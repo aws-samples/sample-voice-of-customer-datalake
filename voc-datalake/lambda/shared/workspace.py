@@ -90,9 +90,6 @@ class WorkspaceContext:
     slug: str
     #: True when a platform admin entered without being a member admin (audited).
     platform_admin: bool
-    #: The workspace ``META``'s ``secret_status`` (``ready`` once its credentials secret exists, else ``pending``):
-    #: the operator APIs use the workspace's secret only when it is ``ready`` (shared/workspace_plugin_store.py).
-    secret_status: str = ''
 
 
 class MembershipCache:
@@ -144,11 +141,11 @@ def text_fields(item: Mapping[str, Any], *fields: str) -> list[str]:
     return [value if isinstance(value := item.get(field), str) else '' for field in fields]
 
 
-#: Exactly what the resolver reads of a membership row (its role) and of a workspace's META (status, name, slug,
-#: secret_status), with the keys: never a member's email or name. A role may be held to these attributes alone
+#: Exactly what the resolver reads of a membership row (its role) and of a workspace's META (status, name, slug),
+#: with the keys: never a member's email or name. A role may be held to these attributes alone
 #: (lib/utils/workspace-request-grants.ts ``grantWorkspaceAttributeRead`` with ``MEMBERSHIP_READ_ATTRIBUTES``: ``dynamodb:Attributes``).
 MEMBER_READ_ATTRIBUTES: Final = ('pk', 'sk', 'role')
-META_READ_ATTRIBUTES: Final = ('pk', 'sk', 'status', 'name', 'slug', 'secret_status')
+META_READ_ATTRIBUTES: Final = ('pk', 'sk', 'status', 'name', 'slug')
 
 
 def _item(table: Any, pk: str, sk: str, attributes: tuple[str, ...]) -> dict:
@@ -197,13 +194,11 @@ def _load(table: Any, event: dict, ws: str, platform_admin: bool,
     meta = _item(table, ws_key(ws), 'META', META_READ_ATTRIBUTES)
     if meta.get('status') != ACTIVE:
         raise NotFoundError(NOT_FOUND)
-    name, slug, secret_status = text_fields(meta, 'name', 'slug', 'secret_status')
+    name, slug = text_fields(meta, 'name', 'slug')
     if enters_as_platform_admin:
         _audit_platform_admin_entry(table, ws, sub)
-        return WorkspaceContext(ws=ws, role='admin', name=name, slug=slug, platform_admin=True,
-                                secret_status=secret_status)
-    return WorkspaceContext(ws=ws, role=role or '', name=name, slug=slug, platform_admin=False,
-                            secret_status=secret_status)
+        return WorkspaceContext(ws=ws, role='admin', name=name, slug=slug, platform_admin=True)
+    return WorkspaceContext(ws=ws, role=role or '', name=name, slug=slug, platform_admin=False)
 
 
 def resolve_workspace(table: Any, event: dict, cache: MembershipCache, *,

@@ -225,11 +225,12 @@ All routes require a signed-in (Cognito) user. "Admin" means the `admins` group.
 **In a workspace** (multi-workspace, not released yet; [multi-workspace.md](multi-workspace.md)): a request that
 sends `X-Workspace-Id` acts in that workspace (a non-member gets the one 404). "Admin" is then the caller's role
 there (a workspace admin, or a platform admin who entered; an editor or a viewer gets 403, and the `admins` group
-grants nothing), "Any user" any member. The scraper list, saves and deletes use the workspace's own credentials
-secret (`voc/ws/{ws}/credentials`, its `webscraper_configs`; these routes and a run answer 409 until the workspace's `secret_status` is `ready`), which the
+grants nothing), "Any user" any member. The scraper list, saves and deletes use the workspace's own config row
+(`WS#{ws}#PLUGIN_CONFIG` / `webscraper` in voc-aggregates, decision 19: a scraper config holds no credential, so it
+is not in SSM; the limits below hold as in the shared secret; nothing saved yet lists no scrapers), which the
 webscraper's run in that workspace reads; a run invokes the webscraper with the request's resolved workspace in
 `workspace_id` (never a body field) and writes and reads `WS#{ws}#SCRAPER_RUN#<scraper id>`; the connectors listing
-reads the workspace's secret too. A scraper that names a `radar_brand` is refused there (400): Radar is not keyed by
+reads the workspace's connector rows too. A scraper that names a `radar_brand` is refused there (400): Radar is not keyed by
 workspace yet. Without the header, every route is as above.
 
 The same URL prefix also serves the import routes, from a second Lambda
@@ -277,8 +278,8 @@ reviews for demos stay available to everyone.
 
 An admin's `enabled` and `frequency_minutes` are stored as sent.
 
-**Save limits.** Scraper configs live in the shared API-credentials secret, so
-`POST /scrapers` refuses a save with `400` when:
+**Save limits.** Scraper configs live in the shared API-credentials secret (in a workspace, in its config row,
+under the same limits), so `POST /scrapers` refuses a save with `400` when:
 
 | Limit | Value |
 |-------|-------|
@@ -291,7 +292,8 @@ An admin's `enabled` and `frequency_minutes` are stored as sent.
 | `pagination.start` | 0–10,000 |
 | `frequency_minutes` | 0–43,200 (30 days) |
 | One scraper, serialized | 8 KiB |
-| All scraper configs, serialized | 48 KiB, leaving room in the 64 KiB secret for integration credentials |
+| All scraper configs, serialized | 48 KiB, leaving room in the 64 KiB secret for integration credentials (the same in a workspace's row, under DynamoDB's 400 KB item) |
+| Any one config list in a workspace's row (scrapers, app connectors, review pages) | 64 KiB, the shared secret's own size |
 
 The limits apply to admins too. An edit that does not grow an already-oversized
 set of configs is still allowed, so it can be repaired.

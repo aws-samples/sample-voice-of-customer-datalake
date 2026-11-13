@@ -21,6 +21,8 @@ _dynamodb_resource = None
 _s3_client = None
 _sqs_client = None
 _secrets_client = None
+_ssm_client = None
+_ssm_run_client = None
 _bedrock_client = None
 _lambda_client = None
 _eventbridge_client = None
@@ -30,6 +32,11 @@ _cognito_idp_client = None
 # (shared/concurrency.py). Below that, botocore discards the surplus connections after each fan-out
 # and logs "Connection pool is full", and the next fan-out pays for fresh TLS handshakes.
 DYNAMODB_MAX_POOL_CONNECTIONS: Final = MAX_IN_FLIGHT_READS
+#: The SSM client of a request-serving Lambda (get_ssm_client): 2 quick attempts with short timeouts, so a route of
+#: two SSM calls (a credentials save reads then writes) answers within API Gateway's 29 s.
+SSM_REQUEST_ATTEMPTS: Final = 2
+SSM_REQUEST_CONNECT_TIMEOUT: Final = 2
+SSM_REQUEST_READ_TIMEOUT: Final = 4
 
 
 def get_dynamodb_resource():
@@ -142,6 +149,34 @@ def get_secrets_client():
     if _secrets_client is None:
         _secrets_client = boto3.client("secretsmanager")
     return _secrets_client
+
+
+def get_ssm_client():
+    """Get the shared SSM client of a request-serving Lambda (the integrations and scrapers APIs, the webhooks):
+    a workspace's credentials parameters.
+
+    2 attempts (standard mode) with 2 s connect and 4 s read timeouts: a route that makes two SSM calls in a row (a
+    credentials save reads, then writes) still answers within API Gateway's 29 s at worst. GetParameter's default
+    throughput is about 40 calls a second per account and region, shared by every deployment there
+    (docs/multi-workspace.md, Credentials).
+    """
+    global _ssm_client
+    if _ssm_client is None:
+        from botocore.config import Config
+        _ssm_client = boto3.client("ssm", config=Config(
+            retries={'mode': 'standard', 'max_attempts': SSM_REQUEST_ATTEMPTS},
+            connect_timeout=SSM_REQUEST_CONNECT_TIMEOUT, read_timeout=SSM_REQUEST_READ_TIMEOUT))
+    return _ssm_client
+
+
+def get_ssm_run_client():
+    """Get the shared SSM client of an ingestor run: adaptive retries, up to 10 attempts, so a burst of runs backs
+    off on a ThrottlingException instead of failing (a run has minutes, not API Gateway's 29 s)."""
+    global _ssm_run_client
+    if _ssm_run_client is None:
+        from botocore.config import Config
+        _ssm_run_client = boto3.client("ssm", config=Config(retries={'mode': 'adaptive', 'max_attempts': 10}))
+    return _ssm_run_client
 
 
 # ── Bedrock generation budget ────────────────────────────────────────────────

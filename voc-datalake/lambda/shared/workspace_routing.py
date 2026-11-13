@@ -29,7 +29,6 @@ from typing import Any, Final
 from botocore.exceptions import ClientError
 
 from shared.aws import consistent_item, is_conditional_check_failure
-from shared.platform_workspaces import CREDENTIALS_READY
 from shared.workspace import ACTIVE, WorkspaceContext
 from shared.workspace_ids import is_workspace_id, ws_key
 from shared.ws_repo import FORM_LOOKUP_PREFIX, LOOKUP_SORT_KEY, WORKSPACE_FIELD, WorkspaceScope, scope_from_lookup
@@ -44,10 +43,10 @@ __all__ = [
     'workspace_payload',
 ]
 
-#: The attributes a workspace's ``META`` is read with: its key, its status and its secret's. The webhook role's GetItem
-#: on ``WS#*`` is limited to exactly these (lib/stacks/api-stack.ts, ``dynamodb:Attributes``), so it never reads a
-#: ``MEMBER#`` row's email or name.
-META_ROUTING_ATTRIBUTES: Final = ('pk', 'sk', 'status', 'secret_status')
+#: The attributes a workspace's ``META`` is read with: its key and its status. The webhook role's GetItem on ``WS#*``
+#: is limited to exactly these (lib/stacks/api-stack.ts, ``dynamodb:Attributes``), so it never reads a ``MEMBER#``
+#: row's email or name. (No ``secret_status`` since decision 19: a workspace's credentials need nothing made first.)
+META_ROUTING_ATTRIBUTES: Final = ('pk', 'sk', 'status')
 
 
 class Unroutable(Exception):
@@ -60,16 +59,10 @@ class RoutedWorkspace:
     """The active workspace a public entry point acts in, from a stored row. Built only by this module."""
 
     scope: WorkspaceScope
-    #: The workspace ``META``'s ``secret_status`` (``ready`` once its credentials secret exists).
-    secret_status: str = ''
 
     @property
     def ws(self) -> str:
         return self.scope.ws
-
-    @property
-    def secret_ready(self) -> bool:
-        return self.secret_status == CREDENTIALS_READY
 
 
 def lookup_key(form_id: str) -> dict[str, str]:
@@ -89,8 +82,7 @@ def _routed(table: Any, ws: str) -> RoutedWorkspace:
         scope = scope_from_lookup(meta)
     except ValueError as error:
         raise Unroutable from error
-    secret_status = meta.get('secret_status')
-    return RoutedWorkspace(scope, secret_status if isinstance(secret_status, str) else '')
+    return RoutedWorkspace(scope)
 
 
 def route_public_id(table: Any, form_id: str) -> RoutedWorkspace | None:

@@ -2,6 +2,7 @@
 docs/multi-workspace.md, Control plane and Credentials)."""
 from collections.abc import Iterator
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -12,6 +13,7 @@ from moto import mock_aws
 from moto_helpers import invoke, pk_sk_table, rest_event
 
 import workspaces_handler
+from shared import platform_workspaces
 from shared.test.cognito_doubles import live_cognito
 from shared.workspace import MembershipCache
 
@@ -28,20 +30,17 @@ STALE_TOKENS = [live_cognito(('admins',)), live_cognito(enabled=False)]
 class World:
     table: Any
     secrets: Any
-    key: str
+    ssm: Any
     cognito: MagicMock
 
 
 @pytest.fixture
 def world() -> Iterator[World]:
     with mock_aws(), patch.object(workspaces_handler, 'memberships', MembershipCache()):
-        key = boto3.client('kms', region_name='us-east-1').create_key()['KeyMetadata']['Arn']
         secrets = boto3.client('secretsmanager', region_name='us-east-1')
-        state = World(pk_sk_table('workspaces'), secrets, key, live_cognito())
+        ssm = boto3.client('ssm', region_name='us-east-1')
+        state = World(pk_sk_table('workspaces'), secrets, ssm, live_cognito())
         with patch.object(workspaces_handler, 'USER_POOL_ID', 'us-east-1_pool'), \
-                patch.object(workspaces_handler, 'KMS_KEY_ARN', key), \
-                patch.object(workspaces_handler, 'WORKSPACE_SECRET_PREFIX', 'voc/ws'), \
-                patch.object(workspaces_handler, 'get_secrets_client', return_value=secrets), \
                 patch.object(workspaces_handler, 'get_cognito_idp_client', side_effect=lambda: state.cognito):
             yield state
 
@@ -71,53 +70,26 @@ def test_a_platform_admin_creates_a_workspace_and_is_its_admin(world, lambda_con
     assert _call(world, lambda_context, 'GET', '/me/workspaces')[1]['workspaces'][0]['id'] == ws
 
 
-def test_the_credentials_secret_is_made_with_the_key_and_the_tag(world, lambda_context):
-    ws = _call(world, lambda_context, 'POST', '/platform/workspaces', body=BODY)[1]['workspace']['id']
-    described = world.secrets.describe_secret(SecretId=f'voc/ws/{ws}/credentials')
-    assert (described['KmsKeyId'], described['Tags']) == (world.key, [{'Key': 'workspace_id', 'Value': ws}])
-
-
-def test_no_request_field_reaches_the_secret_name(world, lambda_context):
+def test_a_create_makes_no_secret_and_no_parameter(world, lambda_context):
+    """Decision 19: a workspace's credentials are SSM parameters made by their first save, so the create makes
+    nothing beyond its rows (no monthly cost per workspace), whatever the request names."""
     hostile = {'name': '../voc-datalake/api-credentials', 'slug': 'other-secret'}
-    with patch.object(workspaces_handler, 'ensure_credentials_secret',
-                      wraps=workspaces_handler.ensure_credentials_secret) as ensure:
-        status, body = _call(world, lambda_context, 'POST', '/platform/workspaces', body=hostile,
-                             headers={'X-Workspace-Id': WS})
+    status, body = _call(world, lambda_context, 'POST', '/platform/workspaces', body=hostile,
+                         headers={'X-Workspace-Id': WS})
+
     assert status == 201
-    [call] = ensure.call_args_list
-    assert call.kwargs == {'prefix': 'voc/ws', 'ws': body['workspace']['id'], 'kms_key_arn': world.key}
-    assert [s['Name'] for s in world.secrets.list_secrets()['SecretList']] == [
-        f'voc/ws/{body["workspace"]["id"]}/credentials']
+    assert body['workspace']['secret_status'] == 'ready'
+    assert world.secrets.list_secrets()['SecretList'] == []
+    assert world.ssm.describe_parameters()['Parameters'] == []
 
 
-def test_a_secret_that_cannot_be_made_leaves_the_workspace_pending_and_says_so(world, lambda_context):
-    denied = ClientError({'Error': {'Code': 'AccessDeniedException', 'Message': 'arn:secret'}}, 'CreateSecret')
-    with patch.object(world.secrets, 'create_secret', side_effect=denied), \
-            patch.object(workspaces_handler, 'logger') as log:
-        status, body = _call(world, lambda_context, 'POST', '/platform/workspaces', body=BODY)
-    _assert_left_pending(world, status, body, log)
-
-
-def _assert_left_pending(world: Any, status: int, body: dict, log: Any) -> str:
-    """The create answered 201 ``pending``, META still says ``pending``, and the failure was logged; the id."""
-    ws = body['workspace']['id']
-    assert (status, body['workspace']['secret_status']) == (201, 'pending')
-    assert world.table.get_item(Key={'pk': f'WS#{ws}', 'sk': 'META'})['Item']['secret_status'] == 'pending'
-    log.exception.assert_called_once_with(
-        'Workspace created without its credentials secret: secret_status stays pending', extra={'workspace_id': ws})
-    return ws
-
-
-def test_a_secret_made_but_not_marked_ready_says_pending_and_the_secret_is_there_to_recover(world, lambda_context):
-    # The case the recovery steps name (docs/multi-workspace.md, Credentials): the secret exists, only the mark failed.
-    denied = ClientError({'Error': {'Code': 'ProvisionedThroughputExceededException', 'Message': 'slow'}},
-                         'TransactWriteItems')
-    with patch.object(workspaces_handler, 'mark_secret_ready', side_effect=denied), \
-            patch.object(workspaces_handler, 'logger') as log:
-        status, body = _call(world, lambda_context, 'POST', '/platform/workspaces', body=BODY)
-    ws = _assert_left_pending(world, status, body, log)
-    [secret] = world.secrets.list_secrets()['SecretList']
-    assert {'Key': 'workspace_id', 'Value': ws} in secret['Tags']
+def test_neither_module_reaches_secrets_manager_or_ssm():
+    """The workspaces API holds no secretsmanager or ssm grant any more (lib/stacks/api-workspaces-lambda.ts)."""
+    for module in (workspaces_handler, platform_workspaces):
+        assert module.__file__ is not None
+        source = Path(module.__file__).read_text(encoding='utf-8')
+        for name in ('get_secrets_client', 'get_ssm_client', 'create_secret', 'put_parameter', 'KMS_KEY_ARN'):
+            assert name not in source, (module.__name__, name)
 
 
 def test_a_slug_that_is_taken_is_a_409(world, lambda_context):
@@ -125,7 +97,6 @@ def test_a_slug_that_is_taken_is_a_409(world, lambda_context):
     status, body = _call(world, lambda_context, 'POST', '/platform/workspaces',
                          body={'name': 'Another', 'slug': 'acme'})
     assert (status, body['error']) == (409, 'That slug is taken: choose another')
-    assert len(world.secrets.list_secrets()['SecretList']) == 1
 
 
 def test_a_bad_body_is_a_400_and_writes_nothing(world, lambda_context):
@@ -162,12 +133,6 @@ def test_a_failed_transaction_is_a_fixed_500(world, lambda_context):
     with patch.object(world.table.meta.client, 'transact_write_items', side_effect=fault):
         assert _call(world, lambda_context, 'POST', '/platform/workspaces', body=BODY) == (
             500, {'success': False, 'error': 'Failed to create the workspace'})
-
-
-def test_an_unconfigured_secret_refuses_the_create_before_writing(world, lambda_context):
-    with patch.object(workspaces_handler, 'KMS_KEY_ARN', ''):
-        assert _call(world, lambda_context, 'POST', '/platform/workspaces', body=BODY)[0] == 500
-    assert world.table.scan()['Items'] == []
 
 
 def test_an_unconfigured_user_pool_refuses_the_live_check(world, lambda_context):

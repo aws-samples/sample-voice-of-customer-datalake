@@ -26,9 +26,14 @@
  * Every role has both runs' grants (docs/multi-workspace.md): a deployment-wide run
  * (an event that names no workspace) reads the shared API-credentials secret and
  * writes the raw bucket under `raw/*`, as before; a run in a workspace reads that
- * workspace's credentials secret (`{prefix}/*`, `voc/ws/{ws}/credentials`,
- * lib/utils/workspace-secrets.ts, the name built from the event's verified
- * workspace) and writes under `ws/{one workspace id}/raw/*`. The deployment-wide grants go when
+ * workspace's credentials parameter of ITS OWN plugin only (decision 19: `ssm:GetParameter`
+ * on `voc/ws/{one workspace id}/credentials/{plugin}`, and a `kms:Decrypt` through SSM for
+ * those names that is no second layer, since the role holds the key's grantEncryptDecrypt
+ * below; lib/utils/workspace-secrets.ts; the shared role gets each of its plugins'
+ * names, so between those plugins only the code-built name separates them), the names
+ * built from the event's verified workspace; its config list is a `WS#{ws}#PLUGIN_CONFIG`
+ * row of voc-aggregates, which every role already reads; and writes under
+ * `ws/{one workspace id}/raw/*`. The deployment-wide grants go when
  * phase 2's last slice removes that path.
  *
  * Resources are created on the stack itself (logical ids `IngestionLambdaRole`
@@ -41,12 +46,13 @@ import type * as kms from 'aws-cdk-lib/aws-kms';
 import type * as s3 from 'aws-cdk-lib/aws-s3';
 import type * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import type * as sqs from 'aws-cdk-lib/aws-sqs';
-import { acknowledgeNag, resourceFinding, type NagAck } from '../utils/nag-ack';
+import { acknowledgeNag, type NagAck } from '../utils/nag-ack';
 import { capitalize } from '../plugin-loader';
 import { grantClaudeModels } from '../utils/claude-model-grant';
 import { piiDetectionStatement } from '../utils/pii-redaction';
 import { grantKeyScopedWrites, grantReadAndWrites } from '../utils/table-write-grants';
 import { grantInvokeByName } from '../utils/worker-lambda';
+import { grantWorkspaceParameterRead } from '../utils/workspace-secrets';
 import { RAW_LAYER_PREFIX, WORKSPACE_ID_PATTERN, WORKSPACE_RAW_LAYER_PREFIX } from './core-buckets';
 
 /**
@@ -72,8 +78,8 @@ export interface BaseIngestionGrants {
   kmsKey: kms.IKey;
   /** The deployment's shared API-credentials secret: a deployment-wide run's (an event that names no workspace). */
   apiSecrets: secretsmanager.ISecret;
-  /** Every per-workspace credentials secret (`{prefix}/*`, lib/utils/workspace-secrets.ts workspaceSecretsArn). */
-  workspaceSecretsArn: string;
+  /** The workspaces' parameters' prefixed base path (`voc/ws`, `<prefix>-voc/ws`; lib/utils/workspace-secrets.ts). */
+  workspaceParameterBasePath: string;
 }
 
 /** What decides whether a plugin's ingestor needs a role of its own. */
@@ -136,10 +142,12 @@ export class IngestorRoles {
   ): iam.Role {
     if (!bedrock && !browser && !scheduleRuleName && !jobNotices) {
       this.shared ??= this.newRole('IngestionLambdaRole');
+      this.grantOwnParameters(this.shared, pluginId);
       return this.shared;
     }
 
     const role = this.newRole(`IngestorRole${capitalize(pluginId)}`);
+    this.grantOwnParameters(role, pluginId);
 
     if (bedrock) {
       grantClaudeModels(role, 'invoke');
@@ -162,6 +170,13 @@ export class IngestorRoles {
     }
 
     return role;
+  }
+
+  /** A run in a workspace reads `pluginId`'s one credentials parameter there (decision 19); on the shared role the
+   *  other plugins' are granted too, so between those only the code-built name separates them. */
+  private grantOwnParameters(role: iam.Role, pluginId: string): void {
+    const { kmsKey, workspaceParameterBasePath } = this.grants;
+    grantWorkspaceParameterRead(this.stack, role, workspaceParameterBasePath, kmsKey, [pluginId]);
   }
 
   /**
@@ -191,7 +206,7 @@ export class IngestorRoles {
     });
 
     const {
-      watermarksTable, aggregatesTable, processingQueue, rawDataBucket, kmsKey, apiSecrets, workspaceSecretsArn,
+      watermarksTable, aggregatesTable, processingQueue, rawDataBucket, kmsKey, apiSecrets,
     } = this.grants;
     watermarksTable.grantReadWriteData(role);
     // Run rows and counters (Put + Update, _shared/base_ingestor.py, the webscraper); the circuit breaker
@@ -206,16 +221,9 @@ export class IngestorRoles {
     rawDataBucket.grantPut(role, `${RAW_LAYER_PREFIX}*`);
     rawDataBucket.grantPut(role, `${WORKSPACE_RAW_LAYER_PREFIX}*`);
     kmsKey.grantEncryptDecrypt(role);
-    // The deployment-wide run's shared secret, until phase 2's last slice removes that path.
+    // The deployment-wide run's shared secret, until phase 2's last slice removes that path. (A run in a workspace
+    // reads its own plugin's parameters: grantOwnParameters, per plugin.)
     apiSecrets.grantRead(role);
-    // The workspaces' credentials secrets (decision 8), read only; the name comes from the run's verified workspace.
-    role.addToPolicy(new iam.PolicyStatement({ actions: ['secretsmanager:GetSecretValue'], resources: [workspaceSecretsArn] }));
-    acknowledgeNag(role, [{
-      id: 'AwsSolutions-IAM5',
-      reason: 'One credentials secret per workspace, created at run time (voc/ws/{ws}/credentials, decision 8): each run '
-        + 'reads the one its event\'s verified workspace names, and the grant reaches only that name prefix of this deployment',
-      findings: [resourceFinding(workspaceSecretsArn)],
-    }]);
     role.addToPolicy(piiDetectionStatement()); // source PII policy (docs/source-policies.md)
 
     return role;

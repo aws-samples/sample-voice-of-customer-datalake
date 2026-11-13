@@ -15,13 +15,13 @@ import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as path from 'path';
 import { Construct } from 'constructs';
-import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
-import { WORKSPACE_SECRET_BASE_PREFIX, WORKSPACE_SECRET_PREFIX_ENV, workspaceSecretsArn } from '../utils/workspace-secrets';
+import { acknowledgeNag } from '../utils/nag-ack';
+import { WORKSPACE_PARAMETER_BASE_PATH, grantWorkspaceParameterRead } from '../utils/workspace-secrets';
 import { WORKSPACE_RAW_LAYER_PREFIX } from './core-buckets';
 
 /** The attributes a webhook reads of a workspace's META (lambda/shared/workspace_routing.py META_ROUTING_ATTRIBUTES;
  * api-stack-webhook-env.test.ts holds the two equal). */
-const WEBHOOK_META_ATTRIBUTES = ['pk', 'sk', 'status', 'secret_status'] as const;
+const WEBHOOK_META_ATTRIBUTES = ['pk', 'sk', 'status'] as const;
 import { DEFAULT_WEBHOOK_MEMORY_MB, getEnabledPlugins, getPluginsWithWebhook, capitalize, pluginDirectoryIds, type PluginManifest } from '../plugin-loader';
 import { pluginVersion } from '../utils/connector-version';
 import { applyAppClientEnv } from '../utils/app-client-env';
@@ -309,10 +309,11 @@ export class VocApiStack extends VocStack {
     aggregatesTable.grant(webhookRole, 'dynamodb:GetItem');
     webhookRole.addToPolicy(piiDetectionStatement());
     // A workspace's endpoint, /webhooks/{plugin}/{ws} (plugins/_shared/base_webhook.py): the workspace's META read
-    // (GetItem on WS#* only, of its routing attributes only: is it active, is its secret ready), and its own credentials secret read, the name built
-    // from the routed workspace only (voc/ws/*: every workspace's, so only the code keeps a delivery to its own,
-    // decision 1's soft isolation). The secrets use the deployment key the role already decrypts with.
-    const webhookWorkspaceSecrets = this.grantWebhookWorkspaces(webhookRole, props.workspacesTable);
+    // (GetItem on WS#* only, of its routing attributes only: is it active), and its webhook plugins' own credentials
+    // parameters read (decision 19), the names built from the routed workspace only (any one workspace id: only the
+    // code keeps a delivery to its own, decision 1's soft isolation), and no other plugin's.
+    const webhookWorkspaceSecrets = this.grantWebhookWorkspaces(webhookRole, props.workspacesTable,
+      webhookPlugins.map((plugin) => plugin.id), kmsKey);
 
     const webhookLambdas = new Map<string, lambda.Function>();
     for (const plugin of webhookPlugins) {
@@ -474,25 +475,16 @@ export class VocApiStack extends VocStack {
 
   /**
    * The webhook role's reach into the workspaces (docs/multi-workspace.md, "Public and non-user entry points"):
-   * GetItem on voc-workspaces' `WS#*` partitions only, of the routing attributes only (`pk`, `sk`, `status`,
-   * `secret_status`: `dynamodb:Attributes`, with a projection the code always sends, lambda/shared/workspace_routing.py
-   * META_ROUTING_ATTRIBUTES), so IAM keeps a MEMBER# row's email and name out of reach; no write. And
-   * GetSecretValue on the workspaces' credentials secrets (`{prefix}/*`), acknowledged. Returns the secret prefix's
-   * environment.
+   * GetItem on voc-workspaces' `WS#*` partitions only, of the routing attributes only (`pk`, `sk`, `status`:
+   * `dynamodb:Attributes`, with a projection the code always sends, lambda/shared/workspace_routing.py
+   * META_ROUTING_ATTRIBUTES), so IAM keeps a MEMBER# row's email and name out of reach; no write. And GetParameter
+   * (and kms:Decrypt through SSM) on `voc/ws/{one workspace id}/credentials/{plugin}` of the webhook plugins only
+   * (decision 19, lib/utils/workspace-secrets.ts). Returns the parameter prefix's environment.
    */
-  private grantWebhookWorkspaces(role: iam.Role, workspacesTable: dynamodb.ITable): Record<string, string> {
+  private grantWebhookWorkspaces(role: iam.Role, workspacesTable: dynamodb.ITable, pluginIds: readonly string[],
+    kmsKey: kms.IKey): Record<string, string> {
     grantWorkspaceAttributeRead(role, workspacesTable, WEBHOOK_META_ATTRIBUTES);
-    const prefix = this.prefixed(WORKSPACE_SECRET_BASE_PREFIX);
-    const secrets = workspaceSecretsArn(this, prefix);
-    role.addToPolicy(new iam.PolicyStatement({ actions: ['secretsmanager:GetSecretValue'], resources: [secrets] }));
-    acknowledgeNag(role, [{
-      id: 'AwsSolutions-IAM5',
-      reason: 'One credentials secret per workspace, created at run time (voc/ws/{ws}/credentials, decision 8): a '
-        + 'delivery to /webhooks/{plugin}/{ws} reads the one its routed workspace names (its stored META, never the path '
-        + 'alone), and the grant reaches only that name prefix of this deployment, read only',
-      findings: [resourceFinding(secrets)],
-    }]);
-    return { [WORKSPACE_SECRET_PREFIX_ENV]: prefix };
+    return grantWorkspaceParameterRead(this, role, this.prefixed(WORKSPACE_PARAMETER_BASE_PATH), kmsKey, pluginIds);
   }
 
   private createWebhookLambda(

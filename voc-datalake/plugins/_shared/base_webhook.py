@@ -7,11 +7,11 @@ Two paths (docs/multi-workspace.md, "Public and non-user entry points"; docs/plu
   that name no workspace);
 * ``POST /webhooks/{plugin}/{ws}``: the ``{ws}`` path value is only the key of a workspace's own ``META`` row
   (``delivery_workspace``, over shared/workspace_routing.py ``route_workspace_id``): it must be a well-formed id of an
-  ``active`` workspace whose credentials secret is ``ready``. The webhook secret and the plugin's settings then come
-  from THAT workspace's secret, ``{prefix}/{ws}/credentials`` (the plugin's namespace), never the shared one; a
-  verified delivery is archived under ``ws/{ws}/raw/<plugin>/…`` and queued with that ``workspace_id``
+  ``active`` workspace. The webhook secret and the plugin's settings then come from THAT workspace's parameter of
+  this plugin, ``{prefix}/{ws}/credentials/{plugin}`` (decision 19, shared/workspace_credentials.py), never the shared
+  secret; a verified delivery is archived under ``ws/{ws}/raw/<plugin>/…`` and queued with that ``workspace_id``
   (``workspace_payload``, after every other field). Anything that routes nowhere (a malformed or unknown id, a
-  ``deleting`` workspace, a secret not ready, unreadable or without the plugin's webhook secret) gets the plugin's
+  ``deleting`` workspace, a parameter missing, unreadable or without the plugin's webhook secret) gets the plugin's
   own bad-signature answer, so the answer confirms no workspace.
 """
 
@@ -28,17 +28,17 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from botocore.exceptions import BotoCoreError, ClientError
 
-from shared.aws import clear_secret_cache, get_s3_client, get_secret, get_secrets_client, get_sqs_client
-from shared.exceptions import ConfigurationError
+from shared.aws import clear_secret_cache, get_s3_client, get_secret, get_sqs_client, get_ssm_client
 from shared.logging import logger, metrics, tracer
+from shared.plugin_identity import is_valid_plugin_identifier
 from shared.source_profiles import SourceProfilesUnavailable
 from shared.tables import get_workspaces_table
-from shared.workspace_ids import credentials_secret_name
+from shared.workspace_credentials import MalformedCredentials, read_credentials
 from shared.workspace_routing import RoutedWorkspace, Unroutable, route_workspace_id, workspace_payload
 
 from .audit import emit_audit_event
 from .normalized_item import normalized_item_fields
-from .plugin_secrets import filter_plugin_secrets, holds_plugin_namespace
+from .plugin_secrets import load_shared_plugin_secrets
 from .raw_archive import WEBHOOK, archive_raw_item
 from .raw_source import pop_raw_source
 from .source_policy_gate import policy_messages
@@ -53,46 +53,47 @@ BRAND_NAME = os.environ.get("BRAND_NAME", "")
 SOURCE_PLATFORM = os.environ.get("SOURCE_PLATFORM", "")
 # The raw archive (``raw/<plugin>/…``, ``_shared/raw_archive.py``): every webhook archives what it receives.
 RAW_DATA_BUCKET = os.environ.get("RAW_DATA_BUCKET", "")
-# The workspaces' credentials secrets, `{prefix}/{ws}/credentials` (lib/stacks/api-stack.ts).
-WORKSPACE_SECRET_PREFIX = os.environ.get("WORKSPACE_SECRET_PREFIX", "")
+# The workspaces' credentials parameters, `{prefix}/{ws}/credentials/{plugin}` (decision 19; lib/stacks/api-stack.ts).
+WORKSPACE_PARAMETER_PREFIX = os.environ.get("WORKSPACE_PARAMETER_PREFIX", "")
 #: The path parameter of ``/webhooks/{plugin}/{ws}`` (lib/stacks/api-routes.ts).
 WORKSPACE_PATH_PARAMETER = "ws"
 
 
-#: How long a warm container keeps a workspace's secret before it reads it again (docs/plugin-architecture.md): a
+#: How long a warm container keeps a workspace's parameter before it reads it again (docs/plugin-architecture.md): a
 #: webhook secret a workspace rotates, or one that leaked and is replaced, stops opening its endpoint within this.
 WORKSPACE_SECRET_TTL_SECONDS = 60.0
-#: A container keeps at most this many workspaces' secrets; a full cache starts again empty.
+#: A container keeps at most this many workspaces' parameters; a full cache starts again empty.
 MAX_CACHED_WORKSPACE_SECRETS = 256
 
 
 class WorkspaceSecrets:
-    """The workspaces' credentials secrets one warm container read, each kept ``ttl`` seconds by name.
+    """The workspaces' credentials parameters one warm container read, each kept ``ttl`` seconds by
+    ``(workspace, plugin)``.
 
     Not ``shared.aws.get_secret``'s cache, which keeps a value for the container's life: a rotated webhook secret
-    takes effect within the TTL everywhere, and a bad signature or a namespace miss costs no extra read (a flood of
-    forged deliveries reads each workspace's secret at most once per TTL), a new workspace's ``{}`` included. A read
-    that FAILS is not kept (``_read_secret`` tells the two apart; ``get_secret`` turns a failure into ``{}`` too, so
-    it is not reused here).
+    takes effect within the TTL everywhere, and a bad signature or a missing key costs no extra read (a flood of
+    forged deliveries reads each workspace's parameter at most once per TTL), a workspace with nothing saved
+    (``ParameterNotFound``, kept as ``{}``) included. A read that FAILS is not kept (``_read_credentials`` tells the
+    two apart).
     """
 
     def __init__(self, ttl: float = WORKSPACE_SECRET_TTL_SECONDS, clock: Callable[[], float] = time.monotonic):
         self._ttl = ttl
         self._clock = clock
-        self._entries: dict[str, tuple[float, dict]] = {}
+        self._entries: dict[tuple[str, str], tuple[float, dict]] = {}
 
-    def get(self, name: str) -> dict:
+    def get(self, ws: str, plugin: str) -> dict:
         now = self._clock()
-        entry = self._entries.get(name)
+        entry = self._entries.get((ws, plugin))
         if entry is not None and now < entry[0]:
             return entry[1]
-        value = _read_secret(name)
+        value = _read_credentials(ws, plugin)
         if value is None:
-            self._entries.pop(name, None)
+            self._entries.pop((ws, plugin), None)
             return {}
         if len(self._entries) >= MAX_CACHED_WORKSPACE_SECRETS:
             self._entries.clear()
-        self._entries[name] = (now + self._ttl, value)
+        self._entries[(ws, plugin)] = (now + self._ttl, value)
         return value
 
     def clear(self) -> None:
@@ -102,18 +103,24 @@ class WorkspaceSecrets:
         return len(self._entries)
 
 
-def _read_secret(name: str) -> dict | None:
-    """One uncached read of a secret's JSON object (``{}`` for a value that is not one); None when the read failed
-    (logged by type, never its value)."""
+def _read_credentials(ws: str, plugin: str) -> dict | None:
+    """One uncached read of ``plugin``'s credentials parameter in ``ws`` (shared/workspace_credentials.py
+    ``read_credentials``): ``{}`` when it does not exist (nothing saved) or is not a JSON object; None when the read
+    failed (logged by type, never its text: it names the parameter, the account and the role)."""
     try:
-        value = json.loads(get_secrets_client().get_secret_value(SecretId=name)["SecretString"])
-    except (ClientError, BotoCoreError, KeyError, ValueError) as error:
-        logger.warning("A workspace's secret could not be read", extra={"error_type": type(error).__name__})
+        return read_credentials(get_ssm_client(), WORKSPACE_PARAMETER_PREFIX, ws, plugin)
+    except MalformedCredentials as error:
+        # A hand-edited value: refused like a bad signature, kept as `{}` for the TTL, and counted for the operator.
+        logger.warning("A workspace's credentials parameter is not a JSON object",
+                       extra={"plugin_id": plugin, "error_type": type(error).__name__})
+        metrics.add_metric(name="WorkspaceCredentialsMalformed", unit="Count", value=1)
+        return {}
+    except (ClientError, BotoCoreError) as error:
+        logger.warning("A workspace's parameter could not be read", extra={"error_type": type(error).__name__})
         return None
-    return value if isinstance(value, dict) else {}
 
 
-#: This container's workspace secrets (tests reset it with ``clear``).
+#: This container's workspace parameters (tests reset it with ``clear``).
 WORKSPACE_SECRETS = WorkspaceSecrets()
 
 
@@ -125,7 +132,7 @@ def _on_workspace_route(event: dict) -> bool:
 
 def delivery_workspace(event: dict) -> tuple[bool, RoutedWorkspace | None]:
     """``(refused, routed)`` of one delivery. ``/webhooks/{plugin}`` (no ``{ws}`` path parameter): ``(False, None)``,
-    deployment-wide. ``/webhooks/{plugin}/{ws}``: ``(False, routed)`` for an active workspace whose secret is ready,
+    deployment-wide. ``/webhooks/{plugin}/{ws}``: ``(False, routed)`` for an active workspace,
     read from its stored ``META`` (the path value is only the row's key), else ``(True, None)``: refused, never served
     deployment-wide. A read fault raises, for the plugin's 500: a provider such as GitHub does not redeliver a failed
     delivery by itself, so the scheduled poll picks the item up and the 500 tells the operator."""
@@ -137,10 +144,9 @@ def delivery_workspace(event: dict) -> tuple[bool, RoutedWorkspace | None]:
         logger.warning("WORKSPACES_TABLE not configured: a workspace webhook is refused")
         return True, None
     try:
-        routed = route_workspace_id(table, parameters.get(WORKSPACE_PATH_PARAMETER))
+        return False, route_workspace_id(table, parameters.get(WORKSPACE_PATH_PARAMETER))
     except Unroutable:
         return True, None
-    return (False, routed) if routed.secret_ready else (True, None)
 
 
 class BaseWebhook(ABC):
@@ -159,18 +165,15 @@ class BaseWebhook(ABC):
         self._s3 = get_s3_client()
 
     def _load_workspace_secrets(self, routed: RoutedWorkspace) -> dict:
-        """The plugin's keys from the WORKSPACE's own secret (the name built from the routed workspace only), or ``{}``
-        when it is unreadable or holds none of them: the delivery is then refused like a bad signature."""
-        if not WORKSPACE_SECRET_PREFIX:
-            logger.warning("WORKSPACE_SECRET_PREFIX not configured")
+        """The plugin's keys from the WORKSPACE's own parameter of this plugin (the name built from the routed
+        workspace and this plugin's identity only; the webhook role may read no other plugin's), or ``{}`` when it
+        is missing, unreadable or malformed: the delivery is then refused like a bad signature."""
+        if not WORKSPACE_PARAMETER_PREFIX:
+            logger.warning("WORKSPACE_PARAMETER_PREFIX not configured")
             return {}
-        all_secrets = WORKSPACE_SECRETS.get(credentials_secret_name(WORKSPACE_SECRET_PREFIX, routed.ws))
-        if not all_secrets or not holds_plugin_namespace(self.source_platform, all_secrets):
+        if not is_valid_plugin_identifier(self.source_platform):
             return {}
-        try:
-            return filter_plugin_secrets(self.source_platform, all_secrets)
-        except ConfigurationError:
-            return {}
+        return dict(WORKSPACE_SECRETS.get(routed.ws, self.source_platform))
 
     def _load_secrets(self) -> dict:
         """Load this plugin's secrets from the shared secret, prefix stripped.
@@ -187,26 +190,14 @@ class BaseWebhook(ABC):
         rather than the missing variable). Pinned by
         'SOURCE_PLATFORM' in ``lib/stacks/api-stack-webhook-env.test.ts``.
 
-        A delivery on a workspace's route reads that workspace's secret instead
-        (``_load_workspace_secrets``), never the shared one.
+        A delivery on a workspace's route reads that workspace's parameter instead
+        (``_load_workspace_secrets``), never the shared secret.
         """
-        if self.routed is not None:
-            return self._load_workspace_secrets(self.routed)
-        if not SECRETS_ARN:
-            logger.warning("SECRETS_ARN not configured")
-            return {}
-
-        all_secrets = get_secret(SECRETS_ARN)
-        if not all_secrets:
-            # Evict the memoized empty payload before refusing on it — see the
-            # same branch in `BaseIngestor._load_secrets` for why `get_secret`
-            # caching a failed read would otherwise wedge the warm container. A
-            # webhook has no manual "Run now" to clear the cache at all, so
-            # without this the only recovery is a container recycle while the
-            # provider's retries expire.
-            clear_secret_cache()
-
-        return filter_plugin_secrets(self.source_platform, all_secrets)
+        routed = self.routed
+        # Deployment-wide: the one shared-secret read both base classes make (_shared/plugin_secrets.py), with this
+        # module's own get_secret, cache eviction and logger.
+        return (self._load_workspace_secrets(routed) if routed is not None else load_shared_plugin_secrets(
+            self.source_platform, SECRETS_ARN, read=get_secret, evict=clear_secret_cache, log=logger))
 
     @abstractmethod
     def parse_webhook_payload(self, body: dict, headers: dict) -> list[dict]:

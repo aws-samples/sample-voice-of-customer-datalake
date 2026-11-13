@@ -172,6 +172,7 @@ from _shared.plugin_secrets import filter_plugin_secrets, plugin_secret_prefix
 from _shared.test.workspace_fixtures import SCOPE, SECRET_NAME, WS
 from shared.exceptions import ConfigurationError, SecretUnreadableError
 from shared.plugin_identity import PLUGIN_IDENTIFIER_RULES, is_valid_plugin_identifier
+from shared.ws_repo import WorkspaceScope
 
 # The identity these tests run as — read from the same module attribute the base
 # classes read, so a rename of the env plumbing cannot leave this file asserting
@@ -219,12 +220,14 @@ MALFORMED_ID_MATCHING_SECRET = {
 }
 
 
-def _make_ingestor(execution_id=None):
+def _make_ingestor(execution_id=None, scope: WorkspaceScope | None = SCOPE):
+    """A run in ``SCOPE`` (its plugin's parameters, read through the plugins' double, plugins/conftest.py), or
+    deployment-wide with ``scope=None`` (the shared secret)."""
     class _Ingestor(base_ingestor.BaseIngestor):
         def fetch_new_items(self):
             yield from []
 
-    return _Ingestor(SCOPE, execution_id=execution_id)
+    return _Ingestor(scope, execution_id=execution_id)
 
 
 def _make_webhook():
@@ -516,7 +519,7 @@ class TestBothBaseClassesFailClosed:
         read at all, so there is nothing to over-share. Kept a warning so a local
         or partially-wired invocation is not turned into a hard failure by this
         change."""
-        with patch('_shared.base_ingestor.WORKSPACE_SECRET_PREFIX', ''):
+        with patch('_shared.base_ingestor.WORKSPACE_PARAMETER_PREFIX', ''):
             assert self._ingestor_with({'unused': 'never-read'}).secrets == {}
         with patch('_shared.base_webhook.SECRETS_ARN', ''):
             assert self._webhook_with({'unused': 'never-read'}).secrets == {}
@@ -525,7 +528,8 @@ class TestBothBaseClassesFailClosed:
     @patch('_shared.base_ingestor.get_s3_client', new=MagicMock())
     @patch('_shared.base_ingestor.get_sqs_client', new=MagicMock())
     def test_the_ingestor_reads_only_its_workspaces_secret(self):
-        """Per-workspace credentials (decision 8): the name is the run's scope's, never the shared secret's."""
+        """Per-workspace credentials (decision 19): the name is the run's scope's and its plugin's parameter, never the
+        shared secret's."""
         with patch('_shared.base_ingestor.get_secret', return_value=MIXED_SECRET) as get_secret:
             _make_ingestor()
 
@@ -559,7 +563,8 @@ class TestOneImplementationOfTheBoundary:
             for node in ast.walk(tree)
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
         }
-        assert 'filter_plugin_secrets' in called, (
+        # The one deployment-wide read (_shared/plugin_secrets.py load_shared_plugin_secrets, over filter_plugin_secrets).
+        assert 'load_shared_plugin_secrets' in called, (
             f'{module.__name__}._load_secrets must delegate to the shared helper'
         )
 
@@ -694,7 +699,9 @@ class TestATransientReadFailureIsRetryable:
 
     Driven through the real `get_secret` and a stubbed Secrets Manager client
     rather than a patched `get_secret`, deliberately: the cache is the subject, and
-    patching the function that holds it removes the thing under test.
+    patching the function that holds it removes the thing under test. The ingestor
+    runs deployment-wide here: the cache is the shared secret's (a run in a
+    workspace reads its plugin's parameters fresh every time, decision 19).
     """
 
     @staticmethod
@@ -723,7 +730,7 @@ class TestATransientReadFailureIsRetryable:
             # the breaker classifies the error, and an unpatched breaker reaches real
             # DynamoDB (see plugins/conftest.py::no_real_aws_calls).
             mock_dynamo.return_value.Table.return_value = MagicMock()
-            construct = _make_ingestor if kind == 'ingestor' else _make_webhook
+            construct = (lambda: _make_ingestor(scope=None)) if kind == 'ingestor' else _make_webhook
 
             # First invocation: the read fails, `get_secret` returns {} and caches
             # it, and construction refuses to proceed on an empty secret.
@@ -754,8 +761,8 @@ class TestATransientReadFailureIsRetryable:
                 patch('_shared.base_ingestor.get_s3_client'), \
                 patch('_shared.base_ingestor.get_sqs_client'):
             mock_dynamo.return_value.Table.return_value = MagicMock()
-            _make_ingestor()
-            _make_ingestor()
+            _make_ingestor(scope=None)
+            _make_ingestor(scope=None)
 
         assert client.get_secret_value.call_count == 1
 
@@ -963,7 +970,8 @@ class TestAConstructionFailureIsReported:
             with pytest.raises(ConfigurationError) as excinfo:
                 _make_ingestor()
 
-        assert PREFIX in str(excinfo.value)
+        # The plugin whose credentials were expected (in a workspace, its parameters are named by it).
+        assert PLUGIN_ID in str(excinfo.value)
 
     def test_the_control_a_successful_construction_reports_nothing(self):
         """Non-vacuity: an unconditional error write would satisfy every

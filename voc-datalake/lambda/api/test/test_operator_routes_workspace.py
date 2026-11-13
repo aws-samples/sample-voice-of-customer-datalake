@@ -5,8 +5,9 @@ admin role there (a workspace admin or an entered platform admin; the deployment
 editor or a viewer gets 403, a non-member the one 404); Run now and a scraper's run carry the RESOLVED workspace on
 their invoke payload (never a body field) and write and read the workspace's run rows; the breaker routes read and
 clear the workspace's own TRIPPED row (enable and disable are refused: the schedule rule serves every workspace);
-credentials, app connectors and scraper configs live in the workspace's own secret. The S3 import API refuses the
-header outright. Without the header each route acts deployment-wide, as before.
+credentials, app connectors and scraper configs live in the workspace's own SSM parameters, one per plugin and kind
+(decision 19). The S3 import API refuses the header outright. Without the header each route acts deployment-wide,
+as before.
 """
 from __future__ import annotations
 
@@ -21,6 +22,7 @@ from unittest.mock import MagicMock, patch
 
 import boto3
 import pytest
+from botocore.exceptions import ClientError
 from integrations_fixtures import stub_rule_lookup
 from moto import mock_aws
 from moto_helpers import pk_sk_table, rest_event
@@ -29,16 +31,17 @@ import integrations_handler
 import s3_import_handler
 import scrapers_handler
 from shared.test.moto_tables import create_pk_sk_table
-from shared.workspace_plugin_store import CREDENTIALS_MISSING, CREDENTIALS_NOT_READY
+from shared.workspace_credentials import read_workspace
 from shared.workspace_request import DEPLOYMENT_ONLY, RADAR_NOT_IN_WORKSPACES, RequestWorkspace
 from shared.ws_repo import message_scope
 
 WS_A = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
 WS_B = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D9'
-#: A workspace whose credentials secret was never made (secret_status pending).
-WS_PENDING = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7DA'
+#: A workspace created a moment ago: nothing saved in it yet.
+WS_NEW = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7DA'
 SHARED_SECRET = 'shared-api-credentials'
-PREFIX = 'voc/ws'
+PREFIX = '/voc/ws'
+KEY = 'arn:aws:kms:us-east-1:123456789012:key/test'
 
 
 def _claims(sub: str, groups: str = 'users') -> dict:
@@ -50,12 +53,12 @@ ADMIN_A = _claims('sub-admin-a')
 EDITOR_A = _claims('sub-editor-a')
 VIEWER_A = _claims('sub-viewer-a')
 ADMIN_B = _claims('sub-admin-b')
-ADMIN_PENDING = _claims('sub-admin-p')
+ADMIN_NEW = _claims('sub-admin-n')
 #: The deployment's administrator, a member of no workspace.
 DEPLOYMENT_ADMIN = _claims('sub-deploy', 'admins')
 PLATFORM_ADMIN = _claims('sub-platform', 'admins,platform-admins')
 MEMBERS = ((WS_A, ADMIN_A, 'admin'), (WS_A, EDITOR_A, 'editor'), (WS_A, VIEWER_A, 'viewer'),
-           (WS_B, ADMIN_B, 'admin'), (WS_PENDING, ADMIN_PENDING, 'admin'))
+           (WS_B, ADMIN_B, 'admin'), (WS_NEW, ADMIN_NEW, 'admin'))
 
 
 @dataclass
@@ -63,6 +66,7 @@ class World:
     aggregates: Any
     workspaces: Any
     secrets: Any
+    ssm: Any
     ingestor: MagicMock
     webscraper: MagicMock
     events: MagicMock
@@ -70,6 +74,34 @@ class World:
 
     def secret(self, name: str) -> dict:
         return json.loads(self.secrets.get_secret_value(SecretId=name)['SecretString'])
+
+    def stored(self, ws: str) -> dict:
+        """Everything saved in workspace ``ws`` (its credentials parameters and its config rows), as the shared secret
+        would hold it (``<plugin>_<key>``)."""
+        credentials = {f'{plugin}_{key}': value for plugin, values in read_workspace(self.ssm, PREFIX, ws).items()
+                       for key, value in values.items()}
+        return {**credentials, **{f"{row['sk']}_configs": row['configs'] for row in self.config_rows(ws)}}
+
+    def save(self, ws: str, name: str, value: str) -> None:
+        """Saved by hand: ``credentials/{plugin}`` a parameter of the workspace, ``configs/{plugin}`` its row."""
+        kind, plugin = name.split('/')
+        if kind == 'configs':
+            self.aggregates.put_item(Item={'pk': f'WS#{ws}#PLUGIN_CONFIG', 'sk': plugin, 'configs': value})
+            return
+        self.ssm.put_parameter(Name=f'{PREFIX}/{ws}/{name}', Value=value, Type='SecureString', KeyId=KEY,
+                               Overwrite=True)
+
+    def parameter_names(self) -> list[str]:
+        return sorted(p['Name'] for p in self.ssm.describe_parameters()['Parameters'])
+
+    def nothing_saved(self) -> bool:
+        """No credentials parameter and no config row in any workspace."""
+        return self.parameter_names() == [] and self.config_rows() == []
+
+    def config_rows(self, ws: str | None = None) -> list[dict]:
+        """Every workspace's config rows (``WS#{ws}#PLUGIN_CONFIG``), or ``ws``'s."""
+        return [item for item in self.aggregates.scan()['Items'] if item['pk'].endswith('#PLUGIN_CONFIG')
+                and (ws is None or item['pk'] == f'WS#{ws}#PLUGIN_CONFIG')]
 
     def row(self, pk: str, sk: str) -> dict | None:
         return self.aggregates.get_item(Key={'pk': pk, 'sk': sk}).get('Item')
@@ -83,25 +115,27 @@ class World:
         return json.loads(payload.decode() if isinstance(payload, bytes) else payload)
 
 
-def _ws_secret(ws: str) -> str:
-    return f'{PREFIX}/{ws}/credentials'
+def _ws_parameter(ws: str, plugin: str) -> str:
+    return f'{PREFIX}/{ws}/credentials/{plugin}'
 
 
 @pytest.fixture
 def world(monkeypatch, request) -> Iterator[World]:
     request.getfixturevalue('plugin_secret_defaults')  # the plugins CDK tells the integrations API about
-    monkeypatch.setenv('WORKSPACE_SECRET_PREFIX', PREFIX)
+    monkeypatch.setenv('WORKSPACE_PARAMETER_PREFIX', PREFIX)
+    monkeypatch.setenv('WORKSPACE_PARAMETER_KEY_ARN', KEY)
+    monkeypatch.setenv('AGGREGATES_TABLE', 'aggregates')
     with mock_aws():
         aggregates = create_pk_sk_table('aggregates')
         workspaces = pk_sk_table('workspaces')
-        for ws, secret_status in ((WS_A, 'ready'), (WS_B, 'ready'), (WS_PENDING, 'pending')):
+        for ws in (WS_A, WS_B, WS_NEW):
             workspaces.put_item(Item={'pk': f'WS#{ws}', 'sk': 'META', 'status': 'active', 'name': ws,
-                                      'slug': ws[-6:].lower(), 'secret_status': secret_status})
+                                      'slug': ws[-6:].lower(), 'secret_status': 'ready'})
         for ws, claims, role in MEMBERS:
             workspaces.put_item(Item={'pk': f'WS#{ws}', 'sk': f"MEMBER#{claims['sub']}", 'role': role})
         secrets = boto3.client('secretsmanager', region_name='us-east-1')
-        for name in (SHARED_SECRET, _ws_secret(WS_A), _ws_secret(WS_B)):
-            secrets.create_secret(Name=name, SecretString='{}')
+        secrets.create_secret(Name=SHARED_SECRET, SecretString='{}')
+        ssm = boto3.client('ssm', region_name='us-east-1')
         resolver = RequestWorkspace(table=lambda: workspaces, confirm_platform_admin=lambda _event: True)
         ingestor = MagicMock()
         ingestor.exceptions.ResourceNotFoundException = type('ResourceNotFoundException', (Exception,), {})
@@ -114,6 +148,8 @@ def world(monkeypatch, request) -> Iterator[World]:
                 patch.object(scrapers_handler._request, 'workspace', resolver), \
                 patch.object(integrations_handler, 'secretsmanager', secrets), \
                 patch.object(scrapers_handler, 'secretsmanager', secrets), \
+                patch.object(integrations_handler, 'ssm', ssm), \
+                patch.object(scrapers_handler, 'ssm', ssm), \
                 patch.object(integrations_handler, 'SECRETS_ARN', SHARED_SECRET), \
                 patch.object(scrapers_handler, 'SECRETS_ARN', SHARED_SECRET), \
                 patch.object(integrations_handler, 'events_client', events), \
@@ -124,8 +160,10 @@ def world(monkeypatch, request) -> Iterator[World]:
                 patch.object(scrapers_handler, 'validate_url', return_value=(True, '')), \
                 patch('shared.tables.get_aggregates_table', return_value=aggregates), \
                 patch.object(scrapers_handler, 'get_aggregates_table', return_value=aggregates), \
-                patch('shared.plugin_circuit.get_aggregates_table', return_value=aggregates):
-            yield World(aggregates, workspaces, secrets, ingestor, webscraper, events, resolver)
+                patch('shared.plugin_circuit.get_aggregates_table', return_value=aggregates), \
+                patch('shared.workspace_plugin_store.get_dynamodb_resource',
+                      return_value=boto3.resource('dynamodb', region_name='us-east-1')):
+            yield World(aggregates, workspaces, secrets, ssm, ingestor, webscraper, events, resolver)
 
 
 def _call(module: Any, lambda_context: Any, method: str, path: str, *, claims: dict, ws: str | None,
@@ -349,37 +387,48 @@ class TestTheBreakerInAWorkspace:
 # ── Credentials ──────────────────────────────────────────────────────────────────────────────────────────────────
 
 class TestCredentialsInAWorkspace:
-    def test_a_save_writes_the_workspaces_secret_only(self, world, lambda_context):
+    def test_a_save_writes_the_workspaces_parameter_of_the_plugin_only(self, world, lambda_context):
         status, body = _integrations(lambda_context, 'PUT', '/integrations/app_reviews_ios/credentials', claims=ADMIN_A,
                                      ws=WS_A, body={'app_name': 'Example App'})
 
         assert status == 200, body
-        assert world.secret(_ws_secret(WS_A)) == {'app_reviews_ios_app_name': 'Example App'}
+        assert world.stored(WS_A) == {'app_reviews_ios_app_name': 'Example App'}
+        assert world.parameter_names() == [_ws_parameter(WS_A, 'app_reviews_ios')]
         assert world.secret(SHARED_SECRET) == {}
-        assert world.secret(_ws_secret(WS_B)) == {}
+        assert world.stored(WS_B) == {}
 
-    def test_no_request_field_reaches_the_secret_name(self, world, lambda_context):
-        """The name comes from the resolved membership only: a body, a path and a query naming another workspace or
-        the shared secret change nothing, and no secret is created."""
+    def test_no_request_field_reaches_the_parameter_name(self, world, lambda_context):
+        """The name comes from the resolved membership and the validated source only: a body, a path and a query
+        naming another workspace or the shared secret change nothing."""
         hostile = {'app_name': 'x', 'workspace_id': WS_B}
-        with patch.object(world.secrets, 'put_secret_value', wraps=world.secrets.put_secret_value) as put:
+        with patch.object(world.ssm, 'put_parameter', wraps=world.ssm.put_parameter) as put:
             status, body = _call(integrations_handler, lambda_context, 'PUT',
                                  '/integrations/app_reviews_ios/credentials', claims=ADMIN_A, ws=WS_A, body=hostile,
                                  path_params={'source': 'app_reviews_ios', 'workspace_id': WS_B},
                                  query={'secret': SHARED_SECRET, 'workspace_id': WS_B})
 
         assert status == 200, body
-        assert [call.kwargs['SecretId'] for call in put.call_args_list] == [_ws_secret(WS_A)]
-        # A body key is only ever a value inside the plugin's namespace of the resolved workspace's secret.
-        assert world.secret(_ws_secret(WS_A)) == {'app_reviews_ios_app_name': 'x', 'app_reviews_ios_workspace_id': WS_B}
-        assert world.secret(_ws_secret(WS_B)) == {}
+        assert [call.kwargs['Name'] for call in put.call_args_list] == [_ws_parameter(WS_A, 'app_reviews_ios')]
+        assert {(call.kwargs['Type'], call.kwargs['KeyId'], call.kwargs['Tier'], call.kwargs['Overwrite'])
+                for call in put.call_args_list} == {('SecureString', KEY, 'Standard', True)}
+        # A body key is only ever a value inside the plugin's own parameter of the resolved workspace.
+        assert world.stored(WS_A) == {'app_reviews_ios_app_name': 'x', 'app_reviews_ios_workspace_id': WS_B}
+        assert world.stored(WS_B) == {}
         assert world.secret(SHARED_SECRET) == {}
-        assert sorted(s['Name'] for s in world.secrets.list_secrets()['SecretList']) == sorted(
-            [SHARED_SECRET, _ws_secret(WS_A), _ws_secret(WS_B)])
 
-    def test_reads_come_from_the_workspaces_secret_masked_as_before(self, world, lambda_context):
-        world.secrets.put_secret_value(SecretId=_ws_secret(WS_A), SecretString=json.dumps(
-            {'app_reviews_ios_app_name': 'Workspace App', 'app_reviews_ios_sort_by': 'most_helpful'}))
+    def test_a_save_over_one_parameters_4096_bytes_is_a_400_and_nothing_is_written(self, world, lambda_context):
+        world.save(WS_A, 'credentials/app_reviews_ios', json.dumps({'app_name': 'Kept'}))
+
+        status, body = _integrations(lambda_context, 'PUT', '/integrations/app_reviews_ios/credentials', claims=ADMIN_A,
+                                     ws=WS_A, body={'app_name': 'x' * 4100})
+
+        assert status == 400
+        assert 'over the 4096-byte limit of one stored value' in body['error']
+        assert world.stored(WS_A) == {'app_reviews_ios_app_name': 'Kept'}
+
+    def test_reads_come_from_the_workspaces_parameter_masked_as_before(self, world, lambda_context):
+        world.save(WS_A, 'credentials/app_reviews_ios',
+                   json.dumps({'app_name': 'Workspace App', 'sort_by': 'most_helpful'}))
         world.secrets.put_secret_value(SecretId=SHARED_SECRET, SecretString=json.dumps(
             {'app_reviews_ios_app_name': 'Deployment App'}))
 
@@ -402,18 +451,18 @@ class TestCredentialsInAWorkspace:
                                   query={'keys': 'app_name'})
 
         assert status == expected
-        assert world.secret(_ws_secret(WS_A)) == {}
+        assert world.nothing_saved()
 
-    def test_a_workspace_without_its_secret_yet_is_told_so(self, world, lambda_context):
+    def test_a_new_workspaces_first_save_creates_its_parameter(self, world, lambda_context):
+        """Nothing is made with a workspace (decision 19): its first save creates the plugin's parameter."""
         status, body = _integrations(lambda_context, 'PUT', '/integrations/app_reviews_ios/credentials',
-                                     claims=ADMIN_PENDING, ws=WS_PENDING, body={'app_name': 'x'})
+                                     claims=ADMIN_NEW, ws=WS_NEW, body={'app_name': 'x'})
 
-        assert status == 409
-        assert body['error'] == (f'{CREDENTIALS_NOT_READY}: an operator must create {_ws_secret(WS_PENDING)} and mark the '
-                                 'workspace ready (see the recovery steps in docs/multi-workspace.md, Credentials).')
+        assert status == 200, body
+        assert world.stored(WS_NEW) == {'app_reviews_ios_app_name': 'x'}
         assert world.secret(SHARED_SECRET) == {}
 
-    def test_an_app_connector_lives_in_the_workspaces_secret(self, world, lambda_context):
+    def test_an_app_connector_lives_in_the_workspaces_config_row(self, world, lambda_context):
         status, body = _integrations(lambda_context, 'POST', '/integrations/app_reviews_ios/apps', claims=ADMIN_A,
                                      ws=WS_A, body={'app': {'id': 'a1', 'app_name': 'Example', 'app_id': '123'}})
         assert status == 200, body
@@ -424,18 +473,21 @@ class TestCredentialsInAWorkspace:
         assert [app['id'] for app in listed['apps']] == ['a1']
         assert deployment['apps'] == []
         assert world.secret(SHARED_SECRET) == {}
+        # A list is a row of the workspace (decision 19), not a parameter.
+        assert world.parameter_names() == []
+        assert [(row['pk'], row['sk']) for row in world.config_rows()] == [(f'WS#{WS_A}#PLUGIN_CONFIG', 'app_reviews_ios')]
 
         status, _ = _integrations(lambda_context, 'DELETE', '/integrations/app_reviews_ios/apps/a1', claims=ADMIN_A,
                                   ws=WS_A)
         assert status == 200
-        assert json.loads(world.secret(_ws_secret(WS_A))['app_reviews_ios_configs']) == []
+        assert json.loads(world.stored(WS_A)['app_reviews_ios_configs']) == []
 
     def test_an_editor_cannot_save_an_app_connector(self, world, lambda_context):
         status, _ = _integrations(lambda_context, 'POST', '/integrations/app_reviews_ios/apps', claims=EDITOR_A,
                                   ws=WS_A, body={'app': {'id': 'a1', 'app_name': 'Example'}})
 
         assert status == 403
-        assert world.secret(_ws_secret(WS_A)) == {}
+        assert world.nothing_saved()
 
 
 SCRAPER: Final = MappingProxyType({
@@ -454,12 +506,14 @@ class TestScraperConfigsInAWorkspace:
         _, deployment = _scrapers(lambda_context, 'GET', '/scrapers', claims=DEPLOYMENT_ADMIN, ws=None)
         assert [s['id'] for s in listed['scrapers']] == ['site-1']
         assert deployment['scrapers'] == []
-        # The key the webscraper's run in WS_A reads (`webscraper_` namespace, plugins/_shared/plugin_secrets.py).
-        assert [c['id'] for c in json.loads(world.secret(_ws_secret(WS_A))['webscraper_configs'])] == ['site-1']
+        # The row the webscraper's run in WS_A reads (its own configs, shared/plugin_configs.py).
+        assert world.parameter_names() == []
+        assert [(row['pk'], row['sk']) for row in world.config_rows()] == [(f'WS#{WS_A}#PLUGIN_CONFIG', 'webscraper')]
+        assert [c['id'] for c in json.loads(world.stored(WS_A)['webscraper_configs'])] == ['site-1']
 
         status, _ = _scrapers(lambda_context, 'DELETE', '/scrapers/site-1', claims=ADMIN_A, ws=WS_A)
         assert status == 200
-        assert json.loads(world.secret(_ws_secret(WS_A))['webscraper_configs']) == []
+        assert json.loads(world.stored(WS_A)['webscraper_configs']) == []
 
     @pytest.mark.parametrize(('claims', 'expected'), [(EDITOR_A, 403), (ADMIN_B, 404)])
     def test_only_the_workspaces_admins_save(self, world, lambda_context, claims, expected):
@@ -467,11 +521,11 @@ class TestScraperConfigsInAWorkspace:
                               body={'scraper': dict(SCRAPER)})
 
         assert status == expected
-        assert world.secret(_ws_secret(WS_A)) == {}
+        assert world.nothing_saved()
 
-    def test_the_connectors_listing_reads_the_workspaces_secret(self, world, lambda_context):
-        world.secrets.put_secret_value(SecretId=_ws_secret(WS_A), SecretString=json.dumps({
-            'app_reviews_ios_configs': json.dumps([{'id': 'a1', 'app_name': 'Workspace App'}])}))
+    def test_the_connectors_listing_reads_the_workspaces_config_rows(self, world, lambda_context):
+        world.save(WS_A, 'configs/app_reviews_ios', json.dumps([{'id': 'a1', 'app_name': 'Workspace App'}]))
+        world.save(WS_B, 'configs/app_reviews_ios', json.dumps([{'id': 'b1', 'app_name': 'Other Workspace App'}]))
 
         _, body = _scrapers(lambda_context, 'GET', '/scrapers/connectors', claims=VIEWER_A, ws=WS_A)
         _, deployment = _scrapers(lambda_context, 'GET', '/scrapers/connectors', claims=DEPLOYMENT_ADMIN, ws=None)
@@ -480,24 +534,25 @@ class TestScraperConfigsInAWorkspace:
         assert deployment['connectors'] == []
 
 
-#: Every route of the two modules that reads or writes the workspace's secret: (module, method, path, params, body).
-SECRET_ROUTES: Final = (
-    (scrapers_handler, 'GET', '/scrapers', None, None),
-    (scrapers_handler, 'GET', '/scrapers/connectors', None, None),
-    (scrapers_handler, 'POST', '/scrapers', None, {'scraper': dict(SCRAPER)}),
-    (scrapers_handler, 'DELETE', '/scrapers/site-1', {'scraper_id': 'site-1'}, None),
-    (integrations_handler, 'GET', '/integrations/status', None, None),
-    (integrations_handler, 'GET', '/integrations/app_reviews_ios/credentials', {'source': 'app_reviews_ios'}, None),
+#: Every route of the two modules that reads or writes the workspace's parameters: (module, method, path, params,
+#: body, what a new workspace's read answers: None for a write or a run).
+STORE_ROUTES: Final = (
+    (scrapers_handler, 'GET', '/scrapers', None, None, {'scrapers': []}),
+    (scrapers_handler, 'GET', '/scrapers/connectors', None, None, {'connectors': []}),
+    (scrapers_handler, 'POST', '/scrapers', None, {'scraper': dict(SCRAPER)}, None),
+    (scrapers_handler, 'DELETE', '/scrapers/site-1', {'scraper_id': 'site-1'}, None, None),
+    (integrations_handler, 'GET', '/integrations/app_reviews_ios/credentials', {'source': 'app_reviews_ios'}, None,
+     {}),
     (integrations_handler, 'PUT', '/integrations/app_reviews_ios/credentials', {'source': 'app_reviews_ios'},
-     {'app_name': 'x'}),
-    (integrations_handler, 'GET', '/integrations/app_reviews_ios/apps', {'source': 'app_reviews_ios'}, None),
+     {'app_name': 'x'}, None),
+    (integrations_handler, 'GET', '/integrations/app_reviews_ios/apps', {'source': 'app_reviews_ios'}, None,
+     {'apps': []}),
     (integrations_handler, 'POST', '/integrations/app_reviews_ios/apps', {'source': 'app_reviews_ios'},
-     {'app': {'id': 'a1', 'app_name': 'Example'}}),
+     {'app': {'id': 'a1', 'app_name': 'Example'}}, None),
     (integrations_handler, 'DELETE', '/integrations/app_reviews_ios/apps/d1',
-     {'source': 'app_reviews_ios', 'app_id': 'd1'}, None),
-    # A run reads the workspace's secret: refused before its row is written or its ingestor invoked.
-    (integrations_handler, 'POST', '/sources/webscraper/run', {'source': 'webscraper'}, None),
-    (scrapers_handler, 'POST', '/scrapers/site-1/run', {'scraper_id': 'site-1'}, None),
+     {'source': 'app_reviews_ios', 'app_id': 'd1'}, None, None),
+    (integrations_handler, 'POST', '/sources/webscraper/run', {'source': 'webscraper'}, None, None),
+    (scrapers_handler, 'POST', '/scrapers/site-1/run', {'scraper_id': 'site-1'}, None, None),
 )
 
 
@@ -507,50 +562,73 @@ def _shared_secret_with_values(world: World) -> None:
         'app_reviews_ios_configs': json.dumps([{'id': 'd1', 'app_name': 'Deployment App'}])}))
 
 
-class TestAWorkspaceWhoseSecretIsPending:
-    """Every route in a workspace whose META's secret_status is not `ready`, or whose secret is missing, answers
-    409, a read too: never an empty list, never the shared secret's values, and nothing written."""
+class TestAWorkspaceWithNothingSavedYet:
+    """Decision 19: nothing is made with a workspace, so a new one is ready at once. Every route answers (no 409, no
+    pending state): a read answers empty (``ParameterNotFound`` is "nothing saved"), never the shared secret's
+    values; a write creates only the plugin's own parameter or config row; a run goes ahead (it ends WorkspaceCredentialsNotSet
+    in the ingestor when nothing of its plugin is saved: plugins/_shared/test/test_base_ingestor.py)."""
 
-    @pytest.mark.parametrize(('module', 'method', 'path', 'params', 'body'), SECRET_ROUTES,
-                             ids=[f'{method} {path}' for _m, method, path, _p, _b in SECRET_ROUTES])
-    def test_every_route_is_told_so(self, world, lambda_context, module, method, path, params, body):
+    @pytest.mark.parametrize(('module', 'method', 'path', 'params', 'body', 'empty'), STORE_ROUTES,
+                             ids=[f'{method} {path}' for _m, method, path, _p, _b, _e in STORE_ROUTES])
+    def test_every_route_answers_from_the_workspaces_own_parameters(self, world, lambda_context, module, method,
+                                                                    path, params, body, empty):
         _shared_secret_with_values(world)
 
-        status, answer = _call(module, lambda_context, method, path, claims=ADMIN_PENDING, ws=WS_PENDING,
+        status, answer = _call(module, lambda_context, method, path, claims=ADMIN_NEW, ws=WS_NEW,
                                path_params=params, body=body, query={'keys': 'app_name'})
 
-        assert status == 409
-        assert answer['error'].startswith(CREDENTIALS_NOT_READY)
-        assert sorted(s['Name'] for s in world.secrets.list_secrets()['SecretList']) == sorted(
-            [SHARED_SECRET, _ws_secret(WS_A), _ws_secret(WS_B)])
-        assert world.partitions() == set()
-        world.ingestor.invoke.assert_not_called()
-        world.webscraper.invoke.assert_not_called()
+        assert status == 200, answer
+        if empty is not None:
+            assert answer == empty
+        assert 'Deployment App' not in json.dumps(answer)
+        assert all(name.startswith(f'{PREFIX}/{WS_NEW}/') for name in world.parameter_names())
+        assert all(row['pk'] == f'WS#{WS_NEW}#PLUGIN_CONFIG' for row in world.config_rows())
 
-    def test_meta_pending_wins_over_a_secret_at_the_name(self, world, lambda_context):
-        """A secret already at `voc/ws/{ws}/credentials` is not used while META says pending (it may not be this
-        workspace's: the create flow decides that and marks ready)."""
-        world.secrets.create_secret(Name=_ws_secret(WS_PENDING), SecretString=json.dumps({
-            'webscraper_configs': json.dumps([dict(SCRAPER)])}))
-
-        status, answer = _scrapers(lambda_context, 'GET', '/scrapers', claims=ADMIN_PENDING, ws=WS_PENDING)
-        put_status, _ = _scrapers(lambda_context, 'POST', '/scrapers', claims=ADMIN_PENDING, ws=WS_PENDING,
-                                  body={'scraper': {**SCRAPER, 'id': 'site-2'}})
-
-        assert (status, put_status) == (409, 409)
-        assert answer['error'].startswith(CREDENTIALS_NOT_READY)
-        assert [c['id'] for c in json.loads(world.secret(_ws_secret(WS_PENDING))['webscraper_configs'])] == [
-            'site-1']
-
-    def test_a_ready_workspace_whose_secret_is_missing_is_told_so_too(self, world, lambda_context):
-        world.secrets.delete_secret(SecretId=_ws_secret(WS_A), ForceDeleteWithoutRecovery=True)
+    def test_the_status_of_a_new_workspace_reports_nothing_configured(self, world, lambda_context):
         _shared_secret_with_values(world)
 
-        status, answer = _scrapers(lambda_context, 'GET', '/scrapers', claims=ADMIN_A, ws=WS_A)
+        status, answer = _integrations(lambda_context, 'GET', '/integrations/status', claims=ADMIN_NEW, ws=WS_NEW)
 
-        assert status == 409
-        assert answer['error'] == (f'{CREDENTIALS_MISSING}: {_ws_secret(WS_A)} does not exist (see the recovery steps in '
-                                   'docs/multi-workspace.md, Credentials).')
+        assert status == 200
+        assert answer['app_reviews_ios'] == {'configured': False, 'credentials_set': []}
+        assert answer['webscraper'] == {'configured': False, 'credentials_set': []}
+
+    def test_the_status_lists_the_workspaces_own_keys(self, world, lambda_context):
+        world.save(WS_A, 'credentials/app_reviews_ios', json.dumps({'app_name': 'Workspace App'}))
+        world.save(WS_A, 'configs/webscraper', json.dumps([dict(SCRAPER)]))
+        world.save(WS_B, 'credentials/webscraper', json.dumps({'api_key': 'other workspace'}))
+
+        _, answer = _integrations(lambda_context, 'GET', '/integrations/status', claims=ADMIN_A, ws=WS_A)
+
+        assert answer['app_reviews_ios']['credentials_set'] == ['app_name']
+        assert answer['webscraper']['credentials_set'] == ['configs']
+
+    def test_a_parameter_read_fault_is_the_routes_fault_never_the_shared_secret(self, world, lambda_context):
+        _shared_secret_with_values(world)
+        denied = ClientError({'Error': {'Code': 'AccessDeniedException', 'Message': 'no'}}, 'GetParameter')
+        with patch.object(world.ssm, 'get_parameter', side_effect=denied) as get_parameter:
+            status, answer = _scrapers(lambda_context, 'GET', '/scrapers', claims=ADMIN_A, ws=WS_A)
+            read_by_the_list = get_parameter.call_count
+            put_status, _ = _scrapers(lambda_context, 'POST', '/scrapers', claims=ADMIN_A, ws=WS_A,
+                                      body={'scraper': dict(SCRAPER)})
+
+        # The member-open list reads the config row alone, never a credentials parameter; the save reads both.
+        assert (status, answer, read_by_the_list) == (200, {'scrapers': []}, 0)
+        assert put_status == 500
+        assert world.nothing_saved()
+
+    @pytest.mark.parametrize(('module', 'path'), [(scrapers_handler, '/scrapers'),
+                                                  (scrapers_handler, '/scrapers/connectors'),
+                                                  (integrations_handler, '/integrations/app_reviews_ios/apps')])
+    def test_the_member_open_list_routes_never_read_a_credentials_parameter(self, world, lambda_context, module,
+                                                                           path):
+        world.save(WS_A, 'credentials/app_reviews_ios', json.dumps({'app_name': 'secret-ish'}))
+        with patch.object(world.ssm, 'get_parameter', wraps=world.ssm.get_parameter) as get_parameter, \
+                patch.object(world.ssm, 'get_paginator', wraps=world.ssm.get_paginator) as by_path:
+            status, _ = _call(module, lambda_context, 'GET', path, claims=VIEWER_A, ws=WS_A,
+                              path_params={'source': 'app_reviews_ios'} if 'integrations' in path else None)
+
+        assert (status, get_parameter.call_count, by_path.call_count) == (200, 0, 0)
 
 
 class TestNoRadarBrandInAWorkspace:
@@ -564,7 +642,7 @@ class TestNoRadarBrandInAWorkspace:
                                  body={'scraper': {**SCRAPER, 'radar_brand': 'rival'}})
 
         assert (status, body['error']) == (400, RADAR_NOT_IN_WORKSPACES)
-        assert world.secret(_ws_secret(WS_A)) == {}
+        assert world.nothing_saved()
 
     def test_without_the_header_the_brand_is_saved(self, world, lambda_context):
         status, body = _scrapers(lambda_context, 'POST', '/scrapers', claims=DEPLOYMENT_ADMIN, ws=None,
@@ -578,14 +656,14 @@ class TestNoRadarBrandInAWorkspace:
                               body={'scraper': {**SCRAPER, 'radar_brand': ' '}})
 
         assert status == 200
-        assert 'radar_brand' not in json.loads(world.secret(_ws_secret(WS_A))['webscraper_configs'])[0]
+        assert 'radar_brand' not in json.loads(world.stored(WS_A)['webscraper_configs'])[0]
 
     def test_an_app_connector_naming_a_radar_brand_is_refused(self, world, lambda_context):
         status, body = _integrations(lambda_context, 'POST', '/integrations/app_reviews_ios/apps', claims=ADMIN_A,
                                      ws=WS_A, body={'app': {'id': 'a1', 'app_name': 'Example', 'radar_brand': 'rival'}})
 
         assert (status, body['error']) == (400, RADAR_NOT_IN_WORKSPACES)
-        assert world.secret(_ws_secret(WS_A)) == {}
+        assert world.nothing_saved()
 
     def test_a_review_page_naming_a_radar_brand_is_refused(self, world, lambda_context):
         target = {'id': 'p1', 'app_name': 'Example page', 'url': 'https://www.example.com/reviews',
@@ -595,7 +673,7 @@ class TestNoRadarBrandInAWorkspace:
                                          ws=WS_A, body={'app': target})
 
         assert (status, body['error']) == (400, RADAR_NOT_IN_WORKSPACES)
-        assert world.secret(_ws_secret(WS_A)) == {}
+        assert world.nothing_saved()
 
     @pytest.mark.parametrize('source', ['webscraper', 'app_reviews_ios', 'web_reviews'])
     @pytest.mark.parametrize('configs', [json.dumps([{**SCRAPER, 'radar_brand': 'rival'}]), '[]', None])
@@ -607,7 +685,7 @@ class TestNoRadarBrandInAWorkspace:
                                      ws=WS_A, body={'configs': configs, 'app_name': 'x'})
 
         assert (status, body['error']) == (400, integrations_handler.CONFIGS_HAVE_THEIR_OWN_ROUTES)
-        assert world.secret(_ws_secret(WS_A)) == {}
+        assert world.nothing_saved()
 
     def test_without_the_header_the_credentials_route_still_takes_configs(self, world, lambda_context):
         configs = json.dumps([dict(SCRAPER)])
@@ -626,8 +704,12 @@ def test_run_now_of_the_s3_import_is_deployment_wide_only(world, lambda_context)
     assert world.partitions() == set()
 
 
-#: Where the two handlers get the secret a route reads and writes: the request's resolved membership only.
-SECRET_SOURCES = frozenset({'secret_id', 'secret_id_or_none'})
+#: What a route may hand `_request.credentials` as the plugins it serves: the route's validated `source` path
+#: parameter, or a constant of the module (never another request field).
+PLUGIN_ARGUMENTS = frozenset({'source', 'WEBSCRAPER_PLUGIN', 'CONNECTOR_SOURCES'})
+#: No handler reads or writes a secret, a parameter or a config row itself: only shared/workspace_plugin_store.py does.
+DIRECT_CALLS = frozenset({'get_secret_value', 'put_secret_value', 'get_parameter', 'get_parameters',
+                          'get_parameters_by_path', 'put_parameter', 'save_configs', 'read_configs'})
 
 
 def _calls(node: ast.AST) -> list[ast.Call]:
@@ -639,38 +721,45 @@ def _name(call: ast.Call) -> str | None:
     return func.id if isinstance(func, ast.Name) else func.attr if isinstance(func, ast.Attribute) else None
 
 
+def _argument_name(node: ast.expr) -> str | None:
+    node = node.value if isinstance(node, ast.Starred) else node
+    return node.id if isinstance(node, ast.Name) else None
+
+
 @pytest.mark.parametrize('module', [integrations_handler, scrapers_handler])
-def test_no_handler_builds_the_secret_name_from_request_input(module):
-    """Every secret a route reads or writes is `secret_id`, assigned only from the module's request secret (the shared
-    ARN, or shared/workspace_plugin_store.py `credentials_secret_id` of the resolved membership); no handler names a
-    secret itself (no `SecretId=`, no `credentials_secret_name`, no `WORKSPACE_SECRET_PREFIX`)."""
+def test_no_handler_builds_a_secret_or_parameter_name_from_request_input(module):
+    """Every store a route reads or writes comes from the module's `_request.credentials` (the shared ARN, or
+    shared/workspace_plugin_store.py `credentials_store` of the resolved membership), named by the route's validated
+    source or a module constant; no handler names a secret, a parameter or a config row itself."""
     source = Path(module.__file__).read_text(encoding='utf-8')
     tree = ast.parse(source)
-    assert 'credentials_secret_name' not in source
-    assert 'WORKSPACE_SECRET_PREFIX' not in source
+    for forbidden in ('credentials_parameter_name', 'plugin_config_key', 'WORKSPACE_PARAMETER_PREFIX'):
+        assert forbidden not in source
     assert not any(keyword.arg == 'SecretId' for call in _calls(tree) for keyword in call.keywords)
-    puts = [call for call in _calls(tree) if _name(call) == 'put_secret_json']
-    assert puts
-    assert all(isinstance(call.args[1], ast.Name) and call.args[1].id == 'secret_id' for call in puts)
-    assigned = [node.value for node in ast.walk(tree) if isinstance(node, ast.Assign)
-                for target in node.targets if isinstance(target, ast.Name) and target.id == 'secret_id']
-    assert assigned
-    assert all(isinstance(value, ast.Call) and _name(value) in SECRET_SOURCES for value in assigned)
+    assert not [call for call in _calls(tree) if _name(call) in DIRECT_CALLS]
+    opened = [call for call in _calls(tree) if _name(call) in {'credentials', 'credentials_or_none'}]
+    assert opened
+    for call in opened:
+        assert isinstance(call.func, ast.Attribute)
+        assert isinstance(call.func.value, ast.Name)
+        assert call.func.value.id == '_request'
+        assert {_argument_name(arg) for arg in call.args} <= PLUGIN_ARGUMENTS
+        assert call.keywords == []
 
 
-def test_the_workspace_secret_name_is_built_from_the_resolved_workspace_only():
-    """shared/workspace_plugin_store.py: the name is `credentials_secret_name(prefix, context.ws)`, after an
-    `isinstance(context, WorkspaceContext)` check."""
+def test_the_workspace_store_is_opened_from_the_resolved_workspace_only():
+    """shared/workspace_plugin_store.py: the store's workspace is `scope_of(context)` (the table's scope, which names
+    every parameter and row), after an `isinstance(context, WorkspaceContext)` check."""
     from shared import workspace_plugin_store
     tree = ast.parse(Path(workspace_plugin_store.__file__).read_text(encoding='utf-8'))
-    function = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == 'credentials_secret_id')
-    [build] = [call for call in _calls(function) if _name(call) == 'credentials_secret_name']
-    ws = build.args[1]
-    assert isinstance(ws, ast.Attribute)
-    assert ws.attr == 'ws'
-    assert isinstance(ws.value, ast.Name)
-    assert ws.value.id == 'context'
+    function = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == 'credentials_store')
+    [scope] = [call for call in _calls(function) if _name(call) == 'scope_of']
+    [context] = scope.args
+    assert isinstance(context, ast.Name)
+    assert context.id == 'context'
     assert any(_name(call) == 'isinstance' for call in _calls(function))
+    [store] = [n for n in ast.walk(tree) if isinstance(n, ast.ClassDef) and n.name == 'WorkspaceStore']
+    assert 'self.ws = table.scope.ws' in ast.unparse(store)
 
 
 # ── The S3 import API: deployment-wide only ─────────────────────────────────────────────────────────────────────

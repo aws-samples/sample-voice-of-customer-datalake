@@ -60,7 +60,7 @@ export function grantWorkspaceAttributeRead(
 
 /** The attributes the resolver reads of a `MEMBER#` row and a `META` row, keys included (lambda/shared/workspace.py):
  *  never a member's email. */
-export const MEMBERSHIP_READ_ATTRIBUTES = ['pk', 'sk', 'role', 'status', 'name', 'slug', 'secret_status'] as const;
+export const MEMBERSHIP_READ_ATTRIBUTES = ['pk', 'sk', 'role', 'status', 'name', 'slug'] as const;
 
 /** The resolver's environment (lambda/shared/workspace_request.py, lambda/shared/tables.py). */
 export function workspaceResolutionEnv(

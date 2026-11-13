@@ -237,7 +237,7 @@ The bases are listed below.
 | Bundle | `plugins/<id>/ingestor/*` at the root, plus `plugins/_shared/` as `_shared` and `lambda/shared/` as `shared`; tests and caches pruned |
 | Log group | `/aws/lambda/voc-ingestor-<id>`, 30-day retention |
 | Schedule | `voc-ingest-<id>-schedule`, created disabled; 2 delivery retries, events older than 1 hour dropped to `voc-ingest-schedule-dlq` |
-| Environment | `WATERMARKS_TABLE`, `PROCESSING_QUEUE_URL`, `RAW_DATA_BUCKET`, `SECRETS_ARN`, `WORKSPACE_SECRET_PREFIX`, `BRAND_NAME`, `SOURCE_PLATFORM` (= id), `AGGREGATES_TABLE`, `INGEST_SCHEDULE_RULE_NAME`, `WORKSPACES_TABLE` and `IDEMPOTENCY_TABLE` (scheduled plugins only), PII-redaction settings |
+| Environment | `WATERMARKS_TABLE`, `PROCESSING_QUEUE_URL`, `RAW_DATA_BUCKET`, `SECRETS_ARN`, `WORKSPACE_PARAMETER_PREFIX`, `BRAND_NAME`, `SOURCE_PLATFORM` (= id), `AGGREGATES_TABLE`, `INGEST_SCHEDULE_RULE_NAME`, `WORKSPACES_TABLE` and `IDEMPOTENCY_TABLE` (scheduled plugins only), PII-redaction settings |
 
 The schedule retries cover delivery only (a throttled or unreachable function). A failure inside
 the ingestor is handled by the [circuit breaker](#circuit-breaker).
@@ -246,8 +246,10 @@ the ingestor is handled by the [circuit breaker](#circuit-breaker).
 `plugins/_shared/base_ingestor.py` routes each event. One that names no workspace (a **Run now** or a
 scraper run sent without `X-Workspace-Id`, an S3 reprocess or upload) runs deployment-wide, exactly as
 before workspaces: the keys, the shared secret and `raw/` this page describes. One that names a
-workspace in `workspace_id` runs in it, with that workspace's keys (`WS#{ws}#…`), secret
-(`voc/ws/{ws}/credentials`) and raw objects (`ws/{ws}/raw/…`): a **Run now** or a scraper run sent with
+workspace in `workspace_id` runs in it, with that workspace's keys (`WS#{ws}#…`), its plugin's credentials
+parameter (`/voc/ws/{ws}/credentials/<id>`, decision 19) and config row (`WS#{ws}#PLUGIN_CONFIG` / `<id>` in
+voc-aggregates) and raw objects
+(`ws/{ws}/raw/…`): a **Run now** or a scraper run sent with
 `X-Workspace-Id` names the request's resolved workspace there (never a body field; the workspace's
 admins only), and the routes that read its run rows and its breaker read the workspace's
 ([multi-workspace.md](multi-workspace.md), the operator routes' row). One whose `workspace_id` is not a
@@ -267,8 +269,11 @@ breaker's `CIRCUIT#*` and `WS#ws_??????????????????????????#CIRCUIT#*` rows), `s
 the processing queue, `s3:PutObject` under `raw/*` and `ws/ws_??????????????????????????/raw/*` of the
 raw bucket (no read, no delete; the workspace segment is one id, `ws_` and 26 `?`, because IAM's `*`
 also matches `/` and `#`), KMS
-encrypt/decrypt, read of the shared secret and of the workspaces' credentials secrets `voc/ws/*` (no
-other secret) and `comprehend:DetectPiiEntities`. Plugins that need nothing else share one role. A
+encrypt/decrypt, read of the shared secret (no other secret), `ssm:GetParameter` on its own plugins'
+credentials parameters of one workspace id (`voc/ws/ws_<26 ?>/credentials/<id>`, with a `kms:Decrypt` through SSM
+for those names, which is no second layer since the role's KMS encrypt/decrypt above is unconditioned; decision 19;
+on the shared role that is every plugin it runs, so between those plugins the
+code-built name is the boundary) and `comprehend:DetectPiiEntities`. Plugins that need nothing else share one role. A
 plugin gets its own role when it has:
 
 - a schedule: `events:DisableRule` on exactly its own rule, for the circuit breaker of its
@@ -296,10 +301,11 @@ beyond the capabilities above needs a change to the stack code.
 | Bundle | `plugins/<id>/webhook/*` plus `_shared` and `shared`, like an ingestor |
 | Route | `/webhooks/<id>` and `/webhooks/<id>/{ws}` (a workspace's endpoint, below) for each manifest method, no authorizer, no CORS preflight |
 | Throttle | 10 requests per second, burst 20, per route (the `{ws}` route is one more bucket, shared by every workspace) |
-| Environment | `PROCESSING_QUEUE_URL`, `SECRETS_ARN`, `BRAND_NAME`, `SOURCE_PLATFORM`, `RAW_DATA_BUCKET`, `AGGREGATES_TABLE`, `WORKSPACES_TABLE`, `WORKSPACE_SECRET_PREFIX`, PII-redaction settings |
+| Environment | `PROCESSING_QUEUE_URL`, `SECRETS_ARN`, `BRAND_NAME`, `SOURCE_PLATFORM`, `RAW_DATA_BUCKET`, `AGGREGATES_TABLE`, `WORKSPACES_TABLE`, `WORKSPACE_PARAMETER_PREFIX`, PII-redaction settings |
 
 All webhook Lambdas share one role: KMS, `sqs:SendMessage` on the processing queue,
-`secretsmanager:GetSecretValue` on the shared secret and on the workspaces' secrets (`voc/ws/*`),
+`secretsmanager:GetSecretValue` on the shared secret, `ssm:GetParameter` on the webhook plugins' credentials
+parameters of one workspace id (`voc/ws/ws_<26 ?>/credentials/<id>`, with `kms:Decrypt` through SSM for those names),
 `dynamodb:GetItem` on the aggregates table (the source profile) and on the `WS#*` rows of
 `voc-workspaces`, Comprehend PII detection and `s3:PutObject` on `raw/<id>/*` and
 `ws/{one workspace id}/raw/<id>/*` for each enabled webhook plugin. Webhooks have no
@@ -309,11 +315,11 @@ feedback-table access.
 
 `POST /webhooks/<id>/{ws}` is a workspace's own endpoint ([multi-workspace.md](multi-workspace.md)).
 The `{ws}` value is only the key of that workspace's stored row: it must be the well-formed id
-of an active workspace whose credentials secret is ready. The webhook secret and the plugin's
-settings (for `github_issues`: the repositories and labels) then come from that workspace's own
-secret, `voc/ws/{ws}/credentials`, in the plugin's namespace, never from the shared secret. A
-verified delivery is archived under `ws/{ws}/raw/<id>/` and queued with that workspace. A
-malformed or unknown id, a workspace being deleted, a secret that is not ready or holds no
+of an active workspace. The webhook secret and the plugin's settings (for `github_issues`: the
+repositories and labels) then come from that workspace's own parameter of the plugin,
+`/voc/ws/{ws}/credentials/<id>` (decision 19), never from the shared secret; a warm container keeps
+it 60 s. A verified delivery is archived under `ws/{ws}/raw/<id>/` and queued with that workspace. A
+malformed or unknown id, a workspace being deleted, a parameter that is missing or holds no
 webhook secret, a signature made with another workspace's secret and an unsigned delivery all
 get the same answer as a bad signature (`github_issues`: 401), after the body checks, so the
 answer does not say whether a workspace exists or uses the plugin. The time the answer takes
@@ -343,10 +349,12 @@ workspace.
 - **Shared secret:** `voc-datalake/api-credentials` (with the account/region suffix), seeded with
   every loaded plugin's `secrets` as `<id>_<key>`, plus `webscraper_configs: "[]"`. The API saves
   plugin credentials, app connectors and scraper configs there; the webhooks and the ingestors'
-  deployment-wide runs read it, and a run in a workspace reads that workspace's own secret,
-  `voc/ws/{ws}/credentials`, instead, which the integrations and scrapers APIs write for a request sent
-  with that workspace's `X-Workspace-Id` (same `<id>_<key>` namespacing; the name built from the
-  resolved workspace only; 409 until the workspace's `secret_status` is `ready`). The ingestion
+  deployment-wide runs read it, and a run in a workspace reads that workspace's own settings of its
+  plugin instead (decision 19: the SSM Parameter Store SecureString `/voc/ws/{ws}/credentials/{plugin}`,
+  standard tier, at most 4 KB, and its config list's voc-aggregates row `WS#{ws}#PLUGIN_CONFIG` /
+  `{plugin}`), which the integrations and scrapers
+  APIs write for a request sent with that workspace's `X-Workspace-Id` (the names built from the resolved
+  workspace and the route's plugin only; nothing saved yet reads as nothing configured). The ingestion
   stack outputs `ApiSecretsArn`, `LoadedPlugins` and `EnabledPlugins`.
 
 ## Writing an ingestor
@@ -401,7 +409,7 @@ construction skips that, and `plugins/test_manual_run_guard.py` fails on it.
 | Member | Behaviour |
 |--------|-----------|
 | `self.scope` | The run's workspace (`WorkspaceScope`) from its event, or `None` for a deployment-wide run. Pass it as the constructor's first argument |
-| `self.secrets` | This plugin's keys from the shared secret (a deployment-wide run) or the workspace's secret `voc/ws/{ws}/credentials`, prefix stripped. Read in `__init__` |
+| `self.secrets` | This plugin's keys: from the shared secret, prefix stripped (a deployment-wide run), or from the workspace's credentials parameter of the plugin, `/voc/ws/{ws}/credentials/<id>`, with `configs` from its config row, read fresh (a run in a workspace). Read in `__init__` |
 | `self.source_platform` | The plugin id (`SOURCE_PLATFORM`) |
 | `get_watermark(key, default=None)` / `set_watermark(key, value)` | String values in the watermarks table under `<id>#<key>` (`WS#{ws}#<id>#<key>` in a workspace). A read or write error is logged, not raised |
 | `normalize_item(item)` | Archives the raw item and builds the queue message (below) |
@@ -592,12 +600,12 @@ workspace runs is its plugin settings', not built yet). Also refused there (400)
 that names a `radar_brand` (Radar is not keyed by workspace yet), a `configs` key on
 `PUT /integrations/<source>/credentials` (save the lists through `POST /scrapers` and `POST
 /integrations/<source>/apps`, which check each entry), and a **Run now** of `s3_import` (the import bucket is not
-keyed by workspace). The routes that use the workspace's secret answer 409 until its `secret_status` is `ready`
-(and when a `ready` workspace's secret is missing), naming the recovery steps of
-[multi-workspace.md](multi-workspace.md#credentials): the credentials routes, `GET /integrations/status`, the app
-connector routes, **Run now** and the scrapers API's list, save, delete, connectors and run. `GET /sources/status`,
-**Reset**, **enable** and **disable** read no secret and do not. A **Run now** in a workspace whose secret holds
-none of the plugin's credentials (a new workspace's `{}`, or only another plugin's keys) ends `error` on its run row,
+keyed by workspace). The credentials routes, `GET /integrations/status`, the app connector routes and the scrapers
+API's list, save, delete and connectors read and write the workspace's own credentials parameter and config row
+([multi-workspace.md](multi-workspace.md#credentials), decision 19): nothing saved reads as empty, and a save whose
+credentials would pass one parameter's 4096 bytes, or whose list would pass the shared secret's own limits, answers
+400. `GET /sources/status`, **Reset**, **enable** and **disable** read no secret and do not. A **Run now** in a
+workspace with no parameter saved for the plugin (and no config row) ends `error` on its run row,
 naming `WorkspaceCredentialsNotSet`, and does not count against the workspace's [circuit breaker](#circuit-breaker).
 Without the header, everything is as above.
 
@@ -720,9 +728,11 @@ variables and blocks real AWS calls. Run one plugin's tests with
 | Runtime | Circuit breaker, audit log lines, runtime-created alarms |
 
 Review a community plugin's code before you enable it. Every ingestor role can read the whole
-shared secret and every workspace's whole credentials secret, so the namespace filter and the name built from the run's
-verified workspace protect against mistakes, not against code written to read other plugins' or
-other workspaces' keys (soft isolation, [multi-workspace.md](multi-workspace.md) decision 1).
+shared secret, so there the namespace filter protects against mistakes, not against code written to
+read other plugins' keys. In a workspace IAM keeps a role to its own plugins' parameters (decision 19),
+but not to one workspace: it may read those parameters of any workspace, and only the name built from
+the run's verified workspace keeps it to its own (soft isolation, [multi-workspace.md](multi-workspace.md)
+decision 1).
 
 ## FAQ
 

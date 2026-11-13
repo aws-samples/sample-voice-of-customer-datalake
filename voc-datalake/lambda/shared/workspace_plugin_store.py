@@ -1,83 +1,190 @@
 """Where an operator route reads and writes a plugin's settings, on either path (docs/multi-workspace.md, Credentials).
 
-The integrations API (plugin credentials, app connectors) and the scrapers API (scraper configs) keep what the plugin
-ingestors read in one Secrets Manager secret, as one JSON object of ``<plugin>_<key>`` values
-(plugins/_shared/plugin_secrets.py filters a run's keys by that namespace):
+The integrations API (plugin credentials, app connectors) and the scrapers API (scraper configs) see what the plugin
+ingestors read as one JSON object of ``<plugin>_<key>`` values (plugins/_shared/plugin_secrets.py filters a run's
+keys by that namespace), through a ``CredentialsStore`` (``read``, then ``write`` of the edited object):
 
-* a request without ``X-Workspace-Id``: the deployment's shared secret (``SECRETS_ARN``), as before;
-* a request in a workspace: that workspace's own secret, ``{prefix}/{ws}/credentials`` (decision 8), the name built
-  ONLY from the request's resolved membership (``credentials_secret_id``, over shared/workspace_ids.py
-  ``credentials_secret_name``, which the workspaces API and the ingestors use too) and the prefix CDK hands down in
-  ``WORKSPACE_SECRET_PREFIX``; never from a path, a body or a query field. A run in that workspace reads the same
-  secret (plugins/_shared/base_ingestor.py ``_load_secrets``).
+* a request without ``X-Workspace-Id``: the deployment's shared Secrets Manager secret (``SECRETS_ARN``), as before
+  (``SharedSecretStore``);
+* a request in a workspace (``WorkspaceStore``, decision 19): each plugin's keys are that workspace's SSM SecureString
+  ``{prefix}/{ws}/credentials/{plugin}`` (shared/workspace_credentials.py), and its ``configs`` list a row of
+  voc-aggregates, ``WS#{ws}#PLUGIN_CONFIG`` / ``{plugin}`` (shared/plugin_configs.py), seen through the workspace
+  layer. Names and keys come ONLY from the request's resolved membership (``credentials_store``), the plugins the
+  route serves and the prefix CDK hands down in ``WORKSPACE_PARAMETER_PREFIX``; never from a path, a body or a query
+  field. A run in that workspace reads the same (plugins/_shared/base_ingestor.py ``read_workspace_values``).
 
-The workspaces API creates a workspace's secret after the workspace (``secret_status`` ``pending`` on its ``META``
-until it exists and is marked ``ready``). Until ``META`` says ``ready`` (the request's resolved membership carries
-it, ``WorkspaceContext.secret_status``), every route in that workspace that uses the secret, a read included, is
-refused with a 409 starting ``CREDENTIALS_NOT_READY``, even if a secret already exists under the name; a ``ready``
-workspace whose secret is missing gets a 409 starting ``CREDENTIALS_MISSING``. Never the shared secret, never an empty
-list. No route creates or retries the secret: an operator follows the recovery steps of docs/multi-workspace.md
-(Credentials).
+Nothing is created with a workspace: what does not exist reads as nothing saved, and the first save creates it (the
+parameter under the deployment's customer-managed key, ``WORKSPACE_PARAMETER_KEY_ARN``). A credentials value over
+4096 bytes, or a list over the shared secret's own limit, is refused (400) before anything is written. Never the shared
+secret in a workspace, and a store reads and writes only the plugins it was opened for.
 """
 from __future__ import annotations
 
 import json
 import os
-from typing import Any, Final
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from typing import Any, Final, Protocol
 
-from botocore.exceptions import ClientError
-
-from shared.exceptions import ConfigurationError, ConflictError
-from shared.platform_workspaces import CREDENTIALS_READY
+from shared.aws import get_dynamodb_resource
+from shared.exceptions import ConfigurationError
+from shared.ingest_tables import ingest_table
+from shared.plugin_configs import (
+    CONFIGS_KEY,
+    checked_configs,
+    read_all_configs,
+    read_configs,
+    read_plugin_values,
+    save_configs,
+)
 from shared.workspace import WorkspaceContext
-from shared.workspace_ids import credentials_secret_name
+from shared.workspace_credentials import read_workspace, save_credentials
+from shared.ws_repo import WorkspaceTable, scope_of
 
-__all__ = ['credentials_secret_id', 'read_secret_json']
+__all__ = ['CredentialsStore', 'StoreClients', 'credentials_store']
 
-SECRETS_NOT_CONFIGURED: Final = 'Secrets not configured'
-#: How the 409 of a workspace whose ``META`` does not say ``secret_status: ready`` starts.
-CREDENTIALS_NOT_READY: Final = "This workspace's credentials secret is not ready"
-#: How the 409 of a ``ready`` workspace whose secret does not exist starts.
-CREDENTIALS_MISSING: Final = "The workspace's credentials secret is missing"
-#: Where an operator finds the recovery steps (both 409s name it).
-RECOVERY_STEPS: Final = 'see the recovery steps in docs/multi-workspace.md, Credentials'
-
-
-def credentials_secret_id(context: object, shared_secret: str) -> str:
-    """The secret this request reads and writes: ``shared_secret`` deployment-wide (``context`` None), else the
-    resolved workspace's ``{prefix}/{ws}/credentials``. ``ConfigurationError`` when the one it needs is not set.
-    ``context`` is ``WorkspaceContext | None`` (typed ``object`` so the check below is also a type guard): anything
-    else is a ``TypeError``, never a name."""
-    if context is None:
-        if not shared_secret:
-            raise ConfigurationError(SECRETS_NOT_CONFIGURED)
-        return shared_secret
-    if not isinstance(context, WorkspaceContext):
-        raise TypeError('a workspace secret needs a resolved workspace')
-    # The workspaces' secret prefix CDK sets (``voc/ws``, or ``<deployment prefix>-voc/ws``).
-    prefix = os.environ.get('WORKSPACE_SECRET_PREFIX', '')
-    if not prefix:
-        raise ConfigurationError(SECRETS_NOT_CONFIGURED)
-    name = credentials_secret_name(prefix, context.ws)
-    if context.secret_status != CREDENTIALS_READY:
-        # The workspace's META says its secret is not made yet (``pending``), or says nothing: not used, even if a
-        # secret already exists under the name (it may lack this workspace's tag; the create flow decides that).
-        raise ConflictError(f'{CREDENTIALS_NOT_READY}: an operator must create {name} and mark the workspace ready '
-                            f'({RECOVERY_STEPS}).')
-    return name
+_NOT_CONFIGURED: Final = 'Secrets not configured'
+#: The environment CDK sets on every Lambda that reads or writes a workspace's parameters (lib/utils/workspace-secrets.ts).
+_PREFIX_ENV: Final = 'WORKSPACE_PARAMETER_PREFIX'
+#: The customer-managed key a write encrypts with (writers only).
+_KEY_ENV: Final = 'WORKSPACE_PARAMETER_KEY_ARN'
 
 
-def read_secret_json(client: Any, secret_id: str, context: WorkspaceContext | None) -> dict:
-    """The secret's JSON object. In a workspace, a secret that does not exist is a 409 (``CREDENTIALS_MISSING``); every
-    other failure (and a missing shared secret) raises as boto3 raised it, for the route to answer."""
-    try:
-        response = client.get_secret_value(SecretId=secret_id)
-    except ClientError as error:
-        if context is not None and error.response.get('Error', {}).get('Code') == 'ResourceNotFoundException':
-            raise ConflictError(f'{CREDENTIALS_MISSING}: {secret_id} does not exist ({RECOVERY_STEPS}).') from error
-        raise
-    secrets = json.loads(response.get('SecretString', '{}'))
+class CredentialsStore(Protocol):
+    """One request's view of the stored plugin settings, as ``<plugin>_<key>`` keys."""
+
+    def read(self) -> dict: ...
+
+    def read_lists(self) -> dict: ...
+
+    def write(self, secrets: dict) -> None: ...
+
+
+@dataclass(frozen=True)
+class StoreClients:
+    """What a module's routes open a store with: the shared secret's ARN, the Secrets Manager and SSM clients, and
+    how the shared secret is written (``put_secret_json(client, secret_id, secrets)``)."""
+
+    shared_secret: str
+    secrets_client: Any
+    ssm_client: Any
+    put_secret: Callable[[Any, str, dict], None]
+
+
+def _read_secret_json(client: Any, secret_id: str) -> dict:
+    """The shared secret's JSON object; every failure raises as boto3 raised it, for the route to answer."""
+    secrets = json.loads(client.get_secret_value(SecretId=secret_id).get('SecretString', '{}'))
     if not isinstance(secrets, dict):
         # A hand-edited secret that is not a JSON object: the routes answer it as they answer malformed JSON.
         raise ValueError('the credentials secret is not a JSON object')
     return secrets
+
+
+class SharedSecretStore:
+    """The deployment's shared secret, read and written whole (a request without ``X-Workspace-Id``)."""
+
+    def __init__(self, clients: StoreClients) -> None:
+        self._clients = clients
+        self.secret_id = clients.shared_secret
+
+    def read(self) -> dict:
+        return _read_secret_json(self._clients.secrets_client, self.secret_id)
+
+    def read_lists(self) -> dict:
+        """Deployment-wide the lists sit in the one shared secret, read whole as before."""
+        return self.read()
+
+    def write(self, secrets: dict) -> None:
+        """``put_secret`` (shared/aws.py ``put_secret_json``: the 64 KiB check, then the write) of the whole object."""
+        self._clients.put_secret(self._clients.secrets_client, self.secret_id, secrets)
+
+
+def _prefixed(stored: dict[str, dict]) -> dict:
+    """Each plugin's bare values as ``<plugin>_<key>`` (what the shared secret would hold for them)."""
+    return {f'{plugin}_{key}': value for plugin, values in stored.items() for key, value in values.items()}
+
+
+def _split(values: dict) -> tuple[dict, object]:
+    """A plugin's bare values as (its credentials, its configs list or None)."""
+    return {key: value for key, value in values.items() if key != CONFIGS_KEY}, values.get(CONFIGS_KEY)
+
+
+class WorkspaceStore:
+    """One workspace's settings of ``plugins`` (every plugin saved there when ``plugins`` is empty: read only)."""
+
+    def __init__(self, ssm: Any, table: WorkspaceTable, *, prefix: str, plugins: Sequence[str], key_id: str) -> None:
+        self._ssm = ssm
+        self._table = table
+        self._prefix = prefix
+        self.ws = table.scope.ws
+        self.plugins = tuple(plugins)
+        self._key_id = key_id
+        self._stored: dict[str, dict] = {}
+
+    def _read_every(self) -> dict[str, dict]:
+        stored = read_workspace(self._ssm, self._prefix, self.ws)
+        for plugin, configs in read_all_configs(self._table).items():
+            stored[plugin] = {**stored.get(plugin, {}), CONFIGS_KEY: configs}
+        return stored
+
+    def read(self) -> dict:
+        """The plugins' keys as ``<plugin>_<key>`` (what the shared secret would hold for them)."""
+        self._stored = ({plugin: read_plugin_values(self._ssm, self._prefix, self._table, plugin)
+                         for plugin in self.plugins} if self.plugins else self._read_every())
+        return _prefixed(self._stored)
+
+    def read_lists(self) -> dict:
+        """Only the plugins' ``configs`` lists, as ``<plugin>_configs``: the member-open list routes' read, which
+        never reaches a credentials parameter (no SSM call at all)."""
+        return {f'{plugin}_{CONFIGS_KEY}': configs for plugin in self.plugins
+                if (configs := read_configs(self._table, plugin)) is not None}
+
+    def write(self, secrets: dict) -> None:
+        """Save each of the store's plugins' namespace of ``secrets`` (the object ``read`` returned, edited): its
+        credentials parameter when they changed, its configs row when the list changed. A key outside those namespaces
+        is never written anywhere."""
+        if not self.plugins:
+            raise TypeError('a store opened for every plugin is read only')
+        if not self._key_id:
+            raise ConfigurationError(_NOT_CONFIGURED)
+        for plugin in self.plugins:
+            prefix = f'{plugin}_'
+            values = {key[len(prefix):]: value for key, value in secrets.items()
+                      if key.startswith(prefix) and len(key) > len(prefix)}
+            stored, stored_configs = _split(self._stored.get(plugin, {}))
+            credentials, configs = _split(values)
+            # A list no longer in the object is left as stored: no route removes one. The list is checked before
+            # anything is written, so a list too large leaves the credentials unwritten too.
+            changed_list = configs is not None and configs != stored_configs
+            if changed_list:
+                checked_configs(plugin, configs)
+            save_credentials(self._ssm, self._prefix, self.ws, plugin, stored=stored, values=credentials,
+                             key_id=self._key_id)
+            if changed_list:
+                save_configs(self._table, plugin, configs)
+
+
+def _required_env(name: str) -> str:
+    value = os.environ.get(name, '')
+    if not value:
+        raise ConfigurationError(_NOT_CONFIGURED)
+    return value
+
+
+def credentials_store(context: object, clients: StoreClients, plugins: Sequence[str] = ()) -> CredentialsStore:
+    """The store this request reads and writes: the shared secret deployment-wide (``context`` None), else the
+    resolved workspace's settings of ``plugins`` (each a plugin id the route already validated; none: every plugin,
+    read only). ``ConfigurationError`` when what it needs is not set. ``context`` is ``WorkspaceContext | None``
+    (typed ``object`` so the check below is also a type guard): anything else is a ``TypeError``, never a name."""
+    if context is None:
+        if not clients.shared_secret:
+            raise ConfigurationError(_NOT_CONFIGURED)
+        return SharedSecretStore(clients)
+    if not isinstance(context, WorkspaceContext):
+        raise TypeError('a workspace store needs a resolved workspace')
+    # The workspaces' parameter prefix CDK sets (``/voc/ws``, or ``/<deployment prefix>-voc/ws``).
+    prefix = _required_env(_PREFIX_ENV)
+    # The config lists are rows of voc-aggregates, the table the operator APIs and the ingestors are all handed.
+    table = ingest_table(scope_of(context), get_dynamodb_resource(), _required_env('AGGREGATES_TABLE'))
+    return WorkspaceStore(clients.ssm_client, table, prefix=prefix, plugins=plugins,
+                          key_id=os.environ.get(_KEY_ENV, ''))

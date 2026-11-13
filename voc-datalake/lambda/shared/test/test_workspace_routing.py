@@ -74,9 +74,9 @@ class TestRoutePublicId:
 
         routed = route_public_id(table, 'ff_1')
 
-        assert routed == RoutedWorkspace(WorkspaceScope(WS_A), 'ready')
+        assert routed == RoutedWorkspace(WorkspaceScope(WS_A))
         assert routed is not None
-        assert routed.secret_ready
+        assert routed.ws == WS_A
 
     @pytest.mark.parametrize('ws', [WS_GONE, 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7DB', 'ws_bad', ''])
     def test_a_row_of_a_deleting_unknown_or_malformed_workspace_is_unroutable(self, table, ws):
@@ -91,9 +91,10 @@ class TestRoutePublicId:
 
 
 class TestRouteWorkspaceId:
-    def test_an_active_workspace_routes_with_its_secret_status(self, table):
-        assert route_workspace_id(table, WS_B) == RoutedWorkspace(WorkspaceScope(WS_B), 'pending')
-        assert not route_workspace_id(table, WS_B).secret_ready
+    def test_an_active_workspace_routes_whatever_its_meta_says_of_a_secret(self, table):
+        """Decision 19: a workspace's credentials need nothing made first, so an old ``secret_status`` is not read."""
+        assert route_workspace_id(table, WS_B) == RoutedWorkspace(WorkspaceScope(WS_B))
+        assert META_ROUTING_ATTRIBUTES == ('pk', 'sk', 'status')
 
     def test_the_meta_is_read_with_the_routing_attributes_only(self):
         """The webhook role's GetItem is limited to these attributes (lib/stacks/api-stack.ts): the read asks only for

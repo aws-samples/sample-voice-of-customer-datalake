@@ -750,10 +750,10 @@ class TestEverythingARunKeepsIsItsWorkspaces:
         ingestor_yielding(scope=OTHER_SCOPE)
 
         assert [c.args[0] for c in ingestor_aws.get_secret.call_args_list] == [
-            SECRET_NAME, f'voc/ws/{OTHER_WS}/credentials']
+            SECRET_NAME, f'/voc/ws/{OTHER_WS}/credentials/test_source']
 
     def test_no_secret_is_read_without_the_prefix(self, ingestor_aws, monkeypatch):
-        monkeypatch.setattr('_shared.base_ingestor.WORKSPACE_SECRET_PREFIX', '')
+        monkeypatch.setattr('_shared.base_ingestor.WORKSPACE_PARAMETER_PREFIX', '')
 
         assert ingestor_yielding().secrets == {}
         ingestor_aws.get_secret.assert_not_called()
@@ -917,8 +917,8 @@ class TestTheDeploymentWidePathIsUnchanged:
 
 
 class TestAWorkspaceWithoutThePluginsCredentials:
-    """A run in a workspace whose secret holds none of the plugin's keys (a new workspace's ``{}``, or only another
-    plugin's keys): it ends ``error`` naming the missing credentials and never counts against the workspace's breaker,
+    """A run in a workspace with none of the plugin's keys saved (neither of its parameters exists; the plugins'
+    double, plugins/conftest.py, keeps only the plugin's own keys of a payload): it ends ``error`` naming the missing credentials and never counts against the workspace's breaker,
     so an admin who has not saved them yet does not find the plugin stopped there after a few runs."""
 
     @pytest.mark.parametrize('stored', [{}, {'other_plugin_api_key': 'k'}], ids=['empty', 'another-plugin'])

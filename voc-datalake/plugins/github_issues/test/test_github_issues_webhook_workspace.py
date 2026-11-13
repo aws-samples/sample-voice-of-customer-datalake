@@ -2,10 +2,11 @@
 points"; plugins/_shared/base_webhook.py).
 
 The ``{ws}`` path value is only the key of the workspace's stored ``META``: the HMAC is checked with the webhook secret
-of THAT workspace's own secret (``voc/ws/{ws}/credentials``, the plugin's namespace), never the shared one, and a
-verified delivery is queued with that workspace and archived under its prefix. A malformed or unknown id, a
-``deleting`` workspace, a secret not ready or without a webhook secret, A's secret on B's endpoint and an unsigned
-delivery all get the same 401 as a bad signature, after the body checks; ``/webhooks/github_issues`` is unchanged.
+of THAT workspace's own parameter of this plugin (``/voc/ws/{ws}/credentials/{plugin}``, decision 19), never the
+shared secret, and a verified delivery is queued with that workspace and archived under its prefix. A malformed or
+unknown id, a ``deleting`` workspace, a parameter missing or without a webhook secret, A's secret on B's endpoint and
+an unsigned delivery all get the same 401 as a bad signature, after the body checks; ``/webhooks/github_issues`` is
+unchanged.
 """
 from __future__ import annotations
 
@@ -28,7 +29,8 @@ from _shared.test.webhook_fixtures import webhook_event
 
 WS_A = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
 WS_B = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D9'
-WS_PENDING = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7DA'
+#: A workspace whose META still carries an old ``secret_status: pending``: nothing reads it any more.
+WS_OLD_PENDING = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7DA'
 WS_GONE = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7DB'
 WS_UNKNOWN = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7DC'
 WS_NO_HOOK = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7DD'
@@ -37,19 +39,28 @@ SECRET_B = 'secret-of-b'
 SHARED = 'shared-secret'
 SHARED_ARN = 'arn:aws:secretsmanager:us-east-1:111111111111:secret:voc-api-credentials'
 BAD_SIGNATURE = (401, {'error': 'Invalid signature'})
+PREFIX = '/voc/ws'
 META = {
-    WS_A: {'status': 'active', 'secret_status': 'ready'},
-    WS_B: {'status': 'active', 'secret_status': 'ready'},
-    WS_PENDING: {'status': 'active', 'secret_status': 'pending'},
-    WS_GONE: {'status': 'deleting', 'secret_status': 'ready'},
-    WS_NO_HOOK: {'status': 'active', 'secret_status': 'ready'},
+    WS_A: {'status': 'active'},
+    WS_B: {'status': 'active'},
+    WS_OLD_PENDING: {'status': 'active', 'secret_status': 'pending'},
+    WS_GONE: {'status': 'deleting'},
+    WS_NO_HOOK: {'status': 'active'},
 }
+
+
+def _parameter(ws: str, plugin: str = base_webhook.SOURCE_PLATFORM) -> str:
+    """The plugin's credentials parameter in ``ws`` (this test session's plugin, ``SOURCE_PLATFORM``)."""
+    return f'{PREFIX}/{ws}/credentials/{plugin}'
+
+
 SECRETS = {
-    f'voc/ws/{WS_A}/credentials': scoped_secret(webhook_secret=SECRET_A, repos=REPO),
-    f'voc/ws/{WS_B}/credentials': scoped_secret(webhook_secret=SECRET_B, repos=REPO),
-    f'voc/ws/{WS_PENDING}/credentials': scoped_secret(webhook_secret=SECRET_A, repos=REPO),
-    f'voc/ws/{WS_GONE}/credentials': scoped_secret(webhook_secret=SECRET_A, repos=REPO),
-    f'voc/ws/{WS_NO_HOOK}/credentials': {'webscraper_configs': '[]'},  # another plugin's keys only
+    _parameter(WS_A): {'webhook_secret': SECRET_A, 'repos': REPO},
+    _parameter(WS_B): {'webhook_secret': SECRET_B, 'repos': REPO},
+    _parameter(WS_OLD_PENDING): {'webhook_secret': SECRET_A, 'repos': REPO},
+    _parameter(WS_GONE): {'webhook_secret': SECRET_A, 'repos': REPO},
+    # Another plugin's parameter only: none of this plugin's.
+    _parameter(WS_NO_HOOK, 'webscraper'): {'webhook_secret': SECRET_A},
     SHARED_ARN: scoped_secret(webhook_secret=SHARED, repos=REPO),
 }
 
@@ -71,19 +82,19 @@ class _Workspaces:
 def hook() -> Iterator[tuple[Any, MagicMock, MagicMock, MagicMock]]:
     sqs = MagicMock()
     sqs.send_message_batch.side_effect = echo_batch_success
-    # One double for both reads: the shared secret's (`get_secret`) and a workspace's (`_read_secret`, behind the TTL
-    # cache, emptied around each test: it is module state).
+    # One double for both reads, by name: the shared secret's (`get_secret`) and a workspace parameter's
+    # (`_read_credentials`, behind the TTL cache, emptied around each test: it is module state).
     secrets = MagicMock(side_effect=lambda name: SECRETS.get(name, {}))
     base_webhook.WORKSPACE_SECRETS.clear()
     with (
         patch.object(base_webhook, 'get_sqs_client', return_value=sqs),
         patch.object(base_webhook, 'get_secret', secrets),
-        patch.object(base_webhook, '_read_secret', secrets),
+        patch.object(base_webhook, '_read_credentials', lambda ws, plugin: secrets(_parameter(ws, plugin))),
         patch.object(base_webhook, 'get_s3_client'),
         patch.object(base_webhook, 'archive_raw_item', return_value=None) as archive,
         patch.object(base_webhook, 'get_workspaces_table', return_value=_Workspaces()),
         patch.object(base_webhook, 'SECRETS_ARN', SHARED_ARN),
-        patch.object(base_webhook, 'WORKSPACE_SECRET_PREFIX', 'voc/ws'),
+        patch.object(base_webhook, 'WORKSPACE_PARAMETER_PREFIX', PREFIX),
         patch('github_issues.webhook.handler.emit_audit_event'),
     ):
         from github_issues.webhook.handler import lambda_handler
@@ -123,16 +134,25 @@ def test_a_delivery_signed_with_the_workspaces_own_secret_lands_in_it(hook):
     assert message['workspace_id'] == WS_A
     assert list(message)[-1] == 'workspace_id'
     assert archive.call_args.kwargs['scope'].ws == WS_A  # ws/{ws}/raw/github_issues/…
-    assert [call.args[0] for call in secrets.call_args_list] == [f'voc/ws/{WS_A}/credentials']  # never the shared
+    # Its own plugin's parameter only: never the shared secret, never another plugin's parameter.
+    assert [call.args[0] for call in secrets.call_args_list] == [_parameter(WS_A)]
+
+
+def test_an_old_pending_meta_no_longer_refuses_the_delivery(hook):
+    """Decision 19: nothing is made with a workspace, so ``secret_status`` is not read; its parameter decides."""
+    handler, sqs, _secrets, _archive = hook
+
+    assert _call(handler, _delivery(WS_OLD_PENDING, SECRET_A))[0] == 200
+    assert _queued(sqs)[0]['workspace_id'] == WS_OLD_PENDING
 
 
 @pytest.mark.parametrize(('ws', 'secret'), [
     (WS_B, SECRET_A),  # A's secret on B's endpoint
     (WS_B, None),  # unsigned
     (WS_B, SHARED),  # the deployment's shared secret
-    (WS_NO_HOOK, None),  # a workspace without the plugin's webhook secret
+    (WS_NO_HOOK, None),  # a workspace without the plugin's parameter
     (WS_NO_HOOK, ''),
-    (WS_PENDING, SECRET_A),  # its secret not ready
+    (WS_NO_HOOK, SECRET_A),  # another plugin's parameter holds this secret: never read
     (WS_GONE, SECRET_A),  # being deleted
     (WS_UNKNOWN, SECRET_A),
     ('ws_not-an-id', SECRET_A),
@@ -147,7 +167,7 @@ def test_anything_else_gets_the_bad_signatures_answer_and_queues_nothing(hook, w
     archive.assert_not_called()
 
 
-@pytest.mark.parametrize('ws', [WS_UNKNOWN, WS_GONE, WS_PENDING, 'ws_not-an-id'])
+@pytest.mark.parametrize('ws', [WS_UNKNOWN, WS_GONE, 'ws_not-an-id'])
 def test_a_workspace_that_routes_nowhere_costs_no_secret_read(hook, ws):
     handler, _sqs, secrets, _archive = hook
 
@@ -205,8 +225,17 @@ def test_without_the_workspaces_table_a_workspace_route_is_refused(hook):
     sqs.send_message_batch.assert_not_called()
 
 
+def test_without_the_parameter_prefix_a_workspace_route_is_refused(hook):
+    handler, sqs, secrets, _archive = hook
+
+    with patch.object(base_webhook, 'WORKSPACE_PARAMETER_PREFIX', ''):
+        assert _call(handler, _delivery(WS_A, SECRET_A)) == BAD_SIGNATURE
+    secrets.assert_not_called()
+    sqs.send_message_batch.assert_not_called()
+
+
 #: The real uncached read, taken before the `hook` fixture replaces it.
-_UNCACHED_READ = base_webhook._read_secret
+_UNCACHED_READ = base_webhook._read_credentials
 
 
 class _Clock:
@@ -217,78 +246,102 @@ class _Clock:
         return self.now
 
 
+def _not_found(name: str) -> ClientError:
+    return ClientError({'Error': {'Code': 'ParameterNotFound', 'Message': name}}, 'GetParameter')
+
+
 @contextmanager
-def _secrets_store(store: dict[str, dict]) -> Generator[tuple[MagicMock, _Clock]]:
-    """The real TTL cache (a fake clock) over a Secrets Manager double answering from ``store`` at call time."""
+def _parameter_store(store: dict[str, dict]) -> Generator[tuple[MagicMock, _Clock]]:
+    """The real TTL cache (a fake clock) over an SSM double answering from ``store`` at call time
+    (``ParameterNotFound`` for a name it does not hold)."""
     client = MagicMock()
-    client.get_secret_value.side_effect = lambda SecretId: {'SecretString': json.dumps(store.get(SecretId, {}))}
+
+    def get_parameter(Name: str, WithDecryption: bool) -> dict:
+        assert WithDecryption is True
+        if Name not in store:
+            raise _not_found(Name)
+        return {'Parameter': {'Name': Name, 'Value': json.dumps(store[Name])}}
+
+    client.get_parameter.side_effect = get_parameter
     clock = _Clock()
-    with (patch.object(base_webhook, '_read_secret', _UNCACHED_READ),
-          patch.object(base_webhook, 'get_secrets_client', return_value=client),
+    with (patch.object(base_webhook, '_read_credentials', _UNCACHED_READ),
+          patch.object(base_webhook, 'get_ssm_client', return_value=client),
           patch.object(base_webhook, 'WORKSPACE_SECRETS', base_webhook.WorkspaceSecrets(clock=clock))):
         yield client, clock
 
 
 def test_a_rotated_workspace_secret_takes_effect_within_the_ttl(hook):
     handler, sqs, _secrets, _archive = hook
-    name = f'voc/ws/{WS_A}/credentials'
-    store = {name: scoped_secret(webhook_secret=SECRET_A, repos=REPO)}
-    with _secrets_store(store) as (client, clock):
+    name = _parameter(WS_A)
+    store = {name: {'webhook_secret': SECRET_A, 'repos': REPO}}
+    with _parameter_store(store) as (client, clock):
         assert _call(handler, _delivery(WS_A, SECRET_A))[0] == 200  # the old secret, now kept
-        store[name] = scoped_secret(webhook_secret='rotated', repos=REPO)
+        store[name] = {'webhook_secret': 'rotated', 'repos': REPO}
         assert _call(handler, _delivery(WS_A, 'rotated')) == BAD_SIGNATURE  # inside the TTL: the kept one
 
         clock.now += base_webhook.WORKSPACE_SECRET_TTL_SECONDS
         assert _call(handler, _delivery(WS_A, 'rotated'))[0] == 200
         assert _call(handler, _delivery(WS_A, SECRET_A)) == BAD_SIGNATURE  # the old one no longer opens it
     assert len(_queued(sqs)) == 2
-    assert client.get_secret_value.call_count == 2
+    assert client.get_parameter.call_count == 2
 
 
-def test_a_flood_of_bad_signatures_reads_the_secret_once_per_ttl(hook):
+def test_a_flood_of_bad_signatures_reads_the_parameter_once_per_ttl(hook):
+    """A missing parameter (``ParameterNotFound``: nothing saved) and an empty one are kept for the TTL like any
+    other value, so forged deliveries cost one read per workspace per TTL."""
     handler, sqs, _secrets, _archive = hook
-    store = {f'voc/ws/{WS_A}/credentials': scoped_secret(webhook_secret=SECRET_A, repos=REPO),
-             f'voc/ws/{WS_NO_HOOK}/credentials': {'webscraper_configs': '[]'},
-             f'voc/ws/{WS_B}/credentials': {}}  # a new workspace's secret
-    with _secrets_store(store) as (client, _clock):
+    store = {_parameter(WS_A): {'webhook_secret': SECRET_A, 'repos': REPO},
+             _parameter(WS_B): {}}  # saved, but without a webhook secret
+    with _parameter_store(store) as (client, _clock):
         for _ in range(20):
             assert _call(handler, _delivery(WS_A, 'forged')) == BAD_SIGNATURE
-            assert _call(handler, _delivery(WS_NO_HOOK, 'forged')) == BAD_SIGNATURE  # a namespace miss, kept too
+            assert _call(handler, _delivery(WS_NO_HOOK, 'forged')) == BAD_SIGNATURE  # not found, kept too
             assert _call(handler, _delivery(WS_B, 'forged')) == BAD_SIGNATURE  # `{}`, kept too
-    assert client.get_secret_value.call_count == 3
+    assert client.get_parameter.call_count == 3
+    assert {call.kwargs['Name'] for call in client.get_parameter.call_args_list} == {
+        _parameter(WS_A), _parameter(WS_NO_HOOK), _parameter(WS_B)}
     sqs.send_message_batch.assert_not_called()
 
 
 def test_the_cache_is_bounded_and_starts_again_empty_when_full():
     reads: list[str] = []
 
-    def read(name: str) -> dict:
-        reads.append(name)
+    def read(ws: str, _plugin: str) -> dict:
+        reads.append(ws)
         return {}
 
     cache = base_webhook.WorkspaceSecrets(clock=_Clock())
-    with patch.object(base_webhook, '_read_secret', read):
+    with patch.object(base_webhook, '_read_credentials', read):
         for index in range(base_webhook.MAX_CACHED_WORKSPACE_SECRETS):
-            cache.get(f'secret-{index}')
+            cache.get(f'ws-{index}', 'p')
         assert len(cache) == base_webhook.MAX_CACHED_WORKSPACE_SECRETS
-        cache.get('secret-0')  # still kept
+        cache.get('ws-0', 'p')  # still kept
         assert len(reads) == base_webhook.MAX_CACHED_WORKSPACE_SECRETS
 
-        cache.get('one-more')  # a miss on a full cache: it starts again empty
+        cache.get('one-more', 'p')  # a miss on a full cache: it starts again empty
         assert len(cache) == 1
-        cache.get('secret-0')
-    assert reads[-1] == 'secret-0'
+        cache.get('ws-0', 'p')
+    assert reads[-1] == 'ws-0'
 
 
 def test_a_failed_read_is_not_kept(hook):
     handler, _sqs, _secrets, _archive = hook
-    with _secrets_store({}) as (client, _clock):
-        client.get_secret_value.side_effect = ClientError({'Error': {'Code': 'ThrottlingException'}}, 'GetSecretValue')
+    with _parameter_store({}) as (client, _clock):
+        client.get_parameter.side_effect = ClientError({'Error': {'Code': 'ThrottlingException'}}, 'GetParameter')
         assert _call(handler, _delivery(WS_A, SECRET_A)) == BAD_SIGNATURE
-        client.get_secret_value.side_effect = None
-        client.get_secret_value.return_value = {
-            'SecretString': json.dumps(scoped_secret(webhook_secret=SECRET_A, repos=REPO))}
+        client.get_parameter.side_effect = None
+        client.get_parameter.return_value = {
+            'Parameter': {'Value': json.dumps({'webhook_secret': SECRET_A, 'repos': REPO})}}
         assert _call(handler, _delivery(WS_A, SECRET_A))[0] == 200
+    assert client.get_parameter.call_count == 2
+
+
+def test_a_parameter_that_is_not_a_json_object_reads_as_empty():
+    client = MagicMock()
+    client.get_parameter.return_value = {'Parameter': {'Value': '["a"]'}}
+    with patch.object(base_webhook, 'get_ssm_client', return_value=client):
+        assert _UNCACHED_READ(WS_A, base_webhook.SOURCE_PLATFORM) == {}
+    assert client.get_parameter.call_args.kwargs['Name'] == f'{base_webhook.WORKSPACE_PARAMETER_PREFIX}/{WS_A}/credentials/{base_webhook.SOURCE_PLATFORM}'
 
 
 @pytest.mark.parametrize(('refused', 'path_parameters'), [

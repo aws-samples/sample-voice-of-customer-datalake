@@ -14,10 +14,10 @@ Routes:
                                 when the live check confirms them, and the entry is audited (shared/workspace.py
                                 resolve_workspace); an entry whose audit row cannot be written is refused.
     POST /platform/workspaces   {name, slug} -> 201 {workspace: {id, name, slug, role: 'admin', secret_status}}:
-                                a new workspace with the caller as its admin, in one transaction, then its
-                                credentials secret (shared/platform_workspaces.py). 400 for a bad name or slug,
-                                409 for a slug that is taken; secret_status 'pending' when the secret could not
-                                be made (logged; the workspace stays, its META says so).
+                                a new workspace with the caller as its admin, in one transaction
+                                (shared/platform_workspaces.py). 400 for a bad name or slug, 409 for a slug
+                                that is taken; secret_status is always 'ready' (decision 19: nothing else is
+                                made, a plugin's credentials parameters come with its first save).
     GET /platform/workspaces    {workspaces: [{id, name, slug, status, created_at, secret_status}], next_cursor}: every
                                 workspace by name, ?limit= (1-100, default 25) and ?cursor= (one Query of the
                                 listing partition, never a Scan).
@@ -45,7 +45,7 @@ The /platform routes are for platform admins only: an administrator (``require_a
 ``platform-admins`` group (``require_platform_admin``), then the live check (shared/platform_admin.py: the live
 Cognito membership and an enabled account), so a revoked or disabled platform admin is refused (403) at once.
 
-A DynamoDB, Cognito or Secrets Manager fault answers a fixed 500, never the AWS error text, which is logged.
+A DynamoDB or Cognito fault answers a fixed 500, never the AWS error text, which is logged.
 """
 
 import json
@@ -56,21 +56,12 @@ from aws_lambda_powertools.event_handler import Response, content_types
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared.api import api_handler, create_api_resolver, get_caller_subject, is_admin, require_admin
-from shared.aws import get_cognito_idp_client, get_dynamodb_resource, get_secrets_client
+from shared.aws import get_cognito_idp_client, get_dynamodb_resource
 from shared.exceptions import AuthorizationError, ConfigurationError, ServiceError, ValidationError
 from shared.import_runs import parse_limit
 from shared.logging import logger
 from shared.platform_admin import live_platform_admin_check, require_platform_admin
-from shared.platform_workspaces import (
-    CREDENTIALS_PENDING,
-    CREDENTIALS_READY,
-    CredentialsSecretError,
-    create_workspace,
-    ensure_credentials_secret,
-    list_workspaces,
-    mark_secret_ready,
-    parse_new_workspace,
-)
+from shared.platform_workspaces import CREDENTIALS_READY, create_workspace, list_workspaces, parse_new_workspace
 from shared.request_body import json_object_body
 from shared.tables import cached_table
 from shared.warm_init import warm_at_init
@@ -97,10 +88,6 @@ from shared.workspace_members import (
 
 WORKSPACES_TABLE = os.environ.get('WORKSPACES_TABLE', '')
 USER_POOL_ID = os.environ.get('USER_POOL_ID', '')
-# The customer-managed key and the name prefix of the per-workspace credentials secrets (voc/ws, or
-# <deployment prefix>-voc/ws): lib/stacks/api-workspaces-lambda.ts.
-KMS_KEY_ARN = os.environ.get('KMS_KEY_ARN', '')
-WORKSPACE_SECRET_PREFIX = os.environ.get('WORKSPACE_SECRET_PREFIX', '')
 # The fixed answers of a fault (#263: never the AWS text).
 FAILED_LIST = 'Failed to list your workspaces'
 FAILED_CURRENT = WORKSPACE_FAULT
@@ -262,19 +249,6 @@ def remove_workspace_member(sub: str) -> dict:
     return {'removed': target}
 
 
-def _credentials_secret_status(table: Any, ws: str, name: str) -> str:
-    """Create the workspace's credentials secret and mark it ready; ``pending`` (logged) when that fails."""
-    try:
-        ensure_credentials_secret(get_secrets_client(), prefix=WORKSPACE_SECRET_PREFIX, ws=ws,
-                                  kms_key_arn=KMS_KEY_ARN)
-        mark_secret_ready(table, ws, name)
-    except (ClientError, BotoCoreError, CredentialsSecretError):
-        logger.exception('Workspace created without its credentials secret: secret_status stays pending',
-                         extra={'workspace_id': ws})
-        return CREDENTIALS_PENDING
-    return CREDENTIALS_READY
-
-
 @app.post('/platform/workspaces')
 def create_platform_workspace():  # a Response: the resolver validates a return annotation, so none here
     event = app.current_event.raw_event
@@ -282,17 +256,14 @@ def create_platform_workspace():  # a Response: the resolver validates a return 
     require_platform_admin(event)
     _require_live_platform_admin(event, FAILED_CREATE)
     new = parse_new_workspace(json_object_body(app))
-    if not (KMS_KEY_ARN and WORKSPACE_SECRET_PREFIX):
-        # Refused before anything is written: a workspace must be able to get its secret.
-        raise ConfigurationError('Workspace credentials not configured')
-    table = get_workspaces_table()
     try:
-        ws = create_workspace(table, new, get_caller_subject(event))
+        ws = create_workspace(get_workspaces_table(), new, get_caller_subject(event))
     except (ClientError, BotoCoreError) as exc:
         logger.exception('Error creating a workspace')
         raise ServiceError(FAILED_CREATE) from exc
-    workspace = {'id': ws, 'name': new.name, 'slug': new.slug, 'role': 'admin',
-                 'secret_status': _credentials_secret_status(table, ws, new.name)}
+    # Nothing else to make (decision 19: a plugin's parameters are created by its first save in the workspace);
+    # `secret_status` stays in the answer for the platform API's callers, always `ready`.
+    workspace = {'id': ws, 'name': new.name, 'slug': new.slug, 'role': 'admin', 'secret_status': CREDENTIALS_READY}
     return Response(status_code=201, content_type=content_types.APPLICATION_JSON,
                     body=json.dumps({'workspace': workspace}))
 

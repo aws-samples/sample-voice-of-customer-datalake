@@ -20,7 +20,7 @@ a write resolves the caller's role from the table (``fresh``).
 
 The operator routes that start and watch ingestion (lambda/api/integrations_handler.py,
 lambda/api/scrapers_handler.py) serve both paths the same way, through one shared ``ResolvedRoutes`` (their resolver
-middleware, admin gate, credentials secret and Radar refusal); its rules:
+middleware, admin gate, stored credentials and Radar refusal); its rules:
 
 * ``ResolvedRoutes.require_request_admin``: an admin-only route's gate on either path: the deployment's ``admins`` group without
   the header, the caller's admin role in the workspace with it (a member admin or an entered platform admin; the
@@ -57,7 +57,7 @@ from shared.workspace import (
     require_workspace_admin,
     resolve_workspace,
 )
-from shared.workspace_plugin_store import credentials_secret_id, read_secret_json
+from shared.workspace_plugin_store import CredentialsStore, StoreClients, credentials_store
 from shared.ws_repo import WorkspaceScope, scope_of
 
 __all__ = [
@@ -146,13 +146,18 @@ class ResolvedRoutes:
     """One two-path operator module's view of each request (the integrations and scrapers APIs), the one
     implementation both share: its resolver middleware (``middleware``, installed with
     ``app.use(middlewares=[_request.middleware])``), its admin gate (``require_request_admin``), and what the routes
-    read of the current request: its membership as the middleware kept it, its scope and its credentials secret
-    (shared/workspace_plugin_store.py: the shared one deployment-wide, the workspace's own in a workspace)."""
+    read of the current request: its membership as the middleware kept it, its scope and its stored plugin settings
+    (shared/workspace_plugin_store.py: the shared secret deployment-wide, the workspace's own parameters in a
+    workspace)."""
 
-    def __init__(self, resolver: Any, workspace: RequestWorkspace | None = None) -> None:
+    def __init__(self, resolver: Any, workspace: RequestWorkspace | None = None,
+                 clients: Callable[[], StoreClients] | None = None) -> None:
         self._resolver = resolver
         #: The module's resolution of a request's workspace (its warm container's memberships, 30 s).
         self.workspace = workspace if workspace is not None else RequestWorkspace()
+        #: The module's shared secret and clients (shared/workspace_plugin_store.py), read at each ``credentials``; a
+        #: module sets it right after installing the resolver (``_request.clients = lambda: StoreClients(...)``).
+        self.clients = clients
 
     def middleware(self, resolver: Any, next_middleware: Callable[[Any], Any]) -> Any:
         """Before every route of the module: the request's membership is resolved (or refused: 400, the one 404, a
@@ -191,21 +196,22 @@ class ResolvedRoutes:
         context = self.context()
         return scope_of(context) if context is not None else None
 
-    def secret_id(self, shared_secret: str) -> str:
-        """The request's credentials secret, named from its resolved membership only (``ConfigurationError`` when the
-        one it needs is not configured)."""
-        return credentials_secret_id(self.context(), shared_secret)
+    def credentials(self, *plugins: str) -> CredentialsStore:
+        """The request's stored plugin settings of ``plugins`` (validated plugin ids; none: every plugin, read only):
+        the shared secret deployment-wide, the resolved workspace's own in a workspace, named from that membership
+        only (``ConfigurationError`` when what it needs is not configured). The module's ``clients`` are read at
+        each call, so a module's own names (and its tests' stand-ins) are the ones used."""
+        if self.clients is None:
+            raise ConfigurationError('Secrets not configured')
+        return credentials_store(self.context(), self.clients(), plugins)
 
-    def secret_id_or_none(self, shared_secret: str) -> str | None:
-        """``secret_id``, or None where none is configured: a read route then answers an empty list, as before."""
+    def credentials_or_none(self, *plugins: str) -> CredentialsStore | None:
+        """``credentials`` for a read route, or None where none is configured: it then answers an empty list, as
+        before."""
         try:
-            return self.secret_id(shared_secret)
+            return self.credentials(*plugins)
         except ConfigurationError:
             return None
-
-    def read_secrets(self, client: Any, secret_id: str) -> dict:
-        """The secret's JSON object (409 in a workspace whose secret does not exist yet)."""
-        return read_secret_json(client, secret_id, self.context())
 
     def refuse_radar_brand(self, radar_brand: object) -> None:
         """400 (``RADAR_NOT_IN_WORKSPACES``) for a non-empty Radar brand saved in a workspace: the processor would

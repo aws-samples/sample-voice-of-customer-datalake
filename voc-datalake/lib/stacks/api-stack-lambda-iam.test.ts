@@ -233,7 +233,7 @@ describe('SettingsLambdaRole reads a workspace membership for the erasure routes
           'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] },
           // Never a member's email or name (lambda/shared/workspace.py MEMBER_READ_ATTRIBUTES, META_READ_ATTRIBUTES).
           'ForAllValues:StringEquals': {
-            'dynamodb:Attributes': ['pk', 'sk', 'role', 'status', 'name', 'slug', 'secret_status'] },
+            'dynamodb:Attributes': ['pk', 'sk', 'role', 'status', 'name', 'slug'] },
           StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
         } }]);
   });
@@ -249,38 +249,63 @@ describe('SettingsLambdaRole reads a workspace membership for the erasure routes
   });
 });
 
-// The operator APIs keep a workspace's plugin credentials, app connectors and scraper configs in its own secret
-// (lambda/shared/workspace_plugin_store.py): Get and Put on `voc/ws/*` beside the shared secret, never Create, Delete,
-// Describe or Tag (the workspaces API makes them), and the prefix in WORKSPACE_SECRET_PREFIX.
+// The operator APIs keep a workspace's plugin credentials in its own SSM parameters (decision 19,
+// lambda/shared/workspace_plugin_store.py, lib/utils/workspace-secrets.ts): Get and Put on
+// `voc/ws/{one workspace id}/credentials/*`, GetParametersByPath on that path, the key through SSM for those names
+// only, never a Delete; no `voc/ws/*` secret; the prefix and the key in the environment. (Their config lists are
+// voc-aggregates rows, under the PutItem these roles already hold there.)
+const ONE_WORKSPACE = `ws_${'?'.repeat(26)}`;
+const onWorkspaceParameters = (role: string) => policyStatementsOf(apiTemplate(), role)
+  .filter((s) => s.resource.includes(':parameter/voc/ws/') || JSON.stringify(s.condition ?? {}).includes(':parameter/voc/ws/'));
+/** A statement's actions (sorted) and whether its resource or condition names `fragment`. */
+const shapeOf = (s: { actions: string[]; resource: string; condition?: unknown }, fragment: string) => ({
+  actions: [...s.actions].sort(byCodeUnit),
+  names: s.resource.includes(fragment) || JSON.stringify(s.condition ?? {}).includes(fragment),
+});
+
 describe.each([
   ['IntegrationsLambdaRole', 'integrations_handler.lambda_handler'],
   ['ScrapersLambdaRole', 'scrapers_handler.lambda_handler'],
-])('%s reads and writes a workspace\'s credentials secret', (role, handler) => {
-  const onWorkspaceSecrets = () => policyStatementsOf(apiTemplate(), role)
-    .filter((s) => s.resource.includes('voc/ws/*'));
-
-  it('may Get and Put every workspace secret, and nothing else there', () => {
-    expect(onWorkspaceSecrets().map((s) => [...s.actions].sort(byCodeUnit)))
-      .toStrictEqual([['secretsmanager:GetSecretValue', 'secretsmanager:PutSecretValue']]);
+])('%s reads and writes a workspace\'s parameters', (role, handler) => {
+  it('may Get and Put every plugin\'s credentials parameter of one workspace id, and list that path', () => {
+    const ssm = onWorkspaceParameters(role).filter((s) => s.actions.some((a) => a.startsWith('ssm:')))
+      .map((s) => ({ ...shapeOf(s, `:parameter/voc/ws/${ONE_WORKSPACE}/credentials`), resource: s.resource }))
+      .sort((a, b) => byCodeUnit(a.actions.join(), b.actions.join()));
+    expect(ssm.map(({ actions, names }) => ({ actions, names }))).toStrictEqual([
+      { actions: ['ssm:GetParameter', 'ssm:PutParameter'], names: true },
+      { actions: ['ssm:GetParametersByPath'], names: true }]);
+    expect(ssm.map((s) => [s.resource.includes('/credentials/*"'), s.resource.includes('/configs')]))
+      .toStrictEqual([[true, false], [false, false]]);
+    expect(actionsWithPrefix(policyStatementsOf(apiTemplate(), role), 'ssm:')).toStrictEqual([
+      'ssm:GetParameter', 'ssm:GetParametersByPath', 'ssm:PutParameter']);
   });
 
-  it('holds no Create, Delete, Describe or Tag of a secret anywhere', () => {
-    expect(actionsWithPrefix(policyStatementsOf(apiTemplate(), role), 'secretsmanager:'))
+  it('decrypts and encrypts with the deployment key only through SSM, for those parameters only', () => {
+    const kms = onWorkspaceParameters(role).filter((s) => s.actions.some((a) => a.startsWith('kms:')));
+    const condition = JSON.stringify(kms[0]?.condition);
+    expect({
+      statements: kms.length, actions: [...(kms[0]?.actions ?? [])].sort(byCodeUnit),
+      onTheKey: /Key/.test(kms[0]?.resource ?? ''), throughSsm: condition.includes('"kms:ViaService"') && condition.includes('ssm.'),
+      forTheNames: condition.includes('"kms:EncryptionContext:PARAMETER_ARN"')
+        && condition.includes(`:parameter/voc/ws/${ONE_WORKSPACE}/credentials/*`),
+    }).toStrictEqual({ statements: 1, actions: ['kms:Decrypt', 'kms:Encrypt'], onTheKey: true, throughSsm: true,
+      forTheNames: true });
+  });
+
+  it('holds no secret of a workspace any more, only the shared one\'s Get and Put', () => {
+    const secrets = policyStatementsOf(apiTemplate(), role).filter((s) => s.actions.some((a) => a.startsWith('secretsmanager:')));
+    expect(actionsWithPrefix(secrets, 'secretsmanager:'))
       .toStrictEqual(['secretsmanager:GetSecretValue', 'secretsmanager:PutSecretValue']);
+    expect(secrets.some((s) => s.resource.includes('voc/ws'))).toBe(false);
+    expect(actionsWithPrefix(policyStatementsOf(apiTemplate(), role), 'ssm:DeleteParameter')).toStrictEqual([]);
   });
 
-  it('may decrypt and generate data keys with the deployment key the secrets are encrypted with', () => {
-    // The workspaces API creates every workspace secret with the customer-managed key (secretsmanager:KmsKeyArn);
-    // without these a Get or Put of one is AccessDenied (moto does not check KMS, so only this test can say so).
-    const kmsStatements = policyStatementsOf(apiTemplate(), role).filter((s) => s.actions.some((a) => a.startsWith('kms:')));
-    expect(kmsStatements.length).toBeGreaterThan(0);
-    expect(kmsStatements.every((s) => !s.resource.includes('"*"'))).toBe(true);
-    expect(actionsWithPrefix(kmsStatements, 'kms:'))
-      .toStrictEqual(expect.arrayContaining(['kms:Decrypt', 'kms:GenerateDataKey']));
-  });
-
-  it('is handed the workspaces\' secret prefix', () => {
-    expect(lambdaEnv(apiTemplate(), handler)).toHaveProperty('WORKSPACE_SECRET_PREFIX', 'voc/ws');
+  it('is handed the workspaces\' parameter prefix and the key, and no secret prefix', () => {
+    const env = lambdaEnv(apiTemplate(), handler);
+    expect({
+      prefix: env.WORKSPACE_PARAMETER_PREFIX, key: /Key/.test(JSON.stringify(env.WORKSPACE_PARAMETER_KEY_ARN)),
+      secretPrefix: 'WORKSPACE_SECRET_PREFIX' in env,
+    }).toStrictEqual({ prefix: '/voc/ws', key: true, secretPrefix: false });
   });
 });
 

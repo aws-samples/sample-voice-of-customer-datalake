@@ -29,7 +29,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
 from typing import override
-from unittest.mock import call, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -177,11 +177,44 @@ class TestTheSecretRead:
         clear.assert_called_once_with()
 
     def test_the_filter_is_given_this_plugins_identity(self, webhook_aws):
-        with patch('_shared.base_webhook.filter_plugin_secrets', return_value={'k': 'v'}) as flt:
+        # The deployment-wide read is _shared/plugin_secrets.py load_shared_plugin_secrets, over its filter.
+        with patch('_shared.plugin_secrets.filter_plugin_secrets', return_value={'k': 'v'}) as flt:
             webhook = webhook_parsing()
 
         flt.assert_called_once_with(PLATFORM, webhook_aws.get_secret.return_value)
         assert webhook.secrets == {'k': 'v'}
+
+
+class TestAWorkspacesMalformedParameter:
+    """A credentials parameter that is not a JSON object (decision 19): ``{}`` (kept for the TTL like any value, so the
+    delivery is refused like a bad signature), a warning naming the plugin and the error type, and a metric."""
+
+    WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
+
+    def test_it_reads_as_empty_warns_with_the_error_type_and_counts(self):
+        client = MagicMock()
+        client.get_parameter.return_value = {'Parameter': {'Value': '["not", "an", "object"]'}}
+        with (
+            patch('_shared.base_webhook.get_ssm_client', return_value=client),
+            patch('_shared.base_webhook.logger') as logger,
+            patch('_shared.base_webhook.metrics') as metrics,
+        ):
+            value = base_webhook._read_credentials(self.WS, PLATFORM)
+
+        assert value == {}
+        logger.warning.assert_called_once_with(
+            "A workspace's credentials parameter is not a JSON object",
+            extra={'plugin_id': PLATFORM, 'error_type': 'MalformedCredentials'})
+        metrics.add_metric.assert_called_once_with(name='WorkspaceCredentialsMalformed', unit='Count', value=1)
+
+    def test_the_empty_value_is_kept_for_the_ttl(self):
+        reads = MagicMock(return_value={})
+        cache = base_webhook.WorkspaceSecrets(clock=lambda: 1000.0)
+        with patch('_shared.base_webhook._read_credentials', reads):
+            first = cache.get(self.WS, PLATFORM)
+            second = cache.get(self.WS, PLATFORM)
+
+        assert (first, second, reads.call_count) == ({}, {}, 1)
 
 
 @pytest.mark.usefixtures('webhook_aws')

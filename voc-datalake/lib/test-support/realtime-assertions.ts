@@ -31,6 +31,9 @@ export function expectPublishesOnlyOn(template: Template, roleLogicalId: string,
   options: { byIdPrefix?: boolean } = {}): void {
   expect(realtimeNamespacesOfRole(template, roleLogicalId, options), roleLogicalId).toStrictEqual([namespace]);
   const own = roleStatements(template, roleLogicalId, options)
+    // An ingestor's read of its plugin's workspace credentials parameter (decision 19, lib/utils/workspace-secrets.ts)
+    // is not a realtime grant.
+    .filter((s) => !s.resource.includes(':parameter/voc/ws/'))
     .flatMap((s) => s.actions)
     .filter((a) => a.startsWith('appsync:') || a.startsWith('ssm:'));
   expect(own, `${roleLogicalId}: no appsync / ssm statement of its own`).toStrictEqual([]);

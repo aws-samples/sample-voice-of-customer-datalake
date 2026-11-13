@@ -2,27 +2,22 @@
 import ast
 from collections.abc import Iterator
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import boto3
 import pytest
 from botocore.exceptions import ClientError
 from moto import mock_aws
 
 from shared.exceptions import ConflictError, ValidationError
 from shared.platform_workspaces import (
-    CREDENTIALS_PENDING,
     CREDENTIALS_READY,
     LISTING_PK,
     RESERVED_SLUGS,
     SLUG_TAKEN,
     WORKSPACE_CREATED,
-    CredentialsSecretError,
     NewWorkspace,
     create_workspace,
-    ensure_credentials_secret,
     list_workspaces,
-    mark_secret_ready,
     new_workspace_id,
     parse_new_workspace,
 )
@@ -132,7 +127,7 @@ def test_create_stores_the_workspace_its_admin_and_its_audit_row(table):
     assert sorted(_partition(table, f'WS#{ws}'), key=lambda row: row['sk']) == [
         {'pk': f'WS#{ws}', 'sk': f'MEMBER#{CREATOR}', 'role': 'admin', 'invited_by': CREATOR, 'joined_at': AT},
         {'pk': f'WS#{ws}', 'sk': 'META', 'name': 'Acme Outfitters', 'slug': 'acme', 'status': 'active',
-         'created_by': CREATOR, 'created_at': AT, 'secret_status': CREDENTIALS_PENDING},
+         'created_by': CREATOR, 'created_at': AT, 'secret_status': CREDENTIALS_READY},
     ]
     assert _partition(table, f'USER#{CREATOR}') == [
         {'pk': f'USER#{CREATOR}', 'sk': f'WS#{ws}', 'name': 'Acme Outfitters', 'slug': 'acme', 'role': 'admin'}]
@@ -189,88 +184,15 @@ def test_a_collision_on_another_row_is_not_a_slug_conflict(table):
         _create(table)
 
 
-def test_mark_secret_ready_flips_the_meta_and_the_listing_row_of_a_pending_workspace_only(table):
-    ws = _create(table)
-    name = table.get_item(Key={'pk': f'WS#{ws}', 'sk': 'META'})['Item']['name']
-    assert [w['secret_status'] for w in list_workspaces(table, limit=10, cursor=None)[0]] == [CREDENTIALS_PENDING]
-    mark_secret_ready(table, ws, name)
+def test_a_new_workspace_is_ready_at_once_in_one_transaction(table):
+    """Decision 19: nothing is made after the transaction (no secret), so META and the listing row say ``ready``
+    from the start, the one write; nothing updates them later."""
+    with patch.object(table.meta.client, 'transact_write_items', wraps=table.meta.client.transact_write_items) as tx:
+        ws = _create(table)
+
+    [_call] = tx.call_args_list
     assert table.get_item(Key={'pk': f'WS#{ws}', 'sk': 'META'})['Item']['secret_status'] == CREDENTIALS_READY
     assert [w['secret_status'] for w in list_workspaces(table, limit=10, cursor=None)[0]] == [CREDENTIALS_READY]
-    with pytest.raises(ClientError, match='TransactionCanceled'):
-        mark_secret_ready(table, ws, name)
-    with pytest.raises(ClientError, match='TransactionCanceled'):
-        mark_secret_ready(table, 'ws_7ZZZZZZZZZZZZZZZZZZZZZZZZZ', name)
-
-
-def test_mark_secret_ready_sends_its_own_idempotency_token(table):
-    # A retried mark whose first attempt landed succeeds rather than failing its own `pending` condition: the token is
-    # the workspace's and stable across calls, and fits DynamoDB's 36 characters.
-    ws = _create(table)
-    with patch.object(table.meta.client, 'transact_write_items', wraps=table.meta.client.transact_write_items) as tx:
-        mark_secret_ready(table, ws, ACME.name)
-    [call] = tx.call_args_list
-    assert call.kwargs['ClientRequestToken'] == f'{ws}-ready'
-    assert len(call.kwargs['ClientRequestToken']) <= 36
-    assert call.kwargs['ClientRequestToken'] != ws  # not the create's own token
-
-
-# ── The credentials secret ───────────────────────────────────────────────────
-
-WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
-
-
-@pytest.fixture
-def secrets_and_key() -> Iterator:
-    with mock_aws():
-        key = boto3.client('kms', region_name='us-east-1').create_key()['KeyMetadata']['Arn']
-        yield boto3.client('secretsmanager', region_name='us-east-1'), key
-
-
-def test_the_secret_is_created_empty_with_the_key_and_the_tag(secrets_and_key):
-    client, key = secrets_and_key
-    ensure_credentials_secret(client, prefix='voc/ws', ws=WS, kms_key_arn=key)
-    described = client.describe_secret(SecretId=f'voc/ws/{WS}/credentials')
-    assert (described['KmsKeyId'], described['Tags']) == (key, [{'Key': 'workspace_id', 'Value': WS}])
-    assert client.get_secret_value(SecretId=f'voc/ws/{WS}/credentials')['SecretString'] == '{}'
-
-
-def test_the_secret_name_takes_the_deployment_prefix(secrets_and_key):
-    client, key = secrets_and_key
-    ensure_credentials_secret(client, prefix='stg-voc/ws', ws=WS, kms_key_arn=key)
-    assert [s['Name'] for s in client.list_secrets()['SecretList']] == [f'stg-voc/ws/{WS}/credentials']
-
-
-def test_a_secret_that_already_exists_for_the_workspace_is_kept(secrets_and_key):
-    client, key = secrets_and_key
-    ensure_credentials_secret(client, prefix='voc/ws', ws=WS, kms_key_arn=key)
-    client.put_secret_value(SecretId=f'voc/ws/{WS}/credentials', SecretString='{"github": "kept"}')
-    ensure_credentials_secret(client, prefix='voc/ws', ws=WS, kms_key_arn=key)
-    assert client.get_secret_value(SecretId=f'voc/ws/{WS}/credentials')['SecretString'] == '{"github": "kept"}'
-
-
-def test_a_secret_by_that_name_that_is_not_the_workspaces_is_an_error(secrets_and_key):
-    client, key = secrets_and_key
-    client.create_secret(Name=f'voc/ws/{WS}/credentials', SecretString='{}')
-    with pytest.raises(CredentialsSecretError):
-        ensure_credentials_secret(client, prefix='voc/ws', ws=WS, kms_key_arn=key)
-
-
-def test_any_other_secrets_manager_error_propagates():
-    client = MagicMock()
-    client.create_secret.side_effect = ClientError({'Error': {'Code': 'AccessDeniedException', 'Message': 'x'}},
-                                                   'CreateSecret')
-    with pytest.raises(ClientError, match='AccessDenied'):
-        ensure_credentials_secret(client, prefix='voc/ws', ws=WS, kms_key_arn='arn:key')
-    client.describe_secret.assert_not_called()
-
-
-@pytest.mark.parametrize('ws', ['ws_bogus', f'{WS}/../other', '../voc-datalake/api-credentials'],
-                         ids=['malformed', 'path', 'other-secret'])
-def test_the_secret_name_takes_only_a_well_formed_workspace_id(ws):
-    client = MagicMock()
-    with pytest.raises(ValueError, match='not a workspace id'):
-        ensure_credentials_secret(client, prefix='voc/ws', ws=ws, kms_key_arn='arn:key')
-    client.create_secret.assert_not_called()
 
 
 # ── List ─────────────────────────────────────────────────────────────────────
@@ -286,11 +208,11 @@ def test_the_list_is_every_workspace_by_name(table):
     workspaces, cursor = list_workspaces(table, limit=25, cursor=None)
     assert workspaces == [
         {'id': ids['Acme'], 'name': 'Acme', 'slug': 'slug-1', 'status': 'active', 'created_at': AT,
-         'secret_status': CREDENTIALS_PENDING},
+         'secret_status': CREDENTIALS_READY},
         {'id': ids['birch'], 'name': 'birch', 'slug': 'slug-2', 'status': 'active', 'created_at': AT,
-         'secret_status': CREDENTIALS_PENDING},
+         'secret_status': CREDENTIALS_READY},
         {'id': ids['zephyr'], 'name': 'zephyr', 'slug': 'slug-0', 'status': 'active', 'created_at': AT,
-         'secret_status': CREDENTIALS_PENDING},
+         'secret_status': CREDENTIALS_READY},
     ]
     assert cursor is None
 

@@ -344,7 +344,7 @@ describe("a workspace's webhook endpoint", () => {
     expect(onWorkspaces.map((s) => ({ actions: actionsOf(s), condition: s.Condition })))
       .toStrictEqual([{ actions: ['dynamodb:GetItem'], condition: {
         'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] },
-        'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'status', 'secret_status'] },
+        'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'status'] },
         StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
       } }]);
   });
@@ -353,14 +353,33 @@ describe("a workspace's webhook endpoint", () => {
     const source = readFileSync(join(__dirname, '..', '..', 'lambda', 'shared', 'workspace_routing.py'), 'utf-8');
     const declared = /^META_ROUTING_ATTRIBUTES: Final = \(([^)]*)\)/m.exec(source)?.[1] ?? '';
     expect([...declared.matchAll(/'(\w+)'/g)].map((match) => match[1]))
-      .toStrictEqual(['pk', 'sk', 'status', 'secret_status']);
+      .toStrictEqual(['pk', 'sk', 'status']);
   });
 
-  it("reads the workspaces' credentials secrets, and writes none", () => {
-    const onWorkspaceSecrets = roleStatements().filter((s) => JSON.stringify(s.Resource).includes('voc/ws/*'));
-    expect(onWorkspaceSecrets.map(actionsOf)).toStrictEqual([['secretsmanager:GetSecretValue']]);
-    expect(roleStatements().flatMap(actionsOf).filter((a) => a.startsWith('secretsmanager:') && a !== 'secretsmanager:GetSecretValue'))
-      .toStrictEqual([]);
+  it("reads its webhook plugins' credentials parameters of one workspace id, and no other parameter or secret", () => {
+    // Decision 19: `voc/ws/{one workspace id}/credentials/{plugin}` of the webhook plugins only, read only.
+    const onParameters = roleStatements().filter((s) => actionsOf(s).some((a) => a.startsWith('ssm:')));
+    const rendered = onParameters.flatMap(resourcesOf).map((resource) => JSON.stringify(resource));
+    const own = `:parameter/voc/ws/ws_${'?'.repeat(26)}/credentials/${WEBHOOK_PLUGIN_ID}"`;
+    expect({
+      actions: onParameters.map(actionsOf),
+      resources: rendered.map((resource) => resource.includes(own) && !resource.includes('*')),
+      otherOnVocWs: roleStatements().filter((s) => JSON.stringify(s.Resource).includes('voc/ws'))
+        .flatMap(actionsOf).filter((a) => !a.startsWith('ssm:') && !a.startsWith('s3:')),
+      otherSecrets: roleStatements().flatMap(actionsOf)
+        .filter((a) => a.startsWith('secretsmanager:') && a !== 'secretsmanager:GetSecretValue'),
+    }).toStrictEqual({ actions: [['ssm:GetParameter']], resources: [true], otherOnVocWs: [], otherSecrets: [] });
+  });
+
+  it('decrypts with the deployment key through SSM for those parameters only', () => {
+    const throughSsm = roleStatements()
+      .filter((s) => JSON.stringify(s.Condition ?? {}).includes('kms:EncryptionContext:PARAMETER_ARN'));
+    const condition = JSON.stringify(throughSsm[0]?.Condition);
+    expect({
+      actions: throughSsm.map(actionsOf),
+      forTheNames: condition.includes(`/credentials/${WEBHOOK_PLUGIN_ID}`),
+      throughSsm: condition.includes('"kms:ViaService":"ssm.'),
+    }).toStrictEqual({ actions: [['kms:Decrypt']], forTheNames: true, throughSsm: true });
   });
 
   it("puts raw objects under one workspace's prefix of its own source only", () => {
@@ -373,8 +392,9 @@ describe("a workspace's webhook endpoint", () => {
     }
   });
 
-  it('is handed the workspaces table and the secret prefix', () => {
-    expect(webhookEnv()).toHaveProperty('WORKSPACE_SECRET_PREFIX', 'voc/ws');
+  it('is handed the workspaces table and the parameter prefix', () => {
+    expect(webhookEnv()).toHaveProperty('WORKSPACE_PARAMETER_PREFIX', '/voc/ws');
+    expect(webhookEnv()).not.toHaveProperty('WORKSPACE_SECRET_PREFIX');
     expect(Object.keys(webhookEnv())).toContain('WORKSPACES_TABLE');
   });
 });

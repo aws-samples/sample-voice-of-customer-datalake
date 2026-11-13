@@ -5,18 +5,20 @@ deployed bundle (the ingestor handler sits at the bundle root beside `_shared/`)
 and a module called `secrets.py` there shadows the stdlib `secrets` for anything
 that imports it — six modules in this tree do.
 
-Which secret: an ingestor's run in a workspace reads that WORKSPACE's secret,
-`voc/ws/{ws}/credentials` (docs/multi-workspace.md, decision 8; the name built
-from the run's verified scope only); a deployment-wide run (an event that names
-no workspace) and a webhook still read the deployment's shared secret until
-their own slices. Either way the keys are namespaced
-`<plugin_id>_<key>` (the API's writers, `integrations_handler` and
-`scrapers_handler`, always prefix; they still write the shared secret, and the
-per-workspace plugin settings will write the workspace's), and inside one secret
-the namespace prefix is the entire isolation boundary between plugins: the
-ingestors share a role, so IAM cannot provide a second layer there (issue #251).
-Between workspaces IAM does not separate them either (soft isolation, decision
-1): the secret's name, built only from the verified scope, does.
+Which secret: this module reads the deployment's SHARED secret, which a
+deployment-wide run (an event that names no workspace) and a delivery to
+`/webhooks/{plugin}` use. A run or a delivery in a workspace does not come here:
+it reads that workspace's own SSM parameter of its plugin only
+(docs/multi-workspace.md, decision 19, `shared/workspace_credentials.py`), one per
+plugin. There IAM is the boundary between plugins only for a plugin with a role of
+its own (each role may read only its plugins' parameter names,
+lib/stacks/ingestion-roles.ts); the plugins that share `IngestionLambdaRole` may
+each read the others' parameters, so between them the boundary is the name the code
+builds from the plugin's own identity, as it is in the shared secret. In the shared secret the
+keys are namespaced `<plugin_id>_<key>` (the API's writers, `integrations_handler`
+and `scrapers_handler`, always prefix), and inside it the namespace prefix is the
+entire isolation boundary between plugins: the ingestors share a role and the
+secret is one resource, so IAM cannot provide a second layer there (issue #251).
 
 Two rules follow from that, and this module is the single choke point for both,
 so neither base class can drift from the other:
@@ -69,7 +71,8 @@ What this boundary does NOT guarantee:
 
 import os
 import sys
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from typing import Any
 
 # Add the `plugins/` directory (this file's grandparent) to sys.path. `shared.*`
 # below resolves through it: `lambda/shared/` is copied in beside `_shared/` when
@@ -82,22 +85,12 @@ from shared.exceptions import ConfigurationError, SecretUnreadableError
 from shared.logging import logger
 from shared.plugin_identity import PLUGIN_IDENTIFIER_RULES, is_valid_plugin_identifier
 
-__all__ = ["filter_plugin_secrets", "holds_plugin_namespace"]
+__all__ = ["filter_plugin_secrets", "load_shared_plugin_secrets"]
 
 
 def plugin_secret_prefix(plugin_id: str) -> str:
     """The namespace every one of *plugin_id*'s keys carries in the secret."""
     return f"{plugin_id}_"
-
-
-def holds_plugin_namespace(plugin_id: str, all_secrets: object) -> bool:
-    """Whether a secret holds at least one of the plugin's ``<plugin>_<key>`` keys. True for a malformed plugin id
-    and for a secret that is not a JSON object, so ``filter_plugin_secrets`` refuses either as the counted
-    misconfiguration it is (the stored JSON may be any value, whatever ``get_secret`` is annotated with)."""
-    if not is_valid_plugin_identifier(plugin_id) or not isinstance(all_secrets, Mapping):
-        return True
-    prefix = plugin_secret_prefix(plugin_id)
-    return any(isinstance(key, str) and key.startswith(prefix) and len(key) > len(prefix) for key in all_secrets)
 
 
 def filter_plugin_secrets(plugin_id: object, all_secrets: object) -> dict:
@@ -215,3 +208,24 @@ def filter_plugin_secrets(plugin_id: object, all_secrets: object) -> dict:
         )
 
     return scoped
+
+
+def load_shared_plugin_secrets(plugin_id: str, secret_arn: str, *, read: Callable[[str], object],
+                               evict: Callable[[], None], log: Any) -> dict:
+    """*plugin_id*'s keys from the deployment's shared secret: both base classes' deployment-wide read, one
+    implementation. Each passes its own module's ``get_secret``, ``clear_secret_cache`` and logger (so a test of one
+    stands in for that module's names).
+
+    An absent *secret_arn* is a warning and ``{}``: the env-var-not-wired case, in which no secret is read at all, so
+    there is nothing to over-share (a plugin invoked outside the CDK-built environment hits it). An empty read is
+    evicted from ``get_secret``'s cache before ``filter_plugin_secrets`` refuses it: ``get_secret`` is lru_cached and
+    swallows EVERY exception into ``{}``, so without the eviction one transient blip would wedge every later
+    invocation of the warm container on the cached ``{}`` (a webhook has no manual run to clear it).
+    """
+    if not secret_arn:
+        log.warning("SECRETS_ARN not configured")
+        return {}
+    all_secrets = read(secret_arn)
+    if not all_secrets:
+        evict()
+    return filter_plugin_secrets(plugin_id, all_secrets)

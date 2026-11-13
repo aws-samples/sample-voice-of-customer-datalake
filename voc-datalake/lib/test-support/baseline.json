@@ -2,7 +2,7 @@
   "description": "Fingerprint of the no-prefix synth. Regenerate with npx ts-node scripts/generate-baseline.ts ONLY for a change intended to alter the default templates — see the script header.",
   "stacks": {
     "VocApiStack": {
-      "templateSha256": "90972001032a11389305b01e317552b7d38d57a4963550cda1d6e7c5c48d4cac",
+      "templateSha256": "9338f7523773adc37997dc7d567dde2b35597cdab2b3b4d9a1801fd43fcf409a",
       "names": {
         "physicalNames": [
           "AWS::ApiGateway::Authorizer Name = voc-board-authorizer",
@@ -113,7 +113,6 @@
           "arn:aws:logs:us-east-1:111111111111:log-group:/aws/lambda/voc-*-<AWS::AccountId>-<AWS::Region>:*",
           "arn:aws:logs:us-east-1:111111111111:log-group:/aws/stepfunctions/voc-*-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:logs:us-east-1:111111111111:log-group:/aws/stepfunctions/voc-*-<AWS::AccountId>-<AWS::Region>:*",
-          "arn:aws:secretsmanager:us-east-1:111111111111:secret:voc/ws/*",
           "arn:aws:sns:us-east-1:111111111111:voc-briefing-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:sns:us-east-1:111111111111:voc-ops-alarms-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:sqs:us-east-1:111111111111:voc-aggregator-stream-failures-<AWS::AccountId>-<AWS::Region>",
@@ -123,7 +122,10 @@
           "arn:aws:sqs:us-east-1:111111111111:voc-ingest-schedule-dlq-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:sqs:us-east-1:111111111111:voc-memory-extract-dlq-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:sqs:us-east-1:111111111111:voc-processing-dlq-<AWS::AccountId>-<AWS::Region>",
-          "arn:aws:ssm:us-east-1:111111111111:parameter/voc/radar/exa-api-key"
+          "arn:aws:ssm:us-east-1:111111111111:parameter/voc/radar/exa-api-key",
+          "arn:aws:ssm:us-east-1:111111111111:parameter/voc/ws/ws_??????????????????????????/credentials",
+          "arn:aws:ssm:us-east-1:111111111111:parameter/voc/ws/ws_??????????????????????????/credentials/*",
+          "arn:aws:ssm:us-east-1:111111111111:parameter/voc/ws/ws_??????????????????????????/credentials/github_issues"
         ],
         "environmentNames": [
           "ASSIST_WORKER_FUNCTION = voc-projects-assist-<AWS::AccountId>-<AWS::Region>",
@@ -178,7 +180,7 @@
           "SYSTEM_LOG_GROUP_PATTERN = /aws/lambda/voc-*-<AWS::AccountId>-<AWS::Region>",
           "SYSTEM_WORKFLOW_LOG_GROUP_PATTERN = /aws/stepfunctions/voc-*-<AWS::AccountId>-<AWS::Region>",
           "WEBSCRAPER_FUNCTION_NAME = voc-ingestor-webscraper-<AWS::AccountId>-<AWS::Region>",
-          "WORKSPACE_SECRET_PREFIX = voc/ws"
+          "WORKSPACE_PARAMETER_PREFIX = /voc/ws"
         ]
       }
     },
@@ -280,7 +282,7 @@
       }
     },
     "VocIngestionStack": {
-      "templateSha256": "7db7feda0b36a7667a366dd5aa1397d90e78d9cf0d1d07cc6c1bb18058b060e7",
+      "templateSha256": "02417e9ebbfd4bbf40d8978263284eb4f3b97d2829e28144697236e0b3d08496",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-ingest-app_reviews_android-schedule-<AWS::AccountId>-<AWS::Region>",
@@ -328,7 +330,13 @@
           "arn:aws:lambda:us-east-1:111111111111:function:voc-ingestor-github_issues-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:lambda:us-east-1:111111111111:function:voc-ingestor-web_reviews-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:lambda:us-east-1:111111111111:function:voc-ingestor-webscraper-<AWS::AccountId>-<AWS::Region>",
-          "arn:aws:secretsmanager:us-east-1:111111111111:secret:voc/ws/*"
+          "arn:aws:ssm:us-east-1:111111111111:parameter/voc/ws/ws_??????????????????????????/credentials/app_reviews_android",
+          "arn:aws:ssm:us-east-1:111111111111:parameter/voc/ws/ws_??????????????????????????/credentials/app_reviews_ios",
+          "arn:aws:ssm:us-east-1:111111111111:parameter/voc/ws/ws_??????????????????????????/credentials/github_issues",
+          "arn:aws:ssm:us-east-1:111111111111:parameter/voc/ws/ws_??????????????????????????/credentials/s3_import",
+          "arn:aws:ssm:us-east-1:111111111111:parameter/voc/ws/ws_??????????????????????????/credentials/synthetic_reviews",
+          "arn:aws:ssm:us-east-1:111111111111:parameter/voc/ws/ws_??????????????????????????/credentials/web_reviews",
+          "arn:aws:ssm:us-east-1:111111111111:parameter/voc/ws/ws_??????????????????????????/credentials/webscraper"
         ],
         "environmentNames": [
           "INGEST_SCHEDULE_RULE_NAME = voc-ingest-app_reviews_android-schedule-<AWS::AccountId>-<AWS::Region>",
@@ -338,7 +346,7 @@
           "INGEST_SCHEDULE_RULE_NAME = voc-ingest-webscraper-schedule-<AWS::AccountId>-<AWS::Region>",
           "POWERTOOLS_SERVICE_NAME = voc-design-capture",
           "POWERTOOLS_SERVICE_NAME = voc-ingestion",
-          "WORKSPACE_SECRET_PREFIX = voc/ws"
+          "WORKSPACE_PARAMETER_PREFIX = /voc/ws"
         ]
       }
     },

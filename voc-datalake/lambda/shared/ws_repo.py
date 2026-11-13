@@ -12,8 +12,8 @@ only ever reads and writes its own rows and objects. This module is the one plac
   shared/workspace_routing.py). Never from a request field.
 * Key builders: ``feedback_key`` and the feedback indexes' partitions (``date_pk``, ``category_pk``,
   ``urgency_pk``, ``feedback_id_pk``, ``channel_pk``), ``metric_pk`` / ``metric_type``, ``watermark_key``,
-  ``source_run_pk``, ``scraper_run_pk`` and ``s3_key`` for objects (``s3_prefix`` their common ``ws/{ws}/``; the credentials secret's name is
-  shared/workspace_ids.py ``credentials_secret_name``).
+  ``source_run_pk``, ``scraper_run_pk`` and ``s3_key`` for objects (``s3_prefix`` their common ``ws/{ws}/``), ``plugin_config_key`` (a plugin's config list; the
+  credentials parameters' names are shared/workspace_ids.py ``credentials_parameter_name``).
 * ``ws_table``: a table that refuses any key, item, update or query outside the scope's partitions (every index
   partition of voc-feedback is one of ``PARTITION_ATTRIBUTES``: gsi4 and gsi5 are keyed on ``gsi4pk`` / ``gsi5pk``,
   no longer on the raw ``feedback_id`` and ``source_channel``).
@@ -31,9 +31,11 @@ The keys (``{ws}`` is ``ws_`` + a ULID, shared/workspace.py ``is_workspace_id``)
                     pk WS#{ws}#SOURCE_RUN#{source}        pk WS#{ws}#SCRAPER_RUN#{scraper_id}
                     pk WS#{ws}#FAILURES#{plugin}          pk WS#{ws}#CIRCUIT#{plugin} (the plugins' breaker)
                     pk WS#{ws}#JOB#erasure (a workspace's erasure jobs and their lock)
+                    pk WS#{ws}#PLUGIN_CONFIG  sk {plugin} (a plugin's config list, shared/plugin_configs.py)
     voc-watermarks  source WS#{ws}#{plugin}#{key}
     raw bucket      ws/{ws}/raw/{source}/{yyyy}/{mm}/{dd}/{stem}/{sha16}.json, ws/{ws}/silver/..., ws/{ws}/...
-    secrets         {prefix}/{ws}/credentials (prefix voc/ws, <deployment prefix>-voc/ws in a prefixed deployment)
+    SSM parameters  {prefix}/{ws}/credentials/{plugin} (prefix /voc/ws, /<deployment prefix>-voc/ws in a prefixed
+                    deployment; decision 19)
 """
 from __future__ import annotations
 
@@ -65,6 +67,8 @@ __all__ = [
     'metric_type',
     'partition_query',
     'partition_scope',
+    'plugin_config_key',
+    'plugin_config_pk',
     's3_key',
     's3_prefix',
     'scope_from_key',
@@ -269,6 +273,19 @@ def scraper_run_pk(scope: WorkspaceScope, scraper_id: str) -> str:
 def erasure_job_pk(scope: WorkspaceScope) -> str:
     """A workspace's erasure jobs and their lock (voc-aggregates, shared/erasure_jobs.py): ``WS#{ws}#JOB#erasure``."""
     return scope.key('JOB', 'erasure')
+
+
+def plugin_config_pk(scope: WorkspaceScope) -> str:
+    """The partition of every plugin's config list of the workspace in voc-aggregates: ``WS#{ws}#PLUGIN_CONFIG``."""
+    return scope.key('PLUGIN_CONFIG')
+
+
+def plugin_config_key(scope: WorkspaceScope, plugin: str) -> dict[str, str]:
+    """A plugin's config list (shared/plugin_configs.py): ``WS#{ws}#PLUGIN_CONFIG`` / ``{plugin}``. Refuses
+    (ValueError) an empty plugin id; the callers pass a validated one."""
+    if not plugin:
+        raise ValueError('a plugin config key needs a plugin id')
+    return {'pk': plugin_config_pk(scope), 'sk': plugin}
 
 
 def watermark_key(scope: WorkspaceScope, plugin: str, key: str) -> str:

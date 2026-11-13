@@ -39,7 +39,7 @@ from _shared.base_ingestor import BaseIngestor
 from _shared.test.fresh_import import assert_loading_puts_root_first, load_fresh
 from _shared.test.ingestor_fixtures import breaker_mock, ingestor_yielding, with_mock_circuit_breaker
 from _shared.test.workspace_fixtures import SCOPE, WS
-from shared.exceptions import ConfigurationError
+from shared.exceptions import ConfigurationError, WorkspaceCredentialsNotSet
 
 MODULE_PATH = Path(base_ingestor.__file__).resolve()
 PLUGINS_ROOT = str(MODULE_PATH.parents[1])
@@ -53,7 +53,7 @@ ENV_SETTINGS = (
     'PROCESSING_QUEUE_URL',
     'RAW_DATA_BUCKET',
     'SECRETS_ARN',
-    'WORKSPACE_SECRET_PREFIX',
+    'WORKSPACE_PARAMETER_PREFIX',
     'WORKSPACES_TABLE',
     'BRAND_NAME',
     'SOURCE_PLATFORM',
@@ -205,13 +205,13 @@ class TestTheConstructionFailureReport:
 
 
 class TestSecretsAndWatermarks:
-    def test_an_unset_secret_prefix_warns_and_reads_nothing(self, ingestor_aws, ingestor_logger):
-        with patch('_shared.base_ingestor.WORKSPACE_SECRET_PREFIX', ''):
+    def test_an_unset_parameter_prefix_warns_and_reads_nothing(self, ingestor_aws, ingestor_logger):
+        with patch('_shared.base_ingestor.WORKSPACE_PARAMETER_PREFIX', ''):
             ingestor = ingestor_yielding()
 
         assert ingestor.secrets == {}
         ingestor_aws.get_secret.assert_not_called()
-        ingestor_logger.warning.assert_called_once_with('WORKSPACE_SECRET_PREFIX not configured')
+        ingestor_logger.warning.assert_called_once_with('WORKSPACE_PARAMETER_PREFIX not configured')
 
     def test_a_deployment_wide_run_without_the_shared_secret_warns_and_reads_nothing(
         self, ingestor_aws, ingestor_logger
@@ -223,16 +223,29 @@ class TestSecretsAndWatermarks:
         ingestor_aws.get_secret.assert_not_called()
         ingestor_logger.warning.assert_called_once_with('SECRETS_ARN not configured')
 
-    def test_the_secret_read_is_named_from_the_prefix_and_the_scope_only(self, ingestor_aws):
-        with patch('_shared.base_ingestor.WORKSPACE_SECRET_PREFIX', 'stg-voc/ws'):
+    def test_the_parameter_read_is_named_from_the_prefix_the_scope_and_the_plugin_only(self, ingestor_aws):
+        with patch('_shared.base_ingestor.WORKSPACE_PARAMETER_PREFIX', '/stg-voc/ws'):
             ingestor_yielding()
 
-        ingestor_aws.get_secret.assert_called_once_with(f'stg-voc/ws/{WS}/credentials')
+        ingestor_aws.get_secret.assert_called_once_with(f'/stg-voc/ws/{WS}/credentials/{PLATFORM}')
 
-    def test_an_empty_read_evicts_the_cache_so_the_next_run_reads_again(self, ingestor_aws):
+    def test_nothing_saved_in_the_workspace_is_not_counted_and_reads_afresh_next_run(self, ingestor_aws):
+        """The parameters are read fresh on every run (no cache to evict): nothing saved is
+        WorkspaceCredentialsNotSet, a SecretUnreadableError the breaker does not count."""
+        ingestor_aws.get_secret.return_value = {}
+        with patch('_shared.base_ingestor.clear_secret_cache') as clear, \
+                pytest.raises(WorkspaceCredentialsNotSet):
+            ingestor_yielding()
+        with pytest.raises(WorkspaceCredentialsNotSet):
+            ingestor_yielding()
+
+        clear.assert_not_called()
+        assert ingestor_aws.get_secret.call_count == 2
+
+    def test_a_deployment_wide_empty_read_evicts_the_cache_so_the_next_run_reads_again(self, ingestor_aws):
         ingestor_aws.get_secret.return_value = {}
         with patch('_shared.base_ingestor.clear_secret_cache') as clear, pytest.raises(ConfigurationError):
-            ingestor_yielding()
+            ingestor_yielding(scope=None)
 
         clear.assert_called_once_with()
 

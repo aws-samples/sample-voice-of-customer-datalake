@@ -10,7 +10,7 @@ Two paths (docs/multi-workspace.md, phase 2 "ingestion"; ``run_in_workspace``):
   scope comes from it (``shared/ws_repo.py scope_from_message``). Everything it keeps is the
   workspace's: watermarks (``WS#{ws}#{plugin}#{key}``), the ``WS#{ws}#SOURCE_RUN#`` rows, the
   circuit breaker, the raw objects (``ws/{ws}/raw/...``), the credentials (the workspace's own
-  secret), and every queued message carries ``workspace_id``. A ``workspace_id`` that is not
+  parameters of this plugin), and every queued message carries ``workspace_id``. A ``workspace_id`` that is not
   a workspace id is refused.
 * A deployment-wide run: its event names no workspace (the API's Run now and scraper run
   without ``X-Workspace-Id``, the S3 import API's reprocess, an S3 upload, the scheduled
@@ -38,19 +38,23 @@ from shared.aws import (
     get_s3_client,
     get_secret,
     get_sqs_client,
+    get_ssm_run_client,
 )
 from shared.exceptions import ConfigurationError, SecretUnreadableError, WorkspaceCredentialsNotSet
 from shared.idempotency import dedupe_claim_item
 from shared.ingest_tables import ingest_table
 from shared.logging import logger, metrics, tracer
+from shared.plugin_configs import read_plugin_values
+from shared.plugin_identity import is_valid_plugin_identifier
 from shared.run_rows import source_run_partition
 from shared.timestamps import now_iso
-from shared.workspace_ids import credentials_secret_name
+from shared.workspace_credentials import MalformedCredentials
 from shared.workspace_plugins import workspaces_with_plugin
 from shared.ws_repo import (
     WATERMARK_PARTITION,
     WORKSPACE_FIELD,
     WorkspaceScope,
+    WorkspaceTable,
     message_scope,
     watermark_key,
 )
@@ -58,7 +62,7 @@ from shared.ws_repo import (
 from .audit import emit_audit_event
 from .circuit_breaker import CircuitBreaker
 from .normalized_item import normalized_item_fields
-from .plugin_secrets import filter_plugin_secrets, holds_plugin_namespace, plugin_secret_prefix
+from .plugin_secrets import filter_plugin_secrets, load_shared_plugin_secrets, plugin_secret_prefix
 from .raw_archive import archive_raw_item
 from .raw_source import pop_raw_source
 from .self_invoke import invoke_self
@@ -74,8 +78,8 @@ PROCESSING_QUEUE_URL = os.environ.get("PROCESSING_QUEUE_URL", "")
 RAW_DATA_BUCKET = os.environ.get("RAW_DATA_BUCKET", "")
 # The shared secret, read by a deployment-wide run (an event that names no workspace).
 SECRETS_ARN = os.environ.get("SECRETS_ARN", "")
-# The workspaces' credentials secrets, `{prefix}/{ws}/credentials` (lib/stacks/ingestion-stack.ts).
-WORKSPACE_SECRET_PREFIX = os.environ.get("WORKSPACE_SECRET_PREFIX", "")
+# The workspaces' credentials parameters, `{prefix}/{ws}/credentials/{plugin}` (decision 19; lib/stacks/ingestion-stack.ts).
+WORKSPACE_PARAMETER_PREFIX = os.environ.get("WORKSPACE_PARAMETER_PREFIX", "")
 # voc-workspaces: the scheduled tick reads the workspaces that enabled this plugin (shared/workspace_plugins.py).
 WORKSPACES_TABLE = os.environ.get("WORKSPACES_TABLE", "")
 BRAND_NAME = os.environ.get("BRAND_NAME", "")
@@ -193,6 +197,17 @@ def run_in_workspace(event: object, run: Callable[[WorkspaceScope | None], dict]
     if is_scheduled_tick(event):
         fan_out_once(SOURCE_PLATFORM, event)
     return run(scope)
+
+
+def read_workspace_values(scope: WorkspaceScope, plugin: str, configs_table: object) -> dict:
+    """``plugin``'s values in the run's workspace, read fresh (shared/plugin_configs.py ``read_plugin_values``): its
+    credentials parameter (one GetParameter) and, through ``configs_table`` (the run's voc-aggregates view of
+    ``scope``), its ``configs`` list's row; ``{}`` when neither is saved. A run without that view (no
+    ``AGGREGATES_TABLE``) is a ``ConfigurationError``, never a run that silently drops its list. The plugin tests
+    stand a double in for it (plugins/conftest.py)."""
+    if not isinstance(configs_table, WorkspaceTable) or configs_table.scope != scope:
+        raise ConfigurationError("AGGREGATES_TABLE not configured: a run in a workspace cannot read its plugin's list")
+    return read_plugin_values(get_ssm_run_client(), WORKSPACE_PARAMETER_PREFIX, configs_table, plugin)
 
 
 class BaseIngestor(ABC):
@@ -364,13 +379,12 @@ class BaseIngestor(ABC):
     def _load_secrets(self) -> dict:
         """
         Load this plugin's API credentials: for a run in a workspace from the
-        WORKSPACE's own Secrets Manager secret, ``{prefix}/{ws}/credentials``
-        (decision 8, docs/multi-workspace.md), the name built from the run's verified
-        scope only (``workspace_ids.credentials_secret_name``), never from anything else in the
+        WORKSPACE's own parameters of this plugin (decision 19, ``_load_workspace_secrets``),
+        the names built from the run's verified scope only, never from anything else in the
         event; for a deployment-wide run from the shared secret (``SECRETS_ARN``), as
         before (lib/stacks/ingestion-roles.ts grants both and no other secret).
 
-        Keys are stored namespaced as ``<plugin_id>_<key>``; ``filter_plugin_secrets``
+        In the shared secret keys are stored namespaced as ``<plugin_id>_<key>``; ``filter_plugin_secrets``
         returns only this plugin's namespace with the prefix stripped, and RAISES
         rather than widening when the namespace matches nothing (issue #251 — the
         old ``filtered if filtered else all_secrets`` turned a typo'd plugin id
@@ -378,47 +392,58 @@ class BaseIngestor(ABC):
         why the "keys with no known prefix are shared/legacy" branch, and the
         plugin-id list it needed, are gone.
 
-        An absent SECRETS_ARN / WORKSPACE_SECRET_PREFIX stays a warning rather than
+        An absent SECRETS_ARN / WORKSPACE_PARAMETER_PREFIX stays a warning rather than
         a raise: that is the env-var-not-wired case, not a namespace mismatch, and no
         secret is read at all — so there is nothing to over-share. It is also what a
         plugin invoked outside the CDK-built environment (a local smoke run) hits.
 
-        In a workspace, a secret that holds none of this plugin's keys (a new workspace's
-        ``{}`` until its credentials are saved, or only other plugins' keys) raises
+        In a workspace, a plugin with nothing saved (no parameter, no config row) raises
         ``WorkspaceCredentialsNotSet``: like ``SecretUnreadableError`` (its base) it is not
         counted by the workspace's breaker, and a manual run's row ends ``error`` naming it.
         Deployment-wide a namespace miss stays a counted ``ConfigurationError``, as before.
         """
-        if self.scope is None:
-            if not SECRETS_ARN:
-                logger.warning("SECRETS_ARN not configured")
-                return {}
-            secret_name = SECRETS_ARN
-        else:
-            if not WORKSPACE_SECRET_PREFIX:
-                logger.warning("WORKSPACE_SECRET_PREFIX not configured")
-                return {}
-            secret_name = credentials_secret_name(WORKSPACE_SECRET_PREFIX, self.scope.ws)
+        if self.scope is not None:
+            return self._load_workspace_secrets(self.scope)
+        return load_shared_plugin_secrets(self.source_platform, SECRETS_ARN, read=get_secret,
+                                          evict=clear_secret_cache, log=logger)
 
-        all_secrets = get_secret(secret_name)
-        if not all_secrets:
-            # `get_secret` is lru_cached and swallows EVERY exception into `{}`,
-            # so a throttle or timeout memoizes an empty payload under the name.
-            # filter_plugin_secrets refuses to run on it (correctly), but without
-            # this eviction the refusal is permanent: every later invocation in
-            # the warm container re-reads the cached `{}` and raises again with no
-            # further API call. Only a manual "Run now" clears the cache, so a
-            # SCHEDULED plugin would stay wedged for the container's lifetime
-            # after a single transient blip. Evicting here costs one extra read on
-            # the next invocation and makes the failure retry-safe.
-            clear_secret_cache()
+    def _load_workspace_secrets(self, scope: WorkspaceScope) -> dict:
+        """This plugin's keys in the run's workspace (decision 19, ``read_workspace_values``): its OWN credentials
+        parameter, ``{prefix}/{ws}/credentials/{plugin}`` (one GetParameter), and its config list's row, the name and
+        the key built from the verified scope and this plugin's identity. Read fresh on every run, so a save takes
+        effect on the next one.
 
-        if self.scope is not None and not holds_plugin_namespace(self.source_platform, all_secrets):
+        A malformed identity is the counted ``ConfigurationError`` of ``filter_plugin_secrets``; a parameter that is
+        not a JSON object, or a prefix that cannot name one, a counted ``ConfigurationError``; a failed read a
+        ``SecretUnreadableError`` (not counted: it may be a throttle); nothing saved ``WorkspaceCredentialsNotSet``."""
+        plugin = self.source_platform
+        if not WORKSPACE_PARAMETER_PREFIX:
+            logger.warning("WORKSPACE_PARAMETER_PREFIX not configured")
+            return {}
+        if not is_valid_plugin_identifier(plugin):
+            return filter_plugin_secrets(plugin, {})  # raises, naming the identity
+        try:
+            values = read_workspace_values(scope, plugin, self.aggregates_table)
+        except (ClientError, BotoCoreError) as error:
+            # The error TYPE only: the AWS text names the parameter, the account and the role.
+            logger.warning("Refusing to load plugin secrets: the workspace's credentials could not be read",
+                           extra={"plugin_id": plugin, "error_type": type(error).__name__})
+            raise SecretUnreadableError(
+                f"Cannot load plugin secrets for '{plugin}': this workspace's credentials could not be read.",
+            ) from error
+        except MalformedCredentials as error:
+            raise ConfigurationError(
+                f"Cannot load plugin secrets for '{plugin}': this workspace's credentials parameter is not a JSON "
+                "object.") from error
+        except ValueError as error:
+            raise ConfigurationError(
+                f"Cannot load plugin secrets for '{plugin}': WORKSPACE_PARAMETER_PREFIX "
+                f"{WORKSPACE_PARAMETER_PREFIX!r} cannot name a parameter.") from error
+        if not values:
             raise WorkspaceCredentialsNotSet(
-                f"No credentials of '{self.source_platform}' are saved in this workspace's secret (no "
-                f"'{plugin_secret_prefix(self.source_platform)}*' keys): save them with "
-                "PUT /integrations/{source}/credentials in the workspace.")
-        return filter_plugin_secrets(self.source_platform, all_secrets)
+                f"No credentials of '{plugin}' are saved in this workspace (no '{plugin_secret_prefix(plugin)}*' "
+                "keys): save them with PUT /integrations/{source}/credentials in the workspace.")
+        return values
 
     def get_watermark(self, key: str, default: str | None = None) -> str | None:
         """Get watermark for a specific source/key from DynamoDB.
