@@ -1,0 +1,5 @@
+{
+  "entries": [
+    {"key": "src/components/PrototypeFeedback/PrototypeFeedbackView.tsx#PrototypeFeedbackView.onIncorporate", "reason": "Prototype builder Part 3 (docs/prototype-builder.md): the Incorporate button's seam, left on purpose for Part 2's drafts route; the page passes it once that route lands, until then only the spec does."}
+  ]
+}

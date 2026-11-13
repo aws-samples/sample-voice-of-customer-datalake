@@ -46,6 +46,7 @@ from shared.categorization import (
     resolve_category,
 )
 from shared.converse import converse_detailed, with_thinking_headroom
+from shared.dynamo_values import as_text
 from shared.engagement_common import conditional_write, is_id, now_iso
 from shared.feature_requests_store import ENRICHMENT_VERSION_SK_PREFIX, REQUEST_PREFIX, get_request, request_key
 from shared.llm_json import first_json_object
@@ -95,14 +96,9 @@ one sentence, at most 300 characters>","language":"<ISO 639-1 code of the reques
 
 # ── Freshness ─────────────────────────────────────────────────────────────────
 
-def _text(request: Mapping[str, Any], field: str) -> str:
-    value = request.get(field)
-    return value if isinstance(value, str) else ''
-
-
 def text_sha16(request: Mapping[str, Any]) -> str:
     """First 16 hex of sha256(title, newline, description): what the enrichment was computed from."""
-    digest = hashlib.sha256(f"{_text(request, 'title')}\n{_text(request, 'description')}".encode())
+    digest = hashlib.sha256(f"{as_text(request, 'title')}\n{as_text(request, 'description')}".encode())
     return digest.hexdigest()[:16]
 
 
@@ -198,9 +194,9 @@ def queue_if_stale(request: Mapping[str, Any]) -> None:
 # ── The model call ────────────────────────────────────────────────────────────
 
 def build_prompt(request: Mapping[str, Any], categories_config: list[dict]) -> str:
-    description = _text(request, 'description')[:MAX_PROMPT_DESCRIPTION_CHARS]
+    description = as_text(request, 'description')[:MAX_PROMPT_DESCRIPTION_CHARS]
     return USER_PROMPT_TEMPLATE.format(
-        title=prompt_safe(_text(request, 'title'), MAX_PROMPT_TITLE_CHARS),
+        title=prompt_safe(as_text(request, 'title'), MAX_PROMPT_TITLE_CHARS),
         description_block=data_block('reviews', description) or '(no description)',
         categories_instruction=build_categories_instruction(categories_config),
     )

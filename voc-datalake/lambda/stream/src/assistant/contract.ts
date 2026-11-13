@@ -110,7 +110,7 @@ export const SERVER_TOOLS = {
     'get_radar', 'search_feature_requests',
   ],
   insights: ['get_urgent_feedback', 'list_feedback', 'get_entities', 'get_resolved_problems'],
-  project: ['get_documents', 'get_persona', 'get_product_context', 'list_project_jobs', 'consult_personas'],
+  project: ['get_documents', 'get_persona', 'get_product_context', 'list_project_jobs', 'consult_personas', 'get_prototype_feedback'],
   forms: ['list_feedback_forms', 'get_feedback_form_stats', 'get_feedback_form_submissions'],
   prioritization: ['get_prioritization'],
   scrapers: ['list_scrapers', 'get_scraper_status', 'analyze_scraper_url', 'get_source_run', 'find_app_store_app'],

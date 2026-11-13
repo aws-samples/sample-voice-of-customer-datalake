@@ -1,8 +1,9 @@
 # Prototype builder (planned)
 
-**Status: planned. Nothing on this page is built yet** except what [Today](#today) describes. Every route,
-tool, field and file below that is not in "Today" is a proposal and is marked *planned*; the code does not
-have it.
+**Status: partly built.** Built: what [Today](#today) describes, Part 2's Back to vN (6.11.00) and drafts from an
+instruction (6.12.00), and Part 3's read side (6.13.00, [built](#built-so-far-part-3s-read-side)); see
+[Slices and order](#slices-and-order). Every other route, tool, field and file below is a proposal and is marked
+*planned*; the code does not have it.
 
 The owner's request, in four parts:
 
@@ -475,9 +476,9 @@ No new storage. The existing loop is reused:
 
 - **Reading**: the pins of each version's form, as `GET …/pins` reads them (`list_pins` in
   `lambda/shared/prototype_pins.py`), merged across the series. `list_pins` stops at 200 pins per form
-  (`MAX_PINS_LISTED`) and says nothing when it does; the feedback route (planned) returns a `partial` flag, and the
+  (`MAX_PINS_LISTED`) and says nothing when it does; the feedback route returns a `partial` flag, and the
   versions it cut, whenever a version's list reached that cap, and the view says "Showing the first 200 pins of
-  v2".
+  v2". A version with exactly 200 pins is reported the same way: `list_pins` cannot tell it from more.
 - **Scale.** The feedback read is one pin query per version of the series (each version has its own form), so its
   cost grows with the number of versions: the route reads at most the newest versions the versions list returns
   (25, `VERSION_LIST_LIMIT` in `lambda/shared/document_history.py`) and says so in the same `partial` flag beyond
@@ -498,17 +499,38 @@ No new storage. The existing loop is reused:
   GET); the per-pin outcome is on the pins themselves (Done: the `addressed_by` mark; Not done: the marked reply,
   read at EDIT, as pins are). The applied version's `revision_feedback` is only "Incorporated N pins (k done)"
   (part 2).
-- **The pins DATA block** (planned): `pins_block` in `lambda/agents/pins.py` is built for agents (15 pins, numbered
+- **The pins DATA block** (built, not yet called): `pins_block` in `lambda/agents/pins.py` is built for agents (15 pins, numbered
   without ids, 6,000 characters), so it does not fit 50 selected items answered one by one. The plan adds a
-  function in the shared layer, in `lambda/shared/prototype_pins.py` (planned function, for example
-  `incorporation_pins_block`), that carries up to 50 pins with their pin ids and replies, capped per pin and per
+  function in the shared layer, in `lambda/shared/prototype_pins.py` (`incorporation_pins_block`), that carries up to 50 pins with their pin ids and replies, capped per pin and per
   block, inside a `prompt_safety` `<prototype_pins>` DATA block, and asks the model to answer per pin id (Done / Not
-  done and a reason). The document generator job uses it; the job never imports from the agents package. Agents'
+  done and a reason). The document generator's draft job (built in 6.12.00 for an instruction) will use it for a
+  `pin_ids` draft (planned); the job never imports from the agents package. Agents'
   `pins_block` may later be built on it.
 
-### API (planned)
+### Built so far: Part 3's read side
 
-| Route (planned) | Who | What |
+The read side is built. Incorporate (a `pin_ids` draft, Apply's marks and replies) is next: Part 2's drafts are
+built (6.12.00) for an instruction only, and until then the drafts route refuses a body with `pin_ids` (400).
+
+- `GET /projects/{id}/prototypes/{document_id}/feedback` (below), EDIT through `_ROUTE_OVERRIDES`; grouping and
+  dedup in `lambda/shared/prototype_feedback.py` (`group_pins`, `read_feedback`).
+- `incorporation_pins_block` in `lambda/shared/prototype_pins.py` (up to 50 pins with their ids and up to 5 replies,
+  600 / 300 / 20,000 characters, flagged pins withheld and returned, an unsafe anchor field left out), for the drafts
+  job; nothing calls it yet.
+- MCP `documents_list_prototype_feedback` and the assistant's server tool `get_prototype_feedback`
+  (`lambda/stream/src/assistant/tools/server/prototype-feedback.ts`): a flagged item or pin keeps only its ids,
+  version, status and the parts of its place (route, selector) not judged unsafe. The element text, selector and route are judged one by one (the route's
+  `unsafe_fields` per item, `route_unsafe` per group) and one that reads like an instruction is left out; a pin is
+  flagged on its comment alone. Both cap a pin's text at 600 characters and send its newest 5 replies (300 each).
+- The page's **Feedback** dialog for editors (`frontend/src/components/PrototypeFeedback/`, opened from the HTML
+  prototype's toolbar): groups, items, the "Not sent to the AI" note, checkboxes, Select all in this group and the
+  "N selected, M pins" count with the 50-pin cap (Incorporate is off while a refetch has folded the selection past
+  it). Its Incorporate button appears only once the page passes it the
+  action (Part 2).
+
+### API
+
+| Route | Who | What |
 |---|---|---|
 | `GET /projects/{id}/prototypes/{document_id}/feedback` | edit (listed in `_ROUTE_OVERRIDES`) | Every item of the series, grouped, with status and marks (`?status=`, `?version=`), and `partial` (with the versions cut) when a version's pins reached the 200 cap or the series has more versions than are read |
 
@@ -528,9 +550,9 @@ Being a GET, the route is listed in `_ROUTE_OVERRIDES` at EDIT (the default for 
 
 ### Tools (tenet 4)
 
-- MCP (planned): `documents_list_prototype_feedback` (read, project), then part 2's
+- MCP: `documents_list_prototype_feedback` (read, project, built), then part 2's (planned)
   `documents_draft_prototype_revision` with the chosen pin ids and `documents_apply_prototype_draft`.
-- The assistant (planned): a server tool `get_prototype_feedback`, then part 2's `draft_prototype_revision` with
+- The assistant: a server tool `get_prototype_feedback` (built), then part 2's (planned) `draft_prototype_revision` with
   **pin ids only**, never feedback text; its approval card lists the selected items and shows the instruction the
   server will use. Apply is the page's banner (part 2).
 - Both feedback tools leave out the text (and replies) of flagged items, giving only their id, place and "flagged",
@@ -689,7 +711,7 @@ Part 4 adds no call at all.
   URL; the feedback tools' answers carry no text of a flagged item.
 - **Part 3**: grouping and dedup are deterministic (the same pins in any order give the same view; identical and
   near-identical texts at one position fold, at two positions do not); the feedback route sets `partial` (naming the
-  version) when a version has more than 200 pins, and when the series has more versions than are read, and not
+  version) when a version's pins reach the 200 cap, and when the series has more versions than are read, and not
   otherwise; a feedback draft takes ids only, refuses more than 50 pins (an item folding several pins counts each)
   and pins of another series, and flagged pins never reach the prompt; the shared pins block carries up to 50 pins
   with their ids, within its caps, and the model's answer is read per pin id; the document generator does not
@@ -791,8 +813,9 @@ prototype's pane: "Back to v3" on the newest version, "Restore v2" on an older o
 job (`doc_type: draft_prototype` in the document generator), the draft GET, Apply and Discard
 (`lambda/shared/prototype_drafts.py`, the routes in `lambda/api/projects_handler.py`), the
 `/prototypes/*/drafts/*` behaviour with `PROTOTYPE_DRAFT_CSP`, the export's skip of `drafts/`, the four MCP draft
-tools, and the draft banner on the prototype pane. Not yet: `pin_ids` drafts (part 3), the outline, the
-assistant's tools and **Edit with the assistant**.
+tools, and the draft banner on the prototype pane. 6.13.00: part 3's read side (the feedback GET, its MCP and assistant
+tools, the Feedback dialog: [Built so far: Part 3's read side](#built-so-far-part-3s-read-side)). Not yet: `pin_ids`
+drafts (part 3's Incorporate), the outline, the assistant's draft tools and **Edit with the assistant**.
 
 ## Decisions (2026-11-13)
 

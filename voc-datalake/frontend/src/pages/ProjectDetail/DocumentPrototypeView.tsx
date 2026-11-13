@@ -13,6 +13,7 @@ import ModalShell from '../../components/ModalShell/ModalShell'
 import PrototypeLinkActions, { PrototypeLinkLifetimeNote } from '../../components/PrototypeLinkActions'
 import PrototypeRenderer from '../../components/PrototypeRenderer'
 import PrototypePinsReview from '../../components/PrototypePins/PrototypePinsReview'
+import PrototypeFeedbackDialog from '../../components/PrototypeFeedback/PrototypeFeedbackDialog'
 import { parsePrototypeSpec, looksLikeHtmlDocument } from '../../components/prototypeSpec'
 import type { InheritedExtraSources } from './documentLineage'
 
@@ -282,6 +283,9 @@ export function PrototypeView({
             {url ? <PrototypeLinkLifetimeNote url={url} noteId={lifetimeNoteId} /> : null}
           </span>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 min-w-0">
+            {/* Every pin of the series, grouped (docs/prototype-builder.md Part 3). The route is EDIT,
+                so a viewer is never offered it. */}
+            {canEdit ? <PrototypeFeedbackDialog projectId={projectId} documentId={documentId} /> : null}
             {canEdit ? (
               <PrototypeFeedbackButton
                 projectId={projectId}

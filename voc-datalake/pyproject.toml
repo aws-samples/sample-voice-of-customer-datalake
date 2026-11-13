@@ -86,6 +86,9 @@ ignore_names = [
     # urllib3's connection protocols, which exist only under TYPE_CHECKING: shared/http_utils.py
     # imports them there and names them in its two `cast('type[...]', ...)` strings.
     "BaseHTTPConnection", "BaseHTTPSConnection",
+    # Planned caller (docs/prototype-builder.md, Part 3 incorporation): the drafts job (Part 2) calls
+    # shared/prototype_pins.py's pins DATA block; tested now (test_prototype_pins_incorporation.py).
+    "incorporation_pins_block",
 ]
 # Decorators that REGISTER the function with a framework, which then calls it: Powertools routes and
 # exception handlers, pydantic validators. Your own wrapper decorators (@api_handler, @tracer.*) are

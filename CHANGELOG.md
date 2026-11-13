@@ -17,6 +17,20 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.13.00] - 2026-11-13
+
+Everything testers said about a prototype in one place: the Prototype builder's part 3, its read side.
+
+### Added
+
+- **Feedback** on an HTML prototype, for editors: one dialog with every version's pins and their replies, grouped by screen and element, near-identical pins at one place folded into one item ("3 testers said this"), in the same order every time. Each item shows where, which version, when, its status and replies. Items are selectable (Select all in a group, a "N selected, M pins" count, at most 50 pins); turning a selection into a revision comes with the next part of the builder. An item whose text reads like an instruction says "Not sent to the AI" and cannot be selected.
+- `GET /projects/{id}/prototypes/{document_id}/feedback` (editors), with `partial` when a version's list reaches 200 pins (that version in `cut`) or the series has more than 25 versions (`older_versions_unread`).
+- MCP `documents_list_prototype_feedback` and the assistant's `get_prototype_feedback` tool. Neither passes on the text of a flagged item or pin.
+
+### Upgrade notes
+
+- Deploy the Api stack (and the stream Lambda, for the assistant's tool) with or before the frontend: the dialog reads the new route.
+
 ## [6.12.00] - 2026-11-13
 
 A prototype can be changed by asking in words: the change comes back as a draft to preview, then is applied as a new version or discarded (the Prototype builder, part 2's second slice).

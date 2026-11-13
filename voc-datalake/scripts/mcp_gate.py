@@ -192,7 +192,8 @@ MODULE_FLOORS: dict[str, int] = {
     # -> 200 (6.10.00): the rename table (RENAMED, resolve_tool), the two review tools' declarations, and
     # docs/mcp.md's and the skill's tables naming exactly the listed tools.
     # -> 208 (6.12.00): the four prototype-draft tools' declarations and flags.
-    'test_mcp_global_tools_mutation': 208,
+    # -> 210 (6.13.00): documents_list_prototype_feedback's declaration and flags.
+    'test_mcp_global_tools_mutation': 210,
     # 1 -> 2 (6.10.00): every name starts with its area, the list grouped by area.
     'test_mcp_global_tools_budget': 2,
     # 5.63.00: the tools' new reach (urgent, github/entities, include_similar), their

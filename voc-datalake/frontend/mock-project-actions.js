@@ -1338,6 +1338,192 @@ function changePinStatus(ctx, documentId, pinId, action) {
   return [200, { success: true, pin: publicPin(pin) }];
 }
 
+// ── Prototype feedback (lambda/shared/prototype_feedback.py; GET …/prototypes/{id}/feedback) ──
+// Every version's pins of the series (newest VERSION_LIST_LIMIT versions, each list
+// capped at 200 as list_pins is), grouped by route and folded the way the backend's
+// pure function does: same position and near-identical text, flagged pins never fold.
+
+const FEEDBACK_VERSION_LIMIT = 25;
+const FEEDBACK_PIN_CAP = 200;
+const FOLD_CENTRE_TOLERANCE = 0.05;
+const FOLD_JACCARD = 0.8;
+// checked_version's and read_feedback's ValidationError messages, word for word.
+const VERSION_INVALID = 'version must be a positive version number';
+const VERSION_NOT_IN_SERIES = 'version is not a version of this prototype';
+
+/** Code-point order (Python's `sorted` on str), never the locale's. */
+function byText(a, b) {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+}
+
+/** normalised_text: Python's `[^\w\s]` keeps letters, digits and `_` (and whitespace); whitespace collapsed. */
+const normalisedText = (text) => (typeof text === 'string' ? text : '').toLowerCase()
+  .replace(/[^\p{L}\p{N}_\s]/gu, '').replace(/\s+/g, ' ').trim();
+
+function textsMatch(a, b) {
+  const left = normalisedText(a);
+  const right = normalisedText(b);
+  if (left === right) return true;
+  const wordsA = new Set(left.split(' ').filter(Boolean));
+  const wordsB = new Set(right.split(' ').filter(Boolean));
+  const union = new Set([...wordsA, ...wordsB]);
+  if (union.size === 0) return false;
+  const shared = [...wordsA].filter((word) => wordsB.has(word)).length;
+  return shared / union.size >= FOLD_JACCARD;
+}
+
+const anchorOf = (pin) => (isPlainObject(pin.anchor) ? pin.anchor : {});
+const routeOf = (pin) => stringOr(anchorOf(pin).route, '');
+const selectorOf = (pin) => stringOr(anchorOf(pin).selector, '');
+
+// The mock screens nothing else, so the main patterns of shared/prompt_safety.py injection_findings live
+// here: an anchor field matching one is named in `unsafe_fields` (prototype_pins.unsafe_anchor_fields).
+const ANCHOR_TEXT_FIELDS = ['route', 'selector', 'text_snippet'];
+const INJECTION_PATTERNS = [
+  /\b(system|developer)\s+prompt\b|\bdeveloper\s+(message|instructions?)\b/i,
+  /\byou\s+are\s+now\b|\bact\s+as\s+(an?\s+)?(unrestricted|jailbroken|dan)\b/i,
+  /^[ \t]*(?:human|assistant)[ \t]*:/im,
+  /<\|?(im_start|im_end|system|endoftext)\|?>/i,
+];
+// ignore_instructions in two steps: a verb, then within 40 characters of its sentence a word like "previous"
+// and, within 30 more, one like "instructions".
+const IGNORE_VERB = /\b(?:ignore|disregard|forget|override)\b/gi;
+const IGNORE_WHAT = /\b(?:previous|prior|above|earlier|all|any|your|the)\b[^.\n]{0,30}\b(?:instructions?|prompts?|rules|directions)\b/i;
+const IGNORE_WINDOW = 40;
+
+function asksToIgnore(text) {
+  return [...text.matchAll(IGNORE_VERB)].some((verb) => {
+    const [clause] = text.slice(verb.index + verb[0].length).split(/[.\n]/, 1);
+    const what = IGNORE_WHAT.exec(clause);
+    return what !== null && what.index <= IGNORE_WINDOW;
+  });
+}
+
+const readsLikeAnInstruction = (text) => asksToIgnore(text) || INJECTION_PATTERNS.some((pattern) => pattern.test(text));
+const unsafeAnchorFields = (anchor) => ANCHOR_TEXT_FIELDS.filter((key) => readsLikeAnInstruction(stringOr(anchor[key], '')));
+
+/** _centre: the bbox is stored in percent of the tester's viewport, so the centre's share is (x + w/2) / 100. */
+function centreOf(pin) {
+  const { bbox } = anchorOf(pin);
+  const box = isPlainObject(bbox) ? bbox : {};
+  const num = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
+  return [(num(box.x) + num(box.w) / 2) / 100, (num(box.y) + num(box.h) / 2) / 100];
+}
+
+/** same_position compares the difference rounded to 6 places (0.30 - 0.25 is a hair over 0.05). */
+const withinTolerance = (a, b) => Math.round(Math.abs(a - b) * 1e6) / 1e6 <= FOLD_CENTRE_TOLERANCE;
+
+function samePosition(a, b) {
+  if (routeOf(a) !== routeOf(b)) return false;
+  const [selectorA, selectorB] = [selectorOf(a), selectorOf(b)];
+  if (selectorA || selectorB) return selectorA === selectorB;
+  const [ax, ay] = centreOf(a);
+  const [bx, by] = centreOf(b);
+  return withinTolerance(ax, bx) && withinTolerance(ay, by);
+}
+
+const replyView = (reply) => ({ by: reply.by ?? null, name: reply.name ?? null, text: reply.text ?? null, at: reply.at ?? null });
+
+/** pin_view: one pin as the answer lists it. */
+const feedbackPin = (pin) => ({
+  pin_id: stringOr(pin.pin_id, ''), document_id: stringOr(pin.document_id, ''),
+  version: Number.isInteger(pin.version) ? pin.version : null,
+  status: stringOr(pin.status, '') || 'open', created_at: stringOr(pin.created_at, ''),
+  addressed_by: typeof pin.addressed_by === 'string' && pin.addressed_by ? pin.addressed_by : null,
+  flagged: pin.flagged !== false, text: stringOr(pin.comment, ''),
+  replies: (Array.isArray(pin.replies) ? pin.replies : []).filter(isPlainObject).map(replyView),
+});
+
+/** Compare two key lists field by field, in code-point order. */
+const byKeys = (left, right) => left.reduce((order, key, index) => order || byText(key, right[index]), 0);
+const pinSortKey = (pin) => [routeOf(pin), selectorOf(pin), stringOr(pin.created_at, ''), stringOr(pin.pin_id, ''), stringOr(pin.document_id, '')];
+
+/** One route's pins (already in (selector, created_at, pin_id) order) folded into items. */
+function foldPins(pins) {
+  const items = [];
+  for (const pin of pins) {
+    const into = pin.flagged !== false ? undefined
+      : items.find((item) => item.first.flagged === false && samePosition(item.first, pin) && textsMatch(item.first.comment, pin.comment));
+    if (into) into.pins.push(pin);
+    else items.push({ first: pin, pins: [pin] });
+  }
+  return items
+    .map(({ first, pins: folded }) => ({
+      item_id: stringOr(first.pin_id, ''), pin_ids: folded.map((p) => stringOr(p.pin_id, '')), count: folded.length,
+      flagged: first.flagged !== false, text: stringOr(first.comment, ''),
+      anchor: { route: routeOf(first), selector: selectorOf(first), text_snippet: stringOr(anchorOf(first).text_snippet, '') },
+      unsafe_fields: unsafeAnchorFields(anchorOf(first)),
+      first_at: stringOr(first.created_at, ''), pins: folded.map(feedbackPin),
+    }))
+    .sort((a, b) => byKeys([a.anchor.selector, a.first_at, a.item_id], [b.anchor.selector, b.first_at, b.item_id]));
+}
+
+/**
+ * group_pins: the pins (each with its series `document_id` and `version`) grouped by route ("" for
+ * none, routes in code-point order) and folded into items; the same pins in any order, the same answer.
+ */
+export function groupFeedbackPins(pins) {
+  const sorted = [...pins].sort((a, b) => byKeys(pinSortKey(a), pinSortKey(b)));
+  const routes = [...new Set(sorted.map(routeOf))];
+  return routes.map((route) => ({
+    route, route_unsafe: readsLikeAnInstruction(route), items: foldPins(sorted.filter((p) => routeOf(p) === route)),
+  }));
+}
+
+/** The series' versions, newest first: a proj_1 id that names no document is a series of one. */
+function feedbackSeries(ctx, documentId) {
+  const doc = findDocument(ctx.detail, documentId);
+  if (!doc) return [{ document_id: documentId, version: 1 }];
+  return seriesOf(ctx.detail, doc).map((d) => ({ document_id: d.document_id, version: Number.isInteger(d.version) ? d.version : 1 }));
+}
+
+/** checked_version: absent or empty is no filter, else 1 to 6 ASCII digits and at least 1: `[version, the 400]`. */
+function checkedVersion(raw) {
+  if (raw === null || raw === '') return [null, null];
+  if (!/^\d{1,6}$/.test(raw) || Number(raw) < 1) return [null, bad(VERSION_INVALID)];
+  return [Number(raw), null];
+}
+
+/** The pins read_feedback reads: each version's list (capped as list_pins is), the capped ones in `cut`. */
+function seriesPins(ctx, read, status) {
+  const cut = [];
+  const pins = read.flatMap((entry) => {
+    const [versionPins] = pinsFor(ctx, entry.document_id);
+    const listed = (versionPins ?? [])
+      .filter((p) => status === null || p.status === status)
+      .sort((a, b) => byText(a.pin_id, b.pin_id))
+      .slice(0, FEEDBACK_PIN_CAP);
+    if (listed.length >= FEEDBACK_PIN_CAP) cut.push({ ...entry, reason: 'pin_cap' });
+    return listed.map((p) => ({ ...p, ...entry }));
+  });
+  return { pins, cut };
+}
+
+function prototypeFeedback(ctx, documentId) {
+  const [, error] = pinsFor(ctx, documentId);
+  if (error) return error;
+  const status = ctx.params.get('status') || null;
+  if (status !== null && !PIN_STATUSES.includes(status)) return bad('status must be open, addressed or resolved');
+  const [version, versionError] = checkedVersion(ctx.params.get('version'));
+  if (versionError) return versionError;
+  const series = feedbackSeries(ctx, documentId);
+  // read_feedback: a version filter looks through the WHOLE series and leaves no version unread.
+  const read = version === null ? series.slice(0, FEEDBACK_VERSION_LIMIT) : series.filter((v) => v.version === version);
+  if (read.length === 0) return bad(VERSION_NOT_IN_SERIES);
+  const olderUnread = version === null ? series.length - read.length : 0;
+  const { pins, cut } = seriesPins(ctx, read, status);
+  return [200, {
+    document_id: documentId,
+    versions_read: read,
+    partial: cut.length > 0 || olderUnread > 0,
+    cut,
+    older_versions_unread: olderUnread,
+    pin_count: pins.length,
+    groups: groupFeedbackPins(pins),
+  }];
+}
+
 // ── Route table ─────────────────────────────────────────────────────────────
 // `pattern` matches the path after `/projects/{id}`. `body`: 'none' (GET/DELETE),
 // 'lenient' (the backend's `json_body or {}`) or 'object' (json_object_body: a
@@ -1374,6 +1560,7 @@ const ROUTES = [
   { method: 'POST', pattern: /^\/prototypes\/([^/]+)\/drafts\/([^/]+)\/apply$/, body: 'lenient', run: applyPrototypeDraft },
 
   { method: 'GET', pattern: /^\/prototypes\/([^/]+)\/pins$/, run: listPins },
+  { method: 'GET', pattern: /^\/prototypes\/([^/]+)\/feedback$/, run: prototypeFeedback },
   { method: 'POST', pattern: /^\/prototypes\/([^/]+)\/pins\/([^/]+)\/replies$/, body: 'object', run: replyToPin },
   { method: 'POST', pattern: /^\/prototypes\/([^/]+)\/pins\/([^/]+)\/resolve$/, body: 'object', run: (ctx, doc, pin) => changePinStatus(ctx, doc, pin, 'resolve') },
   { method: 'POST', pattern: /^\/prototypes\/([^/]+)\/pins\/([^/]+)\/reopen$/, body: 'object', run: (ctx, doc, pin) => changePinStatus(ctx, doc, pin, 'reopen') },

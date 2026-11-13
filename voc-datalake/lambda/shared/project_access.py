@@ -447,6 +447,8 @@ _ROUTE_OVERRIDES: Final = (
     # A prototype draft (docs/prototype-builder.md, part 2) is for editors: its summary is model text
     # about a change no one has applied yet, and its preview URL signs model HTML not yet a version.
     ('GET', ('prototypes', '*', 'drafts', '*'), LEVEL_EDIT),
+    # A prototype series' feedback quotes what testers typed: read at edit, as its pins are.
+    ('GET', ('prototypes', '*', 'feedback'), LEVEL_EDIT),
 )
 
 

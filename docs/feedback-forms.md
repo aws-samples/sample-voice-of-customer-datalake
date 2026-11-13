@@ -404,7 +404,12 @@ not granted the projects table. Pins are never sent to the processing queue (a t
 is not customer voice, and a pin should not cost a model call), and their content is
 never logged. The server type-checks and size-caps every field, rejects bodies over
 24 KB, and screens the comment for prompt injection. A flagged pin is stored but
-kept away from the agents.
+kept away from the agents and the models. The element text, selector and route the browser
+sent with the pin are judged one by one in the prototype feedback tools (MCP
+`documents_list_prototype_feedback`, the assistant's `get_prototype_feedback`) and the incorporation
+block (`incorporation_pins_block`), and a field that reads like an instruction is left out there
+(`unsafe_anchor_fields`); the pin itself is not flagged for them. The agents' revision path
+(`lambda/agents/pins.py`) does not do this yet: it withholds flagged pins but does not screen the anchor fields.
 
 **Review (authenticated, project EDIT).** The routes ride the Cognito-authorized
 `/projects/{proxy+}` and the per-project gate:

@@ -638,7 +638,9 @@ describe('when comments cannot load', () => {
 
     await user.click(within(await threadBy('sam@example.com')).getByRole('button', { name: 'Resolve' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Comments could not be loaded.')
+    // The alert comes at the end of a chain (the resolve, then the refetch that fails): on a loaded machine running
+    // the whole suite it took more than the default 5 s (it passes alone in milliseconds), so this wait is longer.
+    expect(await screen.findByRole('alert', {}, { timeout: 15_000 })).toHaveTextContent('Comments could not be loaded.')
     expect(screen.getByTestId('fake-canvas')).toBe(canvas)
     expect(canvas).toHaveTextContent('Customers wait for a refund.')
   })

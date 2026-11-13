@@ -103,6 +103,7 @@ from shared import (
     project_access,
     project_gate,
     prototype_drafts,
+    prototype_feedback,
     prototype_pins,
     row_lineage_ack,
 )
@@ -4820,8 +4821,8 @@ def _validated_product_doc_ids(project_id: str, raw: Any, field: str) -> list[st
 _PIN_DOCUMENT_ID_RE = re.compile(r'^[A-Za-z0-9_\-]{1,128}\Z')
 
 
-def _pin_form_for(project_id: str, document_id: str) -> str:
-    """EDIT on the project, the prototype exists, and its pin form id — else 4xx."""
+def _pin_prototype_row(project_id: str, document_id: str, *, whole: bool = False) -> dict:
+    """EDIT on the project and the prototype's row (only its key unless ``whole``) — else 4xx."""
     _project_access_for(project_id, _request_caller(), project_access.LEVEL_EDIT)
     if not _PIN_DOCUMENT_ID_RE.fullmatch(document_id):
         raise ValidationError('Invalid document id')
@@ -4830,10 +4831,16 @@ def _pin_form_for(project_id: str, document_id: str) -> str:
         raise ConfigurationError('Projects table not configured')
     item = table.get_item(
         Key={'pk': f'PROJECT#{project_id}', 'sk': f'PROTOTYPE#{document_id}'},
-        ProjectionExpression='pk',
+        **({} if whole else {'ProjectionExpression': 'pk'}),
     ).get('Item')
     if not item:
         raise NotFoundError('Prototype not found')
+    return item
+
+
+def _pin_form_for(project_id: str, document_id: str) -> str:
+    """EDIT on the project, the prototype exists, and its pin form id — else 4xx."""
+    _pin_prototype_row(project_id, document_id)
     return prototype_pins.pin_form_id(document_id)
 
 
@@ -4880,6 +4887,22 @@ def list_prototype_pins(project_id: str, document_id: str):
         raise ValidationError('status must be open, addressed or resolved')
     pins = prototype_pins.list_pins(_pins_table(), form_id, status)
     return {'form_id': form_id, 'document_id': document_id, 'count': len(pins), 'pins': pins}
+
+
+@app.get("/projects/<project_id>/prototypes/<document_id>/feedback")
+@tracer.capture_method
+def list_prototype_feedback(project_id: str, document_id: str):
+    """The series' pins grouped and deduplicated (``?status=``, ``?version=``), with ``partial``.
+
+    EDIT (``_ROUTE_OVERRIDES`` and here), as reading pins is: an item may quote what a tester typed.
+    """
+    # The whole row: its type, title and version name its series (the HTML itself is in S3).
+    row = _pin_prototype_row(project_id, document_id, whole=True)
+    query = app.current_event.query_string_parameters or {}
+    status = prototype_feedback.checked_status(query.get('status'))
+    version = prototype_feedback.checked_version(query.get('version'))
+    return prototype_feedback.read_feedback(get_projects_table(), _pins_table(), project_id, row,
+                                            status=status, version=version)
 
 
 @app.post("/projects/<project_id>/prototypes/<document_id>/pins/<pin_id>/replies")

@@ -51,6 +51,8 @@ export const MOCK_SPEC_NAMES: readonly string[] = [
   'prototype-back',
   // Prototype drafts: Apply writes a version, Discard deletes a job (mock only).
   'prototype-draft',
+  // The prototype Feedback view (builds two prototype versions; mock only).
+  'prototype-feedback',
 ]
 
 /** Matches a path of one of `MOCK_SPEC_NAMES` (Playwright `testMatch`). */

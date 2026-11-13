@@ -32,7 +32,7 @@ function chatContext(documents: unknown[], access?: unknown) {
 }
 
 describe('the project tool definitions', () => {
-  it('lists the five project-pack tools in order', () => {
+  it('lists the six project-pack tools in order', () => {
     const tools = createProjectServerTools(fakeDeps());
     expect(tools.map((t) => [t.kind, t.name, t.pack])).toStrictEqual([
       ['server', 'get_documents', 'project'],
@@ -40,6 +40,7 @@ describe('the project tool definitions', () => {
       ['server', 'get_product_context', 'project'],
       ['server', 'list_project_jobs', 'project'],
       ['server', 'consult_personas', 'project'],
+      ['server', 'get_prototype_feedback', 'project'],
     ]);
   });
 
