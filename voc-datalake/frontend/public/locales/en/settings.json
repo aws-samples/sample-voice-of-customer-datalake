@@ -698,6 +698,8 @@
     "uploadBadType": "{{name}} is not an accepted file type.",
     "uploadTooLarge": "{{name}} is larger than {{mb}} MB.",
     "uploadFailed": "Upload failed. Try again.",
+    "logoNotShrunk": "{{name}} could not be made smaller than 1 MB. Export a smaller PNG and upload that.",
+    "logoUnreadable": "{{name}} could not be read as an image. Export it as PNG and upload that.",
     "integrations": "Design integrations",
     "integrationsHint": "Tokens are stored encrypted and never shown again. Leave a field empty to keep the current token.",
     "providers": {

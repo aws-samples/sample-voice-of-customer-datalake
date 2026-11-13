@@ -1,9 +1,10 @@
 /**
  * @fileoverview Company → Design system → the company logo and its upload.
  *
- * PNG, JPEG and WebP go to the presigned PUT as they are. An SVG is converted to PNG in the
- * browser first (`utils/svgToPng`) and only the PNG is uploaded: the logo route refuses SVG
- * because an SVG can carry script, and the SVG bytes never leave the browser.
+ * PNG, JPEG and WebP within 1024 px and 1 MB go to the presigned PUT as they are; a larger one is
+ * made smaller first (`./logoImage`), never refused for its size (up to {@link LOGO_MAX_INPUT_BYTES}).
+ * An SVG is converted to PNG in the browser first (`utils/svgToPng`) and only the PNG is uploaded:
+ * the logo route refuses SVG because an SVG can carry script, and the SVG bytes never leave the browser.
  *
  * @module pages/Company/LogoUpload
  */
@@ -12,11 +13,13 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Image, Loader2, Upload } from 'lucide-react'
 import type { TFunction } from 'i18next'
-import { designSystemApi, designSystemKey, putToPresigned, UPLOAD_LIMITS } from '../../api/designSystemApi'
+import { designSystemApi, designSystemKey, putToPresigned, UPLOAD_LIMITS, uploadRejection } from '../../api/designSystemApi'
 import type { DraftLogo } from '../../api/designSystemApi'
-import { isSvgConversionError, isSvgFile, svgToPng } from '../../utils/svgToPng'
+import { isSvgConversionError, isSvgFile } from '../../utils/svgToPng'
 import type { SvgConversionReason } from '../../utils/svgToPng'
 import { useInlineImage } from '../../hooks/useInlineImage'
+import { isImagePrepError } from '../ProjectDetail/resizeImage'
+import { uploadableLogo } from './logoImage'
 import { GroupLabel } from './ContextParts'
 import { useUploadError } from './useUploadError'
 
@@ -34,9 +37,16 @@ function svgErrorMessage(reason: SvgConversionReason, name: string, t: TFunction
   }
 }
 
-/** An SVG becomes a PNG here; any other file is uploaded as it is. */
-async function uploadableLogo(file: File): Promise<File> {
-  return isSvgFile(file) ? svgToPng(file) : file
+/** The largest raster file the browser shrinks: anything bigger is refused before it is decoded. */
+const LOGO_MAX_INPUT_BYTES = 25 * 1024 * 1024
+
+/** What the admin reads when an upload failed (literal keys, so the i18n audit sees them). */
+function uploadErrorMessage(failure: unknown, name: string, t: TFunction<'settings'>): string {
+  if (isSvgConversionError(failure)) return svgErrorMessage(failure.reason, name, t)
+  if (isImagePrepError(failure)) {
+    return failure.failure === 'too-large' ? t('designSystem.logoNotShrunk', { name }) : t('designSystem.logoUnreadable', { name })
+  }
+  return t('designSystem.uploadFailed')
 }
 
 export function LogoUpload({ logoUrl, draftLogo, canEdit }: Readonly<{
@@ -61,16 +71,24 @@ export function LogoUpload({ logoUrl, draftLogo, canEdit }: Readonly<{
       await putToPresigned(target, logo)
     },
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: designSystemKey() }),
-    onError: (failure, file) => setError(isSvgConversionError(failure)
-      ? svgErrorMessage(failure.reason, file.name, t)
-      : t('designSystem.uploadFailed')),
+    onError: (failure, file) => setError(uploadErrorMessage(failure, file.name, t)),
   })
   const onFile = (file: File | undefined) => {
     if (!file) return
-    // An SVG is checked by the converter (its own size cap, then the PNG's).
-    const rejection = isSvgFile(file) ? null : rejectionFor('logo', file)
-    setError(rejection)
-    if (rejection === null) upload.mutate(file)
+    setError(null)
+    // An SVG is checked by the converter (its own size cap, then the PNG's). A raster file is checked for its
+    // TYPE only: a large one is made smaller before the upload (the result is far under the route's cap).
+    if (!isSvgFile(file)) {
+      if (uploadRejection('logo', file) === 'type') {
+        setError(rejectionFor('logo', file))
+        return
+      }
+      if (file.size > LOGO_MAX_INPUT_BYTES) {
+        setError(t('designSystem.uploadTooLarge', { name: file.name, mb: LOGO_MAX_INPUT_BYTES / 1024 / 1024 }))
+        return
+      }
+    }
+    upload.mutate(file)
   }
 
   return (
