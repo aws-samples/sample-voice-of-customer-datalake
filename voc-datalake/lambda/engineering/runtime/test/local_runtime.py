@@ -48,13 +48,13 @@ class LocalAgentRuntime:
     def _vm(self, vm: RuntimeSession) -> _LocalVm:
         local = self._vms.get(vm.vm_id)
         if local is None:
-            raise RuntimeRefused(f'unknown MicroVM {vm.vm_id}')
+            raise RuntimeRefused(f'unknown session {vm.vm_id}')
         return local
 
     def _running(self, vm: RuntimeSession) -> _LocalVm:
         local = self._vm(vm)
         if local.state != 'running':
-            raise RuntimeRefused(f'MicroVM {vm.vm_id} is {local.state}')
+            raise RuntimeRefused(f'session {vm.vm_id} is {local.state}')
         return local
 
     def run(self, spec: AgentSpec) -> RuntimeSession:
@@ -76,7 +76,7 @@ class LocalAgentRuntime:
     def resume(self, vm: RuntimeSession) -> None:
         local = self._vm(vm)
         if local.state != 'suspended':
-            raise RuntimeRefused(f'MicroVM {vm.vm_id} is {local.state}, not suspended')
+            raise RuntimeRefused(f'session {vm.vm_id} is {local.state}, not suspended')
         local.state = 'running'
 
     def terminate(self, vm: RuntimeSession) -> None:

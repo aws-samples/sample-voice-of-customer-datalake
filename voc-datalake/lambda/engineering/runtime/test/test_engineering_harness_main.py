@@ -29,7 +29,7 @@ from engineering.workspace.layout import parse_agent_key
 PREFIX = 'ws/default/runs/01JD3R4NZXQ7Y2W8K4M6P9T0AB/fixer-1/'
 CHECKPOINTS = 'ws/default/runs/01JD3R4NZXQ7Y2W8K4M6P9T0AB/fixer-1/commits/cccccccccccccccccccccccccccccccccccccccc/_checkpoints/attempt-1/'
 PATCHES = 'ws/default/runs/01JD3R4NZXQ7Y2W8K4M6P9T0AB/fixer-1/commits/cccccccccccccccccccccccccccccccccccccccc/_patches/attempt-1/'
-#: The test's own git, by absolute path (the fixture repository it builds is the test's, not a MicroVM's).
+#: The test's own git, by absolute path (the fixture repository it builds is the test's, not a session's).
 GIT_BIN = shutil.which('git') or '/usr/bin/git'
 
 
@@ -129,7 +129,7 @@ def test_a_continuation_puts_its_working_tree_back_on_the_fresh_checkout(aws, tm
 
 
 def _vm_directory(root: Path, cache: Path, commit: str) -> RunnerClient:
-    """A MicroVM's /work at ``root`` with the commit checked out from ``cache``, and a client of its own runner."""
+    """A session's /work at ``root`` with the commit checked out from ``cache``, and a client of its own runner."""
     for part in ('work', 'home', 'secrets'):
         (root / part).mkdir(parents=True)
     runner = Runner(str(root / 'work'), sandbox=False, secrets_dir=str(root / 'secrets'), agent_home=str(root / 'home'))

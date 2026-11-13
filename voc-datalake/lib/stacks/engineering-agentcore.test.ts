@@ -156,4 +156,12 @@ describe('the sessions\' deployment settings', () => {
   ])('refuses %s at synth', (_case, context, message) => {
     expect(() => runtimeStack({ engineeringAgents: 'true', ...context })).toThrow(message);
   });
+
+  it.each([
+    ['engineeringImageArns', { python: 'arn:aws:lambda:us-east-1:111111111111:microvm-image/python:3' }, /use engineeringImages .* and engineeringAgentNetwork/],
+    ['engineeringMicrovmUsdPerSecond', '0.0000166', /use engineeringSessionRates/],
+  ])('fails the synth on the removed -c %s, naming its replacement, with the agents on or off', (key, value, message) => {
+    expect(() => runtimeStack({ engineeringAgents: 'true', [key]: value })).toThrow(message);
+    expect(() => runtimeStack({ [key]: value })).toThrow(/was removed in 6\.26\.00/);
+  });
 });

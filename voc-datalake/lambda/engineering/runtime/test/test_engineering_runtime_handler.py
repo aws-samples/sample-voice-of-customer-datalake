@@ -15,6 +15,7 @@ from engineering.runtime import handler
 from engineering.runtime import supervisor as supervisor_module
 from engineering.runtime.agentcore import AgentCoreRuntime
 from engineering.runtime.board_bus import SupervisorBus
+from engineering.runtime.caps import SessionPricing, SessionRates
 from engineering.runtime.harness.skills import COORDINATOR, harness_argv
 from engineering.runtime.interface import AgentSpec, RuntimeRefused, RuntimeSession, SessionsFull
 from engineering.runtime.runs import Run, RunCaps, RunNotActive, RunStore, StartReadFailed, meta_key, run_pk
@@ -71,7 +72,7 @@ def _state(events: Any) -> str:
 
 
 def _recording(monkeypatch: pytest.MonkeyPatch) -> tuple[LocalAgentRuntime, list[RuntimeSession]]:
-    """The wired runtime, and every MicroVM it starts from now on."""
+    """The wired runtime, and every session it starts from now on."""
     runtime = handler._supervisor().runtime
     assert isinstance(runtime, LocalAgentRuntime)
     started: list[RuntimeSession] = []
@@ -137,6 +138,77 @@ def test_a_launch_racing_the_runs_end_is_refused_by_the_session_write_and_ends_i
     assert handler._supervisor().sessions.get(RUN, 'fixer-1') is None
 
 
+def test_a_session_whose_row_write_and_stop_both_fail_is_kept_stopped_again_each_tick_and_counted(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    runtime, started = _recording(monkeypatch)
+    supervisor = handler._supervisor()
+    supervisor.sessions.pricing = SessionPricing(rates=SessionRates(Decimal('0.18'), Decimal(0), Decimal(0), Decimal(0)))
+
+    def no_row(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError('the session row could not be written')
+
+    monkeypatch.setattr(supervisor.sessions, 'create', no_row)
+    real_stop = runtime.terminate
+    stops = iter([False, False])   # the launch's own stop fails, then the first tick's; the next one succeeds
+
+    def flaky_stop(vm: RuntimeSession) -> None:
+        if next(stops, True) is False:
+            raise RuntimeError('the service refused the stop')
+        real_stop(vm)
+
+    monkeypatch.setattr(runtime, 'terminate', flaky_stop)
+    now = int(handler.clock())
+    with pytest.raises(RuntimeError, match='could not be written'):
+        handler.lambda_handler(LAUNCH, None)
+    (lost,) = supervisor.sessions.lost(RUN)
+    # Never lost: its own row names it (and keeps the run watched), and it still runs.
+    assert (lost.vm, runtime.state_of(started[0]), supervisor.sessions.any_live_or_moving(RUN, now)) == (
+        started[0], 'running', True)
+    supervisor.tick(lost.last_tick_at + 60)
+    assert [kept.vm for kept in supervisor.sessions.lost(RUN)] == [started[0]]
+    supervisor.tick(lost.last_tick_at + 120)
+    assert (supervisor.sessions.lost(RUN), runtime.state_of(started[0])) == ([], 'terminated')
+    row = _runs().table.get_item(Key={'pk': f'WS#default#RUN#{RUN}', 'sk': f'LOST#{started[0].vm_id}'})['Item']
+    # Its 120 seconds counted, and priced where the run's cost cap reads its agent's cost.
+    assert (row['microvm_seconds'], 'stopped_at' in row, _runs().spend(RUN)[1]) == (120, True, pytest.approx(0.012))
+
+
+def test_a_launch_hold_that_cannot_be_let_go_never_hides_the_session_writes_own_failure(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    supervisor = handler._supervisor()
+
+    def no_row(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError('the session row could not be written')
+
+    def no_release(*_args: Any, **_kwargs: Any) -> None:
+        raise RuntimeError('the hold could not be let go')
+
+    monkeypatch.setattr(supervisor.sessions, 'create', no_row)
+    monkeypatch.setattr(supervisor.sessions, 'release_launch', no_release)
+    with pytest.raises(RuntimeError, match='session row could not be written'):
+        handler.lambda_handler(LAUNCH, None)
+
+
+def test_a_launch_whose_session_write_landed_though_its_answer_failed_answers_its_session(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    runtime, started = _recording(monkeypatch)
+    supervisor = handler._supervisor()
+    real_create = supervisor.sessions.create
+
+    def landed_but_lost(*args: Any, **kwargs: Any) -> Any:
+        real_create(*args, **kwargs)
+        raise RuntimeError('the answer was lost on its way back')
+
+    monkeypatch.setattr(supervisor.sessions, 'create', landed_but_lost)
+    answer = handler.lambda_handler(LAUNCH, None)
+    # Read back: the row names the session, which is neither stopped nor kept as lost.
+    assert (answer['status'], supervisor.sessions.lost(RUN), runtime.state_of(started[0])) == (
+        'booting', [], 'running')
+
+
 def test_a_repeated_launch_answers_the_session_the_first_wrote_and_starts_no_second_microvm(
         wired: Any, monkeypatch: pytest.MonkeyPatch):
     """The board's retry of a launch (its answer lost, or timed out) for the same task and attempt."""
@@ -168,8 +240,8 @@ def test_an_agent_with_a_session_for_another_task_or_attempt_is_refused_before_a
 
 def test_a_launch_while_another_still_starts_the_agents_microvm_is_busy_and_starts_none(
         wired: Any, monkeypatch: pytest.MonkeyPatch):
-    """The first launch holds the agent's row before its MicroVM starts (and writes the session after): a second
-    one meanwhile (a retry after the board's call timed out) is refused, never a second MicroVM."""
+    """The first launch holds the agent's row before its session starts (and writes the session after): a second
+    one meanwhile (a retry after the board's call timed out) is refused, never a second session."""
     assert wired is not None
     sessions = handler._supervisor().sessions
     sessions.hold_launch(RUN, 'fixer-1', int(handler.clock()))   # (the first launch, still booting)
@@ -414,7 +486,7 @@ def test_an_ended_run_whose_paused_agent_is_being_resumed_stays_watched(wired: A
     session = sessions.get(RUN, 'fixer-1')
     assert session is not None
     paused = sessions.save(replace(session, status='paused'))
-    # A Resume holds the row while it starts the agent's new MicroVM.
+    # A Resume holds the row while it starts the agent's new session.
     sessions.claim(paused, int(handler.clock()), 600)
     handler.lambda_handler({'action': 'end_run', 'run_id': RUN, 'status': 'stopped'}, None)
     assert (_runs().listed(), _state(wired)) == ([RUN], 'ENABLED')
@@ -461,7 +533,7 @@ def test_a_retried_start_keeps_the_coordinator_it_launched(wired: Any, monkeypat
     handler.lambda_handler(COORDINATED, None)
     _runtime, started = _recording(monkeypatch)
     handler.lambda_handler(COORDINATED, None)
-    assert started == []   # no second MicroVM, not even one ended again
+    assert started == []   # no second session, not even one ended again
 
 
 def test_two_starts_racing_launch_one_coordinator(wired: Any, monkeypatch: pytest.MonkeyPatch):
@@ -472,7 +544,7 @@ def test_two_starts_racing_launch_one_coordinator(wired: Any, monkeypatch: pytes
     assert runtime is not None
     with monkeypatch.context() as patch:
         # The second start read no session before the first one's write: the launch's hold refuses it as busy
-        # before any MicroVM starts (ask again; a retry then finds the first one's session).
+        # before any session starts (ask again; a retry then finds the first one's session).
         patch.setattr(handler._supervisor().sessions, 'get', lambda *_args: None)
         with pytest.raises(SessionBusy):
             handler.lambda_handler(COORDINATED, None)
@@ -487,7 +559,7 @@ def test_a_start_racing_a_coordinator_launch_still_under_way_is_busy_and_keeps_t
     assert wired is not None
     _runs().start(OTHER_RUN, caps=RunCaps(max_tasks=5), now=int(handler.clock()), connection='conn-1', commit=COMMIT,
                   language='python')
-    # Another start's launch holds the coordinator's row while its MicroVM boots.
+    # Another start's launch holds the coordinator's row while its session boots.
     handler._supervisor().sessions.hold_launch(OTHER_RUN, COORDINATOR_AGENT, int(handler.clock()))
     _runtime, started = _recording(monkeypatch)
     with pytest.raises(SessionBusy, match='under way'):
@@ -502,7 +574,7 @@ def test_a_resume_that_finds_the_new_coordinators_launch_under_way_still_answers
         wired: Any, monkeypatch: pytest.MonkeyPatch):
     assert wired is not None
     _coordinator_gone()
-    # Another Resume's launch of the new coordinator holds it (its MicroVM still starting, or killed meanwhile).
+    # Another Resume's launch of the new coordinator holds it (its session still starting, or killed meanwhile).
     handler._supervisor().sessions.hold_launch(OTHER_RUN, 'coordinator-2', int(handler.clock()))
     _runtime, started = _recording(monkeypatch)
     assert set(handler.lambda_handler(RESUME, None)) == {'agents', 'applied'}
@@ -562,19 +634,21 @@ def test_a_launch_whose_session_write_and_terminate_both_fail_still_lets_go_of_i
     with monkeypatch.context() as patch:
         patch.setattr(supervisor.sessions, 'create', no_session)
         patch.setattr(supervisor.runtime, 'terminate', no_terminate)
-        with pytest.raises(RuntimeError, match='terminate failed'):
+        # The write's own failure is what is raised; the session is kept to stop again, never lost.
+        with pytest.raises(RuntimeError, match='session write failed'):
             handler.lambda_handler(LAUNCH, None)
+    assert len(supervisor.sessions.lost(RUN)) == 1
     assert not supervisor.sessions.launch_under_way(RUN, 'fixer-1', int(handler.clock()))
     assert handler.lambda_handler(LAUNCH, None)['status'] == 'booting'
 
 
 def _service_down(_spec: AgentSpec) -> RuntimeSession:
-    """The MicroVM service failing a start: a failure, not a refusal, so a launch keeps its recorded agent."""
-    raise RuntimeError('the MicroVM service is unavailable')
+    """The session service failing a start: a failure, not a refusal, so a launch keeps its recorded agent."""
+    raise RuntimeError('the session service is unavailable')
 
 
 def _start_whose_launch_fails(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A start that wrote the run, then failed to launch its coordinator (the MicroVM service was down)."""
+    """A start that wrote the run, then failed to launch its coordinator (the session service was down)."""
     with monkeypatch.context() as patch:
         patch.setattr(handler._supervisor().runtime, 'run', _service_down)
         with pytest.raises(RuntimeError, match='unavailable'):
@@ -592,11 +666,11 @@ def test_a_coordinator_launch_the_runtime_refuses_clears_its_record_so_a_retry_n
     runtime = handler._supervisor().runtime
 
     def refused(_spec: AgentSpec) -> RuntimeSession:
-        raise RuntimeRefused('no MicroVM image is configured for this language')
+        raise RuntimeRefused('no session image is configured for this language')
 
     with monkeypatch.context() as patch:
         patch.setattr(runtime, 'run', refused)
-        with pytest.raises(RuntimeRefused, match='no MicroVM image'):
+        with pytest.raises(RuntimeRefused, match='no session image'):
             handler.lambda_handler(COORDINATED, None)
     task = _coordinate_task()
     assert (task.state, task.attempt, task.launched_agent) == ('open', 1, '')
@@ -604,7 +678,7 @@ def test_a_coordinator_launch_the_runtime_refuses_clears_its_record_so_a_retry_n
         WORKSPACE, OTHER_RUN)[COORDINATE_TASK]
     refusals = [(move.actor, move.reason) for move in moves if move.op == 'launch_refused']
     # Nobody named: the run's history label (runs.UNATTRIBUTED), the same as its RUNLOG rows'.
-    assert refusals == [('unattributed', 'coordinator-1: no MicroVM image is configured for this language')]
+    assert refusals == [('unattributed', 'coordinator-1: no session image is configured for this language')]
     # The run went to a person; their Resume numbers a new coordinator, as the board's launch does after a
     # refusal it cleared.
     run = _runs().get(OTHER_RUN)
@@ -621,14 +695,14 @@ def test_a_refused_coordinator_launch_whose_record_cannot_be_cleared_still_raise
     runtime = handler._supervisor().runtime
 
     def refused(_spec: AgentSpec) -> RuntimeSession:
-        raise RuntimeRefused('no MicroVM image is configured for this language')
+        raise RuntimeRefused('no session image is configured for this language')
 
     def moved(*_args: Any, **_kwargs: Any) -> None:
         raise BoardError('conflict', 'the task is no longer open at this attempt')
 
     monkeypatch.setattr(runtime, 'run', refused)
     monkeypatch.setattr(BoardStore, 'clear_launch', moved)
-    with pytest.raises(RuntimeRefused, match='no MicroVM image'):
+    with pytest.raises(RuntimeRefused, match='no session image'):
         handler.lambda_handler(COORDINATED, None)
     assert 'could not be cleared' in caplog.text
     assert _coordinate_task().launched_agent == COORDINATOR_AGENT
@@ -1180,7 +1254,7 @@ def test_the_start_function_writes_the_run_as_the_person_who_asked_and_hands_its
     assert handler.start_handler(started_by, None) == {'run_id': OTHER_RUN, 'status': 'active'}
     run = _runs().get(OTHER_RUN)
     assert run is not None
-    # Answered once the run is written: no MicroVM started here, the launch handed on.
+    # Answered once the run is written: no session started here, the launch handed on.
     assert (run.status, run.flow, run.budget_usd, started, handed) == (
         'active', 'wf_0123456789ab', 50.0, [], [(OTHER_RUN, 'admin-sub')])
     assert handler.lambda_handler({'action': 'launch_coordinator', 'run_id': OTHER_RUN, 'actor': 'admin-sub'}, None) \
@@ -1226,7 +1300,7 @@ def test_a_handed_on_launch_that_fails_sends_the_run_to_a_person_and_never_raise
     handler.start_handler(COORDINATED, None)
 
     def refused(_spec: AgentSpec) -> RuntimeSession:
-        raise RuntimeRefused('the MicroVM service answered no MicrovmId')
+        raise RuntimeRefused('the session service answered no MicrovmId')
 
     monkeypatch.setattr(handler._supervisor().runtime, 'run', refused if failure == 'refused' else failure)
     answer = handler.lambda_handler({'action': 'launch_coordinator', 'run_id': OTHER_RUN, 'actor': 'admin-sub'}, None)
@@ -1339,7 +1413,7 @@ def test_a_coordinator_launch_still_under_way_is_left_alone(wired: Any, monkeypa
     assert wired is not None
     started = _started_whose_launch_never_ran(monkeypatch)
     late = started + supervisor_module.COORDINATOR_LAUNCH_SECONDS + 60
-    # (a late launch holds the coordinator's row while its MicroVM starts)
+    # (a late launch holds the coordinator's row while its session starts)
     handler._supervisor().sessions.hold_launch(OTHER_RUN, COORDINATOR_AGENT, late - 30)
     assert _tick_at(monkeypatch, late) == 'active'
 

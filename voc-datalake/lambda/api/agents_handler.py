@@ -1121,7 +1121,7 @@ def _run_repo(connection: str) -> str:
 
 def _start_body(body: Mapping[str, Any]) -> dict[str, str]:
     """The request's fields, each checked (400 for anything off): a workflow id, a connection's short id, a commit of
-    40 hexadecimal characters (lower-cased), a language with a MicroVM image, and a goal on one line, at most
+    40 hexadecimal characters (lower-cased), a language with an agent image, and a goal on one line, at most
     ``MAX_RUN_GOAL`` characters, credential-shaped text redacted."""
     from engineering.quality_gate.text import redact
     from engineering.runtime.egress import REGISTRY_HOSTS

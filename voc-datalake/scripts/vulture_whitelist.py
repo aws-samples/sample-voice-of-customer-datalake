@@ -19,7 +19,7 @@ from engineering.knowledge.understand import understand_package
 from engineering.learning.scorecard import ScorecardStore, VersionCard
 from engineering.skills.store import Change, SkillStore, SkillVersion, VersionPage
 
-# The Understand flow's entry, run by the mapper agent in its MicroVM; the agent lands in phase 4
+# The Understand flow's entry, run by the mapper agent in its session; the agent lands in phase 4
 # (docs/autonomous-engineering.md), its tests drive it until then.
 understand_package.__name__
 

@@ -864,7 +864,10 @@ consumption rates), whether each toolchain's dependency step honours its proxy (
 the Java image gives `code` a `~/.m2/settings.xml` naming the proxy; Gradle reads the JVM's `https.proxyHost`, which
 `JAVA_TOOL_OPTIONS` sets; a toolchain that ignores all of them reaches nothing, since the firewall holds it either
 way), and whether a quota or throttle answer to a start (`ServiceQuotaExceededException`, `ThrottlingException`)
-guarantees no session was made (the runtime does not stop one then; on any other failed start it does). Until that run the flag stays off, and this section is corrected to what it shows.
+guarantees no session was made (the runtime does not stop one then; on any other failed start it does), and how
+AgentCore gets the right to make a session's network interfaces in the deployment's subnets in VPC mode (likely its
+service-linked role, made on first use, which then needs `iam:CreateServiceLinkedRole` once, from the deployer;
+the stack grants nothing for it). Until that run the flag stays off, and this section is corrected to what it shows.
 
 The runtime names its agents as the [broker](#repository-connectors) and the
 [bus and board](#how-the-agents-work-together) read them: its roles are `connectors/identity.py`'s AGENT_ROLES (one
@@ -946,6 +949,17 @@ microVM), from its language's image, with its own sparse checkout from the cache
   words (`SessionsFull`) and a continuation is held without a session (`waiting`, never counted as a crash) and
   continued again every tick until there is room, for at most 30 ticks in a row, then held for a person (`paused`,
   their Resume continues it): the service's own answer, atomic, with no count of sessions read.
+- **A session no row names.** When a new session's row write fails (a launch's, a continuation's), the row is read
+  back first: one that names the session means the write landed, and the session goes on. Otherwise it is stopped;
+  when its stop fails too, its id is logged and it is kept on a create-only row of its own (`LOST#<session id>` in
+  its run's partition), which every tick stops again and counts until the stop succeeds (`stopped_at`; never
+  deleted), and which keeps its run watched meanwhile. Each count is one transaction, as a session's priced write:
+  its seconds and cost on that row, its cost on its agent's row (where the run's cost cap reads it; only onto a row
+  that exists), the spend ledger and its flow's month total; one row's failure never stops the run's others. A lost
+  row whose session its agent's row names after all is closed without being counted or stopped. If
+  writing that row fails too, the session is only logged and its runtime's idle timeout ends it (an hour with nothing
+  busy; its runner ends its commands once its role session lapses); so is one whose run was released before its row
+  landed, since nothing watches that run any more.
 - **A stop that fails.** A session whose stop fails keeps its row's end with `stop_pending`: every tick stops it
   again and counts its time meanwhile (its runner may still say busy), and the run stays watched until it is gone. Its
   runner also ends every command once the agent's role session lapses unrenewed (a minute past its 15 minutes), so a
@@ -972,7 +986,8 @@ wait closes.
   The entry point's egress firewall sends each user to its own proxy only: `unit` reaches the runner and port 3128,
   `code` port 3129, and neither reaches any other address or port, a link-local address or a name server. Each
   proxy resolves its host itself and refuses a link-local (169.254.0.0/16, fe80::/10), loopback or unspecified
-  address, whatever name resolved to it (a VPC endpoint's private address is allowed). An extra host shaped like one
+  address, an IPv4-mapped, IPv4-compatible, 6to4 or NAT64 (64:ff9b::/96, 64:ff9b:1::/48) IPv6 address carrying one included, "this network" (0.0.0.0/8) and the EC2
+  metadata service's IPv6 addresses (fd00:ec2::/32), whatever name resolved to it (a VPC endpoint's private address is allowed). An extra host shaped like one
   of the agent's own (a Bedrock runtime or S3 bucket endpoint, a function URL; other AWS hostnames are not judged) is refused at the launch: the two lists are parted by
   shape, so a registry mirror cannot sit on an S3 bucket's endpoint. Each user's
   commands are pointed at its own proxy (`HTTPS_PROXY`, and the JVM's proxy settings); every other repository command

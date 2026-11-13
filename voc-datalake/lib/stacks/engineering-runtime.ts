@@ -49,7 +49,7 @@ import { Construct } from 'constructs';
 import { capitalize } from '../plugin-loader';
 import { ENGINEERING_CACHE_PREFIX } from './core-buckets';
 import {
-  EngineeringAgentCore, buildMemoryMiB, buildRoles, grantSessions, maxSessions, sessionRates,
+  EngineeringAgentCore, buildMemoryMiB, buildRoles, grantSessions, maxSessions, refuseRemovedSettings, sessionRates,
 } from './engineering-agentcore';
 import { grantBudgetWork, grantSpendLedger, viaServices } from './engineering-runtime-grants';
 import { grantClaudeModels } from '../utils/claude-model-grant';
@@ -549,6 +549,7 @@ class EngineeringRuntime extends Construct {
  * (the default: no function, no rule, no role, no grant).
  */
 export function addEngineeringRuntime(scope: Construct, props: EngineeringRuntimeProps): boolean {
+  refuseRemovedSettings(scope);
   if (!engineeringAgentsEnabled(scope)) return false;
   const { peers, engineeringTable, workspaceBucket } = props;
   if (!peers) throw new Error('engineeringAgents needs the engineering bus (its dead-letter queue) and broker');

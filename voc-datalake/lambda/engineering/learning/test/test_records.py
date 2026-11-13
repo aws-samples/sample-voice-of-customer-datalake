@@ -36,7 +36,7 @@ def test_the_record_is_the_runs_own_rows_and_its_named_gate_record() -> None:
     builder = next(agent for agent in run.agents if agent.agent == 'builder-5')
     assert (builder.role, builder.skill_version, builder.crashes, builder.cost_usd) == ('builder', '', 2,
                                                                                        Decimal('0.05'))
-    assert builder.last_failure.startswith('the MicroVM stopped answering exit 137, timed out False; stderr: killed')
+    assert builder.last_failure.startswith('the session stopped answering exit 137, timed out False; stderr: killed')
     assert SECRET not in builder.last_failure
     [gate] = run.gates
     assert (gate.task_id, gate.attempt, gate.verdict, gate.no_go, gate.rounds) == ('t-gate', 1, 'NO-GO', True, 2)

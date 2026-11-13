@@ -37,7 +37,7 @@ def agents() -> tuple[AgentRecord, ...]:
             AgentRecord('fixer-3', 'fixer', 'fixer@1', 200, Decimal('0.75')),
             AgentRecord('fixer-4', 'fixer', 'fixer@2', 50, Decimal('0.1')),
             AgentRecord('builder-5', 'builder', '', 30, Decimal('0.05'), crashes=2,
-                        last_failure=f'the MicroVM stopped answering; key {SECRET}'),
+                        last_failure=f'the session stopped answering; key {SECRET}'),
             AgentRecord('builder-6', 'builder', '', 40, Decimal('0.05')),
             AgentRecord('final-go-7', 'final-go', 'final-go@1', 20, Decimal('0.4')),
             AgentRecord('coordinator-1', 'coordinator', 'coordinator@1', 300, Decimal('0.3')))
@@ -195,7 +195,7 @@ def test_the_evidence_is_the_attempts_own_record_bounded_and_redacted() -> None:
     text = '\n'.join(found.outputs)
     assert 'Attempt 1 of the builder task ended crashed (crashed); held by builder-5.' in text
     assert 'claimed by builder-5 via claim' in text
-    assert 'The supervisor recorded (2 crash(es)): the MicroVM stopped answering' in text
+    assert 'The supervisor recorded (2 crash(es)): the session stopped answering' in text
     assert SECRET not in text
     assert '<redacted>' in text
     no_go = evidence(retro.failures[0], retro.run)

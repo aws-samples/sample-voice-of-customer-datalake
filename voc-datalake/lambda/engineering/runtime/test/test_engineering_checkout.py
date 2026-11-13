@@ -47,7 +47,7 @@ def _run_command(runtime: LocalAgentRuntime, vm: RuntimeSession, command: Comman
 
 
 def _cached_repository(runtime: LocalAgentRuntime, vm: RuntimeSession) -> str:
-    """A repository with one commit and its bare clone (the cache) in the MicroVM's directory; the commit."""
+    """A repository with one commit and its bare clone (the cache) in the session's directory; the commit."""
     git = ('git', '-c', 'user.name=Example', '-c', 'user.email=dev@example.org', '-c', 'init.defaultBranch=main')
     _run(runtime, vm, sys.executable, '-c', SETUP)
     _run(runtime, vm, *git, 'init', '--quiet', 'origin')

@@ -71,7 +71,7 @@ def test_a_claimed_tasks_lease_reads_its_holder_heartbeat_progress_and_wait(boar
 @pytest.mark.parametrize('claimed', [True, False])   # (False: blocked while its launched agent still boots)
 def test_a_task_a_person_blocked_reads_as_ended_never_as_a_lost_lease(board: Any, claimed: bool):
     # A lease of None is a crash to the supervisor (judge: lost lease), which would continue the agent in a new
-    # MicroVM; an ended task, its holder cleared by the block, ends the session.
+    # session; an ended task, its holder cleared by the block, ends the session.
     store, leases, _ = board
     task_id = _posted(store)
     if claimed:
@@ -156,7 +156,7 @@ def test_every_kind_the_supervisor_emits_passes_the_routers_sender_check(kind: s
 def test_each_of_the_supervisors_kinds_goes_out_as_its_type_with_the_supervisors_source(kind: str, to: str):
     events = Events()
     SupervisorBus(EventBridgePublisher(events, 'voc-engineering', SOURCE)).emit(
-        RUN, to, kind, 'fixer-1 continued in a new MicroVM.', {'continuation': '2', 'after': 'crash'},
+        RUN, to, kind, 'fixer-1 continued in a new session.', {'continuation': '2', 'after': 'crash'},
         task_id='task-1', attempt=3)
     [entry] = events.entries
     message = parse(json.loads(entry['Detail']))
@@ -165,7 +165,7 @@ def test_each_of_the_supervisors_kinds_goes_out_as_its_type_with_the_supervisors
         'supervisor', 'supervisor', RUN, 'task-1', 3)
     assert (message.to.kind, message.to.id) == (('run', RUN) if to == 'run' else ('agent', 'fixer-1'))
     # Its figures are in its summary: a message's refs hold only object keys, a commit, a PR and files.
-    assert (message.summary, message.refs.s3) == ('fixer-1 continued in a new MicroVM. (continuation 2, after crash)', ())
+    assert (message.summary, message.refs.s3) == ('fixer-1 continued in a new session. (continuation 2, after crash)', ())
 
 
 def test_a_kind_the_supervisor_does_not_emit_is_refused_before_anything_is_sent():

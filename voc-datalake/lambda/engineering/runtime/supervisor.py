@@ -40,7 +40,15 @@ from typing import Final
 from engineering.runtime.caps import SESSION_LIFE_SECONDS, Timings
 from engineering.runtime.checkout import checkout_commands
 from engineering.runtime.checkpoints import CheckpointReader
-from engineering.runtime.interface import AgentRuntime, CacheMount, Command, ExecResult, RuntimeRefused, SessionsFull
+from engineering.runtime.interface import (
+    AgentRuntime,
+    CacheMount,
+    Command,
+    ExecResult,
+    RuntimeRefused,
+    RuntimeSession,
+    SessionsFull,
+)
 from engineering.runtime.launcher import RENEW_MARGIN_SECONDS, Launcher
 from engineering.runtime.liveness import ended, judge
 from engineering.runtime.ports import Board, Bus, Lease, RunControl
@@ -49,6 +57,7 @@ from engineering.runtime.sessions import (
     WITH_SESSION,
     After,
     AgentSession,
+    LostSession,
     SessionStore,
     StaleSession,
     Status,
@@ -69,6 +78,36 @@ COORDINATOR_LAUNCH_SECONDS: Final = CLAIM_SECONDS + 60
 
 class SessionCallFailed(RuntimeError):
     """A call to an agent's session failed (only these count towards a crash; a port's failure does not)."""
+
+
+def landed_session(sessions: SessionStore, run_id: str, agent_id: str, vm: RuntimeSession) -> AgentSession | None:
+    """The agent's row when a write whose answer failed landed after all and names ``vm`` (read back, consistent);
+    None when it did not, or the read fails too (then the session is treated as one no row names)."""
+    try:
+        current = sessions.get(run_id, agent_id)
+    except Exception:
+        logger.exception('engineering supervisor: a session row could not be read back',
+                         extra={'run_id': run_id, 'agent_id': agent_id, 'vm_id': vm.vm_id})
+        return None
+    return current if current is not None and current.vm_id == vm.vm_id else None
+
+
+def stop_or_keep_lost(runtime: AgentRuntime, sessions: SessionStore, run_id: str, agent_id: str, role: str,
+                      vm: RuntimeSession, now: int) -> None:
+    """Stop a session no row names; when the stop fails, log its id and keep it on a row of its own
+    (``SessionStore.record_lost``) that every tick stops again and counts. When that record fails too, the session is
+    only logged (its id) and its runtime's idle timeout ends it. Never raises: the caller's own failure is what it
+    raises."""
+    try:
+        runtime.terminate(vm)
+    except Exception:
+        logger.exception('engineering supervisor: a session no row names could not be stopped: kept to stop again',
+                         extra={'run_id': run_id, 'agent_id': agent_id, 'vm_id': vm.vm_id})
+        try:
+            sessions.record_lost(run_id, agent_id, role, vm, now)
+        except Exception:
+            logger.exception('engineering supervisor: a lost session could not be recorded',
+                             extra={'run_id': run_id, 'agent_id': agent_id, 'vm_id': vm.vm_id})
 
 
 class SessionBusy(RuntimeRefused):
@@ -106,6 +145,11 @@ class Supervisor:
             live = [session for session in every if session.status in LIVE_STATUSES or session.stop_pending]
             if live:
                 by_run[run_id] = live
+            try:
+                self._retry_lost(run_id, now)
+            except Exception:
+                logger.exception('engineering supervisor: a run\'s lost sessions could not be stopped',
+                                 extra={'run_id': run_id})
             try:
                 self._coordinator_lost(run_id, every, now)
                 self._coordinator_never_launched(run_id, every, holds, now)
@@ -612,10 +656,15 @@ class Supervisor:
             saved = self._save(continued)
         except Exception:
             # The row does not name the session just started (someone else moved it, or the write failed): it would
-            # belong to nobody.
-            with contextlib.suppress(Exception):
-                self.runtime.terminate(vm)
-            raise
+            # belong to nobody. Stopped now, or, when that fails too, kept on a row of its own the tick stops again.
+            # (unless the write landed after all, its answer lost: the row names it, so it is not lost, and goes on)
+            landed = landed_session(self.sessions, session.run_id, session.agent_id, vm)
+            if landed is not None:
+                saved = landed
+            else:
+                stop_or_keep_lost(self.runtime, self.sessions, session.run_id, session.agent_id, session.role, vm,
+                                  now)
+                raise
         refs = {'continuation': str(saved.continuation), 'after': 'crash' if crashed else 'pause',
                 'checkpoint': restore or 'none'}
         self._emit(session, 'run', 'continued',
@@ -634,6 +683,38 @@ class Supervisor:
         full = {**session.inspect, 'last_failure': 'no free agent session: continued once one ends'}
         return self._save(replace(session, status='waiting', exec_id=None, suspended=False, inspect=full,
                                   no_room=tries, **self._counted(session, now), last_tick_at=now))
+
+    def _retry_lost(self, run_id: str, now: int) -> None:
+        """Stop again every session of the run no row names (``SessionStore.record_lost``), counting its time."""
+        for lost in self.sessions.lost(run_id):
+            # One row's failure (its stop, its count) never keeps the run's other lost sessions from theirs.
+            try:
+                self._retry_one_lost(lost, now)
+            except Exception:
+                logger.exception('engineering supervisor: a lost session could not be counted',
+                                 extra={'run_id': run_id, 'agent_id': lost.agent_id, 'vm_id': lost.vm.vm_id})
+
+    def _retry_one_lost(self, lost: LostSession, now: int) -> None:
+        current = self.sessions.get(lost.run_id, lost.agent_id)
+        if current is not None and current.vm_id == lost.vm.vm_id:
+            # Its agent's row names it after all (a read-back that failed, a late write that landed after it): it is that
+            # row's session, counted and stopped there. The lost row is closed without counting it twice or stopping it.
+            self.sessions.lost_named(lost, now)
+            logger.warning('engineering supervisor: a lost session is its agent\'s after all',
+                           extra={'run_id': lost.run_id, 'agent_id': lost.agent_id, 'vm_id': lost.vm.vm_id})
+            return
+        stopped = True
+        try:
+            self.runtime.terminate(lost.vm)
+        except Exception:
+            stopped = False
+            logger.exception('engineering supervisor: a lost session could not be stopped',
+                             extra={'run_id': lost.run_id, 'agent_id': lost.agent_id, 'vm_id': lost.vm.vm_id})
+        self.sessions.lost_tick(lost, now, stopped=stopped)
+        if stopped:
+            logger.warning('engineering supervisor: a lost session is stopped',
+                           extra={'run_id': lost.run_id, 'agent_id': lost.agent_id, 'vm_id': lost.vm.vm_id,
+                                  'lost_seconds': now - lost.recorded_at})
 
     def _ask_pause(self, session: AgentSession, now: int, after: After) -> AgentSession:
         return self._save(replace(session, status='pause_requested', pause_requested_at=now, after_pause=after))

@@ -130,7 +130,7 @@ def tasks() -> list[dict[str, Any]]:
 
 
 def agents() -> list[dict[str, Any]]:
-    crashed = {'last_failure': 'the MicroVM stopped answering',
+    crashed = {'last_failure': 'the session stopped answering',
                'last_exit': {'exit_code': 137, 'timed_out': False, 'stderr_tail': f'killed; key {SECRET}'}}
     return [agent_item('fixer-2', 'fixer', 'fixer@1', seconds=100, cost='0.25'),
             agent_item('fixer-3', 'fixer', 'fixer@1', seconds=200, cost='0.75'),

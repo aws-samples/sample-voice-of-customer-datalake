@@ -17,6 +17,40 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.26.01] - 2026-11-13
+
+Autonomous engineering agents: the follow-ups to 6.26.00's AgentCore runtime. A session no row names is never lost, the egress proxies refuse IPv6 forms of link-local and loopback addresses, and a removed setting fails the synth. Off by default, and no fixed cost in the stacks.
+
+### Fixed
+
+- Each egress proxy now also refuses an IPv4-mapped IPv6 address (`::ffff:a.b.c.d`) and a NAT64 one (`64:ff9b::/96`) whose IPv4 address is link-local, loopback or unspecified, all of "this network" (0.0.0.0/8), and the EC2 metadata service's IPv6 addresses (`fd00:ec2::/32`), and an IPv4-compatible (`::/96`), 6to4 (`2002::/16`) or local-use NAT64 (`64:ff9b:1::/48`) IPv6 address carrying a refused IPv4 address. Before, `::ffff:169.254.169.254`, `::ffff:127.0.0.1` and `fd00:ec2::254` passed the check.
+- A session cost of exactly zero is written as 0, never `0E-12`, which DynamoDB's number format refuses.
+- A new session whose row write fails and whose stop fails too, at a launch or a continuation, is no longer lost:
+  - unless the write landed after all (its answer lost): the row is read back first, and a row that names the session means it is not lost, so it is neither stopped nor counted twice;
+  - its id is logged, and it is kept on a create-only row of its own (`LOST#<session id>` in its run's partition);
+  - every tick stops it again and counts it until the stop succeeds, in one transaction, as a session's priced write books its cost: its seconds and cost on that row, its cost on its agent's row (where the run's cost cap reads it; only onto a row that exists, never a cost-only one), the spend ledger and its flow's month total;
+  - one lost session's failure never keeps its run's others from being stopped;
+  - a lost row whose session its agent's row names after all (a read-back that failed, a late write that landed after it) is closed (`stopped_at`) without being counted or stopped: its agent's row counts and owns it;
+  - a launch hold that cannot be let go afterwards is logged, never raised in place of the write's own failure;
+  - a stopped one is marked `stopped_at`, never deleted, and the run stays watched meanwhile;
+  - if writing that row fails too, the session is only logged (its id), and its runtime's idle timeout ends it; so is one whose run was released before its row landed (nothing watches that run any more).
+  - A launch whose write and stop both fail now raises the write's failure, not the stop's.
+
+### Changed
+
+- `-c engineeringImageArns` and `-c engineeringMicrovmUsdPerSecond`, removed in 6.26.00, now fail the synth, naming their replacements (`engineeringImages` with `engineeringAgentNetwork`; `engineeringSessionRates`), with the agents on or off. Before, either one was ignored.
+- Correction to 6.26.00's upgrade notes, which named "a NAT gateway with an egress firewall, or interface endpoints" as the sessions' way out. A NAT gateway is required: the package registries and the board's function URL have no VPC endpoint. A Bedrock interface endpoint and an S3 gateway endpoint are additions to it, not a replacement (TENETS.md tenet 7; docs/deployment.md).
+- docs/autonomous-engineering.md's not-yet-checked list adds how AgentCore gets the right to make a session's network interfaces in the deployment's subnets (likely its service-linked role, made on first use).
+- Leftover MicroVM prose now says session or agent image: the Agents API's start rules, voc-engineering-start's comments, engineering-gates/README.md, and the tests' docstrings and fakes.
+
+### Upgrade notes
+
+- With `-c engineeringAgents=true` only: no resource or grant changes. The `LOST#` rows are written by the supervisor's and the delivery function's existing grants on the runs' partitions.
+- A deployment still passing `engineeringImageArns` or `engineeringMicrovmUsdPerSecond` now fails the synth: drop the key and set its replacement.
+- No stored row is changed.
+
+Built on the voc-autonomous branch. Off by default.
+
 ## [6.26.00] - 2026-11-13
 
 Autonomous engineering agents: the agents run on Amazon Bedrock AgentCore Runtime (platform version V2), one session per agent, in place of Lambda MicroVMs, whose path is removed: one runtime, not two. Each session is its own microVM, billed per second for the CPU it uses and its memory, with no account memory quota to raise. The security design keeps its rules (no credential but the agent's own short role session, the work back as a git bundle that only the connector pushes, output scrubbed, the run's text read as data) and changes how egress is held: AgentCore has no per-session allowlist, so each session's runner holds it, through two proxies, the agent's and the dependency step's, behind the deployment's VPC. Off by default, and no fixed cost in the stacks: the sessions run in the deployment's own VPC, whose way out (a NAT gateway with an egress firewall, or interface endpoints) bills by the hour, a cost of that network's that only a deployment turning the agents on pays (TENETS.md tenet 7's gap). Not yet run against AWS: the request fields are written from the developer guide and botocore's model, and no real call has checked them.

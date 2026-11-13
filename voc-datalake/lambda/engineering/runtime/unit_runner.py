@@ -646,12 +646,37 @@ def serve(host: str, port: int, runner: Runner, api: Api = 'service') -> Threadi
 Connect = Callable[[tuple[str, int], float], socket.socket]
 
 
+#: The NAT64 well-known prefix (RFC 6052): its last 32 bits are an IPv4 address.
+_NAT64: Final = ipaddress.IPv6Network('64:ff9b::/96')
+#: The local-use NAT64 prefix (RFC 8215), taken as a /48 (RFC 6052's layout), and the deprecated IPv4-compatible form.
+_NAT64_LOCAL: Final = ipaddress.IPv6Network('64:ff9b:1::/48')
+_COMPATIBLE: Final = ipaddress.IPv6Network('::/96')
+#: Never reached whatever the name: "this network" (0.0.0.0/8) and the EC2 instance metadata service's IPv6
+#: addresses (fd00:ec2::/32: metadata, DNS, time; not link-local, so named here).
+_NEVER: Final = (ipaddress.IPv4Network('0.0.0.0/8'), ipaddress.IPv6Network('fd00:ec2::/32'))
+
+
 def outside(address: str) -> bool:
     """``address`` is one a proxied tunnel may reach: never link-local (169.254.0.0/16, fe80::/10, a credential or
     metadata endpoint), loopback or unspecified, whatever name resolved to it. (Private addresses stay: an interface
     endpoint in the VPC has one.)"""
     ip = ipaddress.ip_address(address.split('%', 1)[0])
-    return not (ip.is_link_local or ip.is_loopback or ip.is_unspecified)
+    candidates: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = [ip]
+    if isinstance(ip, ipaddress.IPv6Address):
+        # An IPv4 address carried in an IPv6 one reaches that IPv4 address: IPv4-mapped (::ffff:a.b.c.d), 6to4, the
+        # NAT64 prefixes and the IPv4-compatible form are judged by it too.
+        if ip.ipv4_mapped is not None:
+            candidates.append(ip.ipv4_mapped)
+        if ip.sixtofour is not None:   # 6to4 (2002::/16): bits 16 to 47
+            candidates.append(ip.sixtofour)
+        if ip in _NAT64 or ip in _COMPATIBLE:   # the last 32 bits (RFC 6052 /96; the old IPv4-compatible ::/96)
+            candidates.append(ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF))
+        if ip in _NAT64_LOCAL:   # RFC 6052 /48: bits 48 to 63, then 72 to 87 (bits 64 to 71 are the u octet)
+            value = int(ip)
+            candidates.append(ipaddress.IPv4Address(((value >> 64) & 0xFFFF) << 16 | (value >> 40) & 0xFFFF))
+    return not any(each.is_link_local or each.is_loopback or each.is_unspecified
+                   or any(each in network for network in _NEVER if each.version == network.version)
+                   for each in candidates)
 
 
 def _connect_outside(target: tuple[str, int], timeout: float,

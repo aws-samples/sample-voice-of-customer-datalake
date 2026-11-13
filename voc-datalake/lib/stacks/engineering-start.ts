@@ -64,7 +64,7 @@ const START_PARTITIONS = ['WS#*#RUN#*', 'WS#*#RUNS'];
  * voc-engineering-start's own role (TENETS.md tenet 6: a role per Lambda), with only what `start_run` without its launch
  * uses: the run's rows and its registry row (GetItem, PutItem, UpdateItem: the start's transaction, a decision point),
  * a flow's month total and the hard cap's row (GetItem, at a budgeted start), the stack's key through DynamoDB, its
- * rule switched on (never off), and the runtime invoked by name for the launch. No MicroVM, no AssumeRole of an agent
+ * rule switched on (never off), and the runtime invoked by name for the launch. No agent session, no AssumeRole of an agent
  * role, no bus, no delete, no registry query: the supervisor's role keeps those.
  */
 function startRole(scope: Construct, props: StartProps): iam.Role {
@@ -101,7 +101,7 @@ export function createEngineeringStart(scope: Construct, props: StartProps): lam
     role: startRole(scope, props),
     layer: props.layer,
     // A start only writes the run and switches the rule on, then hands the coordinator's launch on to
-    // voc-engineering-runtime (`launch_coordinator`, asynchronously: its 5 minutes cover a MicroVM's start, which API
+    // voc-engineering-runtime (`launch_coordinator`, asynchronously: its 5 minutes cover a session's start, which API
     // Gateway's 29 s could not): the API waits 25 s for this, and answers 202 once the run is written.
     timeout: cdk.Duration.seconds(30),
     memorySize: 512,

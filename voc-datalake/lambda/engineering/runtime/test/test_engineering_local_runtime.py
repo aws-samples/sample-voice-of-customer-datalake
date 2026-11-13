@@ -170,7 +170,7 @@ def test_unknown_vm_exec_and_a_missing_program_are_refused():
         runtime.poll_exec(vm, 'nope')
     with pytest.raises(RuntimeRefused, match='could not start'):
         runtime.start_exec(vm, Command(argv=('/nonexistent/voc-tool',), timeout_seconds=5))
-    with pytest.raises(RuntimeRefused, match='unknown MicroVM'):
+    with pytest.raises(RuntimeRefused, match='unknown session'):
         runtime.suspend(RuntimeSession(vm_id='other', agent_id='fixer-1', endpoint='nowhere'))
 
 
@@ -273,9 +273,21 @@ def test_the_agent_and_the_dependency_step_are_each_pointed_at_their_own_proxy_a
 @pytest.mark.parametrize(('address', 'reachable'), [
     ('169.254.169.254', False), ('169.254.170.2', False), ('fe80::1', False), ('fe80::1%eth0', False),
     ('127.0.0.1', False), ('::1', False), ('::', False),
-    ('10.0.12.34', True), ('52.94.1.1', True), ('2600:1f18::1', True),
+    ('::ffff:169.254.169.254', False), ('::ffff:127.0.0.1', False), ('::ffff:0.0.0.0', False),
+    ('64:ff9b::169.254.169.254', False), ('64:ff9b::127.0.0.1', False),
+    ('fd00:ec2::254', False), ('fd00:ec2::23', False), ('0.1.2.3', False), ('0.255.255.255', False),
+    ('::ffff:0.1.2.3', False), ('fd00:ec3::1', True),
+    ('::169.254.169.254', False), ('::127.0.0.1', False), ('2002:a9fe:a9fe::1', False), ('2002:7f00:1::1', False),
+    ('64:ff9b:1:a9fe:a9:fe00::', False), ('64:ff9b:1:7f00:0:100::', False),
+    ('::52.94.1.1', True), ('2002:345e:101::1', True), ('64:ff9b:1:345e:1:100::', True),
+    ('10.0.12.34', True), ('52.94.1.1', True), ('2600:1f18::1', True), ('::ffff:52.94.1.1', True),
+    ('64:ff9b::52.94.1.1', True),
 ], ids=['metadata', 'container-credentials', 'link-local-v6', 'scoped-link-local-v6', 'loopback', 'loopback-v6',
-        'unspecified', 'a-vpc-endpoint', 'public', 'public-v6'])
+        'unspecified', 'mapped-metadata', 'mapped-loopback', 'mapped-unspecified', 'nat64-metadata', 'nat64-loopback',
+        'metadata-v6', 'dns-v6', 'this-network', 'this-network-top', 'mapped-this-network', 'near-metadata-v6',
+        'compatible-metadata', 'compatible-loopback', '6to4-metadata', '6to4-loopback', 'local-nat64-metadata',
+        'local-nat64-loopback', 'compatible-public', '6to4-public', 'local-nat64-public',
+        'a-vpc-endpoint', 'public', 'public-v6', 'mapped-public', 'nat64-public'])
 def test_a_tunnel_never_reaches_a_link_local_or_loopback_address_whatever_name_resolved_to_it(
         address: str, reachable: bool):
     assert unit_runner.outside(address) is reachable

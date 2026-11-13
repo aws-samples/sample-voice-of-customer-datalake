@@ -192,7 +192,7 @@ def test_a_wake_that_fails_is_tried_again(world: World, monkeypatch: pytest.Monk
     _suspended_on_an_open_wait(world)
 
     def refuse(_vm: Any) -> None:
-        raise RuntimeError('the MicroVM did not answer')
+        raise RuntimeError('the session did not answer')
 
     monkeypatch.setattr(world.runtime, 'resume', refuse)
     with pytest.raises(AddresseeBusy):
@@ -209,7 +209,7 @@ def test_a_held_addressee_whose_new_microvm_failed_to_start_is_continued_on_the_
     raw = _for({'kind': 'agent', 'id': 'fixer-1'})
 
     def down(_spec: Any) -> Any:
-        raise RuntimeError('the MicroVM service refused the start')
+        raise RuntimeError('the session service refused the start')
 
     with monkeypatch.context() as patch:
         patch.setattr(world.runtime, 'run', down)
@@ -250,7 +250,7 @@ def test_a_held_agent_is_continued_once_per_wait(world: World):
 
 
 def test_an_agent_continued_by_a_message_reads_it_before_its_long_wait_holds_it_again(world: World):
-    # Its wait still open: the new MicroVM boots and works, awake and not asked to pause, for the grace.
+    # Its wait still open: the new session boots and works, awake and not asked to pause, for the grace.
     tick = _continued_by_a_message(world)
     for later in range(tick + 60, tick + T.wake_grace, 60):
         world.supervisor.tick(later)
@@ -274,7 +274,7 @@ def test_a_message_after_a_continued_agents_grace_does_not_open_another(world: W
 
 def test_only_the_continuation_a_message_made_gets_the_grace_not_one_after_it(world: World):
     tick = _continued_by_a_message(world)
-    # During its grace the agent asks to be continued again (its own pause): that MicroVM gets no grace of its own.
+    # During its grace the agent asks to be continued again (its own pause): that session gets no grace of its own.
     vm = world.runtime.run(world.session().spec())
     world.store.save(world.session().on(vm, tick, None))
     tick = _working_from(world, tick)

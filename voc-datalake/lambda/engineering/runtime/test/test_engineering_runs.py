@@ -116,7 +116,7 @@ def test_the_run_control_reads_the_runs_caps_spend_start_and_stop(aws):
     assert aws[1].get_item(Key=META)['Item']['needs_human'] == 'budget'
     assert not control.stop_requested(RUN)
     runs.end(RUN, 'done', now=600)
-    # Any end, not only a person's stop, ends every MicroVM of the run.
+    # Any end, not only a person's stop, ends every session of the run.
     assert control.stop_requested(RUN)
     with pytest.raises(RunNotActive):
         control.started_at(OTHER)

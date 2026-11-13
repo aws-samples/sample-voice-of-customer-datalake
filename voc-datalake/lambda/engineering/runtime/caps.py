@@ -166,8 +166,10 @@ class SessionPricing:
         usd = (Decimal(running * size.vcpus) * rates.vcpu_hour + Decimal(lived * size.gb) * rates.gb_hour
                + Decimal(lived * size.baseline_vcpus) * rates.baseline_vcpu_hour
                + Decimal(lived * size.baseline_gb) * rates.baseline_gb_hour) / HOUR
-        # Rounded up to the 12th digit: a sum DynamoDB stores exactly, never below what was used.
-        return SessionCost(usd=usd.quantize(USD_STEP, rounding=ROUND_CEILING), vcpu_seconds=running * size.vcpus + lived * size.baseline_vcpus,
+        # Rounded up to the 12th digit: a sum DynamoDB stores exactly, never below what was used (and a plain 0, never
+        # 0E-12, which DynamoDB's number format refuses).
+        rounded = usd.quantize(USD_STEP, rounding=ROUND_CEILING)
+        return SessionCost(usd=rounded or Decimal(0), vcpu_seconds=running * size.vcpus + lived * size.baseline_vcpus,
                            gb_seconds=lived * size.total_gb)
 
 

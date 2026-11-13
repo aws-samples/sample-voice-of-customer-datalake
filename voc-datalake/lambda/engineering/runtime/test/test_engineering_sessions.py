@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
+from botocore.exceptions import ClientError
 
 from engineering.runtime.caps import (
     BUILD_SIZES,
@@ -18,7 +19,7 @@ from engineering.runtime.caps import (
 )
 from engineering.runtime.interface import RuntimeRefused, RuntimeSession
 from engineering.runtime.runs import RunCaps, RunNotActive, RunStore
-from engineering.runtime.sessions import AgentSession, SessionStore, StaleSession
+from engineering.runtime.sessions import AgentSession, LostSession, SessionStore, StaleSession
 from engineering.runtime.test.conftest import RUN
 
 SESSION = AgentSession(run_id=RUN, agent_id='fixer-1', role='fixer', task_id='task-1', language='python',
@@ -48,7 +49,7 @@ def test_a_created_session_is_listed_until_its_ended_run_is_released(aws):
     assert store.get(RUN, 'fixer-1') == created
     assert list(store.active()) == [created]
     runs.end(RUN, 'done', now=10)
-    # Still live: the supervisor must see it to end its MicroVM.
+    # Still live: the supervisor must see it to end its session.
     assert list(store.active()) == [created]
     runs.release(RUN)
     assert list(store.active()) == []
@@ -170,7 +171,7 @@ def test_a_harness_model_named_microvm_is_its_own_row_never_the_microvm_time(aws
 
 
 def test_a_session_ledgers_its_first_models_by_name_and_the_rest_on_one_row(aws):
-    # (each continuation's report may add names, from inside the MicroVM: no session opens rows without end)
+    # (each continuation's report may add names, from inside the session: no session opens rows without end)
     store, created = _ledgering(aws)
     tokens = {f'model-{number:03}': {'in': 1, 'out': 0} for number in range(150)}
     moved = store.save(replace(created, microvm_seconds=10, tokens=tokens))
@@ -188,7 +189,7 @@ def test_a_continuation_never_counts_tokens_twice_and_a_row_from_before_books_no
     read = store.get(RUN, 'fixer-1')
     assert read is not None
     moved = store.save(replace(read, tokens={'model-a': {'in': 60, 'out': 5}}))
-    # A continuation: its MicroVM reports from zero, the session's totals carry on.
+    # A continuation: its session reports from zero, the session's totals carry on.
     continued = replace(moved, tokens_before=moved.tokens, tokens=moved.tokens)
     store.save(replace(continued, tokens=continued.reported({'model-a': {'in': 5, 'out': 0}})))
     (row,) = _ledger(aws[1]).values()
@@ -469,3 +470,51 @@ def test_a_continuation_boots_again_in_the_new_microvm_from_its_checkpoint():
     assert (continued.boot_index, continued.exec_id, continued.asked_at, continued.restore_key) == (0, None, None,
                                                                                                     'ckpt-key')
     assert continued.spec('ckpt-key').restore_key == 'ckpt-key'
+
+
+def _lost_store(aws: Any) -> tuple[SessionStore, RunStore]:
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=10), now=0, flow='wf_hunt', repo='example/app')
+    return SessionStore(aws[1], runs, PER_SECOND, clock=lambda: datetime(2026, 11, 13, tzinfo=UTC)), runs
+
+
+LOST_VM = RuntimeSession(vm_id='voc-lost-1', agent_id='fixer-1', endpoint='arn:aws:bedrock-agentcore:runtime/x')
+
+
+def _lost_counted_once(aws: Any) -> tuple[SessionStore, RunStore, LostSession]:
+    """fixer-1's session, a lost session of it recorded at 1000, and its first 600 seconds counted."""
+    store, runs = _lost_store(aws)
+    store.create(SESSION)
+    store.record_lost(RUN, 'fixer-1', 'fixer', LOST_VM, 1000)
+    (lost,) = store.lost(RUN)
+    store.lost_tick(lost, 1600, stopped=False)
+    return store, runs, lost
+
+
+def test_a_lost_sessions_cost_goes_to_its_agent_the_spend_ledger_and_its_flows_month_in_one_write(aws):
+    _, runs, _ = _lost_counted_once(aws)
+    prefix = f'DAY#13#WF#wf_hunt#RUN#{RUN}#AGENT#fixer-1#MODEL#'
+    ledger = _ledger(aws[1])
+    # 600 seconds at 0.0001 a second: on the run's cost (its agent's row), the ledger's row and the flow's month.
+    assert (runs.spend(RUN)[1], ledger[f'{prefix}microvm']['usd'], ledger[f'{prefix}microvm']['microvm_seconds']) == (
+        0.06, Decimal('0.06'), 600)
+    assert _ledger(aws[1], 'FLOW#')['FLOW#wf_hunt']['usd'] == Decimal('0.06')
+
+
+def test_a_lost_tick_that_loses_its_race_counts_nothing_anywhere(aws):
+    store, runs, lost = _lost_counted_once(aws)
+    # The same stretch again (another tick read the row before the first wrote): refused whole, nothing added twice.
+    with pytest.raises(ClientError):
+        store.lost_tick(lost, 1600, stopped=False)
+    assert (runs.spend(RUN)[1], _ledger(aws[1], 'FLOW#')['FLOW#wf_hunt']['usd']) == (0.06, Decimal('0.06'))
+
+
+def test_a_lost_session_of_an_agent_with_no_row_makes_no_cost_only_agent_row(aws):
+    store, _ = _lost_store(aws)
+    store.record_lost(RUN, 'fixer-9', 'fixer', LOST_VM, 1000)
+    (lost,) = store.lost(RUN)
+    store.lost_tick(lost, 1600, stopped=True)
+    # No AGENT# row a reader would take for an agent without a role; the cost is on its own row and the ledger.
+    assert aws[1].get_item(Key={'pk': f'WS#default#RUN#{RUN}', 'sk': 'AGENT#fixer-9'}).get('Item') is None
+    row = aws[1].get_item(Key={'pk': f'WS#default#RUN#{RUN}', 'sk': 'LOST#voc-lost-1'})['Item']
+    assert (row['cost_usd'], 'stopped_at' in row, store.lost(RUN)) == (Decimal('0.06'), True, [])

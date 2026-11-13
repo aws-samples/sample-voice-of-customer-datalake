@@ -171,6 +171,20 @@ export function maxSessions(scope: Construct): number {
   return Number(text);
 }
 
+/** The context keys 6.26.00 removed (the Lambda MicroVM runtime's), each with what replaced it. */
+const REMOVED_SETTINGS: Readonly<Record<string, string>> = {
+  engineeringImageArns: `${IMAGES_CONTEXT} (a tag or sha256 digest per language, of an image pushed to its voc-eng-<language> repository) and ${NETWORK_CONTEXT}`,
+  engineeringMicrovmUsdPerSecond: `${RATES_CONTEXT} (AgentCore's rates per vCPU-hour and GB-hour; every rate 0 leaves sessions unpriced)`,
+};
+
+/** Fail the synth on a removed context key, naming its replacement: it would otherwise do nothing, silently. */
+export function refuseRemovedSettings(scope: Construct): void {
+  const passed = Object.keys(REMOVED_SETTINGS).filter((key) => scope.node.tryGetContext(key) !== undefined);
+  if (passed.length > 0) {
+    throw new Error(passed.map((key) => `-c ${key} was removed in 6.26.00: use ${REMOVED_SETTINGS[key]}.`).join(' '));
+  }
+}
+
 /** The languages this deployment runs agents in: those with an image, once there is a network for them. */
 export function runtimeLanguages(scope: Construct): string[] {
   const named = Object.keys(images(scope));

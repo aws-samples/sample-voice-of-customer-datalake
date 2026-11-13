@@ -93,7 +93,7 @@ from engineering.runtime.sessions import (
     SessionStore,
     StaleSession,
 )
-from engineering.runtime.supervisor import SessionBusy, Supervisor
+from engineering.runtime.supervisor import SessionBusy, Supervisor, landed_session, stop_or_keep_lost
 from engineering.settings import read_hard_cap
 from shared.invocation_cost import measure_invocation_cost
 from shared.logging import logger, metrics
@@ -651,11 +651,21 @@ def launch(event: Mapping[str, Any]) -> dict[str, Any]:
             started_at=int(clock()), last_tick_at=int(clock())),
             labels)
     except Exception:
-        # No session row, no session: one that nothing supervises would run until its idle timeout.
+        # The write landed after all (its answer lost): the row names the session, which is not lost.
+        landed = landed_session(supervisor.sessions, spec.run_id, spec.agent_id, vm)
+        if landed is not None:
+            return _answer(landed)
+        # No session row: one that nothing supervises would run until its idle timeout. Stopped now, or, when that
+        # fails too, kept on a row of its own that every tick stops again and counts (``stop_or_keep_lost``).
+        # (never raises: it logs what it could not do)
+        stop_or_keep_lost(supervisor.runtime, supervisor.sessions, spec.run_id, spec.agent_id, role, vm, int(clock()))
+        # The hold is let go whatever happened to the stop; a release that fails is logged, never raised in place of
+        # the write's own failure, which is what the caller needs (its hold runs out on its own).
         try:
-            supervisor.runtime.terminate(vm)
-        finally:   # (the hold is let go even when ending the session fails: its idle timeout ends it then)
             supervisor.sessions.release_launch(spec.run_id, spec.agent_id)
+        except Exception:
+            logger.exception('engineering runtime: a launch hold could not be let go',
+                             extra={'run_id': spec.run_id, 'agent_id': spec.agent_id})
         raise
     return _answer(session)
 

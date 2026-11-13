@@ -61,6 +61,23 @@ After = Literal['continue', 'hold', 'wait', 'shutdown']
 LAUNCH_HOLD_SECONDS: Final = 5 * 60
 
 
+#: The sort-key prefix of a session no row names (``SessionStore.record_lost``).
+LOST: Final = 'LOST#'
+
+
+@dataclass(frozen=True)
+class LostSession:
+    """A session whose row write failed and whose stop failed too: kept, stopped again every tick, counted."""
+
+    run_id: str
+    agent_id: str
+    role: str
+    vm: RuntimeSession
+    last_tick_at: int
+    #: When it was found lost (its row's creation).
+    recorded_at: int = 0
+
+
 class StaleSession(RuntimeError):
     """Someone else moved the session since it was read."""
 
@@ -483,9 +500,80 @@ class SessionStore:
         return sessions, holds
 
     def any_live_or_moving(self, run_id: str, now: int) -> bool:
-        """An agent of the run is live, or one is being moved (a Resume may be starting a session for it)."""
+        """An agent of the run is live, or one is being moved (a Resume may be starting a session for it), or a session
+        no row names is still to stop (``lost``)."""
         return any(session.status in LIVE_STATUSES or session.stop_pending or (session.claimed_until or 0) >= now
-                   for session in self.of_run(run_id))
+                   for session in self.of_run(run_id)) or bool(self.lost(run_id))
+
+    # --- sessions no row names: a new session whose row write failed, and whose stop failed too ---------------------
+
+    def record_lost(self, run_id: str, agent_id: str, role: str, vm: RuntimeSession, now: int) -> None:
+        """Keep a session that would belong to nobody: its own create-only row, ``LOST#<session id>`` in its run's
+        partition, which every tick stops again (``lost``, ``lost_tick``) and counts until its stop succeeds. Never
+        deleted (D5): a stopped one is marked ``stopped_at``."""
+        try:
+            self._table.put_item(
+                Item={'pk': run_pk(run_id), 'sk': f'{LOST}{vm.vm_id}', 'run_id': run_id, 'agent_id': agent_id,
+                      'role': role, 'vm_id': vm.vm_id, 'endpoint': vm.endpoint, 'recorded_at': now,
+                      'last_tick_at': now, 'microvm_seconds': 0},
+                ConditionExpression='attribute_not_exists(sk)')
+        except ClientError as error:
+            if not is_conditional_check_failure(error):   # (recorded already: a retried move)
+                raise
+
+    def lost(self, run_id: str) -> list[LostSession]:
+        """The run's sessions no row names that are not stopped yet (one Query of its ``LOST#`` rows)."""
+        query = {'KeyConditionExpression': 'pk = :run AND begins_with(sk, :lost)', 'ConsistentRead': True,
+                 'ExpressionAttributeValues': {':run': run_pk(run_id), ':lost': LOST}}
+        return [LostSession(run_id=run_id, agent_id=str(item['agent_id']), role=str(item['role']),
+                            vm=RuntimeSession(vm_id=str(item['vm_id']), agent_id=str(item['agent_id']),
+                                              endpoint=str(item['endpoint'])),
+                            last_tick_at=int(item['last_tick_at']), recorded_at=int(item.get('recorded_at', 0)))
+                for item in iter_query(self._table, query) if 'stopped_at' not in item]
+
+    def lost_named(self, lost: LostSession, now: int) -> None:
+        """Close a lost row whose session its agent's row names after all: ``stopped_at`` (no more retries), nothing
+        counted (its agent's row counts it)."""
+        self._table.update_item(
+            Key={'pk': run_pk(lost.run_id), 'sk': f'{LOST}{lost.vm.vm_id}'},
+            UpdateExpression='SET stopped_at = :now, last_tick_at = :now',
+            ConditionExpression='attribute_exists(sk) AND last_tick_at = :seen',
+            ExpressionAttributeValues={':now': now, ':seen': lost.last_tick_at})
+
+    def lost_tick(self, lost: LostSession, now: int, *, stopped: bool) -> None:
+        """Count a lost session's time since the last tick (on its row, and its cost on its agent's row, where the run's
+        cost cap reads it, an ADD as the brokers' are) and, once its stop succeeded, mark it stopped."""
+        seconds = max(now - lost.last_tick_at, 0)
+        cost = self.pricing.cost(lost.role, running=seconds, held=0)
+        stop = ', stopped_at = :now' if stopped else ''
+        name = self._table.name
+        # Its own row: its seconds and cost, and the stop. Conditional on the tick it last counted, so no two ticks
+        # count one stretch.
+        own: dict[str, Any] = {'Update': {
+            'TableName': name, 'Key': {'pk': run_pk(lost.run_id), 'sk': f'{LOST}{lost.vm.vm_id}'},
+            'UpdateExpression': f'ADD microvm_seconds :s, cost_usd :cost SET last_tick_at = :now{stop}',
+            'ConditionExpression': 'attribute_exists(sk) AND last_tick_at = :seen',
+            'ExpressionAttributeValues': {':s': seconds, ':cost': cost.usd, ':now': now, ':seen': lost.last_tick_at}}}
+        # Its cost where the run's cost cap reads it: the agent's row, an ADD as the brokers' are, only onto a row that
+        # exists (its session's, or its launch hold's), never a cost-only row a reader would take for an agent.
+        agent = {'Update': {'TableName': name, 'Key': _key(lost.run_id, lost.agent_id),
+                            'UpdateExpression': 'ADD cost_usd :cost', 'ConditionExpression': 'attribute_exists(sk)',
+                            'ExpressionAttributeValues': {':cost': cost.usd}}}
+        # And the spend ledger and its flow's month total, as a session's priced write books them.
+        where = replace(self._where(lost.run_id), agent_id=lost.agent_id)
+        ledger = ledger_updates(name, self._clock(), where,
+                                {MICROVM: Usage(usd=cost.usd, microvm_seconds=seconds)}) if seconds > 0 else []
+        priced = cost.usd > 0
+        try:
+            self._transact([own, *([agent] if priced else []), *ledger])
+        except ClientError as error:
+            reasons = error.response.get('CancellationReasons') or []
+            agent_missing = priced and len(reasons) > 1 and reasons[1].get('Code') == 'ConditionalCheckFailed' and (
+                reasons[0].get('Code') in (None, 'None'))
+            if not agent_missing:
+                raise
+            # No row of its agent (a launch whose hold is gone): the cost stays on its own row and the ledger.
+            self._transact([own, *ledger])
 
     def watched(self) -> Iterator[tuple[str, list[AgentSession]]]:
         """Every session, live or not, of each run the supervisor watches, run by run (one query per run)."""

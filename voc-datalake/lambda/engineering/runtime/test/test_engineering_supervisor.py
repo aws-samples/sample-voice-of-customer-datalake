@@ -17,7 +17,7 @@ from engineering.runtime.interface import AgentSpec, Command, RuntimeRefused, Ru
 from engineering.runtime.launcher import Launcher, RunStopped
 from engineering.runtime.ports import Budget, BudgetAlert, Lease
 from engineering.runtime.runs import RunCaps
-from engineering.runtime.sessions import AgentSession, StaleSession
+from engineering.runtime.sessions import AgentSession, LostSession, StaleSession
 from engineering.runtime.supervisor import THIRTY_DAYS
 from engineering.runtime.test.conftest import BUCKET, COMMIT, ROLE_ARNS, RUN, FakeSts, World
 
@@ -191,7 +191,7 @@ def test_an_agent_whose_new_microvm_never_starts_is_escalated_not_retried_foreve
     _until(world, 1000, lambda s: s.status == 'working')
 
     def down(_spec: AgentSpec) -> RuntimeSession:
-        raise RuntimeError('the MicroVM service refused the start')
+        raise RuntimeError('the session service refused the start')
 
     monkeypatch.setattr(world.runtime, 'run', down)   # every continuation's start fails from now on
     ended = _until(world, 1000, lambda s: s.status == 'reposted')
@@ -346,6 +346,96 @@ def test_a_session_whose_stop_fails_is_stopped_again_every_tick_and_its_time_cou
     _assert_terminated(world, first)
 
 
+def _crashing_with_its_starts_recorded(world: World, monkeypatch: pytest.MonkeyPatch) -> list[RuntimeSession]:
+    """A working agent about to crash, and every session the runtime starts from now on (its continuation's)."""
+    world.launch(code='import sys; sys.exit(1)')
+    _until(world, 1000, lambda s: s.status == 'working')
+    started: list[RuntimeSession] = []
+    real_run = world.runtime.run
+
+    def run(spec: AgentSpec) -> RuntimeSession:
+        started.append(real_run(spec))
+        return started[-1]
+
+    monkeypatch.setattr(world.runtime, 'run', run)
+    return started
+
+
+def test_a_continuation_whose_new_rows_write_and_stop_both_fail_keeps_its_new_session_to_stop_again(
+        world: World, monkeypatch: pytest.MonkeyPatch):
+    started = _crashing_with_its_starts_recorded(world, monkeypatch)
+    real_save, real_stop = world.store.save, world.runtime.terminate
+
+    def save(session: AgentSession) -> AgentSession:
+        if started and session.vm_id == started[0].vm_id:
+            raise RuntimeError('the continuation\'s row could not be written')
+        return real_save(session)
+
+    def stop(vm: RuntimeSession) -> None:
+        if started and vm.vm_id == started[0].vm_id:
+            raise RuntimeError('the service refused the stop')
+        real_stop(vm)
+
+    monkeypatch.setattr(world.runtime, 'terminate', stop)
+    monkeypatch.setattr(world.store, 'save', save)
+    world.supervisor.tick(1060)
+    # Nobody's row names the new session, and its stop failed: it is kept on a row of its own, and still runs.
+    assert [lost.vm.vm_id for lost in world.store.lost(RUN)] == [started[0].vm_id]
+    assert world.runtime.state_of(started[0]) == 'running'
+
+
+def test_a_continuation_whose_row_write_landed_though_its_answer_failed_is_not_lost_nor_stopped(
+        world: World, monkeypatch: pytest.MonkeyPatch):
+    started = _crashing_with_its_starts_recorded(world, monkeypatch)
+    real_save = world.store.save
+
+    def save(session: AgentSession) -> AgentSession:
+        saved = real_save(session)
+        if started and session.vm_id == started[0].vm_id and session.status == 'booting' and session.boot_index == 0:
+            raise RuntimeError('the answer was lost on its way back')   # (the write itself landed)
+        return saved
+
+    monkeypatch.setattr(world.store, 'save', save)
+    world.supervisor.tick(1060)
+    # Read back: the row names the new session, so it is neither lost (counted twice) nor stopped.
+    assert (world.store.lost(RUN), world.runtime.state_of(started[0])) == ([], 'running')
+    assert world.session().vm_id == started[0].vm_id
+
+
+def test_a_lost_session_its_agents_row_names_after_all_is_closed_neither_stopped_nor_counted_twice(
+        world: World, monkeypatch: pytest.MonkeyPatch):
+    world.launch(code=SLEEP)
+    working = _until(world, 1000, lambda s: s.status == 'working')
+    # A read-back that failed (or a late write that landed after it) left the agent's own session on a LOST# row too.
+    world.store.record_lost(RUN, 'fixer-1', 'fixer', working.vm, 1000)
+    counted: list[int] = []
+    monkeypatch.setattr(world.store, 'lost_tick', lambda *_args, **_kwargs: counted.append(1))
+    world.supervisor.tick(1060)
+    # Closed (no more retries) without being counted on it or stopped: its agent's row counts and owns it.
+    assert (world.store.lost(RUN), counted, world.runtime.state_of(working.vm)) == ([], [], 'running')
+    assert world.session().vm_id == working.vm_id
+
+
+def test_one_lost_sessions_failure_never_keeps_the_runs_others_from_being_stopped(
+        world: World, monkeypatch: pytest.MonkeyPatch):
+    world.launch(code=SLEEP)
+    _until(world, 1000, lambda s: s.status == 'working')
+    first, second = world.runtime.run(world.session().spec()), world.runtime.run(world.session().spec())
+    for vm in (first, second):
+        world.store.record_lost(RUN, 'fixer-1', 'fixer', vm, 1000)
+    real_tick = world.store.lost_tick
+
+    def tick(lost: LostSession, now: int, *, stopped: bool) -> None:
+        if lost.vm.vm_id == min(first.vm_id, second.vm_id):
+            raise RuntimeError('this row could not be counted')
+        real_tick(lost, now, stopped=stopped)
+
+    monkeypatch.setattr(world.store, 'lost_tick', tick)
+    world.supervisor.tick(1060)
+    # The row that failed stays to try again; the other one is stopped all the same.
+    assert [lost.vm.vm_id for lost in world.store.lost(RUN)] == [min(first.vm_id, second.vm_id)]
+
+
 def test_the_launcher_refuses_a_stopped_runs_agents():
     with pytest.raises(RunStopped):
         Launcher(FakeSts(), ROLE_ARNS).session_for(role='fixer', connection='c', run_id='r', agent_id='a', stopped=True)
@@ -393,11 +483,11 @@ def test_a_continued_session_keeps_the_tokens_of_its_earlier_microvms():
                          egress=(), connection='conn-1', commit=COMMIT, paths=(), harness=('true',), vm_id='vm-1',
                          endpoint='', started_at=0, tokens={'model-a': {'in': 100, 'out': 10}})
     continued = first.on(RuntimeSession(vm_id='vm-2', agent_id='fixer-1', endpoint=''), 10, None)
-    # The new MicroVM's harness counts from zero.
+    # The new session's harness counts from zero.
     tokens = continued.reported({'model-a': {'in': 5, 'out': 1}, 'model-b': {'in': 2, 'out': 0}})
     assert tokens == {'model-a': {'in': 105, 'out': 11}, 'model-b': {'in': 2, 'out': 0}}
     assert replace(continued, tokens=tokens).input_tokens == 107
-    # A report from inside the MicroVM can only add: never a negative count, never below what was saved.
+    # A report from inside the session can only add: never a negative count, never below what was saved.
     lower = replace(continued, tokens=tokens).reported({'model-a': {'in': -1_000_000, 'out': 0}})
     assert lower == tokens
 
@@ -520,7 +610,7 @@ def test_a_crash_that_cannot_be_recorded_keeps_its_count_and_lets_go_of_the_row(
     working = _until(world, 1000, lambda s: s.status == 'working')
 
     def gone(*_args: object) -> None:
-        raise OSError('the MicroVM is gone')
+        raise OSError('the session is gone')
 
     def no_new_microvm(*_args: object) -> None:
         raise OSError('no capacity')
@@ -575,7 +665,7 @@ def test_an_agents_tokens_add_up_over_every_microvm_it_ran_in(world: World):
     world.launch(code=REPORTS_STATUS)
     _until(world, 1000, lambda s: s.status == 'working')
     first = _until(world, 1060, lambda s: s.tokens != {})
-    # Its MicroVM goes away: the agent is continued in a new one, whose harness counts from zero again.
+    # Its session goes away: the agent is continued in a new one, whose harness counts from zero again.
     world.runtime.terminate(first.vm)
     _until(world, 1120, lambda s: s.continuation == 1)
     _until(world, 1180, lambda s: s.status == 'working')
@@ -590,7 +680,7 @@ def test_an_agents_microvm_time_is_priced_once_across_its_continuations(world: W
     first = world.launch(code=SLEEP)
     _until(world, 1000, lambda s: s.status == 'working')
     world.supervisor.tick(1600)
-    # Its MicroVM goes away: continued in a new one, then ended; every second counted once.
+    # Its session goes away: continued in a new one, then ended; every second counted once.
     world.runtime.terminate(first.vm)
     _until(world, 1660, lambda s: s.continuation == 1)
     world.supervisor.signal(RUN, 'fixer-1', 'stop_now', 3000)
@@ -647,7 +737,7 @@ def test_a_signal_whose_microvm_call_fails_is_not_applied(world: World, monkeypa
     assert world.session().suspended
 
     def refuse(_vm: object) -> None:
-        raise RuntimeError('the MicroVM did not answer')
+        raise RuntimeError('the session did not answer')
 
     monkeypatch.setattr(world.runtime, 'resume', refuse)
     status, applied = world.supervisor.signal_detailed(RUN, 'fixer-1', 'save', 1002)['fixer-1']
@@ -778,7 +868,7 @@ def test_shut_down_or_pause_on_an_agent_still_booting_takes_effect_at_once(world
 
 def test_a_booting_agent_whose_open_task_a_person_blocked_is_ended_on_the_next_tick(world: World):
     # Blocked before its claim: the board reads it ended with no holder (board_bus.BoardLeases.lease). The session
-    # ends at once, its MicroVM with it, never left to boot and then be refused its claim.
+    # ends at once, its session with it, never left to boot and then be refused its claim.
     booting = world.launch(code=SLEEP)
     assert booting.harness_at is None
     world.board.leases['01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1'] = Lease(
@@ -1073,7 +1163,7 @@ def test_a_continuations_lease_is_refreshed_again_when_its_harness_starts(world:
     world.supervisor._continue(working, 1060, crashed=False)
     # Through its boot (the checkout, then the harness), a tick at a time.
     _until(world, 1120, lambda s: s.status == 'working')
-    assert len(world.board.refreshed) - before == 2  # before its MicroVM started, and when its harness did
+    assert len(world.board.refreshed) - before == 2  # before its session started, and when its harness did
 
 
 def test_a_continuation_whose_lease_is_refused_when_its_harness_starts_ends(world: World):

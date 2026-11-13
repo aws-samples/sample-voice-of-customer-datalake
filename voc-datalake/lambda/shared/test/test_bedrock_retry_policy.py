@@ -47,7 +47,7 @@ EXEMPT = {
     # The image model's Settings test, same contract: ONE paid image call whose throttle
     # is the answer the admin asked for (a retry would also bill a second image).
     'shared/image_model_status.py': 'a throttle is the image probe result, never retried',
-    # The engineering agents' harness runs inside each agent's MicroVM, stdlib + boto3 only (the images do not ship
+    # The engineering agents' harness runs inside each agent's session, stdlib + boto3 only (the images do not ship
     # shared/), so it CANNOT import shared/; it builds its own client with botocore's adaptive retries (8 attempts).
     'engineering/runtime/harness/main.py': 'cannot import shared/ by design; its client retries (adaptive)',
     'engineering/runtime/harness/converse_loop.py': 'cannot import shared/ by design; main.py builds its client with retries',

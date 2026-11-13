@@ -26,7 +26,7 @@ setting the gates up in one:
   team never turned on is not the agent's to enforce.
 - **Its own pins.** Lock files are honoured (`npm ci`, `--locked`, `--frozen-lockfile`); tools come from the
   repository's own dev dependencies (`npx --no-install`, `python -m ruff`), so the gate never fetches a tool the
-  repository does not pin. `[image]` lists the toolchains the pack's MicroVM image installs, `[tools]` the
+  repository does not pin. `[image]` lists the toolchains the pack's agent image installs, `[tools]` the
   tools whose versions the gate records.
 - **One dependency step, then offline.** `setup` steps are the dependency step: they fetch only what the lock or
   requirement files name, from the public registries in `network` (the repository's registry settings overridden),
@@ -101,7 +101,7 @@ The packs need no scripts of their own today: every step is one command of the r
 
 ## Running it
 
-From `voc-datalake/lambda` (the MicroVM image keeps this directory beside the package, as here), on a committed
+From `voc-datalake/lambda` (the agent image keeps this directory beside the package, as here), on a committed
 checkout:
 
 ```bash

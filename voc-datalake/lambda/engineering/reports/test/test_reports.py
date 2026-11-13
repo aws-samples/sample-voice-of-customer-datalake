@@ -297,7 +297,7 @@ def test_facts_read_what_is_there_and_zero_for_the_rest() -> None:
         # A launch killed while it held its row (no session written): not an agent of the run.
         client.put_item(TableName=TABLE, Item={'pk': {'S': PK}, 'sk': {'S': 'AGENT#a-2'},
                                                LAUNCH_HOLD: {'N': '1700000000'}})
-        # A launch whose MicroVM failed: its hold run out (0), still a hold, never an agent.
+        # A launch whose session failed: its hold run out (0), still a hold, never an agent.
         client.put_item(TableName=TABLE, Item={'pk': {'S': PK}, 'sk': {'S': 'AGENT#a-3'}, LAUNCH_HOLD: {'N': '0'}})
         facts = FactsReader(client, TABLE).read('default', RUN)
     assert facts is not None
