@@ -7,12 +7,11 @@
  * - **Personal**: the caller's own memories — private to them.
  * - **Needs review** (curators): proposed items and conflicts, side by side,
  *   with supporter counts and a suggested resolution.
- * - **Imports** (curators, outside a workspace only): paste a page to learn from.
+ * - **Imports** (curators): paste a page to learn from (inside a workspace, into that workspace's memory).
  *
  * Curators: outside a workspace, the admins and the memory reviewers (an admin is one, and anyone else is one
  * exactly when `GET /memory/review` answers, the server's own gate); inside a workspace, its admins only (the role
- * the server applies there; the deployment's admins and the reviewer flag grant nothing), and Imports is hidden
- * there until page imports work in a workspace.
+ * the server applies there; the deployment's admins and the reviewer flag grant nothing).
  *
  * `?tab=personal|review|imports` deep-links a tab; a curator tab asked for by a
  * non-curator shows Company.
@@ -113,12 +112,11 @@ export default function Memory() {
   const { canCurate, reviewCount, reviewFailed, retryReview } = useCanCurate(configured, workspace)
   const [tab, setTab] = useMemoryTab()
 
-  // Imports stay the deployment's for now: hidden inside a workspace (its imports are not keyed by workspace yet).
+  // Imports are a curator's, inside a workspace too (since 7.16.00: its page under ws/{ws}/memory-imports/).
   const tabs: TabDef[] = [
     { id: 'company', icon: Building2 },
     { id: 'personal', icon: User },
-    ...(canCurate ? [{ id: 'review', icon: Scale, count: reviewCount } satisfies TabDef] : []),
-    ...(canCurate && workspace === null ? [{ id: 'imports', icon: ClipboardPaste } satisfies TabDef] : []),
+    ...(canCurate ? [{ id: 'review', icon: Scale, count: reviewCount } satisfies TabDef, { id: 'imports', icon: ClipboardPaste } satisfies TabDef] : []),
   ]
   const active = tabs.some((d) => d.id === tab) ? tab : 'company'
 

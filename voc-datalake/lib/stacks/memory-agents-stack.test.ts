@@ -33,6 +33,7 @@ import { byCodeUnit } from '../utils/compare';
 import { itemAt } from '../test-support/guards';
 import { sourceStringConstant } from '../test-support/cross-language-invariants';
 import { CONVERSATIONS_BY_KIND_INDEX } from './memory-workers';
+import { WORKSPACE_MEMORY_IMPORTS_PREFIX } from './core-buckets';
 
 const ENV = { account: '111111111111', region: 'us-east-1' };
 
@@ -74,6 +75,12 @@ function functionProps(template: Template, prefix: string) {
 
 function allActions(statements: NormalizedStatement[]): string[] {
   return statements.filter((s) => s.effect === 'Allow').flatMap((s) => s.actions);
+}
+
+/** The S3 resources of the role `rolePrefix*`'s statements, serialized. */
+function s3Resources(template: Template, rolePrefix: string): string {
+  return statementsOfRole(template, rolePrefix).filter((st) => st.actions.some((a) => a.startsWith('s3:')))
+    .map((st) => st.resource).join(' ');
 }
 
 /** `lambda:InvokeFunction` resources, serialized. */
@@ -144,6 +151,29 @@ describe('memory workers (VocProcessingStack)', () => {
     expect(s3.map((st) => st.resource).join(' ')).toContain('/memory-imports/*');
     expect(s3.flatMap((st) => st.actions).filter((a) => /^s3:(Put|Delete)/.test(a))).toStrictEqual([]);
     expect(s.map((st) => st.resource).join(' ')).toContain(`foundation-model/${EMBEDDING_MODEL_ID}`);
+  });
+
+  it("extractor: reads a workspace's imported pages under ws/{one id}/memory-imports/ only", () => {
+    const resources = s3Resources(template, 'MemoryWorkersMemoryExtractorRole');
+    expect(resources).toContain(`/${WORKSPACE_MEMORY_IMPORTS_PREFIX}*`);
+    expect(resources).not.toContain('/ws/*');
+  });
+
+  it.each([
+    ['extractor', 'MemoryWorkersMemoryExtractor'],
+    ['scanner', 'MemoryWorkersMemoryScanner'],
+  ])("%s: reads voc-workspaces' WS# rows only (GetItem): a workspace still active, its member's role", (_name, fn) => {
+    const onWorkspaces = statementsOfRole(template, `${fn}Role`)
+      .filter((statement) => statement.resource.includes('Workspaces'));
+    expect(onWorkspaces.map((statement) => statement.actions)).toStrictEqual([['dynamodb:GetItem']]);
+    template.hasResourceProperties('AWS::IAM::Policy', Match.objectLike({
+      PolicyDocument: { Statement: Match.arrayWith([Match.objectLike({
+        Action: 'dynamodb:GetItem',
+        Condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] } },
+      })]) },
+    }));
+    const env = functionProps(template, fn).Environment.Variables;
+    expect(JSON.stringify(env.WORKSPACES_TABLE)).toContain('Workspaces');
   });
 
   it('extractor: re-queues the next chunk of a long import on the memory-extract queue only', () => {
@@ -372,6 +402,12 @@ describe('memory + agents APIs (VocApiStack)', () => {
     expect(s.map((st) => st.resource).join(' ')).toContain('/memory-imports/*');
     expect(s.map((st) => st.resource).join(' ')).toContain(`foundation-model/${EMBEDDING_MODEL_ID}`);
     expect(functionProps(template, 'MemoryApi').Handler).toBe('memory_handler.lambda_handler');
+  });
+
+  it("memory API: a workspace's imports under ws/{one id}/memory-imports/ only", () => {
+    const resources = s3Resources(template, 'MemoryLambdaRole');
+    expect(resources).toContain(`/${WORKSPACE_MEMORY_IMPORTS_PREFIX}*`);
+    expect(resources).not.toContain('/ws/*');
   });
 
   it('agents API: starts + stops voc-agent-run', () => {

@@ -17,6 +17,24 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.16.00] - 2026-11-13
+
+Multi-workspace: the voc-multiplayer-c track's memory-extraction slice merged. Inside a workspace, Memory learns from that workspace's conversations and imported pages ([docs/memory.md](docs/memory.md), [docs/multi-workspace.md](docs/multi-workspace.md)).
+
+### Added
+
+- Inside a workspace, Memory now learns from that workspace's assistant conversations and from pages imported there, and keeps what it learns in that workspace only. It learns from a conversation only while its owner is an editor or an admin of the workspace (a viewer's or a former member's conversations teach it nothing), and stops writing in a workspace that is being deleted. Importing a page inside a workspace is now available to the workspace's admins: the web app shows the Imports tab there again. Outside a workspace nothing changes.
+
+### Changed
+
+- IAM: the memory scanner and extractor roles may get `WS#*` rows of `voc-workspaces`, held to the attributes the workspace resolver reads and refused when a read names none (each read names its projection: a member's role, a workspace's status); the memory API may put a workspace's imported page under `ws/{one id}/memory-imports/` in the raw-data bucket, and the extractor may read it there.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all` from the repo root): the API and processing stacks change (the roles and environments above); no table, index or cross-stack reference changes.
+- Nothing is migrated: a workspace's memories start learning from its conversations from this release on; conversations from before workspaces keep feeding the deployment's memories only.
+- IAM: review the grants above if you restrict IAM changes.
+
 ## [7.15.00] - 2026-11-13
 
 Multi-workspace: the voc-multiplayer-c track's assistant, logs and memory slices merged. Inside a workspace, the assistant's conversations and Memory are that workspace's own ([docs/multi-workspace.md](docs/multi-workspace.md), [docs/memory.md](docs/memory.md)).

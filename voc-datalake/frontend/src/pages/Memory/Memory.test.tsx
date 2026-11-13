@@ -48,25 +48,29 @@ beforeEach(() => {
   adminFlag.isAdmin = true
 })
 
+/** Both curator tabs, Needs review and Imports, are shown. */
+async function expectCuratorTabs() {
+  expect(await screen.findByRole('tab', { name: /needs review/i })).toBeInTheDocument()
+  expect(screen.getByRole('tab', { name: /imports/i })).toBeInTheDocument()
+}
+
 describe('Memory page', () => {
   it('shows the curator tabs to an admin', async () => {
     route(listRoutes([]))
     renderMemory()
-    expect(await screen.findByRole('tab', { name: /needs review/i })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /imports/i })).toBeInTheDocument()
+    await expectCuratorTabs()
   })
 
   describe('inside a workspace', () => {
     const WS = { id: 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8', slug: 'acme', name: 'Acme Outfitters' }
     afterEach(() => setCurrentWorkspace(null))
 
-    it('lets its admin review, but keeps Imports hidden', async () => {
+    it('lets its admin review and import (page imports work in a workspace since 7.16.00)', async () => {
       adminFlag.isAdmin = false
       setCurrentWorkspace({ ...WS, role: 'admin' })
       route({ ...listRoutes([]), 'GET /me/workspaces/current': () => ({ workspace: { ...WS, role: 'admin' } }) })
       renderMemory()
-      expect(await screen.findByRole('tab', { name: /needs review/i })).toBeInTheDocument()
-      expect(screen.queryByRole('tab', { name: /imports/i })).not.toBeInTheDocument()
+      await expectCuratorTabs()
     })
 
     it('gives a deployment admin who is an editor there no curator tabs, and never asks for the queue', async () => {

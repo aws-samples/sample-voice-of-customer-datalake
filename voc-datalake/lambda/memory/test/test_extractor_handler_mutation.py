@@ -72,7 +72,7 @@ def seams(monkeypatch) -> SimpleNamespace:
     memory_table, aggregates = MagicMock(name='memory'), MagicMock(name='aggregates')
     monkeypatch.setattr(store, 'get_memory_table', lambda: memory_table)
     monkeypatch.setattr(extractor, 'get_aggregates_table', lambda: aggregates)
-    monkeypatch.setattr(extractor, 'categories_config', tuple)
+    monkeypatch.setattr(extractor, 'categories_config', lambda _workspace=None: ())
     model = MagicMock(return_value=_reply(model_reply([])))
     write = MagicMock(return_value=store.WriteOutcome())
     monkeypatch.setattr(store, 'call_memory_model', model)
@@ -99,7 +99,7 @@ class TestTheConstantsAreTheContract:
         assert extractor.MAX_TRANSCRIPT_CHARS == 40_000
         assert extractor.MAX_CANDIDATES_PER_CALL == 12
         assert extractor.EXTRACTION_MAX_TOKENS == 3_000
-        assert extractor.IMPORT_PREFIX == 'memory-imports/'
+        assert extractor.store.IMPORT_PREFIX == 'memory-imports/'
         assert extractor.TRANSCRIPT_ROLES == ('user', 'assistant')
         assert (extractor.KIND_SESSION, extractor.KIND_PROJECT_CHAT, extractor.KIND_AGENT_RUN,
                 extractor.KIND_IMPORT) == ('session', 'project_chat', 'agent_run', 'import')
@@ -461,7 +461,7 @@ class TestProcessSession:
     def session(self, monkeypatch, seams) -> SimpleNamespace:
         """A loadable thread, an empty cursor store and `save_cursor`/`is_restricted` as mocks."""
         state = SimpleNamespace(messages=TWO_TURNS, cursor={}, save=MagicMock(), seams=seams)
-        monkeypatch.setattr(extractor, '_load_messages', lambda _owner, _sid: state.messages)
+        monkeypatch.setattr(extractor, '_load_messages', lambda _owner, _sid, _workspace=None: state.messages)
         monkeypatch.setattr(store, 'get_cursors', lambda _table, ids: {ids[0]: state.cursor} if state.cursor else {})
         monkeypatch.setattr(store, 'save_cursor', state.save)
         monkeypatch.setattr(extractor, 'is_restricted', lambda _owner: False)
@@ -614,9 +614,6 @@ class TestADirectTextSourceGetsItsOrigin:
 # ============================================
 
 class TestImportStorage:
-    def test_the_object_key_is_under_the_imports_prefix(self):
-        assert extractor.import_object_key('imp_abc') == 'memory-imports/imp_abc.json'
-
     def _s3(self, monkeypatch, body: bytes) -> MagicMock:
         s3 = MagicMock()
         s3.get_object.return_value = {'Body': MagicMock(read=MagicMock(return_value=body))}
@@ -666,7 +663,7 @@ class TestProcessImport:
         monkeypatch.setattr(store, 'add_import_counts', state.counts)
         monkeypatch.setattr(extractor, '_enqueue', state.enqueue)
         monkeypatch.setattr(extractor, '_read_import_content',
-                            lambda import_id: state.reads.append(import_id) or '\n\n'.join(state.chunks))
+                            lambda import_id, _workspace=None: state.reads.append(import_id) or '\n\n'.join(state.chunks))
         return state
 
     @staticmethod
@@ -789,7 +786,7 @@ class TestRecordHandlerRoutesByKind:
             extractor.record_handler(self._record('{"kind": "session", "session_id": "c"}'))
         warning.assert_not_called()
         [(args, kwargs)] = route.call_args_list
-        assert (args[0], kwargs) == ({'kind': 'session', 'session_id': 'c'}, {})
+        assert (args[0], args[2], kwargs) == ({'kind': 'session', 'session_id': 'c'}, None, {})
         assert before <= args[1] <= datetime.now(UTC)
         assert args[1].tzinfo is UTC
 
@@ -849,7 +846,7 @@ class TestCategoryLabelsAndIds:
     CATEGORIES = ({'name': 'software_firmware', 'description': 'Software & Firmware'},)
 
     def test_the_prompt_lists_the_configured_categories_and_their_ids_are_kept(self, seams, monkeypatch):
-        monkeypatch.setattr(extractor, 'categories_config', lambda: self.CATEGORIES)
+        monkeypatch.setattr(extractor, 'categories_config', lambda _workspace=None: self.CATEGORIES)
         seams.model.return_value = _reply(model_reply([{**COMPANY_ENTRY, 'categories': ['Software & Firmware']}]))
         extractor.extract_and_write('USER: hi', _origin(), NOW)
         prompt = seams.model.call_args.args[0]
@@ -861,7 +858,7 @@ class TestCategoryLabelsAndIds:
         assert 'never by their ids' in extractor.EXTRACTION_SYSTEM_PROMPT
 
     def test_a_statement_naming_a_category_is_tagged_with_it_even_untagged(self, seams, monkeypatch):
-        monkeypatch.setattr(extractor, 'categories_config', lambda: self.CATEGORIES)
+        monkeypatch.setattr(extractor, 'categories_config', lambda _workspace=None: self.CATEGORIES)
         entry = {**COMPANY_ENTRY, 'statement': 'Software/Firmware crashes are the second biggest problem'}
         seams.model.return_value = _reply(model_reply([entry]))
         extractor.extract_and_write('USER: hi', _origin(), NOW)
@@ -869,5 +866,17 @@ class TestCategoryLabelsAndIds:
         assert args[1][0].categories == ['software_firmware']
 
     def test_a_malformed_config_reads_as_none(self, monkeypatch):
-        monkeypatch.setattr(extractor, 'get_raw_categories_config', lambda _table: 'junk')
+        monkeypatch.setattr(extractor, 'get_raw_categories_config', lambda _table, _workspace=None: 'junk')
         assert extractor.categories_config() == ()
+
+    def test_a_workspace_session_is_tagged_with_that_workspaces_categories(self, seams, monkeypatch):
+        """D8: the categories of the workspace the memories are learned in, never the deployment's."""
+        from shared.ws_repo import WorkspaceScope
+
+        asked: list[object] = []
+        monkeypatch.setattr(extractor, 'categories_config', lambda workspace=None: asked.append(workspace) or ())
+        seams.model.return_value = _reply(model_reply([]))
+        workspace = WorkspaceScope('ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8')
+        extractor.extract_and_write('USER: hi', _origin(workspace=workspace), NOW)
+        extractor.extract_and_write('USER: hi', _origin(), NOW)
+        assert asked == [workspace, None]

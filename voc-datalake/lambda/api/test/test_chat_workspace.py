@@ -77,10 +77,14 @@ def test_a_delete_inside_a_workspace_is_audited_with_its_workspace(lambda_contex
         assert 'CONV#conv_a' in _rows()['USER#sub-ada']
 
 
-def test_the_memory_scanner_mines_only_a_persons_own_conversations():
+def test_the_memory_scanner_mines_a_workspace_conversation_in_its_workspace():
+    """A person's own conversation as before; one kept in a workspace is mined there (memory/test/
+    test_extraction_workspaces.py), never as the deployment's."""
     row = {'sk': 'CONV#conv_a', 'message_count': 3, 'updated_at': '2026-11-01T00:00:00+00:00'}
-    assert (scanner._session_from_row({**row, 'pk': 'USER#sub-ada'}) or {}).get('owner_sub') == 'sub-ada'
-    assert scanner._session_from_row({**row, 'pk': f'WS#{WS_A}#USER#sub-ada'}) is None
+    own = scanner._session_from_row({**row, 'pk': 'USER#sub-ada'}) or {}
+    assert (own.get('owner_sub'), own.get('workspace')) == ('sub-ada', None)
+    kept = scanner._session_from_row({**row, 'pk': f'WS#{WS_A}#USER#sub-ada'}) or {}
+    assert (kept.get('owner_sub'), getattr(kept.get('workspace'), 'ws', None)) == ('sub-ada', WS_A)
 
 
 def _assistant_body(conversation_id: str, base_revision: int) -> dict:

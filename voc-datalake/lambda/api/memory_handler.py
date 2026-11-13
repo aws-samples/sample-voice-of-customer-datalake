@@ -19,9 +19,9 @@ Inside a workspace (``X-Workspace-Id``; docs/multi-workspace.md, "Request flow":
 workspace's memories (shared/memory_store.py, its partitions), resolved first, before anything else, for any member
 (shared/request_workspace.py; fresh for a write, from the warm cache for a read and for the assistant's
 ``POST /memory/retrieve``, its ``used`` marks included): its **admins** curate (the deployment's ``admins`` group and the
-``memory_reviewer`` flag grant nothing there), a **viewer** reads only, and page imports are refused (409) until the
-extractor writes in a workspace. A request that names no workspace keeps the deployment's memories and rules, as
-before.
+``memory_reviewer`` flag grant nothing there), a **viewer** reads only, and a page import is the workspace's (its page under
+``ws/{ws}/memory-imports/``, its queue message naming the workspace: shared/memory_store.py ``import_message``, so the
+extractor writes its memories there). A request that names no workspace keeps the deployment's memories and rules, as before.
 
 ``POST /memory/retrieve`` and ``GET /memory/conflict-check`` are internal: the
 stream assistant and the agents runtime call them with the end user's claims.
@@ -59,7 +59,6 @@ from shared.exceptions import (
 )
 from shared.logging import logger, tracer
 from shared.memory_categories import category_ids, classify_statement
-from shared.memory_store import IMPORT_PREFIX
 from shared.project_access import Caller
 from shared.project_gate import caller_from_event
 from shared.request_body import json_body_value
@@ -603,22 +602,21 @@ def _validated_import(body: dict) -> tuple[str, str | None, str]:
 def create_import():
     caller = _caller()
     _require_curator(caller)
-    if _workspace() is not None:
-        raise ConflictError('Importing pages inside a workspace arrives with its extraction; import outside it')
     if not RAW_DATA_BUCKET or not MEMORY_QUEUE_URL:
         raise ConfigurationError('Memory imports are not configured')
     title, url, content = _validated_import(_body())
     table = get_memory_table()
     now = _now()
     import_id = store.new_import_id()
-    s3_key = f'{IMPORT_PREFIX}{import_id}.json'
+    workspace = _workspace()
+    s3_key = store.import_object_key(import_id, workspace)
     get_s3_client().put_object(
         Bucket=RAW_DATA_BUCKET, Key=s3_key, ContentType='application/json',
         Body=json.dumps({'import_id': import_id, 'title': title, 'url': url, 'content': content,
                          'created_at': now_iso(now)}, ensure_ascii=False).encode('utf-8'),
     )
     record = {
-        **store.import_key(import_id), 'import_id': import_id, 'title': title, 'status': 'queued',
+        **store.import_key(import_id, workspace), 'import_id': import_id, 'title': title, 'status': 'queued',
         's3_key': s3_key, 'content_chars': len(content), 'chunks_total': len(policy.chunk_text(content)),
         'chunks_done': 0, 'created': 0, 'reinforced': 0, 'proposed': 0, 'conflicts': 0, 'dropped': 0,
         'created_by_hash': store.supporter_hash(caller.subject),
@@ -628,15 +626,16 @@ def create_import():
         record['created_by_username'] = caller.username
     if url:
         record['url'] = url
-    table.put_item(Item=record)
+    store.put_new(table, record)
     try:
         # `notify`: who the extractor tells when the import ends (docs/realtime.md). In the message only: the
-        # import row keeps a supporter hash, never the sub.
+        # import row keeps a supporter hash, never the sub. Inside a workspace the message names it (the extractor
+        # writes the memories there), from the request's resolved scope.
         get_sqs_client().send_message(QueueUrl=MEMORY_QUEUE_URL, MessageBody=json.dumps(
-            {'kind': 'import', 'import_id': import_id, 'chunk': 0, 'notify': caller.subject}))
+            store.import_message(import_id, 0, caller.subject, workspace)))
     except Exception as exc:
         store.add_import_counts(table, import_id, {}, {'status': 'failed', 'error': 'Could not queue the import'},
-                                now=now)
+                                now=now, **_in_workspace())
         raise ServiceError('Could not queue the import. Please retry.') from exc
     return Response(status_code=202, content_type=content_types.APPLICATION_JSON,
                     body=json.dumps({'import_id': import_id, 'import': store.public_import(record)}, default=str))

@@ -189,11 +189,23 @@ LivePlatformAdminCheck = Callable[[dict], bool]
 DELEGATED_ROLE_CAP: Final = 'editor'
 
 
+def stored_role(table: Any, ws: str, sub: str) -> str | None:
+    """``sub``'s role in ``ws`` (its ``MEMBER#`` row, read strongly consistent), or None for a non-member. A platform
+    admin's entry is not a role here: it is a request's, live-checked and audited, never a background worker's."""
+    stored = _item(table, ws_key(ws), f'MEMBER#{sub}', MEMBER_READ_ATTRIBUTES).get('role')
+    return stored if isinstance(stored, str) and stored in ROLES else None
+
+
+def is_active(table: Any, ws: str) -> bool:
+    """True while ``ws`` is active (its ``META`` row, read strongly consistent): what a background worker checks before
+    it goes on writing in a workspace (a deleted one's rows are being swept)."""
+    return _item(table, ws_key(ws), 'META', META_READ_ATTRIBUTES).get('status') == ACTIVE
+
+
 def _load(table: Any, event: dict, ws: str, platform_admin: bool,
           confirm_platform_admin: LivePlatformAdminCheck) -> WorkspaceContext:
     sub = member_subject(event)
-    stored = _item(table, ws_key(ws), f'MEMBER#{sub}', MEMBER_READ_ATTRIBUTES).get('role')
-    role = stored if isinstance(stored, str) and stored in ROLES else None
+    role = stored_role(table, ws, sub)
     # Decision 2: a platform admin enters with full admin rights, a member with a lower role too (audited). The
     # token's group makes the caller a candidate; the live check decides (a revoked or disabled one is not).
     enters_as_platform_admin = platform_admin and role != 'admin' and confirm_platform_admin(event)

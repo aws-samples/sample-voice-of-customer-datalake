@@ -94,9 +94,6 @@ class RouteCase:
     #: Without a workspace the route is the deployment's ``admins`` group's (as before): check 3 expects 403 for a
     #: caller outside it.
     deployment_admins_without_a_workspace: bool = False
-    #: Without a workspace the route answers this instead of ``ok_status`` (a route that does inside a workspace what
-    #: it cannot yet, and says so, while the deployment's keeps working): check 3 expects it.
-    status_without_a_workspace: int | None = None
 
 
 def table_snapshot() -> dict[str, list[str]]:
@@ -532,12 +529,12 @@ CASES: dict[tuple[str, str], RouteCase] = {
         literals={_A_STATEMENT: 'a statement the person typed, not a row of a workspace'},
         without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
     ('memory_handler.py', 'POST /memory/imports'): RouteCase(
-        no_ids='the page is new, the workspace is the header: check 1 (refused inside a workspace until its '
-               'extraction writes there)',
+        no_ids='the page is new, the workspace is the header: check 1 (its record, page and queue message are the '
+               "workspace's)",
         body={'title': 'Returns policy', 'content': 'Buyers may return within thirty days.'},
         literals={'Returns policy': 'a page title the curator typed',
                   'Buyers may return within thirty days.': 'a page the curator pasted'},
-        ok_status=409, status_without_a_workspace=202, without_a_workspace=_AS_BEFORE,
+        ok_status=202, without_a_workspace=_AS_BEFORE,
         deployment_admins_without_a_workspace=True),
     ('memory_handler.py', 'GET /memory/imports/<import_id>'): RouteCase(
         ids=_IMPORT_IDS, without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),

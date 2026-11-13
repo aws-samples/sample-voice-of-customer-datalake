@@ -612,8 +612,7 @@ def check_missing_header(world: World, case: RouteCase, route: str, caller: dict
     before = _workspace_rows()
     status, body = _send(world, case, route, ws=None, ids=case.ids.get('A', {}), caller=caller)
     in_admins = 'admins' in get_caller_groups({'requestContext': {'authorizer': {'claims': caller}}})
-    normal = case.ok_status if case.status_without_a_workspace is None else case.status_without_a_workspace
-    expected = 403 if case.deployment_admins_without_a_workspace and not in_admins else normal
+    expected = 403 if case.deployment_admins_without_a_workspace and not in_admins else case.ok_status
     assert status == expected, f'{route} without a workspace: {status} {body}'
     assert _workspace_rows() == before, f'{route} without a workspace changed a workspace row'
     assert not _holds_b(body), f'{route} answered with B data without a workspace: {body}'

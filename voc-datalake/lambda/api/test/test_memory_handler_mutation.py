@@ -45,7 +45,7 @@ MCP_NOBODY = {'sub': 'mcp:tok1'}
 AGENT = {'sub': 'agent:a1', 'voc:acting_subject': 'sub-user'}
 _REAL = ('Candidate', 'COMPANY_PAGE_KEYS', 'MAX_MERGE', 'IMPORT_PK', 'LIST_ATTRIBUTES', 'public_view', 'summary_view',
          'public_import', 'decode_page_token', 'encode_page_token', 'visible_to', 'supporter_hash', 'now_iso',
-         'item_key', 'import_key')
+         'item_key', 'import_key', 'import_object_key', 'import_message', 'put_new', 'strip_runtime')
 
 
 def h(sub: str) -> str:
@@ -757,7 +757,7 @@ class TestImportWrites:
             'created_by_hash': h('sub-rev'), 'created_at': NOW_ISO, 'updated_at': NOW_ISO,
             'created_by_username': 'rita', 'url': 'https://wiki.example.com/p',
         }
-        world.table.put_item.assert_called_once_with(Item=record)
+        world.table.put_item.assert_called_once_with(Item=record, ConditionExpression='attribute_not_exists(pk)')
         world.sqs.send_message.assert_called_once_with(
             QueueUrl='https://sqs.example/q', MessageBody='{"kind": "import", "import_id": "imp_1", "chunk": 0, "notify": "sub-rev"}')
         assert (status, body) == (202, {'import_id': 'imp_1', 'import': store.public_import(record)})

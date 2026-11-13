@@ -20,8 +20,8 @@ key or row reads its workspace from that key's ``pk`` (shared/ws_repo.py ``parti
 layer's view of the table (shared/ingest_tables.py ``table_view``: the table itself for a deployment key, the same
 calls as before; ``ws_table`` for a workspace's, which refuses a key outside it before DynamoDB). Objective alignment
 reads the deployment's company context (``read_company_context``) until company context moves under its workspace. The
-memory API passes the workspace a request names (api/memory_handler.py); the scanner and the extractor do not yet
-(their slice is next).
+memory API passes the workspace a request names (api/memory_handler.py), the scanner the workspace a conversation is
+kept in and the extractor the workspace its message names (memory/scanner, memory/extractor).
 
 Subjects never leave this module in a response and are never logged: personal
 rows carry the owner only in ``pk``/``owner_sub``, and supporters are stored as
@@ -69,7 +69,7 @@ from shared.scope_names import HiddenNames
 from shared.scoped_keys import scoped_pk
 from shared.timestamps import now_iso
 from shared.update_expressions import set_clause
-from shared.ws_repo import WorkspaceScope, partition_scope, ws_table
+from shared.ws_repo import WORKSPACE_FIELD, WorkspaceScope, partition_scope, s3_key, ws_table
 
 MEMORY_TABLE_ENV: Final = 'MEMORY_TABLE'
 # The voc-memory GSI over gsi1pk/gsi1sk — named in lib/stacks/core-stack.ts.
@@ -121,8 +121,9 @@ def get_memory_table():
     return _table_cache[name]
 
 
-def _on(workspace: WorkspaceScope | None) -> dict[str, Any]:
-    """``workspace=`` for a workspace's memory, nothing for the deployment's (its calls as they always were)."""
+def workspace_kwargs(workspace: WorkspaceScope | None) -> dict[str, Any]:
+    """``workspace=`` for a workspace's memory, nothing for the deployment's (its calls as they always were): what
+    a caller passes on to this module's functions."""
     return {} if workspace is None else {'workspace': workspace}
 
 
@@ -511,7 +512,7 @@ def reinforce(table, item: Mapping[str, Any], supporter: str, source: Mapping[st
         )
     _trim_sources(table, item, source)
     append_event(table, str(item.get('memory_id')), 'reinforced' if added else 'refreshed', actor=supporter, now=now,
-                 **_on(partition_scope(item.get('pk'))))
+                 **workspace_kwargs(partition_scope(item.get('pk'))))
     return added
 
 
@@ -564,7 +565,7 @@ def link_conflicts(table, memory_id: str, others: Iterable[str], pool_by_id: Map
             continue
         set_fields(table, other, {'conflicts_with': [*linked, memory_id]}, now=now)
         append_event(table, other_id, 'conflict_linked', detail={'with': memory_id}, now=now,
-                     **_on(partition_scope(other.get('pk'))))
+                     **workspace_kwargs(partition_scope(other.get('pk'))))
 
 
 # ── Objective alignment ──────────────────────────────────────────────────────
@@ -794,7 +795,7 @@ def _apply_decision(table, pools: Pools, candidate: Candidate, decision: policy.
     pools.add(pk, item, vector)
     append_event(table, memory_id, 'created', actor=candidate.supporter,
                  detail={'status': decision.status, 'reason': decision.reason, 'source_kind': candidate.source_kind},
-                 now=now, **_on(candidate.workspace))
+                 now=now, **workspace_kwargs(candidate.workspace))
     if decision.conflicts_with:
         link_conflicts(table, memory_id, decision.conflicts_with, pools.by_id(pk), now=now)
     outcome.memory_ids.append(memory_id)
@@ -836,7 +837,7 @@ def write_explicit(table, candidate: Candidate, *, status: str, aggregates_table
     put_new(table, item)
     append_event(table, memory_id, 'created', actor=candidate.supporter,
                  detail={'status': status, 'source_kind': candidate.source_kind}, now=moment,
-                 **_on(candidate.workspace))
+                 **workspace_kwargs(candidate.workspace))
     _invalidate(pk)
     return item, False
 
@@ -1067,12 +1068,12 @@ def merge_memories(table, items: list[Mapping[str, Any]], statement: str, *, act
         merged.pop('expires_at', None)
     put_new(table, merged)
     append_event(table, memory_id, 'merged', actor=actor, detail={'from': merged['merged_from']}, now=now,
-                 **_on(workspace))
+                 **workspace_kwargs(workspace))
     for item in items:
         set_fields(table, item, {'status': policy.STATUS_ARCHIVED, 'merged_into': memory_id,
                                  'archived_reason': 'merged', 'conflicts_with': []}, now=now)
         append_event(table, str(item.get('memory_id')), 'merged_into', actor=actor, detail={'into': memory_id},
-                     now=now, **_on(workspace))
+                     now=now, **workspace_kwargs(workspace))
     return merged
 
 
@@ -1113,6 +1114,30 @@ def save_cursor(table, session_id: str, fields: Mapping[str, Any], *, now: datet
         ExpressionAttributeNames=names,
         ExpressionAttributeValues=placeholders,
     )
+
+
+def session_message(session_id: str, owner_sub: str, workspace: WorkspaceScope | None = None) -> dict[str, str]:
+    """The extractor's message for an idle assistant session: a workspace's names it (``workspace_id``, from its
+    verified scope: the extractor reads the conversation and writes the memories there)."""
+    message = {'kind': 'session', 'session_id': session_id, 'owner_sub': owner_sub}
+    return message if workspace is None else {**message, WORKSPACE_FIELD: workspace.ws}
+
+
+def import_message(import_id: str, chunk: int, notify: str | None,
+                   workspace: WorkspaceScope | None = None) -> dict[str, Any]:
+    """The extractor's message for one chunk of a page import (``notify``: who hears that it ended), in its
+    workspace when it has one (``workspace_id``, from the verified scope of the request or of the previous chunk)."""
+    message: dict[str, Any] = {'kind': 'import', 'import_id': import_id, 'chunk': chunk}
+    if notify:
+        message['notify'] = notify
+    return message if workspace is None else {**message, WORKSPACE_FIELD: workspace.ws}
+
+
+def import_object_key(import_id: str, workspace: WorkspaceScope | None = None) -> str:
+    """Where an import's original page is kept in the raw bucket: ``memory-imports/{id}.json``, or the workspace's
+    ``ws/{ws}/memory-imports/{id}.json``."""
+    name = f'{import_id}.json'
+    return f'{IMPORT_PREFIX}{name}' if workspace is None else s3_key(workspace, IMPORT_PREFIX.rstrip('/'), name)
 
 
 def import_key(import_id: str, workspace: WorkspaceScope | None = None) -> dict[str, str]:

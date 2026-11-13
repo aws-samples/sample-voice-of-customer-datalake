@@ -238,7 +238,8 @@ describe('cdk-nag acknowledgements', () => {
       // Also counted: the feedback-form API's write-once copy of a workspace form's submission,
       // ws/{one id}/raw/feedback_form/*, and the GitHub webhook's archive of a workspace's delivery,
       // ws/{one id}/raw/github_issues/*.
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 79, used: 79 });
+      // 80: a workspace's page imports under ws/{one id}/memory-imports/* (the memory API's and the extractor's).
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 80, used: 80 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });
