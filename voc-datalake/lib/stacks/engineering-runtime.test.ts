@@ -22,10 +22,11 @@ function fakePeers(stack: cdk.Stack, kmsKey: kms.IKey, pins: Map<string, string>
     // A queue on the stack's key, as voc-engineering-dlq is.
     deadLetterQueue: new sqs.Queue(stack, 'EngineeringDLQ', { encryption: sqs.QueueEncryption.KMS, encryptionMasterKey: kmsKey }),
     bus: events.EventBus.fromEventBusArn(stack, 'Bus', 'arn:aws:events:us-east-1:111111111111:event-bus/voc-engineering'),
-    addAgentPublisher: (statementId: string, _role: iam.IRole, source: string) => {
+    addPublisher: (statementId: string, _role: iam.IRole, source: string) => {
       pins.set(statementId, source);
     },
     board: lambda.Function.fromFunctionArn(stack, 'Board', `${ACCOUNT}:function:voc-engineering-board`),
+    boardUrl: 'https://abc123.lambda-url.us-east-1.on.aws/',
     broker: lambda.Function.fromFunctionArn(stack, 'Broker', `${ACCOUNT}:function:voc-engineering-broker`),
   };
 }
@@ -270,18 +271,33 @@ describe('with -c engineeringAgents=true', () => {
     ])).toBe(1);
   });
 
-  it('pins every agent role with a voice to its own source on the bus as well', () => {
+  it('lets the runtime\'s two roles speak on the bus only as the supervisor', () => {
     const { pins } = runtimeStack({ engineeringAgents: 'true' });
-    expect(pins.size).toBe(12);
+    expect([pins.get('Supervisor'), pins.get('Delivery')]).toStrictEqual(['voc.engineering/supervisor',
+      'voc.engineering/supervisor']);
+    for (const role of ['EngineeringSupervisorRole', 'EngineeringDeliveryRole']) {
+      template.hasResourceProperties('AWS::IAM::Policy', {
+        Roles: [{ Ref: Match.stringLikeRegexp(role) }],
+        PolicyDocument: Match.objectLike({ Statement: Match.arrayWith([Match.objectLike({
+          Sid: 'SpeakAsTheSupervisor', Action: 'events:PutEvents',
+          Condition: { StringEquals: { 'events:source': 'voc.engineering/supervisor' } },
+        })]) }),
+      });
+    }
+  });
+
+  it('pins every agent role with a voice, and the runtime\'s two roles, to its own source on the bus as well', () => {
+    const { pins } = runtimeStack({ engineeringAgents: 'true' });
+    expect(pins.size).toBe(15);
     expect(pins.get('Fixer')).toBe('voc.engineering/agent/fixer/${aws:PrincipalTag/ws}/${aws:PrincipalTag/run}/${aws:PrincipalTag/agent}');
     expect(pins.get('Coordinator')).toBe('voc.engineering/conductor/${aws:PrincipalTag/ws}/${aws:PrincipalTag/run}');
     expect(policyText(template, 'EngineeringAgentFixerRole')).toContain(':event-bus/voc-engineering');
   });
 
-  it('gives the coach no voice on the bus until it has a run-scoped source (its service source names no run)', () => {
+  it('lets the coach speak on the bus only as its own run\'s coach (a run-scoped source)', () => {
     const { pins } = runtimeStack({ engineeringAgents: 'true' });
-    expect(pins.has('Coach')).toBe(false);
-    expect(policyText(template, 'EngineeringAgentCoachRole')).not.toContain('PutOnTheBus');
+    expect(pins.get('Coach')).toBe('voc.engineering/coach/${aws:PrincipalTag/ws}/${aws:PrincipalTag/run}');
+    expect(policyText(template, 'EngineeringAgentCoachRole')).toContain('PutOnTheBus');
   });
 
   it('lets each engineering role use the key only through the services that store its data', () => {
@@ -359,6 +375,7 @@ describe('with -c engineeringAgents=true', () => {
         .parse(policy.Properties?.PolicyDocument?.Statement));
     expect(new Set(statements.flatMap((statement) => [statement.Action].flat()))).toStrictEqual(new Set([
       'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:Query', 'dynamodb:UpdateItem',
+      'events:PutEvents',
       'kms:Decrypt', 'kms:GenerateDataKey',
       'lambda:CreateMicrovmAuthToken', 'lambda:ResumeMicrovm', 'lambda:RunMicrovm', 'lambda:TerminateMicrovm',
       's3:GetObject', 's3:ListBucket',
@@ -378,7 +395,9 @@ describe('with -c engineeringAgents=true', () => {
       }),
     });
     const delivery = policyText(template, 'EngineeringDeliveryRole');
-    expect(delivery).not.toMatch(/WS#\*#RUNS|events:|s3:PutObject|dynamodb:DeleteItem|SuspendMicrovm|iam:/);
+    expect(delivery).not.toMatch(/WS#\*#RUNS|events:Put(Rule|Targets)|events:(Enable|Disable)|s3:PutObject|dynamodb:DeleteItem|SuspendMicrovm|iam:/);
+    // Its one bus action, only as the supervisor (a wake's continuation is reported to the run).
+    expect(delivery.match(/"events:[A-Z]\w*"/g)).toStrictEqual(['"events:PutEvents"']);
     expect(delivery).toMatch(/"Workspace\w*","Arn"\]\},"\/ws\/\*\/runs\/\*\/\*\/commits\/\*\/_checkpoints/);
   });
 
@@ -387,7 +406,9 @@ describe('with -c engineeringAgents=true', () => {
       Properties: { FunctionName: 'voc-engineering-delivery' },
     }));
     const env = Object.keys(EnvSchema.parse(fn?.Properties?.Environment).Variables);
-    expect(env).toStrictEqual(expect.arrayContaining(['ENGINEERING_AGENT_ROLE_ARNS', 'ENGINEERING_IMAGE_ARNS',
+    expect(env).toStrictEqual(expect.arrayContaining(['ENGINEERING_AGENT_ROLE_ARNS', 'ENGINEERING_BOARD_URL',
+      'ENGINEERING_BUS_NAME',
+      'ENGINEERING_IMAGE_ARNS',
       'ENGINEERING_MICROVM_USD_PER_SECOND', 'ENGINEERING_TABLE', 'ENGINEERING_TIMINGS', 'ENGINEERING_WORKSPACE_BUCKET',
       'RAW_DATA_BUCKET']));
     expect(env).not.toContain('SUPERVISOR_RULE_NAME');

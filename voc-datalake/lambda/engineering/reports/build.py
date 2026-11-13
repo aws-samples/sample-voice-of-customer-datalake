@@ -56,6 +56,10 @@ class Inputs:
     gate: GateRecord | None
     #: Per task, its moves (the board's history rows), oldest first.
     history: Mapping[str, Sequence[Move]] = dataclasses.field(default_factory=dict)
+    #: The winning gate record (the last final-go task to end, then its latest attempt) was recorded but could not be
+    #: read (a denial, or an object never written) or is off the schema: a PR report is refused then (handler.py), so
+    #: its description never drops it nor shows an older one in its place. A later attempt's good record wins over it.
+    unread_gate: bool = False
 
 
 def _gate_key(task: Task, key: AgentKey, head: str) -> bool:
@@ -74,7 +78,8 @@ def gather(facts: RunFacts, tasks: Iterable[Task], read: Callable[[str], str | N
     tasks = tuple(tasks)
     located: list[Located] = []
     skipped: list[tuple[AgentKey, int]] = []
-    gate: tuple[tuple[str, int], GateRecord] | None = None
+    # The winning gate record so far, None when it could not be read or is off the schema.
+    gate: tuple[tuple[str, int], GateRecord | None] | None = None
     seen: set[str] = set()
     for task in tasks:
         # A key recorded on two tasks (one agent's attempt holds both) is one object: read and counted once (marked
@@ -85,19 +90,18 @@ def gather(facts: RunFacts, tasks: Iterable[Task], read: Callable[[str], str | N
                 continue
             seen.add(raw)
             text = read(raw)
-            if text is None:
-                continue
             if key.package:
-                found, bad = parse_shard(text)
-                located += [Located(key, finding) for finding in found]
-                skipped.append((key, bad))
+                if text is not None:
+                    found, bad = parse_shard(text)
+                    located += [Located(key, finding) for finding in found]
+                    skipped.append((key, bad))
                 continue
-            record = _gate_record(text)
             order = (task.updated_at, key.attempt)
-            if record is not None and (gate is None or order >= gate[0]):
-                gate = (order, record)
+            if gate is None or order >= gate[0]:
+                gate = (order, None if text is None else _gate_record(text))
     return Inputs(facts=facts, tasks=tasks, findings=tuple(located), skipped=tuple(skipped),
-                  gate=None if gate is None else gate[1], history=dict(history or {}))
+                  gate=None if gate is None else gate[1], history=dict(history or {}),
+                  unread_gate=gate is not None and gate[1] is None)
 
 
 def _gate_record(text: str) -> GateRecord | None:

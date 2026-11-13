@@ -20,6 +20,7 @@ from typing import Any, Final, Literal
 
 from botocore.exceptions import ClientError
 
+from engineering.rows import LAUNCH_HOLD
 from engineering.runtime.interface import AgentSpec, MicroVm
 from engineering.runtime.runs import RunNotActive, RunStore, meta_key, run_pk
 from shared.aws import consistent_item, is_conditional_check_failure
@@ -39,8 +40,17 @@ WITH_MICROVM: Final = frozenset({'booting', 'working', 'pause_requested'})
 After = Literal['continue', 'hold', 'wait', 'shutdown']
 
 
+#: How long a launch holds it: the runtime function's own limit (engineering-runtime.ts, 5 minutes), so a launch
+#: killed at its limit lets go by then.
+LAUNCH_HOLD_SECONDS: Final = 5 * 60
+
+
 class StaleSession(RuntimeError):
     """Someone else moved the session since it was read."""
+
+
+class LaunchUnderWay(RuntimeError):
+    """The agent has its session, or another launch of it holds its row (``SessionStore.hold_launch``)."""
 
 
 @dataclass(frozen=True)
@@ -79,6 +89,9 @@ class AgentSession:
     session_expires_at: int | None = None
     #: When a message last woke it (``Supervisor.wake``): an open wait does not suspend it again for a while.
     woken_at: int | None = None
+    #: When this MicroVM's harness started (its boot's last command): a fresh agent's claim is due within the
+    #: crash clock from then.
+    harness_at: int | None = None
     #: The task's attempt it works on (the board's; its workspace keys go under it).
     task_attempt: int = 1
     #: When its current open wait began (None: no open wait): the 45-minute hold counts from here, awake or not.
@@ -125,11 +138,11 @@ class AgentSession:
                 total[kind] = max(total.get(kind, 0), int(counts.get(kind, 0)))
         return totals
 
-    def spec(self, restore_key: str | None = None, workspace_bucket: str = '') -> AgentSpec:
+    def spec(self, restore_key: str | None = None, workspace_bucket: str = '', board_url: str = '') -> AgentSpec:
         return AgentSpec(run_id=self.run_id, agent_id=self.agent_id, role=self.role, task_id=self.task_id,
                          language=self.language, egress=self.egress, connection=self.connection,
                          restore_key=restore_key, commit=self.commit, attempt=self.task_attempt,
-                         workspace_bucket=workspace_bucket)
+                         workspace_bucket=workspace_bucket, board_url=board_url)
 
     @property
     def vm(self) -> MicroVm:
@@ -140,12 +153,13 @@ class AgentSession:
         return replace(self, vm_id=vm.vm_id, endpoint=vm.endpoint, started_at=now, status='booting',
                        continuation=self.continuation + 1, boot_index=0, exec_id=None, asked_at=None,
                        pause_requested_at=None, after_pause='continue', suspended=False,
-                       failures=0, restore_key=restore_key, tokens_before=self.tokens, woken_at=None,
+                       failures=0, restore_key=restore_key, tokens_before=self.tokens, woken_at=None, harness_at=None,
                        session_expires_at=None, last_tick_at=now)
 
 
 _OPTIONAL_INTS: Final = ('asked_at', 'pause_requested_at', 'session_expires_at', 'last_tick_at',
-                         'claimed_until', 'woken_at', 'wait_since', 'woken_wait', 'woken_continuation')
+                         'claimed_until', 'woken_at', 'wait_since', 'woken_wait', 'woken_continuation',
+                         'harness_at')
 _OPTIONAL_STRS: Final = ('exec_id', 'restore_key')
 
 
@@ -200,14 +214,15 @@ class SessionStore:
         """
         first = replace(session, seq=1)
         name = self._table.name
+        # The launch's hold (``hold_launch``) goes with the row's creation: the session is the record from then on.
+        extra: dict[str, str | None] = {**(labels or {}), LAUNCH_HOLD: None}
         try:
             self._table.meta.client.transact_write_items(TransactItems=[
                 {'ConditionCheck': {'TableName': name, 'Key': meta_key(session.run_id),
                                     'ConditionExpression': '#status = :active',
                                     'ExpressionAttributeNames': {'#status': 'status'},
                                     'ExpressionAttributeValues': {':active': 'active'}}},
-                {'Update': {'TableName': name, **self._update(first, 'attribute_not_exists(seq)', {},
-                                                              dict(labels or {}))}},
+                {'Update': {'TableName': name, **self._update(first, 'attribute_not_exists(seq)', {}, extra)}},
             ])
         except ClientError as error:
             if is_key_collision(error, put_index=0):
@@ -216,6 +231,39 @@ class SessionStore:
                 raise StaleSession(f'session {session.run_id}/{session.agent_id} exists') from error
             raise
         return first
+
+    def hold_launch(self, run_id: str, agent_id: str, now: int) -> None:
+        """Take the agent's launch before its MicroVM starts, for ``LAUNCH_HOLD_SECONDS``: one conditional write on the
+        agent's row while it holds no session yet. ``LaunchUnderWay`` when the agent has its session already, or
+        another launch of it holds it (a retry while the first still boots never starts a second MicroVM)."""
+        try:
+            self._table.update_item(
+                Key=_key(run_id, agent_id), UpdateExpression='SET #hold = :until',
+                ConditionExpression='attribute_not_exists(seq) AND (attribute_not_exists(#hold) OR #hold < :now)',
+                ExpressionAttributeNames={'#hold': LAUNCH_HOLD},
+                ExpressionAttributeValues={':until': now + LAUNCH_HOLD_SECONDS, ':now': now})
+        except ClientError as error:
+            if is_conditional_check_failure(error):
+                raise LaunchUnderWay(f'{run_id}/{agent_id} has a session or a launch under way') from error
+            raise
+
+    def launch_under_way(self, run_id: str, agent_id: str, now: int) -> bool:
+        """Another launch of the agent holds its row (its MicroVM still starting) and has written no session yet."""
+        item = consistent_item(self._table, _key(run_id, agent_id))
+        return item is not None and 'seq' not in item and int(item.get(LAUNCH_HOLD, 0)) >= now
+
+    def release_launch(self, run_id: str, agent_id: str) -> None:
+        """Let go of a launch that started no session (its MicroVM failed to start): a retry may launch at once. The
+        hold is run out (0), never removed: the row stays a launch hold, which no reader takes for an agent (the
+        report builder's facts skip it), rather than a key-only row read as an agent with no role."""
+        try:
+            self._table.update_item(Key=_key(run_id, agent_id), UpdateExpression='SET #hold = :ended',
+                                    ConditionExpression='attribute_not_exists(seq)',
+                                    ExpressionAttributeNames={'#hold': LAUNCH_HOLD},
+                                    ExpressionAttributeValues={':ended': 0})
+        except ClientError as error:
+            if not is_conditional_check_failure(error):   # (a session exists: its creation removed the hold)
+                raise
 
     def save(self, session: AgentSession) -> AgentSession:
         """Write ``session`` over the row it was read from; ``StaleSession`` when the row moved meanwhile."""
@@ -245,7 +293,7 @@ class SessionStore:
 
     @staticmethod
     def _update(session: AgentSession, condition: str, values: dict[str, Any],
-                extra: dict[str, str] | None = None, cost: Decimal | None = None) -> dict[str, Any]:
+                extra: dict[str, str | None] | None = None, cost: Decimal | None = None) -> dict[str, Any]:
         """The update that SETs the session's own attributes (REMOVEs the ones it no longer has), under ``condition``."""
         names: dict[str, str] = {}
         sets, removes, own = [], [], {**_own(session), **(extra or {})}
@@ -290,7 +338,12 @@ class SessionStore:
         return any(session.status in LIVE_STATUSES or (session.claimed_until or 0) >= now
                    for session in self.of_run(run_id))
 
+    def watched(self) -> Iterator[tuple[str, list[AgentSession]]]:
+        """Every session, live or not, of each run the supervisor watches, run by run (one query per run)."""
+        for run_id in self._runs.listed():
+            yield run_id, self.of_run(run_id)
+
     def active(self) -> Iterator[AgentSession]:
         """Every live session of the runs the supervisor watches, run by run."""
-        for run_id in self._runs.listed():
-            yield from (session for session in self.of_run(run_id) if session.status in LIVE_STATUSES)
+        for _run_id, sessions in self.watched():
+            yield from (session for session in sessions if session.status in LIVE_STATUSES)

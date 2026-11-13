@@ -13,6 +13,17 @@ The extractor files generic knowledge about the product, customers or projects a
 specific to one user as **personal**. "I like you to reply in short" is personal; "Our customers demonstrated
 they compare prices before checkout" is company.
 
+**The autonomous engineering agents' part** (*partly built*: the store and its recall, nothing calling them yet)
+has three more scopes, a repository connection's, an agent role's within a connection, and a person's, and
+follows this layer's rules: the same statement hygiene (`shared.memory_policy.clean_statement`), the same 0.8
+confidence for an automated write, proposed until approved, forget = archived and restorable, nothing deleted
+but a person's own memories on their erasure (with its legal basis, a tombstone and an `AUDIT#delete` row; their
+id is de-identified where other scopes name them), and a prompt gets memories only as a fenced DATA block. It is stored in the `voc-engineering` table rather than in
+`voc-memory`, because this layer's company memories reach every shared generator and have no connection in their
+keys, edit in place, and are curated by memory reviewers, where a repository's lessons must stay inside their
+connection, each edit is a new version, and a connection's administrators approve them. See
+[autonomous-engineering.md, "Agent memory"](autonomous-engineering.md#getting-better-skills-the-coach-the-learning-loop-memory).
+
 ## Using the Memory page
 
 Open **Memory** in the sidebar (`/memory`). It has these tabs (`?tab=` deep-links one):

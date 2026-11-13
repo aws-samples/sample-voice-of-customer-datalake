@@ -36,7 +36,6 @@ def test_sources(source, expected):
 @pytest.mark.parametrize(('changes', 'source'), [
     ({}, AGENT_SOURCE),
     ({**TASK, 'from': {'kind': 'system', 'id': 'board'}}, 'voc.engineering/board'),
-    ({**TASK, 'from': {'kind': 'human', 'id': 'user-1'}}, 'voc.engineering/board'),   # a person's move, relayed
     ({'type': 'signal.stop_now', 'from': {'kind': 'human', 'id': 'user-1'}, 'to': {'kind': 'run', 'id': RUN}},
      'voc.engineering/api'),
     ({'type': 'msg.answer', 'from': {'kind': 'human', 'id': 'user-1'}}, 'voc.engineering/api'),
@@ -77,6 +76,9 @@ def test_allowed(changes, source):
     # The API's task.* is a person's only: never the board's or an agent's voice (the drop the bus pins).
     ({**TASK, 'from': {'kind': 'system', 'id': 'board'}}, 'voc.engineering/api',
      'from.kind system is not what the source api proves'),
+    # A person's board actions go out from the API's source: the board's never speaks for a person.
+    ({**TASK, 'from': {'kind': 'human', 'id': 'user-1'}}, 'voc.engineering/board',
+     'from.kind human is not what the source board proves'),
     ({**TASK, 'type': 'task.claimed', 'to': {'kind': 'run', 'id': RUN}, 'from': {'kind': 'agent', 'id': 'fixer-1'}},
      'voc.engineering/api', 'from.kind agent is not what the source api proves'),
     ({'type': 'signal.pause', 'to': {'kind': 'run', 'id': RUN}}, AGENT_SOURCE, 'agent may not send signal.pause'),

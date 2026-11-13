@@ -71,17 +71,17 @@ const run = {
     flow: SAMPLE_FLOW_ID, status: 'running', started_at: minutesAgo(42), ended_at: null,
   },
   agents: [
-    agent('coordinator-0', 'coordinator', {
+    agent('coordinator-1', 'coordinator', {
       status: 'waiting', step: 'board', microvm_state: 'suspended', microvm_age: 2520, heartbeat_age: 360,
       last_progress_at: epochMinutesAgo(30), recent_tools: ['read_issue', 'post_task', 'post_task', 'post_task'],
       microvm_seconds: 310, tokens: [{ model: 'model-large', input_tokens: 42_000, output_tokens: 6_100 }],
     }),
-    agent('fixer-1', 'fixer', {
+    agent('fixer-3', 'fixer', {
       task_id: 'task-fix-page-size', continuation: 1, step: 'board', microvm_state: 'running', microvm_age: 1500,
       heartbeat_age: 5, last_progress_at: epochMinutesAgo(1), recent_tools: ['read_file', 'run_tests', 'edit_file'],
       microvm_seconds: 1_420, tokens: [{ model: 'model-medium', input_tokens: 61_500, output_tokens: 9_800 }],
     }),
-    agent('final-go-1', 'final-go', {
+    agent('final-go-5', 'final-go', {
       task_id: 'task-gate-empty', step: 'Reading the review rounds', microvm_state: 'running', microvm_age: 720,
       heartbeat_age: 540, last_progress_at: epochMinutesAgo(11), recent_tools: ['read_record'],
       stuck_why: 'No progress for 10 minutes: the supervisor asked for its state', microvm_seconds: 640,
@@ -92,39 +92,40 @@ const run = {
     {
       task_id: 'task-fix-page-size', role: 'fixer', state: 'in_progress', title: 'The last page shows one item too many',
       spec: { issue: 7 }, depth: 1, priority: 1, attempt: 2, parent_task: null,
-      lease: { agent: 'fixer-1', epoch: 2, expires: 0 }, result_keys: [], posted_by: 'coordinator-0',
-      updated_by: 'fixer-1', updated_at: minutesAgo(1), spec_hash: 'a1',
+      lease: { agent: 'fixer-3', epoch: 2, expires: 0 }, result_keys: [], posted_by: 'coordinator-1',
+      updated_by: 'fixer-3', updated_at: minutesAgo(1), spec_hash: 'a1',
       history: [
-        { state: 'open', at: minutesAgo(30), by: 'coordinator-0', op: 'post', attempt: 1, result_keys: 0 },
+        { state: 'open', at: minutesAgo(30), by: 'coordinator-1', op: 'post', attempt: 1, result_keys: 0 },
         { state: 'claimed', at: minutesAgo(28), by: 'fixer-2', op: 'claim', attempt: 1, result_keys: 0 },
-        { state: 'failed', at: minutesAgo(26), by: 'fixer-2', op: 'move', attempt: 1, result_keys: 0 },
-        { state: 'claimed', at: minutesAgo(25), by: 'fixer-1', op: 'claim', attempt: 2, result_keys: 0 },
-        { state: 'in_progress', at: minutesAgo(24), by: 'fixer-1', op: 'move', attempt: 2, result_keys: 0 },
+        // (fixer-2 stalled: the supervisor re-posted the task at its next attempt; an ended task is never re-posted)
+        { state: 'open', at: minutesAgo(26), by: 'supervisor', op: 'repost', attempt: 2, result_keys: 0 },
+        { state: 'claimed', at: minutesAgo(25), by: 'fixer-3', op: 'claim', attempt: 2, result_keys: 0 },
+        { state: 'in_progress', at: minutesAgo(24), by: 'fixer-3', op: 'move', attempt: 2, result_keys: 0 },
       ],
     },
     {
       task_id: 'task-fix-sort', role: 'fixer', state: 'open', title: 'Sorting by date ignores the time zone',
       spec: { issue: 9 }, depth: 1, priority: 2, attempt: 1, parent_task: null, lease: null, result_keys: [],
-      posted_by: 'coordinator-0', updated_by: 'coordinator-0', updated_at: minutesAgo(30), spec_hash: 'b2',
-      history: [{ state: 'open', at: minutesAgo(30), by: 'coordinator-0', op: 'post', attempt: 1, result_keys: 0 }],
+      posted_by: 'coordinator-1', updated_by: 'coordinator-1', updated_at: minutesAgo(30), spec_hash: 'b2',
+      history: [{ state: 'open', at: minutesAgo(30), by: 'coordinator-1', op: 'post', attempt: 1, result_keys: 0 }],
     },
     {
       task_id: 'task-fix-empty', role: 'fixer', state: 'done', title: 'An empty search shows an error',
       spec: { issue: 4 }, depth: 1, priority: 1, attempt: 1, parent_task: null, lease: null, result_keys: ['k1'],
-      posted_by: 'coordinator-0', updated_by: 'fixer-3', updated_at: minutesAgo(14), spec_hash: 'c3',
+      posted_by: 'coordinator-1', updated_by: 'fixer-4', updated_at: minutesAgo(14), spec_hash: 'c3',
       history: [
-        { state: 'open', at: minutesAgo(30), by: 'coordinator-0', op: 'post', attempt: 1, result_keys: 0 },
-        { state: 'done', at: minutesAgo(14), by: 'fixer-3', op: 'move', attempt: 1, result_keys: 1 },
+        { state: 'open', at: minutesAgo(30), by: 'coordinator-1', op: 'post', attempt: 1, result_keys: 0 },
+        { state: 'done', at: minutesAgo(14), by: 'fixer-4', op: 'move', attempt: 1, result_keys: 1 },
       ],
     },
     {
       task_id: 'task-gate-empty', role: 'final-go', state: 'done', title: 'The gate record for the empty search fix',
       spec: { commit: 'abc1234' }, depth: 2, priority: 1, attempt: 1, parent_task: 'task-fix-empty',
-      lease: { agent: 'final-go-1', epoch: 1, expires: 0 }, result_keys: ['k2'], posted_by: 'coordinator-0',
-      updated_by: 'final-go-1', updated_at: minutesAgo(12), spec_hash: 'd4',
+      lease: { agent: 'final-go-5', epoch: 1, expires: 0 }, result_keys: ['k2'], posted_by: 'coordinator-1',
+      updated_by: 'final-go-5', updated_at: minutesAgo(12), spec_hash: 'd4',
       history: [
-        { state: 'claimed', at: minutesAgo(13), by: 'final-go-1', op: 'claim', attempt: 1, result_keys: 0 },
-        { state: 'done', at: minutesAgo(12), by: 'final-go-1', op: 'move', attempt: 1, result_keys: 1 },
+        { state: 'claimed', at: minutesAgo(13), by: 'final-go-5', op: 'claim', attempt: 1, result_keys: 0 },
+        { state: 'done', at: minutesAgo(12), by: 'final-go-5', op: 'move', attempt: 1, result_keys: 1 },
       ],
     },
   ],
@@ -147,13 +148,13 @@ function say(from, to, type, summary, { threadId = 't-run', taskId, at = new Dat
 
 say({ kind: 'conductor', id: SAMPLE_RUN_ID }, { kind: 'run', id: SAMPLE_RUN_ID }, 'run.started', 'Started: three bugs to fix', { at: minutesAgo(42) });
 say({ kind: 'system', id: 'board' }, { kind: 'role', id: 'fixer' }, 'task.posted', 'The last page shows one item too many', { taskId: 'task-fix-page-size', at: minutesAgo(30) });
-say({ kind: 'agent', id: 'fixer-1' }, { kind: 'conductor', id: SAMPLE_RUN_ID }, 'msg.question', 'Is the page size inclusive of the last item?', { threadId: 't-page-size', at: minutesAgo(20) });
+say({ kind: 'agent', id: 'fixer-3' }, { kind: 'conductor', id: SAMPLE_RUN_ID }, 'msg.question', 'Is the page size inclusive of the last item?', { threadId: 't-page-size', at: minutesAgo(20) });
 say({ kind: 'system', id: 'board' }, { kind: 'run', id: SAMPLE_RUN_ID }, 'task.done', 'An empty search shows an error: done', { taskId: 'task-fix-empty', at: minutesAgo(14) });
 
 function overview() {
   for (const a of run.agents) {
     if (a.microvm_age !== null) a.microvm_age += 5;
-    if (a.heartbeat_age !== null) a.heartbeat_age = a.agent === 'fixer-1' ? 5 : a.heartbeat_age + 5;
+    if (a.heartbeat_age !== null) a.heartbeat_age = a.agent === 'fixer-3' ? 5 : a.heartbeat_age + 5;
   }
   const byModel = new Map();
   for (const a of run.agents) {
@@ -314,6 +315,11 @@ function postTask(body) {
   const title = typeof body.title === 'string' ? body.title.trim() : '';
   if (!CLAIMERS.includes(body.role)) return [body.role === 'coordinator' ? 403 : 400, { message: 'unknown role' }];
   if (!title || typeof body.spec !== 'object' || body.spec === null) return [400, { message: '"title" and "spec" are required' }];
+  // As the board (spec_hash: role, parent task, spec): an equal task still under way is answered, nothing posted.
+  const equal = run.tasks.find((t) => t.role === body.role && !FINAL.has(t.state)
+    && (t.parent_task || '') === (body.parent_task || '')
+    && JSON.stringify(t.spec) === JSON.stringify(body.spec));
+  if (equal) return [200, { task: equal, duplicate: true }];
   const at = new Date().toISOString();
   const task = {
     task_id: `task-person-${run.tasks.length + 1}`, role: body.role, state: 'open', title, spec: body.spec, depth: 0,
@@ -357,6 +363,10 @@ const ACTIONS = {
   move(task, body) {
     if (body.to === 'needs_human') return [400, { message: 'a task needs a person by block, with a reason: not by a move' }];
     if (task.lease?.agent !== PERSON) return [403, { message: 'only a task you took is moved by you: take it first' }];
+    // As the store: a state no move reaches is a bad request; one that is not a move from this state, a conflict.
+    if (!Object.values(MOVES).some((targets) => targets.includes(body.to))) {
+      return [400, { message: `a task cannot be moved to ${String(body.to)}` }];
+    }
     if (!(MOVES[task.state] ?? []).includes(body.to)) return [409, { message: 'the task cannot move from its state' }];
     return changed(task, body.to, 'move');
   },

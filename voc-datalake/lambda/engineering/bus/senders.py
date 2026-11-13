@@ -1,17 +1,17 @@
 """Who may send what: the router's sender allowlist.
 
 The router knows a sender only from the event's ``source``, so the bus's resource policy pins each source to its
-publisher's identity (lib/stacks/engineering-bus.ts): it admits the board's role and the agent roles with a voice,
-and denies each every source but its own (an agent role's from its session's workspace, run and agent); the
-supervisor's and the delivery function's roles, each pinned to ``voc.engineering/supervisor``, come with the
-runtime's next stack change. A message must
+publisher's identity (lib/stacks/engineering-bus.ts): it admits the board's role, the supervisor's and the delivery
+function's roles and every agent role, and denies each every source but its own (the board's
+``voc.engineering/board``, the runtime's two ``voc.engineering/supervisor``, an agent role's from its session's
+workspace, run and agent, a run's coach its run's). A message must
 also say, in its ``from``, the sender the source proves, and an agent or a run conductor may speak only in its own
 workspace and run. Everything else is dropped and journalled, so no agent can
 speak for another, for a person, for the board or for the supervisor.
 
 Sources: ``voc.engineering/api`` (a signed-in person, through the API), ``voc.engineering/board`` (the board API,
-which also relays a person's moves on the board), ``voc.engineering/supervisor`` (the supervisor, and the delivery
-function's continuations), ``voc.engineering/webhook`` (repository outcomes), ``voc.engineering/conductor/<ws>/<run>``,
+as the board: a person's board actions go out from the API's source), ``voc.engineering/supervisor`` (the
+supervisor, and the delivery function's continuations), ``voc.engineering/webhook`` (repository outcomes), ``voc.engineering/conductor/<ws>/<run>``,
 ``voc.engineering/coach/<ws>/<run>`` (a run's coach: run-scoped, so the run and refs checks apply to it, and it speaks
 as ``coach``, never as ``system``) and ``voc.engineering/agent/<role>/<ws>/<run>/<agent>``, the role one of
 ``VOICES``: the roles that claim tasks, and the gate runner, which sends only its gate results (``msg.finding``,
@@ -31,7 +31,7 @@ VOICES = ROLES | {'gate-runner'}
 #: What the gate runner may send: its gate results.
 GATE_RUNNER_TYPES = frozenset({'msg.finding', 'review.result'})
 #: The ``from.kind`` values each kind of source may claim.
-FROM_KINDS = {'api': frozenset({'human'}), 'board': frozenset({'system', 'human'}),
+FROM_KINDS = {'api': frozenset({'human'}), 'board': frozenset({'system'}),
               'supervisor': frozenset({'supervisor'}), 'coach': frozenset({'coach'}),
               'webhook': frozenset({'system'}), 'conductor': frozenset({'conductor'}), 'agent': frozenset({'agent'})}
 _TALK = frozenset({'agent', 'conductor'})

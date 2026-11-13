@@ -64,8 +64,8 @@ PERSON_LEASE_EXPIRES = 253_402_300_799
 #: The run's coordinate task (one per run, the coordinator's): its id and its role.
 COORDINATE_TASK = 'coordinate'
 COORDINATOR = 'coordinator'
-#: An agent's index in its id (``<role>-<n>``): the runtime takes 0-999; a launch numbers them from 2, the run's start
-#: having taken 1 for its coordinator.
+#: An agent's index in its id (``<role>-<n>``): the runtime takes 0-999; a launch numbers them from 2, the run's
+#: start having taken 1 for its coordinator (``coordinate_items``' ``coordinator-1``, ``agent_count`` 1 on META).
 MAX_AGENTS = 999
 
 
@@ -91,13 +91,6 @@ def _result_key(key: str, ws: str, run_id: str, agent: str, epoch: int) -> bool:
     return parsed is not None and (parsed.ws, parsed.run_id, parsed.agent, parsed.attempt) == (ws, run_id, agent,
                                                                                                 epoch)
 
-
-@dataclass(frozen=True)
-class Launched:
-    """A launch's task, and whether its agent was recorded before (a retry, or a racing launch's)."""
-
-    task: Task
-    reused: bool
 
 
 @dataclass(frozen=True)
@@ -281,9 +274,10 @@ class BoardStore:
         start transaction to put, each ``attribute_not_exists``: ``RunStore.start`` writes through the resource
         table's ``meta.client.transact_write_items``, which serializes them itself. Open, attempt 1, for the
         coordinator alone, and recorded as launched for ``coordinator-1`` at attempt 1, the run's first agent: the
-        runtime's run start is to launch it and write META's ``agent_count`` 1 in the same transaction (voc-auto-b's
-        next merge; in this tree the start writes neither), so a coordinator that dies before its claim is re-posted
-        like any agent."""
+        runtime's run start launches it and writes META's ``agent_count`` 1 in the same transaction
+        (``runs.RunStore.start``). A coordinator that dies before its claim is not re-posted like any agent: the
+        supervisor continues it as a crash, then sends the run to a person, whose Resume replaces it
+        (``runtime/board_bus.BoardLeases.coordinator_to_start``)."""
         task: dict[str, Any] = {**task_key(ws, run_id, COORDINATE_TASK), 'task_id': {'S': COORDINATE_TASK},
                 'role': {'S': COORDINATOR}, 'state': {'S': OPEN}, 'title': {'S': 'Coordinate the run'},
                 'spec': {'S': json.dumps({'coordinate': True}, sort_keys=True)},
@@ -312,7 +306,7 @@ class BoardStore:
         return f'{role}-{int(answer["Attributes"]["agent_count"]["N"])}'
 
     def launch(self, ws: str, run_id: str, task_id: str, *, role: str, actor: str,
-               paths: Sequence[str] = (), language: str = '') -> Launched:
+               paths: Sequence[str] = (), language: str = '') -> Task:
         """Record the coordinator's launch of an agent for an open task of ``role``, at the task's attempt, with the
         ``paths`` and ``language`` it is launched with. A retry at the same attempt finds the agent recorded and
         reuses it (with its recorded paths and language); after a repost (a new attempt) the task gets a new ``<role>-<n>``."""
@@ -323,10 +317,10 @@ class BoardStore:
             raise BoardError('invalid', f'the task is a {current.role} task, not a {role} one to launch')
         return self._record_launch(ws, run_id, current, actor=actor, paths=paths, language=language)
 
-    def launch_coordinator(self, ws: str, run_id: str, *, attempt: int, actor: str = 'runtime') -> Launched:
-        """Record a new run coordinator for the run's coordinate task: the run's trusted code only (the runtime is to
-        call it when a person's Resume takes a run whose coordinator is gone off its decision point, after re-posting
-        the task at the attempt it judged), never a board op, so no agent can start a coordinator. Like ``launch``:
+    def launch_coordinator(self, ws: str, run_id: str, *, attempt: int, actor: str = 'runtime') -> Task:
+        """Record a new run coordinator for the run's coordinate task: the run's trusted code only (the runtime calls
+        it when a person's Resume finds the run's coordinator failed, after re-posting the task at its attempt:
+        ``runtime/board_bus.BoardLeases.coordinator_to_start``), never a board op, so no agent can start a coordinator. Like ``launch``:
         the task open at ``attempt`` (the task's, the same fence as ``repost``), the next ``coordinator-<n>`` from
         META's ``agent_count``, and a retry at the same attempt reusing it. ``actor``: who the history row names
         (the person who resumed, when the caller knows). No paths and no language: the coordinator's are the run's."""
@@ -336,16 +330,16 @@ class BoardStore:
         return self._record_launch(ws, run_id, current, actor=actor, paths=(), language='')
 
     def _record_launch(self, ws: str, run_id: str, current: Task, *, actor: str, paths: Sequence[str],
-                       language: str) -> Launched:
+                       language: str) -> Task:
         task_id, role = current.task_id, current.role
         if current.state != OPEN:
             raise BoardError('conflict', 'only an open task gets an agent launched for it')
         if current.launched_agent and current.launched_attempt == current.attempt:
-            return Launched(current, reused=True)   # (a retried launch: the same agent again)
+            return current   # (a retried launch: the same agent again)
         agent = self._next_agent(ws, run_id, role)
         at = self.now().isoformat()
         attempt = current.attempt
-        task = self._write(ws, run_id, task_id, _Write(
+        return self._write(ws, run_id, task_id, _Write(
             set_expr=('SET launched_agent = :agent, launched_attempt = :attempt, launched_paths = :paths, '
                       'launched_language = :language'),
             condition='#state = :open AND attempt = :attempt AND '
@@ -357,7 +351,21 @@ class BoardStore:
             already=lambda t: t.state == OPEN and bool(t.launched_agent) and t.launched_attempt == attempt,
             refusal='the task is no longer open at this attempt'),
             Move(task_id, OPEN, actor, at, attempt, 'launch', reason=f'launched {agent}').item(ws, run_id))
-        return Launched(task, reused=task.launched_agent != agent)
+
+    def clear_launch(self, ws: str, run_id: str, task: Task, *, actor: str, reason: str) -> Task:
+        """Forget ``task``'s recorded launch (its agent, at its attempt) after the runtime refused it, so the
+        coordinator's next launch numbers a new agent with the language and paths it gives then. Only that launch:
+        a task that moved on, or another launch, is left as it is. A history row says who and why (D4)."""
+        agent, attempt = task.launched_agent, task.attempt
+        return self._write(ws, run_id, task.task_id, _Write(
+            set_expr='REMOVE launched_agent, launched_attempt, launched_paths, launched_language',
+            condition='#state = :open AND attempt = :attempt AND launched_agent = :agent',
+            names={'#state': 'state'},
+            values={':open': {'S': OPEN}, ':attempt': {'N': str(attempt)}, ':agent': {'S': agent}},
+            already=lambda t: t.launched_agent != agent or t.attempt != attempt,
+            refusal='the task is no longer open at this attempt'),
+            Move(task.task_id, OPEN, actor, self.now().isoformat(), attempt, 'launch_refused',
+                 reason=redact(f'{agent}: {reason.strip()}')[:MAX_LINE]).item(ws, run_id))
 
     def _holder(self, agent: str, epoch: int, now: datetime) -> tuple[str, dict[str, Any]]:
         """The lease holder, with the lease's epoch, before the lease runs out (the supervisor re-posts it then), or
@@ -412,13 +420,16 @@ class BoardStore:
                     ':waiting': {'BOOL': waiting}},
             already=lambda _task: False, refusal='the lease is not yours, has run out, or the task has ended'))
 
-    def repost(self, ws: str, run_id: str, task_id: str, *, reason: str, attempt: int | None = None) -> Task:
+    def repost(self, ws: str, run_id: str, task_id: str, *, reason: str, attempt: int | None = None,
+               actor: str = 'supervisor') -> Task:
         """The supervisor's re-post of the task at the ``attempt`` it judged (crashed, stalled, its lease run out):
         ``open`` again at the next attempt, the lease cleared, its reason in the history row. Only at that attempt,
         so a retried re-post never revokes the claim a new agent made meanwhile (a later attempt), and two re-posts
         never both apply. Pass it: without it (a caller from before it, ``None``) the attempt read now is taken,
         which cannot tell a retry from a newer claim. An open task is re-posted only when an agent was launched for
-        it at this attempt and never claimed it (it died or stalled first): the next attempt gets a new agent."""
+        it at this attempt and never claimed it (it died or stalled first): the next attempt gets a new agent.
+        ``actor``: who the task's row and history row name (D4): the supervisor, or the person whose Resume replaces
+        a failed run coordinator (``runtime/board_bus.BoardLeases.coordinator_to_start``)."""
         current = self.task(ws, run_id, task_id)
         unclaimed = current.state == OPEN and bool(current.launched_agent) and current.launched_attempt == current.attempt
         if attempt is None:
@@ -445,12 +456,13 @@ class BoardStore:
                        'OR (#state = :open AND launched_attempt = :attempt)) '
                        'AND (attribute_not_exists(lease_agent) OR NOT begins_with(lease_agent, :person))'),
             names={'#state': 'state'},
-            values={**ended, ':open': {'S': OPEN}, ':one': {'N': '1'}, ':no': {'BOOL': False}, ':person': {'S': PERSON_PREFIX},
-                    ':actor': {'S': 'supervisor'}, ':at': {'S': at}, ':attempt': {'N': str(attempt)}},
+            values={**ended, ':open': {'S': OPEN}, ':one': {'N': '1'}, ':no': {'BOOL': False},
+                    ':person': {'S': PERSON_PREFIX},
+                    ':actor': {'S': actor}, ':at': {'S': at}, ':attempt': {'N': str(attempt)}},
             # Another re-post of the same attempt landed between the read and the write.
             already=lambda t: t.state == OPEN and t.attempt == attempt + 1,
             refusal='the task moved on since it was read'),
-            Move(task_id, OPEN, 'supervisor', at, attempt + 1, 'repost', reason=why).item(ws, run_id))
+            Move(task_id, OPEN, actor, at, attempt + 1, 'repost', reason=why).item(ws, run_id))
 
     # ---- a person's board actions (the Agents API's, admins acting for themselves; plan v3 4.3) --------------------
 
@@ -507,8 +519,9 @@ class BoardStore:
 
     def block(self, ws: str, run_id: str, task_id: str, *, reason: str, actor: str, over: bool = False) -> Task:
         """A person stops a task that has not ended: it needs a person (``needs_human``), with their reason; its
-        holder's lease is cleared, so the agent on it can move it no more. Another person's hold is ended only when
-        ``over`` asks for it (the write holds the holder read, as a take's does)."""
+        holder's lease is cleared, so the agent on it can move it no more (the supervisor reads an ended task as
+        ended, holder or none, and ends that agent's session). Another person's hold is ended only when ``over``
+        asks for it (the write holds the holder read, as a take's does)."""
         why = redact(reason.strip())[:MAX_LINE]
         if not why:
             raise BoardError('invalid', 'a block says why (a line)')

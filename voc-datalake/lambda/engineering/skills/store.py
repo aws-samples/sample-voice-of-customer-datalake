@@ -50,7 +50,8 @@ from botocore.exceptions import ClientError
 from engineering.bus.schema import WS
 from engineering.connectors.identity import AGENT_ROLES
 from engineering.knowledge.store import Actor
-from engineering.rows import get_row
+from engineering.rows import create_only as _put
+from engineering.rows import get_row, transact_or_refuse
 from engineering.rows import number_value as _number
 from engineering.rows import text_value as _text
 from engineering.skills.diff import Event, SkillDiff, diff, from_json, summary, to_json
@@ -229,10 +230,6 @@ def _found(item: dict[str, Any] | None) -> dict[str, Any]:
     if item is None:
         raise SkillNotFound('no such skill version')
     return item
-
-
-def _put(item: Mapping[str, Any], table: str) -> dict[str, Any]:
-    return {'Put': {'TableName': table, 'Item': item, 'ConditionExpression': 'attribute_not_exists(pk)'}}
 
 
 def _utc_now() -> datetime:
@@ -430,12 +427,7 @@ class SkillStore:
                              benchmark=Benchmark(), promoted_from=source)
 
     def _transact(self, items: list[dict[str, Any]], conflict: str) -> None:
-        try:
-            self.client.transact_write_items(TransactItems=items)
-        except ClientError as exc:
-            if not any(is_key_collision(exc, put_index=i) for i in range(len(items))):
-                raise
-            raise SkillConflict(conflict) from exc
+        transact_or_refuse(self.client, items, SkillConflict(conflict))
 
     def _log(self, ws: str, connection: str, role: str, version: int, event: str, by: Actor, at: str,
              comment: str = '') -> dict[str, Any]:

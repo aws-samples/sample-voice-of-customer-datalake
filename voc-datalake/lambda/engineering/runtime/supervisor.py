@@ -29,7 +29,7 @@ once).
 from __future__ import annotations
 
 import contextlib
-from collections import Counter, defaultdict
+from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Final
@@ -67,6 +67,8 @@ class MicroVmCallFailed(RuntimeError):
 class SessionBusy(RuntimeRefused):
     """Another move holds the session's claim: a signal answers ``busy`` (try again), a tick skips it."""
 
+#: The session's end for each state its task can end in on the board.
+ENDED_AS: Final[dict[str, Status]] = {'done': 'done', 'failed': 'failed', 'needs_human': 'failed'}
 
 @dataclass
 class Supervisor:
@@ -82,6 +84,8 @@ class Supervisor:
     #: The workspace bucket (voc-eng-workspace): the agents' checkpoints, patches and findings.
     workspace_bucket: str
     timings: Timings = field(default_factory=Timings)
+    #: The board API's function URL, handed to every agent (a continuation's too; its host is on the session's egress).
+    board_url: str = ''
     #: The checkout an agent boots with (``checkout.checkout_commands``; the tests give a local one).
     checkout: Callable[[str, Sequence[str]], list[Command]] = field(default_factory=lambda: checkout_commands)
     #: Runs whose budget is spent, as of their last tick: no new MicroVM starts for them.
@@ -89,9 +93,16 @@ class Supervisor:
 
     def tick(self, now: int) -> dict[str, int]:
         """One pass over every live session; the number of sessions in each status afterwards."""
-        by_run: dict[str, list[AgentSession]] = defaultdict(list)
-        for session in self.sessions.active():
-            by_run[session.run_id].append(session)
+        by_run: dict[str, list[AgentSession]] = {}
+        for run_id, every in self.sessions.watched():
+            live = [session for session in every if session.status in LIVE_STATUSES]
+            if live:
+                by_run[run_id] = live
+            try:
+                self._coordinator_lost(run_id, every, now)
+            except Exception:
+                logger.exception('engineering supervisor: a run\'s coordinator could not be checked',
+                                 extra={'run_id': run_id})
         statuses: Counter[str] = Counter()
         for run_id, run_sessions in by_run.items():
             try:
@@ -101,6 +112,25 @@ class Supervisor:
                 logger.exception('engineering supervisor: a run could not be checked', extra={'run_id': run_id})
                 statuses.update(session.status for session in run_sessions)
         return dict(statuses)
+
+    def _coordinator_lost(self, run_id: str, sessions: list[AgentSession], now: int) -> None:
+        """Ask for a person again when the run's newest coordinator failed and the run is still active: the session
+        was ended as failed but sending the run to a person did not land (``_crashed``), and nothing else would ask.
+        Only from the sessions the tick read already, and one read of the coordinate task's lease when its newest
+        coordinator failed: none while another coordinator is live or moving, nor once a Resume re-posted the task
+        for a new one (its attempt moved on; that one may still be booting)."""
+        coordinators = [session for session in sessions if session.role == 'coordinator']
+        if not coordinators or any(session.status in LIVE_STATUSES or (session.claimed_until or 0) >= now
+                                   for session in coordinators):
+            return
+        newest = max(coordinators, key=lambda session: (session.task_attempt, session.started_at))
+        if newest.status != 'failed':
+            return   # (done, or a person's Shut down or Stop now: never replaced, the run stays theirs)
+        lease = self.board.lease(run_id, newest.task_id)
+        if lease is None or lease.attempt != newest.task_attempt or lease.final_state:
+            return
+        if self.control.is_active(run_id):
+            self.control.needs_human(run_id, 'coordinator')
 
     def _stopping(self, run_id: str, now: int) -> bool:
         # An ended run first: it is past any decision point, the 30-day one included.
@@ -124,12 +154,9 @@ class Supervisor:
             self._spent.discard(run_id)
         results = [self._ticked(session, now, lambda s: self._advance(s, now)) for session in run_sessions]
         counts = Counter(session.status for session in results)
-        backlog = sum(self.bus.inbox_depth(run_id, session.agent_id) for session in results
-                      if session.status in WITH_MICROVM)
         self.bus.emit(run_id, 'run', 'run.health',
                       ', '.join(f'{count} {status}' for status, count in sorted(counts.items())),
-                      {'tokens': str(budget.tokens), 'cost_usd': f'{budget.cost_usd:.2f}',
-                       'inbox_backlog': str(backlog)})
+                      {'tokens': str(budget.tokens), 'cost_usd': f'{budget.cost_usd:.2f}'})
         return [session.status for session in results]
 
     def _guarded(self, session: AgentSession, now: int, move: Callable[[AgentSession], AgentSession]) -> AgentSession:
@@ -201,8 +228,58 @@ class Supervisor:
 
     # --- one tick of one agent ------------------------------------------------------------------
 
+    def _emit(self, session: AgentSession, to: str, kind: str, summary: str,
+              refs: dict[str, str] | None = None) -> None:
+        """One event about ``session`` (its task and attempt)."""
+        self.bus.emit(session.run_id, to, kind, summary, refs, task_id=session.task_id, attempt=session.task_attempt)
+
+    def _lease(self, session: AgentSession) -> Lease | None:
+        """The task's lease, as the board has it."""
+        return self.board.lease(session.run_id, session.task_id)
+
+    @staticmethod
+    def _superseded(session: AgentSession, lease: Lease) -> bool:
+        """The session's task has moved on: at another attempt (re-posted, claimed or not), or held by another
+        agent."""
+        return lease.attempt != session.task_attempt or (bool(lease.agent_id) and lease.agent_id != session.agent_id)
+
+    def _refreshed(self, session: AgentSession) -> bool:
+        """The holder's lease runs its full time from now (it may have run out on a long hold or a boot)."""
+        return self.board.refresh(session.run_id, session.task_id, agent_id=session.agent_id,
+                                  attempt=session.task_attempt)
+
+    def _refused(self, session: AgentSession, now: int) -> AgentSession:
+        """A refresh refused: the task moved on (another attempt or holder), or ended meanwhile (the session ends as it
+        did)."""
+        return self._gone(session, self._lease(session), now) or self._end(session, 'reposted', now)
+
+    def _gone(self, session: AgentSession, lease: Lease | None, now: int) -> AgentSession | None:
+        """The session's end when its task moved on (another attempt or holder) or ended, else None."""
+        if lease is not None and self._superseded(session, lease):
+            return self._end_superseded(session, lease, now)
+        if lease is not None and lease.ended:
+            return self._end(session, ENDED_AS.get(lease.final_state, 'failed'), now)
+        return None
+
+    def _end_superseded(self, session: AgentSession, lease: Lease, now: int) -> AgentSession:
+        """End a session whose task moved on: never continued nor re-posted."""
+        if not lease.agent_id and lease.attempt == session.task_attempt + 1:
+            # Its own re-post landed but its event may not have (a failed publish): posted again (the board answers
+            # a re-post that landed as it is, and publishes it again), then the session ends.
+            self.board.repost(session.run_id, session.task_id, 'reposted', attempt=session.task_attempt)
+        return self._end(session, 'reposted', now)
+
     def _advance(self, session: AgentSession, now: int) -> AgentSession:
-        lease = self.board.lease(session.run_id, session.task_id)
+        lease = self._lease(session)
+        if lease is not None and self._superseded(session, lease):
+            return self._end_superseded(session, lease, now)
+        if lease is not None and not lease.agent_id:
+            # Open at its own attempt: not claimed yet. Its harness claims it first thing, so the claim is due within
+            # the crash clock from the harness's start (a slow first call is no crash); before that, no lease.
+            lease = (replace(lease, agent_id=session.agent_id, renewed_at=session.harness_at,
+                             last_progress_at=session.harness_at) if session.harness_at is not None else None)
+        if session.status == 'waiting' and lease is not None and lease.ended:
+            return self._end(session, ENDED_AS.get(lease.final_state, 'failed'), now)
         if session.status == 'waiting':
             return session if lease is not None and lease.waiting else self._continue(session, now, crashed=False)
         if session.run_id in self._spent and session.after_pause not in ('hold', 'shutdown'):
@@ -211,7 +288,9 @@ class Supervisor:
         if not session.suspended:
             session = self._renew(session, now)
         if session.status == 'booting':
-            moved = self._boot(session, now)
+            if lease is not None and lease.ended:
+                return self._end(session, ENDED_AS.get(lease.final_state, 'failed'), now)
+            moved = self._boot(session, now, lease)
         else:
             moved = self._work(session, lease, now)
         return self._observe(moved, lease, now) if moved.status in WITH_MICROVM else moved
@@ -219,7 +298,7 @@ class Supervisor:
     def _hold(self, session: AgentSession, now: int) -> AgentSession:
         """A spent budget: a working agent checkpoints and is held; one still booting is held at once."""
         if session.status == 'working':
-            self.bus.emit(session.run_id, session.agent_id, 'pause', 'The run reached its budget: checkpoint and pause.')
+            self._emit(session, session.agent_id, 'pause', 'The run reached its budget: checkpoint and pause.')
             return self._ask_pause(self._wake(session), now, 'hold')
         if session.status == 'booting':
             return self._end(session, 'paused', now)
@@ -244,7 +323,7 @@ class Supervisor:
         continued_for_it = in_grace and self._continued_for_a_message(session)
         long_wait = not continued_for_it and now - (session.wait_since or now) >= self.timings.wait_suspend_limit
         if long_wait or now - session.started_at >= self.timings.pause_after:
-            self.bus.emit(session.run_id, session.agent_id, 'pause', 'Your wait is long: checkpoint and pause.')
+            self._emit(session, session.agent_id, 'pause', 'Your wait is long: checkpoint and pause.')
             return replace(self._wake(session), status='pause_requested', pause_requested_at=now, after_pause='wait')
         if not session.suspended:
             if in_grace:
@@ -303,7 +382,7 @@ class Supervisor:
                           network=True)
         return [*self.checkout(session.commit, session.paths), harness]
 
-    def _boot(self, session: AgentSession, now: int) -> AgentSession:
+    def _boot(self, session: AgentSession, now: int, lease: Lease | None = None) -> AgentSession:
         if now - session.started_at >= self.timings.boot_deadline:
             return self._crashed(replace(session, inspect={**session.inspect, 'last_failure': 'the boot took too long'}),
                                  now)
@@ -317,14 +396,34 @@ class Supervisor:
                 return self._crashed(self._with_exit(session, result), now)
             session = replace(session, boot_index=session.boot_index + 1, exec_id=None)
         command = commands[session.boot_index]
-        exec_id = self._vm_call(lambda: self.runtime.start_exec(vm, command))
         last = session.boot_index == len(commands) - 1
+        if last and lease is not None and lease.agent_id and not self._refreshed(session):
+            # Its harness starts on a lease of its own (a continuation's ran out over the boot's minutes): refused, the
+            # task is not this agent's at this attempt any more.
+            return self._refused(session, now)
+        exec_id = self._vm_call(lambda: self.runtime.start_exec(vm, command))
         if last and self._continued_for_a_message(session):
             # The continuation a message made for this wait: its grace to read the message starts with its harness.
             session = replace(session, woken_at=now)
-        return self._save(replace(session, exec_id=exec_id, status='working' if last else 'booting'))
+        return self._save(replace(session, exec_id=exec_id, status='working' if last else 'booting',
+                                  harness_at=now if last else session.harness_at))
 
     def _work(self, session: AgentSession, lease: Lease | None, now: int) -> AgentSession:
+        if lease is not None and lease.ended:
+            return self._task_ended(session, lease, now)
+        return self._working(session, lease, now)
+
+    def _task_ended(self, session: AgentSession, lease: Lease, now: int) -> AgentSession:
+        """Its task has ended on the board: however its harness exits, or at the hard stop if it does not, the session
+        ends as the task did, never continued nor re-posted."""
+        # A suspended one runs nothing: ended at once (its MicroVM is not kept until the hard stop).
+        exited = session.suspended or self._vm_call(
+            lambda: self.runtime.poll_exec(session.vm, str(session.exec_id))) is not None
+        if exited or now - session.started_at >= self.timings.hard_stop:
+            return self._end(session, ENDED_AS.get(lease.final_state, 'failed'), now)
+        return session
+
+    def _working(self, session: AgentSession, lease: Lease | None, now: int) -> AgentSession:
         if not session.suspended:
             vm, running = session.vm, str(session.exec_id)
             result = self._vm_call(lambda: self.runtime.poll_exec(vm, running))
@@ -341,11 +440,11 @@ class Supervisor:
             return replace(session, asked_at=None)
         if verdict == 'ask_state':
             minutes = self.timings.stall_after // 60
-            self.bus.emit(session.run_id, session.agent_id, 'question',
+            self._emit(session, session.agent_id, 'question',
                           f'No progress for {minutes} minutes: what is your state?')
             return replace(session, asked_at=now)
         if verdict == 'pause':
-            self.bus.emit(session.run_id, session.agent_id, 'pause',
+            self._emit(session, session.agent_id, 'pause',
                           'This MicroVM nears its limit: finish the step, checkpoint, and pause.')
             return replace(session, status='pause_requested', pause_requested_at=now, after_pause='continue')
         if verdict == 'stalled':
@@ -375,7 +474,7 @@ class Supervisor:
         return self._continue(session, now, crashed=False)
 
     def _stalled(self, session: AgentSession, now: int) -> AgentSession:
-        self.bus.emit(session.run_id, 'run', 'timed_out', f'{session.agent_id} stopped answering.')
+        self._emit(session, 'run', 'timed_out', f'{session.agent_id} stopped answering.')
         held = HELD_AS.get(session.after_pause)
         if held is not None:
             # A person's Pause or Shut down (or a spent budget) is kept: the agent is held from its last checkpoint.
@@ -383,7 +482,7 @@ class Supervisor:
         if session.role == 'coordinator':
             # Not a task on the board: restarted like a crash, and after too many in a row, the run goes to a person.
             return self._crashed(session, now)
-        self.board.repost(session.run_id, session.task_id, 'stalled')
+        self.board.repost(session.run_id, session.task_id, 'stalled', attempt=session.task_attempt)
         return self._end(session, 'reposted', now)
 
     def _crashed(self, session: AgentSession, now: int) -> AgentSession:
@@ -392,21 +491,47 @@ class Supervisor:
             return self._end(session, held, now)
         if session.crashes < self.timings.max_crash_continuations:
             return self._continue(session, now, crashed=True)
-        self.bus.emit(session.run_id, 'run', 'failed', f'{session.agent_id} crashed {session.crashes + 1} times.')
+        self._emit(session, 'run', 'failed', f'{session.agent_id} crashed {session.crashes + 1} times.')
         if session.role == 'coordinator':
+            # Its session failed first, then the run goes to a person: a Resume landing between the two then finds
+            # the coordinator failed and replaces it, never a session still kept (and nothing to replace).
+            ended = self._end(session, 'failed', now)
             self.control.needs_human(session.run_id, 'coordinator')
-            return self._end(session, 'failed', now)
-        self.board.repost(session.run_id, session.task_id, 'crashed')
+            return ended
+        self.board.repost(session.run_id, session.task_id, 'crashed', attempt=session.task_attempt)
         return self._end(session, 'reposted', now)
 
     def _continue(self, session: AgentSession, now: int, *, crashed: bool) -> AgentSession:
-        """End the MicroVM and go on as the same agent and task in a new one, from the last checkpoint."""
+        """End the MicroVM and go on as the same agent and task in a new one, from the last checkpoint; never for a
+        task that moved on or ended (every path here: a tick, a wake, a person's Resume)."""
         if session.run_id in self._spent:
             return self._end(session, 'paused', now)
+        lease = self._lease(session)
+        gone = self._gone(session, lease, now)
+        if gone is not None:
+            return gone
+        if lease is not None and lease.agent_id and not self._refreshed(session):
+            # Refused before any MicroVM starts: the task is not this agent's at this attempt any more. (Its lease is
+            # refreshed again when its harness starts, after the boot's minutes.)
+            return self._refused(session, now)
         self._terminate(session)
         restore = self.checkpoints.latest(session.run_id, session.agent_id, session.commit, session.task_attempt)
-        spec = session.spec(restore, self.workspace_bucket)
-        vm = self._vm_call(lambda: self.runtime.run(spec))
+        spec = session.spec(restore, self.workspace_bucket, self.board_url)
+        try:
+            vm = self._vm_call(lambda: self.runtime.run(spec))
+        except MicroVmCallFailed:
+            # A crash whose new MicroVM will not start counts as one more crash (every crash is a running agent's),
+            # so one that never starts is escalated like an agent that keeps crashing (its task re-posted, a
+            # coordinator's run sent to a person), never tried again on every tick. Any other continuation leaves
+            # the row as it was: a pause's comes back here as a crash once its failures add up, and an agent held
+            # without a MicroVM is tried again (a wake's once-per-wait mark is not spent by a start that failed).
+            if crashed:
+                try:
+                    self._save(replace(session, crashes=session.crashes + 1))
+                except Exception:
+                    logger.exception('engineering supervisor: a failed start could not be counted as a crash',
+                                     extra={'run_id': session.run_id, 'agent_id': session.agent_id})
+            raise
         continued = replace(session.on(vm, now, restore), crashes=session.crashes + 1 if crashed else 0,
                             microvm_seconds=session.microvm_seconds + self._elapsed(session, now))
         try:
@@ -419,7 +544,7 @@ class Supervisor:
             raise
         refs = {'continuation': str(saved.continuation), 'after': 'crash' if crashed else 'pause',
                 'checkpoint': restore or 'none'}
-        self.bus.emit(session.run_id, 'run', 'continued',
+        self._emit(session, 'run', 'continued',
                       f'{session.agent_id} continued in a new MicroVM ({saved.continuation}).', refs)
         return saved
 
@@ -588,14 +713,14 @@ class Supervisor:
         before = session
         session = self._renew(self._wake(session), now)
         if kind == 'save':
-            self.bus.emit(session.run_id, session.agent_id, 'save', 'Save a checkpoint now.')
+            self._emit(session, session.agent_id, 'save', 'Save a checkpoint now.')
             return self._save(session)
         if kind in ('pause', 'shutdown'):
             # Already pausing (its 8-hour pause, a long wait): a person's pause or shut down decides what follows;
             # shut down outranks a hold.
             after: After = 'shutdown' if kind == 'shutdown' or session.after_pause == 'shutdown' else 'hold'
             if session.status == 'working':
-                self.bus.emit(session.run_id, session.agent_id, 'pause', 'Finish the step, checkpoint, and pause.')
+                self._emit(session, session.agent_id, 'pause', 'Finish the step, checkpoint, and pause.')
             return self._ask_pause(session, now, after)
         # A Resume of an agent that runs (or pauses to continue, or to shut down: a Shut down outranks it) does nothing
         # but the wake and renewal above: nothing to save, and so not applied, when neither moved anything.

@@ -219,7 +219,7 @@ class LambdaRuntime:
 
     def signal(self, run_id: str, agent_id: str | None, signal: str, attempt: int | None, *, actor: str) -> Applied:
         """``actor``: the person who sent it (the signal record's sender), for the runtime to record who changed the
-        run's status (a whole-run Resume: D4, voc-auto-b's next merge; the runtime in this tree ignores it)."""
+        run's status (a whole-run Resume: D4, ``runtime/runs.py``) and name on a new coordinator's launch."""
         request: dict[str, Any] = {'action': 'signal', 'run_id': run_id, 'signal': signal, 'actor': actor}
         if agent_id is not None:
             request['agent_id'] = agent_id

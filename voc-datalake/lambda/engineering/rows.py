@@ -7,11 +7,19 @@ from collections.abc import Callable, Mapping, Sequence
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from botocore.exceptions import ClientError
+
 from shared.dynamo_paging import count_query, query_all
+from shared.ids import is_key_collision
 
 #: How far below its cursor a reader of numbered rows re-reads (the conversation, an inbox): more than the messages of
 #: a run in flight at once, since two writers may commit their numbers out of order.
 TAIL_WINDOW = 20
+
+#: The attribute a launch holds an agent's ``AGENT#`` row by until its session is written (runtime/sessions.py
+#: ``SessionStore.hold_launch``): a row with it and no ``seq`` is a launch under way or lost, not an agent yet, so
+#: every reader of agents skips it (reports/facts.py too).
+LAUNCH_HOLD = 'launching_until'
 
 
 def window_start(after: int) -> int:
@@ -63,9 +71,17 @@ def _query(table: str, pk: str, prefix: str) -> dict[str, Any]:
             'ExpressionAttributeValues': {':pk': {'S': pk}, ':p': {'S': prefix}}}
 
 
-def partition_rows(client: Any, table: str, pk: str, prefix: str) -> list[dict[str, Any]]:
-    """Every row of the partition ``pk`` whose sort key starts with ``prefix``, in key order, read consistently."""
-    return query_all(client, _query(table, pk, prefix))
+def partition_rows(client: Any, table: str, pk: str, prefix: str, *, max_items: int | None = None) -> list[dict[str, Any]]:
+    """Every row of the partition ``pk`` whose sort key starts with ``prefix``, in key order, read consistently
+    (at most ``max_items`` of them when given: the read stops there)."""
+    return query_all(client, _query(table, pk, prefix), max_items=max_items)
+
+
+def whole_partition(client: Any, table: str, pk: str) -> list[dict[str, Any]]:
+    """Every row of the partition ``pk``, in key order, read consistently, page by page (unbounded: for an erasure,
+    which must reach every row)."""
+    return query_all(client, {'TableName': table, 'ConsistentRead': True, 'KeyConditionExpression': 'pk = :pk',
+                              'ExpressionAttributeValues': {':pk': {'S': pk}}})
 
 
 def run_rows(client: Any, table: str, ws: str, run_id: str, prefix: str) -> list[dict[str, Any]]:
@@ -84,6 +100,21 @@ def amount_attr(item: Mapping[str, Any], key: str) -> Decimal:
     except InvalidOperation:
         return Decimal(0)
     return value if value.is_finite() and value >= 0 else Decimal(0)
+
+
+def create_only(item: Mapping[str, Any], table: str) -> dict[str, Any]:
+    """A transaction's Put of ``item`` that fails when its key exists (versions, logs: written once)."""
+    return {'Put': {'TableName': table, 'Item': item, 'ConditionExpression': 'attribute_not_exists(pk)'}}
+
+
+def transact_or_refuse(client: Any, items: list[dict[str, Any]], refused: Exception) -> None:
+    """``items`` in one transaction; ``refused`` raised (from the error) when one of their conditions failed."""
+    try:
+        client.transact_write_items(TransactItems=items)
+    except ClientError as exc:
+        if not any(is_key_collision(exc, put_index=i) for i in range(len(items))):
+            raise
+        raise refused from exc
 
 
 class Refused(Exception):

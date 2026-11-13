@@ -68,12 +68,14 @@ AGENT_UMASK: Final = 0o022
 PASSED_ENV: Final = ('PATH', 'HOME', 'LANG', 'LC_ALL', 'TZ', 'JAVA_HOME')
 #: The toolchain homes, in the code-owned /opt/voc/cache: repository code's only. An agent's own command never
 #: loads a toolchain, a plugin or a config from a place repository code can write.
-TOOLCHAIN_ENV: Final = ('CARGO_HOME', 'RUSTUP_HOME', 'GRADLE_USER_HOME', 'MAVEN_OPTS', 'NPM_CONFIG_CACHE',
-                        'PIP_CACHE_DIR')
+#: With the toolchains' settings each image sets beside them (``ENV``): Cargo's no incremental build, Gradle's no
+#: daemon (its client talks to it over loopback, which the code firewall rejects in the dependency step).
+TOOLCHAIN_ENV: Final = ('CARGO_HOME', 'RUSTUP_HOME', 'CARGO_INCREMENTAL', 'GRADLE_USER_HOME', 'GRADLE_OPTS',
+                        'MAVEN_OPTS', 'NPM_CONFIG_CACHE', 'PIP_CACHE_DIR')
 #: The agent's ids (``interface.AgentSpec.environment``, set on the MicroVM) and its region: the agent's own
 #: commands' only (the harness reads them); repository code never needs them.
 AGENT_ENV: Final = ('VOC_RUN_ID', 'VOC_AGENT_ID', 'VOC_TASK_ID', 'VOC_ROLE', 'VOC_RESTORE_KEY', 'VOC_COMMIT',
-                    'VOC_ATTEMPT', 'VOC_WORKSPACE_BUCKET', 'AWS_REGION')
+                    'VOC_ATTEMPT', 'VOC_WORKSPACE_BUCKET', 'VOC_BOARD_URL', 'AWS_REGION')
 #: Credential shapes masked in tool output: AWS access keys and secrets, host tokens (GitHub, GitLab),
 #: bearer headers, private keys, and `name=value` pairs whose name says secret.
 _CREDENTIAL_RES: Final = (

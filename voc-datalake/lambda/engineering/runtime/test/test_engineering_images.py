@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from engineering.runtime import unit_runner
 from engineering.runtime.egress import REGISTRY_HOSTS
 from engineering.runtime.interface import ROLES
 
@@ -141,6 +142,26 @@ def test_the_entry_point_turns_the_sandbox_on_and_mounts_nothing_before_a_sessio
     assert "guard='--hardlink-guard'" in entrypoint
     assert '--sandbox $firewall $guard' in entrypoint
     assert 'mount-s3' not in entrypoint
+
+
+def _image_env(language: str) -> dict[str, str]:
+    """The ``ENV`` names and values a toolchain image sets (its continued lines joined)."""
+    text = (IMAGES / language / 'Dockerfile').read_text().replace('\\\n', ' ')
+    return dict(item.split('=', 1) for line in text.splitlines() if line.startswith('ENV ')
+                for item in line.removeprefix('ENV ').split())
+
+
+@pytest.mark.parametrize('language', sorted(REGISTRY_HOSTS))
+def test_every_variable_an_image_sets_reaches_the_repositorys_code(language):
+    # The runner passes only the names it lists: one an image sets and the runner drops does nothing.
+    assert set(_image_env(language)) <= {*unit_runner.PASSED_ENV, *unit_runner.TOOLCHAIN_ENV}
+
+
+def test_the_java_image_runs_gradle_without_its_daemon():
+    # The daemon's client talks to it over loopback, which the code firewall rejects in the dependency step.
+    assert _image_env('java')['GRADLE_OPTS'] == '-Dorg.gradle.daemon=false'
+    env = unit_runner.command_env({'GRADLE_OPTS': '-Dorg.gradle.daemon=false', 'PATH': '/usr/bin'}, repository_code=True)
+    assert env['GRADLE_OPTS'] == '-Dorg.gradle.daemon=false'
 
 
 @pytest.mark.parametrize('language', sorted(REGISTRY_HOSTS))

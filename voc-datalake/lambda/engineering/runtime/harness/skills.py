@@ -5,8 +5,9 @@ worked examples, its tool policy (the only tools the harness offers it: ``tools.
 the model it was written and measured for, and the harness that runs it. Records are kept as they are written:
 a change is a new version, never an edit of one, so a run says which version each agent ran (the session row's
 ``skill_version``, ``<name>@<version>``). ``to_record`` / ``from_record`` are the stored shape, the one the skills
-store (skill history, the coach's proposals, the benchmark gate) keeps; until that store exists, this module is
-where the shipped versions live (it ships in the images with the harness).
+store (``engineering/skills/store.py``: skill history, the coach's proposals, the benchmark gate) keeps; the harness
+does not read that store yet, so the versions an agent runs are the ones shipped here (in the images, with the
+harness).
 
 A role without a skill record runs as before: the platform's own instructions and its role's tools.
 """
@@ -100,11 +101,6 @@ class Skill:
         if not self.model:
             raise SkillError('a skill names the model it was written for')
 
-    @property
-    def label(self) -> str:
-        """``<name>@<version>``: what a session row's ``skill_version`` says."""
-        return skill_label(self.name, self.version)
-
     def system_prompt(self) -> str:
         """The instructions, then the worked examples."""
         shown = '\n\n'.join(f'Example {n}. When: {example.situation}\nDo: {example.action}'
@@ -174,3 +170,12 @@ SKILLS: Final[Mapping[str, Skill]] = {COORDINATOR.name: COORDINATOR}
 
 def skill_for(role: str) -> Skill | None:
     return SKILLS.get(role)
+
+
+#: The harness's entry in every image (engineering-images/common/harness.py).
+HARNESS_ENTRY: Final = ('/usr/bin/python3', '-I', '/opt/voc/harness.py', 'run')
+
+
+def harness_argv(skill: Skill) -> tuple[str, ...]:
+    """The argv a launch runs an agent of ``skill`` with: its harness and its model (``main.py`` ``run``)."""
+    return (*HARNESS_ENTRY, '--adapter', skill.harness, '--model', skill.model)

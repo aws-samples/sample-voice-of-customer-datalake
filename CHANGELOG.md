@@ -17,6 +17,92 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.16.00] - 2026-11-13
+
+Autonomous engineering agents: the run's start launches its coordinator and a person's Resume replaces one that failed, a run's status changes record who made them, the run monitor gains its Reports panel, and the AI assistant drafts engineering flows. Merged from the voc-autonomous-b and voc-autonomous-c branches. Off by default.
+
+### Added
+
+- The run's start launches its coordinator: for a run started with its connection, commit and new `language` (the repository's toolchain, the MicroVM image the coordinator runs in), `start_run` launches `coordinator-1`, the run's first agent, on its `coordinate` task with the coordinator's skill's harness (META's `agent_count` starts at 1, so the board numbers the agents it launches from 2). The coordinate task records that coordinator, and only it claims the task. A retried start launches it only when it has no session yet; a run without its connection, commit or language starts without one. A start whose coordinator does not launch (refused, or its MicroVM did not start) sends the run to a person (the `coordinator` decision point) and raises the failure, never leaving the run active with no coordinator; the person's Resume launches it.
+- A whole-run Resume makes sure the run has a coordinator, as its start does: one whose session failed (it kept crashing, which sent the run to a person) is replaced, the coordinate task re-posted at its attempt (written, never published as `task.posted`) and a new `coordinator-<n>` recorded at the next by `BoardStore.launch_coordinator` (the runtime's only, never a board op) with the person as the actor of both history rows (`BoardStore.repost` takes an `actor`, `supervisor` by default; nobody named is `unattributed`, as on the run's own history). The supervisor ends a crashed coordinator's session as failed before it sends the run to a person, so a Resume in between still replaces it, and if sending it to a person fails, the next tick asks again for an active run whose newest coordinator failed and is still the coordinate task's. A coordinator that is live, held, or ended by a person's Shut down or Stop now is left alone (the run stays active until a person ends or resumes it); a board refusal (the agent cap, a racing Resume) is logged and the Resume still answered.
+- D4 for a run's status: its start, its end, a decision point and a person's Resume each write a `RUNLOG#<at>#<status>#<hex>` row (status, actor, reason, time; create-only, never written over) in the same transaction as META's change, retried when another write of META races it. `start_run`, `end_run` and `signal` take an optional `actor` (`unattributed` when missing; `supervisor` for its own decision points; a start's or a Resume's whose coordinator did not launch names that start's or Resume's actor), and the run monitor's signals now send the signed-in person.
+- The run monitor's **Reports** panel: a run's commit, PR and goal reports by level, goal first, each version's Markdown (rendered as Markdown only) with a version picker; it follows the latest version while the run is under way, and a version counted but never written says so.
+- The AI assistant drafts engineering flows (`voc-workflow/2`) with its workflow tools behind its approval card; the web app creates a new one only where the engineering module is deployed (`features.engineering`), and changes one already saved anywhere.
+- The `EngineeringWorkspaceDeniedReads` metric: each workspace read S3 denied and the reader took as missing (the report builder, the Agents API, the board's `knowledge`), flushed by the board and report handlers.
+
+### Changed
+
+- A replaced run coordinator is refused every board op (403 "the run has another coordinator now"): each coordinator op checks the caller is the coordinate task's recorded coordinator at its attempt, and the task's claim repeats the check in its own write.
+- The coordinator's launch from the runtime follows the board's launch rules: a first start whose coordinator cannot be launched (no skill for the role, no MicroVM image for the language in this deployment) is refused before anything is written, and a Resume checks the same before it re-posts or numbers one; a repeat is answered from its session, and one while another launch still starts refuses a start (`SessionBusy`: ask again, the run is written) and is logged on a Resume; a Resume whose new coordinator is refused or whose MicroVM fails to start logs it and sends the run back to a person, as a start does; a bad request or another task's session clears the coordinate task's record with a `launch_refused` history row, so the next start or Resume numbers a new coordinator.
+- A decision point the run already waits at, for the same reason, writes nothing (the supervisor asks on every tick while a budget stays spent), and none replaces the 30-day one.
+- The run monitor's signals re-read only what they change, not the reports.
+- The Agents API creates a new engineering flow (`voc-workflow/2`) only where the engineering agents module is deployed: `POST /workflows` (New, the editor's Save as, an imported draft saved as new, the assistant's create card) and `POST /workflows/{id}/duplicate` answer 409 for one elsewhere, whoever asks; an engineering flow already saved still opens and saves (PUT), and agents workflows are created as before. The web app offers Save as on an engineering flow only where `features.engineering` is true, and the assistant's duplicate card answers that 409 with a plain sentence.
+- An approved knowledge pack whose stored `pack.json` is not readable JSON is `PackUnavailable` (kind `unavailable`), which the board's `knowledge` answers 503 (try again) instead of 400.
+
+### Fixed
+
+- A running agent whose new MicroVM never starts counts each failed start as a crash, so it is escalated (its task re-posted, or a coordinator's run sent to a person) instead of retried forever.
+- Gradle runs without its daemon in the Java image (`GRADLE_OPTS=-Dorg.gradle.daemon=false`), whose loopback the dependency step's code firewall rejects; every variable a toolchain image sets now reaches repository code (the runner had dropped `GRADLE_OPTS` and the Rust image's `CARGO_INCREMENTAL`).
+- A session that stops without its finish says why in its task's last progress report before the task goes to a person. A run coordinator's stop without finish is a crash instead (the supervisor continues it, then sends the run to a person, whose Resume replaces it), never its coordinate task sent to a person, which left the run active with nobody planning it.
+- A launch whose MicroVM failed to start runs its hold out (0) instead of removing it, so no key-only `AGENT#` row is left for the report builder to read as an agent with no role, and a retry launches at once; the hold is let go even when ending the MicroVM fails.
+
+### Upgrade notes
+
+- With `-c engineeringAgents=true`: a run's META gains `language` and starts `agent_count` at 1, and its coordinate task records `coordinator-1`; a run started before this release has neither, so its coordinator is not launched by a Resume and its agents number from 1 as before. The board Lambda gets `ENGINEERING_IMAGE_LANGUAGES`, the languages of `-c engineeringImageArns` (empty by default), and the runtime reads the same images: until images are configured, every launch, the run coordinator's included, is refused before an agent is numbered (a run's first start with a `language` is refused before it is written). Without the flag nothing changes.
+- A run started on 6.15 has a coordinate task with no recorded coordinator: every coordinator op on it is refused (403), and a Resume launches none: start a new run in its place.
+- In a deployment without the engineering agents module, a client that created engineering flows through `POST /workflows` or `…/duplicate` now gets 409 there; flows already saved are unchanged and still open and save.
+
+## [6.15.01] - 2026-11-13
+
+Autonomous engineering agents: fixes from 6.15.00's review, to launches and PR reports. Off by default.
+
+### Fixed
+
+- A launch the runtime refuses as a bad request (no image for the language in this deployment, no skill for the role, another attempt) or because the agent's session is another task's no longer keeps the task's recorded launch: the board clears it with a `launch_refused` history row naming the coordinator and the refusal, so the coordinator's next launch numbers a new agent with the language and paths it gives then (a clear that fails is logged; the coordinator still reads the runtime's refusal). A launch still booting (`SessionBusy`) and a run not active or stopped keep the record.
+- The runtime answers a repeated launch (the same agent, task and attempt) with its session, and one while the first still starts as busy, before any other check: a launch that got through is never refused on a retry, even once the run has stopped, and any other refusal means no session and no launch of the agent exist.
+- A PR report whose winning gate record (the last final-go task to end, then its latest attempt) cannot be read or is off the schema is refused (logged as an error) instead of published without it or with an older attempt's: the report's Markdown is the pull request's description. A later attempt's good record wins over an unread older one. Commit and goal reports are unchanged.
+- The board refuses (409) a launch of a role that has no skill yet, or in a language this deployment has no MicroVM image for (`ENGINEERING_IMAGE_LANGUAGES`, from `-c engineeringImageArns`), before it numbers an agent, so a coordinator that keeps asking uses up none of the run's 999 agent numbers.
+- A MicroVM the service started but answered without a usable endpoint is terminated at once; if that terminate fails it is logged, and the MicroVM's idle policy ends it.
+
+## [6.15.00] - 2026-11-12
+
+Autonomous engineering agents: the supervisor and the harness run on the board and the bus, the board gains the coordinator's ops, and New engineering flow shows only where the module is deployed. Merged from the voc-autonomous-b and voc-autonomous-c branches. Off by default.
+
+### Added
+
+- The board for the coordinator and the harness: the run's `coordinate` task (written by the run's start with META's commit and connection, claimable only by the run's coordinator); the ops `launch` (coordinator only: it numbers the agent `<role>-<n>` and invokes only the runtime's `launch` action, once per task attempt: a repeat returns the session the first wrote, one still booting is busy; an image language and the checkout's path rule are checked before an agent is numbered; a refusal, or a run started without a connection or commit, answers 409), `tasks` and `knowledge` (`{task_id, package}`: a package of a task whose lease the caller holds, or the root, read through the pack's agent reader); the store's lease `refresh` for the supervisor, and `repost_task` at the attempt the supervisor judged.
+- The harness's board client (`runtime/harness/board_client.py`): a SigV4 POST to the board's function URL (`VOC_BOARD_URL`) as the agent's own session; the coordinator's planner and knowledge reader go through it.
+- The supervisor's board and bus (`runtime/board_bus.py`): leases, refresh and re-post through the board's store, and events as voc-msg/1 from the supervisor's own source.
+- Who speaks on the bus: the gate runner (its gate results only), a run's coach (from a run-scoped source), the supervisor (`signal.*`, `run.agent_*`, and `task.posted` for a re-post), and the API's skill announcements as the signed-in person.
+- `features.engineering` in the web app's `config.json`, from VocApiStack's `EngineeringAvailable` output: the workflow library offers New engineering flow only where the engineering module is deployed (engineering flows already saved still list, open and save).
+
+### Changed
+
+- A fresh agent's claim gets its time; a CLI message counts as done only once the model's notes are saved; a session that ends without its finish goes to a person (needs_human), never done.
+- The voc-skill/1 record keeps one home (`runtime/harness/skills.py`), and a launch takes its argv from the role's skill.
+- The bus policy admits the board's, the supervisor's and the delivery function's roles and the agent roles, each pinned to its own source.
+- The report builder reads a denied object as missing and logs it; the workspace store retries a `ConditionalRequestConflict` and logs a read cut at 4 MB.
+
+### Upgrade notes
+
+- With `-c engineeringAgents=true`: the board Lambda (timeout 120 s, above a launch's boot) may invoke `voc-engineering-runtime` (IAM grants the function; the board's code sends it only the `launch` action, through its op), reads the knowledge packs and gets `ENGINEERING_RUNTIME_FUNCTION`; the agents get `VOC_BOARD_URL`. `npm run deploy:frontend` reads `EngineeringAvailable` (a missing output means false). Without the flag nothing changes.
+
+## [6.14.00] - 2026-11-12
+
+Autonomous engineering agents, phase 3: the agents' memory, slice 1, scoped per repository, per role and per person, every learned memory a draft until it is approved, recalled for a task as fenced data. Nothing invokes it yet.
+
+### Added
+
+- Agent memory, slice 1 (`voc-datalake/lambda/engineering/agent_memory/`, docs/autonomous-engineering.md "Agent memory", docs/memory.md): the agents' part of the memory layer, kept in `voc-engineering` (`WS#<ws>#AMEM#REPO#<connection>`, `…#ROLE#<connection>#<role>`, `…#PERSON#<user>`) rather than `voc-memory`, whose company memories reach every shared generator and have no connection in their keys. Three scopes: a repository's, a role's within a connection (one connection's lessons never reach another's agents) and a person's, kept only for a signed-in user of this deployment. Each memory is a bounded statement (400 characters; credentials and personal data redacted, the layer's hygiene applied, a cited review's sentence refused: feedback ids only), with its provenance (a run, a review comment on the connection's own host, or a person), a confidence and a review date. A learned memory needs 0.8 confidence and stays a draft until an administrator (repository, role) or the person (their own) approves it; every edit is a new create-only version with its author (D1, D4), checked against the memory's revision; forget archives and restore brings it back, and nothing is deleted. An agent acts through a run context built from its run's record (its connection, run, role and the people on its task): it learns and confirms only within its run's connection, its own role's lessons and the people on its task, with its own run as the provenance; a person confirms only as themselves. Each source counts once, up to 20, and an approved repository or role memory confirmed three times is returned as a knowledge-pack proposal, never written to the pack. Every learn, write and edit must pass the reviews the run cited (`review_texts` is required). Recall for a task reads the run's connection's, its role's and its people's approved memories, keeps whole memories within a count and character limit, flags stale and conflicting ones (a conflict names the first five others and counts the rest, found in O(n log n)), and fences them in one DATA block. Reads stay bounded: a scope holds at most 200 live and 500 stored memories per connection (a person's per person and connection) and a memory at most 21 confirmation rows. An administrator erases a person's memories for a legal obligation (D5): a tombstone and an `AUDIT#delete` row (who, what, when, the legal basis) first, then their id de-identified wherever other scopes name it, then their partition deleted, and they are refused in every scope afterwards; nothing calls it yet (no path erases a signed-in user's data today; its caller will need its own grants and the `AUDIT#` row guard extended to `voc-engineering`). Nothing invokes it yet: the learning loop, the harness and the routes land with phases 4 and 5.
+
+### Changed
+
+- Shared write helpers (`create_only`, `transact_or_refuse`) move into `voc-datalake/lambda/engineering/rows.py`, which the skills store now uses; it also gains `whole_partition` (an erasure's unbounded read), and `partition_rows` takes `max_items`. The knowledge notes' subject pattern is public (`SUBJECT`).
+
+### Upgrade notes
+
+- Nothing changes in a deployment.
+
 ## [6.13.00] - 2026-11-12
 
 Autonomous engineering agents: engineering flows in the workflow editor, the run monitor, push delivery per run with the board's inbox, the board's progress and repost, and the run coordinator on a versioned skill. Merged from the voc-autonomous-c and voc-autonomous-b branches. Off by default.

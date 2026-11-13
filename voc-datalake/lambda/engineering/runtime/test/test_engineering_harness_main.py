@@ -15,6 +15,7 @@ from botocore.exceptions import ClientError
 
 from engineering.runtime.checkout import checkout_commands
 from engineering.runtime.harness import main as harness_main
+from engineering.runtime.harness.board_client import InboxHttp
 from engineering.runtime.harness.cli import CliNotOffered
 from engineering.runtime.harness.main import Ports, S3Store, build_session, main
 from engineering.runtime.harness.ports import HarnessPortNotWired, PendingHarnessPorts
@@ -70,6 +71,41 @@ def test_the_session_comes_from_the_agents_environment_and_restores_its_own_chec
     assert (session.restored_seq, session.notes, session.plan) == (7, 'n', ['p'])
     assert session.checkpoint(turn=1).startswith(f'{CHECKPOINTS}000008-')
 
+
+
+@dataclass
+class PausedInbox:
+    """The board's inbox op holding one old pause: every read answers it, as the window behind the tail does."""
+
+    reads: list[int] = field(default_factory=list)
+
+    def post(self, body: dict[str, Any]) -> dict[str, Any]:
+        self.reads.append(body['after'])
+        return {'messages': [{'seq': 1, 'event_id': 'E-PAUSE', 'type': 'signal.pause', 'summary': 'pause'}],
+                'next': 0}
+
+
+def test_a_continuation_does_not_take_again_the_pause_its_first_session_acted_on(aws, tmp_path):
+    s3, _ = aws
+    board = PausedInbox()
+    first = _inbox_session(s3, tmp_path, board)
+    assert first.take_messages() == ([], True)
+    key = first.checkpoint(turn=4)  # the pause's checkpoint
+    saved = json.loads(s3.get_object(Bucket=BUCKET, Key=key)['Body'].read())
+    assert saved['position']['inbox'] == {'after': 0, 'done': [{'id': 'E-PAUSE', 'seq': 1}]}
+    # The continuation reads the inbox again (the old pause still answers) and takes nothing: no second pause.
+    assert _inbox_session(s3, tmp_path, board, VOC_RESTORE_KEY=key).take_messages() == ([], False)
+    assert board.reads == [0, 0]
+
+
+def test_a_checkpoints_cursor_is_handed_to_the_inbox_whatever_it_holds(aws, tmp_path):
+    s3, _ = aws
+    key = f'{CHECKPOINTS}000002-abcd.json'
+    s3.put_object(Bucket=BUCKET, Key=key, Body=json.dumps({'position': {'turn': 1, 'inbox': 'nonsense'}, 'notes': ''}))
+    ports = _ports()
+    build_session(_env(tmp_path, VOC_RESTORE_KEY=key), s3=s3, ports=ports, runner=FakeRunner(), checkout=str(tmp_path))
+    assert isinstance(ports.inbox, FakeInbox)
+    assert ports.inbox.resumed == 'nonsense'  # handed on; InboxHttp.resume ignores what is not a cursor
 
 def _checkpoint_with_a_tree(s3: Any) -> str:
     """A checkpoint of the agent's whose working tree is a patch under its own keys; the checkpoint's key."""
@@ -256,13 +292,26 @@ class OrderedBoard(FakeBoard):
         return super().brief(run_id=run_id, task_id=task_id)
 
 
-def test_the_lease_is_renewed_at_once_before_the_brief_and_the_restore(aws, tmp_path):
+def test_a_fresh_start_claims_its_brief_before_any_renewal(aws, tmp_path):
     s3, _ = aws
     board = OrderedBoard()
-    runner = FakeRunner()
     main(['run', '--adapter', 'converse', '--model', 'model-a'], _env(tmp_path), s3=s3, ports=_ports(board),
-         runner=runner, bedrock=lambda: FakeBedrock([[use('finish', summary='ok')]]))
-    assert board.order[:2] == ['heartbeat', 'brief']
+         runner=FakeRunner(), bedrock=lambda: FakeBedrock([[use('finish', summary='ok')]]))
+    # Its task is not claimed yet: a renewal first would be refused.
+    assert board.order[0] == 'brief'
+
+
+def test_a_continuation_renews_its_lease_at_once_before_the_restore(aws, tmp_path):
+    s3, _ = aws
+    key = f'{CHECKPOINTS}000002-abcd.json'
+    s3.put_object(Bucket=BUCKET, Key=key, Body=json.dumps({'position': {'turn': 1}, 'notes': ''}))
+    board = OrderedBoard()
+    main(['run', '--adapter', 'converse', '--model', 'model-a'], _env(tmp_path, VOC_RESTORE_KEY=key), s3=s3,
+         ports=_ports(board), runner=FakeRunner(), bedrock=lambda: FakeBedrock([[use('finish', summary='ok')]]))
+    assert board.order[0] == 'heartbeat'
+    # Restored: no first checkpoint of a fresh start written beside it.
+    keys = [item['Key'] for item in s3.list_objects_v2(Bucket=BUCKET, Prefix=CHECKPOINTS)['Contents']]
+    assert keys == [key]
 
 
 def test_until_the_board_lands_the_harness_refuses_rather_than_guess(aws, tmp_path):
@@ -303,3 +352,194 @@ def test_the_images_entry_script_imports_the_harness_from_its_own_directory_unde
                            timeout=60, cwd=tmp_path, check=False)
     assert shown.returncode == 0, shown.stderr
     assert 'usage: harness' in shown.stdout
+
+
+def test_the_tool_servers_session_reads_no_brief(aws, tmp_path):
+    s3, _ = aws
+    board = FakeBoard()
+    session = build_session(_env(tmp_path), s3=s3, ports=_ports(board), runner=FakeRunner(), checkout=str(tmp_path),
+                            restore=False)
+    assert (board.briefs_asked, session.context.brief.task_id) == ([], 'task-1')
+
+
+@dataclass
+class Batch:
+    """The inbox op answering one batch, then nothing new (the window behind the tail answers it again)."""
+
+    notices: list[tuple[str, str]]
+
+    def post(self, body: dict[str, Any]) -> dict[str, Any]:
+        del body
+        return {'messages': [{'seq': n, 'event_id': f'E{n}', 'type': kind, 'summary': text}
+                             for n, (kind, text) in enumerate(self.notices, 1)], 'next': 0}
+
+
+
+class Failing:
+    """The board's inbox op failing (a 503 past its retries)."""
+
+    def post(self, body: dict[str, Any]) -> dict[str, Any]:
+        raise RuntimeError(f'board down ({body["op"]})')
+
+def _inbox_session(s3: Any, tmp_path: Any, board: Batch | Failing | PausedInbox, **extra: str) -> Any:
+    ports = Ports(board=FakeBoard(), inbox=InboxHttp(board, '01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1'), broker=FakeBroker())
+    return build_session(_env(tmp_path, **extra), s3=s3, ports=ports, runner=FakeRunner(), checkout=str(tmp_path))
+
+
+def test_an_answer_taken_with_a_pause_reaches_the_continuation(aws, tmp_path):
+    s3, _ = aws
+    board = Batch([('msg.answer', 'Use the second parser.'), ('signal.pause', 'pause')])
+    first = _inbox_session(s3, tmp_path, board)
+    notes, pause = first.take_messages()
+    assert pause
+    key = first.checkpoint(turn=2)  # the pause's checkpoint: the answer was never shown to the model
+    others, again = _inbox_session(s3, tmp_path, board, VOC_RESTORE_KEY=key).take_messages()
+    assert (notes, [(note.kind, note.summary) for note in others], again) == (
+        notes, [('msg.answer', 'Use the second parser.')], False)
+
+
+def test_a_save_in_a_batch_leaves_the_batchs_other_messages_to_be_read_again(aws, tmp_path):
+    s3, _ = aws
+    board = Batch([('signal.save', 'save'), ('msg.answer', 'Yes, go on.')])
+    first = _inbox_session(s3, tmp_path, board)
+    first.take_messages()
+    [key] = [item['Key'] for item in s3.list_objects_v2(Bucket=BUCKET, Prefix=CHECKPOINTS)['Contents']]
+    # The save is done; the answer, not yet shown to the model, is before the cursor's end: read again.
+    others, _ = _inbox_session(s3, tmp_path, board, VOC_RESTORE_KEY=key).take_messages()
+    assert [(note.kind, note.summary) for note in others] == [('msg.answer', 'Yes, go on.')]
+
+
+def test_a_continuation_whose_first_read_fails_keeps_the_cursor_it_restored(aws, tmp_path):
+    s3, _ = aws
+    board = Batch([('msg.answer', 'Use the second parser.'), ('signal.pause', 'pause')])
+    first = _inbox_session(s3, tmp_path, board)
+    first.take_messages()
+    key = first.checkpoint(turn=2)
+    second = _inbox_session(s3, tmp_path, Failing(), VOC_RESTORE_KEY=key)
+    with pytest.raises(RuntimeError, match='board down'):
+        second.take_messages()
+    crash = second.checkpoint(turn=0)  # the crash's checkpoint: the answer is still to be read
+    others, _ = _inbox_session(s3, tmp_path, board, VOC_RESTORE_KEY=crash).take_messages()
+    assert [note.summary for note in others] == ['Use the second parser.']
+
+
+def test_messages_the_model_saved_after_are_not_handed_out_again(aws, tmp_path):
+    s3, _ = aws
+    board = Batch([('msg.answer', 'Yes.')])
+    first = _inbox_session(s3, tmp_path, board)
+    first.take_messages()  # shown to the model
+    first.take_messages()  # the loop came back: the batch reached it
+    first.remember({'notes': 'The person said yes.', 'plan': []})  # the model saved its notes after
+    key = first.checkpoint(turn=3)
+    assert _inbox_session(s3, tmp_path, board, VOC_RESTORE_KEY=key).take_messages() == ([], False)
+
+
+def test_a_message_the_model_had_but_never_saved_after_is_read_again(aws, tmp_path):
+    s3, _ = aws
+    board = Batch([('msg.answer', 'Use the second parser.')])
+    first = _inbox_session(s3, tmp_path, board)
+    first.take_messages()
+    first.take_messages()  # it reached the model; then a pause before the model saved its notes
+    key = first.checkpoint(turn=3)
+    others, _ = _inbox_session(s3, tmp_path, board, VOC_RESTORE_KEY=key).take_messages()
+    assert [note.summary for note in others] == ['Use the second parser.']
+
+
+def test_a_continuation_reads_its_brief_in_its_checkpoint_and_claims_nothing(aws, tmp_path):
+    s3, _ = aws
+    key = f'{CHECKPOINTS}000004-abcd.json'
+    s3.put_object(Bucket=BUCKET, Key=key, Body=json.dumps({
+        'position': {'turn': 2, 'brief': {'title': 'Fix the parser', 'instructions': 'Read src/parse.py.'}},
+        'notes': ''}))
+    board = FakeBoard()
+    session = build_session(_env(tmp_path, VOC_RESTORE_KEY=key), s3=s3, ports=_ports(board), runner=FakeRunner(),
+                            checkout=str(tmp_path))
+    assert (board.briefs_asked, session.context.brief.title, session.context.brief.instructions) == (
+        [], 'Fix the parser', 'Read src/parse.py.')
+
+
+def test_a_checkpoint_saves_the_brief_for_its_continuation(aws, tmp_path):
+    s3, _ = aws
+    key = _session(s3, tmp_path).checkpoint(turn=1)
+    saved = json.loads(s3.get_object(Bucket=BUCKET, Key=key)['Body'].read())
+    assert set(saved['position']['brief']) == {'title', 'instructions'}
+
+
+def test_a_fresh_start_saves_its_brief_in_a_first_checkpoint_at_once(aws, tmp_path):
+    s3, _ = aws
+    board = FakeBoard()
+    main(['run', '--adapter', 'converse', '--model', 'model-a'], _env(tmp_path), s3=s3, ports=_ports(board),
+         runner=FakeRunner(), bedrock=lambda: FakeBedrock([[use('finish', summary='ok')]]))
+    [first, *_] = sorted(item['Key'] for item in s3.list_objects_v2(Bucket=BUCKET, Prefix=CHECKPOINTS)['Contents'])
+    saved = json.loads(s3.get_object(Bucket=BUCKET, Key=first)['Body'].read())
+    # A continuation after a crash before any save of the agent's restores it: no claim of a task it holds.
+    assert (first.removeprefix(CHECKPOINTS)[:6], saved['position']['turn'], set(saved['position']['brief'])) == (
+        '000001', 0, {'title', 'instructions'})
+
+
+def test_a_session_ending_without_finish_sends_its_task_to_a_person_never_done(aws, tmp_path):
+    calls: list[str] = []
+
+    class Ordered(FakeBoard):
+        def progress(self, run_id: str, task_id: str, agent_id: str, step: str) -> None:
+            super().progress(run_id, task_id, agent_id, step)
+            calls.append(step)
+
+        def move(self, run_id: str, task_id: str, *, to_state: str) -> None:
+            super().move(run_id, task_id, to_state=to_state)
+            calls.append(to_state)
+
+    s3, _ = aws
+    board = Ordered()
+    # Two answers without a tool: the loop ends the session, the model never said it was done (it may have given up).
+    assert main(['run', '--adapter', 'converse', '--model', 'model-a'], _env(tmp_path), s3=s3, ports=_ports(board),
+                runner=FakeRunner(), bedrock=lambda: FakeBedrock([[], []])) == 0
+    assert board.moves == [('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'task-1', 'needs_human')]
+    # Its last progress report says why, before the move (the board takes none once the task left its holder).
+    assert board.progress_seen[-1][1:] == ('task-1', 'fixer-1', harness_main.STOPPED_UNFINISHED)
+    assert calls[-2:] == [harness_main.STOPPED_UNFINISHED, 'needs_human']
+
+
+def test_a_finish_moves_the_task_once(aws, tmp_path):
+    s3, _ = aws
+    board = FakeBoard()
+    main(['run', '--adapter', 'converse', '--model', 'model-a'], _env(tmp_path), s3=s3, ports=_ports(board),
+         runner=FakeRunner(), bedrock=lambda: FakeBedrock([[use('finish', summary='ok')]]))
+    assert [move[2] for move in board.moves] == ['done']
+
+
+def test_a_refused_move_at_the_end_is_a_crash_never_a_success(aws, tmp_path):
+    from engineering.runtime.harness.board_client import BoardRefused
+
+    class Refused(FakeBoard):
+        def move(self, run_id: str, task_id: str, *, to_state: str) -> None:
+            raise BoardRefused(409, f'the lease of {run_id}/{task_id} is not yours or has run out: no {to_state}')
+
+    s3, _ = aws
+    with pytest.raises(BoardRefused):
+        main(['run', '--adapter', 'converse', '--model', 'model-a'], _env(tmp_path), s3=s3, ports=_ports(Refused()),
+             runner=FakeRunner(), bedrock=lambda: FakeBedrock([[], []]))
+
+
+def test_a_run_coordinator_that_stops_without_finish_is_a_crash_never_its_task_sent_to_a_person(aws, tmp_path):
+    s3, _ = aws
+    board = FakeBoard()
+    session = build_session(_env(tmp_path, VOC_ROLE='coordinator', VOC_AGENT_ID='coordinator-1',
+                                 VOC_TASK_ID='coordinate'), s3=s3, ports=_ports(board), runner=FakeRunner(),
+                            checkout=str(tmp_path))
+    # Its task is the run's plan: the supervisor continues it, then sends the run to a person, whose Resume
+    # replaces it (the task still held, so it can be re-posted).
+    with pytest.raises(harness_main.CoordinatorStopped):
+        harness_main._finished(session)
+    # Its last progress report says it is continued, never that a person decides.
+    assert (board.moves, board.progress_seen[-1][3]) == ([], harness_main.COORDINATOR_STOPPED)
+    assert 'person' not in harness_main.COORDINATOR_STOPPED
+
+
+def test_a_session_its_cli_tool_server_finished_moves_nothing_more(aws, tmp_path):
+    s3, _ = aws
+    board = FakeBoard()
+    session = build_session(_env(tmp_path), s3=s3, ports=_ports(board), runner=FakeRunner(), checkout=str(tmp_path))
+    session.finished_elsewhere = True  # the CLI's tool server's finish moved the task to done
+    harness_main._finished(session)
+    assert board.moves == []

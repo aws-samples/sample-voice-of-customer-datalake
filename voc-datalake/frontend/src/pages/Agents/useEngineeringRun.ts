@@ -5,7 +5,7 @@
  * ended; the report index every {@link REPORTS_POLL_MS} (read only while the Reports panel that uses it is
  * mounted). Polling is the fallback the plan names (v3 4.10): the push over the sample's AppSync Events channels is
  * a later item. The conversation is read from where the last page left off (`after = next_after`), and each page is
- * merged into what is known by seq, so the window the server re-reads at the tail keeps each message once.
+ * merged into what is known by seq, so the window the server re-reads on every page keeps each message once.
  *
  * @module pages/Agents/useEngineeringRun
  */

@@ -11,9 +11,18 @@ from typing import Any
 
 import boto3
 import pytest
+from botocore.exceptions import ReadTimeoutError
 
-from engineering.board.api import BoardApi, LambdaLauncher, repost_task
+from engineering.board.api import (
+    LAUNCH_READ_TIMEOUT_SECONDS,
+    NO_START_RECORD,
+    BoardApi,
+    LambdaLauncher,
+    launch_client_config,
+    repost_task,
+)
 from engineering.board.inbox import Inbox
+from engineering.board.model import task_key
 from engineering.board.store import COORDINATE_TASK, MAX_AGENTS, BoardError, BoardStore
 from engineering.board.test.table import RUN, TABLE, engineering_table
 from engineering.board.test.test_progress_repost import Bus
@@ -98,7 +107,8 @@ def _board(client: Any, knowledge: Any) -> Board:
     _start(client, store)
     launcher = Launcher()
     api = BoardApi(store, EventBridgePublisher(Bus(), 'voc-engineering', 'voc.engineering/board'),
-                   Inbox(client, TABLE), launcher=launcher, knowledge=knowledge)
+                   Inbox(client, TABLE), launcher=launcher, knowledge=knowledge,
+                   skill=lambda role: f'{role}-skill')   # (the roles' skills, as phase 3 writes them)
     return Board(client, store, api, launcher, knowledge)
 
 
@@ -151,13 +161,15 @@ def test_a_coordinator_dead_before_its_claim_is_reposted_and_the_runtime_launche
         run.store.launch_coordinator(WS, RUN, attempt=1)   # (a Resume judging the attempt before: fenced)
     launched = run.store.launch_coordinator(WS, RUN, attempt=2)
     again = run.store.launch_coordinator(WS, RUN, attempt=2)   # (a retried Resume: the same coordinator)
-    assert (launched.task.launched_agent, launched.task.launched_attempt, launched.reused, again.reused,
-            again.task.launched_agent) == ('coordinator-2', 2, False, True, 'coordinator-2')
-    last = run.store.history(WS, RUN)[COORDINATE_TASK][-1]
-    assert (last.op, last.actor, last.reason) == ('launch', 'runtime', 'launched coordinator-2')
+    assert (launched.launched_agent, launched.launched_attempt, again.launched_agent) == (
+        'coordinator-2', 2, 'coordinator-2')
+    launches = [move for move in run.store.history(WS, RUN)[COORDINATE_TASK] if move.op == 'launch']
+    assert [(move.actor, move.reason) for move in launches] == [('runtime', 'launched coordinator-2')]   # (once)
+    meta = run.client.get_item(TableName=TABLE, Key={'pk': {'S': run_pk(WS, RUN)}, 'sk': {'S': 'META'}})['Item']
+    assert meta['agent_count'] == {'N': '2'}   # (the retry took no number)
     # The board's own launch op still refuses the coordinator's role, even to the run's current coordinator.
     assert call(run, Caller('coordinator', RUN, 2), op='launch', task_id=COORDINATE_TASK, role='coordinator',
-                language='py', paths=[])[0] == 400
+                language='python', paths=[])[0] == 400
 
 
 def test_a_replaced_coordinator_is_refused_every_op_and_the_new_one_works(run: Board) -> None:
@@ -168,7 +180,7 @@ def test_a_replaced_coordinator_is_refused_every_op_and_the_new_one_works(run: B
     def old_ones() -> list[tuple[int, bool]]:
         answers = [call(run, COORDINATOR, op='post', role='fixer', title='More', spec={'issue': 2}),
                    call(run, COORDINATOR, op='tasks'),
-                   call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='py', paths=[]),
+                   call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='python', paths=[]),
                    call(run, COORDINATOR, op='knowledge', package=''),
                    call(run, COORDINATOR, op='inbox', after=0),
                    call(run, COORDINATOR, op='claim', task_id=COORDINATE_TASK)]
@@ -182,6 +194,17 @@ def test_a_replaced_coordinator_is_refused_every_op_and_the_new_one_works(run: B
     new = Caller('coordinator', RUN, 2)
     assert call(run, new, op='claim', task_id=COORDINATE_TASK)[0] == 200
     assert call(run, new, op='tasks')[0] == 200
+
+
+def test_a_repost_names_who_made_it_the_supervisor_unless_a_person_is_given(run: Board) -> None:
+    """D4: the supervisor's own re-posts, and a person's Resume that replaces a failed coordinator."""
+    task_id = fixer_task(run)
+    call(run, FIXER, op='claim', task_id=task_id)
+    assert run.store.repost(WS, RUN, task_id, reason='crashed', attempt=1).updated_by == 'supervisor'
+    task = run.store.repost(WS, RUN, COORDINATE_TASK, reason='gone', attempt=1, actor='admin-1')
+    last = run.store.history(WS, RUN)[COORDINATE_TASK][-1]
+    assert (task.updated_by, last.op, last.actor) == ('admin-1', 'repost', 'admin-1')
+    assert run.store.history(WS, RUN)[task_id][-1].actor == 'supervisor'
 
 
 def test_the_supervisors_repost_of_the_coordinate_task_publishes_nothing(run: Board) -> None:
@@ -279,7 +302,10 @@ def test_a_person_blocks_or_reprioritises_a_task_that_has_not_ended(run: Board) 
     last = run.store.history(WS, RUN)[task_id][-1]
     assert (blocked.state, blocked.lease_agent, last.op, last.reason, last.actor) == (
         'needs_human', '', 'block', 'Wrong repository', PERSON)
-    assert call(run, FIXER, op='renew', task_id=task_id, epoch=1)[0] == 409   # (its holder's lease is gone)
+    # Its holder's lease is gone: it may move it no more, nor take a move of its own for the block (no 200).
+    for op, extra in (('renew', {}), ('progress', {'step': 'still here'}), ('move', {'to': 'done'}),
+                      ('move', {'to': 'needs_human'})):
+        assert call(run, FIXER, op=op, task_id=task_id, epoch=1, **extra)[0] == 409, (op, extra)
     with pytest.raises(BoardError, match='ended'):
         run.store.reprioritise(WS, RUN, task_id, priority=1, actor=PERSON)
 
@@ -391,13 +417,13 @@ def test_the_coordinator_launches_an_agent_for_an_open_task_once(run: Board) -> 
     assert again[1]['agent_id'] == 'fixer-2'   # (a retry: the same agent, no second number)
     assert run.launcher.requests[-1]['paths'] == ['services/billing']   # (with the paths it was launched on)
     other = fixer_task(run, ['x'])
-    assert call(run, COORDINATOR, op='launch', task_id=other, role='fixer', language='go', paths=[])[1][
+    assert call(run, COORDINATOR, op='launch', task_id=other, role='fixer', language='node', paths=[])[1][
         'agent_id'] == 'fixer-3'
 
 
 def test_a_reposted_task_gets_a_new_agent_at_its_new_attempt(run: Board) -> None:
     task_id = fixer_task(run)
-    launch = {'op': 'launch', 'task_id': task_id, 'role': 'fixer', 'language': 'py', 'paths': []}
+    launch = {'op': 'launch', 'task_id': task_id, 'role': 'fixer', 'language': 'python', 'paths': []}
     assert call(run, COORDINATOR, **launch)[1]['agent_id'] == 'fixer-2'
     call(run, FIXER, op='claim', task_id=task_id)
     run.store.repost(WS, RUN, task_id, reason='the lease ran out', attempt=1)
@@ -411,7 +437,7 @@ def test_a_reposted_task_gets_a_new_agent_at_its_new_attempt(run: Board) -> None
 def test_a_launched_agent_that_never_claimed_is_reposted_and_the_next_launch_is_a_new_agent(run: Board) -> None:
     """The agent died or stalled before its claim: the task is still open at the attempt it was launched at."""
     task_id = fixer_task(run)
-    launch = {'op': 'launch', 'task_id': task_id, 'role': 'fixer', 'language': 'py', 'paths': []}
+    launch = {'op': 'launch', 'task_id': task_id, 'role': 'fixer', 'language': 'python', 'paths': []}
     call(run, COORDINATOR, **launch)
     task = run.store.repost(WS, RUN, task_id, reason='crashed before its claim', attempt=1)
     assert (task.state, task.attempt) == ('open', 2)
@@ -427,8 +453,10 @@ def test_a_launch_before_the_run_start_recorded_its_commit_and_connection_record
     task_id = fixer_task(run)
     run.store.client.update_item(TableName=TABLE, Key={'pk': {'S': run_pk(WS, RUN)}, 'sk': {'S': 'META'}},
                                  UpdateExpression='REMOVE #n', ExpressionAttributeNames={'#n': missing})
-    status, body = call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='py', paths=[])
-    assert (status, 'no commit or repository connection' in body['error']) == (503, True)
+    status, body = call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='python', paths=[])
+    # A conflict with a plain reason: only a new run's start records them, so a retry never succeeds.
+    assert (status, body['error']) == (409, NO_START_RECORD)
+    assert 'start a new run' in NO_START_RECORD
     task = run.store.task(WS, RUN, task_id)
     assert (task.launched_agent, run.launcher.requests, run.store.history(WS, RUN)[task_id][-1].op) == ('', [], 'post')
 
@@ -438,11 +466,17 @@ def test_a_retried_launch_keeps_the_language_it_was_launched_with(run: Board) ->
     call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='python', paths=[])
     call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='rust', paths=[])
     assert [request['language'] for request in run.launcher.requests] == ['python', 'python']
+    # Its checks test what it sends: a retry naming another language or a bad path still gets through, and so does
+    # one after a redeploy dropped the image or the skill it was launched with.
+    run.api.images, run.api.skill = frozenset(), lambda _role: None
+    status, body = call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='cobol',
+                        paths=['../x'])
+    assert (status, body['agent_id'], run.launcher.requests[-1]['language']) == (200, 'fixer-2', 'python')
 
 
 def test_a_launch_on_a_task_no_longer_open_never_reaches_the_runtime(run: Board) -> None:
     task_id = fixer_task(run)
-    launch = {'op': 'launch', 'task_id': task_id, 'role': 'fixer', 'language': 'py', 'paths': []}
+    launch = {'op': 'launch', 'task_id': task_id, 'role': 'fixer', 'language': 'python', 'paths': []}
     call(run, COORDINATOR, **launch)
     call(run, FIXER, op='claim', task_id=task_id)
     assert call(run, FIXER, op='move', task_id=task_id, epoch=1, to='in_progress')[0] == 200
@@ -469,11 +503,11 @@ def test_a_launch_is_the_coordinators_for_a_task_of_that_role(run: Board, caller
 def test_only_an_open_task_gets_an_agent_and_a_run_launches_at_most_999(run: Board) -> None:
     task_id = fixer_task(run)
     call(run, FIXER, op='claim', task_id=task_id)
-    assert call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='py', paths=[])[0] == 409
+    assert call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='python', paths=[])[0] == 409
     run.client.update_item(TableName=TABLE, Key={'pk': {'S': run_pk(WS, RUN)}, 'sk': {'S': 'META'}},
                            UpdateExpression='SET agent_count = :n', ExpressionAttributeValues={':n': {'N': str(MAX_AGENTS)}})
     fresh = fixer_task(run, ['y'])
-    assert call(run, COORDINATOR, op='launch', task_id=fresh, role='fixer', language='py', paths=[])[0] == 429
+    assert call(run, COORDINATOR, op='launch', task_id=fresh, role='fixer', language='python', paths=[])[0] == 429
 
 
 
@@ -485,57 +519,185 @@ def test_the_lambda_launcher_reaches_the_runtimes_launch_action_only() -> None:
     assert (request['FunctionName'], json.loads(request['Payload'])['action']) == ('voc-engineering-runtime', 'launch')
 
 
+def test_the_launch_waits_below_the_boards_limit_and_is_never_retried_by_the_client() -> None:
+    """botocore retries a read timeout: the client must not start the runtime's launch a second time itself."""
+    config = launch_client_config()
+    assert (config.read_timeout, config.retries) == (LAUNCH_READ_TIMEOUT_SECONDS, {'total_max_attempts': 1})
+    assert LAUNCH_READ_TIMEOUT_SECONDS < 120   # (the board function's timeout, engineering-bus.ts)
+
+
+@pytest.mark.parametrize(('language', 'paths'), [('go', []), ('python', ['src/*.py']), ('python', ['-rf'])],
+                         ids=['language', 'glob', 'flag'])
+def test_a_launch_the_runtime_would_refuse_records_nothing_and_its_correction_launches(
+        run: Board, language: str, paths: list[str]) -> None:
+    task_id = fixer_task(run)
+    launch = {'op': 'launch', 'task_id': task_id, 'role': 'fixer'}
+    assert call(run, COORDINATOR, **launch, language=language, paths=paths)[0] == 400
+    assert (run.launcher.requests, run.store.task(WS, RUN, task_id).launched_agent) == ([], '')
+    status, body = call(run, COORDINATOR, **launch, language='python', paths=['src'])
+    assert (status, body['agent_id'], run.launcher.requests[-1]['paths']) == (200, 'fixer-2', ['src'])
+
+
+class _TimedOut:
+    def invoke(self, **_: Any) -> Any:
+        raise ReadTimeoutError(endpoint_url='https://lambda')
+
+
+def test_a_launch_lambda_could_not_answer_is_the_runtimes_failure_not_the_tables(
+        run: Board, caplog: pytest.LogCaptureFixture) -> None:
+    run.api.launcher = LambdaLauncher(_TimedOut(), 'f')
+    status, body = call(run, COORDINATOR, op='launch', task_id=fixer_task(run), role='fixer', language='python', paths=[])
+    assert (status, body['error']) == (503, 'the runtime could not be reached: retry')
+    assert 'table' not in caplog.text
+
+
 def _runtime_error(error_type: str) -> LambdaLauncher:
     return LambdaLauncher(LambdaClient({'errorType': error_type, 'errorMessage': f'{error_type}: no'}, 'Unhandled'), 'f')
 
 
-@pytest.mark.parametrize('error_type', ['RuntimeRefused', 'RunNotActive', 'RunExists', 'RunStopped', 'SessionBusy'])
+@pytest.mark.parametrize('error_type', ['RuntimeRefused', 'RunNotActive', 'RunExists', 'RunStopped', 'SessionBusy',
+                                        'StaleSession'])
 def test_each_runtime_refusal_is_a_conflict_with_its_message(run: Board, error_type: str) -> None:
     run.api.launcher = _runtime_error(error_type)
-    status, body = call(run, COORDINATOR, op='launch', task_id=fixer_task(run), role='fixer', language='py', paths=[])
+    status, body = call(run, COORDINATOR, op='launch', task_id=fixer_task(run), role='fixer', language='python', paths=[])
     assert (status, body['error']) == (409, f'{error_type}: no')
 
 
-@pytest.mark.parametrize('error_type', ['KeyError', 'MicroVmCallFailed', 'StaleSession'])
+def test_a_language_with_no_image_in_this_deployment_is_refused_before_an_agent_is_numbered(run: Board) -> None:
+    run.api.images = frozenset({'node'})
+    task_id = fixer_task(run)
+    for _ in range(3):
+        status, body = call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='python', paths=[])
+        assert (status, body['error']) == (409, "no python image in this deployment: launch in one of ['node']")
+    assert call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='node', paths=[])[1][
+        'agent_id'] == 'fixer-2'
+    run.api.images = frozenset()
+    assert call(run, COORDINATOR, op='launch', task_id=fixer_task(run, ['y']), role='fixer', language='node',
+                paths=[])[1]['error'].endswith('none yet')
+
+
+def test_a_role_with_no_skill_is_refused_before_an_agent_is_numbered(run: Board) -> None:
+    run.api.skill = lambda _role: None
+    task_id = fixer_task(run)
+    for _ in range(3):
+        status, body = call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='python', paths=[])
+        assert (status, body['error']) == (409, 'no fixer agent can be launched yet: the role has no skill')
+    run.api.skill = lambda _role: 'fixer-skill'
+    assert call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='python', paths=[])[1][
+        'agent_id'] == 'fixer-2'   # (no number used by the refusals)
+
+
+@pytest.mark.parametrize('error_type', ['RuntimeRefused', 'StaleSession'])
+def test_a_launch_the_runtime_refused_is_forgotten_so_the_next_launches_a_new_agent(run: Board, error_type: str) -> None:
+    task_id = fixer_task(run)
+    launch = {'op': 'launch', 'task_id': task_id, 'role': 'fixer', 'paths': []}
+    run.api.launcher = _runtime_error(error_type)   # (no image for that language; another task's session)
+    assert call(run, COORDINATOR, **launch, language='rust')[0] == 409
+    assert run.store.task(WS, RUN, task_id).launched_agent == ''
+    last = run.store.history(WS, RUN)[task_id][-1]
+    assert (last.op, last.actor, last.reason) == ('launch_refused', 'coordinator-1', f'fixer-2: {error_type}: no')
+    run.api.launcher = Launcher()
+    status, body = call(run, COORDINATOR, **launch, language='python')
+    assert (status, body['agent_id'], run.api.launcher.requests[-1]['language']) == (200, 'fixer-3', 'python')
+
+
+def test_a_retry_the_runtime_refuses_after_a_lost_answer_is_cleared_so_the_task_is_never_stuck(run: Board) -> None:
+    """The runtime answers a repeat, and a launch still booting, before it refuses anything else (handler.py)."""
+    first = {'op': 'launch', 'task_id': fixer_task(run), 'role': 'fixer', 'language': 'python', 'paths': []}
+    run.api.launcher = LambdaLauncher(LambdaClient({}, 'Unhandled'), 'f')
+    statuses = [call(run, COORDINATOR, **first)[0]]
+    run.api.launcher = _runtime_error('RuntimeRefused')   # (a redeploy changed the skill meanwhile)
+    statuses.append(call(run, COORDINATOR, **first)[0])
+    assert (statuses, run.store.task(WS, RUN, first['task_id']).launched_agent) == ([503, 409], '')
+
+
+def test_a_refused_launch_that_cannot_be_cleared_still_answers_the_runtimes_refusal(
+        run: Board, monkeypatch: pytest.MonkeyPatch) -> None:
+    def moved(*_: Any, **__: Any) -> None:
+        raise BoardError('conflict', 'the task is no longer open at this attempt')
+
+    monkeypatch.setattr(run.store, 'clear_launch', moved)
+    run.api.launcher = _runtime_error('RuntimeRefused')
+    status, body = call(run, COORDINATOR, op='launch', task_id=fixer_task(run), role='fixer', language='python',
+                        paths=[])
+    assert (status, body['error']) == (409, 'RuntimeRefused: no')
+
+
+@pytest.mark.parametrize('error_type', ['SessionBusy', 'RunNotActive', 'RunStopped', 'RunExists'])
+def test_a_launch_still_booting_or_of_a_run_not_active_keeps_its_record(run: Board, error_type: str) -> None:
+    """A busy one is the first launch booting; a run not active may hold the first launch's agent still running."""
+    task_id = fixer_task(run)
+    run.api.launcher = _runtime_error(error_type)
+    assert call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='python', paths=[])[0] == 409
+    assert run.store.task(WS, RUN, task_id).launched_agent == 'fixer-2'
+
+
+@pytest.mark.parametrize('error_type', ['KeyError', 'MicroVmCallFailed'])
 def test_the_runtime_failing_is_unavailable(run: Board, error_type: str) -> None:
-    run.api.launcher = _runtime_error(error_type)   # (a session there for an agent just numbered: not a retry)
-    assert call(run, COORDINATOR, op='launch', task_id=fixer_task(run), role='fixer', language='py', paths=[])[0] == 503
+    run.api.launcher = _runtime_error(error_type)
+    assert call(run, COORDINATOR, op='launch', task_id=fixer_task(run), role='fixer', language='python', paths=[])[0] == 503
     run.api.launcher = None
-    assert call(run, COORDINATOR, op='launch', task_id=fixer_task(run, ['z']), role='fixer', language='py',
+    assert call(run, COORDINATOR, op='launch', task_id=fixer_task(run, ['z']), role='fixer', language='python',
                 paths=[])[0] == 503
 
 
-def test_a_retried_launch_whose_session_exists_already_is_launched(run: Board) -> None:
+def test_a_retried_launch_whose_session_exists_already_gets_that_session(run: Board) -> None:
     task_id = fixer_task(run)
-    launch = {'op': 'launch', 'task_id': task_id, 'role': 'fixer', 'language': 'py', 'paths': []}
+    launch = {'op': 'launch', 'task_id': task_id, 'role': 'fixer', 'language': 'python', 'paths': []}
     run.api.launcher = LambdaLauncher(LambdaClient({}, 'Unhandled'), 'f')   # (the answer lost: 503)
     assert call(run, COORDINATOR, **launch)[0] == 503
-    run.api.launcher = _runtime_error('StaleSession')   # (the first try's session got through)
-    assert call(run, COORDINATOR, **launch) == (200, {'agent_id': 'fixer-2', 'status': 'launched'})
+    # The first try's session got through: the runtime answers the repeat with it (runtime/handler.py _launched).
+    run.api.launcher = LambdaLauncher(LambdaClient({'agent_id': 'fixer-2', 'status': 'running'}), 'f')
+    assert call(run, COORDINATOR, **launch) == (200, {'agent_id': 'fixer-2', 'status': 'running'})
 
 
 # --- knowledge --------------------------------------------------------------------------------------------------
 
 def test_an_agent_reads_the_pack_of_its_own_tasks_paths_or_the_root(run: Board) -> None:
     task_id = fixer_task(run, ['services/billing'])
-    assert call(run, FIXER, op='knowledge', package='')[0] == 403   # (no task held yet)
+    assert call(run, FIXER, op='knowledge', task_id=task_id, package='')[0] == 403   # (no lease held yet)
     call(run, FIXER, op='claim', task_id=task_id)
     for package, read in (('', '.'), ('services/billing', 'services/billing')):   # (the root is the store's '.')
-        status, body = call(run, FIXER, op='knowledge', package=package)
+        status, body = call(run, FIXER, op='knowledge', task_id=task_id, package=package)
         assert (status, body) == (200, {'version': 3, 'text': f'<<DATA {read}>>'})
         assert run.knowledge.reads[-1] == (WS, 'repo-1', read)
-    assert call(run, FIXER, op='knowledge', package='crates/ledger')[0] == 403
-    assert call(run, FIXER, op='knowledge', package=7)[0] == 400
+    assert call(run, FIXER, op='knowledge', task_id=task_id, package='crates/ledger')[0] == 403
+    assert call(run, FIXER, op='knowledge', task_id=task_id, package=7)[0] == 400
+    assert call(run, FIXER, op='knowledge', package='')[0] == 400   # (it names its task)
+    assert call(run, FIXER, op='knowledge', task_id='task-nope', package='')[0] == 404
+
+
+def test_knowledge_reads_the_named_tasks_row_alone_never_the_runs_partition(run: Board) -> None:
+    task_id = fixer_task(run, ['services/billing'])
+    call(run, FIXER, op='claim', task_id=task_id)
+
+    def whole_partition(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError('knowledge read the whole run partition')
+
+    run.store.tasks = whole_partition   # type: ignore[method-assign]
+    assert call(run, FIXER, op='knowledge', task_id=task_id, package='')[0] == 200
+
+
+def test_knowledge_needs_the_callers_live_lease_on_the_task_it_names(run: Board) -> None:
+    mine, theirs = fixer_task(run, ['a']), fixer_task(run, ['b'])
+    call(run, FIXER, op='claim', task_id=mine)
+    call(run, Caller('fixer', RUN, 2), op='claim', task_id=theirs)
+    assert call(run, FIXER, op='knowledge', task_id=theirs, package='b')[0] == 403   # (another agent's lease)
+    assert call(run, FIXER, op='knowledge', task_id=mine, package='a')[0] == 200
+    run.store.client.update_item(TableName=TABLE, Key=task_key(WS, RUN, mine),
+                                 UpdateExpression='SET lease_expires = :past',
+                                 ExpressionAttributeValues={':past': {'N': '1'}})
+    assert call(run, FIXER, op='knowledge', task_id=mine, package='a')[0] == 403   # (its lease ran out)
 
 
 def test_an_agent_reads_the_packs_of_the_paths_it_was_launched_on(run: Board) -> None:
     task_id = fixer_task(run, ['services/billing'])
-    call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='py', paths=['crates/ledger', 'bad'])
+    call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='python', paths=['crates/ledger', 'bad'])
     call(run, FIXER, op='claim', task_id=task_id)
-    assert call(run, FIXER, op='knowledge', package='crates/ledger')[1] == {'version': 3,
-                                                                            'text': '<<DATA crates/ledger>>'}
-    assert call(run, FIXER, op='knowledge', package='services/billing')[0] == 200
-    status, body = call(run, FIXER, op='knowledge', package='bad')   # (the store refuses the package: 400)
+    assert call(run, FIXER, op='knowledge', task_id=task_id, package='crates/ledger')[1] == {
+        'version': 3, 'text': '<<DATA crates/ledger>>'}
+    assert call(run, FIXER, op='knowledge', task_id=task_id, package='services/billing')[0] == 200
+    status, body = call(run, FIXER, op='knowledge', task_id=task_id, package='bad')   # (the store refuses it: 400)
     assert (status, 'not a valid package' in body['error']) == (400, True)
 
 
@@ -543,7 +705,7 @@ def test_an_agent_reads_the_packs_of_the_paths_it_was_launched_on(run: Board) ->
 def test_a_pack_the_store_cannot_read_answers_503_not_the_callers_fault(run: Board, package: str) -> None:
     task_id = fixer_task(run, [package])
     call(run, FIXER, op='claim', task_id=task_id)
-    status, body = call(run, FIXER, op='knowledge', package=package)
+    status, body = call(run, FIXER, op='knowledge', task_id=task_id, package=package)
     assert (status, 'cannot be read right now' in body['error']) == (503, True)
 
 
@@ -556,24 +718,30 @@ def test_the_real_pack_store_reads_the_roots_pack_and_refuses_a_bad_package() ->
                                 built_from='a' * 40).version
         packs.approve(WS, 'repo-1', ROOT, version, Actor('admin-1', 'person', admin=True))
         board = _board(client, packs)
-        call(board, FIXER, op='claim', task_id=fixer_task(board, [long]))
-        status, body = call(board, FIXER, op='knowledge', package='')
+        task_id = fixer_task(board, [long])
+        call(board, FIXER, op='claim', task_id=task_id)
+        status, body = call(board, FIXER, op='knowledge', task_id=task_id, package='')
         assert (status, body['version'], 'Two spaces.' in body['text']) == (200, version, True)
-        assert call(board, FIXER, op='knowledge', package=long)[0] == 400
+        assert call(board, FIXER, op='knowledge', task_id=task_id, package=long)[0] == 400
 
 
 def test_the_coordinator_reads_the_root_and_none_approved_is_a_null_version(run: Board) -> None:
-    assert call(run, COORDINATOR, op='knowledge', package='')[1] == {'version': 3, 'text': '<<DATA .>>'}
+    knowledge = {'op': 'knowledge', 'task_id': COORDINATE_TASK, 'package': ''}
+    assert call(run, COORDINATOR, **knowledge)[0] == 403   # (its coordinate task not claimed yet)
+    call(run, COORDINATOR, op='claim', task_id=COORDINATE_TASK)
+    assert call(run, COORDINATOR, **knowledge)[1] == {'version': 3, 'text': '<<DATA .>>'}
     run.api.knowledge = Knowledge()
     run.store.client.update_item(TableName=TABLE, Key={'pk': {'S': run_pk(WS, RUN)}, 'sk': {'S': 'META'}},
                                  UpdateExpression='REMOVE #n', ExpressionAttributeNames={'#n': 'connection'})
-    status, body = call(run, COORDINATOR, op='knowledge', package='')   # (no connection recorded: never 'none approved')
-    assert (status, 'no repository connection' in body['error']) == (503, True)
+    # No connection recorded: never 'none approved', and no retry can get one (only a new run's start): 409.
+    status, body = call(run, COORDINATOR, **knowledge)
+    assert (status, 'started without a repository connection' in body['error']) == (409, True)
+    assert run.api.knowledge.reads == []
     run.api.knowledge = None
-    assert call(run, COORDINATOR, op='knowledge', package='')[0] == 503
+    assert call(run, COORDINATOR, **knowledge)[0] == 503
 
 
 def test_a_package_with_no_approved_pack_answers_a_null_version(run: Board) -> None:
     task_id = fixer_task(run, ['none'])
     call(run, FIXER, op='claim', task_id=task_id)
-    assert call(run, FIXER, op='knowledge', package='none')[1] == {'version': None}
+    assert call(run, FIXER, op='knowledge', task_id=task_id, package='none')[1] == {'version': None}

@@ -13,8 +13,8 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
+from engineering.rows import LAUNCH_HOLD, count_run_rows, run_pk, run_rows
 from engineering.rows import amount_attr as _n
-from engineering.rows import count_run_rows, run_pk, run_rows
 from engineering.rows import string_attr as _s
 
 
@@ -51,6 +51,11 @@ class FactsReader:
     client: Any
     table: str
 
+    @staticmethod
+    def _launch_only(row: dict[str, Any]) -> bool:
+        """A launch's hold with no session written (the launch under way, or killed at its limit): not an agent."""
+        return LAUNCH_HOLD in row and 'seq' not in row
+
     def read(self, ws: str, run_id: str) -> RunFacts | None:
         """The run's facts, or None when the run does not exist."""
         meta = self.client.get_item(TableName=self.table, Key={'pk': {'S': run_pk(ws, run_id)}, 'sk': {'S': 'META'}},
@@ -63,7 +68,7 @@ class FactsReader:
             agent=_s(row, 'sk').removeprefix('AGENT#'), role=_s(row, 'role'), skill_version=_s(row, 'skill_version'),
             model=_s(row, 'model'), microvm_seconds=int(_n(row, 'microvm_seconds')),
             input_tokens=int(_n(row, 'input_tokens')), output_tokens=int(_n(row, 'output_tokens')),
-            cost_usd=_n(row, 'cost_usd')) for row in agent_rows), key=lambda agent: agent.agent))
+            cost_usd=_n(row, 'cost_usd')) for row in agent_rows if not self._launch_only(row)), key=lambda agent: agent.agent))
         return RunFacts(ws=ws, run_id=run_id, goal=_s(meta, 'goal'), repo=_s(meta, 'repo'), flow=_s(meta, 'flow'),
                         status=_s(meta, 'status'), started_at=_s(meta, 'started_at'), ended_at=_s(meta, 'ended_at'),
                         agents=agents, events=events)

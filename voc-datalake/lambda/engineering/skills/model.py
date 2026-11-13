@@ -28,14 +28,20 @@ from typing import Any, Final
 
 from engineering.bus.schema import ULID
 from engineering.connectors.identity import AGENT_ROLES
-from engineering.runtime.harness.skills import HARNESSES, RECORD_SCHEMA, skill_label, skill_record
+from engineering.runtime.harness.skills import (
+    HARNESSES,
+    MAX_INSTRUCTIONS,
+    RECORD_SCHEMA,
+    skill_label,
+    skill_record,
+)
 from shared.model_config import ALLOWED_MODEL_IDS
 
 # The record's shape version (``RECORD_SCHEMA``), the harness adapters (``HARNESSES``, runtime/harness/main.py's
-# ``--adapter``) and the record's stored shape (``skill_record``) are the harness's own (runtime/harness/skills.py),
-# which ships alone in the agents' images; this module adds the store's stricter rules.
+# ``--adapter``), the instructions' length (``MAX_INSTRUCTIONS``) and the record's stored shape (``skill_record``)
+# are the harness's own (runtime/harness/skills.py), which ships alone in the agents' images; this module adds the
+# store's stricter rules.
 
-MAX_INSTRUCTIONS: Final = 20_000
 #: Lines, so a diff's per-line framing stays small beside the text (the version row's size cap, store.py).
 MAX_INSTRUCTION_LINES: Final = 500
 MAX_EXAMPLES: Final = 20
@@ -136,7 +142,7 @@ class Skill:
     def label(self) -> str:
         """``<name>@<version>``: what a session row's ``skill_version`` says (the store's ``SkillVersion.label``
         adds the connection for a connection's own version)."""
-        return skill_label(name=self.name, version=self.version)
+        return skill_label(self.name, self.version)
 
     def to_record(self) -> dict[str, Any]:
         return skill_record(self.name, self.version, self.content)

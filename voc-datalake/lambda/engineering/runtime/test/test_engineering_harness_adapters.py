@@ -245,6 +245,15 @@ def test_the_cli_ends_done_once_it_finished(tmp_path):
     assert _cli(tmp_path, popen=popen, sleep=lambda _s: None).run(w.session) == 'done'
     assert started['cwd'].startswith(str(tmp_path / 'home' / 'cli'))
     assert not os.path.exists(started['cwd'])
+    # Its tool server's finish moved the task: main.py does not send it to a person.
+    assert w.session.finished_elsewhere is True
+
+
+def test_a_cli_that_ends_cleanly_without_its_finish_is_done_but_not_finished(tmp_path):
+    w = world(tmp_path)
+    assert _cli(tmp_path, popen=lambda _argv, **_kwargs: FakeProcess(2), sleep=lambda _s: None).run(w.session) == 'done'
+    # Nothing moved the task: main.py sends it to a person, as for two answers without a tool.
+    assert w.session.finished_elsewhere is False
 
 
 def test_a_pause_during_the_cli_checkpoints_its_last_notes_and_ends_it(tmp_path):
@@ -261,6 +270,39 @@ def test_a_pause_during_the_cli_checkpoints_its_last_notes_and_ends_it(tmp_path)
     assert _checkpoints(w.store)[-1]['notes'] == 'half way'
 
 
+
+def test_an_answer_posted_to_the_cli_and_never_read_is_not_done_at_the_pause(tmp_path):
+    w = world(tmp_path)
+    # A person's answer, posted to the tool server; the model is in a long turn and never reads it; then a pause.
+    w.inbox.queued = [[InboxMessage('msg.answer', 'Use the second parser.', 'E1')], [InboxMessage(PAUSE, '', 'E2')]]
+    assert _cli(tmp_path, popen=lambda _argv, **_kwargs: FakeProcess(10), sleep=lambda _s: None).run(w.session) == 'paused'
+    # The pause is done; the answer is not: the checkpoint's cursor leaves it to be read again.
+    assert w.inbox.finished == ['E2']
+
+
+def test_an_answer_the_cli_read_reached_the_model_and_is_done_once_it_saves(tmp_path):
+    w = world(tmp_path)
+    w.inbox.queued = [[InboxMessage('msg.answer', 'Yes.', 'E1')], [], [InboxMessage(PAUSE, '', 'E2')]]
+    seen: list[Any] = []
+
+    def popen(_argv: list[str], **kwargs: Any) -> FakeProcess:
+        files = SessionFiles(os.path.join(kwargs['cwd'], 'session'))
+        process = FakeProcess(10)
+        original = process.poll
+
+        def poll() -> int | None:
+            seen.extend(files.take_messages())  # the tool server reads what was posted
+            return original()
+
+        process.poll = poll  # type: ignore[method-assign]
+        return process
+
+    assert _cli(tmp_path, popen=popen, sleep=lambda _s: None).run(w.session) == 'paused'
+    # It reached the model (seen), but the model never saved its notes after: only the pause is done.
+    assert (seen, w.session.seen_since_save, w.inbox.finished) == (
+        [{'kind': 'msg.answer', 'summary': 'Yes.'}], ['E1'], ['E2'])
+
+
 def test_a_cli_that_fails_before_finishing_is_a_crash_with_its_work_saved_first(tmp_path):
     w = world(tmp_path)
 
@@ -271,6 +313,29 @@ def test_a_cli_that_fails_before_finishing_is_a_crash_with_its_work_saved_first(
     with pytest.raises(RuntimeError, match='exit code 2'):
         _cli(tmp_path, popen=popen).run(w.session)
     assert _checkpoints(w.store)[-1]['notes'] == 'found the bug'
+
+
+def test_a_cli_batch_counts_only_for_notes_the_model_saved_after_having_it(tmp_path, monkeypatch):
+    w = world(tmp_path)
+    w.inbox.queued = [[InboxMessage('msg.answer', 'Yes.', 'E1')], [], [], [InboxMessage(PAUSE, '', 'E2')]]
+    read = SessionFiles.read
+    raced: list[bool] = []
+
+    def racing(files: SessionFiles, name: str) -> Any:
+        # Right after the loop synced the notes: the tool server saves notes from before the batch, and hands it out
+        # in the same answer.
+        waiting = os.path.isdir(files.directory) and any(entry.startswith('messages-')
+                                                         for entry in os.listdir(files.directory))
+        if name == 'crashed' and not raced and waiting:
+            files.write('checkpoint', {'notes': 'older notes', 'plan': []})
+            files.take_messages()
+            raced.append(True)
+        return read(files, name)
+
+    monkeypatch.setattr(SessionFiles, 'read', racing)
+    assert _cli(tmp_path, popen=lambda _argv, **_kwargs: FakeProcess(10), sleep=lambda _s: None).run(w.session) == 'paused'
+    # Those notes were written before the batch reached the model: it is not done by them.
+    assert (raced, 'E1' in w.inbox.finished) == ([True], False)
 
 
 class BoardRefused(Exception):

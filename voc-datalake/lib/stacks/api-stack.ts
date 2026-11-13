@@ -444,8 +444,8 @@ export class VocApiStack extends VocStack {
         description: 'Participant email can be sent (-c emailFrom; drives the frontend features.email flag)',
       });
     }
-    // Only with -c engineeringAgents=true, so the default templates do not change: deploy.sh reads a missing output
-    // as `features.engineering: false`.
+    // Only with -c engineeringAgents=true, so the default templates gain no output (config.json still carries
+    // `features.engineering: false`): deploy.sh reads a missing output as false.
     if (engineeringAgentsEnabled(this)) {
       new cdk.CfnOutput(this, 'EngineeringAvailable', {
         value: 'true',
