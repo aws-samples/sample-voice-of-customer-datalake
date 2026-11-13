@@ -23,11 +23,11 @@ The repository's Kiro review agents can never read secret files under kiro-cli V
 
 ### Fixed
 
-- The Kiro agents in `.kiro/agents/` keep `.env`, key and credential files out of reach under kiro-cli V3, which enforces only an agent's `permissions.rules` (it ignores `toolsSettings`). The two AI review agents behind the `tenets: AI review` / `commit: AI review` gate steps had no V3 rules in the repository (kiro-cli generated its own on each machine), and the four hook agents (first-principles, quality and security review, test generator) allowed reads with no path limit and denied nothing. Every agent that reads files now carries one deny rule built from the review's secret-path list (`SECRET_PATHS` in `scripts/ai-review/lib.mjs`, now also naming `.env` and `.env.*` outright), and a test fails for any agent that reads files without it. The review agents read the repository only, as before.
+- The Kiro agents in `.kiro/agents/` can no longer open `.env`, key and credential files with the read tool under kiro-cli V3, which enforces only an agent's `permissions.rules` (it ignores `toolsSettings`). The two AI review agents behind the `tenets: AI review` / `commit: AI review` gate steps had no V3 rules in the repository (kiro-cli generated its own on each machine), and the four hook agents (first-principles, quality and security review, test generator) allowed reads with no path limit and denied nothing. Every agent that reads files now carries one deny rule built from the review's secret-path list (`SECRET_PATHS` in `scripts/ai-review/lib.mjs`, now also naming `.env` and `.env.*` outright), and a test fails for any agent whose tools include reading but lacks it. The review agents read the repository only, as before. The rule covers the read tool only: `test-generator` keeps the shell it needs to run tests, so a shell command could still print a secret file there; keep secrets out of the working tree or gitignored.
 
 ### Upgrade notes
 
-- Nothing to deploy: tooling only. A developer whose kiro-cli already upgraded these agent files locally should take the committed versions (`git checkout -- .kiro/agents`); the files no longer carry a machine-specific `kiroUpgrade` marker.
+- Nothing to deploy: tooling only. A developer whose kiro-cli already upgraded these agent files locally should take the committed versions (`git checkout -- .kiro/agents`); no agent file carries a machine-specific `kiroUpgrade` marker any more (one left behind could make kiro-cli regenerate the file and drop the deny rule).
 
 ## [7.00.00] - 2026-11-13
 

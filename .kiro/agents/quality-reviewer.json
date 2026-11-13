@@ -62,10 +62,5 @@
         "effect": "allow"
       }
     ]
-  },
-  "kiroUpgrade": {
-    "revision": 2,
-    "fingerprint": "sha256:786a987b403146ef8efdeffd3f671e5e167fedaede12e9c093573f37a757b7ed",
-    "source": "sha256:25bb1427ffaeb8d834f5337410e4f01c450ff7192d21a9caf6fd2298e325c263"
   }
 }
