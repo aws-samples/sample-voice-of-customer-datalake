@@ -12,7 +12,7 @@ only ever reads and writes its own rows and objects. This module is the one plac
   shared/workspace_routing.py). Never from a request field.
 * Key builders: ``feedback_key`` and the feedback indexes' partitions (``date_pk``, ``category_pk``,
   ``urgency_pk``, ``feedback_id_pk``, ``channel_pk``), ``metric_pk`` / ``metric_type``, ``watermark_key``,
-  ``source_run_pk``, ``scraper_run_pk`` and ``s3_key`` for objects (the credentials secret's name is
+  ``source_run_pk``, ``scraper_run_pk`` and ``s3_key`` for objects (``s3_prefix`` their common ``ws/{ws}/``; the credentials secret's name is
   shared/workspace_ids.py ``credentials_secret_name``).
 * ``ws_table``: a table that refuses any key, item, update or query outside the scope's partitions (every index
   partition of voc-feedback is one of ``PARTITION_ATTRIBUTES``: gsi4 and gsi5 are keyed on ``gsi4pk`` / ``gsi5pk``,
@@ -66,6 +66,7 @@ __all__ = [
     'partition_query',
     'partition_scope',
     's3_key',
+    's3_prefix',
     'scope_from_key',
     'scope_from_lookup',
     'scope_from_message',
@@ -281,6 +282,11 @@ def s3_key(scope: WorkspaceScope, *parts: str) -> str:
     if not segments or any(segment in ('', '.', '..') for segment in segments):
         raise ValueError('an object key needs non-empty segments')
     return '/'.join(('ws', scope.ws, *segments))
+
+
+def s3_prefix(scope: WorkspaceScope) -> str:
+    """``ws/{ws}/``: every object key of the workspace (``s3_key``) starts with it, and no other workspace's does."""
+    return f'ws/{scope.ws}/'
 
 
 def partition_query(partition_attribute: str, partition: str, sort_condition: str | None,

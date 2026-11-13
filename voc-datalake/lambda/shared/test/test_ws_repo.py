@@ -25,6 +25,7 @@ from shared.ws_repo import (
     metric_type,
     partition_scope,
     s3_key,
+    s3_prefix,
     scope_from_key,
     scope_from_message,
     scope_of,
@@ -123,6 +124,13 @@ class TestKeys:
     def test_object_keys(self):
         assert s3_key(A, 'raw', 'webscraper/2026/01/15/x/0123.json') == f'ws/{WS}/raw/webscraper/2026/01/15/x/0123.json'
         assert s3_key(A, 'silver/s/f/1.json').startswith(f'ws/{WS}/silver/')
+
+    def test_the_object_prefix_starts_every_object_key_of_its_workspace_only(self):
+        assert s3_prefix(A) == f'ws/{WS}/'
+        assert s3_key(A, 'reviews/june.csv').startswith(s3_prefix(A))
+        assert not s3_key(B, 'reviews/june.csv').startswith(s3_prefix(A))
+        # A workspace id is fixed-length, so no other id is a prefix of it (the trailing '/' closes it anyway).
+        assert not f'ws/{WS}0/x'.startswith(s3_prefix(A))
 
     @pytest.mark.parametrize('parts', [(), ('',), ('raw', '../ws_7ZZZZZZZZZZZZZZZZZZZZZZZZZ'), ('raw//x',), ('.',)])
     def test_an_object_key_cannot_leave_the_workspace(self, parts):

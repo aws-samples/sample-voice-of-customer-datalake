@@ -22,6 +22,7 @@ from shared import job_notices
 from shared.aws import is_conditional_check_failure
 from shared.erasure_jobs import job_key
 from shared.ingest_tables import table_view
+from shared.logging import logger
 from shared.retention import ERASURE_JOB_COUNTERS, ERASURE_OPTIONAL_COUNTERS
 from shared.timestamps import now_iso
 from shared.ws_repo import WORKSPACE_FIELD, WorkspaceScope, scope_from_message
@@ -134,6 +135,12 @@ def _job_row(aggregates_table: Any, run: Mapping[str, Any]) -> tuple[Any, dict[s
     return table_view(scope, aggregates_table), job_key(str(run['job_id']), scope)
 
 
+#: A job row that exists and is not finished. The claim takes only such a row, and a workspace job's finish lands
+#: only on one (``queued`` too: a claim fault or the generation guard fails a job before it ran), so a duplicate
+#: invoke of a completed job never turns it into failed.
+_UNFINISHED_JOB: Final = 'attribute_exists(pk) AND #status IN (:queued, :running)'
+
+
 def claim_erasure_job(aggregates_table: Any, job_id: str, scope: WorkspaceScope | None = None) -> dict[str, Any] | None:
     """The job ``job_id`` in ``scope``'s job partition (the deployment's ``JOB#erasure`` for None), marked running;
     None when it is missing or already finished."""
@@ -142,7 +149,7 @@ def claim_erasure_job(aggregates_table: Any, job_id: str, scope: WorkspaceScope 
         response = table.update_item(
             key,
             UpdateExpression='SET #status = :running, started_at = if_not_exists(started_at, :now)',
-            ConditionExpression='attribute_exists(pk) AND #status IN (:queued, :running)',
+            ConditionExpression=_UNFINISHED_JOB,
             ExpressionAttributeNames={'#status': 'status'},
             ExpressionAttributeValues={':running': STATUS_RUNNING, ':queued': STATUS_QUEUED, ':now': now_iso()},
             ReturnValues='ALL_NEW',
@@ -161,8 +168,13 @@ def _counter_sets(run: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
     return clauses, {f':{counter}': value for counter, value in counts.items()}
 
 
-def finish_erasure_job(aggregates_table: Any, run: Mapping[str, Any], status: str, error: str | None = None) -> None:
-    """Record the job's outcome and counts (the row keeps its value_hash, never the value)."""
+def finish_erasure_job(aggregates_table: Any, run: Mapping[str, Any], status: str, error: str | None = None) -> bool:
+    """Record the job's outcome and counts (the row keeps its value_hash, never the value); whether it was written.
+
+    A workspace job's row (``run['workspace_id']``) is written only while it is unfinished (``_UNFINISHED_JOB``):
+    when it already reads completed or failed (or is gone), the outcome is logged and dropped, nobody is told, and
+    nothing is raised. The deployment's ``JOB#erasure`` is written unconditionally, as before.
+    """
     clauses, values = _counter_sets(run)
     names = {'#status': 'status'}
     values.update({':status': status, ':now': now_iso()})
@@ -176,9 +188,21 @@ def finish_erasure_job(aggregates_table: Any, run: Mapping[str, Any], status: st
         names['#error'] = 'error'
         values[':error'] = error
     table, key = _job_row(aggregates_table, run)
-    table.update_item(key, UpdateExpression=expression, ExpressionAttributeNames=names,
-                      ExpressionAttributeValues=values)
+    condition: dict[str, str] = {}
+    if job_scope(run) is not None:
+        condition['ConditionExpression'] = _UNFINISHED_JOB
+        values.update({':queued': STATUS_QUEUED, ':running': STATUS_RUNNING})
+    try:
+        table.update_item(key, UpdateExpression=expression, ExpressionAttributeNames=names,
+                          ExpressionAttributeValues=values, **condition)
+    except ClientError as e:
+        if not condition or not is_conditional_check_failure(e):
+            raise
+        logger.info('Erasure job already finished; its outcome is not overwritten',
+                    extra={'job_id': str(run['job_id']), 'status': status})
+        return False
     job_notices.notify(run.get('started_by_sub'), run['job_id'], status, job_type=ERASURE_JOB_TYPE)
+    return True
 
 
 def record_progress(aggregates_table: Any, run: dict[str, Any], phase: str) -> None:

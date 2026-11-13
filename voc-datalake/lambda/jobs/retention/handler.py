@@ -519,10 +519,14 @@ _PHASE_RUNNERS: Final[dict[str, Callable[[Walk, dict | None], dict | None]]] = {
 def _finish(aggregates_table: Any, run: dict[str, Any], status: str, error: str | None = None) -> dict:
     run.pop('_progress', None)
     if run.get('job_id'):
-        finish_erasure_job(aggregates_table, run, status, error)
-        # Completed or failed: the next erasure of this source may start.
+        finished = finish_erasure_job(aggregates_table, run, status, error)
+        # Completed or failed: the next erasure of this source may start (each release frees only its own job's lock).
         _whole_source_lock_call(aggregates_table, run, release_source_lock, 'release')
         _workspace_lock_call(aggregates_table, run, release_workspace_lock, 'release')
+        if not finished:
+            # A workspace job whose row already reads finished (a duplicate invoke): its outcome, audit row and
+            # counts are the first run's; this one adds none (runs.finish_erasure_job logged it).
+            return {'status': 'already_finished', 'job_id': run['job_id']}
     write_audit(aggregates_table, run, status, error)
     metrics.add_metric(name='RetentionItemsDeleted', unit='Count',
                        value=run['deleted_items'] + run['deleted_radar_items'])

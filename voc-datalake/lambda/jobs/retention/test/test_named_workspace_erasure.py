@@ -10,7 +10,7 @@ job that names no workspace runs exactly as before.
 """
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from boto3.dynamodb.conditions import ConditionExpressionBuilder, Key
@@ -264,6 +264,92 @@ class TestFailurePaths:
         lock = _lock(aws)
         assert lock is not None
         assert lock['released_at']
+
+
+class TestAFinishedWorkspaceJobKeepsItsOutcome:
+    """A duplicate invoke of a workspace job that already finished never overwrites its row (``runs._UNFINISHED_JOB``)."""
+
+    NEXT_JOB = 'er_00000000c0df'
+
+    def _completed(self, aws, worker_context) -> dict:
+        put_workspace_feedback(aws, WS, 'f1', author=JANE)
+        event = _job(aws, 'author', JANE)
+        assert handler.handle_event(event, worker_context)['status'] == 'completed'
+        return event
+
+    def test_a_claim_fault_on_a_duplicate_invoke_keeps_the_completed_row_and_tells_nobody(self, aws, worker_context):
+        event = self._completed(aws, worker_context)
+        before = _job_row(aws)
+        throttle = ClientError({'Error': {'Code': 'ThrottlingException'}}, 'UpdateItem')
+
+        with patch.object(handler, 'claim_erasure_job', side_effect=throttle), \
+                patch.object(runs.job_notices, 'notify') as notify, patch.object(handler, 'metrics') as metrics:
+            result = handler.handle_event(event, worker_context)
+
+        assert result == {'status': 'already_finished', 'job_id': JOB_ID}
+        assert _job_row(aws) == before
+        assert before['status'] == 'completed'
+        notify.assert_not_called()
+        metrics.add_metric.assert_not_called()
+
+    def test_a_duplicate_invoke_past_its_generations_keeps_the_completed_row(self, aws, worker_context):
+        event = self._completed(aws, worker_context)
+        before = _job_row(aws)
+
+        assert handler.handle_event({**event, 'run': {'generation': handler.MAX_GENERATIONS}},
+                                    worker_context) == {'status': 'already_finished', 'job_id': JOB_ID}
+
+        assert _job_row(aws) == before
+
+    def test_a_second_invoke_of_a_completed_job_adds_no_audit_row(self, aws, worker_context):
+        event = self._completed(aws, worker_context)
+        first_audit = _audit(aws)
+        throttle = ClientError({'Error': {'Code': 'ThrottlingException'}}, 'UpdateItem')
+
+        with patch.object(handler, 'claim_erasure_job', side_effect=throttle):
+            assert handler.handle_event(event, worker_context)['status'] == 'already_finished'
+
+        assert _audit(aws) == first_audit  # still exactly one AUDIT#retention row, the first run's
+
+    def test_the_duplicate_never_frees_the_lock_of_the_workspaces_next_job(self, aws, worker_context):
+        event = self._completed(aws, worker_context)
+        acquire_workspace_lock(aws['aggregates'], WorkspaceScope(WS), self.NEXT_JOB, datetime.now(UTC))
+        throttle = ClientError({'Error': {'Code': 'ThrottlingException'}}, 'UpdateItem')
+
+        with patch.object(handler, 'claim_erasure_job', side_effect=throttle):
+            handler.handle_event(event, worker_context)
+
+        lock = _lock(aws)
+        assert lock is not None
+        assert lock['job_id'] == self.NEXT_JOB
+        assert 'released_at' not in lock
+
+    def test_a_normal_finish_still_lands_and_tells_its_starter(self, aws, worker_context):
+        put_workspace_feedback(aws, WS, 'f1', author=JANE)
+        event = _job(aws, 'author', JANE, started_by_sub='admin-sub')
+
+        with patch.object(runs.job_notices, 'notify') as notify:
+            assert handler.handle_event(event, worker_context)['status'] == 'completed'
+
+        row = _job_row(aws)
+        assert (row['status'], row['deleted_items']) == ('completed', 1)
+        assert row['finished_at']
+        notify.assert_called_once_with('admin-sub', JOB_ID, 'completed', job_type=runs.ERASURE_JOB_TYPE)
+
+    def test_a_missing_workspace_row_is_never_created_by_a_finish(self, aws):
+        run = {**runs.new_run({}, runs.MODE_ERASE), 'job_id': JOB_ID, 'workspace_id': WS}
+
+        assert runs.finish_erasure_job(aws['aggregates'], run, 'failed', 'e') is False
+
+        assert aws['aggregates'].get_item(Key={'pk': _partition(WS), 'sk': JOB_ID}).get('Item') is None
+
+    def test_another_fault_of_the_finish_is_raised(self):
+        table = MagicMock()
+        table.update_item.side_effect = ClientError({'Error': {'Code': 'ThrottlingException'}}, 'UpdateItem')
+        run = {**runs.new_run({}, runs.MODE_ERASE), 'job_id': JOB_ID, 'workspace_id': WS}
+
+        with pytest.raises(ClientError):
+            runs.finish_erasure_job(table, run, 'failed', 'e')
 
 
 class TestTheWorkspaceComesFromTheServer:

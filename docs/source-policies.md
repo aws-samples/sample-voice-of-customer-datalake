@@ -253,7 +253,8 @@ How it works:
   the row from the partition its invoke event names and fails the job (`Run failed (ValueError)`, nothing
   deleted) when the row names another workspace, none, or one on a whole-source job; it checks every matched
   row's partition before any tombstone; the job and audit rows carry `workspace_id` and count the items in
-  `deleted_workspace_items`, and the workspace's own data_version moves. A **whole-source erasure** in a
+  `deleted_workspace_items`, and the workspace's own data_version moves. A job that already finished keeps its
+  outcome: a repeated invocation that fails never turns a completed workspace job into failed. A **whole-source erasure** in a
   workspace is refused (400) before anything is read (an unknown field gets the usual "field must be one of"
   answer): the sources it may name, its lock and its sweep of `raw/<source>/` are the deployment's (a
   workspace's own whole-source erasure, over its counters, its own lock and `ws/{ws}/raw/<source>/`, is a

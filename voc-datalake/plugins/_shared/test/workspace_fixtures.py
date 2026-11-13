@@ -9,6 +9,9 @@ WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
 OTHER_WS = 'ws_7ZZZZZZZZZZZZZZZZZZZZZZZZZ'
 SCOPE = WorkspaceScope(WS)
 OTHER_SCOPE = WorkspaceScope(OTHER_WS)
+#: Where each workspace's files sit in the import bucket: a run in it reads no other key (s3_import ``_staged_key``).
+WS_PREFIX = f'ws/{WS}/'
+OTHER_WS_PREFIX = f'ws/{OTHER_WS}/'
 #: The deployment's secret prefix the plugin tests run with (plugins/conftest.py WORKSPACE_SECRET_PREFIX).
 SECRET_NAME = f'voc/ws/{WS}/credentials'
 #: An EventBridge scheduled event: the plugin's tick, which names no workspace.

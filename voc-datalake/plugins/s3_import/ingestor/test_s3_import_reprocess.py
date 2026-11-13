@@ -12,6 +12,8 @@ workspace is refused and touches nothing.
 import hashlib
 import importlib
 import io
+import json
+import urllib.parse
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -20,7 +22,16 @@ import pytest
 
 from _shared import raw_original
 from _shared.test.ingestor_fixtures import offline_ingestor_construction
-from _shared.test.workspace_fixtures import EVENTS_WITH_A_MALFORMED_WORKSPACE, REFUSED, SCOPE, WS, ws_event
+from _shared.test.workspace_fixtures import (
+    EVENTS_WITH_A_MALFORMED_WORKSPACE,
+    OTHER_WS,
+    OTHER_WS_PREFIX,
+    REFUSED,
+    SCOPE,
+    WS,
+    WS_PREFIX,
+    ws_event,
+)
 from s3_import.ingestor import handler
 from s3_import.ingestor.handler import _get_source_from_key, lambda_handler
 from shared import s3_import_runs
@@ -52,10 +63,10 @@ IMPORT_BUCKET = "import-bucket"
 
 def _event(key: str, *, execution_id: str | None = RUN_ID, reprocess: bool = True,
            bucket: str = IMPORT_BUCKET) -> dict:
-    """The S3-shaped event of a run in ``WS``."""
+    """The S3-shaped event of a run in ``WS`` of its file *key* (``ws/{ws}/{key}`` in the import bucket)."""
     event: dict = {"workspace_id": WS, "Records": [{
         "eventSource": "aws:s3", "eventName": "ObjectCreated:Put",
-        "s3": {"bucket": {"name": bucket}, "object": {"key": key}},
+        "s3": {"bucket": {"name": bucket}, "object": {"key": WS_PREFIX + key}},
     }]}
     if execution_id is not None:
         event["execution_id"] = execution_id
@@ -232,7 +243,10 @@ class TestAnEventNamingAMalformedWorkspace:
 
 
 def _no_workspace(event: dict) -> dict:
-    return {k: v for k, v in event.items() if k != WORKSPACE_FIELD}
+    """*event* deployment-wide: no ``workspace_id``, and its records' keys without ``WS``'s prefix."""
+    records = [{**r, "s3": {**r["s3"], "object": {"key": r["s3"]["object"]["key"].removeprefix(WS_PREFIX)}}}
+               for r in event.get("Records", [])]
+    return {**{k: v for k, v in event.items() if k != WORKSPACE_FIELD}, "Records": records}
 
 
 def _history_rows(built: dict) -> list[dict]:
@@ -376,7 +390,7 @@ class TestOnlyTheImportBucketIsRead:
 
         invoke(_event("reviews/june.csv"))
 
-        built["s3"].head_object.assert_called_once_with(Bucket=IMPORT_BUCKET, Key="reviews/june.csv")
+        built["s3"].head_object.assert_called_once_with(Bucket=IMPORT_BUCKET, Key=f"{WS_PREFIX}reviews/june.csv")
 
     def test_the_bucket_comes_from_the_environment_the_stack_sets(self, monkeypatch):
         monkeypatch.setenv("S3_IMPORT_BUCKET", "voc-import-from-env")
@@ -387,6 +401,96 @@ class TestOnlyTheImportBucketIsRead:
             monkeypatch.delenv("S3_IMPORT_BUCKET")
             importlib.reload(handler)
         assert handler.IMPORT_BUCKET == ""
+
+
+def _naming(key: str, **kwargs) -> dict:
+    """``_event`` of a run in ``WS`` whose record names the import-bucket key *key* as it is."""
+    event = _event("x.csv", **kwargs)
+    event["Records"][0]["s3"]["object"]["key"] = key
+    return event
+
+
+#: Keys a run in ``WS`` never reads: the deployment's files, another workspace's, and near misses of its own prefix.
+FOREIGN_KEYS = [
+    "reviews/june.csv", "processed/reviews/june.csv", f"ws/{OTHER_WS}/reviews/june.csv",
+    f"ws/{WS}", f"ws/{WS}/", f"ws/{WS}x/reviews/june.csv", f"WS/{WS}/reviews/june.csv",
+    f"x/ws/{WS}/reviews/june.csv",
+    # Inside the prefix, but with an empty, `.` or `..` segment after it.
+    f"ws/{WS}/../{OTHER_WS}/june.csv", f"ws/{WS}//june.csv", f"ws/{WS}/./june.csv", f"ws/{WS}/reviews/../june.csv",
+    f"ws/{WS}/reviews/",
+]
+
+
+class TestAWorkspaceRunReadsOnlyItsOwnFiles:
+    """A run in a workspace reads only keys under its own ``ws/{ws}/`` (``ws_repo.s3_prefix``): any other key is
+    recorded as a refused file and counted, before any S3 call, on an upload event and on a reprocess alike."""
+
+    @pytest.mark.parametrize("key", FOREIGN_KEYS)
+    @pytest.mark.parametrize("reprocess", [True, False], ids=["reprocess", "upload"])
+    def test_a_key_outside_the_workspace_is_refused_unread(self, run, key, reprocess):
+        invoke, built = run
+
+        with patch.object(handler, "metrics") as m:
+            result = invoke(_naming(key, reprocess=reprocess))
+
+        assert result["status"] == "success"
+        assert result["results"] == [{"file": key, "items_processed": 0}]
+        assert built["s3"].mock_calls == []
+        built["ingestor"].send_to_queue.assert_not_called()
+        m.add_metric.assert_any_call(name="ImportFileOutsideWorkspace", unit="Count", value=1)
+        detail, summary = _history_rows(built)
+        assert summary["pk"] == f"WS#{WS}#IMPORT_RUN"
+        assert (summary["status"], summary["imported"]) == ("failed", 0)
+        # The neutral source, no raw file, the file name only in the error: nothing of the refused folder.
+        name = key.rsplit("/", 1)[-1]
+        reason = "file is not in this workspace's import folder"
+        assert detail["errors"] == [f"{name}: {reason}" if name.endswith(".csv") else reason]
+        assert summary["source"] == "S3 - Import"
+        assert not summary["raw_s3_key"]
+        assert OTHER_WS not in json.dumps([detail, summary], default=str)
+
+    def test_an_encoded_record_key_is_read_from_its_decoded_key(self, run):
+        invoke, built = run
+
+        result = invoke(_naming(f"ws%2F{WS}%2Freviews%2Fjune+1.csv"))
+
+        assert result["items_processed"] == 2
+        built["s3"].get_object.assert_called_once_with(Bucket=IMPORT_BUCKET, Key=f"{WS_PREFIX}reviews/june 1.csv")
+
+    def test_an_encoded_key_of_another_workspace_is_refused_unread(self, run):
+        invoke, built = run
+
+        result = invoke(_naming(urllib.parse.quote_plus(f"{OTHER_WS_PREFIX}reviews/june 1.csv")))
+
+        assert result["results"] == [{"file": f"{OTHER_WS_PREFIX}reviews/june 1.csv", "items_processed": 0}]
+        assert built["s3"].mock_calls == []
+
+    def test_its_own_file_is_read_and_named_after_its_folder_inside_the_workspace(self, run):
+        invoke, built = run
+
+        result = invoke(_event("processed/reviews/may.csv"))
+
+        assert result["items_processed"] == 2
+        built["s3"].get_object.assert_called_once_with(Bucket=IMPORT_BUCKET, Key=f"{WS_PREFIX}processed/reviews/may.csv")
+        [batch] = [c.args[0] for c in built["ingestor"].send_to_queue.call_args_list]
+        assert {item["source_platform_override"] for item in batch} == {"S3 - reviews"}
+
+    @pytest.mark.usefixtures("raw_lake")
+    def test_its_original_is_kept_under_its_staged_key_in_its_own_raw_folder(self, run):
+        invoke, built = run
+
+        invoke(_event("reviews/june.csv"))
+
+        (put,) = built["s3"].put_object.call_args_list
+        assert put.kwargs["Key"] == f"{WS_PREFIX}{_original_key('reviews/june.csv')}"
+        assert put.kwargs["Metadata"]["original-key"] == "reviews/june.csv"
+
+    @pytest.fixture
+    def raw_lake(self, monkeypatch):
+        monkeypatch.setenv("RAW_DATA_BUCKET", "raw-lake")
+        monkeypatch.setenv("PLUGIN_VERSION", "1.4.0")
+        with seeded_source_profiles():
+            yield
 
 
 def _api_event(bucket: str, key: str) -> dict:
@@ -404,10 +508,11 @@ class TestTheApiEventEndToEnd:
     def test_the_api_event_for_the_import_bucket_imports_the_file_and_closes_the_run(self, run):
         invoke, built = run
 
-        result = invoke(_api_event(IMPORT_BUCKET, "processed/reviews/june 1.csv"))
+        key = f"{WS_PREFIX}processed/reviews/june 1.csv"
+        result = invoke(_api_event(IMPORT_BUCKET, key))
 
-        assert result["results"] == [{"file": "processed/reviews/june 1.csv", "items_processed": 2}]
-        built["s3"].get_object.assert_called_once_with(Bucket=IMPORT_BUCKET, Key="processed/reviews/june 1.csv")
+        assert result["results"] == [{"file": key, "items_processed": 2}]
+        built["s3"].get_object.assert_called_once_with(Bucket=IMPORT_BUCKET, Key=key)
         [batch] = [c.args[0] for c in built["ingestor"].send_to_queue.call_args_list]
         assert {item["source_platform_override"] for item in batch} == {"S3 - reviews"}
         assert [u["status"] for u in _run_updates(built)] == ["running", "completed"]

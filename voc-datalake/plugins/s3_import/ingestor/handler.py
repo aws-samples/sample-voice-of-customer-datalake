@@ -6,6 +6,12 @@ Folder name becomes the source: {folder}/file.csv -> source = "S3 - {folder}"
 A run is deployment-wide when its event names no workspace (an S3 upload's trigger, the S3 import API's reprocess,
 which refuses X-Workspace-Id, and Run now without it), as always, and runs in the workspace an event names in
 ``workspace_id`` otherwise (``_shared/base_ingestor.py run_in_workspace``; Run now sent with X-Workspace-Id names it).
+A workspace's files sit under its own ``ws/{ws}/`` in the import bucket (``ws/{ws}/{folder}/file.csv``, the folder
+rule read after that prefix); a run in a workspace refuses any other key unread, and any key with an empty, ``.`` or
+``..`` segment after the prefix (``process_file``). A deployment-wide run refuses unread any key of three or more
+segments whose first is ``ws`` (a workspace's folder); the import API's keys are ``<source>/<file>``, so nothing it
+uploads is refused. A refused file's history row names the neutral source ``S3 - Import`` and no raw file
+(``raw_s3_key`` None); its file name goes into the error only when it has a supported extension.
 
 Raw copies: the staged file as uploaded goes to ``raw/s3_import/...`` (a workspace run: ``ws/{ws}/raw/s3_import/...``)
 before it is read
@@ -31,7 +37,7 @@ from shared import job_notices
 from shared.import_runs import MAX_MESSAGES, S3_UPLOAD_ACTOR, ImportCounts, ImportRun, record_import_run
 from shared.invocation_cost import measure_invocation_cost
 from shared.timestamps import now_iso
-from shared.ws_repo import WorkspaceScope
+from shared.ws_repo import WorkspaceScope, s3_prefix
 
 s3_client = boto3.client("s3")
 
@@ -45,6 +51,15 @@ MAX_FILE_SIZE_MB = 50
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 # Where an operator archives ingested files by hand (`processed/<folder>/<file>`).
 PROCESSED_FOLDER = "processed"
+# The source of a file at the bucket's root, and of every refused file (never derived from a key that was refused).
+DEFAULT_SOURCE = "S3 - Import"
+# The first segment of a workspace's import folder (``ws/{ws}/...``, shared/ws_repo.py ``s3_prefix``).
+WORKSPACE_FOLDER = "ws"
+# Segments a workspace's staged key never holds after its prefix.
+_BAD_SEGMENTS = frozenset({"", ".", ".."})
+# Why a key was refused unread, and the metric counting it: in a workspace run, and in a deployment-wide one.
+OUTSIDE_WORKSPACE = ("file is not in this workspace's import folder", "ImportFileOutsideWorkspace")
+IN_A_WORKSPACE_FOLDER = ("file is in a workspace's import folder", "ImportFileInWorkspaceFolder")
 
 # What normalizing one parsed row can raise: AttributeError for a JSON row that is
 # not an object (no `.get`), TypeError/ValueError for a value of an unexpected
@@ -120,7 +135,7 @@ def _get_source_from_key(key: str, *, reprocess: bool = False) -> str:
         parts = parts[1:]
     if len(parts) > 1:
         return f"S3 - {parts[0]}"
-    return "S3 - Import"
+    return DEFAULT_SOURCE
 
 
 def _normalize_row(row: dict, source_name: str, default_channel: str) -> dict | None:
@@ -275,36 +290,79 @@ class S3ImportIngestor(BaseIngestor):
         # Best effort, never raises: the explorer re-reads the run now (its poll stays the fallback).
         job_notices.notify(self.started_by, self.execution_id, updates['status'], job_type=REPROCESS_JOB_TYPE)
 
-    def _record_file_run(self, bucket: str, key: str, started_at: str, counts: ImportCounts, report: FileReport,
-                         *, reprocess: bool = False) -> None:
-        """One import-history record for this file (docs/import-history.md); never raises.
+    def _record_file_run(self, started_at: str, counts: ImportCounts, report: FileReport, *, source: str,
+                         raw_s3_key: str | None) -> None:
+        """One import-history record for a file (docs/import-history.md) under *source*, the label ``process_file``
+        worked out; *raw_s3_key* the file's ``s3://`` URI, or None for a refused file (no raw file). Never raises.
 
         Called from ``process_file``'s ``finally``: anything raised here would replace the import's own
         exception, so every failure is logged and dropped, not only the write errors the shared writer catches.
         """
         try:
             record_import_run(self.aggregates_table, ImportRun(
-                method="s3", source=_get_source_from_key(key, reprocess=reprocess), actor=S3_UPLOAD_ACTOR, started_at=started_at,
+                method="s3", source=source, actor=S3_UPLOAD_ACTOR, started_at=started_at,
                 counts=counts, source_id=self.source_platform, warnings=report.warnings, errors=report.errors,
-                raw_s3_key=f"s3://{bucket}/{key}", warnings_not_kept=report.warnings_not_kept,
+                raw_s3_key=raw_s3_key, warnings_not_kept=report.warnings_not_kept,
             ))
         except Exception:
             # Unexpected (the writer already absorbs write errors at warning level), so logged as an error.
-            logger.exception("Import run record not written", extra={"key": key})
+            logger.exception("Import run record not written", extra={"source": source})
 
-    def _refuse_file(self, bucket: str, key: str, started_at: str, reason: str, *, reprocess: bool) -> int:
-        """Record a file that was not read at all (empty or over the size limit) as a failed run; 0 imported."""
-        self._record_file_run(bucket, key, started_at, ImportCounts(received=0, imported=0), FileReport(errors=[reason]),
-                              reprocess=reprocess)
+    def _refuse_file(self, started_at: str, reason: str, *, source: str, raw_s3_key: str | None) -> int:
+        """Record a file that was not read at all (outside the run's folder, empty or over the size limit) as a
+        failed run; 0 imported."""
+        self._record_file_run(started_at, ImportCounts(received=0, imported=0), FileReport(errors=[reason]),
+                              source=source, raw_s3_key=raw_s3_key)
         return 0
 
+    def _refuse_unread_key(self, key: str, started_at: str) -> int:
+        """A key ``_staged_key`` refused: logged, counted and recorded, never read. Its history row names the neutral
+        ``DEFAULT_SOURCE`` and no raw file; the file name goes into the reason only when it has a supported
+        extension. Nothing of the folder, which may be another workspace's, is kept."""
+        if self.scope is None:
+            (reason, metric), message = IN_A_WORKSPACE_FOLDER, "Refusing a workspace's import file in a deployment-wide run"
+        else:
+            (reason, metric), message = OUTSIDE_WORKSPACE, "Refusing an import file outside the run's workspace"
+        logger.warning(message, extra={"key": key})
+        metrics.add_metric(name=metric, unit="Count", value=1)
+        name = key.rsplit("/", 1)[-1]
+        if _get_parser(name):
+            reason = f"{name}: {reason}"
+        return self._refuse_file(started_at, reason, source=DEFAULT_SOURCE, raw_s3_key=None)
+
+    def _staged_key(self, key: str) -> str | None:
+        """The import-bucket key as the source rules read it (``{folder}/file`` or ``processed/{folder}/file``), or
+        None for a key the run never reads.
+
+        Deployment-wide (no scope) the key itself, as always, but for a key of three or more segments under
+        ``ws/`` (a workspace's folder; the import API's keys are ``<source>/<file>``). In a workspace only a key
+        under the workspace's own ``ws/{ws}/`` (``ws_repo.s3_prefix``) whose segments after it are none empty,
+        ``.`` or ``..``, read without that prefix; any other key, another workspace's or the deployment's, is None.
+        """
+        if self.scope is None:
+            segments = key.split("/")
+            return None if segments[0] == WORKSPACE_FOLDER and len(segments) >= 3 else key
+        prefix = s3_prefix(self.scope)
+        if not key.startswith(prefix):
+            return None
+        staged = key[len(prefix):]
+        return None if _BAD_SEGMENTS.intersection(staged.split("/")) else staged
+
     def process_file(self, bucket: str, key: str, *, reprocess: bool = False) -> int:
-        """Process a single S3 file: validate, parse, normalize, and queue."""
+        """Process a single S3 file: validate, parse, normalize, and queue.
+
+        A key the run never reads (``_staged_key``) is refused before any S3 call.
+        """
+        started_at = now_iso()
+        staged = self._staged_key(key)
+        if staged is None:
+            return self._refuse_unread_key(key, started_at)
         parser = _get_parser(key)
         if not parser:
             logger.warning(f"Unsupported file type: {key}")
             return 0
-        started_at = now_iso()
+        source_name = _get_source_from_key(staged, reprocess=reprocess)
+        raw_s3_key = f"s3://{bucket}/{key}"
 
         # Validate file size
         head = s3_client.head_object(Bucket=bucket, Key=key)
@@ -312,19 +370,19 @@ class S3ImportIngestor(BaseIngestor):
 
         if file_size == 0:
             logger.warning(f"{key}: empty file, skipping")
-            return self._refuse_file(bucket, key, started_at, "empty file", reprocess=reprocess)
+            return self._refuse_file(started_at, "empty file", source=source_name, raw_s3_key=raw_s3_key)
 
         if file_size > MAX_FILE_SIZE_BYTES:
             logger.error(f"{key}: {file_size / 1024 / 1024:.1f} MB exceeds {MAX_FILE_SIZE_MB} MB limit")
-            return self._refuse_file(bucket, key, started_at, f"{file_size / 1024 / 1024:.1f} MB exceeds the {MAX_FILE_SIZE_MB} MB limit",
-                                     reprocess=reprocess)
+            return self._refuse_file(started_at, f"{file_size / 1024 / 1024:.1f} MB exceeds the {MAX_FILE_SIZE_MB} MB limit",
+                                     source=source_name, raw_s3_key=raw_s3_key)
 
         # Stream, parse, normalize, and send in batches
-        source_name = _get_source_from_key(key, reprocess=reprocess)
         response = s3_client.get_object(Bucket=bucket, Key=key)
-        # Read whole (at most MAX_FILE_SIZE_MB): the original goes to the raw lake before parsing.
+        # Read whole (at most MAX_FILE_SIZE_MB): the original goes to the raw lake before parsing. Under its staged
+        # key: in a workspace the copy is already under ws/{ws}/raw/, and a reprocess maps to the same folder.
         body = response["Body"].read()
-        archive_original(s3_client, os.environ.get("RAW_DATA_BUCKET", ""), key, body, scope=self.scope)
+        archive_original(s3_client, os.environ.get("RAW_DATA_BUCKET", ""), staged, body, scope=self.scope)
         stream = io.BytesIO(body)
 
         report = FileReport()
@@ -359,8 +417,8 @@ class S3ImportIngestor(BaseIngestor):
             # metrics.  The exception is not swallowed.
             logger.info(f"Processed {key}: {total} items")
             metrics.add_metric(name="ItemsImported", unit="Count", value=total)
-            self._record_file_run(bucket, key, started_at, _file_counts(parsed, total, report, sent_all=sent_all), report,
-                                  reprocess=reprocess)
+            self._record_file_run(started_at, _file_counts(parsed, total, report, sent_all=sent_all), report,
+                                  source=source_name, raw_s3_key=raw_s3_key)
 
         return total
 
