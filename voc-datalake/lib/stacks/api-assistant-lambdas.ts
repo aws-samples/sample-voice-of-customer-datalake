@@ -17,7 +17,7 @@ import { PII_REDACTION_ENV, piiDetectionStatement } from '../utils/pii-redaction
 import { appVersion } from '../utils/connector-version';
 import type { ApiStackContext } from './api-context';
 import { createS3ImportLambda } from './api-s3-import-lambda';
-import { ENGINEERING_WORKSPACE_REPORTS_KEYS } from './core-buckets';
+import { ENGINEERING_RUN_PARTITIONS, ENGINEERING_WORKSPACE_REPORTS_KEYS } from './core-buckets';
 import { engineeringAgentsEnabled } from './engineering-broker';
 
 /**
@@ -75,7 +75,8 @@ function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, 
   // SPEC# markers and TASKLOG# rows), never the skills', the knowledge packs' or any other; never DeleteItem.
   role.addToPolicy(new iam.PolicyStatement({
     actions: ['dynamodb:PutItem', 'dynamodb:UpdateItem'], resources: [engineeringTable.tableArn],
-    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#RUN#*'] } },
+    // The one workspace named (no `*` that could span a `#`), and a run's id, a ULID: exactly 26 characters.
+    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [ENGINEERING_RUN_PARTITIONS] } },
   }));
   const reports = engineeringWorkspaceBucket.arnForObjects(ENGINEERING_WORKSPACE_REPORTS_KEYS);
   role.addToPolicy(new iam.PolicyStatement({ actions: ['s3:GetObject'], resources: [reports] }));

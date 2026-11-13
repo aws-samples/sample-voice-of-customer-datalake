@@ -22,7 +22,7 @@ import { workflowsApi, workflowsKeys } from '../../api/workflowsApi'
 import { WorkflowCanvas } from '../../components/WorkflowEditor/WorkflowCanvas'
 import { IconTabs } from '../../components/IconTabs/IconTabs'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
-import { useIsAdmin } from '../../store/authStore'
+import { useIsAdmin, useMySub } from '../../store/authStore'
 import { BackToAgents } from './BackToAgents'
 import { EngineeringRunHeader } from './EngineeringRunHeader'
 import { AgentsPanel, BoardPanel } from './EngineeringRunPanels'
@@ -54,6 +54,7 @@ function Panels({ runId, overview, live, canAct, readAt }: Readonly<{
 }>) {
   const { t } = useTranslation('agents')
   const [tab, setTab] = useState<Tab>('agents')
+  const me = useMySub()
   const board = useEngineeringBoard(runId, live)
   const conversation = useEngineeringConversation(runId, live)
   const tasks = board.data ?? []
@@ -64,7 +65,7 @@ function Panels({ runId, overview, live, canAct, readAt }: Readonly<{
       <div role="tabpanel" aria-label={t(`engineeringRun.tabs.${tab}`)} className="max-h-[70vh] overflow-y-auto">
         {tab === 'agents' && <AgentsPanel runId={runId} agents={overview.agents} tasks={tasks} isAdmin={canAct && live}
           now={readAt} />}
-        {tab === 'board' && <BoardPanel tasks={tasks} />}
+        {tab === 'board' && <BoardPanel tasks={tasks} actor={canAct && live && me !== '' ? { runId, me } : undefined} />}
         {tab === 'conversation' && (
           <ConversationPanel runId={runId} messages={conversation.data?.messages ?? []} agents={overview.agents}
             isAdmin={canAct} live={live} />

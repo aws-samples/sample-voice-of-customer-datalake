@@ -14,7 +14,7 @@ import { engineeringRunsApi, engineeringRunsKeys } from '../../api/engineeringRu
 import { mergeBySeq } from '../../api/seqPages'
 import { retryOnceUnlessNotFound } from '../../api/apiErrorStatus'
 import { useConfigStore } from '../../store/configStore'
-import type { AnswerRequest, ConversationMessage, SignalRequest } from '../../api/engineeringRunsApi'
+import type { AnswerRequest, BoardAction, ConversationMessage, NewTask, SignalRequest } from '../../api/engineeringRunsApi'
 
 const ENGINEERING_POLL_MS = 5000
 /** The report index changes only when the builder writes a version: read less often. */
@@ -109,6 +109,22 @@ function useRefreshRun(runId: string): () => void {
 export function useEngineeringSignal(runId: string) {
   const onSuccess = useRefreshRun(runId)
   return useMutation({ mutationFn: (request: SignalRequest) => engineeringRunsApi.signal(runId, request), onSuccess })
+}
+
+/** An admin's action on one task (the board, the overview and the conversation read again). */
+export function useEngineeringTaskAction(runId: string) {
+  const onSuccess = useRefreshRun(runId)
+  return useMutation({
+    mutationFn: (request: { taskId: string; act: BoardAction }) =>
+      engineeringRunsApi.actOnTask(runId, request.taskId, request.act),
+    onSuccess,
+  })
+}
+
+/** An admin posts a task for a role (`duplicate`: an equal task still under way was answered instead). */
+export function useEngineeringPostTask(runId: string) {
+  const onSuccess = useRefreshRun(runId)
+  return useMutation({ mutationFn: (task: NewTask) => engineeringRunsApi.postTask(runId, task), onSuccess })
 }
 
 /** An admin's answer to the run's conductor or one of its agents. */

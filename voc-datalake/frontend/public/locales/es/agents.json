@@ -750,6 +750,28 @@
       "conversation": "Conversación",
       "reports": "Informes"
     },
+    "board": {
+      "post": "Publicar una tarea",
+      "role": "Rol",
+      "title": "Título",
+      "instructions": "Qué hacer",
+      "postSubmit": "Publicar",
+      "posted": "Publicada.",
+      "controls": "Tarea {{task}}",
+      "take": "Tomar",
+      "takeOver": "Tomar el relevo",
+      "moveTo": "Mover a {{state}}",
+      "block": "Bloquear",
+      "priority": "Prioridad",
+      "setPriority": "Fijar prioridad",
+      "reason": "Por qué",
+      "blockSubmit": "Bloquear la tarea",
+      "takeOverTitle": "¿Tomar el relevo de esta tarea?",
+      "takeOverMessage": "Otra persona la tiene ({{holder}}): pasa a ser suya y sus movimientos se rechazan.",
+      "duplicate": "Ya hay una tarea igual en el tablero: no se publicó nada nuevo.",
+      "blockOverTitle": "¿Bloquear esta tarea?",
+      "blockOverMessage": "Otra persona la tiene ({{holder}}): bloquearla pone fin a su asignación."
+    },
     "panels": "Los agentes, el tablero, la conversación y los informes de la ejecución",
     "reports": {
       "title": "Informe: {{subject}}",

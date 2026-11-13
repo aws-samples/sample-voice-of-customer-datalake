@@ -5,7 +5,8 @@
  *   MicroVM's state and age, its heartbeat's age and its last progress, why it looks stuck (highlighted), its
  *   MicroVM time and tokens per model, and (Inspect) its recent tool calls. An admin signals an agent on its own
  *   task, at the attempt the board shows, while the agent holds it and the task is not over.
- * - Board: the tasks grouped by state, each with its lease holder and attempt, and its history in a disclosure.
+ * - Board: the tasks grouped by state, each with its lease holder and attempt, and its history in a disclosure; for an
+ *   admin on a run under way, the board controls (EngineeringBoardControls.tsx).
  *
  * @module pages/Agents/EngineeringRunPanels
  */
@@ -13,6 +14,7 @@ import { useTranslation } from 'react-i18next'
 import { formatDateTime, formatRelativeDate } from '../../utils/dateUtils'
 import { FINAL_TASK_STATES, TASK_STATES } from '../../api/engineeringRunsApi'
 import { EngineeringSignals } from './EngineeringSignals'
+import { PostTaskForm, TaskControls } from './EngineeringBoardControls'
 import { groupsInOrder, useAge } from './engineeringRunText'
 import type { EngineeringAgent, EngineeringTask } from '../../api/engineeringRunsApi'
 
@@ -104,7 +106,13 @@ export function AgentsPanel({ runId, agents, tasks, isAdmin, now }: Readonly<{
   )
 }
 
-function TaskItem({ task }: Readonly<{ task: EngineeringTask }>) {
+/** Who may act on the board from here: the run, and the signed-in admin's `sub` (absent: no controls). */
+interface BoardActor {
+  runId: string
+  me: string
+}
+
+function TaskItem({ task, actor }: Readonly<{ task: EngineeringTask; actor?: BoardActor }>) {
   const { t, i18n } = useTranslation('agents')
   return (
     <li className="rounded-md border border-border px-3 py-2 space-y-1 min-w-0">
@@ -128,22 +136,25 @@ function TaskItem({ task }: Readonly<{ task: EngineeringTask }>) {
           </ol>
         </details>
       )}
+      {actor !== undefined && <TaskControls runId={actor.runId} task={task} me={actor.me} />}
     </li>
   )
 }
 
-export function BoardPanel({ tasks }: Readonly<{ tasks: readonly EngineeringTask[] }>) {
+/** The board by state; with `actor` (an admin, the run under way) its controls: post a task, act on each one. */
+export function BoardPanel({ tasks, actor }: Readonly<{ tasks: readonly EngineeringTask[]; actor?: BoardActor }>) {
   const { t } = useTranslation('agents')
-  if (tasks.length === 0) return <p className="text-sm text-muted">{t('engineeringRun.noTasks')}</p>
   return (
     <div className="space-y-4">
+      {actor !== undefined && <PostTaskForm runId={actor.runId} />}
+      {tasks.length === 0 && <p className="text-sm text-muted">{t('engineeringRun.noTasks')}</p>}
       {groupsInOrder(TASK_STATES, tasks.map((task) => task.state)).map((state) => {
         const group = tasks.filter((task) => task.state === state)
         const name = t(`engineeringRun.states.${state}`, { defaultValue: state })
         return (
           <section key={state} aria-label={name} className="space-y-2">
             <h3 className="text-[12px] font-medium uppercase tracking-wide text-muted">{name} ({group.length})</h3>
-            <ul className="space-y-2">{group.map((task) => <TaskItem key={task.task_id} task={task} />)}</ul>
+            <ul className="space-y-2">{group.map((task) => <TaskItem key={task.task_id} task={task} actor={actor} />)}</ul>
           </section>
         )
       })}

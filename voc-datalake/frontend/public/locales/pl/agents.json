@@ -777,6 +777,28 @@
       "conversation": "Rozmowa",
       "reports": "Raporty"
     },
+    "board": {
+      "post": "Opublikuj zadanie",
+      "role": "Rola",
+      "title": "Tytuł",
+      "instructions": "Co zrobić",
+      "postSubmit": "Opublikuj",
+      "posted": "Opublikowano.",
+      "controls": "Zadanie {{task}}",
+      "take": "Weź",
+      "takeOver": "Przejmij",
+      "moveTo": "Przenieś do {{state}}",
+      "block": "Zablokuj",
+      "priority": "Priorytet",
+      "setPriority": "Ustaw priorytet",
+      "reason": "Dlaczego",
+      "blockSubmit": "Zablokuj zadanie",
+      "takeOverTitle": "Przejąć to zadanie?",
+      "takeOverMessage": "Trzyma je inna osoba ({{holder}}): stanie się Twoje, a jej ruchy będą odrzucane.",
+      "duplicate": "Takie samo zadanie jest już na tablicy: nic nowego nie opublikowano.",
+      "blockOverTitle": "Zablokować to zadanie?",
+      "blockOverMessage": "Trzyma je inna osoba ({{holder}}): zablokowanie kończy jej przydział."
+    },
     "panels": "Agenci, tablica, rozmowa i raporty przebiegu",
     "reports": {
       "title": "Raport: {{subject}}",

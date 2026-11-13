@@ -264,6 +264,7 @@ def test_an_admin_takes_moves_reprioritises_and_blocks_tasks(lambda_context: Any
     task = engineering.task_id   # (claimed by fixer-1)
     status, body = _call(lambda_context, 'POST', f'{BASE}/board/tasks/{task}/take', body={})
     assert (status, body['task']['lease']['agent']) == (200, 'human:admin-sub')
+    assert _call(lambda_context, 'POST', f'{BASE}/board/tasks/{task}/move', body={'to': 'needs_human'})[0] == 400
     assert _call(lambda_context, 'POST', f'{BASE}/board/tasks/{task}/move', body={'to': 'in_progress'})[0] == 200
     assert _call(lambda_context, 'POST', f'{BASE}/board/tasks/{task}/priority', body={'priority': 9})[0] == 200
     assert (_board_task(engineering, task)['state'], _board_task(engineering, task)['priority']) == ('in_progress', '9')
@@ -296,6 +297,9 @@ def test_a_person_moves_only_a_task_they_took_and_a_lost_publish_is_retried(lamb
     task = engineering.task_id
     status, body = _call(lambda_context, 'POST', f'{BASE}/board/tasks/{task}/move', body={'to': 'in_progress'})
     assert (status, 'take it first' in json.dumps(body)) == (403, True)
+    # "Needs a person" is a block's, which says why: never a bare move (a holder's or not).
+    status, body = _call(lambda_context, 'POST', f'{BASE}/board/tasks/{task}/move', body={'to': 'needs_human'})
+    assert (status, 'by block, with a reason' in json.dumps(body)) == (400, True)
     actions.bus.failed = True
     assert _call(lambda_context, 'POST', f'{BASE}/board/tasks/{task}/take', body={})[0] == 503
     assert _board_task(engineering, task)['lease_agent'] == 'human:admin-sub'   # (written before the publish)
@@ -304,6 +308,25 @@ def test_a_person_moves_only_a_task_they_took_and_a_lost_publish_is_retried(lamb
     (entry,) = actions.bus.entries   # (the retry publishes the same change once)
     assert json.loads(entry['Detail'])['summary'].endswith('take by a person')
     assert _call(lambda_context, 'POST', f'{BASE}/board/tasks/{task}/priority', body={})[0] == 400
+
+
+@pytest.mark.parametrize(('action', 'body'),[('take', {}), ('block', {'reason': 'Wrong repo'})])
+def test_another_persons_hold_is_ended_only_when_over_asks(lambda_context: Any, run: tuple[Any, EngineeringRun],
+                                                           actions: Actions, action: str, body: dict[str, str]) -> None:
+    _, engineering = run
+    task = engineering.task_id
+    other = {**ADMIN, 'sub': 'admin-2-sub', 'cognito:username': 'carol'}
+    assert _call(lambda_context, 'POST', f'{BASE}/board/tasks/{task}/take', body={}, claims=other)[0] == 200
+    published = len(actions.bus.entries)
+    path = f'{BASE}/board/tasks/{task}/{action}'
+    assert _call(lambda_context, 'POST', path, body={**body, 'over': 'yes'})[0] == 400
+    status, refused = _call(lambda_context, 'POST', path, body=body)
+    assert (status, 'another person holds the task' in json.dumps(refused)) == (409, True)
+    assert (len(actions.bus.entries), _board_task(engineering, task)['lease_agent']) == (published, 'human:admin-2-sub')
+    assert _call(lambda_context, 'POST', path, body={**body, 'over': True})[0] == 200
+    entry = actions.bus.entries[-1]
+    assert (entry['Source'], json.loads(entry['Detail'])['from']) == (
+        'voc.engineering/api', {'kind': 'human', 'id': 'admin-sub'})
 
 
 def test_a_person_re_prioritises_an_open_task_and_its_role_is_not_told_again(lambda_context: Any,

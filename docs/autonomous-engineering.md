@@ -400,9 +400,8 @@ What exists:
   each agent role every source but its own.
 
 Not built yet: the harness's side (its board, inbox and broker interfaces still refuse every call, and so do the run
-coordinator's: [Runtime](#runtime-one-microvm-per-agent), "Not aligned yet"); the run monitor's board controls (a
-person's board actions are built through the API, below); the agents' findings in the workspace (the runtime writes their checkpoints and patches
-there). The rest of this section is the
+coordinator's: [Runtime](#runtime-one-microvm-per-agent), "Not aligned yet"); the agents' findings in the workspace
+(the runtime writes their checkpoints and patches there). The rest of this section is the
 design; where the built message types and queues differ from it, the code (`bus/schema.py`, `bus/routing.py`) is what
 holds, and the design's type table is what the next slices bring the code to or the table to.
 
@@ -481,13 +480,18 @@ another agent, which resumes it from its checkpoint. An agent suspended on an op
 `review.requested`, a human decision point) keeps its lease while the wait is open. Tasks are claimed: an agent of
 the right role, told of a posted task in its inbox, claims it on the board; the run coordinator posts and orders tasks and may hand one
 to a named agent (`task.assigned`). Agents post tasks within the run's budget and the flow's rules.
-A person can post, re-prioritise, block or take a task, through the API (an administrator acting for themselves:
-`/agents/engineering/<run_id>/board/tasks…`, [docs/autonomous-agents.md](autonomous-agents.md)). Each is the board
+A person can post, re-prioritise, block or take a task, from the run monitor's Board tab or through the API (an
+administrator acting for themselves: `/agents/engineering/<run_id>/board/tasks…`,
+[docs/autonomous-agents.md](autonomous-agents.md)). Each is the board
 store's own conditional write, with a history row naming `human:<subject>`, published as the board's `task.*` event
 from the API's own source with `from.kind` human (the only `task.*` the bus takes from the API). Taking a task makes
 the person its holder with no expiry (`lease_agent` `human:<subject>`, the lease's epoch its attempt): its agent can
 move it no more, and the supervisor, which judges agents' sessions, leaves it alone; the person moves it on like any
-holder. Blocking it ends it as needing a person, with their reason. Never the coordinate task.
+holder. A task another person holds is taken or blocked from them only when asked (`over`: the monitor asks first;
+the write holds the holder it read), and an
+agent's signal to a task a person holds is refused (no agent works on it). Blocking it ends it as needing a person,
+with their reason (the only way a person sends a task there: a move to it is refused, so the why is always kept).
+Never the coordinate task.
 
 **The conversation.** Every event is also written to the run's conversation (DynamoDB, append-only, D1), which the run
 view shows live as a chat between the agents beside the board. The person is a participant: their decisions, answers

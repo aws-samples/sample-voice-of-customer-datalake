@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { renderHook } from '@testing-library/react'
 import { z } from 'zod'
 import { sortedStrings } from '@test/stringLists'
-import { useAuthStore, useIsAdmin } from './authStore'
+import { useAuthStore, useIsAdmin, useMySub } from './authStore'
 import { getRuntimeConfig, isConfigLoaded } from '../runtimeConfig'
 import { at } from '@test/defined'
 
@@ -241,5 +241,24 @@ describe('useIsAdmin', () => {
 
       expect(result.current).toBe(false)
     })
+  })
+})
+
+describe('useMySub', () => {
+  beforeEach(() => {
+    useAuthStore.getState().logout()
+    vi.clearAllMocks()
+  })
+
+  it('is the signed-in user\'s sub with Cognito configured, and empty while signed out', () => {
+    stubCognito(true)
+    expect(renderHook(() => useMySub()).result.current).toBe('')
+    useAuthStore.getState().setUser({ username: 'ada', email: 'ada@example.com', groups: ['admins'], sub: 'sub-ada' })
+    expect(renderHook(() => useMySub()).result.current).toBe('sub-ada')
+  })
+
+  it('is the dev mock\'s caller in the dev bypass (what the mock answers a person\'s hold with)', () => {
+    stubCognito(false)
+    expect(renderHook(() => useMySub()).result.current).toBe('sub-admin-demo')
   })
 })

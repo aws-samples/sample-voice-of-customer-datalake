@@ -36,7 +36,7 @@ from typing import Any, Protocol
 
 from botocore.exceptions import BotoCoreError, ClientError
 
-from engineering.board.model import FINAL, OPEN
+from engineering.board.model import FINAL, OPEN, PERSON_PREFIX
 from engineering.bus.publish import PublishError, new_event_id
 from engineering.bus.schema import MAX_SUMMARY_BYTES, Message, MessageError, Party, fit_summary, summary_text
 from engineering.connectors.identity import WORKSPACE
@@ -304,6 +304,9 @@ class RunMonitor:
         state = string_attr(task, 'state')
         if not holder or epoch != signal.attempt or state == OPEN or state in FINAL:
             raise MonitorError('conflict', 'This task has moved on since you looked: reload the run')
+        if holder.startswith(PERSON_PREFIX):
+            # A person took it (board/store.py take): no agent holds it, so none is signalled through it.
+            raise MonitorError('conflict', 'A person holds this task: no agent works on it to signal')
         return Party('agent', holder)
 
     def signal(self, run_id: str, signal: Signal, actor: Actor) -> dict[str, Any]:

@@ -55,7 +55,8 @@ describe('the engineering run reads', () => {
     // The writes only in a run's partition: never the skills' or the knowledge packs' rows.
     const writes = statements.filter((statement) => statement.actions.includes('dynamodb:PutItem'));
     expect(writes.map((statement) => [statement.actions, statement.condition])).toStrictEqual([[
-      ['dynamodb:PutItem', 'dynamodb:UpdateItem'], { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#RUN#*'] } },
+      ['dynamodb:PutItem', 'dynamodb:UpdateItem'],
+      { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [`WS#default#RUN#${'?'.repeat(26)}`] } },
     ]]);
     const objects = statements.filter((statement) => statement.actions.includes('s3:GetObject'));
     expect(objects.map((statement) => statement.resource)).toStrictEqual([expect.stringMatching(/"\/ws\/default\/reports\/\*"/)]);

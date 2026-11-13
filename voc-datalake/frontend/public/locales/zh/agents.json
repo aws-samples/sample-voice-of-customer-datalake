@@ -744,6 +744,28 @@
       "conversation": "对话",
       "reports": "报告"
     },
+    "board": {
+      "post": "发布任务",
+      "role": "角色",
+      "title": "标题",
+      "instructions": "要做什么",
+      "postSubmit": "发布",
+      "posted": "已发布。",
+      "controls": "任务 {{task}}",
+      "take": "接手",
+      "takeOver": "接管",
+      "moveTo": "移至{{state}}",
+      "block": "阻止",
+      "priority": "优先级",
+      "setPriority": "设置优先级",
+      "reason": "原因",
+      "blockSubmit": "阻止该任务",
+      "takeOverTitle": "接管此任务?",
+      "takeOverMessage": "另一人正在处理 ({{holder}}):接管后归您,对方的操作会被拒绝。",
+      "duplicate": "看板上已有相同的任务:没有发布新任务。",
+      "blockOverTitle": "阻止此任务?",
+      "blockOverMessage": "另一人正在处理 ({{holder}}):阻止后对方的处理随之结束。"
+    },
     "panels": "运行的代理、看板、对话和报告",
     "reports": {
       "title": "报告：{{subject}}",

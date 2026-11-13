@@ -318,6 +318,45 @@ def test_a_take_never_undoes_a_move_made_since_it_read_the_task(run: Board) -> N
     assert run.store.task(WS, RUN, task_id).state == 'in_progress'
 
 
+def test_a_person_takes_over_another_persons_hold_only_when_asked(run: Board) -> None:
+    task_id = fixer_task(run)
+    run.store.take(WS, RUN, task_id, actor=PERSON)
+    with pytest.raises(BoardError, match='another person holds the task'):
+        run.store.take(WS, RUN, task_id, actor='human:admin-2')
+    taken = run.store.take(WS, RUN, task_id, actor='human:admin-2', over=True)
+    assert taken.lease_agent == 'human:admin-2'
+    with pytest.raises(BoardError, match='the lease is not yours'):   # (the first person's move: theirs no more)
+        run.store.move(WS, RUN, task_id, agent=PERSON, epoch=1, to_state='in_progress', result_keys=())
+
+
+@pytest.mark.parametrize('action', ['take', 'block'])
+def test_a_take_or_block_racing_a_take_is_refused_by_the_holder_it_read(
+        run: Board, monkeypatch: pytest.MonkeyPatch, action: str) -> None:
+    task_id = fixer_task(run)
+    call(run, FIXER, op='claim', task_id=task_id)
+    stale = run.store.task(WS, RUN, task_id)   # (claimed, the fixer holding it, as admin-2 read it)
+    run.store.take(WS, RUN, task_id, actor=PERSON)   # (still claimed at the same attempt: only the holder changed)
+    reads = iter([stale])
+    real = run.store.task
+    monkeypatch.setattr(run.store, 'task', lambda *a, **k: next(reads, None) or real(*a, **k))
+    late = (lambda: run.store.take(WS, RUN, task_id, actor='human:admin-2')) if action == 'take' else (
+        lambda: run.store.block(WS, RUN, task_id, reason='wrong repository', actor='human:admin-2'))
+    with pytest.raises(BoardError, match='moved on'):
+        late()
+    after = run.store.task(WS, RUN, task_id)
+    assert (after.lease_agent, after.state) == (PERSON, 'claimed')
+
+
+def test_a_block_of_another_persons_hold_is_refused_unless_asked(run: Board) -> None:
+    task_id = fixer_task(run)
+    run.store.take(WS, RUN, task_id, actor=PERSON)
+    with pytest.raises(BoardError, match='another person holds the task'):
+        run.store.block(WS, RUN, task_id, reason='wrong repository', actor='human:admin-2')
+    assert run.store.task(WS, RUN, task_id).lease_agent == PERSON
+    blocked = run.store.block(WS, RUN, task_id, reason='wrong repository', actor='human:admin-2', over=True)
+    assert (blocked.state, blocked.lease_agent) == ('needs_human', '')
+
+
 def test_the_supervisors_repost_never_takes_a_task_from_the_person_holding_it(run: Board) -> None:
     task_id = fixer_task(run)
     call(run, FIXER, op='claim', task_id=task_id)

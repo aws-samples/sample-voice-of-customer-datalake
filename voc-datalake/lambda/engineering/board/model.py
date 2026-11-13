@@ -17,6 +17,9 @@ from engineering.rows import string_attr as _s
 OPEN, CLAIMED, IN_PROGRESS, IN_REVIEW, DONE, FAILED, NEEDS_HUMAN = (
     'open', 'claimed', 'in_progress', 'in_review', 'done', 'failed', 'needs_human')
 FINAL = frozenset({DONE, FAILED, NEEDS_HUMAN})
+#: A person's id on the board (a history row's actor, a held lease's agent): ``human:<their subject>``. An agent's id is
+#: ``<role>-<n>``, so the two never meet.
+PERSON_PREFIX = 'human:'
 #: The moves a task's owner may make, from a state to the next.
 MOVES = {
     CLAIMED: frozenset({IN_PROGRESS, FAILED, NEEDS_HUMAN}),

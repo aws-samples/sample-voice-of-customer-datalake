@@ -744,6 +744,28 @@
       "conversation": "Unterhaltung",
       "reports": "Berichte"
     },
+    "board": {
+      "post": "Aufgabe einstellen",
+      "role": "Rolle",
+      "title": "Titel",
+      "instructions": "Was zu tun ist",
+      "postSubmit": "Einstellen",
+      "posted": "Eingestellt.",
+      "controls": "Aufgabe {{task}}",
+      "take": "Übernehmen",
+      "takeOver": "Übernehmen von",
+      "moveTo": "Verschieben nach {{state}}",
+      "block": "Blockieren",
+      "priority": "Priorität",
+      "setPriority": "Priorität setzen",
+      "reason": "Warum",
+      "blockSubmit": "Aufgabe blockieren",
+      "takeOverTitle": "Diese Aufgabe übernehmen?",
+      "takeOverMessage": "Eine andere Person hält sie ({{holder}}): Sie gehört dann Ihnen, ihre Schritte werden abgelehnt.",
+      "duplicate": "Eine gleiche Aufgabe ist schon auf dem Board: Es wurde nichts Neues eingestellt.",
+      "blockOverTitle": "Diese Aufgabe blockieren?",
+      "blockOverMessage": "Eine andere Person hält sie ({{holder}}): Das Blockieren beendet ihre Übernahme."
+    },
     "panels": "Agenten, Board, Unterhaltung und Berichte des Laufs",
     "reports": {
       "title": "Bericht: {{subject}}",

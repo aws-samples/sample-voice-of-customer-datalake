@@ -44,8 +44,8 @@ from typing import Any, Protocol
 from botocore.exceptions import BotoCoreError, ClientError
 
 from engineering.board.inbox import MAX_LIMIT, Inbox
-from engineering.board.model import EVENT_OF, FINAL, OPEN, Task
-from engineering.board.store import COORDINATE_TASK, COORDINATOR, PERSON_PREFIX, BoardError, BoardStore, Posted
+from engineering.board.model import EVENT_OF, FINAL, NEEDS_HUMAN, OPEN, PERSON_PREFIX, Task
+from engineering.board.store import COORDINATE_TASK, COORDINATOR, BoardError, BoardStore, Posted
 from engineering.bus.publish import EventBridgePublisher, PublishError, change_event_id, new_event_id
 from engineering.bus.schema import ROLES, Message, MessageError, Party, Refs, fit_summary
 from engineering.connectors.identity import WORKSPACE, Caller, UnknownCaller, caller_from_event, own_account
@@ -88,6 +88,14 @@ def _int(body: Mapping[str, Any], key: str, default: int) -> int:
     if type(value) is int and abs(value) <= MAX_INT:   # not a bool, which is an int too
         return value
     raise BoardError('invalid', f'"{key}" is a whole number of at most {MAX_INT} either way')
+
+
+def _over(body: Mapping[str, Any]) -> bool:
+    """``over``: a take or block may end another person's hold (false by default)."""
+    over = body.get('over', False)
+    if not isinstance(over, bool):
+        raise BoardError('invalid', '"over" is true or false: end another person\'s hold only if you mean to')
+    return over
 
 
 def _object(raw_body: Any) -> dict[str, Any]:
@@ -478,8 +486,8 @@ class PersonBoard:
         return {'task': task.view(), 'duplicate': not posted.created}
 
     def act(self, run_id: str, task_id: str, action: str, body: Mapping[str, Any], subject: str) -> dict[str, Any]:
-        """``priority {priority}``, ``block {reason}``, ``take {}`` or ``move {to}`` (only a task they took, at its
-        attempt) on a task that has not ended. Published to the run (``_person_event``) when the task's last change
+        """``priority {priority}``, ``block {reason, over?}``, ``take {over?}`` (``over``: end another person's hold) or
+        ``move {to}`` (only a task they took, at its attempt) on a task that has not ended. Published to the run (``_person_event``) when the task's last change
         is theirs: this one, or their own earlier try of it (the same event again); a change already there by someone
         else is answered and publishes nothing."""
         actor = PERSON_PREFIX + subject
@@ -488,15 +496,19 @@ class PersonBoard:
                 raise BoardError('invalid', '"priority" is a whole number')
             task = self.store.reprioritise(WORKSPACE, run_id, task_id, priority=_int(body, 'priority', 0), actor=actor)
         elif action == 'block':
-            task = self.store.block(WORKSPACE, run_id, task_id, reason=_text(body, 'reason'), actor=actor)
+            task = self.store.block(WORKSPACE, run_id, task_id, reason=_text(body, 'reason'), actor=actor,
+                                    over=_over(body))
         elif action == 'take':
-            task = self.store.take(WORKSPACE, run_id, task_id, actor=actor)
+            task = self.store.take(WORKSPACE, run_id, task_id, actor=actor, over=_over(body))
         elif action == 'move':
+            to_state = _text(body, 'to')
+            if to_state == NEEDS_HUMAN:   # (a person's "needs a person" always says why: D4)
+                raise BoardError('invalid', 'a task needs a person by block, with a reason: not by a move')
             held = self.store.task(WORKSPACE, run_id, task_id)
             if held.lease_agent != actor:
                 raise BoardError('forbidden', 'only a task you took is moved by you: take it first')
             task = self.store.move(WORKSPACE, run_id, task_id, agent=actor, epoch=held.attempt,
-                                   to_state=_text(body, 'to'), result_keys=())
+                                   to_state=to_state, result_keys=())
         else:
             raise BoardError('invalid', 'the action is one of block, move, priority, take')
         if task.updated_by == actor:
