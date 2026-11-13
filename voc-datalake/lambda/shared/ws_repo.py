@@ -16,7 +16,9 @@ only ever reads and writes its own rows and objects. This module is the one plac
   credentials parameters' names are shared/workspace_ids.py ``credentials_parameter_name``).
 * ``ws_table``: a table that refuses any key, item, update or query outside the scope's partitions (every index
   partition of voc-feedback is one of ``PARTITION_ATTRIBUTES``: gsi4 and gsi5 are keyed on ``gsi4pk`` / ``gsi5pk``,
-  no longer on the raw ``feedback_id`` and ``source_channel``).
+  no longer on the raw ``feedback_id`` and ``source_channel``), also in its multi-item calls on that one table
+  (``transact_write_items``, ``batch_get_item``, ``batch_writer``): a caller never names a table, and one entry
+  outside the scope refuses the whole call before anything is sent.
 
 shared/test/test_ws_raw_access.py counts, per module outside this layer, the raw table and bucket calls and the
 unscoped data-path keys, against an allowlist of the modules not moved yet that must match exactly.
@@ -40,10 +42,11 @@ The keys (``{ws}`` is ``ws_`` + a ULID, shared/workspace.py ``is_workspace_id``)
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Final, Protocol
+from typing import Any, Final, NoReturn, Protocol, Self
 
+from shared.batch_get import BATCH_GET_ATTEMPTS, batch_get_all
 from shared.dynamo_paging import iter_query
 from shared.workspace_ids import is_workspace_id, ws_key
 
@@ -96,10 +99,24 @@ TABLE_PARTITION_KEYS: Final = ('pk', WATERMARK_PARTITION)
 #: ``= :placeholder`` right after an attribute in an UpdateExpression: the one checked way to set a partition.
 _ASSIGNED_PLACEHOLDER: Final = re.compile(r'\s*=\s*(:\w+)(?![\w(])\s*(?:,|\Z|\b(?:SET|REMOVE|ADD|DELETE)\b)',
                                           re.IGNORECASE)
+#: DynamoDB's ceiling on the entries of one TransactWriteItems.
+MAX_TRANSACT_ITEMS: Final = 100
+#: The entries a TransactWriteItems takes, and the options passed on (every other one is refused).
+_TRANSACT_ACTIONS: Final = ('Put', 'Update', 'Delete', 'ConditionCheck')
+_TRANSACT_WRITE_OPTIONS: Final = frozenset({'ClientRequestToken', 'ReturnConsumedCapacity',
+                                            'ReturnItemCollectionMetrics'})
+_BATCH_GET_OPTIONS: Final = frozenset({'ProjectionExpression', 'ExpressionAttributeNames', 'ConsistentRead'})
+#: Request fields that name a table: the view fills in its own, a caller never names one.
+_TABLE_FIELDS: Final = ('TableName', 'RequestItems')
 
 
 class OutOfScopeError(ValueError):
     """A key, item or query outside the scope's partitions: a programming error, never a client's (500)."""
+
+
+class UnprocessedKeysError(RuntimeError):
+    """BatchGetItem still left keys unprocessed after ``BATCH_GET_ATTEMPTS`` calls (shared/batch_get.py): the read
+    fails rather than quietly return fewer items."""
 
 
 @dataclass(frozen=True)
@@ -324,6 +341,11 @@ class WorkspaceTable:
 
     Only the calls the data path makes. A key or item whose partition (``pk``, ``source`` or an index partition
     attribute it carries) is outside the scope raises ``OutOfScopeError`` before anything reaches DynamoDB.
+
+    The multi-item calls (``transact_write_items``, ``batch_get_item``, ``batch_writer``; a ``TransactGetItems``
+    comes with its first caller) act on this one table only and check every entry as the single-item calls do. They go through the table's own
+    client (``table.meta.client``): a resource's client takes and returns plain Python values, as ``put_item`` does
+    (shared/batch_get.py relies on the same), so the view only fills in ``TableName``.
     """
 
     def __init__(self, scope: WorkspaceScope, table: Any, key: str = 'pk') -> None:
@@ -338,8 +360,8 @@ class WorkspaceTable:
             raise OutOfScopeError('a key outside the workspace')
 
     def check_keys(self, keys: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
-        """``keys`` as plain dicts once every one is in the scope (``OutOfScopeError`` otherwise): a caller's
-        ``BatchGetItem``, which this view does not make itself, names only keys of the workspace."""
+        """``keys`` as plain dicts once every one is in the scope (``OutOfScopeError`` otherwise): a caller's own
+        ``BatchGetItem`` names only keys of the workspace (``batch_get_item`` makes one through the view)."""
         checked = [dict(key) for key in keys]
         for key in checked:
             self._check_key(key)
@@ -420,6 +442,84 @@ class WorkspaceTable:
         return iter_query(_BoundQuery(self, partition_attribute, partition, sort_condition), kwargs,
                           max_items=max_items)
 
+    def transact_write_items(self, items: Sequence[Mapping[str, Any]], **kwargs: Any) -> dict:
+        """One ``TransactWriteItems`` on this table: 1 to 100 entries, each ``{'Put': {'Item': …}}``,
+        ``{'Update': {'Key': …, 'UpdateExpression': …}}``, ``{'Delete': {'Key': …}}`` or
+        ``{'ConditionCheck': {'Key': …, 'ConditionExpression': …}}`` (plain Python values, no ``TableName``).
+
+        Each item is checked as ``put_item`` checks it, each key as ``get_item`` does, each ``Update`` as
+        ``check_update`` does; one entry outside the scope refuses the whole transaction before it is sent, so
+        nothing of it is written. Only ``ClientRequestToken``, ``ReturnConsumedCapacity`` and
+        ``ReturnItemCollectionMetrics`` are passed on.
+        """
+        options = _checked_options('TransactWriteItems', kwargs, _TRANSACT_WRITE_OPTIONS)
+        entries = list(items)
+        if not 1 <= len(entries) <= MAX_TRANSACT_ITEMS:
+            raise ValueError(f'a TransactWriteItems takes 1 to {MAX_TRANSACT_ITEMS} entries, not {len(entries)}')
+        checked = [self._checked_write(entry) for entry in entries]
+        self._refuse_duplicates('TransactWriteItems',
+                                [body.get('Key') or body['Item'] for entry in checked for body in entry.values()])
+        return self._table.meta.client.transact_write_items(TransactItems=checked, **options)
+
+    def batch_get_item(self, keys: Iterable[Mapping[str, Any]], **kwargs: Any) -> list[dict]:
+        """Every item found for ``keys`` (all in the scope, none twice), in any order; a missing key is simply absent.
+
+        shared/batch_get.py ``batch_get_all`` sends it: requests of up to 100 keys, each request's
+        ``UnprocessedKeys`` retried with a jittered backoff, ``BATCH_GET_ATTEMPTS`` calls in all, then
+        ``UnprocessedKeysError``. ``ProjectionExpression`` and ``ExpressionAttributeNames`` are passed on; reads are
+        strongly consistent unless ``ConsistentRead=False``.
+        """
+        options = _checked_options('BatchGetItem', kwargs, _BATCH_GET_OPTIONS)
+        checked = self.check_keys(keys)
+        self._refuse_duplicates('BatchGetItem', checked)
+        failure = UnprocessedKeysError(f'BatchGetItem left keys unprocessed after {BATCH_GET_ATTEMPTS} calls')
+        return batch_get_all(self._table, checked, failure=failure, read_options=options)
+
+    def batch_writer(self) -> WorkspaceBatchWriter:
+        """``table.batch_writer()`` through the view (a context manager): each ``put_item(Item=…)`` is checked as
+        ``put_item`` checks it before it is buffered. Puts only for now (``WorkspaceBatchWriter``)."""
+        return WorkspaceBatchWriter(self._check_item, self._table.batch_writer())
+
+    def _checked_write(self, entry: object) -> dict[str, Any]:
+        """One ``TransactItems`` entry, checked, with the view's ``TableName``."""
+        if not isinstance(entry, Mapping) or len(entry) != 1:
+            raise ValueError(f'a transaction entry is one of {", ".join(_TRANSACT_ACTIONS)}')
+        [(action, body)] = entry.items()
+        if action not in _TRANSACT_ACTIONS or not isinstance(body, Mapping):
+            raise ValueError(f'a transaction entry is one of {", ".join(_TRANSACT_ACTIONS)}')
+        request = dict(body)
+        if 'TableName' in request:
+            raise OutOfScopeError('a transaction entry never names its table: the view sends it to its own')
+        if action == 'Put':
+            item = _required(request, 'Item', action)
+            self._check_item(item)
+            request['Item'] = dict(item)
+        else:
+            key = _required(request, 'Key', action)
+            if action == 'Update':
+                self.check_update(key, **{field: value for field, value in request.items() if field != 'Key'})
+            else:
+                self._check_key(key)
+            if action == 'ConditionCheck' and not isinstance(request.get('ConditionExpression'), str):
+                raise ValueError('a ConditionCheck entry needs its ConditionExpression')
+            request['Key'] = dict(key)
+        return {action: {**request, 'TableName': self._table.name}}
+
+    def _key_identity(self, key: Mapping[str, Any]) -> tuple[str, str]:
+        """The item a key or an item names: its partition and, on a ``pk`` table, its ``sk``."""
+        sort_key = key.get('sk') if self.key_attribute == 'pk' else None
+        return repr(key.get(self.key_attribute)), repr(sort_key)
+
+    def _refuse_duplicates(self, call: str, keys: Iterable[Mapping[str, Any]]) -> None:
+        """DynamoDB refuses one call naming an item twice: refused here first (ValueError), naming the item."""
+        seen: set[tuple[str, str]] = set()
+        for key in keys:
+            identity = self._key_identity(key)
+            if identity in seen:
+                partition, sort_key = identity
+                raise ValueError(f'a {call} names one item twice: {self.key_attribute} {partition}, sk {sort_key}')
+            seen.add(identity)
+
 
 class _BoundQuery:
     """One partition's ``WorkspaceTable.query`` with the ``table.query(**kwargs)`` shape the pager calls."""
@@ -434,6 +534,56 @@ class _BoundQuery:
     def query(self, **kwargs: Any) -> dict:
         return self._table.query(self._partition_attribute, self._partition, sort_condition=self._sort_condition,
                                  **kwargs)
+
+
+class WorkspaceBatchWriter:
+    """``WorkspaceTable.batch_writer()``: boto3's batch writer of the view's table, each item checked before it is
+    buffered, so an item outside the scope is refused before any BatchWriteItem carries it. The refusal does not
+    undo the puts before it: leaving the ``with`` block on any exception still flushes what is buffered (boto3's
+    writer flushes in ``__exit__`` whatever ended the block), so a caller that needs all or nothing uses
+    ``transact_write_items``.
+
+    Puts only. ``delete_item`` is refused for now: the workspace's hard delete (phase 4, docs/multi-workspace.md
+    "Export and delete") adds a checked batch delete; until then a delete goes one key at a time through
+    ``WorkspaceTable.delete_item``.
+    """
+
+    def __init__(self, check_item: Callable[[Mapping[str, Any]], None], writer: Any) -> None:
+        self._check_item = check_item
+        self._writer = writer
+
+    def __enter__(self) -> Self:
+        self._writer.__enter__()
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        # boto3's writer flushes what is buffered on the way out.
+        self._writer.__exit__(*exc_info)
+
+    def put_item(self, *, Item: Mapping[str, Any]) -> None:
+        self._check_item(Item)
+        self._writer.put_item(Item=dict(Item))
+
+    def delete_item(self, **_kwargs: Any) -> NoReturn:
+        raise OutOfScopeError('a batch delete is not part of the workspace layer yet: delete one key at a time '
+                              'with WorkspaceTable.delete_item')
+
+
+def _checked_options(call: str, kwargs: Mapping[str, Any], allowed: frozenset[str]) -> dict[str, Any]:
+    """A multi-item call's options: refused when one names a table (the view sends to its own), or is not passed on."""
+    if any(field in kwargs for field in _TABLE_FIELDS):
+        raise OutOfScopeError(f'a {call} never names its table: the view sends it to its own')
+    unknown = sorted(set(kwargs) - allowed)
+    if unknown:
+        raise ValueError(f'a {call} through the workspace layer does not take {", ".join(unknown)}')
+    return dict(kwargs)
+
+
+def _required(request: Mapping[str, Any], field: str, action: str) -> Mapping[str, Any]:
+    value = request.get(field)
+    if not isinstance(value, Mapping):
+        raise ValueError(f'a {action} entry needs its {field}')
+    return value
 
 
 def _spellings(attribute: str, names: Mapping[str, Any]) -> list[str]:

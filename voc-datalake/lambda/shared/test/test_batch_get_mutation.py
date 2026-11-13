@@ -33,7 +33,9 @@ def _read_stuck_key() -> None:
 class TestFailClosedReadBacksOffExponentiallyAndLogs:
     def test_every_retry_sleeps_twice_as_long_as_the_last(self):
         sleep = MagicMock()
-        with patch.object(batch_get.time, 'sleep', sleep):
+        # The jitter's upper bound: the exponential schedule the full jitter draws below.
+        with patch.object(batch_get.time, 'sleep', sleep), \
+                patch.object(batch_get.random, 'uniform', side_effect=lambda _low, high: high):
             _read_stuck_key()
 
         assert [c.args for c in sleep.call_args_list] == [(0.1,), (0.2,), (0.4,), (0.8,)]
