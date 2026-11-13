@@ -352,7 +352,12 @@
     "unknownCategory": "Kategoria „{{category}}” nie jest dostępna dla Ciebie — zmiana zostanie odrzucona.",
     "brandMerged": "Ustawienia po zapisaniu (pola, których nie wymieniono, zachowają bieżącą wartość):",
     "agent": "Agent",
-    "run": "Uruchomienie"
+    "run": "Uruchomienie",
+    "prototypeDraft": {
+      "prototype": "Prototyp:",
+      "instruction": "Polecenie dla wersji roboczej",
+      "note": "To tworzy tylko wersję roboczą. Pojawi się na stronie prototypu, gdy będzie gotowa, a nic nie zostanie zapisane, dopóki jej tam nie zastosujesz."
+    }
   },
   "tools": {
     "create_participant_list": {
@@ -547,6 +552,9 @@
       "titleWith_other": "Utwórz {{count, number}} użytkowników",
       "titleWith_few": "Utwórz {{count, number}} użytkowników",
       "titleWith_many": "Utwórz {{count, number}} użytkowników"
+    },
+    "draft_prototype_revision": {
+      "title": "Przygotuj wersję roboczą zmian prototypu"
     }
   }
 }

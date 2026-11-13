@@ -57,7 +57,7 @@ interface RenderableDocument extends Record<string, unknown> {
 export function renderDocument(document: RenderableDocument, share: number): string {
   const header = `## ${document.title ?? 'Untitled'} (${(document.document_type ?? 'doc').toUpperCase()}) [ID: ${document.document_id}]`;
   if (isPrototype(document)) {
-    return `${header}\nPrototype HTML is not available as text.`;
+    return `${header}\nPrototype HTML is not available as text: get_prototype_outline reads its screens and text.`;
   }
   if (document.content === undefined) return `${header}\n(No text content.)`;
   return `${header}\n\n${withinBudget(document.content, share)}`;

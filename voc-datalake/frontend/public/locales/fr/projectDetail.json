@@ -145,6 +145,10 @@
         "discardFailed": "Le brouillon n’a pas pu être abandonné. Réessayez.",
         "noPreview": "L’aperçu de ce brouillon n’est pas disponible ici.",
         "frameTitle": "{{title}} (brouillon)"
+      },
+      "assistant": {
+        "button": "Modifier avec l’assistant",
+        "prompt": "Modifie ce prototype : "
       }
     },
     "revision": {

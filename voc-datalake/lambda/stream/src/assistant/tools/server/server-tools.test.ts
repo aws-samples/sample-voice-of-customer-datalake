@@ -212,7 +212,7 @@ describe('get_documents', () => {
 
     expect(deps.calls[0]?.call.body).toStrictEqual({ selected_document_ids: ['d1', 'x', 'gone'] });
     expect(result.content).toContain('# Body');
-    expect(result.content).toContain('Prototype HTML is not available as text.');
+    expect(result.content).toContain('Prototype HTML is not available as text: get_prototype_outline reads its screens and text.');
     expect(result.content).toContain('[ID: gone]\nNot found in this project.');
   });
 

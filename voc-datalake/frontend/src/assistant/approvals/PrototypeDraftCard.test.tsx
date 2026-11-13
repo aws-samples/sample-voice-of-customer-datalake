@@ -1,0 +1,71 @@
+/**
+ * The draft_prototype_revision approval card (docs/prototype-builder.md, part 2): it names the prototype
+ * (its title and version, from the project record) and shows the exact instruction the draft job gets, as
+ * text; Approve starts the draft job once (`POST …/prototypes/{document_id}/drafts`, the instruction alone
+ * plus the reply language) and resumes with the job id; Decline starts nothing.
+ */
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { screen, waitFor } from '@testing-library/react'
+
+const fetchApiDoubles = await vi.hoisted(async () => import('@test/fetchApiRoutes'))
+vi.mock('../../api/client', fetchApiDoubles.clientWithMockedFetchApi)
+vi.mock('../../store/authStore', fetchApiDoubles.authStoreModule)
+
+import { resetExecutions } from './executionStore'
+import { stubElementScrollIntoView } from '../../test/stubScrollTo'
+import { adminFlag, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
+import { approve, outcomeOf, renderApprovalCard, resumedToolMessage, writes } from '@test/approvalCardHarness'
+import type { AssistantToolCall } from '../types'
+
+const PAGE = { kind: 'project', path: '/projects/proj_1', projectId: 'proj_1', documentId: 'proto_3' } as const
+const INSTRUCTION = 'Make the summary a **sticky** footer on phones <b>now</b>'
+const call = (args: unknown = { project_id: 'proj_1', document_id: 'proto_3', instruction: INSTRUCTION }): AssistantToolCall =>
+  ({ id: 'c1', name: 'draft_prototype_revision', args })
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  resetFetchApi()
+  resetExecutions()
+  adminFlag.isAdmin = false
+  routeFetchApi({
+    'GET /projects/proj_1': () => ({
+      project: { project_id: 'proj_1', name: 'Checkout', access: { role: 'editor', can_view: true, can_edit: true, can_manage: false } },
+      personas: [],
+      documents: [{ document_id: 'proto_3', document_type: 'prototype', title: 'Checkout flow (v3)', content: '', created_at: '2026-11-13T10:00:00Z' }],
+    }),
+    'POST /projects/proj_1/prototypes/proto_3/drafts': () => ({ success: true, job_id: 'job_7', status: 'pending', message: 'Prototype draft started.' }),
+  })
+  return stubElementScrollIntoView()
+})
+
+describe('draft_prototype_revision card', () => {
+  it('names the prototype and shows the instruction verbatim, as text', async () => {
+    renderApprovalCard(call(), PAGE)
+
+    expect(await screen.findByText('Checkout flow (v3)')).toBeInTheDocument()
+    const instruction = screen.getByTestId('prototype-draft-instruction')
+    expect(instruction.textContent).toBe(INSTRUCTION)
+    expect(instruction.querySelector('b, strong')).toBeNull()
+  })
+
+  it('Approve starts the draft job once and resumes with its job id; nothing else is written', async () => {
+    const { user, onResolve } = renderApprovalCard(call(), PAGE)
+    await screen.findByText('Checkout flow (v3)')
+
+    await approve(user, onResolve)
+
+    expect(writes()).toStrictEqual([['/projects/proj_1/prototypes/proto_3/drafts', 'POST', { instruction: INSTRUCTION, response_language: 'en' }]])
+    expect(resumedToolMessage(onResolve, 'c1')).toMatchObject({ status: 'executed', data: { job_id: 'job_7', draft_id: 'job_7' } })
+  })
+
+  it('Decline starts nothing', async () => {
+    const { user, onResolve } = renderApprovalCard(call(), PAGE)
+
+    // Decline opens the optional reason step; Decline again sends it without one.
+    await user.click(screen.getByRole('button', { name: 'Decline' }))
+    await user.click(screen.getByRole('button', { name: 'Decline' }))
+
+    await waitFor(() => { expect(outcomeOf(onResolve)?.status).toBe('declined') })
+    expect(writes()).toStrictEqual([])
+  })
+})

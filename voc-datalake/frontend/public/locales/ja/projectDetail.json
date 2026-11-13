@@ -138,6 +138,10 @@
         "discardFailed": "下書きを破棄できませんでした。もう一度お試しください。",
         "noPreview": "この下書きのプレビューはここでは利用できません。",
         "frameTitle": "{{title}}（下書き）"
+      },
+      "assistant": {
+        "button": "アシスタントで編集",
+        "prompt": "このプロトタイプを変更してください："
       }
     },
     "revision": {

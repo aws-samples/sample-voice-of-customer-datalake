@@ -137,6 +137,10 @@ const CASES: Record<ClientToolName, { good: unknown[]; bad: unknown[] }> = {
     good: [{ project_id: P }, { project_id: P, title: 'Ancillaries', feedback: 'Bigger buttons', base_prototype_id: 'doc_1' }, { project_id: P, source_prd_id: 'prd_1', source_prfaq_id: 'pf_1' }],
     bad: [{}, { project_id: '../x' }, { project_id: P, title: LONG(201) }, { project_id: P, feedback: LONG(4001) }, { project_id: P, use_research: true }, { project_id: P, document_id: 'doc_1' }],
   },
+  draft_prototype_revision: {
+    good: [{ project_id: P, document_id: 'proto_1', instruction: 'Make the footer sticky' }, { project_id: P, document_id: 'proto_1', instruction: LONG(2000) }],
+    bad: [{ project_id: P, document_id: 'proto_1' }, { project_id: P, document_id: 'proto_1', instruction: '  ' }, { project_id: P, document_id: 'proto_1', instruction: LONG(2001) }, { project_id: P, instruction: 'x' }, { project_id: P, document_id: 'proto_1', instruction: 'x', pin_ids: ['pin_1'] }],
+  },
   cancel_plan: {
     good: [{ plan_id: 'pl_a1b2c3d4e5f6' }],
     bad: [{}, { plan_id: 'ag_a1b2c3d4e5f6' }, { plan_id: 'pl_A1B2C3D4E5F6' }],

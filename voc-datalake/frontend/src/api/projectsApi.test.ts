@@ -378,6 +378,16 @@ describe('projectsApi', () => {
       summary: 'Checkout: the footer sticks\nCart: unchanged', preview_url: 'https://cdn.example.com/prototypes/p1/drafts/job_1.html?Signature=x',
     }
 
+    it('starts a draft with the instruction and the reply language', async () => {
+      mockJsonOnce({ success: true, job_id: 'job_1', status: 'pending', message: 'Prototype draft started.' })
+
+      const started = await projectsApi.startPrototypeDraft('p1', 'proto_2', 'make the footer sticky', 'de')
+
+      expectFetchedWith(`${API}/projects/p1/prototypes/proto_2/drafts`, { method: 'POST' })
+      expect(requestBody()).toStrictEqual({ instruction: 'make the footer sticky', response_language: 'de' })
+      expect(started.job_id).toBe('job_1')
+    })
+
     it('reads a draft through its own route, normalised (what the page does not read is dropped)', async () => {
       mockJsonOnce({ ...DRAFT, completed_at: '2026-11-13T10:00:00Z' })
 

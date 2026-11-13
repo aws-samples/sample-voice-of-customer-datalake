@@ -458,7 +458,22 @@ export const projectsApi = {
   // ── Prototype drafts (docs/prototype-builder.md, part 2; EDIT on the project) ──
   // A draft is a finished `draft_prototype` job plus its own object: no document row until Apply.
   // Discard is the job delete (`dismissJob`), which makes the draft GET and Apply 404 at once.
-  // Starting a draft (POST …/drafts) has no caller in the app yet: REST and MCP start them.
+
+  /**
+   * Starts a draft of `documentId`'s series from an editor's instruction (1–2,000 characters; the
+   * assistant's `draft_prototype_revision`, once approved): a job whose result is `{draft_id}`. The
+   * base is the series' newest version when the job starts, whichever version `documentId` names.
+   */
+  startPrototypeDraft: (projectId: string, documentId: string, instruction: string, responseLanguage: string) =>
+    fetchApi<{
+      success: boolean;
+      job_id: string;
+      status: string;
+      message: string
+    }>(`/projects/${projectId}/prototypes/${encodeURIComponent(documentId)}/drafts`, post({
+      instruction,
+      response_language: responseLanguage,
+    })),
 
   /** A finished draft of this series, or null when there is none to show (404: expired, discarded, another series). */
   getPrototypeDraft: async (projectId: string, documentId: string, draftId: string): Promise<PrototypeDraft | null> => {

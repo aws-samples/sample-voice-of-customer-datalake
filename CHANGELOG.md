@@ -17,6 +17,25 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.14.00] - 2026-11-13
+
+Edit a prototype from the chat bubble: ask the assistant for a change, approve it, and the draft shows on the prototype's page to apply or discard (the Prototype builder, part 2 complete).
+
+### Added
+
+- **Edit with the assistant** in a prototype preview's header, for editors: opens the assistant with the prototype in its context (the chip reads "Editing: Checkout (v3)") and a starter in the composer, nothing sent.
+- The assistant's **draft_prototype_revision** tool: its approval card shows the prototype and the exact instruction; approving starts a draft, which appears in the prototype's draft banner when it is ready. The assistant cannot apply a draft: applying stays on the page, beside the preview.
+- `GET /projects/{id}/prototypes/{document_id}/outline` (anyone who can view the project): a version's screens, headings and visible text, with no code and no tester pins, capped (40 screens, 200 lines, 12,000 characters; `truncated` says so). The assistant reads it through its `get_prototype_outline` tool, so it can name what to change; MCP clients through `documents_get_prototype_outline`.
+- The page context names the open prototype (`documentId`), so the assistant's tools default to it. It is a hint only: every route checks access itself.
+
+### Security
+
+- The assistant reads the outline only inside a `<prototype_outline>` data block; the route defangs data-block tags in every line it answers, and `prototype_outline` joins the tag lists of both the stream and the Python prompts. The outline parser is bounded (the first 512 KB of a page, 256 levels of nesting, its lines and characters) and linear, so a prototype's markup cannot make it quadratic.
+
+### Upgrade notes
+
+- Deploy the Api stack and the stream Lambda with or before the frontend: the button's tool and the outline route are new.
+
 ## [6.13.00] - 2026-11-13
 
 Everything testers said about a prototype in one place: the Prototype builder's part 3, its read side.

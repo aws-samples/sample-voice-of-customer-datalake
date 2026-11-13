@@ -165,7 +165,9 @@ def _is_inline_html(row: Mapping[str, Any], content: str) -> bool:
     return row.get('prototype_format') == 'html' or head.startswith(('<!doctype html', '<html'))
 
 
-_EARLY_SPEC = 'This prototype is an early screen spec, not HTML, so it cannot be restored. Build a new prototype instead.'
+# Neutral words: Back to vN, a draft's start and the outline all read a version's HTML here.
+_EARLY_SPEC = 'This prototype is an early screen spec, not HTML. Build a new prototype instead.'
+_HTML_GONE = "This version's HTML is no longer stored, so it cannot be read"
 
 
 def version_html(s3: Any, bucket: str, project_id: str, row: Mapping[str, Any]) -> str:
@@ -184,7 +186,7 @@ def version_html(s3: Any, bucket: str, project_id: str, row: Mapping[str, Any]) 
         return read_prototype_html(s3, bucket, project_id, str(row['document_id']))
     except ClientError as error:
         if is_missing_s3_object(error):
-            raise NotFoundError("This version's HTML is no longer stored, so it cannot be restored") from error
+            raise NotFoundError(_HTML_GONE) from error
         raise
 
 

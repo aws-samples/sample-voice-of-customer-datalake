@@ -52,6 +52,7 @@ const PROJECT = [
   '- Read before you write: get_documents before update_document, get_persona before update_persona, get_product_context before update_product_context.',
   '- consult_personas lets the project’s personas answer in their own voice; the user sees their answers as cards, so summarise rather than repeat them.',
   '- start_research, generate_document, generate_personas, merge_documents and build_prototype (an interactive prototype from the PRD / PR/FAQ) start background jobs; list_project_jobs reports progress.',
+  '- A change to a prototype the user asks for in words: read get_prototype_outline, then propose draft_prototype_revision with the change as the instruction. It makes a draft preview only; the user applies or discards it on the prototype’s page (there is no apply tool).',
 ];
 
 const SINGLE_LINE_PACKS = [

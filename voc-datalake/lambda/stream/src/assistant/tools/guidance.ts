@@ -96,6 +96,9 @@ const PACK_GUIDANCE: Record<ToolPack, string> = {
       + 'cards, so summarise rather than repeat them.',
     '- start_research, generate_document, generate_personas, merge_documents and build_prototype (an interactive '
       + 'prototype from the PRD / PR/FAQ) start background jobs; list_project_jobs reports progress.',
+    '- A change to a prototype the user asks for in words: read get_prototype_outline, then propose '
+      + 'draft_prototype_revision with the change as the instruction. It makes a draft preview only; the user '
+      + 'applies or discards it on the prototype’s page (there is no apply tool).',
   ].join('\n'),
   forms: '- Feedback forms: list_feedback_forms, get_feedback_form_stats, get_feedback_form_submissions; '
     + 'update_feedback_form changes settings.',

@@ -332,6 +332,11 @@
       "off": "关闭",
       "onNote": "计划导入将重新运行，已触发的断路器会被关闭。",
       "offNote": "计划导入将停止。已导入的内容不受影响。"
+    },
+    "prototypeDraft": {
+      "prototype": "原型：",
+      "instruction": "草稿收到的指令",
+      "note": "这只会生成草稿。草稿就绪后会显示在原型页面上，在那里应用之前不会保存任何内容。"
     }
   },
   "tools": {
@@ -519,6 +524,9 @@
       "title": "创建用户",
       "titleWith_one": "创建 {{count, number}} 个用户",
       "titleWith_other": "创建 {{count, number}} 个用户"
+    },
+    "draft_prototype_revision": {
+      "title": "起草原型修订"
     }
   }
 }

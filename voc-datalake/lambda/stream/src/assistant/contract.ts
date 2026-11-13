@@ -110,7 +110,10 @@ export const SERVER_TOOLS = {
     'get_radar', 'search_feature_requests',
   ],
   insights: ['get_urgent_feedback', 'list_feedback', 'get_entities', 'get_resolved_problems'],
-  project: ['get_documents', 'get_persona', 'get_product_context', 'list_project_jobs', 'consult_personas', 'get_prototype_feedback'],
+  project: [
+    'get_documents', 'get_persona', 'get_product_context', 'list_project_jobs', 'consult_personas', 'get_prototype_feedback',
+    'get_prototype_outline',
+  ],
   forms: ['list_feedback_forms', 'get_feedback_form_stats', 'get_feedback_form_submissions'],
   prioritization: ['get_prioritization'],
   scrapers: ['list_scrapers', 'get_scraper_status', 'analyze_scraper_url', 'get_source_run', 'find_app_store_app'],
@@ -138,6 +141,7 @@ export const CLIENT_TOOLS = {
     'generate_personas',
     'merge_documents',
     'build_prototype',
+    'draft_prototype_revision',
   ],
   forms: ['update_feedback_form'],
   prioritization: [],
@@ -379,6 +383,11 @@ export const pageContextSchema = z.object({
   path: z.string().max(200),
   projectId: z.string().min(1).max(MAX_ID_LENGTH).optional(),
   feedbackId: z.string().min(1).max(MAX_ID_LENGTH).optional(),
+  /**
+   * The project document on screen: set on a prototype's pane (docs/prototype-builder.md, part 2), so
+   * "this prototype" names that version. A hint only: every route a tool calls with it checks access.
+   */
+  documentId: z.string().min(1).max(MAX_ID_LENGTH).optional(),
   /** The autonomous agent on screen (`agent` page: agent detail / workflow editor / runs). */
   agentId: z.string().min(1).max(MAX_ID_LENGTH).optional(),
   /** Active tab on pages that have tabs (`?tab=` or local state). */

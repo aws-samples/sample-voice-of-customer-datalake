@@ -16,6 +16,7 @@ import { recordsAt } from './feedback-shape.js';
 import { createConsultPersonasTool } from './consult-personas.js';
 import { parseProjectPayload, PERSONA_DETAIL_FIELDS, renderDocument } from './project-shape.js';
 import { getPrototypeFeedbackTool } from './prototype-feedback.js';
+import { getPrototypeOutlineTool } from './prototype-outline.js';
 
 const MAX_DOCUMENTS_PER_READ = 5;
 /** get_documents exists to hand the model document text, so its budget is larger than the default. */
@@ -153,5 +154,6 @@ export function createProjectServerTools(deps: ToolDeps): ServerToolDefinition[]
     listProjectJobsTool(deps),
     createConsultPersonasTool(deps),
     getPrototypeFeedbackTool(deps),
+    getPrototypeOutlineTool(deps),
   ];
 }

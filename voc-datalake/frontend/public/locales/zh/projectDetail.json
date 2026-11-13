@@ -138,6 +138,10 @@
         "discardFailed": "无法丢弃草稿，请重试。",
         "noPreview": "此处无法查看此草稿的预览。",
         "frameTitle": "{{title}}（草稿）"
+      },
+      "assistant": {
+        "button": "使用助手编辑",
+        "prompt": "修改此原型："
       }
     },
     "revision": {

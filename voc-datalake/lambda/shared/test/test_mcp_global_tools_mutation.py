@@ -196,6 +196,13 @@ CATALOGUE: dict[str, tuple[str, str, dict, bool, bool, bool]] = {
          '`thread_ids`: 1 to 50 comment ids. Answers the threads.'),
         _object({'project_id': ID, 'document_id': ID, 'thread_ids': {'type': 'array', 'items': {'type': 'string'}, 'minItems': 1, 'maxItems': 50}, 'addressed': {'type': 'boolean', 'default': True}}, 'document_id', 'thread_ids'),
         True, False, True),
+    'documents_get_prototype_outline': (
+        'Get a prototype outline',
+        ("Read a prototype version's outline: its screens (routes), headings and visible text, extracted from its "
+         'HTML (no code, no tester pins; capped, `truncated` says so). Use it to name what to change before '
+         'documents_draft_prototype_revision.'),
+        _object({'project_id': ID, 'document_id': ID}, 'document_id'),
+        False, False, True),
     'documents_draft_prototype_revision': (
         'Draft a prototype revision',
         ('Ask for a change to a prototype in words (write token): `document_id` (any version of it) and '
@@ -355,7 +362,8 @@ class TestTheOldNames:
         assert not listed & set(tools.RENAMED)
         # Tools added since the rename never had an older name.
         new_since_6_10 = {'documents_revise_from_comments', 'documents_mark_comments_addressed',
-                          'documents_list_prototype_feedback', 'documents_draft_prototype_revision',
+                          'documents_list_prototype_feedback', 'documents_get_prototype_outline',
+                          'documents_draft_prototype_revision',
                           'documents_get_prototype_draft', 'documents_apply_prototype_draft',
                           'documents_discard_prototype_draft'}
         assert set(tools.RENAMED.values()) == listed - new_since_6_10

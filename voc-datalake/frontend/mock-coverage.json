@@ -2140,6 +2140,19 @@
   },
   {
     "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/prototypes/${encodeURIComponent(documentId)}/drafts`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/prototypes/proto_1/drafts",
+        "body": {
+          "instruction": "make the summary sticky"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
     "method": "GET",
     "call": "`/projects/${projectId}/prototypes/${encodeURIComponent(documentId)}/drafts/${encodeURIComponent(draftId)}`",
     "probes": [

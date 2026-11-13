@@ -145,6 +145,10 @@
         "discardFailed": "No se pudo descartar el borrador. Inténtalo de nuevo.",
         "noPreview": "La vista previa de este borrador no está disponible aquí.",
         "frameTitle": "{{title}} (borrador)"
+      },
+      "assistant": {
+        "button": "Editar con el asistente",
+        "prompt": "Cambia este prototipo: "
       }
     },
     "revision": {

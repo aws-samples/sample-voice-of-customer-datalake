@@ -8,6 +8,7 @@
   },
   "panel": {
     "title": "어시스턴트",
+    "editing": "편집 중: {{title}}",
     "using": "사용 중: {{context}}",
     "newChat": "새 채팅",
     "sessions": "이전 대화",

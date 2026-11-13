@@ -145,6 +145,10 @@
         "discardFailed": "Não foi possível descartar o rascunho. Tente de novo.",
         "noPreview": "A pré-visualização deste rascunho não está disponível aqui.",
         "frameTitle": "{{title}} (rascunho)"
+      },
+      "assistant": {
+        "button": "Editar com o assistente",
+        "prompt": "Altere este protótipo: "
       }
     },
     "revision": {

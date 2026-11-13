@@ -32,7 +32,7 @@ function chatContext(documents: unknown[], access?: unknown) {
 }
 
 describe('the project tool definitions', () => {
-  it('lists the six project-pack tools in order', () => {
+  it('lists the seven project-pack tools in order', () => {
     const tools = createProjectServerTools(fakeDeps());
     expect(tools.map((t) => [t.kind, t.name, t.pack])).toStrictEqual([
       ['server', 'get_documents', 'project'],
@@ -41,6 +41,7 @@ describe('the project tool definitions', () => {
       ['server', 'list_project_jobs', 'project'],
       ['server', 'consult_personas', 'project'],
       ['server', 'get_prototype_feedback', 'project'],
+      ['server', 'get_prototype_outline', 'project'],
     ]);
   });
 
@@ -106,7 +107,7 @@ describe('get_documents renders each requested document once', () => {
     expect(result).toStrictEqual({
       content: 'Project "Checkout" (proj_1):\n\n'
         + '## Untitled (DOC) [ID: d0]\n(No text content.)\n\n---\n\n'
-        + '## Proto (CUSTOM) [ID: p]\nPrototype HTML is not available as text.\n\n---\n\n'
+        + '## Proto (CUSTOM) [ID: p]\nPrototype HTML is not available as text: get_prototype_outline reads its screens and text.\n\n---\n\n'
         + '## Spec (PRD) [ID: d1]\n\nBody',
     });
     expect(ctx.projectAccess.get('proj_1')).toStrictEqual({ role: 'viewer', can_edit: false, can_manage: false });

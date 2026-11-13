@@ -15,6 +15,8 @@ do for the web app.
   ``documents_mark_comments_addressed`` marks or clears its threads
   (docs/document-review.md). Before 6.10.00 both were ``generate`` with
   ``step: revise``; ``legacy_revise`` maps such a call to them.
+* ``documents_get_prototype_outline`` reads a prototype version's screens, headings and visible text
+  (no code, no pins), so a client can name what to change.
 * ``documents_draft_prototype_revision``, ``documents_get_prototype_draft``,
   ``documents_apply_prototype_draft`` and ``documents_discard_prototype_draft``: a
   prototype draft from an instruction, read, applied as the next version, or discarded
@@ -155,6 +157,12 @@ def _start_draft(args: Mapping[str, Any], project: str | None) -> RouteRequest:
                         body={'instruction': instruction})
 
 
+def _get_outline(args: Mapping[str, Any], project: str | None) -> RouteRequest:
+    p = require_project(project)
+    d = id_arg(args, 'document_id')
+    return RouteRequest(DOMAIN_PROJECTS, 'GET', f'/projects/{p}/prototypes/{d}/outline')
+
+
 def _get_draft(args: Mapping[str, Any], project: str | None) -> RouteRequest:
     p = require_project(project)
     d = id_arg(args, 'document_id')
@@ -281,6 +289,13 @@ STEP_TOOLS: Final[tuple[GlobalTool, ...]] = (
         schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA, 'thread_ids': _THREAD_IDS,
                 'addressed': {'type': 'boolean', 'default': True}}, ('document_id', 'thread_ids')),
         _mark_addressed, stripped, write=True, project_scoped=True),
+    GlobalTool(
+        'documents_get_prototype_outline', 'Get a prototype outline',
+        "Read a prototype version's outline: its screens (routes), headings and visible text, extracted from its "
+        'HTML (no code, no tester pins; capped, `truncated` says so). Use it to name what to change before '
+        'documents_draft_prototype_revision.',
+        schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA}, ('document_id',)),
+        _get_outline, stripped, project_scoped=True),
     GlobalTool(
         'documents_draft_prototype_revision', 'Draft a prototype revision',
         'Ask for a change to a prototype in words (write token): `document_id` (any version of it) and '

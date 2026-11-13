@@ -10,14 +10,15 @@ import { render } from '@test/test-utils'
 import assistantEn from '../../../public/locales/en/assistant.json'
 import { pageContextFromLocation } from '../page/pageContext'
 import PanelHeader from './PanelHeader'
+import type { PageContext } from '@stream/assistant/contract'
 
 const noop = () => {}
 
-function renderHeaderAt(pathname: string) {
+function renderHeaderAt(pathname: string, extra: Partial<PageContext> = {}) {
   render(
     <PanelHeader
       titleId="panel-title"
-      page={pageContextFromLocation({ pathname, search: '' })}
+      page={{ ...pageContextFromLocation({ pathname, search: '' }), ...extra }}
       variant="page"
       mode="bubble"
       hasSidebar={false}
@@ -45,6 +46,16 @@ describe('PanelHeader context chip', () => {
   ])('names %s', (pathname, chip) => {
     renderHeaderAt(pathname)
     expect(screen.getByText(chip)).toBeInTheDocument()
+  })
+
+  it('names the prototype being edited ("Editing: …"), and the project otherwise', () => {
+    renderHeaderAt('/projects/p1', { documentId: 'proto_3', title: 'Checkout flow (v3)' })
+    expect(screen.getByText('Editing: Checkout flow (v3)')).toBeInTheDocument()
+  })
+
+  it('keeps "Using: Project: …" on a project page without an open prototype', () => {
+    renderHeaderAt('/projects/p1', { title: 'Checkout revamp' })
+    expect(screen.getByText(/^Using: .*Checkout revamp$/)).toBeInTheDocument()
   })
 
   it('falls back to "This page" when a label is missing, never the raw key', () => {

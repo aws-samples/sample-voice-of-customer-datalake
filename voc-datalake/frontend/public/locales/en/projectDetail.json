@@ -138,6 +138,10 @@
         "discardFailed": "The draft couldn't be discarded. Try again.",
         "noPreview": "A preview of this draft is not available here.",
         "frameTitle": "{{title}} (draft)"
+      },
+      "assistant": {
+        "button": "Edit with the assistant",
+        "prompt": "Change this prototype: "
       }
     },
     "revision": {

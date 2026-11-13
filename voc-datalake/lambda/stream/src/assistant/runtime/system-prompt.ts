@@ -71,6 +71,12 @@ function pageLines(page: PageContext, props: ForwardedProps): string[] {
       + 'Its personas, documents and product context are available via get_project / get_persona and the project tools.',
     );
   }
+  if (page.projectId && page.documentId) {
+    lines.push(
+      `The user has the project document ${quote(page.documentId)} open (a prototype version): "this prototype" `
+      + 'means it. get_prototype_outline reads its screens and text; draft_prototype_revision proposes a change to it.',
+    );
+  }
   if (hasFilters(page.filters) || hasFilters(props.scope?.filters)) lines.push(FILTERED_PAGE_RULE);
   const readLimit = readLimitForRun(props);
   if (readLimit !== undefined) {

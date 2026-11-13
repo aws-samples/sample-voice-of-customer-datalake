@@ -332,6 +332,11 @@
       "off": "Aus",
       "onNote": "Geplante Importe laufen wieder, und ein ausgelöster Schutzschalter wird geschlossen.",
       "offNote": "Geplante Importe werden gestoppt. Bereits Importiertes bleibt unverändert."
+    },
+    "prototypeDraft": {
+      "prototype": "Prototyp:",
+      "instruction": "Anweisung für den Entwurf",
+      "note": "Das erstellt nur einen Entwurf. Er erscheint auf der Seite des Prototyps, sobald er fertig ist, und nichts wird gespeichert, bis Sie ihn dort übernehmen."
     }
   },
   "tools": {
@@ -519,6 +524,9 @@
       "title": "Benutzer anlegen",
       "titleWith_one": "{{count, number}} Benutzer anlegen",
       "titleWith_other": "{{count, number}} Benutzer anlegen"
+    },
+    "draft_prototype_revision": {
+      "title": "Eine Prototyp-Überarbeitung entwerfen"
     }
   }
 }

@@ -342,6 +342,11 @@
       "off": "Desactivada",
       "onNote": "Las importaciones programadas vuelven a ejecutarse y se cierra un disyuntor activado.",
       "offNote": "Las importaciones programadas se detienen. Lo ya importado no se modifica."
+    },
+    "prototypeDraft": {
+      "prototype": "Prototipo:",
+      "instruction": "Instrucción que recibe el borrador",
+      "note": "Esto solo crea un borrador. Aparece en la página del prototipo cuando está listo y no se guarda nada hasta que lo apliques allí."
     }
   },
   "tools": {
@@ -533,6 +538,9 @@
       "titleWith_one": "Crear {{count, number}} usuario",
       "titleWith_other": "Crear {{count, number}} usuarios",
       "titleWith_many": "Crear {{count, number}} de usuarios"
+    },
+    "draft_prototype_revision": {
+      "title": "Redactar una revisión del prototipo"
     }
   }
 }

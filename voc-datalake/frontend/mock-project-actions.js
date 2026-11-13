@@ -928,7 +928,7 @@ const PROTOTYPE_ROW_ONLY = ['job_id', 'revised_from_id', 'revision_feedback'];
 /** prototype_versions.version_html's rule: inline content is HTML when marked so or shaped like a document. */
 const isInlineHtml = (row) => (row.content ?? '') === '' || row.prototype_format === 'html' || /^\s*<(?:!doctype html|html)/i.test(row.content);
 /** prototype_versions.version_html's 400 for an early JSON screen spec (Back to vN and a draft's base alike). */
-const EARLY_SPEC = bad('This prototype is an early screen spec, not HTML, so it cannot be restored. Build a new prototype instead.');
+const EARLY_SPEC = bad('This prototype is an early screen spec, not HTML. Build a new prototype instead.');
 
 /**
  * Back to vN (shared/prototype_versions.restore_prototype_version): a NEW version from vN's HTML

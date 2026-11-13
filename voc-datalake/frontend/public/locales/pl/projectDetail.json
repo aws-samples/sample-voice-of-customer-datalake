@@ -157,6 +157,10 @@
         "discardFailed": "Nie udało się odrzucić wersji roboczej. Spróbuj ponownie.",
         "noPreview": "Podgląd tej wersji roboczej nie jest tu dostępny.",
         "frameTitle": "{{title}} (wersja robocza)"
+      },
+      "assistant": {
+        "button": "Edytuj z asystentem",
+        "prompt": "Zmień ten prototyp: "
       }
     },
     "deletedSources": {

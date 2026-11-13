@@ -19,7 +19,8 @@ import { startSourceRun } from '../../api/sourceRunsApi'
 import { packsAllowedFor } from '../plan/packsAllowed'
 import { validatePlan } from '@stream/assistant/plan/validate'
 import { keysFor, refreshAfterWrite } from './invalidation'
-import { StaleApprovalError, currentJobEnvironment, shownOf } from './shown'
+import { startProjectJob } from './projectJobStart'
+import { StaleApprovalError } from './shown'
 import type { WriteToolExecutionContext } from '../types'
 import type { BuildPrototypeArgs, CancelPlanArgs, ProposePlanArgs, RunSourceArgs, SetSourceEnabledArgs } from './planSchemas'
 
@@ -57,15 +58,11 @@ function withoutProjectId(args: BuildPrototypeArgs): Partial<BuildPrototypeArgs>
 }
 
 export async function buildPrototype(args: BuildPrototypeArgs, ctx: WriteToolExecutionContext): Promise<ExecutionResult> {
-  const env = shownOf(ctx)?.job ?? currentJobEnvironment()
-  const res = await projectsApi.buildPrototype(args.project_id, {
-    response_language: env.responseLanguage,
-    ...withoutProjectId(args),
-  })
-  refreshAfterWrite(ctx, keysFor.projectJobs(args.project_id))
+  const jobId = await startProjectJob(ctx, args.project_id, (responseLanguage) =>
+    projectsApi.buildPrototype(args.project_id, { response_language: responseLanguage, ...withoutProjectId(args) }))
   return {
-    summary: `Started prototype build job ${res.job_id}; it runs in the background and appears in the project's Jobs.`,
-    data: { job_id: res.job_id },
+    summary: `Started prototype build job ${jobId}; it runs in the background and appears in the project's Jobs.`,
+    data: { job_id: jobId },
   }
 }
 

@@ -14,7 +14,8 @@ Against moto (real conditional puts, transactions and the access gate), through
   200 with the same version, 409 once the series moved (writing nothing), and finishes a version
   whose object an earlier attempt wrote;
 * Discard (the draft DELETE, which deletes only a draft job of this series in any state, and the
-  job DELETE the SPA uses) makes the GET and Apply 404; a viewer gets 403 on the four routes,
+  job DELETE the SPA uses) makes the GET and Apply 404; the outline GET (6.14.00) is a viewer's read
+  of the version named, without the pin widget; a viewer gets 403 on the four draft routes,
   and reads the job's status with ``draft_id`` and none of the detail.
 """
 import json
@@ -259,6 +260,51 @@ class TestAViewer:
         listed = world.call(VIEWER, 'GET', f'/projects/{PROJECT}/jobs')[1]['jobs']
         assert [job['result'] for job in listed] == [{'draft_id': DRAFT_ID}]
         assert SUMMARY not in json.dumps(listed)
+
+
+class TestTheOutline:
+    """``GET …/prototypes/{doc}/outline`` (6.14.00): that version's outline, at VIEW, from its own HTML."""
+
+    def test_a_viewer_reads_the_outline_of_the_version_named(self, world):
+        v1, v2 = _two_versions(world)
+
+        status, body = world.call(VIEWER, 'GET', f'/projects/{PROJECT}/prototypes/{v1["document_id"]}/outline')
+
+        assert status == 200
+        assert body == {'document_id': v1['document_id'], 'version': 1, 'title': '', 'truncated': False,
+                        'screens': [{'route': '', 'headings': ['One'], 'text': []}]}
+        assert world.call(VIEWER, 'GET', f'/projects/{PROJECT}/prototypes/{v2["document_id"]}/outline')[1][
+            'screens'] == [{'route': '', 'headings': ['Two'], 'text': []}]
+
+    def test_it_holds_no_pin_widget(self, world):
+        v1, _ = _two_versions(world)
+        body = world.call(VIEWER, 'GET', f'/projects/{PROJECT}/prototypes/{v1["document_id"]}/outline')[1]
+        assert pin_form_id(v1['document_id']) not in json.dumps(body)
+
+    def test_another_projects_prototype_is_a_404(self, world):
+        other = world.prototype('job_1', '<h1>Elsewhere</h1>', project=OTHER)
+        status, body = world.call(VIEWER, 'GET', f'/projects/{PROJECT}/prototypes/{other["document_id"]}/outline')
+        assert (status, body) == (404, {'success': False, 'error': 'Prototype not found'})
+
+    def test_an_early_json_spec_is_a_400_and_a_lost_object_a_404(self, world):
+        spec = persist_versioned_document(world.projects, PROJECT, 'prototype', 'Spec', 'job_9', {
+            'content': '{"screens": []}', 'created_at': '2026-01-01T00:00:00+00:00'})
+        status, body = world.call(VIEWER, 'GET', f'/projects/{PROJECT}/prototypes/{spec["document_id"]}/outline')
+        # The words fit every reader of a version's HTML (the outline, a draft's start, Back to vN).
+        assert (status, body['error']) == (
+            400, 'This prototype is an early screen spec, not HTML. Build a new prototype instead.')
+
+        v1, _ = _two_versions(world)
+        world.s3.delete_object(Bucket=BUCKET, Key=prototype_s3_key(PROJECT, v1['document_id']))
+        status, body = world.call(VIEWER, 'GET', f'/projects/{PROJECT}/prototypes/{v1["document_id"]}/outline')
+        assert (status, body['error']) == (404, "This version's HTML is no longer stored, so it cannot be read")
+
+    def test_inline_html_of_the_oldest_prototypes_is_read_too(self, world):
+        old = persist_versioned_document(world.projects, PROJECT, 'prototype', 'Old', 'job_8', {
+            'content': '<!DOCTYPE html><html><body><p>Inline</p></body></html>',
+            'created_at': '2026-01-01T00:00:00+00:00'})
+        body = world.call(VIEWER, 'GET', f'/projects/{PROJECT}/prototypes/{old["document_id"]}/outline')[1]
+        assert body['screens'] == [{'route': '', 'headings': [], 'text': ['Inline']}]
 
 
 class TestReadingADraft:

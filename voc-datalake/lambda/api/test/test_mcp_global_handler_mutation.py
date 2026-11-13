@@ -608,7 +608,8 @@ class TestToolGating:
         assert names == ['feedback_search', 'feedback_get', 'feedback_get_metrics', 'feedback_list_categories',
                          'feedback_list_dimensions', 'feedback_get_catalogue', 'memory_search',
                          'company_get_context', 'projects_list', 'projects_get', 'projects_get_job', 'documents_get',
-                         'documents_list_prototype_feedback', 'documents_get_prototype_draft', 'agents_list',
+                         'documents_list_prototype_feedback', 'documents_get_prototype_outline',
+                         'documents_get_prototype_draft', 'agents_list',
                          'agents_get_run', 'feature_requests_search', 'radar_read',
                          'prioritization_get']
         assert _body(response)['result']['tools'][8] == LIST.declaration()

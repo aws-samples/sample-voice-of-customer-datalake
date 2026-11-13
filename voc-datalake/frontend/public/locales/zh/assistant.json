@@ -8,6 +8,7 @@
   },
   "panel": {
     "title": "助手",
+    "editing": "正在编辑：{{title}}",
     "using": "当前上下文：{{context}}",
     "newChat": "新对话",
     "sessions": "历史对话",

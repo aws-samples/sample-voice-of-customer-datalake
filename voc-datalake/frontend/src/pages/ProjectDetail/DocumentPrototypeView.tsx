@@ -14,6 +14,7 @@ import PrototypeLinkActions, { PrototypeLinkLifetimeNote } from '../../component
 import PrototypeRenderer from '../../components/PrototypeRenderer'
 import PrototypePinsReview from '../../components/PrototypePins/PrototypePinsReview'
 import PrototypeFeedbackDialog from '../../components/PrototypeFeedback/PrototypeFeedbackDialog'
+import EditWithAssistantButton from './EditWithAssistantButton'
 import { parsePrototypeSpec, looksLikeHtmlDocument } from '../../components/prototypeSpec'
 import type { InheritedExtraSources } from './documentLineage'
 
@@ -285,7 +286,13 @@ export function PrototypeView({
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 min-w-0">
             {/* Every pin of the series, grouped (docs/prototype-builder.md Part 3). The route is EDIT,
                 so a viewer is never offered it. */}
-            {canEdit ? <PrototypeFeedbackDialog projectId={projectId} documentId={documentId} /> : null}
+            {/* Edit with the assistant (part 2): a draft revision proposed through the assistant's card. */}
+            {canEdit ? (
+              <>
+                <EditWithAssistantButton />
+                <PrototypeFeedbackDialog projectId={projectId} documentId={documentId} />
+              </>
+            ) : null}
             {canEdit ? (
               <PrototypeFeedbackButton
                 projectId={projectId}

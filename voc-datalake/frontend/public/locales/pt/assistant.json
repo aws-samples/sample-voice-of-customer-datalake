@@ -8,6 +8,7 @@
   },
   "panel": {
     "title": "Assistente",
+    "editing": "Editando: {{title}}",
     "using": "Contexto: {{context}}",
     "newChat": "Nova conversa",
     "sessions": "Conversas anteriores",

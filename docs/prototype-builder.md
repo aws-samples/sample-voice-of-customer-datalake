@@ -1,7 +1,8 @@
 # Prototype builder (planned)
 
 **Status: partly built.** Built: what [Today](#today) describes, Part 2's Back to vN (6.11.00) and drafts from an
-instruction (6.12.00), and Part 3's read side (6.13.00, [built](#built-so-far-part-3s-read-side)); see
+instruction (6.12.00), the rest of Part 2 (6.14.00: the outline, the assistant's tools, Edit with the assistant),
+and Part 3's read side (6.13.00, [built](#built-so-far-part-3s-read-side)); see
 [Slices and order](#slices-and-order). Every other route, tool, field and file below is a proposal and is marked
 *planned*; the code does not have it.
 
@@ -142,9 +143,11 @@ What exists, read from the code (paths relative to `voc-datalake/`).
 - **The assistant** is mounted once in the layout (`frontend/src/assistant/components/AssistantRoot.tsx`): a
   draggable launcher bubble and a floating panel, the same thread as `/chat`. Its page context
   (`frontend/src/assistant/page/pageContext.ts`, `pageContextSchema` in `lambda/stream/src/assistant/contract.ts`)
-  carries the project and the tab, not the open document. Its server tool `get_project` lists documents with a
-  `prototype: true` flag, and `get_documents` says "Prototype HTML is not available as text"
-  (`lambda/stream/src/assistant/tools/server/project-shape.ts`): the assistant cannot read a prototype. Its client
+  carried the project and the tab, not the open document, until 6.14.00 (it now names an open prototype,
+  `documentId`). Its server tool `get_project` lists documents with a `prototype: true` flag; before 6.14.00
+  `get_documents` said "Prototype HTML is not available as text"
+  (`lambda/stream/src/assistant/tools/server/project-shape.ts`) and the assistant could not read a prototype (it now
+  reads its outline, part 2). Its client
   tool `build_prototype` (`lambda/stream/src/assistant/tools/client/plan-writes.ts`) starts a build or a
   feedback revision through `build-prototype` after the person approves its card. On a prose document the canvas
   shows the assistant's proposed edit as a diff before approval (`AssistantDiffOnCanvas.tsx` in
@@ -214,8 +217,8 @@ prototype, with a title (at most 80 characters) and a body (at most 280 characte
 - **What a model sees of a prototype.** The block is stripped from any HTML a model is given, as the widget is.
   The outline (part 2's outline route) and the walkthrough draft's input (the PRD / PR/FAQ text and the
   prototype's outline) go to the model as `lambda/shared/prompt_safety.py` DATA blocks, never as instructions:
-  two planned tags added to `DATA_BLOCK_TAGS` there, `prototype_outline` (the outline, wherever a model gets it)
-  and `walkthrough_source` (the PRD / PR/FAQ text given to the walkthrough draft), so the existing neutralising
+  two tags in `DATA_BLOCK_TAGS` there, `prototype_outline` (the outline, wherever a model gets it; added in
+  6.14.00) and `walkthrough_source` (planned: the PRD / PR/FAQ text given to the walkthrough draft), so the existing neutralising
   of those tags inside data applies to them.
 - **The existing revision path keeps the steps** (planned change to `build-prototype`'s generator): a Revise
   through `build-prototype` strips the block from the prior HTML before the model sees it, strips any markers from
@@ -389,7 +392,7 @@ prototype; the assistant offers them no edit (the server refuses one with 403 re
 
 ### API
 
-The first four are built (6.12.00, `{instruction}` only); the rest is planned.
+All five are built: the four draft routes in 6.12.00 (`{instruction}` only), the outline in 6.14.00.
 
 | Route | Who | What |
 |---|---|---|
@@ -397,7 +400,7 @@ The first four are built (6.12.00, `{instruction}` only); the rest is planned.
 | `GET /projects/{id}/prototypes/{document_id}/drafts/{draft_id}` | edit (listed in `_ROUTE_OVERRIDES`) | `{draft_id, base_document_id, base_version, instruction, summary, preview_url, completed_at}`: `preview_url` the draft's signed URL (its own key only; null when signing is unavailable). Planned (part 3): the per-pin outcomes of a feedback draft |
 | `POST /projects/{id}/prototypes/{document_id}/drafts/{draft_id}/apply` | edit | No body: the base and its version come from the job row → 201 `{success, document}` (the new version, signed as the project read signs it); 200 and the same version on a replayed Apply; 409 when the series moved past the base; 404 when the job row is gone |
 | `DELETE /projects/{id}/prototypes/{document_id}/drafts/{draft_id}` | edit | Discard → `{success: true}`: the draft's job row deleted, as `DELETE /projects/{id}/jobs/{job_id}` deletes it. 404 unless the row is a `draft_prototype` job of this project whose base (from its config) is a version of `document_id`'s series, in any state (a draft still being made can be discarded); so it deletes nothing but drafts. The MCP tool calls it; the page uses the job DELETE |
-| `GET /projects/{id}/prototypes/{document_id}/outline` | view | Planned. The version's outline: screens (routes), headings and visible text, extracted from its HTML on the server, capped, with the pin widget and the walkthrough stripped |
+| `GET /projects/{id}/prototypes/{document_id}/outline` | view | `{document_id, version, title, screens: [{route, headings, text}], truncated}` of the version `document_id` names (`outline_of` in `lambda/shared/prototype_outline.py`): extracted on the server from its HTML (its object, or inline HTML: `version_html`), with the pin widget, `script`, `style`, `svg`, `template`, `noscript` and `head` (but the head's own `<title>`) left out, a head left open closed by `<body>`, and hidden text left out (`hidden`, `aria-hidden="true"`, an inline `display: none`; a screen itself is kept, as an inactive screen is hidden until shown). A screen is an element with `data-screen` / `data-route` / `data-page`, a `<section id>`, or an `id` with a class `screen`, `page` or `view`; text outside every screen is the screen `""`. The first 512 KB of HTML are read, elements nest at most 256 deep; at most 40 screens, 200 lines of 300 characters and 12,000 characters in all, title and routes counted (`truncated`); every line, route and the title have their DATA-block tags defanged. Never pins. 400 for an early JSON spec, 404 for a lost object or a document that is no prototype of the project. Planned (part 1): the walkthrough block stripped too |
 
 The drafts body is validated: exactly one of `instruction` and `pin_ids`; with `pin_ids` there is no free text
 for the pins: the server writes the instruction and builds the pins DATA block from the ids (part 3). Back to vN
@@ -410,26 +413,32 @@ moves"). "Draft ready" reaches the browser as the person's AppSync Events notice
 
 ### Tools (tenet 4)
 
-- The assistant (planned): `draft_prototype_revision` (client tool, approval card showing the exact instruction:
-  starts the draft job); a server tool `get_prototype_outline` on the outline route, so the model can read a
-  prototype's screens, headings and visible text, given to it inside a `<prototype_outline>` DATA block, instead of
-  "not available as text". The stream Lambda neutralises DATA tags with its own list (`DATA_BLOCK_TAG` in
-  `lambda/stream/src/assistant/runtime/page-context.ts`), so `prototype_outline` is added there too. Applying is
-  the page's banner (Apply beside the preview and Compare): the assistant points to it and has no apply tool, so
-  the only in-app Apply is the one shown with the full preview.
-- The assistant's page context (planned): a field `documentId` in `pageContextSchema`
-  (`lambda/stream/src/assistant/contract.ts`, today `projectId`, `tab` and others, no document) and in the SPA's
+- The assistant (built in 6.14.00): `draft_prototype_revision` (client tool, project pack,
+  `lambda/stream/src/assistant/tools/client/prototype-draft.ts`: `{project_id, document_id, instruction}`, the
+  instruction 1 to 2,000 characters, both ids defaulting to the page; its approval card (the SPA's) shows the exact
+  instruction and the prototype's title and version; on approval the SPA calls the drafts POST with `{instruction}`
+  and reports the job id; card-only, never a plan step: `CARD_ONLY_WRITE_TOOLS`); a server tool
+  `get_prototype_outline` on the outline route (`tools/server/prototype-outline.ts`), so the model can read a
+  prototype's screens, headings and visible text, given to it inside a `<prototype_outline>` DATA block, every line
+  neutralised. The stream Lambda neutralises DATA tags with its own list (`DATA_BLOCK_TAG` in
+  `lambda/stream/src/assistant/runtime/page-context.ts`), which holds `prototype_outline`, as Python's
+  `DATA_BLOCK_TAGS` does. Applying is the page's banner (Apply beside the preview and Compare): the assistant points
+  to it and has no apply tool, so the only in-app Apply is the one shown with the full preview.
+- The assistant's page context (built in 6.14.00): a field `documentId` in `pageContextSchema`
+  (`lambda/stream/src/assistant/contract.ts`, at most `MAX_ID_LENGTH`) and in the SPA's
   `frontend/src/assistant/page/pageContext.ts`, set to the open prototype's id, so the panel's chip and the tools
-  name the version on screen. It is a hint only: every route a tool calls with it checks access itself.
-  Test (planned): the schema accepts a `documentId` within `MAX_ID_LENGTH` and refuses a longer one, and the SPA
-  sets it on a prototype's page and leaves it out elsewhere.
+  name the version on screen (the system prompt names it as "this prototype", and both tools default to it). It
+  is a hint only: every route a tool calls with it checks access itself. Tests: the schema accepts a `documentId`
+  within `MAX_ID_LENGTH` and refuses a longer one, and the SPA sets it on a prototype's page and leaves it out
+  elsewhere.
 - MCP (built in 6.12.00, `lambda/shared/mcp_global_tools_steps.py`, [mcp.md](mcp.md)):
   `documents_draft_prototype_revision`, `documents_apply_prototype_draft`, `documents_discard_prototype_draft`
   (write, project; the last is the draft DELETE, never the bare job DELETE), with the job polled through `projects_get_job` (status and
   `draft_id`) and the draft read through `documents_get_prototype_draft` (the EDIT draft GET): its summary (and,
   planned, per-pin outcomes) only, the `preview_url` projected out as every signed URL is for a token holder
   (`public()` in `lambda/shared/mcp_global_kit.py` drops keys holding `url`); Apply's answer drops the version's
-  signed `prototype_url` the same way. Planned: `documents_get_prototype_outline` (read, project: the outline GET).
+  signed `prototype_url` the same way. `documents_get_prototype_outline` (read, project: the outline GET, built
+  in 6.14.00).
 - Back to vN has no tool of its own here: the existing restore route has no MCP or assistant tool for any document
   type today, and a restore tool for every versioned type is a follow-up.
 - The existing `build_prototype` tool and `build-prototype` route keep revising straight to a new version, as
@@ -537,7 +546,7 @@ built (6.12.00) for an instruction only, and until then the drafts route refuses
 Incorporate is part 2's `POST …/drafts` with `{pin_ids: [≤ 50]}`: **pin ids, never text**, at most 50 pins. The
 server reads those pins itself, refuses more than 50 and any that are not pins of this series, withholds the
 flagged ones (listed as withheld in the draft's detail), stores the accepted and withheld ids on the job row, and
-builds the DATA block with the planned shared function above.
+builds the DATA block with `incorporation_pins_block` above (built in 6.13.00, not called yet).
 
 Apply is part 2's `…/drafts/{draft_id}/apply`; for a feedback draft it writes the version, then marks the Done pins
 addressed, then posts the Not done replies, in that order, on every call (each mark and reply is idempotent, so a
@@ -550,10 +559,11 @@ Being a GET, the route is listed in `_ROUTE_OVERRIDES` at EDIT (the default for 
 
 ### Tools (tenet 4)
 
-- MCP: `documents_list_prototype_feedback` (read, project, built), then part 2's (planned)
-  `documents_draft_prototype_revision` with the chosen pin ids and `documents_apply_prototype_draft`.
-- The assistant: a server tool `get_prototype_feedback` (built), then part 2's (planned) `draft_prototype_revision` with
-  **pin ids only**, never feedback text; its approval card lists the selected items and shows the instruction the
+- MCP: `documents_list_prototype_feedback` (read, project, built), then part 2's
+  `documents_draft_prototype_revision` (built for an instruction) taking the chosen pin ids (planned) and
+  `documents_apply_prototype_draft`.
+- The assistant: a server tool `get_prototype_feedback` (built), then part 2's `draft_prototype_revision` (built
+  for an instruction, 6.14.00) taking **pin ids only** (planned), never feedback text; its approval card lists the selected items and shows the instruction the
   server will use. Apply is the page's banner (part 2).
 - Both feedback tools leave out the text (and replies) of flagged items, giving only their id, place and "flagged",
   so instruction-shaped text never reaches a model through them either; the page's view shows it to the editor.
@@ -643,8 +653,9 @@ and assistant listings, so every client and the bundle agree:
   re-validated (schema, caps, `injection_findings`); see Part 1's data model.
 - **Prompt injection from feedback.** Feedback text reaches the model only inside DATA blocks
   (`lambda/shared/prompt_safety.py`): pins and their replies in `<prototype_pins>`, built by the server from pin
-  ids (the planned shared function of part 3), never from text a client or the assistant passes. The prototype
-  outline and the walkthrough draft's input are DATA blocks too. Flagged items are withheld and say so. The
+  ids (`incorporation_pins_block`, part 3, built, not called yet), never from text a client or the assistant
+  passes. The prototype outline (a `<prototype_outline>` block, 6.14.00) and the walkthrough draft's input are DATA
+  blocks too. Flagged items are withheld and say so. The
   editor's own instruction in part 2 is the instruction, shown verbatim on the approval card; anything quoted from
   feedback is data. A steered model can only produce HTML that runs in the sandbox above, and it reaches no one
   until an editor applies it.
@@ -814,8 +825,10 @@ job (`doc_type: draft_prototype` in the document generator), the draft GET, Appl
 (`lambda/shared/prototype_drafts.py`, the routes in `lambda/api/projects_handler.py`), the
 `/prototypes/*/drafts/*` behaviour with `PROTOTYPE_DRAFT_CSP`, the export's skip of `drafts/`, the four MCP draft
 tools, and the draft banner on the prototype pane. 6.13.00: part 3's read side (the feedback GET, its MCP and assistant
-tools, the Feedback dialog: [Built so far: Part 3's read side](#built-so-far-part-3s-read-side)). Not yet: `pin_ids`
-drafts (part 3's Incorporate), the outline, the assistant's draft tools and **Edit with the assistant**.
+tools, the Feedback dialog: [Built so far: Part 3's read side](#built-so-far-part-3s-read-side)). 6.14.00: the
+outline (its GET, `documents_get_prototype_outline`, the assistant's `get_prototype_outline` in a
+`<prototype_outline>` DATA block), the assistant's `draft_prototype_revision`, the page context's `documentId` and
+**Edit with the assistant** on the prototype's pane. Not yet: `pin_ids` drafts (part 3's Incorporate) and part 1.
 
 ## Decisions (2026-11-13)
 

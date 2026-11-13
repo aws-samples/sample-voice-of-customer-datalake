@@ -342,6 +342,11 @@
       "off": "Désactivée",
       "onNote": "Les imports planifiés reprennent et un disjoncteur déclenché est refermé.",
       "offNote": "Les imports planifiés sont arrêtés. Rien de ce qui est déjà importé ne change."
+    },
+    "prototypeDraft": {
+      "prototype": "Prototype :",
+      "instruction": "Consigne transmise au brouillon",
+      "note": "Cela crée seulement un brouillon. Il apparaît sur la page du prototype quand il est prêt, et rien n’est enregistré tant que vous ne l’appliquez pas là-bas."
     }
   },
   "tools": {
@@ -533,6 +538,9 @@
       "titleWith_one": "Créer {{count, number}} utilisateur",
       "titleWith_other": "Créer {{count, number}} utilisateurs",
       "titleWith_many": "Créer {{count, number}} utilisateurs"
+    },
+    "draft_prototype_revision": {
+      "title": "Rédiger une révision du prototype"
     }
   }
 }

@@ -2511,8 +2511,25 @@ function toolCallEvents(toolCallId, toolCallName, parentMessageId, args) {
   ];
 }
 
-/** The write a project-page request proposes: create_document for "create/write/draft", else update_project. */
-function proposedWrite(projectId, message) {
+/** The draft_prototype_revision bound on the instruction (the drafts route's 1–2,000 characters). */
+const MOCK_DRAFT_INSTRUCTION_CHARS = 2000;
+
+/**
+ * The write a project-page request proposes. With a prototype open (`page.documentId`, docs/prototype-builder.md
+ * part 2): draft_prototype_revision with the request as the instruction. Else create_document for
+ * "create/write/draft", else update_project.
+ */
+function proposedWrite(projectId, message, page) {
+  if (typeof page.documentId === 'string' && page.documentId !== '') {
+    const instruction = message.trim().slice(0, MOCK_DRAFT_INSTRUCTION_CHARS);
+    const args = { project_id: projectId, document_id: page.documentId, instruction };
+    // The stream's default interrupt message (tools/client/prototype-draft.ts `summarize`); the card names the title.
+    const quoted = `'${instruction.replace(/\s+/g, ' ').trim().slice(0, 300)}'`;
+    return {
+      name: 'draft_prototype_revision', args,
+      summary: `Draft a revision of prototype ${page.documentId} in project ${projectId} (a preview to apply on its page): ${quoted}`,
+    };
+  }
   if (/\b(create|write|draft)\b/i.test(message)) {
     const args = { project_id: projectId, title: 'Assistant summary', content: '# Summary\n\nDelivery delays dominate negative feedback this week.' };
     return { name: 'create_document', args, summary: `Create document 'Assistant summary' in project ${projectId}.` };
@@ -2561,7 +2578,7 @@ function firstRunEvents(page, message, ids) {
     { type: 'TOOL_CALL_RESULT', messageId: ids.lookupResult, toolCallId: ids.lookupCall, content: lookup.result, role: 'tool' },
   ];
   if (projectId && WRITE_INTENT.test(message)) {
-    const write = proposedWrite(projectId, message);
+    const write = proposedWrite(projectId, message, page);
     return {
       events: [
         ...events,

@@ -104,6 +104,7 @@ from shared import (
     project_gate,
     prototype_drafts,
     prototype_feedback,
+    prototype_outline,
     prototype_pins,
     row_lineage_ack,
 )
@@ -157,6 +158,7 @@ from shared.project_writes import (
     is_verification_fixture,
     project_pk,
 )
+from shared.prototype_versions import version_html
 from shared.prototypes import prototype_draft_signed_url
 from shared.request_body import json_body_value, json_object_body
 from shared.row_ids import MAX_KEY_SEGMENT_ID_LEN, is_clampable_number, validated_row_id
@@ -4982,11 +4984,13 @@ def resolve_addressed_prototype_pins(project_id: str, document_id: str):
 # ---- Prototype drafts (docs/prototype-builder.md, part 2) ----------------------
 #
 # A draft is a finished `draft_prototype` job plus its own object; Apply makes it
-# the next version, Discard is the job DELETE (`DELETE /projects/{id}/jobs/{job_id}`).
-# The gate requires EDIT for all three: the two POSTs by default, the GET by its
-# `_ROUTE_OVERRIDES` entry (the summary is model text about an unapplied change, for
-# editors). Every check is in shared/prototype_drafts.py; the job row, never the
-# request, names the draft's object.
+# the next version, Discard deletes its job row: its own DELETE below (a draft job of
+# this series only, what the MCP tool calls), or the job DELETE the page uses
+# (`DELETE /projects/{id}/jobs/{job_id}`). The gate requires EDIT for all four draft
+# routes: the two POSTs and the DELETE by default, the GET by its `_ROUTE_OVERRIDES`
+# entry (the summary is model text about an unapplied change, for editors). Every
+# check is in shared/prototype_drafts.py; the job row, never the request, names the
+# draft's object. The outline after them is a GET at VIEW.
 
 def _draft_job(project_id: str, document_id: str, draft_id: str) -> tuple[dict, dict, dict]:
     """``(job row, its draft detail, the draft's base)``, the base a version of ``document_id``'s series; or a 404."""
@@ -5064,6 +5068,21 @@ def api_discard_prototype_draft(project_id: str, document_id: str, draft_id: str
         raise NotFoundError(prototype_drafts.DRAFT_NOT_FOUND)
     prototype_drafts.drafted_base(get_projects_table(), project_id, document, {'base_document_id': base_id})
     return _delete_job_row(project_id, draft_id)
+
+
+@app.get("/projects/<project_id>/prototypes/<document_id>/outline")
+@tracer.capture_method
+def api_prototype_outline(project_id: str, document_id: str):
+    """``{document_id, version, title, screens: [{route, headings, text}], truncated}`` of that version.
+
+    VIEW (the default for a GET): only what anyone who can open the prototype sees, never pins
+    (shared/prototype_outline.py). An early JSON spec is a 400, a version whose object is gone a 404.
+    """
+    document = projects.prototype_document(project_id, document_id)
+    store = projects.prototype_store()
+    outline = prototype_outline.outline_of(version_html(store.s3, store.bucket, project_id, document))
+    version = document.get('version')
+    return {'document_id': document_id, 'version': int(version) if version is not None else None, **outline}
 
 
 @app.post("/projects/<project_id>/build-prototype")

@@ -216,6 +216,38 @@ class TestPrototypeDrafts:
         assert TOOLS_BY_NAME[DISCARD_DRAFT].shape({'success': True}, {}) == {'success': True}
 
 
+OUTLINE = 'documents_get_prototype_outline'
+
+
+class TestPrototypeOutline:
+    """``documents_get_prototype_outline``: the outline GET (docs/prototype-builder.md, part 2), a project read."""
+
+    def test_it_is_the_outline_route(self):
+        request = _build(OUTLINE, {'document_id': 'd1'})
+        assert (request.domain, request.method, request.path, request.body, request.query) == (
+            'projects', 'GET', '/projects/proj_1/prototypes/d1/outline', None, {})
+
+    @pytest.mark.parametrize('document_id', [None, '', 'd/1'])
+    def test_a_document_id_is_required(self, document_id):
+        with pytest.raises(InvalidToolArgument, match='document_id is required'):
+            _build(OUTLINE, {'document_id': document_id})
+
+    def test_a_project_is_required(self):
+        with pytest.raises(InvalidToolArgument, match='project_id is required'):
+            _build(OUTLINE, {'document_id': 'd1'}, project=None)
+
+    def test_it_is_a_project_scoped_read(self):
+        tool = TOOLS_BY_NAME[OUTLINE]
+        assert (tool.write, tool.admin_only, tool.project_scoped, tool.workspace_wide) == (False, False, True, False)
+
+    def test_the_answer_is_the_outline_without_storage_keys(self):
+        payload = {'document_id': 'd1', 'version': 2, 'title': 'Shop', 'truncated': False, 'pk': 'x',
+                   'screens': [{'route': 'home', 'headings': ['Home'], 'text': ['Pay'], 'sk': 'y'}]}
+        assert TOOLS_BY_NAME[OUTLINE].shape(payload, {}) == {
+            'document_id': 'd1', 'version': 2, 'title': 'Shop', 'truncated': False,
+            'screens': [{'route': 'home', 'headings': ['Home'], 'text': ['Pay']}]}
+
+
 class TestTheOldGenerateRevise:
     """Before 6.10.00 "Revise from comments" was ``generate`` with ``step: revise``: still accepted this release."""
 

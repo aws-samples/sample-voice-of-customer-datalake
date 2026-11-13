@@ -378,6 +378,8 @@ def test_project_route(path, expected):
         ('POST', ('prototypes', 'p1', 'drafts', 'job_1', 'apply'), 'edit'),
         ('GET', ('prototypes', 'p1', 'pins'), 'view'),
         ('GET', ('prototypes', 'p1', 'drafts'), 'view'),
+        # The outline holds only what anyone who can open the prototype sees.
+        ('GET', ('prototypes', 'p1', 'outline'), 'view'),
     ],
 )
 def test_required_level(method, rest, level):

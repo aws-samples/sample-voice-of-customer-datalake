@@ -41,6 +41,7 @@ EVERY_TAG = (
     'email',
     'author_draft',
     'feature_requests',
+    'prototype_outline',
 )
 
 class TestEveryDataBlockTagIsFenced:

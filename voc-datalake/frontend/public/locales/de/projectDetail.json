@@ -138,6 +138,10 @@
         "discardFailed": "Der Entwurf konnte nicht verworfen werden. Versuchen Sie es erneut.",
         "noPreview": "Eine Vorschau dieses Entwurfs ist hier nicht verfügbar.",
         "frameTitle": "{{title}} (Entwurf)"
+      },
+      "assistant": {
+        "button": "Mit dem Assistenten bearbeiten",
+        "prompt": "Ändere diesen Prototyp: "
       }
     },
     "revision": {

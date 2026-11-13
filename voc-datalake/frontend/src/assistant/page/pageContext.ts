@@ -135,6 +135,17 @@ export function pageContextFromLocation(location: LocationLike): PageContext {
   return review.reviewId !== null && review.reviewBrand === null ? { ...base, feedbackId: review.reviewId } : base
 }
 
+/**
+ * The document the Documents tab of a project page has open (`?tab=documents&doc=<id>`,
+ * pages/ProjectDetail/useDocumentSelection.ts), or undefined: elsewhere, or an id over MAX_ID_LENGTH.
+ * Only a candidate: whether it is a prototype is known from the project record (usePageContext).
+ */
+export function selectedDocumentId(page: Pick<PageContext, 'kind' | 'tab'>, search: string): string | undefined {
+  if (page.kind !== 'project' || page.tab !== 'documents') return undefined
+  const id = new URLSearchParams(search).get('doc')
+  return id !== null && id !== '' && id.length <= MAX_ID_LENGTH ? id : undefined
+}
+
 function routeContext(location: LocationLike): PageContext {
   const path = location.pathname.slice(0, MAX_PATH)
   const tab = tabFrom(location.search)

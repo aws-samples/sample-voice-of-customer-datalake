@@ -342,6 +342,11 @@
       "off": "Desativado",
       "onNote": "As importações agendadas voltam a rodar e um disjuntor acionado é fechado.",
       "offNote": "As importações agendadas param. Nada do que já foi importado muda."
+    },
+    "prototypeDraft": {
+      "prototype": "Protótipo:",
+      "instruction": "Instrução que o rascunho recebe",
+      "note": "Isto só cria um rascunho. Ele aparece na página do protótipo quando fica pronto, e nada é salvo até você aplicá-lo lá."
     }
   },
   "tools": {
@@ -533,6 +538,9 @@
       "titleWith_one": "Criar {{count, number}} usuário",
       "titleWith_other": "Criar {{count, number}} usuários",
       "titleWith_many": "Criar {{count, number}} usuários"
+    },
+    "draft_prototype_revision": {
+      "title": "Rascunhar uma revisão do protótipo"
     }
   }
 }

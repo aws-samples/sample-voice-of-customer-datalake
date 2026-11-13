@@ -332,6 +332,11 @@
       "off": "꺼짐",
       "onNote": "예약된 가져오기가 다시 실행되고, 작동한 회로 차단기가 닫힙니다.",
       "offNote": "예약된 가져오기가 중지됩니다. 이미 가져온 데이터는 바뀌지 않습니다."
+    },
+    "prototypeDraft": {
+      "prototype": "프로토타입:",
+      "instruction": "초안에 전달되는 지시",
+      "note": "초안만 만듭니다. 준비되면 프로토타입 페이지에 표시되며, 그곳에서 적용하기 전에는 아무것도 저장되지 않습니다."
     }
   },
   "tools": {
@@ -519,6 +524,9 @@
       "title": "사용자 만들기",
       "titleWith_one": "사용자 {{count, number}}명 만들기",
       "titleWith_other": "사용자 {{count, number}}명 만들기"
+    },
+    "draft_prototype_revision": {
+      "title": "프로토타입 수정 초안 만들기"
     }
   }
 }

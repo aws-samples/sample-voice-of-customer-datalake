@@ -635,12 +635,14 @@ describe('when comments cannot load', () => {
     await user.click(screen.getByRole('button', { name: 'Simulate an edit' }))
     fetchApi.mockImplementation((_endpoint, options) =>
       options?.method === undefined ? Promise.reject(new Error('API Error: 500')) : Promise.resolve({ thread: thread('c_quote', {}) }))
+    // The edit removed the quote "two weeks": on the next frame the layout moves the thread out of the margin into
+    // "Not found in this version", a new card. Clicked before that frame, Resolve would hit the card being replaced,
+    // which leaves the page with the click and does nothing (the run then never failed a refetch, so no alert).
+    await waitFor(() => { expect(notFoundSection()).toHaveTextContent('Name the refund method.') })
 
     await user.click(within(await threadBy('sam@example.com')).getByRole('button', { name: 'Resolve' }))
 
-    // The alert comes at the end of a chain (the resolve, then the refetch that fails): on a loaded machine running
-    // the whole suite it took more than the default 5 s (it passes alone in milliseconds), so this wait is longer.
-    expect(await screen.findByRole('alert', {}, { timeout: 15_000 })).toHaveTextContent('Comments could not be loaded.')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Comments could not be loaded.')
     expect(screen.getByTestId('fake-canvas')).toBe(canvas)
     expect(canvas).toHaveTextContent('Customers wait for a refund.')
   })

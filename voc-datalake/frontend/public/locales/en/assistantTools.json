@@ -332,6 +332,11 @@
       "off": "Off",
       "onNote": "Scheduled imports run again, and a tripped circuit breaker is closed.",
       "offNote": "Scheduled imports stop. Nothing already imported is touched."
+    },
+    "prototypeDraft": {
+      "prototype": "Prototype:",
+      "instruction": "Instruction the draft gets",
+      "note": "This makes a draft only. It shows on the prototype’s page when it is ready, and nothing is saved until you apply it there."
     }
   },
   "tools": {
@@ -519,6 +524,9 @@
       "title": "Create users",
       "titleWith_one": "Create {{count, number}} user",
       "titleWith_other": "Create {{count, number}} users"
+    },
+    "draft_prototype_revision": {
+      "title": "Draft a prototype revision"
     }
   }
 }
