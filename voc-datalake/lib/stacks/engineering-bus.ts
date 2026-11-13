@@ -19,8 +19,10 @@
  *   is pushed per run; the delivery function records each notice as an `INBOX#` row and wakes the addressee, and an
  *   agent reads its notices through the board API's `inbox` op.
  * - The board API (`engineering/board/api.py`) behind a function URL with IAM authentication and no resource-based
- *   policy, like the broker: it takes the caller from its assumed-role identity and publishes each change as the
- *   board.
+ *   policy, like the broker: for an agent it takes the caller from its assumed-role identity and publishes each change
+ *   as the board. The Agents API (VocApiStack) also invokes it directly, by name, for a person's board actions
+ *   (`person_request`): the board writes them with its own role and hands the events back for the API to publish as
+ *   the person. The agent roles may invoke it only through the URL, so a direct invoke is the API's.
  * - One dead-letter queue, voc-engineering-dlq: the events the rule could not hand the router, the router's and the
  *   delivery function's invocations that failed every retry, the report builder's failed builds, and the runtime's
  *   supervisor ticks EventBridge could not deliver (engineering-runtime.ts). Alerting watches it like the platform's other
@@ -54,6 +56,7 @@ import type * as s3 from 'aws-cdk-lib/aws-s3';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import { Construct } from 'constructs';
 
+import { ENGINEERING_BOARD_FUNCTION_BASE_NAME } from '../utils/function-names';
 import { acknowledgeNag, acknowledgeNagOnResource, resourceFinding } from '../utils/nag-ack';
 import { createWorkerFunction, workerRole } from '../utils/worker-lambda';
 import {
@@ -305,7 +308,7 @@ export class EngineeringBus extends Construct {
     this.bus.grantPutEventsTo(role);
     const board = createWorkerFunction(this, 'Board', {
       tree: 'engineering',
-      functionName: props.uniqueName('voc-engineering-board'),
+      functionName: props.uniqueName(ENGINEERING_BOARD_FUNCTION_BASE_NAME),
       handler: 'engineering/board/api.handler',
       role,
       layer: props.layer,

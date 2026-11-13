@@ -522,14 +522,15 @@ the write holds the holder it read), and an
 agent's signal to a task a person holds is refused (no agent works on it). Blocking it ends it as needing a person,
 with their reason (the only way a person sends a task there: a move to it is refused, so the why is always kept).
 A person re-prioritises a task another person holds without `over`: a priority ends no hold, so nothing is taken
-from them. Never the coordinate task. *The Agents API's grant (a known gap, tenet 6):* its role writes a person's
-actions itself, with PutItem and UpdateItem bounded by IAM only to the run's partition (`dynamodb:LeadingKeys`), so
-it could write any item of a run (META's every attribute, the tasks, their SPEC# markers and TASKLOG# rows, the
-RUNLOG# rows, the agents' AGENT# session rows, the conversation's MSG# and the INBOX# rows), and only its code keeps
-it to the board store's conditional writes (the task row, its SPEC# marker, its TASKLOG# row, META's `task_count`).
-`dynamodb:Attributes` cannot narrow it per row (its names are the request's, not a row's, and a PutItem of allowed
-names still replaces a whole row). *Planned*: the Agents API asks the board function to make a person's change,
-whose role already writes those rows, and its own write grant goes.
+from them. Never the coordinate task. The Agents API makes none of these writes itself: after its own checks (an
+administrator acting for themselves, an open run, the bus named) it invokes the board's function directly
+(`voc-datalake/lambda/engineering/board/api.py` `person_request`, `{person: {op, run_id, subject, body, task_id?,
+action?}}`), whose role already writes the board's rows; the board writes the change and hands back the events it
+made, which the API publishes from its own source as the person (the bus takes a person's `task.*` only from there).
+The API's role reads the table (GetItem, Query) and writes none of it, closing the gap where IAM, bounded only by the
+run's partition, let it write any item of a run. The agent roles may invoke the board only through its function URL
+(`lambda:InvokedViaFunctionUrl`), so a direct invoke, the only way into the person path, is the API's; a function
+URL's event is always an agent's, whatever its body says.
 
 **The conversation.** Every event is also written to the run's conversation (DynamoDB, append-only, D1), which the run
 view shows live as a chat between the agents beside the board. The person is a participant: their decisions, answers

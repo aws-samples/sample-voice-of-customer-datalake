@@ -53,11 +53,12 @@ from engineering.board.inbox import MAX_LIMIT, Inbox
 from engineering.board.model import EVENT_OF, FINAL, NEEDS_HUMAN, OPEN, PERSON_PREFIX, Task
 from engineering.board.store import COORDINATE_TASK, COORDINATOR, BoardError, BoardStore, Posted
 from engineering.bus.publish import EventBridgePublisher, PublishError, change_event_id, new_event_id
-from engineering.bus.schema import ROLES, Message, MessageError, Party, Refs, fit_summary
+from engineering.bus.schema import ID, ROLES, ULID, Message, MessageError, Party, Refs, fit_summary
 from engineering.connectors.identity import WORKSPACE, Caller, UnknownCaller, caller_from_event, own_account
 from engineering.knowledge.store import PackError
 from engineering.knowledge.workspaces import ROOT
 from engineering.quality_gate.text import redact
+from engineering.rows import Refused
 from engineering.runtime.checkout import check_sparse_path
 from engineering.runtime.egress import REGISTRY_HOSTS
 from engineering.runtime.harness.skills import skill_for
@@ -648,17 +649,68 @@ def _from_environment() -> BoardApi:
                     images=frozenset(filter(None, os.environ.get('ENGINEERING_IMAGE_LANGUAGES', '').split(','))))
 
 
+class _Kept:
+    """A person's events, kept to hand back: the Agents API publishes them as the person, from its own source (the
+    bus takes a person's ``task.*`` only from there)."""
+
+    def __init__(self) -> None:
+        self.messages: list[Message] = []
+
+    def publish(self, message: Message) -> object:
+        self.messages.append(message)
+        return None
+
+
+def person_request(store: BoardStore, request: Mapping[str, Any]) -> dict[str, Any]:
+    """A person's board action, as the Agents API asks it (``{op: post|act, run_id, subject, body, task_id?, action?}``)
+    through a direct invoke of this function, never its URL: the agent roles may invoke it only through the URL, so a
+    direct invoke is the API's role, which has checked the person is an administrator acting for themselves and the
+    run is open. The board's own role writes the change (the API's role writes no board row), and the events it
+    makes are handed back for the API to publish: ``{status: ok, answer, events}``, or ``{status: refused, kind,
+    message}``."""
+    op, run_id, subject, body = (request.get(key) for key in ('op', 'run_id', 'subject', 'body'))
+    # (the subject by the bus's own id rule: one its event could not carry is refused before anything is written)
+    if not (isinstance(run_id, str) and ULID.fullmatch(run_id) and isinstance(subject, str) and ID.fullmatch(subject)
+            and isinstance(body, Mapping)):
+        return {'status': 'refused', 'kind': 'invalid', 'message': 'a person request names a run, a subject and a body'}
+    kept = _Kept()
+    people = PersonBoard(store, kept)
+    try:
+        if op == 'post':
+            answer = people.post(run_id, body, subject)
+        elif op == 'act' and isinstance(task_id := request.get('task_id'), str) \
+                and isinstance(action := request.get('action'), str):
+            answer = people.act(run_id, task_id, action, body, subject)
+        else:
+            return {'status': 'refused', 'kind': 'invalid', 'message': 'op is post, or act with a task_id and an action'}
+    except Refused as refused:
+        return {'status': 'refused', 'kind': refused.kind, 'message': str(refused)}
+    except (ClientError, BotoCoreError):
+        logger.exception('board: the table refused a person\'s action')
+        return {'status': 'refused', 'kind': 'unavailable', 'message': 'the board could not be reached: retry'}
+    return {'status': 'ok', 'answer': answer, 'events': [message.to_dict() for message in kept.messages]}
+
+
+def _built() -> BoardApi:
+    """The warm container's clients, built once."""
+    global _api
+    if _api is None:
+        _api = _from_environment()
+    return _api
+
+
 @metrics.log_metrics   # (the workspace store's count of denied reads taken as missing, from `knowledge`)
 def handler(event: Mapping[str, Any], context: Any) -> dict[str, Any]:
-    global _api   # the warm container's clients, built once
+    if 'requestContext' not in event and isinstance(person := event.get('person'), Mapping):
+        # A direct invoke (no function URL's request context): only the Agents API's role may make one.
+        return person_request(_built().store, person)
     try:
         caller = caller_from_event(event, os.environ['AGENT_ROLE_NAME_PATTERN'],
                                    own_account(getattr(context, 'invoked_function_arn', '')))
     except UnknownCaller:
         return _answer(403, {'error': 'only an agent of a run may use the board'})
-    if _api is None:
-        _api = _from_environment()
-    return _api.handle_request(caller, _raw_body(event))
+    api = _built()
+    return api.handle_request(caller, _raw_body(event))
 
 
 def _raw_body(event: Mapping[str, Any]) -> Any:

@@ -15,7 +15,7 @@ import {
 import type { VocApiStack } from './api-stack';
 import { ENGINEERING_WORKSPACE_READER_SERVICES } from './dlq-alarms';
 
-const ENGINEERING_ENV = ['ENGINEERING_AGENTS', 'ENGINEERING_TABLE', 'ENGINEERING_WORKSPACE_BUCKET'];
+const ENGINEERING_ENV = ['ENGINEERING_AGENTS', 'ENGINEERING_BOARD_FUNCTION', 'ENGINEERING_TABLE', 'ENGINEERING_WORKSPACE_BUCKET'];
 let cachedOn: VocApiStack | undefined;
 const onStack = (): VocApiStack => {
   cachedOn ??= buildApiStack({ engineeringAgents: true });
@@ -47,27 +47,23 @@ describe('the engineering run reads', () => {
     expect(JSON.stringify(env.ENGINEERING_WORKSPACE_BUCKET)).toMatch(/Fn::ImportValue.*EngineeringWorkspace/);
   });
 
-  it('grant the agents API only what its views and a person\'s board actions use: never a delete', () => {
+  it('grant the agents API only reads of the table and the reports: no write of any kind', () => {
     const statements = engineeringStatements(on());
-    expect(actionsWithPrefix(statements, '')).toStrictEqual(
-      ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:Query', 'dynamodb:UpdateItem', 's3:GetObject']);
-    expect(JSON.stringify(statements)).not.toMatch(/Delete/);
-    // The writes only in a run's partition: never the skills' or the knowledge packs' rows.
-    const writes = statements.filter((statement) => statement.actions.includes('dynamodb:PutItem'));
-    expect(writes.map((statement) => [statement.actions, statement.condition])).toStrictEqual([[
-      ['dynamodb:PutItem', 'dynamodb:UpdateItem'],
-      { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [`WS#default#RUN#${'?'.repeat(26)}`] } },
-    ]]);
+    expect(actionsWithPrefix(statements, '')).toStrictEqual(['dynamodb:GetItem', 'dynamodb:Query', 's3:GetObject']);
+    expect(JSON.stringify(statements)).not.toMatch(/Delete|Put|Update|BatchWrite/);
     const objects = statements.filter((statement) => statement.actions.includes('s3:GetObject'));
     expect(objects.map((statement) => statement.resource)).toStrictEqual([expect.stringMatching(/"\/ws\/default\/reports\/\*"/)]);
   });
 
-  it('grant the writes on the engineering table alone: no index, no other table, no wildcard', () => {
-    // What the run's partition allows is the whole of it (the comment in api-assistant-lambdas.ts names it).
-    const writes = engineeringStatements(on()).filter((statement) => statement.actions.includes('dynamodb:PutItem'));
-    const resources = writes.map((statement) => JSON.stringify(statement.resource));
-    expect(resources).toStrictEqual([expect.stringMatching(/Fn::ImportValue.*Engineering\w*Arn/)]);
-    expect(resources).toStrictEqual([expect.not.stringMatching(/index|\*|\[/)]);
+  it('send a person\'s board actions to the board\'s function, by its name, which its own role writes', () => {
+    const invokes = policyStatementsOf(on(), 'AgentsLambdaRole')
+      .filter((statement) => statement.actions.includes('lambda:InvokeFunction') && /voc-engineering-board/.test(statement.resource));
+    expect(invokes.map((statement) => statement.actions)).toStrictEqual([['lambda:InvokeFunction']]);
+    // (its unique name: the base name, then the account and region, as VocProcessingStack names it)
+    expect(invokes.map((statement) => statement.resource)).toStrictEqual(
+      [expect.stringMatching(/:lambda:[^"]*:function:voc-engineering-board-",/)]);
+    expect(JSON.stringify(serviceEnvironment(on(), 'voc-agents-api').ENGINEERING_BOARD_FUNCTION))
+      .toMatch(/^"?\S*voc-engineering-board-/);
   });
 
   it('give the MCP endpoint nothing: the reads are admin-only and an MCP token is never an admin, so no tool', () => {

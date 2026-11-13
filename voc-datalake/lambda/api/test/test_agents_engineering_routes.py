@@ -7,12 +7,13 @@ administrator minted, get 403; an unknown run and a malformed id answer 404.
 """
 from __future__ import annotations
 
+import io
 import json
 import sys
 from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import boto3
 import pytest
@@ -148,6 +149,31 @@ class Actions:
     runtime: LambdaClient
 
 
+BOARD_FUNCTION = 'voc-engineering-board'
+
+
+class Lambdas:
+    """The Lambda client the routes get: the board function's direct invokes run the board's person path in process
+    (on the same table, as its own role would); every other invoke is the supervisor's fake."""
+
+    def __init__(self, runtime: LambdaClient, client: Any) -> None:
+        self.runtime = runtime
+        self.client = client
+        self.board_requests: list[dict[str, Any]] = []
+
+    def invoke(self, **request: Any) -> dict[str, Any]:
+        if request['FunctionName'] != BOARD_FUNCTION:
+            return self.runtime.invoke(**request)
+        from engineering.board.api import person_request
+        from engineering.board.store import BoardStore
+        from engineering.bus.publish import new_event_id
+
+        payload = json.loads(request['Payload'])
+        self.board_requests.append(payload)
+        answer = person_request(BoardStore(self.client, TABLE, new_id=new_event_id), payload['person'])
+        return {'StatusCode': 200, 'Payload': io.BytesIO(json.dumps(answer).encode())}
+
+
 @pytest.fixture
 def actions(monkeypatch: pytest.MonkeyPatch, run: tuple[Any, EngineeringRun]) -> Iterator[Actions]:
     _, engineering = run
@@ -160,9 +186,10 @@ def actions(monkeypatch: pytest.MonkeyPatch, run: tuple[Any, EngineeringRun]) ->
     SessionStore(table, RunStore(table)).create(FIXER)
     monkeypatch.setenv('ENGINEERING_BUS_NAME', 'voc-engineering')
     monkeypatch.setenv('ENGINEERING_RUNTIME_FUNCTION', 'voc-engineering-runtime')
+    monkeypatch.setenv('ENGINEERING_BOARD_FUNCTION', BOARD_FUNCTION)
     reached = Actions(Bus(), LambdaClient({'agents': {'fixer-1': 'pause_requested'}, 'applied': {'fixer-1': True}}))
     with patch('shared.aws.get_eventbridge_client', return_value=reached.bus), \
-            patch('shared.aws.get_lambda_client', return_value=reached.runtime):
+            patch('shared.aws.get_lambda_client', return_value=Lambdas(reached.runtime, engineering.client)):
         yield reached
 
 
@@ -433,6 +460,81 @@ def test_board_actions_need_the_bus_and_are_404_while_the_module_is_off(lambda_c
     assert _call(lambda_context, 'POST', f'{BASE}/board/tasks', body=body)[0] == 503
     monkeypatch.delenv('ENGINEERING_AGENTS')
     assert _call(lambda_context, 'POST', f'{BASE}/board/tasks', body=body, claims=USER)[0] == 404
+    assert actions.bus.entries == []
+
+
+def test_board_actions_go_through_the_board_function_as_the_person(lambda_context: Any, run: tuple[Any, EngineeringRun],
+                                                                   actions: Actions,
+                                                                   monkeypatch: pytest.MonkeyPatch) -> None:
+    _, engineering = run
+    lambdas = Lambdas(actions.runtime, engineering.client)
+    monkeypatch.setattr('shared.aws.get_lambda_client', lambda: lambdas)
+    path = f'{BASE}/board/tasks/{engineering.task_id}/priority'
+    assert _call(lambda_context, 'POST', path, body={'priority': 4})[0] == 200
+    (request,) = lambdas.board_requests
+    # The board's own role writes; the API names the person, the run and the action (its gate checked them).
+    assert request == {'person': {'op': 'act', 'task_id': engineering.task_id, 'action': 'priority', 'run_id': RUN,
+                                  'subject': 'admin-sub', 'body': {'priority': 4}}}
+
+
+def test_a_board_function_not_named_or_failing_is_a_503_and_nothing_is_sent(lambda_context: Any,
+                                                                            run: tuple[Any, EngineeringRun],
+                                                                            actions: Actions,
+                                                                            monkeypatch: pytest.MonkeyPatch) -> None:
+    _, engineering = run
+    path = f'{BASE}/board/tasks/{engineering.task_id}/take'
+    monkeypatch.delenv('ENGINEERING_BOARD_FUNCTION')
+    status, body = _call(lambda_context, 'POST', path, body={})
+    assert (status, 'names no board function' in json.dumps(body)) == (503, True)
+    monkeypatch.setenv('ENGINEERING_BOARD_FUNCTION', BOARD_FUNCTION)
+    throttled = MagicMock()
+    throttled.invoke.side_effect = ClientError({'Error': {'Code': 'TooManyRequestsException', 'Message': 'x'}}, 'Invoke')
+    monkeypatch.setattr('shared.aws.get_lambda_client', lambda: throttled)
+    assert _call(lambda_context, 'POST', path, body={})[0] == 503
+    assert (actions.bus.entries, _board_task(engineering, engineering.task_id).get('lease_agent')) == ([], 'fixer-1')
+
+
+class _FailsAfterWriting(Lambdas):
+    """The board writes, then its function fails (a timeout after the write): a FunctionError comes back."""
+
+    def invoke(self, **request: Any) -> dict[str, Any]:
+        super().invoke(**request)
+        return {'StatusCode': 200, 'FunctionError': 'Unhandled', 'Payload': io.BytesIO(b'{"errorMessage": "timeout"}')}
+
+
+def test_a_board_that_fails_after_writing_is_a_503_and_the_retry_sends_the_event_once(
+        lambda_context: Any, run: tuple[Any, EngineeringRun], actions: Actions, monkeypatch: pytest.MonkeyPatch) -> None:
+    _, engineering = run
+    path = f'{BASE}/board/tasks/{engineering.task_id}/take'
+    monkeypatch.setattr('shared.aws.get_lambda_client', lambda: _FailsAfterWriting(actions.runtime, engineering.client))
+    assert _call(lambda_context, 'POST', path, body={})[0] == 503
+    assert (actions.bus.entries, _board_task(engineering, engineering.task_id)['lease_agent']) == ([], 'human:admin-sub')
+    monkeypatch.setattr('shared.aws.get_lambda_client', lambda: Lambdas(actions.runtime, engineering.client))
+    assert _call(lambda_context, 'POST', path, body={})[0] == 200   # (answered as it is: the same change)
+    (entry,) = actions.bus.entries
+    assert json.loads(entry['Detail'])['summary'].endswith('take by a person')
+
+
+@pytest.mark.parametrize('forge', ['type', 'sender', 'run', 'task', 'two'])
+def test_an_event_the_board_hands_back_that_is_not_the_persons_action_is_never_sent(
+        lambda_context: Any, run: tuple[Any, EngineeringRun], actions: Actions, monkeypatch: pytest.MonkeyPatch,
+        forge: str) -> None:
+    _, engineering = run
+    real = Lambdas(actions.runtime, engineering.client)
+
+    class Forging(Lambdas):
+        def invoke(self, **request: Any) -> dict[str, Any]:
+            answer = json.loads(real.invoke(**request)['Payload'].read())
+            (event,) = answer['events']
+            forged = {'type': {**event, 'type': 'signal.stop_now'},
+                      'sender': {**event, 'from': {'kind': 'human', 'id': 'other-admin'}},
+                      'run': {**event, 'run_id': '01JD0000000000000000000009'},
+                      'task': {**event, 'task_id': 'task-9'}}
+            answer['events'] = [event, event] if forge == 'two' else [forged[forge]]
+            return {'StatusCode': 200, 'Payload': io.BytesIO(json.dumps(answer).encode())}
+
+    monkeypatch.setattr('shared.aws.get_lambda_client', lambda: Forging(actions.runtime, engineering.client))
+    assert _call(lambda_context, 'POST', f'{BASE}/board/tasks/{engineering.task_id}/take', body={})[0] in (400, 503)
     assert actions.bus.entries == []
 
 
