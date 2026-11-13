@@ -1,7 +1,7 @@
 /**
  * @fileoverview Company → Design system → the company logo and its upload.
  *
- * PNG, JPEG and WebP within 1024 px and 1 MB go to the presigned PUT as they are; a larger one is
+ * PNG, JPEG and WebP within 1 MB go to the presigned PUT as they are (whatever their pixel size); a larger one is
  * made smaller first (`./logoImage`), never refused for its size (up to {@link LOGO_MAX_INPUT_BYTES}).
  * An SVG is converted to PNG in the browser first (`utils/svgToPng`) and only the PNG is uploaded:
  * the logo route refuses SVG because an SVG can carry script, and the SVG bytes never leave the browser.

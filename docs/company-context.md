@@ -275,14 +275,17 @@ counts `{added, replaced}` per token group and for `components`, plus `guideline
 **An oversized logo on a website.** A website reference's raster logo (PNG, JPEG or WebP) over 2 MB is no longer
 refused: while the page is read, the managed browser draws it in a fresh blank tab at up to 1,024 px on its longest
 side and keeps that PNG as the reference's logo preview (marked rendered, like a drawn SVG logo), so "Use this logo"
-copies the smaller PNG (`lambda/design_capture/raster_logo.py`). The address passes the same URL policy before the
+copies the smaller PNG (`lambda/design_capture/raster_logo.py`). Every rendered logo (an SVG or an oversized raster)
+fits the 1 MB company-logo cap: a PNG over it at 1,024 px is drawn again at 768, then 512 px
+(`lambda/design_capture/logo_render.py`). The address passes the same URL policy before the
 browser opens it; if drawing fails, the reference simply has no logo preview. A reference read before 6.06.00, or a
 GitHub repository's logo over 2 MB, still answers "Use this logo" with a 400 that says what to do: upload it as the
 company logo (the browser makes it smaller) or refresh a website reference.
 
 **Use this logo.** `POST …/references/{id}/logo` downloads the candidate server-side with the SSRF guard on the
 URL and on every redirect hop (`shared/http_utils.fetch_public_url`: sockets pinned to the vetted address, no
-https→http downgrade, no proxies), at most 2 MB, PNG/JPEG/WebP decided by the file's bytes, and stores the FILE
+https→http downgrade, no proxies), at most 2 MB downloaded and 1 MB kept (the company-logo cap, 400 above it with what
+to do), PNG/JPEG/WebP decided by the file's bytes, and stores the FILE
 (`company-context/design/logo_<12 hex>.<ext>`) — the design system itself is not changed. It answers
 `{logo_id, logo_url}` (`logo_url` a short-lived signed GET); the editor shows that logo in the same draft "Use as
 design system" fills ("it becomes the company logo when you save the design system"), and **Save design system**
@@ -290,7 +293,7 @@ sends `logo_id` with the usual `PUT /settings/design-system`, which makes it the
 is malformed or its file does not exist). Discard — the apply banner's **Discard** and the save row's **Discard changes** are one action — drops the whole draft, the drafted logo and the banner, and shows the saved logo again; the unused file is kept, like every upload.
 400 with the reason when the address is unsafe, the file is too large or not an image; 409 when there is no
 candidate. A **rendered** candidate (a website's SVG logo, above) is never downloaded: the route copies its stored
-preview PNG (`s3:GetObject` on the preview key, checked again: a PNG by its bytes, ≤ 2 MB; 400 otherwise) to a new
+preview PNG (`s3:GetObject` on the preview key, checked again: a PNG by its bytes, ≤ 1 MB; 400 otherwise) to a new
 `logo_<12 hex>.png`, same answer; **409** `Refresh the reference to read its logo again` when the preview is gone.
 
 **One address, one reference.** `POST …/references` answers **409** naming the existing reference when the URL is

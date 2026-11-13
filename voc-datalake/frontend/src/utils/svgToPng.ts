@@ -28,7 +28,7 @@ const MB = 1024 * 1024
 const SVG_TYPE = 'image/svg+xml'
 /** The largest SVG the converter reads. */
 export const MAX_SVG_BYTES = MB
-/** The largest PNG it hands back (the logo route's own cap). */
+/** The largest PNG it hands back (pages/Company/logoImage.ts then makes one over the 1 MB company-logo cap smaller). */
 const MAX_PNG_BYTES = 5 * MB
 /** The longest side of the PNG, in px: small logos are scaled up for crispness, large ones down. */
 const TARGET_LONGEST_SIDE = 1024
