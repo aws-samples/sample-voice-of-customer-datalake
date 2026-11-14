@@ -16,6 +16,11 @@ caller is a member of, ``sk CONV#{id}``), both strictly scoped to the caller's C
   written exactly as before so an old client keeps working, and listed as
   ``kind: 'chat'``.
 
+Inside a workspace each save first lists the caller among the workspace's conversation owners
+(``WS#{ws}#CONVERSANTS`` / ``{sub}``, put if absent; shared/conversations.py ``record_conversant``), as the stream
+Lambda does before its first write, so the workspace's export and delete find every member's partition, a former
+member's too, with one Query.
+
 The stream Lambda (``lambda/stream/src/assistant/session/``) writes the same
 assistant item while a run streams, adding ``run_id`` / ``run_status``
 (running|finished|failed|interrupted|stopped) / ``revision`` (a number that only grows,
@@ -63,7 +68,7 @@ from botocore.exceptions import ClientError
 
 from shared.api import api_handler, create_api_resolver, get_caller_subject
 from shared.aws import get_dynamodb_resource
-from shared.conversations import ASSISTANT_KIND, CONVERSATION_SK_PREFIX, conversation_partition
+from shared.conversations import ASSISTANT_KIND, CONVERSATION_SK_PREFIX, conversation_partition, record_conversant
 from shared.delete_audit import actor_from_event, record_delete
 from shared.dynamo_paging import iter_query
 from shared.exceptions import ConfigurationError, ConflictError, PayloadTooLargeError, ValidationError
@@ -172,11 +177,22 @@ class _Caller:
 
     pk: str
     workspace: WorkspaceScope | None
+    #: The verified caller's Cognito subject (the partition's own), listed among the workspace's conversation owners.
+    sub: str = ''
 
     def table(self) -> Any:
         """The conversations table as this caller reaches it: the workspace's view (shared/ws_repo.py
         ``ws_table``: a key outside it is refused before DynamoDB), or the table itself."""
         return table_view(self.workspace, _conversations_store())
+
+    def list_as_owner(self, at: str) -> None:
+        """Inside a workspace, list the caller among its conversation owners (``WS#{ws}#CONVERSANTS`` / ``{sub}``,
+        put if absent: shared/conversations.py ``record_conversant``) BEFORE their conversation row is written, so a
+        stored conversation is never unlisted; a fault here fails the save. Nothing outside a workspace. Sent on
+        every save (no warm-container memory, unlike the stream Lambda's many writes per run): a listed owner's put
+        is refused by its condition, which still bills one write; accepted for one save per turn."""
+        if self.workspace is not None:
+            record_conversant(ws_table(self.workspace, _conversations_store()), self.sub, at)
 
 
 def _caller(*, fresh: bool = False) -> _Caller:
@@ -192,7 +208,7 @@ def _caller(*, fresh: bool = False) -> _Caller:
         # A credential or an agent has no conversations of its own inside a workspace (as the stream Lambda refuses).
         raise WorkspaceNotFoundError(WORKSPACE_NOT_FOUND)
     workspace = None if context is None else scope_of(context)
-    return _Caller(pk=conversation_partition(sub, workspace), workspace=workspace)
+    return _Caller(pk=conversation_partition(sub, workspace), workspace=workspace, sub=sub)
 
 
 def _conversation_key(caller: _Caller, conversation_id: str) -> dict[str, str]:
@@ -384,6 +400,7 @@ def _save_assistant_conversation(caller: _Caller, proxy: str, body: dict) -> dic
         **{field: existing[field] for field in _RUN_FIELDS if field in existing},
     }
     _require_fits(item)
+    caller.list_as_owner(now)
     _put_unless_revised(caller, item, existing)
     return {'success': True, 'id': fields['id'], 'updatedAt': now, 'revision': _revision_of(existing)}
 
@@ -573,6 +590,7 @@ def _save_legacy_conversation(caller: _Caller, path_id: str, body: dict) -> dict
     }
     _require_fits(item)
 
+    caller.list_as_owner(item['updated_at'])
     caller.table().put_item(item)
     return {'success': True, 'id': conversation_id}
 

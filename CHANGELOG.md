@@ -17,6 +17,25 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.19.00] - 2026-11-13
+
+Multi-workspace: each workspace keeps a list of who has conversations in it, so the workspace's export and its delete can find every member's conversations, a former member's too, from the workspace id alone ([docs/multi-workspace.md](docs/multi-workspace.md)). Nothing changes for anyone in the web app.
+
+### Added
+
+- Internal: a workspace's list of conversation owners in voc-conversations, `WS#{ws}#CONVERSANTS` / `{sub}` with `first_at` (when the person's first conversation there was kept). The chat routes (`POST /chat/conversations/{id}`, both save shapes) and the assistant's stream Lambda put the person's row if it is absent, before they write the conversation, so a conversation kept in a workspace is always listed; a fault listing the owner stops that save. Nothing removes a row when the person leaves the workspace, as nothing removes their conversations. Outside a workspace nothing is listed. Both sides build the key the same way, pinned by shared cases (`voc-datalake/schemas/conversation-keys-cases.json`). Nothing reads the list yet: the export and the delete will.
+- A one-off backfill, `voc-datalake/scripts/conversations/backfill_conversants.py`, lists the owners of the workspace conversations kept before this release: one Scan of voc-conversations for the `WS#*#USER#*` conversation rows, then a put if absent per owner (dry run by default, `--apply` writes, safe to run again).
+
+### Changed
+
+- The assistant's stream Lambda may read and write voc-conversations only in `USER#*` and `WS#{one id}#USER#*` partitions, and only put in `WS#{one id}#CONVERSANTS` (`dynamodb:LeadingKeys`); its grant was the whole table before.
+- TENETS.md D5 names a gap older than workspaces: an erasure by email reaches neither the memory items nor the assistant conversations, the deployment's or a workspace's.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all` from the repo root): the API stack's chat stream role changes (above). No table, index or API change.
+- Only for a deployment that ran 7.15.00 to 7.18.00 with workspaces in use: after the deploy, run the backfill once from `voc-datalake/` (`.venv/bin/python scripts/conversations/backfill_conversants.py` for a dry run, then again with `--apply`; `--conversations-table NAME`, else the `CONVERSATIONS_TABLE` environment, else the core stack's `ConversationsTableName` output; `--region`). It needs Scan, GetItem and PutItem on voc-conversations and the KMS key's use. A fresh deployment (decision 21) has nothing to list and may skip it.
+
 ## [7.18.00] - 2026-11-13
 
 Multi-workspace: the voc-multiplayer-c track's company-context slice merged. Internal only: nothing changes for anyone ([docs/multi-workspace.md](docs/multi-workspace.md), [docs/company-context.md](docs/company-context.md)).

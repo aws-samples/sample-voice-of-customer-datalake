@@ -5,6 +5,8 @@
  * template readers live in lib/test-support/api-stack-template.ts.
  */
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { Template } from 'aws-cdk-lib/assertions';
 import { AwsSolutionsChecks } from 'cdk-nag';
@@ -138,18 +140,59 @@ describe('ChatStream (AI assistant) delegation', () => {
     expect(dynamoStatements.filter((statement) => /[Pp]rojects/.test(JSON.stringify(statement.Resource)))).toStrictEqual([]);
   });
 
-  it('writes DynamoDB only through one Get/PutItem statement on the conversations table itself', () => {
+  it('writes DynamoDB only on the conversations table itself, by partition shape', () => {
     // Server-side session persistence (lambda/stream/src/assistant/session/):
-    // exactly one statement, exactly these two actions, exactly the conversations
-    // table (no index, no wildcard). The partition is enforced in the stream code.
-    const writes = chatWriteStatements();
-    expect(writes).toHaveLength(1);
-    const write = itemAt(writes, 0);
-    expect([...actionsOf(write)].sort(byCodeUnit)).toStrictEqual(['dynamodb:GetItem', 'dynamodb:PutItem']);
-    const resources: unknown[] = Array.isArray(write.Resource) ? write.Resource : [write.Resource];
-    expect(resources.map((resource) => JSON.stringify(resource))).toStrictEqual([
-      expect.stringMatching(/^\{"Fn::ImportValue":"[^"*]*Conversations[^"*]*Arn[^"*]*"\}$/),
+    // exactly two statements on exactly the conversations table (no index, no wildcard):
+    // Get/PutItem on the caller's conversation partitions, and PutItem alone on a workspace's
+    // list of conversation owners (7.19.00). The sub inside each is enforced in the stream code.
+    const oneId = `ws_${'?'.repeat(26)}`;
+    const writes = chatWriteStatements().map((write) => ({
+      actions: [...actionsOf(write)].sort(byCodeUnit),
+      resources: (Array.isArray(write.Resource) ? write.Resource : [write.Resource]).map((resource) => JSON.stringify(resource)),
+      condition: write.Condition,
+    }));
+    const onConversations = [expect.stringMatching(/^\{"Fn::ImportValue":"[^"*]*Conversations[^"*]*Arn[^"*]*"\}$/)];
+    expect(writes).toStrictEqual([
+      { actions: ['dynamodb:GetItem', 'dynamodb:PutItem'], resources: onConversations,
+        condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['USER#*', `WS#${oneId}#USER#*`] } } },
+      { actions: ['dynamodb:PutItem'], resources: onConversations,
+        condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [`WS#${oneId}#CONVERSANTS`] } } },
     ]);
+  });
+
+  it('grants exactly the partitions the key builders make (schemas/conversation-keys-cases.json)', () => {
+    // The cases both key builders are pinned to (lambda/shared/conversations.py, session/record.ts): a drift between
+    // them and the grant fails here, not in a deployed run. IAM's StringLike: `*` any run of characters, `?` one.
+    const LeadingKeysSchema = z.object({ 'ForAllValues:StringLike': z.object({ 'dynamodb:LeadingKeys': z.array(z.string()) }) });
+    const KeySchema = z.object({ pk: z.string(), sk: z.string() });
+    const { cases } = z.object({
+      cases: z.array(z.object({ conversation: KeySchema, cancel: KeySchema, conversant: KeySchema.nullable() })),
+    }).parse(JSON.parse(readFileSync(join(__dirname, '..', '..', 'schemas', 'conversation-keys-cases.json'), 'utf8')));
+    const globs = (patterns: string[]) => patterns.map((pattern) => new RegExp(`^${pattern.split('').map((c) => {
+      if (c === '*') return '.*';
+      return c === '?' ? '.' : c.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+    }).join('')}$`));
+    const byActions = new Map(chatWriteStatements().map((write) => [
+      [...actionsOf(write)].sort(byCodeUnit).join(','),
+      globs(LeadingKeysSchema.parse(write.Condition)['ForAllValues:StringLike']['dynamodb:LeadingKeys']),
+    ]));
+    const sessionGrant = byActions.get('dynamodb:GetItem,dynamodb:PutItem') ?? [];
+    const ownerGrant = byActions.get('dynamodb:PutItem') ?? [];
+    const allowed = (grant: RegExp[], pk: string) => grant.some((glob) => glob.test(pk));
+
+    const sessionKeys = cases.flatMap((c) => [c.conversation.pk, c.cancel.pk]);
+    const ownerKeys = cases.flatMap((c) => (c.conversant === null ? [] : [c.conversant.pk]));
+    expect(ownerKeys.length).toBeGreaterThan(0);
+    const others = ['AUDIT#delete', 'WS#ws_short#USER#a', 'WS#ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8#x#CONVERSANTS'];
+    // Each grant reaches its own rows only: no session read or write of an owner list, no owner put on a session,
+    // and neither reaches another row of the table.
+    expect({
+      sessionsRefused: sessionKeys.filter((pk) => !allowed(sessionGrant, pk)),
+      ownersRefused: ownerKeys.filter((pk) => !allowed(ownerGrant, pk)),
+      ownersBySessionGrant: ownerKeys.filter((pk) => allowed(sessionGrant, pk)),
+      sessionsByOwnerGrant: sessionKeys.filter((pk) => allowed(ownerGrant, pk)),
+      othersAllowed: others.filter((pk) => allowed(sessionGrant, pk) || allowed(ownerGrant, pk)),
+    }).toStrictEqual({ sessionsRefused: [], ownersRefused: [], ownersBySessionGrant: [], sessionsByOwnerGrant: [], othersAllowed: [] });
   });
 
   it('names the conversations table for the session writes', () => {

@@ -17,7 +17,7 @@ import { PII_REDACTION_ENV, piiDetectionStatement } from '../utils/pii-redaction
 import { appVersion } from '../utils/connector-version';
 import { grantWorkspaceMembershipReads, grantWorkspaceResolution } from '../utils/workspace-resolution-grants';
 import type { ApiStackContext } from './api-context';
-import { WORKSPACE_MEMORY_IMPORTS_PREFIX } from './core-buckets';
+import { WORKSPACE_ID_PATTERN, WORKSPACE_MEMORY_IMPORTS_PREFIX } from './core-buckets';
 import { createS3ImportLambda } from './api-s3-import-lambda';
 
 /**
@@ -27,6 +27,15 @@ import { createS3ImportLambda } from './api-s3-import-lambda';
  * STALE_RUN_SECONDS and the Bedrock requestTimeout are sized against it.
  */
 export const CHAT_STREAM_TIMEOUT = cdk.Duration.minutes(15);
+
+/**
+ * The voc-conversations partitions the stream Lambda reads and writes a conversation in: the caller's own
+ * (`USER#{sub}`) and theirs inside a workspace (`WS#{one id}#USER#{sub}`), lambda/stream/src/assistant/session/record.ts
+ * `callerPartition`.
+ */
+const CONVERSATION_PARTITIONS = ['USER#*', `WS#${WORKSPACE_ID_PATTERN}#USER#*`];
+/** A workspace's list of conversation owners (record.ts `conversantKey`, shared/conversations.py `conversant_key`). */
+const CONVERSANTS_PARTITION = `WS#${WORKSPACE_ID_PATTERN}#CONVERSANTS`;
 
 /** The domain Lambdas the assistant delegates its read tools to. */
 export interface AssistantDelegates {
@@ -270,17 +279,26 @@ export function createAssistantLambdas(
   // DynamoDB permissions
   feedbackTable.grantReadData(chatStreamLambda);
   aggregatesTable.grantReadData(chatStreamLambda);
-  // The caller's own conversation, saved while the run streams: GetItem (the
-  // stored copy at run start, and the run's Stop marker RUNCANCEL#<id>, session/cancel.ts)
-  // + conditional PutItem — nothing else (no Query,
-  // no Delete, no Update). IAM cannot pin the partition to a per-caller
-  // Cognito sub (no LeadingKeys variable for a REST/Lambda caller), so the
-  // stream code enforces USER#{verified sub} (WS#{verified member's workspace}#USER#{sub}) on every key (session/store.ts,
-  // pinned by session.test.ts). Pinned here by 'ChatStream (AI assistant) delegation'.
-  // An explicit statement rather than table.grant(), which adds `<table>/index/*`.
+  // Two statements on the conversations table itself (explicit, rather than table.grant(), which adds
+  // `<table>/index/*`), and nothing else on it (no Query, no Delete, no Update):
+  // 1. GetItem + conditional PutItem of the caller's own conversation, saved while the run streams (GetItem also
+  //    reads the run's Stop marker RUNCANCEL#<id>, session/cancel.ts), held by `dynamodb:LeadingKeys` to the
+  //    partition shapes `USER#*` and `WS#{one id}#USER#*`: no `AUDIT#delete` row and no owner list;
+  // 2. since 7.19.00, PutItem alone on a workspace's list of conversation owners, `WS#{one id}#CONVERSANTS` (the
+  //    owner's row, put if absent before the run's first write, session/store.ts).
+  // IAM pins the shape, not whose partition it is: it cannot name a per-caller Cognito sub (no LeadingKeys variable
+  // for a REST/Lambda caller), so the stream code enforces USER#{verified sub} (WS#{verified member's
+  // workspace}#USER#{sub}) on every key (session/store.ts, pinned by session.test.ts). Pinned here by 'ChatStream
+  // (AI assistant) delegation', which also matches every key of schemas/conversation-keys-cases.json against them.
   chatStreamLambda.addToRolePolicy(new iam.PolicyStatement({
     actions: ['dynamodb:GetItem', 'dynamodb:PutItem'],
     resources: [conversationsTable.tableArn],
+    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': CONVERSATION_PARTITIONS } },
+  }));
+  chatStreamLambda.addToRolePolicy(new iam.PolicyStatement({
+    actions: ['dynamodb:PutItem'],
+    resources: [conversationsTable.tableArn],
+    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [CONVERSANTS_PARTITION] } },
   }));
   // Inside a workspace the conversation is the caller's there, only when they are a member (session/workspace-member.ts:
   // their MEMBER# row and the workspace's META, no platform-admin entry, so only these reads; the code builds every

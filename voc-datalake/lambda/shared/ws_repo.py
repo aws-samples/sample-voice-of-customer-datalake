@@ -12,7 +12,8 @@ only ever reads and writes its own rows and objects. This module is the one plac
   shared/workspace_routing.py). Never from a request field.
 * Key builders: ``feedback_key`` and the feedback indexes' partitions (``date_pk``, ``category_pk``,
   ``urgency_pk``, ``feedback_id_pk``, ``channel_pk``), ``metric_pk`` / ``metric_type``, ``watermark_key``,
-  ``source_run_pk``, ``scraper_run_pk``, ``erasure_job_pk``, ``reprocess_job_pk``, ``export_job_pk`` and ``s3_key`` for objects (``s3_prefix`` their common ``ws/{ws}/``), ``plugin_config_key`` (a plugin's config list; ``plugin_config_history_key`` a list it replaced; the
+  ``source_run_pk``, ``scraper_run_pk``, ``erasure_job_pk``, ``reprocess_job_pk``, ``export_job_pk``, ``conversants_pk`` (the
+  workspace's conversation owners, shared/conversations.py) and ``s3_key`` for objects (``s3_prefix`` their common ``ws/{ws}/``), ``plugin_config_key`` (a plugin's config list; ``plugin_config_history_key`` a list it replaced; the
   credentials parameters' names are shared/workspace_ids.py ``credentials_parameter_name``).
 * ``ws_table``: a table that refuses any key, item, update, query or scan outside the scope's partitions (every index
   partition of voc-feedback is one of ``PARTITION_ATTRIBUTES``: gsi4 and gsi5 are keyed on ``gsi4pk`` / ``gsi5pk``,
@@ -50,6 +51,8 @@ The keys (``{ws}`` is ``ws_`` + a ULID, shared/workspace.py ``is_workspace_id``)
                     pk WS#{ws}#PLUGIN_CONFIG  sk {plugin} (a plugin's config list, shared/plugin_configs.py)
                     pk WS#{ws}#PLUGIN_CONFIG#HISTORY  sk {plugin}#{iso}#{random} (a replaced list, kept, no ttl)
     voc-watermarks  source WS#{ws}#{plugin}#{key}
+    voc-conversations  pk WS#{ws}#USER#{sub}  sk CONV#{id}, RUNCANCEL#{id} (a member's own conversations there)
+                    pk WS#{ws}#CONVERSANTS  sk {sub} (who has kept a conversation there, shared/conversations.py)
     voc-workspaces  pk WS#{ws} (META, MEMBER#{sub}), pk AUDIT#WS#{ws}: read by ``control_query`` only
     raw bucket      ws/{ws}/raw/{source}/{yyyy}/{mm}/{dd}/{stem}/{sha16}.json, ws/{ws}/silver/..., ws/{ws}/...,
                     ws/{ws}/exports/{export id}/… (``ExportObjects``)
@@ -82,6 +85,7 @@ __all__ = [
     'category_pk',
     'channel_pk',
     'control_query',
+    'conversants_pk',
     'date_pk',
     'erasure_job_pk',
     'export_job_pk',
@@ -357,6 +361,13 @@ def reprocess_job_pk(scope: WorkspaceScope) -> str:
 def export_job_pk(scope: WorkspaceScope) -> str:
     """A workspace's export jobs and their lock (voc-aggregates, shared/export_jobs.py): ``WS#{ws}#JOB#export``."""
     return scope.key('JOB', 'export')
+
+
+def conversants_pk(scope: WorkspaceScope) -> str:
+    """The list of the workspace's conversation owners in voc-conversations, one row per person who ever kept a
+    conversation there (shared/conversations.py ``conversant_key``): ``WS#{ws}#CONVERSANTS``. A Query of it, knowing
+    only the workspace id, names every ``WS#{ws}#USER#{sub}`` partition, a former member's too."""
+    return scope.key('CONVERSANTS')
 
 
 def plugin_config_pk(scope: WorkspaceScope) -> str:

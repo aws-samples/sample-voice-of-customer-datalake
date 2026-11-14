@@ -1,13 +1,17 @@
 """The caller's conversations inside a workspace (api/chat_handler.py; shared/conversations.py)."""
 from __future__ import annotations
 
+import sys
 from unittest.mock import patch
 
 import boto3
 import pytest
-from cross_workspace_worlds import ADA, ADA_MEMBER_ONLY, WS_A, WS_B, chat_world
+from boto3.dynamodb.conditions import Key
+from botocore.exceptions import ClientError
+from cross_workspace_worlds import ADA, ADA_MEMBER_ONLY, B_MARK, WS_A, WS_B, chat_world
 
 from memory.scanner import handler as scanner
+from shared.test.repo_paths import load_module_from_path, repo_root
 
 
 def _rows() -> dict[str, list[str]]:
@@ -111,3 +115,105 @@ def test_a_credential_has_no_conversations_inside_a_workspace(lambda_context):
         caller = {'sub': 'mcp:tok_1', 'voc:acting_subject': 'sub-ada', 'cognito:groups': ''}
         assert world.call('GET', '/chat/conversations/_list', ws=WS_A, caller=caller) == (
             404, {'success': False, 'error': 'Workspace not found'})
+
+
+# ── The workspace's list of conversation owners (7.19.00): WS#{ws}#CONVERSANTS / {sub} ──
+
+_CONVERSANTS = f'WS#{WS_A}#CONVERSANTS'
+#: A's viewer, who stays a member.
+VIC = {'sub': 'sub-vic', 'cognito:username': 'vic', 'cognito:groups': 'users'}
+
+
+def _conversations_table():
+    return boto3.resource('dynamodb', region_name='us-east-1').Table('conversations')
+
+
+def _conversants() -> dict[str, dict]:
+    """The owner rows of workspace A, by sub, read the way the export and the delete will: one Query on the
+    workspace's own partition, knowing only its id."""
+    items = _conversations_table().query(KeyConditionExpression=Key('pk').eq(_CONVERSANTS), ConsistentRead=True)['Items']
+    return {str(item['sk']): item for item in items}
+
+
+def _second_body(body: dict) -> dict:
+    """The same save shape for another conversation (an assistant save names its id in the body too)."""
+    return {**body, 'id': 'conv_two'} if 'kind' in body else body
+
+
+@pytest.mark.parametrize('body', [{'title': 'Trip notes', 'messages': []}, _assistant_body('conv_new', 0)],
+                         ids=['legacy', 'assistant'])
+def test_a_first_save_in_a_workspace_lists_its_owner_once(lambda_context, body):
+    with chat_world(lambda_context) as world:
+        assert _conversants() == {}
+        assert world.call('POST', '/chat/conversations/conv_new', ws=WS_A, body=body)[0] == 200
+        listed = _conversants()
+        assert list(listed) == ['sub-ada']
+        row = listed['sub-ada']
+        assert set(row) == {'pk', 'sk', 'first_at'}
+        assert (row['pk'], row['sk']) == (_CONVERSANTS, 'sub-ada')
+        assert world.call('POST', '/chat/conversations/conv_new', ws=WS_A, body=body)[0] == 200
+        assert world.call('POST', '/chat/conversations/conv_two', ws=WS_A, body=_second_body(body))[0] == 200
+        assert _conversants() == {'sub-ada': row}
+
+
+def test_a_save_outside_a_workspace_lists_nobody(lambda_context):
+    with chat_world(lambda_context) as world:
+        status, _ = world.call('POST', '/chat/conversations/conv_own', ws=None, body={'title': 'Mine', 'messages': []})
+        assert status == 200
+        assert [pk for pk in _rows() if pk.endswith('#CONVERSANTS')] == []
+
+
+def test_a_refused_save_lists_nobody(lambda_context):
+    """A body the route refuses (an id that does not match the path) writes neither the list nor the conversation."""
+    with chat_world(lambda_context) as world:
+        status, _ = world.call('POST', '/chat/conversations/conv_new', ws=WS_A,
+                               body={'id': 'conv_other', 'title': 'x', 'messages': []})
+        assert status == 400
+        assert _conversants() == {}
+
+
+def test_the_owner_is_listed_before_the_conversation_is_written(lambda_context):
+    """A fault listing the owner fails the save, and no conversation row is stored unlisted."""
+    import chat_handler
+
+    fault = ClientError({'Error': {'Code': 'ProvisionedThroughputExceededException', 'Message': 'slow down'}}, 'PutItem')
+    with chat_world(lambda_context) as world, patch.object(chat_handler, 'record_conversant', side_effect=fault):
+        before = _rows()
+        with pytest.raises(ClientError, match='ProvisionedThroughputExceeded'):
+            world.call('POST', '/chat/conversations/conv_new', ws=WS_A, body={'title': 'x', 'messages': []})
+        assert _rows() == before
+
+
+def test_a_removed_members_conversations_stay_findable_through_the_list(lambda_context):
+    """The member saves, is removed (their MEMBER# row deleted) and can no longer write there; their conversations
+    are kept, and the workspace's list still names their partition."""
+    with chat_world(lambda_context) as world:
+        status, _ = world.call('POST', '/chat/conversations/conv_new', ws=WS_A, body={'title': 'Kept', 'messages': []})
+        assert status == 200
+        workspaces = boto3.resource('dynamodb', region_name='us-east-1').Table('workspaces')
+        workspaces.delete_item(Key={'pk': f'WS#{WS_A}', 'sk': 'MEMBER#sub-ada'})
+        status, _ = world.call('POST', '/chat/conversations/conv_late', ws=WS_A, body={'title': 'Late', 'messages': []})
+        assert status == 404
+        # A member who stays saves after the removal: the list then names both, the former member first listed.
+        status, _ = world.call('POST', '/chat/conversations/conv_vic', ws=WS_A, caller=VIC,
+                               body={'title': 'Returns desk', 'messages': []})
+        assert status == 200
+        listed = _conversants()
+        assert sorted(listed) == ['sub-ada', 'sub-vic']
+        assert listed['sub-ada']['first_at'] <= listed['sub-vic']['first_at']
+        # Every conversation of the workspace is reached through the list, as a whole-table read finds them.
+        through_list = {(sub, str(item['sk'])) for sub in listed for item in _conversations_table().query(
+            KeyConditionExpression=Key('pk').eq(f'WS#{WS_A}#USER#{sub}'))['Items']}
+        everywhere = {(pk.removeprefix(f'WS#{WS_A}#USER#'), sk) for pk, sks in _rows().items()
+                      if pk.startswith(f'WS#{WS_A}#USER#') for sk in sks}
+        assert through_list == everywhere == {('sub-ada', 'CONV#conv_a'), ('sub-ada', 'CONV#conv_new'),
+                                              ('sub-vic', 'CONV#conv_vic')}
+        # The backfill (a dry run) finds nobody of A missing (B's seeded owner, never saved through a route, is).
+        backfill = load_module_from_path('backfill_conversants_removed_member',
+                                         repo_root() / 'scripts' / 'conversations' / 'backfill_conversants.py')
+        missing: list[str] = []
+        try:
+            backfill.run(_conversations_table(), apply=False, out=missing.append)
+        finally:
+            sys.modules.pop(backfill.__name__, None)
+        assert [line.split()[:2] for line in missing] == [[WS_B, f'sub-{B_MARK}-bea']]

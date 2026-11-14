@@ -57,6 +57,16 @@ export function sessionKey(owner: SessionOwner, threadId: string): { pk: string;
   return { pk: callerPartition(owner), sk: `CONV#${threadId}` };
 }
 
+/**
+ * The owner's row in their workspace's list of conversation owners, `WS#{ws}#CONVERSANTS` / `{sub}` (with
+ * `first_at`), written if absent before the first session write (store.ts); null outside a workspace, where there is
+ * no list. LOCKSTEP with lambda/shared/conversations.py `conversant_key`; both follow
+ * voc-datalake/schemas/conversation-keys-cases.json.
+ */
+export function conversantKey(owner: SessionOwner): { pk: string; sk: string } | null {
+  return owner.workspace === undefined ? null : { pk: `WS#${owner.workspace}#CONVERSANTS`, sk: owner.sub };
+}
+
 /** LOCKSTEP with chat_handler.CANCEL_SK_PREFIX: the Stop marker of a thread's run. */
 const CANCEL_SK_PREFIX = 'RUNCANCEL#';
 
