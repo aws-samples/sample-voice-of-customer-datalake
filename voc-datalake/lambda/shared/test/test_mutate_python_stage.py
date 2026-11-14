@@ -4,7 +4,7 @@ The script runs mutmut in a stage ($TMPDIR/mutate-python-<checksum>) whose `muta
 module's import root. A directory the stage only links (every one but lambda/, plugins/ and the module's own top
 directory) would send mutmut's writes back into the real tree, so the script copies the module's top directory
 and refuses (exit 3, before mutmut starts) when `mutants` or the module's mutant directory still resolves inside
-the repository.
+the repository, or the stage has no such directory at all.
 
 These run the real script in a throwaway repository with a stub in place of `python scripts/mutmut_run.py`: the
 stub answers the baseline with the import name it is given and, for `run`, writes a mutant to
@@ -146,8 +146,9 @@ def test_a_module_the_stage_cannot_copy_is_refused_before_mutmut_runs(repo, tmp_
     assert _snapshot(repo) == before
 
 
-def test_a_module_whose_mutant_directory_is_a_link_is_refused(repo, tmp_path):
-    """The import root is copied but the module's own directory below it is a link into the tree."""
+def test_a_module_below_a_directory_link_has_no_stage_directory_and_is_refused(repo, tmp_path):
+    """The import root is copied, but the module's directory below it is a link: git lists it as one entry that
+    the copy (regular files only) skips, so the stage has no directory for its mutants at all."""
     real = repo / 'voc-datalake/ignored/pkg'
     link = repo / 'voc-datalake/scripts/linked'
     link.symlink_to(real, target_is_directory=True)
@@ -156,6 +157,7 @@ def test_a_module_whose_mutant_directory_is_a_link_is_refused(repo, tmp_path):
     result, calls = _run(repo, tmp_path, 'scripts/linked/mod.py', 'linked.mod')
 
     assert result.returncode == 3
-    assert 'Refusing to mutate scripts/linked/mod.py' in result.stderr
+    assert 'Refusing to mutate scripts/linked/mod.py: the stage has no directory ' in result.stderr
+    assert f'{_stage(tmp_path)}/mutants/linked ' in result.stderr   # the stage's path, not the repository root
     assert calls == ['baseline']
     assert _snapshot(repo) == before

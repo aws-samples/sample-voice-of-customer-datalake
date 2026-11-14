@@ -17,6 +17,16 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.01.04] - 2026-11-14
+
+The testing guide covers property tests, and the mutation stage names the path it refuses.
+
+### Changed
+
+- `.kiro/steering/testing.md` gains a "Property Tests (Hypothesis)" section. It says when a rule gets a property test, how to write one (the invariant in words, realistic generators, the shared `@PROPERTY` settings, `@example` for a case worth keeping), and that every surviving mutant is killed or proved equivalent.
+- mutate-python.sh: a stage with no directory for the module's mutants is refused with its own message, naming the path.
+- As on every release, the version moves the `APP_VERSION` of the Api and Processing Lambdas, so those two template hashes in `voc-datalake/lib/test-support/baseline.json` change.
+
 ## [7.01.03] - 2026-11-14
 
 A stored document version written as an odd digit no longer breaks the project's reads; mutation testing reaches the project export without touching the tree, the version fill is bounded, and the rest of the wiki side is mutation-tested.

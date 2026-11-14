@@ -134,8 +134,13 @@ ln -s "$ROOT/${IMPORT_ROOT:+$IMPORT_ROOT/}${SOURCE_PATH%%/*}" "$STAGE/${SOURCE_P
 # written to, resolves into the repository (a module in an ignored or linked directory, which no copy holds).
 TREE="$(cd "$(git rev-parse --show-toplevel)" && pwd -P)"
 for target in "$STAGE/mutants" "$(dirname "$STAGE/mutants/$SOURCE_PATH")"; do
-  # Both exist (a copy or a link); `pwd -P` resolves every link on the way, on Linux and macOS alike.
-  resolved="$(cd "$target" 2>/dev/null && pwd -P || echo "$TREE")"
+  # `pwd -P` resolves every link on the way, on Linux and macOS alike.
+  if ! resolved="$(cd "$target" 2>/dev/null && pwd -P)"; then
+    echo "Refusing to mutate $MODULE: the stage has no directory $target (the copy holds only the files git" \
+      "lists, so an ignored directory or a link to a directory has none), so its mutants could not be kept out of the repository ($TREE)." \
+      "Nothing was mutated." >&2
+    exit 3
+  fi
   if [[ "$resolved" == "$TREE" || "$resolved" == "$TREE"/* ]]; then
     echo "Refusing to mutate $MODULE: its mutants would be written to $resolved, inside the repository" \
       "($TREE), because the stage holds no copy of it (git lists no file there, or it is a link)." \
