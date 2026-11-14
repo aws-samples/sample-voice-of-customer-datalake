@@ -1,9 +1,9 @@
 """The in-page JavaScript that tells whether an element sits inside a cookie / consent banner.
 
-Both page scripts skip logos inside consent banners: ``page_styles.STYLES_JS`` (logo images) and
-``page_inline_logo.INLINE_LOGO_JS`` (inline ``<svg>`` logos). Each puts ``IN_CONSENT_JS`` where its
-source has the ``CONSENT_PLACEHOLDER`` comment (``with_consent_check``), so the selector list and the
-walk are written once.
+The logo collector (``page_logo_candidates.CANDIDATES_JS``) flags every candidate inside a cookie / consent banner
+(their markup often comes BEFORE the site header and names its vendor "… logo"), so neither the pick nor the
+scoring rules take a vendor's image. The script puts ``IN_CONSENT_JS`` where its source has the
+``CONSENT_PLACEHOLDER`` comment (``with_consent_check``), so the selector list and the walk are written once.
 """
 from __future__ import annotations
 

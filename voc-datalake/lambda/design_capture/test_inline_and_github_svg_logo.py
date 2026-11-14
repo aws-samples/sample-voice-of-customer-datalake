@@ -1,11 +1,11 @@
-"""SVG logos that arrive as MARKUP are drawn to a PNG too: a website's inline ``<svg>`` and a GitHub
-repository's ``*logo*.svg`` (5.47.00).
+"""SVG logos that arrive as MARKUP: a website's picked inline ``<svg>`` (7.01.00: photographed alone, its sanitised
+copy kept beside the PNG) and a GitHub repository's ``*logo*.svg`` (5.47.00: drawn to a PNG).
 
-Fake CDP (``test_design_capture_worker.FakeCdp``), moto DynamoDB + S3. Pins: the inline logo is only looked
-for when the page names no header logo image; its markup is sanitised before it reaches the browser and is
-handed over as a ``data:`` URL argument; it is stored as the rendered preview with the page as its source; a
-refused or failed render falls back to the raster candidate. The GitHub job draws the SVG it is sent, records
-the logo only while the reference is unchanged, and leaves the "upload a PNG" note when it cannot draw it.
+Fake CDP (``test_design_capture_worker.FakeCdp``), moto DynamoDB + S3. Pins: the picked inline SVG is isolated in
+the page tab and trimmed in a fresh tab; its copy is serialised for exactly that stashed candidate, sanitised before
+it is stored, and stored with the page as its source; no usable copy still keeps the PNG; a failed isolation or trim
+is no logo, never no capture. The GitHub job draws the SVG it is sent, records the logo only while the reference
+is unchanged, and leaves the "upload a PNG" note when it cannot draw it.
 """
 import base64
 import json
@@ -15,16 +15,27 @@ import capture_handler
 import capture_worker as cw
 import logo_job
 import page_inline_logo as pil
-import page_styles as ps
 import pytest
-from test_design_capture_worker import REF_ID, FakeCdp, _kit, _styles, table  # noqa: F401 - fixture
+from logo_render import TRIM_JS
+from test_design_capture_worker import (  # noqa: F401 - fixture
+    ISOLATED_BOX,
+    REF_ID,
+    FakeCdp,
+    LogoAnswers,
+    _kit,
+    _styles,
+    candidate,
+    page_candidates,
+    png_bytes,
+    table,
+    trim_answer,
+)
 from test_svg_logo_render import (  # noqa: F401 - fixture
     BOX,
     LOGO_PNG,
     PREVIEW_KEY,
     SVG_KEY,
     logo_downloads,
-    png_bytes,
     s3,
 )
 
@@ -32,34 +43,25 @@ from shared.company_context import DESIGN_SYSTEM_PK, get_reference
 from shared.design_logo_render import SvgLogo, render_event
 
 PAGE = 'https://kirocrew.dev/'
-TOUCH = 'https://kirocrew.dev/apple-touch-icon.png'
 INLINE = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 166 52" onload="steal()">'
           '<script>alert(1)</script><path d="M0 0h166v52H0z" fill="#7c3aed"/></svg>')
 RAW_SVG_URL = 'https://raw.githubusercontent.com/acme/ui/HEAD/brand/logo.svg'
 FETCHED = '2026-10-29T00:00:00+00:00'
 
 
-class InlineCdp(FakeCdp):
-    """Answers the inline-logo evaluate with ``inline`` (the page's serialisation); records whether it ran."""
-
-    def __init__(self, styles: str, inline: object, **kw):
-        super().__init__(styles, **kw)
-        self.inline = inline
-        self.inline_asked = 0
-
-    def _evaluate(self, expression: str) -> str:
-        if expression == pil.inline_logo_expression():
-            self.inline_asked += 1
-            return json.dumps(self.inline)
-        return super()._evaluate(expression)
+def _inline_page(inline: object, *, isolate: object = ISOLATED_BOX, trim: object = None) -> FakeCdp:
+    """A page whose one candidate (the rules' pick) is an inline ``<svg>``; ``inline`` is its serialisation."""
+    found = page_candidates(candidate(kind='inline-svg', url=None))
+    return FakeCdp(_styles(), logo=LogoAnswers(candidates=found, isolate=isolate,
+                                               trim=trim_answer(LOGO_PNG) if trim is None else trim, inline=inline))
 
 
 def _capture(table, s3, cdp):  # noqa: F811 — pytest fixture parameter named like the imported fixture
     raster = MagicMock(return_value=MagicMock(status_code=200, content=png_bytes(32, 32)))
     deps = cw.CaptureDeps(table=table, kit=_kit(cdp, []), summarise_images=MagicMock(return_value='{"summary": "S"}'),
                           sleep=lambda _s: None, clock=iter(range(1000)).__next__, now=lambda: FETCHED,
-                          s3=s3, bucket='raw', logo_fetch=raster)
-    with patch.object(cw, 'validate_url', return_value=(True, '')), patch.object(ps, 'validate_url', return_value=(True, '')):
+                          s3=s3, bucket='raw', logo_fetch=raster, pick_logo=None)
+    with patch.object(cw, 'validate_url', return_value=(True, '')):
         result = cw.run_capture({'action': 'design_capture', 'ref_id': REF_ID}, deps)
     stored = _stored(table)
     assert stored is not None
@@ -77,10 +79,13 @@ def _draw_argument(cdp: FakeCdp) -> str:
     return draw['arguments'][0]['value']
 
 
+def _inline_expressions(cdp: FakeCdp) -> list[str]:
+    return [e for e in cdp.expressions() if e.startswith(f'({pil.INLINE_SVG_JS})')]
+
+
 class TestTheInlineSvgLogo:
-    def test_an_inline_header_svg_is_sanitised_drawn_and_stored_with_the_page_as_its_source(self, table, s3):  # noqa: F811 — pytest fixture parameter named like the imported fixture
-        cdp = InlineCdp(_styles(logos=[{'url': TOUCH, 'kind': 'touch-icon'}]),
-                        {'svg': INLINE, 'width': 166, 'height': 52}, render_answer=BOX, logo_png=LOGO_PNG)
+    def test_stores_the_isolated_png_and_the_sanitised_copy_with_the_page_as_its_source(self, table, s3):  # noqa: F811 — pytest fixture parameter named like the imported fixture
+        cdp = _inline_page({'svg': INLINE, 'width': 166, 'height': 52})
         result, stored, raster = _capture(table, s3, cdp)
         assert result == {'status': 'ready'}
         assert stored['extracted_design']['logo'] == {
@@ -88,57 +93,58 @@ class TestTheInlineSvgLogo:
             'svg_preview_key': SVG_KEY}
         assert s3.get_object(Bucket='raw', Key=PREVIEW_KEY)['Body'].read() == LOGO_PNG
         assert logo_downloads(raster) == []   # inline markup: nothing to download
-        drawn = _draw_argument(cdp)
-        assert drawn.startswith('data:image/svg+xml;base64,')
-        markup = base64.b64decode(drawn.split(',', 1)[1]).decode()
-        assert s3.get_object(Bucket='raw', Key=SVG_KEY)['Body'].read().decode() == markup   # the drawn markup is kept
+        assert _inline_expressions(cdp) == [pil.inline_svg_expression(1)]   # exactly the picked candidate
+        markup = s3.get_object(Bucket='raw', Key=SVG_KEY)['Body'].read().decode()
         assert 'script' not in markup
         assert 'onload' not in markup
         assert 'steal' not in markup
         assert 'fill="#7c3aed"' in markup
-
-    def test_a_header_logo_image_means_the_inline_svg_is_never_looked_for(self, table, s3):  # noqa: F811 — pytest fixture parameter named like the imported fixture
-        cdp = InlineCdp(_styles(logos=[{'url': 'https://kirocrew.dev/logo.png', 'kind': 'header'}]),
-                        {'svg': INLINE, 'width': 166, 'height': 52}, render_answer=BOX, logo_png=LOGO_PNG)
-        _, stored, _ = _capture(table, s3, cdp)
-        assert cdp.inline_asked == 0
-        assert stored['extracted_design']['logo']['source_url'] == 'https://kirocrew.dev/logo.png'
+        (_, trim), = [c for c in cdp.calls if c[0] == 'Runtime.callFunctionOn']
+        assert trim['functionDeclaration'] == TRIM_JS
+        assert trim['arguments'][0]['value'].startswith('data:image/png;base64,')   # the shot, never markup
 
     @pytest.mark.parametrize('inline', [
-        pytest.param(None, id='none-on-the-page'),
+        pytest.param(None, id='no-copy'),
         pytest.param({'svg': '<!DOCTYPE svg [<!ENTITY a "x">]><svg/>', 'width': 166, 'height': 52}, id='refused'),
         pytest.param({'svg': INLINE, 'width': 4, 'height': 4}, id='too-small'),
     ])
-    def test_no_usable_inline_svg_falls_back_to_the_touch_icon(self, table, s3, inline):  # noqa: F811 — pytest fixture parameter named like the imported fixture
-        cdp = InlineCdp(_styles(logos=[{'url': TOUCH, 'kind': 'touch-icon'}]), inline, render_answer=BOX,
-                        logo_png=LOGO_PNG)
+    def test_keeps_only_the_png_when_there_is_no_usable_copy(self, table, s3, inline):  # noqa: F811 — pytest fixture parameter named like the imported fixture
+        cdp = _inline_page(inline)
         result, stored, raster = _capture(table, s3, cdp)
         assert result == {'status': 'ready'}
-        assert cdp.inline_asked == 1
-        assert stored['extracted_design']['logo']['source_url'] == TOUCH
-        assert 'Runtime.callFunctionOn' not in cdp.methods()
-        assert logo_downloads(raster) == [TOUCH]
+        assert len(_inline_expressions(cdp)) == 1
+        assert stored['extracted_design']['logo'] == {'source_url': PAGE, 'content_type': 'image/png',
+                                                      'rendered': True, 'preview_key': PREVIEW_KEY}
+        assert logo_downloads(raster) == []
 
-    def test_a_failed_draw_of_the_inline_svg_keeps_the_capture(self, table, s3):  # noqa: F811 — pytest fixture parameter named like the imported fixture
-        cdp = InlineCdp(_styles(logos=[{'url': TOUCH, 'kind': 'touch-icon'}]),
-                        {'svg': INLINE, 'width': 166, 'height': 52}, render_answer={'error': 'decode_failed'},
-                        logo_png=LOGO_PNG)
+    @pytest.mark.parametrize(('isolate', 'trim'), [
+        pytest.param({'error': 'gone'}, None, id='element-gone'),
+        pytest.param(ISOLATED_BOX, {'error': 'decode_failed'}, id='trim-failed'),
+    ])
+    def test_returns_no_logo_and_a_ready_capture_when_it_cannot_be_photographed_alone(
+            self, table, s3, isolate, trim):  # noqa: F811 — pytest fixture parameter named like the imported fixture
+        cdp = _inline_page({'svg': INLINE, 'width': 166, 'height': 52}, isolate=isolate, trim=trim)
         result, stored, _ = _capture(table, s3, cdp)
         assert result == {'status': 'ready'}
-        assert stored['extracted_design']['logo']['source_url'] == TOUCH
+        assert 'logo' not in stored['extracted_design']
+        assert 'Contents' not in s3.list_objects_v2(Bucket='raw', Prefix=PREVIEW_KEY)
 
     @pytest.mark.parametrize(('raw', 'ok'), [
         (json.dumps({'svg': INLINE, 'width': 166, 'height': 52}), True),
+        (json.dumps({'svg': INLINE, 'width': 8, 'height': 8}), True),
+        (json.dumps({'svg': INLINE, 'width': 7, 'height': 52}), False),
         (json.dumps({'svg': INLINE, 'width': True, 'height': 52}), False),
+        (json.dumps({'svg': '', 'width': 166, 'height': 52}), False),
         (json.dumps({'svg': 'x' * (pil.MAX_INLINE_SVG_CHARS + 1), 'width': 166, 'height': 52}), False),
         (json.dumps([INLINE]), False), ('not json', False), (None, False),
     ])
     def test_the_page_answer_is_re_checked(self, raw, ok):
         assert (pil.parse_inline_logo(raw) is not None) is ok
 
-    def test_an_http_page_is_never_asked(self):
-        assert not pil.wants_inline_logo([], 'http://kirocrew.dev/')
-        assert pil.wants_inline_logo([{'kind': 'touch-icon'}], PAGE)
+    def test_serialises_the_stashed_candidate_by_its_number(self):
+        expression = pil.inline_svg_expression(3)
+        assert expression.endswith(f'({json.dumps(pil.INLINE_LIMITS)}, 3)')
+        assert pil.INLINE_LIMITS['stash'] == '__vocLogoCandidates'
 
 
 # ── A GitHub repository's SVG logo (logo_job) ───────────────────────────────

@@ -29,6 +29,7 @@ the raster candidate — and one INFO line names a short reason (never the URL o
 from __future__ import annotations
 
 import base64
+from dataclasses import dataclass
 from typing import Any, Final, Protocol
 
 from png_check import MAX_SIDE_PX, MIN_SIDE_PX, TOO_LARGE_REASON, png_problem
@@ -133,12 +134,16 @@ class _RenderTab:
         self.call('Emulation.setDefaultBackgroundColorOverride', {'color': TRANSPARENT})
         return self._photograph(self._draw(url, max_side))
 
-    def _draw(self, url: str, max_side: int) -> dict[str, float]:
-        """Build the ``<img>`` (the URL a call argument, set as a property), wait for its decode → the clip."""
+    def _document_id(self) -> str:
         document = self.call('Runtime.evaluate', {'expression': 'document', 'returnByValue': False}).get('result')
         object_id = document.get('objectId') if isinstance(document, dict) else None
         if not isinstance(object_id, str):
             raise RenderRefused('no_document')
+        return object_id
+
+    def _draw(self, url: str, max_side: int) -> dict[str, float]:
+        """Build the ``<img>`` (the URL a call argument, set as a property), wait for its decode → the clip."""
+        object_id = self._document_id()
         drawn = self.call('Runtime.callFunctionOn', {
             'functionDeclaration': RENDER_JS, 'objectId': object_id,
             'arguments': [{'value': url}, {'value': {**RENDER_LIMITS, 'max': max_side}}],
@@ -163,6 +168,124 @@ class _RenderTab:
             self._cdp.call('Target.closeTarget', {'targetId': self.target_id})
         except Exception:  # noqa: BLE001 - closing is best effort; the session ends with the capture anyway
             logger.info('Logo render tab not closed')
+
+    def trim(self, png: bytes, backdrop: dict[str, int] | None) -> dict:
+        """TRIM_JS's answer for ``png`` (a ``data:`` URL argument, never part of the code)."""
+        object_id = self._document_id()
+        data_url = 'data:image/png;base64,' + base64.b64encode(png).decode('ascii')
+        answer = self.call('Runtime.callFunctionOn', {
+            'functionDeclaration': TRIM_JS, 'objectId': object_id,
+            'arguments': [{'value': data_url}, {'value': backdrop}, {'value': TRIM_LIMITS}],
+            'awaitPromise': True, 'returnByValue': True,
+        }, timeout=RENDER_CALL_TIMEOUT_SECONDS).get('result')
+        value = answer.get('value') if isinstance(answer, dict) else None
+        if not isinstance(value, dict) or value.get('error') is not None:
+            raise RenderRefused(str(value.get('error'))[:40] if isinstance(value, dict) else 'no_answer')
+        return value
+
+
+#: A painted pixel is one more opaque than this (0-255).
+TRIM_ALPHA: Final = 8
+#: A logo whose painted pixels average a luminance above this is LIGHT (made for a dark header); it is drawn on its
+#: backdrop when that is at least ``MIN_CONTRAST`` darker, else on ``NEUTRAL_DARK`` (a header that is a photo has no
+#: colour of its own). Measured: 10 of 58 live logos were light.
+LIGHT_LUMINANCE: Final = 0.8
+MIN_CONTRAST: Final = 0.3
+NEUTRAL_DARK: Final = {'r': 31, 'g': 31, 'b': 31}
+#: The margin around a light logo drawn on its backdrop, as a share of its height.
+BACKDROP_MARGIN: Final = 0.2
+TRIM_LIMITS: Final = {'alpha': TRIM_ALPHA, 'light': LIGHT_LUMINANCE, 'contrast': MIN_CONTRAST, 'neutral': NEUTRAL_DARK,
+                      'margin': BACKDROP_MARGIN, 'timeout_ms': DECODE_TIMEOUT_MS}
+
+#: Crops a PNG to its painted pixels (+2 px) on a canvas and measures their mean luminance; a light logo is drawn on
+#: ``backdrop`` ({r, g, b}) or the neutral dark with a margin. → {data: <base64 PNG>, backdrop: {r, g, b} | null} | {error}.
+TRIM_JS: Final = r"""
+function (src, backdrop, L) {
+  const doc = this;
+  const lum = (r, g, b) => (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  const img = doc.createElement('img');
+  let timer = null;
+  const late = new Promise((resolve) => { timer = setTimeout(() => resolve('decode_timeout'), L.timeout_ms); });
+  img.src = src;
+  return Promise.race([img.decode().then(() => 'ok', () => 'decode_failed'), late]).then((state) => {
+    clearTimeout(timer);
+    if (state !== 'ok') return { error: state };
+    const c = doc.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight;
+    const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+    const d = g.getImageData(0, 0, c.width, c.height).data;
+    let x0 = c.width, y0 = c.height, x1 = -1, y1 = -1, painted = 0, light = 0;
+    for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) {
+      const i = (y * c.width + x) * 4;
+      if (d[i + 3] <= L.alpha) continue;
+      painted++; light += lum(d[i], d[i + 1], d[i + 2]);
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+    }
+    if (!painted) return { error: 'nothing_painted' };
+    x0 = Math.max(0, x0 - 2); y0 = Math.max(0, y0 - 2);
+    x1 = Math.min(c.width - 1, x1 + 2); y1 = Math.min(c.height - 1, y1 + 2);
+    const w = x1 - x0 + 1, h = y1 - y0 + 1;
+    const mean = light / painted;
+    const fill = mean <= L.light ? null
+      : (backdrop && lum(backdrop.r, backdrop.g, backdrop.b) <= mean - L.contrast ? backdrop : L.neutral);
+    const pad = fill ? Math.round(h * L.margin) : 0;
+    const o = doc.createElement('canvas'); o.width = w + 2 * pad; o.height = h + 2 * pad;
+    const og = o.getContext('2d');
+    if (fill) { og.fillStyle = `rgb(${fill.r}, ${fill.g}, ${fill.b})`; og.fillRect(0, 0, o.width, o.height); }
+    og.drawImage(c, x0, y0, w, h, pad, pad, w, h);
+    return { data: o.toDataURL('image/png').split(',', 2)[1], backdrop: fill };
+  });
+}
+"""
+
+
+@dataclass(frozen=True)
+class TrimmedPng:
+    png: bytes
+    #: ``#rrggbb`` a light logo was drawn on, else None.
+    backdrop: str | None = None
+
+
+def colour_of(raw: object) -> dict[str, int] | None:
+    """``{r, g, b}`` (each an int 0-255) from untrusted page or canvas output, else None."""
+    if not isinstance(raw, dict):
+        return None
+    colour = {}
+    for channel in ('r', 'g', 'b'):
+        value = raw.get(channel)
+        if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 255:
+            return None
+        colour[channel] = value
+    return colour
+
+
+def hex_colour(colour: dict[str, int] | None) -> str | None:
+    return '#{r:02x}{g:02x}{b:02x}'.format(**colour) if colour else None
+
+
+def _trimmed(tab: _RenderTab, png: bytes, backdrop: dict[str, int] | None) -> TrimmedPng:
+    answer = tab.trim(png, backdrop)
+    trimmed = base64.b64decode(str(answer.get('data') or ''), validate=True)
+    problem = png_problem(trimmed)
+    if problem is not None:
+        raise RenderRefused(problem)
+    return TrimmedPng(trimmed, hex_colour(colour_of(answer.get('backdrop'))))
+
+
+def trim_png(cdp: Cdp, png: bytes, backdrop: dict[str, int] | None) -> TrimmedPng | None:
+    """``png`` cropped to its painted pixels in a fresh about:blank tab (see ``TRIM_JS``), checked by its bytes
+    (``png_check``), or None (logged with a short reason). Never raises."""
+    tab: _RenderTab | None = None
+    try:
+        tab = _RenderTab(cdp)
+        return _trimmed(tab, png, backdrop)
+    except RenderRefused as exc:
+        logger.info('Logo not trimmed', extra={'reason': str(exc)})
+    except Exception as exc:  # noqa: BLE001 - a CDP error, a timeout or a bad answer: no logo, never no capture
+        logger.info('Logo not trimmed', extra={'reason': f'cdp_{type(exc).__name__}'})
+    finally:
+        if tab is not None:
+            tab.close()
+    return None
 
 
 def render_svg_logo(cdp: Cdp, url: str, *, what: str = 'SVG logo') -> bytes | None:

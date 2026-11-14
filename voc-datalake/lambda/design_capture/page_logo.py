@@ -1,36 +1,92 @@
-"""A captured page's SVG logo: drawn to a PNG in the browser, and kept as a SANITISED SVG beside it.
+"""A captured page's logo, read inside the browser session once the pick (``logo_pick``) named it.
 
-``render_page_logo`` runs inside the browser session, after the page was read:
+``read_page_logo`` runs in the session, after the page was read and photographed:
 
-- a header / og-image ``.svg`` that beats the raster candidate (``page_styles.svg_logo_to_render``) is drawn
-  from its URL as an ``<img>`` (``logo_render``: the faithful picture). Its bytes are also downloaded once
-  through the SSRF-guarded fetch (≤ 1 MB, an SVG by its bytes) and rebuilt deny-by-default
-  (``shared.design_svg``) — that sanitised markup is the copy kept beside the PNG;
-- otherwise the page's inline ``<svg>`` logo (``page_inline_logo``) is sanitised and drawn from a ``data:``
-  URL; the sanitised markup is the copy.
+- a picked CANDIDATE (``page_logo_candidates``) is photographed alone in the page tab (``logo_isolate``): the PNG is
+  exactly what the page draws, whatever the element is. Beside it, an SVG copy is kept when there is one: an inline
+  ``<svg>`` serialised in the page (``page_inline_logo``), or an ``<img>`` / CSS background whose file is an ``.svg``,
+  downloaded once through the SSRF-guarded fetch (≤ 1 MB, an SVG by its bytes); either is rebuilt deny-by-default
+  (``shared.design_svg``) before it is kept, download-only;
+- when the element cannot be photographed alone (it left the page, or the page navigated away from a public
+  address) and it is an ``<img>``, its own file is used instead: an SVG drawn as an ``<img>`` in a fresh tab
+  (``logo_render``), a raster downloaded (``raster_logo``, drawn smaller when over 1 MB). A CSS background is never
+  downloaded: it may be a sprite of many images;
+- a picked ``<head>`` icon (no logo on screen) is read like a raster ``<img>``.
 
 ``stored_logo`` then stores the PNG as the preview and the SVG as a download-only object
 (``design_logo.store_rendered`` → ``shared.design_assets.put_svg``). The model reads the PNG only.
-A failure anywhere means no SVG copy, or no rendered logo (the raster candidate is used), never no capture.
+A failure anywhere means no SVG copy, or no logo, never no capture.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Final
+from urllib.parse import urlparse
 
+from logo_isolate import PageTab, isolate_logo
+from logo_pick import LogoPick
 from logo_render import Cdp, render_svg_logo
-from page_inline_logo import InlineSvg
-from page_styles import PageStyles, svg_logo_to_render
+from page_inline_logo import inline_svg_expression, parse_inline_logo
+from page_logo_candidates import (
+    TOP_PX,
+    LogoCandidate,
+    LogoCandidates,
+    candidates_expression,
+    clear_marks_expression,
+    mark_expression,
+    parse_candidates,
+)
+from page_shots import photograph
+from raster_logo import read_raster_logo
+from rendered_logo import RenderedLogo
 
 from shared import design_assets, design_icons, design_logo, design_svg
+from shared.design_vision import PageShot
 from shared.logging import logger
+from shared.url_policy import validate_url
+
+#: The marked photo covers the candidates' band (``TOP_PX``) plus room for the boxes that start near its end.
+MARKED_HEADER_PX: Final = TOP_PX + 80
+MARKED_MIN_PX: Final = 16
+#: How far a re-listed candidate may have moved and still be the picked one.
+RESTASH_SLACK_PX: Final = 4
 
 
 @dataclass(frozen=True)
-class RenderedLogo:
-    """An SVG logo the browser drew: where it came from, the PNG, and the sanitised markup (when there is one)."""
-    source_url: str
-    png: bytes
-    svg: str | None = None
+class PageLogo:
+    """What the session read of the logo: a PNG the browser drew (``rendered``), or a raster file downloaded
+    (``downloaded``, stored after the vision call), or the URL of one it read and refused (never fetched again)."""
+    rendered: RenderedLogo | None = None
+    downloaded: design_logo.DownloadedLogo | None = None
+    refused_url: str | None = None
+
+
+def _pixels(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < MARKED_MIN_PX:
+        return None
+    return float(value)
+
+
+def marked_header(tab: PageTab, found: LogoCandidates) -> PageShot | None:
+    """The top of the page photographed with every candidate outlined and numbered (``MARK_JS``) for the pick, the
+    marks removed again; None without candidates or when the photo fails (the pick then reads the list only)."""
+    if not found.candidates:
+        return None
+    try:
+        tab.evaluate("window.scrollTo({ top: 0, left: 0, behavior: 'instant' })")
+        tab.evaluate(mark_expression())
+        width, height = _pixels(tab.evaluate('innerWidth')), _pixels(tab.evaluate('innerHeight'))
+        if width is None or height is None:
+            return None
+        return photograph(tab, 'header', 0, width, min(height, float(MARKED_HEADER_PX)))
+    except Exception as exc:  # noqa: BLE001 - a CDP error: the pick reads the list only
+        logger.info('Logo candidates not photographed', extra={'reason': type(exc).__name__})
+        return None
+    finally:
+        try:
+            tab.evaluate(clear_marks_expression())
+        except Exception:  # noqa: BLE001 - the marks only matter for the photos; the design shots follow
+            logger.info('Logo marks not cleared')
 
 
 def _sanitised(markup: object, box: tuple[object, object] | None = None) -> str | None:
@@ -49,32 +105,94 @@ def downloaded_svg(url: str, fetch: design_icons.Fetch | None) -> str | None:
     return _sanitised(data)
 
 
-def render_page_logo(cdp: Cdp, styles: PageStyles, inline: InlineSvg | None,
-                     fetch: design_icons.Fetch | None) -> RenderedLogo | None:
-    """The page's SVG logo drawn to a PNG (see the module docstring), or None."""
-    url = svg_logo_to_render(styles.logos)
-    png = render_svg_logo(cdp, url) if url else None
-    if url and png:
-        return RenderedLogo(url, png, downloaded_svg(url, fetch))
-    svg = _sanitised(inline.markup, (inline.width, inline.height)) if inline is not None else None
-    png = render_svg_logo(cdp, design_svg.svg_data_url(svg)) if svg else None
-    return RenderedLogo(styles.url, png, svg) if png else None
+def _is_svg_file(url: str | None) -> bool:
+    return isinstance(url, str) and url.startswith('https://') and urlparse(url).path.lower().endswith('.svg')
+
+
+def _svg_copy(tab: PageTab, candidate: LogoCandidate, fetch: design_icons.Fetch | None) -> str | None:
+    """The picked element's SVG copy, sanitised, or None (never raises: the copy is optional)."""
+    try:
+        if candidate.kind == 'inline-svg':
+            inline = parse_inline_logo(tab.evaluate(inline_svg_expression(candidate.n)))
+            return _sanitised(inline.markup, (inline.width, inline.height)) if inline is not None else None
+        if candidate.kind in ('img', 'css-bg') and _is_svg_file(candidate.url):
+            return downloaded_svg(str(candidate.url), fetch)
+    except Exception as exc:  # noqa: BLE001 - a CDP error or a timeout: no SVG copy, the PNG is still read
+        logger.info('SVG logo copy not read', extra={'reason': type(exc).__name__})
+    return None
+
+
+def _file_logo(cdp: Cdp, url: str, fetch: design_icons.Fetch | None, svg: str | None) -> PageLogo:
+    """The logo read from its own file: an SVG drawn by the browser (which fetches it itself, so its address is
+    checked against the URL policy first), else a raster downloaded through the SSRF-guarded fetch."""
+    if _is_svg_file(url):
+        if not validate_url(url)[0]:
+            logger.info('Logo file not read', extra={'reason': 'url_not_allowed'})
+            return PageLogo()
+        png = render_svg_logo(cdp, url)
+        return PageLogo(rendered=RenderedLogo(url, png, svg)) if png else PageLogo()
+    raster = read_raster_logo(cdp, url, fetch)
+    return PageLogo(rendered=raster.rendered, downloaded=raster.downloaded, refused_url=raster.refused_url)
+
+
+def _restashed(tab: PageTab, found: LogoCandidates, candidate: LogoCandidate) -> LogoCandidate:
+    """``candidate`` as the page shows it NOW: the candidates are listed again (a page that re-rendered its
+    header replaced the stashed elements) and the one of the same kind at the same place (±4 px) is taken;
+    ``candidate`` itself when none matches or the list cannot be read."""
+    try:
+        again = parse_candidates(tab.evaluate(candidates_expression()), found.page_url)
+    except Exception as exc:  # noqa: BLE001 - a CDP error: the first stash is used as it is
+        logger.info('Logo candidates not listed again', extra={'reason': type(exc).__name__})
+        return candidate
+    same = (c for c in again.candidates if c.kind == candidate.kind
+            and all(abs(a - b) <= RESTASH_SLACK_PX for a, b in ((c.x, candidate.x), (c.y, candidate.y),
+                                                                  (c.width, candidate.width), (c.height, candidate.height))))
+    return next(same, candidate)
+
+
+def _isolated(tab: PageTab, cdp: Cdp, found: LogoCandidates, candidate: LogoCandidate, svg: str | None) -> PageLogo | None:
+    """The element photographed alone; for an inline ``<svg>`` that paints nothing alone (it borrows paint from
+    elsewhere in the page), its sanitised copy drawn as an image instead."""
+    isolated = isolate_logo(tab, cdp, _restashed(tab, found, candidate).n)
+    source = candidate.url if candidate.url and candidate.url.startswith('https://') else found.page_url
+    if isolated is not None:
+        return PageLogo(rendered=RenderedLogo(source, isolated.png, svg, isolated.backdrop))
+    png = render_svg_logo(cdp, design_svg.svg_data_url(svg)) if svg and candidate.kind == 'inline-svg' else None
+    return PageLogo(rendered=RenderedLogo(source, png, svg)) if png else None
+
+
+def read_page_logo(tab: PageTab, cdp: Cdp, found: LogoCandidates, pick: LogoPick, fetch: design_icons.Fetch | None,
+                   *, can_isolate: bool) -> PageLogo:
+    """The picked logo as the session reads it (see the module docstring). ``can_isolate`` is False when the page
+    tab no longer shows a public https page (it navigated): then only the element's own file is read."""
+    candidate = found.by_number(pick.number)
+    if candidate is not None:
+        svg = _svg_copy(tab, candidate, fetch) if can_isolate else None
+        isolated = _isolated(tab, cdp, found, candidate, svg) if can_isolate else None
+        if isolated is not None:
+            return isolated
+        if candidate.kind == 'img' and candidate.url and candidate.url.startswith('https://'):
+            return _file_logo(cdp, candidate.url, fetch, svg)
+        logger.info('Picked logo not read', extra={'kind': candidate.kind})
+        return PageLogo()
+    icon = found.head_icon(pick.fallback) if pick.fallback else None
+    return _file_logo(cdp, icon.url, fetch, None) if icon is not None else PageLogo()
 
 
 def stored_logo(design: dict | None, rendered: RenderedLogo | None, ref_id: str, s3: object, bucket: str) -> dict | None:
-    """``design`` with the rendered SVG logo stored as its preview (+ the SVG copy) and recorded as its logo
-    (``rendered: True``), over the raster candidate and anything the model proposed.
+    """``design`` with the rendered logo stored as its preview (+ the SVG copy) and recorded as its logo
+    (``rendered: True``, and the ``backdrop`` a light logo was drawn on), over anything the model proposed.
 
     Without a rendered logo (or when storing it failed) a ``rendered`` flag is never kept: only this
-    worker sets one, so ``store_preview`` downloads the raster candidate as before.
+    worker sets one, so ``store_preview`` downloads the raster logo as before.
     """
     if not isinstance(design, dict):
         return design
     stored = None
     if rendered is not None:
         stored = design_logo.store_rendered(rendered.source_url, rendered.png, ref_id, s3, bucket, rendered.svg)
-    if stored is not None:
-        return {**design, 'logo': stored}
+    if stored is not None and rendered is not None:
+        return {**design, 'logo': {**stored, 'backdrop': rendered.backdrop} if rendered.backdrop else stored}
     logo = design.get('logo')
     if isinstance(logo, dict) and 'rendered' in logo:
         return {**design, 'logo': {k: v for k, v in logo.items() if k != 'rendered'}}

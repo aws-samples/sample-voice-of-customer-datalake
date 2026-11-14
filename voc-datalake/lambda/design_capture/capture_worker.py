@@ -8,32 +8,31 @@ One reference, one page, one browser session of at most ``SESSION_SECONDS``:
 4. the FINAL URL after navigation and redirects is checked again the same way — a page that
    ended on a private, loopback or non-http(s) address is refused and nothing it showed is read;
 5. ONE ``Runtime.evaluate`` (``page_styles.styles_expression``) collects the custom properties,
-   computed styles, most-used values and logo candidates; block detection (the web_reviews
+   computed styles and most-used values; block detection (the web_reviews
    plugin's ``block_detection``) turns a bot wall into a clear error;
-5b. when the page names no header logo IMAGE, one more evaluate (``page_inline_logo``) serialises its
-   inline ``<svg>`` logo, if it has one (untrusted markup, sanitised before use);
+5b. one more evaluate lists the page's numbered LOGO CANDIDATES (``page_logo_candidates``: images, inline SVGs,
+   CSS backgrounds and text logos near the top, open shadow roots included), and the header is photographed with
+   each candidate outlined and numbered (``page_logo.marked_header``);
 6. THREE screenshots for the ONE vision call (``page_shots``): the page above the fold, the header region
    and the footer region, each sized so the model reads it without resizing (PNG, or JPEG when large);
-6b. when the page's best logo is an SVG (a header / og-image SVG ranking above the raster candidate,
-   ``page_styles.svg_logo_to_render``), the browser draws it as an ``<img>`` in a SEPARATE fresh
-   ``about:blank`` tab and keeps a PNG screenshot of it (``logo_render``; checked by its bytes in
-   ``png_check``), and its bytes are downloaded once and sanitised (``shared.design_svg``) as the SVG
-   copy; otherwise an inline SVG logo (5b) is rebuilt deny-by-default and drawn the same way from a
-   ``data:`` URL (``page_logo``); any failure falls back to the raster candidate;
-6c. the page's icons (favicons, touch icons, manifest icons, ``og:image`` when it is the logo) are
+6b. ONE small vision call on the enrichment surface names the candidate that is the logo (``logo_pick``; the
+   scoring rules decide when it cannot answer, then the touch icon; ``og:image`` never). The picked element is
+   photographed ALONE in the page tab — everything else hidden, a transparent background, trimmed to its pixels in
+   a fresh ``about:blank`` tab, a light logo drawn on its dark header colour (``logo_isolate``); beside it a
+   sanitised SVG copy when the element is an inline ``<svg>`` or an ``.svg`` file (``page_logo``). When it cannot be
+   photographed alone, an ``<img>``'s own file is read instead (an SVG drawn by ``logo_render``, a raster
+   downloaded by ``raster_logo``); no candidate at all means no logo, never a guess;
+6c. the page's icons (favicons, touch icons, manifest icons) are
    downloaded through the SSRF-guarded fetch, within ``ICONS_BUDGET_SECONDS`` (``page_icons``,
    ``shared.design_icons``; an SVG icon is sanitised and drawn to a PNG in the same session);
 7. ONE vision converse on the utility surface — the three images + the page facts and text, each fenced
    as DATA (``shared.design_vision``) — returns ``extracted_design`` + ``extracted_summary``, validated
-   like the token editor;
-8. a rendered logo's PNG is stored as the PREVIEW and its sanitised SVG beside it, download-only
-   (``page_logo.stored_logo``), recorded as ``logo: {source_url: <svg url>, content_type: 'image/png',
-   rendered: True, preview_key, svg_preview_key?}``; otherwise the raster candidate (if any), downloaded
-   inside the session ONCE through the SSRF-guarded fetch (``raster_logo``: ≤ 5 MB, PNG/JPEG/WebP by its bytes),
-   is stored as a PREVIEW when it is ≤ 1 MB (``shared.design_logo.store_preview``; a model-proposed logo elsewhere
-   is downloaded then). A raster candidate over 1 MB is drawn smaller in a fresh tab instead, from a ``data:`` URL
-   of those bytes (6b's renderer, ≤ 1024 px, ≤ 1 MB) and recorded like a rendered SVG (``rendered: True``,
-   ``source_url`` = the raster URL); when it cannot be drawn, a download ≤ 2 MB stays a plain preview. Either way the key is ``company-context/design/logo_preview_<ref id>.<ext>``;
+   like the token editor; its logo is always the one 6b read (a logo the model proposes is dropped);
+8. a drawn logo's PNG is stored as the PREVIEW and its sanitised SVG beside it, download-only
+   (``page_logo.stored_logo``), recorded as ``logo: {source_url, content_type: 'image/png', rendered: True,
+   preview_key, svg_preview_key?, backdrop?}``; a raster file downloaded in 6b (≤ 5 MB, PNG/JPEG/WebP by its bytes)
+   is stored as a PREVIEW when it is ≤ 1 MB (``shared.design_logo.store_preview``), drawn smaller first when over
+   it (``raster_logo``). Either way the key is ``company-context/design/logo_preview_<ref id>.<ext>``;
    the icons go to ``company-context/design/icons_<ref id>/`` and are recorded as ``extracted_design.icons``.
    Those two prefixes are the only S3 writes this worker may do.
 
@@ -52,22 +51,21 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Final
 from urllib.parse import urlparse
 
+from logo_pick import AskModel, ask_logo_model, choose_logo
 from logo_render import COMMAND_TIMEOUT_SECONDS, Cdp, render_svg_logo
 from page_components import measured_components
 from page_icons import icon_refs
-from page_inline_logo import InlineSvg, inline_logo_expression, parse_inline_logo, wants_inline_logo
-from page_logo import RenderedLogo, render_page_logo, stored_logo
+from page_logo import PageLogo, marked_header, read_page_logo, stored_logo
+from page_logo_candidates import LogoCandidates, candidates_expression, parse_candidates
 from page_outcome import CaptureError, page_problem
 from page_shots import take_shots
 from page_spacing import without_layout_artefacts
 from page_styles import (
     PageStyles,
     css_text_of_vars,
-    logo_candidate,
     parse_page_styles,
     styles_expression,
 )
-from raster_logo import read_raster_logo
 
 from shared import company_context, design_icons, design_logo, design_references, design_vision
 from shared.cdp_page import HTTP_ERROR_RESPONSE, PROGRESS_JS, SettleTimings, wait_until_settled
@@ -110,6 +108,8 @@ class CaptureDeps:
     # static analysis (CodeQL py/call/wrong-arguments) reads as a method bound to the instance.
     summarise_images: Callable[[Sequence[design_vision.PageShot], str], str] = field(
         default_factory=lambda: design_vision.summarise_page_images)
+    #: The logo pick's model call (``logo_pick``); None = the scoring rules only.
+    pick_logo: AskModel | None = field(default_factory=lambda: ask_logo_model)
     sleep: Callable[[float], None] = field(default_factory=lambda: time.sleep)
     clock: Callable[[], float] = field(default_factory=lambda: time.monotonic)
     now: Callable[[], str] = field(default_factory=lambda: now_iso)
@@ -120,16 +120,10 @@ class CapturedPage:
     styles: PageStyles
     #: The fold, header and footer images of the ONE vision call (``page_shots``; the fold always first).
     shots: tuple[design_vision.PageShot, ...]
-    #: An SVG logo drawn by the browser (``page_logo``); None when none was rendered.
-    rendered_logo: RenderedLogo | None = None
-    #: The page's inline ``<svg>`` logo, read only when the page names no header logo image (``page_inline_logo``).
-    inline_svg: InlineSvg | None = None
+    #: The logo the session read (``page_logo``): drawn, downloaded, or none.
+    logo: PageLogo = field(default_factory=PageLogo)
     #: The page's icons, downloaded (and an SVG one drawn) for the local copies (``shared.design_icons``).
     icons: list[design_icons.FetchedIcon] = field(default_factory=list)
-    #: The raster logo candidate, downloaded in the session (stored by ``store_preview`` without a second fetch).
-    raster_logo: design_logo.DownloadedLogo | None = None
-    #: The raster candidate's URL when the session read it and gave up on it (``store_preview`` skips it).
-    raster_refused: str | None = None
 
 
 # ── The page ────────────────────────────────────────────────────────────────
@@ -208,25 +202,47 @@ def capture_page(cdp: Cdp, url: str, deps: CaptureDeps) -> CapturedPage:
     problem = page_problem(styles.status, deps.kit.blocked_by(signals))
     if problem is not None:
         raise problem
-    inline = None
-    if wants_inline_logo(styles.logos, styles.url):
-        inline = parse_inline_logo(tab.evaluate(inline_logo_expression()))
-    return CapturedPage(styles, take_shots(tab, deps.sleep, VIEWPORT), inline_svg=inline)
+    found, marked = _logo_candidates(tab, styles.url) if deps.bucket else (None, None)
+    # The logo is read before the design shots: the footer shot scrolls the page, and a sticky header that hides
+    # on scroll would not be back in place for the logo afterwards.
+    logo = _read_logo(tab, cdp, styles, found, marked, deps) if found is not None else PageLogo()
+    return CapturedPage(styles, take_shots(tab, deps.sleep, VIEWPORT), logo=logo)
 
 
-def render_logo(cdp: Cdp, page: CapturedPage, deps: CaptureDeps) -> CapturedPage:
-    """``page`` with its SVG logo rendered to a PNG (and its sanitised SVG copy), when it has one (``page_logo``);
-    otherwise, with a bucket, its raster candidate downloaded — or drawn smaller when over 1 MB (``raster_logo``).
+def _logo_candidates(tab: _Tab, page_url: str) -> tuple[LogoCandidates | None, design_vision.PageShot | None]:
+    """The page's numbered logo candidates and the marked header photo; (None, None) on a CDP failure (no logo,
+    never no capture)."""
+    try:
+        found = parse_candidates(tab.evaluate(candidates_expression()), page_url)
+        return found, marked_header(tab, found)
+    except Exception as exc:  # noqa: BLE001 - a CDP error or a timeout: no logo, never no capture
+        logger.info('Logo candidates not read', extra={'reason': type(exc).__name__})
+        return None, None
 
-    Runs after the page work, in its own fresh tab (``logo_render``); any failure keeps ``page`` as it was.
-    """
-    rendered = render_page_logo(cdp, page.styles, page.inline_svg, deps.logo_fetch)
-    if rendered:
-        return replace(page, rendered_logo=rendered)
-    if not deps.bucket:
-        return page
-    raster = read_raster_logo(cdp, page.styles, deps.logo_fetch)
-    return replace(page, rendered_logo=raster.rendered, raster_logo=raster.downloaded, raster_refused=raster.refused_url)
+
+def _read_logo(tab: _Tab, cdp: Cdp, styles: PageStyles, found: LogoCandidates, marked: design_vision.PageShot | None,
+               deps: CaptureDeps) -> PageLogo:
+    """The pick (``logo_pick``), then the picked logo read (``page_logo``); no logo on any failure."""
+    try:
+        pick = choose_logo(found, marked, styles.title, deps.pick_logo)
+        if not pick.found:
+            return PageLogo()
+        return read_page_logo(tab, cdp, found, pick, deps.logo_fetch, can_isolate=_still_public(tab))
+    except Exception as exc:  # noqa: BLE001 - a CDP error or a timeout: no logo, never no capture
+        logger.info('Logo not read', extra={'reason': type(exc).__name__})
+        return PageLogo()
+
+
+def _still_public(tab: _Tab) -> bool:
+    """Whether the page tab still shows a public address (a page may navigate itself after it was read): only
+    then is it photographed again for the logo."""
+    try:
+        location = tab.evaluate('location.href')
+        _require_public(location if isinstance(location, str) else '', final=True)
+    except CaptureError:
+        logger.info('Logo not isolated', extra={'reason': 'page_moved'})
+        return False
+    return True
 
 
 def copy_icons(cdp: Cdp, page: CapturedPage, deps: CaptureDeps) -> CapturedPage:
@@ -257,9 +273,21 @@ def design_from_page(page: CapturedPage, deps: CaptureDeps) -> tuple[str, dict |
     text = f'Page title: {styles.title}\nVisible text (start):\n{styles.text}'
     answer = deps.summarise_images(page.shots, f'{facts}\n\n{text}')
     measured = measured_components(styles.components, styles.rules, Theme(custom_properties(root_css)).resolve_vars)
-    deterministic = {**tokens, 'components': measured, 'logo': logo_candidate(styles.logos)}
+    deterministic = {**tokens, 'components': measured}
     summary, design = design_references.design_outcome(answer, 'computed_styles', deterministic)
-    return summary, overlay_components(without_layout_artefacts(design, styles), measured)
+    return summary, overlay_components(without_layout_artefacts(with_page_logo(design, page.logo), styles), measured)
+
+
+def with_page_logo(design: dict | None, logo: PageLogo) -> dict | None:
+    """``design`` whose logo is the one the session read: a downloaded raster file as the candidate
+    ``store_preview`` stores, else none (a drawn logo is recorded by ``stored_logo``); a logo the vision model
+    proposed is never kept, it would be a guess."""
+    if not isinstance(design, dict):
+        return design
+    without = {k: v for k, v in design.items() if k != 'logo'}
+    if logo.downloaded is not None:
+        return {**without, 'logo': {'source_url': logo.downloaded.url, 'content_type': logo.downloaded.content_type}}
+    return without
 
 
 def _target(deps: CaptureDeps, ref_id: object) -> dict | None:
@@ -303,16 +331,16 @@ def _read(item: dict, deps: CaptureDeps, trace: _Trace) -> tuple[str, dict | Non
         with deps.kit.open_session(SESSION_SECONDS) as cdp:
             session_id = getattr(cdp, 'browser_session_id', '')
             trace.browser_session_id = session_id if isinstance(session_id, str) else ''
-            page = copy_icons(cdp, render_logo(cdp, capture_page(cdp, url, deps), deps), deps)
+            page = copy_icons(cdp, capture_page(cdp, url, deps), deps)
     except deps.kit.browser_errors as exc:
         logger.warning(f'Design capture browser failure: {type(exc).__name__}')
         raise CaptureError('The secure browser could not read the page; try again later',
                            reason=f'browser_{type(exc).__name__}') from exc
     summary, design = design_from_page(page, deps)
     ref_id = str(item['id'])
-    design = stored_logo(design, page.rendered_logo, ref_id, deps.s3, deps.bucket)
-    design = design_logo.store_preview(design, ref_id, deps.s3, deps.bucket, deps.logo_fetch, page.raster_logo,
-                                       page.raster_refused)
+    design = stored_logo(design, page.logo.rendered, ref_id, deps.s3, deps.bucket)
+    design = design_logo.store_preview(design, ref_id, deps.s3, deps.bucket, deps.logo_fetch, page.logo.downloaded,
+                                       page.logo.refused_url)
     return summary, with_icons(design, page, ref_id, deps)
 
 
