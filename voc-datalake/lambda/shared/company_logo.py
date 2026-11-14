@@ -145,11 +145,17 @@ def inline_logo(document: str, data_url: str | None, wordmark: str) -> InlinedLo
     image = data_url or ''
 
     def swap(match: re.Match[str]) -> str:
+        # Each occurrence that gets the image is a use (an `src` and a `srcset` naming it in one tag are two), so the
+        # file never carries the base64 more than MAX_LOGO_USES times. A tag gets the image in every occurrence or
+        # not at all (a half-blank `srcset` would show nothing on a high-density screen): one that does not fit the
+        # uses left becomes the wordmark.
         nonlocal uses
-        if not image or uses >= MAX_LOGO_USES:
+        tag = match.group(0)
+        needed = len(_PLACEHOLDER_RE.findall(tag))
+        if not image or uses + needed > MAX_LOGO_USES:
             return text
-        uses += 1
-        return _PLACEHOLDER_RE.sub(lambda _m: image, match.group(0))
+        uses += needed
+        return _PLACEHOLDER_RE.sub(lambda _m: image, tag)
 
     document = _PLACEHOLDER_IMG_RE.sub(swap, document)
     return InlinedLogo(_PLACEHOLDER_RE.sub(BLANK_IMAGE, document), uses)

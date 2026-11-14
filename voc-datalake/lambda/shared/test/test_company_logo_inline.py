@@ -46,11 +46,12 @@ class TestOnlyImgTagsTakeAUse:
         out, uses = inline_logo(f'<script>const src = "{LOGO_PLACEHOLDER}";</script>', LOGO, 'Example Air')
         assert (out, uses) == (f'<script>const src = "{BLANK_IMAGE}";</script>', 0)
 
-    def test_one_img_naming_the_placeholder_twice_is_one_use(self):
+    def test_an_img_naming_the_placeholder_twice_takes_two_uses(self):
+        # Each embed is a use (commit review, 7.00.02): src + srcset fill both, so the next <img> is the wordmark.
         html = f'<img src="{LOGO_PLACEHOLDER}" srcset="{LOGO_PLACEHOLDER} 2x">{IMG}'
         out, uses = inline_logo(html, LOGO, 'Example Air')
         assert uses == 2
-        assert out == f'<img src="{LOGO}" srcset="{LOGO} 2x"><img src="{LOGO}" alt="Company logo">'
+        assert out == f'<img src="{LOGO}" srcset="{LOGO} 2x"><b>Example Air</b>'
 
 
 class TestCase:
@@ -89,3 +90,11 @@ def test_an_img_built_in_a_script_string_takes_a_logo_place():
     assert '__COMPANY_LOGO__' not in out.document
     assert out.document.count('data:image/png;base64,AAAA') == 2
 
+
+# Commit review (7.00.02): one <img> naming the placeholder in src AND srcset embedded the base64 once per occurrence
+# while counting one use, so a model could repeat it inside one tag without bound.
+def test_a_tag_that_would_embed_the_logo_more_often_than_allowed_becomes_the_wordmark():
+    tag = '<img src="__COMPANY_LOGO__" srcset="__COMPANY_LOGO__ 1x, __COMPANY_LOGO__ 2x, __COMPANY_LOGO__ 3x">'
+    out = inline_logo(tag + '<img src="__COMPANY_LOGO__">', 'data:image/png;base64,AAAA', 'Example Air')
+    assert out.uses == 1
+    assert out.document == '<b>Example Air</b><img src="data:image/png;base64,AAAA">'
