@@ -432,20 +432,20 @@ def _writer_handlers(context: Built, result: Callable[..., Built]) -> dict[str, 
         message = bounded(arguments, 'message', MAX_TEXT)
         answer = context.broker.push(context.run_id, context.agent_id, branch=branch, patch_key=key, tree_hash=tree,
                                      message=message)
-        context.progress(f'pushed {branch}')
+        context.written(f'pushed {branch}')   # (made: a board that fails now never crashes the session)
         return result(json.dumps({'patch': key, 'broker': answer}))
 
     def open_draft_pr(arguments: Mapping[str, Any]) -> Built:
         answer = context.broker.open_draft_pr(context.run_id, context.agent_id, branch=_branch(context, arguments),
                                               title=bounded(arguments, 'title', MAX_NAME),
                                               body=bounded(arguments, 'body', MAX_TEXT))
-        context.progress('opened the draft pull request')
+        context.written('opened the draft pull request')
         return result(json.dumps({'broker': answer}))
 
     def post_comment(arguments: Mapping[str, Any]) -> Built:
         answer = context.broker.comment(context.run_id, context.agent_id, number=_number(arguments),
                                         body=bounded(arguments, 'body', MAX_TEXT))
-        context.progress('posted a review comment')
+        context.written('posted a review comment')
         return result(json.dumps({'broker': answer}))
 
     return {'push_commit': push_commit, 'open_draft_pr': open_draft_pr, 'post_comment': post_comment}

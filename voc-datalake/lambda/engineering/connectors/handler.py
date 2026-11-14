@@ -59,6 +59,7 @@ from engineering.connectors.identity import (
 from engineering.connectors.patches import WorkspacePatches
 from engineering.connectors.records import RunRecords, WriteClaims
 from engineering.connectors.write_policy import WriteRefused
+from engineering.runtime.interface import MAX_ATTEMPT
 from engineering.workspace.store import WorkspaceStore
 from shared.invocation_cost import instrumented_handler
 from shared.logging import logger
@@ -140,9 +141,9 @@ def _choice[T](args: Mapping[str, object], key: str, choices: Mapping[str, T]) -
 
 
 #: A write's optional ``attempt`` (the caller's task attempt, 1 by default): with the caller's run and agent and the
-#: operation, the key a write is made once for (broker.py ``_once``).
+#: operation, the key a write is made once for (broker.py ``_once``). Its bound is the runtime's own (a task's attempts,
+#: ``runtime/interface.py`` ``MAX_ATTEMPT``), so every attempt an agent can work at can write.
 _ATTEMPT: Final = frozenset({'attempt'})
-MAX_ATTEMPT: Final = 1000
 
 
 def _attempt(args: Mapping[str, object]) -> int:

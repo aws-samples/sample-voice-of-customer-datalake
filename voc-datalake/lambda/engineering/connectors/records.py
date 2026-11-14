@@ -114,13 +114,13 @@ WRITE_PREFIX: Final = 'WRITE#'
 def writes_pk(ws: str, run_id: str) -> str:
     """The partition of a run's write claims (beside, never inside, the run's own ``WS#<ws>#RUN#<run>``)."""
     return f'WS#{ws}#WRITES#{run_id}'
-#: A claim row's attributes are ``pk``, ``sk``, ``state``, ``op``, ``at``, ``result`` and ``closed_at``, and the
-#: broker's IAM grant allows those alone (engineering-broker.ts ``BROKER_CLAIM_ATTRIBUTES``).
 
 
 class WriteClaims:
     """The broker's ``WriteLedger``: one create-only claim row per write key in the run's writes' partition, the
-    broker's only write, taken before the host call and closed with its outcome. A claim is taken again only after a refusal (nothing
+    broker's only write, taken before the host call and closed with its outcome. A row's attributes are ``pk``,
+    ``sk``, ``state``, ``op``, ``at``, ``result`` and ``closed_at``, and the broker's IAM grant allows those alone
+    (engineering-broker.ts ``BROKER_CLAIM_ATTRIBUTES``). A claim is taken again only after a refusal (nothing
     was written); a done write's row keeps its answer (a number, a URL, a branch and tree: never a body), so a repeat
     is answered with it."""
 

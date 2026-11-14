@@ -20,7 +20,9 @@ there is no operation that marks one ready or merges it, in any mode.
 
 Every write the host accepts gets an operational log line: the operation, the caller, and what was written (the
 issue or pull request number, the branch, the tree hash), never a body, a patch or a credential. It is not the
-audit record: the durable row of who wrote what comes with the run records.
+audit record. Each write's claim row keeps its outcome (claimed, done with its answer, refused or unknown), its
+operation and when, under the agent's key; it is not the audit row of D4 (who asked, in the run's log), which is
+still planned.
 """
 from __future__ import annotations
 

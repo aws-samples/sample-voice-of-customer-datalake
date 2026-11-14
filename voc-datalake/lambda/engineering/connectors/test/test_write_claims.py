@@ -41,6 +41,7 @@ from engineering.connectors.test.fakes import (
     role_arn,
     url_event,
 )
+from engineering.runtime.interface import MAX_ATTEMPT, AgentSpec
 
 #: The run's writes' partition: never the run's own (``WS#default#RUN#<run>``).
 PK = f'WS#default#WRITES#{RUN}'
@@ -180,11 +181,24 @@ def test_a_repeat_answers_its_first_outcome_even_after_the_run_or_the_dial_moved
     assert host.writes() == ['post_comment', 'push_bundle']
 
 
-@pytest.mark.parametrize('attempt', [0, -1, 1001, True, '2', 1.5])
+@pytest.mark.parametrize('attempt', [0, -1, MAX_ATTEMPT + 1, True, '2', 1.5])
 def test_a_writes_attempt_is_a_whole_number_from_1(attempt: object):
     body = {'operation': 'post_comment', 'args': {'on': 'pull_request', 'number': 7, 'body': 'b', 'attempt': attempt}}
     response = handle(url_event(role_arn('pr-reviewer', f'{RUN}.5'), body), PATTERN, ACCOUNT, Broker(connector()))
-    assert (response['statusCode'], 'attempt is a whole number' in response['body']) == (400, True)
+    assert (response['statusCode'], f'attempt is a whole number from 1 to {MAX_ATTEMPT}.' in response['body']) == (
+        400, True)
+
+
+@pytest.mark.parametrize('attempt', [1, 1001, MAX_ATTEMPT])
+def test_every_attempt_the_runtime_runs_a_task_at_can_write(attempt: int):
+    # The runtime's bound (a task's attempts, runtime/interface.py) is the broker's: an agent at any attempt it can
+    # work at is never refused its write for the attempt's number.
+    assert MAX_ATTEMPT == 9999
+    AgentSpec(run_id=RUN, agent_id='pr-reviewer-5', role='pr-reviewer', task_id='task-1', language='python',
+              egress=(), connection='conn-1', attempt=attempt)
+    body = {'operation': 'post_comment', 'args': {'on': 'pull_request', 'number': 7, 'body': 'b', 'attempt': attempt}}
+    response = handle(url_event(role_arn('pr-reviewer', f'{RUN}.5'), body), PATTERN, ACCOUNT, Broker(connector()))
+    assert response['statusCode'] == 200
 
 
 def test_a_writes_attempt_is_part_of_its_key():

@@ -45,7 +45,7 @@ from engineering.runtime import egress, handler
 from engineering.runtime.checkpoints import artifact_prefix
 from engineering.runtime.harness import broker_client
 from engineering.runtime.harness import main as harness_main
-from engineering.runtime.harness.board_client import BoardHttp, signed_post
+from engineering.runtime.harness.board_client import BoardHttp, BoardRefused, signed_post
 from engineering.runtime.harness.broker_client import (
     MAX_ANSWER_BYTES,
     RETRY_WAITS,
@@ -63,7 +63,7 @@ from engineering.runtime.harness.ports import (
 from engineering.runtime.interface import AgentSpec
 from engineering.runtime.test.broker_stub import AgentSessions, Answer, FunctionUrl
 from engineering.runtime.test.conftest import BROKER_URL
-from engineering.runtime.test.harness_fakes import HARNESS_COMMIT, RUN_ID, world
+from engineering.runtime.test.harness_fakes import HARNESS_COMMIT, RUN_ID, FakeBoard, world
 from engineering.runtime.unit_runner import AGENT_ENV
 
 URL = 'https://brk456ghi.lambda-url.us-east-1.on.aws/'
@@ -467,6 +467,40 @@ def test_a_write_whose_outcome_is_unknown_is_told_as_unknown_never_refused_never
         assert 'refused' not in told.text
     # The task's progress says so too, for the run (the board's last progress on the task).
     assert w.board.progress_seen[-1][3] == f'{tool}: {OUTCOME_UNKNOWN}'
+
+
+class FailingBoard(FakeBoard):
+    """A board that refuses (or cannot be reached for) every progress report."""
+
+    def progress(self, run_id: str, task_id: str, agent_id: str, step: str) -> None:
+        super().progress(run_id, task_id, agent_id, step)
+        raise BoardRefused(503, 'retry')
+
+
+@pytest.mark.parametrize(('role', 'tool', 'arguments', 'made'), [
+    ('committer', 'push_commit', {'branch': f'voc-agent/{RUN_ID}/fix', 'tree_hash': TREE, 'message': 'Fix it'},
+     {'result': {'branch': f'voc-agent/{RUN_ID}/fix', 'tree_hash': TREE}}),
+    ('pr-author', 'open_draft_pr', {'branch': f'voc-agent/{RUN_ID}/fix', 'title': 't', 'body': 'b'},
+     {'result': {'number': 7, 'url': 'https://code.example.com/pull/7'}}),
+    ('pr-reviewer', 'post_comment', {'number': 7, 'body': 'One nit.'},
+     {'result': {'url': 'https://code.example.com/pull/7#comment-1'}}),
+])
+def test_a_board_that_fails_after_a_write_never_crashes_the_session(tmp_path, role: str, tool: str,
+                                                                     arguments: dict[str, Any], made: Any):
+    w = world(tmp_path, role=role)
+    w.session.context.agent_id = f'{role}-1'
+    w.session.context.board = board = FailingBoard()
+    if tool == 'push_commit':
+        arguments = {**arguments, 'patch': f'{artifact_prefix(RUN_ID, "fixer-2", HARNESS_COMMIT, 1, "patches")}t.diff'}
+    for reply, error in ((TimeoutError(), True), (made, False)):   # an unknown outcome, then a write made
+        w.session.context.broker = BrokerHttp(SignedBroker(URL, 'us-east-1', Credentials(), opener=Replies(reply)),
+                                              RUN_ID, f'{role}-1', HARNESS_COMMIT)
+        told = w.session.tools.call(tool, arguments)
+        assert told.error is error
+        assert OUTCOME_UNKNOWN in told.text if error else json.loads(told.text)['broker'] == made['result']
+    # Each was reported to the board (which refused it) and kept in the session's own status.
+    assert len(board.progress_seen) == 2
+    assert w.session.context.status.step == board.progress_seen[-1][3]
 
 
 ENV = {'VOC_BOARD_URL': 'https://abc123def.lambda-url.us-east-1.on.aws/', 'VOC_BROKER_URL': URL,

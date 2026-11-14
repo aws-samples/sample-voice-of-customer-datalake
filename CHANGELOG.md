@@ -17,6 +17,31 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.30.01] - 2026-11-14
+
+Autonomous engineering agents: two fixes to 6.30.00's broker writes. Off by default, and no fixed cost.
+
+### Fixed
+
+- The broker took a write's `attempt` only up to 1000, while the runtime runs a task's attempts up to 9999 (`runtime/interface.py` `MAX_ATTEMPT`): an agent at attempt 1001 or later could never push, open its draft pull request or comment, and was told only that its request was malformed. The broker's handler now takes the runtime's own bound, one constant for both.
+- An outcome the model must read could still crash the session: after a write whose outcome is unknown, and after a write that was made, the tools reported it on the task through the board, and a board that refused that report or could not be reached ended the session, with a write already past. Those reports no longer raise (`AgentContext.written`): the session's own status always has them, and the board gets them when it answers; the model reads the write's outcome as before.
+
+### Changed
+
+- The broker's docstring says what a write's claim row records (its outcome, operation and time under the agent's key) and that the audit row of who asked (D4) is still planned; the claim row's attributes are listed on `WriteClaims` itself.
+- `lib/test-support/baseline.json` regenerated: VocApiStack's and VocProcessingStack's template hashes moved with their Lambda asset hashes alone (the engineering code their bundles carry changed); no resource, name or grant changed.
+
+### Tests
+
+- A write's `attempt` is taken at every attempt the runtime runs a task at (1, 1001, 9999) and refused past it, the bound read from the runtime's constant.
+- A board that fails every progress report never crashes a writer's session, for each of the three writes, whether the outcome is unknown or the write was made.
+
+### Upgrade notes
+
+- Lambda code (asset hashes) and the agents' images' harness files only: rebuild the images before the first run. No IAM, route, table or environment change.
+
+Built on the voc-autonomous branch. Off by default.
+
 ## [6.30.00] - 2026-11-14
 
 Autonomous engineering agents: the harness reaches the connector broker. Before, its broker interface refused every call, so a run on AWS would have stopped at the fixer's `submit_work` and no writer could push, open a draft pull request or comment. Now each agent calls the broker's function URL as its own session, and the broker's own checks (the caller's role, the run, the dial, the CI attestation, the GO ledger, the write rules) decide, as before. In a deployment the broker still answers 503 to every operation: no connection's credential can be stored yet (the connection page is planned), and with one, every push and pull request would still be refused until the CI attestation is recorded. Nothing has run against AWS yet. Off by default, and no fixed cost.

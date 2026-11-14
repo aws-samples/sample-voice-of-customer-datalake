@@ -20,6 +20,7 @@ sub-task post or broker write (``role_tools.py``). Everything a tool returns fro
 """
 from __future__ import annotations
 
+import contextlib
 import fcntl
 import json
 import os
@@ -136,6 +137,14 @@ class AgentContext:
     def progress(self, step: str) -> None:
         self.status.at(step)
         self.board.progress(self.run_id, self.task_id, self.agent_id, step)
+
+    def written(self, step: str) -> None:
+        """Report a host write's outcome (made, or unknown) on the task, never raising: the write is past, so a board
+        that refuses or cannot be reached now must not crash the session over it (the next progress report, the
+        heartbeat or the finish meets it again). The session's own status always has it."""
+        self.status.at(step)
+        with contextlib.suppress(Exception):
+            self.board.progress(self.run_id, self.task_id, self.agent_id, step)
 
 
 def as_data(source: str, text: str) -> str:
@@ -288,7 +297,7 @@ class ToolBox:
         except WriteOutcomeUnknown:
             # Never told as refused, never a crash: the write may have been made, and the broker makes it at most once
             # for this attempt (a repeat answers the first outcome). The task's progress says so, for the run.
-            self.context.progress(f'{name}: {OUTCOME_UNKNOWN}')
+            self.context.written(f'{name}: {OUTCOME_UNKNOWN}')
             return ToolResult(f'{name}: {OUTCOME_UNKNOWN}', error=True)
 
     def _read(self, arguments: Mapping[str, Any]) -> ToolResult:
