@@ -1,12 +1,14 @@
 """An agent's checkout: a sparse, blob-less clone of the repository at one commit, from the cache.
 
-The connector's broker (trusted code, the only holder of the host credential) keeps a partial clone of
-each repository in the cache, ``engineering/cache/<repo>/repo.git`` in the run bucket. Each session's
-entry point mounts ``engineering/cache/<repo>/`` read-only at ``/mnt/voc-cache`` (Mountpoint for Amazon
-S3: no appends or random writes, so nothing is ever written through it), and the agent's first commands
-clone from there: ``--filter=blob:none`` and a sparse checkout of only the task's paths, so a monorepo
-costs what the task touches (the broker sets git's uploadpack.allowFilter on the cache's repository; without it
-git ignores the filter and clones whole). The agent user runs every git command, with hooks, the file-system
+The cache's writer (voc-engineering-cache, ``engineering/connectors/cache.py``: trusted code that holds the
+host's token only for its fetch) keeps one entry per commit and 14-day generation,
+``engineering/cache/<connection>/<commit>/g<N>/repo.git`` in the raw bucket, a bare repository of that commit at depth
+1, complete once its ``READY`` exists (the runtime launches no agent before, and records the generation it found on
+the agent's session). Each session's entry point mounts ``engineering/cache/<connection>/`` read-only at
+``/mnt/voc-cache`` (Mountpoint for Amazon S3: no appends or random writes, so nothing is ever written through it),
+and the agent's first commands clone ``/mnt/voc-cache/<commit>/g<N>/repo.git``: ``--filter=blob:none`` and a sparse
+checkout of only the task's paths, so a monorepo costs what the task touches (the writer sets git's
+uploadpack.allowFilter on the entry's repository; without it git ignores the filter and clones whole). The agent user runs every git command, with hooks, the file-system
 monitor, pagers, external diff tools, credential helpers, terminal prompts and the system config off, so
 nothing the repository planted runs as the agent. The git directory lives beside the working tree
 (``/work/repo.git``, the agent's: ``/work`` is not group-writable), is made read-only to the ``work`` group,
@@ -22,7 +24,11 @@ from typing import Final
 from engineering.runtime.interface import Command, RuntimeRefused
 from engineering.runtime.unit_runner import MOUNT_POINT
 
-CACHE_SOURCE: Final = f'file://{MOUNT_POINT}/repo.git'
+#: The cache's entries as the session sees them: ``<commit>/g<N>/repo.git`` under the mounted connection prefix
+#: (``engineering/connectors/cache_layout.py``).
+CACHE_ROOT: Final = f'file://{MOUNT_POINT}'
+#: The largest cache generation (14 days each: far past any clock this code will run under).
+MAX_GENERATION: Final = 99_999
 #: Relative to the agent's working directory (``/work`` in the images).
 CHECKOUT_DIR: Final = 'repo'
 CLONE_TIMEOUT_SECONDS: Final = 30 * 60
@@ -68,11 +74,29 @@ def check_sparse_path(path: str) -> str:
     return path.rstrip('/')
 
 
-def checkout_commands(commit: str, paths: Sequence[str], source: str = CACHE_SOURCE) -> list[Command]:
+def check_generation(generation: object) -> int:
+    """``generation`` when it is a cache generation: an integer (never a bool) from 0 to ``MAX_GENERATION``."""
+    if not isinstance(generation, int) or isinstance(generation, bool) or not 0 <= generation <= MAX_GENERATION:
+        raise RuntimeRefused(f'a cache generation is a whole number from 0 to {MAX_GENERATION}')
+    return generation
+
+
+def cache_source(commit: str, generation: int) -> str:
+    """The cache's entry of ``commit`` in the mount: ``file:///mnt/voc-cache/<commit>/g<N>/repo.git``, ``N`` the
+    generation the launch found (``runtime/checkout_cache.py``)."""
+    if not COMMIT_RE.match(commit):
+        raise RuntimeRefused('a commit is a full hexadecimal object id')
+    return f'{CACHE_ROOT}/{commit}/g{check_generation(generation)}/{GIT_DIR}'
+
+
+def checkout_commands(commit: str, paths: Sequence[str], generation: int, source: str | None = None) -> list[Command]:
     """The commands that check out ``commit`` with only ``paths`` (the whole tree when ``paths`` is empty).
 
-    ``source`` is the cache's partial clone (a ``file://`` URL; tests point it at a local repository).
+    ``source`` is the cache's entry (a ``file://`` URL): the commit's own of ``generation`` in the mount
+    (``cache_source``) unless given (tests point it at a local repository).
     """
+    check_generation(generation)
+    source = cache_source(commit, generation) if source is None else source
     if not source.startswith('file:///'):
         raise RuntimeRefused('a checkout comes from the cache only (a file:// source)')
     if not COMMIT_RE.match(commit):
@@ -81,8 +105,10 @@ def checkout_commands(commit: str, paths: Sequence[str], source: str = CACHE_SOU
         raise RuntimeRefused(f'at most {MAX_SPARSE_PATHS} sparse paths')
     sparse = [check_sparse_path(path) for path in paths]
     steps: list[tuple[tuple[str, ...], int]] = [
-        ((*GIT, 'clone', '--no-checkout', '--filter=blob:none', f'--separate-git-dir={GIT_DIR}', '--quiet', source,
-          CHECKOUT_DIR), CLONE_TIMEOUT_SECONDS),
+        # --depth=1 as well: the cache's entry is that one commit at depth 1, and git hangs on a blob-less clone of a
+        # shallow repository without it (history is read through the broker, never cloned).
+        ((*GIT, 'clone', '--no-checkout', '--depth=1', '--filter=blob:none', f'--separate-git-dir={GIT_DIR}',
+          '--quiet', source, CHECKOUT_DIR), CLONE_TIMEOUT_SECONDS),
     ]
     if sparse:
         steps.append((repo_git('sparse-checkout', 'set', '--', *sparse), 300))

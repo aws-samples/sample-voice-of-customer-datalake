@@ -472,11 +472,12 @@ describe('with -c engineeringAgents=true', () => {
       })).toBe(1);
     });
 
-    it('hands the retrospective on to the runtime function itself, by name, and to nothing else', () => {
+    it('hands the retrospective on to the runtime function itself, by name, and invokes nothing but the cache writer', () => {
       const invoke = statement('LearningHandsOnToItself');
       expect(invoke).toMatchObject({ Effect: 'Allow', Action: 'lambda:InvokeFunction' });
       expect(JSON.stringify(invoke?.Resource)).toMatch(/:function:voc-engineering-runtime"\]\]\}$/);
-      expect(policyText(template, 'EngineeringSupervisorRole').match(/lambda:InvokeFunction"/g)).toHaveLength(1);
+      // (the other: the checkout cache's writer, engineering-cache.test.ts)
+      expect(policyText(template, 'EngineeringSupervisorRole').match(/lambda:InvokeFunction"/g)).toHaveLength(2);
     });
 
     it('lets the runtime call the allowlisted Claude models (the coach), and the delivery none', () => {

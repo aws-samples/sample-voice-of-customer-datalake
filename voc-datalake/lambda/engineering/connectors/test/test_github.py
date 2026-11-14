@@ -732,9 +732,29 @@ def test_no_token_or_jwt_is_ever_in_a_url_or_a_log_line(caplog: pytest.LogCaptur
 def test_the_client_has_no_merge_approve_settings_or_revoke_method() -> None:
     public = {name for name in dir(GitHubHost) if not name.startswith('_')}
     # Reads (a patch's base file, the default branch, the credential's repository, the branch rules) and the three
-    # writes: nothing else (no method changes a branch rule).
+    # writes, and the checkout cache's read-only fetch token: nothing else (no method changes a branch rule).
     assert public == {'read', 'file_at', 'default_branch', 'repository', 'ci_protection', 'post_comment',
-                      'branch_tree_hash', 'push_bundle', 'open_or_update_draft_pr'}
+                      'branch_tree_hash', 'push_bundle', 'open_or_update_draft_pr', 'fetch_token',
+                      'revoke_fetch_token'}
+
+
+def test_a_revoked_fetch_token_is_deleted_once_and_never_reused() -> None:
+    api = FakeGitHub().on('DELETE', '/installation/token', Response(204, {}, b''))
+    host = client(api)
+    _repository, token = host.fetch_token('conn-1')
+    host.revoke_fetch_token(token)
+    assert [(s.method, s.path, s.headers['Authorization']) for s in api.sent if s.method == 'DELETE'] == [
+        ('DELETE', '/installation/token', f'Bearer {token}')]
+    assert host.fetch_token('conn-1')[1] == 'ghs_test_token_2'   # (a fresh one: the revoked one is forgotten)
+
+
+def test_the_checkout_caches_fetch_token_reads_contents_of_the_one_repository_and_is_reused() -> None:
+    api = FakeGitHub()
+    host = client(api)
+    assert host.fetch_token('conn-1') == ('example-org/refund-service', 'ghs_test_token_1')
+    assert host.fetch_token('conn-1') == ('example-org/refund-service', 'ghs_test_token_1')
+    assert api.scopes() == [{'repositories': ['refund-service'], 'permissions': {'contents': 'read'}}]
+    assert api.calls() == []   # (the token only: git fetches, the client asks the API nothing else)
 
 
 def test_the_connections_repository_is_its_credentials_and_asks_the_host_nothing() -> None:

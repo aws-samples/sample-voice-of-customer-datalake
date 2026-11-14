@@ -1422,6 +1422,16 @@ def test_a_crashed_launch_is_caught_by_a_later_tick_and_the_run_sent_to_a_person
     assert asked == [('needs_human', 'supervisor', 'coordinator')]   # (once: the decision point's own rule)
 
 
+def test_a_launch_that_fills_the_checkout_first_gets_the_fills_longer_window(wired: Any,
+                                                                             monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    started = _started_whose_launch_never_ran(monkeypatch)
+    _runs().mark_cache_fill(OTHER_RUN, now=started + 10)   # (its launch began with a fill of the commit)
+    assert _tick_at(monkeypatch, started + supervisor_module.COORDINATOR_LAUNCH_SECONDS + 60) == 'active'
+    assert _tick_at(monkeypatch, started + supervisor_module.COORDINATOR_FILL_LAUNCH_SECONDS) == 'active'
+    assert _tick_at(monkeypatch, started + supervisor_module.COORDINATOR_FILL_LAUNCH_SECONDS + 60) == 'needs_human'
+
+
 def test_a_coordinator_launch_still_under_way_is_left_alone(wired: Any, monkeypatch: pytest.MonkeyPatch):
     assert wired is not None
     started = _started_whose_launch_never_ran(monkeypatch)

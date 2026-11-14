@@ -146,7 +146,7 @@ def _vm_directory(root: Path, cache: Path, commit: str) -> RunnerClient:
     server = serve('127.0.0.1', 0, runner, 'agent')
     threading.Thread(target=server.serve_forever, daemon=True).start()
     client = RunnerClient(f'http://127.0.0.1:{server.server_address[1]}', sleep=lambda _s: time.sleep(0.02))
-    for command in checkout_commands(commit, [], source=f'file://{cache}'):
+    for command in checkout_commands(commit, [], 0, source=f'file://{cache}'):
         assert client.run(command.argv, timeout_seconds=60, repository_code=False, in_checkout=False)['exit_code'] == 0
     return client
 

@@ -39,9 +39,10 @@ budgets, the run journal) and on [memory](memory.md).
 
 *Partly built*: package detection with code owners (`voc-datalake/lambda/engineering/knowledge/workspaces.py`) and
 the shard cutter with its size budget (`knowledge/shards.py`), as tested code nothing invokes yet (the Understand flow
-that calls them lands with the agents, phase 4). Planned: partial clones and sparse checkouts, change impact (the
-dependency graph between packages), shards' time budgets and the caches' writers (the cache's expiry rule is in the
-stack). Designed for them from day one.
+that calls them lands with the agents, phase 4), and, since 7.05.00, the checkout cache's writer
+(`voc-engineering-cache`, [below](#runtime-one-agentcore-session-per-agent), "The checkout cache"), from which every
+agent's blob-less sparse checkout clones. Planned: change impact (the dependency graph between packages), shards' time
+budgets and the dependency caches' filler (the caches' expiry rule is in the stack). Designed for them from day one.
 
 - **Partial clones.** A checkout is `git clone --filter=blob:none` plus a sparse checkout of only the paths a task
   needs. History and pull requests are read through the host's API, in pages, never by cloning everything.
@@ -64,9 +65,10 @@ stack). Designed for them from day one.
   in S3, under the connection's own prefix, so a new agent starts warm; an agent reads only its own connection's
   prefix. Entries expire 30 days after they were written (the raw bucket's `engineering-cache-expiry` rule on
   `engineering/cache/<connection>/…`, with `-c engineeringAgents=true`) and are rebuilt when needed. Every shard has a size and
-  time budget, and a shard too big is split again (built for the size: `knowledge/shards.py`). Only trusted code writes the cache: the connector's broker writes
-  the checkouts, and the cache filler (a step that runs no repository code: fetch only, from the lockfile, install
-  scripts off) writes the dependency caches. A toolchain whose dependency resolution runs build files (Gradle, Maven)
+  time budget, and a shard too big is split again (built for the size: `knowledge/shards.py`). Only trusted code writes the cache: the checkout cache's writer
+  (`voc-engineering-cache`, built in 7.05.00: fetch only, it runs no repository code) writes the checkouts, one
+  immutable entry per (connection, commit), and the dependency caches' filler (planned: a step that runs no
+  repository code, fetch only, from the lockfile, install scripts off) will write the dependency caches. A toolchain whose dependency resolution runs build files (Gradle, Maven)
   gets no shared dependency cache: its resolution counts as repository code with network (the registry list only,
   nothing customer-derived, no credential), in the sandbox, for that run only. Gradle runs without its daemon
   (`GRADLE_OPTS=-Dorg.gradle.daemon=false` in the Java image), whose client talks to it over loopback, which the
@@ -92,7 +94,7 @@ connection is served instead of answered 503, and, since 7.04.00, the CI attesta
 attests that the repository's CI meets the setup guide ("The target's CI", below), and the broker
 serves a push or a pull request only while that attestation holds and the host's branch rules pass its own read-only
 check; a file or history read is of the run's own default branch. Planned: the run's issue and pull request and its
-cited reviews on the run's record, the checkout cache by commit sha, sparse clones, the GitLab client, and the first
+cited reviews on the run's record, sparse clones, the GitLab client, and the first
 real run against a repository (it waits for the owner).
 
 **The connections (7.03.00).** Administrators acting for themselves (a delegated MCP credential gets 403), only where
@@ -324,7 +326,7 @@ branch, being refused:
 
 | Role | Operations |
 |---|---|
-| every agent | read files, history, issues and pull requests through the broker; checkouts come from the cache it fills |
+| every agent | read files, history, issues and pull requests through the broker; checkouts come from the checkout cache, which its writer fills with the connection's read-only token |
 | issue understander, PR reviewer | post a comment on the run's own issue or pull request (from the run's record) |
 | committer | push its submitted patch, as one commit, to the agent's branch (`push_bundle`: `{branch, patch, tree_hash, message}`) |
 | PR author | open or update the agent's draft pull request |
@@ -1075,7 +1077,9 @@ sends the run to a person (the coordinator's decision point), whose Resume launc
 crashes or times out before it can, the supervisor's tick catches it: an active run started with a coordinator to
 launch (its connection, commit and language) that has no coordinator session and no live launch hold of one, more than
 6 minutes after its start or its last Resume, whichever is later (the runtime's 5-minute limit and a minute's margin,
-`supervisor.COORDINATOR_LAUNCH_SECONDS`; a Resume records `resumed_epoch` on `META`, so its new coordinator gets a full
+`supervisor.COORDINATOR_LAUNCH_SECONDS`), or 21 minutes when a fill of its checkout began since (its META's
+`cache_fill_at`: four 5-minute invocations, the fill and its two further asks among them, and a minute,
+`COORDINATOR_FILL_LAUNCH_SECONDS`; a Resume records `resumed_epoch` on `META`, so its new coordinator gets a full
 window of its own and no tick undoes the Resume), goes to a person (`needs_human` `coordinator`, actor `supervisor`).
 The check uses the agent rows the tick already queries (sessions and launch holds, one query per listed run) and makes
 one GetItem of the run's `META` per tick for each run with no coordinator session; it asks once, as the decision point
@@ -1446,7 +1450,8 @@ wait closes.
   a standard runtime and, unless `-c engineeringBuildMemoryMiB=0`, a build runtime for the roles that build and test.
 
 - **No host token in any session.** Nothing in a session reaches the repository host: the
-  [broker](#repository-connectors) holds the credential, fills the cache and makes every host write. An agent's egress
+  [broker](#repository-connectors) holds the credential and makes every host write, and the checkout cache's writer
+  (below) mints a read-only token only for its own fetch. An agent's egress
   allowlist is, in its region, Bedrock and its two buckets' own S3 endpoints (the raw bucket's for the cache, the
   workspace bucket's for its keys; never the regional one, which reaches every bucket), the board's and the broker's function URLs by their own hosts (`<id>.lambda-url.<region>.on.aws`, never a generic
   Lambda endpoint; the broker's since 7.02.00, when the harness's client of it landed), and, for the agents that run
@@ -1489,10 +1494,13 @@ wait closes.
   (a tmpfs at `/run/voc`) and the kernel's protected hard links are turned on, so repository code cannot hard-link
   the session into the checkout; unless one of the two holds, the runner runs no repository code at all. A killed or timed-out command is ended with its whole process group, and a boxed command's
   namespace dies with it.
-- **Sparse partial clones.** The broker keeps a partial clone per connection in the cache, under
-  `engineering/cache/<connection>/`. With its first session the runner mounts that prefix read-only at `/mnt/voc-cache`
-  (Mountpoint for Amazon S3; nothing is written through it), and the agent clones from it with `--filter=blob:none`
-  and a sparse checkout of only its task's paths (at most 200), then checks out the task's commit. The agent user runs
+- **Sparse partial clones.** The checkout cache (below) holds each run's commit under its connection's prefix,
+  `engineering/cache/<connection>/<commit>/g<N>/repo.git`. With its first session the runner mounts the connection's
+  prefix read-only at `/mnt/voc-cache` (Mountpoint for Amazon S3; nothing is written through it), and the agent clones
+  `/mnt/voc-cache/<commit>/g<N>/repo.git` (the commit checked as a full object id, `N` the generation its launch found
+  and recorded on its session, checked as a whole number) with `--depth=1 --filter=blob:none` (git
+  hangs on a blob-less clone of a shallow repository without the depth) and a sparse checkout of only its task's paths
+  (at most 200), then checks out the task's commit. The agent user runs
   every git command with the system config, terminal prompts, hooks, the file-system monitor, the pager, external diff
   tools and credential helpers off, and with git's own file modes (`core.sharedRepository=0644`, whatever the
   umask). The git directory lives beside the working tree (`/work/repo.git`, which repository code cannot write)
@@ -1501,6 +1509,160 @@ wait closes.
   included, lands inside the working tree), so repository code can change the working tree but neither the git
   directory nor which one the agent's git reads: a `.git` or a repository it plants in the working tree, with
   its config and filters, is never the agent's.
+- **The checkout cache (7.05.00).** Its writer is `voc-engineering-cache`
+  (`voc-datalake/lambda/engineering/connectors/cache.py`, the layout in `cache_layout.py`; CDK in
+  `lib/stacks/engineering-cache.ts`), trusted code that runs no repository code, a container-image Lambda
+  (`voc-datalake/engineering-cache/Dockerfile`: Lambda's Python base image pinned by digest, one exact build of the
+  distro's `git-core`, every Python package pinned by version and sha256 in `engineering-cache/requirements.txt` and
+  installed with `--require-hashes`, built by CDK as a Docker image asset for arm64).
+  - *Layout.* One immutable entry per (connection, commit, generation) in the raw bucket:
+    `engineering/cache/<connection>/<commit>/g<N>/repo.git/…`, a bare repository holding exactly that commit at depth
+    1 under one ref (`refs/heads/voc-base`, HEAD pointing to it), `uploadpack.allowFilter` set, its objects repacked
+    into one pack (`git repack -a -d`; the ref stays one loose file, since S3 keeps no empty directory and git opens a
+    repository only with its `refs/`). The entry is complete only once `…/<commit>/g<N>/READY` exists: a JSON manifest
+    (format 2, the connection, the repository it was fetched from, the commit, its generation and its ref, every file
+    with its size and sha256, the total, when it was written), written last and create-only (`If-None-Match: *`, in
+    the writer's IAM too), never rewritten. A fill that finds READY does nothing; files under `repo.git/` may be
+    overwritten by a retry, since nobody reads an entry without READY. READY marks completion; it is not an integrity
+    check against its readers: the writer is the only principal that may write under the cache's prefix (the raw
+    bucket's deny, under *IAM* below), and
+    each file's sha256 is sent with its put, which S3 checks against the bytes it stores (a mismatch is refused), so
+    the manifest's hashes are what S3 stored. A fill redone after a failed one overwrites the files of the same names (the
+    bucket is versioned: the old ones become noncurrent versions, which the cache's rule expires a day later) and may
+    leave a pack the manifest does not list (its name is its content's hash, and a new repack may name another); it
+    holds the same commit's objects and is harmless. The manifest's `repository` is where the commit was fetched from: a commit fetched by its id may be
+    one only a fork's pull-request ref reaches, so it says nothing of the branch the commit is on.
+  - *Generations.* `N = floor(epoch seconds / 14 days)`, from the caller's clock (`cache_layout.py`
+    `GENERATION_SECONDS`, the one constant). A launch takes READY of generation `N`, or of `N - 1` while its
+    manifest was written under 28 days ago; when neither is usable, generation `N` is filled beside the old one. Every
+    entry expires with the cache's 30-day rule (S3, after it was written), so an entry in use is always at least two
+    days from its expiry, and the old generation is never read near its deletion; nothing is renewed or rewritten.
+    The writer refuses a generation more than one away from its own clock's.
+  - *The fill.* `git init --bare` (no template, so no sample hooks), then `git fetch --depth=1 --no-tags
+    https://github.com/<owner>/<repo>.git <commit>:refs/heads/voc-base`, HEAD set, the commit checked, the repack, in
+    a fresh directory under `/tmp` removed afterwards. Every git command runs with the system and global config,
+    hooks, the file-system monitor, credential helpers and terminal prompts off, https the only protocol, no
+    redirect, no submodule and every fetched object checked, from an environment it is given whole (nothing inherited).
+  - *The token.* An installation token for `contents: read` on the connection's one repository, minted as the broker
+    mints its tokens (`github.py` `fetch_token`, the connection's GitHub App credential read from its SSM parameter as
+    the broker reads it). It reaches git only through the fetch's environment: `GIT_CONFIG_COUNT=1`,
+    `GIT_CONFIG_KEY_0=http.https://github.com/<owner>/<repo>.git.extraHeader`, `GIT_CONFIG_VALUE_0=Authorization: Basic
+    <base64 of x-access-token:<token>>`. It is never in a URL, an argument, a file, a log line or an error: a git
+    failure's words are redacted (the token, its header form, anything credential-shaped) and cut before they are
+    raised. Once the fetch is over (or has failed) the token is revoked (`DELETE /installation/token`, best effort:
+    sent once, never retried, a failure only logged; the token lapses within the hour anyway) and forgotten by the
+    container.
+  - *The claim.* Two fills of one commit's generation are kept apart by a claim row in `voc-engineering`: `pk`
+    `WS#default#CACHE#<connection>`, `sk` `COMMIT#<commit>#G#<N>`, attributes `holder` and `expires_at` only. A fill
+    takes it
+    with a conditional put (`attribute_not_exists(pk) OR expires_at <= now`), a lease of 300 seconds (longer than the
+    function may run), and ends its own lease when done (an update conditioned on its holder): at once when it landed
+    or was refused, but 120 s later when it failed (`CacheFailed`, `FAILED_HOLD_SECONDS`), so during a host outage the
+    launches meanwhile find the fill held (a launch waits; the board's and the continuations' hand nothing on, and an
+    agent's launch is told "a fill of it is under way; try the launch again in a few minutes") instead of each minting
+    a token and starting a fetch, about one fill per 2 minutes in all, not one per launch; a claim another fill
+    holds refuses (`CacheBusy`, saying when to try again), and a crashed fill's claim is taken over once its lease ends.
+  - *Bounds.* The function runs at most 240 s (2 GB of memory, 3 GB of ephemeral storage); the fetch gets at most
+    150 s, and never more than what is left of the 230 s deadline once 80 s are kept for the steps after it (a slow
+    mint shortens it; under 10 s left, the fill stops as "ran out of its time before its fetch"), the repack 30 s, each
+    other git step 10 s, and no upload starts that would end, by an estimate from its size (50 MB/s), past 230 s into
+    the fill. The deadline is the earlier of those 230 s and Lambda's remaining time less 10 s, when the invocation's
+    context gives it (`cache.invocation_ends_by`: a cold start or a slow claim shortens it). Past it the fill ends
+    in its own words (`CacheFailed`; an upload far slower than the estimate can still meet Lambda's limit). The real ceiling is so whichever comes first: 1 GB and 1,000 files once fetched and repacked (refused with
+    the size and the cap, `EntryRefused`), or a depth-1 pack the fetch cannot bring within its budget ("the fetch did
+    not finish within its budget: the repository is too large for the cache, or the host was slow; a Resume tries
+    again", `CacheFailed`: a failure a later try may not meet, since a slow host looks the same); a pack too large for
+    the 3 GB of scratch space fails as a git failure (`CacheFailed`, redacted). Nothing is uploaded and no READY written
+    in any of them. Why not Lambda's 900 s: the runtime waits for the fill synchronously, inside its own function
+    whose limit is 300 s, and that limit is also how long a move holds an agent session's claim (`CLAIM_SECONDS` in
+    `runtime/supervisor.py`), so it is not raised for the cache; the wait (270 s: the writer's 240 s and a cold start)
+    fits inside it. A host that is busy or unreachable for the token is `CacheFailed` with its retry time (never the
+    claim's `CacheBusy`); a host that refuses it (401, 403 or 404: the App's installation or its contents permission
+    removed) is `EntryRefused`, a person's at once, in those words. Each file is one PutObject (no multipart upload).
+  - *When it runs.* The runtime fills the run's commit (generation `N`) before it launches the run's coordinator,
+    after a read of READY found no usable generation: `launch_coordinator` (the start's hand-on) invokes the writer
+    and waits (up to 270 s), then hands the launch on to a fresh invocation of itself, so a fill's wait and a
+    session's start never share the runtime's 5 minutes (a fresh invocation that still finds no READY is refused,
+    never filled again). The start function cannot wait for a fill: the Agents API waits 25 s for it, behind API
+    Gateway's 29 s, which is why the start already hands the coordinator's launch on to the runtime. A whole-run
+    Resume checks READY first, whatever the coordinator's state, and hands a fill on when it is missing, so an entry
+    gone under a live run is filled again. A fill refused or failed is said as the run's health in the writer's own,
+    already redacted words, followed by "A Resume of the run tries again.", and the run goes to a person at the
+    `checkout_cache` decision point. One another fill holds (another run on the same commit) is waited for, reading
+    READY and the claim every 10 s for up to 210 s, and that READY serves this run too; a claim that lapses with no
+    READY (that fill crashed) ends the wait, and the launch's next ask, in a fresh invocation, takes it over (at most
+    twice; then "fills of the commit kept ending with no READY"). A fill that outlasts the wait under a live claim is
+    logged as that and the launch asked exactly once more; still none, a coordinator's launch sends the run to a
+    person ("another fill of the commit held its claim past two waits"). Both of these endings are transient
+    (contention a later try may not meet): a fill a board launch handed on counts them as below. A writer that cannot be asked, or does not answer within the wait, is
+    the cache's failure too ("the cache writer could not be asked, or did not answer in time"; a container-image
+    function idle for weeks goes Inactive and Lambda wakes it on that first call, which is said as such: a Resume a
+    few minutes later fills it). A READY read
+    that answers 403 cannot be told from a missing one (the roles list nothing, below): it is logged apart (not
+    counted as a denied read, which every entry not filled yet would trip), and once a fill has written READY and the read still answers 403, the run is refused saying "the role
+    cannot read the checkout cache (403)" and goes to a person, never held in silence. Every launch (the
+    board's `launch` op included) is refused (`RuntimeRefused`, a 409 the coordinator reads) while the run's commit has
+    no usable generation, or when generation `N`'s manifest names another repository than the run's and `N - 1` of
+    the run's repository does not serve (its connection
+    repointed since the fill: that generation's entry cannot be replaced, so the commit launches nothing through that
+    connection until the next generation, within 14 days; the refusal says so, and that pointing the connection
+    back, or a run on another commit, helps meanwhile; `N - 1` of another
+    repository is simply passed over). A launch that finds one records its generation on the agent's session, and the
+    agent's checkout clones that generation. A coordinator's launch (a start, a Resume) that finds only `N - 1` usable
+    fills `N` ahead first, best effort (a failure leaves `N - 1` in use), so a run's later launches and continuations
+    do not meet `N - 1`'s 28-day edge; the board's launch of any other agent that finds only `N - 1`, or nothing,
+    hands the same fill on in an invocation of its own (the launch is answered as it is), unless a fill of `N`
+    already holds a live claim, so launches after the first fill has taken its claim hand none on (launches racing before that fill takes
+    its claim may both hand one on; the writer's claim keeps them to one fetch). A fill handed on while `N - 1` still
+    serves is a background one: its failure is logged and said as the run's health, and sends nobody to a person; its
+    refusal (`EntryRefused`, say the App uninstalled; likewise for a coordinator's fill ahead, whose launch is then not
+    made) sends the run to a person at once, in the writer's words, never only at `N - 1`'s 28-day edge. An agent's
+    launch refused while a fill is on its way (handed on by that launch, or holding its claim) is told so ("a fill of
+    it is under way; try the launch again in a few minutes"), not that a person's Resume fills it. One
+    handed on while nothing serves, the coordinator still working, sends the run to a person only on a refusal
+    (`EntryRefused`, another repository's entry, `DENIED`) or on the third transient failure in a row (the writer's
+    `CacheFailed`, a fetch past its budget, an invoke that failed or timed out, other fills that held the claim past
+    two waits or kept ending with no READY), counted on the run's META row
+    (`cache_failures`, `RunStore.count_cache_failure`; failures within 300 s of the last one counted are one spell,
+    counted once, so racing fills that meet one outage count once; one more than an hour after the last counted starts
+    the count again at 1) and cleared by a fill that lands or a launch that finds the current entry ready; before that
+    its failure is
+    said as health only ("The run goes on; the next launch tries again (1 of 3 failures in a row)"), and the agent
+    whose launch found nothing usable still gets its refusal. A continuation (the supervisor's, or a wake's in the delivery function) looks
+    the cache up again and clones the generation usable then. A supervisor's continuation that finds only `N - 1`
+    usable hands `N`'s fill on in the background as a board launch does (unless a fill of it holds a live claim), so
+    a long run that launches nothing new never meets `N - 1`'s 28-day edge; a wake's, in the delivery function, hands
+    nothing on (that role neither invokes nor reads a claim: the supervisor's next continuation or launch does). With
+    none usable the agent is held (paused, never
+    counted as a crash), the run's health says why and the run goes to a person (`checkout_cache`). Their Resume, when
+    nothing is usable, leaves the run waiting at `checkout_cache` and hands the fill on; once it has landed, the run
+    is resumed again, continuing the held agents, but only off that point (`RunStore.resume`'s `only_from`): a run
+    that reached another decision point meanwhile (a flow step, the coordinator's) stays there for a person. A
+    Resume whose run the previous generation still serves only fills ahead, and resumes nothing after it.
+  - *IAM.* The writer's role: `s3:PutObject` on the raw bucket's `engineering/cache/*`, with an explicit deny of a
+    READY put that sends no `If-None-Match` (the `s3:if-none-match` condition key, as the raw bucket's own policy
+    uses for `raw/`), and `kms:GenerateDataKey` on the
+    stack's key only through S3 and only for those keys (`kms:EncryptionContext:aws:s3:arn`); `s3:GetObject` on
+    `engineering/cache/*/*/*/READY`; `ssm:GetParameter` on the connections' parameters and `kms:Decrypt` through SSM for
+    them only, as the broker; `dynamodb:GetItem`, `PutItem` and `UpdateItem` on `voc-engineering` in the claims'
+    partitions only (`WS#*#CACHE#*`), of a row only the claim's attributes, no ReturnValues, with the key through
+    DynamoDB for that table; its own log group. No ListBucket, no delete, no other prefix. The supervisor's role gains
+    `lambda:InvokeFunction` on that one function, `s3:GetObject` on the READY markers only (a missing one answers
+    403: it lists nothing, and a ListBucket narrowed to the cache's prefix would not change that, while one on the
+    whole raw bucket would list customer data), and `dynamodb:GetItem` of a fill's claim (`WS#*#CACHE#*`, its key and
+    `expires_at` only, projected); the delivery function's role gains the same READY read, for a wake's continuation.
+    The writer is the only writer at the bucket too: with the flag, the raw bucket's policy holds
+    `DenyEngineeringCacheWritesButTheWriters`, a Deny of `s3:PutObject*` and `s3:DeleteObject*` on
+    `engineering/cache/*` for every principal (`"AWS": "*"`) whose `aws:PrincipalArn` is not (`ArnNotEquals`) the
+    writer's role, `arn:<partition>:iam::<account>:role/voc-engineering-cache-<account>-<region>` (a fixed name, so
+    VocCoreStack names it without a reference to VocProcessingStack), nor, only without `protectData`, the stack's S3
+    auto-delete provider's role (which empties the bucket with the stack). A role with a broader grant on the bucket
+    (Data Explorer may put anywhere else in it) cannot plant a READY or overwrite a pack. The cache's lifecycle
+    expiry is S3's own, no principal's, and reads are not denied. Data Explorer, besides, refuses a save of any key
+    under `engineering/` (400, "Engineering files (engineering/) are read-only in Data Explorer") in whichever bucket
+    it addresses; it can still list and preview the keys under `engineering/cache/*`, so an administrator can read the cached
+    repository code there (the files of a bare repository: its packed objects and its refs).
+  - *Planned.* The dependency caches' filler (per connection and lockfile hash) is not built.
 - **Scoped roles.** Each agent role reads only its connection's cache prefix (in the raw bucket) and its run's keys
   in the workspace bucket, `voc-eng-workspace` (`ws/<ws>/runs/<run>/`), writes only its own keys there
   (`ws/<ws>/runs/<run>/<agent>/`: the agent comes right after the run, so no other agent's key matches; create-only,
@@ -2364,7 +2526,7 @@ and the phase that ships them names them in that row.
 | Phase | Scope | Status |
 |---|---|---|
 | 0 | this design, the benchmark harness and its fixtures | design written; the benchmark harness (the `voc-bench/1` cases, the runner, scorecards) and its four fixtures built, nothing invoking them yet ([Evaluation](#evaluation)) |
-| 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader; the broker's readers of the run's record, the board's GO ledger, the submitted patch and the dial, and a person's go on an AI-assisted run (6.23.00, [above](#repository-connectors)); the harness's client of the broker, the agents' reads and writes signed as their own sessions (7.02.00); the connections, stored by administrators with their GitHub App credential in the SSM parameter the broker reads, with an audit row per change (7.03.00); the CI attestation's record, attested and withdrawn by administrators with an audit row each and voided by a repository change, which every push and pull request waits for, beside the broker's own read-only check of the branch rules, and file and history reads on the run's stored default branch (7.04.00); planned: GitLab, sparse clones, the checkout cache and the first real run; the knowledge pack's package detection, shards, map step, reduce and versioned store with approval ([above](#the-knowledge-pack)), nothing invoking them yet |
+| 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader; the broker's readers of the run's record, the board's GO ledger, the submitted patch and the dial, and a person's go on an AI-assisted run (6.23.00, [above](#repository-connectors)); the harness's client of the broker, the agents' reads and writes signed as their own sessions (7.02.00); the connections, stored by administrators with their GitHub App credential in the SSM parameter the broker reads, with an audit row per change (7.03.00); the CI attestation's record, attested and withdrawn by administrators with an audit row each and voided by a repository change, which every push and pull request waits for, beside the broker's own read-only check of the branch rules, and file and history reads on the run's stored default branch (7.04.00); the checkout cache's writer, one immutable entry per connection and commit filled before a run's coordinator is launched (7.05.00); planned: GitLab, sparse clones, the dependency caches' filler and the first real run; the knowledge pack's package detection, shards, map step, reduce and versioned store with approval ([above](#the-knowledge-pack)), nothing invoking them yet |
 | 2 | the runtime (one AgentCore Runtime session per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API with each task's history, its agents' `inbox`, `progress`, `tasks` and `knowledge` ops, the coordinator's `coordinate` task and `launch`, the lease's refresh and the supervisor's re-post, the push to the delivery function, the workspace's layout, findings and store in its own bucket, and the administrators' run monitor (its reads, signals and answers) and the read routes for a run's board and conversation ([above](#how-the-agents-work-together)); the runtime (one session per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images, the run's start and end, the agent roles' access to the board, the broker and the bus, the delivery function: built, not yet run against AWS, [above](#runtime-one-agentcore-session-per-agent)) |
 | 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); the skills' record, diff and versioned store with an administrator's acceptance and rollback, proposed to by the coach from a run's retrospective ([above](#getting-better-skills-the-coach-the-learning-loop-memory)); the agents' memory store and its recall for a task, its role lessons drafted by a run's retrospective (recall not yet invoked by the harness; same place); the benchmark gate for skill versions (no regression, a gain on the failure's case) and its record on a version, which a coach's version needs to be accepted, nothing invoking it yet ([Evaluation](#evaluation)); the coach (a failure in, a proposed version naming its expected benchmark case out, through the skills store, with its `skill.proposed` message for the caller to publish), invoked by the learning loop (same place as the skills); the learning loop and its scorecards, built: a run's end starts its retrospective (an asynchronous invocation of the runtime), which takes at most three failures to the coach (one Converse call each, once), drafts a lesson in agent memory for each failure taken to the coach (at most three per run) for an administrator to approve, and writes one create-only scorecard row per skill version per run, read by one bounded Query per version (same place); a connection's own cases from its failures, people's reactions on the host as the loop's input, and the scorecard screens planned |
 | 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | in progress: the new editor steps' server side (engineering flows as `voc-workflow/2`, [above](#how-the-agents-work-together)), the six default flows as validated templates in one file the server lists (`GET /workflows/templates`) and the web app reads (same place), and the report builder with its administrators' REST reads ([Reports](#reports)), nothing invoking it yet; a run's start from a saved flow (6.25.00: `POST /agents/engineering/runs` and the flow page's Start a run, [How a flow starts](#how-the-agents-work-together)), which follows its own copy of the flow step by step since 6.28.00 (the conductor, the coordinator's `read_flow`, the board's check of every post and launch against the plan, a person at a step: [The flow a run follows](#the-flow-a-run-follows); memory, the learning loop, self-improvement and the history and pull-request shard sources not run yet); the agents' skills, one per launchable role with its tools, model and the Converse harness (6.29.00, [the agent catalog](#the-agent-catalog)), launched by the board with their skills' argv and driven through the Bug hunt and fix template on the local fake runtime with scripted models; their first run on AWS waits for the owner, and their broker writes for the harness's broker client |

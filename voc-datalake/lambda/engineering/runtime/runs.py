@@ -145,6 +145,8 @@ class Run:
     resumed_at: int = 0
     #: The decision point the run waits at ('' when it waits at none): ``budget``, ``coordinator``, ``flow:<step>``…
     waiting_at: str = ''
+    #: When a fill of the run's checkout last began before a coordinator's launch (epoch seconds; 0 for never).
+    cache_fill_at: int = 0
 
 
 class StartReadFailed(RuntimeRefused):
@@ -369,17 +371,23 @@ class RunStore:
                 return   # at a decision point already: this one's reason, or the 30-day one, which only a stop ends
             raise
 
-    def resume(self, run_id: str, *, now: int, actor: str = '') -> None:
+    def resume(self, run_id: str, *, now: int, actor: str = '', only_from: str = '') -> None:
         """A person resumed the run from its decision point: active again; ``RunNotActive`` when it was not waiting.
         ``resumed_epoch`` records when (the supervisor gives a Resume's new coordinator its own launch window). At a
         flow step's decision point (``flow:<step>``) it is also that person's decision on the step, a create-only
         ``STEP#<step>#decision#…`` row in the same transaction, held to the decision point read (D4: who and when;
-        the conductor passes the step, or gives a blocked one another try)."""
+        the conductor passes the step, or gives a blocked one another try). ``only_from``: only off that decision
+        point (``RunNotActive`` at any other: a Resume a fill carries on never passes a point the person did not
+        see)."""
         waiting = self.get(run_id)
         step = flow_step(waiting.waiting_at) if waiting is not None else ''
         condition, values = '#status = :human AND needs_human <> :thirty', {':active': 'active',
                                                                              ':thirty': 'thirty_days', ':now': now}
         also: tuple[dict[str, Any], ...] = ()
+        if only_from:
+            condition += ' AND needs_human = :only'
+            values[':only'] = only_from
+            step = ''
         if step:
             condition += ' AND needs_human = :point'
             values[':point'] = f'{DECISION_PREFIX}{step}'
@@ -409,6 +417,7 @@ class RunStore:
                    budget_alert=int(item.get('budget_alert', 0)),
                    budget_alert_month=str(item.get('budget_alert_month', '')),
                    resumed_at=int(item.get('resumed_epoch', 0)),
+                   cache_fill_at=int(item.get('cache_fill_at', 0)),
                    waiting_at=str(item.get('needs_human', '')) if item.get('status') == 'needs_human' else '')
 
     def flag_budget(self, run_id: str, month: str, level: int) -> None:
@@ -422,6 +431,57 @@ class RunStore:
                                      'OR budget_alert_month < :month '
                                      'OR (budget_alert_month = :month AND budget_alert < :level))'),
                 ExpressionAttributeValues={':level': level, ':month': month})
+        except ClientError as error:
+            if not is_conditional_check_failure(error):
+                raise
+
+    def mark_cache_fill(self, run_id: str, *, now: int) -> None:
+        """A fill of the run's checkout began before its coordinator's launch (``cache_fill_at``): the supervisor
+        gives that launch the fill's longer window (``supervisor.COORDINATOR_FILL_LAUNCH_SECONDS``)."""
+        try:
+            self._table.update_item(Key=meta_key(run_id), UpdateExpression='SET cache_fill_at = :now',
+                                    ConditionExpression='attribute_exists(pk)', ExpressionAttributeValues={':now': now})
+        except ClientError as error:
+            if not is_conditional_check_failure(error):
+                raise
+
+    def count_cache_failure(self, run_id: str, *, now: int, window: int, reset_after: int) -> int:
+        """One more transient checkout-cache failure on the run's META (``cache_failures``, a fill a board launch
+        handed on while the coordinator works), how many there have been in a row. Failures within ``window`` seconds
+        of the last one counted are one spell (one host outage, met by several racing fills): they are not counted
+        again (``cache_failed_at``); one more than ``reset_after`` seconds after the last starts the count again at
+        1 (an old spell is not this one's)."""
+        try:   # (a first failure, or one long after the last: the count starts again)
+            self._table.update_item(
+                Key=meta_key(run_id), UpdateExpression='SET cache_failures = :one, cache_failed_at = :now',
+                ConditionExpression='attribute_exists(pk) AND (attribute_not_exists(cache_failed_at) '
+                                    'OR cache_failed_at <= :stale)',
+                ExpressionAttributeValues={':one': 1, ':now': now, ':stale': now - reset_after})
+        except ClientError as error:
+            if not is_conditional_check_failure(error):
+                raise
+        else:
+            return 1
+        try:
+            answer = self._table.update_item(
+                Key=meta_key(run_id), UpdateExpression='ADD cache_failures :one SET cache_failed_at = :now',
+                ConditionExpression='attribute_exists(pk) AND (attribute_not_exists(cache_failed_at) '
+                                    'OR cache_failed_at <= :before)',
+                ExpressionAttributeValues={':one': 1, ':now': now, ':before': now - window},
+                ReturnValues='UPDATED_NEW')
+        except ClientError as error:
+            if not is_conditional_check_failure(error):
+                raise
+            item = self._table.get_item(Key=meta_key(run_id), ConsistentRead=True,
+                                        ProjectionExpression='cache_failures').get('Item') or {}
+            return int(item.get('cache_failures', 1))
+        return int(answer.get('Attributes', {}).get('cache_failures', 1))
+
+    def clear_cache_failures(self, run_id: str) -> None:
+        """The run's count of transient checkout-cache failures back to none (a fill landed)."""
+        try:
+            self._table.update_item(Key=meta_key(run_id), UpdateExpression='REMOVE cache_failures, cache_failed_at',
+                                    ConditionExpression='attribute_exists(cache_failures)')
         except ClientError as error:
             if not is_conditional_check_failure(error):
                 raise
@@ -562,11 +622,12 @@ class TableRunControl:
         plan = self._runs.flow_plan(run_id, keep_verdicts=True)
         return FlowStop(plan.decision_point) if plan is not None and plan.decision_point else None
 
-    def coordinator_awaited(self, run_id: str) -> int | None:
+    def coordinator_awaited(self, run_id: str) -> tuple[int, bool] | None:
         run = self._runs.get(run_id)
         if run is None or run.status != 'active' or not (run.connection and run.commit and run.language):
             return None
-        return max(run.started_at, run.resumed_at)   # (a Resume's new coordinator gets its own window)
+        since = max(run.started_at, run.resumed_at)   # (a Resume's new coordinator gets its own window)
+        return since, run.cache_fill_at >= since
 
     def budget_alert(self, run_id: str, now: int) -> BudgetAlert | None:
         """One GetItem of the flow's month total; each level passed above the run's flag is claimed for this run

@@ -30,6 +30,9 @@ class HostError(BrokerError):
     """The repository host failed or answered what the client did not expect; the reason names the operation and
     the host's status, never a token or what was sent."""
 
+    #: The host's HTTP status, when it answered one the client did not expect (0 otherwise).
+    status: int = 0
+
 
 class HostBusy(HostError):
     """The host is rate limiting (or unreachable) for longer than the client waits: retry after ``retry_after``

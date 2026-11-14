@@ -4,7 +4,8 @@ Credentials: the connection's GitHub App (``credentials``). A call reuses a cach
 short App JWT (RS256, nine minutes) and mints one: an installation token for exactly the connection's one repository and the permissions the
 operation needs (``contents``, ``issues``, ``pull_requests``: read or write; ``metadata: read`` comes with every
 token). A token is kept in memory until ``TOKEN_MARGIN_SECONDS`` before it expires (GitHub's tokens live an hour);
-none is revoked early: once a run is stopped the broker refuses its every operation before any token is used.
+the broker's are never revoked early (once a run is stopped the broker refuses its every operation before any token
+is used); the checkout cache's fetch token is, right after its fetch (``revoke_fetch_token``).
 
 Writes, and how each holds the broker's ``tree_hash``:
 
@@ -110,6 +111,8 @@ _COMMENTS: Final[Mapping[CommentTarget, Permissions]] = {
     'issue': {'issues': 'write'}, 'pull_request': {'pull_requests': 'write'}}
 _PUSH: Final[Permissions] = {'contents': 'write'}
 _BRANCH: Final[Permissions] = {'contents': 'read'}
+#: The checkout cache's fetch of one commit (``fetch_token``): read, nothing else.
+_FETCH: Final[Permissions] = {'contents': 'read'}
 #: The repository's own facts (its default branch): what every token holds anyway.
 _METADATA: Final[Permissions] = {'metadata': 'read'}
 #: How long a connection's default branch (the host's, or the stored one the host confirmed) is kept before it is
@@ -354,7 +357,9 @@ class GitHubHost:
         if retry is not None:
             raise HostBusy(f'The repository host is rate limiting {what}; retry later.', retry_after=retry)
         if response.status not in ok:
-            raise HostError(f'The repository host answered {response.status} to {what}.')
+            unexpected = HostError(f'The repository host answered {response.status} to {what}.')
+            unexpected.status = response.status
+            raise unexpected
         return response
 
     def _token(self, connection_id: str, permissions: Permissions) -> tuple[GitHubAppCredential, str]:
@@ -425,6 +430,20 @@ class GitHubHost:
         """``owner/name`` of the repository the connection's credential is for (no request to the host)."""
         credential = self._credentials(connection_id)
         return f'{credential.owner}/{credential.repository}'
+
+    def fetch_token(self, connection_id: str) -> tuple[str, str]:
+        """``owner/name`` and an installation token for ``contents: read`` on that one repository: the checkout
+        cache's fetch (``cache.py``), which hands it to git only through its environment."""
+        credential, token = self._token(connection_id, _FETCH)
+        return f'{credential.owner}/{credential.repository}', token
+
+    def revoke_fetch_token(self, token: str) -> None:
+        """Revoke a token ``fetch_token`` minted (``DELETE /installation/token``, sent once, never retried) and forget
+        it, so this container mints a fresh one next time. Raises ``HostError`` when the host does not answer 204."""
+        for key, (held, _until) in list(self._tokens.items()):
+            if held == token:
+                del self._tokens[key]
+        self._send('DELETE', '/installation/token', f'Bearer {token}', 'the token revocation', ok=(204,))
 
     def default_branch(self, connection_id: str, stored: str = '') -> str:
         """``stored``, the connection's default branch as the run recorded it, once the repository has it (one branch

@@ -10,6 +10,7 @@ import pytest
 from moto import mock_aws
 
 from engineering.runtime.caps import Timings
+from engineering.runtime.checkout_cache import Found
 from engineering.runtime.checkpoints import CheckpointReader
 from engineering.runtime.interface import ROLES, Command
 from engineering.runtime.launcher import Launcher
@@ -86,6 +87,8 @@ class FakeControl:
     released: list[BudgetAlert] = field(default_factory=list)
     #: The runs started with a coordinator to launch, and when (``coordinator_awaited``).
     awaited: dict[str, int] = field(default_factory=dict)
+    #: The runs among them whose checkout fill began since (``coordinator_awaited``'s second answer).
+    filling: set[str] = field(default_factory=set)
     #: The decision point each run's flow waits at (``flow_stop``): none by default.
     flow_points: dict[str, str] = field(default_factory=dict)
 
@@ -113,9 +116,11 @@ class FakeControl:
         point = None if run_id in self.stops else self.flow_points.get(run_id)
         return None if point is None else FlowStop(point, waiting=(run_id, point) in self.humans)
 
-    def coordinator_awaited(self, run_id: str) -> int | None:
-        """Only for a run the test started with a coordinator to launch (``awaited``), while it is active."""
-        return self.awaited.get(run_id) if self.is_active(run_id) else None
+    def coordinator_awaited(self, run_id: str) -> tuple[int, bool] | None:
+        """Only for a run the test started with a coordinator to launch (``awaited``), while it is active; ``filling``
+        names the runs whose checkout fill began since."""
+        since = self.awaited.get(run_id)
+        return None if since is None or not self.is_active(run_id) else (since, run_id in self.filling)
 
     def budget_alert(self, run_id: str, now: int) -> BudgetAlert | None:
         assert run_id
@@ -133,7 +138,19 @@ class FakeControl:
         self.alert = None
 
 
-def quick_checkout(_commit: str, _paths: Sequence[str]) -> list[Command]:
+#: The generation ReadyCache answers: every commit's entry is READY there.
+READY_GENERATION = 1500
+
+
+class ReadyCache:
+    """The checkout cache with every commit's entry READY (``checkout_cache.CheckoutCache``'s launch-side calls)."""
+
+    def look(self, connection: str, commit: str, repository: str) -> Found:
+        assert commit   # (a launch always names the run's commit)
+        return Found('ready', READY_GENERATION, READY_GENERATION, refusal=f'{connection} {repository}')
+
+
+def quick_checkout(_commit: str, _paths: Sequence[str], _generation: int) -> list[Command]:
     """A checkout that needs no cache: one command that writes the file a harness can look for."""
     return [Command(argv=(sys.executable, '-c', "open('checked-out', 'w')"), timeout_seconds=30, repository_code=False)]
 
@@ -178,6 +195,8 @@ def wired(aws: tuple[Any, Any], monkeypatch: pytest.MonkeyPatch) -> Any:
     from shared import aws as shared_aws
     assert aws is not None  # moto's S3 and voc-engineering are up for the handler's own clients
     monkeypatch.setattr(handler, '_runtime', LocalAgentRuntime)
+    # Every run's commit is in the checkout cache (READY); test_engineering_checkout_cache.py drives the real one.
+    monkeypatch.setattr(handler, '_checkout_cache', ReadyCache)
     # (the hard cap's row lives in voc-agents; here the same moto table holds it)
     for name, value in {'RAW_DATA_BUCKET': BUCKET, 'ENGINEERING_WORKSPACE_BUCKET': WORKSPACE_BUCKET, 'ENGINEERING_TABLE': TABLE,
                         'ENGINEERING_SETTINGS_TABLE': TABLE,

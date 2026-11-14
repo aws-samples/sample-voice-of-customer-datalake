@@ -64,6 +64,24 @@ export const SCRATCH_EXPIRATION_DAYS = 2;
  */
 export const ENGINEERING_CACHE_PREFIX = 'engineering/cache/';
 export const ENGINEERING_CACHE_EXPIRATION_DAYS = 30;
+/**
+ * The checkout cache writer's role name (engineering-cache.ts), before the stack's `uniqueName`: fixed, so the raw
+ * bucket's policy (in this stack) names the writer by ARN without a reference to VocProcessingStack.
+ */
+export const ENGINEERING_CACHE_WRITER_ROLE_BASE_NAME = 'voc-engineering-cache';
+
+/** The checkout cache writer's role name, by the owning stack's prefix-aware `uniqueName` (the one source of it). */
+export function engineeringCacheWriterRoleName(uniqueName: (baseName: string) => string): string {
+  return uniqueName(ENGINEERING_CACHE_WRITER_ROLE_BASE_NAME);
+}
+
+/** That role's ARN, in `scope`'s stack (VocCoreStack's bucket policy names it so, with no cross-stack reference). */
+export function engineeringCacheWriterRoleArn(scope: Construct, uniqueName: (baseName: string) => string): string {
+  return cdk.Arn.format({ service: 'iam', region: '', resource: 'role',
+    resourceName: engineeringCacheWriterRoleName(uniqueName) }, cdk.Stack.of(scope));
+}
+/** The object writes and deletes the raw bucket refuses under ENGINEERING_CACHE_PREFIX to all but the writer. */
+const ENGINEERING_CACHE_DENIED_ACTIONS =['s3:PutObject*', 's3:DeleteObject*'] as const;
 const ENGINEERING_NONCURRENT_DAYS = 1;
 /**
  * The engineering workspace bucket (only with `-c engineeringAgents=true`; lambda/engineering/workspace/layout.py):
@@ -220,6 +238,35 @@ export function createPrivateVersionedBucket(
   }));
 }
 
+/**
+ * Only the checkout cache's writer writes or deletes under `engineering/cache/` (docs/autonomous-engineering.md, "The
+ * checkout cache"): an entry stands for a repository's code at a commit, so a READY or a pack put there by anyone else
+ * (an admin's Data Explorer, which may put anywhere else in the bucket) would be cloned by the agents, or block the
+ * commit's fill for up to its 14-day generation. A Deny for every principal whose `aws:PrincipalArn` is not the
+ * writer's role (by its fixed name: no reference to VocProcessingStack) of ENGINEERING_CACHE_DENIED_ACTIONS on those
+ * keys. Exempt as well, only when this bucket auto-deletes (without protectData): the stack's auto-delete provider,
+ * which empties it with the stack. The lifecycle expiry is S3's own and no principal's, so the deny never touches it.
+ */
+function denyCacheWritesButTheWriters(bucket: s3.Bucket, writerRoleArn: string, autoDeletes: boolean): void {
+  const exempt = [writerRoleArn];
+  if (autoDeletes) {
+    const provider = cdk.Stack.of(bucket).node.tryFindChild(AUTO_DELETE_PROVIDER_ID);
+    if (!(provider instanceof cdk.CustomResourceProviderBase)) throw new Error('the raw bucket\'s auto-delete provider is missing');
+    exempt.push(provider.roleArn);
+  }
+  bucket.addToResourcePolicy(new iam.PolicyStatement({
+    sid: 'DenyEngineeringCacheWritesButTheWriters',
+    effect: iam.Effect.DENY,
+    principals: [new iam.AnyPrincipal()],
+    actions: [...ENGINEERING_CACHE_DENIED_ACTIONS],
+    resources: [bucket.arnForObjects(`${ENGINEERING_CACHE_PREFIX}*`)],
+    conditions: { ArnNotEquals: { 'aws:PrincipalArn': exempt } },
+  }));
+}
+
+/** The construct id CDK gives the stack's one S3 auto-delete provider (aws-s3 Bucket `autoDeleteObjects`). */
+const AUTO_DELETE_PROVIDER_ID = 'Custom::S3AutoDeleteObjectsCustomResourceProvider';
+
 /** The engineering caches' expiry rule (ENGINEERING_CACHE_EXPIRATION_DAYS); none without the engineering agents. */
 function engineeringExpiryRules(engineeringAgents: boolean): s3.LifecycleRule[] {
   if (!engineeringAgents) return [];
@@ -259,8 +306,10 @@ export function createCoreBuckets(
   kmsKey: kms.Key,
   corsAllowedOriginsBase: string[],
   protection: DataProtection,
-  engineeringAgents = false,
+  /** The checkout cache writer's role ARN; given only with `-c engineeringAgents=true`. */
+  engineeringCacheWriterRoleArn?: string,
 ): CoreBuckets {
+  const engineeringAgents = engineeringCacheWriterRoleArn !== undefined;
   const accessLogsBucket = new s3.Bucket(scope, 'AccessLogsBucket', {
     bucketName: names.accessLogs,
     encryption: s3.BucketEncryption.S3_MANAGED,
@@ -318,6 +367,9 @@ export function createCoreBuckets(
   });
 
   denyOverwritingRawWrites(rawDataBucket);
+  if (engineeringCacheWriterRoleArn !== undefined) {
+    denyCacheWritesButTheWriters(rawDataBucket, engineeringCacheWriterRoleArn, protection.autoDeleteObjects);
+  }
 
   // Frontend hosting bucket
   const websiteBucket = new s3.Bucket(scope, 'WebsiteBucket', {

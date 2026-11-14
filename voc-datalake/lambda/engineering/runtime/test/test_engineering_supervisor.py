@@ -166,6 +166,26 @@ def test_a_paused_harness_is_continued_in_a_new_microvm_from_its_newest_valid_ch
     _assert_terminated(world, first)
 
 
+def test_a_continuation_clones_the_generation_usable_now_not_its_launchs(world: World,
+                                                                       monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(world.supervisor, 'continuation_generation', lambda _session: 1489)
+    first = world.launch(code='import sys; sys.exit(75)')
+    continued = _until(world, 1000, lambda s: s.continuation >= 1)
+    assert (first.cache_generation, continued.cache_generation) == (0, 1489)
+
+
+def test_a_continuation_with_no_usable_checkout_holds_the_agent_and_never_crashes_it(world: World,
+                                                                                    monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(world.supervisor, 'continuation_generation', lambda _session: None)
+    first = world.launch(code='import sys; sys.exit(75)')
+    held = _until(world, 1000, lambda s: s.status == 'paused')
+    assert (held.continuation, held.crashes, world.board.reposted) == (0, 0, [])
+    # (a person is asked, and the run's health says why)
+    assert ('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'checkout_cache') in world.control.humans
+    assert any('no usable entry' in event['summary'] for event in world.bus.events if event['kind'] == 'run.health')
+    _assert_terminated(world, first)
+
+
 def test_the_supervisor_asks_for_a_pause_ahead_of_the_limit_and_a_silent_agent_is_continued_at_the_hard_stop(
         world: World):
     world.launch(code=SLEEP)
@@ -1000,7 +1020,7 @@ def test_one_failing_session_does_not_stop_the_others_and_a_gone_microvm_becomes
 
 def test_a_boot_that_takes_too_long_is_a_crash(world: World):
     world.launch(code=SLEEP)
-    world.supervisor.checkout = lambda _commit, _paths: [
+    world.supervisor.checkout = lambda _commit, _paths, _generation: [
         Command(argv=(sys.executable, '-c', 'import time; time.sleep(60)'), timeout_seconds=600,
                 repository_code=False)]
     world.supervisor.tick(1000)

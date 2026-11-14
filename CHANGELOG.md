@@ -17,6 +17,172 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.05.00] - 2026-11-14
+
+Autonomous engineering agents: the checkout cache gets its writer, so an agent's sparse checkout has something to clone.
+Off by default (`-c engineeringAgents=true`), and no fixed cost.
+
+### Added
+
+- **The checkout cache's writer, `voc-engineering-cache`** (`lambda/engineering/connectors/cache.py`, its layout and
+  pure rules in `cache_layout.py`; docs/autonomous-engineering.md, "The checkout cache"): `{connection, commit,
+  generation}` → `{status: ready | filled}`. One immutable entry per (connection, commit, 14-day generation) in the raw
+  bucket, `engineering/cache/<connection>/<commit>/g<N>/repo.git/…`: a bare repository holding exactly that commit at
+  depth 1 under `refs/heads/voc-base` (HEAD pointing to it), `uploadpack.allowFilter` on, its objects in one pack. It
+  is complete only once `…/g<N>/READY` exists: a JSON manifest (format, connection, repository, commit, generation, ref, each file
+  with its size and sha256, the total, when it was written), written last and create-only (an IAM deny refuses a READY
+  put without `If-None-Match` too), never rewritten; a fill that finds it does nothing, and one more than a
+  generation from the writer's own clock is refused. READY marks completion, not integrity against readers (the
+  writer is the cache's only writer: see the raw bucket's deny below); each file's sha256 is sent with its put and checked by S3, so the
+  manifest's hashes are what S3 stored. A fill redone after a failed one overwrites the files of the same names (their old
+  versions expire a day later) and may leave an unlisted pack of the same commit's objects, which is harmless. `repository` is where the commit was fetched from (a commit fetched by id may
+  be reachable only through a fork's pull-request ref), not proof of a branch.
+- **Only the writer writes the cache, at the bucket** (`lib/stacks/core-buckets.ts`, `denyCacheWritesButTheWriters`,
+  only with the flag): the raw bucket's policy gains `DenyEngineeringCacheWritesButTheWriters`, a Deny of
+  `s3:PutObject*` and `s3:DeleteObject*` on `engineering/cache/*` for every principal (`"AWS": "*"`) whose
+  `aws:PrincipalArn` is not (`ArnNotEquals`) the writer's role, `arn:<partition>:iam::<account>:role/voc-engineering-cache-<account>-<region>`
+  (its role now has that fixed name, so VocCoreStack names it without a reference to VocProcessingStack), nor, only
+  without `protectData`, the stack's S3 auto-delete provider's role (which empties the bucket with the stack). So no
+  role with a broader grant on the bucket (Data Explorer's put anywhere in it) can plant a READY or overwrite a pack.
+  The 30-day lifecycle expiry is S3's own, no principal's, and is not affected; reads are not denied.
+- **Generations close the expiry gap**: `N = floor(epoch seconds / 14 days)` (`cache_layout.py`, one constant). A launch
+  takes READY of `N`, or of `N - 1` while its manifest was written under 28 days ago; when neither is usable it fills
+  `N` beside the old one. Every object expires 30 days after it was written, so an entry in use is always at least two
+  days from its expiry and the old generation is never read near its deletion; nothing is renewed or rewritten.
+- **The writer** is trusted code that runs no repository code: `git init --bare`, `git fetch --depth=1 --no-tags` of the one commit over
+  https, the commit checked, `git repack -a -d`, with the system and global config, hooks, the file-system monitor,
+  credential helpers and prompts off, https the only protocol, no redirect, every fetched object checked.
+- **Its token**: an installation token for `contents: read` on the connection's one repository (`github.py`
+  `fetch_token`, the broker's own minting from the connection's SSM credential), handed to git only by the fetch's
+  environment (`GIT_CONFIG_COUNT`/`KEY_0`/`VALUE_0`: an `http.<repository URL>.extraHeader` of `Authorization: Basic`
+  of `x-access-token:<token>`); never in a URL, an argument, a file, a log or an error (a git failure is redacted).
+  Revoked once the fetch is over or has failed (`DELETE /installation/token`, `github.py` `revoke_fetch_token`: sent
+  once, never retried, a failure only logged) and forgotten by the container.
+- **Its claim**: a lease row per (connection, commit, generation) in `voc-engineering` (`WS#default#CACHE#<connection>`
+  / `COMMIT#<commit>#G#<N>`, attributes `holder` and `expires_at`), taken by a conditional put, a 300 s lease, ended
+  by its holder: at once after a fill that lands or is refused, 120 s later after one that failed (`CacheFailed`,
+  `FAILED_HOLD_SECONDS`), so during a host outage the launches meanwhile find the fill held (they wait, or hand
+  nothing on) instead of each minting a token and starting a fetch; a claim another fill holds refuses (`CacheBusy`),
+  an expired one is taken over.
+- **Its bounds, and the real ceiling**: 240 s (the fetch at most 150 s and never more than what is left of the 230 s
+  deadline less 80 s for the later steps, the repack 30 s, each other step 10 s, no upload started that would end past
+  230 s by an estimate from its size; the deadline is the earlier of 230 s after the fill began and Lambda's remaining
+  time less 10 s, when the invocation's context gives it), 2 GB of memory, 3 GB of ephemeral storage. A commit is refused when its entry
+  is over 1 GB or 1,000 files once fetched and repacked (`EntryRefused`); a depth-1 fetch that does not finish within
+  its budget fails as "the fetch did not finish within its budget: the repository is too large for the cache, or the
+  host was slow; a Resume tries again" (`CacheFailed`, a failure a later try may not meet); a fill that ran long ends
+  as one out of time, and a pack too large for the scratch space as a git failure (`CacheFailed`, redacted); nothing
+  is marked ready in any of them. Not Lambda's 900 s: the runtime waits for the fill inside its own
+  300 s, which is also how long a move holds a session's claim (`CLAIM_SECONDS`). A host busy or unreachable for the
+  token is `CacheFailed` with its retry time.
+- **Its image's pins**: Lambda's Python base by digest, `git-core-2.50.1-1.amzn2023.0.2` exactly, and every Python
+  package by version and sha256 (`engineering-cache/requirements.txt`, `pip --require-hashes --only-binary=:all:`).
+- **The runtime fills before it launches** (`runtime/checkout_cache.py`, `handler.py`): a run's coordinator is launched
+  only after its commit has a usable entry. `launch_coordinator` invokes the writer and waits (up to 270 s: the
+  writer's 240 s and a cold start), then hands the launch on to a fresh invocation of itself, so the fill and a
+  session's start never share one 5-minute limit; a whole-run Resume checks the cache whatever the coordinator's state
+  and hands a fill on when nothing is usable. A fill refused or failed is said as the run's health in the writer's own
+  (redacted) words, followed by "A Resume of the run tries again.", and the run goes to a person at `checkout_cache`.
+  One another fill holds (another run on the same commit) is waited for, up to 210 s, and its READY serves this run
+  too (a claim that lapses with no READY, a crashed fill, ends the wait and is taken over by the next ask, in a fresh
+  invocation, at most twice); READY's write meeting another in flight (S3's 409) is tried again, not taken as
+  existing; one that outlasts the wait under a live claim is logged as such and the launch asked exactly once more,
+  then a coordinator's launch sends the run to a person ("another fill of the commit held its claim past two waits",
+  or "fills of the commit kept ending with no READY"; both transient, so a fill a board launch handed on counts them
+  as below); a writer that cannot be
+  asked, or does not answer in time, is the cache's failure too (one idle for weeks, which Lambda wakes on that first
+  call, says so: a Resume a few minutes later fills it). A READY read answering 403 (S3's answer to a
+  missing key for a role that lists nothing) is logged apart, not counted as a denied read (every entry not filled
+  yet answers it); still 403 once a fill has written it, the
+  run is refused with "the role cannot read the checkout cache (403)". Every launch, the board's `launch` op
+  included, is refused (`RuntimeRefused`, a 409 the coordinator reads) while the run's commit has no usable
+  generation, or when generation `N`'s manifest names another repository than the run's and no usable `N - 1` of
+  the run's own serves (a connection repointed
+  since: that generation's entry cannot be replaced, so the refusal says the commit waits for the next generation,
+  within 14 days, and that pointing the connection back or a run on another commit helps meanwhile). A launch
+  records the generation it found on the agent's session
+  (`cache_generation`), and the agent's checkout clones that one. A coordinator's launch that finds only `N - 1`
+  usable fills `N` ahead (best effort), and the board's launch of another agent that finds only `N - 1`, or nothing,
+  hands that fill on, unless a fill of `N` holds a live claim (launches after the first fill has taken its claim hand none on; ones racing before it may, and the writer's claim
+  keeps them to one fetch); one handed on while
+  `N - 1` still serves is a background fill, whose failure is only logged and said as health, never a person's; its
+  refusal (`EntryRefused`, say the App uninstalled; a coordinator's fill ahead likewise, its launch then not made)
+  goes to a person at once in the writer's words, not at the 28-day edge. An agent's launch refused while a fill is on
+  its way says "a fill of it is under way; try the launch again in a few minutes". One
+  handed on while nothing serves (the coordinator still works) sends the run to a person only on a refusal
+  (`EntryRefused`: another repository's entry, a role that cannot read the cache, a host that refuses the fetch token
+  with 401/403/404) or on the third transient failure in a row (a slow or busy host, a fetch past its budget, an
+  invoke that failed, other fills of the commit that held their claim or kept ending with no READY), counted as `cache_failures` on the run's META row (failures within 300 s of the last counted
+  are one spell, counted once; one over an hour after the last starts again at 1) and cleared by a fill that lands or
+  a launch that finds the current entry ready. The supervisor waits 21 minutes for a coordinator only when a fill of
+  its checkout began (`cache_fill_at` on META), 6 otherwise. Before the third failure it is said as health only. The agent whose launch
+  found nothing usable is refused as before. A continuation (the supervisor's or a wake's) looks the cache up again and
+  clones the generation usable then; one the supervisor makes on `N - 1` hands `N`'s fill on in the background too,
+  unless a fill of it holds a live claim, so a long run that launches nothing new never meets the 28-day edge (a
+  wake's, in the delivery function, hands nothing on: its role neither invokes nor reads a claim); with none the agent is held (paused, not a crash), the run's health says why and
+  the run goes to a person (`checkout_cache`), whose Resume fills `N` and then resumes the run again, only off that
+  point (a run that reached another decision point meanwhile stays at it).
+- CDK (`lib/stacks/engineering-cache.ts`, `engineering-runtime.ts`): the function, its role and its image
+  (`voc-datalake/engineering-cache/Dockerfile`), only with the flag; the broker's credential grant is now one helper
+  both roles use (`grantConnectionCredentials`, the same two statements).
+
+### Changed
+
+- **An agent's checkout clones its commit's entry**: `checkout.py` clones `file:///mnt/voc-cache/<commit>/g<N>/repo.git`
+  (`cache_source`, the commit checked as a full object id and `N`, the session's `cache_generation`, as a whole number
+  up to 99,999; the mount stays the connection's prefix) with `--depth=1`
+  beside `--filter=blob:none`: git hangs on a blob-less clone of a shallow repository without it.
+- docs/autonomous-engineering.md and docs/deployment.md say the checkout cache's writer is built (its layout, READY,
+  the claim, the token's path through git, the bounds, the launch's refusal, the IAM) and that the dependency caches'
+  filler stays planned.
+- **Data Explorer refuses `engineering/`** (`lambda/api/data_explorer_handler.py`): a save under it answers 400,
+  "Engineering files (engineering/) are read-only in Data Explorer", as `prototypes/` and `silver/` are, in whichever
+  bucket it addresses; the bucket policy above refuses the put under `engineering/cache/` as well. Data Explorer can
+  still list and preview `engineering/cache/`: an administrator can read the cached repository code there.
+- `lib/test-support/baseline.json` regenerated: VocProcessingStack's and VocApiStack's template hashes moved (the
+  Lambda asset hashes of the engineering code their bundles carry, and `APP_VERSION`, 7.5.0, in their functions'
+  environment; the default synth has no cache writer and no cache deny); no resource or name changed.
+
+### Tests
+
+- The layout (the generation at and across its boundary, the 28-day edge of the previous one, keys, the shapes and
+  generations refused, a claim per generation, the caps, the manifest), the token's path (only the fetch's environment carries
+  it; never an argument, a log or an error), READY last and create-only, READY present meaning no work, a READY that
+  landed meanwhile kept, a claim held by another refusing, an expired claim taken over, a release ending only its own
+  holder's lease, the size cap, a bad commit or connection, a git failure redacted, a token that cannot be had, every
+  step bounded; the store and the claims on moto; the image's pins.
+- On real git: the entry is a bare repository of the one commit at depth 1 under its one ref, with `allowFilter`, no
+  hooks and no loose objects, and an agent's sparse blob-less clone of it checks out the commit; no file holds the token.
+- The runtime: the generations (N's READY used; N-1's under 28 days, not at or past it; N-2's never; across the
+  boundary the old generation used until the new one is filled; N filled when N-1 is too old; another repository's
+  N refused, its N-1 passed over), files without READY not ready, the launch refused without a usable entry and
+  starting no session, the generation found recorded on the session and cloned, a continuation cloning the generation
+  usable then and holding the agent (never a crash) when none is, the fill invoked and waited for before the coordinator's launch and the launch in an
+  invocation of its own, a refused fill sending the run to a person, a busy one waited for (and its bound), a Resume
+  refilling an entry gone under a live coordinator, the writer's refusals passed on in its words and nothing else.
+- The round-1 review: a fetch past its budget refused saying so, the token revoked after the fetch (and after a
+  failed one; a failed revocation only logged), each put sending its sha256, a 403 READY read logged apart and, after
+  a fill, refused saying so, a refused fill said as health at `checkout_cache`, a background fill sending nobody, a
+  live claim keeping a burst of launches to no new handoff, a fill outlasting the wait asked once more then refused.
+- CDK: the writer's function (image, arm64, bounds, no retry), its environment, its role's exact statements (the READY
+  create-only deny among them), the invoke and the claim read on the supervisor's role alone, the READY read on the
+  supervisor's and the delivery function's roles and no other, nothing without the flag, and its build context
+  staging only the Dockerfile, its requirements and the filler's code (no tests).
+
+### Upgrade notes
+
+- With the module on, the deploy builds one container image (`voc-engineering-cache`, arm64) as a CDK Docker image
+  asset: Docker or Finch is needed, as for the layers, and the image goes to the bootstrap's asset repository.
+- New: the function `voc-engineering-cache` and its role (writes under the raw bucket's `engineering/cache/` only, reads
+  the entries' READY markers and the connections' SSM parameters, its claim rows in `voc-engineering`); the supervisor's
+  role (`voc-engineering-runtime`) gains `lambda:InvokeFunction` on that one function, `s3:GetObject` on
+  `engineering/cache/*/*/*/READY` (the launch's check) and `dynamodb:GetItem` of a fill's claim (`WS#*#CACHE#*`, its
+  key and `expires_at` only), and the delivery function's role (`voc-engineering-delivery`)
+  the same READY read (a wake's continuation). The start function's role is unchanged: the API waits only 25 s
+  for a start, so the runtime fills before the coordinator's launch it already hands on.
+- A run started before this release has no entry: its next coordinator launch (a Resume) fills it. Nothing to
+  migrate.
+
 ## [7.04.00] - 2026-11-14
 
 Autonomous engineering agents: the CI attestation is recorded, so the broker can serve a push and a draft pull request

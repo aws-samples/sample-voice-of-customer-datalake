@@ -65,15 +65,23 @@ from engineering.runtime.sessions import (
 from shared.logging import logger
 
 THIRTY_DAYS: Final = 30 * 24 * 60 * 60
+#: The decision point of a run whose continuation found no usable checkout (a Resume fills it, then continues).
+CHECKOUT_CACHE_POINT: Final = 'checkout_cache'
 SIGNALS: Final = frozenset({'save', 'pause', 'resume', 'shutdown', 'stop_now'})
 #: Where a held agent goes once it has paused (or crashed while a pause was asked of it).
 HELD_AS: Final[dict[After, Status]] = {'hold': 'paused', 'wait': 'waiting', 'shutdown': 'stopped'}
 #: How long one move may hold a session's claim: the function's own timeout (lib/stacks/engineering-runtime.ts).
 CLAIM_SECONDS: Final = 5 * 60
-#: How long after a run's start its coordinator may still be on its way: the runtime's own limit (the 5 minutes of the
-#: ``launch_coordinator`` invocation a start hands on) plus a minute's margin. Past it, a run with no coordinator
-#: session and no live launch hold of one goes to a person.
+#: How long after a run's start (or last Resume) its coordinator may still be on its way: the runtime's own limit (the
+#: 5 minutes of the ``launch_coordinator`` invocation a start hands on) plus a minute's margin. Past it, a run with no
+#: coordinator session and no live launch hold of one goes to a person.
 COORDINATOR_LAUNCH_SECONDS: Final = CLAIM_SECONDS + 60
+#: How many ``launch_coordinator`` invocations, each within the runtime's own limit, a launch that fills the checkout
+#: cache first may chain: the fill, at most two more asks after another fill outlasted the wait or ended with no READY
+#: (handler.py ``MAX_FILL_ASKS``), and the launch itself.
+COORDINATOR_FILL_LAUNCH_INVOCATIONS: Final = 4
+#: The window when a fill began since the start or Resume (the run's ``cache_fill_at``): that chain, and a minute.
+COORDINATOR_FILL_LAUNCH_SECONDS: Final = COORDINATOR_FILL_LAUNCH_INVOCATIONS * CLAIM_SECONDS + 60
 
 
 class SessionCallFailed(RuntimeError):
@@ -134,8 +142,14 @@ class Supervisor:
     board_url: str = ''
     #: The connector broker's function URL, handed to every agent likewise (its host on the agent's own proxy only).
     broker_url: str = ''
-    #: The checkout an agent boots with (``checkout.checkout_commands``; the tests give a local one).
-    checkout: Callable[[str, Sequence[str]], list[Command]] = field(default_factory=lambda: checkout_commands)
+    #: The checkout an agent boots with: its commit, paths and cache generation (``checkout.checkout_commands``; the
+    #: tests give a local one).
+    checkout: Callable[[str, Sequence[str], int], list[Command]] = field(default_factory=lambda: checkout_commands)
+    #: The cache generation a continuation clones, looked up again (``handler._continuation_generation``: the cache
+    #: may have moved on since the agent's launch), None when none is usable (the agent is held, never crashed). The
+    #: tests' default keeps the session's own.
+    continuation_generation: Callable[[AgentSession], int | None] = field(
+        default=lambda session: session.cache_generation)
     #: Runs whose agents are held, as of their last tick (a spent budget, or the flow waiting at a person): no new
     #: session starts for them.
     _held: set[str] = field(default_factory=set, init=False, repr=False)
@@ -201,8 +215,11 @@ class Supervisor:
             return   # (it has one, live or not: _coordinator_lost's, or a person's to replace)
         if any(agent.startswith('coordinator-') and until >= now for agent, until in holds.items()):
             return   # (a launch of it is under way)
-        started = self.control.coordinator_awaited(run_id)
-        if started is not None and now - started > COORDINATOR_LAUNCH_SECONDS:
+        awaited = self.control.coordinator_awaited(run_id)
+        if awaited is None:
+            return
+        since, filling = awaited
+        if now - since > (COORDINATOR_FILL_LAUNCH_SECONDS if filling else COORDINATOR_LAUNCH_SECONDS):
             logger.warning('engineering supervisor: a run\'s coordinator was never launched', extra={'run_id': run_id})
             self.control.needs_human(run_id, 'coordinator')
 
@@ -517,7 +534,7 @@ class Supervisor:
     def _boot_commands(self, session: AgentSession) -> list[Command]:
         harness = Command(argv=session.harness, timeout_seconds=SESSION_LIFE_SECONDS, repository_code=False,
                           network=True)
-        return [*self.checkout(session.commit, session.paths), harness]
+        return [*self.checkout(session.commit, session.paths, session.cache_generation), harness]
 
     def _boot(self, session: AgentSession, now: int, lease: Lease | None = None) -> AgentSession:
         if now - session.started_at >= self.timings.boot_deadline:
@@ -651,6 +668,18 @@ class Supervisor:
             # Refused before any session starts: the task is not this agent's at this attempt any more. (Its lease is
             # refreshed again when its harness starts, after the boot's minutes.)
             return self._refused(session, now)
+        generation = self.continuation_generation(session)
+        if generation is None:
+            # The checkout cache has no usable entry of its commit now (its generation passed): held, as a held run's
+            # agent is, until a person's Resume of the run fills the current generation and continues it.
+            logger.warning('engineering supervisor: no usable checkout for a continuation, the agent is held',
+                           extra={'run_id': session.run_id, 'agent_id': session.agent_id})
+            self.bus.emit(session.run_id, 'run', 'run.health',
+                          f'{session.agent_id} is held: the checkout cache has no usable entry of the run\'s commit. '
+                          'A Resume of the run fills it, then continues its agents.')
+            self.control.needs_human(session.run_id, CHECKOUT_CACHE_POINT)
+            return self._end(session, 'paused', now)
+        session = replace(session, cache_generation=generation)
         if not self._terminate(session):
             # Never a second session beside one still running: the stop is tried again on the next move.
             raise SessionCallFailed('the old session could not be stopped')

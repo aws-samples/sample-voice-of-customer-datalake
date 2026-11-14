@@ -129,10 +129,11 @@ class RunControl(Protocol):
         the run waits there already; None for no flow, nothing to decide, or another decision point or an end."""
         ...
 
-    def coordinator_awaited(self, run_id: str) -> int | None:
-        """When the run started or a person last resumed it, whichever is later (epoch seconds), if it is active and was
-        started with its connection, commit and language, so it has a coordinator to launch; None otherwise. One read
-        of the run's row."""
+    def coordinator_awaited(self, run_id: str) -> tuple[int, bool] | None:
+        """When the run started or a person last resumed it, whichever is later (epoch seconds), and whether a fill of
+        its checkout was started since (its coordinator's launch then waits for that fill's chain of invocations), if
+        it is active and was started with its connection, commit and language, so it has a coordinator to launch;
+        None otherwise. One read of the run's row."""
         ...
 
     def budget_alert(self, run_id: str, now: int) -> BudgetAlert | None:

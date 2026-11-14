@@ -17,6 +17,70 @@ import {
 } from './core-buckets';
 import { synthCoreTemplate } from '../test-support/core-stack-fixture';
 import { itemAt } from '../test-support/guards';
+import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
+import { SYNTH_ACCOUNT, SYNTH_REGION, SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
+
+/** The pseudo-parameters as the fixtures deploy them (core-stack-fixture.ts, processing-stack-fixture.ts). */
+const PSEUDO: Readonly<Record<string, string>> = {
+  'AWS::AccountId': SYNTH_ACCOUNT, 'AWS::Region': SYNTH_REGION, 'AWS::Partition': 'aws',
+};
+
+/** A template value of literals, pseudo-parameter Refs and Fn::Joins, as the string it deploys as. */
+function resolved(value: unknown): string {
+  if (typeof value === 'string') return value;
+  const ref = z.object({ Ref: z.string() }).safeParse(value);
+  if (ref.success) {
+    const pseudo = PSEUDO[ref.data.Ref];
+    if (pseudo === undefined) throw new Error(`not a pseudo-parameter: ${ref.data.Ref}`);
+    return pseudo;
+  }
+  const [separator, parts] = z.object({ 'Fn::Join': z.tuple([z.string(), z.array(z.unknown())]) }).parse(value)['Fn::Join'];
+  return parts.map(resolved).join(separator);
+}
+
+/** The one cache deny of the raw bucket's policy, with `protectData` as `protect` and the deployment `prefix`. */
+function cacheDeny(protect: 'true' | 'false', prefix?: string): Record<string, unknown> {
+  const statements = rawBucketStatements(synthCoreTemplate({ engineeringAgents: 'true', protectData: protect }, prefix))
+    .filter((statement) => statement['Sid'] === 'DenyEngineeringCacheWritesButTheWriters');
+  expect(statements).toHaveLength(1);
+  return itemAt(statements, 0);
+}
+
+/** The principals the cache deny exempts (its `ArnNotEquals` on `aws:PrincipalArn`). */
+function exempted(statement: Record<string, unknown>): unknown[] {
+  return z.object({ ArnNotEquals: z.object({ 'aws:PrincipalArn': z.array(z.unknown()) }) })
+    .parse(statement['Condition']).ArnNotEquals['aws:PrincipalArn'];
+}
+
+/** The ARN of the checkout cache writer's role as VocProcessingStack, with the deployment `prefix`, creates it. */
+function writerRoleArn(prefix: string | undefined): string {
+  const roles = Object.values(synthProcessingTemplate({ context: { engineeringAgents: 'true' }, deploymentPrefix: prefix })
+    .findResources('AWS::IAM::Role'))
+    .map((role) => role.Properties?.RoleName)
+    .filter((name) => JSON.stringify(name ?? '').includes('voc-engineering-cache'));
+  expect(roles).toHaveLength(1);
+  return `arn:aws:iam::${SYNTH_ACCOUNT}:role/${resolved(roles[0])}`;
+}
+
+/**
+ * The deny's exemption is the role the writer runs as, exactly: both stacks take its name from
+ * core-buckets.ts engineeringCacheWriterRoleName, with the deployment's prefix or without one.
+ */
+describe.each([undefined, 'stg'])('the raw bucket\'s cache deny, deployment prefix %s', (prefix) => {
+  it('exempts exactly the ARN of the writer\'s role VocProcessingStack creates (protectData on: nothing else)', () => {
+    const expected = writerRoleArn(prefix);
+    expect(exempted(cacheDeny('true', prefix)).map(resolved)).toStrictEqual([expected]);
+    expect(expected).toMatch(prefix === undefined ? /:role\/voc-engineering-cache-/ : /:role\/stg-voc-engineering-cache-/);
+  }, SYNTH_TIMEOUT_MS);
+});
+
+/** The raw data bucket's bucket-policy statements in `template`. */
+function rawBucketStatements(template: Template): Record<string, unknown>[] {
+  const policies = Object.values(template.findResources('AWS::S3::BucketPolicy'))
+    .filter((policy) => JSON.stringify(policy.Properties?.Bucket).includes('RawDataBucket'));
+  expect(policies).toHaveLength(1);
+  return z.array(z.record(z.string(), z.unknown())).parse(itemAt(policies, 0).Properties?.PolicyDocument?.Statement);
+}
 
 /**
  * Every core bucket is versioned (recover from an accidental overwrite/delete —
@@ -128,6 +192,30 @@ describe('VocCoreStack raw bucket with the engineering agents', () => {
     const oldRuns = 'engineering/runs/';
     expect(prefixes.filter((prefix) => oldRuns.startsWith(prefix) || prefix.startsWith(oldRuns)))
       .toStrictEqual([]);
+  });
+
+  it('lets no principal put or delete under engineering/cache/ but those its condition exempts', () => {
+    const statement = cacheDeny('false');
+    expect({ ...statement, Resource: undefined, Condition: undefined }).toStrictEqual({
+      Sid: 'DenyEngineeringCacheWritesButTheWriters', Effect: 'Deny', Principal: { AWS: '*' },
+      Action: ['s3:DeleteObject*', 's3:PutObject*'], Resource: undefined, Condition: undefined,
+    });
+    expect(JSON.stringify(statement['Resource'])).toContain('"/engineering/cache/*"');
+    expect(Object.keys(z.record(z.string(), z.unknown()).parse(statement['Condition']))).toStrictEqual(['ArnNotEquals']);
+  });
+
+  it('exempts, without protectData, the writer\'s role VocProcessingStack creates and the stack\'s auto-delete provider', () => {
+    const [writer, autoDelete, ...others] = exempted(cacheDeny('false'));
+    expect(resolved(writer)).toBe(writerRoleArn(undefined));
+    expect(autoDelete).toStrictEqual({
+      'Fn::GetAtt': [expect.stringMatching(/^CustomS3AutoDeleteObjectsCustomResourceProviderRole/), 'Arn'],
+    });
+    expect(others).toStrictEqual([]);
+  }, SYNTH_TIMEOUT_MS);
+
+  it('has no such deny without the engineering agents', () => {
+    expect(rawBucketStatements(synthCoreTemplate())
+      .filter((statement) => statement['Sid'] === 'DenyEngineeringCacheWritesButTheWriters')).toStrictEqual([]);
   });
 
   it.each(APPEND_ONLY_PREFIXES)('still expires nothing under %s', (layer) => {

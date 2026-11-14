@@ -149,6 +149,8 @@ export class EngineeringBroker extends Construct {
   public readonly function: lambda.IFunction;
   /** Its function URL (IAM authentication), handed to every agent's harness as `VOC_BROKER_URL`. */
   public readonly url: string;
+  /** The connections' credentials it reads, which the checkout cache's writer reads the same way. */
+  public readonly connectionParameters: ConnectionParameters;
 
   constructor(scope: Construct, id: string, props: EngineeringBrokerProps) {
     super(scope, id);
@@ -179,30 +181,47 @@ export class EngineeringBroker extends Construct {
     // cryptography signs the GitHub App's JWT (RS256): the signing layer, for this one function of the stack.
     broker.addLayers(dependencyLayer(this, 'SigningDepsLayer', SIGNING_LAYER_DIR,
       'RS256 signing for the engineering broker (GitHub App JWT; ARM64/Graviton)'));
-    const parameters = engineeringParameterArns(stack, props.deploymentPrefix);
-    role.addToPrincipalPolicy(new iam.PolicyStatement({
-      sid: 'EngineeringConnectionCredentials', actions: ['ssm:GetParameter'], resources: [parameters],
-    }));
-    acknowledgeNag(role, [{
-      id: 'AwsSolutions-IAM5',
-      reason: 'One SecureString per repository connection, created by an administrator at run time, so the read '
-        + 'is scoped to the connections\' path (/[<prefix>-]voc/engineering/*), read-only, and nothing else',
-      findings: [resourceFinding(parameters)],
-    }]);
-    role.addToPrincipalPolicy(new iam.PolicyStatement({
-      sid: 'EngineeringConnectionCredentialsKey',
-      actions: ['kms:Decrypt'],
-      resources: [props.kmsKey.keyArn],
-      // Only through SSM, and only for the connections' parameters (SSM puts the parameter's ARN in the context).
-      conditions: {
-        StringEquals: { 'kms:ViaService': `ssm.${stack.region}.amazonaws.com` },
-        StringLike: { 'kms:EncryptionContext:PARAMETER_ARN': parameters },
-      },
-    }));
+    this.connectionParameters = { prefix: parameterPrefix, arns: engineeringParameterArns(stack, props.deploymentPrefix) };
+    grantConnectionCredentials(role, props.kmsKey, this.connectionParameters.arns);
     grantRunRecordReads(role, props);
     this.url = broker.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.AWS_IAM }).url;
     this.function = broker;
   }
+}
+
+/** The connections' credentials as their readers name them: the parameters' path and every parameter's ARN. */
+export interface ConnectionParameters {
+  /** `ENGINEERING_PARAMETER_PREFIX` (engineeringParameterPrefix). */
+  prefix: string;
+  /** engineeringParameterArns: `/[<prefix>-]voc/engineering/*`. */
+  arns: string;
+}
+
+/**
+ * A reader of the connections' GitHub App credentials (the broker; the checkout cache's writer, engineering-cache.ts):
+ * `ssm:GetParameter` on the connections' parameters only, and `kms:Decrypt` on the stack's key only through SSM and
+ * only for those parameters. No put, no delete, no other parameter.
+ */
+export function grantConnectionCredentials(role: iam.Role, kmsKey: kms.IKey, parameters: string): void {
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'EngineeringConnectionCredentials', actions: ['ssm:GetParameter'], resources: [parameters],
+  }));
+  acknowledgeNag(role, [{
+    id: 'AwsSolutions-IAM5',
+    reason: 'One SecureString per repository connection, created by an administrator at run time, so the read '
+      + 'is scoped to the connections\' path (/[<prefix>-]voc/engineering/*), read-only, and nothing else',
+    findings: [resourceFinding(parameters)],
+  }]);
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'EngineeringConnectionCredentialsKey',
+    actions: ['kms:Decrypt'],
+    resources: [kmsKey.keyArn],
+    // Only through SSM, and only for the connections' parameters (SSM puts the parameter's ARN in the context).
+    conditions: {
+      StringEquals: { 'kms:ViaService': `ssm.${cdk.Stack.of(role).region}.amazonaws.com` },
+      StringLike: { 'kms:EncryptionContext:PARAMETER_ARN': parameters },
+    },
+  }));
 }
 
 /**
