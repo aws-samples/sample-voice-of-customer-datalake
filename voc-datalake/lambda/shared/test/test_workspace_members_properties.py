@@ -16,11 +16,9 @@ from itertools import count
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
-from moto import mock_aws
 
 from shared.exceptions import AuthorizationError, ConflictError, NotFoundError
-from shared.test.moto_tables import create_pk_sk_table
-from shared.test.ws_properties import PROPERTY, EmptiedAfter, exactly
+from shared.test.ws_properties import PROPERTY, EmptiedAfter, exactly, moto_pk_sk_table
 from shared.workspace import WorkspaceContext
 from shared.workspace_members import (
     ALREADY_MEMBER,
@@ -48,8 +46,7 @@ _RUNS = count()
 
 @pytest.fixture(scope='module')
 def table() -> Iterator:
-    with mock_aws():
-        yield create_pk_sk_table('workspaces')
+    yield from moto_pk_sk_table('workspaces')
 
 
 def _new_workspace(table) -> str:

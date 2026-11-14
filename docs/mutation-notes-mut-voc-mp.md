@@ -54,7 +54,12 @@ refusals apart.
    UpdateItem; a quiet release logs its own failure only. `test_ws_objects_properties.py`: every export object the job
    touches stays under `ws/{ws}/exports/` with clean segments and the export tag, only a work object is deleted, a
    download name is a plain file name, and the workspace's own objects are read without its exports or another's.
-   Not covered here: `shared/export_jobs.py`'s job rows and `jobs/retention` (see "Not done").
+   `test_export_jobs_properties.py`: random claims, progress writes, endings, failures and erasures of one export
+   job, duplicated, late or out of order, keep its row equal to a model of the generation protocol (a generation is
+   claimed once, from the state just before it, while fresh; only the holding generation writes progress; nothing
+   revives an erased export); each step's exact conditional UpdateItem; an erasure marks only its exports by their own
+   ids; and what a reader sees of every row shape (expired, stalled, never started). Not covered here:
+   `jobs/retention` (see "Not done").
 8. **Limits and credentials** (`lambda/shared/workspace_credentials.py`, the SSM store and its 4096-byte limit; the
    other workspace limits are constants checked where they are used: `MAX_TRANSACT_ITEMS` in component 2,
    `MAX_NAMED_WORKSPACES` in component 4). Properties (`test_workspace_credentials_properties.py`): what is saved is
@@ -96,6 +101,7 @@ in the project's escalation list) for a reviewer to accept or for a rewrite that
 | 4 | `workspace_members.py` (956 mutants; the run's `--lines 279-606` mutated the whole module) | 818 / 114 / 24 / 0 | 947 / 9 / 0 / 0 (9 escalated) |
 | 7 | `erasure_jobs.py` (all, 113 mutants) | 105 / 8 / 0 / 0 | 113 / 0 / 0 / 0 |
 | 7 | `ws_repo.py` 492-720 (`ExportObjects`, `WorkspaceObjects`; 446 mutants) | 223 / 31 / 192 / 0 | 446 / 0 / 0 / 0 |
+| 7 | `export_jobs.py` 128-335 (the job row and its view; 471 mutants) | 407 / 22 / 42 / 0 | 471 / 0 / 0 / 0 |
 | 8 | `workspace_credentials.py` (all, 160 mutants) | 143 / 17 / 0 / 0 | 159 / 1 / 0 / 0 (1 escalated) |
 
 "Before" for `workspace.py` is `test_workspace.py`; for `workspace_members.py` `test_workspace_members.py` and
@@ -116,8 +122,9 @@ answer with no `Error` field, the defaults of a bare GetObject answer; and `is_a
 
 ## Not done
 
-- `shared/export_jobs.py` (the export job's rows: claim, progress, finish, the erasure hold, the views) and
-  `jobs/retention` (the worker's sweep, the tombstone-first rule): no properties yet; their lock rule is component 7's.
+- `jobs/retention` (the worker's sweep, the tombstone-first rule) and `export_jobs.py` 336-431 (the routes' steps:
+  start, status, link, which `test_export_jobs.py` covers): no properties yet; the retention worker is a multi-module
+  job whose sweep needs its own model, the next session's first item.
 
 ## Bugs found by the properties
 

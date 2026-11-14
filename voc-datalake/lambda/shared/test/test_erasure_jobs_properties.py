@@ -19,7 +19,6 @@ import pytest
 from botocore.exceptions import ClientError, EndpointConnectionError
 from hypothesis import given
 from hypothesis import strategies as st
-from moto import mock_aws
 
 from shared.erasure_jobs import (
     WORKSPACE_LOCK_SK,
@@ -33,8 +32,7 @@ from shared.erasure_jobs import (
 )
 from shared.retention import ERASURE_JOB_PK
 from shared.source_erasure import STALE_AFTER
-from shared.test.moto_tables import create_pk_sk_table
-from shared.test.ws_properties import KEY_PARTS, PROPERTY, workspace_ids
+from shared.test.ws_properties import KEY_PARTS, PROPERTY, moto_pk_sk_table, workspace_ids
 from shared.ws_repo import WorkspaceScope
 
 JOBS = ('er_000000000001', 'er_000000000002', 'er_000000000003')
@@ -47,8 +45,7 @@ _RUNS = count()
 
 @pytest.fixture(scope='module')
 def table() -> Iterator:
-    with mock_aws():
-        yield create_pk_sk_table('aggregates')
+    yield from moto_pk_sk_table('aggregates')
 
 
 def _lock_row(table, scope: WorkspaceScope) -> dict | None:

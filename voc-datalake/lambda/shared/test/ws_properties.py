@@ -11,13 +11,23 @@ from __future__ import annotations
 
 import re
 import string
+from collections.abc import Iterator
 from typing import Any, Final
 
 from hypothesis import HealthCheck, settings
 from hypothesis import strategies as st
+from moto import mock_aws
+
+from shared.test.moto_tables import create_pk_sk_table
 
 PROPERTY: Final = settings(max_examples=256, deadline=None, database=None, print_blob=True,
                            suppress_health_check=[HealthCheck.too_slow])
+
+def moto_pk_sk_table(name: str) -> Iterator[Any]:
+    """A module-scoped fixture's body: one moto table keyed ``pk`` / ``sk`` (``yield from`` it)."""
+    with mock_aws():
+        yield create_pk_sk_table(name)
+
 
 class EmptiedAfter:
     """``with EmptiedAfter(table):`` around one generated run on a moto table: every row is removed when the run
