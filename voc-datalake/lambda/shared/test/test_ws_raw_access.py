@@ -180,7 +180,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/api/settings_handler.py': (3, {'Table': 1, 'generate_presigned_url': 3, 'put_object': 1}),
     'lambda/api/users_handler.py': (3, {'Table': 2}),
     'lambda/api/verification_fixture_provider.py': (3, {'get_aggregates_table': 1, 'get_projects_table': 1, 'meta.client': 2, 'transact': 1}),
-    'lambda/api/workspaces_handler.py': (3, {'cached_table': 1}),
+    # The second: voc-aggregates for GET /platform/costs (shared/platform_costs.py), whose workspace rows are read
+    # through ws_table and whose DEPLOYMENT#COST and UNATTRIBUTED#COST rows are no workspace's.
+    'lambda/api/workspaces_handler.py': (3, {'cached_table': 2}),
     'lambda/auth/board_triggers.py': (3, {'Table': 2, 'get_projects_table': 1}),
     'lambda/briefing/handler.py': (3, {'Table': 1}),
     'lambda/briefing/signals.py': (3, {'DATE#': 2, 'METRIC#': 1, 'URGENCY#': 1, 'batch': 1, 'meta.client': 1}),
@@ -193,6 +195,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # `category_pk` / `urgency_pk`); left: the deployment's one CATEGORY# and URGENCY# spelling (`category_partition`,
     # `urgency_partition`) and the module-level voc-feedback / voc-aggregates tables.
     'lambda/jobs/category_reprocess/handler.py': (2, {'CATEGORY#': 1, 'Table': 2, 'URGENCY#': 1}),
+    # Stays raw by design: voc-aggregates for the DEPLOYMENT#COST and UNATTRIBUTED#COST rows (no workspace's; a
+    # workspace's WS#{ws}#COST goes through ws_table) and voc-workspaces for a META's status (the control plane).
+    'lambda/jobs/cost_rollup/handler.py': (0, {'Table': 2}),
     'lambda/jobs/document_generator/handler.py': (3, {'Table': 6, 'delete_objects': 1, 'put_object': 2}),
     'lambda/jobs/document_merger/handler.py': (3, {'Table': 2}),
     'lambda/jobs/persona_importer/handler.py': (3, {'Table': 1}),

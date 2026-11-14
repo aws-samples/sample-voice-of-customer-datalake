@@ -768,16 +768,64 @@ A plugin's config list is not a credential and is not in SSM: it is a row of voc
   `shared/concurrency.py` runs each task in a copy of its caller's context, and a raw thread pool's tasks never
   attribute (pinned by the test above), so their calls stay `UNATTRIBUTED`, never a wrong workspace. So an area whose handler resolves its workspace another way stays `UNATTRIBUTED` until its owner
   calls `usage_meter.attribute(scope)` at its handler entry: the project, document, research, competitive-watch,
-  briefing, memory and agent handlers, and the streaming assistant's mirror of the line.
-- Slice A logs tokens only and prices nothing. Slice B adds the dated price list (from the public Amazon Bedrock
-  pricing page only, a model it cannot read listed as unpriced with the reason), the daily rollup that uses it,
+  briefing, memory and agent handlers. The stream Lambda (TypeScript) logs no line yet: neither its streaming
+  assistant nor its plain Converse calls (the persona consult and the plan step); its mirror of the line comes in
+  its own slice.
+- Slice A logs tokens only and prices nothing. Slice B adds the dated price list, the daily rollup that uses it,
   `GET /platform/costs` and its stack.
+- **The price list (slice B).** `shared/model_prices.py` holds one dated `PriceList`: when and where it was read
+  (`as_of`, `source_url`: the public Amazon Bedrock pricing page), its basis (region and tier), and USD per million
+  tokens by model id as sent, then service tier (input, output, cache read, cache write; `Decimal`). A figure comes
+  only from that page, never from memory. **Every model is unpriced today**: the page could not be fetched when the
+  list was written, so each allowlisted model is in `unpriced` with that reason, every estimate is `null` and every
+  day reads `complete: false`; the tokens are still counted. To fill it in, a deployer reads the page for their
+  region, adds each model id their deployment sends (the `model_id` of the `bedrock_usage` lines: `eu.…` in an EU
+  deployment) with its four prices per tier, removes it from `unpriced`, sets `as_of` to the day read and `basis` to
+  the region, and redeploys; a test fails for an allowlisted model that is neither priced nor unpriced with a reason.
+  A rollup records the `price_as_of` it priced with; a backfill reprices the days it reruns.
+- **The rollup (slice B).** `voc-cost-rollup` (lambda/jobs/cost_rollup/, VocProcessingStack) runs at 02:15 UTC and
+  rolls up yesterday and the day before (a line that arrives late is counted the second time). It finds the
+  deployment's `voc-*` Lambda log groups as System → Logs does, runs one Logs Insights query per 50 groups (four at
+  a time), the day's `[00:00, 24:00)` UTC filtered on `@timestamp` to the millisecond (whatever Insights rounds the
+  query's own window to), then `filter message="bedrock_usage" and ispresent(model_id) and ispresent(operation) |
+  stats …` by `workspace_id`, `model_id` and `service_tier`, and sums the batches. A day is written only when every
+  query completed under Insights' 10,000-row cap; otherwise nothing of it is written and the run fails once the other
+  days are done (the next tick, or a backfill, reruns it); a day whose read or write AWS refuses is recorded as failed
+  with the error's code, and the other days still run. Each row is one whole-item PutItem (no ADD,
+  so a rerun overwrites it), kept with no TTL: `WS#{ws}#COST` / `YYYY-MM-DD` through the workspace layer,
+  `DEPLOYMENT#COST` and `UNATTRIBUTED#COST`, each with `by_model`, `totals`, `estimated_usd` (the priced models'
+  sum, `null` while none is priced), `complete`, `unpriced_models`, `price_as_of`, `rolled_up_at` and `schema` 1. A
+  workspace that is not active gets no row: its calls go to `DEPLOYMENT#COST`'s `deleted_workspaces`. A day with no
+  metered call has no row. During a delete's 21-minute fence a day can be counted twice: rolled up while the
+  workspace was active (its own row) and again after it turned `deleting` (the deployment's `deleted_workspaces`),
+  until the delete sweeps the workspace's row; avoiding it would take a read of the existing row (a GetItem grant),
+  not worth it for a window that short. **Backfill**: invoke `voc-cost-rollup` asynchronously with
+  `{"days": ["YYYY-MM-DD", …]}`, each day over and at most **29 days back** (the log groups keep 30 days; an older day is refused, its lines gone).
+  Not read: the product-document extractor's line (its log group is VocCoreStack's, not a `voc-*` one), so those
+  calls are not in the rollup yet.
+- **The route (slice B).** `GET /platform/costs` on the workspaces API, for platform admins only (`require_admin`,
+  `require_platform_admin`, then the live check), `?from=` and `?to=` (UTC days, at most 92, `to` not after today,
+  default this month), `?limit=` (1 to 25, default 20) and `?cursor=` (the workspace listing's). One Query per
+  workspace on the page, run concurrently; the first page also carries `deployment` (with `deleted_workspaces`) and
+  `unattributed`. The answer is labelled an estimate: `estimate: true`, `label` ("Estimate from list prices, not a
+  bill"), `currency` USD, `price_as_of`, and per entity `days` and a `total` with its `by_model` (no month sums: the
+  92-day range lets the console sum days); a dollar figure is a decimal string, `null` while a part with calls is
+  unpriced and nothing priced, `"0.000000"` for a complete day or total with no calls. Each read
+  logs `platform_costs_read` with the caller's sub and the range (no AUDIT row: it changes nothing).
+- **The hard delete** sweeps a workspace's `WS#{ws}#COST` rows with its settings (they are its data).
 - Also counted: reviews ingested, scraper and browser sessions, Comprehend and Translate characters. (A workspace's
   credentials parameters cost nothing a month: decision 19.)
 - Scale today (this repo keeps no separate load model, so the notes live here): a workspace's erasure (7.09.00) and its category
   reprocess (7.13.00) each Scan the whole voc-feedback table, so N workspaces' live jobs are N whole-table Scans,
   whatever each workspace's size; one live job of each kind per workspace bounds it. The fix is to read only the
   workspace's own index partitions (a Query of its `WS#{ws}#DATE#…` gsi1 days, or a per-workspace index).
+  The cost rollup (slice B) is one invocation a day (reserved concurrency 1): two days × ⌈groups / 50⌉ Insights
+  queries (about 3 a day at 100 Lambdas), each scanning that day's Lambda logs (billed per GB scanned, so it grows
+  with log volume, not with workspaces), then one PutItem per active workspace with calls that day, plus two; no hot
+  key (each row its own partition and day, one writer). At 10× the workspaces it is 10× the puts, still one
+  invocation; a day over Insights' 10,000 result rows (about 10,000 workspace × model × tier combinations) is not
+  written and the run fails, which needs the query split by workspace first. `GET /platform/costs` is one Query per
+  workspace on a page (at most 25, each at most 92 rows) plus two, no Scan; it is a platform admin's read.
 
 ## Export and delete
 

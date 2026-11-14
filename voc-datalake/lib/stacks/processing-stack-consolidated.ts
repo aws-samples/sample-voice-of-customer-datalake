@@ -22,6 +22,7 @@ import { MemoryWorkers } from './memory-workers';
 import { AGGREGATOR_FUNCTION_BASE_NAME, AGGREGATOR_STREAM_FAILURES_BASE_NAME, FEEDBACK_PROCESSOR_FUNCTION_BASE_NAME } from './dlq-alarms';
 import { AgentRuntime } from './agent-runtime';
 import { createBriefingWorker } from './briefing-worker';
+import { createCostRollupWorker } from './cost-rollup-worker';
 import { createRadarScanWorker } from './radar-scan-worker';
 import { createRetentionWorker } from './retention-worker';
 import { workspaceHardDeleteEnabled } from '../utils/workspace-hard-delete';
@@ -402,6 +403,9 @@ export class VocProcessingStack extends VocStack {
         ? { url: props.webSearchGatewayUrl, arn: props.webSearchGatewayArn, toolName: props.webSearchToolName }
         : undefined,
     });
+    // Cost per workspace's daily rollup of the Bedrock usage lines (docs/multi-workspace.md, "Cost per workspace").
+    createCostRollupWorker(this, 'CostRollupWorker', { uniqueName, layer: processingLayer, kmsKey, aggregatesTable,
+      workspacesTable: props.workspacesTable, lambdaLogGroupPattern: this.uniqueNamePattern('/aws/lambda/voc-*') });
 
     // ============================================
     // RESEARCH WORKFLOW (Step Functions)

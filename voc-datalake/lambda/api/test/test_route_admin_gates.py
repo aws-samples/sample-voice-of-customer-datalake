@@ -175,7 +175,7 @@ PLATFORM_ADMIN_ONLY: dict[str, frozenset[str]] = {
     'users_handler.py': frozenset({'PUT /users/<username>/platform-admin'}),
     'workspaces_handler.py': frozenset({
         'POST /platform/workspaces', 'GET /platform/workspaces', 'POST /platform/workspaces/<ws>/delete/cancel',
-        'POST /platform/workspaces/<ws>/delete/resume',
+        'POST /platform/workspaces/<ws>/delete/resume', 'GET /platform/costs',
     }),
     # What every workspace of the deployment shares (docs/multi-workspace.md, "Per-workspace configuration"): the
     # start theme (decision 7) and the alarms on the deployment's own Lambdas.
@@ -559,6 +559,7 @@ def test_the_platform_gate_raises_authorization_error():
     ('workspaces_handler.py', 'GET /platform/workspaces'),
     ('workspaces_handler.py', 'POST /platform/workspaces/<ws>/delete/cancel'),
     ('workspaces_handler.py', 'POST /platform/workspaces/<ws>/delete/resume'),
+    ('workspaces_handler.py', 'GET /platform/costs'),
 ])
 def test_removing_the_platform_gate_is_detected(handler, route):
     tree = ast.parse((API_DIR / handler).read_text(encoding='utf-8'))
@@ -1024,7 +1025,8 @@ ADMIN_ONLY_READS: dict[str, frozenset[str]] = {
         'GET /scrapers/manual/history', 'GET /scrapers/manual/history/<run_id>',
     }),
     # Every workspace of the deployment (the platform console, docs/multi-workspace.md): platform admins only.
-    'workspaces_handler.py': frozenset({'GET /platform/workspaces'}),
+    # Every workspace's cost estimate too (docs/multi-workspace.md, "Cost per workspace").
+    'workspaces_handler.py': frozenset({'GET /platform/workspaces', 'GET /platform/costs'}),
     # Which credentials are set, and their non-secret values: administrators (in a workspace, its admins).
     **TWO_PATH_ADMIN_READS,
     # The erasure jobs (field, value hash, counts, who started them): administrators (in a workspace, its admins).
