@@ -19,11 +19,12 @@ the platform package version.
 
 ## [7.01.01] - 2026-11-14
 
-Property-based tests for the engineering agents' critical components. Tests only: no behaviour changes.
+Property-based and mutation-tested tests for the engineering agents' critical components. Tests only: no behaviour changes.
 
 ### Added
 
 - Hypothesis property tests (`*_properties.py` beside the unit tests, 256 cases each by the one profile in `voc-datalake/lambda/shared/test/properties.py`, 80 where each case builds a moto table; its failing-example database is `hypothesis-regressions/`, ignored but for its README, so an entry a fix needs is added on purpose) for the dial (fails closed), the broker's write policy and role matrix, patch line splitting and hunk application, the GO ledger (the newest ended final go and gate runner decide, for exactly the tree), the spend ledger and its alerts, the hard cap on a start, and the run-state machine (model-based). Each states its invariant in words. The components, why each is critical and their mutation scores are in `docs/mutation-notes-mut-voc-auto.md`.
+- Tests for every mutant `scripts/mutate-python.sh` left alive in those components' modules that a test can kill: `connectors/dial.py`, `connectors/write_policy.py`, `connectors/patches.py`, `connectors/broker.py`, `flow/ledger.py`, `spend.py`, `runtime/runs.py` (the refusals word for word, the bounds, the UTC month and day under a far time zone, the spend ledger's exact requests, a binary delta's copies and inserts past their data, the inflate bound). The mutants no test can kill (equivalent ones, and loops bounded only by their counter) are listed in the notes for a rewrite.
 - `hypothesis==6.135.0` in `voc-datalake/requirements-dev.txt` (pinned exactly: a generator change would move which cases a run tries).
 
 ### Changed
