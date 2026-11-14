@@ -205,22 +205,26 @@ CATALOGUE: dict[str, tuple[str, str, dict, bool, bool, bool]] = {
         False, False, True),
     'documents_draft_prototype_revision': (
         'Draft a prototype revision',
-        ('Ask for a change to a prototype in words (write token): `document_id` (any version of it) and '
-         '`instruction`. The AI drafts the change on the newest version; nothing is saved. Answers a job_id: '
-         'its result is the `draft_id` (projects_get_job); read it with documents_get_prototype_draft.'),
-        _object({'project_id': ID, 'document_id': ID, 'instruction': {'type': 'string', 'maxLength': 2000}}, 'document_id', 'instruction'),
+        ('Ask for a change to a prototype (write token): `document_id` (any version of it) and either '
+         '`instruction` (words) or `pin_ids` (up to 50 tester pins from documents_list_prototype_feedback to '
+         'incorporate). The AI drafts it on the newest version; nothing is saved. Answers a job_id: its result is '
+         'the `draft_id` (projects_get_job); read it with documents_get_prototype_draft.'),
+        _object({'project_id': ID, 'document_id': ID, 'instruction': {'type': 'string', 'maxLength': 2000},
+                 'pin_ids': {'type': 'array', 'items': ID, 'minItems': 1, 'maxItems': 50}}, 'document_id'),
         True, False, True),
     'documents_get_prototype_draft': (
         'Get a prototype draft',
         ("Read a prototype draft: its instruction, the AI's summary of what changed and the version it was "
-         'drafted on (`base_version`). No preview: the user sees it on the prototype page.'),
+         'drafted on (`base_version`); a draft from pins (`kind` feedback) adds `outcomes` per pin (done / not_done '
+         'and a note), `withheld` and `ignored` pin ids. No preview: the user sees it on the prototype page.'),
         _object({'project_id': ID, 'document_id': ID, 'draft_id': ID}, 'document_id', 'draft_id'),
         False, False, True),
     'documents_apply_prototype_draft': (
         'Apply a prototype draft',
         ('Save a prototype draft as the next version (write token); earlier versions are kept, and applying it '
-         'again gives the same version. Refused when a version was saved since the draft: ask again. Confirm '
-         'with the user first.'),
+         'again gives the same version. A draft from pins also marks its done pins addressed and replies to the '
+         'others (`incorporation`). Refused when a version was saved since the draft: ask again. Confirm with the '
+         'user first.'),
         _object({'project_id': ID, 'document_id': ID, 'draft_id': ID}, 'document_id', 'draft_id'),
         True, False, True),
     'documents_discard_prototype_draft': (

@@ -1,8 +1,8 @@
-# Prototype builder (planned)
+# Prototype builder
 
 **Status: partly built.** Built: what [Today](#today) describes, Part 2's Back to vN (6.11.00) and drafts from an
 instruction (6.12.00), the rest of Part 2 (6.14.00: the outline, the assistant's tools, Edit with the assistant),
-and Part 3's read side (6.13.00, [built](#built-so-far-part-3s-read-side)); see
+and Part 3: its read side (6.13.00) and Incorporate (6.15.00, [built](#built-so-far-part-3s-read-side-and-incorporate)); see
 [Slices and order](#slices-and-order). Every other route, tool, field and file below is a proposal and is marked
 *planned*; the code does not have it.
 
@@ -396,8 +396,8 @@ All five are built: the four draft routes in 6.12.00 (`{instruction}` only), the
 
 | Route | Who | What |
 |---|---|---|
-| `POST /projects/{id}/prototypes/{document_id}/drafts` | edit | `{instruction}` (kind `chat`: stripped, 1 to 2,000 characters; optional `response_language`) → `{success, job_id, status: pending, message}`, the job's result `{draft_id}`. Planned (part 3): `{pin_ids: [≤ 50]}` (kind `feedback`); until then a body with `pin_ids` is a 400 "Incorporating feedback into a draft is not available yet". 404 unless `document_id` is a prototype of the project; its series' head is the base, and a head whose HTML cannot be read is refused before any job (400 for an early JSON spec, 404 for a lost object) |
-| `GET /projects/{id}/prototypes/{document_id}/drafts/{draft_id}` | edit (listed in `_ROUTE_OVERRIDES`) | `{draft_id, base_document_id, base_version, instruction, summary, preview_url, completed_at}`: `preview_url` the draft's signed URL (its own key only; null when signing is unavailable). Planned (part 3): the per-pin outcomes of a feedback draft |
+| `POST /projects/{id}/prototypes/{document_id}/drafts` | edit | `{instruction}` (kind `chat`: stripped, 1 to 2,000 characters; optional `response_language`) or `{pin_ids: [1..50]}` (kind `feedback`, 6.15.00: [Part 3](#built-so-far-part-3s-read-side-and-incorporate)); both or neither is a 400 → `{success, job_id, status: pending, message}`, the job's result `{draft_id}`. 404 unless `document_id` is a prototype of the project; its series' head is the base, and a head whose HTML cannot be read is refused before any job (400 for an early JSON spec, 404 for a lost object) |
+| `GET /projects/{id}/prototypes/{document_id}/drafts/{draft_id}` | edit (listed in `_ROUTE_OVERRIDES`) | `{draft_id, kind, base_document_id, base_version, instruction, summary, preview_url, completed_at}`: `kind` `chat` or `feedback`; `preview_url` the draft's signed URL (its own key only; null when signing is unavailable). A feedback draft adds `outcomes`, `withheld` and `ignored` (6.15.00) |
 | `POST /projects/{id}/prototypes/{document_id}/drafts/{draft_id}/apply` | edit | No body: the base and its version come from the job row → 201 `{success, document}` (the new version, signed as the project read signs it); 200 and the same version on a replayed Apply; 409 when the series moved past the base; 404 when the job row is gone |
 | `DELETE /projects/{id}/prototypes/{document_id}/drafts/{draft_id}` | edit | Discard → `{success: true}`: the draft's job row deleted, as `DELETE /projects/{id}/jobs/{job_id}` deletes it. 404 unless the row is a `draft_prototype` job of this project whose base (from its config) is a version of `document_id`'s series, in any state (a draft still being made can be discarded); so it deletes nothing but drafts. The MCP tool calls it; the page uses the job DELETE |
 | `GET /projects/{id}/prototypes/{document_id}/outline` | view | `{document_id, version, title, screens: [{route, headings, text}], truncated}` of the version `document_id` names (`outline_of` in `lambda/shared/prototype_outline.py`): extracted on the server from its HTML (its object, or inline HTML: `version_html`), with the pin widget, `script`, `style`, `svg`, `template`, `noscript` and `head` (but the head's own `<title>`) left out, a head left open closed by `<body>`, and hidden text left out (`hidden`, `aria-hidden="true"`, an inline `display: none`; a screen itself is kept, as an inactive screen is hidden until shown). A screen is an element with `data-screen` / `data-route` / `data-page`, a `<section id>`, or an `id` with a class `screen`, `page` or `view`; text outside every screen is the screen `""`. The first 512 KB of HTML are read, elements nest at most 256 deep; at most 40 screens, 200 lines of 300 characters and 12,000 characters in all, title and routes counted (`truncated`); every line, route and the title have their DATA-block tags defanged. Never pins. 400 for an early JSON spec, 404 for a lost object or a document that is no prototype of the project. Planned (part 1): the walkthrough block stripped too |
@@ -435,7 +435,7 @@ moves"). "Draft ready" reaches the browser as the person's AppSync Events notice
   `documents_draft_prototype_revision`, `documents_apply_prototype_draft`, `documents_discard_prototype_draft`
   (write, project; the last is the draft DELETE, never the bare job DELETE), with the job polled through `projects_get_job` (status and
   `draft_id`) and the draft read through `documents_get_prototype_draft` (the EDIT draft GET): its summary (and,
-  planned, per-pin outcomes) only, the `preview_url` projected out as every signed URL is for a token holder
+  since 6.15.00, a feedback draft's `outcomes`, `withheld` and `ignored`) only, the `preview_url` projected out as every signed URL is for a token holder
   (`public()` in `lambda/shared/mcp_global_kit.py` drops keys holding `url`); Apply's answer drops the version's
   signed `prototype_url` the same way. `documents_get_prototype_outline` (read, project: the outline GET, built
   in 6.14.00).
@@ -492,8 +492,9 @@ No new storage. The existing loop is reused:
   cost grows with the number of versions: the route reads at most the newest versions the versions list returns
   (25, `VERSION_LIST_LIMIT` in `lambda/shared/document_history.py`) and says so in the same `partial` flag beyond
   that. No new hot key: each query is its own form's partition, as `GET …/pins` is today.
-- **Which pins Apply touches**: only the pin ids the model answered that are also in the accepted `pin_ids`
-  stored on the draft's job row (the withheld ones are stored apart). Any other id in the model's answer (one it made up, one
+- **Which pins Apply touches**: only the accepted `pin_ids` stored on the draft's job row that were sent to the model
+  (the withheld ones are stored apart); an accepted pin the model did not answer counts as Not done and gets the fixed
+  reply "The AI gave no answer for this pin.", and a pin withheld or gone when the job ran is untouched. Any other id in the model's answer (one it made up, one
   of another series, a withheld one) is dropped and listed in the draft's detail as ignored; nothing in the request
   widens the set.
 - **Marking**: Apply sets the Done pins of that set addressed (the same status change `mark_prototype_pins_addressed`
@@ -501,31 +502,57 @@ No new storage. The existing loop is reused:
   document id (the revision's id names its version, so there is no separate version field). Resolving stays a
   person's or a later review's step, as today.
 - **Not done replies are the model's words, marked so.** The reason is appended as a reply on the pin (as
-  `append_reply` does), but not as the applier's own reply: it carries an author kind (planned field, for example
-  `kind: ai`), the draft's `llm_metadata` and the applier as the person who approved it, and the view shows it as
-  "AI reason, approved by …". A person's reply keeps today's shape.
+  `append_reply` does), but not as the applier's own reply: it carries an author kind (`kind: ai`, 6.15.00), the
+  draft's `llm_metadata` and whoever applied it as its approver (`approved_by`, the caller's `{sub, kind}`: the
+  person in the app, the token over MCP), and the view shows it as "AI reason, approved by an editor". A person's
+  reply keeps today's shape.
 - **What changed, per item**: the model's note per pin is in the draft's detail (read at EDIT through the draft
   GET); the per-pin outcome is on the pins themselves (Done: the `addressed_by` mark; Not done: the marked reply,
   read at EDIT, as pins are). The applied version's `revision_feedback` is only "Incorporated N pins (k done)"
   (part 2).
-- **The pins DATA block** (built, not yet called): `pins_block` in `lambda/agents/pins.py` is built for agents (15 pins, numbered
-  without ids, 6,000 characters), so it does not fit 50 selected items answered one by one. The plan adds a
-  function in the shared layer, in `lambda/shared/prototype_pins.py` (`incorporation_pins_block`), that carries up to 50 pins with their pin ids and replies, capped per pin and per
-  block, inside a `prompt_safety` `<prototype_pins>` DATA block, and asks the model to answer per pin id (Done / Not
-  done and a reason). The document generator's draft job (built in 6.12.00 for an instruction) will use it for a
-  `pin_ids` draft (planned); the job never imports from the agents package. Agents'
+- **The pins DATA block** (built in 6.13.00, called since 6.15.00): `pins_block` in `lambda/agents/pins.py` is built
+  for agents (15 pins, numbered without ids, 6,000 characters), so it does not fit 50 selected items answered one by
+  one. The shared layer has its own, `incorporation_pins_block` in `lambda/shared/prototype_pins.py`, that carries up
+  to 50 pins with their pin ids and replies, capped per pin and per block, inside a `prompt_safety`
+  `<prototype_pins>` DATA block, and asks the model to answer per pin id (Done / Not done and a reason). The document
+  generator's draft job uses it for a `pin_ids` draft; the job never imports from the agents package. Agents'
   `pins_block` may later be built on it.
 
-### Built so far: Part 3's read side
+### Built so far: Part 3's read side and Incorporate
 
-The read side is built. Incorporate (a `pin_ids` draft, Apply's marks and replies) is next: Part 2's drafts are
-built (6.12.00) for an instruction only, and until then the drafts route refuses a body with `pin_ids` (400).
+The read side is built (6.13.00), and Incorporate's server side in 6.15.00 (below,
+`lambda/shared/prototype_incorporation.py`):
+
+- **The drafts POST with `{pin_ids}`** (exactly one of `instruction` and `pin_ids`; 1 to 50 pin ids, duplicates
+  folded): the pins are those the Feedback view lists (`series_pins` in `lambda/shared/prototype_feedback.py`); an
+  id that is no pin of the series is a 400 naming how many ("2 of the selected pins are not pins of this
+  prototype"), a flagged pin (or one with no mark) is withheld, and a request whose every pin is withheld is a 400.
+  The job config keeps `kind: feedback`, the accepted pins (`{pin_id, form_id, document_id, version}`), the withheld
+  ids and the server's instruction, "Incorporate the selected tester feedback".
+- **The job** reads the accepted pins again by key, gives them to the model only as `incorporation_pins_block`'s
+  DATA block (a pin flagged since is withheld again), and asks for a `<pin_outcomes>` block, one line per pin id,
+  `pin_id: Done: what changed` or `pin_id: Not done: why`, before the HTML (`DRAFT_PROMPT_VERSION` 1.1.0). The
+  draft's detail gains `kind`, `outcomes: [{pin_id, outcome: done | not_done, note}]` for the accepted pins only
+  (the first answer per id; an unanswered pin is Not done, "The AI gave no answer for this pin."; notes plain text,
+  500 characters), `withheld` and `ignored` (ids the model answered that were not accepted).
+- **The draft GET** adds `kind` (`chat` or `feedback`) and, for a feedback draft, `outcomes`, `withheld`, `ignored`.
+- **Apply** (of any draft) records `revised_from_draft_id`, the draft's id, on the version (the project read returns
+  it), so a client tells an applied draft by id. A feedback draft's version has `revision_feedback` "Incorporated N
+  pins (k done)", then, on every call (replays included): each Done pin of the accepted set marked addressed by the
+  new version, from open and once per draft (a mark id from the draft and the pin, `mark_ids` on the pin,
+  conditional: a replay never marks again a pin an editor reopened since, it reports it `reopened`), then one reply
+  per Not done pin, written once (an id from the draft and the pin, `reply_ids` on the pin, conditional),
+  `{by: 'ai', name: 'AI', text, at, kind: 'ai', llm_metadata, approved_by: {sub, kind}}`. The answer adds
+  `incorporation: {marked: [ids], replied: [ids], not_written: [{pin_id, reason}]}` with reasons `pin_gone`,
+  `already_addressed`, `already_resolved`, `reopened`, `thread_full` and `note_withheld` (an instruction-shaped note
+  is not posted). The version stands whatever is not written. The feedback read lists an AI reply with `kind`, `llm_metadata` and `approved_by`; a person's keeps its
+  four keys.
 
 - `GET /projects/{id}/prototypes/{document_id}/feedback` (below), EDIT through `_ROUTE_OVERRIDES`; grouping and
   dedup in `lambda/shared/prototype_feedback.py` (`group_pins`, `read_feedback`).
 - `incorporation_pins_block` in `lambda/shared/prototype_pins.py` (up to 50 pins with their ids and up to 5 replies,
-  600 / 300 / 20,000 characters, flagged pins withheld and returned, an unsafe anchor field left out), for the drafts
-  job; nothing calls it yet.
+  600 / 300 / 20,000 characters, flagged pins withheld and returned, an unsafe anchor field left out), built in 6.13.00;
+  the drafts job calls it for a `pin_ids` draft since 6.15.00.
 - MCP `documents_list_prototype_feedback` and the assistant's server tool `get_prototype_feedback`
   (`lambda/stream/src/assistant/tools/server/prototype-feedback.ts`): a flagged item or pin keeps only its ids,
   version, status and the parts of its place (route, selector) not judged unsafe. The element text, selector and route are judged one by one (the route's
@@ -534,8 +561,8 @@ built (6.12.00) for an instruction only, and until then the drafts route refuses
 - The page's **Feedback** dialog for editors (`frontend/src/components/PrototypeFeedback/`, opened from the HTML
   prototype's toolbar): groups, items, the "Not sent to the AI" note, checkboxes, Select all in this group and the
   "N selected, M pins" count with the 50-pin cap (Incorporate is off while a refetch has folded the selection past
-  it). Its Incorporate button appears only once the page passes it the
-  action (Part 2).
+  it). Its Incorporate button starts a feedback draft with the selected pins' ids (since 6.15.00), and it shows a
+  Done pin as **Incorporated in vN** and an AI reply as "AI reason, approved by an editor".
 
 ### API
 
@@ -546,7 +573,7 @@ built (6.12.00) for an instruction only, and until then the drafts route refuses
 Incorporate is part 2's `POST …/drafts` with `{pin_ids: [≤ 50]}`: **pin ids, never text**, at most 50 pins. The
 server reads those pins itself, refuses more than 50 and any that are not pins of this series, withholds the
 flagged ones (listed as withheld in the draft's detail), stores the accepted and withheld ids on the job row, and
-builds the DATA block with `incorporation_pins_block` above (built in 6.13.00, not called yet).
+builds the DATA block with `incorporation_pins_block` above (built in 6.13.00, called by the draft job since 6.15.00).
 
 Apply is part 2's `…/drafts/{draft_id}/apply`; for a feedback draft it writes the version, then marks the Done pins
 addressed, then posts the Not done replies, in that order, on every call (each mark and reply is idempotent, so a
@@ -560,10 +587,11 @@ Being a GET, the route is listed in `_ROUTE_OVERRIDES` at EDIT (the default for 
 ### Tools (tenet 4)
 
 - MCP: `documents_list_prototype_feedback` (read, project, built), then part 2's
-  `documents_draft_prototype_revision` (built for an instruction) taking the chosen pin ids (planned) and
+  `documents_draft_prototype_revision` taking the chosen `pin_ids` (6.15.00) and
   `documents_apply_prototype_draft`.
 - The assistant: a server tool `get_prototype_feedback` (built), then part 2's `draft_prototype_revision` (built
-  for an instruction, 6.14.00) taking **pin ids only** (planned), never feedback text; its approval card lists the selected items and shows the instruction the
+  for an instruction, 6.14.00) taking **pin ids only** (6.15.00: `pin_ids`, ≤ 50, exactly one of it and
+  `instruction`), never feedback text; its approval card lists the selected items and shows the instruction the
   server will use. Apply is the page's banner (part 2).
 - Both feedback tools leave out the text (and replies) of flagged items, giving only their id, place and "flagged",
   so instruction-shaped text never reaches a model through them either; the page's view shows it to the editor.
@@ -653,7 +681,7 @@ and assistant listings, so every client and the bundle agree:
   re-validated (schema, caps, `injection_findings`); see Part 1's data model.
 - **Prompt injection from feedback.** Feedback text reaches the model only inside DATA blocks
   (`lambda/shared/prompt_safety.py`): pins and their replies in `<prototype_pins>`, built by the server from pin
-  ids (`incorporation_pins_block`, part 3, built, not called yet), never from text a client or the assistant
+  ids (`incorporation_pins_block`, part 3, the draft job's since 6.15.00), never from text a client or the assistant
   passes. The prototype outline (a `<prototype_outline>` block, 6.14.00) and the walkthrough draft's input are DATA
   blocks too. Flagged items are withheld and say so. The
   editor's own instruction in part 2 is the instruction, shown verbatim on the approval card; anything quoted from
@@ -825,10 +853,11 @@ job (`doc_type: draft_prototype` in the document generator), the draft GET, Appl
 (`lambda/shared/prototype_drafts.py`, the routes in `lambda/api/projects_handler.py`), the
 `/prototypes/*/drafts/*` behaviour with `PROTOTYPE_DRAFT_CSP`, the export's skip of `drafts/`, the four MCP draft
 tools, and the draft banner on the prototype pane. 6.13.00: part 3's read side (the feedback GET, its MCP and assistant
-tools, the Feedback dialog: [Built so far: Part 3's read side](#built-so-far-part-3s-read-side)). 6.14.00: the
+tools, the Feedback dialog: [Built so far: Part 3's read side and Incorporate](#built-so-far-part-3s-read-side-and-incorporate)). 6.14.00: the
 outline (its GET, `documents_get_prototype_outline`, the assistant's `get_prototype_outline` in a
 `<prototype_outline>` DATA block), the assistant's `draft_prototype_revision`, the page context's `documentId` and
-**Edit with the assistant** on the prototype's pane. Not yet: `pin_ids` drafts (part 3's Incorporate) and part 1.
+**Edit with the assistant** on the prototype's pane. 6.15.00: part 3's Incorporate (`pin_ids` drafts, per-pin
+outcomes, Apply's marks and AI-marked replies, the tools' `pin_ids`). Not yet: parts 1 and 4.
 
 ## Decisions (2026-11-13)
 

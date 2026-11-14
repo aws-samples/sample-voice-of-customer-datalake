@@ -346,7 +346,12 @@
     "prototypeDraft": {
       "prototype": "Protótipo:",
       "instruction": "Instrução que o rascunho recebe",
-      "note": "Isto só cria um rascunho. Ele aparece na página do protótipo quando fica pronto, e nada é salvo até você aplicá-lo lá."
+      "note": "Isto só cria um rascunho. Ele aparece na página do protótipo quando fica pronto, e nada é salvo até você aplicá-lo lá.",
+      "pins_one": "{{count, number}} pin de tester selecionado",
+      "pins_many": "{{count, number}} de pins de testers selecionados",
+      "pins_other": "{{count, number}} pins de testers selecionados",
+      "noScreen": "(sem tela)",
+      "pinsInstruction": "Só os IDs dos pins são enviados: o servidor lê esses pins e escreve a instrução (incorporar o feedback selecionado dos testers, respondido por pin: feito ou não feito)."
     }
   },
   "tools": {

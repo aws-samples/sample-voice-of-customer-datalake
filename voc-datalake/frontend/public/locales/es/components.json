@@ -831,6 +831,10 @@
     "noMatchHint": "Cambia o borra los filtros, o elige un periodo más largo."
   },
   "prototypeFeedback": {
+    "aiReason": "Motivo de la IA, aprobado por una persona editora:",
+    "incorporated": "Incorporado",
+    "incorporatedIn": "Incorporado en v{{version}}",
+    "incorporateFailed": "No se pudo iniciar la incorporación. Inténtalo de nuevo.",
     "open": "Comentarios",
     "heading": "Comentarios del prototipo",
     "hint": "Lo que los evaluadores marcaron en cada versión de este prototipo, agrupado por pantalla.",

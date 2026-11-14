@@ -7,7 +7,8 @@
  * - `fresh`: its base is the series' newest version, so Apply writes the next one;
  * - `stale`: the series has moved past its base (someone saved, restored or revised): Apply would be a
  *   409, so the banner says so up front and offers only Discard;
- * - applied: a version of the series records this draft (a revise of its base with its instruction),
+ * - applied: a version of the series records this draft (a revise of its base with its instruction, or
+ *   for a feedback draft "Incorporated N pins (k done)" with its own counts),
  *   so there is nothing left to do and no banner (the draft's job stays until it expires or is dismissed,
  *   which keeps a replayed Apply idempotent).
  *
@@ -46,11 +47,31 @@ export interface ShownDraft {
   readonly state: DraftState
 }
 
-/** Whether a version of the series is this draft applied: a revise of its base with its instruction. */
+/** "Incorporated N pins (k done)", as a feedback draft's Apply records it (part 3), singular "1 pin" too. */
+const INCORPORATED = /^Incorporated (\d+) pins? \((\d+) done\)$/
+
+/**
+ * What an applied version of this draft records as `revision_feedback`: an instruction's draft its instruction
+ * (capped); a feedback draft "Incorporated N pins (k done)", N its accepted pins (one outcome each), k the Done ones.
+ */
+function recordsDraft(draft: PrototypeDraft, revisionFeedback: string | undefined): boolean {
+  if (revisionFeedback === undefined) return false
+  if (draft.kind !== 'feedback') return revisionFeedback === draft.instruction.slice(0, FEEDBACK_CAP)
+  const match = INCORPORATED.exec(revisionFeedback)
+  const done = draft.outcomes.filter((outcome) => outcome.outcome === 'done').length
+  return match !== null && Number(match[1]) === draft.outcomes.length && Number(match[2]) === done
+}
+
+/**
+ * Whether a version of the series is this draft applied: one that names it (`revised_from_draft_id`), or, for a
+ * version written before that field (6.12–6.14), a revise of its base whose `revision_feedback` records it. A
+ * version that names another draft is not this one, whatever its text (two feedback drafts can share counts).
+ */
 function wasApplied(draft: PrototypeDraft, series: readonly ProjectDocument[]): boolean {
-  const feedback = draft.instruction.slice(0, FEEDBACK_CAP)
-  return series.some((d) => (d.version ?? 0) > draft.base_version
-    && d.revised_from_id === draft.base_document_id && d.revision_feedback === feedback)
+  return series.some((d) => {
+    if (typeof d.revised_from_draft_id === 'string' && d.revised_from_draft_id !== '') return d.revised_from_draft_id === draft.draft_id
+    return (d.version ?? 0) > draft.base_version && d.revised_from_id === draft.base_document_id && recordsDraft(draft, d.revision_feedback)
+  })
 }
 
 /**

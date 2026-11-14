@@ -346,7 +346,12 @@
     "prototypeDraft": {
       "prototype": "Prototype :",
       "instruction": "Consigne transmise au brouillon",
-      "note": "Cela crée seulement un brouillon. Il apparaît sur la page du prototype quand il est prêt, et rien n’est enregistré tant que vous ne l’appliquez pas là-bas."
+      "note": "Cela crée seulement un brouillon. Il apparaît sur la page du prototype quand il est prêt, et rien n’est enregistré tant que vous ne l’appliquez pas là-bas.",
+      "pins_one": "{{count, number}} épingle de testeur sélectionnée",
+      "pins_many": "{{count, number}} d’épingles de testeurs sélectionnées",
+      "pins_other": "{{count, number}} épingles de testeurs sélectionnées",
+      "noScreen": "(aucun écran)",
+      "pinsInstruction": "Seuls les identifiants des épingles sont envoyés : le serveur lit lui-même ces épingles et écrit la consigne (intégrer les retours sélectionnés des testeurs, avec une réponse par épingle : fait ou non fait)."
     }
   },
   "tools": {

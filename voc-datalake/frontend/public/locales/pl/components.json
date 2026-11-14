@@ -856,6 +856,10 @@
     "noMatchHint": "Zmień lub wyczyść filtry albo wybierz dłuższy okres."
   },
   "prototypeFeedback": {
+    "aiReason": "Powód podany przez AI, zatwierdzony przez osobę edytującą:",
+    "incorporated": "Uwzględniono",
+    "incorporatedIn": "Uwzględniono w v{{version}}",
+    "incorporateFailed": "Nie udało się rozpocząć uwzględniania. Spróbuj ponownie.",
     "open": "Opinie",
     "heading": "Opinie o prototypie",
     "hint": "To, co testerzy przypięli na każdej wersji tego prototypu, pogrupowane według ekranu.",

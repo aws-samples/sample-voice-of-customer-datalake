@@ -806,6 +806,10 @@
     "noMatchHint": "필터를 변경하거나 지우거나 더 긴 기간을 선택하세요."
   },
   "prototypeFeedback": {
+    "aiReason": "AI 사유, 편집자 승인:",
+    "incorporated": "반영됨",
+    "incorporatedIn": "v{{version}}에 반영됨",
+    "incorporateFailed": "반영을 시작하지 못했습니다. 다시 시도하세요.",
     "open": "피드백",
     "heading": "프로토타입 피드백",
     "hint": "이 프로토타입의 모든 버전에 테스터가 남긴 핀을 화면별로 묶었습니다.",

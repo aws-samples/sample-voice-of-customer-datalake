@@ -806,6 +806,10 @@
     "noMatchHint": "Ändern oder entfernen Sie die Filter oder wählen Sie einen längeren Zeitraum."
   },
   "prototypeFeedback": {
+    "aiReason": "KI-Begründung, freigegeben von einer bearbeitenden Person:",
+    "incorporated": "Eingearbeitet",
+    "incorporatedIn": "Eingearbeitet in v{{version}}",
+    "incorporateFailed": "Die Einarbeitung konnte nicht gestartet werden. Versuchen Sie es erneut.",
     "open": "Feedback",
     "heading": "Feedback zum Prototyp",
     "hint": "Was Testpersonen auf jeder Version dieses Prototyps markiert haben, nach Bildschirm gruppiert.",

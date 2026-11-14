@@ -249,3 +249,40 @@ describe('PrototypeFeedbackView', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Loading feedback…')
   })
 })
+
+// docs/prototype-builder.md Part 3, after Apply: a Done pin's mark names the version, a Not done pin's reason is the AI's.
+describe('PrototypeFeedbackView after an incorporation', () => {
+  /** The item with its one pin changed (the read's shape is the server's, so the spec builds it loosely). */
+  const incorporated = (base: ReturnType<typeof item>, extra: Record<string, unknown>) =>
+    ({ ...base, pins: base.pins.map((pin) => ({ ...pin, ...extra })) })
+  // As the server stores it: by "ai", named "AI", the approver by id only.
+  const AI_REPLY = {
+    by: 'ai', name: 'AI', text: 'Needs data the prototype does not have', at: '2026-11-13T12:00:00Z', kind: 'ai',
+    llm_metadata: { model: 'm', prompt_version: '1' }, approved_by: { sub: 'sub-rui', kind: 'user' },
+  }
+
+  function serveIncorporated() {
+    const done = item({ id: 'pin_done', text: 'Pay does nothing', route: '/checkout' })
+    const notDone = item({ id: 'pin_nd', text: 'Show the courier', route: '/checkout' })
+    serve({
+      ...answer([]), pin_count: 2,
+      groups: [{
+        route: '/checkout',
+        items: [incorporated(done, { status: 'addressed', addressed_by: 'doc_v2' }), incorporated(notDone, { replies: [AI_REPLY] })],
+      }],
+    })
+  }
+
+  it('shows a Done pin as "Incorporated in v2", from its mark and the versions read', async () => {
+    serveIncorporated()
+    renderView()
+    expect(await screen.findByText('Incorporated in v2')).toBeInTheDocument()
+  })
+
+  it('shows the AI\'s reason as the AI\'s, approved by an editor, never as a person\'s words (nor "AI" as a name)', async () => {
+    serveIncorporated()
+    renderView()
+    const reason = await screen.findByText('Needs data the prototype does not have')
+    expect(reason.closest('li')).toHaveTextContent(/^AI reason, approved by an editor:\s*Needs data the prototype does not have$/)
+  })
+})

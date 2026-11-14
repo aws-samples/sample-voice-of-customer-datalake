@@ -17,8 +17,10 @@ import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { HTTP_CONFLICT, apiErrorStatus } from '../../api/apiErrorStatus'
 import { summaryLines } from '../../api/prototypeDraftSchema'
-import type { PrototypeDraft } from '../../api/prototypeDraftSchema'
+import type { PinOutcome, PrototypeDraft } from '../../api/prototypeDraftSchema'
+import type { AppliedDraft } from '../../api/projectsApi'
 import type { ProjectDocument } from '../../api/types'
+import { DraftOutcomes, IncorporationResult } from './PrototypeDraftOutcomes'
 import PressedChoices from '../../components/PressedChoices/PressedChoices'
 import { HtmlPrototypeFrame } from '../../components/PrototypeRenderer'
 import { refusalReason } from '../../lib/errors'
@@ -57,12 +59,13 @@ function ActionIcon({ pending, Icon }: Readonly<{ pending: boolean; Icon: Lucide
   return pending ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Icon size={14} aria-hidden />
 }
 
-function DraftActions({ projectId, documentId, shown, onSelectDoc }: Readonly<{
+function DraftActions({ projectId, documentId, shown, onSelectDoc, onApplied }: Readonly<{
   projectId: string; documentId: string; shown: ShownDraft; onSelectDoc: (doc: ProjectDocument) => void
+  onApplied: (applied: AppliedDraft) => void
 }>) {
   const { t } = useTranslation('projectDetail')
   const { draft } = shown
-  const { apply, discard } = usePrototypeDraftActions(projectId, documentId, draft.draft_id, onSelectDoc)
+  const { apply, discard } = usePrototypeDraftActions(projectId, documentId, draft.draft_id, onSelectDoc, onApplied)
   const conflict = apiErrorStatus(apply.error) === HTTP_CONFLICT
   const stale = shown.state === 'stale' || conflict
   const busy = apply.isPending || discard.isPending
@@ -106,19 +109,28 @@ export function PrototypeWithDraft({ projectId, document, documents, canEdit, on
   const shown = usePrototypeDraft(projectId, document, documents, canEdit)
   // Per draft: a newer draft opens on itself again.
   const [chosen, setChosen] = useState<{ readonly draftId: string; readonly preview: DraftPreview } | null>(null)
-  if (shown === null) return <>{children}</>
+  // A feedback draft's Apply result outlives its banner (the applied draft has none): until dismissed.
+  const [applied, setApplied] = useState<{ readonly result: AppliedDraft; readonly outcomes: readonly PinOutcome[] } | null>(null)
+  const incorporation = applied?.result.incorporation ?? null
+  const result = incorporation === null ? null : (
+    <IncorporationResult projectId={projectId} documentId={document.document_id} version={applied?.result.document?.version}
+      incorporation={incorporation} outcomes={applied?.outcomes ?? []} onDismiss={() => { setApplied(null) }} />
+  )
+  if (shown === null) return <>{result}{children}</>
   const { draft } = shown
   const preview = chosen?.draftId === draft.draft_id ? chosen.preview : 'draft'
   return (
     <>
+      {result}
       <PrototypeDraftBanner projectId={projectId} documentId={document.document_id} shown={shown} preview={preview}
-        onPreviewChange={(next) => { setChosen({ draftId: draft.draft_id, preview: next }) }} onSelectDoc={onSelectDoc} />
+        onPreviewChange={(next) => { setChosen({ draftId: draft.draft_id, preview: next }) }} onSelectDoc={onSelectDoc}
+        onApplied={(next) => { setApplied({ result: next, outcomes: draft.outcomes }) }} />
       {preview === 'draft' ? <DraftPreviewFrame url={draft.preview_url} title={document.title} /> : children}
     </>
   )
 }
 
-function PrototypeDraftBanner({ projectId, documentId, shown, preview, onPreviewChange, onSelectDoc }: Readonly<{
+function PrototypeDraftBanner({ projectId, documentId, shown, preview, onPreviewChange, onSelectDoc, onApplied }: Readonly<{
   projectId: string
   /** The prototype version open in the pane (the draft routes are addressed through it). */
   documentId: string
@@ -126,6 +138,7 @@ function PrototypeDraftBanner({ projectId, documentId, shown, preview, onPreview
   preview: DraftPreview
   onPreviewChange: (preview: DraftPreview) => void
   onSelectDoc: (doc: ProjectDocument) => void
+  onApplied: (applied: AppliedDraft) => void
 }>) {
   const { t } = useTranslation('projectDetail')
   const headingId = useId()
@@ -141,8 +154,10 @@ function PrototypeDraftBanner({ projectId, documentId, shown, preview, onPreview
           idleClassName="btn btn-ghost btn-sm" />
       </div>
       <DraftSummary draft={shown.draft} />
+      <DraftOutcomes projectId={projectId} documentId={documentId} draft={shown.draft} />
       {/* Keyed by the draft: an Apply or Discard's state (a 409, an error) never outlives its draft. */}
-      <DraftActions key={shown.draft.draft_id} projectId={projectId} documentId={documentId} shown={shown} onSelectDoc={onSelectDoc} />
+      <DraftActions key={shown.draft.draft_id} projectId={projectId} documentId={documentId} shown={shown} onSelectDoc={onSelectDoc}
+        onApplied={onApplied} />
     </section>
   )
 }

@@ -398,8 +398,8 @@ def put_pin(table: Any, item: dict) -> None:
 
 
 def public_pin(item: dict) -> dict:
-    """A stored pin as the API returns it (keys dropped, Decimals plain)."""
-    return plain({k: v for k, v in item.items() if k not in ('pk', 'sk')})
+    """A stored pin as the API returns it (keys and the write-once reply and mark ids dropped, Decimals plain)."""
+    return plain({k: v for k, v in item.items() if k not in ('pk', 'sk', REPLY_IDS_FIELD, MARK_IDS_FIELD)})
 
 
 def list_pins(table: Any, form_id: str, status: str | None = None) -> list[dict]:
@@ -428,6 +428,61 @@ def append_reply(table: Any, form_id: str, pin_id: str, reply: dict) -> dict:
         ReturnValues='ALL_NEW',
     )
     return public_pin(response.get('Attributes', {}))
+
+
+# A reply the AI wrote (Incorporate's Not done reason, docs/prototype-builder.md Part 3): marked by ``kind``, with
+# the model that wrote it and the editor who approved it, so no view shows it as a person's own words.
+REPLY_KIND_AI = 'ai'
+AI_REPLY_FIELDS = ('kind', 'llm_metadata', 'approved_by')
+# The ids of the replies a pin holds that were written once (``append_reply_once``), for the conditional write.
+REPLY_IDS_FIELD = 'reply_ids'
+
+
+def append_reply_once(table: Any, form_id: str, pin_id: str, reply_id: str, reply: dict) -> None:
+    """Append ``reply`` (carrying ``reply_id``) unless the thread already has that id.
+
+    Conditional on the id not being in the pin's ``reply_ids`` set, so a replayed or concurrent writer
+    of the same reply writes it once. Raises the ConditionalCheckFailedException when the pin is gone,
+    its thread is full, or the id is already there (the caller tells them apart by reading the pin).
+    """
+    table.update_item(
+        Key=pin_key(form_id, pin_id),
+        UpdateExpression=('SET replies = list_append(if_not_exists(replies, :empty), :reply), updated_at = :now '
+                          'ADD #ids :id'),
+        ConditionExpression=('attribute_exists(sk) AND (attribute_not_exists(replies) OR size(replies) < :max) '
+                             'AND NOT contains(#ids, :rid)'),
+        ExpressionAttributeNames={'#ids': REPLY_IDS_FIELD},
+        ExpressionAttributeValues={':empty': [], ':reply': [{**reply, 'id': reply_id}], ':now': reply['at'],
+                                   ':max': MAX_REPLIES, ':id': {reply_id}, ':rid': reply_id},
+    )
+
+
+# The ids of the marks a pin received that were written once (``mark_addressed_once``), for the conditional write.
+MARK_IDS_FIELD = 'mark_ids'
+
+
+def mark_addressed_once(table: Any, form_id: str, pin_id: str, mark_id: str, *, addressed_by: str, actor: str,
+                        now: str) -> None:
+    """Mark an OPEN pin addressed by ``addressed_by``, once per ``mark_id``: never again after an editor reopens it.
+
+    Conditional on the pin being open and the id not being in its ``mark_ids`` set. Raises the
+    ConditionalCheckFailedException otherwise (the caller reads the pin to tell why).
+    """
+    table.update_item(
+        Key=pin_key(form_id, pin_id),
+        UpdateExpression=('SET #status = :addressed, addressed_by = :by, status_by = :actor, updated_at = :now '
+                          'ADD #marks :mark'),
+        ConditionExpression='attribute_exists(sk) AND #status = :open AND NOT contains(#marks, :mid)',
+        ExpressionAttributeNames={'#status': 'status', '#marks': MARK_IDS_FIELD},
+        ExpressionAttributeValues={':addressed': STATUS_ADDRESSED, ':open': STATUS_OPEN, ':by': addressed_by,
+                                   ':actor': actor[:200], ':now': now, ':mark': {mark_id}, ':mid': mark_id},
+    )
+
+
+def get_pin(table: Any, form_id: str, pin_id: str) -> dict | None:
+    """One stored pin (strongly consistent), or None."""
+    item = table.get_item(Key=pin_key(form_id, pin_id), ConsistentRead=True).get('Item')
+    return item if isinstance(item, dict) else None
 
 
 def set_status(table: Any, form_id: str, pin_id: str, status: str, *, actor: str,

@@ -151,7 +151,8 @@ class TestPrototypeDrafts:
             'projects', method, path, body, {})
 
     @pytest.mark.parametrize(('args', 'message'), [
-        ({'document_id': 'd1'}, 'instruction is required'),
+        ({'document_id': 'd1'}, 'give either instruction or pin_ids'),
+        ({'document_id': 'd1', 'instruction': 'Blue', 'pin_ids': ['p1']}, 'give either instruction or pin_ids'),
         ({'document_id': 'd1', 'instruction': '   '}, 'instruction is required'),
         ({'document_id': 'd1', 'instruction': 7}, 'instruction must be a string'),
         ({'document_id': 'd1', 'instruction': 'x' * 2001}, 'instruction must be at most 2000 characters'),
@@ -160,6 +161,23 @@ class TestPrototypeDrafts:
     def test_a_draft_needs_a_document_and_an_instruction_of_at_most_2000_characters(self, args, message):
         with pytest.raises(InvalidToolArgument, match=message):
             _build(DRAFT, args)
+
+    def test_pin_ids_are_sent_as_given_and_no_instruction(self):
+        """Ids only, never text: the route reads the pins, refuses another series' and withholds flagged ones."""
+        assert _build(DRAFT, {'document_id': 'd1', 'pin_ids': ['pin_1', 'pin_2']}).body == {'pin_ids': ['pin_1', 'pin_2']}
+
+    def test_the_schema_offers_pin_ids_up_to_50(self):
+        properties = TOOLS_BY_NAME[DRAFT].input_schema['properties']
+        assert properties['pin_ids'] == {'type': 'array', 'items': {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{1,128}$'},
+                                         'minItems': 1, 'maxItems': 50}
+
+    def test_the_applied_answer_keeps_the_incorporation(self):
+        payload = {'success': True, 'document': {'document_id': 'd4', 'prototype_url': SIGNED},
+                   'incorporation': {'marked': ['pin_a'], 'replied': [], 'not_written': [
+                       {'pin_id': 'pin_b', 'reason': 'thread_full', 'pk': 'x'}]}}
+        assert TOOLS_BY_NAME[APPLY_DRAFT].shape(payload, {}) == {'success': True, 'document': {'document_id': 'd4'},
+                                                                 'incorporation': {'marked': ['pin_a'], 'replied': [],
+                                                                                   'not_written': [{'pin_id': 'pin_b', 'reason': 'thread_full'}]}}
 
     def test_an_instruction_of_2000_characters_is_sent(self):
         assert _build(DRAFT, {'document_id': 'd1', 'instruction': 'x' * 2000}).body == {'instruction': 'x' * 2000}

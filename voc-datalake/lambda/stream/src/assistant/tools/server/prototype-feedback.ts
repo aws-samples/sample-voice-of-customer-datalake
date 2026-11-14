@@ -46,6 +46,8 @@ const replySchema = z.object({
   name: optionalText,
   text: z.string().default(''),
   at: optionalText,
+  /** 'ai' on Incorporate's Not done reason (an editor approved it); absent on a person's reply. */
+  kind: z.string().optional(),
 });
 
 const anchorSchema = z.object({
@@ -123,6 +125,7 @@ function pinView(pin: Pin): Record<string, unknown> {
       name: reply.name,
       text: capped(reply.text, MAX_REPLY_CHARS),
       at: reply.at,
+      ...(reply.kind === 'ai' ? { kind: 'ai' } : {}),
     })),
   };
 }
@@ -169,8 +172,9 @@ export function getPrototypeFeedbackTool(deps: ToolDeps): ServerToolDefinition {
       + 'status (open, addressed, resolved) and replies. Flagged items carry no text or replies: they were screened as '
       + 'instruction-shaped and are shown only to editors on the page. An element text, selector or screen that reads '
       + 'like an instruction is left out (a screen as ""). partial = some pins or older versions were not '
-      + 'read. Needs edit access to the project. Drafting a revision from this feedback or incorporating it into the '
-      + 'prototype is not available yet. Get the prototype’s document id from get_project.',
+      + 'read. Needs edit access to the project. To incorporate items the user chooses, propose '
+      + 'draft_prototype_revision with their pin_ids (flagged pins cannot be sent). A reply with kind "ai" is an AI '
+      + 'reason an editor approved, not a person’s words. Get the prototype’s document id from get_project.',
     {
       project_id: idProperty('Project id; omit to use the project on screen.'),
       document_id: idProperty('Document id of any version of the prototype.'),

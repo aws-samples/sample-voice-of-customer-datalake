@@ -15,11 +15,17 @@ export const PIN_STATUSES = ['open', 'addressed', 'resolved'] as const
 const pct = z.number().catch(0)
 const EMPTY_BBOX = { x: 0, y: 0, w: 0, h: 0 }
 
+/**
+ * A reply on a pin. A person's has `by` / `name`; one an incorporation wrote (docs/prototype-builder.md part 3,
+ * a Not done pin's reason) is `kind: 'ai'`, the model's words (the editor who approved it is named by id only,
+ * so the page says "an editor"). Anything that is not exactly `ai` reads as a person's reply.
+ */
 export const PinReplySchema = z.object({
   by: z.string().catch(''),
   name: z.string().catch(''),
   text: z.string().catch(''),
   at: z.string().catch(''),
+  kind: z.literal('ai').optional().catch(undefined),
 })
 
 const PinAnchorSchema = z.object({
@@ -82,8 +88,11 @@ export const prototypePinsApi = {
     pinMutationResult(await fetchApi<unknown>(`${pinPath(projectId, documentId, pinId)}/${action}`, post())),
 }
 
+/** Every prototype's pin reads of a project (an Apply that marks pins refreshes them all, part 3). */
+export const projectPrototypePinsKey = (projectId: string) => ['prototype-pins', projectId] as const
+
 export const prototypePinsQueryKey = (projectId: string, documentId: string) =>
-  ['prototype-pins', projectId, documentId] as const
+  [...projectPrototypePinsKey(projectId), documentId] as const
 
 /** Under the pins root, so a reply or a status change on a pin refreshes the feedback view too. */
 export const prototypeFeedbackQueryKey = (projectId: string, documentId: string) =>

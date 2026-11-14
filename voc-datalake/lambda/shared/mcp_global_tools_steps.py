@@ -52,6 +52,7 @@ from shared.mcp_global_kit import (
 )
 from shared.methodology import STEPS
 from shared.prototype_drafts import MAX_INSTRUCTION_CHARS
+from shared.prototype_pins import MAX_BATCH_PINS
 
 MAX_BRIEF_CHARS: Final = 4000
 MAX_TITLE_CHARS: Final = 200
@@ -149,12 +150,20 @@ def _revise_started(payload: object, _args: Mapping[str, Any]) -> dict:
 
 
 def _start_draft(args: Mapping[str, Any], project: str | None) -> RouteRequest:
-    """Start a draft (POST …/drafts): the route drafts on the newest version of ``document_id``'s series."""
-    instruction = text_arg(args, 'instruction', max_length=MAX_INSTRUCTION_CHARS, required=True)
+    """Start a draft (POST …/drafts): the route drafts on the newest version of ``document_id``'s series.
+
+    Exactly one of ``instruction`` (words) and ``pin_ids`` (tester pins to incorporate, ids only: the route
+    reads the pins, refuses another series' and withholds flagged ones); the ids reach the route as given.
+    """
+    if (args.get('instruction') is None) == (args.get('pin_ids') is None):
+        raise InvalidToolArgument('give either instruction or pin_ids')
+    if args.get('pin_ids') is not None:
+        body: dict[str, Any] = {'pin_ids': args['pin_ids']}
+    else:
+        body = {'instruction': text_arg(args, 'instruction', max_length=MAX_INSTRUCTION_CHARS, required=True)}
     p = require_project(project)
     d = id_arg(args, 'document_id')
-    return RouteRequest(DOMAIN_PROJECTS, 'POST', f'/projects/{p}/prototypes/{d}/drafts',
-                        body={'instruction': instruction})
+    return RouteRequest(DOMAIN_PROJECTS, 'POST', f'/projects/{p}/prototypes/{d}/drafts', body=body)
 
 
 def _get_outline(args: Mapping[str, Any], project: str | None) -> RouteRequest:
@@ -186,9 +195,13 @@ def _discard_draft(args: Mapping[str, Any], project: str | None) -> RouteRequest
 
 
 def _applied(payload: object, _args: Mapping[str, Any]) -> dict:
-    """The new version, without its storage keys or its signed prototype URL."""
+    """The new version, without its storage keys or its signed prototype URL, and a feedback draft's
+    ``incorporation`` (the pins marked, replied to, not written)."""
     answer = payload if isinstance(payload, Mapping) else {}
-    return {'success': answer.get('success'), 'document': public(answer.get('document'))}
+    shaped = {'success': answer.get('success'), 'document': public(answer.get('document'))}
+    if isinstance(answer.get('incorporation'), Mapping):
+        shaped['incorporation'] = stripped(answer['incorporation'], {})
+    return shaped
 
 
 def _get_job(args: Mapping[str, Any], project: str | None) -> RouteRequest:
@@ -298,24 +311,29 @@ STEP_TOOLS: Final[tuple[GlobalTool, ...]] = (
         _get_outline, stripped, project_scoped=True),
     GlobalTool(
         'documents_draft_prototype_revision', 'Draft a prototype revision',
-        'Ask for a change to a prototype in words (write token): `document_id` (any version of it) and '
-        '`instruction`. The AI drafts the change on the newest version; nothing is saved. Answers a job_id: '
-        'its result is the `draft_id` (projects_get_job); read it with documents_get_prototype_draft.',
+        'Ask for a change to a prototype (write token): `document_id` (any version of it) and either '
+        '`instruction` (words) or `pin_ids` (up to 50 tester pins from documents_list_prototype_feedback to '
+        'incorporate). The AI drafts it on the newest version; nothing is saved. Answers a job_id: its result is '
+        'the `draft_id` (projects_get_job); read it with documents_get_prototype_draft.',
         schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA,
-                'instruction': {'type': 'string', 'maxLength': MAX_INSTRUCTION_CHARS}}, ('document_id', 'instruction')),
+                'instruction': {'type': 'string', 'maxLength': MAX_INSTRUCTION_CHARS},
+                'pin_ids': {'type': 'array', 'items': ID_SCHEMA, 'minItems': 1, 'maxItems': MAX_BATCH_PINS}},
+               ('document_id',)),
         _start_draft, _revise_started, write=True, project_scoped=True),
     GlobalTool(
         'documents_get_prototype_draft', 'Get a prototype draft',
         "Read a prototype draft: its instruction, the AI's summary of what changed and the version it was "
-        'drafted on (`base_version`). No preview: the user sees it on the prototype page.',
+        'drafted on (`base_version`); a draft from pins (`kind` feedback) adds `outcomes` per pin (done / not_done '
+        'and a note), `withheld` and `ignored` pin ids. No preview: the user sees it on the prototype page.',
         schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA, 'draft_id': ID_SCHEMA},
                ('document_id', 'draft_id')),
         _get_draft, stripped, project_scoped=True),
     GlobalTool(
         'documents_apply_prototype_draft', 'Apply a prototype draft',
         'Save a prototype draft as the next version (write token); earlier versions are kept, and applying it '
-        'again gives the same version. Refused when a version was saved since the draft: ask again. Confirm '
-        'with the user first.',
+        'again gives the same version. A draft from pins also marks its done pins addressed and replies to the '
+        'others (`incorporation`). Refused when a version was saved since the draft: ask again. Confirm with the '
+        'user first.',
         schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA, 'draft_id': ID_SCHEMA},
                ('document_id', 'draft_id')),
         _apply_draft, _applied, write=True, project_scoped=True),

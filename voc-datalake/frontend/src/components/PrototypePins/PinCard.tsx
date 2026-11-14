@@ -9,6 +9,7 @@ import { CheckCircle2, RotateCcw, Send, ShieldAlert } from 'lucide-react'
 import type { PrototypePin } from '../../api/prototypePinsApi'
 import { IconBadge } from '../IconBadge/IconBadge'
 import { STATUS_BADGE } from './pinStatusBadge'
+import ReplyAuthor from './ReplyAuthor'
 
 /** Mirrors MAX_REPLY_CHARS in lambda/shared/prototype_pins.py. */
 const MAX_REPLY_CHARS = 2000
@@ -81,7 +82,7 @@ export default function PinCard({ pin, number, busy, onReply, onStatus }: PinCar
         <ul className="space-y-1 border-l pl-2">
           {pin.replies.map((reply) => (
             <li key={`${reply.at}-${reply.by}`} className="text-xs">
-              <span className="font-medium">{reply.name}</span> <span className="whitespace-pre-wrap break-words">{reply.text}</span>
+              <ReplyAuthor reply={reply} /> <span className="whitespace-pre-wrap break-words">{reply.text}</span>
             </li>
           ))}
         </ul>

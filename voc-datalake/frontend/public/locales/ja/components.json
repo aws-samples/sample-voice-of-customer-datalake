@@ -806,6 +806,10 @@
     "noMatchHint": "フィルターを変更またはクリアするか、より長い期間を選択してください。"
   },
   "prototypeFeedback": {
+    "aiReason": "AI の理由（編集者が承認）：",
+    "incorporated": "反映済み",
+    "incorporatedIn": "v{{version}} に反映済み",
+    "incorporateFailed": "反映を開始できませんでした。もう一度お試しください。",
     "open": "フィードバック",
     "heading": "プロトタイプへのフィードバック",
     "hint": "このプロトタイプの各バージョンにテスターが付けたピンを、画面ごとにまとめています。",

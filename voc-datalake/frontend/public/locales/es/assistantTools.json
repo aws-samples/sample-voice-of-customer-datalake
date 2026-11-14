@@ -346,7 +346,12 @@
     "prototypeDraft": {
       "prototype": "Prototipo:",
       "instruction": "Instrucción que recibe el borrador",
-      "note": "Esto solo crea un borrador. Aparece en la página del prototipo cuando está listo y no se guarda nada hasta que lo apliques allí."
+      "note": "Esto solo crea un borrador. Aparece en la página del prototipo cuando está listo y no se guarda nada hasta que lo apliques allí.",
+      "pins_one": "{{count, number}} pin de tester seleccionado",
+      "pins_many": "{{count, number}} de pines de testers seleccionados",
+      "pins_other": "{{count, number}} pines de testers seleccionados",
+      "noScreen": "(sin pantalla)",
+      "pinsInstruction": "Solo se envían los ID de los pines: el servidor lee estos pines y escribe la instrucción (incorporar los comentarios seleccionados de los testers, respondidos por pin: hecho o no hecho)."
     }
   },
   "tools": {

@@ -191,6 +191,7 @@ const ProjectDocumentSchema = z.preprocess(withLegacyManagedDocumentType, z.loos
   input_feedback_ids: optionalStringArray,
   erased_evidence: optionalErasedEvidenceSchema,
   revised_from_id: optionalNullableString,
+  revised_from_draft_id: optionalNullableString,
   revision_feedback: optionalString,
   // A persona / document / product doc this one cited and that was later deleted: read by the
   // transform below (api/deletedSources.ts), the key omitted when there is none.

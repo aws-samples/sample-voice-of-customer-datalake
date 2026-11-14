@@ -17,6 +17,21 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.15.00] - 2026-11-14
+
+Turn tester feedback into the next version of a prototype: select pins, get a draft that says what it did with each, apply it, and the pins are marked (the Prototype builder, part 3 complete; [docs/prototype-builder.md](docs/prototype-builder.md)).
+
+### Added
+
+- **Incorporate** in a prototype's Feedback dialog, for editors: up to 50 selected pins start one draft. The server reads the pins itself and writes the instruction; only pin ids are sent, never text. Pins whose text reads like an instruction to the AI are withheld and never reach the model.
+- The draft banner says per item what the AI did: **Done** and what changed, or **Not done** and why. After **Apply**, the Done pins show **Incorporated in vN**, each Not done pin gets one reply shown as "AI reason, approved by an editor", and a line says what was marked, replied and what could not be written (a pin gone, already addressed or resolved, reopened by an editor since, a full thread, a withheld reason). A retried Apply finishes that work without writing anything twice, and never re-marks a pin an editor reopened. The applied version records the draft it came from (`revised_from_draft_id`). Only the selected pins are ever touched.
+- `POST …/prototypes/{document_id}/drafts` takes `{pin_ids}` (1 to 50) as well as `{instruction}` (exactly one of the two); the draft read adds `kind`, `outcomes`, `withheld` and `ignored`; Apply's answer adds `incorporation`. The applied version records "Incorporated N pins (k done)".
+- MCP `documents_draft_prototype_revision` takes `pin_ids`, and the assistant's `draft_prototype_revision` too (ids only, after reading `get_prototype_feedback`); its card lists where the selected pins are, never their text.
+
+### Security
+
+- A pin's text reaches the model only inside the pins data block, and a pin flagged after it was selected is withheld again when the draft runs. A model-written reply is stored and shown as the AI's, with whoever applied the draft recorded as its approver (the editor in the app, the token over MCP), never as a person's words.
+
 ## [6.14.00] - 2026-11-13
 
 Edit a prototype from the chat bubble: ask the assistant for a change, approve it, and the draft shows on the prototype's page to apply or discard (the Prototype builder, part 2 complete).

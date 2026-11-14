@@ -14,6 +14,7 @@ import { PIN_STATUSES } from '../../api/prototypePinsApi'
 import { formatDateTime } from '../../utils/dateUtils'
 import { IconBadge } from '../IconBadge/IconBadge'
 import { STATUS_BADGE } from '../PrototypePins/pinStatusBadge'
+import ReplyAuthor from '../PrototypePins/ReplyAuthor'
 import { MAX_SELECTED_PINS, type BlockedReason } from './selection'
 
 /** How much of the comment names the item to a screen reader on its checkbox. */
@@ -24,6 +25,28 @@ interface FeedbackItemCardProps {
   readonly checked: boolean
   readonly blocked: BlockedReason
   readonly onToggle: (checked: boolean) => void
+  /** The series' versions by document id (the read's `versions_read`), to name the version a mark came from. */
+  readonly versions: ReadonlyMap<string, number>
+}
+
+/**
+ * The versions an incorporation marked this item's pins addressed by (part 3: `addressed_by` is the new
+ * version's document id), ascending; `null` for a mark whose version the read does not list.
+ */
+function incorporatedIn(item: FeedbackItem, versions: ReadonlyMap<string, number>): (number | null)[] {
+  const marks = item.pins.filter((pin) => pin.status === 'addressed' && pin.addressed_by !== '')
+    .map((pin) => versions.get(pin.addressed_by) ?? null)
+  const known = [...new Set(marks.filter((version): version is number => version !== null))].sort((a, b) => a - b)
+  return marks.includes(null) ? [...known, null] : known
+}
+
+function IncorporatedBadges({ item, versions }: { readonly item: FeedbackItem; readonly versions: ReadonlyMap<string, number> }) {
+  const { t } = useTranslation('components')
+  return incorporatedIn(item, versions).map((version) => (
+    <span key={version ?? 'later'} className="badge badge-ok">
+      {version === null ? t('prototypeFeedback.incorporated') : t('prototypeFeedback.incorporatedIn', { version })}
+    </span>
+  ))
 }
 
 function shortText(text: string): string {
@@ -81,7 +104,7 @@ function ItemReplies({ item }: { readonly item: FeedbackItem }) {
       <ul className="space-y-1 border-l pl-2">
         {replies.map((reply) => (
           <li key={reply.key} className="text-xs break-words">
-            <span className="font-medium">{reply.name || t('prototypeFeedback.someone')}</span>{' '}
+            <ReplyAuthor reply={reply} />{' '}
             <span className="whitespace-pre-wrap">{reply.text}</span>
           </li>
         ))}
@@ -90,7 +113,7 @@ function ItemReplies({ item }: { readonly item: FeedbackItem }) {
   )
 }
 
-export default function FeedbackItemCard({ item, checked, blocked, onToggle }: FeedbackItemCardProps) {
+export default function FeedbackItemCard({ item, checked, blocked, onToggle, versions }: FeedbackItemCardProps) {
   const { t } = useTranslation('components')
   // A status reads as the pins panel words it (projectDetail's prototypePins.status.*).
   const { t: tPins } = useTranslation('projectDetail')
@@ -121,6 +144,7 @@ export default function FeedbackItemCard({ item, checked, blocked, onToggle }: F
             {statuses.map((status) => (
               <span key={status} className={STATUS_BADGE[status]}>{tPins(`prototypePins.status.${status}`)}</span>
             ))}
+            <IncorporatedBadges item={item} versions={versions} />
             {item.flagged ? (
               <IconBadge toneClass="badge-danger" icon={ShieldAlert} iconSize={10}>{t('prototypeFeedback.flagged')}</IconBadge>
             ) : null}

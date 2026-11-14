@@ -3,8 +3,8 @@
 import { del, post, put } from './requestKit'
 import { fetchApi } from './client'
 import { apiErrorStatus } from './apiErrorStatus'
-import { normalizePrototypeDraft } from './prototypeDraftSchema'
-import type { PrototypeDraft } from './prototypeDraftSchema'
+import { normalizeIncorporation, normalizePrototypeDraft } from './prototypeDraftSchema'
+import type { Incorporation, PrototypeDraft } from './prototypeDraftSchema'
 import { getDateBasisBodyParams } from './baseUrl'
 import {
   normalizeDocumentVersions, normalizeMemberCandidates, normalizeProject, normalizeProjectDetail,
@@ -48,6 +48,15 @@ import type {
 export const MAX_PROJECT_DETAIL_BATCH = 200
 
 const HTTP_NOT_FOUND = 404
+
+/** What a draft is made from: an editor's instruction, or selected tester pins (ids only, part 3). */
+export type DraftRequest = { readonly instruction: string } | { readonly pin_ids: readonly string[] }
+
+/** Apply's answer: the version it wrote (null when the answer names none) and, for a feedback draft, its marks. */
+export interface AppliedDraft {
+  readonly document: ProjectDocument | null
+  readonly incorporation: Incorporation | null
+}
 
 /** A JSON POST's request init (`post(...)` is what check-mock-coverage reads as POST). */
 
@@ -460,18 +469,19 @@ export const projectsApi = {
   // Discard is the job delete (`dismissJob`), which makes the draft GET and Apply 404 at once.
 
   /**
-   * Starts a draft of `documentId`'s series from an editor's instruction (1–2,000 characters; the
-   * assistant's `draft_prototype_revision`, once approved): a job whose result is `{draft_id}`. The
+   * Starts a draft of `documentId`'s series: from an editor's instruction (1–2,000 characters; the assistant's
+   * `draft_prototype_revision`), or from selected tester pins (part 3's Incorporate: 1–50 pin ids, never their
+   * text; the server reads the pins itself and writes the instruction). A job whose result is `{draft_id}`. The
    * base is the series' newest version when the job starts, whichever version `documentId` names.
    */
-  startPrototypeDraft: (projectId: string, documentId: string, instruction: string, responseLanguage: string) =>
+  startPrototypeDraft: (projectId: string, documentId: string, request: DraftRequest, responseLanguage: string) =>
     fetchApi<{
       success: boolean;
       job_id: string;
       status: string;
       message: string
     }>(`/projects/${projectId}/prototypes/${encodeURIComponent(documentId)}/drafts`, post({
-      instruction,
+      ...('pin_ids' in request ? { pin_ids: [...request.pin_ids] } : { instruction: request.instruction }),
       response_language: responseLanguage,
     })),
 
@@ -489,12 +499,14 @@ export const projectsApi = {
   /**
    * Writes the draft as the next version of its series (no body: the base comes from the job): the version,
    * the same one on a replay of an Apply that already landed (201 the first time, 200 after). A series that
-   * moved past the draft's base is a 409.
+   * moved past the draft's base is a 409. For a feedback draft, `incorporation` says which pins it marked,
+   * which it replied to and which it could not (every call finishes the set, replays included).
    */
-  applyPrototypeDraft: async (projectId: string, documentId: string, draftId: string): Promise<ProjectDocument | null> => {
+  applyPrototypeDraft: async (projectId: string, documentId: string, draftId: string): Promise<AppliedDraft> => {
     const raw = await fetchApi<unknown>(
       `/projects/${projectId}/prototypes/${encodeURIComponent(documentId)}/drafts/${encodeURIComponent(draftId)}/apply`, post())
-    return normalizeProjectDocument(asRecord(raw)?.document)
+    const record = asRecord(raw)
+    return { document: normalizeProjectDocument(record?.document), incorporation: normalizeIncorporation(record?.incorporation) }
   },
 
   generateProductReport: (projectId: string, body: { response_language?: string; title?: string }) =>

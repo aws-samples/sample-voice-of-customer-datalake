@@ -55,7 +55,7 @@ async function draftOf(doc, instruction) {
 const draftPath = (doc, draftId) => `${PROJECT}/prototypes/${doc.document_id}/drafts/${draftId}`
 
 describe('mock prototype drafts', () => {
-  it('validates the instruction and refuses pin_ids', async () => {
+  it('validates the instruction and refuses both or neither of instruction and pin_ids', async () => {
     const v1 = await build(`Draft checks ${String(Date.now())}`)
     for (const body of [{}, { instruction: '   ' }, { instruction: 'x'.repeat(2001) }, { instruction: 'x', pin_ids: ['pin_1'] }]) {
       const [status] = await call('POST', `${PROJECT}/prototypes/${v1.document_id}/drafts`, body)
@@ -119,5 +119,92 @@ describe('mock prototype drafts', () => {
     assert.equal((await call('GET', draftPath(v1, draftId)))[0], 404)
     assert.equal((await call('POST', `${draftPath(v1, draftId)}/apply`))[0], 404)
     assert.equal((await fetch(draft.preview_url)).status, 404)
+  })
+})
+
+/** The feedback read's pins of `doc`'s series, flat. */
+async function feedbackPins(doc) {
+  const [, feedback] = await call('GET', `${PROJECT}/prototypes/${doc.document_id}/feedback`)
+  return feedback.groups.flatMap((group) => group.items.flatMap((item) => item.pins))
+}
+
+describe('mock Incorporate (part 3): a draft from pin ids', () => {
+  it('refuses a malformed, overlong, foreign or wholly withheld selection', async () => {
+    const v1 = await build(`Incorporate checks ${String(Date.now())}`)
+    const pins = await feedbackPins(v1)
+    const flagged = pins.filter((pin) => pin.flagged).map((pin) => pin.pin_id)
+    const many = Array.from({ length: 51 }, (_, i) => `pin_${String(i).padStart(20, '0')}abcdef`)
+    const refusals = [
+      [[], 'pin_ids must be a non-empty list'], [['not-a-pin'], 'pin_ids holds an invalid pin id'],
+      [many, 'at most 50 pin_ids are allowed'], [['pin_00000000000000000000abcdef'], '1 of the selected pins are not pins of this prototype'],
+      [flagged, 'Every selected pin was withheld: its text reads like an instruction to the AI'],
+    ]
+    for (const [pin_ids, error] of refusals) {
+      const [status, body] = await call('POST', `${PROJECT}/prototypes/${v1.document_id}/drafts`, { pin_ids })
+      assert.deepEqual([status, body.error], [400, error], JSON.stringify(pin_ids))
+    }
+    const both = await call('POST', `${PROJECT}/prototypes/${v1.document_id}/drafts`, { instruction: 'x', pin_ids: [pins[0].pin_id] })
+    assert.deepEqual([both[0], both[1].error], [400, 'Give an instruction or pin_ids, not both'])
+  })
+
+  it('folds a repeated pin id', async () => {
+    const v1 = await build(`Incorporate fold ${String(Date.now())}`)
+    const open = (await feedbackPins(v1)).find((pin) => pin.status === 'open' && !pin.flagged)
+    const [status, started] = await call('POST', `${PROJECT}/prototypes/${v1.document_id}/drafts`, { pin_ids: [open.pin_id, open.pin_id], instruction: null })
+    assert.equal(status, 200, 'a null instruction is absent')
+    await finished(started.job_id)
+    const [, draft] = await call('GET', draftPath(v1, started.job_id))
+    assert.deepEqual(draft.outcomes.map((o) => o.pin_id), [open.pin_id])
+    const [, applied] = await call('POST', `${draftPath(v1, started.job_id)}/apply`)
+    assert.equal(applied.document.revision_feedback, 'Incorporated 1 pin (1 done)')
+  })
+
+  it('withholds flagged pins, answers per accepted pin, and Apply marks and replies once, replays included', async () => {
+    const v1 = await build(`Incorporate flow ${String(Date.now())}`)
+    const pins = await feedbackPins(v1)
+    const open = pins.filter((pin) => pin.status === 'open' && !pin.flagged).map((pin) => pin.pin_id)
+    const flagged = pins.filter((pin) => pin.flagged).map((pin) => pin.pin_id)
+    assert.ok(open.length >= 2 && flagged.length >= 1, 'the seeded pins have open and flagged ones')
+
+    const [status, started] = await call('POST', `${PROJECT}/prototypes/${v1.document_id}/drafts`, { pin_ids: [...open, ...flagged] })
+    assert.equal(status, 200, JSON.stringify(started))
+    const job = await finished(started.job_id)
+    assert.deepEqual(job.result, { draft_id: started.job_id })
+
+    const [, draft] = await call('GET', draftPath(v1, started.job_id))
+    assert.equal(draft.kind, 'feedback')
+    assert.equal(draft.instruction, 'Incorporate the selected tester feedback')
+    assert.deepEqual(draft.withheld, flagged)
+    assert.deepEqual(draft.outcomes.map((o) => o.pin_id), open, 'one outcome per accepted pin, none for a withheld one')
+    const done = draft.outcomes.filter((o) => o.outcome === 'done').map((o) => o.pin_id)
+    const notDone = draft.outcomes.filter((o) => o.outcome === 'not_done').map((o) => o.pin_id)
+
+    const [created, applied] = await call('POST', `${draftPath(v1, started.job_id)}/apply`)
+    assert.equal(created, 201)
+    const v2 = applied.document
+    assert.equal(v2.revision_feedback, `Incorporated ${open.length} pins (${done.length} done)`)
+    assert.equal(v2.revised_from_draft_id, started.job_id)
+    assert.deepEqual(applied.incorporation, { marked: done, replied: notDone, not_written: [] })
+
+    const [replayed, again] = await call('POST', `${draftPath(v1, started.job_id)}/apply`)
+    assert.equal(replayed, 200)
+    assert.deepEqual(again.incorporation, { marked: done, replied: notDone, not_written: [] })
+
+    const after = new Map((await feedbackPins(v2)).map((pin) => [pin.pin_id, pin]))
+    for (const id of done) assert.deepEqual([after.get(id).status, after.get(id).addressed_by], ['addressed', v2.document_id])
+    for (const id of notDone) {
+      const ai = after.get(id).replies.filter((reply) => reply.kind === 'ai')
+      assert.equal(ai.length, 1, 'one model-written reply, even after the replay')
+      assert.deepEqual([ai[0].by, ai[0].name, Object.keys(ai[0].approved_by).sort()], ['ai', 'AI', ['kind', 'sub']])
+      assert.deepEqual(Object.keys(ai[0].llm_metadata).sort(), ['model', 'prompt_version'])
+    }
+    for (const id of flagged) assert.equal(after.get(id).replies.some((reply) => reply.kind === 'ai'), false, 'a withheld pin is never touched')
+
+    // An editor reopens a Done pin: a replay reports it and leaves it open.
+    const [reopened] = await call('POST', `${PROJECT}/prototypes/${after.get(done[0]).document_id}/pins/${done[0]}/reopen`, {})
+    assert.equal(reopened, 200)
+    const [, third] = await call('POST', `${draftPath(v1, started.job_id)}/apply`)
+    assert.deepEqual(third.incorporation.not_written, [{ pin_id: done[0], reason: 'reopened' }])
+    assert.equal(new Map((await feedbackPins(v2)).map((pin) => [pin.pin_id, pin])).get(done[0]).status, 'open')
   })
 })

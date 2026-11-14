@@ -179,6 +179,13 @@ def _one_document(payload: object, args: Mapping[str, Any]) -> dict:
     raise InvalidToolArgument(f'document {wanted} is not in this project')
 
 
+def _feedback_reply(reply: Mapping[str, Any]) -> dict:
+    """One reply: its name, text (capped) and time; an AI reason (Incorporate's Not done) keeps ``kind: 'ai'``,
+    so a client never reads it as a person's words."""
+    view = {'name': reply.get('name'), 'text': _clipped(reply.get('text'), _FEEDBACK_REPLY_CHARS), 'at': reply.get('at')}
+    return {**view, 'kind': 'ai'} if reply.get('kind') == 'ai' else view
+
+
 def _feedback_pin(pin: Mapping[str, Any]) -> dict:
     """One pin of the feedback answer; a flagged one (or one not marked unflagged) without text and replies."""
     flagged = pin.get('flagged') is not False
@@ -186,8 +193,7 @@ def _feedback_pin(pin: Mapping[str, Any]) -> dict:
     if not flagged:
         replies = [r for r in rows_at(pin, 'replies') if isinstance(r, Mapping)][-_FEEDBACK_REPLIES:]
         view |= {'text': _clipped(pin.get('text'), _FEEDBACK_TEXT_CHARS),
-                 'replies': [{'name': r.get('name'), 'text': _clipped(r.get('text'), _FEEDBACK_REPLY_CHARS), 'at': r.get('at')}
-                             for r in replies]}
+                 'replies': [_feedback_reply(r) for r in replies]}
     return {**view, 'flagged': flagged}
 
 

@@ -806,6 +806,10 @@
     "noMatchHint": "请更改或清除筛选条件，或选择更长的时间范围。"
   },
   "prototypeFeedback": {
+    "aiReason": "AI 给出的理由（由一位编辑者批准）：",
+    "incorporated": "已采纳",
+    "incorporatedIn": "已在 v{{version}} 中采纳",
+    "incorporateFailed": "无法开始采纳，请重试。",
     "open": "反馈",
     "heading": "原型反馈",
     "hint": "测试者在此原型每个版本上留下的图钉，按页面分组。",

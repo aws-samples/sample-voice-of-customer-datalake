@@ -5,7 +5,7 @@ import { buildCatalogue } from '../catalogue.js';
 import { buildToolGuidance } from '../guidance.js';
 import { toolsetOf } from '../registry.js';
 import { clientToolLookup, fakeContext, fakeDeps } from '../test-fixtures.js';
-import { MAX_DRAFT_INSTRUCTION_CHARS } from './prototype-draft.js';
+import { MAX_DRAFT_INSTRUCTION_CHARS, MAX_DRAFT_PINS } from './prototype-draft.js';
 
 const NAME = 'draft_prototype_revision';
 const onPrototype = () => fakeContext('project', { projectId: 'proj_1', documentId: 'doc_3' });
@@ -30,12 +30,27 @@ describe('draft_prototype_revision', () => {
   });
 
   it.each([
-    ['no instruction', {}],
+    ['neither an instruction nor pin ids', {}],
+    ['both an instruction and pin ids', { instruction: 'Blue', pin_ids: ['p1'] }],
     ['a blank instruction', { instruction: '   ' }],
     ['an instruction past the route’s bound', { instruction: 'x'.repeat(MAX_DRAFT_INSTRUCTION_CHARS + 1) }],
-    ['an unknown key', { instruction: 'Blue', pin_ids: ['p1'] }],
+    ['no pin ids', { pin_ids: [] }],
+    ['more pin ids than the route takes', { pin_ids: Array.from({ length: MAX_DRAFT_PINS + 1 }, (_v, i) => `pin_${String(i)}`) }],
+    ['a pin id that is no id', { pin_ids: ['pin/1'] }],
+    ['feedback text', { pin_ids: ['p1'], text: 'The total is hidden' }],
   ])('refuses %s', (_label, args) => {
     expect(tool.validate(args, onPrototype()).ok).toBe(false);
+  });
+
+  it('takes pin ids only, up to the route’s bound, and says how many on the card', () => {
+    const ids = Array.from({ length: MAX_DRAFT_PINS }, (_v, i) => `pin_${String(i)}`);
+    expect(tool.validate({ pin_ids: ['pin_a', 'pin_b'] }, onPrototype())).toStrictEqual({
+      ok: true, args: { project_id: 'proj_1', document_id: 'doc_3', pin_ids: ['pin_a', 'pin_b'] },
+    });
+    expect(tool.validate({ pin_ids: ids }, onPrototype()).ok).toBe(true);
+    expect(tool.summarize({ project_id: 'proj_1', document_id: 'doc_3', pin_ids: ['pin_a', 'pin_b'] })).toBe(
+      'Draft a revision of prototype doc_3 in project proj_1 (a preview to apply on its page): incorporate 2 tester pins');
+    expect(JSON.stringify(tool.spec)).toContain('read get_prototype_feedback first and pass the pin ids');
   });
 
   it('accepts an instruction at the bound, and needs a prototype when none is on screen', () => {

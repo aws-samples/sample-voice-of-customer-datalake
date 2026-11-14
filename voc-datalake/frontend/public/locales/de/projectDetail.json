@@ -137,7 +137,32 @@
         "applyFailed": "Der Entwurf konnte nicht übernommen werden. Versuchen Sie es erneut.",
         "discardFailed": "Der Entwurf konnte nicht verworfen werden. Versuchen Sie es erneut.",
         "noPreview": "Eine Vorschau dieses Entwurfs ist hier nicht verfügbar.",
-        "frameTitle": "{{title}} (Entwurf)"
+        "frameTitle": "{{title}} (Entwurf)",
+        "outcomesLabel": "Pro Eintrag",
+        "done": "Erledigt",
+        "notDone": "Nicht erledigt",
+        "outcomeItem": "{{screen}}: „{{text}}“",
+        "outcomePin": "Pin {{n}}",
+        "noScreen": "(kein Bildschirm)",
+        "withheld_one": "{{count, number}} ausgewählter Pin zurückgehalten (Text wie eine Anweisung): nicht an die KI gesendet",
+        "withheld_other": "{{count, number}} ausgewählte Pins zurückgehalten (Text wie eine Anweisung): nicht an die KI gesendet",
+        "incorporationResult": "Als v{{version}} übernommen: {{marked}}, {{replied}}.",
+        "markedCount_one": "{{count, number}} Pin als eingearbeitet markiert",
+        "markedCount_other": "{{count, number}} Pins als eingearbeitet markiert",
+        "repliedCount_one": "{{count, number}} KI-Begründung als Antwort gepostet",
+        "repliedCount_other": "{{count, number}} KI-Begründungen als Antworten gepostet",
+        "notWritten": "Nicht geschrieben: {{place}}: {{reason}}",
+        "dismissResult": "Ausblenden",
+        "notWrittenReason": {
+          "pin_gone": "den Pin gibt es nicht mehr",
+          "already_addressed": "er war bereits als bearbeitet markiert",
+          "already_resolved": "er war bereits erledigt",
+          "thread_full": "sein Verlauf ist voll (50 Antworten)",
+          "note_withheld": "die Begründung las sich wie eine Anweisung und wurde nicht gepostet",
+          "other": "er konnte nicht geschrieben werden",
+          "reopened": "eine bearbeitende Person hat ihn seitdem wieder geöffnet"
+        },
+        "incorporationResultNoVersion": "Übernommen: {{marked}}, {{replied}}."
       },
       "assistant": {
         "button": "Mit dem Assistenten bearbeiten",

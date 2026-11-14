@@ -657,7 +657,7 @@ const seriesOf = (detail, doc) => {
 };
 // document_history._ROW_IDENTITY_FIELDS (plus what is set afresh): `edited_by`, `revise_job_id` and `llm_metadata`
 // describe the version a revise wrote, never a later one derived from it.
-const ROW_IDENTITY = new Set(['document_id', 'title', 'base_title', 'version', 'created_at', 'updated_at', 'content', 'edited_from_id', 'edit_kind', 'restored_from_id', 'restored_from_version', 'edited_by', 'revise_job_id', 'llm_metadata']);
+const ROW_IDENTITY = new Set(['document_id', 'title', 'base_title', 'version', 'created_at', 'updated_at', 'content', 'edited_from_id', 'edit_kind', 'restored_from_id', 'restored_from_version', 'edited_by', 'revise_job_id', 'llm_metadata', 'revised_from_draft_id']);
 
 function newManagedVersion(ctx, source, content, provenance) {
   const carried = Object.fromEntries(Object.entries(source).filter(([key]) => !ROW_IDENTITY.has(key)));
@@ -923,7 +923,7 @@ function listDocumentVersions(ctx, documentId) {
 }
 
 // shared/prototype_versions._PROTOTYPE_ROW_FIELDS beyond ROW_IDENTITY: what described the version a restore copies.
-const PROTOTYPE_ROW_ONLY = ['job_id', 'revised_from_id', 'revision_feedback'];
+const PROTOTYPE_ROW_ONLY = ['job_id', 'revised_from_id', 'revised_from_draft_id', 'revision_feedback'];
 
 /** prototype_versions.version_html's rule: inline content is HTML when marked so or shaped like a document. */
 const isInlineHtml = (row) => (row.content ?? '') === '' || row.prototype_format === 'html' || /^\s*<(?:!doctype html|html)/i.test(row.content);
@@ -1108,10 +1108,15 @@ function draftHtml(base, instruction) {
   return /<body[^>]*>/i.test(html) ? html.replace(/<body[^>]*>/i, (open) => `${open}${note}`) : `${note}${html}`;
 }
 
-/** POST /prototypes/{document_id}/drafts: `{instruction}` → a draft job on the series' newest version. */
+/** POST /prototypes/{document_id}/drafts: `{instruction}` or `{pin_ids}` (exactly one) → a draft job on the series' newest version. */
 function startPrototypeDraft(ctx, documentId) {
   const { body } = ctx;
-  if (own(body, 'pin_ids')) return bad('Incorporating feedback into a draft is not available yet');
+  // A null is absent, as the route reads it.
+  const hasPins = own(body, 'pin_ids') && body.pin_ids !== null;
+  const hasInstruction = own(body, 'instruction') && body.instruction !== null;
+  if (hasPins && hasInstruction) return bad('Give an instruction or pin_ids, not both');
+  if (!hasPins && !hasInstruction) return bad('Give an instruction or pin_ids');
+  if (hasPins) return startFeedbackDraft(ctx, documentId);
   if (typeof body.instruction !== 'string') return bad('instruction must be a string');
   const instruction = body.instruction.trim();
   if (instruction === '' || instruction.length > MAX_INSTRUCTION_CHARS) return bad(`instruction must be 1-${MAX_INSTRUCTION_CHARS} characters`);
@@ -1131,12 +1136,163 @@ function startPrototypeDraft(ctx, documentId) {
     if (!row) throw new Error('The prototype this draft revises no longer exists');
     const quoted = instruction.slice(0, 120);
     entry.draft = {
-      base_document_id: baseId, base_version: baseVersion, instruction, html: draftHtml(row, instruction),
+      kind: 'chat', base_document_id: baseId, base_version: baseVersion, instruction, html: draftHtml(row, instruction),
       summary: `All screens: changed as asked ("${quoted}")\nHeader: a draft note names the instruction`,
     };
     return { draft_id: entry.record.job_id };
   };
   return started;
+}
+
+// ── Incorporate (part 3): a draft from selected tester pins, ids only ──────────
+// The server reads the pins itself across the series' versions, withholds the flagged ones (fail closed: a pin
+// not marked unflagged is flagged, as the feedback read treats it) and writes the instruction; the mock "model"
+// answers Done for every other accepted pin and Not done for the rest. Apply's version names the draft
+// (`revised_from_draft_id`), as the server's does.
+
+const MAX_DRAFT_PINS = 50;
+const INCORPORATE_INSTRUCTION = 'Incorporate the selected tester feedback';
+const NOT_DONE_NOTE = 'It needs data the prototype does not have (mock).';
+
+/** `[pin_ids, null]` or `[null, the 400]`: at most 50 well-formed pin ids as sent, then a repeated one folded (the server's order and words). */
+function checkedPinIds(raw) {
+  if (!Array.isArray(raw) || raw.length === 0) return [null, bad('pin_ids must be a non-empty list')];
+  if (raw.length > MAX_DRAFT_PINS) return [null, bad(`at most ${MAX_DRAFT_PINS} pin_ids are allowed`)];
+  if (!raw.every((id) => typeof id === 'string' && PIN_ID.test(id))) return [null, bad('pin_ids holds an invalid pin id')];
+  return [[...new Set(raw)], null];
+}
+
+/** Every pin of the series (each version's form), by id, with its version's document id. */
+function seriesPinMap(ctx, doc) {
+  const byId = new Map();
+  for (const version of seriesOf(ctx.detail, doc)) {
+    const [pins] = pinsFor(ctx, version.document_id);
+    for (const pin of pins ?? []) byId.set(pin.pin_id, { pin, documentId: version.document_id });
+  }
+  return byId;
+}
+
+/** The mock model's answer per accepted pin: every other one Done (what changed), the rest Not done (why). */
+function mockOutcomes(accepted) {
+  return accepted.map(({ pin }, index) => {
+    const where = stringOr(anchorOf(pin).text_snippet, '') || routeOf(pin) || 'the screen';
+    return index % 2 === 0
+      ? { pin_id: pin.pin_id, outcome: 'done', note: `Changed "${where}" as the tester asked (mock).` }
+      : { pin_id: pin.pin_id, outcome: 'not_done', note: NOT_DONE_NOTE };
+  });
+}
+
+function startFeedbackDraft(ctx, documentId) {
+  const [pinIds, refusal] = checkedPinIds(ctx.body.pin_ids);
+  if (refusal) return refusal;
+  const doc = prototypeOf(ctx, documentId);
+  if (!doc) return PROTOTYPE_NOT_FOUND;
+  const [base] = seriesOf(ctx.detail, doc);
+  if (!isInlineHtml(base)) return EARLY_SPEC;
+  const series = seriesPinMap(ctx, doc);
+  const unknown = pinIds.filter((id) => !series.has(id));
+  if (unknown.length > 0) return bad(`${unknown.length} of the selected pins are not pins of this prototype`);
+  const found = pinIds.map((id) => series.get(id));
+  const withheld = found.filter(({ pin }) => pin.flagged !== false).map(({ pin }) => pin.pin_id);
+  const accepted = found.filter(({ pin }) => pin.flagged === false);
+  if (accepted.length === 0) return bad('Every selected pin was withheld: its text reads like an instruction to the AI');
+  const started = startJob(ctx.projectId, {
+    jobType: 'draft_prototype', status: 'pending', message: 'Prototype draft started.',
+    runningStep: 'invoking_bedrock', errorMessage: 'Prototype draft failed', complete: () => ({}),
+  });
+  const entry = jobs.get(started[1].job_id);
+  const baseId = base.document_id;
+  const baseVersion = base.version ?? 1;
+  entry.complete = (detail) => {
+    const row = findDocument(detail, baseId);
+    if (!row) throw new Error('The prototype this draft revises no longer exists');
+    const outcomes = mockOutcomes(accepted);
+    const done = outcomes.filter((o) => o.outcome === 'done').length;
+    entry.draft = {
+      kind: 'feedback', base_document_id: baseId, base_version: baseVersion, instruction: INCORPORATE_INSTRUCTION,
+      html: draftHtml(row, `${INCORPORATE_INSTRUCTION} (${accepted.length} pins)`),
+      summary: `All screens: ${done} of ${accepted.length} tester pins incorporated\nHeader: a draft note names the incorporation`,
+      outcomes, withheld,
+      accepted: accepted.map(({ pin, documentId: pinDocument }) => ({ pin_id: pin.pin_id, document_id: pinDocument })),
+    };
+    return { draft_id: entry.record.job_id };
+  };
+  return started;
+}
+
+/** "Incorporated N pins (k done)" ("1 pin"), the version's revision_feedback, as the server words it. */
+function incorporatedFeedback(draft) {
+  const count = draft.outcomes.length;
+  const done = draft.outcomes.filter((o) => o.outcome === 'done').length;
+  return `Incorporated ${count} pin${count === 1 ? '' : 's'} (${done} done)`;
+}
+
+/**
+ * Apply's marks and replies for a feedback draft, run on EVERY call (a replay finishes the set): Done pins marked
+ * addressed by the new version (an open one; one this version already marked counts as marked), Not done pins
+ * given one model-written reply (its id derived from the draft and the pin, so a replay writes none twice). Only
+ * the accepted pins are touched; what could not be written is reported, the version stands.
+ */
+function incorporate(ctx, draftId, draft, newDocumentId) {
+  const result = { marked: [], replied: [], not_written: [] };
+  const caller = ctx.shared.mockCaller ?? {};
+  for (const outcome of draft.outcomes) {
+    const accepted = draft.accepted.find((a) => a.pin_id === outcome.pin_id);
+    const [pins] = accepted ? pinsFor(ctx, accepted.document_id) : [null];
+    const pin = (pins ?? []).find((p) => p.pin_id === outcome.pin_id);
+    if (!pin) {
+      result.not_written.push({ pin_id: outcome.pin_id, reason: 'pin_gone' });
+    } else if (outcome.outcome === 'done') {
+      markIncorporated(pin, newDocumentId, draft, result);
+    } else {
+      replyWithReason(pin, `ai_${draftId}_${pin.pin_id}`, outcome.note, caller, result);
+    }
+  }
+  return result;
+}
+
+/**
+ * A Done pin: marked once (the draft remembers it). A replay finds it marked by this version, or, when an editor
+ * reopened it since, reports `reopened` and leaves it open (a person's reopen is never undone by a retry).
+ */
+function markIncorporated(pin, newDocumentId, draft, result) {
+  const marked = draft.markedPins ?? (draft.markedPins = new Set());
+  if (pin.status === 'addressed' && pin.addressed_by === newDocumentId) {
+    result.marked.push(pin.pin_id);
+  } else if (pin.status === 'open' && marked.has(pin.pin_id)) {
+    result.not_written.push({ pin_id: pin.pin_id, reason: 'reopened' });
+  } else if (pin.status === 'open') {
+    Object.assign(pin, { status: 'addressed', addressed_by: newDocumentId, updated_at: nowIso() });
+    marked.add(pin.pin_id);
+    result.marked.push(pin.pin_id);
+  } else {
+    result.not_written.push({ pin_id: pin.pin_id, reason: pin.status === 'resolved' ? 'already_resolved' : 'already_addressed' });
+  }
+}
+
+function replyWithReason(pin, replyId, note, caller, result) {
+  const replies = Array.isArray(pin.replies) ? pin.replies : [];
+  if (replies.some((r) => r.id === replyId)) {
+    result.replied.push(pin.pin_id);
+    return;
+  }
+  // The server posts no model note that reads like an instruction (prompt_safety.injection_findings; the mock's
+  // main patterns of it, readsLikeAnInstruction below).
+  if (readsLikeAnInstruction(note)) {
+    result.not_written.push({ pin_id: pin.pin_id, reason: 'note_withheld' });
+    return;
+  }
+  if (replies.length >= MAX_REPLIES) {
+    result.not_written.push({ pin_id: pin.pin_id, reason: 'thread_full' });
+    return;
+  }
+  const at = nowIso();
+  pin.replies = [...replies, {
+    id: replyId, by: 'ai', name: 'AI', text: note.slice(0, MAX_REPLY_CHARS), at, kind: 'ai', llm_metadata: { ...DRAFT_LLM },
+    approved_by: { sub: caller.sub ?? MOCK_CALLER_SUB, kind: 'user' },
+  }];
+  pin.updated_at = at;
+  result.replied.push(pin.pin_id);
 }
 
 /** The job entry of a finished draft of `documentId`'s series in this project, or null (every refusal is a 404). */
@@ -1154,11 +1310,14 @@ function getPrototypeDraft(ctx, documentId, draftId) {
   const found = draftEntry(ctx, documentId, draftId);
   if (!found) return DRAFT_NOT_FOUND;
   const { record, draft } = found.entry;
+  const feedback = draft.kind === 'feedback'
+    ? { outcomes: cloneJson(draft.outcomes), withheld: [...draft.withheld] }
+    : {};
   return [200, {
     draft_id: record.job_id, base_document_id: draft.base_document_id, base_version: draft.base_version,
-    instruction: draft.instruction, summary: draft.summary,
+    kind: draft.kind, instruction: draft.instruction, summary: draft.summary,
     preview_url: `${ctx.origin}/mock-prototype-drafts/${encodeURIComponent(record.job_id)}.html`,
-    completed_at: record.completed_at,
+    completed_at: record.completed_at, ...feedback,
   }];
 }
 
@@ -1173,16 +1332,22 @@ function applyPrototypeDraft(ctx, documentId, draftId) {
   const base = findDocument(ctx.detail, draft.base_document_id);
   if (!base) return DRAFT_NOT_FOUND;
   const key = `${ctx.projectId}:prototype:apply:${draftId}`;
+  // A feedback draft's marks and replies run after the version on every call, replays included.
+  const answer = (status, document) => [status, {
+    success: true, document,
+    ...(draft.kind === 'feedback' ? { incorporation: incorporate(ctx, draftId, draft, document.document_id) } : {}),
+  }];
   const replayed = findDocument(ctx.detail, allocations.get(key) ?? '');
-  if (replayed) return [200, { success: true, document: replayed }];
+  if (replayed) return answer(200, replayed);
   if ((seriesOf(ctx.detail, base)[0]?.version ?? 1) !== draft.base_version) return STALE_DOCUMENT;
   const carried = Object.fromEntries(Object.entries(base).filter(([field]) => !PROTOTYPE_ROW_ONLY.includes(field)));
+  const feedback = draft.kind === 'feedback' ? incorporatedFeedback(draft) : draft.instruction.slice(0, MAX_INSTRUCTION_CHARS);
   const saved = newManagedVersion(ctx, carried, draft.html, {
-    edit_kind: 'revise', revised_from_id: base.document_id, revision_feedback: draft.instruction.slice(0, MAX_INSTRUCTION_CHARS),
+    edit_kind: 'revise', revised_from_id: base.document_id, revised_from_draft_id: draftId, revision_feedback: feedback,
     edited_by: { sub: ctx.shared.mockCaller?.sub ?? MOCK_CALLER_SUB, kind: 'user' }, llm_metadata: { ...DRAFT_LLM },
   });
   allocations.set(key, saved.document_id);
-  return [201, { success: true, document: saved }];
+  return answer(201, saved);
 }
 
 /** GET /mock-prototype-drafts/{draft_id}.html: the draft's page (the stand-in for its signed CloudFront URL). */
@@ -1423,7 +1588,11 @@ function samePosition(a, b) {
   return withinTolerance(ax, bx) && withinTolerance(ay, by);
 }
 
-const replyView = (reply) => ({ by: reply.by ?? null, name: reply.name ?? null, text: reply.text ?? null, at: reply.at ?? null });
+/** A reply as the read lists it; one an incorporation wrote (part 3) also carries its kind, llm_metadata and approver. */
+const replyView = (reply) => ({
+  by: reply.by ?? null, name: reply.name ?? null, text: reply.text ?? null, at: reply.at ?? null,
+  ...(reply.kind === 'ai' ? { kind: 'ai', llm_metadata: cloneJson(reply.llm_metadata), approved_by: cloneJson(reply.approved_by) } : {}),
+});
 
 /** pin_view: one pin as the answer lists it. */
 const feedbackPin = (pin) => ({

@@ -5006,16 +5006,18 @@ def _draft_job(project_id: str, document_id: str, draft_id: str) -> tuple[dict, 
 @app.post("/projects/<project_id>/prototypes/<document_id>/drafts")
 @tracer.capture_method
 def api_start_prototype_draft(project_id: str, document_id: str):
-    """``{instruction, response_language?}``: a draft of the series' newest version, as a job.
+    """``{instruction | pin_ids, response_language?}``: a draft of the series' newest version, as a job.
 
-    The base is the head of ``document_id``'s series when the request arrives, whichever
-    version it names. Its HTML must be readable (Back to vN's rule): an early JSON spec is
-    a 400, a lost object a 404, both before any job. The job's result is ``{draft_id}``.
+    Exactly one of ``instruction`` (an editor's words) and ``pin_ids`` (1 to 50 pins of this series:
+    Incorporate, Part 3; flagged pins withheld, the instruction the server's). The base is the head of
+    ``document_id``'s series when the request arrives, whichever version it names. Its HTML must be
+    readable (Back to vN's rule): an early JSON spec is a 400, a lost object a 404, both before any job.
+    The job's result is ``{draft_id}``.
     """
     body = json_object_body(app)
-    instruction = prototype_drafts.validated_instruction(body)
+    request = prototype_drafts.validated_request(body)
     document = projects.prototype_document(project_id, document_id)
-    config = prototype_drafts.draft_config(projects.prototype_store(), project_id, document, instruction,
+    config = prototype_drafts.draft_config(projects.prototype_store(), project_id, document, request,
                                            body.get('response_language'))
     # The starter's category scope, as every generator job records it: the company memories
     # the draft's grounding reads are those the editor may see.
@@ -5037,15 +5039,19 @@ def api_get_prototype_draft(project_id: str, document_id: str, draft_id: str):
 def api_apply_prototype_draft(project_id: str, document_id: str, draft_id: str):
     """The draft as the next version: 201 ``{success, document}`` when this call wrote it, 200 on a replay.
 
-    409 when the series moved past the draft's base (ask again on the newest version).
+    409 when the series moved past the draft's base (ask again on the newest version). A feedback
+    draft's answer adds ``incorporation: {marked, replied, not_written}``: after the version, on every
+    call (a replay finishes the set), its Done pins marked addressed and its Not done reasons posted.
     """
     _require_autonomous_edit_allowed(project_id, document_id)
     job, draft, base = _draft_job(project_id, document_id, draft_id)
-    item, created = prototype_drafts.apply_draft(
-        projects.prototype_store(), project_id, job, draft, base, now=now_iso(),
-        actor=actor_from_event(app.current_event.raw_event),
-    )
-    answer = {'success': True, 'document': projects.signed_prototype_document(item, project_id)}
+    store = projects.prototype_store()
+    actor = actor_from_event(app.current_event.raw_event)
+    item, created = prototype_drafts.apply_draft(store, project_id, job, draft, base, now=now_iso(), actor=actor)
+    answer: dict[str, Any] = {'success': True, 'document': projects.signed_prototype_document(item, project_id)}
+    incorporation = prototype_drafts.incorporation_of(store, job, draft, item, actor=actor, now=now_iso())
+    if incorporation is not None:
+        answer['incorporation'] = incorporation
     if not created:
         return answer
     return Response(status_code=201, content_type=content_types.APPLICATION_JSON,

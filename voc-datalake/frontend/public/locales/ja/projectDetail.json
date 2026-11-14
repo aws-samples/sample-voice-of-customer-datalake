@@ -137,7 +137,32 @@
         "applyFailed": "下書きを適用できませんでした。もう一度お試しください。",
         "discardFailed": "下書きを破棄できませんでした。もう一度お試しください。",
         "noPreview": "この下書きのプレビューはここでは利用できません。",
-        "frameTitle": "{{title}}（下書き）"
+        "frameTitle": "{{title}}（下書き）",
+        "outcomesLabel": "項目ごと",
+        "done": "対応済み",
+        "notDone": "未対応",
+        "outcomeItem": "{{screen}}：「{{text}}」",
+        "outcomePin": "ピン {{n}}",
+        "noScreen": "（画面なし）",
+        "withheld_one": "選択したピン {{count, number}} 件を保留しました（指示のようなテキスト）：AI には送信していません",
+        "withheld_other": "選択したピン {{count, number}} 件を保留しました（指示のようなテキスト）：AI には送信していません",
+        "incorporationResult": "v{{version}} として適用しました：{{marked}}、{{replied}}。",
+        "markedCount_one": "{{count, number}} 件のピンを反映済みにしました",
+        "markedCount_other": "{{count, number}} 件のピンを反映済みにしました",
+        "repliedCount_one": "{{count, number}} 件の AI の理由を返信として投稿しました",
+        "repliedCount_other": "{{count, number}} 件の AI の理由を返信として投稿しました",
+        "notWritten": "書き込めませんでした：{{place}}：{{reason}}",
+        "dismissResult": "閉じる",
+        "notWrittenReason": {
+          "pin_gone": "ピンがもう存在しません",
+          "already_addressed": "すでに対応済みになっていました",
+          "already_resolved": "すでに解決済みでした",
+          "thread_full": "スレッドがいっぱいです（返信 50 件）",
+          "note_withheld": "理由が指示のように読めたため、投稿しませんでした",
+          "other": "書き込めませんでした",
+          "reopened": "その後、編集者が再オープンしました"
+        },
+        "incorporationResultNoVersion": "適用しました：{{marked}}、{{replied}}。"
       },
       "assistant": {
         "button": "アシスタントで編集",

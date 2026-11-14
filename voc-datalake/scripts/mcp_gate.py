@@ -207,7 +207,8 @@ MODULE_FLOORS: dict[str, int] = {
     # 20 -> 46 (6.10.00): documents_revise_from_comments, documents_mark_comments_addressed, the old generate revise.
     # 46 -> 87 (6.12.00): the four prototype-draft tools (routes, arguments, flags, no signed URL).
     # -> 94 (6.14.00): documents_get_prototype_outline.
-    'test_mcp_global_tools_steps': 94,
+    # -> 98 (6.15.00): the draft tool's pin_ids, the apply answer's incorporation.
+    'test_mcp_global_tools_steps': 98,
     # 6.04.00: feedback_get_catalogue (+ sources), prioritization_get, prioritization_score, feature_requests_write.
     'test_mcp_global_work_tools': 36,
     # 6.04.00: a feature request or +1 over MCP is recorded under the person (the minter).

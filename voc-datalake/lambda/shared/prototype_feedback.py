@@ -102,10 +102,19 @@ def _sort_key(pin: Mapping[str, Any]) -> tuple[str, str, str, str, str]:
             as_text(pin, 'pin_id'), as_text(pin, 'document_id'))
 
 
+def _reply(reply: Mapping[str, Any]) -> dict:
+    """A reply as listed: a person's keeps today's four keys; an AI's (Incorporate's Not done reason) also carries
+    ``kind``, ``llm_metadata`` and ``approved_by``, so it is never shown as the approver's own words."""
+    view = {key: reply.get(key) for key in _REPLY_FIELDS}
+    if reply.get('kind') == prototype_pins.REPLY_KIND_AI:
+        view.update({key: reply.get(key) for key in prototype_pins.AI_REPLY_FIELDS})
+    return view
+
+
 def _replies(pin: Mapping[str, Any]) -> list[dict]:
     raw = pin.get('replies')
     rows = raw if isinstance(raw, list) else []
-    return [{key: reply.get(key) for key in _REPLY_FIELDS} for reply in rows if isinstance(reply, Mapping)]
+    return [_reply(reply) for reply in rows if isinstance(reply, Mapping)]
 
 
 def _version(pin: Mapping[str, Any]) -> int | None:
@@ -211,6 +220,24 @@ def _series(projects_table: Any, project_id: str, document: Mapping[str, Any]) -
     return series
 
 
+def _pins_of(pins_table: Any, read: list[dict[str, Any]], status: str | None) -> tuple[list[dict], list[dict]]:
+    """``(the pins of these versions, each with its document_id and version; the versions whose list hit the cap)``."""
+    pins: list[dict] = []
+    cut: list[dict] = []
+    for entry in read:
+        listed = prototype_pins.list_pins(pins_table, prototype_pins.pin_form_id(entry['document_id']), status)
+        if len(listed) >= prototype_pins.MAX_PINS_LISTED:
+            cut.append({**entry, 'reason': CUT_REASON_PIN_CAP})
+        pins += [{**pin, **entry} for pin in listed]
+    return pins, cut
+
+
+def series_pins(projects_table: Any, pins_table: Any, project_id: str, document: Mapping[str, Any]) -> list[dict]:
+    """Every pin the feedback read lists for ``document``'s series (the newest ``VERSION_LIST_LIMIT`` versions),
+    each with its ``document_id`` and ``version``: what an editor can select, so what Incorporate accepts."""
+    return _pins_of(pins_table, _series(projects_table, project_id, document)[:VERSION_LIST_LIMIT], None)[0]
+
+
 def read_feedback(projects_table: Any, pins_table: Any, project_id: str, document: Mapping[str, Any], *,
                   status: str | None = None, version: int | None = None) -> dict:
     """The series' feedback answer for the prototype row ``document`` (docs/prototype-builder.md, Part 3)."""
@@ -223,13 +250,7 @@ def read_feedback(projects_table: Any, pins_table: Any, project_id: str, documen
         if not read:
             raise ValidationError('version is not a version of this prototype')
         unread = 0
-    pins: list[dict] = []
-    cut: list[dict] = []
-    for entry in read:
-        listed = prototype_pins.list_pins(pins_table, prototype_pins.pin_form_id(entry['document_id']), status)
-        if len(listed) >= prototype_pins.MAX_PINS_LISTED:
-            cut.append({**entry, 'reason': CUT_REASON_PIN_CAP})
-        pins += [{**pin, **entry} for pin in listed]
+    pins, cut = _pins_of(pins_table, read, status)
     return {
         'document_id': str(document.get('document_id')),
         'versions_read': read,

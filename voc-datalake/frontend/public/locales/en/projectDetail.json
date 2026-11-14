@@ -137,7 +137,32 @@
         "applyFailed": "The draft couldn't be applied. Try again.",
         "discardFailed": "The draft couldn't be discarded. Try again.",
         "noPreview": "A preview of this draft is not available here.",
-        "frameTitle": "{{title}} (draft)"
+        "frameTitle": "{{title}} (draft)",
+        "outcomesLabel": "Per item",
+        "done": "Done",
+        "notDone": "Not done",
+        "outcomeItem": "{{screen}}: “{{text}}”",
+        "outcomePin": "Pin {{n}}",
+        "noScreen": "(no screen)",
+        "withheld_one": "{{count, number}} selected pin withheld (instruction-shaped text): not sent to the AI",
+        "withheld_other": "{{count, number}} selected pins withheld (instruction-shaped text): not sent to the AI",
+        "incorporationResult": "Applied as v{{version}}: {{marked}}, {{replied}}.",
+        "markedCount_one": "{{count, number}} pin marked incorporated",
+        "markedCount_other": "{{count, number}} pins marked incorporated",
+        "repliedCount_one": "{{count, number}} AI reason posted as a reply",
+        "repliedCount_other": "{{count, number}} AI reasons posted as replies",
+        "notWritten": "Not written: {{place}}: {{reason}}",
+        "dismissResult": "Dismiss",
+        "notWrittenReason": {
+          "pin_gone": "the pin no longer exists",
+          "already_addressed": "it was already marked addressed",
+          "already_resolved": "it was already resolved",
+          "thread_full": "its thread is full (50 replies)",
+          "note_withheld": "the reason read like an instruction, so it was not posted",
+          "other": "it could not be written",
+          "reopened": "an editor reopened it since"
+        },
+        "incorporationResultNoVersion": "Applied: {{marked}}, {{replied}}."
       },
       "assistant": {
         "button": "Edit with the assistant",

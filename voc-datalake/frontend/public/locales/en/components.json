@@ -791,6 +791,10 @@
     "noMatchHint": "Change or clear the filters, or choose a longer time range."
   },
   "prototypeFeedback": {
+    "aiReason": "AI reason, approved by an editor:",
+    "incorporated": "Incorporated",
+    "incorporatedIn": "Incorporated in v{{version}}",
+    "incorporateFailed": "The incorporation couldn't be started. Try again.",
     "open": "Feedback",
     "heading": "Prototype feedback",
     "hint": "What testers pinned on every version of this prototype, grouped by screen.",

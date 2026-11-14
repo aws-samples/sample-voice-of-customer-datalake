@@ -583,6 +583,8 @@ export interface ProjectDocument {
    */
   revised_from_id?: string | null
   revision_feedback?: string
+  /** A prototype version written by applying a draft (docs/prototype-builder.md parts 2-3): that draft's id. */
+  revised_from_draft_id?: string | null
   /**
    * What this document cited and that was later deleted (api/deletedSources.ts); the ids stay
    * in `derivation`. Always a list after the boundary; absent on hand-built test documents.

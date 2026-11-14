@@ -14,17 +14,21 @@ import { draftCandidates, shownDraft } from './prototypeDraft'
 import type { ProjectDocument } from '../../api/types'
 import type { ProjectJob } from '../../api/projectTypes'
 import type { PrototypeDraft } from '../../api/prototypeDraftSchema'
+import type { AppliedDraft } from '../../api/projectsApi'
 import { ApiError } from '../../lib/errors'
+import { FEEDBACK_ANSWER } from '../../api/prototype-feedback-fixtures'
 
 const api = vi.hoisted(() => ({
   getJobs: vi.fn<(projectId: string) => Promise<{ success: boolean; jobs: ProjectJob[] }>>(),
   getPrototypeDraft: vi.fn<(projectId: string, documentId: string, draftId: string) => Promise<PrototypeDraft | null>>(),
-  applyPrototypeDraft: vi.fn<(projectId: string, documentId: string, draftId: string) => Promise<ProjectDocument | null>>(),
+  applyPrototypeDraft: vi.fn<(projectId: string, documentId: string, draftId: string) => Promise<AppliedDraft>>(),
   dismissJob: vi.fn<(projectId: string, jobId: string) => Promise<{ success: boolean }>>(),
 }))
 vi.mock('../../api/projectsApi', () => ({ projectsApi: api }))
 const submitPrototypePin = vi.hoisted(() => vi.fn<(formId: string, body: unknown) => Promise<unknown>>())
-vi.mock('../../api/client', () => ({ api: { submitPrototypePin }, fetchApi: vi.fn() }))
+// The feedback read (part 3) names a feedback draft's items; anything else the frame might ask is not served.
+const fetchApi = vi.hoisted(() => vi.fn<(endpoint: string) => Promise<unknown>>())
+vi.mock('../../api/client', () => ({ api: { submitPrototypePin }, fetchApi }))
 
 const prototype = (n: number, extra: Partial<ProjectDocument> = {}): ProjectDocument => ({
   document_id: `proto_${String(n)}`, document_type: 'prototype', title: `Checkout (v${String(n)})`,
@@ -42,7 +46,8 @@ const job = (id: string, completedAt: string, extra: Partial<ProjectJob> = {}): 
 const draft = (extra: Partial<PrototypeDraft> = {}): PrototypeDraft => ({
   draft_id: 'job_1', base_document_id: 'proto_2', base_version: 2, instruction: 'make the footer sticky on phones',
   summary: 'Checkout: the footer sticks on phones\nCart: <b>unchanged</b> **really**',
-  preview_url: 'https://cdn.example.com/prototypes/p1/drafts/job_1.html', ...extra,
+  preview_url: 'https://cdn.example.com/prototypes/p1/drafts/job_1.html', kind: 'chat', outcomes: [], withheld: [],
+  ...extra,
 })
 
 const SUBMIT = {
@@ -161,7 +166,7 @@ describe('PrototypeWithDraft', () => {
 
   it('applies the draft as the next version and selects it', async () => {
     const v3 = prototype(3)
-    api.applyPrototypeDraft.mockResolvedValue(v3)
+    api.applyPrototypeDraft.mockResolvedValue({ document: v3, incorporation: null })
     const { user, onSelectDoc } = renderPane()
     const region = await banner()
 
@@ -266,5 +271,94 @@ describe('PrototypeWithDraft', () => {
     expect(api.getJobs).not.toHaveBeenCalled()
     expect(api.getPrototypeDraft).not.toHaveBeenCalled()
     expect(screen.queryByTestId('prototype-draft-banner')).toBeNull()
+  })
+})
+
+// docs/prototype-builder.md Part 3: a draft made from selected tester pins.
+describe('PrototypeWithDraft, a feedback draft', () => {
+  const FEEDBACK_DRAFT = draft({
+    kind: 'feedback', instruction: 'Incorporate the selected tester feedback',
+    outcomes: [
+      { pin_id: 'pin_1', outcome: 'done', note: 'Moved the total above the <b>fold</b>' },
+      { pin_id: 'pin_2', outcome: 'not_done', note: 'Needs data the prototype does not have' },
+      { pin_id: 'pin_gone', outcome: 'done', note: 'Changed a pin the read no longer lists' },
+    ],
+    withheld: ['pin_9'],
+  })
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    api.getJobs.mockResolvedValue({ success: true, jobs: [job('job_1', '2026-11-13T10:00:00Z')] })
+    api.getPrototypeDraft.mockResolvedValue(FEEDBACK_DRAFT)
+    fetchApi.mockImplementation((endpoint) => (endpoint.endsWith('/feedback')
+      ? Promise.resolve(FEEDBACK_ANSWER)
+      : Promise.reject(new Error(`unrouted ${endpoint}`))))
+  })
+
+  it('lists each item\'s outcome, named by its screen and the tester\'s words, the notes as text', async () => {
+    renderPane()
+    const outcomes = within(await screen.findByTestId('draft-outcomes'))
+
+    // Named once the feedback read lands (until then by place: "Pin 1").
+    await vi.waitFor(() => {
+      expect(outcomes.getAllByRole('listitem').map((row) => row.textContent)).toStrictEqual([
+        'Done /checkout: “The total is hidden on phones”Moved the total above the <b>fold</b>',
+        'Not done /checkout: “The total is hidden on phones”Needs data the prototype does not have',
+        'Done Pin 3Changed a pin the read no longer lists',
+      ])
+    })
+    expect(outcomes.queryByText('fold', { selector: 'b' })).toBeNull()
+  })
+
+  it('says how many selected pins were withheld', async () => {
+    renderPane()
+    expect(await screen.findByText('1 selected pin withheld (instruction-shaped text): not sent to the AI')).toBeInTheDocument()
+  })
+
+  it('after Apply, says what it marked and replied to and what it could not, until dismissed', async () => {
+    const v3 = prototype(3, { revised_from_id: 'proto_2', revision_feedback: 'Incorporated 3 pins (2 done)' })
+    api.applyPrototypeDraft.mockResolvedValue({
+      document: v3,
+      incorporation: { marked: ['pin_1'], replied: [], not_written: [
+        { pin_id: 'pin_gone', reason: 'already_resolved' }, { pin_id: 'pin_2', reason: 'new_code' }, { pin_id: 'pin_1', reason: 'reopened' },
+      ] },
+    })
+    const { user, onSelectDoc } = renderPane()
+    await user.click(within(await banner()).getByRole('button', { name: 'Apply as v3' }))
+
+    const result = await screen.findByTestId('incorporation-result')
+    // Each reason code in its own words; a code this build does not know still reads as a sentence. A pin the read
+    // does not list keeps the number it has in the outcomes ("Pin 3"). textContent joins the lines with no separator.
+    await vi.waitFor(() => {
+      expect(result.textContent).toBe([
+        'Applied as v3: 1 pin marked incorporated, 0 AI reasons posted as replies.',
+        'Not written: Pin 3: it was already resolved',
+        'Not written: /checkout: “The total is hidden on phones”: it could not be written',
+        'Not written: /checkout: “The total is hidden on phones”: an editor reopened it since',
+      ].join(''))
+    })
+    expect(onSelectDoc).toHaveBeenCalledWith(v3)
+    await user.click(within(result).getByRole('button', { name: 'Dismiss' }))
+    expect(screen.queryByTestId('incorporation-result')).toBeNull()
+  })
+
+  it('without a version in Apply\'s answer, says what it did in a sentence with no version', async () => {
+    api.applyPrototypeDraft.mockResolvedValue({ document: null, incorporation: { marked: ['pin_1'], replied: ['pin_2'], not_written: [] } })
+    const { user } = renderPane()
+    await user.click(within(await banner()).getByRole('button', { name: 'Apply as v3' }))
+
+    expect(await screen.findByTestId('incorporation-result'))
+      .toHaveTextContent(/^Applied: 1 pin marked incorporated, 1 AI reason posted as a reply\.$/)
+  })
+
+  it('knows its applied version by the draft id it names; the text only for a version without that field', () => {
+    const version = (extra: Partial<ProjectDocument>) => [prototype(3, { revised_from_id: 'proto_2', ...extra }), v2, v1]
+    // Another draft with the same counts applied: this one is not, and shows (stale: the series moved).
+    expect(shownDraft([FEEDBACK_DRAFT], version({ revised_from_draft_id: 'job_other', revision_feedback: 'Incorporated 3 pins (2 done)' }))?.state)
+      .toBe('stale')
+    expect(shownDraft([FEEDBACK_DRAFT], version({ revised_from_draft_id: 'job_1', revision_feedback: 'anything' }))).toBeNull()
+    // 6.12–6.14 versions: the text, with this draft's own counts.
+    expect(shownDraft([FEEDBACK_DRAFT], version({ revision_feedback: 'Incorporated 3 pins (2 done)' }))).toBeNull()
+    expect(shownDraft([FEEDBACK_DRAFT], version({ revision_feedback: 'Incorporated 3 pins (1 done)' }))?.state).toBe('stale')
   })
 })

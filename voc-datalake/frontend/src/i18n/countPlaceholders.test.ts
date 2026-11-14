@@ -47,6 +47,7 @@ const LEFT_PLAIN: Readonly<Record<string, { params: readonly string[]; why: stri
   'projectDetail:documents.prototype.restoreThis': { params: ['n'], why: ORDINAL },
   'projectDetail:documents.prototype.backHint': { params: ['n'], why: ORDINAL },
   'projectDetail:documents.prototype.draft.apply': { params: ['n'], why: ORDINAL },
+  'projectDetail:documents.prototype.draft.outcomePin': { params: ['n'], why: ORDINAL },
   'projectDetail:documents.versions.label': { params: ['n'], why: ORDINAL },
   'projectDetail:documents.versions.restoredFrom': { params: ['n'], why: ORDINAL },
   'projectDetail:documents.versions.restoreMessage': { params: ['n'], why: ORDINAL },

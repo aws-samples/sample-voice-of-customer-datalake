@@ -356,7 +356,13 @@
     "prototypeDraft": {
       "prototype": "Prototyp:",
       "instruction": "Polecenie dla wersji roboczej",
-      "note": "To tworzy tylko wersję roboczą. Pojawi się na stronie prototypu, gdy będzie gotowa, a nic nie zostanie zapisane, dopóki jej tam nie zastosujesz."
+      "note": "To tworzy tylko wersję roboczą. Pojawi się na stronie prototypu, gdy będzie gotowa, a nic nie zostanie zapisane, dopóki jej tam nie zastosujesz.",
+      "pins_one": "{{count, number}} wybrana pinezka testera",
+      "pins_few": "{{count, number}} wybrane pinezki testerów",
+      "pins_many": "{{count, number}} wybranych pinezek testerów",
+      "pins_other": "{{count, number}} wybranej pinezki testerów",
+      "noScreen": "(brak ekranu)",
+      "pinsInstruction": "Wysyłane są tylko identyfikatory pinezek: serwer sam je odczytuje i pisze polecenie (uwzględnić wybrane opinie testerów, z odpowiedzią dla każdej pinezki: zrobione lub niezrobione)."
     }
   },
   "tools": {

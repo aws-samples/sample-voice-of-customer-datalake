@@ -378,13 +378,16 @@ describe('projectsApi', () => {
       summary: 'Checkout: the footer sticks\nCart: unchanged', preview_url: 'https://cdn.example.com/prototypes/p1/drafts/job_1.html?Signature=x',
     }
 
-    it('starts a draft with the instruction and the reply language', async () => {
+    it.each([
+      ['an instruction', { instruction: 'make the footer sticky' }],
+      ['selected pins (ids only, part 3)', { pin_ids: ['pin_00000000000000000001abcdef'] }],
+    ])('starts a draft from %s and the reply language', async (_case, request) => {
       mockJsonOnce({ success: true, job_id: 'job_1', status: 'pending', message: 'Prototype draft started.' })
 
-      const started = await projectsApi.startPrototypeDraft('p1', 'proto_2', 'make the footer sticky', 'de')
+      const started = await projectsApi.startPrototypeDraft('p1', 'proto_2', request, 'de')
 
       expectFetchedWith(`${API}/projects/p1/prototypes/proto_2/drafts`, { method: 'POST' })
-      expect(requestBody()).toStrictEqual({ instruction: 'make the footer sticky', response_language: 'de' })
+      expect(requestBody()).toStrictEqual({ ...request, response_language: 'de' })
       expect(started.job_id).toBe('job_1')
     })
 
@@ -394,7 +397,16 @@ describe('projectsApi', () => {
       const draft = await projectsApi.getPrototypeDraft('p1', 'proto_2', 'job_1')
 
       expectFetchedWith(`${API}/projects/p1/prototypes/proto_2/drafts/job_1`)
-      expect(draft).toStrictEqual(DRAFT)
+      expect(draft).toStrictEqual({ ...DRAFT, kind: 'chat', outcomes: [], withheld: [] })
+    })
+
+    it('reads a feedback draft\'s outcomes and withheld pins, dropping an outcome it cannot show (and `ignored`)', async () => {
+      const outcomes = [{ pin_id: 'pin_1', outcome: 'done', note: 'Moved it' }, { pin_id: 'pin_2', outcome: 'maybe', note: 'x' }]
+      mockJsonOnce({ ...DRAFT, kind: 'feedback', outcomes, withheld: ['pin_9'], ignored: ['pin_x'] })
+
+      const draft = await projectsApi.getPrototypeDraft('p1', 'proto_2', 'job_1')
+
+      expect(draft).toStrictEqual({ ...DRAFT, kind: 'feedback', outcomes: [outcomes[0]], withheld: ['pin_9'] })
     })
 
     it('reads a 404 as no draft (expired, discarded, another series) and rethrows anything else', async () => {
@@ -411,7 +423,17 @@ describe('projectsApi', () => {
       const applied = await projectsApi.applyPrototypeDraft('p1', 'proto_2', 'job_1')
 
       expectFetchedWith(`${API}/projects/p1/prototypes/proto_2/drafts/job_1/apply`, { method: 'POST' })
-      expect(applied).toMatchObject({ document_id: 'proto_3', version: 3 })
+      expect(applied.document).toMatchObject({ document_id: 'proto_3', version: 3 })
+      expect(applied.incorporation).toBeNull()
+    })
+
+    it('reads a feedback draft\'s Apply: its marks, replies and what it could not write', async () => {
+      const incorporation = { marked: ['pin_1'], replied: ['pin_2'], not_written: [{ pin_id: 'pin_3', reason: 'Its thread is full' }] }
+      mockJsonOnce({ success: true, document: { document_id: 'proto_3', document_type: 'prototype', title: 'Checkout (v3)', version: 3 }, incorporation })
+
+      const applied = await projectsApi.applyPrototypeDraft('p1', 'proto_2', 'job_1')
+
+      expect(applied.incorporation).toStrictEqual(incorporation)
     })
 
     it('rejects a stale Apply (409) like any refusal', async () => {

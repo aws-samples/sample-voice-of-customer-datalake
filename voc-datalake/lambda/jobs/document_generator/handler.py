@@ -98,14 +98,19 @@ from shared.prototype_drafts import (
     DRAFT_FIELD,
     DRAFT_JOB_TYPE,
     DRAFT_PROMPT_VERSION,
+    KIND_FEEDBACK,
+    accepted_pins,
     draft_object_exists,
     parse_change_summary,
     put_draft_html,
     record_draft,
 )
+from shared.prototype_incorporation import parse_pin_outcomes
 from shared.prototype_pins import (
     PIN_SUBMIT_API_BASE_ENV,
     ensure_pin_form,
+    get_pin,
+    incorporation_pins_block,
     inject_pin_widget,
     pin_submit_url,
     strip_pin_widget,
@@ -1580,6 +1585,50 @@ Answer with the <change_summary> block first (at most 12 lines, "screen: what ch
 EXISTING PROTOTYPE (revise this):
 {prior_html}"""
 
+# A feedback draft (Part 3's Incorporate): the same draft, made from tester pins the editor selected, which
+# reach the model only inside the <prototype_pins> DATA block (incorporation_pins_block), answered per pin id.
+PROTOTYPE_INCORPORATE_OUTPUT_RULES = """
+
+THIS REQUEST IS A DRAFT REVISION FROM TESTER FEEDBACK, AND ITS OUTPUT FORMAT REPLACES "OUTPUT FORMAT" ABOVE:
+- First a <change_summary> block: plain text, one line per change in the form "screen: what changed", at most 12 lines, no HTML and no Markdown.
+- Then a <pin_outcomes> block: one line for every pin id in the tester pins, exactly "pin_id: Done: what changed" or "pin_id: Not done: why" (it contradicts the PRD, needs data the prototype does not have, or conflicts with another selected pin). Plain text, one line each.
+- Then the full revised HTML document, starting with <!DOCTYPE html> and ending with </html>.
+- Nothing before, between or after them."""
+
+PROTOTYPE_INCORPORATE_USER_TEMPLATE = """Revise the clickable HTML prototype below to address the tester feedback the editor selected. Change what the feedback asks for where it fits the product, and keep everything else as it is.
+
+PROJECT: {project_name}
+{design_system_section}{company_context_section}
+
+{pins_block}
+
+Answer with the <change_summary> block first (at most 12 lines, "screen: what changed"), then the <pin_outcomes> block (one line per pin id: Done or Not done, and why), then the full revised HTML document. Keep the offline-first single-HTML rules. {lang_hint}
+
+EXISTING PROTOTYPE (revise this):
+{prior_html}"""
+
+
+def _incorporation_input(doc_config: dict) -> tuple[str, list[str], list[str]]:
+    """``(the pins DATA block, the ids it carries, every withheld id)`` of a feedback draft's accepted pins.
+
+    The pins are read again by key (the start resolved them; one may have gone since), and the block
+    withholds a flagged pin again (fail closed). No pin left to send ends the job (a 4xx: nothing to draft).
+    """
+    table = _aggregates_table()
+    if table is None:
+        raise RuntimeError('The pins table is not configured.')
+    pins = [pin for pin in (get_pin(table, str(entry.get('form_id')), str(entry.get('pin_id')))
+                            for entry in accepted_pins(doc_config))
+            if pin is not None]
+    block, withheld_now = incorporation_pins_block(pins)
+    raw_withheld = doc_config.get('withheld')
+    earlier = [str(pin_id) for pin_id in raw_withheld] if isinstance(raw_withheld, list) else []
+    withheld = list(dict.fromkeys([*earlier, *withheld_now]))
+    sent = [str(pin.get('pin_id')) for pin in pins if str(pin.get('pin_id')) not in withheld]
+    if not block:
+        raise ValidationError('No selected pin can be sent to the AI.')
+    return block, sent, withheld
+
 
 def _prior_draft_attempt(project_id: str, job_id: str) -> bool:
     """Whether an earlier delivery of this job already stored its detail AND its object.
@@ -1596,6 +1645,9 @@ def _prior_draft_attempt(project_id: str, job_id: str) -> bool:
 def _draft_prototype(ctx, projects_table, project_id: str, job_id: str, doc_config: dict) -> dict:
     """One draft: the base version's HTML revised by the editor's instruction, stored as the job's draft.
 
+    A feedback draft (``kind: feedback``) is revised from the selected tester pins instead, given as
+    ``incorporation_pins_block``'s DATA block, and its detail adds the per-pin ``outcomes`` (accepted
+    ids only), ``withheld`` and ``ignored`` (``parse_pin_outcomes``). Nothing is marked here: Apply does.
     Writes no document row and no pin form: the detail (``summary``, the base, the
     instruction, ``llm_metadata``) on the job row, then the HTML at the job's draft key
     with no metadata, the pin widget stripped (the model may echo one). The result is
@@ -1615,6 +1667,8 @@ def _draft_prototype(ctx, projects_table, project_id: str, job_id: str, doc_conf
     instruction = str(doc_config.get('instruction') or '').strip()
     if not instruction:
         raise ValidationError('The draft has no instruction.')
+    feedback = doc_config.get('kind') == KIND_FEEDBACK
+    pins_block, sent, withheld = _incorporation_input(doc_config) if feedback else ('', [], [])
 
     proj_resp = projects_table.get_item(Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'})
     project_name = (proj_resp.get('Item') or {}).get('name') or 'Project'
@@ -1626,17 +1680,25 @@ def _draft_prototype(ctx, projects_table, project_id: str, job_id: str, doc_conf
     with_design_system = (base.get(DERIVATION_FIELD) or {}).get('design_system_included') is not False
     design_system_section, company_context_section = _prototype_org_sections(
         grounding, with_design_system=with_design_system)
-    user_prompt = PROTOTYPE_DRAFT_USER_TEMPLATE.format(
-        project_name=project_name, design_system_section=design_system_section,
-        company_context_section=company_context_section, instruction=instruction, lang_hint=lang_hint,
-        prior_html=prior_html[:PROTOTYPE_PRIOR_CAP],
-    )
-    system_prompt = with_guidance(PROTOTYPE_HTML_SYSTEM_PROMPT + PROTOTYPE_DRAFT_OUTPUT_RULES, grounding)
+    sections = {'project_name': project_name, 'design_system_section': design_system_section,
+                'company_context_section': company_context_section, 'lang_hint': lang_hint,
+                'prior_html': prior_html[:PROTOTYPE_PRIOR_CAP]}
+    if feedback:
+        user_prompt = PROTOTYPE_INCORPORATE_USER_TEMPLATE.format(pins_block=pins_block, **sections)
+        rules = PROTOTYPE_INCORPORATE_OUTPUT_RULES
+    else:
+        user_prompt = PROTOTYPE_DRAFT_USER_TEMPLATE.format(instruction=instruction, **sections)
+        rules = PROTOTYPE_DRAFT_OUTPUT_RULES
+    system_prompt = with_guidance(PROTOTYPE_HTML_SYSTEM_PROMPT + rules, grounding)
 
     ctx.update_progress(40, 'invoking_bedrock')
     reply = converse_detailed(prompt=user_prompt, system_prompt=system_prompt, surface='prototype',
                               max_tokens=32000, step_name='draft_prototype')
     summary, rest = parse_change_summary(reply.text)
+    detail: dict = {}
+    if feedback:
+        outcomes, ignored, rest = parse_pin_outcomes(rest, sent)
+        detail = {'kind': KIND_FEEDBACK, 'outcomes': outcomes, 'withheld': withheld, 'ignored': ignored}
     html = _extract_html(rest)
     if not html:
         raise RuntimeError('Prototype model did not return an HTML document.')
@@ -1646,6 +1708,7 @@ def _draft_prototype(ctx, projects_table, project_id: str, job_id: str, doc_conf
         'summary': summary, 'base_document_id': base_id, 'base_version': int(doc_config['base_version']),
         'instruction': instruction,
         'llm_metadata': pass_llm_metadata(answering_model(reply, 'prototype'), DRAFT_PROMPT_VERSION),
+        **detail,
     })
     put_draft_html(_s3(), SCRATCH_BUCKET, project_id, job_id, strip_pin_widget(html))
     ctx.update_progress(100, 'saved')

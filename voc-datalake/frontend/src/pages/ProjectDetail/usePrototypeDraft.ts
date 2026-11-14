@@ -12,7 +12,9 @@
  */
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { projectsApi } from '../../api/projectsApi'
+import type { AppliedDraft } from '../../api/projectsApi'
 import { projectJobsKey, projectKey } from '../../api/projectQueryKeys'
+import { projectPrototypePinsKey } from '../../api/prototypePinsApi'
 import type { ProjectDocument } from '../../api/types'
 import { numberedSeries } from './documentEdit'
 import { draftCandidates, shownDraft } from './prototypeDraft'
@@ -47,6 +49,7 @@ export function usePrototypeDraft(
 /** Apply (select the version it wrote) and Discard (the job delete), each refreshing the project and its jobs. */
 export function usePrototypeDraftActions(
   projectId: string, documentId: string, draftId: string, onSelectDoc: (doc: ProjectDocument) => void,
+  onApplied?: (applied: AppliedDraft) => void,
 ) {
   const queryClient = useQueryClient()
   const refresh = () => Promise.all([
@@ -55,9 +58,12 @@ export function usePrototypeDraftActions(
   ])
   const apply = useMutation({
     mutationFn: () => projectsApi.applyPrototypeDraft(projectId, documentId, draftId),
-    onSuccess: (document) => {
+    onSuccess: (applied) => {
       void refresh()
-      if (document !== null) onSelectDoc(document)
+      // A feedback draft marked pins and replied to them: every pin read of the project is read again.
+      if (applied.incorporation !== null) void queryClient.invalidateQueries({ queryKey: projectPrototypePinsKey(projectId) })
+      onApplied?.(applied)
+      if (applied.document !== null) onSelectDoc(applied.document)
     },
   })
   const discard = useMutation({

@@ -194,9 +194,24 @@ describe('get_prototype_feedback', () => {
       .toStrictEqual(['not_permitted', 'Not permitted — no access.']);
   });
 
-  it('tells the model it is read-only and that drafting or incorporating is not available yet', () => {
+  it('marks an AI reason as kind "ai" and leaves a person’s reply as it was', async () => {
+    const aiReply = { by: 'ai', name: 'AI', text: 'Needs live prices', at: 'z', kind: 'ai', approved_by: { sub: 's', kind: 'user' } };
+    const items = ANSWER.groups[0]?.items ?? [];
+    const withAi = { ...ANSWER, groups: [{ ...ANSWER.groups[0], items: [{ ...items[0], pins: [pin('pin_a', false, 'x', [
+      { by: 'sub-editor', name: 'Editor', text: 'Looking into it', at: 'x' }, aiReply])] }] }] };
+    const result = await serverTool(fakeDeps({ [ROUTE]: withAi }), 'get_prototype_feedback').execute({ document_id: 'doc_3' }, onProject());
+    const replies = z.object({ groups: z.array(z.object({ items: z.array(z.object({ pins: z.array(z.object({
+      replies: z.array(z.record(z.string(), z.unknown())) })) })) })) }).parse(JSON.parse(result.content)).groups[0]?.items[0]?.pins[0]?.replies;
+    expect(replies).toStrictEqual([
+      { name: 'Editor', text: 'Looking into it', at: 'x' },
+      { name: 'AI', text: 'Needs live prices', at: 'z', kind: 'ai' },
+    ]);
+  });
+
+  it('tells the model it is read-only and that incorporating is draft_prototype_revision with pin_ids', () => {
     const description = serverTool(fakeDeps(), 'get_prototype_feedback').spec.toolSpec?.description ?? '';
-    const missing = ['Read-only', 'pins', 'prototype series', 'Flagged items carry no text', 'is not available yet']
+    const missing = ['Read-only', 'pins', 'prototype series', 'Flagged items carry no text',
+      'propose draft_prototype_revision with their pin_ids', 'kind "ai" is an AI reason']
       .filter((text) => !description.includes(text));
     expect(missing).toStrictEqual([]);
   });

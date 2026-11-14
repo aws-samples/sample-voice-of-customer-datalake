@@ -336,7 +336,11 @@
     "prototypeDraft": {
       "prototype": "Prototype:",
       "instruction": "Instruction the draft gets",
-      "note": "This makes a draft only. It shows on the prototype’s page when it is ready, and nothing is saved until you apply it there."
+      "note": "This makes a draft only. It shows on the prototype’s page when it is ready, and nothing is saved until you apply it there.",
+      "pins_one": "{{count, number}} selected tester pin",
+      "pins_other": "{{count, number}} selected tester pins",
+      "noScreen": "(no screen)",
+      "pinsInstruction": "Only the pin ids are sent: the server reads these pins itself and writes the instruction (incorporate the selected tester feedback, answered per pin: Done or Not done)."
     }
   },
   "tools": {

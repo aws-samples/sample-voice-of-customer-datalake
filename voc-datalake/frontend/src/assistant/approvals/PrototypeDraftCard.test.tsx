@@ -5,7 +5,7 @@
  * plus the reply language) and resumes with the job id; Decline starts nothing.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 
 const fetchApiDoubles = await vi.hoisted(async () => import('@test/fetchApiRoutes'))
 vi.mock('../../api/client', fetchApiDoubles.clientWithMockedFetchApi)
@@ -16,6 +16,7 @@ import { stubElementScrollIntoView } from '../../test/stubScrollTo'
 import { adminFlag, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
 import { approve, outcomeOf, renderApprovalCard, resumedToolMessage, writes } from '@test/approvalCardHarness'
 import type { AssistantToolCall } from '../types'
+import { FEEDBACK_ANSWER } from '../../api/prototype-feedback-fixtures'
 
 const PAGE = { kind: 'project', path: '/projects/proj_1', projectId: 'proj_1', documentId: 'proto_3' } as const
 const INSTRUCTION = 'Make the summary a **sticky** footer on phones <b>now</b>'
@@ -34,6 +35,7 @@ beforeEach(() => {
       documents: [{ document_id: 'proto_3', document_type: 'prototype', title: 'Checkout flow (v3)', content: '', created_at: '2026-11-13T10:00:00Z' }],
     }),
     'POST /projects/proj_1/prototypes/proto_3/drafts': () => ({ success: true, job_id: 'job_7', status: 'pending', message: 'Prototype draft started.' }),
+    'GET /projects/proj_1/prototypes/proto_3/feedback': () => FEEDBACK_ANSWER,
   })
   return stubElementScrollIntoView()
 })
@@ -67,5 +69,38 @@ describe('draft_prototype_revision card', () => {
 
     await waitFor(() => { expect(outcomeOf(onResolve)?.status).toBe('declined') })
     expect(writes()).toStrictEqual([])
+  })
+})
+
+// docs/prototype-builder.md Part 3: incorporating tester pins, ids only.
+describe('draft_prototype_revision card with pin_ids', () => {
+  const PINS = ['pin_00000000000000000001abcdef', 'pin_00000000000000000002abcdef']
+  const pinCall = () => call({ project_id: 'proj_1', document_id: 'proto_3', pin_ids: PINS })
+  const answer = {
+    ...FEEDBACK_ANSWER,
+    groups: [{ route: '/checkout', items: [{ ...FEEDBACK_ANSWER.groups[0]?.items[0], pin_ids: PINS, pins: [] }] }],
+  }
+
+  it('lists how many pins and where, and that the server writes the instruction', async () => {
+    routeFetchApi({ 'GET /projects/proj_1/prototypes/proto_3/feedback': () => answer })
+    renderApprovalCard(pinCall(), PAGE)
+
+    const pins = await screen.findByTestId('prototype-draft-pins')
+    expect(pins).toHaveTextContent('2 selected tester pins')
+    expect(await within(pins).findByText('/checkout')).toBeInTheDocument()
+    expect(pins).toHaveTextContent('the server reads these pins itself and writes the instruction')
+    expect(screen.queryByTestId('prototype-draft-instruction')).toBeNull()
+  })
+
+  it('Approve posts the pin ids alone (no text)', async () => {
+    routeFetchApi({
+      'GET /projects/proj_1/prototypes/proto_3/feedback': () => answer,
+      'POST /projects/proj_1/prototypes/proto_3/drafts': () => ({ success: true, job_id: 'job_8', status: 'pending', message: 'Prototype draft started.' }),
+    })
+    const { user, onResolve } = renderApprovalCard(pinCall(), PAGE)
+
+    await approve(user, onResolve)
+
+    expect(writes()).toStrictEqual([['/projects/proj_1/prototypes/proto_3/drafts', 'POST', { pin_ids: PINS, response_language: 'en' }]])
   })
 })

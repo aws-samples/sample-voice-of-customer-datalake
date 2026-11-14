@@ -9,12 +9,11 @@
  * @module components/PrototypeFeedback/PrototypeFeedbackView
  */
 import { useId, useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { AlertCircle, Info, Loader2, MessageSquareText, Wand2 } from 'lucide-react'
-import { prototypeFeedbackQueryKey } from '../../api/prototypePinsApi'
-import { getPrototypeFeedback, type FeedbackGroup, type FeedbackItem as Item, type PrototypeFeedback } from '../../api/prototypeFeedbackSchema'
+import type { FeedbackGroup, FeedbackItem as Item, PrototypeFeedback } from '../../api/prototypeFeedbackSchema'
 import FeedbackItemCard from './FeedbackItemCard'
+import { usePrototypeFeedback } from './pinPlaces'
 import {
   MAX_SELECTED_PINS, blockedReason, clearGroup, groupFullySelected, selectGroup, selectedPinCount, selectedPinIds,
 } from './selection'
@@ -24,6 +23,8 @@ interface PrototypeFeedbackViewProps {
   readonly documentId: string
   /** Starts an incorporation of the selected pins. Without it there is no Incorporate button. */
   readonly onIncorporate?: (pinIds: string[]) => void
+  /** An incorporation is being started: Incorporate waits. */
+  readonly incorporating?: boolean
 }
 
 function ReadNotes({ feedback }: { readonly feedback: PrototypeFeedback }) {
@@ -60,9 +61,10 @@ interface GroupSectionProps {
   readonly selected: ReadonlySet<string>
   readonly pinTotal: number
   readonly onChange: (next: Set<string>) => void
+  readonly versions: ReadonlyMap<string, number>
 }
 
-function GroupSection({ group, allItems, selected, pinTotal, onChange }: GroupSectionProps) {
+function GroupSection({ group, allItems, selected, pinTotal, onChange, versions }: GroupSectionProps) {
   const { t } = useTranslation('components')
   const headingId = useId()
   const screen = group.route || t('prototypeFeedback.noScreen')
@@ -103,6 +105,7 @@ function GroupSection({ group, allItems, selected, pinTotal, onChange }: GroupSe
             checked={selected.has(item.item_id)}
             blocked={blockedReason(item, selected, pinTotal)}
             onToggle={(checked) => toggleItem(item, checked)}
+            versions={versions}
           />
         ))}
       </ul>
@@ -111,12 +114,13 @@ function GroupSection({ group, allItems, selected, pinTotal, onChange }: GroupSe
 }
 
 function SelectionBar({
-  items, selected, onClear, onIncorporate,
+  items, selected, onClear, onIncorporate, incorporating,
 }: {
   readonly items: readonly Item[]
   readonly selected: ReadonlySet<string>
   readonly onClear: () => void
   readonly onIncorporate?: (pinIds: string[]) => void
+  readonly incorporating: boolean
 }) {
   const { t } = useTranslation('components')
   const capId = useId()
@@ -138,10 +142,12 @@ function SelectionBar({
           {t('prototypeFeedback.clearSelection')}
         </button>
         {onIncorporate ? (
-          <button type="button" className="btn btn-primary btn-sm" disabled={count === 0 || overCap}
+          <button type="button" className="btn btn-primary btn-sm" disabled={count === 0 || overCap || incorporating}
             aria-describedby={overCap ? capId : undefined}
             onClick={() => onIncorporate(selectedPinIds(items, selected))}>
-            <Wand2 size={14} aria-hidden /> {t('prototypeFeedback.incorporate')}
+            {incorporating
+              ? <Loader2 size={14} className="animate-spin motion-reduce:animate-none" aria-hidden />
+              : <Wand2 size={14} aria-hidden />} {t('prototypeFeedback.incorporate')}
           </button>
         ) : null}
       </div>
@@ -149,18 +155,17 @@ function SelectionBar({
   )
 }
 
-export default function PrototypeFeedbackView({ projectId, documentId, onIncorporate }: PrototypeFeedbackViewProps) {
+export default function PrototypeFeedbackView({ projectId, documentId, onIncorporate, incorporating = false }: PrototypeFeedbackViewProps) {
   const { t } = useTranslation('components')
-  const query = useQuery({
-    queryKey: prototypeFeedbackQueryKey(projectId, documentId),
-    queryFn: () => getPrototypeFeedback(projectId, documentId),
-  })
+  const query = usePrototypeFeedback(projectId, documentId)
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set())
   const groups = useMemo(() => query.data?.groups ?? [], [query.data])
   const allItems = useMemo(() => groups.flatMap((group) => group.items), [groups])
   // An item that left the answer (resolved elsewhere, refetched) is no longer selected.
   const live = useMemo(() => new Set(allItems.filter((item) => selected.has(item.item_id)).map((item) => item.item_id)), [allItems, selected])
   const pinTotal = selectedPinCount(allItems, live)
+  const versions = useMemo(
+    () => new Map((query.data?.versions_read ?? []).map((read) => [read.document_id, read.version] as const)), [query.data])
 
   if (query.isPending) {
     return (
@@ -206,13 +211,14 @@ export default function PrototypeFeedbackView({ projectId, documentId, onIncorpo
             </p>
             {groups.map((group) => (
               <GroupSection key={group.route} group={group} allItems={allItems} selected={live} pinTotal={pinTotal}
-                onChange={setSelected} />
+                onChange={setSelected} versions={versions} />
             ))}
           </>
         )}
       </div>
       {groups.length === 0 ? null : (
-        <SelectionBar items={allItems} selected={live} onClear={() => setSelected(new Set())} onIncorporate={onIncorporate} />
+        <SelectionBar items={allItems} selected={live} onClear={() => setSelected(new Set())} onIncorporate={onIncorporate}
+          incorporating={incorporating} />
       )}
     </>
   )

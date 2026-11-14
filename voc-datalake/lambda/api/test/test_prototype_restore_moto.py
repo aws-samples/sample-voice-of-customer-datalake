@@ -20,7 +20,7 @@ from unittest.mock import patch
 import boto3
 import pytest
 from moto import mock_aws
-from moto_helpers import pk_sk_table
+from moto_helpers import object_text, pk_sk_table
 
 from shared.document_versions import persist_versioned_document, versioned_document_id
 from shared.exceptions import NotFoundError
@@ -54,7 +54,7 @@ class World:
         })
 
     def html(self, doc_id: str) -> str:
-        return self.s3.get_object(Bucket=BUCKET, Key=prototype_s3_key(PROJECT, doc_id))['Body'].read().decode()
+        return object_text(self.s3, BUCKET, prototype_s3_key(PROJECT, doc_id))
 
     def metadata(self, doc_id: str) -> dict:
         return self.s3.head_object(Bucket=BUCKET, Key=prototype_s3_key(PROJECT, doc_id))['Metadata']

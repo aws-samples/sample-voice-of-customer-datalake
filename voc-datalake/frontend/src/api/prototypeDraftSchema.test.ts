@@ -4,7 +4,7 @@
  * and the summary reads as its non-blank lines.
  */
 import { describe, it, expect } from 'vitest'
-import { normalizePrototypeDraft, summaryLines } from './prototypeDraftSchema'
+import { normalizeIncorporation, normalizePrototypeDraft, summaryLines } from './prototypeDraftSchema'
 
 const DRAFT = {
   draft_id: 'job_1', base_document_id: 'proto_2', base_version: 2, instruction: 'make the footer sticky',
@@ -12,8 +12,16 @@ const DRAFT = {
 }
 
 describe('normalizePrototypeDraft', () => {
-  it('keeps a whole draft as it is', () => {
-    expect(normalizePrototypeDraft(DRAFT)).toStrictEqual(DRAFT)
+  it('keeps a whole draft as it is; an older answer without a kind reads as an instruction\'s draft', () => {
+    expect(normalizePrototypeDraft(DRAFT)).toStrictEqual({ ...DRAFT, kind: 'chat', outcomes: [], withheld: [] })
+  })
+
+  it('caps an outcome\'s note and refuses an incorporation that is not one', () => {
+    const outcomes = [{ pin_id: 'pin_1', outcome: 'not_done', note: 'x'.repeat(1500) }]
+    expect(normalizePrototypeDraft({ ...DRAFT, kind: 'feedback', outcomes })?.outcomes[0]?.note).toHaveLength(1000)
+    expect(normalizeIncorporation(undefined)).toBeNull()
+    expect(normalizeIncorporation({ marked: ['pin_1'], not_written: [{ reason: 'no id' }] }))
+      .toStrictEqual({ marked: ['pin_1'], replied: [], not_written: [] })
   })
 
   it('refuses a draft it cannot show: no id, no base or no version number', () => {

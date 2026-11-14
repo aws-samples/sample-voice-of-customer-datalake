@@ -62,7 +62,7 @@ _PROTOTYPE_ROW_FIELDS = frozenset({
     'gsi1sk', 'created_at', 'updated_at', 'content', 'prototype_url',
     'prototype_etag', 'prototype_version_id', 'job_id',
     'edit_kind', 'edited_from_id', 'edited_by', 'restored_from_id', 'restored_from_version',
-    'revised_from_id', 'revision_feedback', 'revise_job_id', 'llm_metadata',
+    'revised_from_id', 'revised_from_draft_id', 'revision_feedback', 'revise_job_id', 'llm_metadata',
 })
 
 

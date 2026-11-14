@@ -138,8 +138,10 @@ const CASES: Record<ClientToolName, { good: unknown[]; bad: unknown[] }> = {
     bad: [{}, { project_id: '../x' }, { project_id: P, title: LONG(201) }, { project_id: P, feedback: LONG(4001) }, { project_id: P, use_research: true }, { project_id: P, document_id: 'doc_1' }],
   },
   draft_prototype_revision: {
-    good: [{ project_id: P, document_id: 'proto_1', instruction: 'Make the footer sticky' }, { project_id: P, document_id: 'proto_1', instruction: LONG(2000) }],
-    bad: [{ project_id: P, document_id: 'proto_1' }, { project_id: P, document_id: 'proto_1', instruction: '  ' }, { project_id: P, document_id: 'proto_1', instruction: LONG(2001) }, { project_id: P, instruction: 'x' }, { project_id: P, document_id: 'proto_1', instruction: 'x', pin_ids: ['pin_1'] }],
+    good: [{ project_id: P, document_id: 'proto_1', instruction: 'Make the footer sticky' }, { project_id: P, document_id: 'proto_1', instruction: LONG(2000) },
+      { project_id: P, document_id: 'proto_1', pin_ids: ['pin_00000000000000000001abcdef', 'pin_00000000000000000002abcdef'] }],
+    bad: [{ project_id: P, document_id: 'proto_1' }, { project_id: P, document_id: 'proto_1', pin_ids: [] },
+      { project_id: P, document_id: 'proto_1', pin_ids: ['../x'] },{ project_id: P, document_id: 'proto_1', instruction: '  ' }, { project_id: P, document_id: 'proto_1', instruction: LONG(2001) }, { project_id: P, instruction: 'x' }, { project_id: P, document_id: 'proto_1', instruction: 'x', pin_ids: ['pin_1'] }],
   },
   cancel_plan: {
     good: [{ plan_id: 'pl_a1b2c3d4e5f6' }],

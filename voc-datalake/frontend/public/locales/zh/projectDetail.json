@@ -137,7 +137,32 @@
         "applyFailed": "无法应用草稿，请重试。",
         "discardFailed": "无法丢弃草稿，请重试。",
         "noPreview": "此处无法查看此草稿的预览。",
-        "frameTitle": "{{title}}（草稿）"
+        "frameTitle": "{{title}}（草稿）",
+        "outcomesLabel": "逐项结果",
+        "done": "已完成",
+        "notDone": "未完成",
+        "outcomeItem": "{{screen}}：“{{text}}”",
+        "outcomePin": "图钉 {{n}}",
+        "noScreen": "（无屏幕）",
+        "withheld_one": "已保留 {{count, number}} 个所选图钉（像指令的文本）：未发送给 AI",
+        "withheld_other": "已保留 {{count, number}} 个所选图钉（像指令的文本）：未发送给 AI",
+        "incorporationResult": "已应用为 v{{version}}：{{marked}}，{{replied}}。",
+        "markedCount_one": "{{count, number}} 个图钉标记为已采纳",
+        "markedCount_other": "{{count, number}} 个图钉标记为已采纳",
+        "repliedCount_one": "{{count, number}} 条 AI 理由已作为回复发布",
+        "repliedCount_other": "{{count, number}} 条 AI 理由已作为回复发布",
+        "notWritten": "未写入：{{place}}：{{reason}}",
+        "dismissResult": "关闭",
+        "notWrittenReason": {
+          "pin_gone": "该图钉已不存在",
+          "already_addressed": "它已被标记为已处理",
+          "already_resolved": "它已被解决",
+          "thread_full": "其讨论串已满（50 条回复）",
+          "note_withheld": "理由读起来像指令，因此未发布",
+          "other": "无法写入",
+          "reopened": "此后有编辑者重新打开了它"
+        },
+        "incorporationResultNoVersion": "已应用：{{marked}}，{{replied}}。"
       },
       "assistant": {
         "button": "使用助手编辑",
