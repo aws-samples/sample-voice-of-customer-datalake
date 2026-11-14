@@ -19,11 +19,12 @@ the platform package version.
 
 ## [7.01.03] - 2026-11-14
 
-The engineering agents' patch reader is rewritten so its tests can see every line, with the same behaviour. A refactor and tests only.
+The engineering agents' patch reader and spend ledger are rewritten so their tests can see every line, with the same behaviour. Refactors and tests only.
 
 ### Changed
 
 - `connectors/patches.py`: every loop of the patch reader is bounded by its input, so no mutant of it can run forever. The quoted-path, file and patch loops take at most one step per byte or line, and the hunk reader is one forward pass. Three checks that could never decide are gone: the 512-character key bound (the longest key the layout accepts for a patch of the workspace is 497 characters), a mask on a three-digit octal escape, and a repeated key check. Pinned first on 15 real `git diff --cached --binary` patches and git's own result of each (`connectors/test/patch_corpus.py`, `test_patches_testable.py`). Mutation score: 938 killed, 10 survived, 10 timeouts before; 969 of 969 killed after.
+- `spend.py`: a month's read of the spend ledger keeps one bound, its own row count. The pages are read lazily, so the query's `max_items` never decided and is gone. The flow's month total is the sum of the write's usages, starting from an empty `Usage()` instead of an explicit `Decimal(0)`. Pinned first (`test/test_spend_testable.py`: the pages read for each row cap, the Decimal total), plus two tests a survivor asked for: the flow's month total is read strongly consistent, and a group sums its rows. Mutation score: 587 killed, 6 survived before; 587 of 587 killed after.
 
 ### Upgrade notes
 

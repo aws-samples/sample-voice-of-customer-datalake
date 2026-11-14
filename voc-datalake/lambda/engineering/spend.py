@@ -164,7 +164,7 @@ def ledger_updates(table: str, at: datetime, where: Where, usage: Mapping[str, U
                 ':day': day, ':flow': where.flow, ':repo': where.repo, ':run': where.run_id, ':agent': where.agent_id,
                 ':model': model, ':at': at.astimezone(UTC).isoformat(), ':by': WRITER, ':seq': where.seq},
         }})
-    dollars = sum((used.usd for used in by_model.values()), Decimal(0))
+    dollars = sum(by_model.values(), Usage()).usd
     # (only a write that adds dollars: a tokens-only one, or unpriced session time, leaves the hot item alone)
     if updates and dollars > 0 and keyable(where.flow):
         # (dollars only: what the alerts and the hard cap read; the month's tokens and time are the DAY# rows')
@@ -332,9 +332,8 @@ def month_spend(table: Any, month: str, by: str, *, flow: str = '') -> MonthSpen
     query: dict[str, Any] = {'KeyConditionExpression': 'pk = :pk AND begins_with(sk, :day)',
                              'ExpressionAttributeValues': {':pk': ledger_pk(month), ':day': 'DAY#'}}
     spend = MonthSpend(month=month, by=by)
-    rows = 0
-    for item in iter_query(table, query, max_items=MAX_ROWS + 1):
-        rows += 1
+    # (one bound, the read's own count: the pages are read lazily, so none is asked past the row after the cap)
+    for rows, item in enumerate(iter_query(table, query), start=1):
         if rows > MAX_ROWS:
             spend.truncated = True
             break
