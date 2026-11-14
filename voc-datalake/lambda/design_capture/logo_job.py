@@ -43,8 +43,9 @@ from shared.design_logo_render import (
 )
 from shared.logging import logger
 
-#: One logo in a blank tab: far less than a page capture's 120 s.
-LOGO_SESSION_SECONDS: Final = 60
+#: One logo in a blank tab, far less than a page capture's 120 s: a 5 MB raster took 26 s live (three draws at
+#: 1024/768/512 px), so 90 s leaves room for a slow session. Billed only while it runs.
+LOGO_SESSION_SECONDS: Final = 90
 
 
 def _current(table: Any, request: RenderRequest) -> dict | None:

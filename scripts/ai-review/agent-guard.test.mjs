@@ -119,6 +119,7 @@ const v2Allows = (command) => parts(command).every((part) => {
   const anchored = (regex) => new RegExp(`^(?:${regex})$`).test(part)
   return !KIRO_SHELL_SETTINGS.deniedCommands.some(anchored) && KIRO_SHELL_SETTINGS.allowedCommands.some(anchored)
 })
+// V3 shell globs know only `*` (kiro.dev/docs/permissions): `?` is literal here, unlike agent-guard.mjs's PATH globs.
 const globMatch = (pattern, text) => new RegExp(`^${pattern.replace(/[.+^${}()|[\]\\?]/g, '\\$&').replaceAll('*', '.*')}$`).test(text)
 const v3Allows = (command) => parts(command).every((part) => {
   const matches = (rule) => (rule.match ?? ['*']).some((p) => globMatch(p, part)) && !(rule.exclude ?? []).some((p) => globMatch(p, part))
@@ -158,6 +159,9 @@ test('the test generator cannot run a network client, the environment, the AWS C
     'node --test --env-file .env a.test.mjs', 'node --test /tmp/evil/a.test.mjs', 'node --test ../evil/a.test.mjs',
     '.venv/bin/python -m pytest -p evil_plugin', '.venv/bin/python -m pytest -c /tmp/pytest.ini',
     '.venv/bin/python -m pytest --rootdir=/tmp', 'cd voc-datalake && node --test --import ./evil.mjs a.test.mjs',
+    // PR #559 review, round 2: an attached short-option value, and a path through a variable.
+    '.venv/bin/python -m pytest -pevil_plugin', 'npx vitest run -cevil.mjs', 'npm test -C../evil',
+    'node --test $HOME/x.test.mjs', 'node --test ${HOME}/x.test.mjs',
     'cd voc-datalake/frontend && npx vitest run --config ../evil.mjs']) {
     assert.ok(!v2Allows(command), `V2 refuses: ${command}`)
     assert.ok(!v3Allows(command), `V3 refuses: ${command}`)

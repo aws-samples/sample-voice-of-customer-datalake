@@ -173,6 +173,7 @@ const PAGERS = ['cat', 'less', 'more', 'head', 'tail']
  * or inline module, another package or project folder (`npm --prefix /tmp/x test` runs that folder's `scripts.test`).
  * Refused wherever they appear (the prompt's commands use none), and so is any absolute or `..` path argument.
  */
+const SHORT_CODE_FLAGS = ['p', 'c', 'C', 'r', 'e']
 const CODE_LOADING_FLAGS = ['-p', '-c', '-C', '-r', '-e', '--eval', '--print', '--prefix', '--config', '--root', '--dir',
   '--require', '--import', '--loader', '--experimental-loader', '--env-file', '--rootdir', '--confcutdir',
   '--globalSetup', '--setupFiles']
@@ -190,6 +191,8 @@ export const KIRO_SHELL_SETTINGS = Object.freeze({
     `(.*[;&|(] *)?(${NETWORK_AND_SECRET_COMMANDS.join('|')})( .*)?`,
     `(.*[;&|(] *)?(${PAGERS.join('|')}) .*(~|\\$HOME|/Users/|/home/|/root/).*`,
     `.* (${CODE_LOADING_FLAGS.map(regexOf).join('|')})([= ].*)?`,
+    // A short flag with its value attached (`-pplugin`, `-cfile`): the runners accept that form too.
+    `.* -(${SHORT_CODE_FLAGS.join('|')})[^ ]+.*`,
     '.*[ =]/.*',
     '.*\\.\\..*',
   ],
@@ -224,7 +227,10 @@ export const KIRO_SHELL_RULES = Object.freeze([
     capability: 'shell',
     match: [
       ...CODE_LOADING_FLAGS.flatMap((flag) => [`* ${flag}`, `* ${flag} *`, `* ${flag}=*`]),
-      '* /*', '*=/*', '*..*', '*~*', '*$(*', '*`*',
+      // The attached short form (`-pplugin`); V3 globs know only `*`, so this also covers `-p` itself.
+      ...SHORT_CODE_FLAGS.map((flag) => `* -${flag}*`),
+      // `$` at all (V2's argument class refuses it): `$HOME/x`, `${VAR}` and `$(…)` alike.
+      '* /*', '*=/*', '*..*', '*~*', '*$*', '*`*',
     ],
     exclude: TEST_DIRS.flatMap((dir) => [`cd ${dir}`, `cd */${dir}`]),
     effect: 'deny',
