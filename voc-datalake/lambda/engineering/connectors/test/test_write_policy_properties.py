@@ -7,10 +7,13 @@ realistic branch names, paths, sentences and contact details rather than random 
 """
 from __future__ import annotations
 
+import re
+
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
+from engineering.connectors import write_policy
 from engineering.connectors.write_policy import (
     AGENT_BRANCH_PREFIX,
     MIN_REVIEW_MATCH,
@@ -126,10 +129,11 @@ def test_a_reserved_example_address_is_not_a_persons(local: str, domain: str) ->
 
 
 @PROPERTY
-@given(number=PHONE_DIGITS)
-def test_a_phone_number_in_prose_is_refused(number: str) -> None:
-    """A phone number written with a leading plus sign in prose is personal data and is refused."""
-    assert [r.code for r in text_refusals(f'Call +{number} today', [], prose=True)] == ['personal_data']
+@given(number=PHONE_DIGITS, after=st.sampled_from([' today', '.', '. Thanks', '!', '?', ',', ')', ';', '']))
+def test_a_phone_number_in_prose_is_refused(number: str, after: str) -> None:
+    """A phone number written with a leading plus sign in prose is personal data and is refused, whatever ends the
+    sentence or the clause after it."""
+    assert [r.code for r in text_refusals(f'Call +{number}{after}', [], prose=True)] == ['personal_data']
 
 
 @PROPERTY
@@ -166,3 +170,32 @@ def test_a_text_with_no_review_quoted_is_refused_for_nothing_but_personal_data(t
     assert all(r.code == 'personal_data' for r in text_refusals(text, [], prose=True))
     assert text_refusals(text, [], prose=False) == []
     check_text(text, [], prose=False)
+
+
+# The phone rule as it was before 7.01.02, written out here: the fix may only add refusals, never drop one.
+_PHONE_BEFORE = re.compile(r'(?<![\w.])\+?\(?\d(?:[\s()-]{0,2}\d){8,14}(?![\w.])')
+_DATE_START_BEFORE = re.compile(r'^\d{4}-\d{2}-\d{2}')
+
+
+def _refused_before(text: str) -> bool:
+    return any(re.search(r'^\+|[\s()-]', m.group()) and not _DATE_START_BEFORE.match(m.group())
+               and not re.match(r'^\d(?:[\s()-]+\d)+\Z', m.group()) for m in _PHONE_BEFORE.finditer(text))
+
+
+# Text joined from the pieces phone numbers, dates, decimals and identifiers are made of, so numbers the old rule
+# refused, and the edges around them, are drawn often (single random characters almost never make one).
+NUMBERISH = st.lists(st.sampled_from(['2026-11-14', '555-010-0199', '+1 555 010 0199', '(555) 010', '1234', '12', '0',
+                                      '_', '.', ' ', '-', '(', ')', '+', 'a', '\n']), max_size=8).map(''.join)
+
+
+def test_the_tight_reading_is_the_old_rule_exactly() -> None:
+    """The superset rests on one reading being the old rule, character for character."""
+    assert write_policy._PHONE_TIGHT.pattern == _PHONE_BEFORE.pattern
+
+
+@PROPERTY
+@given(text=NUMBERISH)
+def test_every_phone_number_refused_before_is_still_refused(text: str) -> None:
+    """The 7.01.02 fix only widens the phone rule: whatever the old rule refused as a phone number, the new one does."""
+    if _refused_before(text):
+        assert [r.code for r in text_refusals(text, [], prose=True)] == ['personal_data']

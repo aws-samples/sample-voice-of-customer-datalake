@@ -35,12 +35,22 @@ _EMAIL: Final = re.compile(r'[A-Za-z0-9._%+-]+@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)
 #: Reserved for examples and tests (RFC 2606), so never a person's address.
 _RESERVED_DOMAIN: Final = re.compile(r'(?:^|\.)(?:example(?:\.(?:com|net|org))?|test|invalid|localhost)\Z', re.IGNORECASE)
 #: A phone number: an optional +, then 9 to 15 digits with spaces, brackets or dashes between them
-#: ("+1 (555) 010-0199"). A dot is not a separator, so an IP address or a decimal is never one.
-_PHONE: Final = re.compile(r'(?<![\w.])\+?\(?\d(?:[\s()-]{0,2}\d){8,14}(?![\w.])')
+#: ("+1 (555) 010-0199"). A dot is not a separator, so an IP address or a dotted version is never one. The number is
+#: bounded by anything but a letter or a digit: a full stop, an ellipsis or markdown's underscores around it do not
+#: hide it; only a digit and a dot before it, or a dot and a digit after it, make it part of a decimal
+#: ("1 234 567 890.50") or a version, which is not a phone number.
+_PHONE: Final = re.compile(r'(?<![^\W_])(?<!\d\.)\+?\(?\d(?:[\s()-]{0,2}\d){8,14}(?![^\W_])(?!\.\d)')
+#: The same number with tight bounds (no dot or underscore beside it): its matches start elsewhere than ``_PHONE``'s,
+#: so a number a date runs into from a dot or an underscore (".2026-11-1455 010 0199") is still found.
+_PHONE_TIGHT: Final = re.compile(r'(?<![\w.])\+?\(?\d(?:[\s()-]{0,2}\d){8,14}(?![\w.])')
 #: A bare run of digits (a timestamp, an order id) is not a phone number: one needs a leading + or a separator.
 _PHONE_SHAPE: Final = re.compile(r'^\+|[\s()-]')
-#: Nor is a date ("2026-11-12 10:00") or a row of one-digit values ("0 0 0 0 0 0 0 0 0").
+#: Nor is a match that starts with a date ("2026-11-12 10:00"). The text is read three ways, and a number found in
+#: any counts: as written with both bounds, and with its dates blanked out, so a date never runs into the number after
+#: it and hides it ("seen 2026-11-14 555-010-0199"), while a number grouped like a date ("+46 8 1234-56-78") is still
+#: one. Nor is a row of one-digit values ("0 0 0 0 0 0 0 0 0").
 _ISO_DATE: Final = re.compile(r'^\d{4}-\d{2}-\d{2}')
+_DATE: Final = re.compile(r'(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)')
 _SINGLE_DIGITS: Final = re.compile(r'^\d(?:[\s()-]+\d)+\Z')
 #: Punctuation is dropped before matching, so a quote without its full stop or inside quotation marks still matches.
 _NOT_WORD: Final = re.compile(r'[^\w\s]')
@@ -128,7 +138,8 @@ def _is_phone(candidate: str) -> bool:
 
 
 def _has_phone(text: str) -> bool:
-    return any(_is_phone(m.group()) for m in _PHONE.finditer(text))
+    readings = ((_PHONE, text), (_PHONE_TIGHT, text), (_PHONE, _DATE.sub(' ', text)))
+    return any(_is_phone(m.group()) for pattern, read in readings for m in pattern.finditer(read))
 
 
 def text_refusals(text: str, review_texts: Iterable[str], *, prose: bool) -> list[Refusal]:

@@ -11,7 +11,7 @@ added with `git add -f`.
 | # | Component | Module | Why it is critical | Property tests | Mutation run: killed / survived / timeout |
 |---|---|---|---|---|---|
 | 1 | The dial (fails closed) | `engineering/connectors/dial.py` | a wrong answer lets an agent push without a person's choice | `connectors/test/test_dial_properties.py` (5) | 31 mutants: before 27 / 4 / 0, after 31 / 0 / 0 |
-| 2 | Write policy (branch, CI paths, customer text, personal data, commit identity) | `engineering/connectors/write_policy.py` | a wrong answer writes to the default branch or CI, or publishes a customer's words | `connectors/test/test_write_policy_properties.py` (12) | 297 mutants: before 267 / 30 / 0, after 295 / 2 / 0 |
+| 2 | Write policy (branch, CI paths, customer text, personal data, commit identity) | `engineering/connectors/write_policy.py` | a wrong answer writes to the default branch or CI, or publishes a customer's words | `connectors/test/test_write_policy_properties.py` (12) | 297 mutants: before 267 / 30 / 0, after 295 / 2 / 0; with 7.01.02's phone fix 303: 301 / 2 / 0 |
 | 3 | Patch line split and hunk application, the binary delta | `engineering/connectors/patches.py` | a wrong answer commits a file the agent did not write | `connectors/test/test_patches_properties.py` (5) | 958 mutants: before 789 / 157 / 12, after 938 / 10 / 10 |
 | 4 | The GO ledger (`has_go`: the newest ended final go and gate runner, their records, their tree) | `engineering/flow/ledger.py` (read by `connectors/records.py`) | a wrong answer opens a pull request without a GO for exactly that tree | `connectors/test/test_records_properties.py` (1, 80 cases: each builds a moto table) | 176 mutants: before 158 / 18 / 0, after 175 / 1 / 0 |
 | 5 | Spend ledger and alerts (levels, month totals, token deltas) | `engineering/spend.py` | money: a total off, an alert missed or sent twice | `test/test_spend_properties.py` (8) | 593 mutants: before 529 / 64 / 0, after 587 / 6 / 0 |
@@ -34,6 +34,10 @@ Each property states its invariant in words above it. No test was weakened. The 
 The GO ledger's property follows 6.29.00's rule (`flow/ledger.py` `go_tree`): the final go's GO counts only after the
 newest ended gate runner's passing GO on the same tree; GO pairs are drawn on purpose (random tasks alone almost never
 make one), and five `@example` cases pin a GO and the newer tasks that take it away or leave it.
+
+Defect found and fixed (7.01.02): the write policy's phone rule let a number through when a full stop, markdown
+underscores, a touching dot or a preceding date sat beside it; the rule now only widens on the old one (a property
+checks it against the old pattern).
 
 Observation, not a defect: `end` does not remove the `needs_human` attribute, so a run that ends at a decision point
 keeps the reason on its META row. Nothing reads it on an ended run.

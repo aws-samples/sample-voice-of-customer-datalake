@@ -86,3 +86,51 @@ def test_the_authorship_trailers_are_split_from_the_prose(message: str, expected
 ])
 def test_a_message_with_no_trailer_block_is_all_prose(message: str) -> None:
     assert write_policy.split_trailers(message) == (message, '')
+
+
+@pytest.mark.parametrize('text', [
+    'Call +1 555 010 0199.', 'Call +1 (555) 010-0199!', 'Call 555-010-0199, today', 'Ring +44 20 7946 0958?',
+    'Call +1 555 010 0199.\nThanks', '(+1 555 010 0199)',
+    # Markdown emphasis, and a stop or an ellipsis with no space before the number.
+    'Call _+1 555 010 0199_', 'Call __555-010-0199__ now', 'Number...555-010-0199', 'Call me.555-010-0199 ok',
+    # A date just before the number never takes it into a match that is then dropped as a date.
+    'Called 2026-11-14 555-010-0199', 'x_2026-11-14 555-010-0199', '2026-11-14 (555) 010-0199.',
+    # A number grouped like a date, or ending in one, is still a number.
+    '+44 20 7946-09-58', '+46 8 1234-56-78', 'Call +1 555 2026-11-14', '+1 2026-11-1234', '+44 12345-67-89',
+    # A dot followed by a letter ends the number like a full stop.
+    'Call +1 555 010 0199.Thanks',
+    # A date glued to more digits, after a dot or an underscore, does not take the number with it.
+    '.2026-11-1455 010 0199', '_2026-11-1455 010 0199',
+    # A number glued to a date: blanking the date must leave a space, not join the two.
+    'a2026-11-14+0199555555',
+    # A number grouped like a date ending a sentence; one wrapped at a line break; one after a date range.
+    'Call 08-1234-56-78.', 'Call +1 555 010\n0199.', '2026-11-10--2026-11-14 555-010-0199'])
+def test_a_phone_number_ending_a_sentence_or_a_clause_is_refused(text: str) -> None:
+    """A full stop, a question or exclamation mark, a comma, a bracket or markdown around a number does not hide it."""
+    assert [r.code for r in write_policy.text_refusals(text, [], prose=True)] == ['personal_data']
+
+
+@pytest.mark.parametrize('text', [
+    # A grouped decimal: the digits run on past a dot, so they are an amount, not a number to call.
+    'total 1 234 567 890.50 paid', 'Call +1 555 010 0199.5',
+    # A run of digits after a digit and a dot is part of a version or a decimal.
+    'release 2.555 010 0199 is out',
+    # Digits touching a letter are part of a word: a reference, an id, a UUID.
+    'ref A555-010-0199', 'id 555-010-0199x', 'uuid 3f2a1234-5678-9012-abcd-ef0123456789',
+    # A date, alone or with its time, and identifiers stamped with one.
+    'Released 2026-11-12 10:00:00', 'dump_20261114_123045',
+    # Digits glued to a date are not a date, so they are not blanked out into a number of their own.
+    '2026-11-1455 010 0199', '2026-11-14101011212026-11-14',
+    # Separators of three characters split a run of digits into groups, not a number (as before).
+    'Call +1 555 - 010 - 0199'])
+def test_digits_that_run_on_past_a_dot_are_not_a_phone_number(text: str) -> None:
+    assert write_policy.text_refusals(text, [], prose=True) == []
+
+
+def test_a_review_sentence_of_exactly_the_shortest_matched_length_is_matched() -> None:
+    """MIN_REVIEW_MATCH is inclusive: a sentence of exactly that many characters (normalised) is the customer's
+    words; one character shorter is too common a phrase to match on."""
+    exact, shorter = 'The refunds took 3 weeks.', 'The refund took 3 weeks.'
+    assert len(exact.rstrip('.')) == write_policy.MIN_REVIEW_MATCH
+    assert [r.code for r in write_policy.text_refusals(exact, [exact], prose=False)] == ['customer_text']
+    assert write_policy.text_refusals(shorter, [shorter], prose=False) == []

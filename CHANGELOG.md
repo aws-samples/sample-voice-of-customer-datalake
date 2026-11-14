@@ -17,6 +17,18 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.01.02] - 2026-11-14
+
+The engineering agents' prose check now catches a phone number at the end of a sentence or inside markdown emphasis.
+
+### Fixed
+
+- A comment, pull request text or commit message could carry a phone number past the broker's personal-data check (`connectors/write_policy.py` `_PHONE`) when a full stop followed it ("Call +1 555 010 0199."), when markdown underscores wrapped it (`_+1 555 010 0199_`, shown as italics on the host), when a stop or an ellipsis touched its first digit ("Number...555-010-0199"), or when a date came just before it ("Called 2026-11-14 555-010-0199": the date and the number's first digits made one match, which was then dropped as a date): the number's bounds refused any dot or underscore beside it, and a match that began with a date was dropped whole. Now only a letter or a digit beside the number, or a digit and a dot before it or a dot and a digit after it (a grouped decimal such as "1 234 567 890.50", a version), keep a run of digits from being a phone number, and the text is read three ways, a number found in any counting: as written, with the new bounds and with the old ones, and with its dates blanked out (so a number grouped like a date, "+46 8 1234-56-78", is still refused). The old rule is one of the readings, so the check only widens; a property drawing texts from number, date and punctuation pieces checks that every text the old rule refused is still refused. Dots are still not separators, so IP addresses and dotted versions pass as before. Found by the mutation work of 7.01.01; pinned by `test_write_policy_words.py` and by the phone property, which now draws what follows the number.
+
+### Upgrade notes
+
+- No data or API change. The Api and Processing stacks' template hashes in `voc-datalake/lib/test-support/baseline.json` move with the release number (`APP_VERSION`) only. The broker's code ships with the engineering agents (`-c engineeringAgents=true`); deployments without them are unaffected.
+
 ## [7.01.01] - 2026-11-14
 
 Property-based and mutation-tested tests for the engineering agents' critical components. Tests only: no behaviour changes.
