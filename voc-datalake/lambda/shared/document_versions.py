@@ -31,6 +31,7 @@ from shared.exceptions import ConflictError, ServiceError, ValidationError
 from shared.logging import logger
 from shared.project_keys import DOCUMENT_VERSIONS_STORE, PROJECT_PREFIX, project_pk, require_deployment
 from shared.project_writes import (
+    NEW_ROW_CONDITION,
     PROJECT_WRITABLE_ATTRIBUTE_NAMES,
     PROJECT_WRITABLE_ATTRIBUTE_VALUES,
     PROJECT_WRITABLE_CONDITION,
@@ -569,9 +570,7 @@ def _acquire_legacy_migration(
                             'migration_expires_at': expires_at,
                             'updated_at': now,
                         },
-                        'ConditionExpression': (
-                            'attribute_not_exists(pk) AND attribute_not_exists(sk)'
-                        ),
+                        'ConditionExpression': NEW_ROW_CONDITION,
                     },
                 }
             else:
@@ -846,9 +845,7 @@ def _persist_legacy_identity(
                 'Item': _legacy_assignment_item(
                     counter_key, document_type, normalized, original, canonical,
                 ),
-                'ConditionExpression': (
-                    'attribute_not_exists(pk) AND attribute_not_exists(sk)'
-                ),
+                'ConditionExpression': NEW_ROW_CONDITION,
             },
         })
     if document_update is not None:
@@ -1088,9 +1085,7 @@ def _ensure_allocation_history(
                 'Put': {
                     'TableName': table_name,
                     'Item': expected,
-                    'ConditionExpression': (
-                        'attribute_not_exists(pk) AND attribute_not_exists(sk)'
-                    ),
+                    'ConditionExpression': NEW_ROW_CONDITION,
                 },
             },
         ])
@@ -1256,7 +1251,7 @@ def persist_versioned_document(
                         'last_version': candidate_version,
                         'updated_at': item_fields['created_at'],
                     },
-                    'ConditionExpression': 'attribute_not_exists(pk) AND attribute_not_exists(sk)',
+                    'ConditionExpression': NEW_ROW_CONDITION,
                 },
             }
         else:
@@ -1313,16 +1308,14 @@ def persist_versioned_document(
                 'Put': {
                     'TableName': table_name,
                     'Item': allocation,
-                    'ConditionExpression': (
-                        'attribute_not_exists(pk) AND attribute_not_exists(sk)'
-                    ),
+                    'ConditionExpression': NEW_ROW_CONDITION,
                 },
             },
             {
                 'Put': {
                     'TableName': table_name,
                     'Item': item,
-                    'ConditionExpression': 'attribute_not_exists(pk) AND attribute_not_exists(sk)',
+                    'ConditionExpression': NEW_ROW_CONDITION,
                 },
             },
             {

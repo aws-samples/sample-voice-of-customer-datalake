@@ -17,6 +17,21 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.26.00] - 2026-11-14
+
+Multi-workspace, phase 3a: the project id claim and the workspace's registry of its projects. Internal only: nothing changes for anyone ([docs/multi-workspace.md](docs/multi-workspace.md#the-project-plan-phase-3)).
+
+### Changed
+
+- Internal: a project made inside a workspace would claim its id for the whole deployment, a row `PROJECT_ID#{id}` / `CLAIM` in `voc-projects` that names the workspace and when it was claimed (put only if absent, built only by the workspace layer, `lambda/shared/ws_repo.py`), in one transaction with the project and its row in the workspace's list of its projects (`WS#{ws}#PROJECT_IDS` / `{id}`): all three are written or none is. An id already claimed gets a fresh id, once, as two creates in the same second do; any other failure is not retried and writes nothing. A reader of the claim, its delete (for the workspace's delete) and a reader of the workspace's project list come with it, for the later slices that need them.
+- Internal: every project store's create condition (`attribute_not_exists(pk) AND attribute_not_exists(sk)`) now names one constant, `NEW_ROW_CONDITION` in `lambda/shared/project_writes.py`; the requests are unchanged.
+- No route, job or assistant tool passes a workspace yet: a project is created exactly as before, with the same single write, no claim and no list row.
+
+### Upgrade notes
+
+- Nothing to do: no table, index, IAM or API change. VocApiStack and VocProcessingStack change only their functions' `APP_VERSION`; VocCoreStack and VocWebSearchStack synthesize the same templates as 7.25.00, and so does VocIngestionStack unless inbound email is configured (then only its intake function's `APP_VERSION`). Every function built from `lambda/` gets new code (the shared modules change), with no change in what it does. A normal deploy (`npm run deploy:all`) does it.
+- Rollback: no stored data changes (no workspace creates a project yet), so an earlier release deploys over it as it is.
+
 ## [7.25.00] - 2026-11-14
 
 Multi-workspace, phase 4: a prerequisite of the workspace's hard delete. No conversation is written in a workspace that is not active, so the delete's sweep, which finds a workspace's conversations through its list of conversation owners, never misses one saved after the workspace was marked `deleting` ([docs/multi-workspace.md](docs/multi-workspace.md#export-and-delete)).

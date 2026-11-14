@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-import boto3
 import pytest
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
@@ -40,7 +39,7 @@ from shared.project_access import Caller
 from shared.project_keys import NotPerWorkspaceError, document_keys, personas_index_pk, project_pk, project_type_pk
 from shared.project_tables import iter_project_rows
 from shared.scoped_query import query_partition
-from shared.test.moto_tables import create_pk_sk_table
+from shared.test.moto_tables import create_pk_sk_table, create_projects_table_with_type_index
 from shared.ws_repo import OutOfScopeError, WorkspaceScope
 
 A = WorkspaceScope('ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8')
@@ -115,12 +114,7 @@ def test_the_reader_refuses_a_placeholder_the_workspace_query_names_itself(table
 
 def test_the_type_index_keeps_each_scopes_projects_apart():
     with mock_aws():
-        projects = boto3.resource('dynamodb', region_name='us-east-1').create_table(
-            TableName='voc-projects-index-test', BillingMode='PAY_PER_REQUEST',
-            KeySchema=[{'AttributeName': 'pk', 'KeyType': 'HASH'}, {'AttributeName': 'sk', 'KeyType': 'RANGE'}],
-            AttributeDefinitions=[{'AttributeName': a, 'AttributeType': 'S'} for a in ('pk', 'sk', 'gsi1pk', 'gsi1sk')],
-            GlobalSecondaryIndexes=[{'IndexName': BY_TYPE, 'Projection': {'ProjectionType': 'ALL'}, 'KeySchema': [
-                {'AttributeName': 'gsi1pk', 'KeyType': 'HASH'}, {'AttributeName': 'gsi1sk', 'KeyType': 'RANGE'}]}])
+        projects = create_projects_table_with_type_index('voc-projects-index-test')
         for scope in SCOPES:
             projects.put_item(Item={'pk': _pk(scope), 'sk': 'META', 'gsi1pk': project_type_pk(workspace=scope),
                                     'gsi1sk': STAMP, 'name': _scope_name(scope)})

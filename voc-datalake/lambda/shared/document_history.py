@@ -49,7 +49,7 @@ from shared.document_versions import (
 from shared.dynamo_paging import iter_query, query_all
 from shared.exceptions import ConflictError, NotFoundError, ValidationError
 from shared.project_keys import DOCUMENT_VERSIONS_STORE, project_pk, require_deployment
-from shared.project_writes import projects_table_name
+from shared.project_writes import NEW_ROW_CONDITION, projects_table_name
 from shared.row_ids import OPAQUE_ID_RE
 from shared.ws_repo import WorkspaceScope
 
@@ -195,7 +195,7 @@ def _replace_unmanaged(table: Any, project_id: str, document: dict, *, content: 
     try:
         table.meta.client.transact_write_items(TransactItems=[
             {'Put': {'TableName': table_name, 'Item': snapshot,
-                     'ConditionExpression': 'attribute_not_exists(pk) AND attribute_not_exists(sk)'}},
+                     'ConditionExpression': NEW_ROW_CONDITION}},
             {'Update': {
                 'TableName': table_name, 'Key': {'pk': document['pk'], 'sk': document['sk']},
                 'UpdateExpression': 'SET ' + ', '.join(f'{name} = :v{n}' for n, name in enumerate(sets)),

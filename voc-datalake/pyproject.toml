@@ -53,6 +53,8 @@ ignore_names = [
     # (DEFAULT_CACHE) around every API test (lambda/api/test/conftest.py) and between the reads one
     # test compares (test_metrics_projected_reads.py). No production caller; a cache is never cleared live.
     "clear",
+    # Called by Python itself when a class is subclassed: shared/ws_repo.py ProjectClaim refuses every subclass.
+    "__init_subclass__",
     # html.parser.HTMLParser callbacks, called by the parser itself (agents/artifacts.py).
     "handle_starttag",
     "handle_endtag",
