@@ -75,7 +75,9 @@ After writing tests, run them to make sure they pass:
 
 Your shell runs only these test runners (plus `npm test` / `npm run test…`), after an optional `cd` into
 `voc-datalake`, `voc-datalake/frontend` or `voc-datalake/lambda/stream`. Every other command is refused, and so are
-`;`, `$(…)`, redirections and `~` in the arguments. Read files with the read tool, not the shell. Write only inside
+`;`, `$(…)`, `~`, absolute or `..` paths, and flags that load other code or another project (`--config`, `-c`,
+`--prefix`, `-C`, `--import`, `--require`, `-r`, `-p`, `-e`, `--env-file`, `--root`, `--rootdir`). Do not redirect
+output to a file: report the runner's output instead. Read files with the read tool, not the shell. Write only inside
 the repository; paths shaped like a secret (`.env`, keys, credentials files) are refused.
 
 If a test fails, fix it. Tests that don't pass are worse than no tests.

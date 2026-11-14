@@ -9,7 +9,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { AGENTS, agentErrors, agentTreeErrors, resourceError } from './agent-guard.mjs'
+import { AGENTS, agentErrors, agentTreeErrors, globRegex, resourceError } from './agent-guard.mjs'
 import { KIRO_SHELL_RULES, KIRO_SHELL_SETTINGS } from './lib.mjs'
 
 const ROOT = join(import.meta.dirname, '..', '..')
@@ -148,10 +148,36 @@ test('the test generator cannot run a network client, the environment, the AWS C
   for (const command of ['npx vitest run $(cat .env)', 'node --test a.test.mjs > ~/.profile', 'node --test `id`']) {
     assert.ok(!v2Allows(command), `V2 refuses: ${command}`)
   }
+  // PR #559 review: flags that load code or another project, and paths outside the repository, on BOTH engines
+  // (V3's allow globs take any argument, so its deny rules must refuse them too), with redirection and `~` on V3.
+  for (const command of ['npm run test --prefix /tmp/evil', 'npm test -C /tmp/evil', 'npm run test:x --prefix=../evil',
+    'npx vitest run --config /tmp/evil.config.mjs', 'npx vitest run --config=evil.mjs', 'npx vitest run -c evil.mjs',
+    'npx vitest run --root ../evil', 'node --test --import ./evil.mjs a.test.mjs', 'node --test -r ./evil.cjs a.test.mjs',
+    'node --test --env-file .env a.test.mjs', 'node --test /tmp/evil/a.test.mjs', 'node --test ../evil/a.test.mjs',
+    '.venv/bin/python -m pytest -p evil_plugin', '.venv/bin/python -m pytest -c /tmp/pytest.ini',
+    '.venv/bin/python -m pytest --rootdir=/tmp', 'cd voc-datalake && node --test --import ./evil.mjs a.test.mjs',
+    'cd voc-datalake/frontend && npx vitest run --config ../evil.mjs']) {
+    assert.ok(!v2Allows(command), `V2 refuses: ${command}`)
+    assert.ok(!v3Allows(command), `V3 refuses: ${command}`)
+  }
+  // V3 rewrites a `cd` to an absolute path before matching: that exact form stays allowed, nothing broader.
+  for (const command of ['cd /Users/someone/repo/voc-datalake', 'cd /home/ci/repo/voc-datalake/frontend']) {
+    assert.ok(v3Allows(command), `V3 allows its rewritten cd: ${command}`)
+  }
+  // Redirections are checked by kiro-cli as writes, not by these command rules (see lib.mjs): not asserted here.
   // Review (7.00.02): a folder of the same name outside the repository. V2 allows only a relative `cd`; V3 rewrites
   // `cd` to an absolute path before matching, so it cannot tell them apart (documented in lib.mjs).
   for (const command of ['cd ../../voc-datalake && npx vitest run', 'cd /tmp/x/voc-datalake && npx vitest run',
     'cd voc-datalake/../../voc-datalake && npx vitest run']) {
     assert.ok(!v2Allows(command), `V2 refuses: ${command}`)
   }
+})
+
+// PR #559 review: `?` was left as a regex quantifier, so a secret glob holding one would mis-match.
+test('a secret glob reads `*` as any characters, `?` as one character, and the rest literally', () => {
+  assert.ok(globRegex('*id_?sa*').test('my_id_rsa.pub'))
+  assert.ok(!globRegex('*id_?sa*').test('my_id_sa.pub'))
+  assert.ok(globRegex('*.env').test('.env'))
+  assert.ok(!globRegex('*.env').test('xenv'))
+  assert.ok(!globRegex('*.pem').test('a.pemx'))
 })

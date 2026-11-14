@@ -48,7 +48,8 @@ from shared.s3_versions import delete_every_version_of_keys
 MAX_LOGO_BYTES = 2_000_000
 #: The largest raster candidate the managed browser draws smaller (read once through the SSRF guard, then handed to
 #: the browser as a ``data:`` URL): ``lambda/design_capture/raster_logo.py`` and ``logo_job.py``.
-RASTER_SHRINK_MAX_BYTES = 5_000_000
+RASTER_SHRINK_MAX_BYTES = 5_000_000  # verified live on aws.browser.v1 (2026-11-14): a 5 MB PNG of noise, 6.7 M chars
+#                                      as a data: URL, drew in 26 s over its 1024/768/512 px tries; 3 MB in 13 s.
 #: The largest COMPANY logo (the saved one), for every client alike: the upload route, "Use this logo" and the
 #: prototype build that inlines it (shared.company_logo). The web app makes a larger image smaller before it uploads.
 COMPANY_LOGO_MAX_BYTES = 1_000_000
