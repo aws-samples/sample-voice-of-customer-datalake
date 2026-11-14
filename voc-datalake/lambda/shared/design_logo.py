@@ -3,7 +3,8 @@
 The candidate URL came from a web page or a repository, so it is untrusted: https only, and the
 fetch goes through ``shared.http_utils.fetch_public_url`` — the SSRF guard (``shared.url_policy``)
 on the URL and on EVERY redirect hop, sockets pinned to the vetted address at connect time (no DNS
-rebinding), no https→http downgrade, no proxies. The body is read to at most 2 MB, and its type is
+rebinding), no https→http downgrade, no proxies. The body is read to at most 2 MB (``MAX_LOGO_BYTES``; the capture and render paths pass
+``max_bytes=RASTER_SHRINK_MAX_BYTES``, 5 MB, for a logo they draw smaller), and its type is
 decided by its first bytes (PNG, JPEG or WebP), never by the server's Content-Type or the URL's
 extension: an SVG (a document that can carry script) or HTML error page is refused.
 
@@ -164,7 +165,8 @@ def store_rendered(source_url: str, png: bytes, ref_id: str, s3: Any, bucket: st
     reference's preview → the logo to record
     ``{source_url, content_type: 'image/png', rendered: True, preview_key, svg_preview_key?}``, or None.
 
-    The bytes are checked again here: a PNG by its magic bytes, at most 2 MB. ``svg`` is the sanitised
+    The bytes are checked again here: a PNG by its magic bytes, at most 2 MB (the store's own ceiling; the render path
+    already keeps a drawn logo within the 1 MB company-logo cap). ``svg`` is the sanitised
     markup (``shared.design_svg`` output) the PNG was drawn from, when there is one: it is stored too, as a
     download-only object (``design_assets.put_svg``); when that fails the PNG is still recorded. Never raises.
     """

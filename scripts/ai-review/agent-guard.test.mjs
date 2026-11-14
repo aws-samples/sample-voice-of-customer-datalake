@@ -110,7 +110,9 @@ test('the folder check refuses a missing agent and ignores files kiro-cli cannot
   assert.deepEqual(agentTreeErrors([...files, { path: 'commit-reviewer.json.bak', text: '{"tools":["*"]}' }, { path: '.DS_Store', text: '' }]), [])
 })
 
-// The shell spec, checked the way each engine applies it (live-verified in 7.00.02): both split a compound command
+// A MODEL of each engine's matching, written by hand from live probes (7.00.02): a green test proves the rules match
+// the model, not kiro-cli. Re-probe both engines (CONTRIBUTING.md) after changing the shell rules or kiro-cli.
+// The shell spec, checked the way each engine applies it: both split a compound command
 // at ; && || | and check each part; V2 anchors each regex, V3's `*` matches any characters.
 const parts = (command) => command.split(/\s*(?:;|&&|\|\||\|)\s*/).filter(Boolean)
 const v2Allows = (command) => parts(command).every((part) => {
