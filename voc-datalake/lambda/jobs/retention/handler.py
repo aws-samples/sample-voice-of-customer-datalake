@@ -607,7 +607,6 @@ _PHASE_RUNNERS: Final[dict[str, Callable[[Walk, dict | None], dict | None]]] = {
 # ============================================
 
 def _finish(aggregates_table: Any, run: dict[str, Any], status: str, error: str | None = None) -> dict:
-    run.pop('_progress', None)
     if run.get('job_id'):
         finished = finish_erasure_job(aggregates_table, run, status, error)
         # Completed or failed: the next erasure of this source may start (each release frees only its own job's lock).
@@ -643,7 +642,8 @@ def handle_event(event: dict[str, Any], context: Any) -> dict:
     finally:
         # After deletes (a hand-over, completion or failure): cached reads move on. A job that names a workspace
         # deleted that workspace's items only: its own data_version moves (WS#{ws}#METRIC#meta), not the deployment's.
-        named = job_scope(state) if state.get('job_id') else None
+        # (Only ``_workspace_job`` puts a workspace on the run, beside its job id.)
+        named = job_scope(state)
         if named is not None:
             if _workspace_items(state) > before[2]:
                 bump_data_version(tables['aggregates'], named)

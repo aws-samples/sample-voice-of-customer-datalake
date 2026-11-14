@@ -71,22 +71,23 @@ class TestThePageCap:
 class TestTheRawSweepsCap:
     def _sweep(self, context: MagicMock, answers: list[tuple[int, bool]]) -> tuple[dict | None, MagicMock, list, int]:
         """A whole-source sweep of ``web`` whose listing pages answer ``(objects deleted, more left)`` in turn: its
-        result, the hand-over, the prefix each page listed, and the objects counted. ``self.progress`` and
-        ``self.logger`` keep the progress writes and the log."""
+        result, the hand-over, the prefix each page listed, and the objects counted. ``self.walk``,
+        ``self.progress`` and ``self.logger`` keep the walk, the progress writes and the log."""
         run = {'mode': 'erase', 'run_id': 'r1', 'deleted_objects': 0, 'source': 'web'}
         listed = iter(answers)
+        self.walk = _walk(context, run)
         with patch.object(handler, 'RAW_DATA_BUCKET', 'bucket'), \
                 patch.object(handler, 'record_progress') as self.progress, \
                 patch.object(handler, 'logger') as self.logger, \
                 patch.object(handler.retention, 'delete_raw_prefix_page', side_effect=lambda *_: next(listed)) as page, \
                 patch.object(handler, '_hand_over', return_value={'status': 'continued'}) as hand_over:
-            result = handler._sweep_raw(_walk(context, run), None)
+            result = handler._sweep_raw(self.walk, None)
         return result, hand_over, [call.args[2] for call in page.call_args_list], run['deleted_objects']
 
     def test_a_prefix_that_still_has_more_after_the_cap_hands_over_with_no_cursor(self, worker_context) -> None:
         result, hand_over, prefixes, objects = self._sweep(worker_context, [(4, True), (5, True)])
         assert result == {'status': 'continued'}
-        assert hand_over.call_args.args[1:] == ('raw', None)
+        hand_over.assert_called_once_with(self.walk, 'raw', None)
         assert (prefixes, objects) == (['raw/web/', 'raw/web/'], 9)
         assert [call.args[2] for call in self.progress.call_args_list] == ['raw', 'raw']
         self.logger.warning.assert_called_once_with('Retention phase read its page cap in one invocation; handing over',
