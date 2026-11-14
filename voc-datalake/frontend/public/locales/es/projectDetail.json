@@ -43,7 +43,7 @@
       "companyContext": "Contexto de la empresa",
       "designSystem": "Sistema de diseño de la empresa",
       "companyLogo": "Logotipo de la empresa",
-      "companyLogoLeftOut": "Logotipo de la empresa omitido (más de 1 MB o ilegible)",
+      "companyLogoLeftOut": "Logotipo de la empresa no utilizado",
       "roles": {
         "mergeInput": "Fusionado",
         "prototypePrd": "PRD de origen del prototipo",
