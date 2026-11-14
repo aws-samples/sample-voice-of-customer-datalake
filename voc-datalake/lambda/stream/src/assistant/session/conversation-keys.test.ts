@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { cancelKey, conversantKey, sessionKey } from './record.js';
 import { createDynamoSessionStore } from './store.js';
 import type { SessionOwner } from './workspace-member.js';
+import type { WorkspaceStatusCheck } from './workspace-status.js';
 
 const KeySchema = z.object({ pk: z.string(), sk: z.string() });
 const CasesSchema = z.object({
@@ -48,6 +49,8 @@ describe('the keys agree with the chat routes', () => {
 const WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8';
 const MEMBER: SessionOwner = { sub: 'sub-fern', workspace: WS };
 const FIRST_AT = '2026-11-13T09:00:00.000Z';
+/** A workspace that stays active (the status check's own spec covers one that is not). */
+const ACTIVE: WorkspaceStatusCheck = { isActive: () => Promise.resolve(true) };
 
 /** A document client that records each command's input and answers the conversant put with `conversant`. */
 function recordingClient(conversant: () => Promise<unknown> = () => Promise.resolve({})) {
@@ -67,7 +70,7 @@ const sessionItem = (owner: SessionOwner) => ({ ...sessionKey(owner, 'thread-1')
 describe('the store lists the owner of a workspace conversation', () => {
   it('puts the owner row if absent, before the first conversation write, once per owner', async () => {
     const { client, sent } = recordingClient();
-    const store = createDynamoSessionStore(client, 'conv-table', () => FIRST_AT);
+    const store = createDynamoSessionStore(client, 'conv-table', () => FIRST_AT, ACTIVE);
 
     await store.put(MEMBER, sessionItem(MEMBER), 1);
     await store.put(MEMBER, sessionItem(MEMBER), 2);
@@ -87,7 +90,7 @@ describe('the store lists the owner of a workspace conversation', () => {
   it('takes an owner already listed as listed, and writes the conversation', async () => {
     const listed = new ConditionalCheckFailedException({ message: 'exists', $metadata: {} });
     const { client, sent } = recordingClient(() => Promise.reject(listed));
-    const store = createDynamoSessionStore(client, 'conv-table', () => FIRST_AT);
+    const store = createDynamoSessionStore(client, 'conv-table', () => FIRST_AT, ACTIVE);
 
     await expect(store.put(MEMBER, sessionItem(MEMBER), 1)).resolves.toBe('written');
     await store.put(MEMBER, sessionItem(MEMBER), 2);
@@ -103,7 +106,7 @@ describe('the store lists the owner of a workspace conversation', () => {
       calls.conversant += 1;
       return calls.conversant === 1 ? Promise.reject(new Error('ProvisionedThroughputExceededException')) : Promise.resolve({});
     });
-    const store = createDynamoSessionStore(client, 'conv-table', () => FIRST_AT);
+    const store = createDynamoSessionStore(client, 'conv-table', () => FIRST_AT, ACTIVE);
 
     await expect(store.put(MEMBER, sessionItem(MEMBER), 1)).rejects.toThrow('ProvisionedThroughputExceeded');
     expect(sent).toHaveLength(1);
@@ -116,7 +119,7 @@ describe('the store lists the owner of a workspace conversation', () => {
 
   it('lists each owner of each workspace on its own', async () => {
     const { client, sent } = recordingClient();
-    const store = createDynamoSessionStore(client, 'conv-table', () => FIRST_AT);
+    const store = createDynamoSessionStore(client, 'conv-table', () => FIRST_AT, ACTIVE);
     const other: SessionOwner = { sub: 'sub-gale', workspace: WS };
 
     await store.put(MEMBER, sessionItem(MEMBER), 1);

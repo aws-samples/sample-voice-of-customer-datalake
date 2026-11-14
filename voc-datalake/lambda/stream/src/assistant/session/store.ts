@@ -11,6 +11,11 @@
  * built by `sessionKey(owner, …)` from the verified authorizer claims (and the workspace
  * they were verified a member of, workspace-member.ts), and
  * a put whose item names another partition is refused before it is sent.
+ *
+ * Inside a workspace every put first asks whether the workspace is still `active` (`createWorkspaceStatusCheck`,
+ * since 7.25.00): one that is not (`deleting`, or no `META`) gets the one 404, `WorkspaceNotFoundError`, and neither the
+ * owner row nor the conversation is written. A failed read rejects the put with its own error: nothing is sent, and
+ * the next write reads again. A store made without the check writes nothing inside a workspace.
  */
 import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
@@ -19,7 +24,8 @@ import type { Message } from '@ag-ui/core';
 import { z } from 'zod';
 import { callerPartition, cancelKey, conversantKey, sessionKey } from './record.js';
 import type { PutOutcome } from './writer.js';
-import type { SessionOwner } from './workspace-member.js';
+import { WorkspaceNotFoundError, type SessionOwner } from './workspace-member.js';
+import type { WorkspaceStatusCheck } from './workspace-status.js';
 
 export interface StoredSession {
   createdAt: string | null;
@@ -70,6 +76,7 @@ const MAX_LISTED_OWNERS = 1000;
 
 export function createDynamoSessionStore(
   client: SessionDocClient, tableName: string, nowIso: () => string = () => new Date().toISOString(),
+  status?: WorkspaceStatusCheck,
 ): SessionStore {
   // The owners this container has seen listed, so a run's many writes list their owner once, not once per write.
   const listed = new Set<string>();
@@ -127,6 +134,9 @@ export function createDynamoSessionStore(
     },
     async put(owner, item, revision) {
       if (item.pk !== callerPartition(owner)) throw new RangeError('Session item outside the caller partition');
+      if (owner.workspace !== undefined) {
+        if (status === undefined || !await status.isActive(owner.workspace)) throw new WorkspaceNotFoundError();
+      }
       await listOwner(owner);
       try {
         await client.send(new PutCommand({

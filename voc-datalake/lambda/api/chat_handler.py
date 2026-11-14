@@ -187,8 +187,8 @@ class _Caller:
 
     def list_as_owner(self, at: str) -> None:
         """Inside a workspace, list the caller among its conversation owners (``WS#{ws}#CONVERSANTS`` / ``{sub}``,
-        put if absent: shared/conversations.py ``record_conversant``) BEFORE their conversation row is written, so a
-        stored conversation is never unlisted; a fault here fails the save. Nothing outside a workspace. Sent on
+        put if absent: shared/conversations.py ``record_conversant``) BEFORE their conversation row or a run's Stop
+        marker is written, so no row of theirs there is ever unlisted; a fault here fails the write. Nothing outside a workspace. Sent on
         every save (no warm-container memory, unlike the stream Lambda's many writes per run): a listed owner's put
         is refused by its condition, which still bills one write; accepted for one save per turn."""
         if self.workspace is not None:
@@ -678,11 +678,16 @@ def cancel_run(conversation_id: str):
     run_id = body.get('runId') if isinstance(body, dict) else None
     if not isinstance(run_id, str) or not LONG_OPAQUE_ID_RE.fullmatch(run_id):
         raise ValidationError('runId must be a run id')
+    requested_at = now_iso()
+    # Inside a workspace the marker sits in the caller's partition there, so the owner is listed first, as a save
+    # lists them: the workspace's delete finds every partition through that list, and a run can be stopped before
+    # its first save (no CONV# row is required).
+    caller.list_as_owner(requested_at)
     caller.table().put_item({
         'pk': caller.pk,
         'sk': f'{CANCEL_SK_PREFIX}{conversation_id}',
         'run_id': run_id,
-        'requested_at': now_iso(),
+        'requested_at': requested_at,
         'ttl': int(time.time()) + CANCEL_TTL_SECONDS,
     })
     return {'success': True, 'id': conversation_id, 'runId': run_id}

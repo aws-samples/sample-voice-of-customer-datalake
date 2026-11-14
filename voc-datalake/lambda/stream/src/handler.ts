@@ -26,12 +26,16 @@ import { createMemoryRecall } from './assistant/runtime/memory-recall.js';
 import { getInternalApiInvoker } from './assistant/tools/internal-api.js';
 import { createDynamoSessionStore } from './assistant/session/store.js';
 import { createWorkspaceMembership } from './assistant/session/workspace-member.js';
+import { createWorkspaceStatusCheck } from './assistant/session/workspace-status.js';
 import { createRealtimePublisher } from './lib/realtime-publish.js';
 import { createPersonaRound } from './assistant/runtime/persona-round.js';
 import { getDefaultToolDeps } from './assistant/tools/deps.js';
 
 // ── AWS Clients (module-level for connection reuse) ──
-const docClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
+// Each DynamoDB request has its own bound (10 s; the SDK retries within its own attempts), so a hung status read or
+// session put ends long before the invocation does.
+const DYNAMODB_REQUEST_TIMEOUT_MS = 10_000;
+const docClient = DynamoDBDocumentClient.from(new DynamoDBClient({ requestHandler: { requestTimeout: DYNAMODB_REQUEST_TIMEOUT_MS } }), {
   marshallOptions: { removeUndefinedValues: true },
 });
 
@@ -59,7 +63,10 @@ const deps: RuntimeDeps = {
   ...(CONVERSATIONS_TABLE
     ? {
         sessions: {
-          store: createDynamoSessionStore(docClient, CONVERSATIONS_TABLE),
+          // Inside a workspace each write first asks that it is still active (`createWorkspaceStatusCheck`); with no
+          // workspaces table no workspace run reaches a write (no membership: the one 404 at its start).
+          store: createDynamoSessionStore(docClient, CONVERSATIONS_TABLE, undefined,
+            WORKSPACES_TABLE ? createWorkspaceStatusCheck(docClient, WORKSPACES_TABLE) : undefined),
           nowMs: () => Date.now(),
           ...(notify === undefined ? {} : { notify }),
           ...(WORKSPACES_TABLE ? { membership: createWorkspaceMembership(docClient, WORKSPACES_TABLE) } : {}),

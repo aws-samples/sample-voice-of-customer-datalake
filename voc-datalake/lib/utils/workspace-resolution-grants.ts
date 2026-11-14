@@ -66,6 +66,23 @@ export function grantWorkspaceMembershipReads(workspacesTable: dynamodb.ITable, 
   return { WORKSPACES_TABLE: workspacesTable.tableName };
 }
 
+/** What a writer that checks a member's role and the workspace's status reads, with the keys: a `MEMBER#` row's
+ *  `role` (LOCKSTEP with lambda/stream/src/assistant/session/workspace-member.ts `MEMBER_ROW_ATTRIBUTES`) and a
+ *  `META`'s `status` (LOCKSTEP with lambda/stream/src/assistant/session/workspace-status.ts `STATUS_READ_ATTRIBUTES`,
+ *  since 7.25.00). */
+const ROLE_AND_STATUS_ATTRIBUTES = ['pk', 'sk', 'role', 'status'] as const;
+
+/** The reads of a writer that checks a member's role and the workspace's status and nothing else (the assistant's
+ *  stream Lambda: lambda/stream/src/assistant/session/workspace-member.ts at a run's start, workspace-status.ts before
+ *  each session write): GetItem on `WS#*` held to {@link ROLE_AND_STATUS_ATTRIBUTES}, never a workspace's name or
+ *  slug nor a member's email. IAM cannot tell a
+ *  `META` from a `MEMBER#` row (both are in `WS#{ws}`), so the code's projections pick the row's own. Returns the
+ *  Lambda's `WORKSPACES_TABLE`. */
+export function grantWorkspaceRoleAndStatusReads(workspacesTable: dynamodb.ITable, role: iam.IRole): Record<string, string> {
+  grantWorkspaceAttributeRead(role, workspacesTable, ROLE_AND_STATUS_ATTRIBUTES);
+  return { WORKSPACES_TABLE: workspacesTable.tableName };
+}
+
 /** Grants `role` the workspace resolution's reads and its audit row; returns the Lambda's `WORKSPACES_TABLE`. */
 export function grantWorkspaceResolution(workspacesTable: dynamodb.ITable, role: iam.Role): Record<string, string> {
   role.addManagedPolicy(resolutionPolicy(role, workspacesTable));

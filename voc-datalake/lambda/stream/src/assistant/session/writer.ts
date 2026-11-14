@@ -11,10 +11,13 @@
  *   so a newer run always outranks an older one. The put is conditional on the
  *   stored revision being older; a refusal means a newer writer owns the item
  *   (another run of this thread), so this run stops writing.
- * - A failed write is logged with an EMF metric and does not stop later writes.
+ * - A failed write is logged with an EMF metric and does not stop later writes,
+ *   except a `WorkspaceNotFoundError` (the workspace is no longer active,
+ *   store.ts): logged and counted once, then this run stops writing, as when superseded.
  */
 import { METRIC_NAMESPACE } from '../../lib/metric-namespace.js';
 import { errorName } from '../../lib/error-name.js';
+import { WorkspaceNotFoundError } from './workspace-member.js';
 
 /** A put landed, or was refused because the stored revision is newer. Failures throw. */
 export type PutOutcome = 'written' | 'superseded';
@@ -69,6 +72,8 @@ export function createSessionWriter(put: SessionPut, nowMs: () => number): Sessi
       const name = errorName(error);
       console.error(`Assistant session write failed: ${name}`);
       recordWriteFailure(name);
+      // A workspace that is not active stays so for this run: no later snapshot is sent to be refused again.
+      if (error instanceof WorkspaceNotFoundError) state.superseded = true;
     }
   }
 

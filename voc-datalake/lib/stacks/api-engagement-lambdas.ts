@@ -34,6 +34,11 @@ export interface EngagementInputs {
   enabledSourcesEnv: string;
 }
 
+/** The chat API Lambda's timeout (voc-chat-api, lambda/api/chat_handler.py): a chat route's write lands within it of
+ *  its fresh workspace resolution, so the workspace hard delete's fence depends on it (docs/multi-workspace.md,
+ *  "Export and delete", step 4: the fence is above it plus CHAT_STREAM_TIMEOUT and a margin). */
+export const CHAT_API_TIMEOUT = cdk.Duration.seconds(30);
+
 /** A membership's two rows (lambda/shared/workspace_members.py): `WS#{ws}` / `MEMBER#{sub}` and `USER#{sub}` / `WS#{ws}`. */
 const MEMBERSHIP_PARTITIONS = ['USER#*', 'WS#*'];
 /** A workspace's audit partition, the only one the users API writes in voc-workspaces (lib/utils/audit-row-guard.ts). */
@@ -356,7 +361,7 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
     handler: 'chat_handler.lambda_handler',
     code: createApiLambdaCode('chat_handler.py'),
     role: chatRole,
-    timeout: cdk.Duration.seconds(30),
+    timeout: CHAT_API_TIMEOUT,
     memorySize: 1024, // CPU-bound: memory buys vCPU; keep CPU <= 60% of the share
     environment: {
       CONVERSATIONS_TABLE: conversationsTable.tableName, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-chat-api', LOG_LEVEL: 'INFO',

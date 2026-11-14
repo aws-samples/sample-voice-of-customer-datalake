@@ -15,7 +15,7 @@ import { snapStartFunctionProps } from '../utils/snapstart';
 import { AGGREGATES_VERSION_PARTITION, grantCacheVersionBump } from '../utils/cache-version-grants';
 import { PII_REDACTION_ENV, piiDetectionStatement } from '../utils/pii-redaction';
 import { appVersion } from '../utils/connector-version';
-import { grantWorkspaceMembershipReads, grantWorkspaceResolution } from '../utils/workspace-resolution-grants';
+import { grantWorkspaceResolution, grantWorkspaceRoleAndStatusReads } from '../utils/workspace-resolution-grants';
 import type { ApiStackContext } from './api-context';
 import { WORKSPACE_ID_PATTERN, WORKSPACE_MEMORY_IMPORTS_PREFIX } from './core-buckets';
 import { createS3ImportLambda } from './api-s3-import-lambda';
@@ -24,7 +24,11 @@ import { createS3ImportLambda } from './api-s3-import-lambda';
  * The assistant's run ceiling: the Lambda timeout AND the /chat/stream
  * integration timeout (api-routes.ts; a response-streaming integration may run
  * up to 15 minutes). One value so the two cannot drift; the stream contract's
- * STALE_RUN_SECONDS and the Bedrock requestTimeout are sized against it.
+ * STALE_RUN_SECONDS and the Bedrock requestTimeout are sized against it. The
+ * workspace hard delete's fence depends on it too: a run's last conversation
+ * write lands within one of these after the workspace is marked `deleting`
+ * (lambda/stream/src/assistant/session/workspace-status.ts); docs/multi-workspace.md
+ * names this value, and raising it raises the fence (api-stack-assist-workers.test.ts).
  */
 export const CHAT_STREAM_TIMEOUT = cdk.Duration.minutes(15);
 
@@ -302,9 +306,11 @@ export function createAssistantLambdas(
   }));
   // Inside a workspace the conversation is the caller's there, only when they are a member (session/workspace-member.ts:
   // their MEMBER# row and the workspace's META, no platform-admin entry, so only these reads; the code builds every
-  // key from the verified sub and that workspace).
+  // key from the verified sub and that workspace). Since 7.25.00 each session write inside a workspace first reads
+  // its META's status again (session/workspace-status.ts: a deleting workspace gets no row). Held to the role and
+  // the status alone (no name or slug: the stream reads neither).
   if (chatStreamLambda.role === undefined) throw new Error('The chat stream Lambda has no role');
-  for (const [name, value] of Object.entries(grantWorkspaceMembershipReads(ctx.props.workspacesTable, chatStreamLambda.role))) {
+  for (const [name, value] of Object.entries(grantWorkspaceRoleAndStatusReads(ctx.props.workspacesTable, chatStreamLambda.role))) {
     chatStreamLambda.addEnvironment(name, value);
   }
   // No projects-table grant: the assistant is read-only server-side and

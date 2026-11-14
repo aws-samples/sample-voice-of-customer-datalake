@@ -202,14 +202,19 @@ describe('ChatStream (AI assistant) delegation', () => {
 
   // A conversation inside a workspace is the caller's there, only when they are a member: both its writers resolve
   // membership without a platform admin's entry (session/workspace-member.ts; api/chat_handler.py, elevate=False).
-  // The read is 7.14.00's attribute-limited one: the resolver's attributes, and refused when it names none.
-  it.each(['ChatStreamApi', 'ChatApi'])('%s reads only membership rows of voc-workspaces and writes nothing there', (prefix) => {
+  // The read is 7.14.00's attribute-limited one, refused when it names none: the resolver's attributes for the chat
+  // routes; for the stream (since 7.25.00, which reads META's status again before each session write) the role and the
+  // status alone, the attributes session/workspace-member.ts and session/workspace-status.ts project.
+  it.each([
+    ['ChatStreamApi', ['pk', 'sk', 'role', 'status']],
+    ['ChatApi', ['pk', 'sk', 'role', 'status', 'name', 'slug']],
+  ])('%s reads only membership rows of voc-workspaces and writes nothing there', (prefix, attributes) => {
     const fn = byLogicalPrefix(functions(), prefix);
     const onWorkspaces = chatGrants(fn).filter((statement) => JSON.stringify(statement.Resource).includes('Workspaces'));
     expect(onWorkspaces.map((statement) => ({ actions: actionsOf(statement), condition: statement.Condition }))).toStrictEqual([
       { actions: ['dynamodb:GetItem'], condition: {
         'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] },
-        'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'role', 'status', 'name', 'slug'] },
+        'ForAllValues:StringEquals': { 'dynamodb:Attributes': attributes },
         StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
         Null: { 'dynamodb:Attributes': 'false' },
       } },

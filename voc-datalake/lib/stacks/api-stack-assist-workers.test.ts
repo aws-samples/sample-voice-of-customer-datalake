@@ -7,6 +7,8 @@
  * and scrapers can write the job row; and that /chat/stream runs 15 minutes.
  */
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
@@ -17,6 +19,8 @@ import { itemAt } from '../test-support/guards';
 import { MEMORY_SIZES } from '../sizing/policy';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import { byCodeUnit } from '../utils/compare';
+import { CHAT_STREAM_TIMEOUT } from './api-assistant-lambdas';
+import { CHAT_API_TIMEOUT } from './api-engagement-lambdas';
 
 beforeAll(() => {
   apiTemplate();
@@ -166,6 +170,23 @@ describe('the AI assistant stream runs for 15 minutes', () => {
 
   it('gives the chat-stream Lambda a 900 s timeout', () => {
     expect(chatStreamProperties().Timeout).toBe(900);
+  });
+
+  // The workspace hard delete's fence depends on both writers' timeouts: a conversation write lands within one
+  // invocation of the `deleting` mark (lambda/stream/src/assistant/session/workspace-status.ts; the chat routes
+  // resolve the workspace fresh on each write). docs/multi-workspace.md states both numbers and the fence rule
+  // (fence above their sum plus a margin), so a change to either must change the docs, and the fence, with it.
+  it('pins both conversation writers\' timeouts to the numbers the hard delete fence rule names', () => {
+    const chatApi = Object.entries(apiTemplate().findResources('AWS::Lambda::Function'))
+      .filter(([logicalId]) => /^ChatApi[0-9A-F]{8}$/.test(logicalId));
+    expect(chatApi).toHaveLength(1);
+    const chatApiTimeout = z.object({ Properties: z.object({ Timeout: z.number() }) }).parse(itemAt(chatApi, 0)[1]).Properties.Timeout;
+    const docs = readFileSync(join(__dirname, '..', '..', '..', 'docs', 'multi-workspace.md'), 'utf8');
+    expect({
+      stream: [CHAT_STREAM_TIMEOUT.toSeconds(), chatStreamProperties().Timeout],
+      chatApi: [CHAT_API_TIMEOUT.toSeconds(), chatApiTimeout],
+      docs: [docs.includes('`CHAT_STREAM_TIMEOUT`, 15 minutes'), docs.includes('`CHAT_API_TIMEOUT`, 30 s')],
+    }).toStrictEqual({ stream: [900, 900], chatApi: [30, 30], docs: [true, true] });
   });
 
   // Same runtime as voc-plan-step (plan-runtime.test.ts), which is bundled from the same package.

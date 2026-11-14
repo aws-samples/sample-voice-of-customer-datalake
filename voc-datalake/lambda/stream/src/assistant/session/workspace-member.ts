@@ -15,13 +15,15 @@
  *   to save in a workspace, so their conversations there are kept only once they add themselves as a member.
  * Read fresh (strongly consistent, no cache) once per run, at its start, as api/chat_handler.py reads it fresh for each
  * write: a removed member starts no run that saves there.
- * IAM: GetItem on the `WS#*` partitions of voc-workspaces only (lib/utils/workspace-resolution-grants.ts).
+ * Each session write inside the workspace then asks again whether it is still active
+ * (`createWorkspaceStatusCheck`, called by the store's put).
+ * IAM: GetItem on the `WS#*` partitions of voc-workspaces only, held to pk, sk, role and status
+ * (lib/utils/workspace-resolution-grants.ts `grantWorkspaceRoleAndStatusReads`).
  */
-import { GetCommand } from '@aws-sdk/lib-dynamodb';
-import { z } from 'zod';
 import { ApiError } from '../../lib/errors.js';
 import { parseGroups } from '../runtime/event.js';
 import type { CallerClaims } from '../types.js';
+import { readWorkspaceRow, readWorkspaceStatus, type StatusDocClient } from './workspace-status.js';
 
 /** LOCKSTEP with lambda/shared/workspace.py `NOT_FOUND`. */
 export const WORKSPACE_NOT_FOUND = 'Workspace not found';
@@ -52,39 +54,25 @@ export interface WorkspaceMembership {
   isMember(workspace: string, sub: string): Promise<boolean>;
 }
 
-/** What the membership needs of a document client. */
-export interface MembershipDocClient {
-  send(command: GetCommand): Promise<unknown>;
-}
-
-const rowSchema = z.object({ Item: z.object({ role: z.unknown().optional(), status: z.unknown().optional() }).loose().optional() }).loose();
+/** What the membership needs of a document client: the status read's own (one GetItem). */
+export type MembershipDocClient = StatusDocClient;
 
 /**
- * What each read names (LOCKSTEP with lambda/shared/workspace.py `MEMBER_READ_ATTRIBUTES` and a subset of
- * `META_READ_ATTRIBUTES`; never a member's email, nor `secret_status`, which the resolver dropped in 7.12.00). The
- * role's GetItem is held to the resolver's attributes and refuses a read that names none
- * (lib/utils/workspace-resolution-grants.ts `grantWorkspaceAttributeRead`), so every read sends its projection.
+ * What the membership read names (LOCKSTEP with lambda/shared/workspace.py `MEMBER_READ_ATTRIBUTES` and
+ * lib/utils/workspace-resolution-grants.ts `ROLE_AND_STATUS_ATTRIBUTES`; never a member's email). The `META` read is
+ * workspace-status.ts `readWorkspaceStatus`'s. The role's GetItem is held to pk, sk, role and status and refuses a read
+ * that names none (`grantWorkspaceRoleAndStatusReads`), so every read sends its projection.
  */
 const MEMBER_ROW_ATTRIBUTES = ['pk', 'sk', 'role'] as const;
-const META_ROW_ATTRIBUTES = ['pk', 'sk', 'status'] as const;
 
 export function createWorkspaceMembership(client: MembershipDocClient, tableName: string): WorkspaceMembership {
-  async function row(pk: string, sk: string, attributes: readonly string[]): Promise<{ role?: unknown; status?: unknown }> {
-    // Every attribute through a name placeholder (`role` and `status` are reserved words).
-    const names = Object.fromEntries(attributes.map((attribute, index) => [`#a${String(index)}`, attribute]));
-    const response = await client.send(new GetCommand({
-      TableName: tableName, Key: { pk, sk }, ConsistentRead: true,
-      ProjectionExpression: Object.keys(names).join(', '), ExpressionAttributeNames: names,
-    }));
-    const parsed = rowSchema.safeParse(response);
-    return parsed.success ? parsed.data.Item ?? {} : {};
-  }
   return {
     async isMember(workspace, sub) {
-      const { role } = await row(`WS#${workspace}`, `MEMBER#${sub}`, MEMBER_ROW_ATTRIBUTES);
-      if (typeof role !== 'string' || !ROLES.has(role)) return false;
-      const { status } = await row(`WS#${workspace}`, 'META', META_ROW_ATTRIBUTES);
-      return status === 'active';
+      const { role: stored } = await readWorkspaceRow(client, tableName, { pk: `WS#${workspace}`, sk: `MEMBER#${sub}` },
+        MEMBER_ROW_ATTRIBUTES);
+      if (typeof stored !== 'string' || !ROLES.has(stored)) return false;
+      // Fresh, uncached: a run that starts after the workspace is marked `deleting` saves nothing.
+      return await readWorkspaceStatus(client, tableName, workspace) === 'active';
     },
   };
 }

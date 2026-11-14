@@ -156,6 +156,70 @@ def test_a_first_save_in_a_workspace_lists_its_owner_once(lambda_context, body):
         assert _conversants() == {'sub-ada': row}
 
 
+def _mark_deleting() -> None:
+    _workspaces_table().update_item(Key={'pk': f'WS#{WS_A}', 'sk': 'META'}, UpdateExpression='SET #s = :s',
+                                    ExpressionAttributeNames={'#s': 'status'}, ExpressionAttributeValues={':s': 'deleting'})
+
+
+def _remove_meta() -> None:
+    _workspaces_table().delete_item(Key={'pk': f'WS#{WS_A}', 'sk': 'META'})
+
+
+def _workspaces_table():
+    return boto3.resource('dynamodb', region_name='us-east-1').Table('workspaces')
+
+
+@pytest.mark.parametrize('body', [{'title': 'Trip notes', 'messages': []}, _assistant_body('conv_new', 0)],
+                         ids=['legacy', 'assistant'])
+@pytest.mark.parametrize('not_active', [_mark_deleting, _remove_meta], ids=['deleting', 'no-meta'])
+def test_a_save_in_a_workspace_that_is_not_active_writes_nothing(lambda_context, body, not_active):
+    """The hard delete sweeps the partitions its owner list names, so nothing is written once the workspace is
+    marked: the save's resolution (``fresh``: a strongly consistent read of META, no warm cache) answers the one 404
+    before the owner row or the conversation row, the save shape aside. The warm cache is primed first, so the
+    refusal is the fresh read's."""
+    with chat_world(lambda_context) as world:
+        assert world.call('GET', '/chat/conversations/_list', ws=WS_A)[0] == 200
+        not_active()
+        before = _rows()
+        assert world.call('POST', '/chat/conversations/conv_new', ws=WS_A, body=body) == (
+            404, {'success': False, 'error': 'Workspace not found'})
+        assert _rows() == before
+        assert _conversants() == {}
+
+
+_RUN_ID = 'run_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
+
+
+def test_a_stop_in_a_workspace_lists_the_owner_before_its_marker(lambda_context):
+    """A run can be stopped before its first save, so no conversation is needed: the owner is listed, then the
+    marker is written in their partition there."""
+    with chat_world(lambda_context) as world:
+        assert world.call('POST', '/chat/conversations/conv_unsaved/cancel', ws=WS_A, body={'runId': _RUN_ID})[0] == 200
+        assert list(_conversants()) == ['sub-ada']
+        assert 'RUNCANCEL#conv_unsaved' in _rows()[f'WS#{WS_A}#USER#sub-ada']
+        assert 'CONV#conv_unsaved' not in _rows()[f'WS#{WS_A}#USER#sub-ada']
+
+
+@pytest.mark.parametrize('not_active', [_mark_deleting, _remove_meta], ids=['deleting', 'no-meta'])
+def test_a_stop_in_a_workspace_that_is_not_active_writes_nothing(lambda_context, not_active):
+    with chat_world(lambda_context) as world:
+        assert world.call('GET', '/chat/conversations/_list', ws=WS_A)[0] == 200
+        not_active()
+        before = _rows()
+        assert world.call('POST', '/chat/conversations/conv_a/cancel', ws=WS_A, body={'runId': _RUN_ID}) == (
+            404, {'success': False, 'error': 'Workspace not found'})
+        assert _rows() == before
+        assert _conversants() == {}
+
+
+def test_a_stop_outside_a_workspace_lists_nobody(lambda_context):
+    with chat_world(lambda_context) as world:
+        assert world.call('POST', '/chat/conversations/conv_a/cancel', ws=None, body={'runId': _RUN_ID})[0] == 200
+        assert 'RUNCANCEL#conv_a' in _rows()['USER#sub-ada']
+        assert _conversants() == {}
+        assert [pk for pk in _rows() if pk.endswith('#CONVERSANTS')] == []
+
+
 def test_a_save_outside_a_workspace_lists_nobody(lambda_context):
     with chat_world(lambda_context) as world:
         status, _ = world.call('POST', '/chat/conversations/conv_own', ws=None, body={'title': 'Mine', 'messages': []})
@@ -172,15 +236,19 @@ def test_a_refused_save_lists_nobody(lambda_context):
         assert _conversants() == {}
 
 
-def test_the_owner_is_listed_before_the_conversation_is_written(lambda_context):
-    """A fault listing the owner fails the save, and no conversation row is stored unlisted."""
+@pytest.mark.parametrize(('path', 'body'), [
+    ('/chat/conversations/conv_new', {'title': 'x', 'messages': []}),
+    ('/chat/conversations/conv_a/cancel', {'runId': _RUN_ID}),
+], ids=['save', 'stop'])
+def test_the_owner_is_listed_before_the_conversation_is_written(lambda_context, path, body):
+    """A fault listing the owner fails the save (or the Stop), and no conversation row or marker is stored unlisted."""
     import chat_handler
 
     fault = ClientError({'Error': {'Code': 'ProvisionedThroughputExceededException', 'Message': 'slow down'}}, 'PutItem')
     with chat_world(lambda_context) as world, patch.object(chat_handler, 'record_conversant', side_effect=fault):
         before = _rows()
         with pytest.raises(ClientError, match='ProvisionedThroughputExceeded'):
-            world.call('POST', '/chat/conversations/conv_new', ws=WS_A, body={'title': 'x', 'messages': []})
+            world.call('POST', path, ws=WS_A, body=body)
         assert _rows() == before
 
 
