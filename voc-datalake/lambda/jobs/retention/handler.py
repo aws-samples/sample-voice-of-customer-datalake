@@ -45,7 +45,8 @@ A run walks its PHASES in order, each paged and time-budgeted:
 Each deleted item first gets a tombstone (``copies.py``); its kept Silver versions
 (``silver/{source}/{feedback_id}/``) are deleted with it (``shared/retention.delete_item``). Before the Lambda's
 budget runs out, or once a phase has read ``MAX_PAGES`` pages, the worker re-invokes itself with its phase, the
-phase's scan cursor and its running state (``runs.py``). Deletes are idempotent, so a
+phase's scan cursor and its running state (``runs.py``). A scan that answers with the cursor it was read from
+fails the run (``CursorStuck``) rather than reading the same page again. Deletes are idempotent, so a
 duplicate delivery or an overlapping daily run only repeats no-ops. Every
 finished run (and every failure) writes one audit row (``pk AUDIT#retention``).
 
@@ -60,7 +61,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Final
+from typing import Any, Final, NoReturn
 
 from boto3.dynamodb.conditions import ConditionBase
 from botocore.exceptions import BotoCoreError, ClientError
@@ -351,20 +352,36 @@ def _walk(walk: Walk, phase: str, cursor: dict | None, scan: Callable[[dict | No
 
     ``scan(cursor)`` reads one page; ``handle(page, cursor)`` works through it and
     returns ``_Resume`` when the time ran out mid-page. The cursor is checkpointed
-    across self re-invocations. At most ``MAX_PAGES`` pages, then a hand-over at the next one.
+    across self re-invocations. At most ``MAX_PAGES`` pages, then a hand-over at the next one. A page whose
+    ``LastEvaluatedKey`` is the cursor it was read from stops the run (``CursorStuck``) before it is handled, so it
+    is never worked through twice; a longer cycle (A, B, A) is bounded by the page cap.
     """
     for _page in range(MAX_PAGES):
         page = scan(cursor)
+        following = page.get('LastEvaluatedKey') or None
+        if following is not None and following == cursor:
+            _cursor_stuck(phase)
         resume = handle(page, cursor)
         if resume is not None:
             return _hand_over(walk, phase, resume.cursor)
         record_progress(walk.aggregates, walk.run, phase)
-        cursor = page.get('LastEvaluatedKey') or None
-        if cursor is None:
+        if following is None:
             return None
+        cursor = following
         if not walk.time_left():
             return _hand_over(walk, phase, cursor)
     return _page_cap(walk, phase, cursor)
+
+
+class CursorStuck(RuntimeError):
+    """A scan answered with the cursor it was read from: the walk would read that page forever."""
+
+
+def _cursor_stuck(phase: str) -> NoReturn:
+    """Stop the run: it fails and is audited like any other failure (``_run``). The cursor is a row key (it may
+    name a person), so only the phase is logged."""
+    logger.error('Retention scan returned the cursor it started from; stopping the run', extra={'phase': phase})
+    raise CursorStuck(phase)
 
 
 def _page_cap(walk: Walk, phase: str, cursor: dict | None) -> dict:
