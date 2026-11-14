@@ -9,14 +9,11 @@ there is no preview and one INFO line; a logo up to 1 MB is stored as downloaded
 import base64
 from unittest.mock import MagicMock, patch
 
-import capture_worker as cw
-import page_styles as ps
 import pytest
 import raster_logo
-from test_design_capture_worker import ANSWER, REF_ID, FakeCdp, _kit, _styles, table  # noqa: F401 - fixture
+from test_design_capture_worker import ANSWER, REF_ID, FakeCdp, _run, _styles, table  # noqa: F401 - fixture
 from test_svg_logo_render import BOX, LOGO_PNG, png_bytes, s3  # noqa: F401 - fixture
 
-from shared.company_context import get_reference
 from shared.design_logo import COMPANY_LOGO_MAX_BYTES, MAX_LOGO_BYTES, RASTER_SHRINK_MAX_BYTES
 from shared.http_utils import UnsafeURLError
 
@@ -47,15 +44,9 @@ def _site(logo: MagicMock | Exception):
 
 
 def _capture(table, s3, cdp: FakeCdp, logo: MagicMock | Exception):  # noqa: F811 - fixture parameter
+    """One capture whose page offers ``logo`` → ``(result, stored row, logo fetch)`` (the worker suite's ``_run``)."""
     fetch = _site(logo)
-    deps = cw.CaptureDeps(table=table, kit=_kit(cdp, []), summarise_images=MagicMock(return_value=ANSWER),
-                          sleep=lambda _s: None, clock=iter(range(1000)).__next__, now=lambda: '2026-11-13T00:00:00+00:00',
-                          s3=s3, bucket='raw', logo_fetch=fetch)
-    with patch.object(cw, 'validate_url', return_value=(True, '')), \
-            patch.object(ps, 'validate_url', return_value=(True, '')):
-        result = cw.run_capture({'action': 'design_capture', 'ref_id': REF_ID}, deps)
-    stored = get_reference(table, REF_ID)
-    assert stored is not None
+    result, stored, _vision, _sessions = _run(table, cdp, s3=s3, fetch=fetch, now=lambda: '2026-11-13T00:00:00+00:00')
     return result, stored, fetch
 
 
