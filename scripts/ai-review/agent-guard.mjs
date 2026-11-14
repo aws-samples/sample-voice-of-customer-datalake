@@ -12,7 +12,10 @@
  */
 import { KIRO_READ_SETTINGS, KIRO_SHELL_RULES, KIRO_SHELL_SETTINGS, KIRO_WRITE_RULES, KIRO_WRITE_SETTINGS, SECRET_PATHS } from './lib.mjs'
 
-/** `{capability: 'skill', effect: 'allow'}`: lets the agent activate skills; no file, write or shell access. */
+/**
+ * `{capability: 'skill', effect: 'allow'}`: lets the agent activate skills. A skill adds instructions, never a tool:
+ * the agent still has only the tools listed here, under the same read rules. No file, write or shell access.
+ */
 const SKILL_RULE = Object.freeze({ capability: 'skill', effect: 'allow' })
 const READER = Object.freeze({ tools: ['read', 'thinking'], allowedTools: ['thinking'], writes: false, shell: false })
 

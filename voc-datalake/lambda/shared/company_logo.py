@@ -140,7 +140,9 @@ def inline_logo(document: str, data_url: str | None, wordmark: str) -> InlinedLo
     ``url()``, a script) becomes a transparent image and never takes a use.
     """
     uses = 0
-    text = f'<b>{html.escape(wordmark)}</b>'
+    # No quotes, and no backtick or `$`, so the wordmark is safe in an attribute, a quoted script string and a
+    # template literal alike (as character references the browser shows the same text).
+    text = '<b>' + html.escape(wordmark).replace('`', '&#96;').replace('$', '&#36;') + '</b>'
 
     image = data_url or ''
 
