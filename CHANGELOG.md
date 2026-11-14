@@ -21,7 +21,7 @@ the platform package version.
 
 The project branch takes main's releases since it started (6.04.08, 6.05.00, 7.00.00 and 7.00.01, listed below under
 their own numbers, as released on main, after this branch's sections: its own 6.04.08, 6.05.00 and 7.00.00 share
-those numbers): workshop templates reserve no concurrency for the Global MCP endpoint (this branch's export job
+those numbers, so main's are marked "(from main)"): workshop templates reserve no concurrency for the Global MCP endpoint (this branch's export job
 still reserves 10: Known issues); Node.js 24 for the
 tooling and the minimatch and fast-xml-parser fixes; prototypes show the uploaded company logo, an SVG logo uploads
 again and a large logo is made smaller (the company logo is at most 1 MB for every client); the Kiro agents can no
@@ -829,7 +829,7 @@ The repository's Kiro agents can no longer read `.env`, key and credential files
 
 - Nothing to deploy: tooling only. A version bump moves only the `APP_VERSION` of the Api and Processing Lambdas, so those two template hashes in `voc-datalake/lib/test-support/baseline.json` change, as on every release. A developer whose kiro-cli upgraded these agent files locally should take the committed versions (`git checkout -- .kiro/agents`).
 
-## [7.00.00] - 2026-11-13
+## [7.00.00] - 2026-11-13 (from main)
 
 Prototypes show the company logo uploaded in the design system, an SVG logo can be uploaded again, and a large logo is made smaller instead of refused.
 
@@ -851,7 +851,7 @@ Prototypes show the company logo uploaded in the design system, an SVG logo can 
 
 - Deploy the stacks (`npm run deploy:infra`, which deploys `VocCoreStack` before `VocApiStack`) and the frontend (`npm run deploy:frontend`). `VocCoreStack` gains one managed policy, `CompanyLogoReadPolicy` (`s3:GetObject` on the uploaded logos only, `company-context/design/logo_????????????.*` in the raw data bucket, so not the design references' logo previews), and `VocApiStack` attaches it to the document generator job role (`voc-job-document-generator`). **Breaking (the reason for the major version):** an API or MCP client that uploads its own company logo (`POST /settings/design-system/logo`) must send at most 1 MB (it was 5 MB), and **Use this logo** refuses a candidate over 1 MB (it was 2 MB); both answer 400 with what to do. The web app is not affected: it makes a larger image smaller before it uploads. Nothing else changes. Prototypes built before this release keep the logo they were built with; build or revise one to get the uploaded logo.
 
-## [6.05.00] - 2026-11-11
+## [6.05.00] - 2026-11-11 (from main)
 
 The repository's tooling needs Node.js 24, and the minimatch and fast-xml-parser security alerts are fixed.
 
@@ -870,7 +870,7 @@ The repository's tooling needs Node.js 24, and the minimatch and fast-xml-parser
 - Run `npm ci` again in `voc-datalake/`, `voc-datalake/frontend/` and `voc-datalake/lambda/stream/` to pick up the new lockfiles.
 - Deploy from Node.js 24.15+ (`node --version`). On Node 22, npm warns `EBADENGINE`, and newer tooling may not run. On Node 24, `npm ci` in `voc-datalake/frontend/` still warns `EBADENGINE` once, for `i18next-parser` 9.4.0 (its latest release declares Node 22 or older); that warning is expected, and the tool runs on Node 24.
 
-## [6.04.08] - 2026-11-11
+## [6.04.08] - 2026-11-11 (from main)
 
 Workshop templates no longer reserve Lambda concurrency, so a Workshop Studio event's VocApiStack completes.
 
