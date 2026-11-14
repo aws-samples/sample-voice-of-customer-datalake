@@ -142,9 +142,10 @@ class ProcessDeps:
     http_get: Callable[..., requests.Response] = requests.get
     #: The logo-candidate download (None = ``shared.http_utils.fetch_public_url``, the SSRF-guarded fetch).
     logo_fetch: Callable[..., requests.Response] | None = None
-    #: Starts the browser render of a repository's SVG logo (``shared.design_logo_render``) with the event
-    #: it is given → whether it started. None = no browser in this deployment: the SVG is not read and the
-    #: guidelines get the "upload a PNG export" note.
+    #: Starts the browser render of a repository's SVG logo, or its raster logo over 1 MB
+    #: (``shared.design_logo_render``), with the event it is given → whether it started. None = no browser in this
+    #: deployment: the SVG is not read and the guidelines get the "upload a PNG export" note; a raster logo is
+    #: previewed as before (≤ 2 MB).
     start_logo_render: Callable[[dict], bool] | None = None
 
 
@@ -618,36 +619,49 @@ def process_reference(table: Any, item: dict, deps: ProcessDeps) -> dict:
     Returns the attributes written. Fetch and model failures become
     ``status='error'``; only a failure to WRITE the outcome propagates. ``fetched_at`` is the
     time the read FINISHED (ready or error). A logo candidate is downloaded as a preview
-    (``shared.design_logo.store_preview``) when there is a bucket. A GitHub repository's SVG logo is
-    handed to the browser AFTER the ready outcome is written (``_start_svg_logo_render``).
+    (``shared.design_logo.store_preview``) when there is a bucket. A GitHub repository's SVG logo, or its
+    raster logo over the 1 MB company-logo cap, is handed to the browser AFTER the ready outcome is written
+    (``_start_logo_render``).
     """
     ref_id = str(item.get('id'))
-    svg_logo = None
+    handoff: design_logo_render.SvgLogo | design_logo_render.RasterLogo | None = None
     try:
         extraction = extract(deps, item)
-        design = design_logo.store_preview(extraction.design, ref_id, deps.s3, deps.bucket, deps.logo_fetch)
+        design, raster = _with_preview(extraction.design, item, ref_id, deps)
         outcome = ready_outcome(extraction.summary, design, now_iso())
-        svg_logo = extraction.svg_logo
+        handoff = extraction.svg_logo or raster
     except ReferenceFetchError as exc:
         outcome = error_outcome(str(exc), now_iso())
     except Exception as exc:  # noqa: BLE001 - every failure is recorded, never a 500
         logger.warning(f'Design reference processing failed: {type(exc).__name__}')
         outcome = error_outcome('The reference could not be processed; try Refresh again later', now_iso())
     record_outcome(table, ref_id, outcome, str(outcome['fetched_at']))
-    if svg_logo is not None:
-        outcome = _start_svg_logo_render(table, ref_id, outcome, svg_logo, deps)
+    if handoff is not None:
+        outcome = _start_logo_render(table, ref_id, outcome, handoff, deps)
     return outcome
 
 
-def _start_svg_logo_render(table: Any, ref_id: str, outcome: dict, svg_logo: design_logo_render.SvgLogo,
-                           deps: ProcessDeps) -> dict:
-    """Ask the browser to draw the SVG logo; when that cannot start, record the "upload a PNG" note instead."""
+def _with_preview(design: dict | None, item: dict, ref_id: str,
+                  deps: ProcessDeps) -> tuple[dict | None, design_logo_render.RasterLogo | None]:
+    """``design`` with its logo preview stored, plus a GitHub raw raster logo over the 1 MB cap to hand to the
+    browser (only when there is one to hand to: ``design_logo_render.github_raster_preview``)."""
+    if item.get('kind') != 'github' or deps.start_logo_render is None:
+        return design_logo.store_preview(design, ref_id, deps.s3, deps.bucket, deps.logo_fetch), None
+    design, raster = design_logo_render.github_raster_preview(design, ref_id, deps.s3, deps.bucket, deps.logo_fetch)
+    return design, raster if raster and raster.source_url.startswith(f'{GITHUB_RAW}/') else None
+
+
+def _start_logo_render(table: Any, ref_id: str, outcome: dict,
+                       logo: design_logo_render.SvgLogo | design_logo_render.RasterLogo, deps: ProcessDeps) -> dict:
+    """Ask the browser to draw the logo; when that cannot start, record the "upload a PNG" note instead."""
     fetched_at = str(outcome['fetched_at'])
     start = deps.start_logo_render
-    if start is not None and start(design_logo_render.render_event(ref_id, svg_logo, fetched_at)):
+    if start is not None and start(design_logo_render.render_event(ref_id, logo, fetched_at)):
         return outcome
     design = dict(outcome['extracted_design'])
-    design['guidelines_md'] = design_logo_render.with_note(design.get('guidelines_md'), svg_logo_note(svg_logo.path))
+    note = (svg_logo_note(logo.path) if isinstance(logo, design_logo_render.SvgLogo)
+            else design_logo_render.render_failed_note(logo))
+    design['guidelines_md'] = design_logo_render.with_note(design.get('guidelines_md'), note)
     noted = {**outcome, 'extracted_design': design}
     record_outcome(table, ref_id, noted, fetched_at)
     return noted
