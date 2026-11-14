@@ -190,8 +190,9 @@ def _invitation_metadata(event: dict) -> dict:
         return {}
     parts = (claims.get('given_name'), claims.get('family_name'))
     full = ' '.join(p.strip() for p in parts if isinstance(p, str) and p.strip())
-    name = claims.get('name') if isinstance(claims.get('name'), str) else ''
-    inviter = (name.strip() or full)[:_MAX_INVITER_CHARS]
+    raw_name = claims.get('name')
+    name = raw_name.strip() if isinstance(raw_name, str) else ''
+    inviter = (name or full)[:_MAX_INVITER_CHARS]
     return {'ClientMetadata': {'invited_by': inviter}} if inviter else {}
 
 

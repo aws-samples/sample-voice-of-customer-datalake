@@ -13,7 +13,7 @@ def aggregates(monkeypatch):
     monkeypatch.setenv('AGGREGATES_TABLE', 'aggregates')
     monkeypatch.setenv('SIGN_IN_URL', 'https://voc.example.com/')
     monkeypatch.delenv('WORKSHOP', raising=False)
-    monkeypatch.delenv('TEMP_PASSWORD_DAYS', raising=False)
+    monkeypatch.setenv('TEMP_PASSWORD_DAYS', '7')  # the stack always sets it (core-auth.ts)
     with mock_aws():
         table = create_pk_sk_table('aggregates')
         monkeypatch.setattr(user_messages, '_table', None)
