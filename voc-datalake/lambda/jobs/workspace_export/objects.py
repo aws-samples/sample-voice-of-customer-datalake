@@ -44,6 +44,7 @@ from dataclasses import dataclass, field
 from typing import Any, Final
 
 from jobs.workspace_export.zip_stream import BadEntryName, entry_name
+from shared.carried_values import count_of
 from shared.design_assets import SVG_TYPE
 from shared.ws_repo import WorkspaceScope, s3_prefix
 
@@ -130,6 +131,13 @@ def _listed_key(key: str) -> tuple[str, bool]:
     return shown[:MAX_LISTED_KEY], len(shown) > MAX_LISTED_KEY
 
 
+def _measure(value: object) -> float:
+    """One carried measurement (bytes or seconds): a number, never a bool; ValueError otherwise."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ValueError('rates is not a measurement')
+    return float(value)
+
+
 @dataclass
 class ObjectsState:
     """What the objects carry across hand-overs: the last key handled, the bytes copied, the objects not included,
@@ -143,14 +151,18 @@ class ObjectsState:
 
     @classmethod
     def from_json(cls, value: object) -> ObjectsState:
+        """The carried state (a fresh one for anything but a mapping); ValueError, and only ValueError, for a count
+        or a measured rate of the wrong type. A key that is not a string, or a skipped entry or rate list of another
+        shape, is left out as before."""
         if not isinstance(value, Mapping):
             return cls()
         after, skipped, rates = value.get('after'), value.get('skipped'), value.get('rates')
-        return cls(after=after if isinstance(after, str) else None, copied_bytes=int(value.get('copied_bytes') or 0),
+        return cls(after=after if isinstance(after, str) else None,
+                   copied_bytes=count_of(value.get('copied_bytes') or 0, 'copied_bytes'),
                    skipped=[dict(item) for item in skipped if isinstance(item, Mapping)]
                    if isinstance(skipped, list) else [],
-                   skipped_count=int(value.get('skipped_count') or 0),
-                   rates={str(kind): [float(measured[0]), float(measured[1])]
+                   skipped_count=count_of(value.get('skipped_count') or 0, 'skipped_count'),
+                   rates={str(kind): [_measure(measured[0]), _measure(measured[1])]
                           for kind, measured in rates.items() if isinstance(measured, list) and len(measured) == 2}
                    if isinstance(rates, Mapping) else {})
 

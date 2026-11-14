@@ -160,7 +160,10 @@ the MCP endpoint's 20, docs/deployment.md), no async retry. Permissions: feedbac
 `WS#{one id}#MEM#company`, `#MEMEVT#*` and `#MEMIMPORT`, and only with `dynamodb:Select` `COUNT` on
 `#MEMCURSOR` and on `gsi1-by-memory-status` for `WS#{one id}#MEMSTATUS#personal#*` (`memory.py`: the company memory
 exported, events per company memory id, no person's hash or chat session id in any row; personal memories and
-cursors are their owners' and only counted); workspaces Query on `WS#{one id}` and
+cursors are their owners' and only counted); voc-conversations (7.24.00) Query only, of `WS#{one id}#CONVERSANTS`
+projected to its key alone (`dynamodb:Attributes` `pk` and `sk`, `dynamodb:Select` `SPECIFIC_ATTRIBUTES`; the code asks for `sk`) and, only with
+`dynamodb:Select` `COUNT`, of `WS#{one id}#USER#*` (`conversations.py`: the members' conversations are theirs, never
+exported; one `Limit` 1 count per owner, so the manifest gives only how many people have any); workspaces Query on `WS#{one id}` and
 `AUDIT#WS#{one id}` only; raw bucket `s3:PutObject`, `PutObjectTagging`, `GetObject`, `AbortMultipartUpload`,
 `ListMultipartUploadParts` under `ws/{one id}/exports/*` only, and `s3:DeleteObject` on its own work objects
 (`ws/{one id}/exports/*/work/*`) only; read-only on the workspace's own objects: `s3:ListBucket` with `s3:prefix`

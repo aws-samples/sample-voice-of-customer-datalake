@@ -16,6 +16,7 @@ from shared import category_access
 from shared.agentic_search import run_agentic_web_search
 from shared.api import api_handler
 from shared.aws import get_s3_client
+from shared.carried_values import is_count
 from shared.converse import BedrockThrottlingError, converse
 from shared.derivation import (
     DERIVATION_FIELD,
@@ -285,11 +286,6 @@ _USAGE_COUNT_KEYS = ('feedback_count', 'feedback_items_used', 'fetch_limit')
 _USAGE_FLAG_KEYS = ('context_truncated', 'fetch_limit_reached')
 
 
-def _is_count(value: object) -> bool:
-    """A non-negative int that is not a bool (``True`` is an ``int`` in Python)."""
-    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
-
-
 def _received_feedback_usage(value: object) -> dict:
     """``_feedback_usage``'s output as it arrives at step_save, or ``{}``.
 
@@ -299,7 +295,7 @@ def _received_feedback_usage(value: object) -> dict:
     """
     if not isinstance(value, dict):
         return {}
-    counts_ok = all(_is_count(value.get(key)) for key in _USAGE_COUNT_KEYS)
+    counts_ok = all(is_count(value.get(key)) for key in _USAGE_COUNT_KEYS)
     flags_ok = all(isinstance(value.get(key), bool) for key in _USAGE_FLAG_KEYS)
     if not (counts_ok and flags_ok):
         return {}

@@ -16,7 +16,10 @@ workspace_routing.py ``workspace_payload``). Each invocation:
    ``objects/{key without ws/{ws}/}`` (jobs/workspace_export/objects.py: read through shared/ws_repo.py's read-only
    ``WorkspaceObjects``, whole, DEFLATE or STORE; one too large or badly named is listed in the manifest instead),
    into one streaming ZIP64 (zip_stream.py) cut into 64 MB parts of one S3 multipart upload,
-   ``ws/{ws}/exports/{export id}/workspace-export.zip`` (shared/ws_repo.py ``ExportObjects``);
+   ``ws/{ws}/exports/{export id}/workspace-export.zip`` (shared/ws_repo.py ``ExportObjects``); then counts what it
+   leaves out, each count a phase of its own before the completion: the personal memories and extraction cursors
+   (``memory_counts``, memory.py) and how many people keep conversations (``conversation_counts``,
+   conversations.py), ``Select COUNT`` only;
 4. with less than ``TIME_RESERVE_MS`` left, or before an object it could not copy in the time left, closes the open
    file (no entry crosses an invocation), keeps the zip's
    unsent tail (under 5 MB; a larger one goes up as a part) in ``work/tail-{gen}`` and this invocation's
@@ -36,7 +39,12 @@ it finished") an hour later, when its lock is free again. Before completing,
 an invocation with too little time left hands over once more, every entity written, and the next one completes. A
 workspace's credentials are never read (no SSM or Secrets Manager grant).
 
-Env: ``FEEDBACK_TABLE``, ``AGGREGATES_TABLE``, ``MEMORY_TABLE``, ``WORKSPACES_TABLE``, ``RAW_DATA_BUCKET``.
+An event whose run state cannot be read (a phase no release names, a value of the wrong type) fails the job the same
+way when the row waits for the generation it names (no claim can be made from it): the upload it names aborted, the
+lock released, the starter notified. One for another generation, or with no readable generation, changes nothing.
+
+Env: ``FEEDBACK_TABLE``, ``AGGREGATES_TABLE``, ``MEMORY_TABLE``, ``CONVERSATIONS_TABLE``, ``WORKSPACES_TABLE``,
+``RAW_DATA_BUCKET``.
 """
 from __future__ import annotations
 
@@ -57,6 +65,7 @@ from botocore.exceptions import (
     ResponseStreamingError,
 )
 
+from jobs.workspace_export.conversations import ConversationCount, carried_state, fresh_state
 from jobs.workspace_export.entities import ENTITIES, FILE_CAP, ExportRefused, Source, encode_row, manifest
 from jobs.workspace_export.memory import COUNTED
 from jobs.workspace_export.objects import (
@@ -75,6 +84,7 @@ from jobs.workspace_export.objects import ENTITY as OBJECTS
 from jobs.workspace_export.zip_stream import PartSink, ZipEntry, ZipState, ZipWriter
 from shared import export_jobs
 from shared.aws import get_dynamodb_resource, get_s3_client, invoke_lambda_async
+from shared.carried_values import count_of, flag_or, is_count, mapping_or_empty
 from shared.erasure_jobs import refresh_lock, release_lock, release_quietly
 from shared.export_jobs import EXPORT_JOB_TYPE, WORKSPACE_DELETING
 from shared.ingest_tables import ingest_table
@@ -100,8 +110,9 @@ from shared.ws_repo import (
     s3_prefix,
 )
 
-FEEDBACK_TABLE, AGGREGATES_TABLE, MEMORY_TABLE, RAW_DATA_BUCKET = (
-    os.environ.get(name, '') for name in ('FEEDBACK_TABLE', 'AGGREGATES_TABLE', 'MEMORY_TABLE', 'RAW_DATA_BUCKET'))
+FEEDBACK_TABLE, AGGREGATES_TABLE, MEMORY_TABLE, CONVERSATIONS_TABLE, RAW_DATA_BUCKET = (
+    os.environ.get(name, '') for name in ('FEEDBACK_TABLE', 'AGGREGATES_TABLE', 'MEMORY_TABLE', 'CONVERSATIONS_TABLE',
+                                          'RAW_DATA_BUCKET'))
 
 #: Hand over to a fresh invocation when less than this remains (the 15-minute timeout's reserve: a part of up to
 #: 64 MB, the work objects, the progress write and the invoke all fit in it).
@@ -134,9 +145,17 @@ STREAM_RESUMES: Final = 2
 _STREAM_ERRORS: Final = (ResponseStreamingError, ReadTimeoutError, ConnectionClosedError, IncompleteReadError)
 #: The counts of the memory left out of the export (memory.py), after the objects and before the completion.
 MEMORY_COUNTS: Final = 'memory_counts'
+#: The count of the members' conversations (conversations.py, 7.24.00), never exported: after the memory counts.
+CONVERSATION_COUNTS: Final = 'conversation_counts'
 #: Every phase of a run, in order, each named: a checkpoint (and the job row's ``phase``) names the one it is in, so
 #: a phase added in a later release never shifts a running export onto another.
-PHASES: Final = (*ENTITIES, OBJECTS, MEMORY_COUNTS, COMPLETING)
+PHASES: Final = (*ENTITIES, OBJECTS, MEMORY_COUNTS, CONVERSATION_COUNTS, COMPLETING)
+#: What reading a carried run state raises when it is malformed (a phase no release names, a value of the wrong type
+#: or shape).
+#: ValueError only: every reader of a carried state raises it for bad input (shared/carried_values.py, ZipState,
+#: ObjectsState), so a TypeError (a coding bug) surfaces as a crash instead of quietly failing a healthy export.
+_MALFORMED: Final = (ValueError,)
+MALFORMED_RUN: Final = 'Export failed (its hand-over state could not be read)'
 #: A checkpoint written before phases were named held an index into the 4b release's phases.
 _PHASES_4B: Final = ('feedback', 'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'workspace',
                      'members', 'audit', 'plugin_config_history', OBJECTS, COMPLETING)
@@ -149,6 +168,23 @@ def phase_of(value: object) -> str:
     if isinstance(value, str) and value in PHASES:
         return value
     raise ValueError('not an export phase')
+
+
+def _list(value: object, name: str) -> list[Any]:
+    """``value``, a list (empty when absent); ValueError for anything else."""
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError(f'{name} is not a list')
+    return value
+
+
+def _names(value: object) -> list[str]:
+    """One entity's file names: a list of strings; ValueError for anything else."""
+    names = _list(value, 'files')
+    if not all(isinstance(name, str) and name for name in names):
+        raise ValueError('files is not a list of names')
+    return list(names)
 
 
 def next_phase(phase: str) -> str:
@@ -175,31 +211,58 @@ class RunState:
     #: Whether this run writes the memory entities: False for one resumed from a checkpoint of the 4b order already
     #: past them (its manifest then says the memory is not in it).
     memory_exported: bool = True
+    #: The count of the conversations left out, as far as it went (conversations.py ``ConversationCount.count``).
+    conversation_count: dict[str, Any] = field(default_factory=fresh_state)
+    #: Whether this run counts the conversations: False for one resumed from a checkpoint of an earlier release
+    #: already at the completion, past the count (its manifest then says they were not counted).
+    conversations_counted: bool = True
 
     @classmethod
-    def from_event(cls, event: Mapping[str, Any]) -> RunState:
+    def from_event(cls, event: Mapping[str, Any], scope: WorkspaceScope) -> RunState:
+        """The carried state (a fresh one for a start); ValueError, and only ValueError, for a part of the wrong shape,
+        which
+        ``handle_event`` turns into a failed job (``_fail_malformed``). Checked here: the generation (which a carried
+        state must name), the part number, the upload id, the phase, the flags, the entity cursor (a mapping or
+        none), the counts, the files, the central-directory generations and the tail's, the top level of the zip,
+        objects and memory-count states (a mapping or none; inside them ``ZipState`` checks its offset and entries,
+        ``ObjectsState`` its counts and measured rates, and a memory count's own fields are read as before), and the
+        conversations' count whole (conversations.py ``carried_state``)."""
         carried = event.get('run')
         if not isinstance(carried, Mapping):
             return cls()
-        cursor = carried.get('cursor')
-        tail = carried.get('tail_generation')
+        if 'generation' not in carried:
+            raise ValueError('a carried run names no generation')
         raw_phase = carried.get('phase', PHASES[0])
-        exported = carried.get('memory_exported')
-        if not isinstance(exported, bool):
-            exported = not (isinstance(raw_phase, int) and phase_of(raw_phase) in (OBJECTS, COMPLETING))
+        phase = phase_of(raw_phase)
+        # Each flag a bool, or absent in a checkpoint of an earlier release (then derived from its phase).
+        exported = flag_or(carried.get('memory_exported'), 'memory_exported',
+                           default=not (isinstance(raw_phase, int) and phase in (OBJECTS, COMPLETING)))
+        # A checkpoint from before 7.24.00 carries no such flag: one already at the completion is past the count.
+        counted = flag_or(carried.get('conversations_counted'), 'conversations_counted', default=phase != COMPLETING)
+        upload_id = carried.get('upload_id', '')
+        if not isinstance(upload_id, str):
+            raise ValueError('upload_id is not an upload id')
+        part = count_of(carried.get('part', 1), 'part')
+        if part < 1:
+            raise ValueError('part is not a part number')
+        tail = carried.get('tail_generation')
+        cursor = carried.get('cursor')
         return cls(
-            memory_exported=exported,
-            generation=int(carried.get('generation', 0)), upload_id=str(carried.get('upload_id') or ''),
-            part=int(carried.get('part', 1)), zip_state=ZipState.from_json(carried.get('zip')),
-            phase=phase_of(raw_phase),
-            cursor=dict(cursor) if isinstance(cursor, Mapping) else None,
-            counts={str(name): int(count) for name, count in (carried.get('counts') or {}).items()},
-            files={str(name): [str(file) for file in names] for name, names in (carried.get('files') or {}).items()},
-            cd_generations=[int(generation) for generation in carried.get('cd_generations') or []],
-            tail_generation=int(tail) if isinstance(tail, int) else None,
-            objects=ObjectsState.from_json(carried.get('objects')),
-            memory_counts={str(what): dict(state) for what, state in (carried.get('memory_counts') or {}).items()
-                           if isinstance(state, Mapping)})
+            memory_exported=exported, conversations_counted=counted,
+            conversation_count=carried_state(carried.get('conversation_count'), scope),
+            generation=count_of(carried['generation'], 'generation'), upload_id=upload_id, part=part,
+            zip_state=ZipState.from_json(dict(mapping_or_empty(carried.get('zip'), 'zip')) or None),
+            phase=phase,
+            cursor=dict(mapping_or_empty(cursor, 'cursor')) if cursor is not None else None,
+            counts={str(name): count_of(count, 'counts')
+                    for name, count in mapping_or_empty(carried.get('counts'), 'counts').items()},
+            files={str(name): _names(names) for name, names in mapping_or_empty(carried.get('files'), 'files').items()},
+            cd_generations=[count_of(generation, 'cd_generations')
+                            for generation in _list(carried.get('cd_generations'), 'cd_generations')],
+            tail_generation=None if tail is None else count_of(tail, 'tail_generation'),
+            objects=ObjectsState.from_json(mapping_or_empty(carried.get('objects'), 'objects')),
+            memory_counts={str(what): dict(mapping_or_empty(state, 'memory_counts'))
+                           for what, state in mapping_or_empty(carried.get('memory_counts'), 'memory_counts').items()})
 
     def to_json(self) -> dict[str, Any]:
         return {'generation': self.generation, 'upload_id': self.upload_id, 'part': self.part,
@@ -208,7 +271,9 @@ class RunState:
                 'cd_generations': list(self.cd_generations), 'tail_generation': self.tail_generation,
                 'objects': self.objects.to_json(),
                 'memory_counts': {what: dict(state) for what, state in self.memory_counts.items()},
-                'memory_exported': self.memory_exported}
+                'memory_exported': self.memory_exported,
+                'conversation_count': dict(self.conversation_count),
+                'conversations_counted': self.conversations_counted}
 
 
 class _HandOver(Exception):
@@ -239,6 +304,8 @@ class ExportRun:
         self.workspaces = get_workspaces_table()
         self.source = Source(scope, ingest_table(scope, resource, FEEDBACK_TABLE), self.jobs, self.workspaces,
                              ingest_table(scope, resource, MEMORY_TABLE))
+        # voc-conversations through the workspace's view (shared/ingest_tables.py: ``ws_table`` in a workspace).
+        self.conversations = ConversationCount(scope, ingest_table(scope, resource, CONVERSATIONS_TABLE))
         s3 = get_s3_client()
         self.objects = ExportObjects(scope, s3, RAW_DATA_BUCKET)
         self.workspace_objects = WorkspaceObjects(scope, s3, RAW_DATA_BUCKET)
@@ -291,7 +358,7 @@ class ExportRun:
 
     def _write_entities(self, writer: ZipWriter) -> None:
         """Every phase from the run's on, up to the completion: the entities, the workspace's objects, the counts of
-        the memory left out; ``_HandOver`` when the time runs low."""
+        the memory and the conversations left out; ``_HandOver`` when the time runs low."""
         while self.run.phase in ENTITIES:
             entity = self.run.phase
             cursor = self.run.cursor or self.source.first_cursor(entity, self.created.date())
@@ -305,6 +372,10 @@ class ExportRun:
         if self.run.phase == MEMORY_COUNTS:
             self._count_memory_left_out()
             self.run.phase = next_phase(MEMORY_COUNTS)
+        if self.run.phase == CONVERSATION_COUNTS:
+            if not self.conversations.count(self.run.conversation_count, self._time_left):
+                raise _HandOver
+            self.run.phase = next_phase(CONVERSATION_COUNTS)
 
     # ── The workspace's objects (objects.py) ────────────────────────────────────────────────────────────────
 
@@ -487,7 +558,8 @@ class ExportRun:
             created_at=self.created.isoformat(), completed_at=completed.isoformat(), files=self.run.files,
             counts=self.run.counts, daily_total=daily_total,
             objects=manifest_section(self.run.counts.get(OBJECTS, 0), self.run.objects),
-            memory_left_out=self._memory_left_out(), memory_exported=self.run.memory_exported))
+            memory_left_out=self._memory_left_out(), memory_exported=self.run.memory_exported,
+            conversations=self._conversations_left_out()))
         self._close(entry)
         exported = self.run.counts.get('feedback', 0)
         if exported != daily_total:
@@ -518,7 +590,8 @@ class ExportRun:
         """Count the personal memories and the extraction cursors (never exported: memory.py), each from where the
         run's checkpoint left it. Each invocation reads at least one page of a count; after a page with more to
         count, ``_HandOver`` once the time has reached ``TIME_RESERVE_MS``, and the next invocation goes on from the
-        checkpoint. So the counts eat into the completion's reserve by one page of each (two Queries) at most."""
+        checkpoint. So the counts eat into the completion's reserve by one page of each at most (two Queries here, and
+        one for the conversations' count, conversations.py, which keeps the same contract)."""
         for what in COUNTED:
             state = self.run.memory_counts.setdefault(what, {})
             if not self.source.memory.count(what, state, self._time_left):
@@ -528,6 +601,14 @@ class ExportRun:
         """``{what: (count, complete)}`` for the manifest (none for an export checkpointed before the counts)."""
         return {what: (int(state.get('total') or 0), bool(state.get('done')))
                 for what, state in self.run.memory_counts.items()}
+
+    def _conversations_left_out(self) -> int | None:
+        """How many people have any conversation, for the manifest (the phase ends only once the count is done);
+        None for a run that never counted them (resumed from an earlier release's checkpoint already at the
+        completion)."""
+        if not self.run.conversations_counted:
+            return None
+        return self.run.conversation_count['people']
 
     def _workspace_names(self) -> dict[str, Any]:
         page = control_query(self.scope, self.workspaces, 'meta', sort_condition='#sk = :meta',
@@ -587,8 +668,21 @@ class ExportRun:
             self._delete_work_objects(None)
         return outcome
 
+    def fail_awaited(self, generation: int, error: str) -> dict[str, Any]:
+        """End the job ``failed`` for an event no generation can be claimed from (``_fail_malformed``), only while
+        the row still waits for ``generation`` (shared/export_jobs.py ``fail_awaited``: the condition is in the
+        write). Written first, so a claim that lands meanwhile keeps its run, its upload and its lock; then the
+        upload aborted, the lock released and the starter notified, as any failure does."""
+        if not export_jobs.fail_awaited(self.jobs, self.export_id, generation, {'error': error}):
+            return {'status': 'not_claimed', 'export_id': self.export_id}
+        self._abort()
+        return self._after_finish(export_jobs.EXPORT_FAILED, written=True)
+
     def _finish(self, status: str, fields: Mapping[str, Any]) -> dict[str, Any]:
         written = export_jobs.finish_job(self.jobs, self.export_id, status, fields)
+        return self._after_finish(status, written=written)
+
+    def _after_finish(self, status: str, *, written: bool) -> dict[str, Any]:
         self.finished = written
         # The job already reads finished; a lock that cannot be released goes stale after an hour anyway.
         release_quietly(lambda: release_lock(self.jobs, export_job_pk(self.scope), self.export_id, datetime.now(UTC)),
@@ -605,8 +699,11 @@ def handle_event(event: dict[str, Any], context: Any) -> dict[str, Any]:
     if refused or scope is None or not export_jobs.is_export_id(export_id):
         logger.error('Export event without a valid workspace and export id')
         return {'status': 'ignored'}
-    run = RunState.from_event(event)
     jobs = ingest_table(scope, get_dynamodb_resource(), AGGREGATES_TABLE)
+    try:
+        run = RunState.from_event(event, scope)
+    except _MALFORMED as error:
+        return _fail_malformed(scope, export_id, jobs, event, context, error)
     row = export_jobs.claim_generation(jobs, export_id, run.generation, datetime.now(UTC))
     if row is None:
         logger.info('Export generation not claimed (missing, finished, a duplicate or late)',
@@ -616,6 +713,32 @@ def handle_event(event: dict[str, Any], context: Any) -> dict[str, Any]:
     if row.get(WORKSPACE_FIELD) != scope.ws:
         return export.fail('The job row names another workspace')
     return export.execute()
+
+
+def _fail_malformed(scope: WorkspaceScope, export_id: str, jobs: WorkspaceTable, event: Mapping[str, Any],
+                    context: Any, error: Exception) -> dict[str, Any]:
+    """An event whose run state cannot be read: no generation can be claimed from it, and left alone its row would
+    wait an hour for its stale lock. When the row waits for the generation the event names
+    (shared/export_jobs.py ``awaits_generation``, beside the claim's own conditions, read first), the job ends
+    ``failed`` by a write that carries the same condition (``ExportRun.fail_awaited``), so a claim that lands between
+    the read and the write keeps its run; then the upload the state names is aborted when it names one, the lock
+    released and the starter notified. Any other event changes nothing."""
+    logger.error('Workspace export run state could not be read',
+                 extra={'export_id': export_id, 'error_type': type(error).__name__})
+    carried = event.get('run')
+    carried = carried if isinstance(carried, Mapping) else {}
+    generation = carried.get('generation')
+    found = jobs.get_item(export_jobs.job_key(scope, export_id), ConsistentRead=True).get('Item')
+    # ``awaits_generation`` checks the generation is a count too; this ``is_count`` is here for the type checker, so
+    # ``generation`` reaches ``fail_awaited`` as an int.
+    if not isinstance(found, Mapping) or not is_count(generation) \
+            or not export_jobs.awaits_generation(found, generation):
+        # Not the generation the row waits for (a late or repeated event, another invocation's row now, or no
+        # generation named): nothing is written, as for any event the claim refuses.
+        return {'status': 'not_claimed', 'export_id': export_id}
+    upload_id = carried.get('upload_id')
+    run = RunState(upload_id=upload_id if isinstance(upload_id, str) else '')
+    return ExportRun(scope, export_id, dict(found), run, event, context).fail_awaited(generation, MALFORMED_RUN)
 
 
 # Build the AWS clients during INIT, not on the first request (shared/warm_init.py).

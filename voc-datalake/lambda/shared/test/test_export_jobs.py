@@ -342,3 +342,21 @@ def test_an_erasure_holds_the_lock_whoever_held_it_and_frees_only_its_own(tables
     # A released lock taken again by a later pass (a hand-over) is held again.
     export_jobs.hold_for_erasure(view, 'erasure-run2', NOW)
     assert 'released_at' not in _lock(aggregates)
+
+
+@pytest.mark.parametrize(('row', 'generation', 'awaits'), [
+    ({'status': 'queued'}, 0, True),
+    ({'status': 'queued', 'generation': 0}, 0, False),
+    ({'status': 'running', 'generation': 0}, 1, True),
+    ({'status': 'running', 'generation': 1}, 1, False),
+    ({'status': 'running', 'generation': 0}, 2, False),
+    ({'status': 'completed', 'generation': 0}, 1, False),
+    ({'status': 'queued'}, None, False),
+    ({'status': 'queued'}, True, False),
+    ({'status': 'running', 'generation': 0}, '1', False),
+    ({'status': 'queued'}, -1, False),
+])
+def test_awaits_generation_matches_the_claims_own_conditions(row, generation, awaits):
+    """The generation an unclaimable event names fails a job only when the claim would have taken it: the start of
+    a queued job, or the next generation of a running one."""
+    assert export_jobs.awaits_generation(row, generation) is awaits

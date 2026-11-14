@@ -34,7 +34,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any, Final
 
-from jobs.workspace_export.pages import TABLE_KEY, items, key, last_key, start
+from jobs.workspace_export.pages import TABLE_KEY, count_page, items, key, last_key, start
 from shared.indexes import MEMORY_BY_STATUS_INDEX
 from shared.memory_policy import SCOPE_PERSONAL, STATUSES
 from shared.ws_repo import (
@@ -178,13 +178,13 @@ class MemorySource:
         partitions = self._counted_partitions(what)
         state.setdefault('total', 0)
         while int(state.get('part') or 0) < len(partitions) and not state.get('done'):
-            attribute, partition, index = partitions[int(state.get('part') or 0)]
-            page = self._memory.query(attribute, partition, Select='COUNT', **index, **start(state.get('cursor')))
-            state['total'] = int(state['total']) + int(page.get('Count') or 0)
-            state['cursor'] = last_key(page)
+            part = int(state.get('part') or 0)
+            attribute, partition, index = partitions[part]
+            going = count_page(self._memory, attribute, partition, state, time_left,
+                               more_after=part + 1 < len(partitions), **index)
             if state['cursor'] is None:
-                state['part'] = int(state.get('part') or 0) + 1
-            if int(state.get('part') or 0) < len(partitions) and not time_left():
+                state['part'] = part + 1
+            if not going:
                 return False
         state['done'] = True
         return True

@@ -13,6 +13,15 @@
  *   - voc-memory (slice 4c): Query only, of a workspace's `MEM#company`, `MEMEVT#*` and `MEMIMPORT` partitions on
  *     the table; of its `MEMCURSOR` partition on the table and its `MEMSTATUS#personal#*` partitions on
  *     `gsi1-by-memory-status`, both only with `dynamodb:Select` `COUNT` (no row can be read there); no write;
+ *   - voc-conversations (7.24.00): Query only, of a workspace's `CONVERSANTS` partition projected to its key alone
+ *     (`dynamodb:Attributes` `pk` and `sk`, `dynamodb:Select` `SPECIFIC_ATTRIBUTES`; the code asks for `sk`), and
+ *     of its `USER#*` partitions only with `dynamodb:Select` `COUNT` (the code asks each owner's partition once,
+ *     `Limit` 1: whether they have any conversation); no write. IAM cannot hold a count to the code's request: a
+ *     `COUNT` Query with no limit would count a person's conversations, and one with a `FilterExpression`, a
+ *     narrower `begins_with` or `BETWEEN` on `sk`, or an `ExclusiveStartKey` of its choosing would say whether rows
+ *     the role cannot read match a guess (an oracle that could probe a person's `CONV#` ids one prefix at a time), as
+ *     the memory counts could. Only the code holds it: one fixed request, `begins_with(sk, 'CONV#')`, `Limit` 1, no
+ *     filter, no start key (lambda/jobs/workspace_export/conversations.py, pinned by its tests);
  *   - the raw data bucket, under `ws/{one id}/exports/*` only: PutObject, PutObjectTagging, GetObject,
  *     AbortMultipartUpload and ListMultipartUploadParts, and DeleteObject on `…/exports/*\/work/*` only (the work
  *     objects of an export that may not go on);
@@ -85,6 +94,20 @@ const countOnly = (partition: string) => ({
   'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [partition] },
   StringEquals: { 'dynamodb:Select': 'COUNT' },
 });
+/**
+ * The workspace's list of conversation owners in voc-conversations (lambda/shared/ws_repo.py `conversants_pk`), read
+ * for its `sk` (each owner's subject) alone, and each owner's partition there, counted only (7.24.00): a person's
+ * conversations are theirs, never in the export.
+ */
+export const CONVERSANTS_PARTITION = `WS#${WORKSPACE_ID_PATTERN}#CONVERSANTS`;
+export const CONVERSATION_OWNER_PARTITIONS = `WS#${WORKSPACE_ID_PATTERN}#USER#*`;
+/**
+ * What the job may read of the owner list (`dynamodb:Attributes`, which must be sent): the row's key only, never its
+ * `first_at`. The code projects `sk` alone; `pk` is listed too, as this repo's other attribute-limited grants list
+ * the table's keys, so a request that also names the key it queries is not refused; it adds nothing to what the role
+ * can learn, since it is the partition `dynamodb:LeadingKeys` already names.
+ */
+export const CONVERSANTS_ATTRIBUTES = ['pk', 'sk'];
 /** A workspace's two control-plane partitions in voc-workspaces (lambda/shared/ws_repo.py `control_query`). */
 export const CONTROL_PARTITIONS = [`WS#${WORKSPACE_ID_PATTERN}`, `AUDIT#WS#${WORKSPACE_ID_PATTERN}`];
 /** What the job does to the objects under a workspace's exports. */
@@ -99,6 +122,7 @@ export interface WorkspaceExportWorkerProps {
   aggregatesTable: dynamodb.ITable;
   workspacesTable: dynamodb.ITable;
   memoryTable: dynamodb.ITable;
+  conversationsTable: dynamodb.ITable;
   rawDataBucket: s3.IBucket;
 }
 
@@ -126,7 +150,9 @@ function exportCode(): lambda.Code {
 export function createWorkspaceExportWorker(scope: Construct, id: string,
   props: WorkspaceExportWorkerProps): lambda.Function {
   const worker = new Construct(scope, id);
-  const { uniqueName, kmsKey, feedbackTable, aggregatesTable, workspacesTable, memoryTable, rawDataBucket } = props;
+  const {
+    uniqueName, kmsKey, feedbackTable, aggregatesTable, workspacesTable, memoryTable, conversationsTable, rawDataBucket,
+  } = props;
   const functionName = uniqueName(WORKSPACE_EXPORT_FUNCTION_BASE_NAME);
   const role = workerRole(worker, 'ExportRole');
   role.addToPolicy(new iam.PolicyStatement({
@@ -168,6 +194,29 @@ export function createWorkspaceExportWorker(scope: Construct, id: string,
     actions: ['dynamodb:Query'],
     resources: [`${memoryTable.tableArn}/index/${MEMORY_BY_STATUS_INDEX}`],
     conditions: countOnly(MEMORY_PERSONAL_STATUS_PARTITIONS),
+  }));
+  // 7.24.00: the members' conversations, counted, never exported (lambda/jobs/workspace_export/conversations.py).
+  // The owner list is read for its key alone: `dynamodb:Attributes` must be sent (`Null` false), name only `pk` and
+  // `sk`, and the request must ask for those attributes only (`SPECIFIC_ATTRIBUTES`); each owner's partition only
+  // counted (the code asks once, `Limit` 1: has any). The COUNT statement cannot fix the limit, the key condition, a
+  // filter or a start key (no limit would count a person's conversations; a narrower `begins_with`, a `BETWEEN` or a
+  // filter could probe their `CONV#` ids): IAM cannot prevent that; only the code holds it.
+  role.addToPolicy(new iam.PolicyStatement({
+    sid: 'ListWorkspaceConversationOwners',
+    actions: ['dynamodb:Query'],
+    resources: [conversationsTable.tableArn],
+    conditions: {
+      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [CONVERSANTS_PARTITION] },
+      'ForAllValues:StringEquals': { 'dynamodb:Attributes': CONVERSANTS_ATTRIBUTES },
+      StringEquals: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+      Null: { 'dynamodb:Attributes': 'false' },
+    },
+  }));
+  role.addToPolicy(new iam.PolicyStatement({
+    sid: 'CountWorkspaceConversations',
+    actions: ['dynamodb:Query'],
+    resources: [conversationsTable.tableArn],
+    conditions: countOnly(CONVERSATION_OWNER_PARTITIONS),
   }));
   role.addToPolicy(new iam.PolicyStatement({
     sid: 'WriteWorkspaceExports',
@@ -219,6 +268,7 @@ export function createWorkspaceExportWorker(scope: Construct, id: string,
       AGGREGATES_TABLE: aggregatesTable.tableName,
       WORKSPACES_TABLE: workspacesTable.tableName,
       MEMORY_TABLE: memoryTable.tableName,
+      CONVERSATIONS_TABLE: conversationsTable.tableName,
       RAW_DATA_BUCKET: rawDataBucket.bucketName,
       POWERTOOLS_SERVICE_NAME: WORKSPACE_EXPORT_FUNCTION_BASE_NAME,
       LOG_LEVEL: 'INFO',

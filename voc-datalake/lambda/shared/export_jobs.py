@@ -41,6 +41,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from shared.audit_rows import put_new_audit_row
 from shared.aws import is_conditional_check_failure
+from shared.carried_values import is_count
 from shared.dynamo_values import plain
 from shared.erasure_jobs import WORKSPACE_LOCK_SK, acquire_lock, release_lock, release_quietly
 from shared.logging import logger
@@ -57,9 +58,11 @@ __all__ = [
     'ErasureHoldsExports',
     'ExportRunning',
     'LinkUnavailable',
+    'awaits_generation',
     'claim_generation',
     'expires_at',
     'export_status',
+    'fail_awaited',
     'finish_job',
     'hold_for_erasure',
     'is_export_id',
@@ -193,6 +196,36 @@ def claim_generation(view: WorkspaceTable, export_id: str, generation: int, now:
         raise
     attributes = response.get('Attributes')
     return dict(attributes) if isinstance(attributes, Mapping) else None
+
+
+def awaits_generation(row: Mapping[str, Any], generation: object) -> bool:
+    """Whether the job ``row`` (read consistently) waits for invocation ``generation``: ``claim_generation``'s
+    conditions without its freshness (a stale row may be ended too), for an event that cannot be claimed because its
+    run state cannot be read (jobs/workspace_export/handler.py ``_fail_malformed``): generation 0 of a queued job, or
+    the next one of a running job. False for anything that is not a generation. A read only: the write that ends the
+    job carries the same condition (``fail_awaited``), so a claim that lands between the two is never undone. A
+    forged event naming generation N also matches while generation N - 1 is still running (the row reads running
+    at N - 1 then too); that adds no exposure, since only the function can invoke itself and a well-formed forged
+    event could already claim N."""
+    if not is_count(generation):
+        return False
+    if generation == 0:
+        return row.get('status') == EXPORT_QUEUED and 'generation' not in row
+    return row.get('status') == EXPORT_RUNNING and row.get('generation') == generation - 1
+
+
+def fail_awaited(view: WorkspaceTable, export_id: str, generation: int, fields: Mapping[str, Any]) -> bool:
+    """End the job ``failed`` with ``fields`` only while it still waits for invocation ``generation``
+    (``awaits_generation``'s conditions, in the write itself: queued with no generation for 0, else running at the one
+    before); whether it was written. An invocation that claimed the generation meanwhile keeps its run."""
+    if generation == 0:
+        condition = 'attribute_exists(pk) AND #status = :queued AND attribute_not_exists(#generation)'
+        values: dict[str, Any] = {':queued': EXPORT_QUEUED}
+    else:
+        condition = 'attribute_exists(pk) AND #status = :running AND #generation = :awaited'
+        values = {':running': EXPORT_RUNNING, ':awaited': generation - 1}
+    return _conditional_update(view, export_id, {'status': EXPORT_FAILED, **fields}, condition,
+                               {'#status': 'status', '#generation': 'generation'}, values)
 
 
 def _sets(fields: Mapping[str, Any]) -> tuple[str, dict[str, str], dict[str, Any]]:

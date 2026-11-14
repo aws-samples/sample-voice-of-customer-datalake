@@ -12,7 +12,7 @@ import { synthProcessingTemplate } from '../test-support/processing-stack-fixtur
 import { expectSelfInvokeOnly, findWorkerFunction } from '../test-support/worker-function';
 import { byCodeUnit } from '../utils/compare';
 import {
-  CONTROL_PARTITIONS, EXPORT_JOB_PARTITION, MEMORY_TABLE_PARTITIONS, WORKSPACE_DATE_PARTITIONS,
+  CONTROL_PARTITIONS, CONVERSANTS_ATTRIBUTES, CONVERSANTS_PARTITION, CONVERSATION_OWNER_PARTITIONS, EXPORT_JOB_PARTITION, MEMORY_TABLE_PARTITIONS, WORKSPACE_DATE_PARTITIONS,
   WORKSPACE_EXPORT_MAX_EVENT_AGE_MINUTES,
   WORKSPACE_EXPORT_RESERVED_CONCURRENCY,
 } from './workspace-export-worker';
@@ -74,7 +74,7 @@ describe('the voc-workspace-export job', () => {
   it('is told its tables and bucket, and no secret, parameter or key', () => {
     const variables = worker().Environment.Variables;
     expect(Object.keys(variables)).toStrictEqual(expect.arrayContaining([
-      'FEEDBACK_TABLE', 'AGGREGATES_TABLE', 'WORKSPACES_TABLE', 'RAW_DATA_BUCKET']));
+      'FEEDBACK_TABLE', 'AGGREGATES_TABLE', 'WORKSPACES_TABLE', 'MEMORY_TABLE', 'CONVERSATIONS_TABLE', 'RAW_DATA_BUCKET']));
     for (const name of ['SECRETS_ARN', 'WORKSPACE_PARAMETER_PREFIX', 'KMS_KEY_ARN']) expect(variables).not.toHaveProperty(name);
   });
 
@@ -112,6 +112,29 @@ describe('the voc-workspace-export job', () => {
       { actions: ['dynamodb:Query'], index: true, condition: countOnly(`WS#${ONE_WORKSPACE}#MEMSTATUS#personal#*`) },
     ]);
     expect(worker().Environment.Variables).toHaveProperty('MEMORY_TABLE');
+  });
+
+  it('only Queries voc-conversations: the owner list for its sk alone, each owner\'s partition counted (7.24.00)', () => {
+    expect([CONVERSANTS_PARTITION, CONVERSATION_OWNER_PARTITIONS, CONVERSANTS_ATTRIBUTES]).toStrictEqual([
+      `WS#${ONE_WORKSPACE}#CONVERSANTS`, `WS#${ONE_WORKSPACE}#USER#*`, ['pk', 'sk']]);
+    const conversations = allowed().filter((s) => s.resource.includes('Conversations'))
+      .map((s) => ({ actions: s.actions, index: s.resource.includes('/index/'), condition: s.condition }));
+    expect(conversations).toStrictEqual([
+      // Each owner's subject (the row's key) and nothing else of the list (never first_at): a projection must be sent.
+      { actions: ['dynamodb:Query'], index: false, condition: {
+        ...keys([`WS#${ONE_WORKSPACE}#CONVERSANTS`]),
+        'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk'] },
+        StringEquals: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+        Null: { 'dynamodb:Attributes': 'false' },
+      } },
+      // A person's conversations: a count only, so no title or message can be read there. IAM cannot fix the count's
+      // limit, key condition, filter or start key, so no limit would count a person's conversations and a narrower
+      // begins_with, a BETWEEN or a filter could probe their CONV# ids; only the code holds it (one Limit 1 request,
+      // pinned by lambda/jobs/workspace_export/test/test_conversations.py).
+      { actions: ['dynamodb:Query'], index: false, condition: {
+        ...keys([`WS#${ONE_WORKSPACE}#USER#*`]), StringEquals: { 'dynamodb:Select': 'COUNT' } } },
+    ]);
+    expect(worker().Environment.Variables).toHaveProperty('CONVERSATIONS_TABLE');
   });
 
   it('holds no Scan, BatchWrite or table delete, and deletes only its own work objects', () => {
