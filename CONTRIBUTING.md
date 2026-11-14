@@ -109,10 +109,13 @@ in, a timeout, or CI = the step prints why and passes, so the gate runs on every
   `AI_REVIEW_BASE=<ref>` diffs against another base.
 - The same change is reviewed once: answers are cached in `.cache/ai-review/` (`AI_REVIEW_CACHE=0` re-runs).
 - The agents can only read, and only inside the repository (Kiro: `.kiro/agents/tenets-reviewer.json` and
-  `commit-reviewer.json`, the read tool with `allowedPaths: ['./**']` and nothing trusted; Claude Code: Read and Glob
-  in `dontAsk` mode with repository-scoped allow rules, no MCP servers). Paths shaped like a secret (`.env`, `*.pem`,
+  `commit-reviewer.json`, the read tool with `./**` allowed and nothing trusted, run on kiro-cli's V2 engine
+  (`--agent-engine v2`), which keeps headless reads inside the repository; Claude Code: Read and Glob in `dontAsk`
+  mode with repository-scoped allow rules, no MCP servers). Paths shaped like a secret (`.env`, `*.pem`,
   `*credentials*`, … `SECRET_PATHS` in `scripts/ai-review/lib.mjs`) are left out of the diff and named in the
-  output, and the tools themselves refuse to read them (Kiro `deniedPaths`, Claude Code deny rules). The diff is
+  output, and the tools themselves refuse to read them (Kiro: `toolsSettings` `deniedPaths`, which V2 enforces, and
+  `permissions.rules`, which V3 enforces, both generated from that list and pinned for every agent in
+  `.kiro/agents` by `scripts/ai-review/agent-guard.test.mjs`; Claude Code deny rules). The diff is
   treated as data. They are
   language models: a PASS is not proof, and two runs can differ. `validate-affected.sh` never runs them (groups
   `tenets` and `commit`).

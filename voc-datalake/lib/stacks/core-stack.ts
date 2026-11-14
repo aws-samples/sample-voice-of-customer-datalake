@@ -35,6 +35,8 @@ import { allowEventBridgeToScheduleDlq } from './ingestion-schedule-dlq';
  * restorable for most of their 35 days and leaves time to cancel the deletion.
  */
 const KMS_KEY_PENDING_WINDOW_DAYS = 30;
+/** The stored company-logo types (shared/design_logo.py LOGO_EXTENSIONS): one exact read grant each. */
+const COMPANY_LOGO_EXTENSIONS = ['png', 'jpg', 'webp'] as const;
 
 /** VocCoreStack takes the common stack props (env, deploymentPrefix, description) and the opt-in WAF. */
 export interface VocCoreStackProps extends VocStackProps {
@@ -508,18 +510,16 @@ export class VocCoreStack extends VocStack {
       cdkCustomResourceSuppressions,
     );
 
-    // The company logo, read-only (GetObject, no List): the keys come from the design-system row. `?` is one
-    // character: exactly `logo_<12 hex>.<ext>` (company_context.new_id), never a reference's `logo_preview_*`.
-    const companyLogoKeys = this.rawDataBucket.arnForObjects('company-context/design/logo_????????????.*');
+    // The company logo, read-only (GetObject, no List): the keys come from the design-system row. One resource per
+    // stored extension (shared/design_logo.py LOGO_EXTENSIONS), no `*` (which in IAM also crosses `/`): each `?` is
+    // exactly one character, so only `logo_<12 chars>.png|jpg|webp` (company_context.new_id → 12 hex) matches, never a
+    // reference's `logo_preview_ref_<12 hex>.*` (its 13th character after `logo_` is not the `.`).
+    const companyLogoKeys = COMPANY_LOGO_EXTENSIONS.map(
+      (extension) => this.rawDataBucket.arnForObjects(`company-context/design/logo_????????????.${extension}`));
     this.companyLogoReadPolicy = new iam.ManagedPolicy(this, 'CompanyLogoReadPolicy', {
       description: 'Read the uploaded company logo objects of the raw data bucket (docs/company-context.md)',
-      statements: [new iam.PolicyStatement({ actions: ['s3:GetObject'], resources: [companyLogoKeys] })],
+      statements: [new iam.PolicyStatement({ actions: ['s3:GetObject'], resources: companyLogoKeys })],
     });
-    acknowledgeNag(this.companyLogoReadPolicy, [{
-      id: 'AwsSolutions-IAM5',
-      reason: 'GetObject on ONE key prefix of the raw data bucket, the uploaded company logos (company-context/design/logo_<12 single-character wildcards>.<ext>); the wildcards are the logo id and extension, never another prefix or a reference preview',
-      findings: [resourceFinding(companyLogoKeys)],
-    }]);
 
 
     // ============================================

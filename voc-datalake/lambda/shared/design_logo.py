@@ -17,16 +17,20 @@ An SVG logo is never downloaded here: ``voc-design-capture`` renders it to a PNG
 browser (``lambda/design_capture/logo_render.py``) and ``store_rendered`` keeps that PNG under the same
 preview key, with ``rendered: True``, plus the SANITISED SVG beside it (``logo_preview_<ref id>.svg``,
 download-only: ``shared.design_assets``); "Use this logo" then copies the stored PNG
-(``read_rendered_preview``) instead of downloading the candidate. A website's RASTER candidate over
-2 MB (``LogoTooLargeError``) is drawn the same way, smaller (``lambda/design_capture/raster_logo.py``),
-and recorded the same way; anywhere else (a GitHub reference, "Use this logo" on an older read) it stays
-refused, with the advice to refresh or upload a PNG.
+(``read_rendered_preview``) instead of downloading the candidate. A RASTER candidate over the company-logo cap
+(``COMPANY_LOGO_MAX_BYTES``, 1 MB) is drawn the same way, smaller, and recorded the same way: a website's inside
+its capture (``lambda/design_capture/raster_logo.py``), a GitHub repository's by a hand-off to the capture worker
+(``shared.design_logo_render``, ``lambda/design_capture/logo_job.py``). Either reads the bytes ONCE through the
+guard (at most ``RASTER_SHRINK_MAX_BYTES``, 5 MB, typed by its bytes) and gives the browser a ``data:`` URL, so the
+browser never fetches the candidate. Without a browser (or on "Use this logo" of an older read) a candidate over
+1 MB stays refused, with the advice to refresh or upload a PNG.
 
 Archiving a reference (``DELETE /settings/design-system/references/{id}``) deletes its preview objects
 (``delete_previews``; the settings role's only S3 delete, scoped to ``logo_preview_*`` and ``icons_*``).
 """
 from __future__ import annotations
 
+import base64
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -42,6 +46,9 @@ from shared.logging import logger
 from shared.s3_versions import delete_every_version_of_keys
 
 MAX_LOGO_BYTES = 2_000_000
+#: The largest raster candidate the managed browser draws smaller (read once through the SSRF guard, then handed to
+#: the browser as a ``data:`` URL): ``lambda/design_capture/raster_logo.py`` and ``logo_job.py``.
+RASTER_SHRINK_MAX_BYTES = 5_000_000
 #: The largest COMPANY logo (the saved one), for every client alike: the upload route, "Use this logo" and the
 #: prototype build that inlines it (shared.company_logo). The web app makes a larger image smaller before it uploads.
 COMPANY_LOGO_MAX_BYTES = 1_000_000
@@ -95,17 +102,20 @@ def sniff_image_type(data: bytes) -> str | None:
     return None
 
 
-def fetch_logo(url: str, fetch: Callable[..., requests.Response] | None = None) -> tuple[bytes, str]:
-    """``(bytes, content_type)`` of the logo at ``url``; LogoFetchError with the reason otherwise.
+def fetch_logo(url: str, fetch: Callable[..., requests.Response] | None = None,
+               max_bytes: int = MAX_LOGO_BYTES) -> tuple[bytes, str]:
+    """``(bytes, content_type)`` of the logo at ``url`` (at most ``max_bytes``); LogoFetchError with the reason
+    otherwise (LogoTooLargeError for a larger body).
 
-    ``fetch`` defaults to ``fetch_public_url`` (looked up at call time, so it can be patched).
+    ``fetch`` defaults to ``fetch_public_url`` (looked up at call time, so it can be patched). The capture
+    worker reads a raster it will draw smaller with ``max_bytes=RASTER_SHRINK_MAX_BYTES``.
     """
     fetch = fetch or fetch_public_url
     if not url.startswith('https://'):
         raise LogoFetchError('The logo address must be https')
     try:
         response = fetch(url, timeout=LOGO_TIMEOUT_SECONDS, max_redirects=LOGO_MAX_REDIRECTS,
-                         max_bytes=MAX_LOGO_BYTES + 1)
+                         max_bytes=max_bytes + 1)
     except UnsafeURLError as exc:
         raise LogoFetchError('The logo address is not allowed (it points to a private or unsafe location)') from exc
     except requests.exceptions.RequestException as exc:
@@ -113,12 +123,19 @@ def fetch_logo(url: str, fetch: Callable[..., requests.Response] | None = None) 
     if response.status_code != HTTP_OK:
         raise LogoFetchError(f'The logo could not be downloaded (HTTP {response.status_code})')
     data = response.content
-    if len(data) > MAX_LOGO_BYTES:
-        raise LogoTooLargeError(LOGO_TOO_LARGE)
+    if len(data) > max_bytes:
+        raise LogoTooLargeError(LOGO_TOO_LARGE if max_bytes == MAX_LOGO_BYTES
+                                else f'The logo is larger than {max_bytes // 1_000_000} MB')
     content_type = sniff_image_type(data)
     if content_type is None:
         raise LogoFetchError('The logo is not a PNG, JPEG or WebP image')
     return data, content_type
+
+
+def image_data_url(data: bytes, content_type: str) -> str:
+    """``data:<type>;base64,…`` of downloaded raster bytes, for the managed browser to draw without fetching
+    anything (``content_type`` is ``fetch_logo``'s sniffed type, never a server header)."""
+    return f'data:{content_type};base64,{base64.b64encode(data).decode("ascii")}'
 
 
 def preview_key(ref_id: str, content_type: str) -> str:
@@ -142,7 +159,7 @@ def svg_preview_key(ref_id: str) -> str:
 
 def store_rendered(source_url: str, png: bytes, ref_id: str, s3: Any, bucket: str,
                    svg: str | None = None) -> dict | None:
-    """Store a browser-rendered logo (an SVG, or a raster over 2 MB drawn smaller: PNG bytes) as the
+    """Store a browser-rendered logo (an SVG, or a raster over 1 MB drawn smaller: PNG bytes) as the
     reference's preview → the logo to record
     ``{source_url, content_type: 'image/png', rendered: True, preview_key, svg_preview_key?}``, or None.
 
@@ -224,7 +241,7 @@ def delete_previews(s3: Any, bucket: str, ref_id: str, extra_keys: Sequence[str]
 
 def store_preview(design: dict | None, ref_id: str, s3: Any, bucket: str,
                   fetch: Callable[..., requests.Response] | None = None,
-                  downloaded: DownloadedLogo | None = None) -> dict | None:
+                  downloaded: DownloadedLogo | None = None, refused_url: str | None = None) -> dict | None:
     """``design`` with ``logo.preview_key`` set when its candidate downloaded and was stored, else unchanged.
 
     Never raises: a refused, missing, oversized or non-raster candidate (or an S3 failure) only
@@ -232,7 +249,9 @@ def store_preview(design: dict | None, ref_id: str, s3: Any, bucket: str,
     never shown for a new candidate. A RENDERED logo (``is_rendered``: the capture worker already stored
     its PNG under this reference's key) is returned untouched — its SVG is never downloaded; a
     ``rendered`` flag anywhere else (e.g. proposed by a model) is dropped like a stale key.
-    ``downloaded`` is the candidate ``fetch_logo`` already read (same URL): its bytes are stored, not fetched again.
+    ``downloaded`` is the candidate ``fetch_logo`` already read (same URL): its bytes are stored, not fetched again
+    (only up to ``MAX_LOGO_BYTES``). ``refused_url`` is a candidate the caller already read and gave up on (logged
+    there): it gets no preview and is not downloaded again.
     """
     logo = design.get('logo') if isinstance(design, dict) else None
     if not isinstance(design, dict) or not isinstance(logo, dict):
@@ -242,11 +261,13 @@ def store_preview(design: dict | None, ref_id: str, s3: Any, bucket: str,
     logo = {k: v for k, v in logo.items() if k not in ('preview_key', 'svg_preview_key', 'rendered')}
     without = {**design, 'logo': logo}
     url = logo.get('source_url')
-    if not bucket or not isinstance(url, str) or not REF_ID_RE.fullmatch(ref_id):
+    if not bucket or not isinstance(url, str) or not REF_ID_RE.fullmatch(ref_id) or url == refused_url:
         return without
     try:
         if downloaded is not None and downloaded.url == url:
             data, content_type = downloaded.data, downloaded.content_type
+            if len(data) > MAX_LOGO_BYTES:
+                raise LogoTooLargeError(LOGO_TOO_LARGE)
         else:
             data, content_type = fetch_logo(url, fetch)
         key = preview_key(ref_id, content_type)

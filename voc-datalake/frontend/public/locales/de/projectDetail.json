@@ -39,7 +39,7 @@
       "companyContext": "Unternehmenskontext",
       "designSystem": "Designsystem des Unternehmens",
       "companyLogo": "Firmenlogo",
-      "companyLogoLeftOut": "Firmenlogo ausgelassen (über 1 MB oder nicht lesbar)",
+      "companyLogoLeftOut": "Firmenlogo nicht verwendet",
       "roles": {
         "mergeInput": "Zusammengeführt",
         "prototypePrd": "Prototyp-Quelle PRD",

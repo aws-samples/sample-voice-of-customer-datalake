@@ -40,7 +40,7 @@ describe('DerivationFooter company knowledge', () => {
 
   it.each([
     [true, 'Company logo'],
-    [false, 'Company logo left out (over 1 MB or unreadable)'],
+    [false, 'Company logo not used'],
   ])('says whether the uploaded company logo was used (company_logo_included %s)', (included, line) => {
     expect(renderFooter({ ...BASE, company_logo_included: included })).toContain(line)
   })
