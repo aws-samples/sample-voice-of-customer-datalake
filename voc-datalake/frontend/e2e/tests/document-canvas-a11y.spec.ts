@@ -30,7 +30,7 @@ import { expect, type Locator, type Page } from '@playwright/test'
 import { test } from '../lib/test'
 import { expectInsideWindow, expectNoSeriousAxe, expectNoSidewaysScrolling } from '../lib/a11y'
 import { apiCall, listOf, stringField } from '../lib/api'
-import { CANVAS_TEXT, addComment, barButton, canvasOf, createDocument, documentRow, fileMenu, fileMenuItem, saveStatus, storedDocument } from '../lib/canvas'
+import { CANVAS_TEXT, addComment, barButton, canvasOf, createDocument, fileMenu, fileMenuItem, revealDocumentRow, saveStatus, storedDocument } from '../lib/canvas'
 import { dialogNamed } from '../lib/dialogs'
 import { MOCK, RUN_PREFIX } from '../lib/env'
 import { pinTheme, roleOf, site, type Theme } from '../lib/fixtures'
@@ -69,7 +69,8 @@ async function atWidth(page: Page, width: number, theme: Theme): Promise<void> {
 /** Opens `title` in `project`, the page shown from its top (the row's click scrolls the list on a phone). */
 async function openPage(page: Page, title: string, project = PROJECT): Promise<void> {
   await page.goto(site(`/projects/${project}?tab=documents`), { waitUntil: 'domcontentloaded' })
-  await documentRow(page, title).click()
+  // Below 1280 px the list holds one section: the row's own is opened first.
+  await (await revealDocumentRow(page, title)).click()
   await expect(page.getByRole('textbox', { name: title, exact: true })).toBeVisible({ timeout: 20_000 })
   await page.getByTestId('document-detail-pane').evaluate((pane) => { pane.scrollIntoView({ block: 'start' }) })
 }

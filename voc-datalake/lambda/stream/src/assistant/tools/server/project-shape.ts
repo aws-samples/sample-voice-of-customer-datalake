@@ -1,10 +1,12 @@
 /**
- * `GET /projects/{id}` (whole raw items) → compact, content-free overviews.
+ * `GET /projects/{id}` (whole raw items) → compact, content-free overviews. The documents are listed in the
+ * project's sections (document-sections.ts), as the project page and MCP `projects_get` list them.
  */
 import { z } from 'zod';
 import { AssistantToolError } from '../errors.js';
 import { pick, withinBudget } from '../format.js';
 import { parseProjectAccess, type ProjectAccessSummary } from '../project-access.js';
+import { groupBySection, type SectionGroup } from './document-sections.js';
 import { recordsAt } from './feedback-shape.js';
 
 const projectBodySchema = z.object({ project: z.record(z.string(), z.unknown()) }).loose();
@@ -75,7 +77,8 @@ export interface ProjectSummary {
   access?: ProjectAccessSummary;
   project: Record<string, unknown>;
   personas: Record<string, unknown>[];
-  documents: Record<string, unknown>[];
+  /** The documents in the list's four sections, in order (PRD, PR/FAQ, Prototypes, Documents; empty ones kept). */
+  document_sections: SectionGroup<Record<string, unknown>>[];
 }
 
 export function summarizeProject(body: unknown): ProjectSummary {
@@ -85,6 +88,6 @@ export function summarizeProject(body: unknown): ProjectSummary {
     ...(access ? { access } : {}),
     project: pick(payload.project, PROJECT_FIELDS, 1000),
     personas: payload.personas.map((persona) => pick(persona, PERSONA_OVERVIEW_FIELDS, 300)),
-    documents: payload.documents.map(documentOverview),
+    document_sections: groupBySection(payload.documents, documentOverview),
   };
 }

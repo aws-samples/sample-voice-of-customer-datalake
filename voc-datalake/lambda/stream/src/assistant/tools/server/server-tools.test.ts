@@ -161,28 +161,62 @@ describe('get_feedback_item', () => {
 });
 
 describe('get_project', () => {
-  it('summarises without document content', async () => {
-    const deps = fakeDeps({
-      'GET /projects/proj_1': {
-        project: { pk: 'PROJECT#proj_1', sk: 'META', project_id: 'proj_1', name: 'Checkout', status: 'active' },
-        personas: [{ sk: 'PERSONA#p1', persona_id: 'p1', name: 'Pat', tagline: 'Busy', pain_points: { a: 1 } }],
-        documents: [
-          { sk: 'PRD#d1', document_id: 'd1', document_type: 'prd', title: 'PRD', content: 'secret body text' },
-          { sk: 'PROTOTYPE#x', document_id: 'x', document_type: 'prototype', title: 'Proto', prototype_url: 'https://x' },
-        ],
-      },
-    });
+  /** get_project on proj_1's page, the Projects API answering `body`: the parsed result. */
+  async function getProjectOnPage(body: Record<string, unknown>): Promise<unknown> {
+    const deps = fakeDeps({ 'GET /projects/proj_1': body });
     const result = await serverTool(deps, 'get_project').execute({}, fakeContext('project', { projectId: 'proj_1' }));
-    const parsed: unknown = JSON.parse(result.content);
+    return JSON.parse(result.content);
+  }
+
+  it('summarises without document content', async () => {
+    const parsed = await getProjectOnPage({
+      project: { pk: 'PROJECT#proj_1', sk: 'META', project_id: 'proj_1', name: 'Checkout', status: 'active' },
+      personas: [{ sk: 'PERSONA#p1', persona_id: 'p1', name: 'Pat', tagline: 'Busy', pain_points: { a: 1 } }],
+      documents: [
+        { sk: 'PRD#d1', document_id: 'd1', document_type: 'prd', title: 'PRD', content: 'secret body text' },
+        { sk: 'PROTOTYPE#x', document_id: 'x', document_type: 'prototype', title: 'Proto', prototype_url: 'https://x' },
+      ],
+    });
 
     expect(parsed).toStrictEqual({
       project: { project_id: 'proj_1', name: 'Checkout', status: 'active' },
       personas: [{ persona_id: 'p1', name: 'Pat', tagline: 'Busy' }],
-      documents: [
-        { document_id: 'd1', document_type: 'prd', title: 'PRD', content_chars: 16 },
-        { document_id: 'x', document_type: 'prototype', title: 'Proto', prototype: true },
+      document_sections: [
+        { section: 'prd', documents: [{ document_id: 'd1', document_type: 'prd', title: 'PRD', content_chars: 16 }] },
+        { section: 'prfaq', documents: [] },
+        { section: 'prototypes', documents: [{ document_id: 'x', document_type: 'prototype', title: 'Proto', prototype: true }] },
+        { section: 'documents', documents: [] },
       ],
     });
+  });
+
+  it('lists the documents in the four sections in order, by the read’s section, else by type, last edit first', async () => {
+    const parsed = await getProjectOnPage({
+      project: { project_id: 'proj_1' },
+      documents: [
+        { document_id: 'r1', document_type: 'research', title: 'Notes', section: 'documents', content: 'ab' },
+        { document_id: 'p1', document_type: 'prototype', section: 'prototypes', title: 'Proto' },
+        // Made later, but q2 was edited since: the last edit puts q2 first, as the project page lists them.
+        { document_id: 'q1', document_type: 'prfaq', section: 'prfaq', title: 'FAQ v1', content: 'a', created_at: '2026-02-01' },
+        { document_id: 'd1', document_type: 'prd', title: 'PRD', content: 'abc' },
+        {
+          document_id: 'q2', document_type: 'prfaq', section: 'prfaq', title: 'FAQ v2', content: 'ab',
+          created_at: '2026-01-01', updated_at: '2026-03-01',
+        },
+        // A read without sections (an older API): by type; a type added later is a Document.
+        { document_id: 'u1', document_type: 'roadmap', title: 'Later', content: '' },
+      ],
+    });
+
+    expect(parsed).toMatchObject({
+      document_sections: [
+        { section: 'prd', documents: [{ document_id: 'd1', content_chars: 3 }] },
+        { section: 'prfaq', documents: [{ document_id: 'q2' }, { document_id: 'q1' }] },
+        { section: 'prototypes', documents: [{ document_id: 'p1', prototype: true }] },
+        { section: 'documents', documents: [{ document_id: 'r1' }, { document_id: 'u1' }] },
+      ],
+    });
+    expect(parsed).not.toHaveProperty('documents');
   });
 
   it('surfaces a 403 from the API as a model-readable permission error', async () => {

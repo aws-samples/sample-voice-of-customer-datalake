@@ -15,6 +15,7 @@ import { apiCall, listOf, stringField } from '../lib/api'
 import { MOCK } from '../lib/env'
 import { isRecord } from '../lib/guards'
 import { roleOf, settle, site } from '../lib/fixtures'
+import { revealDocumentRow } from '../lib/canvas'
 
 const PROJECT = 'proj_1'
 /** The mock job completes on its second read; a few more reads is the margin. */
@@ -45,7 +46,8 @@ async function titles(base: string): Promise<string[]> {
 async function openDocument(page: Page, title: string): Promise<void> {
   await page.goto(site(`/projects/${PROJECT}?tab=documents`), { waitUntil: 'domcontentloaded' })
   await settle(page, 800)
-  await page.getByRole('button', { name: title }).first().click()
+  // Below 1280 px the list shows one section at a time: its row is reached through the section buttons.
+  await (await revealDocumentRow(page, title)).click()
   await expect(page.getByRole('heading', { name: title, level: 2 })).toBeVisible()
 }
 

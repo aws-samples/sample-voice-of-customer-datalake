@@ -74,7 +74,7 @@ Each tool's name starts with its area: `feedback_`, `memory_`, `company_`, `proj
 | `memory_search` | Check what the team already decided or knows (company + the user's personal memory) before proposing something. |
 | `company_get_context` | The vision and objectives a proposal should align with. |
 | `projects_list` | Find research projects (and their ids). |
-| `projects_get` | A project's personas and the list of its documents (titles and ids only). |
+| `projects_get` | A project's personas and its documents grouped by section in `document_sections: [{section, documents}]` (`prd`, `prfaq`, `prototypes`, `documents`; ids, types, titles, versions and times only, last edit first). Read `document_sections`: the flat `documents` list is deprecated. |
 | `projects_generate` | (write) Start one methodology step in a project: `step` = `personas` (adds `count` personas, never replaces), `research` (`brief` = the question), `prfaq` or `prd` (`brief` = the idea; reads customer feedback), `prototype` (from the newest PRD / PR/FAQ). Answers a `job_id` and a `methodology` block: the upstream steps this one runs without (`skipped`) and `warnings`. Tell the user about every warning; never hide a skipped step. A prototype with no PRD or PR/FAQ is refused: write one first. A PR/FAQ or PRD is refused unless the user (and the project owner) work AI-driven. |
 | `projects_get_job` | Follow a job `projects_generate` or `documents_revise_from_comments` started: give `project_id` and `job_id`; read it until `status` is `completed` or `failed`. A step's `result` names the document and carries the `methodology` block; a revision's `result` has its `outcome` (`recommendations`, or `applied` with the new version). |
 | `documents_get` | Read one document's full content. |

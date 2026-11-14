@@ -823,7 +823,7 @@ class TestGetProject:
             {'sk': 'PERSONA#p2', 'persona_id': 'p2', 'avatar_url': 'https://cdn/kept.png'},
             {'sk': 'PERSONA#p3', 'persona_id': 'p3'},
         ]
-        assert result['documents'] == [{**self._partition()[4], 'signed': True, 'normalized': True}]
+        assert result['documents'] == [{**self._partition()[4], 'signed': True, 'normalized': True, 'section': 'prd'}]
         project = result['project']
         assert project['kiro_default_export_prompt'] == projects.KIRO_DEFAULT_EXPORT_PROMPT
         assert project['owner_email'] == 'owner@example.com'

@@ -62,7 +62,12 @@ describe('project reads surface the caller access', () => {
       access: { role: 'viewer', can_edit: false, can_manage: false },
       project: { project_id: 'proj_1', name: 'Checkout', visibility: 'private' },
       personas: [{ persona_id: 'p1', name: 'Pat' }],
-      documents: [],
+      document_sections: [
+        { section: 'prd', documents: [] },
+        { section: 'prfaq', documents: [] },
+        { section: 'prototypes', documents: [] },
+        { section: 'documents', documents: [] },
+      ],
     });
     expect(result.content.startsWith('{"access":')).toBe(true);
     expect(ctx.projectAccess.isReadOnly('proj_1')).toBe(true);

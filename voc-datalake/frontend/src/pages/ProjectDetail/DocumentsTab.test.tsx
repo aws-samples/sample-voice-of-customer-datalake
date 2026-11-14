@@ -41,9 +41,9 @@ describe('DocumentsTab', () => {
     expect(screen.getByRole('button', { name: /New Document/i })).toBeInTheDocument()
   })
 
-  it('renders empty state when no documents', () => {
+  it('renders each of the four sections empty when there are no documents', () => {
     renderWithRouter(<DocumentsTab {...defaultProps} />)
-    expect(screen.getByText('No documents')).toBeInTheDocument()
+    expect(screen.getAllByText('No documents')).toHaveLength(4)
   })
 
   it('calls onCreateDoc when New Document button is clicked', async () => {
@@ -65,11 +65,15 @@ describe('DocumentsTab', () => {
 
   it.each<[outcome: string, text: string]>([
     ['renders document list when documents exist', 'Test Document'],
-    ['renders document type badge', 'PRD'],
     ['shows select message when no document selected', 'Select a document'],
   ])('%s', (_outcome, text) => {
     renderWithRouter(<DocumentsTab {...defaultProps} documents={[mockDoc]} />)
     expect(screen.getByText(text)).toBeInTheDocument()
+  })
+
+  it('renders the document type badge on the row', () => {
+    renderWithRouter(<DocumentsTab {...defaultProps} documents={[mockDoc]} />)
+    expect(within(screen.getByRole('button', { name: /Test Document$/ })).getByText('PRD')).toBeInTheDocument()
   })
 
   it('calls onSelectDoc when document is clicked', async () => {

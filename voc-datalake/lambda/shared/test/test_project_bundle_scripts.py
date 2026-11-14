@@ -233,6 +233,74 @@ class TestRoundTrip:
         assert 'dry run' in out
 
 
+def _manifest(world: dict[str, Any]) -> dict[str, Any]:
+    return json.loads((world['bundle'] / 'manifest.json').read_text())
+
+
+class TestDocumentSections:
+    """docs/prototype-builder.md part 4: the manifest counts documents per section; the rows are as stored."""
+
+    def test_a_project_without_documents_counts_zero_in_every_section(self, world):
+        pk = f'PROJECT#{OTHER_PID}'
+        world['tables']['src-p'].put_item(Item={'pk': pk, 'sk': 'PERSONA#p1', 'persona_id': 'p1'})
+        assert _export(world, OTHER_PID) == 0
+        assert _manifest(world)['projects'][0]['document_sections'] == {
+            'prd': 0, 'prfaq': 0, 'prototypes': 0, 'documents': 0}
+
+    def test_each_document_row_counts_in_its_section_and_nothing_else_does(self, world):
+        pk = f'PROJECT#{PID}'
+        for sk, document_type in (('PRFAQ#f1', 'prfaq'), ('DOC#c1', 'custom'), ('DOC#d1', 'decision'),
+                                  ('RESEARCH#r1', 'research'), ('PRODUCT_REPORT#p1', 'product_report'),
+                                  ('DOC#u1', 'a_type_added_later'), ('PRODUCT_DOC#x1', 'prd'),
+                                  ('PERSONA#x', 'prototype')):
+            world['tables']['src-p'].put_item(Item={'pk': pk, 'sk': sk, 'document_id': sk.split('#')[1],
+                                                    'document_type': document_type})
+        assert _export(world, PID) == 0
+        # The DOCUMENT_VERSIONS allocation (document_type prd), the product doc and the persona are not documents.
+        assert _manifest(world)['projects'][0]['document_sections'] == {
+            'prd': 1, 'prfaq': 1, 'prototypes': 1, 'documents': 5}
+        assert list(_manifest(world)['projects'][0]['document_sections']) == [
+            'prd', 'prfaq', 'prototypes', 'documents']
+
+    def test_a_legacy_row_with_no_type_counts_in_its_sort_keys_section(self, world):
+        """A managed row awaiting the metadata backfill (no `document_type`), as the project read lists it."""
+        pk = f'PROJECT#{OTHER_PID}'
+        for sk in ('PRD#j', 'PROTOTYPE#k', 'PRFAQ#l', 'DOC#m'):
+            world['tables']['src-p'].put_item(Item={'pk': pk, 'sk': sk, 'document_id': sk.split('#')[1]})
+        assert _export(world, OTHER_PID) == 0
+        assert _manifest(world)['projects'][0]['document_sections'] == {
+            'prd': 1, 'prfaq': 1, 'prototypes': 1, 'documents': 1}
+
+    def test_the_rows_are_exported_as_stored(self, world):
+        assert _export(world, PID) == 0
+        summary = _manifest(world)['projects'][0]
+        lines = [json.loads(line) for line in (world['bundle'] / 'items.jsonl').read_text().splitlines()]
+        assert len(lines) == summary['rows']
+        codec = sys.modules['project_bundle.codec']
+        stored = {(r['pk'], r['sk']): r for name in ('src-p', 'src-a') for r in _rows(world['tables'][name])}
+        for line in lines:
+            item = codec.decode(line['item'])
+            assert 'section' not in item
+            assert item == stored[(item['pk'], item['sk'])]
+
+    def test_a_bundle_without_the_counts_still_imports(self, world):
+        """A bundle written before the counts: the importer never reads them."""
+        _export(world, PID)
+        manifest_path = world['bundle'] / 'manifest.json'
+        manifest = json.loads(manifest_path.read_text())
+        for summary in manifest['projects']:
+            del summary['document_sections']
+        manifest_path.write_text(json.dumps(manifest))
+        assert _import(world) == 0
+        assert world['tables']['tgt-p'].get_item(Key={'pk': f'PROJECT#{PID}', 'sk': f'PRD#{PRD_ID}'}).get('Item')
+
+    @pytest.mark.usefixtures('scripts')
+    def test_the_document_rows_are_the_ones_the_project_read_lists(self):
+        from shared.deleted_sources import DOCUMENT_SORT_KEY_PREFIXES
+
+        assert sys.modules['project_bundle.exporter'].DOCUMENT_SORT_KEY_PREFIXES == DOCUMENT_SORT_KEY_PREFIXES
+
+
 class TestRefusals:
     def test_an_owner_the_target_pool_does_not_know_is_refused(self, world, capsys):
         del world['cognito'].users['owner@example.com']

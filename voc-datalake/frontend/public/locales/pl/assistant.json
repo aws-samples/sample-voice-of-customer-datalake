@@ -323,6 +323,12 @@
       "persona": "Persony",
       "document": "Dokumenty"
     },
+    "sections": {
+      "prd": "PRD",
+      "prfaq": "PR/FAQ",
+      "prototypes": "Prototypy",
+      "documents": "Dokumenty"
+    },
     "limit": {
       "persona": "Najwyżej {{max, number}} person na wiadomość.",
       "document": "Najwyżej {{max, number}} dokumenty na wiadomość."

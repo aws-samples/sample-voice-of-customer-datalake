@@ -287,6 +287,12 @@
       "persona": "ペルソナ",
       "document": "ドキュメント"
     },
+    "sections": {
+      "prd": "PRD",
+      "prfaq": "PR/FAQ",
+      "prototypes": "プロトタイプ",
+      "documents": "ドキュメント"
+    },
     "limit": {
       "persona": "1 回のメッセージで指定できるペルソナは最大 {{max, number}} 件です。",
       "document": "1 回のメッセージで指定できるドキュメントは最大 {{max, number}} 件です。"

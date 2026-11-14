@@ -47,6 +47,19 @@
       "visualsUsed_other": "{{count, number}} Mockups verwendet"
     },
     "newDocument": "Neues Dokument",
+    "sections": {
+      "label": "Dokumentbereiche",
+      "prd": "PRD",
+      "prfaq": "PR/FAQ",
+      "prototypes": "Prototypen",
+      "documents": "Dokumente",
+      "toggle_one": "{{name}}, {{count, number}} Dokument",
+      "toggle_other": "{{name}}, {{count, number}} Dokumente",
+      "new": "Neu",
+      "newPrd": "Neues PRD",
+      "newPrfaq": "Neues PR/FAQ",
+      "newPrototype": "Neuer Prototyp"
+    },
     "noDocuments": "Keine Dokumente",
     "ordinal": "{{ordinal}} von {{total, number}}",
     "versions": {

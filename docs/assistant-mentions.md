@@ -11,8 +11,13 @@ documents and its own profile. Then the assistant adds a short synthesis.
 ## Using it
 
 - Type `@` to pick a persona, or `@all` for every persona of the project. Type `#` to pick a document.
-  Titles carry their version (`(v2)`), and the newest come first. PR/FAQs, PRDs, research reports and custom
-  documents can be tagged. Prototypes are not offered, because their HTML is not text a persona can read.
+  Titles carry their version (`(v2)`). The list offers the most recently edited documents that match (at most 8)
+  and groups them by the project's sections, in the Documents tab's order
+  ([prototype-builder.md](prototype-builder.md) "Part 4"): **PRD**, **PR/FAQ**, then **Documents** (research
+  reports, custom documents and every other type), last edit first within each (`updated_at`, else `created_at`),
+  as the tab lists them. Each section is a named group of
+  the list, so a screen reader hears its name. PR/FAQs, PRDs, research reports and custom documents can be
+  tagged. Prototypes are not offered, because their HTML is not text a persona can read.
 - The list is keyboard-driven: ArrowDown / ArrowUp move, Enter or Tab picks, and Escape closes the list
   (only the list; the panel stays open). Screen readers hear the active option
   (`aria-activedescendant` on the textbox) and the number of suggestions. On a phone, the `@` and `#`

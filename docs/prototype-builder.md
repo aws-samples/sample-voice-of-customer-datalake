@@ -2,7 +2,8 @@
 
 **Status: partly built.** Built: what [Today](#today) describes, Part 2's Back to vN (6.11.00) and drafts from an
 instruction (6.12.00), the rest of Part 2 (6.14.00: the outline, the assistant's tools, Edit with the assistant),
-and Part 3: its read side (6.13.00) and Incorporate (6.15.00, [built](#built-so-far-part-3s-read-side-and-incorporate)); see
+Part 3: its read side (6.13.00) and Incorporate (6.15.00, [built](#built-so-far-part-3s-read-side-and-incorporate)),
+and Part 4's sections (6.16.00, [built](#data-model-and-api)); see
 [Slices and order](#slices-and-order). Every other route, tool, field and file below is a proposal and is marked
 *planned*; the code does not have it.
 
@@ -153,18 +154,20 @@ What exists, read from the code (paths relative to `voc-datalake/`).
   shows the assistant's proposed edit as a diff before approval (`AssistantDiffOnCanvas.tsx` in
   `frontend/src/components/DocumentCanvas/actions/`).
 - **MCP** (`lambda/shared/mcp_global_tools.py`, `lambda/shared/mcp_global_tools_steps.py`, [mcp.md](mcp.md)):
-  `projects_get` lists documents (ids, types, titles, versions); `documents_get` reads one (not a prototype's HTML);
+  `projects_get` lists documents (ids, types, titles, versions) in `document_sections`, grouped by section, last
+  edit first within each ([Part 4](#part-4-documents-in-sections)); `documents_get` reads one (not a prototype's HTML);
   `documents_update` refuses prototypes; `projects_generate` with `step: prototype` builds one from the newest PRD
   or PR/FAQ, with only a `title` (no revision). No MCP tool reads or moderates pins.
 - **The AI-mode gate does not cover prototypes.** `lambda/shared/ai_writing.py` gates only `prfaq` and `prd`
   (`GATED_DOC_TYPES`); TENETS.md tenet 3 says prototypes are AI-backed by design, in every mode.
-- **The documents list** (`frontend/src/pages/ProjectDetail/DocumentList.tsx`) is one flat list of buttons (type
-  badge, version or ordinal, date, title), every version a row of its own, in the order the project read returns
-  them, with one **New document** button above it (custom documents only). It is a strip above the page below
-  1280 px and a column beside it from there.
+- **The documents list** (`frontend/src/pages/ProjectDetail/DocumentList.tsx`) groups its rows (type badge,
+  version or ordinal, last-edit date, title; every version a row of its own) in four sections, PRD, PR/FAQ,
+  Prototypes and Documents, each a disclosure with its count and its own **New** for editors, last edit first
+  within each ([Part 4](#part-4-documents-in-sections)). It is a strip above the page below 1280 px, with a row of
+  section buttons above it, and a column beside it from there.
 - **The project export** is two operator scripts, not a route ([project-export.md](project-export.md)): the
-  bundle's `manifest.json` holds one summary per project (rows and object counts), and `items.jsonl` every row.
-  Documents are not grouped there either.
+  bundle's `manifest.json` holds one summary per project (rows, object counts and `document_sections`, the
+  documents per section), and `items.jsonl` every row, as stored.
 
 ## Part 1: guided demo (skippable)
 
@@ -613,7 +616,9 @@ The project's documents list groups its documents in four sections, always in th
 - Each section is a disclosure: a button with the section name and its count ("Prototypes, 3"), `aria-expanded`,
   and its list below. Every section starts open on each page view; folding is not remembered. A section with
   nothing in it shows its heading, a count of 0 and its **New** action, so the step is visible before it is done.
-- Within a section, documents are ordered by last edit, newest first (`updated_at`, else `created_at`).
+- Within a section, documents are ordered by last edit, newest first (`updated_at`, else `created_at`; ties by
+  `document_id`), and each row shows that date. The `#document` mentions, MCP `projects_get` and the assistant's
+  `get_project` use the same order.
 - **New** per section, for editors: PRD and PR/FAQ open their writing wizards (the person's way of working
   applies, unchanged), Prototypes opens the build dialog (disabled with its reason when the project has no PRD or
   PR/FAQ, the existing 409 rule), Documents opens the existing **New document**. Viewers see no New.
@@ -624,20 +629,23 @@ The project's documents list groups its documents in four sections, always in th
 
 ### Data model and API
 
-No new storage and no new route. The section is a pure function of `document_type`, a planned server helper
-`document_section(document_type)` in the shared layer, used by the project read, the export manifest and the MCP
-and assistant listings, so every client and the bundle agree:
+Built. No new storage and no new route. The section is a pure function of `document_type`, the server helper
+`document_section(document_type)` (`lambda/shared/document_sections.py`, with `SECTION_ORDER`), used by the project read, the export manifest and the MCP
+and assistant listings, so every client and the bundle agree. A legacy managed row with no `document_type` (sort
+key `PRD#`, `PRFAQ#` or `PROTOTYPE#`, awaiting the metadata backfill) is in its sort key's section, as the backfill
+reads it (`row_section(row)` on the server; the SPA's and the stream's fallbacks do the same):
 
-- `GET /projects/{id}` (exists): each document carries a planned `section` field (`prd`, `prfaq`, `prototypes`,
+- `GET /projects/{id}`: each document carries a `section` field, computed on read (`prd`, `prfaq`, `prototypes`,
   `documents`); clients group and count by it, in the helper's fixed order (no second, derived list).
-- The project export (planned): the bundle manifest's project summary gains a per-section document count; the rows
+- The project export: the bundle manifest's project summary has `document_sections`, a count per section; the rows
   themselves are unchanged, so an older bundle still imports.
 
 ### Tools (tenet 4)
 
 - MCP `projects_get` and the assistant's `get_project` list documents grouped by the same sections, in the same
-  order (planned), and `#document` mentions in the assistant ([assistant-mentions.md](assistant-mentions.md)) list
-  them grouped.
+  order (`document_sections: [{section, documents}]`, every section kept, empty ones too, last edit first within
+  each), and `#document` mentions in the assistant ([assistant-mentions.md](assistant-mentions.md)) list them
+  grouped the same way.
 
 ## Security boundary
 
@@ -857,7 +865,8 @@ tools, the Feedback dialog: [Built so far: Part 3's read side and Incorporate](#
 outline (its GET, `documents_get_prototype_outline`, the assistant's `get_prototype_outline` in a
 `<prototype_outline>` DATA block), the assistant's `draft_prototype_revision`, the page context's `documentId` and
 **Edit with the assistant** on the prototype's pane. 6.15.00: part 3's Incorporate (`pin_ids` drafts, per-pin
-outcomes, Apply's marks and AI-marked replies, the tools' `pin_ids`). Not yet: parts 1 and 4.
+outcomes, Apply's marks and AI-marked replies, the tools' `pin_ids`). 6.16.00: part 4, documents in sections
+([Part 4](#part-4-documents-in-sections)). Not yet: part 1.
 
 ## Decisions (2026-11-13)
 

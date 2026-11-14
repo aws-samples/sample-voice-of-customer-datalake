@@ -17,6 +17,7 @@ import { pinTheme, roleOf, runStep, settle, site, type Theme } from '../lib/fixt
 import { attachDeep, useDesignIds, viewportOf, type Ids, type Viewport } from '../lib/designRun'
 import { MOCK } from '../lib/env'
 import { motionAudit } from '../lib/deepAudit'
+import { documentSectionButtons } from '../lib/canvas'
 import type { StepRecorder } from '../lib/recorder'
 
 interface OverlayCase {
@@ -36,6 +37,11 @@ const OVERLAY = '[role="dialog"], [role="menu"], [role="listbox"], [aria-modal="
 const DESTRUCTIVE = /delete|remove|revoke|archive|disable|reset|forget|run now|send|save|submit|publish|generate|confirm|close session/i
 
 const byName = (name: RegExp | string) => (p: Page): Locator => p.getByRole('button', { name, exact: typeof name === 'string' }).first()
+/** Opens one section of the Documents tab when the list shows one at a time (below 1280 px); a no-op from 1280 px. */
+const openDocumentSection = (name: RegExp) => async (p: Page): Promise<void> => {
+  const button = documentSectionButtons(p).getByRole('button', { name })
+  if (await button.isVisible()) await button.click()
+}
 const openAssistant = async (p: Page): Promise<void> => {
   await p.getByRole('button', { name: 'Open assistant' }).click()
   await expect(p.getByRole('textbox', { name: 'Message the assistant' })).toBeVisible()
@@ -54,8 +60,10 @@ const CASES: readonly OverlayCase[] = [
   { step: 'project-share', path: '/projects/{project}', trigger: byName(/^Share/) },
   { step: 'persona-import', path: '/projects/{project}?tab=personas', trigger: byName('Import Persona') },
   { step: 'persona-new', path: '/projects/{project}?tab=personas', trigger: byName(/^(New|Add|Create) Persona$/i) },
-  { step: 'document-new', path: '/projects/{project}?tab=documents', trigger: byName(/^(New Document|Create Document)$/) },
-  { step: 'prototype-build-wizard', path: '/projects/{project}?tab=documents', trigger: byName('Build Prototype') },
+  // Below 1280 px the Documents tab shows one section at a time (6.16.00): its New is reached through the section
+  // buttons first; from 1280 px every section is open and the row is hidden.
+  { step: 'document-new', path: '/projects/{project}?tab=documents', prepare: openDocumentSection(/^Documents\b/), trigger: byName(/^(New Document|Create Document)$/) },
+  { step: 'prototype-build-wizard', path: '/projects/{project}?tab=documents', prepare: openDocumentSection(/^Prototypes\b/), trigger: byName('New prototype') },
   { step: 'workflow-editor', path: '/agents/{agent}?tab=workflow', adminOnly: true, trigger: byName(/^(Edit workflow|Open editor|Edit)$/i) },
   { step: 'mobile-menu', path: '/dashboard', only: 'mobile', trigger: byName('Open menu') },
   {

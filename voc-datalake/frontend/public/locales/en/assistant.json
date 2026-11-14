@@ -287,6 +287,12 @@
       "persona": "Personas",
       "document": "Documents"
     },
+    "sections": {
+      "prd": "PRD",
+      "prfaq": "PR/FAQ",
+      "prototypes": "Prototypes",
+      "documents": "Documents"
+    },
     "limit": {
       "persona": "At most {{max, number}} personas per message.",
       "document": "At most {{max, number}} documents per message."

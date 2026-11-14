@@ -163,6 +163,16 @@ Escape closing an empty reply box (focus back on Reply), Ctrl+Enter posting a re
 outcome (Close on its heading's line). The stale-save banner at 1440 and 360 in both themes; the read-only page of
 `proj_2` at 1440 and 390 in light. The editor's own menus are `document-canvas`'s.
 
+`document-sections.spec.ts` (the Documents tab's list in its four sections, docs/prototype-builder.md Part 4; checks in
+`lib/a11y.ts`) runs ONLY there too, on `proj_1` with reduced motion, creating nothing: at 1440 the four sections (PRD,
+PR/FAQ, Prototypes, Documents) in order with the counts of the project read (each document's `section`), all open,
+each section's New, Enter and Space folding and unfolding PR/FAQ (its rows gone and back, Tab on to its New), every
+section open again after a reload, and the Prototypes New opening the build dialog (Escape closes it, nothing built);
+at 390 the row of section buttons above the strip, the first section with documents open, Enter on Documents putting
+its rows in the strip, the row inside the window. Each state passes axe with no serious or critical finding and
+scrolls nothing sideways. `lib/canvas.ts` `revealDocumentRow` opens a row's section below 1280 px for the specs that
+open a document there.
+
 `document-canvas-perf.spec.ts` (the canvas on long documents) runs ONLY there too: it creates a 60,000- and a 200,000-character document in
 `proj_1` (`e2e-<run id>-canvas perf …`), types three bursts with pauses into a paragraph with a citation, and reads the
 browser's Event Timing and Long Tasks: no main-thread task over 200 ms (the slowest keystroke is reported but held to no bar:

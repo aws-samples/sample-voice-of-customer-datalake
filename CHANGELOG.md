@@ -17,6 +17,24 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.16.00] - 2026-11-14
+
+A project's documents in the steps of the method: PRD, PR/FAQ, Prototypes, Documents (the Prototype builder, part 4; [docs/prototype-builder.md](docs/prototype-builder.md)).
+
+### Added
+
+- The Documents tab lists a project's documents in four sections, always in that order: **PRD**, **PR/FAQ**, **Prototypes** and **Documents** (research reports, custom documents, product reports, decision records and any later type). Each section is a disclosure with its count, open on every visit; documents are listed last edit first. An empty section still shows, with a count of 0 and its **New** action (for editors: the writing wizards, the prototype build dialog, New document). Below 1280 px the sections are a row of buttons above the document strip, so the strip never scrolls sideways through all four sections.
+- `GET /projects/{id}` gives every document its `section` (`prd`, `prfaq`, `prototypes`, `documents`), computed on read by one helper (`lambda/shared/document_sections.py`). The project export's manifest counts each project's documents per section; the rows are unchanged, so older bundles still import.
+- The assistant's `#document` mentions list documents grouped the same way.
+
+### Changed
+
+- MCP `projects_get` and the assistant's `get_project` list a project's documents as `document_sections: [{section, documents}]`, in the same order and with every section kept. The assistant's tool no longer answers the flat list.
+
+### Deprecated
+
+- MCP `projects_get`'s flat `documents` list: it is still answered in 6.16.00, beside `document_sections`, and a later release removes it. Move MCP clients and saved prompts to `document_sections`.
+
 ## [6.15.00] - 2026-11-14
 
 Turn tester feedback into the next version of a prototype: select pins, get a draft that says what it did with each, apply it, and the pins are marked (the Prototype builder, part 3 complete; [docs/prototype-builder.md](docs/prototype-builder.md)).

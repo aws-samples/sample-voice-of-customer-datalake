@@ -1,6 +1,9 @@
 /**
  * DocumentsTab - Documents list and detail view, plus the prototype builder.
  *
+ * The list is in the project's four sections (DocumentList), each with its New for an editor: the PRD and PR/FAQ
+ * writing wizards, the prototype build dialog, and New document.
+ *
  * A prose document opens on its page (components/DocumentCanvas/page/DocumentPage, lazy-loaded so the editor's
  * bundle loads only on this tab), edited in place there; its Export, Delete and Save live in the page's action bar.
  * A prototype keeps its preview pane, with Delete in the pane's header.
@@ -10,11 +13,19 @@ import clsx from 'clsx'
 import { FileText, Loader2 } from 'lucide-react'
 import { lazy, Suspense } from 'react'
 import { useTranslation } from 'react-i18next'
-import DocumentList from './DocumentList'
+import DocumentList, { type SectionNewAction } from './DocumentList'
 import { canEditProject } from './projectAccess'
 import { seriesKeyOf } from './documentEdit'
+import { deriveOverviewState } from './overviewState'
+import { PrototypeBuildWizard } from './PrototypeBuildWizard'
+import { useProjectPrototypeBuild } from './useProjectPrototypeBuild'
 import { isVersionManagedDocument } from '../../api/documentLineage'
-import type { ProjectDocument } from '../../api/types'
+import type { TFunction } from 'i18next'
+import type { PrototypeBuildControl } from './usePrototypeBuild'
+import type { DocumentSectionId } from '../../api/documentSections'
+import type { DesignSystem } from '../../api/designSystemApi'
+import type { ProjectMethodology } from '../../api/methodologySchema'
+import type { DocType, ProjectDocument } from '../../api/types'
 import type { Project, ProductDoc } from '../../api/projectTypes'
 import ErasedEvidenceNote from './ErasedEvidenceNote'
 import FeedbackCorpus from './FeedbackCorpus'
@@ -43,11 +54,18 @@ interface DocumentsTabProps {
    */
   readonly productDocs?: ProductDoc[]
   readonly selectedDoc: ProjectDocument | null
+  /** The server's per-step gaps (`GET /projects/{id}` → `methodology`): the Prototypes New's "needs a PRD or PR/FAQ". */
+  readonly methodology?: ProjectMethodology
+  /** The company design system for the build dialog's "Design system" box; undefined = not known. */
+  readonly designSystem?: DesignSystem
   readonly onSelectDoc: (doc: ProjectDocument) => void
   readonly onDeleteDoc: () => void
+  /** The Documents section's New: the existing New document. */
   readonly onCreateDoc: () => void
+  /** The PRD and PR/FAQ sections' New: the document wizard with that type (the Overview card's own). */
+  readonly onWriteDocument: (docType: DocType) => void
   /**
-   * A prototype revision was started. Only the jobs panel needs to know: the
+   * A prototype revision or build was started. Only the jobs panel needs to know: the
    * refreshed document list arrives when the job completes, via useProjectData,
    * whether or not this tab is still mounted.
    */
@@ -60,35 +78,39 @@ export default function DocumentsTab({
   documents,
   productDocs,
   selectedDoc,
+  methodology,
+  designSystem,
   onSelectDoc,
   onDeleteDoc,
   onCreateDoc,
+  onWriteDocument,
   onJobStarted,
   isDeleting,
 }: DocumentsTabProps) {
   const { t } = useTranslation('projectDetail')
   // Viewers read and export documents; create / edit / delete / revise would only 403.
   const canEdit = canEditProject(project)
-  // The page in focus view has the window: "New document" and the list step aside (null in place: no remount).
+  // The page in focus view has the window: the list (and its New) steps aside (null in place: no remount).
   const focusView = useFocusViewActive()
+  // The Prototypes section's New is the Overview card's build: the same dialog, sources and "needs a PRD or PR/FAQ".
+  const overview = deriveOverviewState({ personas: [], documents, productDocs, methodology })
+  const prototypeBuild = useProjectPrototypeBuild({
+    projectId: project.project_id, state: overview, designSystem, onJobStarted,
+  })
+  const newActions = canEdit
+    ? sectionNewActions({
+      build: prototypeBuild, needsDocs: overview.steps.prototype.missingUpstream, onCreateDoc, onWriteDocument, t,
+    })
+    : undefined
 
   return (
     <div className={focusView ? undefined : 'space-y-4'}>
-      {canEdit && !focusView ? (
-        <div className="flex justify-end">
-          <button
-            type="button"
-            onClick={onCreateDoc}
-            className="btn btn-primary"
-          >
-            <FileText size={16} aria-hidden />{t('documents.newDocument')}
-          </button>
-        </div>
-      ) : null}
       {/* The list is a narrow column from xl, a strip above the page below it: the page needs the width for its
           outline, text and rail. */}
       <div className={focusView ? undefined : 'flex flex-col gap-4 xl:grid xl:grid-cols-[13rem_minmax(0,1fr)] xl:gap-6'}>
-        {focusView ? null : <DocumentList documents={documents} selectedDoc={selectedDoc} onSelectDoc={onSelectDoc} />}
+        {focusView ? null : (
+          <DocumentList documents={documents} selectedDoc={selectedDoc} onSelectDoc={onSelectDoc} newActions={newActions} />
+        )}
         {selectedDoc === null ? (
           <div data-testid="document-detail-pane" className={clsx(PANE, 'lg:min-h-[500px]')}>
             <div className="flex flex-col items-center justify-center gap-3 h-full min-h-[240px] text-sm text-muted text-center">
@@ -102,7 +124,50 @@ export default function DocumentsTab({
             isDeleting={isDeleting} />
         )}
       </div>
+      {/* Opened by the Prototypes section's New; nothing is built until its own button is pressed. */}
+      {canEdit ? <PrototypeBuildWizard build={prototypeBuild} t={t} /> : null}
     </div>
+  )
+}
+
+/**
+ * Each section's New for an editor: PRD and PR/FAQ open the document wizard with that type, Prototypes the build
+ * dialog (disabled with its reason while the project has no PRD or PR/FAQ, or while a build is starting), Documents
+ * the existing New document.
+ */
+function sectionNewActions({ build, needsDocs, onCreateDoc, onWriteDocument, t }: {
+  readonly build: PrototypeBuildControl
+  /** The project has no PRD and no PR/FAQ to build from (the build route's 409; the server's methodology says so). */
+  readonly needsDocs: boolean
+  readonly onCreateDoc: () => void
+  readonly onWriteDocument: (docType: DocType) => void
+  readonly t: TFunction<'projectDetail'>
+}): Record<DocumentSectionId, SectionNewAction> {
+  return {
+    prd: { onClick: () => onWriteDocument('prd') },
+    prfaq: { onClick: () => onWriteDocument('prfaq') },
+    prototypes: {
+      onClick: build.onClick,
+      disabled: needsDocs || build.busy,
+      // The reason the button is disabled for: a build that is starting is not missing a PRD.
+      reason: needsDocs ? t('documents.prototype.needsDocs') : undefined,
+      status: <PrototypeBuildStatus build={build} />,
+    },
+    documents: { onClick: onCreateDoc },
+  }
+}
+
+/**
+ * A build that failed to start, or the brief note that it began (the jobs panel has it after that). Always mounted,
+ * so a screen reader hears the text that arrives in it.
+ */
+function PrototypeBuildStatus({ build }: Readonly<{ build: PrototypeBuildControl }>) {
+  const { t } = useTranslation('projectDetail')
+  const text = build.error ?? (build.started ? t('documents.prototype.started') : null)
+  return (
+    <p role="status" className={clsx('text-xs', build.error === null ? 'text-ok' : 'text-danger', text === null && 'sr-only')}>
+      {text}
+    </p>
   )
 }
 

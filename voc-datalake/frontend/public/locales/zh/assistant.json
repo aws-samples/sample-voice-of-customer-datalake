@@ -287,6 +287,12 @@
       "persona": "用户画像",
       "document": "文档"
     },
+    "sections": {
+      "prd": "PRD",
+      "prfaq": "PR/FAQ",
+      "prototypes": "原型",
+      "documents": "文档"
+    },
     "limit": {
       "persona": "每条消息最多 {{max, number}} 个用户画像。",
       "document": "每条消息最多 {{max, number}} 个文档。"

@@ -16,6 +16,7 @@ import { MOCK } from '../lib/env'
 import { isRecord } from '../lib/guards'
 import { overflowsHorizontally, widthMetrics } from '../lib/mode'
 import { roleOf, settle, site } from '../lib/fixtures'
+import { revealDocumentRow } from '../lib/canvas'
 
 const PROJECT = 'proj_1'
 const MAX_JOB_POLLS = 5
@@ -36,7 +37,8 @@ async function build(title: string): Promise<void> {
 async function openDocument(page: Page, title: string): Promise<void> {
   await page.goto(site(`/projects/${PROJECT}?tab=documents`), { waitUntil: 'domcontentloaded' })
   await settle(page, 800)
-  await page.getByRole('button', { name: title }).first().click()
+  // Below 1280 px the list shows one section at a time: its row is reached through the section buttons.
+  await (await revealDocumentRow(page, title)).click()
   await expect(page.getByRole('heading', { name: title, level: 2 })).toBeVisible()
 }
 

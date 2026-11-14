@@ -12,7 +12,7 @@ import type {
   Tab, NoteItem,
 } from './types'
 import type {
-  ProjectDocument,
+  DocType, ProjectDocument,
 } from '../../api/types'
 import type {
   ProjectPersona,
@@ -46,6 +46,8 @@ interface TabContentProps extends OverviewPassThrough {
   readonly onSelectDoc: (d: ProjectDocument) => void
   readonly onDeleteDoc: () => void
   readonly onCreateDoc: () => void
+  /** The Documents tab's PRD / PR/FAQ New: the document wizard with that type. */
+  readonly onWriteDocument: (docType: DocType) => void
 }
 
 export default function TabContent({
@@ -76,6 +78,7 @@ export default function TabContent({
   onSelectDoc,
   onDeleteDoc,
   onCreateDoc,
+  onWriteDocument,
   onJobStarted,
 }: TabContentProps) {
   if (activeTab === 'overview') {
@@ -143,10 +146,14 @@ export default function TabContent({
       // the API 404s on an id it cannot resolve, which would make a
       // visually-grounded prototype unrevisable for good.
       productDocs={productDocs}
+      // For the Prototypes section's New: the same build dialog, sources and rule as the Overview card.
+      methodology={methodology}
+      designSystem={designSystem}
       selectedDoc={selectedDoc}
       onSelectDoc={onSelectDoc}
       onDeleteDoc={onDeleteDoc}
       onCreateDoc={onCreateDoc}
+      onWriteDocument={onWriteDocument}
       onJobStarted={onJobStarted}
       isDeleting={isDeleting}
     />

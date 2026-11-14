@@ -47,6 +47,19 @@
       "visualsUsed_other": "已使用 {{count, number}} 份视觉稿"
     },
     "newDocument": "新建文档",
+    "sections": {
+      "label": "文档分区",
+      "prd": "PRD",
+      "prfaq": "PR/FAQ",
+      "prototypes": "原型",
+      "documents": "文档",
+      "toggle_one": "{{name}}，{{count, number}} 个文档",
+      "toggle_other": "{{name}}，{{count, number}} 个文档",
+      "new": "新建",
+      "newPrd": "新建 PRD",
+      "newPrfaq": "新建 PR/FAQ",
+      "newPrototype": "新建原型"
+    },
     "noDocuments": "无文档",
     "ordinal": "第 {{ordinal}} 个，共 {{total, number}} 个",
     "versions": {
