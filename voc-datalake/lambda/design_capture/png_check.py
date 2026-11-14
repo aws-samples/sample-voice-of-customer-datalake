@@ -20,6 +20,8 @@ from shared.design_logo import MAX_LOGO_BYTES, sniff_image_type
 MIN_SIDE_PX: Final = 8
 #: Largest side the renderer produces (logo_render); the inflate bound follows from it.
 MAX_SIDE_PX: Final = 1024
+#: ``png_problem``'s reason for a PNG over ``MAX_LOGO_BYTES`` or ``MAX_SIDE_PX`` (logo_render draws it again smaller).
+TOO_LARGE_REASON: Final = 'too_large'
 _SIGNATURE_BYTES: Final = 8
 _CHUNK_HEADER_BYTES: Final = 8
 _CHUNK_CRC_BYTES: Final = 4
@@ -64,7 +66,7 @@ def _pixels_problem(chunks: list[tuple[bytes, bytes]]) -> str | None:
     if min(width, height) < MIN_SIDE_PX:
         return 'too_small'
     if max(width, height) > MAX_SIDE_PX:
-        return 'too_large'
+        return TOO_LARGE_REASON
     if depth == _BITS_PER_CHANNEL and colour == _RGBA:
         idat = b''.join(body for kind, body in chunks if kind == b'IDAT')
         return 'blank' if _all_transparent(width, height, idat) else None
@@ -77,7 +79,7 @@ def png_problem(data: bytes) -> str | None:
     if sniff_image_type(data) != 'image/png':
         return 'not_png'
     if len(data) > MAX_LOGO_BYTES:
-        return 'too_large'
+        return TOO_LARGE_REASON
     try:
         return _pixels_problem(_chunks(data))
     except (ValueError, struct.error, zlib.error):

@@ -214,8 +214,9 @@ class TestTheRasterStillWins:
         cdp = FakeCdp(_page(('https://kirocrew.dev/logo.png', 'header')))
         _, stored, raster = _capture(table, s3, cdp, answer=answer)
         assert 'rendered' not in stored['extracted_design']['logo']
-        # the model's proposal is downloaded like any candidate (an SVG there is refused by its bytes)
-        assert logo_downloads(raster) == [SVG]
+        # the page's candidate is read in the session; the model's proposal is downloaded like any candidate
+        # after it (an SVG there is refused by its bytes)
+        assert logo_downloads(raster) == ['https://kirocrew.dev/logo.png', SVG]
 
 
 class TestPngCheck:

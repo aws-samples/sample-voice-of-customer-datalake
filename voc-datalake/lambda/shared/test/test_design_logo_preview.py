@@ -76,6 +76,40 @@ class TestStorePreview:
         fetch.assert_not_called()
 
 
+class TestTooLargeAndAlreadyDownloaded:
+    def test_a_download_over_2_mb_is_a_typed_refusal_that_says_what_to_do(self):
+        fetch = MagicMock(return_value=_response(200, PNG + b'0' * 2_000_000))
+        with pytest.raises(design_logo.LogoTooLargeError) as exc_info:
+            design_logo.fetch_logo('https://www.example.com/logo.png', fetch)
+        assert isinstance(exc_info.value, design_logo.LogoFetchError)   # callers that catch the base keep working
+        assert str(exc_info.value) == design_logo.LOGO_TOO_LARGE
+        assert str(exc_info.value).startswith('The logo is larger than 2 MB: upload it as the company logo')
+
+    @pytest.mark.parametrize('failure', [_response(403, b''), _response(200, b'<html>error</html>')])
+    def test_other_refusals_are_not_the_size_refusal(self, failure):
+        with pytest.raises(design_logo.LogoFetchError) as exc_info:
+            design_logo.fetch_logo('https://www.example.com/logo.png', MagicMock(return_value=failure))
+        assert not isinstance(exc_info.value, design_logo.LogoTooLargeError)
+
+    def test_bytes_already_downloaded_for_the_same_url_are_stored_without_a_second_fetch(self, bucket):
+        fetch = MagicMock()
+        downloaded = design_logo.DownloadedLogo('https://kiro.dev/logo.png', WEBP, 'image/webp')
+        design = design_logo.store_preview(DESIGN, REF_ID, bucket, 'raw', fetch, downloaded)
+        key = f'company-context/design/logo_preview_{REF_ID}.webp'
+        assert design is not None
+        assert design['logo'] == {**DESIGN['logo'], 'preview_key': key}
+        assert bucket.get_object(Bucket='raw', Key=key)['Body'].read() == WEBP
+        fetch.assert_not_called()
+
+    def test_bytes_downloaded_for_another_url_are_ignored_and_the_candidate_fetched(self, bucket):
+        fetch = MagicMock(return_value=_response(200, PNG))
+        downloaded = design_logo.DownloadedLogo('https://www.example.com/other.png', WEBP, 'image/webp')
+        design = design_logo.store_preview(DESIGN, REF_ID, bucket, 'raw', fetch, downloaded)
+        assert design is not None
+        assert design['logo']['preview_key'] == f'company-context/design/logo_preview_{REF_ID}.png'
+        fetch.assert_called_once()
+
+
 RENDERED_KEY = f'company-context/design/logo_preview_{REF_ID}.png'
 RENDERED = {'colors': [], 'logo': {'source_url': 'https://kiro.dev/brand/logo.svg', 'content_type': 'image/png',
                                    'rendered': True, 'preview_key': RENDERED_KEY}}

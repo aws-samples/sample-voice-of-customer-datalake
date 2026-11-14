@@ -38,6 +38,8 @@
       "webSearchesUsed_other": "Web検索{{count, number}}件",
       "companyContext": "会社のコンテキスト",
       "designSystem": "会社のデザインシステム",
+      "companyLogo": "会社のロゴ",
+      "companyLogoLeftOut": "会社のロゴは省略されました（1 MB 超または読み込み不可）",
       "roles": {
         "mergeInput": "マージ元",
         "prototypePrd": "プロトタイプの元PRD",

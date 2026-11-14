@@ -117,6 +117,7 @@ def build_derivation(
     web_search_count: int = 0,
     company_context_included: bool = False,
     design_system_included: bool | None = None,
+    company_logo_included: bool | None = None,
 ) -> dict:
     """Assemble the `derivation` map for a document item.
 
@@ -141,6 +142,9 @@ def build_derivation(
             system reached the prompt, False when the build was told not to read
             it. Written only when not None (None: not a prototype, or no design
             system configured).
+        company_logo_included: prototypes only — True when the uploaded company logo was inlined, False when
+            one is uploaded but was left out (over the inline cap or unreadable). Written only when not None
+            (None: no logo uploaded, or the design system was not read).
 
     The three knowledge keys are omitted when empty so a document built without
     them stores exactly the shape it stored before they existed.
@@ -176,4 +180,6 @@ def build_derivation(
         record['company_context_included'] = True
     if design_system_included is not None:
         record['design_system_included'] = bool(design_system_included)
+    if company_logo_included is not None:
+        record['company_logo_included'] = bool(company_logo_included)
     return record

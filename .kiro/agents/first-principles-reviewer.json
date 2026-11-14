@@ -10,9 +10,6 @@
     "thinking"
   ],
   "allowedTools": [
-    "fs_read",
-    "grep",
-    "glob",
     "thinking"
   ],
   "resources": [
@@ -22,11 +19,71 @@
     "file://.kiro/steering/structure.md",
     "file://.kiro/steering/product.md"
   ],
+  "toolsSettings": {
+    "fs_read": {
+      "allowedPaths": [
+        "./**"
+      ],
+      "deniedPaths": [
+        "**/.env",
+        "**/.env.*",
+        "**/*.env",
+        "**/*.env.*",
+        "**/*.pem",
+        "**/*.key",
+        "**/*.p12",
+        "**/*.pfx",
+        "**/*id_rsa*",
+        "**/*id_ed25519*",
+        "**/*credentials*",
+        "**/*.secret*",
+        "**/*.npmrc",
+        "**/*.netrc"
+      ]
+    }
+  },
   "permissions": {
     "rules": [
       {
         "capability": "fs_read",
+        "match": [
+          "./**"
+        ],
         "effect": "allow"
+      },
+      {
+        "capability": "fs_read",
+        "match": [
+          "**/.env",
+          "**/.env/**",
+          "**/.env.*",
+          "**/.env.*/**",
+          "**/*.env",
+          "**/*.env/**",
+          "**/*.env.*",
+          "**/*.env.*/**",
+          "**/*.pem",
+          "**/*.pem/**",
+          "**/*.key",
+          "**/*.key/**",
+          "**/*.p12",
+          "**/*.p12/**",
+          "**/*.pfx",
+          "**/*.pfx/**",
+          "**/*id_rsa*",
+          "**/*id_rsa*/**",
+          "**/*id_ed25519*",
+          "**/*id_ed25519*/**",
+          "**/*credentials*",
+          "**/*credentials*/**",
+          "**/*.secret*",
+          "**/*.secret*/**",
+          "**/*.npmrc",
+          "**/*.npmrc/**",
+          "**/*.netrc",
+          "**/*.netrc/**"
+        ],
+        "effect": "deny"
       }
     ]
   }

@@ -38,6 +38,17 @@ describe('DerivationFooter company knowledge', () => {
     expect(text).toContain('1 company memory · 1 web search')
   })
 
+  it.each([
+    [true, 'Company logo'],
+    [false, 'Company logo left out (over 1 MB or unreadable)'],
+  ])('says whether the uploaded company logo was used (company_logo_included %s)', (included, line) => {
+    expect(renderFooter({ ...BASE, company_logo_included: included })).toContain(line)
+  })
+
+  it('says nothing about the company logo when the build did not record it', () => {
+    expect(renderFooter(BASE)).not.toContain('Company logo')
+  })
+
   it('names the company design system only when a prototype read it', () => {
     expect(renderFooter({ ...BASE, design_system_included: true })).toContain('Company design system')
   })
