@@ -808,7 +808,7 @@
     "guidance": {
       "title": "Czego potrzebuje poświadczenie",
       "app": "Utwórz aplikację GitHub App i zainstaluj ją tylko w tym repozytorium. Uprawnienia repozytorium: Contents, Pull requests i Issues ustawione na Read and write, Metadata na Read-only. Nic więcej: żadnych uprawnień Administration, Workflows, Secrets, Actions ani organizacji.",
-      "token": "Aplikacja nigdy nie trafia do agentów: na każdy krok broker wydaje token ważny godzinę, tylko dla tego repozytorium i tylko z tym, czego krok potrzebuje (zawartość repozytorium i pull requesty, odczyt i zapis; nigdy administracja).",
+      "token": "Aplikacja nigdy nie trafia do agentów: na każdy krok broker wydaje token ważny godzinę, tylko dla tego repozytorium i tylko z tym, czego krok potrzebuje z uprawnień aplikacji (Contents, Pull requests i Issues, odczyt i zapis; Metadata, tylko odczyt; nigdy administracja).",
       "branch": "Chroń domyślną gałąź i pozwól agentom wypychać zmiany tylko do gałęzi o nazwach voc-agent/*."
     },
     "dialog": {

@@ -119,7 +119,7 @@ describe('the engineering run reads', () => {
 
   it('encrypt a credential with the stack\'s key only through SSM and only for the connections\' parameters', () => {
     const statements = policyStatementsOf(on(), 'AgentsLambdaRole')
-      .filter((statement) => statement.actions.includes('kms:Encrypt') && statement.condition !== undefined);
+      .filter((statement) => statement.actions.includes('kms:Encrypt') && /ssm\./.test(JSON.stringify(statement.condition)));
     expect(statements.map((statement) => [...statement.actions].sort(byCodeUnit)))
       .toStrictEqual([['kms:Encrypt', 'kms:GenerateDataKey']]);
     expect(statements[0]?.condition).toStrictEqual({
@@ -131,6 +131,27 @@ describe('the engineering run reads', () => {
       },
     });
     expect(statements[0]?.resource).toContain('Fn::ImportValue');
+  });
+
+  it('use the stack\'s key only through DynamoDB, S3 and SSM, each for what the role does there', () => {
+    const keys = policyStatementsOf(on(), 'AgentsLambdaRole')
+      .filter((statement) => statement.actions.some((action) => action.startsWith('kms:')));
+    // Every statement on the key names the one service that calls KMS for it: none the role could use itself.
+    const via = (service: string) => ({ 'kms:ViaService': `${service}.us-east-1.amazonaws.com` });
+    expect(keys.map((statement) => [statement.condition, [...statement.actions].sort(byCodeUnit)])).toStrictEqual([
+      [{ StringEquals: via('dynamodb') }, ['kms:Decrypt', 'kms:Encrypt', 'kms:GenerateDataKey',
+        'kms:GenerateDataKeyWithoutPlaintext', 'kms:ReEncryptFrom', 'kms:ReEncryptTo']],
+      [{ StringEquals: via('s3') }, ['kms:Decrypt']],
+      [expect.objectContaining({ StringEquals: via('ssm') }), ['kms:Encrypt', 'kms:GenerateDataKey']],
+    ]);
+    expect(new Set(keys.map((statement) => statement.resource)).size).toBe(1);
+  });
+
+  it('use the stack\'s key only through DynamoDB while the module is off', () => {
+    const keys = policyStatementsOf(apiTemplate(), 'AgentsLambdaRole')
+      .filter((statement) => statement.actions.some((action) => action.startsWith('kms:')));
+    expect(keys.map((statement) => statement.condition)).toStrictEqual([
+      { StringEquals: { 'kms:ViaService': 'dynamodb.us-east-1.amazonaws.com' } }]);
   });
 
   it('give the agents API no SSM grant while the module is off', () => {

@@ -33,6 +33,16 @@ import { engineeringRunCaps } from './engineering-start';
  */
 export const CHAT_STREAM_TIMEOUT = cdk.Duration.minutes(15);
 
+/**
+ * What the Agents API's role may do with the stack's key through DynamoDB alone: what a customer-managed table key
+ * needs from its caller (the same set lib/utils/exact-grants.ts leaves of CDK's encrypt-and-decrypt grant on a role
+ * that uses DynamoDB), never a call of its own.
+ */
+const AGENTS_TABLES_KEY_ACTIONS = [
+  'kms:Decrypt', 'kms:Encrypt', 'kms:GenerateDataKey', 'kms:GenerateDataKeyWithoutPlaintext', 'kms:ReEncryptFrom',
+  'kms:ReEncryptTo',
+] as const;
+
 /** The domain Lambdas the assistant delegates its read tools to. */
 export interface AssistantDelegates {
   projectsLambda: lambda.Function;
@@ -64,7 +74,8 @@ export interface AssistantLambdas {
  * partitions for `GET /agents/engineering/spend`), never a write; `lambda:InvokeFunction` on the board's function
  * for a person's board actions (its own role writes them) and on the start function for a run's start (never the
  * runtime's own function), and GetObject on the workspace
- * bucket's reports only; its key comes with the role's grant on the stack's key. No ListBucket (it would list every
+ * bucket's reports only, with `kms:Decrypt` on the stack's key through S3 alone (the table's key comes with the role's
+ * DynamoDB-only grant, `AgentsTablesKey`). No ListBucket (it would list every
  * run object's key): S3 answers a report version that was counted but never written with 403, which views.py reads as
  * missing (404), since the role may read every report key. Returns the env that turns the routes on (shared/engineering_agents.py),
  * or undefined: off, the role gets nothing and the routes answer 404.
@@ -88,6 +99,11 @@ function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, 
   grantInvokeByName(cdk.Stack.of(role), role, [ctx.uniqueName(ENGINEERING_START_FUNCTION_BASE_NAME)], 'StartEngineeringRuns');
   const reports = engineeringWorkspaceBucket.arnForObjects(ENGINEERING_WORKSPACE_REPORTS_KEYS);
   role.addToPolicy(new iam.PolicyStatement({ actions: ['s3:GetObject'], resources: [reports] }));
+  // The reports' key: decrypt through S3 alone (the role writes nothing to the bucket).
+  role.addToPolicy(new iam.PolicyStatement({
+    sid: 'EngineeringReportsKey', actions: ['kms:Decrypt'], resources: [ctx.props.kmsKey.keyArn],
+    conditions: { StringEquals: { 'kms:ViaService': `s3.${ctx.stack.region}.amazonaws.com` } },
+  }));
   acknowledgeNag(role, [{
     id: 'AwsSolutions-IAM5',
     reason: 'Read-only on the engineering workspace\'s report objects (one per run, level, subject and version, known only at run time); never the runs\' own objects',
@@ -202,7 +218,14 @@ export function createAssistantLambdas(
   agentsTable.grant(agentsRole, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:Query');
   // Category access (which agents a user may see), category config, model picker — all GetItem.
   aggregatesTable.grant(agentsRole, 'dynamodb:GetItem');
-  kmsKey.grantEncryptDecrypt(agentsRole);
+  // The stack's key only through the services that encrypt what this role reads and writes with it (6.31.01 audit):
+  // DynamoDB here, for voc-agents, the aggregates table and, with the engineering module, voc-engineering; S3 for the
+  // workspace's reports and SSM for the connections' parameters, in engineeringReads. The role calls KMS itself for
+  // nothing, and voc-agent-run has no customer-managed key (its executions are encrypted by Step Functions' own).
+  agentsRole.addToPolicy(new iam.PolicyStatement({
+    sid: 'AgentsTablesKey', actions: [...AGENTS_TABLES_KEY_ACTIONS], resources: [kmsKey.keyArn],
+    conditions: { StringEquals: { 'kms:ViaService': `dynamodb.${stack.region}.amazonaws.com` } },
+  }));
   agentRunStateMachine.grantStartExecution(agentsRole);
   const agentExecutionsArn = stack.formatArn({
     service: 'states',

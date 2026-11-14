@@ -7,8 +7,9 @@ other code writes; the broker writes none of them:
 * the run: ``WS#<ws>#RUN#<run>`` / ``META`` (``runtime/runs.py``), read strongly consistent for the caller's run
   alone (its session names it): its status, connection, commit, the person who started it and its ``repo`` (the
   stored connection's repository at the start, which the broker holds the connection's credential to). A run whose META
-  names another run is no run; an active run without a connection is ``NoConnection``. The connection's default
-  branch comes from the host.
+  names another run is no run; an active run without a connection is ``NoConnection``. META's ``default_branch``,
+  the stored connection's at the start (``connections.py``), is handed on as ``stored_default_branch``; this reads
+  nothing of the host: the broker works the run's branch out only after its repository check (``broker.py``).
 * the board's GO ledger: the run's ``TASK#`` rows (one Query of its partition). The final-go task that ended last
   (done, failed or needing a person: blocked by a person too) is the run's verdict, whatever its state, and of it
   the gate record its holder recorded last (``_gate/attempt-<n>/record.json`` under the final-go agent's own keys).
@@ -56,14 +57,12 @@ _UNREADABLE: Final = "The run's record could not be read; retry."
 
 class RunRecords:
     """The broker's ``RunDirectory`` and ``GateLedger`` over the run's rows (a low-level DynamoDB client) and the
-    workspace bucket; ``default_branch`` is the host's (``RepositoryHost.default_branch``)."""
+    workspace bucket."""
 
-    def __init__(self, client: Any, table: str, workspace: WorkspaceStore,
-                 default_branch: Callable[[str], str]) -> None:
+    def __init__(self, client: Any, table: str, workspace: WorkspaceStore) -> None:
         self._client = client
         self._table = table
         self._workspace = workspace
-        self._default_branch = default_branch
 
     def _row(self, run_id: str, sk: str) -> dict[str, Any] | None:
         try:
@@ -79,7 +78,7 @@ class RunRecords:
         if status == ACTIVE and not connection:
             raise NoConnection(NO_CONNECTION)
         return RunRecord(
-            connection_id=connection, default_branch=self._default_branch(connection) if status == ACTIVE else '',
+            connection_id=connection, default_branch='', stored_default_branch=string_attr(item, 'default_branch'),
             status=status, ci_attested=False, cited_reviews=(), bot_addresses=(AUTHOR,),
             commit=string_attr(item, 'commit'), started_by=string_attr(item, 'started_by'),
             repository=string_attr(item, 'repo'))

@@ -86,7 +86,8 @@ def test_an_admin_starts_a_saved_flow_with_its_stored_budget_as_themselves(lambd
     assert status == 202, body
     sent = _sent(client)
     assert ULID.fullmatch(sent['run_id'])
-    # The deployment's caps when it sets none (50 USD, 10 million tokens); the repo is the stored connection's.
+    # The deployment's caps when it sets none (50 USD, 10 million tokens); the repo and the default branch are the
+    # stored connection's.
     # The flow as stored now goes with the start, which copies it into the run's own record: the run follows that.
     stored = json.loads(sent.pop('flow_definition'))
     assert (stored['schema'], [node['id'] for node in stored['nodes']], stored['budget']) == (
@@ -94,7 +95,7 @@ def test_an_admin_starts_a_saved_flow_with_its_stored_budget_as_themselves(lambd
     assert sent == {'action': 'start_run', 'run_id': sent['run_id'], 'max_tasks': agents_handler.RUN_TASK_CAP,
                     'flow': workflow_id, 'flow_revision': 1, 'budget_usd': 49.99, 'connection': 'conn-1',
                     'commit': COMMIT, 'language': 'python', 'goal': 'Fix the paging bugs', 'actor': 'admin-sub',
-                    'repo': 'example-org/shop', 'max_cost_usd': 50.0, 'max_tokens': 10_000_000}
+                    'repo': 'example-org/shop', 'default_branch': 'main', 'max_cost_usd': 50.0, 'max_tokens': 10_000_000}
     assert body == {'run': {'run_id': sent['run_id'], 'status': 'active', 'workflow_id': workflow_id,
                             'started_by': 'admin-sub'}}
 

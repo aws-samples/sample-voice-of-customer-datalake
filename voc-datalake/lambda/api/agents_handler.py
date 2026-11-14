@@ -1138,9 +1138,9 @@ def list_engineering_connections():
 @app.put('/agents/engineering/connections/<connection_id>')
 @tracer.capture_method(capture_response=False)
 def put_engineering_connection(connection_id: str):
-    """``{host: github, repository: owner/name, default_branch, credential?: {app_id, installation_id, private_key}}``
-    → ``{connection, created}``: stores the connection (its credential in SSM first, the row with its create-only
-    audit row after). The credential is needed to add one and to change its repository; 409 for a repository change
+    """``{host: github, repository: owner/name, default_branch, credential?: {app_id, installation_id, private_key},
+    reason?}`` → ``{connection, created}``: stores the connection (its credential in SSM first, the row with its
+    create-only audit row after, the reason on it). The credential is needed to add one and to change its repository; 409 for a repository change
     while a run of the connection is live, past the connection limit, or a change made meanwhile."""
     connections, caller = _connection_store()
     from engineering.connectors.connections import check_connection_id, parse_request
@@ -1156,10 +1156,19 @@ def put_engineering_connection(connection_id: str):
 @app.delete('/agents/engineering/connections/<connection_id>')
 @tracer.capture_method(capture_response=False)
 def delete_engineering_connection(connection_id: str):
-    """``{removed: true}``: removes the connection's credential (its runs' broker calls are refused once a warm broker's five-minute copy goes) and marks
-    its row removed, with its audit row. 404 for a connection that is not stored."""
+    """``{reason?}`` (the body optional) → ``{removed: true}``: removes the connection's credential (its runs' broker
+    calls are refused once a warm broker's five-minute copy goes) and marks its row removed, with its audit row (the
+    reason on it). 404 for a connection that is not stored."""
     connections, caller = _connection_store()
-    _connection_call(lambda: connections.remove(connection_id, _connection_actor(caller)))
+    from engineering.connectors.connections import parse_reason
+
+    def remove() -> None:
+        body = json_object_body(app)
+        if not set(body) <= {'reason'}:
+            raise ValidationError('the body is {reason?}, or none')
+        connections.remove(connection_id, _connection_actor(caller), parse_reason(body.get('reason')))
+
+    _connection_call(remove)
     return {'removed': True}
 
 
@@ -1205,15 +1214,17 @@ def _run_cap(name: str, default: float, kind: type) -> Any:
     return value
 
 
-def _run_repo(connection: str) -> str:
-    """The run's ``repo``, as its reports and the spend ledger group it: the stored connection's repository
-    (``owner/name``). 400 for a connection that is not stored: its broker would refuse every operation."""
+def _run_connection(connection: str) -> dict[str, str]:
+    """The run's ``repo`` (as its reports and the spend ledger group it) and ``default_branch``: the stored
+    connection's repository (``owner/name``) and default branch, copied onto the run (the broker serves the run on
+    that branch once the host confirms it has it: connectors/records.py). 400 for a connection that is not stored:
+    its broker would refuse every operation."""
     from engineering.connectors.connections import stored_connection
 
     stored = _connection_call(lambda: stored_connection(_agents_table(), connection))
     if stored is None:
         raise ValidationError('connection names no stored repository connection: add it under Agents → Connections')
-    return str(stored['repository'])
+    return {'repo': str(stored['repository']), 'default_branch': str(stored['default_branch'])}
 
 
 def _start_body(body: Mapping[str, Any]) -> dict[str, str]:
@@ -1349,7 +1360,7 @@ def start_engineering_run():
         # The flow as stored now: the run copies it and follows its copy (a later edit is the next run's).
         'flow_definition': definition, 'flow_revision': revision,
         'connection': fields['connection'], 'commit': fields['commit'], 'language': fields['language'],
-        'goal': fields['goal'], 'actor': caller.subject, 'repo': _run_repo(fields['connection']),
+        'goal': fields['goal'], 'actor': caller.subject, **_run_connection(fields['connection']),
         'max_cost_usd': _run_cap('ENGINEERING_RUN_CAP_USD', DEFAULT_RUN_CAP_USD, float),
         'max_tokens': _run_cap('ENGINEERING_RUN_TOKEN_CAP', DEFAULT_RUN_TOKEN_CAP, int),
     }

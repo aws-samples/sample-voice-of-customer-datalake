@@ -15,7 +15,7 @@ from engineering.board.test.table import TABLE, create_table
 from engineering.connectors.hosts import NoConnection, Unavailable
 from engineering.connectors.patches import AUTHOR
 from engineering.connectors.records import RunRecords
-from engineering.connectors.test.fakes import BASE, RUN, TREE, FakeHost
+from engineering.connectors.test.fakes import BASE, RUN, TREE
 from engineering.flow import ledger as go_ledger
 from engineering.workspace.store import WorkspaceStore
 
@@ -79,32 +79,39 @@ def checked_record(verdict: str = 'GO', tree: str = TREE, *, stop: str = '', sta
                         'complete': True, 'finding_ids': []}]}
 
 
-def ledger(client: Any, s3: Any, host: FakeHost | None = None) -> RunRecords:
-    return RunRecords(client, TABLE, WorkspaceStore(s3, BUCKET, denied_is_missing=True),
-                      (host or FakeHost()).default_branch)
+def ledger(client: Any, s3: Any) -> RunRecords:
+    return RunRecords(client, TABLE, WorkspaceStore(s3, BUCKET, denied_is_missing=True))
 
 
-def test_the_run_is_its_meta_with_the_hosts_default_branch(stores: tuple[Any, Any]) -> None:
+def test_the_run_is_its_meta_and_its_stored_default_branch_with_nothing_of_the_host(
+        stores: tuple[Any, Any]) -> None:
     client, s3 = stores
-    meta(client)
-    host = FakeHost()
-    run = ledger(client, s3, host).run(RUN)
+    meta(client, default_branch='develop')
+    run = ledger(client, s3).run(RUN)
     assert run is not None
-    assert (run.connection_id, run.default_branch, run.status, run.commit, run.started_by) == (
-        'conn-1', 'main', 'active', BASE, 'person-sub-1')
+    # The branch is the broker's to work out, after its repository check (broker.py): '' here, the stored one beside.
+    assert (run.connection_id, run.default_branch, run.stored_default_branch, run.status, run.commit,
+            run.started_by) == ('conn-1', '', 'develop', 'active', BASE, 'person-sub-1')
     # Nothing records an attestation, the run's issue or pull request, or its reviews yet: none is made up.
     assert (run.ci_attested, run.issue_number, run.pull_request_number, run.cited_reviews) == (False, None, None, ())
     assert run.bot_addresses == (AUTHOR,)
-    assert host.calls == [('default_branch', 'conn-1')]
+
+
+def test_a_run_started_before_6_31_01_has_no_stored_default_branch(stores: tuple[Any, Any]) -> None:
+    client, s3 = stores
+    meta(client)
+    run = ledger(client, s3).run(RUN)
+    assert run is not None
+    assert run.stored_default_branch == ''
 
 
 @pytest.mark.parametrize('status', ['stopped', 'needs_human', 'done'])
 def test_a_run_that_is_not_active_is_read_without_the_host(stores: tuple[Any, Any], status: str) -> None:
     client, s3 = stores
     meta(client, status=status, connection='')
-    host = FakeHost()
-    run = ledger(client, s3, host).run(RUN)
-    assert (run is not None and run.status, host.calls) == (status, [])
+    run = ledger(client, s3).run(RUN)
+    assert run is not None
+    assert run.status == status
 
 
 def test_an_unknown_run_or_a_meta_of_another_run_is_no_run(stores: tuple[Any, Any]) -> None:
@@ -218,7 +225,7 @@ def test_the_latest_attempt_of_a_task_wins_and_only_its_record_is_read(stores: t
     store = WorkspaceStore(s3, BUCKET)
     original = store.read_bytes
     monkeypatch.setattr(store, 'read_bytes', lambda k, limit: read.append(k) or original(k, limit))
-    assert RunRecords(client, TABLE, store, FakeHost().default_branch).has_go(RUN, TREE)
+    assert RunRecords(client, TABLE, store).has_go(RUN, TREE)
     # The deciding final go's record, then the newest gate runner's: no other.
     assert read == [key, gate]
 
@@ -257,11 +264,11 @@ class Down:
 @pytest.mark.parametrize('read', [lambda r: r.run(RUN), lambda r: r.person_go(RUN), lambda r: r.has_go(RUN, TREE)])
 def test_a_table_that_cannot_be_read_is_unavailable(read: Any) -> None:
     with pytest.raises(Unavailable):
-        read(RunRecords(Down(), TABLE, WorkspaceStore(Down(), BUCKET), FakeHost().default_branch))
+        read(RunRecords(Down(), TABLE, WorkspaceStore(Down(), BUCKET)))
 
 
 def test_a_workspace_that_cannot_be_read_is_unavailable(stores: tuple[Any, Any]) -> None:
     client, s3 = stores
     final_go(client, s3, 't1', gate_record('GO'))
     with pytest.raises(Unavailable):
-        RunRecords(client, TABLE, WorkspaceStore(Down(), BUCKET), FakeHost().default_branch).has_go(RUN, TREE)
+        RunRecords(client, TABLE, WorkspaceStore(Down(), BUCKET)).has_go(RUN, TREE)

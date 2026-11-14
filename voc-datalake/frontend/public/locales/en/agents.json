@@ -721,7 +721,7 @@
     "guidance": {
       "title": "What the credential needs",
       "app": "Create a GitHub App and install it only on this repository. Repository permissions: Contents, Pull requests and Issues set to Read and write, Metadata to Read-only. Nothing else: no Administration, Workflows, Secrets, Actions or organization permission.",
-      "token": "The App is never handed to the agents: for each step the broker mints a token valid for one hour, for this one repository and only what the step needs (repository contents and pull requests, read and write; never admin).",
+      "token": "The App is never handed to the agents: for each step the broker mints a token valid for one hour, for this one repository and only what the step needs of the App's permissions (Contents, Pull requests and Issues, read and write; Metadata, read-only; never admin).",
       "branch": "Protect the default branch, and let the agents push only to branches named voc-agent/*."
     },
     "dialog": {

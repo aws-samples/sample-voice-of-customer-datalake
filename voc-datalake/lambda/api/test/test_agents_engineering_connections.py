@@ -27,7 +27,7 @@ from engineering.connectors import credentials, handler
 from engineering.connectors.broker import OTHER_REPOSITORY
 from engineering.connectors.connections import LOG_PREFIX, PARTITION
 from engineering.connectors.github import GitHubHost, Response
-from engineering.connectors.hosts import NO_CONNECTION
+from engineering.connectors.hosts import NO_CONNECTION, STORED_BRANCH_MISSING
 from engineering.connectors.test.app_keys import APP_ID, INSTALLATION_ID, OWNER, REPOSITORY, connection_body, pem
 from engineering.connectors.test.fakes import OTHER_RUN, PATTERN, RUN, role_arn, url_event
 from engineering.connectors.test.test_github import NOW, REPO, Clock, FakeGitHub, answer
@@ -50,10 +50,11 @@ class Env:
     engineering: Any
     ssm: Any
 
-    def start_run(self, connection: str = 'refunds', run_id: str = RUN, repo: str = f'{OWNER}/{REPOSITORY}') -> None:
+    def start_run(self, connection: str = 'refunds', run_id: str = RUN, repo: str = f'{OWNER}/{REPOSITORY}',
+                  default_branch: str = '') -> None:
         RunStore(boto3.resource('dynamodb', region_name='us-east-1').Table(TABLE)).start(
             run_id, caps=RunCaps(max_tasks=10), now=int(NOW), connection=connection, repo=repo, commit='c' * 40,
-            language='python', actor='admin-sub')
+            language='python', actor='admin-sub', default_branch=default_branch)
 
 
 @pytest.fixture
@@ -177,11 +178,18 @@ def broker_read(api: FakeGitHub, run_id: str = RUN) -> tuple[int, dict[str, Any]
     return response['statusCode'], json.loads(response['body'])
 
 
-def test_the_broker_answers_a_runs_read_once_its_connection_is_stored_and_503_once_it_is_removed(
-        lambda_context: Any, env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.fixture
+def broker_env(env: Env, monkeypatch: pytest.MonkeyPatch) -> Env:
+    """``env`` with the broker's own env (its role pattern, the workspace bucket and the aggregates table)."""
     for name, value in ((handler.ROLE_NAME_PATTERN_ENV, PATTERN), (handler.BUCKET_ENV, 'voc-eng-workspace'),
                         (handler.AGGREGATES_ENV, 'voc-aggregates')):
         monkeypatch.setenv(name, value)
+    return env
+
+
+def test_the_broker_answers_a_runs_read_once_its_connection_is_stored_and_503_once_it_is_removed(
+        lambda_context: Any, broker_env: Env) -> None:
+    env = broker_env
     api = FakeGitHub().on('GET', REPO, answer(200, {'default_branch': 'main'})) \
         .on('GET', f'{REPO}/contents/README.md', Response(status=200, headers={}, body=b'# Refund service\n'))
     # The run names the connection; nothing stored yet, so the broker has no credential to use.
@@ -205,9 +213,40 @@ def test_the_broker_answers_a_runs_read_once_its_connection_is_stored_and_503_on
     assert broker_read(api) == (503, {'error': NO_CONNECTION})
 
 
+def test_the_broker_serves_a_run_on_its_connections_stored_default_branch_only_while_the_host_has_it(
+        lambda_context: Any, broker_env: Env) -> None:
+    env = broker_env
+    api = FakeGitHub().on('GET', f'{REPO}/git/ref/heads/develop', answer(200, {'object': {'sha': 'd' * 40}})) \
+        .on('GET', f'{REPO}/git/ref/heads/gone', answer(404, {})) \
+        .on('GET', f'{REPO}/contents/README.md', Response(status=200, headers={}, body=b'# Refund service\n'))
+    assert _call(lambda_context, 'PUT', connection_path(), body=body(default_branch='develop'))[0] == 200
+    # The start copies the stored branch onto the run (as it does the repository); the broker confirms it on the host.
+    env.start_run(**agents_handler._run_connection('refunds'))
+    assert broker_read(api)[0] == 200
+    assert ('GET', f'{REPO}/git/ref/heads/develop') in api.calls()
+    assert ('GET', REPO) not in api.calls()   # (never the host's own default branch)
+    # A branch the repository does not have: every operation refused, nothing read.
+    sent = len(api.sent)
+    env.start_run(run_id=OTHER_RUN, default_branch='gone')
+    assert broker_read(api, OTHER_RUN) == (409, {'error': STORED_BRANCH_MISSING})
+    assert [s.path for s in api.sent[sent:] if '/contents/' in s.path] == []
+
+
 @pytest.mark.usefixtures('env')
-def test_a_runs_repository_is_its_stored_connections(lambda_context: Any) -> None:
+def test_a_runs_repository_and_default_branch_are_its_stored_connections(lambda_context: Any) -> None:
     with pytest.raises(agents_handler.ValidationError, match='no stored repository connection'):
-        agents_handler._run_repo('refunds')
-    assert _call(lambda_context, 'PUT', connection_path(), body=body())[0] == 200
-    assert agents_handler._run_repo('refunds') == f'{OWNER}/{REPOSITORY}'
+        agents_handler._run_connection('refunds')
+    assert _call(lambda_context, 'PUT', connection_path(), body=body(default_branch='trunk'))[0] == 200
+    assert agents_handler._run_connection('refunds') == {'repo': f'{OWNER}/{REPOSITORY}', 'default_branch': 'trunk'}
+
+
+def test_a_change_and_a_removal_record_the_administrators_reason(lambda_context: Any, env: Env) -> None:
+    assert _call(lambda_context, 'PUT', connection_path(), body=body(reason='New App for the team'))[0] == 200
+    assert _call(lambda_context, 'DELETE', connection_path(), body={'reason': ['not text']})[0] == 400
+    assert _call(lambda_context, 'DELETE', connection_path(), body={'why': 'x'})[0] == 400
+    assert _call(lambda_context, 'DELETE', connection_path(), body={'reason': 'Repository archived'}) == (
+        200, {'removed': True})
+    audits = env.agents.query(KeyConditionExpression='pk = :pk AND begins_with(sk, :log)',
+                              ExpressionAttributeValues={':pk': PARTITION, ':log': LOG_PREFIX})['Items']
+    assert sorted((row['action'], row['reason']) for row in audits) == [
+        ('created', 'New App for the team'), ('removed', 'Repository archived')]

@@ -781,7 +781,7 @@
     "guidance": {
       "title": "Ce dont l’identifiant a besoin",
       "app": "Créez une GitHub App et installez-la uniquement sur ce dépôt. Autorisations du dépôt : Contents, Pull requests et Issues en Read and write, Metadata en Read-only. Rien d’autre : aucune autorisation Administration, Workflows, Secrets, Actions ni d’organisation.",
-      "token": "L’App n’est jamais confiée aux agents : pour chaque étape, le broker émet un jeton valable une heure, pour ce seul dépôt et seulement pour ce dont l’étape a besoin (contenu du dépôt et pull requests, lecture et écriture ; jamais d’administration).",
+      "token": "L’App n’est jamais confiée aux agents : pour chaque étape, le broker émet un jeton valable une heure, pour ce seul dépôt et seulement avec ce dont l’étape a besoin parmi les permissions de l’App (Contents, Pull requests et Issues, lecture et écriture ; Metadata, lecture seule ; jamais d’administration).",
       "branch": "Protégez la branche par défaut, et ne laissez les agents pousser que sur des branches nommées voc-agent/*."
     },
     "dialog": {

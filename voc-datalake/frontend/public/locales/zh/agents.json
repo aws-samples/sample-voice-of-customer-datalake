@@ -775,7 +775,7 @@
     "guidance": {
       "title": "凭据需要具备什么",
       "app": "创建一个 GitHub App，并只安装在此仓库上。仓库权限：Contents、Pull requests 和 Issues 设为 Read and write，Metadata 设为 Read-only。不要授予其他权限：不需要 Administration、Workflows、Secrets、Actions 或组织权限。",
-      "token": "App 本身从不交给智能体：代理服务在每一步签发一个有效期一小时的令牌，只针对此仓库，只含该步骤所需的权限（仓库内容和拉取请求的读写；从不含管理权限）。",
+      "token": "App 本身从不交给智能体：代理服务在每一步签发一个有效期一小时的令牌，只针对此仓库，只含该步骤所需的 App 权限（Contents、Pull requests 和 Issues 的读写；Metadata 只读；从不含管理权限）。",
       "branch": "请保护默认分支，并只允许智能体推送到名为 voc-agent/* 的分支。"
     },
     "dialog": {

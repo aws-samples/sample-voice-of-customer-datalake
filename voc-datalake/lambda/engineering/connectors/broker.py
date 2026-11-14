@@ -30,6 +30,7 @@ import contextlib
 import hashlib
 import json
 from collections.abc import Callable, Mapping
+from dataclasses import replace
 from typing import Final
 
 from engineering.connectors.hosts import (
@@ -161,7 +162,10 @@ class Broker:
         # failed save): a run never reads or writes another repository than its own.
         if self._connector.host.repository(run.connection_id) != run.repository:
             raise NotNow(OTHER_REPOSITORY)
-        return self._connector, run
+        # Only then the run's branch: the stored one once the host confirms it (StoredBranchMissing, 409, when not),
+        # so a credential re-pointed at another repository is never used for a lookup.
+        branch = self._connector.host.default_branch(run.connection_id, run.stored_default_branch)
+        return self._connector, replace(run, default_branch=branch)
 
     def _open_write(self, caller: Caller, operation: str, branch: str) -> tuple[Connector, RunRecord]:
         """A push's or a pull request's checks before its own: the run, the dial, the CI attestation, the branch."""

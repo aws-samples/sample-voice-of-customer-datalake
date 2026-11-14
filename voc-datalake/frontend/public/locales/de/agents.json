@@ -775,7 +775,7 @@
     "guidance": {
       "title": "Was die Zugangsberechtigung braucht",
       "app": "Erstellen Sie eine GitHub App und installieren Sie sie nur in diesem Repository. Repository-Berechtigungen: Contents, Pull requests und Issues auf Read and write, Metadata auf Read-only. Sonst nichts: keine Berechtigung für Administration, Workflows, Secrets, Actions oder die Organisation.",
-      "token": "Die App wird den Agenten nie übergeben: Für jeden Schritt erstellt der Broker ein Token, das eine Stunde gilt, nur für dieses Repository und nur für das, was der Schritt braucht (Repository-Inhalte und Pull Requests, Lesen und Schreiben; nie Administration).",
+      "token": "Die App wird den Agenten nie übergeben: Für jeden Schritt erstellt der Broker ein Token, das eine Stunde gilt, nur für dieses Repository und nur mit dem, was der Schritt von den Berechtigungen der App braucht (Contents, Pull requests und Issues, Lesen und Schreiben; Metadata, nur Lesen; nie Administration).",
       "branch": "Schützen Sie den Standard-Branch und lassen Sie die Agenten nur in Branches namens voc-agent/* pushen."
     },
     "dialog": {

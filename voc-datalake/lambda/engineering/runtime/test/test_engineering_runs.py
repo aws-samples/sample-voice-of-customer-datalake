@@ -130,6 +130,16 @@ def test_a_runs_connection_and_base_commit_are_kept_for_the_boards_launch(aws: A
     assert (run.connection, run.commit) == ('conn-1', 'a' * 40)
 
 
+def test_meta_keeps_the_connections_default_branch_at_the_start_for_the_broker(aws: Any):
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=5), now=1000, connection='conn-1', repo='example/app',
+               default_branch='develop')
+    runs.start(OTHER, caps=RunCaps(max_tasks=5), now=1000)
+    # (connectors/records.py reads it; '' holds the run to the repository's own default branch)
+    assert aws[1].get_item(Key=META)['Item']['default_branch'] == 'develop'
+    assert aws[1].get_item(Key={'pk': f'WS#default#RUN#{OTHER}', 'sk': 'META'})['Item']['default_branch'] == ''
+
+
 @pytest.mark.parametrize(('connection', 'commit', 'error'), [
     ('conn 1', '', 'connection'), ('', 'abc123', 'full hexadecimal'), ('', 'A' * 40, 'full hexadecimal')])
 def test_a_bad_connection_or_commit_starts_no_run(aws: Any, connection: str, commit: str, error: str):

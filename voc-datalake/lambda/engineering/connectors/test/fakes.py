@@ -5,6 +5,7 @@ import json
 from dataclasses import dataclass, field, replace
 
 from engineering.connectors.hosts import (
+    STORED_BRANCH_MISSING,
     WRITE_CLAIMED,
     WRITE_REFUSED,
     BundleContents,
@@ -17,6 +18,7 @@ from engineering.connectors.hosts import (
     ReadPage,
     RepositoryHost,
     RunRecord,
+    StoredBranchMissing,
     Submission,
     WriteClaim,
     WriteLedger,
@@ -98,9 +100,16 @@ class FakeHost:
         self.calls.append(('file_at', connection_id, commit, path))
         return self.files.get(path)
 
-    def default_branch(self, connection_id: str) -> str:
-        self.calls.append(('default_branch', connection_id))
-        return 'main'
+    #: The branches the repository has (a stored default branch is served only when it is one of them).
+    branches: tuple[str, ...] = ('main', 'develop')
+    #: Every default-branch lookup (connection, stored branch), apart from ``calls``.
+    branch_lookups: list[tuple[str, str]] = field(default_factory=list)
+
+    def default_branch(self, connection_id: str, stored: str = '') -> str:
+        self.branch_lookups.append((connection_id, stored))
+        if stored and stored not in self.branches:
+            raise StoredBranchMissing(STORED_BRANCH_MISSING)
+        return stored or 'main'
 
     def post_comment(self, connection_id: str, on: CommentTarget, number: int, body: str) -> str:
         self.calls.append(('post_comment', connection_id, on, number, body))

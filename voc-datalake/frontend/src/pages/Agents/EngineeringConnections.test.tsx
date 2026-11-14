@@ -6,12 +6,16 @@
  * (the DELETE), a server's 409 said in its own words, what the App needs, and the form's own checks before anything is
  * sent. Where the tab is offered is Agents.test.tsx's.
  */
+import * as fs from 'fs'
+import * as path from 'path'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { z } from 'zod'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createTestQueryClient, renderWithQueryClient } from '@test/query-client'
 import { fetchApi, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
 import { at } from '@test/defined'
+import { sortedStrings } from '@test/stringLists'
 import { said } from '@test/describedField'
 import { ApiError } from '../../lib/errors'
 import type { RouteHandler } from '@test/fetchApiRoutes'
@@ -80,7 +84,9 @@ describe('the connections list', () => {
     expect(screen.getByRole('button', { name: 'Add connection' })).toBeEnabled()
     const guidance = screen.getByRole('region', { name: 'What the credential needs' })
     expect(guidance).toHaveTextContent('Contents, Pull requests and Issues set to Read and write')
-    expect(guidance).toHaveTextContent('repository contents and pull requests, read and write; never admin')
+    // A token holds at most the App's own permissions, the four the line above asks for.
+    expect(guidance).toHaveTextContent(
+      'Contents, Pull requests and Issues, read and write; Metadata, read-only; never admin')
   })
 
   it('says a failed load, and loads again on Retry', async () => {
@@ -236,5 +242,24 @@ describe('removing a connection', () => {
     await userEvent.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(calls('DELETE')).toStrictEqual([])
+  })
+})
+
+const LOCALES_DIR = path.join(__dirname, '../../../public/locales')
+const LOCALES = ['de', 'en', 'es', 'fr', 'ja', 'ko', 'pl', 'pt', 'zh']
+const guidanceSchema = z.object({ connections: z.object({ guidance: z.object({ token: z.string() }) }) })
+const localeGuidance = (locale: string) => guidanceSchema.parse(
+  JSON.parse(fs.readFileSync(path.join(LOCALES_DIR, locale, 'agents.json'), 'utf8'))).connections.guidance
+
+describe('what a token holds, in every locale', () => {
+  it('covers the nine shipped locales', () => {
+    expect(sortedStrings(fs.readdirSync(LOCALES_DIR))).toStrictEqual(LOCALES)
+  })
+
+  // The App's permissions, by the names its settings page shows: a token holds at most those (github.py).
+  it.each(LOCALES)('%s names the App\'s four permissions in what a token holds', (locale) => {
+    const { token } = localeGuidance(locale)
+    expect(['Contents', 'Pull requests', 'Issues', 'Metadata'].filter((name) => !token.includes(name)))
+      .toStrictEqual([])
   })
 })

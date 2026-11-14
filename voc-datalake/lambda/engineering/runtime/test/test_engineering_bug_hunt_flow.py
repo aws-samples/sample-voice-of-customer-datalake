@@ -103,9 +103,9 @@ class GitHost:
         base = self.work / 'base' / path   # (a path the broker's patch reader took: no '..', no .git)
         return base.read_bytes() if (connection_id, commit) == ('conn-1', COMMIT) and base.is_file() else None
 
-    def default_branch(self, connection_id: str) -> str:
+    def default_branch(self, connection_id: str, stored: str = '') -> str:
         assert connection_id == 'conn-1'
-        return 'main'
+        return stored or 'main'
 
     def repository(self, connection_id: str) -> str:
         assert connection_id == 'conn-1'
@@ -338,7 +338,7 @@ def bug_hunt(wired: Any, aws: tuple[Any, Any], tmp_path: Path) -> BugHunt:
         AttributeDefinitions=[{'AttributeName': name, 'AttributeType': 'S'} for name in ('pk', 'sk')])
     people.put_item(Item={**ai_mode_key(STARTER), 'mode': MODE_AI_DRIVEN})
     host = GitHost(cache, commit, tmp_path / 'host')
-    records = RunRecords(client, TABLE, workspace, host.default_branch)
+    records = RunRecords(client, TABLE, workspace)
     broker = Broker(Connector(host=host, bundles=WorkspacePatches(workspace, host.file_at), runs=Attested(records),
                               ledger=records, dial=WaysOfWorking(people), writes=WriteClaims(client, TABLE)))
     return BugHunt(api, launcher, s3, tmp_path, cache, commit, host, FunctionUrl(BROKER_URL, broker, AgentSessions(RUN)))

@@ -51,6 +51,7 @@ from engineering.connectors.credentials import GitHubAppCredential
 from engineering.connectors.hosts import (
     FILE_MODES,
     OBJECT_ID,
+    STORED_BRANCH_MISSING,
     BundleContents,
     CommentTarget,
     Conflict,
@@ -64,6 +65,7 @@ from engineering.connectors.hosts import (
     PullRequestRef,
     ReadKind,
     ReadPage,
+    StoredBranchMissing,
 )
 from engineering.connectors.write_policy import BrokerError, WriteRefused
 from shared.github_rest import GITHUB_API, GITHUB_API_VERSION
@@ -103,8 +105,11 @@ _PUSH: Final[Permissions] = {'contents': 'write'}
 _BRANCH: Final[Permissions] = {'contents': 'read'}
 #: The repository's own facts (its default branch): what every token holds anyway.
 _METADATA: Final[Permissions] = {'metadata': 'read'}
-#: How long a connection's default branch is kept before it is read again.
+#: How long a connection's default branch (the host's, or the stored one the host confirmed) is kept before it is
+#: read again.
 DEFAULT_BRANCH_SECONDS: Final = 300
+#: The most entries each branch cache keeps (connections times branches stay small; the oldest goes first).
+MAX_CACHED_BRANCHES: Final = 256
 _DRAFT: Final[Permissions] = {'contents': 'read', 'pull_requests': 'write'}
 
 
@@ -280,6 +285,14 @@ def _stray_changes(contents: BundleContents) -> list[str]:
     return found
 
 
+def _keep[K, V](cache: dict[K, V], key: K, value: V) -> None:
+    """``cache[key] = value``, the oldest entries dropped first so it never holds more than ``MAX_CACHED_BRANCHES``."""
+    cache.pop(key, None)
+    while len(cache) >= MAX_CACHED_BRANCHES:
+        del cache[next(iter(cache))]
+    cache[key] = value
+
+
 class GitHubHost:
     """``RepositoryHost`` over the GitHub REST API, one App installation token per repository and permission set."""
 
@@ -292,6 +305,8 @@ class GitHubHost:
         self._tokens: dict[tuple[str, int, str, tuple[tuple[str, str], ...]], tuple[str, float]] = {}
         #: (connection, owner/repository) -> (its default branch, when it is read again).
         self._default_branches: dict[tuple[str, str], tuple[str, float]] = {}
+        #: (connection, owner/repository, a stored default branch the host has) -> when it is looked up again.
+        self._confirmed_branches: dict[tuple[str, str, str], float] = {}
 
     # --- HTTP -------------------------------------------------------------------------------------------------
 
@@ -376,16 +391,31 @@ class GitHubHost:
         credential = self._credentials(connection_id)
         return f'{credential.owner}/{credential.repository}'
 
-    def default_branch(self, connection_id: str) -> str:
-        """The repository's default branch, kept ``DEFAULT_BRANCH_SECONDS`` per connection and repository."""
+    def default_branch(self, connection_id: str, stored: str = '') -> str:
+        """``stored``, the connection's default branch as the run recorded it, once the repository has it (one branch
+        lookup, ``contents: read``, kept ``DEFAULT_BRANCH_SECONDS``; ``StoredBranchMissing`` when it has none, never
+        kept); for ``stored=''`` (a run started before connections recorded one) the repository's own default
+        branch, kept as long per connection and repository."""
         credential = self._credentials(connection_id)
+        if stored:
+            return self._confirmed(connection_id, f'{credential.owner}/{credential.repository}', stored)
         key = (connection_id, f'{credential.owner}/{credential.repository}')
         held = self._default_branches.get(key)
         now = self._clock()
         if held is not None and now < held[1]:
             return held[0]
         branch = _text(_json(self._api(connection_id, _METADATA, 'GET', '', 'the repository read')), 'default_branch')
-        self._default_branches[key] = (branch, now + DEFAULT_BRANCH_SECONDS)
+        _keep(self._default_branches, key, (branch, now + DEFAULT_BRANCH_SECONDS))
+        return branch
+
+    def _confirmed(self, connection_id: str, repository: str, branch: str) -> str:
+        key = (connection_id, repository, branch)
+        now = self._clock()
+        if now < self._confirmed_branches.get(key, 0.0):
+            return branch
+        if self._head(connection_id, _BRANCH, branch) is None:
+            raise StoredBranchMissing(STORED_BRANCH_MISSING)
+        _keep(self._confirmed_branches, key, now + DEFAULT_BRANCH_SECONDS)
         return branch
 
     def _read_history(self, connection_id: str, target: str, page: str) -> ReadPage:

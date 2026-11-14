@@ -17,6 +17,83 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.31.01] - 2026-11-14
+
+Autonomous engineering agents: the follow-ups of 6.31.00's reviews. Off by default (`-c engineeringAgents=true`), and
+no fixed cost.
+
+### Fixed
+
+- **The connection's stored default branch is the broker's** (`connectors/records.py`, `github.py`). It was stored and
+  never read: the broker held every run to the repository's own default branch. A run's start now copies the stored
+  connection's default branch onto the run (META's `default_branch`, beside its `repo`: `POST
+  /agents/engineering/runs`, then `runs.py`), and the broker holds the run to it (never a push to it, a new branch
+  starts on it, a draft pull request opens against it) once the host confirms the repository has it (one branch lookup,
+  `contents: read`, kept five minutes, each of the two branch caches bounded to 256 entries), asked only after the
+  repository check, so a credential re-pointed at another repository is never used for it (`records.py` reads nothing
+  of the host). A branch the repository does not have refuses the run's every operation, 409
+  (`StoredBranchMissing`), until an administrator corrects the connection and starts the run again. A run started
+  before this release has none on its META and keeps the repository's own default branch.
+- **Two administrators adding the same connection id at once** (`connections.py`): the losing save's undo deleted the
+  parameter the winning save had just stored, leaving a row that says its credential is set with none behind it. The
+  undo now reads the row again: with none stored (or a removed one) the parameter is deleted, as before; once another
+  save stored a row, nothing is deleted, and that row is marked credential not set instead (the parameter may hold
+  either save's credential), with its audit row. A row that cannot be read again is taken as none: deleted, failing
+  closed. One ordering is not prevented and fails closed: the loser's row write fails for another reason (a
+  throttle), the winner's put lands, the loser's undo (no row yet) deletes it, and the winner's row is written after.
+  SSM has no conditional delete and the Agents API cannot read a parameter, so the delete cannot be held to the
+  loser's own version; the row then says set with no credential behind it, and the broker refuses every run on the
+  connection (503) until it is saved again with its credential, never serving one with another's.
+
+### Added
+
+- An optional `reason` on a connection change (`PUT …/connections/<id>` `{…, reason?}`, `DELETE …/connections/<id>`
+  `{reason?}`, the body optional): one line, at most 500 characters (longer is 400, never cut), credential-shaped text
+  redacted, kept on the change's audit row (D4's why). The web app does not send one yet.
+
+### Changed
+
+- **The Agents API's role uses the stack's key only through services** (`lib/stacks/api-assistant-lambdas.ts`). Audit
+  of its uses: DynamoDB (`voc-agents`, the aggregates table, `voc-engineering`), S3 (the workspace's reports) and SSM
+  (the connections' parameters); `voc-agent-run` has no customer-managed key, and the code calls KMS itself nowhere.
+  So the unconditioned `kmsKey.grantEncryptDecrypt` is replaced by `kms:ViaService` statements for exactly those:
+  through DynamoDB the actions a table key needs (what lib/utils/exact-grants.ts left of the old grant), through S3
+  `kms:Decrypt` (with the module on), and the SSM statement of 6.31.00, which now narrows what it states.
+- The 409 for a repository change while a run of the connection is live reads the runs, then writes: a run started
+  between the two is not seen. docs/autonomous-engineering.md and `connections.py` now say so, and that what
+  guarantees a run never reads or writes another repository is the broker's own check (it serves a run only while the
+  connection's credential names the run's repository), which fails closed.
+- Agents → Connections, "What the credential needs", all nine locales: what a token holds now names the App's own
+  permissions (Contents, Pull requests and Issues, read and write; Metadata, read-only), as the line above it asks the
+  App for, instead of contents and pull requests alone.
+- `lib/test-support/baseline.json` regenerated: VocApiStack's template hash moved (the Agents API role's key
+  statements, and its Lambda asset hashes) and VocProcessingStack's (the Lambda asset hashes of the code its bundles
+  carry); no resource or name changed.
+
+### Tests
+
+- The stored default branch: META keeps it from the start (`runs.py`, the runtime handler, the Agents API's start);
+  the broker's records hand it on without asking the host; the broker asks for it only after the repository check
+  (none asked for a run on another repository), refuses each operation while the host lacks it (its words never
+  naming the branch) and pushes on it; the GitHub client's branch lookup (`contents: read`, kept five minutes, a
+  refusal never kept, the caches bounded with the oldest dropped first), the handler's 409, and end to end through
+  the route and the broker's Lambda against a fake GitHub.
+- The race on moto (DynamoDB, SSM, KMS): another administrator's whole add between a save's read and its credential
+  put; the loser's undo keeps the parameter and marks the winner's row not set (its next save with the credential sets
+  it again); the same for a re-add of a removed connection; a row that cannot be read again deletes the parameter;
+  and the one ordering left (a throttled write, the winner's put deleted before its row) ends with the broker
+  reading no credential, until a save with the credential restores it.
+- The reason: kept one line and redacted on the audit rows of a save and a removal, absent when not given, refused
+  over 500 characters or when not text, and through the routes (the DELETE's body checked).
+- CDK: every statement of the Agents API's role on the key names its one service (DynamoDB, S3, SSM, with their
+  actions), with the module on and off.
+- The web app: each of the nine locales names the App's four permissions in what a token holds.
+
+### Upgrade notes
+
+- Nothing to do. With the module on, a connection whose default branch is not the repository's (or no longer exists)
+  now refuses its new runs' operations (409) until it is corrected under Agents → Connections.
+
 ## [6.31.00] - 2026-11-14
 
 Autonomous engineering agents: repository connections can be stored, so the broker serves a run on a stored connection

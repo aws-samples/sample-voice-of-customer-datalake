@@ -1,6 +1,7 @@
 """voc-engineering-runtime: a run's start and end, the supervisor's tick, the launcher, the run monitor's signals.
 
-- ``{"action": "start_run", "run_id", "max_tasks", "max_tokens"?, "max_cost_usd"?, "goal"?, "repo"?, "flow"?,
+- ``{"action": "start_run", "run_id", "max_tasks", "max_tokens"?, "max_cost_usd"?, "goal"?, "repo"?,
+  "default_branch"?, "flow"?,
   "budget_usd"? (the flow's monthly budget, copied onto the run for its alerts and, with the administrators' hard
   cap on, its first start's cost cap: ``runs.hard_capped``, ``engineering/settings.py``), "connection"?,
   "commit"?, "language"?, "actor"?, "flow_definition"?, "flow_revision"?}``: the run's ``META`` row, its
@@ -426,7 +427,8 @@ def start_run(event: Mapping[str, Any], *, launch: bool = True) -> dict[str, Any
         raise RuntimeRefused('flow_definition is the stored flow\'s definition, as its JSON text')
     try:
         runs.start(run_id, caps=caps, now=int(clock()), goal=str(event.get('goal', '')),
-                   repo=str(event.get('repo', '')), flow=flow,
+                   repo=str(event.get('repo', '')), default_branch=str(event.get('default_branch', '')),
+                   flow=flow,
                    connection=str(event.get('connection', '')), commit=str(event.get('commit', '')),
                    language=language, actor=str(event.get('actor') or ''),
                    budget_usd=budget_usd, flow_definition=definition,

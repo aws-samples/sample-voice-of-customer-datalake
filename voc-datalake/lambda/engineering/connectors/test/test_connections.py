@@ -28,10 +28,12 @@ from engineering.connectors.connections import (
     ConnectionStore,
     is_branch_name,
     live_runs_of,
+    parse_reason,
     parse_request,
     stored_connection,
 )
-from engineering.connectors.credentials import parse_credential
+from engineering.connectors.credentials import ParameterStoreCredentials, parse_credential
+from engineering.connectors.hosts import NoConnection
 from engineering.connectors.test.app_keys import (
     APP_ID,
     INSTALLATION_ID,
@@ -274,6 +276,120 @@ def test_a_stored_connection_whose_row_is_not_written_after_its_credential_chang
     assert [row['action'] for row in env.audits()] == ['created', 'credential_unset']
     with pytest.raises(ConnectionRefused, match='credential is needed'):
         env.store().save('refunds', parse_request(body(credential=None)), ADMIN)
+
+
+def _racing(env: Env, first: Any) -> ConnectionStore:
+    """A store whose save runs ``first`` (another administrator's whole save) after it read the row and before it puts
+    its credential: both saves started from no row."""
+    started: list[bool] = []
+
+    def ssm() -> Any:
+        if not started:
+            started.append(True)
+            first()
+        return env.ssm
+
+    return ConnectionStore(env.table, ssm, PREFIX, env.key_id, lambda _connection: [], clock=lambda: WHEN)
+
+
+def test_two_administrators_adding_the_same_id_at_once_never_lose_the_winners_parameter(env: Env) -> None:
+    winner = Actor(subject='admin-2', name='dana')
+    loser = _racing(env, lambda: env.store().save('refunds', parse_request(body(repository='example-org/winner')),
+                                                  winner))
+    with pytest.raises(ConnectionRefused, match='changed meanwhile') as refused:
+        loser.save('refunds', parse_request(body()), ADMIN)
+    assert refused.value.kind == 'conflict'
+    # The losing save's undo deletes nothing: the parameter stays (holding the loser's credential, put last), and the
+    # winner's row says its credential is not set, so its next save needs it and the broker refuses its runs (the
+    # parameter names another repository than the row).
+    assert parse_credential(env.parameter('refunds')['Value']).repository == REPOSITORY
+    (listed,) = env.store().list()
+    assert (listed['repository'], listed['credential']['set'], listed['created_by']) == (
+        'example-org/winner', False, 'dana')
+    assert [(row['action'], row['by']) for row in env.audits()] == [('created', 'admin-2'),
+                                                                    ('credential_unset', 'admin-sub')]
+    connection, created = env.store().save('refunds', parse_request(body(repository='example-org/winner')), winner)
+    assert (created, connection['credential']['set']) == (False, True)
+    assert parse_credential(env.parameter('refunds')['Value']).repository == 'winner'
+
+
+def test_a_re_add_that_loses_to_another_re_add_keeps_the_winners_parameter(env: Env) -> None:
+    save(env)
+    env.store().remove('refunds', ADMIN)
+    loser = _racing(env, lambda: save(env))
+    with pytest.raises(ConnectionRefused, match='changed meanwhile'):
+        loser.save('refunds', parse_request(body()), ADMIN)
+    assert env.parameter('refunds')['Type'] == 'SecureString'
+    assert [row['action'] for row in env.audits()] == ['created', 'removed', 'created', 'credential_unset']
+
+
+def test_a_new_connections_lost_save_whose_row_cannot_be_read_again_deletes_its_parameter(env: Env) -> None:
+    store = env.store()
+    original = env.table
+    failing = MagicMock(wraps=original)
+    failing.name = original.name
+    reads = iter(range(100))
+
+    def get_item(**request: Any) -> Any:
+        if next(reads) > 0:   # (the save's own read goes through; the undo's does not)
+            raise ClientError({'Error': {'Code': 'ProvisionedThroughputExceededException'}}, 'GetItem')
+        return original.get_item(**request)
+
+    failing.get_item.side_effect = get_item
+    failing.meta.client.transact_write_items.side_effect = ClientError(
+        {'Error': {'Code': 'TransactionCanceledException', 'Message': 'canceled'}}, 'TransactWriteItems')
+    store._table = failing
+    with pytest.raises(ConnectionRefused, match='changed meanwhile'):
+        store.save('refunds', parse_request(body()), ADMIN)
+    # (fails closed: no credential is left behind for a row nobody could read)
+    assert env.ssm.describe_parameters()['Parameters'] == []
+
+
+def test_a_winners_parameter_a_failed_save_deleted_before_the_winners_row_was_written_fails_closed(env: Env) -> None:
+    # B's row write fails for another reason than a conflict (a throttle); A's put lands meanwhile, and B's undo, finding
+    # no row yet, deletes the parameter; then A's row is written. SSM has no conditional delete (and the Agents API no
+    # read), so this one ordering is not prevented: it fails closed.
+    loser = env.store()
+    throttled = MagicMock(wraps=env.table)
+    throttled.name = env.table.name
+    throttled.meta.client.transact_write_items.side_effect = ClientError(
+        {'Error': {'Code': 'ProvisionedThroughputExceededException'}}, 'TransactWriteItems')
+    loser._table = throttled
+    with pytest.raises(ConnectionRefused, match='could not be saved'):
+        loser.save('refunds', parse_request(body()), ADMIN)
+    landed_before_the_delete = MagicMock()   # (A's put, already made, then deleted by B's undo)
+    env.store(ssm=landed_before_the_delete).save('refunds', parse_request(body()), Actor(subject='admin-2', name='dana'))
+    assert env.store().list()[0]['credential']['set'] is True
+    assert env.ssm.describe_parameters()['Parameters'] == []
+    # The broker reads no credential, so it refuses every run on the connection (503) until it is saved again with
+    # its credential; it never serves one with another's credential.
+    with pytest.raises(NoConnection):
+        ParameterStoreCredentials(PREFIX, lambda: env.ssm).get('refunds')
+    env.store().save('refunds', parse_request(body()), ADMIN)
+    assert parse_credential(env.parameter('refunds')['Value']).repository == REPOSITORY
+
+
+def test_a_change_records_the_administrators_reason_one_line_and_redacted(env: Env) -> None:
+    token = 'ghp_' + 'x' * 36
+    save(env, reason='  Moved to the\n  new App\t')
+    save(env, default_branch='trunk', credential=None, reason=f'rotated: old one was {token}')
+    env.store().remove('refunds', ADMIN, 'Repository archived')
+    created, updated, removed = env.audits()
+    assert (created['reason'], removed['reason']) == ('Moved to the new App', 'Repository archived')
+    assert token not in updated['reason']
+    assert '<redacted>' in updated['reason']
+    # (no reason, no attribute: the row holds only what was said)
+    save(env, 'other')
+    (other,) = [row for row in env.audits() if row['connection_id'] == 'other']
+    assert 'reason' not in other
+
+
+@pytest.mark.parametrize(('reason', 'error'), [('x' * 501, 'at most 500'), (7, 'reason is text')])
+def test_a_reason_is_text_of_at_most_its_limit(reason: object, error: str) -> None:
+    with pytest.raises(ConnectionRefused, match=error) as refused:
+        parse_request(body(reason=reason))
+    assert refused.value.kind == 'invalid'
+    assert parse_reason(None) == ''
 
 
 def test_two_saves_from_the_same_version_never_overwrite_each_other(env: Env) -> None:

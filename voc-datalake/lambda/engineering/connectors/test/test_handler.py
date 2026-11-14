@@ -18,6 +18,7 @@ from engineering.connectors.dial import WaysOfWorking
 from engineering.connectors.github import GitHubHost
 from engineering.connectors.hosts import (
     NO_CONNECTION,
+    STORED_BRANCH_MISSING,
     UNCONNECTED,
     Conflict,
     HostBusy,
@@ -192,6 +193,14 @@ def test_409_for_a_stopped_run() -> None:
     broker = Broker(connector(runs=FakeRuns({RUN: record(status='stopped')})))
     status, body = ask('mapper', 'read', {'kind': 'file', 'target': 'a'}, broker)
     assert (status, body) == (409, {'error': 'The run is stopped; the broker refuses its operations.'})
+
+
+def test_409_while_the_connections_stored_default_branch_is_not_on_the_repository() -> None:
+    host = FakeHost(branches=('main',))
+    broker = Broker(connector(host=host, runs=FakeRuns({RUN: record(stored_default_branch='gone')})))
+    status, body = ask('mapper', 'read', {'kind': 'file', 'target': 'a'}, broker)
+    assert (status, body) == (409, {'error': STORED_BRANCH_MISSING})
+    assert host.calls == []
 
 
 def test_409_for_a_push_without_a_go() -> None:

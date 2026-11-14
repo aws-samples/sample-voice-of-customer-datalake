@@ -17,11 +17,13 @@ from engineering.connectors.broker import (
     permitted,
 )
 from engineering.connectors.hosts import (
+    STORED_BRANCH_MISSING,
     BundleContents,
     CommentTarget,
     NoConnection,
     PullRequestRef,
     RunRecord,
+    StoredBranchMissing,
     Submission,
 )
 from engineering.connectors.identity import AGENT_ROLES, Caller
@@ -146,7 +148,28 @@ def test_a_run_is_refused_when_its_connection_names_another_repository_than_it_s
     with pytest.raises(NotNow) as caught:
         call(Broker(connector(host=host, runs=runs, ledger=FakeLedger({(RUN, TREE)}))), caller(role), operation)
     assert caught.value.reason == OTHER_REPOSITORY
-    assert host.calls == []
+    # (the branch is worked out only after the repository check: a re-pointed credential is never used for it)
+    assert (host.calls, host.branch_lookups) == ([], [])
+
+
+@pytest.mark.parametrize('operation', OPERATIONS)
+def test_a_run_is_held_to_its_stored_default_branch_and_refused_while_the_host_lacks_it(operation: str) -> None:
+    role = next(r for r, op in WRITERS.items() if op == operation) if operation != READ else 'mapper'
+    host = FakeHost(branches=('main',))
+    runs = FakeRuns({RUN: record(stored_default_branch='release/gone')})
+    with pytest.raises(StoredBranchMissing) as caught:
+        call(Broker(connector(host=host, runs=runs, ledger=FakeLedger({(RUN, TREE)}))), caller(role), operation)
+    # 409 at the handler, nothing read or written; the words never name the branch.
+    assert caught.value.reason == STORED_BRANCH_MISSING
+    assert (host.calls, host.branch_lookups) == ([], [('conn-1', 'release/gone')])
+
+
+def test_a_push_names_the_stored_default_branch_to_the_host() -> None:
+    host = FakeHost()
+    runs = FakeRuns({RUN: record(stored_default_branch='develop')})
+    push(Broker(connector(host=host, runs=runs, ledger=FakeLedger({(RUN, TREE)}))), caller('committer'))
+    assert [c[-1] for c in host.calls if c[0] == 'push_bundle'] == ['develop']
+    assert host.branch_lookups == [('conn-1', 'develop')]
 
 
 def test_a_comment_quoting_a_review_is_refused() -> None:

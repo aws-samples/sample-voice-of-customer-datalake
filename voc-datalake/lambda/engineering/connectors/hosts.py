@@ -64,6 +64,17 @@ class Conflict(WriteRefused):
     not the checked one. Nothing was written to the branch."""
 
 
+class StoredBranchMissing(Conflict):
+    """The connection's stored default branch (the one the run started with) is not on the repository: the broker
+    refuses the run's every operation until an administrator corrects the connection (answered 409, nothing read or
+    written)."""
+
+
+#: The refusal's words: never the branch's name (the agent's own record already holds it).
+STORED_BRANCH_MISSING: Final = ("The connection's default branch is not on the repository; an administrator "
+                                'corrects it under Agents → Connections, then the run is started again.')
+
+
 #: A write's claim (``WriteLedger``): taken before the host call, then closed with what came of it.
 WRITE_CLAIMED: Final = 'claimed'
 WRITE_DONE: Final = 'done'
@@ -147,6 +158,8 @@ class RunRecord:
     """The run's record: its connection and what the broker checks against, never taken from the request."""
 
     connection_id: str
+    #: The branch the broker holds the run to: worked out by the broker (``RepositoryHost.default_branch``) only after
+    #: the repository check, from ``stored_default_branch``; '' until then.
     default_branch: str
     #: The run's status (META's): the broker serves only an ``ACTIVE`` run.
     status: str
@@ -166,6 +179,8 @@ class RunRecord:
     #: The repository the run started on (META's ``repo``, the stored connection's ``owner/name`` at its start): the
     #: broker serves the run only while the connection's credential names that same repository.
     repository: str = ''
+    #: META's ``default_branch``: the stored connection's at the start ('' for a run started before 6.31.01).
+    stored_default_branch: str = ''
 
 
 @dataclass(frozen=True)
@@ -195,7 +210,10 @@ class RepositoryHost(Protocol):
         """The bytes of ``path`` at ``commit``, ``None`` when the commit has no such file (a patch's base)."""
         ...
 
-    def default_branch(self, connection_id: str) -> str: ...
+    def default_branch(self, connection_id: str, stored: str = '') -> str:
+        """``stored`` (the connection's default branch as the run recorded it) once the host confirms the repository
+        has it, ``StoredBranchMissing`` when it does not; the repository's own default branch for ``stored=''``."""
+        ...
 
     def repository(self, connection_id: str) -> str:
         """The repository (``owner/name``) the connection's stored credential is for."""

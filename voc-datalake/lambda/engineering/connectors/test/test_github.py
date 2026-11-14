@@ -39,6 +39,7 @@ from engineering.connectors.hosts import (
     NotFound,
     OutcomeUnknown,
     PullRequestRef,
+    StoredBranchMissing,
 )
 from engineering.connectors.identity import Caller
 from engineering.connectors.test.app_keys import APP_ID, INSTALLATION_ID, credential, private_key
@@ -516,7 +517,8 @@ def test_an_updated_pull_request_whose_check_fails_wrote_so_its_outcome_is_unkno
                                    answer(200, {'number': 8, 'head': {'sha': PR_HEAD}})], ids=['rate-limited', 'moved'])
 def test_a_draft_whose_check_fails_after_the_create_is_unknown_and_its_repeat_opens_no_second_pull_request(
         check: Response) -> None:
-    api = draftable(FakeGitHub(), open_prs=[], pr_tree='e' * 40).on('GET', f'{REPO}/pulls/8', check)
+    api = draftable(FakeGitHub(), open_prs=[], pr_tree='e' * 40).on('GET', f'{REPO}/pulls/8', check) \
+        .on('GET', REPO, answer(200, {'default_branch': 'main'}))   # (the broker's branch, after its repository check)
     claims = FakeWrites()
     broker = Broker(connector(host=client(api), writes=claims))
     author = Caller('pr-author', RUN, 4)
@@ -750,6 +752,44 @@ def test_the_default_branch_is_read_with_metadata_only_and_kept_five_minutes() -
     assert api.scopes()[0]['permissions'] == {'metadata': 'read'}
     clock.now += github.DEFAULT_BRANCH_SECONDS
     assert host.default_branch('c') == 'main'
+
+
+def test_a_stored_default_branch_is_served_once_the_host_has_it_and_kept_five_minutes() -> None:
+    api = FakeGitHub().on('GET', f'{REPO}/git/ref/heads/develop', answer(200, {'object': {'sha': 'a' * 40}}),
+                          answer(404, {}))
+    clock = Clock()
+    host = client(api, clock)
+    assert (host.default_branch('c', 'develop'), host.default_branch('c', 'develop')) == ('develop', 'develop')
+    # One branch lookup with contents: read, never the repository's own default branch.
+    assert api.calls() == [('GET', f'{REPO}/git/ref/heads/develop')]
+    assert api.scopes()[0]['permissions'] == {'contents': 'read'}
+    clock.now += github.DEFAULT_BRANCH_SECONDS
+    with pytest.raises(StoredBranchMissing):
+        host.default_branch('c', 'develop')
+
+
+def test_the_branch_caches_keep_at_most_their_bound_the_oldest_going_first(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(github, 'MAX_CACHED_BRANCHES', 2)
+    api = FakeGitHub()
+    for branch in ('one', 'two', 'three'):
+        api.on('GET', f'{REPO}/git/ref/heads/{branch}', answer(200, {'object': {'sha': 'a' * 40}}))
+    host = client(api)
+    for branch in ('one', 'two', 'three', 'three'):
+        host.default_branch('c', branch)
+    assert [key[2] for key in host._confirmed_branches] == ['two', 'three']
+    host.default_branch('c', 'one')   # (dropped: looked up again)
+    assert api.calls().count(('GET', f'{REPO}/git/ref/heads/one')) == 2
+    assert len(host._confirmed_branches) == 2
+
+
+def test_a_stored_default_branch_the_host_does_not_have_is_refused_and_not_kept() -> None:
+    api = FakeGitHub().on('GET', f'{REPO}/git/ref/heads/release/1.x', answer(404, {}),
+                          answer(200, {'object': {'sha': 'b' * 40}}))
+    host = client(api)
+    with pytest.raises(StoredBranchMissing):
+        host.default_branch('c', 'release/1.x')
+    # (once created on the host, the next call is served: a refusal is never kept)
+    assert host.default_branch('c', 'release/1.x') == 'release/1.x'
 
 
 # --- the HTTPS transport --------------------------------------------------------------------------------------------

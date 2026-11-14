@@ -99,7 +99,7 @@ the module is deployed (404 otherwise), through the Agents API (`voc-datalake/la
   branch, who created and last changed it, and of its credential only whether it is set and the App's two ids (not
   secret). One Query of the connections' partition.
 - `PUT /agents/engineering/connections/<id>` `{host: "github", repository: "owner/name", default_branch,
-  credential?: {app_id, installation_id, private_key}}` → `{connection, created}`. The id is 1 to 63 lower-case
+  credential?: {app_id, installation_id, private_key}, reason?}` → `{connection, created}`. The id is 1 to 63 lower-case
   letters, digits or `-` (what a run's `connection` names); the repository is GitHub's `owner/name`; the default
   branch a name git takes, ASCII, at most 255 characters, never an agent's `voc-agent/` branch; the credential the
   App's id and installation id (digits) and its private key, an unencrypted RSA key in PEM (PKCS#1 as GitHub hands
@@ -107,29 +107,54 @@ the module is deployed (404 otherwise), through the Agents API (`voc-datalake/la
   field, never its value. The credential is needed to add a connection and to change its repository (it is stored
   with the key); a save without it keeps the stored one (the branch alone changes). A repository change while a run of
   the connection has not ended (the runs' registry, then each run's META) is refused, 409; so is a 21st connection,
-  and a change made meanwhile (each change is conditioned on the version read).
-- `DELETE /agents/engineering/connections/<id>` → `{removed: true}`: its parameter is deleted first, so every run on
-  it is refused within five minutes (a warm broker keeps a credential it read that long), then its row is marked removed
-  (kept, and listed no more). Not refused while runs are live: it is the way to cut a connection's access.
+  and a change made meanwhile (each change is conditioned on the version read). That 409 reads the runs, then writes,
+  so a run started between the two is not seen: it is a courtesy, not the guarantee. What guarantees that a run never
+  reads or writes another repository than the one it started on is the broker's own check: it serves a run only while
+  the connection's credential names the run's repository, and refuses it otherwise (409), failing closed.
+- `DELETE /agents/engineering/connections/<id>` `{reason?}` (the body optional) → `{removed: true}`: its parameter is
+  deleted first, so every run on it is refused within five minutes (a warm broker keeps a credential it read that
+  long), then its row is marked removed (kept, and listed no more). Not refused while runs are live: it is the way to
+  cut a connection's access.
+
+The default branch (6.31.01) is the broker's: a run's start copies the stored connection's default branch onto the
+run (META's `default_branch`, beside its `repo`), and the broker holds the run to it (never a push to it, a new branch
+starts on it, a draft pull request is opened against it) once the host confirms the repository has it (one branch
+lookup with `contents: read`, kept five minutes, made only after the repository check below, so a credential
+re-pointed at another repository is never used for it); a branch the repository does not have refuses the run's every
+operation, 409, until an administrator corrects the connection and starts the run again. A change of the branch
+reaches the runs started after it. A run started before 6.31.01 has none on its META and is held to the repository's
+own default branch, as before. A change's optional `reason` (one line, at most 500 characters, credential-shaped text
+redacted: D4's why) is kept on its audit row.
 
 A connection is a row in `voc-agents` (`CONNECTIONS#default` / `CONNECTION#<id>`) and its credential the parameter
 below, written before the row. When the row then cannot be written (a change made meanwhile, a failed write), a new
 connection's parameter is deleted again, and a stored connection's row is marked credential not set (with its audit
-row), so the page says so and the next save needs the credential. Whatever the row says, the broker serves a run only
-while its connection's credential names the repository the run started on (META's `repo`, which a start takes from
-the stored connection): any other is refused, 409, before the host is read for the run. Every
+row), so the page says so and the next save needs the credential. Before a new connection's parameter is deleted
+the row is read again (6.31.01): when two administrators add the same id at once, the losing save finds the
+winner's row and deletes nothing (the parameter may be the winner's), and marks that row credential not set instead,
+since the parameter may hold the loser's credential; a row that cannot be read is taken as none, and the parameter is
+deleted, failing closed. One ordering is not prevented, and fails closed: the losing save's row write fails for
+another reason than a conflict (a throttle), the winner's put lands, the loser's undo (finding no row yet) deletes it,
+and the winner's row is written after; SSM has no conditional delete and the Agents API cannot read a parameter, so
+the delete cannot be held to the loser's own version. The row then says its credential is set with none behind it:
+the broker reads no credential and refuses every run on the connection (503) until it is saved again with its
+credential, and never serves a run with another save's credential. Whatever the row says, the broker serves a run
+only while its connection's credential names the repository the run started on (META's `repo`, which a start takes
+from the stored connection): any other is refused, 409, before the host is read for the run (the default branch's
+lookup included). Every
 change writes a create-only audit row in the same transaction (`LOG#<at>#<hex>`: who, their subject and name, when,
-created, updated or removed, each changed field's old and new value, and for the credential only `replaced`, `kept`
-or `removed`; D4). The Agents API is the rows' one writer: every other role that writes `voc-agents` (the agents'
+created, updated or removed, each changed field's old and new value, for the credential only `replaced`, `kept`
+or `removed`, and the administrator's reason when one was given; D4). The Agents API is the rows' one writer: every other role that writes `voc-agents` (the agents'
 conductor, nodes, persona panel and heartbeat) has an explicit Deny of writes on the connections' partitions, as on
 the hard cap's (`denyHardCapWrites`, pinned by `lib/stacks/hard-cap-guard.test.ts`). The private key is never answered, logged, put in an error or stored outside SSM, and the Agents
 API cannot read it back: its role holds `ssm:PutParameter` and `ssm:DeleteParameter` on exactly the connections'
 parameters, and `kms:Encrypt` and `kms:GenerateDataKey` on the stack's key only through SSM and only for those
 parameters, never `ssm:GetParameter` (`voc-datalake/lib/stacks/api-assistant-lambdas.ts`, pinned by
-`api-engineering-reads.test.ts`). That KMS statement states the need; it narrows nothing yet, since the role's older
-unconditioned `kmsKey.grantEncryptDecrypt` (for its DynamoDB items) already covers the key: without a read of the
-parameter, the role still never holds the key's ciphertext through SSM. A run starts only on a stored connection (400 otherwise), and its `repo` is the
-connection's repository. GitHub only: GitLab's project access token, and the attestation's points on the connection
+`api-engineering-reads.test.ts`). Since 6.31.01 the role holds the stack's key only through the services that use it
+for the role: DynamoDB (`voc-agents`, the aggregates table, `voc-engineering`), S3 (`kms:Decrypt`, for the workspace's
+reports) and SSM (the statement above), each a `kms:ViaService` condition, and no unconditioned grant: it can call
+KMS itself for nothing, so it can encrypt or decrypt nothing outside those services (pinned by the same test). A run
+starts only on a stored connection (400 otherwise), and its `repo` and `default_branch` are the connection's. GitHub only: GitLab's project access token, and the attestation's points on the connection
 page, are planned.
 
 **What the broker reads (6.23.00).** Reads only, of rows and objects other code writes:
@@ -139,7 +164,10 @@ page, are planned.
   records it since 6.23.00; a run started with no person has none), and, since 6.31.00, its `repo`, the stored
   connection's repository at the start, which the connection's credential must still name. A META that names another run is no run; the
   broker serves only an `active` run (stopped, ended or waiting at a person's decision: 409, with the reason). The
-  default branch comes from the host (kept five minutes). Not on the record yet, so read as absent: the CI
+  default branch is META's `default_branch` (6.31.01: the stored connection's at the start), once the host confirms
+  the repository has it (kept five minutes; 409 when it does not); for a META without one, the repository's own
+  default branch (kept five minutes). The broker asks the host either only after the repository check (`broker.py`);
+  `records.py` reads nothing of the host. Not on the record yet, so read as absent: the CI
   attestation (so every push and pull request is still refused, after the dial), the run's issue and pull request
   (so no comment is accepted), and the reviews behind its feedback ids (so the verbatim-quote rule has nothing to
   compare; the personal-data rules still run).

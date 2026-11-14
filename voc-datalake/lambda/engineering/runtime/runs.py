@@ -261,7 +261,8 @@ class RunStore:
 
     def start(self, run_id: str, *, caps: RunCaps, now: int, goal: str = '', repo: str = '', flow: str = '',
               connection: str = '', commit: str = '', language: str = '', actor: str = '',
-              budget_usd: float | None = None, flow_definition: str = '', flow_revision: int = 0) -> None:
+              budget_usd: float | None = None, flow_definition: str = '', flow_revision: int = 0,
+              default_branch: str = '') -> None:
         """Write the run's ``META`` and list it for the supervisor; ``RunExists`` when it was started already.
 
         ``connection`` and ``commit`` (a full object id), when given, are what the board's ``launch`` op starts the
@@ -287,7 +288,9 @@ class RunStore:
         name = self._table.name
         meta: dict[str, Any] = {**meta_key(run_id), 'run_id': run_id, 'status': 'active', 'started_at': _iso(now),
                                 'started_epoch': now, 'max_tasks': caps.max_tasks, 'goal': _text(goal),
-                                'repo': _text(repo), 'flow': _text(flow), 'connection': connection, 'commit': commit,
+                                # The connection's stored default branch at the start: the broker's, once the host
+                                # confirms it has it (connectors/records.py); '' for the host's own.
+                                'repo': _text(repo), 'default_branch': _text(default_branch), 'flow': _text(flow), 'connection': connection, 'commit': commit,
                                 'language': language, 'agent_count': 1,
                                 # Whose way of working the broker's dial reads (connectors/dial.py): the person
                                 # who started the run, '' for none (then nothing is pushed: Human-driven).

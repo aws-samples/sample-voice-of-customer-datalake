@@ -14,13 +14,16 @@ A connection is a row in voc-agents and, while it holds a credential, one SSM Pa
   the broker: this code never reads it back (its role has no ``ssm:GetParameter``), and the private key is never
   answered, logged, put in an error, or stored anywhere but the parameter;
 * every change, a create-only audit row in the same partition, ``LOG#<at>#<hex>`` (D4: who, when, what changed:
-  the fields' old and new values, and for the credential only ``replaced`` / ``kept`` / ``removed``), written in
-  the same transaction as the row.
+  the fields' old and new values, and for the credential only ``replaced`` / ``kept`` / ``removed``; and why, when
+  the administrator says: an optional ``reason``, one line of at most ``MAX_REASON`` characters, credential-shaped
+  text redacted), written in the same transaction as the row.
 
 The credential is written before the row and removed before the row is marked removed, so a failure between the two
 never leaves a removed connection whose credential the broker could still use. A repository change while a run of
 the connection is live is refused (409): the run's agents would otherwise read and push to another repository than
-the one it started on. Removing a connection is not refused: it is the way to cut a connection's access (within five
+the one it started on. That check reads the runs, then writes: a run started between the two is not seen, so what
+guarantees it is the broker's own check, which serves a run only while the connection's credential names the run's
+repository (``broker.py`` ``OTHER_REPOSITORY``), failing closed. Removing a connection is not refused: it is the way to cut a connection's access (within five
 minutes: a warm broker keeps a credential it read that long, ``credentials.py`` ``CACHE_SECONDS``).
 
 Nothing here imports ``cryptography`` (the Agents API ships without the signing layer): the private key's shape is
@@ -71,11 +74,13 @@ _BRANCH: Final = re.compile(r'[A-Za-z0-9][A-Za-z0-9._/-]{0,254}')
 _PEM: Final = re.compile(r'-----BEGIN (RSA |)PRIVATE KEY-----\n(?:[A-Za-z0-9+/=]{1,76}\n)+-----END \1PRIVATE KEY-----')
 #: rsaEncryption's object identifier (1.2.840.113549.1.1.1) in DER: what a PKCS#8 RSA key's algorithm names.
 _RSA_ENCRYPTION: Final = bytes.fromhex('06092a864886f70d010101')
-_FIELDS: Final = frozenset({'host', 'repository', 'default_branch', 'credential'})
+_FIELDS: Final = frozenset({'host', 'repository', 'default_branch', 'credential', 'reason'})
 _CREDENTIAL_FIELDS: Final = frozenset({'app_id', 'installation_id', 'private_key'})
 #: The row's fields an audit row records the change of (never the private key).
 _AUDITED: Final = ('repository', 'default_branch', 'app_id', 'installation_id')
 _MAX_NAME: Final = 128
+#: The longest reason a change takes (one line; longer is refused, never cut).
+MAX_REASON: Final = 500
 #: The fields of a row the view answers as text or null.
 _OPTIONAL_TEXT: Final = ('app_id', 'installation_id', 'created_at', 'created_by', 'updated_at', 'updated_by')
 
@@ -109,12 +114,14 @@ class AppCredential:
 
 @dataclass(frozen=True)
 class ConnectionRequest:
-    """A checked save: the host, the repository, the default branch and, when the save replaces it, the credential."""
+    """A checked save: the host, the repository, the default branch, when the save replaces it the credential, and
+    the administrator's reason ('' for none)."""
 
     host: str
     repository: str
     default_branch: str
     credential: AppCredential | None
+    reason: str = ''
 
 
 @dataclass(frozen=True)
@@ -183,10 +190,25 @@ def _credential(value: object) -> AppCredential:
                          private_key=_private_key(value['private_key']))
 
 
+def parse_reason(value: object) -> str:
+    """Why the change is made, for its audit row: one line (whitespace collapsed), credential-shaped text redacted
+    (a pasted key or token never reaches a row), at most ``MAX_REASON`` characters; '' for none."""
+    if value is None:
+        return ''
+    if not isinstance(value, str):
+        raise _invalid(f'reason is text: why the change is made, at most {MAX_REASON} characters')
+    from engineering.quality_gate.text import redact
+
+    text = ' '.join(''.join(char if char.isprintable() else ' ' for char in redact(value)).split())
+    if len(text) > MAX_REASON:
+        raise _invalid(f'reason is at most {MAX_REASON} characters')
+    return text
+
+
 def parse_request(body: Mapping[str, object]) -> ConnectionRequest:
     """A save's body, each field checked (``ConnectionRefused('invalid')`` naming the field, never its value)."""
     if not set(body) <= _FIELDS or not {'host', 'repository', 'default_branch'} <= set(body):
-        raise _invalid('the body is {host, repository, default_branch, credential?}')
+        raise _invalid('the body is {host, repository, default_branch, credential?, reason?}')
     if body['host'] not in HOSTS:
         raise _invalid('host is github (GitLab is planned)')
     branch = body['default_branch']
@@ -195,7 +217,8 @@ def parse_request(body: Mapping[str, object]) -> ConnectionRequest:
                        '255), not an agent\'s voc-agent/ branch')
     credential = body.get('credential')
     return ConnectionRequest(host=str(body['host']), repository=_repository(body['repository']), default_branch=branch,
-                             credential=None if credential is None else _credential(credential))
+                             credential=None if credential is None else _credential(credential),
+                             reason=parse_reason(body.get('reason')))
 
 
 def parameter_value(repository: str, credential: AppCredential) -> str:
@@ -352,16 +375,18 @@ class ConnectionStore:
             field: {'from': earlier.get(field) if live else None, 'to': item.get(field)}
             for field in _AUDITED if not live or earlier.get(field) != item.get(field)}
         changes['credential'] = 'replaced' if credential is not None else 'kept'
-        audit = self._audit(connection_id, 'updated' if live else 'created', changes, actor, at, item['version'])
+        audit = self._audit(connection_id, 'updated' if live else 'created', changes, actor, at, item['version'],
+                            request.reason)
         undo = self._credential_undo(connection_id, name, live, actor) if credential is not None else None
         self._write(item, before, audit, undo=undo)
         logger.info('engineering connection saved', extra={'connection_id': connection_id, 'connection_created': not live,
                                                             'credential_replaced': credential is not None})
         return view(item), not live
 
-    def remove(self, connection_id: str, actor: Actor) -> None:
-        """Remove the connection: its credential first (the broker refuses its runs once its cached copy goes), then its row is
-        marked removed, with its audit row. 404 for a connection that is not stored."""
+    def remove(self, connection_id: str, actor: Actor, reason: str = '') -> None:
+        """Remove the connection: its credential first (the broker refuses its runs once its cached copy goes), then
+        its row is marked removed, with its audit row (``reason``, checked by ``parse_reason``, on it). 404 for a
+        connection that is not stored."""
         check_connection_id(connection_id)
         name = self._parameter(connection_id)
         before = self._row(connection_id)
@@ -373,25 +398,53 @@ class ConnectionStore:
         item = {**before, 'removed': True, 'credential_set': False, 'removed_at': at,
                 'removed_by': _name(actor.name), 'version': version}
         changes = {'repository': {'from': before.get('repository'), 'to': None}, 'credential': 'removed'}
-        self._write(item, before, self._audit(connection_id, 'removed', changes, actor, at, version),
+        self._write(item, before, self._audit(connection_id, 'removed', changes, actor, at, version, reason),
                     undo=self._credential_undo(connection_id, name, True, actor))
         logger.info('engineering connection removed', extra={'connection_id': connection_id})
 
     def _audit(self, connection_id: str, action: str, changes: Mapping[str, Any], actor: Actor, at: str,
-               version: int) -> dict[str, Any]:
-        """The change's create-only audit row (D4): who, when, what; never the private key."""
-        return {'pk': PARTITION, 'sk': f'{LOG_PREFIX}{at}#{secrets.token_hex(4)}', 'connection_id': connection_id,
-                'action': action, 'changes': dict(changes), 'by': _name(actor.subject), 'by_name': _name(actor.name),
-                'at': at, 'version': version}
+               version: int, reason: str = '') -> dict[str, Any]:
+        """The change's create-only audit row (D4): who, when, what and, when given, why; never the private key."""
+        row = {'pk': PARTITION, 'sk': f'{LOG_PREFIX}{at}#{secrets.token_hex(4)}', 'connection_id': connection_id,
+               'action': action, 'changes': dict(changes), 'by': _name(actor.subject), 'by_name': _name(actor.name),
+               'at': at, 'version': version}
+        return {**row, 'reason': reason} if reason else row
 
     def _credential_undo(self, connection_id: str, name: str, live: bool, actor: Actor) -> Callable[[], None]:
         """What a changed credential needs when its row is not written: a new connection's parameter is deleted
-        again; a stored connection's row is marked credential not set (its parameter, replaced or deleted, no longer
-        matches the row, so the page says so and the next save needs the credential; the broker still refuses a run
-        whose repository the parameter does not name)."""
+        again, unless another save stored the connection meanwhile (``_undo_new``); a stored connection's row is
+        marked credential not set (its parameter, replaced or deleted, no longer matches the row, so the page says so
+        and the next save needs the credential; the broker still refuses a run whose repository the parameter does
+        not name)."""
         if not live:
-            return lambda: self._delete_credential(name, connection_id)
+            return lambda: self._undo_new(connection_id, name, actor)
         return lambda: self._mark_unset(connection_id, actor)
+
+    def _undo_new(self, connection_id: str, name: str, actor: Actor) -> None:
+        """A new connection's save whose row was not written: two administrators adding the same id at once both put
+        the parameter, and the save that wrote its row first won. The row is read again: with none stored (or a
+        removed one) the parameter is deleted; once a save stored one, the parameter is never deleted (it may be the
+        winner's), but it may hold this save's credential instead, so the stored row is marked credential not set
+        (its next save needs the credential; the broker refuses a run whose repository the parameter does not name).
+        After a delete the row is read once more: a save that put its parameter just before the delete and wrote its
+        row after it is marked not set too. A row that cannot be read is taken as none: the parameter is deleted,
+        failing closed (a winner's runs are refused until its credential is saved again).
+
+        One ordering is not prevented: this save's row write fails for another reason than a conflict, another save
+        puts its parameter, this undo (finding no row yet) deletes it, and the other save's row is written after the
+        second read. SSM has no conditional delete and this role cannot read a parameter, so the delete cannot be
+        held to this save's own version. It fails closed: that row says its credential is set with none behind it,
+        so the broker reads no credential and refuses every run on the connection (503) until it is saved again
+        with its credential; no run is ever served with another save's credential."""
+        try:
+            row = self._row(connection_id)
+        except ConnectionRefused:
+            row = None
+        if row is None or row.get('removed') is True:
+            self._delete_credential(name, connection_id)
+            row = self._row(connection_id)
+        if row is not None and row.get('removed') is not True and row.get('credential_set') is True:
+            self._mark_unset(connection_id, actor)
 
     def _mark_unset(self, connection_id: str, actor: Actor) -> None:
         at = self._clock().astimezone(UTC).isoformat()

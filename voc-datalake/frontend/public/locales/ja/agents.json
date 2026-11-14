@@ -775,7 +775,7 @@
     "guidance": {
       "title": "認証情報に必要なもの",
       "app": "GitHub App を作成し、このリポジトリだけにインストールしてください。リポジトリの権限: Contents、Pull requests、Issues を Read and write、Metadata を Read-only に設定します。それ以外は付けないでください（Administration、Workflows、Secrets、Actions、組織の権限は不要です）。",
-      "token": "App そのものがエージェントに渡されることはありません。ブローカーがステップごとに 1 時間有効なトークンを発行し、このリポジトリだけを対象に、そのステップに必要な権限（リポジトリの内容とプルリクエストの読み書き。管理権限は一切なし）だけを持たせます。",
+      "token": "App そのものがエージェントに渡されることはありません。ブローカーがステップごとに 1 時間有効なトークンを発行し、このリポジトリだけを対象に、App の権限のうちそのステップに必要なもの（Contents、Pull requests、Issues の読み書き、Metadata の読み取りのみ。管理権限は一切なし）だけを持たせます。",
       "branch": "デフォルトブランチを保護し、エージェントが push できるのを voc-agent/* という名前のブランチだけに制限してください。"
     },
     "dialog": {

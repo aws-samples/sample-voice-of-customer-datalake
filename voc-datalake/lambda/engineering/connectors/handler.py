@@ -252,7 +252,7 @@ def broker_for(parameter_prefix: str, table: str = '', bucket: str = '', aggrega
 
     # No ListBucket on the broker's role: an object never written answers 403, read as missing (and counted).
     workspace = WorkspaceStore(get_s3_client(), bucket, denied_is_missing=True)
-    records = RunRecords(get_dynamodb_client(), table, workspace, host.default_branch)
+    records = RunRecords(get_dynamodb_client(), table, workspace)
     return Broker(Connector(host=host, bundles=WorkspacePatches(workspace, host.file_at), runs=records,
                             ledger=records, dial=WaysOfWorking(get_dynamodb_resource().Table(aggregates)),
                             writes=WriteClaims(get_dynamodb_client(), table)))

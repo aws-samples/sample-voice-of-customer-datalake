@@ -500,7 +500,7 @@ def test_a_retried_start_or_end_finishes_what_the_first_one_left(wired: Any):
 #: The run's first agent, the coordinator its coordinate task records.
 COORDINATOR_AGENT = 'coordinator-1'
 COORDINATED = {'action': 'start_run', 'run_id': OTHER_RUN, 'max_tasks': 5, 'goal': 'fix the parser',
-               'connection': 'conn-1', 'commit': COMMIT, 'language': 'python'}
+               'connection': 'conn-1', 'commit': COMMIT, 'language': 'python', 'default_branch': 'develop'}
 
 
 def test_a_runs_start_launches_its_coordinator_on_its_coordinate_task(wired: Any, monkeypatch: pytest.MonkeyPatch):
@@ -517,7 +517,8 @@ def test_a_runs_start_launches_its_coordinator_on_its_coordinate_task(wired: Any
     table = boto3.resource('dynamodb', region_name='us-east-1').Table(TABLE)
     meta = table.get_item(Key=meta_key(OTHER_RUN)).get('Item')
     assert meta is not None
-    assert (meta['agent_count'], meta['language']) == (1, 'python')
+    # (the connection's stored default branch, as the start sent it: what the broker serves the run on)
+    assert (meta['agent_count'], meta['language'], meta['default_branch']) == (1, 'python', 'develop')
 
 
 def test_a_retried_start_keeps_the_coordinator_it_launched(wired: Any, monkeypatch: pytest.MonkeyPatch):
