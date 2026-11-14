@@ -153,7 +153,8 @@ export const KIRO_WRITE_RULES = Object.freeze([
  *     separator, redirection, substitution or `~`, and `denyByDefault` refuses every unlisted command instead of
  *     prompting.
  *   - V3 (`permissions.rules`, capability `shell`): `*` matches any characters; V3 rewrites `cd <dir>` to the
- *     absolute path before matching (verified live), hence a `*` before each folder. The `match: ['*']` deny with
+ *     absolute path before matching (verified live), hence a `*` before each folder; so V3 cannot tell the
+ *     repository's folder from one of the same name elsewhere (V2 can, and allows only a relative `cd`). The `match: ['*']` deny with
  *     the allowed commands as `exclude` is V3's deny-by-default: V3 ran `cat .env` with no approval when nothing
  *     denied it.
  * LIMIT: a test runner executes the code it runs, and this agent writes that code. A test it writes can still reach
@@ -169,7 +170,8 @@ const PAGERS = ['cat', 'less', 'more', 'head', 'tail']
 const regexOf = (literal) => literal.replace(/[.+^${}()|[\]\\*?]/g, '\\$&')
 export const KIRO_SHELL_SETTINGS = Object.freeze({
   allowedCommands: [
-    `cd ([^ ;&|<>$\`\\\\(){}~!\\n\\r]*/)?(${TEST_DIRS.map(regexOf).join('|')})/?`,
+    // A relative `cd` from the repository root only: no `..`, no absolute path (a folder of the same name elsewhere).
+    `cd (\\./)?(${TEST_DIRS.map(regexOf).join('|')})/?`,
     `npx vitest (run|--run)${SHELL_ARGS}`,
     `(${PYTHONS.map(regexOf).join('|')}) -m pytest${SHELL_ARGS}`,
     `node --test${SHELL_ARGS}`,

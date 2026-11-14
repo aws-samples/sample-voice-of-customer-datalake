@@ -79,7 +79,7 @@
     },
     "shell": {
       "allowedCommands": [
-        "cd ([^ ;&|<>$`\\\\(){}~!\\n\\r]*/)?(voc-datalake|voc-datalake/frontend|voc-datalake/lambda/stream)/?",
+        "cd (\\./)?(voc-datalake|voc-datalake/frontend|voc-datalake/lambda/stream)/?",
         "npx vitest (run|--run)( [^;&|<>$`\\\\(){}~!\\n\\r]*)?",
         "(python|python3|\\.venv/bin/python|voc-datalake/\\.venv/bin/python) -m pytest( [^;&|<>$`\\\\(){}~!\\n\\r]*)?",
         "node --test( [^;&|<>$`\\\\(){}~!\\n\\r]*)?",
