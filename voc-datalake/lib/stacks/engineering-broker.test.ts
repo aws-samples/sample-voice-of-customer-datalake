@@ -69,10 +69,13 @@ describe('the engineering broker', () => {
     const on = template('on');
     const statements = brokerStatements(on);
     const actions = statements.flatMap((statement) => [statement.Action].flat()).sort(byCodeUnit);
-    // Reads only: no PutItem, UpdateItem, DeleteItem, PutObject or GenerateDataKey anywhere on its role.
+    // Reads, and the one write of its claim rows (PutItem, UpdateItem, their GenerateDataKey): no DeleteItem,
+    // PutObject or other write anywhere on its role.
     expect(actions).toStrictEqual([
-      'dynamodb:GetItem', 'dynamodb:GetItem', 'dynamodb:Query', 'kms:Decrypt', 'kms:Decrypt', 'logs:CreateLogStream',
-      'logs:PutLogEvents', 's3:GetObject', 'ssm:GetParameter',
+      'dynamodb:GetItem', 'dynamodb:GetItem', 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:Query',
+      'dynamodb:UpdateItem',
+      'kms:Decrypt', 'kms:Decrypt', 'kms:GenerateDataKey', 'logs:CreateLogStream', 'logs:PutLogEvents',
+      's3:GetObject', 'ssm:GetParameter',
     ]);
     const parameters = {
       'Fn::Join': ['', ['arn:', { Ref: 'AWS::Partition' }, ':ssm:us-east-1:111111111111:parameter/voc/engineering/*']],
@@ -101,6 +104,30 @@ describe('the engineering broker', () => {
     // One table: voc-engineering's ARN (an import from VocCoreStack), never an index or "*".
     expect(JSON.stringify(records?.Resource)).toMatch(/^\{"Fn::ImportValue":"[^"]*GetAttEngineering[^"]*Arn[^"]*"\}$/);
     expect(JSON.stringify(records?.Resource)).not.toContain('index');
+  });
+
+  it('writes only a write\'s claim row, in its own partition, of its own attributes, encrypted through DynamoDB', () => {
+    const statements = brokerStatements(template('on'));
+    const claims = statements.find((statement) => statement.Sid === 'WriteClaims');
+    // In the runs' writes' partitions alone: never a run's own (its META, tasks, a person's go, its log).
+    expect(claims).toMatchObject({
+      Effect: 'Allow', Action: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem'],
+      Condition: {
+        'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#WRITES#*'] },
+        'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'state', 'op', 'at', 'result', 'closed_at'] },
+        StringEqualsIfExists: { 'dynamodb:ReturnValues': 'NONE' },
+      },
+    });
+    // voc-engineering alone (an import from VocCoreStack), never an index, another table or "*".
+    expect(JSON.stringify(claims?.Resource)).toMatch(/^\{"Fn::ImportValue":"[^"]*GetAttEngineering[^"]*Arn[^"]*"\}$/);
+    const key = statements.find((statement) => statement.Sid === 'WriteClaimsKey');
+    expect(key).toMatchObject({
+      Action: 'kms:GenerateDataKey',
+      Condition: { StringEquals: { 'kms:ViaService': 'dynamodb.us-east-1.amazonaws.com' } },
+    });
+    // For voc-engineering's rows alone: the table's name in DynamoDB's encryption context.
+    expect(JSON.stringify(key?.Condition)).toMatch(
+      /"kms:EncryptionContext:aws:dynamodb:tableName":\{"Fn::ImportValue":"[^"]*RefEngineering[^"]*"\}/);
   });
 
   it('reads a person\'s way of working from the aggregates table\'s flag partitions only', () => {

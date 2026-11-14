@@ -280,7 +280,7 @@ def test_a_go_is_refused_when_the_checkout_drifted_from_the_judged_tree_and_a_no
     w.runner.tree = 'f' * 40
     refused = w.session.tools.call('write_gate_record', {'verdict': 'GO', 'reasons': ['checked']})
     assert refused.error
-    assert f'its tree is now {"f" * 40}, not the judged {TREE}' in refused.text
+    assert f'the checkout\'s tree is now {"f" * 40}, which differs from the judged {TREE}' in refused.text
     assert [call['argv'][-2:] for call in w.runner.calls] == [['add', '--all'], ['--work-tree=.', 'write-tree']]
     assert w.store.objects == {}
     no_go = json.loads(w.session.tools.call('write_gate_record', {'verdict': 'NO-GO',
@@ -472,7 +472,7 @@ def test_the_pr_author_opens_a_draft_and_the_pr_reviewer_comments_through_the_br
         assert reviewer.session.tools.call('post_comment', {'number': number, 'body': 'b'}).error
 
 
-def test_the_broker_not_wired_yet_stops_the_session_rather_than_guess(tmp_path):
+def test_a_broker_with_no_url_stops_the_session_rather_than_guess(tmp_path):
     w = world(tmp_path, role='pr-author')
     w.session.context.broker = PendingHarnessPorts()
     with pytest.raises(HarnessPortNotWired, match=r'broker\.open_draft_pr'):
@@ -481,7 +481,7 @@ def test_the_broker_not_wired_yet_stops_the_session_rather_than_guess(tmp_path):
     for call in (lambda: pending.push(RUN_ID, 'committer-2', branch=BRANCH, patch_key='k', tree_hash=TREE,
                                       message='m'),
                  lambda: pending.comment(RUN_ID, 'pr-reviewer-3', number=7, body='b')):
-        with pytest.raises(HarnessPortNotWired, match='not wired yet'):
+        with pytest.raises(HarnessPortNotWired, match=r'is not wired \(the session was handed no'):
             call()
 
 

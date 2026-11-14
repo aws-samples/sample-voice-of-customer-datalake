@@ -24,8 +24,12 @@
  *   (`ws/default/runs/*\/commits/*\/_patches/*`, `ws/default/runs/*\/final-go-*\/commits/*\/_gate/*`,
  *   `ws/default/runs/*\/gate-runner-*\/commits/*\/_gate/*`; no ListBucket, so a key never written answers 403,
  *   read as missing);
- * - `kms:Decrypt` on the stack's key through DynamoDB and S3 only (no GenerateDataKey: it encrypts nothing).
- * No write to any table or bucket. The function URL has no
+ * - `dynamodb:GetItem`, `dynamodb:PutItem` and `dynamodb:UpdateItem` on voc-engineering, only in the runs' writes'
+ *   partitions (`WS#*#WRITES#*`, never a run's own) and of a row only a write claim's attributes (6.30.00: each write
+ *   made once per caller, attempt, operation and what it writes, records.py WriteClaims), with
+ *   `kms:GenerateDataKey` on the stack's key through DynamoDB only, for it;
+ * - `kms:Decrypt` on the stack's key through DynamoDB and S3 only.
+ * No other write to any table or bucket. The function URL has no
  * resource-based policy, so only identities of this account that an IAM policy grants `lambda:InvokeFunctionUrl`
  * on it can call it: the agent roles (engineering-runtime.ts). Idle, it costs nothing (tenet 7): standard
  * SSM parameters have no monthly charge.
@@ -86,6 +90,10 @@ const BROKER_WORKSPACE_KEYS = [
 ];
 /** The way-of-working row's attributes the broker may read (its key, and `mode`: connectors/dial.py MODE_ATTRIBUTE). */
 const BROKER_PEOPLE_ATTRIBUTES = ['pk', 'sk', 'mode'];
+/** A write's claim row's attributes, all the broker may write (connectors/records.py WriteClaims). */
+const BROKER_CLAIM_ATTRIBUTES = ['pk', 'sk', 'state', 'op', 'at', 'result', 'closed_at'];
+/** The runs' writes' partitions (`WS#<ws>#WRITES#<run>`, records.py writes_pk): the claim rows', and nothing else. */
+const BROKER_WRITE_PARTITIONS = 'WS#*#WRITES#*';
 
 /**
  * Whether `-c engineeringAgents=true` asked for the engineering agents (CLI context arrives as a string), strictly
@@ -116,6 +124,8 @@ export interface EngineeringBrokerProps {
 export class EngineeringBroker extends Construct {
   /** The broker: the agent roles may call its function URL (engineering-runtime.ts). */
   public readonly function: lambda.IFunction;
+  /** Its function URL (IAM authentication), handed to every agent's harness as `VOC_BROKER_URL`. */
+  public readonly url: string;
 
   constructor(scope: Construct, id: string, props: EngineeringBrokerProps) {
     super(scope, id);
@@ -169,7 +179,7 @@ export class EngineeringBroker extends Construct {
       },
     }));
     grantRunRecordReads(role, props);
-    broker.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.AWS_IAM });
+    this.url = broker.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.AWS_IAM }).url;
     this.function = broker;
   }
 }
@@ -185,6 +195,19 @@ function grantRunRecordReads(role: iam.Role, props: EngineeringBrokerProps): voi
     actions: ['dynamodb:GetItem', 'dynamodb:Query'],
     resources: [props.engineeringTable.tableArn],
     conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [BROKER_RUN_PARTITIONS] } },
+  }));
+  // The broker's one write: a write's claim row (records.py WriteClaims: create-only PutItem, then one UpdateItem that
+  // closes it, and the GetItem a repeat reads), in a partition of the run's writes alone, so the grant reaches no row
+  // of the run's own partition (META, TASK#, GO#person, RUNLOG#), and of a row only the claim's attributes.
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'WriteClaims',
+    actions: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem'],
+    resources: [props.engineeringTable.tableArn],
+    conditions: {
+      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [BROKER_WRITE_PARTITIONS] },
+      'ForAllValues:StringEquals': { 'dynamodb:Attributes': BROKER_CLAIM_ATTRIBUTES },
+      StringEqualsIfExists: { 'dynamodb:ReturnValues': 'NONE' },
+    },
   }));
   role.addToPrincipalPolicy(new iam.PolicyStatement({
     sid: 'WaysOfWorking',
@@ -214,5 +237,18 @@ function grantRunRecordReads(role: iam.Role, props: EngineeringBrokerProps): voi
     actions: ['kms:Decrypt'],
     resources: [props.kmsKey.keyArn],
     conditions: { StringEquals: { 'kms:ViaService': ['dynamodb', 's3'].map((service) => `${service}.${region}.amazonaws.com`) } },
+  }));
+  // The claim rows' encryption: through DynamoDB alone (it encrypts nothing in S3), and for voc-engineering alone
+  // (DynamoDB puts the table's name in the encryption context).
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'WriteClaimsKey',
+    actions: ['kms:GenerateDataKey'],
+    resources: [props.kmsKey.keyArn],
+    conditions: {
+      StringEquals: {
+        'kms:ViaService': `dynamodb.${region}.amazonaws.com`,
+        'kms:EncryptionContext:aws:dynamodb:tableName': props.engineeringTable.tableName,
+      },
+    },
   }));
 }

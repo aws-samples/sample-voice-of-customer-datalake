@@ -1,6 +1,8 @@
-"""What the broker reads of a run's own record (docs/autonomous-engineering.md, "Repository connectors").
+"""What the broker reads of a run's own record, and its one write there (docs/autonomous-engineering.md, "Repository
+connectors").
 
-Reads only, of rows and objects other code writes; the broker writes none of them:
+The broker's one write is a write's claim row, in a partition of the run's writes alone (``WriteClaims``, 6.30.00). Otherwise reads only, of rows and objects
+other code writes; the broker writes none of them:
 
 * the run: ``WS#<ws>#RUN#<run>`` / ``META`` (``runtime/runs.py``), read strongly consistent for the caller's run
   alone (its session names it): its status, connection, commit and the person who started it. A run whose META
@@ -22,6 +24,8 @@ ids (so the write rules have no review text to compare: their personal-data chec
 """
 from __future__ import annotations
 
+import json
+import time
 from collections.abc import Callable
 from typing import Any, Final
 
@@ -29,7 +33,16 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from engineering.board.model import PERSON_PREFIX, Task
 from engineering.board.store import PERSON_GO_SK
-from engineering.connectors.hosts import ACTIVE, NO_CONNECTION, NoConnection, RunRecord, Unavailable
+from engineering.connectors.hosts import (
+    ACTIVE,
+    NO_CONNECTION,
+    WRITE_CLAIMED,
+    WRITE_REFUSED,
+    NoConnection,
+    RunRecord,
+    Unavailable,
+    WriteClaim,
+)
 from engineering.connectors.identity import WORKSPACE
 from engineering.connectors.patches import AUTHOR
 from engineering.flow.ledger import go_tree, read_gate_record
@@ -91,3 +104,80 @@ class RunRecords:
 
     def has_go(self, run_id: str, tree_hash: str) -> bool:
         return bool(tree_hash) and self._go_tree(run_id) == tree_hash
+
+
+#: A write's claim row, in a partition of the run's writes alone (``writes_pk``), so the broker's write grant reaches no
+#: other row of the run: ``WS#<ws>#WRITES#<run>`` / ``WRITE#<agent>#<attempt>#<operation>#<digest>``.
+WRITE_PREFIX: Final = 'WRITE#'
+
+
+def writes_pk(ws: str, run_id: str) -> str:
+    """The partition of a run's write claims (beside, never inside, the run's own ``WS#<ws>#RUN#<run>``)."""
+    return f'WS#{ws}#WRITES#{run_id}'
+#: A claim row's attributes are ``pk``, ``sk``, ``state``, ``op``, ``at``, ``result`` and ``closed_at``, and the
+#: broker's IAM grant allows those alone (engineering-broker.ts ``BROKER_CLAIM_ATTRIBUTES``).
+
+
+class WriteClaims:
+    """The broker's ``WriteLedger``: one create-only claim row per write key in the run's writes' partition, the
+    broker's only write, taken before the host call and closed with its outcome. A claim is taken again only after a refusal (nothing
+    was written); a done write's row keeps its answer (a number, a URL, a branch and tree: never a body), so a repeat
+    is answered with it."""
+
+    def __init__(self, client: Any, table: str, clock: Callable[[], float] = time.time) -> None:
+        self._client = client
+        self._table = table
+        self._clock = clock
+
+    def _key(self, run_id: str, key: str) -> dict[str, Any]:
+        return {'pk': {'S': writes_pk(WORKSPACE, run_id)}, 'sk': {'S': f'{WRITE_PREFIX}{key}'}}
+
+    def claim(self, run_id: str, key: str, operation: str) -> WriteClaim | None:
+        try:
+            self._client.put_item(
+                TableName=self._table,
+                Item={**self._key(run_id, key), 'state': {'S': WRITE_CLAIMED}, 'op': {'S': operation},
+                      'at': {'N': str(int(self._clock()))}},
+                ConditionExpression='attribute_not_exists(pk) OR #state = :refused',
+                ExpressionAttributeNames={'#state': 'state'},
+                ExpressionAttributeValues={':refused': {'S': WRITE_REFUSED}})
+        except ClientError as exc:
+            if exc.response.get('Error', {}).get('Code') != 'ConditionalCheckFailedException':
+                raise Unavailable(_UNREADABLE) from exc
+        except BotoCoreError as exc:
+            raise Unavailable(_UNREADABLE) from exc
+        else:
+            return None
+        found = self.earlier(run_id, key)
+        if found is None:
+            raise Unavailable(_UNREADABLE)
+        return found
+
+    def earlier(self, run_id: str, key: str) -> WriteClaim | None:
+        item = self._row(run_id, key)
+        if item is None:
+            return None
+        raw = string_attr(item, 'result')
+        result = json.loads(raw) if raw else None
+        return WriteClaim(state=string_attr(item, 'state'), result=result if isinstance(result, dict) else None)
+
+    def _row(self, run_id: str, key: str) -> dict[str, Any] | None:
+        try:
+            return get_row(self._client, self._table, self._key(run_id, key))
+        except (ClientError, BotoCoreError) as exc:
+            raise Unavailable(_UNREADABLE) from exc
+
+    def close(self, run_id: str, key: str, state: str, result: dict[str, object] | None = None) -> None:
+        values: dict[str, Any] = {':state': {'S': state}, ':claimed': {'S': WRITE_CLAIMED},
+                                  ':at': {'N': str(int(self._clock()))}}
+        expression = 'SET #state = :state, closed_at = :at'
+        if result is not None:
+            values[':result'] = {'S': json.dumps(result, sort_keys=True)}
+            expression += ', #result = :result'
+        try:
+            self._client.update_item(
+                TableName=self._table, Key=self._key(run_id, key), UpdateExpression=expression,
+                ConditionExpression='#state = :claimed', ExpressionAttributeValues=values,
+                ExpressionAttributeNames={'#state': 'state', **({'#result': 'result'} if result is not None else {})})
+        except (ClientError, BotoCoreError) as exc:
+            raise Unavailable("The write's outcome could not be recorded.") from exc

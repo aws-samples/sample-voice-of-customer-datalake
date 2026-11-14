@@ -5,6 +5,8 @@ import json
 from dataclasses import dataclass, field, replace
 
 from engineering.connectors.hosts import (
+    WRITE_CLAIMED,
+    WRITE_REFUSED,
     BundleContents,
     CommentTarget,
     Commit,
@@ -13,8 +15,11 @@ from engineering.connectors.hosts import (
     PullRequestRef,
     ReadKind,
     ReadPage,
+    RepositoryHost,
     RunRecord,
     Submission,
+    WriteClaim,
+    WriteLedger,
 )
 
 RUN = '01JC8Z3K4M5N6P7Q8R9S0T1V2W'
@@ -155,9 +160,36 @@ class FakeDial:
         return self.modes.get(person, 'ai_driven')
 
 
-def connector(host: FakeHost | None = None, bundles: FakeBundles | None = None, runs: FakeRuns | None = None,
-              ledger: FakeLedger | None = None, dial: Dial | None = None) -> Connector:
+@dataclass
+class FakeWrites:
+    """The writes' claims in memory, by the rule ``records.WriteClaims`` keeps (create-only, again only after a
+    refusal)."""
+
+    claims: dict[tuple[str, str], WriteClaim] = field(default_factory=dict)
+
+    def claim(self, run_id: str, key: str, operation: str) -> WriteClaim | None:
+        if f'#{operation}#' not in key:
+            raise ValueError(f'{key} is not a key of {operation}')
+        earlier = self.claims.get((run_id, key))
+        if earlier is not None and earlier.state != WRITE_REFUSED:
+            return earlier
+        self.claims[(run_id, key)] = WriteClaim(WRITE_CLAIMED)
+        return None
+
+    def earlier(self, run_id: str, key: str) -> WriteClaim | None:
+        return self.claims.get((run_id, key))
+
+    def close(self, run_id: str, key: str, state: str, result: dict[str, object] | None = None) -> None:
+        if self.claims[(run_id, key)].state != WRITE_CLAIMED:
+            raise ValueError(f'{key} is closed already')
+        self.claims[(run_id, key)] = WriteClaim(state, result)
+
+
+def connector(host: RepositoryHost | None = None, bundles: FakeBundles | None = None, runs: FakeRuns | None = None,
+              ledger: FakeLedger | None = None, dial: Dial | None = None,
+              writes: WriteLedger | None = None) -> Connector:
     """The collaborators, each a fake: by default the run's final go answered GO for ``TREE``, and its starter works
     AI-driven."""
     return Connector(host=host or FakeHost(), bundles=bundles or FakeBundles(), runs=runs or FakeRuns(),
-                     ledger=ledger if ledger is not None else FakeLedger({(RUN, TREE)}), dial=dial or FakeDial())
+                     ledger=ledger if ledger is not None else FakeLedger({(RUN, TREE)}), dial=dial or FakeDial(),
+                     writes=writes if writes is not None else FakeWrites())

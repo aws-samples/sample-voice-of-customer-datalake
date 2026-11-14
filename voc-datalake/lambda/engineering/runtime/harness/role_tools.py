@@ -186,13 +186,15 @@ def gate_record(context: Built, arguments: Mapping[str, Any]) -> bytes:
         raise ValueError('a pack is a gate pack\'s name (letters, digits, ".", "_", "-")')
     verdict, stop, rounds, final_go = _verdict(context, arguments)
     if verdict == 'GO':
-        # The checkout's tree now, every change in it taken (a check that wrote, formatted or deleted a file): a GO
-        # only when it is still the tree judged, so a check never passes on a tree the record does not name.
+        # The checkout's tree now, every change in it taken: a GO only when it is still the tree judged. The limit:
+        # this compares the tree at the record's write only, and no check is tied to the tree it ran on, so a command
+        # that changes the tree and another that changes it back leave the judged tree, and the checks between them
+        # ran on another one.
         now = checkout_tree(context)
         if now != context.gate_tree:
-            raise ValueError(f'the checkout changed after the submitted patch was applied (its tree is now {now}, '
-                             f'not the judged {context.gate_tree}: a command wrote, changed or deleted a file), so '
-                             'its checks are not for the judged tree: write NO-GO, and say which command changed it')
+            raise ValueError(f'the checkout\'s tree is now {now}, which differs from the judged {context.gate_tree} '
+                             '(the submitted patch applied to the run\'s commit), so its checks are not for the judged '
+                             'tree: write NO-GO, and say which command changed it')
     record = {'schema': GATE_SCHEMA, 'verdict': verdict, 'stop_reason': stop, 'tree_hash': context.gate_tree,
               'packs': list(dict.fromkeys(packs)), 'own_gate': False, 'tool_versions': {}, 'max_rounds': 1,
               'reviewers': [], 'model_calls': 0, 'accepted_by': '', 'rounds': rounds, 'findings': [],

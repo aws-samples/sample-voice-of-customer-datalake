@@ -54,9 +54,31 @@ class InvalidTarget(HostError):
     it did not hand out)."""
 
 
+class OutcomeUnknown(HostError):
+    """A write reached the host, or may have, and whether it was made is not known (a host error, a timeout): answered
+    502, never made again for the same key (``WriteLedger``)."""
+
+
 class Conflict(WriteRefused):
     """The host's state is not the one the write was checked against: the branch moved (the lease), or its tree is
     not the checked one. Nothing was written to the branch."""
+
+
+#: A write's claim (``WriteLedger``): taken before the host call, then closed with what came of it.
+WRITE_CLAIMED: Final = 'claimed'
+WRITE_DONE: Final = 'done'
+#: Refused with nothing written (a write rule, the host's lease): the same key may be claimed again.
+WRITE_REFUSED: Final = 'refused'
+#: The host may or may not have made it: never made again for that key.
+WRITE_UNKNOWN: Final = 'unknown'
+
+
+@dataclass(frozen=True)
+class WriteClaim:
+    """An earlier claim of a write's key: its state, and a done write's answer (never a body or a patch)."""
+
+    state: str
+    result: dict[str, object] | None = None
 
 
 @dataclass(frozen=True)
@@ -209,6 +231,23 @@ class Dial(Protocol):
         ...
 
 
+class WriteLedger(Protocol):
+    """Each write once per key (the caller's run, agent and attempt and the operation), so a repeat of a write whose
+    outcome its caller never learnt answers the first outcome and is never made twice."""
+
+    def claim(self, run_id: str, key: str, operation: str) -> WriteClaim | None:
+        """None: claimed now (create-only, or again after a refusal); else the earlier claim as it stands."""
+        ...
+
+    def earlier(self, run_id: str, key: str) -> WriteClaim | None:
+        """The claim of ``key`` as it stands (a consistent read; nothing claimed), None for none."""
+        ...
+
+    def close(self, run_id: str, key: str, state: str, result: dict[str, object] | None = None) -> None:
+        """The claim's outcome (``WRITE_DONE`` with the answer, ``WRITE_REFUSED``, ``WRITE_UNKNOWN``)."""
+        ...
+
+
 class Unconnected:
     """The patch reader, run records, GO ledger and dial where the deployment names none of their stores: every call
     is ``NoConnection``, so the broker refuses each permitted operation with 503 before it reaches the host."""
@@ -228,17 +267,28 @@ class Unconnected:
     def mode(self, person: str) -> str:  # noqa: ARG002 - the protocol's signature
         raise NoConnection(NO_CONNECTION)
 
+    def claim(self, run_id: str, key: str, operation: str) -> WriteClaim | None:  # noqa: ARG002 - the protocol's
+        raise NoConnection(NO_CONNECTION)
+
+    def earlier(self, run_id: str, key: str) -> WriteClaim | None:  # noqa: ARG002 - the protocol's signature
+        raise NoConnection(NO_CONNECTION)
+
+    def close(self, run_id: str, key: str, state: str,  # noqa: ARG002 - the protocol's signature
+              result: dict[str, object] | None = None) -> None:  # noqa: ARG002 - the protocol's signature
+        raise NoConnection(NO_CONNECTION)
+
 
 UNCONNECTED: Final = Unconnected()
 
 
 @dataclass(frozen=True)
 class Connector:
-    """A configured connection's collaborators: the host client, the patch reader, the runs, the board and the
-    dial."""
+    """A configured connection's collaborators: the host client, the patch reader, the runs, the board, the dial and
+    the writes' claims."""
 
     host: RepositoryHost
     bundles: BundleReader
     runs: RunDirectory
     ledger: GateLedger
     dial: Dial
+    writes: WriteLedger

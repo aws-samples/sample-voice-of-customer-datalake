@@ -21,6 +21,12 @@ from typing import Final
 #: multi-workspace lands (plan v3, 4.3).
 WORKSPACE: Final = 'default'
 ROLE_PLACEHOLDER: Final = '{role}'
+#: The operations an agent asks the broker for (broker.py says which role may make which), here so that the
+#: harness's client, which the agents' images ship with this module and not the broker, names them from one home.
+READ: Final = 'read'
+POST_COMMENT: Final = 'post_comment'
+PUSH_BUNDLE: Final = 'push_bundle'
+OPEN_OR_UPDATE_DRAFT_PR: Final = 'open_or_update_draft_pr'
 #: The agent catalog's roles, as their IAM role names spell them.
 AGENT_ROLES: Final = frozenset({
     'mapper', 'understander', 'hunter', 'fixer', 'builder', 'committer', 'commit-reviewer', 'gate-runner',

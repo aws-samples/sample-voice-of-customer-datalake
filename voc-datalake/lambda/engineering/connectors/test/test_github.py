@@ -14,6 +14,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 
 from engineering.connectors import github
+from engineering.connectors.broker import Broker
 from engineering.connectors.github import (
     API_HOST,
     JWT_SECONDS,
@@ -27,6 +28,7 @@ from engineering.connectors.github import (
     rate_limit_retry,
 )
 from engineering.connectors.hosts import (
+    WRITE_UNKNOWN,
     BundleContents,
     Commit,
     Conflict,
@@ -35,10 +37,12 @@ from engineering.connectors.hosts import (
     HostError,
     InvalidTarget,
     NotFound,
+    OutcomeUnknown,
     PullRequestRef,
 )
+from engineering.connectors.identity import Caller
 from engineering.connectors.test.app_keys import APP_ID, INSTALLATION_ID, credential, private_key
-from engineering.connectors.test.fakes import BASE, BOT, BRANCH, TREE, bundle_contents
+from engineering.connectors.test.fakes import BASE, BOT, BRANCH, RUN, TREE, FakeWrites, bundle_contents, connector
 from engineering.connectors.write_policy import WriteRefused
 
 NOW = 1_800_000_000.0
@@ -442,40 +446,44 @@ def test_no_pull_request_unless_the_branch_head_has_the_tree(tree: str, head: in
     assert writes(api) == []
 
 
-def test_a_pull_request_opened_while_the_branch_moved_is_closed_and_refused() -> None:
+def test_a_pull_request_opened_while_the_branch_moved_is_closed_and_its_outcome_unknown() -> None:
     api = draftable(FakeGitHub(), open_prs=[], pr_tree='e' * 40)
-    with pytest.raises(Conflict) as caught:
+    with pytest.raises(OutcomeUnknown) as caught:
         client(api).open_or_update_draft_pr('c', BRANCH, 'main', 'Fix', 'Body', TREE)
+    # The write went out: never a refusal (a Conflict says nothing was written), whatever the close did.
+    assert not isinstance(caught.value, WriteRefused | HostBusy)
     assert 'moved' in caught.value.reason
+    assert isinstance(caught.value.__cause__, Conflict)
     assert [w[:2] for w in writes(api)] == [('POST', f'{REPO}/pulls'), ('PATCH', f'{REPO}/pulls/8')]
     assert writes(api)[-1][2] == {'state': 'closed'}
 
 
-@pytest.mark.parametrize(('check', 'error'), [
-    (answer(429, {}, {'retry-after': '7'}), HostBusy),
+@pytest.mark.parametrize(('check', 'cause'), [
+    (answer(429, {}, {'retry-after': '7'}), HostBusy),   # a rate limit after the create: no longer "nothing written"
     (answer(500, {}), HostError),
     (answer(200, {'number': 8}), HostError),   # an answer without the head's sha
 ])
-def test_a_pull_request_opened_whose_check_fails_is_closed_and_the_failure_raised(check: Response,
-                                                                                 error: type[Exception]) -> None:
+def test_a_pull_request_opened_whose_check_fails_is_closed_and_its_outcome_unknown(check: Response,
+                                                                                  cause: type[Exception]) -> None:
     api = draftable(FakeGitHub(), open_prs=[]).on('GET', f'{REPO}/pulls/8', check)
-    with pytest.raises(error):
+    with pytest.raises(OutcomeUnknown) as caught:
         client(api).open_or_update_draft_pr('c', BRANCH, 'main', 'Fix', 'Body', TREE)
+    assert (type(caught.value), isinstance(caught.value.__cause__, cause)) == (OutcomeUnknown, True)
     assert writes(api)[-1] == ('PATCH', f'{REPO}/pulls/8', {'state': 'closed'})
 
 
-def test_a_close_that_fails_is_logged_by_number_and_the_refusal_still_raised(
+def test_a_close_that_fails_is_logged_by_number_and_the_outcome_still_unknown(
         caplog: pytest.LogCaptureFixture) -> None:
     api = draftable(FakeGitHub(), open_prs=[], pr_tree='e' * 40).on('PATCH', f'{REPO}/pulls/8', answer(500, {}))
-    with pytest.raises(Conflict):
+    with pytest.raises(OutcomeUnknown):
         client(api).open_or_update_draft_pr('c', BRANCH, 'main', 'Secret title', 'Secret body', TREE)
     closes = [r for r in caplog.records if r.getMessage() == 'engineering pull request not closed']
     assert [vars(r)['pull_request'] for r in closes] == [8]
     assert 'Secret' not in repr([vars(r) for r in caplog.records])
 
 
-def test_any_failure_of_the_close_still_raises_the_original_refusal(caplog: pytest.LogCaptureFixture,
-                                                                     monkeypatch: pytest.MonkeyPatch) -> None:
+def test_any_failure_of_the_close_still_raises_the_outcome_unknown(caplog: pytest.LogCaptureFixture,
+                                                                    monkeypatch: pytest.MonkeyPatch) -> None:
     host = client(draftable(FakeGitHub(), open_prs=[], pr_tree='e' * 40))
     real_api = host._api
 
@@ -485,17 +493,38 @@ def test_any_failure_of_the_close_still_raises_the_original_refusal(caplog: pyte
             raise ValueError('a malformed answer')
         return real_api(connection_id, permissions, method, path, what, **kwargs)
     monkeypatch.setattr(host, '_api', api)
-    with pytest.raises(Conflict):
+    with pytest.raises(OutcomeUnknown):
         host.open_or_update_draft_pr('c', BRANCH, 'main', 'Fix', 'Body', TREE)
     assert [vars(r)['pull_request'] for r in caplog.records
             if r.getMessage() == 'engineering pull request not closed'] == [8]
 
 
-def test_an_updated_pull_request_whose_branch_moved_is_refused_but_left_open() -> None:
+@pytest.mark.parametrize('check', [answer(200, {'number': 7, 'head': {'sha': PR_HEAD}}),   # (its tree moved)
+                                   answer(429, {}, {'retry-after': '7'})], ids=['moved', 'rate-limited'])
+def test_an_updated_pull_request_whose_check_fails_wrote_so_its_outcome_is_unknown_and_left_open(
+        check: Response) -> None:
     api = draftable(FakeGitHub(), open_prs=[{'number': 7, 'html_url': 'https://h/pull/7'}], pr_tree='e' * 40)
-    with pytest.raises(Conflict):
+    api.on('GET', f'{REPO}/pulls/7', check)
+    with pytest.raises(OutcomeUnknown) as caught:
         client(api).open_or_update_draft_pr('c', BRANCH, 'main', 'Fix', 'Body', TREE)
+    # The text was updated: never recorded as "refused, nothing written".
+    assert 'updated' in caught.value.reason
     assert writes(api) == [('PATCH', f'{REPO}/pulls/7', {'title': 'Fix', 'body': 'Body'})]
+
+
+@pytest.mark.parametrize('check', [answer(429, {}, {'retry-after': '7'}),
+                                   answer(200, {'number': 8, 'head': {'sha': PR_HEAD}})], ids=['rate-limited', 'moved'])
+def test_a_draft_whose_check_fails_after_the_create_is_unknown_and_its_repeat_opens_no_second_pull_request(
+        check: Response) -> None:
+    api = draftable(FakeGitHub(), open_prs=[], pr_tree='e' * 40).on('GET', f'{REPO}/pulls/8', check)
+    claims = FakeWrites()
+    broker = Broker(connector(host=client(api), writes=claims))
+    author = Caller('pr-author', RUN, 4)
+    for _ in range(2):
+        with pytest.raises(OutcomeUnknown):
+            broker.open_or_update_draft_pr(author, BRANCH, 'Fix the refund total', 'Rounds to cents (fb_01).')
+    assert [w[:2] for w in writes(api)].count(('POST', f'{REPO}/pulls')) == 1
+    assert [claim.state for claim in claims.claims.values()] == [WRITE_UNKNOWN]
 
 
 def test_a_pull_request_lookup_answer_without_a_number_is_a_host_error() -> None:

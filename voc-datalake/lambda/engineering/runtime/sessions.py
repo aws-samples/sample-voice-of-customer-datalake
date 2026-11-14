@@ -184,11 +184,12 @@ class AgentSession:
                 total[kind] = max(total.get(kind, 0), int(counts.get(kind, 0)))
         return totals
 
-    def spec(self, restore_key: str | None = None, workspace_bucket: str = '', board_url: str = '') -> AgentSpec:
+    def spec(self, restore_key: str | None = None, workspace_bucket: str = '', board_url: str = '',
+             broker_url: str = '') -> AgentSpec:
         return AgentSpec(run_id=self.run_id, agent_id=self.agent_id, role=self.role, task_id=self.task_id,
                          language=self.language, egress=self.egress, connection=self.connection,
                          restore_key=restore_key, commit=self.commit, attempt=self.task_attempt,
-                         workspace_bucket=workspace_bucket, board_url=board_url)
+                         workspace_bucket=workspace_bucket, board_url=board_url, broker_url=broker_url)
 
     @property
     def vm(self) -> RuntimeSession:

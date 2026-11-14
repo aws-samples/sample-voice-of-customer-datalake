@@ -3,8 +3,10 @@
 No session reaches the repository host: the connector's broker holds the host credential, fills the
 checkout cache and makes every write (docs/autonomous-engineering.md → Repository connectors). So an
 agent reaches only Amazon Bedrock in its region, two buckets in S3 (the raw bucket for the cache mount,
-the workspace bucket for its run's keys and its own puts) and, for the agents that run repository code, its language's package registries (the dependency
-step is the only command with network: ``unit_runner.sandboxed_argv``). The list is checked host by host
+the workspace bucket for its run's keys and its own puts), the platform's two function URLs (the board's and the
+broker's, each by its own host, on the agent's own proxy) and, for the agents that run repository code, its language's
+package registries (the dependency step is the only command with network: ``unit_runner.sandboxed_argv``; its proxy
+never gets a function URL). The list is checked host by host
 (a plain DNS name: no scheme, port, path, wildcard or IP address) and travels with the agent
 (``AgentSpec.egress``).
 """
@@ -53,8 +55,8 @@ def aws_hosts(region: str, *buckets: str) -> tuple[str, ...]:
     their virtual-hosted endpoints only: the regional path-style endpoint would reach every bucket in the region)
     (no SQS: there are no task queues, and an agent's messages reach it through the board).
 
-    The board's function URL is added by its own host (``egress_allowlist``'s ``service_urls``), the broker's too
-    once the harness calls it; no generic Lambda endpoint is ever on the list.
+    The board's and the broker's function URLs are added by their own hosts (``egress_allowlist``'s
+    ``service_urls``); no generic Lambda endpoint is ever on the list.
     """
     if not _REGION_RE.match(region):
         raise RuntimeRefused(f'{region!r} is not an AWS region name')
@@ -73,8 +75,8 @@ def egress_allowlist(
 
     ``extra_hosts`` (at most 10, from the deployment's configuration) add e.g. a private registry
     mirror; they are for the agents that run code only, like the registries, and only the dependency step reaches
-    them. ``service_urls`` are the platform's function URLs every agent calls (the board's), by their own host: never
-    a generic Lambda endpoint.
+    them. ``service_urls`` are the platform's function URLs every agent calls (the board's and the broker's), by their
+    own host: never a generic Lambda endpoint.
     """
     if language not in REGISTRY_HOSTS:
         raise RuntimeRefused(f'no toolchain image for language {language!r}')
@@ -102,9 +104,9 @@ _AGENT_HOST_RE: Final = re.compile(
 
 def split(hosts: Iterable[str]) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """``egress_allowlist``'s hosts parted by who reaches them, each through a proxy of its own in the session: the
-    agent's (Bedrock, its buckets, the board's function URL) and the dependency step's (its language's registries and
-    the deployment's extra hosts). The agent never reaches a registry; repository code never reaches Bedrock, a
-    bucket or the board. It parts them by their shape, which is why ``egress_allowlist`` refuses an extra host shaped
+    agent's (Bedrock, its buckets, the board's and the broker's function URLs) and the dependency step's (its language's
+    registries and the deployment's extra hosts). The agent never reaches a registry; repository code never reaches
+    Bedrock, a bucket, the board or the broker. It parts them by their shape, which is why ``egress_allowlist`` refuses an extra host shaped
     like one of the agent's (the limit: a registry mirror on an S3 bucket's endpoint cannot be an extra host)."""
     agent, code = [], []
     for host in hosts:

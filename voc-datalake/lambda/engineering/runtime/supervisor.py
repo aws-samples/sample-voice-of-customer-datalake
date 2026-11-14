@@ -132,6 +132,8 @@ class Supervisor:
     timings: Timings = field(default_factory=Timings)
     #: The board API's function URL, handed to every agent (a continuation's too; its host is on the session's egress).
     board_url: str = ''
+    #: The connector broker's function URL, handed to every agent likewise (its host on the agent's own proxy only).
+    broker_url: str = ''
     #: The checkout an agent boots with (``checkout.checkout_commands``; the tests give a local one).
     checkout: Callable[[str, Sequence[str]], list[Command]] = field(default_factory=lambda: checkout_commands)
     #: Runs whose agents are held, as of their last tick (a spent budget, or the flow waiting at a person): no new
@@ -653,7 +655,7 @@ class Supervisor:
             # Never a second session beside one still running: the stop is tried again on the next move.
             raise SessionCallFailed('the old session could not be stopped')
         restore = self.checkpoints.latest(session.run_id, session.agent_id, session.commit, session.task_attempt)
-        spec = session.spec(restore, self.workspace_bucket, self.board_url)
+        spec = session.spec(restore, self.workspace_bucket, self.board_url, self.broker_url)
         try:
             vm = self._vm_call(lambda: self.runtime.run(spec))
         except SessionCallFailed as failed:

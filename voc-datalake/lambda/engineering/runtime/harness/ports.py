@@ -5,10 +5,10 @@ one and launching its agent), the agent's inbox (the run monitor's and the super
 ``pause``, a question), the knowledge pack (its agent reader: the latest approved version, read as data) and the
 broker (every write to the repository host) are built apart from the runtime (engineering/board, its inbox op
 included, engineering/knowledge, engineering/connectors;
-docs/autonomous-engineering.md → How the agents work together, Repository connectors). Until the harness is
-wired to them, it reaches them only through these interfaces, the
-tests use fakes of them, and ``main.py`` wires adapters that refuse (``PendingHarnessPorts``), like the
-supervisor's own ports.
+docs/autonomous-engineering.md → How the agents work together, Repository connectors). The harness reaches them
+only through these interfaces: ``main.py`` wires them on the board's and the broker's function URLs
+(``board_client.py``, ``broker_client.py``), the tests use fakes of them, and a port with no URL to reach refuses
+(``PendingHarnessPorts``), like the supervisor's own ports.
 """
 from __future__ import annotations
 
@@ -114,14 +114,40 @@ class Inbox(Protocol):
     def resume(self, cursor: object) -> None: ...
 
 
+class BrokerRefused(RuntimeError):
+    """The broker did not do what was asked: its status (0: its answer never came) and its plain reason, which the
+    tools hand the model as a refusal it reads (the skills: a refusal is the answer, never something to work
+    around)."""
+
+    def __init__(self, status: int, reason: str) -> None:
+        super().__init__(f'the broker refused ({status}): {reason}' if status else reason)
+        self.status = status
+
+
+#: What the model is told of a write whose outcome is not known: it may have been made. Nothing reads the host back
+#: yet, so the outcome stays unknown until a person checks the host (the claim row and the task's progress say so).
+OUTCOME_UNKNOWN: Final = 'outcome unknown: do not repeat it; it stays unknown until a person checks the host'
+
+
+class WriteOutcomeUnknown(RuntimeError):
+    """A write (push, draft pull request, comment) the broker may or may not have made: its answer never came, came
+    unreadable, or said the host's outcome is not known. Never a refusal, never a crash: the model reads
+    ``OUTCOME_UNKNOWN``, and the broker makes that write at most once for the agent's attempt (a repeat answers the
+    first outcome)."""
+
+    def __init__(self) -> None:
+        super().__init__(OUTCOME_UNKNOWN)
+
+
 class Broker(Protocol):
     """The connector's broker, which alone writes to the repository host (connectors/broker.py: it checks the caller's
     role, the run, the dial, the CI attestation, the board's GO and the write rules before the host). Each write is the
     one its role may make: ``push`` the committer's, ``open_draft_pr`` the PR author's, ``comment`` the PR
-    reviewer's; the answer is the broker's ``result``."""
+    reviewer's; the answer is the broker's ``result``, a refusal ``BrokerRefused``."""
 
     def submit(self, run_id: str, agent_id: str, task_id: str, patch_key: str, summary: str) -> str:
-        """Hand the agent's work (a patch under its own keys) to the broker, which alone writes to the host."""
+        """Hand the agent's work (a patch under its own keys) on: the broker reads it at the committer's push, after
+        the quality gate's GO, and alone writes it to the host."""
         ...
 
     def push(self, run_id: str, agent_id: str, *, branch: str, patch_key: str, tree_hash: str,
@@ -149,13 +175,13 @@ class HarnessPortNotWired(RuntimeError):
 
 
 class PendingHarnessPorts:
-    """The ports a harness has no wiring for: the board and the inbox without a board URL, and the broker, the
-    planner and the knowledge reader until they are wired. Every call refuses."""
+    """The ports a harness has no wiring for: the board, the inbox, the planner and the knowledge reader without a
+    board URL (``VOC_BOARD_URL``), the broker without a broker URL (``VOC_BROKER_URL``). Every call refuses."""
 
     @staticmethod
     def _refuse(name: str) -> HarnessPortNotWired:
-        return HarnessPortNotWired(f'{name} is not wired yet (no board URL for the board and the inbox; the broker, '
-                                   'the planner and the knowledge reader are not wired yet)')
+        return HarnessPortNotWired(f'{name} is not wired (the session was handed no board URL for the board, the '
+                                   'inbox, the planner and the knowledge reader, or no broker URL for the broker)')
 
     def brief(self, *, run_id: str, task_id: str) -> TaskBrief:
         raise self._refuse(f'board.brief({run_id}, {task_id})')

@@ -136,6 +136,8 @@ export interface EngineeringPeers {
   /** The board's function URL: handed to every agent's harness, its host on the agent's egress. */
   boardUrl: string;
   broker: lambda.IFunction;
+  /** The broker's function URL: handed to every agent's harness (`VOC_BROKER_URL`), its host on the agent's egress. */
+  brokerUrl: string;
 }
 
 
@@ -240,6 +242,7 @@ class EngineeringRuntime extends Construct {
       ENGINEERING_SETTINGS_TABLE: props.agentsTable.tableName,
       ENGINEERING_BUS_NAME: props.peers.bus.eventBusName,
       ENGINEERING_BOARD_URL: props.peers.boardUrl,
+      ENGINEERING_BROKER_URL: props.peers.brokerUrl,
       RAW_DATA_BUCKET: props.rawDataBucket.bucketName,
       ENGINEERING_WORKSPACE_BUCKET: props.workspaceBucket.bucketName,
       SUPERVISOR_RULE_NAME: ruleName,
@@ -376,11 +379,15 @@ class EngineeringRuntime extends Construct {
     // through the board's inbox op (its run's only).
     // The board's and the broker's function URLs (IAM-authenticated, no resource policy): the URL call, and the
     // invoke behind it only through a function URL.
+    // One statement each, on its one function: the harness calls the broker's URL as the agent's own session
+    // (harness/broker_client.py), and the broker refuses any operation the caller's role may not make.
     const urls = [peers.board.functionArn, peers.broker.functionArn];
-    role.addToPolicy(new iam.PolicyStatement({
-      sid: 'BoardAndBrokerUrls', actions: ['lambda:InvokeFunctionUrl'], resources: urls,
-      conditions: { StringEquals: { 'lambda:FunctionUrlAuthType': 'AWS_IAM' } },
-    }));
+    for (const [sid, fn] of [['BoardUrl', peers.board], ['BrokerUrl', peers.broker]] as const) {
+      role.addToPolicy(new iam.PolicyStatement({
+        sid, actions: ['lambda:InvokeFunctionUrl'], resources: [fn.functionArn],
+        conditions: { StringEquals: { 'lambda:FunctionUrlAuthType': 'AWS_IAM' } },
+      }));
+    }
     role.addToPolicy(new iam.PolicyStatement({
       sid: 'BoardAndBrokerThroughUrls', actions: ['lambda:InvokeFunction'], resources: urls,
       conditions: { Bool: { 'lambda:InvokedViaFunctionUrl': 'true' } },

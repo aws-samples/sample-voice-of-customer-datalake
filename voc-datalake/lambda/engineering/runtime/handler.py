@@ -166,7 +166,7 @@ def _supervisor() -> Supervisor:
             checkpoints=CheckpointReader(get_s3_client(), workspace),
             bucket=bucket, workspace_bucket=workspace,
             timings=caps.timings(json.loads(os.environ.get('ENGINEERING_TIMINGS', '{}'))),
-            board_url=os.environ['ENGINEERING_BOARD_URL'],
+            board_url=os.environ['ENGINEERING_BOARD_URL'], broker_url=os.environ['ENGINEERING_BROKER_URL'],
         )
     return _supervisor_cache
 
@@ -636,13 +636,15 @@ def launch(event: Mapping[str, Any]) -> dict[str, Any]:
     allowlist = egress.egress_allowlist(
         role=role, language=language, region=os.environ.get('AWS_REGION', 'us-east-1'), bucket=supervisor.bucket,
         workspace_bucket=supervisor.workspace_bucket,
-        extra_hosts=json.loads(os.environ.get('ENGINEERING_EXTRA_EGRESS', '[]')), service_urls=[supervisor.board_url])
+        extra_hosts=json.loads(os.environ.get('ENGINEERING_EXTRA_EGRESS', '[]')),
+        service_urls=[supervisor.board_url, supervisor.broker_url])
     attempt = _attempt(supervisor, str(event.get('run_id', '')), str(event.get('task_id', '')),
                        _optional_number(event, 'attempt', int))
     spec = AgentSpec(run_id=str(event.get('run_id', '')), agent_id=str(event.get('agent_id', '')), role=role,
                      task_id=str(event.get('task_id', '')), language=language, egress=allowlist,
                      connection=str(event.get('connection', '')), commit=commit, attempt=attempt,
-                     workspace_bucket=supervisor.workspace_bucket, board_url=supervisor.board_url)
+                     workspace_bucket=supervisor.workspace_bucket, board_url=supervisor.board_url,
+                     broker_url=supervisor.broker_url)
     existing = _launched(supervisor.sessions, spec)
     if existing is not None:
         return existing

@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import { policiesWithStatement } from '../test-support/engineering-template';
 import {
-  ACCOUNT, EnvSchema, count, policyText, runtimeStack, supervisorEnv,
+  ACCOUNT, EnvSchema, count, functionEnv, policyText, runtimeStack, supervisorEnv,
 } from '../test-support/engineering-runtime-fixture';
 import { ENGINEERING_WORKSPACE_READER_SERVICES } from './dlq-alarms';
 import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
@@ -211,17 +211,46 @@ describe('with -c engineeringAgents=true', () => {
   });
 
   it('lets an agent role call the board\'s and the broker\'s function URLs, and invoke them only through one', () => {
-    const urls = [`${ACCOUNT}:function:voc-engineering-board`, `${ACCOUNT}:function:voc-engineering-broker`];
+    const board = `${ACCOUNT}:function:voc-engineering-board`;
+    const broker = `${ACCOUNT}:function:voc-engineering-broker`;
+    const iamOnly = { StringEquals: { 'lambda:FunctionUrlAuthType': 'AWS_IAM' } };
     expect(fixerPoliciesWith(template, [
+          Match.objectLike({ Sid: 'BoardUrl', Action: 'lambda:InvokeFunctionUrl', Resource: board, Condition: iamOnly }),
+          Match.objectLike({ Sid: 'BrokerUrl', Action: 'lambda:InvokeFunctionUrl', Resource: broker, Condition: iamOnly }),
           Match.objectLike({
-            Sid: 'BoardAndBrokerUrls', Action: 'lambda:InvokeFunctionUrl', Resource: urls,
-            Condition: { StringEquals: { 'lambda:FunctionUrlAuthType': 'AWS_IAM' } },
-          }),
-          Match.objectLike({
-            Sid: 'BoardAndBrokerThroughUrls', Action: 'lambda:InvokeFunction', Resource: urls,
+            Sid: 'BoardAndBrokerThroughUrls', Action: 'lambda:InvokeFunction', Resource: [board, broker],
             Condition: { Bool: { 'lambda:InvokedViaFunctionUrl': 'true' } },
           }),
     ])).toBe(1);
+  });
+
+  it('gives every agent role the broker\'s function URL alone, IAM-authenticated, and no other URL call', () => {
+    const broker = `${ACCOUNT}:function:voc-engineering-broker`;
+    const agentPolicies = template.findResources('AWS::IAM::Policy', {
+      Properties: { Roles: [{ Ref: Match.stringLikeRegexp('^EngineeringRuntimeEngineeringAgent') }] },
+    });
+    const UrlStatements = z.array(z.looseObject({
+      Sid: z.string().optional(), Action: z.union([z.string(), z.array(z.string())]), Resource: z.unknown(),
+      Condition: z.unknown().optional(),
+    }));
+    const urlCalls = Object.values(agentPolicies)
+      .map((policy) => UrlStatements.parse(policy.Properties?.PolicyDocument?.Statement)
+        .filter((statement) => [statement.Action].flat().includes('lambda:InvokeFunctionUrl')));
+    expect(urlCalls).toHaveLength(13);
+    for (const statements of urlCalls) {
+      // Exactly the board's and the broker's, one function each, never a wildcard or another function.
+      expect(statements.map((statement) => [statement.Sid, statement.Resource])).toStrictEqual([
+        ['BoardUrl', `${ACCOUNT}:function:voc-engineering-board`], ['BrokerUrl', broker]]);
+      expect(statements.map((statement) => statement.Condition)).toStrictEqual([
+        { StringEquals: { 'lambda:FunctionUrlAuthType': 'AWS_IAM' } },
+        { StringEquals: { 'lambda:FunctionUrlAuthType': 'AWS_IAM' } }]);
+    }
+  });
+
+  it('hands the broker\'s function URL to the agents through the supervisor and the delivery', () => {
+    for (const name of ['voc-engineering-runtime', 'voc-engineering-delivery', 'voc-engineering-start']) {
+      expect(functionEnv(template, name).ENGINEERING_BROKER_URL).toBe('https://def456.lambda-url.us-east-1.on.aws/');
+    }
   });
 
   it('lets the runtime\'s two roles speak on the bus only as the supervisor', () => {

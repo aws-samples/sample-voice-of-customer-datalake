@@ -1,13 +1,17 @@
 """A run of the Bug hunt and fix template, end to end on the local fake runtime: the coordinator follows the flow, the
 board launches each step's agent through the runtime's launch (its argv from the role's skill), and each agent runs
-the harness's own entry with that argv, on a scripted Converse model, against the board API in process. The run goes
-as far as the models let it: to the draft pull request, or to a person when an agent stops without finishing."""
+the harness's own entry with that argv, on a scripted Converse model, against the board API in process. The writers
+reach the host through the harness's own broker client, signed as their own sessions, to the broker's own handler
+behind a SigV4-checking function URL (``broker_stub``), with the broker's own readers of the run's record, the GO
+ledger, the submitted patch and the dial (the starter's way of working AI-driven) over the run's real rows and
+objects, and a host on the fixture repository that rebuilds each push with git. The run goes as far as the models
+let it: to the draft pull request, or to a person when an agent stops without finishing."""
 from __future__ import annotations
 
 import functools
 import json
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -18,23 +22,41 @@ from engineering.board.api import BoardApi
 from engineering.board.inbox import Inbox
 from engineering.board.store import COORDINATE_TASK, BoardStore
 from engineering.bus.publish import EventBridgePublisher
+from engineering.connectors.broker import Broker
+from engineering.connectors.dial import WaysOfWorking
+from engineering.connectors.hosts import (
+    BundleContents,
+    CommentTarget,
+    Conflict,
+    Connector,
+    PullRequestRef,
+    ReadKind,
+    ReadPage,
+    RunRecord,
+)
 from engineering.connectors.identity import Caller
+from engineering.connectors.patches import WorkspacePatches
+from engineering.connectors.records import RunRecords, WriteClaims
 from engineering.flow.ledger import read_gate_record
 from engineering.flow.test.fixtures import TEMPLATES
 from engineering.runtime import handler
 from engineering.runtime.harness import main as harness_main
 from engineering.runtime.harness.board_client import BoardHttp, BoardKnowledge, BoardPlanner, InboxHttp
+from engineering.runtime.harness.broker_client import BrokerHttp, SignedBroker
 from engineering.runtime.harness.converse_loop import ConverseAdapter
 from engineering.runtime.harness.interface import AgentSession
+from engineering.runtime.harness.ports import BrokerRefused
 from engineering.runtime.harness.runner_client import RunnerClient
 from engineering.runtime.harness.skills import COORDINATOR, SKILLS, Skill, harness_argv
 from engineering.runtime.harness.tools import as_data
-from engineering.runtime.test.conftest import BOARD_URL, COMMIT, TABLE, WORKSPACE_BUCKET
-from engineering.runtime.test.harness_fakes import FakeBedrock, FakeBroker, FakeRunner, use
+from engineering.runtime.test.broker_stub import AgentSessions, FunctionUrl
+from engineering.runtime.test.conftest import BOARD_URL, BROKER_URL, COMMIT, TABLE, WORKSPACE_BUCKET
+from engineering.runtime.test.harness_fakes import FakeBedrock, FakeRunner, use
 from engineering.runtime.test.test_engineering_board_bus import Events
 from engineering.runtime.test.test_engineering_harness_main import _vm_directory, fixture_repository, run_git
 from engineering.runtime.test.test_engineering_inbox_end_to_end import ApiTransport
 from engineering.workspace.store import WorkspaceStore
+from shared.ai_mode import MODE_AI_DRIVEN, ai_mode_key
 from shared.workflow_schema import encode_definition
 
 RUN = '01JD3R4NZXQ7Y2W8K4M6P9T0CD'
@@ -46,6 +68,90 @@ FIXED = SLUGS.replace('""', '""  # <= max_length')
 #: The agents whose session runs on real git (a checkout of the fixture repository): the fixer, whose submitted patch
 #: is the change, and the gate's two, which judge it.
 ON_GIT = ('fixer', 'gate-runner', 'final-go')
+#: The person who started the run (a person's subject), whose way of working the broker's dial reads: AI-driven.
+STARTER = 'person-sub-1'
+#: The aggregates table's stand-in, where the people's ways of working are.
+AGGREGATES = 'voc-aggregates-test'
+PULL_REQUEST = PullRequestRef(number=7, url='https://code.example.com/example/app/pull/7')
+
+
+@dataclass
+class GitHost:
+    """The repository host on the fixture repository (``cache``, at ``commit``, which the run's ``COMMIT`` stands
+    for): a base file read at the run's commit; a push rebuilt with git from the bundle's changes on that commit, and
+    the branch moved only when the rebuilt tree is the checked one, as the host's client does (connectors/github.py);
+    a draft opened only on a branch whose tree is the checked one."""
+
+    cache: Path
+    commit: str
+    work: Path
+    branches: dict[str, str] = field(default_factory=dict)
+    writes: list[tuple[str, str, str]] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        # The run's commit as the host has it: a clone of the cache at that commit, read file by file.
+        run_git('clone', '--quiet', str(self.cache), str(self.work / 'base'))
+        assert run_git('-C', str(self.work / 'base'), 'rev-parse', 'HEAD') == self.commit
+
+    def read(self, connection_id: str, kind: ReadKind, target: str, cursor: str | None) -> ReadPage:
+        del connection_id, cursor
+        return ReadPage(content=f'{kind}:{target}', next_cursor=None)
+
+    def file_at(self, connection_id: str, commit: str, path: str) -> bytes | None:
+        base = self.work / 'base' / path   # (a path the broker's patch reader took: no '..', no .git)
+        return base.read_bytes() if (connection_id, commit) == ('conn-1', COMMIT) and base.is_file() else None
+
+    def default_branch(self, connection_id: str) -> str:
+        assert connection_id == 'conn-1'
+        return 'main'
+
+    def post_comment(self, connection_id: str, on: CommentTarget, number: int, body: str) -> str:
+        raise AssertionError(f'no comment in this flow ({connection_id}, {on} {number}, {len(body)} characters)')
+
+    def branch_tree_hash(self, connection_id: str, branch: str) -> str | None:
+        assert connection_id == 'conn-1'
+        return self.branches.get(branch)
+
+    def push_bundle(self, connection_id: str, branch: str, contents: BundleContents, tree_hash: str,
+                    default_branch: str) -> None:
+        assert (connection_id, default_branch, contents.base) == ('conn-1', 'main', COMMIT)
+        clone = self.work / f'push-{len(self.writes)}'
+        run_git('clone', '--quiet', str(self.cache), str(clone))
+        for commit in contents.commits:
+            for change in commit.changes:
+                target = clone / change.path
+                if change.content is None:
+                    target.unlink()
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(change.content)
+        run_git('-C', str(clone), 'add', '--all')
+        rebuilt = run_git('-C', str(clone), 'write-tree')
+        if rebuilt != tree_hash:
+            raise Conflict('The tree rebuilt from the patch is not the checked one; nothing was pushed.')
+        self.branches[branch] = rebuilt
+        self.writes.append(('push_bundle', branch, rebuilt))
+
+    def open_or_update_draft_pr(self, connection_id: str, branch: str, base: str, title: str, body: str,
+                                tree_hash: str) -> PullRequestRef:
+        assert (connection_id, base, bool(title and body)) == ('conn-1', 'main', True)
+        if self.branches.get(branch) != tree_hash:
+            raise Conflict("The branch's head is not the checked tree.")
+        self.writes.append(('open_or_update_draft_pr', branch, tree_hash))
+        return PULL_REQUEST
+
+
+@dataclass
+class Attested:
+    """The broker's run directory (records.py ``RunRecords``) with the CI attestation given. Its record is planned
+    (until then every run reads as not attested, and every push is refused), so the test stands in for an
+    administrator's confirmation of the repository's CI settings, and for nothing else."""
+
+    records: RunRecords
+
+    def run(self, run_id: str) -> RunRecord | None:
+        found = self.records.run(run_id)
+        return None if found is None else replace(found, ci_attested=True)
 
 
 @dataclass
@@ -107,19 +213,31 @@ class BugHunt:
     #: The fixture repository's cache (what a real checkout clones) and its commit.
     cache: Path
     commit: str
-    broker: FakeBroker = field(default_factory=FakeBroker)
+    #: The repository host and the broker's function URL in front of the broker's own handler.
+    host: GitHost
+    url: FunctionUrl
     models: dict[str, ScriptedModel] = field(default_factory=dict)
 
     def transport(self, agent_id: str) -> ApiTransport:
         role, index = agent_id.rsplit('-', 1)
         return ApiTransport(self.api, Caller(role, RUN, int(index)))
 
+    def broker(self, agent_id: str) -> BrokerHttp:
+        """The harness's own broker client, signed with the agent's own role session (the launcher's)."""
+        return BrokerHttp(SignedBroker(BROKER_URL, 'us-east-1', self.url.sessions.credentials(agent_id),
+                                       opener=self.url), RUN, agent_id, COMMIT)
+
     def ports(self, agent_id: str, task_id: str, attempt: int) -> harness_main.Ports:
-        """``main.default_ports`` on the board API in process: the agent's own caller, never another's."""
+        """``main.default_ports`` on the board API in process and the broker's function URL: the agent's own caller,
+        never another's."""
         transport = self.transport(agent_id)
         return harness_main.Ports(board=BoardHttp(transport, RUN, task_id, epoch=attempt),
-                                  inbox=InboxHttp(transport, RUN, agent_id), broker=self.broker,
+                                  inbox=InboxHttp(transport, RUN, agent_id), broker=self.broker(agent_id),
                                   planner=BoardPlanner(transport, RUN), knowledge=BoardKnowledge(transport, RUN, task_id))
+
+    def broker_calls(self) -> list[tuple[str, str, int]]:
+        """Each call the broker's function URL took: the caller's session name, the operation, the status."""
+        return [(str(caller).rsplit('/', 1)[-1], operation, status) for caller, operation, status, _ in self.url.calls]
 
     def environment(self, agent_id: str) -> tuple[tuple[str, ...], dict[str, str]]:
         """The agent's argv and environment, as its session row has them (what the runtime starts it with)."""
@@ -129,8 +247,10 @@ class BugHunt:
         home.mkdir(parents=True)
         (self.tmp / agent_id / 'repo').mkdir()
         (self.tmp / agent_id / 'repo' / 'slugs.py').write_text(SLUGS)
-        env = {**session.spec(None, WORKSPACE_BUCKET, BOARD_URL).environment(), 'AWS_REGION': 'us-east-1',
+        env = {**session.spec(None, WORKSPACE_BUCKET, BOARD_URL, BROKER_URL).environment(), 'AWS_REGION': 'us-east-1',
                'HOME': str(home)}
+        assert (env['VOC_BROKER_URL'], BROKER_URL.removeprefix('https://').rstrip('/') in session.egress) == (
+            BROKER_URL, True)
         return session.harness, env
 
     def run_agent(self, agent_id: str, turns: list[list[dict[str, Any]]], monkeypatch: pytest.MonkeyPatch) -> int:
@@ -163,11 +283,15 @@ class BugHunt:
         assert isinstance(flow, dict)
         return flow
 
-    def read(self, agent_id: str, path: str) -> list[str]:
-        """What ``agent_id``'s session was handed for each ``read_file`` of ``path``: its checkout's file, fenced."""
+    def results(self, agent_id: str, start: str) -> list[str]:
+        """The tool results ``agent_id``'s session was handed that start with ``start``."""
         texts = [block['toolResult']['content'][0]['text'] for message in self.models[agent_id].requests[-1]['messages']
                  for block in message['content'] if 'toolResult' in block]
-        return [text for text in texts if text.startswith(f'<data source="file:{path}">')]
+        return [text for text in texts if text.startswith(start)]
+
+    def read(self, agent_id: str, path: str) -> list[str]:
+        """What ``agent_id``'s session was handed for each ``read_file`` of ``path``: its checkout's file, fenced."""
+        return self.results(agent_id, f'<data source="file:{path}">')
 
 
 def coordinate(session: AgentSession, turns: list[list[dict[str, Any]]]) -> str:
@@ -188,8 +312,8 @@ def bug_hunt(wired: Any, aws: tuple[Any, Any], tmp_path: Path) -> BugHunt:
     s3, _ = aws
     handler.lambda_handler({'action': 'start_run', 'run_id': RUN, 'max_tasks': 20, 'goal': 'hunt the slug bugs',
                             'connection': 'conn-1', 'commit': COMMIT, 'language': 'python', 'flow': 'wf_bugs',
-                            'flow_definition': encode_definition(TEMPLATES['bug-hunt-and-fix']), 'flow_revision': 1},
-                           None)
+                            'flow_definition': encode_definition(TEMPLATES['bug-hunt-and-fix']), 'flow_revision': 1,
+                            'actor': STARTER}, None)
     client = boto3.client('dynamodb', region_name='us-east-1')
     counter = iter(range(1, 100))
     workspace = WorkspaceStore(s3, WORKSPACE_BUCKET, denied_is_missing=True)
@@ -198,7 +322,19 @@ def bug_hunt(wired: Any, aws: tuple[Any, Any], tmp_path: Path) -> BugHunt:
     api = BoardApi(BoardStore(client, TABLE, new_id=lambda: f'task-{next(counter)}'),
                    EventBridgePublisher(Events(), 'voc-engineering', 'voc.engineering/board'), Inbox(client, TABLE),
                    launcher=launcher, gate_records=lambda key: read_gate_record(workspace, key))
-    return BugHunt(api, launcher, s3, tmp_path, *fixture_repository(tmp_path, {'slugs.py': SLUGS}))
+    cache, commit = fixture_repository(tmp_path, {'slugs.py': SLUGS})
+    # The broker's own wiring (connectors/handler.py broker_for) over the run's rows and objects, the starter's way
+    # of working AI-driven in the aggregates table, and the host on the fixture repository.
+    people = boto3.resource('dynamodb', region_name='us-east-1').create_table(
+        TableName=AGGREGATES, BillingMode='PAY_PER_REQUEST',
+        KeySchema=[{'AttributeName': 'pk', 'KeyType': 'HASH'}, {'AttributeName': 'sk', 'KeyType': 'RANGE'}],
+        AttributeDefinitions=[{'AttributeName': name, 'AttributeType': 'S'} for name in ('pk', 'sk')])
+    people.put_item(Item={**ai_mode_key(STARTER), 'mode': MODE_AI_DRIVEN})
+    host = GitHost(cache, commit, tmp_path / 'host')
+    records = RunRecords(client, TABLE, workspace, host.default_branch)
+    broker = Broker(Connector(host=host, bundles=WorkspacePatches(workspace, host.file_at), runs=Attested(records),
+                              ledger=records, dial=WaysOfWorking(people), writes=WriteClaims(client, TABLE)))
+    return BugHunt(api, launcher, s3, tmp_path, cache, commit, host, FunctionUrl(BROKER_URL, broker, AgentSessions(RUN)))
 
 
 def _fixed_tree(flow: BugHunt) -> str:
@@ -241,17 +377,29 @@ def test_a_bug_hunt_runs_every_step_with_its_roles_skill_to_the_draft_pull_reque
         [use('write_file', path='slugs.py', text=FIXED)],
         [use('run', argv=['python3', '-m', 'unittest'])], [use('submit_work', summary='the <= fix and its test')],
         _done('fixed with a test')], monkeypatch)
-    patch = flow.broker.submitted[0][3]
-    # The board lists it among the fixer's task's outputs, where the coordinator reads it for the gate's tasks.
+    # The board lists the submitted patch among the fixer's task's outputs, where the coordinator reads it for the
+    # gate's tasks. The submission went through the harness's broker client, which makes no call for it: the broker
+    # reads the patch at the committer's push.
     listed = {task['task_id']: task for task in flow.transport('coordinator-1').post({'op': 'tasks'})['tasks']}
-    assert listed['task-2']['result_keys'] == [patch]
+    [patch] = listed['task-2']['result_keys']
+    assert patch.startswith(f'ws/default/runs/{RUN}/fixer-3/commits/{COMMIT}/_patches/attempt-1/task-2-')
+    assert [json.loads(text)['broker'][:10] for text in flow.results('fixer-3', '{"patch"')] == ['submitted:']
+    assert flow.broker_calls() == []
     coordinate(coordinator, _post_and_launch('commit-reviewer', 'board', 'task-3', 'Review the slug fix'))
     flow.run_agent('commit-reviewer-4', [
         [use('read_file', path='slugs.py')],
         [use('write_findings', package='.', shard='review', findings=[{**FINDING, 'severity': 'nit'}])],
         _done('no blocking finding')], monkeypatch)
-    # Nothing is committed before the gate: the template's commit step comes after its GO.
-    assert (statuses(flow.plan())['commit'], flow.broker.writes) == ('waiting', [])
+    # Nothing is committed before the gate: the template's commit step comes after its GO, and the broker's own
+    # checks refuse a push asked for early (no GO in the ledger for the fixed tree) or by a fixer (its role).
+    tree = _fixed_tree(flow)
+    assert (statuses(flow.plan())['commit'], flow.host.writes) == ('waiting', [])
+    with pytest.raises(BrokerRefused, match='no final-go GO for this tree') as early:
+        flow.broker('committer-9').push(RUN, 'committer-9', branch=BRANCH, patch_key=patch, tree_hash=tree,
+                                        message='Keep a slug exactly max_length long')
+    with pytest.raises(BrokerRefused, match='The fixer role may not push bundle') as fixer:
+        flow.broker('fixer-3').push(RUN, 'fixer-3', branch=BRANCH, patch_key=patch, tree_hash=tree, message='m')
+    assert (early.value.status, fixer.value.status, flow.host.writes) == (409, 403, [])
 
     # The gate's two tasks name the fixer's patch: the harness applies it to each one's checkout and hashes the tree
     # before anything runs, so the checks run on the fix and the record's tree is that tree, never a model's word.
@@ -278,7 +426,6 @@ def test_a_bug_hunt_runs_every_step_with_its_roles_skill_to_the_draft_pull_reque
     tasks = {task.task_id: task for task in flow.api.store.tasks('default', RUN)}
     records = [json.loads(flow.s3.get_object(Bucket=WORKSPACE_BUCKET, Key=tasks[task].result_keys[0])['Body'].read())
                for task in ('task-4', 'task-5')]
-    tree = _fixed_tree(flow)
     assert [(record['verdict'], record['tree_hash']) for record in records] == [('GO', tree), ('GO', tree)]
 
     # After the GO: the committer pushes the fixer's submitted patch, for the tree the gate judged.
@@ -309,14 +456,18 @@ def test_a_bug_hunt_runs_every_step_with_its_roles_skill_to_the_draft_pull_reque
     assert statuses(plan) == {'start': 'done', 'hunt': 'done', 'board': 'done', 'gate': 'done', 'commit': 'done',
                               'pr_author': 'done', 'pr': 'done', 'human': 'skipped'}
     # The outputs went where their readers read them, recorded on the tasks (the fixer's: its submitted patch, the
-    # one the committer pushed); the host writes went to the broker, the push only after the GO.
+    # one the committer pushed). The host writes went through the broker, each writer as its own session: the push
+    # only after the GO, rebuilt by the host from the patch to exactly the tree the gate judged, and the draft on
+    # that branch's tree.
     tasks = {task.task_id: task for task in flow.api.store.tasks('default', RUN)}
     assert all(task.state == 'done' for task in tasks.values())
     assert [len(tasks[t].result_keys) for t in ('task-1', 'task-2', 'task-3', 'task-4', 'task-5')] == [1] * 5
     assert tasks['task-2'].result_keys == (patch,)
-    assert [(write[0], write[3].get('patch'), write[3].get('tree_hash')) for write in flow.broker.writes] == [
-        ('push_bundle', patch, tree), ('open_or_update_draft_pr', None, None)]
-    assert [submitted[1] for submitted in flow.broker.submitted] == ['fixer-3']
+    assert flow.host.writes == [('push_bundle', BRANCH, tree), ('open_or_update_draft_pr', BRANCH, tree)]
+    assert flow.broker_calls() == [(f'{RUN}.9', 'push_bundle', 409), (f'{RUN}.3', 'push_bundle', 403),
+                                   (f'{RUN}.7', 'push_bundle', 200), (f'{RUN}.8', 'open_or_update_draft_pr', 200)]
+    assert [json.loads(text)['broker'] for text in flow.results('pr-author-8', '{"broker"')] == [
+        {'number': PULL_REQUEST.number, 'url': PULL_REQUEST.url}]
 
 
 def test_an_agent_that_stops_without_finishing_takes_the_run_to_a_person(bug_hunt: BugHunt,

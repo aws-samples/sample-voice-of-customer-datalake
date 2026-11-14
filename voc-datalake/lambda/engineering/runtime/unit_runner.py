@@ -126,7 +126,7 @@ TOOLCHAIN_ENV: Final = ('CARGO_HOME', 'RUSTUP_HOME', 'CARGO_INCREMENTAL', 'GRADL
 #: The agent's ids (``interface.AgentSpec.environment``, handed with the session's ``start``) and its region: the
 #: agent's own commands' only (the harness reads them); repository code never needs them.
 AGENT_ENV: Final = ('VOC_RUN_ID', 'VOC_AGENT_ID', 'VOC_TASK_ID', 'VOC_ROLE', 'VOC_RESTORE_KEY', 'VOC_COMMIT',
-                    'VOC_ATTEMPT', 'VOC_WORKSPACE_BUCKET', 'VOC_BOARD_URL', 'AWS_REGION')
+                    'VOC_ATTEMPT', 'VOC_WORKSPACE_BUCKET', 'VOC_BOARD_URL', 'VOC_BROKER_URL', 'AWS_REGION')
 #: Credential shapes masked in tool output: AWS access keys and secrets, host tokens (GitHub, GitLab),
 #: bearer headers, private keys, and `name=value` pairs whose name says secret.
 _CREDENTIAL_RES: Final = (

@@ -84,15 +84,7 @@ class SignedTransport:
         raise AssertionError('unreachable')  # pragma: no cover
 
     def _post(self, body: dict[str, Any]) -> dict[str, Any]:
-        from botocore.auth import SigV4Auth
-        from botocore.awsrequest import AWSRequest
-
-        url = board_url(self.url)  # https and the function URL's host only: never file: or another scheme
-        data = json.dumps(body, separators=(',', ':')).encode()
-        request = AWSRequest(method='POST', url=url, data=data, headers={'Content-Type': 'application/json'})
-        SigV4Auth(self.credentials.get_frozen_credentials(), 'lambda', self.region).add_auth(request)
-        prepared = urllib.request.Request(url, data=data, method='POST',  # noqa: S310 - https, checked above
-                                          headers=dict(request.headers.items()))
+        prepared = signed_post(self.url, self.region, self.credentials, body)
         timeout = LAUNCH_TIMEOUT_SECONDS if body.get('op') == 'launch' else TIMEOUT_SECONDS
         try:
             with _OPENER.open(prepared, timeout=timeout) as answer:
@@ -113,20 +105,42 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 _OPENER: Final = urllib.request.build_opener(_NoRedirect)
 
 
-def _json(raw: bytes) -> dict[str, Any]:
-    if len(raw) > MAX_ANSWER_BYTES:
-        raise BoardRefused(502, 'the answer is over its limit')
+def json_object(raw: bytes, limit: int, refused: Callable[[str], Exception]) -> dict[str, Any]:
+    """``raw`` as a JSON object; ``refused(reason)`` is raised for an answer over ``limit`` bytes, not JSON, or not
+    an object (the board's answers and the broker's)."""
+    if len(raw) > limit:
+        raise refused('the answer is over its limit')
     try:
         answer = json.loads(raw or b'{}')
     except ValueError as error:
-        raise BoardRefused(502, 'the answer is not JSON') from error
+        raise refused('the answer is not JSON') from error
     if not isinstance(answer, dict):
-        raise BoardRefused(502, 'the answer is not an object')
+        raise refused('the answer is not an object')
     return answer
 
 
+def _json(raw: bytes) -> dict[str, Any]:
+    return json_object(raw, MAX_ANSWER_BYTES, lambda reason: BoardRefused(502, reason))
+
+
+def signed_post(url: str, region: str, credentials: Any, body: dict[str, Any]) -> urllib.request.Request:
+    """A POST of ``body`` (compact JSON) to the function URL ``url``, signed with ``credentials`` (SigV4, service
+    ``lambda``: the session's token and the date go with it, signed): the board's calls and the broker's
+    (``broker_client.py``)."""
+    from botocore.auth import SigV4Auth
+    from botocore.awsrequest import AWSRequest
+
+    url = board_url(url)  # https and the function URL's host only: never file: or another scheme
+    data = json.dumps(body, separators=(',', ':')).encode()
+    request = AWSRequest(method='POST', url=url, data=data, headers={'Content-Type': 'application/json'})
+    SigV4Auth(credentials.get_frozen_credentials(), 'lambda', region).add_auth(request)
+    return urllib.request.Request(url, data=data, method='POST',  # noqa: S310 - https, checked above
+                                  headers=dict(request.headers.items()))
+
+
 def board_url(url: str) -> str:
-    """The board's function URL, as the runtime hands it: https, a function URL's own host, nothing else."""
+    """A platform function URL (the board's, the broker's), as the runtime hands it: https, a function URL's own host,
+    nothing else."""
     parts = urlsplit(url)
     if (parts.scheme != 'https' or not FUNCTION_URL_RE.match(parts.hostname or '') or parts.port is not None
             or parts.username or parts.query or parts.fragment or parts.path not in ('', '/')):

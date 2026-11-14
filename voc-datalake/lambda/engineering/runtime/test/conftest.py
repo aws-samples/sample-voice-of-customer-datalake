@@ -163,6 +163,8 @@ SCHEDULE = 'voc-engineering-supervisor'
 BUS = 'voc-engineering'
 #: The board API's function URL the agents are handed.
 BOARD_URL = 'https://abc123def.lambda-url.us-east-1.on.aws/'
+#: The connector broker's function URL the agents are handed.
+BROKER_URL = 'https://brk456ghi.lambda-url.us-east-1.on.aws/'
 #: The deployment's agent runtimes (the local fake runs every language; the handler's checks read these).
 IMAGE_ARNS = {'python': {'standard': 'arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/voc_eng_python-a1b2c3'},
               'java': {'standard': 'arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/voc_eng_java-d4e5f6'}}
@@ -181,6 +183,7 @@ def wired(aws: tuple[Any, Any], monkeypatch: pytest.MonkeyPatch) -> Any:
                         'ENGINEERING_SETTINGS_TABLE': TABLE,
                         'SUPERVISOR_RULE_NAME': SCHEDULE, 'ENGINEERING_AGENT_ROLE_ARNS': json.dumps(ROLE_ARNS),
                         'ENGINEERING_BUS_NAME': BUS, 'ENGINEERING_BOARD_URL': BOARD_URL,
+                        'ENGINEERING_BROKER_URL': BROKER_URL,
                         'ENGINEERING_AGENT_RUNTIMES': json.dumps(IMAGE_ARNS),
                         'ENGINEERING_BENCHMARK_CASES': json.dumps(['slug-cut-bug']),
                         'AWS_DEFAULT_REGION': 'us-east-1', 'AWS_REGION': 'us-east-1'}.items():

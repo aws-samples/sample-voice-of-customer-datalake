@@ -19,7 +19,8 @@ Writes, and how each holds the broker's ``tree_hash``:
   push stay unreferenced, and GitHub collects them;
 * a draft pull request, opened, or its title and body updated, only when the branch's head has ``tree_hash``, and
   checked again afterwards: when the pull request's head does not have it (the branch moved meanwhile), or the
-  check itself fails, one the client just opened is closed and the write is refused. An update changes only the title and body: GitHub's REST
+  check itself fails, one the client just opened is closed and the write's outcome is unknown (OutcomeUnknown), never
+  refused, since the host already wrote. An update changes only the title and body: GitHub's REST
   API cannot turn a pull request a person marked ready back into a draft.
 
 The client has no method for a merge, an approval, settings, branch protection, members, webhooks or secrets.
@@ -59,6 +60,7 @@ from engineering.connectors.hosts import (
     InvalidTarget,
     NoConnection,
     NotFound,
+    OutcomeUnknown,
     PullRequestRef,
     ReadKind,
     ReadPage,
@@ -535,12 +537,15 @@ class GitHubHost:
             ref = PullRequestRef(number=_int(created, 'number'), url=_text(created, 'html_url'))
         try:
             self._require_pull_request_tree(connection_id, ref.number, tree_hash)
-        except Exception:
+        except Exception as exc:
             # Whatever stops the check (the branch moved, a rate limit, a host error), a pull request this call
-            # opened is not left open unchecked; the original failure is what the caller gets.
+            # opened is not left open unchecked. The write has gone out (opened, or its text updated), so the
+            # outcome is unknown, never a refusal: the broker's claim is closed unknown and never made again.
             if opened:
                 self._close(connection_id, ref.number)
-            raise
+            why = exc.reason if isinstance(exc, BrokerError) else type(exc).__name__
+            raise OutcomeUnknown(f'The pull request was {"opened" if opened else "updated"}, but its check after the '
+                                 f'write did not pass ({why}); whether it stands as asked is not known.') from exc
         return ref
 
     def _close(self, connection_id: str, number: int) -> None:

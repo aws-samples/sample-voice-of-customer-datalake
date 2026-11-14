@@ -84,8 +84,11 @@ stack). Designed for them from day one.
 *Partly built*: the broker's caller identity, operations per role and write rules, the GitHub client and the
 credential reader, and, since 6.23.00, its readers of what a run recorded: the run's own record, the board's GO
 ledger, the committer's submitted patch and the dial (`voc-datalake/lambda/engineering/connectors/`: `records.py`,
-`patches.py`, `dial.py`), deployed only with `-c engineeringAgents=true`. Planned: the connection page that stores a
-credential (so no deployment has a connection yet, and every operation still answers 503), the CI attestation's
+`patches.py`, `dial.py`), deployed only with `-c engineeringAgents=true`, and, since 6.30.00, the harness's client of
+it, so the agents' reads and writes reach it ([The agent catalog](#the-agent-catalog), "The harness's broker
+client"). Planned: the connection page
+that stores a credential (so no deployment has a connection yet, and every operation still answers 503), the CI
+attestation's
 record, the run's issue and pull request and its cited reviews on the run's record, the checkout cache by commit
 sha, sparse clones, and the GitLab client.
 
@@ -139,8 +142,11 @@ on the aggregates table in the people's flag partitions (`USERFLAGS#*`) and of a
 (`dynamodb:Attributes`, `dynamodb:Select` `SPECIFIC_ATTRIBUTES`), `s3:GetObject` on the workspace's patches and the
 final-go and gate-runner agents' gate records (`ws/default/runs/*/commits/*/_patches/*`,
 `ws/default/runs/*/final-go-*/commits/*/_gate/*`, `ws/default/runs/*/gate-runner-*/commits/*/_gate/*`: the GO
-ledger's rule reads both), and `kms:Decrypt` through DynamoDB and S3;
-no write to any table or bucket.
+ledger's rule reads both), and `kms:Decrypt` through DynamoDB and S3. Its one write (6.30.00): `dynamodb:GetItem`,
+`dynamodb:PutItem` and `dynamodb:UpdateItem` on voc-engineering in the runs' writes' partitions alone
+(`WS#*#WRITES#*`: never a run's own, so it cannot overwrite a run's META, tasks, a person's go or its log), of a row
+only a write claim's attributes (`pk`, `sk`, `state`, `op`, `at`, `result`, `closed_at`), with `kms:GenerateDataKey`
+through DynamoDB; no other write to any table or bucket.
 
 **What is built.** The GitHub client (`connectors/github.py`) reuses a cached installation token or, to mint one, signs
 a nine-minute App JWT (RS256, the App's private key from the connection's parameter, below) for an installation token for the connection's one repository and
@@ -163,13 +169,15 @@ branch with `force: false` (or creates it): a push made meanwhile that the new c
 the update fail (a fast-forward of the same lineage still passes, so the head check before it is the lease). Objects of a refused push
 stay unreferenced. A draft pull request is opened, or its title and body updated, only when the branch's head has the
 checked tree, and the pull request's head is checked again afterwards: if the branch moved meanwhile, a pull request
-the client just opened is closed and the write refused. An update changes only the title and body: GitHub's REST API
+the client just opened is closed, and the write's outcome is unknown (6.30.00: it went out, so it is never answered as
+refused, and never made again for that attempt). An update changes only the title and body: GitHub's REST API
 cannot turn a pull request someone marked ready back into a draft. Every request goes to `api.github.com` through one
 transport, with no redirect followed; a token is sent only in the `Authorization` header, never in a URL or a log
 line. The client has no method for a merge, an approval, settings, branch protection, members, webhooks or secrets.
 Each write the host accepts gets an operational log line with the operation, the caller, the connection and what was
 written (issue or pull request number, branch, tree hash, commit count), never a body, a patch or a token; the
-durable audit row of each write (D4) is still planned (the broker writes no table).
+durable audit row of each write (D4) is still planned (the broker's one write, since 6.30.00, is each write's claim
+row, which records its outcome but not who asked for it in D4's form).
 
 | Host | Credential | Permissions it holds | Never |
 |---|---|---|---|
@@ -418,8 +426,10 @@ The gate judges the patch the committer pushes, end to end:
    apply exactly. Anything else stops the session before any check runs (a crash, which the supervisor continues and
    then sends to a person). Its own git then hashes that tree (`git add --all`, `git write-tree`): the checks run on
    the change, and the tree is the record's. The model never types it, and a task that names no patch cannot write a
-   GO. When the record is written the harness hashes the checkout again the same way, and refuses a GO when a
-   command wrote, changed or deleted a file since (the record can then only be a NO-GO or STOPPED).
+   GO. When the record is written the harness hashes the checkout again the same way, and refuses a GO when the
+   tree differs from the judged one (the record can then only be a NO-GO or STOPPED). That compares the tree at the
+   record's write only: no check is tied to the tree it ran on, so a command that changes the tree and another that
+   changes it back leave the judged tree, and the checks between them ran on another one.
 3. The tree is a function of the run's commit and the patch, so the gate runner and the final go, each hashing its
    own checkout, write the same tree. One GO ledger rule holds for the board, the flow and the broker
    (`flow/ledger.py` `go_tree`): the final go's GO counts only when the gate runner task that ended last ended done
@@ -435,24 +445,85 @@ The gate judges the patch the committer pushes, end to end:
    branch only when the rebuilt tree is that tree (the host's client checks it). So a push lands only the patch the
    gate judged; the broker takes a fixer's or builder's patch of the run only from a committer.
 
-Two limits hold today. The gate runner's checks are whichever commands its model ran (the harness records each one
+Three limits hold today. The gate runner's checks are whichever commands its model ran (the harness records each one
 and how it exited, but nothing yet matches them to the packs' commands), so whether they were the packs' is the final
-go's to judge. And a gate judges one submitted patch, so a run pushes one: when a hunter posts several fixes, the
-coordinator names one, and the others are not pushed. Matching the checks to the packs and combining several fixes
-are follow-ups.
+go's to judge. No check is tied to the tree it ran on (above): the tree is compared when the record is written, not
+before and after each command. And a gate judges one submitted patch, so a run pushes one: when a hunter posts
+several fixes, the coordinator names one, and the others are not pushed. Matching the checks to the packs, hashing
+the tree around each check, and combining several fixes are follow-ups.
+
+**The harness's broker client (6.30.00).** The harness reaches the broker the way it reaches the board
+(`runtime/harness/broker_client.py`, beside `board_client.py`): every call is a POST of `{"operation", "args"}` to the
+broker's function URL, signed SigV4 (service `lambda`) with the agent's own role session, so the broker takes the
+caller's role, run and agent from the session as it always has, and alone decides what each role may do. The runtime
+hands every agent the URL (`VOC_BROKER_URL`, from the supervisor's `ENGINEERING_BROKER_URL`; a continuation and the
+CLI's tool server get it too) and puts its host, by name, on the agent's own egress proxy only (`egress.split`: the
+dependency step's proxy, which repository code uses, never gets a function URL). Each agent role may call the
+broker's function URL and no other but the board's (`lambda:InvokeFunctionUrl` on the broker's function alone, with
+`lambda:FunctionUrlAuthType` `AWS_IAM`, its own statement, pinned by `lib/stacks/engineering-runtime.test.ts`). What
+it covers:
+
+- **Reads** (every role): a page of a file, a history, an issue or a pull request; retried on a 503 or a lost
+  connection, twice, backing off.
+- **Writes**: the committer's `push_commit` (`push_bundle`), the PR author's `open_draft_pr`
+  (`open_or_update_draft_pr`), the PR reviewer's `post_comment` (`post_comment` on the run's pull request). Each is
+  sent once, never retried, with the agent's attempt (`VOC_ATTEMPT`), and the broker makes it at most once per key:
+  the caller's run, agent and attempt, the operation and a digest of what it writes (`broker.py` `write_key`,
+  `_once`), so the same write asked again is one write and a different one (a second comment, a pull request's new
+  text) is its own. Just before the host call it writes a create-only claim row in a partition of the run's writes
+  alone (`WS#<ws>#WRITES#<run>` / `WRITE#<agent>#<attempt>#<operation>#<digest>`, `records.py` `WriteClaims`; never
+  in the run's own partition, which its grant cannot reach) and closes it with the outcome: `done` with the answer (a
+  number, a URL, a branch and tree, never a body), `refused` when nothing was written (a write rule, the host's lease,
+  a target not found, a rate limit, answered 503 with its `Retry-After`: the key may be claimed again), or `unknown`
+  (any other host error). A failure after the host may have written is `unknown`, never `refused`: a pull
+  request opened or updated whose check after the write fails (the branch moved, a rate limit, a host error; a pull
+  request the call opened is closed first, and a failed close changes nothing) is unknown, and so is a push whose
+  trees or commits were made before a failure other than the branch's own refusal. A branch move the host refuses (a
+  422, or a Conflict on the lease) is `refused`: its trees and commits stay unreferenced and the branch did not move. So is a failure to mint the host token (an answer other than a token,
+  before the write): it errs on the safe side, and blocks that write for the attempt. A credential the broker cannot
+  read is "no connection" (503, nothing written). A repeat is answered from its first outcome before the run's, the
+  dial's and the board's checks (as the runtime answers a repeated launch), so a write made answers its answer even
+  after the run moved on; a repeat of one whose outcome is unknown, or whose claim a crash left open, is not made
+  again and answers 502. So a continuation that asks again, within the same task attempt, never posts a comment
+  twice, pushes twice or opens a second pull request; a new attempt of the task is a new key, and after an unknown
+  outcome it may post again (a person checks the host first).
+- **Outcome unknown** (writes only): an answer that never came whole (a timeout, a lost connection, a cut body), a
+  5xx other than the broker's own 503 (which says nothing was written: no connection, its records unreadable), so
+  the broker's own 502 and the function URL's 502 or 504, and a 200 the client cannot read or that is off its shape.
+  The model is told "outcome unknown: do not repeat it; it stays unknown until a person checks the host", and the
+  task's progress says so; it is never told the write was refused, and the session never crashes for it. Nothing
+  reads the host back yet: the claim row keeps the outcome (`unknown`) in the run's writes' partition, any repeat is
+  answered from it and never made twice, and the PR author's draft still needs the pushed branch's tree on the host
+  (a push that never landed is refused there: "push it first"). A person checks the host; reading the host back at a
+  repeat (the branch's tree, the pull request by its head, the comment) and showing the unknown claims on the run
+  monitor are planned.
+- **Submit**: the broker defines no call for it. The fixer's or builder's `submit_work` writes the patch under its own
+  keys, and the client checks that the key is one the broker pushes (a fixer's or builder's submitted patch of the
+  run at its commit, the agent's own) and answers that the committer pushes it after the gate's GO; the broker reads it
+  at that push (`patches.py`).
+
+Every wait is bounded at 125 s, past the broker function's own 120 s, and a redirect is never followed. Any other
+answer but a 200 (a read's every non-200, a write's 4xx and the broker's own 503) is a plain refusal with the
+status and reason (at most 500 characters), which the tools hand the model as a result it reads (the writers'
+skills: a refusal is the answer, never something to work around), never a crash.
+The client logs no body, answer or credential.
 
 **How far a run gets today.** On the local fake runtime with scripted models, the Bug hunt and fix template runs
-from the hunt to the draft pull request (a test). Against AWS nothing has run yet; once the owner starts one, a run
-gets as far as this: the board, the inbox and the flow work through the board's API; every agent is launched with
-its skill; the agents read the checkout, run its commands, write their outputs and post their tasks; and the run
-stops at its first call to the broker, the fixer's or builder's `submit_work`, since the harness's broker interface
-is not wired to the broker's function URL yet (it refuses, and the session crashes rather than guess): the patch is
-written under the agent's own keys but never recorded on its task, so the gate has no submitted patch to judge yet
-and nothing reaches the host. The final go's model judges from its brief (it has no tool to read the gate runner's
-record or the findings yet); its GO counts only by the GO ledger's rule above, which needs the gate runner's own GO
-on the same tree. Not done yet:
-the harness's broker client (the broker's function URL in the agent's environment and egress), the final go's read
-of the gate runner's record and the findings, and the first run, which waits for the owner.
+from the hunt to the draft pull request (a test), and since 6.30.00 its writers go through the harness's own broker
+client, each signed as its own session, to the broker's own handler behind a stand-in for the function URL's IAM
+check that verifies each SigV4 signature: the broker's readers of the run's record, the GO ledger, the submitted
+patch and the dial (the starter's way of working AI-driven) read the run's real rows and objects, and a host on the
+fixture repository rebuilds the push with git and moves the branch only when its tree is the one the gate judged.
+Against AWS nothing has run yet; once the owner starts one, a run gets as far as this: the board, the inbox and the
+flow work through the board's API; every agent is launched with its skill; the agents read the checkout, run its
+commands, write their outputs and post their tasks; the fixer's or builder's `submit_work` is recorded on its task,
+so the gate judges it; and the committer's push reaches the broker, which answers 503 ("no repository connection is
+configured"), which the committer reads as its answer: no connection's credential can be stored yet (the connection page,
+*planned*), and with one every push and pull request would still be refused until the CI attestation is recorded
+(*planned*). The final go's model judges from its brief (it has no tool to read the gate runner's record or the
+findings yet); its GO counts only by the GO ledger's rule above, which needs the gate runner's own GO on the same
+tree. Not done yet: a stored connection credential (the connection page), the CI attestation's record, the final
+go's read of the gate runner's record and the findings, and the first run, which waits for the owner.
 
 ## How the agents work together
 
@@ -576,8 +647,9 @@ What exists:
   denies each of them every source but its own (the board `voc.engineering/board`, the runtime's two
   `voc.engineering/supervisor`, an agent its own, a run's coach `voc.engineering/coach/<ws>/<run>`).
 
-Not built yet: the rest of the harness's side (its broker interface still refuses every call:
-[Runtime](#runtime-one-agentcore-session-per-agent), "Not aligned yet"). Since 6.29.00 every launchable role has a
+Since 6.30.00 the harness's broker interface reaches the broker's function URL as the agent's own session ([the agent
+catalog](#the-agent-catalog), "The harness's broker client"); the broker answers 503 until a connection's credential
+can be stored. Since 6.29.00 every launchable role has a
 skill ([the agent catalog](#the-agent-catalog)), so the board launches any of them (the coach is the one role with
 none, and a launch of a role with no skill is still refused, 409), and the agents write their findings, notes and gate
 records in the workspace beside their checkpoints and patches, each recorded on its task. The rest of this section is the
@@ -1131,8 +1203,9 @@ to it from its tags; `from.kind` `coach`) among them. Not aligned yet (the runti
   and commit, never an invoke grant of the coordinator's on the runtime, which would also reach its tick, its end
   of a run and its signals), and `knowledge` (a package of the caller's own task, or the root: the coordinator's
   `coordinate` task, which the run's start posts, has no paths, so it reads the root's pack); a refusal of the
-  board's (a 4xx) is a result the coordinator's model reads, never a crash. Its broker interface
-  still refuses every call.
+  board's (a 4xx) is a result the coordinator's model reads, never a crash. Its broker interface (6.30.00,
+  `harness/broker_client.py`) is the broker's function URL (`VOC_BROKER_URL`, its host on the agent's own proxy),
+  signed the same way; a broker's refusal is a result the model reads too, and a write is never retried.
 
 Each agent of a run runs in its own AgentCore Runtime session (its own microVM; below, an agent's session or its
 microVM), from its language's image, with its own sparse checkout from the cache (`runtime/agentcore.py`):
@@ -1207,9 +1280,9 @@ wait closes.
   runner (root's, on loopback; an HTTPS `CONNECT` only, to a host of its own list, on port 443; it never reads what
   goes through):
   - the agent's own (user `unit`, port 3128): Bedrock in its region, its two buckets' own S3 endpoints and the board's
-    function URL. Never a registry.
+    and the broker's function URLs. Never a registry.
   - the dependency step's (user `code`, port 3129, the one repository-code command with network): its language's
-    package registries and the deployment's extra hosts. Never Bedrock, a bucket or the board.
+    package registries and the deployment's extra hosts. Never Bedrock, a bucket, the board or the broker.
 
   The entry point's egress firewall sends each user to its own proxy only: `unit` reaches the runner and port 3128,
   `code` port 3129, and neither reaches any other address or port, a link-local address or a name server. Each
@@ -1227,8 +1300,8 @@ wait closes.
   (`com.amazonaws.<region>.bedrock-runtime`, private DNS on) whose endpoint policy allows `bedrock:InvokeModel*` and
   `bedrock:Converse*` only for principals of this account (`aws:PrincipalAccount`), so the agent's Bedrock traffic
   never leaves the VPC and cannot be spent on another account; and a NAT gateway, which the package registries and the
-  board's function URL need (a function URL has no VPC endpoint), ideally behind an egress firewall that admits only
-  the registries, the extra hosts and the board's host. The stack makes none of it (TENETS.md tenet 7).
+  board's and the broker's function URLs need (a function URL has no VPC endpoint), ideally behind an egress firewall
+  that admits only the registries, the extra hosts and the board's and the broker's hosts. The stack makes none of it (TENETS.md tenet 7).
 - **The sessions' execution role.** One for every runtime: it pulls the images from the stack's repositories and
   writes the runtimes' logs, nothing else. Everything else a session does is done with the agent role's 15-minute
   session the launcher hands its agent user (below), whose grants are, all scoped by its session tags: read its
@@ -1242,8 +1315,8 @@ wait closes.
 - **No host token in any session.** Nothing in a session reaches the repository host: the
   [broker](#repository-connectors) holds the credential, fills the cache and makes every host write. An agent's egress
   allowlist is, in its region, Bedrock and its two buckets' own S3 endpoints (the raw bucket's for the cache, the
-  workspace bucket's for its keys; never the regional one, which reaches every bucket), the board's function URL by its own host (`<id>.lambda-url.<region>.on.aws`, never a generic Lambda endpoint; the
-  broker's too once the harness calls it), and, for the agents that run
+  workspace bucket's for its keys; never the regional one, which reaches every bucket), the board's and the broker's function URLs by their own hosts (`<id>.lambda-url.<region>.on.aws`, never a generic
+  Lambda endpoint; the broker's since 6.30.00, when the harness's client of it landed), and, for the agents that run
   repository code, its language's package registries (plus at most 10 configured hosts, a registry mirror for example),
   which only its dependency step reaches (the second proxy, above).
 - **Credentials from a launcher, never in the image.** A session starts with no AWS credential of the run's (its runtime's execution role pulls its image and writes its
@@ -1514,8 +1587,8 @@ wait closes.
   role's (6.29.00, [the agent catalog](#the-agent-catalog)): its outputs (`write_findings`, `write_notes`,
   `write_gate_record`, each written once under its own keys and recorded on its task when it finishes),
   `post_subtask` (the hunter's fixes and the builder's sub-builds, the board's own rule of who posts for whom) and
-  the writers' one broker write each (`push_commit`, `open_draft_pr`, `post_comment`, through the broker interface,
-  which still refuses). It renews its task's lease once a minute. Everything from the
+  the writers' one broker write each (`push_commit`, `open_draft_pr`, `post_comment`, through the harness's broker
+  client since 6.30.00, signed as the agent's own session). It renews its task's lease once a minute. Everything from the
   repository, the knowledge pack, the memory or a checkpoint reaches the model fenced as data, which its
   instructions say is never an instruction. Between turns it reads its inbox: `save` checkpoints at once, `pause`
   checkpoints and exits 75; the Converse loop also checkpoints and pauses after 150 turns in one session or once a
@@ -2158,7 +2231,7 @@ and the phase that ships them names them in that row.
 | Phase | Scope | Status |
 |---|---|---|
 | 0 | this design, the benchmark harness and its fixtures | design written; the benchmark harness (the `voc-bench/1` cases, the runner, scorecards) and its four fixtures built, nothing invoking them yet ([Evaluation](#evaluation)) |
-| 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader; the broker's readers of the run's record, the board's GO ledger, the submitted patch and the dial, and a person's go on an AI-assisted run (6.23.00, [above](#repository-connectors); no connection can be stored yet, so every operation still answers 503, and with one every push and pull request would still be refused until the CI attestation is recorded); planned: the connection page, the attestation's record, GitLab, sparse clones and the checkout cache; the knowledge pack's package detection, shards, map step, reduce and versioned store with approval ([above](#the-knowledge-pack)), nothing invoking them yet |
+| 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader; the broker's readers of the run's record, the board's GO ledger, the submitted patch and the dial, and a person's go on an AI-assisted run (6.23.00, [above](#repository-connectors)); the harness's client of the broker, the agents' reads and writes signed as their own sessions (6.30.00; no connection can be stored yet, so every operation still answers 503, and with one every push and pull request would still be refused until the CI attestation is recorded); planned: the connection page, the attestation's record, GitLab, sparse clones and the checkout cache; the knowledge pack's package detection, shards, map step, reduce and versioned store with approval ([above](#the-knowledge-pack)), nothing invoking them yet |
 | 2 | the runtime (one AgentCore Runtime session per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API with each task's history, its agents' `inbox`, `progress`, `tasks` and `knowledge` ops, the coordinator's `coordinate` task and `launch`, the lease's refresh and the supervisor's re-post, the push to the delivery function, the workspace's layout, findings and store in its own bucket, and the administrators' run monitor (its reads, signals and answers) and the read routes for a run's board and conversation ([above](#how-the-agents-work-together)); the runtime (one session per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images, the run's start and end, the agent roles' access to the board, the broker and the bus, the delivery function: built, not yet run against AWS, [above](#runtime-one-agentcore-session-per-agent)) |
 | 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); the skills' record, diff and versioned store with an administrator's acceptance and rollback, proposed to by the coach from a run's retrospective ([above](#getting-better-skills-the-coach-the-learning-loop-memory)); the agents' memory store and its recall for a task, its role lessons drafted by a run's retrospective (recall not yet invoked by the harness; same place); the benchmark gate for skill versions (no regression, a gain on the failure's case) and its record on a version, which a coach's version needs to be accepted, nothing invoking it yet ([Evaluation](#evaluation)); the coach (a failure in, a proposed version naming its expected benchmark case out, through the skills store, with its `skill.proposed` message for the caller to publish), invoked by the learning loop (same place as the skills); the learning loop and its scorecards, built: a run's end starts its retrospective (an asynchronous invocation of the runtime), which takes at most three failures to the coach (one Converse call each, once), drafts a lesson in agent memory for each failure taken to the coach (at most three per run) for an administrator to approve, and writes one create-only scorecard row per skill version per run, read by one bounded Query per version (same place); a connection's own cases from its failures, people's reactions on the host as the loop's input, and the scorecard screens planned |
 | 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | in progress: the new editor steps' server side (engineering flows as `voc-workflow/2`, [above](#how-the-agents-work-together)), the six default flows as validated templates in one file the server lists (`GET /workflows/templates`) and the web app reads (same place), and the report builder with its administrators' REST reads ([Reports](#reports)), nothing invoking it yet; a run's start from a saved flow (6.25.00: `POST /agents/engineering/runs` and the flow page's Start a run, [How a flow starts](#how-the-agents-work-together)), which follows its own copy of the flow step by step since 6.28.00 (the conductor, the coordinator's `read_flow`, the board's check of every post and launch against the plan, a person at a step: [The flow a run follows](#the-flow-a-run-follows); memory, the learning loop, self-improvement and the history and pull-request shard sources not run yet); the agents' skills, one per launchable role with its tools, model and the Converse harness (6.29.00, [the agent catalog](#the-agent-catalog)), launched by the board with their skills' argv and driven through the Bug hunt and fix template on the local fake runtime with scripted models; their first run on AWS waits for the owner, and their broker writes for the harness's broker client |

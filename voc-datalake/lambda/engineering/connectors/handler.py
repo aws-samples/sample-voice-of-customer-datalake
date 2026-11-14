@@ -27,15 +27,7 @@ from collections.abc import Callable, Mapping
 from functools import lru_cache
 from typing import Any, Final
 
-from engineering.connectors.broker import (
-    OPEN_OR_UPDATE_DRAFT_PR,
-    POST_COMMENT,
-    PUSH_BUNDLE,
-    READ,
-    Broker,
-    NotNow,
-    NotPermitted,
-)
+from engineering.connectors.broker import Broker, NotNow, NotPermitted
 from engineering.connectors.credentials import PARAMETER_PREFIX_ENV, ParameterStoreCredentials
 from engineering.connectors.dial import WaysOfWorking
 from engineering.connectors.github import GitHubHost
@@ -54,9 +46,18 @@ from engineering.connectors.hosts import (
     ReadKind,
     Unavailable,
 )
-from engineering.connectors.identity import Caller, UnknownCaller, caller_from_event, own_account
+from engineering.connectors.identity import (
+    OPEN_OR_UPDATE_DRAFT_PR,
+    POST_COMMENT,
+    PUSH_BUNDLE,
+    READ,
+    Caller,
+    UnknownCaller,
+    caller_from_event,
+    own_account,
+)
 from engineering.connectors.patches import WorkspacePatches
-from engineering.connectors.records import RunRecords
+from engineering.connectors.records import RunRecords, WriteClaims
 from engineering.connectors.write_policy import WriteRefused
 from engineering.workspace.store import WorkspaceStore
 from shared.invocation_cost import instrumented_handler
@@ -138,6 +139,19 @@ def _choice[T](args: Mapping[str, object], key: str, choices: Mapping[str, T]) -
     return choices[value]
 
 
+#: A write's optional ``attempt`` (the caller's task attempt, 1 by default): with the caller's run and agent and the
+#: operation, the key a write is made once for (broker.py ``_once``).
+_ATTEMPT: Final = frozenset({'attempt'})
+MAX_ATTEMPT: Final = 1000
+
+
+def _attempt(args: Mapping[str, object]) -> int:
+    attempt = args.get('attempt', 1)
+    if isinstance(attempt, bool) or not isinstance(attempt, int) or not 0 < attempt <= MAX_ATTEMPT:
+        raise BadRequest(f'attempt is a whole number from 1 to {MAX_ATTEMPT}.')
+    return attempt
+
+
 def _read(broker: Broker, caller: Caller, args: Mapping[str, object]) -> dict[str, object]:
     _keys(args, {'kind', 'target'}, frozenset({'cursor'}))
     cursor = _text(args, 'cursor', MAX_NAME) if 'cursor' in args else None
@@ -146,30 +160,32 @@ def _read(broker: Broker, caller: Caller, args: Mapping[str, object]) -> dict[st
 
 
 def _post_comment(broker: Broker, caller: Caller, args: Mapping[str, object]) -> dict[str, object]:
-    _keys(args, {'on', 'number', 'body'})
+    _keys(args, {'on', 'number', 'body'}, _ATTEMPT)
     number = args['number']
     if isinstance(number, bool) or not isinstance(number, int) or number < 1:
         raise BadRequest('number is a positive integer.')
-    url = broker.post_comment(caller, _choice(args, 'on', _COMMENT_TARGETS), number, _text(args, 'body', MAX_TEXT))
+    url = broker.post_comment(caller, _choice(args, 'on', _COMMENT_TARGETS), number, _text(args, 'body', MAX_TEXT),
+                              _attempt(args))
     return {'url': url}
 
 
 def _push_bundle(broker: Broker, caller: Caller, args: Mapping[str, object]) -> dict[str, object]:
-    """``{branch, patch, tree_hash, message}``: the caller's submitted patch (its workspace key) as one commit."""
-    _keys(args, {'branch', 'patch', 'tree_hash', 'message'})
+    """``{branch, patch, tree_hash, message, attempt?}``: the caller's submitted patch (its workspace key) as one
+    commit."""
+    _keys(args, {'branch', 'patch', 'tree_hash', 'message'}, _ATTEMPT)
     tree_hash = _text(args, 'tree_hash', MAX_NAME)
     if not OBJECT_ID.fullmatch(tree_hash):
         raise BadRequest('tree_hash is a full git tree id (the one the board\'s GO names).')
     branch = _text(args, 'branch', MAX_NAME)
     pushed = broker.push_bundle(caller, branch, _text(args, 'patch', MAX_NAME), tree_hash,
-                                _text(args, 'message', MAX_TEXT))
+                                _text(args, 'message', MAX_TEXT), _attempt(args))
     return {'branch': branch, 'tree_hash': pushed}
 
 
 def _open_or_update_draft_pr(broker: Broker, caller: Caller, args: Mapping[str, object]) -> dict[str, object]:
-    _keys(args, {'branch', 'title', 'body'})
+    _keys(args, {'branch', 'title', 'body'}, _ATTEMPT)
     ref = broker.open_or_update_draft_pr(caller, _text(args, 'branch', MAX_NAME), _text(args, 'title', MAX_NAME),
-                                         _text(args, 'body', MAX_TEXT))
+                                         _text(args, 'body', MAX_TEXT), _attempt(args))
     return {'number': ref.number, 'url': ref.url}
 
 
@@ -229,14 +245,15 @@ def broker_for(parameter_prefix: str, table: str = '', bucket: str = '', aggrega
     host = GitHubHost(ParameterStoreCredentials(parameter_prefix).get)
     if not (table and bucket and aggregates):
         return Broker(Connector(host=host, bundles=UNCONNECTED, runs=UNCONNECTED, ledger=UNCONNECTED,
-                                dial=UNCONNECTED))
+                                dial=UNCONNECTED, writes=UNCONNECTED))
     from shared.aws import get_dynamodb_client, get_dynamodb_resource, get_s3_client
 
     # No ListBucket on the broker's role: an object never written answers 403, read as missing (and counted).
     workspace = WorkspaceStore(get_s3_client(), bucket, denied_is_missing=True)
     records = RunRecords(get_dynamodb_client(), table, workspace, host.default_branch)
     return Broker(Connector(host=host, bundles=WorkspacePatches(workspace, host.file_at), runs=records,
-                            ledger=records, dial=WaysOfWorking(get_dynamodb_resource().Table(aggregates))))
+                            ledger=records, dial=WaysOfWorking(get_dynamodb_resource().Table(aggregates)),
+                            writes=WriteClaims(get_dynamodb_client(), table)))
 
 
 @instrumented_handler   # (its metrics flush: the workspace store's count of denied reads taken as missing)

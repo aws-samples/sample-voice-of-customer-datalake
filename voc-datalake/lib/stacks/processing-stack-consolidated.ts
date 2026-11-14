@@ -375,6 +375,7 @@ export class VocProcessingStack extends VocStack {
       });
       peers = {
         deadLetterQueue: bus.dlq, bus: bus.bus, board: bus.board, boardUrl: bus.boardUrl, broker: broker.function,
+        brokerUrl: broker.url,
         addPublisher: (statementId, role, source) => bus.addPublisher(statementId, role, source),
       };
     }
