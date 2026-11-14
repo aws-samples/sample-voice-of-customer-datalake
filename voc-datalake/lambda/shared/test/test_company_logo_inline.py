@@ -61,6 +61,7 @@ class TestCase:
         assert has_logo_placeholder(f'<img src="{spelling}">') is True
 
 
+@pytest.mark.timing
 def test_a_long_run_of_unclosed_img_tags_is_matched_in_linear_time():
     hostile = '<img ' * 20_000 + LOGO_PLACEHOLDER
     started = time.monotonic()

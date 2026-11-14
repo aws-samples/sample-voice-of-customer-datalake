@@ -50,7 +50,8 @@ prompt:
   written before the cap, unreadable, or the model placed none), absent when there is none or the design system
   was not read; the "Built from" footer says "Company logo" or "Company logo not used". A design system that holds
   only a logo is not recorded as `design_system_included`. The document generator role reads the uploaded logos
-  only, `company-context/design/logo_????????????.png`, `.jpg` and `.webp` (not the references' previews)
+  only: keys named `logo_` + 12 characters + `.png`, `.jpg` or `.webp` under `company-context/design/` (IAM
+  `logo_????????????` with each extension; not the references' previews)
   (`s3:GetObject`, VocCoreStack's `CompanyLogoReadPolicy` managed policy, attached in VocApiStack).
 - **Category scope applies to the design system too.** Like the vision and objectives, guideline paragraphs,
   token entries and references whose text names a category the reader may not see are left out
