@@ -165,6 +165,26 @@
       "stale": "Esta propuesta se basó en la revisión {{expected}}, pero la actual es la {{current}}: se rechazará al guardar; pide al asistente que la vuelva a generar.",
       "counts": "{{nodes, number}} pasos, {{edges, number}} flechas, {{loops, number}} bucles"
     },
+    "knowledgeRefresh": {
+      "label": "La actualización del paquete de conocimiento",
+      "actionLabel": "Acción",
+      "action": "Iniciar una ejecución del flujo Understand the repository. Hasta que el entorno de ejecución siga los pasos de un flujo, la ejecución todavía no recorre nada ni redacta ningún paquete de conocimiento; la estimación es lo que permiten sus límites.",
+      "repository": "Conexión del repositorio",
+      "commit": "Commit",
+      "head": "El último commit de la rama predeterminada",
+      "commitHint": "Escribe el identificador completo del último commit de la rama predeterminada: esta implementación todavía no puede leer la rama.",
+      "flow": "Flujo",
+      "flowName": "{{name}}, revisión {{revision, number}}",
+      "estimateLabel": "Estimación",
+      "estimate": "Unos {{minutes, number}} minutos y unos {{cost}} de tiempo de sesión de los agentes",
+      "estimateBasis": "Una estimación: el flujo recorre como máximo {{shards, number}} fragmentos por ejecución, unos {{seconds, number}} segundos cada uno, y luego redacta durante unos {{draft, number}} minutos. Cuenta {{sessions, number}} sesiones de agente (la coordinación de la ejecución y una por cada paso de agente, de {{vcpus, number}} vCPU y {{gb, number}} GB cada una) durante toda la ejecución, a unos {{rate}} por hora cada una según las tarifas publicadas de AgentCore. Los tokens del modelo se suman, y la ejecución se detiene en sus límites de coste y de tokens.",
+      "asYou": "Al aprobar, inicias la ejecución tú, y la ejecución registra que la iniciaste.",
+      "moduleOff": "Esta implementación no tiene el módulo de ingeniería, así que no se puede aprobar. Aún puedes rechazarlo.",
+      "readFailed": "No se pudieron leer los flujos guardados, así que no se puede aprobar. Recházalo y vuelve a pedirlo.",
+      "looking": "Buscando el flujo Understand guardado…",
+      "notSaved": "Todavía no hay ningún flujo Understand guardado, así que no se puede actualizar el paquete de conocimiento de {{connection}}.",
+      "createNote": "Al aprobar se guarda el flujo Understand a partir de su plantilla y no se inicia nada. Después, pide de nuevo al asistente que inicie la actualización."
+    },
     "radar": {
       "notTracked": "Sin seguimiento",
       "removed": "Eliminada (se conservan sus reseñas y lanzamientos guardados)",
@@ -476,6 +496,10 @@
     },
     "duplicate_workflow": {
       "title": "Duplicar un flujo de trabajo"
+    },
+    "propose_knowledge_refresh": {
+      "title": "Actualizar un paquete de conocimiento",
+      "titleWith": "Actualizar el paquete de conocimiento de {{connection}}"
     },
     "update_company_context": {
       "title": "Cambiar la visión y los objetivos de la empresa"

@@ -162,6 +162,7 @@
     "create_workflow",
     "update_workflow",
     "duplicate_workflow",
+    "propose_knowledge_refresh",
     "update_company_context",
     "update_design_system"
   ],
@@ -185,7 +186,8 @@
     "save_radar_brands",
     "run_radar_scan",
     "create_participant_list",
-    "add_participants"
+    "add_participants",
+    "propose_knowledge_refresh"
   ],
   "free_text_fields": {
     "create_project": [

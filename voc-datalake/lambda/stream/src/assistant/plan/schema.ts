@@ -99,11 +99,13 @@ export const PLAN_CONTROL_TOOLS = ['propose_plan', 'cancel_plan'] as const;
  * list it diffed against. `create_participant_list` and `add_participants` call the
  * engagement API, which voc-plan-step may not invoke (no ENGAGEMENT_FUNCTION), and
  * `add_participants` carries up to 200 people from this chat (owner rule: bulk entry is
- * one approval card the user reads row by row). They stay ordinary chat writes.
+ * one approval card the user reads row by row). `propose_knowledge_refresh` starts an engineering run, which only an
+ * administrator's Approve on its own card may do (owner decision: never pre-approved, never started by a plan), and
+ * its executor re-checks the Understand flow the card showed. They stay ordinary chat writes.
  */
 export const CARD_ONLY_WRITE_TOOLS = [
   'save_brand_settings', 'create_user', 'create_users', 'update_user', 'set_user_access', 'import_reviews',
-  'save_radar_brands', 'run_radar_scan', 'create_participant_list', 'add_participants',
+  'save_radar_brands', 'run_radar_scan', 'create_participant_list', 'add_participants', 'propose_knowledge_refresh',
 ] as const;
 const NOT_A_PLAN_WRITE: ReadonlySet<string> = new Set([...PLAN_CONTROL_TOOLS, ...CARD_ONLY_WRITE_TOOLS]);
 

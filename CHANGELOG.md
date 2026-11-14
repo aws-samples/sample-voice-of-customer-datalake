@@ -17,6 +17,40 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.27.00] - 2026-11-13
+
+Autonomous engineering agents: an administrator can ask the AI assistant to refresh a repository's knowledge pack. The assistant only proposes: its approval card names the repository, the commit and an estimate of the minutes and the cost, and only an administrator's Approve starts the Understand flow, as that administrator. Off by default, and no fixed cost.
+
+### Added
+
+- The AI assistant's `propose_knowledge_refresh {connection, commit?, language?}` (the `agents` pack). It is for administrators only: it is not offered to anyone else, and is refused if called. It has no MCP tool.
+  - The model's call only shows an approval card. The card names:
+    - the action;
+    - the repository connection;
+    - the commit, or "the default branch's head", whose full id the administrator enters on the card (no connection can be read yet);
+    - the language;
+    - the saved Understand flow, with its name, revision and monthly budget;
+    - an estimate of the minutes and the cost, called one. The flow's map step maps at most its `shard_cap` shards in a run (200 at most), each assumed to take about 20 seconds, plus about 10 minutes for the reduce and the drafting. The run's coordinator and one session per agent step of the flow are counted for the whole run, each a standard session (2 vCPU, 8 GB) at about $0.39 an hour at AgentCore's published rates. That makes about 77 minutes and $1.50 for the template (three sessions). Model tokens come on top, and the run's cost and token caps bound it either way.
+  - Only an administrator's **Approve** starts the refresh. The web app then calls `POST /agents/engineering/runs` with the saved Understand flow, in the approver's own session. There `require_admin_caller` checks that person at the click: anyone else gets 403, and so does a delegated credential such as an MCP token. The run records who started it (`started_by` and its `RUNLOG#` row: D4).
+  - Nothing else starts it. The model's call alone starts nothing, nothing approves the card automatically, and no plan step may name it: it is a card-only write (`CARD_ONLY_WRITE_TOOLS`, `plan_contract.json`).
+  - The Understand flow is the saved, active engineering flow with the "Understand the repository" template's steps (each step's id and kind, an agent step's role and the arrows). A saved flow records no template id; with several, the one saved last counts. Approve starts exactly the flow and revision the card showed. If the flow changed since, nothing is started.
+  - With no Understand flow saved, the card says so. Its Approve saves one from the template the server serves (`POST /workflows`) and starts nothing; the refresh is then a second card under the same rules.
+  - Approve waits until the card has what it needs: the saved flows read, and a full commit id. A card whose flows cannot be read, or where the engineering module is not deployed, cannot be approved.
+  - A start that may have written its run is never sent again. The card reports the run it names, or that nobody can tell.
+  - What goes back to the model names only ids (the run's, the flow's, the connection's and the commit's). The run's own words reach the model only through `get_engineering_run`, as data.
+  - The card is in all nine languages.
+- An approval card's preview can hold Approve until it has what it needs (`ApprovalHoldContext`), and says why.
+
+### Changed
+
+- docs/autonomous-engineering.md and docs/autonomous-agents.md say "refresh the knowledge pack" through the assistant is built, and how. docs/mcp.md says it has no MCP tool. TENETS.md's tenet 4 row names it among the admin-only engineering work with no MCP tool.
+
+### Upgrade notes
+
+- Lambda code only (asset hashes), plus the web app: deploy both (`npm run deploy:frontend` too), or the assistant offers a tool the app shows as unknown. No route or stored row changes, and the card uses the existing routes. As for every run started today, the run records the flow and its budget but nothing follows its steps yet, and it reaches a repository only once a connection's credential can be stored.
+
+Built on the voc-autonomous branch. Off by default.
+
 ## [6.26.01] - 2026-11-13
 
 Autonomous engineering agents: the follow-ups to 6.26.00's AgentCore runtime. A session no row names is never lost, the egress proxies refuse IPv6 forms of link-local and loopback addresses, and a removed setting fails the synth. Off by default, and no fixed cost in the stacks.

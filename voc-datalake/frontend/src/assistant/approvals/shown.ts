@@ -18,6 +18,9 @@
  *   diffed against.
  * - `radarBrandsBase` — the same for the stored Radar brand list the
  *   `save_radar_brands` diff was computed against.
+ * - `knowledgeRefresh` — what the `propose_knowledge_refresh` card's Approve does as it shows it right now (the
+ *   Understand flow and revision, the commit and the language; or the save of the flow from its template); the
+ *   executor re-reads the flows and does exactly that, or nothing.
  *
  * The record reaches previews through {@link ShownContext} and executors
  * through the execution context (see {@link shownOf}) — the shared
@@ -55,7 +58,17 @@ export interface ShownRecord {
   accessBase?: string
   /** Set by the save_radar_brands preview: `radarListFingerprint` of the stored list it diffed against. */
   radarBrandsBase?: string
+  /** Set by the propose_knowledge_refresh preview: what its Approve does, as the card shows it right now. */
+  knowledgeRefresh?: KnowledgeRefreshShown
 }
+
+/**
+ * What a knowledge refresh card shows: the Understand flow it starts (its id and revision), on the commit and in the
+ * language on the card; or, with no Understand flow saved, the save of one from its template (nothing started).
+ */
+export type KnowledgeRefreshShown =
+  | { mode: 'start'; workflowId: string; revision: number; commit: string; language: string }
+  | { mode: 'create' }
 
 /** Raised when the state an approval was shown against has changed; its message reaches the model. */
 export class StaleApprovalError extends Error {
@@ -112,6 +125,21 @@ export function recordRadarBrandsBase(shown: ShownRecord, fingerprint: string | 
 }
 
 export const ShownContext = createContext<ShownRecord | null>(null)
+
+/**
+ * Lets a preview hold Approve until the card has what it needs (the state it reads, a field the approver fills, such
+ * as the commit of a knowledge refresh); the card shows why. A preview that never calls it holds nothing.
+ */
+export const ApprovalHoldContext = createContext<(held: boolean) => void>(holdNothing)
+
+function holdNothing(): void {
+  // (outside a card there is no Approve to hold)
+}
+
+/** Record what the knowledge refresh card's Approve does right now (undefined: nothing yet). */
+export function recordKnowledgeRefresh(shown: ShownRecord, what: KnowledgeRefreshShown | undefined): void {
+  shown.knowledgeRefresh = what
+}
 
 /** The card's shown record, when the execution came from a card. */
 export function shownOf(ctx: WriteToolExecutionContext): ShownRecord | undefined {

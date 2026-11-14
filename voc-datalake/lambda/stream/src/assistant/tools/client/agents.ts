@@ -14,6 +14,7 @@ import {
 } from '../agent-schemas.js';
 import { idProperty, idSchema } from '../spec.js';
 import { defineClientTool, q, stringProperty } from './define.js';
+import { proposeKnowledgeRefresh } from './knowledge-refresh.js';
 
 const AGENT_ID = idProperty('Agent id (defaults to the agent on screen).');
 const WORKFLOW_ID = idProperty('Workflow id (from get_agent / get_workflow).');
@@ -173,5 +174,6 @@ export function createAgentsClientTools(): ClientToolDefinition[] {
     createWorkflow,
     updateWorkflow,
     duplicateWorkflow,
+    proposeKnowledgeRefresh,
   ];
 }

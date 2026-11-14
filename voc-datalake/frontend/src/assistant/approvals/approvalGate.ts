@@ -41,11 +41,13 @@ export interface GateInput {
   confirmed: boolean
   disabled: boolean
   phase: 'pending' | 'declining' | 'executing'
+  /** The preview holds Approve (shown.ts ApprovalHoldContext): what the card needs is not in yet. */
+  held?: boolean
 }
 
 export function isApprovable(input: GateInput): boolean {
-  const { definition, check, expiry, adminBlocked, destructive, confirmed, disabled, phase } = input
+  const { definition, check, expiry, adminBlocked, destructive, confirmed, disabled, phase, held = false } = input
   if (definition === undefined || !check.ok) return false
-  if (expiry.expired || adminBlocked || disabled || phase !== 'pending') return false
+  if (expiry.expired || adminBlocked || disabled || held || phase !== 'pending') return false
   return !destructive || confirmed
 }

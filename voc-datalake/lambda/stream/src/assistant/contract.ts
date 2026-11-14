@@ -154,6 +154,7 @@ export const CLIENT_TOOLS = {
     'create_workflow',
     'update_workflow',
     'duplicate_workflow',
+    'propose_knowledge_refresh',
   ],
   company: ['update_company_context', 'update_my_context', 'update_design_system'],
   participants: ['create_participant_list', 'add_participants'],
@@ -192,6 +193,8 @@ export const ADMIN_ONLY_CLIENT_TOOLS: readonly ClientToolName[] = [
   'create_workflow',
   'update_workflow',
   'duplicate_workflow',
+  // Its card starts an engineering run (POST /agents/engineering/runs, require_admin_caller): administrators only.
+  'propose_knowledge_refresh',
   'update_company_context',
   'update_design_system',
 ];

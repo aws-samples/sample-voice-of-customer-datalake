@@ -52,6 +52,7 @@ describe('approval gate', () => {
     ['unconfirmed destructive', { confirmed: false }],
     ['expired', { expiry: { expired: true, remainingMs: 0 } }],
     ['admin-blocked', { adminBlocked: true }],
+    ['held by its preview', { held: true }],
     ['disabled', { disabled: true }],
     ['already executing', { phase: 'executing' }],
     ['unknown tool', { definition: undefined }],

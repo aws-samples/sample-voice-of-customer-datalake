@@ -176,6 +176,32 @@ def test_only_an_admin_acting_for_themselves_starts_a_run(lambda_context: Any, s
     assert client.requests == []
 
 
+def test_the_knowledge_refresh_cards_start_runs_the_understand_flow_as_the_approving_admin_only(
+        lambda_context: Any, start: tuple[Start, str]) -> None:
+    """The assistant's knowledge refresh card (frontend/src/assistant/approvals/knowledgeExecutors.ts) sends exactly
+    this on an administrator's Approve, in their own session: the saved Understand flow, the card's commit and
+    language, and its goal (knowledge-refresh-rules.ts refreshGoal). Only that administrator starts it; anyone else,
+    and an administrator's delegated credential, is refused before anything is sent."""
+    from shared import engineering_templates
+
+    client, _ = start
+    (understand,) = [t for t in engineering_templates.list_templates() if t['template_id'] == 'understand-repository']
+    status, body = _call(lambda_context, 'POST', '/workflows', body={'definition': understand['definition']})
+    assert status == 201, body
+    flow = body['workflow']['workflow_id']
+    request = _body(flow, connection='acme-shop', language='rust',
+                    goal='Refresh the knowledge pack of repository connection acme-shop')
+    for claims in (USER, DELEGATED_ADMIN):
+        assert _call(lambda_context, 'POST', PATH, body=request, claims=claims)[0] == 403
+    assert client.requests == []
+    status, body = _call(lambda_context, 'POST', PATH, body=request)
+    assert status == 202, body
+    sent = _sent(client)
+    assert (sent['flow'], sent['connection'], sent['actor'], body['run']['started_by']) == (
+        flow, 'acme-shop', 'admin-sub', 'admin-sub')
+    assert sent['goal'] == 'Refresh the knowledge pack of repository connection acme-shop'
+
+
 @pytest.mark.parametrize('missing', ['ENGINEERING_AGENTS', 'ENGINEERING_TABLE'])
 def test_the_start_is_404_while_the_module_is_off(lambda_context: Any, start: tuple[Start, str],
                                                   monkeypatch: pytest.MonkeyPatch, missing: str) -> None:

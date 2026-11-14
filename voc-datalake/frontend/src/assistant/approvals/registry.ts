@@ -19,6 +19,8 @@ import * as ag from './agentSchemas'
 import * as c from './companySchemas'
 import * as memory from './memoryExecutors'
 import * as agents from './agentExecutors'
+import * as kn from './knowledgeSchemas'
+import * as knowledge from './knowledgeExecutors'
 import * as company from './companyExecutors'
 import * as sc from './scraperSchemas'
 import * as scrapers from './scraperExecutors'
@@ -44,6 +46,7 @@ import { AgentActionPreview, AgentChangesPreview } from './previews/AgentPreview
 import { CompanyContextPreview, DesignSystemPreview, MyContextPreview } from './previews/CompanyPreviews'
 import { CompanyMemoryChangePreview, RememberPreview } from './previews/MemoryPreviews'
 import { WorkflowCreatePreview, WorkflowDiffPreview } from './previews/WorkflowDiffPreview'
+import { KnowledgeRefreshPreview } from './previews/KnowledgeRefreshPreview'
 import { BrandSettingsPreview } from './previews/BrandSettingsPreview'
 import { DocumentDiffPreview } from './previews/DocumentDiffPreview'
 import { FeedbackCategoryPreview } from './previews/FeedbackCategoryPreview'
@@ -336,6 +339,12 @@ const DEFINITIONS: readonly WriteToolDefinition[] = [
   defineWriteTool({
     name: 'duplicate_workflow', argsSchema: ag.duplicateWorkflowArgs, execute: agents.duplicateWorkflow,
     title: (_a, t) => t(toolTitleKey('duplicate_workflow')),
+  }),
+  // (administrators only; only this card's Approve starts the refresh, as the approver: see the knowledgeExecutors module)
+  defineWriteTool({
+    name: 'propose_knowledge_refresh', argsSchema: kn.proposeKnowledgeRefreshArgs, execute: knowledge.proposeKnowledgeRefresh,
+    title: (a, t) => t('assistantTools:tools.propose_knowledge_refresh.titleWith', { connection: a.connection }),
+    Preview: KnowledgeRefreshPreview,
   }),
   // ── Company context ──
   defineWriteTool({

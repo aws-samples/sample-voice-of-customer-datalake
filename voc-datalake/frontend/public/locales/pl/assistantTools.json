@@ -154,6 +154,26 @@
       "stale": "Ta propozycja została przygotowana na podstawie wersji {{expected}}, ale aktualna to {{current}} — zapis zostanie odrzucony; poproś asystenta o ponowne przygotowanie.",
       "counts": "{{nodes, number}} kroków, {{edges, number}} strzałek, {{loops, number}} pętli"
     },
+    "knowledgeRefresh": {
+      "label": "Odświeżenie pakietu wiedzy",
+      "actionLabel": "Działanie",
+      "action": "Uruchom przepływ Understand the repository. Dopóki środowisko uruchomieniowe nie wykonuje kroków przepływu, uruchomienie jeszcze niczego nie przegląda i nie przygotowuje pakietu wiedzy; szacunek to tyle, na ile pozwalają jego limity.",
+      "repository": "Połączenie z repozytorium",
+      "commit": "Commit",
+      "head": "Najnowszy commit gałęzi domyślnej",
+      "commitHint": "Wpisz pełny identyfikator najnowszego commita gałęzi domyślnej: to wdrożenie nie umie jeszcze odczytać gałęzi.",
+      "flow": "Przepływ",
+      "flowName": "{{name}}, wersja {{revision, number}}",
+      "estimateLabel": "Szacunek",
+      "estimate": "Około {{minutes, number}} min i około {{cost}} za czas sesji agentów",
+      "estimateBasis": "To szacunek: przepływ przegląda najwyżej {{shards, number}} fragmentów w jednym uruchomieniu, każdy przez około {{seconds, number}} s, a potem przez około {{draft, number}} min przygotowuje projekt. Liczy {{sessions, number}} sesji agentów (koordynatora uruchomienia i po jednej na każdy krok agenta, każda po {{vcpus, number}} vCPU i {{gb, number}} GB) przez całe uruchomienie, każdą po około {{rate}} za godzinę według opublikowanych stawek AgentCore. Tokeny modelu są liczone osobno, a uruchomienie zatrzymuje się na swoich limitach kosztu i tokenów.",
+      "asYou": "Zatwierdzenie uruchamia przepływ w Twoim imieniu, a uruchomienie zapisuje, że to Ty je rozpocząłeś.",
+      "moduleOff": "To wdrożenie nie ma modułu inżynieryjnego, więc nie można tego zatwierdzić. Nadal możesz to odrzucić.",
+      "readFailed": "Nie udało się odczytać zapisanych przepływów, więc nie można tego zatwierdzić. Odrzuć to i poproś ponownie.",
+      "looking": "Szukanie zapisanego przepływu Understand…",
+      "notSaved": "Nie zapisano jeszcze przepływu Understand, więc nie można odświeżyć pakietu wiedzy repozytorium {{connection}}.",
+      "createNote": "Zatwierdzenie zapisuje przepływ Understand z jego szablonu i niczego nie uruchamia. Potem poproś asystenta ponownie o uruchomienie odświeżenia."
+    },
     "radar": {
       "notTracked": "Nieśledzona",
       "removed": "Usunięta (zapisane recenzje i wydania są zachowane)",
@@ -488,6 +508,10 @@
     },
     "duplicate_workflow": {
       "title": "Duplikuj przepływ pracy"
+    },
+    "propose_knowledge_refresh": {
+      "title": "Odśwież pakiet wiedzy",
+      "titleWith": "Odśwież pakiet wiedzy repozytorium {{connection}}"
     },
     "update_company_context": {
       "title": "Zmień wizję i cele firmy"

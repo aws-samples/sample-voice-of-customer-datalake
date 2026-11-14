@@ -159,6 +159,26 @@
       "stale": "This proposal was built on revision {{expected}}, but the current one is {{current}} — saving will be refused; ask the assistant to rebuild it.",
       "counts": "{{nodes, number}} steps, {{edges, number}} arrows, {{loops, number}} loops"
     },
+    "knowledgeRefresh": {
+      "label": "The knowledge refresh",
+      "actionLabel": "Action",
+      "action": "Start a run of the Understand the repository flow. Until the runtime follows a flow’s steps, the run maps nothing yet and drafts no knowledge pack; the estimate is what its caps allow.",
+      "repository": "Repository connection",
+      "commit": "Commit",
+      "head": "The default branch’s head",
+      "commitHint": "Enter the full id of the default branch’s head: this deployment cannot read the branch yet.",
+      "flow": "Flow",
+      "flowName": "{{name}}, revision {{revision, number}}",
+      "estimateLabel": "Estimate",
+      "estimate": "About {{minutes, number}} minutes and about {{cost}} of agent session time",
+      "estimateBasis": "An estimate: the flow maps at most {{shards, number}} shards in a run, about {{seconds, number}} seconds each, then drafts for about {{draft, number}} minutes. It counts {{sessions, number}} agent sessions (the run’s coordinator and one for each agent step, {{vcpus, number}} vCPU and {{gb, number}} GB each) for the whole run, at about {{rate}} an hour each at AgentCore’s published rates. Model tokens come on top, and the run stops at its cost and token caps.",
+      "asYou": "Approve starts the run as you, and the run records you as the one who started it.",
+      "moduleOff": "This deployment has no engineering module, so this can’t be approved. You can still decline it.",
+      "readFailed": "The saved flows could not be read, so this can’t be approved. Decline it, then ask again.",
+      "looking": "Looking for the saved Understand flow…",
+      "notSaved": "No Understand flow is saved yet, so the knowledge pack of {{connection}} can’t be refreshed.",
+      "createNote": "Approve saves the Understand flow from its template and starts nothing. Then ask the assistant again to start the refresh."
+    },
     "radar": {
       "notTracked": "Not tracked",
       "removed": "Removed (its stored reviews and releases are kept)",
@@ -464,6 +484,10 @@
     },
     "duplicate_workflow": {
       "title": "Duplicate a workflow"
+    },
+    "propose_knowledge_refresh": {
+      "title": "Refresh a knowledge pack",
+      "titleWith": "Refresh the knowledge pack of {{connection}}"
     },
     "update_company_context": {
       "title": "Change the company vision & objectives"

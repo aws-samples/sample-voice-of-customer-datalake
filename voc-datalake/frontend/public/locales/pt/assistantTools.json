@@ -165,6 +165,26 @@
       "stale": "Esta proposta foi criada sobre a revisão {{expected}}, mas a atual é {{current}} — o salvamento será recusado; peça ao assistente para recriá-la.",
       "counts": "{{nodes, number}} etapas, {{edges, number}} setas, {{loops, number}} loops"
     },
+    "knowledgeRefresh": {
+      "label": "A atualização do pacote de conhecimento",
+      "actionLabel": "Ação",
+      "action": "Iniciar uma execução do fluxo Understand the repository. Até que o ambiente de execução siga as etapas de um fluxo, a execução ainda não percorre nada nem redige nenhum pacote de conhecimento; a estimativa é o que os limites permitem.",
+      "repository": "Conexão do repositório",
+      "commit": "Commit",
+      "head": "O commit mais recente do branch padrão",
+      "commitHint": "Insira o ID completo do commit mais recente do branch padrão: esta implantação ainda não consegue ler o branch.",
+      "flow": "Fluxo",
+      "flowName": "{{name}}, revisão {{revision, number}}",
+      "estimateLabel": "Estimativa",
+      "estimate": "Cerca de {{minutes, number}} minutos e cerca de {{cost}} de tempo de sessão dos agentes",
+      "estimateBasis": "Uma estimativa: o fluxo percorre no máximo {{shards, number}} fragmentos por execução, cerca de {{seconds, number}} segundos cada, e depois redige por cerca de {{draft, number}} minutos. Ela conta {{sessions, number}} sessões de agente (a coordenação da execução e uma para cada etapa de agente, de {{vcpus, number}} vCPU e {{gb, number}} GB cada) durante toda a execução, a cerca de {{rate}} por hora cada nas tarifas publicadas do AgentCore. Os tokens do modelo são cobrados à parte, e a execução para nos limites de custo e de tokens.",
+      "asYou": "Aprovar inicia a execução em seu nome, e a execução registra que foi você quem a iniciou.",
+      "moduleOff": "Esta implantação não tem o módulo de engenharia, por isso não pode ser aprovada. Você ainda pode recusá-la.",
+      "readFailed": "Não foi possível ler os fluxos salvos, por isso não pode ser aprovada. Recuse e peça novamente.",
+      "looking": "Procurando o fluxo Understand salvo…",
+      "notSaved": "Ainda não há um fluxo Understand salvo, por isso o pacote de conhecimento de {{connection}} não pode ser atualizado.",
+      "createNote": "Aprovar salva o fluxo Understand a partir do modelo e não inicia nada. Depois, peça novamente ao assistente para iniciar a atualização."
+    },
     "radar": {
       "notTracked": "Não acompanhada",
       "removed": "Removida (as avaliações e lançamentos salvos são mantidos)",
@@ -476,6 +496,10 @@
     },
     "duplicate_workflow": {
       "title": "Duplicar um fluxo de trabalho"
+    },
+    "propose_knowledge_refresh": {
+      "title": "Atualizar um pacote de conhecimento",
+      "titleWith": "Atualizar o pacote de conhecimento de {{connection}}"
     },
     "update_company_context": {
       "title": "Alterar a visão e os objetivos da empresa"

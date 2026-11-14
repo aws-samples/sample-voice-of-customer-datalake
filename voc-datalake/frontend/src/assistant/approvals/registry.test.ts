@@ -337,6 +337,11 @@ const CASES: Record<ClientToolName, { good: unknown[]; bad: unknown[] }> = {
     good: [{ workflow_id: 'wf_default' }, { workflow_id: 'wf_default', name: 'Copy' }],
     bad: [{}, { workflow_id: 'wf_default', name: '' }, { workflow_id: 'wf_default', name: LONG(201) }],
   },
+  propose_knowledge_refresh: {
+    good: [{ connection: 'acme-shop' }, { connection: 'acme-shop', commit: 'a'.repeat(40), language: 'java' }],
+    bad: [{}, { connection: 'acme shop' }, { connection: 'acme-shop', commit: 'main' }, { connection: 'acme-shop', language: 'go' },
+      { connection: 'acme-shop', workflow_id: 'wf_1' }],
+  },
   // ── Company context ──
   update_company_context: {
     good: [{ vision: '# Vision' }, { objectives: [{ title: 'Grow', description: '', horizon: 'date', due: '2026-12-31' }] }],

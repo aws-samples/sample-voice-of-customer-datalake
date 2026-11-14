@@ -178,8 +178,13 @@ no MCP tool for engineering runs yet (docs/mcp.md). The web app's AI assistant a
 administrator with `get_engineering_run {run_id?, agent?}` (read only, the run on screen by default: the run and each
 agent's status, task, step, why it looks stuck and recent tool calls, live agents first, the agents' words passed to
 the model as data), through these same routes and gate (in a plan, only a think step whose approver the conductor
-re-checks as an administrator before the step, as with the assistant's other admin-only reads); "refresh the knowledge pack" through the assistant waits on an owner decision (an admin action through a
-model needs its approval card). An administrator starts a run from a saved engineering flow's page (**Start a run**:
+re-checks as an administrator before the step, as with the assistant's other admin-only reads). "Refresh the knowledge pack" through the assistant is built (6.27.00):
+`propose_knowledge_refresh {connection, commit?, language?}` (administrators) only proposes, as a card naming the action,
+the repository connection, the commit (or the default branch's head, whose full id the administrator enters on the card),
+the saved Understand flow and an estimate of the minutes and cost; only an administrator's Approve starts the flow, with
+`POST /agents/engineering/runs` in that administrator's own session (the same gate: anyone else and a delegated credential
+get 403; the run records who started it), never the model and never a plan step; with no Understand flow saved, the card's
+Approve saves one from its template and starts nothing ([autonomous-engineering.md](autonomous-engineering.md#how-the-agents-work-together)). An administrator starts a run from a saved engineering flow's page (**Start a run**:
 the repository connection, the commit, the language and the goal, checked as the server checks them) or with
 `POST /agents/engineering/runs` (below); the run monitor then opens on it. The web app's page for a run is `/agents/engineering/<run_id>`:
 its flow with the steps its agents are on, and the Agents, Board, Conversation and Reports panels (the reports by

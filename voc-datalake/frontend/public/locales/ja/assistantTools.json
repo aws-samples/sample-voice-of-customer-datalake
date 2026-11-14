@@ -159,6 +159,26 @@
       "stale": "この提案はリビジョン {{expected}} を基に作成されましたが、現在のリビジョンは {{current}} です — 保存は拒否されます。アシスタントに再作成を依頼してください。",
       "counts": "{{nodes, number}} ステップ、{{edges, number}} 矢印、{{loops, number}} ループ"
     },
+    "knowledgeRefresh": {
+      "label": "ナレッジパックの更新",
+      "actionLabel": "操作",
+      "action": "Understand the repository フローの実行を開始します。ランタイムがフローのステップに従うようになるまで、この実行はまだ何も読み取らず、ナレッジパックの下書きも作成しません。見積もりは上限で許される範囲です。",
+      "repository": "リポジトリ接続",
+      "commit": "コミット",
+      "head": "デフォルトブランチの最新コミット",
+      "commitHint": "デフォルトブランチの最新コミットの完全な ID を入力してください。このデプロイではまだブランチを読み取れません。",
+      "flow": "フロー",
+      "flowName": "{{name}}（リビジョン {{revision, number}}）",
+      "estimateLabel": "見積もり",
+      "estimate": "約 {{minutes, number}} 分、エージェントのセッション時間で約 {{cost}}",
+      "estimateBasis": "見積もりです。フローは 1 回の実行で最大 {{shards, number}} 個の断片をそれぞれ約 {{seconds, number}} 秒で読み取り、その後約 {{draft, number}} 分かけて下書きを作成します。実行全体を通して {{sessions, number}} 個のエージェントセッション（実行のコーディネーターと、エージェントの各ステップに 1 つずつ。各 {{vcpus, number}} vCPU、{{gb, number}} GB）を数え、AgentCore の公開料金でそれぞれ 1 時間あたり約 {{rate}} です。モデルのトークンは別途かかり、実行はコストとトークンの上限で止まります。",
+      "asYou": "承認すると、あなたとして実行が開始され、開始した人としてあなたが記録されます。",
+      "moduleOff": "このデプロイにはエンジニアリングモジュールがないため、承認できません。拒否することはできます。",
+      "readFailed": "保存済みのフローを読み取れなかったため、承認できません。拒否してから、もう一度依頼してください。",
+      "looking": "保存済みの Understand フローを探しています…",
+      "notSaved": "Understand フローがまだ保存されていないため、{{connection}} のナレッジパックを更新できません。",
+      "createNote": "承認すると、テンプレートから Understand フローが保存されますが、何も開始されません。その後、アシスタントにもう一度更新の開始を依頼してください。"
+    },
     "radar": {
       "notTracked": "追跡していません",
       "removed": "削除（保存済みのレビューとリリースは保持されます）",
@@ -464,6 +484,10 @@
     },
     "duplicate_workflow": {
       "title": "ワークフローを複製"
+    },
+    "propose_knowledge_refresh": {
+      "title": "ナレッジパックを更新",
+      "titleWith": "{{connection}} のナレッジパックを更新"
     },
     "update_company_context": {
       "title": "会社のビジョンと目標を変更"

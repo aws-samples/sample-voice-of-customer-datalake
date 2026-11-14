@@ -165,6 +165,26 @@
       "stale": "Cette proposition repose sur la révision {{expected}}, mais la révision actuelle est la {{current}} — l'enregistrement sera refusé ; demandez à l'assistant de la reconstruire.",
       "counts": "{{nodes, number}} étapes, {{edges, number}} flèches, {{loops, number}} boucles"
     },
+    "knowledgeRefresh": {
+      "label": "L’actualisation du dossier de connaissances",
+      "actionLabel": "Action",
+      "action": "Lancer une exécution du flux Understand the repository. Tant que l’environnement d’exécution ne suit pas encore les étapes d’un flux, l’exécution ne parcourt rien et ne rédige aucun dossier de connaissances ; l’estimation correspond à ce que ses plafonds permettent.",
+      "repository": "Connexion au dépôt",
+      "commit": "Commit",
+      "head": "Le dernier commit de la branche par défaut",
+      "commitHint": "Saisissez l’identifiant complet du dernier commit de la branche par défaut : ce déploiement ne peut pas encore lire la branche.",
+      "flow": "Flux",
+      "flowName": "{{name}}, révision {{revision, number}}",
+      "estimateLabel": "Estimation",
+      "estimate": "Environ {{minutes, number}} minutes et environ {{cost}} de temps de session des agents",
+      "estimateBasis": "Une estimation : le flux parcourt au plus {{shards, number}} fragments par exécution, environ {{seconds, number}} secondes chacun, puis rédige pendant environ {{draft, number}} minutes. Elle compte {{sessions, number}} sessions d’agent (la coordination de l’exécution et une par étape d’agent, de {{vcpus, number}} vCPU et {{gb, number}} Go chacune) pendant toute l’exécution, à environ {{rate}} de l’heure chacune aux tarifs publiés d’AgentCore. Les jetons du modèle s’y ajoutent, et l’exécution s’arrête à ses plafonds de coût et de jetons.",
+      "asYou": "Approuver lance l’exécution en votre nom, et l’exécution enregistre que vous l’avez lancée.",
+      "moduleOff": "Ce déploiement n’a pas de module d’ingénierie : cette action ne peut pas être approuvée. Vous pouvez toujours la refuser.",
+      "readFailed": "Les flux enregistrés n’ont pas pu être lus : cette action ne peut pas être approuvée. Refusez-la, puis redemandez.",
+      "looking": "Recherche du flux Understand enregistré…",
+      "notSaved": "Aucun flux Understand n’est encore enregistré : le dossier de connaissances de {{connection}} ne peut pas être actualisé.",
+      "createNote": "Approuver enregistre le flux Understand à partir de son modèle et ne lance rien. Demandez ensuite à nouveau à l’assistant de lancer l’actualisation."
+    },
     "radar": {
       "notTracked": "Non suivie",
       "removed": "Retirée (ses avis et sorties enregistrés sont conservés)",
@@ -476,6 +496,10 @@
     },
     "duplicate_workflow": {
       "title": "Dupliquer un workflow"
+    },
+    "propose_knowledge_refresh": {
+      "title": "Actualiser un dossier de connaissances",
+      "titleWith": "Actualiser le dossier de connaissances de {{connection}}"
     },
     "update_company_context": {
       "title": "Modifier la vision et les objectifs de l'entreprise"

@@ -159,6 +159,26 @@
       "stale": "此提议基于第 {{expected}} 版，但当前为第 {{current}} 版——保存将被拒绝；请让助手重新生成。",
       "counts": "{{nodes, number}} 个步骤，{{edges, number}} 个箭头，{{loops, number}} 个循环"
     },
+    "knowledgeRefresh": {
+      "label": "知识包刷新",
+      "actionLabel": "操作",
+      "action": "启动 Understand the repository 流程的一次运行。在运行时按流程步骤执行之前，这次运行还不会读取任何内容，也不会起草知识包；估算是其上限所允许的范围。",
+      "repository": "代码库连接",
+      "commit": "提交",
+      "head": "默认分支的最新提交",
+      "commitHint": "请输入默认分支最新提交的完整 ID：此部署暂时还无法读取分支。",
+      "flow": "流程",
+      "flowName": "{{name}}，修订版 {{revision, number}}",
+      "estimateLabel": "估算",
+      "estimate": "约 {{minutes, number}} 分钟，代理会话时间约 {{cost}}",
+      "estimateBasis": "这是估算：流程每次运行最多读取 {{shards, number}} 个分片，每个约 {{seconds, number}} 秒，然后用约 {{draft, number}} 分钟起草。它按整个运行时长计算 {{sessions, number}} 个代理会话（运行的协调者，以及每个代理步骤各一个，每个 {{vcpus, number}} vCPU、{{gb, number}} GB），按 AgentCore 公布的价格，每个每小时约 {{rate}}。模型令牌另计，运行会在其成本上限和令牌上限处停止。",
+      "asYou": "批准后将以你的身份启动运行，运行会记录是你启动的。",
+      "moduleOff": "此部署没有工程模块，因此无法批准。你仍然可以拒绝。",
+      "readFailed": "无法读取已保存的流程，因此无法批准。请拒绝，然后再次提出请求。",
+      "looking": "正在查找已保存的 Understand 流程…",
+      "notSaved": "尚未保存 Understand 流程，因此无法刷新 {{connection}} 的知识包。",
+      "createNote": "批准会根据模板保存 Understand 流程，但不会启动任何内容。之后请再次让助手启动刷新。"
+    },
     "radar": {
       "notTracked": "未跟踪",
       "removed": "已移除（已存储的评论和发布会保留）",
@@ -464,6 +484,10 @@
     },
     "duplicate_workflow": {
       "title": "复制工作流"
+    },
+    "propose_knowledge_refresh": {
+      "title": "刷新知识包",
+      "titleWith": "刷新 {{connection}} 的知识包"
     },
     "update_company_context": {
       "title": "更改公司愿景与目标"

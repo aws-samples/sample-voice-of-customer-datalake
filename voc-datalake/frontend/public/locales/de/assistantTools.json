@@ -159,6 +159,26 @@
       "stale": "Dieser Vorschlag basiert auf Revision {{expected}}, aktuell ist aber {{current}} – das Speichern wird abgelehnt; bitten Sie den Assistenten, ihn neu zu erstellen.",
       "counts": "{{nodes, number}} Schritte, {{edges, number}} Pfeile, {{loops, number}} Schleifen"
     },
+    "knowledgeRefresh": {
+      "label": "Die Aktualisierung des Wissenspakets",
+      "actionLabel": "Aktion",
+      "action": "Einen Lauf des Ablaufs „Understand the repository“ starten. Solange die Laufzeitumgebung den Schritten eines Ablaufs noch nicht folgt, erfasst der Lauf noch nichts und entwirft kein Wissenspaket; die Schätzung zeigt, was seine Obergrenzen zulassen.",
+      "repository": "Repository-Verbindung",
+      "commit": "Commit",
+      "head": "Der neueste Stand des Standard-Branches",
+      "commitHint": "Geben Sie die vollständige ID des neuesten Commits des Standard-Branches ein: Diese Bereitstellung kann den Branch noch nicht lesen.",
+      "flow": "Ablauf",
+      "flowName": "{{name}}, Revision {{revision, number}}",
+      "estimateLabel": "Schätzung",
+      "estimate": "Etwa {{minutes, number}} Minuten und etwa {{cost}} Sitzungszeit der Agenten",
+      "estimateBasis": "Eine Schätzung: Der Ablauf erfasst höchstens {{shards, number}} Teile pro Lauf, je etwa {{seconds, number}} Sekunden, und entwirft dann etwa {{draft, number}} Minuten lang. Sie zählt {{sessions, number}} Agentensitzungen (die Koordination des Laufs und eine je Agentenschritt, je {{vcpus, number}} vCPU und {{gb, number}} GB) für den ganzen Lauf, zu je etwa {{rate}} pro Stunde nach den veröffentlichten AgentCore-Preisen. Modell-Token kommen hinzu, und der Lauf endet an seinen Kosten- und Token-Obergrenzen.",
+      "asYou": "Mit der Freigabe starten Sie den Lauf selbst, und der Lauf hält fest, dass Sie ihn gestartet haben.",
+      "moduleOff": "Diese Bereitstellung hat kein Engineering-Modul, daher kann dies nicht freigegeben werden. Sie können es weiterhin ablehnen.",
+      "readFailed": "Die gespeicherten Abläufe konnten nicht gelesen werden, daher kann dies nicht freigegeben werden. Lehnen Sie es ab und fragen Sie erneut.",
+      "looking": "Der gespeicherte Understand-Ablauf wird gesucht…",
+      "notSaved": "Es ist noch kein Understand-Ablauf gespeichert, daher kann das Wissenspaket von {{connection}} nicht aktualisiert werden.",
+      "createNote": "Die Freigabe speichert den Understand-Ablauf aus seiner Vorlage und startet nichts. Bitten Sie den Assistenten danach erneut, die Aktualisierung zu starten."
+    },
     "radar": {
       "notTracked": "Nicht verfolgt",
       "removed": "Entfernt (gespeicherte Bewertungen und Releases bleiben erhalten)",
@@ -464,6 +484,10 @@
     },
     "duplicate_workflow": {
       "title": "Workflow duplizieren"
+    },
+    "propose_knowledge_refresh": {
+      "title": "Ein Wissenspaket aktualisieren",
+      "titleWith": "Das Wissenspaket von {{connection}} aktualisieren"
     },
     "update_company_context": {
       "title": "Unternehmensvision & -ziele ändern"
