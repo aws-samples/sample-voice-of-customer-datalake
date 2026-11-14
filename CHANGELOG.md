@@ -17,6 +17,23 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.01.01] - 2026-11-14
+
+Property-based tests for the engineering agents' critical components. Tests only: no behaviour changes.
+
+### Added
+
+- Hypothesis property tests (`*_properties.py` beside the unit tests, 256 cases each by the one profile in `voc-datalake/lambda/shared/test/properties.py`, 80 where each case builds a moto table; its failing-example database is `hypothesis-regressions/`, ignored but for its README, so an entry a fix needs is added on purpose) for the dial (fails closed), the broker's write policy and role matrix, patch line splitting and hunk application, the GO ledger (the newest ended final go and gate runner decide, for exactly the tree), the spend ledger and its alerts, the hard cap on a start, and the run-state machine (model-based). Each states its invariant in words. The components, why each is critical and their mutation scores are in `docs/mutation-notes-mut-voc-auto.md`.
+- `hypothesis==6.135.0` in `voc-datalake/requirements-dev.txt` (pinned exactly: a generator change would move which cases a run tries).
+
+### Changed
+
+- `.gitignore`: `node_modules` without the trailing slash, so a worktree that links its dependencies to another clone's is ignored too; Hypothesis's per-run `.hypothesis/` state and the failing-example database's entries are ignored.
+
+### Upgrade notes
+
+- No deployment needed. The Api and Processing stacks' template hashes in `voc-datalake/lib/test-support/baseline.json` move with the release number (`APP_VERSION`) only.
+
 ## [7.01.00] - 2026-11-14
 
 The project branch takes main's releases since they parted beside the autonomous engineering agents (6.04.09 and 6.05.00 to 6.29.00 here): main's 6.05.00 of 2026-11-11 (Node.js 24, the minimatch and fast-xml-parser fixes), 7.00.00 (the company logo in prototypes; **breaking:** the company logo is at most 1 MB) and 7.00.01 (the Kiro agents' secret paths and write checks). The merge itself changes no behaviour of either side; a deployment of this branch's line gets main's changes with it. Both lines numbered a release 6.05.00; each keeps its own section, as released.

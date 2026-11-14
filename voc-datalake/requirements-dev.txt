@@ -42,3 +42,6 @@ vulture==2.16
 # Mutation testing, behind scripts/mutate-python.sh (+ scripts/mutmut_run.py). Not a gate: a report on what a
 # change touched. Pinned exactly: the script builds mutmut 3's stage and line filter on its internals.
 mutmut==3.8.1
+# Property-based tests (``*_properties.py`` beside the unit tests; the one profile is lambda/shared/test/properties.py).
+# Pinned exactly: a generator or shrinker change would move which cases a run tries.
+hypothesis==6.135.0

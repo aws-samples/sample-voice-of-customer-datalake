@@ -1,5 +1,5 @@
-# Dependencies
-node_modules/
+# Dependencies (no trailing slash: a worktree that links node_modules to another clone's has a symlink there)
+node_modules
 
 # Build output
 dist/
@@ -23,6 +23,12 @@ __pycache__/
 *.so
 .Python
 .venv/
+# Hypothesis's per-run state. Its failing-example database, voc-datalake/lambda/shared/test/hypothesis-regressions/,
+# catches every local failure: ignored but for its README, so the one entry a fix needs is added on purpose
+# (git add -f) and a red run while a test is written leaves nothing to commit.
+.hypothesis/
+voc-datalake/lambda/shared/test/hypothesis-regressions/*
+!voc-datalake/lambda/shared/test/hypothesis-regressions/README.md
 
 # Lambda layers (built artifacts)
 voc-datalake/lambda/layers/*/python/
