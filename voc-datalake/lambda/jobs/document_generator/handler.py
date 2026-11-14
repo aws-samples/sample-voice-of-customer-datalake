@@ -116,6 +116,7 @@ from shared.prototype_pins import (
     strip_pin_widget,
 )
 from shared.prototype_versions import put_prototype_html, read_prototype_html, version_html
+from shared.prototype_walkthrough import extract_steps, inject_walkthrough, strip_walkthrough
 from shared.tables import get_jobs_table
 from shared.timestamps import now_iso
 
@@ -1293,13 +1294,31 @@ def _prior_prototype_html(project_id: str, base: dict | None) -> str:
         return legacy
 
 
-def _revision_feedback_section(project_id: str, base: dict | None, feedback: str) -> str:
-    """The USER FEEDBACK prompt section of a feedback-driven revision."""
+def _base_steps(project_id: str, base: dict | None) -> list[dict]:
+    """The walkthrough steps of the prototype a revision is built on (none for a fresh build).
+
+    A base whose HTML cannot be read gives none: the revision still builds (its prompt never needed it
+    when no feedback came with the id), it only starts without a walkthrough.
+    """
+    if base is None:
+        return []
+    try:
+        return extract_steps(_prior_prototype_html(project_id, base))
+    except RuntimeError:
+        logger.warning('Base prototype HTML unreadable; the revision starts without a walkthrough')
+        return []
+
+
+def _revision_feedback_section(project_id: str, base: dict | None, feedback: str, prior: str | None = None) -> str:
+    """The USER FEEDBACK prompt section of a feedback-driven revision (``prior``: the base's HTML, read once
+    by the caller; else read here)."""
     # Cap the prior HTML so the prompt stays within budget; the model gets
     # enough to understand structure/style and revise it toward the feedback.
-    # The pin widget is ours, not the model's: it is re-injected (with the
-    # revision's own form) after generation, so the model never sees it.
-    prior_html = strip_pin_widget(_prior_prototype_html(project_id, base))
+    # The pin widget and the walkthrough are ours, not the model's: both are re-injected
+    # (the widget with the revision's own form, the base's steps) after generation, so the
+    # model never sees them.
+    raw = _prior_prototype_html(project_id, base) if prior is None else prior
+    prior_html = strip_walkthrough(strip_pin_widget(raw))
     prior_block = (
         f'\n\nEXISTING PROTOTYPE (revise this):\n{prior_html[:PROTOTYPE_PRIOR_CAP]}' if prior_html else ''
     )
@@ -1420,7 +1439,9 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     # job whether or not feedback was sent alongside it. Absent, null or blank
     # still means "this build is not a revision".
     base = _base_prototype(projects_table, project_id, base_prototype_id)
-    feedback_section = _revision_feedback_section(project_id, base, feedback) if feedback else ''
+    # Read once: a feedback revision's prompt and the steps it keeps come from the same HTML.
+    prior = _prior_prototype_html(project_id, base) if feedback and base is not None else None
+    feedback_section = _revision_feedback_section(project_id, base, feedback, prior) if feedback else ''
 
     # The company design system + company knowledge (Settings → Company and the
     # company memories), read only once every source above resolved. Both ''
@@ -1461,7 +1482,10 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     html = _extract_html(raw)
     if not html:
         raise RuntimeError('Prototype model did not return an HTML document.')
-    html = _with_pin_widget(project_id, doc_id, title, html)
+    # A model-written walkthrough block (a fake one, or the base's echoed) never reaches a stored object; a
+    # revision keeps its base version's steps (docs/prototype-builder.md, Part 1), a fresh build has none.
+    base_steps = extract_steps(prior) if prior is not None else _base_steps(project_id, base)
+    html = _with_pin_widget(project_id, doc_id, title, inject_walkthrough(strip_walkthrough(html), base_steps))
 
     ctx.update_progress(80, 'saving_prototype')
 
@@ -1663,7 +1687,7 @@ def _draft_prototype(ctx, projects_table, project_id: str, job_id: str, doc_conf
     base = _document_by_id(projects_table, project_id, 'PROTOTYPE#', base_id) if base_id else None
     if base is None:
         raise NotFoundError('The prototype version this draft was asked on no longer exists.')
-    prior_html = strip_pin_widget(version_html(_s3(), SCRATCH_BUCKET, project_id, base))
+    prior_html = strip_walkthrough(strip_pin_widget(version_html(_s3(), SCRATCH_BUCKET, project_id, base)))
     instruction = str(doc_config.get('instruction') or '').strip()
     if not instruction:
         raise ValidationError('The draft has no instruction.')
@@ -1710,7 +1734,8 @@ def _draft_prototype(ctx, projects_table, project_id: str, job_id: str, doc_conf
         'llm_metadata': pass_llm_metadata(answering_model(reply, 'prototype'), DRAFT_PROMPT_VERSION),
         **detail,
     })
-    put_draft_html(_s3(), SCRATCH_BUCKET, project_id, job_id, strip_pin_widget(html))
+    # Neither the widget nor a walkthrough block (the model may echo or fake one): Apply adds the base's steps.
+    put_draft_html(_s3(), SCRATCH_BUCKET, project_id, job_id, strip_walkthrough(strip_pin_widget(html)))
     ctx.update_progress(100, 'saved')
     return {'draft_id': job_id}
 

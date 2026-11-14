@@ -352,6 +352,16 @@
       "pins_other": "{{count, number}} pines de testers seleccionados",
       "noScreen": "(sin pantalla)",
       "pinsInstruction": "Solo se envían los ID de los pines: el servidor lee estos pines y escribe la instrucción (incorporar los comentarios seleccionados de los testers, respondidos por pin: hecho o no hecho)."
+    },
+    "walkthrough": {
+      "remove": "Se quita el recorrido.",
+      "step": "Paso {{n}} de {{total}}",
+      "position": "una posición en {{screen}}",
+      "thisScreen": "esta pantalla",
+      "replaces_one": "Sustituye el {{count, number}} paso guardado.",
+      "replaces_many": "Sustituye los {{count, number}} de pasos guardados.",
+      "replaces_other": "Sustituye los {{count, number}} pasos guardados.",
+      "note": "Guardar crea una nueva versión del prototipo; quienes lo abran verán los pasos."
     }
   },
   "tools": {
@@ -546,6 +556,10 @@
     },
     "draft_prototype_revision": {
       "title": "Redactar una revisión del prototipo"
+    },
+    "set_prototype_walkthrough": {
+      "title": "Guardar un recorrido del prototipo",
+      "titleRemove": "Quitar el recorrido del prototipo"
     }
   }
 }

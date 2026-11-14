@@ -134,7 +134,7 @@ CATALOGUE: dict[str, tuple[str, str, dict, bool, bool, bool]] = {
         'Get a project',
         ('Read one research project: its details, personas (name, tagline) and documents in sections prd, prfaq, '
          'prototypes, documents, last edit first in each (ids, types, titles, versions; no bodies: read one with '
-         'documents_get).'),
+         'documents_get). The flat `documents` list is deprecated: read `document_sections`.'),
         _object({'project_id': ID}),
         False, False, True),
     'projects_generate': (
@@ -204,6 +204,28 @@ CATALOGUE: dict[str, tuple[str, str, dict, bool, bool, bool]] = {
          'documents_draft_prototype_revision.'),
         _object({'project_id': ID, 'document_id': ID}, 'document_id'),
         False, False, True),
+    'documents_get_prototype_walkthrough': (
+        'Get a prototype walkthrough',
+        ("Read a prototype version's guided walkthrough: its steps (title, body, selector or anchor), [] when it has "
+         'none.'),
+        _object({'project_id': ID, 'document_id': ID}, 'document_id'),
+        False, False, True),
+    'documents_set_prototype_walkthrough': (
+        'Set a prototype walkthrough',
+        ("Save a prototype's walkthrough as its next version (write token): `steps` (up to 10, each a `title` of at "
+         'most 80 characters, a plain-text `body` of at most 280, and a `selector` or an `anchor` {route, bbox}; [] '
+         'removes the steps) on the version `document_id`, which must be the newest. Optional `edit_id` makes a retry '
+         'the same version. Confirm with the user first.'),
+        _object({'project_id': ID, 'document_id': ID, 'steps': {'type': 'array', 'maxItems': 10, 'items': {'type': 'object'}},
+                 'edit_id': ID}, 'document_id', 'steps'),
+        True, False, True),
+    'documents_draft_prototype_walkthrough': (
+        'Draft a prototype walkthrough',
+        ("Ask the AI for walkthrough steps from the prototype's screens and the PRD / PR/FAQ it was built from "
+         '(write token); nothing is saved. Answers a job_id: its result is `steps` (projects_get_job), to show the '
+         'user and save with documents_set_prototype_walkthrough.'),
+        _object({'project_id': ID, 'document_id': ID}, 'document_id'),
+        True, False, True),
     'documents_draft_prototype_revision': (
         'Draft a prototype revision',
         ('Ask for a change to a prototype (write token): `document_id` (any version of it) and either '
@@ -368,6 +390,8 @@ class TestTheOldNames:
         # Tools added since the rename never had an older name.
         new_since_6_10 = {'documents_revise_from_comments', 'documents_mark_comments_addressed',
                           'documents_list_prototype_feedback', 'documents_get_prototype_outline',
+                          'documents_get_prototype_walkthrough', 'documents_set_prototype_walkthrough',
+                          'documents_draft_prototype_walkthrough',
                           'documents_draft_prototype_revision',
                           'documents_get_prototype_draft', 'documents_apply_prototype_draft',
                           'documents_discard_prototype_draft'}

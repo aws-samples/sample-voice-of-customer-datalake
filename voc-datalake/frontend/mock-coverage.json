@@ -2140,6 +2140,43 @@
   },
   {
     "file": "api/projectsApi.ts",
+    "method": "GET",
+    "call": "walkthroughPath(projectId, documentId)",
+    "probes": [
+      {
+        "path": "/projects/proj_1/prototypes/proto_1/walkthrough"
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "PUT",
+    "call": "walkthroughPath(projectId, documentId)",
+    "probes": [
+      {
+        "path": "/projects/proj_1/prototypes/proto_1/walkthrough",
+        "body": {
+          "steps": [],
+          "edit_id": "probe-1"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/prototypes/${encodeURIComponent(documentId)}/walkthrough/draft`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/prototypes/proto_1/walkthrough/draft",
+        "body": {
+          "response_language": "en"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
     "method": "POST",
     "call": "`/projects/${projectId}/prototypes/${encodeURIComponent(documentId)}/drafts`",
     "probes": [

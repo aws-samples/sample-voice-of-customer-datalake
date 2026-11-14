@@ -11,7 +11,8 @@
 import { projectsApi } from '../../api/projectsApi'
 import { startProjectJob } from './projectJobStart'
 import type { WriteToolExecutionContext } from '../types'
-import type { DraftPrototypeRevisionArgs } from './prototypeSchemas'
+import { keysFor, refreshAfterWrite } from './invalidation'
+import type { DraftPrototypeRevisionArgs, SetPrototypeWalkthroughArgs } from './prototypeSchemas'
 
 export async function draftPrototypeRevision(
   args: DraftPrototypeRevisionArgs, ctx: WriteToolExecutionContext,
@@ -24,5 +25,19 @@ export async function draftPrototypeRevision(
     summary: `Started prototype draft job ${jobId} (${what}). When it finishes, the draft shows on the prototype's page `
       + 'with Apply and Discard; nothing is saved until the editor applies it there.',
     data: { job_id: jobId, draft_id: jobId },
+  }
+}
+
+/** `set_prototype_walkthrough` (Part 1): the approved steps saved as the next version (`[]` removes them). */
+export async function setPrototypeWalkthrough(
+  args: SetPrototypeWalkthroughArgs, ctx: WriteToolExecutionContext,
+): Promise<{ summary: string; data: { document_id: string | null; version: number | null } }> {
+  const saved = await projectsApi.savePrototypeWalkthrough(args.project_id, args.document_id, args.steps, crypto.randomUUID())
+  refreshAfterWrite(ctx, keysFor.projectRecord(args.project_id))
+  const what = args.steps.length === 0 ? 'Removed the walkthrough' : `Saved a ${String(args.steps.length)}-step walkthrough`
+  const version = saved?.version ?? null
+  return {
+    summary: `${what} as version ${version === null ? '(unknown)' : String(version)} of the prototype (document ${saved?.document_id ?? 'unknown'}).`,
+    data: { document_id: saved?.document_id ?? null, version },
   }
 }

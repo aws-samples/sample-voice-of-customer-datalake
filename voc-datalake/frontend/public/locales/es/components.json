@@ -889,5 +889,41 @@
     "cap": "como máximo {{max, number}} pines",
     "clearSelection": "Borrar selección",
     "incorporate": "Incorporar"
+  },
+  "prototypeWalkthrough": {
+    "show": "Mostrar recorrido",
+    "checkPlace": "Redactado: comprueba a qué apunta este paso y apúntalo a su elemento.",
+    "repoint": "Apuntar el paso {{n}} a un elemento",
+    "open": "Recorrido",
+    "heading": "Recorrido",
+    "close": "Cerrar el editor del recorrido",
+    "noRuntime": "Esta versión es anterior a los recorridos, así que su vista previa no puede elegir elementos ni reproducir pasos. Revisa o vuelve a generar el prototipo y añade el recorrido en la nueva versión.",
+    "addStep": "Añadir un paso",
+    "picking": "Haz clic en un elemento de la vista previa…",
+    "draft": "Redactar con el asistente",
+    "drafted": "Los pasos redactados están en la lista: revísalos. No se guarda nada hasta que guardes.",
+    "draftFailed": "No se pudieron redactar los pasos. Inténtalo de nuevo.",
+    "empty": "Aún no hay pasos. Añade un paso haciendo clic en un elemento de la vista previa o redáctalos con el asistente.",
+    "save": "Guardar como nueva versión",
+    "remove": "Quitar recorrido",
+    "saveHint": "Guardar crea una nueva versión del prototipo; las versiones anteriores conservan su propio recorrido.",
+    "conflict": "El prototipo cambió desde que abriste esta versión: abre la versión más reciente y guarda allí.",
+    "saveFailed": "No se pudo guardar el recorrido. Inténtalo de nuevo.",
+    "stepCount": "Paso {{n}} de {{total}}",
+    "moveUp": "Subir el paso {{n}}",
+    "moveDown": "Bajar el paso {{n}}",
+    "previewFrom": "Vista previa desde el paso {{n}}",
+    "removeStep": "Quitar el paso {{n}}",
+    "title": "Título",
+    "body": "Texto",
+    "pointsAt": "Apunta a",
+    "position": "una posición en {{screen}}",
+    "thisScreen": "esta pantalla",
+    "stepLabel": "Paso {{n}} de {{total}}",
+    "problem": {
+      "title": "El paso {{n}} necesita un título.",
+      "body": "El paso {{n}} necesita un texto.",
+      "anchor": "El paso {{n}} no apunta a nada: quítalo y vuelve a elegir su elemento."
+    }
   }
 }

@@ -290,6 +290,9 @@ class TestGateRefusalsReachTheExceptionHandlers:
         ('GET', '/projects/p1/prototypes/d1/drafts/job_0123456789abcdef'),
         ('POST', '/projects/p1/prototypes/d1/drafts/job_0123456789abcdef/apply'),
         ('DELETE', '/projects/p1/prototypes/d1/drafts/job_0123456789abcdef'),
+        # The walkthrough (Part 1): its save and its draft.
+        ('PUT', '/projects/p1/prototypes/d1/walkthrough'),
+        ('POST', '/projects/p1/prototypes/d1/walkthrough/draft'),
         # Back to vN of a prototype goes through the restore route, a write.
         ('POST', '/projects/p1/documents/d1/versions/d0/restore'),
     ])

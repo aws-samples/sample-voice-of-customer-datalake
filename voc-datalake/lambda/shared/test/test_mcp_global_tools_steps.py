@@ -266,6 +266,43 @@ class TestPrototypeOutline:
             'screens': [{'route': 'home', 'headings': ['Home'], 'text': ['Pay']}]}
 
 
+STEPS = [{'title': 'Start here', 'body': 'Pick a plan', 'selector': '#plan'}]
+
+
+class TestPrototypeWalkthrough:
+    """The walkthrough tools (docs/prototype-builder.md, Part 1): each is ONE route."""
+
+    @pytest.mark.parametrize(('name', 'args', 'method', 'path', 'body'), [
+        ('documents_get_prototype_walkthrough', {'document_id': 'd1'}, 'GET',
+         '/projects/proj_1/prototypes/d1/walkthrough', None),
+        ('documents_set_prototype_walkthrough', {'document_id': 'd1', 'steps': STEPS, 'edit_id': 'e1'}, 'PUT',
+         '/projects/proj_1/prototypes/d1/walkthrough', {'steps': STEPS, 'edit_id': 'e1'}),
+        ('documents_set_prototype_walkthrough', {'document_id': 'd1', 'steps': []}, 'PUT',
+         '/projects/proj_1/prototypes/d1/walkthrough', {'steps': []}),
+        ('documents_draft_prototype_walkthrough', {'document_id': 'd1'}, 'POST',
+         '/projects/proj_1/prototypes/d1/walkthrough/draft', {}),
+    ])
+    def test_each_tool_is_its_route(self, name, args, method, path, body):
+        request = _build(name, args)
+        assert (request.domain, request.method, request.path, request.body) == ('projects', method, path, body)
+
+    @pytest.mark.parametrize(('args', 'message'), [
+        ({'document_id': 'd1'}, 'steps must be a list'),
+        ({'document_id': 'd1', 'steps': 'x'}, 'steps must be a list'),
+        ({'document_id': 'd1', 'steps': [], 'edit_id': 'a/b'}, 'edit_id is required'),
+    ])
+    def test_a_save_needs_a_list_of_steps_and_an_id_shaped_edit_id(self, args, message):
+        with pytest.raises(InvalidToolArgument, match=message):
+            _build('documents_set_prototype_walkthrough', args)
+
+    @pytest.mark.parametrize(('name', 'write'), [('documents_get_prototype_walkthrough', False),
+                                                 ('documents_set_prototype_walkthrough', True),
+                                                 ('documents_draft_prototype_walkthrough', True)])
+    def test_the_get_is_a_read_and_the_rest_are_writes_all_project_scoped(self, name, write):
+        tool = TOOLS_BY_NAME[name]
+        assert (tool.write, tool.admin_only, tool.project_scoped) == (write, False, True)
+
+
 class TestTheOldGenerateRevise:
     """Before 6.10.00 "Revise from comments" was ``generate`` with ``step: revise``: still accepted this release."""
 

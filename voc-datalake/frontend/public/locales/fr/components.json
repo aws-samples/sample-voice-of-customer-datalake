@@ -889,5 +889,41 @@
     "cap": "au plus {{max, number}} épingles",
     "clearSelection": "Effacer la sélection",
     "incorporate": "Intégrer"
+  },
+  "prototypeWalkthrough": {
+    "show": "Afficher la visite guidée",
+    "checkPlace": "Rédigée : vérifiez ce que vise cette étape et pointez-la vers son élément.",
+    "repoint": "Pointer l’étape {{n}} vers un élément",
+    "open": "Visite guidée",
+    "heading": "Visite guidée",
+    "close": "Fermer l’éditeur de la visite guidée",
+    "noRuntime": "Cette version est antérieure aux visites guidées : son aperçu ne peut ni choisir d’éléments ni lire les étapes. Révisez ou régénérez le prototype, puis ajoutez la visite sur la nouvelle version.",
+    "addStep": "Ajouter une étape",
+    "picking": "Cliquez sur un élément de l’aperçu…",
+    "draft": "Rédiger avec l’assistant",
+    "drafted": "Les étapes rédigées sont dans la liste : relisez-les. Rien n’est enregistré tant que vous n’enregistrez pas.",
+    "draftFailed": "Les étapes n’ont pas pu être rédigées. Réessayez.",
+    "empty": "Aucune étape pour l’instant. Ajoutez une étape en cliquant sur un élément de l’aperçu, ou faites-les rédiger par l’assistant.",
+    "save": "Enregistrer comme nouvelle version",
+    "remove": "Retirer la visite guidée",
+    "saveHint": "Enregistrer crée une nouvelle version du prototype ; les versions précédentes gardent leur propre visite.",
+    "conflict": "Le prototype a changé depuis l’ouverture de cette version : ouvrez la version la plus récente et enregistrez-y.",
+    "saveFailed": "La visite guidée n’a pas pu être enregistrée. Réessayez.",
+    "stepCount": "Étape {{n}} sur {{total}}",
+    "moveUp": "Monter l’étape {{n}}",
+    "moveDown": "Descendre l’étape {{n}}",
+    "previewFrom": "Aperçu à partir de l’étape {{n}}",
+    "removeStep": "Retirer l’étape {{n}}",
+    "title": "Titre",
+    "body": "Texte",
+    "pointsAt": "Pointe vers",
+    "position": "une position sur {{screen}}",
+    "thisScreen": "cet écran",
+    "stepLabel": "Étape {{n}} sur {{total}}",
+    "problem": {
+      "title": "L’étape {{n}} a besoin d’un titre.",
+      "body": "L’étape {{n}} a besoin d’un texte.",
+      "anchor": "L’étape {{n}} ne pointe vers rien : retirez-la et choisissez à nouveau son élément."
+    }
   }
 }

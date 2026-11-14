@@ -363,6 +363,17 @@
       "pins_other": "{{count, number}} wybranej pinezki testerów",
       "noScreen": "(brak ekranu)",
       "pinsInstruction": "Wysyłane są tylko identyfikatory pinezek: serwer sam je odczytuje i pisze polecenie (uwzględnić wybrane opinie testerów, z odpowiedzią dla każdej pinezki: zrobione lub niezrobione)."
+    },
+    "walkthrough": {
+      "remove": "Przewodnik zostanie usunięty.",
+      "step": "Krok {{n}} z {{total}}",
+      "position": "pozycję na ekranie {{screen}}",
+      "thisScreen": "ten ekran",
+      "replaces_one": "Zastępuje {{count, number}} zapisany krok.",
+      "replaces_few": "Zastępuje {{count, number}} zapisane kroki.",
+      "replaces_many": "Zastępuje {{count, number}} zapisanych kroków.",
+      "replaces_other": "Zastępuje {{count, number}} zapisanego kroku.",
+      "note": "Zapis tworzy nową wersję prototypu; osoby, które go otworzą, zobaczą kroki."
     }
   },
   "tools": {
@@ -561,6 +572,10 @@
     },
     "draft_prototype_revision": {
       "title": "Przygotuj wersję roboczą zmian prototypu"
+    },
+    "set_prototype_walkthrough": {
+      "title": "Zapisz przewodnik prototypu",
+      "titleRemove": "Usuń przewodnik prototypu"
     }
   }
 }

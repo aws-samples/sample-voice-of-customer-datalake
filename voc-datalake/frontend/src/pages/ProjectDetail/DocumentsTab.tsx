@@ -230,8 +230,17 @@ function PrototypePane({
       // monitor was 900px or 1440px tall — #288 stopped the jobs panel pushing
       // it down the page, but a taller viewport still bought it nothing.
       // 70vh is deliberately short of the full viewport so the pane still fits
-      // above the fold on a laptop rather than introducing a scroll.
-      className={clsx(PANE, 'overflow-hidden lg:min-h-[70vh]')}
+      // above the fold on a laptop rather than introducing a scroll. It is the
+      // pane's HEIGHT, not a minimum: as a minimum, the xl grid stretched the
+      // pane to the documents list's height (thousands of px on a long list),
+      // the frame with it, and the prototype's own viewport (its fixed
+      // walkthrough popup, its bottom bars) fell below the page's visible area
+      // inside clipped boxes nobody could scroll. Below lg the walkthrough
+      // editor and the pins panel stack under the frame, so the pane grows
+      // (at least 70vh) and the frame keeps its own 50vh minimum
+      // (PrototypePinsReview); before, a phone's frame was an iframe's default
+      // 150 px.
+      className={clsx(PANE, 'min-h-[70vh] lg:min-h-0 lg:h-[70vh] lg:overflow-hidden')}
     >
       <div className="h-full flex flex-col">
         <div className="flex items-start justify-between mb-4 gap-2">
@@ -273,6 +282,8 @@ function PrototypePane({
             extraSources={inheritedExtraSources(document, documents, productDocs)}
             canEdit={canEdit}
             onJobStarted={onJobStarted}
+            seriesKey={seriesKeyOf(document)}
+            onSelectDoc={onSelectDoc}
           />
         </PrototypeWithDraft>
         {/* Prototypes keep their own revision lineage (the revision footer), no content versions. */}

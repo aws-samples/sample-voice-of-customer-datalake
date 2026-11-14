@@ -922,5 +922,41 @@
     "cap": "najwyżej {{max, number}} pinezek",
     "clearSelection": "Wyczyść zaznaczenie",
     "incorporate": "Uwzględnij"
+  },
+  "prototypeWalkthrough": {
+    "show": "Pokaż przewodnik",
+    "checkPlace": "Przygotowany: sprawdź, co wskazuje ten krok, i wskaż jego element.",
+    "repoint": "Wskaż element dla kroku {{n}}",
+    "open": "Przewodnik",
+    "heading": "Przewodnik",
+    "close": "Zamknij edytor przewodnika",
+    "noRuntime": "Ta wersja powstała przed przewodnikami, więc jej podgląd nie może wybierać elementów ani odtwarzać kroków. Popraw lub utwórz prototyp od nowa, a potem dodaj przewodnik w nowej wersji.",
+    "addStep": "Dodaj krok",
+    "picking": "Kliknij element w podglądzie…",
+    "draft": "Przygotuj z asystentem",
+    "drafted": "Przygotowane kroki są na liście: sprawdź je. Nic nie zostanie zapisane, dopóki nie zapiszesz.",
+    "draftFailed": "Nie udało się przygotować kroków. Spróbuj ponownie.",
+    "empty": "Nie ma jeszcze kroków. Dodaj krok, klikając element w podglądzie, albo przygotuj je z asystentem.",
+    "save": "Zapisz jako nową wersję",
+    "remove": "Usuń przewodnik",
+    "saveHint": "Zapis tworzy nową wersję prototypu; wcześniejsze wersje zachowują swój przewodnik.",
+    "conflict": "Prototyp zmienił się od otwarcia tej wersji: otwórz najnowszą wersję i zapisz tam.",
+    "saveFailed": "Nie udało się zapisać przewodnika. Spróbuj ponownie.",
+    "stepCount": "Krok {{n}} z {{total}}",
+    "moveUp": "Przesuń krok {{n}} w górę",
+    "moveDown": "Przesuń krok {{n}} w dół",
+    "previewFrom": "Podgląd od kroku {{n}}",
+    "removeStep": "Usuń krok {{n}}",
+    "title": "Tytuł",
+    "body": "Tekst",
+    "pointsAt": "Wskazuje",
+    "position": "pozycję na ekranie {{screen}}",
+    "thisScreen": "ten ekran",
+    "stepLabel": "Krok {{n}} z {{total}}",
+    "problem": {
+      "title": "Krok {{n}} potrzebuje tytułu.",
+      "body": "Krok {{n}} potrzebuje tekstu.",
+      "anchor": "Krok {{n}} nie wskazuje niczego: usuń go i wybierz element ponownie."
+    }
   }
 }

@@ -3,7 +3,7 @@
 **Status: partly built.** Built: what [Today](#today) describes, Part 2's Back to vN (6.11.00) and drafts from an
 instruction (6.12.00), the rest of Part 2 (6.14.00: the outline, the assistant's tools, Edit with the assistant),
 Part 3: its read side (6.13.00) and Incorporate (6.15.00, [built](#built-so-far-part-3s-read-side-and-incorporate)),
-and Part 4's sections (6.16.00, [built](#data-model-and-api)); see
+Part 4's sections (6.16.00, [built](#data-model-and-api)) and Part 1's walkthrough (6.17.00, [API](#api)); see
 [Slices and order](#slices-and-order). Every other route, tool, field and file below is a proposal and is marked
 *planned*; the code does not have it.
 
@@ -180,18 +180,19 @@ prototype, with a title (at most 80 characters) and a body (at most 280 characte
 
 - **Anchors.** A step is anchored by the element's CSS selector (the same stable selector the pin widget
   records) or, when no selector fits, by a position: the bounding box as a share of the viewport plus the
-  in-prototype route, exactly the pin's `anchor` shape. When the selector matches nothing on the current screen,
+  in-prototype route, the hash of the prototype's location without `#` (`""` for any screen), the pin's `anchor`
+  shape. When the selector matches nothing on the current screen,
   the popup falls back to the recorded position; when the step's route is not the current one, the step waits
   until the prototype reaches it, and **Next** says so ("Open the Checkout screen to continue").
 - **When it shows.** In the app, the first time a person opens a version that has a walkthrough: the SPA keeps a
-  per-person, per-version "seen" flag (planned) beside the series' "Don't show again" flag, sets it when the
+  per-person, per-version "seen" flag beside the series' "Don't show again" flag, sets it when the
   walkthrough starts, and starts it by itself only on a version not yet seen. Opened standalone, the prototype has
   no storage (below), so it shows the walkthrough on every load. **Show walkthrough** in the preview's header
   replays it at any time. A version with no walkthrough shows nothing.
 - **"Don't show again"** is remembered per viewer and per prototype series (all versions of `Title (vN)`): once
   set, no version of the series starts the walkthrough by itself; **Show walkthrough** still replays it. In the app
-  the SPA stores the flag for the signed-in person and tells the walkthrough over the existing frame port whether
-  to start. Opened standalone, the prototype has an opaque origin and no storage at all (the sandbox), so "Don't
+  the SPA stores the flag for the signed-in person and tells the walkthrough whether to start, over the private
+  port the runtime hands it (its own, beside the pin widget's; [Security boundary](#security-boundary)). Opened standalone, the prototype has an opaque origin and no storage at all (the sandbox), so "Don't
   show again" lasts for that page load only; the popup says so.
 - **Keyboard and screen reader.** The popup is a non-modal `role="dialog"` with an accessible name (the step's
   title) and its body as the description; focus moves to it when it opens and back to where it was when it closes;
@@ -201,7 +202,7 @@ prototype, with a title (at most 80 characters) and a body (at most 280 characte
 - **Phone.** Below 480 px wide, or when the anchor leaves no room beside it, the popup is a sheet at the bottom of
   the prototype's frame, with the anchor scrolled into view above it. No sideways scroll.
 - **Writing the steps.** On the prototype's page, editors get **Walkthrough** → an editor beside the preview: add
-  a step by clicking an element in the preview (the pin widget's picker, reused), reorder by dragging or with
+  a step by clicking an element in the preview (the element picker in the walkthrough runtime), reorder by dragging or with
   Alt+Shift+Up / Down, edit the text, preview from any step. **Draft with the assistant** asks the model for steps
   from the PRD / PR/FAQ the prototype was built from and the prototype's own text and structure; the draft lands in
   the editor, never saved until the editor saves. The draft job writes nothing: no row, no object, no version.
@@ -212,21 +213,32 @@ prototype, with a title (at most 80 characters) and a body (at most 280 characte
   (`<script type="application/json">`, never executed, with every `<` written as its JSON Unicode escape, backslash-u-003c, so step text cannot
   close the block or open a tag) next to the walkthrough runtime, both injected by the server between their own two
   HTML comments, exactly as the pin widget is. No row field holds them. The model never writes the block in the
-  HTML: every model output (a build, a revision, a draft) has any walkthrough markers, and what lies between them,
-  stripped before it is stored (planned), so the only block in a stored object is the one the server injected. On
-  read, the server extracts only that block and re-validates it (schema, the caps below, `injection_findings`); a
-  block that fails gives no steps. The editor, MCP and the assistant read a version's steps through a planned server
-  route that does this (below); the project export carries them inside the HTML objects it already exports.
+  HTML: every model output (a build, a revision, a draft, an incorporation) has any walkthrough markers, and what
+  lies between them, stripped before it is stored (6.17.00, `strip_walkthrough` in
+  `lambda/shared/prototype_walkthrough.py`), repeated until nothing changes (markers written inside markers cannot
+  rebuild a block) and with any steps data block outside the markers (a decoy) removed too, so the only block in a
+  stored object is the one the server injected.
+  Every version the server writes carries the block, `{"steps":[]}` when it has none, because the editor's element
+  picker lives in the runtime (with no steps the runtime starts nothing); a draft's object carries none (no bridge
+  reaches a draft's frame), and a version written before 6.17.00 has none. On read, the server extracts only that
+  block (the last one, which it injects near the end of `<body>`) and re-validates it (schema, the caps below, `injection_findings`); a block that fails gives no steps. The
+  editor, MCP and the assistant read a version's steps through the GET route that does this (below); the project
+  export carries them inside the HTML objects it already exports. The runtime (`lambda/shared/static/
+  prototype-walkthrough.js`) is inlined in a script element, so it may never contain a script end, an HTML comment
+  opener or a marker: the server refuses one that does (`runtime_source`).
 - **What a model sees of a prototype.** The block is stripped from any HTML a model is given, as the widget is.
   The outline (part 2's outline route) and the walkthrough draft's input (the PRD / PR/FAQ text and the
   prototype's outline) go to the model as `lambda/shared/prompt_safety.py` DATA blocks, never as instructions:
   two tags in `DATA_BLOCK_TAGS` there, `prototype_outline` (the outline, wherever a model gets it; added in
-  6.14.00) and `walkthrough_source` (planned: the PRD / PR/FAQ text given to the walkthrough draft), so the existing neutralising
+  6.14.00) and `walkthrough_source` (the PRD / PR/FAQ text given to the walkthrough draft, 6.17.00; the stream
+  sends no walkthrough source, so its list does not need it), so the existing neutralising
   of those tags inside data applies to them.
-- **The existing revision path keeps the steps** (planned change to `build-prototype`'s generator): a Revise
+- **The existing revision path keeps the steps** (6.17.00, `build-prototype`'s generator): a Revise
   through `build-prototype` strips the block from the prior HTML before the model sees it, strips any markers from
   the model's output, and re-injects the base version's steps on the new version. So a walkthrough survives a
-  Revise, and agents' revisions keep it too.
+  Revise, and agents' revisions keep it too. Version from HTML keeps the steps the same way: Back to vN keeps the
+  restored version's, an applied draft its base's (the draft's model HTML has none), a walkthrough save the new
+  ones; a fresh build has none.
 - **Saving a walkthrough is a new version** of the prototype (D1), written by part 2's *version from HTML* step
   (below): the server takes the current version's HTML, replaces the walkthrough block with the new steps and
   persists the next version of the series with the series' existing provenance fields, as a prose edit records
@@ -235,29 +247,37 @@ prototype, with a title (at most 80 characters) and a body (at most 280 characte
   derives from the document id), so the new version gets a new form and starts with no pins; part 3's view reads
   them across the series.
 - "Don't show again" and "seen" are a viewer's preferences, not part of the prototype: per-person flags, the first
-  keyed by the series, the second by the version (planned, in the browser's storage for the signed-in person);
+  keyed by the series, the second by the version (in the browser's storage for the signed-in person,
+  `frontend/src/components/PrototypePins/walkthroughFlags.ts`);
   nothing on the server. "Don't show again" is the only thing the host stores because of a message from the frame
   (see [Security boundary](#security-boundary)); "seen" is set by the host itself when it starts the walkthrough.
 
-### API (planned)
+### API
 
-| Route (planned) | Who | What |
+Built in 6.17.00 (`lambda/api/projects_handler.py`, the steps' rules in `lambda/shared/prototype_walkthrough.py`).
+
+| Route | Who | What |
 |---|---|---|
-| `GET /projects/{id}/prototypes/{document_id}/walkthrough` | view | `{steps}` extracted from the version's HTML (empty when it has none) |
-| `PUT /projects/{id}/prototypes/{document_id}/walkthrough` | edit | `{steps, edit_id}` → 201 and the new version (`edit_id` as the prose saves send it, `validated_edit_id`, so a retry after a lost response gets the same version, not a 409); the write expects the series at `{document_id}`'s version (`expected_last_version` of `persist_versioned_document`), so it is 409 when the series moved past it |
-| `POST /projects/{id}/prototypes/{document_id}/walkthrough/draft` | edit | 202 assist job; its result is `{steps}`, nothing written (the steps come from the PRD / PR/FAQ and the prototype only, which a viewer can read, never from pins) |
+| `GET /projects/{id}/prototypes/{document_id}/walkthrough` | view | `{steps}` extracted from the version's HTML and re-validated (`[]` when it has none or its block fails) |
+| `PUT /projects/{id}/prototypes/{document_id}/walkthrough` | edit | `{steps, edit_id?}` → 201 `{success, document}` and the new version (`edit_kind: edit`, `edited_by`, `edited_from_id`; signed as the project read signs it); `edit_id` as the prose saves send it (`validated_edit_id`, else a digest of the steps), so a retry after a lost response gets the same version with 200, not a 409; the write expects the series at `{document_id}`'s version (`expected_last_version` of `persist_versioned_document`), so it is 409 when the series moved past it; `steps: []` writes a version with the empty block |
+| `POST /projects/{id}/prototypes/{document_id}/walkthrough/draft` | edit | `{response_language?}` → 202 assist job (`assist_walkthrough_draft`); its result is `{steps}`, nothing written, the steps written in `response_language` (a language tag; anything else is ignored), else in the prototype's own language. The model (the documents surface) gets the version's outline in a `<prototype_outline>` block and the PRD / PR/FAQ it was built from (`source_prd_id` / `source_prfaq_id`) in a `<walkthrough_source>` block, never pins; it answers a title and body per step, and each step gets route `""` (any screen: the outline's screen ids are not the location hash the runtime compares) and a box in the middle of the viewport, for the editor to point at an element with the picker. A step that fails validation is dropped; when none is left the job fails with that reason |
 
-Validation: at most 10 steps, the caps above, selectors at most 512 characters (the pins' cap), the text screened
-by `injection_findings` (a flagged step is refused with 400 naming it: an editor is writing it, as for company
-context).
+Validation: at most 10 steps, the caps above, a `selector` or an `anchor` (`{route?, bbox: {x, y, w, h}}`: the
+route is the hash of the prototype's location, without `#` (one leading `#` is dropped, so `#checkout` is saved
+as `checkout`), `""` for any screen; the box in shares of the viewport,
+0 to 1), selectors at most 512 characters and routes 300 (the pins' caps), the text screened by
+`injection_findings` (a flagged step is refused with 400 naming it, "step 2: body reads like an instruction to the
+AI; rephrase it": an editor is writing it, as for company context); unknown keys are dropped.
 
 ### Tools (tenet 4)
 
-- MCP (planned): `documents_get_prototype_walkthrough` (read, project: the GET),
+- MCP (6.17.00): `documents_get_prototype_walkthrough` (read, project: the GET),
   `documents_set_prototype_walkthrough` (write, project: the PUT) and the draft through
   `documents_draft_prototype_walkthrough` (write, project: the job; read with `projects_get_job`).
-- The assistant (planned): a client tool `set_prototype_walkthrough` with an approval card that previews the
-  steps; drafting is the same tool's "draft" first step through the job.
+- The assistant (6.17.00): a client tool `set_prototype_walkthrough` (`{project_id, document_id, steps}`, card-only)
+  with an approval card that previews the steps. Drafting has no assistant tool: the model writes the steps itself
+  from `get_prototype_outline` and the PRD / PR/FAQ (`get_documents`) and the card shows them before anything is
+  saved; the page's **Draft with the assistant** is the draft route's job.
 
 ## Part 2: edit a prototype from a chat bubble
 
@@ -403,7 +423,7 @@ All five are built: the four draft routes in 6.12.00 (`{instruction}` only), the
 | `GET /projects/{id}/prototypes/{document_id}/drafts/{draft_id}` | edit (listed in `_ROUTE_OVERRIDES`) | `{draft_id, kind, base_document_id, base_version, instruction, summary, preview_url, completed_at}`: `kind` `chat` or `feedback`; `preview_url` the draft's signed URL (its own key only; null when signing is unavailable). A feedback draft adds `outcomes`, `withheld` and `ignored` (6.15.00) |
 | `POST /projects/{id}/prototypes/{document_id}/drafts/{draft_id}/apply` | edit | No body: the base and its version come from the job row → 201 `{success, document}` (the new version, signed as the project read signs it); 200 and the same version on a replayed Apply; 409 when the series moved past the base; 404 when the job row is gone |
 | `DELETE /projects/{id}/prototypes/{document_id}/drafts/{draft_id}` | edit | Discard → `{success: true}`: the draft's job row deleted, as `DELETE /projects/{id}/jobs/{job_id}` deletes it. 404 unless the row is a `draft_prototype` job of this project whose base (from its config) is a version of `document_id`'s series, in any state (a draft still being made can be discarded); so it deletes nothing but drafts. The MCP tool calls it; the page uses the job DELETE |
-| `GET /projects/{id}/prototypes/{document_id}/outline` | view | `{document_id, version, title, screens: [{route, headings, text}], truncated}` of the version `document_id` names (`outline_of` in `lambda/shared/prototype_outline.py`): extracted on the server from its HTML (its object, or inline HTML: `version_html`), with the pin widget, `script`, `style`, `svg`, `template`, `noscript` and `head` (but the head's own `<title>`) left out, a head left open closed by `<body>`, and hidden text left out (`hidden`, `aria-hidden="true"`, an inline `display: none`; a screen itself is kept, as an inactive screen is hidden until shown). A screen is an element with `data-screen` / `data-route` / `data-page`, a `<section id>`, or an `id` with a class `screen`, `page` or `view`; text outside every screen is the screen `""`. The first 512 KB of HTML are read, elements nest at most 256 deep; at most 40 screens, 200 lines of 300 characters and 12,000 characters in all, title and routes counted (`truncated`); every line, route and the title have their DATA-block tags defanged. Never pins. 400 for an early JSON spec, 404 for a lost object or a document that is no prototype of the project. Planned (part 1): the walkthrough block stripped too |
+| `GET /projects/{id}/prototypes/{document_id}/outline` | view | `{document_id, version, title, screens: [{route, headings, text}], truncated}` of the version `document_id` names (`outline_of` in `lambda/shared/prototype_outline.py`): extracted on the server from its HTML (its object, or inline HTML: `version_html`), with the pin widget, `script`, `style`, `svg`, `template`, `noscript` and `head` (but the head's own `<title>`) left out, a head left open closed by `<body>`, and hidden text left out (`hidden`, `aria-hidden="true"`, an inline `display: none`; a screen itself is kept, as an inactive screen is hidden until shown). A screen is an element with `data-screen` / `data-route` / `data-page`, a `<section id>`, or an `id` with a class `screen`, `page` or `view`; text outside every screen is the screen `""`. The first 512 KB of HTML are read, elements nest at most 256 deep; at most 40 screens, 200 lines of 300 characters and 12,000 characters in all, title and routes counted (`truncated`); every line, route and the title have their DATA-block tags defanged. Never pins. 400 for an early JSON spec, 404 for a lost object or a document that is no prototype of the project. The walkthrough block is stripped too (6.17.00) |
 
 The drafts body is validated: exactly one of `instruction` and `pin_ids`; with `pin_ids` there is no free text
 for the pins: the server writes the instruction and builds the pins DATA block from the ids (part 3). Back to vN
@@ -523,7 +543,7 @@ No new storage. The existing loop is reused:
 
 ### Built so far: Part 3's read side and Incorporate
 
-The read side is built (6.13.00), and Incorporate's server side in 6.15.00 (below,
+The read side is built (6.13.00), and Incorporate, server and app, in 6.15.00 (below,
 `lambda/shared/prototype_incorporation.py`):
 
 - **The drafts POST with `{pin_ids}`** (exactly one of `instruction` and `pin_ids`; 1 to 50 pin ids, duplicates
@@ -545,7 +565,8 @@ The read side is built (6.13.00), and Incorporate's server side in 6.15.00 (belo
   new version, from open and once per draft (a mark id from the draft and the pin, `mark_ids` on the pin,
   conditional: a replay never marks again a pin an editor reopened since, it reports it `reopened`), then one reply
   per Not done pin, written once (an id from the draft and the pin, `reply_ids` on the pin, conditional),
-  `{by: 'ai', name: 'AI', text, at, kind: 'ai', llm_metadata, approved_by: {sub, kind}}`. The answer adds
+  `{id, by: 'ai', name: 'AI', text, at, kind: 'ai', llm_metadata, approved_by: {sub, kind}}` (`id` the reply's
+  write-once id). The answer adds
   `incorporation: {marked: [ids], replied: [ids], not_written: [{pin_id, reason}]}` with reasons `pin_gone`,
   `already_addressed`, `already_resolved`, `reopened`, `thread_full` and `note_withheld` (an instruction-shaped note
   is not posted). The version stands whatever is not written. The feedback read lists an AI reply with `kind`, `llm_metadata` and `approved_by`; a person's keeps its
@@ -660,12 +681,16 @@ reads it (`row_section(row)` on the server; the SPA's and the stream's fallbacks
   flag in the browser. Nothing that arrives over the bridge writes anything as the viewer or with their identity, and
   no planned route takes an author from it. That is why pins stay anonymous.
 - **The walkthrough runs inside the prototype's own document, never from outside it.** Its runtime is a static,
-  self-contained script in the repository (planned, beside `lambda/shared/static/prototype-pin-widget.js`), injected
+  self-contained script in the repository (`lambda/shared/static/prototype-walkthrough.js`, beside the pin widget's
+  `prototype-pin-widget.js`; 6.17.00), injected
   by the server into the HTML it writes, as the widget is. The SPA never injects script into the frame and the
   frame never loads any: the CSP stays exactly as it is for `/prototypes/*` (`PROTOTYPE_BASE_CSP` in
   `lib/utils/prototype-csp.ts`, no new `connect-src`, the sandbox without `allow-same-origin`), and
-  `lib/utils/prototype-csp.test.ts` keeps pinning it. The SPA sends the frame only small typed messages over the
-  existing private port (start, stop, "don't show again" state), never text to render as HTML. The step data block
+  `lib/utils/prototype-csp.test.ts` keeps pinning it. The runtime hands the host a private `MessageChannel` port of
+  its own (a second port beside the pin widget's, offered with a `ready` message the host's existing bridge listener
+  accepts only from the shown frame, `usePinBridge.ts`), and only small typed messages cross it, never text to render
+  as HTML: the SPA sends `start` and `pick`; the frame answers `done`, `skipped`,
+  `dont-show-again`, `picked` and `pick-cancelled`. The step data block
   escapes `<`, and the runtime sets step text with `textContent`.
 - **What a prototype can still reach.** There is no `connect-src` (beyond the pin form's own submit URL), but the
   sandbox keeps `allow-popups`, so a prototype's script can open a popup, and it can navigate its own frame, to any
@@ -866,7 +891,9 @@ outline (its GET, `documents_get_prototype_outline`, the assistant's `get_protot
 `<prototype_outline>` DATA block), the assistant's `draft_prototype_revision`, the page context's `documentId` and
 **Edit with the assistant** on the prototype's pane. 6.15.00: part 3's Incorporate (`pin_ids` drafts, per-pin
 outcomes, Apply's marks and AI-marked replies, the tools' `pin_ids`). 6.16.00: part 4, documents in sections
-([Part 4](#part-4-documents-in-sections)). Not yet: part 1.
+([Part 4](#part-4-documents-in-sections)). 6.17.00: part 1, the guided walkthrough (the block in every version,
+its GET / PUT / draft routes, the MCP and assistant tools, the runtime, the editor and **Show walkthrough**). All
+four parts are built.
 
 ## Decisions (2026-11-13)
 

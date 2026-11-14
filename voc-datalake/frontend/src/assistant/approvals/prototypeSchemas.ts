@@ -13,6 +13,7 @@
  */
 import { z } from 'zod'
 import { nonEmpty } from '@stream/assistant/tools/client/text-schemas'
+import { WALKTHROUGH_LIMITS } from '../../api/prototypeWalkthroughSchema'
 import { idSchema } from './schemas'
 
 /**
@@ -34,3 +35,27 @@ export const draftPrototypeRevisionArgs = z.union([
 ])
 
 export type DraftPrototypeRevisionArgs = z.infer<typeof draftPrototypeRevisionArgs>
+
+/**
+ * `set_prototype_walkthrough` (Part 1): the steps saved as the prototype's next version (`[]` removes them); the
+ * same bounds as the route and the stream tool (`WALKTHROUGH_LIMITS`, pinned by the lockstep test).
+ */
+const share = z.number().min(0).max(1)
+const walkthroughStep = z.strictObject({
+  title: nonEmpty(WALKTHROUGH_LIMITS.title),
+  body: nonEmpty(WALKTHROUGH_LIMITS.body),
+  selector: nonEmpty(WALKTHROUGH_LIMITS.selector).optional(),
+  anchor: z.strictObject({
+    // Optional for the model (as the stream tool's); '' (this screen) when it names none.
+    route: z.string().max(WALKTHROUGH_LIMITS.route).default(''),
+    bbox: z.strictObject({ x: share, y: share, w: share, h: share }),
+  }).optional(),
+}).refine((step) => step.selector !== undefined || step.anchor !== undefined, 'Each step needs a selector or an anchor.')
+
+export const setPrototypeWalkthroughArgs = z.strictObject({
+  project_id: idSchema,
+  document_id: idSchema,
+  steps: z.array(walkthroughStep).max(WALKTHROUGH_LIMITS.steps),
+})
+
+export type SetPrototypeWalkthroughArgs = z.infer<typeof setPrototypeWalkthroughArgs>

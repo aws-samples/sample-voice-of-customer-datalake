@@ -538,7 +538,7 @@ _CATALOGUE: Final[tuple[GlobalTool, ...]] = (
         'projects_get', 'Get a project',
         'Read one research project: its details, personas (name, tagline) and documents in sections prd, prfaq, '
         'prototypes, documents, last edit first in each (ids, types, titles, versions; no bodies: read one with '
-        'documents_get).',
+        'documents_get). The flat `documents` list is deprecated: read `document_sections`.',
         schema({'project_id': PROJECT_ID_SCHEMA}), _get_project, _project_overview, project_scoped=True),
     GlobalTool(
         'documents_get', 'Get a document',

@@ -22,6 +22,7 @@ later — goes through ``version_from_html`` here, so each new version gets:
 """
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Mapping
 from typing import Any
@@ -30,6 +31,7 @@ from botocore.exceptions import ClientError
 
 from shared.aws import S3_CONDITIONAL_WRITE_CONFLICTS, is_missing_s3_object
 from shared.document_history import (
+    EDIT_KIND_EDIT,
     EDIT_KIND_RESTORE,
     restore_rows,
     series_base,
@@ -50,6 +52,7 @@ from shared.prototype_pins import (
     prototype_object_metadata,
     strip_pin_widget,
 )
+from shared.prototype_walkthrough import extract_steps, inject_walkthrough
 from shared.prototypes import prototype_s3_key
 
 PROTOTYPE_TYPE = 'prototype'
@@ -116,7 +119,7 @@ class PrototypeStore:
 
 def version_from_html(store: PrototypeStore, project_id: str, source: Mapping[str, Any], html: str, *,
                       allocation_id: str, now: str, provenance: Mapping[str, Any],
-                      expected_last_version: int | None = None) -> dict:
+                      expected_last_version: int | None = None, steps: list[dict] | None = None) -> dict:
     """``html`` as the next version of ``source``'s series; its row.
 
     A replay of an allocation that already landed returns that version and writes
@@ -125,6 +128,10 @@ def version_from_html(store: PrototypeStore, project_id: str, source: Mapping[st
     draft: the version it was drafted on) makes a series that moved past it the
     stale-series ConflictError, checked before the form and the object are written
     and again, atomically, by ``persist_versioned_document``.
+
+    The walkthrough (Part 1): ``steps`` None keeps the one ``html`` carries (Back to vN: the
+    restored version's own), re-validated and re-injected; a list replaces it (a walkthrough
+    save; an applied draft: its base's steps, the draft's model HTML having none); ``[]`` none.
     """
     existing = get_versioned_document_by_allocation(store.table, project_id, PROTOTYPE_TYPE, allocation_id)
     if existing is not None:
@@ -135,7 +142,9 @@ def version_from_html(store: PrototypeStore, project_id: str, source: Mapping[st
         raise ConflictError(STALE_SERIES_MESSAGE)
     doc_id = versioned_document_id(project_id, PROTOTYPE_TYPE, allocation_id)
     form_id = ensure_pin_form(store.pins_table, project_id, doc_id, base)
-    page = inject_pin_widget(strip_pin_widget(html), form_id, pin_submit_url(form_id, store.api_base))
+    body = strip_pin_widget(html)
+    body = inject_walkthrough(body, extract_steps(body) if steps is None else steps)
+    page = inject_pin_widget(body, form_id, pin_submit_url(form_id, store.api_base))
     identity = put_prototype_html(store.s3, store.bucket, project_id, doc_id, page, store.api_base)
     fields = {key: value for key, value in source.items() if key not in _PROTOTYPE_ROW_FIELDS}
     fields.update({
@@ -208,3 +217,31 @@ def restore_prototype_version(store: PrototypeStore, project_id: str, document: 
         'restored_from_id': version_id, 'restored_from_version': source['version'],
     })
     return {'success': True, 'document': item}
+
+
+def save_walkthrough(store: PrototypeStore, project_id: str, document: Mapping[str, Any], steps: list[dict],
+                     edit_id: object, *, now: str, actor: Mapping[str, str]) -> tuple[dict, bool]:
+    """``(the version, whether THIS call created it)``: ``document``'s HTML with ``steps`` (already valid) as the
+    next version of its series; ``[]`` removes the walkthrough (docs/prototype-builder.md, Part 1).
+
+    ``edit_kind: edit``, ``edited_by`` the saver, ``edited_from_id`` the version it came from. The series must
+    still be at ``document``'s version (409 otherwise), and the same ``edit_id`` (else a digest of the steps)
+    answers the version it already made. As Apply, a stale refusal whose own allocation landed meanwhile (two
+    saves of one edit at once) answers that version.
+    """
+    key = validated_edit_id(edit_id, json.dumps(steps, sort_keys=True))
+    allocation_id = f"walkthrough:{document['document_id']}:{key}"
+    existing = get_versioned_document_by_allocation(store.table, project_id, PROTOTYPE_TYPE, allocation_id)
+    if existing is not None:
+        return existing, False
+    html = version_html(store.s3, store.bucket, project_id, document)
+    try:
+        item = version_from_html(store, project_id, document, html, allocation_id=allocation_id, now=now, provenance={
+            'edit_kind': EDIT_KIND_EDIT, 'edited_by': dict(actor), 'edited_from_id': document['document_id'],
+        }, expected_last_version=int(document['version']), steps=steps)
+    except ConflictError:
+        landed = get_versioned_document_by_allocation(store.table, project_id, PROTOTYPE_TYPE, allocation_id)
+        if landed is None:
+            raise
+        return landed, False
+    return item, True

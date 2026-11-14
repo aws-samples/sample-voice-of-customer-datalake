@@ -20,6 +20,7 @@ import { createWorkspaceClientTools } from './client/workspace.js';
 import { createPlanClientTools } from './client/plan.js';
 import { createPlanWriteClientTools } from './client/plan-writes.js';
 import { createPrototypeDraftClientTools } from './client/prototype-draft.js';
+import { createPrototypeWalkthroughClientTools } from './client/prototype-walkthrough.js';
 import { getDefaultToolDeps, type ToolDeps } from './deps.js';
 import { ConfigurationError } from '../../lib/errors.js';
 import { createAgentsServerTools } from './server/agents.js';
@@ -69,6 +70,7 @@ export function buildCatalogue(deps: ToolDeps): AssistantToolDefinition[] {
     ...createPlanClientTools(catalogue),
     ...createPlanWriteClientTools(),
     ...createPrototypeDraftClientTools(),
+    ...createPrototypeWalkthroughClientTools(),
   ];
   const byName = new Map<string, AssistantToolDefinition>();
   for (const definition of definitions) {

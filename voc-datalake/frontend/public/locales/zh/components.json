@@ -856,5 +856,41 @@
     "cap": "最多 {{max, number}} 个图钉",
     "clearSelection": "清除选择",
     "incorporate": "纳入"
+  },
+  "prototypeWalkthrough": {
+    "show": "显示导览",
+    "checkPlace": "已起草：请检查此步骤指向的位置，并将其指向对应元素。",
+    "repoint": "为第 {{n}} 步指定元素",
+    "open": "导览",
+    "heading": "导览",
+    "close": "关闭导览编辑器",
+    "noRuntime": "此版本早于导览功能，其预览无法选择元素或播放步骤。请修订或重新生成原型，然后在新版本上添加导览。",
+    "addStep": "添加步骤",
+    "picking": "在预览中点击一个元素…",
+    "draft": "使用助手起草",
+    "drafted": "起草的步骤已放入列表：请检查。在你保存之前不会保存任何内容。",
+    "draftFailed": "无法起草步骤，请重试。",
+    "empty": "还没有步骤。点击预览中的元素来添加步骤，或使用助手起草。",
+    "save": "保存为新版本",
+    "remove": "移除导览",
+    "saveHint": "保存会生成原型的新版本；之前的版本保留各自的导览。",
+    "conflict": "自你打开此版本后原型已更改：请打开最新版本并在那里保存。",
+    "saveFailed": "无法保存导览，请重试。",
+    "stepCount": "第 {{n}} 步，共 {{total}} 步",
+    "moveUp": "上移第 {{n}} 步",
+    "moveDown": "下移第 {{n}} 步",
+    "previewFrom": "从第 {{n}} 步开始预览",
+    "removeStep": "移除第 {{n}} 步",
+    "title": "标题",
+    "body": "正文",
+    "pointsAt": "指向",
+    "position": "{{screen}} 上的位置",
+    "thisScreen": "此屏幕",
+    "stepLabel": "第 {{n}} 步，共 {{total}} 步",
+    "problem": {
+      "title": "第 {{n}} 步需要标题。",
+      "body": "第 {{n}} 步需要正文。",
+      "anchor": "第 {{n}} 步没有指向任何内容：请删除它并重新选择元素。"
+    }
   }
 }

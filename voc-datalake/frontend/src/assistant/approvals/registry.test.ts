@@ -143,6 +143,20 @@ const CASES: Record<ClientToolName, { good: unknown[]; bad: unknown[] }> = {
     bad: [{ project_id: P, document_id: 'proto_1' }, { project_id: P, document_id: 'proto_1', pin_ids: [] },
       { project_id: P, document_id: 'proto_1', pin_ids: ['../x'] },{ project_id: P, document_id: 'proto_1', instruction: '  ' }, { project_id: P, document_id: 'proto_1', instruction: LONG(2001) }, { project_id: P, instruction: 'x' }, { project_id: P, document_id: 'proto_1', instruction: 'x', pin_ids: ['pin_1'] }],
   },
+  set_prototype_walkthrough: {
+    good: [
+      { project_id: P, document_id: 'proto_1', steps: [] },
+      { project_id: P, document_id: 'proto_1', steps: [{ title: 'Order', body: 'Your order', selector: '#order' }] },
+      { project_id: P, document_id: 'proto_1', steps: [{ title: 'Pay', body: 'Pay here', anchor: { bbox: { x: 0.1, y: 0.2, w: 0.3, h: 0.1 } } }] },
+    ],
+    bad: [
+      { project_id: P, document_id: 'proto_1' },
+      { project_id: P, document_id: 'proto_1', steps: [{ title: 'Order', body: 'No place' }] },
+      { project_id: P, document_id: 'proto_1', steps: [{ title: LONG(81), body: 'b', selector: '#a' }] },
+      { project_id: P, document_id: 'proto_1', steps: [{ title: 't', body: 'b', anchor: { bbox: { x: 2, y: 0, w: 0, h: 0 } } }] },
+      { project_id: P, document_id: 'proto_1', steps: Array.from({ length: 11 }, () => ({ title: 't', body: 'b', selector: '#a' })) },
+    ],
+  },
   cancel_plan: {
     good: [{ plan_id: 'pl_a1b2c3d4e5f6' }],
     bad: [{}, { plan_id: 'ag_a1b2c3d4e5f6' }, { plan_id: 'pl_A1B2C3D4E5F6' }],

@@ -142,6 +142,7 @@ export const CLIENT_TOOLS = {
     'merge_documents',
     'build_prototype',
     'draft_prototype_revision',
+    'set_prototype_walkthrough',
   ],
   forms: ['update_feedback_form'],
   prioritization: [],

@@ -889,5 +889,41 @@
     "cap": "no máximo {{max, number}} pins",
     "clearSelection": "Limpar seleção",
     "incorporate": "Incorporar"
+  },
+  "prototypeWalkthrough": {
+    "show": "Mostrar tour guiado",
+    "checkPlace": "Rascunhado: confira para onde este passo aponta e aponte-o para o elemento.",
+    "repoint": "Apontar o passo {{n}} para um elemento",
+    "open": "Tour guiado",
+    "heading": "Tour guiado",
+    "close": "Fechar o editor do tour guiado",
+    "noRuntime": "Esta versão é anterior aos tours guiados, então sua pré-visualização não consegue escolher elementos nem reproduzir passos. Revise ou gere o protótipo de novo e adicione o tour na nova versão.",
+    "addStep": "Adicionar um passo",
+    "picking": "Clique em um elemento da pré-visualização…",
+    "draft": "Rascunhar com o assistente",
+    "drafted": "Os passos rascunhados estão na lista: revise-os. Nada é salvo até você salvar.",
+    "draftFailed": "Não foi possível rascunhar os passos. Tente de novo.",
+    "empty": "Ainda não há passos. Adicione um passo clicando em um elemento da pré-visualização ou rascunhe-os com o assistente.",
+    "save": "Salvar como nova versão",
+    "remove": "Remover tour guiado",
+    "saveHint": "Salvar cria uma nova versão do protótipo; as versões anteriores mantêm seu próprio tour.",
+    "conflict": "O protótipo mudou desde que você abriu esta versão: abra a versão mais recente e salve lá.",
+    "saveFailed": "Não foi possível salvar o tour guiado. Tente de novo.",
+    "stepCount": "Passo {{n}} de {{total}}",
+    "moveUp": "Mover o passo {{n}} para cima",
+    "moveDown": "Mover o passo {{n}} para baixo",
+    "previewFrom": "Pré-visualizar a partir do passo {{n}}",
+    "removeStep": "Remover o passo {{n}}",
+    "title": "Título",
+    "body": "Texto",
+    "pointsAt": "Aponta para",
+    "position": "uma posição em {{screen}}",
+    "thisScreen": "esta tela",
+    "stepLabel": "Passo {{n}} de {{total}}",
+    "problem": {
+      "title": "O passo {{n}} precisa de um título.",
+      "body": "O passo {{n}} precisa de um texto.",
+      "anchor": "O passo {{n}} não aponta para nada: remova-o e escolha o elemento de novo."
+    }
   }
 }

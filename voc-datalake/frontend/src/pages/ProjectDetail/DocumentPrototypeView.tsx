@@ -17,6 +17,7 @@ import PrototypeFeedbackDialog from '../../components/PrototypeFeedback/Prototyp
 import EditWithAssistantButton from './EditWithAssistantButton'
 import { parsePrototypeSpec, looksLikeHtmlDocument } from '../../components/prototypeSpec'
 import type { InheritedExtraSources } from './documentLineage'
+import type { ProjectDocument } from '../../api/types'
 
 // ── Prototype feedback → regenerate ──────────────────────────────────────────
 // The generated prototype is usually a user-facing view. This lets the reviewer
@@ -230,7 +231,7 @@ function LegacyHtmlActions({
 
 export function PrototypeView({
   projectId, documentId, html, url, title, prototypeFormat, sourcePrdId, sourcePrfaqId,
-  sourcesDropped, extraSources, canEdit, onJobStarted,
+  sourcesDropped, extraSources, canEdit, onJobStarted, seriesKey, onSelectDoc,
 }: {
   readonly projectId: string
   readonly documentId: string
@@ -248,6 +249,10 @@ export function PrototypeView({
   /** False for a viewer: no "revise with feedback" (it starts a billable job the gate would refuse). */
   readonly canEdit: boolean
   readonly onJobStarted?: () => void
+  /** The prototype series (the walkthrough's "don't show again" is per series). */
+  readonly seriesKey?: string
+  /** Selects the version a saved walkthrough wrote (editors' walkthrough editor). */
+  readonly onSelectDoc?: (doc: ProjectDocument) => void
 }) {
   const { t } = useTranslation('projectDetail')
   // Shared by the lifetime note and the anchors that describe themselves with it.
@@ -320,7 +325,7 @@ export function PrototypeView({
           </div>
         </div>
         <PrototypePinsReview projectId={projectId} documentId={documentId} url={url} html={html} title={title}
-          canEdit={canEdit} />
+          canEdit={canEdit} seriesKey={seriesKey} onSelectDoc={onSelectDoc} />
       </div>
     )
   }

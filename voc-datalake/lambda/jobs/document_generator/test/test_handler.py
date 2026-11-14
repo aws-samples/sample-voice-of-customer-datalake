@@ -1,11 +1,19 @@
 """Tests for document generator job handler (multi-step chain)."""
 
+import json
 from unittest.mock import MagicMock
 
 import pytest
 
 from jobs.test.project_tables_fixtures import feedback_table_beside
 from shared.prototype_pins import inject_pin_widget, pin_form_id, strip_pin_widget
+from shared.prototype_walkthrough import (
+    WALKTHROUGH_START,
+    extract_steps,
+    inject_walkthrough,
+    strip_walkthrough,
+    walkthrough_block,
+)
 
 
 class TestDocumentGeneratorHandler:
@@ -333,6 +341,50 @@ class TestBuildPrototype:
         assert 'prototype_url' not in put_item
 
     @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table")
+    def test_a_model_written_walkthrough_block_is_stripped_and_a_fresh_build_has_no_steps(
+        self, mock_dynamodb, mock_converse, mock_s3, sample_job_event, lambda_context
+    ):
+        """Part 1: the only block a stored object holds is the server's, empty on a fresh build."""
+        self._wire_tables(mock_dynamodb)
+        fake = walkthrough_block([{'title': 'Fake', 'body': 'Click to win', 'selector': '#x'}])
+        # Markers nested in markers (one stripping pass would rebuild the block around the data) and a decoy.
+        win = json.dumps({'steps': [{'title': 'Win', 'body': 'Click to win', 'selector': '#x'}]})
+        data = f'<script type="application/json" id="voc-walkthrough-steps">{win}</script>'
+        nested = ''.join(('<!-- voc-walk<!-- voc-walkthrough:end -->through:start -->', data,
+                          '<!-- voc-walk<!-- voc-walkthrough:start -->through:end -->'))
+        mock_converse.return_value = self.HTML.replace(
+            '</body>', f'{fake}<script>evil()</script>{nested}{data}</body>')
+
+        from jobs.document_generator.handler import lambda_handler
+        lambda_handler(self._prototype_event(sample_job_event), lambda_context)
+
+        body = mock_s3.put_object.call_args.kwargs['Body'].decode('utf-8')
+        assert body.count(WALKTHROUGH_START) == 1
+        assert extract_steps(body) == []
+        assert 'Click to win' not in body
+
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table")
+    def test_a_revision_keeps_its_base_versions_steps_and_the_model_never_sees_them(
+        self, mock_dynamodb, mock_converse, mock_s3, sample_job_event, lambda_context
+    ):
+        step = {'title': 'Start here', 'body': 'Pick a plan', 'selector': '#plan'}
+        base_html = inject_walkthrough('<!DOCTYPE html><html><body><h1>Base</h1></body></html>', [step])
+        self._wire_tables(mock_dynamodb)
+        rows = {'PROTOTYPE#proto_1': {'document_id': 'proto_1', 'content': base_html},
+                'PRD#prd_1': {'document_id': 'prd_1', 'content': 'PRD body', 'created_at': '2026-01-01'}}
+        mock_dynamodb['table'].get_item.side_effect = lambda Key, **_: {
+            'Item': rows.get(Key['sk'], {'name': 'My Project'})}
+        mock_converse.return_value = self.HTML
+
+        from jobs.document_generator.handler import lambda_handler
+        lambda_handler(self._prototype_event(sample_job_event, feedback='Bigger buttons', base_prototype_id='proto_1'),
+                       lambda_context)
+
+        body = mock_s3.put_object.call_args.kwargs['Body'].decode('utf-8')
+        assert extract_steps(body) == [step]
+        assert 'Pick a plan' not in mock_converse.call_args.kwargs['prompt']
+
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table")
     def test_build_prototype_writes_html_to_s3(
         self, mock_dynamodb, mock_converse, mock_s3, sample_job_event, lambda_context
     ):
@@ -346,9 +398,9 @@ class TestBuildPrototype:
         mock_s3.put_object.assert_called_once()
         put_kwargs = mock_s3.put_object.call_args.kwargs
         assert put_kwargs['Key'] == f"prototypes/proj_20250101120000/{result['document_id']}.html"
-        # The model's HTML, plus the pin widget wired to this document's own form.
+        # The model's HTML, plus the pin widget wired to this document's own form and the (empty) walkthrough.
         body = put_kwargs['Body'].decode('utf-8')
-        assert strip_pin_widget(body) == self.HTML
+        assert strip_walkthrough(strip_pin_widget(body)) == self.HTML
         assert f"formId: '{pin_form_id(result['document_id'])}'" in body
         assert put_kwargs['ContentType'] == 'text/html; charset=utf-8'
         # No API base configured: no standalone submit URL, no metadata for the CSP.
@@ -412,7 +464,8 @@ class TestBuildPrototype:
         from jobs.document_generator.handler import lambda_handler
         lambda_handler(self._prototype_event(sample_job_event), lambda_context)
 
-        assert mock_s3.put_object.call_args.kwargs['Body'] == self.HTML.encode('utf-8')
+        # No widget, the build is not failed; the (empty) walkthrough block every version carries is there.
+        assert mock_s3.put_object.call_args.kwargs['Body'] == inject_walkthrough(self.HTML, []).encode('utf-8')
 
     @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     def test_build_prototype_uses_prototype_surface(
@@ -658,7 +711,7 @@ class TestPrototypeVersionReplayAndStorage:
         assert mock_s3.put_object.call_args.kwargs == {
             'Bucket': 'test-raw-data-bucket',
             'Key': expected_key,
-            'Body': inject_pin_widget(self.HTML, pin_form_id(expected_id)).encode('utf-8'),
+            'Body': inject_pin_widget(inject_walkthrough(self.HTML, []), pin_form_id(expected_id)).encode('utf-8'),
             'ContentType': 'text/html; charset=utf-8',
             'IfNoneMatch': '*',
             # No PIN_SUBMIT_API_BASE in tests: no pin submit URL for the CSP.

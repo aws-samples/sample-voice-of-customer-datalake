@@ -15,6 +15,7 @@
 // Wired into mock-server.js by handleDomainModules (runs before its inline routes).
 
 import { createHash, randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { autofillPrfaq, suggestDocumentBrief } from './mock-ai-drafts.js';
 import { documentSeriesKey, versionLlmView } from './mock-document-review.js';
 import {
@@ -1072,7 +1073,9 @@ function startPrototypeBuild(ctx) {
       // Inline HTML (the legacy srcDoc path): the mock has no signed CloudFront URL to mint.
       const title = config.title ?? defaultPrototypeTitle(prd, prfaq, `Prototype: ${detail.project?.name ?? 'Project'}`);
       const doc = addVersionedDocument(ctx.shared, detail, 'prototype', title, {
-        content: prototypeHtml(title, [prd, prfaq].filter(Boolean), config.feedback),
+        // Every version carries the walkthrough block (6.17.00); a revision keeps its base's steps, a fresh build has none.
+        content: withWalkthrough(prototypeHtml(title, [prd, prfaq].filter(Boolean), config.feedback),
+          config.base ? walkthroughStepsOf(findDocument(detail, config.base)) : []),
         prototype_format: 'html',
         source_prd_id: prd?.document_id ?? null, source_prfaq_id: prfaq?.document_id ?? null,
         ...(config.feedback ? { revised_from_id: config.base, revision_feedback: config.feedback.slice(0, 2000) } : {}),
@@ -1104,7 +1107,8 @@ function prototypeOf(ctx, documentId) {
 /** The mock's draft "HTML": the base's, with a visible note of the instruction at the top of its body. */
 function draftHtml(base, instruction) {
   const note = `<p data-draft-note style="margin:0;padding:8px 24px;background:#fff4d6;color:#1d2330;font:13px system-ui,sans-serif">Draft: ${escapeHtml(instruction)}</p>`;
-  const html = base.content || prototypeHtml(base.title ?? 'Prototype', [], '');
+  // A draft carries no walkthrough (Apply puts the base's steps back).
+  const html = withoutWalkthrough(base.content || prototypeHtml(base.title ?? 'Prototype', [], ''));
   return /<body[^>]*>/i.test(html) ? html.replace(/<body[^>]*>/i, (open) => `${open}${note}`) : `${note}${html}`;
 }
 
@@ -1342,7 +1346,8 @@ function applyPrototypeDraft(ctx, documentId, draftId) {
   if ((seriesOf(ctx.detail, base)[0]?.version ?? 1) !== draft.base_version) return STALE_DOCUMENT;
   const carried = Object.fromEntries(Object.entries(base).filter(([field]) => !PROTOTYPE_ROW_ONLY.includes(field)));
   const feedback = draft.kind === 'feedback' ? incorporatedFeedback(draft) : draft.instruction.slice(0, MAX_INSTRUCTION_CHARS);
-  const saved = newManagedVersion(ctx, carried, draft.html, {
+  // version_from_html: the applied version keeps its base's walkthrough.
+  const saved = newManagedVersion(ctx, carried, withWalkthrough(draft.html, walkthroughStepsOf(base)), {
     edit_kind: 'revise', revised_from_id: base.document_id, revised_from_draft_id: draftId, revision_feedback: feedback,
     edited_by: { sub: ctx.shared.mockCaller?.sub ?? MOCK_CALLER_SUB, kind: 'user' }, llm_metadata: { ...DRAFT_LLM },
   });
@@ -1358,6 +1363,130 @@ function serveDraftPreview(req, res, url) {
   res.writeHead(html ? 200 : 404, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
   res.end(html ?? '<!doctype html><title>Not found</title><p>This draft is gone.</p>');
   return true;
+}
+
+// ── Walkthrough (docs/prototype-builder.md Part 1; shared/prototype_walkthrough.py) ──────────
+// The steps live only in the version's HTML, as the server injects them: the steps block and the runtime
+// (lambda/shared/static/prototype-walkthrough.js, read once here) between the two voc-walkthrough comments, before
+// </body>. A mock prototype is inline HTML, so the runtime runs in the dev mock's preview too.
+
+const WALKTHROUGH_START = '<!-- voc-walkthrough:start -->';
+const WALKTHROUGH_END = '<!-- voc-walkthrough:end -->';
+const WALKTHROUGH_RUNTIME = readFileSync(new URL('../lambda/shared/static/prototype-walkthrough.js', import.meta.url), 'utf8');
+const WALKTHROUGH_LIMITS = { steps: 10, title: 80, body: 280, selector: 512, route: 300 };
+const WALKTHROUGH_BLOCK = /<!-- voc-walkthrough:start -->[\s\S]*?<!-- voc-walkthrough:end -->/g;
+const STEPS_JSON = /<script type="application\/json" id="voc-walkthrough-steps">([\s\S]*?)<\/script>/g;
+/** The draft job's placeholder place: the model cannot see the screen, the editor re-points the step. */
+const DRAFT_ANCHOR_BOX = { x: 0.3, y: 0.3, w: 0.4, h: 0.4 };
+
+const withoutWalkthrough = (html) => String(html ?? '').replace(WALKTHROUGH_BLOCK, '');
+
+/** The HTML with its walkthrough block replaced by `steps` (`[]` still writes the block: the editor's picker needs the runtime). */
+function withWalkthrough(html, steps) {
+  const data = JSON.stringify({ steps }).replace(/</g, '\\u003c');
+  const block = `${WALKTHROUGH_START}<script type="application/json" id="voc-walkthrough-steps">${data}</script>`
+    + `<script>${WALKTHROUGH_RUNTIME}\nwindow.VoCWalkthrough && window.VoCWalkthrough.init();</script>${WALKTHROUGH_END}`;
+  const clean = withoutWalkthrough(html);
+  return /<\/body>/i.test(clean) ? clean.replace(/<\/body>/i, `${block}</body>`) : `${clean}${block}`;
+}
+
+/** step N's problem, the route's wording ("step 2: title …"), or null when it is a step. */
+function walkthroughStepProblem(raw, index) {
+  const n = index + 1;
+  if (!isPlainObject(raw)) return `step ${n}: must be an object`;
+  const text = (value, max) => typeof value === 'string' && value.trim() !== '' && value.trim().length <= max;
+  if (!text(raw.title, WALKTHROUGH_LIMITS.title)) return `step ${n}: title must be 1-${WALKTHROUGH_LIMITS.title} characters`;
+  if (!text(raw.body, WALKTHROUGH_LIMITS.body)) return `step ${n}: body must be 1-${WALKTHROUGH_LIMITS.body} characters`;
+  if (raw.selector !== undefined && !text(raw.selector, WALKTHROUGH_LIMITS.selector)) return `step ${n}: selector must be 1-${WALKTHROUGH_LIMITS.selector} characters`;
+  const box = isPlainObject(raw.anchor) ? raw.anchor.bbox : undefined;
+  const shares = isPlainObject(box) && ['x', 'y', 'w', 'h'].every((k) => typeof box[k] === 'number' && box[k] >= 0 && box[k] <= 1);
+  if (raw.anchor !== undefined && !shares) return `step ${n}: anchor.bbox must hold x, y, w and h as shares from 0 to 1`;
+  if (raw.selector === undefined && raw.anchor === undefined) return `step ${n}: give a selector or an anchor`;
+  return null;
+}
+
+/** A clean copy of a valid step (texts trimmed, only the step's own fields). */
+function cleanWalkthroughStep(raw) {
+  const step = { title: raw.title.trim(), body: raw.body.trim() };
+  if (raw.selector !== undefined) step.selector = raw.selector.trim();
+  if (raw.anchor !== undefined) {
+    const { x, y, w, h } = raw.anchor.bbox;
+    step.anchor = { route: stringOr(raw.anchor.route, '').slice(0, WALKTHROUGH_LIMITS.route), bbox: { x, y, w, h } };
+  }
+  return step;
+}
+
+/**
+ * As the server writes a step: ONE leading '#' is dropped from its route ('#checkout' → 'checkout', '##x' → '#x'),
+ * once, on the write (a read never drops another).
+ */
+function writtenRoute(step) {
+  if (!step.anchor) return step;
+  return { ...step, anchor: { ...step.anchor, route: step.anchor.route.replace(/^#/, '') } };
+}
+
+/**
+ * The steps a document's HTML carries, extracted and re-validated: a block that fails gives none. As the server, the
+ * LAST block is read (the server's own sits last; a copy in the prototype's own markup earlier never wins).
+ */
+function walkthroughStepsOf(doc) {
+  const match = [...String(doc?.content ?? '').matchAll(STEPS_JSON)].at(-1);
+  if (!match) return [];
+  try {
+    const steps = JSON.parse(match[1]).steps;
+    if (!Array.isArray(steps) || steps.length > WALKTHROUGH_LIMITS.steps) return [];
+    return steps.every((step, i) => walkthroughStepProblem(step, i) === null) ? steps.map(cleanWalkthroughStep) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** GET …/prototypes/{document_id}/walkthrough (VIEW). */
+function getWalkthrough(ctx, documentId) {
+  const doc = prototypeOf(ctx, documentId);
+  if (!doc) return PROTOTYPE_NOT_FOUND;
+  return [200, { steps: walkthroughStepsOf(doc) }];
+}
+
+/**
+ * PUT …/walkthrough (EDIT): `{steps, edit_id?}` → a NEW version with these steps (`[]` empties the block),
+ * `edit_kind: edit`; 201, 200 on a replay of the same edit_id; 409 when the series moved past this version.
+ */
+function saveWalkthrough(ctx, documentId) {
+  const doc = prototypeOf(ctx, documentId);
+  if (!doc) return PROTOTYPE_NOT_FOUND;
+  const { steps } = ctx.body;
+  if (!Array.isArray(steps)) return bad('steps must be a list');
+  if (steps.length > WALKTHROUGH_LIMITS.steps) return bad(`at most ${WALKTHROUGH_LIMITS.steps} steps are allowed`);
+  const problem = steps.map(walkthroughStepProblem).find((p) => p !== null);
+  if (problem) return bad(problem);
+  const [editId, editIdError] = editIdOf(ctx.body, JSON.stringify(steps));
+  if (editIdError) return editIdError;
+  const key = `${ctx.projectId}:prototype:walkthrough:${documentId}:${editId}`;
+  const replayed = findDocument(ctx.detail, allocations.get(key) ?? '');
+  if (replayed) return [200, { success: true, document: replayed }];
+  if ((seriesOf(ctx.detail, doc)[0]?.version ?? 1) !== (doc.version ?? 1)) return STALE_DOCUMENT;
+  const carried = Object.fromEntries(Object.entries(doc).filter(([field]) => !PROTOTYPE_ROW_ONLY.includes(field)));
+  const saved = newManagedVersion(ctx, carried, withWalkthrough(doc.content ?? '', steps.map(cleanWalkthroughStep).map(writtenRoute)), {
+    edit_kind: 'edit', edited_from_id: doc.document_id, edited_by: { sub: ctx.shared.mockCaller?.sub ?? MOCK_CALLER_SUB, kind: 'user' },
+  });
+  allocations.set(key, saved.document_id);
+  return [201, { success: true, document: saved }];
+}
+
+/**
+ * POST …/walkthrough/draft (EDIT) `{response_language?}`: an assist job whose result is `{steps}`, nothing written;
+ * each step's place a placeholder. As the server, a body that is not a JSON object is refused and an empty one
+ * is none (the route's 'object' body); the mock's canned steps are English whatever the language.
+ */
+function draftWalkthrough(ctx, documentId) {
+  const doc = prototypeOf(ctx, documentId);
+  if (!doc) return PROTOTYPE_NOT_FOUND;
+  const anchor = { route: '', bbox: { ...DRAFT_ANCHOR_BOX } };
+  return startProjectAssistJob(ctx.projectId, 'assist_walkthrough_draft', [200, { steps: [
+    { title: 'Your order at a glance', body: 'This card says when the parcel arrives and why the date changed.', anchor },
+    { title: 'Place the order', body: 'The total includes shipping, so the price you see is the price you pay.', anchor },
+  ] }]);
 }
 
 // ── AI helpers (assist jobs: their answer is the job `result`, see `assisted`) ──
@@ -1723,6 +1852,10 @@ const ROUTES = [
 
   { method: 'POST', pattern: /^\/prfaq-autofill$/, body: 'lenient', run: assisted('assist_prfaq_autofill', autofillPrfaq) },
   { method: 'POST', pattern: /^\/build-prototype$/, body: 'object', run: startPrototypeBuild },
+
+  { method: 'GET', pattern: /^\/prototypes\/([^/]+)\/walkthrough$/, run: getWalkthrough },
+  { method: 'PUT', pattern: /^\/prototypes\/([^/]+)\/walkthrough$/, body: 'object', run: saveWalkthrough },
+  { method: 'POST', pattern: /^\/prototypes\/([^/]+)\/walkthrough\/draft$/, body: 'object', run: draftWalkthrough },
 
   { method: 'POST', pattern: /^\/prototypes\/([^/]+)\/drafts$/, body: 'object', run: startPrototypeDraft },
   { method: 'GET', pattern: /^\/prototypes\/([^/]+)\/drafts\/([^/]+)$/, run: getPrototypeDraft },

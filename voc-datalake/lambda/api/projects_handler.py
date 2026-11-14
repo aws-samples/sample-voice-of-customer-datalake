@@ -106,6 +106,8 @@ from shared import (
     prototype_feedback,
     prototype_outline,
     prototype_pins,
+    prototype_walkthrough,
+    prototype_walkthrough_draft,
     row_lineage_ack,
 )
 from shared import prioritization_axes as axes_mod
@@ -158,7 +160,7 @@ from shared.project_writes import (
     is_verification_fixture,
     project_pk,
 )
-from shared.prototype_versions import version_html
+from shared.prototype_versions import save_walkthrough, version_html
 from shared.prototypes import prototype_draft_signed_url
 from shared.request_body import json_body_value, json_object_body
 from shared.row_ids import MAX_KEY_SEGMENT_ID_LEN, is_clampable_number, validated_row_id
@@ -5091,6 +5093,84 @@ def api_prototype_outline(project_id: str, document_id: str):
     return {'document_id': document_id, 'version': int(version) if version is not None else None, **outline}
 
 
+# ---- The walkthrough (docs/prototype-builder.md, Part 1) ---------------------------
+#
+# The steps live only in the version's HTML (shared/prototype_walkthrough.py): the GET reads
+# them (VIEW), the PUT saves them as a new version (EDIT), the draft is an assist job that
+# writes nothing (EDIT: it spends a model call).
+
+ASSIST_WALKTHROUGH_DRAFT = 'assist_walkthrough_draft'
+
+
+@app.get("/projects/<project_id>/prototypes/<document_id>/walkthrough")
+@tracer.capture_method
+def api_get_prototype_walkthrough(project_id: str, document_id: str):
+    """``{steps}`` of that version: its block, re-validated (``[]`` for none, or one that fails)."""
+    document = projects.prototype_document(project_id, document_id)
+    store = projects.prototype_store()
+    return {'steps': prototype_walkthrough.extract_steps(version_html(store.s3, store.bucket, project_id, document))}
+
+
+@app.put("/projects/<project_id>/prototypes/<document_id>/walkthrough")
+@tracer.capture_method
+def api_put_prototype_walkthrough(project_id: str, document_id: str):
+    """``{steps, edit_id?}`` → 201 ``{success, document}``: a new version with these steps (``[]``: none).
+
+    ``edit_kind: edit``; 409 when the series moved past ``document_id``'s version; the same ``edit_id``
+    answers the version it made (200). A step that fails validation is a 400 naming it and the field.
+    """
+    body = json_object_body(app)
+    steps = prototype_walkthrough.validate_steps(body.get('steps'))
+    document = projects.prototype_document(project_id, document_id)
+    item, created = save_walkthrough(projects.prototype_store(), project_id, document, steps, body.get('edit_id'),
+                                     now=now_iso(), actor=actor_from_event(app.current_event.raw_event))
+    answer = {'success': True, 'document': projects.signed_prototype_document(item, project_id)}
+    if not created:
+        return answer
+    return Response(status_code=201, content_type=content_types.APPLICATION_JSON,
+                    body=json.dumps(answer, default=decimal_default))
+
+
+@app.post("/projects/<project_id>/prototypes/<document_id>/walkthrough/draft")
+@tracer.capture_method
+def api_draft_prototype_walkthrough(project_id: str, document_id: str):
+    """``{response_language?}``: 202 + an assist job whose ``result`` is ``{steps}``; nothing is written (the
+    editor saves, or not). The steps are written in ``response_language``, else in the prototype's language."""
+    body = json_object_body(app)
+    document = projects.prototype_document(project_id, document_id)
+    store = projects.prototype_store()
+    # Refused now (400 early spec, 404 lost object) rather than minutes later in the job.
+    version_html(store.s3, store.bucket, project_id, document)
+    return _started_assist(project_id, ASSIST_WALKTHROUGH_DRAFT,
+                           {'project_id': project_id, 'document_id': document_id,
+                            'response_language': body.get('response_language')})
+
+
+def _walkthrough_sources(project_id: str, document: dict) -> list[tuple[str, str]]:
+    """The PRD and PR/FAQ the prototype was built from (``source_prd_id`` / ``source_prfaq_id``), as text."""
+    table = get_projects_table()
+    sources: list[tuple[str, str]] = []
+    for label, prefix, key in (('PRD', 'PRD#', 'source_prd_id'), ('PR/FAQ', 'PRFAQ#', 'source_prfaq_id')):
+        source_id = document.get(key)
+        if not isinstance(source_id, str) or not source_id:
+            continue
+        row = table.get_item(Key={'pk': f'PROJECT#{project_id}', 'sk': f'{prefix}{source_id}'}).get('Item') or {}
+        content = row.get('content')
+        if isinstance(content, str) and content:
+            sources.append((label, content))
+    return sources
+
+
+def _walkthrough_draft_work(config: dict) -> dict:
+    project_id = config['project_id']
+    document = projects.prototype_document(project_id, config['document_id'])
+    store = projects.prototype_store()
+    outline = prototype_outline.outline_of(version_html(store.s3, store.bucket, project_id, document))
+    return prototype_walkthrough_draft.draft_steps(outline=outline,
+                                                   sources=_walkthrough_sources(project_id, document),
+                                                   language=config.get('response_language'))
+
+
 @app.post("/projects/<project_id>/build-prototype")
 @tracer.capture_method
 def api_build_prototype(project_id: str):
@@ -5383,6 +5463,8 @@ ASSIST_WORK = {
     ASSIST_PERSONA_REVIEW: assist_jobs.Work(_persona_review_work, 'The persona review failed. Please try again.'),
     ASSIST_REVISE_FROM_COMMENTS: assist_jobs.Work(
         _revise_work, 'Revising from comments failed. Please try again.'),
+    ASSIST_WALKTHROUGH_DRAFT: assist_jobs.Work(
+        _walkthrough_draft_work, 'Could not draft the walkthrough. Please try again.'),
 }
 
 # Document comments and review links (shared/document_review_routes.py, docs/document-review.md). Included

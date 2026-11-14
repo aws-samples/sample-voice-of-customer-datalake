@@ -841,5 +841,41 @@
     "cap": "at most {{max, number}} pins",
     "clearSelection": "Clear selection",
     "incorporate": "Incorporate"
+  },
+  "prototypeWalkthrough": {
+    "show": "Show walkthrough",
+    "checkPlace": "Drafted: check where this step points, and point it at its element.",
+    "repoint": "Point step {{n}} at an element",
+    "open": "Walkthrough",
+    "heading": "Walkthrough",
+    "close": "Close the walkthrough editor",
+    "noRuntime": "This version was made before walkthroughs, so its preview cannot pick elements or play steps. Revise or rebuild the prototype, then add the walkthrough on the new version.",
+    "addStep": "Add a step",
+    "picking": "Click an element in the preview…",
+    "draft": "Draft with the assistant",
+    "drafted": "Drafted steps are in the list: review them. Nothing is saved until you save.",
+    "draftFailed": "The steps couldn't be drafted. Try again.",
+    "empty": "No steps yet. Add a step by clicking an element in the preview, or draft them with the assistant.",
+    "save": "Save as a new version",
+    "remove": "Remove walkthrough",
+    "saveHint": "Saving writes a new version of the prototype; earlier versions keep their own walkthrough.",
+    "conflict": "The prototype changed since you opened this version: open the newest version and save there.",
+    "saveFailed": "The walkthrough couldn't be saved. Try again.",
+    "stepCount": "Step {{n}} of {{total}}",
+    "moveUp": "Move step {{n}} up",
+    "moveDown": "Move step {{n}} down",
+    "previewFrom": "Preview from step {{n}}",
+    "removeStep": "Remove step {{n}}",
+    "title": "Title",
+    "body": "Text",
+    "pointsAt": "Points at",
+    "position": "a position on {{screen}}",
+    "thisScreen": "this screen",
+    "stepLabel": "Step {{n}} of {{total}}",
+    "problem": {
+      "title": "Step {{n}} needs a title.",
+      "body": "Step {{n}} needs a text.",
+      "anchor": "Step {{n}} points at nothing: remove it and pick its element again."
+    }
   }
 }

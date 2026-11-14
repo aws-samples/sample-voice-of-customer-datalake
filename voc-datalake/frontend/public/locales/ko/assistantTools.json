@@ -341,6 +341,15 @@
       "pins_other": "선택한 테스터 핀 {{count, number}}개",
       "noScreen": "(화면 없음)",
       "pinsInstruction": "핀 ID만 보냅니다. 서버가 이 핀들을 직접 읽고 지시를 작성합니다(선택한 테스터 피드백 반영, 핀마다 완료 또는 미완료로 답변)."
+    },
+    "walkthrough": {
+      "remove": "둘러보기를 삭제합니다.",
+      "step": "{{n}}/{{total}}단계",
+      "position": "{{screen}}의 위치",
+      "thisScreen": "이 화면",
+      "replaces_one": "저장된 단계 {{count, number}}개를 대체합니다.",
+      "replaces_other": "저장된 단계 {{count, number}}개를 대체합니다.",
+      "note": "저장하면 프로토타입의 새 버전이 만들어지고, 여는 사람에게 단계가 표시됩니다."
     }
   },
   "tools": {
@@ -531,6 +540,10 @@
     },
     "draft_prototype_revision": {
       "title": "프로토타입 수정 초안 만들기"
+    },
+    "set_prototype_walkthrough": {
+      "title": "프로토타입 둘러보기 저장",
+      "titleRemove": "프로토타입 둘러보기 삭제"
     }
   }
 }

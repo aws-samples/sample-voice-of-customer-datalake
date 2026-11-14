@@ -47,6 +47,7 @@ from shared.prototype_incorporation import (
 )
 from shared.prototype_pins import batch_pin_ids
 from shared.prototype_versions import PROTOTYPE_TYPE, PrototypeStore, version_from_html, version_html
+from shared.prototype_walkthrough import extract_steps
 from shared.prototypes import prototype_draft_s3_key
 
 DRAFT_JOB_TYPE: Final = 'draft_prototype'
@@ -337,5 +338,8 @@ def _write_applied_version(store: PrototypeStore, project_id: str, draft: Mappin
     llm_metadata = _llm_metadata(draft)
     if llm_metadata is not None:
         provenance['llm_metadata'] = llm_metadata
+    # The draft is model HTML with no walkthrough (stripped by the job): the version keeps its base's steps.
+    steps = extract_steps(version_html(store.s3, store.bucket, project_id, base))
     return version_from_html(store, project_id, base, html, allocation_id=allocation_id, now=now,
-                             provenance=provenance, expected_last_version=_epoch(draft.get('base_version')))
+                             provenance=provenance, expected_last_version=_epoch(draft.get('base_version')),
+                             steps=steps)

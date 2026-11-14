@@ -99,6 +99,8 @@ const PACK_GUIDANCE: Record<ToolPack, string> = {
     '- A change to a prototype the user asks for in words: read get_prototype_outline, then propose '
       + 'draft_prototype_revision with the change as the instruction. It makes a draft preview only; the user '
       + 'applies or discards it on the prototype’s page (there is no apply tool).',
+    '- A guided walkthrough of a prototype (popups that walk a viewer through it): write the steps from '
+      + 'get_prototype_outline and the PRD / PR/FAQ, then propose set_prototype_walkthrough; the card previews them.',
   ].join('\n'),
   forms: '- Feedback forms: list_feedback_forms, get_feedback_form_stats, get_feedback_form_submissions; '
     + 'update_feedback_form changes settings.',

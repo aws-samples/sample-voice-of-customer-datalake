@@ -5,6 +5,8 @@ import { fetchApi } from './client'
 import { apiErrorStatus } from './apiErrorStatus'
 import { normalizeIncorporation, normalizePrototypeDraft } from './prototypeDraftSchema'
 import type { Incorporation, PrototypeDraft } from './prototypeDraftSchema'
+import { normalizeWalkthroughSteps } from './prototypeWalkthroughSchema'
+import type { WalkthroughStep } from './prototypeWalkthroughSchema'
 import { getDateBasisBodyParams } from './baseUrl'
 import {
   normalizeDocumentVersions, normalizeMemberCandidates, normalizeProject, normalizeProjectDetail,
@@ -48,6 +50,9 @@ import type {
 export const MAX_PROJECT_DETAIL_BATCH = 200
 
 const HTTP_NOT_FOUND = 404
+
+const walkthroughPath = (projectId: string, documentId: string) =>
+  `/projects/${projectId}/prototypes/${encodeURIComponent(documentId)}/walkthrough`
 
 /** What a draft is made from: an editor's instruction, or selected tester pins (ids only, part 3). */
 export type DraftRequest = { readonly instruction: string } | { readonly pin_ids: readonly string[] }
@@ -508,6 +513,27 @@ export const projectsApi = {
     const record = asRecord(raw)
     return { document: normalizeProjectDocument(record?.document), incorporation: normalizeIncorporation(record?.incorporation) }
   },
+
+  // ── Prototype walkthrough (docs/prototype-builder.md Part 1) ──
+
+  /** The version's walkthrough steps, extracted and re-validated by the server (none when it has none). VIEW. */
+  getPrototypeWalkthrough: async (projectId: string, documentId: string): Promise<WalkthroughStep[]> =>
+    normalizeWalkthroughSteps(await fetchApi<unknown>(walkthroughPath(projectId, documentId))),
+
+  /**
+   * Saves the steps as a NEW version of the series (`[]` removes the walkthrough); the answer's `document` is it.
+   * `editId` makes a retried save the same version; a series that moved past `documentId` is a 409. EDIT.
+   */
+  savePrototypeWalkthrough: async (projectId: string, documentId: string, steps: readonly WalkthroughStep[], editId: string): Promise<ProjectDocument | null> => {
+    const raw = await fetchApi<unknown>(walkthroughPath(projectId, documentId), put({ steps, edit_id: editId }))
+    return normalizeProjectDocument(asRecord(raw)?.document)
+  },
+
+  /** Steps drafted from the PRD / PR/FAQ the prototype was built from and its outline: an assist job, nothing saved. EDIT. */
+  draftPrototypeWalkthrough: (projectId: string, documentId: string, responseLanguage: string): Promise<WalkthroughStep[]> =>
+    projectAssist(projectId,
+      () => fetchApi<unknown>(`/projects/${projectId}/prototypes/${encodeURIComponent(documentId)}/walkthrough/draft`, post({ response_language: responseLanguage })),
+      normalizeWalkthroughSteps),
 
   generateProductReport: (projectId: string, body: { response_language?: string; title?: string }) =>
     fetchApi<{

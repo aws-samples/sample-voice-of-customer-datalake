@@ -1,6 +1,6 @@
 /**
- * Restore = a NEW version carrying an earlier version's content (one fresh `edit_id` per click),
- * selected once it lands. The document page's History dialog and a prototype's Back to vN share it.
+ * Writes that make a NEW version (one fresh `edit_id` per click), selected once it lands: a restore (the document
+ * page's History dialog and a prototype's Back to vN) and a prototype's walkthrough save share the one hook.
  *
  * @module pages/ProjectDetail/useVersionRestore
  */
@@ -9,15 +9,24 @@ import { projectsApi } from '../../api/projectsApi'
 import { projectKey } from '../../api/projectQueryKeys'
 import type { ProjectDocument } from '../../api/types'
 
-export function useVersionRestore(projectId: string, documentId: string, onSelectDoc: (doc: ProjectDocument) => void) {
+/** `write(input, editId)` makes the next version; on success the project is refetched and the version selected. */
+export function useNewVersionWrite<T>(
+  projectId: string, write: (input: T, editId: string) => Promise<ProjectDocument | null>,
+  onSelectDoc: (doc: ProjectDocument) => void,
+) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (versionId: string) =>
-      projectsApi.restoreDocumentVersion(projectId, documentId, versionId, crypto.randomUUID()),
-    onSuccess: (restored) => {
+    mutationFn: (input: T) => write(input, crypto.randomUUID()),
+    onSuccess: (written) => {
       // The project prefix also covers every versions list of this project.
       void queryClient.invalidateQueries({ queryKey: projectKey(projectId) })
-      if (restored !== null) onSelectDoc(restored)
+      if (written !== null) onSelectDoc(written)
     },
   })
+}
+
+/** Restore = a NEW version carrying an earlier version's content. */
+export function useVersionRestore(projectId: string, documentId: string, onSelectDoc: (doc: ProjectDocument) => void) {
+  return useNewVersionWrite(projectId, (versionId: string, editId) =>
+    projectsApi.restoreDocumentVersion(projectId, documentId, versionId, editId), onSelectDoc)
 }

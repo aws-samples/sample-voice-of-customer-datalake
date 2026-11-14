@@ -185,7 +185,8 @@
     "run_radar_scan",
     "create_participant_list",
     "add_participants",
-    "draft_prototype_revision"
+    "draft_prototype_revision",
+    "set_prototype_walkthrough"
   ],
   "free_text_fields": {
     "create_project": [

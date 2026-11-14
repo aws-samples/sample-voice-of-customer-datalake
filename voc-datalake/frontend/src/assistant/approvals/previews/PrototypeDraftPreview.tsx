@@ -10,7 +10,7 @@
 import { useTranslation } from 'react-i18next'
 import { usePinPlaces } from '../../../components/PrototypeFeedback/pinPlaces'
 import type { PinPlace } from '../../../components/PrototypeFeedback/pinPlaces'
-import { useProjectDetail } from './useProjectDetail'
+import { PrototypePreview } from './PrototypeLine'
 import type { DraftPrototypeRevisionArgs } from '../prototypeSchemas'
 
 /** The selected pins' items, once each, in the selection's order (a pin the read does not list is left out). */
@@ -46,15 +46,8 @@ function SelectedPins({ projectId, documentId, pinIds }: Readonly<{ projectId: s
 
 export function PrototypeDraftPreview({ args }: Readonly<{ args: DraftPrototypeRevisionArgs }>) {
   const { t } = useTranslation('assistantTools')
-  const { data } = useProjectDetail(args.project_id)
-  const prototype = data?.documents.find((d) => d.document_id === args.document_id)
   return (
-    <div className="space-y-2 text-[13px]">
-      <p>
-        <span className="font-medium">{t('preview.prototypeDraft.prototype')}</span>{' '}
-        {/* The title carries its version, "Checkout (v3)"; the id until the project record is read. */}
-        {prototype?.title ?? args.document_id}
-      </p>
+    <PrototypePreview projectId={args.project_id} documentId={args.document_id} note={t('preview.prototypeDraft.note')}>
       {'pin_ids' in args ? (
         <SelectedPins projectId={args.project_id} documentId={args.document_id} pinIds={args.pin_ids} />
       ) : (
@@ -66,7 +59,6 @@ export function PrototypeDraftPreview({ args }: Readonly<{ args: DraftPrototypeR
           </p>
         </div>
       )}
-      <p className="rounded-md border border-info/30 bg-info-subtle p-2 text-[12px] text-info">{t('preview.prototypeDraft.note')}</p>
-    </div>
+    </PrototypePreview>
   )
 }

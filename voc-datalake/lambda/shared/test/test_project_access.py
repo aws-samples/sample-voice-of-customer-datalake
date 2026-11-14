@@ -380,6 +380,10 @@ def test_project_route(path, expected):
         ('GET', ('prototypes', 'p1', 'drafts'), 'view'),
         # The outline holds only what anyone who can open the prototype sees.
         ('GET', ('prototypes', 'p1', 'outline'), 'view'),
+        # A walkthrough is read by viewers (it runs in the prototype they see), written by editors.
+        ('GET', ('prototypes', 'p1', 'walkthrough'), 'view'),
+        ('PUT', ('prototypes', 'p1', 'walkthrough'), 'edit'),
+        ('POST', ('prototypes', 'p1', 'walkthrough', 'draft'), 'edit'),
     ],
 )
 def test_required_level(method, rest, level):

@@ -341,6 +341,15 @@
       "pins_other": "{{count, number}} selected tester pins",
       "noScreen": "(no screen)",
       "pinsInstruction": "Only the pin ids are sent: the server reads these pins itself and writes the instruction (incorporate the selected tester feedback, answered per pin: Done or Not done)."
+    },
+    "walkthrough": {
+      "remove": "The walkthrough is removed.",
+      "step": "Step {{n}} of {{total}}",
+      "position": "a position on {{screen}}",
+      "thisScreen": "this screen",
+      "replaces_one": "Replaces the {{count, number}} saved step.",
+      "replaces_other": "Replaces the {{count, number}} saved steps.",
+      "note": "Saving writes a new version of the prototype; viewers see the steps when they open it."
     }
   },
   "tools": {
@@ -531,6 +540,10 @@
     },
     "draft_prototype_revision": {
       "title": "Draft a prototype revision"
+    },
+    "set_prototype_walkthrough": {
+      "title": "Save a prototype walkthrough",
+      "titleRemove": "Remove the prototype's walkthrough"
     }
   }
 }

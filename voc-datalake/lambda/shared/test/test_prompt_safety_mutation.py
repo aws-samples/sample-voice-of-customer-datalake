@@ -30,7 +30,7 @@ from shared.prompt_safety import (
 )
 
 # Spelled out, not imported: the point is to notice when the module's list drifts.
-EVERY_TAG = (
+_FIRST_TAGS = (
     'company_context', 'design_system', 'memory', 'my_context',
     'reference', 'document', 'reviews',
     'conductor_message', 'artifact', 'transcript',
@@ -41,8 +41,10 @@ EVERY_TAG = (
     'email',
     'author_draft',
     'feature_requests',
-    'prototype_outline',
 )
+# The Prototype builder's blocks: the outline (6.14.00) and the walkthrough draft's source (6.17.00).
+_PROTOTYPE_TAGS = ('prototype_outline', 'walkthrough_source')
+EVERY_TAG = (*_FIRST_TAGS, *_PROTOTYPE_TAGS)
 
 class TestEveryDataBlockTagIsFenced:
     def test_the_tag_tuple_is_exactly_this_in_this_order(self):

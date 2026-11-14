@@ -29,6 +29,7 @@ import pytest
 from jobs.document_generator import handler as H
 from shared.exceptions import ServiceError
 from shared.grounding import Grounding
+from shared.prototype_walkthrough import inject_walkthrough
 from shared.test.instrumentation_fixtures import INSTRUMENTED_HANDLER_LAYERS, handler_layers
 
 GROUNDED = Grounding(text='<company_context>C</company_context>', memory_ids=['mem_1'],
@@ -385,8 +386,9 @@ class TestGeneratePrototype:
         build.table.get_item.assert_called_once_with(Key={'pk': 'PROJECT#proj_1', 'sk': 'META'})
         build['_research_documents'].assert_called_once_with(build.table, PROJECT, ['r1', 'r2'])
         build['_base_prototype'].assert_called_once_with(build.table, PROJECT, 'b1')
+        # The base's HTML read once (here a row with neither an object nor inline content: '').
         build['_revision_feedback_section'].assert_called_once_with(
-            PROJECT, {'base': 1}, 'fix it ' + 'z' * 2000,
+            PROJECT, {'base': 1}, 'fix it ' + 'z' * 2000, '',
         )
         build['versioned_document_id'].assert_called_once_with(PROJECT, 'prototype', JOB)
         assert build.prompt == (
@@ -398,8 +400,9 @@ class TestGeneratePrototype:
             'surface': 'prototype', 'max_tokens': 32000, 'step_name': 'build_prototype',
         }
         build['_extract_html'].assert_called_once_with('RAW')
+        # The model's HTML with the server's walkthrough block (the base's steps; a revision keeps them).
         build['_with_pin_widget'].assert_called_once_with(
-            PROJECT, 'doc_new', 'Prototype: Acme App', '<html>ok</html>',
+            PROJECT, 'doc_new', 'Prototype: Acme App', inject_walkthrough('<html>ok</html>', []),
         )
         build['_put_prototype_html'].assert_called_once_with(PROJECT, 'doc_new', '<html>pinned</html>')
         assert build.ctx.update_progress.call_args_list == [

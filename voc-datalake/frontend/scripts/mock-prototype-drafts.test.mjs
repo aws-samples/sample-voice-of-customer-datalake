@@ -208,3 +208,80 @@ describe('mock Incorporate (part 3): a draft from pin ids', () => {
     assert.equal(new Map((await feedbackPins(v2)).map((pin) => [pin.pin_id, pin])).get(done[0]).status, 'open')
   })
 })
+
+describe('mock walkthrough (part 1)', () => {
+  /** The backend seam's place for a drafted step, to be checked and re-pointed. */
+  const PLACEHOLDER_BOX = { x: 0.3, y: 0.3, w: 0.4, h: 0.4 }
+  const STEPS = [
+    { title: 'Your order', body: 'When it arrives.', selector: '#order-status' },
+    { title: 'Pay', body: 'Shipping included.', anchor: { route: '', bbox: { x: 0.1, y: 0.6, w: 0.2, h: 0.05 } } },
+  ]
+  const walkthrough = (doc) => `${PROJECT}/prototypes/${doc.document_id}/walkthrough`
+
+  it('a build carries an empty block; a save is a new version with the steps; a replay is the same version', async () => {
+    const v1 = await build(`Walkthrough ${String(Date.now())}`)
+    assert.ok(v1.content.includes('voc-walkthrough:start') && v1.content.includes('window.VoCWalkthrough'), 'the runtime is in every version')
+    assert.deepEqual((await call('GET', walkthrough(v1)))[1], { steps: [] })
+
+    const [created, saved] = await call('PUT', walkthrough(v1), { steps: STEPS, edit_id: 'wt-1' })
+    assert.equal(created, 201)
+    const v2 = saved.document
+    assert.deepEqual([v2.version, v2.edit_kind, v2.edited_from_id], [2, 'edit', v1.document_id])
+    assert.deepEqual((await call('GET', walkthrough(v2)))[1], { steps: STEPS })
+    assert.deepEqual((await call('GET', walkthrough(v1)))[1], { steps: [] }, 'the earlier version keeps its own')
+
+    const [replayed, again] = await call('PUT', walkthrough(v1), { steps: STEPS, edit_id: 'wt-1' })
+    assert.deepEqual([replayed, again.document.document_id], [200, v2.document_id])
+    assert.equal((await call('PUT', walkthrough(v1), { steps: STEPS, edit_id: 'wt-2' }))[0], 409, 'the series moved past v1')
+  })
+
+  it('names the step and field it refuses; a draft job answers placeholder places and writes nothing', async () => {
+    const v1 = await build(`Walkthrough checks ${String(Date.now())}`)
+    const [status, body] = await call('PUT', walkthrough(v1), { steps: [STEPS[0], { title: '', body: 'x', selector: '#a' }] })
+    assert.deepEqual([status, body.error], [400, 'step 2: title must be 1-80 characters'])
+
+    const [started, job] = await call('POST', `${walkthrough(v1)}/draft`, {})
+    assert.equal(started, 202)
+    const [, result] = await call('GET', `${PROJECT}/jobs/${job.job_id}`)
+    assert.deepEqual(result.result.steps.map((step) => step.anchor.bbox), [PLACEHOLDER_BOX, PLACEHOLDER_BOX])
+    assert.deepEqual((await call('GET', walkthrough(v1)))[1], { steps: [] })
+  })
+
+  it('reads the last steps block, as the server does: a copy earlier in the prototype\'s own markup never wins', async () => {
+    // The mock writes the title into the HTML as is: here it carries a block ahead of the server's own.
+    const decoy = '<script type="application/json" id="voc-walkthrough-steps">{"steps":[{"title":"Decoy","body":"B","selector":"#a"}]}</script>'
+    const v1 = await build(`Walkthrough decoy ${String(Date.now())} ${decoy}`)
+    assert.ok(v1.content.indexOf(decoy) < v1.content.lastIndexOf('id="voc-walkthrough-steps"'), 'the decoy comes first')
+    assert.deepEqual((await call('GET', walkthrough(v1)))[1], { steps: [] })
+    const [, saved] = await call('PUT', walkthrough(v1), { steps: STEPS, edit_id: 'wt-d' })
+    assert.deepEqual((await call('GET', walkthrough(saved.document)))[1], { steps: STEPS })
+  })
+
+  it('drops one leading # from a step\'s route, as the server does', async () => {
+    const v1 = await build(`Walkthrough routes ${String(Date.now())}`)
+    const at = (route) => ({ title: 'T', body: 'B', anchor: { route, bbox: { x: 0, y: 0, w: 0.1, h: 0.1 } } })
+    const [, saved] = await call('PUT', walkthrough(v1), { steps: [at('#checkout'), at('##x'), at('cart')], edit_id: 'wt-r' })
+    const [, read] = await call('GET', walkthrough(saved.document))
+    assert.deepEqual(read.steps.map((step) => step.anchor.route), ['checkout', '#x', 'cart'])
+  })
+
+  it('a draft takes an empty body or an object, and refuses any other body', async () => {
+    const v1 = await build(`Walkthrough draft body ${String(Date.now())}`)
+    const statuses = []
+    for (const body of [undefined, { response_language: 'fr' }, ['not', 'an', 'object'], 'text']) {
+      statuses.push((await call('POST', `${walkthrough(v1)}/draft`, body))[0])
+    }
+    assert.deepEqual(statuses, [202, 202, 400, 400])
+  })
+
+  it('keeps the steps across a revision and an applied draft', async () => {
+    const title = `Walkthrough kept ${String(Date.now())}`
+    const v1 = await build(title)
+    const [, saved] = await call('PUT', walkthrough(v1), { steps: STEPS, edit_id: 'wt-k' })
+    const v3 = await build(title, saved.document)
+    assert.deepEqual((await call('GET', walkthrough(v3)))[1], { steps: STEPS }, 'a revision keeps its base\'s steps')
+    const draftId = await draftOf(v3, 'move the footer')
+    const [, applied] = await call('POST', `${draftPath(v3, draftId)}/apply`)
+    assert.deepEqual((await call('GET', walkthrough(applied.document)))[1], { steps: STEPS }, 'Apply keeps them too')
+  })
+})

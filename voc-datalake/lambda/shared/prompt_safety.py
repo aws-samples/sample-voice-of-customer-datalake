@@ -47,6 +47,8 @@ DATA_BLOCK_TAGS = (
     # A prototype's screens, headings and visible text (shared/prototype_outline.py): model-written HTML,
     # read by the assistant (its get_prototype_outline tool) and MCP clients as data.
     'prototype_outline',
+    # The PRD / PR/FAQ text a walkthrough draft is written from (shared/prototype_walkthrough_draft.py).
+    'walkthrough_source',
 )
 
 _TAG_RE = re.compile(

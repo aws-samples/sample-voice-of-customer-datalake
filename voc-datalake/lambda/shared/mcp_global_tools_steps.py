@@ -53,6 +53,7 @@ from shared.mcp_global_kit import (
 from shared.methodology import STEPS
 from shared.prototype_drafts import MAX_INSTRUCTION_CHARS
 from shared.prototype_pins import MAX_BATCH_PINS
+from shared.prototype_walkthrough import MAX_STEPS as MAX_WALKTHROUGH_STEPS
 
 MAX_BRIEF_CHARS: Final = 4000
 MAX_TITLE_CHARS: Final = 200
@@ -170,6 +171,30 @@ def _get_outline(args: Mapping[str, Any], project: str | None) -> RouteRequest:
     p = require_project(project)
     d = id_arg(args, 'document_id')
     return RouteRequest(DOMAIN_PROJECTS, 'GET', f'/projects/{p}/prototypes/{d}/outline')
+
+
+def _get_walkthrough(args: Mapping[str, Any], project: str | None) -> RouteRequest:
+    p = require_project(project)
+    d = id_arg(args, 'document_id')
+    return RouteRequest(DOMAIN_PROJECTS, 'GET', f'/projects/{p}/prototypes/{d}/walkthrough')
+
+
+def _set_walkthrough(args: Mapping[str, Any], project: str | None) -> RouteRequest:
+    """The steps reach the route as given: its 400 (naming the step and the field) is the tool's error."""
+    if not isinstance(args.get('steps'), list):
+        raise InvalidToolArgument('steps must be a list (an empty one removes the walkthrough)')
+    body: dict[str, Any] = {'steps': args['steps']}
+    if args.get('edit_id') is not None:
+        body['edit_id'] = id_arg(args, 'edit_id')
+    p = require_project(project)
+    d = id_arg(args, 'document_id')
+    return RouteRequest(DOMAIN_PROJECTS, 'PUT', f'/projects/{p}/prototypes/{d}/walkthrough', body=body)
+
+
+def _draft_walkthrough(args: Mapping[str, Any], project: str | None) -> RouteRequest:
+    p = require_project(project)
+    d = id_arg(args, 'document_id')
+    return RouteRequest(DOMAIN_PROJECTS, 'POST', f'/projects/{p}/prototypes/{d}/walkthrough/draft', body={})
 
 
 def _get_draft(args: Mapping[str, Any], project: str | None) -> RouteRequest:
@@ -309,6 +334,29 @@ STEP_TOOLS: Final[tuple[GlobalTool, ...]] = (
         'documents_draft_prototype_revision.',
         schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA}, ('document_id',)),
         _get_outline, stripped, project_scoped=True),
+    GlobalTool(
+        'documents_get_prototype_walkthrough', 'Get a prototype walkthrough',
+        "Read a prototype version's guided walkthrough: its steps (title, body, selector or anchor), [] when it has "
+        'none.',
+        schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA}, ('document_id',)),
+        _get_walkthrough, stripped, project_scoped=True),
+    GlobalTool(
+        'documents_set_prototype_walkthrough', 'Set a prototype walkthrough',
+        "Save a prototype's walkthrough as its next version (write token): `steps` (up to 10, each a `title` of at "
+        'most 80 characters, a plain-text `body` of at most 280, and a `selector` or an `anchor` {route, bbox}; [] '
+        'removes the steps) on the version `document_id`, which must be the newest. Optional `edit_id` makes a retry '
+        'the same version. Confirm with the user first.',
+        schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA,
+                'steps': {'type': 'array', 'maxItems': MAX_WALKTHROUGH_STEPS, 'items': {'type': 'object'}},
+                'edit_id': ID_SCHEMA}, ('document_id', 'steps')),
+        _set_walkthrough, _applied, write=True, project_scoped=True),
+    GlobalTool(
+        'documents_draft_prototype_walkthrough', 'Draft a prototype walkthrough',
+        "Ask the AI for walkthrough steps from the prototype's screens and the PRD / PR/FAQ it was built from "
+        '(write token); nothing is saved. Answers a job_id: its result is `steps` (projects_get_job), to show the '
+        'user and save with documents_set_prototype_walkthrough.',
+        schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA}, ('document_id',)),
+        _draft_walkthrough, _revise_started, write=True, project_scoped=True),
     GlobalTool(
         'documents_draft_prototype_revision', 'Draft a prototype revision',
         'Ask for a change to a prototype (write token): `document_id` (any version of it) and either '

@@ -218,9 +218,12 @@ describe('document pane height', () => {
    * whole generated application previewed in ~430px whether the monitor was 900px or
    * 1440px tall.
    */
-  it('gives a prototype the viewport rather than a fixed 500px', () => {
+  // A height, not a minimum: as a minimum, the xl grid stretched the pane (and the prototype's frame, so its own
+  // viewport) to a long documents list's height, below the page's visible area. Below lg the pane grows with the
+  // panels stacked under the frame (a phone's frame was an iframe's default 150 px).
+  it('gives a prototype 70% of the viewport, as its height, rather than a fixed 500px', () => {
     renderTab(prototypeDoc(signedUrl(Date.now() + HOUR_MS, 'sig-1')))
-    expect(screen.getByTestId('document-detail-pane')).toHaveClass('lg:min-h-[70vh]')
+    expect(screen.getByTestId('document-detail-pane')).toHaveClass('lg:h-[70vh]', 'min-h-[70vh]')
   })
 
   it('leaves prose documents on the shorter pane, where extra height is only whitespace', async () => {
@@ -228,6 +231,6 @@ describe('document pane height', () => {
     // The prose page is lazy-loaded.
     const pane = await screen.findByTestId('document-detail-pane')
     expect(pane).toHaveClass('lg:min-h-[500px]')
-    expect(pane).not.toHaveClass('lg:min-h-[70vh]')
+    expect(pane).not.toHaveClass('lg:h-[70vh]')
   })
 })

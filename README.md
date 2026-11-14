@@ -239,7 +239,7 @@ See [Getting Started with Plugins](docs/getting-started-plugins.md).
 | [Project Workspace](docs/project-workspace.md) | Projects, the Product tab, cited reviews, document versions, sharing, company personas |
 | [Persona Generation](docs/persona-generation.md) | Adding personas next to the existing ones or replacing them |
 | [Document canvas](docs/document-canvas.md) | The Documents tab's page view: outline, evidence, editing in place, saving, history, the assistant's diffs |
-| [Prototype builder](docs/prototype-builder.md) | Back to an earlier version, edits from the assistant's chat bubble as previewed drafts, tester feedback selected into a revision, documents in sections; planned: a skippable walkthrough on a prototype |
+| [Prototype builder](docs/prototype-builder.md) | Back to an earlier version, edits from the assistant's chat bubble as previewed drafts, tester feedback selected into a revision, documents in sections, and a skippable guided walkthrough on a prototype |
 | [Document review](docs/document-review.md) | Margin comments, "Ask personas to review", share-for-review links and their sign-in |
 | [Ways of working with AI](docs/ways-of-working.md) | Human-driven, AI-assisted and AI-driven PR/FAQ and PRD writing, and how the server enforces it |
 | [Prioritization Scoring](docs/prioritization.md) | The workspace scoring setup: metrics, weights, directions, the composite formula, templates, routes |

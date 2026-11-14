@@ -57,6 +57,8 @@ export const MOCK_SPEC_NAMES: readonly string[] = [
   'prototype-feedback',
   // Incorporate (part 3): a draft from tester pins, Apply's marks and replies (mock only).
   'prototype-incorporate',
+  // The guided walkthrough (part 1): starts once, replays, the editor saves a version (mock only).
+  'prototype-walkthrough',
 ]
 
 /** Matches a path of one of `MOCK_SPEC_NAMES` (Playwright `testMatch`). */

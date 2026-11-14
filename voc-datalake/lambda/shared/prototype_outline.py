@@ -38,6 +38,7 @@ from typing import Any, Final
 
 from shared.prompt_safety import neutralise_tags
 from shared.prototype_pins import strip_pin_widget
+from shared.prototype_walkthrough import strip_walkthrough
 from shared.text_clip import WHITESPACE_RE
 
 MAX_INPUT_CHARS: Final = 512 * 1024
@@ -192,7 +193,7 @@ def _line(text: str) -> str:
 
 def outline_of(html: str) -> dict[str, Any]:
     """``{title, screens: [{route, headings, text}], truncated}`` of a prototype's HTML, within the caps."""
-    source = strip_pin_widget(html or '')
+    source = strip_walkthrough(strip_pin_widget(html or ''))
     truncated = len(source) > MAX_INPUT_CHARS
     parser = _OutlineParser()
     parser.feed(source[:MAX_INPUT_CHARS])

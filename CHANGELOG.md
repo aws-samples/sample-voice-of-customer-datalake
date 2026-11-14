@@ -17,6 +17,29 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.17.00] - 2026-11-14
+
+A prototype can walk people through itself: a skippable, step-by-step guide that editors write, the last part of the Prototype builder ([docs/prototype-builder.md](docs/prototype-builder.md)).
+
+### Added
+
+- **A guided walkthrough** inside a prototype: one to ten steps, each a small popup pointing at an element (or a place on a screen), with **Next**, **Back**, **Skip** and **Don't show again** and "Step 2 of 5"; the last step's Next reads **Done**. It starts by itself the first time a person opens a version that has one, and **Show walkthrough** in the preview's header replays it. "Don't show again" is remembered per person for the whole series in the app; opened on its own link, the walkthrough shows on every load and the flag lasts that visit. It works from the keyboard (Left and Right move, Esc skips), names itself to screen readers, respects reduced motion, and becomes a bottom sheet on a phone.
+- **The Walkthrough editor** beside an editor's preview: add a step by clicking an element of the prototype, reorder, edit the text, preview unsaved steps, then save, which makes a new version (earlier versions keep their own steps). **Draft with the assistant** suggests steps from the prototype's screens and the PRD / PR/FAQ it was built from; they land in the editor, marked to check where they point, and nothing is saved until the editor saves.
+- `GET …/prototypes/{document_id}/walkthrough` (viewers), `PUT …/walkthrough` (editors; `{steps, edit_id}`, a new version, 409 when a newer version exists) and `POST …/walkthrough/draft` (editors; a job whose result is the suggested steps). MCP `documents_get_prototype_walkthrough`, `documents_set_prototype_walkthrough` and `documents_draft_prototype_walkthrough`; the assistant's `set_prototype_walkthrough`, whose approval card previews the steps.
+- Every prototype version written from now on carries the walkthrough's runtime (with no steps when it has none), so the editor can point steps at elements; a version written before 6.17.00 shows a note in the editor instead. A walkthrough is kept across revisions, Back to vN and applied drafts.
+
+### Fixed
+
+- A prototype's preview fits its pane: beside a long documents list the pane used to grow with the list, so the bottom of a tall prototype (a walkthrough popup included) could not be reached; on a phone the preview was a 150-pixel strip and now takes at least half the screen.
+
+### Security
+
+- The steps live only in the version's HTML, as a data block the server writes, re-validates on read and screens for instruction-shaped text; a block a model writes (nested or decoy copies included) is stripped from every model output, and the platform never puts the steps in a model's prompt (MCP clients read them through `documents_get_prototype_walkthrough`). Messages from the prototype's frame only change the page's own state and the viewer's local flag.
+
+### Upgrade notes
+
+- Deploy the Api stack, the stream Lambda and the frontend together.
+
 ## [6.16.00] - 2026-11-14
 
 A project's documents in the steps of the method: PRD, PR/FAQ, Prototypes, Documents (the Prototype builder, part 4; [docs/prototype-builder.md](docs/prototype-builder.md)).

@@ -188,6 +188,24 @@ def world(api_gateway_event, lambda_context, monkeypatch: pytest.MonkeyPatch) ->
             yield World(projects_table, jobs_table, pins, s3, call, invoked)
 
 
+def _apply_that_looked_before_the_other_landed(world: World, path: str) -> tuple[tuple[int, Any], list[tuple]]:
+    """An Apply whose first allocation read missed a version another Apply was landing (two at once):
+    ``(its answer, the allocation reads apply_draft made)``. Its write then meets the moved series."""
+    from shared import prototype_drafts, prototype_versions
+
+    real = prototype_drafts.get_versioned_document_by_allocation
+    looks: list[tuple] = []
+
+    def looked_before_the_other_landed(*args: Any) -> dict | None:
+        looks.append(args)
+        return None if len(looks) == 1 else real(*args)
+
+    with patch.object(prototype_drafts, 'get_versioned_document_by_allocation',
+                      side_effect=looked_before_the_other_landed), \
+            patch.object(prototype_versions, 'get_versioned_document_by_allocation', return_value=None):
+        return world.call(EDITOR, 'POST', path), looks
+
+
 def _two_versions(world: World) -> tuple[dict, dict]:
     v1 = world.prototype('job_1', '<h1>One</h1>')
     v2 = world.prototype('job_22', '<h1>Two</h1>', revised_from_id=v1['document_id'])
@@ -463,23 +481,12 @@ class TestApplyingADraft:
     def test_an_apply_that_another_one_beat_is_answered_200_with_that_version_not_409(self, world):
         """Two Applies at the same moment: this one looked before the other landed, so its write finds the
         series moved; the version that moved it is this draft's own, so the answer is that replay."""
-        from shared import prototype_drafts, prototype_versions
-
         _, v2 = _two_versions(world)
         world.draft(v2)
         path = f'{world.draft_path(v2["document_id"])}/apply'
         first = world.call(EDITOR, 'POST', path)
-        real = prototype_drafts.get_versioned_document_by_allocation
-        looks: list[tuple] = []
 
-        def looked_before_the_other_landed(*args: Any) -> dict | None:
-            looks.append(args)
-            return None if len(looks) == 1 else real(*args)
-
-        with patch.object(prototype_drafts, 'get_versioned_document_by_allocation',
-                          side_effect=looked_before_the_other_landed), \
-                patch.object(prototype_versions, 'get_versioned_document_by_allocation', return_value=None):
-            again = world.call(EDITOR, 'POST', path)
+        again, looks = _apply_that_looked_before_the_other_landed(world, path)
 
         assert (first[0], again[0]) == (201, 200)
         assert again[1]['document']['document_id'] == first[1]['document']['document_id']
@@ -683,6 +690,22 @@ class TestIncorporate:
         assert mine == person
         assert (ai['kind'], ai['approved_by'], ai['llm_metadata']['model']) == (
             'ai', {'sub': EDITOR['sub'], 'kind': 'user'}, 'test-model')
+
+    def test_two_applies_at_once_give_one_version_and_one_set_of_marks_and_replies(self, world):
+        """The second looked before the first landed (its first allocation read missed): its write meets the
+        moved series, finds its own version and finishes the same set, writing nothing twice."""
+        v2 = self._done_and_not_done(world)
+        path = f'{world.draft_path(v2["document_id"])}/apply'
+        first = world.call(EDITOR, 'POST', path)
+
+        second, _ = _apply_that_looked_before_the_other_landed(world, path)
+
+        assert (first[0], second[0]) == (201, 200)
+        assert second[1]['document']['document_id'] == first[1]['document']['document_id']
+        assert second[1]['incorporation'] == first[1]['incorporation'] == {
+            'marked': [PIN_A], 'replied': [PIN_B], 'not_written': []}
+        assert (len(world.prototype_rows()), len(world.stored_pin(v2, PIN_B)['replies']),
+                len(world.stored_pin(v2, PIN_A)['mark_ids'])) == (3, 1, 1)
 
     def test_a_replay_never_re_marks_a_pin_an_editor_reopened_and_says_so(self, world):
         v2 = self._done_and_not_done(world)

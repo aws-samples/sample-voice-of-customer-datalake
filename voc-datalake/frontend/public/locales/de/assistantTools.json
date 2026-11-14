@@ -341,6 +341,15 @@
       "pins_other": "{{count, number}} ausgewählte Tester-Pins",
       "noScreen": "(kein Bildschirm)",
       "pinsInstruction": "Nur die Pin-IDs werden gesendet: Der Server liest diese Pins selbst und schreibt die Anweisung (das ausgewählte Tester-Feedback einarbeiten, pro Pin beantwortet: erledigt oder nicht erledigt)."
+    },
+    "walkthrough": {
+      "remove": "Der Rundgang wird entfernt.",
+      "step": "Schritt {{n}} von {{total}}",
+      "position": "eine Position auf {{screen}}",
+      "thisScreen": "diesem Bildschirm",
+      "replaces_one": "Ersetzt den {{count, number}} gespeicherten Schritt.",
+      "replaces_other": "Ersetzt die {{count, number}} gespeicherten Schritte.",
+      "note": "Speichern erstellt eine neue Version des Prototyps; Betrachtende sehen die Schritte, wenn sie ihn öffnen."
     }
   },
   "tools": {
@@ -531,6 +540,10 @@
     },
     "draft_prototype_revision": {
       "title": "Eine Prototyp-Überarbeitung entwerfen"
+    },
+    "set_prototype_walkthrough": {
+      "title": "Einen Rundgang für den Prototyp speichern",
+      "titleRemove": "Den Rundgang des Prototyps entfernen"
     }
   }
 }

@@ -31,6 +31,7 @@ from shared.prototype_pins import (
     pin_form_id,
     strip_pin_widget,
 )
+from shared.prototype_walkthrough import strip_walkthrough
 from shared.prototypes import prototype_s3_key
 
 PROJECT = 'proj-1'
@@ -117,7 +118,8 @@ class TestBackToAVersion:
         assert html.count(WIDGET_START) == 1
         assert f"formId: '{pin_form_id(new_id)}'" in html
         assert pin_form_id(v1['document_id']) not in html
-        assert strip_pin_widget(html) == strip_pin_widget(world.html(v1['document_id']))
+        # The same page; the new version also carries the walkthrough block (empty), as every version does.
+        assert strip_walkthrough(strip_pin_widget(html)) == strip_pin_widget(world.html(v1['document_id']))
         form = world.pins.get_item(Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{pin_form_id(new_id)}'})['Item']
         assert (form['document_id'], form['project_id'], form['form_type']) == (new_id, PROJECT, 'prototype_pin')
 

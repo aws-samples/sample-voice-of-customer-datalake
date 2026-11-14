@@ -352,6 +352,16 @@
       "pins_other": "{{count, number}} pins de testers selecionados",
       "noScreen": "(sem tela)",
       "pinsInstruction": "Só os IDs dos pins são enviados: o servidor lê esses pins e escreve a instrução (incorporar o feedback selecionado dos testers, respondido por pin: feito ou não feito)."
+    },
+    "walkthrough": {
+      "remove": "O tour guiado é removido.",
+      "step": "Passo {{n}} de {{total}}",
+      "position": "uma posição em {{screen}}",
+      "thisScreen": "esta tela",
+      "replaces_one": "Substitui a {{count, number}} etapa salva.",
+      "replaces_many": "Substitui as {{count, number}} de etapas salvas.",
+      "replaces_other": "Substitui as {{count, number}} etapas salvas.",
+      "note": "Salvar cria uma nova versão do protótipo; quem abrir verá os passos."
     }
   },
   "tools": {
@@ -546,6 +556,10 @@
     },
     "draft_prototype_revision": {
       "title": "Rascunhar uma revisão do protótipo"
+    },
+    "set_prototype_walkthrough": {
+      "title": "Salvar um tour guiado do protótipo",
+      "titleRemove": "Remover o tour guiado do protótipo"
     }
   }
 }

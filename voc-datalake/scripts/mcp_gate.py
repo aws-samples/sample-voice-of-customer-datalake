@@ -194,7 +194,8 @@ MODULE_FLOORS: dict[str, int] = {
     # -> 208 (6.12.00): the four prototype-draft tools' declarations and flags.
     # -> 210 (6.13.00): documents_list_prototype_feedback's declaration and flags.
     # -> 212 (6.14.00): documents_get_prototype_outline's.
-    'test_mcp_global_tools_mutation': 212,
+    # -> 218 (6.17.00): the three walkthrough tools' declarations and flags.
+    'test_mcp_global_tools_mutation': 218,
     # 1 -> 2 (6.10.00): every name starts with its area, the list grouped by area.
     'test_mcp_global_tools_budget': 2,
     # 5.63.00: the tools' new reach (urgent, github/entities, include_similar), their
@@ -208,7 +209,8 @@ MODULE_FLOORS: dict[str, int] = {
     # 46 -> 87 (6.12.00): the four prototype-draft tools (routes, arguments, flags, no signed URL).
     # -> 94 (6.14.00): documents_get_prototype_outline.
     # -> 98 (6.15.00): the draft tool's pin_ids, the apply answer's incorporation.
-    'test_mcp_global_tools_steps': 98,
+    # -> 108 (6.17.00): the three walkthrough tools.
+    'test_mcp_global_tools_steps': 108,
     # 6.04.00: feedback_get_catalogue (+ sources), prioritization_get, prioritization_score, feature_requests_write.
     'test_mcp_global_work_tools': 36,
     # 6.04.00: a feature request or +1 over MCP is recorded under the person (the minter).

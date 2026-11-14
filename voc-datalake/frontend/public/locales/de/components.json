@@ -856,5 +856,41 @@
     "cap": "höchstens {{max, number}} Pins",
     "clearSelection": "Auswahl aufheben",
     "incorporate": "Einarbeiten"
+  },
+  "prototypeWalkthrough": {
+    "show": "Rundgang zeigen",
+    "checkPlace": "Entworfen: Prüfen Sie, worauf dieser Schritt zeigt, und richten Sie ihn auf sein Element.",
+    "repoint": "Schritt {{n}} auf ein Element richten",
+    "open": "Rundgang",
+    "heading": "Rundgang",
+    "close": "Rundgang-Editor schließen",
+    "noRuntime": "Diese Version entstand vor den Rundgängen, daher kann ihre Vorschau keine Elemente auswählen und keine Schritte abspielen. Überarbeiten oder erstellen Sie den Prototyp neu und fügen Sie den Rundgang in der neuen Version hinzu.",
+    "addStep": "Schritt hinzufügen",
+    "picking": "Klicken Sie auf ein Element in der Vorschau…",
+    "draft": "Mit dem Assistenten entwerfen",
+    "drafted": "Die entworfenen Schritte stehen in der Liste: Prüfen Sie sie. Gespeichert wird erst, wenn Sie speichern.",
+    "draftFailed": "Die Schritte konnten nicht entworfen werden. Versuchen Sie es erneut.",
+    "empty": "Noch keine Schritte. Fügen Sie einen Schritt hinzu, indem Sie auf ein Element in der Vorschau klicken, oder lassen Sie sie vom Assistenten entwerfen.",
+    "save": "Als neue Version speichern",
+    "remove": "Rundgang entfernen",
+    "saveHint": "Speichern erstellt eine neue Version des Prototyps; frühere Versionen behalten ihren eigenen Rundgang.",
+    "conflict": "Der Prototyp hat sich geändert, seit Sie diese Version geöffnet haben: Öffnen Sie die neueste Version und speichern Sie dort.",
+    "saveFailed": "Der Rundgang konnte nicht gespeichert werden. Versuchen Sie es erneut.",
+    "stepCount": "Schritt {{n}} von {{total}}",
+    "moveUp": "Schritt {{n}} nach oben",
+    "moveDown": "Schritt {{n}} nach unten",
+    "previewFrom": "Vorschau ab Schritt {{n}}",
+    "removeStep": "Schritt {{n}} entfernen",
+    "title": "Titel",
+    "body": "Text",
+    "pointsAt": "Zeigt auf",
+    "position": "eine Position auf {{screen}}",
+    "thisScreen": "diesem Bildschirm",
+    "stepLabel": "Schritt {{n}} von {{total}}",
+    "problem": {
+      "title": "Schritt {{n}} braucht einen Titel.",
+      "body": "Schritt {{n}} braucht einen Text.",
+      "anchor": "Schritt {{n}} zeigt auf nichts: Entfernen Sie ihn und wählen Sie sein Element erneut."
+    }
   }
 }

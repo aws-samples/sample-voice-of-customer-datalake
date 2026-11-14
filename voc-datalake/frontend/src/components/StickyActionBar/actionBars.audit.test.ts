@@ -86,6 +86,7 @@ const EXEMPT: Readonly<Record<string, string>> = {
   MemoryEditor: 'inline Save inside one memory card, one of many in the memory list',
   PrioritizationHeader: 'Save sits in the page header',
   RoomVotePanel: 'Open room vote is a per-row control in the expanded row',
+  WalkthroughEditor: 'Save as a new version ends the walkthrough editor\'s side panel beside the prototype preview, inside the panel\'s own scroll, not the page\'s form',
   PrototypeDraftBanner: 'Apply as vN sits in the draft banner at the top of the prototype pane, above the preview, left-aligned; no form to save',
   DecisionsTab: 'New decision is a tab-header action',
   DecisionCard: 'per-decision Draft PR/FAQ, one of many in the decision list',

@@ -341,6 +341,15 @@
       "pins_other": "選択したテスターのピン {{count, number}} 件",
       "noScreen": "（画面なし）",
       "pinsInstruction": "送信するのはピンの ID だけです。サーバーがこれらのピンを読み、指示を書きます（選択したテスターのフィードバックを反映し、ピンごとに対応済みか未対応かを回答）。"
+    },
+    "walkthrough": {
+      "remove": "ウォークスルーを削除します。",
+      "step": "ステップ {{n}} / {{total}}",
+      "position": "{{screen}} 上の位置",
+      "thisScreen": "この画面",
+      "replaces_one": "保存済みの {{count, number}} 個のステップを置き換えます。",
+      "replaces_other": "保存済みの {{count, number}} 個のステップを置き換えます。",
+      "note": "保存するとプロトタイプの新しいバージョンが作成され、開いた人にステップが表示されます。"
     }
   },
   "tools": {
@@ -531,6 +540,10 @@
     },
     "draft_prototype_revision": {
       "title": "プロトタイプの改訂案を作成"
+    },
+    "set_prototype_walkthrough": {
+      "title": "プロトタイプのウォークスルーを保存",
+      "titleRemove": "プロトタイプのウォークスルーを削除"
     }
   }
 }

@@ -352,6 +352,16 @@
       "pins_other": "{{count, number}} épingles de testeurs sélectionnées",
       "noScreen": "(aucun écran)",
       "pinsInstruction": "Seuls les identifiants des épingles sont envoyés : le serveur lit lui-même ces épingles et écrit la consigne (intégrer les retours sélectionnés des testeurs, avec une réponse par épingle : fait ou non fait)."
+    },
+    "walkthrough": {
+      "remove": "La visite guidée est retirée.",
+      "step": "Étape {{n}} sur {{total}}",
+      "position": "une position sur {{screen}}",
+      "thisScreen": "cet écran",
+      "replaces_one": "Remplace l’étape enregistrée ({{count, number}}).",
+      "replaces_many": "Remplace les {{count, number}} d’étapes enregistrées.",
+      "replaces_other": "Remplace les {{count, number}} étapes enregistrées.",
+      "note": "Enregistrer crée une nouvelle version du prototype ; les personnes qui l’ouvrent voient les étapes."
     }
   },
   "tools": {
@@ -546,6 +556,10 @@
     },
     "draft_prototype_revision": {
       "title": "Rédiger une révision du prototype"
+    },
+    "set_prototype_walkthrough": {
+      "title": "Enregistrer une visite guidée du prototype",
+      "titleRemove": "Retirer la visite guidée du prototype"
     }
   }
 }

@@ -146,6 +146,8 @@ export function HtmlPrototypeFrame({
   }
   return (
     <iframe
+      // The bridge knows its frame by this ref (the walkthrough runs in an inline prototype too, docs Part 1).
+      ref={frameRef}
       title={orFallback(title, 'Prototype')}
       srcDoc={html}
       sandbox={PROTOTYPE_FRAME_SANDBOX}

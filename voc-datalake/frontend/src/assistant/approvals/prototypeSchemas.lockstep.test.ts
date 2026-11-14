@@ -45,6 +45,14 @@ describe('draft_prototype_revision bounds: stream ⇄ SPA', () => {
     expect(stream).toMatch(/required: \['project_id', 'document_id'\]/)
   })
 
+  it('set_prototype_walkthrough has the stream tool’s bounds (and so the route’s)', () => {
+    const walkthrough = read('lambda/stream/src/assistant/tools/client/prototype-walkthrough.ts')
+    const stream = constNumberRecord(walkthrough, 'WALKTHROUGH_LIMITS')
+    expect(constNumberRecord(read('frontend/src/api/prototypeWalkthroughSchema.ts'), 'WALKTHROUGH_LIMITS')).toStrictEqual({
+      steps: stream.steps, title: stream.titleChars, body: stream.bodyChars, selector: stream.selectorChars, route: stream.routeChars,
+    })
+  })
+
   it('checks each pin id with the stream’s own id rule (both sides: an idSchema list), the format left to the route', () => {
     expect(stream).toMatch(/pin_ids: z\.array\(idSchema\)/)
     expect(spa).toMatch(/z\.array\(idSchema\)/)

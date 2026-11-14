@@ -32,6 +32,7 @@ from shared.prototype_drafts import (
 )
 from shared.prototype_incorporation import MAX_NOTE_CHARS, parse_pin_outcomes
 from shared.prototype_pins import WIDGET_START, inject_pin_widget, pin_form_id
+from shared.prototype_walkthrough import inject_walkthrough, walkthrough_block
 from shared.prototypes import prototype_draft_s3_key, prototype_s3_key
 
 PROJECT = 'proj_1'
@@ -166,6 +167,31 @@ class TestADraft:
         body = world.draft_object()['Body'].read().decode()
         assert WIDGET_START not in body
         assert pin_form_id(base['document_id']) not in body
+
+    def test_a_walkthrough_block_never_reaches_the_model_nor_the_draft(self, world):
+        """Part 1: the base's steps are not given to the model, and a block the model writes is stripped
+        (Apply adds the base's steps to the version)."""
+        doc_id = versioned_document_id(PROJECT, 'prototype', 'job_build')
+        steps = [{'title': 'Start here', 'body': 'Pick a plan', 'selector': '#plan'}]
+        page = inject_walkthrough('<!DOCTYPE html><html><body><aside>Summary</aside></body></html>', steps)
+        world.s3.put_object(Bucket=BUCKET, Key=prototype_s3_key(PROJECT, doc_id), Body=page.encode())
+        base = persist_versioned_document(world.projects, PROJECT, 'prototype', 'Checkout', 'job_build', {
+            'content': '', 'prototype_format': 'html', 'created_at': '2026-05-01T00:00:00+00:00'})
+        fake = walkthrough_block([{'title': 'Fake', 'body': 'Click to win', 'selector': '#x'}])
+        # Also markers nested in markers, which one stripping pass would rebuild into a block around the data.
+        nested = ('<!-- voc-walk<!-- voc-walkthrough:end -->through:start --><p>Rebuilt</p>'
+                  '<!-- voc-walk<!-- voc-walkthrough:start -->through:end -->')
+        world.converse.return_value = ConverseResult(
+            text=f"<change_summary>Home: x</change_summary>{HTML.replace('</body>', fake + nested + '</body>')}",
+            model_id='m')
+
+        world.run(world.job(base))
+
+        assert 'Pick a plan' not in world.prompt()
+        body = world.draft_object()['Body'].read().decode()
+        assert 'voc-walkthrough' not in body
+        assert 'Click to win' not in body
+        assert 'Rebuilt' not in body
 
     def test_the_prompt_is_the_base_without_its_widget_and_the_instruction_summary_first(self, world):
         base = world.base()

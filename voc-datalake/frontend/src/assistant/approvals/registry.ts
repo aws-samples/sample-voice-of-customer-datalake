@@ -52,6 +52,7 @@ import { FeedbackCategoryPreview } from './previews/FeedbackCategoryPreview'
 import { PersonaChangesPreview, ProductContextPreview } from './previews/FieldChangesPreview'
 import { JobPreview } from './previews/JobPreview'
 import { PrototypeDraftPreview } from './previews/PrototypeDraftPreview'
+import { PrototypeWalkthroughPreview } from './previews/PrototypeWalkthroughPreview'
 import type { ComponentType } from 'react'
 import type { z } from 'zod'
 import type { ClientToolName, PageContext } from '@stream/assistant/contract'
@@ -181,6 +182,11 @@ const DEFINITIONS: readonly WriteToolDefinition[] = [
   defineWriteTool({
     name: 'draft_prototype_revision', argsSchema: pr.draftPrototypeRevisionArgs, execute: prototypes.draftPrototypeRevision,
     title: (_a, t) => t(toolTitleKey('draft_prototype_revision')), Preview: PrototypeDraftPreview,
+  }),
+  defineWriteTool({
+    name: 'set_prototype_walkthrough', argsSchema: pr.setPrototypeWalkthroughArgs, execute: prototypes.setPrototypeWalkthrough,
+    title: (a, t) => t(a.steps.length === 0 ? 'assistantTools:tools.set_prototype_walkthrough.titleRemove' : toolTitleKey('set_prototype_walkthrough')),
+    Preview: PrototypeWalkthroughPreview,
   }),
   defineWriteTool({
     name: 'update_feedback_form', argsSchema: s.updateFeedbackFormArgs, execute: executors.updateFeedbackForm,
