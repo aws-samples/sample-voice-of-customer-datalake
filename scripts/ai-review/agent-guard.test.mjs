@@ -148,4 +148,10 @@ test('the test generator cannot run a network client, the environment, the AWS C
   for (const command of ['npx vitest run $(cat .env)', 'node --test a.test.mjs > ~/.profile', 'node --test `id`']) {
     assert.ok(!v2Allows(command), `V2 refuses: ${command}`)
   }
+  // Review (7.00.02): a folder of the same name outside the repository. V2 allows only a relative `cd`; V3 rewrites
+  // `cd` to an absolute path before matching, so it cannot tell them apart (documented in lib.mjs).
+  for (const command of ['cd ../../voc-datalake && npx vitest run', 'cd /tmp/x/voc-datalake && npx vitest run',
+    'cd voc-datalake/../../voc-datalake && npx vitest run']) {
+    assert.ok(!v2Allows(command), `V2 refuses: ${command}`)
+  }
 })

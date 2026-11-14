@@ -77,3 +77,15 @@ def test_a_long_run_of_unclosed_img_tags_is_matched_in_linear_time():
 ])
 def test_logo_record(uploaded, uses, recorded):
     assert logo_record(uploaded, uses) is recorded
+
+
+# Review (7.00.02) suspected a placeholder in a script that BUILDS an <img> takes no place: the tag text is still in the
+# document, so it is inlined (a template literal and an escaped double-quoted string alike).
+def test_an_img_built_in_a_script_string_takes_a_logo_place():
+    doc = ('<script>a.innerHTML = `<img src="__COMPANY_LOGO__" alt="Logo">`;'
+           ' b.innerHTML = "<img src=\\"__COMPANY_LOGO__\\">";</script>')
+    out = inline_logo(doc, 'data:image/png;base64,AAAA', 'Example Air')
+    assert out.uses == 2
+    assert '__COMPANY_LOGO__' not in out.document
+    assert out.document.count('data:image/png;base64,AAAA') == 2
+

@@ -333,7 +333,9 @@ test('only the known-wide *credentials* glob matches tracked files, so the revie
   // SECRET_PATHS also drives REVIEW_PATHSPEC: a tracked match is left out of every review (named, never sent). The
   // `*credentials*` matches (mock-credentials.js, mcp_credentials.py, their tests) are known and named; any other
   // glob matching a tracked file is a new silent gap. Check `git ls-files -- '<glob>'` before adding a glob.
-  const tracked = spawnSync('git', ['ls-files', '--', ...SECRET_PATHS.filter((glob) => glob !== '*credentials*')], { cwd: ROOT, encoding: 'utf8' })
+  // `:(glob)**/<glob>` matches at any depth: a plain `.env` pathspec is literal and would see only the root file.
+  const pathspecs = SECRET_PATHS.filter((glob) => glob !== '*credentials*').map((glob) => `:(glob)**/${glob}`)
+  const tracked = spawnSync('git', ['ls-files', '--', ...pathspecs], { cwd: ROOT, encoding: 'utf8' })
   assert.equal(tracked.status, 0, tracked.stderr)
   assert.equal(tracked.stdout.trim(), '')
 })
