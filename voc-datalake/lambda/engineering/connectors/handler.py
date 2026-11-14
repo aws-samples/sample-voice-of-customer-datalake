@@ -11,8 +11,9 @@ repository connection, the run's records or the way of working unreadable for no
 The broker's connector: the GitHub client (``github.GitHubHost``) over the connections' SSM credentials, once the
 stack names their prefix; with the engineering table, the workspace bucket and the aggregates table named too, the
 run's record and the board's GO ledger (``records.RunRecords``), the submitted patch's reader
-(``patches.WorkspacePatches``) and the dial (``dial.WaysOfWorking``). Without them, ``hosts.UNCONNECTED`` stands in
-and every permitted operation answers 503.
+(``patches.WorkspacePatches``) and the dial (``dial.WaysOfWorking``), and, with voc-agents named
+(``ENGINEERING_CONNECTIONS_TABLE``), the connections' CI attestations (``records.RunRecords.attested``; without it no
+run is attested, so every push and pull request is refused). Without them, ``hosts.UNCONNECTED`` stands in and every permitted operation answers 503.
 
 Nothing from the body is logged or echoed (it may hold a bundle, a comment, or a token pasted by mistake): the log
 line has the operation, the caller's role, run and agent index, and the status.
@@ -78,6 +79,10 @@ _COMMENT_TARGETS: Final[Mapping[str, CommentTarget]] = {'issue': 'issue', 'pull_
 TABLE_ENV: Final = 'ENGINEERING_TABLE'
 BUCKET_ENV: Final = 'ENGINEERING_WORKSPACE_BUCKET'
 AGGREGATES_ENV: Final = 'AGGREGATES_TABLE'
+#: voc-agents, where the connections' CI attestations are (records.py ``attested``; unnamed: never attested). The
+#: broker's own name for it: the Agents API's ``AGENTS_TABLE`` (shared/agents_store.py) is the table the broker reads of
+#: only the attestations' partitions.
+CONNECTIONS_TABLE_ENV: Final = 'ENGINEERING_CONNECTIONS_TABLE'
 
 
 class BadRequest(Exception):
@@ -238,10 +243,12 @@ def handle(event: Mapping[str, object], role_name_pattern: str, account: str, br
 
 
 @lru_cache(maxsize=1)
-def broker_for(parameter_prefix: str, table: str = '', bucket: str = '', aggregates: str = '') -> Broker:
+def broker_for(parameter_prefix: str, table: str = '', bucket: str = '', aggregates: str = '',
+               agents: str = '') -> Broker:
     """The container's broker (one, so its credentials and tokens stay warm): the GitHub client over the
     connections under ``parameter_prefix``, and the run's records, the patches and the dial in ``table``, ``bucket``
-    and ``aggregates`` (``UNCONNECTED`` while any is unnamed); no connector without a prefix."""
+    and ``aggregates`` (``UNCONNECTED`` while any is unnamed), the CI attestations in ``agents`` (none attested while
+    it is unnamed); no connector without a prefix."""
     if not parameter_prefix:
         return Broker(None)
     host = GitHubHost(ParameterStoreCredentials(parameter_prefix).get)
@@ -252,7 +259,7 @@ def broker_for(parameter_prefix: str, table: str = '', bucket: str = '', aggrega
 
     # No ListBucket on the broker's role: an object never written answers 403, read as missing (and counted).
     workspace = WorkspaceStore(get_s3_client(), bucket, denied_is_missing=True)
-    records = RunRecords(get_dynamodb_client(), table, workspace)
+    records = RunRecords(get_dynamodb_client(), table, workspace, agents)
     return Broker(Connector(host=host, bundles=WorkspacePatches(workspace, host.file_at), runs=records,
                             ledger=records, dial=WaysOfWorking(get_dynamodb_resource().Table(aggregates)),
                             writes=WriteClaims(get_dynamodb_client(), table)))
@@ -264,4 +271,5 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     environ = os.environ
     return handle(event, environ.get(ROLE_NAME_PATTERN_ENV, ''), account,
                   broker_for(environ.get(PARAMETER_PREFIX_ENV, ''), environ.get(TABLE_ENV, ''),
-                             environ.get(BUCKET_ENV, ''), environ.get(AGGREGATES_ENV, '')))
+                             environ.get(BUCKET_ENV, ''), environ.get(AGGREGATES_ENV, ''),
+                             environ.get(CONNECTIONS_TABLE_ENV, '')))

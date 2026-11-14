@@ -826,6 +826,45 @@
       "conflict": "Die Verbindung kann sich gerade nicht ändern: Stoppen Sie zuerst ihre laufenden Läufe, oder entfernen Sie eine andere Verbindung.",
       "unavailable": "Die Verbindungen sind gerade nicht verfügbar. Versuchen Sie es gleich noch einmal.",
       "generic": "Die Verbindung konnte nicht geändert werden. Versuchen Sie es erneut."
+    },
+    "ci": {
+      "attested": "CI bestätigt",
+      "notAttested": "CI nicht bestätigt",
+      "attestedBy": "Bestätigt von {{who}}, {{when}}: Die Agenten dürfen auf voc-agent/*-Branches pushen und Pull-Request-Entwürfe öffnen.",
+      "none": "Die Agenten pushen nichts in dieses Repository, bis eine Administratorin oder ein Administrator bestätigt, dass seine CI Agenten-Branches nichts Wertvolles gibt.",
+      "withdrawnBy": "Zurückgezogen von {{who}}, {{when}}: Die Agenten pushen nichts, bis die CI erneut bestätigt ist.",
+      "voidedRepository": "Ungültig geworden, als sich das Repository der Verbindung geändert hat: Bestätigen Sie die CI dieses Repositorys.",
+      "voidedRemoved": "Ungültig geworden, als die Verbindung entfernt wurde: Bestätigen Sie ihre CI erneut.",
+      "unknownPerson": "eine Administratorin oder ein Administrator",
+      "attest": "CI bestätigen",
+      "attestLabel": "CI von {{repository}} bestätigen",
+      "withdrawAction": "CI zurückziehen",
+      "withdrawLabel": "CI-Bestätigung von {{repository}} zurückziehen",
+      "recorded": "Die CI-Bestätigung von {{repository}} ist gespeichert.",
+      "withdrawn": "Die CI-Bestätigung von {{repository}} ist zurückgezogen.",
+      "points": {
+        "protected_secrets": "CI-Secrets gelten nur für geschützte Branches (Umgebungen mit Branch-Regeln): Ein Agenten-Branch erhält keine.",
+        "read_only_token": "Das Standard-Token der Workflows ist schreibgeschützt, und kein Workflow fordert Schreibrechte an.",
+        "oidc_pinned": "Cloud-Zugriff über OIDC (id-token: write) ist an geschützte Branches oder Umgebungen gebunden.",
+        "no_self_hosted_runner": "Kein selbst gehosteter Runner übernimmt Jobs von ungeschützten Branches.",
+        "no_privileged_pull_request": "Kein Workflow, der bei einem Pull Request im Kontext des Standard-Branches läuft (pull_request_target oder workflow_run mit den Artefakten des auslösenden Laufs), checkt Code oder Artefakte des Pull Requests aus, führt sie aus oder lädt sie herunter.",
+        "branch_rules": "Der Standard-Branch ist mit den erforderlichen Prüfungen des Repositorys geschützt, und die App kann nur auf voc-agent/*-Branches pushen."
+      },
+      "dialog": {
+        "title": "CI von {{repository}} bestätigen",
+        "description": "Ein Push auf einen Agenten-Branch kann die Pipelines des Repositorys starten, und diese führen Code aus, den ein Agent ändern kann. Bestätigen Sie jeden Punkt für dieses Repository: Ihr Name und die Uhrzeit werden dazu gespeichert.",
+        "legend": "Auf ungeschützten Branches erhält die CI des Repositorys nichts Wertvolles:",
+        "allPoints": "Bestätigen Sie jeden Punkt: Die Agenten pushen erst, wenn alle zutreffen.",
+        "note": "Notiz (optional)",
+        "noteHint": "Was Sie geprüft haben oder warum: wird mit der Bestätigung gespeichert. Eine Zeile, höchstens {{max, number}} Zeichen.",
+        "checked": "Der Broker liest bei jedem Push und Pull Request zusätzlich die Branch-Regeln: Der Standard-Branch ist mit erforderlichen Prüfungen geschützt, voc-agent/*-Branches sind nicht geschützt.",
+        "save": "Bestätigung speichern"
+      },
+      "withdraw": {
+        "title": "CI-Bestätigung von {{repository}} zurückziehen?",
+        "message": "Der nächste Push oder Pull Request der Agenten auf {{repository}} wird abgelehnt, bis eine Administratorin oder ein Administrator die CI erneut bestätigt.",
+        "confirm": "Bestätigung zurückziehen"
+      }
     }
   },
   "engineeringRun": {

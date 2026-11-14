@@ -163,6 +163,8 @@ class RunRecord:
     default_branch: str
     #: The run's status (META's): the broker serves only an ``ACTIVE`` run.
     status: str
+    #: Whether an administrator's CI attestation holds for the run's repository (``RunDirectory.attested``: read at
+    #: each push and pull request, never before), and its version (0 for none).
     ci_attested: bool
     #: The text of the reviews behind the run's feedback ids: what no write may quote.
     cited_reviews: tuple[str, ...]
@@ -181,6 +183,43 @@ class RunRecord:
     repository: str = ''
     #: META's ``default_branch``: the stored connection's at the start ('' for a run started before 6.31.01).
     stored_default_branch: str = ''
+    ci_attestation: int = 0
+
+
+@dataclass(frozen=True)
+class CiProtection:
+    """What the host's branch rules say, as the connection's read-only token reads them (``RepositoryHost
+    .ci_protection``): whether the default branch is protected and the checks it requires, and whether the agent's
+    branch is protected (it must not be: a protected branch gets the CI secrets and the cloud trust kept for
+    protected branches, and an agent's branch runs code an agent wrote). ``checked_at``: when the host was read."""
+
+    default_branch_protected: bool
+    required_checks: tuple[str, ...]
+    agent_branch_protected: bool
+    checked_at: float = 0.0
+
+    @property
+    def passes(self) -> bool:
+        return self.default_branch_protected and bool(self.required_checks) and not self.agent_branch_protected
+
+
+#: What a push or a pull request is refused with when the host's branch rules are not what the setup guide asks.
+CI_DEFAULT_UNPROTECTED: Final = ("The repository's default branch is not protected: protect it, with the "
+                                 "repository's own checks required, before the agents push.")
+CI_NO_REQUIRED_CHECKS: Final = ("The repository's default branch requires no status check: require the repository's "
+                                'own CI checks on it before the agents push.')
+CI_AGENT_BRANCH_PROTECTED: Final = ("The agent's branch is protected by the repository's rules, so it would get what "
+                                    'protected branches get (their CI secrets and cloud trust): leave voc-agent/* '
+                                    'branches unprotected.')
+
+
+def ci_refusal(found: CiProtection) -> str | None:
+    """Why ``found`` refuses a push or a pull request, None when it passes."""
+    if not found.default_branch_protected:
+        return CI_DEFAULT_UNPROTECTED
+    if not found.required_checks:
+        return CI_NO_REQUIRED_CHECKS
+    return CI_AGENT_BRANCH_PROTECTED if found.agent_branch_protected else None
 
 
 @dataclass(frozen=True)
@@ -204,7 +243,14 @@ class RepositoryHost(Protocol):
     or updates a pull request only after verifying that the branch's head has that tree. A pull request read
     returns the pull request, its conversation, its review comments and its reviews."""
 
-    def read(self, connection_id: str, kind: ReadKind, target: str, cursor: str | None) -> ReadPage: ...
+    def read(self, connection_id: str, kind: ReadKind, target: str, cursor: str | None, branch: str = '') -> ReadPage:
+        """A page of what ``target`` names; a file and history on ``branch`` (the run's default branch, as the broker
+        worked it out; '' for the repository's own)."""
+        ...
+
+    def ci_protection(self, connection_id: str, default_branch: str, branch: str) -> CiProtection:
+        """The host's branch rules for ``default_branch`` and the agent's ``branch``, read with a read-only token."""
+        ...
 
     def file_at(self, connection_id: str, commit: str, path: str) -> bytes | None:
         """The bytes of ``path`` at ``commit``, ``None`` when the commit has no such file (a patch's base)."""
@@ -238,6 +284,11 @@ class BundleReader(Protocol):
 
 class RunDirectory(Protocol):
     def run(self, run_id: str) -> RunRecord | None: ...
+
+    def attested(self, run: RunRecord) -> RunRecord:
+        """``run`` with the CI attestation that holds for its connection and repository (``ci_attested``,
+        ``ci_attestation``): what a push or a pull request needs, read when one is asked for."""
+        ...
 
 
 class GateLedger(Protocol):
@@ -281,6 +332,9 @@ class Unconnected:
         raise NoConnection(NO_CONNECTION)
 
     def run(self, run_id: str) -> RunRecord | None:  # noqa: ARG002 - the protocol's signature
+        raise NoConnection(NO_CONNECTION)
+
+    def attested(self, run: RunRecord) -> RunRecord:  # noqa: ARG002 - the protocol's signature
         raise NoConnection(NO_CONNECTION)
 
     def has_go(self, run_id: str, tree_hash: str) -> bool:  # noqa: ARG002 - the protocol's signature

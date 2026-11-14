@@ -826,6 +826,45 @@
       "conflict": "现在无法更改此连接：请先停止它正在进行的运行，或移除另一个连接。",
       "unavailable": "连接暂时不可用。请稍后重试。",
       "generic": "无法更改此连接。请重试。"
+    },
+    "ci": {
+      "attested": "CI 已确认",
+      "notAttested": "CI 未确认",
+      "attestedBy": "由 {{who}} 于 {{when}} 确认：智能体可以推送到 voc-agent/* 分支并创建拉取请求草稿。",
+      "none": "在管理员确认此仓库的 CI 不会向智能体分支提供任何有价值的东西之前，智能体不会向此仓库推送任何内容。",
+      "withdrawnBy": "由 {{who}} 于 {{when}} 撤回：在再次确认之前，智能体不会推送任何内容。",
+      "voidedRepository": "连接的仓库已更改，确认已失效：请确认此仓库的 CI。",
+      "voidedRemoved": "连接已移除，确认已失效：请再次确认其 CI。",
+      "unknownPerson": "一位管理员",
+      "attest": "确认 CI",
+      "attestLabel": "确认 {{repository}} 的 CI",
+      "withdrawAction": "撤回 CI 确认",
+      "withdrawLabel": "撤回 {{repository}} 的 CI 确认",
+      "recorded": "{{repository}} 的 CI 确认已记录。",
+      "withdrawn": "{{repository}} 的 CI 确认已撤回。",
+      "points": {
+        "protected_secrets": "CI 密钥仅限受保护的分支（带分支规则的环境）：智能体分支得不到任何密钥。",
+        "read_only_token": "工作流的默认令牌为只读，且没有工作流请求写入权限。",
+        "oidc_pinned": "通过 OIDC（id-token: write）的云访问仅限受保护的分支或环境。",
+        "no_self_hosted_runner": "没有自托管运行器接收来自未受保护分支的作业。",
+        "no_privileged_pull_request": "在拉取请求上以默认分支上下文运行的工作流（pull_request_target，或使用触发运行产物的 workflow_run）都不会检出、运行或下载拉取请求的代码或产物。",
+        "branch_rules": "默认分支受仓库的必需检查保护，且应用只能推送到 voc-agent/* 分支。"
+      },
+      "dialog": {
+        "title": "确认 {{repository}} 的 CI",
+        "description": "推送到智能体分支可能会启动仓库自己的流水线，而流水线会运行智能体可以更改的代码。请为此仓库逐项确认：您的姓名和时间会一并记录。",
+        "legend": "在未受保护的分支上，仓库的 CI 得不到任何有价值的东西：",
+        "allPoints": "请确认每一项：只有全部满足后，智能体才会推送。",
+        "note": "备注（可选）",
+        "noteHint": "您检查了什么或原因：与确认一并保存。一行，最多 {{max, number}} 个字符。",
+        "checked": "每次推送和拉取请求时，代理服务还会读取分支规则：默认分支须受必需检查保护，voc-agent/* 分支须不受保护。",
+        "save": "记录确认"
+      },
+      "withdraw": {
+        "title": "撤回 {{repository}} 的 CI 确认？",
+        "message": "在管理员再次确认其 CI 之前，智能体在 {{repository}} 上的下一次推送或拉取请求都会被拒绝。",
+        "confirm": "撤回确认"
+      }
     }
   },
   "engineeringRun": {

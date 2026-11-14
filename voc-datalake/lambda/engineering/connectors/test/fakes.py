@@ -9,6 +9,7 @@ from engineering.connectors.hosts import (
     WRITE_CLAIMED,
     WRITE_REFUSED,
     BundleContents,
+    CiProtection,
     CommentTarget,
     Commit,
     Connector,
@@ -92,9 +93,23 @@ class FakeHost:
     def repository(self, connection_id: str) -> str:  # noqa: ARG002 - the protocol's signature
         return self.credential_repository
 
-    def read(self, connection_id: str, kind: ReadKind, target: str, cursor: str | None) -> ReadPage:
+    #: The branch each read was made on (apart from ``calls``).
+    read_branches: list[str] = field(default_factory=list)
+    #: The branch rules the host answers (by default the guide's: protected, one required check, agents' unprotected).
+    protection: CiProtection = field(default_factory=lambda: CiProtection(
+        default_branch_protected=True, required_checks=('ci / test',), agent_branch_protected=False,
+        checked_at=1_700_000_000.0))
+    #: Every branch rules check (connection, default branch, agent's branch), apart from ``calls``.
+    ci_checks: list[tuple[str, str, str]] = field(default_factory=list)
+
+    def read(self, connection_id: str, kind: ReadKind, target: str, cursor: str | None, branch: str = '') -> ReadPage:
         self.calls.append(('read', connection_id, kind, target, cursor))
+        self.read_branches.append(branch)
         return ReadPage(content=f'{kind}:{target}', next_cursor=None if cursor else 'page-2')
+
+    def ci_protection(self, connection_id: str, default_branch: str, branch: str) -> CiProtection:
+        self.ci_checks.append((connection_id, default_branch, branch))
+        return self.protection
 
     def file_at(self, connection_id: str, commit: str, path: str) -> bytes | None:
         self.calls.append(('file_at', connection_id, commit, path))
@@ -149,6 +164,10 @@ class FakeRuns:
 
     def run(self, run_id: str) -> RunRecord | None:
         return self.runs.get(run_id)
+
+    def attested(self, run: RunRecord) -> RunRecord:
+        """The record as given: its ``ci_attested`` stands for the attestation (version 1 when attested)."""
+        return replace(run, ci_attestation=1 if run.ci_attested else 0)
 
 
 @dataclass

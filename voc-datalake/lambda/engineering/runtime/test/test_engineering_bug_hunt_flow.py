@@ -26,6 +26,7 @@ from engineering.connectors.broker import Broker
 from engineering.connectors.dial import WaysOfWorking
 from engineering.connectors.hosts import (
     BundleContents,
+    CiProtection,
     CommentTarget,
     Conflict,
     Connector,
@@ -95,9 +96,15 @@ class GitHost:
         run_git('clone', '--quiet', str(self.cache), str(self.work / 'base'))
         assert run_git('-C', str(self.work / 'base'), 'rev-parse', 'HEAD') == self.commit
 
-    def read(self, connection_id: str, kind: ReadKind, target: str, cursor: str | None) -> ReadPage:
-        del connection_id, cursor
+    def read(self, connection_id: str, kind: ReadKind, target: str, cursor: str | None, branch: str = '') -> ReadPage:
+        del connection_id, cursor, branch
         return ReadPage(content=f'{kind}:{target}', next_cursor=None)
+
+    def ci_protection(self, connection_id: str, default_branch: str, branch: str) -> CiProtection:
+        """The branch rules the setup guide asks for: the default branch protected with a required check, the agent's
+        branch not protected."""
+        assert (connection_id, default_branch, branch.startswith(f'voc-agent/{RUN}/')) == ('conn-1', 'main', True)
+        return CiProtection(default_branch_protected=True, required_checks=('ci / test',), agent_branch_protected=False)
 
     def file_at(self, connection_id: str, commit: str, path: str) -> bytes | None:
         base = self.work / 'base' / path   # (a path the broker's patch reader took: no '..', no .git)
@@ -149,15 +156,17 @@ class GitHost:
 
 @dataclass
 class Attested:
-    """The broker's run directory (records.py ``RunRecords``) with the CI attestation given. Its record is planned
-    (until then every run reads as not attested, and every push is refused), so the test stands in for an
-    administrator's confirmation of the repository's CI settings, and for nothing else."""
+    """The broker's run directory (records.py ``RunRecords``) with the CI attestation given: the test stands in for an
+    administrator's attestation of the repository's CI settings (its record, in voc-agents, is the Agents API's:
+    lambda/api/test/test_agents_engineering_connections.py runs the broker on it end to end), and for nothing else."""
 
     records: RunRecords
 
     def run(self, run_id: str) -> RunRecord | None:
-        found = self.records.run(run_id)
-        return None if found is None else replace(found, ci_attested=True)
+        return self.records.run(run_id)
+
+    def attested(self, run: RunRecord) -> RunRecord:
+        return replace(run, ci_attested=True, ci_attestation=1)
 
 
 @dataclass

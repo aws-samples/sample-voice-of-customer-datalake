@@ -12,12 +12,14 @@ from moto import mock_aws
 
 from engineering.board.store import BoardStore
 from engineering.board.test.table import TABLE, create_table
-from engineering.connectors.hosts import NoConnection, Unavailable
+from engineering.connectors import attestations
+from engineering.connectors.hosts import NoConnection, RunRecord, Unavailable
 from engineering.connectors.patches import AUTHOR
 from engineering.connectors.records import RunRecords
-from engineering.connectors.test.fakes import BASE, RUN, TREE
+from engineering.connectors.test.fakes import BASE, REPOSITORY, RUN, TREE, record
 from engineering.flow import ledger as go_ledger
 from engineering.workspace.store import WorkspaceStore
+from shared.test.moto_tables import create_pk_sk_table
 
 BUCKET = 'voc-eng-workspace'
 PK = f'WS#default#RUN#{RUN}'
@@ -92,7 +94,8 @@ def test_the_run_is_its_meta_and_its_stored_default_branch_with_nothing_of_the_h
     # The branch is the broker's to work out, after its repository check (broker.py): '' here, the stored one beside.
     assert (run.connection_id, run.default_branch, run.stored_default_branch, run.status, run.commit,
             run.started_by) == ('conn-1', '', 'develop', 'active', BASE, 'person-sub-1')
-    # Nothing records an attestation, the run's issue or pull request, or its reviews yet: none is made up.
+    # The CI attestation is read at a push or a pull request (``attested``), never with the run; nothing records the
+    # run's issue or pull request, or its reviews yet: none is made up.
     assert (run.ci_attested, run.issue_number, run.pull_request_number, run.cited_reviews) == (False, None, None, ())
     assert run.bot_addresses == (AUTHOR,)
 
@@ -272,3 +275,61 @@ def test_a_workspace_that_cannot_be_read_is_unavailable(stores: tuple[Any, Any])
     final_go(client, s3, 't1', gate_record('GO'))
     with pytest.raises(Unavailable):
         RunRecords(client, TABLE, WorkspaceStore(Down(), BUCKET)).has_go(RUN, TREE)
+
+
+# --- the CI attestation (attestations.py), in voc-agents ------------------------------------------------------------
+
+
+AGENTS = 'voc-agents-test'
+
+
+def attestation(agents: Any, version: int, state: str, repository: str = REPOSITORY) -> None:
+    """A version of conn-1's attestation as the Agents API writes it."""
+    agents.put_item(Item=attestations.version_row('conn-1', version, state, repository, by='admin-sub',
+                                                  by_name='alice', at='2026-11-14T09:00:00+00:00',
+                                                  points=attestations.POINTS if state == attestations.ATTESTED else ()))
+
+
+def attested(client: Any, s3: Any, run: RunRecord | None = None, agents_table: str = AGENTS) -> RunRecord:
+    records_ = RunRecords(client, TABLE, WorkspaceStore(s3, BUCKET, denied_is_missing=True), agents_table)
+    return records_.attested(run or record(ci_attested=False))
+
+
+def test_a_run_is_attested_only_by_the_newest_version_that_stands_for_its_repository(
+        stores: tuple[Any, Any]) -> None:
+    client, s3 = stores
+    agents = create_pk_sk_table(AGENTS)
+    assert (attested(client, s3).ci_attested, attested(client, s3).ci_attestation) == (False, 0)
+    attestation(agents, 1, attestations.ATTESTED)
+    assert (attested(client, s3).ci_attested, attested(client, s3).ci_attestation) == (True, 1)
+    # For another repository than the run started on: not this run's.
+    assert attested(client, s3, record(ci_attested=True, repository='example-org/other')).ci_attested is False
+    for version, state in ((2, attestations.WITHDRAWN), (3, attestations.ATTESTED), (4, attestations.VOIDED)):
+        attestation(agents, version, state)
+        assert attested(client, s3).ci_attestation == (3 if state == attestations.ATTESTED else 0)
+
+
+def test_with_no_agents_table_or_no_repository_on_the_run_nothing_is_attested(stores: tuple[Any, Any]) -> None:
+    client, s3 = stores
+    attestation(create_pk_sk_table(AGENTS), 1, attestations.ATTESTED)
+    assert attested(client, s3, agents_table='').ci_attested is False
+    assert attested(client, s3, record(ci_attested=True, repository='')).ci_attested is False
+    assert attested(client, s3, record(ci_attested=True, connection_id='')).ci_attested is False
+
+
+def test_the_attestation_read_is_one_projected_query_and_a_failure_is_unavailable() -> None:
+    queries: list[dict[str, Any]] = []
+
+    class Recording:
+        def query(self, **request: Any) -> Any:
+            queries.append(request)
+            return {'Items': []}
+
+    assert RunRecords(Recording(), TABLE, WorkspaceStore(Down(), BUCKET), AGENTS).attested(record()).ci_attested is False
+    (query,) = queries
+    # Of the newest row only the attributes the broker's IAM grant allows (engineering-broker.ts).
+    assert (query['TableName'], query['Limit'], query['ScanIndexForward'], sorted(
+        query['ExpressionAttributeNames'].values())) == (AGENTS, 1, False, sorted(attestations.BROKER_ATTRIBUTES))
+    assert query['ExpressionAttributeValues'][':pk'] == {'S': 'CONNECTIONS#default#CI#conn-1'}
+    with pytest.raises(Unavailable, match='CI attestation'):
+        RunRecords(Down(), TABLE, WorkspaceStore(Down(), BUCKET), AGENTS).attested(record())

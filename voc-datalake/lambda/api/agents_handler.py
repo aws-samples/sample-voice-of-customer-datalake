@@ -29,7 +29,9 @@ Permissions:
   its history row; the runtime reads it at a budgeted run's first start), and the repository connections
   (``GET /agents/engineering/connections``, ``PUT``/``DELETE …/connections/<id>``,
   engineering/connectors/connections.py: a row in the agents table with its audit rows, and the GitHub App
-  credential in SSM, written and deleted here, never read), and a run's start
+  credential in SSM, written and deleted here, never read), and each connection's CI attestation
+  (``POST``/``DELETE …/connections/<id>/ci-attestation``, engineering/connectors/attestations.py: create-only
+  version rows beside the connection's, each with its audit row), and a run's start
   (``POST /agents/engineering/runs``, a saved engineering flow on a stored connection's commit: the start
   function, below); while the engineering agents are off every caller gets 404.
 
@@ -1170,6 +1172,53 @@ def delete_engineering_connection(connection_id: str):
 
     _connection_call(remove)
     return {'removed': True}
+
+
+# A connection's CI attestation (engineering/connectors/attestations.py; docs/autonomous-engineering.md, "The target's
+# CI"): an administrator acting for themselves confirms every point of the setup guide for the connection's repository,
+# or withdraws the confirmation. Each is a create-only version row with the connection's own audit row; the broker
+# refuses every push and pull request on the connection while none holds.
+@app.post('/agents/engineering/connections/<connection_id>/ci-attestation')
+@tracer.capture_method(capture_response=False)
+def attest_engineering_connection_ci(connection_id: str):
+    """``{points: [...every point of the setup guide], repository, version, reason?}`` → ``{attestation, created,
+    connection_version}``: records the administrator's attestation that the repository's CI meets the guide, for the
+    repository and the connection version they reviewed (an attestation that already holds is answered as it stands,
+    ``created: false``). 404 for a connection that is not stored; 409 when the connection no longer holds that
+    repository at that version (another administrator changed it meanwhile: the check is in the write's own
+    condition too)."""
+    connections, caller = _connection_store()
+    from engineering.connectors.connections import check_connection_id, parse_attestation
+
+    def attest() -> tuple[dict, bool, int]:
+        check_connection_id(connection_id)
+        request = parse_attestation(json_object_body(app))
+        attestation, created = connections.attest(connection_id, request, _connection_actor(caller))
+        # (a recorded attestation bumps the connection's version once, in its transaction)
+        return attestation, created, request.version + 1 if created else request.version
+
+    attestation, created, version = _connection_call(attest)
+    return {'attestation': attestation, 'created': created, 'connection_version': version}
+
+
+@app.delete('/agents/engineering/connections/<connection_id>/ci-attestation')
+@tracer.capture_method(capture_response=False)
+def withdraw_engineering_connection_ci(connection_id: str):
+    """``{reason?}`` (the body optional) → ``{withdrawn: true}``: withdraws the connection's CI attestation (a new
+    version, with its audit row), so the broker refuses every push and pull request on it from the next one. 404 when
+    none holds."""
+    connections, caller = _connection_store()
+    from engineering.connectors.connections import check_connection_id, parse_reason
+
+    def withdraw() -> None:
+        check_connection_id(connection_id)
+        body = json_object_body(app)
+        if not set(body) <= {'reason'}:
+            raise ValidationError('the body is {reason?}, or none')
+        connections.withdraw(connection_id, _connection_actor(caller), parse_reason(body.get('reason')))
+
+    _connection_call(withdraw)
+    return {'withdrawn': True}
 
 
 # A run's start (``POST /agents/engineering/runs``): an administrator acting for themselves starts a saved engineering

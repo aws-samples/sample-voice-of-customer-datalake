@@ -17,6 +17,96 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.32.00] - 2026-11-14
+
+Autonomous engineering agents: the CI attestation is recorded, so the broker can serve a push and a draft pull request
+on an attested connection instead of refusing every one. Off by default (`-c engineeringAgents=true`), and no fixed
+cost.
+
+### Added
+
+- **A connection's CI attestation** (`lambda/engineering/connectors/attestations.py`, `connections.py`;
+  docs/autonomous-engineering.md, "Repository connectors"): an administrator acting for themselves (a delegated MCP
+  credential gets 403; 404 while the module is off) attests that the repository's CI meets the setup guide,
+  `POST /agents/engineering/connections/<id>/ci-attestation` `{points, repository, version, reason?}` →
+  `{attestation, created, connection_version}`, every one of its six points confirmed by id (CI secrets scoped to
+  protected branches, a read-only workflow token, OIDC trust pinned to protected branches, no self-hosted runner for
+  unprotected branches, no privileged workflow on a pull request's code, the branch rules), for the repository and the
+  connection version the page showed: 409 once the connection holds another repository or version, checked on the row
+  read and in the write's own transaction condition, so another administrator repointing the connection meanwhile
+  never gets an unreviewed repository attested (the list answers each connection's `version`). It is withdrawn with
+  `DELETE …/ci-attestation` `{reason?}` → `{withdrawn: true}`.
+  Each change is a create-only version row (`CONNECTIONS#default#CI#<id>` / `V#<version>`: the state, the repository
+  it stands for, the points, who and when, the reason) written in one transaction with the connection's audit row
+  (`ci_attested`, `ci_withdrawn`) and a bump of the connection row's version, so a change made meanwhile is 409. A
+  repository change and a removal void it (a `voided` version, its cause, and `ci_attestation: voided` on the save's or
+  the removal's audit row); changing the repository back does not restore it. The connections' list answers each one's
+  newest version.
+- **The broker reads it** (`records.py` `attested`, `broker.py`): at every push and pull request, after the dial, one
+  Query of the newest version in `voc-agents`, projected (`ENGINEERING_CONNECTIONS_TABLE` on the broker); it holds only while it is
+  `attested` for the repository the run started on. A withdrawal or a void holds from the next write. Every other gate
+  is unchanged: the dial, the final go's GO, the write claims.
+- **The broker's own check of the branch rules** (`github.py` `ci_protection`, `hosts.py` `CiProtection`): at each push
+  and pull request on an attested connection, with the connection's `contents: read` token (GitHub's branch read and
+  the ruleset rules of a branch, which any reader sees; at most four requests, no write), the run's default branch must
+  be protected and require at least one status check, and the agent's branch must not be protected by any rule;
+  otherwise 409 saying what to change. A pass is kept five minutes per warm container (at most 256 kept, the oldest
+  dropped first), so rules weakened after a pass can go unseen that long, while a withdrawal or a void takes effect at
+  the next write; a failure is read again next time. Each write's claim row records the attestation's version, when
+  the rules were read and the required checks' names. The check covers only default-branch protection with a required
+  check and an unprotected agent's branch; the App's pushes being limited to `voc-agent/*` stays the attestation's.
+- **Agents → Connections** shows each connection's CI attestation (attested, by whom and when; withdrawn; voided and
+  why; none), with **Attest CI** (the six points as checkboxes that must all be ticked, and an optional note; it sends
+  the repository and version shown) and **Withdraw CI** (after a confirmation, with an optional note sent as its
+  reason), in all nine locales.
+- CDK (`lib/stacks/engineering-broker.ts`): the broker's role gets `dynamodb:Query` on `voc-agents` in the
+  attestations' partitions alone (`CONNECTIONS#*#CI#*`) and of a row only its key, `state`, `repository` and `version`.
+  The partitions match `CONNECTIONS#*`, so every other role that writes `voc-agents` stays denied writes to them.
+
+### Fixed
+
+- **A file and history read use the run's own default branch** (`github.py`, `broker.py`): they read the repository's
+  own default branch, so a run whose connection names `develop` read files of `main`. The broker now hands the host the
+  branch it worked out (the stored one, once the host confirmed it), as `ref` and `sha`.
+
+### Changed
+
+- docs/autonomous-engineering.md, docs/deployment.md and TENETS.md (tenet 3's row) say what is built and what is
+  planned: GitLab (its client and its attestation), sparse clones, the checkout cache, the run's issue and pull request
+  on its record, and the first real run against a repository, which waits for the owner.
+- `lib/test-support/baseline.json` regenerated: VocProcessingStack's and VocApiStack's template hashes moved (the
+  Lambda asset hashes of the code their bundles carry; the default synth has no broker); no resource or name changed.
+
+### Tests
+
+- The broker on the fake host, end to end through the routes and the broker's Lambda on moto: a draft pull request is
+  refused with no attestation, opened once one is recorded (its claim keeping the attestation and the branch rules),
+  refused again once it is withdrawn; a repository change voids it and the broker refuses until the repository is
+  attested again; an attested connection whose default branch is unprotected is refused.
+- The record: each version's fields, create-only rows, the audit rows, the version bump and the 409 of a raced
+  repository change, an attestation answered as it stands, a withdrawal and a new attestation after it, the voids, the
+  404s and 503s, and every point required (a refusal naming what is missing, never echoing a value).
+- The routes: the admin gate (a plain user and an administrator's MCP credential get 403), 404 with the module off,
+  400 for a body off its rules, the audit rows and their reasons, and the repoint race: a connection repointed (or
+  changed) after the page showed it is 409 with nothing recorded, through the route and the store, and a repoint
+  between the store's read and its write is refused by the transaction's own condition (which names the reviewed
+  repository and version).
+- The broker's reader: the newest version decides, only for the run's repository, none without the agents table or the
+  run's `repo`, one projected Query of exactly the attributes its IAM grant allows, 503 on a failed read.
+- The branch rules: classic protection and rulesets, the required checks of both, each rule off the guide refusing the
+  push and the pull request, the names kept bounded, a pass kept five minutes and a failure read again, the cache's
+  bound; a file and history read on the run's branch.
+- CDK: the broker's new statement (the partitions, the attributes, a Query only, voc-agents alone) and its variable.
+- The web app: each state's text, the attestation sent only once every point is ticked (the first one left focused),
+  the note sent, a 409 in the server's words, the withdrawal after its confirmation, and the attest flow in each of the
+  nine locales through their own labels.
+
+### Upgrade notes
+
+- With the module on, every push and pull request is refused until an administrator attests the connection's CI
+  (Agents → Connections → Attest CI), and then while the repository's default branch is unprotected, requires no
+  status check, or a rule protects `voc-agent/*` branches. Nothing to migrate.
+
 ## [6.31.01] - 2026-11-14
 
 Autonomous engineering agents: the follow-ups of 6.31.00's reviews. Off by default (`-c engineeringAgents=true`), and

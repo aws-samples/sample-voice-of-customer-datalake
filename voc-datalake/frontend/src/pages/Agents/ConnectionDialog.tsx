@@ -11,15 +11,13 @@
  *
  * @module pages/Agents/ConnectionDialog
  */
-import { useId, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { Loader2 } from 'lucide-react'
-import ModalShell from '../../components/ModalShell/ModalShell'
 import { engineeringConnectionsApi, engineeringConnectionsKeys } from '../../api/engineeringConnectionsApi'
 import { ConnectionTextField, CredentialGuidance } from './ConnectionFields'
+import { ConnectionFormModal } from './ConnectionModals'
 import { EMPTY_CONNECTION_FORM, MAX_BRANCH, connectionIssues, connectionRequest } from './connectionRules'
-import { useConnectionError } from './connectionText'
 import type { ConnectionList, EngineeringConnection, SavedConnection } from '../../api/engineeringConnectionsApi'
 import type { ConnectionField, ConnectionForm, ConnectionIssues } from './connectionRules'
 
@@ -65,10 +63,7 @@ export function ConnectionDialog({ existing, onClose, onSaved }: Readonly<{
   onSaved: (saved: SavedConnection) => void
 }>) {
   const { t } = useTranslation('agents')
-  const errorText = useConnectionError()
   const queryClient = useQueryClient()
-  const titleId = useId()
-  const descriptionId = useId()
   const [form, setForm] = useState<ConnectionForm>(() => formOf(existing))
   const [issues, setIssues] = useState<ConnectionIssues>({})
   const fields = useRef<Partial<Record<ConnectionField, HTMLInputElement | HTMLTextAreaElement | null>>>({})
@@ -107,40 +102,18 @@ export function ConnectionDialog({ existing, onClose, onSaved }: Readonly<{
     )
   }
   return (
-    <ModalShell isOpen onClose={onClose} ariaLabelledBy={titleId} panelClassName="w-full max-w-lg"
-      dismissable={!save.isPending}>
-      <div className="dialog-header">
-        <div>
-          <h2 id={titleId} className="dialog-title">
-            {existing === null ? t('connections.dialog.addTitle') : t('connections.dialog.editTitle', { repository: existing.repository })}
-          </h2>
-          <p id={descriptionId} className="dialog-description">{t('connections.dialog.description')}</p>
-        </div>
-      </div>
-      <form className="contents" noValidate aria-describedby={descriptionId} onSubmit={(event) => {
-        event.preventDefault()
-        if (!save.isPending) submit()
-      }}>
-        <div className="dialog-body space-y-3">
-          {field('connectionId', { mono: true })}
-          {field('repository', { mono: true })}
-          {field('defaultBranch', { mono: true })}
-          {existing !== null && <StoredCredential connection={existing} />}
-          {field('appId', { mono: true })}
-          {field('installationId', { mono: true })}
-          {field('privateKey', { secret: true })}
-          <CredentialGuidance />
-          {save.isError && <p role="alert" className="text-[12px] text-danger">{errorText(save.error)}</p>}
-        </div>
-        <div className="dialog-footer">
-          <button type="button" className="btn btn-secondary" onClick={onClose} disabled={save.isPending}>
-            {t('common.cancel')}
-          </button>
-          <button type="submit" className="btn btn-primary" aria-disabled={save.isPending}>
-            {save.isPending && <Loader2 size={14} className="animate-spin" aria-hidden="true" />} {t('connections.dialog.save')}
-          </button>
-        </div>
-      </form>
-    </ModalShell>
+    <ConnectionFormModal
+      title={existing === null ? t('connections.dialog.addTitle') : t('connections.dialog.editTitle', { repository: existing.repository })}
+      description={t('connections.dialog.description')} saveLabel={t('connections.dialog.save')} pending={save.isPending}
+      error={save.isError ? save.error : null} onClose={onClose} onSubmit={submit}>
+      {field('connectionId', { mono: true })}
+      {field('repository', { mono: true })}
+      {field('defaultBranch', { mono: true })}
+      {existing !== null && <StoredCredential connection={existing} />}
+      {field('appId', { mono: true })}
+      {field('installationId', { mono: true })}
+      {field('privateKey', { secret: true })}
+      <CredentialGuidance />
+    </ConnectionFormModal>
   )
 }

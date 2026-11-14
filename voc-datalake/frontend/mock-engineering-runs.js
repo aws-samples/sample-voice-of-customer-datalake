@@ -20,6 +20,7 @@
 //   GET|PUT /agents/engineering/settings   the administrators' hard cap {hard_cap, updated_at, updated_by}
 //   GET  /agents/engineering/connections   the repository connections {connections, limit} (admin; never a secret)
 //   PUT|DELETE /agents/engineering/connections/<id>   store one with its GitHub App credential, or keep the stored one
+//   POST|DELETE /agents/engineering/connections/<id>/ci-attestation   attest its CI (every point), or withdraw it
 //                     (the server's field checks; 409 past the limit or for a repository change with live runs) | remove
 //                     one (404 for an unknown id)
 //   GET  /agents/engineering/spend?month=&by=&workflow=   the spend ledger's month, grouped (admin; 400 for a bad
@@ -494,7 +495,7 @@ function settingsRoute(req, res, send, shared) {
 // The engineering connectors' `connections` module's rules. The GitHub App's private key is taken and never answered: a connection says only
 // whether its credential is set, and the App's ids. A save without a credential keeps the stored one (a new connection,
 // or a new repository, needs it); a live run on 'storefront' refuses its repository change (409).
-const CONNECTION_PATH = /^\/agents\/engineering\/connections(?:\/([^/]*))?$/;
+const CONNECTION_PATH = /^\/agents\/engineering\/connections(?:\/([^/]*)(\/ci-attestation)?)?$/;
 const CONNECTION_LIMIT = 20;
 const CONNECTION_FIELDS = ['host', 'repository', 'default_branch', 'credential'];
 const CREDENTIAL_FIELDS = ['app_id', 'installation_id', 'private_key'];
@@ -503,6 +504,7 @@ const connections = new Map([['storefront', {
   connection_id: 'storefront', host: 'github', repository: 'example-org/storefront', default_branch: 'main',
   credential: { kind: 'app', set: true, app_id: '104729', installation_id: '7919001' },
   created_at: minutesAgo(60 * 24 * 9), created_by: 'admin-demo', updated_at: minutesAgo(60 * 24 * 2), updated_by: 'admin-demo',
+  version: 3,
 }]]);
 const DIGITS = /^[1-9]\d{0,19}$/;
 const PEM = /^-----BEGIN (RSA |)PRIVATE KEY-----\n(?:[A-Za-z0-9+/=]{1,76}\n)+-----END \1PRIVATE KEY-----$/;
@@ -568,18 +570,90 @@ function saveConnection(id, body) {
   const connection = {
     connection_id: id, host: 'github', repository: body.repository, default_branch: body.default_branch, credential,
     created_at: before?.created_at ?? now, created_by: before?.created_by ?? 'admin-demo', updated_at: now, updated_by: 'admin-demo',
+    version: (before?.version ?? 0) + 1,
   };
   connections.set(id, connection);
-  return [200, { connection, created: before === undefined }];
+  if (before !== undefined && before.repository !== body.repository) voidAttestation(id, 'repository_changed');
+  return [200, { connection: withAttestation(connection), created: before === undefined }];
 }
 
-function connectionsRoute(req, res, send, shared, id) {
+// ── A connection's CI attestation (POST|DELETE …/connections/<id>/ci-attestation; connectors/attestations.py) ──
+// Every point of the setup guide confirmed, or 400; the newest version answered with the connection; a repository
+// change or a removal voids it.
+const CI_POINTS = ['protected_secrets', 'read_only_token', 'oidc_pinned', 'no_self_hosted_runner',
+  'no_privileged_pull_request', 'branch_rules'];
+const attestations = new Map([['storefront', {
+  version: 1, state: 'attested', repository: 'example-org/storefront', points: CI_POINTS, by: 'admin-demo',
+  at: minutesAgo(60 * 24), reason: null, cause: null,
+}]]);
+
+const withAttestation = (connection) => ({ ...connection, ci_attestation: attestations.get(connection.connection_id) ?? null });
+
+/** The connection's next version: `state`, for its repository now, by the demo administrator. */
+function nextVersion(id, state, extra) {
+  const newest = attestations.get(id);
+  const version = {
+    version: (newest?.version ?? 0) + 1, state, repository: connections.get(id)?.repository ?? newest?.repository ?? '',
+    points: [], by: 'admin-demo', at: new Date().toISOString(), reason: null, cause: null, ...extra,
+  };
+  attestations.set(id, version);
+  return version;
+}
+
+function voidAttestation(id, cause) {
+  if (attestations.get(id)?.state === 'attested') nextVersion(id, 'voided', { cause });
+}
+
+function attest(id, body) {
+  if (!connections.has(id)) return [404, { message: 'Connection not found' }];
+  const points = body?.points;
+  const fields = ['points', 'repository', 'version', 'reason'];
+  if (!Array.isArray(points) || Object.keys(body).some((key) => !fields.includes(key))
+    || typeof body.repository !== 'string' || !Number.isInteger(body.version)) {
+    return [400, { message: 'the body is {points, repository, version, reason?}: the setup guide\'s points confirmed' }];
+  }
+  const missing = CI_POINTS.filter((point) => !points.includes(point));
+  if (missing.length > 0 || points.some((point) => !CI_POINTS.includes(point))) {
+    return [400, { message: `every point of the setup guide is confirmed: not yet ${missing.join(', ')}` }];
+  }
+  // (the repository and version the page reviewed: another administrator's change meanwhile refuses it)
+  const connection = connections.get(id);
+  if (connection.repository !== body.repository || connection.version !== body.version) {
+    return [409, { message: 'the connection changed meanwhile: reload it, review its repository again and try again' }];
+  }
+  const newest = attestations.get(id);
+  if (newest?.state === 'attested' && newest.repository === connection.repository) {
+    return [200, { attestation: newest, created: false, connection_version: connection.version }];
+  }
+  const reason = typeof body.reason === 'string' && body.reason.trim() !== '' ? body.reason.trim() : null;
+  connection.version += 1;
+  return [200, { attestation: nextVersion(id, 'attested', { points: CI_POINTS, reason }), created: true,
+    connection_version: connection.version }];
+}
+
+function attestationRoute(req, res, send, shared, id) {
+  if (req.method === 'POST') return shared.collectJson(req, res, (body) => send(...attest(id, body)));
+  if (req.method !== 'DELETE') return send(405, { message: 'Method not allowed' });
+  if (!connections.has(id) || attestations.get(id)?.state !== 'attested') {
+    return send(404, { message: 'no CI attestation holds for this connection' });
+  }
+  return shared.collectJson(req, res, (body) => {
+    const reason = typeof body?.reason === 'string' && body.reason.trim() !== '' ? body.reason.trim() : null;
+    connections.get(id).version += 1;
+    nextVersion(id, 'withdrawn', { reason });
+    send(200, { withdrawn: true });
+  });
+}
+
+function connectionsRoute(req, res, send, shared, id, ciAttestation) {
   if (!isAdmin()) return send(403, { message: 'Admin access required' });
   if (id === undefined) {
     if (req.method !== 'GET') return send(405, { message: 'Method not allowed' });
-    return send(200, { connections: [...connections.values()], limit: CONNECTION_LIMIT });
+    return send(200, { connections: [...connections.values()].map(withAttestation), limit: CONNECTION_LIMIT });
   }
+  if (ciAttestation) return attestationRoute(req, res, send, shared, id);
   if (req.method === 'DELETE') {
+    voidAttestation(id, 'connection_removed');
     if (!connections.delete(id)) return send(404, { message: 'Connection not found' });
     return send(200, { removed: true });
   }
@@ -634,7 +708,8 @@ export function handleEngineeringRunRoutes(req, res, url, send, shared) {
   if (!url.pathname.startsWith(PREFIX)) return false;
   const connection = CONNECTION_PATH.exec(url.pathname);
   if (connection) {
-    connectionsRoute(req, res, send, shared, connection[1] === undefined ? undefined : decodeURIComponent(connection[1]));
+    connectionsRoute(req, res, send, shared, connection[1] === undefined ? undefined : decodeURIComponent(connection[1]),
+      connection[2] !== undefined);
     return true;
   }
   const exact = url.pathname.slice(PREFIX.length);

@@ -23,7 +23,13 @@ Writes, and how each holds the broker's ``tree_hash``:
   refused, since the host already wrote. An update changes only the title and body: GitHub's REST
   API cannot turn a pull request a person marked ready back into a draft.
 
-The client has no method for a merge, an approval, settings, branch protection, members, webhooks or secrets.
+Reads: a file and history on the run's default branch (the broker hands it on: ``ref`` and ``sha``), an issue or a
+pull request with its thread, a patch's base file at the run's commit, and, for the CI attestation's check
+(6.32.00, ``ci_protection``), what any reader of the repository sees of its branch rules: a branch's ``protected``
+and classic required checks, and the ruleset rules that apply to a branch's name.
+
+The client has no method for a merge, an approval, settings, a change of branch protection, members, webhooks or
+secrets.
 Every request goes to ``api.github.com`` through one ``Transport`` (tests inject a fake): the token travels only in
 the ``Authorization`` header, never in a URL; no redirect is followed; reads follow ``Link`` pagination by page
 number (the cursor). A rate limit (``Retry-After``, ``X-RateLimit-Reset``, a secondary rate limit) is never waited
@@ -53,6 +59,7 @@ from engineering.connectors.hosts import (
     OBJECT_ID,
     STORED_BRANCH_MISSING,
     BundleContents,
+    CiProtection,
     CommentTarget,
     Conflict,
     FileChange,
@@ -111,6 +118,13 @@ DEFAULT_BRANCH_SECONDS: Final = 300
 #: The most entries each branch cache keeps (connections times branches stay small; the oldest goes first).
 MAX_CACHED_BRANCHES: Final = 256
 _DRAFT: Final[Permissions] = {'contents': 'read', 'pull_requests': 'write'}
+#: How long branch rules that passed the CI check are kept before they are read again.
+CI_CHECK_SECONDS: Final = 300
+#: The ruleset rules of one branch the check reads (one page): a branch with any is protected.
+RULES_PAGE: Final = 100
+#: The required checks a check keeps (their names), and the longest name it keeps.
+MAX_REQUIRED_CHECKS: Final = 20
+MAX_CHECK_NAME: Final = 200
 
 
 @dataclass(frozen=True)
@@ -285,6 +299,22 @@ def _stray_changes(contents: BundleContents) -> list[str]:
     return found
 
 
+def _check_names(names: list[object]) -> tuple[str, ...]:
+    """The status checks' names a branch rule lists: text, one line, at most ``MAX_CHECK_NAME`` characters each."""
+    return tuple(name for name in names if isinstance(name, str) and name.strip() and len(name) <= MAX_CHECK_NAME
+                 and name.isprintable())
+
+
+def _ruleset_checks(rules: list[object]) -> tuple[str, ...]:
+    """The status checks the ``required_status_checks`` rules of a branch's rulesets require."""
+    names: list[object] = []
+    for rule in rules:
+        if _dig(rule, 'type') == 'required_status_checks':
+            listed = _dig(rule, 'parameters', 'required_status_checks')
+            names += [_dig(check, 'context') for check in (listed if isinstance(listed, list) else [])]
+    return _check_names(names)
+
+
 def _keep[K, V](cache: dict[K, V], key: K, value: V) -> None:
     """``cache[key] = value``, the oldest entries dropped first so it never holds more than ``MAX_CACHED_BRANCHES``."""
     cache.pop(key, None)
@@ -307,6 +337,8 @@ class GitHubHost:
         self._default_branches: dict[tuple[str, str], tuple[str, float]] = {}
         #: (connection, owner/repository, a stored default branch the host has) -> when it is looked up again.
         self._confirmed_branches: dict[tuple[str, str, str], float] = {}
+        #: (connection, owner/repository, default branch, agent branch) -> (branch rules that passed, when read again).
+        self._ci_checks: dict[tuple[str, str, str, str], tuple[CiProtection, float]] = {}
 
     # --- HTTP -------------------------------------------------------------------------------------------------
 
@@ -356,21 +388,24 @@ class GitHubHost:
 
     # --- reads ------------------------------------------------------------------------------------------------
 
-    def read(self, connection_id: str, kind: ReadKind, target: str, cursor: str | None) -> ReadPage:
+    def read(self, connection_id: str, kind: ReadKind, target: str, cursor: str | None, branch: str = '') -> ReadPage:
+        """A file or history on ``branch`` (the run's default branch, as the broker worked it out: the stored one once
+        the host confirmed it; '' for the repository's own), an issue or a pull request with its thread."""
         if kind == 'file':
-            return self._read_file(connection_id, target, cursor)
+            return self._read_file(connection_id, target, cursor, branch)
         page = _page(cursor)
         if kind == 'history':
-            return self._read_history(connection_id, target, page)
+            return self._read_history(connection_id, target, page, branch)
         return self._read_thread(connection_id, kind, _number(target), page)
 
-    def _read_file(self, connection_id: str, target: str, cursor: str | None) -> ReadPage:
+    def _read_file(self, connection_id: str, target: str, cursor: str | None, branch: str) -> ReadPage:
         if cursor is not None:
             raise InvalidTarget('A file is read whole; it has no pages.')
-        response = self._api(connection_id, _READS['file'], 'GET', f'/contents/{_repository_path(target)}',
+        on = f'?{urlencode({"ref": branch})}' if branch else ''
+        response = self._api(connection_id, _READS['file'], 'GET', f'/contents/{_repository_path(target)}{on}',
                              'the file read', accept=_RAW, ok=(200, 404))
         if response.status == 404:
-            raise NotFound('The repository has no such file on its default branch.')
+            raise NotFound("The repository has no such file on the run's default branch.")
         try:
             return ReadPage(content=response.body.decode('utf-8'), next_cursor=None)
         except UnicodeDecodeError:
@@ -418,9 +453,62 @@ class GitHubHost:
         _keep(self._confirmed_branches, key, now + DEFAULT_BRANCH_SECONDS)
         return branch
 
-    def _read_history(self, connection_id: str, target: str, page: str) -> ReadPage:
-        # "." is the whole repository's history; any other target, the history of that path.
+    # --- the branch rules (the CI attestation's check) ------------------------------------------------------------
+
+    def ci_protection(self, connection_id: str, default_branch: str, branch: str) -> CiProtection:
+        """What the repository's branch rules say of ``default_branch`` and the agent's ``branch``, read with a
+        ``contents: read`` token (rules and branches are what any reader of the repository sees): the default
+        branch's protection (classic branch protection or any ruleset rule) and the status checks it requires (both
+        kinds), and whether ``branch`` is protected (any rule for its name, or, once it exists, GitHub's own
+        ``protected``). At most four requests (two per branch), none of them a write; a result that passes is kept
+        ``CI_CHECK_SECONDS`` per connection, repository and both branches, one that does not is read again next time,
+        so a fixed rule counts at once."""
+        credential = self._credentials(connection_id)
+        key = (connection_id, f'{credential.owner}/{credential.repository}', default_branch, branch)
+        now = self._clock()
+        held = self._ci_checks.get(key)
+        if held is not None and now < held[1]:
+            return held[0]
+        protected, classic_checks = self._branch_protection(connection_id, default_branch)
+        rules = self._rules(connection_id, default_branch)
+        agent_protected, _ = self._branch_protection(connection_id, branch)
+        checks = (*classic_checks, *_ruleset_checks(rules))
+        found = CiProtection(default_branch_protected=protected or bool(rules),
+                             required_checks=tuple(dict.fromkeys(checks))[:MAX_REQUIRED_CHECKS],
+                             agent_branch_protected=agent_protected or bool(self._rules(connection_id, branch)),
+                             checked_at=now)
+        if found.passes:
+            _keep(self._ci_checks, key, (found, now + CI_CHECK_SECONDS))
+        return found
+
+    def _branch_protection(self, connection_id: str, branch: str) -> tuple[bool, tuple[str, ...]]:
+        """GitHub's own ``protected`` of ``branch`` and the status checks its classic protection requires; (False,
+        ()) for a branch the repository does not have (yet)."""
+        response = self._api(connection_id, _BRANCH, 'GET', f'/branches/{quote(branch, safe="/")}',
+                             'the branch rules read', ok=(200, 404))
+        if response.status == 404:
+            return False, ()
+        data = _json(response)
+        status = _dig(data, 'protection', 'required_status_checks')
+        contexts = _dig(status, 'contexts')
+        checks = _dig(status, 'checks')
+        names = [*(contexts if isinstance(contexts, list) else []),
+                 *(_dig(check, 'context') for check in (checks if isinstance(checks, list) else []))]
+        return _dig(data, 'protected') is True, _check_names(names)
+
+    def _rules(self, connection_id: str, branch: str) -> list[object]:
+        """The ruleset rules that apply to ``branch`` (one page of ``RULES_PAGE``: a branch with more has rules)."""
+        response = self._api(connection_id, _BRANCH, 'GET',
+                             f'/rules/branches/{quote(branch, safe="/")}?{urlencode({"per_page": RULES_PAGE})}',
+                             'the branch rules read', ok=(200, 404))
+        data = [] if response.status == 404 else _json(response)
+        return data if isinstance(data, list) else []
+
+    def _read_history(self, connection_id: str, target: str, page: str, branch: str) -> ReadPage:
+        # "." is the whole repository's history; any other target, the history of that path; on ``branch``.
         fields: dict[str, object] = {'per_page': PAGE_SIZE, 'page': page}
+        if branch:
+            fields['sha'] = branch
         if target != '.':
             _repository_path(target)
             fields['path'] = target

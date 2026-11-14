@@ -832,6 +832,45 @@
       "conflict": "La conexión no puede cambiar ahora: detenga antes sus ejecuciones en curso, o quite otra conexión.",
       "unavailable": "Las conexiones no están disponibles ahora mismo. Vuelva a intentarlo en un momento.",
       "generic": "No se pudo cambiar la conexión. Vuelva a intentarlo."
+    },
+    "ci": {
+      "attested": "CI certificada",
+      "notAttested": "CI sin certificar",
+      "attestedBy": "Certificada por {{who}}, {{when}}: los agentes pueden hacer push a ramas voc-agent/* y abrir borradores de pull request.",
+      "none": "Los agentes no hacen push a este repositorio hasta que un administrador certifique que su CI no da nada de valor a las ramas de los agentes.",
+      "withdrawnBy": "Retirada por {{who}}, {{when}}: los agentes no hacen push hasta que se certifique de nuevo.",
+      "voidedRepository": "Anulada al cambiar el repositorio de la conexión: certifique la CI de este repositorio.",
+      "voidedRemoved": "Anulada al quitar la conexión: certifique su CI de nuevo.",
+      "unknownPerson": "un administrador",
+      "attest": "Certificar CI",
+      "attestLabel": "Certificar la CI de {{repository}}",
+      "withdrawAction": "Retirar CI",
+      "withdrawLabel": "Retirar la certificación de CI de {{repository}}",
+      "recorded": "La certificación de CI de {{repository}} está registrada.",
+      "withdrawn": "La certificación de CI de {{repository}} está retirada.",
+      "points": {
+        "protected_secrets": "Los secretos de CI se limitan a ramas protegidas (entornos con reglas de rama): una rama de agente no recibe ninguno.",
+        "read_only_token": "El token predeterminado de los workflows es de solo lectura, y ningún workflow pide permisos de escritura.",
+        "oidc_pinned": "El acceso a la nube mediante OIDC (id-token: write) está limitado a ramas o entornos protegidos.",
+        "no_self_hosted_runner": "Ningún runner autoalojado acepta trabajos de ramas no protegidas.",
+        "no_privileged_pull_request": "Ningún workflow que se ejecute en el contexto de la rama predeterminada en un pull request (pull_request_target, o workflow_run con los artefactos de la ejecución que lo inició) extrae, ejecuta ni descarga el código o los artefactos del pull request.",
+        "branch_rules": "La rama predeterminada está protegida con las comprobaciones obligatorias del repositorio, y la App solo puede hacer push a ramas voc-agent/*."
+      },
+      "dialog": {
+        "title": "Certificar la CI de {{repository}}",
+        "description": "Un push a una rama de agente puede iniciar los pipelines del propio repositorio, que ejecutan código que un agente puede cambiar. Confirme cada punto para este repositorio: su nombre y la hora quedan registrados con él.",
+        "legend": "En las ramas no protegidas, la CI del repositorio no recibe nada de valor:",
+        "allPoints": "Confirme todos los puntos: los agentes solo hacen push cuando se cumplen todos.",
+        "note": "Nota (opcional)",
+        "noteHint": "Qué comprobó, o por qué: se guarda con la certificación. Una línea, como máximo {{max, number}} caracteres.",
+        "checked": "El broker además lee las reglas de rama en cada push y pull request: la rama predeterminada protegida con comprobaciones obligatorias, y las ramas voc-agent/* sin proteger.",
+        "save": "Registrar certificación"
+      },
+      "withdraw": {
+        "title": "¿Retirar la certificación de CI de {{repository}}?",
+        "message": "El próximo push o pull request de los agentes en {{repository}} se rechaza hasta que un administrador certifique su CI de nuevo.",
+        "confirm": "Retirar certificación"
+      }
     }
   },
   "engineeringRun": {

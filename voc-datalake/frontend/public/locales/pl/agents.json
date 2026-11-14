@@ -859,6 +859,45 @@
       "conflict": "Tego połączenia nie można teraz zmienić: najpierw zatrzymaj jego trwające uruchomienia albo usuń inne połączenie.",
       "unavailable": "Połączenia są teraz niedostępne. Spróbuj ponownie za chwilę.",
       "generic": "Nie udało się zmienić połączenia. Spróbuj ponownie."
+    },
+    "ci": {
+      "attested": "CI potwierdzone",
+      "notAttested": "CI niepotwierdzone",
+      "attestedBy": "Potwierdzone przez: {{who}}, {{when}}. Agenci mogą wypychać zmiany do gałęzi voc-agent/* i otwierać wersje robocze pull requestów.",
+      "none": "Agenci niczego nie wypychają do tego repozytorium, dopóki administrator nie potwierdzi, że jego CI nie daje gałęziom agentów niczego cennego.",
+      "withdrawnBy": "Wycofane przez: {{who}}, {{when}}. Agenci niczego nie wypychają, dopóki CI nie zostanie potwierdzone ponownie.",
+      "voidedRepository": "Unieważnione po zmianie repozytorium połączenia: potwierdź CI tego repozytorium.",
+      "voidedRemoved": "Unieważnione po usunięciu połączenia: potwierdź jego CI ponownie.",
+      "unknownPerson": "administrator",
+      "attest": "Potwierdź CI",
+      "attestLabel": "Potwierdź CI repozytorium {{repository}}",
+      "withdrawAction": "Wycofaj CI",
+      "withdrawLabel": "Wycofaj potwierdzenie CI repozytorium {{repository}}",
+      "recorded": "Potwierdzenie CI repozytorium {{repository}} jest zapisane.",
+      "withdrawn": "Potwierdzenie CI repozytorium {{repository}} jest wycofane.",
+      "points": {
+        "protected_secrets": "Sekrety CI są ograniczone do chronionych gałęzi (środowiska z regułami gałęzi): gałąź agenta nie dostaje żadnych.",
+        "read_only_token": "Domyślny token workflowów jest tylko do odczytu i żaden workflow nie prosi o uprawnienia do zapisu.",
+        "oidc_pinned": "Dostęp do chmury przez OIDC (id-token: write) jest ograniczony do chronionych gałęzi lub środowisk.",
+        "no_self_hosted_runner": "Żaden samodzielnie hostowany runner nie przyjmuje zadań z niechronionych gałęzi.",
+        "no_privileged_pull_request": "Żaden workflow uruchamiany przy pull requeście w kontekście gałęzi domyślnej (pull_request_target albo workflow_run z artefaktami uruchomienia, które go wywołało) nie pobiera, nie uruchamia ani nie ściąga kodu lub artefaktów pull requesta.",
+        "branch_rules": "Gałąź domyślna jest chroniona wymaganymi kontrolami repozytorium, a aplikacja może wypychać zmiany tylko do gałęzi voc-agent/*."
+      },
+      "dialog": {
+        "title": "Potwierdź CI repozytorium {{repository}}",
+        "description": "Wypchnięcie do gałęzi agenta może uruchomić własne potoki repozytorium, które wykonują kod, jaki agent może zmienić. Potwierdź każdy punkt dla tego repozytorium: zapisujemy przy tym Twoje imię i nazwisko oraz czas.",
+        "legend": "W niechronionych gałęziach CI repozytorium nie dostaje niczego cennego:",
+        "allPoints": "Potwierdź każdy punkt: agenci wypychają zmiany dopiero, gdy wszystkie są spełnione.",
+        "note": "Notatka (opcjonalnie)",
+        "noteHint": "Co sprawdzono lub dlaczego: zapisywane z potwierdzeniem. Jedna linia, najwyżej {{max, number}} znaków.",
+        "checked": "Broker przy każdym wypchnięciu i pull requeście odczytuje też reguły gałęzi: gałąź domyślna chroniona wymaganymi kontrolami, a gałęzie voc-agent/* niechronione.",
+        "save": "Zapisz potwierdzenie"
+      },
+      "withdraw": {
+        "title": "Wycofać potwierdzenie CI repozytorium {{repository}}?",
+        "message": "Następne wypchnięcie lub pull request agentów w {{repository}} zostanie odrzucone, dopóki administrator ponownie nie potwierdzi CI.",
+        "confirm": "Wycofaj potwierdzenie"
+      }
     }
   },
   "engineeringRun": {

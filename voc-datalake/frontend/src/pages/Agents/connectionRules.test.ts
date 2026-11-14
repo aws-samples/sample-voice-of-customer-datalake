@@ -18,7 +18,7 @@ const form = (fields: Partial<ConnectionForm>): ConnectionForm => ({
 const stored: EngineeringConnection = {
   connection_id: 'web-app', host: 'github', repository: 'example-org/web-app', default_branch: 'main',
   credential: { kind: 'app', set: true, app_id: '123', installation_id: '456' },
-  created_at: null, created_by: null, updated_at: null, updated_by: null,
+  created_at: null, created_by: null, updated_at: null, updated_by: null, version: 1, ci_attestation: null,
 }
 
 describe('the connection rules', () => {

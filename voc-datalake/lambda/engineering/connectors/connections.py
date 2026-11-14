@@ -18,6 +18,13 @@ A connection is a row in voc-agents and, while it holds a credential, one SSM Pa
   the administrator says: an optional ``reason``, one line of at most ``MAX_REASON`` characters, credential-shaped
   text redacted), written in the same transaction as the row.
 
+A connection's CI attestation (6.32.00, ``attestations.py``): an administrator confirms the setup guide's points for
+it (``attest``) or withdraws the confirmation (``withdraw``); a repository change and a removal void it. Each is a
+create-only version row in the attestation's own partition, written in one transaction with the connection's audit
+row (``ci_attested``, ``ci_withdrawn``; a void is a change of the save's or the removal's own audit row) and, for an
+attestation or a withdrawal, a bump of the connection row's version, so a change of the connection made meanwhile
+refuses one of the two (409). The list answers each connection's newest version (one Query of one row each).
+
 The credential is written before the row and removed before the row is marked removed, so a failure between the two
 never leaves a removed connection whose credential the broker could still use. A repository change while a run of
 the connection is live is refused (409): the run's agents would otherwise read and push to another repository than
@@ -43,6 +50,8 @@ from typing import Any, Final, Literal
 
 from botocore.exceptions import BotoCoreError, ClientError
 
+from engineering.connectors import attestations
+from engineering.connectors.attestations import ATTESTED, POINTS, WITHDRAWN
 from engineering.connectors.identity import WORKSPACE
 from engineering.runtime.outputs import AGENT_BRANCH_PREFIX
 from engineering.settings import UNNAMED
@@ -81,6 +90,8 @@ _AUDITED: Final = ('repository', 'default_branch', 'app_id', 'installation_id')
 _MAX_NAME: Final = 128
 #: The longest reason a change takes (one line; longer is refused, never cut).
 MAX_REASON: Final = 500
+#: A CI attestation or withdrawal of a connection that changed after the administrator reviewed it (409).
+_REVIEWED_CHANGED: Final = 'the connection changed meanwhile: reload it, review its repository again and try again'
 #: The fields of a row the view answers as text or null.
 _OPTIONAL_TEXT: Final = ('app_id', 'installation_id', 'created_at', 'created_by', 'updated_at', 'updated_by')
 
@@ -221,6 +232,41 @@ def parse_request(body: Mapping[str, object]) -> ConnectionRequest:
                              reason=parse_reason(body.get('reason')))
 
 
+@dataclass(frozen=True)
+class AttestationRequest:
+    """A checked attestation: the points confirmed, the repository and the connection's version the administrator
+    reviewed (what the dialog showed), and their reason ('' for none)."""
+
+    points: tuple[str, ...]
+    repository: str
+    version: int
+    reason: str = ''
+
+
+def parse_attestation(body: Mapping[str, object]) -> AttestationRequest:
+    """An attestation's body, ``{points, repository, version, reason?}``: every point of the setup guide confirmed
+    (``attestations.POINTS``), the repository and the connection's version the administrator reviewed, and their
+    reason; ``ConnectionRefused('invalid')`` naming what is off, never echoing a value."""
+    if not set(body) <= {'points', 'repository', 'version', 'reason'} or not {'points', 'repository', 'version'} <= set(body):
+        raise _invalid('the body is {points, repository, version, reason?}: the setup guide\'s points confirmed for '
+                       'the repository and the connection version reviewed')
+    repository, version = body['repository'], body['version']
+    if not isinstance(repository, str) or not REPOSITORY.fullmatch(repository):
+        raise _invalid('repository is the connection\'s repository as owner/name, as the attestation reviewed it')
+    if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+        raise _invalid('version is the connection\'s version the attestation reviewed (a positive whole number)')
+    points = body['points']
+    if not isinstance(points, list) or not all(isinstance(point, str) for point in points):
+        raise _invalid('points is the list of the setup guide\'s points confirmed, each by its id')
+    if not set(points) <= set(POINTS):
+        raise _invalid(f'points names a point the setup guide does not have (its points: {", ".join(POINTS)})')
+    missing = [point for point in POINTS if point not in points]
+    if missing:
+        raise _invalid(f'every point of the setup guide is confirmed: not yet {", ".join(missing)}')
+    return AttestationRequest(points=POINTS, repository=repository, version=version,
+                              reason=parse_reason(body.get('reason')))
+
+
 def parameter_value(repository: str, credential: AppCredential) -> str:
     """The parameter's JSON, as the broker's reader parses it (credentials.py ``parse_credential``)."""
     value = json.dumps({'app_id': credential.app_id, 'installation_id': credential.installation_id,
@@ -235,8 +281,9 @@ def _name(text: str) -> str:
     return ''.join(char for char in text if char.isprintable())[:_MAX_NAME] or UNNAMED
 
 
-def view(item: Mapping[str, Any]) -> dict[str, Any]:
-    """A stored connection as the API answers it: never a secret, only whether the credential is set."""
+def view(item: Mapping[str, Any], attestation: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """A stored connection as the API answers it: never a secret, only whether the credential is set; and its CI
+    attestation's newest version (``attestation``, None for none)."""
     texts = {field: item[field] if isinstance(item.get(field), str) and item[field] else None for field in _OPTIONAL_TEXT}
     return {
         'connection_id': str(item.get('connection_id', '')), 'host': str(item.get('host', 'github')),
@@ -244,6 +291,9 @@ def view(item: Mapping[str, Any]) -> dict[str, Any]:
         'credential': {'kind': 'app', 'set': item.get('credential_set') is True,
                        'app_id': texts['app_id'], 'installation_id': texts['installation_id']},
         **{field: texts[field] for field in ('created_at', 'created_by', 'updated_at', 'updated_by')},
+        # (what an attestation names as the version it reviewed: any change of the connection moves it)
+        'version': int(item.get('version', 0)),
+        'ci_attestation': attestations.view(attestation),
     }
 
 
@@ -291,14 +341,22 @@ class ConnectionStore:
             'ExpressionAttributeValues': {':pk': PARTITION, ':row': ROW_PREFIX}})
 
     def list(self) -> list[dict[str, Any]]:
-        """The stored connections (not the removed ones), by id."""
+        """The stored connections (not the removed ones), by id, each with its CI attestation's newest version (one
+        Query of one row per connection: at most ``MAX_CONNECTIONS``)."""
         try:
-            return [view(item) for item in self._rows() if item.get('removed') is not True]
+            return [view(item, attestations.newest(self._table, str(item.get('connection_id', ''))))
+                    for item in self._rows() if item.get('removed') is not True]
         except (ClientError, BotoCoreError) as exc:
             raise ConnectionRefused('unavailable', 'the connections could not be read: retry') from exc
 
     def _row(self, connection_id: str) -> dict[str, Any] | None:
         return _row(self._table, connection_id)
+
+    def _newest_attestation(self, connection_id: str) -> dict[str, Any] | None:
+        try:
+            return attestations.newest(self._table, connection_id)
+        except (ClientError, BotoCoreError) as exc:
+            raise ConnectionRefused('unavailable', 'the CI attestation could not be read: retry') from exc
 
     # --- writes -----------------------------------------------------------------------------------------------
 
@@ -356,6 +414,9 @@ class ConnectionStore:
             raise ConnectionRefused('unavailable', 'the connection could not be read: retry') from exc
         earlier: Mapping[str, Any] = before or {}
         live = before is not None and earlier.get('removed') is not True
+        moved = live and earlier.get('repository') != request.repository
+        # (a repository change voids the attestation: it stood for the repository the connection had)
+        attestation = self._newest_attestation(connection_id) if live else None
         credential = request.credential
         if credential is not None:
             self._put_credential(name, parameter_value(request.repository, credential), connection_id)
@@ -375,13 +436,21 @@ class ConnectionStore:
             field: {'from': earlier.get(field) if live else None, 'to': item.get(field)}
             for field in _AUDITED if not live or earlier.get(field) != item.get(field)}
         changes['credential'] = 'replaced' if credential is not None else 'kept'
+        void = self._void(attestation if moved else None, attestations.REPOSITORY_CHANGED, actor, at)
+        if void is not None:
+            changes['ci_attestation'] = attestations.VOIDED
         audit = self._audit(connection_id, 'updated' if live else 'created', changes, actor, at, item['version'],
                             request.reason)
         undo = self._credential_undo(connection_id, name, live, actor) if credential is not None else None
-        self._write(item, before, audit, undo=undo)
+        self._write(item, before, audit, undo=undo, extra=() if void is None else (void,))
         logger.info('engineering connection saved', extra={'connection_id': connection_id, 'connection_created': not live,
                                                             'credential_replaced': credential is not None})
-        return view(item), not live
+        return view(item, attestation if void is None else void['Put']['Item']), not live
+
+    def _void(self, attestation: Mapping[str, Any] | None, cause: str, actor: Actor, at: str) -> dict[str, Any] | None:
+        """The transaction's Put voiding ``attestation`` when it is one (``attestations.void_put``), else None."""
+        return attestations.void_put(self._table.name, attestation, cause, by=_name(actor.subject),
+                                     by_name=_name(actor.name), at=at)
 
     def remove(self, connection_id: str, actor: Actor, reason: str = '') -> None:
         """Remove the connection: its credential first (the broker refuses its runs once its cached copy goes), then
@@ -392,15 +461,95 @@ class ConnectionStore:
         before = self._row(connection_id)
         if before is None or before.get('removed') is True:
             raise ConnectionRefused('not_found', 'Connection not found')
+        attestation = self._newest_attestation(connection_id)
         self._delete_credential(name, connection_id)
         at = self._clock().astimezone(UTC).isoformat()
         version = int(before.get('version', 0)) + 1
         item = {**before, 'removed': True, 'credential_set': False, 'removed_at': at,
                 'removed_by': _name(actor.name), 'version': version}
         changes = {'repository': {'from': before.get('repository'), 'to': None}, 'credential': 'removed'}
+        void = self._void(attestation, attestations.CONNECTION_REMOVED, actor, at)
+        if void is not None:
+            changes['ci_attestation'] = attestations.VOIDED
         self._write(item, before, self._audit(connection_id, 'removed', changes, actor, at, version, reason),
-                    undo=self._credential_undo(connection_id, name, True, actor))
+                    undo=self._credential_undo(connection_id, name, True, actor), extra=() if void is None else (void,))
         logger.info('engineering connection removed', extra={'connection_id': connection_id})
+
+    # --- the CI attestation ----------------------------------------------------------------------------------------
+
+    def _live_row(self, connection_id: str) -> dict[str, Any]:
+        row = self._row(check_connection_id(connection_id))
+        if row is None or row.get('removed') is True:
+            raise ConnectionRefused('not_found', 'Connection not found')
+        return row
+
+    def attest(self, connection_id: str, request: AttestationRequest, actor: Actor) -> tuple[dict[str, Any], bool]:
+        """Record an administrator's confirmation of the setup guide's points (``parse_attestation``) for the
+        repository they reviewed: the new version and True, or the one that already holds and False (nothing
+        written). It is the connection's only while the connection still holds that repository at that version:
+        409 otherwise (another administrator changed it after the dialog was shown), checked on the row read and
+        again in the transaction's own condition, so a change landing in between refuses the write. 404 for a
+        connection that is not stored."""
+        row = self._live_row(connection_id)
+        if row.get('repository') != request.repository or int(row.get('version', 0)) != request.version:
+            raise ConnectionRefused('conflict', _REVIEWED_CHANGED)
+        newest = self._newest_attestation(connection_id)
+        if attestations.is_attested(newest, request.repository):
+            return attestations.view(newest) or {}, False
+        at = self._clock().astimezone(UTC).isoformat()
+        item = attestations.version_row(connection_id, attestations.version_of(newest) + 1, ATTESTED,
+                                        request.repository, by=_name(actor.subject), by_name=_name(actor.name), at=at,
+                                        points=request.points, reason=request.reason)
+        self._attestation_write(row, item, newest, actor, request.reason)
+        logger.info('engineering CI attestation recorded', extra={'connection_id': connection_id,
+                                                                   'attestation_version': item['version']})
+        return attestations.view(item) or {}, True
+
+    def withdraw(self, connection_id: str, actor: Actor, reason: str = '') -> None:
+        """Withdraw the connection's attestation (a new version, ``withdrawn``): the broker refuses every push and pull
+        request on it again. 404 when none holds."""
+        row = self._live_row(connection_id)
+        repository = str(row.get('repository', ''))
+        newest = self._newest_attestation(connection_id)
+        if not attestations.is_attested(newest, repository):
+            raise ConnectionRefused('not_found', 'no CI attestation holds for this connection')
+        at = self._clock().astimezone(UTC).isoformat()
+        item = attestations.version_row(connection_id, attestations.version_of(newest) + 1, WITHDRAWN, repository,
+                                        by=_name(actor.subject), by_name=_name(actor.name), at=at, reason=reason)
+        self._attestation_write(row, item, newest, actor, reason)
+        logger.info('engineering CI attestation withdrawn', extra={'connection_id': connection_id,
+                                                                    'attestation_version': item['version']})
+
+    def _attestation_write(self, row: Mapping[str, Any], item: Mapping[str, Any], newest: Mapping[str, Any] | None,
+                           actor: Actor, reason: str) -> None:
+        """The version row, the connection's audit row and a bump of the connection row's version, in one transaction.
+        The bump is conditioned on the version read and on the row still holding the version row's repository (the one
+        reviewed), so a change of the connection made meanwhile, its repository's above all, refuses this (409)."""
+        connection_id = str(item['connection_id'])
+        version = int(row.get('version', 0)) + 1
+        action = 'ci_attested' if item['state'] == ATTESTED else 'ci_withdrawn'
+        changes = {'ci_attestation': {'from': None if newest is None else newest.get('state'), 'to': item['state'],
+                                      'version': item['version'], 'repository': item['repository']}}
+        audit = self._audit(connection_id, action, changes, actor, str(item['at']), version, reason)
+        try:
+            self._table.meta.client.transact_write_items(TransactItems=[
+                {'Update': {'TableName': self._table.name, 'Key': _key(connection_id),
+                            'UpdateExpression': 'SET #version = :version',
+                            'ConditionExpression': ('#version = :read AND #repository = :reviewed '
+                                                    'AND attribute_not_exists(removed)'),
+                            'ExpressionAttributeNames': {'#version': 'version', '#repository': 'repository'},
+                            'ExpressionAttributeValues': {':version': version, ':read': row.get('version', 0),
+                                                          ':reviewed': item['repository']}}},
+                {'Put': {'TableName': self._table.name, 'Item': dict(item),
+                         'ConditionExpression': 'attribute_not_exists(sk)'}},   # (D1: create-only)
+                {'Put': {'TableName': self._table.name, 'Item': audit, 'ConditionExpression': 'attribute_not_exists(sk)'}},
+            ])
+        except (ClientError, BotoCoreError) as error:
+            logger.warning('engineering CI attestation not recorded', extra={
+                'connection_id': connection_id, 'error_code': error_code(error)})
+            if isinstance(error, ClientError) and _canceled(error):
+                raise ConnectionRefused('conflict', _REVIEWED_CHANGED) from None
+            raise ConnectionRefused('unavailable', 'the CI attestation could not be recorded: try again') from None
 
     def _audit(self, connection_id: str, action: str, changes: Mapping[str, Any], actor: Actor, at: str,
                version: int, reason: str = '') -> dict[str, Any]:
@@ -467,8 +616,9 @@ class ConnectionStore:
             raise ConnectionRefused('unavailable', 'the connection could not be recorded') from None
 
     def _write(self, item: Mapping[str, Any], before: Mapping[str, Any] | None, audit: Mapping[str, Any],
-               undo: Callable[[], None] | None = None) -> None:
-        """The row and its audit row in one transaction, the row conditioned on the version read."""
+               undo: Callable[[], None] | None = None, extra: Sequence[Mapping[str, Any]] = ()) -> None:
+        """The row and its audit row in one transaction, the row conditioned on the version read (``extra``: the
+        attestation's void, when the change voids it)."""
         if before is None:
             condition: dict[str, Any] = {'ConditionExpression': 'attribute_not_exists(sk)'}
         else:
@@ -479,6 +629,7 @@ class ConnectionStore:
                 {'Put': {'TableName': self._table.name, 'Item': dict(item), **condition}},
                 {'Put': {'TableName': self._table.name, 'Item': dict(audit),
                          'ConditionExpression': 'attribute_not_exists(sk)'}},   # (D1: create-only)
+                *(dict(write) for write in extra),
             ])
         except (ClientError, BotoCoreError) as error:
             if undo is not None:

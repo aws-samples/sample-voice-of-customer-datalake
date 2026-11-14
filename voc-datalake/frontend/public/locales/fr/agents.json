@@ -832,6 +832,45 @@
       "conflict": "La connexion ne peut pas changer maintenant : arrêtez d’abord ses exécutions en cours, ou supprimez une autre connexion.",
       "unavailable": "Les connexions sont indisponibles pour le moment. Réessayez dans un instant.",
       "generic": "La connexion n’a pas pu être modifiée. Réessayez."
+    },
+    "ci": {
+      "attested": "CI attestée",
+      "notAttested": "CI non attestée",
+      "attestedBy": "Attestée par {{who}}, {{when}} : les agents peuvent pousser sur les branches voc-agent/* et ouvrir des brouillons de pull request.",
+      "none": "Les agents ne poussent rien sur ce dépôt tant qu’un administrateur n’a pas attesté que sa CI ne donne rien de précieux aux branches des agents.",
+      "withdrawnBy": "Retirée par {{who}}, {{when}} : les agents ne poussent rien tant qu’elle n’est pas attestée à nouveau.",
+      "voidedRepository": "Annulée quand le dépôt de la connexion a changé : attestez la CI de ce dépôt.",
+      "voidedRemoved": "Annulée quand la connexion a été supprimée : attestez à nouveau sa CI.",
+      "unknownPerson": "un administrateur",
+      "attest": "Attester la CI",
+      "attestLabel": "Attester la CI de {{repository}}",
+      "withdrawAction": "Retirer la CI",
+      "withdrawLabel": "Retirer l’attestation de CI de {{repository}}",
+      "recorded": "L’attestation de CI de {{repository}} est enregistrée.",
+      "withdrawn": "L’attestation de CI de {{repository}} est retirée.",
+      "points": {
+        "protected_secrets": "Les secrets de CI sont limités aux branches protégées (environnements avec règles de branche) : une branche d’agent n’en reçoit aucun.",
+        "read_only_token": "Le jeton par défaut des workflows est en lecture seule, et aucun workflow ne demande de droits d’écriture.",
+        "oidc_pinned": "L’accès au cloud par OIDC (id-token: write) est limité aux branches ou environnements protégés.",
+        "no_self_hosted_runner": "Aucun runner auto-hébergé ne prend de tâches venant de branches non protégées.",
+        "no_privileged_pull_request": "Aucun workflow qui s’exécute dans le contexte de la branche par défaut sur une pull request (pull_request_target, ou workflow_run avec les artefacts de l’exécution déclencheuse) ne récupère, n’exécute ni ne télécharge le code ou les artefacts de la pull request.",
+        "branch_rules": "La branche par défaut est protégée avec les vérifications obligatoires du dépôt, et l’App ne peut pousser que sur les branches voc-agent/*."
+      },
+      "dialog": {
+        "title": "Attester la CI de {{repository}}",
+        "description": "Un push sur une branche d’agent peut lancer les pipelines du dépôt, qui exécutent du code qu’un agent peut modifier. Confirmez chaque point pour ce dépôt : votre nom et l’heure sont enregistrés avec.",
+        "legend": "Sur les branches non protégées, la CI du dépôt ne reçoit rien de précieux :",
+        "allPoints": "Confirmez chaque point : les agents ne poussent qu’une fois tous respectés.",
+        "note": "Note (facultatif)",
+        "noteHint": "Ce que vous avez vérifié, ou pourquoi : conservé avec l’attestation. Une ligne, au plus {{max, number}} caractères.",
+        "checked": "Le broker lit aussi les règles de branche à chaque push et pull request : la branche par défaut protégée avec des vérifications obligatoires, et les branches voc-agent/* non protégées.",
+        "save": "Enregistrer l’attestation"
+      },
+      "withdraw": {
+        "title": "Retirer l’attestation de CI de {{repository}} ?",
+        "message": "Le prochain push ou la prochaine pull request des agents sur {{repository}} est refusé tant qu’un administrateur n’a pas attesté à nouveau sa CI.",
+        "confirm": "Retirer l’attestation"
+      }
     }
   },
   "engineeringRun": {

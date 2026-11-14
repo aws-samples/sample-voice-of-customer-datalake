@@ -350,7 +350,7 @@ class FailingHost(FakeHost):
         self.error = error
 
     def read(self, connection_id: str, kind: ReadKind, target: str,  # noqa: ARG002 - FakeHost's signature
-             cursor: str | None) -> ReadPage:  # noqa: ARG002
+             cursor: str | None, branch: str = '') -> ReadPage:  # noqa: ARG002
         raise self.error
 
 

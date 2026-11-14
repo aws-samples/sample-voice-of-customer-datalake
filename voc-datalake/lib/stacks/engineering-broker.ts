@@ -28,6 +28,9 @@
  *   partitions (`WS#*#WRITES#*`, never a run's own) and of a row only a write claim's attributes (6.30.00: each write
  *   made once per caller, attempt, operation and what it writes, records.py WriteClaims), with
  *   `kms:GenerateDataKey` on the stack's key through DynamoDB only, for it;
+ * - `dynamodb:Query` on voc-agents, only in the connections' CI attestations' partitions (`CONNECTIONS#*#CI#*`, 6.32.00:
+ *   the newest version of the run's connection's attestation, connectors/attestations.py) and of a row only its key,
+ *   `state`, `repository` and `version` (a projection: a `dynamodb:Attributes` condition);
  * - `kms:Decrypt` on the stack's key through DynamoDB and S3 only.
  * No other write to any table or bucket. The function URL has no
  * resource-based policy, so only identities of this account that an IAM policy grants `lambda:InvokeFunctionUrl`
@@ -105,6 +108,13 @@ const BROKER_PEOPLE_ATTRIBUTES = ['pk', 'sk', 'mode'];
 const BROKER_CLAIM_ATTRIBUTES = ['pk', 'sk', 'state', 'op', 'at', 'result', 'closed_at'];
 /** The runs' writes' partitions (`WS#<ws>#WRITES#<run>`, records.py writes_pk): the claim rows', and nothing else. */
 const BROKER_WRITE_PARTITIONS = 'WS#*#WRITES#*';
+/**
+ * The connections' CI attestations' partitions in voc-agents (`CONNECTIONS#<ws>#CI#<connection>`, attestations.py
+ * attestation_pk): beside the connections' own (`CONNECTIONS#<ws>`), which this pattern does not match.
+ */
+const BROKER_ATTESTATION_PARTITIONS = 'CONNECTIONS#*#CI#*';
+/** An attestation version's attributes the broker may read (attestations.py BROKER_ATTRIBUTES). */
+const BROKER_ATTESTATION_ATTRIBUTES = ['pk', 'sk', 'state', 'repository', 'version'];
 
 /**
  * Whether `-c engineeringAgents=true` asked for the engineering agents (CLI context arrives as a string), strictly
@@ -130,6 +140,8 @@ export interface EngineeringBrokerProps {
   workspaceBucket: s3.IBucket;
   /** The aggregates table: the people's way of working (shared/ai_mode.py), read only. */
   aggregatesTable: dynamodb.ITable;
+  /** voc-agents (VocCoreStack): the connections' CI attestations, read only (6.32.00). */
+  agentsTable: dynamodb.ITable;
 }
 
 export class EngineeringBroker extends Construct {
@@ -160,6 +172,7 @@ export class EngineeringBroker extends Construct {
         ENGINEERING_TABLE: props.engineeringTable.tableName,
         ENGINEERING_WORKSPACE_BUCKET: props.workspaceBucket.bucketName,
         AGGREGATES_TABLE: props.aggregatesTable.tableName,
+        ENGINEERING_CONNECTIONS_TABLE: props.agentsTable.tableName,
       },
       serviceName: 'voc-engineering-broker',
     });
@@ -194,7 +207,8 @@ export class EngineeringBroker extends Construct {
 
 /**
  * The broker's reads of what a run recorded (records.py, patches.py, dial.py): the runs' partitions of voc-engineering
- * (GetItem, Query), the people's flags of the aggregates table (GetItem), the agents' patches and gate records in the
+ * (GetItem, Query), the people's flags of the aggregates table (GetItem), the connections' CI attestations in voc-agents
+ * (Query), the agents' patches and gate records in the
  * workspace (GetObject), and the stack's key to decrypt them through DynamoDB and S3. Nothing written.
  */
 function grantRunRecordReads(role: iam.Role, props: EngineeringBrokerProps): void {
@@ -226,6 +240,18 @@ function grantRunRecordReads(role: iam.Role, props: EngineeringBrokerProps): voi
     conditions: {
       'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [BROKER_PEOPLE_PARTITIONS] },
       'ForAllValues:StringEquals': { 'dynamodb:Attributes': BROKER_PEOPLE_ATTRIBUTES },
+      StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+    },
+  }));
+  // The CI attestation of the run's connection (records.py attested): one Query of the newest version, projected, in
+  // the attestations' partitions alone: never a connection's own row, its audit rows or any other row of voc-agents.
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'ConnectionAttestations',
+    actions: ['dynamodb:Query'],
+    resources: [props.agentsTable.tableArn],
+    conditions: {
+      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [BROKER_ATTESTATION_PARTITIONS] },
+      'ForAllValues:StringEquals': { 'dynamodb:Attributes': BROKER_ATTESTATION_ATTRIBUTES },
       StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
     },
   }));

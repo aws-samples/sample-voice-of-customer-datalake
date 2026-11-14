@@ -5,8 +5,13 @@ the caller's session, never the request) is one the broker knows and is active; 
 dial (the way of working of the person who started the run, ``shared/ai_mode.py``: Human-driven pushes nothing,
 AI-assisted waits for a person's go on the run, AI-driven goes on; failing closed, ``dial.py``: only an explicitly
 stored AI-assisted or AI-driven allows anything, so a person with no saved way of working, a stored mode outside
-the modes, or a run that names no person pushes nothing), the CI attestation and the board's final-go GO
-for exactly the tree it is about to write; then the write rules (``write_policy``); and only then calls the host. A
+the modes, or a run that names no person pushes nothing), the CI attestation (6.32.00: an administrator's
+confirmation for the run's connection and repository, read at each push and pull request, ``records.py``), the
+branch, the host's own branch rules as the connection's read-only token reads them (the default branch protected
+with the repository's required checks, the agent's branch unprotected: ``RepositoryHost.ci_protection``, a pass kept
+five minutes) and the board's final-go GO for exactly the tree it is about to write; then the write rules
+(``write_policy``); and only then calls the host. A write's claim row keeps the attestation's version and when the
+branch rules were read (``_ci_record``). A file or history read is of the run's own default branch. A
 refusal raises ``WriteRefused`` (``NotPermitted`` for the role, ``NotNow`` for the run's, the dial's or the board's
 state) with a plain reason for the run journal.
 
@@ -39,6 +44,7 @@ from engineering.connectors.hosts import (
     WRITE_DONE,
     WRITE_REFUSED,
     WRITE_UNKNOWN,
+    CiProtection,
     CommentTarget,
     Connector,
     HostBusy,
@@ -53,6 +59,7 @@ from engineering.connectors.hosts import (
     RunRecord,
     Submission,
     Unavailable,
+    ci_refusal,
 )
 from engineering.connectors.identity import (
     AGENT_ROLES,
@@ -111,9 +118,30 @@ def permitted(role: str, operation: str) -> bool:
     return role in AGENT_ROLES and (operation == READ or _WRITES.get(role) == operation)
 
 
+NOT_ATTESTED: Final = ("An administrator has not yet confirmed the repository's CI settings for agent branches "
+                       '(Agents → Connections, the CI attestation).')
+
+
 def _require_attestation(run: RunRecord) -> None:
     if not run.ci_attested:
-        raise NotNow("An administrator has not yet confirmed the repository's CI settings for agent branches.")
+        raise NotNow(NOT_ATTESTED)
+
+
+def _require_ci(connector: Connector, run: RunRecord, branch: str) -> CiProtection:
+    """The host's own branch rules, as far as the connection's read-only token reads them: the default branch protected
+    with the repository's required checks, the agent's branch unprotected (``ci_refusal``)."""
+    found = connector.host.ci_protection(run.connection_id, run.default_branch, branch)
+    refusal = ci_refusal(found)
+    if refusal is not None:
+        raise NotNow(refusal)
+    return found
+
+
+def _ci_record(run: RunRecord, found: CiProtection) -> dict[str, object]:
+    """What a write's claim row keeps of the CI checks it was made on: the attestation's version, and when the host's
+    branch rules were read with the checks they require (the names a repository's own CI gives its jobs)."""
+    return {'attestation': run.ci_attestation, 'checked_at': int(found.checked_at),
+            'required_checks': list(found.required_checks)}
 
 
 def _require_dial(connector: Connector, run: RunRecord, run_id: str) -> None:
@@ -167,13 +195,17 @@ class Broker:
         branch = self._connector.host.default_branch(run.connection_id, run.stored_default_branch)
         return self._connector, replace(run, default_branch=branch)
 
-    def _open_write(self, caller: Caller, operation: str, branch: str) -> tuple[Connector, RunRecord]:
-        """A push's or a pull request's checks before its own: the run, the dial, the CI attestation, the branch."""
+    def _open_write(self, caller: Caller, operation: str,
+                    branch: str) -> tuple[Connector, RunRecord, dict[str, object]]:
+        """A push's or a pull request's checks before its own: the run, the dial, the CI attestation (read now, so a
+        withdrawal or a void holds from the next write), the branch, then the host's branch rules; with what the
+        write's claim keeps of the CI checks."""
         connector, run = self._open(caller, operation)
         _require_dial(connector, run, caller.run_id)
+        run = connector.runs.attested(run)
         _require_attestation(run)
         _require_branch(branch, run, caller.run_id)
-        return connector, run
+        return connector, run, _ci_record(run, _require_ci(connector, run, branch))
 
     def _first_outcome(self, caller: Caller, operation: str, attempt: int,
                        *arguments: object) -> dict[str, object] | None:
@@ -195,7 +227,8 @@ class Broker:
 
     def read(self, caller: Caller, kind: ReadKind, target: str, cursor: str | None) -> ReadPage:
         connector, run = self._open(caller, READ)
-        return connector.host.read(run.connection_id, kind, target, cursor)
+        # (a file and history on the run's own default branch: the stored one it started with, once the host has it)
+        return connector.host.read(run.connection_id, kind, target, cursor, run.default_branch)
 
     def post_comment(self, caller: Caller, on: CommentTarget, number: int, body: str, attempt: int = 1) -> str:
         """Post ``body`` on the run's own issue or pull request; the comment's URL. Once per ``attempt``
@@ -224,7 +257,7 @@ class Broker:
         first = self._first_outcome(caller, PUSH_BUNDLE, attempt, branch, patch, tree_hash, message)
         if first is not None:
             return str(first['tree_hash'])
-        connector, run = self._open_write(caller, PUSH_BUNDLE, branch)
+        connector, run, ci = self._open_write(caller, PUSH_BUNDLE, branch)
         if not connector.ledger.has_go(caller.run_id, tree_hash):
             raise NotNow("The board holds no final-go GO for this tree: the quality gate's final go passes on it "
                          'first.')
@@ -241,7 +274,7 @@ class Broker:
         def push() -> dict[str, object]:
             connector.host.push_bundle(run.connection_id, branch, contents, tree_hash, run.default_branch)
             _wrote(caller, PUSH_BUNDLE, run, branch=branch, tree_hash=tree_hash, commits=len(contents.commits))
-            return {'branch': branch, 'tree_hash': tree_hash}
+            return {'branch': branch, 'tree_hash': tree_hash, 'ci': ci}
 
         return str(_once(connector, caller, PUSH_BUNDLE, attempt, push, branch, patch, tree_hash, message)['tree_hash'])
 
@@ -252,7 +285,7 @@ class Broker:
         first = self._first_outcome(caller, OPEN_OR_UPDATE_DRAFT_PR, attempt, branch, title, body)
         if first is not None:
             return _pull_request(first)
-        connector, run = self._open_write(caller, OPEN_OR_UPDATE_DRAFT_PR, branch)
+        connector, run, ci = self._open_write(caller, OPEN_OR_UPDATE_DRAFT_PR, branch)
         check_text(f'{title}\n\n{body}', run.cited_reviews, prose=True)
         tree_hash = connector.host.branch_tree_hash(run.connection_id, branch)
         if tree_hash is None:
@@ -264,7 +297,7 @@ class Broker:
             ref = connector.host.open_or_update_draft_pr(run.connection_id, branch, run.default_branch, title, body,
                                                          tree_hash)
             _wrote(caller, OPEN_OR_UPDATE_DRAFT_PR, run, branch=branch, tree_hash=tree_hash, number=ref.number)
-            return {'number': ref.number, 'url': ref.url}
+            return {'number': ref.number, 'url': ref.url, 'ci': ci}
 
         return _pull_request(_once(connector, caller, OPEN_OR_UPDATE_DRAFT_PR, attempt, open_draft, branch, title, body))
 

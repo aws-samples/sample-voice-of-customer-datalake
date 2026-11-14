@@ -20,21 +20,28 @@ other code writes; the broker writes none of them:
 * a person's go on the run: ``WS#<ws>#RUN#<run>`` / ``GO#person``, the create-only row an administrator's go writes
   (through the board function, ``board/store.py`` ``person_go``), what an AI-assisted run's push waits for.
 
-Not recorded yet, so not read: the CI attestation (every run reads as not attested, so every push and pull request
-is still refused), the run's issue and pull request (so no comment is accepted) and the reviews behind its feedback
-ids (so the write rules have no review text to compare: their personal-data checks still run).
+* the CI attestation (6.32.00, ``attestations.py``): in voc-agents, the newest version of the run's connection's
+  attestation (one Query of one row, projected), read at each push and pull request (``attested``), never for a
+  read. It holds only while it is ``attested`` for the repository the run started on (META's ``repo``); a withdrawn
+  or voided one, none, or a deployment that names no agents table, is not attested, so the push or pull request is
+  refused.
+
+Not recorded yet, so not read: the run's issue and pull request (so no comment is accepted) and the reviews behind
+its feedback ids (so the write rules have no review text to compare: their personal-data checks still run).
 """
 from __future__ import annotations
 
 import json
 import time
 from collections.abc import Callable
+from dataclasses import replace
 from typing import Any, Final
 
 from botocore.exceptions import BotoCoreError, ClientError
 
 from engineering.board.model import PERSON_PREFIX, Task
 from engineering.board.store import PERSON_GO_SK
+from engineering.connectors.attestations import attested_version
 from engineering.connectors.hosts import (
     ACTIVE,
     NO_CONNECTION,
@@ -56,13 +63,14 @@ _UNREADABLE: Final = "The run's record could not be read; retry."
 
 
 class RunRecords:
-    """The broker's ``RunDirectory`` and ``GateLedger`` over the run's rows (a low-level DynamoDB client) and the
-    workspace bucket."""
+    """The broker's ``RunDirectory`` and ``GateLedger`` over the run's rows (a low-level DynamoDB client), the
+    workspace bucket and, for the CI attestation, voc-agents (``agents_table``; '' for none: never attested)."""
 
-    def __init__(self, client: Any, table: str, workspace: WorkspaceStore) -> None:
+    def __init__(self, client: Any, table: str, workspace: WorkspaceStore, agents_table: str = '') -> None:
         self._client = client
         self._table = table
         self._workspace = workspace
+        self._agents_table = agents_table
 
     def _row(self, run_id: str, sk: str) -> dict[str, Any] | None:
         try:
@@ -82,6 +90,15 @@ class RunRecords:
             status=status, ci_attested=False, cited_reviews=(), bot_addresses=(AUTHOR,),
             commit=string_attr(item, 'commit'), started_by=string_attr(item, 'started_by'),
             repository=string_attr(item, 'repo'))
+
+    def attested(self, run: RunRecord) -> RunRecord:
+        if not (self._agents_table and run.connection_id and run.repository):
+            return replace(run, ci_attested=False, ci_attestation=0)
+        try:
+            version = attested_version(self._client, self._agents_table, run.connection_id, run.repository)
+        except (ClientError, BotoCoreError) as exc:
+            raise Unavailable("The connection's CI attestation could not be read; retry.") from exc
+        return replace(run, ci_attested=version > 0, ci_attestation=version)
 
     def person_go(self, run_id: str) -> bool:
         item = self._row(run_id, PERSON_GO_SK)

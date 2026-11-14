@@ -832,6 +832,45 @@
       "conflict": "A conexão não pode mudar agora: pare primeiro suas execuções em andamento, ou remova outra conexão.",
       "unavailable": "As conexões estão indisponíveis no momento. Tente de novo daqui a pouco.",
       "generic": "Não foi possível alterar a conexão. Tente de novo."
+    },
+    "ci": {
+      "attested": "CI atestada",
+      "notAttested": "CI não atestada",
+      "attestedBy": "Atestada por {{who}}, {{when}}: os agentes podem fazer push para branches voc-agent/* e abrir rascunhos de pull request.",
+      "none": "Os agentes não fazem push neste repositório até que um administrador ateste que a CI dele não entrega nada de valor aos branches dos agentes.",
+      "withdrawnBy": "Retirada por {{who}}, {{when}}: os agentes não fazem push até que seja atestada de novo.",
+      "voidedRepository": "Anulada quando o repositório da conexão mudou: ateste a CI deste repositório.",
+      "voidedRemoved": "Anulada quando a conexão foi removida: ateste a CI de novo.",
+      "unknownPerson": "um administrador",
+      "attest": "Atestar CI",
+      "attestLabel": "Atestar a CI de {{repository}}",
+      "withdrawAction": "Retirar CI",
+      "withdrawLabel": "Retirar a atestação de CI de {{repository}}",
+      "recorded": "A atestação de CI de {{repository}} está registrada.",
+      "withdrawn": "A atestação de CI de {{repository}} foi retirada.",
+      "points": {
+        "protected_secrets": "Os segredos de CI ficam limitados a branches protegidos (ambientes com regras de branch): um branch de agente não recebe nenhum.",
+        "read_only_token": "O token padrão dos workflows é somente leitura, e nenhum workflow pede permissões de escrita.",
+        "oidc_pinned": "O acesso à nuvem por OIDC (id-token: write) fica limitado a branches ou ambientes protegidos.",
+        "no_self_hosted_runner": "Nenhum runner auto-hospedado aceita jobs de branches não protegidos.",
+        "no_privileged_pull_request": "Nenhum workflow que roda no contexto do branch padrão em um pull request (pull_request_target, ou workflow_run com os artefatos da execução que o disparou) faz checkout, executa ou baixa o código ou os artefatos do pull request.",
+        "branch_rules": "O branch padrão está protegido com as verificações obrigatórias do repositório, e o App só pode fazer push para branches voc-agent/*."
+      },
+      "dialog": {
+        "title": "Atestar a CI de {{repository}}",
+        "description": "Um push para um branch de agente pode iniciar os pipelines do próprio repositório, que executam código que um agente pode alterar. Confirme cada ponto para este repositório: seu nome e o horário ficam registrados com ele.",
+        "legend": "Em branches não protegidos, a CI do repositório não recebe nada de valor:",
+        "allPoints": "Confirme todos os pontos: os agentes só fazem push quando todos valem.",
+        "note": "Observação (opcional)",
+        "noteHint": "O que você verificou, ou por quê: fica guardado com a atestação. Uma linha, no máximo {{max, number}} caracteres.",
+        "checked": "O broker também lê as regras de branch a cada push e pull request: o branch padrão protegido com verificações obrigatórias, e os branches voc-agent/* sem proteção.",
+        "save": "Registrar atestação"
+      },
+      "withdraw": {
+        "title": "Retirar a atestação de CI de {{repository}}?",
+        "message": "O próximo push ou pull request dos agentes em {{repository}} é recusado até que um administrador ateste a CI de novo.",
+        "confirm": "Retirar atestação"
+      }
     }
   },
   "engineeringRun": {

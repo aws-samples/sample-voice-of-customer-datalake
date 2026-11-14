@@ -18,16 +18,20 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from moto import mock_aws
 
+from engineering.connectors import attestations
+from engineering.connectors.attestations import POINTS
 from engineering.connectors.connections import (
     LOG_PREFIX,
     MAX_CONNECTIONS,
     MAX_PARAMETER_BYTES,
     PARTITION,
     Actor,
+    AttestationRequest,
     ConnectionRefused,
     ConnectionStore,
     is_branch_name,
     live_runs_of,
+    parse_attestation,
     parse_reason,
     parse_request,
     stored_connection,
@@ -105,7 +109,8 @@ def test_a_new_connection_stores_its_credential_where_the_broker_reads_it(env: E
     assert connection == {
         'connection_id': 'refunds', 'host': 'github', 'repository': f'{OWNER}/{REPOSITORY}', 'default_branch': 'main',
         'credential': {'kind': 'app', 'set': True, 'app_id': APP_ID, 'installation_id': str(INSTALLATION_ID)},
-        'created_at': WHEN.isoformat(), 'created_by': 'alice', 'updated_at': WHEN.isoformat(), 'updated_by': 'alice'}
+        'created_at': WHEN.isoformat(), 'created_by': 'alice', 'updated_at': WHEN.isoformat(), 'updated_by': 'alice',
+        'version': 1, 'ci_attestation': None}   # (none until an administrator confirms the setup guide's points)
     assert env.store().list() == [connection]
 
 
@@ -493,6 +498,219 @@ def test_a_key_the_broker_could_not_use_is_refused_without_quoting_it(env: Env, 
     ('a/', False), ('a.', False), ('a@{b', False), ('a/.b', False), ('ünï', False)])
 def test_a_default_branch_is_one_git_takes(branch: str, ok: bool) -> None:
     assert is_branch_name(branch) is ok
+
+
+# --- the CI attestation (attestations.py) ---------------------------------------------------------------------------
+
+
+def versions(env: Env, connection_id: str = 'refunds') -> list[dict[str, Any]]:
+    """The connection's attestation versions, oldest first."""
+    return sorted((row for row in env.rows() if row['pk'] == attestations.attestation_pk(connection_id)),
+                  key=lambda row: row['sk'])
+
+
+def row_version(env: Env) -> int:
+    return int(env.table.get_item(Key={'pk': PARTITION, 'sk': 'CONNECTION#refunds'})['Item']['version'])
+
+
+def reviewed(env: Env) -> AttestationRequest:
+    """What the dialog shows now: the connection's repository and version (the first ones for no connection)."""
+    row = env.table.get_item(Key={'pk': PARTITION, 'sk': 'CONNECTION#refunds'}).get('Item') or {}
+    return AttestationRequest(points=POINTS, repository=str(row.get('repository', f'{OWNER}/{REPOSITORY}')),
+                              version=int(row.get('version', 1)))
+
+
+def attest(env: Env, actor: Actor = ADMIN, store: ConnectionStore | None = None,
+           request: AttestationRequest | None = None) -> tuple[dict[str, Any], bool]:
+    """An administrator's attestation of the connection as the dialog shows it now (``reviewed``)."""
+    return (store or env.store()).attest('refunds', request or reviewed(env), actor)
+
+
+def test_an_attestation_names_every_point_of_the_guide_and_who_and_when_and_is_listed(env: Env) -> None:
+    save(env)
+    request = parse_attestation({'points': list(reversed(POINTS)), 'repository': f'{OWNER}/{REPOSITORY}', 'version': 1,
+                                 'reason': 'Checked with the CI owners'})
+    view, created = env.store().attest('refunds', request, ADMIN)
+    assert (created, view) == (True, {
+        'version': 1, 'state': 'attested', 'repository': f'{OWNER}/{REPOSITORY}', 'points': list(POINTS),
+        'by': 'alice', 'at': WHEN.isoformat(), 'reason': 'Checked with the CI owners', 'cause': None})
+    (stored,) = versions(env)
+    assert (stored['by'], stored['sk']) == ('admin-sub', 'V#000001')   # (the subject is kept, never answered)
+    (listed,) = env.store().list()
+    assert listed['ci_attestation'] == view
+    # One audit row beside the connection's own, and the connection's version bumped in the same transaction.
+    attested_audit = env.audits()[-1]
+    assert (attested_audit['action'], attested_audit['by'], attested_audit['reason'], attested_audit['changes']) == (
+        'ci_attested', 'admin-sub', 'Checked with the CI owners', {'ci_attestation': {
+            'from': None, 'to': 'attested', 'version': 1, 'repository': f'{OWNER}/{REPOSITORY}'}})
+    assert row_version(env) == 2
+    # Create-only (D1): a version is never rewritten.
+    with pytest.raises(ClientError, match='ConditionalCheckFailed'):
+        env.table.put_item(Item={**stored, 'state': 'withdrawn'}, ConditionExpression='attribute_not_exists(sk)')
+
+
+def test_an_attestation_that_already_holds_is_answered_as_it_stands(env: Env) -> None:
+    save(env)
+    first, _ = attest(env)
+    again, created = attest(env, Actor(subject='admin-2', name='dana'))
+    assert (created, again) == (False, first)
+    assert len(versions(env)) == 1
+    assert [row['action'] for row in env.audits()] == ['created', 'ci_attested']
+
+
+def test_a_withdrawal_is_a_new_version_with_its_audit_row_and_an_attestation_can_follow(env: Env) -> None:
+    save(env)
+    attest(env)
+    env.store().withdraw('refunds', Actor(subject='admin-2', name='dana'), 'The runners changed')
+    assert [(row['state'], row['by_name']) for row in versions(env)] == [('attested', 'alice'), ('withdrawn', 'dana')]
+    assert env.store().list()[0]['ci_attestation']['state'] == 'withdrawn'
+    assert (env.audits()[-1]['action'], env.audits()[-1]['reason']) == ('ci_withdrawn', 'The runners changed')
+    with pytest.raises(ConnectionRefused, match='no CI attestation holds') as refused:
+        env.store().withdraw('refunds', ADMIN)
+    assert refused.value.kind == 'not_found'
+    assert attest(env)[0]['version'] == 3
+
+
+def test_a_repository_change_voids_the_attestation_and_changing_it_back_does_not_restore_it(env: Env) -> None:
+    save(env)
+    attest(env)
+    # A change of the branch alone keeps it.
+    assert save(env, default_branch='trunk', credential=None)[0]['ci_attestation']['state'] == 'attested'
+    connection, _ = save(env, repository='example-org/other')
+    assert (connection['ci_attestation']['state'], connection['ci_attestation']['cause']) == (
+        'voided', 'repository_changed')
+    voided = versions(env)[-1]
+    assert (voided['version'], voided['repository'], voided['by']) == (2, f'{OWNER}/{REPOSITORY}', 'admin-sub')
+    assert env.audits()[-1]['changes']['ci_attestation'] == 'voided'
+    save(env)   # (back to the first repository: a void stands, the guide's points are confirmed again)
+    assert env.store().list()[0]['ci_attestation']['state'] == 'voided'
+    assert len(versions(env)) == 2
+
+
+def test_a_removal_voids_the_attestation_and_a_re_added_connection_has_none(env: Env) -> None:
+    save(env)
+    attest(env)
+    env.store().remove('refunds', ADMIN)
+    assert [(row['state'], row.get('cause')) for row in versions(env)] == [
+        ('attested', None), ('voided', 'connection_removed')]
+    save(env)
+    assert env.store().list()[0]['ci_attestation']['state'] == 'voided'
+    with pytest.raises(ConnectionRefused, match='no CI attestation holds'):
+        env.store().withdraw('refunds', ADMIN)
+
+
+@pytest.mark.parametrize('act', ['attest', 'withdraw'])
+def test_an_attestation_of_a_connection_that_is_not_stored_is_not_found(env: Env, act: str) -> None:
+    calls = {'attest': lambda: attest(env),
+             'withdraw': lambda: env.store().withdraw('refunds', ADMIN)}
+    with pytest.raises(ConnectionRefused, match='not found') as refused:
+        calls[act]()
+    assert refused.value.kind == 'not_found'
+    save(env)
+    env.store().remove('refunds', ADMIN)
+    with pytest.raises(ConnectionRefused, match='not found'):
+        calls[act]()
+    assert versions(env) == []
+
+
+def test_an_attestation_raced_by_a_repository_change_is_a_conflict_and_records_nothing(
+        env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
+    save(env)
+    store = env.store()
+    newest = store._newest_attestation
+
+    def racing(connection_id: str) -> Any:
+        save(env, repository='example-org/other')   # (another administrator's change, after this one read the row)
+        return newest(connection_id)
+
+    monkeypatch.setattr(store, '_newest_attestation', racing)
+    with pytest.raises(ConnectionRefused, match='changed meanwhile') as refused:
+        attest(env, store=store)
+    assert refused.value.kind == 'conflict'
+    assert versions(env) == []
+    assert 'ci_attested' not in [row['action'] for row in env.audits()]
+
+
+def test_an_attestation_that_cannot_be_read_or_written_is_unavailable(env: Env) -> None:
+    save(env)
+    store = env.store()
+    failing = MagicMock(wraps=env.table)
+    failing.name = env.table.name
+    failing.meta.client.transact_write_items.side_effect = ClientError(
+        {'Error': {'Code': 'ProvisionedThroughputExceededException'}}, 'TransactWriteItems')
+    store._table = failing
+    with pytest.raises(ConnectionRefused, match='could not be recorded') as refused:
+        attest(env, store=store)
+    assert refused.value.kind == 'unavailable'
+    failing.query.side_effect = ClientError({'Error': {'Code': 'ProvisionedThroughputExceededException'}}, 'Query')
+    with pytest.raises(ConnectionRefused, match='could not be read') as refused:
+        store.withdraw('refunds', ADMIN)
+    assert refused.value.kind == 'unavailable'
+
+
+@pytest.mark.parametrize('change', [{'repository': 'example-org/other'}, {'version': 1}],
+                         ids=['repointed', 'changed'])
+def test_an_attestation_of_a_connection_changed_after_it_was_reviewed_is_a_conflict(
+        env: Env, change: dict[str, Any]) -> None:
+    save(env)
+    shown = reviewed(env)   # (the dialog: the repository and version the administrator reviews)
+    # Another administrator repoints the connection (or changes it) before this one confirms.
+    if 'repository' in change:
+        save(env, repository='example-org/other')
+    else:
+        save(env, default_branch='trunk', credential=None)
+    stale = AttestationRequest(points=POINTS, **{'repository': shown.repository, 'version': shown.version, **change})
+    with pytest.raises(ConnectionRefused, match='review its repository again') as refused:
+        attest(env, request=stale)
+    assert refused.value.kind == 'conflict'
+    assert versions(env) == []
+    # Reviewed again, as the connection now is: recorded for that repository.
+    assert attest(env)[0]['repository'] == env.store().list()[0]['repository']
+
+
+def test_the_reviewed_repository_and_version_are_the_attestations_own_write_condition(
+        env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
+    save(env)
+    store = env.store()
+    sent: list[dict[str, Any]] = []
+    client = env.table.meta.client
+    real = client.transact_write_items
+
+    def recording(**request: Any) -> Any:
+        sent.append(request)
+        return real(**request)
+
+    monkeypatch.setattr(client, 'transact_write_items', recording)
+    attest(env, store=store)
+    (bump,) = [item['Update'] for item in sent[-1]['TransactItems'] if 'Update' in item]
+    assert bump['ConditionExpression'] == '#version = :read AND #repository = :reviewed AND attribute_not_exists(removed)'
+    assert (bump['ExpressionAttributeValues'][':read'], bump['ExpressionAttributeValues'][':reviewed']) == (
+        1, f'{OWNER}/{REPOSITORY}')
+
+
+BODY = {'points': list(POINTS), 'repository': f'{OWNER}/{REPOSITORY}', 'version': 1}
+
+
+@pytest.mark.parametrize(('payload', 'error'), [
+    ({}, 'the body is'),
+    ({**BODY, 'extra': 1}, 'the body is'),
+    ({'points': list(POINTS)}, 'the body is'),
+    ({**BODY, 'points': 'all'}, 'points is the list'),
+    ({**BODY, 'points': [1]}, 'points is the list'),
+    ({**BODY, 'points': [*POINTS, 'trust_me']}, 'does not have'),
+    ({**BODY, 'points': list(POINTS[:-1])}, f'not yet {POINTS[-1]}'),
+    ({**BODY, 'reason': 7}, 'reason is text'),
+    ({**BODY, 'repository': 'trust_me'}, 'repository is'),
+    ({**BODY, 'version': 0}, 'version is'),
+    ({**BODY, 'version': True}, 'version is'),
+    ({**BODY, 'version': '1'}, 'version is'),
+])
+def test_an_attestation_confirms_every_point_and_a_refusal_names_what_is_off(payload: dict[str, Any],
+                                                                             error: str) -> None:
+    with pytest.raises(ConnectionRefused, match=error) as refused:
+        parse_attestation(payload)
+    assert refused.value.kind == 'invalid'
+    assert 'trust_me' not in str(refused.value)   # (a value is never echoed)
 
 
 def test_the_live_runs_are_the_registrys_runs_of_the_connection_that_have_not_ended() -> None:

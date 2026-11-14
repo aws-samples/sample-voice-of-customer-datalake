@@ -73,7 +73,7 @@ describe('the engineering broker', () => {
     // PutObject or other write anywhere on its role.
     expect(actions).toStrictEqual([
       'dynamodb:GetItem', 'dynamodb:GetItem', 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:Query',
-      'dynamodb:UpdateItem',
+      'dynamodb:Query', 'dynamodb:UpdateItem',
       'kms:Decrypt', 'kms:Decrypt', 'kms:GenerateDataKey', 'logs:CreateLogStream', 'logs:PutLogEvents',
       's3:GetObject', 'ssm:GetParameter',
     ]);
@@ -144,6 +144,23 @@ describe('the engineering broker', () => {
     expect(JSON.stringify(modes?.Resource)).toContain('Aggregates');
   });
 
+  it('reads of voc-agents only the connections\' CI attestations, by a projected Query', () => {
+    const attestations = brokerStatements(template('on')).find((statement) => statement.Sid === 'ConnectionAttestations');
+    // In the attestations' partitions alone (never a connection's own row or its audit rows), of a row only what the
+    // broker reads (attestations.py BROKER_ATTRIBUTES), and never a GetItem or a write.
+    expect(attestations).toMatchObject({
+      Effect: 'Allow', Action: 'dynamodb:Query',
+      Condition: {
+        'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['CONNECTIONS#*#CI#*'] },
+        'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'state', 'repository', 'version'] },
+        StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+      },
+    });
+    // One table: voc-agents' ARN (an import from VocCoreStack), never an index or "*".
+    expect(JSON.stringify(attestations?.Resource)).toMatch(/^\{"Fn::ImportValue":"[^"]*Agents[^"]*Arn[^"]*"\}$/);
+    expect(JSON.stringify(attestations?.Resource)).not.toContain('index');
+  });
+
   it('reads only the agents\' patches and the gate records of the workspace', () => {
     const objects = brokerStatements(template('on'))
       .find((statement) => statement.Sid === 'SubmittedPatchesAndGateRecords');
@@ -165,7 +182,7 @@ describe('the engineering broker', () => {
   it('names the stores it reads', () => {
     const on = template('on');
     const variables = on.findResources('AWS::Lambda::Function')[brokerId(on)]?.Properties?.Environment?.Variables;
-    expect(['ENGINEERING_TABLE', 'ENGINEERING_WORKSPACE_BUCKET', 'AGGREGATES_TABLE']
+    expect(['ENGINEERING_TABLE', 'ENGINEERING_WORKSPACE_BUCKET', 'AGGREGATES_TABLE', 'ENGINEERING_CONNECTIONS_TABLE']
       .filter((name) => !(name in (variables ?? {})))).toStrictEqual([]);
   });
 

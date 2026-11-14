@@ -608,6 +608,38 @@
     ]
   },
   {
+    "file": "api/engineeringConnectionsApi.ts",
+    "method": "POST",
+    "call": "attestationPath(connection.connection_id)",
+    "probes": [
+      {
+        "path": "/agents/engineering/connections/storefront/ci-attestation",
+        "body": {
+          "points": [
+            "protected_secrets",
+            "read_only_token",
+            "oidc_pinned",
+            "no_self_hosted_runner",
+            "no_privileged_pull_request",
+            "branch_rules"
+          ],
+          "repository": "example-org/storefront",
+          "version": 3
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringConnectionsApi.ts",
+    "method": "DELETE",
+    "call": "attestationPath(connectionId)",
+    "probes": [
+      {
+        "path": "/agents/engineering/connections/storefront/ci-attestation"
+      }
+    ]
+  },
+  {
     "file": "api/engineeringRunsApi.ts",
     "method": "POST",
     "call": "'/agents/engineering/runs'",

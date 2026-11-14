@@ -772,6 +772,45 @@
       "conflict": "The connection cannot change now: stop its live runs first, or remove another connection.",
       "unavailable": "The connections are unavailable right now. Try again in a moment.",
       "generic": "The connection could not be changed. Try again."
+    },
+    "ci": {
+      "attested": "CI attested",
+      "notAttested": "CI not attested",
+      "attestedBy": "Attested by {{who}}, {{when}}: the agents may push to voc-agent/* branches and open draft pull requests.",
+      "none": "The agents push nothing to this repository until an administrator attests that its CI keeps agent branches harmless.",
+      "withdrawnBy": "Withdrawn by {{who}}, {{when}}: the agents push nothing until it is attested again.",
+      "voidedRepository": "Voided when the connection’s repository changed: attest this repository’s CI.",
+      "voidedRemoved": "Voided when the connection was removed: attest its CI again.",
+      "unknownPerson": "an administrator",
+      "attest": "Attest CI",
+      "attestLabel": "Attest the CI of {{repository}}",
+      "withdrawAction": "Withdraw CI",
+      "withdrawLabel": "Withdraw the CI attestation of {{repository}}",
+      "recorded": "The CI attestation of {{repository}} is recorded.",
+      "withdrawn": "The CI attestation of {{repository}} is withdrawn.",
+      "points": {
+        "protected_secrets": "CI secrets are scoped to protected branches (environments with branch rules): an agent branch gets none.",
+        "read_only_token": "The default workflow token is read-only, and no workflow asks for write permissions.",
+        "oidc_pinned": "Cloud access through OIDC (id-token: write) is pinned to protected branches or environments.",
+        "no_self_hosted_runner": "No self-hosted runner takes jobs from unprotected branches.",
+        "no_privileged_pull_request": "No workflow that runs in the default branch’s context on a pull request (pull_request_target, or workflow_run with the triggering run’s artifacts) checks out, runs or downloads the pull request’s code or artifacts.",
+        "branch_rules": "The default branch is protected with the repository’s required checks, and the App can push only to voc-agent/* branches."
+      },
+      "dialog": {
+        "title": "Attest the CI of {{repository}}",
+        "description": "A push to an agent branch can start the repository’s own pipelines, which run code an agent can change. Confirm each point for this repository: your name and the time are recorded with it.",
+        "legend": "On branches that are not protected, the repository’s CI gets nothing worth taking:",
+        "allPoints": "Confirm every point: the agents push only once all of them hold.",
+        "note": "Note (optional)",
+        "noteHint": "What you checked, or why: kept with the attestation. One line, at most {{max, number}} characters.",
+        "checked": "The broker also reads the branch rules at each push and pull request: the default branch protected with required checks, and voc-agent/* branches not protected.",
+        "save": "Record attestation"
+      },
+      "withdraw": {
+        "title": "Withdraw the CI attestation of {{repository}}?",
+        "message": "The agents’ next push or pull request on {{repository}} is refused until an administrator attests its CI again.",
+        "confirm": "Withdraw attestation"
+      }
     }
   },
   "engineeringRun": {

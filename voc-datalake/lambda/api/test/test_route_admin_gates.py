@@ -74,6 +74,9 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         'PUT /agents/engineering/settings',
         # The repository connections and their credentials (engineering/connectors/connections.py): the same gate.
         'PUT /agents/engineering/connections/<connection_id>', 'DELETE /agents/engineering/connections/<connection_id>',
+        # A connection's CI attestation (engineering/connectors/attestations.py): the same gate.
+        'POST /agents/engineering/connections/<connection_id>/ci-attestation',
+        'DELETE /agents/engineering/connections/<connection_id>/ci-attestation',
         # A run's start from a saved engineering flow (the start function): an admin acting for themselves.
         'POST /agents/engineering/runs',
         'POST /workflows', 'PUT /workflows/<workflow_id>',
