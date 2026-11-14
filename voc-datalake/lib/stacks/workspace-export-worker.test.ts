@@ -15,6 +15,7 @@ import {
   CONTROL_PARTITIONS, EXPORT_JOB_PARTITION, WORKSPACE_DATE_PARTITIONS, WORKSPACE_EXPORT_MAX_EVENT_AGE_MINUTES,
   WORKSPACE_EXPORT_RESERVED_CONCURRENCY,
 } from './workspace-export-worker';
+import { WORKSPACE_OBJECTS_PREFIX } from './core-buckets';
 
 let template: Template;
 beforeAll(() => { template = synthProcessingTemplate({ withIndexes: true }); });
@@ -51,7 +52,7 @@ const InvokeConfigSchema = z.object({
 });
 
 describe('the voc-workspace-export job', () => {
-  it('runs one vCPU for 15 minutes, at most two at once, no async retry, no event older than 15 minutes', () => {
+  it('runs one vCPU for 15 minutes, at most ten at once, no async retry, no event older than 40 minutes', () => {
     expect(worker().Handler).toBe('jobs/workspace_export/handler.lambda_handler');
     const found = Object.entries(template.findResources('AWS::Lambda::Function'))
       .filter(([logicalId]) => logicalId.startsWith('WorkspaceExportWorkerExport'));
@@ -106,12 +107,26 @@ describe('the voc-workspace-export job', () => {
   });
 
   it('writes, tags, reads, aborts and lists the parts of objects under one workspace\'s exports only', () => {
-    const s3 = allowed().filter((s) => s.actions.some((action) => action.startsWith('s3:'))
-      && !s.actions.includes('s3:DeleteObject'));
+    const s3 = allowed().filter((s) => s.actions.includes('s3:PutObject'));
     expect(s3.map((s) => [...s.actions].sort(byCodeUnit))).toStrictEqual([[
       's3:AbortMultipartUpload', 's3:GetObject', 's3:ListMultipartUploadParts', 's3:PutObject', 's3:PutObjectTagging']]);
     expect(s3[0]?.resource).toContain(`/ws/${ONE_WORKSPACE}/exports/*`);
     expect(s3[0]?.resource).not.toMatch(/\/(raw|silver)\//);
+    const writes = allowed().filter((s) => s.actions.some((action) => /^s3:(Put|Abort|Delete)/.test(action)));
+    expect(writes.every((s) => s.resource.includes(`/ws/${ONE_WORKSPACE}/exports/`))).toBe(true);
+  });
+
+  it('lists and reads one workspace\'s own objects, and nothing else of the bucket (slice 4b)', () => {
+    expect(WORKSPACE_OBJECTS_PREFIX).toBe(`ws/${ONE_WORKSPACE}/*`);
+    const lists = allowed().filter((s) => s.actions.some((action) => action.startsWith('s3:List')
+      && action !== 's3:ListMultipartUploadParts'));
+    // The bucket itself (no object path), only with that one workspace's prefix.
+    expect(lists.map((s) => ({ actions: s.actions, condition: s.condition, objects: s.resource.includes('/*') })))
+      .toStrictEqual([{ actions: ['s3:ListBucket'], objects: false,
+        condition: { StringLike: { 's3:prefix': [`ws/${ONE_WORKSPACE}/*`] } } }]);
+    const reads = allowed().filter((s) => s.actions.length === 1 && s.actions[0] === 's3:GetObject');
+    expect(reads.map((s) => ({ paths: [...s.resource.matchAll(/"\/([^"]*)"/g)].map((match) => match[1]),
+      condition: s.condition }))).toStrictEqual([{ paths: [`ws/${ONE_WORKSPACE}/*`], condition: undefined }]);
   });
 
   it('never reads a credential, and reaches nothing else', () => {

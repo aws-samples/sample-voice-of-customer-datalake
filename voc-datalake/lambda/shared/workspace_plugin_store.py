@@ -113,11 +113,11 @@ class WorkspaceStore:
     """One workspace's settings of ``plugins`` (every plugin saved there when ``plugins`` is empty: read only).
 
     ``actor`` returns the caller's sub (the request's authorizer claim, ``ResolvedRoutes.credentials``): a changed
-    list is stamped with it and its history row names it (shared/plugin_configs.py ``save_configs``); asked only when
-    a list is saved, so a read needs none."""
+    list is stamped with it and its history row names it (shared/plugin_configs.py ``save_configs``); required, and
+    asked only when a list is saved."""
 
     def __init__(self, ssm: Any, table: WorkspaceTable, *, prefix: str, plugins: Sequence[str], key_id: str,
-                 actor: Callable[[], str] | None = None) -> None:
+                 actor: Callable[[], str]) -> None:
         self._ssm = ssm
         self._table = table
         self._prefix = prefix
@@ -139,8 +139,12 @@ class WorkspaceStore:
     def read(self) -> dict:
         """The plugins' keys as ``<plugin>_<key>`` (what the shared secret would hold for them); each config row
         kept as read."""
-        self._stored = ({plugin: read_plugin_values(self._ssm, self._prefix, self._table, plugin, self._rows)
-                         for plugin in self.plugins} if self.plugins else self._read_every())
+        if not self.plugins:
+            self._stored = self._read_every()
+            return _prefixed(self._stored)
+        self._stored = {}
+        for plugin in self.plugins:
+            self._stored[plugin], self._rows[plugin] = read_plugin_values(self._ssm, self._prefix, self._table, plugin)
         return _prefixed(self._stored)
 
     def read_lists(self) -> dict:
@@ -179,7 +183,7 @@ class WorkspaceStore:
                 checked_credentials(plugin, credentials)
             if configs is not None and configs != stored_configs:
                 save_configs(self._table, plugin, configs, replaced=self._rows.get(plugin),
-                             updated_by=self._actor() if self._actor is not None else '')
+                             updated_by=self._actor())
             save_credentials(self._ssm, self._prefix, self.ws, plugin, stored=stored, values=credentials,
                              key_id=self._key_id)
 
@@ -192,12 +196,13 @@ def _required_env(name: str) -> str:
 
 
 def credentials_store(context: object, clients: StoreClients, plugins: Sequence[str] = (), *,
-                      actor: Callable[[], str] | None = None) -> CredentialsStore:
+                      actor: Callable[[], str]) -> CredentialsStore:
     """The store this request reads and writes: the shared secret deployment-wide (``context`` None), else the
     resolved workspace's settings of ``plugins`` (each a plugin id the route already validated; none: every plugin,
     read only). ``ConfigurationError`` when what it needs is not set. ``context`` is ``WorkspaceContext | None``
     (typed ``object`` so the check below is also a type guard): anything else is a ``TypeError``, never a name.
-    ``actor``: the caller's sub, from the request's authorizer (``WorkspaceStore``), never from a body."""
+    ``actor`` (required): the caller's sub, from the request's authorizer (``WorkspaceStore``), never from a body;
+    the shared secret records no author."""
     if context is None:
         if not clients.shared_secret:
             raise ConfigurationError(_NOT_CONFIGURED)

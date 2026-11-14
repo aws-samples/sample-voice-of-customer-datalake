@@ -69,6 +69,7 @@ from typing import Any, Final, NoReturn, Protocol, Self
 from boto3.dynamodb.conditions import Attr, ConditionBase
 from botocore.exceptions import ClientError
 
+from shared.aws import S3_MISSING_KEY_CODES
 from shared.batch_get import BATCH_GET_ATTEMPTS, batch_get_all
 from shared.dynamo_paging import iter_query
 from shared.workspace_ids import is_workspace_id, ws_key
@@ -79,7 +80,9 @@ __all__ = [
     'WORKSPACE_FIELD',
     'WORKSPACE_KEY_PREFIX',
     'ExportObjects',
+    'ListedObject',
     'OutOfScopeError',
+    'WorkspaceObjects',
     'WorkspaceScope',
     'WorkspaceTable',
     'category_pk',
@@ -573,6 +576,112 @@ class ExportObjects:
             'get_object', ExpiresIn=expires_in,
             Params={'Bucket': self._bucket, 'Key': self._checked(key),
                     'ResponseContentDisposition': f'attachment; filename="{filename}"'}))
+
+
+#: S3 lists at most this many objects a page (ListObjectsV2).
+_LIST_OBJECTS_PAGE: Final = 1000
+#: S3's 403 codes (a GetObject of a missing key answers one to a role without an unconditioned ListBucket).
+_ACCESS_DENIED: Final = frozenset({'AccessDenied', '403'})
+
+
+@dataclass(frozen=True)
+class ListedObject:
+    """One current object of a workspace, as a listing shows it."""
+
+    key: str
+    size: int
+
+
+@dataclass(frozen=True)
+class ObjectPage:
+    """One page of a workspace's objects (never its exports), and the key the next page starts after (None: done)."""
+
+    objects: list[ListedObject]
+    following: str | None
+
+
+@dataclass(frozen=True)
+class OpenedObject:
+    """An object being read: its body (a stream: ``read(n)``), content type, size and ETag (the version read, so a
+    dropped stream resumes on that version only: ``WorkspaceObjects.resume``)."""
+
+    body: Any
+    content_type: str
+    size: int
+    etag: str = ''
+
+
+class WorkspaceObjects:
+    """The workspace's own objects in one bucket, read-only: every current object under ``s3_prefix`` except its
+    exports (``exports_prefix``: the export's own zips and work objects are never read back into an export). Lists
+    with ``Prefix`` ``ws/{ws}/`` only (the export job's ``s3:ListBucket`` holds that ``s3:prefix``), and reads a key
+    only under it, outside the exports, with no empty, ``.`` or ``..`` segment (``OutOfScopeError`` before the
+    call). Never writes, tags or deletes."""
+
+    def __init__(self, scope: WorkspaceScope, s3: Any, bucket: str) -> None:
+        if not bucket:
+            raise ValueError('a workspace has its objects in a bucket')
+        self.scope = scope
+        self._s3 = s3
+        self._bucket = bucket
+
+    def list_page(self, start_after: str | None) -> ObjectPage:
+        """One page (``_LIST_OBJECTS_PAGE``) of the workspace's current objects in key order, after ``start_after``
+        (a key under the workspace, or None from the first), without its exports. A listed key outside the workspace
+        is refused."""
+        prefix = s3_prefix(self.scope)
+        request: dict[str, Any] = {'Bucket': self._bucket, 'Prefix': prefix, 'MaxKeys': _LIST_OBJECTS_PAGE}
+        if start_after is not None:
+            if not start_after.startswith(prefix):
+                raise OutOfScopeError('a listing cursor outside the workspace')
+            request['StartAfter'] = start_after
+        response = self._s3.list_objects_v2(**request)
+        listed = [(str(entry['Key']), int(entry.get('Size') or 0)) for entry in response.get('Contents') or []]
+        if any(not key.startswith(prefix) for key, _ in listed):
+            raise OutOfScopeError('a listed key outside the workspace')
+        exports = exports_prefix(self.scope)
+        objects = [ListedObject(key, size) for key, size in listed if not key.startswith(exports)]
+        following = listed[-1][0] if listed and response.get('IsTruncated') else None
+        return ObjectPage(objects, following)
+
+    def _checked(self, key: object) -> str:
+        prefix = s3_prefix(self.scope)
+        if (not isinstance(key, str) or not key.startswith(prefix) or key.startswith(exports_prefix(self.scope))
+                or any(segment in ('', '.', '..') for segment in key[len(prefix):].split('/'))):
+            raise OutOfScopeError("a key outside the workspace's own objects")
+        return key
+
+    def open(self, key: str) -> OpenedObject | None:
+        """``key``'s current version (its body a stream), or None when it is gone since it was listed.
+
+        S3 answers a GetObject of a missing key 403 (``AccessDenied``), not 404, to a role without an unconditioned
+        ``s3:ListBucket`` (this one lists only with its ``s3:prefix``). So a 403 is checked: a listing of exactly
+        that key (``Prefix`` the key, one result, which the prefix condition allows) that does not find it means the
+        key is gone; one that finds it means the 403 is real, raised as it came."""
+        checked = self._checked(key)
+        try:
+            response = self._s3.get_object(Bucket=self._bucket, Key=checked)
+        except ClientError as error:
+            code = error.response.get('Error', {}).get('Code')
+            if code in S3_MISSING_KEY_CODES or (code in _ACCESS_DENIED and not self._still_listed(checked)):
+                return None
+            raise
+        return OpenedObject(response['Body'], str(response.get('ContentType') or ''),
+                            int(response.get('ContentLength') or 0), str(response.get('ETag') or ''))
+
+    def resume(self, key: str, start: int, etag: str) -> Any:
+        """The rest of ``key`` from byte ``start`` (a stream), only while its current version is still ``etag``: a
+        ranged GetObject with ``IfMatch``, so a version replaced mid-copy is refused (412, raised) and never spliced
+        onto the bytes already read."""
+        if not etag or start < 0:
+            raise ValueError('a resume names the version read and a byte offset')
+        return self._s3.get_object(Bucket=self._bucket, Key=self._checked(key), Range=f'bytes={start}-',
+                                   IfMatch=etag)['Body']
+
+    def _still_listed(self, key: str) -> bool:
+        """Whether ``key`` itself is still a current object (not merely a prefix of another key)."""
+        response = self._s3.list_objects_v2(Bucket=self._bucket, Prefix=key, MaxKeys=1)
+        return any(entry.get('Key') == key for entry in response.get('Contents') or [])
 
 
 def partition_query(partition_attribute: str, partition: str, sort_condition: str | None,

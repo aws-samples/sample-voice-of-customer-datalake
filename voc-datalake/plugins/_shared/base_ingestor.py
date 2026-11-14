@@ -207,7 +207,8 @@ def read_workspace_values(scope: WorkspaceScope, plugin: str, configs_table: obj
     stand a double in for it (plugins/conftest.py)."""
     if not isinstance(configs_table, WorkspaceTable) or configs_table.scope != scope:
         raise ConfigurationError("AGGREGATES_TABLE not configured: a run in a workspace cannot read its plugin's list")
-    return read_plugin_values(get_ssm_run_client(), WORKSPACE_PARAMETER_PREFIX, configs_table, plugin)
+    values, _row = read_plugin_values(get_ssm_run_client(), WORKSPACE_PARAMETER_PREFIX, configs_table, plugin)
+    return values
 
 
 class BaseIngestor(ABC):

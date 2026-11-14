@@ -48,7 +48,7 @@ class TestTheSharedSecretStore:
         client, put = MagicMock(), MagicMock()
         client.get_secret_value.return_value = {'SecretString': '{"a_b": "c"}'}
 
-        store = credentials_store(None, StoreClients('arn:shared', client, MagicMock(), put))
+        store = credentials_store(None, StoreClients('arn:shared', client, MagicMock(), put), actor=lambda: ADMIN_SUB)
         read = store.read()
         store.write({'a_b': 'd'})
 
@@ -57,7 +57,7 @@ class TestTheSharedSecretStore:
         client.get_secret_value.assert_called_once_with(SecretId='arn:shared')
         put.assert_called_once_with(client, 'arn:shared', {'a_b': 'd'})
         with pytest.raises(ConfigurationError):
-            credentials_store(None, StoreClients('', client, MagicMock(), put))
+            credentials_store(None, StoreClients('', client, MagicMock(), put), actor=lambda: ADMIN_SUB)
 
     def test_a_fault_raises_as_boto3_raised_it(self):
         client = MagicMock()
@@ -126,7 +126,7 @@ class TestTheWorkspaceStoreIsOpenedFromTheResolvedMembership:
         assert (store.ws, store.plugins) == (WS, ('webscraper',))
         with pytest.raises(TypeError):
             credentials_store(SimpleNamespace(ws=OTHER),  # type: ignore[arg-type]
-                              StoreClients('arn:shared', MagicMock(), MagicMock(), MagicMock()))
+                              StoreClients('arn:shared', MagicMock(), MagicMock(), MagicMock()), actor=lambda: ADMIN_SUB)
 
     @pytest.mark.parametrize('unset', ['WORKSPACE_PARAMETER_PREFIX', 'AGGREGATES_TABLE'])
     def test_a_workspace_without_its_configuration_is_not_served_the_shared_secret(self, monkeypatch, unset):
@@ -135,7 +135,8 @@ class TestTheWorkspaceStoreIsOpenedFromTheResolvedMembership:
         monkeypatch.delenv(unset)
 
         with pytest.raises(ConfigurationError), patch('shared.workspace_plugin_store.get_dynamodb_resource'):
-            credentials_store(_context(), StoreClients('arn:shared', MagicMock(), MagicMock(), MagicMock()))
+            credentials_store(_context(), StoreClients('arn:shared', MagicMock(), MagicMock(), MagicMock()),
+                              actor=lambda: ADMIN_SUB)
 
     def test_a_write_without_the_key_is_refused_before_any_call(self, world, monkeypatch):
         monkeypatch.delenv('WORKSPACE_PARAMETER_KEY_ARN')
@@ -458,8 +459,19 @@ class TestTheConfigHistory:
         assert written
         assert all(pk.startswith(f'WS#{WS}#') for pk in written)
 
+    def test_a_list_only_save_writes_no_credentials_parameter(self, world):
+        """A save that changes only the list writes its config row, and no parameter at all (the credentials are
+        unchanged: save_credentials writes only a change)."""
+        store = world.open('webscraper')
+        secrets = store.read()
+        store.write({**secrets, 'webscraper_configs': '[{"id": "s1"}]'})
+        assert world.names() == set()
+        assert world.config_row('webscraper')['configs'] == '[{"id": "s1"}]'
+
     def test_a_list_is_saved_only_with_the_callers_sub(self, world):
-        store = credentials_store(_context(), StoreClients('', MagicMock(), world.ssm, MagicMock()), ('webscraper',))
+        """``actor`` is required; one that answers no sub (an empty one) saves no list."""
+        store = credentials_store(_context(), StoreClients('', MagicMock(), world.ssm, MagicMock()), ('webscraper',),
+                                  actor=lambda: '')
         secrets = store.read()
 
         with pytest.raises(TypeError, match="caller's sub"):

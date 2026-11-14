@@ -1,8 +1,9 @@
-"""An in-memory S3 for a workspace's export (shared/ws_repo.py ``ExportObjects``): objects with their tags, multipart
-uploads with their parts, and presigned links. Every call is recorded, so a test can assert that each key stayed
+"""An in-memory S3 for a workspace's export (shared/ws_repo.py ``ExportObjects`` and ``WorkspaceObjects``): objects
+with their tags and content types, listings, multipart uploads with their parts, and presigned links. Every call is recorded, so a test can assert that each key stayed
 under the workspace's exports and that every object was tagged."""
 from __future__ import annotations
 
+import hashlib
 import io
 from dataclasses import dataclass, field
 from typing import Any
@@ -14,6 +15,11 @@ def _require(holds: bool, what: str) -> None:
     """The double's own check of a call S3 would refuse (an AssertionError fails the test that made it)."""
     if not holds:
         raise AssertionError(f'the export S3 double expected {what}')
+
+
+def _s3_order(key: str) -> bytes:
+    """S3 lists keys in the order of their UTF-8 bytes."""
+    return key.encode('utf-8', 'surrogatepass')
 
 
 @dataclass
@@ -36,6 +42,8 @@ class ExportS3:
         self.fail_on: str | None = None
         self.error: Exception | None = None
         self.last_presign: dict[str, Any] = {}
+        self.content_types: dict[str, str] = {}
+        self.listings: list[dict[str, Any]] = []
         self._next_upload = 0
 
     def _record(self, method: str, bucket: str, key: str) -> None:
@@ -108,9 +116,42 @@ class ExportS3:
         self.objects.pop(Key, None)
         return {}
 
-    def get_object(self, *, Bucket: str, Key: str) -> dict[str, Any]:
+    def get_object(self, *, Bucket: str, Key: str, Range: str = '', IfMatch: str = '') -> dict[str, Any]:
         self._record('get_object', Bucket, Key)
-        return {'Body': io.BytesIO(self.objects[Key][0])}
+        if Key not in self.objects:
+            # What S3 answers a role whose s3:ListBucket carries an s3:prefix condition (the export job's): 403, not
+            # 404, since the request names no prefix that would allow it to learn the key is missing.
+            raise ClientError({'Error': {'Code': 'AccessDenied', 'Message': 'Access Denied'}}, 'GetObject')
+        body = self.objects[Key][0]
+        etag = self.etag(Key)
+        if IfMatch and IfMatch != etag:
+            raise ClientError({'Error': {'Code': 'PreconditionFailed', 'Message': 'At least one of the pre-conditions'
+                                                                                  ' you specified did not hold'}},
+                              'GetObject')
+        if Range:
+            _require(Range.startswith('bytes=') and Range.endswith('-'), 'an open-ended byte range')
+            body = body[int(Range[len('bytes='):-1]):]
+        return {'Body': io.BytesIO(body), 'ContentLength': len(body), 'ETag': etag,
+                'ContentType': self.content_types.get(Key, 'binary/octet-stream')}
+
+    def etag(self, key: str) -> str:
+        """The object's current version, as S3 names it (quoted): it changes whenever the object's bytes do."""
+        return f'"{hashlib.md5(self.objects[key][0], usedforsecurity=False).hexdigest()}"'
+
+    def seed(self, key: str, body: bytes, content_type: str = 'binary/octet-stream') -> None:
+        """An object the workspace already has (written by its ingestion, not by the export: no call recorded)."""
+        self.objects[key] = (bytes(body), '')
+        self.content_types[key] = content_type
+
+    def list_objects_v2(self, *, Bucket: str, Prefix: str, MaxKeys: int, StartAfter: str = '') -> dict[str, Any]:
+        """One page of the current objects under ``Prefix`` in S3's order (UTF-8 bytes), after ``StartAfter``."""
+        self._record('list_objects_v2', Bucket, Prefix)
+        self.listings.append({'Prefix': Prefix, 'StartAfter': StartAfter, 'MaxKeys': MaxKeys})
+        keys = sorted((key for key in self.objects if key.startswith(Prefix)), key=_s3_order)
+        after = [key for key in keys if _s3_order(key) > _s3_order(StartAfter)]
+        page = after[:MaxKeys]
+        return {'Contents': [{'Key': key, 'Size': len(self.objects[key][0])} for key in page],
+                'IsTruncated': len(after) > MaxKeys, 'KeyCount': len(page)}
 
     def generate_presigned_url(self, ClientMethod: str, *, Params: dict[str, Any], ExpiresIn: int) -> str:
         self._record('generate_presigned_url', Params['Bucket'], Params['Key'])

@@ -66,8 +66,9 @@ NOT_PER_WORKSPACE: Final = ('projects_documents', 'personas', 'agents_workflows'
 #: Rows of the workspace an export leaves out, and why.
 NOT_EXPORTED: Final = {
     # Per workspace since 7.15.00 and 7.16.00, not in the export yet: an open gap (docs/multi-workspace.md, 7.17.00).
-    'memory': ("Not in this export yet: the workspace's memory (voc-memory's WS#{ws}# partitions) and its page imports "
-               '(ws/{ws}/memory-imports/) are per workspace since 7.16.00 and join the export in a later release.'),
+    'memory': ("Not in this export yet: the workspace's memory items (voc-memory's WS#{ws}# partitions) are per "
+               'workspace since 7.16.00 and join the export in a later release. Its page imports '
+               '(ws/{ws}/memory-imports/) are exported, under objects/memory-imports/.'),
     'conversations': ("Not in this export yet: the members' assistant conversations in the workspace "
                       "(voc-conversations' WS#{ws}#USER#{sub} partitions) are per workspace since 7.15.00 and join "
                       'the export in a later release.'),
@@ -87,8 +88,6 @@ EXCLUDED: Final = {
     'erasure_value_hash': "An erasure job's value hash is left out of erasure_jobs.",
     'email_hashes': "An audit row's email hash (a new account's) is left out of audit.",
 }
-RAW_OBJECTS: Final = {'status': 'not_included_yet',
-                      'note': 'The raw and Silver objects under ws/{ws}/ join the export in a later release.'}
 
 
 class ExportRefused(RuntimeError):
@@ -274,9 +273,10 @@ def encode_row(item: Mapping[str, Any]) -> bytes:
 
 def manifest(*, export_id: str, scope: WorkspaceScope, workspace: Mapping[str, Any], created_at: str,
              completed_at: str, files: Mapping[str, list[str]], counts: Mapping[str, int],
-             daily_total: int) -> bytes:
+             daily_total: int, objects: Mapping[str, Any]) -> bytes:
     """``manifest.json``: every entity with its files and count, the counts check against the workspace's
-    ``daily_total`` counters, what is not per workspace yet, not exported or excluded, and the raw objects' status."""
+    ``daily_total`` counters, what is not per workspace yet, not exported or excluded, and the workspace's objects
+    (``objects``: jobs/workspace_export/objects.py ``manifest_section``)."""
     feedback = int(counts.get('feedback', 0))
     document = {
         'format': 'voc-workspace-export',
@@ -296,6 +296,6 @@ def manifest(*, export_id: str, scope: WorkspaceScope, workspace: Mapping[str, A
                               for name in NOT_PER_WORKSPACE},
         'not_exported': dict(NOT_EXPORTED),
         'excluded': dict(EXCLUDED),
-        'raw_objects': dict(RAW_OBJECTS),
+        'objects': dict(objects),
     }
     return (json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True) + '\n').encode('utf-8')

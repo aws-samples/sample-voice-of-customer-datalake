@@ -12,7 +12,10 @@
  *   - voc-workspaces: Query only, of a workspace's `WS#{one id}` and `AUDIT#WS#{one id}`; no write;
  *   - the raw data bucket, under `ws/{one id}/exports/*` only: PutObject, PutObjectTagging, GetObject,
  *     AbortMultipartUpload and ListMultipartUploadParts, and DeleteObject on `…/exports/*\/work/*` only (the work
- *     objects of an export that may not go on); no List of the bucket, no read of raw/ or silver/;
+ *     objects of an export that may not go on);
+ *   - the workspace's own objects (slice 4b), read-only: `s3:ListBucket` only with the `s3:prefix` `ws/{one id}/*`,
+ *     and `s3:GetObject` on `ws/{one id}/*` (its raw/, silver/ and any other folder; the code skips its exports and
+ *     refuses another workspace's key); no write, tag or delete there;
  *   - KMS; its own invoke; the `jobs` channel's publish (processing-stack-consolidated.ts); no SSM and no Secrets
  *     Manager: a workspace's credentials are never exported.
  *
@@ -44,7 +47,7 @@ import { LOG_RETENTION } from '../utils/log-retention';
 import { pythonLambdaAsset } from '../utils/python-lambda-asset';
 import { grantKeyScopedWrites } from '../utils/table-write-grants';
 import { grantInvokeByName, workerRole } from '../utils/worker-lambda';
-import { WORKSPACE_EXPORTS_PREFIX, WORKSPACE_ID_PATTERN } from './core-buckets';
+import { WORKSPACE_EXPORTS_PREFIX, WORKSPACE_ID_PATTERN, WORKSPACE_OBJECTS_PREFIX } from './core-buckets';
 
 /** Path-style handler: the bundle keeps `jobs/workspace_export/` with `shared/` beside `jobs/`. */
 const EXPORT_HANDLER = 'jobs/workspace_export/handler.lambda_handler';
@@ -137,6 +140,21 @@ export function createWorkspaceExportWorker(scope: Construct, id: string,
     actions: ['s3:DeleteObject'],
     resources: [rawDataBucket.arnForObjects(`${WORKSPACE_EXPORTS_PREFIX}*/work/*`)],
   }));
+  // Slice 4b: the workspace's own objects into its zip (lambda/jobs/workspace_export/objects.py), read-only. The
+  // listing names `ws/{one id}/` as its prefix (lambda/shared/ws_repo.py `WorkspaceObjects`, which refuses any other
+  // key and skips the exports), and a read reaches one workspace's keys only; the event names the workspace.
+  role.addToPolicy(new iam.PolicyStatement({
+    sid: 'ListWorkspaceObjects',
+    actions: ['s3:ListBucket'],
+    resources: [rawDataBucket.bucketArn],
+    conditions: { StringLike: { 's3:prefix': [WORKSPACE_OBJECTS_PREFIX] } },
+  }));
+  role.addToPolicy(new iam.PolicyStatement({
+    sid: 'ReadWorkspaceObjects',
+    actions: ['s3:GetObject'],
+    resources: [rawDataBucket.arnForObjects(WORKSPACE_OBJECTS_PREFIX)],
+  }));
+  // Encrypt for the zip and its work objects; decrypt for those and for the workspace's objects (SSE-KMS, through S3).
   kmsKey.grantEncryptDecrypt(role);
   // The hand-over before the 15-minute ceiling, by name (a GetAtt from its own role would be a cycle).
   grantInvokeByName(cdk.Stack.of(worker), role, [functionName], 'SelfInvoke');

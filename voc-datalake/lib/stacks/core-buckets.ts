@@ -86,6 +86,11 @@ export const APPEND_ONLY_PREFIXES = [
  */
 export const WORKSPACE_EXPORTS_PREFIX = `${WORKSPACE_DATA_PREFIX}${WORKSPACE_ID_PATTERN}/exports/`;
 /**
+ * Every object of one workspace, `ws/{one id}/*`: what its export reads into its zip (slice 4b, the listing's
+ * `s3:prefix` and its GetObject; lib/stacks/workspace-export-worker.ts).
+ */
+export const WORKSPACE_OBJECTS_PREFIX = `${WORKSPACE_DATA_PREFIX}${WORKSPACE_ID_PATTERN}/*`;
+/**
  * The object tag every export object carries (`voc-export=true`, lambda/shared/ws_repo.py `EXPORT_TAGGING`), and
  * the one thing the export lifecycle rule matches: a lifecycle prefix cannot name "every workspace's exports/"
  * (it is literal), so the rule filters on the tag, and the bucket policy refuses the tag on any key outside a

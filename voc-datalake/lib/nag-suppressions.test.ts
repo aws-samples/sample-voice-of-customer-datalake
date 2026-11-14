@@ -243,7 +243,8 @@ describe('cdk-nag acknowledgements', () => {
       // lib/stacks/api-workspace-export.ts).
       // 82: an export's own work objects, ws/{one id}/exports/*/work/*, which an export that may not go on deletes
       // (lib/stacks/workspace-export-worker.ts).
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 82, used: 82 });
+      // 83: every object of one workspace, ws/{one id}/*, which the export job reads into its zip (7.20.00).
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 83, used: 83 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

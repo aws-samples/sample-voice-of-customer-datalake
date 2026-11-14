@@ -17,6 +17,25 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.20.00] - 2026-11-14
+
+Multi-workspace, phase 4b: the voc-multiplayer-b track's export-objects slice merged. A workspace's export now also holds the workspace's own files ([docs/multi-workspace.md](docs/multi-workspace.md#export-and-delete)). Its memory items and its members' conversations are still not exported (the open gap of 7.17.00).
+
+### Added
+
+- The workspace export also carries every current object under `ws/{ws}/` except `exports/` (raw, Silver, memory imports) as `objects/<key>`, read through a read-only workspace view (`WorkspaceObjects` in `lambda/shared/ws_repo.py`), the listing checkpointed so a long one resumes in the next invocation. Entry names are checked against path tricks and Windows extraction (also after NFKC); a key that fails, an object deleted mid-run (S3 answers this role 403 for it: a one-key listing then confirms it is gone; a 403 for a key still there fails the export), one over 3 GiB, or one too slow even for a fresh invocation is counted in the manifest, with the first 50 listed, and never fails the export. A read that drops partway (a reset or timed-out connection) resumes from the byte reached, at most twice, with a ranged read of the same version (`IfMatch` its ETag); one that keeps dropping, or an object replaced meanwhile, fails the export rather than mix two versions. Images, the zip family and gzip are stored as they are; the rest is compressed. The manifest notes what is not included: older versions; names equal under case or Unicode normalisation, which can overwrite each other on extraction; streaming readers that reject stored entries with data descriptors.
+
+### Changed
+
+- Deleting a scraper that does not exist writes nothing (it no longer rewrites the shared secret or the workspace's list).
+- An export that is still running 3 days (less an hour) after it was started fails, "Stopped after running for 3 days", with its upload aborted: the bucket expires an export's zip 10 days after its upload began, so a longer run would leave less than the 7-day download window. The 300 hand-overs stay the runaway guard; together they put the ceiling at some 4.5 to 12 million small objects, or 625 GiB (S3's 10,000 parts of 64 MiB).
+- The export manifest's `not_exported.memory` now says the memory page imports are exported (under `objects/memory-imports/`) and only the memory items are not.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all` from the repo root): the processing stack changes (the export job's code and role), and every function built from `lambda/` or `plugins/` gets new code (the shared modules change), behaviour changing only where this section says (the export, the scraper delete); no grant changes outside the export job's role, no table, index, bucket or cross-stack reference changes, and nothing is migrated.
+- IAM: the export job's role gains `s3:ListBucket` on the raw data bucket, conditioned on `s3:prefix` `ws/<one id>/*`, and `s3:GetObject` on `ws/<one id>/*` (every object of one workspace id; only the code, which names the prefix from the job's row, keeps an export to its own workspace). Its writes stay under `ws/<one id>/exports/*`.
+
 ## [7.19.00] - 2026-11-13
 
 Multi-workspace: each workspace keeps a list of who has conversations in it, so the workspace's export and its delete can find every member's conversations, a former member's too, from the workspace id alone ([docs/multi-workspace.md](docs/multi-workspace.md)). Nothing changes for anyone in the web app.

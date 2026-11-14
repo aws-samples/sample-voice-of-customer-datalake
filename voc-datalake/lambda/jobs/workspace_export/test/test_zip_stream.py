@@ -16,11 +16,13 @@ import pytest
 from jobs.workspace_export.zip_stream import (
     MIN_PART_SIZE,
     PART_SIZE,
+    BadEntryName,
     ExportTooLarge,
     PartSink,
     ZipState,
     ZipWriter,
     count_central_records,
+    entry_name,
 )
 
 MODIFIED = datetime(2026, 11, 13, 9, 30, 15, tzinfo=UTC)
@@ -77,7 +79,7 @@ def _one_shot() -> bytes:
         for line in lines:
             entry.write(line)
         records += entry.close()
-    writer.finish(bytes(records))
+    writer.finish([bytes(records)])
     return bytes(sink.data)
 
 
@@ -163,7 +165,7 @@ def test_a_writer_resumed_across_generations_writes_the_one_shot_bytes():
             next_part, tail = sink.hand_over()
             assert len(tail) < SMALL_MIN
         else:
-            writer.finish(bytes(records))
+            writer.finish([bytes(records)])
             sink.close()
     assert len(parts.parts) >= 3
     joined = parts.joined()
@@ -193,7 +195,7 @@ def test_a_tiny_zip_is_one_last_part():
     sink = PartSink(parts.upload)
     writer = ZipWriter(sink, MODIFIED)
     record = writer.open_entry('manifest.json').close()
-    writer.finish(record)
+    writer.finish([record])
     uploaded = sink.close()
     assert uploaded == 1
     assert _read(parts.joined()) == {'manifest.json': b''}
@@ -221,7 +223,7 @@ def test_forced_zip64_offsets_past_4_gib_are_read_back(tmp_path):
         entry = writer.open_entry(name)
         entry.write(body)
         records += entry.close()
-    writer.finish(bytes(records))
+    writer.finish([bytes(records)])
     path = tmp_path / 'shifted.zip'
     with path.open('wb') as file:
         file.seek(base)
@@ -240,16 +242,78 @@ def test_the_finish_refuses_records_that_are_not_every_entry():
     first = writer.open_entry('a.jsonl').close()
     writer.open_entry('b.jsonl').close()
     with pytest.raises(ValueError, match='every entry'):
-        writer.finish(first)
+        writer.finish([first])
     assert count_central_records(first) == 1
     with pytest.raises(ValueError, match='truncated'):
         count_central_records(first[:-1])
 
 
-@pytest.mark.parametrize('name', ['', '/abs', 'a//b', '../up', 'a/./b', 'win\\dows', 'nul\x00'])
+@pytest.mark.parametrize('name', [
+    '', '/abs', 'a//b', '../up', 'a/./b', 'win\\dows', 'nul\x00',
+    'a/.. /b', 'a/ /b', 'a/. ./b', 'a/.../b',  # only dots and spaces once trailing ones are dropped
+    # A C1 control; U+202E (right-to-left override), U+200B (zero width space), U+FEFF (byte order mark), U+2028
+    # (line separator) and U+2029 (paragraph separator), written by code point so the source shows them.
+    'c1\x85', f'bidi{chr(0x202E)}txt.exe', f'zero{chr(0x200B)}width', f'bom{chr(0xFEFF)}',
+    f'line{chr(0x2028)}sep', f'para{chr(0x2029)}sep',
+])
 def test_an_entry_name_is_a_plain_relative_path(name):
-    with pytest.raises(ValueError, match='entry name'):
+    with pytest.raises(BadEntryName, match='entry name'):
         ZipWriter(Bytes(), MODIFIED).open_entry(name)
+
+
+#: Full-width dot, solidus and reverse solidus (U+FF0E, U+FF0F, U+FF3C): NFKC folds them into ``.``, ``/`` and ``\``.
+_DOT, _SLASH, _BACKSLASH = chr(0xFF0E), chr(0xFF0F), chr(0xFF3C)
+
+
+@pytest.mark.parametrize('name', [
+    f'{_DOT}{_DOT}{_SLASH}{_DOT}{_DOT}{_SLASH}x',  # '../../x' once normalised
+    f'a/{_DOT}{_DOT}/b', f'a{_SLASH}b', f'a{_BACKSLASH}b',
+    'a:b', 'a<b', 'a>b', 'a"b', 'a|b', 'a?b', 'a*b',
+    'CON', 'con.txt', 'raw/Nul.json', 'aux', 'PRN.tar.gz', 'COM1', 'lpt9.log', 'raw/com3 .txt',
+    'CONIN$', 'conout$.log',
+    # Full-width colon, less-than, greater-than, quote, bar, question mark and star (U+FF1A, U+FF1C, U+FF1E,
+    # U+FF02, U+FF5C, U+FF1F, U+FF0A): each folds into the character Windows refuses.
+    *(f'a{chr(point)}b' for point in (0xFF1A, 0xFF1C, 0xFF1E, 0xFF02, 0xFF5C, 0xFF1F, 0xFF0A)),
+])
+def test_a_name_unsafe_once_normalised_or_on_windows_is_refused(name):
+    with pytest.raises(BadEntryName, match='entry name'):
+        ZipWriter(Bytes(), MODIFIED).open_entry(name)
+
+
+@pytest.mark.parametrize('name', ['a.b./c', 'café/résumé.json', 'a b/c d', '.hidden/x', 'x/...a', 'console.log',
+                                  'COM10', 'contact/aux-notes.txt', 'LPT0'])
+def test_plain_names_with_dots_spaces_and_accents_are_taken(name):
+    encoded = entry_name(name)
+    assert encoded == name.encode('utf-8')
+
+
+def test_stored_entries_are_read_back_including_an_empty_one():
+    """STORE: the bytes as they are, the sizes equal, a data descriptor too (the CRC is known only at the end)."""
+    sink = Bytes()
+    writer = ZipWriter(sink, MODIFIED)
+    records = bytearray()
+    bodies = {'objects/photo.png': bytes(range(256)) * 8, 'objects/empty.gz': b'', 'objects/notes.txt': b'abc' * 50}
+    for name, body in bodies.items():
+        entry = writer.open_entry(name, store=name.endswith(('.png', '.gz')))
+        entry.write(body)
+        records += entry.close()
+    writer.finish([bytes(records)])
+    assert _read(bytes(sink.data)) == bodies
+    with zipfile.ZipFile(io.BytesIO(bytes(sink.data))) as archive:
+        infos = {info.filename: info for info in archive.infolist()}
+    for name in ('objects/photo.png', 'objects/empty.gz'):
+        assert infos[name].compress_type == zipfile.ZIP_STORED
+        assert infos[name].compress_size == infos[name].file_size == len(bodies[name])
+        assert infos[name].flag_bits & 0x0008
+    assert infos['objects/notes.txt'].compress_type == zipfile.ZIP_DEFLATED
+
+
+def test_the_central_directory_is_streamed_in_chunks_and_counted_across_them():
+    sink = Bytes()
+    writer = ZipWriter(sink, MODIFIED)
+    chunks = [writer.open_entry(name).close() for name in ('a.jsonl', 'b.jsonl', 'c.jsonl')]
+    writer.finish(iter([chunks[0] + chunks[1], chunks[2]]))
+    assert sorted(_read(bytes(sink.data))) == ['a.jsonl', 'b.jsonl', 'c.jsonl']
 
 
 def test_one_entry_at_a_time_and_no_state_while_one_is_open():

@@ -524,6 +524,19 @@ class TestScraperConfigsInAWorkspace:
         assert status == 200
         assert json.loads(world.stored(WS_A)['webscraper_configs']) == []
 
+    def test_deleting_a_scraper_in_a_workspace_with_no_list_writes_nothing(self, world, lambda_context):
+        """No list saved: the delete has nothing to remove, so no empty list (nor a history row) is written."""
+        status, _ = _scrapers(lambda_context, 'DELETE', '/scrapers/site-1', claims=ADMIN_A, ws=WS_A)
+        assert status == 200
+        assert world.config_rows() == []
+        assert [item for item in world.aggregates.scan()['Items'] if 'PLUGIN_CONFIG' in item['pk']] == []
+        # Nor does deleting an id the saved list does not hold.
+        _scrapers(lambda_context, 'POST', '/scrapers', claims=ADMIN_A, ws=WS_A, body={'scraper': dict(SCRAPER)})
+        before = world.row(f'WS#{WS_A}#PLUGIN_CONFIG', 'webscraper')
+        status, _ = _scrapers(lambda_context, 'DELETE', '/scrapers/site-9', claims=ADMIN_A, ws=WS_A)
+        assert status == 200
+        assert world.row(f'WS#{WS_A}#PLUGIN_CONFIG', 'webscraper') == before
+
     def test_a_save_is_stamped_with_the_caller_and_keeps_the_list_it_replaced(self, world, lambda_context):
         """``updated_by`` is the caller's sub from the authorizer, never a body field."""
         status, _ = _scrapers(lambda_context, 'POST', '/scrapers', claims=ADMIN_A, ws=WS_A,

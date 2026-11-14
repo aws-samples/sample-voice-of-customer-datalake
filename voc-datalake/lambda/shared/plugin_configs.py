@@ -86,16 +86,13 @@ def read_all_configs(table: WorkspaceTable) -> dict[str, str]:
             if isinstance(item.get('sk'), str) and isinstance(item.get(CONFIGS_KEY), str)}
 
 
-def read_plugin_values(ssm: Any, prefix: str, table: WorkspaceTable, plugin: str,
-                       rows: dict[str, ConfigRow | None] | None = None) -> dict:
+def read_plugin_values(ssm: Any, prefix: str, table: WorkspaceTable, plugin: str) -> tuple[dict, ConfigRow | None]:
     """``plugin``'s values in the table's workspace: its credentials parameter's keys (one GetParameter) and, under
-    ``configs``, its list (one GetItem); ``{}`` when neither is saved. ``rows``, when given, keeps the row as read
-    under ``plugin`` (what a save then replaces: shared/workspace_plugin_store.py)."""
+    ``configs``, its list (one GetItem); ``{}`` when neither is saved. With them, the config row as read (None: no
+    list), what a save then replaces (shared/workspace_plugin_store.py); a run uses the values only."""
     values = read_credentials(ssm, prefix, table.scope.ws, plugin)
     row = read_config_row(table, plugin)
-    if rows is not None:
-        rows[plugin] = row
-    return values if row is None else {**values, CONFIGS_KEY: row.configs}
+    return (values if row is None else {**values, CONFIGS_KEY: row.configs}), row
 
 
 def checked_configs(plugin: str, configs: object) -> str:

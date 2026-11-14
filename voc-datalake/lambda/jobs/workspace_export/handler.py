@@ -12,9 +12,13 @@ workspace_routing.py ``workspace_payload``). Each invocation:
 2. stops with ``cancelled`` / ``workspace_deleting`` (the upload aborted, the lock released) when the workspace's
    ``META`` is gone or no longer ``active``: read at every start, before every hand-over and before completing;
 3. writes the entities of jobs/workspace_export/entities.py, in order, each as JSONL files of at most 256 MB
-   (``feedback/feedback-0001.jsonl``, …), into one streaming ZIP64 (zip_stream.py) cut into 64 MB parts of one S3
-   multipart upload, ``ws/{ws}/exports/{export id}/workspace-export.zip`` (shared/ws_repo.py ``ExportObjects``);
-4. with less than ``TIME_RESERVE_MS`` left, closes the open file (no entry crosses an invocation), keeps the zip's
+   (``feedback/feedback-0001.jsonl``, …), then every current object of the workspace outside its exports, each as
+   ``objects/{key without ws/{ws}/}`` (jobs/workspace_export/objects.py: read through shared/ws_repo.py's read-only
+   ``WorkspaceObjects``, whole, DEFLATE or STORE; one too large or badly named is listed in the manifest instead),
+   into one streaming ZIP64 (zip_stream.py) cut into 64 MB parts of one S3 multipart upload,
+   ``ws/{ws}/exports/{export id}/workspace-export.zip`` (shared/ws_repo.py ``ExportObjects``);
+4. with less than ``TIME_RESERVE_MS`` left, or before an object it could not copy in the time left, closes the open
+   file (no entry crosses an invocation), keeps the zip's
    unsent tail (under 5 MB; a larger one goes up as a part) in ``work/tail-{gen}`` and this invocation's
    central-directory records in ``work/cd-{gen}`` (both tagged ``voc-export=true``), renews the lock, records its
    progress and re-invokes itself with its state (``run``);
@@ -29,22 +33,44 @@ lock. The starter gets a notice only when that outcome is written on the row (it
 invocation the timeout or an out-of-memory kills writes nothing, nor does a hand-over Lambda drops (throttled past
 ``maxEventAge``), so its row stays ``running`` until the export page shows it ``failed`` ("The export stopped before
 it finished") an hour later, when its lock is free again. Before completing,
-an invocation with too little time left hands over once more, every entity written, and the next one completes. The raw objects join in slice 4b;
-the manifest says ``not_included_yet``. A workspace's credentials are never read (no SSM or Secrets Manager grant).
+an invocation with too little time left hands over once more, every entity written, and the next one completes. A
+workspace's credentials are never read (no SSM or Secrets Manager grant).
 
 Env: ``FEEDBACK_TABLE``, ``AGGREGATES_TABLE``, ``WORKSPACES_TABLE``, ``RAW_DATA_BUCKET``.
 """
 from __future__ import annotations
 
+import itertools
 import os
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 
-from botocore.exceptions import BotoCoreError, ClientError
+from botocore.exceptions import (
+    BotoCoreError,
+    ClientError,
+    ConnectionClosedError,
+    IncompleteReadError,
+    ReadTimeoutError,
+    ResponseStreamingError,
+)
 
 from jobs.workspace_export.entities import ENTITIES, FILE_CAP, ExportRefused, Source, encode_row, manifest
+from jobs.workspace_export.objects import (
+    BAD_NAME,
+    CHUNK,
+    GONE,
+    MAX_OBJECT_BYTES,
+    TOO_LARGE,
+    TOO_SLOW,
+    ObjectsState,
+    entry_for,
+    manifest_section,
+    stored,
+)
+from jobs.workspace_export.objects import ENTITY as OBJECTS
 from jobs.workspace_export.zip_stream import PartSink, ZipEntry, ZipState, ZipWriter
 from shared import export_jobs
 from shared.aws import get_dynamodb_resource, get_s3_client, invoke_lambda_async
@@ -62,11 +88,15 @@ from shared.workspace import ACTIVE
 from shared.ws_repo import (
     WORKSPACE_FIELD,
     ExportObjects,
+    ListedObject,
+    OpenedObject,
+    WorkspaceObjects,
     WorkspaceScope,
     WorkspaceTable,
     control_query,
     export_job_pk,
     message_scope,
+    s3_prefix,
 )
 
 FEEDBACK_TABLE, AGGREGATES_TABLE, RAW_DATA_BUCKET = (
@@ -75,13 +105,41 @@ FEEDBACK_TABLE, AGGREGATES_TABLE, RAW_DATA_BUCKET = (
 #: Hand over to a fresh invocation when less than this remains (the 15-minute timeout's reserve: a part of up to
 #: 64 MB, the work objects, the progress write and the invoke all fit in it).
 TIME_RESERVE_MS: Final = 2 * 60 * 1000
+#: The function's timeout (lib/stacks/workspace-export-worker.ts: 15 minutes).
+TIMEOUT_MS: Final = 15 * 60 * 1000
+#: What a fresh invocation can give one object: its timeout less the reserve, and a minute for its start (the claim,
+#: the deleting check, the tail and the listing). An object allowed more is never started (objects.py, ``too_slow``);
+#: one allowed less fits the next invocation, so a hand-over before it always makes progress.
+FRESH_BUDGET_MS: Final = TIMEOUT_MS - TIME_RESERVE_MS - 60 * 1000
 #: A runaway guard: an export this long means something is wrong; it fails loudly instead.
 MAX_GENERATIONS: Final = 300
+#: The bucket's lifecycle (lib/stacks/core-buckets.ts, held to these by a test): an export's zip expires
+#: ``EXPORT_EXPIRATION_DAYS`` after its upload began, and an upload still open after ``ABORT_MULTIPART_DAYS`` is
+#: aborted. So a run must end while the whole download window (``export_jobs.DOWNLOAD_DAYS``) still fits before the
+#: expiry: 3 days from its creation, less an hour's margin; one that runs longer (a very large workspace, or starts
+#: held up by throttling) fails, saying so, instead of completing a zip that would vanish inside its window.
+EXPORT_EXPIRATION_DAYS: Final = 10
+ABORT_MULTIPART_DAYS: Final = 7
+MAX_RUN: Final = timedelta(days=min(EXPORT_EXPIRATION_DAYS - export_jobs.DOWNLOAD_DAYS,
+                                    ABORT_MULTIPART_DAYS)) - timedelta(hours=1)
+RAN_TOO_LONG: Final = 'Stopped after running for 3 days (the zip would expire inside its download window)'
 ZIP_CONTENT_TYPE: Final = 'application/zip'
 MANIFEST_NAME: Final = 'manifest.json'
 #: The job row's phase once every entity is written: the manifest, the central directory, the upload's completion.
 COMPLETING: Final = 'manifest'
 _AWS_ERRORS: Final = (ClientError, BotoCoreError)
+#: How many times one object's dropped read stream is resumed, and what counts as one dropping.
+STREAM_RESUMES: Final = 2
+_STREAM_ERRORS: Final = (ResponseStreamingError, ReadTimeoutError, ConnectionClosedError, IncompleteReadError)
+#: The run's phase after the JSONL entities: the workspace's objects; past it, the completion.
+OBJECTS_PHASE: Final = len(ENTITIES)
+
+
+def _phase_name(phase: int) -> str:
+    """The job row's ``phase``: the entity being written, ``objects``, or ``COMPLETING``."""
+    if phase < len(ENTITIES):
+        return ENTITIES[phase]
+    return OBJECTS if phase == OBJECTS_PHASE else COMPLETING
 
 
 @dataclass
@@ -98,6 +156,7 @@ class RunState:
     files: dict[str, list[str]] = field(default_factory=dict)
     cd_generations: list[int] = field(default_factory=list)
     tail_generation: int | None = None
+    objects: ObjectsState = field(default_factory=ObjectsState)
 
     @classmethod
     def from_event(cls, event: Mapping[str, Any]) -> RunState:
@@ -113,13 +172,15 @@ class RunState:
             counts={str(name): int(count) for name, count in (carried.get('counts') or {}).items()},
             files={str(name): [str(file) for file in names] for name, names in (carried.get('files') or {}).items()},
             cd_generations=[int(generation) for generation in carried.get('cd_generations') or []],
-            tail_generation=int(tail) if isinstance(tail, int) else None)
+            tail_generation=int(tail) if isinstance(tail, int) else None,
+            objects=ObjectsState.from_json(carried.get('objects')))
 
     def to_json(self) -> dict[str, Any]:
         return {'generation': self.generation, 'upload_id': self.upload_id, 'part': self.part,
                 'zip': self.zip_state.to_json(), 'phase': self.phase, 'cursor': self.cursor, 'counts': dict(self.counts),
                 'files': {name: list(names) for name, names in self.files.items()},
-                'cd_generations': list(self.cd_generations), 'tail_generation': self.tail_generation}
+                'cd_generations': list(self.cd_generations), 'tail_generation': self.tail_generation,
+                'objects': self.objects.to_json()}
 
 
 class _HandOver(Exception):
@@ -149,7 +210,9 @@ class ExportRun:
         self.jobs: WorkspaceTable = ingest_table(scope, resource, AGGREGATES_TABLE)
         self.workspaces = get_workspaces_table()
         self.source = Source(scope, ingest_table(scope, resource, FEEDBACK_TABLE), self.jobs, self.workspaces)
-        self.objects = ExportObjects(scope, get_s3_client(), RAW_DATA_BUCKET)
+        s3 = get_s3_client()
+        self.objects = ExportObjects(scope, s3, RAW_DATA_BUCKET)
+        self.workspace_objects = WorkspaceObjects(scope, s3, RAW_DATA_BUCKET)
         self.zip_key = self.objects.key(export_id, export_jobs.ZIP_NAME)
         self.created = parse_iso(row.get('created_at')) or datetime.now(UTC)
         self.records = bytearray()
@@ -177,6 +240,8 @@ class ExportRun:
     def _execute(self) -> dict[str, Any]:
         if self.run.generation >= MAX_GENERATIONS:
             return self.fail('Stopped after too many hand-overs')
+        if datetime.now(UTC) - self.created >= MAX_RUN:
+            return self.fail(RAN_TOO_LONG)
         if self._deleting():
             return self._cancel()
         if self.run.generation == 0:
@@ -196,7 +261,8 @@ class ExportRun:
         return has_time_left(self.context, TIME_RESERVE_MS)
 
     def _write_entities(self, writer: ZipWriter) -> None:
-        """Every entity from the run's phase and cursor on; ``_HandOver`` when the time runs low."""
+        """Every entity from the run's phase and cursor on, then the workspace's objects; ``_HandOver`` when the time
+        runs low."""
         while self.run.phase < len(ENTITIES):
             entity = ENTITIES[self.run.phase]
             cursor = self.run.cursor or self.source.first_cursor(entity, self.created.date())
@@ -204,6 +270,98 @@ class ExportRun:
                 self._write_entity(writer, entity, cursor)
             self.run.phase += 1
             self.run.cursor = None
+        if self.run.phase == OBJECTS_PHASE:
+            self._write_objects(writer)
+            self.run.phase += 1
+
+    # ── The workspace's objects (objects.py) ────────────────────────────────────────────────────────────────
+
+    def _write_objects(self, writer: ZipWriter) -> None:
+        """Every current object of the workspace after the run's last key, a listing page at a time; the last key
+        handled is the checkpoint, so a hand-over (``_HandOver``) between any two objects resumes right after it."""
+        state = self.run.objects
+        while True:
+            page = self.workspace_objects.list_page(state.after)
+            for listed in page.objects:
+                if not self._time_left():
+                    raise _HandOver
+                self._write_object(writer, listed)
+                state.after = listed.key
+            if page.following is None:
+                return
+            state.after = page.following
+
+    def _write_object(self, writer: ZipWriter, listed: ListedObject) -> None:
+        """One object as its entry, whole; or listed as not included; ``_HandOver`` before one that would not fit in
+        the time left at its kind's measured rate. One that would not fit even a fresh invocation's budget
+        (``FRESH_BUDGET_MS``) is listed ``too_slow`` instead of started."""
+        state = self.run.objects
+        if listed.key.endswith('/') and listed.size == 0:
+            return  # a folder marker (a console's "create folder"): no object, nothing to list
+        name, why = entry_for(self.scope, listed.key)
+        relative = listed.key.removeprefix(s3_prefix(self.scope))
+        if name is None:
+            state.skip(relative, listed.size, BAD_NAME, why)
+            return
+        if listed.size > MAX_OBJECT_BYTES:
+            state.skip(relative, listed.size, TOO_LARGE)
+            return
+        # Opened first: its kind (STORE or DEFLATE) comes with its content type, before any byte is read.
+        opened = self.workspace_objects.open(listed.key)
+        if opened is None:
+            state.skip(relative, listed.size, GONE)
+            return
+        store = stored(opened.content_type, listed.key)
+        allowed_ms = state.seconds_for(opened.size, store) * 1000
+        if opened.size > MAX_OBJECT_BYTES or allowed_ms >= FRESH_BUDGET_MS or not self._fits(allowed_ms):
+            opened.body.close()
+            if opened.size > MAX_OBJECT_BYTES:
+                # Replaced by a larger version since it was listed.
+                state.skip(relative, opened.size, TOO_LARGE)
+            elif allowed_ms >= FRESH_BUDGET_MS:
+                state.skip(relative, opened.size, TOO_SLOW)
+            else:
+                raise _HandOver
+            return
+        started = time.monotonic()
+        entry = writer.open_entry(name, store=store)
+        self._copy(entry, listed.key, opened)
+        self._close(entry)
+        state.measured(store, entry.size, time.monotonic() - started)
+        state.copied_bytes += entry.size
+        self.run.counts[OBJECTS] = self.run.counts.get(OBJECTS, 0) + 1
+
+    def _copy(self, entry: ZipEntry, key: str, opened: OpenedObject) -> None:
+        """``opened``'s bytes into ``entry``. A read stream that drops (a reset or timed-out connection, a short body)
+        is resumed from the byte reached, on the same version (``WorkspaceObjects.resume``), at most
+        ``STREAM_RESUMES`` times; past that, or when the object changed meanwhile, the error is raised (the entry is
+        part-written, so the export fails rather than hold a spliced object)."""
+        body, copied, resumes = opened.body, 0, 0
+        try:
+            while copied < opened.size:
+                try:
+                    chunk = body.read(CHUNK)
+                except _STREAM_ERRORS:
+                    resumes += 1
+                    if resumes > STREAM_RESUMES or not opened.etag:
+                        raise
+                    logger.warning('export object stream dropped, resuming',
+                                   extra={'resume': resumes, 'at_byte': copied})
+                    body.close()
+                    body = self.workspace_objects.resume(key, copied, opened.etag)
+                    continue
+                if not chunk:
+                    # botocore raises IncompleteReadError first; should that change, a short object still never
+                    # ends its entry quietly.
+                    raise IncompleteReadError(actual_bytes=copied, expected_bytes=opened.size)
+                entry.write(chunk)
+                copied += len(chunk)
+        finally:
+            body.close()
+
+    def _fits(self, allowed_ms: float) -> bool:
+        """Whether a copy allowed ``allowed_ms`` ends before this invocation's reserve."""
+        return allowed_ms < self.context.get_remaining_time_in_millis() - TIME_RESERVE_MS
 
     def _write_entity(self, writer: ZipWriter, entity: str, cursor: dict[str, Any]) -> None:
         """One entity's rows as JSONL files from ``cursor`` on. Its open file always ends in this invocation (at the
@@ -278,7 +436,7 @@ class ExportRun:
         refresh_lock(self.jobs, export_job_pk(self.scope), self.export_id, now)
         progressed = export_jobs.record_progress(self.jobs, self.export_id, generation, {
             'progress_at': now.isoformat(),
-            'phase': ENTITIES[self.run.phase] if self.run.phase < len(ENTITIES) else COMPLETING,
+            'phase': _phase_name(self.run.phase),
             'counts': dict(self.run.counts)})
         if not progressed:
             return self._stop(previous_tail)
@@ -295,16 +453,19 @@ class ExportRun:
         entry.write(manifest(
             export_id=self.export_id, scope=self.scope, workspace=self._workspace_names(),
             created_at=self.created.isoformat(), completed_at=completed.isoformat(), files=self.run.files,
-            counts=self.run.counts, daily_total=daily_total))
+            counts=self.run.counts, daily_total=daily_total,
+            objects=manifest_section(self.run.counts.get(OBJECTS, 0), self.run.objects)))
         self._close(entry)
         exported = self.run.counts.get('feedback', 0)
         if exported != daily_total:
             # Reported, not fatal: an item without a date, an expired counter or an arrival during the run.
             logger.warning('Workspace export counts differ from daily_total',
                            extra={'export_id': self.export_id, 'feedback': exported, 'daily_total': daily_total})
-        earlier = b''.join(self.objects.read_object(self._work_key(f'cd-{generation}'))
-                           for generation in self.run.cd_generations)
-        writer.finish(earlier + bytes(self.records))
+        # Each generation's records read and streamed into the parts in turn (never joined: memory stays at about
+        # one part plus one generation's records), then this invocation's.
+        earlier = (self.objects.read_object(self._work_key(f'cd-{generation}'))
+                   for generation in self.run.cd_generations)
+        writer.finish(itertools.chain(earlier, [bytes(self.records)]))
         uploaded = sink.close()
         parts = self.objects.list_parts(self.zip_key, self.run.upload_id)
         if [part['PartNumber'] for part in parts] != list(range(1, uploaded + 1)):
