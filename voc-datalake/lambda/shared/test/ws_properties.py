@@ -11,13 +11,30 @@ from __future__ import annotations
 
 import re
 import string
-from typing import Final
+from typing import Any, Final
 
 from hypothesis import HealthCheck, settings
 from hypothesis import strategies as st
 
 PROPERTY: Final = settings(max_examples=256, deadline=None, database=None, print_blob=True,
                            suppress_health_check=[HealthCheck.too_slow])
+
+class EmptiedAfter:
+    """``with EmptiedAfter(table):`` around one generated run on a moto table: every row is removed when the run
+    ends, pass or fail. moto copies the whole table on each transaction, so a module-scoped table that kept every
+    run's rows would make each run slower than the one before."""
+
+    def __init__(self, table: Any) -> None:
+        self._table = table
+
+    def __enter__(self) -> None:
+        return None
+
+    def __exit__(self, *_exc_info: object) -> None:
+        with self._table.batch_writer() as writer:
+            for row in self._table.scan(ProjectionExpression='pk, sk')['Items']:
+                writer.delete_item(Key={'pk': row['pk'], 'sk': row['sk']})
+
 
 def exactly(message: str) -> str:
     """A ``pytest.raises(match=…)`` pattern for exactly ``message`` (``match`` searches, so a bare message would also
