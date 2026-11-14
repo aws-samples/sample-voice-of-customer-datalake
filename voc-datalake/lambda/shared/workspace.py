@@ -56,6 +56,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from typing import Any, Final
 
+from shared import usage_meter
 from shared.api import get_caller_subject
 from shared.audit_rows import put_new_audit_row
 from shared.dynamo_paging import iter_query
@@ -243,6 +244,8 @@ def resolve_workspace(table: Any, event: dict, cache: MembershipCache, *,
 
     ``confirm_platform_admin`` runs only on a cache fill where the token's group would elevate the caller.
     """
+    # Counted to no one until the workspace resolves (shared/usage_meter.py): a failed resolve leaves UNATTRIBUTED.
+    usage_meter.attribute(usage_meter.UNATTRIBUTED)
     ws = _workspace_id(event)
     sub = member_subject(event)
     delegated = is_synthetic_subject(get_caller_subject(event))
@@ -254,6 +257,8 @@ def resolve_workspace(table: Any, event: dict, cache: MembershipCache, *,
     if context is None:
         context = _load(table, event, ws, platform_admin, confirm_platform_admin)
         cache.put(ws, sub, context, platform_admin)
+    # The request's Bedrock calls are counted to the workspace it resolved to (shared/usage_meter.py).
+    usage_meter.attribute(context.ws)
     if context.role == 'admin' and delegated:
         # A credential or an agent acts for its person at most as an editor, never as an admin (as for projects,
         # shared/project_access.py): it may write what its person may, but administers nothing. Capped after the

@@ -418,6 +418,43 @@ def _bedrock():
     return _clients['bedrock']
 
 
+# ── Usage line (stdlib mirror of shared/usage_meter.py) ─────────────────────
+# Each successful Converse or InvokeModel call on a scoped Python client logs one `bedrock_usage` line
+# (docs/multi-workspace.md, "Cost per workspace"). This Lambda cannot
+# import shared/ (module docstring), so its one Converse call logs the same fields here, counted to UNATTRIBUTED (the
+# upload's workspace is not resolved in this Lambda). test/test_usage_lockstep.py pins the fields to the original.
+_USAGE_LINE = 'bedrock_usage'
+_USAGE_UNREADABLE = 'bedrock_usage_unreadable'
+_USAGE_FIELDS = ('workspace_id', 'model_id', 'operation', 'service_tier',
+                 'input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_write_tokens')
+_USAGE_KEYS = ('inputTokens', 'outputTokens', 'cacheReadInputTokens', 'cacheWriteInputTokens')
+_UNATTRIBUTED = 'UNATTRIBUTED'
+
+
+def _usage_fields(model_id: str, response: object) -> dict[str, object] | None:
+    """The line's fields for one Converse response (numbers and ids only), or None when its usage is unreadable."""
+    usage = response.get('usage') if isinstance(response, dict) else None
+    if not isinstance(usage, dict) or 'inputTokens' not in usage or 'outputTokens' not in usage:
+        return None
+    counts = [usage.get(key, 0) for key in _USAGE_KEYS]
+    if not all(isinstance(n, int) and not isinstance(n, bool) and n >= 0 for n in counts):
+        return None
+    tier = response.get('serviceTier') if isinstance(response, dict) else None
+    tier_type = tier.get('type') if isinstance(tier, dict) else None
+    values = (_UNATTRIBUTED, model_id, 'Converse', tier_type if isinstance(tier_type, str) and tier_type else 'default',
+              *counts)
+    return dict(zip(_USAGE_FIELDS, values, strict=True))
+
+
+def _log_usage(model_id: str, response: object) -> None:
+    """Never raises: an unreadable response logs the operation only."""
+    fields = _usage_fields(model_id, response)
+    if fields is None:
+        logger.warning(_USAGE_UNREADABLE, extra={'operation': 'Converse', 'reason': 'usage is unreadable'})
+    else:
+        logger.info(_USAGE_LINE, extra=fields)
+
+
 def _table(name: str):
     key = f'table:{name}'
     if key not in _clients:
@@ -887,6 +924,10 @@ def _extract_image(bucket: str, key: str, content_type: str, actual_size: int) -
         }],
         inferenceConfig={'maxTokens': MAX_DESCRIPTION_TOKENS},
     )
+    try:
+        _log_usage(_invocation_model_id(model_id), response)
+    except Exception as error:  # noqa: BLE001 - counting the call must never fail the extraction
+        logger.warning(_USAGE_UNREADABLE, extra={'operation': 'Converse', 'reason': type(error).__name__})
     blocks = response.get('output', {}).get('message', {}).get('content', []) or []
     text = '\n'.join(t for b in blocks if isinstance(b, dict) and (t := b.get('text')))
     return text, text.encode('utf-8')

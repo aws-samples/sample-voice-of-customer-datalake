@@ -32,6 +32,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
+from shared import usage_meter
 from shared.logging import logger, metrics, tracer
 from shared.model_profile import profile_from_job_event, with_model_profile
 
@@ -78,6 +79,8 @@ def measure_invocation_cost[R](func: Callable[[Any, Any], R]) -> Callable[[Any, 
     """
     @functools.wraps(func)
     def wrapper(event: Any, context: Any) -> R:
+        # A warm container never counts this invocation's Bedrock calls to the last one's workspace.
+        usage_meter.reset()
         cpu_start = time.process_time()
         wall_start = time.perf_counter()
         try:

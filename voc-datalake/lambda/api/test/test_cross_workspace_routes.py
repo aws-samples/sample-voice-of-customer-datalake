@@ -895,12 +895,13 @@ def test_the_shared_request_resolver_resolves_first():
     """shared/request_workspace.py ``request_workspace`` counts as a resolver: it resolves first on every path but one,
     its first statement, which answers ``None`` for a request that names no workspace before any read or write (the
     deployment as before; check 3 runs that path for every route whose case allows it, and expects the 400 for
-    every other)."""
+    every other). The one statement before that ``return`` counts the request's Bedrock calls to the deployment
+    (shared/usage_meter.py ``attribute``: a context variable, no read or write)."""
     tree = ast.parse((API_DIR.parent / 'shared' / 'request_workspace.py').read_text(encoding='utf-8'))
     function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'request_workspace')
     docstring, guard, *rest = function.body
     assert isinstance(docstring, ast.Expr)
-    assert ast.unparse(guard) == 'if not _names_a_workspace(event):\n    return None'
+    assert ast.unparse(guard) == 'if not _names_a_workspace(event):\n    usage_meter.attribute(None)\n    return None'
     function.body = [docstring, *rest]
     assert 'request_workspace' in resolving_functions(tree)[0]
 

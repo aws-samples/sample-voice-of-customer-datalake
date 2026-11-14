@@ -741,9 +741,37 @@ A plugin's config list is not a credential and is not in SSM: it is a row of voc
 
 ## Cost per workspace
 
-- Every Bedrock call logs `workspace_id`, the model and its input and output tokens (`shared/converse.py` and the
+- The aim: each Bedrock model call logs `workspace_id`, the model and its tokens (`shared/converse.py` and the
   stream Lambda's model client already centralise those calls). A daily rollup writes `WS#{ws}#COST` rows by date,
   and the platform console shows cost per workspace per day and month (tokens × list price, labelled an estimate).
+- **Slice A, the usage line (decision 9).** Every successful Converse or InvokeModel call on a Python
+  `bedrock-runtime` client made by `shared/model_config.py` `scope_bedrock_client` (the one through
+  `shared/aws.py` `get_bedrock_client`, and the capacity probe's) logs one INFO line `bedrock_usage`
+  (`shared/usage_meter.py`, a botocore `after-call` hook beside the inference-scope hook; no caller changed), with
+  numbers and ids only, never a prompt or a response: `workspace_id`, `model_id` as sent (after the inference scope),
+  `operation`, `service_tier` (the one Bedrock answered with, else the one asked for, else `default`), `input_tokens`,
+  `output_tokens`, `cache_read_tokens` and `cache_write_tokens` (`USAGE_FIELDS`). Converse reads the response's
+  `usage`, InvokeModel the `x-amzn-bedrock-*-token-count` headers. An answer whose usage cannot be read logs
+  `bedrock_usage_unreadable` with the operation and the reason, and the call goes on: logging never raises into the
+  caller. The product-document extractor, which cannot import `shared/`, logs the same line for its one Converse
+  call (counted `UNATTRIBUTED`; `product_doc_extractor/test/test_usage_lockstep.py` pins the fields).
+- **Not counted yet.** ConverseStream is not metered on the Python side: no Python code streams (the streaming
+  assistant is the TypeScript stream Lambda, whose mirror of the line is its owner's follow-up). The image clients of
+  `shared/avatar.py` and `shared/image_model_status.py` are not counted either: an image is priced per image, a
+  follow-up.
+- **The attribution rule.** A call is counted to the workspace its context names, `DEPLOYMENT`, or `UNATTRIBUTED`.
+  `resolve_workspace` names the request's workspace (`UNATTRIBUTED` until it resolves), `request_workspace` names
+  `DEPLOYMENT` for a request that names none, and `ws_repo.message_scope` names the message's workspace,
+  `DEPLOYMENT` for a deployment-wide message and `UNATTRIBUTED` for a refused one. `scope_from_message` only builds
+  a scope and attributes nothing. A test pins those call sites. Every invocation starts `UNATTRIBUTED`
+  (`measure_invocation_cost` resets it, so a warm container never carries the last workspace on),
+  `shared/concurrency.py` runs each task in a copy of its caller's context, and a raw thread pool's tasks never
+  attribute (pinned by the test above), so their calls stay `UNATTRIBUTED`, never a wrong workspace. So an area whose handler resolves its workspace another way stays `UNATTRIBUTED` until its owner
+  calls `usage_meter.attribute(scope)` at its handler entry: the project, document, research, competitive-watch,
+  briefing, memory and agent handlers, and the streaming assistant's mirror of the line.
+- Slice A logs tokens only and prices nothing. Slice B adds the dated price list (from the public Amazon Bedrock
+  pricing page only, a model it cannot read listed as unpriced with the reason), the daily rollup that uses it,
+  `GET /platform/costs` and its stack.
 - Also counted: reviews ingested, scraper and browser sessions, Comprehend and Translate characters. (A workspace's
   credentials parameters cost nothing a month: decision 19.)
 - Scale today (this repo keeps no separate load model, so the notes live here): a workspace's erasure (7.09.00) and its category

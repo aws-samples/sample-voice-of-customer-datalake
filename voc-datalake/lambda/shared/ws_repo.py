@@ -90,6 +90,7 @@ from boto3.dynamodb.conditions import Attr, ConditionBase
 from boto3.dynamodb.types import TypeDeserializer
 from botocore.exceptions import ClientError
 
+from shared import usage_meter
 from shared.aws import S3_MISSING_KEY_CODES, consistent_item, is_conditional_check_failure
 from shared.batch_get import BATCH_GET_ATTEMPTS, batch_get_all, unprocessed_backoff
 from shared.dynamo_paging import iter_query
@@ -305,13 +306,21 @@ def message_scope(body: object) -> tuple[bool, WorkspaceScope | None]:
     A message that names a workspace in ``workspace_id`` runs in it; one that names none (no such field) runs
     deployment-wide (``scope`` None); one whose field is there but is not a workspace id (``None`` included) is
     refused, never run deployment-wide instead.
+
+    The message's Bedrock calls are counted (shared/usage_meter.py) to its workspace, to the deployment when it
+    names none, and to no one when it is refused: UNATTRIBUTED is set first, so a refused record after a good one
+    is never counted to the good one's workspace.
     """
+    usage_meter.attribute(usage_meter.UNATTRIBUTED)
     if not isinstance(body, Mapping) or WORKSPACE_FIELD not in body:
+        usage_meter.attribute(None)
         return False, None
     try:
-        return False, scope_from_message(body)
+        scope = scope_from_message(body)
     except ValueError:
         return True, None
+    usage_meter.attribute(scope.ws)
+    return False, scope
 
 
 def scope_from_key(partition_key: object) -> WorkspaceScope:
