@@ -88,6 +88,7 @@ or set it in `voc-datalake/cdk.context.json`. An invalid value fails the synth.
 | `inboundEmailDomain` (+ `inboundEmailHostedZoneId`, `inboundEmailHostedZoneName`, `inboundEmailRuleSet`, `inboundEmailCreateIdentity`) | none | Receives feedback by email through SES ([email-intake.md](email-intake.md)) |
 | `deploymentPrefix` | none | Namespaces a second copy in the same account and region ([Two Deployments](#two-deployments-in-one-account-and-region)) |
 | `mcpReservedConcurrency` | `20` | Reserved concurrency of the MCP endpoint ([below](#reserved-concurrency-of-the-mcp-endpoint--c-mcpreservedconcurrency)) |
+| `workshop` | `false` | `true` (set by `npm run generate:workshop-artifacts`) marks an AWS workshop deployment: an invitation email sent before a brand is configured says the account was set up for an AWS workshop and points to the workshop organizer instead of "your VoC Analytics administrator" ([Invitation email](#invitation-email)) |
 | `performanceTier` | `false` | `true` turns on every paid optimisation at once: the fixed-cost performance features (`snapStart`) and the paid security features (`enableWaf`, `cognitoPlus`); a feature's own flag set to `false` leaves it out (e.g. `-c performanceTier=true -c cognitoPlus=false`); for a deployment that runs as a managed service rather than a sample ([lambda-sizing.md](lambda-sizing.md#the-performance-tier--c-performancetier)) |
 | `enableWaf` | `false` | `true` puts AWS WAF in front of the SPA distribution and the API stage (a fixed monthly cost, about $20 plus $0.60 per million requests; off by default per [TENETS.md](../TENETS.md), tenet 7) ([below](#aws-waf-and-cognito-plus-opt-in)) |
 | `cognitoPlus` | `false` | `true` moves both user pools to the Cognito Plus plan with threat protection in audit mode ($0.020 per monthly active user, no free tier) ([below](#aws-waf-and-cognito-plus-opt-in)) |
@@ -578,6 +579,24 @@ sources whose profile sets `retention_days`, and for erasure requests an admin s
 is the only role with a delete permission on customer data. Sources without a profile are
 kept forever, so a deploy changes nothing until an admin configures one. See
 [source-policies.md](source-policies.md) and [dimensions.md](dimensions.md).
+
+### Invitation email
+
+When an admin adds a user (Administration → Users), Cognito emails an invitation with a temporary
+password. The app pool's custom-message trigger (`lambda/auth/user_messages.py`) writes it so that someone
+who has never heard of "VoC" can tell it is genuine:
+
+- **Who and where:** the inviting admin's name (from their sign-in token; their email address is never
+  sent) and the workspace: "the *Acme* VoC Analytics workspace" once Administration → Brand has a name.
+- **What it is:** one sentence on what VoC Analytics does.
+- **What to do:** the sign-in link, the temporary password, how long it works (7 days, the pool's policy),
+  and whom to ask if the invitation was unexpected: "your VoC Analytics administrator", or, on a workshop
+  deployment (`-c workshop=true`) with no brand set, the workshop organizer.
+
+The sender stays Cognito's `no-reply@verificationemail.com` (at most 50 emails a day per account).
+Recipients' mail systems usually still mark it external. The invitation carries a "Support reference",
+the user's internal id: Cognito only sends a custom invitation that contains it, and otherwise falls back to
+the plain template in `lib/stacks/core-auth.ts`.
 
 <a id="participant-email-and-the-feature-request-board--c-emailfrom"></a>
 

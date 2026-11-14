@@ -359,6 +359,29 @@ class TestCreateUser:
             UserPoolId=POOL, Username='uuid-1', GroupName='admins')
         assert decoded['user']['groups'] == ['admins']
 
+    @pytest.mark.parametrize(('names', 'inviter'), [
+        pytest.param({'name': ' Luca Perrozzi '}, 'Luca Perrozzi', id='name-claim'),
+        pytest.param({'given_name': 'Luca', 'family_name': 'Perrozzi'}, 'Luca Perrozzi', id='given-and-family'),
+        pytest.param({'name': 'Display', 'given_name': 'Luca'}, 'Display', id='name-wins'),
+        pytest.param({'given_name': 'x' * 200}, 'x' * 80, id='capped'),
+    ])
+    def test_names_the_inviting_admin_in_the_invitation(self, created, names, inviter, api_gateway_event,
+                                                        lambda_context):
+        claims = {'sub': 'admin-sub', 'email': 'admin@example.com', 'cognito:groups': 'admins', **names}
+        status, _ = _call(api_gateway_event, lambda_context, 'POST', '/users', {'email': 'a@example.com'},
+                          claims=claims)
+
+        assert status == 200
+        kwargs = created.admin_create_user.call_args.kwargs
+        # Only the name: the admin's email address never reaches the invitee.
+        assert kwargs['ClientMetadata'] == {'invited_by': inviter}
+
+    def test_sends_no_metadata_when_the_admin_has_no_name(self, created, api_gateway_event, lambda_context):
+        claims = {'sub': 'admin-sub', 'email': 'admin@example.com', 'cognito:groups': 'admins', 'name': '  '}
+        _call(api_gateway_event, lambda_context, 'POST', '/users', {'email': 'a@example.com'}, claims=claims)
+
+        assert 'ClientMetadata' not in created.admin_create_user.call_args.kwargs
+
     @pytest.mark.parametrize(('body', 'message'), [
         ({'name': 'No Email'}, 'Email is required'),
         ({'email': '   '}, 'Email is required'),
