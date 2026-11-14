@@ -17,6 +17,34 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.00.02] - 2026-11-14
+
+Fixes from an independent review of 7.00.00 and 7.00.01: large reference logos work again, prototypes never get a broken or misrecorded logo, and the repository's Kiro agents are confined further.
+
+### Fixed
+
+- A design reference's logo between 1 and 5 MB is drawn smaller when the reference is read, so **Use this logo** accepts it. Since 7.00.00 a website or GitHub logo of 1 to 2 MB was refused, because it was only drawn smaller above 2 MB. A GitHub repository's raster logo is handed to the managed browser like its SVG logo already is; when it cannot be drawn, the reference's guidelines ask for a PNG under 1 MB. See [docs/company-context.md → An oversized reference logo](docs/company-context.md).
+- Prototypes: when no logo is available, the company name is written as plain bold text that cannot break the prototype's scripts (it was a `<span>` with quoted attributes, which broke a script that held the logo in a string). Only `<img>` tags take one of the two logo places, in any letter case; a placeholder in a comment, CSS or a script no longer uses one up.
+- A prototype's "Built from" footer says "Company logo" only when the logo actually appears in the prototype, and "Company logo not used" when one is uploaded but does not (it recorded that the logo was read, even when the model placed none). A design system that holds only a logo is no longer listed as "Design system".
+- Company → Design system → **Upload logo** in a browser that cannot encode WebP: a large logo now falls back to a smaller PNG (768, then 512 px) instead of being refused.
+- 7.00.01 said that kiro-cli's V3 engine ignores an agent's `permissions` rules. It does not: kiro-cli has two engines, and the headless one (`--no-interactive`, which the review runners use) is V2, which enforces only `toolsSettings`, while interactive V3 enforces only `permissions.rules`. Both blocks stay in every agent, for that reason. The grep gap named there is closed (below), and `test-generator` is not run by a hook.
+
+### Security
+
+- Drawing a reference's logo smaller downloads it once through the platform's address checks (the SSRF guard on every redirect, sockets pinned to the vetted address), at most 5 MB and a PNG, JPEG or WebP by its bytes; the managed browser draws those bytes from a `data:` URL and never fetches the address itself (it used to re-download the raw URL, outside the guard).
+- The AI review runners (`scripts/ai-review/review.mjs` and the optional pre-push hook) pin kiro-cli's V2 engine (`--agent-engine v2`), which keeps their reads inside the repository; the engine used to depend on each developer's `chat.agentEngine` setting.
+- `first-principles-reviewer` no longer has the `grep` and `glob` tools, which printed lines from a denied `.env` on the V2 engine; it searches by listing folders and reading files with its read tool.
+- `test-generator` no longer pre-approves every shell command and every write. Its shell runs only the repository's test runners (`npx vitest run`, `pytest` through the venv, `node --test`, `npm test`, `npm run test…`, optionally after a `cd` into a package folder); network clients, `env`, `printenv`, the AWS CLI and reads of home paths are refused, on both engines.
+- Secret-shaped paths also include `.envrc`, `.pypirc`, `.pgpass`, ECDSA and DSA keys, `.ppk`, `.jks` and `.tfvars` files: they are never sent for review and the agents cannot read them (no tracked file matches).
+- The agent-configuration test is an allowlist: it fails on any agent, tool, field, `resources` entry, hook, MCP server or agent-shaped file in `.kiro/agents` that is not listed (`scripts/ai-review/agent-guard.mjs`).
+- The document generator's read of the company logo names the exact `.png`, `.jpg` and `.webp` keys.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:infra`, then the frontend). No new resource; the `CompanyLogoReadPolicy` managed policy changes in place.
+- A company logo over 1 MB saved before 7.00.00 still shows in the app but is left out of every prototype ("Company logo not used"): upload it again (the browser makes it smaller). A reference read before this release keeps its old preview: refresh it so a large logo is drawn smaller.
+- Used interactively (kiro-cli's V3 engine), the repository's Kiro agents can still read and write files outside the repository without asking; agent rules cannot prevent that today. Inside the repository secret-shaped paths are refused on both engines. The four agents pinned to `claude-opus-4.6` do not start on V3 in accounts where that model is unavailable. A test that `test-generator` writes can do anything when it runs: read its tests before running them.
+
 ## [7.00.01] - 2026-11-13
 
 The repository's Kiro agents can no longer read `.env`, key and credential files with their read tool.

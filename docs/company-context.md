@@ -40,14 +40,17 @@ prompt:
   unticked. The inlined logo is marked (`data:image/png;voc=company-logo;base64,…`): a revision sends the base
   prototype back with exactly that image turned into the placeholder again (no other inline image), so the base
   HTML budget is spent on markup. When a revision has no logo to use, the prompt asks for a drawn wordmark, and a
-  placeholder `<img>` the model still writes becomes the brand (or project) name as text. The prompt asks for the logo in at
-  most two places (the header and a splash or sign-in screen), and the build enforces it: only the first two
-  placeholders get the image (each use carries it in the file again), any further one becomes the wordmark text.
-  The derivation records it beside `design_system_included`: `company_logo_included` is `true` when the uploaded
-  logo was inlined, `false` when one is uploaded but was left out (over 1 MB, written before the cap, or
-  unreadable), absent when there is none or the design system was not read; the "Built from" footer says
-  "Company logo" or "Company logo left out (over 1 MB or unreadable)". The document generator
-  role reads the uploaded logos only, `company-context/design/logo_????????????.*` (not the references' previews)
+  placeholder `<img>` the model still writes becomes the brand (or project) name as plain bold text (`<b>…</b>`,
+  escaped and with no quotes, so it is safe inside a script string too). The prompt asks for the logo in at most
+  two places (the header and a splash or sign-in screen), and the build enforces it: only the first two `<img>` tags
+  naming the placeholder (in any letter case) get the image (each use carries it in the file again), a further one
+  becomes the wordmark text, and a placeholder outside an `<img>` (a comment, CSS, a script) takes no place and
+  becomes a transparent image. The derivation records it beside `design_system_included`: `company_logo_included`
+  is `true` when the uploaded logo appears in the prototype, `false` when one is uploaded but does not (over 1 MB,
+  written before the cap, unreadable, or the model placed none), absent when there is none or the design system
+  was not read; the "Built from" footer says "Company logo" or "Company logo not used". A design system that holds
+  only a logo is not recorded as `design_system_included`. The document generator role reads the uploaded logos
+  only, `company-context/design/logo_????????????.png`, `.jpg` and `.webp` (not the references' previews)
   (`s3:GetObject`, VocCoreStack's `CompanyLogoReadPolicy` managed policy, attached in VocApiStack).
 - **Category scope applies to the design system too.** Like the vision and objectives, guideline paragraphs,
   token entries and references whose text names a category the reader may not see are left out
@@ -277,15 +280,20 @@ guidelines (or take them as they are when there are none yet). `changes`
 counts `{added, replaced}` per token group and for `components`, plus `guidelines_added`. The admin reviews it in the editor and saves with the usual
 `PUT /settings/design-system`. 409 when the reference has no extracted design yet or is archived.
 
-**An oversized logo on a website.** A website reference's raster logo (PNG, JPEG or WebP) over 2 MB is no longer
-refused: while the page is read, the managed browser draws it in a fresh blank tab at up to 1,024 px on its longest
-side and keeps that PNG as the reference's logo preview (marked rendered, like a drawn SVG logo), so "Use this logo"
-copies the smaller PNG (`lambda/design_capture/raster_logo.py`). Every rendered logo (an SVG or an oversized raster)
-fits the 1 MB company-logo cap: a PNG over it at 1,024 px is drawn again at 768, then 512 px
-(`lambda/design_capture/logo_render.py`). The address passes the same URL policy before the
-browser opens it; if drawing fails, the reference simply has no logo preview. A reference read before 7.00.00, or a
-GitHub repository's logo over 2 MB, still answers "Use this logo" with a 400 that says what to do: upload it as the
-company logo (the browser makes it smaller) or refresh a website reference.
+**An oversized reference logo.** A reference's raster logo (PNG, JPEG or WebP) larger than 1 MB, the most the
+company logo can be, is drawn smaller so that "Use this logo" can use it. For a website the capture does this while
+it reads the page (`lambda/design_capture/raster_logo.py`); for a GitHub repository the settings worker hands the
+logo's raw address to the capture worker (`design_logo_render`, kind `raster`; `lambda/design_capture/logo_job.py`),
+as it does for an SVG logo. Either way the image is downloaded ONCE through the platform's address checks
+(`shared.http_utils.fetch_public_url`: the SSRF guard on every hop, sockets pinned to the vetted address), at most
+5 MB, and must be a PNG, JPEG or WebP by its bytes; the managed browser draws those downloaded bytes from a `data:`
+URL in a fresh blank tab, so it never fetches the address itself. The result is a PNG preview marked rendered
+(like a drawn SVG logo) that "Use this logo" copies. Every rendered logo fits the 1 MB cap: a PNG over it at
+1,024 px is drawn again at 768, then 512 px (`lambda/design_capture/logo_render.py`). A logo that cannot be drawn
+keeps its plain preview when it is at most 2 MB, and a GitHub reference gets a note in its guidelines asking for a
+PNG under 1 MB. A logo over 5 MB, one in a private repository, or a reference read before 7.00.02 has no usable
+preview: "Use this logo" answers a 400 that says what to do (upload it as the company logo, the browser makes it
+smaller, or refresh the reference).
 
 **Use this logo.** `POST …/references/{id}/logo` downloads the candidate server-side with the SSRF guard on the
 URL and on every redirect hop (`shared/http_utils.fetch_public_url`: sockets pinned to the vetted address, no
@@ -317,9 +325,9 @@ Infrastructure: `voc-design-capture` runs as its own role — the managed-browse
 on the `SETTINGS#design_system` and `SETTINGS#model` partitions and `UpdateItem` on `SETTINGS#design_system` only
 (`dynamodb:LeadingKeys`), KMS for the table and bucket, `s3:PutObject` on
 `company-context/design/logo_preview_*` (the logo preview: a downloaded raster candidate, or the PNG the
-browser rendered from an SVG logo or from a raster logo over 2 MB, and the SVG's sanitised copy) and `company-context/design/icons_*` (the copied icons)
+browser rendered from an SVG logo or from a raster logo over 1 MB, and the SVG's sanitised copy) and `company-context/design/icons_*` (the copied icons)
 only; env `RAW_DATA_BUCKET`; no read, no delete, no
-secrets. Its second action, `design_logo_render` (a GitHub reference's SVG logo), uses the same grants. It is never retried (a retry opens another billed
+secrets. Its second action, `design_logo_render` (a GitHub reference's SVG logo, or its raster logo over 1 MB), uses the same grants. It is never retried (a retry opens another billed
 session). The settings role may invoke it (`DESIGN_CAPTURE_FUNCTION`, by name: VocIngestionStack deploys before
 VocApiStack).
 
