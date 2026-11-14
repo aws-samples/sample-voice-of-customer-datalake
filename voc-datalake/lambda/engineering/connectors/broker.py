@@ -5,7 +5,7 @@ the caller's session, never the request) is one the broker knows and is active; 
 dial (the way of working of the person who started the run, ``shared/ai_mode.py``: Human-driven pushes nothing,
 AI-assisted waits for a person's go on the run, AI-driven goes on; failing closed, ``dial.py``: only an explicitly
 stored AI-assisted or AI-driven allows anything, so a person with no saved way of working, a stored mode outside
-the modes, or a run that names no person pushes nothing), the CI attestation (6.32.00: an administrator's
+the modes, or a run that names no person pushes nothing), the CI attestation (7.04.00: an administrator's
 confirmation for the run's connection and repository, read at each push and pull request, ``records.py``), the
 branch, the host's own branch rules as the connection's read-only token reads them (the default branch protected
 with the repository's required checks, the agent's branch unprotected: ``RepositoryHost.ci_protection``, a pass kept
@@ -16,7 +16,7 @@ refusal raises ``WriteRefused`` (``NotPermitted`` for the role, ``NotNow`` for t
 state) with a plain reason for the run journal.
 
 Each write is made once per key, the caller's run, agent and attempt, the operation and a digest of what it writes
-(``_once``, 6.30.00): a claim row (``records.WriteClaims``) is taken just before the host call and closed with its outcome, so a repeat of a write
+(``_once``, 7.02.00): a claim row (``records.WriteClaims``) is taken just before the host call and closed with its outcome, so a repeat of a write
 its caller never heard back from answers the first outcome and is never made twice; a host error leaves the outcome
 unknown (``OutcomeUnknown``, 502), and the write is not made again for that attempt.
 

@@ -1,5 +1,6 @@
 import * as cdk from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3n from 'aws-cdk-lib/aws-s3-notifications';
@@ -135,6 +136,12 @@ export class VocCoreStack extends VocStack {
   public readonly realtime: CoreRealtime;
   /** How customer data is removed with the stacks (`-c protectData`). */
   public readonly dataProtection: DataProtection;
+  /**
+   * Read the uploaded company logo objects (`company-context/design/logo_<12 hex>.<ext>`): the document generator inlines the
+   * logo into a prototype (lambda/shared/company_logo.py). A managed policy here, attached in VocApiStack, because
+   * that role's inline policy is at its size gate (lib/stacks/api-stack-mcp.test.ts).
+   */
+  public readonly companyLogoReadPolicy: iam.ManagedPolicy;
 
   constructor(scope: Construct, id: string, props: VocCoreStackProps) {
     super(scope, id, props);
@@ -532,6 +539,19 @@ export class VocCoreStack extends VocStack {
       this.node.findChild('BucketNotificationsHandler050a0587b7544547bf325f094a3db834'),
       cdkCustomResourceSuppressions,
     );
+
+    // The company logo, read-only (GetObject, no List): the keys come from the design-system row. `?` is one
+    // character: exactly `logo_<12 hex>.<ext>` (company_context.new_id), never a reference's `logo_preview_*`.
+    const companyLogoKeys = this.rawDataBucket.arnForObjects('company-context/design/logo_????????????.*');
+    this.companyLogoReadPolicy = new iam.ManagedPolicy(this, 'CompanyLogoReadPolicy', {
+      description: 'Read the uploaded company logo objects of the raw data bucket (docs/company-context.md)',
+      statements: [new iam.PolicyStatement({ actions: ['s3:GetObject'], resources: [companyLogoKeys] })],
+    });
+    acknowledgeNag(this.companyLogoReadPolicy, [{
+      id: 'AwsSolutions-IAM5',
+      reason: 'GetObject on ONE key prefix of the raw data bucket, the uploaded company logos (company-context/design/logo_<12 single-character wildcards>.<ext>); the wildcards are the logo id and extension, never another prefix or a reference preview',
+      findings: [resourceFinding(companyLogoKeys)],
+    }]);
 
 
     // ============================================

@@ -1,8 +1,11 @@
 /**
  * @fileoverview svgToPng: an SVG logo becomes a PNG in the browser (longest side 1024 px), or a
- * typed error the UI can explain; the blob URL is revoked whatever happens.
+ * typed error the UI can explain. The SVG is loaded from a `data:` URL, the one scheme the site's
+ * CSP lets an image load besides 'self'.
  */
-import { describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_SIDE, MAX_SVG_BYTES, isSvgConversionError, isSvgFile, parseViewBoxSize, svgToPngWith,
 } from './svgToPng'
@@ -25,13 +28,11 @@ class FakeImage implements RasterImage {
 interface Harness {
   deps: SvgToPngDeps<FakeImage>
   sizes: Array<{ width: number; height: number }>
-  revoked: string[]
   loaded: string[]
 }
 
 function harness(image: FakeImage, toBlob: () => Promise<Blob | null> = () => Promise.resolve(new Blob(['png'], { type: 'image/png' }))): Harness {
   const sizes: Harness['sizes'] = []
-  const revoked: string[] = []
   const loaded: string[] = []
   const createCanvas = (width: number, height: number): RasterCanvas<FakeImage> => {
     sizes.push({ width, height })
@@ -39,7 +40,6 @@ function harness(image: FakeImage, toBlob: () => Promise<Blob | null> = () => Pr
   }
   return {
     sizes,
-    revoked,
     loaded,
     deps: {
       readText: (file) => new Promise((resolve) => {
@@ -49,8 +49,6 @@ function harness(image: FakeImage, toBlob: () => Promise<Blob | null> = () => Pr
       }),
       createImage: (url) => { loaded.push(url); return image },
       createCanvas,
-      createObjectURL: () => 'blob:svg-1',
-      revokeObjectURL: (url) => { revoked.push(url) },
       timeoutMs: 20,
     },
   }
@@ -71,7 +69,7 @@ describe('svgToPng', () => {
   it('converts with the natural size and hands back a PNG file', async () => {
     const h = harness(new FakeImage(256, 256))
     const png = await svgToPngWith(svgFile(), h.deps)
-    expect([png.type, png.name, h.sizes, h.loaded]).toStrictEqual(['image/png', 'mark.png', [{ width: 1024, height: 1024 }], ['blob:svg-1']])
+    expect([png.type, png.name, h.sizes, h.loaded.length]).toStrictEqual(['image/png', 'mark.png', [{ width: 1024, height: 1024 }], 1])
   })
 
   it('uses the viewBox when the SVG has no natural size', async () => {
@@ -122,21 +120,25 @@ describe('svgToPng', () => {
     expect(await reasonOf(svgToPngWith(svgFile(), h.deps))).toBe('result_too_large')
   })
 
-  it.each([
-    ['success', () => Promise.resolve(), () => Promise.resolve(new Blob(['png']))],
-    ['a failed decode', () => Promise.reject(new Error('x')), () => Promise.resolve(new Blob(['png']))],
-    ['a tainted canvas', () => Promise.resolve(), () => Promise.reject(new Error('SecurityError'))],
-  ])('always revokes the blob URL (%s)', async (_label, decode, toBlob) => {
-    const h = harness(new FakeImage(10, 10, decode), toBlob)
-    await reasonOf(svgToPngWith(svgFile(), h.deps))
-    expect(h.revoked).toStrictEqual(['blob:svg-1'])
+  it('loads the SVG text from a data: URL typed image/svg+xml, even when the file had no type', async () => {
+    const h = harness(new FakeImage(10, 10))
+    const text = '<svg xmlns="http://www.w3.org/2000/svg"><title>Exämple Äir</title></svg>'
+    await svgToPngWith(new File([text], 'logo.SVG'), h.deps)
+    const [url] = h.loaded
+    const prefix = 'data:image/svg+xml;base64,'
+    expect(url?.startsWith(prefix)).toBe(true)
+    const bytes = Uint8Array.from(atob(url?.slice(prefix.length) ?? ''), (char) => char.charCodeAt(0))
+    expect(new TextDecoder().decode(bytes)).toBe(text)
   })
 
-  it('loads the SVG from a blob typed image/svg+xml, even when the file had no type', async () => {
+  // Regression: a blob: URL was blocked by `img-src 'self' data:`, so every SVG failed as "unreadable".
+  it("loads the SVG from a scheme the site's CSP img-src allows", async () => {
+    const cdn = readFileSync(join(__dirname, '../../../lib/stacks/core-cdn.ts'), 'utf8')
+    const imgSrc = /img-src ([^;]+);/.exec(cdn)?.[1]?.split(/\s+/) ?? []
     const h = harness(new FakeImage(10, 10))
-    const created = vi.fn((_blob: Blob) => 'blob:svg-1')
-    await svgToPngWith(new File(['<svg/>'], 'logo.SVG'), { ...h.deps, createObjectURL: created })
-    expect(created.mock.calls[0]?.[0].type).toBe('image/svg+xml')
+    await svgToPngWith(svgFile(), h.deps)
+    const scheme = `${(h.loaded[0] ?? '').split(':')[0] ?? ''}:`
+    expect(imgSrc).toContain(scheme)
   })
 })
 

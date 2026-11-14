@@ -266,7 +266,8 @@ class TestLogo:
     @pytest.mark.parametrize(('content_type', 'size'), [
         ('image/svg+xml', 100),   # an SVG can carry script
         ('text/html', 100),
-        ('image/png', 5_000_001),
+        # The company-logo cap is 1 MB for every client (tenet 4): the web app makes a larger image smaller first.
+        ('image/png', 1_000_001),
         ('image/png', 0),
     ])
     def test_refuses_unsafe_types_and_sizes(self, api_gateway_event, lambda_context, content_type, size):

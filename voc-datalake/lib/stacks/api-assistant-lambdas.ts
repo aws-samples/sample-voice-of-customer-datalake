@@ -218,7 +218,7 @@ export function createAssistantLambdas(
   agentsTable.grant(agentsRole, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:Query');
   // Category access (which agents a user may see), category config, model picker — all GetItem.
   aggregatesTable.grant(agentsRole, 'dynamodb:GetItem');
-  // The stack's key only through the services that encrypt what this role reads and writes with it (6.31.01 audit):
+  // The stack's key only through the services that encrypt what this role reads and writes with it (7.03.01 audit):
   // DynamoDB here, for voc-agents, the aggregates table and, with the engineering module, voc-engineering; S3 for the
   // workspace's reports and SSM for the connections' parameters, in engineeringReads. The role calls KMS itself for
   // nothing, and voc-agent-run has no customer-managed key (its executions are encrypted by Step Functions' own).

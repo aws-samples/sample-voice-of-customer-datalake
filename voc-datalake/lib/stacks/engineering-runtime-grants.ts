@@ -37,7 +37,7 @@ export const HARD_CAP_DENY_SID = 'DenyHardCapWrites';
 /**
  * An explicit Deny of every write on the administrators' engineering partitions of voc-agents, for a role that may
  * write voc-agents elsewhere: the hard cap's (its `HARD_CAP` row and its `LOG#` history rows) and the repository
- * connections' (each connection's row and its `LOG#` audit rows, 6.31.00). The Agents API is their one writer, so no
+ * connections' (each connection's row and its `LOG#` audit rows, 7.03.00). The Agents API is their one writer, so no
  * other role can turn the cap on or off, change a connection, or overwrite their history. `ForAnyValue`, as
  * audit-row-guard.ts and engineering-bus.ts denyCostRows: denied when ANY key a request names is one of those
  * partitions. An explicit Deny wins over every Allow, so a later broad grant cannot reopen it.

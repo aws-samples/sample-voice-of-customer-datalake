@@ -1,7 +1,7 @@
 """What the broker reads of a run's own record, and its one write there (docs/autonomous-engineering.md, "Repository
 connectors").
 
-The broker's one write is a write's claim row, in a partition of the run's writes alone (``WriteClaims``, 6.30.00). Otherwise reads only, of rows and objects
+The broker's one write is a write's claim row, in a partition of the run's writes alone (``WriteClaims``, 7.02.00). Otherwise reads only, of rows and objects
 other code writes; the broker writes none of them:
 
 * the run: ``WS#<ws>#RUN#<run>`` / ``META`` (``runtime/runs.py``), read strongly consistent for the caller's run
@@ -20,7 +20,7 @@ other code writes; the broker writes none of them:
 * a person's go on the run: ``WS#<ws>#RUN#<run>`` / ``GO#person``, the create-only row an administrator's go writes
   (through the board function, ``board/store.py`` ``person_go``), what an AI-assisted run's push waits for.
 
-* the CI attestation (6.32.00, ``attestations.py``): in voc-agents, the newest version of the run's connection's
+* the CI attestation (7.04.00, ``attestations.py``): in voc-agents, the newest version of the run's connection's
   attestation (one Query of one row, projected), read at each push and pull request (``attested``), never for a
   read. It holds only while it is ``attested`` for the repository the run started on (META's ``repo``); a withdrawn
   or voided one, none, or a deployment that names no agents table, is not attested, so the push or pull request is

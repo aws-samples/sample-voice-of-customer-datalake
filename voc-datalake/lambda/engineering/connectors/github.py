@@ -25,7 +25,7 @@ Writes, and how each holds the broker's ``tree_hash``:
 
 Reads: a file and history on the run's default branch (the broker hands it on: ``ref`` and ``sha``), an issue or a
 pull request with its thread, a patch's base file at the run's commit, and, for the CI attestation's check
-(6.32.00, ``ci_protection``), what any reader of the repository sees of its branch rules: a branch's ``protected``
+(7.04.00, ``ci_protection``), what any reader of the repository sees of its branch rules: a branch's ``protected``
 and classic required checks, and the ruleset rules that apply to a branch's name.
 
 The client has no method for a merge, an approval, settings, a change of branch protection, members, webhooks or

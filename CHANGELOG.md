@@ -17,7 +17,7 @@ the platform package version.
 
 ## [Unreleased]
 
-## [6.32.00] - 2026-11-14
+## [7.04.00] - 2026-11-14
 
 Autonomous engineering agents: the CI attestation is recorded, so the broker can serve a push and a draft pull request
 on an attested connection instead of refusing every one. Off by default (`-c engineeringAgents=true`), and no fixed
@@ -107,9 +107,9 @@ cost.
   (Agents → Connections → Attest CI), and then while the repository's default branch is unprotected, requires no
   status check, or a rule protects `voc-agent/*` branches. Nothing to migrate.
 
-## [6.31.01] - 2026-11-14
+## [7.03.01] - 2026-11-14
 
-Autonomous engineering agents: the follow-ups of 6.31.00's reviews. Off by default (`-c engineeringAgents=true`), and
+Autonomous engineering agents: the follow-ups of 7.03.00's reviews. Off by default (`-c engineeringAgents=true`), and
 no fixed cost.
 
 ### Fixed
@@ -148,7 +148,7 @@ no fixed cost.
   (the connections' parameters); `voc-agent-run` has no customer-managed key, and the code calls KMS itself nowhere.
   So the unconditioned `kmsKey.grantEncryptDecrypt` is replaced by `kms:ViaService` statements for exactly those:
   through DynamoDB the actions a table key needs (what lib/utils/exact-grants.ts left of the old grant), through S3
-  `kms:Decrypt` (with the module on), and the SSM statement of 6.31.00, which now narrows what it states.
+  `kms:Decrypt` (with the module on), and the SSM statement of 7.03.00, which now narrows what it states.
 - The 409 for a repository change while a run of the connection is live reads the runs, then writes: a run started
   between the two is not seen. docs/autonomous-engineering.md and `connections.py` now say so, and that what
   guarantees a run never reads or writes another repository is the broker's own check (it serves a run only while the
@@ -184,7 +184,7 @@ no fixed cost.
 - Nothing to do. With the module on, a connection whose default branch is not the repository's (or no longer exists)
   now refuses its new runs' operations (409) until it is corrected under Agents → Connections.
 
-## [6.31.00] - 2026-11-14
+## [7.03.00] - 2026-11-14
 
 Autonomous engineering agents: repository connections can be stored, so the broker serves a run on a stored connection
 instead of answering 503 to every operation. Off by default (`-c engineeringAgents=true`), and no fixed cost.
@@ -261,9 +261,9 @@ instead of answering 503 to every operation. Off by default (`-c engineeringAgen
   release recorded its connection's id as its repository, so the broker refuses it (409) even once the connection
   is stored; start it again on the stored connection. TENETS.md's tenet 3 and 4 rows name the connections.
 
-## [6.30.01] - 2026-11-14
+## [7.02.01] - 2026-11-14
 
-Autonomous engineering agents: two fixes to 6.30.00's broker writes. Off by default, and no fixed cost.
+Autonomous engineering agents: two fixes to 7.02.00's broker writes. Off by default, and no fixed cost.
 
 ### Fixed
 
@@ -286,7 +286,7 @@ Autonomous engineering agents: two fixes to 6.30.00's broker writes. Off by defa
 
 Built on the voc-autonomous branch. Off by default.
 
-## [6.30.00] - 2026-11-14
+## [7.02.00] - 2026-11-14
 
 Autonomous engineering agents: the harness reaches the connector broker. Before, its broker interface refused every call, so a run on AWS would have stopped at the fixer's `submit_work` and no writer could push, open a draft pull request or comment. Now each agent calls the broker's function URL as its own session, and the broker's own checks (the caller's role, the run, the dial, the CI attestation, the GO ledger, the write rules) decide, as before. In a deployment the broker still answers 503 to every operation: no connection's credential can be stored yet (the connection page is planned), and with one, every push and pull request would still be refused until the CI attestation is recorded. Nothing has run against AWS yet. Off by default, and no fixed cost.
 
@@ -322,6 +322,54 @@ Autonomous engineering agents: the harness reaches the connector broker. Before,
 - Lambda code (asset hashes), and the agents' images' harness files: rebuild them (the harness has a new module, `broker_client.py`). One IAM change on the 13 agent roles: the `BoardAndBrokerUrls` statement becomes `BoardUrl` and `BrokerUrl`, the same permissions on the same two functions. One IAM change on the broker's role, its first write: `WriteClaims` (`dynamodb:GetItem`, `dynamodb:PutItem`, `dynamodb:UpdateItem` on voc-engineering, only in the runs' writes' partitions, `WS#*#WRITES#*`, and of a claim row's attributes) and `WriteClaimsKey` (`kms:GenerateDataKey` on the stack's key through DynamoDB only, for voc-engineering's encryption context only). The broker's write operations take an optional `attempt` (1 by default); the harness sends its own. One environment change: `ENGINEERING_BROKER_URL` (the broker's function URL) on voc-engineering-runtime, voc-engineering-delivery and voc-engineering-start. A session launched before this release keeps the egress it was launched with, its continuations too, so it cannot reach the broker; nothing has run against AWS yet. No route or table changes (the claim rows live in voc-engineering, in partitions of their own, `WS#<ws>#WRITES#<run>`).
 
 Built on the voc-autonomous branch. Off by default.
+
+## [7.01.00] - 2026-11-14
+
+The project branch takes main's releases since they parted beside the autonomous engineering agents (6.04.09 and 6.05.00 to 6.29.00 here): main's 6.05.00 of 2026-11-11 (Node.js 24, the minimatch and fast-xml-parser fixes), 7.00.00 (the company logo in prototypes; **breaking:** the company logo is at most 1 MB) and 7.00.01 (the Kiro agents' secret paths and write checks). The merge itself changes no behaviour of either side; a deployment of this branch's line gets main's changes with it. Both lines numbered a release 6.05.00; each keeps its own section, as released.
+
+### Changed
+
+- One version for both lines: 7.01.00, above main's 7.00.01 and this branch's 6.29.00.
+
+### Upgrade notes
+
+- From 6.29.00, read main's 7.00.00 (breaking: `POST /settings/design-system/logo` and **Use this logo** answer 400 above 1 MB; deploy `VocCoreStack` before `VocApiStack`, for the new `CompanyLogoReadPolicy`) and main's 6.05.00 of 2026-11-11 (deploy from Node.js 24.15+, and run `npm ci` again in `voc-datalake/`, `voc-datalake/frontend/` and `voc-datalake/lambda/stream/`).
+- The Api, Core and Processing stacks' template hashes in `voc-datalake/lib/test-support/baseline.json` move: Api and Processing with the release number (`APP_VERSION`) and both sides' changes, Core with main's `CompanyLogoReadPolicy` and its export.
+
+## [7.00.01] - 2026-11-13
+
+The repository's Kiro agents can no longer read `.env`, key and credential files with their read tool.
+
+### Fixed
+
+- The four hook agents in `.kiro/agents/` (first-principles, quality and security review, test generator) could read any file on the machine, `.env` and `~/.aws` included: they pre-approved `fs_read` in `allowedTools`, had no path limit and denied nothing. Every agent now carries the same rules as the two AI review agents behind the `tenets: AI review` / `commit: AI review` gate steps, built from one list (`SECRET_PATHS` in `scripts/ai-review/lib.mjs`, now naming `.env` and `.env.*` outright): reads of the repository only (`./**`), never a secret-shaped path, in both formats, and no read tool pre-approved. Verified live with kiro-cli 3.3.0: the agents read repository files without a prompt and are refused `.env`; it takes the `toolsSettings` block (an agent with only the documented V3 `permissions` deny read `.env`), and a pre-approved `fs_read` bypassed the deny, so a test now pins all three for every agent. The test generator also may not write a secret-shaped path. No agent file carries a machine-specific `kiroUpgrade` marker any more.
+- Two gaps remain, both verified with kiro-cli 3.3.0 and outside what agent rules can close: the `grep` tool of `first-principles-reviewer` prints lines from a denied `.env` (kiro-cli's search ignores the deny rules and `.kiroignore`, against its own documentation), and `test-generator` keeps the shell and the pre-approved writes it needs, so it can still print a file with a shell command or write outside the repository. Keep secrets out of the working tree, or gitignored.
+
+### Upgrade notes
+
+- Nothing to deploy: tooling only. A version bump moves only the `APP_VERSION` of the Api and Processing Lambdas, so those two template hashes in `voc-datalake/lib/test-support/baseline.json` change, as on every release. A developer whose kiro-cli upgraded these agent files locally should take the committed versions (`git checkout -- .kiro/agents`).
+
+## [7.00.00] - 2026-11-13
+
+Prototypes show the company logo uploaded in the design system, an SVG logo can be uploaded again, and a large logo is made smaller instead of refused.
+
+### Added
+
+- A prototype now shows the company logo from Company → Design system (`/company?tab=design`) wherever it shows the company's logo, instead of a logo the model draws. The model writes a placeholder and the build puts the uploaded logo in its place as an inline image, so the prototype stays one offline file. It follows the build dialog's **Design system** box, and the prototype's "Built from" footer says whether the logo was used or left out (`derivation.company_logo_included`). A logo over 1 MB is left out and the prototype gets a drawn wordmark, as before. A revision uses the logo uploaded when it is built: when there is none any more (or the box is unticked), the model is told to draw a wordmark instead, and a leftover logo spot shows the brand or project name as text, never an empty image. Other inline images in a prototype are never mistaken for the logo. See [docs/company-context.md → How the AI uses them](docs/company-context.md#how-the-ai-uses-them).
+- Company → Design system → **Upload logo** makes a large PNG, JPEG or WebP logo smaller in the browser instead of refusing it (up to 25 MB, was refused over 5 MB): at most 1,024 px on its longest side and under 1 MB, PNG first, then WebP so transparency is kept. A logo within 1 MB is uploaded as it is. See [docs/company-context.md](docs/company-context.md).
+- A website design reference whose logo is a PNG, JPEG or WebP over 2 MB gets a logo preview again: the managed browser that reads the page draws it at up to 1,024 px and keeps that PNG, so **Use this logo** works (it was refused with "The logo is larger than 2 MB"). A GitHub repository's logo over 2 MB, or a reference read before this release, still cannot be used directly, and the message now says what to do: upload it as the company logo, or refresh a website reference.
+
+### Changed
+
+- **Breaking:** the company logo is at most 1 MB for every client: `POST /settings/design-system/logo` (was 5 MB) and **Use this logo** (`POST /settings/design-system/references/{id}/logo`, was 2 MB) answer 400 above it, so an API or MCP caller gets the same result as the web app, whose upload makes the image smaller first, and every saved logo fits a prototype.
+
+### Fixed
+
+- Company → Design system → **Upload logo** refused every SVG file with "could not be read as an SVG image. Export it as PNG and upload that." The browser converts an SVG to PNG before the upload, and it loaded the SVG from a `blob:` URL, which the site's Content-Security-Policy (`img-src 'self' data:`) blocks. It now loads it from a `data:` URL, and the policy is unchanged. PNG, JPEG and WebP uploads were not affected.
+
+### Upgrade notes
+
+- Deploy the stacks (`npm run deploy:infra`, which deploys `VocCoreStack` before `VocApiStack`) and the frontend (`npm run deploy:frontend`). `VocCoreStack` gains one managed policy, `CompanyLogoReadPolicy` (`s3:GetObject` on the uploaded logos only, `company-context/design/logo_????????????.*` in the raw data bucket, so not the design references' logo previews), and `VocApiStack` attaches it to the document generator job role (`voc-job-document-generator`). **Breaking (the reason for the major version):** an API or MCP client that uploads its own company logo (`POST /settings/design-system/logo`) must send at most 1 MB (it was 5 MB), and **Use this logo** refuses a candidate over 1 MB (it was 2 MB); both answer 400 with what to do. The web app is not affected: it makes a larger image smaller before it uploads. Nothing else changes. Prototypes built before this release keep the logo they were built with; build or revise one to get the uploaded logo.
 
 ## [6.29.00] - 2026-11-14
 
@@ -1096,6 +1144,25 @@ The design of autonomous engineering agents: agents that learn how a connected G
 ### Upgrade notes
 
 - No infrastructure, API or data change. In the web app, the four self-clearing messages keep their timer with their page: a second save within 3 seconds now shows its "Saved" for the full 3 seconds.
+
+## [6.05.00] - 2026-11-11
+
+The repository's tooling needs Node.js 24, and the minimatch and fast-xml-parser security alerts are fixed.
+
+### Changed
+
+- Node.js 24.15+ is now the only supported line for the local tooling (root `package.json` `engines`, was `^22.22.2 || >=24.15.0`; `tools/kiro-acp-bridge` was `>=18.0.0`). It is the line CI and the Node Lambdas (`nodejs24.x`) already ran; Node 22 was never tested in CI. README, CONTRIBUTING and [docs/deployment.md](docs/deployment.md) say so.
+
+### Security
+
+- minimatch (GHSA-g3hv-75wg-m249, denial of service through glob-part amplification): every copy from 7.0.0 up to 11.0.1 is forced to `^11.0.1` by an npm override in `voc-datalake/`, `voc-datalake/frontend/` and `voc-datalake/lambda/stream/`. These copies are all used by build and lint tooling (ESLint, typescript-eslint, eslint-plugin-sonarjs, Stryker); the repository-root project holds no minimatch. minimatch 11 drops `makeRe` and `AST`, which none of those use. The stream Lambda's `eslint-plugin-import-x`, which did, moves to 4.18.1, the first release that supports minimatch 11. glob 10 does not work on minimatch 11 (a pattern matches nothing), so the frontend's `quick-temp` (behind `i18next-parser`, the `i18n:extract` authoring tool) gets rimraf 6.1.4 through a second override, which brings glob 14, built for minimatch 11. When a lint-tooling bump brings a new minimatch consumer, check that it does not need `makeRe`, `AST` or glob 13 or older before keeping the override; when `quick-temp` changes, check that it still calls rimraf's `sync`, which the rimraf 6 override relies on. `scripts/dependency-overrides.test.mjs` (a `validate.sh` step) fails when any of the six committed lockfiles holds a minimatch in the vulnerable range other than the copy bundled in `aws-cdk-lib`, a glob older than 14 on minimatch 11, or an unaudited `quick-temp`. The copy bundled inside `aws-cdk-lib` stays at 10.2.6: npm cannot override a bundled dependency, and no `aws-cdk-lib` release ships minimatch 11 yet. That copy only matches the repository's own asset-exclude patterns at synth time and never sees user input.
+- fast-xml-parser (GHSA-474x-hrwr-fgx4, quadratic CPU use on unterminated stop-node tags) moves from 5.11.2 to 5.12.0 in the frontend lockfile. `aws-amplify` pulls it in through `@aws-amplify/storage`. The SPA imports only `aws-amplify/auth`.
+
+### Upgrade notes
+
+- Nothing to do for a deployment of the platform. A redeploy changes only the release number the Api and Processing Lambdas record (`APP_VERSION`, `6.5.0`), as every release does; that and the stream lockfile (the assistant's NodejsFunction `depsLockFilePath`) are why those two stacks' template hashes in `voc-datalake/lib/test-support/baseline.json` move, and no other stack's.
+- Run `npm ci` again in `voc-datalake/`, `voc-datalake/frontend/` and `voc-datalake/lambda/stream/` to pick up the new lockfiles.
+- Deploy from Node.js 24.15+ (`node --version`). On Node 22, npm warns `EBADENGINE`, and newer tooling may not run. On Node 24, `npm ci` in `voc-datalake/frontend/` still warns `EBADENGINE` once, for `i18next-parser` 9.4.0 (its latest release declares Node 22 or older); that warning is expected, and the tool runs on Node 24.
 
 ## [6.04.08] - 2026-11-11
 

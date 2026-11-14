@@ -181,7 +181,7 @@ class RunRecord:
     #: The repository the run started on (META's ``repo``, the stored connection's ``owner/name`` at its start): the
     #: broker serves the run only while the connection's credential names that same repository.
     repository: str = ''
-    #: META's ``default_branch``: the stored connection's at the start ('' for a run started before 6.31.01).
+    #: META's ``default_branch``: the stored connection's at the start ('' for a run started before 7.03.01).
     stored_default_branch: str = ''
     ci_attestation: int = 0
 

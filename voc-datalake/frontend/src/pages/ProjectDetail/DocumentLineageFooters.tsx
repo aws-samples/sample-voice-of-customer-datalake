@@ -129,7 +129,14 @@ function knowledgeInputs(knowledge: DerivationKnowledge, t: TFunction<'projectDe
       : null,
     knowledge.company_context_included ? t('documents.derivation.companyContext') : null,
     knowledge.design_system_included === true ? t('documents.derivation.designSystem') : null,
+    companyLogoInput(knowledge.company_logo_included, t),
   ]
+}
+
+/** The company logo's line: inlined, or left out (over the 1 MB cap or unreadable); nothing when not recorded. */
+function companyLogoInput(included: boolean | null, t: TFunction<'projectDetail'>): string | null {
+  if (included === null) return null
+  return included ? t('documents.derivation.companyLogo') : t('documents.derivation.companyLogoLeftOut')
 }
 
 /** One contributing document: navigable while it exists, plain text once it does not. */

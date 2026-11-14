@@ -18,7 +18,7 @@ A connection is a row in voc-agents and, while it holds a credential, one SSM Pa
   the administrator says: an optional ``reason``, one line of at most ``MAX_REASON`` characters, credential-shaped
   text redacted), written in the same transaction as the row.
 
-A connection's CI attestation (6.32.00, ``attestations.py``): an administrator confirms the setup guide's points for
+A connection's CI attestation (7.04.00, ``attestations.py``): an administrator confirms the setup guide's points for
 it (``attest``) or withdraws the confirmation (``withdraw``); a repository change and a removal void it. Each is a
 create-only version row in the attestation's own partition, written in one transaction with the connection's audit
 row (``ci_attested``, ``ci_withdrawn``; a void is a change of the save's or the removal's own audit row) and, for an

@@ -698,6 +698,8 @@
     "uploadBadType": "{{name}}은(는) 허용되지 않는 파일 형식입니다.",
     "uploadTooLarge": "{{name}}이(가) {{mb}}MB를 초과합니다.",
     "uploadFailed": "업로드에 실패했습니다. 다시 시도하세요.",
+    "logoNotShrunk": "{{name}}을(를) 1MB 미만으로 줄일 수 없습니다. 더 작은 PNG로 내보낸 후 업로드하세요.",
+    "logoUnreadable": "{{name}}을(를) 이미지로 읽을 수 없습니다. PNG로 내보낸 후 업로드하세요.",
     "integrations": "디자인 연동",
     "integrationsHint": "토큰은 암호화되어 저장되며 다시 표시되지 않습니다. 현재 토큰을 유지하려면 비워 두세요.",
     "providers": {

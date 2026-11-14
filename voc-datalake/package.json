@@ -1,6 +1,6 @@
 {
   "name": "voc-datalake",
-  "version": "6.32.0",
+  "version": "7.4.0",
   "description": "Voice of the Customer Data Lake - AWS CDK Infrastructure",
   "scripts": {
     "build": "tsc",
@@ -64,6 +64,7 @@
   "overrides": {
     "typed-rest-client": {
       "qs": "^6.17.1"
-    }
+    },
+    "minimatch@>=7.0.0 <11.0.1": "^11.0.1"
   }
 }

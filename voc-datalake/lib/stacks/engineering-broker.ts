@@ -25,10 +25,10 @@
  *   `ws/default/runs/*\/gate-runner-*\/commits/*\/_gate/*`; no ListBucket, so a key never written answers 403,
  *   read as missing);
  * - `dynamodb:GetItem`, `dynamodb:PutItem` and `dynamodb:UpdateItem` on voc-engineering, only in the runs' writes'
- *   partitions (`WS#*#WRITES#*`, never a run's own) and of a row only a write claim's attributes (6.30.00: each write
+ *   partitions (`WS#*#WRITES#*`, never a run's own) and of a row only a write claim's attributes (7.02.00: each write
  *   made once per caller, attempt, operation and what it writes, records.py WriteClaims), with
  *   `kms:GenerateDataKey` on the stack's key through DynamoDB only, for it;
- * - `dynamodb:Query` on voc-agents, only in the connections' CI attestations' partitions (`CONNECTIONS#*#CI#*`, 6.32.00:
+ * - `dynamodb:Query` on voc-agents, only in the connections' CI attestations' partitions (`CONNECTIONS#*#CI#*`, 7.04.00:
  *   the newest version of the run's connection's attestation, connectors/attestations.py) and of a row only its key,
  *   `state`, `repository` and `version` (a projection: a `dynamodb:Attributes` condition);
  * - `kms:Decrypt` on the stack's key through DynamoDB and S3 only.
@@ -140,7 +140,7 @@ export interface EngineeringBrokerProps {
   workspaceBucket: s3.IBucket;
   /** The aggregates table: the people's way of working (shared/ai_mode.py), read only. */
   aggregatesTable: dynamodb.ITable;
-  /** voc-agents (VocCoreStack): the connections' CI attestations, read only (6.32.00). */
+  /** voc-agents (VocCoreStack): the connections' CI attestations, read only (7.04.00). */
   agentsTable: dynamodb.ITable;
 }
 

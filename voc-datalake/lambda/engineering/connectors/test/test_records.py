@@ -100,7 +100,7 @@ def test_the_run_is_its_meta_and_its_stored_default_branch_with_nothing_of_the_h
     assert run.bot_addresses == (AUTHOR,)
 
 
-def test_a_run_started_before_6_31_01_has_no_stored_default_branch(stores: tuple[Any, Any]) -> None:
+def test_a_run_started_before_7_03_01_has_no_stored_default_branch(stores: tuple[Any, Any]) -> None:
     client, s3 = stores
     meta(client)
     run = ledger(client, s3).run(RUN)
