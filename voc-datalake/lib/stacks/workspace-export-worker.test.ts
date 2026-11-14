@@ -12,7 +12,8 @@ import { synthProcessingTemplate } from '../test-support/processing-stack-fixtur
 import { expectSelfInvokeOnly, findWorkerFunction } from '../test-support/worker-function';
 import { byCodeUnit } from '../utils/compare';
 import {
-  CONTROL_PARTITIONS, EXPORT_JOB_PARTITION, WORKSPACE_DATE_PARTITIONS, WORKSPACE_EXPORT_MAX_EVENT_AGE_MINUTES,
+  CONTROL_PARTITIONS, EXPORT_JOB_PARTITION, MEMORY_TABLE_PARTITIONS, WORKSPACE_DATE_PARTITIONS,
+  WORKSPACE_EXPORT_MAX_EVENT_AGE_MINUTES,
   WORKSPACE_EXPORT_RESERVED_CONCURRENCY,
 } from './workspace-export-worker';
 import { WORKSPACE_OBJECTS_PREFIX } from './core-buckets';
@@ -94,6 +95,23 @@ describe('the voc-workspace-export job', () => {
   it('only Queries voc-workspaces, in a workspace\'s own two control partitions', () => {
     expect(CONTROL_PARTITIONS).toStrictEqual([`WS#${ONE_WORKSPACE}`, `AUDIT#WS#${ONE_WORKSPACE}`]);
     expect(on('Workspaces')).toStrictEqual([{ actions: ['dynamodb:Query'], condition: keys(CONTROL_PARTITIONS) }]);
+  });
+
+  it('only Queries voc-memory, in one workspace\'s company memory partitions and its personal counts (4c)', () => {
+    expect(MEMORY_TABLE_PARTITIONS).toStrictEqual([`WS#${ONE_WORKSPACE}#MEM#company`, `WS#${ONE_WORKSPACE}#MEMEVT#*`,
+      `WS#${ONE_WORKSPACE}#MEMIMPORT`]);
+    const memory = allowed().filter((s) => s.actions.some((action) => action.startsWith('dynamodb:'))
+      && s.resource.includes('Memory'))
+      .map((s) => ({ actions: s.actions, index: s.resource.includes('/index/gsi1-by-memory-status'),
+        condition: s.condition }));
+    const countOnly = (partition: string) => ({ ...keys([partition]), StringEquals: { 'dynamodb:Select': 'COUNT' } });
+    expect(memory).toStrictEqual([
+      { actions: ['dynamodb:Query'], index: false, condition: keys(MEMORY_TABLE_PARTITIONS) },
+      // The members' sessions and personal memories: a count only, so no statement or owner can be read there.
+      { actions: ['dynamodb:Query'], index: false, condition: countOnly(`WS#${ONE_WORKSPACE}#MEMCURSOR`) },
+      { actions: ['dynamodb:Query'], index: true, condition: countOnly(`WS#${ONE_WORKSPACE}#MEMSTATUS#personal#*`) },
+    ]);
+    expect(worker().Environment.Variables).toHaveProperty('MEMORY_TABLE');
   });
 
   it('holds no Scan, BatchWrite or table delete, and deletes only its own work objects', () => {

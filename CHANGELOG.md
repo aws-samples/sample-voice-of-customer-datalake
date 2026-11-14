@@ -17,6 +17,23 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.22.00] - 2026-11-14
+
+Multi-workspace, phase 4c: the voc-multiplayer-b track's export-memory slice merged. A workspace's export now also holds the workspace's company memory ([docs/multi-workspace.md](docs/multi-workspace.md#export-and-delete)). Its members' conversations are still not exported.
+
+### Added
+
+- The workspace export carries the workspace's company memories, their events and the memory import rows (`memory_company`, `memory_events`, `memory_imports`), read by Query under the workspace's own memory keys (`WS#{ws}#MEM#company`, `#MEMEVT#{memory id}`, `#MEMIMPORT`). Personal memories and chat-session cursors are their owners' only (docs/memory.md): they are not in the workspace export, only counted in the manifest (`memory.not_exported`, approximate), through count-only permissions. The events grant (`#MEMEVT#*`) also reaches a personal memory's events, which IAM cannot tell apart; the job reads events only for the ids it finds in the company partition, so it never queries them. No exported memory row carries a person's hash, an embedding or a chat session's id. An export in flight across a deploy resumes where it was: a checkpoint now names its phase (an entity, `objects`, `memory_counts`, `manifest`), and one written by an earlier release is read by that release's order.
+- The workspace export's memory entities carry only the fields each one lists (`lambda/jobs/workspace_export/memory.py`: the memory store's public fields and the row's key; for a company memory also a merge's and an archive's fields, `merged_from`, `archived_reason`, `archived_at`; sources as the memory API shows them), so a field added to memory rows later never reaches an export by default. Two fields are exported as they are for now: a company memory's `conflicts_with` can hold a personal memory's id (an id only, never its content), and an event's `detail` is exported whole.
+
+### Changed
+
+- The export's manifest no longer lists `memory` under `not_exported`; `conversations` stay there. An export started before this release that resumes already past the memory entities finishes without them, and its manifest lists `memory` under `not_exported` and says to export again.
+
+### Upgrade notes
+
+- The export job's role (`voc-workspace-export`, `lib/stacks/workspace-export-worker.ts`) gains three `dynamodb:Query` grants on `voc-memory`, each limited by `dynamodb:LeadingKeys` to one workspace id's partitions: a Query of `WS#{one id}#MEM#company`, `WS#{one id}#MEMEVT#*` and `WS#{one id}#MEMIMPORT` on the table; and, only with `dynamodb:Select` `COUNT`, a Query of `WS#{one id}#MEMCURSOR` on the table and of `WS#{one id}#MEMSTATUS#personal#*` on its `gsi1-by-memory-status` index. No other action on the table. The function gets `MEMORY_TABLE`. A normal deploy (`npm run deploy:all`) does the rest: these grants change only the processing stack's export role, and the core and API stacks change only through their functions' code (`shared/` changed, which every function built from `lambda/` bundles), with no resource or grant change there; nothing else to do.
+
 ## [7.21.00] - 2026-11-14
 
 Multi-workspace, phase 3 groundwork: the project stores can keep a workspace's project rows. Internal only: nothing changes for anyone ([docs/multi-workspace.md](docs/multi-workspace.md)).

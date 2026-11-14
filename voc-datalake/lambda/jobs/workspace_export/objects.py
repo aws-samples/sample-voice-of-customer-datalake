@@ -10,10 +10,12 @@ reached it: the manifest says the older versions are not exported.
 The rules this module holds:
 
 * **The entry's name** comes from the key, which is user data: zip_stream.py ``entry_name``'s rules (the one list;
-  in short: plain relative segments, none empty, ``.`` or ``..``, also once trailing dots and spaces are dropped and
-  once NFKC-normalised; no backslash nor any of ``:<>"|?*``; no control, format (bidi, zero-width) or separator
-  character; valid UTF-8; at most 65,535 bytes). A key that fails is skipped and listed in the manifest with the
-  reason; the export never fails on it.
+  in short: no empty, ``.`` or ``..`` segment, also once trailing dots and spaces are dropped, so no absolute path;
+  none of the characters Windows refuses, ``\\ : < > " | ? *``; no Windows device name as a segment, CON, PRN, AUX,
+  NUL, CONIN$, CONOUT$, COM1 to COM9 and LPT1 to LPT9, in any case, with or without an extension; all of that again
+  in the name's NFKC form, which may hold no ``/`` the name does not; no control, format (bidi, zero-width) or
+  separator character; valid UTF-8; at most 65,535 bytes). A key that fails is skipped and listed in the manifest
+  with the reason; the export never fails on it. A folder marker (a zero-byte key ending ``/``) is skipped quietly.
 * **A dropped read stream** (a reset or timed-out connection, a short body) is resumed from the byte reached with a
   ranged read pinned to the version first read (``IfMatch`` its ETag), at most twice (the handler's
   ``STREAM_RESUMES``); past that, or if the object changed meanwhile, the export fails rather than splice versions.
@@ -202,5 +204,7 @@ def manifest_section(count: int, state: ObjectsState) -> dict[str, Any]:
         'reading': ('Already-compressed objects are STORED entries with a data descriptor (their CRC is known only '
                     'after they are read), which some streaming readers reject; readers of the central directory '
                     '(most unzip tools) open them. Keys that differ only in letter case or Unicode normalisation can '
-                    'overwrite each other when extracted on a case-insensitive file system (macOS, Windows).'),
+                    'overwrite each other when extracted on a case-insensitive file system (macOS, Windows), and '
+                    'keys that differ only by trailing dots or spaces in a segment can on Windows, which drops '
+                    'them.'),
     }

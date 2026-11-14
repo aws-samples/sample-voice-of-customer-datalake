@@ -53,6 +53,8 @@ The keys (``{ws}`` is ``ws_`` + a ULID, shared/workspace.py ``is_workspace_id``)
     voc-watermarks  source WS#{ws}#{plugin}#{key}
     voc-conversations  pk WS#{ws}#USER#{sub}  sk CONV#{id}, RUNCANCEL#{id} (a member's own conversations there)
                     pk WS#{ws}#CONVERSANTS  sk {sub} (who has kept a conversation there, shared/conversations.py)
+    voc-memory      pk WS#{ws}#MEM#company  sk MEM#{memory_id}   gsi1pk WS#{ws}#MEMSTATUS#{scope}#{status}
+                    pk WS#{ws}#MEMEVT#{memory_id}, WS#{ws}#MEMCURSOR, WS#{ws}#MEMIMPORT (shared/memory_store.py)
     voc-workspaces  pk WS#{ws} (META, MEMBER#{sub}), pk AUDIT#WS#{ws}: read by ``control_query`` only
     raw bucket      ws/{ws}/raw/{source}/{yyyy}/{mm}/{dd}/{stem}/{sha16}.json, ws/{ws}/silver/..., ws/{ws}/...,
                     ws/{ws}/exports/{export id}/… (``ExportObjects``)
@@ -96,6 +98,11 @@ __all__ = [
     'feedback_id_pk',
     'feedback_key',
     'is_workspace_key',
+    'memory_company_pk',
+    'memory_cursor_pk',
+    'memory_event_pk',
+    'memory_import_pk',
+    'memory_status_pk',
     'message_scope',
     'metric_pk',
     'metric_type',
@@ -371,6 +378,33 @@ def conversants_pk(scope: WorkspaceScope) -> str:
     conversation there (shared/conversations.py ``conversant_key``): ``WS#{ws}#CONVERSANTS``. A Query of it, knowing
     only the workspace id, names every ``WS#{ws}#USER#{sub}`` partition, a former member's too."""
     return scope.key('CONVERSANTS')
+
+
+def memory_company_pk(scope: WorkspaceScope) -> str:
+    """The workspace's company memories in voc-memory (shared/memory_store.py ``COMPANY_PK``):
+    ``WS#{ws}#MEM#company``."""
+    return scope.key('MEM', 'company')
+
+
+def memory_status_pk(scope: WorkspaceScope, memory_scope: str, status: str) -> str:
+    """One status partition of voc-memory's ``gsi1-by-memory-status`` in the workspace (shared/memory_store.py
+    ``status_partition``): ``WS#{ws}#MEMSTATUS#{company|personal}#{status}``."""
+    return scope.key('MEMSTATUS', memory_scope, status)
+
+
+def memory_cursor_pk(scope: WorkspaceScope) -> str:
+    """The workspace's memory extraction cursors (``sk SESSION#{id}``): ``WS#{ws}#MEMCURSOR``."""
+    return scope.key('MEMCURSOR')
+
+
+def memory_import_pk(scope: WorkspaceScope) -> str:
+    """The workspace's memory imports (``sk {import id}``): ``WS#{ws}#MEMIMPORT``."""
+    return scope.key('MEMIMPORT')
+
+
+def memory_event_pk(scope: WorkspaceScope, memory_id: str) -> str:
+    """One memory's audit events (no content, no subs): ``WS#{ws}#MEMEVT#{memory id}``."""
+    return scope.key('MEMEVT', memory_id)
 
 
 def plugin_config_pk(scope: WorkspaceScope) -> str:
