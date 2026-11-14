@@ -124,18 +124,21 @@ class FlowGuard:
         ended = sum(task.flow_step == step and task.shard == shard and task.state in FINAL for task in tasks)
         return PostFields(step, shard, slot_sk(step, shard, ended), absent=closed)
 
-    def launch_check(self, run_id: str, task: Task) -> None:
-        """A launch only for a task of a live step of the run's flow, or a person's own task (posted with no step)."""
+    def launch_check(self, run_id: str, task: Task) -> tuple[str, ...]:
+        """A launch only for a task of a live step of the run's flow, or a person's own task (posted with no step);
+        the rows the launch's own write must find absent (its step's ``STEP#<step>#done``: a close racing the launch
+        refuses it)."""
         plan = None if task.role == COORDINATOR else self.plan(run_id)   # (the coordinate task: the store refuses it)
         if plan is None:
-            return
+            return ()
         if not task.flow_step:
             if task.posted_by.startswith(PERSON_PREFIX):
-                return
+                return ()
             raise BoardError('conflict', 'the task names no step of the run\'s flow: post its work for a ready step')
         refusal = plan.launch_refusal(task.flow_step)
         if refusal is not None:
             raise BoardError('conflict', refusal)
+        return (step_sk(task.flow_step, DONE),)
 
     def view(self, run_id: str, actor: str) -> dict[str, Any]:
         """The ``flow`` op: the plan as data for the run coordinator; each step it passed as not yet run is recorded
@@ -155,7 +158,8 @@ class FlowGuard:
         closes) or ``{step, action: fan_out, shards}`` (a map's shards: repository paths, each once, at most its
         ``shard_cap``), recorded create-only; the plan after it is answered."""
         step, action = _step_text(body, 'step'), body.get('action')
-        plan = self.plan(run_id)
+        tasks = self.store.tasks(WORKSPACE, run_id)   # (the plan's read, which a board's close is held to)
+        plan = self.plan(run_id, tasks)
         if plan is None:
             raise BoardError('conflict', NO_FLOW)
         at = self.store.now().isoformat()
@@ -163,7 +167,11 @@ class FlowGuard:
             refusal = plan.complete_refusal(step)
             if refusal is not None:
                 raise BoardError('conflict', refusal)
-            recorded = self.record.record(WORKSPACE, run_id, step, DONE, actor=actor, at=at)
+            if plan.flow.steps[step].type == 'board':
+                # Held in its own write to the tasks this plan read for it, all ended: a post since refuses it.
+                recorded = self.record.close(WORKSPACE, run_id, step, read=tasks, actor=actor, at=at)
+            else:
+                recorded = self.record.record(WORKSPACE, run_id, step, DONE, actor=actor, at=at)
         elif action == 'fan_out':
             raw = body.get('shards')
             if not isinstance(raw, list) or not all(isinstance(shard, str) for shard in raw):

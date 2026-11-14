@@ -145,6 +145,17 @@ def slot_sk(step: str, shard: str, ended: int) -> str:
     return f'{SLOT_PREFIX}{step}#{shard}#{ended}'
 
 
+#: A flow step's count of the tasks ever posted for it (``POSTS#<step>``, ``posts``): every post for the step ADDs one
+#: in its own transaction, and a board's close is conditioned on the count it read (``flow/record.py``
+#: ``FlowRecord.close``), so a post landing between the close's plan read and its write refuses the close. Tasks never
+#: leave an ended state, so the count read with every task of it ended means none is live when the close lands.
+POSTS_PREFIX = 'POSTS#'
+
+
+def posts_sk(step: str) -> str:
+    return f'{POSTS_PREFIX}{step}'
+
+
 def _result_key(key: str, ws: str, run_id: str, agent: str, epoch: int) -> bool:
     """One of the agent's own workspace objects of the lease's attempt, short (it rides on every event)."""
     parsed = parse_agent_key(key) if len(key) <= MAX_KEY_LENGTH else None
@@ -218,13 +229,15 @@ class BoardStore:
         task_id = self.new_id()
         pk = f'WS#{ws}#RUN#{run_id}'
         at = self.now().isoformat()
-        item = {**task_key(ws, run_id, task_id), 'task_id': {'S': task_id}, 'role': {'S': role},
+        item: dict[str, Any] = {**task_key(ws, run_id, task_id), 'task_id': {'S': task_id}, 'role': {'S': role},
                 'state': {'S': OPEN}, 'title': {'S': title}, 'spec': {'S': json.dumps(spec, sort_keys=True)},
                 'spec_hash': {'S': digest}, 'depth': {'N': str(depth)}, 'priority': {'N': str(priority)},
                 'attempt': {'N': '1'}, 'posted_by': {'S': actor}, 'updated_by': {'S': actor}, 'updated_at': {'S': at}}
         if parent_task:
             item['parent_task'] = {'S': parent_task}
         item.update({name: {'S': value} for name, value in (('flow_step', step), ('shard', shard)) if value})
+        if step:
+            item['counted'] = {'BOOL': True}   # (its post adds one to the step's count, in this transaction)
         spec_key = {'pk': {'S': pk}, 'sk': {'S': f'SPEC#{digest}'}}
         if answer_only:
             return self._equal_under_way(ws, run_id, spec_key)
@@ -233,6 +246,10 @@ class BoardStore:
                           'Item': {'pk': {'S': pk}, 'sk': {'S': slot}, 'task_id': {'S': task_id}}}}] if slot else []
         checks = [{'ConditionCheck': {'TableName': self.table, 'Key': {'pk': {'S': pk}, 'sk': {'S': sk}},
                                       'ConditionExpression': 'attribute_not_exists(pk)'}} for sk in absent]
+        # (the step's post count, which a board's close is conditioned on: last, it holds no condition of its own)
+        counts = [{'Update': {'TableName': self.table, 'Key': {'pk': {'S': pk}, 'sk': {'S': posts_sk(step)}},
+                              'UpdateExpression': 'ADD posts :one',
+                              'ExpressionAttributeValues': {':one': {'N': '1'}}}}] if step else []
         for _ in range(2):   # (a second try only after the marker's task had ended)
             try:
                 self.client.transact_write_items(TransactItems=[
@@ -245,7 +262,7 @@ class BoardStore:
                     {'Put': {'TableName': self.table, 'ConditionExpression': 'attribute_not_exists(pk)', 'Item': item}},
                     {'Put': {'TableName': self.table, 'ConditionExpression': 'attribute_not_exists(pk)',
                              'Item': Move(task_id, OPEN, actor, at, 1, 'post').item(ws, run_id)}},
-                    *slots, *checks,
+                    *slots, *checks, *counts,
                 ])
             except ClientError as exc:
                 if is_key_collision(exc, put_index=1):
@@ -318,13 +335,16 @@ class BoardStore:
             moves.setdefault(move.task_id, []).append(move)
         return moves
 
-    def _write(self, ws: str, run_id: str, task_id: str, write: _Write, log: Mapping[str, Any]) -> Task:
-        """The task's conditional update and its history row, in one transaction; the task as it is after."""
-        return self._write_change(ws, run_id, task_id, write, log)[0]
+    def _write(self, ws: str, run_id: str, task_id: str, write: _Write, log: Mapping[str, Any],
+               absent: Sequence[str] = ()) -> Task:
+        """The task's conditional update and its history row, in one transaction (with ``absent``: the run's rows that
+        must not exist when it lands); the task as it is after."""
+        return self._write_change(ws, run_id, task_id, write, log, absent)[0]
 
     def _write_change(self, ws: str, run_id: str, task_id: str, write: _Write,
-                      log: Mapping[str, Any]) -> tuple[Task, bool]:
+                      log: Mapping[str, Any], absent: Sequence[str] = ()) -> tuple[Task, bool]:
         """``_write``, and whether this call made the change (False: ``write.already``, a retry answered as it is)."""
+        pk = task_key(ws, run_id, task_id)['pk']
         try:
             self.client.transact_write_items(TransactItems=[
                 {'Update': {'TableName': self.table, 'Key': task_key(ws, run_id, task_id),
@@ -333,14 +353,21 @@ class BoardStore:
                             'ExpressionAttributeNames': dict(write.names),
                             'ExpressionAttributeValues': dict(write.values)}},
                 {'Put': {'TableName': self.table, 'Item': dict(log), 'ConditionExpression': 'attribute_not_exists(pk)'}},
+                *({'ConditionCheck': {'TableName': self.table, 'Key': {'pk': pk, 'sk': {'S': sk}},
+                                      'ConditionExpression': 'attribute_not_exists(pk)'}} for sk in absent),
             ])
         except ClientError as exc:
+            closed = any(is_key_collision(exc, put_index=2 + n) for n in range(len(absent)))
             # The update's condition (index 0) or the same history row already there (index 1, the same move again).
-            if not (is_key_collision(exc, put_index=0) or is_key_collision(exc, put_index=1)):
+            if not (closed or is_key_collision(exc, put_index=0) or is_key_collision(exc, put_index=1)):
                 raise
             current = self.task(ws, run_id, task_id)
             if write.already(current):
+                # (a racing write landed first: a launch that lost to another one, the step closed after it, is
+                # answered with the agent that one recorded)
                 return current, False
+            if closed:
+                raise BoardError('conflict', 'the task\'s step was closed meanwhile: read the flow again') from exc
             raise BoardError('conflict', write.refusal) from exc
         return self.task(ws, run_id, task_id), True
 
@@ -429,16 +456,18 @@ class BoardStore:
         return f'{role}-{int(answer["Attributes"]["agent_count"]["N"])}'
 
     def launch(self, ws: str, run_id: str, task_id: str, *, role: str, actor: str,
-               paths: Sequence[str] = (), language: str = '') -> Task:
+               paths: Sequence[str] = (), language: str = '', absent: Sequence[str] = ()) -> Task:
         """Record the coordinator's launch of an agent for an open task of ``role``, at the task's attempt, with the
         ``paths`` and ``language`` it is launched with. A retry at the same attempt finds the agent recorded and
-        reuses it (with its recorded paths and language); after a repost (a new attempt) the task gets a new ``<role>-<n>``."""
+        reuses it (with its recorded paths and language); after a repost (a new attempt) the task gets a new ``<role>-<n>``.
+        ``absent``: the run's rows that must not exist when the record lands (its flow step's ``STEP#<step>#done``),
+        held in its own transaction, so a launch racing the step's close starts no agent on a closed step."""
         current = self.task(ws, run_id, task_id)
         if current.role == COORDINATOR:
             raise BoardError('invalid', "the coordinate task's coordinator comes from the run, never from a launch")
         if current.role != role:
             raise BoardError('invalid', f'the task is a {current.role} task, not a {role} one to launch')
-        return self._record_launch(ws, run_id, current, actor=actor, paths=paths, language=language)
+        return self._record_launch(ws, run_id, current, actor=actor, paths=paths, language=language, absent=absent)
 
     def launch_coordinator(self, ws: str, run_id: str, *, attempt: int, actor: str = 'runtime') -> Task:
         """Record a new run coordinator for the run's coordinate task: the run's trusted code only (the runtime calls
@@ -453,12 +482,19 @@ class BoardStore:
         return self._record_launch(ws, run_id, current, actor=actor, paths=(), language='')
 
     def _record_launch(self, ws: str, run_id: str, current: Task, *, actor: str, paths: Sequence[str],
-                       language: str) -> Task:
+                       language: str, absent: Sequence[str] = ()) -> Task:
         task_id, role = current.task_id, current.role
         if current.state != OPEN:
             raise BoardError('conflict', 'only an open task gets an agent launched for it')
         if current.launched_agent and current.launched_attempt == current.attempt:
             return current   # (a retried launch: the same agent again)
+        # A step closed already is refused before an agent is numbered (only a close landing between this read and
+        # the write below uses one up: the write's own check refuses it then).
+        if any(self._get({'pk': {'S': run_pk(ws, run_id)}, 'sk': {'S': sk}}) is not None for sk in absent):
+            landed = self.task(ws, run_id, task_id)   # (another launch that landed before the close: its agent)
+            if landed.launched_agent and landed.launched_attempt == current.attempt:
+                return landed
+            raise BoardError('conflict', 'the task\'s step was closed meanwhile: read the flow again')
         agent = self._next_agent(ws, run_id, role)
         at = self.now().isoformat()
         attempt = current.attempt
@@ -473,7 +509,7 @@ class BoardStore:
             # A launch racing this one recorded its agent at this attempt first: that one is the task's.
             already=lambda t: t.state == OPEN and bool(t.launched_agent) and t.launched_attempt == attempt,
             refusal='the task is no longer open at this attempt'),
-            Move(task_id, OPEN, actor, at, attempt, 'launch', reason=f'launched {agent}').item(ws, run_id))
+            Move(task_id, OPEN, actor, at, attempt, 'launch', reason=f'launched {agent}').item(ws, run_id), absent)
 
     def clear_launch(self, ws: str, run_id: str, task: Task, *, actor: str, reason: str) -> Task:
         """Forget ``task``'s recorded launch (its agent, at its attempt) after the runtime refused it, so the

@@ -293,7 +293,9 @@ export class EngineeringBus extends Construct {
     const role = workerRole(this, 'BoardRole');
     this.addPublisher('Board', role, 'voc.engineering/board');
     // Query: the inbox op reads the caller's INBOX# rows (board/inbox.py).
-    props.engineeringTable.grant(role, ...TABLE_ACTIONS, 'dynamodb:Query');
+    // ConditionCheckItem: a flow step's checks in the board's own transactions (a post, a launch or a board's close
+    // held to the step not being closed and to its post count: lambda/engineering/board/store.py, flow/record.py).
+    props.engineeringTable.grant(role, ...TABLE_ACTIONS, 'dynamodb:Query', 'dynamodb:ConditionCheckItem');
     denyCostRows(role, props.engineeringTable);
     const runtime = props.uniqueName(ENGINEERING_RUNTIME_FUNCTION_BASE_NAME);
     this.grantInvokeByName(role, 'EngineeringRuntimeLaunch', runtime);

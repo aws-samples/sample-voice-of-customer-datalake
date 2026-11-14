@@ -41,8 +41,8 @@ from botocore.exceptions import BotoCoreError, ClientError
 from engineering.board.model import Task
 from engineering.board.store import BoardStore
 from engineering.connectors.identity import WORKSPACE
-from engineering.flow.conductor import DECISION_PREFIX, Flow, FlowError, Plan, conduct
-from engineering.flow.ledger import ReadRecord
+from engineering.flow.conductor import DECISION_PREFIX, GO, NO_GO, Flow, FlowError, Plan, conduct
+from engineering.flow.ledger import ReadRecord, newest_final_go
 from engineering.flow.record import (
     CACHED_FLOWS,
     FLOW_SK,
@@ -54,6 +54,7 @@ from engineering.flow.record import (
     gate_verdicts,
     parse_flow,
     recorded_verdicts,
+    verdict_item,
 )
 from engineering.runtime.checkout import COMMIT_RE
 from engineering.runtime.egress import REGISTRY_HOSTS
@@ -73,6 +74,7 @@ from shared import workflow_schema
 from shared.aws import consistent_item, is_conditional_check_failure
 from shared.dynamo_paging import iter_query
 from shared.ids import is_key_collision
+from shared.logging import logger
 from shared.workflow_engineering import BUDGET_RULE, budget_of
 
 #: How a run ends (``active`` and ``needs_human`` are its live statuses).
@@ -254,6 +256,8 @@ class RunStore:
         self._gate_records = gate_records
         #: The runs' copies of their flows, once read (create-only: never changed), at most ``CACHED_FLOWS``.
         self._flow_copies: dict[str, Flow] = {}
+        #: The gate verdicts a plan read at a decision point, to keep once the run is there (``keep_verdicts``).
+        self._unkept: dict[str, tuple[Plan, list[Task], Mapping[tuple[str, str], str]]] = {}
 
     def start(self, run_id: str, *, caps: RunCaps, now: int, goal: str = '', repo: str = '', flow: str = '',
               connection: str = '', commit: str = '', language: str = '', actor: str = '',
@@ -425,9 +429,12 @@ class RunStore:
                  'ExpressionAttributeValues': {':run': run_pk(run_id), ':p': prefix}}
         return [_typed(item) for item in iter_query(self._table, query)]
 
-    def flow_plan(self, run_id: str) -> Plan | None:
+    def flow_plan(self, run_id: str, *, keep_verdicts: bool = False) -> Plan | None:
         """The conductor's plan for the run (None: it was started without a flow): its copy of its flow, kept once
-        read (it never changes), then its tasks, its step rows and META read now (engineering/flow/record.py)."""
+        read (it never changes), then its tasks, its step rows and META read now (engineering/flow/record.py).
+        ``keep_verdicts``: at a decision point, each gate verdict read from its record is kept, create-only, as the
+        board keeps it (``STEP#<gate>#verdict#<task>``), so the run monitor, which reads no gate record, shows the
+        run at the gate's decision point rather than the gate still running."""
         flow = self._flow_copies.get(run_id)
         if flow is None:
             item = consistent_item(self._table, {'pk': run_pk(run_id), 'sk': FLOW_SK})
@@ -440,9 +447,37 @@ class RunStore:
         meta = consistent_item(self._table, meta_key(run_id))
         tasks = [Task.from_item(item) for item in self._typed_rows(run_id, 'TASK#')]
         rows = self._typed_rows(run_id, STEP_PREFIX)
-        verdicts = gate_verdicts(flow, tasks, WORKSPACE, run_id, self._gate_records, recorded_verdicts(rows))
-        return conduct(flow, board_state(tasks, rows, cap_reached=cap_reached(_typed(meta) if meta else None),
+        recorded = recorded_verdicts(rows)
+        verdicts = gate_verdicts(flow, tasks, WORKSPACE, run_id, self._gate_records, recorded)
+        plan = conduct(flow, board_state(tasks, rows, cap_reached=cap_reached(_typed(meta) if meta else None),
                                          verdicts=verdicts))
+        if keep_verdicts and plan.decision_point and self._gate_records is not None:
+            # (kept once the run is at its decision point: ``keep_verdicts``, best effort, never before it)
+            self._unkept[run_id] = (plan, tasks, recorded)
+        return plan
+
+    def keep_verdicts(self, run_id: str) -> None:
+        """Keep the gate verdicts the last ``flow_plan(keep_verdicts=True)`` of the run read at its decision point
+        (nothing when it read none)."""
+        unkept = self._unkept.pop(run_id, None)
+        if unkept is not None:
+            self._keep_verdicts(run_id, *unkept)
+
+    def _keep_verdicts(self, run_id: str, plan: Plan, tasks: list[Task],
+                       recorded: Mapping[tuple[str, str], str]) -> None:
+        """Each gate verdict the plan read from its record, for its deciding final-go task, create-only (a verdict
+        already kept is never written over), as the supervisor."""
+        at = _iso(int(time.time()))
+        for step, verdict in plan.verdicts.items():
+            latest = newest_final_go([task for task in tasks if task.flow_step == step], WORKSPACE, run_id)
+            if verdict not in (GO, NO_GO) or latest is None or (step, latest[0].task_id) in recorded:
+                continue
+            item = verdict_item(run_pk(run_id), step, latest[0].task_id, verdict, actor=SUPERVISOR, at=at)
+            try:
+                self._table.put_item(Item=item, ConditionExpression='attribute_not_exists(sk)')
+            except ClientError as error:
+                if not is_conditional_check_failure(error):
+                    raise
 
     @property
     def table(self) -> Any:
@@ -497,7 +532,16 @@ class TableRunControl:
         return self._run(run_id).status in ENDED
 
     def needs_human(self, run_id: str, reason: str) -> None:
+        """The run at its decision point; at a flow step's, the gate verdicts the supervisor read are then kept for
+        the run monitor, best effort: a write that fails is logged and never delays or fails the decision point."""
         self._runs.needs_human(run_id, reason, now=int(self._clock()))
+        if not flow_step(reason):
+            return
+        try:
+            self._runs.keep_verdicts(run_id)
+        except Exception:
+            logger.exception('engineering runtime: a gate verdict for the run monitor was not kept',
+                             extra={'run_id': run_id, 'decision_point': reason})
 
     def is_active(self, run_id: str) -> bool:
         run = self._runs.get(run_id)
@@ -512,7 +556,7 @@ class TableRunControl:
         if run is None or run.status != 'active':
             waiting = run is not None and bool(flow_step(run.waiting_at))
             return FlowStop(run.waiting_at, waiting=True) if run is not None and waiting else None
-        plan = self._runs.flow_plan(run_id)
+        plan = self._runs.flow_plan(run_id, keep_verdicts=True)
         return FlowStop(plan.decision_point) if plan is not None and plan.decision_point else None
 
     def coordinator_awaited(self, run_id: str) -> int | None:

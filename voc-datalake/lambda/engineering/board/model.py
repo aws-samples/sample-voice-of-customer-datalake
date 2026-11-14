@@ -120,6 +120,9 @@ class Task:
     #: map's shard it works on (a step after a map takes one task per shard): engineering/flow/conductor.py.
     flow_step: str = ''
     shard: str = ''
+    #: Its post added one to its step's count (``POSTS#<step>``, board/store.py): a task posted before the count
+    #: existed is not, and a board holding one never closes.
+    counted: bool = False
 
     @classmethod
     def from_item(cls, item: Mapping[str, Any]) -> Task:
@@ -135,7 +138,7 @@ class Task:
             launched_attempt=_n(item, 'launched_attempt'),
             launched_paths=tuple(path['S'] for path in item.get('launched_paths', {}).get('L', ()) if 'S' in path),
             launched_language=_s(item, 'launched_language'), flow_step=_s(item, 'flow_step'),
-            shard=_s(item, 'shard'))
+            shard=_s(item, 'shard'), counted=item.get('counted', {}).get('BOOL') is True)
 
     def paths(self) -> tuple[str, ...]:
         """The repository paths the task works on: '' (the root), its spec's ``paths`` (strings) and the paths its

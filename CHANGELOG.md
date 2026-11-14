@@ -17,6 +17,32 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.28.01] - 2026-11-14
+
+Autonomous engineering agents: the board's flow guards now hold in the write itself. A board's close, and a launch, can no longer race a post or a close, and the run monitor shows a run at a quality gate's decision point as being there. Off by default, and no fixed cost.
+
+### Fixed
+
+- A board's close is held in its own write. Every post for a step adds one to the step's count (`POSTS#<step>`) in its transaction. The close (`STEP#<board>#done`) is written only while the count is the one its plan read, with every task it counted ended. A post landing between the close's plan read and its write refuses the close (409, "read the flow again").
+  - A board the close read empty closes only while it has no count. One with tasks closes only on `posts` equal to them.
+  - Each counted task is marked (`counted`). A board holding a task posted before the count existed never closes (409: a person decides), since its count cannot vouch for what was posted since.
+- A launch racing its step's close starts no agent. The launch's record is written only while its step is not closed (a check on `STEP#<step>#done` in the launch's own transaction), else 409. A launch that lost to another one before the close is answered with the agent that one recorded. A step closed already is refused before an agent is numbered.
+- The board's role is granted `dynamodb:ConditionCheckItem`, which its flow transactions' checks need (in 6.28.00 too: a post for a flow step would have been refused by IAM).
+- At a decision point, the supervisor keeps the gate verdict it read, as the board does (`STEP#<gate>#verdict#<task>`, create-only, by `supervisor`). The run monitor, which reads no gate record, then shows the run at the gate's decision point, not the gate still running. The row is written after the run is at its decision point, best effort: a failed write is logged and never delays or fails it.
+
+### Changed
+
+- docs/autonomous-engineering.md says:
+  - the broker's GO check reads all of the run's final-go tasks, while a flow's gate reads only its own step's (the same rule over a different set);
+  - a transient S3 error on a gate record waits and is read again, and never fails the run: the board answers 503 and its caller retries, the supervisor reads again at its next tick, and a report's build fails, to be built again;
+  - how the close and the launch are held in their writes.
+
+### Upgrade notes
+
+- Lambda code (asset hashes) and one grant: the board's role may now run `dynamodb:ConditionCheckItem` on the engineering table (its flow steps' checks inside its post, launch and close transactions; 6.28.00's post checks already needed it). No route changes. The new `POSTS#<step>` rows are in the run's own partition, which the board's role already writes. A board with a task posted before this release (uncounted) never closes; none exists, since the runtime has not run against AWS.
+
+Built on the voc-autonomous branch. Off by default.
+
 ## [6.28.00] - 2026-11-14
 
 Autonomous engineering agents: a run started from a saved flow now follows that flow, step by step. The run keeps its own copy of the flow, a deterministic conductor says which steps are ready, and the board takes work only for those steps, so the model cannot skip a step or take them out of order. Steps the runtime cannot do yet are reported as not run, never faked. Off by default, and no fixed cost.

@@ -390,11 +390,14 @@ class BoardApi:
             # The runtime's own image languages: one it would refuse is refused before an agent is numbered on it,
             # since a retry at the attempt keeps the language it was launched with.
             raise BoardError('invalid', f'"role" is a role that claims tasks, "language" one of {sorted(REGISTRY_HOSTS)}')
+        absent: tuple[str, ...] = ()
         if not recorded:   # (a retry is never refused for a skill or an image a redeploy changed meanwhile)
             self._check_launchable(role, language)
             # In a run that follows a flow: only a task of a live step (or a person's own task), before an agent is
-            # numbered; a retry of a launch that got through is never refused for a step that moved on since.
-            self.flows.launch_check(caller.run_id, self.store.task(WORKSPACE, caller.run_id, _text(body, 'task_id')))
+            # numbered, and the step still not closed in the launch record's own write; a retry of a launch that got
+            # through is never refused for a step that moved on since.
+            absent = self.flows.launch_check(caller.run_id,
+                                             self.store.task(WORKSPACE, caller.run_id, _text(body, 'task_id')))
         meta = self._meta(caller.run_id)
         commit, connection = meta.get('commit', {}).get('S', ''), meta.get('connection', {}).get('S', '')
         if not (commit and connection):
@@ -402,7 +405,7 @@ class BoardApi:
             # a retry. Checked before an agent is numbered, so a launch the runtime must refuse records nothing.
             raise BoardError('conflict', NO_START_RECORD)
         task = self.store.launch(WORKSPACE, caller.run_id, _text(body, 'task_id'), role=role,
-                                 actor=agent_id(caller), paths=paths, language=language)
+                                 actor=agent_id(caller), paths=paths, language=language, absent=absent)
         # A retry (the same agent at the same attempt) gets what the first launch's session answers.
         try:
             answer = self.launcher.launch({

@@ -300,11 +300,12 @@ describe('the engineering bus', () => {
     expect(permissions).toStrictEqual([]);
   });
 
-  it('grants the board the table\'s item calls and its inbox query, a put on exactly the bus, the runtime\'s invoke and the knowledge packs\' reads, nothing else', () => {
+  it('grants the board the table\'s item calls, its inbox query and its flow checks, a put on exactly the bus, the runtime\'s invoke and the knowledge packs\' reads, nothing else', () => {
     const on = template('on');
     const board = functionId(on, 'voc-engineering-board');
+    // ConditionCheckItem: the flow step's checks inside its post, launch and close transactions.
     expect(actionsOf(on, board)).toStrictEqual(
-      [...TABLE_ACTIONS, 'dynamodb:Query', ...KEY_ACTIONS, 'events:PutEvents', 'lambda:InvokeFunction',
+      [...TABLE_ACTIONS, 'dynamodb:Query', 'dynamodb:ConditionCheckItem', ...KEY_ACTIONS, 'events:PutEvents', 'lambda:InvokeFunction',
         'logs:CreateLogStream', 'logs:PutLogEvents', 's3:GetObject'].sort(byCodeUnit));
     const put = statementsOf(on, board).find((statement) => statement.Action === 'events:PutEvents');
     expect(put?.Resource).toStrictEqual({ 'Fn::GetAtt': [busId(on), 'Arn'] });

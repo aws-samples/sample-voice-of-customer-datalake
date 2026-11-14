@@ -25,10 +25,12 @@ from typing import Any, Final
 from botocore.exceptions import ClientError
 
 from engineering.board.model import Task
+from engineering.board.store import BoardError, posts_sk
 from engineering.flow.conductor import GO, NO_GO, UNREAD, BoardState, Flow, FlowError, Plan, StepTask, conduct
 from engineering.flow.ledger import ReadRecord, newest_final_go, verdict
 from engineering.rows import get_row, number_value, run_pk, run_rows, string_attr
 from shared.aws import is_conditional_check_failure
+from shared.ids import is_key_collision
 from shared.logging import logger
 
 FLOW_SK: Final = 'FLOW'
@@ -56,6 +58,13 @@ def decision_item(run_id_pk: str, step: str, *, actor: str, at: str, nonce: str)
     transaction."""
     return {'pk': run_id_pk, 'sk': step_sk(step, DECISION, f'{at}#{nonce}'), 'kind': 'step_record', 'step': step,
             'record': DECISION, 'by': actor, 'at': at}
+
+
+def verdict_item(run_id_pk: str, step: str, task_id: str, verdict: str, *, actor: str, at: str) -> dict[str, Any]:
+    """A gate's verdict as read from its deciding final-go task's record, as plain values (a resource table's put):
+    the same row ``FlowRecord.record_verdicts`` writes."""
+    return {'pk': run_id_pk, 'sk': step_sk(step, VERDICT, task_id), 'kind': 'step_record', 'step': step,
+            'record': VERDICT, 'by': actor, 'at': at, 'task_id': task_id, 'verdict': verdict}
 
 
 def step_task(task: Task) -> StepTask:
@@ -232,6 +241,39 @@ class FlowRecord:
             if not is_conditional_check_failure(exc):
                 raise
             return False
+        return True
+
+    def close(self, ws: str, run_id: str, step: str, *, read: Sequence[Task], actor: str, at: str) -> bool:
+        """A board's close (``STEP#<step>#done``, create-only), held in its own write to the tasks the closer read for
+        the step (``read``), every one of them ended (``POSTS#<step>``, which each post for the step adds to in its
+        transaction: ``board/store.py``): a post landing between the closer's read and this write refuses the close,
+        ``BoardError`` conflict. A board the closer read empty closes only with no count (``attribute_not_exists``: a
+        post since creates it); one with tasks only on its count equal to them (``posts = :read``). A board holding a
+        task posted before the count existed (not ``counted``) never closes: its count cannot vouch for what was posted
+        since. False when the board was closed already."""
+        mine = [task for task in read if task.flow_step == step]
+        if any(not task.counted for task in mine):
+            raise BoardError('conflict', f'board {step} holds tasks posted before its count existed: it cannot be '
+                                         'closed (a person decides: block or stop the run)')
+        posts = len(mine)
+        pk = {'S': run_pk(ws, run_id)}
+        item = {'pk': pk, 'sk': {'S': step_sk(step, DONE)}, 'kind': {'S': 'step_record'}, 'step': {'S': step},
+                'record': {'S': DONE}, 'by': {'S': actor}, 'at': {'S': at}}
+        try:
+            self.client.transact_write_items(TransactItems=[
+                {'Put': {'TableName': self.table, 'Item': item, 'ConditionExpression': 'attribute_not_exists(sk)'}},
+                {'ConditionCheck': {'TableName': self.table, 'Key': {'pk': pk, 'sk': {'S': posts_sk(step)}},
+                                    **({'ConditionExpression': 'posts = :read',
+                                        'ExpressionAttributeValues': {':read': {'N': str(posts)}}} if posts else
+                                       {'ConditionExpression': 'attribute_not_exists(pk)'})}},
+            ])
+        except ClientError as exc:
+            if is_key_collision(exc, put_index=0):
+                return False
+            if is_key_collision(exc, put_index=1):
+                raise BoardError('conflict', f'a task was posted for board {step} meanwhile: read the flow again '
+                                             'before you close it') from exc
+            raise
         return True
 
     def mark_not_yet_run(self, ws: str, run_id: str, plan: Plan, *, actor: str, at: str) -> None:

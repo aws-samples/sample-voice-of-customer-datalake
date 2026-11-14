@@ -833,11 +833,19 @@ started from a saved flow follows that flow's steps; the flow is the plan.
   a racing post by a `SLOT#` marker written in the post's own transaction; every post for a step holds, in the same
   transaction, that the step was not closed (no `STEP#<step>#done`), so a post racing a board's close never lands on
   the closed board. A retried post is answered with the equal task it repeats while that task is under way, and
-  refused once it has ended (never made a new task past the step's check). A launch is only for a task of a live step
-  (or a person's own task); a retry of a launch that got through is never refused. The final go of a quality gate is
-  taken only once a gate runner's task of the step is done, and an empty board closes only when an agent other than
-  the coordinator was to post on it (a hunter that found nothing). The caps, the coordinator's single lease and the
-  check of a replaced coordinator, the launch rules and the claim guard are unchanged.
+  refused once it has ended (never made a new task past the step's check). A board's close is held in its own write
+  too (6.28.01): every post for a step adds one to the step's count (`POSTS#<step>`) in its transaction, and the
+  close (`STEP#<board>#done`) is written only while the count is the one its plan read, with every task it counted
+  ended (a task never leaves an ended state; a board read empty closes only while it has no count), so a post
+  landing between the close's plan read and its write refuses the close. Each counted task is marked (`counted`),
+  and a board holding a task posted before the count existed never closes (a person decides). A launch is only for a
+  task of a live step (or a person's own task), and its record is written only while its step is not closed (a check
+  on `STEP#<step>#done` in the launch's own transaction), so a launch racing the step's close starts no agent; one
+  that lost to another launch before the close is answered with the agent that one recorded, and a retry of a
+  launch that got through is never refused. The final go of a quality
+  gate is taken only once a gate runner's task of the step is done, and an empty board closes only when an agent
+  other than the coordinator was to post on it (a hunter that found nothing). The caps, the coordinator's single
+  lease and the check of a replaced coordinator, the launch rules and the claim guard are unchanged.
 
   What this holds, and what it does not: the board refuses any post or launch for a step that is not live, for a
   role the step does not take or from a poster it does not allow, so the coordinator cannot start a later step before
@@ -855,13 +863,20 @@ started from a saved flow follows that flow's steps; the flow is the plan.
   step's decision point is not asked again; its agents stay held. A NO-GO of the quality gate takes its `fail` arrow
   to a person; nothing reaches the pull request then.
 - **The gate's verdict is the GO ledger's** (`flow/ledger.py`, the one rule the broker's `has_go` uses too): the
-  final-go task of the step that ended last decides, and it is a GO only when it ended done and its own gate record
-  reads as a GO (verdict GO, the final go's GO, no stop). A final go that ended done with a NO-GO record, a missing or
-  unreadable record, or one off its schema takes the `fail` arrow. The board and the supervisor read the record (the
-  board's role reads the gate records' keys only, `ReadGateRecords`; the runtime's already did); the board records
-  each verdict it read (`STEP#<gate>#verdict#<task>`) for the run monitor, which reads no gate record, and which shows
-  a verdict not recorded yet as still running, never as a GO. The broker still opens a pull request only for a GO on
-  the exact tree.
+  final-go task that ended last decides, and it is a GO only when it ended done and its own gate record reads as a
+  GO (verdict GO, the final go's GO, no stop). The same rule over a different set of tasks: the broker's GO check
+  reads all of the run's final-go tasks (a pull request is the run's), a flow's gate only its own step's. A final go
+  that ended done with a NO-GO record, a missing record, one access denies (read as missing) or one off its schema
+  takes the `fail` arrow. A transient S3 error on a gate record is no verdict: it waits and is read again, never
+  failing the run nor taken for either verdict (the board answers 503 and its caller retries; the supervisor logs it
+  and reads again at its next tick; a report's build that meets one fails that build, to be built again). The board
+  and the supervisor read the record (the board's role reads the gate records' keys only, `ReadGateRecords`; the
+  runtime's already did) and keep each verdict they read (`STEP#<gate>#verdict#<task>`, create-only): the board when
+  the coordinator reads the plan, the supervisor once it has sent the run to its decision point (6.28.01; best
+  effort: a failed write is logged, never delaying or failing the decision point). The run
+  monitor reads no gate record: it shows a kept verdict, so a run at the gate's decision point shows there, and a
+  verdict not kept yet as the gate still running, never as a GO. The broker still opens a pull request only for a GO
+  on the exact tree.
 - **The run monitor and the reports** show the flow with its steps lit: the overview carries the run's own copy of
   its flow, as its start wrote it, with its revision, each step's status and where the flow stands
   (`flow_definition`, `flow_revision`, `flow_steps`, `flow_outcome`); the monitor draws that copy (never the flow as

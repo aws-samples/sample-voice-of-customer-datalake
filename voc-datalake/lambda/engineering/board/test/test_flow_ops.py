@@ -292,6 +292,98 @@ def test_a_retried_post_whose_equal_task_ended_is_refused_never_made_a_new_task(
     assert len([task for task in bugs.store.tasks(WS, RUN) if task.flow_step == 'hunt']) == 1
 
 
+def test_a_close_racing_a_post_between_its_plan_read_and_its_write_is_refused(bugs: Board) -> None:
+    """The close is held in its own write to the tasks its plan read for the board (``POSTS#<board>``)."""
+    _ended(bugs, 'hunter', 'hunt')
+    _ended(bugs, 'fixer', 'board')
+    guard = FlowGuard(bugs.store)
+    plan = guard.plan(RUN)
+    assert plan is not None
+    assert (plan.steps['board'].status, plan.steps['board'].task_count) == ('ready', 1)
+    # A post lands after the close read the plan (the board ready, its one task ended) and before its write.
+    assert post(bugs, role='fixer', flow_step='board', title='Fix one more', spec={'instructions': 'One more.'})[0] == 200
+    read = bugs.store.tasks(WS, RUN)[:-1]   # (the tasks the close's plan read: before the post)
+    with pytest.raises(BoardError, match='posted for board board meanwhile'):
+        guard.record.close(WS, RUN, 'board', read=read, actor='coordinator-1', at='now')
+    assert not [row for row in run_rows(bugs.client, TABLE, WS, RUN, 'STEP#') if row['record']['S'] == 'done']
+    counted = run_rows(bugs.client, TABLE, WS, RUN, 'POSTS#board')
+    assert [row['posts']['N'] for row in counted] == ['2']
+
+
+def test_a_launch_racing_its_steps_close_starts_no_agent_on_the_closed_step(bugs: Board) -> None:
+    """The launch's record is held in its own write to its step's not being closed."""
+    fix = call(bugs, HUNTER, op='post', role='fixer', flow_step='board', title='Fix it',
+               spec={'instructions': 'Fix it.'})[1]['task']['task_id']
+    guard = FlowGuard(bugs.store)
+    absent = guard.launch_check(RUN, bugs.store.task(WS, RUN, fix))
+    assert absent == ('STEP#board#done',)
+    # The close lands after the launch's check and before its write.
+    assert guard.record.record(WS, RUN, 'board', 'done', actor='coordinator-1', at='now') is True
+    with pytest.raises(BoardError, match='closed meanwhile'):
+        bugs.store.launch(WS, RUN, fix, role='fixer', actor='coordinator-1', language='python', absent=absent)
+    assert bugs.store.task(WS, RUN, fix).launched_agent == ''
+    # (refused before an agent is numbered: the run's agent count is the coordinator's alone)
+    meta = bugs.store.meta(WS, RUN)
+    assert meta is not None
+    assert meta['agent_count']['N'] == '1'
+
+
+def test_a_close_landing_between_a_launchs_read_and_its_write_is_refused_in_the_write(
+        bugs: Board, monkeypatch: pytest.MonkeyPatch) -> None:
+    fix = call(bugs, HUNTER, op='post', role='fixer', flow_step='board', title='Fix it',
+               spec={'instructions': 'Fix it.'})[1]['task']['task_id']
+    guard = FlowGuard(bugs.store)
+    absent = guard.launch_check(RUN, bugs.store.task(WS, RUN, fix))
+    original = bugs.store._next_agent
+
+    def numbered_then_closed(ws: str, run_id: str, role: str) -> str:
+        agent = original(ws, run_id, role)
+        guard.record.record(WS, RUN, 'board', 'done', actor='coordinator-1', at='now')   # (the close lands now)
+        return agent
+
+    monkeypatch.setattr(bugs.store, '_next_agent', numbered_then_closed)
+    with pytest.raises(BoardError, match='closed meanwhile'):
+        bugs.store.launch(WS, RUN, fix, role='fixer', actor='coordinator-1', language='python', absent=absent)
+    assert bugs.store.task(WS, RUN, fix).launched_agent == ''
+
+
+def test_a_board_holding_tasks_posted_before_its_count_existed_never_closes(bugs: Board) -> None:
+    """k old ended tasks (posted before the count: uncounted) and one new task under way: the count (1) cannot vouch
+    for the board, whatever the close read."""
+    _ended(bugs, 'hunter', 'hunt')
+    for n in range(2):
+        old = bugs.store.post(WS, RUN, role='fixer', title=f'Old fix {n}', spec={'old': n}, parent_task='',
+                              priority=0, actor='coordinator-1').task   # (no step: as before the count)
+        bugs.client.update_item(TableName=TABLE, Key={'pk': {'S': run_pk(WS, RUN)}, 'sk': {'S': f'TASK#{old.task_id}'}},
+                                UpdateExpression='SET #s = :done, flow_step = :board',
+                                ExpressionAttributeNames={'#s': 'state'},
+                                ExpressionAttributeValues={':done': {'S': 'done'}, ':board': {'S': 'board'}})
+    read = bugs.store.tasks(WS, RUN)   # (the close's plan read: the old ones, all ended)
+    assert post(bugs, role='fixer', flow_step='board', title='A new fix', spec={'instructions': 'New.'})[0] == 200
+    guard = FlowGuard(bugs.store)
+    with pytest.raises(BoardError, match='posted before its count existed'):
+        guard.record.close(WS, RUN, 'board', read=read, actor='coordinator-1', at='now')
+    with pytest.raises(BoardError, match='posted before its count existed'):
+        guard.record.close(WS, RUN, 'board', read=bugs.store.tasks(WS, RUN), actor='coordinator-1', at='now')
+    assert not [row for row in run_rows(bugs.client, TABLE, WS, RUN, 'STEP#') if row['record']['S'] == 'done']
+
+
+def test_a_launch_losing_to_another_before_the_close_is_answered_with_the_agent_recorded(
+        bugs: Board, monkeypatch: pytest.MonkeyPatch) -> None:
+    fix = call(bugs, HUNTER, op='post', role='fixer', flow_step='board', title='Fix it',
+               spec={'instructions': 'Fix it.'})[1]['task']['task_id']
+    absent = FlowGuard(bugs.store).launch_check(RUN, bugs.store.task(WS, RUN, fix))
+    stale = bugs.store.task(WS, RUN, fix)   # (what the second launch read: no agent recorded yet)
+    first = bugs.store.launch(WS, RUN, fix, role='fixer', actor='coordinator-1', language='python', absent=absent)
+    FlowGuard(bugs.store).record.record(WS, RUN, 'board', 'done', actor='coordinator-1', at='now')
+    reads = iter([stale])
+    original = bugs.store.task
+    monkeypatch.setattr(bugs.store, 'task', lambda ws, run_id, task_id: next(reads, None) or original(ws, run_id,
+                                                                                                        task_id))
+    second = bugs.store.launch(WS, RUN, fix, role='fixer', actor='coordinator-1', language='python', absent=absent)
+    assert (second.launched_agent, second.launched_attempt) == (first.launched_agent, 1)
+
+
 def test_a_post_racing_the_boards_close_never_lands_on_the_closed_board(bugs: Board) -> None:
     _ended(bugs, 'hunter', 'hunt')
     spec = {'instructions': 'Fix it.'}

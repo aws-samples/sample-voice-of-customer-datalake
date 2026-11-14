@@ -135,6 +135,72 @@ def test_the_run_control_says_where_the_flow_waits_for_a_person_and_keeps_saying
     assert control.flow_stop(RUN) is None   # (another decision point: not the flow's to say)
 
 
+def _no_go_at_the_gate(table: Any) -> RunStore:
+    """A bug hunt run whose final go ended done with a NO-GO record (its hunt done, its board closed)."""
+    from engineering.connectors.test.test_records import gate_record
+    from engineering.quality_gate.record import GateRecord
+    runs = RunStore(table, gate_records=lambda _key: GateRecord.from_dict(gate_record('NO-GO')))
+    runs.start(RUN, caps=RunCaps(max_tasks=10), now=86_400, flow='wf_bugs',
+               flow_definition=encode_definition(TEMPLATES['bug-hunt-and-fix']), flow_revision=1)
+    client = boto3.client('dynamodb', region_name='us-east-1')
+    key = f'ws/default/runs/{RUN}/final-go-4/commits/{"a" * 40}/_gate/attempt-1/record.json'
+    for task_id, step, role in (('task-1', 'hunt', 'hunter'), ('task-2', 'gate', 'gate-runner'),
+                                ('task-3', 'gate', 'final-go')):
+        BoardStore(client, TABLE, new_id=lambda task_id=task_id: task_id).post(
+            'default', RUN, role=role, title=step, spec={'n': task_id}, parent_task='', priority=0,
+            actor='coordinator-1', step=step)
+        table.update_item(Key={'pk': PK, 'sk': f'TASK#{task_id}'},
+                          UpdateExpression='SET #s = :done, lease_agent = :holder, result_keys = :keys',
+                          ExpressionAttributeNames={'#s': 'state'},
+                          ExpressionAttributeValues={':done': 'done', ':holder': 'final-go-4', ':keys': {key}})
+    table.put_item(Item={'pk': PK, 'sk': 'STEP#board#done', 'kind': 'step_record', 'step': 'board', 'record': 'done',
+                         'by': 'coordinator-1', 'at': 'now'})
+    return runs
+
+
+def test_at_a_gates_decision_point_the_supervisor_keeps_the_verdict_it_read_for_the_run_monitor(aws):
+    """A final go that ended done with a NO-GO record: the supervisor reads it (its role reads the gate records),
+    sends the run to the gate's fail arrow's decision point and keeps the verdict, so the run monitor, which reads no
+    gate record, shows the run at that person too, not the gate still running."""
+    table = aws[1]
+    runs = _no_go_at_the_gate(table)
+    client = boto3.client('dynamodb', region_name='us-east-1')
+    # The monitor's read before the supervisor: the gate's verdict is not read there, so never a GO.
+    before = run_flow(client, TABLE, 'default', RUN, None)
+    assert before is not None
+    assert (before.plan.outcome, before.plan.steps['gate'].status) == ('running', 'running')
+    control = TableRunControl(runs, clock=lambda: 90_000.0)
+    assert control.flow_stop(RUN) == FlowStop('flow:human')
+    assert not [row for row in _rows(table, 'STEP#') if row['record'] == 'verdict']   # (kept once the run is there)
+    control.needs_human(RUN, 'flow:human')
+    (kept,) = [row for row in _rows(table, 'STEP#') if row['record'] == 'verdict']
+    assert (kept['sk'], kept['verdict'], kept['by']) == ('STEP#gate#verdict#task-3', 'no_go', 'supervisor')
+    after = run_flow(client, TABLE, 'default', RUN, None)
+    assert after is not None
+    assert (after.plan.outcome, after.plan.at, after.plan.steps['pr_author'].status) == (
+        'needs_human', 'human', 'skipped')
+
+
+def test_a_failed_write_of_the_monitors_verdict_never_keeps_the_run_from_its_decision_point(
+        aws, monkeypatch: pytest.MonkeyPatch):
+    from botocore.exceptions import ClientError
+    table = aws[1]
+    runs = _no_go_at_the_gate(table)
+    control = TableRunControl(runs, clock=lambda: 90_000.0)
+    assert control.flow_stop(RUN) == FlowStop('flow:human')
+
+    def refused(**_request: Any) -> None:
+        raise ClientError({'Error': {'Code': 'ProvisionedThroughputExceededException', 'Message': 'slow down'}},
+                          'PutItem')
+
+    monkeypatch.setattr(table, 'put_item', refused)
+    control.needs_human(RUN, 'flow:human')   # (the verdict's write fails: logged, never raised)
+    run = runs.get(RUN)
+    assert run is not None
+    assert (run.status, run.waiting_at) == ('needs_human', 'flow:human')
+    assert not [row for row in _rows(table, 'STEP#') if row['record'] == 'verdict']
+
+
 def test_the_run_control_of_a_run_without_a_flow_says_nothing(aws):
     runs = RunStore(aws[1])
     runs.start(RUN, caps=RunCaps(max_tasks=10), now=0)
