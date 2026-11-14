@@ -11,7 +11,7 @@ import { Match, type Template } from 'aws-cdk-lib/assertions';
 import { synthCoreTemplate } from '../test-support/core-stack-fixture';
 import { defined, isRecord, itemAt, recordAt } from '../test-support/guards';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
-import { BRAND_SETTINGS_PK, TEMPORARY_PASSWORD_DAYS, USER_MESSAGES_FILES } from './core-auth';
+import { BRAND_SETTINGS_PK, DESIGN_SYSTEM_SETTINGS_PK, TEMPORARY_PASSWORD_DAYS, USER_MESSAGES_FILES } from './core-auth';
 import { copyStepsFor, onlyTheseFiles } from '../utils/self-contained-trigger';
 
 const HANDLER = 'auth/user_messages.handler';
@@ -63,13 +63,13 @@ describe('app pool custom-message trigger', () => {
     expect(pool.LambdaConfig).toMatchObject({ CustomMessage: { 'Fn::GetAtt': [id, 'Arn'] } });
   });
 
-  it('may read only the brand row, and decrypt it', () => {
+  it('may read only the brand and design-system rows, and decrypt them', () => {
     const statements = triggerStatements(template);
     const dynamo = statements.filter((s) => JSON.stringify(s.Action).includes('dynamodb:'));
     expect(dynamo).toHaveLength(1);
     expect(itemAt(dynamo, 0)).toMatchObject({
       Action: 'dynamodb:GetItem',
-      Condition: { 'ForAllValues:StringEquals': { 'dynamodb:LeadingKeys': [BRAND_SETTINGS_PK] } },
+      Condition: { 'ForAllValues:StringEquals': { 'dynamodb:LeadingKeys': [BRAND_SETTINGS_PK, DESIGN_SYSTEM_SETTINGS_PK] } },
     });
     expect(statements.some((s) => JSON.stringify(s.Action).includes('kms:Decrypt'))).toBe(true);
   });
