@@ -157,7 +157,8 @@ export const KIRO_WRITE_RULES = Object.freeze([
  *     repository's folder from one of the same name elsewhere (V2 can, and allows only a relative `cd`). The `match: ['*']` deny with
  *     the allowed commands as `exclude` is V3's deny-by-default: V3 ran `cat .env` with no approval when nothing
  *     denied it.
- * LIMIT: a test runner executes the code it runs, and this agent writes that code. A test it writes can still reach
+ * LIMIT: a test runner executes the code it runs, and this agent writes that code (its flags can name code to load
+ * too, e.g. `pytest -p <module>`, `vitest --config <file>`). A test it writes can still reach
  * the network or read a home file; these rules stop the agent from doing so with a direct command, not through a
  * test. Review what the test generator writes before running it again.
  */
