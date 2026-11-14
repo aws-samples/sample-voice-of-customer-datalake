@@ -8,7 +8,8 @@ workspace), maybe narrowed to a sort-key prefix, every page. Each page is shared
 ``ws_table`` (a partition or a cursor outside the workspace is refused before DynamoDB). The stores' single-item
 calls go through shared/ingest_tables.py ``table_view`` and shared/workspace_config.py ``get_scoped_item``, their
 transactions through shared/project_writes.py ``transact_project_writes``. Only voc-projects is read here: the jobs
-and the participant lists are not per workspace yet.
+and the participant lists are not per workspace yet. ``iter_registered_project_ids`` pages a workspace's registry of
+its project ids the same way (since 7.26.00).
 """
 from __future__ import annotations
 
@@ -18,11 +19,11 @@ from types import SimpleNamespace
 from typing import Any
 
 from shared.dynamo_paging import iter_query
-from shared.project_keys import project_pk
+from shared.project_keys import project_pk, project_registry_pk
 from shared.scoped_query import SortRange, query_partition
-from shared.ws_repo import WorkspaceScope
+from shared.ws_repo import WorkspaceScope, require_scope
 
-__all__ = ['iter_project_rows']
+__all__ = ['iter_project_rows', 'iter_registered_project_ids']
 
 
 def iter_project_rows(table: Any, project_id: str, *, workspace: WorkspaceScope | None = None,
@@ -34,3 +35,14 @@ def iter_project_rows(table: Any, project_id: str, *, workspace: WorkspaceScope 
     pages = SimpleNamespace(query=partial(query_partition, workspace, table, 'pk',
                                           project_pk(project_id, workspace=workspace), sort=sort))
     return iter_query(pages, kwargs)
+
+
+def iter_registered_project_ids(table: Any, *, workspace: WorkspaceScope) -> Iterator[str]:
+    """The id of every project made in ``workspace``, from its registry (``WS#{ws}#PROJECT_IDS``), across every page:
+    a strongly consistent Query through ``ws_table``, projected to the ids. Every id the workspace ever claimed is
+    there (the claim is written in the registry row's own transaction). For the export, the delete and an erasure. A
+    workspace only: the deployment's projects have no registry (``OutOfScopeError`` for anything but a
+    ``WorkspaceScope``)."""
+    require_scope(workspace, 'only a workspace has a project registry')
+    pages = SimpleNamespace(query=partial(query_partition, workspace, table, 'pk', project_registry_pk(workspace)))
+    return (str(row['sk']) for row in iter_query(pages, {'ProjectionExpression': 'sk', 'ConsistentRead': True}))

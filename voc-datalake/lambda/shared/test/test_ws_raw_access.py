@@ -32,7 +32,8 @@ parsed, and each raw access is counted by its kind:
   scanned code today, and the exemption is only a counting rule: the layer's runtime checks are the boundary;
 * a string that STARTS a data-path partition or object key without the workspace (``'SOURCE#…'``,
   ``f'METRIC#{name}'``, ``'raw/'`` …: ``UNSCOPED_KEY_PREFIXES``): such a key can only name the deployment-wide
-  partition, never one workspace's.
+  partition, never one workspace's. A project id's claim (``PROJECT_ID#{id}``) is one: only the layer spells it, and
+  only the project create calls its writer (``CLAIM_WRITER``).
 
 ``ALLOWED`` names, per module, the phase that moves it (2: the data path, 3: everything else; docs/multi-workspace.md
 "Phases"; 0: it stays raw by design, the control plane and the handle plumbing) and how many of EACH kind it still holds. A module's counts must match exactly: a new raw access fails
@@ -101,7 +102,8 @@ UNSCOPED_INGEST_TABLE: Final = 'ingest_table(None)'
 #: not counted, a spelled-out None is (as ``ingest_table(None)`` is).
 PROJECT_ACCESSORS: Final = frozenset({'iter_project_rows', 'transact_project_writes', 'transact_project_actions',
                                       'put_project_item', 'put_project_item_and_increment',
-                                      'create_counted_project_child', 'get_scoped_item'})
+                                      'create_counted_project_child', 'get_scoped_item',
+                                      'create_workspace_project', 'iter_registered_project_ids'})
 #: The accessors whose scope may also be passed by position, and where.
 PROJECT_ACCESSOR_SCOPE_POSITION: Final = {'get_scoped_item': 2}
 UNSCOPED_PROJECT_ACCESS: Final = 'project accessor(workspace=None)'
@@ -113,9 +115,13 @@ VIEW_BUILDERS: Final = frozenset({'ws_table', 'WorkspaceTable'})
 VIEW_TYPE: Final = 'WorkspaceTable'
 #: Where the builders must be imported from (under their own names) for a view to count as one.
 LAYER_MODULE: Final = 'shared.ws_repo'
-#: Partition and object prefixes of the data path that, at the start of a string, name no workspace.
+#: Partition and object prefixes of the data path that, at the start of a string, name no workspace. ``PROJECT_ID#``
+#: is a project id's deployment-wide claim (since 7.26.00): only the layer spells it (``claim_project_id``,
+#: ``project_claim``).
 UNSCOPED_KEY_PREFIXES: Final = ('SOURCE#', 'METRIC#', 'DATE#', 'CATEGORY#', 'URGENCY#', 'CHANNEL#', 'SOURCE_RUN#',
-                                'raw/', 'silver/', 'PROJECT#', 'TYPE#PROJECT')
+                                'raw/', 'silver/', 'PROJECT#', 'TYPE#PROJECT', 'PROJECT_ID#')
+#: The layer's claim writer (``claim_project_id``) and the one module that may call it: the project create.
+CLAIM_WRITER: Final = ('claim_project_id', frozenset({'lambda/shared/project_writes.py'}))
 #: Modules that answer requests a client sent (the API, the public webhooks): their workspace is never read from
 #: what the client sent.
 REQUEST_FACING: Final = ('lambda/api/', 'plugins/_shared/base_webhook.py')
@@ -599,6 +605,13 @@ def test_a_scope_is_built_only_in_the_layer():
     assert _calls_of('WorkspaceScope') == []
 
 
+def test_the_claim_writer_is_called_by_the_project_create_only():
+    """The claim is the layer's one write outside a workspace (``PROJECT_ID#{id}``), and only a workspace's project
+    create makes it (shared/project_writes.py ``create_workspace_project``)."""
+    name, callers = CLAIM_WRITER
+    assert set(_calls_of(name)) == callers
+
+
 def test_no_request_facing_module_takes_its_scope_from_what_was_sent():
     """A request's workspace is its resolved membership (``scope_of``), never a field, a path or a cursor."""
     assert [module for name in ('scope_from_message', 'scope_from_key', 'scope_from_lookup')
@@ -807,6 +820,10 @@ def test_the_scan_sees_each_kind_of_raw_access(tmp_path):
         "pn = create_counted_project_child(table, 'p1', 'doc', build, workspace=None)\n"
         "pg = get_scoped_item(table, key, None)\n"
         "ph = get_scoped_item(table, key, scope)\n"
+        "pp = create_workspace_project(table, item, workspace=None)\n"
+        "pq = iter_registered_project_ids(table, workspace=None)\n"
+        # A project id's claim, spelled outside the layer.
+        "claim = f'PROJECT_ID#{project_id}'\n"
         # The multi-item calls: raw on a table, a resource or a client, and a bound method kept for later ...
         "r = table.meta.client.transact_write_items(TransactItems=[])\n"
         "s = client.transact_get_items(TransactItems=[])\n"
@@ -831,7 +848,7 @@ def test_the_scan_sees_each_kind_of_raw_access(tmp_path):
         'Table': 1, 'put_object': 1, 'copy_object': 1, 'get_feedback_table': 1, 'get_aggregates_table': 1,
         'SOURCE#': 1, 'METRIC#': 1, 'raw/': 1, 'silver/': 1, 'upload_file': 1, 'upload_fileobj': 1,
         'cached_table': 1, 'generate_presigned_url': 1, 'delete_object': 1, 'DeploymentTable': 2,
-        'ingest_table(None)': 2, 'project accessor(workspace=None)': 7, 'transact': 4, 'batch': 4,
+        'ingest_table(None)': 2, 'project accessor(workspace=None)': 9, 'PROJECT_ID#': 1, 'transact': 4, 'batch': 4,
         # The low-level client itself (7.00.00's rule), beside the multi-item calls made on it.
         'meta.client': 3})
 

@@ -117,11 +117,13 @@ from shared.project_keys import (
     project_type_pk,
 )
 from shared.project_writes import (
+    NEW_ROW_CONDITION,
     PROJECT_DELETION_ATTRIBUTE,
     PROJECT_WRITABLE_ATTRIBUTE_NAMES,
     PROJECT_WRITABLE_ATTRIBUTE_VALUES,
     PROJECT_WRITABLE_CONDITION,
     create_counted_project_child,
+    create_workspace_project,
     is_project_tombstone,
     is_verification_fixture,
     project_meta_key,
@@ -145,6 +147,7 @@ from shared.row_ids import LONG_OPAQUE_ID_RE
 from shared.s3_versions import delete_every_version, delete_every_version_of_keys
 from shared.tables import get_feedback_table, get_jobs_table, get_projects_table
 from shared.timestamps import now_iso
+from shared.ws_repo import PROJECT_CLAIM_INDEX, WorkspaceScope
 
 # The instructions "Copy to Kiro" on a document pastes ahead of that document.
 # ONE definition only: the frontend reads it from the get_project response's
@@ -473,12 +476,20 @@ def _count_project_children(project_id: object) -> tuple[int, int]:
 
 
 @tracer.capture_method
-def create_project(body: dict, caller: Caller) -> dict:
+def create_project(body: dict, caller: Caller, *, workspace: WorkspaceScope | None = None) -> dict:
     """Create a new project owned by ``caller`` (private unless asked otherwise).
 
     An autonomous-agent principal creates it for the run's handoff target
     (``project_access.agent_project_owner_sub``) with its invited editors, and
     the project records which agent created it.
+
+    ``workspace`` (plumbing since 7.26.00: no route passes one): None writes the
+    deployment's ``META`` with the one conditional put it always made; a
+    workspace writes the id's deployment-wide claim, the ``META`` and the
+    registry row in one scoped transaction
+    (shared/project_writes.py ``create_workspace_project``). Either way a
+    refused id (a same-second collision, or a claim already held) is retried
+    once with a fresh one.
     """
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
@@ -499,9 +510,9 @@ def create_project(body: dict, caller: Caller) -> dict:
 
     def put_project(project_id: str) -> dict:
         item = {
-            'pk': project_pk(project_id),
+            'pk': project_pk(project_id, workspace=workspace),
             'sk': 'META',
-            'gsi1pk': project_type_pk(),
+            'gsi1pk': project_type_pk(workspace=workspace),
             'gsi1sk': now,
             'project_id': project_id,
             'name': body.get('name', 'New Project'),
@@ -516,15 +527,21 @@ def create_project(body: dict, caller: Caller) -> dict:
             **sharing,
             'visibility': visibility,
         }
+        if workspace is not None:
+            create_workspace_project(projects_table, item, workspace=workspace)
+            return item
         projects_table.put_item(
             Item=item,
-            ConditionExpression='attribute_not_exists(pk) AND attribute_not_exists(sk)',
+            ConditionExpression=NEW_ROW_CONDITION,
         )
         return item
 
     # Two creates in the same second used to mint the same `proj_<stamp>` and
-    # the second one 500'd on this condition (shared/ids.py).
-    item = write_with_fresh_id('proj', put_project, now=now_dt)
+    # the second one 500'd on this condition (shared/ids.py). In a workspace a
+    # claim already held cancels the one transaction at the claim's index, and
+    # is retried the same way; nothing was written.
+    put_index = None if workspace is None else PROJECT_CLAIM_INDEX
+    item = write_with_fresh_id('proj', put_project, put_index=put_index, now=now_dt)
     return {'success': True, 'project': _with_sharing_fields(item, caller)}
 
 
@@ -1259,9 +1276,7 @@ def _start_project_deletion(
                 'status': 'deleting',
                 PROJECT_DELETION_ATTRIBUTE: now,
             },
-            ConditionExpression=(
-                'attribute_not_exists(pk) AND attribute_not_exists(sk)'
-            ),
+            ConditionExpression=NEW_ROW_CONDITION,
         )
 
     for _attempt in range(PROJECT_DELETE_FENCE_ATTEMPTS):

@@ -10,7 +10,9 @@ Inside a workspace (plumbing since 7.21.00: no route passes one yet) every build
 ``WS#{ws}#PROJECT#{id}#DOCUMENTS`` / ``#PERSONAS`` and the type partition ``WS#{ws}#TYPE#PROJECT``. Without one (None)
 each gives exactly the deployment's key above. ``project_id_of`` reads a stored ``pk`` back for one scope (the
 project's id, or None when it is not one of that scope's project partitions), so a reader never takes another
-scope's partition for one of its projects.
+scope's partition for one of its projects. A workspace also keeps a registry of its project ids (since 7.26.00),
+``WS#{ws}#PROJECT_IDS`` / ``{id}`` (``project_registry_key``); the deployment-wide claim of an id, ``PROJECT_ID#{id}``,
+is the workspace layer's own (shared/ws_repo.py ``claim_project_id``).
 
 Every module builds these through here (but the product-doc extractor, a stdlib-only bundle with no ``shared/``,
 which spells ``PROJECT#{id}`` itself: product_doc_extractor/handler.py); shared/test/test_ws_raw_access.py counts
@@ -27,7 +29,7 @@ if TYPE_CHECKING:
 
 __all__ = ['DOCUMENT_COMMENTS_STORE', 'DOCUMENT_VERSIONS_STORE', 'PROJECT_GATE_STORE', 'PROJECT_PREFIX', 'PROJECT_TYPE_PK',
            'NotPerWorkspaceError', 'document_keys', 'document_listing', 'personas_index_pk', 'project_id_of',
-           'project_pk', 'project_type_pk', 'require_deployment']
+           'project_pk', 'project_registry_key', 'project_registry_pk', 'project_type_pk', 'require_deployment']
 
 #: The start of every project partition of the deployment (a reader that tells a project's partition from another's).
 PROJECT_PREFIX: Final = 'PROJECT#'
@@ -42,6 +44,8 @@ DOCUMENT_COMMENTS_STORE: Final = 'Document comments'
 #: The project access gate (shared/project_access.py, shared/project_gate.py): the deployment's admins and public
 #: visibility decide it, so it refuses a workspace until the switch decides from the workspace's own membership.
 PROJECT_GATE_STORE: Final = 'Project gate'
+#: A workspace's registry of its project ids, one row per project, ``WS#{ws}#PROJECT_IDS`` / ``{id}``.
+_PROJECT_REGISTRY: Final = 'PROJECT_IDS'
 
 
 class NotPerWorkspaceError(RuntimeError):
@@ -70,6 +74,20 @@ def project_pk(project_id: str, *, workspace: WorkspaceScope | None = None) -> s
 def project_type_pk(*, workspace: WorkspaceScope | None = None) -> str:
     """``gsi1-by-type``'s partition of the scope's project rows: ``TYPE#PROJECT``, ``WS#{ws}#TYPE#PROJECT``."""
     return scoped_pk(workspace, PROJECT_TYPE_PK)
+
+
+def project_registry_pk(workspace: WorkspaceScope) -> str:
+    """The workspace's registry of its project ids in voc-projects: ``WS#{ws}#PROJECT_IDS`` (since 7.26.00). A Query
+    of it, knowing only the workspace, names every project made there (the export, the delete, an erasure)."""
+    return workspace.key(_PROJECT_REGISTRY)
+
+
+def project_registry_key(project_id: str, *, workspace: WorkspaceScope) -> dict[str, str]:
+    """A project's row in its workspace's registry: ``WS#{ws}#PROJECT_IDS`` / ``{id}``, written in the same
+    transaction as the project's ``META`` (shared/project_writes.py ``create_workspace_project``)."""
+    if not project_id:
+        raise ValueError('a registry row names a project id')
+    return {'pk': project_registry_pk(workspace), 'sk': project_id}
 
 
 def project_id_of(partition_key: object, *, workspace: WorkspaceScope | None = None) -> str | None:

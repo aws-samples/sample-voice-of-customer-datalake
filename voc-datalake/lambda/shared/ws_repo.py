@@ -28,6 +28,11 @@ only ever reads and writes its own rows and objects. This module is the one plac
 * ``control_query``: one read-only Query page of the workspace's two control-plane partitions in voc-workspaces,
   ``WS#{ws}`` (``META`` and the ``MEMBER#`` rows) and ``AUDIT#WS#{ws}``, which the layer builds itself (they are not
   ``WS#{ws}#…`` keys, so ``ws_table`` refuses them). The export job's reader (phase 4).
+* ``claim_project_id`` / ``project_claim`` / ``release_project_claim``: the deployment-wide claim of a project id
+  made in a workspace, ``PROJECT_ID#{id}`` / ``CLAIM`` in voc-projects (docs/multi-workspace.md, the project plan,
+  3a): a ``ProjectClaim`` the layer builds and puts (only if absent) inside the workspace's own transaction
+  (``WorkspaceTable.transact_write_items``'s ``claim``), its strongly consistent read, and its conditional delete.
+  The only key outside a workspace the layer writes for one; as a caller's own entry, ``ws_table`` refuses it.
 * ``ExportObjects``: the workspace's export objects, ``ws/{ws}/exports/…`` only (``exports_prefix``): the multipart
   upload of an export's zip, its work objects (each tagged ``voc-export=true``, which the raw bucket's lifecycle
   expires and its policy refuses anywhere else) and a presigned download of the zip. Any key outside the prefix is
@@ -56,6 +61,8 @@ The keys (``{ws}`` is ``ws_`` + a ULID, shared/workspace.py ``is_workspace_id``)
     voc-memory      pk WS#{ws}#MEM#company  sk MEM#{memory_id}   gsi1pk WS#{ws}#MEMSTATUS#{scope}#{status}
                     pk WS#{ws}#MEMEVT#{memory_id}, WS#{ws}#MEMCURSOR, WS#{ws}#MEMIMPORT (shared/memory_store.py)
     voc-workspaces  pk WS#{ws} (META, MEMBER#{sub}), pk AUDIT#WS#{ws}: read by ``control_query`` only
+    voc-projects    pk PROJECT_ID#{project id}  sk CLAIM (deployment-wide: ``claim_project_id``, ``project_claim``,
+                    ``release_project_claim``)
     raw bucket      ws/{ws}/raw/{source}/{yyyy}/{mm}/{dd}/{stem}/{sha16}.json, ws/{ws}/silver/..., ws/{ws}/...,
                     ws/{ws}/exports/{export id}/… (``ExportObjects``)
     SSM parameters  {prefix}/{ws}/credentials/{plugin} (prefix /voc/ws, /<deployment prefix>-voc/ws in a prefixed
@@ -63,6 +70,7 @@ The keys (``{ws}`` is ``ws_`` + a ULID, shared/workspace.py ``is_workspace_id``)
 """
 from __future__ import annotations
 
+import os
 import re
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
@@ -71,24 +79,28 @@ from typing import Any, Final, NoReturn, Protocol, Self
 from boto3.dynamodb.conditions import Attr, ConditionBase
 from botocore.exceptions import ClientError
 
-from shared.aws import S3_MISSING_KEY_CODES
+from shared.aws import S3_MISSING_KEY_CODES, is_conditional_check_failure
 from shared.batch_get import BATCH_GET_ATTEMPTS, batch_get_all
 from shared.dynamo_paging import iter_query
+from shared.row_ids import LONG_OPAQUE_ID_RE
 from shared.workspace_ids import is_workspace_id, ws_key
 
 __all__ = [
     'FORM_LOOKUP_PREFIX',
     'PARTITION_ATTRIBUTES',
+    'PROJECT_CLAIM_INDEX',
     'WORKSPACE_FIELD',
     'WORKSPACE_KEY_PREFIX',
     'ExportObjects',
     'ListedObject',
     'OutOfScopeError',
+    'ProjectClaim',
     'WorkspaceObjects',
     'WorkspaceScope',
     'WorkspaceTable',
     'category_pk',
     'channel_pk',
+    'claim_project_id',
     'control_query',
     'conversants_pk',
     'date_pk',
@@ -112,7 +124,10 @@ __all__ = [
     'plugin_config_history_pk',
     'plugin_config_key',
     'plugin_config_pk',
+    'project_claim',
+    'release_project_claim',
     'reprocess_job_pk',
+    'require_scope',
     's3_key',
     's3_prefix',
     'scope_from_key',
@@ -488,6 +503,131 @@ def control_query(scope: WorkspaceScope, table: Any, which: str, *, sort_conditi
     if start is not None and (not isinstance(start, Mapping) or start.get('pk') != partition):
         raise OutOfScopeError('a cursor outside the workspace')
     return table.query(**partition_query('pk', partition, sort_condition, kwargs))
+
+
+def require_scope(workspace: object, refusal: str) -> None:
+    """``OutOfScopeError(refusal)`` unless ``workspace`` is a ``WorkspaceScope``: a store typed for a workspace only
+    refuses the deployment (None), a bare id or anything else at run time too."""
+    if not isinstance(workspace, WorkspaceScope):
+        raise OutOfScopeError(refusal)
+
+
+#: The deployment-wide claim of a project id (voc-projects): ``PROJECT_ID#{id}`` / ``CLAIM``, naming the workspace
+#: the project was made in (``WORKSPACE_FIELD``) and when (``claimed_at``). Outside every workspace by design: a
+#: public link, the product-doc extractor or an MCP pin that knows only the id finds its workspace here, and no two
+#: workspaces hold one id (docs/multi-workspace.md, the project plan, 3a). It is written only inside the scoped
+#: transaction that writes the project's ``META`` and registry row (``WorkspaceTable.transact_write_items``'s
+#: ``claim``), so it never exists without them. The deployment's creates never put one: a reader that knows only an
+#: id looks up the deployment's ``PROJECT#{id}`` row as well as the claim, and refuses when both exist (3h).
+PROJECT_CLAIM_PREFIX: Final = 'PROJECT_ID#'
+PROJECT_CLAIM_SORT_KEY: Final = 'CLAIM'
+#: Where the claim's Put sits in its transaction: a held claim is the cancellation reason at this index
+#: (shared/ids.py ``write_with_fresh_id(put_index=...)``).
+PROJECT_CLAIM_INDEX: Final = 0
+#: The environment variable naming voc-projects (shared/tables.py ``get_projects_table``): the one table a claim is
+#: written in.
+PROJECTS_TABLE_ENV: Final = 'PROJECTS_TABLE'
+_CLAIMED_AT: Final = 'claimed_at'
+_CLAIM_TOKEN: Final = object()
+_NOT_THE_DEPLOYMENT: Final = 'a project claim names a workspace, never the deployment'
+_NOT_A_CLAIM: Final = "a transaction's claim is a project claim of its own workspace"
+
+
+def _project_claim_key(project_id: object) -> dict[str, str]:
+    """``{pk, sk}`` of a project id's claim. The id must have the project id shape (``LONG_OPAQUE_ID_RE``: letters,
+    digits, ``_`` and ``-``, no ``#``), so the key is a claim's and no other row's (``OutOfScopeError`` otherwise)."""
+    if not isinstance(project_id, str) or not LONG_OPAQUE_ID_RE.fullmatch(project_id):
+        raise OutOfScopeError('a project claim names a project id')
+    return {'pk': f'{PROJECT_CLAIM_PREFIX}{project_id}', 'sk': PROJECT_CLAIM_SORT_KEY}
+
+
+class ProjectClaim:
+    """A project id's claim for one workspace, built only by ``claim_project_id``: the one entry outside the
+    workspace a ``WorkspaceTable.transact_write_items`` takes (its ``claim``). It holds the id, the workspace and the
+    time only, never a key or an item: the transaction builds the Put itself (``WorkspaceTable._claim_entry``). Fixed
+    once built, and never subclassed."""
+
+    __slots__ = ('_claimed_at', '_project_id', '_scope')
+    _claimed_at: str
+    _project_id: str
+    _scope: WorkspaceScope
+
+    def __init_subclass__(cls) -> NoReturn:
+        raise TypeError('a ProjectClaim cannot be subclassed')
+
+    def __init__(self, token: object, scope: WorkspaceScope, project_id: str, claimed_at: str) -> None:
+        if token is not _CLAIM_TOKEN:
+            raise TypeError('a project claim is built by claim_project_id only')
+        for name, value in (('_scope', scope), ('_project_id', project_id), ('_claimed_at', claimed_at)):
+            object.__setattr__(self, name, value)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        raise AttributeError('a ProjectClaim cannot be changed')
+
+    def __delattr__(self, name: str) -> None:
+        raise AttributeError('a ProjectClaim cannot be changed')
+
+    @property
+    def scope(self) -> WorkspaceScope:
+        """The workspace the id is claimed for."""
+        return self._scope
+
+    @property
+    def project_id(self) -> str:
+        """The id claimed."""
+        return self._project_id
+
+    @property
+    def claimed_at(self) -> str:
+        """When it was claimed (the project's ``created_at``)."""
+        return self._claimed_at
+
+
+def claim_project_id(project_id: str, *, workspace: WorkspaceScope, claimed_at: str) -> ProjectClaim:
+    """The claim of ``project_id`` for ``workspace``, to write in that workspace's transaction (``claim=``).
+
+    Only a real workspace claims: the deployment (None), or anything but a ``WorkspaceScope``, is refused
+    (``OutOfScopeError``), as is an id not of the project id shape; nothing is sent here.
+    """
+    require_scope(workspace, _NOT_THE_DEPLOYMENT)
+    if not claimed_at:
+        raise ValueError('a project claim says when it was made')
+    _project_claim_key(project_id)
+    return ProjectClaim(_CLAIM_TOKEN, workspace, project_id, claimed_at)
+
+
+def project_claim(table: Any, project_id: str) -> WorkspaceScope | None:
+    """The workspace ``project_id`` is claimed for, or None when no claim exists (a deployment project, or no
+    project). A strongly consistent GetItem of the claim, projected to its workspace only. A claim that names no
+    workspace id raises ValueError: it is never read as the deployment's.
+
+    A caller uses the answer only to route: it then applies that workspace's own access check (its membership) to
+    the caller before it reads or answers anything, and never echoes the workspace id it found.
+    """
+    response = table.get_item(Key=_project_claim_key(project_id), ConsistentRead=True,
+                              ProjectionExpression='#ws', ExpressionAttributeNames={'#ws': WORKSPACE_FIELD})
+    item = response.get('Item')
+    if item is None:
+        return None
+    workspace_id = item.get(WORKSPACE_FIELD)
+    if not is_workspace_id(workspace_id):
+        raise ValueError('a project claim names no workspace')
+    return WorkspaceScope(str(workspace_id))
+
+
+def release_project_claim(table: Any, project_id: str, *, workspace: WorkspaceScope) -> bool:
+    """Delete ``project_id``'s claim, only while it names ``workspace`` (the workspace's delete, 3g). False when there
+    is no such claim (none, or another workspace's): nothing is deleted then."""
+    require_scope(workspace, _NOT_THE_DEPLOYMENT)
+    try:
+        table.delete_item(Key=_project_claim_key(project_id), ConditionExpression='#ws = :ws',
+                          ExpressionAttributeNames={'#ws': WORKSPACE_FIELD},
+                          ExpressionAttributeValues={':ws': workspace.ws})
+    except ClientError as error:
+        if is_conditional_check_failure(error):
+            return False
+        raise
+    return True
 
 
 #: The folder of a workspace's exports (``ws/{ws}/exports/``) and the tag every object there carries: the raw
@@ -903,7 +1043,8 @@ class WorkspaceTable:
             raise OutOfScopeError('a scanned row outside the workspace')
         return response
 
-    def transact_write_items(self, items: Sequence[Mapping[str, Any]], **kwargs: Any) -> dict:
+    def transact_write_items(self, items: Sequence[Mapping[str, Any]], *, claim: ProjectClaim | None = None,
+                             **kwargs: Any) -> dict:
         """One ``TransactWriteItems`` on this table: 1 to 100 entries, each ``{'Put': {'Item': …}}``,
         ``{'Update': {'Key': …, 'UpdateExpression': …}}``, ``{'Delete': {'Key': …}}`` or
         ``{'ConditionCheck': {'Key': …, 'ConditionExpression': …}}`` (plain Python values, no ``TableName``).
@@ -912,15 +1053,40 @@ class WorkspaceTable:
         ``check_update`` does; one entry outside the scope refuses the whole transaction before it is sent, so
         nothing of it is written. Only ``ClientRequestToken``, ``ReturnConsumedCapacity`` and
         ``ReturnItemCollectionMetrics`` are passed on.
+
+        ``claim``: a project id's claim for this same workspace (``claim_project_id``), the one entry outside the
+        workspace a transaction takes, put first (``PROJECT_CLAIM_INDEX``, counted in the 100), so the claim is
+        written with the project's rows or not at all. A claim for another workspace, or anything but a
+        ``ProjectClaim``, is refused; a caller's own entry outside the workspace stays refused.
         """
         options = _checked_options('TransactWriteItems', kwargs, _TRANSACT_WRITE_OPTIONS)
         entries = list(items)
-        if not 1 <= len(entries) <= MAX_TRANSACT_ITEMS:
-            raise ValueError(f'a TransactWriteItems takes 1 to {MAX_TRANSACT_ITEMS} entries, not {len(entries)}')
+        claimed = [] if claim is None else [self._claim_entry(claim)]
+        if not 1 <= len(entries) + len(claimed) <= MAX_TRANSACT_ITEMS:
+            raise ValueError(f'a TransactWriteItems takes 1 to {MAX_TRANSACT_ITEMS} entries, '
+                             f'not {len(entries) + len(claimed)}')
         checked = [self._checked_write(entry) for entry in entries]
         self._refuse_duplicates('TransactWriteItems',
                                 [body.get('Key') or body['Item'] for entry in checked for body in entry.values()])
-        return self._unscoped_table.meta.client.transact_write_items(TransactItems=checked, **options)
+        return self._unscoped_table.meta.client.transact_write_items(TransactItems=[*claimed, *checked], **options)
+
+    def _claim_entry(self, claim: object) -> dict[str, Any]:
+        """The claim's Put, built here from the claim's id and time and this view's own workspace and table: only a
+        ``ProjectClaim`` itself (``type`` checked, not ``isinstance``), complete, of this workspace, of a well-formed
+        id, on voc-projects (``PROJECTS_TABLE_ENV``); ``OutOfScopeError`` otherwise, before anything is sent."""
+        if type(claim) is not ProjectClaim:
+            raise OutOfScopeError(_NOT_A_CLAIM)
+        try:
+            scope, project_id, claimed_at = claim.scope, claim.project_id, claim.claimed_at
+        except AttributeError as error:  # an instance made without its constructor (``object.__new__``)
+            raise OutOfScopeError(_NOT_A_CLAIM) from error
+        if scope != self.scope or not claimed_at:
+            raise OutOfScopeError(_NOT_A_CLAIM)
+        table_name = self._unscoped_table.name
+        if not table_name or table_name != os.environ.get(PROJECTS_TABLE_ENV):
+            raise OutOfScopeError('a project claim is written in the projects table only')
+        item = {**_project_claim_key(project_id), WORKSPACE_FIELD: self.scope.ws, _CLAIMED_AT: claimed_at}
+        return {'Put': {'TableName': table_name, 'Item': item, 'ConditionExpression': 'attribute_not_exists(pk)'}}
 
     def batch_get_item(self, keys: Iterable[Mapping[str, Any]], **kwargs: Any) -> list[dict]:
         """Every item found for ``keys`` (all in the scope, none twice), in any order; a missing key is simply absent.

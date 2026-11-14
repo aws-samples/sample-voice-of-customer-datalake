@@ -42,15 +42,20 @@ ALLOWED_UNUSED_EXPORTS: dict[str, frozenset[str]] = {
     # data path moves onto it; each slice that imports a name removes it here (the ingestion slice took the
     # scope from a message, the watermark, run and object keys and the table view; the processor's slice the
     # feedback item's keys and index partitions, through shared/feedback_partitions.py; the ingestors and the
-    # processor read a message's scope through message_scope, which wraps scope_from_message).
+    # processor read a message's scope through message_scope, which wraps scope_from_message). project_claim: phase
+    # 3's claim reader (7.26.00), for the public links (3e) and the MCP pins (3h);
+    # release_project_claim: the claim's delete, for the workspace delete (3g).
     'lambda/shared/ws_repo': frozenset({
-        'OutOfScopeError', 'PARTITION_ATTRIBUTES', 'metric_pk', 'metric_type', 'scope_from_key', 'scope_from_message',
-        'scope_of',
+        'OutOfScopeError', 'PARTITION_ATTRIBUTES', 'metric_pk', 'metric_type', 'project_claim',
+        'release_project_claim', 'scope_from_key', 'scope_from_message', 'scope_of',
     }),
     # The error the stores not per workspace yet raise through `require_deployment` (docs/multi-workspace.md, the
     # project plan): what a caller would catch, raised by name nowhere else; each slice that threads a store keeps it
     # until the last refusal goes.
     'lambda/shared/project_keys': frozenset({'NotPerWorkspaceError'}),
+    # Phase 3's registry of a workspace's project ids (7.26.00, docs/multi-workspace.md, the project plan 3a), landed
+    # before its readers, the workspace export, delete and erasure (3g), which remove it here.
+    'lambda/shared/project_tables': frozenset({'iter_registered_project_ids'}),
 }
 
 
