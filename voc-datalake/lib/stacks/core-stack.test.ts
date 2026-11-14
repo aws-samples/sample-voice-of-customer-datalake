@@ -1467,7 +1467,9 @@ describe('the company logo read policy', () => {
     }).parse(policies[0]).Properties.PolicyDocument;
     expect(statements).toHaveLength(1);
     expect(statements[0]?.Action).toBe('s3:GetObject');
-    expect(JSON.stringify(statements[0]?.Resource)).toContain('/company-context/design/logo_????????????.*');
+    // Review (7.00.00): `logo_????????????.*` let `*` cross `/`; one exact resource per stored extension instead.
+    expect(statements[0]?.Resource).toStrictEqual(['jpg', 'png', 'webp'].map((extension) => ({ 'Fn::Join': ['', [
+      expect.anything(), `/company-context/design/logo_????????????.${extension}`] ] })));
   });
 });
 

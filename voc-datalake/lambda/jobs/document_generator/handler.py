@@ -59,6 +59,7 @@ from shared.company_logo import (
     has_company_logo,
     has_logo_placeholder,
     inline_logo,
+    logo_record,
     with_logo_placeholder,
 )
 from shared.converse import converse_chain
@@ -502,8 +503,9 @@ class BuildLogo(NamedTuple):
     """The company logo for one prototype build."""
     #: The logo as a ``data:`` URL, or None (opted out, none uploaded, too large, unreadable).
     data_url: str | None = None
-    #: The derivation's ``company_logo_included``: True inlined, False uploaded but left out, None not recorded.
-    included: bool | None = None
+    #: Whether a logo is uploaded and the design system was read (``company_logo.logo_record`` then records
+    #: whether any use was inlined).
+    uploaded: bool = False
 
 
 def _company_logo(with_design_system: bool) -> BuildLogo:
@@ -523,7 +525,7 @@ def _company_logo(with_design_system: bool) -> BuildLogo:
     if not has_company_logo(row):
         return BuildLogo()
     data_url = company_logo_data_url(row, _s3(), SCRATCH_BUCKET)
-    return BuildLogo(data_url, data_url is not None)
+    return BuildLogo(data_url, True)
 
 
 def _design_system_record(requested: bool, section: str) -> bool | None:
@@ -1483,6 +1485,8 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     design_system_section, company_context_section = _prototype_org_sections(
         grounding, with_design_system=with_design_system)
     # The model writes a placeholder for the uploaded logo; the image is inlined after generation.
+    # Recorded from the design system itself, before the logo instruction (a logo alone is not a design system).
+    design_system_included = _design_system_record(with_design_system, design_system_section)
     logo = _company_logo(with_design_system)
     logo_url = logo.data_url
     if logo_url:
@@ -1520,7 +1524,7 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     html = _extract_html(raw)
     if not html:
         raise RuntimeError('Prototype model did not return an HTML document.')
-    html = inline_logo(html, logo_url, brand or project_name)
+    html, logo_uses = inline_logo(html, logo_url, brand or project_name)
     html = _with_pin_widget(project_id, doc_id, title, html)
 
     ctx.update_progress(80, 'saving_prototype')
@@ -1593,8 +1597,8 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
             # True when the design system reached the prompt, False when the build
             # was told not to read it (a revision inherits that choice), omitted
             # when it was asked for but none is configured.
-            design_system_included=_design_system_record(with_design_system, design_system_section),
-            company_logo_included=logo.included,
+            design_system_included=design_system_included,
+            company_logo_included=logo_record(logo.uploaded, logo_uses),
             **derivation_knowledge(grounding),
         ),
         'created_at': now,

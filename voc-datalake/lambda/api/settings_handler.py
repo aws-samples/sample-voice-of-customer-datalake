@@ -1213,7 +1213,7 @@ def _design_names_hidden(reference: dict, hidden: HiddenNames) -> bool:
 
 
 # ── Company logo ─────────────────────────────────────────────────────────────
-# An uploaded logo lives at company-context/design/logo-*.{png,jpg,webp}; the
+# An uploaded logo lives at company-context/design/logo_<12 hex>.{png,jpg,webp}; the
 # bucket and that prefix are private, so it is served as a short-lived presigned
 # GET minted on every read. A new upload is recorded as PENDING and replaces the
 # current logo only once the object exists, so an abandoned or failed upload
@@ -1280,7 +1280,7 @@ def _signed_logo_url(key: str) -> str:
 def create_logo_upload_route():
     """Start a logo upload (admin): ``{content_type, size_bytes}`` → 201 ``{upload}``.
 
-    PNG, JPEG or WebP up to 5 MB (no SVG — it can carry script). The presigned
+    PNG, JPEG or WebP up to 1 MB (``design_logo.COMPANY_LOGO_MAX_BYTES``; no SVG — it can carry script). The presigned
     PUT is signed with the declared type and size, so S3 enforces both.
     """
     require_admin(app.current_event.raw_event)
@@ -1569,12 +1569,12 @@ def use_reference_logo_route(ref_id: str):
     """Put a reference's logo candidate into the draft (admin) → 200 ``{logo_id, logo_url}``; NOTHING is saved.
 
     The candidate is downloaded server-side through the SSRF guard (``shared.design_logo``:
-    https, every hop re-validated, ≤ 2 MB, PNG/JPEG/WebP by its bytes) and stored as an object
-    under ``company-context/design/logo_*``. The design-system row is untouched: the editor shows
+    https, every hop re-validated, ≤ 2 MB, PNG/JPEG/WebP by its bytes; refused over the 1 MB company-logo
+    cap) and stored as an object ``company-context/design/logo_<12 hex>.<ext>``. The design-system row is untouched: the editor shows
     ``logo_url`` (a signed GET) and the admin's ``PUT /settings/design-system`` with ``logo_id``
     makes it the company logo; a discarded draft leaves the object unused (kept, like uploads).
     A RENDERED candidate (an SVG logo the capture worker drew as a PNG) is not downloaded: its stored
-    preview PNG is copied (checked again by its bytes, ≤ 2 MB); 409 when that preview is gone.
+    preview PNG is copied (checked again by its bytes; over the 1 MB cap it is refused too); 409 when it is gone.
     """
     require_admin(app.current_event.raw_event)
     if not RAW_DATA_BUCKET:
@@ -1625,7 +1625,8 @@ def _process_reference_event(event: dict) -> dict:
 
 
 def _start_logo_render(event: dict) -> bool:
-    """Hand a GitHub reference's sanitised SVG logo to ``voc-design-capture`` (async) → whether it started.
+    """Hand a GitHub reference's sanitised SVG logo, or its raster logo over 1 MB, to ``voc-design-capture``
+    (async) → whether it started.
 
     The settings role already may invoke that function (website references); a failure is logged by type
     and the reference gets the "upload a PNG export" note instead (``design_references``).
@@ -1633,7 +1634,7 @@ def _start_logo_render(event: dict) -> bool:
     try:
         invoke_lambda_async(DESIGN_CAPTURE_FUNCTION, event)
     except Exception as e:  # noqa: BLE001 - the reference stays usable; the caller records the note
-        logger.warning(f'Could not start the SVG logo render: {type(e).__name__}')
+        logger.warning(f'Could not start the logo render: {type(e).__name__}')
         return False
     return True
 

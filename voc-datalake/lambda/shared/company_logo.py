@@ -19,7 +19,7 @@ from __future__ import annotations
 import base64
 import html
 import re
-from typing import Any
+from typing import Any, NamedTuple
 
 from botocore.exceptions import BotoCoreError, ClientError
 
@@ -39,8 +39,9 @@ _UPLOADED_LOGO_KEY_RE = re.compile(re.escape(LOGO_KEY_PREFIX) + r'[0-9a-f]{12}\.
 #: The largest logo inlined into a prototype: the company-logo cap every write path enforces (an object written
 #: before that cap, up to 5 MB, is left out and logged; a prototype carrying that much base64 would be slow to open).
 MAX_INLINE_LOGO_BYTES = COMPANY_LOGO_MAX_BYTES
-#: How many placeholders get the image: each use carries the whole base64 again, so a model that writes it more
-#: often than asked cannot make the prototype many MB (the rest become the wordmark as text).
+#: How many placeholder ``<img>`` tags get the image: each use carries the whole base64 again, so a model that
+#: writes it more often than asked cannot make the prototype many MB (the rest become the wordmark as text). A
+#: placeholder anywhere else (a comment, a CSS ``url()``, a script) never takes a use.
 MAX_LOGO_USES = 2
 #: What the prompt tells the model to write as the logo's ``src``.
 LOGO_PLACEHOLDER = '__COMPANY_LOGO__'
@@ -50,8 +51,11 @@ BLANK_IMAGE = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAA
 #: revision turns back exactly the logo and never another inline image the model drew.
 LOGO_MARKER = 'voc=company-logo'
 _MARKED_LOGO_RE = re.compile(r'data:image/(?:png|jpeg|webp);' + re.escape(LOGO_MARKER) + r';base64,[A-Za-z0-9+/]*={0,2}')
-#: An ``<img>`` whose source is the placeholder: replaced by a text wordmark when there is no logo.
-_PLACEHOLDER_IMG_RE = re.compile(r'<img\b[^>]*' + re.escape(LOGO_PLACEHOLDER) + r'[^>]*>', re.IGNORECASE)
+#: The placeholder in any case (the prompt spells it in capitals; a model may not).
+_PLACEHOLDER_RE = re.compile(re.escape(LOGO_PLACEHOLDER), re.IGNORECASE)
+#: An ``<img>`` tag naming the placeholder. Bounded (an attribute run of at most 2,000 characters on each side) so a
+#: long run of ``<img`` without ``>`` cannot make the match quadratic.
+_PLACEHOLDER_IMG_RE = re.compile(r'<img\b[^>]{0,2000}?' + re.escape(LOGO_PLACEHOLDER) + r'[^>]{0,2000}>', re.IGNORECASE)
 
 LOGO_INSTRUCTION = (
     f'COMPANY LOGO: the company has its own logo. Wherever the prototype shows the company logo or '
@@ -120,17 +124,42 @@ def company_logo_data_url(row: dict | None, s3: Any, bucket: str) -> str | None:
     return None
 
 
-def inline_logo(document: str, data_url: str | None, wordmark: str) -> str:
-    """``document`` with the first ``MAX_LOGO_USES`` placeholders replaced by the logo.
+class InlinedLogo(NamedTuple):
+    """``inline_logo``'s answer: the document, and how many ``<img>`` uses carry the logo."""
+    document: str
+    uses: int
 
-    Any further placeholder, and every one without a logo (none uploaded, unreadable, or the build left the
-    design system out): a placeholder ``<img>`` becomes ``wordmark`` as bold text, so the prototype never shows
-    an empty logo, and any other placeholder (a CSS ``url()``) a transparent image.
+
+def inline_logo(document: str, data_url: str | None, wordmark: str) -> InlinedLogo:
+    """``document`` with the first ``MAX_LOGO_USES`` placeholder ``<img>`` tags showing the logo.
+
+    Only an ``<img>`` tag naming the placeholder (in any case) counts as a use. Any further one, and every one
+    without a logo (none uploaded, unreadable, or the build left the design system out), becomes ``wordmark`` as
+    bold text with no attributes and no quotes (``<b>…</b>``, escaped), so the prototype never shows an empty logo
+    and a placeholder inside a quoted JS string stays valid script. A placeholder anywhere else (a comment, a CSS
+    ``url()``, a script) becomes a transparent image and never takes a use.
     """
-    if data_url:
-        document = document.replace(LOGO_PLACEHOLDER, data_url, MAX_LOGO_USES)
-    text = f'<span class="company-wordmark" style="font-weight:700">{html.escape(wordmark)}</span>'
-    return _PLACEHOLDER_IMG_RE.sub(text, document).replace(LOGO_PLACEHOLDER, BLANK_IMAGE)
+    uses = 0
+    text = f'<b>{html.escape(wordmark)}</b>'
+
+    image = data_url or ''
+
+    def swap(match: re.Match[str]) -> str:
+        nonlocal uses
+        if not image or uses >= MAX_LOGO_USES:
+            return text
+        uses += 1
+        return _PLACEHOLDER_RE.sub(lambda _m: image, match.group(0))
+
+    document = _PLACEHOLDER_IMG_RE.sub(swap, document)
+    return InlinedLogo(_PLACEHOLDER_RE.sub(BLANK_IMAGE, document), uses)
+
+
+def logo_record(uploaded: bool, uses: int) -> bool | None:
+    """The derivation's ``company_logo_included``: True when at least one use was inlined, False when a logo is
+    uploaded but none was (left out: over the cap or unreadable, or the model placed none), None when none is
+    uploaded or the design system was not read (``uploaded`` False)."""
+    return uses > 0 if uploaded else None
 
 
 def with_logo_placeholder(document: str) -> str:
@@ -144,4 +173,4 @@ def has_company_logo(row: dict | None) -> bool:
 
 
 def has_logo_placeholder(document: str) -> bool:
-    return LOGO_PLACEHOLDER in document
+    return _PLACEHOLDER_RE.search(document) is not None

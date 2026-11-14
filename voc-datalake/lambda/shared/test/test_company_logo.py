@@ -134,30 +134,29 @@ class TestPlaceholder:
     def test_inline_replaces_every_placeholder(self):
         html = f'<img src="{LOGO_PLACEHOLDER}"><footer><img src="{LOGO_PLACEHOLDER}"></footer>'
         assert inline_logo(html, 'data:image/png;base64,AAAA', 'Example Air') == (
-            '<img src="data:image/png;base64,AAAA"><footer><img src="data:image/png;base64,AAAA"></footer>')
+            '<img src="data:image/png;base64,AAAA"><footer><img src="data:image/png;base64,AAAA"></footer>', 2)
 
     def test_without_a_logo_a_placeholder_img_becomes_the_wordmark_as_text(self):
         html = f'<header><IMG class="logo" src="{LOGO_PLACEHOLDER}" alt="Company logo"></header>'
-        assert inline_logo(html, None, 'Example <Air>') == (
-            '<header><span class="company-wordmark" style="font-weight:700">Example &lt;Air&gt;</span></header>')
+        assert inline_logo(html, None, 'Example <Air>') == ('<header><b>Example &lt;Air&gt;</b></header>', 0)
 
     def test_without_a_logo_a_placeholder_outside_an_img_becomes_a_blank_image(self):
         assert inline_logo(f'.hero{{background:url({LOGO_PLACEHOLDER})}}', None, 'Example Air') == (
-            f'.hero{{background:url({BLANK_IMAGE})}}')
+            f'.hero{{background:url({BLANK_IMAGE})}}', 0)
 
     # Review (PR #556): the "at most two places" rule is the model's; the cap is ours.
     def test_only_the_first_two_placeholders_get_the_image_and_the_rest_the_wordmark(self):
         html = ''.join(f'<img src="{LOGO_PLACEHOLDER}">' for _ in range(5))
-        out = inline_logo(html, 'data:image/png;base64,AAAA', 'Example Air')
-        assert out.count('data:image/png;base64,AAAA') == MAX_LOGO_USES == 2
-        assert out.count('class="company-wordmark"') == 3
+        out, uses = inline_logo(html, 'data:image/png;base64,AAAA', 'Example Air')
+        assert out.count('data:image/png;base64,AAAA') == uses == MAX_LOGO_USES == 2
+        assert out.count('<b>Example Air</b>') == 3
         assert LOGO_PLACEHOLDER not in out
 
     def test_html_without_a_placeholder_is_unchanged(self):
-        assert inline_logo('<h1>Demo</h1>', 'data:image/png;base64,AAAA', 'Example Air') == '<h1>Demo</h1>'
+        assert inline_logo('<h1>Demo</h1>', 'data:image/png;base64,AAAA', 'Example Air') == ('<h1>Demo</h1>', 0)
 
     def test_the_marked_logo_goes_back_to_the_placeholder(self):
-        html = inline_logo(f'<header><img src="{LOGO_PLACEHOLDER}" alt="Company logo"></header>', self.LOGO, 'x')
+        html, _ = inline_logo(f'<header><img src="{LOGO_PLACEHOLDER}" alt="Company logo"></header>', self.LOGO, 'x')
         assert with_logo_placeholder(html) == f'<header><img src="{LOGO_PLACEHOLDER}" alt="Company logo"></header>'
 
     # Regression (commit review): every large inline image used to be taken for the logo.

@@ -53,6 +53,19 @@ def test_the_png_check_names_an_oversized_png_with_the_reason_the_retry_keys_on(
     assert png_check.png_problem(b'\x89PNG\r\n\x1a\n' + b'\x00' * (png_check.MAX_LOGO_BYTES + 1)) == png_check.TOO_LARGE_REASON
 
 
+# Review (7.00.00): the give-up line named `over_company_logo_cap` even when the PNG check refused every size.
+@pytest.mark.parametrize(('answers', 'reason'), [
+    pytest.param((logo_render.TOO_LARGE,) * 3, 'png_check_too_large', id='png-check-refused-every-size'),
+    pytest.param((BIG,) * 3, 'over_company_logo_cap', id='over-the-cap-at-every-size'),
+    pytest.param((BIG, BIG, logo_render.TOO_LARGE), 'png_check_too_large', id='the-last-size-decides'),
+])
+def test_the_give_up_line_names_the_last_real_reason(answers, reason):
+    with patch.object(logo_render, 'logger') as log:
+        assert _render(*answers)[0] is None
+    assert log.info.call_args_list[-1].args == ('Oversized logo not rendered',)
+    assert log.info.call_args_list[-1].kwargs == {'extra': {'reason': reason}}
+
+
 def test_a_failed_render_is_not_retried():
     assert _render(None) == (None, [1024])
 

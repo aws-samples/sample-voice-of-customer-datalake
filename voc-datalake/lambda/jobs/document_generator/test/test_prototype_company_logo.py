@@ -29,10 +29,10 @@ def _stored_html(mock_s3) -> str:
 
 
 def _build(mock_dynamodb, mock_converse, sample_job_event, lambda_context, *, logo, html=MODEL_HTML,
-           included=None, **config):
+           uploaded=False, **config):
     wire_projects_table(mock_dynamodb, prd_pages=[{'Items': [PRD_NEW]}], prfaq_pages=[{'Items': []}])
     mock_converse.return_value = html
-    answer = handler.BuildLogo(logo, True) if logo else handler.BuildLogo(None, included)
+    answer = handler.BuildLogo(logo, True) if logo else handler.BuildLogo(None, uploaded)
     with patch.object(handler, '_company_logo', return_value=answer) as company_logo:
         run_prototype_build(sample_job_event, lambda_context, **config)
     return prompt_sent(mock_converse), company_logo
@@ -58,7 +58,7 @@ class TestPrototypeLogo:
         assert 'COMPANY LOGO' not in prompt
         stored = _stored_html(mock_s3)
         assert LOGO_PLACEHOLDER not in stored
-        assert '<span class="company-wordmark" style="font-weight:700">Example Air</span>' in stored
+        assert '<b>Example Air</b>' in stored
 
     def test_a_revision_without_a_logo_asks_for_a_wordmark_instead_of_the_placeholder(
         self, mock_dynamodb, mock_converse, mock_s3, sample_job_event, lambda_context,
@@ -84,12 +84,32 @@ class TestPrototypeLogo:
 
 @pytest.mark.usefixtures('mock_jobs_table', 'mock_s3')
 class TestDerivationRecordsTheLogo:
-    @pytest.mark.parametrize(('logo', 'included', 'recorded'), [(LOGO, True, True), (None, False, False), (None, None, 'absent')])
-    def test_company_logo_included(self, logo, included, recorded, mock_dynamodb, mock_converse,
+    @pytest.mark.parametrize(('logo', 'uploaded', 'html', 'recorded'), [
+        pytest.param(LOGO, True, MODEL_HTML, True, id='inlined'),
+        # Review (7.00.00): the model drew its own wordmark and placed no placeholder; the logo was read, not used.
+        pytest.param(LOGO, True, '<!DOCTYPE html><html><body><svg></svg></body></html>', False, id='never-placed'),
+        pytest.param(LOGO, True, f'<!DOCTYPE html><html><body><!-- {LOGO_PLACEHOLDER} --></body></html>', False,
+                     id='only-in-a-comment'),
+        pytest.param(None, True, MODEL_HTML, False, id='uploaded-but-left-out'),
+        pytest.param(None, False, MODEL_HTML, 'absent', id='none-uploaded'),
+    ])
+    def test_company_logo_included(self, logo, uploaded, html, recorded, mock_dynamodb, mock_converse,
                                    sample_job_event, lambda_context):
-        _build(mock_dynamodb, mock_converse, sample_job_event, lambda_context, logo=logo, included=included)
+        _build(mock_dynamodb, mock_converse, sample_job_event, lambda_context, logo=logo, html=html,
+               uploaded=uploaded)
         derivation = saved_item(mock_dynamodb)[handler.DERIVATION_FIELD]
         assert derivation.get('company_logo_included', 'absent') == recorded
+
+    # Review (7.00.00): the logo instruction was appended before the record was taken, so a design system with an
+    # uploaded logo and nothing else recorded design_system_included: true.
+    def test_a_logo_alone_does_not_record_the_design_system_as_included(
+        self, mock_dynamodb, mock_converse, sample_job_event, lambda_context,
+    ):
+        prompt, _ = _build(mock_dynamodb, mock_converse, sample_job_event, lambda_context, logo=LOGO)
+        assert LOGO_INSTRUCTION in prompt
+        derivation = saved_item(mock_dynamodb)[handler.DERIVATION_FIELD]
+        assert 'design_system_included' not in derivation
+        assert derivation['company_logo_included'] is True
 
 
 class TestCompanyLogoRead:
@@ -125,8 +145,8 @@ class TestCompanyLogoRead:
         assert handler._company_logo(True) == handler.BuildLogo()
 
     @pytest.mark.parametrize(('row', 'data_url', 'expected'), [
-        ({'logo_s3_key': 'company-context/design/logo_aaaaaaaaaaaa.png'}, None, (None, False)),  # uploaded, left out
-        ({}, None, (None, None)),                                                                # none uploaded
+        ({'logo_s3_key': 'company-context/design/logo_aaaaaaaaaaaa.png'}, None, (None, True)),   # uploaded, left out
+        ({}, None, (None, False)),                                                               # none uploaded
     ])
     def test_a_logo_left_out_is_recorded_and_no_logo_is_not(self, monkeypatch, row, data_url, expected):
         monkeypatch.setenv('AGGREGATES_TABLE', 'agg')
