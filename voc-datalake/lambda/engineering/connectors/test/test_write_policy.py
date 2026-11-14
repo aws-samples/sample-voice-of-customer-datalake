@@ -65,15 +65,14 @@ def test_allows_ordinary_paths() -> None:
     assert write_policy.path_refusals(['src/app.py', 'docs/ci.md', '.github/CODEOWNERS']) == []
 
 
-def test_check_push_names_every_reason() -> None:
+def test_check_paths_names_the_ci_definition() -> None:
     with pytest.raises(WriteRefused) as caught:
-        write_policy.check_push('main', 'main', RUN, ['.github/workflows/ci.yml'])
-    assert 'default branch' in caught.value.reason
+        write_policy.check_paths(['src/app.py', '.github/workflows/ci.yml'])
     assert '.github/workflows/ci.yml' in caught.value.reason
 
 
-def test_check_push_passes_an_allowed_push() -> None:
-    write_policy.check_push(f'voc-agent/{RUN}/fix-1', 'main', RUN, ['src/app.py'])
+def test_check_paths_passes_ordinary_paths() -> None:
+    write_policy.check_paths(['src/app.py', 'docs/ci.md'])
     assert write_policy.path_refusals(['src/app.py']) == []
 
 

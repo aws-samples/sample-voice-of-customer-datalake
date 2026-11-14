@@ -158,10 +158,10 @@ def text_refusals(text: str, review_texts: Iterable[str], *, prose: bool) -> lis
     return found
 
 
-def check_push(branch: str, default_branch: str, run_id: str, changed_paths: Iterable[str]) -> None:
-    """Raise ``WriteRefused`` unless a push of ``changed_paths`` to ``branch`` by run ``run_id`` is allowed."""
-    refusals = [r for r in [branch_refusal(branch, default_branch, run_id)] if r is not None]
-    refusals += path_refusals(changed_paths)
+def check_paths(changed_paths: Iterable[str]) -> None:
+    """Raise ``WriteRefused`` when a push changes a path an agent may not touch (its branch is ``branch_refusal``'s,
+    judged before anything is read)."""
+    refusals = path_refusals(changed_paths)
     if refusals:
         raise WriteRefused(' '.join(r.message for r in refusals))
 

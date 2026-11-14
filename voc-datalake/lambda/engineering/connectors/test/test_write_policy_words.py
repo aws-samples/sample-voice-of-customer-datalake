@@ -38,11 +38,11 @@ def test_only_leading_slashes_are_dropped_before_a_path_is_matched() -> None:
     assert write_policy.path_refusals(['X.github/workflows/ci.yml', 'XX/.github/workflows/ci.yml']) == []
 
 
-def test_a_push_refused_twice_says_both_reasons_one_after_the_other() -> None:
+def test_a_push_of_two_ci_definitions_says_both_one_after_the_other() -> None:
     with pytest.raises(WriteRefused) as refused:
-        write_policy.check_push('main', 'main', RUN, ['.github/workflows/ci.yml'])
-    assert refused.value.reason == ('An agent never pushes to the default branch. '
-                                    'An agent never changes the CI definitions (.github/workflows/ci.yml).')
+        write_policy.check_paths(['.github/workflows/b.yml', 'src/app.py', '.github/workflows/a.yml'])
+    assert refused.value.reason == ('An agent never changes the CI definitions (.github/workflows/a.yml). '
+                                    'An agent never changes the CI definitions (.github/workflows/b.yml).')
 
 
 def test_a_bundle_with_other_than_one_head_says_how_many_it_carries() -> None:

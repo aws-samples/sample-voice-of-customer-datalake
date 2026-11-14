@@ -20,7 +20,7 @@ from engineering.connectors.write_policy import (
     WriteRefused,
     branch_refusal,
     check_commit_identities,
-    check_push,
+    check_paths,
     check_text,
     path_refusals,
     text_refusals,
@@ -90,13 +90,12 @@ def test_a_ci_definition_is_refused_and_nothing_else_is(paths: list[str]) -> Non
 
 
 @PROPERTY
-@given(run_id=RUN_IDS, rest=BRANCH_RESTS, path=CI_PATHS)
-def test_a_push_is_refused_if_any_part_of_it_is_refused(run_id: str, rest: str, path: str) -> None:
-    """A push is allowed only when its branch and every changed path are allowed: one bad part is enough."""
-    own = f'{AGENT_BRANCH_PREFIX}{run_id}/{rest}'
-    check_push(own, DEFAULT_BRANCH, run_id, ['src/app.py'])
+@given(path=CI_PATHS)
+def test_a_push_is_refused_if_any_of_its_paths_is_refused(path: str) -> None:
+    """A push's paths are allowed only when every one is: one CI definition among them is enough."""
+    check_paths(['src/app.py'])
     with pytest.raises(WriteRefused) as refused:
-        check_push(own, DEFAULT_BRANCH, run_id, ['src/app.py', path])
+        check_paths(['src/app.py', path])
     assert refused.value.reason == f'An agent never changes the CI definitions ({path}).'
 
 

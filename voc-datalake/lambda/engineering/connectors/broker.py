@@ -41,7 +41,7 @@ from engineering.connectors.write_policy import (
     check_commit_identities,
     check_commit_message,
     check_heads,
-    check_push,
+    check_paths,
     check_text,
 )
 from shared.ai_mode import MODE_AI_ASSISTED, MODE_AI_DRIVEN
@@ -168,7 +168,7 @@ class Broker:
             run_id=caller.run_id, agent_id=agent_id(caller), run=run, key=patch, branch=branch, tree_hash=tree_hash,
             message=message))
         check_heads(contents.heads)
-        check_push(branch, run.default_branch, caller.run_id, contents.changed_paths)
+        check_paths(contents.changed_paths)   # (the branch was judged in _open_write, before anything was read)
         for commit in contents.commits:
             check_commit_identities(commit.author, commit.committer, run.bot_addresses)
             check_commit_message(commit.message, run.cited_reviews, run.bot_addresses)
