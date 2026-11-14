@@ -5,7 +5,8 @@ anyone has told them what "VoC" is, so it says who invited them, to which worksp
 and what to do if they did not expect it. It names:
 
 - the company (Administration → Brand, ``SETTINGS#brand`` / ``config`` → ``brand_name`` in the aggregates
-  table), when an admin has set one;
+  table), when an admin has set one, and the colour prototypes use (Company → Design system, the
+  ``primary``/``brand``/``accent`` hex colour token) for the header, the link and the password;
 - otherwise, on a workshop deployment (``-c workshop=true``, set by ``npm run generate:workshop-artifacts``),
   the AWS workshop and its organizer;
 - the inviter, passed by ``api/users_handler.py`` as ``ClientMetadata.invited_by`` (absent when a user is
@@ -35,6 +36,15 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 BRAND_KEY = {'pk': 'SETTINGS#brand', 'sk': 'config'}
+#: The design system (Company → Design system, shared/company_context.py DESIGN_SYSTEM_PK): its colour tokens give
+#: the invitation the same accent colour prototypes are built with.
+DESIGN_SYSTEM_KEY = {'pk': 'SETTINGS#design_system', 'sk': 'config'}
+#: Colour token names, in order of preference, that name the accent; otherwise the first usable colour wins.
+ACCENT_TOKEN_NAMES = ('primary', 'brand', 'accent')
+#: The accent without a design system: the app's own indigo.
+DEFAULT_ACCENT = '#4c51bf'
+#: Only a plain hex colour goes into the email's inline styles (rgb()/hsl()/keywords are skipped, never echoed).
+_HEX_COLOR = re.compile(r'#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})')
 #: Longest brand or inviter name printed; anything longer is cut (an email subject has to stay readable).
 MAX_NAME_CHARS = 80
 _CONTROL_CHARS = re.compile(r'[\x00-\x1f\x7f]')
@@ -63,10 +73,10 @@ class Audience:
     @property
     def workspace(self) -> str:
         if self.brand:
-            return f'the {self.brand} VoC Analytics workspace'
+            return f'the {self.brand} VoC Analytics workspace running on AWS'
         if self.workshop:
-            return 'a VoC Analytics workspace set up for an AWS workshop'
-        return 'a VoC Analytics workspace'
+            return 'a VoC Analytics workspace running on AWS, set up for an AWS workshop'
+        return 'a VoC Analytics workspace running on AWS'
 
     @property
     def subject(self) -> str:
@@ -102,14 +112,53 @@ def _aggregates_table():
     return _table
 
 
+def _read_settings(key: dict, what: str) -> dict:
+    """One settings row from the aggregates table, or {} when it is missing or cannot be read (never raises)."""
+    try:
+        return _aggregates_table().get_item(Key=key).get('Item') or {}
+    except (BotoCoreError, ClientError, KeyError) as error:
+        logger.warning('%s lookup failed, using the default: %s', what, type(error).__name__)
+        return {}
+
+
 def brand_name() -> str:
     """The configured brand name, or '' when none is set or it cannot be read."""
-    try:
-        item = _aggregates_table().get_item(Key=BRAND_KEY).get('Item') or {}
-    except (BotoCoreError, ClientError, KeyError) as error:
-        logger.warning('Brand lookup failed, using the neutral wording: %s', type(error).__name__)
-        return ''
-    return clean_name(item.get('brand_name'))
+    return clean_name(_read_settings(BRAND_KEY, 'Brand').get('brand_name'))
+
+
+def pick_accent(colors: Any) -> str:
+    """The accent among design-system colour tokens: the first hex colour named primary/brand/accent,
+    else the first hex colour, else DEFAULT_ACCENT. Anything but a plain hex value is ignored."""
+    entries = [c for c in colors if isinstance(c, dict)] if isinstance(colors, list) else []
+    usable = [(str(c.get('name', '')).strip().lower(), str(c.get('value', '')).strip()) for c in entries]
+    usable = [(name, value) for name, value in usable if _HEX_COLOR.fullmatch(value)]
+    for wanted in ACCENT_TOKEN_NAMES:
+        for name, value in usable:
+            if name == wanted or name.startswith(f'{wanted}-'):
+                return value.lower()
+    return usable[0][1].lower() if usable else DEFAULT_ACCENT
+
+
+def accent_color() -> str:
+    """The invitation's accent: the design system's (as prototypes use it), or the app's own indigo."""
+    tokens = _read_settings(DESIGN_SYSTEM_KEY, 'Design system').get('tokens')
+    return pick_accent(tokens.get('colors') if isinstance(tokens, dict) else None)
+
+
+def text_on(background: str) -> str:
+    """White or near-black, whichever reads better on a hex ``background`` (WCAG relative luminance)."""
+    hex_digits = background.lstrip('#')
+    if len(hex_digits) == 3:
+        hex_digits = ''.join(ch * 2 for ch in hex_digits)
+
+    def channel(pair: str) -> float:
+        value = int(pair, 16) / 255
+        return value / 12.92 if value <= 0.03928 else ((value + 0.055) / 1.055) ** 2.4
+
+    red, green, blue = (channel(hex_digits[i:i + 2]) for i in (0, 2, 4))
+    luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+    # Contrast against white is (1.05)/(L+0.05), against #111 about (L+0.05)/0.056: pick the larger.
+    return '#ffffff' if 1.05 / (luminance + 0.05) >= (luminance + 0.05) / 0.056 else '#111111'
 
 
 def _workshop() -> bool:
@@ -120,13 +169,13 @@ def _sign_in_url() -> str:
     return os.environ.get('SIGN_IN_URL', '').rstrip('/')
 
 
-def _page(title: str, body: str) -> str:
-    """The shared frame: a solid header with white text, readable in clients that drop gradients."""
+def _page(title: str, body: str, accent: str = DEFAULT_ACCENT) -> str:
+    """The shared frame: a solid header in ``accent`` with readable text (no gradient: some clients drop it)."""
     return f"""<!DOCTYPE html>
 <html>
 <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto;">
-  <div style="background: #4c51bf; padding: 24px 30px;">
-    <h1 style="color: #ffffff; margin: 0; font-size: 22px;">{title}</h1>
+  <div style="background: {accent}; padding: 24px 30px;">
+    <h1 style="color: {text_on(accent)}; margin: 0; font-size: 22px;">{title}</h1>
   </div>
   <div style="padding: 30px; background: #f9f9f9;">
 {body}
@@ -136,8 +185,10 @@ def _page(title: str, body: str) -> str:
 
 
 def invitation_message(*, audience: Audience, inviter: str, given_name: str, sign_in_url: str,
-                       username_parameter: str, code_parameter: str, valid_days: int) -> tuple[str, str]:
-    """(subject, html) for an invitation. ``audience``, ``inviter`` and ``given_name`` are unescaped."""
+                       username_parameter: str, code_parameter: str, valid_days: int,
+                       accent: str = DEFAULT_ACCENT) -> tuple[str, str]:
+    """(subject, html) for an invitation. ``audience``, ``inviter`` and ``given_name`` are unescaped;
+    ``accent`` must already be a validated hex colour (``pick_accent``)."""
     workspace = html.escape(audience.workspace)
     who = f'{html.escape(inviter)} invited you to {workspace}' if inviter else f'You have been invited to {workspace}'
     greeting = f'Hello {html.escape(given_name)},' if given_name else 'Hello,'
@@ -152,16 +203,16 @@ def invitation_message(*, audience: Audience, inviter: str, given_name: str, sig
     <p>{html.escape(PRODUCT_SUMMARY)}</p>{workshop_note}
     <p><strong>To sign in:</strong></p>
     <ol>
-      <li>Open <a href="{url}" style="color: #4c51bf;">{url}</a></li>
+      <li>Open <a href="{url}" style="color: {accent};">{url}</a></li>
       <li>Sign in with this email address and the temporary password below:
-        <div style="font-family: monospace; font-size: 18px; font-weight: bold; color: #4c51bf; margin: 8px 0;">{code_parameter}</div>
+        <div style="font-family: monospace; font-size: 18px; font-weight: bold; color: {accent}; margin: 8px 0;">{code_parameter}</div>
       </li>
       <li>Choose your own password when asked. The temporary one works for {valid_days} days.</li>
     </ol>
     <p>If you were not expecting this invitation, check with {html.escape(audience.contact)} before signing in, or ignore this email. Nobody from VoC Analytics will ask you for your password by email or phone.</p>
     <p style="color: #666; font-size: 12px;">Support reference: {username_parameter}</p>
     <p style="margin-top: 24px;">{html.escape(audience.signature)}</p>"""
-    return audience.subject, _page('Welcome to VoC Analytics', body)
+    return audience.subject, _page('Welcome to VoC Analytics', body, accent)
 
 
 def _forgot_password_message(code_parameter: str, sign_in_url: str) -> tuple[str, str]:
@@ -207,6 +258,7 @@ def handler(event: dict, context: Any) -> dict:
             username_parameter=request.get('usernameParameter') or '{username}',
             code_parameter=code_parameter,
             valid_days=_valid_days(),
+            accent=accent_color(),
         )
     elif source == RESET_SOURCE:
         subject, message = _forgot_password_message(code_parameter, sign_in_url)
