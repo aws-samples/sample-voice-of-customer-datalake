@@ -98,3 +98,10 @@ def test_a_tag_that_would_embed_the_logo_more_often_than_allowed_becomes_the_wor
     out = inline_logo(tag + '<img src="__COMPANY_LOGO__">', 'data:image/png;base64,AAAA', 'Example Air')
     assert out.uses == 1
     assert out.document == '<b>Example Air</b><img src="data:image/png;base64,AAAA">'
+
+
+# Commit review (7.00.02): a backtick or `$` in the name would end or interpolate a template literal holding the tag.
+def test_the_wordmark_is_safe_inside_a_template_literal():
+    out = inline_logo('<script>a.innerHTML = `<img src="__COMPANY_LOGO__">`</script>', None, 'Pay`${x}` <Air>')
+    assert out.document == '<script>a.innerHTML = `<b>Pay&#96;&#36;{x}&#96; &lt;Air&gt;</b>`</script>'
+

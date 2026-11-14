@@ -159,7 +159,7 @@ def svg_preview_key(ref_id: str) -> str:
 
 def store_rendered(source_url: str, png: bytes, ref_id: str, s3: Any, bucket: str,
                    svg: str | None = None) -> dict | None:
-    """Store a browser-rendered logo (an SVG, or a raster over 2 MB drawn smaller: PNG bytes) as the
+    """Store a browser-rendered logo (an SVG, or a raster over 1 MB drawn smaller: PNG bytes) as the
     reference's preview → the logo to record
     ``{source_url, content_type: 'image/png', rendered: True, preview_key, svg_preview_key?}``, or None.
 

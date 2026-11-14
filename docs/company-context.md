@@ -291,8 +291,8 @@ as it does for an SVG logo. Either way the image is downloaded ONCE through the 
 URL in a fresh blank tab, so it never fetches the address itself. The result is a PNG preview marked rendered
 (like a drawn SVG logo) that "Use this logo" copies. Every rendered logo fits the 1 MB cap: a PNG over it at
 1,024 px is drawn again at 768, then 512 px (`lambda/design_capture/logo_render.py`). A logo that cannot be drawn
-keeps its plain preview when it is at most 2 MB, and a GitHub reference gets a note in its guidelines asking for a
-PNG under 1 MB. A logo over 5 MB, one in a private repository, or a reference read before 7.00.02 has no usable
+keeps its plain preview when it is at most 2 MB (shown in the reference, but over 1 MB "Use this logo" refuses it),
+and a GitHub reference gets a note in its guidelines asking for a PNG under 1 MB. A logo over 5 MB, one in a private repository, or a reference read before 7.00.02 has no usable
 preview: "Use this logo" answers a 400 that says what to do (upload it as the company logo, the browser makes it
 smaller, or refresh the reference).
 
