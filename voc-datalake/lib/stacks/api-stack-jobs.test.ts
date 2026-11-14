@@ -280,6 +280,15 @@ describe('prototype object IAM boundaries', () => {
     expect([...actions].filter((action) => action.startsWith('s3:Delete'))).toStrictEqual([]);
     expect(actions).not.toContain('s3:*');
   });
+
+  it('gives the document generator the company logo through VocCoreStack\'s managed policy, not its inline policy', () => {
+    // The inline policy is at its size gate (api-stack-mcp.test.ts), so the logo read is a managed policy.
+    const roles = apiTemplate().findResources('AWS::IAM::Role');
+    const role = Object.entries(roles).find(([logicalId]) => logicalId.startsWith('DocumentGeneratorRole'));
+    expect(JSON.stringify(role?.[1])).toContain('CompanyLogoReadPolicy');
+    const inline = statementsForRole('DocumentGeneratorRole');
+    expect(inline.filter((statement) => JSON.stringify(statement.Resource).includes('company-context'))).toStrictEqual([]);
+  });
 });
 
 

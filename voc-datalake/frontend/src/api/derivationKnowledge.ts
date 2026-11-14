@@ -32,10 +32,13 @@ export interface DerivationKnowledge {
   company_context_included: boolean
   /** Prototypes: true read, false opted out, null not recorded. */
   design_system_included: boolean | null
+  /** Prototypes: true the uploaded company logo was inlined, false it was left out, null not recorded. */
+  company_logo_included: boolean | null
 }
 
 const NO_KNOWLEDGE: DerivationKnowledge = {
   memory_ids: [], web_search_count: 0, company_context_included: false, design_system_included: null,
+  company_logo_included: null,
 }
 
 const KnowledgeSchema = z
@@ -47,6 +50,7 @@ const KnowledgeSchema = z
     web_search_count: z.unknown().optional().transform(toCount),
     company_context_included: z.boolean().catch(false),
     design_system_included: z.boolean().nullable().optional().transform((value) => value ?? null).catch(null),
+    company_logo_included: z.boolean().nullable().optional().transform((value) => value ?? null).catch(null),
   })
   .catch(() => ({ ...NO_KNOWLEDGE }))
 

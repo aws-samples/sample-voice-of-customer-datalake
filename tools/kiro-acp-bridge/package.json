@@ -13,7 +13,7 @@
     "e2e:kiro": "node test/e2e-kiro.mjs"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=24.15.0"
   },
   "dependencies": {
     "ws": "8.22.1",

@@ -700,6 +700,8 @@
     "uploadBadType": "{{name}} hat keinen zulässigen Dateityp.",
     "uploadTooLarge": "{{name}} ist größer als {{mb}} MB.",
     "uploadFailed": "Hochladen fehlgeschlagen. Bitte erneut versuchen.",
+    "logoNotShrunk": "{{name}} konnte nicht unter 1 MB verkleinert werden. Exportieren Sie ein kleineres PNG und laden Sie es hoch.",
+    "logoUnreadable": "{{name}} konnte nicht als Bild gelesen werden. Exportieren Sie es als PNG und laden Sie es hoch.",
     "integrations": "Design-Integrationen",
     "integrationsHint": "Tokens werden verschlüsselt gespeichert und nie wieder angezeigt. Lassen Sie ein Feld leer, um das aktuelle Token zu behalten.",
     "providers": {

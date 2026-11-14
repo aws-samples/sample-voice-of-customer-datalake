@@ -31,8 +31,9 @@ from __future__ import annotations
 import base64
 from typing import Any, Final, Protocol
 
-from png_check import MAX_SIDE_PX, MIN_SIDE_PX, png_problem
+from png_check import MAX_SIDE_PX, MIN_SIDE_PX, TOO_LARGE_REASON, png_problem
 
+from shared.design_logo import COMPANY_LOGO_MAX_BYTES
 from shared.logging import logger
 
 COMMAND_TIMEOUT_SECONDS: Final = 30.0
@@ -42,6 +43,8 @@ DECODE_TIMEOUT_MS: Final = 8_000
 RENDER_CALL_TIMEOUT_SECONDS: Final = DECODE_TIMEOUT_MS / 1000 + 4
 TRANSPARENT: Final = {'r': 0, 'g': 0, 'b': 0, 'a': 0}
 RENDER_LIMITS: Final = {'max': MAX_SIDE_PX, 'min': RENDER_MIN_PX, 'timeout_ms': DECODE_TIMEOUT_MS}
+#: The longest sides tried, largest first, until the PNG fits the company-logo cap.
+RENDER_SIDES_PX: Final = (MAX_SIDE_PX, 768, 512)
 
 RENDER_JS: Final = r"""
 function (url, L) {
@@ -124,13 +127,13 @@ class _RenderTab:
     def call(self, method: str, params: dict, timeout: float = COMMAND_TIMEOUT_SECONDS) -> dict:
         return self._cdp.call(method, params, session_id=self._session, timeout=timeout)
 
-    def render(self, url: str) -> bytes:
+    def render(self, url: str, max_side: int = MAX_SIDE_PX) -> bytes:
         self.call('Emulation.setDeviceMetricsOverride',
-                  {'width': MAX_SIDE_PX, 'height': MAX_SIDE_PX, 'deviceScaleFactor': 1, 'mobile': False})
+                  {'width': max_side, 'height': max_side, 'deviceScaleFactor': 1, 'mobile': False})
         self.call('Emulation.setDefaultBackgroundColorOverride', {'color': TRANSPARENT})
-        return self._photograph(self._draw(url))
+        return self._photograph(self._draw(url, max_side))
 
-    def _draw(self, url: str) -> dict[str, float]:
+    def _draw(self, url: str, max_side: int) -> dict[str, float]:
         """Build the ``<img>`` (the URL a call argument, set as a property), wait for its decode → the clip."""
         document = self.call('Runtime.evaluate', {'expression': 'document', 'returnByValue': False}).get('result')
         object_id = document.get('objectId') if isinstance(document, dict) else None
@@ -138,7 +141,7 @@ class _RenderTab:
             raise RenderRefused('no_document')
         drawn = self.call('Runtime.callFunctionOn', {
             'functionDeclaration': RENDER_JS, 'objectId': object_id,
-            'arguments': [{'value': url}, {'value': RENDER_LIMITS}],
+            'arguments': [{'value': url}, {'value': {**RENDER_LIMITS, 'max': max_side}}],
             'awaitPromise': True, 'returnByValue': True,
         }, timeout=RENDER_CALL_TIMEOUT_SECONDS).get('result')
         return clip_of(drawn.get('value') if isinstance(drawn, dict) else None)
@@ -162,23 +165,52 @@ class _RenderTab:
             logger.info('Logo render tab not closed')
 
 
-def render_svg_logo(cdp: Cdp, url: str) -> bytes | None:
-    """The PNG of the SVG logo at ``url`` as the browser draws it, or None (logged with a short reason).
+def render_svg_logo(cdp: Cdp, url: str, *, what: str = 'SVG logo') -> bytes | None:
+    """The PNG of the image (an SVG logo, or a raster one too large to keep) at ``url`` as the browser draws
+    it, or None (logged as ``what`` with a short reason).
 
+    At most ``COMPANY_LOGO_MAX_BYTES`` (1 MB), so "Use this logo" can always make it the company logo: a PNG
+    over it at 1024 px (or one the PNG check refused as too large, over 2 MB) is drawn again at 768, then
+    512 px (a fresh tab each time, at most three draws) before it is given up.
     Never raises: the logo must never fail the capture.
     """
+    for max_side in RENDER_SIDES_PX:
+        png = _render_once(cdp, url, what, max_side)
+        if png is None:
+            return None
+        if isinstance(png, bytes):
+            if len(png) <= COMPANY_LOGO_MAX_BYTES:
+                return png
+            reason = 'over_company_logo_cap'   # a usable PNG, over the 1 MB company-logo cap
+        else:
+            reason = 'png_check_too_large'     # the PNG check refused it (over 2 MB or 1024 px)
+        logger.info(f'{what} too large; drawn smaller', extra={'max_side': max_side, 'reason': reason})
+    logger.info(f'{what} not rendered', extra={'reason': 'over_company_logo_cap'})
+    return None
+
+
+class _TooLarge:
+    """``_render_once``'s answer for a PNG the check refused as too large: worth drawing again smaller."""
+
+
+TOO_LARGE: Final = _TooLarge()
+
+
+def _render_once(cdp: Cdp, url: str, what: str, max_side: int) -> bytes | _TooLarge | None:
     tab: _RenderTab | None = None
     try:
         tab = _RenderTab(cdp)
-        png = tab.render(url)
+        png = tab.render(url, max_side)
     except RenderRefused as exc:
-        logger.info('SVG logo not rendered', extra={'reason': str(exc)})
+        if str(exc) == TOO_LARGE_REASON:
+            return TOO_LARGE
+        logger.info(f'{what} not rendered', extra={'reason': str(exc)})
         return None
     except Exception as exc:  # noqa: BLE001 - a CDP error, a timeout or a closed socket: no logo, never no capture
-        logger.info('SVG logo not rendered', extra={'reason': f'cdp_{type(exc).__name__}'})
+        logger.info(f'{what} not rendered', extra={'reason': f'cdp_{type(exc).__name__}'})
         return None
     finally:
         if tab is not None:
             tab.close()
-    logger.info('SVG logo rendered', extra={'bytes': len(png)})
+    logger.info(f'{what} rendered', extra={'bytes': len(png)})
     return png

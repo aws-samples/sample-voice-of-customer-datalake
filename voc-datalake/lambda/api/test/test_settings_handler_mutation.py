@@ -518,9 +518,9 @@ class TestStartingAReprocess:
         assert response['statusCode'] == 400
         assert payload['error'] == 'content_type must be one of: image/png, image/jpeg, image/webp'
         response, payload = route('POST', '/settings/design-system/logo', {'content_type': 'image/png',
-                                                                            'size_bytes': 5_000_001})
+                                                                            'size_bytes': 1_000_001})
         assert response['statusCode'] == 400
-        assert payload['error'] == 'size_bytes must be between 1 and 5000000'
+        assert payload['error'] == 'size_bytes must be between 1 and 1000000'
 
 
 # ── Problem resolutions ──────────────────────────────────────────────────────

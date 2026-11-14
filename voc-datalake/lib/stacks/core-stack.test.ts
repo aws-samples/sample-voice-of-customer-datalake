@@ -1457,6 +1457,20 @@ describe('raw bucket scratch copies (DATA-4)', () => {
   });
 });
 
+describe('the company logo read policy', () => {
+  it('grants only s3:GetObject on the uploaded logo objects of the raw bucket', () => {
+    const policies = Object.entries(synthCoreTemplate().findResources('AWS::IAM::ManagedPolicy'))
+      .filter(([id]) => id.startsWith('CompanyLogoReadPolicy')).map(([, resource]) => resource);
+    expect(policies).toHaveLength(1);
+    const { Statement: statements } = z.object({
+      Properties: z.object({ PolicyDocument: z.object({ Statement: z.array(z.object({ Action: z.unknown(), Resource: z.unknown() })) }) }),
+    }).parse(policies[0]).Properties.PolicyDocument;
+    expect(statements).toHaveLength(1);
+    expect(statements[0]?.Action).toBe('s3:GetObject');
+    expect(JSON.stringify(statements[0]?.Resource)).toContain('/company-context/design/logo_????????????.*');
+  });
+});
+
 describe('the SPA security headers (WA SEC11, EDGE-3/4/6)', () => {
   const spaPolicy = () => Object.values(synthCoreTemplate().findResources('AWS::CloudFront::ResponseHeadersPolicy'))
     .map((policy) => recordAt(policy, 'Properties', 'ResponseHeadersPolicyConfig'))

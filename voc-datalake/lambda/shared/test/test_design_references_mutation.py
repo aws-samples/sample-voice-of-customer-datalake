@@ -406,8 +406,8 @@ class TestUploadSpec:
     @pytest.mark.parametrize(('kind', 'content_type', 'ext', 'limit'), [
         ('screenshot', 'image/png', 'png', 5_000_000), ('screenshot', 'image/jpeg', 'jpg', 5_000_000),
         ('screenshot', 'image/webp', 'webp', 5_000_000), ('html', 'text/html', 'html', 2_000_000),
-        ('logo', 'image/png', 'png', 5_000_000), ('logo', 'image/jpeg', 'jpg', 5_000_000),
-        ('logo', 'image/webp', 'webp', 5_000_000),
+        ('logo', 'image/png', 'png', 1_000_000), ('logo', 'image/jpeg', 'jpg', 1_000_000),
+        ('logo', 'image/webp', 'webp', 1_000_000),
     ])
     def test_every_type_and_its_limit(self, kind, content_type, ext, limit):
         assert dr.upload_spec(kind, content_type, 1) == (ext, 1)
