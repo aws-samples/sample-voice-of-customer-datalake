@@ -67,6 +67,12 @@ describe('generate:workshop-artifacts', () => {
       .toStrictEqual([['mcpReservedConcurrency', '0']]);
   });
 
+  it('marks the deployment as a workshop, so an invitation without a brand names the workshop organizer', () => {
+    // lambda/auth/user_messages.py: without a configured brand, a workshop invitation says the account was set
+    // up for an AWS workshop and points to its organizer; any other deployment says "your administrator".
+    expect(synthContext(script).filter(([key]) => key === 'workshop')).toStrictEqual([['workshop', 'true']]);
+  });
+
   it('keeps web search on and the model pin the workshop accounts are granted', () => {
     expect(synthContext(script)).toContainEqual(['enableWebSearch', 'true']);
     expect(synthContext(script)).toContainEqual(['defaultModelId', 'global.anthropic.claude-sonnet-4-6']);

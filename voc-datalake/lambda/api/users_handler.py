@@ -173,6 +173,28 @@ def list_users():
     return {'success': True, 'users': users}
 
 
+#: The longest inviter name sent with an invitation (lambda/auth/user_messages.py MAX_NAME_CHARS cuts it again).
+_MAX_INVITER_CHARS: Final = 80
+
+
+def _invitation_metadata(event: dict) -> dict:
+    """``ClientMetadata`` naming the inviting admin, from their ID-token claims, or ``{}`` without a name.
+
+    The invitation trigger (lambda/auth/user_messages.py) prints it as "<name> invited you to …"; the
+    email address is never sent, so an invitation does not expose the admin's address.
+    """
+    request_context = event.get('requestContext')
+    authorizer = request_context.get('authorizer') if isinstance(request_context, dict) else None
+    claims = authorizer.get('claims') if isinstance(authorizer, dict) else None
+    if not isinstance(claims, dict):
+        return {}
+    parts = (claims.get('given_name'), claims.get('family_name'))
+    full = ' '.join(p.strip() for p in parts if isinstance(p, str) and p.strip())
+    name = claims.get('name') if isinstance(claims.get('name'), str) else ''
+    inviter = (name.strip() or full)[:_MAX_INVITER_CHARS]
+    return {'ClientMetadata': {'invited_by': inviter}} if inviter else {}
+
+
 @app.post('/users')
 @tracer.capture_method
 def create_user():
@@ -213,6 +235,8 @@ def create_user():
             Username=str(uuid.uuid4()),  # Generate unique username (email is set as alias attribute)
             UserAttributes=user_attrs,
             DesiredDeliveryMediums=['EMAIL'],
+            # The invitation names who sent it (lambda/auth/user_messages.py); omitted when the token has no name.
+            **_invitation_metadata(app.current_event.raw_event),
         )
 
         username = response['User']['Username']
