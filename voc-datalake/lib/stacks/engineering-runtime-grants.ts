@@ -29,15 +29,18 @@ export function grantSpendLedger(role: iam.IRole, table: dynamodb.ITable): void 
 
 /** The hard cap's partition in voc-agents (lambda/engineering/settings.py SETTINGS_KEY). */
 export const HARD_CAP_PARTITION = 'SETTINGS#engineering';
+/** The repository connections' partitions in voc-agents (lambda/engineering/connectors/connections.py PARTITION). */
+export const CONNECTIONS_PARTITIONS = 'CONNECTIONS#*';
 /** The Sid of {@link denyHardCapWrites}' statement. */
 export const HARD_CAP_DENY_SID = 'DenyHardCapWrites';
 
 /**
- * An explicit Deny of every write on the hard cap's partition of voc-agents (its `HARD_CAP` row and its `LOG#` history
- * rows), for a role that may write voc-agents elsewhere: the Agents API is the setting's one writer, so no other role
- * can turn the cap on or off or overwrite its history. `ForAnyValue`, as audit-row-guard.ts and engineering-bus.ts
- * denyCostRows: denied when ANY key a request names is that partition. An explicit Deny wins over every Allow, so a
- * later broad grant cannot reopen it.
+ * An explicit Deny of every write on the administrators' engineering partitions of voc-agents, for a role that may
+ * write voc-agents elsewhere: the hard cap's (its `HARD_CAP` row and its `LOG#` history rows) and the repository
+ * connections' (each connection's row and its `LOG#` audit rows, 6.31.00). The Agents API is their one writer, so no
+ * other role can turn the cap on or off, change a connection, or overwrite their history. `ForAnyValue`, as
+ * audit-row-guard.ts and engineering-bus.ts denyCostRows: denied when ANY key a request names is one of those
+ * partitions. An explicit Deny wins over every Allow, so a later broad grant cannot reopen it.
  */
 export function denyHardCapWrites(role: iam.IRole, agentsTable: dynamodb.ITable): void {
   role.addToPrincipalPolicy(new iam.PolicyStatement({
@@ -45,7 +48,7 @@ export function denyHardCapWrites(role: iam.IRole, agentsTable: dynamodb.ITable)
     effect: iam.Effect.DENY,
     actions: ['dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem', 'dynamodb:BatchWriteItem'],
     resources: [agentsTable.tableArn],
-    conditions: { 'ForAnyValue:StringLike': { 'dynamodb:LeadingKeys': [HARD_CAP_PARTITION] } },
+    conditions: { 'ForAnyValue:StringLike': { 'dynamodb:LeadingKeys': [HARD_CAP_PARTITION, CONNECTIONS_PARTITIONS] } },
   }));
 }
 

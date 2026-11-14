@@ -19,7 +19,8 @@
     "label": "エージェントページのセクション",
     "agents": "エージェント",
     "workflows": "ワークフロー",
-    "spend": "費用"
+    "spend": "費用",
+    "connections": "接続"
   },
   "list": {
     "title": "自律エージェント",
@@ -747,6 +748,85 @@
     "loadFailed": "費用を読み込めませんでした。",
     "truncated": "この月の行数は 1 回の読み取りの上限を超えています。表示の数値は下限です。",
     "empty": "{{month}}の費用はありません。"
+  },
+  "connections": {
+    "title": "リポジトリ接続",
+    "intro": "エンジニアリングエージェントは接続を通じてリポジトリにアクセスします。接続はリポジトリ、そのデフォルトブランチ、エージェント用に保存された認証情報からなります。保存された認証情報は、誰にも二度と表示されません。",
+    "add": "接続を追加",
+    "limitReached": "このデプロイで保持できる接続は最大 {{limit, number}} 件です。追加するには、いずれかを削除してください。",
+    "loadFailed": "リポジトリ接続を読み込めませんでした。",
+    "emptyTitle": "リポジトリ接続はまだありません",
+    "emptyHint": "エンジニアリングエージェントがリポジトリで作業できるよう、接続を追加してください。",
+    "branch": "デフォルトブランチ：{{branch}}",
+    "kind": "GitHub App",
+    "appIds": "App {{appId}}、インストール {{installationId}}",
+    "set": "設定済み",
+    "notSet": "未設定",
+    "notSetHint": "保存された認証情報がありません。接続を編集し、認証情報を入力して保存し直してください。",
+    "updated": "{{when}} に {{who}} が更新",
+    "unknownEditor": "不明",
+    "edit": "編集",
+    "editLabel": "{{repository}} を編集",
+    "remove": "削除",
+    "removeLabel": "{{repository}} を削除",
+    "created": "{{repository}} を追加しました。",
+    "saved": "{{repository}} を保存しました。",
+    "removed": "{{repository}} を削除しました。",
+    "guidance": {
+      "title": "認証情報に必要なもの",
+      "app": "GitHub App を作成し、このリポジトリだけにインストールしてください。リポジトリの権限: Contents、Pull requests、Issues を Read and write、Metadata を Read-only に設定します。それ以外は付けないでください（Administration、Workflows、Secrets、Actions、組織の権限は不要です）。",
+      "token": "App そのものがエージェントに渡されることはありません。ブローカーがステップごとに 1 時間有効なトークンを発行し、このリポジトリだけを対象に、そのステップに必要な権限（リポジトリの内容とプルリクエストの読み書き。管理権限は一切なし）だけを持たせます。",
+      "branch": "デフォルトブランチを保護し、エージェントが push できるのを voc-agent/* という名前のブランチだけに制限してください。"
+    },
+    "dialog": {
+      "addTitle": "リポジトリ接続を追加",
+      "editTitle": "{{repository}} への接続を編集",
+      "description": "エンジニアリングエージェントはこの接続を使ってリポジトリを読み取り、変更を提案します。",
+      "stored": "保存済みの認証情報:",
+      "keepHint": "保存済みの認証情報は表示されません。そのまま使うには秘密鍵を空のままにしてください。リポジトリ、App ID、インストール ID を変更する場合は、秘密鍵をもう一度入力する必要があります。",
+      "save": "接続を保存"
+    },
+    "fields": {
+      "connectionId": "接続 ID",
+      "repository": "リポジトリ",
+      "defaultBranch": "デフォルトブランチ",
+      "appId": "App ID",
+      "installationId": "インストール ID",
+      "privateKey": "秘密鍵"
+    },
+    "hints": {
+      "connectionId": "小文字、数字、ハイフンで 63 文字まで。接続を追加した後は変更できません。",
+      "connectionIdFixed": "接続の追加時に決めたもので、変更できません。",
+      "repository": "リポジトリのアドレスと同じ owner/name の形式。",
+      "defaultBranch": "エージェントが作業を始め、変更を提案する先のブランチ。",
+      "appId": "App の数値 ID。",
+      "installationId": "このリポジトリへの App のインストールの数値 ID。",
+      "privateKey": "App の秘密鍵: GitHub が生成した .pem ファイル全体（約 4 KB まで）。送信は 1 回だけで、二度と表示されません。"
+    },
+    "invalid": {
+      "connectionId": "英字か数字で始まる、1〜63 文字の小文字、数字、ハイフンの ID を入力してください。",
+      "repository": "リポジトリを owner/name の形式で入力してください。",
+      "defaultBranch": "ブランチ名を入力してください。英字、数字、「.」「_」「-」「/」のみ、{{max, number}} 文字以内で、「..」を含まず、voc-agent/ のブランチ以外にしてください。",
+      "appId": "App ID を数字だけで入力してください。",
+      "installationId": "インストール ID を数字だけで入力してください。",
+      "privateKeyEmpty": "App の秘密鍵を貼り付けてください。新しい接続には認証情報が必要です。",
+      "privateKeyNeeded": "App の秘密鍵をもう一度貼り付けてください。新しいリポジトリ、App ID、インストール ID は秘密鍵と一緒に保存されます。",
+      "privateKey": "暗号化されていない RSA 鍵の PEM ブロック全体を、BEGIN 行から END 行まで貼り付けてください。",
+      "privateKeyLarge": "鍵が認証情報に収まるサイズ（約 4 KB）を超えています。App 自身の秘密鍵を使ってください。"
+    },
+    "confirm": {
+      "title": "{{repository}} を削除しますか？",
+      "message": "接続と保存された認証情報が削除されます。{{repository}} で作業中の実行は5 分以内にアクセスを失い、接続が再び保存されるまで読み取りも書き込みも失敗します。",
+      "confirm": "接続を削除"
+    },
+    "errors": {
+      "invalid": "入力が拒否されました。各項目を確認して、もう一度保存してください。",
+      "forbidden": "接続を変更できるのは管理者だけです。",
+      "notFound": "接続が見つからないか、エンジニアリングエージェントがオフになっています。",
+      "conflict": "今はこの接続を変更できません。先に実行中の実行を停止するか、ほかの接続を削除してください。",
+      "unavailable": "現在、接続を利用できません。しばらくしてからもう一度お試しください。",
+      "generic": "接続を変更できませんでした。もう一度お試しください。"
+    }
   },
   "engineeringRun": {
     "untitled": "エンジニアリング実行",

@@ -26,8 +26,11 @@ Permissions:
   waits for), and the runs' spend by month (``GET /agents/engineering/spend``,
   engineering/spend.py), and the hard cap's setting, read and written (``GET``/``PUT
   /agents/engineering/settings``, engineering/settings.py: one row in the agents table, written with
-  its history row; the runtime reads it at a budgeted run's first start), and a run's start
-  (``POST /agents/engineering/runs``, a saved engineering flow on a repository's commit: the start
+  its history row; the runtime reads it at a budgeted run's first start), and the repository connections
+  (``GET /agents/engineering/connections``, ``PUT``/``DELETE …/connections/<id>``,
+  engineering/connectors/connections.py: a row in the agents table with its audit rows, and the GitHub App
+  credential in SSM, written and deleted here, never read), and a run's start
+  (``POST /agents/engineering/runs``, a saved engineering flow on a stored connection's commit: the start
   function, below); while the engineering agents are off every caller gets 404.
 
 Own role (20 KB policy limit): the agents table (read/write), the aggregates table
@@ -37,7 +40,9 @@ their table and workspace bucket (never a write: GetItem and Query) and ``lambda
 function (``ENGINEERING_BOARD_FUNCTION``), which makes a person's board actions with its own role and hands the
 events back for this role to publish as the person (engineering/board/api.py person_request), and
 ``lambda:InvokeFunction`` on the start function (``ENGINEERING_START_FUNCTION``, voc-engineering-start: the runtime's
-code and role, which runs ``start_run`` and refuses every other action; never the runtime's own function); it is to add
+code and role, which runs ``start_run`` and refuses every other action; never the runtime's own function), and
+``ssm:PutParameter`` and ``ssm:DeleteParameter`` on the connections' parameters only, with ``kms:Encrypt`` and
+``kms:GenerateDataKey`` on the stack's key through SSM for them (no ``ssm:GetParameter``); it is to add
 ``lambda:InvokeFunction`` on ``voc-engineering-runtime`` (the run
 monitor's signals) and ``events:PutEvents`` on the engineering bus with the source ``voc.engineering/api``, with
 their names, and the bus's resource policy is to let this role put that source (until then the monitor's actions
@@ -1071,6 +1076,93 @@ def put_engineering_settings():
     return saved.view()
 
 
+# The repository connections (engineering/connectors/connections.py; docs/autonomous-engineering.md, "Repository
+# connectors"): administrators acting for themselves (a delegated credential gets 403), 404 while the module is off.
+# A connection is a row in voc-agents and its GitHub App credential an SSM SecureString under the name the broker
+# reads; this role writes and deletes that parameter and never reads it, and no answer or log line carries the secret.
+_CONNECTION_ERRORS = {'invalid': ValidationError, 'not_found': NotFoundError, 'conflict': ConflictError,
+                      'unavailable': ServiceUnavailableError}
+
+
+def _connection_store() -> tuple[Any, Caller]:
+    """The connections' store and its caller: 404 while the module is off, then 403 for anyone but an administrator."""
+    _engineering_on()
+    caller = _caller()
+    require_admin_caller(caller)
+    from engineering.connectors.connections import (
+        PARAMETER_KEY_ENV,
+        PARAMETER_PREFIX_ENV,
+        ConnectionStore,
+        live_runs_of,
+    )
+    from engineering.runtime.runs import RunStore
+
+    runs = RunStore(get_dynamodb_resource().Table(os.environ['ENGINEERING_TABLE']))
+    return ConnectionStore(_agents_table(), _ssm_client, os.environ.get(PARAMETER_PREFIX_ENV, ''),
+                           os.environ.get(PARAMETER_KEY_ENV, ''), live_runs_of(runs)), caller
+
+
+@cache
+def _ssm_client() -> Any:
+    import boto3
+
+    return boto3.client('ssm')
+
+
+def _connection_actor(caller: Caller) -> Any:
+    from engineering.connectors.connections import Actor
+
+    return Actor(subject=caller.subject, name=caller.username or caller.subject)
+
+
+def _connection_call(act: Any) -> Any:
+    from engineering.connectors.connections import ConnectionRefused
+
+    try:
+        return act()
+    except ConnectionRefused as refused:
+        raise _CONNECTION_ERRORS[refused.kind](str(refused)) from None
+
+
+@app.get('/agents/engineering/connections')
+@tracer.capture_method(capture_response=False)
+def list_engineering_connections():
+    """``{connections: [...], limit}``: the stored connections, each with whether its credential is set (never the
+    credential), one Query of their partition."""
+    connections, _ = _connection_store()
+    from engineering.connectors.connections import MAX_CONNECTIONS
+
+    return {'connections': _connection_call(connections.list), 'limit': MAX_CONNECTIONS}
+
+
+@app.put('/agents/engineering/connections/<connection_id>')
+@tracer.capture_method(capture_response=False)
+def put_engineering_connection(connection_id: str):
+    """``{host: github, repository: owner/name, default_branch, credential?: {app_id, installation_id, private_key}}``
+    → ``{connection, created}``: stores the connection (its credential in SSM first, the row with its create-only
+    audit row after). The credential is needed to add one and to change its repository; 409 for a repository change
+    while a run of the connection is live, past the connection limit, or a change made meanwhile."""
+    connections, caller = _connection_store()
+    from engineering.connectors.connections import check_connection_id, parse_request
+
+    def save() -> tuple[dict, bool]:
+        check_connection_id(connection_id)
+        return connections.save(connection_id, parse_request(json_object_body(app)), _connection_actor(caller))
+
+    connection, created = _connection_call(save)
+    return {'connection': connection, 'created': created}
+
+
+@app.delete('/agents/engineering/connections/<connection_id>')
+@tracer.capture_method(capture_response=False)
+def delete_engineering_connection(connection_id: str):
+    """``{removed: true}``: removes the connection's credential (its runs' broker calls are refused once a warm broker's five-minute copy goes) and marks
+    its row removed, with its audit row. 404 for a connection that is not stored."""
+    connections, caller = _connection_store()
+    _connection_call(lambda: connections.remove(connection_id, _connection_actor(caller)))
+    return {'removed': True}
+
+
 # A run's start (``POST /agents/engineering/runs``): an administrator acting for themselves starts a saved engineering
 # flow on a repository's commit. The API mints the run's id and invokes the start function (voc-engineering-start, the
 # runtime's code: it runs ``start_run`` and refuses every other action; this role may invoke it and never the runtime
@@ -1114,9 +1206,14 @@ def _run_cap(name: str, default: float, kind: type) -> Any:
 
 
 def _run_repo(connection: str) -> str:
-    """The run's ``repo``, as its reports and the spend ledger group it: the connection's repository once connections
-    are stored (the connection page is planned, so there is no record to read yet); until then the connection's id."""
-    return connection
+    """The run's ``repo``, as its reports and the spend ledger group it: the stored connection's repository
+    (``owner/name``). 400 for a connection that is not stored: its broker would refuse every operation."""
+    from engineering.connectors.connections import stored_connection
+
+    stored = _connection_call(lambda: stored_connection(_agents_table(), connection))
+    if stored is None:
+        raise ValidationError('connection names no stored repository connection: add it under Agents → Connections')
+    return str(stored['repository'])
 
 
 def _start_body(body: Mapping[str, Any]) -> dict[str, str]:

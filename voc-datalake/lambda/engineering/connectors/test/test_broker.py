@@ -7,6 +7,7 @@ import pytest
 
 from engineering.connectors.broker import (
     OPEN_OR_UPDATE_DRAFT_PR,
+    OTHER_REPOSITORY,
     POST_COMMENT,
     PUSH_BUNDLE,
     READ,
@@ -132,6 +133,19 @@ def test_refuses_an_unknown_or_inactive_run(runs: FakeRuns, reason: str) -> None
     with pytest.raises(NotNow) as caught:
         Broker(connector(host=host, runs=runs)).read(caller('mapper'), 'file', 'README.md', None)
     assert caught.value.reason == reason
+    assert host.calls == []
+
+
+@pytest.mark.parametrize('operation', OPERATIONS)
+@pytest.mark.parametrize('started_on', ['example-org/other', ''], ids=['another repository', 'none recorded'])
+def test_a_run_is_refused_when_its_connection_names_another_repository_than_it_started_on(
+        operation: str, started_on: str) -> None:
+    role = next(r for r, op in WRITERS.items() if op == operation) if operation != READ else 'mapper'
+    host = FakeHost()
+    runs = FakeRuns({RUN: record(repository=started_on)})
+    with pytest.raises(NotNow) as caught:
+        call(Broker(connector(host=host, runs=runs, ledger=FakeLedger({(RUN, TREE)}))), caller(role), operation)
+    assert caught.value.reason == OTHER_REPOSITORY
     assert host.calls == []
 
 

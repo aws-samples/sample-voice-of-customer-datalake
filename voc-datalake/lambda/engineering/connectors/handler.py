@@ -28,7 +28,8 @@ from functools import lru_cache
 from typing import Any, Final
 
 from engineering.connectors.broker import Broker, NotNow, NotPermitted
-from engineering.connectors.credentials import PARAMETER_PREFIX_ENV, ParameterStoreCredentials
+from engineering.connectors.connections import PARAMETER_PREFIX_ENV
+from engineering.connectors.credentials import ParameterStoreCredentials
 from engineering.connectors.dial import WaysOfWorking
 from engineering.connectors.github import GitHubHost
 from engineering.connectors.hosts import (

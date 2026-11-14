@@ -573,6 +573,41 @@
     ]
   },
   {
+    "file": "api/engineeringConnectionsApi.ts",
+    "method": "GET",
+    "call": "'/agents/engineering/connections'",
+    "probes": [
+      {
+        "path": "/agents/engineering/connections"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringConnectionsApi.ts",
+    "method": "PUT",
+    "call": "connectionPath(connectionId)",
+    "probes": [
+      {
+        "path": "/agents/engineering/connections/storefront",
+        "body": {
+          "host": "github",
+          "repository": "example-org/storefront",
+          "default_branch": "trunk"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringConnectionsApi.ts",
+    "method": "DELETE",
+    "call": "connectionPath(connectionId)",
+    "probes": [
+      {
+        "path": "/agents/engineering/connections/retired"
+      }
+    ]
+  },
+  {
     "file": "api/engineeringRunsApi.ts",
     "method": "POST",
     "call": "'/agents/engineering/runs'",

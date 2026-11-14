@@ -72,6 +72,8 @@ ON_GIT = ('fixer', 'gate-runner', 'final-go')
 STARTER = 'person-sub-1'
 #: The aggregates table's stand-in, where the people's ways of working are.
 AGGREGATES = 'voc-aggregates-test'
+#: The stored connection's repository: the run's ``repo`` at its start, and the one the host's credential is for.
+REPOSITORY = 'example/app'
 PULL_REQUEST = PullRequestRef(number=7, url='https://code.example.com/example/app/pull/7')
 
 
@@ -104,6 +106,10 @@ class GitHost:
     def default_branch(self, connection_id: str) -> str:
         assert connection_id == 'conn-1'
         return 'main'
+
+    def repository(self, connection_id: str) -> str:
+        assert connection_id == 'conn-1'
+        return REPOSITORY
 
     def post_comment(self, connection_id: str, on: CommentTarget, number: int, body: str) -> str:
         raise AssertionError(f'no comment in this flow ({connection_id}, {on} {number}, {len(body)} characters)')
@@ -311,7 +317,8 @@ def bug_hunt(wired: Any, aws: tuple[Any, Any], tmp_path: Path) -> BugHunt:
     assert wired is not None
     s3, _ = aws
     handler.lambda_handler({'action': 'start_run', 'run_id': RUN, 'max_tasks': 20, 'goal': 'hunt the slug bugs',
-                            'connection': 'conn-1', 'commit': COMMIT, 'language': 'python', 'flow': 'wf_bugs',
+                            'connection': 'conn-1', 'repo': REPOSITORY, 'commit': COMMIT, 'language': 'python',
+                            'flow': 'wf_bugs',
                             'flow_definition': encode_definition(TEMPLATES['bug-hunt-and-fix']), 'flow_revision': 1,
                             'actor': STARTER}, None)
     client = boto3.client('dynamodb', region_name='us-east-1')

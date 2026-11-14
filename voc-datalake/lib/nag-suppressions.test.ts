@@ -241,7 +241,8 @@ describe('cdk-nag acknowledgements', () => {
       // its IAM5.
       // 89 -> 90: the engineering broker's read of the gate runners' gate records (one prefix: the GO ledger needs
       // the gate runner's GO on the final go's tree), its IAM5.
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 90, used: 90 });
+      // 90 -> 91: the agents API's put and delete of the repository connections' parameters (one path), its IAM5.
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 91, used: 91 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

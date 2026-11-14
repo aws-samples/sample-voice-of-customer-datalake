@@ -20,7 +20,8 @@
     "label": "Secciones de la página de agentes",
     "agents": "Agentes",
     "workflows": "Flujos de trabajo",
-    "spend": "Gasto"
+    "spend": "Gasto",
+    "connections": "Conexiones"
   },
   "list": {
     "title": "Agentes autónomos",
@@ -753,6 +754,85 @@
     "loadFailed": "No se pudo cargar el gasto.",
     "truncated": "Este mes tiene más filas de las que caben en una lectura: las cifras son un mínimo.",
     "empty": "No hubo gasto en {{month}}."
+  },
+  "connections": {
+    "title": "Conexiones de repositorio",
+    "intro": "Los agentes de ingeniería llegan a un repositorio a través de una conexión: el repositorio, su rama predeterminada y una credencial guardada para ellos. Una credencial guardada no se vuelve a mostrar nunca, a nadie.",
+    "add": "Añadir conexión",
+    "limitReached": "Esta implementación admite como máximo {{limit, number}} conexiones. Quite una para añadir otra.",
+    "loadFailed": "No se pudieron cargar las conexiones de repositorio.",
+    "emptyTitle": "Aún no hay conexiones de repositorio",
+    "emptyHint": "Añada una para que los agentes de ingeniería puedan trabajar en un repositorio.",
+    "branch": "Rama predeterminada: {{branch}}",
+    "kind": "GitHub App",
+    "appIds": "App {{appId}}, instalación {{installationId}}",
+    "set": "Guardada",
+    "notSet": "Sin guardar",
+    "notSetHint": "Falta la credencial guardada: edite la conexión y vuelva a guardarla con su credencial.",
+    "updated": "Modificada {{when}} por {{who}}",
+    "unknownEditor": "desconocido",
+    "edit": "Editar",
+    "editLabel": "Editar {{repository}}",
+    "remove": "Quitar",
+    "removeLabel": "Quitar {{repository}}",
+    "created": "Se ha añadido {{repository}}.",
+    "saved": "Se ha guardado {{repository}}.",
+    "removed": "Se ha quitado {{repository}}.",
+    "guidance": {
+      "title": "Qué necesita la credencial",
+      "app": "Cree una GitHub App e instálela solo en este repositorio. Permisos del repositorio: Contents, Pull requests e Issues en Read and write, Metadata en Read-only. Nada más: ningún permiso de Administration, Workflows, Secrets, Actions ni de la organización.",
+      "token": "La App nunca se entrega a los agentes: para cada paso, el bróker emite un token válido una hora, solo para este repositorio y solo con lo que el paso necesita (contenido del repositorio y pull requests, lectura y escritura; nunca administración).",
+      "branch": "Proteja la rama predeterminada y permita que los agentes hagan push solo a ramas llamadas voc-agent/*."
+    },
+    "dialog": {
+      "addTitle": "Añadir una conexión de repositorio",
+      "editTitle": "Editar la conexión a {{repository}}",
+      "description": "Los agentes de ingeniería usan esta conexión para leer el repositorio y proponerle cambios.",
+      "stored": "Credencial guardada:",
+      "keepHint": "La credencial guardada nunca se muestra. Deje la clave privada vacía para conservarla; un repositorio, un ID de App o un ID de instalación nuevos necesitan de nuevo la clave privada.",
+      "save": "Guardar conexión"
+    },
+    "fields": {
+      "connectionId": "Id. de la conexión",
+      "repository": "Repositorio",
+      "defaultBranch": "Rama predeterminada",
+      "appId": "Id. de la App",
+      "installationId": "Id. de la instalación",
+      "privateKey": "Clave privada"
+    },
+    "hints": {
+      "connectionId": "Letras minúsculas, dígitos y guiones, hasta 63. No puede cambiar una vez añadida la conexión.",
+      "connectionIdFixed": "Se eligió al añadir la conexión; no puede cambiar.",
+      "repository": "owner/name, como en la dirección del repositorio.",
+      "defaultBranch": "La rama de la que parten los agentes y a la que proponen sus cambios.",
+      "appId": "El id. numérico de la App.",
+      "installationId": "El id. numérico de la instalación de la App en este repositorio.",
+      "privateKey": "La clave privada de la App: el archivo .pem completo que generó GitHub, de unos 4 KB como máximo. Se envía una vez y nunca vuelve a mostrarse."
+    },
+    "invalid": {
+      "connectionId": "Introduzca un id. de 1 a 63 letras minúsculas, dígitos o guiones, que empiece por una letra o un dígito.",
+      "repository": "Introduzca el repositorio como owner/name.",
+      "defaultBranch": "Escriba un nombre de rama: letras, dígitos, «.», «_», «-» y «/», como máximo {{max, number}} caracteres, sin «..» y que no sea una rama voc-agent/.",
+      "appId": "Introduzca el id. de la App: solo dígitos.",
+      "installationId": "Introduzca el id. de la instalación: solo dígitos.",
+      "privateKeyEmpty": "Pegue la clave privada de la App: una conexión nueva necesita su credencial.",
+      "privateKeyNeeded": "Pegue de nuevo la clave privada de la App: un repositorio, un ID de App o un ID de instalación nuevos se guardan con ella.",
+      "privateKey": "Pegue la clave RSA completa sin cifrar en PEM, desde su línea BEGIN hasta su línea END.",
+      "privateKeyLarge": "La clave es más grande de lo que cabe en una credencial (unos 4 KB): use la clave privada propia de la App."
+    },
+    "confirm": {
+      "title": "¿Quitar {{repository}}?",
+      "message": "Se quitan la conexión y su credencial guardada. Las ejecuciones que trabajan en {{repository}} pierden el acceso en cinco minutos como máximo: sus lecturas y escrituras fallan hasta que se vuelva a guardar una conexión.",
+      "confirm": "Quitar conexión"
+    },
+    "errors": {
+      "invalid": "Se rechazó un campo. Revise los campos y vuelva a guardar.",
+      "forbidden": "Solo un administrador puede cambiar las conexiones.",
+      "notFound": "No se encontró la conexión, o los agentes de ingeniería están desactivados.",
+      "conflict": "La conexión no puede cambiar ahora: detenga antes sus ejecuciones en curso, o quite otra conexión.",
+      "unavailable": "Las conexiones no están disponibles ahora mismo. Vuelva a intentarlo en un momento.",
+      "generic": "No se pudo cambiar la conexión. Vuelva a intentarlo."
+    }
   },
   "engineeringRun": {
     "untitled": "Ejecución de ingeniería",

@@ -708,9 +708,15 @@ def test_no_token_or_jwt_is_ever_in_a_url_or_a_log_line(caplog: pytest.LogCaptur
 
 def test_the_client_has_no_merge_approve_settings_or_revoke_method() -> None:
     public = {name for name in dir(GitHubHost) if not name.startswith('_')}
-    # Reads (a patch's base file, the default branch) and the three writes: nothing else.
-    assert public == {'read', 'file_at', 'default_branch', 'post_comment', 'branch_tree_hash', 'push_bundle',
-                      'open_or_update_draft_pr'}
+    # Reads (a patch's base file, the default branch, the credential's repository) and the three writes: nothing else.
+    assert public == {'read', 'file_at', 'default_branch', 'repository', 'post_comment', 'branch_tree_hash',
+                      'push_bundle', 'open_or_update_draft_pr'}
+
+
+def test_the_connections_repository_is_its_credentials_and_asks_the_host_nothing() -> None:
+    api = FakeGitHub()
+    assert client(api).repository('conn-1') == 'example-org/refund-service'
+    assert api.sent == []
 
 
 def test_a_base_file_is_read_raw_at_its_commit_and_a_missing_one_is_none() -> None:

@@ -13,7 +13,7 @@ from moto import mock_aws
 from engineering.board.test.table import create_table
 from engineering.connectors import handler
 from engineering.connectors.broker import Broker
-from engineering.connectors.credentials import PARAMETER_PREFIX_ENV
+from engineering.connectors.connections import PARAMETER_PREFIX_ENV
 from engineering.connectors.dial import WaysOfWorking
 from engineering.connectors.github import GitHubHost
 from engineering.connectors.hosts import (

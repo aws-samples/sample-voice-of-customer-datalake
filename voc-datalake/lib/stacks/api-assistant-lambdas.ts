@@ -22,7 +22,7 @@ import type { ApiStackContext } from './api-context';
 import { createS3ImportLambda } from './api-s3-import-lambda';
 import { ENGINEERING_WORKSPACE_REPORTS_KEYS } from './core-buckets';
 import { grantInvokeByName } from '../utils/worker-lambda';
-import { engineeringAgentsEnabled } from './engineering-broker';
+import { engineeringAgentsEnabled, engineeringParameterArns, engineeringParameterPrefix } from './engineering-broker';
 import { engineeringRunCaps } from './engineering-start';
 
 /**
@@ -93,14 +93,49 @@ function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, 
     reason: 'Read-only on the engineering workspace\'s report objects (one per run, level, subject and version, known only at run time); never the runs\' own objects',
     findings: [resourceFinding(reports)],
   }]);
+  const parameterPrefix = grantConnectionCredentialWrites(ctx, role);
   return {
     ENGINEERING_AGENTS: 'on',
+    ENGINEERING_PARAMETER_PREFIX: parameterPrefix,
+    ENGINEERING_PARAMETER_KEY: ctx.props.kmsKey.keyArn,
     ENGINEERING_TABLE: engineeringTable.tableName,
     ENGINEERING_WORKSPACE_BUCKET: engineeringWorkspaceBucket.bucketName,
     ENGINEERING_BOARD_FUNCTION: ctx.uniqueName(ENGINEERING_BOARD_FUNCTION_BASE_NAME),
     ENGINEERING_START_FUNCTION: ctx.uniqueName(ENGINEERING_START_FUNCTION_BASE_NAME),
     ...engineeringRunCaps(ctx.stack),
   };
+}
+
+/**
+ * The repository connections' credentials (`PUT`/`DELETE /agents/engineering/connections/<id>`,
+ * lambda/engineering/connectors/connections.py): `ssm:PutParameter` and `ssm:DeleteParameter` on exactly the connections'
+ * parameters (`/[<prefix>-]voc/engineering/*`, the path the broker reads: engineering-broker.ts), and `kms:Encrypt` and
+ * `kms:GenerateDataKey` on the stack's key only through SSM and only for those parameters (SSM names the parameter in
+ * the encryption context). Never `ssm:GetParameter`: the Agents API writes a credential and cannot read it back. The
+ * prefix, for the role's env.
+ */
+function grantConnectionCredentialWrites(ctx: ApiStackContext, role: iam.Role): string {
+  const stack = cdk.Stack.of(role);
+  const parameters = engineeringParameterArns(stack, ctx.deploymentPrefix);
+  role.addToPolicy(new iam.PolicyStatement({
+    sid: 'ConnectionCredentialWrites', actions: ['ssm:PutParameter', 'ssm:DeleteParameter'], resources: [parameters],
+  }));
+  role.addToPolicy(new iam.PolicyStatement({
+    sid: 'ConnectionCredentialKey',
+    actions: ['kms:Encrypt', 'kms:GenerateDataKey'],
+    resources: [ctx.props.kmsKey.keyArn],
+    conditions: {
+      StringEquals: { 'kms:ViaService': `ssm.${stack.region}.amazonaws.com` },
+      StringLike: { 'kms:EncryptionContext:PARAMETER_ARN': parameters },
+    },
+  }));
+  acknowledgeNag(role, [{
+    id: 'AwsSolutions-IAM5',
+    reason: 'One SecureString per repository connection, named by an administrator at run time, so the writes are '
+      + 'scoped to the connections\' path (/[<prefix>-]voc/engineering/*): put and delete only, never a read',
+    findings: [resourceFinding(parameters)],
+  }]);
+  return engineeringParameterPrefix(ctx.deploymentPrefix);
 }
 
 export function createAssistantLambdas(

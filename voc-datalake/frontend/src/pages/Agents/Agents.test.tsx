@@ -387,3 +387,33 @@ describe('Agents list — the Spend tab', () => {
     expect(spendCalls()).toStrictEqual([])
   })
 })
+
+describe('Agents list — the Connections tab', () => {
+  const connectionCalls = () => fetchApi.mock.calls.map(([path]) => path).filter((path) => path.startsWith('/agents/engineering/connections'))
+
+  it('an admin has it while the engineering agents are on, and it lists the connections', async () => {
+    engineeringModule.available = true
+    route({ 'GET /agents/engineering/connections': () => ({ connections: [], limit: 20 }) })
+    renderList('/agents?tab=connections')
+    expect(await screen.findByRole('tab', { name: 'Connections', selected: true })).toBeInTheDocument()
+    expect(await screen.findByText('No repository connections yet')).toBeInTheDocument()
+  })
+
+  it('without the engineering agents there is none, and ?tab=connections shows the agents', async () => {
+    route({ 'GET /agents': () => ({ items: [] }) })
+    renderList('/agents?tab=connections')
+    expect(await screen.findByRole('tab', { name: 'Agents', selected: true })).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Connections' })).not.toBeInTheDocument()
+    expect(connectionCalls()).toStrictEqual([])
+  })
+
+  it('a non-admin has no tabs and never reads the connections', async () => {
+    engineeringModule.available = true
+    adminFlag.isAdmin = false
+    route({ 'GET /agents': () => ({ items: [] }) })
+    renderList('/agents?tab=connections')
+    expect(await screen.findByText('No autonomous agents yet')).toBeInTheDocument()
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
+    expect(connectionCalls()).toStrictEqual([])
+  })
+})

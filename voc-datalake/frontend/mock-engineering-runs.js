@@ -18,6 +18,10 @@
 //   POST /agents/engineering/runs   {workflow_id, connection, commit, language, goal}: admin; a run's start, answered
 //                     202 with the sample run (written, its coordinator's launch under way) (400 for a field off the server's rules)
 //   GET|PUT /agents/engineering/settings   the administrators' hard cap {hard_cap, updated_at, updated_by}
+//   GET  /agents/engineering/connections   the repository connections {connections, limit} (admin; never a secret)
+//   PUT|DELETE /agents/engineering/connections/<id>   store one with its GitHub App credential, or keep the stored one
+//                     (the server's field checks; 409 past the limit or for a repository change with live runs) | remove
+//                     one (404 for an unknown id)
 //   GET  /agents/engineering/spend?month=&by=&workflow=   the spend ledger's month, grouped (admin; 400 for a bad
 //                     month, grouping or workflow id), from a few sample rows over this month and last
 // Every GET of the overview moves the run a little (the agents' ages), so polling shows it live.
@@ -486,6 +490,103 @@ function settingsRoute(req, res, send, shared) {
   });
 }
 
+// ── The repository connections (GET /agents/engineering/connections, PUT|DELETE …/connections/<id>) ──
+// The engineering connectors' `connections` module's rules. The GitHub App's private key is taken and never answered: a connection says only
+// whether its credential is set, and the App's ids. A save without a credential keeps the stored one (a new connection,
+// or a new repository, needs it); a live run on 'storefront' refuses its repository change (409).
+const CONNECTION_PATH = /^\/agents\/engineering\/connections(?:\/([^/]*))?$/;
+const CONNECTION_LIMIT = 20;
+const CONNECTION_FIELDS = ['host', 'repository', 'default_branch', 'credential'];
+const CREDENTIAL_FIELDS = ['app_id', 'installation_id', 'private_key'];
+const LIVE_RUN_CONNECTIONS = new Set(['storefront']);
+const connections = new Map([['storefront', {
+  connection_id: 'storefront', host: 'github', repository: 'example-org/storefront', default_branch: 'main',
+  credential: { kind: 'app', set: true, app_id: '104729', installation_id: '7919001' },
+  created_at: minutesAgo(60 * 24 * 9), created_by: 'admin-demo', updated_at: minutesAgo(60 * 24 * 2), updated_by: 'admin-demo',
+}]]);
+const DIGITS = /^[1-9]\d{0,19}$/;
+const PEM = /^-----BEGIN (RSA |)PRIVATE KEY-----\n(?:[A-Za-z0-9+/=]{1,76}\n)+-----END \1PRIVATE KEY-----$/;
+const BRANCH = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$/;
+
+/** The stored credential's state for a save's credential (never the key), or the 400 message of a bad one. */
+function credentialState(credential) {
+  if (typeof credential !== 'object' || credential === null
+    || Object.keys(credential).sort().join() !== CREDENTIAL_FIELDS.join()) {
+    return 'credential is {app_id, installation_id, private_key}: the GitHub App\'s';
+  }
+  const { app_id: appId, installation_id: installationId, private_key: key } = credential;
+  if (!DIGITS.test(String(appId))) return 'app_id is the GitHub App\'s number';
+  if (!DIGITS.test(String(installationId))) return 'installation_id is the GitHub App\'s number';
+  if (typeof key !== 'string' || !PEM.test(key.replaceAll('\r\n', '\n').trim())) {
+    return 'private_key is an unencrypted RSA private key in PEM';
+  }
+  return { kind: 'app', set: true, app_id: String(appId), installation_id: String(installationId) };
+}
+
+function isBranch(branch) {
+  return typeof branch === 'string' && BRANCH.test(branch) && !branch.includes('..') && !branch.includes('@{')
+    && !/[/.]$/.test(branch) && !branch.startsWith('voc-agent/')
+    && branch.split('/').every((part) => part !== '' && !part.startsWith('.') && !part.endsWith('.lock'));
+}
+
+/** The 400 message of a body off the rules, else null. */
+function connectionBodyIssue(id, body) {
+  if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(id)) return 'the connection id is 1 to 63 lower-case letters, digits or "-"';
+  if (!body || Object.keys(body).some((key) => !CONNECTION_FIELDS.includes(key))) return 'the body is {host, repository, default_branch, credential?}';
+  if (body.host !== 'github') return 'host is github (GitLab is planned)';
+  const [owner = '', name = '', ...rest] = typeof body.repository === 'string' ? body.repository.split('/') : [];
+  const repoOk = rest.length === 0 && /^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/.test(owner) && /^[A-Za-z0-9._-]{1,100}$/.test(name)
+    && name !== '.' && name !== '..';
+  if (!repoOk) return 'repository is the GitHub repository as owner/name';
+  if (!isBranch(body.default_branch)) return 'default_branch is a branch name git accepts, not an agent\'s voc-agent/ branch';
+  return null;
+}
+
+/** The credential a save leaves stored, or the 400 message: a save without one keeps the stored one. */
+function savedCredential(before, body) {
+  if (body.credential !== undefined && body.credential !== null) return credentialState(body.credential);
+  if (before === undefined) return 'credential is needed to add a connection';
+  if (before.repository !== body.repository || !before.credential.set) {
+    return 'credential is needed again: the stored one holds the repository it was saved with';
+  }
+  return before.credential;
+}
+
+function saveConnection(id, body) {
+  const issue = connectionBodyIssue(id, body);
+  if (issue !== null) return [400, { message: issue }];
+  const before = connections.get(id);
+  const credential = savedCredential(before, body);
+  if (typeof credential === 'string') return [400, { message: credential }];
+  if (before === undefined && connections.size >= CONNECTION_LIMIT) {
+    return [409, { message: `at most ${CONNECTION_LIMIT} connections: remove one to add another` }];
+  }
+  if (before !== undefined && before.repository !== body.repository && LIVE_RUN_CONNECTIONS.has(id)) {
+    return [409, { message: '1 run(s) of this connection are live: the repository changes once they end (or stop them first)' }];
+  }
+  const now = new Date().toISOString();
+  const connection = {
+    connection_id: id, host: 'github', repository: body.repository, default_branch: body.default_branch, credential,
+    created_at: before?.created_at ?? now, created_by: before?.created_by ?? 'admin-demo', updated_at: now, updated_by: 'admin-demo',
+  };
+  connections.set(id, connection);
+  return [200, { connection, created: before === undefined }];
+}
+
+function connectionsRoute(req, res, send, shared, id) {
+  if (!isAdmin()) return send(403, { message: 'Admin access required' });
+  if (id === undefined) {
+    if (req.method !== 'GET') return send(405, { message: 'Method not allowed' });
+    return send(200, { connections: [...connections.values()], limit: CONNECTION_LIMIT });
+  }
+  if (req.method === 'DELETE') {
+    if (!connections.delete(id)) return send(404, { message: 'Connection not found' });
+    return send(200, { removed: true });
+  }
+  if (req.method !== 'PUT') return send(405, { message: 'Method not allowed' });
+  return shared.collectJson(req, res, (body) => send(...saveConnection(id, body)));
+}
+
 // ── A run's start (POST /agents/engineering/runs; agents_handler.py start_engineering_run) ──
 // The server's checks (a connection's short id, a 40-character commit, an image language, a goal of 1-500 characters
 // on one line, nothing else in the body); a start answers the sample run, so the monitor it opens has something to show.
@@ -531,6 +632,11 @@ const EXACT_ROUTES = { runs: startRoute, settings: settingsRoute, spend: spendRo
 
 export function handleEngineeringRunRoutes(req, res, url, send, shared) {
   if (!url.pathname.startsWith(PREFIX)) return false;
+  const connection = CONNECTION_PATH.exec(url.pathname);
+  if (connection) {
+    connectionsRoute(req, res, send, shared, connection[1] === undefined ? undefined : decodeURIComponent(connection[1]));
+    return true;
+  }
   const exact = url.pathname.slice(PREFIX.length);
   if (Object.hasOwn(EXACT_ROUTES, exact)) {
     EXACT_ROUTES[exact](req, res, send, shared, url);

@@ -35,6 +35,8 @@ BRANCH = f'voc-agent/{RUN}/fix-refund-total'
 PERSON = 'casey@mail-host.net'
 #: The connection's bot address (``record().bot_addresses``).
 BOT = 'voc-agents[bot]@users.noreply.code-host.net'
+#: The repository the run started on, and the one ``FakeHost``'s credential is for.
+REPOSITORY = 'example-org/refund-service'
 
 
 def role_arn(role: str, session: str = f'{RUN}.3', account: str = ACCOUNT) -> str:
@@ -61,7 +63,7 @@ def record(**overrides: object) -> RunRecord:
     ``STARTER`` on ``BASE``, with ``overrides``."""
     base = RunRecord(connection_id='conn-1', default_branch='main', status='active', ci_attested=True,
                      cited_reviews=(REVIEW,), issue_number=42, pull_request_number=7, bot_addresses=(BOT,),
-                     commit=BASE, started_by=STARTER)
+                     commit=BASE, started_by=STARTER, repository=REPOSITORY)
     return replace(base, **overrides)
 
 
@@ -82,6 +84,11 @@ class FakeHost:
     calls: list[tuple[object, ...]] = field(default_factory=list)
 
     files: dict[str, bytes] = field(default_factory=dict)
+    #: The repository the connection's credential is for (not recorded in ``calls``: it asks the host nothing).
+    credential_repository: str = REPOSITORY
+
+    def repository(self, connection_id: str) -> str:  # noqa: ARG002 - the protocol's signature
+        return self.credential_repository
 
     def read(self, connection_id: str, kind: ReadKind, target: str, cursor: str | None) -> ReadPage:
         self.calls.append(('read', connection_id, kind, target, cursor))

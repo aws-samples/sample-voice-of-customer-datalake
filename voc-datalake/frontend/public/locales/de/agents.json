@@ -19,7 +19,8 @@
     "label": "Bereiche der Agentenseite",
     "agents": "Agenten",
     "workflows": "Workflows",
-    "spend": "Ausgaben"
+    "spend": "Ausgaben",
+    "connections": "Verbindungen"
   },
   "list": {
     "title": "Autonome Agenten",
@@ -747,6 +748,85 @@
     "loadFailed": "Die Ausgaben konnten nicht geladen werden.",
     "truncated": "Dieser Monat hat mehr Zeilen, als ein Lesevorgang abruft: Die Zahlen sind eine Untergrenze.",
     "empty": "Im {{month}} wurde nichts ausgegeben."
+  },
+  "connections": {
+    "title": "Repository-Verbindungen",
+    "intro": "Die Engineering-Agenten erreichen ein Repository über eine Verbindung: das Repository, seinen Standard-Branch und eine für sie gespeicherte Zugangsberechtigung. Eine gespeicherte Zugangsberechtigung wird nie wieder angezeigt, niemandem.",
+    "add": "Verbindung hinzufügen",
+    "limitReached": "Diese Bereitstellung fasst höchstens {{limit, number}} Verbindungen. Entfernen Sie eine, um eine weitere hinzuzufügen.",
+    "loadFailed": "Die Repository-Verbindungen konnten nicht geladen werden.",
+    "emptyTitle": "Noch keine Repository-Verbindungen",
+    "emptyHint": "Fügen Sie eine hinzu, damit die Engineering-Agenten an einem Repository arbeiten können.",
+    "branch": "Standard-Branch: {{branch}}",
+    "kind": "GitHub App",
+    "appIds": "App {{appId}}, Installation {{installationId}}",
+    "set": "Gesetzt",
+    "notSet": "Nicht gesetzt",
+    "notSetHint": "Die gespeicherte Zugangsberechtigung fehlt: Bearbeiten Sie die Verbindung und speichern Sie sie erneut mit ihrer Zugangsberechtigung.",
+    "updated": "Geändert {{when}} von {{who}}",
+    "unknownEditor": "unbekannt",
+    "edit": "Bearbeiten",
+    "editLabel": "{{repository}} bearbeiten",
+    "remove": "Entfernen",
+    "removeLabel": "{{repository}} entfernen",
+    "created": "{{repository}} wurde hinzugefügt.",
+    "saved": "{{repository}} wurde gespeichert.",
+    "removed": "{{repository}} wurde entfernt.",
+    "guidance": {
+      "title": "Was die Zugangsberechtigung braucht",
+      "app": "Erstellen Sie eine GitHub App und installieren Sie sie nur in diesem Repository. Repository-Berechtigungen: Contents, Pull requests und Issues auf Read and write, Metadata auf Read-only. Sonst nichts: keine Berechtigung für Administration, Workflows, Secrets, Actions oder die Organisation.",
+      "token": "Die App wird den Agenten nie übergeben: Für jeden Schritt erstellt der Broker ein Token, das eine Stunde gilt, nur für dieses Repository und nur für das, was der Schritt braucht (Repository-Inhalte und Pull Requests, Lesen und Schreiben; nie Administration).",
+      "branch": "Schützen Sie den Standard-Branch und lassen Sie die Agenten nur in Branches namens voc-agent/* pushen."
+    },
+    "dialog": {
+      "addTitle": "Repository-Verbindung hinzufügen",
+      "editTitle": "Verbindung zu {{repository}} bearbeiten",
+      "description": "Die Engineering-Agenten lesen über diese Verbindung das Repository und schlagen Änderungen daran vor.",
+      "stored": "Gespeicherte Zugangsberechtigung:",
+      "keepHint": "Die gespeicherte Zugangsberechtigung wird nie angezeigt. Lassen Sie den privaten Schlüssel leer, um sie zu behalten; ein neues Repository, eine neue App-ID oder Installations-ID braucht den privaten Schlüssel erneut.",
+      "save": "Verbindung speichern"
+    },
+    "fields": {
+      "connectionId": "Verbindungs-ID",
+      "repository": "Repository",
+      "defaultBranch": "Standard-Branch",
+      "appId": "App-ID",
+      "installationId": "Installations-ID",
+      "privateKey": "Privater Schlüssel"
+    },
+    "hints": {
+      "connectionId": "Kleinbuchstaben, Ziffern und Bindestriche, bis zu 63. Sie kann sich nach dem Hinzufügen nicht mehr ändern.",
+      "connectionIdFixed": "Beim Hinzufügen der Verbindung gewählt; sie kann sich nicht ändern.",
+      "repository": "owner/name, wie in der Adresse des Repositorys.",
+      "defaultBranch": "Der Branch, von dem die Agenten ausgehen und für den sie ihre Änderungen vorschlagen.",
+      "appId": "Die numerische ID der App.",
+      "installationId": "Die numerische ID der Installation der App in diesem Repository.",
+      "privateKey": "Der private Schlüssel der App: die ganze .pem-Datei, die GitHub erzeugt hat, höchstens etwa 4 KB. Er wird einmal gesendet und nie wieder angezeigt."
+    },
+    "invalid": {
+      "connectionId": "Geben Sie eine ID aus 1 bis 63 Kleinbuchstaben, Ziffern oder Bindestrichen ein, die mit einem Buchstaben oder einer Ziffer beginnt.",
+      "repository": "Geben Sie das Repository als owner/name ein.",
+      "defaultBranch": "Geben Sie einen Branch-Namen ein: Buchstaben, Ziffern, „.“, „_“, „-“ und „/“, höchstens {{max, number}} Zeichen, kein „..“, kein voc-agent/-Branch.",
+      "appId": "Geben Sie die App-ID ein: nur Ziffern.",
+      "installationId": "Geben Sie die Installations-ID ein: nur Ziffern.",
+      "privateKeyEmpty": "Fügen Sie den privaten Schlüssel der App ein: Eine neue Verbindung braucht ihre Zugangsberechtigung.",
+      "privateKeyNeeded": "Fügen Sie den privaten Schlüssel der App erneut ein: Ein neues Repository, eine neue App-ID oder Installations-ID wird mit ihm gespeichert.",
+      "privateKey": "Fügen Sie den ganzen unverschlüsselten RSA-Schlüssel im PEM-Format ein, von der BEGIN- bis zur END-Zeile.",
+      "privateKeyLarge": "Der Schlüssel ist größer, als eine Zugangsberechtigung fasst (etwa 4 KB): Verwenden Sie den eigenen privaten Schlüssel der App."
+    },
+    "confirm": {
+      "title": "{{repository}} entfernen?",
+      "message": "Dadurch werden die Verbindung und ihre gespeicherte Zugangsberechtigung entfernt. Läufe, die an {{repository}} arbeiten, verlieren innerhalb von fünf Minuten den Zugriff: Ihre Lese- und Schreibvorgänge schlagen fehl, bis wieder eine Verbindung gespeichert ist.",
+      "confirm": "Verbindung entfernen"
+    },
+    "errors": {
+      "invalid": "Ein Feld wurde abgelehnt. Prüfen Sie die Felder und speichern Sie erneut.",
+      "forbidden": "Nur Administratorinnen und Administratoren können die Verbindungen ändern.",
+      "notFound": "Die Verbindung wurde nicht gefunden, oder die Engineering-Agenten sind ausgeschaltet.",
+      "conflict": "Die Verbindung kann sich gerade nicht ändern: Stoppen Sie zuerst ihre laufenden Läufe, oder entfernen Sie eine andere Verbindung.",
+      "unavailable": "Die Verbindungen sind gerade nicht verfügbar. Versuchen Sie es gleich noch einmal.",
+      "generic": "Die Verbindung konnte nicht geändert werden. Versuchen Sie es erneut."
+    }
   },
   "engineeringRun": {
     "untitled": "Engineering-Lauf",

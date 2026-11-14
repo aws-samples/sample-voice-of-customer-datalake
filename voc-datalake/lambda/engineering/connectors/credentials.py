@@ -1,6 +1,7 @@
 """A connection's GitHub App credential (docs/autonomous-engineering.md, "Repository connectors": credentials).
 
-One SSM Parameter Store SecureString per connection, ``{prefix}{connection_id}`` (CDK hands the prefix down:
+One SSM Parameter Store SecureString per connection, written by an administrator's save (``connections.py``, through
+the Agents API's ``PUT /agents/engineering/connections/<id>``), ``{prefix}{connection_id}`` (CDK hands the prefix down:
 ``/[<prefix>-]voc/engineering/``), encrypted with the stack's customer-managed key and holding JSON::
 
     {"app_id": "123456", "installation_id": 7890123, "repository": "owner/name", "private_key": "-----BEGIN ..."}
@@ -24,19 +25,15 @@ from botocore.exceptions import BotoCoreError, ClientError
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+from engineering.connectors.connections import APP_NUMBER, REPOSITORY
 from engineering.connectors.hosts import NO_CONNECTION, NoConnection
 from shared.logging import logger
 from shared.model_fallback import error_code
 
-#: The broker's env var with the parameters' prefix (``/voc/engineering/``; lib/stacks/engineering-broker.ts).
-PARAMETER_PREFIX_ENV: Final = 'ENGINEERING_PARAMETER_PREFIX'
 #: How long a read credential is kept: a replaced key reaches a warm container within this.
 CACHE_SECONDS: Final = 300
 #: A connection id: what a parameter name may hold after the prefix (no ``/``, so never another path).
 _CONNECTION_ID: Final = re.compile(r'[A-Za-z0-9][A-Za-z0-9_-]{0,127}')
-_DIGITS: Final = re.compile(r'[1-9][0-9]{0,19}')
-#: ``owner/name`` as GitHub spells them.
-_REPOSITORY: Final = re.compile(r'(?P<owner>[A-Za-z0-9][A-Za-z0-9-]{0,38})/(?P<name>[A-Za-z0-9._-]{1,100})')
 
 
 class CredentialUnusable(NoConnection):
@@ -68,8 +65,8 @@ def parse_credential(text: str) -> GitHubAppCredential:
     if not isinstance(value, dict):
         raise CredentialUnusable(NO_CONNECTION)
     app_id, installation_id = _field(value, 'app_id'), _field(value, 'installation_id')
-    repository = _REPOSITORY.fullmatch(_field(value, 'repository'))
-    if not (_DIGITS.fullmatch(app_id) and _DIGITS.fullmatch(installation_id)) or repository is None \
+    repository = REPOSITORY.fullmatch(_field(value, 'repository'))
+    if not (APP_NUMBER.fullmatch(app_id) and APP_NUMBER.fullmatch(installation_id)) or repository is None \
             or repository.group('name') in {'.', '..'}:
         raise CredentialUnusable(NO_CONNECTION)
     try:

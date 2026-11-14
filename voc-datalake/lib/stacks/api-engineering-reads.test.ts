@@ -17,8 +17,9 @@ import type { VocApiStack } from './api-stack';
 import { ENGINEERING_WORKSPACE_READER_SERVICES } from './dlq-alarms';
 import { engineeringRunCaps } from './engineering-start';
 
-const ENGINEERING_ENV = ['ENGINEERING_AGENTS', 'ENGINEERING_BOARD_FUNCTION', 'ENGINEERING_RUN_CAP_USD',
-  'ENGINEERING_RUN_TOKEN_CAP', 'ENGINEERING_START_FUNCTION', 'ENGINEERING_TABLE', 'ENGINEERING_WORKSPACE_BUCKET'];
+const ENGINEERING_ENV = ['ENGINEERING_AGENTS', 'ENGINEERING_BOARD_FUNCTION', 'ENGINEERING_PARAMETER_KEY',
+  'ENGINEERING_PARAMETER_PREFIX', 'ENGINEERING_RUN_CAP_USD', 'ENGINEERING_RUN_TOKEN_CAP', 'ENGINEERING_START_FUNCTION',
+  'ENGINEERING_TABLE', 'ENGINEERING_WORKSPACE_BUCKET'];
 let cachedOn: VocApiStack | undefined;
 const onStack = (): VocApiStack => {
   cachedOn ??= buildApiStack({ engineeringAgents: true });
@@ -97,6 +98,44 @@ describe('the engineering run reads', () => {
     [{ engineeringRunCapUsd: 'lots' }], [{ engineeringRunTokenCap: '1.5' }], [{ engineeringRunTokenCap: '0' }],
   ])('refuse a run cap that is not a positive number, so no run is uncapped (%j)', (context) => {
     expect(() => engineeringRunCaps(new cdk.App({ context }))).toThrow(/is a positive/);
+  });
+
+  it('write and delete the connections\' credentials where the broker reads them, and never read one back', () => {
+    const statements = policyStatementsOf(on(), 'AgentsLambdaRole');
+    const parameters = '{"Fn::Join":["",["arn:",{"Ref":"AWS::Partition"},":ssm:us-east-1:111111111111:parameter/voc/engineering/*"]]}';
+    const ssm = statements.filter((statement) => statement.actions.some((action) => action.startsWith('ssm:')));
+    expect(ssm.map((statement) => [[...statement.actions].sort(byCodeUnit), statement.resource]))
+      .toStrictEqual([[['ssm:DeleteParameter', 'ssm:PutParameter'], parameters]]);
+    expect(ssm[0]?.condition).toBeUndefined();
+    // No read of a parameter in any form, so the Agents API never holds a stored credential in clear.
+    expect(JSON.stringify(statements)).not.toMatch(/ssm:Get|ssm:\*|ssm:Describe/);
+  });
+
+  it('name the connections\' parameter path and key to the agents API', () => {
+    const env = serviceEnvironment(on(), 'voc-agents-api');
+    expect(env.ENGINEERING_PARAMETER_PREFIX).toBe('/voc/engineering/');
+    expect(JSON.stringify(env.ENGINEERING_PARAMETER_KEY)).toContain('Fn::ImportValue');
+  });
+
+  it('encrypt a credential with the stack\'s key only through SSM and only for the connections\' parameters', () => {
+    const statements = policyStatementsOf(on(), 'AgentsLambdaRole')
+      .filter((statement) => statement.actions.includes('kms:Encrypt') && statement.condition !== undefined);
+    expect(statements.map((statement) => [...statement.actions].sort(byCodeUnit)))
+      .toStrictEqual([['kms:Encrypt', 'kms:GenerateDataKey']]);
+    expect(statements[0]?.condition).toStrictEqual({
+      StringEquals: { 'kms:ViaService': 'ssm.us-east-1.amazonaws.com' },
+      StringLike: {
+        'kms:EncryptionContext:PARAMETER_ARN': {
+          'Fn::Join': ['', ['arn:', { Ref: 'AWS::Partition' }, ':ssm:us-east-1:111111111111:parameter/voc/engineering/*']],
+        },
+      },
+    });
+    expect(statements[0]?.resource).toContain('Fn::ImportValue');
+  });
+
+  it('give the agents API no SSM grant while the module is off', () => {
+    const statements = policyStatementsOf(apiTemplate(), 'AgentsLambdaRole');
+    expect(JSON.stringify(statements)).not.toMatch(/ssm:|PARAMETER_ARN/);
   });
 
   it('give the MCP endpoint nothing: the reads are admin-only and an MCP token is never an admin, so no tool', () => {

@@ -21,7 +21,8 @@
     "label": "Sekcje strony agentów",
     "agents": "Agenci",
     "workflows": "Przepływy pracy",
-    "spend": "Wydatki"
+    "spend": "Wydatki",
+    "connections": "Połączenia"
   },
   "list": {
     "title": "Agenci autonomiczni",
@@ -780,6 +781,85 @@
     "loadFailed": "Nie udało się wczytać wydatków.",
     "truncated": "Ten miesiąc ma więcej wierszy, niż obejmuje jeden odczyt: pokazane liczby to dolna granica.",
     "empty": "Brak wydatków – {{month}}."
+  },
+  "connections": {
+    "title": "Połączenia z repozytoriami",
+    "intro": "Agenci inżynieryjni docierają do repozytorium przez połączenie: repozytorium, jego domyślną gałąź i zapisane dla nich poświadczenie. Zapisane poświadczenie nie jest już nigdy nikomu pokazywane.",
+    "add": "Dodaj połączenie",
+    "limitReached": "To wdrożenie mieści najwyżej {{limit, number}} połączeń. Usuń jedno, aby dodać kolejne.",
+    "loadFailed": "Nie udało się wczytać połączeń z repozytoriami.",
+    "emptyTitle": "Nie ma jeszcze połączeń z repozytoriami",
+    "emptyHint": "Dodaj połączenie, aby agenci inżynieryjni mogli pracować w repozytorium.",
+    "branch": "Domyślna gałąź: {{branch}}",
+    "kind": "GitHub App",
+    "appIds": "Aplikacja {{appId}}, instalacja {{installationId}}",
+    "set": "Zapisane",
+    "notSet": "Niezapisane",
+    "notSetHint": "Brak zapisanego poświadczenia: edytuj połączenie i zapisz je ponownie wraz z poświadczeniem.",
+    "updated": "Zmienione {{when}} przez {{who}}",
+    "unknownEditor": "nieznana osoba",
+    "edit": "Edytuj",
+    "editLabel": "Edytuj {{repository}}",
+    "remove": "Usuń",
+    "removeLabel": "Usuń {{repository}}",
+    "created": "Dodano {{repository}}.",
+    "saved": "Zapisano {{repository}}.",
+    "removed": "Usunięto {{repository}}.",
+    "guidance": {
+      "title": "Czego potrzebuje poświadczenie",
+      "app": "Utwórz aplikację GitHub App i zainstaluj ją tylko w tym repozytorium. Uprawnienia repozytorium: Contents, Pull requests i Issues ustawione na Read and write, Metadata na Read-only. Nic więcej: żadnych uprawnień Administration, Workflows, Secrets, Actions ani organizacji.",
+      "token": "Aplikacja nigdy nie trafia do agentów: na każdy krok broker wydaje token ważny godzinę, tylko dla tego repozytorium i tylko z tym, czego krok potrzebuje (zawartość repozytorium i pull requesty, odczyt i zapis; nigdy administracja).",
+      "branch": "Chroń domyślną gałąź i pozwól agentom wypychać zmiany tylko do gałęzi o nazwach voc-agent/*."
+    },
+    "dialog": {
+      "addTitle": "Dodaj połączenie z repozytorium",
+      "editTitle": "Edytuj połączenie z {{repository}}",
+      "description": "Agenci inżynieryjni używają tego połączenia, aby czytać repozytorium i proponować w nim zmiany.",
+      "stored": "Zapisane poświadczenie:",
+      "keepHint": "Zapisane poświadczenie nigdy nie jest pokazywane. Zostaw klucz prywatny pusty, aby je zachować; nowe repozytorium, identyfikator aplikacji lub instalacji wymaga ponownie klucza prywatnego.",
+      "save": "Zapisz połączenie"
+    },
+    "fields": {
+      "connectionId": "Identyfikator połączenia",
+      "repository": "Repozytorium",
+      "defaultBranch": "Domyślna gałąź",
+      "appId": "Identyfikator App",
+      "installationId": "Identyfikator instalacji",
+      "privateKey": "Klucz prywatny"
+    },
+    "hints": {
+      "connectionId": "Małe litery, cyfry i łączniki, do 63 znaków. Po dodaniu połączenia nie można go zmienić.",
+      "connectionIdFixed": "Wybrany przy dodawaniu połączenia; nie można go zmienić.",
+      "repository": "owner/name, tak jak w adresie repozytorium.",
+      "defaultBranch": "Gałąź, od której agenci zaczynają i do której proponują swoje zmiany.",
+      "appId": "Liczbowy identyfikator App.",
+      "installationId": "Liczbowy identyfikator instalacji App w tym repozytorium.",
+      "privateKey": "Klucz prywatny aplikacji: cały plik .pem wygenerowany przez GitHub, najwyżej około 4 KB. Jest wysyłany raz i nigdy więcej nie jest pokazywany."
+    },
+    "invalid": {
+      "connectionId": "Wpisz identyfikator złożony z 1–63 małych liter, cyfr lub łączników, zaczynający się literą lub cyfrą.",
+      "repository": "Wpisz repozytorium w postaci owner/name.",
+      "defaultBranch": "Wpisz nazwę gałęzi: litery, cyfry, „.”, „_”, „-” i „/”, najwyżej {{max, number}} znaków, bez „..”, nie gałąź voc-agent/.",
+      "appId": "Wpisz identyfikator App: same cyfry.",
+      "installationId": "Wpisz identyfikator instalacji: same cyfry.",
+      "privateKeyEmpty": "Wklej klucz prywatny aplikacji: nowe połączenie potrzebuje poświadczenia.",
+      "privateKeyNeeded": "Wklej ponownie klucz prywatny aplikacji: nowe repozytorium, identyfikator aplikacji lub instalacji jest zapisywany razem z nim.",
+      "privateKey": "Wklej cały niezaszyfrowany klucz RSA w formacie PEM, od wiersza BEGIN do wiersza END.",
+      "privateKeyLarge": "Klucz jest większy, niż mieści poświadczenie (około 4 KB): użyj własnego klucza prywatnego aplikacji."
+    },
+    "confirm": {
+      "title": "Usunąć {{repository}}?",
+      "message": "Zostaną usunięte połączenie i jego zapisane poświadczenie. Uruchomienia pracujące w {{repository}} w ciągu pięciu minut tracą dostęp: ich odczyty i zapisy kończą się błędem, dopóki połączenie nie zostanie zapisane ponownie.",
+      "confirm": "Usuń połączenie"
+    },
+    "errors": {
+      "invalid": "Jedno z pól zostało odrzucone. Sprawdź pola i zapisz ponownie.",
+      "forbidden": "Tylko administrator może zmieniać połączenia.",
+      "notFound": "Nie znaleziono połączenia albo agenci inżynieryjni są wyłączeni.",
+      "conflict": "Tego połączenia nie można teraz zmienić: najpierw zatrzymaj jego trwające uruchomienia albo usuń inne połączenie.",
+      "unavailable": "Połączenia są teraz niedostępne. Spróbuj ponownie za chwilę.",
+      "generic": "Nie udało się zmienić połączenia. Spróbuj ponownie."
+    }
   },
   "engineeringRun": {
     "untitled": "Przebieg inżynieryjny",

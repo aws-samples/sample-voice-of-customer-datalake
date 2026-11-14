@@ -17,6 +17,83 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.31.00] - 2026-11-14
+
+Autonomous engineering agents: repository connections can be stored, so the broker serves a run on a stored connection
+instead of answering 503 to every operation. Off by default (`-c engineeringAgents=true`), and no fixed cost.
+
+### Added
+
+- **Repository connections** (`lambda/engineering/connectors/connections.py`; docs/autonomous-engineering.md,
+  "Repository connectors": "The connections"), through the Agents API, for administrators acting for themselves (a
+  delegated MCP credential gets 403) and only where the module is deployed (404 otherwise):
+  `GET /agents/engineering/connections` lists them (of the credential only whether it is set, and the GitHub App's
+  ids); `PUT /agents/engineering/connections/<id>` stores one (host `github`, the repository `owner/name`, the default
+  branch, and the GitHub App's credential: its id, installation id and private key); `DELETE …/connections/<id>` removes
+  it. Every field is checked and a refusal names the field, never its value. The credential is written to the SSM
+  SecureString the broker's reader reads (`/[<prefix>-]voc/engineering/<id>`, standard tier, the stack's key) and is
+  never answered, logged or stored anywhere else; a save without it keeps the stored one, and adding a connection or
+  changing its repository needs it. A repository change while a run of the connection is live is 409, as are a 21st
+  connection and a change made meanwhile (version-conditioned). A removal deletes the parameter first, so the
+  connection's runs are refused within five minutes (a warm broker keeps a read credential that long). Every change writes a create-only audit row (who, when, what changed, never
+  the key; D4) in the same transaction as the connection's row (`voc-agents`, `CONNECTIONS#default`).
+- **Agents → Connections** in the web app, for administrators with `features.engineering`: the list (repository,
+  default branch, the App's ids, the credential set or not, who changed it last), adding and editing a connection
+  (the private key is write-only: never prefilled or shown back, kept only in the dialog's state and the one request;
+  left empty, it keeps the stored credential), removing one after a confirmation that says its live runs lose access within five minutes,
+  and what the App needs (Contents, Pull requests and Issues read and write, Metadata read, no admin, workflows or
+  secrets permission; the tokens it mints carry only what a step needs). All nine locales; the dev mock serves the
+  three routes with the server's rules.
+
+### Changed
+
+- A run starts only on a stored connection (`POST /agents/engineering/runs`: 400 otherwise), and its `repo` (the
+  reports' and the spend ledger's grouping) is the connection's repository instead of its id.
+- The broker serves a run only while its connection's credential names the repository the run started on (its
+  META's `repo`): any other, or none recorded, is refused, 409, for every operation (`RepositoryHost.repository`).
+  So a credential and its row that disagree after a failed save, or a repository changed under a run, never send
+  a run's reads or writes to another repository. When a credential changed and its row could not be written, a
+  stored connection's row is marked credential not set (with its audit row), and a new one's parameter deleted.
+- The Agents API's role, with the module on: `ssm:PutParameter` and `ssm:DeleteParameter` on exactly the connections'
+  parameters, and a statement of `kms:Encrypt` and `kms:GenerateDataKey` on the stack's key only through SSM and only
+  for those parameters (it narrows nothing yet: the role's older unconditioned encrypt/decrypt grant on the key, for
+  its DynamoDB items, still covers it); no `ssm:GetParameter`. Its env names the parameters' prefix and key (`ENGINEERING_PARAMETER_PREFIX`,
+  `ENGINEERING_PARAMETER_KEY`). The broker keeps its read, unchanged.
+- The explicit Deny every other `voc-agents` writer holds on the hard cap's partition (`DenyHardCapWrites`) now covers
+  the connections' partitions too (`CONNECTIONS#*`): the Agents API is their one writer.
+- The broker's credential reader takes the repository rule and the parameters' env name from `connections.py`, one
+  definition for the writer and the reader.
+- docs/autonomous-engineering.md and docs/deployment.md: the connections are built; GitLab, sparse clones, the checkout
+  cache and the CI attestation's record stay planned (so every push and pull request is still refused).
+- `lib/test-support/baseline.json` regenerated: VocApiStack's and VocProcessingStack's template hashes moved (the Deny on
+  the other `voc-agents` writers, and the Lambda asset hashes of the code their bundles carry); no resource or name
+  changed. The Agents API's new grants and env exist only with the module on, outside the default synth.
+
+### Tests
+
+- The store on moto (DynamoDB, SSM, KMS): what is stored is what the broker's own reader parses; the key is in no row,
+  answer or log line; each change's audit row; a save that keeps the credential; the repository change refused while
+  a run is live, and allowed after; the limit; a concurrent change; SSM failures; every field's rule, a key the broker
+  could not use (encrypted, not RSA, too large) refused without being quoted.
+- A failed row write after a replaced or deleted credential leaves the row "not set" with its audit row; the broker
+  refuses, for each operation, a run whose connection names another repository (or none recorded).
+- The routes: the whole flow as an administrator, 403 for a plain user and an administrator's MCP credential, 404 while
+  the module is off, 503 without the parameters' path or key, and, end to end, a run's read through the broker's Lambda
+  against a fake GitHub: 503 before the connection is stored, answered once it is stored through the route (its token
+  minted for the stored repository alone), 503 again once it is removed. A start on a connection that is not stored is
+  400.
+- CDK: the Agents API's SSM and KMS grants pinned (no read of a parameter in any form; nothing while the module is
+  off), the Deny's two partitions on every other `voc-agents` writer.
+- The web app: the list, adding, editing (the key kept or asked for again), removing with its confirmation and Escape,
+  the form's checks before anything is sent, and the key never in the page or the query cache after a save.
+
+### Upgrade notes
+
+- Nothing to do for a deployment with the module off. With it on, deploy as usual; then add each repository under
+  Agents → Connections with its GitHub App (install it on that one repository only). A run started before this
+  release recorded its connection's id as its repository, so the broker refuses it (409) even once the connection
+  is stored; start it again on the stored connection. TENETS.md's tenet 3 and 4 rows name the connections.
+
 ## [6.30.01] - 2026-11-14
 
 Autonomous engineering agents: two fixes to 6.30.00's broker writes. Off by default, and no fixed cost.

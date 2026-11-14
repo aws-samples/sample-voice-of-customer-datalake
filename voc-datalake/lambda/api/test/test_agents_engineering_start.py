@@ -48,13 +48,18 @@ class Start(LambdaClient):
 
 @pytest.fixture
 def start(monkeypatch: pytest.MonkeyPatch, lambda_context: Any) -> Iterator[tuple[Start, str]]:
-    """The module on, the start function named, and a saved engineering flow with a $49.99 monthly budget."""
+    """The module on, the start function named, two stored connections, and a saved engineering flow with a $49.99
+    monthly budget."""
     monkeypatch.setenv('ENGINEERING_AGENTS', 'on')
     monkeypatch.setenv('ENGINEERING_TABLE', 'voc-engineering')
     monkeypatch.setenv('ENGINEERING_START_FUNCTION', START_FUNCTION)
     client = Start({})
     monkeypatch.setattr(agents_handler, '_start_client', lambda: client)
-    with _api():
+    with _api() as env:
+        for connection, repository in (('conn-1', 'example-org/shop'), ('acme-shop', 'example-org/acme-shop')):
+            env.agents.put_item(Item={'pk': 'CONNECTIONS#default', 'sk': f'CONNECTION#{connection}',
+                                      'connection_id': connection, 'host': 'github', 'repository': repository,
+                                      'default_branch': 'main', 'credential_set': True, 'version': 1})
         definition = {**bug_fix(), 'budget': {'monthly_usd': 49.99}}
         status, body = _call(lambda_context, 'POST', '/workflows', body={'definition': definition})
         assert status == 201, body
@@ -81,8 +86,7 @@ def test_an_admin_starts_a_saved_flow_with_its_stored_budget_as_themselves(lambd
     assert status == 202, body
     sent = _sent(client)
     assert ULID.fullmatch(sent['run_id'])
-    # The deployment's caps when it sets none (50 USD, 10 million tokens); the repo is the connection's id until a
-    # connection's record can be read.
+    # The deployment's caps when it sets none (50 USD, 10 million tokens); the repo is the stored connection's.
     # The flow as stored now goes with the start, which copies it into the run's own record: the run follows that.
     stored = json.loads(sent.pop('flow_definition'))
     assert (stored['schema'], [node['id'] for node in stored['nodes']], stored['budget']) == (
@@ -90,7 +94,7 @@ def test_an_admin_starts_a_saved_flow_with_its_stored_budget_as_themselves(lambd
     assert sent == {'action': 'start_run', 'run_id': sent['run_id'], 'max_tasks': agents_handler.RUN_TASK_CAP,
                     'flow': workflow_id, 'flow_revision': 1, 'budget_usd': 49.99, 'connection': 'conn-1',
                     'commit': COMMIT, 'language': 'python', 'goal': 'Fix the paging bugs', 'actor': 'admin-sub',
-                    'repo': 'conn-1', 'max_cost_usd': 50.0, 'max_tokens': 10_000_000}
+                    'repo': 'example-org/shop', 'max_cost_usd': 50.0, 'max_tokens': 10_000_000}
     assert body == {'run': {'run_id': sent['run_id'], 'status': 'active', 'workflow_id': workflow_id,
                             'started_by': 'admin-sub'}}
 
@@ -165,6 +169,15 @@ def test_a_field_off_its_rule_is_400_and_nothing_is_started(lambda_context: Any,
     client, workflow_id = start
     status, _ = _call(lambda_context, 'POST', PATH, body=_body(workflow_id, **change))
     assert (status, client.requests) == (400, [])
+
+
+@pytest.mark.parametrize('connection', ['conn-2', 'Conn-1'], ids=['not stored', 'not a connection id'])
+def test_a_connection_that_is_not_stored_is_400_and_nothing_is_started(lambda_context: Any, start: tuple[Start, str],
+                                                                       connection: str) -> None:
+    client, workflow_id = start
+    status, body = _call(lambda_context, 'POST', PATH, body=_body(workflow_id, connection=connection))
+    assert (status, client.requests) == (400, [])
+    assert 'connection' in body['error']
 
 
 def test_a_missing_field_is_400(lambda_context: Any, start: tuple[Start, str]) -> None:

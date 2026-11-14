@@ -20,7 +20,8 @@
     "label": "Sections de la page des agents",
     "agents": "Agents",
     "workflows": "Workflows",
-    "spend": "Dépenses"
+    "spend": "Dépenses",
+    "connections": "Connexions"
   },
   "list": {
     "title": "Agents autonomes",
@@ -753,6 +754,85 @@
     "loadFailed": "Impossible de charger les dépenses.",
     "truncated": "Ce mois compte plus de lignes qu’une lecture n’en prend : les chiffres affichés sont un minimum.",
     "empty": "Aucune dépense en {{month}}."
+  },
+  "connections": {
+    "title": "Connexions aux dépôts",
+    "intro": "Les agents d’ingénierie accèdent à un dépôt par une connexion : le dépôt, sa branche par défaut et un identifiant d’accès enregistré pour eux. Un identifiant enregistré n’est plus jamais affiché, à personne.",
+    "add": "Ajouter une connexion",
+    "limitReached": "Ce déploiement accepte au plus {{limit, number}} connexions. Supprimez-en une pour en ajouter une autre.",
+    "loadFailed": "Les connexions aux dépôts n’ont pas pu être chargées.",
+    "emptyTitle": "Aucune connexion à un dépôt pour l’instant",
+    "emptyHint": "Ajoutez-en une pour que les agents d’ingénierie puissent travailler sur un dépôt.",
+    "branch": "Branche par défaut : {{branch}}",
+    "kind": "GitHub App",
+    "appIds": "App {{appId}}, installation {{installationId}}",
+    "set": "Enregistré",
+    "notSet": "Non enregistré",
+    "notSetHint": "L’identifiant enregistré est absent : modifiez la connexion et enregistrez-la de nouveau avec son identifiant.",
+    "updated": "Modifiée {{when}} par {{who}}",
+    "unknownEditor": "inconnu",
+    "edit": "Modifier",
+    "editLabel": "Modifier {{repository}}",
+    "remove": "Supprimer",
+    "removeLabel": "Supprimer {{repository}}",
+    "created": "{{repository}} est ajouté.",
+    "saved": "{{repository}} est enregistré.",
+    "removed": "{{repository}} est supprimé.",
+    "guidance": {
+      "title": "Ce dont l’identifiant a besoin",
+      "app": "Créez une GitHub App et installez-la uniquement sur ce dépôt. Autorisations du dépôt : Contents, Pull requests et Issues en Read and write, Metadata en Read-only. Rien d’autre : aucune autorisation Administration, Workflows, Secrets, Actions ni d’organisation.",
+      "token": "L’App n’est jamais confiée aux agents : pour chaque étape, le broker émet un jeton valable une heure, pour ce seul dépôt et seulement pour ce dont l’étape a besoin (contenu du dépôt et pull requests, lecture et écriture ; jamais d’administration).",
+      "branch": "Protégez la branche par défaut, et ne laissez les agents pousser que sur des branches nommées voc-agent/*."
+    },
+    "dialog": {
+      "addTitle": "Ajouter une connexion à un dépôt",
+      "editTitle": "Modifier la connexion à {{repository}}",
+      "description": "Les agents d’ingénierie utilisent cette connexion pour lire le dépôt et y proposer des modifications.",
+      "stored": "Identifiant d’accès enregistré :",
+      "keepHint": "L’identifiant d’accès enregistré n’est jamais affiché. Laissez la clé privée vide pour le conserver ; un nouveau dépôt, un nouvel identifiant d’App ou d’installation demande à nouveau la clé privée.",
+      "save": "Enregistrer la connexion"
+    },
+    "fields": {
+      "connectionId": "Identifiant de la connexion",
+      "repository": "Dépôt",
+      "defaultBranch": "Branche par défaut",
+      "appId": "ID de l’App",
+      "installationId": "ID de l’installation",
+      "privateKey": "Clé privée"
+    },
+    "hints": {
+      "connectionId": "Lettres minuscules, chiffres et tirets, jusqu’à 63. Il ne peut plus changer une fois la connexion ajoutée.",
+      "connectionIdFixed": "Choisi à l’ajout de la connexion ; il ne peut pas changer.",
+      "repository": "owner/name, comme dans l’adresse du dépôt.",
+      "defaultBranch": "La branche dont partent les agents et sur laquelle ils proposent leurs modifications.",
+      "appId": "L’ID numérique de l’App.",
+      "installationId": "L’ID numérique de l’installation de l’App sur ce dépôt.",
+      "privateKey": "La clé privée de l’App : le fichier .pem entier généré par GitHub, environ 4 Ko au plus. Elle est envoyée une fois et n’est plus jamais affichée."
+    },
+    "invalid": {
+      "connectionId": "Saisissez un identifiant de 1 à 63 lettres minuscules, chiffres ou tirets, commençant par une lettre ou un chiffre.",
+      "repository": "Saisissez le dépôt sous la forme owner/name.",
+      "defaultBranch": "Saisissez un nom de branche : lettres, chiffres, « . », « _ », « - » et « / », {{max, number}} caractères au plus, sans « .. », pas une branche voc-agent/.",
+      "appId": "Saisissez l’ID de l’App : des chiffres uniquement.",
+      "installationId": "Saisissez l’ID de l’installation : des chiffres uniquement.",
+      "privateKeyEmpty": "Collez la clé privée de l’App : une nouvelle connexion a besoin de son identifiant d’accès.",
+      "privateKeyNeeded": "Collez à nouveau la clé privée de l’App : un nouveau dépôt, un nouvel identifiant d’App ou d’installation est enregistré avec elle.",
+      "privateKey": "Collez la clé RSA entière, non chiffrée, au format PEM, de sa ligne BEGIN à sa ligne END.",
+      "privateKeyLarge": "La clé dépasse ce qu’un identifiant d’accès peut contenir (environ 4 Ko) : utilisez la clé privée de l’App elle-même."
+    },
+    "confirm": {
+      "title": "Supprimer {{repository}} ?",
+      "message": "La connexion et son identifiant enregistré sont supprimés. Les exécutions qui travaillent sur {{repository}} perdent l’accès en cinq minutes au plus : leurs lectures et écritures échouent jusqu’à ce qu’une connexion soit de nouveau enregistrée.",
+      "confirm": "Supprimer la connexion"
+    },
+    "errors": {
+      "invalid": "Un champ a été refusé. Vérifiez les champs et enregistrez de nouveau.",
+      "forbidden": "Seul un administrateur peut modifier les connexions.",
+      "notFound": "La connexion est introuvable, ou les agents d’ingénierie sont désactivés.",
+      "conflict": "La connexion ne peut pas changer maintenant : arrêtez d’abord ses exécutions en cours, ou supprimez une autre connexion.",
+      "unavailable": "Les connexions sont indisponibles pour le moment. Réessayez dans un instant.",
+      "generic": "La connexion n’a pas pu être modifiée. Réessayez."
+    }
   },
   "engineeringRun": {
     "untitled": "Exécution d’ingénierie",

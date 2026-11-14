@@ -5,7 +5,8 @@ The broker's one write is a write's claim row, in a partition of the run's write
 other code writes; the broker writes none of them:
 
 * the run: ``WS#<ws>#RUN#<run>`` / ``META`` (``runtime/runs.py``), read strongly consistent for the caller's run
-  alone (its session names it): its status, connection, commit and the person who started it. A run whose META
+  alone (its session names it): its status, connection, commit, the person who started it and its ``repo`` (the
+  stored connection's repository at the start, which the broker holds the connection's credential to). A run whose META
   names another run is no run; an active run without a connection is ``NoConnection``. The connection's default
   branch comes from the host.
 * the board's GO ledger: the run's ``TASK#`` rows (one Query of its partition). The final-go task that ended last
@@ -80,7 +81,8 @@ class RunRecords:
         return RunRecord(
             connection_id=connection, default_branch=self._default_branch(connection) if status == ACTIVE else '',
             status=status, ci_attested=False, cited_reviews=(), bot_addresses=(AUTHOR,),
-            commit=string_attr(item, 'commit'), started_by=string_attr(item, 'started_by'))
+            commit=string_attr(item, 'commit'), started_by=string_attr(item, 'started_by'),
+            repository=string_attr(item, 'repo'))
 
     def person_go(self, run_id: str) -> bool:
         item = self._row(run_id, PERSON_GO_SK)

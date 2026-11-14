@@ -371,6 +371,11 @@ class GitHubHost:
                              accept=_RAW, ok=(200, 404))
         return None if response.status == 404 else response.body
 
+    def repository(self, connection_id: str) -> str:
+        """``owner/name`` of the repository the connection's credential is for (no request to the host)."""
+        credential = self._credentials(connection_id)
+        return f'{credential.owner}/{credential.repository}'
+
     def default_branch(self, connection_id: str) -> str:
         """The repository's default branch, kept ``DEFAULT_BRANCH_SECONDS`` per connection and repository."""
         credential = self._credentials(connection_id)

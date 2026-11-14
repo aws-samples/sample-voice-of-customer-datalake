@@ -163,6 +163,9 @@ class RunRecord:
     commit: str = ''
     #: The person who started the run (their subject): whose way of working the dial reads ('' for none).
     started_by: str = ''
+    #: The repository the run started on (META's ``repo``, the stored connection's ``owner/name`` at its start): the
+    #: broker serves the run only while the connection's credential names that same repository.
+    repository: str = ''
 
 
 @dataclass(frozen=True)
@@ -193,6 +196,10 @@ class RepositoryHost(Protocol):
         ...
 
     def default_branch(self, connection_id: str) -> str: ...
+
+    def repository(self, connection_id: str) -> str:
+        """The repository (``owner/name``) the connection's stored credential is for."""
+        ...
 
     def post_comment(self, connection_id: str, on: CommentTarget, number: int, body: str) -> str: ...
 

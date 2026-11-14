@@ -69,6 +69,17 @@ export function engineeringParameterPrefix(deploymentPrefix: string | undefined)
   return deploymentPrefix ? `/${deploymentPrefix}-${ENGINEERING_PARAMETER_PATH}` : `/${ENGINEERING_PARAMETER_PATH}`;
 }
 
+/**
+ * Every connection's parameter (`/[<prefix>-]voc/engineering/*`) in `stack`'s account and region: the broker reads them,
+ * the Agents API writes and deletes them (api-assistant-lambdas.ts).
+ */
+export function engineeringParameterArns(stack: cdk.Stack, deploymentPrefix: string | undefined): string {
+  return stack.formatArn({
+    service: 'ssm', resource: 'parameter', resourceName: `${engineeringParameterPrefix(deploymentPrefix).slice(1)}*`,
+    arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
+  });
+}
+
 /** `lambda/engineering/connectors/handler.py`, path-style inside the worker bundle. */
 const BROKER_HANDLER = 'engineering/connectors/handler.lambda_handler';
 
@@ -155,10 +166,7 @@ export class EngineeringBroker extends Construct {
     // cryptography signs the GitHub App's JWT (RS256): the signing layer, for this one function of the stack.
     broker.addLayers(dependencyLayer(this, 'SigningDepsLayer', SIGNING_LAYER_DIR,
       'RS256 signing for the engineering broker (GitHub App JWT; ARM64/Graviton)'));
-    const parameters = stack.formatArn({
-      service: 'ssm', resource: 'parameter', resourceName: `${parameterPrefix.slice(1)}*`,
-      arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
-    });
+    const parameters = engineeringParameterArns(stack, props.deploymentPrefix);
     role.addToPrincipalPolicy(new iam.PolicyStatement({
       sid: 'EngineeringConnectionCredentials', actions: ['ssm:GetParameter'], resources: [parameters],
     }));

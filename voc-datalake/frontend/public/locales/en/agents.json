@@ -19,7 +19,8 @@
     "label": "Agents page sections",
     "agents": "Agents",
     "workflows": "Workflows",
-    "spend": "Spend"
+    "spend": "Spend",
+    "connections": "Connections"
   },
   "list": {
     "title": "Autonomous agents",
@@ -693,6 +694,85 @@
     "loadFailed": "The spend could not be loaded.",
     "truncated": "This month has more ledger rows than one read takes: the figures shown are a lower bound.",
     "empty": "Nothing was spent in {{month}}."
+  },
+  "connections": {
+    "title": "Repository connections",
+    "intro": "The engineering agents reach a repository through a connection: the repository, its default branch and a credential stored for them. A stored credential is never shown again, to anyone.",
+    "add": "Add connection",
+    "limitReached": "This deployment holds at most {{limit, number}} connections. Remove one to add another.",
+    "loadFailed": "The repository connections could not be loaded.",
+    "emptyTitle": "No repository connections yet",
+    "emptyHint": "Add one so the engineering agents can work on a repository.",
+    "branch": "Default branch: {{branch}}",
+    "kind": "GitHub App",
+    "appIds": "App {{appId}}, installation {{installationId}}",
+    "set": "Set",
+    "notSet": "Not set",
+    "notSetHint": "The stored credential is missing: edit the connection and save it with its credential again.",
+    "updated": "Updated {{when}} by {{who}}",
+    "unknownEditor": "unknown",
+    "edit": "Edit",
+    "editLabel": "Edit {{repository}}",
+    "remove": "Remove",
+    "removeLabel": "Remove {{repository}}",
+    "created": "{{repository}} is added.",
+    "saved": "{{repository}} is saved.",
+    "removed": "{{repository}} is removed.",
+    "guidance": {
+      "title": "What the credential needs",
+      "app": "Create a GitHub App and install it only on this repository. Repository permissions: Contents, Pull requests and Issues set to Read and write, Metadata to Read-only. Nothing else: no Administration, Workflows, Secrets, Actions or organization permission.",
+      "token": "The App is never handed to the agents: for each step the broker mints a token valid for one hour, for this one repository and only what the step needs (repository contents and pull requests, read and write; never admin).",
+      "branch": "Protect the default branch, and let the agents push only to branches named voc-agent/*."
+    },
+    "dialog": {
+      "addTitle": "Add a repository connection",
+      "editTitle": "Edit the connection to {{repository}}",
+      "description": "The engineering agents use this connection to read the repository and propose changes to it.",
+      "stored": "Stored credential:",
+      "keepHint": "The stored credential is never shown. Leave the private key empty to keep it; a new repository, App id or installation id needs the private key again.",
+      "save": "Save connection"
+    },
+    "fields": {
+      "connectionId": "Connection id",
+      "repository": "Repository",
+      "defaultBranch": "Default branch",
+      "appId": "App id",
+      "installationId": "Installation id",
+      "privateKey": "Private key"
+    },
+    "hints": {
+      "connectionId": "Lowercase letters, digits and hyphens, up to 63. It cannot change once the connection is added.",
+      "connectionIdFixed": "Chosen when the connection was added; it cannot change.",
+      "repository": "owner/name, as in the repository’s address.",
+      "defaultBranch": "The branch the agents start from and propose their changes to.",
+      "appId": "The App’s numeric id.",
+      "installationId": "The numeric id of the App’s installation on this repository.",
+      "privateKey": "The App’s private key: the whole .pem file GitHub generated, up to about 4 KB. It is sent once and never shown again."
+    },
+    "invalid": {
+      "connectionId": "Enter an id of 1 to 63 lowercase letters, digits or hyphens, starting with a letter or a digit.",
+      "repository": "Enter the repository as owner/name.",
+      "defaultBranch": "Enter a branch name: letters, digits, “.”, “_”, “-” and “/”, at most {{max, number}} characters, no “..”, not a voc-agent/ branch.",
+      "appId": "Enter the App id: digits only.",
+      "installationId": "Enter the installation id: digits only.",
+      "privateKeyEmpty": "Paste the App’s private key: a new connection needs its credential.",
+      "privateKeyNeeded": "Paste the App’s private key again: a new repository, App id or installation id is stored with it.",
+      "privateKey": "Paste the whole unencrypted RSA key in PEM, from its BEGIN line to its END line.",
+      "privateKeyLarge": "The key is larger than a credential holds (about 4 KB): use the App’s own private key."
+    },
+    "confirm": {
+      "title": "Remove {{repository}}?",
+      "message": "This removes the connection and its stored credential. Runs working on {{repository}} lose access within five minutes: their reads and writes fail until a connection is stored again.",
+      "confirm": "Remove connection"
+    },
+    "errors": {
+      "invalid": "A field was refused. Check the fields and save again.",
+      "forbidden": "Only an administrator can change the connections.",
+      "notFound": "The connection was not found, or the engineering agents are off.",
+      "conflict": "The connection cannot change now: stop its live runs first, or remove another connection.",
+      "unavailable": "The connections are unavailable right now. Try again in a moment.",
+      "generic": "The connection could not be changed. Try again."
+    }
   },
   "engineeringRun": {
     "untitled": "Engineering run",

@@ -72,6 +72,8 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         'POST /agents/engineering/<run_id>/go',
         # The administrators' hard cap on engineering runs (engineering/settings.py): an admin acting for themselves.
         'PUT /agents/engineering/settings',
+        # The repository connections and their credentials (engineering/connectors/connections.py): the same gate.
+        'PUT /agents/engineering/connections/<connection_id>', 'DELETE /agents/engineering/connections/<connection_id>',
         # A run's start from a saved engineering flow (the start function): an admin acting for themselves.
         'POST /agents/engineering/runs',
         'POST /workflows', 'PUT /workflows/<workflow_id>',

@@ -92,6 +92,8 @@ _NOT_ACTIVE: Final[Mapping[str, str]] = {
     'needs_human': "The run waits at a person's decision; the broker refuses its operations until it is resumed.",
 }
 _ENDED: Final = 'The run has ended; the broker refuses its operations.'
+OTHER_REPOSITORY: Final = ("The run's connection now names another repository than the one the run started on; "
+                           'start a new run on it.')
 
 
 class NotPermitted(WriteRefused):
@@ -154,6 +156,11 @@ class Broker:
             raise NotNow('The run is not one the broker knows.')
         if run.status != ACTIVE:
             raise NotNow(_NOT_ACTIVE.get(run.status, _ENDED))
+        # The connection's credential must still be for the repository the run started on (connections.py: a stored
+        # connection's repository may change once its runs end, and a credential and its row could disagree after a
+        # failed save): a run never reads or writes another repository than its own.
+        if self._connector.host.repository(run.connection_id) != run.repository:
+            raise NotNow(OTHER_REPOSITORY)
         return self._connector, run
 
     def _open_write(self, caller: Caller, operation: str, branch: str) -> tuple[Connector, RunRecord]:

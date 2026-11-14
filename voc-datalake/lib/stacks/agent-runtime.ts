@@ -137,7 +137,8 @@ export class AgentRuntime extends Construct {
     const { uniqueName, kmsKey, agentsTable, aggregatesTable } = this.props;
     const role = workerRole(this, `${id}Role`);
     agentsTable.grant(role, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:Query');
-    // (never the engineering hard cap's row or its history: the Agents API is their one writer)
+    // (never the engineering hard cap's row, the repository connections' rows or their history: the Agents API is
+    // their one writer)
     denyHardCapWrites(role, agentsTable);
     aggregatesTable.grant(role, ...spec.aggregatesActions);
     kmsKey.grantEncryptDecrypt(role);
@@ -292,7 +293,7 @@ export class AgentRuntime extends Construct {
     const role = workerRole(this, 'AgentHeartbeatRole');
     // Enabled agents (index), cursors, the queued RUN row it creates.
     agentsTable.grant(role, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:Query');
-    denyHardCapWrites(role, agentsTable);   // (the engineering hard cap's row: the Agents API's alone)
+    denyHardCapWrites(role, agentsTable);   // (the hard cap's and the connections' rows: the Agents API's alone)
     // new_reviews trigger: in-scope reviews since the agent's cursor (date index).
     feedbackTable.grant(role, 'dynamodb:Query');
     // threshold trigger: METRIC#daily_category / daily_subcategory rows.

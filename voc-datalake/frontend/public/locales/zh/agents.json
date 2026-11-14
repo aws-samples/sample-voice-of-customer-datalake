@@ -19,7 +19,8 @@
     "label": "智能体页面分区",
     "agents": "智能体",
     "workflows": "工作流",
-    "spend": "费用"
+    "spend": "费用",
+    "connections": "连接"
   },
   "list": {
     "title": "自主智能体",
@@ -747,6 +748,85 @@
     "loadFailed": "无法加载费用。",
     "truncated": "本月的行数超过一次读取的上限：显示的数字为下限。",
     "empty": "{{month}}没有费用。"
+  },
+  "connections": {
+    "title": "代码仓库连接",
+    "intro": "工程智能体通过连接访问代码仓库：连接包括仓库、其默认分支以及为它们保存的凭据。已保存的凭据不会再向任何人显示。",
+    "add": "添加连接",
+    "limitReached": "此部署最多可保存 {{limit, number}} 个连接。请先移除一个，再添加新的连接。",
+    "loadFailed": "无法加载代码仓库连接。",
+    "emptyTitle": "还没有代码仓库连接",
+    "emptyHint": "添加一个连接，工程智能体即可在仓库中工作。",
+    "branch": "默认分支：{{branch}}",
+    "kind": "GitHub App",
+    "appIds": "App {{appId}}，安装 {{installationId}}",
+    "set": "已设置",
+    "notSet": "未设置",
+    "notSetHint": "缺少已保存的凭据：请编辑此连接，并连同凭据重新保存。",
+    "updated": "{{who}} 于 {{when}} 更新",
+    "unknownEditor": "未知",
+    "edit": "编辑",
+    "editLabel": "编辑 {{repository}}",
+    "remove": "移除",
+    "removeLabel": "移除 {{repository}}",
+    "created": "已添加 {{repository}}。",
+    "saved": "已保存 {{repository}}。",
+    "removed": "已移除 {{repository}}。",
+    "guidance": {
+      "title": "凭据需要具备什么",
+      "app": "创建一个 GitHub App，并只安装在此仓库上。仓库权限：Contents、Pull requests 和 Issues 设为 Read and write，Metadata 设为 Read-only。不要授予其他权限：不需要 Administration、Workflows、Secrets、Actions 或组织权限。",
+      "token": "App 本身从不交给智能体：代理服务在每一步签发一个有效期一小时的令牌，只针对此仓库，只含该步骤所需的权限（仓库内容和拉取请求的读写；从不含管理权限）。",
+      "branch": "请保护默认分支，并只允许智能体推送到名为 voc-agent/* 的分支。"
+    },
+    "dialog": {
+      "addTitle": "添加代码仓库连接",
+      "editTitle": "编辑到 {{repository}} 的连接",
+      "description": "工程智能体使用此连接读取仓库并提出修改。",
+      "stored": "已存储的凭据：",
+      "keepHint": "已存储的凭据永远不会显示。私钥留空即可保留它；更换仓库、App ID 或安装 ID 时需要再次提供私钥。",
+      "save": "保存连接"
+    },
+    "fields": {
+      "connectionId": "连接 ID",
+      "repository": "仓库",
+      "defaultBranch": "默认分支",
+      "appId": "App ID",
+      "installationId": "安装 ID",
+      "privateKey": "私钥"
+    },
+    "hints": {
+      "connectionId": "小写字母、数字和连字符，最多 63 个字符。添加连接后不能更改。",
+      "connectionIdFixed": "在添加连接时选定，不能更改。",
+      "repository": "owner/name，与仓库地址中的写法相同。",
+      "defaultBranch": "智能体开始工作并提交修改建议的分支。",
+      "appId": "App 的数字 ID。",
+      "installationId": "App 在此仓库上的安装的数字 ID。",
+      "privateKey": "App 的私钥：GitHub 生成的整个 .pem 文件，最多约 4 KB。只发送一次，之后不再显示。"
+    },
+    "invalid": {
+      "connectionId": "请输入由 1 到 63 个小写字母、数字或连字符组成、以字母或数字开头的 ID。",
+      "repository": "请按 owner/name 的格式输入仓库。",
+      "defaultBranch": "请输入分支名称：仅限字母、数字、“.”、“_”、“-” 和 “/”，最多 {{max, number}} 个字符，不含 “..”，且不能是 voc-agent/ 分支。",
+      "appId": "请输入 App ID：仅限数字。",
+      "installationId": "请输入安装 ID：仅限数字。",
+      "privateKeyEmpty": "请粘贴 App 的私钥：新连接需要凭据。",
+      "privateKeyNeeded": "请再次粘贴 App 的私钥：新的仓库、App ID 或安装 ID 会和私钥一起存储。",
+      "privateKey": "请粘贴完整的未加密 RSA 私钥 PEM 块，从 BEGIN 行到 END 行。",
+      "privateKeyLarge": "密钥超过了凭据能容纳的大小（约 4 KB）：请使用 App 自己的私钥。"
+    },
+    "confirm": {
+      "title": "要移除 {{repository}} 吗？",
+      "message": "这会移除此连接及其已保存的凭据。正在 {{repository}} 上工作的运行会在五分钟内失去访问权限：在重新保存连接之前，它们的读取和写入都会失败。",
+      "confirm": "移除连接"
+    },
+    "errors": {
+      "invalid": "有字段被拒绝。请检查各字段后重新保存。",
+      "forbidden": "只有管理员可以更改连接。",
+      "notFound": "未找到此连接，或者工程智能体已关闭。",
+      "conflict": "现在无法更改此连接：请先停止它正在进行的运行，或移除另一个连接。",
+      "unavailable": "连接暂时不可用。请稍后重试。",
+      "generic": "无法更改此连接。请重试。"
+    }
   },
   "engineeringRun": {
     "untitled": "工程运行",

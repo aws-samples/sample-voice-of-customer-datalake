@@ -11,6 +11,7 @@ import userEvent from '@testing-library/user-event'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { renderWithQueryClient } from '@test/query-client'
 import { fetchApi, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
+import { said } from '@test/describedField'
 import { ApiError } from '../../lib/errors'
 import type { RouteHandler as Handler } from '@test/fetchApiRoutes'
 import type { WorkflowSummary } from '../../api/workflowsApi'
@@ -47,12 +48,6 @@ async function fill(dialog: HTMLElement, fields: { connection?: string; commit?:
   if (connection !== '') await userEvent.type(within(dialog).getByLabelText('Repository connection'), connection)
   if (commit !== '') await userEvent.type(within(dialog).getByLabelText('Commit'), commit)
   if (goal !== '') await userEvent.type(within(dialog).getByLabelText('Goal'), goal)
-}
-
-/** A field's state as a screen reader has it: invalid or not, and what describes it. */
-function said(dialog: HTMLElement, label: string): [string | null, string | null | undefined] {
-  const field = within(dialog).getByLabelText(label)
-  return [field.getAttribute('aria-invalid'), document.getElementById(field.getAttribute('aria-describedby') ?? '')?.textContent]
 }
 
 beforeEach(() => { resetFetchApi() })
