@@ -36,7 +36,7 @@ it finished") an hour later, when its lock is free again. Before completing,
 an invocation with too little time left hands over once more, every entity written, and the next one completes. A
 workspace's credentials are never read (no SSM or Secrets Manager grant).
 
-Env: ``FEEDBACK_TABLE``, ``AGGREGATES_TABLE``, ``WORKSPACES_TABLE``, ``RAW_DATA_BUCKET``.
+Env: ``FEEDBACK_TABLE``, ``AGGREGATES_TABLE``, ``MEMORY_TABLE``, ``WORKSPACES_TABLE``, ``RAW_DATA_BUCKET``.
 """
 from __future__ import annotations
 
@@ -51,6 +51,7 @@ from typing import Any, Final
 from botocore.exceptions import BotoCoreError, ClientError
 
 from jobs.workspace_export.entities import ENTITIES, FILE_CAP, ExportRefused, Source, encode_row, manifest
+from jobs.workspace_export.memory import COUNTED
 from jobs.workspace_export.objects import (
     BAD_NAME,
     CHUNK,
@@ -91,8 +92,8 @@ from shared.ws_repo import (
     s3_prefix,
 )
 
-FEEDBACK_TABLE, AGGREGATES_TABLE, RAW_DATA_BUCKET = (
-    os.environ.get(name, '') for name in ('FEEDBACK_TABLE', 'AGGREGATES_TABLE', 'RAW_DATA_BUCKET'))
+FEEDBACK_TABLE, AGGREGATES_TABLE, MEMORY_TABLE, RAW_DATA_BUCKET = (
+    os.environ.get(name, '') for name in ('FEEDBACK_TABLE', 'AGGREGATES_TABLE', 'MEMORY_TABLE', 'RAW_DATA_BUCKET'))
 
 #: Hand over to a fresh invocation when less than this remains (the 15-minute timeout's reserve: a part of up to
 #: 64 MB, the work objects, the progress write and the invoke all fit in it).
@@ -110,15 +111,27 @@ MANIFEST_NAME: Final = 'manifest.json'
 #: The job row's phase once every entity is written: the manifest, the central directory, the upload's completion.
 COMPLETING: Final = 'manifest'
 _AWS_ERRORS: Final = (ClientError, BotoCoreError)
-#: The run's phase after the JSONL entities: the workspace's objects; past it, the completion.
-OBJECTS_PHASE: Final = len(ENTITIES)
+#: The counts of the memory left out of the export (memory.py), after the objects and before the completion.
+MEMORY_COUNTS: Final = 'memory_counts'
+#: Every phase of a run, in order, each named: a checkpoint (and the job row's ``phase``) names the one it is in, so
+#: a phase added in a later release never shifts a running export onto another.
+PHASES: Final = (*ENTITIES, OBJECTS, MEMORY_COUNTS, COMPLETING)
+#: A checkpoint written before phases were named held an index into the 4b release's phases.
+_PHASES_4B: Final = ('feedback', 'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'workspace',
+                     'members', 'audit', 'plugin_config_history', OBJECTS, COMPLETING)
 
 
-def _phase_name(phase: int) -> str:
-    """The job row's ``phase``: the entity being written, ``objects``, or ``COMPLETING``."""
-    if phase < len(ENTITIES):
-        return ENTITIES[phase]
-    return OBJECTS if phase == OBJECTS_PHASE else COMPLETING
+def phase_of(value: object) -> str:
+    """The phase a checkpoint names (an old numeric one by the 4b order); ValueError for anything else."""
+    if isinstance(value, int) and not isinstance(value, bool) and 0 <= value < len(_PHASES_4B):
+        return _PHASES_4B[value]
+    if isinstance(value, str) and value in PHASES:
+        return value
+    raise ValueError('not an export phase')
+
+
+def next_phase(phase: str) -> str:
+    return PHASES[PHASES.index(phase) + 1]
 
 
 @dataclass
@@ -129,13 +142,15 @@ class RunState:
     upload_id: str = ''
     part: int = 1
     zip_state: ZipState = field(default_factory=ZipState)
-    phase: int = 0
+    phase: str = PHASES[0]
     cursor: dict[str, Any] | None = None
     counts: dict[str, int] = field(default_factory=dict)
     files: dict[str, list[str]] = field(default_factory=dict)
     cd_generations: list[int] = field(default_factory=list)
     tail_generation: int | None = None
     objects: ObjectsState = field(default_factory=ObjectsState)
+    #: Each count of the memory left out, as far as it went (memory.py ``MemorySource.count``).
+    memory_counts: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @classmethod
     def from_event(cls, event: Mapping[str, Any]) -> RunState:
@@ -147,19 +162,23 @@ class RunState:
         return cls(
             generation=int(carried.get('generation', 0)), upload_id=str(carried.get('upload_id') or ''),
             part=int(carried.get('part', 1)), zip_state=ZipState.from_json(carried.get('zip')),
-            phase=int(carried.get('phase', 0)), cursor=dict(cursor) if isinstance(cursor, Mapping) else None,
+            phase=phase_of(carried.get('phase', PHASES[0])),
+            cursor=dict(cursor) if isinstance(cursor, Mapping) else None,
             counts={str(name): int(count) for name, count in (carried.get('counts') or {}).items()},
             files={str(name): [str(file) for file in names] for name, names in (carried.get('files') or {}).items()},
             cd_generations=[int(generation) for generation in carried.get('cd_generations') or []],
             tail_generation=int(tail) if isinstance(tail, int) else None,
-            objects=ObjectsState.from_json(carried.get('objects')))
+            objects=ObjectsState.from_json(carried.get('objects')),
+            memory_counts={str(what): dict(state) for what, state in (carried.get('memory_counts') or {}).items()
+                           if isinstance(state, Mapping)})
 
     def to_json(self) -> dict[str, Any]:
         return {'generation': self.generation, 'upload_id': self.upload_id, 'part': self.part,
                 'zip': self.zip_state.to_json(), 'phase': self.phase, 'cursor': self.cursor, 'counts': dict(self.counts),
                 'files': {name: list(names) for name, names in self.files.items()},
                 'cd_generations': list(self.cd_generations), 'tail_generation': self.tail_generation,
-                'objects': self.objects.to_json()}
+                'objects': self.objects.to_json(),
+                'memory_counts': {what: dict(state) for what, state in self.memory_counts.items()}}
 
 
 class _HandOver(Exception):
@@ -188,7 +207,8 @@ class ExportRun:
         resource = get_dynamodb_resource()
         self.jobs: WorkspaceTable = ingest_table(scope, resource, AGGREGATES_TABLE)
         self.workspaces = get_workspaces_table()
-        self.source = Source(scope, ingest_table(scope, resource, FEEDBACK_TABLE), self.jobs, self.workspaces)
+        self.source = Source(scope, ingest_table(scope, resource, FEEDBACK_TABLE), self.jobs, self.workspaces,
+                             ingest_table(scope, resource, MEMORY_TABLE))
         s3 = get_s3_client()
         self.objects = ExportObjects(scope, s3, RAW_DATA_BUCKET)
         self.workspace_objects = WorkspaceObjects(scope, s3, RAW_DATA_BUCKET)
@@ -230,7 +250,7 @@ class ExportRun:
         except _HandOver:
             return self._hand_over(sink, writer)
         if not self._time_left():
-            # Every entity is written (phase == len(ENTITIES)): the next invocation only completes the zip.
+            # Every entity, the objects and the counts are done (phase COMPLETING): the next invocation completes.
             return self._hand_over(sink, writer)
         return self._complete(sink, writer)
 
@@ -238,18 +258,21 @@ class ExportRun:
         return has_time_left(self.context, TIME_RESERVE_MS)
 
     def _write_entities(self, writer: ZipWriter) -> None:
-        """Every entity from the run's phase and cursor on, then the workspace's objects; ``_HandOver`` when the time
-        runs low."""
-        while self.run.phase < len(ENTITIES):
-            entity = ENTITIES[self.run.phase]
+        """Every phase from the run's on, up to the completion: the entities, the workspace's objects, the counts of
+        the memory left out; ``_HandOver`` when the time runs low."""
+        while self.run.phase in ENTITIES:
+            entity = self.run.phase
             cursor = self.run.cursor or self.source.first_cursor(entity, self.created.date())
             if cursor is not None:
                 self._write_entity(writer, entity, cursor)
-            self.run.phase += 1
+            self.run.phase = next_phase(entity)
             self.run.cursor = None
-        if self.run.phase == OBJECTS_PHASE:
+        if self.run.phase == OBJECTS:
             self._write_objects(writer)
-            self.run.phase += 1
+            self.run.phase = next_phase(OBJECTS)
+        if self.run.phase == MEMORY_COUNTS:
+            self._count_memory_left_out()
+            self.run.phase = next_phase(MEMORY_COUNTS)
 
     # ── The workspace's objects (objects.py) ────────────────────────────────────────────────────────────────
 
@@ -389,7 +412,7 @@ class ExportRun:
         refresh_lock(self.jobs, export_job_pk(self.scope), self.export_id, now)
         progressed = export_jobs.record_progress(self.jobs, self.export_id, generation, {
             'progress_at': now.isoformat(),
-            'phase': _phase_name(self.run.phase),
+            'phase': self.run.phase,
             'counts': dict(self.run.counts)})
         if not progressed:
             return self._stop(previous_tail)
@@ -407,7 +430,8 @@ class ExportRun:
             export_id=self.export_id, scope=self.scope, workspace=self._workspace_names(),
             created_at=self.created.isoformat(), completed_at=completed.isoformat(), files=self.run.files,
             counts=self.run.counts, daily_total=daily_total,
-            objects=manifest_section(self.run.counts.get(OBJECTS, 0), self.run.objects)))
+            objects=manifest_section(self.run.counts.get(OBJECTS, 0), self.run.objects),
+            memory_left_out=self._memory_left_out()))
         self._close(entry)
         exported = self.run.counts.get('feedback', 0)
         if exported != daily_total:
@@ -433,6 +457,20 @@ class ExportRun:
         return self._finish(export_jobs.EXPORT_COMPLETED, {
             'completed_at': completed.isoformat(), 'expires_at': export_jobs.expires_at(completed),
             'counts': dict(self.run.counts), 'size_bytes': writer.state.offset, 'phase': COMPLETING})
+
+    def _count_memory_left_out(self) -> None:
+        """Count the personal memories and the extraction cursors (never exported: memory.py), each from where the
+        run's checkpoint left it; ``_HandOver`` when the time reaches ``TIME_RESERVE_MS``, so a count never eats into
+        the completion's reserve and the next invocation goes on with it."""
+        for what in COUNTED:
+            state = self.run.memory_counts.setdefault(what, {})
+            if not self.source.memory.count(what, state, self._time_left):
+                raise _HandOver
+
+    def _memory_left_out(self) -> dict[str, tuple[int, bool]]:
+        """``{what: (count, complete)}`` for the manifest (none for an export checkpointed before the counts)."""
+        return {what: (int(state.get('total') or 0), bool(state.get('done')))
+                for what, state in self.run.memory_counts.items()}
 
     def _workspace_names(self) -> dict[str, Any]:
         page = control_query(self.scope, self.workspaces, 'meta', sort_condition='#sk = :meta',

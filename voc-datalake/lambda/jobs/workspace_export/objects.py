@@ -10,9 +10,13 @@ reached it: the manifest says the older versions are not exported.
 The rules this module holds:
 
 * **The entry's name** comes from the key, which is user data: zip_stream.py ``entry_name``'s rules (no empty, ``.``
-  or ``..`` segment, also once trailing dots and spaces are dropped, so no absolute path; no backslash; no control,
-  format (bidi, zero-width) or separator character; valid UTF-8; at most 65,535 bytes). A key that fails is skipped
-  and listed in the manifest with the reason; the export never fails on it.
+  or ``..`` segment, also once trailing dots and spaces are dropped, so no absolute path; none of the characters
+  Windows refuses, ``\\ : < > " | ? *``; no Windows device name as a segment, CON, PRN, AUX, NUL, CONIN$, CONOUT$,
+  COM1 to COM9 and LPT1 to LPT9, in any case, with or without an extension; all of
+  that again in the name's NFKC form, which may hold no ``/`` the name does not; no control, format (bidi,
+  zero-width) or separator character; valid UTF-8; at most 65,535 bytes). A key that fails is skipped and listed in
+  the manifest with the reason; the export never fails on it. A folder marker (a zero-byte key ending ``/``) is
+  skipped quietly.
 * **DEFLATE or STORE** (``stored``): STORE only for bytes already compressed, on first principles: images
   (``image/*`` but SVG, which is text), the zip family (zip, the office formats docx, xlsx, pptx, odt, ods, odp, and
   epub and jar, all zip containers) and gzip, by content type, else by the key's extension. Everything else is
@@ -198,5 +202,7 @@ def manifest_section(count: int, state: ObjectsState) -> dict[str, Any]:
         'reading': ('Already-compressed objects are STORED entries with a data descriptor (their CRC is known only '
                     'after they are read), which some streaming readers reject; readers of the central directory '
                     '(most unzip tools) open them. Keys that differ only in letter case or Unicode normalisation can '
-                    'overwrite each other when extracted on a case-insensitive file system (macOS, Windows).'),
+                    'overwrite each other when extracted on a case-insensitive file system (macOS, Windows), and '
+                    'keys that differ only by trailing dots or spaces in a segment can on Windows, which drops '
+                    'them.'),
     }

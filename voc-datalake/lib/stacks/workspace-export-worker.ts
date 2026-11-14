@@ -10,6 +10,9 @@
  *   - voc-aggregates: GetItem and Query where the partition is one workspace's (`WS#{one id}#*`), and UpdateItem
  *     only on its export jobs and lock (`WS#{one id}#JOB#export`); no PutItem, DeleteItem or BatchWriteItem;
  *   - voc-workspaces: Query only, of a workspace's `WS#{one id}` and `AUDIT#WS#{one id}`; no write;
+ *   - voc-memory (slice 4c): Query only, of a workspace's `MEM#company`, `MEMEVT#*` and `MEMIMPORT` partitions on
+ *     the table; of its `MEMCURSOR` partition and its `MEMSTATUS#personal#*` partitions on `gsi1-by-memory-status`
+ *     only with `dynamodb:Select` `COUNT` (no row can be read there); no write;
  *   - the raw data bucket, under `ws/{one id}/exports/*` only: PutObject, PutObjectTagging, GetObject,
  *     AbortMultipartUpload and ListMultipartUploadParts, and DeleteObject on `…/exports/*\/work/*` only (the work
  *     objects of an export that may not go on);
@@ -66,6 +69,22 @@ export const EXPORT_JOB_PARTITION = `WS#${WORKSPACE_ID_PATTERN}#JOB#export`;
 export const WORKSPACE_DATE_PARTITIONS = `WS#${WORKSPACE_ID_PATTERN}#DATE#*`;
 /** Every partition of one workspace in voc-aggregates. */
 const WORKSPACE_AGGREGATE_PARTITIONS = `WS#${WORKSPACE_ID_PATTERN}#*`;
+/** voc-memory's status index (lambda/shared/indexes.py MEMORY_BY_STATUS_INDEX). */
+const MEMORY_BY_STATUS_INDEX = 'gsi1-by-memory-status';
+/**
+ * One workspace's memory partitions on the table the job reads (lambda/shared/ws_repo.py `memory_*_pk`): its company
+ * memories, their events and its import rows.
+ */
+export const MEMORY_TABLE_PARTITIONS = [`WS#${WORKSPACE_ID_PATTERN}#MEM#company`, `WS#${WORKSPACE_ID_PATTERN}#MEMEVT#*`,
+  `WS#${WORKSPACE_ID_PATTERN}#MEMIMPORT`];
+/** What the job may only count, never read (`dynamodb:Select` `COUNT`): their owners' (docs/memory.md). */
+const MEMORY_CURSOR_PARTITION = `WS#${WORKSPACE_ID_PATTERN}#MEMCURSOR`;
+const MEMORY_PERSONAL_STATUS_PARTITIONS = `WS#${WORKSPACE_ID_PATTERN}#MEMSTATUS#personal#*`;
+/** A Query's condition there: those partitions, and a count only (no row, no attribute, comes back). */
+const countOnly = (partition: string) => ({
+  'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [partition] },
+  StringEquals: { 'dynamodb:Select': 'COUNT' },
+});
 /** A workspace's two control-plane partitions in voc-workspaces (lambda/shared/ws_repo.py `control_query`). */
 export const CONTROL_PARTITIONS = [`WS#${WORKSPACE_ID_PATTERN}`, `AUDIT#WS#${WORKSPACE_ID_PATTERN}`];
 /** What the job does to the objects under a workspace's exports. */
@@ -79,6 +98,7 @@ export interface WorkspaceExportWorkerProps {
   feedbackTable: dynamodb.ITable;
   aggregatesTable: dynamodb.ITable;
   workspacesTable: dynamodb.ITable;
+  memoryTable: dynamodb.ITable;
   rawDataBucket: s3.IBucket;
 }
 
@@ -106,7 +126,7 @@ function exportCode(): lambda.Code {
 export function createWorkspaceExportWorker(scope: Construct, id: string,
   props: WorkspaceExportWorkerProps): lambda.Function {
   const worker = new Construct(scope, id);
-  const { uniqueName, kmsKey, feedbackTable, aggregatesTable, workspacesTable, rawDataBucket } = props;
+  const { uniqueName, kmsKey, feedbackTable, aggregatesTable, workspacesTable, memoryTable, rawDataBucket } = props;
   const functionName = uniqueName(WORKSPACE_EXPORT_FUNCTION_BASE_NAME);
   const role = workerRole(worker, 'ExportRole');
   role.addToPolicy(new iam.PolicyStatement({
@@ -127,6 +147,27 @@ export function createWorkspaceExportWorker(scope: Construct, id: string,
     actions: ['dynamodb:Query'],
     resources: [workspacesTable.tableArn],
     conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': CONTROL_PARTITIONS } },
+  }));
+  // Slice 4c: the workspace's company memory (lambda/jobs/workspace_export/memory.py), Query only, of exactly its
+  // partitions: the table's company, event and import partitions read; its cursor partition and the status index's
+  // personal partitions counted only (`dynamodb:Select` `COUNT`: personal memories and sessions are their owners').
+  role.addToPolicy(new iam.PolicyStatement({
+    sid: 'QueryWorkspaceMemory',
+    actions: ['dynamodb:Query'],
+    resources: [memoryTable.tableArn],
+    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': MEMORY_TABLE_PARTITIONS } },
+  }));
+  role.addToPolicy(new iam.PolicyStatement({
+    sid: 'CountWorkspaceMemoryCursors',
+    actions: ['dynamodb:Query'],
+    resources: [memoryTable.tableArn],
+    conditions: countOnly(MEMORY_CURSOR_PARTITION),
+  }));
+  role.addToPolicy(new iam.PolicyStatement({
+    sid: 'CountWorkspacePersonalMemories',
+    actions: ['dynamodb:Query'],
+    resources: [`${memoryTable.tableArn}/index/${MEMORY_BY_STATUS_INDEX}`],
+    conditions: countOnly(MEMORY_PERSONAL_STATUS_PARTITIONS),
   }));
   role.addToPolicy(new iam.PolicyStatement({
     sid: 'WriteWorkspaceExports',
@@ -177,6 +218,7 @@ export function createWorkspaceExportWorker(scope: Construct, id: string,
       FEEDBACK_TABLE: feedbackTable.tableName,
       AGGREGATES_TABLE: aggregatesTable.tableName,
       WORKSPACES_TABLE: workspacesTable.tableName,
+      MEMORY_TABLE: memoryTable.tableName,
       RAW_DATA_BUCKET: rawDataBucket.bucketName,
       POWERTOOLS_SERVICE_NAME: WORKSPACE_EXPORT_FUNCTION_BASE_NAME,
       LOG_LEVEL: 'INFO',

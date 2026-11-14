@@ -152,7 +152,11 @@ workspace by its `LOCK`), handing over to itself before its 15-minute timeout, c
 deleting, and ending with a job notice (`workspace_export`) when it writes its outcome. 1,769 MB, reserved
 concurrency 10 (free; about five workspaces export at once before throttling; the account's quota need is 130 with
 the MCP endpoint's 20, docs/deployment.md), no async retry. Permissions: feedback Query of `gsi1-by-date` only, on `WS#{one id}#DATE#*`; aggregates GetItem + Query on
-`WS#{one id}#*` and UpdateItem on `WS#{one id}#JOB#export`; workspaces Query on `WS#{one id}` and
+`WS#{one id}#*` and UpdateItem on `WS#{one id}#JOB#export`; voc-memory (4c) Query only, on the table for
+`WS#{one id}#MEM#company`, `#MEMEVT#*` and `#MEMIMPORT`, and only with `dynamodb:Select` `COUNT` on
+`#MEMCURSOR` and on `gsi1-by-memory-status` for `WS#{one id}#MEMSTATUS#personal#*` (`memory.py`: the company memory
+exported, events per company memory id, no person's hash or chat session id in any row; personal memories and
+cursors are their owners' and only counted); workspaces Query on `WS#{one id}` and
 `AUDIT#WS#{one id}` only; raw bucket `s3:PutObject`, `PutObjectTagging`, `GetObject`, `AbortMultipartUpload`,
 `ListMultipartUploadParts` under `ws/{one id}/exports/*` only, and `s3:DeleteObject` on its own work objects
 (`ws/{one id}/exports/*/work/*`) only; read-only on the workspace's own objects: `s3:ListBucket` with `s3:prefix`

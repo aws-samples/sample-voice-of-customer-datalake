@@ -85,6 +85,11 @@ __all__ = [
     'feedback_id_pk',
     'feedback_key',
     'is_workspace_key',
+    'memory_company_pk',
+    'memory_cursor_pk',
+    'memory_event_pk',
+    'memory_import_pk',
+    'memory_status_pk',
     'message_scope',
     'metric_pk',
     'metric_type',
@@ -317,6 +322,33 @@ def erasure_job_pk(scope: WorkspaceScope) -> str:
 def export_job_pk(scope: WorkspaceScope) -> str:
     """A workspace's export jobs and their lock (voc-aggregates, shared/export_jobs.py): ``WS#{ws}#JOB#export``."""
     return scope.key('JOB', 'export')
+
+
+def memory_company_pk(scope: WorkspaceScope) -> str:
+    """The workspace's company memories in voc-memory (shared/memory_store.py ``COMPANY_PK``):
+    ``WS#{ws}#MEM#company``."""
+    return scope.key('MEM', 'company')
+
+
+def memory_status_pk(scope: WorkspaceScope, memory_scope: str, status: str) -> str:
+    """One status partition of voc-memory's ``gsi1-by-memory-status`` in the workspace (shared/memory_store.py
+    ``status_partition``): ``WS#{ws}#MEMSTATUS#{company|personal}#{status}``."""
+    return scope.key('MEMSTATUS', memory_scope, status)
+
+
+def memory_cursor_pk(scope: WorkspaceScope) -> str:
+    """The workspace's memory extraction cursors (``sk SESSION#{id}``): ``WS#{ws}#MEMCURSOR``."""
+    return scope.key('MEMCURSOR')
+
+
+def memory_import_pk(scope: WorkspaceScope) -> str:
+    """The workspace's memory imports (``sk {import id}``): ``WS#{ws}#MEMIMPORT``."""
+    return scope.key('MEMIMPORT')
+
+
+def memory_event_pk(scope: WorkspaceScope, memory_id: str) -> str:
+    """One memory's audit events (no content, no subs): ``WS#{ws}#MEMEVT#{memory id}``."""
+    return scope.key('MEMEVT', memory_id)
 
 
 def plugin_config_pk(scope: WorkspaceScope) -> str:

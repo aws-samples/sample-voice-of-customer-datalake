@@ -13,7 +13,10 @@ workspace layer (shared/ws_repo.py):
   ``#IMPORT_RUN``; the summary itself when the detail is gone) and ``erasure_jobs`` (``#JOB#erasure``, ``er_…`` rows,
   without ``value_hash``);
 * from voc-workspaces (``control_query``): ``workspace`` (``WS#{ws}`` / ``META``), ``members`` (its ``MEMBER#``
-  rows) and ``audit`` (``AUDIT#WS#{ws}``).
+  rows) and ``audit`` (``AUDIT#WS#{ws}``);
+* from voc-memory (slice 4c, jobs/workspace_export/memory.py): the company memory only, ``memory_company``,
+  ``memory_imports`` and ``memory_events``; personal memories and the extraction cursors are their owners' and are
+  only counted.
 
 Each page's rows come with the cursor that resumes right after them, so an invocation that runs out of time stops
 after any row and the next one carries on from it.
@@ -27,6 +30,10 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any, Final
 
+from jobs.workspace_export.memory import DROPPED as MEMORY_DROPPED
+from jobs.workspace_export.memory import ENTITIES as MEMORY_ENTITIES
+from jobs.workspace_export.memory import MemorySource
+from jobs.workspace_export.pages import TABLE_KEY, items, key, last_key, start
 from shared.dynamo_values import as_count, plain
 from shared.earliest_date import EARLIEST_DATE_ATTRIBUTE, earliest_date_key, parse_iso_date
 from shared.import_runs import DETAIL_SK, LIST_PK
@@ -46,24 +53,24 @@ from shared.ws_repo import (
 
 __all__ = ['ENTITIES', 'FILE_CAP', 'ExportRefused', 'Source', 'encode_row', 'manifest']
 
-#: The entities in the order the export writes them. A job's checkpoint names its entity by index here, so a new
-#: entity goes last: an export running across a deploy resumes on the same entity.
+#: The entities in the order the export writes them, the first phases of a run (handler.py ``PHASES``: then the
+#: objects, the memory counts and the completion). A checkpoint names its phase, so an entity added in any position
+#: never shifts a running export onto another: one that was past it across a deploy finishes without it (its count
+#: reads 0), one that was before it writes it. A checkpoint from before phases were named is read by the 4b order.
 ENTITIES: Final = ('feedback', 'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'workspace',
-                   'members', 'audit', 'plugin_config_history')
+                   'members', 'audit', 'plugin_config_history', *MEMORY_ENTITIES)
 #: The most one JSONL file holds (before compression): a longer entity continues in its next file.
 FILE_CAP: Final = 256 * 1024 * 1024
 #: The index key of a feedback row: its table key and gsi1's, the cursor that resumes after it.
 _FEEDBACK_KEY: Final = ('pk', 'sk', 'gsi1pk', 'gsi1sk')
-_TABLE_KEY: Final = ('pk', 'sk')
 #: What an export never carries of a row: a hash of a person's value (it could confirm a guessed one): an erasure's
 #: value hash, and an `account_created` audit row's email hash (shared/workspace_members.py).
-_DROPPED: Final = {'erasure_jobs': ('value_hash',), 'audit': ('email_sha256',)}
+_DROPPED: Final = {'erasure_jobs': ('value_hash',), 'audit': ('email_sha256',), **MEMORY_DROPPED}
 #: At most this many rows a feedback page (a day may hold many: the page then continues within the day).
 PAGE_LIMIT: Final = 500
 
 #: What a later phase keys by workspace (docs/multi-workspace.md, Phases): nothing of it is the workspace's yet.
-NOT_PER_WORKSPACE: Final = ('projects_documents', 'personas', 'memory', 'agents_workflows', 'conversations',
-                            'settings')
+NOT_PER_WORKSPACE: Final = ('projects_documents', 'personas', 'agents_workflows', 'settings')
 #: Rows of the workspace an export leaves out, and why.
 NOT_EXPORTED: Final = {
     'metrics': 'Derived: the METRIC# counters are rebuilt from the feedback (scripts/retention/rebuild_aggregates.py).',
@@ -74,6 +81,8 @@ NOT_EXPORTED: Final = {
     'idempotency': 'Operational: the processing claims (voc-idempotency).',
     'form_lookups': "Routing: each form's FORM# lookup row (the forms themselves are in feedback_forms).",
     'user_rows': "Routing: each member's USER# row behind their workspace list (the members are in members).",
+    'conversations': ("Not exported yet: a workspace's conversations are kept per member, and nothing lists the "
+                      'members who have them (a later release adds that list, and the conversations to the export).'),
 }
 #: What an export never holds, by design.
 EXCLUDED: Final = {
@@ -81,7 +90,29 @@ EXCLUDED: Final = {
                     'export job has no permission to read them. Save them again where the data is imported.'),
     'erasure_value_hash': "An erasure job's value hash is left out of erasure_jobs.",
     'email_hashes': "An audit row's email hash (a new account's) is left out of audit.",
+    'memory_embeddings': ("A memory's embedding (a vector computed from its statement) is left out of memory_company: "
+                          'it is derived, and is recomputed from the statement.'),
+    'memory_people': ("What names or could confirm a person in the memory rows: a memory's supporter_set (hashes of "
+                      "its supporters' ids), an event's actor (a supporter's hash), an import's created_by_hash and "
+                      'created_by_username.'),
+    'personal_memory': ("Personal memories and the extraction cursors are their owners' only (docs/memory.md): "
+                        'never in the workspace export, only counted (memory.not_exported); personal memories\' '
+                        'events are neither exported nor counted.'),
 }
+#: What a reader of the memory entities should know.
+MEMORY_NOTE: Final = ("The workspace's company memory: every company memory (memory_company), the events of each "
+                      '(memory_events) and the import rows (memory_imports; the imported files are among the '
+                      'objects, under memory-imports/). Personal memories are their owners\' only (docs/memory.md) '
+                      'and are not in the workspace export, nor are the extraction cursors (each points at a '
+                      "member's session): those two are counted in memory.not_exported, approximately (the status "
+                      "index is eventually consistent); personal memories' events are neither exported nor counted. "
+                      'What every memory row leaves out is in excluded.')
+
+
+def _shown(entity: str, item: Mapping[str, Any]) -> dict[str, Any]:
+    """``item`` as the export writes it: without what ``_DROPPED`` leaves out of ``entity``."""
+    dropped = _DROPPED.get(entity, ())
+    return {name: value for name, value in item.items() if name not in dropped}
 
 
 class ExportRefused(RuntimeError):
@@ -108,37 +139,17 @@ class Page:
     following: dict[str, Any] | None
 
 
-def _key(item: Mapping[str, Any], attributes: tuple[str, ...]) -> dict[str, Any]:
-    """The key a Query resumes after ``item`` from: every one of ``attributes`` (a key attribute: always there)."""
-    return {attribute: item[attribute] for attribute in attributes}
-
-
-def _start(cursor: Mapping[str, Any]) -> dict[str, Any]:
-    start = cursor.get('start')
-    return {'ExclusiveStartKey': dict(start)} if isinstance(start, Mapping) and start else {}
-
-
-def _items(page: Mapping[str, Any]) -> list[dict[str, Any]]:
-    items = page.get('Items')
-    return [dict(item) for item in items if isinstance(item, Mapping)] if isinstance(items, list) else []
-
-
-def _last_key(page: Mapping[str, Any]) -> dict[str, Any] | None:
-    """A page's cursor: the job pages by hand (a time budget, a hand-over between rows, a checkpointed cursor)."""
-    last = page.get('LastEvaluatedKey')
-    return dict(last) if isinstance(last, Mapping) and last else None
-
-
 class Source:
     """One workspace's entities, through its views of voc-feedback and voc-aggregates (``ws_table``) and voc-workspaces
     (read by ``control_query`` only)."""
 
     def __init__(self, scope: WorkspaceScope, feedback: WorkspaceTable, aggregates: WorkspaceTable,
-                 workspaces: Any) -> None:
+                 workspaces: Any, memory: WorkspaceTable) -> None:
         self.scope = scope
         self._feedback = feedback
         self._aggregates = aggregates
         self._workspaces = workspaces
+        self.memory = MemorySource(scope, memory)
 
     # ── Where each entity starts ────────────────────────────────────────────────────────────────────────────
 
@@ -162,8 +173,8 @@ class Source:
     def _first_counted_day(self) -> date | None:
         """The first day of the workspace's ``daily_total`` counters (their ``sk``), a check on the watermark."""
         page = self._aggregates.query('pk', metric_partition(self.scope, DAILY_TOTAL_PK), Limit=1)
-        items = _items(page)
-        return parse_iso_date(items[0].get('sk')) if items else None
+        first = items(page)
+        return parse_iso_date(first[0].get('sk')) if first else None
 
     # ── One page ────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -172,30 +183,31 @@ class Source:
             return self._feedback_page(cursor)
         if entity == 'import_runs':
             return self._import_runs_page(cursor)
+        if entity in MEMORY_ENTITIES:
+            rows, following = self.memory.page(entity, cursor)
+            return Page([Row(_shown(entity, item), after) for item, after in rows], following)
         if entity in _AGGREGATE_PARTITIONS:
             partition, condition, values = _AGGREGATE_PARTITIONS[entity](self.scope)
             page = self._aggregates.query('pk', partition, sort_condition=condition, **_condition_values(values),
-                                          **_start(cursor))
+                                          **start(cursor.get('start')))
             return self._rows(entity, page)
         which, condition, values = _CONTROL_PARTITIONS[entity]
         page = control_query(self.scope, self._workspaces, which, sort_condition=condition,
-                             **_condition_values(values), **_start(cursor))
+                             **_condition_values(values), **start(cursor.get('start')))
         return self._rows(entity, page)
 
     def _rows(self, entity: str, page: Mapping[str, Any]) -> Page:
-        dropped = _DROPPED.get(entity, ())
-        rows = [Row({name: value for name, value in item.items() if name not in dropped},
-                    {'start': _key(item, _TABLE_KEY)}) for item in _items(page)]
-        last = _last_key(page)
+        rows = [Row(_shown(entity, item), {'start': key(item, TABLE_KEY)}) for item in items(page)]
+        last = last_key(page)
         return Page(rows, {'start': last} if last else None)
 
     def _feedback_page(self, cursor: Mapping[str, Any]) -> Page:
         day, last_day = str(cursor['day']), str(cursor['last'])
         page = self._feedback.query('gsi1pk', date_pk(self.scope, day), IndexName=FEEDBACK_BY_DATE_INDEX,
-                                    Limit=PAGE_LIMIT, **_start(cursor))
-        rows = [Row(item, {'day': day, 'last': last_day, 'start': _key(item, _FEEDBACK_KEY)})
-                for item in _items(page)]
-        following = _last_key(page)
+                                    Limit=PAGE_LIMIT, **start(cursor.get('start')))
+        rows = [Row(item, {'day': day, 'last': last_day, 'start': key(item, _FEEDBACK_KEY)})
+                for item in items(page)]
+        following = last_key(page)
         if following is not None:
             return Page(rows, {'day': day, 'last': last_day, 'start': following})
         next_day = date.fromisoformat(day) + timedelta(days=1)
@@ -205,17 +217,17 @@ class Source:
 
     def _import_runs_page(self, cursor: Mapping[str, Any]) -> Page:
         """Each run's detail row (its summary's fields and its warnings and errors), the summary when it is gone."""
-        page = self._aggregates.query('pk', self.scope.key(LIST_PK), **_start(cursor))
+        page = self._aggregates.query('pk', self.scope.key(LIST_PK), **start(cursor.get('start')))
         rows = []
-        for summary in _items(page):
+        for summary in items(page):
             run_id = summary.get('run_id')
             detail = None
             if isinstance(run_id, str) and run_id:
                 found = self._aggregates.get_item({'pk': self.scope.key(LIST_PK, run_id), 'sk': DETAIL_SK})
                 detail = found.get('Item')
             rows.append(Row(dict(detail) if isinstance(detail, Mapping) else summary,
-                            {'start': _key(summary, _TABLE_KEY)}))
-        last = _last_key(page)
+                            {'start': key(summary, TABLE_KEY)}))
+        last = last_key(page)
         return Page(rows, {'start': last} if last else None)
 
     # ── The counts check ────────────────────────────────────────────────────────────────────────────────────
@@ -267,10 +279,11 @@ def encode_row(item: Mapping[str, Any]) -> bytes:
 
 def manifest(*, export_id: str, scope: WorkspaceScope, workspace: Mapping[str, Any], created_at: str,
              completed_at: str, files: Mapping[str, list[str]], counts: Mapping[str, int],
-             daily_total: int, objects: Mapping[str, Any]) -> bytes:
+             daily_total: int, objects: Mapping[str, Any], memory_left_out: Mapping[str, tuple[int, bool]]) -> bytes:
     """``manifest.json``: every entity with its files and count, the counts check against the workspace's
-    ``daily_total`` counters, what is not per workspace yet, not exported or excluded, and the workspace's objects
-    (``objects``: jobs/workspace_export/objects.py ``manifest_section``)."""
+    ``daily_total`` counters, what is not per workspace yet, not exported or excluded, the workspace's objects
+    (``objects``: jobs/workspace_export/objects.py ``manifest_section``), and the memory left out (``memory_left_out``:
+    ``{what: (count, complete)}``, counted by jobs/workspace_export/memory.py)."""
     feedback = int(counts.get('feedback', 0))
     document = {
         'format': 'voc-workspace-export',
@@ -285,6 +298,11 @@ def manifest(*, export_id: str, scope: WorkspaceScope, workspace: Mapping[str, A
             'feedback': feedback, 'daily_total': daily_total, 'matches': feedback == daily_total,
             'note': ('The feedback exported, against the sum of the daily_total counters. A difference means items '
                      'without a date, counters that expired, or items that arrived while the export ran.'),
+        },
+        'memory': {
+            'note': MEMORY_NOTE,
+            'not_exported': {what: {'count': count, 'complete': complete, 'approximate': True}
+                             for what, (count, complete) in memory_left_out.items()},
         },
         'not_per_workspace': {name: {'status': 'not_per_workspace', 'phase': 3, 'count': 0}
                               for name in NOT_PER_WORKSPACE},

@@ -27,6 +27,7 @@ from jobs.workspace_export.test.conftest import (
     day,
     queue,
     seed,
+    seed_memory,
 )
 
 ZIP_KEY = f'ws/{WS}/exports/{EXPORT_ID}/workspace-export.zip'
@@ -455,40 +456,51 @@ def test_a_late_hand_over_exits_without_running(world):
     assert len(world.s3.calls) == calls
 
 
+def _checkpointed(world: World, phase: object) -> dict[str, Any]:
+    """The first invocation's event of a queued export, checkpointed at ``phase`` (a name, or an old index)."""
+    return {**queue(world), 'run': {'generation': 0, 'phase': phase}}
+
+
 def test_too_little_time_to_complete_hands_over_once_more(world):
-    """Every entity written, the time short: the next invocation (phase == len(ENTITIES)) only completes the zip."""
+    """Everything written, the time short: the invocation hands over at the completion, which the next one does."""
     seed(world)
-    with patch.object(handler, 'ENTITIES', ()):
-        first = handler.handle_event(queue(world), Budget(0))
-        assert first['status'] == 'continued'
-        [(_, following)] = [call.args for call in world.invoke.call_args_list]
-        assert following['run']['phase'] == 0
-        assert handler.handle_event(following, Budget())['status'] == 'completed'
+    first = handler.handle_event(_checkpointed(world, handler.COMPLETING), Budget(0))
+    assert first['status'] == 'continued'
+    [(_, following)] = [call.args for call in world.invoke.call_args_list]
+    assert following['run']['phase'] == handler.COMPLETING
+    assert handler.handle_event(following, Budget())['status'] == 'completed'
     assert set(_unzip(world)) == {'manifest.json'}
 
 
-def test_an_export_checkpointed_at_the_old_end_writes_the_config_history(world):
-    """An export that wrote the eight entities of the release before (phase 8, then handed over to complete) and
-    resumes after the deploy: phase 8 is now plugin_config_history, written before the zip completes."""
+def test_a_checkpoint_names_its_phase(world):
     seed(world)
-    before = tuple(entity for entity in entities.ENTITIES if entity != 'plugin_config_history')
-    assert (*before, 'plugin_config_history') == entities.ENTITIES
-    write_entities = handler.ExportRun._write_entities
-
-    def then_out_of_time(run: handler.ExportRun, writer: Any) -> None:
-        write_entities(run, writer)
-        run.context = Budget(0)
-
-    with patch.object(handler, 'ENTITIES', before), \
-            patch.object(handler.ExportRun, '_write_entities', then_out_of_time):
-        assert handler.handle_event(queue(world), Budget())['status'] == 'continued'
+    assert handler.handle_event(queue(world), Budget(6))['status'] == 'continued'
     [(_, following)] = [call.args for call in world.invoke.call_args_list]
-    assert following['run']['phase'] == len(before)
+    assert following['run']['phase'] in handler.PHASES
+    assert isinstance(following['run']['phase'], str)
+    with pytest.raises(ValueError, match='phase'):
+        handler.phase_of('a phase of a later release')
 
-    assert handler.handle_event(following, Budget())['status'] == 'completed'
+
+@pytest.mark.parametrize(('old', 'written'), [
+    (8, {'plugin_config_history', 'memory_company', 'memory_imports', 'memory_events'}),  # 4b's last entity
+    (9, set()),  # 4b's objects: on with them, no memory entity skipped into halfway
+    (10, set()),  # 4b's completion
+])
+def test_an_old_numeric_checkpoint_resumes_by_the_4b_order(world, old, written):
+    """A checkpoint from before phases were named holds an index into 4b's phases: 8 is plugin_config_history, 9 the
+    objects, 10 the completion. Each resumes on that very phase, so none lands on a memory entity partway (an
+    export already past the entities finishes as the 4b export it was)."""
+    seed(world)
+    seed_memory(world)
+    world.s3.seed(f'ws/{WS}/raw/a.json', b'{}', 'application/json')
+    assert handler.phase_of(old) == ('plugin_config_history', 'objects', handler.COMPLETING)[old - 8]
+    assert handler.handle_event(_checkpointed(world, old), Budget())['status'] == 'completed'
     files = _unzip(world)
-    assert [row['configs'] for row in _jsonl(files, 'plugin_config_history')] == ['[]']
-    assert json.loads(files['manifest.json'])['entities']['plugin_config_history']['count'] == 1
+    entities_written = {name.split('/', 1)[0] for name in files if name.endswith('.jsonl')}
+    assert entities_written == written
+    assert ('objects/raw/a.json' in files) is (old <= 9)
+    assert not any(name.startswith('feedback/') for name in files)  # never back to an earlier phase
 
 
 def test_an_audit_rows_email_hash_is_never_exported(world):

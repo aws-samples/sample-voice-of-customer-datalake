@@ -315,6 +315,7 @@ export class VocProcessingStack extends VocStack {
       feedbackTable,
       aggregatesTable,
       workspacesTable: props.workspacesTable,
+      memoryTable: props.memoryTable,
       rawDataBucket,
     });
     // An export's end reaches the admin who started it (lambda/jobs/workspace_export/handler.py, docs/realtime.md).
