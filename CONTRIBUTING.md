@@ -115,7 +115,13 @@ in, a timeout, or CI = the step prints why and passes, so the gate runs on every
   `*credentials*`, … `SECRET_PATHS` in `scripts/ai-review/lib.mjs`) are left out of the diff and named in the
   output, and the tools themselves refuse to read them (Kiro: `toolsSettings` `deniedPaths`, which V2 enforces, and
   `permissions.rules`, which V3 enforces, both generated from that list and pinned for every agent in
-  `.kiro/agents` by `scripts/ai-review/agent-guard.test.mjs`; Claude Code deny rules). The diff is
+  `.kiro/agents` by `scripts/ai-review/agent-guard.test.mjs`; Claude Code deny rules).
+- The guard test checks the agent files against a hand-written model of each kiro-cli engine, not kiro-cli itself.
+  After changing the agents' rules or upgrading kiro-cli, re-probe both engines by hand: in a throwaway folder outside
+  the repository (`git init`, dummy files only, never real secrets), copy an agent file, give it a prompt that calls
+  the tool as asked and prints errors verbatim, and run
+  `kiro-cli chat --agent <copy> --agent-engine v2|v3 --no-interactive --trust-tools= --wrap never` once per engine
+  for a repository read, a `.env` read and the shell commands in question. The diff is
   treated as data. They are
   language models: a PASS is not proof, and two runs can differ. `validate-affected.sh` never runs them (groups
   `tenets` and `commit`).
