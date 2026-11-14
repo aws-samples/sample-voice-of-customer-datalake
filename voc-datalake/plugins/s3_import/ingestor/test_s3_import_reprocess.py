@@ -489,7 +489,9 @@ class TestAWorkspaceRunReadsOnlyItsOwnFiles:
     def raw_lake(self, monkeypatch):
         monkeypatch.setenv("RAW_DATA_BUCKET", "raw-lake")
         monkeypatch.setenv("PLUGIN_VERSION", "1.4.0")
-        with seeded_source_profiles():
+        # Since 7.08.00 a run in a workspace reads the workspace's own source profiles (a source it saved none for
+        # redacts, so keeps no original): the workspace keeps whole files for s3_import.
+        with seeded_source_profiles(workspaces={WS: [{"id": "s3_import", "pii": "allow"}]}):
             yield
 
 

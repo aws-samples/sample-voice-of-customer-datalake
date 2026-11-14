@@ -6,7 +6,7 @@
  * Event:
  *   { plan_id, step: PlanStep, resolved: {"<step>.<output>": value},
  *     think_outputs: {"<step>.<output>": text}, claims: {sub, cognito:username,
- *     cognito:groups, voc:acting_subject, voc:principal},
+ *     cognito:groups, voc:acting_subject, voc:principal, voc:workspace?},
  *     approved_pending?: {tool, args, fingerprint},
  *     env?: {days?, response_language?, date_basis?} }      ← optional extension
  *
@@ -43,6 +43,8 @@ export const planStepEventSchema = z.object({
     'cognito:groups': claim.optional(),
     'voc:acting_subject': claim.optional(),
     'voc:principal': claim.optional(),
+    // The workspace the plan was approved in (lambda/agents/plan_identity.py): sent as each domain call's header.
+    'voc:workspace': claim.optional(),
   }),
   approved_pending: z.object({
     tool: z.string().min(1).max(64),

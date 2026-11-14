@@ -1,0 +1,29 @@
+{
+  "description": "The voc-conversations keys both writers build: lambda/shared/conversations.py (and api/chat_handler.py's CANCEL_SK_PREFIX) and lambda/stream/src/assistant/session/record.ts. Each side's test reads these cases. workspace null: the person's own partition outside any workspace, with no owner list (conversant null).",
+  "cases": [
+    {
+      "sub": "a1b2c3d4-0000-4000-8000-00000000000a",
+      "workspace": null,
+      "conversation_id": "conv_1",
+      "conversation": { "pk": "USER#a1b2c3d4-0000-4000-8000-00000000000a", "sk": "CONV#conv_1" },
+      "cancel": { "pk": "USER#a1b2c3d4-0000-4000-8000-00000000000a", "sk": "RUNCANCEL#conv_1" },
+      "conversant": null
+    },
+    {
+      "sub": "a1b2c3d4-0000-4000-8000-00000000000a",
+      "workspace": "ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8",
+      "conversation_id": "conv_1",
+      "conversation": { "pk": "WS#ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8#USER#a1b2c3d4-0000-4000-8000-00000000000a", "sk": "CONV#conv_1" },
+      "cancel": { "pk": "WS#ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8#USER#a1b2c3d4-0000-4000-8000-00000000000a", "sk": "RUNCANCEL#conv_1" },
+      "conversant": { "pk": "WS#ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8#CONVERSANTS", "sk": "a1b2c3d4-0000-4000-8000-00000000000a" }
+    },
+    {
+      "sub": "sub-fern",
+      "workspace": "ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D9",
+      "conversation_id": "a-Thread_42",
+      "conversation": { "pk": "WS#ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D9#USER#sub-fern", "sk": "CONV#a-Thread_42" },
+      "cancel": { "pk": "WS#ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D9#USER#sub-fern", "sk": "RUNCANCEL#a-Thread_42" },
+      "conversant": { "pk": "WS#ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D9#CONVERSANTS", "sk": "sub-fern" }
+    }
+  ]
+}

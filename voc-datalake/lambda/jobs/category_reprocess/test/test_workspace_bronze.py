@@ -1,8 +1,8 @@
 """A workspace's bronze can be replayed (TENETS.md D3): the raw reader follows a review's link under the bronze root
 of the review's own scope, ``raw/`` for a deployment review and ``ws/{ws}/raw/`` for a workspace's, and no other.
 
-No route starts a workspace's reprocess yet (it comes with the workspace's settings); the job itself stays
-deployment-wide and skips ``WS#`` items (shared/reprocess_slices.py), so this holds the reader at the unit level.
+Since 7.13.00 a workspace's own job replays its reviews (test_workspace_reprocess.py); this holds the reader at the
+unit level, for either kind of review.
 """
 from unittest.mock import MagicMock, patch
 

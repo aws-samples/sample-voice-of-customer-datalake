@@ -23,6 +23,8 @@ from shared.tables import get_aggregates_table
 
 PARTICIPANTS_TABLE_ENV: Final = 'PARTICIPANTS_TABLE'
 FEATURE_REQUESTS_TABLE_ENV: Final = 'FEATURE_REQUESTS_TABLE'
+#: The deployment's brand row (a workspace's is under it, lambda/api/settings_handler.py; the engagement API reads
+#: this one until it moves into its workspace).
 BRAND_KEY: Final = {'pk': 'SETTINGS#brand', 'sk': 'config'}
 
 

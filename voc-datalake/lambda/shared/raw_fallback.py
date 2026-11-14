@@ -36,12 +36,12 @@ def archive_inline_raw(raw_record: Mapping[str, Any], now: datetime,
                        scope: WorkspaceScope | None = None) -> str | None:
     """The ``s3://`` URI of ``raw_record['raw_data']``'s copy; None when there is nothing to write,
     the record already names its archive, the policy forbids a copy or the write failed. A message of a workspace
-    (``scope``) is archived under ``ws/{ws}/raw/`` (the source policy read is still the deployment's)."""
+    (``scope``) is archived under ``ws/{ws}/raw/``, under that workspace's source policy."""
     raw = raw_record.get('raw_data')
     source = raw_record.get('source_platform')
     if not isinstance(raw, dict) or raw_record.get('s3_raw_uri') or not isinstance(source, str):
         return None
-    if not source_permits_raw_copy(source):
+    if not source_permits_raw_copy(source, scope=scope):
         return None
     stem = item_stem(raw_record.get('id'), content_digest(raw))
     uri = app_json_copy(source, now.date(), stem, raw, PROCESSOR_CONNECTOR, scope)

@@ -80,6 +80,19 @@ def update_with_key(view: WorkspaceTable | DeploymentTable, request: Mapping[str
     return view.update_item(request['Key'], **{name: value for name, value in request.items() if name != 'Key'})
 
 
+class ScopedUpdates:
+    """``table`` in ``scope`` (``table_view``) with boto3's ``update_item(Key=…, …)`` call shape, for a writer built
+    the boto3 way (shared/feedback_category.py ``apply_conditional_update``, the category reprocess's per-review
+    updates): the table itself deployment-wide, ``ws_table`` in a workspace, which refuses a key or an index
+    partition outside it before DynamoDB."""
+
+    def __init__(self, scope: WorkspaceScope | None, table: Any) -> None:
+        self._view = table_view(scope, table)
+
+    def update_item(self, **request: Any) -> dict:
+        return update_with_key(self._view, request)
+
+
 def table_view(scope: WorkspaceScope | None, table: Any, key: str = 'pk') -> WorkspaceTable | DeploymentTable:
     """An already-open ``table`` on either path: seen through ``scope`` (``ws_table``: a key, item or update outside
     it is refused before DynamoDB), or deployment-wide (``scope`` None, the same calls on the table). The feedback

@@ -25,9 +25,11 @@ import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import { Construct } from 'constructs';
+import { WORKSPACE_MEMORY_IMPORTS_PREFIX } from './core-buckets';
 
 import { grantClaudeModels } from '../utils/claude-model-grant';
 import { grantEmbeddingModel } from '../utils/memory-recall-grant';
+import { grantWorkspaceMembershipReads } from '../utils/workspace-resolution-grants';
 import { createWorkerFunction, scheduleWorker, workerRole } from '../utils/worker-lambda';
 
 /** Extractor ceiling; the queue's visibility timeout is derived from it. */
@@ -50,6 +52,8 @@ export interface MemoryWorkersProps {
   conversationsTable: dynamodb.ITable;
   aggregatesTable: dynamodb.ITable;
   rawDataBucket: s3.IBucket;
+  /** voc-workspaces: the retention sweep reads the platform's listing to sweep each workspace's memories too. */
+  workspacesTable: dynamodb.ITable;
 }
 
 export class MemoryWorkers extends Construct {
@@ -90,11 +94,12 @@ export class MemoryWorkers extends Construct {
 
   /** SQS consumer: session/import/agent-run text -> memory items. */
   private createExtractor(): lambda.Function {
-    const { uniqueName, kmsKey, memoryTable, conversationsTable, aggregatesTable, rawDataBucket } = this.props;
+    const { uniqueName, kmsKey, memoryTable, conversationsTable, aggregatesTable, rawDataBucket, workspacesTable } = this.props;
     const { region } = cdk.Stack.of(this);
     const role = workerRole(this, 'MemoryExtractorRole');
     // Memories (pools, dedup, writes, audit), import records, and the session
-    // cursors it reads in one BatchGetItem (store.get_cursors) and advances.
+    // cursors it reads (store.get_cursors: the deployment's in one BatchGetItem,
+    // a workspace's one GetItem each) and advances.
     memoryTable.grant(role, 'dynamodb:BatchGetItem', 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:Query');
     conversationsTable.grant(role, 'dynamodb:GetItem');
     // No voc-agents grant: an agent-run source arrives as text on the queue
@@ -103,6 +108,10 @@ export class MemoryWorkers extends Construct {
     aggregatesTable.grant(role, 'dynamodb:GetItem');
     // Page imports: the original text the memory API stored.
     rawDataBucket.grantRead(role, 'memory-imports/*');
+    rawDataBucket.grantRead(role, `${WORKSPACE_MEMORY_IMPORTS_PREFIX}*`);
+    // A workspace session is extracted only while the workspace is active and its owner an editor or an admin there
+    // (lambda/shared/workspace.py is_active, stored_role): its META row and their member row, GetItem on WS#* only.
+    const workspaceEnv = grantWorkspaceMembershipReads(workspacesTable, role);
     kmsKey.grantEncryptDecrypt(role);
     // A page import longer than one chunk re-queues its next chunk (extractor _enqueue).
     this.extractQueue.grantSendMessages(role);
@@ -125,6 +134,7 @@ export class MemoryWorkers extends Construct {
         CONVERSATIONS_TABLE: conversationsTable.tableName,
         RAW_DATA_BUCKET: rawDataBucket.bucketName,
         MEMORY_EXTRACT_QUEUE_URL: this.extractQueue.queueUrl,
+        ...workspaceEnv,
       },
     });
     // The event source grants consume (incl. kms:Decrypt) on the queue.
@@ -137,7 +147,7 @@ export class MemoryWorkers extends Construct {
 
   /** Every 15 min: enqueue idle assistant sessions with unseen messages. */
   private createScanner(): void {
-    const { uniqueName, kmsKey, memoryTable, conversationsTable } = this.props;
+    const { uniqueName, kmsKey, memoryTable, conversationsTable, workspacesTable } = this.props;
     const role = workerRole(this, 'MemoryScannerRole');
     // The idle-session window is a Query of the kind/updated_at index (core-stack.ts), never a
     // Scan of the table: idle cost no longer grows with the stored conversations (TENETS.md tenet 7).
@@ -149,7 +159,11 @@ export class MemoryWorkers extends Construct {
     // Session cursors (MEMCURSOR / SESSION#...): read in one BatchGetItem
     // (store.get_cursors), advanced with UpdateItem (store.save_cursor). Without
     // BatchGetItem every run failed AccessDenied and no session was ever queued.
-    memoryTable.grant(role, 'dynamodb:BatchGetItem', 'dynamodb:UpdateItem');
+    // A workspace's cursors (WS#{ws}#MEMCURSOR) are read one GetItem each, through its view.
+    memoryTable.grant(role, 'dynamodb:BatchGetItem', 'dynamodb:GetItem', 'dynamodb:UpdateItem');
+    // A workspace's sessions only while it is active (lambda/shared/workspace.py is_active): its META row, GetItem
+    // on WS#* only.
+    const workspaceEnv = grantWorkspaceMembershipReads(workspacesTable, role);
     kmsKey.grantEncryptDecrypt(role);
     this.extractQueue.grantSendMessages(role);
 
@@ -166,6 +180,7 @@ export class MemoryWorkers extends Construct {
         MEMORY_TABLE: memoryTable.tableName,
         CONVERSATIONS_TABLE: conversationsTable.tableName,
         MEMORY_EXTRACT_QUEUE_URL: this.extractQueue.queueUrl,
+        ...workspaceEnv,
       },
     });
     scheduleWorker(this, 'MemoryScannerSchedule', fn, uniqueName('voc-memory-scanner-schedule'),
@@ -174,11 +189,17 @@ export class MemoryWorkers extends Construct {
 
   /** Daily: decay (90 days untouched) and dated (past expires_at) -> archived. */
   private createRetention(): void {
-    const { uniqueName, kmsKey, memoryTable } = this.props;
+    const { uniqueName, kmsKey, memoryTable, workspacesTable } = this.props;
     const role = workerRole(this, 'MemoryRetentionRole');
     // Query the status index, archive in place (UpdateItem), append an audit event (PutItem).
     memoryTable.grant(role, 'dynamodb:Query', 'dynamodb:UpdateItem', 'dynamodb:PutItem');
     kmsKey.grantEncryptDecrypt(role);
+    // Each workspace's memories too: the platform's listing of workspaces (one partition, read only).
+    role.addToPolicy(new iam.PolicyStatement({
+      actions: ['dynamodb:Query'],
+      resources: [workspacesTable.tableArn],
+      conditions: { 'ForAllValues:StringEquals': { 'dynamodb:LeadingKeys': ['WORKSPACES'] } },
+    }));
 
     const fn = createWorkerFunction(this, 'MemoryRetention', {
       tree: 'memory',
@@ -189,7 +210,7 @@ export class MemoryWorkers extends Construct {
       timeout: cdk.Duration.minutes(15),
       memorySize: 512,
       serviceName: 'voc-memory-retention',
-      environment: { MEMORY_TABLE: memoryTable.tableName },
+      environment: { MEMORY_TABLE: memoryTable.tableName, WORKSPACES_TABLE: workspacesTable.tableName },
     });
     scheduleWorker(this, 'MemoryRetentionSchedule', fn, uniqueName('voc-memory-retention-schedule'),
       // 03:15 UTC - off the quarter-hour the scanner and heartbeat fire on.

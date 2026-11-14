@@ -2,9 +2,10 @@
  * @fileoverview Plugin configuration modal for the Scrapers page.
  * @module pages/Scrapers/PluginConfigModal
  *
- * Supports multiple app configurations per plugin (e.g. track 2 iOS apps).
- * Configs are stored as a JSON array in Secrets Manager via the
- * /integrations/{source}/apps CRUD endpoints.
+ * Supports multiple app configurations per plugin (e.g. track 2 iOS apps), through the
+ * /integrations/{source}/apps CRUD endpoints: deployment-wide a JSON array in the shared secret,
+ * inside a workspace that workspace's own config row (decision 19). Run now inside a workspace runs
+ * only a plugin the workspace enabled; otherwise it says to enable it first (`isPluginNotEnabled`).
  */
 
 import {
@@ -35,6 +36,7 @@ import RadarSourcePicker from './RadarSourcePicker'
 import { RadarBadge } from './SourceCardParts'
 import { useRadarBrandLabel } from './useRadarBrands'
 import { allAppConfigsKey, appConfigsKey } from '../../api/queryKeys'
+import { isPluginNotEnabled } from '../../workspace/workspaceRefusals'
 
 interface PluginConfigModalProps {
   readonly plugin: PluginManifest
@@ -224,20 +226,27 @@ function SettingsPointer({ plugin }: Readonly<{ plugin: PluginManifest }>) {
 }
 
 function RunNowRow({
-  isAdmin, isPending, result, onRun,
+  isAdmin, isPending, result, error, onRun,
 }: {
   readonly isAdmin: boolean
   readonly isPending: boolean
   readonly result: { success: boolean; message: string } | undefined
+  /** The failed run's error: a workspace that has not enabled the plugin is shown as its own reason. */
+  readonly error: unknown
   readonly onRun: () => void
 }) {
   const { t } = useTranslation('scrapers')
+  const { t: tCommon } = useTranslation('common')
+  // Inside a workspace, Run now runs only a plugin the workspace enabled (PLUGIN_NOT_ENABLED, workspaceRefusals.ts):
+  // the reason points to Workspace settings, and the button stays for the run once it is enabled there.
+  const notEnabled = isPluginNotEnabled(error)
   return (
     <div className="flex items-center gap-2">
       <button onClick={onRun} disabled={isPending || !isAdmin} title={isAdmin ? undefined : ADMIN_ONLY_TITLE} className="btn btn-secondary">
         {isPending ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
         {t('pluginConfig.runNow')}
       </button>
+      {notEnabled ? <ResultMessage success={false} message={tCommon('workspaces.errors.pluginNotEnabled')} /> : null}
       {result == null ? null : <ResultMessage success={result.success} message={result.message === '' ? t('pluginConfig.runTriggered') : result.message} />}
     </div>
   )
@@ -381,7 +390,7 @@ export default function PluginConfigModal({
                 setEditingApp(null); setIsAdding(false)
               }} />
           ) : <SettingsPointer plugin={plugin} />}
-          {apps.length > 0 && <RunNowRow isAdmin={isAdmin} isPending={runMutation.isPending} result={runMutation.data} onRun={() => runMutation.mutate()} />}
+          {apps.length > 0 && <RunNowRow isAdmin={isAdmin} isPending={runMutation.isPending} result={runMutation.data} error={runMutation.error} onRun={() => runMutation.mutate()} />}
           {hasApps ? <AppSetup plugin={plugin} /> : null}
         </div>
         )}

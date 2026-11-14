@@ -205,7 +205,27 @@ def token_view(row: Mapping[str, Any], now: datetime) -> dict[str, Any]:
         'status': token_status(row, now),
         # Whether run_agent CAN be offered (still re-checked against Cognito per call).
         'can_run_agents': bool(row.get('minted_by_admin')) and scope_allows_write(row.get('scope')),
+        # The workspace it was minted in (None: the deployment's, as before).
+        'workspace_id': token_workspace(row),
     }
+
+
+#: The token row's attribute naming the workspace it was minted in (absent: the deployment's).
+WORKSPACE_ATTRIBUTE: Final = 'workspace'
+#: What a blank stored workspace goes out as: not a workspace id, so the resolver answers the one 404.
+UNUSABLE_WORKSPACE: Final = 'unusable'
+
+
+def token_workspace(row: Mapping[str, Any]) -> str | None:
+    """The workspace a token acts in: the one it was minted in (``WORKSPACE_ATTRIBUTE``, from the mint request's
+    resolved membership), or None for a token minted with no workspace (no attribute). Never from an MCP request.
+    Fails closed: any stored value is sent (a blank one as ``UNUSABLE_WORKSPACE``), so a damaged one meets the
+    resolver's one 404, never a deployment-wide token."""
+    value = row.get(WORKSPACE_ATTRIBUTE)
+    if value is None:
+        return None
+    text = str(value)
+    return text if text.strip() else UNUSABLE_WORKSPACE
 
 
 # ---------------------------------------------------------------------------

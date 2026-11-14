@@ -13,7 +13,7 @@ from moto import mock_aws
 from moto_helpers import invoke, pk_sk_table, rest_event
 
 import workspaces_handler
-from shared import platform_workspaces
+from shared import platform_admin_gate, platform_workspaces
 from shared.test.cognito_doubles import live_cognito
 from shared.workspace import MembershipCache
 
@@ -41,7 +41,9 @@ def world() -> Iterator[World]:
         ssm = boto3.client('ssm', region_name='us-east-1')
         state = World(pk_sk_table('workspaces'), secrets, ssm, live_cognito())
         with patch.object(workspaces_handler, 'USER_POOL_ID', 'us-east-1_pool'), \
-                patch.object(workspaces_handler, 'get_cognito_idp_client', side_effect=lambda: state.cognito):
+                patch.object(workspaces_handler, 'get_cognito_idp_client', side_effect=lambda: state.cognito), \
+                patch.dict('os.environ', {'USER_POOL_ID': 'us-east-1_pool'}), \
+                patch.object(platform_admin_gate, 'get_cognito_idp_client', side_effect=lambda: state.cognito):
             yield state
 
 
@@ -136,7 +138,7 @@ def test_a_failed_transaction_is_a_fixed_500(world, lambda_context):
 
 
 def test_an_unconfigured_user_pool_refuses_the_live_check(world, lambda_context):
-    with patch.object(workspaces_handler, 'USER_POOL_ID', ''):
+    with patch.dict('os.environ', {'USER_POOL_ID': ''}):
         assert _call(world, lambda_context, 'GET', '/platform/workspaces')[0] == 500
 
 

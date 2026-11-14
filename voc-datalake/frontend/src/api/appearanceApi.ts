@@ -1,9 +1,9 @@
 /**
- * @fileoverview The workspace's start theme (`GET|PUT /settings/appearance`,
+ * @fileoverview The deployment's start theme (`GET|PUT /settings/appearance`,
  * lambda/shared/appearance_routes.py).
  *
- * Every signed-in user reads it; only an admin saves it (the server answers 403
- * otherwise, and 400 for an id it does not ship). A person's own pick stays in
+ * Every signed-in user reads it; only a platform admin saves it, checked live (the
+ * server answers 403 otherwise, and 400 for an id it does not ship). A person's own pick stays in
  * this browser (theme/themeStore.ts); this is what `workspace` resolves to.
  *
  * @module api/appearanceApi

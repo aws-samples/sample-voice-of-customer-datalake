@@ -20,17 +20,21 @@ there, approximate, checkpointed across hand-overs): the personal memories (the 
 partitions of the status index, where each sits once) and the extraction cursors (``WS#{ws}#MEMCURSOR``: each points
 at a member's chat session). The personal memories' events are neither exported nor counted.
 
-Each memory entity exports only the fields it lists (``FIELDS``, from what the memory API shows), so what names or
-could confirm a person never leaves, nor any field added to memory rows later: a memory's ``supporter_set`` (hashes
-of its supporters' subs) and ``embedding`` (derived from the statement), an event's ``actor`` (a supporter hash), an
-import's ``created_by_hash`` and ``created_by_username``.
+Each memory entity exports only the fields it lists (``FIELDS``: the memory API's fields plus the row's key, a
+company memory also with what a merge or an archive writes, ``merged_from``, ``archived_reason`` and
+``archived_at``), so what names or could confirm a person never leaves, nor any field added to memory rows later: a
+memory's ``supporter_set`` (hashes of its supporters' subs) and ``embedding`` (derived from the statement), an
+event's ``actor`` (a supporter hash), an import's ``created_by_hash`` and ``created_by_username``. Two fields are
+exported as they are for now: a company memory's ``conflicts_with`` can hold a personal memory's id (an id only,
+never its content), and an event's ``detail`` is exported whole (an allowlist keyed by the event's action is
+planned).
 """
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from typing import Any, Final
 
-from jobs.workspace_export.pages import TABLE_KEY, items, key, last_key, start
+from jobs.workspace_export.pages import TABLE_KEY, count_page, items, key, last_key, start
 from shared.memory_partitions import CURSORS, memory_partitions
 from shared.ws_repo import (
     WorkspaceScope,
@@ -45,7 +49,8 @@ __all__ = ['COUNTED', 'ENTITIES', 'MemorySource']
 #: The memory entities, in the export's order (after plugin_config_history; a checkpoint names its phase).
 ENTITIES: Final = ('memory_company', 'memory_imports', 'memory_events')
 #: The fields each memory entity exports, and no other (an allowlist: a field added to memory rows later never
-#: reaches the export by default). Each is what the memory API shows (shared/memory_store.py), plus the row's key.
+#: reaches the export by default). Each is the memory API's fields (shared/memory_store.py) plus the row's key, and
+#: no more but where a list says so.
 #: A company memory: the store's public fields (``_PUBLIC_FIELDS`` / ``public_view``) and its sources, shown as
 #: ``_public_sources`` shows them; never its embedding, its supporters' hashes or its owner.
 COMPANY_FIELDS: Final = (
@@ -170,13 +175,13 @@ class MemorySource:
         partitions = self._counted_partitions(what)
         state.setdefault('total', 0)
         while int(state.get('part') or 0) < len(partitions) and not state.get('done'):
-            attribute, partition, index = partitions[int(state.get('part') or 0)]
-            page = self._memory.query(attribute, partition, Select='COUNT', **index, **start(state.get('cursor')))
-            state['total'] = int(state['total']) + int(page.get('Count') or 0)
-            state['cursor'] = last_key(page)
+            part = int(state.get('part') or 0)
+            attribute, partition, index = partitions[part]
+            going = count_page(self._memory, attribute, partition, state, time_left,
+                               more_after=part + 1 < len(partitions), **index)
             if state['cursor'] is None:
-                state['part'] = int(state.get('part') or 0) + 1
-            if int(state.get('part') or 0) < len(partitions) and not time_left():
+                state['part'] = part + 1
+            if not going:
                 return False
         state['done'] = True
         return True

@@ -38,13 +38,17 @@
  *
  * Inline, on each role's default policy (at most three statements, the tables it writes), not a managed policy per
  * stack: no new resource against the VocApiStack ceiling, and the size stays far under the 10,240-character inline
- * quota (api-stack-mcp.test.ts). Applied by applyAppAspects (lib/utils/app-aspects.ts), after every grant and before
- * the exact-grants rewrite, in bin/ and in every per-stack test fixture.
+ * quota (api-stack-mcp.test.ts). A customer-managed policy that writes a guarded table is guarded the same way, its
+ * Denies in the policy itself (it is attached to roles the guard cannot list), and a writer may be named by that
+ * policy's path (the stack's workspace-resolution policy, lib/utils/workspace-resolution-grants.ts). Applied by
+ * applyAppAspects (lib/utils/app-aspects.ts), after every grant and before the exact-grants rewrite, in bin/ and in
+ * every per-stack test fixture.
  */
 import type * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import type { IConstruct } from 'constructs';
 import { z } from 'zod';
+import { WORKSPACE_RESOLUTION_POLICY_ID } from './workspace-resolution-grants';
 
 /** The partition-key pattern of every audit row. */
 const AUDIT_PARTITION_PATTERN = 'AUDIT#*';
@@ -66,7 +70,7 @@ export interface AuditRowTables {
   readonly workspacesTable?: dynamodb.ITable;
 }
 
-/** An audit writer of one table, by the construct-path suffix of its role. */
+/** An audit writer of one table, by the construct-path suffix of its role (or of a customer-managed policy). */
 export interface NamedAuditWriter {
   readonly table: dynamodb.ITable;
   readonly rolePathSuffixes: readonly string[];
@@ -104,14 +108,12 @@ const AUDIT_WRITERS: readonly { readonly table: keyof AuditRowTables; readonly r
   // The users API: the member_removed rows of a deleted user's memberships (AUDIT#WS#<ws> only,
   // lambda/shared/workspace_members.py remove_user_memberships; lib/stacks/api-engagement-lambdas.ts).
   { table: 'workspacesTable', rolePathSuffix: '/UsersLambdaRole', partitionKey: 'AUDIT#WS#*' },
-  // The data-path APIs that resolve X-Workspace-Id (lambda/shared/workspace_request.py): a platform admin's entry
-  // into a workspace (AUDIT#WS#<ws> only; lib/utils/workspace-request-grants.ts).
-  { table: 'workspacesTable', rolePathSuffix: '/MetricsLambdaRole', partitionKey: 'AUDIT#WS#*' },
-  { table: 'workspacesTable', rolePathSuffix: '/FeedbackEditLambdaRole', partitionKey: 'AUDIT#WS#*' },
-  // The operator APIs that resolve it too (Run now, scraper runs, the breaker, a workspace's credentials).
-  { table: 'workspacesTable', rolePathSuffix: '/IntegrationsLambdaRole', partitionKey: 'AUDIT#WS#*' },
-  { table: 'workspacesTable', rolePathSuffix: '/ScrapersLambdaRole', partitionKey: 'AUDIT#WS#*' },
-  // The feedback forms' signed-in routes resolve it too (a workspace's forms; lib/stacks/api-engagement-lambdas.ts).
+  // A domain API acting in a workspace (the settings API first): a platform admin's entry (AUDIT#WS#<ws> only,
+  // lambda/shared/request_workspace.py), by the stack's one workspace-resolution policy, not by each role.
+  { table: 'workspacesTable', rolePathSuffix: `/${WORKSPACE_RESOLUTION_POLICY_ID}`, partitionKey: 'AUDIT#WS#*' },
+  // The feedback forms (7.06.00): they attach that policy too, and also write voc-workspaces from their own policy
+  // (a workspace form's FORM# lookup row, and its form_deleted audit row before the delete), so the role is named a
+  // writer of AUDIT#WS#* itself (lib/stacks/api-engagement-lambdas.ts).
   { table: 'workspacesTable', rolePathSuffix: '/FeedbackFormLambdaRole', partitionKey: 'AUDIT#WS#*' },
   // A workspace's hard delete (lib/stacks/workspace-delete-worker.ts): one tombstone per deleted item and memory
   // (AUDIT#tombstone#<source>, AUDIT#tombstone#memory: a conditional put of a new key, shared/ws_repo.py
@@ -149,9 +151,9 @@ function tablesWritten(statement: z.infer<typeof StatementSchema>, tableArns: Re
     .filter((resource): resource is string => typeof resource === 'string' && tableArns.has(resource));
 }
 
-/** The guarded tables (by their ARN tokens) a role's default policy writes. */
-function writtenTables(policy: iam.Policy, tableArns: ReadonlySet<string>): Set<string> {
-  const statements = DocumentSchema.parse(policy.document.toJSON())?.Statement ?? [];
+/** The guarded tables (by their ARN tokens) a policy document writes. */
+function writtenTables(document: iam.PolicyDocument, tableArns: ReadonlySet<string>): Set<string> {
+  const statements = DocumentSchema.parse(document.toJSON())?.Statement ?? [];
   return new Set(statements.flatMap((raw) => tablesWritten(StatementSchema.parse(raw), tableArns)));
 }
 
@@ -173,25 +175,30 @@ const CHANGE_ACTIONS = ['dynamodb:DeleteItem', 'dynamodb:UpdateItem', 'dynamodb:
 /** What a role may put in each table it writes: every audit partition, one, or none. */
 type PutRight = { readonly kind: 'any' } | { readonly kind: 'one'; readonly partitionKey: string } | { readonly kind: 'none' };
 
-function putRight(role: iam.Role, arn: string, writers: readonly NamedAuditWriter[]): PutRight {
+function putRight(holder: GuardedHolder, arn: string, writers: readonly NamedAuditWriter[]): PutRight {
   const named = writers.find((writer) => writer.table.tableArn === arn
-    && writer.rolePathSuffixes.some((suffix) => role.node.path.endsWith(suffix)));
+    && writer.rolePathSuffixes.some((suffix) => holder.path.endsWith(suffix)));
   if (named === undefined) return { kind: 'none' };
   return named.partitionKey === undefined ? { kind: 'any' } : { kind: 'one', partitionKey: named.partitionKey };
 }
 
-/** Add the audit-row Denies to one role (see the module comment). Each guarded table appears in ONE of the first two
+/** What holds a grant: a role (its Denies go on its default policy) or a customer-managed policy (in itself). */
+interface GuardedHolder {
+  readonly path: string;
+  readonly add: (statement: iam.PolicyStatement) => void;
+}
+
+/** Add the audit-row Denies to one holder (see the module comment). Each guarded table appears in ONE of the first two
  *  statements, so its ARN is written once (the projects API's inline policy is close to the 70% size check): */
-function guardRole(role: iam.Role, written: ReadonlySet<string>, writers: readonly NamedAuditWriter[]): void {
-  const rights = [...written].map((arn) => ({ arn, right: putRight(role, arn, writers) }));
+function guardHolder(holder: GuardedHolder, written: ReadonlySet<string>, writers: readonly NamedAuditWriter[]): void {
+  const rights = [...written].map((arn) => ({ arn, right: putRight(holder, arn, writers) }));
   //  - the tables it writes audit rows in: no change, no delete (a batch included);
   const writes = rights.filter(({ right }) => right.kind !== 'none').map(({ arn }) => arn);
-  if (writes.length > 0) role.addToPrincipalPolicy(denyOnAuditRows(AUDIT_DENY_CHANGE_SID, CHANGE_ACTIONS, writes));
+  if (writes.length > 0) holder.add(denyOnAuditRows(AUDIT_DENY_CHANGE_SID, CHANGE_ACTIONS, writes));
   //  - the tables it does not: no put either (it cannot forge or overwrite a row);
   const none = rights.filter(({ right }) => right.kind === 'none').map(({ arn }) => arn);
   if (none.length > 0) {
-    role.addToPrincipalPolicy(denyOnAuditRows(AUDIT_DENY_WRITE_SID, [...new Set([...CHANGE_ACTIONS, ...PUT_ACTIONS])],
-      none));
+    holder.add(denyOnAuditRows(AUDIT_DENY_WRITE_SID, [...new Set([...CHANGE_ACTIONS, ...PUT_ACTIONS])], none));
   }
   //  - a writer limited to one partition: no put on any other audit partition. A pattern (`AUDIT#WS#*`, one
   //    workspace's audit partition each) is matched with StringNotLike, an exact key with StringNotEquals. A role
@@ -200,22 +207,33 @@ function guardRole(role: iam.Role, written: ReadonlySet<string>, writers: readon
   limited.forEach(({ arn, partitionKey }, index) => {
     const operator = partitionKey.includes('*') ? 'ForAnyValue:StringNotLike' : 'ForAnyValue:StringNotEquals';
     const sid = index === 0 ? AUDIT_DENY_OTHER_PARTITION_SID : `${AUDIT_DENY_OTHER_PARTITION_SID}${index + 1}`;
-    role.addToPrincipalPolicy(denyOnAuditRows(sid, PUT_ACTIONS, [arn], {
+    holder.add(denyOnAuditRows(sid, PUT_ACTIONS, [arn], {
       ...AUDIT_KEYS,
       [operator]: { 'dynamodb:LeadingKeys': [partitionKey] },
     }));
   });
 }
 
-/** Add the audit-row Denies to every role under `scope` that writes a guarded table (see the module comment). */
+/** Add the audit-row Denies to every role and customer-managed policy under `scope` that writes a guarded table (see
+ *  the module comment). */
 export function applyAuditRowGuard(scope: IConstruct, options: AuditGuardOptions): void {
   const tableArns = new Set(options.tables.map((table) => table.tableArn));
   if (tableArns.size === 0) return;
-  const roles = scope.node.findAll().filter((construct): construct is iam.Role => construct instanceof iam.Role);
-  for (const role of roles) {
-    const policy = role.node.tryFindChild('DefaultPolicy');
-    if (!(policy instanceof iam.Policy)) continue;
-    const written = writtenTables(policy, tableArns);
-    if (written.size > 0) guardRole(role, written, options.writers);
+  for (const construct of scope.node.findAll()) {
+    const holder = holderOf(construct);
+    if (holder === undefined) continue;
+    const written = writtenTables(holder.document, tableArns);
+    if (written.size > 0) guardHolder(holder, written, options.writers);
   }
+}
+
+/** A role with a default policy, or a customer-managed policy: what it grants and where its Denies go. */
+function holderOf(construct: IConstruct): (GuardedHolder & { readonly document: iam.PolicyDocument }) | undefined {
+  if (construct instanceof iam.ManagedPolicy) {
+    return { path: construct.node.path, document: construct.document, add: (statement) => { construct.addStatements(statement); } };
+  }
+  if (!(construct instanceof iam.Role)) return undefined;
+  const policy = construct.node.tryFindChild('DefaultPolicy');
+  if (!(policy instanceof iam.Policy)) return undefined;
+  return { path: construct.node.path, document: policy.document, add: (statement) => { construct.addToPrincipalPolicy(statement); } };
 }

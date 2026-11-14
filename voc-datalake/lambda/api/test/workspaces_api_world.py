@@ -11,6 +11,7 @@ from moto_helpers import pk_sk_table
 from test_workspaces_members_routes import ADA, EDI, VIC, WS
 
 import workspaces_handler
+from shared import platform_admin_gate
 from shared.test.cognito_doubles import live_cognito
 from shared.workspace import MembershipCache
 
@@ -28,6 +29,10 @@ def workspaces_api(values: Mapping[str, Any],
         for name, value in {'get_cognito_idp_client': live_cognito(), 'get_dynamodb_resource': resource,
                             **(returns or {})}.items():
             stack.enter_context(patch.object(workspaces_handler, name, return_value=value))
+        # The live platform-admin gate (shared/platform_admin_gate.py) reads the pool from its own client and the
+        # environment.
+        stack.enter_context(patch.object(platform_admin_gate, 'get_cognito_idp_client', return_value=live_cognito()))
+        stack.enter_context(patch.dict('os.environ', {'USER_POOL_ID': 'us-east-1_pool'}))
         workspaces, aggregates = pk_sk_table('workspaces'), pk_sk_table('aggregates')
         workspaces.put_item(Item={'pk': f'WS#{WS}', 'sk': 'META', 'name': 'Acme Outfitters', 'slug': 'acme',
                                   'status': 'active'})

@@ -46,6 +46,11 @@ export function userAdminEndpoints(fetchApi: FetchApi) {
     disableUser: (username: string) => fetchApi<UserMessage>(userPath(username, '/disable'), put()),
 
     deleteUser: (username: string) => fetchApi<UserMessage>(userPath(username), del()),
+
+    // Platform admins only (403 otherwise); a grant only to an administrator (400), never a revoke of the last
+    // enabled platform admin (409). docs/multi-workspace.md → Control plane.
+    setPlatformAdmin: (username: string, platformAdmin: boolean) =>
+      fetchApi<UserMessage>(userPath(username, '/platform-admin'), put({ platform_admin: platformAdmin })),
   }
 }
 

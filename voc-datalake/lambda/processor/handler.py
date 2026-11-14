@@ -12,9 +12,13 @@ Two paths (docs/multi-workspace.md, phase 2), chosen per message by ``workspace_
   every index partition prefixed (shared/feedback_partitions.py), written, checked for a duplicate and refreshed in
   place through the workspace layer (``ws_table``); its log rows ``WS#{ws}#LOGS#…``; its idempotency key
   ``WS#{ws}#…``, so one source item in two workspaces is two items; its Silver versions and inline raw copy under
-  ``ws/{ws}/``. Settings (categories, dimensions, source profiles) are still the deployment's. A message that
-  Radar would claim is refused (the record fails, and after its retries the queue's DLQ holds it): Radar is not
-  keyed by workspace yet (phase 3), and a workspace's review is never written to the deployment's voc-radar.
+  ``ws/{ws}/``. Its settings are the workspace's own (since 7.08.00; shared/workspace_config.py): the categories
+  that classify it, the dimensions, and the source profile whose PII policy, raw-copy policy, defaults and tags
+  apply (a workspace that saved none of a kind gets the built-in defaults, never the deployment's rows). A message
+  stamped with a Radar brand (``radar_brand_key``) is refused (the record fails, and after its retries the queue's
+  DLQ holds it): Radar is not keyed by workspace yet (phase 3), and a workspace's review is never written to the
+  deployment's voc-radar. A deployment source profile's ``radar_brand`` claims no workspace message: that is the
+  deployment's Radar setting, so such a message is stored as the workspace's own feedback.
 * A message that names none is stored deployment-wide exactly as before (``SOURCE#{source}``, ``LOGS#…``), with
   ``gsi4pk`` ``FEEDBACK#{id}`` and ``gsi5pk`` ``CHANNEL#{channel}`` for the two re-keyed indexes.
 * A message whose ``workspace_id`` is there but is not a workspace id is rejected like any invalid message
@@ -354,31 +358,55 @@ def validate_sqs_message(raw_record: dict, scope: WorkspaceScope | None = None) 
 
 # Category instruction, prompts and parsing live in shared/categorization.py
 # (shared with the category-reprocess worker). The categories cache below stays
-# here: it is this Lambda's per-container state.
+# here: it is this Lambda's per-container state. Every settings read below is of the scope of the message being
+# processed (shared/workspace_config.py): a workspace's rows for a message that names one, the deployment's for one
+# that names none, cached per scope, so one workspace's settings never classify, redact or label another's feedback.
+# The deployment's categories (a message that names no workspace), exactly as before workspaces.
 _categories_cache = None
 _categories_cache_time = None
+#: Each workspace's: workspace id -> (read at, categories).
+_workspace_categories: dict[str, tuple[float, list]] = {}
 CATEGORIES_CACHE_TTL = 300  # 5 minutes
 
 
-@tracer.capture_method
-def get_categories_config() -> list:
-    """Fetch categories configuration from DynamoDB with caching."""
-    global _categories_cache, _categories_cache_time
-
-    now = datetime.now(UTC).timestamp()
-    if _categories_cache is not None and _categories_cache_time and (now - _categories_cache_time) < CATEGORIES_CACHE_TTL:
-        return _categories_cache
-
+def _read_categories(scope: WorkspaceScope | None) -> list | None:
+    """``scope``'s configured categories; None when there are none or the read failed (logged)."""
     try:
-        categories = load_categories_config(aggregates_table)
+        categories = (load_categories_config(aggregates_table) if scope is None
+                      else load_categories_config(aggregates_table, scope))
         if categories:
-            _categories_cache = categories
-            _categories_cache_time = now
             logger.info(f"Loaded {len(categories)} categories from DynamoDB")
             return categories
         logger.warning("No categories configured - will use defaults")
     except (ClientError, BotoCoreError) as e:
         logger.exception(f"Could not fetch categories from DynamoDB: {e}")
+    return None
+
+
+@tracer.capture_method
+def get_categories_config(scope: WorkspaceScope | None = None) -> list:
+    """The categories of ``scope``'s workspace (the deployment's without one), cached per scope; [] when none are
+    configured or the read failed (the model then gets the defaults)."""
+    global _categories_cache, _categories_cache_time
+
+    now = datetime.now(UTC).timestamp()
+    if scope is not None:
+        cached = _workspace_categories.get(scope.ws)
+        if cached is not None and now - cached[0] < CATEGORIES_CACHE_TTL:
+            return cached[1]
+        # An empty or failed read is cached too, to avoid repeated failed lookups.
+        categories = _read_categories(scope) or []
+        _workspace_categories[scope.ws] = (now, categories)
+        return categories
+
+    if _categories_cache is not None and _categories_cache_time and (now - _categories_cache_time) < CATEGORIES_CACHE_TTL:
+        return _categories_cache
+
+    categories = _read_categories(None)
+    if categories:
+        _categories_cache = categories
+        _categories_cache_time = now
+        return categories
 
     # Cache empty result to avoid repeated failed lookups
     _categories_cache = []
@@ -386,43 +414,59 @@ def get_categories_config() -> list:
     return []
 
 
-def build_categories_instruction() -> str:
-    """Build the categories instruction for the LLM prompt."""
-    return categories_instruction_for(get_categories_config())
+def build_categories_instruction(scope: WorkspaceScope | None = None) -> str:
+    """Build the categories instruction for the LLM prompt (``scope``'s categories)."""
+    return categories_instruction_for(get_categories_config(scope))
 
 
 # Dimensions config and source profiles: the same per-container TTL as the
-# categories above, read through this module's aggregates table. A failed read
+# categories above, read through this module's aggregates table, per scope. A failed read
 # is cached as "none" for the TTL too (the review is still stored, without them).
-_settings_cache: dict[str, tuple[float, list]] = {}
-# The settings whose cached value stands in for a FAILED read (see strict readers).
-_failed_settings: set[str] = set()
+#: The deployment's setting by its name (``'dimensions'``, ``'sources'``), a workspace's by ``(name, workspace id)``
+#: -> (read at, value).
+_settings_cache: dict[str | tuple[str, str], tuple[float, list]] = {}
+# The settings whose cached value stands in for a FAILED read (see strict readers), keyed the same way.
+_failed_settings: set[str | tuple[str, str]] = set()
 
 
-def _cached_setting(name: str, loader) -> list:
+def _setting_key(name: str, scope: WorkspaceScope | None) -> str | tuple[str, str]:
+    return name if scope is None else (name, scope.ws)
+
+
+def _cached_setting(name: str, loader, scope: WorkspaceScope | None = None) -> list:
     now = datetime.now(UTC).timestamp()
-    cached = _settings_cache.get(name)
+    key = _setting_key(name, scope)
+    cached = _settings_cache.get(key)
     if cached is not None and now - cached[0] < CATEGORIES_CACHE_TTL:
         return cached[1]
     try:
-        value = loader(aggregates_table)
-        _failed_settings.discard(name)
+        # The deployment's read is the call it always was; a workspace's names its scope.
+        value = loader(aggregates_table) if scope is None else loader(aggregates_table, scope)
+        _failed_settings.discard(key)
     except (ClientError, BotoCoreError, ValueError) as e:
         logger.exception(f"Could not read the {name} settings: {type(e).__name__}")
         value = []
-        _failed_settings.add(name)
-    _settings_cache[name] = (now, value)
+        _failed_settings.add(key)
+    _settings_cache[key] = (now, value)
     return value
 
 
-def get_dimensions_config() -> list:
-    """The built-in plus the configured dimensions (cached; only the built-ins when the read failed)."""
-    return _cached_setting('dimensions', load_dimensions_config) or with_builtin_dimensions([])
+def _sources_failed(scope: WorkspaceScope | None) -> bool:
+    """Whether ``scope``'s cached source profiles stand in for a failed read (the strict readers fail closed)."""
+    return _setting_key('sources', scope) in _failed_settings
 
 
-def source_profile(source_platform: str) -> dict:
-    """The source's profile (cached; the defaults when absent or unreadable)."""
-    return profile_for(_cached_setting('sources', load_source_profiles), source_platform)
+def get_dimensions_config(scope: WorkspaceScope | None = None) -> list:
+    """The built-in plus the configured dimensions of ``scope``'s workspace (the deployment's without one; cached;
+    only the built-ins when the read failed)."""
+    return _cached_setting('dimensions', load_dimensions_config, scope) or with_builtin_dimensions([])
+
+
+def source_profile(source_platform: str, scope: WorkspaceScope | None = None) -> dict:
+    """The source's profile in ``scope``'s workspace (the deployment's without one; cached; the defaults when absent
+    or unreadable)."""
+    return profile_for(_cached_setting('sources', load_source_profiles, scope), source_platform,
+                       workspace=scope is not None)
 
 processor = ConcurrentSqsBatchProcessor(max_workers=ENRICHMENT_CONCURRENCY)
 
@@ -455,13 +499,28 @@ def get_comprehend_sentiment(text: str, language: str) -> dict:
     return comprehend_sentiment(comprehend, text, language)
 
 
-def invoke_bedrock_llm(raw_record: dict, raise_on_throttle: bool = True) -> dict:
-    """Invoke Bedrock for structured insights (throttling re-raised for SQS retry)."""
+def invoke_bedrock_llm(raw_record: dict, raise_on_throttle: bool = True,
+                       scope: WorkspaceScope | None = None) -> dict:
+    """Invoke Bedrock for structured insights (throttling re-raised for SQS retry), with ``scope``'s categories and
+    dimensions (the deployment's without one)."""
     return invoke_enrichment_llm(
-        raw_record, build_categories_instruction(),
+        raw_record, build_categories_instruction(scope),
         converse_fn=converse_detailed, raise_on_throttle=raise_on_throttle,
-        dimensions_config=get_dimensions_config(),
+        dimensions_config=get_dimensions_config(scope),
     )
+
+
+def _enrichment_steps(scope: WorkspaceScope | None) -> EnrichmentSteps:
+    """The enrichment stages for a record of ``scope``. Deployment-wide the model step is this module's
+    ``invoke_bedrock_llm`` itself; in a workspace, a call of it (looked up at call time, so this module's function
+    stays the seam) with the workspace's scope."""
+    if scope is None:
+        return EnrichmentSteps(detect_language, translate_text, get_comprehend_sentiment, invoke_bedrock_llm)
+
+    def in_workspace(raw_record: dict) -> dict:
+        return invoke_bedrock_llm(raw_record, scope=scope)
+
+    return EnrichmentSteps(detect_language, translate_text, get_comprehend_sentiment, in_workspace)
 
 def generate_deterministic_id(source_platform: str, source_id: str, text: str = '', created_at: str = '', url: str = '') -> str:
     """
@@ -524,36 +583,37 @@ def load_stored_item(pk: str, sk: str, scope: WorkspaceScope | None = None) -> d
     return item if isinstance(item, dict) else None
 
 
-def _enrich_again(raw_record: dict) -> tuple[Enrichment, list]:
-    """The processor's enrichment of an updated copy, and the categories config it ran with."""
-    categories_config = get_categories_config()
+def _enrich_again(raw_record: dict, scope: WorkspaceScope | None = None) -> tuple[Enrichment, list]:
+    """The processor's enrichment of an updated copy, and the categories config (``scope``'s) it ran with."""
+    categories_config = get_categories_config(scope)
     enrichment = run_enrichment(
         raw_record,
-        EnrichmentSteps(detect_language, translate_text, get_comprehend_sentiment, invoke_bedrock_llm),
+        _enrichment_steps(scope),
         PRIMARY_LANGUAGE,
         categories_config,
     )
     return enrichment, categories_config
 
 
-def _reinferred_dimensions(stored: dict, enrichment: Enrichment, categories_config: list) -> tuple[dict, dict]:
-    """The stored item's dimensions after the re-enrichment (locked values kept)."""
+def _reinferred_dimensions(stored: dict, enrichment: Enrichment, categories_config: list,
+                           scope: WorkspaceScope | None = None) -> tuple[dict, dict]:
+    """The stored item's dimensions after the re-enrichment (locked values kept), under ``scope``'s dimensions."""
     category = stored.get('category') if keeps_stored_category(stored, enrichment) else enrichment.attributes['category']
     return reinfer_dimensions(
-        get_dimensions_config(), stored,
+        get_dimensions_config(scope), stored,
         product=category_product(categories_config, category), ai=enrichment.ai_dimensions,
     )
 
 
 def _reenrichment_update(stored: dict, raw_record: dict, now_iso: str, scope: WorkspaceScope | None = None) -> dict:
     """Re-run the processor's enrichment for an edited issue; attributes-only when the model failed."""
-    enrichment, categories_config = _enrich_again(raw_record)
+    enrichment, categories_config = _enrich_again(raw_record, scope)
     if enrichment.llm_failed:
         # Never overwrite a good enrichment with the fallback defaults; the text is
         # left as stored too, so the next copy of the issue tries again.
         count_metric("SourceUpdateEnrichmentFailed")
         return attributes_update(stored, raw_record, now_iso)
-    dimensions = _reinferred_dimensions(stored, enrichment, categories_config)
+    dimensions = _reinferred_dimensions(stored, enrichment, categories_config, scope)
     count_metric("SourceUpdatesReenriched")
     return reenrichment_update(stored, raw_record, enrichment, dimensions, now_iso, scope)
 
@@ -566,7 +626,7 @@ def refresh_stored_item(stored: dict, raw_record: dict, scope: WorkspaceScope | 
     ``ConcurrentSourceUpdateError`` when the item changed under us, so the record
     is retried against the new state. ``scope``: the workspace the item is in, for a message of one.
     """
-    pii_policy = pii_policy_for(raw_record)
+    pii_policy = pii_policy_for(raw_record, scope)
     decision = update_decision(stored, raw_record, pii_policy)
     if decision != UPDATE_APPLY:
         logger.info(f"Source update {decision}: {stored.get('feedback_id')}")
@@ -597,11 +657,11 @@ def _csv_reenriched(stored: dict, raw_record: dict, pii_policy: str,
     customer's words are dropped. A FAILED model call returns ``(None, False)``: like an issue
     refresh, the stored enrichment is never overwritten with the fallback defaults.
     """
-    enrichment, categories_config = _enrich_again(raw_record)
+    enrichment, categories_config = _enrich_again(raw_record, scope)
     if enrichment.llm_failed:
         count_metric("CsvUpdateEnrichmentFailed")
         return None, False
-    dimensions = _reinferred_dimensions(stored, enrichment, categories_config)
+    dimensions = _reinferred_dimensions(stored, enrichment, categories_config, scope)
     fields = reenriched_fields(stored, raw_record, enrichment, dimensions, scope)
     if pii_policy == PII_SUMMARY_ONLY:
         fields.update(dict.fromkeys(SUMMARY_ONLY_DROPPED_FIELDS))
@@ -624,7 +684,7 @@ def refresh_csv_item(stored: dict, raw_record: dict, scope: WorkspaceScope | Non
         logger.info(f"CSV update {decision}: {stored.get('feedback_id')}")
         count_metric("CsvUpdatesUnchanged")
         return decision
-    pii_policy = pii_policy_for(raw_record)
+    pii_policy = pii_policy_for(raw_record, scope)
     wants_reenrichment = needs_reenrichment(stored, raw_record, pii_policy)
     reenriched, moves_category = (
         _csv_reenriched(stored, raw_record, pii_policy, scope) if wants_reenrichment else (None, False))
@@ -725,15 +785,17 @@ def build_feedback_item(raw_record: dict, feedback_id: str, now: datetime, scope
     date_str = now.strftime('%Y-%m-%d')
     source_platform = raw_record.get('source_platform', 'unknown')
     source_display = raw_record.get('brand_name', '') or source_platform
-    source_channel = raw_record.get('source_channel', 'unknown')
+    # One rule for a missing, null or empty channel, the one a CSV correction applies (shared/csv_updates.py): it
+    # is 'unknown', so every item has a channel and a gsi5 partition.
+    source_channel = raw_record.get('source_channel') or 'unknown'
     original_text = raw_record.get('text', '')
 
     # Same enrichment path as the category-reprocess worker's raw mode. The steps
     # are looked up at call time, so this module's functions stay the seam.
-    categories_config = get_categories_config()
+    categories_config = get_categories_config(scope)
     enrichment = run_enrichment(
         raw_record,
-        EnrichmentSteps(detect_language, translate_text, get_comprehend_sentiment, invoke_bedrock_llm),
+        _enrichment_steps(scope),
         PRIMARY_LANGUAGE,
         categories_config,
     )
@@ -761,10 +823,9 @@ def build_feedback_item(raw_record: dict, feedback_id: str, now: datetime, scope
         'gsi3sk': now_iso,
 
         # GSI4: by feedback id; GSI5: by channel (sort key gsi1sk). Their own partition attributes, so a
-        # workspace's id or channel is never found by another workspace's (or the deployment's) read. An empty
-        # channel is in no channel partition (no reader asks for one).
+        # workspace's id or channel is never found by another workspace's (or the deployment's) read.
         FEEDBACK_ID_INDEX_PARTITION: feedback_id_partition(scope, feedback_id),
-        CHANNEL_INDEX_PARTITION: channel_partition(scope, source_channel) if source_channel else None,
+        CHANNEL_INDEX_PARTITION: channel_partition(scope, source_channel),
 
         # Data fields
         'feedback_id': feedback_id,
@@ -819,7 +880,7 @@ def build_feedback_item(raw_record: dict, feedback_id: str, now: datetime, scope
         'author': raw_record.get('author'),
         'title': raw_record.get('title'),
         'metadata': raw_record.get('metadata') or None,
-        **classification_attributes(raw_record, categories_config, enrichment),
+        **classification_attributes(raw_record, categories_config, enrichment, scope),
     }
 
     # Remove None values
@@ -827,14 +888,15 @@ def build_feedback_item(raw_record: dict, feedback_id: str, now: datetime, scope
     # The heuristic band (shared/usefulness.py): read off the customer's own text and
     # the enrichment, BEFORE the storage policy may reduce the text to its summary.
     built[USEFULNESS_FIELD] = item_usefulness(built)
-    return apply_storage_policy(built, pii_policy_for(raw_record))
+    return apply_storage_policy(built, pii_policy_for(raw_record, scope))
 
 
 WITHHELD_TEXT = '[withheld]'
 
 
-def pii_policy_for(raw_record: dict) -> str:
-    """The PII policy ingestion applied; the source profile's when the message does not say.
+def pii_policy_for(raw_record: dict, scope: WorkspaceScope | None = None) -> str:
+    """The PII policy ingestion applied; the source profile's (``scope``'s workspace's for a message of one, the
+    deployment's without one) when the message does not say.
 
     FAILS CLOSED on the second branch: a message that carries no
     ``pii_policy_applied`` and whose source profile cannot be read raises
@@ -844,10 +906,11 @@ def pii_policy_for(raw_record: dict) -> str:
     applied = raw_record.get('pii_policy_applied')
     if isinstance(applied, str) and applied:
         return applied
-    profiles = _cached_setting('sources', load_source_profiles)
-    if 'sources' in _failed_settings:
+    profiles = _cached_setting('sources', load_source_profiles, scope)
+    if _sources_failed(scope):
         raise SourceProfilesUnavailable
-    return profile_for(profiles, raw_record.get('source_platform', 'unknown'))['pii']
+    # A workspace's source without a profile there redacts (privacy by default, shared/source_profiles.py).
+    return profile_for(profiles, raw_record.get('source_platform', 'unknown'), workspace=scope is not None)['pii']
 
 
 def apply_storage_policy(item: dict, pii_policy: str) -> dict:
@@ -863,16 +926,18 @@ def apply_storage_policy(item: dict, pii_policy: str) -> dict:
     return stored
 
 
-def classification_attributes(raw_record: dict, categories_config: list, enrichment: Enrichment) -> dict:
+def classification_attributes(raw_record: dict, categories_config: list, enrichment: Enrichment,
+                              scope: WorkspaceScope | None = None) -> dict:
     """``dimensions``, ``dimension_sources`` and ``tags`` (None when empty) for a new review.
 
     Order per key: the message (its ``dimensions``, then ``metadata`` entries keyed by
     a dimension key), the source profile's defaults, the category's
-    configured product, then the model (``shared.feedback_dimensions``).
+    configured product, then the model (``shared.feedback_dimensions``); the dimensions and the profile are
+    ``scope``'s workspace's for a message of one.
     """
-    profile = source_profile(raw_record.get('source_platform', 'unknown'))
+    profile = source_profile(raw_record.get('source_platform', 'unknown'), scope)
     dimensions, sources = resolve_item_dimensions(
-        get_dimensions_config(),
+        get_dimensions_config(scope),
         message=raw_record.get('dimensions'),
         metadata=raw_record.get('metadata'),
         profile_defaults=profile.get('dimension_defaults'),
@@ -915,11 +980,14 @@ class RadarTableUnavailableError(Exception):
 
 
 class WorkspaceRadarRefusedError(Exception):
-    """A workspace's message that Radar would claim; the record fails (SQS → DLQ after its retries).
+    """A workspace's message stamped with a Radar brand (``radar_brand_key``); the record fails (SQS → DLQ after
+    its retries).
 
     Radar is not keyed by workspace yet (docs/multi-workspace.md, phase 3): storing the review in the
     deployment's voc-radar would put a workspace's data where every workspace's Radar reads, and storing
-    it as the workspace's own feedback would count another brand's review as its own.
+    it as the workspace's own feedback would count the brand its scraper or connector tracks as its own. A
+    message claimed only by a deployment source profile's ``radar_brand`` is not refused: it is stored as the
+    workspace's own feedback (the profile is the deployment's Radar setting).
     """
 
 
@@ -936,8 +1004,9 @@ def radar_brand_for(raw_record: dict) -> str | None:
     source" cannot be proven and a guess would put another brand's review in
     our own numbers.
     """
+    # The deployment's profiles: only a message that names no workspace reaches Radar (``_radar_result``).
     profiles = _cached_setting('sources', load_source_profiles)
-    if 'sources' in _failed_settings:
+    if _sources_failed(None):
         raise SourceProfilesUnavailable
     key = raw_record.get('radar_brand_key')
     if key:

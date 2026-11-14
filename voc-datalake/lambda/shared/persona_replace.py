@@ -18,13 +18,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Final
 
-from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
 from shared.aws import is_conditional_check_failure
-from shared.dynamo_paging import iter_query
 from shared.exceptions import NotFoundError
+from shared.ingest_tables import table_view
 from shared.logging import logger
+from shared.project_keys import project_pk
+from shared.project_tables import iter_project_rows
+from shared.ws_repo import OutOfScopeError, WorkspaceScope
 
 #: The persona attribute; only a literal ``True`` protects.
 PROTECTED_FIELD: Final = 'protected'
@@ -50,27 +52,26 @@ class ClearedPersonas:
     failed: list[str] = field(default_factory=list)
 
 
-def _persona_rows(table: Any, project_id: str) -> list[dict]:
-    return list(iter_query(table, {
-        'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}') & Key('sk').begins_with('PERSONA#'),
-        'ProjectionExpression': 'pk, sk, #protected, #name',
-        'ExpressionAttributeNames': {'#protected': PROTECTED_FIELD, '#name': 'name'},
-    }))
+def _persona_rows(table: Any, project_id: str, *, workspace: WorkspaceScope | None) -> list[dict]:
+    return list(iter_project_rows(table, project_id, workspace=workspace, sort_prefix='PERSONA#',
+                                  ProjectionExpression='pk, sk, #protected, #name',
+                                  ExpressionAttributeNames={'#protected': PROTECTED_FIELD, '#name': 'name'}))
 
 
-def _delete_unprotected(table: Any, project_id: str, sort_key: str) -> None:
-    table.delete_item(
-        Key={'pk': f'PROJECT#{project_id}', 'sk': sort_key},
+def _delete_unprotected(table: Any, project_id: str, sort_key: str, *, workspace: WorkspaceScope | None) -> None:
+    table_view(workspace, table).delete_item(
+        {'pk': project_pk(project_id, workspace=workspace), 'sk': sort_key},
         ConditionExpression=_UNPROTECTED_CONDITION,
         ExpressionAttributeNames={'#protected': PROTECTED_FIELD},
         ExpressionAttributeValues={':true': True},
     )
 
 
-def clear_personas(table: Any, project_id: str) -> ClearedPersonas:
-    """Delete every unprotected persona row of the project, one by one; a failed delete never stops the rest."""
+def clear_personas(table: Any, project_id: str, *, workspace: WorkspaceScope | None = None) -> ClearedPersonas:
+    """Delete every unprotected persona row of the project, one by one; a failed delete never stops the rest. A key
+    the workspace layer refuses (``OutOfScopeError``) is a programming error: raised, never counted as failed."""
     result = ClearedPersonas()
-    for row in _persona_rows(table, project_id):
+    for row in _persona_rows(table, project_id, workspace=workspace):
         sort_key = row.get('sk')
         if not isinstance(sort_key, str):
             continue
@@ -78,7 +79,9 @@ def clear_personas(table: Any, project_id: str) -> ClearedPersonas:
             result.protected.append(sort_key)
             continue
         try:
-            _delete_unprotected(table, project_id, sort_key)
+            _delete_unprotected(table, project_id, sort_key, workspace=workspace)
+        except OutOfScopeError:
+            raise
         except Exception as error:
             if is_conditional_check_failure(error):
                 result.protected.append(sort_key)  # protected after the read: kept, by design
@@ -95,11 +98,12 @@ def clear_personas(table: Any, project_id: str) -> ClearedPersonas:
     return result
 
 
-def set_protection(table: Any, project_id: str, persona_id: str, protected: bool, now: str) -> None:
+def set_protection(table: Any, project_id: str, persona_id: str, protected: bool, now: str, *,
+                   workspace: WorkspaceScope | None = None) -> None:
     """Mark a persona protected (or not); ``NotFoundError`` when the project has no such persona."""
     try:
-        table.update_item(
-            Key={'pk': f'PROJECT#{project_id}', 'sk': f'PERSONA#{persona_id}'},
+        table_view(workspace, table).update_item(
+            {'pk': project_pk(project_id, workspace=workspace), 'sk': f'PERSONA#{persona_id}'},
             UpdateExpression='SET #protected = :protected, updated_at = :now',
             ConditionExpression='attribute_exists(pk)',
             ExpressionAttributeNames={'#protected': PROTECTED_FIELD},

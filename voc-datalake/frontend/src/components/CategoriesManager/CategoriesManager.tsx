@@ -16,6 +16,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Loader2, Check, AlertCircle } from 'lucide-react'
 import { api } from '../../api/client'
 import { categoriesConfigKey, useCategoriesConfig } from '../../hooks/useCategories'
+import { useConfigScope } from '../../workspace/configScope'
 import ConfirmModal from '../ConfirmModal/ConfirmModal'
 import { normalizeCategories } from './categoriesSchema'
 import CategoryRow from './CategoryRow'
@@ -23,6 +24,7 @@ import { subcategoriesOf, toSlug } from './categoryEntries'
 import ReprocessPanel from './ReprocessPanel'
 import CategoryGeneratePanel from './CategoryGeneratePanel'
 import { useIsAdmin } from '../../store/authStore'
+import { useCurrentWorkspace } from '../../workspace/currentWorkspace'
 
 /**
  * Unique id for a new (sub)category, minted at interaction time.
@@ -63,6 +65,11 @@ export default function CategoriesManager() {
   const { t } = useTranslation('components', { keyPrefix: 'categoriesManager' })
   const queryClient = useQueryClient()
   const isAdmin = useIsAdmin()
+  // Whose categories (workspace/configScope.ts): Administration edits the deployment's, the workspace settings page
+  // the workspace's. The reprocess below is of the same scope.
+  const scope = useConfigScope()
+  const workspace = useCurrentWorkspace()
+  const editsWorkspace = scope === 'workspace' && workspace !== null
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [deleteCategoryId, setDeleteCategoryId] = useState<string | null>(null)
   const [editingCategory, setEditingCategory] = useState<string | null>(null)
@@ -72,10 +79,12 @@ export default function CategoriesManager() {
 
   // Normalized once at the shared query boundary — legacy rows lack
   // id/subcategories and crashed this tab (issue #181).
-  const { data: categoriesConfig, isLoading } = useCategoriesConfig()
+  const { data: categoriesConfig, isLoading } = useCategoriesConfig(scope)
 
   const saveMutation = useMutation({
-    mutationFn: (categories: Category[]) => api.saveCategoriesConfig({ categories }),
+    mutationFn: (categories: Category[]) => (scope === 'deployment'
+      ? api.saveDeploymentCategoriesConfig({ categories })
+      : api.saveCategoriesConfig({ categories })),
     // Refetch on failure too: the route validates (and is admin-only), so a
     // refused save must not leave the editor showing what was not stored.
     onSettled: () => {
@@ -269,7 +278,10 @@ export default function CategoriesManager() {
         </p>
       )}
 
-      <ReprocessPanel />
+      {/* The category reprocess of the same scope as these categories (useReprocessJob.ts): beside a workspace's
+          own categories its own job, replaying its reviews with its categories and dimensions (7.13.00); in
+          Administration the deployment's. */}
+      <ReprocessPanel inWorkspace={editsWorkspace} />
 
       <ConfirmModal
         isOpen={deleteCategoryId !== null}

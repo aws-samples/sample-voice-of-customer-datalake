@@ -3,6 +3,7 @@ with their tags and content types, listings, multipart uploads with their parts,
 under the workspace's exports and that every object was tagged."""
 from __future__ import annotations
 
+import hashlib
 import io
 from dataclasses import dataclass, field
 from typing import Any
@@ -115,15 +116,27 @@ class ExportS3:
         self.objects.pop(Key, None)
         return {}
 
-    def get_object(self, *, Bucket: str, Key: str) -> dict[str, Any]:
+    def get_object(self, *, Bucket: str, Key: str, Range: str = '', IfMatch: str = '') -> dict[str, Any]:
         self._record('get_object', Bucket, Key)
         if Key not in self.objects:
             # What S3 answers a role whose s3:ListBucket carries an s3:prefix condition (the export job's): 403, not
             # 404, since the request names no prefix that would allow it to learn the key is missing.
             raise ClientError({'Error': {'Code': 'AccessDenied', 'Message': 'Access Denied'}}, 'GetObject')
         body = self.objects[Key][0]
-        return {'Body': io.BytesIO(body), 'ContentLength': len(body),
+        etag = self.etag(Key)
+        if IfMatch and IfMatch != etag:
+            raise ClientError({'Error': {'Code': 'PreconditionFailed', 'Message': 'At least one of the pre-conditions'
+                                                                                  ' you specified did not hold'}},
+                              'GetObject')
+        if Range:
+            _require(Range.startswith('bytes=') and Range.endswith('-'), 'an open-ended byte range')
+            body = body[int(Range[len('bytes='):-1]):]
+        return {'Body': io.BytesIO(body), 'ContentLength': len(body), 'ETag': etag,
                 'ContentType': self.content_types.get(Key, 'binary/octet-stream')}
+
+    def etag(self, key: str) -> str:
+        """The object's current version, as S3 names it (quoted): it changes whenever the object's bytes do."""
+        return f'"{hashlib.md5(self.objects[key][0], usedforsecurity=False).hexdigest()}"'
 
     def seed(self, key: str, body: bytes, content_type: str = 'binary/octet-stream') -> None:
         """An object the workspace already has (written by its ingestion, not by the export: no call recorded)."""

@@ -319,8 +319,11 @@ def test_an_export_that_completes_between_the_read_and_the_mark_is_still_marked(
     acquire_lock(view, PARTITION, export_id, NOW, _held())
     read_while_running = list(view.iter_query('pk', PARTITION))
     export_jobs.finish_job(view, export_id, 'completed', {})  # it completes after the read
-    with patch.object(view, 'iter_query', return_value=iter(read_while_running)):
-        export_jobs.mark_erased(view, NOW)
+    # A WorkspaceTable is frozen (shared/ws_repo.py): a double that wraps it answers the stale read.
+    stale = MagicMock(wraps=view)
+    stale.scope = view.scope
+    stale.iter_query.return_value = iter(read_while_running)
+    export_jobs.mark_erased(stale, NOW)
     row = aggregates.get_item(Key={'pk': PARTITION, 'sk': export_id})['Item']
     assert row['status'] == 'erased'
 
@@ -359,3 +362,21 @@ def test_an_erasure_creates_no_lock_row_for_a_workspace_that_is_not_active(table
     assert 'Item' not in aggregates.get_item(Key=export_jobs.export_lock_key(view.scope))
     export_jobs.hold_for_erasure(view, 'erasure-run1', NOW, workspace_active=True)
     assert _lock(aggregates)['job_id'] == 'erasure-run1'
+
+
+@pytest.mark.parametrize(('row', 'generation', 'awaits'), [
+    ({'status': 'queued'}, 0, True),
+    ({'status': 'queued', 'generation': 0}, 0, False),
+    ({'status': 'running', 'generation': 0}, 1, True),
+    ({'status': 'running', 'generation': 1}, 1, False),
+    ({'status': 'running', 'generation': 0}, 2, False),
+    ({'status': 'completed', 'generation': 0}, 1, False),
+    ({'status': 'queued'}, None, False),
+    ({'status': 'queued'}, True, False),
+    ({'status': 'running', 'generation': 0}, '1', False),
+    ({'status': 'queued'}, -1, False),
+])
+def test_awaits_generation_matches_the_claims_own_conditions(row, generation, awaits):
+    """The generation an unclaimable event names fails a job only when the claim would have taken it: the start of
+    a queued job, or the next generation of a running one."""
+    assert export_jobs.awaits_generation(row, generation) is awaits

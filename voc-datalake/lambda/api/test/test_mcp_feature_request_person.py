@@ -40,8 +40,8 @@ def world():
 
 def _write(ctx: Any, row: dict, arguments: dict, minter: MinterIdentity | None = ALICE) -> tuple[str, str]:
     """The tool's outcome and its answer text (JSON on success, the route's refusal otherwise)."""
-    def call_domain(call: DomainCall, *, claims: dict) -> DomainResult:
-        response = resolver.resolve(build_proxy_event(call, claims), ctx)
+    def call_domain(call: DomainCall, *, claims: dict, workspace: str | None = None) -> DomainResult:
+        response = resolver.resolve(build_proxy_event(call, claims, workspace), ctx)
         return DomainResult(response['statusCode'], json.loads(response['body']))
 
     with pytest.MonkeyPatch.context() as mp:

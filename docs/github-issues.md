@@ -106,10 +106,10 @@ reading it:
 | Body at most 1 MB | 413 |
 | `X-Hub-Signature-256` present and equal to `sha256=` + HMAC-SHA256(raw body, secret), constant-time compare | 401 |
 
-In a workspace (multi-workspace, not released yet) the payload URL is
+In a workspace (multi-workspace, since 7.06.00; its deliveries are ingested into it since 7.14.00) the payload URL is
 `<API endpoint>/webhooks/github_issues/{workspace id}`, and the secret, repositories and labels
 are the workspace's own; an unknown workspace or one without a webhook secret answers 401 like
-a bad signature ([plugin-architecture.md](plugin-architecture.md#a-workspaces-webhook-endpoint-not-released-yet)).
+a bad signature ([plugin-architecture.md](plugin-architecture.md#a-workspaces-webhook-endpoint-since-70600)).
 
 Verified deliveries for an unconfigured repository, pull requests, bot comments, deletions,
 `ping` and other events are acknowledged with 200 and dropped. A webhook item and a later poll
@@ -184,7 +184,7 @@ them.
 
 Every item's untouched GitHub payload is archived to the raw bucket
 (`raw/github_issues/{y}/{m}/{d}/<id>/<sha16>.json`, one write-once object per content version) by both the
-ingestor and the webhook, like every source; an ingestor run in a workspace (multi-workspace, not released yet,
+ingestor and the webhook, like every source; an ingestor run in a workspace (multi-workspace, since 7.00.00,
 [multi-workspace.md](multi-workspace.md)) archives under `ws/{ws}/raw/github_issues/…`.
 
 ### `issue_attributes`

@@ -17,6 +17,640 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.24.00] - 2026-11-14
+
+Multi-workspace, phase 4: the members' conversations are not included in a workspace's export; its manifest says only how many people have any ([docs/multi-workspace.md](docs/multi-workspace.md#export-and-delete)). A person's assistant conversations are theirs, and the export goes to the workspace's admins.
+
+### Added
+
+- The workspace export's manifest has a `conversations` section: `people`, how many people (current or former members) have at least one conversation in the workspace, and nothing else: no conversation total, no conversation, title, message or conversation id, and no conversation owner's id. What the number reveals, as the manifest's note says: two exports compared show how many people started or stopped keeping conversations there in between, so whether a given member started using the assistant can be seen that way. The job reads the workspace's list of conversation owners (`WS#{ws}#CONVERSANTS`, 7.19.00) for its keys only, then asks each owner's `WS#{ws}#USER#{sub}` once whether it holds any `CONV#` row (`Select COUNT`, `Limit` 1: a run's cancel markers do not count), through the workspace layer, after the memory counts and before the completion, checkpointed across hand-overs. Load: one Query per owner, each reading at most one row, so the cost grows with the number of owners, not with how many conversations they keep or how long those are. A member gets no copy of their own conversations from this export.
+
+### Changed
+
+- The export's manifest moves `conversations` from `not_exported` (a gap) to `excluded` (by design). An export started before this release that resumes already at its completion finishes without the count: its manifest's `conversations` says `counted: false` and to export again.
+- Internal: the checks of values a job carries across its hand-overs ("a count", "a mapping or none", "a key or none") live in one module, `lambda/shared/carried_values.py`, used by the export job, `export_jobs.awaits_generation` and the research step handler (which drops its own copy of the count check; no change in what it does). The memory counts page through one helper, `pages.py` `count_page`, with no change in what they do.
+
+### Fixed
+
+- A workspace export whose hand-over state has the wrong shape in a field the job checks now fails at once when it is the hand-over the job waits for: the job is marked failed (by a write conditioned on that same generation, so a real claim that lands first keeps its run), then the upload it names is aborted, the export lock released and the starter notified. Checked: the generation (which a carried state must now name: no fallback to the first), the part number, the upload id, the phase, the two flags, the entity cursor, the counts, the file names, the central-directory and tail generations, the zip state's offset and entries, the objects state's counts and measured rates, the top level of the memory-count states, and the conversations' count whole (its owner-list cursor must be this workspace's). A flag carried as null is its default. Not checked: a memory count's own fields and the objects state's key and skipped list, read as before. Every check raises a ValueError, the one error a malformed state fails the job with; any other error is left to fail the invocation, as a coding bug should. A late or repeated event, or one that names no generation, changes nothing, as a refused claim does (`awaits_generation` and `fail_awaited`, beside the claim in `lambda/shared/export_jobs.py`). Before, the invocation raised and the job stayed running until its lock went stale an hour later.
+
+### Upgrade notes
+
+- The export job's role (`voc-workspace-export`, `lib/stacks/workspace-export-worker.ts`) gains two `dynamodb:Query` grants on `voc-conversations`, each limited by `dynamodb:LeadingKeys` to one workspace id's partitions: a Query of `WS#{one id}#CONVERSANTS` only with `dynamodb:Select` `SPECIFIC_ATTRIBUTES` and `dynamodb:Attributes` limited to the row's key, `pk` and `sk` (the attributes must be named; the code asks for `sk` alone, so a row's `first_at` is never read); and a Query of `WS#{one id}#USER#*` only with `dynamodb:Select` `COUNT`. No other action on the table; the table's key is the deployment key the role already uses. The function gets `CONVERSATIONS_TABLE`. IAM cannot hold a count to the code's request: a `COUNT` Query with no limit could count a person's conversations, and one with a filter, a narrower `begins_with` or a `BETWEEN` on `sk`, or a start key of its choosing could tell whether their conversations match a guess, even probe their `CONV#` ids a prefix at a time, as the memory counts of 7.22.00 could; only the code holds it (one fixed request, `Limit` 1, no filter, no start key; its tests pin it). The hand-over event carries the owners' ids still to count; the function's self-invoke has no failure destination or dead-letter queue, and the job never logs an event. A normal deploy (`npm run deploy:all`) does the rest: the processing stack's export role and function change, and its research step function gets new code (it uses the shared count check; no change in what it does). The API stack changes only through its functions' code and `APP_VERSION` (every function built from `lambda/` bundles `shared/`, and `shared/export_jobs.py` changed, with no change in what they do). The core stack's template only lists its existing exports in another order: CDK writes an export when a consuming stack first references it, and the export worker's role now references the conversations table's ARN before the memory table's name is referenced, so the conversations table's ARN export now comes before the memory table's name export. The synthesized core template has the same 52 exports before and after (51 cross-stack exports, 7.23.00's `CompanyLogoReadPolicy` among them, and `VocFrontendDomainName`), none added or removed, and no resource or grant change. Nothing else to do.
+- Rollback: no earlier release's code (7.23.00 and before) can read the `conversation_counts` phase. An export running when an earlier release is deployed again would fail its next hand-over without writing its outcome, and its row would wait an hour for its stale lock. Roll back only when no workspace export is running (each workspace's export page, or its `WS#{ws}#JOB#export` rows reading `running`).
+
+## [7.23.00] - 2026-11-14
+
+The project branch takes main's releases since it started (6.04.08, 6.05.00, 7.00.00 and 7.00.01, listed below under
+their own numbers, as released on main, after this branch's sections: its own 6.04.08, 6.05.00 and 7.00.00 share
+those numbers, so main's are marked "(from main)"): workshop templates reserve no concurrency for the Global MCP endpoint (this branch's export job
+still reserves 10: Known issues); Node.js 24 for the
+tooling and the minimatch and fast-xml-parser fixes; prototypes show the uploaded company logo, an SVG logo uploads
+again and a large logo is made smaller (the company logo is at most 1 MB for every client); the Kiro agents can no
+longer read `.env`, key and credential files. Nothing of the multi-workspace work changes.
+
+### Known issues
+
+- Main's 6.04.08 makes the workshop templates reserve no concurrency for the Global MCP endpoint
+  (`-c mcpReservedConcurrency=0`), but this branch's workspace export job (`voc-workspace-export`, since 7.17.00)
+  still reserves 10 (`WORKSPACE_EXPORT_RESERVED_CONCURRENCY`), in the workshop templates too: a Workshop Studio
+  account with 110 unreserved executions is left at AWS's minimum of 100, so any further reservation there fails.
+  `voc-datalake/scripts/workshop-artifacts.test.ts` checks the MCP flag only (renamed in this merge: "reserves no
+  concurrency for the Global MCP endpoint, which a workshop account cannot spare"). Whether the export
+  job gets a switch the workshop sets to 0 is left for a follow-up.
+- Main's 7.00.00 reads the uploaded company logo from the deployment's design-system row directly
+  (`lambda/jobs/document_generator/handler.py`, `SETTINGS#design_system`): when the design system moves under its
+  workspace, that reader moves with it.
+- Main's 7.00.01 denies the Kiro agents every `**/*credentials*` path, which also keeps them from opening this
+  branch's `lambda/shared/workspace_credentials.py` (source, not a secret) and its tests; narrowing that deny is left
+  to a follow-up (a change to the agents' secret rules).
+
+### Upgrade notes
+
+- As each of main's four releases says below: deploy the stacks (`npm run deploy:infra`, VocCoreStack before
+  VocApiStack: the `CompanyLogoReadPolicy` managed policy and its attachment to the document generator's job role)
+  and the frontend (`npm run deploy:frontend`); deploy from Node.js 24.15+ and run `npm ci` again in `voc-datalake/`,
+  `voc-datalake/frontend/` and `voc-datalake/lambda/stream/`. **Breaking (from main's 7.00.00):** an API or MCP client
+  that uploads the company logo must send at most 1 MB.
+
+## [7.22.00] - 2026-11-14
+
+Multi-workspace, phase 4c: the voc-multiplayer-b track's export-memory slice merged. A workspace's export now also holds the workspace's company memory ([docs/multi-workspace.md](docs/multi-workspace.md#export-and-delete)). Its members' conversations are still not exported.
+
+### Added
+
+- The workspace export carries the workspace's company memories, their events and the memory import rows (`memory_company`, `memory_events`, `memory_imports`), read by Query under the workspace's own memory keys (`WS#{ws}#MEM#company`, `#MEMEVT#{memory id}`, `#MEMIMPORT`). Personal memories and chat-session cursors are their owners' only (docs/memory.md): they are not in the workspace export, only counted in the manifest (`memory.not_exported`, approximate), through count-only permissions. The events grant (`#MEMEVT#*`) also reaches a personal memory's events, which IAM cannot tell apart; the job reads events only for the ids it finds in the company partition, so it never queries them. No exported memory row carries a person's hash, an embedding or a chat session's id. An export in flight across a deploy resumes where it was: a checkpoint now names its phase (an entity, `objects`, `memory_counts`, `manifest`), and one written by an earlier release is read by that release's order.
+- The workspace export's memory entities carry only the fields each one lists (`lambda/jobs/workspace_export/memory.py`: the memory store's public fields and the row's key; for a company memory also a merge's and an archive's fields, `merged_from`, `archived_reason`, `archived_at`; sources as the memory API shows them), so a field added to memory rows later never reaches an export by default. Two fields are exported as they are for now: a company memory's `conflicts_with` can hold a personal memory's id (an id only, never its content), and an event's `detail` is exported whole.
+
+### Changed
+
+- The export's manifest no longer lists `memory` under `not_exported`; `conversations` stay there. An export started before this release that resumes already past the memory entities finishes without them, and its manifest lists `memory` under `not_exported` and says to export again.
+
+### Upgrade notes
+
+- The export job's role (`voc-workspace-export`, `lib/stacks/workspace-export-worker.ts`) gains three `dynamodb:Query` grants on `voc-memory`, each limited by `dynamodb:LeadingKeys` to one workspace id's partitions: a Query of `WS#{one id}#MEM#company`, `WS#{one id}#MEMEVT#*` and `WS#{one id}#MEMIMPORT` on the table; and, only with `dynamodb:Select` `COUNT`, a Query of `WS#{one id}#MEMCURSOR` on the table and of `WS#{one id}#MEMSTATUS#personal#*` on its `gsi1-by-memory-status` index. No other action on the table. The function gets `MEMORY_TABLE`. A normal deploy (`npm run deploy:all`) does the rest: these grants change only the processing stack's export role, and the core and API stacks change only through their functions' code (`shared/` changed, which every function built from `lambda/` bundles), with no resource or grant change there; nothing else to do.
+
+## [7.21.00] - 2026-11-14
+
+Multi-workspace, phase 3 groundwork: the project stores can keep a workspace's project rows. Internal only: nothing changes for anyone ([docs/multi-workspace.md](docs/multi-workspace.md)).
+
+### Changed
+
+- Internal: every project key builder (`lambda/shared/project_keys.py`) takes an optional workspace and gives that workspace's keys (`WS#{ws}#PROJECT#{id}`, its `#DOCUMENTS` and `#PERSONAS` index partitions, `WS#{ws}#TYPE#PROJECT`); without one it gives exactly today's keys. The project writes, the company persona library, decisions, the deleted-source notices, the document finder, the persona review list and the persona save, count, overlap, clear and protection stores take an optional workspace too, and inside one they read and write only through the workspace layer. The document versions and their series, a series' comment threads and persona review, and the project access gate are not per workspace yet: they refuse a workspace rather than use the deployment's rows or the deployment's access rules. No route, job or assistant tool passes a workspace yet: every project, document, persona and job is read and written exactly as before.
+- Internal: reading several projects' details at once (`GET /projects?ids=…`) now skips a stored project row whose key has a `#` after the project id. No write makes such a row, and the ids the route reads are checked to contain none, so nothing changes in practice.
+
+### Upgrade notes
+
+- Nothing to do: no stack, table, IAM or API change. Every function built from `lambda/` gets new code (the shared modules change), with no change in what it does.
+
+## [7.20.00] - 2026-11-14
+
+Multi-workspace, phase 4b: the voc-multiplayer-b track's export-objects slice merged. A workspace's export now also holds the workspace's own files ([docs/multi-workspace.md](docs/multi-workspace.md#export-and-delete)). Its memory items and its members' conversations are still not exported (the open gap of 7.17.00).
+
+### Added
+
+- The workspace export also carries every current object under `ws/{ws}/` except `exports/` (raw, Silver, memory imports) as `objects/<key>`, read through a read-only workspace view (`WorkspaceObjects` in `lambda/shared/ws_repo.py`), the listing checkpointed so a long one resumes in the next invocation. Entry names are checked against path tricks and Windows extraction (also after NFKC); a key that fails, an object deleted mid-run (S3 answers this role 403 for it: a one-key listing then confirms it is gone; a 403 for a key still there fails the export), one over 3 GiB, or one too slow even for a fresh invocation is counted in the manifest, with the first 50 listed, and never fails the export. A read that drops partway (a reset or timed-out connection) resumes from the byte reached, at most twice, with a ranged read of the same version (`IfMatch` its ETag); one that keeps dropping, or an object replaced meanwhile, fails the export rather than mix two versions. Images, the zip family and gzip are stored as they are; the rest is compressed. The manifest notes what is not included: older versions; names equal under case or Unicode normalisation, which can overwrite each other on extraction; streaming readers that reject stored entries with data descriptors.
+
+### Changed
+
+- Deleting a scraper that does not exist writes nothing (it no longer rewrites the shared secret or the workspace's list).
+- An export that is still running 3 days (less an hour) after it was started fails, "Stopped after running for 3 days", with its upload aborted: the bucket expires an export's zip 10 days after its upload began, so a longer run would leave less than the 7-day download window. The 300 hand-overs stay the runaway guard; together they put the ceiling at some 4.5 to 12 million small objects, or 625 GiB (S3's 10,000 parts of 64 MiB).
+- The export manifest's `not_exported.memory` now says the memory page imports are exported (under `objects/memory-imports/`) and only the memory items are not.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all` from the repo root): the processing stack changes (the export job's code and role), and every function built from `lambda/` or `plugins/` gets new code (the shared modules change), behaviour changing only where this section says (the export, the scraper delete); no grant changes outside the export job's role, no table, index, bucket or cross-stack reference changes, and nothing is migrated.
+- IAM: the export job's role gains `s3:ListBucket` on the raw data bucket, conditioned on `s3:prefix` `ws/<one id>/*`, and `s3:GetObject` on `ws/<one id>/*` (every object of one workspace id; only the code, which names the prefix from the job's row, keeps an export to its own workspace). Its writes stay under `ws/<one id>/exports/*`.
+
+## [7.19.00] - 2026-11-13
+
+Multi-workspace: each workspace keeps a list of who has conversations in it, so the workspace's export and its delete can find every member's conversations, a former member's too, from the workspace id alone ([docs/multi-workspace.md](docs/multi-workspace.md)). Nothing changes for anyone in the web app.
+
+### Added
+
+- Internal: a workspace's list of conversation owners in voc-conversations, `WS#{ws}#CONVERSANTS` / `{sub}` with `first_at` (when the person's first conversation there was kept). The chat routes (`POST /chat/conversations/{id}`, both save shapes) and the assistant's stream Lambda put the person's row if it is absent, before they write the conversation, so a conversation kept in a workspace is always listed; a fault listing the owner stops that save. Nothing removes a row when the person leaves the workspace, as nothing removes their conversations. Outside a workspace nothing is listed. Both sides build the key the same way, pinned by shared cases (`voc-datalake/schemas/conversation-keys-cases.json`). Nothing reads the list yet: the export and the delete will.
+- A one-off backfill, `voc-datalake/scripts/conversations/backfill_conversants.py`, lists the owners of the workspace conversations kept before this release: one Scan of voc-conversations for the `WS#*#USER#*` conversation rows, then a put if absent per owner (dry run by default, `--apply` writes, safe to run again).
+
+### Changed
+
+- The assistant's stream Lambda may read and write voc-conversations only in `USER#*` and `WS#{one id}#USER#*` partitions, and only put in `WS#{one id}#CONVERSANTS` (`dynamodb:LeadingKeys`); its grant was the whole table before.
+- TENETS.md D5 names a gap older than workspaces: an erasure by email reaches neither the memory items nor the assistant conversations, the deployment's or a workspace's.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all` from the repo root): the API stack's chat stream role changes (above). No table, index or API change.
+- Only for a deployment that ran 7.15.00 to 7.18.00 with workspaces in use: after the deploy, run the backfill once from `voc-datalake/` (`.venv/bin/python scripts/conversations/backfill_conversants.py` for a dry run, then again with `--apply`; `--conversations-table NAME`, else the `CONVERSATIONS_TABLE` environment, else the core stack's `ConversationsTableName` output; `--region`). It needs Scan, GetItem and PutItem on voc-conversations and the KMS key's use. A fresh deployment (decision 21) has nothing to list and may skip it.
+
+## [7.18.00] - 2026-11-13
+
+Multi-workspace: the voc-multiplayer-c track's company-context slice merged. Internal only: nothing changes for anyone ([docs/multi-workspace.md](docs/multi-workspace.md), [docs/company-context.md](docs/company-context.md)).
+
+### Changed
+
+- Internal: company context's store can keep a workspace's vision, objectives and each person's own objectives (`WS#{ws}#SETTINGS#company_context`, `WS#{ws}#USERCTX#{sub}`; `lambda/shared/company_context.py`), and the settings API saves both through the store's own writers. Nothing uses a workspace's rows yet: the Company page, the generators and the assistant keep the deployment's company context, and move into workspaces with projects.
+
+### Upgrade notes
+
+- Nothing to do: no stack, table, IAM or API change.
+
+## [7.17.00] - 2026-11-13
+
+Multi-workspace, phase 4a: the voc-multiplayer-b track's export and config-history slices merged. A workspace's admins export the workspace from Workspace settings and download it for 7 days, and a workspace's plugin config lists keep their history ([docs/multi-workspace.md](docs/multi-workspace.md#export-and-delete)). The export does not yet hold the workspace's memory or its members' conversations (per workspace since 7.16.00 and 7.15.00): the manifest lists them as not exported, an open gap.
+
+### Added
+
+- A workspace admin (or a platform admin entering, audited) exports the workspace: `POST /me/workspaces/current/export` queues one export per workspace (409 while one runs, or while an erasure runs in the workspace), `GET` shows its status, and `POST /me/workspaces/current/export/link` gives a fresh 15-minute download link, audited, while the export is completed and within 7 days. The requester gets a job notice; no email is sent.
+- The export job (`voc-workspace-export`, in VocProcessingStack) writes JSONL per entity and a manifest into one streaming ZIP64 under `ws/{ws}/exports/`, one S3 multipart upload resumed across invocations; it reads only through the workspace layer, by Query, never exports credentials, value hashes or email hashes, lists what is not per workspace yet or not exported, and checks its counts against the daily counters. It exports the feedback, the plugin config lists and their history, the feedback forms, the import runs, the erasure jobs, the workspace, its members and its audit rows. Raw objects, memory and conversations come in a later release.
+- Workspace settings gains an Export section for the workspace's admins: Start an export, its status (refreshed while it is being made, and no longer once it is done or failed), Download (a fresh 15-minute link for each press), the 7-day window and each refusal said in words, in all nine languages. The dev mock serves the three routes.
+- Export objects carry a `voc-export` tag and expire after 10 days; a bucket Deny keeps the tag, and copies of an export, out of every other prefix.
+
+### Changed
+
+- D5: an erasure that reaches a workspace (its items or a member's row) closes that workspace's exports at once (marked erased, no link signed), keeps their lock through its hand-overs, aborts any open upload and deletes every version under `ws/{ws}/exports/`, swept twice; the remaining windows (and retention windows, which do not clear exports) are written down as D5 gaps.
+- A workspace's scraper, app-connector and review-page lists keep their history: each save that changes a list keeps the replaced list as a history row in the workspace (`WS#{ws}#PLUGIN_CONFIG#HISTORY`, kept forever, with who replaced it and when), and stamps the current list with who saved it (from the sign-in, never the request) and when; both are written in one transaction, so a concurrent save answers 409 instead of losing an entry. The list is saved before the plugin's credentials. A save still refuses to write anything unless the workspace's settings were read first (7.12.00).
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all` from the repo root): the processing stack gains the `voc-workspace-export` function and its role, the core stack's raw data bucket gains the export lifecycle rule (objects tagged `voc-export=true` under `ws/*/exports/` expire after 10 days) and the bucket policy's Denies on that tag elsewhere, the API stack's workspaces role gains its export grants, and `voc-retention` gains the exports phase. No table, index or cross-stack reference changes, and nothing is migrated.
+- The account's Lambda concurrency quota must be at least 130 in the deployment's region: the export job reserves 10 concurrent executions, beside the reservations the stacks already make ([docs/deployment.md](docs/deployment.md)). Raise it in Service Quotas before deploying if it is lower: the deploy fails otherwise.
+- IAM: the export job reads only a workspace's own partitions (`dynamodb:Query` and `GetItem` by `dynamodb:LeadingKeys`; Query only on the control-plane partitions of `voc-workspaces`), writes and lists only under `ws/{one id}/exports/*` and deletes only its own work objects; the workspaces API may put, update and query `WS#{one id}#JOB#export` in voc-aggregates, read `ws/{one id}/exports/*` (to sign the link) and invoke the job by name; `voc-retention` may delete every version and abort an upload under `ws/{one id}/exports/*`, and list the bucket's open uploads (`ListBucketMultipartUploads` takes no prefix condition). The integrations and scrapers roles' table grants already cover the history rows.
+
+## [7.16.00] - 2026-11-13
+
+Multi-workspace: the voc-multiplayer-c track's memory-extraction slice merged. Inside a workspace, Memory learns from that workspace's conversations and imported pages ([docs/memory.md](docs/memory.md), [docs/multi-workspace.md](docs/multi-workspace.md)).
+
+### Added
+
+- Inside a workspace, Memory now learns from that workspace's assistant conversations and from pages imported there, and keeps what it learns in that workspace only. It learns from a conversation only while its owner is an editor or an admin of the workspace (a viewer's or a former member's conversations teach it nothing), and stops writing in a workspace that is being deleted. Importing a page inside a workspace is now available to the workspace's admins: the web app shows the Imports tab there again. Outside a workspace nothing changes.
+
+### Changed
+
+- IAM: the memory scanner and extractor roles may get `WS#*` rows of `voc-workspaces`, held to the attributes the workspace resolver reads and refused when a read names none (each read names its projection: a member's role, a workspace's status); the memory API may put a workspace's imported page under `ws/{one id}/memory-imports/` in the raw-data bucket, and the extractor may read it there.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all` from the repo root): the API and processing stacks change (the roles and environments above); no table, index or cross-stack reference changes.
+- Nothing is migrated: a workspace's memories start learning from its conversations from this release on; conversations from before workspaces keep feeding the deployment's memories only.
+- IAM: review the grants above if you restrict IAM changes.
+
+## [7.15.00] - 2026-11-13
+
+Multi-workspace: the voc-multiplayer-c track's assistant, logs and memory slices merged. Inside a workspace, the assistant's conversations and Memory are that workspace's own ([docs/multi-workspace.md](docs/multi-workspace.md), [docs/memory.md](docs/memory.md)).
+
+### Changed
+
+- Inside a workspace, the assistant's conversations are your own there: the history, saves, renames, deletes and Stop act on the conversations you had in that workspace, and the assistant checks you are a member before it saves anything. A platform admin who is not a member still gets answers there, but nothing of the conversation is kept until they add themselves as a member; the web app says so, marks the conversation unsaved and does not retry. Your conversations from before workspaces are offered below the history, read only ("Conversations from before workspaces"). Workspace conversations do not feed memories yet. Outside a workspace nothing changes.
+- Inside a workspace, Memory is the workspace's own: what you add, confirm, edit, forget, restore, merge and review, and what the assistant and MCP clients recall, are that workspace's memories. Its admins curate them (a member of the deployment's `admins` group or a memory reviewer has no extra rights there, while a platform admin who enters acts as its admin, as everywhere in a workspace; the web app shows the review tab to the workspace's admins only), and its viewers read them. Memory retention expires and fades them as it does outside workspaces. Importing pages inside a workspace is not available yet (the Imports tab is hidden there), a workspace's assistant conversations do not feed memories yet, and a workspace's memories are still linked to the deployment's company objectives (company context moves per workspace in a later release). Outside a workspace nothing changes.
+- IAM: the chat API and the chat stream roles may get `WS#*` rows of `voc-workspaces`, held to the attributes the workspace resolver reads and refused when a read names none; the memory API attaches the stack's workspace-resolution policy and may call Cognito `AdminListGroupsForUser` and `AdminGetUser` (a platform admin's entry, checked live); the memory retention role may Query the `WORKSPACES` listing partition only.
+
+### Added
+
+- Internal: the logs' readers (validation, processing, the summary and a scraper's runs) can read a workspace's own trail (`lambda/shared/processing_logs.py`). Nothing changes yet: the logs pages read the deployment's trail for everyone.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all` from the repo root): the API and processing stacks change (the roles and environments above); no table, index or cross-stack reference changes.
+- Nothing is migrated: inside a workspace, Memory and the assistant's history start empty. The deployment's memories and conversations from before workspaces are kept, still apply outside any workspace, and stay readable without the `X-Workspace-Id` header (in the web app, the conversations under "Conversations from before workspaces").
+- IAM: review the grants above if you restrict IAM changes.
+
+## [7.14.00] - 2026-11-13
+
+Multi-workspace, phase 2's data path is done: a workspace's own ingestion runs. The hold that kept every workspace from ingesting is lifted, now that a workspace's feedback is processed, counted, read, erased and replayed in it (7.00.00 to 7.13.00). A workspace's admins enable its plugins; an enabled plugin runs in the workspace on its schedule and through Run now; a workspace's feedback forms and webhooks take feedback into it (docs/multi-workspace.md, the 7.14.00 row and Phases).
+
+### Added
+
+- A run in a workspace runs only a plugin the workspace enabled: `POST /sources/{source}/run` and `POST /scrapers/{id}/run` (the webscraper plugin) answer 409 "Enable this plugin for the workspace first" otherwise, after the admin gate and the source check, before anything is written or invoked. Without `X-Workspace-Id` nothing changes.
+- Inside a workspace, Run now in a plugin's configuration dialog and a scraper card's Run say "Enable this plugin for the workspace first: Workspace settings → Plugins." on that refusal (9 locales).
+- A delivery on a workspace's webhook endpoint is taken in only when the workspace enabled that plugin; otherwise it gets the same 401 as a bad signature, before any secret is read, so disabling a plugin stops its deliveries too.
+- A cross-path test (`lambda/jobs/test/test_workspace_cross_path.py`): one workspace's message through the processor, the aggregator, the workspace's category reprocess and an erasure by email, stored, counted, replayed and erased in that workspace only; two workspaces' copies of one source item stay apart.
+
+### Changed
+
+- Enabling a plugin for a workspace (Workspace settings → Plugins, its admins) writes the workspace's `PLUGIN#{plugin}` / `WS#{ws}` row, audited first; disabling deletes it. The plugin's scheduled tick then also runs in each workspace that enabled it, with that workspace's credentials, watermarks, breaker, raw data and messages.
+- A workspace's editors and admins can create feedback forms in it, and a submission to one is ingested into that workspace. A verified delivery on a workspace's webhook endpoint (`POST /webhooks/{plugin}/{ws}`) for a plugin it enabled is ingested into that workspace.
+- Workspace settings no longer offers the S3 import, which never runs in a workspace (`GET /me/workspaces/current/plugins` leaves it out, and enabling it answers 404).
+- An S3 import reprocess that names a workspace gets the S3 import API's one 400 (it acts deployment-wide only), like its other routes, instead of the hold's 409.
+- The members page's and the platform console's notice and the Workspace settings plugins card say that the plugins a workspace's admins turn on collect feedback into it (9 locales).
+- IAM: the workspaces API's role (`voc-workspaces-api`) may put `PLUGIN#*` rows in `voc-workspaces` (its DeleteItem there is unchanged); the integrations, scrapers and webhook roles may read a `PLUGIN#*` row's `pk` there (GetItem). Every attribute-limited GetItem on `voc-workspaces` (those, the webhooks' routing read and the MCP tokens' membership reads) now refuses a read that names no attributes.
+
+### Removed
+
+- The ingestion hold: `PER_WORKSPACE_INGESTION`, `hold_workspace_ingestion` and its 409 reason `INGESTION_NOT_YET` (`lambda/shared/workspace_plugin_settings.py`), with every refusal it gave (enabling a plugin, Run now and a scraper's run in a workspace, a workspace form's create and submission, a workspace webhook's delivery, an S3 import reprocess naming a workspace) and `workspace_payload`'s `ingestion` parameter. No flag replaces it.
+- The web app's held state on Workspace settings (the inert Enable and its note), and the strings `workspaces.errors.ingestionNotYet` and `workspaces.errors.ingestionRunNotYet`.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all` from the repo root). IAM: the workspaces role's PutItem gains the `PLUGIN#*` partition of `voc-workspaces`, the integrations, scrapers and webhook roles gain GetItem on `PLUGIN#*` limited to `pk`, and the attribute-limited GetItem grants on `voc-workspaces` gain a `Null` condition on `dynamodb:Attributes`; no table, index, bucket or cross-stack reference changes, and nothing is migrated.
+- Nothing starts ingesting into a workspace on deploy: a workspace has no `PLUGIN#` row until its admins enable a plugin, so the scheduled ticks fan out to no workspace until then. Once one is enabled, each tick of that plugin makes one more asynchronous invoke per workspace that enabled it, and a workspace's run calls the source with that workspace's own credentials.
+- A workspace webhook that delivered before (and was refused while the hold was on) needs its plugin enabled on that workspace's settings page; until then its deliveries get 401.
+- Not yet: a workspace's own whole-source erasure (phase 4); a whole-source erasure stays the deployment's request.
+
+## [7.13.00] - 2026-11-13
+
+Multi-workspace, phase 2: a workspace's reviews can be replayed (TENETS.md D3). A workspace's admins run the category reprocess on that workspace's own reviews, with its own categories and dimensions, from its Workspace settings page; the deployment's reprocess is unchanged. This meets the last condition of the per-workspace ingestion hold, which stays on in this release: the unlock is a release of its own, next ([docs/multi-workspace.md](docs/multi-workspace.md)).
+
+### Added
+
+- Inside a workspace, Workspace settings shows "Reprocess existing feedback" beside the workspace's categories, for its admins: the same modes, slices, cost note, progress, cancel and resume as Administration's, on the workspace's own job, and its description says only this workspace's reviews are read and updated, in all nine languages. The "Classify review types" card on that page starts the workspace's job too. Administration's panels stay the deployment's from any address.
+- `POST /settings/categories/reprocess`, `GET /settings/categories/reprocess` and `POST /settings/categories/reprocess/{job_id}/cancel` act in the workspace `X-Workspace-Id` names: the workspace's admins only (an editor or a viewer gets 403, a delegated caller such as an MCP token or an agent too, and the deployment's `admins` group grants nothing there; a platform admin enters as admin, audited, as on the categories routes), and a member of another workspace gets the one 404. Without the header they are the deployment's, for the deployment's `admins`, exactly as before.
+- A workspace's job replays only that workspace's reviews, with its own categories and dimensions (the built-in defaults where it saved none, never the deployment's): category and subcategory, the full enrichment from its own raw data, or its AI-inferred dimensions, each with the usefulness band. Its updates go to the workspace's own index partitions, the old version of each review is kept under the workspace's `ws/{ws}/silver/`, its cached reads refresh from its own data version, and the aggregator moves its own counters. Another workspace's reviews and the deployment's are not read or changed. A summary-only review stays summary-only.
+- One reprocess job runs per workspace at a time (409 for a second one there), beside the deployment's and every other workspace's. A workspace's jobs and their progress are seen only in that workspace; another workspace's job id is not found there.
+- Internal: the job rows and lock of a workspace live in `WS#{ws}#JOB#category_reprocess` (voc-aggregates), written through the repository layer, and name the workspace from the caller's resolved membership; the worker refuses a row that names another workspace. The repository layer gains a scoped `WorkspaceTable.scan` (a boto3 filter ANDed with the workspace's key prefix; a string filter or a returned row outside the workspace is refused; its cursor is a position in the whole table and names only the table key), and `shared/ingest_tables.py` a shared `ScopedUpdates` writer, which the feedback edits now use too. The cross-workspace suite classifies the three routes as workspace-scoped; the raw-access guard's row for the reprocess worker drops one `CATEGORY#` key and moves to phase 2.
+
+### Changed
+
+- IAM: the category reprocess role (`voc-category-reprocess`) may read a workspace's raw data (`s3:GetObject` on `ws/{any one workspace id}/raw/*`) and put a kept version under a workspace's Silver history (`s3:PutObject` on `ws/{any one workspace id}/silver/*`, write-once like `silver/*`). The pattern matches exactly one id segment but any workspace's id; the code pins which (the job's own workspace, through the repository layer). Its DynamoDB grants are unchanged: they were already table-wide (Scan, GetItem, UpdateItem on voc-feedback; GetItem, UpdateItem on voc-aggregates), so writing the `WS#*` partitions needs no new statement. The settings API's role is unchanged (it already wrote voc-aggregates and resolves workspaces through the stack's workspace-resolution policy).
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all` from the repo root): the processing stack's reprocess role gains the two S3 statements above, and the API and web app change; no table, index or cross-stack reference changes, and nothing is migrated. A deployment with no workspace sees no change.
+- A workspace's reprocess reads the whole feedback table, as the deployment's does (a Scan filtered to the workspace), so its DynamoDB read cost follows the table's size, not the workspace's, and it checkpoints its job row once per page of 25 rows read (one small write each); it refreshes the workspace's cached reads after a page that rewrote one of its reviews and once at the end of each invocation (about every 12 minutes), not after every page. Inside a workspace the panel offers no source slice (the list of sources it would show is the deployment's), so a workspace's job from the web app replays every source; the API still takes `sources`. Each review it re-derives costs one model call, as before.
+- Per-workspace ingestion stays held: `PER_WORKSPACE_INGESTION` is still off and the workspaces role still holds no PutItem on `PLUGIN#*`.
+
+## [7.12.00] - 2026-11-13
+
+Multi-workspace, phase 2: the voc-multiplayer-b track's credentials-store and multi-item slices merged. A workspace's credentials are SSM Parameter Store SecureString parameters, one per plugin, instead of one Secrets Manager secret per workspace (decision 19), so a workspace adds no monthly cost; the repository layer gains scoped multi-item calls for phases 3 and 4 ([docs/multi-workspace.md](docs/multi-workspace.md#credentials)). Per-workspace ingestion stays held (D3).
+
+### Added
+
+- Internal: the repository layer (`lambda/shared/ws_repo.py`) gains scoped multi-item calls on a workspace view: `transact_write_items` (1 to 100 Put, Update, Delete or ConditionCheck entries, each checked, each taking only its own listed fields; one out of scope refuses the whole transaction before it is sent), `batch_get_item` (every key checked; strongly consistent unless `ConsistentRead=False`) and a Put-only `batch_writer()`. A key named twice is refused. A caller never names a table. Nothing calls them yet.
+
+### Changed
+
+- A workspace's plugin credentials are SSM Parameter Store SecureString parameters under the customer-managed key, one per plugin, `/voc/ws/{ws}/credentials/{plugin}` (`/<prefix>-voc/ws/…` in a prefixed deployment), standard tier (no monthly fee; at most 4 KB each, a larger save is refused with 400), instead of one Secrets Manager secret per workspace. The deployment's shared credentials secret is unchanged.
+- A workspace's scraper and connector lists hold no secret and are a voc-aggregates row (`WS#{ws}#PLUGIN_CONFIG`), with the deployment's size limits; the list routes open to members read them without touching SSM.
+- Creating a workspace makes no secret. `secret_status` is still written `ready`, but it no longer reflects a secret and nothing reads it: the operator routes' 409s on a pending secret are gone, resolving `X-Workspace-Id` no longer reads it, and the platform console (Administration → Privacy & access → Workspaces) no longer shows the secret's pending or ready badge, nor the "secret could not be created" note after a create, in all nine languages.
+- IAM: an ingestor role reads only its own plugins' parameters and the webhook role only its webhook plugins'; the integrations and scrapers roles get and put a workspace's parameters; every `voc/ws/*` Secrets Manager grant is removed (the workspaces API holds no Secrets Manager or SSM grant), and no role may create a key or a secret at run time. The data-path APIs that resolve a workspace (metrics, feedback edits, integrations, scrapers, the feedback forms' signed-in routes) reach it through the API stack's one workspace-resolution managed policy.
+- SSM calls retry adaptively in an ingestor run (10 attempts) and briefly in the API and webhook routes (2 attempts, 2 s / 4 s timeouts), so a route answers within API Gateway's 29 s.
+- A webhook delivery to a workspace still verifies its signature, now with that workspace's credentials parameter, before the ingestion hold answers.
+- `shared/batch_get.py` `batch_get_all` backs off with full jitter (still at most 5 calls, about 1.5 s a chunk) and lets the caller set `ConsistentRead` (still strongly consistent by default).
+- Internal: the raw-access guard counts DynamoDB's multi-item calls (`transact`, `batch`), except on the layer's own view.
+
+### Upgrade notes
+
+- Fresh deployments only (decision 21): an existing deployment's per-workspace `voc/ws/*` secrets are not migrated, and after this release nothing reads them. An existing deployment that takes it anyway deploys as usual (`npm run deploy:all` from the repo root: the API and ingestion stacks' roles and the web app change; no table, index or cross-stack reference changes), then, in each workspace, saves its plugin credentials, app connectors and scrapers again (Administration inside that workspace), and then deletes the old `voc/ws/*` secrets by hand (each bills until deleted). A deployment-wide run, delivery or request keeps using the shared secret, so a deployment with no workspace has nothing to do.
+- SSM's default GetParameter throughput (about 40 a second per account and region; a paid higher-throughput setting raises it) and the 10,000 standard parameters per account and region are documented in [docs/deployment.md](docs/deployment.md#ssm-parameter-store-limits-a-workspaces-credentials).
+
+## [7.11.00] - 2026-11-13
+
+Multi-workspace, groundwork for phase 3: the voc-multiplayer-c track's project-keys slice merged. Nothing changes for anyone ([docs/multi-workspace.md](docs/multi-workspace.md#per-workspace-configuration)).
+
+### Changed
+
+- Internal: every key of a project's rows (`PROJECT#{id}`, its documents' and personas' index keys, `TYPE#PROJECT`, where a document is listed and a document row's keys) is built in one module, `lambda/shared/project_keys.py`, ahead of projects moving into workspaces. Two exceptions remain: the product-doc extractor, a bundle with no shared code, still spells its own, and the documents' version counters (`DOCUMENT_VERSIONS#PROJECT#{id}`, `lambda/shared/document_versions.py`) are still built there and not yet counted by the guard. The raw-access guard (`lambda/shared/test/test_ws_raw_access.py`) now also counts every module that opens the projects' or jobs' table, or spells `PROJECT#` or `TYPE#PROJECT` at the start of a key. No route, stored data or stack changes.
+
+### Upgrade notes
+
+- Nothing to do: no stack, table, IAM or API change.
+
+## [7.10.00] - 2026-11-13
+
+Multi-workspace, phase 2: the voc-multiplayer-c track's MCP and Radar slices merged. An MCP token created, or an OAuth sign-in approved, inside a workspace acts in that workspace, as its person and at most as an editor; Radar's settings and views can be read per workspace, with no caller passing one yet ([docs/multi-workspace.md](docs/multi-workspace.md)).
+
+### Added
+
+- An MCP token created inside a workspace (Connect, `POST /connect/tokens` with the workspace open) and an OAuth sign-in approved inside one (the consent page with a workspace open) act in that workspace: every call carries it, with the membership of the person who created or approved it there, at most as an editor, never as an admin and never as a platform admin. Removing that person from the workspace stops the credential on every route that acts in a workspace (within 30 seconds, the membership cache of a warm function). Approving a sign-in again replaces it, workspace included. A platform admin who is not a member cannot create a token or approve a sign-in there (403, "add yourself as a member first"). Tokens and sign-ins made outside a workspace behave as before ([docs/mcp.md](docs/mcp.md)).
+- The web app's consent page and Connect's token form say which workspace a new sign-in or token will act in (or that it acts across the whole deployment) and, on that 403, tell a non-member to add themselves as a member first instead of showing the generic failure, in all nine languages. Connect's token list and sign-in list show each one's workspace (`workspace_id` in both lists).
+- Internal: Radar's scan settings and brand list (`lambda/shared/radar_keys.py`: the scan settings, the brand list, the processor's brand routing, cached per workspace, and the daily brief's brand list) and Radar's views (`lambda/shared/radar_reads.py`: the brand headers, trend, themes, review list and detail, the comparison with our own feedback, the releases and All brands) take an optional workspace and then read only its rows. Nothing changes yet: no caller passes a workspace and Administration still edits the deployment's Radar settings; they move with Radar's reviews at the phase-2 cut-over.
+
+### Changed
+
+- IAM: the MCP tokens role (`voc-mcp-tokens-api`, `lib/stacks/global-mcp.ts`) may get `WS#*` rows of `voc-workspaces`, held to the attributes the workspace resolver projects (`pk`, `sk`, `role`, `status`, `name`, `slug`, `secret_status`: never a member's email), and gets `WORKSPACES_TABLE` and `USER_POOL_ID`. It writes nothing there and has no Cognito grant: a token or sign-in is pinned with the person's own membership only, never a platform admin's entry.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all` from the repo root): the API stack changes (the MCP tokens role's new read on `voc-workspaces` and its environment); no table, index or cross-stack reference changes, and nothing is migrated.
+- IAM: review the MCP tokens role's new `GetItem` on `voc-workspaces` if you restrict IAM changes.
+- Existing tokens and sign-ins keep acting deployment-wide. To have an assistant act in a workspace, create a new token, or approve the sign-in again, with that workspace open.
+- The web app always opens a workspace for anyone who has one, so a new token or sign-in from such a person is pinned to that workspace, whose feedback stays empty while per-workspace ingestion is held. Until the web app offers a deployment-wide choice, keep the tokens and sign-ins you already have for the deployment's data, or create new ones from an account with no workspace.
+
+## [7.09.00] - 2026-11-13
+
+Multi-workspace, phase 2: the voc-multiplayer-b track's erasure-in-a-workspace slice and its follow-ups merged: a workspace's member admin can erase that workspace's reviews by author, source id, CSV row or email, which closes the D5 condition of the ingestion hold ([docs/source-policies.md](docs/source-policies.md#retention-and-erasure), "Workspace items"). Per-workspace ingestion stays held until the category reprocess replays a workspace's reviews (D3).
+
+### Added
+
+- Erasure in one workspace: `POST /settings/erasure` with `X-Workspace-Id`, by that workspace's member admin, erases that workspace's reviews only, by author, `source_id`, `csv_row_id` or email; each review is tombstoned first and goes with its Silver and raw versions under `ws/{ws}/`. The job row lives in the workspace's own partition (`WS#{ws}#JOB#erasure`) and names the workspace from the resolved membership, never from the body; the worker checks that the row names the workspace whose partition it read. One erasure per workspace runs at a time (a second start answers 409). `GET /settings/erasure` with the header lists that workspace's newest 20 jobs; without it the deployment's list is unchanged.
+- Inside a workspace, Administration's erasure panel sends the workspace for an erasure by author, source id, CSV row or email and lists that workspace's jobs, and its form and confirm dialog say the erasure reaches that workspace's reviews only (an erasure by email included); the whole-source panel keeps working on the deployment's sources and jobs.
+
+### Changed
+
+- A whole-source erasure in a workspace is refused (400), and platform admins are not elevated on the erasure routes: they erase in a workspace as its member admin. A delegated caller (an MCP token, an agent or a plan step) cannot start an erasure in a workspace (403), as for the workspace's admin settings. A workspace's erasure bumps the workspace's own data_version and never blocks the deployment's whole-source erasure of the same source.
+- Resolving `X-Workspace-Id` reads only a member's role and the workspace's status, name, slug and credentials state, never a member's email.
+- An S3 import run in a workspace reads only files under that workspace's own `ws/{ws}/` folder, and refuses a key with an empty, `.` or `..` segment, before any read. A deployment-wide run refuses a key under `ws/` of three or more segments (the import API's `<source>/<file>` keys are unchanged). A refused file is recorded under the source "S3 - Import" with no raw file, its name in the error only for a supported extension.
+- A queued message refused for a malformed `workspace_id` is logged in the deployment-wide validation row without any of its content.
+- A duplicate invoke of a finished workspace erasure job never rewrites its outcome, writes no audit row and counts no metric (it answers `already_finished`).
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all` from the repo root): the API stack (Lambda code only, no role's policy: the settings and webhook handlers, and every API that resolves a workspace, whose shared resolver `lambda/shared/workspace.py` now reads only the attributes it uses), the processing stack (`voc-retention` and the processor) and the ingestion stack (the S3 import, and every ingestor's bundled `lambda/shared` code) change, and the web app; no table, index or cross-stack reference changes, and nothing is migrated.
+- IAM: no new grant on the settings role: it reads a workspace's membership through the API stack's one workspace-resolution managed policy, which it holds since 6.18.00. No other role's IAM changes: the webhook role's read of a workspace's row stays held to the attributes it routes by, as since 7.06.00.
+- An erasure inside a workspace now acts in that workspace: a deployment administrator who erases a person by author or id from Administration while inside a workspace erases that workspace's reviews only, and must be its member admin. The deployment's erasure by author, source id or CSV row stays available through the API without the header; from the web app, anyone who has a workspace reaches it again with the next web-app release. An erasure by email from the deployment still reaches every workspace.
+
+## [7.08.00] - 2026-11-13
+
+Multi-workspace, phase 2: the configuration cut-over. The categories, the dimensions and the source profiles are each workspace's, in both directions at once: a workspace's admins edit its own, and its feedback is processed, ingested and read with them. Without a workspace everything reads and writes the deployment's rows, as before. No workspace ingests yet: the hold stays ([docs/multi-workspace.md](docs/multi-workspace.md#per-workspace-configuration)).
+
+### Added
+
+- Inside a workspace, `GET` and `PUT /settings/categories`, `/settings/dimensions` and `/settings/sources` act in it (`X-Workspace-Id`): any member reads the workspace's own rows, and only its admins save them; the deployment's `admins` group grants nothing there, and a member of another workspace gets the one 404. A workspace that has saved none of the three has none: its feedback gets the built-in default categories and the built-in dimensions, never the deployment's rows.
+- Privacy by default in a workspace: a source without a profile in that workspace has its personal data redacted (and keeps no raw copy) until the workspace's admins save a profile that allows it. The deployment's own default is unchanged.
+- The workspace's settings page (`/w/{slug}/workspace-settings`) has the categories, dimensions and source-policies editors for the workspace's admins, whether or not they are deployment administrators; its other members see who can change them.
+
+### Changed
+
+- The processor classifies a workspace's message with that workspace's categories and dimensions and stores it under that workspace's source profile (PII policy, default dimension values and tags, inline raw-copy policy). The plugin ingestors' source policy and raw archive, a workspace webhook's delivery and a workspace form's submission apply the workspace's profile too, and the feedback and metrics routes' category access checks read the request's workspace's restricted sources and categories.
+- A workspace's source profile cannot set a retention window or a Radar brand (400): the retention windows stay the deployment's and apply to every workspace's items, and at ingestion a workspace's source carries the deployment's window, so a source with a window keeps no whole-file original there either.
+- Administration's Categories, Dimensions and Source policies always edit the deployment's own settings, from any address, for the deployment's administrators as before; inside a workspace they say so plainly and link to the workspace's settings page, which edits the workspace's own (without the retention and Radar fields, the category reprocess or the erasure panels). Inside a workspace a delegated caller (an MCP token, an agent) cannot save its admin settings. The members page's and platform console's notice lists the categories, dimensions and source policies among what each workspace keeps (9 languages).
+
+### Upgrade notes
+
+- No stack, table or IAM change. The processor, the ingestors, the webhooks and the API Lambdas that read these settings already read every row of `voc-aggregates` (so the `WS#{ws}#SETTINGS#categories`, `#dimensions` and `#sources` rows too), and the settings API already writes workspace settings rows (the brand's, since 6.18.00).
+- Nothing to migrate: the deployment's categories, dimensions and source profiles stay where they are and keep applying to everything without a workspace. A workspace starts with none of its own; its admins set them on its settings page, while Administration keeps editing the deployment's.
+
+## [7.07.00] - 2026-11-13
+
+Multi-workspace, phase 2: the voc-multiplayer-c track's configuration-readers slice merged. The categories, the dimensions and the source profiles can be read per workspace; nothing changes yet, since no caller passes a workspace and Administration still edits the deployment's rows ([docs/multi-workspace.md](docs/multi-workspace.md#per-workspace-configuration)).
+### Added
+
+- Internal: the readers of the categories config (and its cached copy), the processor's categories, the dimensions, the source profiles, the restricted sources and the category access check of every feedback route take an optional workspace and then read that workspace's own row (`lambda/shared/workspace_config.py`; the deployment's categories key now lives in `lambda/shared/categories_key.py`). The categories and source-profile caches keep one entry per workspace. Every caller still passes none, so every read is the deployment's, as before; the settings pages and the data path move together at the phase-2 cut-over.
+
+### Upgrade notes
+
+- Nothing to do: no stack, table, IAM or API change.
+
+## [7.06.00] - 2026-11-13
+
+Multi-workspace, phase 2: the voc-multiplayer-b track's public-routes slice merged: feedback forms and webhooks can belong to a workspace, routed by a server-side record, never by what the caller sends. No workspace ingests yet: a workspace form's submission and a delivery on a workspace's webhook answer the same 409 as enabling a plugin and every run in a workspace, until the hold lifts ([docs/multi-workspace.md](docs/multi-workspace.md)).
+
+### Added
+
+- Feedback forms can be created in a workspace (`X-Workspace-Id`: editors and admins write, any member reads); each workspace form gets a `FORM#{id}` lookup row in `voc-workspaces`, and the public config, iframe and submit routes route by that row, never by the request. Once per-workspace ingestion is on, a workspace form's submissions are queued in its workspace and their raw copies kept under `ws/{ws}/raw/feedback_form/`. A form whose workspace is unknown or being deleted answers like an unknown id ([docs/feedback-forms.md](docs/feedback-forms.md#workspaces-since-70600)).
+- `POST /webhooks/{plugin}/{ws}`: a workspace's own webhook endpoint, verified with that workspace's own webhook secret (never the shared one; a secret is kept 60 seconds per name, so a rotation takes effect within a minute); anything that routes nowhere gets the bad-signature 401. `/webhooks/{plugin}` is unchanged.
+
+### Changed
+
+- New feedback forms get 128-bit ids: `ff_` and 32 hex characters in a workspace, `fd_` and 32 hex characters deployment-wide; existing 8-character ids keep working. A deployment update never creates a form (404 for a missing one), and a deployment update or delete of an id a workspace's lookup row holds answers 404. Deleting a workspace's form writes its `form_deleted` audit row (`AUDIT#WS#{ws}`) first; deleting an id the workspace does not hold answers 404 and records nothing.
+- The ingestion hold covers the public routes: while per-workspace ingestion is off, creating a form in a workspace answers 409 (so no form is embedded that would refuse its visitors), a submission to a workspace's form answers 409 before anything is archived or queued, and a verified delivery on a workspace's webhook answers 409 before its body is parsed; the one writer of `workspace_id` on a payload or message refuses one too. Deployment forms and `/webhooks/{plugin}` are unchanged.
+- The dev mock mints deployment form ids as the API does (`fd_` and 32 hex characters) and, like the API, answers 404 to an update of a missing form.
+- IAM: the feedback-form role attaches the API stack's one workspace-resolution managed policy (as the other APIs that act in a workspace), may call Cognito `AdminListGroupsForUser` and `AdminGetUser` (the live platform-admin check), and may get, put and delete `FORM#*` rows in `voc-workspaces`; the audit-row guard names it a writer of `AUDIT#WS#*` rows only (the `form_deleted` row). The webhook role may read `WS#*` rows of `voc-workspaces` and the `voc/ws/*` secrets. Both may write raw copies under one workspace id's `raw/` prefix for their own source.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all` from the repo root): the API stack changes (the feedback-form and webhook roles' policies and environment, and one new API Gateway resource and method per webhook plugin, `/webhooks/{plugin}/{ws}`); no table, index or cross-stack reference changes, and nothing is migrated.
+- IAM: review the feedback-form and webhook roles' new grants above if you restrict IAM changes. Like the operator APIs' roles, the webhook role can read every workspace's credentials secret; only the code keeps a delivery to its own workspace's (TENETS.md, tenet 6).
+- Existing forms keep their ids and work as before; embeds of a new form use its new, longer id.
+- Inside a workspace the web app's Feedback Forms page lists that workspace's forms (none yet, since creating one there answers 409 while per-workspace ingestion is held), so the deployment's forms cannot be reached from the web app by anyone who has a workspace until the next web-app release; their embeds and submissions keep working.
+
+## [7.05.00] - 2026-11-13
+
+Multi-workspace: the tenet questions the design left open are settled by the owner, and TENETS.md gains a data lake tenet, D8, "Each workspace is its own boundary" ([docs/multi-workspace.md](docs/multi-workspace.md#tenet-questions-settled-owner-2026-11-12)). Docs and tenets only: the platform, its stacks and its stored data do not change.
+
+### Changed
+
+- **TENETS.md D8, "Each workspace is its own boundary."** A workspace's data stays in that workspace. Sharing data with another workspace copies it there, and from then on the copy belongs to the workspace that imported it: nothing done in the source (an edit, an erasure, deleting the source workspace) reaches it. Each workspace's admins answer for the data it holds, and the share step says so before anything is copied: "it will be copied to <workspace>, which then owns its copy". "Where the platform stands today" gains a D8 row: a request names its workspace and a member of another gets the one 404 (`lambda/api/test/test_cross_workspace_routes.py`), a workspace's feedback, dashboards, brand and resolved problems are its own (7.04.00); projects, the assistant, Radar and most settings are still shared (phase 3), and sharing between workspaces is not built yet (phase 5).
+- **TENETS.md D5** says how a workspace delete meets it: deleting a whole workspace is its data controller's own request, a retention limit under its agreement with the deployment; it states its basis, is approved by typing the workspace's address, is recorded in an audit row, leaves a tombstone per deleted item and offers an export first. "Every derived copy" means every copy inside the workspace that holds the item: a copy another workspace imported is that workspace's own data (D8).
+- **docs/multi-workspace.md**: "Open tenet questions" is now "Tenet questions, settled (owner, 2026-11-12)". The workspace delete (phase 4) is accepted as proposed (decision 17), and "Export and delete" no longer waits on it; an erasure in workspace A does not reach B's imported copies (phase 5, D8: `imported_from` stays as lineage, D4, not as a path for the source's changes), and the import plugin's section says so; per-workspace credentials move to an SSM SecureString parameter (decision 19, tenet 7); workspace audit rows keep a partition key starting `AUDIT#` (decision 20, as built: `AUDIT#WS#{ws}`); the 7.00.00 index re-key is for fresh deployments only (decision 21). Decision 11 and the Credentials section point at the settled questions.
+- Every list of the tenets names D8: `TENET_IDS` in `scripts/pr-checks/tenets.mjs` (so `Tenets touched: D8` passes the PR check once this merges; `tenets.test.mjs` pins it against TENETS.md), the pull request template, TENETS.md's enforcement list and its pull request checklist (a Workspaces line), `REVIEW.md`, `.kiro/steering/tenets.md` (a stop-and-raise line) and the tenets and quality reviewer prompts (`.kiro/agents/prompts/`).
+
+## [7.04.00] - 2026-11-13
+
+Multi-workspace, phase 2: the voc-multiplayer-b track's aggregator, read-API and operator-route slices merged: a workspace's feedback is counted in its own counters and read back through the metrics and feedback APIs, and Run now, scraper runs, run status, the circuit breaker and plugin credentials act in the request's workspace. The web app sends `X-Workspace-Id` on every call inside a workspace, so inside one the dashboards, the feedback lists and Administration → Sources now show and change that workspace's data, not the deployment's ([docs/multi-workspace.md](docs/multi-workspace.md)). No workspace ingests yet: enabling a plugin and every run in a workspace answer the same 409 until an erasure by author or id and the category reprocess reach workspace reviews.
+
+### Added
+
+- The aggregator counts a workspace's feedback in that workspace's own counters (`WS#{ws}#METRIC#…`, `metric_type` `WS#{ws}#<type>`, its watermark and data_version under `WS#{ws}#METRIC#meta`) through the workspace layer; coalesced runs never mix scopes, and a `WS#` key naming no workspace is skipped and counted (`AggregatorWorkspaceRecordsSkipped`). `scripts/retention/rebuild_aggregates.py --workspace ws_…` rebuilds one workspace's counters from its own reviews.
+- `GET /feedback…`, `GET /metrics/…` and `PUT /feedback/{id}/category|dimensions` act in the workspace `X-Workspace-Id` names: members read and edit only that workspace's feedback and counters (the one 404 for a non-member, 403 for a viewer's edit; a platform admin enters live-checked and audited), the response cache is keyed by workspace, and a cursor from another scope is refused (400). Without the header nothing changes.
+- The integrations and scrapers APIs act in the workspace `X-Workspace-Id` names (without it nothing changes): their admin routes need the caller's admin role in that workspace; Run now and scraper runs are built to start the ingestor in the resolved workspace (never from a body field) and to read and write its run rows, but are held for now (below); breaker status and reset reach the workspace's own breaker, while enable and disable answer 400 in a workspace (they switch the one schedule every workspace shares); plugin credentials, app connectors and scraper configs are read from and written to the workspace's own secret `voc/ws/{ws}/credentials`.
+
+### Changed
+
+- In a workspace the operator routes use its credentials secret only once its `secret_status` is `ready`: otherwise every one of them, Run now and scraper runs included, answers 409 naming the secret and the recovery steps (or saying a ready workspace's secret is missing). A workspace run whose secret holds none of the plugin's credentials ends `error` naming `WorkspaceCredentialsNotSet` and does not count against the workspace's circuit breaker.
+- In a workspace a scraper, app connector or review page that names a Radar brand is refused (400), `PUT /integrations/{source}/credentials` refuses a `configs` key (400: save the lists through `POST /scrapers` and `POST /integrations/{source}/apps`), and Run now of `s3_import` is refused (400): Radar and the import bucket are not keyed by workspace yet. The processor stores a workspace's message as that workspace's feedback even when the deployment's source profile names a Radar brand; only a message stamped with its own Radar brand is still refused.
+- No workspace run starts yet: while per-workspace ingestion is held, Run now and a scraper's run in a workspace, and an S3 import's reprocess that names one, answer the same 409 as enabling a plugin ("Per-workspace ingestion arrives with phase 2 of multi-workspace: …"), before anything is read, written or invoked; the web app's Run now shows the reason. In a workspace, Run now checks the source and refuses `s3_import` before it reads the secret. Requests without a workspace run deployment-wide as before.
+- The members page's and the platform console's notice says what each workspace keeps (feedback, dashboards, brand, resolved problems) and what is still shared (projects, the assistant, Radar, the other settings), in every language.
+- After a source is turned on inside a workspace, its card reads the status again instead of showing the workspace's tripped breaker as closed (turning a source on closes the deployment's breaker).
+- The S3 import API answers 400 to any other request that sends `X-Workspace-Id`. The web app sends the calls that stay the deployment's without it, inside a workspace too: a source's schedule switch (`PUT /sources/{source}/enable|disable`), every `/s3-import/*` call and the S3 import's Run now, so Administration → Sources still reaches them.
+- GET answers vary on `X-Workspace-Id` as well as `Authorization`; an edit or a write route in a workspace reads the caller's role from the table, never the 30-second membership cache.
+- Any field erasure that deletes an S3 import's reviews lists that scope's originals folder for review (TENETS.md D5).
+- The scraper run's invoke payload no longer carries the unused `manual_run` field. [docs/plugin-architecture.md](docs/plugin-architecture.md) lists `GET /integrations/status` as admin-only, as the code has it.
+- IAM: the metrics, feedback-edit, integrations and scrapers roles attach the API stack's one workspace-resolution managed policy (GetItem on `voc-workspaces` `WS#*` and `AUDIT#WS#*`, PutItem on `AUDIT#WS#*` only; the settings API's since 6.18.00) and may call Cognito `AdminListGroupsForUser` and `AdminGetUser` (the live platform-admin check). The feedback-edit role also bumps a workspace's `WS#{ws}#METRIC#meta` data_version and puts under `ws/{ws}/silver/*`; the integrations and scrapers roles get `GetSecretValue` and `PutSecretValue` on `voc/ws/*` (with the customer-managed key) and `WORKSPACE_SECRET_PREFIX`; the integrations role may also delete `WS#{ws}#CIRCUIT#*` rows. `{ws}` is exactly one workspace id in each pattern.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all` from the repo root): the API stack (the four roles' policies and environment) the processing and ingestion stacks' code and the web app change; no table, index or cross-stack reference changes, and nothing is migrated. `rebuild_aggregates.py` without `--workspace` rebuilds the deployment's counters as before.
+- Inside a workspace the web app now shows that workspace's own feedback and counters, which start empty, and Administration → Sources manages that workspace's credentials and runs: people who used the deployment's dashboards from inside a workspace no longer see the deployment's data there. A Run now there answers that workspace runs are not possible yet; a source's schedule and the S3 import stay the deployment's from anywhere. Until the next web-app release, Administration → Sources is shown to the deployment's `admins` only, and the deployment's own credentials, scrapers and Run now cannot be reached from the web app by anyone who has a workspace.
+
+## [7.03.00] - 2026-11-12
+
+Multi-workspace, phase 2: the voc-multiplayer-b track's retention slice merged: an erasure by email and a retention window now reach every workspace's reviews and their copies, each tombstoned first. Enabling a plugin for a workspace still answers 409: a workspace's reviews are not yet counted in the dashboards or shown by the read APIs ([docs/multi-workspace.md](docs/multi-workspace.md#per-workspace-configuration)).
+
+### Changed
+
+- Erasure and retention reach workspaces (TENETS.md D5; [docs/source-policies.md](docs/source-policies.md#retention-and-erasure), "Workspace items"): an erasure by email, and a source profile's retention window, also delete every workspace's matching reviews (`WS#{ws}#SOURCE#…` in `voc-feedback`), their Silver versions under `ws/{ws}/silver/` and every version of their raw objects under `ws/{ws}/raw/`. Each is tombstoned first in `AUDIT#tombstone#<source>` (sort key `{ws}#{feedback_id}`, `workspace_id` on the row) and counted in `deleted_workspace_items`, which the erasure API's job view and Administration's erasure jobs show beside the deleted-reviews count. Administration's erasure form and its confirm dialog say that an erasure by email reaches every workspace.
+- An erasure by author, `source_id` or `csv_row_id`, and a whole-source erasure, stay the deployment's: an author is a display name, an id is unique only within one account or upload, and each workspace has its own. To reach a person's reviews in the workspaces, erase by their email.
+- An erasure that deletes an S3 import's reviews lists that scope's originals folder (`raw/s3_import/`, or a workspace's `ws/{ws}/raw/s3_import/`) on `files_needing_review`, shown in Administration as a folder to review: no row says which original file a review came from, so the files are kept.
+- The daily retention run skips and counts a row whose partition starts `WS#` but names no workspace (`unscoped_rows_skipped`, metric `RetentionUnscopedRowsSkipped`), so the deployment's windows keep running; an erasure fails on such a row before deleting it or anything after it (the runbook is in [docs/source-policies.md](docs/source-policies.md#retention-and-erasure)).
+- The category reprocess's raw mode follows a review's raw link only under that review's own root (`raw/` or `ws/{ws}/raw/`); the job itself stays deployment-wide and leaves workspace reviews out.
+- IAM (`{ws}` is exactly one workspace id in each pattern): `voc-retention` may delete objects and object versions under `ws/{ws}/raw/*` and `ws/{ws}/silver/*` and list versions under those prefixes, and an explicit Deny refuses it any delete under `ws/{ws}/raw/s3_import/*`.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all` from the repo root): the processing stack (the `voc-retention` role's policy) and the web app change; no table, index or cross-stack reference changes, and nothing is migrated.
+- IAM: the `voc-retention` role gains the deletes and version listing above, plus a Deny statement on a workspace's S3 import originals; review them if you restrict IAM changes. A Deny always wins, so a policy you attach to that role cannot re-allow those deletes.
+- A retention window now also binds workspace reviews of that source (a workspace's messages are processed under the deployment's source profiles until per-workspace profiles arrive, phase 3). No workspace holds reviews yet: enabling a plugin for a workspace still answers 409.
+
+## [7.02.00] - 2026-11-12
+
+Multi-workspace: the web app's side of a workspace's brand and plugins, and an editor for the deployment's default brand in the platform console. No API or stack change; workspaces still do not separate most data, and enabling a plugin for a workspace still answers 409 until phase 2's retention slice ([docs/multi-workspace.md](docs/multi-workspace.md)).
+
+### Added
+
+- Workspace settings, a page of each workspace at `/w/{slug}/workspace-settings`, opened from the header's workspace menu beside Members ("Page not found" outside a workspace). Its admins (the role the server applies there) edit and save the workspace's brand, whether or not they are in the deployment's `admins` group; editors and viewers see it read-only. A refused save says "Only this workspace's admins can change its brand." Administration's own sections are unchanged: the deployment's `admins` still reach them, and nobody else.
+- The same page lists the plugins the deployment offers and whether the workspace has turned each one on (`GET /me/workspaces/current/plugins`, for every member), with Enable and Disable for the workspace's admins. Enabling is not possible yet: the server refuses it, and the page then says "Per-workspace ingestion arrives with a later release: a workspace cannot enable a plugin yet." and offers Enable no more. Every plugin still collects feedback for the whole deployment, as before, and the page says so.
+- Administration → Privacy & access → Workspaces (platform admins) has a Deployment default brand editor below the workspaces: the deployment's own brand, used outside any workspace and still by participant emails and feedback boards. It reads and saves `/settings/brand` without `X-Workspace-Id` from any address, a workspace's included, so people who have a workspace can reach it again. Its save is for the deployment's `admins`, as the server decides for a request without a workspace.
+
+### Changed
+
+- Inside a workspace, Administration → General's read-only brand notice names the workspace's admins, who are the ones who can change that brand.
+- The dev mock serves a workspace's plugins (every enable refused with 409 and the server's reason, a disable answered) and its brand per workspace, beside the deployment's brand without the header, and `GET /settings/model` returns `deployment_default` (none pinned).
+
+### Fixed
+
+- Corrections to 6.18.00's entry, whose text stays as released: its summary's "a workspace's own plugins" meant the routes that list and change them; no workspace could enable a plugin then, nor can one now. The appearance and alert writes need the deployment's `admins` and a live platform admin (both checks), not a platform admin alone. [docs/multi-workspace.md](docs/multi-workspace.md#per-workspace-configuration) now says both this way.
+
+### Upgrade notes
+
+- Nothing to do: only the web app and the dev mock change. Deploy as usual (`npm run deploy:all` from the repo root).
+
+## [7.01.00] - 2026-11-12
+
+Multi-workspace, phase 2: the voc-multiplayer-c track's model slice merged: the model pinned at deploy gets a row of its own, the first step of the model picker per workspace. A workspace's brand, the track's other slice in this merge, was already in 6.18.00.
+
+### Changed
+
+- The model pinned at deploy (`-c defaultModelId`) is a deployment row of its own, `SETTINGS#model_default`, read below every administrator's pick (per surface, then for all surfaces, then the deployment's default, then the built-in default) by every model lookup: the shared resolver, streaming chat and the product-doc extractor ([docs/multi-workspace.md](docs/multi-workspace.md#per-workspace-configuration)). Administration → AI models shows it as what Automatic uses when no model is picked for all surfaces (`GET /settings/model` returns `deployment_default`). The pin's custom resource may update only that row. The picks can now move into each workspace without the deployment's default.
+
+### Upgrade notes
+
+- Nothing to do: a deployment pinned before keeps its pin where it was (`SETTINGS#model`'s `model_id`), and it still applies. Deploy every stack together (`npm run deploy:all` from the repo root): the model-pin resource, the settings API, the stream Lambda, the product-doc extractor and the web app change, across several stacks. IAM: the model-pin resource's UpdateItem on `voc-aggregates` is narrowed to the `SETTINGS#model_default` partition (it could update any row before), and the design-capture role's GetItem also reaches that partition.
+
+## [7.00.00] - 2026-11-12
+
+**Breaking (major):** this release re-keys the feedback table's `gsi4-by-feedback-id` and `gsi5-by-channel` onto new attributes, a change to a stack that CloudFormation cannot apply to an existing deployment in one update, and to stored data, whose existing items carry neither new key and need a backfill. Read the Upgrade notes before deploying over an existing stack; a fresh deployment needs nothing.
+
+Multi-workspace, phase 2 starts: the voc-multiplayer-b track merged: the data path's repository layer and its raw-access guard, plugin ingestion in a workspace beside the deployment-wide path, and the feedback processor storing a workspace's messages in that workspace. Nothing in the app starts a workspace's run yet: enabling a plugin still answers 409 and no API sends a workspace to an ingestor, until the retention slice lands ([docs/multi-workspace.md](docs/multi-workspace.md)).
+
+### Added
+
+- The data path's repository layer, `voc-datalake/lambda/shared/ws_repo.py`: a verified `WorkspaceScope` (from a resolved request, an asynchronous message's `workspace_id` or a stored `WS#{ws}#…` key, never from a request field), the builders of the data-path keys inside a workspace (feedback items and their index partitions, the counters and their metric type, source runs, watermarks, objects under `ws/{ws}/`), and `ws_table`, a table view that refuses any key, item, update, query or cursor outside the workspace before DynamoDB sees it. Each call takes only the parameters listed for it, so a `TableName` or a legacy parameter (`AttributeUpdates`, `Expected`, `KeyConditions`, `QueryFilter`, `ConditionalOperator`, `AttributesToGet`) is refused, and a table view's workspace cannot be changed once built ([docs/multi-workspace.md](docs/multi-workspace.md)).
+- The raw-access guard, `voc-datalake/lambda/shared/test/test_ws_raw_access.py`: per production module under `lambda/` and `plugins/` and per kind, the raw table and bucket calls (S3 writes, copies and deletes, a resource collection's batch delete), any reference to a data-path table getter, any `.meta.client`, the layer's private handle, and the strings that start an unscoped data-path key (`SOURCE#`, `METRIC#`, `raw/` …), held to an allowlist of the modules not moved yet (each with the phase that moves it, or the reason it stays raw) that must match exactly, so it can only shrink; and only the layer builds a workspace scope, no API module from a message, and no API module writes `workspace_id` into a message.
+- Plugin ingestors gain a per-workspace path. An event naming a `workspace_id` runs in that workspace: its own watermarks, run, history and breaker rows, `ws/{ws}/raw/…` objects, the workspace's `voc/ws/{ws}/credentials` secret, and `workspace_id` on queued messages. A malformed `workspace_id` is refused. An event naming none (Run now, scraper runs, S3 reprocess and uploads) runs deployment-wide exactly as before, until phase 2's last slice.
+- The scheduled tick runs the deployment-wide run as before and invokes the ingestor once per workspace that enabled the plugin (`PLUGIN#{plugin}` rows in voc-workspaces; nothing writes them yet, so every tick fans out to no workspace).
+- The feedback processor stores a message that names a workspace under that workspace: `WS#{ws}#` keys on the item and all five index partitions, `WS#{ws}#LOGS#` log rows, a workspace-scoped idempotency key, and Silver versions and inline raw copies under `ws/{ws}/`. Messages without one are stored as before. A malformed `workspace_id` is rejected to the DLQ. A workspace message that Radar would claim is refused (Radar is not keyed by workspace yet).
+
+### Changed
+
+- A workspace's breaker stops only that workspace's runs and disables no schedule rule; the deployment-wide breaker is unchanged.
+- `gsi4-by-feedback-id` and `gsi5-by-channel` are keyed on the new attributes `gsi4pk` (`FEEDBACK#{id}`) and `gsi5pk` (`CHANNEL#{channel}`), which the processor writes; gsi5 also projects `source_channel`. Every reader queries the deployment-wide partition.
+- The aggregator, `voc-retention`, the category reprocess and `rebuild_aggregates.py` leave workspace items out (`AggregatorWorkspaceRecordsSkipped`). Workspace items are not aggregated or erased yet.
+- IAM (`{ws}` below is exactly one workspace id in each pattern): every ingestor role also gets `secretsmanager:GetSecretValue` on the `voc/ws/*` secrets, `s3:PutObject` under `ws/{ws}/raw/*` in the raw bucket, and `dynamodb:DeleteItem` on its `WS#{ws}#CIRCUIT#*` rows in voc-aggregates. Every scheduled ingestor role also gets `dynamodb:PutItem` in voc-idempotency on its own tick claims only (`ingestor#fanout#{plugin}#*`), `dynamodb:Query` on voc-workspaces for its own `PLUGIN#{plugin}` partition only (with `kms:Decrypt` on that table's key), and `lambda:InvokeFunction` on its own function (before, only a manifest that set `selfInvoke` got it). The processor's role also gets `s3:PutObject` under `ws/{ws}/raw/*` and `ws/{ws}/silver/*`. The raw bucket's write-once policy covers `ws/{ws}/raw/` and `ws/{ws}/silver/`. Scheduled ingestors get the `WORKSPACES_TABLE` and `IDEMPOTENCY_TABLE` variables, and every ingestor gets `WORKSPACE_SECRET_PREFIX`.
+
+### Removed
+
+- The plugin manifest's `infrastructure.ingestor.selfInvoke`: every scheduled ingestor may invoke its own function, and a manifest that still names it fails to load.
+- 6.14.00's repository layer (`lambda/shared/ws_repository.py`) and its gate step `audit: ws_raw_access` (`scripts/audit/ws_raw_access.py` and its allowlist): `ws_repo.py` and the raw-access guard above replace them. Nothing in the data path used the old layer. The new guard does not scan the stream and plan-step Lambdas' TypeScript yet (phase 3 moves that code).
+
+### Upgrade notes
+
+- Do not deploy this release onto an existing deployment (decision 12: multi-workspace starts on a fresh deployment). Changing a GSI's key is a delete and re-create, one index change per table update, so CloudFormation rejects the update; existing items carry no `gsi4pk`/`gsi5pk`. An operator who must upgrade re-keys in steps (remove gsi4, deploy; add the new gsi4, deploy; the same for gsi5) and backfills `gsi4pk = FEEDBACK#{feedback_id}` and `gsi5pk = CHANNEL#{source_channel}` on every item first.
+- Deploy every stack together (`npm run deploy:all` from the repo root): the core stack (the two re-keyed indexes, the raw bucket's policy), the ingestion stack and the processing stack change. VocIngestionStack gains two cross-stack references to VocCoreStack, voc-workspaces and voc-idempotency (their names, ARNs and keys), so VocCoreStack deploys first, and while VocIngestionStack imports them neither table can be replaced or renamed without first removing that use.
+- IAM: the ingestor, scheduled-ingestor and processor roles gain the grants listed under Changed, the voc-idempotency claim put among them; review them if you restrict IAM changes. A plugin manifest of your own that names `selfInvoke` must drop it.
+- Workspace runs keep their own watermarks (`WS#{ws}#…`), separate from the deployment-wide ones, so a workspace's first run starts from no watermark.
+- Gate: `scripts/validate.sh` no longer runs `audit: ws_raw_access`; the raw-access guard runs with the Python tests. A local tool or CI job that called `scripts/audit/ws_raw_access.py` drops that call.
+
+## [6.18.00] - 2026-11-12
+
+Multi-workspace, phase 1: the voc-multiplayer-c track merged: the cross-workspace suite over every API route, a workspace's own plugins, resolved problems and brand, the workspace carried by the assistant and plan steps, and what every workspace shares kept for platform admins. The data path is still not keyed by workspace (phase 2).
+
+### Added
+
+- The cross-workspace suite now covers every route of the API (`voc-datalake/lambda/api/test/test_cross_workspace_routes.py`, with `cross_workspace_worlds.py` and `cross_workspace_pending.py`; [docs/multi-workspace.md](docs/multi-workspace.md#phases)): each route, reads and writes, is named by file and route in exactly one table: workspace-scoped (it resolves `X-Workspace-Id` before it can return or write, found structurally), outside a workspace by design (each with its reason), or pending with the phase that moves it (with `POST /mcp/global`). For each workspace-scoped route the suite generates the checks over two seeded workspaces: a member of A naming B gets the one 404, the same answer as for a workspace that does not exist; B's ids under A's header get the same answer as ids that exist nowhere; no header is the 400; none of them changes a row or writes to Cognito; the same request inside A works; no answer holds B's data. It proves it can fail. A new route, or a pending one that starts resolving the workspace, fails until it is classified, so the pending lists only shrink. It replaces 6.14.00's `test_cross_workspace.py` and keeps that suite's checks: a route anywhere in the Lambdas that reaches the workspace's resolution through helpers in other modules must be workspace-scoped, and naming another workspace, or a malformed id, calls no Cognito at all, for a viewer, a caller in no workspace and a member of the deployment's `admins` only too.
+- The scope of every settings row, per workspace or for the deployment, is written down and held to the code ([docs/multi-workspace.md](docs/multi-workspace.md#per-workspace-configuration), a new table; `voc-datalake/lambda/shared/test/test_settings_scopes.py`): per workspace `brand`, `company_context`, `design_system`, `categories`, `dimensions`, `sources`, `resolved_problems`, `email_intake`, `fallback_owner`, `radar`, `model` (the pick, over a deployment default) and voc-participants' `SETTINGS`; for the deployment `appearance` (decision 7), `model_quotas` and `image_model_quota` (decision 10), `alerts`. A settings row with no scope, a new file spelling a workspace kind's key, a key built from a prefix or spelled oddly, and a docs row that drifts all fail.
+- The assistant's reads carry the caller's workspace: the stream Lambda takes its request's `X-Workspace-Id` and sends it as the `X-Workspace-Id` header, never as a claim, on every domain-Lambda call it makes as the signed-in person; each domain Lambda answers it as it answers the caller's own request (membership of the verified sub, the 400, the one 404). The global MCP tools do not carry one yet.
+- Plan steps carry the workspace their plan was approved in: `POST /agents/plans` keeps the approval's `X-Workspace-Id` (when well formed) as `workspace_id` on the plan; each step's claims name it (`voc:workspace`), and the plan-step Lambda sends it as the domain calls' `X-Workspace-Id` header, never as a claim ([docs/assistant-plan-mode.md](docs/assistant-plan-mode.md), "Identity and permissions"). Membership stays the domain Lambdas' to judge, for the approver.
+- A workspace sees which of the deployment's plugins run for it (decision 6; the plugins `cdk.context.json` enables are the ceiling): `GET /me/workspaces/current/plugins` (any member: every plugin the deployment offers, with whether the workspace enabled it) and `PUT /me/workspaces/current/plugins/{plugin_id}` `{enabled}` (workspace admins; 404 for a plugin the deployment does not offer; 409 when it changed meanwhile), in the workspaces API. An enabled plugin is a `PLUGIN#{plugin_id}` / `WS#{ws}` row in `voc-workspaces`, the partition its scheduled ingestor reads to fan out over the workspaces that enabled it; each change is audited first (`plugin_enabled`, `plugin_disabled`). Until per-workspace ingestion is in (phase 2), a workspace cannot enable a plugin: `{enabled: true}` answers 409 and writes nothing; disabling still answers. The web app does not show it yet.
+
+### Changed
+
+- What every workspace shares is a platform admin's to change: `PUT /settings/appearance` (the deployment's one colour scheme, decision 7) and the alert writes (`PUT /logs/alerts`, `POST /logs/alerts/recipients`, `POST /logs/alerts/recipients/remove`) now need a platform admin, checked live (the live Cognito membership and an enabled account of the same person); a plain administrator gets 403, the reads are unchanged. The web app shows the default theme and the alerts read-only to everyone else, with a notice, and says who may change them on a 403.
+- A team's resolved problems live in its workspace (decision 6; [docs/multi-workspace.md](docs/multi-workspace.md#per-workspace-configuration)): `GET` and `PUT /settings/resolved-problems` with `X-Workspace-Id` read and write that workspace's row: any member reads (still only the problems under the categories they may see), an editor or an admin marks one (403 for a viewer; the role read fresh from the table). A request that names no workspace (the web app with no workspace, a deployment from before workspaces, an MCP token that pins none) keeps the deployment's row with today's rules and never reaches a workspace's. The domain APIs share one workspace resolution (the workspaces API's rules, the one 404, a platform admin's entry checked live and audited) and one live platform-admin check, which the workspaces API's platform routes and workspace entries now run too (no change in what they answer). A plan approval whose `X-Workspace-Id` is not a workspace id now answers the one 404 before anything is written or started.
+- A workspace's brand lives in its workspace (decision 6): `GET` and `PUT /settings/brand` with `X-Workspace-Id` read and write that workspace's brand: any member reads, only the workspace's admins change it (the deployment's `admins` group grants nothing inside a workspace). A request that names no workspace keeps the deployment's brand and its administrators, as before. The API accepts a workspace admin's brand edit; in the web app the brand form (Administration → General) is reachable only by members of `admins` for now, and inside a workspace it is editable only by those who are also that workspace's admins (read-only to everyone else); opening it to every workspace admin is the next web-app slice. The deployment-wide brand, the one a request without a workspace reads, is edited outside a workspace, so it cannot be reached from the web app by anyone who has a workspace (the workspace gate always enters one); the platform console gains a "deployment default" editor in the next web-app slice. A new workspace starts with an empty brand; the engagement API's emails and feedback boards keep the deployment's brand name until they move.
+
+### Upgrade notes
+
+- Deploy every stack and the web app together (`npm run deploy:all` from the repo root): the API stack (settings, logs, workspaces and agents APIs, the stream Lambda and the web app) and the processing stack (the plan-step Lambda) change in this release.
+- IAM and configuration: the settings and logs APIs read the caller's groups and account in Cognito (`AdminListGroupsForUser`, `AdminGetUser`), and the logs API gets `USER_POOL_ID`; the workspaces API's role may delete `PLUGIN#*` rows in `voc-workspaces` and gets `ENABLED_SOURCES`; the API stack gains one workspace-resolution managed policy (GetItem on `WS#*` and `AUDIT#WS#*`, PutItem on `AUDIT#WS#*` in `voc-workspaces`), attached to the settings API's role, which gets `WORKSPACES_TABLE`; the audit-row guard now guards a customer-managed policy like a role.
+- Before upgrading a deployment from before 6.06.02, add the people who manage the default theme and the operational alerts to `platform-admins` (6.06.02, Upgrade notes), or nobody can change them.
+- Nothing to migrate: the deployment's resolved problems and brand stay and keep working without a workspace; a workspace starts with none of its own.
+
+## [6.17.00] - 2026-11-12
+
+Multi-workspace, phase 1: a follow-up to 6.16.00's sign-out in the browser's other tabs. The data path is still not keyed by workspace (phase 2).
+
+### Changed
+
+- When another tab signs out, or its session expires, a signed-in tab showing one of the pages that open without an account of the app (a ballot, the feedback boards, a document shared for review, an unsubscribe link, or the sign-in page) no longer goes to the sign-in page: it removes the same saved state as every other tab and reloads the page it shows, which then opens without the app's session (the boards and a review use that session when there is one). Every other signed-in tab reloads to the sign-in page, as in 6.16.00, and a signed-out tab stays as it is.
+- The sign-out and the expired-session redirect are now tested to sign the session out before they tell the other tabs; told first, the other tabs would still read a signed-in session and keep the last person's state.
+
+### Fixed
+
+- Correction to the 6.16.00 entry: since 6.16.00, the other tabs also clear the list of workspaces the server refused in that tab and a platform admin's console entries, as the tab that signs out does.
+
+### Upgrade notes
+
+- Only the web app changes: deploy VocApiStack as usual (`cd voc-datalake && npm run deploy:api`; it carries the web app). No API, table or permission changes.
+
+## [6.16.00] - 2026-11-12
+
+Multi-workspace, phase 1: signing out in one browser tab now ends the session in the browser's other open tabs too. The data path is still not keyed by workspace (phase 2).
+
+### Changed
+
+- When a browser tab signs out, or its session expires, every other open tab of the web app in that browser removes each workspace's saved state (the assistant panel's, the manual-import draft and the dashboard filters) and the assistant panel's saved state outside workspaces, as the tab that signed out does, and a tab that was signed in reloads to the sign-in page. Before, such a tab kept the last person's state in memory and could save it back to the browser for the next person. The draft and filters outside workspaces are kept, as after a sign-out. The tab that ends its session leaves a short notice in the browser's storage (`voc-session-ended`, a fresh value each time), and the browser tells the other tabs; nothing is sent to the server. A session refresh that fails for a moment and then succeeds is not a sign-out and ends no other tab, a sign-in in another tab changes nothing in the open ones, and a late notice of an earlier sign-out does not remove what a person who signed in meanwhile has saved.
+
+### Upgrade notes
+
+- Only the web app changes: deploy VocApiStack as usual (`cd voc-datalake && npm run deploy:api`; it carries the web app). No API, table or permission changes.
+
+## [6.15.00] - 2026-11-12
+
+Multi-workspace, phase 1: what the browser saves stays in its workspace, and two follow-ups to the header menu and the members page. The data path is still not keyed by workspace (phase 2).
+
+### Changed
+
+- Inside a workspace, the state the web app saves in the browser is that workspace's own ([docs/multi-workspace.md](docs/multi-workspace.md#phases)): the assistant panel's saved state (the conversation in view, the panel mode, web search, desktop notifications, the folded sidebar and, per tab, whether the panel is open), the manual-import draft and the dashboard's filters (time range, custom days, date basis) and the rest of the browser's config. A draft or a filter left in one workspace no longer opens in another, and is back on return to it. Each is saved under its usual name with the workspace's slug added (`voc-config:w/acme`). Outside a workspace, and in a deployment without workspaces, nothing changes: the same names and the same saved state as before. Entering a workspace for the first time after this release starts from the defaults; the state saved before stays outside workspaces. Signing out, or an expired session, removes every workspace's saved state of these three, and the assistant panel's saved state outside workspaces, from the browser, so the next person finds none of it; Account → "Reset local settings" clears this browser's config outside workspaces and in every workspace.
+- The header's workspace menu no longer offers to switch to a workspace the server refused in this browser tab (one being deleted, or a membership removed a moment ago), as the not-found page already did.
+- The members page waits for the role the server applies in the workspace before it shows what the caller may do: a platform admin who is also an editor or a viewer there no longer sees the read-only page for a moment before the admin controls appear. The confirmation of the current workspace (`GET /me/workspaces/current`) is asked once, not retried: when it fails for another reason than a 404, the page and the header keep the membership's role at once (a platform console's entry offers Try again, as before).
+
+### Upgrade notes
+
+- Only the web app changes: deploy VocApiStack as usual (`cd voc-datalake && npm run deploy:api`; it carries the web app). No API, table or permission changes. Inside a workspace, people find the assistant panel, the manual-import draft and the dashboard filters at their defaults the first time; nothing is lost outside workspaces.
+
+## [6.14.00] - 2026-11-12
+
+Multi-workspace, phase 1: the workspace-scoped repository layer, and the three guards that keep workspaces apart from now on. The data path is still not keyed by workspace (phase 2).
+
+### Added
+
+- The repository layer that phase 2 moves the data path onto, `lambda/shared/ws_repository.py` ([docs/multi-workspace.md](docs/multi-workspace.md#request-flow), step 4): `ws_table(ws, env_var)` opens one of the tables phase 2 keys by workspace (a fixed list of tables and their indexes; any other table is refused) and refuses, before calling AWS, any key whose partition attribute is not inside the workspace's data partitions (`WS#{ws}#…`), any put whose index partition attributes (each of that table's indexes) are not, and any update whose update expression names one of them (as a word or a `#placeholder`; a condition such as `attribute_exists(#pk)` is fine); each call takes only the parameters listed for it (the legacy `AttributeUpdates`, `Expected`, `KeyConditions`, `QueryFilter` and `AttributesToGet` are refused). Gets, puts, updates and deletes take and answer boto3's own forms, so a call site of those moves by swapping its table handle (its key values becoming `WS#{ws}#…`, phase 2's re-keying), unless it uses a legacy parameter or its update sets a key or index attribute (which becomes a put); a query names its partition (and an index by name) instead of a key condition, so each query call site is rewritten when it moves, and there is no scan. The layer has no transactions and no batch reads or writes yet: phase 2 adds scoped ones before it moves a call site that needs them. `ws_s3_key(ws, …)` builds `ws/{ws}/…` object keys and refuses empty parts, path traversal and control characters. Nothing in the data path uses it yet, so no route behaves differently.
+- A raw-access gate step, `audit: ws_raw_access` (`scripts/audit/ws_raw_access.py`, [docs/code-audit.md](docs/code-audit.md)): it counts, file by file, the raw table handles and DynamoDB and S3 clients and the S3 writes, copies and deletes it can see statically (client calls, presigned URLs, `Object`/`Bucket` methods and collection deletes; the detector lists what it misses) outside the layer in the Lambdas' Python and in the stream and plan-step Lambdas (TypeScript names followed through import and require aliases), against `scripts/audit/allowlists/ws_raw_access.json`. A new file with raw access, or a count that grows, fails the gate; a count that drops fails until its entry is lowered, so the list only shrinks. The list (today's baseline: 111 files), grouped by the phase that moves each file or the reason it stays raw (the control plane, the shared handle plumbing, a deploy-time resource), is the work list of phases 2 to 4.
+- A cross-workspace test suite, `lambda/api/test/test_cross_workspace.py`: every workspace-scoped route (today `GET /me/workspaces/current` and the members routes) answers a member of another workspace, and a caller in neither workspace, with the one 404 and the same body as for an id that names no workspace, calls no Cognito and changes nothing. A route anywhere in the Lambdas that resolves the workspace, directly or through helpers in other modules, but is missing from the suite's registry fails it.
+- A two-workspace check on the dev mock: the mock switch takes `"member"`, `PUT /__mock/workspaces {"enabled": true, "member": "acme"}` (the caller a member of that workspace only, and no platform admin to the workspace routes), and a Playwright spec (`e2e/tests/cross-workspace.spec.ts`, dev mock only) checks that the address `/w/juniper/members` of the other workspace shows "Workspace not found".
+
+### Upgrade notes
+
+- Nothing to do: no route, table, permission or web app behaviour changes. Deploy as usual; the version number in the API and Processing stacks moves with the release.
+
+## [6.13.00] - 2026-11-12
+
+Multi-workspace, phase 1: the web app manages a workspace's members, and platform admins get the platform console.
+
+### Added
+
+- A members page inside a workspace, `/w/{slug}/members`, opened from Members in the header's workspace menu (the header now shows the workspace as a menu with one workspace too) ([docs/multi-workspace.md](docs/multi-workspace.md#invites)). Every member sees the list (name or email, role, the date they joined), a page at a time. A workspace admin adds a member by email with a role (an email with an account becomes a member at once, with no email sent, and the page says so; a new email gets an account and a temporary password by email, for a deployment administrator only), changes a role and removes a member after a confirmation; any member leaves after a confirmation, then lands on `/`. The server's refusals are said in words: the last admin, a membership changed meanwhile, an admin demoted meanwhile, a person already a member, a new email from a workspace admin outside `admins`. Outside a workspace the address shows "Page not found". The page says plainly that workspaces do not separate data yet.
+- The platform console, Administration → Privacy & access → Workspaces, shown only to platform admins (the `platform-admins` group in the session's token; the API checks it live and answers 403 to anyone else): every workspace by name with its slug, status and whether its credentials secret is ready or pending; a form that creates one (name, slug, checked in the browser by the server's rules; a taken slug is refused with 409 and said so), after which the caller is its admin; and Enter, a full page load to `/w/{slug}/`.
+- Under Administration → Privacy & access → Users, platform admins grant and revoke platform admin per user (`PUT /users/{username}/platform-admin`): only an administrator can be granted it, and the last enabled platform admin cannot be revoked; each refusal is said in words.
+- The dev mock serves the platform list and create, the members list, add, role change, removal and leave (with the last-admin and already-a-member refusals) and the platform-admin grant and revoke, all on the state its `PUT /__mock/workspaces` switch sets (on: two fictional workspaces with members; off: none, as before). A Playwright spec (`e2e/tests/workspace-admin.spec.ts`, dev mock only) covers creating and entering a workspace, adding a member, a role change, the last-admin refusal and leaving.
+
+### Changed
+
+- The workspace gate lets a platform admin into a workspace they are not a member of when they enter it from the platform console: the console records the workspace's id for the tab, and the gate opens the workspace only once `GET /me/workspaces/current` answers that workspace with that slug (the server's live check and audited entry, decision 2). Without that record, or when the server answers 404, the address shows the same "Workspace not found" page as before, so nothing changes for anyone else.
+
+### Upgrade notes
+
+- Only the web app changes: deploy VocApiStack as usual (`cd voc-datalake && npm run deploy:api`; it carries the web app). No API, table or permission changes.
+
+## [6.12.00] - 2026-11-12
+
+Multi-workspace, phase 1: the web app knows the caller's workspaces, works inside `/w/{slug}/…` and names the current workspace on every API call.
+
+### Added
+
+- After sign-in the web app reads `GET /me/workspaces` and `GET /me/workspaces/current` ([docs/multi-workspace.md](docs/multi-workspace.md#request-flow)). With two or more workspaces, `/` (or any address without `/w/{slug}`) shows a picker listing each workspace with the caller's role; the workspace last entered in the browser is highlighted, never chosen automatically, and each choice opens the same path inside it. With exactly one, the app moves into it with a full page load, keeping the path. An address whose slug is not one of the caller's shows "Workspace not found" with the caller's own workspaces, the same page whether the slug exists or not. On an address without `/w/{slug}`, a caller with no workspace, or a list that cannot be read, gets the app as before (the data is not keyed by workspace until phase 2); on a `/w/{slug}` address a list that cannot be read shows "Could not load your workspaces" with Try again and Sign out, never the app outside the workspace, and a workspace already entered stays entered when a later refresh of the list fails. The workspace last used is remembered only once the server has confirmed it. A workspace the list names but the server refuses (one being deleted, or a membership removed a moment ago) is left out for the rest of the browser tab: the not-found page says it is not available, never links back to it, and its start link opens the app without it instead of moving back in. The public pages (`/login`, `/vote`, `/board`, `/review`, `/unsubscribe`) are unchanged. The data is not separated by workspace yet: until phase 2 keys the data path by workspace, every workspace shows the deployment's same feedback, projects and settings.
+- Inside a workspace every page lives under `/w/{slug}/` (every existing link keeps working there), the header shows the workspace's name and, with two or more workspaces, a menu that switches to another one's dashboard with a full page load (the page starts with an empty cache). The copied review link, the Prioritization "view full" link and the expired-session redirect to sign-in keep the workspace in the address; signing out, or an expired session, clears the tab's refused workspaces, and signing out also clears the current workspace and leaves its address with a full page load to the plain `/login`. All new copy is in the nine languages.
+- Every API call made inside a workspace, the assistant's stream and the feedback boards' calls included, carries `X-Workspace-Id`, sent only to the deployment's own API (the rule the session token follows).
+- The dev mock serves both routes; its dev switch `PUT /__mock/workspaces` with `{"enabled": true}` gives the mock caller two fictional workspaces (admin of Acme Outfitters, editor of Juniper Trail Co.); by default it has none, as before. A Playwright spec (`e2e/tests/workspaces.spec.ts`, dev mock only) covers the picker, the header, the switch and the not-found page.
+
+### Changed
+
+- The API's CORS allows the `X-Workspace-Id` request header: the gateway's preflight and its error responses, and the Lambdas' own CORS answers (`lambda/shared/api.py`, the projects API).
+
+### Upgrade notes
+
+- Deploy VocApiStack (`cd voc-datalake && npm run deploy:api`; it carries the gateway, the API Lambdas and the web app) so the browser's preflight allows `X-Workspace-Id`; `npm run deploy:infra` (every stack) works too. Until it is deployed, a web app inside a workspace would have its API calls refused by the preflight; a deployment without workspaces sends no such header and is not affected.
+- The SPA fallback already serves `index.html` for `/w/…` addresses (VocCoreStack's distribution answers every unknown path with it); nothing changes there.
+
 ## [6.11.00] - 2026-11-12
 
 Multi-workspace, phase 1: a deleted user leaves their workspaces, and an erasure by email reaches workspace members.
@@ -203,6 +837,72 @@ The design for serving several separate teams from one deployment, each in its o
 ### Added
 
 - [docs/multi-workspace.md](docs/multi-workspace.md): the multi-workspace design (status: design, nothing built yet). One deployment, every row keyed `WS#{ws}#…` and every object under `ws/{ws}/`; a `VocControlStack` with the `voc-workspaces` table (workspaces, members, invites, slugs, audit); a `platform-admins` group that creates workspaces and enters any of them (audited); roles per workspace (admin, editor, viewer); `/w/{slug}/…` URLs and an `X-Workspace-Id` header resolved by shared middleware that answers 404 to non-members; the public entry points, per-workspace configuration, one credentials secret per workspace (about $0.40 a month each, the one fixed cost the design adds), cost per workspace, export and delete (and its D5 trade-off), the five phases and the guards phase 1 adds (the raw-access static test, the cross-workspace suite, a two-workspace end-to-end check).
+
+## [7.00.01] - 2026-11-13
+
+The repository's Kiro agents can no longer read `.env`, key and credential files with their read tool.
+
+### Fixed
+
+- The four hook agents in `.kiro/agents/` (first-principles, quality and security review, test generator) could read any file on the machine, `.env` and `~/.aws` included: they pre-approved `fs_read` in `allowedTools`, had no path limit and denied nothing. Every agent now carries the same rules as the two AI review agents behind the `tenets: AI review` / `commit: AI review` gate steps, built from one list (`SECRET_PATHS` in `scripts/ai-review/lib.mjs`, now naming `.env` and `.env.*` outright): reads of the repository only (`./**`), never a secret-shaped path, in both formats, and no read tool pre-approved. Verified live with kiro-cli 3.3.0: the agents read repository files without a prompt and are refused `.env`; it takes the `toolsSettings` block (an agent with only the documented V3 `permissions` deny read `.env`), and a pre-approved `fs_read` bypassed the deny, so a test now pins all three for every agent. The test generator also may not write a secret-shaped path. No agent file carries a machine-specific `kiroUpgrade` marker any more.
+- Two gaps remain, both verified with kiro-cli 3.3.0 and outside what agent rules can close: the `grep` tool of `first-principles-reviewer` prints lines from a denied `.env` (kiro-cli's search ignores the deny rules and `.kiroignore`, against its own documentation), and `test-generator` keeps the shell and the pre-approved writes it needs, so it can still print a file with a shell command or write outside the repository. Keep secrets out of the working tree, or gitignored.
+
+### Upgrade notes
+
+- Nothing to deploy: tooling only. A version bump moves only the `APP_VERSION` of the Api and Processing Lambdas, so those two template hashes in `voc-datalake/lib/test-support/baseline.json` change, as on every release. A developer whose kiro-cli upgraded these agent files locally should take the committed versions (`git checkout -- .kiro/agents`).
+
+## [7.00.00] - 2026-11-13 (from main)
+
+Prototypes show the company logo uploaded in the design system, an SVG logo can be uploaded again, and a large logo is made smaller instead of refused.
+
+### Added
+
+- A prototype now shows the company logo from Company → Design system (`/company?tab=design`) wherever it shows the company's logo, instead of a logo the model draws. The model writes a placeholder and the build puts the uploaded logo in its place as an inline image, so the prototype stays one offline file. It follows the build dialog's **Design system** box, and the prototype's "Built from" footer says whether the logo was used or left out (`derivation.company_logo_included`). A logo over 1 MB is left out and the prototype gets a drawn wordmark, as before. A revision uses the logo uploaded when it is built: when there is none any more (or the box is unticked), the model is told to draw a wordmark instead, and a leftover logo spot shows the brand or project name as text, never an empty image. Other inline images in a prototype are never mistaken for the logo. See [docs/company-context.md → How the AI uses them](docs/company-context.md#how-the-ai-uses-them).
+- Company → Design system → **Upload logo** makes a large PNG, JPEG or WebP logo smaller in the browser instead of refusing it (up to 25 MB, was refused over 5 MB): at most 1,024 px on its longest side and under 1 MB, PNG first, then WebP so transparency is kept. A logo within 1 MB is uploaded as it is. See [docs/company-context.md](docs/company-context.md).
+- A website design reference whose logo is a PNG, JPEG or WebP over 2 MB gets a logo preview again: the managed browser that reads the page draws it at up to 1,024 px and keeps that PNG, so **Use this logo** works (it was refused with "The logo is larger than 2 MB"). A GitHub repository's logo over 2 MB, or a reference read before this release, still cannot be used directly, and the message now says what to do: upload it as the company logo, or refresh a website reference.
+
+### Changed
+
+- **Breaking:** the company logo is at most 1 MB for every client: `POST /settings/design-system/logo` (was 5 MB) and **Use this logo** (`POST /settings/design-system/references/{id}/logo`, was 2 MB) answer 400 above it, so an API or MCP caller gets the same result as the web app, whose upload makes the image smaller first, and every saved logo fits a prototype.
+
+### Fixed
+
+- Company → Design system → **Upload logo** refused every SVG file with "could not be read as an SVG image. Export it as PNG and upload that." The browser converts an SVG to PNG before the upload, and it loaded the SVG from a `blob:` URL, which the site's Content-Security-Policy (`img-src 'self' data:`) blocks. It now loads it from a `data:` URL, and the policy is unchanged. PNG, JPEG and WebP uploads were not affected.
+
+### Upgrade notes
+
+- Deploy the stacks (`npm run deploy:infra`, which deploys `VocCoreStack` before `VocApiStack`) and the frontend (`npm run deploy:frontend`). `VocCoreStack` gains one managed policy, `CompanyLogoReadPolicy` (`s3:GetObject` on the uploaded logos only, `company-context/design/logo_????????????.*` in the raw data bucket, so not the design references' logo previews), and `VocApiStack` attaches it to the document generator job role (`voc-job-document-generator`). **Breaking (the reason for the major version):** an API or MCP client that uploads its own company logo (`POST /settings/design-system/logo`) must send at most 1 MB (it was 5 MB), and **Use this logo** refuses a candidate over 1 MB (it was 2 MB); both answer 400 with what to do. The web app is not affected: it makes a larger image smaller before it uploads. Nothing else changes. Prototypes built before this release keep the logo they were built with; build or revise one to get the uploaded logo.
+
+## [6.05.00] - 2026-11-11 (from main)
+
+The repository's tooling needs Node.js 24, and the minimatch and fast-xml-parser security alerts are fixed.
+
+### Changed
+
+- Node.js 24.15+ is now the only supported line for the local tooling (root `package.json` `engines`, was `^22.22.2 || >=24.15.0`; `tools/kiro-acp-bridge` was `>=18.0.0`). It is the line CI and the Node Lambdas (`nodejs24.x`) already ran; Node 22 was never tested in CI. README, CONTRIBUTING and [docs/deployment.md](docs/deployment.md) say so.
+
+### Security
+
+- minimatch (GHSA-g3hv-75wg-m249, denial of service through glob-part amplification): every copy from 7.0.0 up to 11.0.1 is forced to `^11.0.1` by an npm override in `voc-datalake/`, `voc-datalake/frontend/` and `voc-datalake/lambda/stream/`. These copies are all used by build and lint tooling (ESLint, typescript-eslint, eslint-plugin-sonarjs, Stryker); the repository-root project holds no minimatch. minimatch 11 drops `makeRe` and `AST`, which none of those use. The stream Lambda's `eslint-plugin-import-x`, which did, moves to 4.18.1, the first release that supports minimatch 11. glob 10 does not work on minimatch 11 (a pattern matches nothing), so the frontend's `quick-temp` (behind `i18next-parser`, the `i18n:extract` authoring tool) gets rimraf 6.1.4 through a second override, which brings glob 14, built for minimatch 11. When a lint-tooling bump brings a new minimatch consumer, check that it does not need `makeRe`, `AST` or glob 13 or older before keeping the override; when `quick-temp` changes, check that it still calls rimraf's `sync`, which the rimraf 6 override relies on. `scripts/dependency-overrides.test.mjs` (a `validate.sh` step) fails when any of the six committed lockfiles holds a minimatch in the vulnerable range other than the copy bundled in `aws-cdk-lib`, a glob older than 14 on minimatch 11, or an unaudited `quick-temp`. The copy bundled inside `aws-cdk-lib` stays at 10.2.6: npm cannot override a bundled dependency, and no `aws-cdk-lib` release ships minimatch 11 yet. That copy only matches the repository's own asset-exclude patterns at synth time and never sees user input.
+- fast-xml-parser (GHSA-474x-hrwr-fgx4, quadratic CPU use on unterminated stop-node tags) moves from 5.11.2 to 5.12.0 in the frontend lockfile. `aws-amplify` pulls it in through `@aws-amplify/storage`. The SPA imports only `aws-amplify/auth`.
+
+### Upgrade notes
+
+- Nothing to do for a deployment of the platform. A redeploy changes only the release number the Api and Processing Lambdas record (`APP_VERSION`, `6.5.0`), as every release does; that and the stream lockfile (the assistant's NodejsFunction `depsLockFilePath`) are why those two stacks' template hashes in `voc-datalake/lib/test-support/baseline.json` move, and no other stack's.
+- Run `npm ci` again in `voc-datalake/`, `voc-datalake/frontend/` and `voc-datalake/lambda/stream/` to pick up the new lockfiles.
+- Deploy from Node.js 24.15+ (`node --version`). On Node 22, npm warns `EBADENGINE`, and newer tooling may not run. On Node 24, `npm ci` in `voc-datalake/frontend/` still warns `EBADENGINE` once, for `i18next-parser` 9.4.0 (its latest release declares Node 22 or older); that warning is expected, and the tool runs on Node 24.
+
+## [6.04.08] - 2026-11-11 (from main)
+
+Workshop templates no longer reserve Lambda concurrency, so a Workshop Studio event's VocApiStack completes.
+
+### Fixed
+
+- `npm run generate:workshop-artifacts` synthesizes with `-c mcpReservedConcurrency=0`. Workshop Studio event accounts have only 110 unreserved Lambda executions (of a 1000 quota), and AWS keeps at least 100 unreserved, so the Global MCP endpoint's default reservation of 20 failed VocApiStack ("decreases account's UnreservedConcurrentExecution below its minimum value of [100]"). Without a reservation the endpoint shares the pool; its API Gateway method throttle (`GLOBAL_MCP_METHOD_THROTTLE` in `voc-datalake/lib/stacks/global-mcp.ts`) bounds the request rate, though not the concurrency. `voc-datalake/scripts/workshop-artifacts.test.ts` pins the flag, and `voc-datalake/lib/stacks/api-stack-mcp-global-ops.test.ts` already pins that 0 omits `ReservedConcurrentExecutions` instead of throttling to zero. See [docs/mcp.md](docs/mcp.md).
+
+### Upgrade notes
+
+- Nothing changes for a deployment from `npm run deploy:infra`: the MCP endpoint keeps its reservation of 20 by default. Regenerate the workshop templates (`npm run generate:workshop-artifacts`) and republish them to the workshop's `development` assets.
 
 ## [6.04.07] - 2026-11-11
 

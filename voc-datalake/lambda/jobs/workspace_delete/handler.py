@@ -36,7 +36,8 @@ row the same way, then raises). An invocation the timeout kills writes
 nothing; the job reads ``failed`` an hour later and resumes the same way. No retry of its own (``retryAttempts`` 0),
 events older than 40 minutes dropped, at most ``MAX_GENERATIONS``, two invocations at once in the deployment.
 
-Env: ``FEEDBACK_TABLE``, ``AGGREGATES_TABLE``, ``MEMORY_TABLE``, ``WATERMARKS_TABLE``, ``WORKSPACES_TABLE``,
+Env: ``FEEDBACK_TABLE``, ``AGGREGATES_TABLE``, ``MEMORY_TABLE``, ``WATERMARKS_TABLE``, ``RADAR_TABLE``,
+``WORKSPACES_TABLE``,
 ``RAW_DATA_BUCKET``, ``WORKSPACE_PARAMETER_PREFIX``, ``PLUGIN_IDS`` (the deployment's plugin ids, a JSON list),
 ``WORKSPACE_HARD_DELETE`` (``true``: the job is built only with ``-c workspaceHardDelete=true``, and refuses every
 event without it).
@@ -56,6 +57,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from jobs.workspace_delete.sweeps import (
     OWNER_LISTS,
     PARTITION_FAMILIES,
+    PARTITION_FAMILY_TABLES,
     SWEEPS,
     WORK_PARTITION,
     Context,
@@ -93,9 +95,9 @@ from shared.ws_repo import (
     message_scope,
 )
 
-FEEDBACK_TABLE, AGGREGATES_TABLE, MEMORY_TABLE, WATERMARKS_TABLE, RAW_DATA_BUCKET, PARAMETER_PREFIX = (
+FEEDBACK_TABLE, AGGREGATES_TABLE, MEMORY_TABLE, WATERMARKS_TABLE, RADAR_TABLE, RAW_DATA_BUCKET, PARAMETER_PREFIX = (
     os.environ.get(name, '') for name in ('FEEDBACK_TABLE', 'AGGREGATES_TABLE', 'MEMORY_TABLE', 'WATERMARKS_TABLE',
-                                          'RAW_DATA_BUCKET', 'WORKSPACE_PARAMETER_PREFIX'))
+                                          'RADAR_TABLE', 'RAW_DATA_BUCKET', 'WORKSPACE_PARAMETER_PREFIX'))
 
 #: Hand over to a fresh invocation when less than this remains (a page's tombstones, its deletes, the checkpoint and
 #: the invoke all fit in it).
@@ -215,9 +217,11 @@ class DeleteRun:
             aggregates=ingest_table(scope, resource, AGGREGATES_TABLE),
             memory=ingest_table(scope, resource, MEMORY_TABLE),
             watermarks=ingest_table(scope, resource, WATERMARKS_TABLE, key='source'),
+            radar=ingest_table(scope, resource, RADAR_TABLE),
             workspaces=self.workspaces, objects=WorkspaceObjectVersions(scope, s3, RAW_DATA_BUCKET),
             exports=ExportObjects(scope, s3, RAW_DATA_BUCKET), ssm=get_ssm_run_client(),
             parameter_prefix=PARAMETER_PREFIX, plugin_ids=_plugin_ids(), job=row,
+            # The config readers' handle: each read goes through the workspace's view (sweeps.py Context.settings).
             settings=ingest_table(None, resource, AGGREGATES_TABLE).table, counts=run.counts,
             time_left=lambda: has_time_left(context, TIME_RESERVE_MS))
         self._take_phase_from_the_row()
@@ -480,7 +484,7 @@ VERIFY_CHECKS: Final[tuple[tuple[str, Check], ...]] = (
     ('credentials', _credentials_left),
     ('feedback', _listed('feedback', 'feedback')),
     ('counters', _listed('counter', 'aggregates')),
-    *((name, _listed(name, 'aggregates')) for name in PARTITION_FAMILIES),
+    *((name, _listed(name, PARTITION_FAMILY_TABLES.get(name, 'aggregates'))) for name in PARTITION_FAMILIES),
     *((name, _owner_list_left(owners)) for name, owners in OWNER_LISTS.items()),
     ('watermarks', _partition(lambda scope: scope.key(WATERMARK_DIRECTORY))),
     ('memory', _memory_left),

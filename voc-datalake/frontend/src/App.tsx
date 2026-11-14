@@ -11,6 +11,7 @@ import { createAppQueryClient } from './api/queryPolicies'
 import { watchFeedbackJobs } from './api/feedbackDataWatch'
 import { bindQueryCacheToUser } from './api/userCacheScope'
 import { watchRealtimeSession } from './realtime/session'
+import { PAGE_BASENAME } from './workspace/workspacePath'
 
 // Caching policy per key family (api/queryPolicies.ts); app-lifetime watchers,
 // so their unsubscribes are deliberately not kept.
@@ -18,7 +19,9 @@ const queryClient = createAppQueryClient()
 watchFeedbackJobs(queryClient)
 bindQueryCacheToUser(queryClient)
 
-const router = createBrowserRouter(routes)
+// Inside a workspace (`/w/{slug}/…`, workspace/workspacePath.ts) the whole route table lives under that base
+// path, so every existing route and link works unchanged; switching workspaces is a full page load.
+const router = createBrowserRouter(routes, { basename: PAGE_BASENAME })
 
 /** Push notifications (docs/realtime.md) are bound once, after the runtime config names the Event API. */
 const realtimeWatch = { started: false }

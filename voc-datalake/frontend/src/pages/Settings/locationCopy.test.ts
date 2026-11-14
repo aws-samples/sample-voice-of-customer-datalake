@@ -57,9 +57,9 @@ interface Place { readonly label: string; readonly sections: readonly string[] }
 function places(locale: string): Place[] {
   const labels = settingsSchema.parse(readJson(locale, 'settings'))
   const tabLabel = (id: AdminTabId) => labels.tabs[id === 'brand' ? 'general' : id] ?? id
-  return visibleTabs(true).map((id) => ({
+  return visibleTabs(true, false).map((id) => ({
     label: tabLabel(id),
-    sections: visibleSections(id, true).map((section) => labels.sections[section] ?? section),
+    sections: visibleSections(id, true, false).map((section) => labels.sections[section] ?? section),
   }))
 }
 

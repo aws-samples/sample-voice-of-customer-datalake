@@ -9,9 +9,8 @@
 // Deliberately NOT claimed here (they live in mock-server.js):
 // GET /feedback-forms (list) and GET /feedback-forms/{id}/stats.
 //
-// Two mock-only liberties, both called out where they happen:
-// - PUT on an unknown form answers 404 (the real update_item has no condition,
-//   so it would upsert a nameless stub).
+// PUT on an unknown form answers 404, as the real update does (a conditional
+// update_item, `attribute_exists(sk)`: never an upsert). One mock-only liberty:
 // - A `pf_<16 hex>` id with no stored record resolves to a synthetic
 //   prototype_pin form, so the prototype pin bridge works against mock
 //   prototypes that carry a pin widget but have no stored form.
@@ -230,8 +229,8 @@ function createForm(shared, body) {
   const linkError = linkFieldError(input) ?? themeError(input);
   if (linkError) return fail(400, linkError);
   const now = new Date().toISOString();
-  // str(uuid.uuid4())[:8] in build_form_item.
-  const item = { form_id: randomUUID().slice(0, 8), brand_name: '', created_at: now, updated_at: now };
+  // A deployment form's id, as feedback_form_handler.py new_form_id mints it: `fd_` and 128 random bits in hex.
+  const item = { form_id: 'fd_' + randomBytes(16).toString('hex'), brand_name: '', created_at: now, updated_at: now };
   for (const [field, fallback] of Object.entries(DEFAULT_FORM_CONFIG)) {
     item[field] = copy(own(input, field) ? input[field] : fallback);
   }
@@ -248,7 +247,8 @@ function updateForm(shared, formId, body) {
   const fields = UPDATABLE_FIELDS.filter((field) => own(input, field));
   if (fields.length === 0) return fail(400, 'No fields to update');
   const form = shared.mockFeedbackForms.find((f) => f.form_id === formId);
-  if (!form) return fail(404, 'Form not found'); // mock-only: the real update upserts
+  // As the real update: a conditional UpdateItem (attribute_exists), so a missing form is a 404, never an upsert.
+  if (!form) return fail(404, 'Form not found');
   for (const field of fields) form[field] = copy(input[field]);
   form.updated_at = new Date().toISOString();
   return [200, { success: true, form: itemToForm(form) }];

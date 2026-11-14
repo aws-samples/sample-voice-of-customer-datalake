@@ -20,7 +20,7 @@ from shared.model_config import (
     surface_default,
     uses_adaptive_thinking,
 )
-from shared.test.model_config_fixtures import stored_model_config
+from shared.test.model_config_fixtures import picks_reads, stored_model_config
 
 OPUS55 = "global.anthropic.claude-opus-5-5"
 SONNET55 = "global.anthropic.claude-sonnet-5-5"
@@ -184,7 +184,7 @@ class TestGetActiveModelId:
             get_active_model_id('chat')
             clear_model_cache()
             get_active_model_id('chat')
-        assert table.get_item.call_count == 2
+        assert picks_reads(table) == 2
 
 
 class TestAllowlistLockstep:

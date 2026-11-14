@@ -1,0 +1,36 @@
+"""Reading a project's partition in voc-projects, on either path (phase 3 plumbing, docs/multi-workspace.md).
+
+The one read every project store makes of a whole partition, ``PROJECT#{id}`` (``WS#{ws}#PROJECT#{id}`` in a
+workspace), maybe narrowed to a sort-key prefix, every page. Each page is shared/scoped_query.py
+``query_partition``, bound to the partition with ``functools.partial`` for shared/dynamo_paging.py's pager (its one
+``query(**kwargs)`` call): without a workspace it sends exactly the request the stores always sent
+(``Key('pk').eq(…) & Key('sk').begins_with(…)`` on the table itself), in one it goes through shared/ws_repo.py
+``ws_table`` (a partition or a cursor outside the workspace is refused before DynamoDB). The stores' single-item
+calls go through shared/ingest_tables.py ``table_view`` and shared/workspace_config.py ``get_scoped_item``, their
+transactions through shared/project_writes.py ``transact_project_writes``. Only voc-projects is read here: the jobs
+and the participant lists are not per workspace yet.
+"""
+from __future__ import annotations
+
+from collections.abc import Iterator
+from functools import partial
+from types import SimpleNamespace
+from typing import Any
+
+from shared.dynamo_paging import iter_query
+from shared.project_keys import project_pk
+from shared.scoped_query import SortRange, query_partition
+from shared.ws_repo import WorkspaceScope
+
+__all__ = ['iter_project_rows']
+
+
+def iter_project_rows(table: Any, project_id: str, *, workspace: WorkspaceScope | None = None,
+                      sort_prefix: str | None = None, **kwargs: Any) -> Iterator[dict]:
+    """Every row of the project's partition (the workspace's project when given), only those whose ``sk`` begins
+    with ``sort_prefix`` when given, across every page. ``kwargs``: the rest of the Query
+    (``ProjectionExpression``, ``ExpressionAttributeNames``, ``ConsistentRead``…)."""
+    sort = SortRange('sk', 'begins_with', sort_prefix) if sort_prefix is not None else None
+    pages = SimpleNamespace(query=partial(query_partition, workspace, table, 'pk',
+                                          project_pk(project_id, workspace=workspace), sort=sort))
+    return iter_query(pages, kwargs)

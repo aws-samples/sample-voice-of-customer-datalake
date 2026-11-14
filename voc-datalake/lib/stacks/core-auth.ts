@@ -15,7 +15,7 @@ import { LOG_RETENTION } from '../utils/log-retention';
 import * as cr from 'aws-cdk-lib/custom-resources';
 import * as fs from 'fs';
 import * as path from 'path';
-import { ALLOWED_MODEL_IDS } from '../utils/model-allowlist';
+import { ALLOWED_MODEL_IDS, MODEL_DEFAULT_PARTITION } from '../utils/model-allowlist';
 import { acknowledgeNag, acknowledgeNagOnResource } from '../utils/nag-ack';
 import {
   cdkCustomResourceSuppressions,
@@ -26,7 +26,7 @@ import type { CoreBuildContext } from './core-cdn';
 import { retainOnReplace } from '../utils/retain-on-replace';
 import { isDevDeployment } from '../utils/context';
 import { cognitoPlusEnabled, userPoolFeaturePlan } from '../utils/cognito-plus';
-import { grantWrites } from '../utils/table-write-grants';
+import { grantKeyScopedWrites } from '../utils/table-write-grants';
 
 /** The Cognito group of platform admins (docs/multi-workspace.md). */
 const PLATFORM_ADMIN_GROUP = 'platform-admins';
@@ -281,14 +281,16 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
   );
 
   // ============================================
-  // GLOBAL MODEL PIN (opt-in, for accounts that cannot use the newest models)
+  // THE DEPLOYMENT'S DEFAULT MODEL (opt-in, for accounts that cannot use the newest models)
   // ============================================
-  // `-c defaultModelId=<allowlisted id>` seeds settings.model_id, the legacy
-  // global override that outranks SURFACE_DEFAULTS in both resolvers
-  // (shared/model_config.py and lambda/stream/src/bedrock/model-override.ts).
-  // One attribute therefore repoints every AI surface without touching the
-  // built-in defaults, so deployments that CAN use the newer models are
-  // unaffected.
+  // `-c defaultModelId=<allowlisted id>` seeds SETTINGS#model_default, the
+  // deployment's default, which every resolver reads below the admins' picks
+  // and above SURFACE_DEFAULTS (shared/model_config.py,
+  // lambda/stream/src/bedrock/model-override.ts, the product-doc extractor).
+  // One row therefore repoints every AI surface nobody picked for, without
+  // touching the built-in defaults, so deployments that CAN use the newer models
+  // are unaffected; it is not the picks' row, so the picks can move into each
+  // workspace (docs/multi-workspace.md).
   //
   // Motivating case: Workshop Studio events sit behind a Private Marketplace
   // that refuses the model agreements for Sonnet 5 / Opus 5, and they are
@@ -310,10 +312,11 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
     const modelPinLambda = createInlineCustomResourceHandler(ctx, 'ModelPinLambda', {
       baseName: 'voc-model-pin',
       sourceFile: 'model_pin.py',
-      description: 'Seeds the global Bedrock model pin (create once, never reset)',
+      description: "Seeds the deployment's default Bedrock model (create once, never reset)",
     });
-    // One conditional UpdateItem on the pin row (model_pin.py): no read, no put, no delete.
-    grantWrites(aggregatesTable, modelPinLambda, ['UpdateItem']);
+    // One conditional UpdateItem on the deployment's default-model row (model_pin.py), in that partition only: no
+    // read, no put, no delete.
+    grantKeyScopedWrites(aggregatesTable, modelPinLambda, ['UpdateItem'], [MODEL_DEFAULT_PARTITION]);
 
     const modelPinProvider = new cr.Provider(stack, 'ModelPinProvider', {
       onEventHandler: modelPinLambda,

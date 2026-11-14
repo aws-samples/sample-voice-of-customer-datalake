@@ -39,6 +39,7 @@ test('touchedIds reads the leading id list in any case and separator, and ignore
 
 test('a section naming real tenets, or none, passes', () => {
   assert.deepEqual(problems('## Tenets\n\nTenets touched: 3, 7, D4'), [])
+  assert.deepEqual(problems('## Tenets\n\nTenets touched: D5, D8'), [])
   assert.deepEqual(problems('## Tenets\n\nTenets touched: none'), [])
   assert.deepEqual(problems('## Tenets\n\n**Tenets touched:** None — docs only'), [])
   assert.deepEqual(problems('## Tenets\n\nTenets touched: 7 (SnapStart opt-in, see #242)'), [])

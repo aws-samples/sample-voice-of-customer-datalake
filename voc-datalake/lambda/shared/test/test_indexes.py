@@ -21,12 +21,12 @@ ALL_INDEX_NAMES = frozenset(
     value for name, value in vars(indexes).items() if name.endswith('_INDEX')
 )
 
-# Stack indexes no Lambda queries, so shared.indexes declares no constant for them.
+# Stack indexes no Lambda names, so shared.indexes declares no constant for them.
 # Listed here so set equality still holds: an index added to the stack, or one of
-# these gaining a Python consumer, still has to be a deliberate edit.
-STACK_ONLY_INDEXES = frozenset({
-    'gsi1-by-status',  # voc-jobs table
-})
+# these gaining a Python consumer, still has to be a deliberate edit. (voc-jobs'
+# gsi1-by-status left this list in 6.14.00 for that release's repository layer and
+# came back in 7.00.00, when that layer was retired: no Lambda names it.)
+STACK_ONLY_INDEXES: frozenset[str] = frozenset({'gsi1-by-status'})
 
 
 

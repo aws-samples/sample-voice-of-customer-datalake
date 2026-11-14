@@ -210,13 +210,14 @@ class TestTokenViewShape:
             'revoked_at': None,
             'status': 'active',
             'can_run_agents': True,
+            'workspace_id': None,
         }
 
     def test_empty_row_reads_as_an_expired_read_token(self):
         assert gt.token_view({}, NOW) == {
             'token_id': None, 'name': '', 'scope': 'read', 'project_id': None,
             'created_at': None, 'expires_at': None, 'last_used_at': None, 'revoked_at': None,
-            'status': 'expired', 'can_run_agents': False,
+            'status': 'expired', 'can_run_agents': False, 'workspace_id': None,
         }
 
     @pytest.mark.parametrize('scope', ['admin', '', None, 7])
@@ -317,3 +318,22 @@ class TestAuditViewShowsExactlyFourFacts:
 
     def test_empty_project_id_is_none(self):
         assert gt.audit_view({'project_id': ''})['project_id'] is None
+
+
+
+class TestTheTokensWorkspace:
+    WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
+
+    def test_a_token_minted_in_a_workspace_names_it(self):
+        assert gt.token_workspace({gt.WORKSPACE_ATTRIBUTE: self.WS}) == self.WS
+        assert gt.token_view({gt.WORKSPACE_ATTRIBUTE: self.WS}, NOW)['workspace_id'] == self.WS
+
+    def test_no_attribute_is_the_deployment_s(self):
+        assert gt.token_workspace({}) is None
+        assert gt.token_workspace({gt.WORKSPACE_ATTRIBUTE: None}) is None
+
+    @pytest.mark.parametrize(('value', 'sent'), [('ws_bad', 'ws_bad'), (42, '42'), ('', gt.UNUSABLE_WORKSPACE),
+                                                 ('  ', gt.UNUSABLE_WORKSPACE), ('\n', gt.UNUSABLE_WORKSPACE),
+                                                 ('WS#ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8', 'WS#ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8')])
+    def test_a_damaged_one_fails_closed_never_deployment_wide(self, value, sent):
+        assert gt.token_workspace({gt.WORKSPACE_ATTRIBUTE: value}) == sent

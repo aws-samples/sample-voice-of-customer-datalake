@@ -154,6 +154,7 @@
     "reprocess": {
       "title": "重新处理现有反馈",
       "description": "更改类别后，对已存储的评论重新分类。评论会原地更新——不会删除任何内容。",
+      "workspaceDescription": "更改此工作区的类别或维度后，用它们重新推导其已存储的评论。只读取并原地更新此工作区的评论——不会删除任何内容，也不会影响其他工作区。",
       "modeLabel": "模式",
       "modes": {
         "processed": {
@@ -697,6 +698,7 @@
     "members": "已去标识化的工作区成员身份：{{rows, number}}",
     "workspaceItems": "工作区中已删除的评论：{{items, number}}",
     "emailReachesWorkspaces": "按电子邮件删除也会删除此人在每个工作区中的评论。其他字段仅作用于此部署自身的评论。",
+    "reachesThisWorkspace": "在此工作区内，删除只会删除此工作区的评价，按电子邮件删除也是如此。",
     "reviewFolders": "因可能包含已删除的行而保留的 S3 导入原件文件夹：{{folders, number}} 个。请检查：",
     "reviewFiles": "因同时包含未删除的行而保留的上传文件：{{files, number}} 个。请检查：",
     "status": {

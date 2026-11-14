@@ -120,9 +120,10 @@ describe('SourceErasurePanel', () => {
 
   it('sends what was typed as confirm with the legal basis, and shows the job progress', async () => {
     const region = await startDeletion(` ${BASIS} `, [running])
+    // The deployment's (no X-Workspace-Id): a workspace refuses a whole-source erasure.
     await waitFor(() => expect(fetchApi).toHaveBeenCalledWith('/settings/erasure', {
       method: 'POST', body: JSON.stringify({ field: 'source', value: SOURCE, confirm: SOURCE, legal_basis: BASIS }),
-    }))
+    }, 'deployment'))
     expect(await within(region).findByText('Deleting raw files. Reviews deleted: 40. Raw files deleted: 12.')).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
@@ -174,11 +175,11 @@ describe('SourceErasurePanel', () => {
     expect(await within(await panel()).findByText('No source has data yet.')).toBeInTheDocument()
   })
 
-  it('reads the jobs and the source list with one request', async () => {
+  it("reads the deployment's jobs and source list with one request", async () => {
     renderWithQueryClient(<SourceErasurePanel profiles={PROFILES} />)
     await within(await panel()).findByLabelText('Source')
-    const reads = fetchApi.mock.calls.filter((call) => call[0] === '/settings/erasure' && call[1] === undefined)
-    expect(reads).toHaveLength(1)
+    const reads = fetchApi.mock.calls.filter((call) => call[0] === '/settings/erasure' && call[1]?.method === 'GET')
+    expect(reads.map((call) => call[2])).toStrictEqual(['deployment'])
   })
 
   it('refreshes the feedback views once a job it saw running has ended, not before', async () => {

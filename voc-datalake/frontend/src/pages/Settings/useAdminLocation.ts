@@ -24,11 +24,11 @@ import type { AdminLocation, AdminSectionId, AdminTabId } from './adminTabs'
 const OWNED_PARAMS: readonly string[] = ['tab', 'section', 'board']
 
 /** `?<canonical>` (other params kept) when `tab` / `section` are not the canonical form of where they lead, else null. */
-function redirectFor(current: URLSearchParams, isAdmin: boolean): string | null {
+function redirectFor(current: URLSearchParams, isAdmin: boolean, isPlatformAdmin: boolean): string | null {
   const tab = current.get('tab')
   const section = current.get('section')
   if (tab === null) return null
-  const resolved = resolveAdminLocation(tab, section, isAdmin)
+  const resolved = resolveAdminLocation(tab, section, isAdmin, isPlatformAdmin)
   const canonical = new URLSearchParams(canonicalSearch(resolved))
   if (canonical.get('tab') === tab && canonical.get('section') === section) return null
   const board = current.get('board')
@@ -39,19 +39,19 @@ function redirectFor(current: URLSearchParams, isAdmin: boolean): string | null 
 /** The guard's `shouldBlock` for /admin: only leaving the page (a path change) can lose the brand draft. */
 export const isLeavingAdmin = (current: Location, next: Location): boolean => current.pathname !== next.pathname
 
-export function useAdminLocation(isAdmin: boolean) {
+export function useAdminLocation(isAdmin: boolean, isPlatformAdmin: boolean) {
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = searchParams.get('tab')
   const section = searchParams.get('section')
-  const location = resolveAdminLocation(tab, section, isAdmin)
-  const redirectTo = redirectFor(searchParams, isAdmin)
+  const location = resolveAdminLocation(tab, section, isAdmin, isPlatformAdmin)
+  const redirectTo = redirectFor(searchParams, isAdmin, isPlatformAdmin)
 
   /** Push `next` unless it is already the place in the URL (re-clicking the open tab adds no entry). */
   const go = (next: AdminLocation) => {
     const target = withOwnedParams(searchParams, OWNED_PARAMS, new URLSearchParams(canonicalSearch(next)))
     if (target.toString() !== searchParams.toString()) setSearchParams(target)
   }
-  const selectTab = (next: AdminTabId) => go({ tab: next, section: visibleSections(next, isAdmin)[0] ?? null })
+  const selectTab = (next: AdminTabId) => go({ tab: next, section: visibleSections(next, isAdmin, isPlatformAdmin)[0] ?? null })
   const selectSection = (next: AdminSectionId) => go({ tab: location.tab, section: next })
   return { location, selectTab, selectSection, redirectTo }
 }

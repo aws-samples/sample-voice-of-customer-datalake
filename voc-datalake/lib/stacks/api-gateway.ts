@@ -59,9 +59,9 @@ export const CORS_ALLOW_HEADERS = [
   'X-Requested-With',
   'X-Amz-Date',
   'X-Amz-Security-Token',
-  // The workspace a request acts in (docs/multi-workspace.md, "Request flow"; lambda/shared/workspace.py): the web
-  // app will send it on every call inside a workspace (it does not yet). Also in the Lambdas' own CORS answer (lambda/shared/api.py
-  // create_cors_config), pinned to this list by api-stack-cors-preflight.test.ts.
+  // The current workspace (docs/multi-workspace.md, Request flow): the web app sends it with every call in one. Also
+  // in the Lambdas' own CORS answer (lambda/shared/api.py create_cors_config), pinned to this list by
+  // api-stack-cors-preflight.test.ts.
   WORKSPACE_HEADER,
   ...MCP_TRANSPORT_HEADERS,
 ];

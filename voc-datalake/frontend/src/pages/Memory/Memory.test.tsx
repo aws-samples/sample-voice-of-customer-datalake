@@ -2,7 +2,7 @@
  * @fileoverview Memory page: tabs and curator gating, +1, forget through the
  * ConfirmModal, merge of a multi-selection, conflict resolution and imports.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithQueryClient } from '@test/query-client'
@@ -15,6 +15,7 @@ vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.f
 vi.mock('../../store/authStore', () => import('@test/fetchApiRoutes').then((m) => m.authStoreModule()))
 
 const { default: Memory } = await import('./Memory')
+const { setCurrentWorkspace } = await import('../../workspace/currentWorkspace')
 
 /** The page at `entry`, with the router's current `?search` in `data-testid="search"`. */
 function renderMemory(entry = '/memory') {
@@ -47,12 +48,45 @@ beforeEach(() => {
   adminFlag.isAdmin = true
 })
 
+/** Both curator tabs, Needs review and Imports, are shown. */
+async function expectCuratorTabs() {
+  expect(await screen.findByRole('tab', { name: /needs review/i })).toBeInTheDocument()
+  expect(screen.getByRole('tab', { name: /imports/i })).toBeInTheDocument()
+}
+
 describe('Memory page', () => {
   it('shows the curator tabs to an admin', async () => {
     route(listRoutes([]))
     renderMemory()
-    expect(await screen.findByRole('tab', { name: /needs review/i })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /imports/i })).toBeInTheDocument()
+    await expectCuratorTabs()
+  })
+
+  describe('inside a workspace', () => {
+    const WS = { id: 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8', slug: 'acme', name: 'Acme Outfitters' }
+    afterEach(() => setCurrentWorkspace(null))
+
+    it('lets its admin review and import (page imports work in a workspace since 7.16.00)', async () => {
+      adminFlag.isAdmin = false
+      setCurrentWorkspace({ ...WS, role: 'admin' })
+      route({ ...listRoutes([]), 'GET /me/workspaces/current': () => ({ workspace: { ...WS, role: 'admin' } }) })
+      renderMemory()
+      await expectCuratorTabs()
+    })
+
+    it('gives a deployment admin who is an editor there no curator tabs, and never asks for the queue', async () => {
+      adminFlag.isAdmin = true
+      setCurrentWorkspace({ ...WS, role: 'editor' })
+      const review = vi.fn(() => ({ items: [] }))
+      route({
+        'GET /memory': () => ({ items: [memory('m1', 'Customers love fast delivery')] }),
+        'GET /memory/review': review,
+        'GET /me/workspaces/current': () => ({ workspace: { ...WS, role: 'editor' } }),
+      })
+      renderMemory()
+      expect(await screen.findByText('Customers love fast delivery')).toBeInTheDocument()
+      expect(screen.queryByRole('tab', { name: /needs review/i })).not.toBeInTheDocument()
+      expect(review).not.toHaveBeenCalled()
+    })
   })
 
   it('hides the curator tabs when the review route refuses a non-admin', async () => {

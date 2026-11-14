@@ -24,6 +24,7 @@ import type { RowCompositionActions } from './RowCompositionPanel'
 import type { LinkedForm } from './formLinkUtils'
 import type { PrioritizationScore, ProjectDocument } from '../../api/types'
 import { formatDate } from '../../utils/dateUtils'
+import { pageHref } from '../../workspace/workspacePath'
 import type { TFunction } from 'i18next'
 import type { ReactElement } from 'react'
 import { TeamScoreSummary, DisagreementBadge, TeamScorePanel } from './RowTeamScore'
@@ -167,7 +168,7 @@ function RowDocument({
         </div>
         {/* The project, not the document: the document route on this app is the
             project page, and that is where the full text lives. */}
-        <a href={`/projects/${projectId}`} className="text-sm link flex items-center gap-1 flex-shrink-0">
+        <a href={pageHref(`/projects/${projectId}`)} className="text-sm link flex items-center gap-1 flex-shrink-0">
           <span className="hidden sm:inline">{t('preview.viewFull')}</span>
           <span className="sm:hidden">{t('preview.viewMobile')}</span>
           <ExternalLink size={14} />

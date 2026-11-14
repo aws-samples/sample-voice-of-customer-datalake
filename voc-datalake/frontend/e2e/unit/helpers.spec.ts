@@ -90,6 +90,9 @@ test('saved sessions keep the login and drop the persisted UI state', () => {
         { name: 'voc-config', value: '{}' },
         { name: 'voc-assistant-ui', value: '{"state":{"open":true}}' },
         { name: 'voc-manual-import', value: '{}' },
+        // A workspace's own records (src/workspace/workspaceStorage.ts) go too.
+        { name: 'voc-assistant-ui:w/acme', value: '{"state":{"open":true}}' },
+        { name: 'voc-manual-import:w/juniper', value: '{}' },
       ],
     }],
   }

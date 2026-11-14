@@ -714,7 +714,8 @@ class TestRunResearch:
             'date_basis': 'review',
             'created_at': NOW,
         }
-        research_env['put'].assert_called_once_with(research_env['table'], 'p1', item, 'document_count')
+        research_env['put'].assert_called_once_with(research_env['table'], 'p1', item, 'document_count',
+                                                    workspace=None)
         assert result == {'success': True, 'document': item}
         assert log.info.call_args_list[2] == call(
             f'Saving research document, content size: {len(content)} chars, feedback items: 2',

@@ -154,6 +154,7 @@
     "reprocess": {
       "title": "기존 피드백 재처리",
       "description": "카테고리를 변경한 후 이미 저장된 리뷰를 다시 분류합니다. 리뷰는 그대로 업데이트되며 아무것도 삭제되지 않습니다.",
+      "workspaceDescription": "이 워크스페이스의 카테고리나 차원을 변경한 후 저장된 리뷰를 그에 맞게 다시 도출합니다. 이 워크스페이스의 리뷰만 읽고 그대로 업데이트하며, 아무것도 삭제되지 않고 다른 워크스페이스에는 영향을 주지 않습니다.",
       "modeLabel": "모드",
       "modes": {
         "processed": {
@@ -697,6 +698,7 @@
     "members": "비식별 처리된 워크스페이스 멤버십: {{rows, number}}",
     "workspaceItems": "워크스페이스에서 삭제된 리뷰: {{items, number}}",
     "emailReachesWorkspaces": "이메일로 삭제하면 모든 워크스페이스에 있는 이 사람의 리뷰도 삭제됩니다. 다른 항목은 이 배포 자체의 리뷰에만 적용됩니다.",
+    "reachesThisWorkspace": "이 워크스페이스 안에서는 삭제가 이 워크스페이스의 리뷰만 지웁니다. 이메일로 삭제하는 경우도 마찬가지입니다.",
     "reviewFolders": "삭제된 행이 들어 있을 수 있어 보관한 S3 가져오기 원본 폴더: {{folders, number}}개. 검토하세요:",
     "reviewFiles": "삭제되지 않은 행도 포함하고 있어 보관한 업로드 파일: {{files, number}}개. 검토하세요:",
     "status": {

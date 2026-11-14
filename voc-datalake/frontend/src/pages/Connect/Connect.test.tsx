@@ -26,8 +26,15 @@ vi.mock('../../api/connectApi', () => ({
   },
 }))
 vi.mock('../../api/projectsApi', () => ({ projectsApi: { getProjects: () => getProjects() } }))
+const listWorkspaces = vi.fn<() => unknown>()
+vi.mock('../../api/workspacesApi', () => ({
+  myWorkspacesKey: () => ['my-workspaces'],
+  workspacesApi: { list: () => listWorkspaces() },
+}))
 
 const { default: Connect } = await import('./Connect')
+const { setCurrentWorkspace } = await import('../../workspace/currentWorkspace')
+const { ApiError } = await import('../../lib/errors')
 
 const ACTIVE = {
   token_id: 'tok_0123456789abcdef', name: 'Kiro laptop', scope: 'write', project_id: undefined,
@@ -49,7 +56,9 @@ function renderConnect(path = '/connect') {
 }
 
 beforeEach(() => {
-  for (const mock of [listTokens, mintToken, revokeToken, tokenDetail, getProjects]) mock.mockReset()
+  for (const mock of [listTokens, mintToken, revokeToken, tokenDetail, getProjects, listWorkspaces]) mock.mockReset()
+  listWorkspaces.mockResolvedValue([])
+  setCurrentWorkspace(null)
   getProjects.mockResolvedValue({ projects: [{ project_id: 'proj_1', name: 'Checkout revamp' }] })
   listTokens.mockResolvedValue(listing())
   useConfigStore.setState((s) => ({ config: { ...s.config, apiEndpoint: 'https://api.example.com/v1/' } }))
@@ -107,6 +116,31 @@ describe('Connect', () => {
     expect(mintToken).toHaveBeenCalledWith({ name: 'Copilot', scope: 'read', expires_in_days: 30 })
   })
 
+  it('says a new token acts across the whole deployment outside a workspace', async () => {
+    await renderMintForm()
+
+    expect(screen.getByText('The new token will act across the whole deployment, outside any workspace.')).toBeInTheDocument()
+  })
+
+  it('names the workspace a new token will act in', async () => {
+    setCurrentWorkspace({ id: 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8', slug: 'acme', name: 'Acme Outfitters', role: 'editor' })
+    await renderMintForm()
+
+    expect(screen.getByText('The new token will act in the Acme Outfitters workspace only.')).toBeInTheDocument()
+  })
+
+  it('tells a non-member to add themselves first on the 403, not the generic failure', async () => {
+    setCurrentWorkspace({ id: 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8', slug: 'acme', name: 'Acme Outfitters', role: 'admin' })
+    const { user, create } = await renderMintForm()
+    mintToken.mockRejectedValue(new ApiError(403, 'Only a member of an existing workspace can create a token'))
+
+    await user.type(screen.getByLabelText('Name'), 'Copilot')
+    await user.click(create)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/add yourself as a member first/)
+    expect(screen.queryByTestId('connect-new-token')).not.toBeInTheDocument()
+  })
+
   it('shows the minted token once', async () => {
     const { user, create } = await renderMintForm()
 
@@ -149,6 +183,27 @@ describe('Connect', () => {
 
     expect(await screen.findByRole('button', { name: 'Revoke token “Kiro laptop”' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Revoke token “CI runner”' })).toBeInTheDocument()
+  })
+
+  it('shows the workspace each token acts in', async () => {
+    listWorkspaces.mockResolvedValue([{ id: 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8', slug: 'acme', name: 'Acme Outfitters', role: 'editor' }])
+    listTokens.mockResolvedValue(listing([
+      { ...ACTIVE, workspace_id: 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8' },
+      { ...ACTIVE, token_id: 'tok_2222222222222222', name: 'Left team', workspace_id: 'ws_7ZZZZZZZZZZZZZZZZZZZZZZZZZ' },
+      { ...ACTIVE, token_id: 'tok_1111111111111111', name: 'CI runner' },
+    ]))
+    renderConnect()
+
+    expect(await screen.findByText('Acme Outfitters')).toBeInTheDocument()
+    expect(screen.getByText('ws_7ZZZZZZZZZZZZZZZZZZZZZZZZZ')).toBeInTheDocument()
+    expect(screen.getByText('None (deployment-wide)')).toBeInTheDocument()
+  })
+
+  it('asks for no workspaces when no token names one', async () => {
+    renderConnect()
+
+    expect(await screen.findByText('None (deployment-wide)')).toBeInTheDocument()
+    expect(listWorkspaces).not.toHaveBeenCalled()
   })
 
   it('offers agent runs in the write hint only to an admin', async () => {

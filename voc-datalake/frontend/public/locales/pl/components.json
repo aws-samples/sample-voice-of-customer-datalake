@@ -160,6 +160,7 @@
     "reprocess": {
       "title": "Ponownie przetwórz istniejące opinie",
       "description": "Po zmianie kategorii ponownie skategoryzuj opinie już zapisane w systemie. Opinie są aktualizowane na miejscu — nic nie zostanie usunięte.",
+      "workspaceDescription": "Po zmianie kategorii lub wymiarów tego obszaru roboczego ponownie wyprowadź nimi jego zapisane opinie. Odczytywane i aktualizowane na miejscu są tylko opinie tego obszaru roboczego — nic nie zostanie usunięte, a inne obszary robocze pozostaną nietknięte.",
       "modeLabel": "Tryb",
       "modes": {
         "processed": {
@@ -743,6 +744,7 @@
     "members": "Zanonimizowane członkostwa w przestrzeniach roboczych: {{rows, number}}",
     "workspaceItems": "Usunięte opinie w przestrzeniach roboczych: {{items, number}}",
     "emailReachesWorkspaces": "Usunięcie według adresu e-mail usuwa też opinie tej osoby w każdej przestrzeni roboczej. Pozostałe pola obejmują tylko własne opinie tego wdrożenia.",
+    "reachesThisWorkspace": "W tym obszarze roboczym usunięcie obejmuje tylko opinie tego obszaru roboczego, także usunięcie według adresu e-mail.",
     "reviewFolders": "Zachowane foldery oryginałów importu S3, które mogą zawierać usunięte wiersze: {{folders, number}}. Sprawdź je:",
     "reviewFiles": "Przesłane pliki zachowane, bo zawierają też wiersze, których nie usunięto: {{files, number}}. Sprawdź je:",
     "status": {

@@ -265,7 +265,7 @@ function useScraperStatus(scraperId: string) {
 }
 
 export default function ScraperCard({
-  scraper, radarBrandLabel, isAdmin, onEdit, onDelete, onRun,
+  scraper, radarBrandLabel, isAdmin, onEdit, onDelete, onRun, runRefusal,
 }: {
   readonly scraper: ScraperConfig
   /** The label of the Radar brand `scraper.radar_brand` names (its reviews go to Radar), else undefined. */
@@ -275,10 +275,15 @@ export default function ScraperCard({
   readonly onEdit: () => void
   readonly onDelete: () => void
   readonly onRun: () => void
+  /** Why the server refused this card's last Run, in words (a workspace that has not enabled the plugin), else
+   *  undefined: the card then shows it instead of a run's progress. */
+  readonly runRefusal?: string
 }) {
-  const {
-    showStatus, isRunning, lastRunInfo, handleRun, handleComplete,
-  } = useScraperStatus(scraper.id)
+  const status = useScraperStatus(scraper.id)
+  const refused = runRefusal !== undefined
+  const showStatus = status.showStatus && !refused
+  const isRunning = status.isRunning && !refused
+  const { lastRunInfo, handleRun, handleComplete } = status
   const showLastRunSummary = lastRunInfo != null && lastRunInfo.status !== 'never_run' && !showStatus
 
   return (
@@ -289,6 +294,7 @@ export default function ScraperCard({
       <ScraperCardStats scraper={scraper} lastRunInfo={lastRunInfo} />
       {showLastRunSummary ? <LastRunSummary lastRunInfo={lastRunInfo} /> : null}
       {showStatus ? <ScraperRunStatus scraperId={scraper.id} onComplete={handleComplete} /> : null}
+      {refused ? <p role="alert" className="text-sm text-danger mb-3">{runRefusal}</p> : null}
       <ScraperCardActions scraper={scraper} isRunning={isRunning} isAdmin={isAdmin} onRun={() => handleRun(onRun)} onEdit={onEdit} onDelete={onDelete} />
     </div>
   )

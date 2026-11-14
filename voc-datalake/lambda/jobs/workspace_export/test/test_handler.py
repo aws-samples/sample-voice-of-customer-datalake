@@ -29,8 +29,11 @@ from jobs.workspace_export.test.conftest import (
     seed,
     seed_memory,
 )
+from shared import export_jobs
+from shared.ws_repo import WorkspaceScope
 
 ZIP_KEY = f'ws/{WS}/exports/{EXPORT_ID}/workspace-export.zip'
+SCOPE = WorkspaceScope(WS)
 FEEDBACK_COUNT = FEEDBACK_DAYS * FEEDBACK_PER_DAY
 
 
@@ -128,6 +131,13 @@ def test_a_one_invocation_export_holds_every_entity_and_its_manifest(world):
     assert manifest['not_per_workspace']['projects_documents'] == {
         'status': 'not_per_workspace', 'phase': 3, 'count': 0}
     assert set(manifest['not_exported']) >= {'metrics', 'runs', 'logs', 'watermarks', 'idempotency', 'user_rows'}
+    # The members' conversations are theirs: counted, never exported (7.24.00), so excluded by design, never "not per
+    # workspace". The company memory is exported since 7.22.00, so memory is in neither list.
+    assert 'conversations' in manifest['excluded']
+    assert 'conversations' not in manifest['not_exported']
+    assert manifest['conversations'] | {'note': None} == {'counted': True, 'people': 0, 'note': None}
+    assert {'memory', 'conversations'}.isdisjoint(manifest['not_per_workspace'])
+    assert 'memory' not in manifest['not_exported']
     _assert_only_this_workspaces_exports(world)
 
 
@@ -362,6 +372,126 @@ def test_too_many_hand_overs_fail_the_job(world):
     assert _row(world)['error'] == 'Stopped after too many hand-overs'
 
 
+@pytest.mark.parametrize(('broken', 'message'), [
+    ({'phase': 'a phase of a later release'}, 'not an export phase'),
+    ({'phase': 99}, 'not an export phase'),
+    ({'part': 0}, 'part is not a part number'),
+    ({'part': '2'}, 'part is not a count'),
+    ({'counts': ['feedback']}, 'counts is not a mapping'),
+    ({'counts': {'feedback': -1}}, 'counts is not a count'),
+    ({'files': {'feedback': 'feedback-0001.jsonl'}}, 'files is not a list'),
+    ({'files': {'feedback': [3]}}, 'files is not a list of names'),
+    ({'memory_counts': ['cursors']}, 'memory_counts is not a mapping'),
+    ({'memory_counts': {'cursors': 3}}, 'memory_counts is not a mapping'),
+    ({'cd_generations': 0}, 'cd_generations is not a list'),
+    ({'cd_generations': ['1']}, 'cd_generations is not a count'),
+    ({'tail_generation': '1'}, 'tail_generation is not a count'),
+    ({'zip': 'not a zip state'}, 'zip is not a mapping'),
+    ({'zip': {'offset': -1, 'entries': 0}}, 'not a zip state'),
+    ({'objects': ['after']}, 'objects is not a mapping'),
+    ({'objects': {'copied_bytes': {'n': 1}}}, 'copied_bytes is not a count'),
+    ({'objects': {'skipped_count': -2}}, 'skipped_count is not a count'),
+    ({'objects': {'rates': {'deflate': [1024, None]}}}, 'rates is not a measurement'),
+    ({'cursor': 'a cursor'}, 'cursor is not a mapping'),
+    ({'memory_exported': 'yes'}, 'memory_exported is not a flag'),
+    ({'conversations_counted': 1}, 'conversations_counted is not a flag'),
+    ({'conversation_count': ['not', 'a', 'count']}, 'conversation_count is not a count state'),
+    ({'conversation_count': {'subs': [None]}}, 'subs is not a page of owners'),
+], ids=lambda case: json.dumps(case)[:40])
+def test_a_hand_over_whose_run_state_cannot_be_read_fails_the_job_cleanly(world, broken, message):
+    """A run state whose checked fields (handler.py ``RunState.from_event``) have the wrong shape fails the job at
+    once: the row ``failed``, the upload the state names aborted, the lock released and the starter notified; never a
+    row left running until its lock goes stale."""
+    seed(world)
+    assert handler.handle_event(queue(world), Budget(6))['status'] == 'continued'
+    [(_, following)] = [call.args for call in world.invoke.call_args_list]
+    with pytest.raises(ValueError, match=message):
+        handler.RunState.from_event({'run': {**following['run'], **broken}}, SCOPE)
+    upload_id = following['run']['upload_id']
+    world.notify.reset_mock()
+    result = handler.handle_event({**following, 'run': {**following['run'], **broken}}, Budget())
+    assert result == {'status': 'failed', 'export_id': EXPORT_ID}
+    row = _row(world)
+    assert (row['status'], row['error']) == ('failed', handler.MALFORMED_RUN)
+    assert world.s3.aborted == [upload_id]
+    assert 'released_at' in _lock(world)
+    world.notify.assert_called_once_with('sub-ada', EXPORT_ID, 'failed', job_type='workspace_export')
+
+
+def test_an_unreadable_run_state_without_a_known_upload_fails_without_an_abort(world):
+    seed(world)
+    result = handler.handle_event(
+        {**queue(world), 'run': {'generation': 0, 'phase': {'not': 'a phase'}, 'upload_id': 7}}, Budget())
+    assert result['status'] == 'failed'
+    assert _row(world)['error'] == handler.MALFORMED_RUN
+    assert world.s3.aborted == []
+    assert 'released_at' in _lock(world)
+
+
+@pytest.mark.parametrize('generation', [0, 2, 'one', None], ids=['an-earlier-one', 'a-later-one', 'unreadable',
+                                                                 'absent'])
+def test_an_unreadable_run_state_for_another_generation_never_fails_the_running_export(world, generation):
+    """A late or repeated event, or one with no readable generation, while the row runs at generation 0 waiting for
+    1: nothing is written, nothing aborted, the lock kept; the export goes on."""
+    seed(world)
+    assert handler.handle_event(queue(world), Budget(6))['status'] == 'continued'
+    [(_, following)] = [call.args for call in world.invoke.call_args_list]
+    lock = _lock(world)
+    carried = {**following['run'], 'phase': 'a phase of a later release', 'generation': generation}
+    if generation is None:
+        del carried['generation']
+    broken = {**following, 'run': carried}
+    assert handler.handle_event(broken, Budget())['status'] == 'not_claimed'
+    assert _row(world)['status'] == 'running'
+    assert world.s3.aborted == []
+    assert _lock(world) == lock
+    assert _run(world, following)[-1]['status'] == 'completed'
+
+
+@pytest.mark.parametrize('carried', [{}, {'generation': None}, {'generation': True}, {'generation': -1},
+                                     {'generation': '1'}])
+def test_a_carried_run_must_name_its_generation(carried):
+    """No silent fallback to generation 0: a carried run without a generation is malformed."""
+    with pytest.raises(ValueError, match='generation'):
+        handler.RunState.from_event({'run': {'phase': 'objects', **carried}}, SCOPE)
+
+
+def test_a_claim_that_lands_between_the_check_and_the_failure_keeps_its_run(world):
+    """The malformed event's check reads the row waiting for generation 1; a real claim of generation 1 lands right
+    after it (another delivery). The failure's write carries the same condition (shared/export_jobs.py
+    ``fail_awaited``), so it writes nothing: the row stays running, the upload is not aborted, the lock is kept."""
+    seed(world)
+    assert handler.handle_event(queue(world), Budget(6))['status'] == 'continued'
+    [(_, following)] = [call.args for call in world.invoke.call_args_list]
+    lock = _lock(world)
+    awaits = export_jobs.awaits_generation
+
+    def then_claimed(row: Any, generation: object) -> bool:
+        waiting = awaits(row, generation)
+        world.aggregates.update_item(Key={'pk': f'WS#{WS}#JOB#export', 'sk': EXPORT_ID},
+                                     UpdateExpression='SET #g = :g', ExpressionAttributeNames={'#g': 'generation'},
+                                     ExpressionAttributeValues={':g': 1})
+        return waiting
+
+    broken = {**following, 'run': {**following['run'], 'phase': 'a phase of a later release'}}
+    with patch.object(export_jobs, 'awaits_generation', then_claimed):
+        assert handler.handle_event(broken, Budget())['status'] == 'not_claimed'
+    row = _row(world)
+    assert (row['status'], row['generation']) == ('running', 1)
+    assert 'error' not in row
+    assert world.s3.aborted == []
+    assert _lock(world) == lock
+    world.notify.assert_not_called()
+
+
+def test_an_unreadable_run_state_of_a_job_that_is_not_here_does_nothing(world):
+    seed(world)
+    event = {'export_id': 'ex_01JC3Q8ZK6V7W9X2Y4A5B6C7ZZ', 'workspace_id': WS, 'run': {'phase': 'later'}}
+    assert handler.handle_event(event, Budget())['status'] == 'not_claimed'
+    assert _row(world)['status'] == 'queued'
+    assert world.s3.calls == []
+
+
 @pytest.mark.parametrize('event', [
     {'export_id': EXPORT_ID},
     {'export_id': EXPORT_ID, 'workspace_id': 'ws_bogus'},
@@ -501,6 +631,24 @@ def test_an_old_numeric_checkpoint_resumes_by_the_4b_order(world, old, written):
     assert entities_written == written
     assert ('objects/raw/a.json' in files) is (old <= 9)
     assert not any(name.startswith('feedback/') for name in files)  # never back to an earlier phase
+    # Past the memory entities, the manifest says the memory is not in this export; else it lists it as exported.
+    manifest = json.loads(files['manifest.json'])
+    skipped = not written
+    assert ('memory' in manifest['not_exported']) is skipped
+    assert (manifest['memory']['note'] == entities.MEMORY_NOT_RUN) is skipped
+    # Only 4b's completion is past the conversations' count (7.24.00): there the manifest says they were not counted.
+    assert manifest['conversations']['counted'] is (old != 10)
+
+
+def test_a_run_past_the_memory_entities_keeps_saying_so_across_hand_overs(world):
+    """The 4b checkpoint is read once; the hand-overs after it carry ``memory_exported`` False on."""
+    seed(world)
+    world.s3.seed(f'ws/{WS}/raw/a.json', b'{}', 'application/json')
+    assert handler.handle_event(_checkpointed(world, 9), Budget(0))['status'] == 'continued'
+    [(_, following)] = [call.args for call in world.invoke.call_args_list]
+    assert following['run']['memory_exported'] is False
+    assert handler.RunState.from_event(following, SCOPE).memory_exported is False
+    assert handler.RunState.from_event({'run': {'generation': 1, 'phase': 'objects'}}, SCOPE).memory_exported is True
 
 
 def test_an_audit_rows_email_hash_is_never_exported(world):

@@ -39,12 +39,14 @@ from boto3.dynamodb.conditions import Key
 from shared import memory_policy as policy
 from shared import memory_store as store
 from shared.aws import get_dynamodb_resource, get_sqs_client
-from shared.conversations import ASSISTANT_KIND, CONVERSATION_SK_PREFIX
+from shared.conversations import ASSISTANT_KIND, CONVERSATION_SK_PREFIX, USER_PARTITION_PREFIX
 from shared.indexes import CONVERSATIONS_BY_KIND_INDEX
 from shared.invocation_cost import instrumented_handler
 from shared.logging import logger, metrics
 from shared.timestamps import now_iso
 from shared.warm_init import warm_at_init
+from shared.workspace import is_active
+from shared.ws_repo import WorkspaceScope, partition_scope
 
 if TYPE_CHECKING:
     from mypy_boto3_sqs.type_defs import SendMessageBatchRequestEntryTypeDef
@@ -52,13 +54,14 @@ if TYPE_CHECKING:
 CONVERSATIONS_TABLE = os.environ.get('CONVERSATIONS_TABLE', '')
 # The CDK names the variable MEMORY_EXTRACT_QUEUE_URL (lib/stacks/memory-workers.ts).
 MEMORY_QUEUE_URL = os.environ.get('MEMORY_EXTRACT_QUEUE_URL', '')
+# voc-workspaces: whether a workspace whose sessions are idle is still active (shared/workspace.py ``is_active``).
+WORKSPACES_TABLE = os.environ.get('WORKSPACES_TABLE', '')
 
 IDLE_MINUTES: Final = 30
 LOOKBACK_DAYS: Final = 7
 REENQUEUE_AFTER_MINUTES: Final = 120
 SAFETY_MARGIN_MS: Final = 20_000
 SQS_BATCH: Final = 10
-USER_PK_PREFIX: Final = 'USER#'
 DIRECT_KINDS: Final = ('agent_run', 'project_chat')
 # SQS caps a message at 256 KiB; 60k characters of UTF-8 stays under it even
 # when every character takes three bytes, with room for the envelope.
@@ -66,8 +69,15 @@ MAX_DIRECT_TEXT_CHARS: Final = 60_000
 MAX_REF_CHARS: Final = 128
 
 
+def _table(name: str):
+    """The table ``name`` names, or None when the stack set no name (the caller says what is not configured)."""
+    if not name:
+        return None
+    return get_dynamodb_resource().Table(name)
+
+
 def get_conversations_table():
-    return get_dynamodb_resource().Table(CONVERSATIONS_TABLE) if CONVERSATIONS_TABLE else None
+    return _table(CONVERSATIONS_TABLE)
 
 
 # ── Schedule path ────────────────────────────────────────────────────────────
@@ -102,21 +112,40 @@ def idle_sessions(table, now: datetime, time_left_ms) -> list[dict]:
         kwargs['ExclusiveStartKey'] = last
 
 
+def _owner(pk: str) -> tuple[WorkspaceScope | None, str] | None:
+    """``(workspace, owner_sub)`` of a conversation partition: a person's own (``USER#{sub}``), or theirs inside a
+    workspace (``WS#{ws}#USER#{sub}``, shared/conversations.py); None for anything else (a malformed workspace key
+    included: it is never mined as the deployment's)."""
+    if pk.startswith(USER_PARTITION_PREFIX):
+        return None, pk[len(USER_PARTITION_PREFIX):]
+    try:
+        workspace = partition_scope(pk)
+    except ValueError:
+        return None
+    if workspace is None:
+        return None
+    rest = pk[len(workspace.prefix):]
+    return (workspace, rest[len(USER_PARTITION_PREFIX):]) if rest.startswith(USER_PARTITION_PREFIX) else None
+
+
 def _session_from_row(row: Mapping[str, Any]) -> dict | None:
     pk, sk = row.get('pk'), row.get('sk')
-    if not (isinstance(pk, str) and isinstance(sk, str)
-            and pk.startswith(USER_PK_PREFIX) and sk.startswith(CONVERSATION_SK_PREFIX)):
+    if not (isinstance(pk, str) and isinstance(sk, str) and sk.startswith(CONVERSATION_SK_PREFIX)):
+        return None
+    owner = _owner(pk)
+    if owner is None or not owner[1]:
         return None
     try:
         count = int(row.get('message_count') or 0)
     except (TypeError, ValueError):
         count = 0
-    return {
-        'owner_sub': pk[len(USER_PK_PREFIX):],
+    session = {
+        'owner_sub': owner[1],
         'session_id': sk[len(CONVERSATION_SK_PREFIX):],
         'message_count': count,
         'updated_at': str(row.get('updated_at') or ''),
     }
+    return session if owner[0] is None else {**session, 'workspace': owner[0]}
 
 
 def needs_extraction(session: Mapping[str, Any], cursor: Mapping[str, Any] | None, now: datetime) -> bool:
@@ -139,6 +168,55 @@ def needs_extraction(session: Mapping[str, Any], cursor: Mapping[str, Any] | Non
     return not in_flight or now - enqueued > timedelta(minutes=REENQUEUE_AFTER_MINUTES)
 
 
+def _cursor_id(session: Mapping[str, Any]) -> tuple[str | None, str]:
+    """A session's cursor, by its workspace and id (one session id can be in two workspaces)."""
+    workspace = session.get('workspace')
+    return (None if workspace is None else workspace.ws, str(session['session_id']))
+
+
+def _cursors(memory_table, sessions: list[dict]) -> dict[tuple[str | None, str], dict]:
+    """Every session's cursor: the deployment's in one batch read, each workspace's in its own partition."""
+    by_workspace: dict[str | None, tuple[WorkspaceScope | None, list[str]]] = {}
+    for session in sessions:
+        workspace = session.get('workspace')
+        key = None if workspace is None else workspace.ws
+        by_workspace.setdefault(key, (workspace, []))[1].append(str(session['session_id']))
+    found: dict[tuple[str | None, str], dict] = {}
+    for key, (workspace, ids) in by_workspace.items():
+        for session_id, cursor in store.get_cursors(memory_table, ids, **store.workspace_kwargs(workspace)).items():
+            found[(key, session_id)] = cursor
+    return found
+
+
+def _in_active_workspaces(sessions: list[dict]) -> list[dict]:
+    """The sessions to consider: the deployment's, and a workspace's only while it is active (one strongly consistent
+    read per workspace), so a workspace being deleted gets no cursor and no message again (its rows are being swept).
+    A workspace whose read fails is left for the next run (logged and counted): it never stops the deployment's scan
+    or another workspace's."""
+    workspaces = {session['workspace'].ws for session in sessions if session.get('workspace') is not None}
+    if not workspaces:
+        return sessions
+    table = get_workspaces_table()
+    active = set() if table is None else {ws for ws in workspaces if _active(table, ws)}
+    if table is None:
+        logger.error('WORKSPACES_TABLE is not configured; workspace sessions are left for a later run')
+    if left := len(workspaces) - len(active):
+        metrics.add_metric(name='MemoryScanWorkspacesSkipped', unit=MetricUnit.Count, value=left)
+    return [s for s in sessions if s.get('workspace') is None or s['workspace'].ws in active]
+
+
+def get_workspaces_table():
+    return _table(WORKSPACES_TABLE)
+
+
+def _active(table, ws: str) -> bool:
+    try:
+        return is_active(table, ws)
+    except Exception:  # noqa: BLE001 - one workspace's read fault waits for the next run, see _in_active_workspaces
+        logger.warning('A workspace could not be read; its sessions are left for the next run', extra={'workspace_id': ws})
+        return False
+
+
 def _send_batch(messages: list[dict]) -> set[int]:
     """Send up to 10 messages; returns the indexes SQS accepted."""
     entries: list[SendMessageBatchRequestEntryTypeDef] = [
@@ -156,18 +234,19 @@ def scan_and_enqueue(now: datetime, time_left_ms) -> dict[str, int]:
     conversations, memory_table = get_conversations_table(), store.get_memory_table()
     if conversations is None or memory_table is None or not MEMORY_QUEUE_URL:
         raise RuntimeError('memory scanner is not configured')
-    sessions = idle_sessions(conversations, now, time_left_ms)
-    cursors = store.get_cursors(memory_table, [s['session_id'] for s in sessions])
-    due = [s for s in sessions if needs_extraction(s, cursors.get(s['session_id']), now)]
+    sessions = _in_active_workspaces(idle_sessions(conversations, now, time_left_ms))
+    cursors = _cursors(memory_table, sessions)
+    due = [s for s in sessions if needs_extraction(s, cursors.get(_cursor_id(s)), now)]
     enqueued = 0
     for start in range(0, len(due), SQS_BATCH):
         batch = due[start:start + SQS_BATCH]
         accepted = _send_batch(
-            [{'kind': 'session', 'session_id': s['session_id'], 'owner_sub': s['owner_sub']} for s in batch])
+            [store.session_message(s['session_id'], s['owner_sub'], s.get('workspace')) for s in batch])
         for index in sorted(accepted):
             session = batch[index]
             store.save_cursor(memory_table, session['session_id'],
-                              {'owner_sub': session['owner_sub'], 'enqueued_at': now_iso(now)}, now=now)
+                              {'owner_sub': session['owner_sub'], 'enqueued_at': now_iso(now)}, now=now,
+                              **store.workspace_kwargs(session.get('workspace')))
             enqueued += 1
     if enqueued:
         metrics.add_metric(name='MemorySessionsEnqueued', unit=MetricUnit.Count, value=enqueued)

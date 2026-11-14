@@ -14,7 +14,8 @@ import type { VocCoreStack } from '../stacks/core-stack';
 import type { VocIngestionStack } from '../stacks/ingestion-stack';
 import type { VocProcessingStack } from '../stacks/processing-stack-consolidated';
 import {
-  WORKSPACE_EXPORTS_PREFIX, WORKSPACE_OBJECTS_PREFIX, WORKSPACE_RAW_LAYER_PREFIX, WORKSPACE_SILVER_HISTORY_PREFIX,
+  WORKSPACE_EXPORTS_PREFIX, WORKSPACE_MEMORY_IMPORTS_PREFIX, WORKSPACE_OBJECTS_PREFIX, WORKSPACE_RAW_LAYER_PREFIX,
+  WORKSPACE_SILVER_HISTORY_PREFIX,
 } from '../stacks/core-buckets';
 import { acknowledgeNag } from './nag-ack';
 import {
@@ -44,9 +45,11 @@ export function acknowledgeStackFindings({ core, ingestion, processing, api }: C
     // silver/*: the processor and the reprocess worker keep an item's previous version (write-once Put), and
     // voc-retention deletes those versions with the item (lambda/shared/silver_provenance.py). ws/{one id}/raw/* and
     // ws/{one id}/silver/*: the processor's write-once Puts for a workspace's message (docs/multi-workspace.md).
+    // ws/{one id}/memory-imports/*: the memory extractor reads a workspace's imported page.
     ...s3ObjectSuppressions([
       raw.arnForObjects('raw/*'), raw.arnForObjects('silver/*'),
       raw.arnForObjects(`${WORKSPACE_RAW_LAYER_PREFIX}*`), raw.arnForObjects(`${WORKSPACE_SILVER_HISTORY_PREFIX}*`),
+      raw.arnForObjects(`${WORKSPACE_MEMORY_IMPORTS_PREFIX}*`),
       // ws/{one id}/exports/*: a workspace's export, written by voc-workspace-export, and deleted with every version
       // by voc-retention when an erasure reaches that workspace (a derived copy, TENETS.md D5).
       raw.arnForObjects(`${WORKSPACE_EXPORTS_PREFIX}*`),
@@ -70,6 +73,8 @@ export function acknowledgeStackFindings({ core, ingestion, processing, api }: C
       // (plugins/_shared/base_webhook.py), as raw/github_issues/* below for the deployment's.
       raw.arnForObjects(`${WORKSPACE_RAW_LAYER_PREFIX}feedback_form/*`),
       raw.arnForObjects(`${WORKSPACE_RAW_LAYER_PREFIX}github_issues/*`),
+      // ws/{one id}/memory-imports/*: the memory API keeps a workspace's imported page (and the extractor reads it).
+      raw.arnForObjects(`${WORKSPACE_MEMORY_IMPORTS_PREFIX}*`),
       // ws/{one id}/exports/*: a workspace's export, signed for download by the workspaces API
       // (lib/stacks/api-workspace-export.ts; each object's name is the job's, never a caller's).
       raw.arnForObjects(`${WORKSPACE_EXPORTS_PREFIX}*`),

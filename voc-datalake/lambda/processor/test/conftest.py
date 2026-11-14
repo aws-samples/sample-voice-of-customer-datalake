@@ -25,9 +25,12 @@ def _no_dimension_or_source_settings():
     handler._settings_cache.update({'dimensions': seeded, 'sources': seeded})
     # A read failure recorded by one test must not make the next one fail closed (xdist workers share the module).
     handler._failed_settings.clear()
+    # A workspace's settings (never seeded here: a test of a workspace message seeds or stores its own).
+    handler._workspace_categories.clear()
     yield
     handler._settings_cache.clear()
     handler._failed_settings.clear()
+    handler._workspace_categories.clear()
 
 
 @pytest.fixture(autouse=True)

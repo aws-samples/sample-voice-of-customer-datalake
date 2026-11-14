@@ -13,8 +13,8 @@
  *   - PutItem only on the audit partitions it writes, keyed by partition and not by workspace: `AUDIT#tombstone#*`
  *     (one tombstone per deleted item and memory, its sort key `{ws}#{id}`) in voc-aggregates, and
  *     `AUDIT#workspace-deletes` (the completed row) in voc-workspaces;
- *   - GetItem of the deployment's `SETTINGS#categories` and `SETTINGS#dimensions` (`deploymentSettings`: the closed
- *     counter families' names);
+ *   - the closed counter families' names read from the workspace's own `WS#{id}#SETTINGS#categories` and
+ *     `#dimensions` rows (the `aggregates` grant's GetItem on `WS#{id}#*`), never the deployment's settings;
  *   - S3: versions listed only with the `s3:prefix` `ws/{id}/*`, deleted by version id and uploads aborted under
  *     `ws/{id}/*` only; ListBucketMultipartUploads is bucket-wide (it takes no `s3:prefix` condition: upload keys and
  *     ids only, no data);
@@ -25,14 +25,14 @@
  * here and in SWEEPS together; MCP tokens, once phase 3 pins one to a workspace (sweeps.py says so).
  */
 export type DeleteGrant =
-  | 'aggregates' | 'metricTypeIndex' | 'deploymentSettings' | 'tombstones' | 'exportJobs' | 'feedback'
-  | 'watermarks' | 'memory' | 'objects' | 'credentials' | 'controlRows';
+  | 'aggregates' | 'metricTypeIndex' | 'tombstones' | 'exportJobs' | 'feedback'
+  | 'watermarks' | 'memory' | 'objects' | 'credentials' | 'controlRows' | 'radar';
 
 /** Each sweep (SWEEPS' names, in order) and the grants it needs. */
 export const WORKSPACE_DELETE_GRANTS: Readonly<Record<string, readonly DeleteGrant[]>> = {
   credentials: ['credentials', 'aggregates'],
   feedback: ['feedback', 'aggregates', 'tombstones'],
-  counters: ['aggregates', 'metricTypeIndex', 'deploymentSettings'],
+  counters: ['aggregates', 'metricTypeIndex'],
   source_runs: ['aggregates'],
   failures: ['aggregates'],
   circuits: ['aggregates'],
@@ -42,10 +42,14 @@ export const WORKSPACE_DELETE_GRANTS: Readonly<Record<string, readonly DeleteGra
   feedback_forms: ['aggregates'],
   import_runs: ['aggregates'],
   erasure_jobs: ['aggregates'],
+  reprocess_jobs: ['aggregates'],
   watermarks: ['aggregates', 'watermarks'],
   memory: ['memory', 'tombstones'],
   exports: ['aggregates', 'exportJobs', 'objects'],
   objects: ['objects'],
+  radar: ['radar', 'aggregates'],
+  settings: ['aggregates'],
+  user_contexts: ['aggregates'],
   control_rows: ['controlRows', 'aggregates'],
 };
 

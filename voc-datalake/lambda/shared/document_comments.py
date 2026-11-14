@@ -14,6 +14,10 @@ found in this version" and kept.
 
 Text is type-checked and capped here; text that reads like an instruction to a model is kept
 but ``flagged`` (shared.prompt_safety), as prototype pins are. Nothing here logs content.
+
+Not per workspace yet (docs/multi-workspace.md, the project plan): every read and write takes a ``workspace`` only to
+refuse it (``NotPerWorkspaceError``), so a review route that reads a workspace's document never files or lists its
+comments under the deployment's ``DCOMMENTS#`` keys.
 """
 from __future__ import annotations
 
@@ -30,9 +34,11 @@ from boto3.dynamodb.conditions import Key
 from shared.dynamo_paging import iter_query
 from shared.dynamo_values import plain
 from shared.exceptions import ValidationError
+from shared.project_keys import DOCUMENT_COMMENTS_STORE, require_deployment
 from shared.prompt_safety import injection_findings
 from shared.request_body import validated_text
 from shared.timestamps import now_iso
+from shared.ws_repo import WorkspaceScope
 
 COMMENTS_PK_PREFIX: Final = 'DCOMMENTS#'
 COMMENT_SK_PREFIX: Final = 'C#'
@@ -158,26 +164,33 @@ def reply_item(author: Mapping[str, Any], text: str) -> dict[str, Any]:
             'flagged': bool(injection_findings(text)), 'at': now_iso()}
 
 
-def put_thread(table: Any, item: Mapping[str, Any]) -> None:
+def put_thread(table: Any, item: Mapping[str, Any], *, workspace: WorkspaceScope | None = None) -> None:
+    require_deployment(workspace, DOCUMENT_COMMENTS_STORE)
     table.put_item(Item=dict(item), ConditionExpression='attribute_not_exists(sk)')
 
 
-def get_thread(table: Any, project_id: str, series_id: str, comment_id: str) -> dict[str, Any] | None:
+def get_thread(table: Any, project_id: str, series_id: str, comment_id: str, *,
+               workspace: WorkspaceScope | None = None) -> dict[str, Any] | None:
+    require_deployment(workspace, DOCUMENT_COMMENTS_STORE)
     if not is_comment_id(comment_id):
         return None
     item = table.get_item(Key=comment_key(project_id, series_id, comment_id), ConsistentRead=True).get('Item')
     return item if isinstance(item, dict) else None
 
 
-def list_threads(table: Any, project_id: str, series_id: str) -> list[dict[str, Any]]:
+def list_threads(table: Any, project_id: str, series_id: str, *,
+                 workspace: WorkspaceScope | None = None) -> list[dict[str, Any]]:
     """The series' threads, oldest first, at most ``MAX_THREADS_LISTED``."""
+    require_deployment(workspace, DOCUMENT_COMMENTS_STORE)
     query = {'KeyConditionExpression': Key('pk').eq(comments_pk(project_id, series_id))
              & Key('sk').begins_with(COMMENT_SK_PREFIX), 'ConsistentRead': True}
     return list(islice(iter_query(table, query), MAX_THREADS_LISTED))
 
 
-def append_reply(table: Any, item: Mapping[str, Any], reply: Mapping[str, Any]) -> dict[str, Any]:
+def append_reply(table: Any, item: Mapping[str, Any], reply: Mapping[str, Any], *,
+                 workspace: WorkspaceScope | None = None) -> dict[str, Any]:
     """Add ``reply`` to the thread (capped); raises the conditional failure past ``MAX_REPLIES``."""
+    require_deployment(workspace, DOCUMENT_COMMENTS_STORE)
     response = table.update_item(
         Key={'pk': item['pk'], 'sk': item['sk']},
         UpdateExpression='SET replies = list_append(if_not_exists(replies, :empty), :reply), updated_at = :now',
@@ -188,8 +201,10 @@ def append_reply(table: Any, item: Mapping[str, Any], reply: Mapping[str, Any]) 
     return response.get('Attributes', {})
 
 
-def set_status(table: Any, item: Mapping[str, Any], status: str, actor_name: str) -> dict[str, Any]:
+def set_status(table: Any, item: Mapping[str, Any], status: str, actor_name: str, *,
+               workspace: WorkspaceScope | None = None) -> dict[str, Any]:
     """Resolve or reopen; raises the conditional failure when the thread is gone."""
+    require_deployment(workspace, DOCUMENT_COMMENTS_STORE)
     response = table.update_item(
         Key={'pk': item['pk'], 'sk': item['sk']},
         UpdateExpression='SET #status = :status, status_by = :by, updated_at = :now',
@@ -201,7 +216,8 @@ def set_status(table: Any, item: Mapping[str, Any], status: str, actor_name: str
     return response.get('Attributes', {})
 
 
-def delete_thread(table: Any, item: Mapping[str, Any]) -> None:
+def delete_thread(table: Any, item: Mapping[str, Any], *, workspace: WorkspaceScope | None = None) -> None:
+    require_deployment(workspace, DOCUMENT_COMMENTS_STORE)
     table.delete_item(Key={'pk': item['pk'], 'sk': item['sk']})
 
 

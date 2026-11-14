@@ -203,7 +203,7 @@ class TestTheStoredItemIsExactlyTheDocumentedShape:
         mock_table = MagicMock()
         mock_table.get_item.return_value = {'Item': {'created_at': '2025-12-31T00:00:00+00:00'}}
         with patch.object(chat_handler, 'conversations_table', mock_table):
-            chat_handler._save_assistant_conversation(PK_A, 'c1', _body(conv_id='c1'))
+            chat_handler._save_assistant_conversation(chat_handler._Caller(PK_A, None), 'c1', _body(conv_id='c1'))
         mock_table.get_item.assert_called_once_with(
             Key={'pk': PK_A, 'sk': 'CONV#c1'},
             ProjectionExpression='#created, #updated, #rid, #rs, #rev, #ct, #kind',

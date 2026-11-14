@@ -18,6 +18,7 @@ from shared.aws import invoke_lambda_async, is_conditional_check_failure
 from shared.exceptions import ApiError, ServiceError
 from shared.job_notices import notify_project_job
 from shared.logging import logger
+from shared.project_keys import project_pk
 from shared.tables import get_jobs_table
 from shared.timestamps import now_iso
 
@@ -77,7 +78,7 @@ def claim_job_execution(
 
     try:
         jobs_table.update_item(
-            Key={'pk': f'PROJECT#{project_id}', 'sk': f'JOB#{job_id}'},
+            Key={'pk': project_pk(project_id), 'sk': f'JOB#{job_id}'},
             UpdateExpression=CLAIM_UPDATE_EXPRESSION,
             ConditionExpression=CLAIM_CONDITION_EXPRESSION,
             ExpressionAttributeNames=CLAIM_ATTRIBUTE_NAMES,
@@ -120,7 +121,7 @@ def recover_job_execution_claim(
     )
     while True:
         response = jobs_table.get_item(
-            Key={'pk': f'PROJECT#{project_id}', 'sk': f'JOB#{job_id}'},
+            Key={'pk': project_pk(project_id), 'sk': f'JOB#{job_id}'},
             ConsistentRead=True,
         )
         item = response.get('Item') if isinstance(response, dict) else None
@@ -197,7 +198,7 @@ def create_job(
     ttl = int((datetime.now(UTC) + timedelta(minutes=ttl_minutes)).timestamp())
 
     item = {
-        'pk': f'PROJECT#{project_id}',
+        'pk': project_pk(project_id),
         'sk': f'JOB#{job_id}',
         'gsi1pk': f'STATUS#{status}',
         'gsi1sk': now,
@@ -274,7 +275,7 @@ def update_job_status(
 
     try:
         jobs_table.update_item(
-            Key={'pk': f'PROJECT#{project_id}', 'sk': f'JOB#{job_id}'},
+            Key={'pk': project_pk(project_id), 'sk': f'JOB#{job_id}'},
             UpdateExpression=update_expr,
             ExpressionAttributeValues=expr_values,
             ExpressionAttributeNames=expr_names,

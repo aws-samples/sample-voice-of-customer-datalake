@@ -30,6 +30,7 @@ from shared.dimension_config import (
 )
 from shared.exceptions import ServiceError, ValidationError
 from shared.logging import logger
+from shared.ws_repo import WorkspaceScope
 
 __all__ = ['clean_dimensions', 'message_labels', 'normalise_label_fields']
 
@@ -124,9 +125,10 @@ def validate_label_config(
     }
 
 
-def normalise_label_fields(table: Any, entry: dict[str, Any]) -> None:
+def normalise_label_fields(table: Any, entry: dict[str, Any], scope: WorkspaceScope | None = None) -> None:
     """Validate a save body's ``dimension_defaults`` / ``tags`` against the stored
-    dimensions config and normalise them IN PLACE; a body naming neither is untouched.
+    dimensions config (``scope``'s workspace's for a save in one, the deployment's without one) and normalise them
+    IN PLACE; a body naming neither is untouched.
 
     ``ValidationError`` (400) for a bad value, ``ServiceError`` (500) when the
     dimensions config cannot be read: a write path must not store what it could
@@ -135,7 +137,7 @@ def normalise_label_fields(table: Any, entry: dict[str, Any]) -> None:
     if 'dimension_defaults' not in entry and 'tags' not in entry:
         return
     try:
-        dimensions_config = load_dimensions_config(table)
+        dimensions_config = load_dimensions_config(table, scope)
     except (ClientError, BotoCoreError, ValueError) as e:
         logger.exception('Dimensions config could not be read to validate a save')
         raise ServiceError('Dimension settings could not be read') from e

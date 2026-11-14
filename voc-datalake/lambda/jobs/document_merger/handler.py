@@ -31,6 +31,7 @@ from shared.invocation_cost import instrumented_handler
 from shared.jobs import JobContext, job_handler
 from shared.logging import logger
 from shared.persona_context import personas_prompt_context
+from shared.project_keys import document_listing, project_pk
 from shared.project_writes import create_counted_project_child
 from shared.timestamps import now_iso
 
@@ -143,7 +144,7 @@ def _save_merged_document(
     def build(doc_id: str) -> dict:
         return {
             **item_fields,
-            'pk': f'PROJECT#{project_id}',
+            'pk': project_pk(project_id),
             'sk': f'DOC#{doc_id}',
             'document_id': doc_id,
             'document_type': document_type,
@@ -191,7 +192,7 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, merge_config: dict
     selected_doc_ids = merge_config.get('selected_document_ids', [])
     selected_persona_ids = merge_config.get('selected_persona_ids', [])
 
-    resp = projects_table.query(KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}'))
+    resp = projects_table.query(KeyConditionExpression=Key('pk').eq(project_pk(project_id)))
     all_items = resp.get('Items', [])
 
     selected_docs = [
@@ -236,8 +237,7 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, merge_config: dict
     ctx.update_progress(90, 'saving_document')
     now = now_iso()
     item_fields = {
-        'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS',
-        'gsi1sk': now,
+        **document_listing(project_id, now),
         'content': content,
         'job_id': job_id,
         # Unchanged: the requested ids, in the merger's own long-standing shape.

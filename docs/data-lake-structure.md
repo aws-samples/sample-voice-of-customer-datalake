@@ -56,7 +56,7 @@ its manifest `version` for an ingestor (`webhook_<plugin>` for a webhook), or th
 
 | Writer | Where | What | Connector |
 |---|---|---|---|
-| Plugin ingestors and webhooks | `raw/<source>/…/<item>/<sha16>.json`; an ingestor's run in a workspace (multi-workspace, not released yet, [multi-workspace.md](multi-workspace.md)) under `ws/<ws>/raw/<source>/…` | The mapped item and the payload received (`raw_content`): the App Store RSS entry, the Google Play review, the scraped review element's outer HTML or the JSON-LD `Review` object, the import file's row, the GitHub issue/comment. Bounded at 256 KB, cut with a marker (`plugins/_shared/raw_source.py`) | `<plugin>` / `webhook_<plugin>` |
+| Plugin ingestors and webhooks | `raw/<source>/…/<item>/<sha16>.json`; an ingestor's run in a workspace (multi-workspace, since 7.00.00, [multi-workspace.md](multi-workspace.md)) under `ws/<ws>/raw/<source>/…` | The mapped item and the payload received (`raw_content`): the App Store RSS entry, the Google Play review, the scraped review element's outer HTML or the JSON-LD `Review` object, the import file's row, the GitHub issue/comment. Bounded at 256 KB, cut with a marker (`plugins/_shared/raw_source.py`) | `<plugin>` / `webhook_<plugin>` |
 | Feedback forms (`POST /feedback-forms/{id}/submit`) | `raw/feedback_form/…/<feedback id>/<sha16>.json` | `{form_id, submission}`: the body as the widget sent it, before the source policy | `feedback_form` |
 | Feedback boards ([feature-requests.md](feature-requests.md#raw-copies)) | `raw/feature_requests/…/<request id \| support id>/<sha16>.json` | A request on create and every content edit; a +1 on create and every edit. Not queued into `voc-feedback` | `feature_requests` |
 | Email inbox ([email-intake.md](email-intake.md#raw-copies)) | `raw/email_intake/…/<item id>/<sha16>.eml` | The email as received; filtered mail too, with metadata `drop-reason` | `email_intake` |
@@ -94,7 +94,7 @@ The bucket is versioned and KMS-encrypted. Ingestor roles may only put objects u
 workspace's `ws/<ws>/raw/` (a run in a workspace archives there, [multi-workspace.md](multi-workspace.md)):
 they cannot read or delete. Only `voc-retention` deletes raw objects, for an opt-in per-source retention
 period or an erasure request; in `ws/<ws>/raw/` and `ws/<ws>/silver/` for an erasure by email or a retention
-window, never for a whole-source erasure (Unreleased, [Source policies → Workspace items](source-policies.md#retention-and-erasure)). The bucket policy denies every PutObject under `raw/`, `silver/`, `ws/<ws>/raw/` and
+window, never for a whole-source erasure (since 7.03.00, [Source policies → Workspace items](source-policies.md#retention-and-erasure)). The bucket policy denies every PutObject under `raw/`, `silver/`, `ws/<ws>/raw/` and
 `ws/<ws>/silver/` that does not send `If-None-Match` (the IAM patterns pin `<ws>` to one id, `ws_` and 26 `?`,
 as do the ingestor roles' puts: IAM's `*` also matches `/`) (statement `DenyRawWritesWithoutIfNoneMatch`, `lib/stacks/core-buckets.ts`),
 so no writer, ours or a custom out-of-band one, can overwrite a raw object; a CopyObject into `raw/`
@@ -161,7 +161,7 @@ All tables use on-demand capacity and customer-managed KMS encryption. Physical 
 |-------|-------------|---------|
 | `voc-feedback` | `pk=SOURCE#<brand_name, else source_platform>`, `sk=FEEDBACK#<id>` | Processed feedback and enrichment. Producers send the deployment's brand name, so most items share one partition; filter by `source_platform` to select a source. Its stream feeds the aggregator |
 | `voc-aggregates` | `pk`, `sk` | Daily metrics, settings, logs, form configs, source and scraper runs, prioritization rows, ballots and voting sessions |
-| `voc-watermarks` | `source` (`<plugin_id>#<key>`; `WS#<ws>#<plugin_id>#<key>` for a run in a workspace, [multi-workspace.md](multi-workspace.md), not released yet) | Per-source ingestion progress |
+| `voc-watermarks` | `source` (`<plugin_id>#<key>`; `WS#<ws>#<plugin_id>#<key>` for a run in a workspace, [multi-workspace.md](multi-workspace.md), since 7.00.00) | Per-source ingestion progress |
 | `voc-projects` | `pk`, `sk` | Project metadata, personas, artifacts, document comments and review links, global MCP tokens (`MCPGTOKEN`), and managed-version state |
 | `voc-jobs` | `pk=PROJECT#<id>`, `sk=JOB#<id>` | Long-running research and generation jobs, and assist jobs |
 | `voc-conversations` | `pk=USER#<subject>`, `sk=CONV#<id>` | Per-user AI assistant sessions (`kind=assistant`; `messages_json`/`page_json`/`pending_json` JSON strings, `message_count`, item kept under ~350 KB) and legacy chat records (native `messages` list); current writes do not set TTL |
@@ -171,7 +171,7 @@ All tables use on-demand capacity and customer-managed KMS encryption. Physical 
 | `voc-radar` | `pk`, `sk` | Other brands' reviews, kept out of your own metrics ([radar.md](radar.md)) |
 | `voc-participants` | `pk`, `sk` | People to ask for feedback, lists and asks ([participants.md](participants.md)) |
 | `voc-feature-requests` | `pk`, `sk` | Feedback boards and their requests ([feature-requests.md](feature-requests.md)) |
-| `voc-workspaces` | `pk`, `sk` | Workspaces, members, invites, slugs, the platform console's listing (`WORKSPACES`) and their audit; read and written by the workspaces API (`/me/*`, `/platform/*`): platform admins create workspaces (one transaction, the creator as admin), a platform admin's entry is audited, and a workspace's admins add members, change roles and remove members (a member may leave), each change audited first and written to the `MEMBER#` and `USER#` rows in one transaction (its one delete: a removal's two rows); no invite rows are written (membership is immediate). Since 6.11.00 two more roles write it: the users API removes a deleted user's memberships before the account (each `AUDIT#WS#` row first, then the `MEMBER#` and `USER#` delete), and `voc-retention`'s erasure by email removes `email` and `name` from the person's `MEMBER#` rows after a tombstone ([multi-workspace.md](multi-workspace.md#invites)). The scheduled plugin ingestors Query its `PLUGIN#<plugin>` partitions only (the workspaces that enabled the plugin, for the tick's fan-out; nothing writes them yet). Since 4d-1 every plugin ingestor, the feedback processor, the aggregator and the webhooks GetItem a workspace's `META` for its status only (`pk`, `sk`, `status`, held there by IAM), so nothing is written to a workspace that is not `active` and no webhook routes to one ([multi-workspace.md](multi-workspace.md#export-and-delete)) |
+| `voc-workspaces` | `pk`, `sk` | Workspaces, members, invites, slugs, the platform console's listing (`WORKSPACES`), a workspace form's lookup row (`FORM#{id}` / `META`, since 7.06.00: its `workspace_id`, put before the form and deleted with it by the feedback forms API, read by the form's public routes), each workspace's enabled plugins (`PLUGIN#{plugin}` / `WS#{ws}`, written by the workspaces API's plugin routes; none until phase 2's data path is in: enabling answers 409) and their audit; read and written by the workspaces API (`/me/*`, `/platform/*`): platform admins create workspaces (one transaction, the creator as admin), a platform admin's entry is audited, and a workspace's admins add members, change roles and remove members (a member may leave), each change audited first and written to the `MEMBER#` and `USER#` rows in one transaction (its deletes: a removal's two rows and a disabled plugin's `PLUGIN#` row); no invite rows are written (membership is immediate). Since 6.11.00 two more roles write it: the users API removes a deleted user's memberships before the account (each `AUDIT#WS#` row first, then the `MEMBER#` and `USER#` delete), and `voc-retention`'s erasure by email removes `email` and `name` from the person's `MEMBER#` rows after a tombstone ([multi-workspace.md](multi-workspace.md#invites)). The scheduled plugin ingestors Query its `PLUGIN#<plugin>` partitions only (the workspaces that enabled the plugin, for the tick's fan-out; no row exists while enabling answers 409). Since 4d-1 every plugin ingestor, the feedback processor, the aggregator and the webhooks GetItem a workspace's `META` for its status only (`pk`, `sk`, `status`, held there by IAM), so nothing is written to a workspace that is not `active` and no webhook routes to one ([multi-workspace.md](multi-workspace.md#export-and-delete)) |
 
 ### Feedback table indexes
 
@@ -185,7 +185,7 @@ All tables use on-demand capacity and customer-managed KMS encryption. Physical 
 
 The date index is keyed by when the processor stored the item, not by the review's own date.
 
-gsi4 and gsi5 are keyed on `gsi4pk` / `gsi5pk` (Unreleased; a workspace's item carries `WS#<ws>#…` in every key):
+gsi4 and gsi5 are keyed on `gsi4pk` / `gsi5pk` (since 7.00.00; a workspace's item carries `WS#<ws>#…` in every key):
 an existing deployment does not take that release in place ([Multi-workspace → Upgrading](multi-workspace.md#upgrading)).
 
 Feedback items do not expire: the table has no TTL and the processor stamps none. Only
@@ -210,7 +210,7 @@ such as every source or persona counter. Common key families include:
 | `JOB#category_reprocess` / `rp_<hex>` | Category reprocess jobs |
 | `JOB#erasure` / `er_<hex>`, `AUDIT#retention` | Erasure jobs and the retention audit trail |
 | `AUDIT#platform-admins` / `<iso>#<random>` | Every grant and revoke of the `platform-admins` group (kept, no TTL; written only by the users API, [multi-workspace.md](multi-workspace.md#control-plane)) |
-| `LOGS#validation#<source>`, `LOGS#processing#<source>` | Validation and processing logs (7-day TTL); a workspace's message (Unreleased, [multi-workspace.md](multi-workspace.md)) logs under `WS#<ws>#LOGS#validation#<source>` and `WS#<ws>#LOGS#processing#<source>`, which `GET /logs/*` does not read yet |
+| `LOGS#validation#<source>`, `LOGS#processing#<source>` | Validation and processing logs (7-day TTL); a workspace's message (since 7.00.00, [multi-workspace.md](multi-workspace.md)) logs under `WS#<ws>#LOGS#validation#<source>` and `WS#<ws>#LOGS#processing#<source>`, which `GET /logs/*` does not read yet |
 | `FEEDBACK_FORM` | Feedback-form configuration and statistics |
 | `SOURCE_RUN#<source>` / `<execution id>` | Manual and reprocess runs of a plugin ingestor (`WS#<ws>#SOURCE_RUN#<source>` for a run in a workspace) |
 | `SCRAPER_RUN#<scraper id>` | Scraper run state (`WS#<ws>#SCRAPER_RUN#<scraper id>` in a workspace) |

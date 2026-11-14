@@ -9,6 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from jobs.workspace_delete.sweeps import WORKSPACE_SETTINGS_KINDS
 from jobs.workspace_delete.test.conftest import (
     OTHER,
     WS,
@@ -20,8 +21,12 @@ from jobs.workspace_delete.test.conftest import (
     seed_workspace,
 )
 from jobs.workspace_delete.test.families import FAMILIES
+from shared.company_context import my_context_key, put_my_context
 from shared.import_runs import LIST_PK
+from shared.memory_store import append_event, company_pk, cursor_key, import_key, scope_pk, status_partition
 from shared.onboarding import FEEDBACK_FORM_PK
+from shared.radar_keys import radar_settings_key
+from shared.workspace_settings import settings_key
 from shared.ws_repo import (
     WATERMARK_DIRECTORY,
     WorkspaceScope,
@@ -46,11 +51,13 @@ from shared.ws_repo import (
     plugin_config_history_pk,
     plugin_config_key,
     plugin_config_pk,
+    reprocess_job_pk,
     s3_key,
     s3_prefix,
     scraper_run_pk,
     source_run_pk,
     urgency_pk,
+    user_context_owners_pk,
     watermark_directory_key,
     watermark_key,
     workspace_tombstone_key,
@@ -105,6 +112,21 @@ def _personal_memory(world: World) -> Probe:
                    gsi1sk='2026-11-02T00:00:00#mem_fam_p')
 
 
+def _my_context(world: World) -> Probe:
+    put_my_context(world.aggregates, 'sub-fam', {'objectives': []}, updated_at='2026-11-02T00:00:00+00:00',
+                   workspace=SCOPE)
+    return Probe('aggregates', my_context_key('sub-fam', SCOPE))
+
+
+def _event(world: World) -> Probe:
+    """An event of a company memory the seed holds, as the store appends it."""
+    append_event(world.memory, 'mem_c1', 'reinforced', workspace=SCOPE)
+    rows = world.memory.query(KeyConditionExpression='pk = :p',
+                              ExpressionAttributeValues={':p': memory_event_pk(SCOPE, 'mem_c1')})['Items']
+    newest = max(rows, key=lambda row: str(row['sk']))
+    return Probe('memory', {'pk': newest['pk'], 'sk': newest['sk']})
+
+
 #: Each family's seed, by its families.py name (None: not seeded, its entry says why).
 SEEDS: dict[str, Callable[[World], Probe] | None] = {
     'feedback_key': lambda w: _item(w, 'key'),
@@ -127,6 +149,26 @@ SEEDS: dict[str, Callable[[World], Probe] | None] = {
     'CIRCUIT': lambda w: _aggregate(w, SCOPE.key('CIRCUIT', 'webscraper')),
     'LOGS': lambda w: _aggregate(w, SCOPE.key('LOGS', 'validation', 'webscraper')),
     'erasure_job_pk': lambda w: _aggregate(w, erasure_job_pk(SCOPE), 'er_fam', status='completed'),
+    'reprocess_job_pk': lambda w: _aggregate(w, reprocess_job_pk(SCOPE), 'rp_fam', status='completed'),
+    **{f'SETTINGS#{kind}': (lambda w, kind=kind: _aggregate(w, settings_key(WS, kind)['pk'], 'config', kind=kind))
+       for kind in WORKSPACE_SETTINGS_KINDS},
+    # A member's own objectives, saved as the settings API saves them (its owner row first), and a former
+    # member's owner row whose objectives row is already gone.
+    'my_context_key': _my_context,
+    'user_context_owners_pk': lambda w: _aggregate(w, user_context_owners_pk(SCOPE), 'sub-former'),
+    'SETTINGS#radar': lambda w: _put(w, 'radar', {**radar_settings_key('brands', SCOPE), 'brands': []}),
+    # shared/memory_store.py's own spellings of the memory partitions.
+    'company_pk': lambda w: _memory(w, company_pk(SCOPE), 'MEM#mem_fam_c2', memory_id='mem_fam_c2',
+                                    scope='company', status='active'),
+    'scope_pk': lambda w: _memory(w, scope_pk('company', None, SCOPE), 'MEM#mem_fam_c3', memory_id='mem_fam_c3',
+                                  scope='company', status='active'),
+    'status_partition': lambda w: _memory(w, f'WS#{WS}#MEM#user#sub-fam2', 'MEM#mem_fam_p2', memory_id='mem_fam_p2',
+                                          scope='personal', status='active',
+                                          gsi1pk=status_partition('personal', 'active', SCOPE),
+                                          gsi1sk='2026-11-02T00:00:00#mem_fam_p2'),
+    'append_event': _event,
+    'cursor_key': lambda w: _put(w, 'memory', cursor_key('fam2', SCOPE)),
+    'import_key': lambda w: _put(w, 'memory', import_key('imp_fam2', SCOPE)),
     'export_job_pk': lambda w: _aggregate(w, export_job_pk(SCOPE), 'ex_01JC3Q8ZK6V7W9X2Y4A5B6C7DA',
                                           export_id='ex_01JC3Q8ZK6V7W9X2Y4A5B6C7DA', status='failed'),
     'memory_company_pk': lambda w: _memory(w, memory_company_pk(SCOPE), 'MEM#mem_fam_c', memory_id='mem_fam_c',
@@ -155,6 +197,8 @@ SEEDS: dict[str, Callable[[World], Probe] | None] = {
     'workspace_tombstone_key': lambda w: _put(w, 'aggregates', {
         **workspace_tombstone_key(SCOPE, 'webscraper', 'fam-stone'), 'mode': 'erase', 'run_id': 'r-fam'}),
     'message_idempotency_key': None,
+    **dict.fromkeys(('conversants_pk', 'USER', 'project_pk', 'project_type_pk', 'scoped_key', '_releases_since',
+                     'daily_rows', 'item_partitions')),
 }
 
 
@@ -182,5 +226,6 @@ def test_each_familys_row_is_gone_or_kept_as_its_entry_says(world):
     outcome = {name: ('kept' if _present(world, probe) else 'gone') for name, probe in probes.items()}
     expected = {name: ('kept' if FAMILIES[name].startswith('KEPT: ') else 'gone') for name in probes}
     assert outcome == expected
-    not_seeded = sorted(name for name, seed in SEEDS.items() if seed is None)
-    assert [(name, FAMILIES[name].split(':')[0]) for name in not_seeded] == [('message_idempotency_key', 'TTL')]
+    # Not seeded: exactly the entries no sweep deletes yet or that expire (TTL, RESERVED, GAP).
+    not_seeded = {name for name, seed in SEEDS.items() if seed is None}
+    assert not_seeded == {name for name, entry in FAMILIES.items() if entry.startswith(('TTL: ', 'RESERVED: ', 'GAP: '))}

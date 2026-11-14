@@ -16,6 +16,7 @@ from shared import category_access
 from shared.agentic_search import run_agentic_web_search
 from shared.api import api_handler
 from shared.aws import get_s3_client
+from shared.carried_values import is_count
 from shared.converse import BedrockThrottlingError, converse
 from shared.derivation import (
     DERIVATION_FIELD,
@@ -51,6 +52,7 @@ from shared.jobs import update_job_status
 from shared.logging import logger, tracer
 from shared.model_config import surface_context_window_tokens
 from shared.persona_context import personas_prompt_context
+from shared.project_keys import document_keys, project_pk
 from shared.project_writes import create_counted_project_child
 from shared.prompt_labels_store import load_prompt_labels
 from shared.prompts import (
@@ -284,11 +286,6 @@ _USAGE_COUNT_KEYS = ('feedback_count', 'feedback_items_used', 'fetch_limit')
 _USAGE_FLAG_KEYS = ('context_truncated', 'fetch_limit_reached')
 
 
-def _is_count(value: object) -> bool:
-    """A non-negative int that is not a bool (``True`` is an ``int`` in Python)."""
-    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
-
-
 def _received_feedback_usage(value: object) -> dict:
     """``_feedback_usage``'s output as it arrives at step_save, or ``{}``.
 
@@ -298,7 +295,7 @@ def _received_feedback_usage(value: object) -> dict:
     """
     if not isinstance(value, dict):
         return {}
-    counts_ok = all(_is_count(value.get(key)) for key in _USAGE_COUNT_KEYS)
+    counts_ok = all(is_count(value.get(key)) for key in _USAGE_COUNT_KEYS)
     flags_ok = all(isinstance(value.get(key), bool) for key in _USAGE_FLAG_KEYS)
     if not (counts_ok and flags_ok):
         return {}
@@ -360,7 +357,7 @@ def _project_items(proj_table: Any, project_id: str) -> list[dict]:
     One query page stops at 1 MB, so a project with many long documents had its
     later personas and documents silently missing from the research context.
     """
-    query: dict[str, Any] = {'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}')}
+    query: dict[str, Any] = {'KeyConditionExpression': Key('pk').eq(project_pk(project_id))}
     items: list[dict] = []
     for _page in range(MAX_PROJECT_ITEM_PAGES):
         response = proj_table.query(**query)
@@ -823,10 +820,7 @@ Public-web grounding for this report came from the following searches:
     if proj_table:
         def build(document_id: str) -> dict:
             return {
-                'pk': f'PROJECT#{project_id}',
-                'sk': f'RESEARCH#{document_id}',
-                'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS',
-                'gsi1sk': now,
+                **document_keys(project_id, f'RESEARCH#{document_id}', now),
                 'document_id': document_id,
                 'document_type': 'research',
                 'title': title,

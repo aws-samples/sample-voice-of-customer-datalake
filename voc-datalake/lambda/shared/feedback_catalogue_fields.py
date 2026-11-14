@@ -73,7 +73,7 @@ FIELDS: Final[tuple[CatalogueField, ...]] = (
        always=True, key=True),
     _f('gsi3sk', 'string', _P, '`processed_at` (gsi3-by-urgency)', always=True, key=True),
     _f('gsi4pk', 'string', _P, '`FEEDBACK#{feedback_id}` (index gsi4-by-feedback-id)', always=True, key=True),
-    _f('gsi5pk', 'string', ('processor', 'source_update'), '`CHANNEL#{source_channel}` (index gsi5-by-channel); absent when the channel is empty',
+    _f('gsi5pk', 'string', ('processor', 'source_update'), '`CHANNEL#{source_channel}` (index gsi5-by-channel); `CHANNEL#unknown` when the channel is empty',
        key=True),
     # ── identity and source ──────────────────────────────────────────────────
     _f('feedback_id', 'string', _P, 'The item id: the same source item has the same id in every workspace, so '

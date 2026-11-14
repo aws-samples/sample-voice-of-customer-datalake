@@ -21,6 +21,7 @@ import {
   SCHEDULE_TARGET_RETRY_ATTEMPTS,
 } from './ingestion-stack';
 import { itemAt } from '../test-support/guards';
+import { WORKSPACE_STATUS_READ_CONDITION } from '../test-support/iam-statements';
 import { capitalize } from '../plugin-loader';
 import { synthIngestionStacks, synthIngestionTemplate } from '../test-support/ingestion-stack-fixture';
 import { SYNTH_ACCOUNT, SYNTH_REGION } from '../test-support/synth-app';
@@ -331,11 +332,7 @@ describe('VocIngestionStack scheduled tick fan-out grants', () => {
       .filter((grant) => JSON.stringify(grant.resource).includes('Workspaces'));
     expect(reads.map((grant) => grant.roles).flat().sort(byCodeUnit)).toStrictEqual([...roles].sort(byCodeUnit));
     for (const grant of reads) {
-      expect(grant.condition).toStrictEqual({
-        'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] },
-        'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'status'] },
-        StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
-      });
+      expect(grant.condition).toStrictEqual(WORKSPACE_STATUS_READ_CONDITION);
     }
     // No other read of voc-workspaces than the scheduled roles' PLUGIN# Query (pinned below).
     for (const action of ['dynamodb:BatchGetItem', 'dynamodb:Scan', 'dynamodb:PutItem', 'dynamodb:DeleteItem']) {

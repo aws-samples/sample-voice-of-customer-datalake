@@ -11,7 +11,7 @@ import { apiTemplate, apiTemplatePrefixed, policyStatementsOf, serviceEnvironmen
 import { itemAt } from '../test-support/guards';
 import { SYNTH_REGION, SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import { claudeRoleGrantOf, missingModelGrants } from '../test-support/bedrock-grants';
-import { ALLOWED_MODEL_IDS } from '../utils/model-allowlist';
+import { ALLOWED_MODEL_IDS, MODEL_DEFAULT_PARTITION } from '../utils/model-allowlist';
 import { PY_LAMBDA_ASSET_EXCLUDES, rootPluginAssetExcludes } from '../utils/lambda-asset-excludes';
 import {
   DESIGN_CAPTURE_MEMORY_MB, DESIGN_CAPTURE_TIMEOUT, DESIGN_ICONS_PREFIX, DESIGN_SYSTEM_PARTITION, LOGO_PREVIEW_PREFIX,
@@ -80,10 +80,11 @@ describe('voc-design-capture in VocIngestionStack', () => {
     ]);
   });
 
-  it('reads and writes only the design-system rows (plus a read of the model settings)', () => {
+  it('reads and writes only the design-system rows (plus a read of the model picks and the deployment default)', () => {
     const dynamo = statements().filter((s) => s.actions.some((a) => a.startsWith('dynamodb:')));
     expect(dynamo.map((s) => [s.actions, s.condition])).toStrictEqual([
-      [['dynamodb:GetItem'], { 'ForAllValues:StringEquals': { 'dynamodb:LeadingKeys': [DESIGN_SYSTEM_PARTITION, MODEL_SETTINGS_PARTITION] } }],
+      [['dynamodb:GetItem'], { 'ForAllValues:StringEquals': { 'dynamodb:LeadingKeys': [
+        DESIGN_SYSTEM_PARTITION, MODEL_SETTINGS_PARTITION, MODEL_DEFAULT_PARTITION] } }],
       [['dynamodb:UpdateItem'], { 'ForAllValues:StringEquals': { 'dynamodb:LeadingKeys': [DESIGN_SYSTEM_PARTITION] } }],
     ]);
   });

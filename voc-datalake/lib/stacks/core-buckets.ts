@@ -65,7 +65,12 @@ export const WORKSPACE_DATA_PREFIX = 'ws/';
 export const WORKSPACE_ID_PATTERN = `ws_${'?'.repeat(26)}`;
 /** A tenant workspace's bronze layer, `ws/{ws}/raw/` (the plugin ingestors since the ingestion slice): as `raw/`. */
 export const WORKSPACE_RAW_LAYER_PREFIX = `${WORKSPACE_DATA_PREFIX}${WORKSPACE_ID_PATTERN}/${RAW_LAYER_PREFIX}`;
-/** A tenant workspace's Silver history, `ws/{ws}/silver/`: as `silver/` (no writer yet; the processor's slice). */
+/**
+ * A tenant workspace's page imports, `ws/{ws}/memory-imports/` (the memory API puts the original page, the extractor
+ * reads it: lambda/shared/memory_store.py `import_object_key`): as `memory-imports/`.
+ */
+export const WORKSPACE_MEMORY_IMPORTS_PREFIX = `${WORKSPACE_DATA_PREFIX}${WORKSPACE_ID_PATTERN}/memory-imports/`;
+/** A tenant workspace's Silver history, `ws/{ws}/silver/`: as `silver/` (the processor writes it for a workspace's messages, 7.00.00). */
 export const WORKSPACE_SILVER_HISTORY_PREFIX = `${WORKSPACE_DATA_PREFIX}${WORKSPACE_ID_PATTERN}/${SILVER_HISTORY_PREFIX}`;
 /**
  * The append-only layers of the raw data bucket: write-once, kept forever (only voc-retention deletes, and

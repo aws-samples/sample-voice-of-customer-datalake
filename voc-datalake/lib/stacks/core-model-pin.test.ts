@@ -23,6 +23,15 @@ const PolicySchema = z.object({
   }),
 });
 const PackageJsonSchema = z.object({ scripts: z.record(z.string(), z.string()) });
+/** The same policy shape with each statement's condition. */
+const ConditionedPolicySchema = z.object({
+  Roles: z.array(z.unknown()).optional(),
+  PolicyDocument: z.object({
+    Statement: z.array(z.object({
+      Effect: z.string(), Action: z.union([z.string(), z.array(z.string())]), Condition: z.unknown().optional(),
+    })),
+  }),
+});
 
 /** The `-c defaultModelId=…` of `npm run generate:workshop-artifacts`. */
 function workshopModelId(): string {
@@ -54,5 +63,23 @@ describe('ModelPin custom resource (VocCoreStack)', () => {
       .filter((s) => s.Effect === 'Allow' && onKey.includes(JSON.stringify(s.Resource)))
       .flatMap((s) => (Array.isArray(s.Action) ? s.Action : [s.Action]));
     expect(actions).toContain('kms:Decrypt');
+  }, SYNTH_TIMEOUT_MS);
+
+  it('updates only the deployment default-model row model_pin.py writes', () => {
+    const { Resources } = ResourcesSchema.parse(synthApp({ defaultModelId: workshopModelId() }).template('VocCoreStack'));
+    const role = Object.keys(Resources).filter((id) => id.startsWith('ModelPinLambdaServiceRole')
+      && Resources[id]?.Type === 'AWS::IAM::Role');
+    expect(role).toHaveLength(1);
+    const roleRef = JSON.stringify({ Ref: role[0] });
+    const updates = Object.values(Resources)
+      .filter((r) => r.Type === 'AWS::IAM::Policy')
+      .map((r) => ConditionedPolicySchema.parse(r.Properties))
+      .filter((p) => (p.Roles ?? []).some((r) => JSON.stringify(r) === roleRef))
+      .flatMap((p) => p.PolicyDocument.Statement)
+      .filter((s) => s.Effect === 'Allow' && [s.Action].flat().includes('dynamodb:UpdateItem'));
+    // The literal model_pin.py's MODEL_DEFAULT_PK spells, so the two sides cannot drift.
+    expect(updates.map((s) => s.Condition)).toStrictEqual([
+      { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['SETTINGS#model_default'] } },
+    ]);
   }, SYNTH_TIMEOUT_MS);
 });

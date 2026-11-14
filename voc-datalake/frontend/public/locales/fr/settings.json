@@ -159,6 +159,7 @@
     "retry": "Réessayer",
     "notSynced": "Non synchronisé",
     "saveFailed": "Échec de l’enregistrement sur le serveur. Réessayez.",
+    "savedToServer": "Marque enregistrée.",
     "adminOnlyNotice": "Seuls les administrateurs peuvent modifier la configuration de la marque. Vous pouvez la consulter ici."
   },
   "categories": {
@@ -232,6 +233,7 @@
     "runErrors_many": "{{count, number}} erreurs",
     "textLength_many": "Longueur du texte : {{count, number}} caractères",
     "alerts": {
+      "platformAdminOnly": "Seuls les administrateurs de la plateforme peuvent modifier les alertes : les alarmes surveillent tout le déploiement. Vous pouvez les consulter ici.",
       "title": "Alertes",
       "on": "Activées",
       "off": "Désactivées",
@@ -723,6 +725,8 @@
     "uploadBadType": "{{name}} n'est pas un type de fichier accepté.",
     "uploadTooLarge": "{{name}} dépasse {{mb}} Mo.",
     "uploadFailed": "Échec du téléversement. Réessayez.",
+    "logoNotShrunk": "Impossible de réduire {{name}} sous 1 Mo. Exportez un PNG plus petit et téléversez-le.",
+    "logoUnreadable": "Impossible de lire {{name}} comme une image. Exportez-le en PNG et téléversez-le.",
     "integrations": "Intégrations de design",
     "integrationsHint": "Les jetons sont stockés chiffrés et ne sont plus jamais affichés. Laissez un champ vide pour conserver le jeton actuel.",
     "providers": {
@@ -992,7 +996,7 @@
   "appearance": {
     "title": "Thème par défaut",
     "hint": "Le thème de couleurs que tout le monde voit jusqu’à choisir le sien dans Compte → Préférences.",
-    "adminOnlyNotice": "Seuls les administrateurs peuvent changer le thème par défaut. Vous pouvez le consulter ici.",
+    "adminOnlyNotice": "Seuls les administrateurs de la plateforme peuvent modifier le thème par défaut : tous les espaces de travail le partagent. Vous pouvez le consulter ici.",
     "loading": "Chargement du thème par défaut…",
     "loadFailed": "Impossible de charger le thème par défaut depuis le serveur.",
     "save": "Enregistrer le thème",

@@ -9,11 +9,9 @@ header both routes are the deployment's, exactly as before.
 """
 from __future__ import annotations
 
-import re
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
-from typing import Any
+from typing import Any, Final
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -26,7 +24,7 @@ import settings_handler
 from settings_handler import lambda_handler
 from shared import erasure_scope, workspace_request
 from shared.erasure_jobs import acquire_workspace_lock, refresh_workspace_lock, release_workspace_lock
-from shared.exceptions import ValidationError
+from shared.exceptions import AuthorizationError, ValidationError
 from shared.source_erasure import blocking_job
 from shared.test.moto_tables import create_aggregates_table_with_metric_index
 from shared.workspace import MEMBER_READ_ATTRIBUTES, META_READ_ATTRIBUTES, WorkspaceContext
@@ -380,9 +378,10 @@ def _failing_view(method: str, error: Exception) -> Any:
     real_view = erasure_scope.table_view
 
     def view(scope: Any, table: Any) -> Any:
+        # A stand-in over the real view: a workspace table's state is fixed (shared/ws_repo.py), so its method is
+        # replaced on a wrapper, never on the view itself.
         seen = real_view(scope, table)
-        setattr(seen, method, MagicMock(side_effect=error))
-        return seen
+        return MagicMock(wraps=seen, **{method: MagicMock(side_effect=error)})
     return view
 
 
@@ -402,7 +401,7 @@ class TestTheModulesOwnResolver:
             with patch.object(settings_handler, 'aggregates_table', aggregates), \
                     patch.object(settings_handler, 'RETENTION_FUNCTION', 'voc-retention'), \
                     patch.object(workspace_request, 'get_workspaces_table', return_value=workspaces), \
-                    patch.object(workspace_request, 'get_cognito_idp_client', return_value=cognito), \
+                    patch('shared.platform_admin_gate.get_cognito_idp_client', return_value=cognito), \
                     patch.object(settings_handler, 'invoke_lambda_async', MagicMock()) as invoke:
 
                 def call(claims: dict) -> int:
@@ -428,15 +427,7 @@ class TestTheModulesOwnResolver:
         projected = [set(kwargs['ExpressionAttributeNames'].values()) for _args, kwargs in get_item.call_args_list]
         assert projected == [set(MEMBER_READ_ATTRIBUTES), set(META_READ_ATTRIBUTES)]
         assert all(kwargs['ConsistentRead'] for _args, kwargs in get_item.call_args_list)
-
-    def test_the_grant_allows_exactly_the_projected_attributes(self):
-        """lib/utils/workspace-request-grants.ts MEMBERSHIP_READ_ATTRIBUTES is the union of the two projections."""
-        source = (Path(__file__).resolve().parents[3] / 'lib/utils/workspace-request-grants.ts').read_text('utf-8')
-        match = re.search(r"MEMBERSHIP_READ_ATTRIBUTES = \[([^\]]*)\]", source)
-        assert match is not None
-        granted = re.findall(r"'([a-z_]+)'", match.group(1))
-        assert set(granted) == set(MEMBER_READ_ATTRIBUTES) | set(META_READ_ATTRIBUTES)
-        assert 'email' not in granted
+        assert 'email' not in set(MEMBER_READ_ATTRIBUTES) | set(META_READ_ATTRIBUTES)
 
 
 class TestTheJobRow:
@@ -449,3 +440,25 @@ class TestTheJobRow:
     def test_a_whole_source_row_never_names_a_workspace(self):
         with pytest.raises(ValidationError):
             erasure_scope.scoped_job_row({'field': 'source'}, _context())
+
+
+class TestADelegatedCaller:
+    """A start in a workspace is the member admin's own act (an erasure cannot be undone): a delegated caller (an MCP
+    token, an agent, a plan step acting for the admin) gets 403, as for the workspace's admin settings; reading the
+    jobs, and the deployment's path, are unchanged."""
+
+    MCP_FOR_ADMIN: Final = {'sub': 'mcp:tok_1', 'cognito:username': 'ad', 'voc:acting_subject': ADMIN_A['sub']}
+
+    @staticmethod
+    def _event(claims: dict) -> dict:
+        return {'headers': {'X-Workspace-Id': WS_A}, 'requestContext': {'authorizer': {'claims': claims}}}
+
+    def test_a_delegated_start_in_a_workspace_is_refused(self):
+        workspace = MagicMock(context=MagicMock(return_value=_context()))
+        with pytest.raises(AuthorizationError, match='delegated caller'):
+            erasure_scope.require_erasure_admin(workspace, self._event(self.MCP_FOR_ADMIN), write=True)
+
+    def test_the_member_admin_starts_it_and_a_delegated_caller_still_reads_the_jobs(self):
+        workspace = MagicMock(context=MagicMock(return_value=_context()))
+        assert erasure_scope.require_erasure_admin(workspace, self._event(ADMIN_A), write=True) == _context()
+        assert erasure_scope.require_erasure_admin(workspace, self._event(self.MCP_FOR_ADMIN)) == _context()

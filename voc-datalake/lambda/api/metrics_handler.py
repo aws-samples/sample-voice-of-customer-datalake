@@ -9,8 +9,9 @@ a non-member, an unknown or deleting workspace; a platform admin enters as admin
 every read then goes through shared/ws_repo.py ``ws_table`` on the workspace's partitions: the items by id
 (``WS#{ws}#FEEDBACK#…``), by date, category, urgency and channel (``WS#{ws}#DATE#…`` …), the counters
 (``WS#{ws}#METRIC#…``, ``metric_type`` ``WS#{ws}#<type>``), its data_version and watermark, and the response cache
-keyed by the workspace too. A request with no such header reads the deployment, exactly as before. The settings a
-route reads (categories, dimensions, the caller's category access) stay the deployment's until phase 3.
+keyed by the workspace too. A request with no such header reads the deployment, exactly as before. The categories,
+dimensions and restricted sources a route reads are the request's workspace's (since 7.08.00; the deployment's
+without the header); the caller's own category-access row stays the deployment's (phase 3).
 """
 
 import os
@@ -460,7 +461,8 @@ def _caller_scope() -> CategoryScope:
     """
     scope = app.context.get('category_scope')
     if not isinstance(scope, CategoryScope):
-        scope = scope_for_event(app.current_event.raw_event, aggregates_table)
+        # Against the request's workspace's categories and restricted sources (the deployment's without one).
+        scope = scope_for_event(app.current_event.raw_event, aggregates_table, _ws_scope())
         app.append_context(category_scope=scope)
     return scope
 
@@ -806,7 +808,7 @@ def _dimensions_config() -> list[dict[str, Any]]:
     if isinstance(cached, list):
         return cached
     try:
-        config = load_dimensions_config(_aggregates_table())
+        config = load_dimensions_config(_aggregates_table(), _ws_scope())
     except (ClientError, BotoCoreError, ValueError) as exc:
         logger.warning('Dimensions config unreadable; answering without dimensions',
                        extra={'error_type': type(exc).__name__})
@@ -1370,7 +1372,7 @@ def get_entities():
     # PERSONA_PREFIX, shared with the aggregator that BUILT this pk: two Lambdas
     # that cannot import each other must strip exactly what the other prepended,
     # or the bucket names come back mangled.
-    configured = get_configured_categories(aggregates_table)
+    configured = get_configured_categories(aggregates_table, _ws_scope())
     (category_totals, is_partial), (source_totals, sources_partial), (persona_counts, personas_partial), \
         (total_window, total_truncated) = concurrently(
             lambda: _metric_window_totals(CATEGORY_PREFIX, configured, days, current_date),
@@ -1736,7 +1738,7 @@ def _metric_request() -> _MetricRequest:
 
 def _configured_category_names() -> list[str]:
     """The configured category names (or the defaults), in config order."""
-    return get_configured_categories(aggregates_table) or DEFAULT_CATEGORIES
+    return get_configured_categories(aggregates_table, _ws_scope()) or DEFAULT_CATEGORIES
 
 
 def _visible_category_names(scope: CategoryScope) -> list[str]:

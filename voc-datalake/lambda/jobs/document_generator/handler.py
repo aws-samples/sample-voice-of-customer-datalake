@@ -51,7 +51,16 @@ from botocore.exceptions import ClientError
 from shared import category_access, methodology
 from shared.api import validate_date_basis
 from shared.aws import get_dynamodb_resource, get_s3_client
-from shared.company_context import company_context_block, design_system_block
+from shared.company_context import CONFIG_SK, DESIGN_SYSTEM_PK, company_context_block, design_system_block
+from shared.company_logo import (
+    LOGO_INSTRUCTION,
+    LOGO_REMOVED_INSTRUCTION,
+    company_logo_data_url,
+    has_company_logo,
+    has_logo_placeholder,
+    inline_logo,
+    with_logo_placeholder,
+)
 from shared.converse import converse_chain
 from shared.derivation import (
     DERIVATION_FIELD,
@@ -91,6 +100,7 @@ from shared.logging import logger, metrics
 from shared.model_config import surface_context_window_tokens
 from shared.model_profile import model_profile_scope, payload_fields, profile_from_payload
 from shared.persona_context import personas_prompt_context
+from shared.project_keys import document_listing, project_pk
 from shared.prompt_labels_store import load_prompt_labels
 from shared.prompts import get_prd_generation_steps, get_prfaq_generation_steps
 from shared.prototype_pins import (
@@ -191,7 +201,7 @@ def _gather_context(
     # Query project items once if we need personas or documents
     wants_documents = data_sources.get('documents') or data_sources.get('research')
     if data_sources.get('personas') or wants_documents:
-        resp = projects_table.query(KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}'))
+        resp = projects_table.query(KeyConditionExpression=Key('pk').eq(project_pk(project_id)))
         all_project_items = resp.get('Items', [])
 
         # Gather personas
@@ -489,6 +499,34 @@ def _prototype_org_sections(grounding: Grounding | None = None, *,
     return design_section, company_section
 
 
+class BuildLogo(NamedTuple):
+    """The company logo for one prototype build."""
+    #: The logo as a ``data:`` URL, or None (opted out, none uploaded, too large, unreadable).
+    data_url: str | None = None
+    #: The derivation's ``company_logo_included``: True inlined, False uploaded but left out, None not recorded.
+    included: bool | None = None
+
+
+def _company_logo(with_design_system: bool) -> BuildLogo:
+    """The company logo for this build (``BuildLogo``).
+
+    The logo belongs to the design system, so the build dialog's "Design system" box decides
+    for it too. Never raises: a failed read builds the prototype without the logo (not recorded).
+    """
+    table = _aggregates_table() if with_design_system else None
+    if table is None:
+        return BuildLogo()
+    try:
+        row = table.get_item(Key={'pk': DESIGN_SYSTEM_PK, 'sk': CONFIG_SK}).get('Item')
+    except Exception as exc:  # noqa: BLE001 - optional prompt context must never fail a build
+        logger.warning('Company logo unavailable for the prototype', extra={'error_type': type(exc).__name__})
+        return BuildLogo()
+    if not has_company_logo(row):
+        return BuildLogo()
+    data_url = company_logo_data_url(row, _s3(), SCRATCH_BUCKET)
+    return BuildLogo(data_url, data_url is not None)
+
+
 def _design_system_record(requested: bool, section: str) -> bool | None:
     """The derivation's ``design_system_included``: True read, False opted out, None none configured."""
     if not requested:
@@ -764,8 +802,7 @@ def _document_item_fields(project_id: str, job_id: str, feature_idea: str,
     """
     now = now_iso()
     item_fields = {
-        'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS',
-        'gsi1sk': now,
+        **document_listing(project_id, now),
         'feature_idea': clean_stored_text(feature_idea),
         'content': clean_stored_text(content),
         'job_id': job_id,
@@ -959,7 +996,7 @@ def _document_by_id(projects_table, project_id: str, sk_prefix: str, document_id
     client-supplied id here without a separate ownership check.
     """
     resp = projects_table.get_item(
-        Key={'pk': f'PROJECT#{project_id}', 'sk': f'{sk_prefix}{document_id}'},
+        Key={'pk': project_pk(project_id), 'sk': f'{sk_prefix}{document_id}'},
     )
     return resp.get('Item') or None
 
@@ -1007,7 +1044,7 @@ def _newest_document_id(projects_table, project_id: str, sk_prefix: str) -> str 
     """
     newest = None
     params: dict = {
-        'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}') & Key('sk').begins_with(sk_prefix),
+        'KeyConditionExpression': Key('pk').eq(project_pk(project_id)) & Key('sk').begins_with(sk_prefix),
         # None of these names can collide with a DynamoDB reserved word (`sk` is
         # not one, and the others contain an underscore), so no
         # ExpressionAttributeNames are needed. `sk` is here only as the fallback
@@ -1215,7 +1252,7 @@ def _base_prototype(projects_table, project_id: str, base_prototype_id: str) -> 
     if not base_prototype_id:
         return None
     item = projects_table.get_item(
-        Key={'pk': f'PROJECT#{project_id}', 'sk': f'PROTOTYPE#{base_prototype_id}'},
+        Key={'pk': project_pk(project_id), 'sk': f'PROTOTYPE#{base_prototype_id}'},
     ).get('Item')
     if not item:
         raise RuntimeError(
@@ -1312,7 +1349,8 @@ def _revision_feedback_section(project_id: str, base: dict | None, feedback: str
     # enough to understand structure/style and revise it toward the feedback.
     # The pin widget is ours, not the model's: it is re-injected (with the
     # revision's own form) after generation, so the model never sees it.
-    prior_html = strip_pin_widget(_prior_prototype_html(project_id, base))
+    # An inlined company logo goes back to its placeholder: base64 would eat the prior-HTML cap.
+    prior_html = with_logo_placeholder(strip_pin_widget(_prior_prototype_html(project_id, base)))
     prior_block = (
         f'\n\nEXISTING PROTOTYPE (revise this):\n{prior_html[:PROTOTYPE_PRIOR_CAP]}' if prior_html else ''
     )
@@ -1385,7 +1423,7 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     if not prd and not prfaq:
         raise RuntimeError('No PRD or PR/FAQ found for this project. Generate at least one first.')
 
-    proj_resp = projects_table.get_item(Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'})
+    proj_resp = projects_table.get_item(Key={'pk': project_pk(project_id), 'sk': 'META'})
     project_name = (proj_resp.get('Item') or {}).get('name') or 'Project'
 
     title = doc_config.get('title') or default_prototype_title(prd, prfaq, f'Prototype: {project_name}')
@@ -1444,6 +1482,14 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     with_design_system = _use_design_system(doc_config)
     design_system_section, company_context_section = _prototype_org_sections(
         grounding, with_design_system=with_design_system)
+    # The model writes a placeholder for the uploaded logo; the image is inlined after generation.
+    logo = _company_logo(with_design_system)
+    logo_url = logo.data_url
+    if logo_url:
+        design_system_section += f'\n\n{LOGO_INSTRUCTION}'
+    elif has_logo_placeholder(feedback_section):
+        # The base prototype showed the uploaded logo, and there is none to use now: a drawn wordmark instead.
+        feedback_section += f'\n\n{LOGO_REMOVED_INSTRUCTION}'
 
     user_prompt = PROTOTYPE_HTML_USER_TEMPLATE.format(
         project_name=project_name,
@@ -1474,6 +1520,7 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     html = _extract_html(raw)
     if not html:
         raise RuntimeError('Prototype model did not return an HTML document.')
+    html = inline_logo(html, logo_url, brand or project_name)
     html = _with_pin_widget(project_id, doc_id, title, html)
 
     ctx.update_progress(80, 'saving_prototype')
@@ -1489,8 +1536,7 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
 
     item_fields = {
         **prototype_identity,
-        'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS',
-        'gsi1sk': now,
+        **document_listing(project_id, now),
         # NO prototype_url here. `/prototypes/*` is restricted by a CloudFront
         # trusted key group (issue #229), so a usable URL carries a signature
         # and an expiry — persisting one would bake in an expiry that outlives
@@ -1547,6 +1593,7 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
             # was told not to read it (a revision inherits that choice), omitted
             # when it was asked for but none is configured.
             design_system_included=_design_system_record(with_design_system, design_system_section),
+            company_logo_included=logo.included,
             **derivation_knowledge(grounding),
         ),
         'created_at': now,

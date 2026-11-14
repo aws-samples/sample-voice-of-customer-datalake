@@ -11,7 +11,7 @@ import { expectSelfInvokeOnly, findWorkerFunction, workerSettings } from '../tes
 import { byCodeUnit } from '../utils/compare';
 import { WORKSPACE_DELETE_GRANTS, deleteGrants } from '../utils/workspace-delete-grants';
 import {
-  CONTROL_ROW_DELETES, DELETE_AUDIT_PARTITION, DELETE_JOB_PARTITION, DEPLOYMENT_SETTINGS_PARTITIONS, MEMORY_PARTITIONS,
+  CONTROL_ROW_DELETES, DELETE_AUDIT_PARTITION, DELETE_JOB_PARTITION, MEMORY_PARTITIONS,
   TOMBSTONE_PARTITIONS,
   WORKSPACE_DELETE_MAX_EVENT_AGE_MINUTES, WORKSPACE_DELETE_RESERVED_CONCURRENCY,
 } from './workspace-delete-worker';
@@ -72,10 +72,10 @@ describe('the voc-workspace-delete job', () => {
   it('every sweep names its grants, and the job holds exactly their union', () => {
     expect(Object.keys(WORKSPACE_DELETE_GRANTS)).toStrictEqual([
       'credentials', 'feedback', 'counters', 'source_runs', 'failures', 'circuits', 'logs', 'scraper_runs',
-      'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'watermarks', 'memory', 'exports',
-      'objects', 'control_rows']);
+      'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'reprocess_jobs', 'watermarks', 'memory', 'exports',
+      'objects', 'radar', 'settings', 'user_contexts', 'control_rows']);
     expect([...deleteGrants()].sort(byCodeUnit)).toStrictEqual(['aggregates', 'controlRows', 'credentials',
-      'deploymentSettings', 'exportJobs', 'feedback', 'memory', 'metricTypeIndex', 'objects', 'tombstones',
+      'exportJobs', 'feedback', 'memory', 'metricTypeIndex', 'objects', 'radar', 'tombstones',
       'watermarks']);
   });
 
@@ -89,10 +89,9 @@ describe('the voc-workspace-delete job', () => {
 
   it('voc-aggregates: reads and batch deletes of one workspace, its tombstones and its export rows\' mark only', () => {
     expect(TOMBSTONE_PARTITIONS).toBe('AUDIT#tombstone#*');
-    // The deployment's two settings rows, GetItem only: the closed counter families' names (no workspace data).
-    expect(DEPLOYMENT_SETTINGS_PARTITIONS).toStrictEqual(['SETTINGS#categories', 'SETTINGS#dimensions']);
+    // No deployment settings row: the closed counter families' names come from the workspace's own
+    // WS#{id}#SETTINGS#categories and #dimensions rows, under the GetItem on WS#{id}#* below (7.08.00).
     expect(on('Aggregates')).toStrictEqual(sorted([
-      { actions: ['dynamodb:GetItem'], index: null, condition: keys(['SETTINGS#categories', 'SETTINGS#dimensions']) },
       { actions: ['dynamodb:GetItem', 'dynamodb:Query'], index: null, condition: keys([`WS#${ONE}#*`]) },
       { actions: ['dynamodb:BatchWriteItem'], index: null, condition: keys([`WS#${ONE}#*`]) },
       { actions: ['dynamodb:PutItem'], index: null, condition: keys(['AUDIT#tombstone#*']) },
@@ -114,6 +113,13 @@ describe('the voc-workspace-delete job', () => {
   it('voc-watermarks: BatchWriteItem of one workspace\'s watermarks only, no read', () => {
     expect(on('Watermarks')).toStrictEqual([
       { actions: ['dynamodb:BatchWriteItem'], index: null, condition: keys([`WS#${ONE}#*`]) }]);
+  });
+
+  it('voc-radar: reads and batch deletes of one workspace\'s partitions only (its Radar settings)', () => {
+    expect(on('Radar')).toStrictEqual(sorted([
+      { actions: ['dynamodb:BatchWriteItem'], index: null, condition: keys([`WS#${ONE}#*`]) },
+      { actions: ['dynamodb:GetItem', 'dynamodb:Query'], index: null, condition: keys([`WS#${ONE}#*`]) },
+    ]));
   });
 
   it('voc-workspaces: its job row, its audit partition, and the workspace\'s control rows by their partitions', () => {

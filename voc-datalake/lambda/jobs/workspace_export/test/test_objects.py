@@ -7,16 +7,20 @@ from __future__ import annotations
 import gzip
 import io
 import json
+import re
 import zipfile
+from datetime import timedelta
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
 import pytest
+from botocore.exceptions import ResponseStreamingError
 
 from jobs.workspace_export import handler, objects
 from jobs.workspace_export.objects import ObjectsState, entry_for, stored
 from jobs.workspace_export.test.conftest import EXPORT_ID, OTHER, WS, World, queue, seed
-from shared import ws_repo
+from shared import export_jobs, ws_repo
 from shared.test.export_s3_double import ExportS3
 from shared.ws_repo import OutOfScopeError, WorkspaceObjects, WorkspaceScope
 
@@ -252,6 +256,86 @@ def test_a_403_for_a_key_that_is_still_listed_is_raised_and_fails_the_export(wor
     assert result['status'] == 'failed'
 
 
+class _Dropping(io.BytesIO):
+    """A read stream that drops (as botocore raises a reset connection) after ``at`` bytes."""
+
+    def __init__(self, body: bytes, at: int) -> None:
+        super().__init__(body)
+        self._at = at
+
+    def read(self, size: int | None = -1) -> bytes:
+        if self.tell() >= self._at:
+            raise ResponseStreamingError(error='connection reset')
+        limit = self._at - self.tell()
+        return super().read(limit if size is None or size < 0 else min(size, limit))
+
+
+def _drop_streams(world: World, key: str, drops: int, at: int, replace: bytes | None = None) -> list[dict[str, Any]]:
+    """``key``'s first ``drops`` reads drop after ``at`` bytes (``replace``, if given, becomes its bytes at the first
+    drop); returns every GetObject request for it."""
+    real_get, requests = world.s3.get_object, []
+
+    def get_object(**request: Any) -> dict[str, Any]:
+        if request['Key'] == key:
+            requests.append({name: value for name, value in request.items() if name in ('Range', 'IfMatch')})
+        response = real_get(**request)
+        if request['Key'] != key:
+            return response
+        if len(requests) <= drops:
+            response['Body'] = _Dropping(response['Body'].read(), at)
+            if replace is not None and len(requests) == 1:
+                world.s3.seed(key, replace, 'application/json')
+        return response
+
+    world.s3.get_object = get_object  # type: ignore[method-assign]
+    return requests
+
+
+def test_a_dropped_read_stream_resumes_from_the_byte_reached_on_the_same_version(world):
+    seed(world)
+    _seed_objects(world)
+    key = f'{PREFIX}raw/web/2026/11/13/item/a1.json'
+    etag = world.s3.etag(key)
+    requests = _drop_streams(world, key, drops=2, at=100)
+    [result] = _run(world)
+    assert result['status'] == 'completed'
+    assert _archive(world).read(_name(key)) == OBJECTS[key][0]  # whole, byte for byte, nothing twice
+    assert requests == [{}, {'Range': 'bytes=100-', 'IfMatch': etag}, {'Range': 'bytes=200-', 'IfMatch': etag}]
+
+
+def test_a_stream_that_keeps_dropping_fails_the_export_after_two_resumes(world):
+    seed(world)
+    _seed_objects(world)
+    key = f'{PREFIX}raw/web/2026/11/13/item/a1.json'
+    requests = _drop_streams(world, key, drops=3, at=100)
+    [result] = _run(world)
+    assert result['status'] == 'failed'
+    assert len(requests) == 1 + handler.STREAM_RESUMES
+
+
+def test_an_object_replaced_while_its_stream_dropped_fails_the_export_never_splicing_versions(world):
+    seed(world)
+    _seed_objects(world)
+    key = f'{PREFIX}raw/web/2026/11/13/item/a1.json'
+    requests = _drop_streams(world, key, drops=1, at=100, replace=b'{"text": "a new version"}' * 40)
+    [result] = _run(world)
+    assert result['status'] == 'failed'
+    assert requests[1]['IfMatch'] != world.s3.etag(key)  # refused by S3 (412), not read
+    assert ZIP_KEY not in world.s3.objects
+
+
+def test_the_layer_resumes_only_with_a_version_and_an_offset():
+    s3 = ExportS3('raw-bucket')
+    s3.seed(f'{PREFIX}raw/a.json', b'0123456789')
+    layer = WorkspaceObjects(WorkspaceScope(WS), s3, 'raw-bucket')
+    assert layer.resume(f'{PREFIX}raw/a.json', 4, s3.etag(f'{PREFIX}raw/a.json')).read() == b'456789'
+    for etag, start in (('', 4), (s3.etag(f'{PREFIX}raw/a.json'), -1)):
+        with pytest.raises(ValueError, match='names the version read and a byte offset'):
+            layer.resume(f'{PREFIX}raw/a.json', start, etag)
+    with pytest.raises(OutOfScopeError):
+        layer.resume(f'ws/{OTHER}/raw/z.json', 0, '"x"')
+
+
 def test_an_object_replaced_by_a_larger_version_after_its_listing_is_listed_too_large(world):
     seed(world)
     _seed_objects(world)
@@ -365,6 +449,37 @@ def test_the_largest_object_fits_a_fresh_invocation_at_the_conservative_rate(sto
     stays inside a fresh invocation's budget, so the size cap and the time rule agree."""
     allowed_ms = ObjectsState().seconds_for(objects.MAX_OBJECT_BYTES, store=store) * 1000
     assert allowed_ms < handler.FRESH_BUDGET_MS
+
+
+def test_the_run_limit_matches_the_buckets_lifecycle_and_keeps_the_download_window_whole():
+    """The pin: the handler's copies of the bucket's export expiry and multipart abort are the stack's own, and a run
+    ends while the whole download window fits before the zip expires and the upload is still open."""
+    stack = (Path(__file__).resolve().parents[4] / 'lib/stacks/core-buckets.ts').read_text(encoding='utf-8')
+    for name in ('EXPORT_EXPIRATION_DAYS', 'ABORT_MULTIPART_DAYS'):
+        match = re.search(rf'export const {name} = (\d+);', stack)
+        assert match, name
+        assert int(match.group(1)) == getattr(handler, name), name
+    window = timedelta(days=export_jobs.DOWNLOAD_DAYS)
+    expiry, abort = timedelta(days=handler.EXPORT_EXPIRATION_DAYS), timedelta(days=handler.ABORT_MULTIPART_DAYS)
+    longest = handler.MAX_RUN
+    assert longest + window < expiry
+    assert longest < abort
+
+
+def test_an_export_still_running_past_the_run_limit_fails_saying_why_and_aborts_its_upload(world):
+    seed(world)
+    _seed_objects(world)
+    first = handler.handle_event(queue(world), _Budget(world.s3, 2))
+    assert first['status'] == 'continued'  # within the limit: as before, an upload open
+    [(_fn, event)] = [call.args for call in world.invoke.call_args_list]
+    with patch.object(handler, 'MAX_RUN', timedelta(0)):
+        result = handler.handle_event(event, _Budget(world.s3, None))
+    assert result['status'] == 'failed'
+    row = world.aggregates.get_item(Key={'pk': f'WS#{WS}#JOB#export', 'sk': EXPORT_ID})['Item']
+    assert (row['status'], row['error']) == ('failed', handler.RAN_TOO_LONG)
+    assert world.s3.aborted  # the open upload aborted
+    assert not world.s3.uploads
+    assert ZIP_KEY not in world.s3.objects  # no zip (work objects expire with the export tag, as on every failure)
 
 
 def test_thousands_of_small_copies_do_not_slow_the_rate_a_large_object_is_judged_at():

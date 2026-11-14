@@ -27,6 +27,11 @@ from shared.model_profile import E2E_GROUP
 from shared.project_access import ACTING_SUBJECT_CLAIM, ADMIN_GROUP
 
 USERS_GROUP: Final = 'users'
+#: The workspace a plan was approved in (META ``workspace_id``), for the step's domain calls: not a claim, the plan
+#: step sends it as their ``X-Workspace-Id`` header (stream/src/assistant/tools/internal-api.ts), and a domain route
+#: that has moved into its workspace (so far the resolved problems; the rest in phases 2 and 3) resolves the approver's
+#: membership there (lambda/shared/request_workspace.py).
+WORKSPACE_CLAIM: Final = 'voc:workspace'
 _GROUPS_PAGE: Final = 60
 
 
@@ -101,7 +106,9 @@ def approver_claims(meta: Mapping[str, Any], *, needs_admin: bool, admin_if_curr
     # The e2e test users' model profile (shared/model_profile.py) follows the approver's group, read now.
     if E2E_GROUP in current:
         names.append(E2E_GROUP)
+    workspace = meta.get('workspace_id')
     return {
         'sub': sub, 'cognito:username': username, 'cognito:groups': ','.join(names),
         ACTING_SUBJECT_CLAIM: sub, PRINCIPAL_CLAIM: f"{PLAN_PRINCIPAL_PREFIX}{meta['plan_id']}",
+        **({WORKSPACE_CLAIM: workspace} if isinstance(workspace, str) and workspace else {}),
     }

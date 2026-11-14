@@ -425,3 +425,28 @@ class TestTheBodyIsDecodedAsTheRouteMeantIt:
         lambda_client.invoke.return_value = _proxy_response({'statusCode': 502, 'body': raw_body})
 
         assert call_domain(_call(), claims=_CLAIMS) == DomainResult(status_code=502, payload=raw_body)
+
+
+
+class TestTheWorkspaceHeader:
+    """The workspace a token was minted in goes as X-Workspace-Id, never as a claim; none without one."""
+
+    WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
+
+    def _event(self, workspace):
+        from shared.mcp_delegate import DomainCall, build_proxy_event
+
+        call = DomainCall(function_name='f', method='GET', path='/settings/brand')
+        return build_proxy_event(call, {'sub': 'mcp:tok_1'}, workspace)
+
+    def test_the_minted_workspace_is_the_header(self):
+        event = self._event(self.WS)
+        assert event['headers']['X-Workspace-Id'] == self.WS
+        assert self.WS not in str(event['requestContext'])
+
+    @pytest.mark.parametrize('workspace', [None, ''])
+    def test_no_workspace_means_no_header(self, workspace):
+        assert 'X-Workspace-Id' not in self._event(workspace)['headers']
+
+    def test_a_damaged_workspace_is_sent_as_is_so_the_resolver_refuses_it(self):
+        assert self._event('ws_bad')['headers']['X-Workspace-Id'] == 'ws_bad'

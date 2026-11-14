@@ -11,8 +11,8 @@ The erasure routes (``POST`` / ``GET /settings/erasure``, lambda/api/settings_ha
   ``require_workspace_admin``: a member admin; the deployment's ``admins`` grants nothing inside a workspace),
   resolved from the table, never the 30 s cache. A platform admin is never elevated here (``no_platform_admin_entry``):
   they act with their own membership's role, or get the one 404, so these routes write no entry audit row and run no
-  live check (the settings role reads ``WS#*`` in voc-workspaces only; its policy is near the size line past which a
-  domain is split, lib/utils/workspace-request-grants.ts ``grantWorkspaceAttributeRead``). A platform admin who must
+  live check (the settings role reads the membership through the stack's one workspace-resolution policy,
+  lib/utils/workspace-resolution-grants.ts, with the resolver's projections, shared/workspace.py). A platform admin who must
   erase in a workspace makes themselves a member admin there first (the platform console, audited). Its job row
   lives in the workspace's own partition (``WS#{ws}#JOB#erasure``, shared/erasure_jobs.py, written through the
   workspace layer) and names the workspace (``scoped_job_row``); one erasure of a workspace runs at a time (its lock,
@@ -44,9 +44,10 @@ from shared.erasure_jobs import (
     release_quietly,
     release_workspace_lock,
 )
-from shared.exceptions import ConflictError, ValidationError
+from shared.exceptions import AuthorizationError, ConflictError, ValidationError
 from shared.ingest_tables import table_view
 from shared.logging import logger
+from shared.project_gate import caller_from_event
 from shared.retention import ERASURE_JOB_PREFIX, SOURCE_FIELD
 from shared.workspace import WorkspaceContext, require_workspace_admin
 from shared.workspace_request import RequestWorkspace
@@ -79,20 +80,24 @@ def no_platform_admin_entry(_event: dict) -> bool:
     return False
 
 
-def require_erasure_admin(workspace: RequestWorkspace, event: dict) -> WorkspaceContext | None:
+def require_erasure_admin(workspace: RequestWorkspace, event: dict, *, write: bool = False) -> WorkspaceContext | None:
     """The erasure routes' gate on both paths (403 otherwise); the workspace the request acts in, or None.
 
     Resolved first, afresh from the table (``fresh``: a member demoted a moment ago cannot erase or read the jobs):
     400 for an empty header, the one 404 for a malformed id, an unknown or ``deleting`` workspace and a non-member.
     Without the header the deployment's ``admins`` (``require_admin``), as before; with it the caller's admin role in
     the workspace (``require_workspace_admin``: a member admin; ``workspace`` is built with
-    ``no_platform_admin_entry``).
+    ``no_platform_admin_entry``). A start (``write``) in a workspace is the member admin's own act: a delegated
+    caller (an MCP token, an agent or a plan step acting for the person) gets 403, as for the workspace's admin
+    settings (shared/request_workspace.py ``require_settings_admin``); an erasure cannot be undone.
     """
     context = workspace.context(event, fresh=True)
     if context is None:
         require_admin(event)
     else:
         require_workspace_admin(context)
+        if write and caller_from_event(event).delegated:
+            raise AuthorizationError('An erasure in a workspace cannot be started by a delegated caller')
     return context
 
 

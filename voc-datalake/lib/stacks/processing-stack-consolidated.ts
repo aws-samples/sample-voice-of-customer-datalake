@@ -31,7 +31,8 @@ import { createResearchStateMachine } from './processing-research-workflow';
 import { grantSharedMemoryRecall } from '../utils/memory-recall-grant';
 import { PROCESSOR_BATCHING_WINDOW, PROCESSOR_MAX_CONCURRENCY, PROCESSOR_TIMEOUT } from './processor-timing';
 import { appVersion } from '../utils/connector-version';
-import { grantSilverHistoryPut } from '../utils/silver-history-grants';
+import { grantSilverHistoryPut, grantWorkspaceSilverHistoryPut } from '../utils/silver-history-grants';
+import { WORKSPACE_RAW_LAYER_PREFIX } from './core-buckets';
 import { grantReadAndWrites } from '../utils/table-write-grants';
 import { grantRealtimePublish, type RealtimePublishing } from '../utils/realtime';
 import { FEATURE_REQUESTS_TABLE_ENV, grantFeatureRequestEvidenceRead } from '../utils/feature-request-evidence-grant';
@@ -327,6 +328,7 @@ export class VocProcessingStack extends VocStack {
       aggregatesTable,
       workspacesTable: props.workspacesTable,
       memoryTable: props.memoryTable,
+      conversationsTable: props.conversationsTable,
       rawDataBucket,
     });
     // An export's end reaches the admin who started it (lambda/jobs/workspace_export/handler.py, docs/realtime.md).
@@ -347,6 +349,7 @@ export class VocProcessingStack extends VocStack {
         workspacesTable: props.workspacesTable,
         memoryTable: props.memoryTable,
         watermarksTable: props.watermarksTable,
+        radarTable: props.radarTable,
         rawDataBucket,
         pluginIds: loadPlugins(path.join(__dirname, '../../plugins')).map((plugin) => plugin.id),
       });
@@ -364,6 +367,7 @@ export class VocProcessingStack extends VocStack {
       conversationsTable: props.conversationsTable,
       aggregatesTable,
       rawDataBucket,
+      workspacesTable: props.workspacesTable,
     });
     this.memoryExtractQueue = memoryWorkers.extractQueue;
     grantRealtimePublish(props.realtime, 'jobs', [memoryWorkers.extractor]);
@@ -521,7 +525,8 @@ export class VocProcessingStack extends VocStack {
    * over to a fresh async invocation of ITSELF before its 15-minute ceiling.
    *
    * Least privilege — no DeleteItem/PutItem on feedback (items are only ever
-   * UPDATEd in place), raw bucket read limited to `raw/*`.
+   * UPDATEd in place), raw bucket read limited to `raw/*` and, for a workspace's job
+   * (7.13.00), `ws/{any one workspace id}/raw/*` (the code pins which workspace).
    */
   private createCategoryReprocessLambda(deps: {
     feedbackTable: dynamodb.Table;
@@ -543,8 +548,13 @@ export class VocProcessingStack extends VocStack {
     // the settings API's, not the worker's.
     deps.aggregatesTable.grant(role, 'dynamodb:GetItem', 'dynamodb:UpdateItem');
     deps.rawDataBucket.grantRead(role, 'raw/*');
-    // The item as it was before each reprocess update (lambda/shared/silver_provenance.py): write-once Put only.
+    // A workspace's own job (7.13.00) replays that workspace's bronze: read only, on ws/{any one workspace id}/raw/*
+    // (the pattern matches exactly one id segment, any id; the code pins which: the job's scope, shared/ws_repo.py).
+    deps.rawDataBucket.grantRead(role, `${WORKSPACE_RAW_LAYER_PREFIX}*`);
+    // The item as it was before each reprocess update (lambda/shared/silver_provenance.py): write-once Put only,
+    // under silver/ for a deployment item and ws/{any one workspace id}/silver/ for a workspace's (the code pins which).
     grantSilverHistoryPut(deps.rawDataBucket, role);
+    grantWorkspaceSilverHistoryPut(deps.rawDataBucket, role);
     deps.kmsKey.grantEncryptDecrypt(role);
     // 'enrichment'/'utilities' surfaces are repointable via the picker (issue #96).
     grantClaudeModels(role, 'invoke');

@@ -10,16 +10,18 @@ import { Check, Link2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useLocation } from 'react-router-dom'
 import { useCopiedFlag } from '../../hooks/useCopiedFlag'
+import { pageHref } from '../../workspace/workspacePath'
 
-/** The absolute URL of a review's page in this app. */
+/** The absolute URL of a review's page in this app (inside the current workspace's `/w/{slug}`, if any). */
 function reviewPageUrl(feedbackId: string, origin: string): string {
-  return `${origin}/feedback/${encodeURIComponent(feedbackId)}`
+  const path = `/feedback/${encodeURIComponent(feedbackId)}`
+  return `${origin}${pageHref(path)}`
 }
 
 /** The link for one review: its page, or (a Radar review) the current modal address without a hash. */
 function reviewLink(feedbackId: string, radarPath: string | null): string {
   const { origin } = window.location
-  return radarPath === null ? reviewPageUrl(feedbackId, origin) : `${origin}${radarPath}`
+  return radarPath === null ? reviewPageUrl(feedbackId, origin) : `${origin}${pageHref(radarPath)}`
 }
 
 interface CopyReviewLinkProps {

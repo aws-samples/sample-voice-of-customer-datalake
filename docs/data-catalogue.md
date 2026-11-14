@@ -66,7 +66,7 @@ cd voc-datalake/lambda && ../.venv/bin/python -m shared.feedback_catalogue
 | `gsi3pk` | string | `URGENCY#{urgency}` (index gsi3-by-urgency) | processor, source_update | none | kept / kept |  | always key |
 | `gsi3sk` | string | `processed_at` (gsi3-by-urgency) | processor | none | kept / kept |  | always key |
 | `gsi4pk` | string | `FEEDBACK#{feedback_id}` (index gsi4-by-feedback-id) | processor | none | kept / kept |  | always key |
-| `gsi5pk` | string | `CHANNEL#{source_channel}` (index gsi5-by-channel); absent when the channel is empty | processor, source_update | none | kept / kept |  | key |
+| `gsi5pk` | string | `CHANNEL#{source_channel}` (index gsi5-by-channel); `CHANNEL#unknown` when the channel is empty | processor, source_update | none | kept / kept |  | key |
 | `feedback_id` | string | The item id: the same source item has the same id in every workspace, so gsi4-by-feedback-id is keyed on `gsi4pk` | processor | none | kept / kept |  | always |
 | `source_id` | string | The id the source gave the item (its own review / issue id) | producer | none | kept / kept |  | always |
 | `source_platform` | string | The source (plugin id or import path) that sent the item | producer | none | kept / kept |  | always |

@@ -238,14 +238,17 @@ describe('cdk-nag acknowledgements', () => {
       // Also counted: the feedback-form API's write-once copy of a workspace form's submission,
       // ws/{one id}/raw/feedback_form/*, and the GitHub webhook's archive of a workspace's delivery,
       // ws/{one id}/raw/github_issues/*.
-      // 80: a workspace's export, ws/{one id}/exports/* (the export job's writes, the workspaces API's signed read;
+      // 80: a workspace's page imports under ws/{one id}/memory-imports/* (the memory API's and the extractor's).
+      // 81: a workspace's export, ws/{one id}/exports/* (the export job's writes, the workspaces API's signed read;
       // lib/stacks/api-workspace-export.ts).
-      // 81: an export's own work objects, ws/{one id}/exports/*/work/*, which an export that may not go on deletes
+      // 82: an export's own work objects, ws/{one id}/exports/*/work/*, which an export that may not go on deletes
       // (lib/stacks/workspace-export-worker.ts).
-      // 82: every object of one workspace, ws/{one id}/*, which the export job reads into its zip (slice 4b).
-      // 83: a workspace's hard delete deletes its credentials parameters, voc/ws/{one id}/credentials/*
-      // (lib/stacks/workspace-delete-worker.ts; its ws/{one id}/* versions share 82's finding).
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 83, used: 83 });
+      // 83: every object of one workspace, ws/{one id}/*, which the export job reads into its zip (7.20.00).
+      // 84: main's 7.00.00, the document generator's read of the uploaded company logos,
+      // company-context/design/logo_????????????.* (CompanyLogoReadPolicy).
+      // 85: a workspace's hard delete deletes its credentials parameters, voc/ws/{one id}/credentials/*
+      // (lib/stacks/workspace-delete-worker.ts; its ws/{one id}/* versions share 83's finding).
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 85, used: 85 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

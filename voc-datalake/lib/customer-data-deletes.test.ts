@@ -96,6 +96,8 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
   AgentsTable: {},
   RadarTable: {
     [RETENTION_ROLE]: { scope: WHOLE_TABLE, why: 'erasure and retention reach Radar reviews and their dedupe markers (docs/radar.md)' },
+    // A workspace's hard delete: its Radar settings (WS#{one id}#SETTINGS#radar), one workspace's partitions only.
+    [DELETE_ROLE]: WORKSPACE_DELETE,
   },
   // The multi-workspace control plane (docs/multi-workspace.md). Membership rows are access configuration, not
   // customer data (D5 covers feedback and raw items); a removal is audited first (AUDIT#WS#, under the audit-row
@@ -104,7 +106,10 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
   // Workspace delete was settled by decision 17 (phase 4d-2, its role below). The users API deletes a deleted user's memberships
   // (6.11.00, lambda/shared/workspace_members.py remove_user_memberships), each audited first, in the same scope.
   WorkspacesTable: {
-    'VocApiStack/WorkspacesLambdaRole': { scope: ['USER#*', 'WS#*'], why: 'membership removal: MEMBER# and USER# rows only' },
+    'VocApiStack/WorkspacesLambdaRole': {
+      scope: ['PLUGIN#*', 'USER#*', 'WS#*'],
+      why: 'membership removal (MEMBER# and USER# rows only) and a disabled plugin\'s PLUGIN# row: configuration',
+    },
     'VocApiStack/UsersLambdaRole': {
       scope: ['USER#*', 'WS#*'], why: 'a deleted user\'s memberships: their MEMBER# and USER# rows only, before the account goes',
     },
@@ -135,22 +140,20 @@ const WORKSPACE_WRITERS: Readonly<Record<string, Scope>> = {
   // Since 4d-2 also a hard delete's request, cancel and resume: its job row (WSDELETE), the platform's audit rows
   // (AUDIT#workspace-deletes), and META's and the listing row's status (lib/stacks/api-workspace-delete.ts: on
   // `WS#{one id}` exactly).
-  'VocApiStack/WorkspacesLambdaRole': ['AUDIT#WS#*', 'AUDIT#workspace-deletes', 'SLUG#*', 'USER#*', 'WORKSPACES', 'WS#*',
-    `WS#${ONE_WORKSPACE}`, 'WSDELETE'],
+  'VocApiStack/WorkspacesLambdaRole': ['AUDIT#WS#*', 'AUDIT#workspace-deletes', 'PLUGIN#*', 'SLUG#*', 'USER#*',
+    'WORKSPACES', 'WS#*', `WS#${ONE_WORKSPACE}`, 'WSDELETE'],
   // The hard delete itself: its job row, its completed audit row, the slug guard's deleted_at, the control rows.
   [DELETE_ROLE]: ['AUDIT#workspace-deletes', 'FORM#*', 'PLUGIN#*', 'SLUG#*', 'USER#*', 'WORKSPACES',
     `WS#${ONE_WORKSPACE}`, 'WSDELETE'],
   'VocApiStack/UsersLambdaRole': ['AUDIT#WS#*', 'USER#*', 'WS#*'],
+  // A platform admin's entry into a workspace from a domain API: the stack's one workspace-resolution policy, attached
+  // to each domain API's role that resolves (lib/utils/workspace-resolution-grants.ts): the settings API, and since
+  // 7.04.00 the metrics API, the feedback edits and the integrations and scrapers APIs.
+  'VocApiStack/WorkspaceResolutionPolicy': ['AUDIT#WS#*'],
   [RETENTION_ROLE]: ['WS#*'],
-  // The data-path APIs that resolve X-Workspace-Id: a platform admin's entry audit row only (PutItem, a new row;
-  // lib/utils/workspace-request-grants.ts).
-  'VocApiStack/MetricsLambdaRole': ['AUDIT#WS#*'],
-  'VocApiStack/FeedbackEditLambdaRole': ['AUDIT#WS#*'],
-  'VocApiStack/IntegrationsLambdaRole': ['AUDIT#WS#*'],
-  'VocApiStack/ScrapersLambdaRole': ['AUDIT#WS#*'],
-  // The feedback forms: an entry audit row and a workspace form's `form_deleted` row (AUDIT#WS#*, written before the
-  // delete), and a workspace form's lookup row (put on create, deleted with the form).
-  'VocApiStack/FeedbackFormLambdaRole': ['AUDIT#WS#*', 'FORM#*'],
+  // The feedback forms (7.06.00): a workspace form's lookup row (put on create, deleted with the form); its entry and
+  // form_deleted audit rows go through the workspace-resolution policy above.
+  'VocApiStack/FeedbackFormLambdaRole': ['FORM#*'],
 };
 
 /** A sample object key per customer / workspace prefix of the raw bucket, matched against each grant's ARN glob. */
@@ -222,9 +225,10 @@ interface Grant { role: string; managed: boolean; actions: string[]; resource: s
 const DYNAMO_DELETE = /^dynamodb:(DeleteItem|BatchWriteItem|PartiQLDelete|\*)$/;
 const S3_DELETE = /^s3:(Delete.*|\*)$/;
 
-/** `<Stack>/<RoleId>` for a CDK default policy logical id (`<RoleId>DefaultPolicy<hash>`). */
+/** `<Stack>/<RoleId>` for a CDK default policy logical id (`<RoleId>DefaultPolicy<hash>`), `<Stack>/<PolicyId>` for a
+ *  customer-managed policy's (`<PolicyId><hash>`). */
 function roleOf(stack: string, policyId: string): string {
-  return `${stack}/${policyId.replace(/DefaultPolicy[0-9A-F]{8}$/, '')}`;
+  return `${stack}/${policyId.replace(/(?:DefaultPolicy)?[0-9A-F]{8}$/, '')}`;
 }
 
 // With the hard delete on (-c workspaceHardDelete=true, lib/utils/workspace-hard-delete.ts): every role that can
@@ -323,10 +327,10 @@ describe('customer-data, workspace and audit deletes across every stack', () => 
   // and the live platform-admin check on entering a workspace (6.09.00, lambda/shared/workspace.py). Both landed; the
   // change that creates workspaces (6.09.00) is the one that widened WORKSPACE_WRITERS; the members routes (6.10.00)
   // write within the same partitions (role updates and removals in `USER#*` and `WS#*`); 6.11.00 adds the users API (a
-  // deleted user's memberships) and voc-retention (an erasure by email's de-identification); the read APIs' slice adds
-  // the metrics API and the feedback edits (a platform admin's entry audit, AUDIT#WS#* only). A new writer or partition
-  // is a decision recorded here.
-  it('voc-workspaces: only the workspaces API, the users API, voc-retention and the entry audits write, each in its partitions', () => {
+  // deleted user's memberships) and voc-retention (an erasure by email's de-identification); the workspace-resolution
+  // policy of the domain APIs that act in a workspace (the settings API first), the entry audit row of a platform admin
+  // (`AUDIT#WS#*`, a new row only). A new writer or partition is a decision recorded here.
+  it('voc-workspaces: only the workspaces and users APIs, the domain APIs\' resolution and voc-retention write, each in its partitions', () => {
     const writers: Record<string, Scope> = {};
     for (const grant of grants.filter(onTable('WorkspacesTable')).filter((g) => g.actions.some((a) => DYNAMO_WRITE.test(a)))) {
       writers[grant.role] = unionOf(writers[grant.role] ?? [], scopeOf(grant));

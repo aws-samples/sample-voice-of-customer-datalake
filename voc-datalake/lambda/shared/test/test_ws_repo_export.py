@@ -77,13 +77,13 @@ def _objects(min_part: int = 1) -> tuple[ExportObjects, ExportS3]:
 def test_the_s3_double_refuses_a_part_under_the_minimum_but_the_last():
     objects, s3 = _objects(min_part=8)
     key = objects.key('ex_1', 'workspace-export.zip')
-    upload = objects.create_multipart_upload(key, 'application/zip')
+    upload = objects.start_upload(key, 'application/zip')
     objects.upload_part(key, upload, 1, b'short')
     objects.upload_part(key, upload, 2, b'last')
     with pytest.raises(ClientError, match='EntityTooSmall'):
         objects.complete_multipart_upload(key, upload, objects.list_parts(key, upload))
     assert key not in s3.objects
-    upload = objects.create_multipart_upload(key, 'application/zip')
+    upload = objects.start_upload(key, 'application/zip')
     objects.upload_part(key, upload, 1, b'long enough')
     objects.upload_part(key, upload, 2, b'last')
     objects.complete_multipart_upload(key, upload, objects.list_parts(key, upload))
@@ -105,7 +105,7 @@ def test_export_keys_live_under_the_workspaces_exports():
 def test_every_call_refuses_a_key_outside_the_exports(key):
     objects, s3 = _objects()
     calls = [
-        lambda: objects.create_multipart_upload(key, 'application/zip'),
+        lambda: objects.start_upload(key, 'application/zip'),
         lambda: objects.upload_part(key, 'u', 1, b'x'),
         lambda: objects.list_parts(key, 'u'),
         lambda: objects.complete_multipart_upload(key, 'u', []),
@@ -136,7 +136,7 @@ def test_an_upload_already_gone_is_aborted_and_any_other_fault_raises():
 def test_a_multipart_upload_round_trips_and_is_tagged():
     objects, s3 = _objects()
     key = objects.key('ex_1', 'workspace-export.zip')
-    upload = objects.create_multipart_upload(key, 'application/zip')
+    upload = objects.start_upload(key, 'application/zip')
     for number, body in ((1, b'first'), (2, b'second'), (3, b'third')):
         objects.upload_part(key, upload, number, body)
     parts = objects.list_parts(key, upload)
@@ -149,7 +149,7 @@ def test_a_multipart_upload_round_trips_and_is_tagged():
 def test_list_parts_follows_every_page():
     objects, s3 = _objects()
     key = objects.key('ex_1', 'workspace-export.zip')
-    upload = objects.create_multipart_upload(key, 'application/zip')
+    upload = objects.start_upload(key, 'application/zip')
     for number in range(1, 2501):
         objects.upload_part(key, upload, number, b'x')
     parts = objects.list_parts(key, upload)
@@ -159,8 +159,8 @@ def test_list_parts_follows_every_page():
 
 def test_the_open_uploads_are_the_workspaces_exports_only():
     objects, s3 = _objects()
-    first = objects.create_multipart_upload(objects.key('ex_1', 'workspace-export.zip'), 'application/zip')
-    ExportObjects(WorkspaceScope(OTHER), s3, BUCKET).create_multipart_upload(
+    first = objects.start_upload(objects.key('ex_1', 'workspace-export.zip'), 'application/zip')
+    ExportObjects(WorkspaceScope(OTHER), s3, BUCKET).start_upload(
         f'ws/{OTHER}/exports/ex_2/workspace-export.zip', 'application/zip')
     assert objects.open_uploads() == [(f'ws/{WS}/exports/ex_1/workspace-export.zip', first)]
 

@@ -41,9 +41,9 @@ from shared.exceptions import (
 )
 from shared.image_limits import IMAGE_CONTENT_TYPE_EXTENSIONS, MAX_IMAGE_BYTES
 from shared.logging import logger, tracer
+from shared.project_keys import document_keys, project_pk
 from shared.project_writes import (
     create_counted_project_child,
-    project_pk,
     put_project_item,
 )
 from shared.s3_versions import delete_every_version_of_keys
@@ -288,7 +288,7 @@ def get_context(project_id: str) -> dict:
         raise ConfigurationError('Projects table not configured')
 
     resp = projects_table.get_item(
-        Key={'pk': f'PROJECT#{project_id}', 'sk': CONTEXT_SK}
+        Key={'pk': project_pk(project_id), 'sk': CONTEXT_SK}
     )
     item = resp.get('Item')
     if not item:
@@ -323,12 +323,12 @@ def update_context(project_id: str, body: object) -> dict:
     # Build UpdateExpression for whatever fields are present in the patch.
     # Always set updated_at; ensure base item exists with put_item if missing.
     resp = projects_table.get_item(
-        Key={'pk': f'PROJECT#{project_id}', 'sk': CONTEXT_SK},
+        Key={'pk': project_pk(project_id), 'sk': CONTEXT_SK},
         ProjectionExpression='pk',
     )
     if not resp.get('Item'):
         base = {
-            'pk': f'PROJECT#{project_id}',
+            'pk': project_pk(project_id),
             'sk': CONTEXT_SK,
             'created_at': now,
             'updated_at': now,
@@ -341,7 +341,7 @@ def update_context(project_id: str, body: object) -> dict:
     if not patch:
         # No-op patch; just bump updated_at so clients can detect activity.
         projects_table.update_item(
-            Key={'pk': f'PROJECT#{project_id}', 'sk': CONTEXT_SK},
+            Key={'pk': project_pk(project_id), 'sk': CONTEXT_SK},
             UpdateExpression='SET updated_at = :now',
             ConditionExpression='attribute_exists(pk) AND attribute_exists(sk)',
             ExpressionAttributeValues={':now': now},
@@ -360,7 +360,7 @@ def update_context(project_id: str, body: object) -> dict:
         expr_names[name_alias] = key
 
     projects_table.update_item(
-        Key={'pk': f'PROJECT#{project_id}', 'sk': CONTEXT_SK},
+        Key={'pk': project_pk(project_id), 'sk': CONTEXT_SK},
         UpdateExpression='SET ' + ', '.join(set_parts),
         ConditionExpression='attribute_exists(pk) AND attribute_exists(sk)',
         ExpressionAttributeValues=expr_vals,
@@ -888,10 +888,7 @@ def generate_report(project_id: str, body: dict) -> dict:
 
     def build(report_id: str) -> dict:
         return {
-            'pk': f'PROJECT#{project_id}',
-            'sk': f'PRODUCT_REPORT#{report_id}',
-            'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS',
-            'gsi1sk': now,
+            **document_keys(project_id, f'PRODUCT_REPORT#{report_id}', now),
             'document_id': report_id,
             'document_type': 'product_report',
             'title': title,

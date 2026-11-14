@@ -85,7 +85,7 @@ The infrastructure is five CDK stacks: `VocCoreStack` (tables, buckets, Cognito,
 
 ## 🚀 Quick Start
 
-You need the AWS CLI with credentials, Node.js 22.22.2+ (or 24.15+), Python 3.12+ for the local tooling (the Lambdas run Python 3.14) and Docker or Finch.
+You need the AWS CLI with credentials, Node.js 24.15+, Python 3.12+ for the local tooling (the Lambdas run Python 3.14) and Docker or Finch.
 
 ```bash
 # Clone and install
@@ -111,7 +111,7 @@ npm run deploy:all
 
 Web search deploys a stack to us-east-1, so a deployment in another region also needs `cdk bootstrap aws://<account>/us-east-1` (or `-c enableWebSearch=false`). Before the first deploy, file Anthropic's use-case form in the Bedrock console if your account has not done so. The [Deployment Guide](docs/deployment.md) covers both, and the settings for production.
 
-> **Existing deployments (Unreleased, multi-workspace):** the next release re-keys two indexes of the feedback table, which CloudFormation cannot do in one update, and items stored before would be missing from them. Do not deploy it onto an existing stack; see [Multi-workspace → Upgrading](docs/multi-workspace.md#upgrading).
+> **Existing deployments (7.00.00, multi-workspace):** release 7.00.00 re-keys two indexes of the feedback table, which CloudFormation cannot do in one update, and items stored before would be missing from them. Do not deploy it onto an existing stack; see [Multi-workspace → Upgrading](docs/multi-workspace.md#upgrading).
 
 ## 🧪 Running the Tests
 
@@ -141,7 +141,7 @@ aws cloudformation describe-stacks \
   --output text
 ```
 
-On a new deployment the admin is also the first member of the `platform-admins` group, which will create workspaces ([Multi-workspace](docs/multi-workspace.md)); an older deployment adds one by hand ([CHANGELOG 6.06.02](CHANGELOG.md#60602---2026-11-11), Upgrade notes). The site address is the `WebsiteURL` output of the same stack. You are asked to change the password on first sign-in. Later deploys leave the admin user untouched: no new user is created, the password is never reset, and the output shows a placeholder.
+On a new deployment the admin is also the first member of the `platform-admins` group, which creates workspaces and changes what every workspace shares, such as the default theme and the operational alerts ([Multi-workspace](docs/multi-workspace.md)); an older deployment adds one by hand ([CHANGELOG 6.06.02](CHANGELOG.md#60602---2026-11-11), Upgrade notes). The site address is the `WebsiteURL` output of the same stack. You are asked to change the password on first sign-in. Later deploys leave the admin user untouched: no new user is created, the password is never reset, and the output shows a placeholder.
 
 ## ⚙️ Configuration
 

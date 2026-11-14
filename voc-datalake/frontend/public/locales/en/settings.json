@@ -159,6 +159,7 @@
     "retry": "Retry",
     "notSynced": "Not synced",
     "saveFailed": "Couldn’t save to the server. Try again.",
+    "savedToServer": "Brand saved.",
     "adminOnlyNotice": "Only admins can change the brand configuration. You can view it here."
   },
   "categories": {
@@ -222,6 +223,7 @@
     "validationFailures": "Validation Failures",
     "periodLabel": "Time period",
     "alerts": {
+      "platformAdminOnly": "Only platform admins can change alerting: the alarms watch the whole deployment. You can view the status here.",
       "title": "Alerts",
       "on": "On",
       "off": "Off",
@@ -698,6 +700,8 @@
     "uploadBadType": "{{name}} is not an accepted file type.",
     "uploadTooLarge": "{{name}} is larger than {{mb}} MB.",
     "uploadFailed": "Upload failed. Try again.",
+    "logoNotShrunk": "{{name}} could not be made smaller than 1 MB. Export a smaller PNG and upload that.",
+    "logoUnreadable": "{{name}} could not be read as an image. Export it as PNG and upload that.",
     "integrations": "Design integrations",
     "integrationsHint": "Tokens are stored encrypted and never shown again. Leave a field empty to keep the current token.",
     "providers": {
@@ -964,7 +968,7 @@
   "appearance": {
     "title": "Default theme",
     "hint": "The colour theme everyone sees until they pick their own in Account → Preferences.",
-    "adminOnlyNotice": "Only admins can change the default theme. You can view it here.",
+    "adminOnlyNotice": "Only platform admins can change the default theme: every workspace shares it. You can view it here.",
     "loading": "Loading the default theme…",
     "loadFailed": "Couldn’t load the default theme from the server.",
     "save": "Save theme",

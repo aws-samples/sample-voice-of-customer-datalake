@@ -42,6 +42,8 @@
       "webSearchesUsed_many": "{{count, number}} de recherches web",
       "companyContext": "Contexte de l'entreprise",
       "designSystem": "Système de design de l’entreprise",
+      "companyLogo": "Logo de l'entreprise",
+      "companyLogoLeftOut": "Logo de l'entreprise omis (plus de 1 Mo ou illisible)",
       "roles": {
         "mergeInput": "Fusionné",
         "prototypePrd": "PRD source du prototype",

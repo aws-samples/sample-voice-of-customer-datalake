@@ -17,6 +17,8 @@ import { useAssistantUiStore } from '../../assistant/store/assistantStore'
 import { useBubbleStore } from '../../assistant/bubble/bubbleStore'
 import { languageNames, supportedLanguages } from '../../i18n/languages'
 import { parsedJson } from '@test/jsonText'
+import { stubLocationAssign } from '@test/location'
+import { withMemoryLocalStorage } from '@test/memoryLocalStorage'
 
 const fetchApi = vi.fn<(endpoint: string, options?: RequestInit) => Promise<unknown>>()
 const signOut = vi.fn<() => void>()
@@ -237,14 +239,16 @@ describe('Account — MCP tokens and sign out', () => {
     expect(within(section('My MCP tokens')).getByRole('link', { name: 'Go to Connect' })).toHaveAttribute('href', '/connect')
   })
 
-  it('signs out from the page: clears cached data, ends the session, goes to /login', async () => {
+  it('signs out from the page: clears cached data, ends the session, loads /login', async () => {
     const queryClient = createTestQueryClient({ gcTime: Infinity })
     renderAt('?tab=profile', queryClient)
     queryClient.setQueryData(['feedback'], { items: ['private'] })
+    // A full page load to the plain sign-in page (hooks/useSignOut.ts).
+    const assign = stubLocationAssign()
     await userEvent.click(within(section('Sign out')).getByRole('button', { name: 'Sign out' }))
     expect(queryClient.getQueryData(['feedback'])).toBeUndefined()
     expect(signOut).toHaveBeenCalledTimes(1)
-    expect(navigate).toHaveBeenCalledWith('/login')
+    expect(assign).toHaveBeenCalledExactlyOnceWith('/login')
   })
 })
 
@@ -391,6 +395,22 @@ describe('Account — this browser, under "Advanced" (moved from Administration 
     await userEvent.click(within(advanced()).getByRole('button', { name: 'Reset Settings' }))
     await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Reset' }))
     expect(useConfigStore.getState().config).toMatchObject({ apiEndpoint: '', brandName: '' })
+  })
+
+})
+
+describe('Account — Reset local settings, in every workspace', () => {
+  const saved = withMemoryLocalStorage()
+
+  it("clears this browser's config in every workspace too, not only the page's own", async () => {
+    // Where the config store keeps a workspace's record (store/configStore.ts, workspace/workspaceStorage.ts).
+    saved.set('voc-config:w/juniper', '{"state":{"timeRange":"7d"},"version":3}')
+    saved.set('voc-assistant-ui:w/juniper', '{}')
+    renderAt('?tab=preferences')
+    await userEvent.click(within(advanced()).getByRole('button', { name: 'Reset Settings' }))
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Reset' }))
+    // The page's own config, cleared; juniper's gone; another store's record untouched.
+    expect([...saved.keys()].filter((key) => key.startsWith('voc-config') || key.startsWith('voc-assistant-ui'))).toStrictEqual(['voc-assistant-ui:w/juniper', 'voc-config'])
   })
 
   it('is collapsed while an API endpoint is configured', () => {

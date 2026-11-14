@@ -1,7 +1,7 @@
 {
   "entries": [
     {
-      "key": "ACCESS_SK_PREFIX|SUBSCRIBER_SK_PREFIX|USER_PARTITION_PREFIX|USER_PK_PREFIX::*",
+      "key": "ACCESS_SK_PREFIX|SUBSCRIBER_SK_PREFIX|USER_PARTITION_PREFIX::*",
       "reason": "four unrelated keys that happen to start with the user namespace: a conversations partition, a briefing subscriber row, a category-access row and a member's voc-workspaces inverse row (the workspace layer builds it to delete it, shared/ws_repo.py WorkspaceControlRows)"
     },
     {

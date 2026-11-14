@@ -23,12 +23,12 @@ USER = {'sub': 'user-sub', 'cognito:username': 'bob'}
 
 
 def event(method: str, path: str, *, claims: dict = ADMIN, body: object = None,
-          query: dict | None = None) -> dict:
+          query: dict | None = None, headers: dict | None = None) -> dict:
     """The REST API Gateway proxy event the handler resolves: ``path`` doubles as the resource
-    (the resolver matches on it), ``body`` is JSON-encoded only when given."""
+    (the resolver matches on it), ``body`` is JSON-encoded only when given; ``headers`` adds request headers."""
     return {
         'httpMethod': method, 'path': path, 'resource': path,
-        'headers': {'Content-Type': 'application/json'},
+        'headers': {'Content-Type': 'application/json', **(headers or {})},
         'requestContext': {'authorizer': {'claims': claims}, 'requestId': 'r', 'stage': 'test',
                            'httpMethod': method, 'path': path},
         'body': json.dumps(body) if body is not None else None,

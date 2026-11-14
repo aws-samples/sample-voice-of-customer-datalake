@@ -40,7 +40,7 @@ from shared.model_config import (
     surface_context_window_tokens,
     surface_default,
 )
-from shared.test.model_config_fixtures import stored_model_config
+from shared.test.model_config_fixtures import MODEL_ROWS_READ, picks_reads, stored_model_config
 
 OPUS55 = 'global.anthropic.claude-opus-5-5'
 SONNET55 = 'global.anthropic.claude-sonnet-5-5'
@@ -217,7 +217,7 @@ class TestSettingsItemKey:
     def test_lookup_reads_the_settings_item_by_pk_and_sk(self, monkeypatch):
         with stored_model_config(monkeypatch, {'surfaces': {'chat': HAIKU45}}) as table:
             get_active_model_id('chat')
-        table.get_item.assert_called_once_with(Key={'pk': 'SETTINGS#model', 'sk': 'config'})
+        assert [call.kwargs for call in table.get_item.call_args_list] == MODEL_ROWS_READ
 
     def test_no_table_env_never_builds_a_dynamodb_resource(self, monkeypatch):
         monkeypatch.delenv('AGGREGATES_TABLE', raising=False)
@@ -262,7 +262,7 @@ class TestCacheWindows:
             assert get_active_model_id('chat') == HAIKU45
             now.return_value = second_read_at
             assert get_active_model_id('chat') == HAIKU45
-        assert table.get_item.call_count == reads
+        assert picks_reads(table) == reads
 
     @pytest.mark.parametrize(('second_read_at', 'reads'), [
         (1009.999, 1),   # still inside the 10 s error window
@@ -280,7 +280,7 @@ class TestCacheWindows:
             assert model_config._cache == {'value': {}, 'expires': 1010.0}
             now.return_value = second_read_at
             assert get_active_model_id('chat') == SONNET55
-        assert table.get_item.call_count == reads
+        assert picks_reads(table) == reads
         assert log.warning.call_args_list[0].args == (
             'Model settings lookup failed; using defaults: ThrottlingException',
         )
@@ -293,7 +293,7 @@ class TestCacheWindows:
         with stored_model_config(monkeypatch, {'surfaces': {'chat': HAIKU45}}) as table, \
                 patch('shared.model_config.time.time', return_value=1000.0):
             assert get_active_model_id('chat') == HAIKU45
-        assert table.get_item.call_count == 1
+        assert picks_reads(table) == 1
 
     def test_a_non_dict_item_is_cached_as_empty_settings(self, monkeypatch):
         with stored_model_config(monkeypatch, 'not-a-dict'), \
@@ -325,3 +325,50 @@ class TestRejectedModelWarning:
                 patch('shared.model_config.logger') as log:
             assert get_active_model_id('chat') == SONNET55
         log.warning.assert_not_called()
+
+
+
+class TestTheDeploymentDefault:
+    """SETTINGS#model_default (pinned at deploy, custom_resources/model_pin.py): below every pick, above the built-in
+    surface default; a deployment from before the split keeps its pin in model_id, which still outranks it."""
+
+    def test_it_applies_to_a_surface_nobody_picked(self, monkeypatch):
+        with stored_model_config(monkeypatch, None, default={'model_id': HAIKU45}):
+            assert get_active_model_id('chat') == HAIKU45
+
+    def test_every_pick_outranks_it(self, monkeypatch):
+        with stored_model_config(monkeypatch, {'surfaces': {'chat': OPUS55}, 'model_id': SONNET55},
+                                 default={'model_id': HAIKU45}):
+            assert (get_active_model_id('chat'), get_active_model_id('prototype')) == (OPUS55, SONNET55)
+
+    def test_one_outside_the_allowlist_is_ignored(self, monkeypatch):
+        with stored_model_config(monkeypatch, None, default={'model_id': 'anthropic.unknown'}):
+            assert get_active_model_id('chat') == SONNET55
+
+    def test_a_failed_read_of_it_keeps_the_picks_for_the_error_window(self, monkeypatch):
+        with stored_model_config(monkeypatch, {'surfaces': {'chat': OPUS55}}) as table, \
+                patch('shared.model_config.time.time', return_value=1000.0):
+            picks = table.get_item.side_effect
+
+            def throttled_default(Key: dict, **kwargs: object) -> dict:
+                if Key['pk'] == 'SETTINGS#model_default':
+                    raise Exception('Throttled')  # noqa: TRY002 — the boto error the lookup must absorb
+                return picks(Key=Key, **kwargs)
+
+            table.get_item.side_effect = throttled_default
+            assert get_active_model_id('chat') == OPUS55
+            assert model_config._cache['expires'] == 1010.0
+
+    def test_a_failed_read_of_the_picks_still_applies_it_for_the_error_window(self, monkeypatch):
+        with stored_model_config(monkeypatch, None, default={'model_id': HAIKU45}) as table, \
+                patch('shared.model_config.time.time', return_value=1000.0):
+            rows = table.get_item.side_effect
+
+            def throttled_picks(Key: dict, **kwargs: object) -> dict:
+                if Key['pk'] == 'SETTINGS#model':
+                    raise Exception('Throttled')  # noqa: TRY002 — the boto error the lookup must absorb
+                return rows(Key=Key, **kwargs)
+
+            table.get_item.side_effect = throttled_picks
+            assert get_active_model_id('chat') == HAIKU45
+            assert model_config._cache['expires'] == 1010.0

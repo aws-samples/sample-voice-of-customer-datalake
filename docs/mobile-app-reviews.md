@@ -236,7 +236,7 @@ do and the totals so far. Every invocation (a "part") runs at least one app, so 
 N parts; ten iOS apps take two.
 
 - **Run row** (`SOURCE_RUN#<plugin>`; `WS#{ws}#SOURCE_RUN#<plugin>` for a run in a workspace, whose every part
-  carries its `workspace_id`, [multi-workspace.md](multi-workspace.md), not released yet): unchanged contract. It stays `running` while parts follow
+  carries its `workspace_id`, [multi-workspace.md](multi-workspace.md), since 7.00.00): unchanged contract. It stays `running` while parts follow
   each other, `items_found` is the running total over every part, `started_at` is the first part's,
   and only the last part writes `completed` with every part's warnings as `errors`. A part that
   raises writes `error` (earlier parts' warnings kept); a part that cannot start the next one

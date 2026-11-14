@@ -125,7 +125,7 @@ def tsc  repo                               "node: AI review tests"             
 # (`tenets`, `commit`), so validate-affected.sh never spends a model call; they run in the full gate, once per release.
 def tsc  tenets                             "tenets: AI review"                  'cd "$ROOT" && node scripts/ai-review/review.mjs --kind tenets'
 def lint commit                             "commit: AI review"                  'cd "$ROOT" && node scripts/ai-review/review.mjs --kind commit'
-def tsc  repo                               "node: dependency scripts tests"     'cd "$ROOT" && node --test scripts/dependency-audit.test.mjs scripts/dependency-freshness.test.mjs scripts/scheduled-failure-watch.test.mjs'
+def tsc  repo                               "node: dependency scripts tests"     'cd "$ROOT" && node --test scripts/dependency-audit.test.mjs scripts/dependency-freshness.test.mjs scripts/dependency-overrides.test.mjs scripts/scheduled-failure-watch.test.mjs'
 def tsc  repo                               "node: pre-push hook parsing"        'cd "$ROOT" && node --test scripts/git-hooks/pre-push.test.mjs'
 def tsc  repo                               "node: validate.sh scheduling"      'cd "$ROOT" && node --test scripts/validate.test.mjs'
 # Secrets in the working tree (.gitleaks.toml: default rules + the platform's token formats, build
@@ -157,7 +157,7 @@ def tsc  frontend,frontend-static           "node: frontend i18n script tests"  
 # Every key the source uses exists in English, and no locale misses/adds keys (untranslated values only warn).
 def tsc  frontend,frontend-static           "node: frontend i18n audit"          'cd "$FRONTEND" && { out="$(node scripts/i18n-check.mjs)" || { printf "%s\n" "$out"; exit 1; }; }'
 # Every fetchApi call site in the SPA has a dev-mock route that answers it (frontend/mock-coverage.json).
-def tsc  frontend,frontend-static           "node: frontend mock coverage"       'cd "$FRONTEND" && node --test scripts/check-mock-coverage.test.mjs scripts/mock-corpus.test.mjs scripts/mock-faceted-scope.test.mjs scripts/mock-scope.test.mjs scripts/mock-edit-stamp.test.mjs scripts/mock-reprocess.test.mjs scripts/mock-methodology.test.mjs scripts/mock-users.test.mjs && node scripts/check-mock-coverage.mjs'
+def tsc  frontend,frontend-static           "node: frontend mock coverage"       'cd "$FRONTEND" && node --test scripts/check-mock-coverage.test.mjs scripts/mock-corpus.test.mjs scripts/mock-faceted-scope.test.mjs scripts/mock-scope.test.mjs scripts/mock-edit-stamp.test.mjs scripts/mock-reprocess.test.mjs scripts/mock-methodology.test.mjs scripts/mock-users.test.mjs scripts/mock-workspaces.test.mjs && node scripts/check-mock-coverage.mjs'
 # Duplication across code and tests, whole repo (.jscpd.json: threshold 0). The SPA imports the modules it
 # shares with the stream Lambda through @stream (frontend/streamSource.ts), so there is no mirror to exclude.
 def lint repo                               "jscpd"                              'cd "$ROOT" && npx jscpd --fail-on-empty --reporters console --silent'

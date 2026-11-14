@@ -10,7 +10,7 @@ import { useAdminLocation } from './useAdminLocation'
 
 function mount(entry: string, isAdmin = true) {
   const wrapper = ({ children }: Readonly<{ children: ReactNode }>) => <TestRouter initialEntries={[entry]}>{children}</TestRouter>
-  return renderHook(() => useAdminLocation(isAdmin), { wrapper })
+  return renderHook(() => useAdminLocation(isAdmin, false), { wrapper })
 }
 
 describe('the board param', () => {

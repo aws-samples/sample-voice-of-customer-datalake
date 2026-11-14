@@ -50,6 +50,9 @@ export const CREDENTIAL_LIFECYCLE_FIELDS = {
   last_used_at: optionalText,
   revoked_at: optionalText,
   status: z.enum(TOKEN_STATUSES).catch('expired'),
+  // The workspace the credential was created in and acts in (shared/mcp_global_tokens.py `token_workspace`); absent
+  // or null for a deployment-wide one. Shown only: the server decides where every call acts.
+  workspace_id: optionalText,
 }
 
 const ConnectTokenSchema = z.object({

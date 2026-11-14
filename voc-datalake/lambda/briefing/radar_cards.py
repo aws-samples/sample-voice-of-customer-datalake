@@ -38,6 +38,7 @@ from shared.radar_releases import list_releases
 from shared.radar_store import counter_pk, sum_counter
 from shared.radar_views import compare, configured_category_names, ours_visible, themes
 from shared.source_profiles import load_source_profiles
+from shared.ws_repo import WorkspaceScope
 
 KIND_RELEASE: Final = 'radar_release'
 KIND_COMPLAINTS: Final = 'radar_complaints'
@@ -71,19 +72,21 @@ class RadarRead:
     radar_sources: tuple[str, ...]
 
 
-def effective_brands(aggregates_table: Any, radar_table: Any) -> list[RadarBrand]:
+def effective_brands(aggregates_table: Any, radar_table: Any,
+                     scope: WorkspaceScope | None = None) -> list[RadarBrand]:
     """Every tracked brand. The ONE place the brief learns the brand list.
 
     The stored list (voc-radar ``SETTINGS#radar/brands``) merged with the legacy
-    source-profile brands by key (docs/radar.md). A malformed stored list must not
+    source-profile brands by key (docs/radar.md), both ``scope``'s workspace's (the
+    deployment's without one; the brief passes none yet). A malformed stored list must not
     fail the whole brief: it reads as empty, so only the legacy brands remain.
     """
     try:
-        listed = load_brand_list(radar_table)
+        listed = load_brand_list(radar_table, scope)
     except ValueError:
         logger.warning('The stored Radar brand list is malformed; the brief uses the legacy profile brands only')
         listed = []
-    return merged_brands(listed, load_source_profiles(aggregates_table))
+    return merged_brands(listed, load_source_profiles(aggregates_table, scope))
 
 
 def visible_brands(brands: Sequence[RadarBrand], scope: CategoryScope) -> list[RadarBrand]:

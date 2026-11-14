@@ -86,7 +86,7 @@ def test_the_company_memory_is_exported_and_no_row_names_a_person(world):
     manifest = json.loads(files['manifest.json'])
     assert set(manifest['entities']) >= set(memory.ENTITIES)
     assert 'memory' not in manifest['not_per_workspace']
-    assert 'conversations' in manifest['not_exported']
+    assert 'conversations' in manifest['excluded']
     assert {'memory_embeddings', 'memory_people', 'personal_memory'} <= set(manifest['excluded'])
     assert 'memory_check' not in manifest
 

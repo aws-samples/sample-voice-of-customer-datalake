@@ -10,7 +10,9 @@ explicit tables kept below:
     gate primitive: ``require_admin`` (``shared.api``, from the event) or
     ``require_admin_caller`` (``shared.project_gate``, an admin not acting through a
     delegated credential) or ``require_board_admin`` (``shared.engagement_identity``, an
-    app-pool admin on the feedback boards);
+    app-pool admin on the feedback boards) or ``require_settings_admin`` (``shared.request_workspace``,
+    an admin of the workspace the request names, else the deployment's ``admins``; both branches refuse,
+    shared/test/test_request_workspace.py);
   - that statement calls a module helper that does so itself (to any depth); a
     helper also counts when it is a check, i.e. a top-level ``if`` that tests
     ``.is_admin`` and raises ``AuthorizationError``, like `project_gate.require_admin_caller`;
@@ -42,13 +44,14 @@ GATE_PRIMITIVE = 'require_admin'
 # (test_every_shared_gate_primitive_is_an_admin_check), so a name here cannot hide a non-gate.
 # `require_board_admin` (``shared.engagement_identity``): an app-pool admin on the feedback boards' routes.
 # `require_request_admin` (``shared.workspace_request``): a two-path route's gate, `require_admin` without
-# X-Workspace-Id and `require_workspace_admin` with it (both branches pinned below).
+# X-Workspace-Id and `require_workspace_admin` with it (both branches pinned below). `require_settings_admin`
+# (``shared.request_workspace``): the same two branches for a settings kind that moved into its workspace.
 TWO_PATH_GATE = 'require_request_admin'
 # `require_erasure_admin` (``shared.erasure_scope``): the erasure routes' gate on both paths, `require_admin` without
 # X-Workspace-Id and `require_workspace_admin` with it (both branches pinned below, WORKSPACE_PARTIAL).
 ERASURE_GATE = 'require_erasure_admin'
-GATE_PRIMITIVES = frozenset({GATE_PRIMITIVE, 'require_admin_caller', 'require_board_admin', TWO_PATH_GATE,
-                             ERASURE_GATE})
+GATE_PRIMITIVES = frozenset({GATE_PRIMITIVE, 'require_admin_caller', 'require_board_admin', 'require_settings_admin',
+                             TWO_PATH_GATE, ERASURE_GATE})
 # Shared resolver middlewares that gate a whole module (checked the same way, below).
 GATE_MIDDLEWARES = frozenset({'admins_only'})
 SHARED_DIR = API_DIR.parent / 'shared'
@@ -75,7 +78,7 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         'POST /workflows/<workflow_id>/duplicate', 'POST /workflows/<workflow_id>/rename',
         'DELETE /workflows/<workflow_id>',
     }),
-    # The workspace's start theme (Administration → General): every person sees it until they pick their own.
+    # The deployment's start theme (Administration → General): every person sees it until they pick their own.
     'appearance_routes.py': frozenset({'PUT /settings/appearance'}),
     'data_explorer_handler.py': frozenset({'PUT /data-explorer/s3', 'PUT /data-explorer/feedback'}),
     # Company personas (since 5.60.00): only admins write the shared library; promote copies into it.
@@ -135,7 +138,7 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
     }),
     'settings_handler.py': frozenset({
         'PUT /settings/model', 'POST /settings/model/test',
-        'PUT /settings/brand',  # #242: shared deployment config
+        'PUT /settings/brand',  # #242: the workspace's brand (its admins; without a workspace, the deployment's)
         'PUT /settings/categories',
         'POST /settings/categories/generate',  # #242 (Bedrock spend)
         'POST /settings/categories/reprocess', 'POST /settings/categories/reprocess/<job_id>/cancel',
@@ -174,6 +177,12 @@ PLATFORM_ADMIN_ONLY: dict[str, frozenset[str]] = {
         'POST /platform/workspaces', 'GET /platform/workspaces', 'POST /platform/workspaces/<ws>/delete/cancel',
         'POST /platform/workspaces/<ws>/delete/resume',
     }),
+    # What every workspace of the deployment shares (docs/multi-workspace.md, "Per-workspace configuration"): the
+    # start theme (decision 7) and the alarms on the deployment's own Lambdas.
+    'appearance_routes.py': frozenset({'PUT /settings/appearance'}),
+    'logs_handler.py': frozenset({
+        'PUT /logs/alerts', 'POST /logs/alerts/recipients', 'POST /logs/alerts/recipients/remove',
+    }),
 }
 #: The methods whose routes the platform-gate checks read: the writes and the reads.
 PLATFORM_GATED_METHODS = MUTATING_METHODS | {'get'}
@@ -186,6 +195,8 @@ WORKSPACE_GATE = 'require_workspace_admin'
 WORKSPACE_ADMIN_ONLY: dict[str, frozenset[str]] = {
     'workspaces_handler.py': frozenset({
         'POST /me/workspaces/current/members', 'PUT /me/workspaces/current/members/<sub>',
+        # The workspace's plugins, within the deployment's ceiling (shared/workspace_plugin_settings.py).
+        'PUT /me/workspaces/current/plugins/<plugin_id>',
         # The workspace's export (docs/multi-workspace.md, "Export and delete"): start it, and sign a 15-minute
         # download link of a completed one (an audited read of the whole workspace's data).
         'POST /me/workspaces/current/export', 'POST /me/workspaces/current/export/link',
@@ -322,7 +333,8 @@ OPEN_BY_DECISION: tuple[OpenGroup, ...] = (
           'PATCH /projects/prioritization/rows/<row_id>',
           'PUT /projects/prioritization/rows/<row_id>/lineage-ack', 'PUT /projects/prioritization',
           'PATCH /projects/prioritization'),
-    _open('resolved problems: shared team state, every signed-in user marks a problem resolved',
+    _open("resolved problems: the workspace's shared state, every editor or admin of it marks a problem resolved "
+          "(without a workspace, the deployment's, every signed-in user, as before)",
           'settings_handler.py', 'PUT /settings/resolved-problems'),
     _open("caller's own data: personal context and onboarding preference, self only",
           'settings_handler.py', 'PUT /settings/my-context', 'PUT /settings/my-onboarding'),
@@ -516,16 +528,21 @@ def _platform_gated(source: str) -> dict[str, bool]:
             for fn in functions.values() for key in _route_keys(fn, PLATFORM_GATED_METHODS)}
 
 
+def _route_file(name: str) -> Path:
+    """A handler (lambda/api/) or a router it includes (lambda/shared/*_routes.py)."""
+    return API_DIR / name if (API_DIR / name).exists() else SHARED_DIR / name
+
+
 @pytest.mark.parametrize(('handler', 'route'), sorted(
     (handler, route) for handler, routes in PLATFORM_ADMIN_ONLY.items() for route in routes))
 def test_every_platform_admin_route_is_admin_only_and_carries_the_platform_gate(handler, route):
     assert route in ADMIN_ONLY.get(handler, frozenset()) | ADMIN_ONLY_READS.get(handler, frozenset())
-    assert _platform_gated((API_DIR / handler).read_text(encoding='utf-8')).get(route) is True, (
+    assert _platform_gated(_route_file(handler).read_text(encoding='utf-8')).get(route) is True, (
         f'{handler} {route} is missing or lost its require_platform_admin gate')
 
 
 def test_only_the_listed_routes_carry_the_platform_gate():
-    gated = {(path.name, key) for path in _handler_files()
+    gated = {(path.name, key) for path in [*_handler_files(), *_router_files()]
              for key, has in _platform_gated(path.read_text(encoding='utf-8')).items() if has}
     assert gated == {(handler, route) for handler, routes in PLATFORM_ADMIN_ONLY.items() for route in routes}
 
@@ -550,9 +567,10 @@ def test_removing_the_platform_gate_is_detected(handler, route):
     assert _platform_gated(ast.unparse(tree))[route] is False
 
 
-# The live check follows the token gate on every platform route of the workspaces API (shared/platform_admin.py):
-# the token alone would let a revoked or disabled platform admin through until it expires.
-LIVE_PLATFORM_GATE = '_require_live_platform_admin'
+# The live check follows the token gate on every platform route of the workspaces API (shared/platform_admin_gate.py,
+# since 6.18.00 the same one the deployment-wide writes run): the token alone would let a revoked or disabled
+# platform admin through until it expires.
+LIVE_PLATFORM_GATE = 'require_live_platform_admin'
 
 
 @pytest.mark.parametrize('route', sorted(PLATFORM_ADMIN_ONLY['workspaces_handler.py']))
@@ -560,6 +578,20 @@ def test_every_workspaces_platform_route_runs_the_live_check(route):
     functions = _module_functions(ast.parse((API_DIR / 'workspaces_handler.py').read_text(encoding='utf-8')))
     [fn] = [fn for fn in functions.values() if route in _route_keys(fn, PLATFORM_GATED_METHODS)]
     assert LIVE_PLATFORM_GATE in _top_level_calls(fn)
+
+
+# The deployment-wide writes run the shared live check (shared/platform_admin_gate.py) after the token gate.
+SHARED_LIVE_PLATFORM_GATE = 'require_live_platform_admin'
+DEPLOYMENT_WIDE_WRITES = ('appearance_routes.py', 'logs_handler.py')
+
+
+@pytest.mark.parametrize(('handler', 'route'), sorted(
+    (handler, route) for handler in DEPLOYMENT_WIDE_WRITES for route in PLATFORM_ADMIN_ONLY[handler]))
+def test_every_deployment_wide_write_runs_the_live_check(handler, route):
+    functions = _module_functions(ast.parse(_route_file(handler).read_text(encoding='utf-8')))
+    [fn] = [fn for fn in functions.values() if route in _route_keys(fn, PLATFORM_GATED_METHODS)]
+    assert SHARED_LIVE_PLATFORM_GATE in _top_level_calls(fn)
+# (What the shared live check refuses is pinned by lambda/shared/test/test_platform_admin_gate.py.)
 
 
 def _workspace_gated(source: str) -> dict[str, bool]:
@@ -1025,6 +1057,10 @@ OPEN_BY_DESIGN_READS: dict[tuple[str, str], str] = {
         "The members of the workspace X-Workspace-Id names, for any of its members (Roles: a viewer reads the "
         "workspace); a non-member gets the workspace's one 404 (shared/workspace.py)."
     ),
+    ('workspaces_handler.py', 'GET /me/workspaces/current/plugins'): (
+        "The plugins the deployment offers and which of them the workspace X-Workspace-Id names enabled, for any of "
+        "its members (the menu shows what runs); a non-member gets the workspace's one 404 (shared/workspace.py)."
+    ),
 }
 
 
@@ -1127,6 +1163,25 @@ def test_every_shared_gate_primitive_is_an_admin_check():
         first = api_functions[name].body[1] if ast.get_docstring(api_functions[name]) else api_functions[name].body[0]
         assert isinstance(first, ast.Expr)
         assert _called_name(first.value) == GATE_PRIMITIVE
+    # require_settings_admin (shared/request_workspace.py): its whole body is one `if` that calls require_admin on one
+    # branch and, on the other, the workspace branch: require_workspace_admin (itself an `if ...: raise
+    # AuthorizationError`) as its first statement, then an `if` that raises for a delegated caller (7.08.00).
+    settings = _module_functions(ast.parse((SHARED_DIR / 'request_workspace.py').read_text(encoding='utf-8')))
+    body = settings['require_settings_admin'].body[1:]   # after its docstring
+    assert len(body) == 1
+    assert isinstance(body[0], ast.If)
+    # Each branch is exactly one bare call: a return or a nested `if` before the gate would leave it dead.
+    parts = (body[0].body, body[0].orelse)
+    assert [[type(stmt) for stmt in part] for part in parts] == [[ast.Expr], [ast.Expr]]
+    calls = [part[0].value for part in parts if isinstance(part[0], ast.Expr)]
+    assert [_called_name(call) for call in calls] == [GATE_PRIMITIVE, '_require_workspace_settings_admin']
+    branch = settings['_require_workspace_settings_admin'].body[1:]   # after its docstring
+    assert isinstance(branch[0], ast.Expr)
+    assert _called_name(branch[0].value) == 'require_workspace_admin'
+    assert any(isinstance(stmt, ast.If) and _raises_authorization_error(stmt.body) for stmt in branch[1:])
+    workspace = _module_functions(ast.parse((SHARED_DIR / 'workspace.py').read_text(encoding='utf-8')))
+    assert any(isinstance(stmt, ast.If) and _raises_authorization_error(stmt.body)
+               for stmt in workspace['require_workspace_admin'].body)
 
 
 def test_the_shared_admin_middleware_gates_every_route_of_its_module():

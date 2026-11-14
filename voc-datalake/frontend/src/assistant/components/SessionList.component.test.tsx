@@ -3,7 +3,7 @@
  * the saved history (loading, error, empty, delete behind a confirm, refetch on save), with the
  * sessions API mocked and the thread store seeded directly.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { screen, waitFor, within } from '@testing-library/react'
@@ -16,7 +16,9 @@ vi.mock('../sessions/sessionsApi', async () => (await import('@test/assistantDou
 
 import SessionList from './SessionList'
 import SessionsDrawer from './SessionsDrawer'
-import { deleteSession, listSessions } from '../sessions/sessionsApi'
+import { deleteSession, getDeploymentSession, listDeploymentSessions, listSessions } from '../sessions/sessionsApi'
+import { setCurrentWorkspace } from '../../workspace/currentWorkspace'
+import { ApiError } from '../../lib/errors'
 import { slotOf, useThreadStore } from '../store/assistantStore'
 import { createThreadState } from '../thread/reducer'
 import type { SessionSummary } from '../sessions/schema'
@@ -379,5 +381,37 @@ describe('SessionsDrawer', () => {
     render(<SessionsDrawer onOpen={onOpen} onClose={vi.fn()} />)
     await userEvent.click(await screen.findByText('Beta'))
     expect(onOpen).toHaveBeenCalledExactlyOnceWith('s-beta')
+  })
+})
+
+describe('SessionList inside a workspace', () => {
+  const WS = { id: 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8', slug: 'acme', name: 'Acme Outfitters', role: 'editor' } as const
+  beforeEach(() => setCurrentWorkspace(WS))
+  afterEach(() => setCurrentWorkspace(null))
+
+  it('offers the conversations from before workspaces, read only, asked for only when opened', async () => {
+    vi.mocked(listDeploymentSessions).mockResolvedValue([summary('s-old', 'Pricing questions')])
+    vi.mocked(getDeploymentSession).mockResolvedValue({
+      id: 's-old', messages: [userMessage('u1', 'Why do people churn?'), { id: 'a1', role: 'assistant', content: 'Mostly pricing.' }],
+      pendingInterrupts: [], createdAt: '', updatedAt: '', runStatus: null, revision: 1,
+    })
+    render(<SessionList onPick={vi.fn()} />)
+    expect(await screen.findByText('No saved conversations yet.')).toBeInTheDocument()
+    expect(listDeploymentSessions).not.toHaveBeenCalled()
+
+    await userEvent.click(screen.getByText('Conversations from before workspaces'))
+    await userEvent.click(await screen.findByText('Pricing questions'))
+
+    const transcript = await screen.findByRole('list', { name: 'Conversation' })
+    expect([transcript.textContent, vi.mocked(getDeploymentSession).mock.calls]).toStrictEqual([
+      'You: Why do people churn?Assistant: Mostly pricing.', [['s-old']],
+    ])
+  })
+
+  it('says the conversations are not saved on a 404, and asks only once', async () => {
+    vi.mocked(listSessions).mockRejectedValue(new ApiError(404, 'Workspace not found'))
+    render(<SessionList onPick={vi.fn()} />)
+    expect(await screen.findByText(/Conversations here are not saved/)).toBeInTheDocument()
+    expect(listSessions).toHaveBeenCalledTimes(1)
   })
 })

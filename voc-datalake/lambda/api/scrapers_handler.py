@@ -52,7 +52,8 @@ runs (`_request.middleware`: 400 for an empty header, the one 404 for a non-memb
 platform admin enters as admin, live-checked and audited; a write's role read from the
 table). There the admin routes need the caller's admin role in the workspace
 (`_request.require_request_admin`; the deployment's `admins` grants nothing there), the
-reads any member; the scraper configs are the workspace's own config row
+reads any member; a scraper's run there needs the webscraper plugin enabled in the
+workspace (409 `PLUGIN_NOT_ENABLED` otherwise, shared/workspace_plugin_settings.py); the scraper configs are the workspace's own config row
 `WS#{ws}#PLUGIN_CONFIG` / `webscraper` in voc-aggregates (decision 19,
 shared/workspace_plugin_store.py and shared/plugin_configs.py; the same limits as in the
 shared secret), which the webscraper's run in that workspace reads, and
@@ -107,6 +108,7 @@ from shared.url_policy import (
 from shared.workspace_plugin_store import CredentialsStore, StoreClients
 from shared.workspace_request import ResolvedRoutes
 from shared.workspace_routing import workspace_payload
+from shared.ws_repo import WorkspaceScope
 
 secretsmanager = get_secrets_client()
 ssm = get_ssm_client()
@@ -376,8 +378,9 @@ def _scraper_shape_error(scraper: dict) -> str | None:
     return None
 
 
-def _validated_scraper(body: object) -> dict:
-    """The `scraper` of a save request, or a 400 explaining why it cannot be stored."""
+def _validated_scraper(body: object, scope: WorkspaceScope | None = None) -> dict:
+    """The `scraper` of a save request, or a 400 explaining why it cannot be stored (its labels checked against the
+    dimensions of ``scope``, the request's workspace; the deployment's without one)."""
     scraper = body.get('scraper') if isinstance(body, dict) else None
     if not scraper:
         raise ValidationError('No scraper config provided')
@@ -388,8 +391,9 @@ def _validated_scraper(body: object) -> dict:
     error = _scraper_shape_error(scraper) or scraper_url_error(scraper, validate_url)
     if error is not None:
         raise ValidationError(error)
-    # Dimension defaults and tags the ingestor stamps on every message it sends.
-    normalise_label_fields(get_aggregates_table(), scraper)
+    # Dimension defaults and tags the ingestor stamps on every message it sends, checked against the dimensions of
+    # the request's workspace (the deployment's without one), the ones its messages are processed with.
+    normalise_label_fields(get_aggregates_table(), scraper, scope)
     _normalise_radar_brand(scraper)
     return scraper
 
@@ -455,7 +459,7 @@ def save_scraper():
     # overwrites, `base_etag` refuses a stale update. Absent = the upsert.
     mode = config_write_guard.write_mode(body)
     base = config_write_guard.base_etag(body)
-    scraper = _validated_scraper(body)
+    scraper = _validated_scraper(body, _request.scope())
     # In a workspace no Radar brand (Radar is not keyed by workspace: its messages would be refused).
     _request.refuse_radar_brand(scraper.get('radar_brand'))
 
@@ -593,10 +597,13 @@ def run_scraper(scraper_id: str):
     In a workspace: its admins. The payload's `workspace_id` is the RESOLVED
     workspace (`workspace_payload`), so the webscraper runs there, finds the
     scraper in that workspace's own config row (an id it does not hold finds
-    nothing) and moves the workspace's `WS#{ws}#SCRAPER_RUN#{id}` row written here.
+    nothing) and moves the workspace's `WS#{ws}#SCRAPER_RUN#{id}` row written here. A workspace that has
+    not enabled the webscraper plugin gets 409 `PLUGIN_NOT_ENABLED`
+    (shared/workspace_plugin_settings.py) before anything is read or written.
     """
     _request.require_request_admin()
     context, scope = _request.context(), _request.scope()
+    _request.require_plugin_enabled(WEBSCRAPER_PLUGIN)
     execution_id = timestamped_id(f'run_{scraper_id}', datetime.now(UTC))
     # `execution_id` marks a manual run for the webscraper (it clears the secret cache, moves the run row); the
     # `manual_run: true` this payload once carried was read by nothing, so it is no longer sent.

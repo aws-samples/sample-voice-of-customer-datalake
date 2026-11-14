@@ -20,8 +20,24 @@ export const patch = (body?: unknown): RequestInit => jsonRequest('PATCH', body)
 // A DELETE body is rare: a person's erasure states its legal basis in one (docs/participants.md).
 export const del = (body?: unknown): RequestInit => jsonRequest('DELETE', body)
 
-/** The signature of `fetchApi` in `./client`. */
-export type FetchApi = <T>(endpoint: string, options?: RequestInit) => Promise<T>
+/** The signature of `fetchApi` in `./client` (`scope`: baseUrl.ts `RequestScope`, default `'workspace'`). */
+export type FetchApi = <T>(endpoint: string, options?: RequestInit, scope?: 'workspace' | 'deployment') => Promise<T>
+
+/**
+ * The source whose Run now is the deployment's alone: the S3 import's bucket is not keyed by workspace, so the
+ * integrations API refuses its Run now in a workspace (400) and the web app sends it without `X-Workspace-Id`.
+ */
+const DEPLOYMENT_ONLY_RUN_SOURCE = 's3_import'
+
+/** The scope of a source's Run now: `'deployment'` for {@link DEPLOYMENT_ONLY_RUN_SOURCE}, else none given (the
+ *  default, the current workspace's). */
+export const runScope = (source: string): 'deployment' | undefined =>
+  (source === DEPLOYMENT_ONLY_RUN_SOURCE ? 'deployment' : undefined)
+
+/** `cursor=…`, the query of a page after the first of a `next_cursor` list. */
+export function cursorQuery(cursor: string): string {
+  return new URLSearchParams({ cursor }).toString()
+}
 
 /**
  * Build URLSearchParams from an object, filtering out undefined/null values.

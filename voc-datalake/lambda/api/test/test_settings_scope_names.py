@@ -12,6 +12,7 @@ from unittest.mock import patch
 import pytest
 from handler_events_fixtures import call_route
 from moto import mock_aws
+from workspace_fixtures import WS, act_in_workspace
 
 import settings_handler
 from settings_handler import lambda_handler
@@ -19,6 +20,13 @@ from shared.category_access import access_key
 from shared.category_gate import CATEGORIES_PK, CATEGORIES_SK
 from shared.company_context import COMPANY_CONTEXT_PK, CONFIG_SK, DESIGN_SYSTEM_PK
 from shared.test.moto_tables import create_pk_sk_table
+from shared.workspace_settings import settings_key
+
+
+@pytest.fixture(autouse=True)
+def _in_a_workspace(monkeypatch):
+    """The resolved-problems routes act in a workspace (shared/request_workspace.py, stubbed here)."""
+    act_in_workspace(monkeypatch, settings_handler)
 
 ADMIN = {'sub': 'admin-sub', 'cognito:username': 'alice', 'cognito:groups': 'admins'}
 VIEWER = {'sub': 'viewer-sub', 'cognito:username': 'vic', 'cognito:groups': 'users'}
@@ -50,8 +58,10 @@ def table():
             {'name': 'software_firmware', 'description': 'Software & Firmware'},
         ]})
         table.put_item(Item={'pk': COMPANY_CONTEXT_PK, 'sk': CONFIG_SK, 'vision': VISION, 'objectives': OBJECTIVES})
-        table.put_item(Item={'pk': settings_handler.RESOLVED_PROBLEMS_PK, 'sk': settings_handler.RESOLVED_PROBLEMS_SK,
-                             'resolved': RESOLVED})
+        table.put_item(Item={**settings_key(WS, settings_handler.RESOLVED_PROBLEMS_KIND), 'resolved': RESOLVED})
+        # The deployment's row, for a request with no workspace: a request in the workspace never reads it.
+        table.put_item(Item={**settings_handler.DEPLOYMENT_RESOLVED_PROBLEMS_KEY, 'resolved': {
+            'technical_support:response_time:before workspaces': {'resolved_at': '2099-01-01T00:00:00+00:00'}}})
         table.put_item(Item={'pk': DESIGN_SYSTEM_PK, 'sk': CONFIG_SK, 'guidelines': GUIDELINES, 'tokens': {
             'colors': [{'name': 'primary', 'value': '#8e48ff'}, {'name': 'hardware-quality', 'value': 'red'}]},
             'components': COMPONENTS})

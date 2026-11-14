@@ -12,6 +12,7 @@ vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.f
 import { fetchApi, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
 import { ApiError } from '../../lib/errors'
 import DimensionsManager from './DimensionsManager'
+import { ConfigScopeContext } from '../../workspace/configScope'
 import { parsedJson } from '@test/jsonText'
 
 beforeEach(() => {
@@ -19,6 +20,26 @@ beforeEach(() => {
   routeFetchApi({
     'GET /settings/dimensions': () => dimensionsWire,
     'PUT /settings/dimensions': (body) => ({ success: true, ...(typeof body === 'object' ? body : {}), updated_at: '2026-02-02' }),
+  })
+})
+
+describe("DimensionsManager in Administration (the deployment's dimensions)", () => {
+  it("reads and saves the deployment's rows without the workspace header, from any address", async () => {
+    const user = userEvent.setup()
+    renderWithQueryClient(<ConfigScopeContext.Provider value="deployment"><DimensionsManager /></ConfigScopeContext.Provider>)
+    const userType = await screen.findByRole('region', { name: 'User type' })
+    expect(fetchApi).toHaveBeenCalledWith('/settings/dimensions', { method: 'GET' }, 'deployment')
+    await user.type(within(userType).getByLabelText('New value for User type'), 'reseller{Enter}')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(fetchApi).toHaveBeenCalledWith(
+      '/settings/dimensions', expect.objectContaining({ method: 'PUT' }), 'deployment'))
+  })
+
+  it("the workspace settings page's editor sends the plain, workspace-scoped call", async () => {
+    renderWithQueryClient(<DimensionsManager />)
+    await screen.findByRole('region', { name: 'User type' })
+    expect(fetchApi).toHaveBeenCalledWith('/settings/dimensions', undefined)
+    expect(fetchApi.mock.calls.flat()).not.toContain('deployment')
   })
 })
 

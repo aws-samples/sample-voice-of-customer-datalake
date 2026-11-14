@@ -13,7 +13,20 @@
  * needs. Keeping it here rather than copied per-file means the suites that use
  * it cannot drift apart.
  */
-import { beforeEach } from 'vitest'
+import { beforeEach, vi } from 'vitest'
+
+/**
+ * Replace `window.location` with one whose `assign` (a full page load) is recorded; `pathname` is the page's
+ * address. Restored after the test by `setup.ts`.
+ */
+export function stubLocationAssign(pathname = '/') {
+  const assign = vi.fn<(url: string) => void>()
+  const { origin } = window.location
+  Object.defineProperty(window, 'location', {
+    value: { origin, href: `${origin}${pathname}`, pathname, assign }, writable: true, configurable: true,
+  })
+  return assign
+}
 
 /** The document origin these suites assume when resolving relative URLs. */
 export const APP_ORIGIN = 'http://localhost:3000'

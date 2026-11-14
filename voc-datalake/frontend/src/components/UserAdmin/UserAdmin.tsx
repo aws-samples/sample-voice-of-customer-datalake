@@ -8,6 +8,7 @@
  * - Reset password
  * - Enable/disable users
  * - Delete users
+ * - Grant and revoke platform admin (platform admins only, PlatformAdminPanel)
  *
  * Only visible to users in the 'admins' group.
  *
@@ -29,6 +30,7 @@ import CreateUserModal from './CreateUserModal'
 import EditUserModal from './EditUserModal'
 import CategoryAccessModal from './CategoryAccessModal'
 import UserFlagsPanel from './UserFlagsPanel'
+import PlatformAdminPanel from './PlatformAdminPanel'
 import AiModePanel from './AiModePanel'
 import {
   UsersTable, UsersCards,
@@ -233,6 +235,8 @@ export default function UserAdmin() {
       </div>
 
       <UserFlagsPanel users={users} />
+
+      <PlatformAdminPanel users={users} />
 
       <AiModePanel users={users} />
 

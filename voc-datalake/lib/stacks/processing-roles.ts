@@ -21,7 +21,7 @@ import { grantClaudeModels } from '../utils/claude-model-grant';
 import { WORKSPACE_RAW_LAYER_PREFIX, WORKSPACE_SILVER_HISTORY_PREFIX } from './core-buckets';
 import { grantSilverHistoryPut } from '../utils/silver-history-grants';
 import { grantReadAndWrites, grantWrites } from '../utils/table-write-grants';
-import { grantWorkspaceStatusRead } from '../utils/workspace-request-grants';
+import { grantWorkspaceStatusRead } from '../utils/workspace-resolution-grants';
 
 /** Comprehend `comprehendActions` and Translate's TranslateText (neither takes a resource ARN, so `*`). Shared by
  *  the processor and the category reprocess worker, which enrich the same way. */

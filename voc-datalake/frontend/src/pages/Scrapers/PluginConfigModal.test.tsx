@@ -8,6 +8,8 @@ import PluginConfigModal from './PluginConfigModal'
 // the wording, so a later decision to translate the tooltip must not fail a test
 // about admin access. See the constant's own docstring for why it is still English.
 import { ADMIN_ONLY_TITLE } from '../../constants/admin'
+import { ApiError } from '../../lib/errors'
+import { PLUGIN_NOT_ENABLED } from '../../workspace/workspaceRefusals'
 import type { PluginManifest } from '../../plugins/types'
 import { at } from '@test/defined'
 
@@ -217,6 +219,23 @@ describe('PluginConfigModal', () => {
 
       expect(screen.getByText(/GitHub Issues is connected in Administration → Sources → Source settings: paste the token/)).toBeInTheDocument()
       expect(screen.queryByText(/above/)).not.toBeInTheDocument()
+    })
+  })
+
+  // Inside a workspace, Run now runs only a plugin the workspace enabled (PLUGIN_NOT_ENABLED, the text
+  // workspaceRefusals.lockstep.test.ts holds to the server's).
+  describe('a Run now of a plugin the workspace has not enabled', () => {
+    it('says to enable it first, and nothing for any other failure', async () => {
+      mockRunSource.mockRejectedValueOnce(new ApiError(409, PLUGIN_NOT_ENABLED))
+      const user = await renderLoaded(true)
+
+      await user.click(screen.getByRole('button', { name: /run now/i }))
+
+      expect(await screen.findByText('Enable this plugin for the workspace first: Workspace settings → Plugins.'))
+        .toBeInTheDocument()
+      mockRunSource.mockRejectedValueOnce(new ApiError(409, 'Something else'))
+      await user.click(screen.getByRole('button', { name: /run now/i }))
+      await waitFor(() => { expect(screen.queryByText(/Enable this plugin for the workspace first/)).not.toBeInTheDocument() })
     })
   })
 

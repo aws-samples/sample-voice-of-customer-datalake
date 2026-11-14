@@ -202,6 +202,59 @@ class TestConsent:
         assert theirs['grants'] == []
 
 
+class TestWorkspace:
+    """A sign-in approved inside a workspace acts there (shared/mcp_workspace_pin.py; docs/mcp.md)."""
+
+    WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
+
+    def _inside(self, ws):
+        from shared import mcp_workspace_pin
+        from shared.workspace import WorkspaceContext
+
+        def resolved(_event, _public_error, **options):
+            assert options == {'fresh': True, 'elevate': False}
+            return None if ws is None else WorkspaceContext(ws=ws, role='editor', name='Acme Outfitters', slug='acme',
+                                                            platform_admin=False)
+        return patch.object(mcp_workspace_pin, 'request_workspace', resolved)
+
+    @pytest.mark.parametrize('ws', [WS, None])
+    def test_the_grant_and_its_calls_act_in_the_workspace_it_was_approved_in(self, oauth, ws):
+        import mcp_global_handler
+        from shared import mcp_global_tokens as gt
+        with self._inside(ws):
+            signed_in = oauth.sign_in('alice')
+        [row] = _grant_rows(oauth)
+        assert row.get(gt.WORKSPACE_ATTRIBUTE) == ws
+        _, mine = oauth.consent_api('alice', 'GET', '/connect/oauth/grants')
+        assert mine['grants'][0]['workspace_id'] == ws
+        effective = mcp_global_handler._authenticate({'headers': {'authorization': f'Bearer {signed_in.access_token}'}})
+        assert effective is not None
+        assert gt.token_workspace(effective) == ws
+
+    @pytest.mark.parametrize(('platform_admin', 'status'), [(True, 403), (False, 404)])
+    def test_a_non_member_cannot_approve_a_sign_in_for_the_workspace(self, oauth, platform_admin, status):
+        from shared import mcp_workspace_pin
+        from shared.exceptions import NotFoundError
+
+        def not_a_member(_event, _public_error, **_options):
+            raise NotFoundError('Workspace not found')
+        with patch.object(mcp_workspace_pin, 'request_workspace', not_a_member), \
+                patch.object(mcp_workspace_pin, 'is_platform_admin', return_value=platform_admin):
+            replied, body = oauth.consent('alice', oauth.authorize_query(
+                CLIENTS['kiro'], 'http://127.0.0.1:5000/oauth/callback'), scope='read')
+        assert (replied, body['error']) == (status, mcp_workspace_pin.NOT_A_MEMBER if platform_admin
+                                            else 'Workspace not found')
+        assert _grant_rows(oauth) == []
+
+    def test_a_reconsent_outside_the_workspace_makes_it_the_deployments_again(self, oauth):
+        from shared import mcp_global_tokens as gt
+        with self._inside(self.WS):
+            oauth.sign_in('alice')
+        oauth.sign_in('alice')
+        [row] = _grant_rows(oauth)
+        assert gt.WORKSPACE_ATTRIBUTE not in row
+
+
 class TestRelayAndToken:
     def test_the_relay_is_single_use(self, oauth):
         _, approved = oauth.consent('alice', oauth.authorize_query(CLIENTS['kiro'], 'http://127.0.0.1:5000/oauth/callback'))

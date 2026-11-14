@@ -18,6 +18,7 @@ import { del, post, put } from './requestKit'
 import { z } from 'zod'
 import { AuthError } from '../lib/errors'
 import { isTrustedOrigin } from '../lib/trustedOrigins'
+import { workspaceHeader } from '../workspace/currentWorkspace'
 import { getBaseUrl } from './baseUrl'
 import { apiErrorFor, fetchApi as appFetchApi } from './client'
 import { lenientText, optionalText, parsedList } from './schemaList'
@@ -159,12 +160,13 @@ export function normalizeRequestDetail(raw: unknown): z.infer<typeof detailRespo
 
 /**
  * The board transport for a board-pool session. `getToken(true)` must return a refreshed token
- * (or null when the session is gone); the token is only ever sent to a trusted API origin.
+ * (or null when the session is gone); the token is only ever sent to a trusted API origin, and so is the
+ * current workspace's `X-Workspace-Id` (workspace/currentWorkspace.ts), the rule `getAuthHeaders` follows.
  */
 export function boardTransport(getToken: (forceRefresh: boolean) => Promise<string | null>): FetchApi {
   const send = async (url: string, options: RequestInit | undefined, forceRefresh: boolean): Promise<Response> => {
     const token = isTrustedOrigin(url) ? await getToken(forceRefresh) : null
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    const headers: Record<string, string> = { 'Content-Type': 'application/json', ...workspaceHeader(url) }
     if (token !== null && token !== '') headers['Authorization'] = token
     return fetch(url, { ...options, headers })
   }

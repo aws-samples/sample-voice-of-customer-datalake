@@ -231,6 +231,8 @@ AGGREGATES_TABLE = os.environ.get('AGGREGATES_TABLE', '')
 DEFAULT_MODEL_ID = os.environ.get('DEFAULT_MODEL_ID', '')
 MODEL_SETTINGS_PK = 'SETTINGS#model'
 MODEL_SETTINGS_SK = 'config'
+#: The deployment's default model, pinned at deploy (custom_resources/model_pin.py), below the picks.
+MODEL_DEFAULT_PK = 'SETTINGS#model_default'
 MODEL_SURFACE = 'documents'
 
 # Only product-doc uploads. Anything else under the notification's `projects/`
@@ -454,29 +456,40 @@ def _allowlisted(model_id, allowed: set) -> str | None:
     return None
 
 
+def _model_row(pk: str) -> object:
+    """One model row of the aggregates table (``sk`` ``config``), or None; a failed read is logged, never raised."""
+    try:
+        return _table(AGGREGATES_TABLE).get_item(Key={'pk': pk, 'sk': MODEL_SETTINGS_SK}).get('Item')
+    except Exception as e:  # noqa: BLE001 - model lookup must never break extraction
+        logger.warning(f'Model settings lookup failed; using default: {e}')
+        return None
+
+
 def _resolve_model_id() -> str:
     """The model id for the `documents` surface. Never raises.
 
     Same precedence as shared/model_config.py::get_active_model_id:
-    per-surface override > legacy global override > built-in default. Any
-    failure — no table configured, no item, a read error — resolves to
-    DEFAULT_MODEL_ID, because a model lookup is not allowed to break extraction.
+    per-surface override > legacy global override > the deployment's default
+    (SETTINGS#model_default) > built-in default. A failed read of either row
+    keeps what the other answered; nothing read (no table configured, no
+    item, read errors) resolves to DEFAULT_MODEL_ID, because a model lookup is
+    not allowed to break extraction.
 
     No per-container cache, unlike shared/: this function handles one document
-    per invocation rather than a hot inference loop, so a single get_item costs
+    per invocation rather than a hot inference loop, so its two get_items cost
     nothing worth caching, and a fresh read means a model just changed in
     Settings applies to the very next upload.
     """
     settings: dict = {}
+    pinned: dict = {}
     if AGGREGATES_TABLE:
-        try:
-            item = _table(AGGREGATES_TABLE).get_item(
-                Key={'pk': MODEL_SETTINGS_PK, 'sk': MODEL_SETTINGS_SK}
-            ).get('Item')
-            if isinstance(item, dict):
-                settings = item
-        except Exception as e:  # noqa: BLE001 - model lookup must never break extraction
-            logger.warning(f'Model settings lookup failed; using default: {e}')
+        # Each row read on its own: a failed read of one keeps what the other answered, as in shared/model_config.py.
+        item = _model_row(MODEL_SETTINGS_PK)
+        if isinstance(item, dict):
+            settings = item
+        default_item = _model_row(MODEL_DEFAULT_PK)
+        if isinstance(default_item, dict):
+            pinned = default_item
 
     allowed = _allowlist()
     surfaces = settings.get('surfaces')
@@ -487,6 +500,9 @@ def _resolve_model_id() -> str:
     legacy_global = _allowlisted(settings.get('model_id'), allowed)
     if legacy_global:
         return legacy_global
+    deployment_default = _allowlisted(pinned.get('model_id'), allowed)
+    if deployment_default:
+        return deployment_default
     return DEFAULT_MODEL_ID
 
 

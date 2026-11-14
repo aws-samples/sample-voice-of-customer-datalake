@@ -191,7 +191,7 @@ def synthetic_claims(token_info: Mapping[str, Any]) -> dict[str, str]:
     return claims
 
 
-def build_proxy_event(call: DomainCall, claims: Mapping[str, str]) -> dict:
+def build_proxy_event(call: DomainCall, claims: Mapping[str, str], workspace: str | None = None) -> dict:
     """Synthesize the API Gateway v1 proxy event for a delegated route call.
 
     Mirrors the shape the `api_gateway_event` test fixture builds, which is the
@@ -218,7 +218,10 @@ def build_proxy_event(call: DomainCall, claims: Mapping[str, str]) -> dict:
         'queryStringParameters': query or None,
         'pathParameters': dict(call.path_parameters) if call.path_parameters else None,
         'body': json.dumps(call.body) if call.body is not None else None,
-        'headers': {'Content-Type': 'application/json'},
+        # The workspace the credential was minted in, as the header every domain Lambda resolves (the caller's own
+        # membership decides there, shared/workspace.py), never as a claim; none for a deployment-wide credential. Sent
+        # as stored: a malformed one is the resolver's one 404 (fail closed), never dropped.
+        'headers': {'Content-Type': 'application/json', **({'X-Workspace-Id': workspace} if workspace else {})},
         'requestContext': {
             # The claims are placed here and nowhere else, and they are the
             # argument — this function does not build them (see synthetic_claims).
@@ -243,7 +246,7 @@ def _stringify(value: Any) -> str:
     return str(value)
 
 
-def call_domain(call: DomainCall, *, claims: Mapping[str, str]) -> DomainResult:
+def call_domain(call: DomainCall, *, claims: Mapping[str, str], workspace: str | None = None) -> DomainResult:
     """Invoke the owning domain function and decode its proxy response.
 
     Raises:
@@ -256,7 +259,7 @@ def call_domain(call: DomainCall, *, claims: Mapping[str, str]) -> DomainResult:
     if not call.function_name:
         raise DelegationUnavailable(f'no function configured for {call.method} {call.path}')
 
-    event = build_proxy_event(call, claims)
+    event = build_proxy_event(call, claims, workspace)
     try:
         response = get_delegate_lambda_client().invoke(
             FunctionName=call.function_name,

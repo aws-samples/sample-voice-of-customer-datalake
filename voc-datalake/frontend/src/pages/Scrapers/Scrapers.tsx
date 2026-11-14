@@ -22,6 +22,7 @@ import { useIsAdmin } from '../../store/authStore'
 import { useConfigStore } from '../../store/configStore'
 import { useManualImportStore } from '../../store/manualImportStore'
 import { serverReason } from '../../lib/errors'
+import { isPluginNotEnabled } from '../../workspace/workspaceRefusals'
 import GeneratorConfigModal from './GeneratorConfigModal'
 import JsonUploadModal from './JsonUploadModal'
 import CsvUploadModal from './CsvUploadModal'
@@ -93,11 +94,13 @@ function useScraperMutations() {
     saveMutation,
     deleteMutation,
     runMutation,
+    /** The scraper whose Run the workspace refused (it has not enabled the webscraper plugin), if any. */
+    refusedRun: isPluginNotEnabled(runMutation.error) ? runMutation.variables : undefined,
   }
 }
 
 function ScrapersContent({
-  scrapers, isLoading, appConfigPlugins, syntheticPlugins, isAdmin, onRefresh, onShowTemplates, onEdit, onDelete, onRun, onEditPlugin, onDeleteApp, onRunApp, onGenerate, failure,
+  scrapers, isLoading, appConfigPlugins, syntheticPlugins, isAdmin, onRefresh, onShowTemplates, onEdit, onDelete, onRun, refusedRun, onEditPlugin, onDeleteApp, onRunApp, onGenerate, failure,
 }: {
   readonly scrapers: ScraperConfig[]
   readonly isLoading: boolean
@@ -109,6 +112,8 @@ function ScrapersContent({
   readonly onEdit: (s: ScraperConfig) => void
   readonly onDelete: (id: string) => void
   readonly onRun: (id: string) => void
+  /** The scraper whose Run the workspace refused because it has not enabled the webscraper plugin, if any. */
+  readonly refusedRun?: string
   readonly onEditPlugin: (p: PluginManifest, appId: string) => void
   readonly onDeleteApp: (pluginId: string, appId: string) => void
   readonly onRunApp: (pluginId: string, appIdentifier: string) => Promise<unknown>
@@ -143,7 +148,8 @@ function ScrapersContent({
         <div className="grid grid-cols-1 gap-4">
           <AppConfigList plugins={appConfigPlugins} isAdmin={isAdmin} onEditPlugin={onEditPlugin} onDeleteApp={onDeleteApp} onRunApp={onRunApp} />
           {scrapers.map((scraper) => (
-            <ScraperCard key={scraper.id} scraper={scraper} radarBrandLabel={radarLabel(scraper.radar_brand)} isAdmin={isAdmin} onEdit={() => onEdit(scraper)} onDelete={() => onDelete(scraper.id)} onRun={() => onRun(scraper.id)} />
+            <ScraperCard key={scraper.id} scraper={scraper} radarBrandLabel={radarLabel(scraper.radar_brand)} isAdmin={isAdmin} onEdit={() => onEdit(scraper)} onDelete={() => onDelete(scraper.id)} onRun={() => onRun(scraper.id)}
+              runRefusal={refusedRun === scraper.id ? t('workspaces.errors.pluginNotEnabled', { ns: 'common' }) : undefined} />
           ))}
           {syntheticPlugins.length > 0 ? (
             <section aria-labelledby="synthetic-sources-heading" className="pt-2">
@@ -239,6 +245,7 @@ export default function Scrapers() {
     saveMutation,
     deleteMutation,
     runMutation,
+    refusedRun,
   } = useScraperMutations()
   const scrapers = data?.scrapers ?? []
 
@@ -318,6 +325,7 @@ export default function Scrapers() {
         onEdit={setEditingScraper}
         onDelete={setDeleteScraperId}
         onRun={(id) => runMutation.mutate(id)}
+        refusedRun={refusedRun}
         onEditPlugin={(plugin, appId) => {
           setFocusAppId(appId); setSelectedPlugin(plugin)
         }}

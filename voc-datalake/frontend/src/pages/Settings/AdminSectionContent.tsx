@@ -12,6 +12,8 @@ import RadarSection from './RadarSection'
 import EmailInboxCard from './EmailInboxCard'
 import ParticipantSettingsCard from './ParticipantSettingsCard'
 import BoardsSection from './boards/BoardsSection'
+import PlatformWorkspacesSection from './PlatformWorkspacesSection'
+import DeploymentBrandCard from './DeploymentBrandCard'
 import { DimensionsSection, SourcePoliciesSection } from './DataGovernanceSections'
 import { CategoriesSection, DataSourcesSection, UserAdminSection } from './SettingsSections'
 import type { AdminSectionId, AdminTabId } from './adminTabs'
@@ -42,6 +44,16 @@ function AdminOnlySection({ section, apiEndpoint }: Readonly<{ section: AdminSec
   }
 }
 
+/** Every workspace, then the brand outside them (DeploymentBrandCard.tsx). */
+function PlatformConsole() {
+  return (
+    <div className="space-y-6">
+      <PlatformWorkspacesSection />
+      <DeploymentBrandCard />
+    </div>
+  )
+}
+
 function SectionContent({ section, apiEndpoint, isAdmin }: Readonly<ContentProps & { section: AdminSectionId }>) {
   switch (section) {
     case 'plugins': return <DataSourcesSection apiEndpoint={apiEndpoint} isAdmin={isAdmin} />
@@ -51,11 +63,14 @@ function SectionContent({ section, apiEndpoint, isAdmin }: Readonly<ContentProps
   }
 }
 
-export default function AdminSectionContent({ tab, section, apiEndpoint, isAdmin }: Readonly<ContentProps & {
+export default function AdminSectionContent({ tab, section, apiEndpoint, isAdmin, isPlatformAdmin }: Readonly<ContentProps & {
   tab: AdminTabId
   section: AdminSectionId | null
+  isPlatformAdmin: boolean
 }>) {
   if (tab === 'ai') return <AiModelSection apiEndpoint={apiEndpoint} isAdmin={isAdmin} />
   if (section === null) return null
+  // The platform console: platform admins only, like its tab (adminTabs.ts), with the deployment's default brand.
+  if (section === 'workspaces') return isAdmin && isPlatformAdmin && apiEndpoint ? <PlatformConsole /> : null
   return <SectionContent section={section} apiEndpoint={apiEndpoint} isAdmin={isAdmin} />
 }

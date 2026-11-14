@@ -4,7 +4,7 @@
  * helpers. The per-endpoint URL/method/body round-trips live in
  * `client.endpoints.test.ts`.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import {
   expectFetchedWith, fetchMock, installFetchMock, mockFailureOnce, mockJsonOnce, mockStatusOnce,
   requestHeaders, requestUrl,
@@ -81,6 +81,8 @@ import { authService } from '../services/auth'
 import * as runtimeConfig from '../runtimeConfig'
 import { useConfigStore } from '../store/configStore'
 import { SESSION_EXPIRED_PATH, resetSessionExpiryForTests } from '../services/sessionExpiry'
+import { setCurrentWorkspace } from '../workspace/currentWorkspace'
+import { ACME } from '../test/workspaceFixtures'
 
 const EMPTY_PAGE = { count: 0, items: [] }
 
@@ -262,6 +264,56 @@ describe('error bodies', () => {
     mockStatusOnce(401)
     mockFailureOnce(403, JSON.stringify({ message: SERVER_MESSAGE }))
     await expect(fetchApi('/projects/p1')).rejects.toThrow('Session expired. Please login again.')
+  })
+})
+
+describe('the request scope: a deployment-wide call names no workspace', () => {
+  afterEach(() => setCurrentWorkspace(null))
+
+  it('names the current workspace by default, and none when the call opts out', async () => {
+    setCurrentWorkspace(ACME)
+    mockJsonOnce({})
+    mockJsonOnce({})
+    await fetchApi('/settings/brand')
+    await fetchApi('/settings/brand', { method: 'GET' }, 'deployment')
+    expect(requestHeaders(0)['X-Workspace-Id']).toBe(ACME.id)
+    expect(requestHeaders(1)).toStrictEqual({ 'Content-Type': 'application/json', Authorization: DEFAULT_ID_TOKEN })
+  })
+
+  it('keeps the opt-out on the 401 retry', async () => {
+    setCurrentWorkspace(ACME)
+    queueUnauthorizedThenOk()
+    await fetchApi('/settings/brand', { method: 'PUT', body: '{}' }, 'deployment')
+    expect(fetchMock()).toHaveBeenCalledTimes(2)
+    expect(requestHeaders(1)['X-Workspace-Id']).toBeUndefined()
+  })
+})
+
+describe('the deployment-only operator calls name no workspace, inside one too', () => {
+  // The API refuses them with X-Workspace-Id (400): the schedule every workspace's tick fans out from, and the
+  // S3 import's bucket, which is not keyed by workspace (docs/multi-workspace.md, 7.04.00).
+  afterEach(() => setCurrentWorkspace(null))
+
+  it.each([
+    ['enable a source', () => api.enableSource('webscraper')],
+    ['disable a source', () => api.disableSource('webscraper')],
+    ['Run now of the S3 import', () => api.runSource('s3_import')],
+    ['list the S3 import sources', () => api.getS3ImportSources()],
+    ['list the S3 import files', () => api.getS3ImportFiles({ source: 'reviews' })],
+    ['ask for an S3 import upload URL', () => api.getS3UploadUrl('a.csv', 'reviews')],
+    ['delete an S3 import file', () => api.deleteS3ImportFile('reviews/a.csv')],
+  ])('%s', async (_name, call) => {
+    setCurrentWorkspace(ACME)
+    mockJsonOnce({})
+    await call()
+    expect(requestHeaders(0)['X-Workspace-Id']).toBeUndefined()
+  })
+
+  it("keeps the workspace on any other source's Run now", async () => {
+    setCurrentWorkspace(ACME)
+    mockJsonOnce({})
+    await api.runSource('webscraper')
+    expect(requestHeaders(0)['X-Workspace-Id']).toBe(ACME.id)
   })
 })
 

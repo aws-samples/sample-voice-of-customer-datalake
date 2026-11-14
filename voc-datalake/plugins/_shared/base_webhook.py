@@ -7,11 +7,12 @@ Two paths (docs/multi-workspace.md, "Public and non-user entry points"; docs/plu
   that name no workspace);
 * ``POST /webhooks/{plugin}/{ws}``: the ``{ws}`` path value is only the key of a workspace's own ``META`` row
   (``delivery_workspace``, over shared/workspace_routing.py ``route_workspace_id``): it must be a well-formed id of an
-  ``active`` workspace. The webhook secret and the plugin's settings then come from THAT workspace's parameter of
+  ``active`` workspace that enabled this plugin (its ``PLUGIN#{plugin}`` / ``WS#{ws}`` row, since 7.14.00). The
+  webhook secret and the plugin's settings then come from THAT workspace's parameter of
   this plugin, ``{prefix}/{ws}/credentials/{plugin}`` (decision 19, shared/workspace_credentials.py), never the shared
   secret; a verified delivery is archived under ``ws/{ws}/raw/<plugin>/…`` and queued with that ``workspace_id``
   (``workspace_payload``, after every other field). Anything that routes nowhere (a malformed or unknown id, a
-  ``deleting`` workspace, a parameter missing, unreadable or without the plugin's webhook secret) gets the plugin's
+  ``deleting`` workspace, a workspace that has not enabled the plugin, a parameter missing, unreadable or without the plugin's webhook secret) gets the plugin's
   own bad-signature answer, so the answer confirms no workspace.
 """
 
@@ -29,11 +30,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared.aws import clear_secret_cache, get_s3_client, get_secret, get_sqs_client, get_ssm_client
+from shared.exceptions import ConflictError
 from shared.logging import logger, metrics, tracer
 from shared.plugin_identity import is_valid_plugin_identifier
 from shared.source_profiles import SourceProfilesUnavailable
 from shared.tables import get_workspaces_table
 from shared.workspace_credentials import MalformedCredentials, read_credentials
+from shared.workspace_plugin_settings import require_plugin_enabled
 from shared.workspace_routing import RoutedWorkspace, Unroutable, route_workspace_id, workspace_payload
 
 from .audit import emit_audit_event
@@ -133,8 +136,10 @@ def _on_workspace_route(event: dict) -> bool:
 def delivery_workspace(event: dict) -> tuple[bool, RoutedWorkspace | None]:
     """``(refused, routed)`` of one delivery. ``/webhooks/{plugin}`` (no ``{ws}`` path parameter): ``(False, None)``,
     deployment-wide. ``/webhooks/{plugin}/{ws}``: ``(False, routed)`` for an active workspace,
-    read from its stored ``META`` (the path value is only the row's key), else ``(True, None)``: refused, never served
-    deployment-wide. A read fault raises, for the plugin's 500: a provider such as GitHub does not redeliver a failed
+    read from its stored ``META`` (the path value is only the row's key), that enabled this plugin (its
+    ``PLUGIN#{plugin}`` / ``WS#{ws}`` row, shared/workspace_plugin_settings.py: a disable stops its deliveries at
+    once), else ``(True, None)``: refused with the bad signature's 401 before any secret is read or the body parsed,
+    never served deployment-wide, so the answer says nothing of which. A read fault raises, for the plugin's 500: a provider such as GitHub does not redeliver a failed
     delivery by itself, so the scheduled poll picks the item up and the 500 tells the operator."""
     if not _on_workspace_route(event):
         return False, None
@@ -144,9 +149,11 @@ def delivery_workspace(event: dict) -> tuple[bool, RoutedWorkspace | None]:
         logger.warning("WORKSPACES_TABLE not configured: a workspace webhook is refused")
         return True, None
     try:
-        return False, route_workspace_id(table, parameters.get(WORKSPACE_PATH_PARAMETER))
-    except Unroutable:
+        routed = route_workspace_id(table, parameters.get(WORKSPACE_PATH_PARAMETER))
+        require_plugin_enabled(table, routed.ws, SOURCE_PLATFORM)
+    except (Unroutable, ConflictError, ValueError):  # ValueError: no plugin id configured (SOURCE_PLATFORM)
         return True, None
+    return False, routed
 
 
 class BaseWebhook(ABC):
@@ -274,13 +281,14 @@ class BaseWebhook(ABC):
 
         A delivery routed to a workspace names it on every message
         (``workspace_payload``: the stored row's workspace, set after every field
-        the item and the source policy put there); a deployment-wide one names
-        none, as before.
+        the item and the source policy put there), under that workspace's source
+        policy; a deployment-wide one names none, under the deployment's, as before.
         """
+        scope = self.routed.scope if self.routed is not None else None
         return send_messages_to_queue(
             self._sqs,
             PROCESSING_QUEUE_URL,
-            [workspace_payload(message, self.routed) for message in policy_messages(items)],
+            [workspace_payload(message, self.routed) for message in policy_messages(items, scope)],
             metric_name="WebhookItemsIngested",
             log_label="webhook",
         )

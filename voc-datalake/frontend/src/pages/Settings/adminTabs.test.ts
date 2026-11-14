@@ -16,7 +16,7 @@ describe('resolveAdminLocation', () => {
     ['logs', 'system', 'logs'],
     ['version', 'system', 'version'],
   ])('maps the pre-5.09 ?tab=%s to %s / %s', (old, tab, section) => {
-    expect(resolveAdminLocation(old, null, true)).toStrictEqual({ tab, section })
+    expect(resolveAdminLocation(old, null, true, false)).toStrictEqual({ tab, section })
   })
 
   it.each([
@@ -32,11 +32,11 @@ describe('resolveAdminLocation', () => {
     ['system', null, 'system', 'logs'],
     ['system', 'users', 'system', 'logs'],
   ])('resolves the new ?tab=%s&section=%s to %s / %s', (tab, section, expectedTab, expectedSection) => {
-    expect(resolveAdminLocation(tab, section, true)).toStrictEqual({ tab: expectedTab, section: expectedSection })
+    expect(resolveAdminLocation(tab, section, true, false)).toStrictEqual({ tab: expectedTab, section: expectedSection })
   })
 
   it.each([null, 'mcp', 'nope'])('falls back to General for ?tab=%s', (tab) => {
-    expect(resolveAdminLocation(tab, null, true)).toStrictEqual({ tab: 'brand', section: null })
+    expect(resolveAdminLocation(tab, null, true, false)).toStrictEqual({ tab: 'brand', section: null })
   })
 
   it.each([
@@ -48,29 +48,41 @@ describe('resolveAdminLocation', () => {
     ['dimensions', null, 'taxonomy', 'categories'],
     ['access', 'boards', 'brand', null],
   ])('keeps a non-admin off admin-only ?tab=%s&section=%s (→ %s / %s)', (tab, section, expectedTab, expectedSection) => {
-    expect(resolveAdminLocation(tab, section, false)).toStrictEqual({ tab: expectedTab, section: expectedSection })
+    expect(resolveAdminLocation(tab, section, false, false)).toStrictEqual({ tab: expectedTab, section: expectedSection })
   })
 })
 
 describe('visibility', () => {
-  it('shows admins all six tabs', () => {
-    expect(visibleTabs(true)).toStrictEqual(['brand', 'sources', 'taxonomy', 'access', 'ai', 'system'])
+  it('shows admins all six tabs, platform admin or not', () => {
+    expect([visibleTabs(true, false), visibleTabs(true, true)]).toStrictEqual([
+      ['brand', 'sources', 'taxonomy', 'access', 'ai', 'system'], ['brand', 'sources', 'taxonomy', 'access', 'ai', 'system'],
+    ])
   })
 
   it('hides Privacy & access, whose sections are all admin-only, from a non-admin', () => {
-    expect(visibleTabs(false)).toStrictEqual(['brand', 'sources', 'taxonomy', 'ai', 'system'])
+    expect(visibleTabs(false, false)).toStrictEqual(['brand', 'sources', 'taxonomy', 'ai', 'system'])
   })
 
   it('leaves a non-admin one open section per sectioned tab', () => {
     const sections: readonly AdminTabId[] = ['sources', 'taxonomy', 'system']
-    expect(sections.map((tab) => visibleSections(tab, false))).toStrictEqual([['plugins'], ['categories'], ['logs']])
+    expect(sections.map((tab) => visibleSections(tab, false, false))).toStrictEqual([['plugins'], ['categories'], ['logs']])
   })
 })
 
 describe('Privacy & access', () => {
   it('lists Boards after Source policies and Users, for admins only', () => {
-    expect([visibleSections('access', true), visibleSections('access', false)])
+    expect([visibleSections('access', true, false), visibleSections('access', false, false)])
       .toStrictEqual([['policies', 'users', 'boards'], []])
+  })
+
+  it('adds Workspaces, the platform console, for a platform admin only (an administrator in platform-admins)', () => {
+    expect([visibleSections('access', true, true), visibleSections('access', false, true)])
+      .toStrictEqual([['policies', 'users', 'boards', 'workspaces'], []])
+  })
+
+  it('sends a deep link to Workspaces back to the tab\'s first section for anyone else', () => {
+    expect([resolveAdminLocation('access', 'workspaces', true, true), resolveAdminLocation('access', 'workspaces', true, false)])
+      .toStrictEqual([{ tab: 'access', section: 'workspaces' }, { tab: 'access', section: 'policies' }])
   })
 })
 

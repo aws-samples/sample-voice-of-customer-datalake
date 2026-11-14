@@ -19,9 +19,11 @@ from shared import methodology
 from shared.ai_writing import GATED_DOC_TYPES
 from shared.document_versions import persist_versioned_document
 from shared.exceptions import ValidationError
+from shared.project_keys import DOCUMENT_VERSIONS_STORE, document_listing, require_deployment
 from shared.request_body import validated_text
 from shared.row_ids import OPAQUE_ID_RE
 from shared.timestamps import now_iso
+from shared.ws_repo import WorkspaceScope
 
 HUMAN_DOC_TYPES: Final = GATED_DOC_TYPES
 ORIGIN_HUMAN: Final = 'human'
@@ -81,16 +83,18 @@ def _create_id(body: dict) -> str:
     return raw
 
 
-def create_human_document(table: Any, project_id: str, doc_type: str, body: dict, *, creator_sub: str) -> dict:
-    """File a hand-written PR/FAQ / PRD as the next version of its series; answers the item."""
+def create_human_document(table: Any, project_id: str, doc_type: str, body: dict, *, creator_sub: str,
+                          workspace: WorkspaceScope | None = None) -> dict:
+    """File a hand-written PR/FAQ / PRD as the next version of its series; answers the item. Not per workspace yet
+    (it is a document version): a ``workspace`` is refused (``NotPerWorkspaceError``)."""
+    require_deployment(workspace, DOCUMENT_VERSIONS_STORE)
     if doc_type not in HUMAN_DOC_TYPES:
         raise ValidationError('document_type must be prfaq or prd')
     title = _title(body)
     content = _content(body, doc_type)
     now = now_iso()
     fields = {
-        'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS',
-        'gsi1sk': now,
+        **document_listing(project_id, now),
         'content': content,
         'origin': ORIGIN_HUMAN,
         # Says on the artifact that it cites no evidence (tenet 2, M4).

@@ -60,7 +60,7 @@ In `voc-aggregates`, two rows per run, with no `ttl` (kept while the platform ru
 | `IMPORT_RUN` | `{started_at}#{run_id}` | The summary: every field except `warnings` and `errors`, so the newest-first listing reads small rows |
 | `IMPORT_RUN#{run_id}` | `RUN` | The detail: the summary fields plus `warnings` and `errors` |
 
-An S3 import run in a workspace (multi-workspace, not released yet, [multi-workspace.md](multi-workspace.md))
+An S3 import run in a workspace (multi-workspace, since 7.00.00, [multi-workspace.md](multi-workspace.md))
 writes the same two rows under `WS#{ws}#IMPORT_RUN` and `WS#{ws}#IMPORT_RUN#{run_id}`; the history routes read the
 deployment-wide rows above until they are keyed by workspace. Nothing in the app starts such a run yet: the import
 bucket is not keyed by workspace, so the S3 import API (its reprocess included) answers 400 to a request that sends

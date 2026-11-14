@@ -157,6 +157,19 @@ class TestKeys:
             s3_key(A, *parts)
 
 
+def _scan_every_page(repo, **kwargs) -> tuple[list[str], list[dict]]:
+    """Every page of ``repo.scan(**kwargs)``: the sort keys answered, and each page's ``LastEvaluatedKey``."""
+    found: list[str] = []
+    cursors: list[dict] = []
+    while True:
+        page = repo.scan(**kwargs, **({'ExclusiveStartKey': cursors[-1]} if cursors else {}))
+        found += [str(row['sk']) for row in page['Items']]
+        cursor = page.get('LastEvaluatedKey')
+        if not cursor:
+            return found, cursors
+        cursors.append(cursor)
+
+
 @pytest.fixture
 def table():
     with mock_aws():
@@ -261,7 +274,7 @@ class TestWorkspaceTable:
     def test_an_update_without_an_expression_is_refused(self):
         backing = MagicMock()
         with pytest.raises(OutOfScopeError, match='needs an UpdateExpression'):
-            ws_table(A, backing).update_item(feedback_key(A, 'web', 'f1'), AttributeUpdates={'gsi1pk': {}})
+            ws_table(A, backing).update_item(feedback_key(A, 'web', 'f1'), ExpressionAttributeValues={':a': 1})
         assert backing.method_calls == []
 
     def test_a_cursor_inside_the_scope_is_passed_on(self):
@@ -275,6 +288,112 @@ class TestWorkspaceTable:
         assert kwargs['KeyConditionExpression'] == '#p = :p'
         assert kwargs['ExpressionAttributeNames'] == {'#p': 'gsi1pk'}
         assert kwargs['ExpressionAttributeValues'] == {':p': date_pk(A, '2026-01-15')}
+
+    @pytest.mark.parametrize('call', [
+        lambda repo: repo.put_item(feedback_key(A, 'web', 'f1'), TableName='voc-workspaces'),
+        lambda repo: repo.get_item(feedback_key(A, 'web', 'f1'), TableName='voc-workspaces'),
+        lambda repo: repo.delete_item(feedback_key(A, 'web', 'f1'), TableName='voc-workspaces'),
+        lambda repo: repo.query('pk', f'WS#{WS}#SOURCE#web', TableName='voc-workspaces'),
+        lambda repo: repo.update_item(feedback_key(A, 'web', 'f1'), UpdateExpression='SET a = :a',
+                                      ExpressionAttributeValues={':a': 1}, TableName='voc-workspaces'),
+        lambda repo: repo.update_item(feedback_key(A, 'web', 'f1'), UpdateExpression='SET a = :a',
+                                      ExpressionAttributeValues={':a': 1},
+                                      AttributeUpdates={'gsi1pk': {'Value': 'DATE#x', 'Action': 'PUT'}}),
+        lambda repo: repo.put_item(feedback_key(A, 'web', 'f1'), Expected={'pk': {'Exists': False}}),
+        lambda repo: repo.delete_item(feedback_key(A, 'web', 'f1'), Expected={'pk': {'Exists': True}}),
+        lambda repo: repo.get_item(feedback_key(A, 'web', 'f1'), AttributesToGet=['text']),
+        lambda repo: repo.query('pk', f'WS#{WS}#SOURCE#web',
+                                KeyConditions={'pk': {'AttributeValueList': ['SOURCE#web'], 'ComparisonOperator': 'EQ'}}),
+        lambda repo: repo.query('pk', f'WS#{WS}#SOURCE#web', QueryFilter={}, ConditionalOperator='OR'),
+    ])
+    def test_refuses_a_parameter_it_does_not_check(self, call):
+        """Ported from 6.14.00's layer: each call takes only its listed parameters, so neither a ``TableName``
+        (boto3 lets it override the table's own) nor a legacy parameter can reach DynamoDB unchecked."""
+        backing = MagicMock()
+        with pytest.raises(OutOfScopeError, match='does not take'):
+            call(ws_table(A, backing))
+        assert backing.method_calls == []
+
+    def test_every_listed_parameter_is_passed_on(self):
+        backing = MagicMock()
+        backing.query.return_value = {'Items': []}
+        repo = ws_table(A, backing)
+        repo.get_item(feedback_key(A, 'web', 'f1'), ConsistentRead=True, ProjectionExpression='#t',
+                      ExpressionAttributeNames={'#t': 'text'}, ReturnConsumedCapacity='TOTAL')
+        repo.put_item(feedback_key(A, 'web', 'f1'), ConditionExpression='attribute_not_exists(pk)',
+                      ReturnValuesOnConditionCheckFailure='ALL_OLD')
+        repo.query('gsi1pk', date_pk(A, '2026-01-15'), IndexName='gsi1-by-date', Limit=5, ScanIndexForward=False,
+                   FilterExpression='#t = :t', ExpressionAttributeNames={'#t': 'text'},
+                   ExpressionAttributeValues={':t': 'x'}, Select='ALL_ATTRIBUTES')
+        assert backing.get_item.call_args.kwargs['ConsistentRead'] is True
+        assert backing.put_item.call_args.kwargs['ReturnValuesOnConditionCheckFailure'] == 'ALL_OLD'
+        assert backing.query.call_args.kwargs['IndexName'] == 'gsi1-by-date'
+
+    def test_a_tables_scope_key_and_handle_are_fixed(self):
+        """Ported from 6.14.00's layer: no caller can swap the scope, the key or the handle of a table it holds."""
+        repo = ws_table(A, MagicMock())
+        for name, value in (('scope', B), ('key_attribute', 'source'), ('_scope', B), ('_unscoped_table', None),
+                            ('anything', 1)):
+            with pytest.raises(AttributeError):
+                setattr(repo, name, value)
+        with pytest.raises(AttributeError):
+            del repo._scope
+        assert not hasattr(repo, '__dict__')
+        assert (repo.scope, repo.key_attribute) == (A, 'pk')
+
+    def test_a_scan_answers_the_scopes_rows_only(self, table):
+        """The category reprocess of a workspace (7.13.00): a Scan through the view answers only its rows, page by
+        page, with the caller's own boto3 filter ANDed in."""
+        from boto3.dynamodb.conditions import Attr
+
+        for scope, fid in ((A, 'f1'), (A, 'f2'), (B, 'f3')):
+            table.put_item(Item={**feedback_key(scope, 'web', fid), 'kind': 'review'})
+        table.put_item(Item={'pk': 'SOURCE#web', 'sk': 'FEEDBACK#f4', 'kind': 'review'})
+        table.put_item(Item={**feedback_key(A, 'web', 'f5'), 'kind': 'other'})
+        repo = ws_table(A, table)
+
+        found, _cursors = _scan_every_page(repo, Limit=2, FilterExpression=Attr('kind').eq('review'))
+        unfiltered = repo.scan()
+
+        assert sorted(found) == ['FEEDBACK#f1', 'FEEDBACK#f2']
+        assert sorted(row['sk'] for row in unfiltered['Items']) == ['FEEDBACK#f1', 'FEEDBACK#f2', 'FEEDBACK#f5']
+
+    def test_a_scan_resumes_from_a_cursor_on_another_scopes_row(self, table):
+        """``Limit`` applies before the filter, so a page's ``LastEvaluatedKey`` is often another scope's row: it
+        is a position in the table and is passed on, while the answer stays the scope's."""
+        for scope, fid in ((B, 'f0'), (A, 'f1'), (B, 'f2'), (A, 'f3')):
+            table.put_item(Item=feedback_key(scope, 'web', fid))
+        table.put_item(Item={'pk': 'SOURCE#web', 'sk': 'FEEDBACK#f4'})
+        repo = ws_table(A, table)
+
+        found, cursors = _scan_every_page(repo, Limit=1)
+
+        assert sorted(found) == ['FEEDBACK#f1', 'FEEDBACK#f3']
+        assert any(not A.owns(cursor['pk']) for cursor in cursors)
+
+    @pytest.mark.parametrize('kwargs', [
+        {'FilterExpression': 'kind = :k'},
+        {'ExclusiveStartKey': {**feedback_key(A, 'web', 'f1'), 'gsi2pk': f'WS#{WS}#CATEGORY#x'}},
+        {'ExclusiveStartKey': {'pk': 'SOURCE#web', 'sk': 'FEEDBACK#f1', 'text': 'x'}},
+        {'ExclusiveStartKey': {'pk': 1, 'sk': 'FEEDBACK#f1'}},
+        {'ExclusiveStartKey': {}},
+        {'ExclusiveStartKey': 'not a cursor'},
+        {'TableName': 'voc-workspaces'},
+        {'ExpressionAttributeValues': {':k': 'x'}},
+        {'IndexName': 'gsi1-by-date'},
+    ], ids=['string-filter', 'cursor-index-attribute', 'cursor-other-attribute', 'cursor-not-a-string',
+            'empty-cursor', 'malformed-cursor', 'table-name', 'values', 'index'])
+    def test_a_scan_refuses_anything_it_cannot_hold_to_the_scope(self, kwargs):
+        backing = MagicMock()
+        with pytest.raises(OutOfScopeError):
+            ws_table(A, backing).scan(**kwargs)
+        assert backing.method_calls == []
+
+    def test_a_scanned_row_outside_the_scope_never_reaches_the_caller(self):
+        backing = MagicMock()
+        backing.scan.return_value = {'Items': [{**feedback_key(A, 'web', 'f1')}, {**feedback_key(B, 'web', 'f2')}]}
+        with pytest.raises(OutOfScopeError, match='scanned row'):
+            ws_table(A, backing).scan(Limit=5)
 
     def test_watermark_keys_are_checked_by_source(self):
         backing = MagicMock()
@@ -542,6 +661,22 @@ class TestTheMultiItemCalls:
         with pytest.raises(OutOfScopeError):
             ws_table(A, table).transact_write_items([_put(A, 'f1'), _put(B, 'f1')])
         assert table.scan()['Items'] == []
+
+    @pytest.mark.parametrize('items', [
+        [{'Put': {'Item': _key(A, 'f1'), 'Expected': {'pk': {'Exists': False}}}}],
+        [{'Update': {'Key': _key(A, 'f1'), 'UpdateExpression': 'SET a = :a', 'ExpressionAttributeValues': {':a': 1},
+                     'AttributeUpdates': {'gsi1pk': {'Value': 'DATE#x', 'Action': 'PUT'}}}}],
+        [{'Delete': {'Key': _key(A, 'f1'), 'ReturnValues': 'ALL_OLD'}}],
+        [{'ConditionCheck': {'Key': _key(A, 'f1'), 'ConditionExpression': 'attribute_exists(pk)',
+                             'ConditionalOperator': 'OR'}}],
+    ])
+    def test_a_transaction_entry_takes_only_its_listed_fields(self, items):
+        """The single-item calls' allow-lists hold per entry too: a legacy parameter, or any other the layer does not
+        check, refuses the whole transaction before it is sent."""
+        backing = _backing()
+        with pytest.raises(OutOfScopeError, match='does not take'):
+            ws_table(A, backing).transact_write_items(items)
+        assert backing.mock_calls == []
 
     @pytest.mark.parametrize('items', _TRANSACTIONS_OUT_OF_SCOPE)
     def test_a_transaction_with_an_entry_outside_the_scope_is_refused_whole(self, items):

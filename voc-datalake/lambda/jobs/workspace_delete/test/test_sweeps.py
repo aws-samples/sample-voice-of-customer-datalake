@@ -29,6 +29,7 @@ from jobs.workspace_delete.test.conftest import (
     seed_workspace,
     snapshot,
 )
+from shared.workspace_settings import settings_key
 from shared.ws_repo import WorkspaceScope, WorkspaceTable
 
 BY_NAME = {sweep.name: sweep for sweep in SWEEPS}
@@ -64,8 +65,8 @@ def _partition(table: Any, pk: str) -> list[dict]:
 def test_the_entries_run_in_the_designs_order():
     assert [sweep.name for sweep in SWEEPS] == [
         'credentials', 'feedback', 'counters', 'source_runs', 'failures', 'circuits', 'logs', 'scraper_runs',
-        'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'watermarks', 'memory', 'exports',
-        'objects', 'control_rows']
+        'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'reprocess_jobs', 'watermarks', 'memory',
+        'exports', 'objects', 'radar', 'settings', 'user_contexts', 'control_rows']
 
 
 def test_only_the_feedback_and_the_memory_are_tombstoned():
@@ -218,10 +219,15 @@ class TestCounters:
         assert _partition(seeded.aggregates, orphan) == []
 
     def test_the_closed_families_go_even_with_no_item_naming_them(self, seeded):
-        """A configured category (and its subcategory) or a sentiment label is listed from the settings, so its
-        counters go though every item of it was erased before the delete."""
-        seeded.aggregates.put_item(Item={'pk': 'SETTINGS#categories', 'sk': 'config', 'categories': [
+        """A category the workspace configures (and its subcategory) or a sentiment label is listed from the
+        workspace's own settings (7.08.00), so its counters go though every item of it was erased before the delete;
+        the deployment's categories are never read (a counter only they name stays, as does their row)."""
+        seeded.aggregates.put_item(Item={**settings_key(WS, 'categories'), 'categories': [
             {'name': 'erased_only', 'subcategories': [{'name': 'late'}]}]})
+        seeded.aggregates.put_item(Item={'pk': 'SETTINGS#categories', 'sk': 'config', 'categories': [
+            {'name': 'deployment_only'}]})
+        deployments = f'WS#{WS}#METRIC#daily_category#deployment_only'
+        seeded.aggregates.put_item(Item={'pk': deployments, 'sk': '2026-01-01', 'count': 1})
         orphans = [f'WS#{WS}#METRIC#daily_category#erased_only', f'WS#{WS}#METRIC#daily_subcategory#erased_only#late',
                    f'WS#{WS}#METRIC#category_sentiment#erased_only#negative',
                    f'WS#{WS}#METRIC#daily_sentiment#mixed']
@@ -232,6 +238,7 @@ class TestCounters:
 
         assert [pk for pk in orphans if _partition(seeded.aggregates, pk)] == []
         assert _partition(seeded.aggregates, 'SETTINGS#categories') != []
+        assert _partition(seeded.aggregates, deployments) != []
 
 
 @pytest.mark.parametrize(('name', 'partitions'), [

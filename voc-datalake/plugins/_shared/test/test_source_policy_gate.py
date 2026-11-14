@@ -49,8 +49,11 @@ def test_archive_raw_item_still_writes_for_an_allow_source():
 def test_an_ingestors_archive_is_the_workspaces_and_a_webhooks_stays_deployment_wide():
     item = {'id': 'x', 'created_at': '2026-01-15T00:00:00Z'}
     ingestor_s3, webhook_s3 = MagicMock(), MagicMock()
-    ingestor_uri = archive_raw_item(ingestor_s3, 'bucket', 'other', item, scope=SCOPE)
-    other_uri = archive_raw_item(MagicMock(), 'bucket', 'other', item, scope=OTHER_SCOPE)
+    # Each workspace keeps the source's PII (its own allow profile; without one its default redacts, keeping none).
+    allow = [{'id': 'other', 'pii': 'allow'}]
+    with seeded_source_profiles(workspaces={WS: allow, OTHER_WS: allow}):
+        ingestor_uri = archive_raw_item(ingestor_s3, 'bucket', 'other', item, scope=SCOPE)
+        other_uri = archive_raw_item(MagicMock(), 'bucket', 'other', item, scope=OTHER_SCOPE)
     webhook_uri = archive_raw_item(webhook_s3, 'bucket', 'other', item, transport=WEBHOOK)
 
     assert ingestor_uri is not None
@@ -98,7 +101,8 @@ def test_a_deployment_wide_ingestor_run_queues_the_policy_applied_message_unchan
 
 
 def test_ingestor_and_webhook_queue_the_policy_applied_messages():
-    with seeded_source_profiles(_REDACTED), \
+    # The deployment's profile and the workspace's both redact: each run applies its own scope's.
+    with seeded_source_profiles(_REDACTED, workspaces={WS: _REDACTED}), \
             patch.object(base_ingestor, 'send_messages_to_queue', return_value=1) as ingest_send, \
             patch.object(base_webhook, 'send_messages_to_queue', return_value=1) as webhook_send:
         base_ingestor.BaseIngestor.send_to_queue(MagicMock(scope=SCOPE), [_message()])
@@ -107,6 +111,48 @@ def test_ingestor_and_webhook_queue_the_policy_applied_messages():
     # The ingestor's messages also name the run's workspace; a deployment-wide webhook's name none.
     assert ingest_send.call_args.args[2] == [{**expected[0], 'workspace_id': WS}]
     assert webhook_send.call_args.args[2] == expected
+
+
+_ALLOW = {'id': 'x', 'source_platform': 'tickets', 'text': 'mail jane@example.com', 'author': 'Jane',
+          'pii_policy_applied': 'allow'}
+_REDACT = {'id': 'x', 'source_platform': 'tickets', 'text': 'mail [EMAIL]', 'pii_policy_applied': 'redact'}
+
+
+@pytest.mark.parametrize(('deployment', 'workspace', 'in_workspace', 'deployment_wide'), [
+    (_REDACTED, [{'id': 'tickets', 'pii': 'allow'}], _ALLOW, _REDACT),
+    ([], _REDACTED, _REDACT, _ALLOW),
+    # A workspace that saved no profile for the source: its default redacts (privacy by default).
+    ([], [], _REDACT, _ALLOW),
+], ids=['only-the-deployment-redacts', 'only-the-workspace-redacts', 'no-workspace-profile-redacts'])
+def test_a_run_in_a_workspace_applies_the_workspaces_policy_never_the_deployments(
+        deployment, workspace, in_workspace, deployment_wide):
+    """7.08.00: a workspace's run (and archive) reads that workspace's profile; a deployment-wide one the
+    deployment's, as before; a workspace that saved none redacts by default, whatever the deployment's says."""
+    with seeded_source_profiles(deployment, workspaces={WS: workspace}), \
+            patch.object(base_ingestor, 'send_messages_to_queue', return_value=1) as ingest_send:
+        base_ingestor.BaseIngestor.send_to_queue(MagicMock(scope=SCOPE), [_message()])
+        workspace_run = ingest_send.call_args.args[2]
+        base_ingestor.BaseIngestor.send_to_queue(MagicMock(scope=None), [_message()])
+        deployment_run = ingest_send.call_args.args[2]
+        archives = (raw_archive_permitted('tickets', SCOPE), raw_archive_permitted('tickets'))
+
+    assert workspace_run == [{**in_workspace, 'workspace_id': WS}]
+    assert deployment_run == [deployment_wide]
+    assert archives == (in_workspace is _ALLOW, deployment_wide is _ALLOW)
+
+
+def test_a_routed_webhook_applies_its_workspaces_policy():
+    """A delivery routed to a workspace passes that workspace's source policy, not the deployment's."""
+    from shared.workspace_routing import route_workspace_id
+
+    table = MagicMock()
+    table.get_item.return_value = {'Item': {'pk': f'WS#{WS}', 'sk': 'META', 'status': 'active',
+                                            'secret_status': 'ready'}}
+    routed = route_workspace_id(table, WS)
+    with seeded_source_profiles([], workspaces={WS: _REDACTED}), \
+            patch.object(base_webhook, 'send_messages_to_queue', return_value=1) as webhook_send:
+        base_webhook.BaseWebhook.send_to_queue(MagicMock(routed=routed), [_message()])
+    assert webhook_send.call_args.args[2] == [{**_REDACT, 'workspace_id': WS}]
 
 
 def test_a_routed_webhook_names_the_stored_rows_workspace_last_never_the_payloads():

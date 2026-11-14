@@ -180,12 +180,12 @@ lambda/jobs/category_reprocess/handler.py  # voc-category-reprocess worker (asyn
 | Metrics | `metrics_handler.py` | DynamoDB read (feedback, aggregates) |
 | Feedback Edit (`voc-feedback-edit-api`) | `feedback_edit_handler.py` | DynamoDB RW (feedback), read (aggregates) |
 | Chat | `chat_handler.py` | DynamoDB RW (conversations) |
-| Chat Stream (AI assistant) | `lambda/stream` (TypeScript) | DynamoDB read (feedback, aggregates), Bedrock streaming, invoke ProjectsApi/MetricsApi/FeedbackFormApi/SettingsApi/ScrapersApi/MemoryApi/AgentsApi/UsersApi/EngagementApi (users: admin-only directory reads), conversations GetItem/PutItem (the caller's own session only, partition enforced in code) — no projects table, no business-data writes |
+| Chat Stream (AI assistant) | `lambda/stream` (TypeScript) | DynamoDB read (feedback, aggregates), Bedrock streaming, invoke ProjectsApi/MetricsApi/FeedbackFormApi/SettingsApi/ScrapersApi/MemoryApi/AgentsApi/UsersApi/EngagementApi (users: admin-only directory reads), conversations GetItem/PutItem on `USER#*` and `WS#{one id}#USER#*` and PutItem on `WS#{one id}#CONVERSANTS` (`dynamodb:LeadingKeys`; the caller's own session and their row in the workspace's owner list only, the sub enforced in code) — no projects table, no business-data writes |
 | Integrations | `integrations_handler.py` | Secrets Manager (the deployment's shared secret), SSM Get/Put/GetParametersByPath on one workspace's `/voc/ws/{ws}/credentials/*` with KMS through SSM (decision 19), DynamoDB aggregates (a workspace's `WS#{ws}#PLUGIN_CONFIG` config rows and their `#PLUGIN_CONFIG#HISTORY`, in one transaction), the workspace resolution, EventBridge |
 | Scrapers | `scrapers_handler.py` | Secrets Manager (the deployment's shared secret, Get/Put), DynamoDB aggregates read and PutItem (table-wide: `SCRAPER_RUN#` run rows, a workspace's `WS#{ws}#PLUGIN_CONFIG` row and its `#PLUGIN_CONFIG#HISTORY`, in one transaction), jobs table (assist jobs), SSM Get/Put on `/voc/ws/{one id}/credentials/*` and GetParametersByPath on that path, KMS (the deployment key; Decrypt/Encrypt through SSM for those names; decision 19), the workspace resolution (workspaces GetItem `WS#*`/`AUDIT#WS#*`, PutItem `AUDIT#WS#*`, Cognito `AdminListGroupsForUser`, `AdminGetUser`), Lambda invoke (the webscraper ingestor, its assist worker), Bedrock |
 | Manual Import | `manual_import_handler.py` | DynamoDB, SQS, S3 |
 | S3 Import | `s3_import_handler.py` | S3 import bucket RW, KMS; reprocess: invoke the `s3_import` ingestor, aggregates `SOURCE_RUN#s3_import` rows only |
-| Settings | `settings_handler.py` | DynamoDB (aggregates, a workspace's erasure jobs and lock included), Bedrock; DynamoDB workspaces GetItem `WS#*` only, held to the attributes the resolver projects (`dynamodb:Attributes`: never a member's email; the erasure routes' `X-Workspace-Id`, no platform-admin entry) |
+| Settings | `settings_handler.py` | DynamoDB (aggregates, a workspace's erasure jobs and lock included), Bedrock; DynamoDB workspaces through the stack's one workspace-resolution policy (GetItem `WS#*` and `AUDIT#WS#*`, PutItem `AUDIT#WS#*` only, `lib/utils/workspace-resolution-grants.ts`): the erasure routes' `X-Workspace-Id` reads a membership with the resolver's projections, never a member's email, and no platform-admin entry; the settings kinds' workspace routes may enter a platform admin, audited |
 | Projects | `projects_handler.py` | DynamoDB (projects, jobs), Step Functions, Bedrock, S3 |
 | Users | `users_handler.py` | Cognito admin; platform admin (live check) for `PUT /users/{username}/platform-admin` and for acting on a platform admin; DynamoDB workspaces (a deleted user's memberships, since 6.11.00: Query `USER#*`/`WS#*`, GetItem `WS#*`/`AUDIT#WS#*`, ConditionCheckItem `WS#*`, PutItem `AUDIT#WS#*`, DeleteItem `USER#*`/`WS#*`) |
 | Feedback Forms | `feedback_form_handler.py` | DynamoDB (aggregates), SQS |
@@ -198,8 +198,8 @@ lambda/jobs/category_reprocess/handler.py  # voc-category-reprocess worker (asyn
 | Engagement | `engagement_handler.py` | DynamoDB (participants, feature requests RW; projects, aggregates read), KMS, SES (with `-c emailFrom`), self-invoke |
 | Ballots | `ballots_handler.py` | DynamoDB (aggregates Get/Put/Update, projects GetItem), KMS |
 | Radar | `radar_handler.py` | DynamoDB (radar RW, aggregates read), KMS, invoke the Radar scan worker |
-| Workspaces | `workspaces_handler.py` | DynamoDB (workspaces Query/GetItem, PutItem scoped to `AUDIT#WS#*`, `SLUG#*`, `USER#*`, `WORKSPACES`, `WS#*`: a workspace's creation, a member's add and the audit rows; UpdateItem scoped to `WS#*` and `USER#*` and the attribute `role` alone (a member's role change); DeleteItem scoped to `WS#*` and `USER#*` (a member's removal); ConditionCheckItem scoped to `WS#*`; phase 4a's export routes: aggregates PutItem, UpdateItem and Query scoped to `WS#{one id}#JOB#export`; phase 4d-2's delete routes: the same on `WS#{one id}#JOB#erasure`, UpdateItem of `status` and `deleting_at` alone on `WS#*` and `WORKSPACES`, PutItem and UpdateItem on `WSDELETE`, PutItem on `AUDIT#workspace-deletes`), S3 GetObject under `ws/{one id}/exports/*` (the export's presigned link), invoke `voc-workspace-export` and `voc-workspace-delete` by name, KMS, Cognito (`AdminListGroupsForUser`, `AdminGetUser`: the live platform-admin check; `ListUsers`, `AdminCreateUser`: adding a member); no Secrets Manager or SSM (decision 19: a workspace's credentials are SSM parameters its first save makes, `lib/utils/workspace-secrets.ts`) |
-| Category Reprocess worker (`voc-category-reprocess`) | `jobs/category_reprocess/handler.py` | DynamoDB (feedback Scan/Get/Update, aggregates), S3 read (`raw/*`), KMS, Bedrock, Comprehend, Translate, self-invoke |
+| Workspaces | `workspaces_handler.py` | DynamoDB (workspaces Query/GetItem, PutItem scoped to `AUDIT#WS#*`, `PLUGIN#*`, `SLUG#*`, `USER#*`, `WORKSPACES`, `WS#*`: a workspace's creation, a member's add, a plugin enabled and the audit rows; UpdateItem scoped to `WS#*` and `USER#*` and the attribute `role` alone (a member's role change); DeleteItem scoped to `WS#*` and `USER#*` (a member's removal) and `PLUGIN#*` (a workspace's plugin disabled); ConditionCheckItem scoped to `WS#*`; phase 4a's export routes: aggregates PutItem, UpdateItem and Query scoped to `WS#{one id}#JOB#export`; phase 4d-2's delete routes: the same on `WS#{one id}#JOB#erasure`, UpdateItem of `status` and `deleting_at` alone on `WS#*` and `WORKSPACES`, PutItem and UpdateItem on `WSDELETE`, PutItem on `AUDIT#workspace-deletes`), S3 GetObject under `ws/{one id}/exports/*` (the export's presigned link), invoke `voc-workspace-export` and `voc-workspace-delete` by name, KMS, Cognito (`AdminListGroupsForUser`, `AdminGetUser`: the live platform-admin check; `ListUsers`, `AdminCreateUser`: adding a member); no Secrets Manager or SSM (decision 19: a workspace's credentials are SSM parameters its first save makes, `lib/utils/workspace-secrets.ts`) |
+| Category Reprocess worker (`voc-category-reprocess`) | `jobs/category_reprocess/handler.py` | DynamoDB (feedback Scan/Get/Update, aggregates Get/Update), S3 read (`raw/*`, one workspace's `ws/{ws}/raw/*` since 7.13.00), S3 PutObject (`silver/*`, one workspace's `ws/{ws}/silver/*`), KMS, Bedrock, Comprehend, Translate, self-invoke |
 
 **When adding new API endpoints:**
 
@@ -492,6 +492,14 @@ export const api = {
   }),
 }
 ```
+
+A simplified sketch: the real `fetchApi` (`frontend/src/api/client.ts`) builds its headers with `getAuthHeaders`
+(`api/baseUrl.ts`), which adds the Cognito token and, inside a workspace, `X-Workspace-Id`
+(`workspace/currentWorkspace.ts`), both only for a trusted origin. A transport that sets its own headers (the
+feedback boards' `boardTransport`) adds `workspaceHeader(url)` the same way. A call that must reach the
+deployment-wide row even inside a workspace passes the request scope `'deployment'` (`fetchApi(path, options,
+'deployment')`, `RequestScope` in `api/baseUrl.ts`; today only the platform console's default brand,
+`api/brandApi.ts`): never strip the header by hand.
 
 ### Zustand Store Pattern
 

@@ -116,3 +116,18 @@ class TestRunEnrichment:
         assert enrichment.attributes['category'] == 'shipping'
         assert enrichment.attributes['subcategory'] == 'late'
         assert enrichment.attributes['normalized_text'] is None
+
+
+
+def test_the_processor_reads_the_categories_of_the_workspace_it_categorises():
+    from unittest.mock import MagicMock
+
+    from shared.categorization import load_categories_config
+    from shared.ws_repo import WorkspaceScope
+
+    ws = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
+    rows = {'SETTINGS#categories': [{'name': 'deployment'}], f'WS#{ws}#SETTINGS#categories': [{'name': 'team'}]}
+    table = MagicMock()
+    table.get_item.side_effect = lambda Key: {'Item': {'categories': rows[Key['pk']]}}
+    assert [c['name'] for c in load_categories_config(table)] == ['deployment']
+    assert [c['name'] for c in load_categories_config(table, WorkspaceScope(ws))] == ['team']

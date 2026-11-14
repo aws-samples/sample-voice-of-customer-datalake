@@ -22,6 +22,12 @@ vi.mock('../../api/oauthApi', () => ({
   oauthApi: { listGrants: () => listGrants(), revokeGrant: (grantId: string) => revokeGrant(grantId) },
 }))
 vi.mock('../../api/projectsApi', () => ({ projectsApi: { getProjects: () => Promise.resolve({ projects: [] }) } }))
+vi.mock('../../api/workspacesApi', () => ({
+  myWorkspacesKey: () => ['my-workspaces'],
+  workspacesApi: {
+    list: () => Promise.resolve([{ id: 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8', slug: 'acme', name: 'Acme Outfitters', role: 'editor' }]),
+  },
+}))
 
 const { default: Connect } = await import('./Connect')
 
@@ -76,6 +82,18 @@ describe('Connect: sign in with your account', () => {
     expect(await screen.findByRole('button', { name: 'Create token' })).toBeInTheDocument()
     expect(screen.queryByTestId('connect-oauth-kiro')).not.toBeInTheDocument()
     expect(listGrants).not.toHaveBeenCalled()
+  })
+
+  it('shows the workspace each sign-in acts in', async () => {
+    const IN_WORKSPACE = { ...GRANT, grant_id: 'oag_1111111111111111111111111111111111111111', client_name: 'Cursor',
+      client_kind: 'cursor', workspace_id: 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8' }
+    listGrants.mockResolvedValue([GRANT, IN_WORKSPACE])
+    renderConnect()
+
+    const inWorkspace = await screen.findByTestId(`connect-grant-${IN_WORKSPACE.grant_id}`)
+    expect(await within(inWorkspace).findByText('Workspace: Acme Outfitters')).toBeInTheDocument()
+    expect(within(screen.getByTestId(`connect-grant-${GRANT.grant_id}`)).getByText('Workspace: None (deployment-wide)'))
+      .toBeInTheDocument()
   })
 
   it('revokes a signed-in assistant after confirmation', async () => {

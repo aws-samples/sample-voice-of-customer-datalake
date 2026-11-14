@@ -14,6 +14,7 @@ import { vi } from 'vitest'
 import { EventType } from '@ag-ui/core'
 import type { RunAgentInput } from '@ag-ui/core'
 import type { AguiEvent } from '../assistant/agui/sse'
+import { apiErrorStatus } from '../api/apiErrorStatus'
 
 /** `assistant/sessions/sessionsApi`: saves succeed, nothing is stored. */
 export function sessionsApiModule() {
@@ -24,6 +25,10 @@ export function sessionsApiModule() {
     deleteSession: vi.fn(() => Promise.resolve()),
     renameSession: vi.fn((_id: string, title: string) => Promise.resolve(title)),
     cancelServerRun: vi.fn(() => Promise.resolve()),
+    listDeploymentSessions: vi.fn(() => Promise.resolve([])),
+    getDeploymentSession: vi.fn(() => Promise.resolve(null)),
+    // The real reading: a chat route's 404 is "this workspace keeps no conversations for the caller".
+    isNotSavedHere: (error: unknown) => apiErrorStatus(error) === 404,
   }
 }
 

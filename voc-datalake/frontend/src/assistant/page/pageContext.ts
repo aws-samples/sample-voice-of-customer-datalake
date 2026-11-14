@@ -60,6 +60,10 @@ export const PAGE_PATTERNS: readonly PagePattern[] = [
   // "set up Radar for <brand>" (brand list, Radar scraper / connector, scan) works on this page.
   { route: 'radar', kind: 'radar' },
   { route: 'account', kind: 'other', label: 'account' },
+  // A workspace's members (docs/multi-workspace.md): no assistant pack.
+  { route: 'members', kind: 'other' },
+  // A workspace's brand and plugins: no assistant pack either.
+  { route: 'workspace-settings', kind: 'other' },
   // Participants (docs/participants.md): its own kind — core + the participants pack (lists, add people).
   { route: 'participants', kind: 'participants' },
   // The in-app feature-request board (docs/feature-requests.md): no assistant pack either.

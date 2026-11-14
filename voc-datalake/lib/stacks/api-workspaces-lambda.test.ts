@@ -2,16 +2,17 @@
  * The workspaces API, `voc-workspaces-api` (lib/stacks/api-workspaces-lambda.ts, docs/multi-workspace.md):
  * GET, POST, PUT and DELETE /me/{proxy+} and GET + POST /platform/{proxy+} behind the Cognito authorizer, a role of
  * its own with exactly the actions its code uses: on the voc-workspaces table Query, GetItem, PutItem in the
- * partitions a create, an add and an audit write, UpdateItem on `WS#*` and `USER#*` (attribute `role` only),
- * DeleteItem on `WS#*` and `USER#*` (a member's removal), ConditionCheckItem on `WS#*`; the live platform-admin
+ * partitions a create, an add, an audit and a plugin's enable write, UpdateItem on `WS#*` and `USER#*` (attribute
+ * `role` only), DeleteItem on `WS#*` and `USER#*` (a member's removal) and `PLUGIN#*` (a plugin disabled),
+ * ConditionCheckItem on `WS#*`; the live platform-admin
  * check's two Cognito reads plus ListUsers and AdminCreateUser (adding a member). No Secrets Manager and no SSM grant
  * (decision 19: a workspace's credentials parameters are made by their first save, not by its creation).
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import {
-  actionsWithPrefix, apiMethods, apiTemplate, apiTemplateHardDelete, functionIdForHandler, nonOptions,
-  policyStatementsOf, resolveMethod,
+  actionsWithPrefix, apiMethods, apiTemplate, apiTemplateAllPlugins, apiTemplateHardDelete, functionIdForHandler,
+  nonOptions, policyStatementsOf, resolveMethod,
   serviceEnvironment,
 } from '../test-support/api-stack-template';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
@@ -40,6 +41,15 @@ describe('the voc-workspaces-api Lambda', () => {
     }
   });
 
+  it('names the plugins the deployment offers (cdk.context.json): the ceiling of a workspace\'s plugins', () => {
+    // The default fixture enables no plugin; the all-plugins one enables every plugin under plugins/.
+    expect(environment().ENABLED_SOURCES).toBe('[]');
+    // The one ceiling: the same list the integrations API (and the ingestors' track) is given.
+    const all = serviceEnvironment(apiTemplateAllPlugins(), 'voc-workspaces-api').ENABLED_SOURCES;
+    expect(all).toStrictEqual(serviceEnvironment(apiTemplateAllPlugins(), 'voc-integrations-api').ENABLED_SOURCES);
+    expect(JSON.parse(String(all))).toContain('webscraper');
+  }, SYNTH_TIMEOUT_MS);
+
   it('may Query, GetItem, PutItem, UpdateItem, DeleteItem and ConditionCheckItem on the workspaces table, nothing else', () => {
     expect(actionsWithPrefix(statements(), 'dynamodb:')).toStrictEqual([
       'dynamodb:ConditionCheckItem', 'dynamodb:DeleteItem', 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:Query',
@@ -51,11 +61,13 @@ describe('the voc-workspaces-api Lambda', () => {
       .sort((a, b) => byCodeUnit(a.actions.join() + JSON.stringify(a.condition), b.actions.join() + JSON.stringify(b.condition)));
     expect(shape).toStrictEqual([
       { actions: ['dynamodb:ConditionCheckItem'], condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] } } },
-      // A member's removal: their MEMBER# and USER# rows (IAM pins the partition, not the sort key).
-      { actions: ['dynamodb:DeleteItem'], condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['USER#*', 'WS#*'] } } },
+      // A member's removal: their MEMBER# and USER# rows (IAM pins the partition, not the sort key); a plugin disabled.
+      { actions: ['dynamodb:DeleteItem'], condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [
+        'PLUGIN#*', 'USER#*', 'WS#*'] } } },
       { actions: ['dynamodb:GetItem', 'dynamodb:Query'], condition: undefined },
+      // A create's rows, an add's rows, the audits, and an enabled plugin's PLUGIN#{plugin} / WS#{ws} row (7.14.00).
       { actions: ['dynamodb:PutItem'], condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [
-        'AUDIT#WS#*', 'SLUG#*', 'USER#*', 'WORKSPACES', 'WS#*'] } } },
+        'AUDIT#WS#*', 'PLUGIN#*', 'SLUG#*', 'USER#*', 'WORKSPACES', 'WS#*'] } } },
       // A role change: `role` alone, on the MEMBER# and USER# rows.
       { actions: ['dynamodb:UpdateItem'], condition: {
         'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['USER#*', 'WS#*'] },

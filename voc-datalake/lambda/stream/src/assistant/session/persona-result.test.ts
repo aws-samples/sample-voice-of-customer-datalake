@@ -5,7 +5,7 @@ import { MAX_STORED_PERSONA_CHARS, storedPersonaResult } from './persona-result.
 import { PERSONA_RESULT_CASES, PERSONA_RESULT_INPUTS, SIX_LONG_ANSWERS } from './persona-result-fixtures.js';
 
 const snapshotBase = {
-  callerSub: 'sub-1', threadId: 'thread-1', runId: 'run-1', status: 'finished' as const,
+  owner: { sub: 'sub-1' }, threadId: 'thread-1', runId: 'run-1', status: 'finished' as const,
   page: { kind: 'project' as const, path: '/projects/p' }, pendingInterrupts: [], createdAt: 'c', updatedAt: 'u', revision: 1,
 };
 

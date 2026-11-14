@@ -5,29 +5,44 @@ Every producer resolves its source's profile through ``cached_source_profile_str
 would be a real ``GetItem``; seeding the cache stands in for the stored row.
 """
 import os
-from collections.abc import Generator, Iterator
+from collections.abc import Generator, Iterator, Mapping
 from contextlib import contextmanager
+from unittest.mock import patch
 
 from shared import source_profiles
 
 
 @contextmanager
-def seeded_source_profiles(profiles: list[dict] | None = None) -> Generator[None, None, None]:
-    """Serve ``profiles`` (default: none configured) from the cache for the block.
+def seeded_source_profiles(profiles: list[dict] | None = None,
+                           workspaces: Mapping[str, list[dict]] | None = None) -> Generator[None, None, None]:
+    """Serve ``profiles`` (default: none configured) as the deployment's from the cache for the block, and
+    ``workspaces`` (workspace id -> its profiles) as each workspace's; a workspace not named has none (its
+    ``WS#{ws}#SETTINGS#sources`` row absent), never the deployment's.
 
     Nests: the previous cache state comes back on exit, so a test can seed its
     own profiles inside an autouse "no profiles" seeding.
     """
     previous = dict(source_profiles._cache)
     previous_table = os.environ.get('AGGREGATES_TABLE')
-    # The cache is consulted only when a table is configured.
+    by_workspace = {ws: list(rows) for ws, rows in (workspaces or {}).items()}
+    real_load = source_profiles.load_source_profiles
+
+    def load(table: object, scope: object = None) -> list[dict]:
+        """A workspace's read answers its seeded profiles; the deployment's reads the table as before."""
+        if scope is None:
+            return real_load(table)
+        return list(by_workspace.get(getattr(scope, 'ws', ''), []))
+
+    # The cache is consulted only when a table is configured. The deployment's entry (no workspace).
     os.environ['AGGREGATES_TABLE'] = previous_table or 'test-aggregates'
-    source_profiles._cache['profiles'] = list(profiles or [])
-    source_profiles._cache['expires'] = float('inf')
-    source_profiles._cache['failed'] = False
+    source_profiles._cache[None] = {'profiles': list(profiles or []), 'expires': float('inf'), 'failed': False}
+    for ws, rows in by_workspace.items():
+        source_profiles._cache[ws] = {'profiles': rows, 'expires': float('inf'), 'failed': False}
     try:
-        yield
+        with patch.object(source_profiles, 'load_source_profiles', load):
+            yield
     finally:
+        source_profiles._cache.clear()
         source_profiles._cache.update(previous)
         if previous_table is None:
             os.environ.pop('AGGREGATES_TABLE', None)
@@ -39,7 +54,7 @@ def seeded_source_profiles(profiles: list[dict] | None = None) -> Generator[None
 def unreadable_source_profiles() -> Generator[None, None, None]:
     """The cache holds a FAILED read for the block: lenient readers get defaults, strict ones raise."""
     with seeded_source_profiles():
-        source_profiles._cache['failed'] = True
+        source_profiles._cache[None]['failed'] = True
         yield
 
 

@@ -144,11 +144,11 @@ from shared.prioritization_keys import (
 )
 from shared.prioritization_row_batch import batch_project_ids, ensure_rows_batch
 from shared.project_access import Caller, ProjectAccess
+from shared.project_keys import PROJECT_PREFIX, project_pk
 from shared.project_writes import (
     PROJECT_DELETION_ATTRIBUTE,
     is_project_tombstone,
     is_verification_fixture,
-    project_pk,
 )
 from shared.request_body import json_body_value, json_object_body
 from shared.row_ids import MAX_KEY_SEGMENT_ID_LEN, is_clampable_number, validated_row_id
@@ -330,8 +330,8 @@ def _gate_meta_batch_chunk(table, project_ids: list[str]) -> dict[str, dict]:
         response = client.batch_get_item(RequestItems=request)
         for item in (response.get('Responses') or {}).get(table.name, []):
             pk = item.get('pk') if isinstance(item, dict) else None
-            if isinstance(pk, str) and pk.startswith('PROJECT#'):
-                metas[pk[len('PROJECT#'):]] = item
+            if isinstance(pk, str) and pk.startswith(PROJECT_PREFIX):
+                metas[pk[len(PROJECT_PREFIX):]] = item
         unprocessed = response.get('UnprocessedKeys') or {}
         if not unprocessed.get(table.name, {}).get('Keys'):
             return metas
@@ -389,7 +389,7 @@ def _require_project_exists(project_id: str) -> None:
 def _methodology_items(project_id: str) -> list[dict]:
     """The keys of one project's artifacts, enough for shared/methodology.py (no content read)."""
     return query_all(get_projects_table(), {
-        'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}'),
+        'KeyConditionExpression': Key('pk').eq(project_pk(project_id)),
         'ConsistentRead': True,
         'ProjectionExpression': 'sk, document_id, persona_id',
     })
@@ -1167,7 +1167,7 @@ def api_get_job_status(project_id: str, job_id: str):
 def _job_status(project_id: str, job_id: str) -> dict:
     # Consistent: an assist's first poll lands milliseconds after its start wrote the row.
     response = get_jobs_table().get_item(
-        Key={'pk': f'PROJECT#{project_id}', 'sk': f'JOB#{job_id}'}, ConsistentRead=True,
+        Key={'pk': project_pk(project_id), 'sk': f'JOB#{job_id}'}, ConsistentRead=True,
     )
     item = response.get('Item')
     if not item:
@@ -1197,7 +1197,7 @@ def _project_job_rows(project_id: str) -> list[dict]:
     (``assist_*``) are request plumbing, not work a user started, so they are left
     out before the limit.
     """
-    query: dict[str, Any] = {'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}')}
+    query: dict[str, Any] = {'KeyConditionExpression': Key('pk').eq(project_pk(project_id))}
     rows: list[dict] = []
     scanned = 0
     while scanned < JOBS_LIST_SCAN_CAP:
@@ -1234,7 +1234,7 @@ def _job_list(project_id: str) -> dict:
 @app.delete("/projects/<project_id>/jobs/<job_id>")
 @tracer.capture_method
 def api_delete_job(project_id: str, job_id: str):
-    get_jobs_table().delete_item(Key={'pk': f'PROJECT#{project_id}', 'sk': f'JOB#{job_id}'})
+    get_jobs_table().delete_item(Key={'pk': project_pk(project_id), 'sk': f'JOB#{job_id}'})
     return {'success': True}
 
 
@@ -2633,7 +2633,7 @@ def _project_documents(project_id: str) -> list[dict]:
     if not table:
         raise ConfigurationError('Projects table not configured')
     query_kwargs: dict[str, Any] = {
-        'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}'),
+        'KeyConditionExpression': Key('pk').eq(project_pk(project_id)),
         # `sk` identifies the type, `document_id` and `created_at` are what the
         # composition selects on. None is a DynamoDB reserved word.
         'ProjectionExpression': 'sk, document_id, created_at',
@@ -4676,7 +4676,7 @@ def _validated_source_id(project_id: str, sk_prefix: str, raw: Any, field: str) 
     if len(document_id) > MAX_KEY_SEGMENT_ID_LEN:
         raise ValidationError(f'{field} is not a valid document id')
     item = get_projects_table().get_item(
-        Key={'pk': f'PROJECT#{project_id}', 'sk': f'{sk_prefix}{document_id}'},
+        Key={'pk': project_pk(project_id), 'sk': f'{sk_prefix}{document_id}'},
     ).get('Item')
     if not item:
         raise NotFoundError(f'{field}: no such document in this project')
@@ -4797,7 +4797,7 @@ def _pin_form_for(project_id: str, document_id: str) -> str:
     if not table:
         raise ConfigurationError('Projects table not configured')
     item = table.get_item(
-        Key={'pk': f'PROJECT#{project_id}', 'sk': f'PROTOTYPE#{document_id}'},
+        Key={'pk': project_pk(project_id), 'sk': f'PROTOTYPE#{document_id}'},
         ProjectionExpression='pk',
     ).get('Item')
     if not item:
@@ -5247,7 +5247,7 @@ def lambda_handler(event: dict, context: Any) -> dict:
             'headers': {
                 'Content-Type': 'application/json',
                 'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Requested-With,X-Amz-Date,X-Api-Key,X-Amz-Security-Token',
+                'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Requested-With,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,X-Workspace-Id',
                 'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
             },
             'body': json.dumps({'error': 'Internal server error', 'message': 'An unexpected error occurred.'})

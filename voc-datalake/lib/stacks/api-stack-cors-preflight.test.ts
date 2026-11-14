@@ -83,8 +83,8 @@ describe('CORS preflight on exactly the method-bearing resources', () => {
 });
 
 /**
- * `X-Workspace-Id` (docs/multi-workspace.md, "Request flow"): the web app will send it on every call inside a
- * workspace (it does not yet); a non-simple header, so the browser preflights it. The gateway's generated OPTIONS, its own error responses and
+ * `X-Workspace-Id` (docs/multi-workspace.md, "Request flow"): the web app sends it on every call inside a
+ * workspace (since 6.12.00); a non-simple header, so the browser preflights it. The gateway's generated OPTIONS, its own error responses and
  * the Lambdas' CORS answer (lambda/shared/api.py `create_cors_config`) must all allow it, spelled as
  * lambda/shared/workspace.py reads it (case-insensitively).
  */

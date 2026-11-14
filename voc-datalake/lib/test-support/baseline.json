@@ -2,7 +2,7 @@
   "description": "Fingerprint of the no-prefix synth. Regenerate with npx ts-node scripts/generate-baseline.ts ONLY for a change intended to alter the default templates — see the script header.",
   "stacks": {
     "VocApiStack": {
-      "templateSha256": "8c51226cfaf155b59d96c78535dfdb707d27890f306e12717a1fbf2e54e0969d",
+      "templateSha256": "4ff27d506110dfe179cfb97b393a4e5fbbbcea2919acbf5b48c06e5a7ec22bdb",
       "names": {
         "physicalNames": [
           "AWS::ApiGateway::Authorizer Name = voc-board-authorizer",
@@ -187,7 +187,7 @@
       }
     },
     "VocCoreStack": {
-      "templateSha256": "a6076f95d0d0855010af69899b91441b97108df8c5ab6dd6ef0711ad1045faed",
+      "templateSha256": "f2caadd30a4264fc0f40e19e9e4da3c0f3f26c9b2f8f09a38798065dd3ad8986",
       "names": {
         "physicalNames": [
           "AWS::AppSync::Api Name = voc-events-<AWS::AccountId>-<AWS::Region>",
@@ -253,6 +253,7 @@
           "VocCoreStack:ExportsOutputRefAggregatesTable0F8EFB129CB80975",
           "VocCoreStack:ExportsOutputRefCdnSigningKeySecret1F5BD0A95EE94953",
           "VocCoreStack:ExportsOutputRefCdnSigningPublicKey67AE99272D6BC2F5",
+          "VocCoreStack:ExportsOutputRefCompanyLogoReadPolicy8D21378AC5F75BA2",
           "VocCoreStack:ExportsOutputRefConversationsTableCD91EB96EE2E4585",
           "VocCoreStack:ExportsOutputRefDesignIntegrationsSecretCD6C10D83BBE49DE",
           "VocCoreStack:ExportsOutputRefFeatureRequestsTable08A3D6C3A8E49107",
@@ -284,7 +285,7 @@
       }
     },
     "VocIngestionStack": {
-      "templateSha256": "71fc33fa2e67ff6250ab53897c49ded17c66c098038e3ecb808a995f4cfde4af",
+      "templateSha256": "9ca61c5d08d4579bef925160a12d94fcb335e369b931083629371af7ad855d10",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-ingest-app_reviews_android-schedule-<AWS::AccountId>-<AWS::Region>",
@@ -353,7 +354,7 @@
       }
     },
     "VocProcessingStack": {
-      "templateSha256": "7419e33d60faf40b504bd8ebb0a5139a97257b7c1534476ba3e8518e6d647ca6",
+      "templateSha256": "16c2e238a0cf8c1226b0bd8f3c33b6c449842d65d7cf648120d9b48407a53aa6",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-agent-heartbeat-schedule-<AWS::AccountId>-<AWS::Region>",

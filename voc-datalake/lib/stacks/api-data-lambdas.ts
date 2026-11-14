@@ -27,13 +27,13 @@ import type { ApiStackContext } from './api-context';
 import {
   AGGREGATES_VERSION_PARTITION, grantCacheVersionBump, grantWorkspaceCacheVersionBump,
 } from '../utils/cache-version-grants';
-import {
-  MEMBERSHIP_READ_ATTRIBUTES, grantWorkspaceAttributeRead, grantWorkspaceResolution, workspaceResolutionEnv,
-} from '../utils/workspace-request-grants';
 import { WORKSPACE_PARAMETER_BASE_PATH, grantWorkspaceParametersReadWrite } from '../utils/workspace-secrets';
 import { CIRCUIT_ROW_PARTITIONS } from './ingestion-roles';
 import { grantKeyScopedWrites, grantReadAndWrites } from '../utils/table-write-grants';
 import { grantWorkspaceVersionDeletes } from '../utils/workspace-object-deletes';
+import {
+  grantRequestWorkspace, grantWorkspaceAttributeRead, grantWorkspaceResolution, PLUGIN_ROW_KEY, PLUGIN_ROW_PARTITIONS,
+} from '../utils/workspace-resolution-grants';
 import { briefingApiWiring } from './briefing-worker';
 import { grantImageModelProbe } from './api-marketplace';
 import { DESIGN_ICONS_PREFIX, LOGO_PREVIEW_PREFIX } from './design-capture';
@@ -81,9 +81,10 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   aggregatesTable.grantReadData(metricsRole);
   kmsKey.grantEncryptDecrypt(metricsRole);
   // A request's X-Workspace-Id (docs/multi-workspace.md): its membership read in voc-workspaces, a platform admin's
-  // entry audited (AUDIT#WS#* puts only) and live-checked in Cognito (lib/utils/workspace-request-grants.ts). The
-  // workspace's own partitions of voc-feedback and voc-aggregates are in the read grants above.
-  grantWorkspaceResolution(metricsRole, workspacesTable, userPool);
+  // entry audited (AUDIT#WS#* puts only) and live-checked in Cognito, through the stack's one workspace-resolution
+  // policy (lib/utils/workspace-resolution-grants.ts). The workspace's own partitions of voc-feedback and
+  // voc-aggregates are in the read grants above.
+  const metricsWorkspaceEnv = grantRequestWorkspace(workspacesTable, metricsRole, userPool);
 
   const metricsLambda = new lambda.Function(stack, 'MetricsApi', {
     functionName: ctx.uniqueName(METRICS_API_FUNCTION_BASE_NAME),
@@ -102,7 +103,7 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
       ALLOWED_ORIGIN: allowedOrigin,
       // GET /feedback/catalogue imports the writers' modules, which read the pipeline version at import.
       APP_VERSION: appVersion(),
-      ...workspaceResolutionEnv(workspacesTable, userPool),
+      ...metricsWorkspaceEnv,
       POWERTOOLS_SERVICE_NAME: 'voc-metrics-api',
       LOG_LEVEL: 'INFO',
     },
@@ -129,8 +130,8 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   // and a workspace's review under one workspace's ws/{ws}/silver/.
   grantSilverHistoryPut(rawDataBucket, feedbackEditRole);
   grantWorkspaceSilverHistoryPut(rawDataBucket, feedbackEditRole);
-  // A request's X-Workspace-Id, as the metrics API resolves it (lib/utils/workspace-request-grants.ts).
-  grantWorkspaceResolution(feedbackEditRole, workspacesTable, userPool);
+  // A request's X-Workspace-Id, as the metrics API resolves it (lib/utils/workspace-resolution-grants.ts).
+  const feedbackEditWorkspaceEnv = grantRequestWorkspace(workspacesTable, feedbackEditRole, userPool);
 
   const feedbackEditLambda = new lambda.Function(stack, 'FeedbackEditApi', {
     functionName: ctx.uniqueName(FEEDBACK_EDIT_API_FUNCTION_BASE_NAME),
@@ -148,7 +149,7 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
       // pipeline_version (the enrichment provenance stays), so the app release is not needed here.
       RAW_DATA_BUCKET: rawDataBucket.bucketName,
       ALLOWED_ORIGIN: allowedOrigin,
-      ...workspaceResolutionEnv(workspacesTable, userPool),
+      ...feedbackEditWorkspaceEnv,
       POWERTOOLS_SERVICE_NAME: 'voc-feedback-edit-api',
       LOG_LEVEL: 'INFO',
     },
@@ -177,10 +178,12 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
     resources: [secretsArn],
   }));
   // A request's X-Workspace-Id (docs/multi-workspace.md; lambda/shared/workspace_request.py): its membership read,
-  // a platform admin's entry audited and live-checked (lib/utils/workspace-request-grants.ts), and the workspace's
-  // own parameters read and written (credentials, app connectors; decision 19). The deployment key, unconditioned,
-  // for the shared secret it reads and writes (encrypted with it).
-  grantWorkspaceResolution(integrationsRole, workspacesTable, userPool);
+  // a platform admin's entry audited and live-checked (lib/utils/workspace-resolution-grants.ts), and the
+  // workspace's own parameters read and written (credentials, app connectors; decision 19). The deployment key,
+  // unconditioned, for the shared secret it reads and writes (encrypted with it).
+  const integrationsWorkspaceEnv = grantRequestWorkspace(workspacesTable, integrationsRole, userPool);
+  // Run now in a workspace runs only a plugin the workspace enabled: its PLUGIN# row's key, read (7.14.00).
+  grantWorkspaceAttributeRead(integrationsRole, workspacesTable, PLUGIN_ROW_KEY, PLUGIN_ROW_PARTITIONS);
   kmsKey.grantEncryptDecrypt(integrationsRole);
   const workspaceSecretsEnv = grantWorkspaceParametersReadWrite(
     stack, integrationsRole, ctx.prefixed(WORKSPACE_PARAMETER_BASE_PATH), kmsKey);
@@ -235,7 +238,7 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
     environment: { SECRETS_ARN: secretsArn, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-integrations-api', LOG_LEVEL: 'INFO', DEPLOY_ACCOUNT_ID: cdk.Aws.ACCOUNT_ID, DEPLOY_REGION: cdk.Aws.REGION, PLUGIN_SECRET_DEFAULTS: JSON.stringify(pluginSecretDefaults), PLUGIN_SECRET_KEYS: JSON.stringify(secretConfigKeysByPlugin(allPlugins)), ENABLED_SOURCES: enabledSourcesEnv, ...ctx.prefixOnlyEnv({
       INGESTOR_FUNCTION_NAME_PATTERN: ctx.uniqueNamePattern(`voc-ingestor-${SOURCE_PLACEHOLDER}`),
       INGEST_SCHEDULE_RULE_NAME_PATTERN: ctx.uniqueNamePattern(`voc-ingest-${SOURCE_PLACEHOLDER}-schedule`),
-    }), AGGREGATES_TABLE: aggregatesTable.tableName, ...workspaceResolutionEnv(workspacesTable, userPool),
+    }), AGGREGATES_TABLE: aggregatesTable.tableName, ...integrationsWorkspaceEnv,
     ...workspaceSecretsEnv },
     layers: [apiLayer],
     logGroup: ctx.logGroup('IntegrationsApiLogs', ctx.uniqueName('voc-integrations-api')),
@@ -259,7 +262,9 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   kmsKey.grantEncryptDecrypt(scrapersRole);
   // X-Workspace-Id as the integrations API resolves it; a workspace's scraper configs are its WS#{ws}#PLUGIN_CONFIG
   // row in voc-aggregates (the PutItem above), its credentials its own parameters.
-  grantWorkspaceResolution(scrapersRole, workspacesTable, userPool);
+  const scrapersWorkspaceEnv = grantRequestWorkspace(workspacesTable, scrapersRole, userPool);
+  // A scraper's run in a workspace needs the webscraper plugin enabled there: its PLUGIN# row's key, read (7.14.00).
+  grantWorkspaceAttributeRead(scrapersRole, workspacesTable, PLUGIN_ROW_KEY, PLUGIN_ROW_PARTITIONS);
   const scrapersWorkspaceSecretsEnv = grantWorkspaceParametersReadWrite(
     stack, scrapersRole, ctx.prefixed(WORKSPACE_PARAMETER_BASE_PATH), kmsKey);
   // POST /scrapers/{id}/run invokes the webscraper ingestor by its exact name
@@ -293,7 +298,7 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
     timeout: cdk.Duration.seconds(120),
     memorySize: 1536, // CPU-bound: memory buys vCPU; keep CPU <= 60% of the share
     environment: { SECRETS_ARN: secretsArn, AGGREGATES_TABLE: aggregatesTable.tableName, WEBSCRAPER_FUNCTION_NAME: webscraperFunctionName, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-scrapers-api', LOG_LEVEL: 'INFO', JOBS_TABLE: jobsTable.tableName, [ASSIST_WORKER_ENV]: scrapersWorkerName,
-      ...workspaceResolutionEnv(workspacesTable, userPool), ...scrapersWorkspaceSecretsEnv },
+      ...scrapersWorkspaceEnv, ...scrapersWorkspaceSecretsEnv },
     layers: [apiLayer],
     logGroup: ctx.logGroup('ScrapersApiLogs', ctx.uniqueName('voc-scrapers-api')),
   };
@@ -436,11 +441,15 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   // The morning brief (docs/briefing.md): Refresh queues, the caller's own email subscription.
   const briefing = briefingApiWiring(stack, ctx.uniqueName, kmsKey, ctx.props.userPool);
   briefing.grant(settingsRole);
-  // The erasure routes (POST and GET /settings/erasure) resolve X-Workspace-Id for a member admin
-  // (lambda/shared/erasure_scope.py): the membership read only, no platform-admin entry, so no entry audit row and no
-  // live check, and only the attributes the resolver projects: never a member's email
-  // (lib/utils/workspace-request-grants.ts). The job's deletes stay voc-retention's.
-  grantWorkspaceAttributeRead(settingsRole, workspacesTable, MEMBERSHIP_READ_ATTRIBUTES);
+  // PUT /settings/appearance is a platform admin's (the deployment's one colour scheme, docs/multi-workspace.md):
+  // the live check reads the caller's groups and account (lambda/shared/platform_admin_gate.py), in the pool
+  // `USER_POOL_ID` names (set with the briefing environment below).
+  // The same live check lets a platform admin enter a workspace (the resolved-problems routes act in the caller's
+  // workspace, lambda/shared/request_workspace.py): the membership reads and the entry's audit row. The erasure
+  // routes (POST and GET /settings/erasure, lambda/shared/erasure_scope.py) resolve X-Workspace-Id through the same
+  // policy for a member admin only (no platform-admin entry); the job's deletes stay voc-retention's.
+  ctx.props.userPool.grant(settingsRole, 'cognito-idp:AdminListGroupsForUser', 'cognito-idp:AdminGetUser');
+  const workspaceResolutionEnv = grantWorkspaceResolution(ctx.props.workspacesTable, settingsRole);
 
   const settingsProps: lambda.FunctionProps = {
     functionName: settingsFunctionName,
@@ -455,6 +464,7 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
     memorySize: 1769, // CPU-bound: memory buys vCPU; keep CPU <= 60% of the share
     environment: {
       AGGREGATES_TABLE: aggregatesTable.tableName,
+      ...workspaceResolutionEnv,
       // The category reprocess worker lives in VocProcessingStack. Named, not
       // imported: the deterministic physical name needs no cross-stack export,
       // and this stack already deploys after Processing.
@@ -469,8 +479,6 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
       JOBS_TABLE: jobsTable.tableName,
       [ASSIST_WORKER_ENV]: settingsWorkerName,
       ...briefing.environment,
-      // The erasure routes' X-Workspace-Id: the memberships' table (lambda/shared/workspace_request.py).
-      WORKSPACES_TABLE: workspacesTable.tableName,
       // Settings → Email inbox (docs/email-intake.md); nothing when the inbox is off.
       ...inboundEmailSettingsEnv(stack.node, () => ctx.uniqueName(INBOUND_EMAIL_RULE_BASE_NAME)),
     },

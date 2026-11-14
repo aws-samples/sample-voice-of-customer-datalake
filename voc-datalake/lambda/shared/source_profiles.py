@@ -13,6 +13,13 @@ config`` in the aggregates table)::
                 radar_brand?, radar_domains?}],     # Radar sources only (shared.radar_brands)
      updated_at, updated_by}
 
+A workspace's profiles are ``WS#{ws}#SETTINGS#sources`` (shared/workspace_config.py), read for its items and
+requests only; a workspace that saved none has none, never the deployment's: its sources take the defaults below
+except that their PII is REDACTED (``WORKSPACE_DEFAULT_PII``, privacy by default). Its profiles set
+no retention window and no Radar brand (``workspace_profiles_problem``): voc-retention applies the deployment's
+windows to every item, a workspace's included (so a workspace's own window would delete nothing), and Radar is not
+keyed by workspace; ``cached_source_profile_strict`` gives a workspace's source the deployment's window.
+
 A source without a profile gets ``profile_for``'s defaults: PII allowed, kept
 forever, not restricted, no defaults (``email_intake``, the public inbox, defaults to redact). Validation normalises (every field is
 present in the output) and raises ValueError with a client-safe message.
@@ -46,6 +53,8 @@ from shared.exceptions import ServiceUnavailableError
 from shared.legal_basis import required_legal_basis
 from shared.logging import logger
 from shared.radar_brands import radar_profile_fields
+from shared.workspace_config import get_config_item
+from shared.ws_repo import WorkspaceScope
 
 __all__ = [
     'PII_ALLOW',
@@ -59,9 +68,16 @@ __all__ = [
     'load_source_profiles',
     'profile_for',
     'validate_source_profiles',
+    'workspace_profiles_problem',
 ]
 
 SOURCES_SETTINGS_KEY: Final = {'pk': 'SETTINGS#sources', 'sk': 'config'}
+#: A workspace's profiles are ``WS#{ws}#SETTINGS#sources`` (shared/workspace_config.py).
+SOURCES_KIND: Final = 'sources'
+#: The fields a workspace's profile takes from the deployment's profile of the same source.
+_DEPLOYMENT_WINDOW: Final = ('retention_days', 'retention_legal_basis')
+#: Radar's fields, never part of a workspace's profile.
+_RADAR_FIELDS: Final = ('radar_brand', 'radar_domains')
 
 PII_ALLOW: Final = 'allow'
 PII_REDACT: Final = 'redact'
@@ -80,8 +96,8 @@ SOURCE_ID_RE: Final = re.compile(r'^[a-z0-9][a-z0-9_-]{0,47}\Z')
 
 _CACHE_TTL_SECONDS: Final = 300
 _ERROR_CACHE_TTL_SECONDS: Final = 30
-# `profiles` None = nothing cached; `expires` and `failed` are written with every read.
-_cache: dict[str, Any] = {'profiles': None}
+#: workspace id (None: the deployment) -> ``{profiles, expires, failed}``.
+_cache: dict[str | None, dict[str, Any]] = {}
 
 
 class SourceProfilesUnavailable(ServiceUnavailableError):
@@ -206,8 +222,39 @@ def validate_source_profiles(value: object, dimensions_config: list[dict[str, An
     return _profiles(value, dimensions_config, strict=True)
 
 
-def load_source_profiles(table: Any) -> list[dict[str, Any]]:
-    """The stored profiles, normalised; [] when none are configured.
+#: The profile fields a workspace's profile leaves empty: the retention window and its basis, Radar's brand and
+#: domains (the module docstring says why).
+_WORKSPACE_EMPTY_FIELDS: Final = (('retention_days', 'retention'), ('retention_legal_basis', 'retention'),
+                                  ('radar_brand', 'radar'), ('radar_domains', 'radar'))
+
+
+def _set(value: object) -> bool:
+    """Whether a profile field as sent names something (None, a blank string and an empty list name nothing)."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return False
+    return not (isinstance(value, list | tuple) and not value)
+
+
+def workspace_profiles_problem(value: object) -> str | None:
+    """Why the profiles sent for a workspace (``value``, the request's list as sent, checked before normalising
+    drops a field) cannot be a workspace's (a client-safe message), or None: one that sets a retention window or its
+    legal basis, a Radar brand or Radar domains."""
+    for entry in value if isinstance(value, list) else []:
+        if not isinstance(entry, Mapping):
+            continue
+        for field, kind in _WORKSPACE_EMPTY_FIELDS:
+            if _set(entry.get(field)):
+                what = f'Source "{entry.get("id")}"'
+                if kind == 'retention':
+                    return (f"{what}: retention windows are the deployment's and apply to every workspace's items, "
+                            f'so a workspace profile cannot set {field} (leave it empty)')
+                return (f'{what}: Radar is not kept per workspace yet, so a workspace profile cannot set {field}')
+    return None
+
+
+def load_source_profiles(table: Any, scope: WorkspaceScope | None = None) -> list[dict[str, Any]]:
+    """The stored profiles of ``scope``'s workspace (the deployment's without one), normalised; [] when none are
+    configured.
 
     Uncached and strongly consistent. A DynamoDB error propagates, and so does a
     corrupt row (ValueError): silently dropping a profile would un-restrict its
@@ -216,13 +263,15 @@ def load_source_profiles(table: Any) -> list[dict[str, Any]]:
     through ``resolve_dimensions``. Nor is ``retention_legal_basis`` required: a profile
     saved before 6.00.00 keeps its retention period without one (``shared.legal_basis``).
     """
-    item = table.get_item(Key=SOURCES_SETTINGS_KEY, ConsistentRead=True).get('Item') or {}
+    item = get_config_item(table, SOURCES_KIND, SOURCES_SETTINGS_KEY, scope)
     return _profiles(item.get('sources'), None, strict=False)
 
 
 # Sources whose UNCONFIGURED default is stricter than allow. The public email inbox
 # (docs/email-intake.md) redacts until an admin saves a profile for it.
 _BUILT_IN_DEFAULTS: Final = {'email_intake': {'label': 'Email inbox', 'pii': PII_REDACT}}
+#: The PII policy of a workspace's source that has no profile in that workspace (``profile_for(…, workspace=True)``).
+WORKSPACE_DEFAULT_PII: Final = PII_REDACT
 
 
 def _default_profile(source_id: str) -> dict[str, Any]:
@@ -233,8 +282,13 @@ def _default_profile(source_id: str) -> dict[str, Any]:
     }
 
 
-def profile_for(profiles: list[dict[str, Any]], source_id: str) -> dict[str, Any]:
-    """The profile for ``source_id`` (a copy the caller may mutate), or the defaults."""
+def profile_for(profiles: list[dict[str, Any]], source_id: str, *, workspace: bool = False) -> dict[str, Any]:
+    """The profile for ``source_id`` (a copy the caller may mutate), or the defaults.
+
+    ``workspace``: ``profiles`` are a workspace's own. A source it saved no profile for gets the workspace default,
+    which REDACTS personal data (privacy by default, TENETS.md tenet 6 and D5: a new workspace never stores PII in
+    full just because nobody has saved a profile yet); the deployment's default stays allow, as before.
+    """
     for profile in profiles:
         if profile.get('id') == source_id:
             return {
@@ -243,36 +297,37 @@ def profile_for(profiles: list[dict[str, Any]], source_id: str) -> dict[str, Any
                 'tags': list(profile.get('tags') or []),
                 **({'radar_domains': list(profile['radar_domains'])} if 'radar_domains' in profile else {}),
             }
-    return _default_profile(source_id)
+    default = _default_profile(source_id)
+    return {**default, 'pii': WORKSPACE_DEFAULT_PII} if workspace else default
 
 
 def clear_source_profiles_cache() -> None:
-    """Reset the container cache (tests, and the settings Lambda after a save)."""
-    _cache['profiles'] = None
+    """Reset the container cache, every workspace's (tests, and the settings Lambda after a save)."""
+    _cache.clear()
 
 
-def _cached_profiles() -> tuple[list[dict[str, Any]], bool]:
-    """``(profiles, failed)``: the cached list, and whether it stands in for a failed read."""
+def _cached_profiles(scope: WorkspaceScope | None) -> tuple[list[dict[str, Any]], bool]:
+    """``(profiles, failed)`` of ``scope``'s workspace (the deployment's without one): the cached list, and whether it
+    stands in for a failed read. One cache entry per workspace."""
     table_name = os.environ.get('AGGREGATES_TABLE', '')
     if not table_name:
         return [], False
     now = time.time()
-    if _cache['profiles'] is not None and now < _cache['expires']:
-        return _cache['profiles'], bool(_cache.get('failed'))
+    entry = _cache.get(None if scope is None else scope.ws)
+    if entry is not None and now < entry['expires']:
+        return entry['profiles'], entry['failed']
     profiles: list[dict[str, Any]] = []
     ttl, failed = _CACHE_TTL_SECONDS, False
     try:
-        profiles = load_source_profiles(get_dynamodb_resource().Table(table_name))
+        profiles = load_source_profiles(get_dynamodb_resource().Table(table_name), scope)
     except Exception:
         logger.exception('Source profiles lookup failed; using defaults')
         ttl, failed = _ERROR_CACHE_TTL_SECONDS, True
-    _cache['profiles'] = profiles
-    _cache['expires'] = now + ttl
-    _cache['failed'] = failed
+    _cache[None if scope is None else scope.ws] = {'profiles': profiles, 'expires': now + ttl, 'failed': failed}
     return profiles, failed
 
 
-def cached_source_profile_strict(source_id: str) -> dict[str, Any]:
+def cached_source_profile_strict(source_id: str, scope: WorkspaceScope | None = None) -> dict[str, Any]:
     """``source_id``'s profile from a per-container cache; raises when the read failed.
 
     The whole list is read once per ``_CACHE_TTL_SECONDS``; with no ``AGGREGATES_TABLE``
@@ -280,17 +335,31 @@ def cached_source_profile_strict(source_id: str) -> dict[str, Any]:
     read is not ingested (nor archived) under the allow default; the caller retries.
     The failed read is cached for ``_ERROR_CACHE_TTL_SECONDS``, so a retry storm does
     not hammer the table.
+
+    The profile of a workspace's source (``scope``) is the workspace's own (its PII policy, restriction, defaults
+    and tags; when it saved none, the workspace default, which redacts PII) with the deployment's retention window for that source
+    (``_DEPLOYMENT_WINDOW``, which voc-retention applies to every item) and no Radar brand: so a raw copy is kept
+    per item, never as a whole file, wherever the deployment's window deletes item by item. Raises when either list
+    cannot be read.
     """
-    profiles, failed = _cached_profiles()
+    profiles, failed = _cached_profiles(scope)
     if failed:
         raise SourceProfilesUnavailable
-    return profile_for(profiles, source_id)
+    profile = profile_for(profiles, source_id, workspace=scope is not None)
+    if scope is None:
+        return profile
+    deployment, deployment_failed = _cached_profiles(None)
+    if deployment_failed:
+        raise SourceProfilesUnavailable
+    window = profile_for(deployment, source_id)
+    return {**{key: value for key, value in profile.items() if key not in _RADAR_FIELDS},
+            **{field: window[field] for field in _DEPLOYMENT_WINDOW}}
 
 
-def source_profile_configured(source_id: str) -> bool:
+def source_profile_configured(source_id: str, scope: WorkspaceScope | None = None) -> bool:
     """True when an admin has saved a profile for ``source_id`` (not just the defaults); raises when
     the read failed, like ``cached_source_profile_strict``. For writers whose copy is opt-in."""
-    profiles, failed = _cached_profiles()
+    profiles, failed = _cached_profiles(scope)
     if failed:
         raise SourceProfilesUnavailable
     return any(profile.get('id') == source_id for profile in profiles)

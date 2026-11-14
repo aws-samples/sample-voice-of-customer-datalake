@@ -31,9 +31,13 @@ from jobs.workspace_delete.test.conftest import (
     snapshot,
 )
 from shared import workspace_deletes
+from shared.company_context import my_context_key, put_my_context
 from shared.exceptions import ConflictError
 from shared.ingest_tables import ingest_table
+from shared.workspace_settings import settings_key
+from shared.ws_repo import WorkspaceScope, control_query, user_context_owners_pk
 
+SCOPE = WorkspaceScope(WS)
 MEMORIES = len(COMPANY_MEMORIES) + len(PERSONAL_MEMORIES)
 
 
@@ -215,13 +219,15 @@ class TestHandOvers:
         assert not [key for key, _version in after['objects'] if key.startswith(f'ws/{WS}/')]
         assert _job(world)['counts']['feedback'] == FEEDBACK_ITEMS
 
-    @pytest.mark.parametrize('phase', ['feedback', 'objects', 'memory', 'counters'])
-    def test_a_hand_over_mid_phase_resumes_from_its_cursor(self, world, phase):
+    # Each invocation's clock checks (Budget) chosen so a hand-over falls inside the phase: which one does depends on
+    # how many checks the phases before it make (each sweep added before one shifts it).
+    @pytest.mark.parametrize(('phase', 'checks'), [('feedback', 3), ('objects', 2), ('memory', 3), ('counters', 3)])
+    def test_a_hand_over_mid_phase_resumes_from_its_cursor(self, world, phase, checks):
         event = _seed(world)
         checkpoints: list[dict] = []
         for _ in range(400):
             world.invoke.reset_mock()
-            handler.handle_event(event, Budget(3))
+            handler.handle_event(event, Budget(checks))
             if not world.invoke.called:
                 break
             event = world.invoke.call_args.args[1]
@@ -591,6 +597,51 @@ class TestTheVerifyPass:
 
         assert _resume_to_the_end(world)[-1]['status'] == 'completed'
         assert _feedback_of_the_workspace(world) == []
+
+    def test_a_second_round_after_the_settings_and_control_rows_are_gone_still_deletes_late_rows(self, world):
+        """Round 1 lists a custom category's counters from the workspace's settings; the settings and the control
+        rows are gone by the verify pass, so round 2 re-derives only the defaults and walks the inventory, which still
+        lists round 1's partitions: a late counter there and a late objectives save (its owner row first) both go."""
+        event = _seed(world)
+        world.aggregates.put_item(Item={**settings_key(WS, 'categories'), 'categories': [{'name': 'late_only'}]})
+        late_counter = {'pk': f'WS#{WS}#METRIC#daily_category#late_only', 'sk': '2026-01-02', 'count': 1}
+        real = handler.DeleteRun._verify
+        arrived: list[bool] = []
+
+        def verify_after_late_writes(run):
+            if not arrived:
+                assert 'Item' not in world.aggregates.get_item(Key=settings_key(WS, 'categories'))
+                assert control_query(SCOPE, world.workspaces, 'meta', Limit=1)['Items'] == []
+                world.aggregates.put_item(Item=late_counter)
+                put_my_context(world.aggregates, 'sub-late', {'objectives': []}, updated_at=now().isoformat(),
+                               workspace=SCOPE)
+                arrived.append(True)
+            return real(run)
+
+        with patch.object(handler.DeleteRun, '_verify', verify_after_late_writes):
+            assert run_to_the_end(world, event)[-1]['status'] == 'completed'
+        assert arrived == [True]
+        assert 'Item' not in world.aggregates.get_item(Key={'pk': late_counter['pk'], 'sk': late_counter['sk']})
+        assert 'Item' not in world.aggregates.get_item(Key=my_context_key('sub-late', SCOPE))
+        assert world.aggregates.query(KeyConditionExpression='pk = :p', ExpressionAttributeValues={
+            ':p': user_context_owners_pk(SCOPE)})['Items'] == []
+
+    def test_another_workspaces_and_the_deployments_settings_and_objectives_are_kept(self, world):
+        event = _seed(world)
+        other = WorkspaceScope(OTHER)
+        kept = [{**settings_key(OTHER, 'categories'), 'categories': [{'name': 'theirs'}]},
+                {'pk': 'SETTINGS#categories', 'sk': 'config', 'categories': [{'name': 'deployment'}]},
+                {**my_context_key('sub-ada'), 'objectives': []}]
+        for item in kept:
+            world.aggregates.put_item(Item=item)
+        put_my_context(world.aggregates, 'sub-ada', {'objectives': []}, updated_at=now().isoformat(), workspace=other)
+        put_my_context(world.aggregates, 'sub-ada', {'objectives': []}, updated_at=now().isoformat(), workspace=SCOPE)
+        assert run_to_the_end(world, event)[-1]['status'] == 'completed'
+        for item in kept:
+            assert 'Item' in world.aggregates.get_item(Key={'pk': item['pk'], 'sk': item['sk']}), item['pk']
+        assert 'Item' in world.aggregates.get_item(Key=my_context_key('sub-ada', other))
+        assert 'Item' in world.aggregates.get_item(Key={'pk': user_context_owners_pk(other), 'sk': 'sub-ada'})
+        assert 'Item' not in world.aggregates.get_item(Key=my_context_key('sub-ada', SCOPE))
 
     def test_a_job_with_nothing_left_writes_no_leftovers(self, world):
         run_to_the_end(world, _seed(world))

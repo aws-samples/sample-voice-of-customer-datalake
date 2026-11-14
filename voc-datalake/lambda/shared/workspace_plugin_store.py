@@ -125,7 +125,8 @@ class WorkspaceStore:
         self.plugins = tuple(plugins)
         self._key_id = key_id
         self._actor = actor
-        self._stored: dict[str, dict] = {}
+        # None until ``read`` ran: ``write`` compares with what was read, so it refuses before that.
+        self._stored: dict[str, dict] | None = None
         #: Each plugin's config row as ``read`` found it (None: no list): what a save replaces, and its condition.
         self._rows: dict[str, ConfigRow | None] = {}
 
@@ -155,14 +156,18 @@ class WorkspaceStore:
     def write(self, secrets: dict) -> None:
         """Save each of the store's plugins' namespace of ``secrets`` (the object ``read`` returned, edited): its
         credentials parameter when they changed, its configs row when the list changed. A key outside those namespaces
-        is never written anywhere. A changed list replaces the row as ``read`` found it (a plugin not read: no list),
-        so a save made since then is a 409 (``ConflictError``), not an overwrite. Per plugin, both sizes are checked
-        first and the list is saved before the credentials, so that 409 or a 400 writes nothing of the plugin (a store
-        of several plugins keeps what it already wrote of the plugins before it). A fault writing the credentials
-        after the list saved (an SSM service fault: nothing else can fail there, the sizes being checked) leaves the
-        saved list in place and the route answers 500."""
+        is never written anywhere. Refused (``RuntimeError``, nothing written) unless ``read`` ran on this store first:
+        without what was read, every parameter and list would be rewritten blind (``read_lists`` does not count). A
+        changed list replaces the row as ``read`` found it (a plugin not read: no list), so a save made since then is
+        a 409 (``ConflictError``), not an overwrite. Per plugin, both sizes are checked first and the list is saved
+        before the credentials, so that 409 or a 400 writes nothing of the plugin (a store of several plugins keeps
+        what it already wrote of the plugins before it). A fault writing the credentials after the list saved (an SSM
+        service fault: nothing else can fail there, the sizes being checked) leaves the saved list in place and the
+        route answers 500."""
         if not self.plugins:
             raise TypeError('a store opened for every plugin is read only')
+        if self._stored is None:
+            raise RuntimeError('write needs read() on this store first')
         if not self._key_id:
             raise ConfigurationError(_NOT_CONFIGURED)
         for plugin in self.plugins:

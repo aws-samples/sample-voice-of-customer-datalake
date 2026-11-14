@@ -3,7 +3,7 @@ Category Reprocess Job Lambda Handler
 
 Re-categorises stored feedback after an admin changes the category
 configuration. Started by ``POST /settings/categories/reprocess`` (settings
-API) with an async event ``{job_id, cursor?}``.
+API) with an async event ``{job_id, cursor?, workspace_id?}`` (the workspace only for a job started in one).
 
 Modes:
   * ``processed`` — re-classify category/subcategory from the stored (translated)
@@ -45,11 +45,28 @@ Invariants:
     ``normalized_text`` / ``direct_customer_quote`` back (the processor's rule).
     The raw reader follows a link only under the bronze root of the review's own
     scope (``raw/``, or ``ws/{ws}/raw/`` for a workspace's review: ``_raw_key``).
-  * Deployment-wide: a job reads and rewrites the deployment's reviews only (a
-    workspace's ``WS#`` items are skipped, ``shared/reprocess_slices.py``) and
-    writes the unprefixed ``CATEGORY#`` / ``URGENCY#`` partitions. A workspace's
-    reprocess comes with the workspace's own settings (phase 3, another track);
-    its bronze is already readable by the raw reader above.
+  * One scope per job (TENETS.md D3, since 7.13.00). A job of the deployment (an
+    event that names no workspace) reads and rewrites the deployment's reviews only
+    (a workspace's ``WS#`` items are skipped, ``shared/reprocess_slices.py``) with
+    the deployment's categories and dimensions, and writes the unprefixed
+    ``CATEGORY#`` / ``URGENCY#`` partitions, exactly as before. A workspace's job
+    (the event's ``workspace_id``, written by the settings API from the caller's
+    resolved membership) reads its row in the workspace's own job partition
+    (``WS#{ws}#JOB#category_reprocess``) and fails unless the row names that
+    workspace; it scans only ``WS#{ws}#`` items, through the workspace layer
+    (shared/ws_repo.py ``WorkspaceTable.scan``), re-derives them with that
+    workspace's own categories and dimensions (shared/workspace_config.py: a
+    workspace that saved none gets the defaults, never the deployment's rows),
+    writes every update through ``ws_table`` (``WS#{ws}#CATEGORY#…`` /
+    ``WS#{ws}#URGENCY#…``), keeps the old versions under ``ws/{ws}/silver/``, and
+    bumps the workspace's own ``data_version`` (after a page only when it rewrote
+    a review: most pages of the whole-table Scan hold none of the workspace's). Every review's index partitions
+    follow its own partition's scope (``category_partition``, ``urgency_partition``). The counters follow
+    through the stream: the aggregator applies each rewrite's MODIFY in the
+    review's scope, so a workspace's counters move and the deployment's do not
+    (7.04.00). A review's PII rule is the one it was stored under (its
+    ``pii_policy``, from its workspace's source profile when it was processed): a
+    summary-only review stays summary-only on either path.
   * Every mode also (re)computes the heuristic ``usefulness`` band
     (``shared.usefulness``, no model call) from the stored text, so a reprocess
     backfills reviews stored before the band existed. A review whose category
@@ -90,6 +107,7 @@ from shared.data_version import bump_data_version
 from shared.dimension_config import load_dimensions_config
 from shared.feedback_category import CATEGORY_SOURCE_MANUAL, CATEGORY_SOURCE_REPROCESS
 from shared.feedback_dimensions import category_product, reinfer_dimensions
+from shared.ingest_tables import ScopedUpdates
 from shared.invocation_cost import instrumented_handler
 from shared.jobs import has_time_left
 
@@ -104,7 +122,7 @@ from shared.reprocess_slices import admits as slice_admits
 from shared.source_profiles import PII_SUMMARY_ONLY
 from shared.timestamps import now_iso, parse_iso
 from shared.usefulness import USEFULNESS_FIELD, USEFULNESS_UNRATED, item_usefulness, stored_band
-from shared.ws_repo import partition_scope
+from shared.ws_repo import WORKSPACE_FIELD, WorkspaceScope, category_pk, message_scope, partition_scope, urgency_pk
 
 FEEDBACK_TABLE = os.environ.get('FEEDBACK_TABLE', '')
 AGGREGATES_TABLE = os.environ.get('AGGREGATES_TABLE', '')
@@ -154,15 +172,31 @@ def _tables() -> tuple[Any, Any]:
     return dynamodb.Table(FEEDBACK_TABLE), dynamodb.Table(AGGREGATES_TABLE)
 
 
+def category_partition(item: dict, category: str) -> str:
+    """``item``'s gsi2 partition for ``category``, in the item's own scope: ``WS#{ws}#CATEGORY#…`` for a
+    workspace's review (shared/ws_repo.py ``category_pk``), the unprefixed one for the deployment's."""
+    scope = partition_scope(item.get('pk'))
+    return f'CATEGORY#{category}' if scope is None else category_pk(scope, category)
+
+
+def urgency_partition(item: dict, urgency: str) -> str:
+    """``item``'s gsi3 partition for ``urgency``, in the item's own scope (``WS#{ws}#URGENCY#…`` for a workspace's
+    review, shared/ws_repo.py ``urgency_pk``)."""
+    scope = partition_scope(item.get('pk'))
+    return f'URGENCY#{urgency}' if scope is None else urgency_pk(scope, urgency)
+
+
 # ============================================
 # Slice read
 # ============================================
 
 def scan_page(
     feedback_table: Any, cursor: dict | None, job_slice: ReprocessSlice, window: tuple[str | None, str | None],
+    scope: WorkspaceScope | None = None,
 ) -> dict:
-    """One page of the job's slice (a filtered Scan; ``shared.reprocess_slices``)."""
-    return read_page(feedback_table, cursor, job_slice, window, PAGE_SIZE)
+    """One page of the job's slice (a filtered Scan; ``shared.reprocess_slices``): ``scope``'s rows only, through
+    the workspace layer, for a workspace's job."""
+    return read_page(feedback_table, cursor, job_slice, window, PAGE_SIZE, **jobs.scope_option(scope))
 
 
 # ============================================
@@ -317,7 +351,7 @@ def processed_attributes(
     if resolved is None:
         return None
     category, subcategory = resolved
-    return {'category': category, 'subcategory': subcategory, 'gsi2pk': f"CATEGORY#{category}"}
+    return {'category': category, 'subcategory': subcategory, 'gsi2pk': category_partition(item, category)}
 
 
 def raw_attributes(item: dict, categories_config: list[dict], raw_record: dict | None = None) -> dict | None:
@@ -348,8 +382,8 @@ def raw_attributes(item: dict, categories_config: list[dict], raw_record: dict |
     if resolved is None:
         return None
     attributes['category'], attributes['subcategory'] = resolved
-    attributes['gsi2pk'] = f"CATEGORY#{attributes['category']}"
-    attributes['gsi3pk'] = f"URGENCY#{attributes['urgency']}"
+    attributes['gsi2pk'] = category_partition(item, attributes['category'])
+    attributes['gsi3pk'] = urgency_partition(item, attributes['urgency'])
     attributes['llm_metadata'] = enrichment.llm_result.get('metadata', {})
     if item.get('pii_policy') == PII_SUMMARY_ONLY:
         attributes.update(dict.fromkeys(SUMMARY_ONLY_WITHHELD))
@@ -427,7 +461,13 @@ def keep_then_update(feedback_table: Any, item: dict, update: dict, changed: dic
     """
     changed_fields = sorted(field for field, value in changed.items() if item.get(field) != value)
     feedback_table.update_item(**update)
-    silver_provenance.keep_silver_version(item, actor=actor, reason=SILVER_REASON, changed_fields=changed_fields)
+    scope = partition_scope(item.get('pk'))
+    if scope is None:
+        silver_provenance.keep_silver_version(item, actor=actor, reason=SILVER_REASON, changed_fields=changed_fields)
+    else:
+        # A workspace's review: its version under ws/{ws}/silver/ (the job admitted only its own workspace's items).
+        silver_provenance.keep_silver_version(item, actor=actor, reason=SILVER_REASON, changed_fields=changed_fields,
+                                              scope=scope)
 
 
 def enrichment_stamps(mode: str, actor: dict, now: str, llm_metadata: dict | None) -> dict:
@@ -554,11 +594,19 @@ def _recategorise(feedback_table: Any, item: dict, job: dict, categories_config:
 
 def _hand_over(
     context: Any, job_id: str, cursor: dict | None, throttle_restarts: int, worker_token: str,
+    scope: WorkspaceScope | None = None,
 ) -> None:
     event: dict = {'job_id': job_id, 'throttle_restarts': throttle_restarts, 'worker_token': worker_token}
     if cursor:
         event['cursor'] = cursor
+    if scope is not None:
+        # The next invocation reads the row in the same workspace's partition (the event this one was started with).
+        event[WORKSPACE_FIELD] = scope.ws
     invoke_lambda_async(context.function_name, event)
+
+
+#: A workspace job's row that does not name the workspace whose partition it was read in.
+WRONG_WORKSPACE_ERROR = 'The job row does not name the workspace it was read in'
 
 
 def run_job(event: dict, context: Any) -> dict:
@@ -566,13 +614,19 @@ def run_job(event: dict, context: Any) -> dict:
     if not isinstance(job_id, str) or not jobs.is_job_id(job_id):
         logger.error("Reprocess event without a valid job_id")
         return {'status': 'ignored'}
+    # The workspace the event names (the settings API's, from the caller's resolved membership); none: the
+    # deployment's job. A `workspace_id` that is not a workspace id is refused, never run deployment-wide.
+    refused, scope = message_scope(event)
+    if refused:
+        logger.error("Reprocess event names no workspace it can run in", extra={'job_id': job_id})
+        return {'status': 'ignored'}
     feedback_table, aggregates_table = _tables()
 
     previous_token = event.get('worker_token')
     token = jobs.new_worker_token()
     job = jobs.claim_job(
         aggregates_table, job_id, token,
-        previous_token=previous_token if isinstance(previous_token, str) else None,
+        previous_token=previous_token if isinstance(previous_token, str) else None, **jobs.scope_option(scope),
     )
     if job is None:
         logger.info("Reprocess job is not active or owned by another delivery; nothing to do",
@@ -580,23 +634,31 @@ def run_job(event: dict, context: Any) -> dict:
         return {'status': 'not_active'}
 
     counters = _job_counters(job)
+    if not jobs.names_its_scope(job, scope):
+        # Defence in depth: the row was read in the event's partition, so it must name that workspace (or, for the
+        # deployment's partition, none). Nothing is read or rewritten.
+        logger.error("Reprocess job row names another scope", extra={'job_id': job_id})
+        jobs.finish_job(aggregates_table, job_id, jobs.STATUS_FAILED, counters=counters,
+                        error=WRONG_WORKSPACE_ERROR, worker_token=token, **jobs.scope_option(scope))
+        return {'status': jobs.STATUS_FAILED}
     cursor = event.get('cursor') or job.get('cursor') or None
     throttle_restarts = int(event.get('throttle_restarts', 0))
     try:
         return _reprocess_pages(
             feedback_table, aggregates_table, context, job_id, job, counters, cursor, throttle_restarts, token,
+            **jobs.scope_option(scope),
         )
     except Exception as e:
         # Error type only, like the per-review log: an exception message or traceback
         # can quote review text (a Bedrock/Comprehend refusal echoes its input).
         logger.error("Category reprocess job failed", extra={'job_id': job_id, 'error_type': type(e).__name__})
         jobs.finish_job(aggregates_table, job_id, jobs.STATUS_FAILED, counters=counters,
-                        error=f'Reprocess failed ({type(e).__name__})', worker_token=token)
+                        error=f'Reprocess failed ({type(e).__name__})', worker_token=token, **jobs.scope_option(scope))
         return {'status': jobs.STATUS_FAILED}
     finally:
         # Completion, hand-over, cancel or failure: whatever this invocation rewrote is
-        # visible to cached reads from now on (docs/caching.md).
-        bump_data_version(aggregates_table)
+        # visible to cached reads from now on (docs/caching.md): the workspace's own counter for its job.
+        bump_data_version(aggregates_table, **jobs.scope_option(scope))
 
 
 def _job_counters(job: dict) -> dict:
@@ -609,51 +671,75 @@ def _job_counters(job: dict) -> dict:
 
 def _reprocess_pages(
     feedback_table: Any, aggregates_table: Any, context: Any, job_id: str, job: dict, counters: dict,
-    cursor: dict | None, throttle_restarts: int, token: str,
+    cursor: dict | None, throttle_restarts: int, token: str, scope: WorkspaceScope | None = None,
 ) -> dict:
-    """Walk the scan from ``cursor`` until the job finishes, hands over or is cancelled."""
-    categories_config = load_categories_config(aggregates_table)
-    dimensions_config = load_dimensions_config(aggregates_table) if job.get('mode') == jobs.MODE_DIMENSIONS else []
-    if jobs.record_config(aggregates_table, job, job_config(aggregates_table, categories_config), token) is None:
+    """Walk the scan from ``cursor`` until the job finishes, hands over or is cancelled.
+
+    ``scope``: a workspace's job, which reads that workspace's categories and dimensions (the defaults where it
+    saved none, never the deployment's rows), its rows only, and writes through the workspace layer.
+    """
+    categories_config = load_categories_config(aggregates_table, **jobs.scope_option(scope))
+    dimensions_config = (load_dimensions_config(aggregates_table, **jobs.scope_option(scope))
+                         if job.get('mode') == jobs.MODE_DIMENSIONS else [])
+    if jobs.record_config(aggregates_table, job, job_config(aggregates_table, categories_config), token,
+                          **jobs.scope_option(scope)) is None:
         logger.info("Reprocess job cancelled or claimed by another delivery", extra={'job_id': job_id})
         return {'status': jobs.STATUS_CANCELLED}
+    # A workspace's rewrites go through the workspace layer (each key and index partition checked in its scope).
+    writes = feedback_table if scope is None else ScopedUpdates(scope, feedback_table)
     # A days window counts back from when the JOB started, not from this invocation: a hand-over hours
     # later reads the same days as the first invocation did.
     job_slice = slice_from_job(job)
     window = job_slice.window(parse_iso(job.get('created_at')) or datetime.now(UTC))
     while True:
-        page = scan_page(feedback_table, cursor, job_slice, window)
+        updated_before = counters['updated']
+        page = scan_page(feedback_table, cursor, job_slice, window, **jobs.scope_option(scope))
         for item in page.get('Items', []):
-            if not slice_admits(item, job_slice, window):
+            if not slice_admits(item, job_slice, window, **jobs.scope_option(scope)):
                 cursor = {'pk': item['pk'], 'sk': item['sk']}
                 continue
             if counters['scanned'] >= jobs.MAX_REPROCESS_ITEMS:
-                return _finish_at_ceiling(aggregates_table, job_id, counters, token, cursor)
+                return _finish_at_ceiling(aggregates_table, job_id, counters, token, cursor, **jobs.scope_option(scope))
             if not has_time_left(context, TIME_RESERVE_MS):
-                return _checkpoint_and_hand_over(aggregates_table, context, job_id, counters, cursor, 0, token)
+                return _checkpoint_and_hand_over(aggregates_table, context, job_id, counters, cursor, 0, token,
+                                                 **jobs.scope_option(scope))
             try:
-                reprocess_item(feedback_table, item, job, categories_config, counters, dimensions_config)
+                reprocess_item(writes, item, job, categories_config, counters, dimensions_config)
             except BedrockThrottlingError:
                 if throttle_restarts >= MAX_THROTTLE_RESTARTS:
                     jobs.finish_job(aggregates_table, job_id, jobs.STATUS_FAILED, counters=counters,
-                                    error='Bedrock kept throttling; try again later', worker_token=token)
+                                    error='Bedrock kept throttling; try again later', worker_token=token,
+                                    **jobs.scope_option(scope))
                     return {'status': jobs.STATUS_FAILED}
                 return _checkpoint_and_hand_over(
                     aggregates_table, context, job_id, counters, cursor, throttle_restarts + 1, token,
+                    **jobs.scope_option(scope),
                 )
             cursor = {'pk': item['pk'], 'sk': item['sk']}
             throttle_restarts = 0
         cursor = page.get('LastEvaluatedKey') or None
         if cursor is None:
             jobs.finish_job(aggregates_table, job_id, jobs.STATUS_COMPLETED, counters=counters,
-                            worker_token=token)
+                            worker_token=token, **jobs.scope_option(scope))
             metrics.add_metric(name="CategoryReprocessCompleted", unit="Count", value=1)
             return {'status': jobs.STATUS_COMPLETED, **_result_counters(counters)}
-        if jobs.checkpoint(aggregates_table, job_id, counters, cursor, token) is None:
+        if scope is not None and not has_time_left(context, TIME_RESERVE_MS):
+            # A workspace's job may read many pages of other scopes' rows in a row, where the per-review check above
+            # never runs: it hands over between pages too, from the page's cursor (run_job's bump follows).
+            return _checkpoint_and_hand_over(aggregates_table, context, job_id, counters, cursor, throttle_restarts,
+                                             token, **jobs.scope_option(scope))
+        if jobs.checkpoint(aggregates_table, job_id, counters, cursor, token, **jobs.scope_option(scope)) is None:
             logger.info("Reprocess job cancelled or claimed by another delivery", extra={'job_id': job_id})
             return {'status': jobs.STATUS_CANCELLED}
-        # Each page checkpoint publishes that page's rewrites to the cached reads.
-        bump_data_version(aggregates_table)
+        _publish_page(aggregates_table, scope, rewrote=counters['updated'] > updated_before)
+
+
+def _publish_page(aggregates_table: Any, scope: WorkspaceScope | None, *, rewrote: bool) -> None:
+    """Each page checkpoint publishes that page's rewrites to the cached reads. A workspace's job pages through the
+    whole table, most pages holding none of its rows: it bumps only after a page that rewrote one, so its read cache
+    is not emptied for nothing (the deployment's bumps every page, as before)."""
+    if scope is None or rewrote:
+        bump_data_version(aggregates_table, **jobs.scope_option(scope))
 
 
 def _result_counters(counters: dict) -> dict:
@@ -661,22 +747,23 @@ def _result_counters(counters: dict) -> dict:
     return {**counters, 'raw_fallback_sources': sorted(counters.get('raw_fallback_sources') or ())}
 
 
-def _finish_at_ceiling(aggregates_table: Any, job_id: str, counters: dict, token: str, cursor: dict | None) -> dict:
+def _finish_at_ceiling(aggregates_table: Any, job_id: str, counters: dict, token: str, cursor: dict | None,
+                       scope: WorkspaceScope | None = None) -> dict:
     """End the job 'partial' at the ceiling; ``cursor`` (the last review done) is where a resume starts."""
     logger.warning("Reprocess job reached its item ceiling", extra={'job_id': job_id})
     jobs.finish_job(aggregates_table, job_id, jobs.STATUS_PARTIAL, counters=counters,
-                    worker_token=token, stopped_at_ceiling=True, resume_from=cursor)
+                    worker_token=token, stopped_at_ceiling=True, resume_from=cursor, **jobs.scope_option(scope))
     metrics.add_metric(name="CategoryReprocessStoppedAtCeiling", unit="Count", value=1)
     return {'status': jobs.STATUS_PARTIAL, 'stopped_at_ceiling': True, **_result_counters(counters)}
 
 
 def _checkpoint_and_hand_over(
     aggregates_table: Any, context: Any, job_id: str, counters: dict, cursor: dict | None,
-    throttle_restarts: int, token: str,
+    throttle_restarts: int, token: str, scope: WorkspaceScope | None = None,
 ) -> dict:
-    if jobs.checkpoint(aggregates_table, job_id, counters, cursor, token) is None:
+    if jobs.checkpoint(aggregates_table, job_id, counters, cursor, token, **jobs.scope_option(scope)) is None:
         return {'status': jobs.STATUS_CANCELLED}
-    _hand_over(context, job_id, cursor, throttle_restarts, token)
+    _hand_over(context, job_id, cursor, throttle_restarts, token, **jobs.scope_option(scope))
     return {'status': 'continued', **_result_counters(counters)}
 
 

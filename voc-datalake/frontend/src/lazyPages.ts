@@ -29,6 +29,10 @@ export const Agents = lazy(() => import('./pages/Agents/Agents'))
 export const AgentDetail = lazy(() => import('./pages/Agents/AgentDetail'))
 export const WorkflowPage = lazy(() => import('./pages/Agents/WorkflowPage'))
 export const Account = lazy(() => import('./pages/Account/Account'))
+// The current workspace's members (docs/multi-workspace.md): a page only inside a workspace.
+export const Members = lazy(() => import('./pages/Members/Members'))
+// The current workspace's own settings (its brand and plugins): a page only inside a workspace.
+export const WorkspaceSettings = lazy(() => import('./pages/WorkspaceSettings/WorkspaceSettings'))
 export const Connect = lazy(() => import('./pages/Connect/Connect'))
 // MCP OAuth consent (docs/mcp.md): where an assistant's sign-in lands, behind ProtectedRoute.
 export const OAuthConsent = lazy(() => import('./pages/OAuthConsent/OAuthConsent'))

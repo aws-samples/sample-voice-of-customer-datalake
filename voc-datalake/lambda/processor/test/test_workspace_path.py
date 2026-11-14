@@ -18,6 +18,21 @@ OTHER_WS = 'ws_7ZZZZZZZZZZZZZZZZZZZZZZZZZ'
 BUCKET = 'voc-raw-workspaces'
 
 
+#: Each workspace keeps its sources' PII here (a workspace with no profile redacts by default, 7.08.00), so its items
+#: are stored as the deployment's are.
+ALLOW_PROFILES = ({'id': 'webscraper', 'label': 'Reviews', 'pii': 'allow'},
+                  {'id': 'github_issues', 'label': 'Issues', 'pii': 'allow'})
+
+
+@pytest.fixture(autouse=True)
+def _workspace_settings():
+    """No dimensions and allow-PII profiles in either workspace (as the conftest seeds the deployment's): the
+    processor reads a workspace's own settings for its messages (7.08.00; test_workspace_config.py reads them)."""
+    for ws in (WS, OTHER_WS):
+        handler._settings_cache[('dimensions', ws)] = (float('inf'), [])
+        handler._settings_cache[('sources', ws)] = (float('inf'), list(ALLOW_PROFILES))
+
+
 def review(**fields) -> dict:
     """A plain (not update-capable) review message, as an ingestor queues it."""
     return {'id': 'rev-1', 'source_platform': 'webscraper', 'source_channel': 'reviews', 'text': 'Late parcel again',
@@ -67,6 +82,18 @@ class TestAMessageOfAWorkspace:
         assert item['gsi1pk'] == f"DATE#{item['date']}"
         assert (item['gsi2pk'], item['gsi3pk']) == ('CATEGORY#product_quality', 'URGENCY#medium')
         assert (item['gsi4pk'], item['gsi5pk']) == (f'FEEDBACK#{feedback_id}', 'CHANNEL#reviews')
+
+    @pytest.mark.parametrize('channel', [{}, {'source_channel': None}, {'source_channel': ''}])
+    @pytest.mark.parametrize('workspace', [{}, {'workspace_id': WS}])
+    def test_a_missing_null_or_empty_channel_is_unknown_with_its_partition(self, channel, workspace):
+        """One rule for every channel-less message, the one a CSV correction applies (shared/csv_updates.py)."""
+        message = {key: value for key, value in review(**workspace).items() if key != 'source_channel'}
+        with issues.world() as (feedback, _):
+            issues.deliver({**message, **channel})
+            (item,) = _items(feedback)
+
+        prefix = f'WS#{WS}#' if workspace else ''
+        assert (item['source_channel'], item['gsi5pk']) == ('unknown', f'{prefix}CHANNEL#unknown')
 
     def test_the_same_source_item_in_two_workspaces_and_the_deployment_is_three_items(self):
         with issues.world([issues.insights()] * 3, idempotent=True) as (feedback, llm):
@@ -120,7 +147,9 @@ class TestTheInlineRawFallback:
         from shared.test.raw_lake_fixtures import RAW_BUCKET, raw_keys, raw_lake_client
         from shared.test.source_profile_fixtures import seeded_source_profiles
 
-        with issues.world() as (feedback, _), raw_lake_client() as s3, seeded_source_profiles():
+        # The workspace keeps its PII (its own allow profile; with none, its default redacts and keeps no copy).
+        with issues.world() as (feedback, _), raw_lake_client() as s3, \
+                seeded_source_profiles(workspaces={WS: list(ALLOW_PROFILES)}):
             issues.deliver(review(workspace_id=WS, raw_data={'id': 'rev-1', 'body': 'Late parcel again'}))
             (item,) = _items(feedback)
             keys = raw_keys(s3)

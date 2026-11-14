@@ -20,6 +20,7 @@ import clsx from 'clsx'
 import { useAssistant } from '../runtime/useAssistant'
 import { shownMode, useAssistantUiStore, useThreadStore } from '../store/assistantStore'
 import { sessionTitle } from '../sessions/serialize'
+import { useIsUnsaved } from '../sessions/unsavedThreads'
 import ApprovalList from './ApprovalList'
 import Composer from './Composer'
 import EmptyState from './EmptyState'
@@ -137,6 +138,7 @@ function ConversationPane({ column, draft, onDraft, accessory }: Readonly<{
   // The last conversation is still loading after a reload: typing now would start a throwaway one.
   const restoring = useThreadStore((s) => s.restore.status === 'pending')
   const blockedReason = blockedReasonFor(thread.status, restoring, t)
+  const unsaved = useIsUnsaved(thread.threadId)
   return (
     <div className="flex min-w-0 flex-1 flex-col">
       <div className="relative flex-1 overflow-y-auto px-3 py-3">
@@ -145,6 +147,11 @@ function ConversationPane({ column, draft, onDraft, accessory }: Readonly<{
           <div className="mt-3">
             <ApprovalList thread={thread} page={page} onResolve={resolve} />
           </div>
+          {unsaved && (
+            <p role="status" className="mt-3 rounded-lg border border-warn/30 bg-warn-subtle px-3 py-2 text-[12px] text-text">
+              {t('sessions.notSavedHere')}
+            </p>
+          )}
           {errorText !== null && <p role="alert" className="mt-3 rounded-lg border border-danger/30 bg-danger-subtle px-3 py-2 text-[12px] text-danger">{errorText}</p>}
         </div>
       </div>

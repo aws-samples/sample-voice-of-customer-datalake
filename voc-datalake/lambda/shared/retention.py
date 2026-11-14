@@ -47,8 +47,8 @@ under ``silver/{source}/`` (``silver_source_prefix``).
 
 A workspace's items (``WS#{ws}#SOURCE#…``, docs/multi-workspace.md) are reached by an erasure by email
 (``reaches_workspaces``: the deployment's erasure, made by a deployment admin, erases a person's data wherever it
-is; an author, a display name, is not one person everywhere) and by a retention window (a workspace's items are processed under the deployment's source profiles until
-per-workspace profiles replace them, phase 3). Such an item's own copies are its workspace's: raw objects under
+is; an author, a display name, is not one person everywhere) and by a retention window (the windows are the deployment's: a workspace's profile sets none, and at ingestion
+it carries the deployment's window for its source, shared/source_profiles.py ``cached_source_profile_strict``). Such an item's own copies are its workspace's: raw objects under
 ``ws/{ws}/raw/`` (``raw_root`` of its scope: a key under any other root is never deleted as its own) and Silver
 versions under ``ws/{ws}/silver/``. A whole-source erasure, a request about the deployment's own source, leaves them,
 and so does an erasure by ``author``, ``source_id`` or ``csv_row_id`` (a display name, or an id unique only within
@@ -210,10 +210,10 @@ def _store_items(store: str, *, workspaces: bool) -> ConditionBase:
 def retention_filter(cutoffs: Mapping[str, str], store: str = STORE_FEEDBACK) -> ConditionBase:
     """Scan filter: items of ``store`` of a retained source dated before its cutoff.
 
-    A workspace's item too: a workspace's message is processed under the deployment's source profiles (its PII and
-    raw-copy policy; ``plugins/_shared/raw_original.py`` keeps no whole file for a source with a window, because the
-    window deletes item by item), so the profile's window binds its items as well, until per-workspace profiles
-    replace the deployment's for workspaces (phase 3).
+    A workspace's item too: the windows are the deployment's. A workspace's profile sets none (the settings API
+    refuses one), and at ingestion a workspace's source carries the deployment's window
+    (shared/source_profiles.py ``cached_source_profile_strict``), so ``plugins/_shared/raw_original.py`` keeps no
+    whole file for a source with a window there either, because the window deletes item by item.
     """
     clauses = [Attr('source_platform').eq(source) & Attr('date').lt(cutoff) for source, cutoff in cutoffs.items()]
     if not clauses:

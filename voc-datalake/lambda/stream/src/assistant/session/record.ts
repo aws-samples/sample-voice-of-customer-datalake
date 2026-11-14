@@ -5,7 +5,7 @@
  * load it with the same reader it uses for its own saves.
  *
  * Item (table `voc-conversations`):
- *   pk USER#{sub} · sk CONV#{threadId} · conversation_id · kind 'assistant' ·
+ *   pk USER#{sub} (WS#{ws}#USER#{sub} inside a workspace) · sk CONV#{threadId} · conversation_id · kind 'assistant' ·
  *   title · messages_json · page_json · pending_json · message_count ·
  *   created_at · updated_at — the attributes chat_handler writes — plus the
  *   three this Lambda owns: run_id · run_status · revision.
@@ -23,6 +23,7 @@
 import type { ContentPart, Message } from '@ag-ui/core';
 import type { PageContext, SESSION_RUN_STATUSES } from '../contract.js';
 import { MAX_RETRY_PERSONA_CHARS, MAX_STORED_PERSONA_CHARS, storedPersonaResult } from './persona-result.js';
+import type { SessionOwner } from './workspace-member.js';
 
 export type RunStatus = (typeof SESSION_RUN_STATUSES)[number];
 
@@ -43,25 +44,39 @@ export function isStorableThreadId(threadId: string): boolean {
   return CONVERSATION_ID_PATTERN.test(threadId);
 }
 
-/** The partition is ALWAYS the verified caller's Cognito subject (authorizer claims), never request data. */
-export function callerPartition(callerSub: string): string {
-  return `USER#${callerSub}`;
+/**
+ * The partition is ALWAYS the verified caller's Cognito subject (authorizer claims), never request data: their own
+ * (`USER#{sub}`), or theirs inside the workspace they were verified a member of (`WS#{ws}#USER#{sub}`,
+ * workspace-member.ts). LOCKSTEP with lambda/shared/conversations.py `conversation_partition`.
+ */
+export function callerPartition(owner: SessionOwner): string {
+  return owner.workspace === undefined ? `USER#${owner.sub}` : `WS#${owner.workspace}#USER#${owner.sub}`;
 }
 
-export function sessionKey(callerSub: string, threadId: string): { pk: string; sk: string } {
-  return { pk: callerPartition(callerSub), sk: `CONV#${threadId}` };
+export function sessionKey(owner: SessionOwner, threadId: string): { pk: string; sk: string } {
+  return { pk: callerPartition(owner), sk: `CONV#${threadId}` };
+}
+
+/**
+ * The owner's row in their workspace's list of conversation owners, `WS#{ws}#CONVERSANTS` / `{sub}` (with
+ * `first_at`), written if absent before the first session write (store.ts); null outside a workspace, where there is
+ * no list. LOCKSTEP with lambda/shared/conversations.py `conversant_key`; both follow
+ * voc-datalake/schemas/conversation-keys-cases.json.
+ */
+export function conversantKey(owner: SessionOwner): { pk: string; sk: string } | null {
+  return owner.workspace === undefined ? null : { pk: `WS#${owner.workspace}#CONVERSANTS`, sk: owner.sub };
 }
 
 /** LOCKSTEP with chat_handler.CANCEL_SK_PREFIX: the Stop marker of a thread's run. */
 const CANCEL_SK_PREFIX = 'RUNCANCEL#';
 
 /** The key of the Stop marker chat_handler writes for this thread (`POST .../cancel`). */
-export function cancelKey(callerSub: string, threadId: string): { pk: string; sk: string } {
-  return { pk: callerPartition(callerSub), sk: `${CANCEL_SK_PREFIX}${threadId}` };
+export function cancelKey(owner: SessionOwner, threadId: string): { pk: string; sk: string } {
+  return { pk: callerPartition(owner), sk: `${CANCEL_SK_PREFIX}${threadId}` };
 }
 
 export interface SessionSnapshot {
-  callerSub: string;
+  owner: SessionOwner;
   threadId: string;
   runId: string;
   status: RunStatus;
@@ -162,7 +177,7 @@ export function estimatedItemBytes(item: Record<string, unknown>): number {
 }
 
 function itemFor(snapshot: SessionSnapshot, messages: readonly Message[]): Record<string, unknown> {
-  const { pk, sk } = sessionKey(snapshot.callerSub, snapshot.threadId);
+  const { pk, sk } = sessionKey(snapshot.owner, snapshot.threadId);
   return {
     pk,
     sk,

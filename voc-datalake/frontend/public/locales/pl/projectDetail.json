@@ -43,6 +43,8 @@
       "webSearchesUsed_other": "{{count, number}} wyszukiwań w sieci",
       "companyContext": "Kontekst firmy",
       "designSystem": "System projektowy firmy",
+      "companyLogo": "Logo firmy",
+      "companyLogoLeftOut": "Pominięto logo firmy (ponad 1 MB lub nieczytelne)",
       "selectedUsed": "Wykorzystano {{used, number}} z {{selected, number}} wybranych dokumentów",
       "unavailable": "Już niedostępne",
       "visualsUsed_one": "{{count, number}} wykorzystana wizualizacja",

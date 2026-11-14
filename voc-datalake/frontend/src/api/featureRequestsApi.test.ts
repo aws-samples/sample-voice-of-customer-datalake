@@ -6,6 +6,8 @@ import { ApiError, AuthError } from '../lib/errors'
 import {
   boardTransport, createFeatureRequestsApi, normalizeRequestDetail, normalizeRequestList,
 } from './featureRequestsApi'
+import { setCurrentWorkspace } from '../workspace/currentWorkspace'
+import { ACME } from '../test/workspaceFixtures'
 
 vi.mock('../lib/trustedOrigins', () => ({ isTrustedOrigin: () => true }))
 vi.mock('./baseUrl', () => ({ getBaseUrl: () => 'https://api.example.com/v1' }))
@@ -82,6 +84,19 @@ describe('the board transport', () => {
     expect(result.requests).toHaveLength(1)
     expect(fetchMock.mock.calls[0]?.[0]).toBe('https://api.example.com/v1/feature-requests')
     expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get('Authorization')).toBe('board-id-token')
+  })
+
+  it('names the current workspace like the app client does, and none outside one', async () => {
+    const fetchMock = stubFetch(new Response(JSON.stringify({ requests: [], viewer: {} })), new Response(JSON.stringify({ requests: [], viewer: {} })))
+    const api = createFeatureRequestsApi(boardTransport(() => Promise.resolve('board-id-token')))
+
+    setCurrentWorkspace(ACME)
+    await api.listRequests()
+    setCurrentWorkspace(null)
+    await api.listRequests()
+
+    expect(fetchMock.mock.calls.map((call) => new Headers(call[1]?.headers).get('X-Workspace-Id')))
+      .toStrictEqual([ACME.id, null])
   })
 
   it('refreshes once on 401 and retries with the new token', async () => {

@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { renderHook } from '@testing-library/react'
 import { z } from 'zod'
 import { sortedStrings } from '@test/stringLists'
-import { useAuthStore, useIsAdmin } from './authStore'
+import { useAuthStore, useIsAdmin, useIsPlatformAdmin } from './authStore'
 import { getRuntimeConfig, isConfigLoaded } from '../runtimeConfig'
 import { at } from '@test/defined'
 
@@ -241,5 +241,46 @@ describe('useIsAdmin', () => {
 
       expect(result.current).toBe(false)
     })
+  })
+})
+
+describe('useIsPlatformAdmin', () => {
+  beforeEach(() => {
+    useAuthStore.getState().logout()
+    vi.clearAllMocks()
+  })
+
+  it('reports a user in the platform-admins group', () => {
+    stubCognito(true)
+    useAuthStore.getState().setUser({ username: 'ada', email: 'ada@example.com', groups: ['admins', 'platform-admins'] })
+
+    const { result } = renderHook(() => useIsPlatformAdmin())
+
+    expect(result.current).toBe(true)
+  })
+
+  it('denies an administrator outside platform-admins', () => {
+    stubCognito(true)
+    useAuthStore.getState().setUser({ username: 'bo', email: 'bo@example.com', groups: ['admins'] })
+
+    const { result } = renderHook(() => useIsPlatformAdmin())
+
+    expect(result.current).toBe(false)
+  })
+
+  it('takes the local-dev bypass without Cognito, like useIsAdmin', () => {
+    stubCognito(false)
+
+    const { result } = renderHook(() => useIsPlatformAdmin())
+
+    expect(result.current).toBe(true)
+  })
+
+  it('denies when no user is present', () => {
+    stubCognito(true)
+
+    const { result } = renderHook(() => useIsPlatformAdmin())
+
+    expect(result.current).toBe(false)
   })
 })

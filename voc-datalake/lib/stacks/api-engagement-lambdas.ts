@@ -15,7 +15,7 @@ import { FEEDBACK_FORM_API_FUNCTION_BASE_NAME, USERS_API_FUNCTION_BASE_NAME } fr
 import { AGGREGATES_VERSION_PARTITION, grantCacheVersionBump } from '../utils/cache-version-grants';
 import { appVersion } from '../utils/connector-version';
 import { grantKeyScopedWrites, grantReadAndWrites } from '../utils/table-write-grants';
-import { grantWorkspaceResolution, workspaceResolutionEnv } from '../utils/workspace-request-grants';
+import { grantRequestWorkspace, grantWorkspaceMembershipReads } from '../utils/workspace-resolution-grants';
 import { WORKSPACE_ID_PATTERN, WORKSPACE_RAW_LAYER_PREFIX } from './core-buckets';
 import type { ApiStackContext } from './api-context';
 import { OPS_ALERTS_NAG_REASON, opsAlertsWiring } from './dlq-alarms';
@@ -44,20 +44,22 @@ const FORM_LOOKUP_PARTITION = 'FORM#*';
 
 /**
  * The feedback forms API in a workspace (docs/multi-workspace.md, "Public and non-user entry points"): the signed-in
- * routes resolve X-Workspace-Id (lib/utils/workspace-request-grants.ts: GetItem on `WS#*` and `AUDIT#WS#*`, PutItem
- * on `AUDIT#WS#*` only, the live platform-admin check), and a workspace's form has a lookup row `FORM#{id}` the
+ * routes resolve X-Workspace-Id through the stack's one workspace-resolution policy (lib/utils/workspace-resolution-
+ * grants.ts: GetItem on `WS#*` and `AUDIT#WS#*`, PutItem on `AUDIT#WS#*` only, which also covers a workspace form's
+ * `form_deleted` audit row; and the live platform-admin check), and a workspace's form has a lookup row `FORM#{id}` the
  * public routes read (GetItem), its create writes (a conditional PutItem) and its delete removes (a conditional
  * DeleteItem): `dynamodb:LeadingKeys` `FORM#*` for those three, nothing else of the table (no Query, Scan or
  * UpdateItem). The row is routing configuration, not customer data (lib/customer-data-deletes.test.ts names it).
  */
-function grantFormRouting(ctx: ApiStackContext, role: iam.Role): void {
+function grantFormRouting(ctx: ApiStackContext, role: iam.Role): Record<string, string> {
   const { workspacesTable, userPool } = ctx.props;
-  grantWorkspaceResolution(role, workspacesTable, userPool);
+  const resolutionEnv = grantRequestWorkspace(workspacesTable, role, userPool);
   role.addToPolicy(new iam.PolicyStatement({
     actions: ['dynamodb:GetItem'], resources: [workspacesTable.tableArn],
     conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [FORM_LOOKUP_PARTITION] } },
   }));
   grantKeyScopedWrites(workspacesTable, role, ['PutItem', 'DeleteItem'], [FORM_LOOKUP_PARTITION]);
+  return resolutionEnv;
 }
 
 /**
@@ -112,6 +114,10 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
     findings: opsAlerts.alarmArns.map(resourceFinding),
   }]);
 
+  // The alert writes are a platform admin's (alarms on the deployment's own Lambdas, docs/multi-workspace.md): the
+  // live check reads the caller's groups and account (lambda/shared/platform_admin_gate.py).
+  userPool.grant(logsRole, 'cognito-idp:AdminListGroupsForUser', 'cognito-idp:AdminGetUser');
+
   // Administration → System → Logs diagnostics: log search, failure-queue peek (api-logs-diagnostics.ts).
   const diagnosticsEnv = grantLogsDiagnostics(ctx, logsRole, {
     opsAlertsQueues: opsAlerts.environment.OPS_ALERTS_QUEUES ?? '',
@@ -128,7 +134,7 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
     role: logsRole,
     timeout: cdk.Duration.seconds(30),
     memorySize: 1769, // one vCPU 2026-10-23: single-threaded Python gains nothing above it (lib/sizing/policy.ts)
-    environment: { AGGREGATES_TABLE: aggregatesTable.tableName, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-logs-api', LOG_LEVEL: 'INFO', ENABLED_SOURCES: inputs.enabledSourcesEnv, ...diagnosticsEnv, WEB_SEARCH_ENABLED: ctx.props.webSearchGatewayUrl !== undefined ? 'true' : 'false', ...opsAlerts.environment },
+    environment: { AGGREGATES_TABLE: aggregatesTable.tableName, USER_POOL_ID: userPool.userPoolId, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-logs-api', LOG_LEVEL: 'INFO', ENABLED_SOURCES: inputs.enabledSourcesEnv, ...diagnosticsEnv, WEB_SEARCH_ENABLED: ctx.props.webSearchGatewayUrl !== undefined ? 'true' : 'false', ...opsAlerts.environment },
     layers: [apiLayer],
     logGroup: ctx.logGroup('LogsApiLogs', ctx.uniqueName('voc-logs-api')),
   });
@@ -175,7 +181,7 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
   grantReadAndWrites(aggregatesTable, feedbackFormRole, ['PutItem', 'UpdateItem']);
   grantKeyScopedWrites(aggregatesTable, feedbackFormRole, ['DeleteItem'], [
     'FEEDBACK_FORM', `WS#${WORKSPACE_ID_PATTERN}#FEEDBACK_FORM`]);
-  grantFormRouting(ctx, feedbackFormRole);
+  const formRoutingEnv = grantFormRouting(ctx, feedbackFormRole);
   feedbackTable.grantReadData(feedbackFormRole);
   kmsKey.grantEncryptDecrypt(feedbackFormRole);
   feedbackFormRole.addToPolicy(new iam.PolicyStatement({ actions: ['sqs:SendMessage'], resources: [processingQueueArn] }));
@@ -211,7 +217,7 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
       PARTICIPANTS_TABLE: participantsTable.tableName,
       BRAND_NAME: brandName,
       // X-Workspace-Id on the signed-in routes, and a workspace form's FORM#{id} lookup row (voc-workspaces).
-      ...workspaceResolutionEnv(ctx.props.workspacesTable, userPool),
+      ...formRoutingEnv,
       // The raw copy of each submission and its connector-version (lambda/shared/feedback_form_raw.py).
       RAW_DATA_BUCKET: rawDataBucket.bucketName,
       APP_VERSION: appVersion(),
@@ -339,6 +345,9 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
   // The caller's own conversations: save (Put), rename (Update), DELETE /chat/conversations/{id} (Delete). No batch.
   grantReadAndWrites(conversationsTable, chatRole, ['PutItem', 'UpdateItem', 'DeleteItem']);
   kmsKey.grantEncryptDecrypt(chatRole);
+  // Inside a workspace the caller's conversations are theirs there: the routes resolve the caller's own membership
+  // (no platform-admin entry, as the stream Lambda: no Cognito look-up and no audit row, so only the membership reads).
+  const chatWorkspaceEnv = grantWorkspaceMembershipReads(ctx.props.workspacesTable, chatRole);
 
   const chatLambda = new lambda.Function(stack, 'ChatApi', {
     functionName: ctx.uniqueName('voc-chat-api'),
@@ -349,7 +358,13 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
     role: chatRole,
     timeout: cdk.Duration.seconds(30),
     memorySize: 1024, // CPU-bound: memory buys vCPU; keep CPU <= 60% of the share
-    environment: { CONVERSATIONS_TABLE: conversationsTable.tableName, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-chat-api', LOG_LEVEL: 'INFO' },
+    environment: {
+      CONVERSATIONS_TABLE: conversationsTable.tableName, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-chat-api', LOG_LEVEL: 'INFO',
+      // Named for the shared resolution module's live check, which these routes never run (elevate=False): no
+      // Cognito grant goes with it, so a later call that did elevate would be refused, not silently elevated.
+      USER_POOL_ID: userPool.userPoolId,
+      ...chatWorkspaceEnv,
+    },
     layers: [apiLayer],
     logGroup: ctx.logGroup('ChatApiLogs', ctx.uniqueName('voc-chat-api')),
   });

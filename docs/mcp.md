@@ -88,7 +88,14 @@ subject `mcp:{token_id}` acting for the minter, so the route's own rules apply:
 - **projects** — the minter's project access (`shared/project_access.py`), capped at
   **editor**; a credential never owns, manages or administers a project;
 - **feedback, metrics, categories, memory, agents** — the minter's category access;
-- **never admin** — the synthesized `cognito:groups` is always empty.
+- **never admin** — the synthesized `cognito:groups` is always empty;
+- **its workspace** — a token minted inside a workspace, and an OAuth sign-in approved inside one, acts in it (the
+  call carries its `X-Workspace-Id`, from the token or grant row, never from the MCP request), with the person's
+  membership there, at most as an editor: on every route that acts in its workspace, removing them from the
+  workspace stops it there (the routes not moved yet still answer for the deployment, as for every caller). Only a
+  member can create one there (`shared/mcp_workspace_pin.py`: a platform admin who is not a member gets 403). A
+  re-consent replaces the grant, workspace included. One made with no workspace acts as before
+  ([multi-workspace](multi-workspace.md), Request flow).
 
 On every authenticated request the handler also re-checks the minter in Cognito
 (`AdminGetUser`): a disabled or deleted user's tokens stop working immediately.
@@ -492,7 +499,9 @@ or the deploy fails. `docs/lambda-sizing.md` covers memory only.
 `-c mcpReservedConcurrency=<n>` changes the number (a whole number, checked at synth; default 20). `0` means
 no reservation at all: the function then shares the unreserved pool like every other Lambda, which is the
 setting for an account whose quota is under 120 (new accounts can start at 10). The quota rule above becomes
-`n` + 100.
+`n` + 100. The rule is about the UNRESERVED executions, which can be lower than the quota: Workshop Studio
+event accounts showed a quota of 1000 with only 110 unreserved, so `npm run generate:workshop-artifacts`
+synthesizes with `-c mcpReservedConcurrency=0` (`aws lambda get-account-settings` shows both numbers).
 
 ## Testing
 

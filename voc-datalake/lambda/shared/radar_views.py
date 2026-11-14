@@ -32,6 +32,7 @@ from shared.radar_store import (
     recent_items,
     sum_counter,
 )
+from shared.ws_repo import WorkspaceScope
 
 MAX_THEME_ITEMS: Final = 1000
 MAX_THEMES: Final = 8
@@ -51,10 +52,10 @@ def window(days: int, today: date) -> tuple[date, date]:
     return today - timedelta(days=days - 1), today
 
 
-def sentiment_trend(table: Any, brand: str, start: date, end: date) -> list[dict[str, Any]]:
-    """One point per day with reviews: ``{date, count, avg_sentiment}``."""
+def sentiment_trend(table: Any, brand: str, start: date, end: date, workspace: WorkspaceScope | None = None) -> list[dict[str, Any]]:
+    """One point per day with reviews: ``{date, count, avg_sentiment}`` (``workspace``'s with one)."""
     points = []
-    for row in daily_rows(table, counter_pk(brand, 'daily_total'), start, end):
+    for row in daily_rows(table, counter_pk(brand, 'daily_total'), start, end, workspace):
         count = int(row.get('count') or 0)
         if count:
             average = Decimal(str(row.get('sentiment_sum') or 0)) / count
@@ -62,12 +63,13 @@ def sentiment_trend(table: Any, brand: str, start: date, end: date) -> list[dict
     return points
 
 
-def brand_totals(table: Any, brand: str, start: date, end: date) -> dict[str, Any]:
-    """``{total, avg_sentiment, sentiment: {label: count}}`` over the window."""
-    rows = daily_rows(table, counter_pk(brand, 'daily_total'), start, end)
+def brand_totals(table: Any, brand: str, start: date, end: date, workspace: WorkspaceScope | None = None) -> dict[str, Any]:
+    """``{total, avg_sentiment, sentiment: {label: count}}`` over the window (``workspace``'s with one)."""
+    rows = daily_rows(table, counter_pk(brand, 'daily_total'), start, end, workspace)
     total = sum(int(row.get('count') or 0) for row in rows)
     score = sum((Decimal(str(row.get('sentiment_sum') or 0)) for row in rows), Decimal(0))
-    sentiment = {label: int(sum_counter(table, counter_pk(brand, f'daily_sentiment#{label}'), start, end))
+    sentiment = {label: int(sum_counter(table, counter_pk(brand, f'daily_sentiment#{label}'), start, end,
+                                        workspace=workspace))
                  for label in SENTIMENT_LABELS}
     return {
         'total': total,
@@ -77,19 +79,19 @@ def brand_totals(table: Any, brand: str, start: date, end: date) -> dict[str, An
 
 
 def counted_totals(table: Any, brand: str, start: date, end: date, scope: CategoryScope, *,
-                   with_trend: bool) -> dict[str, Any]:
+                   with_trend: bool, workspace: WorkspaceScope | None = None) -> dict[str, Any]:
     """``{total, avg_sentiment, sentiment}`` (+ ``trend``) from the distinct reviews the list shows.
 
     The daily counters count every stored COPY (a file imported twice counted twice), so the
     header said 12 while "Read all reviews" listed 6. Counted from the list's own walk and the
     caller's scope instead; only a window too large to walk falls back to the counters.
     """
-    counts = review_counts(table, brand, start, end, scope)
+    counts = review_counts(table, brand, start, end, scope, workspace)
     if counts.complete:
         view = counts.totals()
         return {**view, 'trend': counts.trend()} if with_trend else view
-    view = brand_totals(table, brand, start, end)
-    return {**view, 'trend': sentiment_trend(table, brand, start, end)} if with_trend else view
+    view = brand_totals(table, brand, start, end, workspace)
+    return {**view, 'trend': sentiment_trend(table, brand, start, end, workspace)} if with_trend else view
 
 
 def _quote(item: Mapping[str, Any]) -> str | None:
@@ -103,14 +105,15 @@ def _theme_label(item: Mapping[str, Any]) -> tuple[str, str | None]:
     return str(item.get('category') or OTHER_CATEGORY), item.get('subcategory') or None
 
 
-def themes(table: Any, brand: str, start: date, end: date, scope: CategoryScope) -> dict[str, Any]:
+def themes(table: Any, brand: str, start: date, end: date, scope: CategoryScope,
+           workspace: WorkspaceScope | None = None) -> dict[str, Any]:
     """``{love: [...], hate: [...], sampled}``: the top praise and complaint themes with counts and quotes.
 
     A theme is a (category, subcategory) pair. Read from at most
     ``MAX_THEME_ITEMS`` of the newest reviews (``sampled`` says when the window
     held more); categories the caller may not see are left out.
     """
-    items = recent_items(table, brand, start, end, MAX_THEME_ITEMS)
+    items = recent_items(table, brand, start, end, MAX_THEME_ITEMS, workspace)
     counts: dict[str, Counter[tuple[str, str | None]]] = {polarity: Counter() for polarity in THEME_POLARITIES}
     quotes: dict[tuple[str, tuple[str, str | None]], list[str]] = defaultdict(list)
     seen: set[tuple[str, tuple[str, str | None], tuple[str, str]]] = set()
@@ -157,9 +160,11 @@ def _rounded(value: Decimal | None) -> float | None:
     return None if value is None else float(round(value, 3))
 
 
-def _side(table: Any, pk_of: Callable[[str], str], start: date, end: date) -> dict[str, Any]:
+def _side(table: Any, pk_of: Callable[[str], str], start: date, end: date,
+          workspace: WorkspaceScope | None) -> dict[str, Any]:
     """``{volume, positive_share, negative_share}`` from one side's per-sentiment daily counters."""
-    return side_view({label: int(sum_counter(table, pk_of(label), start, end)) for label in SENTIMENT_LABELS})
+    return side_view({label: int(sum_counter(table, pk_of(label), start, end, workspace=workspace))
+                      for label in SENTIMENT_LABELS})
 
 
 def _verdict(theirs: Mapping[str, Any], ours: Mapping[str, Any] | None) -> str | None:
@@ -186,7 +191,7 @@ def ours_visible(scope: CategoryScope, radar_source_ids: Iterable[str]) -> bool:
 
 
 def _their_sides(radar_table: Any, brand: str, categories: list[str], start: date, end: date,
-                 counted: ReviewCounts | None) -> dict[str, dict[str, Any]]:
+                 counted: ReviewCounts | None, workspace: WorkspaceScope | None) -> dict[str, dict[str, Any]]:
     """Their side per visible category: from the distinct reviews when ``counted`` is given, else the counters.
 
     The counters are bumped once per STORED copy, so a review imported twice read as two
@@ -197,14 +202,15 @@ def _their_sides(radar_table: Any, brand: str, categories: list[str], start: dat
         return {category: sides[category] for category in categories if category in sides}
     return {
         category: _side(radar_table, lambda label, c=category: counter_pk(brand, f'category_sentiment#{c}#{label}'),
-                        start, end)
+                        start, end, workspace)
         for category in categories
-        if sum_counter(radar_table, counter_pk(brand, f'daily_category#{category}'), start, end)
+        if sum_counter(radar_table, counter_pk(brand, f'daily_category#{category}'), start, end, workspace=workspace)
     }
 
 
 def compare(radar_table: Any, aggregates_table: Any, brand: str, categories: Iterable[str],
-            start: date, end: date, scope: CategoryScope, *, ours_available: bool) -> dict[str, Any]:
+            start: date, end: date, scope: CategoryScope, *, ours_available: bool,
+            workspace: WorkspaceScope | None = None) -> dict[str, Any]:
     """Per category, their sentiment and volume against ours: ``{categories: [...], ours_available, overall}``.
 
     Only the categories the brand has reviews in (at most ``MAX_COMPARE_CATEGORIES``,
@@ -215,13 +221,15 @@ def compare(radar_table: Any, aggregates_table: Any, brand: str, categories: Ite
     own walk, ``review_counts``), as the header and the list do; a window too large
     to walk, or a walk that found no stored review (counters older than the review
     rows), keeps the counters. ``overall`` is ``{theirs, ours}``: the whole window as
-    one side each (same counting as the rows; ``ours`` None without ``ours_available``).
+    one side each (same counting as the rows; ``ours`` None without ``ours_available``). ``workspace``: both sides
+    are its own, its Radar rows and its own feedback's counters (shared/radar_reads.py).
     """
-    counts = review_counts(radar_table, brand, start, end, scope)
+    counts = review_counts(radar_table, brand, start, end, scope, workspace)
     counted = counts if counts.complete and counts.items else None
     visible = [category for category in categories if category_access.admits(scope, category)]
     theirs_by_category = {
-        category: side for category, side in _their_sides(radar_table, brand, visible, start, end, counted).items()
+        category: side for category, side in _their_sides(radar_table, brand, visible, start, end, counted,
+                                                          workspace).items()
         if side['volume']
     }
     busiest = sorted(theirs_by_category, key=lambda c: theirs_by_category[c]['volume'], reverse=True)
@@ -229,12 +237,13 @@ def compare(radar_table: Any, aggregates_table: Any, brand: str, categories: Ite
     for category in busiest[:MAX_COMPARE_CATEGORIES]:
         theirs = theirs_by_category[category]
         ours = _side(aggregates_table, lambda label, c=category: _our_category_pk(c, label),
-                     start, end) if ours_available else None
+                     start, end, workspace) if ours_available else None
         too_few = int(theirs['volume']) < MIN_COMPARE_REVIEWS
         rows.append({'category': category, 'theirs': theirs, 'ours': ours, 'too_few': too_few,
                      'verdict': None if too_few else _verdict(theirs, ours)})
-    overall = {'theirs': _their_overall(radar_table, brand, visible, start, end, scope, counted),
-               'ours': _our_overall(aggregates_table, visible, start, end, scope) if ours_available else None}
+    overall = {'theirs': _their_overall(radar_table, brand, visible, start, end, scope, counted, workspace),
+               'ours': _our_overall(aggregates_table, visible, start, end, scope, workspace) if ours_available
+               else None}
     return {'categories': rows, 'ours_available': ours_available, 'overall': overall}
 
 
@@ -243,15 +252,16 @@ def _our_category_pk(category: str, label: str) -> str:
 
 
 def _category_sum(table: Any, pk_of: Callable[[str, str], str], categories: Iterable[str], start: date,
-                  end: date) -> dict[str, Any]:
+                  end: date, workspace: WorkspaceScope | None) -> dict[str, Any]:
     """One side summed over ``categories``' per-category sentiment counters (``pk_of(category, label)``)."""
     names = list(categories)
-    return side_view({label: sum(int(sum_counter(table, pk_of(category, label), start, end)) for category in names)
+    return side_view({label: sum(int(sum_counter(table, pk_of(category, label), start, end, workspace=workspace))
+                                 for category in names)
                       for label in SENTIMENT_LABELS})
 
 
 def _their_overall(radar_table: Any, brand: str, visible: list[str], start: date, end: date, scope: CategoryScope,
-                   counted: ReviewCounts | None) -> dict[str, Any]:
+                   counted: ReviewCounts | None, workspace: WorkspaceScope | None) -> dict[str, Any]:
     """The brand's whole window as one side: the distinct reviews when walked (as the rows), else its counters.
 
     A caller with a category restriction gets only the ``visible`` categories, from the
@@ -260,21 +270,22 @@ def _their_overall(radar_table: Any, brand: str, visible: list[str], start: date
     if counted is not None:
         return side_view(counted.totals()['sentiment'])
     if scope.categories_all:
-        return _side(radar_table, lambda label: counter_pk(brand, f'daily_sentiment#{label}'), start, end)
+        return _side(radar_table, lambda label: counter_pk(brand, f'daily_sentiment#{label}'), start, end,
+                     workspace)
     return _category_sum(radar_table, lambda c, label: counter_pk(brand, f'category_sentiment#{c}#{label}'),
-                         visible, start, end)
+                         visible, start, end, workspace)
 
 
 def _our_overall(aggregates_table: Any, visible: list[str], start: date, end: date,
-                 scope: CategoryScope) -> dict[str, Any]:
+                 scope: CategoryScope, workspace: WorkspaceScope | None) -> dict[str, Any]:
     """OUR feedback's whole window as one side (the ``SENTIMENT_PREFIX`` daily counters).
 
     A caller with a category restriction gets the sum of the ``visible`` categories instead
     (``METRIC#category_sentiment#…``), as the metrics API narrows every number to that scope.
     """
     if scope.categories_all:
-        return _side(aggregates_table, lambda label: f'{SENTIMENT_PREFIX}{label}', start, end)
-    return _category_sum(aggregates_table, _our_category_pk, visible, start, end)
+        return _side(aggregates_table, lambda label: f'{SENTIMENT_PREFIX}{label}', start, end, workspace)
+    return _category_sum(aggregates_table, _our_category_pk, visible, start, end, workspace)
 
 
 def configured_category_names(categories_config: Iterable[Any]) -> list[str]:

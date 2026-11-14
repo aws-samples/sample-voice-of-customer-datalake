@@ -8,6 +8,7 @@ import { isRecord } from '../lib/typeGuards'
 import type { DateBasis } from '../api/types'
 import { versionedPersist } from './persistVersion'
 import { DEFAULT_DATE_BASIS, DEFAULT_TIME_RANGE, TIME_RANGES, type TimeRange } from './timeRanges'
+import { workspaceStorageName } from '../workspace/workspaceStorage'
 
 /**
  * Return true when `endpoint` is safe to persist as the API endpoint.
@@ -209,7 +210,8 @@ export const useConfigStore = create<ConfigStore>()(
       }
     }),
     {
-      name: 'voc-config',
+      // Per workspace inside one (workspace/workspaceStorage.ts); unchanged outside.
+      name: workspaceStorageName('voc-config'),
       // The data fields only — exactly what was persisted before (functions
       // never serialise), now named so the shape can be versioned.
       partialize: (state): z.infer<typeof PersistedConfigSchema> => ({

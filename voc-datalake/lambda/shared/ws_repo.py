@@ -12,13 +12,19 @@ only ever reads and writes its own rows and objects. This module is the one plac
   shared/workspace_routing.py). Never from a request field.
 * Key builders: ``feedback_key`` and the feedback indexes' partitions (``date_pk``, ``category_pk``,
   ``urgency_pk``, ``feedback_id_pk``, ``channel_pk``), ``metric_pk`` / ``metric_type``, ``watermark_key``,
-  ``source_run_pk``, ``scraper_run_pk`` and ``s3_key`` for objects (``s3_prefix`` their common ``ws/{ws}/``), ``plugin_config_key`` (a plugin's config list; ``plugin_config_history_key`` a list it replaced; the
+  ``source_run_pk``, ``scraper_run_pk``, ``erasure_job_pk``, ``reprocess_job_pk``, ``export_job_pk``, ``conversants_pk`` (the
+  workspace's conversation owners, shared/conversations.py) and ``s3_key`` for objects (``s3_prefix`` their common ``ws/{ws}/``), ``plugin_config_key`` (a plugin's config list; ``plugin_config_history_key`` a list it replaced; the
   credentials parameters' names are shared/workspace_ids.py ``credentials_parameter_name``).
-* ``ws_table``: a table that refuses any key, item, update or query outside the scope's partitions (every index
+* ``ws_table``: a table that refuses any key, item, update, query or scan outside the scope's partitions (every index
   partition of voc-feedback is one of ``PARTITION_ATTRIBUTES``: gsi4 and gsi5 are keyed on ``gsi4pk`` / ``gsi5pk``,
   no longer on the raw ``feedback_id`` and ``source_channel``), also in its multi-item calls on that one table
   (``transact_write_items``, ``batch_get_item``, ``batch_writer``): a caller never names a table, and one entry
-  outside the scope refuses the whole call before anything is sent.
+  outside the scope refuses the whole call before anything is sent. Each call, and each entry of a transaction,
+  takes only the boto3 parameters listed for it (``ALLOWED_OPTIONS``, ``_TRANSACT_ENTRY_FIELDS``): a ``TableName``
+  (which boto3 would let override the table), the legacy ``AttributeUpdates``, ``Expected``, ``KeyConditions``,
+  ``QueryFilter``, ``ConditionalOperator`` and ``AttributesToGet``, or any other is refused before DynamoDB. A
+  table's scope, key and handle are fixed once built (``__slots__``, read-only properties);
+  shared/test/test_ws_raw_access.py counts any use of the private handle, ``_unscoped_table``, outside this layer.
 * ``control_query``: one read-only Query page of the workspace's two control-plane partitions in voc-workspaces,
   ``WS#{ws}`` (``META`` and the ``MEMBER#`` rows) and ``AUDIT#WS#{ws}``, which the layer builds itself (they are not
   ``WS#{ws}#…`` keys, so ``ws_table`` refuses them). The export job's reader (phase 4).
@@ -51,13 +57,19 @@ The keys (``{ws}`` is ``ws_`` + a ULID, shared/workspace.py ``is_workspace_id``)
                     pk WS#{ws}#SOURCE_RUN#{source}        pk WS#{ws}#SCRAPER_RUN#{scraper_id}
                     pk WS#{ws}#FAILURES#{plugin}          pk WS#{ws}#CIRCUIT#{plugin} (the plugins' breaker)
                     pk WS#{ws}#JOB#erasure (a workspace's erasure jobs and their lock)
+                    pk WS#{ws}#JOB#category_reprocess (a workspace's category reprocess jobs and their lock)
                     pk WS#{ws}#JOB#export (a workspace's export jobs and their lock, shared/export_jobs.py)
                     pk WS#{ws}#PLUGIN_CONFIG  sk {plugin} (a plugin's config list, shared/plugin_configs.py)
                     pk WS#{ws}#PLUGIN_CONFIG#HISTORY  sk {plugin}#{iso}#{random} (a replaced list, kept, no ttl)
                     pk WS#{ws}#WATERMARK_KEYS  sk {plugin}#{key} (lists a watermark, ``watermark_directory_key``)
                     pk WS#{ws}#DELETE#PARTITIONS  sk {kind}#{name} (the hard delete's inventory, ``delete_work_pk``)
                     pk AUDIT#tombstone#{kind}  sk {ws}#{id} (a deleted item's or memory's, ``WorkspaceTombstones``)
+                    pk WS#{ws}#USERCTX_SUBS  sk {sub} (who saved objectives, ``user_context_owners_pk``)
     voc-watermarks  source WS#{ws}#{plugin}#{key}
+    voc-conversations  pk WS#{ws}#USER#{sub}  sk CONV#{id}, RUNCANCEL#{id} (a member's own conversations there)
+                    pk WS#{ws}#CONVERSANTS  sk {sub} (who has kept a conversation there, shared/conversations.py)
+    voc-memory      pk WS#{ws}#MEM#company  sk MEM#{memory_id}   gsi1pk WS#{ws}#MEMSTATUS#{scope}#{status}
+                    pk WS#{ws}#MEMEVT#{memory_id}, WS#{ws}#MEMCURSOR, WS#{ws}#MEMIMPORT (shared/memory_store.py)
     voc-workspaces  pk WS#{ws} (META, MEMBER#{sub}), pk AUDIT#WS#{ws}: read by ``control_query``; META's status by
                     ``workspace_is_active``; the rows ``WorkspaceControlRows`` deletes (its docstring)
     raw bucket      ws/{ws}/raw/{source}/{yyyy}/{mm}/{dd}/{stem}/{sha16}.json, ws/{ws}/silver/..., ws/{ws}/...,
@@ -74,6 +86,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final, NoReturn, Protocol, Self
 
+from boto3.dynamodb.conditions import Attr, ConditionBase
 from boto3.dynamodb.types import TypeDeserializer
 from botocore.exceptions import ClientError
 
@@ -104,6 +117,7 @@ __all__ = [
     'category_pk',
     'channel_pk',
     'control_query',
+    'conversants_pk',
     'date_pk',
     'delete_work_pk',
     'erasure_job_pk',
@@ -126,6 +140,7 @@ __all__ = [
     'plugin_config_history_pk',
     'plugin_config_key',
     'plugin_config_pk',
+    'reprocess_job_pk',
     's3_key',
     's3_prefix',
     'scope_from_key',
@@ -135,6 +150,7 @@ __all__ = [
     'scraper_run_pk',
     'source_run_pk',
     'urgency_pk',
+    'user_context_owners_pk',
     'watermark_directory_key',
     'watermark_key',
     'ws_table',
@@ -154,6 +170,25 @@ TABLE_PARTITION_KEYS: Final = ('pk', WATERMARK_PARTITION)
 #: ``= :placeholder`` right after an attribute in an UpdateExpression: the one checked way to set a partition.
 _ASSIGNED_PLACEHOLDER: Final = re.compile(r'\s*=\s*(:\w+)(?![\w(])\s*(?:,|\Z|\b(?:SET|REMOVE|ADD|DELETE)\b)',
                                           re.IGNORECASE)
+_WRITE_OPTIONS: Final = frozenset({'ConditionExpression', 'ExpressionAttributeNames', 'ExpressionAttributeValues',
+                                   'ReturnValues', 'ReturnConsumedCapacity', 'ReturnItemCollectionMetrics',
+                                   'ReturnValuesOnConditionCheckFailure'})
+#: The boto3 parameters each ``WorkspaceTable`` call passes on (its key, item or partition aside); any other is
+#: refused: ``TableName`` (boto3 lets a call's own one override the table's), the legacy ``AttributeUpdates``,
+#: ``Expected``, ``KeyConditions``, ``QueryFilter``, ``ConditionalOperator`` and ``AttributesToGet`` (none of which
+#: the layer checks), and a ``Key`` or ``Item`` beside the checked one.
+ALLOWED_OPTIONS: Final[Mapping[str, frozenset[str]]] = {
+    'get_item': frozenset({'ConsistentRead', 'ProjectionExpression', 'ExpressionAttributeNames',
+                           'ReturnConsumedCapacity'}),
+    'put_item': _WRITE_OPTIONS,
+    'delete_item': _WRITE_OPTIONS,
+    'update_item': _WRITE_OPTIONS | {'UpdateExpression'},
+    'query': frozenset({'IndexName', 'Limit', 'ExclusiveStartKey', 'ScanIndexForward', 'ConsistentRead',
+                        'ProjectionExpression', 'FilterExpression', 'ExpressionAttributeNames',
+                        'ExpressionAttributeValues', 'Select', 'ReturnConsumedCapacity'}),
+    # The filter is a boto3 condition (``Attr``), ANDed with the scope's own: no names or values of its own.
+    'scan': frozenset({'Limit', 'ExclusiveStartKey', 'FilterExpression', 'ConsistentRead', 'ReturnConsumedCapacity'}),
+}
 #: DynamoDB's ceiling on the entries of one TransactWriteItems.
 MAX_TRANSACT_ITEMS: Final = 100
 #: The entries a TransactWriteItems takes, and the options passed on (every other one is refused).
@@ -161,6 +196,16 @@ _TRANSACT_ACTIONS: Final = ('Put', 'Update', 'Delete', 'ConditionCheck')
 _TRANSACT_WRITE_OPTIONS: Final = frozenset({'ClientRequestToken', 'ReturnConsumedCapacity',
                                             'ReturnItemCollectionMetrics'})
 _BATCH_GET_OPTIONS: Final = frozenset({'ProjectionExpression', 'ExpressionAttributeNames', 'ConsistentRead'})
+_ENTRY_CONDITION_FIELDS: Final = frozenset({'ConditionExpression', 'ExpressionAttributeNames',
+                                            'ExpressionAttributeValues', 'ReturnValuesOnConditionCheckFailure'})
+#: The fields each TransactWriteItems entry takes (the ``ALLOWED_OPTIONS`` rule for a single call, per entry): a
+#: legacy ``Expected`` or ``AttributeUpdates``, or anything else, is refused before the transaction is sent.
+_TRANSACT_ENTRY_FIELDS: Final[Mapping[str, frozenset[str]]] = {
+    'Put': _ENTRY_CONDITION_FIELDS | {'Item'},
+    'Update': _ENTRY_CONDITION_FIELDS | {'Key', 'UpdateExpression'},
+    'Delete': _ENTRY_CONDITION_FIELDS | {'Key'},
+    'ConditionCheck': _ENTRY_CONDITION_FIELDS | {'Key'},
+}
 #: Request fields that name a table: the view fills in its own, a caller never names one.
 _TABLE_FIELDS: Final = ('TableName', 'RequestItems')
 
@@ -368,9 +413,29 @@ def erasure_job_pk(scope: WorkspaceScope) -> str:
     return scope.key('JOB', 'erasure')
 
 
+def reprocess_job_pk(scope: WorkspaceScope) -> str:
+    """A workspace's category reprocess jobs and their lock (voc-aggregates, shared/reprocess_jobs.py):
+    ``WS#{ws}#JOB#category_reprocess``."""
+    return scope.key('JOB', 'category_reprocess')
+
+
 def export_job_pk(scope: WorkspaceScope) -> str:
     """A workspace's export jobs and their lock (voc-aggregates, shared/export_jobs.py): ``WS#{ws}#JOB#export``."""
     return scope.key('JOB', 'export')
+
+
+def user_context_owners_pk(scope: WorkspaceScope) -> str:
+    """The list of the members who saved their own objectives in the workspace (voc-aggregates, shared/
+    company_context.py ``put_my_context``, one row per person, ``sk`` their sub): ``WS#{ws}#USERCTX_SUBS``. A Query
+    of it names every ``WS#{ws}#USERCTX#{sub}`` row, a former member's too (the hard delete's ``user_contexts``)."""
+    return scope.key('USERCTX_SUBS')
+
+
+def conversants_pk(scope: WorkspaceScope) -> str:
+    """The list of the workspace's conversation owners in voc-conversations, one row per person who ever kept a
+    conversation there (shared/conversations.py ``conversant_key``): ``WS#{ws}#CONVERSANTS``. A Query of it, knowing
+    only the workspace id, names every ``WS#{ws}#USER#{sub}`` partition, a former member's too."""
+    return scope.key('CONVERSANTS')
 
 
 def memory_company_pk(scope: WorkspaceScope) -> str:
@@ -518,7 +583,7 @@ INACTIVE_STATUS_TTL_SECONDS: Final = 30.0
 #: A container keeps at most this many statuses; a full cache drops the expired ones, then the soonest to expire.
 MAX_CACHED_STATUSES: Final = 1024
 #: Exactly what ``workspace_is_active`` (and a webhook's routing, shared/workspace_routing.py) reads of a workspace's
-#: ``META``, with its keys: those roles are held to these (lib/utils/workspace-request-grants.ts
+#: ``META``, with its keys: those roles are held to these (lib/utils/workspace-resolution-grants.ts
 #: ``grantWorkspaceStatusRead``, ``dynamodb:Attributes``).
 STATUS_READ_ATTRIBUTES: Final = ('pk', 'sk', 'status')
 
@@ -822,7 +887,7 @@ class ExportObjects:
             raise OutOfScopeError("a key outside the workspace's exports")
         return key
 
-    def create_multipart_upload(self, key: str, content_type: str) -> str:
+    def start_upload(self, key: str, content_type: str) -> str:
         """A new multipart upload of ``key`` (tagged); its upload id."""
         response = self._s3.create_multipart_upload(Bucket=self._bucket, Key=self._checked(key),
                                                     ContentType=content_type, Tagging=EXPORT_TAGGING)
@@ -913,11 +978,13 @@ class ObjectPage:
 
 @dataclass(frozen=True)
 class OpenedObject:
-    """An object being read: its body (a stream: ``read(n)``), content type and size."""
+    """An object being read: its body (a stream: ``read(n)``), content type, size and ETag (the version read, so a
+    dropped stream resumes on that version only: ``WorkspaceObjects.resume``)."""
 
     body: Any
     content_type: str
     size: int
+    etag: str = ''
 
 
 class WorkspaceObjects:
@@ -976,7 +1043,16 @@ class WorkspaceObjects:
                 return None
             raise
         return OpenedObject(response['Body'], str(response.get('ContentType') or ''),
-                            int(response.get('ContentLength') or 0))
+                            int(response.get('ContentLength') or 0), str(response.get('ETag') or ''))
+
+    def resume(self, key: str, start: int, etag: str) -> Any:
+        """The rest of ``key`` from byte ``start`` (a stream), only while its current version is still ``etag``: a
+        ranged GetObject with ``IfMatch``, so a version replaced mid-copy is refused (412, raised) and never spliced
+        onto the bytes already read."""
+        if not etag or start < 0:
+            raise ValueError('a resume names the version read and a byte offset')
+        return self._s3.get_object(Bucket=self._bucket, Key=self._checked(key), Range=f'bytes={start}-',
+                                   IfMatch=etag)['Body']
 
     def _still_listed(self, key: str) -> bool:
         """Whether ``key`` itself is still a current object (not merely a prefix of another key)."""
@@ -1099,12 +1175,40 @@ class WorkspaceTable:
     (shared/batch_get.py relies on the same), so the view only fills in ``TableName``.
     """
 
+    # Fixed state: no __dict__, and nothing can be set or deleted once built, so no caller can swap the scope, the
+    # key or the handle behind a table it was given.
+    __slots__ = ('_key_attribute', '_scope', '_unscoped_table')
+    _key_attribute: str
+    _scope: WorkspaceScope
+    _unscoped_table: Any
+
     def __init__(self, scope: WorkspaceScope, table: Any, key: str = 'pk') -> None:
         if key not in TABLE_PARTITION_KEYS:
             raise ValueError('a data-path table is keyed on pk or source')
-        self.scope = scope
-        self.key_attribute = key
-        self._table = table
+        for name, value in (('_scope', scope), ('_key_attribute', key), ('_unscoped_table', table)):
+            object.__setattr__(self, name, value)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        raise AttributeError('a WorkspaceTable cannot be changed')
+
+    def __delattr__(self, name: str) -> None:
+        raise AttributeError('a WorkspaceTable cannot be changed')
+
+    @property
+    def scope(self) -> WorkspaceScope:
+        """The workspace this table is seen through."""
+        return self._scope
+
+    @property
+    def key_attribute(self) -> str:
+        """The table's partition key: ``pk``, or ``source`` (voc-watermarks)."""
+        return self._key_attribute
+
+    @staticmethod
+    def _check_options(method: str, kwargs: Mapping[str, Any]) -> None:
+        unknown = sorted(set(kwargs) - ALLOWED_OPTIONS[method])
+        if unknown:
+            raise OutOfScopeError(f'{method} does not take {", ".join(unknown)}')
 
     def _check_key(self, key: Mapping[str, Any]) -> None:
         if not self.scope.owns(key.get(self.key_attribute)):
@@ -1130,12 +1234,14 @@ class WorkspaceTable:
                 raise OutOfScopeError(f'{attribute} outside the workspace')
 
     def get_item(self, key: Mapping[str, Any], **kwargs: Any) -> dict:
+        self._check_options('get_item', kwargs)
         self._check_key(key)
-        return self._table.get_item(Key=dict(key), **kwargs)
+        return self._unscoped_table.get_item(Key=dict(key), **kwargs)
 
     def put_item(self, item: Mapping[str, Any], **kwargs: Any) -> dict:
+        self._check_options('put_item', kwargs)
         self._check_item(item)
-        return self._table.put_item(Item=dict(item), **kwargs)
+        return self._unscoped_table.put_item(Item=dict(item), **kwargs)
 
     def put_new_tombstone(self, item: Mapping[str, Any]) -> dict[str, Any] | None:
         """The view's one write outside its partitions, for ``WorkspaceTombstones``: a put of a new key in an
@@ -1147,8 +1253,8 @@ class WorkspaceTable:
                 and isinstance(sk, str) and sk.startswith(f'{self.scope.ws}#')):
             raise OutOfScopeError('not a tombstone of the workspace')
         try:
-            self._table.put_item(Item=dict(item), ConditionExpression='attribute_not_exists(pk)',
-                                 ReturnValuesOnConditionCheckFailure='ALL_OLD')
+            self._unscoped_table.put_item(Item=dict(item), ConditionExpression='attribute_not_exists(pk)',
+                                          ReturnValuesOnConditionCheckFailure='ALL_OLD')
         except ClientError as error:
             if is_conditional_check_failure(error):
                 return _plain_old_item(error.response.get('Item'))
@@ -1156,8 +1262,9 @@ class WorkspaceTable:
         return None
 
     def delete_item(self, key: Mapping[str, Any], **kwargs: Any) -> dict:
+        self._check_options('delete_item', kwargs)
         self._check_key(key)
-        return self._table.delete_item(Key=dict(key), **kwargs)
+        return self._unscoped_table.delete_item(Key=dict(key), **kwargs)
 
     def update_item(self, key: Mapping[str, Any], **kwargs: Any) -> dict:
         """``UpdateItem`` of a key in the scope.
@@ -1168,11 +1275,13 @@ class WorkspaceTable:
         because its value could not be checked here.
         """
         self.check_update(key, **kwargs)
-        return self._table.update_item(Key=dict(key), **kwargs)
+        return self._unscoped_table.update_item(Key=dict(key), **kwargs)
 
     def check_update(self, key: Mapping[str, Any], **kwargs: Any) -> None:
         """``update_item``'s checks without the call (``OutOfScopeError`` when one fails): a caller that sends the
-        same update inside a ``TransactWriteItems`` (the aggregator's arrivals) checks each ``Update`` here first."""
+        same update inside a ``TransactWriteItems`` (the aggregator's arrivals) checks each ``Update`` here first,
+        its parameters too (``ALLOWED_OPTIONS``, without the ``Key`` and ``TableName`` the transaction names)."""
+        self._check_options('update_item', kwargs)
         self._check_key(key)
         expression = kwargs.get('UpdateExpression')
         names = kwargs.get('ExpressionAttributeNames') or {}
@@ -1198,18 +1307,51 @@ class WorkspaceTable:
             raise OutOfScopeError('a query outside the workspace')
         if 'KeyConditionExpression' in kwargs:
             raise OutOfScopeError('the key condition is built by the layer')
+        self._check_options('query', kwargs)
         start = kwargs.get('ExclusiveStartKey')
         # A cursor a client sent back: every partition attribute it names must be in the scope too.
         if start is not None and (not isinstance(start, Mapping) or any(
                 attribute in start and not self.scope.owns(start[attribute]) for attribute in PARTITION_ATTRIBUTES)):
             raise OutOfScopeError('a cursor outside the workspace')
-        return self._table.query(**partition_query(partition_attribute, partition, sort_condition, kwargs))
+        return self._unscoped_table.query(**partition_query(partition_attribute, partition, sort_condition, kwargs))
 
     def iter_query(self, partition_attribute: str, partition: str, *, sort_condition: str | None = None,
                    max_items: int | None = None, **kwargs: Any) -> Iterator[dict]:
         """Every item of ``query`` across its pages (at most ``max_items``; shared/dynamo_paging.py pages)."""
         return iter_query(_BoundQuery(self, partition_attribute, partition, sort_condition), kwargs,
                           max_items=max_items)
+
+    def scan(self, **kwargs: Any) -> dict:
+        """One page of a Scan of the table that answers the scope's rows only: its ``FilterExpression`` (a boto3
+        condition, ``Attr(…)``; a string one is refused, as it could not be combined) is ANDed with the table's key
+        beginning ``WS#{ws}#``, and a returned row outside it (which the filter rules out) raises ``OutOfScopeError``
+        rather than reach the caller.
+
+        A cursor (``ExclusiveStartKey``) is a position in the whole table, not a partition read: DynamoDB applies
+        ``Limit`` before the filter, so a page's ``LastEvaluatedKey`` is the last row it evaluated, often another
+        scope's. So a cursor may name any row, but only by the table's own key (``pk``/``source`` and ``sk``); any
+        other attribute in it is refused. It never widens what is answered: the filter and the row check do that.
+
+        A Scan still reads, and is billed for, the whole table: the filter only narrows what comes back. Its caller
+        is a workspace's category reprocess (jobs/category_reprocess), as the deployment's reprocess scans the whole
+        table for its own rows.
+        """
+        self._check_options('scan', kwargs)
+        request = dict(kwargs)
+        caller_filter = request.pop('FilterExpression', None)
+        if caller_filter is not None and not isinstance(caller_filter, ConditionBase):
+            raise OutOfScopeError('a scan filter through the workspace layer is a boto3 condition')
+        start = request.get('ExclusiveStartKey')
+        if start is not None and (not isinstance(start, Mapping) or not start
+                                  or not set(start) <= {self.key_attribute, 'sk'}
+                                  or not all(isinstance(value, str) for value in start.values())):
+            raise OutOfScopeError('a scan cursor names the table key only')
+        scoped: ConditionBase = Attr(self.key_attribute).begins_with(self.scope.prefix)
+        response = self._unscoped_table.scan(
+            FilterExpression=scoped if caller_filter is None else scoped & caller_filter, **request)
+        if any(not self.scope.owns(item.get(self.key_attribute)) for item in response.get('Items') or []):
+            raise OutOfScopeError('a scanned row outside the workspace')
+        return response
 
     def transact_write_items(self, items: Sequence[Mapping[str, Any]], **kwargs: Any) -> dict:
         """One ``TransactWriteItems`` on this table: 1 to 100 entries, each ``{'Put': {'Item': …}}``,
@@ -1228,7 +1370,7 @@ class WorkspaceTable:
         checked = [self._checked_write(entry) for entry in entries]
         self._refuse_duplicates('TransactWriteItems',
                                 [body.get('Key') or body['Item'] for entry in checked for body in entry.values()])
-        return self._table.meta.client.transact_write_items(TransactItems=checked, **options)
+        return self._unscoped_table.meta.client.transact_write_items(TransactItems=checked, **options)
 
     def batch_get_item(self, keys: Iterable[Mapping[str, Any]], **kwargs: Any) -> list[dict]:
         """Every item found for ``keys`` (all in the scope, none twice), in any order; a missing key is simply absent.
@@ -1242,13 +1384,13 @@ class WorkspaceTable:
         checked = self.check_keys(keys)
         self._refuse_duplicates('BatchGetItem', checked)
         failure = UnprocessedKeysError(f'BatchGetItem left keys unprocessed after {BATCH_GET_ATTEMPTS} calls')
-        return batch_get_all(self._table, checked, failure=failure, read_options=options)
+        return batch_get_all(self._unscoped_table, checked, failure=failure, read_options=options)
 
     def batch_writer(self) -> WorkspaceBatchWriter:
         """``table.batch_writer()`` through the view (a context manager): each ``put_item(Item=…)`` is checked as
         ``put_item`` checks it before it is buffered. Puts only (``WorkspaceBatchWriter``); deletes go through
         ``batch_delete``."""
-        return WorkspaceBatchWriter(self._check_item, self._table.batch_writer())
+        return WorkspaceBatchWriter(self._check_item, self._unscoped_table.batch_writer())
 
     def batch_delete(self, keys: Iterable[Mapping[str, Any]]) -> int:
         """Delete every item ``keys`` names, and answer how many keys were sent: used by the hard delete (4d-2).
@@ -1270,12 +1412,12 @@ class WorkspaceTable:
         return len(checked)
 
     def _delete_chunk(self, keys: list[dict[str, Any]]) -> None:
-        name = self._table.name
+        name = self._unscoped_table.name
         pending: list[Any] = [{'DeleteRequest': {'Key': key}} for key in keys]
         for attempt in range(BATCH_WRITE_ATTEMPTS):
             if attempt:
                 unprocessed_backoff(attempt)
-            response = self._table.meta.client.batch_write_item(RequestItems={name: pending})
+            response = self._unscoped_table.meta.client.batch_write_item(RequestItems={name: pending})
             pending = list((response.get('UnprocessedItems') or {}).get(name) or [])
             if not pending:
                 return
@@ -1294,6 +1436,9 @@ class WorkspaceTable:
         request = dict(body)
         if 'TableName' in request:
             raise OutOfScopeError('a transaction entry never names its table: the view sends it to its own')
+        unknown = sorted(set(request) - _TRANSACT_ENTRY_FIELDS[action])
+        if unknown:
+            raise OutOfScopeError(f'a {action} entry does not take {", ".join(unknown)}')
         if action == 'Put':
             item = _required(request, 'Item', action)
             self._check_item(item)
@@ -1307,7 +1452,7 @@ class WorkspaceTable:
             if action == 'ConditionCheck' and not isinstance(request.get('ConditionExpression'), str):
                 raise ValueError('a ConditionCheck entry needs its ConditionExpression')
             request['Key'] = dict(key)
-        return {action: {**request, 'TableName': self._table.name}}
+        return {action: {**request, 'TableName': self._unscoped_table.name}}
 
     def _key_identity(self, key: Mapping[str, Any]) -> tuple[str, str]:
         """The item a key or an item names: its partition and, on a ``pk`` table, its ``sk``."""

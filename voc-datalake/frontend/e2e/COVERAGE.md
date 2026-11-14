@@ -18,6 +18,10 @@ CHANGELOG from 5.00.00 to 5.34.00. Update this file in the same change as a new 
 |---|---|---|---|
 | Home: greeting, morning brief, "Your brief", "Things to do", agent-decision card | `/` | Covered | surfaces M |
 | Home: onboarding buddy (checklist, Skip, Hide, Don't show again) | `/` | Covered | home-onboarding |
+| Workspaces (6.12): the picker, entering `/w/{slug}/dashboard` with `X-Workspace-Id`, the header's workspace menu, an unknown slug's not-found page | `/` | Covered | workspaces M (mock only: it needs the mock's two fictional workspaces) |
+| Workspace members (6.13): the list, add by email, role change, the last-admin refusal, leave | `/w/{slug}/members` | Covered | workspace-admin M (mock only: memberships cannot be restored with proof on a deployment); remove a member and the other refusals: component specs only |
+| Cross-workspace (6.14): the `/w/{slug}/members` address of a workspace the caller is not a member of shows not-found | `/w/{slug}/members` | Covered | cross-workspace M (mock only: it needs the mock's two fictional workspaces); the API's 404 per route: `lambda/api/test/test_cross_workspace_routes.py` |
+| Platform console (6.13): list, create, enter (also a workspace the caller is not a member of) | `/admin?tab=access&section=workspaces` | Covered | workspace-admin M (mock only: a workspace cannot be deleted yet); grant and revoke platform admin (Users): component specs only (the live grant is a Cognito group change) |
 | Home: brief subscribe / Brief settings save, card dismiss (5.23) | `/` | Missing | writes the caller's brief subscription; needs a restore like account.spec |
 | Dashboard: tiles and charts vs the API, empty-workspace welcome | `/dashboard` | Covered | dashboard-data |
 | Dashboard: custom time range popover | `/dashboard` | Covered | modals M |

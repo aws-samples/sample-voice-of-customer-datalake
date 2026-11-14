@@ -12,7 +12,7 @@ import { expectCancelKeepsDraftGuarded } from '@test/unsavedGuardContract'
 import type { GuardUser } from '@test/unsavedGuardContract'
 import { useConfigStore } from '../../store/configStore'
 import { brandSettingsKey } from '../../hooks/useBrandSettings'
-import type { BrandSettingsResponse } from './useSettingsSync'
+import type { BrandSettingsResponse } from '../../api/brandApi'
 
 const getBrandSettings = vi.fn<() => Promise<BrandSettingsResponse>>()
 
@@ -22,7 +22,7 @@ vi.mock('../../api/client', () => ({
     saveBrandSettings: () => Promise.resolve({ success: true }),
   },
 }))
-vi.mock('../../store/authStore', () => ({ useIsAdmin: () => true }))
+vi.mock('../../store/authStore', () => ({ useIsAdmin: () => true, useIsPlatformAdmin: () => false }))
 vi.mock('./LogsSection', () => ({ default: () => <p>Logs</p> }))
 
 const { default: Settings } = await import('./Settings')

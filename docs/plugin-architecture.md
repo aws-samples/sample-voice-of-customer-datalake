@@ -242,7 +242,7 @@ The bases are listed below.
 The schedule retries cover delivery only (a throttled or unreachable function). A failure inside
 the ingestor is handled by the [circuit breaker](#circuit-breaker).
 
-**Workspaces** ([multi-workspace.md](multi-workspace.md), not released yet). `run_in_workspace` in
+**Workspaces** ([multi-workspace.md](multi-workspace.md), since 7.00.00; a Run now or a scraper run in a workspace since 7.04.00). `run_in_workspace` in
 `plugins/_shared/base_ingestor.py` routes each event. One that names no workspace (a **Run now** or a
 scraper run sent without `X-Workspace-Id`, an S3 reprocess or upload) runs deployment-wide, exactly as
 before workspaces: the keys, the shared secret and `raw/` this page describes. One that names a
@@ -311,7 +311,9 @@ parameters of one workspace id (`voc/ws/ws_<26 ?>/credentials/<id>`, with `kms:D
 `ws/{one workspace id}/raw/<id>/*` for each enabled webhook plugin. Webhooks have no
 feedback-table access.
 
-### A workspace's webhook endpoint (not released yet)
+### A workspace's webhook endpoint (since 7.06.00)
+
+Since 7.14.00 (the ingestion hold lifted, [multi-workspace.md](multi-workspace.md#per-workspace-configuration)) a verified delivery on it is archived and queued into the workspace, as below, when the workspace has enabled the plugin (its `PLUGIN#<id>` / `WS#{ws}` row, Workspace settings → Plugins). A workspace that has not, or has disabled it since, gets the bad signature's 401, read before any secret or the body, so the answer reveals neither; the webhook role reads that row's `pk` only.
 
 `POST /webhooks/<id>/{ws}` is a workspace's own endpoint ([multi-workspace.md](multi-workspace.md)).
 The `{ws}` value is only the key of that workspace's stored row: it must be the well-formed id
@@ -587,16 +589,17 @@ invokes the ingestor; the settings card polls it until `completed` or `error`. S
 (`POST`/`DELETE /scrapers`, `POST /scrapers/{id}/run`, `POST /scrapers/analyze-url`) are admin-only
 for the same reasons ([scrapers.md](scrapers.md)).
 
-**In a workspace** (multi-workspace, not released yet; [multi-workspace.md](multi-workspace.md)): a
+**In a workspace** (multi-workspace, since 7.04.00; [multi-workspace.md](multi-workspace.md)): a
 request that sends `X-Workspace-Id` acts in that workspace (a non-member gets the one 404). "Admin" is
 then the caller's role there (a workspace admin, or a platform admin who entered; an editor or a viewer
 gets 403, and the deployment's `admins` group grants nothing); the other routes are for any member.
-Credentials and app connectors are the workspace's own secret's; **Run now** invokes the ingestor
-with `{execution_id, app_id?, workspace_id}`, `workspace_id` the resolved workspace (never a body
+Credentials and app connectors are the workspace's own secret's; **Run now** runs only a plugin the workspace
+enabled (since 7.14.00: 409 "Enable this plugin for the workspace first" otherwise, before anything is written or
+invoked), and invokes the ingestor with `{execution_id, app_id?, workspace_id}`, `workspace_id` the resolved workspace (never a body
 field), and writes and reads `WS#{ws}#SOURCE_RUN#<source>`; `GET /sources/status` reports the shared
 schedule rule and the workspace's breaker; **Reset** clears the workspace's breaker only; **enable**
 and **disable** answer 400, because the schedule rule serves every workspace (which plugins a
-workspace runs is its plugin settings', not built yet). Also refused there (400): an app connector or a review page
+workspace runs is its plugin settings', the `PLUGIN#` rows its admins enable on Workspace settings). Also refused there (400): an app connector or a review page
 that names a `radar_brand` (Radar is not keyed by workspace yet), a `configs` key on
 `PUT /integrations/<source>/credentials` (save the lists through `POST /scrapers` and `POST
 /integrations/<source>/apps`, which check each entry), and a **Run now** of `s3_import` (the import bucket is not

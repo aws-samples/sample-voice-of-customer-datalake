@@ -142,7 +142,7 @@ source's retention window, and participant erasure (`DELETE /participants/people
 | `retention` | Daily schedule, 04:15 UTC | Items (in `voc-feedback` and `voc-radar`) of sources whose profile sets `retention_days`, with `date` older than the cutoff, under the profile's `retention_legal_basis` |
 | `erase` | `POST /settings/erasure` (admin) `{field, value, source?, legal_basis}` | Items where `field == value`. `field` is `author`, `source_id`, `csv_row_id` or `email` (`metadata.email` / `metadata.submitter_email`); optionally limited to one `source`, which is **required** for `source_id` and `csv_row_id` (an id is unique only within its source; 400 without it) |
 | `erase`, `field: source` | `POST /settings/erasure` (admin), Administration → Privacy & access → Source policies → **Delete all data from a source** | Every item whose `source_platform` is the source, its Radar reviews, its whole-file uploads, then every object version left under `raw/<source>/` and `silver/<source>/` (see [Delete all data from a source](#delete-all-data-from-a-source)) |
-| `erase` in one workspace (Unreleased) | `POST /settings/erasure` with `X-Workspace-Id` (that workspace's member admin) `{field, value, source?, legal_basis}` | That workspace's items only where `field == value` (`author`, `source_id`, `csv_row_id` or `email`; a whole source is refused, 400), with their copies under `ws/<ws>/` (see Workspace items, below) |
+| `erase` in one workspace (since 7.09.00) | `POST /settings/erasure` with `X-Workspace-Id` (that workspace's member admin) `{field, value, source?, legal_basis}` | That workspace's items only where `field == value` (`author`, `source_id`, `csv_row_id` or `email`; a whole source is refused, 400), with their copies under `ws/<ws>/` (see Workspace items, below) |
 
 How it works:
 
@@ -229,7 +229,7 @@ How it works:
   [multi-workspace.md → Invites](multi-workspace.md#invites) says why not a look-up by account). The
   person's Cognito account is not part of the lake: deleting the user (`DELETE /users/{username}`)
   removes the account and its memberships.
-- **Workspace items** (Unreleased; [multi-workspace.md](multi-workspace.md)). An erasure job started
+- **Workspace items** (since 7.03.00; an erasure in one workspace since 7.09.00; [multi-workspace.md](multi-workspace.md)). An erasure job started
   without `X-Workspace-Id` is the deployment's (a deployment admin starts it), and a person's data is erased
   wherever it is: an erasure by `email` (with or without a source) also matches every workspace's items
   (`WS#{ws}#SOURCE#…` in `voc-feedback`) in the same item scan; Administration's erasure form and its confirm
@@ -288,11 +288,13 @@ How it works:
   no index serves one workspace's items); one live job per workspace bounds that cost, and a per-workspace index
   is a later optimisation.
   `GET /settings/erasure` with the header lists that workspace's newest 20 jobs (one Query of its partition)
-  and no sources; without it, the deployment's jobs as before. Administration does not send the header yet. A **retention window** reaches workspace items too: a
-  workspace's messages are processed under the deployment's source profiles (their PII and raw-copy policy;
-  a source with a window keeps no whole-file original, because the window deletes item by item), so the
-  profile's window binds the workspace's items too, until per-workspace profiles replace the deployment's
-  for workspaces (phase 3). Each one is tombstoned first,
+  and no sources; without it, the deployment's jobs as before. Inside a workspace, Administration sends the header for an erasure by author, source id, CSV row or email, and lists that workspace's jobs; a whole-source erasure is sent without it. A **retention window** reaches workspace items too:
+  the windows are the deployment's. Since 7.08.00 a workspace's messages are processed under the workspace's
+  own source profiles (their PII policy, restriction, defaults and tags; a source the workspace saved no profile
+  for redacts personal data by default, never takes the deployment's profile), but a workspace's profile sets no window (the settings API
+  refuses one), and at ingestion it carries the deployment's window for its source, so a source with a window
+  keeps no whole-file original there either (the window deletes item by item) and the deployment's window
+  binds the workspace's items. Each one is tombstoned first,
   in the same partition as the deployment's (`AUDIT#tombstone#<source>`, which the audit-row guard
   protects; a `WS#{ws}#…` partition would be outside it) with the workspace in its sort key and row
   (`sk <ws>#<feedback_id>`, `workspace_id`), so two workspaces' copies of one source item and the

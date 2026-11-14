@@ -31,12 +31,14 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Final
 
-from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
 from shared import dynamo_paging
 from shared.aws import is_conditional_check_failure
 from shared.feedback import DATE_BASIS_REVIEW, basis_date
+from shared.radar_reads import SortRange, partition_query
+from shared.scoped_keys import scoped_pk
+from shared.ws_repo import WorkspaceScope
 
 __all__ = [
     'SENTIMENT_LABELS',
@@ -198,9 +200,12 @@ def _contended(error: ClientError) -> bool:
     return any(code in ('TransactionConflict', 'ThrottlingError') for code in _reasons(error))
 
 
-def sum_counter(table: Any, pk: str, start: date, end: date, attribute: str = 'count') -> Decimal:
-    """The sum of ``attribute`` over the daily rows of ``pk`` from ``start`` to ``end`` (inclusive)."""
-    return sum((Decimal(str(row.get(attribute, 0))) for row in daily_rows(table, pk, start, end)), Decimal(0))
+def sum_counter(table: Any, pk: str, start: date, end: date, attribute: str = 'count', *,
+                workspace: WorkspaceScope | None = None) -> Decimal:
+    """The sum of ``attribute`` over the daily rows of ``pk`` (the deployment's key; ``workspace``'s copy of it
+    with one) from ``start`` to ``end`` (inclusive)."""
+    rows = daily_rows(table, pk, start, end, workspace)
+    return sum((Decimal(str(row.get(attribute, 0))) for row in rows), Decimal(0))
 
 
 def query_all(table: Any, key_condition: Any) -> list[dict[str, Any]]:
@@ -208,32 +213,34 @@ def query_all(table: Any, key_condition: Any) -> list[dict[str, Any]]:
     return dynamo_paging.query_all(table, {'KeyConditionExpression': key_condition})
 
 
-def daily_rows(table: Any, pk: str, start: date, end: date) -> list[dict[str, Any]]:
-    """The daily rows of ``pk`` from ``start`` to ``end``, oldest first."""
-    return query_all(table, Key('pk').eq(pk) & Key('sk').between(start.isoformat(), end.isoformat()))
+def daily_rows(table: Any, pk: str, start: date, end: date, workspace: WorkspaceScope | None = None) -> list[dict[str, Any]]:
+    """The daily rows of ``pk`` (the deployment's key; ``workspace``'s copy of it with one) from ``start`` to
+    ``end``, oldest first."""
+    target = partition_query(table, workspace, scoped_pk(workspace, pk), SortRange(start.isoformat(), end.isoformat()))
+    return dynamo_paging.query_all(target, {})
 
 
-def item_partitions(brand: str, start: date, end: date) -> list[str]:
-    """The month partitions holding ``brand``'s reviews from ``start`` to ``end``, newest first."""
+def item_partitions(brand: str, start: date, end: date, workspace: WorkspaceScope | None = None) -> list[str]:
+    """The month partitions holding ``brand``'s reviews from ``start`` to ``end``, newest first (``workspace``'s
+    with one)."""
     months: list[str] = []
     cursor = end.replace(day=1)
     while cursor >= start.replace(day=1):
-        months.append(_items_pk(brand, cursor.strftime('%Y-%m')))
+        months.append(scoped_pk(workspace, _items_pk(brand, cursor.strftime('%Y-%m'))))
         cursor = (cursor - timedelta(days=1)).replace(day=1)
     return months
 
 
-def recent_items(table: Any, brand: str, start: date, end: date, limit: int) -> list[dict[str, Any]]:
-    """Up to ``limit`` of ``brand``'s reviews dated ``start``..``end``, newest first."""
+def recent_items(table: Any, brand: str, start: date, end: date, limit: int,
+                 workspace: WorkspaceScope | None = None) -> list[dict[str, Any]]:
+    """Up to ``limit`` of ``brand``'s reviews dated ``start``..``end``, newest first (``workspace``'s with one)."""
     low, high = start.isoformat(), f'{end.isoformat()}#~'
     out: list[dict[str, Any]] = []
-    for pk in item_partitions(brand, start, end):
-        kwargs: dict[str, Any] = {
-            'KeyConditionExpression': Key('pk').eq(pk) & Key('sk').between(low, high),
-            'ScanIndexForward': False,
-        }
+    for pk in item_partitions(brand, start, end, workspace):
+        target = partition_query(table, workspace, pk, SortRange(low, high))
+        kwargs: dict[str, Any] = {'ScanIndexForward': False}
         while len(out) < limit:
-            page = table.query(**kwargs, Limit=limit - len(out))
+            page = target.query(**kwargs, Limit=limit - len(out))
             out.extend(page.get('Items', []))
             if 'LastEvaluatedKey' not in page:
                 break

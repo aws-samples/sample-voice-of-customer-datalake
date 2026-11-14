@@ -7,7 +7,9 @@ import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { LOG_RETENTION } from '../utils/log-retention';
-import { grantWorkspaceStatusRead } from '../utils/workspace-request-grants';
+import {
+  grantWorkspaceAttributeRead, grantWorkspaceStatusRead, PLUGIN_ROW_KEY, PLUGIN_ROW_PARTITIONS,
+} from '../utils/workspace-resolution-grants';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
@@ -107,6 +109,8 @@ export interface VocApiStackProps extends VocStackProps {
   userPoolDomainPrefix: string;
   /** VocCoreStack's AppSync Events API: its hosts and per-namespace publish policies (core-realtime.ts). */
   realtime: CoreRealtime;
+  /** VocCoreStack's read of the uploaded company logo, for the document generator's prototypes. */
+  companyLogoReadPolicy: iam.IManagedPolicy;
 
   // Ingestion stack resources
   processingQueueUrl: string;
@@ -273,7 +277,7 @@ export class VocApiStack extends VocStack {
     const jobs = createJobLambdas(ctx, projects);
     const radarLambda = createRadarLambda(ctx);
     const engagementLambda = createParticipantsLambda(ctx);
-    const workspacesLambda = createWorkspacesLambda(ctx);
+    const workspacesLambda = createWorkspacesLambda(ctx, { enabledSourcesEnv: data.enabledSourcesEnv });
     // A workspace's export (docs/multi-workspace.md "Export and delete"): its routes' grants; the job is
     // VocProcessingStack's (workspace-export-worker.ts), invoked by name.
     grantWorkspaceExportRoutes(ctx, workspacesLambda);
@@ -480,13 +484,16 @@ export class VocApiStack extends VocStack {
    * The webhook role's reach into the workspaces (docs/multi-workspace.md, "Public and non-user entry points"):
    * GetItem on voc-workspaces' `WS#*` partitions only, of a `META`'s status only (`grantWorkspaceStatusRead`: `pk`,
    * `sk`, `status`, `dynamodb:Attributes`, with the projection the code always sends, lambda/shared/ws_repo.py
-   * STATUS_READ_ATTRIBUTES), so IAM keeps a MEMBER# row's email and name out of reach; no write. And GetParameter
+   * STATUS_READ_ATTRIBUTES), so IAM keeps a MEMBER# row's email and name out of reach, and of `PLUGIN#*` rows their
+   * `pk` only (the workspace enabled the plugin, 7.14.00); no write. And GetParameter
    * (and kms:Decrypt through SSM) on `voc/ws/{one workspace id}/credentials/{plugin}` of the webhook plugins only
    * (decision 19, lib/utils/workspace-secrets.ts). Returns the parameter prefix's environment.
    */
   private grantWebhookWorkspaces(role: iam.Role, workspacesTable: dynamodb.ITable, pluginIds: readonly string[],
     kmsKey: kms.IKey): Record<string, string> {
     grantWorkspaceStatusRead(role, workspacesTable);
+    // Since 7.14.00 a delivery is taken in only for a workspace that enabled the plugin: its PLUGIN# row's key.
+    grantWorkspaceAttributeRead(role, workspacesTable, PLUGIN_ROW_KEY, PLUGIN_ROW_PARTITIONS);
     return grantWorkspaceParameterRead(this, role, this.prefixed(WORKSPACE_PARAMETER_BASE_PATH), kmsKey, pluginIds);
   }
 

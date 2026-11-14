@@ -85,6 +85,12 @@ describe('buildProxyEvent', () => {
     const claims = { sub: 's', email: 'j@example.com', iss: 'https://cognito-idp.us-east-1.amazonaws.com/us-east-1_app', email_verified: 'true' };
     expect(buildProxyEvent(JOBS_CALL, claims).requestContext).toStrictEqual({ authorizer: { claims }, stage: 'v1' });
   });
+
+  it("sends the caller's workspace as the X-Workspace-Id header, never as a claim", () => {
+    const event = buildProxyEvent(JOBS_CALL, { ...CLAIMS, 'voc:workspace': 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8' });
+    expect(event.headers).toStrictEqual({ 'Content-Type': 'application/json', 'X-Workspace-Id': 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8' });
+    expect(event.requestContext).toStrictEqual({ authorizer: { claims: CLAIMS }, stage: 'v1' });
+  });
 });
 
 describe('createInternalApiInvoker', () => {

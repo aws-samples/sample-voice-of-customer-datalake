@@ -2,7 +2,7 @@
 # run). One group per line: `<name> [workers=<n>] [--<playwright flag>...] <spec file>...`. Each finished in under
 # 25 min against production with 8 shards in parallel (6.04.02). unit/shard-groups.spec.ts fails when a spec under
 # tests/ is in no group or in two; the specs that cannot run here are listed there with their reason (QA tracks
-# s1 / s2 run alone, csv-dataset-update runs on the dev mock only).
+# s1 / s2 run alone, csv-dataset-update, workspaces, workspace-admin and cross-workspace run on the dev mock only).
 
 design-screens  workers=6 --fully-parallel tests/design-screens.spec.ts
 design-overlays workers=4 --fully-parallel tests/design-overlays.spec.ts tests/i18n-smoke.spec.ts

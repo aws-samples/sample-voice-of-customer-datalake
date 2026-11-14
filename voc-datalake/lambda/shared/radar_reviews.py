@@ -23,8 +23,6 @@ from datetime import date
 from decimal import Decimal
 from typing import Any, Final
 
-from boto3.dynamodb.conditions import Key
-
 from shared import category_access
 from shared.api import validate_int
 from shared.b64_json import decode_b64_json, encode_b64_json
@@ -32,8 +30,11 @@ from shared.category_access import CategoryScope
 from shared.dynamo_paging import iter_query
 from shared.dynamo_values import item_key
 from shared.pii_redaction import redact_text
+from shared.radar_reads import SortRange, partition_query, scoped_key
 from shared.radar_store import SENTIMENT_LABELS, item_partitions, marker_key, radar_day
 from shared.timestamps import ISO_DAY_RE
+from shared.workspace_config import get_scoped_item
+from shared.ws_repo import WorkspaceScope
 
 __all__ = [
     'ReviewFilter',
@@ -88,14 +89,15 @@ def _cursor_json(cursor: str) -> object:
     return decode_b64_json(cursor, 'cursor is not valid')
 
 
-def decode_cursor(cursor: str, brand: str, start: date, end: date) -> dict[str, str]:
-    """The ``{pk, sk}`` a cursor carries; ``ValueError`` unless it is a review key of ``brand`` in the window."""
+def decode_cursor(cursor: str, brand: str, start: date, end: date, workspace: WorkspaceScope | None = None) -> dict[str, str]:
+    """The ``{pk, sk}`` a cursor carries; ``ValueError`` unless it is a review key of ``brand`` in the window (and in
+    ``workspace``'s partitions with one)."""
     value = _cursor_json(cursor)
     if not isinstance(value, dict) or set(value) != {'pk', 'sk'}:
         raise ValueError('cursor is not valid')
     pk, sk = value['pk'], value['sk']
     match = _SK_PATTERN.fullmatch(sk) if isinstance(sk, str) else None
-    if not isinstance(pk, str) or match is None or pk not in item_partitions(brand, start, end):
+    if not isinstance(pk, str) or match is None or pk not in item_partitions(brand, start, end, workspace):
         raise ValueError('cursor is not valid')
     day = match.group(1)
     if not pk.endswith(f'#{day[:7]}') or not start.isoformat() <= day <= end.isoformat():
@@ -103,20 +105,20 @@ def decode_cursor(cursor: str, brand: str, start: date, end: date) -> dict[str, 
     return {'pk': pk, 'sk': sk}
 
 
-def _stored(table: Any, brand: str, start: date, end: date, after: Mapping[str, str] | None) -> Iterator[dict]:
-    """``brand``'s reviews dated ``start``..``end``, newest first, starting after ``after``."""
+def _stored(table: Any, brand: str, start: date, end: date, after: Mapping[str, str] | None,
+            workspace: WorkspaceScope | None) -> Iterator[dict]:
+    """``brand``'s reviews dated ``start``..``end``, newest first, starting after ``after`` (``workspace``'s with
+    one, shared/radar_reads.py)."""
     low, high = start.isoformat(), f'{end.isoformat()}#~'
-    partitions = item_partitions(brand, start, end)
+    partitions = item_partitions(brand, start, end, workspace)
     if after is not None:
         partitions = partitions[partitions.index(after['pk']):]
     for pk in partitions:
-        kwargs: dict[str, Any] = {
-            'KeyConditionExpression': Key('pk').eq(pk) & Key('sk').between(low, high),
-            'ScanIndexForward': False, 'Limit': QUERY_PAGE,
-        }
+        target = partition_query(table, workspace, pk, SortRange(low, high))
+        kwargs: dict[str, Any] = {'ScanIndexForward': False, 'Limit': QUERY_PAGE}
         if after is not None and pk == after['pk']:
             kwargs['ExclusiveStartKey'] = dict(after)
-        yield from iter_query(table, kwargs)
+        yield from iter_query(target, kwargs)
 
 
 def written_day(item: Mapping[str, Any]) -> str:
@@ -141,12 +143,12 @@ def same_review_key(item: Mapping[str, Any]) -> tuple[str, str]:
 
 
 def _walk(table: Any, brand: str, admits: Callable[[Mapping[str, Any]], bool], start: date, end: date,
-          after: Mapping[str, str] | None) -> Iterator[tuple[int, dict, bool]]:
+          after: Mapping[str, str] | None, workspace: WorkspaceScope | None) -> Iterator[tuple[int, dict, bool]]:
     """``(read, item, listed)`` for every stored review, newest first: ``listed`` when ``admits``
     accepts it and it is not a second copy of a review already listed. THE one reading the list
     and every count share."""
     seen: set[tuple[str, str]] = set()
-    for read, item in enumerate(_stored(table, brand, start, end, after), start=1):
+    for read, item in enumerate(_stored(table, brand, start, end, after, workspace), start=1):
         key = same_review_key(item)
         listed = admits(item) and key not in seen
         if listed:
@@ -156,7 +158,7 @@ def _walk(table: Any, brand: str, admits: Callable[[Mapping[str, Any]], bool], s
 
 def list_reviews(table: Any, brand: str, *, admits: Callable[[Mapping[str, Any]], bool],
                  start: date, end: date, limit: int,
-                 after: Mapping[str, str] | None = None) -> tuple[list[dict], str | None]:
+                 after: Mapping[str, str] | None = None, workspace: WorkspaceScope | None = None) -> tuple[list[dict], str | None]:
     """Up to ``limit`` stored reviews that ``admits`` accepts, newest first, and the next cursor (None at the end).
 
     One review past ``limit`` is looked for, so a cursor is returned only when a next
@@ -165,7 +167,7 @@ def list_reviews(table: Any, brand: str, *, admits: Callable[[Mapping[str, Any]]
     the stored copies are kept (the list collapses them, nothing is deleted).
     """
     found: list[dict] = []
-    for read, item, listed in _walk(table, brand, admits, start, end, after):
+    for read, item, listed in _walk(table, brand, admits, start, end, after, workspace):
         if listed:
             if len(found) == limit:
                 return found, encode_cursor(item_key(found[-1]))
@@ -176,7 +178,7 @@ def list_reviews(table: Any, brand: str, *, admits: Callable[[Mapping[str, Any]]
 
 
 def distinct_reviews(table: Any, brand: str, *, admits: Callable[[Mapping[str, Any]], bool],
-                     start: date, end: date, cap: int) -> tuple[list[dict], bool]:
+                     start: date, end: date, cap: int, workspace: WorkspaceScope | None = None) -> tuple[list[dict], bool]:
     """Every distinct review ``admits`` accepts in the window, newest first, and whether the walk finished.
 
     The SAME walk as ``list_reviews``, so a count built from these agrees with the list
@@ -184,7 +186,7 @@ def distinct_reviews(table: Any, brand: str, *, admits: Callable[[Mapping[str, A
     reaching the end.
     """
     found: list[dict] = []
-    for read, item, listed in _walk(table, brand, admits, start, end, None):
+    for read, item, listed in _walk(table, brand, admits, start, end, None, workspace):
         if read > cap:
             return found, False
         if listed:
@@ -265,7 +267,7 @@ def _narrowed(params: Mapping[str, str], start: date, end: date) -> _ReadRange:
 
 
 def reviews_page(table: Any, brand: str, scope: CategoryScope, params: Mapping[str, str],
-                 window: tuple[date, date]) -> dict[str, Any]:
+                 window: tuple[date, date], workspace: WorkspaceScope | None = None) -> dict[str, Any]:
     """``{reviews, next_cursor, limit}`` for one ``GET /radar/brands/{brand}/reviews`` (``ValueError`` = 400).
 
     A category the caller may not see is an empty page, never its reviews.
@@ -273,13 +275,14 @@ def reviews_page(table: Any, brand: str, scope: CategoryScope, params: Mapping[s
     wanted = ReviewFilter(_param(params, 'category'), _subcategory(params), _param(params, 'sentiment'))
     read = _narrowed(params, *window)
     cursor = _param(params, 'cursor')
-    after = decode_cursor(cursor, brand, read.start, read.end) if cursor else None
+    after = decode_cursor(cursor, brand, read.start, read.end, workspace) if cursor else None
     limit = validate_int(params.get('limit'), default=DEFAULT_LIMIT, min_val=1, max_val=MAX_LIMIT)
     if wanted.category is not None and not category_access.admits(scope, wanted.category):
         return {'reviews': [], 'next_cursor': None, 'limit': limit}
     in_scope = scope_admits(scope, wanted)
     items, next_cursor = list_reviews(table, brand, admits=lambda item: read.admits(item) and in_scope(item),
-                                      start=read.start, end=read.end, limit=limit, after=after)
+                                      start=read.start, end=read.end, limit=limit, after=after,
+                                      workspace=workspace)
     return {'reviews': [review_view(item) for item in items], 'next_cursor': next_cursor, 'limit': limit}
 
 
@@ -313,14 +316,18 @@ _DETAIL_PLAIN_FIELDS: Final = ('source_created_at', 'source_channel')
 MAX_FEEDBACK_ID_CHARS: Final = 256
 
 
-def stored_review(table: Any, brand: str, feedback_id: str) -> dict[str, Any] | None:
-    """One stored review of ``brand`` by id (through its dedupe marker), or None when absent."""
+def stored_review(table: Any, brand: str, feedback_id: str, workspace: WorkspaceScope | None = None) -> dict[str, Any] | None:
+    """One stored review of ``brand`` by id (through its dedupe marker), or None when absent (``workspace``'s
+    with one: a marker that points outside it reads as absent)."""
     if not feedback_id or len(feedback_id) > MAX_FEEDBACK_ID_CHARS:
         return None
-    marker = table.get_item(Key=marker_key(brand, feedback_id)).get('Item')
+    marker = get_scoped_item(table, scoped_key(workspace, marker_key(brand, feedback_id)), workspace)
     if not marker or not marker.get('item_pk') or not marker.get('item_sk'):
         return None
-    return table.get_item(Key={'pk': str(marker['item_pk']), 'sk': str(marker['item_sk'])}).get('Item')
+    item_pk = str(marker['item_pk'])
+    if workspace is not None and not workspace.owns(item_pk):
+        return None
+    return get_scoped_item(table, {'pk': item_pk, 'sk': str(marker['item_sk'])}, workspace) or None
 
 
 def review_detail_view(item: Mapping[str, Any]) -> dict[str, Any]:

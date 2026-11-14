@@ -11,7 +11,8 @@ Two checks, for two jobs:
   user in more groups than that is outside this sample's model. A token keeps its groups until
   it expires, so a revoked or disabled platform admin's token alone would still pass; the live look-up makes a
   revoke or a disable take effect at once. The users API (its platform-admin rules), the workspaces API's
-  ``/platform`` routes and a platform admin's entry into a workspace (shared/workspace.py) all use this one check.
+  ``/platform`` routes, a platform admin's entry into a workspace (shared/workspace.py) and the writes of what every
+  workspace shares (shared/platform_admin_gate.py: the start theme, the alerts) all use this one check.
 
 A caller with no username claim, an unknown (deleted) user, a missing group or a disabled account is not a
 platform admin. A failed look-up (a Cognito fault) raises ``ClientError`` / ``BotoCoreError``: each caller answers
@@ -19,7 +20,6 @@ its own fixed 500 and never admits the caller.
 """
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import Any, Final
 
 from shared.api import get_caller_groups
@@ -65,12 +65,3 @@ def is_live_platform_admin(event: dict, cognito: Any, user_pool_id: str) -> bool
     # reused the username.
     attributes = {attr.get('Name'): attr.get('Value') for attr in caller.get('UserAttributes', [])}
     return caller.get('Enabled') is True and attributes.get('sub') == first_claim(event, ('sub',))
-
-
-def live_platform_admin_check(cognito: Callable[[], Any], user_pool_id: Callable[[], str]) -> Callable[[dict], bool]:
-    """``is_live_platform_admin`` bound to a handler's Cognito client and user pool, each read at call time (a
-    handler's own getters: an unconfigured pool raises its 500 only when the check runs). The ``confirm_platform_admin``
-    of shared/workspace.py ``resolve_workspace`` (the workspaces API, shared/workspace_request.py)."""
-    def confirm(event: dict) -> bool:
-        return is_live_platform_admin(event, cognito(), user_pool_id())
-    return confirm

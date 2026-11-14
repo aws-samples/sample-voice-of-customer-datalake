@@ -48,8 +48,10 @@ from shared.document_versions import (
 )
 from shared.dynamo_paging import iter_query, query_all
 from shared.exceptions import ConflictError, NotFoundError, ValidationError
+from shared.project_keys import DOCUMENT_VERSIONS_STORE, project_pk, require_deployment
 from shared.project_writes import projects_table_name
 from shared.row_ids import OPAQUE_ID_RE
+from shared.ws_repo import WorkspaceScope
 
 REVISION_PREFIX = 'REVISION#'
 # The versions a list shows, newest first. A document edited more often keeps
@@ -126,7 +128,7 @@ def _series_documents(table: Any, project_id: str, document: dict, document_type
     int ``version`` and leaves every other row alone, which the type filter drops.
     """
     series = normalized_base_title(series_base(document), document_type)
-    rows = query_all(table, {'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}'), 'ConsistentRead': True})
+    rows = query_all(table, {'KeyConditionExpression': Key('pk').eq(project_pk(project_id)), 'ConsistentRead': True})
     versions = [
         row for row in normalize_document_versions(rows)
         if managed_document_type(row) == document_type
@@ -136,12 +138,15 @@ def _series_documents(table: Any, project_id: str, document: dict, document_type
     return versions
 
 
-def series_versions(table: Any, project_id: str, document: dict) -> list[dict]:
+def series_versions(table: Any, project_id: str, document: dict, *,
+                    workspace: WorkspaceScope | None = None) -> list[dict]:
     """Every version of a managed ``document``'s series, newest first ([] for an unmanaged one).
 
     ``document`` needs only ``document_type`` (or a typed ``sk``) and ``base_title`` / ``title``;
     the document review routes (shared/document_review_routes.py) read a series by its link.
+    Not per workspace yet, like the rest of this module: a ``workspace`` is refused (``NotPerWorkspaceError``).
     """
+    require_deployment(workspace, DOCUMENT_VERSIONS_STORE)
     document_type = managed_document_type(document)
     return [] if document_type is None else _series_documents(table, project_id, document, document_type)
 
@@ -229,13 +234,15 @@ def _unmanaged_version_view(row: dict, revision: int, *, current: bool, created_
 # ── Public operations ────────────────────────────────────────────────────────
 
 def edit_document(table: Any, project_id: str, document: dict, body: dict, *, now: str,
-                  title: str | None = None) -> dict:
+                  title: str | None = None, workspace: WorkspaceScope | None = None) -> dict:
     """Apply an edit as a new version. ``title`` is the new title of an UNMANAGED document.
 
     ``body['expected_revision']`` (optional) is the revision the caller loaded; a
     document that moved on since is a ConflictError (409), never a silent overwrite.
     Checked after the no-change return: an edit that saves nothing clobbers nothing.
+    Not per workspace yet: a ``workspace`` is refused (``NotPerWorkspaceError``).
     """
+    require_deployment(workspace, DOCUMENT_VERSIONS_STORE)
     expected = validated_expected_revision(body.get('expected_revision'))
     content = _content_of(body, document)
     new_title = title if title is not None else str(document.get('title') or '')
@@ -261,8 +268,11 @@ def edit_document(table: Any, project_id: str, document: dict, body: dict, *, no
     return {'success': True, 'document': item}
 
 
-def list_document_versions(table: Any, project_id: str, document: dict) -> dict:
-    """The document's versions, newest first, each with its content."""
+def list_document_versions(table: Any, project_id: str, document: dict, *,
+                           workspace: WorkspaceScope | None = None) -> dict:
+    """The document's versions, newest first, each with its content. Not per workspace yet (its revision rows sit
+    in the deployment's version partition): a ``workspace`` is refused (``NotPerWorkspaceError``)."""
+    require_deployment(workspace, DOCUMENT_VERSIONS_STORE)
     document_type = managed_document_type(document)
     if document_type is not None:
         series = _series_documents(table, project_id, document, document_type)[:VERSION_LIST_LIMIT]
@@ -277,8 +287,10 @@ def list_document_versions(table: Any, project_id: str, document: dict) -> dict:
 
 
 def restore_document_version(table: Any, project_id: str, document: dict, version_id: str, body: dict, *,
-                             now: str) -> dict:
-    """A NEW version carrying ``version_id``'s content (history is added to, never rewritten)."""
+                             now: str, workspace: WorkspaceScope | None = None) -> dict:
+    """A NEW version carrying ``version_id``'s content (history is added to, never rewritten). Not per workspace
+    yet: a ``workspace`` is refused (``NotPerWorkspaceError``)."""
+    require_deployment(workspace, DOCUMENT_VERSIONS_STORE)
     document_type = managed_document_type(document)
     if document_type == 'prototype':
         raise ValidationError('Prototypes are restored through the prototype revision workflow')
@@ -323,8 +335,11 @@ def _restore_unmanaged(table: Any, project_id: str, document: dict, version_id: 
     return {'success': True, 'document': item}
 
 
-def delete_document_revisions(table: Any, project_id: str, document_id: str) -> None:
-    """Remove an unmanaged document's saved revisions (its own rows only)."""
+def delete_document_revisions(table: Any, project_id: str, document_id: str, *,
+                              workspace: WorkspaceScope | None = None) -> None:
+    """Remove an unmanaged document's saved revisions (its own rows only). Not per workspace yet: a ``workspace``
+    is refused (``NotPerWorkspaceError``)."""
+    require_deployment(workspace, DOCUMENT_VERSIONS_STORE)
     query: dict[str, Any] = {
         'KeyConditionExpression': Key('pk').eq(version_partition_key(project_id))
         & Key('sk').begins_with(f'{REVISION_PREFIX}{document_id}#'),

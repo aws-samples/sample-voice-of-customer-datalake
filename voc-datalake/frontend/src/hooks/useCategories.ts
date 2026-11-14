@@ -15,18 +15,21 @@ import { api } from '../api/client'
 import { callerCategoryScopeKey, categoryAccessApi, scopeAdmits } from '../api/categoryAccessApi'
 import { normalizeCategories } from '../components/CategoriesManager/categoriesSchema'
 import { useConfigStore } from '../store/configStore'
+import { scopedKey } from '../workspace/configScope'
+import type { RequestScope } from '../api/baseUrl'
 import type { CategoryScope } from '../api/categoryAccessApi'
 import type { Category } from '../components/CategoriesManager/CategoriesManager'
 
 /** Query key of the category config (Settings → Categories). */
 export const categoriesConfigKey = () => ['categories-config'] as const
 
-/** The configured categories, normalized (legacy rows get ids; issue #181). */
-export function useCategoriesConfig() {
+/** The configured categories, normalized (legacy rows get ids; issue #181): the current workspace's (`scope`
+ * `'workspace'`, the default) or the deployment's (`'deployment'`, Administration's editor). */
+export function useCategoriesConfig(scope: RequestScope = 'workspace') {
   const apiEndpoint = useConfigStore((s) => s.config.apiEndpoint)
   return useQuery({
-    queryKey: categoriesConfigKey(),
-    queryFn: () => api.getCategoriesConfig(),
+    queryKey: scopedKey(categoriesConfigKey(), scope),
+    queryFn: () => (scope === 'deployment' ? api.getDeploymentCategoriesConfig() : api.getCategoriesConfig()),
     // The real GET returns the DynamoDB item verbatim, so `categories` may be
     // absent; normalize once so every consumer can trust the Category type.
     select: (data) => {

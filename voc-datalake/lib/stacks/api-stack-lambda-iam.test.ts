@@ -24,6 +24,7 @@ import { acknowledgementCovering } from '../utils/nag-ack';
 import type { IConstruct } from 'constructs';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import { byCodeUnit } from '../utils/compare';
+import { WORKSPACE_RESOLUTION_POLICY_ID } from '../utils/workspace-resolution-grants';
 import { itemAt } from '../test-support/guards';
 
 /** A role construct's DefaultPolicy CloudFormation resource. */
@@ -178,25 +179,38 @@ describe('feedback edit Lambda (PUT /feedback/{id}/category, PUT /feedback/{id}/
   });
 });
 
-// ── X-Workspace-Id on the data path (docs/multi-workspace.md, lib/utils/workspace-request-grants.ts) ──────────
+// ── X-Workspace-Id on the data path (docs/multi-workspace.md, lib/utils/workspace-resolution-grants.ts) ───────
 // The metrics API, the feedback edits and the operator APIs (integrations, scrapers) resolve a request's workspace
-// (lambda/shared/workspace_request.py): they read voc-workspaces' WS#* and AUDIT#WS#* rows, put only an entry audit
-// row (AUDIT#WS#*), and run the live platform-admin check in Cognito; nothing else of the control plane.
+// (lambda/shared/workspace_request.py) through the stack's one workspace-resolution policy, as the settings API does
+// (platform-admin-writes.test.ts pins what that policy allows: GetItem on WS#* and AUDIT#WS#*, PutItem on AUDIT#WS#*
+// only), and run the live platform-admin check in Cognito; nothing else of the control plane.
+// The operator APIs also read, from their own policy, a PLUGIN# row's key: a run in a workspace starts only a plugin
+// the workspace enabled (7.14.00, lambda/shared/workspace_plugin_settings.py require_plugin_enabled, which projects
+// pk); a read naming no attributes is refused (Null); nothing else there.
+const PLUGIN_KEY_READ = [{
+  actions: ['dynamodb:GetItem'],
+  condition: {
+    'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['PLUGIN#*'] },
+    'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk'] },
+    StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+    Null: { 'dynamodb:Attributes': 'false' },
+  },
+}];
 describe.each([
-  'MetricsLambdaRole', 'FeedbackEditLambdaRole', 'IntegrationsLambdaRole', 'ScrapersLambdaRole',
-])('%s resolves X-Workspace-Id', (role) => {
-  // The DynamoDB statements on voc-workspaces (the table's key grants name no `dynamodb:` action).
-  const onWorkspaces = () => policyStatementsOf(apiTemplate(), role)
-    .filter((s) => s.resource.includes('Workspaces') && s.actions.some((a) => a.startsWith('dynamodb:')));
-
-  it('reads WS#* and AUDIT#WS#* and puts only AUDIT#WS#* in voc-workspaces', () => {
-    expect(onWorkspaces().map((s) => ({ actions: [...s.actions].sort(byCodeUnit), condition: s.condition })))
-      .toStrictEqual([
-        { actions: ['dynamodb:GetItem'],
-          condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['AUDIT#WS#*', 'WS#*'] } } },
-        { actions: ['dynamodb:PutItem'],
-          condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['AUDIT#WS#*'] } } },
-      ]);
+  ['MetricsLambdaRole', []], ['FeedbackEditLambdaRole', []],
+  ['IntegrationsLambdaRole', PLUGIN_KEY_READ], ['ScrapersLambdaRole', PLUGIN_KEY_READ],
+])('%s resolves X-Workspace-Id', (role, own) => {
+  it('attaches the one workspace-resolution policy and writes nothing in voc-workspaces from its own', () => {
+    const policies = Object.keys(apiTemplate().findResources('AWS::IAM::ManagedPolicy'))
+      .filter((id) => id.startsWith(WORKSPACE_RESOLUTION_POLICY_ID));
+    expect(policies).toHaveLength(1);
+    const attached = JSON.stringify(Object.entries(apiTemplate().findResources('AWS::IAM::Role'))
+      .find(([id]) => id.startsWith(role))?.[1]);
+    expect(attached).toContain(JSON.stringify({ Ref: policies[0] }));
+    expect(policyStatementsOf(apiTemplate(), role)
+      .filter((s) => s.resource.includes('Workspaces') && s.actions.some((a) => a.startsWith('dynamodb:')))
+      .map((s) => ({ actions: s.actions, condition: s.condition })))
+      .toStrictEqual(own);
   });
 });
 
@@ -219,28 +233,17 @@ describe.each([
   });
 });
 
-// The settings API's erasure routes (lambda/shared/erasure_scope.py) resolve X-Workspace-Id for a member admin only:
-// they never let a platform admin enter, so they read the membership and write nothing in voc-workspaces (no entry
-// audit row, no live check: the role's Cognito access stays the morning brief's AdminGetUser).
+// The settings API's erasure routes (lambda/shared/erasure_scope.py) resolve X-Workspace-Id for a member admin only,
+// never elevating a platform admin. They read the membership through the stack's one workspace-resolution policy,
+// which the role holds since 6.18.00 for its other workspace routes (platform-admin-writes.test.ts pins both): the
+// role's own policy names voc-workspaces for nothing.
 describe('SettingsLambdaRole reads a workspace membership for the erasure routes', () => {
   const role = 'SettingsLambdaRole';
 
-  it('may GetItem WS#* in voc-workspaces, only the attributes the resolver projects, and nothing else there', () => {
-    const onWorkspaces = policyStatementsOf(apiTemplate(), role).filter((s) => s.resource.includes('Workspaces'));
-    expect(onWorkspaces.map((s) => ({ actions: [...s.actions].sort(byCodeUnit), condition: s.condition })))
-      .toStrictEqual([{ actions: ['dynamodb:GetItem'],
-        condition: {
-          'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] },
-          // Never a member's email or name (lambda/shared/workspace.py MEMBER_READ_ATTRIBUTES, META_READ_ATTRIBUTES).
-          'ForAllValues:StringEquals': {
-            'dynamodb:Attributes': ['pk', 'sk', 'role', 'status', 'name', 'slug'] },
-          StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
-        } }]);
-  });
-
-  it('runs no live platform-admin check', () => {
-    expect(actionsWithPrefix(roleStatements(apiTemplate(), role), 'cognito-idp:'))
-      .toStrictEqual(['cognito-idp:AdminGetUser']);
+  it('writes and reads nothing in voc-workspaces from its own policy', () => {
+    expect(policyStatementsOf(apiTemplate(), role)
+      .filter((s) => s.resource.includes('Workspaces') && s.actions.some((a) => a.startsWith('dynamodb:'))))
+      .toStrictEqual([]);
   });
 
   it('is handed the workspaces table', () => {
@@ -316,16 +319,21 @@ describe('FeedbackFormLambdaRole routes a workspace\'s forms', () => {
   const onWorkspaces = () => policyStatementsOf(apiTemplate(), role)
     .filter((s) => s.resource.includes('Workspaces') && s.actions.some((a) => a.startsWith('dynamodb:')));
 
-  it('reads WS#*, AUDIT#WS#* and FORM#*, puts AUDIT#WS#* and FORM#*, deletes FORM#* only in voc-workspaces', () => {
+  it('reads, puts and deletes FORM#* only from its own policy, and resolves through the one resolution policy', () => {
+    // WS#* and AUDIT#WS#* (the membership reads, the entry and form_deleted audit rows) come with the stack's
+    // workspace-resolution policy (lib/utils/workspace-resolution-grants.ts), as for every API that resolves.
     const shapes = onWorkspaces().map((s) => ({ actions: [...s.actions].sort(byCodeUnit), condition: s.condition }));
     const keys = (keys: string[]) => ({ 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': keys } });
     expect(shapes).toStrictEqual(expect.arrayContaining([
-      { actions: ['dynamodb:GetItem'], condition: keys(['AUDIT#WS#*', 'WS#*']) },
-      { actions: ['dynamodb:PutItem'], condition: keys(['AUDIT#WS#*']) },
       { actions: ['dynamodb:GetItem'], condition: keys(['FORM#*']) },
       { actions: ['dynamodb:DeleteItem', 'dynamodb:PutItem'], condition: keys(['FORM#*']) },
     ]));
-    expect(shapes).toHaveLength(4);
+    expect(shapes).toHaveLength(2);
+    const policies = Object.keys(apiTemplate().findResources('AWS::IAM::ManagedPolicy'))
+      .filter((id) => id.startsWith(WORKSPACE_RESOLUTION_POLICY_ID));
+    const attached = JSON.stringify(Object.entries(apiTemplate().findResources('AWS::IAM::Role'))
+      .find(([id]) => id.startsWith(role))?.[1]);
+    expect(attached).toContain(JSON.stringify({ Ref: policies[0] }));
   });
 
   it('deletes only the deployment\'s and one workspace\'s form config rows in aggregates', () => {

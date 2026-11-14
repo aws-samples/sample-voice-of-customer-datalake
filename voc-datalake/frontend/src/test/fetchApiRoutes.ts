@@ -16,16 +16,21 @@
  */
 import { afterAll, beforeAll, vi } from 'vitest'
 import { useConfigStore } from '../store/configStore'
+import type { RequestScope } from '../api/baseUrl'
 
 /** One canned endpoint: receives the parsed JSON body, returns the response. */
 export type RouteHandler = (body: unknown) => unknown
 
-/** The mocked `fetchApi(endpoint, options)`. */
-export const fetchApi = vi.fn<(endpoint: string, options?: RequestInit) => Promise<unknown>>()
+/** The mocked `fetchApi(endpoint, options, scope)`. */
+export const fetchApi = vi.fn<(endpoint: string, options?: RequestInit, scope?: RequestScope) => Promise<unknown>>()
 
-/** An `api/client` module whose `fetchApi` delegates to {@link fetchApi}. */
+/** An `api/client` module whose `fetchApi` delegates to {@link fetchApi} (`scope` passed on only when given). */
 export function fetchApiClientModule() {
-  return { fetchApi: (endpoint: string, options?: RequestInit) => fetchApi(endpoint, options) }
+  return {
+    fetchApi: (endpoint: string, options?: RequestInit, scope?: RequestScope) => (scope === undefined
+      ? fetchApi(endpoint, options)
+      : fetchApi(endpoint, options, scope)),
+  }
 }
 
 /** The real `api/client` module with only `fetchApi` replaced by {@link fetchApi}. */

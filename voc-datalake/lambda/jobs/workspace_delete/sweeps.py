@@ -44,6 +44,7 @@ from botocore.exceptions import ClientError
 
 from jobs.workspace_export.pages import TABLE_KEY, items, key, last_key, start
 from shared.categorization import allowed_category_names, load_categories_config
+from shared.company_context import my_context_key
 from shared.dimension_config import allowed_values, load_dimensions_config
 from shared.earliest_date import EARLIEST_DATE_ATTRIBUTE, earliest_date_key, meta_partition, parse_iso_date
 from shared.erasure_jobs import WORKSPACE_LOCK_SK
@@ -68,10 +69,12 @@ from shared.metric_keys import (
 )
 from shared.onboarding import FEEDBACK_FORM_PK
 from shared.plugin_identity import is_valid_plugin_identifier
+from shared.radar_keys import radar_settings_key
 from shared.radar_store import SENTIMENT_LABELS
 from shared.retention import STORE_FEEDBACK, UNKNOWN_SOURCE, item_feedback_id, item_source
 from shared.workspace_credentials import delete_parameters, list_parameter_names
 from shared.workspace_members import MEMBER_PREFIX
+from shared.workspace_settings import settings_key
 from shared.ws_repo import (
     LOOKUP_SORT_KEY,
     WATERMARK_DIRECTORY,
@@ -91,8 +94,10 @@ from shared.ws_repo import (
     memory_event_pk,
     plugin_config_history_pk,
     plugin_config_pk,
+    reprocess_job_pk,
     scraper_run_pk,
     source_run_pk,
+    user_context_owners_pk,
 )
 
 __all__ = [
@@ -166,6 +171,8 @@ class Context:
     aggregates: WorkspaceTable
     memory: WorkspaceTable
     watermarks: WorkspaceTable
+    #: voc-radar: the workspace's Radar settings (``WS#{ws}#SETTINGS#radar``).
+    radar: WorkspaceTable
     workspaces: Any
     objects: WorkspaceObjectVersions
     exports: ExportObjects
@@ -173,7 +180,9 @@ class Context:
     parameter_prefix: str
     plugin_ids: tuple[str, ...]
     job: Mapping[str, Any]
-    #: The deployment's voc-aggregates, read for its category and dimension settings only (``_closed_counters``).
+    #: voc-aggregates' handle the config readers take, each read through the workspace's own view (shared/
+    #: workspace_config.py ``get_scoped_item`` with ``scope``): the workspace's category and dimension rows only,
+    #: ``WS#{ws}#SETTINGS#…`` (``_closed_counters``), never the deployment's.
     settings: Any
     counts: dict[str, int] = field(default_factory=dict)
     pacer: Pacer = field(default_factory=Pacer)
@@ -317,9 +326,10 @@ def _sources(ctx: Context) -> list[str]:
 
 # ── Partition families: listed once into the inventory, then each partition deleted page by page ─────────────────
 
-def _partitions_sweep(name: str, partitions: Callable[[Context], Iterable[str]], *,
+def _partitions_sweep(name: str, partitions: Callable[[Context], Iterable[str]], *, table: str = 'aggregates',
                       note_rows: Step | None = None) -> Sweep:
-    """A sweep of every row of a set of partitions of voc-aggregates: the first step lists them (``partitions``,
+    """A sweep of every row of a set of partitions of ``table`` (a Context view, voc-aggregates by default; the
+    inventory is always voc-aggregates'): the first step lists them (``partitions``,
     read while what they are found from still exists) under ``name`` in the inventory, then each is read and deleted
     a page at a time (``{inv, todo, start}``: the inventory page, the partitions of it still to do, the key within
     the first)."""
@@ -327,10 +337,10 @@ def _partitions_sweep(name: str, partitions: Callable[[Context], Iterable[str]],
         if cursor is None:
             note(ctx, name, (partition for partition in partitions(ctx) if ctx.scope.owns(partition)))
             return Batch([], {'inv': None, 'todo': [], 'inv_done': False, 'start': None})
-        return walk_listed(ctx, ctx.aggregates, name, cursor)
+        return walk_listed(ctx, getattr(ctx, table), name, cursor)
 
-    return Sweep(name, 'aggregates', pages, delete_keys(lambda ctx: ctx.aggregates), note=note_rows,
-                 grants=('aggregates',))
+    grants = ('aggregates',) if table == 'aggregates' else (table, 'aggregates')
+    return Sweep(name, table, pages, delete_keys(lambda ctx: getattr(ctx, table)), note=note_rows, grants=grants)
 
 
 @dataclass(frozen=True)
@@ -343,7 +353,7 @@ class OwnerList:
     listed: Callable[[WorkspaceScope, Mapping[str, Any]], Iterable[str]]
 
 
-def owner_list_sweep(name: str, owners: OwnerList, *, grants: tuple[str, ...]) -> Sweep:
+def owner_list_sweep(name: str, owners: OwnerList) -> Sweep:
     """An entry whose partitions an owner list names: a partition of rows, each naming one or more partitions of the
     same table (``owners.listed``). Stage ``list``: the list a page at a time, then each partition it names deleted
     in full, a page at a time (``{list_start, list_done, todo, start}``); stage ``drop``: the list itself, LAST, so a
@@ -373,6 +383,8 @@ def owner_list_sweep(name: str, owners: OwnerList, *, grants: tuple[str, ...]) -
         return Batch([], {'stage': 'list', 'list_start': following, 'list_done': following is None, 'todo': named,
                           'start': None})
 
+    # The list's table (its grant group shares the table's name) and the inventory's voc-aggregates.
+    grants = ('aggregates',) if owners.table == 'aggregates' else (owners.table, 'aggregates')
     return Sweep(name, owners.table, pages, delete_keys(owners.view_of), grants=grants)
 
 
@@ -529,13 +541,14 @@ def _tombstone_feedback(ctx: Context, batch: Batch) -> int:
 
 def _closed_counters(ctx: Context) -> Iterator[str]:
     """The counter partitions of the closed families, whatever an item still holds: every sentiment label, every
-    category the deployment configures (with ``other``, the default) with each label and each of its
+    category the workspace configures (with ``other``, the default) with each label and each of its
     subcategories, and every value of every configured dimension with each label. A workspace's messages are
-    enriched with the deployment's settings (phase 3 moves them), so a counter of a category whose items were all
+    enriched with the workspace's own settings (7.08.00, shared/workspace_config.py: a workspace that saved none
+    reads none, and the default categories apply), so a counter of a category whose items were all
     erased before the delete is listed here even though no stored item names it."""
     labels = SENTIMENT_LABELS
     yield from (f'{SENTIMENT_PREFIX}{label}' for label in labels)
-    configured_categories = load_categories_config(ctx.settings)
+    configured_categories = load_categories_config(ctx.settings, ctx.scope)
     # The names the model may answer with: the configured ones, or the defaults while none are saved.
     categories: dict[str, list[str]] = {name: [] for name in (*allowed_category_names(configured_categories), 'other')}
     for category in configured_categories:
@@ -547,7 +560,7 @@ def _closed_counters(ctx: Context) -> Iterator[str]:
         yield f'{CATEGORY_PREFIX}{name}'
         yield from (f'{SUBCATEGORY_PREFIX}{name}#{sub}' for sub in subcategories)
         yield from (f'{_CATEGORY_SENTIMENT_PREFIX}{name}#{label}' for label in labels)
-    for dimension in load_dimensions_config(ctx.settings):
+    for dimension in load_dimensions_config(ctx.settings, ctx.scope):
         for value in allowed_values(dimension):
             yield f'{DIMENSION_PREFIX}{dimension["key"]}#{value}'
             yield from (f'{DIMENSION_SENTIMENT_PREFIX}{dimension["key"]}#{value}#{label}' for label in labels)
@@ -623,8 +636,16 @@ def _import_run_detail(scope: WorkspaceScope, row: Mapping[str, Any]) -> list[st
 
 
 #: The owner-list entries, by name (``owner_list_sweep``; the verify pass checks each list is gone).
+def _user_context_of(scope: WorkspaceScope, row: Mapping[str, Any]) -> list[str]:
+    """A listed member's objectives partition (``WS#{ws}#USERCTX#{sub}``, shared/company_context.py)."""
+    sub = row.get('sk')
+    return [my_context_key(sub, scope)['pk']] if isinstance(sub, str) and sub else []
+
+
 OWNER_LISTS: Final = {
     'import_runs': OwnerList('aggregates', lambda ctx: ctx.aggregates, _import_run_list, _import_run_detail),
+    # Each member who saved objectives in the workspace, a former one too (shared/ws_repo.py user_context_owners_pk).
+    'user_contexts': OwnerList('aggregates', lambda ctx: ctx.aggregates, user_context_owners_pk, _user_context_of),
 }
 
 
@@ -834,6 +855,21 @@ def _done_in_pages(_ctx: Context, _batch: Batch) -> int:
     return 0
 
 
+#: The kinds of settings a workspace keeps in voc-aggregates, ``WS#{ws}#SETTINGS#{kind}`` (shared/workspace_settings.py;
+#: written since the config cut-over, 7.08.00, and the brand, resolved-problems and company-context slices). The
+#: registry's lockstep (test/families.py, test/test_registry.py) holds it to every kind the code builds that key for.
+WORKSPACE_SETTINGS_KINDS: Final = ('brand', 'categories', 'company_context', 'dimensions', 'resolved_problems',
+                                   'sources')
+
+
+def _settings(ctx: Context) -> Iterator[str]:
+    """The workspace's settings partitions (``WORKSPACE_SETTINGS_KINDS``). Swept after every reader of them: the
+    counters sweep lists the closed families' partitions from the categories and dimensions into the inventory once;
+    a later round of it (a resume, or the verify pass sending the job back) re-derives only the defaults, and walks
+    the inventory, which still lists round 1's partitions."""
+    yield from (settings_key(ctx.scope.ws, kind)['pk'] for kind in WORKSPACE_SETTINGS_KINDS)
+
+
 #: The aggregates families swept partition by partition (``_partitions_sweep``), in order, with how each finds its
 #: partitions: by source or plugin id, by the scraper ids of the config lists (before those lists go), or fixed.
 PARTITION_FAMILIES: Final[dict[str, Callable[[Context], Iterable[str]]]] = {
@@ -845,11 +881,20 @@ PARTITION_FAMILIES: Final[dict[str, Callable[[Context], Iterable[str]]]] = {
     'plugin_configs': lambda ctx: [plugin_config_pk(ctx.scope), plugin_config_history_pk(ctx.scope)],
     'feedback_forms': lambda ctx: [ctx.scope.key(FEEDBACK_FORM_PK)],
     'erasure_jobs': lambda ctx: [erasure_job_pk(ctx.scope)],
+    # A workspace's category reprocess jobs and their LOCK (7.13.00, shared/reprocess_jobs.py).
+    'reprocess_jobs': lambda ctx: [reprocess_job_pk(ctx.scope)],
+    # voc-radar: the workspace's Radar settings, config and brands (shared/radar_keys.py, decision 13).
+    'radar': lambda ctx: [radar_settings_key('config', ctx.scope)['pk']],
+    # The workspace's own settings: after every reader of them (the counters).
+    'settings': _settings,
 }
+#: The table each partition family is in, when not voc-aggregates (a Context view's name).
+PARTITION_FAMILY_TABLES: Final = {'radar': 'radar'}
 
 
 def _family(name: str) -> Sweep:
-    return _partitions_sweep(name, PARTITION_FAMILIES[name], note_rows=_note_forms if name == 'feedback_forms' else None)
+    return _partitions_sweep(name, PARTITION_FAMILIES[name], table=PARTITION_FAMILY_TABLES.get(name, 'aggregates'),
+                             note_rows=_note_forms if name == 'feedback_forms' else None)
 
 
 #: Every sweep, in the order the job runs them (docs/multi-workspace.md, "Export and delete", step 4).
@@ -859,19 +904,24 @@ SWEEPS: Final = (
     Sweep('feedback', 'feedback', _feedback_pages, delete_keys(lambda ctx: ctx.feedback),
           tombstone=_tombstone_feedback, note=_note_counters, grants=('feedback', 'aggregates', 'tombstones')),
     Sweep('counters', 'aggregates', _counter_pages, delete_keys(lambda ctx: ctx.aggregates),
-          grants=('aggregates', 'metricTypeIndex', 'deploymentSettings')),
+          grants=('aggregates', 'metricTypeIndex')),
     *(_family(name) for name in ('source_runs', 'failures', 'circuits', 'logs', 'scraper_runs', 'plugin_configs',
                                  'feedback_forms')),
-    owner_list_sweep('import_runs', OWNER_LISTS['import_runs'], grants=('aggregates',)),
+    owner_list_sweep('import_runs', OWNER_LISTS['import_runs']),
     _family('erasure_jobs'),
+    _family('reprocess_jobs'),
     Sweep('watermarks', 'watermarks', _watermark_pages, _delete_watermarks, grants=('aggregates', 'watermarks')),
     Sweep('memory', 'memory', memory_pages, _delete_memories, tombstone=_tombstone_memories,
           grants=('memory', 'tombstones')),
     Sweep('exports', 'aggregates', _export_pages, delete_keys(lambda ctx: ctx.aggregates),
           grants=('aggregates', 'exportJobs', 'objects')),
     Sweep('objects', 'bucket', _object_pages, _delete_objects, grants=('objects',)),
+    _family('radar'),
+    _family('settings'),
+    owner_list_sweep('user_contexts', OWNER_LISTS['user_contexts']),
     Sweep('control_rows', 'workspaces', _control_pages, _done_in_pages, grants=('controlRows', 'aggregates')),
-    # Reserved for voc-lead, owner_list_sweep('conversations', …): voc-conversations' list WS#{ws}#CONVERSANTS (sk
+    # Reserved for voc-lead, owner_list_sweep('conversations', …): voc-conversations' list WS#{ws}#CONVERSANTS
+    # (shared/ws_repo.py conversants_pk, a RESERVED entry of families.py; sk
     # {sub}) names each member's WS#{ws}#USER#{sub} (its CONV# and RUNCANCEL# rows); each listed partition goes in
     # full, then the list LAST, so a stopped sweep resumes from it. It brings a conversations view on Context, an
     # OWNER_LISTS row (so the verify pass checks the list is gone), and its own grant group in

@@ -12,6 +12,15 @@ import { AUDIT_DENY_CHANGE_SID, AUDIT_DENY_OTHER_PARTITION_SID, AUDIT_DENY_WRITE
 import { byCodeUnit } from '../utils/compare';
 import { itemAt } from './guards';
 
+/** The condition of a workspace status read (lib/utils/workspace-resolution-grants.ts `grantWorkspaceStatusRead`):
+ *  GetItem of `WS#*` rows held to `pk`, `sk` and `status`, a projection required. */
+export const WORKSPACE_STATUS_READ_CONDITION = {
+  'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] },
+  'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'status'] },
+  StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+  Null: { 'dynamodb:Attributes': 'false' },
+} as const;
+
 const AUDIT_ROW_GUARD_SIDS: ReadonlySet<string> = new Set([AUDIT_DENY_CHANGE_SID, AUDIT_DENY_WRITE_SID,
   AUDIT_DENY_OTHER_PARTITION_SID]);
 

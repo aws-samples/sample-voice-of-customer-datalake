@@ -1,5 +1,5 @@
 /**
- * Streaming assistant Lambda handler (Node.js 22).
+ * Streaming assistant Lambda handler (Node.js 24).
  *
  * `POST /chat/stream` (API Gateway REST, Cognito authorizer, STREAM transfer
  * mode) speaks AG-UI 1.0: the body is a `RunAgentInput`, the response is a
@@ -25,6 +25,7 @@ import { createAiWritingLoader } from './assistant/runtime/ai-writing.js';
 import { createMemoryRecall } from './assistant/runtime/memory-recall.js';
 import { getInternalApiInvoker } from './assistant/tools/internal-api.js';
 import { createDynamoSessionStore } from './assistant/session/store.js';
+import { createWorkspaceMembership } from './assistant/session/workspace-member.js';
 import { createRealtimePublisher } from './lib/realtime-publish.js';
 import { createPersonaRound } from './assistant/runtime/persona-round.js';
 import { getDefaultToolDeps } from './assistant/tools/deps.js';
@@ -37,6 +38,7 @@ const docClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
 const AGGREGATES_TABLE = process.env.AGGREGATES_TABLE ?? '';
 // Server-side session persistence (assistant/session/): unset = not saved.
 const CONVERSATIONS_TABLE = process.env.CONVERSATIONS_TABLE ?? '';
+const WORKSPACES_TABLE = process.env.WORKSPACES_TABLE ?? '';
 // Push notifications (docs/realtime.md): unset = none, the SPA polls.
 const notify = createRealtimePublisher({ host: process.env.REALTIME_HTTP_DNS, region: process.env.AWS_REGION });
 
@@ -60,6 +62,7 @@ const deps: RuntimeDeps = {
           store: createDynamoSessionStore(docClient, CONVERSATIONS_TABLE),
           nowMs: () => Date.now(),
           ...(notify === undefined ? {} : { notify }),
+          ...(WORKSPACES_TABLE ? { membership: createWorkspaceMembership(docClient, WORKSPACES_TABLE) } : {}),
         },
       }
     : {}),

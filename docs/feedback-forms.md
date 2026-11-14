@@ -263,9 +263,12 @@ malformed request costs no DynamoDB read, no queue message and no Bedrock call.
 
 **Form id** (`config`, `submit`, `iframe`): 1–64 characters from
 `[0-9A-Za-z_.-]`, and not exactly `.` or `..`. Anything else is a `404 Form not
-found`, the same answer as an unknown id. Every id the service mints matches: the
-8-hex-character ids of dashboard forms and the `pf_…` ids of prototype pin forms,
-and so do hand-seeded ids such as `website-form` or `acme.website`. If you seeded
+found`, the same answer as an unknown id. Every id the service mints matches: a new
+deployment form's `fd_` and 32 hex characters, a new workspace form's `ff_` and 32 hex
+characters ([Form ids](#form-ids)), the 8-hex-character ids of forms created before
+7.06.00, the `pf_…` ids of prototype pin forms, and hand-seeded ids such as
+`website-form` or `acme.website`. Only an `ff_` id is looked up in `voc-workspaces`
+(its `FORM#{id}` row); every other id is a deployment form's. If you seeded
 a form row by hand with any other character in its id (a space, `:`, `@`, `+`,
 `%`, `~`, a quote or a non-ASCII letter), rename it before upgrading: its public
 routes now answer `404`.
@@ -289,11 +292,18 @@ caps in `shared/prototype_pins.py`.
 
 ## Access to form management
 
-Any authenticated user may create, update and delete any feedback form and read its
-submissions. The routes are deliberately not admin-gated, because the Feedback Forms
-page is open to every user, and they have no per-form ownership check. Give app
-accounts only to people you trust with every form. The public routes are protected
-by the input validation above.
+Without `X-Workspace-Id`, any authenticated user may create, update and delete any of
+the deployment's forms and read their submissions. Those routes are deliberately not
+admin-gated, because the Feedback Forms page is open to every user, and they have no
+per-form ownership check: give app accounts only to people you trust with every
+deployment form. They never reach a workspace's form: an update or delete of an id a
+workspace's lookup row holds answers 404.
+
+With `X-Workspace-Id` the routes act in that workspace only ([Workspaces](#workspaces-since-70600)):
+any member reads its forms, only its editors and admins create, update and delete
+them (a viewer gets 403), and anyone else gets the one 404. The public routes are
+protected by the input validation above, and choose a form's workspace only from its
+lookup row.
 
 ## Form ids
 
@@ -304,10 +314,12 @@ Forms created before this change keep their 8-character ids, and every route sti
 serves them; prototype pin forms keep their `pf_` ids. `PUT /feedback-forms/{id}`
 updates only a form that exists: an unknown id answers 404 and creates nothing.
 
-## Workspaces (not released yet)
+## Workspaces (since 7.06.00)
 
-Multi-workspace ([multi-workspace.md](multi-workspace.md)) is being built; the web app
-does not send `X-Workspace-Id` yet, so today every form is a deployment form.
+Inside a workspace the web app sends `X-Workspace-Id` ([multi-workspace.md](multi-workspace.md)), so a form
+created there is that workspace's, and since 7.14.00 (the ingestion hold lifted,
+[multi-workspace.md](multi-workspace.md#per-workspace-configuration)) its submissions are ingested into that
+workspace. From 7.06.00 to 7.13.00 creating a form in a workspace and a submission to one answered 409.
 
 - The signed-in routes (`GET`/`POST /feedback-forms`, `PUT`/`DELETE /feedback-forms/{id}`,
   `GET /feedback-forms/{id}/stats` and `/submissions`) act in the workspace that
@@ -316,22 +328,25 @@ does not send `X-Workspace-Id` yet, so today every form is a deployment form.
   unknown workspace and one being deleted all get the same 404. Without the header the
   routes behave exactly as described above.
 - A workspace's form is stored in that workspace's own partition, and gets a lookup row
-  `FORM#{id}` in `voc-workspaces` that names its workspace. In a workspace, a form id
+  `FORM#{id}` / `META` in `voc-workspaces` (`workspace_id`, `created_at`) that names its
+  workspace: written, conditionally, before the form, and removed with it. In a workspace, a form id
   of another workspace or of the deployment is not found, and an update never creates
   a form. Its id starts `ff_`; without the header, an update or delete of such an id
   that a workspace's form holds answers 404.
 - Deleting a workspace's form first writes an audit row in that workspace's audit
   partition (`AUDIT#WS#{ws}`: kind `form_deleted`, the caller's sub, the form id and the
   time). It records the attempt, and when it cannot be written nothing is deleted. No
-  role can change or remove it.
+  role can change or remove it. An id the workspace does not hold answers 404 and
+  records nothing.
 - The public `config`, `iframe` and `submit` routes look the id up and never read a
   header or a body field to choose the workspace. A form with a lookup row serves its
   workspace's config, and a submission to it is queued with that workspace and its raw
   copy kept under `ws/{ws}/raw/feedback_form/`. A form without a lookup row is a
   deployment form, exactly as before. A lookup row whose workspace is unknown or being
   deleted, a lookup row without its form, and an unknown id all answer the same 404.
-- A workspace's form uses the deployment's categories and `feedback_form` source
-  profile, like every workspace message until per-workspace settings arrive. Participant
+- A workspace's form uses its workspace's own categories (its preset routing) and
+  `feedback_form` source profile (its PII policy; its raw copy is opt-in through that
+  workspace's own profile), since 7.08.00; the deployment's profile opts no workspace in. Participant
   asks and prototype pins stay deployment features: a workspace's form attributes no
   answer to an ask.
 

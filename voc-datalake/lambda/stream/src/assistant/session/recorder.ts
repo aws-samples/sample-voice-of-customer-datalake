@@ -24,12 +24,13 @@ import { z } from 'zod';
 import { CUSTOM_EVENTS, type PageContext } from '../contract.js';
 import { buildSessionItem, type RunStatus } from './record.js';
 import type { SessionWriter } from './writer.js';
+import type { SessionOwner } from './workspace-member.js';
 
 export const THROTTLE_MS = 2000;
 export const THROTTLE_CHARS = 2000;
 
 export interface RecorderBase {
-  callerSub: string;
+  owner: SessionOwner;
   threadId: string;
   runId: string;
   page: PageContext;
@@ -134,7 +135,7 @@ export function createSessionRecorder(base: RecorderBase, writer: SessionWriter,
     state.lastFlushMs = nowMs();
     state.charsSinceFlush = 0;
     const snapshot = {
-      callerSub: base.callerSub,
+      owner: base.owner,
       threadId: base.threadId,
       runId: base.runId,
       status: state.status,

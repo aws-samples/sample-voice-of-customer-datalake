@@ -31,12 +31,13 @@ import os
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import ClassVar
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import ANY, MagicMock, call, patch
 
 import pytest
 from botocore.exceptions import ClientError
 from handler_events_fixtures import call_route
 from module_reload_fixtures import reload_cycle
+from workspace_fixtures import WS, act_in_workspace
 
 import settings_handler
 from settings_handler import lambda_handler
@@ -46,13 +47,22 @@ from shared.model_config import ALLOWED_MODEL_IDS, PICKER_SURFACES
 from shared.reprocess_slices import ReprocessSlice
 from shared.test.clock import frozen_clock
 from shared.test.instrumentation_fixtures import assert_tracer_wrapped
+from shared.test.model_config_fixtures import MODEL_ROWS_READ
+
+
+@pytest.fixture(autouse=True)
+def _in_a_workspace(monkeypatch):
+    """The resolved-problems routes act in a workspace (shared/request_workspace.py, stubbed here)."""
+    act_in_workspace(monkeypatch, settings_handler)
 
 HAIKU = 'global.anthropic.claude-haiku-4-5-20251001-v1:0'
 OPUS = 'global.anthropic.claude-opus-5'
 FIXED_NOW = datetime(2026, 10, 5, 12, 0, 0, 1, tzinfo=UTC)
 FIXED_NOW_ISO = '2026-10-05T12:00:00.000001+00:00'
 USER = {'sub': 'user-sub', 'cognito:username': 'bob', 'cognito:groups': 'users'}
-RESOLVED_KEY = {'pk': 'SETTINGS#resolved_problems', 'sk': 'config'}
+RESOLVED_KEY = {'pk': f'WS#{WS}#SETTINGS#resolved_problems', 'sk': 'config'}
+#: The workspace's brand row (the request acts in WS, stubbed above).
+BRAND_KEY = {'pk': f'WS#{WS}#SETTINGS#brand', 'sk': 'config'}
 
 
 def _client_error(code: str, message: str = 'from the table') -> ClientError:
@@ -136,10 +146,11 @@ class TestTheColdStartModuleState:
             sys.path[:] = saved
 
     def test_the_module_constants_are_the_documented_values(self):
-        assert (settings_handler.SETTINGS_PK, settings_handler.SETTINGS_SK) == ('SETTINGS#brand', 'config')
-        assert (settings_handler.CATEGORIES_PK, settings_handler.CATEGORIES_SK) == ('SETTINGS#categories', 'config')
-        assert (settings_handler.RESOLVED_PROBLEMS_PK, settings_handler.RESOLVED_PROBLEMS_SK) == (
-            'SETTINGS#resolved_problems', 'config')
+        assert settings_handler.BRAND_KIND == 'brand'
+        assert settings_handler.CATEGORIES_SETTINGS_KEY == {'pk': 'SETTINGS#categories', 'sk': 'config'}
+        assert (settings_handler.CATEGORIES_KIND, settings_handler.DIMENSIONS_KIND, settings_handler.SOURCES_KIND) == (
+            'categories', 'dimensions', 'sources')
+        assert settings_handler.RESOLVED_PROBLEMS_KIND == 'resolved_problems'
         assert (settings_handler.MAX_PROBLEM_KEY_LEN, settings_handler.MAX_PROBLEM_KEY_BYTES,
                 settings_handler.MAX_RESOLVED_ENTRIES, settings_handler._PRUNE_CHUNK_SIZE) == (255, 255, 500, 20)
         assert settings_handler.RESOLVED_PROBLEMS_TTL_DAYS == 180
@@ -401,6 +412,7 @@ class TestEveryRefusalNamesItsCause:
         assert payload['error'] == ('Resolved-problem limit reached (500). '
                                     'Unresolve entries you no longer need first.')
 
+    @pytest.mark.usefixtures('no_workspace')
     def test_a_malformed_job_id_is_not_even_read(self, route, table):
         response, payload = route('POST', '/settings/categories/reprocess/not-a-job/cancel',
                                   path_params={'job_id': 'not-a-job'},
@@ -410,6 +422,7 @@ class TestEveryRefusalNamesItsCause:
         table.get_item.assert_not_called()
         table.update_item.assert_not_called()
 
+    @pytest.mark.usefixtures('no_workspace')
     def test_a_cancel_of_a_missing_job_is_named(self, route, table):
         with patch.object(settings_handler.reprocess_jobs, 'cancel_job', return_value=None) as cancel_job:
             response, payload = route('POST', '/settings/categories/reprocess/rp_000000000000/cancel',
@@ -430,7 +443,10 @@ class TestEveryRefusalNamesItsCause:
         invoke.assert_not_called()
 
 
+@pytest.mark.usefixtures('no_workspace')
 class TestStartingAReprocess:
+    """The deployment's reprocess (a request that names no workspace), exactly as before 7.13.00."""
+
     JOB: ClassVar[dict[str, object]] = {'pk': 'JOB#category_reprocess', 'sk': 'rp_0123456789ab', 'status': 'queued', 'mode': 'raw', 'days': 0,
                                        'include_manual': False, 'started_by': 'alice', 'created_at': FIXED_NOW_ISO, 'updated_at': FIXED_NOW_ISO}
     CLAIMS: ClassVar[dict[str, object]] = {'sub': 'admin-sub', 'cognito:username': 'alice', 'cognito:groups': 'admins'}
@@ -502,9 +518,9 @@ class TestStartingAReprocess:
         assert response['statusCode'] == 400
         assert payload['error'] == 'content_type must be one of: image/png, image/jpeg, image/webp'
         response, payload = route('POST', '/settings/design-system/logo', {'content_type': 'image/png',
-                                                                            'size_bytes': 5_000_001})
+                                                                            'size_bytes': 1_000_001})
         assert response['statusCode'] == 400
-        assert payload['error'] == 'size_bytes must be between 1 and 5000000'
+        assert payload['error'] == 'size_bytes must be between 1 and 1000000'
 
 
 # ── Problem resolutions ──────────────────────────────────────────────────────
@@ -580,7 +596,7 @@ class TestTheResolveWrites:
         table.update_item.side_effect = attempts
         table.get_item.return_value = {'Item': {'resolved': stored}}
         with pytest.raises(ValidationError) as raised:
-            settings_handler._resolve_problem_key('new')
+            settings_handler._resolve_problem_key(RESOLVED_KEY, 'new')
         assert raised.value.__cause__ is attempts[-1]
 
     def test_the_unresolve_write(self, route, table):
@@ -643,7 +659,7 @@ class TestThePrune:
     def test_the_chunked_remove_expressions_cover_every_stale_key_in_order(self, table, logger):
         stale = {f'old {i:02d}': _entry(300) for i in range(45)}
         table.get_item.return_value = {'Item': {'resolved': {**stale, 'live': _entry(1)}}}
-        assert settings_handler._prune_expired_entries() == 45
+        assert settings_handler._prune_expired_entries(RESOLVED_KEY) == 45
         table.get_item.assert_called_once_with(Key=RESOLVED_KEY)
         calls = table.update_item.call_args_list
         assert [len(c.kwargs['ExpressionAttributeNames']) - 1 for c in calls] == [20, 20, 5]
@@ -661,20 +677,20 @@ class TestThePrune:
 
     def test_nothing_stale_means_no_write_and_no_log(self, table, logger):
         table.get_item.return_value = {'Item': {'resolved': {'live': _entry(1)}}}
-        assert settings_handler._prune_expired_entries() == 0
+        assert settings_handler._prune_expired_entries(RESOLVED_KEY) == 0
         table.update_item.assert_not_called()
         logger.info.assert_not_called()
 
     def test_a_disabled_ttl_prunes_nothing_without_reading(self, table):
         with patch.object(settings_handler, 'RESOLVED_PROBLEMS_TTL_DAYS', 0):
-            assert settings_handler._prune_expired_entries() == 0
+            assert settings_handler._prune_expired_entries(RESOLVED_KEY) == 0
         table.get_item.assert_not_called()
 
     @pytest.mark.parametrize('stored', [{}, {'Item': {}}, {'Item': {'resolved': 'corrupted'}},
                                         {'Item': {'resolved': ['a']}}])
     def test_malformed_or_missing_storage_prunes_nothing(self, table, stored):
         table.get_item.return_value = stored
-        assert settings_handler._prune_expired_entries() == 0
+        assert settings_handler._prune_expired_entries(RESOLVED_KEY) == 0
         table.update_item.assert_not_called()
 
 
@@ -722,12 +738,69 @@ class TestExpiry:
         table.get_item.assert_called_once_with(Key=RESOLVED_KEY)
 
 
+#: The deployment's row: a request that names no workspace keeps it, as before (shared/request_workspace.py).
+DEPLOYMENT_RESOLVED_KEY = {'pk': 'SETTINGS#resolved_problems', 'sk': 'config'}
+
+
+@pytest.fixture
+def no_workspace(monkeypatch):
+    """The request names no workspace: the deployment as before (shared/request_workspace.py answers None)."""
+    monkeypatch.setattr(settings_handler, 'request_workspace', lambda _event, _public_error, **_options: None)
+
+
+@pytest.mark.usefixtures('no_workspace')
+class TestWithoutAWorkspace:
+    def test_get_reads_the_deployment_row(self, route, table):
+        table.get_item.return_value = {'Item': {'resolved': {}}}
+        response, _ = route('GET', '/settings/resolved-problems')
+        assert response['statusCode'] == 200
+        table.get_item.assert_called_once_with(Key=DEPLOYMENT_RESOLVED_KEY)
+
+    def test_put_writes_the_deployment_row_for_any_signed_in_user(self, route, table):
+        response, _ = route('PUT', '/settings/resolved-problems', {'key': 'k', 'resolved': True})
+        assert response['statusCode'] == 200
+        assert table.update_item.call_args.kwargs['Key'] == DEPLOYMENT_RESOLVED_KEY
+
+
+@pytest.mark.parametrize(('role', 'status'), [('viewer', 403), ('editor', 200), ('admin', 200)])
+def test_in_a_workspace_a_viewer_reads_and_an_editor_marks(monkeypatch, route, table, role, status):
+    act_in_workspace(monkeypatch, settings_handler, role)
+    table.get_item.return_value = {'Item': {'resolved': {}}}
+    assert route('GET', '/settings/resolved-problems')[0]['statusCode'] == 200
+    response, _ = route('PUT', '/settings/resolved-problems', {'key': 'k', 'resolved': True})
+    assert response['statusCode'] == status
+    assert table.update_item.called is (status == 200)
+
+
 # ── Model settings ───────────────────────────────────────────────────────────
 
 class TestTheModelSettingsRow:
     def test_the_row_is_read_by_its_key(self, route, table):
         route('GET', '/settings/model')
-        table.get_item.assert_called_once_with(Key={'pk': 'SETTINGS#model', 'sk': 'config'})
+        # The picks, then the deployment's default (pinned at deploy), which the answer names.
+        assert [call.kwargs for call in table.get_item.call_args_list] == MODEL_ROWS_READ
+
+    def test_a_failed_read_of_the_default_still_answers_the_picks(self, route, table):
+        failure = ClientError({'Error': {'Code': 'ThrottlingException', 'Message': 'slow down'}}, 'GetItem')
+
+        def picks_only(Key):
+            if Key['pk'] == 'SETTINGS#model_default':
+                raise failure
+            return {'Item': {'model_id': OPUS}}
+
+        table.get_item.side_effect = picks_only
+        response, payload = route('GET', '/settings/model')
+        assert (response['statusCode'], payload['model_id'], payload['deployment_default']) == (200, OPUS, None)
+
+    def test_a_default_outside_the_allowlist_is_not_named(self, route, table):
+        table.get_item.side_effect = lambda Key: (
+            {'Item': {'model_id': 'anthropic.unknown'}} if Key['pk'] == 'SETTINGS#model_default' else {})
+        assert route('GET', '/settings/model')[1]['deployment_default'] is None
+
+    def test_the_answer_names_the_deployment_s_default(self, route, table):
+        table.get_item.side_effect = lambda Key: {'Item': {'model_id': OPUS}} if Key['pk'] == 'SETTINGS#model_default' else {}
+        _, payload = route('GET', '/settings/model')
+        assert (payload['model_id'], payload['deployment_default']) == (None, OPUS)
 
     def test_a_non_dict_surfaces_attribute_reads_as_automatic(self, route, table):
         table.get_item.return_value = {'Item': {'surfaces': 'chat=haiku', 'model_id': OPUS}}
@@ -800,11 +873,11 @@ class TestTheModelSettingsRow:
 
 class TestBrand:
     def test_a_row_missing_every_field_reads_as_the_defaults(self, route, table):
-        table.get_item.return_value = {'Item': {'pk': 'SETTINGS#brand', 'sk': 'config'}}
+        table.get_item.return_value = {'Item': BRAND_KEY}
         response, payload = route('GET', '/settings/brand')
         assert response['statusCode'] == 200
         assert payload == {'brand_name': '', 'brand_handles': [], 'hashtags': [], 'urls_to_track': []}
-        table.get_item.assert_called_once_with(Key={'pk': 'SETTINGS#brand', 'sk': 'config'})
+        table.get_item.assert_called_once_with(Key=BRAND_KEY)
 
     @pytest.mark.usefixtures('fixed_now')
     def test_a_partial_save_writes_the_whole_row_with_defaults(self, route, table):
@@ -815,7 +888,7 @@ class TestBrand:
             'settings': {'brand_name': 'Acme', 'brand_handles': [], 'hashtags': [], 'urls_to_track': []},
         }
         table.put_item.assert_called_once_with(Item={
-            'pk': 'SETTINGS#brand', 'sk': 'config', 'brand_name': 'Acme', 'brand_handles': [], 'hashtags': [],
+            **BRAND_KEY, 'brand_name': 'Acme', 'brand_handles': [], 'hashtags': [],
             'urls_to_track': [], 'updated_at': FIXED_NOW_ISO,
         })
 
@@ -836,7 +909,10 @@ class TestBrand:
 
 # ── Categories ───────────────────────────────────────────────────────────────
 
+@pytest.mark.usefixtures('no_workspace')
 class TestCategories:
+    """The deployment's categories (a request that names no workspace); a workspace's: test_settings_workspace_config.py."""
+
     OWNER: ClassVar[dict[str, object]] = {'sub': 'owner-sub', 'username': 'olga', 'email': 'olga@example.com'}
 
     def test_no_row_reads_as_an_empty_config_with_a_null_timestamp(self, route, table):
@@ -901,6 +977,7 @@ class TestCategories:
         assert payload == {'success': True, 'message': 'Saved 2 categories'}
         table.put_item.assert_called_once_with(Item={
             'pk': 'SETTINGS#categories', 'sk': 'config', 'updated_at': FIXED_NOW_ISO,
+            'updated_by': ANY,  # who saved it, as the dimensions and the source profiles record (7.08.00)
             'categories': [
                 {'name': 'a', 'description': '', 'subcategories': []},
                 {'name': 'b', 'description': '', 'subcategories': []},
@@ -1519,3 +1596,48 @@ class TestTheWorkerBranch:
             assert lambda_handler({'action': 'other', 'ref_id': REF_ID}, lambda_context) == {'statusCode': 200}
         process.assert_not_called()
         resolve.assert_called_once_with({'action': 'other', 'ref_id': REF_ID}, lambda_context)
+
+
+@pytest.mark.usefixtures('no_workspace')
+class TestTheBrandWithoutAWorkspace:
+    """A request that names no workspace keeps the deployment's brand row and its admins (as before)."""
+
+    def test_get_reads_the_deployment_row(self, route, table):
+        table.get_item.return_value = {'Item': {'brand_name': 'Acme'}}
+        assert route('GET', '/settings/brand')[1]['brand_name'] == 'Acme'
+        table.get_item.assert_called_once_with(Key={'pk': 'SETTINGS#brand', 'sk': 'config'})
+
+    def test_put_is_the_deployment_admins_and_writes_the_deployment_row(self, route, table):
+        response, _ = route('PUT', '/settings/brand', {'brand_name': 'Acme'})
+        assert response['statusCode'] == 200
+        assert table.put_item.call_args.kwargs['Item']['pk'] == 'SETTINGS#brand'
+
+    def test_put_is_refused_to_a_user_outside_the_admins_group(self, route, table):
+        response, _ = route('PUT', '/settings/brand', {'brand_name': 'Acme'}, claims=USER)
+        assert response['statusCode'] == 403
+        table.put_item.assert_not_called()
+
+
+@pytest.mark.parametrize(('role', 'status'), [('viewer', 403), ('editor', 403), ('admin', 200)])
+def test_in_a_workspace_only_its_admins_change_the_brand(monkeypatch, route, table, role, status):
+    """The route's caller is in the deployment's admins group: it grants nothing inside a workspace."""
+    act_in_workspace(monkeypatch, settings_handler, role)
+    response, _ = route('PUT', '/settings/brand', {'brand_name': 'Acme'})
+    assert response['statusCode'] == status
+    assert table.put_item.called is (status == 200)
+
+
+def test_the_brand_s_write_resolves_the_role_fresh_and_its_read_from_the_cache(monkeypatch, route, table):
+    """A workspace admin demoted a moment ago cannot change the brand from another container's warm cache."""
+    seen: list[dict] = []
+    context = act_in_workspace(monkeypatch, settings_handler)
+
+    def recording(_event, _public_error, **options):
+        seen.append(options)
+        return context
+
+    monkeypatch.setattr(settings_handler, 'request_workspace', recording)
+    table.get_item.return_value = {'Item': {}}
+    route('GET', '/settings/brand')
+    route('PUT', '/settings/brand', {'brand_name': 'Acme'})
+    assert seen == [{}, {'fresh': True}]

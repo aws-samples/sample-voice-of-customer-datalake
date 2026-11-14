@@ -62,8 +62,6 @@ export const TOMBSTONE_PARTITIONS = 'AUDIT#tombstone#*';
  * partition, so USER#*, FORM#*, PLUGIN#* and WORKSPACES reach other workspaces' rows too: the code builds the sort
  * key (`WS#{ws}`) or deletes only a row naming this workspace (`workspace_id`), tested. */
 export const CONTROL_ROW_DELETES = [WORKSPACE_CONTROL_PARTITION, 'FORM#*', 'PLUGIN#*', 'USER#*', 'WORKSPACES'];
-/** The deployment's settings rows the counters' sweep reads (shared/categorization.py, shared/dimension_config.py). */
-export const DEPLOYMENT_SETTINGS_PARTITIONS = ['SETTINGS#categories', 'SETTINGS#dimensions'];
 /** The indexes the sweeps read (lambda/shared/indexes.py). */
 const FEEDBACK_BY_DATE_INDEX = 'gsi1-by-date';
 const AGGREGATES_BY_METRIC_TYPE_INDEX = 'gsi1-by-metric-type';
@@ -83,6 +81,8 @@ export interface WorkspaceDeleteWorkerProps {
   workspacesTable: dynamodb.ITable;
   memoryTable: dynamodb.ITable;
   watermarksTable: dynamodb.ITable;
+  /** voc-radar: a workspace's Radar settings (`WS#{id}#SETTINGS#radar`). */
+  radarTable: dynamodb.ITable;
   rawDataBucket: s3.IBucket;
   /** Every plugin id of the deployment (its PLUGIN#{p} rows and per-plugin partitions are found by them). */
   pluginIds: readonly string[];
@@ -155,11 +155,6 @@ function grantOnAggregates(role: iam.Role, which: DeleteGrant, aggregatesTable: 
       query(role, 'QueryWorkspaceMetricTypes', `${aggregatesTable.tableArn}/index/${AGGREGATES_BY_METRIC_TYPE_INDEX}`,
         [WORKSPACE_PARTITIONS]);
       return true;
-    case 'deploymentSettings':
-      // The closed counter families' names (sweeps.py `_closed_counters`): two deployment rows, no workspace data.
-      query(role, 'ReadDeploymentCounterSettings', aggregatesTable.tableArn, DEPLOYMENT_SETTINGS_PARTITIONS,
-        ['dynamodb:GetItem']);
-      return true;
     case 'tombstones':
       grantKeyScopedWrites(aggregatesTable, role, ['PutItem'], [TOMBSTONE_PARTITIONS]);
       return true;
@@ -173,7 +168,7 @@ function grantOnAggregates(role: iam.Role, which: DeleteGrant, aggregatesTable: 
 
 /** Each grant's statements (lib/utils/workspace-delete-grants.ts). */
 function grant(scope: Construct, role: iam.Role, which: DeleteGrant, props: WorkspaceDeleteWorkerProps): void {
-  const { feedbackTable, aggregatesTable, workspacesTable, memoryTable, watermarksTable, rawDataBucket } = props;
+  const { feedbackTable, aggregatesTable, workspacesTable, memoryTable, watermarksTable, radarTable, rawDataBucket } = props;
   if (grantOnAggregates(role, which, aggregatesTable)) return;
   switch (which) {
     case 'feedback':
@@ -184,6 +179,11 @@ function grant(scope: Construct, role: iam.Role, which: DeleteGrant, props: Work
       return;
     case 'watermarks':
       grantKeyScopedWrites(watermarksTable, role, ['BatchWriteItem'], [WORKSPACE_PARTITIONS]);
+      return;
+    case 'radar':
+      // The workspace's Radar rows (sweeps.py `radar`): read and batch-deleted in its own partitions only.
+      query(role, 'ReadWorkspaceRadar', radarTable.tableArn, [WORKSPACE_PARTITIONS], ['dynamodb:GetItem', 'dynamodb:Query']);
+      grantKeyScopedWrites(radarTable, role, ['BatchWriteItem'], [WORKSPACE_PARTITIONS]);
       return;
     case 'memory':
       query(role, 'QueryWorkspaceMemory', memoryTable.tableArn, MEMORY_PARTITIONS);
@@ -254,6 +254,7 @@ export function createWorkspaceDeleteWorker(scope: Construct, id: string,
       WORKSPACES_TABLE: workspacesTable.tableName,
       MEMORY_TABLE: props.memoryTable.tableName,
       WATERMARKS_TABLE: props.watermarksTable.tableName,
+      RADAR_TABLE: props.radarTable.tableName,
       RAW_DATA_BUCKET: props.rawDataBucket.bucketName,
       PLUGIN_IDS: JSON.stringify([...props.pluginIds].sort(byCodeUnit)),
       // Built only with the flag on (lib/utils/workspace-hard-delete.ts); the job refuses to run without it.

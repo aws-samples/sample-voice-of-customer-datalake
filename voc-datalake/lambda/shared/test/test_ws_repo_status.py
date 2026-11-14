@@ -74,8 +74,8 @@ class TestTheStatusCheck:
             assert workspace_is_active(table, B, WorkspaceStatusCache()) is True
 
     def test_the_writers_grant_allows_exactly_the_projected_attributes(self):
-        """lib/utils/workspace-request-grants.ts WORKSPACE_STATUS_ATTRIBUTES is the read's projection."""
-        source = (Path(__file__).resolve().parents[3] / 'lib/utils/workspace-request-grants.ts').read_text('utf-8')
+        """lib/utils/workspace-resolution-grants.ts WORKSPACE_STATUS_ATTRIBUTES is the read's projection."""
+        source = (Path(__file__).resolve().parents[3] / 'lib/utils/workspace-resolution-grants.ts').read_text('utf-8')
         match = re.search(r"WORKSPACE_STATUS_ATTRIBUTES = \[([^\]]*)\]", source)
         assert match is not None
         assert tuple(re.findall(r"'([a-z_]+)'", match.group(1))) == STATUS_READ_ATTRIBUTES

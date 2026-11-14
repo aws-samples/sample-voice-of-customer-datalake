@@ -199,6 +199,17 @@ runtime and MCP tokens use.
   or the user directory (`list_users`, `get_user_access`), so `voc-plan-step` has no Users API grant. In `scrapers`
   and `settings` a think step reads as an admin only while the approver still is one.
 - `run_agent` and `cancel_agent_run` are admin-only tools, matching their routes.
+- The workspace (docs/multi-workspace.md, "Request flow"): the approval's own `X-Workspace-Id` is kept on the plan
+  (`workspace_id` on its META row; none when the request names no workspace, and a header that is not a workspace id
+  is the one 404, before anything is written or started), and every step names it to the
+  domain Lambdas it calls (`voc:workspace` in the step's claims, sent as each call's `X-Workspace-Id` header, never as
+  a claim). A route that has moved into its workspace judges it as for the approver's own request
+  (`lambda/shared/request_workspace.py`): so far `GET` and `PUT /settings/resolved-problems` (a think step's
+  `get_resolved_problems`, a `set_problem_resolved` step), so such a step acts only in a workspace its approver is a
+  member of, a viewer approver's `set_problem_resolved` is refused (403), and an approver removed from it mid-run has
+  the following steps refused (a write reads the role fresh from the table; a read within the 30 s membership cache,
+  `lambda/shared/workspace.py`). Every other route a plan calls still only carries the header, until it moves (phases
+  2 and 3); a plan approved with no workspace keeps the deployment's rows, as before.
 
 ## Failure, cancel and delete
 

@@ -11,8 +11,13 @@ Resolution order for a surface ``S``::
     explicit model_id argument
     > per-surface override      (settings.surfaces[S])
     > legacy global override    (settings.model_id — applies to every surface)
+    > the deployment's default  (SETTINGS#model_default, pinned at deploy: custom_resources/model_pin.py)
     > built-in default for S    (SURFACE_DEFAULTS[S])
     > BEDROCK_MODEL_ID
+
+The picks (``SETTINGS#model``) and the deploy-time default (``SETTINGS#model_default``) are two rows, so the picks
+can move into each workspace (docs/multi-workspace.md, "Per-workspace configuration") while the default stays the
+deployment's. A deployment from before the split keeps its pin in ``settings.model_id``, where it still applies.
 
 The per-surface design replaces the single global toggle: an admin can, for
 example, keep enrichment on cheap Haiku while running chat on Sonnet 5.5 and
@@ -36,6 +41,10 @@ from shared.model_profile import E2E_PROFILE, active_profile
 
 MODEL_SETTINGS_PK = "SETTINGS#model"
 MODEL_SETTINGS_SK = "config"
+#: The deployment's default model, pinned at deploy (custom_resources/model_pin.py): ``model_id``, below the picks.
+MODEL_DEFAULT_KEY = {"pk": "SETTINGS#model_default", "sk": "config"}
+#: Where _load_settings puts the deployment default's model id in the settings it returns (no stored attribute).
+DEPLOYMENT_DEFAULT = "deployment_default"
 
 # --- Curated allowlist -------------------------------------------------------
 # MUST stay in lockstep with:
@@ -417,8 +426,8 @@ def surface_context_window_tokens(surface: str) -> int:
 
 
 # --- Per-container cache -----------------------------------------------------
-# Cache the whole settings item (surfaces map + legacy global) so hot Lambdas
-# don't read DynamoDB on every inference. Failures cache for a shorter window
+# Cache the settings (surfaces map + legacy global, and the deployment's default
+# from its own row) so hot Lambdas don't read DynamoDB on every inference. Failures cache for a shorter window
 # so a throttling blip doesn't pin inference to defaults for the full minute.
 _CACHE_TTL_SECONDS = 60
 _ERROR_CACHE_TTL_SECONDS = 10
@@ -431,12 +440,24 @@ def clear_model_cache() -> None:
     _cache["expires"] = 0.0
 
 
-def _load_settings() -> dict:
-    """Return the cached model-settings item, or {} when absent/unreadable.
+def _read_row(table_name: str, key: dict) -> tuple[object, bool]:
+    """One item of the aggregates table and whether the read worked; a failure is logged, never raised."""
+    try:
+        return get_dynamodb_resource().Table(table_name).get_item(Key=key).get("Item"), True
+    except Exception as e:  # noqa: BLE001 — model lookup must never break inference
+        logger.warning(f"Model settings lookup failed; using defaults: {e}")
+        return None, False
 
-    Shape: ``{'surfaces': {surface: model_id}, 'model_id': <legacy global>}``.
-    Never raises — a missing table env, missing item, or read failure all
-    resolve to an empty dict so callers fall back to surface defaults.
+
+def _load_settings() -> dict:
+    """Return the cached model settings, or {} when absent/unreadable.
+
+    Shape: ``{'surfaces': {surface: model_id}, 'model_id': <legacy global>,
+    'deployment_default': <model id>}`` (the last from SETTINGS#model_default,
+    never stored under that name). Never raises: a missing table env or a
+    missing item leaves its part out, and each row's read failure is absorbed
+    on its own (what the other row answered is kept, cached for the 10 s error
+    window), so callers fall back to surface defaults.
     """
     table_name = os.environ.get("AGGREGATES_TABLE", "")
     if not table_name:
@@ -444,18 +465,14 @@ def _load_settings() -> dict:
     now = time.time()
     if _cache["value"] is not None and now < _cache["expires"]:
         return _cache["value"]
-    value: dict = {}
-    ttl = _CACHE_TTL_SECONDS
-    try:
-        table = get_dynamodb_resource().Table(table_name)
-        item = table.get_item(
-            Key={"pk": MODEL_SETTINGS_PK, "sk": MODEL_SETTINGS_SK}
-        ).get("Item")
-        if isinstance(item, dict):
-            value = item
-    except Exception as e:  # noqa: BLE001 — model lookup must never break inference
-        logger.warning(f"Model settings lookup failed; using defaults: {e}")
-        ttl = _ERROR_CACHE_TTL_SECONDS
+    # Each row read on its own: a failed read of one keeps what the other answered (for the error window), the same
+    # way the streaming-chat lookup does (lambda/stream/src/bedrock/model-override.ts).
+    item, picks_read = _read_row(table_name, {"pk": MODEL_SETTINGS_PK, "sk": MODEL_SETTINGS_SK})
+    value: dict = dict(item) if isinstance(item, dict) else {}
+    pinned, default_read = _read_row(table_name, MODEL_DEFAULT_KEY)
+    if isinstance(pinned, dict) and pinned.get("model_id"):
+        value[DEPLOYMENT_DEFAULT] = pinned["model_id"]
+    ttl = _CACHE_TTL_SECONDS if picks_read and default_read else _ERROR_CACHE_TTL_SECONDS
     _cache["value"] = value
     _cache["expires"] = now + ttl
     return value
@@ -478,8 +495,8 @@ def get_active_model_id(surface: str = DEFAULT_SURFACE) -> str:
     """Resolve the Bedrock model ID to use for a given AI surface.
 
     Never raises. Precedence: active model profile (every surface) >
-    per-surface override > legacy global override > built-in surface default >
-    BEDROCK_MODEL_ID.
+    per-surface override > legacy global override > the deployment's default >
+    built-in surface default > BEDROCK_MODEL_ID.
     """
     forced = profile_model_id()
     if forced:
@@ -493,4 +510,7 @@ def get_active_model_id(surface: str = DEFAULT_SURFACE) -> str:
     legacy_global = _allowlisted(settings.get("model_id"))
     if legacy_global:
         return legacy_global
+    pinned = _allowlisted(settings.get(DEPLOYMENT_DEFAULT))
+    if pinned:
+        return pinned
     return surface_default(surface)

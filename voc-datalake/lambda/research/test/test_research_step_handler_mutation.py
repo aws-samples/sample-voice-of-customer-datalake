@@ -581,7 +581,7 @@ class TestStepSave:
             call(P, J, 'completed', 100, 'complete', result={'document_id': RESEARCH_ID, 'title': title}),
         ]
         table, project_id, item, counter = saved.call_args.args
-        assert (project_id, counter) == (P, 'document_count')
+        assert (project_id, counter, saved.call_args.kwargs) == (P, 'document_count', {'workspace': None})
         content = item.pop('content')
         assert content.startswith(
             '# Research Report: Research\n\n**Generated:** 2026-03-04\n**Feedback Analyzed:** 4 items\n'

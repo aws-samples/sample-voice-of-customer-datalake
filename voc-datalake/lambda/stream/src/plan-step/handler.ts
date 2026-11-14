@@ -1,5 +1,5 @@
 /**
- * `voc-plan-step` Lambda handler (Node.js 22, ARM64; bundled by esbuild from
+ * `voc-plan-step` Lambda handler (Node.js 24, ARM64; bundled by esbuild from
  * THIS file — `lambda/stream/src/plan-step/handler.ts`, export `handler`).
  * Invoked directly by the plan conductor (VocProcessingStack) once per `write`
  * or `think` step; never behind API Gateway. See event.ts for the contract and

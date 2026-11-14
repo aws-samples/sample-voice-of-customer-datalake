@@ -21,7 +21,7 @@ describe('Administration → Sources copy', () => {
   })
 
   it('opens ?tab=sources on that section', () => {
-    expect(resolveAdminLocation('sources', null, true)).toStrictEqual({ tab: 'sources', section: 'plugins' })
+    expect(resolveAdminLocation('sources', null, true, false)).toStrictEqual({ tab: 'sources', section: 'plugins' })
   })
 
   it.each([

@@ -1,0 +1,58 @@
+/**
+ * @fileoverview The caller's workspaces (`GET /me/workspaces`), one cache entry shared by the workspace gate and
+ * the header's workspace menu (rendered only under the gate), the server's answer for the current one
+ * (`GET /me/workspaces/current`), and the last workspace this browser entered, which
+ * the picker highlights. The workspaces the server refused in this tab are in `refusedWorkspaces.ts`.
+ *
+ * @module workspace/useMyWorkspaces
+ */
+import { useQuery } from '@tanstack/react-query'
+import { currentWorkspaceKey, myWorkspacesKey, workspacesApi } from '../api/workspacesApi'
+import type { WorkspaceRole } from '../api/workspacesApi'
+import type { CurrentWorkspace } from './currentWorkspace'
+
+export function useMyWorkspaces() {
+  return useQuery({ queryKey: myWorkspacesKey(), queryFn: workspacesApi.list })
+}
+
+/**
+ * `GET /me/workspaces/current` for the workspace `id` (null: not asked): the workspace as the server resolves it,
+ * with the role it applies there. One cache entry per id, shared by the gate (which asks on entering) and the
+ * members page (which waits for that role). Not retried: both act on the first answer (a failure keeps the
+ * membership's role, or offers Try again for an unlisted entry), never a spinner through the client's retries.
+ */
+export function useServerWorkspace(id: string | null) {
+  return useQuery({ queryKey: currentWorkspaceKey(id ?? ''), queryFn: workspacesApi.current, enabled: id !== null, retry: false })
+}
+
+/**
+ * The role the server applies in `workspace` (`/current`), or null until it answers. If that read fails, the
+ * membership's role, as the gate keeps it; the server decides every write either way. The members and workspace
+ * settings pages wait for it, so a platform admin who is also an editor or a viewer is not shown the read-only page
+ * first; the brand form reads it too (useBrandEditRight.ts).
+ */
+export function useServerRole(workspace: CurrentWorkspace | null): WorkspaceRole | null {
+  const server = useServerWorkspace(workspace?.id ?? null)
+  if (workspace === null || server.isPending) return null
+  return server.data?.id === workspace.id ? server.data.role : workspace.role
+}
+
+/** localStorage: the slug of the workspace last entered in this browser (a highlight, never a redirect). */
+const LAST_WORKSPACE_KEY = 'voc-last-workspace'
+
+export function lastWorkspaceSlug(): string | null {
+  try {
+    return window.localStorage.getItem(LAST_WORKSPACE_KEY)
+  } catch {
+    // Storage blocked: nothing is highlighted.
+    return null
+  }
+}
+
+export function rememberWorkspace(slug: string): void {
+  try {
+    window.localStorage.setItem(LAST_WORKSPACE_KEY, slug)
+  } catch {
+    // Storage blocked: the picker simply highlights nothing next time.
+  }
+}

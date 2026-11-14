@@ -8,6 +8,7 @@ from github_fixtures import API, ISSUES_PATH, REPO, FakeGitHub, FakeResponse, co
 from github_ingestor_fixtures import WATERMARK_KEY, WatermarkTable, ingestor_with, run_listing, sent_items
 
 from _shared.test.workspace_fixtures import OTHER_SCOPE, OTHER_WS, WS
+from shared.test.source_profile_fixtures import seeded_source_profiles
 
 AT_BOUNDARY = {"since": "2026-01-03T00:00:00Z", "boundary": [2]}
 
@@ -212,7 +213,9 @@ def test_the_token_is_sent_only_as_a_bearer_header():
 
 def test_the_raw_github_payload_is_archived_and_not_enqueued():
     github = FakeGitHub({ISSUES_PATH: [ok([issue(1)])]})
+    # The workspace keeps the source's PII (its own allow profile; without one it redacts and keeps no raw copy).
     with patch("_shared.base_ingestor.RAW_DATA_BUCKET", "raw-bucket"), \
+            seeded_source_profiles(workspaces={WS: [{"id": "test_source", "pii": "allow"}]}), \
             ingestor_with(github, WatermarkTable()) as ingestor:
         ingestor.run()
 

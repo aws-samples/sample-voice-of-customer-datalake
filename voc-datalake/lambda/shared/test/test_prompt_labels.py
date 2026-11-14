@@ -31,7 +31,7 @@ class TestLoad:
         import shared.prompt_labels_store as loader
         from shared import api
 
-        monkeypatch.setattr(api, '_categories_cache', None)
+        monkeypatch.setattr(api, '_categories_cache', {})
         table = MagicMock()
         table.get_item.side_effect = lambda Key, **_: {'Item': (
             {'categories': CATEGORIES} if Key['pk'] == 'SETTINGS#categories'

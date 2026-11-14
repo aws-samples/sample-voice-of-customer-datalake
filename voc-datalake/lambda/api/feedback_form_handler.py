@@ -95,8 +95,9 @@ feedback_table = dynamodb.Table(FEEDBACK_TABLE) if FEEDBACK_TABLE else None
 
 
 
-def _preset_routing(form: dict) -> tuple[str, str]:
-    """The form's category routing as category NAMES (a pre-5.25 form may hold config ids).
+def _preset_routing(form: dict, scope: WorkspaceScope | None = None) -> tuple[str, str]:
+    """The form's category routing as category NAMES (a pre-5.25 form may hold config ids), against the categories
+    of the form's workspace (``scope``; the deployment's for a deployment form).
 
     This is the public, unauthenticated submit path, so the config comes from the
     warm-container cache (5 minutes, ``shared.api.get_raw_categories_config``), and a
@@ -107,7 +108,7 @@ def _preset_routing(form: dict) -> tuple[str, str]:
     subcategory = str(form.get('subcategory') or '')
     if not category:
         return '', subcategory
-    return feedback_category.routed_names(get_raw_categories_config(aggregates_table), category, subcategory)
+    return feedback_category.routed_names(get_raw_categories_config(aggregates_table, scope), category, subcategory)
 
 def _forms_table() -> 'Table':
     """The aggregates table, where form configs live; ConfigurationError when unset."""
@@ -479,9 +480,10 @@ def _is_widget_dimensions(value: object) -> TypeGuard[dict]:
     return isinstance(value, dict) and len(value) <= MAX_WIDGET_DIMENSIONS
 
 
-def _validate_form_labels(body: dict) -> None:
-    """Normalise `dimension_defaults` / `tags` in a create/update body in place (400 when invalid)."""
-    normalise_label_fields(_forms_table(), body)
+def _validate_form_labels(body: dict, scope: WorkspaceScope | None = None) -> None:
+    """Normalise `dimension_defaults` / `tags` in a create/update body in place (400 when invalid), against the
+    dimensions of the form's workspace (``scope``; the deployment's for a deployment form)."""
+    normalise_label_fields(_forms_table(), body, scope)
 
 def validate_link_fields(body: dict) -> None:
     """Reject a malformed project_id / document_id before it is persisted.
@@ -815,7 +817,7 @@ def _stats_for_forms(items: list[dict], scope: WorkspaceScope | None = None) -> 
     """
     if not feedback_table:
         raise ConfigurationError('Feedback table not configured')
-    access = scope_for_event(app.current_event.raw_event, aggregates_table)
+    access = scope_for_event(app.current_event.raw_event, aggregates_table, scope)
     form_ids_by_pk: dict[str, list[str]] = {}
     for item in items:
         form_id = item.get('form_id')
@@ -883,7 +885,7 @@ def create_form():
     """Create a new feedback form (in a workspace: its form, and the lookup row that routes its public id there)."""
     scope = _request_scope(write=True)
     body = json_object_body(app)
-    _validate_form_labels(body)
+    _validate_form_labels(body, scope)
     # Link fields are validated inside build_form_item, structurally.
     item = build_form_item(body, scope=scope)
 
@@ -925,7 +927,7 @@ def update_form(form_id: str):
     body = json_object_body(app)
     validate_link_fields(body)
     validate_theme(body)
-    _validate_form_labels(body)
+    _validate_form_labels(body, scope)
     now = now_iso()
 
     # Build update expression dynamically
@@ -983,11 +985,15 @@ def delete_form(form_id: str):
 
     A workspace's delete is recorded first (TENETS.md D5: a workspace delete is recorded), in its audit partition
     ``AUDIT#WS#{ws}`` (kind ``form_deleted``, the actor's sub, the form id, the time; under the audit-row guard, so no
-    role can change or remove it): a row that cannot be written deletes nothing, and the row records the attempt.
+    role can change or remove it): a row that cannot be written deletes nothing, and the row records the attempt. Only
+    a form the workspace holds is recorded and deleted: an unknown id, or another workspace's, is the 404, with no
+    audit row (the deployment's delete stays idempotent).
     """
     scope = _request_scope(write=True)
     if scope is None:
         _refuse_a_workspaces_id(form_id, 'Failed to delete form')
+    else:
+        _read_form(form_id, 'Failed to delete form', scope)  # 404 for a form this workspace does not hold
     try:
         if scope is not None:
             _record_form_delete(scope, form_id)
@@ -1112,7 +1118,7 @@ def submit_form_feedback(form_id: str):
     if participant:
         metadata['participant'] = participant
 
-    preset_category, preset_subcategory = _preset_routing(form)
+    preset_category, preset_subcategory = _preset_routing(form, scope)
     normalized_record = {
         'id': feedback_id,
         'source_platform': FEEDBACK_FORM_SOURCE,
@@ -1135,8 +1141,8 @@ def submit_form_feedback(form_id: str):
     }
     # The feedback_form source profile's PII policy, before anything is archived or
     # queued. Strict: an unreadable policy answers 503 (the widget can retry) rather
-    # than archiving or queueing under the allow default.
-    profile = cached_source_profile_strict(FEEDBACK_FORM_SOURCE)
+    # than archiving or queueing under the allow default. A workspace's form: that workspace's profile.
+    profile = cached_source_profile_strict(FEEDBACK_FORM_SOURCE, scope)
     policed = apply_source_policy(normalized_record, profile)
     if policed is None:
         raise ValidationError('Feedback text is required')
@@ -1350,7 +1356,7 @@ def get_form_submissions(form_id: str):
     source_channel = f'form_{form_id}'
     source_pk = _form_source_pk(form, workspace)
     # Read before the try: a failed access read is its own 500, not "no submissions".
-    scope = scope_for_event(app.current_event.raw_event, aggregates_table)
+    scope = scope_for_event(app.current_event.raw_event, aggregates_table, workspace)
 
     try:
         items = []
@@ -1437,7 +1443,7 @@ def get_form_stats(form_id: str):
 
     source_channel = f'form_{form_id}'
     source_pk = _form_source_pk(form, workspace)
-    scope = scope_for_event(app.current_event.raw_event, aggregates_table)
+    scope = scope_for_event(app.current_event.raw_event, aggregates_table, workspace)
 
     try:
         ratings = _RatingTally()

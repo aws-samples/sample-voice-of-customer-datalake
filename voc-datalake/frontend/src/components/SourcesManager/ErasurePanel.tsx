@@ -23,6 +23,7 @@ import {
   ErasureJobDetails, ErasureSection, ErasureStartError, ErasureStatusBadge, ErasureWorkspaceItems,
 } from './erasureParts'
 import { errorReason, useErasureJobs, useStartErasure } from './useErasureJobs'
+import { useCurrentWorkspace } from '../../workspace/currentWorkspace'
 
 const FIELD_COPY: Record<ErasureJobField, { labelKey: string }> = {
   author: { labelKey: 'components:erasure.fields.author' },
@@ -57,17 +58,27 @@ function JobRow({ job }: Readonly<{ job: ErasureJob }>) {
   )
 }
 
-/** Only an email is one person everywhere: an erasure by email also reaches every workspace (the server's rule,
- *  lambda/shared/retention.py `reaches_workspaces`); the other fields reach the deployment's own reviews only. */
-const reachesWorkspaces = (field: ErasureField) => field === 'email'
+/**
+ * Where the erasure reaches, as a note's key, or null for none. Inside a workspace the request names it
+ * (`X-Workspace-Id`), and the server erases that workspace's reviews only, by any field, an email included
+ * (lambda/shared/erasure_scope.py). Outside one, only an email is one person everywhere: an erasure by email also
+ * reaches every workspace (lambda/shared/retention.py `reaches_workspaces`); the other fields, the deployment's own
+ * reviews only.
+ */
+function useReachNote(field: ErasureField): string | null {
+  const { t } = useTranslation('components', { keyPrefix: 'erasure' })
+  if (useCurrentWorkspace() !== null) return t('reachesThisWorkspace')
+  return field === 'email' ? t('emailReachesWorkspaces') : null
+}
 
-/** The "Match on" picker, with the note that an erasure by email reaches every workspace. */
+/** The "Match on" picker, with the note on where the erasure reaches. */
 function MatchOnField({ field, onChange }: Readonly<{ field: ErasureField; onChange: (field: ErasureField) => void }>) {
   const { t } = useTranslation('components', { keyPrefix: 'erasure' })
   const { t: tAll } = useTranslation()
   const fieldId = useId()
   const reachId = useId()
-  const reaches = reachesWorkspaces(field)
+  const note = useReachNote(field)
+  const reaches = note !== null
   return (
     <div>
       <label htmlFor={fieldId} className="block text-xs font-medium text-text mb-1">{t('fieldLabel')}</label>
@@ -75,17 +86,18 @@ function MatchOnField({ field, onChange }: Readonly<{ field: ErasureField; onCha
         aria-describedby={reaches ? reachId : undefined}>
         {ERASURE_FIELDS.map((f) => <option key={f} value={f}>{tAll(FIELD_COPY[f].labelKey)}</option>)}
       </select>
-      {reaches && <p id={reachId} className="text-xs text-muted mt-1">{t('emailReachesWorkspaces')}</p>}
+      {note !== null && <p id={reachId} className="text-xs text-muted mt-1">{note}</p>}
     </div>
   )
 }
 
-/** The confirm dialog's text: what is erased where, and for an email that every workspace is reached too. */
+/** The confirm dialog's text: what is erased, and where it reaches (`useReachNote`). */
 function useConfirmMessage(field: ErasureField, source: string): string {
   const { t } = useTranslation('components', { keyPrefix: 'erasure' })
   const { t: tAll } = useTranslation()
+  const note = useReachNote(field)
   const message = t('confirmMessage', { field: tAll(FIELD_COPY[field].labelKey), source: source === '' ? t('allSources') : source })
-  return reachesWorkspaces(field) ? `${message} ${t('emailReachesWorkspaces')}` : message
+  return note === null ? message : `${message} ${note}`
 }
 
 export default function ErasurePanel({ profiles }: Readonly<{ profiles: readonly SourceProfile[] }>) {

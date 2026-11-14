@@ -159,6 +159,7 @@
     "retry": "重试",
     "notSynced": "未同步",
     "saveFailed": "无法保存到服务器。请重试。",
+    "savedToServer": "品牌已保存。",
     "adminOnlyNotice": "只有管理员可以更改品牌配置。您可以在此查看。"
   },
   "categories": {
@@ -222,6 +223,7 @@
     "validationFailures": "验证失败",
     "periodLabel": "时间段",
     "alerts": {
+      "platformAdminOnly": "只有平台管理员可以更改告警：告警监视整个部署。你可以在这里查看。",
       "title": "告警",
       "on": "开",
       "off": "关",
@@ -698,6 +700,8 @@
     "uploadBadType": "{{name}} 不是受支持的文件类型。",
     "uploadTooLarge": "{{name}} 超过 {{mb}} MB。",
     "uploadFailed": "上传失败，请重试。",
+    "logoNotShrunk": "无法将 {{name}} 缩小到 1 MB 以下。请导出更小的 PNG 后上传。",
+    "logoUnreadable": "无法将 {{name}} 作为图片读取。请导出为 PNG 后上传。",
     "integrations": "设计集成",
     "integrationsHint": "令牌加密存储，且不会再次显示。留空即保留当前令牌。",
     "providers": {
@@ -964,7 +968,7 @@
   "appearance": {
     "title": "默认主题",
     "hint": "在每个人于 账户 → 偏好设置 中选择自己的主题之前，所有人看到的配色主题。",
-    "adminOnlyNotice": "只有管理员可以更改默认主题。你可以在此查看。",
+    "adminOnlyNotice": "只有平台管理员可以更改默认主题：所有工作区共用它。你可以在这里查看。",
     "loading": "正在加载默认主题…",
     "loadFailed": "无法从服务器加载默认主题。",
     "save": "保存主题",

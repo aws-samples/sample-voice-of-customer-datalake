@@ -159,6 +159,7 @@
     "reprocess": {
       "title": "Retraiter les retours existants",
       "description": "Après avoir modifié les catégories, recatégorisez les avis déjà enregistrés. Les avis sont mis à jour sur place — rien n'est supprimé.",
+      "workspaceDescription": "Après avoir modifié les catégories ou les dimensions de cet espace de travail, recalculez avec elles ses avis enregistrés. Seuls les avis de cet espace de travail sont lus et mis à jour sur place — rien n'est supprimé, et les autres espaces de travail ne sont pas touchés.",
       "modeLabel": "Mode de traitement",
       "modes": {
         "processed": {
@@ -720,6 +721,7 @@
     "members": "Appartenances à des espaces de travail anonymisées : {{rows, number}}",
     "workspaceItems": "Avis supprimés dans des espaces de travail : {{items, number}}",
     "emailReachesWorkspaces": "Un effacement par e-mail supprime aussi les avis de cette personne dans chaque espace de travail. Les autres champs n'atteignent que les avis propres à ce déploiement.",
+    "reachesThisWorkspace": "Dans cet espace de travail, l’effacement supprime uniquement les avis de cet espace de travail, y compris un effacement par e-mail.",
     "reviewFolders": "Dossiers d'originaux d'import S3 conservés pouvant contenir des lignes effacées : {{folders, number}}. Vérifiez-les :",
     "reviewFiles": "Fichiers importés conservés parce qu'ils contiennent aussi des lignes non effacées : {{files, number}}. Vérifiez-les :",
     "status": {

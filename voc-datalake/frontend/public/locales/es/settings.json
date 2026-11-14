@@ -159,6 +159,7 @@
     "retry": "Reintentar",
     "notSynced": "No sincronizado",
     "saveFailed": "No se pudo guardar en el servidor. Inténtalo de nuevo.",
+    "savedToServer": "Marca guardada.",
     "adminOnlyNotice": "Solo los administradores pueden cambiar la configuración de marca. Puedes consultarla aquí."
   },
   "categories": {
@@ -232,6 +233,7 @@
     "runErrors_many": "{{count, number}} errores",
     "textLength_many": "Longitud del texto: {{count, number}} caracteres",
     "alerts": {
+      "platformAdminOnly": "Solo los administradores de la plataforma pueden cambiar las alertas: las alarmas vigilan todo el despliegue. Puedes ver el estado aquí.",
       "title": "Alertas",
       "on": "Activadas",
       "off": "Desactivadas",
@@ -723,6 +725,8 @@
     "uploadBadType": "{{name}} no es un tipo de archivo admitido.",
     "uploadTooLarge": "{{name}} supera los {{mb}} MB.",
     "uploadFailed": "Error al subir. Inténtalo de nuevo.",
+    "logoNotShrunk": "No se pudo reducir {{name}} por debajo de 1 MB. Exporta un PNG más pequeño y súbelo.",
+    "logoUnreadable": "No se pudo leer {{name}} como imagen. Expórtalo como PNG y súbelo.",
     "integrations": "Integraciones de diseño",
     "integrationsHint": "Los tokens se guardan cifrados y no se vuelven a mostrar. Deja un campo vacío para conservar el token actual.",
     "providers": {
@@ -992,7 +996,7 @@
   "appearance": {
     "title": "Tema predeterminado",
     "hint": "El tema de color que todos ven hasta que eligen el suyo en Cuenta → Preferencias.",
-    "adminOnlyNotice": "Solo los administradores pueden cambiar el tema predeterminado. Puedes verlo aquí.",
+    "adminOnlyNotice": "Solo los administradores de la plataforma pueden cambiar el tema predeterminado: lo comparten todos los espacios de trabajo. Puedes verlo aquí.",
     "loading": "Cargando el tema predeterminado…",
     "loadFailed": "No se pudo cargar el tema predeterminado del servidor.",
     "save": "Guardar tema",

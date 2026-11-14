@@ -18,6 +18,9 @@ workspace layer (shared/ws_repo.py):
   ``memory_imports`` and ``memory_events``; personal memories and the extraction cursors are their owners' and are
   only counted.
 
+The members' conversations in voc-conversations are their own: not included; only how many people have any is
+counted (7.24.00, jobs/workspace_export/conversations.py).
+
 Each page's rows come with the cursor that resumes right after them, so an invocation that runs out of time stops
 after any row and the next one carries on from it.
 """
@@ -53,7 +56,7 @@ from shared.ws_repo import (
 __all__ = ['ENTITIES', 'FILE_CAP', 'ExportRefused', 'Source', 'encode_row', 'manifest']
 
 #: The entities in the order the export writes them, the first phases of a run (handler.py ``PHASES``: then the
-#: objects, the memory counts and the completion). A checkpoint names its phase, so an entity added in any position
+#: objects, the memory counts, the conversations' count and the completion). A checkpoint names its phase, so an entity added in any position
 #: never shifts a running export onto another: one that was past it across a deploy finishes without it (its count
 #: reads 0), one that was before it writes it. A checkpoint from before phases were named is read by the 4b order.
 ENTITIES: Final = ('feedback', 'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'workspace',
@@ -72,6 +75,8 @@ PAGE_LIMIT: Final = 500
 NOT_PER_WORKSPACE: Final = ('projects_documents', 'personas', 'agents_workflows', 'settings')
 #: Rows of the workspace an export leaves out, and why.
 NOT_EXPORTED: Final = {
+    # The company memory is exported since 7.22.00 (memory.py); personal memories (since 7.22.00) and the members'
+    # conversations (since 7.24.00, conversations.py: how many people have any) are only counted (EXCLUDED).
     'metrics': 'Derived: the METRIC# counters are rebuilt from the feedback (scripts/retention/rebuild_aggregates.py).',
     'runs': 'Operational: the source and scraper run records (SOURCE_RUN#, SCRAPER_RUN#).',
     'circuit_breaker': "Operational: the plugins' failure counts and breaker rows (FAILURES#, CIRCUIT#).",
@@ -80,8 +85,6 @@ NOT_EXPORTED: Final = {
     'idempotency': 'Operational: the processing claims (voc-idempotency).',
     'form_lookups': "Routing: each form's FORM# lookup row (the forms themselves are in feedback_forms).",
     'user_rows': "Routing: each member's USER# row behind their workspace list (the members are in members).",
-    'conversations': ("Not exported yet: a workspace's conversations are kept per member, and nothing lists the "
-                      'members who have them (a later release adds that list, and the conversations to the export).'),
 }
 #: What an export never holds, by design.
 EXCLUDED: Final = {
@@ -93,13 +96,33 @@ EXCLUDED: Final = {
                           'it is derived, and is recomputed from the statement.'),
     'memory_derived': ("A memory's search_text (its statement in lower case, for search) and its status index keys "
                        '(gsi1pk, gsi1sk) are left out of memory_company: each is derived from the fields exported.'),
-    'memory_people': ('Each memory entity exports only the fields it lists, those the memory API shows (any field '
-                      "added later stays out): so never a memory's supporter_set (hashes of its supporters' ids), "
-                      "an event's actor (a supporter's hash), nor an import's created_by_hash or created_by_username."),
+    'memory_people': ('Each memory entity exports only the fields it lists (any field added later stays out): a '
+                      "company memory, the memory API's fields plus its key (pk, sk) and what a merge or an archive "
+                      'writes (merged_from, archived_reason, archived_at); an import, the API\'s fields but '
+                      'created_by_username, plus its key; an event, its key, action, at and detail. So never a '
+                      "memory's supporter_set (hashes of its supporters' ids), an event's actor (a supporter's "
+                      "hash), nor an import's created_by_hash or created_by_username. A company memory's "
+                      "conflicts_with can hold a personal memory's id (an id only, never its content), and an "
+                      "event's detail is exported whole."),
     'personal_memory': ("Personal memories and the extraction cursors are their owners' only (docs/memory.md): "
                         'never in the workspace export, only counted (memory.not_exported); personal memories\' '
                         'events are neither exported nor counted.'),
+    'conversations': ("The members' assistant conversations in the workspace are not included, and a member gets no "
+                      'copy of their own from this export; only how many people have any is given (conversations).'),
 }
+#: Why the conversations are not in the export, in every conversations note.
+_CONVERSATIONS_OWN: Final = ("The members' assistant conversations in the workspace are their own and are not "
+                             'included, and a member gets no copy of their own from this export.')
+#: What a reader of the conversations' count should know.
+CONVERSATIONS_NOTE: Final = (f'{_CONVERSATIONS_OWN} people is how many people (current or former members) have at '
+                             'least one conversation in the workspace, read when the export reached each of them. No '
+                             "conversation count, person's id or conversation is given. Two exports compared show how "
+                             'many people started or stopped keeping conversations here in between, so whether a given '
+                             'member started using the assistant can be seen that way.')
+#: The conversations' note for an export started before 7.24.00 and resumed past the point where they are counted.
+CONVERSATIONS_NOT_COUNTED: Final = (f'{_CONVERSATIONS_OWN} Not counted in this export: it was started by an earlier '
+                                    'release and had already passed the point where the conversations are counted '
+                                    'when it resumed. Export again to include how many people have any.')
 #: What a reader of the memory entities should know.
 MEMORY_NOTE: Final = ("The workspace's company memory: every company memory (memory_company), the events of each "
                       '(memory_events) and the import rows (memory_imports; the imported files are among the '
@@ -108,6 +131,10 @@ MEMORY_NOTE: Final = ("The workspace's company memory: every company memory (mem
                       "member's session): those two are counted in memory.not_exported, approximately (the status "
                       "index is eventually consistent); personal memories' events are neither exported nor counted. "
                       'What every memory row leaves out is in excluded.')
+#: The manifest's memory note for an export started before 7.22.00 and resumed past the memory entities.
+MEMORY_NOT_RUN: Final = ('Not in this export: it was started by an earlier release and had already passed the point '
+                         'where the memory entities are written when it resumed, so memory_company, memory_events '
+                         'and memory_imports are empty here. Export again to include the company memory.')
 
 
 def _shown(entity: str, item: Mapping[str, Any]) -> dict[str, Any]:
@@ -279,14 +306,28 @@ def encode_row(item: Mapping[str, Any]) -> bytes:
             + '\n').encode('utf-8')
 
 
+def _conversations_section(people: int | None) -> dict[str, Any]:
+    """The manifest's ``conversations``: how many people have any (a finished count: the phase ends only once it is
+    done), or that they were not counted (``counted`` False, ``people`` null)."""
+    if people is None:
+        return {'counted': False, 'people': None, 'note': CONVERSATIONS_NOT_COUNTED}
+    return {'counted': True, 'people': people, 'note': CONVERSATIONS_NOTE}
+
+
 def manifest(*, export_id: str, scope: WorkspaceScope, workspace: Mapping[str, Any], created_at: str,
              completed_at: str, files: Mapping[str, list[str]], counts: Mapping[str, int],
-             daily_total: int, objects: Mapping[str, Any], memory_left_out: Mapping[str, tuple[int, bool]]) -> bytes:
+             daily_total: int, objects: Mapping[str, Any], memory_left_out: Mapping[str, tuple[int, bool]],
+             conversations: int | None, memory_exported: bool = True) -> bytes:
     """``manifest.json``: every entity with its files and count, the counts check against the workspace's
     ``daily_total`` counters, what is not per workspace yet, not exported or excluded, the workspace's objects
     (``objects``: jobs/workspace_export/objects.py ``manifest_section``), and the memory left out (``memory_left_out``:
-    ``{what: (count, complete)}``, counted by jobs/workspace_export/memory.py)."""
+    ``{what: (count, complete)}``, counted by jobs/workspace_export/memory.py; ``complete`` is always true once
+    counted, since the phase ends only when its counts are done). ``memory_exported`` False (a run
+    resumed from an earlier release's checkpoint past the memory entities) lists ``memory`` as not exported.
+    ``conversations``: how many people have any (jobs/workspace_export/conversations.py), None for a run resumed
+    from an earlier release's checkpoint past their count (the section then says they were not counted)."""
     feedback = int(counts.get('feedback', 0))
+    not_exported = dict(NOT_EXPORTED) if memory_exported else {**NOT_EXPORTED, 'memory': MEMORY_NOT_RUN}
     document = {
         'format': 'voc-workspace-export',
         'version': 1,
@@ -302,13 +343,14 @@ def manifest(*, export_id: str, scope: WorkspaceScope, workspace: Mapping[str, A
                      'without a date, counters that expired, or items that arrived while the export ran.'),
         },
         'memory': {
-            'note': MEMORY_NOTE,
+            'note': MEMORY_NOTE if memory_exported else MEMORY_NOT_RUN,
             'not_exported': {what: {'count': count, 'complete': complete, 'approximate': True}
                              for what, (count, complete) in memory_left_out.items()},
         },
+        'conversations': _conversations_section(conversations),
         'not_per_workspace': {name: {'status': 'not_per_workspace', 'phase': 3, 'count': 0}
                               for name in NOT_PER_WORKSPACE},
-        'not_exported': dict(NOT_EXPORTED),
+        'not_exported': not_exported,
         'excluded': dict(EXCLUDED),
         'objects': dict(objects),
     }

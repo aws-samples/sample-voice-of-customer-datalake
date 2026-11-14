@@ -11,9 +11,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from boto3.dynamodb.conditions import Key
+from botocore.exceptions import ClientError
 
-from shared import plugin_circuit
-from shared.exceptions import AuthorizationError, ConfigurationError, ValidationError
+from shared import plugin_circuit, workspace_plugin_settings
+from shared.exceptions import AuthorizationError, ConfigurationError, ConflictError, ServiceError, ValidationError
 from shared.run_rows import latest_run, scraper_run_partition, source_run_partition
 from shared.workspace import WorkspaceContext
 from shared.workspace_plugin_store import SharedSecretStore, StoreClients, WorkspaceStore
@@ -21,6 +22,7 @@ from shared.workspace_request import (
     DEPLOYMENT_ONLY,
     RADAR_NOT_IN_WORKSPACES,
     WORKSPACE_CONTEXT_KEY,
+    RequestWorkspace,
     ResolvedRoutes,
     WorkspaceNotResolved,
     deployment_only,
@@ -41,6 +43,11 @@ def _context(role: str = 'admin', ws: str = WS) -> WorkspaceContext:
 def _event(groups: str = 'users', header: str | None = None) -> dict:
     headers = {} if header is None else {'X-Workspace-Id': header}
     return {'headers': headers, 'requestContext': {'authorizer': {'claims': {'sub': 's', 'cognito:groups': groups}}}}
+
+
+def _app(raw_event: dict, method: str, path: str) -> SimpleNamespace:
+    """A resolver as a middleware sees it: the request's raw event, method and path."""
+    return SimpleNamespace(current_event=SimpleNamespace(raw_event=raw_event, http_method=method, path=path))
 
 
 class _Resolver:
@@ -80,6 +87,47 @@ class TestTheTwoPathAdminGate:
             _routes(_context(role), 'admins').require_request_admin()
 
 
+class TestARunNeedsItsPluginEnabled:
+    """``ResolvedRoutes.require_plugin_enabled`` (shared/workspace_plugin_settings.py ``PLUGIN_NOT_ENABLED``)."""
+
+    @staticmethod
+    def _table(enabled: bool) -> MagicMock:
+        table = MagicMock()
+        table.get_item.return_value = {'Item': {'pk': 'PLUGIN#webscraper'}} if enabled else {}
+        return table
+
+    def _routes_over(self, context: WorkspaceContext | None, table: MagicMock) -> ResolvedRoutes:
+        resolver = _Resolver('POST')
+        resolver.context[WORKSPACE_CONTEXT_KEY] = context
+        return ResolvedRoutes(resolver, RequestWorkspace(table=lambda: table))
+
+    def test_an_enabled_plugin_runs_after_one_consistent_read_of_its_key(self):
+        table = self._table(enabled=True)
+
+        self._routes_over(_context(), table).require_plugin_enabled('webscraper')
+
+        table.get_item.assert_called_once_with(Key={'pk': 'PLUGIN#webscraper', 'sk': f'WS#{WS}'},
+                                               ConsistentRead=True, ProjectionExpression='pk')
+
+    def test_a_plugin_the_workspace_has_not_enabled_is_the_409(self):
+        with pytest.raises(ConflictError, match=re.escape(workspace_plugin_settings.PLUGIN_NOT_ENABLED)):
+            self._routes_over(_context(), self._table(enabled=False)).require_plugin_enabled('webscraper')
+
+    def test_deployment_wide_nothing_is_read(self):
+        table = self._table(enabled=False)
+
+        self._routes_over(None, table).require_plugin_enabled('webscraper')
+
+        table.get_item.assert_not_called()
+
+    def test_a_read_fault_is_the_fixed_500(self):
+        table = MagicMock()
+        table.get_item.side_effect = ClientError({'Error': {'Code': 'InternalServerError', 'Message': 'x'}}, 'GetItem')
+
+        with pytest.raises(ServiceError):
+            self._routes_over(_context(), table).require_plugin_enabled('webscraper')
+
+
 class TestTheInvokePayload:
     def test_in_a_workspace_the_resolved_one_is_set_after_every_field(self):
         payload = workspace_payload({'execution_id': 'e', 'workspace_id': OTHER}, _context())
@@ -98,14 +146,22 @@ class TestTheInvokePayload:
 class TestDeploymentOnly:
     @pytest.mark.parametrize('header', [WS, '', 'not-a-workspace'])
     def test_any_header_is_refused_before_the_route(self, header):
-        app, route = SimpleNamespace(current_event=SimpleNamespace(raw_event=_event(header=header))), MagicMock()
+        app, route = _app(_event(header=header), 'GET', '/s3-import/files'), MagicMock()
+
+        with pytest.raises(ValidationError, match=DEPLOYMENT_ONLY):
+            deployment_only(app, route)
+        route.assert_not_called()
+
+    @pytest.mark.parametrize('header', [WS, ''])
+    def test_a_reprocess_that_names_a_workspace_gets_the_one_400(self, header):
+        app, route = _app(_event(header=header), 'POST', '/s3-import/reprocess'), MagicMock()
 
         with pytest.raises(ValidationError, match=DEPLOYMENT_ONLY):
             deployment_only(app, route)
         route.assert_not_called()
 
     def test_without_it_the_route_runs(self):
-        app, route = SimpleNamespace(current_event=SimpleNamespace(raw_event=_event())), MagicMock(return_value='ok')
+        app, route = _app(_event(), 'POST', '/s3-import/reprocess'), MagicMock(return_value='ok')
 
         assert deployment_only(app, route) == 'ok'
 

@@ -4,6 +4,7 @@
  * the home-page run environment and a session record the server is still generating.
  */
 import { vi } from 'vitest'
+import { apiErrorStatus } from '../../api/apiErrorStatus'
 import type { SessionRecord } from '../sessions/schema'
 import type { RunEnvironment } from './runtime'
 
@@ -15,6 +16,8 @@ export function sessionsApiModule() {
     getSession: vi.fn(() => Promise.resolve(null)),
     saveSession: vi.fn(() => Promise.resolve()),
     cancelServerRun: vi.fn(() => Promise.resolve()),
+    // The real reading: a 404 from a chat route is "this workspace keeps no conversations for the caller".
+    isNotSavedHere: (error: unknown) => apiErrorStatus(error) === 404,
   }
 }
 

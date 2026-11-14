@@ -19,6 +19,18 @@ import { useConfigStore } from '../store/configStore'
 /** Query key of the brand settings. Single source of truth for Layout and Settings. */
 export const brandSettingsKey = () => ['brand-settings'] as const
 
+/**
+ * `GET /settings/brand` (the current workspace's brand inside one, the deployment's outside), once there is an API:
+ * one cache entry for the shell, Administration → General and the workspace's settings page.
+ */
+export function useBrandSettings(apiEndpoint: string) {
+  return useQuery({
+    queryKey: brandSettingsKey(),
+    queryFn: () => api.getBrandSettings(),
+    enabled: apiEndpoint !== '',
+  })
+}
+
 /** The one field the shell needs, validated: an error payload or a non-string name reads as unknown. */
 const BrandNameSchema = z.object({ brand_name: z.string() })
 
@@ -39,11 +51,7 @@ function brandNameOf(raw: unknown): string | null {
 export function useBrandName(apiEndpoint: string): { brandName: string; isLoading: boolean } {
   const { config, setConfig } = useConfigStore()
   const persisted = config.brandName
-  const { data, isLoading } = useQuery({
-    queryKey: brandSettingsKey(),
-    queryFn: () => api.getBrandSettings(),
-    enabled: apiEndpoint !== '',
-  })
+  const { data, isLoading } = useBrandSettings(apiEndpoint)
   const stored = brandNameOf(data)
 
   useEffect(() => {

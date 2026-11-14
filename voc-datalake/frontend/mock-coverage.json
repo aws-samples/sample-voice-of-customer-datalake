@@ -324,6 +324,38 @@
     ]
   },
   {
+    "file": "api/brandApi.ts",
+    "method": "GET",
+    "call": "'/settings/brand'",
+    "probes": [
+      {
+        "path": "/settings/brand"
+      }
+    ]
+  },
+  {
+    "file": "api/brandApi.ts",
+    "method": "PUT",
+    "call": "'/settings/brand'",
+    "probes": [
+      {
+        "path": "/settings/brand",
+        "body": {
+          "brand_name": "Acme Outfitters",
+          "brand_handles": [
+            "@acme"
+          ],
+          "hashtags": [
+            "#acme"
+          ],
+          "urls_to_track": [
+            "https://example.com/reviews"
+          ]
+        }
+      }
+    ]
+  },
+  {
     "file": "api/categoryAccessApi.ts",
     "method": "GET",
     "call": "'/feedback/access'",
@@ -3018,6 +3050,191 @@
         "body": {
           "name": "x",
           "revision": 1
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/workspaceExportApi.ts",
+    "method": "GET",
+    "call": "'/me/workspaces/current/export'",
+    "probes": [
+      {
+        "path": "/me/workspaces/current/export"
+      }
+    ]
+  },
+  {
+    "file": "api/workspaceExportApi.ts",
+    "method": "POST",
+    "call": "'/me/workspaces/current/export'",
+    "probes": [
+      {
+        "path": "/me/workspaces/current/export",
+        "body": {}
+      }
+    ]
+  },
+  {
+    "file": "api/workspaceExportApi.ts",
+    "method": "POST",
+    "call": "'/me/workspaces/current/export/link'",
+    "probes": [
+      {
+        "path": "/me/workspaces/current/export/link",
+        "body": {}
+      }
+    ]
+  },
+  {
+    "file": "api/workspacePluginsApi.ts",
+    "method": "GET",
+    "call": "'/me/workspaces/current/plugins'",
+    "probes": [
+      {
+        "path": "/me/workspaces/current/plugins"
+      }
+    ]
+  },
+  {
+    "file": "api/workspacePluginsApi.ts",
+    "method": "PUT",
+    "call": "`/me/workspaces/current/plugins/${encodeURIComponent(pluginId)}`",
+    "probes": [
+      {
+        "path": "/me/workspaces/current/plugins/webscraper",
+        "body": {
+          "enabled": false
+        }
+      },
+      {
+        "path": "/me/workspaces/current/plugins/webscraper",
+        "body": {
+          "enabled": true
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/workspacesApi.ts",
+    "method": "GET",
+    "call": "'/me/workspaces'",
+    "probes": [
+      {
+        "path": "/me/workspaces"
+      }
+    ]
+  },
+  {
+    "file": "api/workspacesApi.ts",
+    "method": "GET",
+    "call": "'/me/workspaces/current'",
+    "probes": [
+      {
+        "path": "/me/workspaces/current"
+      }
+    ]
+  },
+  {
+    "file": "api/workspaceMembersApi.ts",
+    "method": "GET",
+    "call": "'/me/workspaces/current/members'",
+    "probes": [
+      {
+        "path": "/me/workspaces/current/members"
+      }
+    ]
+  },
+  {
+    "file": "api/workspaceMembersApi.ts",
+    "method": "GET",
+    "call": "`/me/workspaces/current/members?${cursorQuery(cursor)}`",
+    "probes": [
+      {
+        "path": "/me/workspaces/current/members?cursor=25"
+      }
+    ]
+  },
+  {
+    "file": "api/workspaceMembersApi.ts",
+    "method": "POST",
+    "call": "'/me/workspaces/current/members'",
+    "probes": [
+      {
+        "path": "/me/workspaces/current/members",
+        "body": {
+          "email": "viewer@example.com",
+          "role": "viewer"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/workspaceMembersApi.ts",
+    "method": "PUT",
+    "call": "`/me/workspaces/current/members/${encodeURIComponent(sub)}`",
+    "probes": [
+      {
+        "path": "/me/workspaces/current/members/sub-viewer-demo",
+        "body": {
+          "role": "editor"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/workspaceMembersApi.ts",
+    "method": "DELETE",
+    "call": "`/me/workspaces/current/members/${encodeURIComponent(sub)}`",
+    "probes": [
+      {
+        "path": "/me/workspaces/current/members/sub-viewer-demo"
+      }
+    ]
+  },
+  {
+    "file": "api/platformWorkspacesApi.ts",
+    "method": "GET",
+    "call": "'/platform/workspaces'",
+    "probes": [
+      {
+        "path": "/platform/workspaces"
+      }
+    ]
+  },
+  {
+    "file": "api/platformWorkspacesApi.ts",
+    "method": "GET",
+    "call": "`/platform/workspaces?${cursorQuery(cursor)}`",
+    "probes": [
+      {
+        "path": "/platform/workspaces?cursor=25"
+      }
+    ]
+  },
+  {
+    "file": "api/platformWorkspacesApi.ts",
+    "method": "POST",
+    "call": "'/platform/workspaces'",
+    "probes": [
+      {
+        "path": "/platform/workspaces",
+        "body": {
+          "name": "Acme Outfitters Field Team",
+          "slug": "acme-field"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/adminEndpoints.ts",
+    "method": "PUT",
+    "call": "userPath(username, '/platform-admin')",
+    "probes": [
+      {
+        "path": "/users/admin-demo/platform-admin",
+        "body": {
+          "platform_admin": true
         }
       }
     ]

@@ -5,6 +5,7 @@
  * assistant can look the reviews up with its read tools.
  */
 import { isChatRoute } from '../page/chatRoute'
+import { appPathname } from '../../workspace/workspacePath'
 import { newThread } from '../runtime/runtime'
 import { useAssistantUiStore } from './assistantStore'
 
@@ -26,7 +27,7 @@ export function composeDraft({ prompt, context }: OpenAssistantRequest): string 
   return ids.length === 0 ? prompt : `${prompt}\n\n[feedback: ${ids.join(', ')}]`
 }
 
-export function openAssistant(request: OpenAssistantRequest, pathname: string = window.location.pathname): void {
+export function openAssistant(request: OpenAssistantRequest, pathname: string = appPathname()): void {
   newThread()
   const ui = useAssistantUiStore.getState()
   // Strictly increasing, so two identical prompts in a row are still both adopted.

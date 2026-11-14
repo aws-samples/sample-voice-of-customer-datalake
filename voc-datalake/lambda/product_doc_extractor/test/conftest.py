@@ -70,18 +70,26 @@ class FakeS3:
 
 
 class FakeTable:
-    """A single-item DynamoDB table stand-in."""
+    """A single-item DynamoDB table stand-in; ``by_pk`` answers some partition keys with their own item, or an
+    exception to raise (the model picks and the deployment default are two rows)."""
 
     def __init__(self, item: dict | None = None, get_error: Exception | None = None,
-                 update_error: Exception | None = None):
+                 update_error: Exception | None = None, by_pk: dict | None = None):
         self.item = item
         self.get_error = get_error
         self.update_error = update_error
+        self.by_pk = by_pk or {}
         self.updates: list[dict] = []
 
-    def get_item(self, **_kwargs):
+    def get_item(self, **kwargs):
         if self.get_error is not None:
             raise self.get_error
+        pk = kwargs.get('Key', {}).get('pk')
+        if pk in self.by_pk:
+            answer = self.by_pk[pk]
+            if isinstance(answer, Exception):
+                raise answer
+            return {'Item': answer} if answer is not None else {}
         return {'Item': self.item} if self.item is not None else {}
 
     def update_item(self, **kwargs):
@@ -274,10 +282,12 @@ def wire(extractor):
     def _wire(*, body: bytes = b'', doc: dict | None = None,
               model_text: str = 'description', settings: dict | None = None,
               settings_error: Exception | None = None,
-              update_error: Exception | None = None):
+              update_error: Exception | None = None, deployment_default: object = None):
         s3 = FakeS3(body)
         projects = FakeTable(doc, update_error=update_error)
-        aggregates = FakeTable(settings, get_error=settings_error)
+        # The picks are `settings`; the deployment default (SETTINGS#model_default) is its own row, absent unless given.
+        aggregates = FakeTable(settings, get_error=settings_error,
+                               by_pk={'SETTINGS#model_default': deployment_default})
         bedrock = MagicMock()
         bedrock.converse.return_value = {
             'output': {'message': {'content': [{'text': model_text}]}}

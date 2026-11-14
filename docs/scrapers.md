@@ -198,7 +198,7 @@ tick it runs every enabled scraper whose `frequency_minutes` have passed since i
 ## Run Status
 
 Each run is recorded in `voc-aggregates` (`SCRAPER_RUN#<scraper id>`; `WS#{ws}#SCRAPER_RUN#<scraper id>` for a run
-in a workspace, [multi-workspace.md](multi-workspace.md), not released yet). The card shows the last run's date and its
+in a workspace, [multi-workspace.md](multi-workspace.md), since 7.00.00). The card shows the last run's date and its
 pages and reviews; `GET /scrapers/{id}/status` returns the latest run, with stored errors redacted:
 
 - **Status**: running, completed, completed with errors, or failed
@@ -222,7 +222,7 @@ All routes require a signed-in (Cognito) user. "Admin" means the `admins` group.
 | POST | `/scrapers/analyze-url` | Admin | AI-assisted selector detection. Answers `202 {success, job_id, status: 'pending'}`; the work runs on `voc-scrapers-assist` |
 | GET | `/scrapers/jobs/{job_id}` | The starter | Poll an analyze-url job: `pending` / `running`, then `completed` with `result` or `failed` with `error` |
 
-**In a workspace** (multi-workspace, not released yet; [multi-workspace.md](multi-workspace.md)): a request that
+**In a workspace** (multi-workspace, since 7.04.00; [multi-workspace.md](multi-workspace.md)): a request that
 sends `X-Workspace-Id` acts in that workspace (a non-member gets the one 404). "Admin" is then the caller's role
 there (a workspace admin, or a platform admin who entered; an editor or a viewer gets 403, and the `admins` group
 grants nothing), "Any user" any member. The scraper list, saves and deletes use the workspace's own config row

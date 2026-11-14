@@ -43,6 +43,32 @@ describe('extractCallerClaims', () => {
   it('ignores non-string claim values', () => {
     expect(extractCallerClaims(eventWithClaims({ sub: 's', email: 42 }))).toStrictEqual({ sub: 's' });
   });
+
+  function withHeaders(headers: Record<string, string>) {
+    return parseLambdaEvent({ headers, requestContext: { authorizer: { claims: { sub: 's', aud: 'client' } } } });
+  }
+
+  it("carries the request's X-Workspace-Id, any header case", () => {
+    const ws = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8';
+    for (const name of ['X-Workspace-Id', 'x-workspace-id', 'X-WORKSPACE-ID']) {
+      expect(extractCallerClaims(withHeaders({ [name]: ws }))).toStrictEqual({ sub: 's', 'voc:workspace': ws });
+    }
+  });
+
+  it('forwards a malformed value as it is, for the domain Lambda to refuse as it refuses the caller', () => {
+    expect(extractCallerClaims(withHeaders({ 'X-Workspace-Id': ' ws_short ' }))).toStrictEqual({ sub: 's', 'voc:workspace': ' ws_short ' });
+  });
+
+  it('carries no workspace without the header, or with one that has no value', () => {
+    expect(extractCallerClaims(withHeaders({ 'Content-Type': 'application/json' }))).toStrictEqual({ sub: 's' });
+    const noValue = parseLambdaEvent({ headers: { 'X-Workspace-Id': undefined }, requestContext: { authorizer: { claims: { sub: 's', aud: 'client' } } } });
+    expect(extractCallerClaims(noValue)).toStrictEqual({ sub: 's' });
+  });
+
+  it('never takes the workspace from a claim', () => {
+    expect(extractCallerClaims(eventWithClaims({ sub: 's', aud: 'client', 'voc:workspace': 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8' })))
+      .toStrictEqual({ sub: 's' });
+  });
 });
 
 describe('requireAppClient', () => {

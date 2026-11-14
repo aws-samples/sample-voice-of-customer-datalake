@@ -36,6 +36,13 @@ without the header, the one 404 for a non-member; a platform admin enters as adm
                                                 last admin's demotion or a membership changed meanwhile.
     DELETE /me/workspaces/current/members/{sub} -> {removed: sub}: workspace admins, or the member themselves
                                                 (leave); 409 for the last admin or a membership changed meanwhile.
+The plugins of the workspace X-Workspace-Id names (shared/workspace_plugin_settings.py; the deployment's
+plugins, ENABLED_SOURCES from cdk.context.json, are the ceiling), resolved the same way:
+    GET /me/workspaces/current/plugins          {plugins: [{id, enabled, enabled_at?, enabled_by?}]}: any member,
+                                                every plugin the deployment offers, in its order
+    PUT /me/workspaces/current/plugins/{id}     {enabled} -> {plugin: {id, enabled, ...}}: workspace admins only
+                                                (an enable writes PLUGIN#{id} / WS#{ws}, a disable deletes it);
+                                                404 for a plugin the deployment does not offer; audited first.
 Each write resolves the caller's role from the table, never the 30 s cache (a demoted admin cannot undo it), commits
 only while the acting admin is still admin (a check in its transaction: 403 when they were demoted meanwhile), writes
 its AUDIT#WS#{ws} row first, and drops the changed member's cached membership in this container (other containers
@@ -82,8 +89,10 @@ turns the hard delete on (``-c workspaceHardDelete=true``: WORKSPACE_HARD_DELETE
 export ships). The cancel works whatever the flag: it only restores a workspace.
 
 The /platform routes are for platform admins only: an administrator (``require_admin``), the token's
-``platform-admins`` group (``require_platform_admin``), then the live check (shared/platform_admin.py: the live
-Cognito membership and an enabled account), so a revoked or disabled platform admin is refused (403) at once.
+``platform-admins`` group (``require_platform_admin``), then the live check (shared/platform_admin_gate.py
+``require_live_platform_admin``, in the pool ``USER_POOL_ID`` names: the live Cognito membership and an enabled
+account), so a revoked or disabled platform admin is refused (403) at once. The same live check
+(``confirm_live_platform_admin``) runs before a platform admin enters a workspace, as in every domain API.
 
 A DynamoDB or Cognito fault answers a fixed 500, never the AWS error text, which is logged.
 """
@@ -91,14 +100,15 @@ A DynamoDB or Cognito fault answers a fixed 500, never the AWS error text, which
 import json
 import os
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Final
 
 from aws_lambda_powertools.event_handler import Response, content_types
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared.api import api_handler, create_api_resolver, get_caller_subject, is_admin, require_admin
 from shared.aws import get_cognito_idp_client, get_dynamodb_resource, get_s3_client, invoke_lambda_async
-from shared.exceptions import AuthorizationError, ConfigurationError, ConflictError, ServiceError, ValidationError
+from shared.enabled_sources import enabled_plugin_ids
+from shared.exceptions import ConfigurationError, ConflictError, ServiceError, ValidationError
 from shared.export_jobs import (
     ErasureHoldsExports,
     ExportRunning,
@@ -110,7 +120,8 @@ from shared.export_jobs import (
 from shared.import_runs import parse_limit
 from shared.ingest_tables import ingest_table
 from shared.logging import logger
-from shared.platform_admin import live_platform_admin_check, require_platform_admin
+from shared.platform_admin import require_platform_admin
+from shared.platform_admin_gate import confirm_live_platform_admin, require_live_platform_admin
 from shared.platform_workspaces import CREDENTIALS_READY, create_workspace, list_workspaces, parse_new_workspace
 from shared.request_body import json_object_body
 from shared.tables import cached_table
@@ -142,6 +153,12 @@ from shared.workspace_members import (
     parse_role_change,
     remove_member,
 )
+from shared.workspace_plugin_settings import (
+    offered_plugin,
+    parse_plugin_change,
+    set_plugin_enabled,
+    workspace_plugins,
+)
 from shared.ws_repo import ExportObjects, WorkspaceScope, WorkspaceTable, scope_of
 
 WORKSPACES_TABLE = os.environ.get('WORKSPACES_TABLE', '')
@@ -162,13 +179,15 @@ FAILED_MEMBERS = 'Failed to list the members'
 FAILED_ADD_MEMBER = 'Failed to add the member'
 FAILED_CHANGE_ROLE = "Failed to change the member's role"
 FAILED_REMOVE_MEMBER = 'Failed to remove the member'
+FAILED_PLUGINS = "Failed to list the workspace's plugins"
+FAILED_CHANGE_PLUGIN = 'Failed to change the plugin'
 FAILED_START_EXPORT = 'Failed to start the export'
 FAILED_EXPORT_STATUS = 'Failed to read the export'
 FAILED_EXPORT_LINK = 'Failed to sign the download link'
-EXPORT_NOT_DOWNLOADABLE = ('No export can be downloaded: the newest is not completed, or its 7 days are over. '
-                           'Start a new export')
-EXPORT_ALREADY_RUNNING = 'An export of this workspace is already running: wait for it to finish, then start another'
-EXPORT_ERASURE_RUNNING = 'An erasure is running in this workspace: start the export when it ends'
+EXPORT_NOT_DOWNLOADABLE: Final = ('No export can be downloaded: the newest is not completed, or its 7 days are '
+                                  'over. Start a new export')
+EXPORT_ALREADY_RUNNING: Final = 'An export of this workspace is already running: wait for it to finish, then start another'
+EXPORT_ERASURE_RUNNING: Final = 'An erasure is running in this workspace: start the export when it ends'
 FAILED_START_DELETE = 'Failed to start the delete'
 FAILED_CANCEL_DELETE = 'Failed to cancel the delete'
 FAILED_RESUME_DELETE = 'Failed to resume the delete'
@@ -192,26 +211,6 @@ def _user_pool() -> str:
     return USER_POOL_ID
 
 
-def _cognito() -> Any:
-    """The Cognito client, looked up at call time (tests patch this module's ``get_cognito_idp_client``)."""
-    return get_cognito_idp_client()
-
-
-#: The live platform-admin check (shared/platform_admin.py); a Cognito fault raises.
-_confirm_platform_admin = live_platform_admin_check(_cognito, _user_pool)
-
-
-def _require_live_platform_admin(event: dict, public_error: str) -> None:
-    """403 unless the caller is a platform admin now; a failed look-up answers ``public_error`` (500)."""
-    try:
-        confirmed = _confirm_platform_admin(event)
-    except (ClientError, BotoCoreError) as exc:
-        logger.exception('Error checking the caller platform admin membership')
-        raise ServiceError(public_error) from exc
-    if not confirmed:
-        raise AuthorizationError('Platform admin access required')
-
-
 @app.get('/me/workspaces')
 def my_workspaces() -> dict:
     sub = get_caller_subject(app.current_event.raw_event)
@@ -230,7 +229,7 @@ def _workspace(event: dict, public_error: str, *, fresh: bool = False) -> Worksp
     audited as an entry each time)."""
     try:
         return resolve_workspace(get_workspaces_table(), event, MembershipCache() if fresh else memberships,
-                                 confirm_platform_admin=_confirm_platform_admin)
+                                 confirm_platform_admin=confirm_live_platform_admin)
     except (ClientError, BotoCoreError) as exc:
         # A failed read, a failed live platform-admin check, or an entry audit row that could not be written: the
         # entry is refused, the AWS error (table, key, account) stays in the log.
@@ -322,6 +321,33 @@ def remove_workspace_member(sub: str) -> dict:
         raise ServiceError(FAILED_REMOVE_MEMBER) from exc
     memberships.invalidate(context.ws, target)
     return {'removed': target}
+
+
+@app.get('/me/workspaces/current/plugins')
+def workspace_plugin_list() -> dict:
+    context = _workspace(app.current_event.raw_event, FAILED_PLUGINS)
+    try:
+        plugins = workspace_plugins(get_workspaces_table(), context.ws, enabled_plugin_ids())
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception('Error listing the workspace plugins')
+        raise ServiceError(FAILED_PLUGINS) from exc
+    return {'plugins': plugins}
+
+
+@app.put('/me/workspaces/current/plugins/<plugin_id>')
+def change_workspace_plugin(plugin_id: str) -> dict:
+    event = app.current_event.raw_event
+    # The plugin and the body first: refused before a platform admin's entry writes its audit row.
+    plugin = offered_plugin(plugin_id, enabled_plugin_ids())
+    enabled = parse_plugin_change(json_object_body(app))
+    context = _workspace(event, FAILED_CHANGE_PLUGIN, fresh=True)
+    require_workspace_admin(context)
+    try:
+        entry = set_plugin_enabled(get_workspaces_table(), context, plugin, enabled, get_caller_subject(event))
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception('Error changing a workspace plugin')
+        raise ServiceError(FAILED_CHANGE_PLUGIN) from exc
+    return {'plugin': entry}
 
 
 def _export_jobs(context: WorkspaceContext) -> WorkspaceTable:
@@ -430,7 +456,7 @@ def cancel_workspace_delete(ws: str) -> dict:
     event = app.current_event.raw_event
     require_admin(event)
     require_platform_admin(event)
-    _require_live_platform_admin(event, FAILED_CANCEL_DELETE)
+    require_live_platform_admin(event, FAILED_CANCEL_DELETE)
     try:
         job = cancel_delete(get_workspaces_table(), _workspace_aggregates, ws, get_caller_subject(event),
                             datetime.now(UTC))
@@ -446,7 +472,7 @@ def resume_workspace_delete(ws: str) -> dict:
     require_hard_delete()
     require_admin(event)
     require_platform_admin(event)
-    _require_live_platform_admin(event, FAILED_RESUME_DELETE)
+    require_live_platform_admin(event, FAILED_RESUME_DELETE)
     if not DELETE_FUNCTION:
         raise ConfigurationError('Delete function not configured')
     try:
@@ -463,7 +489,7 @@ def create_platform_workspace():  # a Response: the resolver validates a return 
     event = app.current_event.raw_event
     require_admin(event)
     require_platform_admin(event)
-    _require_live_platform_admin(event, FAILED_CREATE)
+    require_live_platform_admin(event, FAILED_CREATE)
     new = parse_new_workspace(json_object_body(app))
     try:
         ws = create_workspace(get_workspaces_table(), new, get_caller_subject(event))
@@ -482,7 +508,7 @@ def list_platform_workspaces() -> dict:
     event = app.current_event.raw_event
     require_admin(event)
     require_platform_admin(event)
-    _require_live_platform_admin(event, FAILED_PLATFORM_LIST)
+    require_live_platform_admin(event, FAILED_PLATFORM_LIST)
     params = app.current_event.query_string_parameters or {}
     try:
         workspaces, next_cursor = list_workspaces(get_workspaces_table(), limit=parse_limit(params.get('limit')),

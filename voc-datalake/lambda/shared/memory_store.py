@@ -13,6 +13,16 @@ Row shapes (contract in the features brief, §Storage):
 ``gsi1sk`` is the rank key: the latest of reinforced / used / created, so a
 status partition reads newest-touched first and retention can bound by age.
 
+A workspace's memories (docs/multi-workspace.md, "Request flow": memory) are the same rows inside its partitions: every key above
+with the workspace's prefix, ``WS#{ws}#MEM#company``, ``WS#{ws}#MEMSTATUS#…``, ``WS#{ws}#MEMEVT#…``,
+``WS#{ws}#MEMCURSOR``, ``WS#{ws}#MEMIMPORT``. The builders take an optional ``workspace``; every operation on a stored
+key or row reads its workspace from that key's ``pk`` (shared/ws_repo.py ``partition_scope``) and goes through the
+layer's view of the table (shared/ingest_tables.py ``table_view``: the table itself for a deployment key, the same
+calls as before; ``ws_table`` for a workspace's, which refuses a key outside it before DynamoDB). Objective alignment
+reads the deployment's company context (``read_company_context``) until company context moves under its workspace. The
+memory API passes the workspace a request names (api/memory_handler.py), the scanner the workspace a conversation is
+kept in and the extractor the workspace its message names (memory/scanner, memory/extractor).
+
 Subjects never leave this module in a response and are never logged: personal
 rows carry the owner only in ``pk``/``owner_sub``, and supporters are stored as
 one-way hashes (``supporter_hash``) so "+1 once per person" needs no identity.
@@ -53,10 +63,13 @@ from shared.dynamo_values import item_key, plain
 from shared.embeddings import EMBED_DIMENSIONS, embed_text
 from shared.exceptions import ValidationError
 from shared.indexes import MEMORY_BY_STATUS_INDEX
+from shared.ingest_tables import table_view
 from shared.logging import logger
 from shared.scope_names import HiddenNames
+from shared.scoped_keys import scoped_pk
 from shared.timestamps import now_iso
 from shared.update_expressions import set_clause
+from shared.ws_repo import WORKSPACE_FIELD, WorkspaceScope, partition_scope, s3_key, ws_table
 
 MEMORY_TABLE_ENV: Final = 'MEMORY_TABLE'
 # The voc-memory GSI over gsi1pk/gsi1sk — named in lib/stacks/core-stack.ts.
@@ -108,20 +121,37 @@ def get_memory_table():
     return _table_cache[name]
 
 
-def scope_pk(scope: str, owner_sub: str | None) -> str:
+def workspace_kwargs(workspace: WorkspaceScope | None) -> dict[str, Any]:
+    """``workspace=`` for a workspace's memory, nothing for the deployment's (its calls as they always were): what
+    a caller passes on to this module's functions."""
+    return {} if workspace is None else {'workspace': workspace}
+
+
+def _view(table: Any, pk: object) -> Any:
+    """``table`` as the partition ``pk`` reaches it: itself for a deployment key, the workspace's view for one of a
+    workspace's (see the module docstring)."""
+    return table_view(partition_scope(pk), table)
+
+
+def company_pk(workspace: WorkspaceScope | None = None) -> str:
+    """The company scope's partition: the deployment's, or the workspace's."""
+    return scoped_pk(workspace, COMPANY_PK)
+
+
+def scope_pk(scope: str, owner_sub: str | None, workspace: WorkspaceScope | None = None) -> str:
     if scope == policy.SCOPE_COMPANY:
-        return COMPANY_PK
+        return company_pk(workspace)
     if not owner_sub:
         raise ValueError('a personal memory needs an owner')
-    return f'{PERSONAL_PK_PREFIX}{owner_sub}'
+    return scoped_pk(workspace, f'{PERSONAL_PK_PREFIX}{owner_sub}')
 
 
 def memory_key(pk: str, memory_id: str) -> dict[str, str]:
     return {'pk': pk, 'sk': f'{MEMORY_SK_PREFIX}{memory_id}'}
 
 
-def status_partition(scope: str, status: str) -> str:
-    return f'MEMSTATUS#{scope}#{status}'
+def status_partition(scope: str, status: str, workspace: WorkspaceScope | None = None) -> str:
+    return scoped_pk(workspace, f'MEMSTATUS#{scope}#{status}')
 
 
 def new_memory_id() -> str:
@@ -198,12 +228,14 @@ class Candidate:
     retention: str = policy.RETENTION_DECAY
     expires_at: str | None = None
     categories: list[str] = field(default_factory=list)
+    #: The workspace the memory is learned in (None: the deployment's).
+    workspace: WorkspaceScope | None = None
 
 
 def build_item(candidate: Candidate, *, memory_id: str, status: str, vector: list[float],
                aligned_ids: list[str], conflicts_with: Iterable[str] = (), now: datetime) -> dict:
     stamp = now_iso(now)
-    pk = scope_pk(candidate.scope, candidate.owner_sub)
+    pk = scope_pk(candidate.scope, candidate.owner_sub, candidate.workspace)
     item: dict[str, Any] = {
         **memory_key(pk, memory_id),
         'memory_id': memory_id,
@@ -226,7 +258,7 @@ def build_item(candidate: Candidate, *, memory_id: str, status: str, vector: lis
         'conflicts_with': list(conflicts_with),
         'tombstoned': False,
         'aligned_objective_ids': aligned_ids,
-        'gsi1pk': status_partition(candidate.scope, status),
+        'gsi1pk': status_partition(candidate.scope, status, candidate.workspace),
         'gsi1sk': stamp,
     }
     if candidate.owner_sub and candidate.scope == policy.SCOPE_PERSONAL:
@@ -277,8 +309,6 @@ def _projection(attributes: Iterable[str]) -> tuple[str, dict[str, str]]:
     return ', '.join(names), names
 
 
-
-
 def partition_key_condition(pk: str, sk_prefix: str | None = None):
     """``pk = :pk`` [AND ``begins_with(sk, :prefix)``].
 
@@ -289,36 +319,63 @@ def partition_key_condition(pk: str, sk_prefix: str | None = None):
     return condition if sk_prefix is None else condition & Key('sk').begins_with(sk_prefix)
 
 
+def _sort_prefix(sk_prefix: str | None, values: dict[str, Any], names: dict[str, str]) -> str | None:
+    """A workspace query's ``begins_with`` on the sort key (its name and value added to ``names`` / ``values``)."""
+    if sk_prefix is None:
+        return None
+    names['#mem_sk'] = 'sk'
+    values[':mem_prefix'] = sk_prefix
+    return 'begins_with(#mem_sk, :mem_prefix)'
+
+
+def _workspace_rows(workspace: WorkspaceScope, table, partition_attribute: str, partition: str, *,
+                    sk_prefix: str | None = None, **options: Any) -> list[dict]:
+    """Every row of one of a workspace's partitions (``pk``, or ``gsi1pk`` with ``IndexName``), every page."""
+    names = dict(options.pop('ExpressionAttributeNames', None) or {})
+    values = dict(options.pop('ExpressionAttributeValues', None) or {})
+    condition = _sort_prefix(sk_prefix, values, names)
+    if names:
+        options['ExpressionAttributeNames'] = names
+    if values:
+        options['ExpressionAttributeValues'] = values
+    return list(ws_table(workspace, table).iter_query(partition_attribute, partition, sort_condition=condition,
+                                                      **options))
+
+
 def query_partition(table, pk: str, *, sk_prefix: str | None = None) -> list[dict]:
     """Every row of ``pk`` (paginated), optionally only the sort keys starting ``sk_prefix``."""
+    workspace = partition_scope(pk)
+    if workspace is not None:
+        return _workspace_rows(workspace, table, 'pk', pk, sk_prefix=sk_prefix)
     return query_all(table, {'KeyConditionExpression': partition_key_condition(pk, sk_prefix)})
 
 
-def query_status(table, scope: str, status: str, *, attributes: Iterable[str] | None = None) -> list[dict]:
+def query_status(table, scope: str, status: str, *, attributes: Iterable[str] | None = None,
+                 workspace: WorkspaceScope | None = None) -> list[dict]:
     """Every memory of ``scope`` in ``status`` via gsi1 (paginated), optionally projected."""
-    kwargs: dict[str, Any] = {
-        'IndexName': GSI1_INDEX,
-        'KeyConditionExpression': Key('gsi1pk').eq(status_partition(scope, status)),
-    }
+    kwargs: dict[str, Any] = {'IndexName': GSI1_INDEX}
     if attributes:
         kwargs['ProjectionExpression'], kwargs['ExpressionAttributeNames'] = _projection(attributes)
-    return query_all(table, kwargs)
+    partition = status_partition(scope, status, workspace)
+    if workspace is not None:
+        return _workspace_rows(workspace, table, 'gsi1pk', partition, **kwargs)
+    return query_all(table, {**kwargs, 'KeyConditionExpression': Key('gsi1pk').eq(partition)})
 
 
 def get_item(table, key: Mapping[str, str]) -> dict | None:
-    item = table.get_item(Key=dict(key), ConsistentRead=True).get('Item')
+    item = _view(table, key['pk']).get_item(key, ConsistentRead=True).get('Item')
     return item if isinstance(item, dict) else None
 
 
-def locate(table, memory_id: object, caller_sub: str | None) -> dict | None:
-    """A memory the caller may address by id: company, else the caller's own personal.
+def locate(table, memory_id: object, caller_sub: str | None, workspace: WorkspaceScope | None = None) -> dict | None:
+    """A memory the caller may address by id: company, else the caller's own personal (``workspace``'s with one).
 
     ``memory_id`` may come straight off a request path, hence ``object``."""
     if not isinstance(memory_id, str) or not memory_id.startswith('mem_') or len(memory_id) > 40:
         return None
-    found = get_item(table, memory_key(COMPANY_PK, memory_id))
+    found = get_item(table, memory_key(company_pk(workspace), memory_id))
     if found is None and caller_sub:
-        found = get_item(table, memory_key(scope_pk(policy.SCOPE_PERSONAL, caller_sub), memory_id))
+        found = get_item(table, memory_key(scope_pk(policy.SCOPE_PERSONAL, caller_sub, workspace), memory_id))
     return found
 
 
@@ -367,15 +424,17 @@ def strip_runtime(item: Mapping[str, Any]) -> dict:
 
 
 def put_new(table, item: Mapping[str, Any]) -> None:
-    table.put_item(Item=strip_runtime(item), ConditionExpression='attribute_not_exists(pk)')
+    _view(table, item['pk']).put_item(strip_runtime(item), ConditionExpression='attribute_not_exists(pk)')
 
 
 def append_event(table, memory_id: str, action: str, *, actor: str | None = None,
-                 detail: Mapping[str, Any] | None = None, now: datetime | None = None) -> None:
-    """One audit row. ``actor`` is a supporter hash (never a sub); no statement text."""
+                 detail: Mapping[str, Any] | None = None, now: datetime | None = None,
+                 workspace: WorkspaceScope | None = None) -> None:
+    """One audit row (``workspace``'s for a memory of one). ``actor`` is a supporter hash (never a sub); no
+    statement text."""
     stamp = now_iso(now)
     row: dict[str, Any] = {
-        'pk': f'{EVENT_PK_PREFIX}{memory_id}', 'sk': f'{stamp}#{secrets.token_hex(3)}',
+        'pk': scoped_pk(workspace, f'{EVENT_PK_PREFIX}{memory_id}'), 'sk': f'{stamp}#{secrets.token_hex(3)}',
         'action': action, 'at': stamp,
     }
     if actor:
@@ -383,7 +442,7 @@ def append_event(table, memory_id: str, action: str, *, actor: str | None = None
     if detail:
         row['detail'] = dict(detail)
     try:
-        table.put_item(Item=row)
+        _view(table, row['pk']).put_item(row)
     except Exception:
         logger.exception('Memory audit event write failed')
 
@@ -393,10 +452,10 @@ def set_fields(table, item: Mapping[str, Any], fields: Mapping[str, Any], *, now
     stamp = now_iso(now)
     values = {**fields, 'updated_at': stamp}
     if 'status' in fields:
-        values['gsi1pk'] = status_partition(str(item.get('scope')), str(fields['status']))
+        values['gsi1pk'] = status_partition(str(item.get('scope')), str(fields['status']), partition_scope(item['pk']))
     clause, names, placeholders = set_clause(values)
-    response = table.update_item(
-        Key=item_key(item),
+    response = _view(table, item['pk']).update_item(
+        item_key(item),
         UpdateExpression=f'SET {clause}',
         ExpressionAttributeNames=names,
         ExpressionAttributeValues=placeholders,
@@ -423,15 +482,16 @@ def reinforce(table, item: Mapping[str, Any], supporter: str, source: Mapping[st
         sets += ['#st = :active', 'gsi1pk = :gpk']
         names['#st'] = 'status'
         values[':active'] = policy.STATUS_ACTIVE
-        values[':gpk'] = status_partition(str(item.get('scope')), policy.STATUS_ACTIVE)
+        values[':gpk'] = status_partition(str(item.get('scope')), policy.STATUS_ACTIVE, partition_scope(item['pk']))
     if source:
         sets.append('sources = list_append(if_not_exists(sources, :empty), :src)')
         values[':empty'] = []
         values[':src'] = [dict(source)]
     added = True
+    view = _view(table, item['pk'])
     try:
-        table.update_item(
-            Key=item_key(item),
+        view.update_item(
+            item_key(item),
             UpdateExpression='SET ' + ', '.join(sets) + ' ADD supporters :one, supporter_set :who',
             ConditionExpression='attribute_exists(pk) AND NOT contains(supporter_set, :h)',
             ExpressionAttributeValues={**values, ':one': 1, ':who': {supporter}, ':h': supporter},
@@ -443,15 +503,16 @@ def reinforce(table, item: Mapping[str, Any], supporter: str, source: Mapping[st
         added = False
         refresh_values = {k: v for k, v in values.items() if k not in (':empty', ':src')}
         refresh_sets = [s for s in sets if not s.startswith('sources')]
-        table.update_item(
-            Key=item_key(item),
+        view.update_item(
+            item_key(item),
             UpdateExpression='SET ' + ', '.join(refresh_sets),
             ConditionExpression='attribute_exists(pk)',
             ExpressionAttributeValues=refresh_values,
             **({'ExpressionAttributeNames': names} if names else {}),
         )
     _trim_sources(table, item, source)
-    append_event(table, str(item.get('memory_id')), 'reinforced' if added else 'refreshed', actor=supporter, now=now)
+    append_event(table, str(item.get('memory_id')), 'reinforced' if added else 'refreshed', actor=supporter, now=now,
+                 **workspace_kwargs(partition_scope(item.get('pk'))))
     return added
 
 
@@ -471,8 +532,8 @@ def _trim_sources(table, item: Mapping[str, Any], source: Mapping[str, str] | No
     if not source or not isinstance(existing, list) or len(existing) < policy.MAX_SOURCES_KEPT:
         return
     try:
-        table.update_item(Key=item_key(item), UpdateExpression='REMOVE sources[0]',
-                          ConditionExpression='attribute_exists(pk)')
+        _view(table, item['pk']).update_item(item_key(item), UpdateExpression='REMOVE sources[0]',
+                                             ConditionExpression='attribute_exists(pk)')
     except Exception:  # noqa: BLE001 - trimming provenance is best effort
         logger.warning('Could not trim memory sources')
 
@@ -482,8 +543,8 @@ def touch_used(table, items: Iterable[Mapping[str, Any]], *, now: datetime) -> N
     stamp = now_iso(now)
     for item in items:
         try:
-            table.update_item(
-                Key=item_key(item),
+            _view(table, item['pk']).update_item(
+                item_key(item),
                 UpdateExpression='SET last_used_at = :now, gsi1sk = :now',
                 ConditionExpression='attribute_exists(pk)',
                 ExpressionAttributeValues={':now': stamp},
@@ -503,7 +564,8 @@ def link_conflicts(table, memory_id: str, others: Iterable[str], pool_by_id: Map
         if memory_id in linked:
             continue
         set_fields(table, other, {'conflicts_with': [*linked, memory_id]}, now=now)
-        append_event(table, other_id, 'conflict_linked', detail={'with': memory_id}, now=now)
+        append_event(table, other_id, 'conflict_linked', detail={'with': memory_id}, now=now,
+                     **workspace_kwargs(partition_scope(other.get('pk'))))
 
 
 # ── Objective alignment ──────────────────────────────────────────────────────
@@ -694,7 +756,7 @@ def write_automated(
             outcome.dropped += 1
             continue
         vector = embed_text(candidate.statement)
-        pk = scope_pk(candidate.scope, candidate.owner_sub)
+        pk = scope_pk(candidate.scope, candidate.owner_sub, candidate.workspace)
         close = nearest(pools.get(pk), vector, min_cosine=policy.RELATED_COSINE, limit=MAX_JUDGED_NEIGHBOURS)
         planned.append((candidate, gate, vector, pk, close))
     pairs = [(c.statement, str(row.get('statement') or '')) for c, _, _, _, close in planned for row, _ in close]
@@ -733,7 +795,7 @@ def _apply_decision(table, pools: Pools, candidate: Candidate, decision: policy.
     pools.add(pk, item, vector)
     append_event(table, memory_id, 'created', actor=candidate.supporter,
                  detail={'status': decision.status, 'reason': decision.reason, 'source_kind': candidate.source_kind},
-                 now=now)
+                 now=now, **workspace_kwargs(candidate.workspace))
     if decision.conflicts_with:
         link_conflicts(table, memory_id, decision.conflicts_with, pools.by_id(pk), now=now)
     outcome.memory_ids.append(memory_id)
@@ -757,7 +819,7 @@ def write_explicit(table, candidate: Candidate, *, status: str, aggregates_table
     """
     moment = now or datetime.now(UTC)
     vector = embed_text(candidate.statement)
-    pk = scope_pk(candidate.scope, candidate.owner_sub)
+    pk = scope_pk(candidate.scope, candidate.owner_sub, candidate.workspace)
     for row, _ in nearest(load_pool(table, pk), vector, min_cosine=policy.DEDUP_COSINE, limit=3):
         if row.get('tombstoned') or row.get('status') == policy.STATUS_ARCHIVED:
             continue
@@ -774,7 +836,8 @@ def write_explicit(table, candidate: Candidate, *, status: str, aggregates_table
                       aligned_ids=aligned_objectives(vector, objective_vectors(aggregates_table)), now=moment)
     put_new(table, item)
     append_event(table, memory_id, 'created', actor=candidate.supporter,
-                 detail={'status': status, 'source_kind': candidate.source_kind}, now=moment)
+                 detail={'status': status, 'source_kind': candidate.source_kind}, now=moment,
+                 **workspace_kwargs(candidate.workspace))
     _invalidate(pk)
     return item, False
 
@@ -819,7 +882,7 @@ def visible_to(scope: CategoryScope | None, row: Mapping[str, Any], hidden: Hidd
 def retrieve(table, query: str, *, caller_sub: str | None, include_personal: bool, k: int,
              scope: CategoryScope | None = None, now: datetime | None = None,
              related_floor: float = 0.2, kinds: Iterable[str] | None = None,
-             hidden: HiddenNames | None = None) -> list[dict]:
+             hidden: HiddenNames | None = None, workspace: WorkspaceScope | None = None) -> list[dict]:
     """Top-``k`` active memories (company + the caller's personal) by the policy score.
 
     Marks the returned memories used. ``related_floor`` drops vectors that are
@@ -829,10 +892,10 @@ def retrieve(table, query: str, *, caller_sub: str | None, include_personal: boo
     """
     moment = now or datetime.now(UTC)
     vector = embed_text(query)
-    pool = [r for r in load_pool(table, COMPANY_PK, cached=True)
+    pool = [r for r in load_pool(table, company_pk(workspace), cached=True)
             if r.get('status') == policy.STATUS_ACTIVE and visible_to(scope, r, hidden)]
     if include_personal and caller_sub:
-        pool += [r for r in load_pool(table, scope_pk(policy.SCOPE_PERSONAL, caller_sub))
+        pool += [r for r in load_pool(table, scope_pk(policy.SCOPE_PERSONAL, caller_sub, workspace))
                  if r.get('status') == policy.STATUS_ACTIVE and visible_to(scope, r, hidden)]
     if kinds is not None:
         wanted = frozenset(kinds)
@@ -849,15 +912,15 @@ def retrieve(table, query: str, *, caller_sub: str | None, include_personal: boo
 
 
 def related_live(table, statement: str, *, caller_sub: str | None, limit: int = 5,
-                 scope: CategoryScope | None = None,
-                 hidden: HiddenNames | None = None) -> list[tuple[dict, float]]:
+                 scope: CategoryScope | None = None, hidden: HiddenNames | None = None,
+                 workspace: WorkspaceScope | None = None) -> list[tuple[dict, float]]:
     """Live memories close to ``statement`` (company + caller's personal), for conflict checks."""
     vector = embed_text(statement)
     live = (policy.STATUS_ACTIVE, policy.STATUS_CONFLICT)
-    pool = [r for r in load_pool(table, COMPANY_PK, cached=True)
+    pool = [r for r in load_pool(table, company_pk(workspace), cached=True)
             if r.get('status') in live and visible_to(scope, r, hidden)]
     if caller_sub:
-        pool += [r for r in load_pool(table, scope_pk(policy.SCOPE_PERSONAL, caller_sub))
+        pool += [r for r in load_pool(table, scope_pk(policy.SCOPE_PERSONAL, caller_sub, workspace))
                  if r.get('status') in live and visible_to(scope, r, hidden)]
     return nearest(pool, vector, min_cosine=policy.RELATED_COSINE, limit=limit)
 
@@ -879,12 +942,14 @@ def _list_filter(kind: str | None, q: str | None):
 
 
 def list_company(table, status: str, *, kind: str | None, q: str | None, limit: int,
-                 start_key: Mapping[str, str] | None) -> tuple[list[dict], dict | None]:
-    """One page of company memories in ``status``, most recently touched first."""
+                 start_key: Mapping[str, str] | None,
+                 workspace: WorkspaceScope | None = None) -> tuple[list[dict], dict | None]:
+    """One page of company memories in ``status``, most recently touched first (``workspace``'s with one: a page
+    token outside it is refused before DynamoDB)."""
     projection, names = _projection(LIST_ATTRIBUTES)
+    partition = status_partition(policy.SCOPE_COMPANY, status, workspace)
     kwargs: dict[str, Any] = {
         'IndexName': GSI1_INDEX,
-        'KeyConditionExpression': Key('gsi1pk').eq(status_partition(policy.SCOPE_COMPANY, status)),
         'ScanIndexForward': False, 'Limit': limit,
         'ProjectionExpression': projection, 'ExpressionAttributeNames': names,
     }
@@ -892,41 +957,64 @@ def list_company(table, status: str, *, kind: str | None, q: str | None, limit: 
     if condition is not None:
         kwargs['FilterExpression'] = condition
     if start_key:
+        if workspace is not None and not all(workspace.owns(start_key.get(name)) for name in ('pk', 'gsi1pk')):
+            # A page token from another partition is a bad request (the 400 of decode_page_token), never a 500.
+            raise ValidationError('cursor is invalid')
         kwargs['ExclusiveStartKey'] = dict(start_key)
-    response = table.query(**kwargs)
+    if workspace is None:
+        response = table.query(KeyConditionExpression=Key('gsi1pk').eq(partition), **kwargs)
+    else:
+        response = ws_table(workspace, table).query('gsi1pk', partition, **kwargs)
     return response.get('Items', []), response.get('LastEvaluatedKey')
 
 
-def list_personal(table, owner_sub: str, status: str, *, kind: str | None, q: str | None) -> list[dict]:
-    """Every personal memory of the owner in ``status``, most recently touched first."""
+def list_personal(table, owner_sub: str, status: str, *, kind: str | None, q: str | None,
+                  workspace: WorkspaceScope | None = None) -> list[dict]:
+    """Every personal memory of the owner in ``status``, most recently touched first (``workspace``'s with one)."""
     projection, names = _projection(LIST_ATTRIBUTES)
     condition = Attr('status').eq(status)
     extra = _list_filter(kind, q)
     if extra is not None:
         condition = condition & extra
-    rows = query_all(table, {
-        'KeyConditionExpression': partition_key_condition(scope_pk(policy.SCOPE_PERSONAL, owner_sub),
-                                                          MEMORY_SK_PREFIX),
-        'FilterExpression': condition,
-        'ProjectionExpression': projection, 'ExpressionAttributeNames': names,
-    })
+    pk = scope_pk(policy.SCOPE_PERSONAL, owner_sub, workspace)
+    if workspace is None:
+        rows = query_all(table, {
+            'KeyConditionExpression': partition_key_condition(pk, MEMORY_SK_PREFIX),
+            'FilterExpression': condition,
+            'ProjectionExpression': projection, 'ExpressionAttributeNames': names,
+        })
+    else:
+        rows = _workspace_rows(workspace, table, 'pk', pk, sk_prefix=MEMORY_SK_PREFIX, FilterExpression=condition,
+                               ProjectionExpression=projection, ExpressionAttributeNames=names)
     rows.sort(key=lambda r: str(r.get('gsi1sk') or ''), reverse=True)
     return rows
 
 
-def count_status(table, scope: str, status: str) -> int:
-    kwargs: dict[str, Any] = {
-        'IndexName': GSI1_INDEX, 'Select': 'COUNT',
-        'KeyConditionExpression': Key('gsi1pk').eq(status_partition(scope, status)),
-    }
+def count_status(table, scope: str, status: str, workspace: WorkspaceScope | None = None) -> int:
+    partition = status_partition(scope, status, workspace)
+    kwargs: dict[str, Any] = {'IndexName': GSI1_INDEX, 'Select': 'COUNT'}
+    if workspace is None:
+        kwargs['KeyConditionExpression'] = Key('gsi1pk').eq(partition)
+    view = table if workspace is None else _GsiPartition(ws_table(workspace, table), partition)
     total = 0
     while True:
-        response = table.query(**kwargs)
+        response = view.query(**kwargs)
         total += int(response.get('Count', 0))
         last = response.get('LastEvaluatedKey')
         if not last:
             return total
         kwargs['ExclusiveStartKey'] = last
+
+
+class _GsiPartition:
+    """One of a workspace's ``gsi1pk`` partitions with the ``table.query(**kwargs)`` shape a pager calls."""
+
+    def __init__(self, view: Any, partition: str) -> None:
+        self._view = view
+        self._partition = partition
+
+    def query(self, **kwargs: Any) -> dict:
+        return self._view.query('gsi1pk', self._partition, **kwargs)
 
 
 def linked_items(table, item: Mapping[str, Any]) -> list[dict]:
@@ -963,12 +1051,13 @@ def merge_memories(table, items: list[Mapping[str, Any]], statement: str, *, act
     vector = embed_text(statement)
     retentions = {str(i.get('retention')) for i in items}
     retention = next((r for r in policy.RETENTIONS if r in retentions), policy.RETENTION_DECAY)
+    workspace = partition_scope(first.get('pk'))
     candidate = Candidate(
         statement=statement, kind=kind or str(first.get('kind') or 'other'), scope=scope, confidence=1.0,
         source_kind=policy.SOURCE_USER_EXPLICIT, source=sources[-1] if sources else {},
         supporter=actor, owner_sub=first.get('owner_sub'), retention=retention,
         expires_at=next((str(i['expires_at']) for i in items if i.get('expires_at')), None),
-        categories=tags[:policy.MAX_CATEGORIES_PER_MEMORY],
+        categories=tags[:policy.MAX_CATEGORIES_PER_MEMORY], workspace=workspace,
     )
     memory_id = new_memory_id()
     merged = build_item(candidate, memory_id=memory_id, status=policy.STATUS_ACTIVE, vector=vector,
@@ -978,22 +1067,27 @@ def merge_memories(table, items: list[Mapping[str, Any]], statement: str, *, act
     if candidate.retention != policy.RETENTION_DATED:
         merged.pop('expires_at', None)
     put_new(table, merged)
-    append_event(table, memory_id, 'merged', actor=actor, detail={'from': merged['merged_from']}, now=now)
+    append_event(table, memory_id, 'merged', actor=actor, detail={'from': merged['merged_from']}, now=now,
+                 **workspace_kwargs(workspace))
     for item in items:
         set_fields(table, item, {'status': policy.STATUS_ARCHIVED, 'merged_into': memory_id,
                                  'archived_reason': 'merged', 'conflicts_with': []}, now=now)
         append_event(table, str(item.get('memory_id')), 'merged_into', actor=actor, detail={'into': memory_id},
-                     now=now)
+                     now=now, **workspace_kwargs(workspace))
     return merged
 
 
 # ── Session cursors + import records ─────────────────────────────────────────
-def cursor_key(session_id: str) -> dict[str, str]:
-    return {'pk': CURSOR_PK, 'sk': f'{CURSOR_SK_PREFIX}{session_id}'}
+def cursor_key(session_id: str, workspace: WorkspaceScope | None = None) -> dict[str, str]:
+    return {'pk': scoped_pk(workspace, CURSOR_PK), 'sk': f'{CURSOR_SK_PREFIX}{session_id}'}
 
 
-def get_cursors(table, session_ids: list[str]) -> dict[str, dict]:
-    """``{session_id: cursor}`` via BatchGetItem (chunks of 100, unprocessed retried)."""
+def get_cursors(table, session_ids: list[str], workspace: WorkspaceScope | None = None) -> dict[str, dict]:
+    """``{session_id: cursor}`` via BatchGetItem (chunks of 100, unprocessed retried); a workspace's one GetItem
+    each through its view (the layer has no batch read on this branch yet)."""
+    if workspace is not None:
+        found = {session_id: get_item(table, cursor_key(session_id, workspace)) for session_id in session_ids}
+        return {session_id: row for session_id, row in found.items() if row is not None}
     out: dict[str, dict] = {}
     client = table.meta.client
     for start in range(0, len(session_ids), 100):
@@ -1009,29 +1103,55 @@ def get_cursors(table, session_ids: list[str]) -> dict[str, dict]:
     return out
 
 
-def save_cursor(table, session_id: str, fields: Mapping[str, Any], *, now: datetime) -> None:
+def save_cursor(table, session_id: str, fields: Mapping[str, Any], *, now: datetime,
+                workspace: WorkspaceScope | None = None) -> None:
     values = {**fields, 'updated_at': now_iso(now)}
     clause, names, placeholders = set_clause(values)
-    table.update_item(
-        Key=cursor_key(session_id),
+    key = cursor_key(session_id, workspace)
+    _view(table, key['pk']).update_item(
+        key,
         UpdateExpression=f'SET {clause}',
         ExpressionAttributeNames=names,
         ExpressionAttributeValues=placeholders,
     )
 
 
-def import_key(import_id: str) -> dict[str, str]:
-    return {'pk': IMPORT_PK, 'sk': import_id}
+def session_message(session_id: str, owner_sub: str, workspace: WorkspaceScope | None = None) -> dict[str, str]:
+    """The extractor's message for an idle assistant session: a workspace's names it (``workspace_id``, from its
+    verified scope: the extractor reads the conversation and writes the memories there)."""
+    message = {'kind': 'session', 'session_id': session_id, 'owner_sub': owner_sub}
+    return message if workspace is None else {**message, WORKSPACE_FIELD: workspace.ws}
 
 
-def get_import(table, import_id: object) -> dict | None:
+def import_message(import_id: str, chunk: int, notify: str | None,
+                   workspace: WorkspaceScope | None = None) -> dict[str, Any]:
+    """The extractor's message for one chunk of a page import (``notify``: who hears that it ended), in its
+    workspace when it has one (``workspace_id``, from the verified scope of the request or of the previous chunk)."""
+    message: dict[str, Any] = {'kind': 'import', 'import_id': import_id, 'chunk': chunk}
+    if notify:
+        message['notify'] = notify
+    return message if workspace is None else {**message, WORKSPACE_FIELD: workspace.ws}
+
+
+def import_object_key(import_id: str, workspace: WorkspaceScope | None = None) -> str:
+    """Where an import's original page is kept in the raw bucket: ``memory-imports/{id}.json``, or the workspace's
+    ``ws/{ws}/memory-imports/{id}.json``."""
+    name = f'{import_id}.json'
+    return f'{IMPORT_PREFIX}{name}' if workspace is None else s3_key(workspace, IMPORT_PREFIX.rstrip('/'), name)
+
+
+def import_key(import_id: str, workspace: WorkspaceScope | None = None) -> dict[str, str]:
+    return {'pk': scoped_pk(workspace, IMPORT_PK), 'sk': import_id}
+
+
+def get_import(table, import_id: object, workspace: WorkspaceScope | None = None) -> dict | None:
     if not isinstance(import_id, str) or not import_id.startswith('imp_') or len(import_id) > 40:
         return None
-    return get_item(table, import_key(import_id))
+    return get_item(table, import_key(import_id, workspace))
 
 
 def add_import_counts(table, import_id: str, counts: Mapping[str, int], fields: Mapping[str, Any],
-                      *, now: datetime) -> None:
+                      *, now: datetime, workspace: WorkspaceScope | None = None) -> None:
     """Atomically add outcome counters and SET ``fields`` on an import record."""
     values: dict[str, Any] = {':now': now_iso(now)}
     names: dict[str, str] = {}
@@ -1046,13 +1166,14 @@ def add_import_counts(table, import_id: str, counts: Mapping[str, int], fields: 
         values[f':c{i}'] = int(value)
         adds.append(f'#c{i} :c{i}')
     expression = 'SET ' + ', '.join(sets) + (' ADD ' + ', '.join(adds) if adds else '')
+    key = import_key(import_id, workspace)
     kwargs: dict[str, Any] = {
-        'Key': import_key(import_id), 'UpdateExpression': expression,
+        'UpdateExpression': expression,
         'ExpressionAttributeValues': values, 'ConditionExpression': 'attribute_exists(pk)',
     }
     if names:
         kwargs['ExpressionAttributeNames'] = names
-    table.update_item(**kwargs)
+    _view(table, key['pk']).update_item(key, **kwargs)
 
 
 def public_import(item: Mapping[str, Any]) -> dict:

@@ -291,13 +291,14 @@ class TestTheDelegations:
         assert result['raw_data'] == (item if carries_raw else None)
 
     def test_send_to_queue_names_the_metric_and_the_log_label(self, ingestor_aws):
-        items = [{'id': 'a'}]
+        # A source the workspace keeps PII for (ingestor_aws seeds its allow profile; with none it would redact).
+        items = [{'id': 'a', 'source_platform': 'test_source'}]
         with patch('_shared.base_ingestor.send_messages_to_queue', return_value=1) as send:
             assert ingestor_yielding().send_to_queue(items) == 1
 
         send.assert_called_once_with(
             ingestor_aws.sqs, base_ingestor.PROCESSING_QUEUE_URL,
-            [{'id': 'a', 'pii_policy_applied': 'allow', 'workspace_id': WS}],
+            [{'id': 'a', 'source_platform': 'test_source', 'pii_policy_applied': 'allow', 'workspace_id': WS}],
             metric_name='ItemsIngested', log_label='ingestor',
         )
 

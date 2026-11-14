@@ -9,21 +9,22 @@
  *   "Reset local settings" moved to Account → This browser (docs/account-vs-admin.md)
  * - Sources: Data sources, Integrations, Email inbox, Radar
  * - Taxonomy: Categories, Dimensions
- * - Privacy & access: Source policies, Users, Boards (feedback boards + company domains)
+ * - Privacy & access: Source policies, Users, Boards (feedback boards + company domains), Workspaces (the
+ *   platform console, platform admins only)
  * - AI models
  * - System: Logs, Version
  */
 
-import { brandSettingsKey } from '../../hooks/useBrandSettings'
+import { brandSettingsKey, useBrandSettings } from '../../hooks/useBrandSettings'
 import { useExpiringValue } from '../../hooks/useExpiringValue'
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { ChevronDown } from 'lucide-react'
 import { useConfigStore } from '../../store/configStore'
-import { useIsAdmin } from '../../store/authStore'
+import { useIsAdmin, useIsPlatformAdmin } from '../../store/authStore'
 import { useUnsavedChangesGuard } from '../../components/UnsavedChangesGuard/useUnsavedChangesGuard'
 import { api } from '../../api/client'
 import clsx from 'clsx'
@@ -33,6 +34,7 @@ import AdminSectionContent from './AdminSectionContent'
 import { SECTION_PANEL_ID, buildSections, buildTabs, sectionTabId } from './adminTabLabels'
 import { isLeavingAdmin, useAdminLocation } from './useAdminLocation'
 import { useApiEndpointField, useBrandForm } from './useSettingsSync'
+import { useBrandEditRight } from './useBrandEditRight'
 import { Header, ApiConfigSection, BrandConfigSection } from './SettingsSections'
 import DefaultThemeCard from './DefaultThemeCard'
 
@@ -51,12 +53,14 @@ export default function Settings() {
   const queryClient = useQueryClient()
   const { config, setConfig } = useConfigStore()
   const isAdmin = useIsAdmin()
+  const isPlatformAdmin = useIsPlatformAdmin()
+  const canEditBrand = useBrandEditRight(isAdmin)
   // "Saved" clears itself after 3 s; the timer goes with the page.
   const [savedShown, showSaved, clearSaved] = useExpiringValue<true>(3000)
   const saved = savedShown !== null
   const [saving, setSaving] = useState(false)
   const [saveFailed, setSaveFailed] = useState(false)
-  const { location, selectTab, selectSection, redirectTo } = useAdminLocation(isAdmin)
+  const { location, selectTab, selectSection, redirectTo } = useAdminLocation(isAdmin, isPlatformAdmin)
   const activeTab = location.tab
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
@@ -64,11 +68,7 @@ export default function Settings() {
 
   const {
     data: backendSettings, isLoading: loadingSettings, isError: brandLoadFailed, refetch: refetchBrand,
-  } = useQuery({
-    queryKey: brandSettingsKey(),
-    queryFn: () => api.getBrandSettings(),
-    enabled: !!config.apiEndpoint,
-  })
+  } = useBrandSettings(config.apiEndpoint)
 
   const {
     brandName, setBrandName,
@@ -128,8 +128,8 @@ export default function Settings() {
   // Brand edits live at page level, so switching tabs (a query change) keeps them; leaving the page asks (E2E F6).
   const guard = useUnsavedChangesGuard({ dirty: brandDirty, onSave: handleSave, onDiscard: discardBrand, shouldBlock: isLeavingAdmin })
 
-  const tabs = buildTabs(t, isAdmin)
-  const sections = buildSections(t, activeTab, isAdmin)
+  const tabs = buildTabs(t, isAdmin, isPlatformAdmin)
+  const sections = buildSections(t, activeTab, isAdmin, isPlatformAdmin)
 
   const activeTabData = tabs.find(t => t.id === activeTab)
 
@@ -138,7 +138,7 @@ export default function Settings() {
     // would otherwise stretch the page past 390px instead of scrolling itself.
     <div className="max-w-5xl mx-auto min-w-0 w-full">
       {redirectTo !== null && <Navigate to={redirectTo} replace />}
-      <Header saved={saved} saving={saving} saveFailed={saveFailed} canSave={isAdmin} showSave={activeTab === 'brand'} onSave={() => void handleSave()} />
+      <Header saved={saved} saving={saving} saveFailed={saveFailed} canSave={canEditBrand} showSave={activeTab === 'brand'} onSave={() => void handleSave()} />
       {guard.dialog}
 
       {/* Mobile Tab Dropdown */}
@@ -206,13 +206,13 @@ export default function Settings() {
             onBrandHandlesChange={setBrandHandles}
             onHashtagsChange={setHashtags}
             onUrlsToTrackChange={setUrlsToTrack}
-            readOnly={!isAdmin}
+            readOnly={!canEditBrand}
           />
-          <DefaultThemeCard apiEndpoint={apiEndpoint} isAdmin={isAdmin} />
+          <DefaultThemeCard apiEndpoint={apiEndpoint} canEdit={isPlatformAdmin} />
         </div>
       ) : (
         <SectionPanel labelledBy={sections.length > 1 && location.section !== null ? sectionTabId(location.section) : null}>
-          <AdminSectionContent tab={activeTab} section={location.section} apiEndpoint={apiEndpoint} isAdmin={isAdmin} />
+          <AdminSectionContent tab={activeTab} section={location.section} apiEndpoint={apiEndpoint} isAdmin={isAdmin} isPlatformAdmin={isPlatformAdmin} />
         </SectionPanel>
       )}
     </div>

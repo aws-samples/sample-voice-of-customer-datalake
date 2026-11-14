@@ -16,6 +16,9 @@ import SourceCard from './SourceCard'
 import { getEnabledPlugins } from '../../plugins'
 import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import { SECTION_TITLE } from './sectionTitle'
+import { useCurrentWorkspace } from '../../workspace/currentWorkspace'
+import WorkspaceConfigNotice from '../../workspace/WorkspaceConfigNotice'
+import { ConfigScopeContext } from '../../workspace/configScope'
 
 // ============================================
 // Header Component
@@ -32,7 +35,7 @@ interface HeaderProps {
   readonly showSave: boolean
 }
 
-function SaveButtonContent({ saving, saved }: Readonly<{ saving: boolean; saved: boolean }>) {
+export function SaveButtonContent({ saving, saved }: Readonly<{ saving: boolean; saved: boolean }>) {
   const { t } = useTranslation('settings')
   if (saving) return <><Loader2 size={16} className="animate-spin" />{t('saving')}</>
   if (saved) return <><Check size={16} />{t('saved')}</>
@@ -158,7 +161,7 @@ interface BrandConfigSectionProps {
   readonly readOnly: boolean
 }
 
-function BrandSyncStatus({ apiEndpoint, loadingSettings, loadFailed }: Readonly<{ apiEndpoint: string; loadingSettings: boolean; loadFailed: boolean }>) {
+export function BrandSyncStatus({ apiEndpoint, loadingSettings, loadFailed }: Readonly<{ apiEndpoint: string; loadingSettings: boolean; loadFailed: boolean }>) {
   const { t } = useTranslation('settings')
   if (!apiEndpoint || loadingSettings) return null
   if (loadFailed) {
@@ -177,8 +180,64 @@ function BrandField({ id, label, hint, children }: Readonly<{ id: string; label:
   )
 }
 
+/** Why the brand is read-only here: the text names who may change it. */
+export function BrandReadOnlyNotice({ text }: Readonly<{ text: string }>) {
+  return (
+    <p className="flex items-start gap-2 text-sm text-text bg-info-subtle border border-info/30 p-3 rounded-lg mb-4">
+      <Lock size={16} className="flex-shrink-0 mt-0.5 text-info" aria-hidden="true" />
+      {text}
+    </p>
+  )
+}
+
+/** The brand form's four fields, as text, with their change handlers. */
+export interface BrandFieldValues {
+  readonly brandName: string
+  readonly brandHandles: string
+  readonly hashtags: string
+  readonly urlsToTrack: string
+  readonly setBrandName: (value: string) => void
+  readonly setBrandHandles: (value: string) => void
+  readonly setHashtags: (value: string) => void
+  readonly setUrlsToTrack: (value: string) => void
+}
+
+/**
+ * The four brand fields. `idPrefix` keeps their ids unique where two brand forms could share a page; `readOnly`
+ * disables every one of them.
+ */
+export function BrandFields({ values, readOnly, idPrefix = 'settings-brand' }: Readonly<{
+  values: BrandFieldValues
+  readOnly: boolean
+  idPrefix?: string
+}>) {
+  const { t } = useTranslation('settings')
+  return (
+    <div className="space-y-4">
+      <BrandField id={`${idPrefix}-name`} label={t('brand.nameLabel')}>
+        <input id={`${idPrefix}-name`} disabled={readOnly} type="text" value={values.brandName} onChange={(e) => values.setBrandName(e.target.value)} placeholder={t('brand.namePlaceholder')} className="input" />
+      </BrandField>
+      <BrandField id={`${idPrefix}-handles`} label={t('brand.handlesLabel')} hint={t('brand.handlesHint')}>
+        <input id={`${idPrefix}-handles`} disabled={readOnly} type="text" value={values.brandHandles} onChange={(e) => values.setBrandHandles(e.target.value)} placeholder={t('brand.handlesPlaceholder')} className="input" />
+      </BrandField>
+      <BrandField id={`${idPrefix}-hashtags`} label={t('brand.hashtagsLabel')}>
+        <input id={`${idPrefix}-hashtags`} disabled={readOnly} type="text" value={values.hashtags} onChange={(e) => values.setHashtags(e.target.value)} placeholder={t('brand.hashtagsPlaceholder')} className="input" />
+      </BrandField>
+      <BrandField id={`${idPrefix}-urls`} label={t('brand.urlsLabel')} hint={t('brand.urlsHint')}>
+        <textarea id={`${idPrefix}-urls`} disabled={readOnly} value={values.urlsToTrack} onChange={(e) => values.setUrlsToTrack(e.target.value)} placeholder={'https://example.com/reviews\nhttps://forum.example.com'} className="input min-h-[100px]" />
+      </BrandField>
+    </div>
+  )
+}
+
 export function BrandConfigSection({ apiEndpoint, loadingSettings, loadFailed, onRetry, brandName, brandHandles, hashtags, urlsToTrack, onBrandNameChange, onBrandHandlesChange, onHashtagsChange, onUrlsToTrackChange, readOnly }: BrandConfigSectionProps) {
   const { t } = useTranslation('settings')
+  // Inside a workspace the brand is the workspace's, and only its admins change it.
+  const inWorkspace = useCurrentWorkspace() !== null
+  const values: BrandFieldValues = {
+    brandName, brandHandles, hashtags, urlsToTrack,
+    setBrandName: onBrandNameChange, setBrandHandles: onBrandHandlesChange, setHashtags: onHashtagsChange, setUrlsToTrack: onUrlsToTrackChange,
+  }
   return (
     <div className="card">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -201,26 +260,8 @@ export function BrandConfigSection({ apiEndpoint, loadingSettings, loadFailed, o
           </button>
         </div>
       )}
-      {readOnly && (
-        <p className="flex items-start gap-2 text-sm text-text bg-info-subtle border border-info/30 p-3 rounded-lg mb-4">
-          <Lock size={16} className="flex-shrink-0 mt-0.5 text-info" aria-hidden="true" />
-          {t('brand.adminOnlyNotice')}
-        </p>
-      )}
-      <div className="space-y-4">
-        <BrandField id="settings-brand-name" label={t('brand.nameLabel')}>
-          <input id="settings-brand-name" disabled={readOnly} type="text" value={brandName} onChange={(e) => onBrandNameChange(e.target.value)} placeholder={t('brand.namePlaceholder')} className="input" />
-        </BrandField>
-        <BrandField id="settings-brand-handles" label={t('brand.handlesLabel')} hint={t('brand.handlesHint')}>
-          <input id="settings-brand-handles" disabled={readOnly} type="text" value={brandHandles} onChange={(e) => onBrandHandlesChange(e.target.value)} placeholder={t('brand.handlesPlaceholder')} className="input" />
-        </BrandField>
-        <BrandField id="settings-brand-hashtags" label={t('brand.hashtagsLabel')}>
-          <input id="settings-brand-hashtags" disabled={readOnly} type="text" value={hashtags} onChange={(e) => onHashtagsChange(e.target.value)} placeholder={t('brand.hashtagsPlaceholder')} className="input" />
-        </BrandField>
-        <BrandField id="settings-brand-urls" label={t('brand.urlsLabel')} hint={t('brand.urlsHint')}>
-          <textarea id="settings-brand-urls" disabled={readOnly} value={urlsToTrack} onChange={(e) => onUrlsToTrackChange(e.target.value)} placeholder={'https://example.com/reviews\nhttps://forum.example.com'} className="input min-h-[100px]" />
-        </BrandField>
-      </div>
+      {readOnly && <BrandReadOnlyNotice text={inWorkspace ? t('common:workspaces.settings.brandReadOnly') : t('brand.adminOnlyNotice')} />}
+      <BrandFields values={values} readOnly={readOnly} />
     </div>
   )
 }
@@ -245,7 +286,11 @@ export function CategoriesSection({ apiEndpoint }: CategoriesSectionProps) {
       {!apiEndpoint ? (
         <ConfigureFirstNotice message={t('categories.configureFirst')} />
       ) : (
-        <CategoriesManager />
+        <>
+          {/* The deployment's categories from any address (inside a workspace the notice says so). */}
+          <WorkspaceConfigNotice />
+          <ConfigScopeContext.Provider value="deployment"><CategoriesManager /></ConfigScopeContext.Provider>
+        </>
       )}
     </div>
   )

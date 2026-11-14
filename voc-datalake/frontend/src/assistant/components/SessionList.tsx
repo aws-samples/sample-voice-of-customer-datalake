@@ -17,7 +17,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Loader2, Search } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { deleteSession, listSessions } from '../sessions/sessionsApi'
+import { deleteSession, isNotSavedHere, listSessions } from '../sessions/sessionsApi'
+import { useCurrentWorkspace } from '../../workspace/currentWorkspace'
+import BeforeWorkspaces from './BeforeWorkspaces'
 import { SESSIONS_QUERY_KEY } from '../sessions/queryKeys'
 import { groupSessions, matchesTitle } from '../sessions/sessionGroups'
 import { closeThread } from '../runtime/runtime'
@@ -53,11 +55,19 @@ function useOpenSlots(): { slots: ThreadSlot[]; activeId: string } {
   return { slots: listed, activeId }
 }
 
+/** The library's default number of retries, kept for every other failure. */
+const HISTORY_RETRIES = 3
+
 /** Saved sessions, refetched whenever a conversation is saved. */
-function useHistory() {
+function useHistory(inWorkspace: boolean) {
   const queryClient = useQueryClient()
   const saveTick = useThreadStore((s) => s.saveTick)
-  const query = useQuery({ queryKey: SESSIONS_QUERY_KEY, queryFn: listSessions })
+  // Inside a workspace a 404 is settled (it keeps no conversations for this caller): never retried. Elsewhere the
+  // client's own retry policy, as before.
+  const query = useQuery({
+    queryKey: SESSIONS_QUERY_KEY, queryFn: listSessions,
+    ...(inWorkspace ? { retry: (failures: number, error: unknown) => !isNotSavedHere(error) && failures < HISTORY_RETRIES } : {}),
+  })
   useEffect(() => {
     if (saveTick > 0) void queryClient.invalidateQueries({ queryKey: SESSIONS_QUERY_KEY })
   }, [saveTick, queryClient])
@@ -166,14 +176,16 @@ function HistoryGroups({ sessions, nowMs, actions }: Readonly<{
   )
 }
 
-function HistoryStatus({ isLoading, isError, empty, searching }: Readonly<{
+function HistoryStatus({ isLoading, isError, notSavedHere, empty, searching }: Readonly<{
   isLoading: boolean
   isError: boolean
+  notSavedHere: boolean
   empty: boolean
   searching: boolean
 }>) {
   const { t } = useTranslation('assistant')
   if (isLoading) return <Loader2 size={16} className="mx-auto mt-4 animate-spin text-accent motion-reduce:animate-none" aria-label={t('sessions.loading')} />
+  if (notSavedHere) return <p className="p-2 text-[12px] text-muted" role="status">{t('sessions.notSavedHere')}</p>
   if (isError) return <p className="p-2 text-[12px] text-danger" role="alert">{t('sessions.error')}</p>
   if (!empty) return null
   return <p className="p-2 text-[12px] text-muted">{searching ? t('sessions.noMatch') : t('sessions.empty')}</p>
@@ -182,7 +194,9 @@ function HistoryStatus({ isLoading, isError, empty, searching }: Readonly<{
 export default function SessionList({ onPick, groupHeadingLevel = 4 }: Readonly<SessionListProps>) {
   const { t } = useTranslation('assistant')
   const open = useOpenSlots()
-  const { data, isLoading, isError, remove } = useHistory()
+  const inWorkspace = useCurrentWorkspace() !== null
+  const { data, isLoading, isError, error, remove } = useHistory(inWorkspace)
+  const notSavedHere = inWorkspace && isError && isNotSavedHere(error)
   const { rename, failure } = useSessionRename()
   const [pendingDelete, setPendingDelete] = useState<DeleteRequest | null>(null)
   const [query, setQuery] = useState('')
@@ -207,8 +221,10 @@ export default function SessionList({ onPick, groupHeadingLevel = 4 }: Readonly<
       <RenameFailureNotice failure={failure} />
       <OpenGroup entries={openEntries} activeId={open.activeId} level={groupHeadingLevel} actions={actions} />
       <GroupHeading level={groupHeadingLevel}>{t('sessions.historyGroup')}</GroupHeading>
-      <HistoryStatus isLoading={isLoading} isError={isError} empty={data !== undefined && history.length === 0} searching={query.trim() !== ''} />
+      <HistoryStatus isLoading={isLoading} isError={isError} notSavedHere={notSavedHere}
+        empty={data !== undefined && history.length === 0} searching={query.trim() !== ''} />
       <HistoryGroups sessions={history} nowMs={nowMs} actions={actions} />
+      {inWorkspace && <BeforeWorkspaces />}
       <DeleteConfirm request={pendingDelete} deleting={deleting} onCancel={() => setPendingDelete(null)}
         onConfirm={(id) => remove.mutate(id, { onSettled: () => setPendingDelete(null) })} />
     </div>

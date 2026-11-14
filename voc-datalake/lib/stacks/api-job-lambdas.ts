@@ -45,6 +45,7 @@ export function createJobLambdas(ctx: ApiStackContext, projects: ProjectsLambda)
   const projectsFunctions = [projectsLambda, projectsAssistWorker];
   const {
     feedbackTable, aggregatesTable, projectsTable, jobsTable, kmsKey, rawDataBucket, memoryTable, featureRequestsTable,
+    companyLogoReadPolicy,
   } = ctx.props;
   // Company memories for the shared generators (lambda/shared/job_knowledge.py).
   const memoryRecall = { memoryTable, kmsKey, region: stack.region };
@@ -205,6 +206,9 @@ export function createJobLambdas(ctx: ApiStackContext, projects: ProjectsLambda)
   // prototype (a document delete is the projects API's).
   rawDataBucket.grantRead(documentGeneratorRole, 'prototypes/*');
   rawDataBucket.grantPut(documentGeneratorRole, 'prototypes/*');
+  // The company logo (Company → Design system), inlined into a prototype as a data: URL
+  // (lambda/shared/company_logo.py): VocCoreStack's read-only managed policy (KMS decrypt is granted above).
+  documentGeneratorRole.addManagedPolicy(companyLogoReadPolicy);
 
   const documentGeneratorLambda = createJobLambda('DocumentGeneratorJob', {
     baseName: 'voc-job-document-generator',

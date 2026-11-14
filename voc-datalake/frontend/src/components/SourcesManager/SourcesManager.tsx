@@ -4,8 +4,13 @@
  * tags every review from it carries; plus the erasure panels (one person, a whole source).
  *
  * A source with no profile uses the defaults (keep everything, forever, visible
- * to all). Edits stay in a local draft until Save (one PUT of the whole list,
- * validated server-side).
+ * to all; inside a workspace its PII is redacted). Edits stay in a local draft until
+ * Save (one PUT of the whole list, validated server-side).
+ *
+ * Whose profiles (workspace/configScope.ts): Administration edits the deployment's (`'deployment'`, no
+ * `X-Workspace-Id` from any address), beside the erasure panels (an erasure of a person in the current workspace
+ * inside one, the deployment's outside; a whole-source erasure always the deployment's); a workspace's settings
+ * page edits the workspace's own (`'workspace'`), without them.
  *
  * @module components/SourcesManager
  */
@@ -27,20 +32,22 @@ import { draftProblem, knownSourceIds, newProfile, toDraft, toWire } from './sou
 import type { SourceProfile } from '../../api/sourceProfilesApi'
 import type { DraftProfile } from './sourceDraft'
 import { scrapersKey } from '../../api/queryKeys'
+import { scopedKey, useConfigScope } from '../../workspace/configScope'
 
-function ProfilesEditor({ stored }: Readonly<{ stored: readonly SourceProfile[] }>) {
+function ProfilesEditor({ stored, withErasure }: Readonly<{ stored: readonly SourceProfile[]; withErasure: boolean }>) {
   const { t } = useTranslation('components', { keyPrefix: 'sourcesManager' })
   const queryClient = useQueryClient()
   const invalidateFeedbackData = useInvalidateFeedbackData()
-  const { data: dimensionsConfig } = useDimensionsConfig()
+  const scope = useConfigScope()
+  const { data: dimensionsConfig } = useDimensionsConfig(scope)
   const dimensions = dimensionsConfig?.dimensions ?? []
   const { draft, edit, barProps, onFieldBlur } = useDraftEditor({
     initial: (): DraftProfile[] => toDraft(stored),
     toWire,
     problem: draftProblem,
-    save: (sources: SourceProfile[]) => sourceProfilesApi.saveProfiles(sources),
+    save: (sources: SourceProfile[]) => sourceProfilesApi.saveProfiles(sources, scope),
     onSaved: (sources) => {
-      queryClient.setQueryData(sourceProfilesKey(), sources)
+      queryClient.setQueryData(scopedKey(sourceProfilesKey(), scope), sources)
       invalidateFeedbackData() // a profile change (restricted, PII policy) changes what the feedback reads return
     },
   })
@@ -69,19 +76,29 @@ function ProfilesEditor({ stored }: Readonly<{ stored: readonly SourceProfile[] 
       ))}
       <AddSourceProfile knownIds={knownIds} draft={draft} disabled={draft.length >= MAX_SOURCE_PROFILES} onAdd={(id) => edit([...draft, newProfile(id)])} />
       <DraftSaveBar {...barProps} />
-      <ErasurePanel profiles={stored} />
-      <SourceErasurePanel profiles={stored} />
+      {withErasure && (
+        <>
+          <ErasurePanel profiles={stored} />
+          <SourceErasurePanel profiles={stored} />
+        </>
+      )}
     </div>
   )
 }
 
-export default function SourcesManager() {
+/**
+ * `withErasure` (default on): the erasure panels (`POST /settings/erasure`). An erasure by author, source id, CSV
+ * row or email names the current workspace inside one (that workspace's member admins; its reviews only) and is
+ * the deployment's outside; a whole-source erasure is always the deployment's (no `X-Workspace-Id`, its
+ * administrators). A workspace's settings page leaves them out: it edits only that workspace's profiles.
+ */
+export default function SourcesManager({ withErasure = true }: Readonly<{ withErasure?: boolean }>) {
   const { t } = useTranslation('components', { keyPrefix: 'sourcesManager' })
-  const { data, isLoading, isError, dataUpdatedAt } = useSourceProfiles()
+  const { data, isLoading, isError, dataUpdatedAt } = useSourceProfiles(useConfigScope())
   return (
     <DraftLoadGate isLoading={isLoading} isError={isError} errorText={t('loadError')}>
       {/* Remounted when the stored list changes, so the draft restarts from it. */}
-      <ProfilesEditor key={dataUpdatedAt} stored={data ?? []} />
+      <ProfilesEditor key={dataUpdatedAt} stored={data ?? []} withErasure={withErasure} />
     </DraftLoadGate>
   )
 }

@@ -14,6 +14,7 @@ Lambda: `lambda/stream/src/bedrock/model-override.ts`):
 
 ```
 explicit arg > per-surface admin override > legacy global model_id
+    > the deployment's default (SETTINGS#model_default, pinned at deploy by -c defaultModelId)
     > surface default > BEDROCK_MODEL_ID env
 ```
 

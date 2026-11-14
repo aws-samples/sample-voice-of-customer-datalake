@@ -14,15 +14,16 @@ from __future__ import annotations
 
 from typing import Any, Final
 
-from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
 from shared.aws import is_conditional_check_failure
-from shared.dynamo_paging import iter_query
+from shared.ingest_tables import table_view
 from shared.logging import logger
 from shared.project_access import VISIBILITY_PRIVATE
+from shared.project_tables import iter_project_rows
 from shared.project_writes import project_meta_key
 from shared.timestamps import now_iso
+from shared.ws_repo import WorkspaceScope
 
 COMPANY_PERSONAS_CONTAINER: Final = 'company_personas'
 CONTAINER_KIND: Final = 'company_personas'
@@ -36,18 +37,19 @@ def is_company_container(project_id: object) -> bool:
     return project_id == COMPANY_PERSONAS_CONTAINER
 
 
-def ensure_company_personas_meta(table: Any) -> None:
+def ensure_company_personas_meta(table: Any, *, workspace: WorkspaceScope | None = None) -> None:
     """Create the container's META row on the first company write; a no-op afterwards.
 
     Conditional (``attribute_not_exists``), so two first writes racing each other both
     succeed and the row is written once. The persona-save writable check and
-    ``store_persona_count`` need the row to exist.
+    ``store_persona_count`` need the row to exist. ``workspace``: the workspace's own
+    library (None, the deployment's, for every caller today).
     """
     now = now_iso()
     try:
-        table.put_item(
-            Item={
-                **project_meta_key(COMPANY_PERSONAS_CONTAINER),
+        table_view(workspace, table).put_item(
+            {
+                **project_meta_key(COMPANY_PERSONAS_CONTAINER, workspace=workspace),
                 'project_id': COMPANY_PERSONAS_CONTAINER,
                 'kind': CONTAINER_KIND,
                 'name': CONTAINER_NAME,
@@ -70,12 +72,9 @@ def _created_at(item: dict) -> str:
     return str(item.get('created_at') or '')
 
 
-def company_persona_items(table: Any) -> list[dict]:
-    """Every company persona row, newest ``created_at`` first."""
-    rows = list(iter_query(table, {
-        'KeyConditionExpression': Key('pk').eq(f'PROJECT#{COMPANY_PERSONAS_CONTAINER}')
-        & Key('sk').begins_with('PERSONA#'),
-    }))
+def company_persona_items(table: Any, *, workspace: WorkspaceScope | None = None) -> list[dict]:
+    """Every company persona row, newest ``created_at`` first (the workspace's library when given)."""
+    rows = list(iter_project_rows(table, COMPANY_PERSONAS_CONTAINER, workspace=workspace, sort_prefix='PERSONA#'))
     return sorted(rows, key=_created_at, reverse=True)
 
 

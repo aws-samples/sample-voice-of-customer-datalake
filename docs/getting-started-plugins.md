@@ -175,7 +175,7 @@ def lambda_handler(event, context):
 workspace, as every schedule tick's own run and every Run now sent without `X-Workspace-Id` does, and in
 the workspace an event names in `workspace_id` otherwise (a Run now sent with `X-Workspace-Id` names the
 request's workspace there, with that workspace's credentials); the tick first fans out (once per tick) to
-every workspace that enabled the plugin ([multi-workspace.md](multi-workspace.md), not released yet). Your
+every workspace that enabled the plugin ([multi-workspace.md](multi-workspace.md), since 7.00.00; a Run now in a workspace since 7.04.00). Your
 code changes for none of it. What the base class does for you when
 `run()` is called:
 

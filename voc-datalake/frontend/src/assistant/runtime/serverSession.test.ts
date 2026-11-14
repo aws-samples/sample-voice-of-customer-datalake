@@ -24,6 +24,9 @@ import { getSession, saveSession } from '../sessions/sessionsApi'
 import { normalizeSessionRecord } from '../sessions/schema'
 import { slotOf, useThreadStore } from '../store/assistantStore'
 import { ApiError } from '../../lib/errors'
+import { renderHook } from '@testing-library/react'
+import { clearUnsaved, useIsUnsaved } from '../sessions/unsavedThreads'
+import { setCurrentWorkspace } from '../../workspace/currentWorkspace'
 
 const env = HOME_ENV
 const NOW = Date.parse('2026-10-06T12:00:00Z')
@@ -297,5 +300,43 @@ describe('the SPA never overwrites a newer server revision', () => {
     await run
     await vi.waitFor(() => expect(saveSessionMock).toHaveBeenCalledTimes(2))
     expect([runAgentMock.mock.calls.length, getSessionMock.mock.calls.length]).toStrictEqual([0, 0])
+  })
+})
+
+describe('a workspace that keeps no conversations for the caller (an entered platform admin, not a member)', () => {
+  const WS = { id: 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8', slug: 'acme', name: 'Acme Outfitters', role: 'admin' } as const
+  beforeEach(() => {
+    vi.useRealTimers()
+    useThreadStore.getState().reset()
+    clearUnsaved()
+    saveSessionMock.mockReset()
+    saveSessionMock.mockRejectedValue(new ApiError(404, 'Workspace not found'))
+    runAgentMock.mockReset()
+    runAgentMock.mockImplementation((input, onEvent) => {
+      onEvent({ type: EventType.RUN_STARTED, threadId: input.threadId, runId: input.runId })
+      onEvent({ type: EventType.TEXT_MESSAGE_CONTENT, messageId: 'a', delta: 'Answered' })
+      onEvent({ type: EventType.RUN_FINISHED, threadId: input.threadId, runId: input.runId })
+      return Promise.resolve()
+    })
+  })
+  afterEach(() => setCurrentWorkspace(null))
+
+  it('still answers, marks the conversation unsaved and never retries the 404', async () => {
+    setCurrentWorkspace(WS)
+    await sendMessage('hi', env)
+    const { threadId } = useThreadStore.getState().thread
+    expect(renderHook(() => useIsUnsaved(threadId)).result.current).toBe(true)
+    expect(useThreadStore.getState().thread.messages.at(-1)).toMatchObject({ content: 'Answered' })
+    // The save made as the run starts and the one after it: two, then nothing more.
+    await new Promise((resolve) => {
+      setTimeout(resolve, 50)
+    })
+    expect(saveSessionMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('outside a workspace a 404 is not read as unsaved', async () => {
+    await sendMessage('hi', env)
+    const { threadId } = useThreadStore.getState().thread
+    expect(renderHook(() => useIsUnsaved(threadId)).result.current).toBe(false)
   })
 })

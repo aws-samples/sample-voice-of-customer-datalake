@@ -51,9 +51,16 @@
  * `/me/workspaces/current`, the workspace the caller acts in. Every shape grows by 3 (performance tier 409 → 412);
  * the ceiling is 412, and the 425 gate is unchanged.
  *
+ * 6.18.00 (the first workspace settings, docs/multi-workspace.md, "Per-workspace configuration") spends 1: the
+ * stack's one workspace-resolution policy (lib/utils/workspace-resolution-grants.ts), a customer-managed policy every
+ * domain API that acts in a workspace attaches, rather than its statements and audit Denies in each role's inline
+ * policy (the settings role's would pass the 70% inline-size alarm, api-stack-mcp.test.ts). One resource for the
+ * whole phase: each later domain API attaches it for nothing. Every shape grows by 1 (performance tier 412 → 413);
+ * the ceiling is 413, and the 425 gate is unchanged.
  * The public routes' workspace slice (docs/multi-workspace.md) spends 2 in a synth with the GitHub webhook: a
  * workspace's endpoint `/webhooks/github_issues/{ws}` (one resource, one POST, no preflight) through the webhook's
- * existing integration (no new function, role or invoke permission). The ceiling is 414; the 425 gate is unchanged.
+ * existing integration (no new function, role or invoke permission); the feedback forms attach the workspace-resolution
+ * policy above for nothing. The ceiling is 415 (7.06.00); the 425 gate is unchanged.
  *
  * Phase 4a (a workspace's export) spends none here: its routes ride `/me/{proxy+}` and the workspaces API's
  * existing integration, and the job is VocProcessingStack's (workspace-export-worker.ts), invoked by name.
@@ -68,10 +75,10 @@ import { SNAPSTART_CONTEXT_KEY } from '../utils/snapstart';
  * The release ceiling: 388 after 5.63.00 (MCP OAuth), + 4 in 5.77.00 (request validation) + 2 for the opt-in API web
  * ACL (5.77.00) + the BucketDeployment handler's log group the bare fixture did not count (5.78.00); the
  * performance-tier synth is 395, as deployed; + 9 for the workspaces API (6.07.00): 404; + 5 for `/platform`
- * (6.09.00): 409; + 3 for the members routes' methods on `/me/{proxy+}` (6.10.00): 412; + 2 for a workspace's
- * webhook endpoint (the public routes' slice): 414.
+ * (6.09.00): 409; + 3 for the members routes' methods on `/me/{proxy+}` (6.10.00): 412; + 1 for the workspace-resolution
+ * policy (6.18.00): 413; + 2 for a workspace's webhook endpoint (7.06.00): 415.
  */
-const ENGAGEMENT_RELEASE_CEILING = 414;
+const ENGAGEMENT_RELEASE_CEILING = 415;
 
 function resourceCount(resources: Record<string, unknown> | undefined): number {
   return Object.keys(resources ?? {}).length;

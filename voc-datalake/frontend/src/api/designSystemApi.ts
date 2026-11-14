@@ -36,7 +36,8 @@ export const UPLOAD_LIMITS = {
   html: { types: ['text/html'], maxBytes: 2 * MB },
   // No SVG: an SVG is a document that can carry script (the API refuses it too). The logo picker
   // still offers SVG: utils/svgToPng converts it to PNG in the browser and only the PNG is sent.
-  logo: { types: ['image/png', 'image/jpeg', 'image/webp'], maxBytes: 5 * MB },
+  // At most 1 MB (design_logo.COMPANY_LOGO_MAX_BYTES): pages/Company/logoImage.ts makes a larger image smaller first.
+  logo: { types: ['image/png', 'image/jpeg', 'image/webp'], maxBytes: 1_000_000 },
 } as const satisfies Record<string, { types: readonly string[]; maxBytes: number }>
 export type UploadTarget = keyof typeof UPLOAD_LIMITS
 

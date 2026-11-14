@@ -17,6 +17,10 @@
  * @module services/sessionExpiry
  */
 import { authService } from './auth'
+import { announceSessionEnded } from './crossTabSignOut'
+import { forgetRefused } from '../workspace/refusedWorkspaces'
+import { pageHref } from '../workspace/workspacePath'
+import { forgetWorkspaceStores } from '../workspace/workspaceStorage'
 
 /** Query flag appended to `/login` when a session ended unexpectedly. */
 const EXPIRED_FLAG = 'expired'
@@ -48,7 +52,17 @@ export function endExpiredSession(): void {
   if (ending.inProgress) return
   ending.inProgress = true
   authService.signOut()
-  window.location.replace(SESSION_EXPIRED_PATH)
+  // Whoever signs in next in this tab asks the server afresh about every workspace.
+  forgetRefused()
+  // And finds no workspace's saved conversation, draft or filters, nor the assistant's plain record.
+  forgetWorkspaceStores()
+  // The browser's other open tabs end theirs too (services/crossTabSignOut.ts). Only after signOut() has written
+  // `voc-auth` signed out: a tab that hears the signal while the stored session still says signed in skips the wipe.
+  announceSessionEnded()
+  // A platform admin's entries stay (signing back in returns to the workspace's address): each one only names an id
+  // to ask the server about, so whoever signs in gets the server's answer for themselves (workspace/platformEntry.ts).
+  // Inside a workspace the sign-in page is under its `/w/{slug}`, so signing back in returns there.
+  window.location.replace(pageHref(SESSION_EXPIRED_PATH))
 }
 
 /**

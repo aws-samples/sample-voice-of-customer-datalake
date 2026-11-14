@@ -29,13 +29,18 @@ import { recordCreated, type EntityKind } from './ledger'
  */
 export const PERSISTED_UI_KEYS: readonly string[] = ['voc-assistant-ui', 'voc-manual-import', 'voc-assistant-bubble']
 
+/** A persisted UI key, or a workspace's own record of one (`voc-assistant-ui:w/acme`, src/workspace/workspaceStorage.ts). */
+function isPersistedUiKey(name: string): boolean {
+  return PERSISTED_UI_KEYS.some((key) => name === key || name.startsWith(`${key}:w/`))
+}
+
 /** `state` (a Playwright storage state) without the persisted UI keys; anything unrecognised is returned as is. */
 export function withoutPersistedUi(state: unknown): unknown {
   if (!isRecord(state) || !Array.isArray(state['origins'])) return state
   const origins = state['origins'].map((origin: unknown) => {
     if (!isRecord(origin) || !Array.isArray(origin['localStorage'])) return origin
     const kept = origin['localStorage'].filter((item: unknown) =>
-      !(isRecord(item) && typeof item['name'] === 'string' && PERSISTED_UI_KEYS.includes(item['name'])))
+      !(isRecord(item) && typeof item['name'] === 'string' && isPersistedUiKey(item['name'])))
     return { ...origin, localStorage: kept }
   })
   return { ...state, origins }

@@ -16,7 +16,9 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { Template } from 'aws-cdk-lib/assertions';
 import { stateMachineDefinition, synthProcessingTemplate } from '../test-support/processing-stack-fixture';
 import { isRecord, itemAt, recordAt } from '../test-support/guards';
-import { IamPolicySchema, allowedActions, roleStatements } from '../test-support/iam-statements';
+import {
+  IamPolicySchema, WORKSPACE_STATUS_READ_CONDITION, allowedActions, roleStatements,
+} from '../test-support/iam-statements';
 import { expectSelfInvokeOnly, findWorkerFunction } from '../test-support/worker-function';
 
 function researchDefinition(template: Template): string {
@@ -384,13 +386,23 @@ describe('category reprocess worker', () => {
       .toStrictEqual(['dynamodb:GetItem', 'dynamodb:UpdateItem']);
   });
 
-  it('reads only raw/* in the raw bucket, and writes only a kept Silver version (PutObject on silver/*)', () => {
-    const s3 = statements().filter((s) => s.actions.some((a) => a.startsWith('s3:')));
-    expect(s3.length).toBeGreaterThan(0);
-    const writes = s3.filter((s) => s.actions.some((a) => /^s3:(Put|Delete|Abort)/.test(a)));
-    expect(writes.map((s) => [s.actions, s.resource.includes('/silver/*')])).toStrictEqual([[['s3:PutObject'], true]]);
-    const objectResources = s3.map((s) => s.resource).filter((r) => r.includes('/'));
+  const s3Statements = () => statements().filter((s) => s.actions.some((a) => a.startsWith('s3:')));
+  const ONE_WORKSPACE = `ws/ws_${'?'.repeat(26)}/`;
+
+  it('writes only a kept Silver version: PutObject on silver/* and one workspace\'s ws/{ws}/silver/*', () => {
+    const writes = s3Statements().filter((s) => s.actions.some((a) => /^s3:(Put|Delete|Abort)/.test(a)));
+    // silver/* for a deployment review, ws/{one id}/silver/* for a workspace's (7.13.00): PutObject only.
+    expect(writes.map((s) => [s.actions, s.resource.includes('/silver/*')]))
+      .toStrictEqual([[['s3:PutObject'], true], [['s3:PutObject'], true]]);
+    expect(writes.map((s) => s.resource.includes(`${ONE_WORKSPACE}silver/*`))).toStrictEqual([false, true]);
+  });
+
+  it('reads only raw/* and one workspace\'s ws/{ws}/raw/*, never a bucket-wide or every-workspace path', () => {
+    const objectResources = s3Statements().map((s) => s.resource).filter((r) => r.includes('/'));
     expect(objectResources.join(' ')).toContain('/raw/*');
+    // A workspace's bronze: exactly one workspace id segment, never `ws/*`.
+    expect(objectResources.join(' ')).toContain(`${ONE_WORKSPACE}raw/*`);
+    expect(objectResources.every((r) => !r.includes('ws/*')), 'a grant over every workspace path').toBe(true);
     expect(objectResources.every((r) => !r.includes('"/*"')), 'bucket-wide object grant').toBe(true);
   });
 
@@ -552,11 +564,7 @@ describe('the processor and the aggregator read a workspace\'s status, and nothi
         Action: 'dynamodb:GetItem',
         Effect: 'Allow',
         Resource: expect.anything(),
-        Condition: {
-          'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] },
-          'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'status'] },
-          StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
-        },
+        Condition: WORKSPACE_STATUS_READ_CONDITION,
       }]);
       expect(JSON.stringify(environment(service)?.WORKSPACES_TABLE)).toContain('Workspaces');
     });

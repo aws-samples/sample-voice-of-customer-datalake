@@ -19,12 +19,15 @@ import { chatScopeFor } from '../store/chatScopeStore'
 import { allInterruptsResolved } from '../thread/reducer'
 import { buildResume } from '../thread/resume'
 import { toWireMessages } from '../thread/wire'
-import { cancelServerRun, getSession, saveSession } from '../sessions/sessionsApi'
+import { cancelServerRun, getSession, isNotSavedHere, saveSession } from '../sessions/sessionsApi'
+import { clearUnsaved, markUnsaved } from '../sessions/unsavedThreads'
+import { currentWorkspace } from '../../workspace/currentWorkspace'
 import { threadFromSession, toSaveBody } from '../sessions/serialize'
 import { isValidSessionId } from '../sessions/schema'
 import { onAssistantSignOut, slotOf, useAssistantUiStore, useThreadStore } from '../store/assistantStore'
 import { announceRunEnd } from '../notifications/runNotifications'
 import { isChatRoute } from '../page/chatRoute'
+import { appPathname } from '../../workspace/workspacePath'
 import { apiErrorStatus, HTTP_CONFLICT } from '../../api/apiErrorStatus'
 import { CUSTOM_EVENTS } from '@stream/assistant/contract'
 import { adoptAfterStop, adoptServerSession, followServerRun } from './followServerRun'
@@ -98,7 +101,10 @@ async function saveThreadNow(threadId: string, page: PageContext | null, adoptOn
     if (threadId === activeId()) rememberInView()
     if (refreshList) useThreadStore.getState().noteSaved()
   } catch (error) {
-    if (adoptOnConflict && apiErrorStatus(error) === HTTP_CONFLICT) void adoptServerSession(threadId)
+    // Inside a workspace that keeps no conversations for this caller (a platform admin who entered without being a
+    // member): settled, shown as unsaved, never retried; the assistant still answers.
+    if (currentWorkspace() !== null && isNotSavedHere(error)) markUnsaved(threadId)
+    else if (adoptOnConflict && apiErrorStatus(error) === HTTP_CONFLICT) void adoptServerSession(threadId)
     // Otherwise saving is best-effort; the next finished run retries with the full thread.
   }
 }
@@ -218,7 +224,7 @@ async function executeRun(threadId: string, env: RunEnvironment, { resume, befor
 /** Whether the user is looking at this thread: it is in view, in an open panel or on `/chat`. */
 function threadOnScreen(threadId: string): boolean {
   if (threadId !== activeId()) return false
-  return useAssistantUiStore.getState().open || isChatRoute(window.location.pathname)
+  return useAssistantUiStore.getState().open || isChatRoute(appPathname())
 }
 
 /** Desktop notification for a run that ended out of sight (opt-in; see runNotifications). */
@@ -230,7 +236,7 @@ function announceEnd(threadId: string): void {
     threadOnScreen: threadOnScreen(threadId),
     onOpen: () => {
       switchThread(threadId)
-      if (!isChatRoute(window.location.pathname)) useAssistantUiStore.getState().setOpen(true)
+      if (!isChatRoute(appPathname())) useAssistantUiStore.getState().setOpen(true)
     },
   })
 }
@@ -377,4 +383,5 @@ onAssistantSignOut(() => {
   for (const controller of inFlight.values()) controller.abort()
   inFlight.clear()
   inFlightRunIds.clear()
+  clearUnsaved()
 })

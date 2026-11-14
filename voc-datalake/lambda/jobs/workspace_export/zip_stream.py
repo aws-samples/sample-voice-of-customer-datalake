@@ -20,7 +20,7 @@ The zip (PKWARE APPNOTE 6.3.x):
   would have written in one go.
 
 The part sink: ``PartSink`` cuts the stream into parts of ``PART_SIZE`` (64 MiB; S3's 10,000 parts cap an export at
-640 GiB) for an injected ``upload(number, body)``. At a hand-over, ``hand_over`` uploads what is buffered as a part
+625 GiB) for an injected ``upload(number, body)``. At a hand-over, ``hand_over`` uploads what is buffered as a part
 when it is at least S3's minimum part (5 MiB) and returns the tail otherwise, for the job to keep until the next
 invocation starts its sink with it; ``close`` uploads the last part, the only one S3 lets be smaller.
 """

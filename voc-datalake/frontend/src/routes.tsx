@@ -22,6 +22,7 @@ import MovedRouteRedirect from './components/MovedRouteRedirect'
 import Layout from './components/Layout/Layout'
 import ProtectedRoute from './components/ProtectedRoute/ProtectedRoute'
 import WorkspaceThemeSync from './theme/WorkspaceThemeSync'
+import WorkspaceGate from './workspace/WorkspaceGate'
 import AdminRoute from './components/AdminRoute/AdminRoute'
 import PageLoader from './components/PageLoader/PageLoader'
 import RouteErrorBoundary from './components/RouteErrorBoundary'
@@ -31,7 +32,7 @@ import {
   Home, Dashboard, FeedbackDetail, Categories, ProblemAnalysis, Settings,
   Scrapers, Chat, Projects, ProjectDetail, Prioritization, FeedbackForms,
   DataExplorer, Vote, Memory, Company, Agents, AgentDetail,
-  WorkflowPage, Account, Connect, OAuthConsent, Radar, Participants,
+  WorkflowPage, Account, Members, WorkspaceSettings, Connect, OAuthConsent, Radar, Participants,
   FeatureRequests, FeatureBoardPage, Board, Unsubscribe, Review,
 } from './lazyPages'
 
@@ -104,9 +105,13 @@ export const routes: RouteObject[] = [
     path: '/',
     element: (
       <ProtectedRoute>
-        {/* The administrator's start theme (GET /settings/appearance), read once signed in. */}
-        <WorkspaceThemeSync />
-        <Layout />
+        {/* Signed in: the caller's workspaces decide the picker, the not-found page or the app inside
+            `/w/{slug}` (workspace/WorkspaceGate.tsx); with none, the app as before workspaces. */}
+        <WorkspaceGate>
+          {/* The administrator's start theme (GET /settings/appearance), read once signed in. */}
+          <WorkspaceThemeSync />
+          <Layout />
+        </WorkspaceGate>
       </ProtectedRoute>
     ),
     // Catches errors thrown by Layout/ProtectedRoute themselves; page-level
@@ -143,6 +148,10 @@ export const routes: RouteObject[] = [
       { path: 'connect', ...page(<Connect />) },
       { path: 'oauth/authorize', ...page(<OAuthConsent />) },
       { path: 'account', ...page(<Account />) },
+      // The current workspace's members (the header's workspace menu); "Page not found" outside a workspace.
+      { path: 'members', ...page(<Members />) },
+      // The current workspace's brand and plugins (the same menu), for every member; "Page not found" outside one.
+      { path: 'workspace-settings', ...page(<WorkspaceSettings />) },
       // Administration (was Settings): admins only. The old
       // path keeps working — links, bookmarks and `?tab=` deep links redirect.
       { path: 'admin', ...page(<AdminRoute><Settings /></AdminRoute>) },

@@ -1,6 +1,7 @@
 /**
  * @fileoverview "Reprocess existing feedback" — re-derive stored reviews after the
- * categories change (admin only, Administration → Taxonomy).
+ * categories change (admin only): the deployment's in Administration → Taxonomy, a
+ * workspace's own on its Workspace settings page beside its categories (since 7.13.00).
  *
  * Mode choice (re-categorise processed text, reprocess from raw data, re-infer dimensions),
  * the slice it replays (window, sources, categories: `ReprocessSliceFields`), whether
@@ -90,7 +91,11 @@ function confirmMessage(request: ReprocessStart, t: TFunction): string {
   return t('categoriesManager.reprocess.confirmMessage', { mode: t(modeTitleKey(request.mode)), window })
 }
 
-export default function ReprocessPanel() {
+/**
+ * `inWorkspace`: the panel sits beside a workspace's own categories (its settings page, its admins), so its calls
+ * reach that workspace's own job (useReprocessJob.ts) and the description says whose reviews it replays.
+ */
+export default function ReprocessPanel({ inWorkspace = false }: Readonly<{ inWorkspace?: boolean }>) {
   const { t } = useTranslation('components')
   const titleId = useId()
   const [form, setForm] = useState<ReprocessForm>(INITIAL_FORM)
@@ -107,10 +112,12 @@ export default function ReprocessPanel() {
         <RefreshCw size={16} className="text-accent" aria-hidden="true" />
         <h3 id={titleId} className="text-sm font-semibold tracking-tight text-text-strong">{t('categoriesManager.reprocess.title')}</h3>
       </div>
-      <p className="text-sm text-muted">{t('categoriesManager.reprocess.description')}</p>
+      <p className="text-sm text-muted">
+        {t(inWorkspace ? 'categoriesManager.reprocess.workspaceDescription' : 'categoriesManager.reprocess.description')}
+      </p>
 
       <ModeChoice mode={form.mode} onChange={(mode) => update({ mode })} />
-      <ReprocessSliceFields form={form} onChange={update} invalid={request === null} />
+      <ReprocessSliceFields form={form} onChange={update} invalid={request === null} withSources={!inWorkspace} />
       <p className="text-xs text-warn">{t('categoriesManager.reprocess.costNote')}</p>
 
       <StickyActionBar variant="inline" className="py-2">

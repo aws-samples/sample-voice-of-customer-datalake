@@ -34,6 +34,7 @@ PREFIX: Final = '/voc/ws'
 MEMORY_TABLE: Final = 'test-memory'
 WATERMARKS_TABLE: Final = 'test-watermarks'
 WORKSPACES_TABLE: Final = 'test-workspaces'
+RADAR_TABLE: Final = 'test-radar'
 PLUGINS: Final = ('webscraper', 'app_reviews_ios')
 #: A third workspace, for deletes requested together.
 THIRD: Final = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7DB'
@@ -57,6 +58,7 @@ class World:
     s3: Any
     ssm: Any
     invoke: MagicMock
+    radar: Any = None
 
 
 def _watermarks_table(resource: Any) -> Any:
@@ -74,6 +76,7 @@ def world() -> Iterator[World]:
         workspaces = create_pk_sk_table(WORKSPACES_TABLE, resource)
         aggregates = create_aggregates_table_with_metric_index(handler.AGGREGATES_TABLE, resource)
         watermarks = _watermarks_table(resource)
+        radar = create_pk_sk_table(RADAR_TABLE, resource)
         memory = create_table_with_gsi1(resource, MEMORY_TABLE, MEMORY_BY_STATUS_INDEX)
         feedback = create_table_with_gsi1(resource, handler.FEEDBACK_TABLE, FEEDBACK_BY_DATE_INDEX)
         s3 = boto3.client('s3', region_name='us-east-1')
@@ -88,10 +91,11 @@ def world() -> Iterator[World]:
                 patch.object(handler, 'invoke_lambda_async', invoke), \
                 patch.object(handler, 'MEMORY_TABLE', MEMORY_TABLE), \
                 patch.object(handler, 'WATERMARKS_TABLE', WATERMARKS_TABLE), \
+                patch.object(handler, 'RADAR_TABLE', RADAR_TABLE), \
                 patch.object(handler, 'RAW_DATA_BUCKET', BUCKET), \
                 patch.object(handler, 'PARAMETER_PREFIX', PREFIX), \
                 patch.dict('os.environ', {'PLUGIN_IDS': json.dumps(list(PLUGINS)), 'WORKSPACE_HARD_DELETE': 'true'}):
-            yield World(feedback, aggregates, memory, watermarks, workspaces, s3, ssm, invoke)
+            yield World(feedback, aggregates, memory, watermarks, workspaces, s3, ssm, invoke, radar)
 
 
 class Budget(LambdaBudget):
@@ -297,7 +301,7 @@ def snapshot(world: World) -> dict[str, list]:
     uploads = world.s3.list_multipart_uploads(Bucket=BUCKET).get('Uploads') or []
     return {
         'feedback': rows(world.feedback), 'aggregates': rows(world.aggregates), 'memory': rows(world.memory),
-        'watermarks': rows(world.watermarks), 'workspaces': rows(world.workspaces),
+        'watermarks': rows(world.watermarks), 'workspaces': rows(world.workspaces), 'radar': rows(world.radar),
         'objects': sorted((entry['Key'], entry['VersionId']) for part in ('Versions', 'DeleteMarkers')
                           for entry in listed.get(part) or []),
         'uploads': sorted(upload['Key'] for upload in uploads),

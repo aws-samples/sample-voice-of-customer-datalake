@@ -9,14 +9,16 @@ reached it: the manifest says the older versions are not exported.
 
 The rules this module holds:
 
-* **The entry's name** comes from the key, which is user data: zip_stream.py ``entry_name``'s rules (no empty, ``.``
-  or ``..`` segment, also once trailing dots and spaces are dropped, so no absolute path; none of the characters
-  Windows refuses, ``\\ : < > " | ? *``; no Windows device name as a segment, CON, PRN, AUX, NUL, CONIN$, CONOUT$,
-  COM1 to COM9 and LPT1 to LPT9, in any case, with or without an extension; all of
-  that again in the name's NFKC form, which may hold no ``/`` the name does not; no control, format (bidi,
-  zero-width) or separator character; valid UTF-8; at most 65,535 bytes). A key that fails is skipped and listed in
-  the manifest with the reason; the export never fails on it. A folder marker (a zero-byte key ending ``/``) is
-  skipped quietly.
+* **The entry's name** comes from the key, which is user data: zip_stream.py ``entry_name``'s rules (the one list;
+  in short: no empty, ``.`` or ``..`` segment, also once trailing dots and spaces are dropped, so no absolute path;
+  none of the characters Windows refuses, ``\\ : < > " | ? *``; no Windows device name as a segment, CON, PRN, AUX,
+  NUL, CONIN$, CONOUT$, COM1 to COM9 and LPT1 to LPT9, in any case, with or without an extension; all of that again
+  in the name's NFKC form, which may hold no ``/`` the name does not; no control, format (bidi, zero-width) or
+  separator character; valid UTF-8; at most 65,535 bytes). A key that fails is skipped and listed in the manifest
+  with the reason; the export never fails on it. A folder marker (a zero-byte key ending ``/``) is skipped quietly.
+* **A dropped read stream** (a reset or timed-out connection, a short body) is resumed from the byte reached with a
+  ranged read pinned to the version first read (``IfMatch`` its ETag), at most twice (the handler's
+  ``STREAM_RESUMES``); past that, or if the object changed meanwhile, the export fails rather than splice versions.
 * **DEFLATE or STORE** (``stored``): STORE only for bytes already compressed, on first principles: images
   (``image/*`` but SVG, which is text), the zip family (zip, the office formats docx, xlsx, pptx, odt, ods, odp, and
   epub and jar, all zip containers) and gzip, by content type, else by the key's extension. Everything else is
@@ -42,6 +44,7 @@ from dataclasses import dataclass, field
 from typing import Any, Final
 
 from jobs.workspace_export.zip_stream import BadEntryName, entry_name
+from shared.carried_values import count_of
 from shared.design_assets import SVG_TYPE
 from shared.ws_repo import WorkspaceScope, s3_prefix
 
@@ -128,6 +131,13 @@ def _listed_key(key: str) -> tuple[str, bool]:
     return shown[:MAX_LISTED_KEY], len(shown) > MAX_LISTED_KEY
 
 
+def _measure(value: object) -> float:
+    """One carried measurement (bytes or seconds): a number, never a bool; ValueError otherwise."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ValueError('rates is not a measurement')
+    return float(value)
+
+
 @dataclass
 class ObjectsState:
     """What the objects carry across hand-overs: the last key handled, the bytes copied, the objects not included,
@@ -141,14 +151,18 @@ class ObjectsState:
 
     @classmethod
     def from_json(cls, value: object) -> ObjectsState:
+        """The carried state (a fresh one for anything but a mapping); ValueError, and only ValueError, for a count
+        or a measured rate of the wrong type. A key that is not a string, or a skipped entry or rate list of another
+        shape, is left out as before."""
         if not isinstance(value, Mapping):
             return cls()
         after, skipped, rates = value.get('after'), value.get('skipped'), value.get('rates')
-        return cls(after=after if isinstance(after, str) else None, copied_bytes=int(value.get('copied_bytes') or 0),
+        return cls(after=after if isinstance(after, str) else None,
+                   copied_bytes=count_of(value.get('copied_bytes') or 0, 'copied_bytes'),
                    skipped=[dict(item) for item in skipped if isinstance(item, Mapping)]
                    if isinstance(skipped, list) else [],
-                   skipped_count=int(value.get('skipped_count') or 0),
-                   rates={str(kind): [float(measured[0]), float(measured[1])]
+                   skipped_count=count_of(value.get('skipped_count') or 0, 'skipped_count'),
+                   rates={str(kind): [_measure(measured[0]), _measure(measured[1])]
                           for kind, measured in rates.items() if isinstance(measured, list) and len(measured) == 2}
                    if isinstance(rates, Mapping) else {})
 

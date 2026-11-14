@@ -14,7 +14,8 @@
  * that reaches the per-job ceiling ends `partial`; `{resume: <job_id>}` continues
  * it from where it stopped. docs/categories.md → "Reprocessing a slice".
  *
- * One job at a time: starting while one is queued/running answers 409. Every
+ * One job at a time per scope (the deployment's, and each workspace's own since
+ * 7.13.00): starting while one is queued/running answers 409. Every
  * response is normalized through a lenient Zod schema — the panel polls this
  * while the job runs, so a drifted field must not crash the poll.
  *
@@ -23,6 +24,7 @@
 import { post } from './requestKit'
 import { z } from 'zod'
 import { fetchApi } from './client'
+import type { RequestScope } from './baseUrl'
 
 // `dimensions` re-infers AI dimensions only; it never overwrites a value set by
 // the source, its profile or a person (`dimension_sources` source/profile/manual).
@@ -136,12 +138,19 @@ const BASE = '/settings/categories/reprocess'
 /** Latest job, polled while it runs. */
 export const latestReprocessJobKey = () => ['category-reprocess-job'] as const
 
+/**
+ * Whose job a call reaches (since 7.13.00, workspace/configScope.ts): `'workspace'` (the default) names the current
+ * workspace, so inside one it is that workspace's own job, replaying its reviews with its own categories and
+ * dimensions, for its admins; `'deployment'` never names one, so Administration's panel reaches the deployment's
+ * job, for the deployment's administrators, from any address.
+ */
 export const reprocessApi = {
-  getLatest: async (): Promise<ReprocessJob | null> => normalizeJobEnvelope(await fetchApi<unknown>(BASE)),
+  getLatest: async (scope: RequestScope = 'workspace'): Promise<ReprocessJob | null> =>
+    normalizeJobEnvelope(await fetchApi<unknown>(BASE, { method: 'GET' }, scope)),
 
-  start: async (request: ReprocessRequest): Promise<ReprocessJob | null> =>
-    normalizeJobEnvelope(await fetchApi<unknown>(BASE, post(request))),
+  start: async (request: ReprocessRequest, scope: RequestScope = 'workspace'): Promise<ReprocessJob | null> =>
+    normalizeJobEnvelope(await fetchApi<unknown>(BASE, post(request), scope)),
 
-  cancel: async (jobId: string): Promise<ReprocessJob | null> =>
-    normalizeJobEnvelope(await fetchApi<unknown>(`${BASE}/${encodeURIComponent(jobId)}/cancel`, post())),
+  cancel: async (jobId: string, scope: RequestScope = 'workspace'): Promise<ReprocessJob | null> =>
+    normalizeJobEnvelope(await fetchApi<unknown>(`${BASE}/${encodeURIComponent(jobId)}/cancel`, post(), scope)),
 }

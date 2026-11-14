@@ -22,6 +22,7 @@ import { Plus } from 'lucide-react'
 import { dimensionsApi, dimensionsConfigKey } from '../../api/dimensionsApi'
 import { MAX_DIMENSIONS } from '../../api/dimensionsSchema'
 import { useDimensionsConfig } from '../../hooks/useDimensions'
+import { scopedKey, useConfigScope } from '../../workspace/configScope'
 import BuiltinDimensionCard from './BuiltinDimensionCard'
 import DimensionEditor from './DimensionEditor'
 import { draftProblem, newDimension, removeDimension, replaceDimension, toDraft, toWire } from './dimensionDraft'
@@ -31,12 +32,14 @@ import type { DraftDimension } from './dimensionDraft'
 function DimensionsEditor({ stored }: Readonly<{ stored: readonly Dimension[] }>) {
   const { t } = useTranslation('components', { keyPrefix: 'dimensionsManager' })
   const queryClient = useQueryClient()
+  // Whose dimensions (workspace/configScope.ts): the deployment's in Administration, the workspace's on its page.
+  const scope = useConfigScope()
   const { draft, edit, barProps, onFieldBlur } = useDraftEditor({
     initial: (): DraftDimension[] => toDraft(stored),
     toWire,
     problem: draftProblem,
-    save: (dimensions: Dimension[]) => dimensionsApi.saveConfig(dimensions),
-    onSaved: (config) => queryClient.setQueryData(dimensionsConfigKey(), config),
+    save: (dimensions: Dimension[]) => dimensionsApi.saveConfig(dimensions, scope),
+    onSaved: (config) => queryClient.setQueryData(scopedKey(dimensionsConfigKey(), scope), config),
   })
 
   return (
@@ -67,7 +70,7 @@ function DimensionsEditor({ stored }: Readonly<{ stored: readonly Dimension[] }>
 
 export default function DimensionsManager() {
   const { t } = useTranslation('components', { keyPrefix: 'dimensionsManager' })
-  const { data, isLoading, isError } = useDimensionsConfig()
+  const { data, isLoading, isError } = useDimensionsConfig(useConfigScope())
   const dimensions = data?.dimensions ?? []
   const builtin = dimensions.filter((d) => d.builtin === true)
   const custom = dimensions.filter((d) => d.builtin !== true)

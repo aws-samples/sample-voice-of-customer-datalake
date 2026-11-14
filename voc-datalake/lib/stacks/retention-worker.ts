@@ -65,7 +65,7 @@ import { PY_LAMBDA_ASSET_EXCLUDES, WORKER_TREE_ASSET_EXCLUDES } from '../utils/l
 import { pythonLambdaAsset } from '../utils/python-lambda-asset';
 import { grantKeyScopedWrites } from '../utils/table-write-grants';
 import { grantInvokeByName, scheduleWorker, workerRole } from '../utils/worker-lambda';
-import { grantWorkspaceStatusRead } from '../utils/workspace-request-grants';
+import { grantWorkspaceStatusRead } from '../utils/workspace-resolution-grants';
 
 /** The request partitions of voc-feature-requests (`FR#{id}`: META + its +1s), the only rows the worker re-keys. */
 const FEATURE_REQUEST_PARTITIONS = 'FR#*';

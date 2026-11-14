@@ -137,9 +137,9 @@ class TestTheSaveKeepsWhatItCan:
                                'TransactWriteItems')
         real = persona_save.put_project_item
         calls = MagicMock(side_effect=[conflict, None])
-        def flaky(table, project_id, item):
+        def flaky(table, project_id, item, *, workspace):
             if calls() is None:
-                real(table, project_id, item)
+                real(table, project_id, item, workspace=workspace)
         item = {'pk': f'PROJECT#{PROJECT}', 'sk': 'PERSONA#p-1', 'persona_id': 'p-1'}
         sleep = MagicMock()
         with patch.object(persona_save, 'put_project_item', flaky):

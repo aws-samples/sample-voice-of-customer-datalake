@@ -7,7 +7,7 @@ protection, the frontend deployment, diagnostics, and troubleshooting.
 ## Prerequisites
 
 - **AWS CLI** configured with credentials for the target account
-- **Node.js** 22.22.2+ or 24.15+ and npm (the lint and test tooling needs it; CI runs Node 24, matching the `nodejs24.x` Lambda runtime; the 22 line is supported but not tested in CI)
+- **Node.js** 24.15+ and npm (root `package.json` `engines`; the same line as CI and the `nodejs24.x` Lambda runtime)
 - **Python** 3.12+ for the local lint and tests (the Lambdas run Python 3.14; their code and layers are built in
   containers)
 - **Docker or Finch** for the Lambda layers and CDK asset bundling
@@ -319,7 +319,7 @@ The platform consists of 4 core stacks plus 1 AI-enablement stack.
 npm run deploy:infra    # Deploy all CDK stacks, then refresh the API stage
 ```
 
-> **Upgrading an existing deployment (Unreleased, multi-workspace):** this release re-keys the feedback table's
+> **Upgrading an existing deployment (7.00.00, multi-workspace):** release 7.00.00 re-keys the feedback table's
 > `gsi4-by-feedback-id` and `gsi5-by-channel` onto `gsi4pk` / `gsi5pk`. CloudFormation cannot change an index's key
 > in one update, and items stored before carry neither attribute, so lookups by id and channel filters would miss
 > them. Multi-workspace starts on a fresh deployment: do not deploy this onto an existing stack, or re-key in steps
@@ -726,8 +726,10 @@ or failed agreement shows there as a warning.
 ### Operational alerts (Administration → System → Logs → Alerts)
 
 No CloudWatch alarm is deployed by CDK: an alarm is billed every hour it exists,
-and one nobody is subscribed to notifies nobody. An admin turns alerting on in
-**Administration → System → Logs → Alerts**; the logs API (`voc-logs-api`,
+and one nobody is subscribed to notifies nobody. A platform admin turns alerting on in
+**Administration → System → Logs → Alerts** (the alarms watch the deployment's own Lambdas and their recipients hear
+about every workspace, so the writes are platform admins' only, checked live; the deployment's
+administrators still read the status, [Multi-workspace](multi-workspace.md#per-workspace-configuration)); the logs API (`voc-logs-api`,
 `lambda/shared/ops_alerts.py`) then creates the alarms with `PutMetricAlarm`, and
 turning it off deletes them. Turning it on twice is harmless (an alarm is
 overwritten), and turning it off deletes exactly the alarms under this
@@ -1396,11 +1398,19 @@ npm run deploy:infra -- -c defaultModelId=global.anthropic.claude-sonnet-4-6
 ```
 
 This creates a `Custom::ModelPin` resource in `VocCoreStack` that writes
-`model_id` to the `SETTINGS#model` configuration item. Behaviour worth knowing:
+`model_id` to the deployment's default-model item, `SETTINGS#model_default`
+(its own row, not the administrators' picks in `SETTINGS#model`, so the picks
+can later be each workspace's while the default stays the deployment's).
+Behaviour worth knowing:
 
-- **Write-once.** The value is only set if absent, so an administrator's later
-  choice in Administration → AI models is never overwritten by a redeploy. It is a floor, not a lock:
-  per-surface overrides still take precedence.
+- **Write-once.** The value is only set if absent, so a redeploy never changes
+  it. It is a floor, not a lock: every choice in Administration → AI models
+  (per surface, or for all surfaces) takes precedence.
+- **Upgrading.** A deployment pinned before this row existed keeps its pin in
+  `SETTINGS#model` (`model_id`), where it still applies to every surface left on
+  Automatic; nothing needs to move (the custom resource runs again only when
+  `defaultModelId` changes, and then writes the new row, which that pin
+  outranks).
 - **Validated at synth.** The id must be in `ALLOWED_MODEL_IDS`
   (`lib/utils/model-allowlist.ts`); an unrecognized value fails the synth rather
   than being discarded at read time.
@@ -1539,6 +1549,7 @@ throttles every call. So when the model a surface resolved cannot serve right
 now, the request is re-run on the next model of one ordered chain:
 
 1. the surface's resolved model (admin per-surface pin › legacy global pin ›
+   the deployment's default (`SETTINGS#model_default`, `-c defaultModelId`) ›
    built-in default, or an explicit `model_id=`),
 2. the surface's built-in default, when different,
 3. then `MODEL_FALLBACK_ORDER`: **Sonnet 5.5 → Sonnet 5 → Sonnet 4.6 → Haiku 5.5 → Haiku 4.5**.

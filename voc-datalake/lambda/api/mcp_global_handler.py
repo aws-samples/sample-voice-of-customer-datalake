@@ -454,10 +454,12 @@ def _tool_content(payload: Any, *, is_error: bool) -> dict:
     return result
 
 
-def _call_route(request: RouteRequest, claims: Mapping[str, str]) -> DomainResult:
+def _call_route(request: RouteRequest, claims: Mapping[str, str], row: Mapping[str, Any]) -> DomainResult:
+    """The domain route's answer to ``request`` as the token: its claims, and the workspace it was minted in."""
     function_name = os.environ.get(DOMAIN_FUNCTION_ENV[request.domain], '')
     return call_domain(DomainCall(function_name=function_name, method=request.method, path=request.path,
-                                  query=request.query, body=request.body), claims=claims)
+                                  query=request.query, body=request.body), claims=claims,
+                       workspace=gt.token_workspace(row))
 
 
 def _with_follow_ups(payload: Any, call: ToolCall, row: Mapping[str, Any]) -> Any:
@@ -468,7 +470,7 @@ def _with_follow_ups(payload: Any, call: ToolCall, row: Mapping[str, Any]) -> An
     joined = dict(payload)
     for follow in follow_ups:
         try:
-            result = _call_route(follow.request, _claims_for(call, row))
+            result = _call_route(follow.request, _claims_for(call, row), row)
         except DelegationUnavailable:
             joined[f'{follow.key}_error'] = 'unavailable'
             continue
@@ -482,7 +484,7 @@ def _with_follow_ups(payload: Any, call: ToolCall, row: Mapping[str, Any]) -> An
 def _run_tool(call: ToolCall, row: Mapping[str, Any]) -> tuple[dict, str]:
     """(MCP tool result, audit outcome). Raises DelegationUnavailable for a server fault."""
     tool = call.tool
-    result = _call_route(tool.build(call.arguments, call.project_id), _claims_for(call, row))
+    result = _call_route(tool.build(call.arguments, call.project_id), _claims_for(call, row), row)
     if result.status_code >= 500:
         raise DelegationUnavailable(f'route answered {result.status_code}')
     if not result.ok:
@@ -534,7 +536,7 @@ def _tools_list(req_id: Any, _params: Mapping[str, Any], row: Mapping[str, Any])
 def _catalogue(req_id: Any, params: Mapping[str, Any], row: Mapping[str, Any], *, method: str) -> dict:
     """``prompts/*`` and ``resources/*`` (shared/mcp_global_prompts.py), read as the token like a tool."""
     answer = mpp.answer(method, params, scope=row.get('scope'),
-                        read=lambda request: _call_route(request, synthetic_claims(row)))
+                        read=lambda request: _call_route(request, synthetic_claims(row), row))
     if answer.audit_as:
         _audit(row, tool=answer.audit_as, project_id=None, outcome=answer.outcome)
     if answer.result is None:

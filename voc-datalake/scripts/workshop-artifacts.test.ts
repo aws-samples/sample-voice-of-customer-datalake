@@ -55,6 +55,18 @@ describe('generate:workshop-artifacts', () => {
     expect(synthContext(script).filter(([key]) => key === 'protectData')).toHaveLength(1);
   });
 
+  it('reserves no concurrency for the Global MCP endpoint, which a workshop account cannot spare', () => {
+    // Workshop Studio accounts had 110 unreserved executions (limit 1000), and AWS keeps at least 100 unreserved, so
+    // the MCP endpoint's default reservation of 20 failed VocApiStack ("decreases account's
+    // UnreservedConcurrentExecution below its minimum value of [100]"). Without one, the endpoint shares the pool;
+    // its API Gateway method throttle (GLOBAL_MCP_METHOD_THROTTLE) bounds the request rate, not the concurrency
+    // (lib/stacks/global-mcp.ts). That 0 omits the property rather than throttling the function to zero is pinned by
+    // lib/stacks/api-stack-mcp-global-ops.test.ts ("never a throttling 0"), which also pins the default 20. Exactly
+    // once, like protectData: a later -c mcpReservedConcurrency=<n> would win and bring the failure back.
+    expect(synthContext(script).filter(([key]) => key === 'mcpReservedConcurrency'))
+      .toStrictEqual([['mcpReservedConcurrency', '0']]);
+  });
+
   it('keeps web search on and the model pin the workshop accounts are granted', () => {
     expect(synthContext(script)).toContainEqual(['enableWebSearch', 'true']);
     expect(synthContext(script)).toContainEqual(['defaultModelId', 'global.anthropic.claude-sonnet-4-6']);

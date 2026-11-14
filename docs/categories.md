@@ -153,7 +153,9 @@ from either source). One value means exactly what it always meant. Ported from P
 The same routes, and `PUT /feedback/{id}/category|dimensions`, take an optional `X-Workspace-Id` header: with it they
 read (and edit) only that workspace's feedback and counters, for its members (the one 404 otherwise; an edit needs the
 editor or admin role there); without it they read the deployment, as before ([Multi-workspace](multi-workspace.md),
-"Request flow"). The filters above, the categories configuration and each person's category access are the
+"Request flow"). Since 7.08.00 the categories configuration and the restricted sources those reads and edits check
+are the request's workspace's own (a workspace that saved none has the default categories and nothing restricted;
+[Multi-workspace](multi-workspace.md#the-configuration-cut-over-70800)); each person's category access row stays the
 deployment's in both cases.
 
 | Parameter | Values |
@@ -219,6 +221,12 @@ the only feedback write path reachable from the browser.
 
 When the categories change, an admin can re-categorise what is already stored
 (Administration → Taxonomy → Categories → "Reprocess existing feedback").
+Inside a workspace (since 7.13.00) its admins do the same for that workspace on its
+Workspace settings page, beside its categories: the routes below with `X-Workspace-Id`
+start, show and cancel the workspace's own job (one at a time per workspace), which
+replays only that workspace's reviews with its own categories and dimensions
+([multi-workspace](multi-workspace.md), the 7.13.00 row). Administration's panel stays
+the deployment's.
 Every mode also rates each review's usefulness band, which backfills reviews stored
 before the band existed ([data quality](data-quality.md#backfill-optional-field-not-rated)).
 

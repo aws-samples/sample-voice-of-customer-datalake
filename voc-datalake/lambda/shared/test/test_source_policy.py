@@ -137,6 +137,6 @@ def test_archive_mode(profile, mode, allowed):
 def test_policy_message_uses_the_cached_profile_of_the_source():
     with patch.object(source_policy, 'cached_source_profile_strict', return_value=_profile(pii='redact')) as cached:
         out, profile = policy_message(_message())
-    cached.assert_called_once_with('support_tickets')
+    cached.assert_called_once_with('support_tickets', None)  # no workspace: the deployment's profile
     assert (out or {}).get('pii_policy_applied') == 'redact'
     assert profile['pii'] == 'redact'

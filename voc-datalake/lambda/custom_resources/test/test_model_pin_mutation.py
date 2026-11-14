@@ -58,7 +58,9 @@ class TestTheLiteralsOtherCodeReads:
         module.handler(_event(), None)
 
         assert table.calls == [{
-            'Key': {'pk': 'SETTINGS#model', 'sk': 'config'},
+            # The deployment's default, a row of its own (not the picks' SETTINGS#model): the picks move into
+            # each workspace, the default stays the deployment's.
+            'Key': {'pk': 'SETTINGS#model_default', 'sk': 'config'},
             'UpdateExpression': 'SET model_id = :m',
             'ConditionExpression': 'attribute_not_exists(model_id)',
             'ExpressionAttributeValues': {':m': MODEL},
@@ -127,7 +129,7 @@ def _info_lines(caplog, table) -> list[tuple[int, str]]:
 class TestTheInfoLinesRecordWhatHappened:
     def test_pinning_logs_the_model(self, caplog):
         assert _info_lines(caplog, _FakeTable()) == [
-            (logging.INFO, f'Pinned every AI surface to {MODEL}'),
+            (logging.INFO, f"Pinned the deployment's default model to {MODEL}"),
         ]
 
     def test_keeping_an_existing_value_logs_the_wanted_model(self, caplog):

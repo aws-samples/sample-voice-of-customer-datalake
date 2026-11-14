@@ -774,7 +774,7 @@ class TestGenerateReport:
             'derivation': build_derivation(product_context_included=True),
             'created_at': FROZEN_ISO,
         }
-        report.write.assert_called_once_with(table, 'p1', item, 'document_count')
+        report.write.assert_called_once_with(table, 'p1', item, 'document_count', workspace=None)
         assert result == {'success': True, 'document': item}
 
     @pytest.mark.usefixtures('table')

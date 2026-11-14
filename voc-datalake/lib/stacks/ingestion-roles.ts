@@ -52,7 +52,7 @@ import { grantClaudeModels } from '../utils/claude-model-grant';
 import { piiDetectionStatement } from '../utils/pii-redaction';
 import { grantKeyScopedWrites, grantReadAndWrites } from '../utils/table-write-grants';
 import { grantInvokeByName } from '../utils/worker-lambda';
-import { grantWorkspaceStatusRead } from '../utils/workspace-request-grants';
+import { grantWorkspaceStatusRead } from '../utils/workspace-resolution-grants';
 import { grantWorkspaceParameterRead } from '../utils/workspace-secrets';
 import { RAW_LAYER_PREFIX, WORKSPACE_ID_PATTERN, WORKSPACE_RAW_LAYER_PREFIX } from './core-buckets';
 

@@ -30,8 +30,9 @@ read, updated (its ``gsi2pk`` to ``WS#{ws}#CATEGORY#…``) through shared/ws_rep
 version kept under ``ws/{ws}/silver/`` and the workspace's own data_version bumped. In a workspace an edit is a
 write, so it is for its editors and admins (docs/multi-workspace.md, "Roles"): a viewer gets 403, after the
 membership check. A request with no such header edits the deployment's item, exactly as before (any signed-in
-caller who sees the item's categories). The categories and dimensions config, and the caller's category access,
-stay the deployment's (phase 3).
+caller who sees the item's categories). The categories and dimensions config and the restricted sources are the
+edit's workspace's (since 7.08.00; the deployment's without the header); the caller's own category-access row stays
+the deployment's (phase 3).
 """
 
 from collections.abc import Mapping
@@ -67,7 +68,7 @@ from shared.feedback_category import (
 from shared.feedback_dimensions import apply_dimension_edit
 from shared.feedback_partitions import FEEDBACK_ID_INDEX_PARTITION, feedback_id_partition
 from shared.indexes import FEEDBACK_BY_ID_INDEX
-from shared.ingest_tables import table_view, update_with_key
+from shared.ingest_tables import ScopedUpdates, table_view
 from shared.logging import logger, tracer
 from shared.project_gate import caller_from_event
 from shared.request_body import json_body_value
@@ -95,21 +96,10 @@ def _edit_scope(event: dict) -> WorkspaceScope | None:
     context = _workspace.context(event, fresh=True)
     if context is None:
         return None
+    # The workspace roles that write (docs/multi-workspace.md, "Roles": an edit is a write).
     if context.role not in EDITING_ROLES:
         raise AuthorizationError('Editing feedback needs the editor or admin role in this workspace')
     return scope_of(context)
-
-
-class _ItemWriter:
-    """The feedback table as shared/feedback_category.py ``apply_conditional_update`` calls it
-    (``update_item(Key=…, …)``), in the edit's scope (shared/ingest_tables.py ``table_view``: the table itself
-    deployment-wide, ``ws_table`` in a workspace)."""
-
-    def __init__(self, scope: WorkspaceScope | None, table: Any) -> None:
-        self._view = table_view(scope, table)
-
-    def update_item(self, **kwargs: Any) -> dict:
-        return update_with_key(self._view, kwargs)
 
 
 def _tables() -> tuple[Any, Any]:
@@ -182,15 +172,15 @@ def set_feedback_category(feedback_id: str):
     subcategory = category_label(body.get('subcategory'), 'subcategory', required=False)
     feedback_table, aggregates_table = _tables()
 
-    scope = scope_for_caller(caller, aggregates_table)
+    scope = scope_for_caller(caller, aggregates_table, workspace)
     item = _current_item(feedback_table, feedback_id, workspace)
     _require_visible(scope, item, category)
-    validate_target(categories_config(aggregates_table), category, subcategory)
+    validate_target(categories_config(aggregates_table, workspace), category, subcategory)
 
     override = override_record(item, caller)
     edit = _edit(event, REASON_CATEGORY_EDIT)
     kwargs = _update_kwargs(item, category, subcategory, override, edit, workspace)
-    updated = apply_conditional_update(_ItemWriter(workspace, feedback_table), kwargs)
+    updated = apply_conditional_update(ScopedUpdates(workspace, feedback_table), kwargs)
     keep_before_edit(item, edit, kwargs, workspace)  # once the edit landed: a refused one leaves no version
     # Read-your-write: cached reads move on now, not when the stream reaches the aggregator.
     bump_data_version(aggregates_table, workspace)
@@ -224,18 +214,18 @@ def set_feedback_dimensions(feedback_id: str):
     edits, tags = _dimensions_body(json_body_value(app))
     feedback_table, aggregates_table = _tables()
 
-    scope = scope_for_caller(caller, aggregates_table)
+    scope = scope_for_caller(caller, aggregates_table, workspace)
     item = _current_item(feedback_table, feedback_id, workspace)
     if not category_access.admits_item(scope, item):
         raise NotFoundError(FEEDBACK_NOT_FOUND)
     try:
-        dimensions, sources = apply_dimension_edit(_dimensions_config(aggregates_table), item, edits)
+        dimensions, sources = apply_dimension_edit(_dimensions_config(aggregates_table, workspace), item, edits)
     except ValueError as exc:
         raise ValidationError(str(exc)) from exc
     new_tags = item.get('tags') if tags is None else tags
     edit = _edit(event, REASON_DIMENSIONS_EDIT)
     kwargs = _dimensions_update_kwargs(item, dimensions, sources, new_tags, edit)
-    updated = apply_conditional_update(_ItemWriter(workspace, feedback_table), kwargs)
+    updated = apply_conditional_update(ScopedUpdates(workspace, feedback_table), kwargs)
     keep_before_edit(item, edit, kwargs, workspace)  # once the edit landed: a refused one leaves no version
     bump_data_version(aggregates_table, workspace)
     return {
@@ -263,10 +253,11 @@ def _dimensions_body(body: object) -> tuple[dict[str, Any], list[str] | None]:
     return edits, tags
 
 
-def _dimensions_config(aggregates_table: Any) -> list[dict]:
-    """The dimensions config on this write path; a corrupt stored row is a 500."""
+def _dimensions_config(aggregates_table: Any, workspace: WorkspaceScope | None = None) -> list[dict]:
+    """The dimensions config of the edit's workspace (the deployment's without one) on this write path; a corrupt
+    stored row is a 500."""
     try:
-        return load_dimensions_config(aggregates_table)
+        return load_dimensions_config(aggregates_table, workspace)
     except ValueError as exc:
         logger.warning('Stored dimensions config is invalid')
         raise ServiceError('The dimensions configuration is invalid. Ask an admin to save it again.') from exc

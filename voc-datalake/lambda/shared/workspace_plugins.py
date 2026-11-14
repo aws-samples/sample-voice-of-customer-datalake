@@ -18,7 +18,7 @@ from shared.dynamo_paging import iter_query
 from shared.plugin_identity import is_valid_plugin_identifier
 from shared.workspace_ids import is_workspace_id
 
-__all__ = ['workspaces_with_plugin']
+__all__ = ['plugin_partition', 'workspaces_with_plugin']
 
 PLUGIN_PARTITION_PREFIX: Final = 'PLUGIN#'
 WORKSPACE_SORT_PREFIX: Final = 'WS#'

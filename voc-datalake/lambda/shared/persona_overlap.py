@@ -28,11 +28,10 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
-from boto3.dynamodb.conditions import Key
-
-from shared.dynamo_paging import iter_query
 from shared.persona_replace import PROTECTED_FIELD, is_protected
+from shared.project_tables import iter_project_rows
 from shared.prompt_safety import neutralise_tags
+from shared.ws_repo import WorkspaceScope
 
 #: The newest personas projected into the prompt.
 MAX_PROJECTED_PERSONAS = 20
@@ -145,13 +144,12 @@ def _describe_existing(rows: Iterable[dict]) -> ExistingPersonas:
     return ExistingPersonas(keys, _existing_personas_section(_bounded_projection(ordered)), names)
 
 
-def read_existing_personas(table: Any, project_id: str, *, only_protected: bool = False) -> ExistingPersonas:
+def read_existing_personas(table: Any, project_id: str, *, only_protected: bool = False,
+                           workspace: WorkspaceScope | None = None) -> ExistingPersonas:
     """The personas a generation keeps (every page): all of them when adding, the protected ones when replacing."""
-    rows = iter_query(table, {
-        'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}') & Key('sk').begins_with('PERSONA#'),
-        'ProjectionExpression': ', '.join(_ATTRIBUTE_NAMES),
-        'ExpressionAttributeNames': dict(_ATTRIBUTE_NAMES),
-    })
+    rows = iter_project_rows(table, project_id, workspace=workspace, sort_prefix='PERSONA#',
+                             ProjectionExpression=', '.join(_ATTRIBUTE_NAMES),
+                             ExpressionAttributeNames=dict(_ATTRIBUTE_NAMES))
     return _describe_existing(row for row in rows if not only_protected or is_protected(row))
 
 

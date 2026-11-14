@@ -79,7 +79,7 @@ def _routed(table: Any, ws: str) -> RoutedWorkspace:
     """The workspace ``ws`` names as a ``RoutedWorkspace``, from its own stored ``META`` row (the scope built from
     that row, never from ``ws``), when the row is there and ``active``; ``Unroutable`` otherwise."""
     # Its key and status only (shared/ws_repo.py STATUS_READ_ATTRIBUTES): the webhook role's GetItem on ``WS#*`` is
-    # held to exactly these (lib/utils/workspace-request-grants.ts grantWorkspaceStatusRead), so it never reads a
+    # held to exactly these (lib/utils/workspace-resolution-grants.ts grantWorkspaceStatusRead), so it never reads a
     # ``MEMBER#`` row's email or name.
     meta = consistent_item(table, {'pk': ws_key(ws), 'sk': LOOKUP_SORT_KEY}, STATUS_READ_ATTRIBUTES)
     if meta is None or meta.get('status') != ACTIVE:
@@ -133,7 +133,7 @@ def release_lookup(table: Any, form_id: str, scope: WorkspaceScope) -> None:
 
 def workspace_payload(payload: Mapping[str, Any], source: object) -> dict[str, Any]:
     """An asynchronous payload or message on either path: an operator route's invoke payload (Run now, a web
-    scraper's run), a form's submission, a webhook's delivery.
+    scraper's run), a form's submission, a webhook's delivery, an erasure job's row and invoke event.
 
     A ``workspace_id`` among ``payload``'s fields (one a body or a source payload carried) is dropped first, so
     deployment-wide (``source`` None) it names no workspace, and otherwise ``workspace_id`` is the server's workspace,

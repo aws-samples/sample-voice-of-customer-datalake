@@ -85,6 +85,12 @@ class World:
         assert isinstance(store, WorkspaceStore)
         return store
 
+    def opened(self, *plugins: str, ws: str = WS) -> WorkspaceStore:
+        """A store that has read what is saved (``write`` refuses before ``read``)."""
+        store = self.open(*plugins, ws=ws)
+        store.read()
+        return store
+
     def config_row(self, plugin: str, ws: str = WS) -> dict:
         return self.table.get_item(Key={'pk': f'WS#{ws}#PLUGIN_CONFIG', 'sk': plugin})['Item']
 
@@ -136,8 +142,26 @@ class TestTheWorkspaceStoreIsOpenedFromTheResolvedMembership:
         monkeypatch.delenv('WORKSPACE_PARAMETER_KEY_ARN')
 
         with pytest.raises(ConfigurationError):
-            world.open('webscraper').write({'webscraper_api_key': 'k'})
+            world.opened('webscraper').write({'webscraper_api_key': 'k'})
         assert world.names() == set()
+
+    @pytest.mark.parametrize('first', [None, 'read_lists'], ids=['nothing', 'only-the-lists'])
+    def test_a_write_before_read_is_refused_and_writes_nothing(self, world, first):
+        """``write`` keeps what did not change by comparing with what ``read`` returned, so without that read it
+        would rewrite every parameter and list blind: it refuses, before any call."""
+        world.opened('webscraper').write({'webscraper_api_key': 'k1', 'webscraper_configs': '["kept"]'})
+        store = world.open('webscraper')
+        if first is not None:
+            getattr(store, first)()
+
+        with patch.object(world.ssm, 'put_parameter') as put, \
+                patch.object(world.table.meta.client, 'put_item') as rows, \
+                pytest.raises(RuntimeError, match=r'read\(\) on this store first'):
+            store.write({'webscraper_api_key': 'k2', 'webscraper_configs': '[]'})
+
+        assert (put.call_args_list, rows.call_args_list) == ([], [])
+        stored = world.open('webscraper').read()
+        assert stored == {'webscraper_api_key': 'k1', 'webscraper_configs': '["kept"]'}
 
     def test_a_store_of_every_plugin_is_read_only(self, world):
         store: CredentialsStore = world.open()
@@ -192,8 +216,8 @@ class TestTheWorkspaceStore:
     def test_a_store_reads_and_writes_only_its_own_plugins(self, world):
         """Per-plugin isolation: another plugin's keys in the edited object are never written, and a read of one
         plugin never sees another's (nor another workspace's)."""
-        world.open('github_issues').write({'github_issues_token': 'secret-token'})
-        world.open('webscraper', ws=OTHER).write({'webscraper_api_key': 'other-workspace',
+        world.opened('github_issues').write({'github_issues_token': 'secret-token'})
+        world.opened('webscraper', ws=OTHER).write({'webscraper_api_key': 'other-workspace',
                                                   'webscraper_configs': '["other"]'})
 
         store = world.open('webscraper')
@@ -210,16 +234,16 @@ class TestTheWorkspaceStore:
         assert read_back == {'webscraper_api_key': 'k'}
 
     def test_every_plugin_of_the_workspace_for_the_status(self, world):
-        world.open('webscraper').write({'webscraper_configs': '[]'})
-        world.open('github_issues').write({'github_issues_token': 't'})
-        world.open('github_issues', ws=OTHER).write({'github_issues_token': 'other'})
+        world.opened('webscraper').write({'webscraper_configs': '[]'})
+        world.opened('github_issues').write({'github_issues_token': 't'})
+        world.opened('github_issues', ws=OTHER).write({'github_issues_token': 'other'})
 
         every = world.open().read()
         assert every == {'github_issues_token': 't', 'webscraper_configs': '[]'}
 
     def test_the_lists_alone_are_read_without_ssm(self, world):
         """The member-open list routes' read (``read_lists``): the config rows only, no credentials parameter."""
-        world.open('webscraper').write({'webscraper_configs': '[]', 'webscraper_api_key': 'k'})
+        world.opened('webscraper').write({'webscraper_configs': '[]', 'webscraper_api_key': 'k'})
         with patch.object(world.ssm, 'get_parameter') as one, \
                 patch.object(world.ssm, 'get_paginator') as by_path:
             lists = world.open('webscraper', 'github_issues').read_lists()
@@ -235,7 +259,7 @@ class TestTheWorkspaceStore:
         assert every == {}
 
     def test_one_malformed_parameter_does_not_hide_the_others_status(self, world):
-        world.open('github_issues').write({'github_issues_token': 't'})
+        world.opened('github_issues').write({'github_issues_token': 't'})
         world.ssm.put_parameter(Name=f'{PREFIX}/{WS}/credentials/webscraper', Value='["a"]', Type='SecureString')
         with patch('shared.workspace_credentials.logger') as logger, \
                 patch('shared.workspace_credentials.metrics') as metrics:
@@ -250,18 +274,18 @@ class TestTheWorkspaceStore:
 
     def test_a_list_too_large_leaves_the_credentials_unwritten_too(self, world):
         with pytest.raises(ValidationError, match=f'over the {SECRET_STRING_MAX_BYTES}-byte limit'):
-            world.open('webscraper').write({'webscraper_api_key': 'k',
+            world.opened('webscraper').write({'webscraper_api_key': 'k',
                                             'webscraper_configs': json.dumps(['x' * SECRET_STRING_MAX_BYTES])})
 
         assert (world.names(), world.config_rows()) == (set(), [])
 
     def test_a_configs_list_is_stored_as_its_json_text(self, world):
         with pytest.raises(TypeError, match='JSON text'):
-            world.open('webscraper').write({'webscraper_configs': [{'id': 's1'}]})
+            world.opened('webscraper').write({'webscraper_configs': [{'id': 's1'}]})
         assert world.config_rows() == []
 
     def test_credentials_over_4096_bytes_are_refused_and_nothing_is_written(self, world):
-        world.open('webscraper').write({'webscraper_api_key': 'k'})
+        world.opened('webscraper').write({'webscraper_api_key': 'k'})
         store = world.open('webscraper')
         secrets = store.read()
 
@@ -277,25 +301,25 @@ class TestTheWorkspaceStore:
         assert len(json.dumps({'api_key': value}, ensure_ascii=False)) < 4096
 
         with pytest.raises(ValidationError, match=r'over the 4096-byte limit'):
-            world.open('webscraper').write({'webscraper_api_key': value})
+            world.opened('webscraper').write({'webscraper_api_key': value})
         assert world.names() == set()
 
     def test_exactly_4096_bytes_is_kept(self, world):
         value = 'x' * (4096 - len(json.dumps({'api_key': ''})))
 
-        world.open('webscraper').write({'webscraper_api_key': value})
+        world.opened('webscraper').write({'webscraper_api_key': value})
 
         assert len(world.value(f'{PREFIX}/{WS}/credentials/webscraper').encode()) == 4096
 
     def test_a_list_takes_the_shared_secrets_own_limit_not_4_kb(self, world):
         """A list is a row (decision 19): what the shared secret holds fits; past its 64 KiB, a 400."""
         fits = json.dumps(['x' * 40_000])
-        world.open('webscraper').write({'webscraper_configs': fits})
+        world.opened('webscraper').write({'webscraper_configs': fits})
         read_back = world.open('webscraper').read()
         assert read_back == {'webscraper_configs': fits}
 
         with pytest.raises(ValidationError, match=f'over the {SECRET_STRING_MAX_BYTES}-byte limit'):
-            world.open('webscraper').write({'webscraper_configs': json.dumps(['x' * SECRET_STRING_MAX_BYTES])})
+            world.opened('webscraper').write({'webscraper_configs': json.dumps(['x' * SECRET_STRING_MAX_BYTES])})
 
     def test_a_parameter_that_is_not_a_json_object_is_malformed(self, world):
         world.ssm.put_parameter(Name=f'{PREFIX}/{WS}/credentials/webscraper', Value='["a"]', Type='SecureString')
