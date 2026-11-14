@@ -21,6 +21,7 @@ import { grantClaudeModels } from '../utils/claude-model-grant';
 import { WORKSPACE_RAW_LAYER_PREFIX, WORKSPACE_SILVER_HISTORY_PREFIX } from './core-buckets';
 import { grantSilverHistoryPut } from '../utils/silver-history-grants';
 import { grantReadAndWrites, grantWrites } from '../utils/table-write-grants';
+import { grantWorkspaceStatusRead } from '../utils/workspace-request-grants';
 
 /** Comprehend `comprehendActions` and Translate's TranslateText (neither takes a resource ARN, so `*`). Shared by
  *  the processor and the category reprocess worker, which enrich the same way. */
@@ -34,6 +35,8 @@ export interface ProcessorRoleProps {
   readonly aggregatesTable: dynamodb.ITable;
   readonly idempotencyTable: dynamodb.ITable;
   readonly radarTable: dynamodb.ITable;
+  /** voc-workspaces: a workspace message's `META` status only (`grantWorkspaceStatusRead`). */
+  readonly workspacesTable: dynamodb.ITable;
   readonly processingQueue: sqs.IQueue;
   readonly kmsKey: kms.IKey;
   readonly rawDataBucket: s3.IBucket;
@@ -51,7 +54,9 @@ export interface ProcessorRoleProps {
  *   a workspace message's under ws/{ws}/raw/ (docs/multi-workspace.md);
  * - silver/: write-once Put of an item's kept version before an in-place refresh (shared/silver_provenance.py);
  *   a workspace item's under ws/{ws}/silver/;
- * - the processing queue, Bedrock (the 'enrichment' surface, any allowlisted model), Comprehend, Translate, KMS.
+ * - the processing queue, Bedrock (the 'enrichment' surface, any allowlisted model), Comprehend, Translate, KMS;
+ * - voc-workspaces: GetItem of `WS#*` held to `pk`, `sk` and `status`, a workspace message's status check (a message
+ *   of a workspace that is not active is dropped; lambda/shared/ws_repo.py `workspace_is_active`).
  */
 export function createProcessorRole(scope: Construct, props: ProcessorRoleProps): iam.Role {
   const role = new iam.Role(scope, 'ProcessingLambdaRole', {
@@ -67,6 +72,7 @@ export function createProcessorRole(scope: Construct, props: ProcessorRoleProps)
   props.processingQueue.grantConsumeMessages(role);
   props.kmsKey.grantEncryptDecrypt(role);
   props.radarTable.grant(role, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem');
+  grantWorkspaceStatusRead(role, props.workspacesTable);
   // Write-once under raw/ (the bucket policy refuses a put without If-None-Match). Put only: no read, no delete.
   // And under one workspace's ws/{ws}/raw/: a workspace message's inline raw_data fallback (docs/multi-workspace.md).
   props.rawDataBucket.grantPut(role, 'raw/*');
@@ -86,6 +92,8 @@ export function createProcessorRole(scope: Construct, props: ProcessorRoleProps)
 export interface AggregatorRoleProps {
   readonly aggregatesTable: dynamodb.ITable;
   readonly idempotencyTable: dynamodb.ITable;
+  /** voc-workspaces: a workspace record's `META` status only (`grantWorkspaceStatusRead`). */
+  readonly workspacesTable: dynamodb.ITable;
   readonly kmsKey: kms.IKey;
 }
 
@@ -96,7 +104,9 @@ export interface AggregatorRoleProps {
  *   the data-version bump): no put, no delete;
  * - idempotency: PutItem only, the per-record dedupe claim inside the counters' transaction (shared/idempotency.py);
  * - the stream read (DescribeStream / GetRecords / GetShardIterator / ListStreams, with kms:Decrypt) and the
- *   on-failure queue's SendMessage are granted by the event source and its destination, not here.
+ *   on-failure queue's SendMessage are granted by the event source and its destination, not here;
+ * - voc-workspaces: GetItem of `WS#*` held to `pk`, `sk` and `status`, a workspace record's status check (a record of
+ *   a workspace that is not active is skipped).
  *
  * No Bedrock, Comprehend, Translate, raw/ or processing-queue access, and no access to the feedback table's items.
  */
@@ -106,6 +116,7 @@ export function createAggregatorRole(scope: Construct, props: AggregatorRoleProp
   });
   grantReadAndWrites(props.aggregatesTable, role, ['UpdateItem']);
   grantWrites(props.idempotencyTable, role, ['PutItem']);
+  grantWorkspaceStatusRead(role, props.workspacesTable);
   props.kmsKey.grantEncryptDecrypt(role);
   return role;
 }

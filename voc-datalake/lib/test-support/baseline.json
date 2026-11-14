@@ -187,7 +187,7 @@
       }
     },
     "VocCoreStack": {
-      "templateSha256": "4c9a8d4b635980094bdece2e41ec2c4dd334725e509b6b0ff306b16e6ec4f78e",
+      "templateSha256": "a6076f95d0d0855010af69899b91441b97108df8c5ab6dd6ef0711ad1045faed",
       "names": {
         "physicalNames": [
           "AWS::AppSync::Api Name = voc-events-<AWS::AccountId>-<AWS::Region>",
@@ -284,7 +284,7 @@
       }
     },
     "VocIngestionStack": {
-      "templateSha256": "02417e9ebbfd4bbf40d8978263284eb4f3b97d2829e28144697236e0b3d08496",
+      "templateSha256": "71fc33fa2e67ff6250ab53897c49ded17c66c098038e3ecb808a995f4cfde4af",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-ingest-app_reviews_android-schedule-<AWS::AccountId>-<AWS::Region>",
@@ -353,7 +353,7 @@
       }
     },
     "VocProcessingStack": {
-      "templateSha256": "3f7708d6fc81224e2776b828f870e5176186142660aaf98616db28fa1c4a21c8",
+      "templateSha256": "d42bd90a693bfb4566b1035bc11f529739aeed51e38bdb29117db2430c238c4b",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-agent-heartbeat-schedule-<AWS::AccountId>-<AWS::Region>",

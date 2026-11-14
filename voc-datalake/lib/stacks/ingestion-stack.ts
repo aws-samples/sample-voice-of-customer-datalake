@@ -89,7 +89,8 @@ function denyInsecureTransport(queue: sqs.Queue): void {
 export interface VocIngestionStackProps extends VocStackProps {
   watermarksTable: dynamodb.Table;
   aggregatesTable: dynamodb.Table;
-  /** voc-workspaces (VocCoreStack): the scheduled tick reads the workspaces that enabled a plugin (`PLUGIN#` rows). */
+  /** voc-workspaces (VocCoreStack): the scheduled tick reads the workspaces that enabled a plugin (`PLUGIN#` rows), and
+   *  every run in a workspace its `META` status. */
   workspacesTable: dynamodb.ITable;
   /** voc-idempotency (VocCoreStack): the scheduled tick's claim, so a retried delivery fans out no second time. */
   idempotencyTable: dynamodb.ITable;
@@ -114,7 +115,8 @@ export class VocIngestionStack extends VocStack {
 
   // Built in the constructor once the grant targets exist (see ingestion-roles.ts).
   private ingestorRoles!: IngestorRoles;
-  /** What a scheduled ingestor's tick fans out with: voc-workspaces (WORKSPACES_TABLE) and voc-idempotency (IDEMPOTENCY_TABLE). */
+  /** What a scheduled ingestor's tick claims itself with: voc-idempotency (IDEMPOTENCY_TABLE). Every ingestor has
+   *  voc-workspaces (WORKSPACES_TABLE) in its common environment. */
   private scheduledTickEnv!: Record<string, string>;
 
   // Created on first use, so a deployment with no scheduled plugin gets no
@@ -166,8 +168,13 @@ export class VocIngestionStack extends VocStack {
     });
 
     // Common environment variables
-    const commonEnv = this.buildCommonEnv(watermarksTable, rawDataBucket, apiSecrets, workspaceParameterBasePath, config);
-    this.scheduledTickEnv = { WORKSPACES_TABLE: workspacesTable.tableName, IDEMPOTENCY_TABLE: idempotencyTable.tableName };
+    // Every ingestor reads voc-workspaces (WORKSPACES_TABLE): a run in a workspace checks its META status first, and
+    // a scheduled one's tick also lists the workspaces that enabled the plugin.
+    const commonEnv = {
+      ...this.buildCommonEnv(watermarksTable, rawDataBucket, apiSecrets, workspaceParameterBasePath, config),
+      WORKSPACES_TABLE: workspacesTable.tableName,
+    };
+    this.scheduledTickEnv = { IDEMPOTENCY_TABLE: idempotencyTable.tableName };
 
     // Lambda Layer for common dependencies
     const dependenciesLayer = this.createDependenciesLayer();
@@ -428,7 +435,7 @@ export class VocIngestionStack extends VocStack {
       SOURCE_PLATFORM: plugin.id,
       // The connector-version on every raw object the plugin archives (plugins/_shared/raw_archive.py).
       PLUGIN_VERSION: pluginVersion(plugin),
-      // The tick's fan-out: its claim (voc-idempotency) and the workspaces that enabled the plugin (voc-workspaces).
+      // The tick's fan-out: its claim (voc-idempotency); voc-workspaces is in the common environment.
       ...(scheduleRuleName ? { INGEST_SCHEDULE_RULE_NAME: scheduleRuleName, ...this.scheduledTickEnv } : {}),
     };
 

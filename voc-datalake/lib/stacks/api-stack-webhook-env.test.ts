@@ -350,8 +350,11 @@ describe("a workspace's webhook endpoint", () => {
   });
 
   it('grants exactly the attributes the routing read projects', () => {
-    const source = readFileSync(join(__dirname, '..', '..', 'lambda', 'shared', 'workspace_routing.py'), 'utf-8');
-    const declared = /^META_ROUTING_ATTRIBUTES: Final = \(([^)]*)\)/m.exec(source)?.[1] ?? '';
+    // workspace_routing.py reads a META with the layer's STATUS_READ_ATTRIBUTES (shared/ws_repo.py).
+    const shared = join(__dirname, '..', '..', 'lambda', 'shared');
+    expect(readFileSync(join(shared, 'workspace_routing.py'), 'utf-8')).toMatch(/LOOKUP_SORT_KEY}, STATUS_READ_ATTRIBUTES\)/);
+    const declared = /^STATUS_READ_ATTRIBUTES: Final = \(([^)]*)\)/m
+      .exec(readFileSync(join(shared, 'ws_repo.py'), 'utf-8'))?.[1] ?? '';
     expect([...declared.matchAll(/'(\w+)'/g)].map((match) => match[1]))
       .toStrictEqual(['pk', 'sk', 'status']);
   });

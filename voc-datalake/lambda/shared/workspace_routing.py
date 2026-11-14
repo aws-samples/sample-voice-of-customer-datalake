@@ -24,14 +24,21 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import Any
 
 from botocore.exceptions import ClientError
 
 from shared.aws import consistent_item, is_conditional_check_failure
 from shared.workspace import ACTIVE, WorkspaceContext
 from shared.workspace_ids import is_workspace_id, ws_key
-from shared.ws_repo import FORM_LOOKUP_PREFIX, LOOKUP_SORT_KEY, WORKSPACE_FIELD, WorkspaceScope, scope_from_lookup
+from shared.ws_repo import (
+    FORM_LOOKUP_PREFIX,
+    LOOKUP_SORT_KEY,
+    STATUS_READ_ATTRIBUTES,
+    WORKSPACE_FIELD,
+    WorkspaceScope,
+    scope_from_lookup,
+)
 
 __all__ = [
     'RoutedWorkspace',
@@ -43,10 +50,6 @@ __all__ = [
     'workspace_payload',
 ]
 
-#: The attributes a workspace's ``META`` is read with: its key and its status. The webhook role's GetItem on ``WS#*``
-#: is limited to exactly these (lib/stacks/api-stack.ts, ``dynamodb:Attributes``), so it never reads a ``MEMBER#``
-#: row's email or name. (No ``secret_status`` since decision 19: a workspace's credentials need nothing made first.)
-META_ROUTING_ATTRIBUTES: Final = ('pk', 'sk', 'status')
 
 
 class Unroutable(Exception):
@@ -75,7 +78,10 @@ def lookup_key(form_id: str) -> dict[str, str]:
 def _routed(table: Any, ws: str) -> RoutedWorkspace:
     """The workspace ``ws`` names as a ``RoutedWorkspace``, from its own stored ``META`` row (the scope built from
     that row, never from ``ws``), when the row is there and ``active``; ``Unroutable`` otherwise."""
-    meta = consistent_item(table, {'pk': ws_key(ws), 'sk': LOOKUP_SORT_KEY}, META_ROUTING_ATTRIBUTES)
+    # Its key and status only (shared/ws_repo.py STATUS_READ_ATTRIBUTES): the webhook role's GetItem on ``WS#*`` is
+    # held to exactly these (lib/utils/workspace-request-grants.ts grantWorkspaceStatusRead), so it never reads a
+    # ``MEMBER#`` row's email or name.
+    meta = consistent_item(table, {'pk': ws_key(ws), 'sk': LOOKUP_SORT_KEY}, STATUS_READ_ATTRIBUTES)
     if meta is None or meta.get('status') != ACTIVE:
         raise Unroutable
     try:

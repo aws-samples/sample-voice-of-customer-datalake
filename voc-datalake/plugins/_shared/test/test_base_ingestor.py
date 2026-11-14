@@ -575,14 +575,14 @@ class TestTheScheduledTickFansOut:
             call('voc-ingestor-test_source', {'workspace_id': WS}),
             call('voc-ingestor-test_source', {'workspace_id': OTHER_WS}),
         ]
-        assert result == {'status': 'fanned_out', 'workspaces': 2, 'failed': 0}
+        assert result == {'status': 'fanned_out', 'workspaces': 2, 'failed': 0, 'skipped': 0}
 
     def test_no_workspace_with_the_plugin_invokes_nothing(self, tick):
         from _shared.base_ingestor import fan_out_tick
 
         tick.listed.return_value = []
 
-        assert fan_out_tick('test_source') == {'status': 'fanned_out', 'workspaces': 0, 'failed': 0}
+        assert fan_out_tick('test_source') == {'status': 'fanned_out', 'workspaces': 0, 'failed': 0, 'skipped': 0}
         tick.invoke.assert_not_called()
 
     @pytest.mark.parametrize('failure', [
@@ -596,7 +596,7 @@ class TestTheScheduledTickFansOut:
             result = fan_out_tick('test_source')
 
         assert tick.invoke.call_count == 2
-        assert result == {'status': 'fanned_out', 'workspaces': 1, 'failed': 1}
+        assert result == {'status': 'fanned_out', 'workspaces': 1, 'failed': 1, 'skipped': 0}
         metrics.add_metric.assert_called_once_with(name='IngestFanOutFailures', unit='Count', value=1)
 
     def test_a_list_that_cannot_be_read_raises(self, tick):
@@ -623,7 +623,7 @@ class TestTheScheduledTickFansOut:
 
         monkeypatch.delenv('AWS_LAMBDA_FUNCTION_NAME')
 
-        assert fan_out_tick('test_source') == {'status': 'fanned_out', 'workspaces': 0, 'failed': 2}
+        assert fan_out_tick('test_source') == {'status': 'fanned_out', 'workspaces': 0, 'failed': 2, 'skipped': 0}
         tick.invoke.assert_not_called()
 
 

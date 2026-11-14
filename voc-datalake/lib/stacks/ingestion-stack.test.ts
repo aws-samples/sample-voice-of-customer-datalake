@@ -315,9 +315,33 @@ describe('VocIngestionStack scheduled tick fan-out grants', () => {
         rule: ruleName,
       });
     }
-    const unscheduled = Object.keys(s3ImportIngestor().Environment.Variables);
-    expect(unscheduled.filter((name) => ['WORKSPACES_TABLE', 'IDEMPOTENCY_TABLE', 'INGEST_SCHEDULE_RULE_NAME']
-      .includes(name))).toStrictEqual([]);
+    // An unscheduled ingestor has voc-workspaces too (a run in a workspace reads its META status), never the tick's.
+    const unscheduled = s3ImportIngestor().Environment.Variables;
+    expect(Object.keys(unscheduled).filter((name) => ['WORKSPACES_TABLE', 'IDEMPOTENCY_TABLE', 'INGEST_SCHEDULE_RULE_NAME']
+      .includes(name))).toStrictEqual(['WORKSPACES_TABLE']);
+    expect(unscheduled['WORKSPACES_TABLE']).toStrictEqual({ 'Fn::ImportValue': expect.stringContaining('Workspaces') });
+  });
+
+  it('lets every ingestor role GetItem voc-workspaces WS# rows held to pk, sk and status, and nothing more', () => {
+    // plugins/_shared/base_ingestor.py workspace_active (lambda/shared/ws_repo.py workspace_is_active): a run in a
+    // workspace, and the tick per workspace, stop for one that is not active (slice 4d-1 of the hard delete).
+    const roles = [...new Set([...scheduledIngestors().map((s) => s.roleId), s3ImportIngestor().Role['Fn::GetAtt'][0]])];
+    expect(roles).toHaveLength(3);
+    const reads = grantsOf(template, 'dynamodb:GetItem')
+      .filter((grant) => JSON.stringify(grant.resource).includes('Workspaces'));
+    expect(reads.map((grant) => grant.roles).flat().sort(byCodeUnit)).toStrictEqual([...roles].sort(byCodeUnit));
+    for (const grant of reads) {
+      expect(grant.condition).toStrictEqual({
+        'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] },
+        'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'status'] },
+        StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+      });
+    }
+    // No other read of voc-workspaces than the scheduled roles' PLUGIN# Query (pinned below).
+    for (const action of ['dynamodb:BatchGetItem', 'dynamodb:Scan', 'dynamodb:PutItem', 'dynamodb:DeleteItem']) {
+      expect(grantsOf(template, action).filter((grant) => JSON.stringify(grant.resource).includes('Workspaces')),
+        action).toStrictEqual([]);
+    }
   });
 
   it('lets each scheduled role put only its own plugin\'s tick claims in voc-idempotency, and nothing else there', () => {

@@ -54,6 +54,16 @@ def _fresh_response_cache():
     DEFAULT_CACHE.clear()
 
 
+@pytest.fixture(autouse=True)
+def _users_api_without_workspaces(monkeypatch):
+    """The users API as these suites were written for it: no voc-workspaces (a deleted user's memberships are read
+    only in test_users_delete_memberships.py, which wires its own table). lambda/conftest.py sets WORKSPACES_TABLE for
+    the processor and the aggregator, which require it, so users_handler would otherwise bind a real table."""
+    import users_handler  # imported here first, so a test that imports it later never sees the real table
+
+    monkeypatch.setattr(users_handler, 'workspaces_table', None)
+
+
 @pytest.fixture
 def deployment_wide_metrics_request():
     """For cases that call metrics_handler's data helpers directly, outside a request: stand in for what its

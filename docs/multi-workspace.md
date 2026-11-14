@@ -389,7 +389,70 @@ with its stated basis, the slug typed as approval, an audit row, a tombstone per
    manifest, never exported. Conversations are not exported yet (a later release lists a workspace's
    conversation owners first).
 3. The admin confirms by typing the slug. The workspace's status becomes `deleting`: every request is refused and its
-   schedules stop.
+   schedules stop. Since 4d-1 (Unreleased) every writer of a workspace's data checks that status before it writes
+   (`voc-datalake/lambda/shared/ws_repo.py` `workspace_is_active`), so nothing new arrives while the delete runs:
+   - **the scheduled fan-out** skips a workspace that is not active (`IngestFanOutSkipped`), and **an ingestor's run**
+     in one is refused before it builds or reads anything (`IngestorWorkspaceNotActive`, `workspace_not_active`);
+   - **the feedback processor** drops such a workspace's message before validation: counted
+     (`WorkspaceMessagesDropped`), logged with the workspace id and no content, no row written, and the message
+     acked, never failed. A failed message would reach the processing DLQ after its retries, and a redrive of that
+     queue (the routine fix for a bad batch) would bring the workspace's feedback back after its delete had
+     finished;
+   - **the aggregator** skips its stream records (`AggregatorInactiveWorkspaceRecordsSkipped`), the delete's own
+     `REMOVE`s included: the workspace's counters go with it, so nothing is decremented.
+
+   So while a workspace is `deleting`, its messages in flight (queued before the change, or sent by a run that began
+   within the 300 s a container may still hold `active`) are dropped once the processor reads `deleting`: acked and
+   counted, never stored, so there is no item and no tombstone for them (TENETS.md, D5's gaps). A cancel during the
+   fence does not bring them back (and a container that read `deleting` keeps dropping for up to 30 s after the
+   cancel): the hard delete's cancel (4d-2) will rebuild the workspace's counters and audit the count of messages
+   dropped while it was `deleting`.
+
+   Not active means any status but `active`, or no `META` at all. The check is one strongly consistent GetItem of
+   `WS#{ws}` / `META`, projected to its status; each role is held to `pk`, `sk` and `status` of `WS#*` rows
+   (`grantWorkspaceStatusRead`, `dynamodb:Attributes`). Each warm container keeps the answer (`WorkspaceStatusCache`,
+   `voc-datalake/lambda/shared/ws_repo.py`): an `active` one for 300 s, a not-active one for 30 s, so a long active
+   TTL only lengthens the delete's fence and a short not-active one keeps a cancel's loss window short; a failed read
+   is not kept and fails the run or record, which is retried. So a writer stops within 300 s plus the invocation
+   already running (at most 15 minutes): the delete job (4d-2) waits 21 minutes after `deleting` (5 + 15 + 1 of
+   margin) before it deletes anything. A Run now or a scraper run refused this way ends the `running` row the API
+   wrote (`error`, `workspace_not_active`), only if that row is still there; a status that cannot be read is not a
+   refusal: the run raises, its row untouched, and Lambda's retry reads the status again. A deployment-wide run,
+   message or record reads nothing new.
+
+   **Load.** Each read is one strongly consistent GetItem (one read request unit, the `META` row is far under 4 KB).
+   The total, at most: busy workspaces × warm containers ÷ 300 s, for the processor and the aggregator each (a
+   container reads a workspace only when one of its records arrives, and then at most once per 300 s; a workspace
+   being deleted at most once per 30 s; a cold cache has no single-flight, so the processor's worker threads, 5 at
+   once in a batch of up to 10, can each read the same workspace once before the first answer is kept), plus the
+   ingestors: one read per run in a workspace, and on each scheduled
+   tick one read per enabled workspace, made one after another before the invokes.
+   - Worked through for 1,000 busy workspaces, 20 processor containers (its concurrency cap) and, say, 4 aggregator
+     containers (one per stream shard; no parallelization factor is set): (20 + 4) × 1,000 ÷ 300 = 80 reads a second
+     at the worst, when every container sees every workspace every 300 s; about 207 million reads a month, about $26
+     at the on-demand price of $0.125 per million reads. Real traffic is far below it: a processor batch is at most 10
+     messages, so a container sees at most 10 workspaces per batch.
+   - The tick: per plugin and tick, 1,000 sequential GetItems (a few seconds of the tick's run, before its
+     deployment-wide run; a 5-minute schedule is about 290,000 reads a month per plugin, about $0.04), and each
+     invoked run reads once more, in its own container.
+   - Per partition: each workspace's `WS#{ws}` partition gets at most 24 ÷ 300, under one read every 10 s, from the
+     processor and the aggregator, far under a partition's 3,000 a second.
+   - 10×, 10,000 busy workspaces: 800 reads a second at the worst (about $260 a month), far under the table's
+     default on-demand ceiling of 40,000 read units a second, no quota to raise; per partition unchanged; the tick
+     spends tens of seconds reading 10,000 statuses one after another, the first ceiling to watch (the fix is
+     batching them, BatchGetItem of 100, or reading only those the tick will invoke).
+   - A deployment-wide message, record or run reads nothing new.
+
+   **The watermark directory.** voc-watermarks is keyed on `source` alone, so a workspace's watermarks share no
+   partition. Since 4d-1 an ingestor's `set_watermark` in a workspace first puts a directory row in voc-aggregates,
+   `WS#{ws}#WATERMARK_KEYS` / `{plugin}#{key}`: the key alone, so an unconditional put each time the watermark is set
+   is idempotent (a few writes a run), and it writes no watermark it could not list (counted,
+   `WatermarkNotListed`); the delete finds every watermark with one Query. Watermarks written before 4d-1 have
+   no row and are not backfilled: workspace runs are new, so this holds for fresh deployments only.
+
+   The repository layer's checked deletes (a batch delete of a workspace's keys, a delete of every version under
+   `ws/{ws}/`, the workspace's control-plane rows of `voc-workspaces`) come with the job that calls them (4d-2):
+   4d-1 deletes nothing.
 4. The delete job (self re-invoking and checkpointed, like `voc-retention`) deletes every `WS#{ws}#` partition of
    every table, every `ws/{ws}/` object with all its versions, the workspace secret, its MCP tokens, memberships, slug
    and the share grants it gave or used. Whether copies other workspaces already imported stay theirs is the second

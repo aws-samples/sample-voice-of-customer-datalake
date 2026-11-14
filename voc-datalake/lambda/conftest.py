@@ -45,6 +45,9 @@ os.environ.setdefault('POWERTOOLS_SERVICE_NAME', 'test-voc')
 os.environ.setdefault('POWERTOOLS_METRICS_NAMESPACE', 'TestVoC')
 os.environ.setdefault('FEEDBACK_TABLE', 'test-feedback')
 os.environ.setdefault('AGGREGATES_TABLE', 'test-aggregates')
+# Required by the processor and the aggregator (a workspace's status check, lambda/shared/ws_repo.py
+# workspace_is_active); their suites stand in for the check (processor/test, aggregator/test conftest.py).
+os.environ.setdefault('WORKSPACES_TABLE', 'test-workspaces')
 os.environ.setdefault('CONVERSATIONS_TABLE', 'test-conversations')
 os.environ.setdefault('PROJECTS_TABLE', 'test-projects')
 os.environ.setdefault('JOBS_TABLE', 'test-jobs')

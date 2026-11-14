@@ -30,6 +30,15 @@ def _no_dedupe_table_unless_a_test_names_one(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _every_workspace_is_active(monkeypatch):
+    """Every workspace a record names is active, unless a test restores the real check (test_workspace_status.py):
+    the suites here have no voc-workspaces table, and the status read has its own tests."""
+    from aggregator import handler
+
+    monkeypatch.setattr(handler, 'workspace_active', lambda _scope: True)
+
+
+@pytest.fixture(autouse=True)
 def _earliest_date_watermark(request, monkeypatch):
     """Stub the earliest-date watermark write unless a test opts in.
 

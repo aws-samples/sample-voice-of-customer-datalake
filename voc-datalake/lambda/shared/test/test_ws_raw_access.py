@@ -71,8 +71,11 @@ DEPLOYMENT_TABLE: Final = 'DeploymentTable'
 UNSCOPED_INGEST_TABLE: Final = 'ingest_table(None)'
 #: DynamoDB's multi-item calls and the kind each is counted in. ``WorkspaceTable`` has the same methods, so a call
 #: on one of its views (``VIEW_BUILDERS``, ``VIEW_TYPE``) is scoped, not raw.
+#: ``batch_delete`` is named ahead of the layer's own (``WorkspaceTable.batch_delete``, the hard delete's, 4d-2), so
+#: from its first line it counts as the layer's on a view and as raw on anything else.
 MULTI_ITEM_KINDS: Final = {'transact_write_items': 'transact', 'transact_get_items': 'transact',
-                           'batch_get_item': 'batch', 'batch_write_item': 'batch', 'batch_writer': 'batch'}
+                           'batch_get_item': 'batch', 'batch_write_item': 'batch', 'batch_writer': 'batch',
+                           'batch_delete': 'batch'}
 VIEW_BUILDERS: Final = frozenset({'ws_table', 'WorkspaceTable'})
 VIEW_TYPE: Final = 'WorkspaceTable'
 #: Where the builders must be imported from (under their own names) for a view to count as one.
@@ -104,7 +107,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # shared/metric_keys.py `metric_partition`); METRIC#urgent moved to metric_keys (URGENT_PK). Left: the
     # category+sentiment prefix and the module-level voc-aggregates / voc-idempotency tables.
     # transact: the arrival and reversal transactions (each Update checked by `WorkspaceTable.check_update` first).
-    'lambda/aggregator/handler.py': (2, {'METRIC#': 1, 'Table': 2, 'transact': 2}),
+    # Table: 3 since 4d-1, the third voc-workspaces, read only for a workspace's META status
+    # (shared/ws_repo.py `workspace_is_active`, the control plane, not a data-path table).
+    'lambda/aggregator/handler.py': (2, {'METRIC#': 1, 'Table': 3, 'transact': 2}),
     'lambda/api/agents_handler.py': (3, {'get_aggregates_table': 1}),
     'lambda/api/ballots_handler.py': (2, {'get_aggregates_table': 1, 'transact': 1}),
     'lambda/api/chat_handler.py': (3, {'Table': 1}),
@@ -160,8 +165,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/memory/scanner/handler.py': (3, {'Table': 1}),
     # The processor's two paths (docs/multi-workspace.md) go through shared/ingest_tables.py `table_view` (its message's
     # scope, or None deployment-wide); its five key literals moved to shared/feedback_partitions.py. Table: the
-    # module-level voc-feedback, voc-aggregates and voc-radar the view is taken of.
-    'lambda/processor/handler.py': (2, {'Table': 3}),
+    # module-level voc-feedback, voc-aggregates and voc-radar the view is taken of; and since 4d-1 voc-workspaces,
+    # read only for a workspace message's META status (shared/ws_repo.py `workspace_is_active`, the control plane).
+    'lambda/processor/handler.py': (2, {'Table': 4}),
     'lambda/product_doc_extractor/handler.py': (3, {'Table': 1, 'put_object': 1}),
     'lambda/research/research_step_handler.py': (3, {'delete_object': 1, 'get_feedback_table': 1, 'put_object': 2}),
     'lambda/shared/agent_run_resume.py': (3, {'transact': 1}),
@@ -223,7 +229,8 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/shared/tables.py': (2, {'Table': 2}),
     'lambda/shared/user_flags.py': (3, {'Table': 1, 'batch': 1, 'transact': 1}),
     'lambda/shared/workspace_members.py': (3, {'transact': 1}),
-    # voc-workspaces opened deployment-wide for the tick's fan-out (the control plane's PLUGIN# list). Its run row's
+    # voc-workspaces opened deployment-wide (one helper, `_workspaces_table`) for the tick's fan-out (the control
+    # plane's PLUGIN# list) and, since 4d-1, a workspace's META status before a run or a fan-out invoke. Its run row's
     # partition moved to shared/run_rows.py (source_run_partition), the spelling the API uses too. transact: the
     # tick's claim in voc-idempotency, a one-item transaction.
     'plugins/_shared/base_ingestor.py': (2, {'ingest_table(None)': 1, 'transact': 1}),
@@ -695,6 +702,7 @@ def test_the_scan_sees_each_kind_of_raw_access(tmp_path):
         # ... but not on the layer's view (built here, or a parameter of its type) ...
         "view = ws_table(scope, table)\n"
         "view.transact_write_items([])\n"
+        "view.batch_delete([])\n"
         "ws_table(scope, table).batch_get_item([])\n"
         "def scoped(repo: WorkspaceTable):\n"
         "    repo.batch_writer()\n"
@@ -702,13 +710,14 @@ def test_the_scan_sees_each_kind_of_raw_access(tmp_path):
         "mixed = ws_table(scope, table)\n"
         "mixed = table\n"
         "mixed.batch_writer()\n"
+        "mixed.batch_delete([])\n"
         "view.meta.client.transact_write_items(TransactItems=[])\n",
         encoding='utf-8')
     assert _kinds(_parse(sample)) == Counter({
         'Table': 1, 'put_object': 1, 'copy_object': 1, 'get_feedback_table': 1, 'get_aggregates_table': 1,
         'SOURCE#': 1, 'METRIC#': 1, 'raw/': 1, 'silver/': 1, 'upload_file': 1, 'upload_fileobj': 1,
         'cached_table': 1, 'generate_presigned_url': 1, 'delete_object': 1, 'DeploymentTable': 2,
-        'ingest_table(None)': 2, 'transact': 4, 'batch': 4})
+        'ingest_table(None)': 2, 'transact': 4, 'batch': 5})
 
 
 _LAYER_IMPORT: Final = 'from shared.ws_repo import WorkspaceTable, ws_table\n'

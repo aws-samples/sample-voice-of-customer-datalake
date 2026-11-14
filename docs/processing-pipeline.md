@@ -395,6 +395,7 @@ Processor metrics (CloudWatch namespace `VoC`):
 | `BedrockThrottleRetry` | Records returned to the queue after Bedrock throttling |
 | `SourceUpdatesApplied` | Stored issue-tracker items refreshed in place |
 | `RadarFeedbackProcessed` | Radar reviews stored in `voc-radar` |
+| `WorkspaceMessagesDropped` | Messages of a workspace that is not active (being deleted), acked without being stored |
 
 Aggregator metrics (one per behaviour, so a reversal is not hidden behind an insert):
 
@@ -407,6 +408,7 @@ Aggregator metrics (one per behaviour, so a reversal is not hidden behind an ins
 | `AggregateWriteDeclined` | Writes the handler chose not to attempt |
 | `AggregateRecordReplayed` | Redelivered stream records the dedupe claim refused |
 | `AggregateTransactionConflicted` | Transactions re-attempted after contention or throttling on a shared row |
+| `AggregatorInactiveWorkspaceRecordsSkipped` | Records of a workspace that is not active (being deleted), left out of every counter |
 
 ### Logs and alarms
 
@@ -429,3 +431,9 @@ ten. Each record succeeds or fails on its own: a failed or throttled record is r
 
 The aggregator reads the feedback table's stream in batches of up to 100 records, gathered for at
 most 30 seconds, from `TRIM_HORIZON`, and bisects a failing batch to isolate a poison record.
+
+Both read a workspace's status before they write its data (a message or a record of a workspace that is
+not `active` is dropped or skipped: [multi-workspace.md](multi-workspace.md), "Export and delete"): one
+strongly consistent GetItem of the workspace's `META` (one read request unit), at most once per workspace
+per 300 seconds per warm container (30 seconds for one that is not active), on the hot path of each. A deployment-wide message or
+record reads nothing new.

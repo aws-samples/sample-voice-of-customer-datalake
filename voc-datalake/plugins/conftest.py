@@ -172,6 +172,18 @@ def workspace_parameters_through_get_secret(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def every_workspace_is_active(monkeypatch):
+    """Every workspace a run or the tick names is active, and a watermark's directory row (`BaseIngestor.
+    _list_watermark`, in voc-aggregates, which these suites do not configure) is taken as written, unless a test
+    restores the real ones (`_shared/test/test_base_ingestor_workspace_status.py`): there is no voc-workspaces table
+    here, and both have their own tests."""
+    from _shared import base_ingestor
+
+    monkeypatch.setattr(base_ingestor, 'workspace_active', lambda _scope: True)
+    monkeypatch.setattr(base_ingestor.BaseIngestor, '_list_watermark', lambda _self, _scope, _key: None)
+
+
+@pytest.fixture(autouse=True)
 def no_source_profiles():
     """Every plugin message passes the source policy (`_shared/source_policy_gate.py`);
     serve "no profiles configured" from its cache instead of a DynamoDB read. A test

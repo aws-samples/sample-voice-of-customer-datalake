@@ -30,6 +30,15 @@ def _no_dimension_or_source_settings():
     handler._failed_settings.clear()
 
 
+@pytest.fixture(autouse=True)
+def _every_workspace_is_active(monkeypatch):
+    """Every workspace a message names is active, unless a test restores the real check (test_workspace_status.py):
+    the suites here have no voc-workspaces table, and the status read has its own tests."""
+    from processor import handler
+
+    monkeypatch.setattr(handler, 'workspace_active', lambda _scope: True)
+
+
 @pytest.fixture
 def lambda_context():
     """A mock Lambda context (the shape Powertools' inject_lambda_context reads)."""

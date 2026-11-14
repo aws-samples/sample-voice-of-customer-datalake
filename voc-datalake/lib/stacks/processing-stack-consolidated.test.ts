@@ -16,7 +16,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { Template } from 'aws-cdk-lib/assertions';
 import { stateMachineDefinition, synthProcessingTemplate } from '../test-support/processing-stack-fixture';
 import { isRecord, itemAt, recordAt } from '../test-support/guards';
-import { allowedActions, roleStatements } from '../test-support/iam-statements';
+import { IamPolicySchema, allowedActions, roleStatements } from '../test-support/iam-statements';
 import { expectSelfInvokeOnly, findWorkerFunction } from '../test-support/worker-function';
 
 function researchDefinition(template: Template): string {
@@ -531,4 +531,33 @@ describe('the feedback processor picks up new feedback within seconds (QA 2.13.0
     const [, props] = processorFunction();
     expect(recordAt(props, 'Environment', 'Variables')?.ENRICHMENT_CONCURRENCY).toBe('5');
   });
+});
+
+describe('the processor and the aggregator read a workspace\'s status, and nothing more of voc-workspaces (4d-1)', () => {
+  // lambda/shared/ws_repo.py workspace_is_active: a message (processor) or a stream record (aggregator) of a workspace
+  // that is not active is dropped or skipped. Each role: GetItem of WS# rows held to pk, sk and status.
+  const template = synthProcessingTemplate();
+  const workspaceStatements = (rolePrefix: string) => Object.entries(template.findResources('AWS::IAM::Policy'))
+    .filter(([id]) => id.startsWith(rolePrefix))
+    .flatMap(([, resource]) => IamPolicySchema.parse(resource).Properties.PolicyDocument.Statement)
+    .filter((statement) => statement.Effect !== 'Deny' && JSON.stringify(statement.Resource).includes('Workspaces'));
+  const environment = (service: string) => Object.values(template.findResources('AWS::Lambda::Function'))
+    .map((fn) => recordAt(fn, 'Properties', 'Environment', 'Variables'))
+    .find((vars) => vars?.POWERTOOLS_SERVICE_NAME === service);
+
+  it.each([['ProcessingLambdaRole', 'voc-processor'], ['AggregatorLambdaRole', 'voc-aggregator']])(
+    '%s holds one GetItem of WS# rows, limited to pk, sk and status, and its function names the table',
+    (rolePrefix, service) => {
+      expect(workspaceStatements(rolePrefix)).toStrictEqual([{
+        Action: 'dynamodb:GetItem',
+        Effect: 'Allow',
+        Resource: expect.anything(),
+        Condition: {
+          'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] },
+          'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'status'] },
+          StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+        },
+      }]);
+      expect(JSON.stringify(environment(service)?.WORKSPACES_TABLE)).toContain('Workspaces');
+    });
 });

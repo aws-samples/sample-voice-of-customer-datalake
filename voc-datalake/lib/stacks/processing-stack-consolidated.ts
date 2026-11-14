@@ -133,10 +133,12 @@ export class VocProcessingStack extends VocStack {
     // ============================================
     // PROCESSOR + AGGREGATOR ROLES (one each, lib/stacks/processing-roles.ts)
     // ============================================
+    const { workspacesTable } = props;
     const processingRole = createProcessorRole(this, {
-      feedbackTable, aggregatesTable, idempotencyTable, radarTable: props.radarTable, processingQueue, kmsKey, rawDataBucket,
+      feedbackTable, aggregatesTable, idempotencyTable, radarTable: props.radarTable, workspacesTable, processingQueue,
+      kmsKey, rawDataBucket,
     });
-    const aggregatorRole = createAggregatorRole(this, { aggregatesTable, idempotencyTable, kmsKey });
+    const aggregatorRole = createAggregatorRole(this, { aggregatesTable, idempotencyTable, workspacesTable, kmsKey });
 
     // ============================================
     // FEEDBACK PROCESSOR LAMBDA
@@ -159,6 +161,8 @@ export class VocProcessingStack extends VocStack {
         FEEDBACK_TABLE: feedbackTable.tableName,
         AGGREGATES_TABLE: aggregatesTable.tableName,
         IDEMPOTENCY_TABLE: idempotencyTable.tableName,
+        // A workspace message's META status (dropped when not active; lambda/shared/ws_repo.py workspace_is_active).
+        WORKSPACES_TABLE: workspacesTable.tableName,
         PRIMARY_LANGUAGE: config.primaryLanguage,
         ENRICHMENT_CONCURRENCY: String(PROCESSOR_ENRICHMENT_CONCURRENCY),
         // No BEDROCK_MODEL_ID env: the enrichment model resolves through the
@@ -229,6 +233,8 @@ export class VocProcessingStack extends VocStack {
         // warning and applies counters non-transactionally, which is the
         // pre-#264 behaviour rather than an outage.
         IDEMPOTENCY_TABLE: idempotencyTable.tableName,
+        // A workspace record's META status (skipped when not active; lambda/shared/ws_repo.py workspace_is_active).
+        WORKSPACES_TABLE: workspacesTable.tableName,
         POWERTOOLS_SERVICE_NAME: 'voc-aggregator',
         LOG_LEVEL: 'INFO',
       },

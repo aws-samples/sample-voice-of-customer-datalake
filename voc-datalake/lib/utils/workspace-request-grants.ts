@@ -58,6 +58,20 @@ export function grantWorkspaceAttributeRead(
   }));
 }
 
+/** The one TS spelling of what a workspace's `META` is read with for its status, keys included
+ *  (lambda/shared/ws_repo.py `STATUS_READ_ATTRIBUTES`, which lambda/shared/test/test_ws_repo_status.py holds equal). */
+const WORKSPACE_STATUS_ATTRIBUTES = ['pk', 'sk', 'status'] as const;
+
+/**
+ * GetItem on voc-workspaces' `WS#*` rows, held to `pk`, `sk` and `status`: a writer's status check (the ingestors,
+ * the feedback processor, the aggregator) stops for a workspace that is not `active` (docs/multi-workspace.md,
+ * "Export and delete"), and a webhook routes only to an active workspace (lambda/shared/workspace_routing.py).
+ * Nothing else of the table: no member row's role, email or name, no Query.
+ */
+export function grantWorkspaceStatusRead(role: iam.Role, workspacesTable: dynamodb.ITable): void {
+  grantWorkspaceAttributeRead(role, workspacesTable, WORKSPACE_STATUS_ATTRIBUTES);
+}
+
 /** The attributes the resolver reads of a `MEMBER#` row and a `META` row, keys included (lambda/shared/workspace.py):
  *  never a member's email. */
 export const MEMBERSHIP_READ_ATTRIBUTES = ['pk', 'sk', 'role', 'status', 'name', 'slug'] as const;

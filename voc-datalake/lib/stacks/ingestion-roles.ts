@@ -52,6 +52,7 @@ import { grantClaudeModels } from '../utils/claude-model-grant';
 import { piiDetectionStatement } from '../utils/pii-redaction';
 import { grantKeyScopedWrites, grantReadAndWrites } from '../utils/table-write-grants';
 import { grantInvokeByName } from '../utils/worker-lambda';
+import { grantWorkspaceStatusRead } from '../utils/workspace-request-grants';
 import { grantWorkspaceParameterRead } from '../utils/workspace-secrets';
 import { RAW_LAYER_PREFIX, WORKSPACE_ID_PATTERN, WORKSPACE_RAW_LAYER_PREFIX } from './core-buckets';
 
@@ -69,7 +70,8 @@ const FAN_OUT_CLAIM_PREFIX = 'ingestor#fanout#';
 export interface BaseIngestionGrants {
   watermarksTable: dynamodb.ITable;
   aggregatesTable: dynamodb.ITable;
-  /** voc-workspaces: the scheduled tick's list of the workspaces that enabled a plugin (scheduled roles only). */
+  /** voc-workspaces: every role reads a workspace's `META` status (pk, sk, status only); a scheduled role also the
+   *  tick's list of the workspaces that enabled its plugin. */
   workspacesTable: dynamodb.ITable;
   /** voc-idempotency: the scheduled tick's claim, so it fans out at most once (scheduled roles only). */
   idempotencyTable: dynamodb.ITable;
@@ -206,12 +208,16 @@ export class IngestorRoles {
     });
 
     const {
-      watermarksTable, aggregatesTable, processingQueue, rawDataBucket, kmsKey, apiSecrets,
+      watermarksTable, aggregatesTable, workspacesTable, processingQueue, rawDataBucket, kmsKey, apiSecrets,
     } = this.grants;
     watermarksTable.grantReadWriteData(role);
-    // Run rows and counters (Put + Update, _shared/base_ingestor.py, the webscraper); the circuit breaker
+    // Run rows and counters (Put + Update, _shared/base_ingestor.py, the webscraper), and a workspace watermark's
+    // directory row (`WS#{ws}#WATERMARK_KEYS`, put if absent: base_ingestor.py `_list_watermark`); the circuit breaker
     // (_shared/circuit_breaker.py) deletes only its own CIRCUIT# rows (deployment-wide and per workspace) when it closes.
     grantReadAndWrites(aggregatesTable, role, ['PutItem', 'UpdateItem']);
+    // A run in a workspace (and the tick, per workspace) reads its META status first: GetItem of `WS#*` held to pk, sk
+    // and status (base_ingestor.py `workspace_active`), so a workspace being deleted gets no new data.
+    grantWorkspaceStatusRead(role, workspacesTable);
     grantKeyScopedWrites(aggregatesTable, role, ['DeleteItem'], CIRCUIT_ROW_PARTITIONS);
     processingQueue.grantSendMessages(role);
     // Write-only (IAM-1): ingestors only `put_object` raw/<source>/... (a deployment-wide run) and ws/{ws}/raw/<source>/...

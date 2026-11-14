@@ -26,6 +26,11 @@ only ever reads and writes its own rows and objects. This module is the one plac
   upload of an export's zip, its work objects (each tagged ``voc-export=true``, which the raw bucket's lifecycle
   expires and its policy refuses anywhere else) and a presigned download of the zip. Any key outside the prefix is
   refused before any call reaches S3.
+* ``workspace_is_active``: the one status check of every writer of a workspace's data (the scheduled fan-out, an
+  ingestor's run, the processor, the aggregator; 4d-1): a GetItem of ``META`` limited to its status, cached per
+  container in a ``WorkspaceStatusCache`` (300 s an active answer, 30 s a not-active one; ``WorkspaceStatusCheck``
+  binds it to a table). ``watermark_directory_key``: the voc-aggregates row that lists a
+  workspace's watermark, so its voc-watermarks rows are found without a Scan.
 
 shared/test/test_ws_raw_access.py counts, per module outside this layer, the raw table and bucket calls and the
 unscoped data-path keys, against an allowlist of the modules not moved yet that must match exactly.
@@ -43,8 +48,10 @@ The keys (``{ws}`` is ``ws_`` + a ULID, shared/workspace.py ``is_workspace_id``)
                     pk WS#{ws}#JOB#export (a workspace's export jobs and their lock, shared/export_jobs.py)
                     pk WS#{ws}#PLUGIN_CONFIG  sk {plugin} (a plugin's config list, shared/plugin_configs.py)
                     pk WS#{ws}#PLUGIN_CONFIG#HISTORY  sk {plugin}#{iso}#{random} (a replaced list, kept, no ttl)
+                    pk WS#{ws}#WATERMARK_KEYS  sk {plugin}#{key} (lists a watermark, ``watermark_directory_key``)
     voc-watermarks  source WS#{ws}#{plugin}#{key}
-    voc-workspaces  pk WS#{ws} (META, MEMBER#{sub}), pk AUDIT#WS#{ws}: read by ``control_query`` only
+    voc-workspaces  pk WS#{ws} (META, MEMBER#{sub}), pk AUDIT#WS#{ws}: read by ``control_query``; META's status by
+                    ``workspace_is_active``
     raw bucket      ws/{ws}/raw/{source}/{yyyy}/{mm}/{dd}/{stem}/{sha16}.json, ws/{ws}/silver/..., ws/{ws}/...,
                     ws/{ws}/exports/{export id}/… (``ExportObjects``)
     SSM parameters  {prefix}/{ws}/credentials/{plugin} (prefix /voc/ws, /<deployment prefix>-voc/ws in a prefixed
@@ -53,20 +60,23 @@ The keys (``{ws}`` is ``ws_`` + a ULID, shared/workspace.py ``is_workspace_id``)
 from __future__ import annotations
 
 import re
+import threading
+import time
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final, NoReturn, Protocol, Self
 
 from botocore.exceptions import ClientError
 
-from shared.aws import S3_MISSING_KEY_CODES
+from shared.aws import S3_MISSING_KEY_CODES, consistent_item
 from shared.batch_get import BATCH_GET_ATTEMPTS, batch_get_all
 from shared.dynamo_paging import iter_query
-from shared.workspace_ids import is_workspace_id, ws_key
+from shared.workspace_ids import ACTIVE, is_workspace_id, ws_key
 
 __all__ = [
     'FORM_LOOKUP_PREFIX',
     'PARTITION_ATTRIBUTES',
+    'STATUS_READ_ATTRIBUTES',
     'WORKSPACE_FIELD',
     'WORKSPACE_KEY_PREFIX',
     'ExportObjects',
@@ -74,6 +84,7 @@ __all__ = [
     'OutOfScopeError',
     'WorkspaceObjects',
     'WorkspaceScope',
+    'WorkspaceStatusCheck',
     'WorkspaceTable',
     'category_pk',
     'channel_pk',
@@ -108,6 +119,7 @@ __all__ = [
     'scraper_run_pk',
     'source_run_pk',
     'urgency_pk',
+    'watermark_directory_key',
     'watermark_key',
     'ws_table',
 ]
@@ -144,6 +156,7 @@ class OutOfScopeError(ValueError):
 class UnprocessedKeysError(RuntimeError):
     """BatchGetItem still left keys unprocessed after ``BATCH_GET_ATTEMPTS`` calls (shared/batch_get.py): the read
     fails rather than quietly return fewer items."""
+
 
 
 @dataclass(frozen=True)
@@ -384,6 +397,23 @@ def watermark_key(scope: WorkspaceScope, plugin: str, key: str) -> str:
     return scope.key(plugin, key)
 
 
+#: The voc-aggregates partition listing a workspace's watermarks (``watermark_directory_key``).
+WATERMARK_DIRECTORY: Final = 'WATERMARK_KEYS'
+
+
+def watermark_directory_key(scope: WorkspaceScope, plugin: str, key: str) -> dict[str, str]:
+    """The directory row of one watermark in voc-aggregates: ``WS#{ws}#WATERMARK_KEYS`` / ``{plugin}#{key}``.
+
+    voc-watermarks is keyed on ``source`` alone, so a workspace's watermarks share no partition; plugins/_shared/
+    base_ingestor.py ``set_watermark`` puts this row (its key alone, so the put is idempotent) before the watermark, so the hard delete (4d-2)
+    finds every one with one Query instead of a Scan: the watermark's key is ``scope.prefix`` + the row's ``sk``
+    (``watermark_key``). Written since 4d-1 only: a deployment upgraded with workspace watermarks already written has
+    no row for them (no backfill; multi-workspace runs are new). Refuses (ValueError) an empty part."""
+    if not (plugin and key):
+        raise ValueError('a watermark directory key needs a plugin id and a key')
+    return {'pk': scope.key(WATERMARK_DIRECTORY), 'sk': f'{plugin}#{key}'}
+
+
 def s3_key(scope: WorkspaceScope, *parts: str) -> str:
     """An object key inside the workspace: ``ws/{ws}/a/b``. Refuses empty, ``.`` and ``..`` segments."""
     segments = [segment for part in parts for segment in part.split('/')]
@@ -432,6 +462,94 @@ def control_query(scope: WorkspaceScope, table: Any, which: str, *, sort_conditi
     if start is not None and (not isinstance(start, Mapping) or start.get('pk') != partition):
         raise OutOfScopeError('a cursor outside the workspace')
     return table.query(**partition_query('pk', partition, sort_condition, kwargs))
+
+
+#: How long a warm container trusts a workspace's status (``workspace_is_active``), by the answer:
+#: * ``active``, 300 s: a workspace set to ``deleting`` stops every writer within this, beyond the invocation already
+#:   running, so the hard delete's fence waits it out (5 min, plus one 15-minute invocation and a minute's margin: 21
+#:   min); a longer one only lengthens that fence, and it is what keeps the hot paths' reads low;
+#: * not active, 30 s: a delete cancelled during the fence makes the workspace active again, and its messages are
+#:   dropped for at most this after (docs/multi-workspace.md, "Export and delete").
+ACTIVE_STATUS_TTL_SECONDS: Final = 300.0
+INACTIVE_STATUS_TTL_SECONDS: Final = 30.0
+#: A container keeps at most this many statuses; a full cache drops the expired ones, then the soonest to expire.
+MAX_CACHED_STATUSES: Final = 1024
+#: Exactly what ``workspace_is_active`` (and a webhook's routing, shared/workspace_routing.py) reads of a workspace's
+#: ``META``, with its keys: those roles are held to these (lib/utils/workspace-request-grants.ts
+#: ``grantWorkspaceStatusRead``, ``dynamodb:Attributes``).
+STATUS_READ_ATTRIBUTES: Final = ('pk', 'sk', 'status')
+
+
+class WorkspaceStatusCache:
+    """Whether each workspace is active, as one warm container last read it: an active answer for
+    ``ACTIVE_STATUS_TTL_SECONDS``, a not-active one for ``INACTIVE_STATUS_TTL_SECONDS``.
+
+    Both answers are kept, so a deleted workspace's records are not each a read; a failed read never is
+    (``workspace_is_active`` puts only what it read). Thread-safe: the processor's records run on worker threads."""
+
+    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._entries: dict[str, tuple[float, bool]] = {}
+
+    def get(self, ws: str) -> bool | None:
+        """The cached answer for ``ws``, or None when there is none or it is older than the TTL."""
+        with self._lock:
+            entry = self._entries.get(ws)
+            if entry is None:
+                return None
+            expires_at, active = entry
+            if self._clock() >= expires_at:
+                del self._entries[ws]
+                return None
+            return active
+
+    def put(self, ws: str, active: bool) -> None:
+        """Keep ``ws``'s answer for its TTL. A full cache first drops the answers already expired, then the one that
+        would expire soonest (with two TTLs the order they were put in is not the order they expire in), never the
+        whole cache."""
+        with self._lock:
+            now = self._clock()
+            self._entries.pop(ws, None)
+            if len(self._entries) >= MAX_CACHED_STATUSES:
+                for expired in [key for key, (expires_at, _active) in self._entries.items() if expires_at <= now]:
+                    del self._entries[expired]
+                while len(self._entries) >= MAX_CACHED_STATUSES:
+                    del self._entries[min(self._entries, key=lambda key: self._entries[key][0])]
+            ttl = ACTIVE_STATUS_TTL_SECONDS if active else INACTIVE_STATUS_TTL_SECONDS
+            self._entries[ws] = (now + ttl, active)
+
+
+def workspace_is_active(table: Any, scope: WorkspaceScope, cache: WorkspaceStatusCache) -> bool:
+    """Whether the workspace's ``META`` (voc-workspaces ``WS#{ws}`` / ``META``) says ``active``: every writer of a
+    workspace's data asks before it writes (the scheduled fan-out, an ingestor's run, the processor, the aggregator),
+    so a workspace set to ``deleting`` gets nothing new while its hard delete runs (4d-1).
+
+    One strongly consistent GetItem projected to ``STATUS_READ_ATTRIBUTES``, at most once per workspace per TTL in
+    ``cache`` (``WorkspaceStatusCache``: 300 s for active, 30 s for not). A missing ``META`` and any other status
+    answer False, and are cached too; a failed read raises and caches nothing, so the caller's record or run fails and
+    is retried."""
+    cached = cache.get(scope.ws)
+    if cached is not None:
+        return cached
+    found = consistent_item(table, {'pk': control_partition(scope, 'meta'), 'sk': LOOKUP_SORT_KEY},
+                            STATUS_READ_ATTRIBUTES)
+    active = found is not None and found.get('status') == ACTIVE
+    cache.put(scope.ws, active)
+    return active
+
+
+class WorkspaceStatusCheck:
+    """A writer's status check (``workspace_is_active``), bound to its voc-workspaces table and a container's own
+    cache: ``check(scope)``. The feedback processor and the aggregator each keep one at module level."""
+
+    def __init__(self, table: Any, cache: WorkspaceStatusCache | None = None) -> None:
+        self._table = table
+        self._cache = cache or WorkspaceStatusCache()
+
+    def __call__(self, scope: WorkspaceScope) -> bool:
+        """Whether ``scope``'s workspace is active; a failed read raises (nothing cached)."""
+        return workspace_is_active(self._table, scope, self._cache)
 
 
 #: The folder of a workspace's exports (``ws/{ws}/exports/``) and the tag every object there carries: the raw

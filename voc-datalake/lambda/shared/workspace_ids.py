@@ -21,12 +21,17 @@ from typing import Final
 from shared.plugin_identity import is_valid_plugin_identifier
 
 __all__ = [
+    'ACTIVE',
     'credentials_parameter_name',
     'credentials_path',
     'is_workspace_id',
     'ws_key',
 ]
 
+#: The status of a workspace in use (its ``META``'s ``status``): any other (``deleting``), or no ``META`` at all, is a
+#: workspace nothing may enter or write (shared/workspace.py ``resolve_workspace``, shared/ws_repo.py
+#: ``workspace_is_active``).
+ACTIVE: Final = 'active'
 #: ``ws_`` + a ULID: 26 Crockford base32 characters (no I, L, O, U), the first one 0-7 (128 bits).
 _WORKSPACE_ID: Final = re.compile(r'ws_[0-7][0-9A-HJKMNP-TV-Z]{25}')
 #: A parameter prefix: ``/`` then path segments of letters, digits, ``-`` and ``_`` (``/voc/ws``, ``/stg-voc/ws``).

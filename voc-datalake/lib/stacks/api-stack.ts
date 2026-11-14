@@ -7,7 +7,7 @@ import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { LOG_RETENTION } from '../utils/log-retention';
-import { grantWorkspaceAttributeRead } from '../utils/workspace-request-grants';
+import { grantWorkspaceStatusRead } from '../utils/workspace-request-grants';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
@@ -18,10 +18,6 @@ import { Construct } from 'constructs';
 import { acknowledgeNag } from '../utils/nag-ack';
 import { WORKSPACE_PARAMETER_BASE_PATH, grantWorkspaceParameterRead } from '../utils/workspace-secrets';
 import { WORKSPACE_RAW_LAYER_PREFIX } from './core-buckets';
-
-/** The attributes a webhook reads of a workspace's META (lambda/shared/workspace_routing.py META_ROUTING_ATTRIBUTES;
- * api-stack-webhook-env.test.ts holds the two equal). */
-const WEBHOOK_META_ATTRIBUTES = ['pk', 'sk', 'status'] as const;
 import { DEFAULT_WEBHOOK_MEMORY_MB, getEnabledPlugins, getPluginsWithWebhook, capitalize, pluginDirectoryIds, type PluginManifest } from '../plugin-loader';
 import { pluginVersion } from '../utils/connector-version';
 import { applyAppClientEnv } from '../utils/app-client-env';
@@ -479,15 +475,15 @@ export class VocApiStack extends VocStack {
 
   /**
    * The webhook role's reach into the workspaces (docs/multi-workspace.md, "Public and non-user entry points"):
-   * GetItem on voc-workspaces' `WS#*` partitions only, of the routing attributes only (`pk`, `sk`, `status`:
-   * `dynamodb:Attributes`, with a projection the code always sends, lambda/shared/workspace_routing.py
-   * META_ROUTING_ATTRIBUTES), so IAM keeps a MEMBER# row's email and name out of reach; no write. And GetParameter
+   * GetItem on voc-workspaces' `WS#*` partitions only, of a `META`'s status only (`grantWorkspaceStatusRead`: `pk`,
+   * `sk`, `status`, `dynamodb:Attributes`, with the projection the code always sends, lambda/shared/ws_repo.py
+   * STATUS_READ_ATTRIBUTES), so IAM keeps a MEMBER# row's email and name out of reach; no write. And GetParameter
    * (and kms:Decrypt through SSM) on `voc/ws/{one workspace id}/credentials/{plugin}` of the webhook plugins only
    * (decision 19, lib/utils/workspace-secrets.ts). Returns the parameter prefix's environment.
    */
   private grantWebhookWorkspaces(role: iam.Role, workspacesTable: dynamodb.ITable, pluginIds: readonly string[],
     kmsKey: kms.IKey): Record<string, string> {
-    grantWorkspaceAttributeRead(role, workspacesTable, WEBHOOK_META_ATTRIBUTES);
+    grantWorkspaceStatusRead(role, workspacesTable);
     return grantWorkspaceParameterRead(this, role, this.prefixed(WORKSPACE_PARAMETER_BASE_PATH), kmsKey, pluginIds);
   }
 

@@ -113,7 +113,9 @@ def world() -> Iterator[_World]:
                 patch.object(aggregator, 'IDEMPOTENCY_TABLE', ''), \
                 patch.object(aggregator, '_known_earliest_date', None), \
                 patch.object(aggregator, '_known_workspace_earliest', {}), \
+                patch.object(aggregator, 'workspace_active', lambda _scope: True), \
                 patch.object(aggregator, 'data_changed', BatchBump(aggregator.bump_data_version)):
+            # Both workspaces are active (the aggregator's status check has its own tests).
             for item in ITEMS:
                 aggregator.record_handler(stream_record('INSERT', new=item))
         for ws, member in ((WS_A, MEMBER_A), (WS_B, MEMBER_B)):
