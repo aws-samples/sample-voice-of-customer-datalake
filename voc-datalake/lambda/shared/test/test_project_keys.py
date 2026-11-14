@@ -2,17 +2,29 @@
 import pytest
 
 from shared.project_keys import (
+    DOCUMENT_COMMENTS_STORE,
     PROJECT_PREFIX,
     PROJECT_TYPE_PK,
     NotPerWorkspaceError,
+    ProjectPartition,
     document_keys,
     document_listing,
+    document_revision_key,
+    document_revisions_prefix,
+    job_status_pk,
+    legacy_assignment_key,
+    legacy_assignment_prefix,
     personas_index_pk,
     project_id_of,
+    project_partitions,
     project_pk,
     project_type_pk,
     require_deployment,
+    version_allocation_key,
+    version_counter_key,
+    version_partition_key,
 )
+from shared.test.document_versions_fixtures import sha
 from shared.ws_repo import WorkspaceScope
 
 WS_A = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
@@ -83,6 +95,61 @@ def test_project_id_of_reads_a_partition_for_one_scope(partition_key, scope, exp
 
 
 def test_a_store_not_per_workspace_refuses_one():
-    require_deployment(None, 'Document versions')
-    with pytest.raises(NotPerWorkspaceError, match='Document versions is not per workspace yet'):
-        require_deployment(A, 'Document versions')
+    require_deployment(None, DOCUMENT_COMMENTS_STORE)
+    with pytest.raises(NotPerWorkspaceError, match='Document comments is not per workspace yet'):
+        require_deployment(A, DOCUMENT_COMMENTS_STORE)
+
+
+COUNTER_SK = 'PRD#1fef41e791b4745c34c15e7d36a86b18613c4711303ef591186f6c8605c53304'   # sha256 of 'trail map'
+ALLOCATION_SK = f"ALLOCATION#PRD#{sha('job_1')}"
+
+
+def test_the_version_keys_are_the_deployments_stored_keys():
+    assert version_partition_key('proj_1') == 'DOCUMENT_VERSIONS#PROJECT#proj_1'
+    assert version_partition_key('proj_1', workspace=None) == 'DOCUMENT_VERSIONS#PROJECT#proj_1'
+    counter = version_counter_key('proj_1', 'prd', 'trail map')
+    assert counter == {'pk': 'DOCUMENT_VERSIONS#PROJECT#proj_1', 'sk': COUNTER_SK}
+    assert version_allocation_key('proj_1', 'prd', 'job_1', workspace=None) == {
+        'pk': 'DOCUMENT_VERSIONS#PROJECT#proj_1', 'sk': ALLOCATION_SK}
+    assert legacy_assignment_prefix(counter) == f'LEGACY_ASSIGNMENT#{COUNTER_SK}#'
+    assert legacy_assignment_key(counter, 'PRD#legacy_1') == {
+        'pk': 'DOCUMENT_VERSIONS#PROJECT#proj_1', 'sk': f"LEGACY_ASSIGNMENT#{COUNTER_SK}#{sha('PRD#legacy_1')}"}
+    assert document_revisions_prefix('doc_1') == 'REVISION#doc_1#'
+    assert document_revision_key('proj_1', 'doc_1', 7) == {
+        'pk': 'DOCUMENT_VERSIONS#PROJECT#proj_1', 'sk': 'REVISION#doc_1#000007'}
+
+
+def test_a_workspaces_version_keys_are_the_same_keys_inside_it():
+    partition = f'WS#{WS_A}#DOCUMENT_VERSIONS#PROJECT#proj_1'
+    assert version_partition_key('proj_1', workspace=A) == partition
+    counter = version_counter_key('proj_1', 'prd', 'trail map', workspace=A)
+    assert counter == {'pk': partition, 'sk': COUNTER_SK}
+    assert version_allocation_key('proj_1', 'prd', 'job_1', workspace=A) == {'pk': partition, 'sk': ALLOCATION_SK}
+    # A legacy assignment sits in its counter's partition, so in the counter's scope.
+    assert legacy_assignment_key(counter, 'PRD#legacy_1') == {
+        'pk': partition, 'sk': f"LEGACY_ASSIGNMENT#{COUNTER_SK}#{sha('PRD#legacy_1')}"}
+    assert document_revision_key('proj_1', 'doc_1', 7, workspace=A) == {'pk': partition, 'sk': 'REVISION#doc_1#000007'}
+    assert A.owns(partition)
+    assert not B.owns(partition)
+    assert not A.owns(version_partition_key('proj_1'))
+
+
+def test_a_projects_partitions_are_listed_with_their_tables():
+    assert project_partitions('proj_1') == (
+        ProjectPartition('project', 'PROJECTS_TABLE', 'PROJECT#proj_1'),
+        ProjectPartition('versions', 'PROJECTS_TABLE', 'DOCUMENT_VERSIONS#PROJECT#proj_1'),
+        ProjectPartition('jobs', 'JOBS_TABLE', 'PROJECT#proj_1'),
+        ProjectPartition('lists', 'PARTICIPANTS_TABLE', 'PROJECT#proj_1'),
+    )
+    assert project_partitions('proj_1', workspace=A) == (
+        ProjectPartition('project', 'PROJECTS_TABLE', f'WS#{WS_A}#PROJECT#proj_1'),
+        ProjectPartition('versions', 'PROJECTS_TABLE', f'WS#{WS_A}#DOCUMENT_VERSIONS#PROJECT#proj_1'),
+        ProjectPartition('jobs', 'JOBS_TABLE', f'WS#{WS_A}#PROJECT#proj_1'),
+        ProjectPartition('lists', 'PARTICIPANTS_TABLE', f'WS#{WS_A}#PROJECT#proj_1'),
+    )
+
+
+def test_a_jobs_status_partition_is_the_stored_one():
+    assert job_status_pk('running') == 'STATUS#running'
+    assert job_status_pk('failed', workspace=None) == 'STATUS#failed'
+    assert job_status_pk('running', workspace=A) == f'WS#{WS_A}#STATUS#running'

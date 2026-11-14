@@ -71,8 +71,8 @@ def series_of(project_id: str, document: dict) -> dict[str, str]:
 
 def latest_version(table: Any, project_id: str, document_type: str, base: str, *,
                    workspace: WorkspaceScope | None = None) -> dict | None:
-    """The newest stored version of the series, or None when every version was deleted. Not per workspace yet (a
-    series is the document versions' store): ``series_versions`` refuses a ``workspace`` (``NotPerWorkspaceError``)."""
+    """The newest stored version of the series, or None when every version was deleted (``workspace``'s project
+    when given, read through ``series_versions``)."""
     versions = series_versions(table, project_id, {'document_type': document_type, 'base_title': base},
                                workspace=workspace)
     return versions[0] if versions else None

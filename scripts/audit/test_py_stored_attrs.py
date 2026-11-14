@@ -56,6 +56,42 @@ def test_read_attributes_and_non_item_dicts_stay_quiet(result: dict[str, str]) -
         assert not [k for k in result if k.endswith(f'::{quiet}')], quiet
 
 
+HELPER_STORE = '''
+def transact_rows(table, entries):
+    table.meta.client.transact_write_items(TransactItems=entries)
+
+def save(table, run):
+    snapshot = {'pk': 'RUN', 'sk': run.id, 'snapshot_only': 1}
+    transaction = [{'Put': {'TableName': 'runs', 'Item': snapshot}}]
+    transaction.append({'Put': {'TableName': 'runs', 'Item': _row(run)}})
+    allocation = _allocation(run)
+    transaction.append({'Put': {'TableName': 'runs', 'Item': allocation}})
+    transact_rows(table, transaction)
+
+def _row(run):
+    return {'pk': 'X', 'sk': run.id, 'appended_only': 1}
+
+def _allocation(run):
+    return {'pk': 'A', 'sk': run.id, 'bound_only': 1}
+
+def handler(event):
+    return run_with(event, lambda scope: _body(scope))
+
+def run_with(event, body):
+    transact_rows(event, body(None))
+
+def _body(scope):
+    return {'status': 'success', 'response_only': 1}
+'''
+
+
+def test_a_write_through_a_helper_follows_its_variables_and_builders(make_tree: TreeMaker) -> None:
+    root = make_tree({'lambda/shared/runs_store.py': HELPER_STORE})
+    found, _, _ = findings(root)
+    assert sorted(f.key for f in found) == [f'lambda/shared/runs_store.py::{name}' for name in (
+        'appended_only', 'bound_only', 'snapshot_only')]   # never the handler's response (response_only)
+
+
 def test_expression_reads_skip_the_attribute_being_set() -> None:
     assert expression_reads('SET a = if_not_exists(a, :z) + :one, b = c') == {'c'}
     assert expression_reads('attribute_exists(pk) AND #s = :s') == {'pk', 's'}

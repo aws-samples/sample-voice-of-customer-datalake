@@ -62,7 +62,6 @@ from shared.document_versions import (
     persist_versioned_document,
     preserve_versioned_document_allocation,
     split_versioned_title,
-    version_partition_key,
     versioned_document_id,
 )
 from shared.dynamo_paging import iter_query
@@ -115,6 +114,7 @@ from shared.project_keys import (
     project_id_of,
     project_pk,
     project_type_pk,
+    version_partition_key,
 )
 from shared.project_writes import (
     NEW_ROW_CONDITION,

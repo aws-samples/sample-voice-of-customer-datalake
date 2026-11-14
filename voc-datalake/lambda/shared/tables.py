@@ -35,9 +35,13 @@ def cached_table(resource: Any, name: str) -> Any:
     return resource.Table(name)
 
 
+#: The environment variable naming voc-jobs.
+JOBS_TABLE_ENV = 'JOBS_TABLE'
+
+
 def get_jobs_table():
     """Get jobs table resource. Requires JOBS_TABLE env var."""
-    return _get_table('JOBS_TABLE')
+    return _get_table(JOBS_TABLE_ENV)
 
 
 def get_aggregates_table():

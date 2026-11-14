@@ -11,8 +11,10 @@ WHAT COUNTS AS STORED: a key of a dict literal inside a function that calls ``pu
 ``update_item`` / ``transact_write_items`` (minus dicts handed to ``json.dumps``, ``put_object``,
 ``invoke``, ``send_message``, loggers, ``Payload=`` / ``Body=`` / ``extra=``, and returned responses); a
 dict returned by a function whose result is passed as ``Item=``; a dict argument of any function that
-itself writes to DynamoDB (``store.set_fields(table, item, {...})``); a ``SET`` / ``ADD`` target of an
-update expression.
+itself writes to DynamoDB (``store.set_fields(table, item, {...})``), followed through the variables
+the calling function binds and grows (``transaction = [...]``, ``transaction.append({...})``,
+``transact_project_writes(table, transaction)``) and the dicts this module's functions it calls return;
+a ``SET`` / ``ADD`` target of an update expression.
 
 HOW. Writes are collected per writer module. A READ is any occurrence of the name outside the writer
 (identifier token in Python / TS / TSX / JS / JSON product code, tests excluded), or, inside the
@@ -134,24 +136,91 @@ def _function_writes(tree: ast.Module, found: dict[str, int]) -> None:
                     _dict_keys(node.value, found)
 
 
-def _helper_call_writes(node: ast.Call, found: dict[str, int]) -> None:
-    """Every dict in a write helper's arguments, nested ones too (``update_step(t, id, Change({...}))``)."""
-    for arg in [*node.args, *(kw.value for kw in node.keywords if kw.arg not in NOT_ITEM_KWARGS)]:
-        for sub in ast.walk(arg):
+#: List methods that add to a variable a write helper is later handed (``transaction.append({...})``).
+_GROWERS = frozenset({'append', 'extend', 'insert'})
+
+
+def _bindings(fn: ast.AST) -> dict[str, list[ast.expr]]:
+    """name -> every value bound to it in ``fn``: an assignment, or what ``name.append`` / ``extend`` /
+    ``insert`` adds to it."""
+    out: dict[str, list[ast.expr]] = {}
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Assign):
+            values = [(t.id, node.value) for t in node.targets if isinstance(t, ast.Name)]
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.value is not None:
+            values = [(node.target.id, node.value)]
+        elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in _GROWERS
+              and isinstance(node.func.value, ast.Name)):
+            values = [(node.func.value.id, arg) for arg in node.args]
+        else:
+            continue
+        for name, value in values:
+            out.setdefault(name, []).append(value)
+    return out
+
+
+def _local_builders(tree: ast.Module) -> dict[str, list[ast.expr]]:
+    """function name (this module) -> the dict literals it returns."""
+    return {fn.name: [n.value for n in ast.walk(fn) if isinstance(n, ast.Return) and isinstance(n.value, ast.Dict)]
+            for fn in _functions(tree)}
+
+
+def _stored_dicts(root: ast.AST, bindings: dict[str, list[ast.expr]],
+                  builders: dict[str, list[ast.expr]]) -> Iterator[ast.Dict]:
+    """Every dict literal ``root`` hands a write: its own, those of the variables it names (bound in the same
+    function), and those a function of this module returns when its call is a variable's value or an ``Item``
+    (``allocation = _allocation_item(...)``, ``'Item': _row(run)``; never a call handed straight to a helper,
+    such as a handler's own body passed to its runner). Each name and builder is followed once, so the walk ends."""
+    pending: list[tuple[ast.AST, bool]] = [(root, False)]
+    followed: set[str] = set()
+    while pending:
+        node, bound = pending.pop()
+        walked = list(ast.walk(node))
+        items = {id(value) for sub in walked if isinstance(sub, ast.Dict)
+                 for key, value in zip(sub.keys, sub.values, strict=True)
+                 if isinstance(key, ast.Constant) and key.value == 'Item'}
+        for sub in walked:
             if isinstance(sub, ast.Dict):
-                _dict_keys(sub, found)
+                yield sub
+            elif isinstance(sub, ast.Name) and isinstance(sub.ctx, ast.Load) and sub.id not in followed:
+                followed.add(sub.id)
+                pending.extend((value, True) for value in bindings.get(sub.id, ()))
+            elif (isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name) and sub.func.id in builders
+                  and (bound or id(sub) in items) and f'{sub.func.id}()' not in followed):
+                followed.add(f'{sub.func.id}()')
+                pending.extend((value, True) for value in builders[sub.func.id])
+
+
+def _helper_call_writes(node: ast.Call, found: dict[str, int], bindings: dict[str, list[ast.expr]],
+                        builders: dict[str, list[ast.expr]]) -> None:
+    """Every dict in a write helper's arguments, nested ones too (``update_step(t, id, Change({...}))``), and
+    those of the variables and local builders they name (``transact_project_writes(table, transaction)``)."""
+    for arg in [*node.args, *(kw.value for kw in node.keywords if kw.arg not in NOT_ITEM_KWARGS)]:
+        for sub in _stored_dicts(arg, bindings, builders):
+            _dict_keys(sub, found)
 
 
 def writes_in(tree: ast.Module, helpers: set[str]) -> dict[str, int]:
     """attribute -> first line it is written on: dicts in DynamoDB-writing functions (minus payloads and
-    responses), dicts returned by item builders, dict arguments of write helpers, and update-expression
-    ``SET`` / ``ADD`` targets."""
+    responses), dicts returned by item builders, dict arguments of write helpers (followed through the
+    variables of the calling function and the builders of this module), and update-expression ``SET`` /
+    ``ADD`` targets."""
     found: dict[str, int] = {}
     _function_writes(tree, found)
-    for node in ast.walk(tree):
+    builders = _local_builders(tree)
+    for fn in _functions(tree):
+        bindings = _bindings(fn)
+        for node in ast.walk(fn):
+            if isinstance(node, ast.Call) and _callee(node) in helpers:
+                _helper_call_writes(node, found, bindings, builders)
+    # A call in a module-level statement (not a function's or a class's): no function's variables to follow.
+    module_level = [stmt for stmt in tree.body
+                    if not isinstance(stmt, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)]
+    for node in (sub for stmt in module_level for sub in ast.walk(stmt)):
         if isinstance(node, ast.Call) and _callee(node) in helpers:
-            _helper_call_writes(node, found)
-        elif isinstance(node, ast.Constant) and isinstance(node.value, str) and re.search(r'\b(SET|ADD)\b', node.value):
+            _helper_call_writes(node, found, {}, builders)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and re.search(r'\b(SET|ADD)\b', node.value):
             for match in _UPDATE_TARGET.finditer(node.value):
                 found.setdefault(match.group(1), node.lineno)
     return {name: line for name, line in found.items() if name not in KEY_NAMES}

@@ -54,7 +54,7 @@ class TestDocumentHistory:
         table = MagicMock()
         document = {'document_id': 'doc1', 'revision': 1}
         with pytest.raises(NotFoundError):
-            document_history._restore_unmanaged(table, 'p1', document, 'r1' + NL, now='t')
+            document_history._restore_unmanaged(table, 'p1', document, 'r1' + NL, now='t', workspace=None)
         table.get_item.assert_not_called()
 
 

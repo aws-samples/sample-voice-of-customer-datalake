@@ -26,9 +26,9 @@ from boto3.dynamodb.conditions import Attr, Key
 
 from project_bundle.bundle import BundleWriter, ObjectRecord
 from project_bundle.deployment import Deployment
+from project_bundle.remap import project_keys
 
 PIN_FORMS_PK = 'FEEDBACK_FORM'
-VERSIONS_PK_PREFIX = 'DOCUMENT_VERSIONS#PROJECT#'
 COMMENTS_PK_PREFIX = 'DCOMMENTS#'
 SHARE_INDEX_SK = 'SHARE'
 TOMBSTONE_STATUSES = frozenset({'deleting', 'deleted'})
@@ -172,7 +172,7 @@ class Exporter:
     def _export_one(self, project_id: str, meta: dict[str, Any], comments: list[dict[str, Any]],
                     writer: BundleWriter) -> dict[str, Any]:
         project_rows = (_partition(self.projects, f'PROJECT#{project_id}')
-                        + _partition(self.projects, f'{VERSIONS_PK_PREFIX}{project_id}') + comments)
+                        + _partition(self.projects, project_keys().version_partition_key(project_id)) + comments)
         kept = [row for row in project_rows if not is_credential(row)]
         aggregate_rows = pin_rows(self.aggregates, project_id)
         for row in kept:

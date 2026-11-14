@@ -11,11 +11,11 @@ string value, every map key, every sort key and every S3 key:
 
 `--new-ids` derives the new ids with the platform's own helpers (`lambda/shared`), so a
 derived id (a versioned document id, a series id, a pin form id) is exactly what the
-platform would compute for the new project; those helpers are imported only then.
+platform would compute for the new project; those helpers are imported only then. A legacy
+version assignment's sort key is rebuilt by `shared/project_keys.py` (standard library only).
 """
 from __future__ import annotations
 
-import hashlib
 import re
 import sys
 from collections.abc import Mapping
@@ -25,7 +25,6 @@ from typing import Any
 
 # Characters an id is made of: a match must not touch one on either side.
 _ID_CHARS = r'A-Za-z0-9_\-'
-LEGACY_ASSIGNMENT_PREFIX = 'LEGACY_ASSIGNMENT#'
 
 
 class Rewriter:
@@ -59,25 +58,39 @@ def fix_legacy_assignment(item: dict[str, Any]) -> dict[str, Any]:
     """Re-derive a legacy version assignment's sort key from its (rewritten) source sk.
 
     The key is `LEGACY_ASSIGNMENT#{counter sk}#{sha256(source_document_sk)}`
-    (`shared/document_versions.py` `_legacy_assignment_key`), so a new document id changes it.
+    (`shared/project_keys.py` `legacy_assignment_key`), so a new document id changes it.
     """
     sk, source = str(item.get('sk', '')), item.get('source_document_sk')
-    if not sk.startswith(LEGACY_ASSIGNMENT_PREFIX) or not isinstance(source, str):
+    # The counter's sk sits between the sk's first '#' and its last one.
+    counter_key = {'pk': str(item.get('pk', '')), 'sk': sk.rpartition('#')[0].partition('#')[2]}
+    keys = project_keys()
+    if not isinstance(source, str) or not sk.startswith(keys.legacy_assignment_prefix(counter_key)):
         return item
-    counter_part = sk.removeprefix(LEGACY_ASSIGNMENT_PREFIX).rsplit('#', 1)[0]
-    digest = hashlib.sha256(source.encode()).hexdigest()
-    return {**item, 'sk': f'{LEGACY_ASSIGNMENT_PREFIX}{counter_part}#{digest}'}
+    return {**item, **keys.legacy_assignment_key(counter_key, source)}
+
+
+def _lambda_on_path() -> None:
+    lambda_dir = str(Path(__file__).resolve().parents[2] / 'lambda')
+    if lambda_dir not in sys.path:
+        sys.path.insert(0, lambda_dir)
+
+
+def project_keys() -> Any:
+    """`shared/project_keys.py`, the one builder of a project's keys (standard library only: no virtualenv); the
+    exporter reads the versions partition through it too."""
+    _lambda_on_path()
+    from shared import project_keys
+
+    return project_keys
 
 
 def _shared_helpers() -> SimpleNamespace:
     """`lambda/` on the path, then the id helpers (they need the repo's virtualenv)."""
-    lambda_dir = str(Path(__file__).resolve().parents[2] / 'lambda')
-    if lambda_dir not in sys.path:
-        sys.path.insert(0, lambda_dir)
-    from shared import document_history, document_series, document_versions, ids, prototype_pins
+    _lambda_on_path()
+    from shared import document_history, document_series, document_versions, ids, project_keys, prototype_pins
 
     return SimpleNamespace(history=document_history, series=document_series, versions=document_versions,
-                           ids=ids, pins=prototype_pins)
+                           ids=ids, pins=prototype_pins, keys=project_keys)
 
 
 def _fresh(ids: Any, old: str) -> str:
@@ -91,14 +104,17 @@ def _is_document_row(item: dict[str, Any], pk: str) -> bool:
             and str(item.get('sk', '')).endswith(f'#{document_id}') and item.get('sk') != 'META')
 
 
-def _allocated_ids(versions: Any, rows: list[dict[str, Any]], old_pid: str, new_pid: str) -> dict[str, str]:
+def _allocated_ids(helpers: SimpleNamespace, rows: list[dict[str, Any]], old_pid: str,
+                   new_pid: str) -> dict[str, str]:
     """A versioned document's id is derived from the project id and its allocation."""
     found = {}
+    versions_pk = helpers.keys.version_partition_key(old_pid)
     for item in rows:
         allocation, document_type, document_id = (item.get('allocation_id'), item.get('document_type'),
                                                   item.get('document_id'))
-        if item.get('pk') == f'{versions.VERSION_COUNTER_PREFIX}{old_pid}' and allocation and document_id:
-            found[str(document_id)] = versions.versioned_document_id(new_pid, str(document_type), str(allocation))
+        if item.get('pk') == versions_pk and allocation and document_id:
+            found[str(document_id)] = helpers.versions.versioned_document_id(new_pid, str(document_type),
+                                                                             str(allocation))
     return found
 
 
@@ -118,7 +134,7 @@ def _series_ids(helpers: SimpleNamespace, documents: list[dict[str, Any]], old_p
 def new_id_map(rows: list[dict[str, Any]], old_pid: str) -> dict[str, str]:
     """Every id the project owns -> a fresh one (the `--new-ids` map)."""
     helpers = _shared_helpers()
-    versions, ids, pins = helpers.versions, helpers.ids, helpers.pins
+    ids, pins = helpers.ids, helpers.pins
     new_pid = _fresh(ids, old_pid)
     pk = f'PROJECT#{old_pid}'
     mapping = {old_pid: new_pid}
@@ -128,7 +144,7 @@ def new_id_map(rows: list[dict[str, Any]], old_pid: str) -> dict[str, str]:
         if item.get('pk') == pk and persona_id != sk and persona_id and '#' not in persona_id:
             mapping[persona_id] = _fresh(ids, persona_id)
     documents = [item for item in rows if _is_document_row(item, pk)]
-    allocated = _allocated_ids(versions, rows, old_pid, new_pid)
+    allocated = _allocated_ids(helpers, rows, old_pid, new_pid)
     for document in documents:
         old_doc = str(document['document_id'])
         mapping[old_doc] = allocated.get(old_doc) or _fresh(ids, old_doc)

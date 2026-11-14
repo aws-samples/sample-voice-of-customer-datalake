@@ -30,13 +30,11 @@ import shared.document_versions as dv
 from shared.document_versions import (
     VERSIONED_DOCUMENT_TYPES,
     _acquire_legacy_migration,
-    _allocation_key,
     _assign_persisted_legacy_versions,
     _assign_unpersisted_legacy_versions,
     _creation_order,
     _historical_legacy_versions,
     _legacy_assignment_item,
-    _legacy_assignment_key,
     _legacy_document_update,
     _legacy_migration_active,
     _legacy_suffix_version,
@@ -54,9 +52,14 @@ from shared.document_versions import (
     normalized_base_title,
     persist_legacy_document_versions,
     split_versioned_title,
-    version_partition_key,
 )
 from shared.exceptions import ServiceError, ValidationError
+from shared.project_keys import (
+    legacy_assignment_key,
+    version_allocation_key,
+    version_counter_key,
+    version_partition_key,
+)
 from shared.project_writes import project_writable_condition
 from shared.test.document_versions_fixtures import COUNTER_KEY, NOW_EPOCH, NOW_ISO, frozen_time
 from shared.test.document_versions_fixtures import client_error as _client_error
@@ -76,13 +79,13 @@ class TestStoredKeysKeepTheirPrefixes:
         assert version_partition_key('p1') == 'DOCUMENT_VERSIONS#PROJECT#p1'
 
     def test_legacy_assignment_key(self):
-        assert _legacy_assignment_key(COUNTER_KEY, 'PRD#x') == {
+        assert legacy_assignment_key(COUNTER_KEY, 'PRD#x') == {
             'pk': 'DOCUMENT_VERSIONS#PROJECT#p1',
             'sk': f"LEGACY_ASSIGNMENT#PRD#digest#{_sha('PRD#x')}",
         }
 
     def test_allocation_key(self):
-        assert _allocation_key('p1', 'prd', 'a1') == {
+        assert version_allocation_key('p1', 'prd', 'a1') == {
             'pk': 'DOCUMENT_VERSIONS#PROJECT#p1',
             'sk': f"ALLOCATION#PRD#{_sha('a1')}",
         }
@@ -100,7 +103,7 @@ class TestProjectAcceptsWrites:
     def test_meta_row_decides(self, meta, expected):
         table = _table()
         table.get_item.return_value = {} if meta is None else {'Item': meta}
-        assert _project_accepts_writes(table, 'p1') is expected
+        assert _project_accepts_writes(table, 'p1', workspace=None) is expected
         table.get_item.assert_called_once_with(
             Key={'pk': 'PROJECT#p1', 'sk': 'META'}, ConsistentRead=True,
         )
@@ -341,7 +344,7 @@ class TestQueryLegacyAssignments:
             {'Items': 'junk', 'LastEvaluatedKey': {'pk': 'k2'}},
             {'Items': [{'v': 2}], 'LastEvaluatedKey': {}},
         ]
-        assert _query_legacy_assignments(table, COUNTER_KEY) == [{'v': 1}, {'v': 2}]
+        assert _query_legacy_assignments(table, 'p1', COUNTER_KEY, workspace=None) == [{'v': 1}, {'v': 2}]
         condition = (
             Key('pk').eq('DOCUMENT_VERSIONS#PROJECT#p1')
             & Key('sk').begins_with('LEGACY_ASSIGNMENT#PRD#digest#')
@@ -357,12 +360,12 @@ class TestQueryLegacyAssignments:
     def test_a_non_dict_cursor_ends_the_walk(self):
         table = _table()
         table.query.side_effect = [{'Items': [{'v': 1}], 'LastEvaluatedKey': 'k'}]
-        assert _query_legacy_assignments(table, COUNTER_KEY) == [{'v': 1}]
+        assert _query_legacy_assignments(table, 'p1', COUNTER_KEY, workspace=None) == [{'v': 1}]
 
     def test_a_non_dict_response_ends_the_walk(self):
         table = _table()
         table.query.side_effect = [None]
-        assert _query_legacy_assignments(table, COUNTER_KEY) == []
+        assert _query_legacy_assignments(table, 'p1', COUNTER_KEY, workspace=None) == []
 
 
 class TestLeaseTiming:
@@ -390,7 +393,7 @@ class TestLeaseTiming:
         active = {'migration_owner': 'o', 'migration_expires_at': NOW_EPOCH}
         table = _table()
         table.get_item.side_effect = [{'Item': active}, {'Item': active}, {'Item': {'v': 1}}]
-        assert _wait_for_legacy_migration(table, COUNTER_KEY) == {'v': 1}
+        assert _wait_for_legacy_migration(table, COUNTER_KEY, workspace=None) == {'v': 1}
         assert sleep.call_args_list == [call(0.025), call(0.05)]
         table.get_item.assert_called_with(Key=COUNTER_KEY, ConsistentRead=True)
 
@@ -401,7 +404,7 @@ class TestLeaseTiming:
         table = _table()
         table.get_item.return_value = {'Item': active}
         with pytest.raises(ServiceError) as caught:
-            _wait_for_legacy_migration(table, COUNTER_KEY)
+            _wait_for_legacy_migration(table, COUNTER_KEY, workspace=None)
         assert caught.value.message == 'Document versions are being initialized. Please retry.'
         assert sleep.call_count == 1
         assert sleep.call_args.args[0] == pytest.approx(0.01)
@@ -409,7 +412,7 @@ class TestLeaseTiming:
 
 def _acquire(table: MagicMock, high_water: int = 3) -> int:
     return _acquire_legacy_migration(
-        table, 'p1', COUNTER_KEY, 'prd', 'launch', 'Launch', high_water, 'me',
+        table, 'p1', COUNTER_KEY, 'prd', 'launch', 'Launch', high_water, 'me', workspace=None,
     )
 
 
@@ -560,7 +563,7 @@ class TestRaiseLockedHighWater:
     def test_raises_the_counter_under_the_lease(self):
         table = _table()
         table.get_item.return_value = _held(2)
-        _raise_locked_high_water(table, COUNTER_KEY, 3, 'me')
+        _raise_locked_high_water(table, COUNTER_KEY, 3, 'me', workspace=None)
         table.update_item.assert_called_once_with(
             Key=COUNTER_KEY,
             UpdateExpression='SET #last = :last, updated_at = :now',
@@ -579,14 +582,14 @@ class TestRaiseLockedHighWater:
         table.get_item.return_value = {'Item': {
             'migration_owner': 'me', 'migration_expires_at': NOW_EPOCH,
         }}
-        _raise_locked_high_water(table, COUNTER_KEY, 1, 'me')
+        _raise_locked_high_water(table, COUNTER_KEY, 1, 'me', workspace=None)
         assert table.update_item.call_args.kwargs['ExpressionAttributeValues'][':observed'] == 0
 
     @pytest.mark.parametrize('stored', [3, 4])
     def test_a_counter_at_or_above_the_high_water_is_left(self, stored):
         table = _table()
         table.get_item.return_value = _held(stored)
-        _raise_locked_high_water(table, COUNTER_KEY, 3, 'me')
+        _raise_locked_high_water(table, COUNTER_KEY, 3, 'me', workspace=None)
         table.update_item.assert_not_called()
 
     @pytest.mark.parametrize('counter', [
@@ -598,7 +601,7 @@ class TestRaiseLockedHighWater:
         table = _table()
         table.get_item.return_value = counter
         with pytest.raises(ServiceError) as caught:
-            _raise_locked_high_water(table, COUNTER_KEY, 3, 'me')
+            _raise_locked_high_water(table, COUNTER_KEY, 3, 'me', workspace=None)
         assert caught.value.message == 'Document version migration lease was lost. Please retry.'
 
     def test_a_non_retryable_error_is_re_raised(self):
@@ -607,7 +610,7 @@ class TestRaiseLockedHighWater:
         error = _client_error('AccessDeniedException')
         table.update_item.side_effect = [error]
         with pytest.raises(ClientError) as caught:
-            _raise_locked_high_water(table, COUNTER_KEY, 3, 'me')
+            _raise_locked_high_water(table, COUNTER_KEY, 3, 'me', workspace=None)
         assert caught.value is error
         assert table.update_item.call_count == 1
 
@@ -615,7 +618,7 @@ class TestRaiseLockedHighWater:
 class TestRenewLegacyMigration:
     def test_extends_the_lease_it_holds(self):
         table = _table()
-        _renew_legacy_migration(table, COUNTER_KEY, 'me')
+        _renew_legacy_migration(table, COUNTER_KEY, 'me', workspace=None)
         table.update_item.assert_called_once_with(
             Key=COUNTER_KEY,
             UpdateExpression='SET #expires = :expires, updated_at = :now',
@@ -633,7 +636,7 @@ class TestRenewLegacyMigration:
         table = _table()
         table.update_item.side_effect = [_client_error('ConditionalCheckFailedException')]
         with pytest.raises(ServiceError) as caught:
-            _renew_legacy_migration(table, COUNTER_KEY, 'me')
+            _renew_legacy_migration(table, COUNTER_KEY, 'me', workspace=None)
         assert caught.value.message == 'Document version migration lease was lost. Please retry.'
 
     def test_a_non_transient_error_is_re_raised(self):
@@ -641,17 +644,17 @@ class TestRenewLegacyMigration:
         error = _client_error('AccessDeniedException')
         table.update_item.side_effect = [error]
         with pytest.raises(ClientError) as caught:
-            _renew_legacy_migration(table, COUNTER_KEY, 'me')
+            _renew_legacy_migration(table, COUNTER_KEY, 'me', workspace=None)
         assert caught.value is error
 
 
 def _raise_to_three(table: MagicMock) -> None:
     table.get_item.return_value = _held(2)
-    _raise_locked_high_water(table, COUNTER_KEY, 3, 'me')
+    _raise_locked_high_water(table, COUNTER_KEY, 3, 'me', workspace=None)
 
 
 def _renew(table: MagicMock) -> None:
-    _renew_legacy_migration(table, COUNTER_KEY, 'me')
+    _renew_legacy_migration(table, COUNTER_KEY, 'me', workspace=None)
 
 
 LEASE_WRITES = [
@@ -692,7 +695,7 @@ class TestLegacyWrites:
     def test_assignment_item(self):
         original = {'pk': 'PROJECT#p1', 'sk': 'PRD#a', 'document_id': 'a'}
         assert _legacy_assignment_item(COUNTER_KEY, 'prd', 't', original, CANONICAL) == {
-            **_legacy_assignment_key(COUNTER_KEY, 'PRD#a'),
+            **legacy_assignment_key(COUNTER_KEY, 'PRD#a'),
             'source_document_sk': 'PRD#a',
             'document_id': 'a',
             'document_type': 'prd',
@@ -784,7 +787,7 @@ class TestPersistLegacyDocumentVersions:
             {'pk': 'PROJECT#p1', 'sk': 'PRFAQ#c', 'base_title': 'Base', 'title': 'Other'},
         ]
         with patch.object(dv, '_persist_legacy_series') as series:
-            series.side_effect = lambda _t, _p, _type, _n, docs: [
+            series.side_effect = lambda _t, _p, _type, _n, docs, **_scope: [
                 {**d, 'planned': True} for d in docs
             ]
             result = persist_legacy_document_versions(_table(), 'p1', documents)
@@ -800,7 +803,7 @@ class TestPersistLegacyDocumentVersions:
         assert _identity(result[2]) == ('T', 2, 'T (v2)')
 
 
-SERIES_KEY = dv._counter_key('p1', 'prd', 't')
+SERIES_KEY = version_counter_key('p1', 'prd', 't')
 
 
 @pytest.fixture
@@ -833,18 +836,18 @@ class TestPersistLegacySeries:
             {'last_version': 6, 'base_title': 'Leased'},
         ]
         series['acquire'].return_value = 6
-        planned = dv._persist_legacy_series(table, 'p1', 'prd', 't', documents)
+        planned = dv._persist_legacy_series(table, 'p1', 'prd', 't', documents, workspace=None)
         assert _identity(planned[0]) == ('Leased', 7, 'Leased (v7)')
         series['acquire'].assert_called_once_with(
-            table, 'p1', SERIES_KEY, 'prd', 't', 'Stored', 5, 'owner',
+            table, 'p1', SERIES_KEY, 'prd', 't', 'Stored', 5, 'owner', workspace=None,
         )
-        series['raise_high'].assert_called_once_with(table, SERIES_KEY, 7, 'owner')
+        series['raise_high'].assert_called_once_with(table, SERIES_KEY, 7, 'owner', workspace=None)
         series['persist'].assert_called_once_with(
-            table, 'p1', SERIES_KEY, 'prd', 't', 'owner', documents[0], planned[0], None,
+            table, 'p1', SERIES_KEY, 'prd', 't', 'owner', documents[0], planned[0], None, workspace=None,
         )
-        series['release'].assert_called_once_with(table, SERIES_KEY, 'owner')
-        assert series['assignments'].call_args_list == [call(table, SERIES_KEY)] * 2
-        assert series['get_item'].call_args_list == [call(table, SERIES_KEY)] * 2
+        series['release'].assert_called_once_with(table, SERIES_KEY, 'owner', workspace=None)
+        assert series['assignments'].call_args_list == [call(table, 'p1', SERIES_KEY, workspace=None)] * 2
+        assert series['get_item'].call_args_list == [call(table, SERIES_KEY, workspace=None)] * 2
 
     def test_an_existing_assignment_is_handed_to_the_write(self, series):
         table = _table()
@@ -856,10 +859,10 @@ class TestPersistLegacySeries:
         series['assignments'].side_effect = [[assignment], [assignment]]
         series['get_item'].return_value = {}
         series['acquire'].return_value = 0
-        dv._persist_legacy_series(table, 'p1', 'prd', 't', documents)
+        dv._persist_legacy_series(table, 'p1', 'prd', 't', documents, workspace=None)
         assert [c.args[-1] for c in series['persist'].call_args_list] == [None, assignment]
         series['acquire'].assert_called_once_with(
-            table, 'p1', SERIES_KEY, 'prd', 't', 'T', 2, 'owner',
+            table, 'p1', SERIES_KEY, 'prd', 't', 'T', 2, 'owner', workspace=None,
         )
 
     @pytest.mark.parametrize(('document', 'assignment', 'message'), [
@@ -876,10 +879,10 @@ class TestPersistLegacySeries:
         series['get_item'].return_value = {}
         series['acquire'].return_value = 0
         with pytest.raises(ServiceError) as caught:
-            dv._persist_legacy_series(table, 'p1', 'prd', 't', [document])
+            dv._persist_legacy_series(table, 'p1', 'prd', 't', [document], workspace=None)
         assert caught.value.message == message
         series['persist'].assert_not_called()
-        series['release'].assert_called_once_with(table, SERIES_KEY, 'owner')
+        series['release'].assert_called_once_with(table, SERIES_KEY, 'owner', workspace=None)
 
 
 class TestIncompleteRowsDoNotStopTheWalk:
@@ -899,7 +902,7 @@ class TestIncompleteRowsDoNotStopTheWalk:
         active = {'Item': {'migration_owner': 'o', 'migration_expires_at': NOW_EPOCH}}
         table = _table()
         table.get_item.side_effect = [active, active, active, {}]
-        assert _wait_for_legacy_migration(table, COUNTER_KEY) == {}
+        assert _wait_for_legacy_migration(table, COUNTER_KEY, workspace=None) == {}
         assert sleep.call_args_list == [call(0.025), call(0.05), call(0.1)]
 
     def test_an_assignment_without_a_source_matches_no_document(self, series):
@@ -909,7 +912,7 @@ class TestIncompleteRowsDoNotStopTheWalk:
         series['assignments'].side_effect = [[orphan], [orphan]]
         series['get_item'].return_value = {}
         series['acquire'].return_value = 0
-        dv._persist_legacy_series(table, 'p1', 'prd', 't', documents)
+        dv._persist_legacy_series(table, 'p1', 'prd', 't', documents, workspace=None)
         assert series['persist'].call_args.args[-1] is None
 
 
@@ -933,6 +936,6 @@ class TestLeaseEdgeCases:
         table = _table()
         table.get_item.return_value = {'Item': {'last_version': 2, 'migration_owner': 'me'}}
         with patch.object(dv.time, 'time', return_value=1), pytest.raises(ServiceError) as caught:
-            _raise_locked_high_water(table, COUNTER_KEY, 3, 'me')
+            _raise_locked_high_water(table, COUNTER_KEY, 3, 'me', workspace=None)
         assert caught.value.message == 'Document version migration lease was lost. Please retry.'
         table.update_item.assert_not_called()

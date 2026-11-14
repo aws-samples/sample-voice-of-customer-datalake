@@ -17,8 +17,8 @@ from shared.document_versions import (
     normalize_document_versions,
     normalized_base_title,
     persist_versioned_document,
-    version_partition_key,
 )
+from shared.project_keys import version_partition_key
 from shared.test.moto_tables import create_projects_table_with_meta
 
 # MIRRORED by SERIES_KEY_CASES in
@@ -142,7 +142,7 @@ def test_previously_split_series_continue_past_both_halves(projects_table):
             'base_title': base, 'version': 1, 'title': f'{base} (v1)',
             'created_at': _fields(minute)['created_at'],
         })
-    # The plain series' counter (sk format of document_versions._counter_key).
+    # The plain series' counter (sk format of project_keys.version_counter_key).
     projects_table.put_item(Item={
         'pk': version_partition_key('p1'),
         'sk': f"PRD#{hashlib.sha256(b'checkout').hexdigest()}",

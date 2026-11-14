@@ -30,8 +30,10 @@ def mock_dynamodb():
     transactions = []
     version_items = {}
 
-    def version_get_item(_table, key):
-        """Keep allocator bookkeeping separate from mocked source reads."""
+    def version_get_item(_table, key, *, workspace):
+        """Keep allocator bookkeeping separate from mocked source reads (the deployment's: no job passes a
+        workspace)."""
+        assert workspace is None
         return version_items.get((key.get('pk'), key.get('sk')), {})
 
     # Document version persistence uses one four-item transaction: counter,

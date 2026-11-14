@@ -19,7 +19,7 @@ from shared import methodology
 from shared.ai_writing import GATED_DOC_TYPES
 from shared.document_versions import persist_versioned_document
 from shared.exceptions import ValidationError
-from shared.project_keys import DOCUMENT_VERSIONS_STORE, document_listing, require_deployment
+from shared.project_keys import document_listing
 from shared.request_body import validated_text
 from shared.row_ids import OPAQUE_ID_RE
 from shared.timestamps import now_iso
@@ -85,16 +85,15 @@ def _create_id(body: dict) -> str:
 
 def create_human_document(table: Any, project_id: str, doc_type: str, body: dict, *, creator_sub: str,
                           workspace: WorkspaceScope | None = None) -> dict:
-    """File a hand-written PR/FAQ / PRD as the next version of its series; answers the item. Not per workspace yet
-    (it is a document version): a ``workspace`` is refused (``NotPerWorkspaceError``)."""
-    require_deployment(workspace, DOCUMENT_VERSIONS_STORE)
+    """File a hand-written PR/FAQ / PRD as the next version of its series; answers the item. ``workspace``: the
+    project's scope (the document, its listing and its version rows are that scope's)."""
     if doc_type not in HUMAN_DOC_TYPES:
         raise ValidationError('document_type must be prfaq or prd')
     title = _title(body)
     content = _content(body, doc_type)
     now = now_iso()
     fields = {
-        **document_listing(project_id, now),
+        **document_listing(project_id, now, workspace=workspace),
         'content': content,
         'origin': ORIGIN_HUMAN,
         # Says on the artifact that it cites no evidence (tenet 2, M4).
@@ -103,4 +102,5 @@ def create_human_document(table: Any, project_id: str, doc_type: str, body: dict
         'updated_at': now,
         **({'created_by_sub': creator_sub} if creator_sub else {}),
     }
-    return persist_versioned_document(table, project_id, doc_type, title, f'human:{_create_id(body)}', fields)
+    return persist_versioned_document(table, project_id, doc_type, title, f'human:{_create_id(body)}', fields,
+                                      workspace=workspace)

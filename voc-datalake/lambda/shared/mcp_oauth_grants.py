@@ -35,6 +35,7 @@ from datetime import datetime, timedelta
 from typing import Any, Final, TypeGuard
 
 from shared import mcp_global_tokens as gt
+from shared.digests import sha256_hex
 from shared.mcp_oauth_config import CLIENT_DISPLAY_NAMES, OAuthConfig
 from shared.timestamps import parse_iso
 
@@ -49,7 +50,7 @@ MAX_ORIGIN_JTI_LENGTH: Final = 128
 
 def grant_id(subject: str, client_id: str) -> str:
     """The grant id of ``subject`` with ``client_id`` (ids are not secrets; the JWT is the credential)."""
-    digest = hashlib.sha256(f'{subject}\n{client_id}'.encode()).hexdigest()
+    digest = sha256_hex(f'{subject}\n{client_id}')
     return f'{GRANT_ID_PREFIX}{digest[:40]}'
 
 
@@ -66,10 +67,6 @@ def is_active_grant_of(row: dict | None, *, sub: str, client_id: str, now: datet
     return gt.token_status(row, now) == gt.STATUS_ACTIVE
 
 
-def _sha256_hex(value: str) -> str:
-    return hashlib.sha256(value.encode()).hexdigest()
-
-
 def s256_challenge(code_verifier: str) -> str:
     """RFC 7636 S256: BASE64URL(SHA256(ASCII(code_verifier))) without padding."""
     digest = hashlib.sha256(code_verifier.encode('ascii', errors='replace')).digest()
@@ -84,7 +81,7 @@ def verifier_matches_consent(row: Mapping[str, Any], code_verifier: object) -> b
     stored = row.get('consent_challenge_sha256')
     if not isinstance(stored, str) or not stored or not isinstance(code_verifier, str) or not code_verifier:
         return False
-    return hmac.compare_digest(_sha256_hex(s256_challenge(code_verifier)), stored)
+    return hmac.compare_digest(sha256_hex(s256_challenge(code_verifier)), stored)
 
 
 def grant_item(*, subject: str, username: str, is_admin: bool, client_id: str, client_kind: str,
@@ -109,7 +106,7 @@ def grant_item(*, subject: str, username: str, is_admin: bool, client_id: str, c
         'created_at': now.isoformat(),
         'expires_at': (now + timedelta(days=GRANT_LIFETIME_DAYS)).isoformat(),
         'chain_open_until': (now + timedelta(minutes=CHAIN_WINDOW_MINUTES)).isoformat(),
-        'consent_challenge_sha256': _sha256_hex(code_challenge),
+        'consent_challenge_sha256': sha256_hex(code_challenge),
         'origin_jtis': [],
     }
     if project_id:

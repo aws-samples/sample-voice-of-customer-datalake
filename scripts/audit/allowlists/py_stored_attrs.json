@@ -7,6 +7,9 @@
     {"key": "lambda/shared/decision_records.py::seeded_prfaq_at", "reason": "Audit timestamp next to seeded_prfaq_job_id (which is read): when a decision seeded its PR/FAQ job."},
     {"key": "lambda/shared/document_history.py::edited_from_id", "reason": "Version provenance (which document a restore was edited from), stored with restored_from_id/_version for the version history audit."},
     {"key": "lambda/shared/document_history.py::replaced_at", "reason": "Audit timestamp on a superseded revision snapshot (saved_at is served; replaced_at records when it stopped being current)."},
+    {"key": "lambda/shared/document_versions.py::document_pk", "reason": "Read, but not by name: a stored allocation is compared key by key with the one it should be (_assert_allocation_reference, _assert_allocation_item iterate the expected dict), so a replay never returns another scope's or another project's document."},
+    {"key": "lambda/shared/plugin_configs.py::superseded_by_sub", "reason": "Audit trail on a config history row (who replaced the list), kept for good and exported whole as plugin_config_history (docs/multi-workspace.md, 7.17.00)."},
+    {"key": "lambda/shared/reprocess_jobs.py::last_config", "reason": "Audit field on a category reprocess job: the configuration a hand-over derived with when it differed from the first (docs/categories.md); config_changed is the flag, last_config is for an operator reading the row."},
     {"key": "lambda/shared/jobs.py::execution_owner", "reason": "Operator diagnostic: the aws_request_id holding a job's execution lease, matched against CloudWatch logs when a job is stuck."},
     {"key": "lambda/shared/document_share.py::revoked_by", "reason": "Audit trail on a turned-off review link (the row is kept with revoked = true): who turned it off, for an operator reading the table."}
   ]

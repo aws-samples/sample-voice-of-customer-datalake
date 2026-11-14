@@ -160,7 +160,7 @@ class TestAnUnmanagedEditSavesWhatItReplaces:
 
     def test_deleting_the_document_removes_its_saved_revisions(self, table):
         from projects import delete_document
-        from shared.document_versions import version_partition_key
+        from shared.project_keys import version_partition_key
 
         _custom_doc(table)
         _edit('doc_1', {'content': 'second draft'})

@@ -51,8 +51,10 @@ ALLOWED_UNUSED_EXPORTS: dict[str, frozenset[str]] = {
     }),
     # The error the stores not per workspace yet raise through `require_deployment` (docs/multi-workspace.md, the
     # project plan): what a caller would catch, raised by name nowhere else; each slice that threads a store keeps it
-    # until the last refusal goes.
-    'lambda/shared/project_keys': frozenset({'NotPerWorkspaceError'}),
+    # until the last refusal goes. project_partitions and its ProjectPartition (7.27.00, the project plan 3b): the
+    # partitions keyed by a project's id alone, for the workspace export and the hard delete's projects entry (3g) and the
+    # per-project delete (3h), which remove them here.
+    'lambda/shared/project_keys': frozenset({'NotPerWorkspaceError', 'ProjectPartition', 'project_partitions'}),
     # Phase 3's registry of a workspace's project ids (7.26.00, docs/multi-workspace.md, the project plan 3a), landed
     # before its readers, the workspace export, delete and erasure (3g), which remove it here.
     'lambda/shared/project_tables': frozenset({'iter_registered_project_ids'}),

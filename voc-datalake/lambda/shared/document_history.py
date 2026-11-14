@@ -26,6 +26,11 @@ carry ``expected_revision`` — the revision it loaded (unmanaged: ``revision``,
 = 1; managed: the ``version`` of the series head it edited) — and is refused with a
 409 when the document moved on since. Absent, there is no check: the assistant's and
 MCP's ``update_document`` send none, exactly as before.
+
+**Per workspace** (plumbing since 7.27.00: no route passes one yet, docs/multi-workspace.md, the project plan 3b):
+every operation takes ``workspace``. Without one the requests are exactly the deployment's; in one, the series is
+read from the workspace's project partition and the revisions from its version partition (shared/project_keys.py),
+through the workspace layer, and a document row of another scope is refused before DynamoDB.
 """
 from __future__ import annotations
 
@@ -34,7 +39,6 @@ import re
 from decimal import Decimal
 from typing import Any
 
-from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
 from shared.document_versions import (
@@ -44,16 +48,16 @@ from shared.document_versions import (
     normalized_base_title,
     persist_versioned_document,
     split_versioned_title,
-    version_partition_key,
 )
-from shared.dynamo_paging import iter_query, query_all
 from shared.exceptions import ConflictError, NotFoundError, ValidationError
-from shared.project_keys import DOCUMENT_VERSIONS_STORE, project_pk, require_deployment
-from shared.project_writes import NEW_ROW_CONDITION, projects_table_name
+from shared.project_keys import document_revision_key, document_revisions_prefix, version_partition_key
+from shared.project_tables import iter_project_rows, iter_version_rows
+from shared.project_writes import NEW_ROW_CONDITION, projects_table_name, transact_project_writes
 from shared.row_ids import OPAQUE_ID_RE
-from shared.ws_repo import WorkspaceScope
+from shared.scoped_query import SortRange, query_partition
+from shared.workspace_config import get_scoped_item
+from shared.ws_repo import WorkspaceScope, ws_table
 
-REVISION_PREFIX = 'REVISION#'
 # The versions a list shows, newest first. A document edited more often keeps
 # every version; the list is the recent history, not an archive browser.
 VERSION_LIST_LIMIT = 25
@@ -113,22 +117,23 @@ def series_base(document: dict) -> str:
 
 
 def _new_managed_version(table: Any, project_id: str, document_type: str, source: dict, content: str, *,
-                         allocation_id: str, now: str, provenance: dict[str, Any],
+                         allocation_id: str, now: str, provenance: dict[str, Any], workspace: WorkspaceScope | None,
                          expected_last_version: int | None = None) -> dict:
     fields = {key: value for key, value in source.items() if key not in _ROW_IDENTITY_FIELDS}
     fields.update({'content': content, 'created_at': now, 'updated_at': now, **provenance})
     return persist_versioned_document(table, project_id, document_type, series_base(source), allocation_id, fields,
-                                      expected_last_version=expected_last_version)
+                                      expected_last_version=expected_last_version, workspace=workspace)
 
 
-def _series_documents(table: Any, project_id: str, document: dict, document_type: str) -> list[dict]:
+def _series_documents(table: Any, project_id: str, document: dict, document_type: str, *,
+                      workspace: WorkspaceScope | None) -> list[dict]:
     """Every version of ``document``'s series, newest first (full rows, content included).
 
     ``normalize_document_versions`` gives every managed row a ``base_title`` and an
     int ``version`` and leaves every other row alone, which the type filter drops.
     """
     series = normalized_base_title(series_base(document), document_type)
-    rows = query_all(table, {'KeyConditionExpression': Key('pk').eq(project_pk(project_id)), 'ConsistentRead': True})
+    rows = list(iter_project_rows(table, project_id, workspace=workspace, ConsistentRead=True))
     versions = [
         row for row in normalize_document_versions(rows)
         if managed_document_type(row) == document_type
@@ -144,11 +149,11 @@ def series_versions(table: Any, project_id: str, document: dict, *,
 
     ``document`` needs only ``document_type`` (or a typed ``sk``) and ``base_title`` / ``title``;
     the document review routes (shared/document_review_routes.py) read a series by its link.
-    Not per workspace yet, like the rest of this module: a ``workspace`` is refused (``NotPerWorkspaceError``).
+    ``workspace``: the project's scope (its own partition only).
     """
-    require_deployment(workspace, DOCUMENT_VERSIONS_STORE)
     document_type = managed_document_type(document)
-    return [] if document_type is None else _series_documents(table, project_id, document, document_type)
+    return [] if document_type is None else _series_documents(table, project_id, document, document_type,
+                                                              workspace=workspace)
 
 
 def _managed_version_view(row: dict, *, current: bool) -> dict:
@@ -170,17 +175,14 @@ def _revision_of(document: dict) -> int:
     return max(int(revision), 1) if revision == int(revision) else 1
 
 
-def _revision_key(project_id: str, document_id: str, revision: int) -> dict[str, str]:
-    return {'pk': version_partition_key(project_id), 'sk': f'{REVISION_PREFIX}{document_id}#{revision:06d}'}
-
-
 def _replace_unmanaged(table: Any, project_id: str, document: dict, *, content: str, title: str,
-                       now: str, provenance: dict[str, Any]) -> dict:
+                       now: str, provenance: dict[str, Any], workspace: WorkspaceScope | None) -> dict:
     """Snapshot the current content as its revision, then write the new one (one transaction)."""
     document_id = str(document['document_id'])
     observed = _revision_of(document)
     snapshot = {
-        **_revision_key(project_id, document_id, observed), 'document_id': document_id, 'revision': observed,
+        **document_revision_key(project_id, document_id, observed, workspace=workspace), 'document_id': document_id,
+        'revision': observed,
         'title': document.get('title') or '', 'content': document.get('content') or '',
         'saved_at': document.get('updated_at') or document.get('created_at'), 'replaced_at': now,
         'edit_kind': document.get('edit_kind'), 'restored_from_version': document.get('restored_from_version'),
@@ -193,7 +195,7 @@ def _replace_unmanaged(table: Any, project_id: str, document: dict, *, content: 
     values = {f':v{n}': value for n, (_, value) in enumerate(sets.values())}
     table_name = projects_table_name(table)
     try:
-        table.meta.client.transact_write_items(TransactItems=[
+        transact_project_writes(table, [
             {'Put': {'TableName': table_name, 'Item': snapshot,
                      'ConditionExpression': NEW_ROW_CONDITION}},
             {'Update': {
@@ -204,7 +206,7 @@ def _replace_unmanaged(table: Any, project_id: str, document: dict, *, content: 
                 'ExpressionAttributeValues': {**values, ':document_id': document_id,
                                               **({':observed': observed} if 'revision' in document else {})},
             }},
-        ])
+        ], workspace=workspace)
     except ClientError as error:
         if error.response.get('Error', {}).get('Code') == 'TransactionCanceledException':
             raise ConflictError(STALE_DOCUMENT_MESSAGE) from error
@@ -213,12 +215,12 @@ def _replace_unmanaged(table: Any, project_id: str, document: dict, *, content: 
             **provenance}
 
 
-def _revision_rows(table: Any, project_id: str, document_id: str, limit: int) -> list[dict]:
-    page = table.query(
-        KeyConditionExpression=Key('pk').eq(version_partition_key(project_id))
-        & Key('sk').begins_with(f'{REVISION_PREFIX}{document_id}#'),
-        ScanIndexForward=False, Limit=limit, ConsistentRead=True,
-    )
+def _revision_rows(table: Any, project_id: str, document_id: str, limit: int, *,
+                   workspace: WorkspaceScope | None) -> list[dict]:
+    """The newest ``limit`` saved revisions of an unmanaged document: one page of its version partition."""
+    page = query_partition(workspace, table, 'pk', version_partition_key(project_id, workspace=workspace),
+                           sort=SortRange('sk', 'begins_with', document_revisions_prefix(document_id)),
+                           ScanIndexForward=False, Limit=limit, ConsistentRead=True)
     return list(page.get('Items', []))
 
 
@@ -240,9 +242,8 @@ def edit_document(table: Any, project_id: str, document: dict, body: dict, *, no
     ``body['expected_revision']`` (optional) is the revision the caller loaded; a
     document that moved on since is a ConflictError (409), never a silent overwrite.
     Checked after the no-change return: an edit that saves nothing clobbers nothing.
-    Not per workspace yet: a ``workspace`` is refused (``NotPerWorkspaceError``).
+    ``workspace``: the project's scope (``document`` is a row of it).
     """
-    require_deployment(workspace, DOCUMENT_VERSIONS_STORE)
     expected = validated_expected_revision(body.get('expected_revision'))
     content = _content_of(body, document)
     new_title = title if title is not None else str(document.get('title') or '')
@@ -254,7 +255,7 @@ def edit_document(table: Any, project_id: str, document: dict, body: dict, *, no
         allocation_id = f"edit:{document['document_id']}:{validated_edit_id(body.get('edit_id'), content)}"
         item = _new_managed_version(table, project_id, document_type, document, content, allocation_id=allocation_id,
                                     now=now, provenance={**provenance, 'edited_from_id': document['document_id']},
-                                    expected_last_version=expected)
+                                    expected_last_version=expected, workspace=workspace)
         return {'success': True, 'document': item}
     # Validated for one contract across both kinds; an unmanaged edit is idempotent by
     # content already (a replayed save finds the text unchanged and saves nothing).
@@ -264,44 +265,45 @@ def edit_document(table: Any, project_id: str, document: dict, body: dict, *, no
     if expected is not None and expected != _revision_of(document):
         raise ConflictError(STALE_DOCUMENT_MESSAGE)
     item = _replace_unmanaged(table, project_id, document, content=content, title=new_title, now=now,
-                              provenance=provenance)
+                              provenance=provenance, workspace=workspace)
     return {'success': True, 'document': item}
 
 
 def list_document_versions(table: Any, project_id: str, document: dict, *,
                            workspace: WorkspaceScope | None = None) -> dict:
-    """The document's versions, newest first, each with its content. Not per workspace yet (its revision rows sit
-    in the deployment's version partition): a ``workspace`` is refused (``NotPerWorkspaceError``)."""
-    require_deployment(workspace, DOCUMENT_VERSIONS_STORE)
+    """The document's versions, newest first, each with its content (``workspace``'s project when given: its
+    series, or the revisions in its version partition)."""
     document_type = managed_document_type(document)
     if document_type is not None:
-        series = _series_documents(table, project_id, document, document_type)[:VERSION_LIST_LIMIT]
+        series = _series_documents(table, project_id, document, document_type,
+                                   workspace=workspace)[:VERSION_LIST_LIMIT]
         versions = [_managed_version_view(row, current=index == 0) for index, row in enumerate(series)]
         return {'managed': True, 'versions': versions}
     current = _revision_of(document)
     versions = [_unmanaged_version_view(document, current, current=True,
                                         created_at=document.get('updated_at') or document.get('created_at'))]
-    for row in _revision_rows(table, project_id, str(document['document_id']), VERSION_LIST_LIMIT - 1):
+    for row in _revision_rows(table, project_id, str(document['document_id']), VERSION_LIST_LIMIT - 1,
+                              workspace=workspace):
         versions.append(_unmanaged_version_view(row, _revision_of(row), current=False, created_at=row.get('saved_at')))
     return {'managed': False, 'versions': versions}
 
 
 def restore_document_version(table: Any, project_id: str, document: dict, version_id: str, body: dict, *,
                              now: str, workspace: WorkspaceScope | None = None) -> dict:
-    """A NEW version carrying ``version_id``'s content (history is added to, never rewritten). Not per workspace
-    yet: a ``workspace`` is refused (``NotPerWorkspaceError``)."""
-    require_deployment(workspace, DOCUMENT_VERSIONS_STORE)
+    """A NEW version carrying ``version_id``'s content (history is added to, never rewritten), in ``workspace``'s
+    project when given."""
     document_type = managed_document_type(document)
     if document_type == 'prototype':
         raise ValidationError('Prototypes are restored through the prototype revision workflow')
     if document_type is not None:
-        return _restore_managed(table, project_id, document_type, document, version_id, body, now=now)
-    return _restore_unmanaged(table, project_id, document, version_id, now=now)
+        return _restore_managed(table, project_id, document_type, document, version_id, body, now=now,
+                                workspace=workspace)
+    return _restore_unmanaged(table, project_id, document, version_id, now=now, workspace=workspace)
 
 
 def _restore_managed(table: Any, project_id: str, document_type: str, document: dict, version_id: str,
-                     body: dict, *, now: str) -> dict:
-    series = _series_documents(table, project_id, document, document_type)
+                     body: dict, *, now: str, workspace: WorkspaceScope | None) -> dict:
+    series = _series_documents(table, project_id, document, document_type, workspace=workspace)
     source = next((row for row in series if row.get('document_id') == version_id), None)
     if source is None:
         raise NotFoundError('Version not found')
@@ -314,37 +316,48 @@ def _restore_managed(table: Any, project_id: str, document_type: str, document: 
                                 now=now,
                                 provenance={'edit_kind': EDIT_KIND_RESTORE, 'edited_from_id': latest['document_id'],
                                             'restored_from_id': version_id,
-                                            'restored_from_version': source['version']})
+                                            'restored_from_version': source['version']},
+                                workspace=workspace)
     return {'success': True, 'document': item}
 
 
-def _restore_unmanaged(table: Any, project_id: str, document: dict, version_id: str, *, now: str) -> dict:
+def _restore_unmanaged(table: Any, project_id: str, document: dict, version_id: str, *, now: str,
+                       workspace: WorkspaceScope | None) -> dict:
     match = UNMANAGED_VERSION_RE.fullmatch(version_id)
     if match is None:
         raise NotFoundError('Version not found')
     revision = int(match.group(1))
     if revision == _revision_of(document):
         return {'success': True, 'unchanged': True, 'document': document}
-    row = table.get_item(Key=_revision_key(project_id, str(document['document_id']), revision),
-                         ConsistentRead=True).get('Item')
+    row = get_scoped_item(table, document_revision_key(project_id, str(document['document_id']), revision,
+                                                       workspace=workspace), workspace, ConsistentRead=True)
     if not row:
         raise NotFoundError('Version not found')
     item = _replace_unmanaged(table, project_id, document, content=str(row.get('content') or ''),
                               title=str(row.get('title') or document.get('title') or ''), now=now,
-                              provenance={'edit_kind': EDIT_KIND_RESTORE, 'restored_from_version': revision})
+                              provenance={'edit_kind': EDIT_KIND_RESTORE, 'restored_from_version': revision},
+                              workspace=workspace)
     return {'success': True, 'document': item}
 
 
 def delete_document_revisions(table: Any, project_id: str, document_id: str, *,
                               workspace: WorkspaceScope | None = None) -> None:
-    """Remove an unmanaged document's saved revisions (its own rows only). Not per workspace yet: a ``workspace``
-    is refused (``NotPerWorkspaceError``)."""
-    require_deployment(workspace, DOCUMENT_VERSIONS_STORE)
-    query: dict[str, Any] = {
-        'KeyConditionExpression': Key('pk').eq(version_partition_key(project_id))
-        & Key('sk').begins_with(f'{REVISION_PREFIX}{document_id}#'),
-        'ProjectionExpression': 'pk, sk', 'ConsistentRead': True,
-    }
-    with table.batch_writer() as batch:
-        for item in iter_query(table, query):
-            batch.delete_item(Key={'pk': item['pk'], 'sk': item['sk']})
+    """Remove an unmanaged document's saved revisions (its own rows only), in ``workspace``'s project when given.
+
+    One delete per saved revision the paged Query reads, so the loop is bounded by the rows it read. The
+    deployment's go in batches (the table's ``batch_writer``), as before. A workspace's go one scoped DeleteItem at a
+    time (``WorkspaceTable.delete_item``, its key checked to be the workspace's), and a refused key stops the loop
+    before any later one is sent: the layer's batch writer takes no deletes (boto3's retries of unprocessed items
+    have no cap)."""
+    rows = iter_version_rows(table, project_id, workspace=workspace, sort_prefix=document_revisions_prefix(document_id),
+                             ProjectionExpression='pk, sk', ConsistentRead=True)
+    if workspace is None:
+        with table.batch_writer() as batch:
+            for item in rows:
+                batch.delete_item(Key={'pk': item['pk'], 'sk': item['sk']})
+        return
+    # Switches to WorkspaceTable.batch_delete (checked keys, duplicates refused, bounded retries) when the
+    # workspace hard delete's track merges (docs/multi-workspace.md, the 7.27.00 row).
+    view = ws_table(workspace, table)
+    for item in rows:
+        view.delete_item({'pk': item['pk'], 'sk': item['sk']})

@@ -14,30 +14,46 @@ scope's partition for one of its projects. A workspace also keeps a registry of 
 ``WS#{ws}#PROJECT_IDS`` / ``{id}`` (``project_registry_key``); the deployment-wide claim of an id, ``PROJECT_ID#{id}``,
 is the workspace layer's own (shared/ws_repo.py ``claim_project_id``).
 
+A project's document versions (shared/document_versions.py, shared/document_history.py, shared/human_documents.py) keep
+their bookkeeping in a partition of their own, ``DOCUMENT_VERSIONS#PROJECT#{id}`` (``version_partition_key``;
+``WS#{ws}#DOCUMENT_VERSIONS#PROJECT#{id}`` in a workspace, since 7.27.00): a series' counter
+(``version_counter_key``), an allocation's history (``version_allocation_key``), a legacy document's assignment
+(``legacy_assignment_key``, in its counter's partition) and an unmanaged document's revisions
+(``document_revision_key``).
+
 Every module builds these through here (but the product-doc extractor, a stdlib-only bundle with no ``shared/``,
 which spells ``PROJECT#{id}`` itself: product_doc_extractor/handler.py); shared/test/test_ws_raw_access.py counts
 the modules that read project tables or spell these keys.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, NamedTuple
 
+from shared.digests import sha256_hex
 from shared.scoped_keys import scoped_pk
 
 if TYPE_CHECKING:
     from shared.ws_repo import WorkspaceScope
 
-__all__ = ['DOCUMENT_COMMENTS_STORE', 'DOCUMENT_VERSIONS_STORE', 'PROJECT_GATE_STORE', 'PROJECT_PREFIX', 'PROJECT_TYPE_PK',
-           'NotPerWorkspaceError', 'document_keys', 'document_listing', 'personas_index_pk', 'project_id_of',
-           'project_pk', 'project_registry_key', 'project_registry_pk', 'project_type_pk', 'require_deployment']
+__all__ = ['DOCUMENT_COMMENTS_STORE', 'PROJECT_GATE_STORE', 'PROJECT_PREFIX', 'PROJECT_TYPE_PK', 'NotPerWorkspaceError', 'ProjectPartition',
+           'document_keys', 'document_listing', 'document_revision_key', 'document_revisions_prefix', 'job_status_pk',
+           'legacy_assignment_key', 'legacy_assignment_prefix', 'personas_index_pk', 'project_id_of',
+           'project_partitions', 'project_pk', 'project_registry_key', 'project_registry_pk', 'project_type_pk',
+           'require_deployment',
+           'version_allocation_key', 'version_counter_key', 'version_partition_key']
 
 #: The start of every project partition of the deployment (a reader that tells a project's partition from another's).
 PROJECT_PREFIX: Final = 'PROJECT#'
 #: ``gsi1-by-type``'s partition of the deployment's project rows (``META``).
 PROJECT_TYPE_PK: Final = 'TYPE#PROJECT'
-#: The document versions and their history (shared/document_versions.py, shared/document_history.py,
-#: shared/human_documents.py), not per workspace yet: the name ``require_deployment`` refuses a workspace with.
-DOCUMENT_VERSIONS_STORE: Final = 'Document versions'
+#: The start of a project's document-version partition (``version_partition_key``).
+_DOCUMENT_VERSIONS_PREFIX: Final = f'DOCUMENT_VERSIONS#{PROJECT_PREFIX}'
+#: The sort-key starts of an allocation's history, a legacy document's assignment and an unmanaged document's revision.
+_ALLOCATION_PREFIX: Final = 'ALLOCATION#'
+_LEGACY_ASSIGNMENT_PREFIX: Final = 'LEGACY_ASSIGNMENT#'
+_REVISION_PREFIX: Final = 'REVISION#'
+#: The start of a project job's status partition in voc-jobs' ``gsi1-by-status`` (``job_status_pk``).
+_JOB_STATUS_PREFIX: Final = 'STATUS#'
 #: A series' comment threads and its persona review (shared/document_comments.py, shared/document_review.py),
 #: keyed ``DCOMMENTS#{project}#{series}``, not per workspace yet.
 DOCUMENT_COMMENTS_STORE: Final = 'Document comments'
@@ -55,7 +71,7 @@ class NotPerWorkspaceError(RuntimeError):
 
 def require_deployment(workspace: WorkspaceScope | None, store: str) -> None:
     """Fail closed (``NotPerWorkspaceError``) when a workspace reaches ``store``, a project store not per workspace
-    yet (the document versions, slice 3b; the comments, slice 3e; the access gate, slice 3h; docs/multi-workspace.md)."""
+    yet (the comments, slice 3e; the access gate, slice 3h; docs/multi-workspace.md)."""
     if workspace is not None:
         raise NotPerWorkspaceError(f'{store} is not per workspace yet')
 
@@ -121,3 +137,95 @@ def document_keys(project_id: str, sort_key: str, listed_at: str, *,
 def personas_index_pk(project_id: str, *, workspace: WorkspaceScope | None = None) -> str:
     """The ``gsi1pk`` of a project's personas."""
     return f'{project_pk(project_id, workspace=workspace)}#PERSONAS'
+
+
+def version_partition_key(project_id: str, *, workspace: WorkspaceScope | None = None) -> str:
+    """The partition of a project's document-version rows in voc-projects, apart from the project's own so they do not
+    weigh on its document queries: ``DOCUMENT_VERSIONS#PROJECT#{id}`` (``WS#{ws}#DOCUMENT_VERSIONS#PROJECT#{id}`` in a
+    workspace)."""
+    return scoped_pk(workspace, f'{_DOCUMENT_VERSIONS_PREFIX}{project_id}')
+
+
+def version_counter_key(project_id: str, document_type: str, normalized_title: str, *,
+                        workspace: WorkspaceScope | None = None) -> dict[str, str]:
+    """A series' version counter: ``{TYPE}#{sha256 of the normalized base title}`` in the version partition."""
+    return {'pk': version_partition_key(project_id, workspace=workspace),
+            'sk': f'{document_type.upper()}#{sha256_hex(normalized_title)}'}
+
+
+def version_allocation_key(project_id: str, document_type: str, allocation_id: str, *,
+                           workspace: WorkspaceScope | None = None) -> dict[str, str]:
+    """An allocation's history row (kept after its document is deleted, so a late retry cannot recreate it):
+    ``ALLOCATION#{TYPE}#{sha256 of the allocation id}`` in the version partition."""
+    return {'pk': version_partition_key(project_id, workspace=workspace),
+            'sk': f'{_ALLOCATION_PREFIX}{document_type.upper()}#{sha256_hex(allocation_id)}'}
+
+
+def legacy_assignment_prefix(counter_key: dict[str, str]) -> str:
+    """The sort-key start of a series' legacy assignments: ``LEGACY_ASSIGNMENT#{counter sk}#``."""
+    return f"{_LEGACY_ASSIGNMENT_PREFIX}{counter_key['sk']}#"
+
+
+def legacy_assignment_key(counter_key: dict[str, str], source_document_sk: str) -> dict[str, str]:
+    """A legacy document's assigned version, in its series counter's partition (so in the counter's scope: no
+    workspace of its own to pass): ``LEGACY_ASSIGNMENT#{counter sk}#{sha256 of the document's sk}``."""
+    return {'pk': counter_key['pk'], 'sk': f'{legacy_assignment_prefix(counter_key)}{sha256_hex(source_document_sk)}'}
+
+
+def document_revisions_prefix(document_id: str) -> str:
+    """The sort-key start of an unmanaged document's saved revisions: ``REVISION#{document id}#``."""
+    return f'{_REVISION_PREFIX}{document_id}#'
+
+
+def document_revision_key(project_id: str, document_id: str, revision: int, *,
+                          workspace: WorkspaceScope | None = None) -> dict[str, str]:
+    """One saved revision of an unmanaged document: ``REVISION#{document id}#{revision:06d}`` in the version
+    partition."""
+    return {'pk': version_partition_key(project_id, workspace=workspace),
+            'sk': f'{document_revisions_prefix(document_id)}{revision:06d}'}
+
+
+def job_status_pk(status: str, *, workspace: WorkspaceScope | None = None) -> str:
+    """voc-jobs' ``gsi1-by-status`` partition of a project job's status: ``STATUS#{status}`` (one partition for every
+    project of the deployment), ``WS#{ws}#STATUS#{status}`` in a workspace (since 7.27.00; no job is written in one
+    yet: the jobs are slice 3c)."""
+    return scoped_pk(workspace, f'{_JOB_STATUS_PREFIX}{status}')
+
+
+class ProjectPartition(NamedTuple):
+    """One partition keyed by a project's id: what it holds (``kind``: ``project``, ``versions``, ``jobs``,
+    ``lists``), the environment variable naming its table, and its ``pk``."""
+
+    kind: str
+    table_env: str
+    partition: str
+
+
+def project_partitions(project_id: str, *, workspace: WorkspaceScope | None = None) -> tuple[ProjectPartition, ...]:
+    """The partitions keyed by the project id alone, each with its kind and table (since 7.27.00), for the workspace
+    export, the hard delete's projects entry and the per-project delete (slices 3g, 3h; none calls it yet): in
+    voc-projects its own partition (``project_pk``) and its document versions (``version_partition_key``: the saved
+    revisions hold customer text); in voc-jobs and voc-participants the same ``project_pk``. Each in the workspace when
+    given. The jobs (3c) and the participant lists (3d) still write the deployment's keys only, so in a workspace
+    their entries name where those rows will be.
+
+    Left out, each reached another way:
+
+    * the comment threads, ``DCOMMENTS#{project}#{series}``: one partition per series, derived from the project's
+      series (shared/document_comments.py);
+    * the review links' ``DOCSHARE#{id}`` rows (deployment-wide);
+    * the S3 objects (avatars, product documents, prototypes; ``ws/{ws}/`` prefixes in a workspace);
+    * the id's claim and the workspace's registry row (kept on a project delete: shared/ws_repo.py);
+    * the workspace's own ``LIST#`` / ``PERSON#`` rows in voc-participants, and the ``project_ids`` attributes on
+      them, which a delete must clean."""
+    # Imported here, not at the top: these modules import boto3, and this one stays standard library only for its
+    # other callers (scripts/project_bundle/remap.py).
+    from shared.engagement_config import PARTICIPANTS_TABLE_ENV
+    from shared.tables import JOBS_TABLE_ENV
+    from shared.ws_repo import PROJECTS_TABLE_ENV
+
+    own = project_pk(project_id, workspace=workspace)
+    return (ProjectPartition('project', PROJECTS_TABLE_ENV, own),
+            ProjectPartition('versions', PROJECTS_TABLE_ENV, version_partition_key(project_id, workspace=workspace)),
+            ProjectPartition('jobs', JOBS_TABLE_ENV, own),
+            ProjectPartition('lists', PARTICIPANTS_TABLE_ENV, own))

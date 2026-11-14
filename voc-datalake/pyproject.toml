@@ -55,6 +55,9 @@ ignore_names = [
     "clear",
     # Called by Python itself when a class is subclassed: shared/ws_repo.py ProjectClaim refuses every subclass.
     "__init_subclass__",
+    # shared/project_keys.py ProjectPartition's table: read by project_partitions' callers to come (the workspace
+    # export, the hard delete, the per-project delete: docs/multi-workspace.md, the project plan 3g and 3h).
+    "table_env",
     # html.parser.HTMLParser callbacks, called by the parser itself (agents/artifacts.py).
     "handle_starttag",
     "handle_endtag",

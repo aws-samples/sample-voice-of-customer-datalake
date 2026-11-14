@@ -218,7 +218,7 @@ class TestAManagedEdit:
             table, 'p1', 'prd', 'Launch', 'edit:prd_1:e1',
             {'document_type': 'prd', 'feedback_count': 9, 'source_prd_id': 'x', 'content': 'new',
              'created_at': NOW, 'updated_at': NOW, 'edit_kind': 'edit', 'edited_from_id': 'prd_1'},
-            expected_last_version=3)
+            expected_last_version=3, workspace=None)
         assert result == {'success': True, 'document': {'document_id': 'new'}}
 
     def test_without_an_edit_id_the_content_digest_allocates(self, persist: MagicMock):
@@ -228,7 +228,7 @@ class TestAManagedEdit:
 
         args = persist.call_args
         assert args.args[2:5] == ('prfaq', 'Untitled', 'edit:f1:ba7816bf8f01cfea414140de5dae2223')
-        assert args.kwargs == {'expected_last_version': None}
+        assert args.kwargs == {'expected_last_version': None, 'workspace': None}
 
     def test_a_titled_row_without_base_title_takes_its_series_from_the_title(self, persist: MagicMock):
         document = {'sk': 'PRD#p', 'document_id': 'p', 'title': 'Launch (v4)', 'content': 'old'}
@@ -338,7 +338,7 @@ class TestManagedRestore:
             table, 'p1', 'prd', 'Launch', 'restore:a:r9',
             {'document_type': 'prd', 'feedback_count': 2, 'content': '', 'created_at': NOW, 'updated_at': NOW,
              'edit_kind': 'restore', 'edited_from_id': 'b', 'restored_from_id': 'a', 'restored_from_version': 1},
-            expected_last_version=None)
+            expected_last_version=None, workspace=None)
         assert result == {'success': True, 'document': {'document_id': 'new'}}
 
 

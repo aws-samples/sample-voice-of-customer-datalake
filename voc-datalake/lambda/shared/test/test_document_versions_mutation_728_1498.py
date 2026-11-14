@@ -36,14 +36,12 @@ from shared.document_versions import (
     _assert_allocation_item,
     _assert_allocation_reference,
     _conditional_failure,
-    _counter_key,
     _counter_moved,
     _document_key,
     _ensure_allocation_history,
     _existing_document,
     _get_item,
     _legacy_assignment_item,
-    _legacy_assignment_key,
     _legacy_document_update,
     _legacy_identity_settled,
     _persist_legacy_identity,
@@ -61,6 +59,7 @@ from shared.document_versions import (
     versioned_document_id,
 )
 from shared.exceptions import ConflictError, ServiceError, ValidationError
+from shared.project_keys import legacy_assignment_key, version_counter_key
 from shared.project_writes import (
     PROJECT_WRITABLE_ATTRIBUTE_NAMES,
     PROJECT_WRITABLE_ATTRIBUTE_VALUES,
@@ -177,7 +176,7 @@ def _persist_identity(
     existing: dict[str, Any] | None = None,
 ) -> None:
     _persist_legacy_identity(
-        table, 'p1', COUNTER_KEY, 'prd', 't', 'me', original, CANONICAL, existing,
+        table, 'p1', COUNTER_KEY, 'prd', 't', 'me', original, CANONICAL, existing, workspace=None,
     )
 
 
@@ -232,7 +231,7 @@ class TestPersistLegacyIdentity:
         table.meta.client.transact_write_items.side_effect = [_client_error('ThrottlingException')]
         with patch.object(dv, '_legacy_identity_settled', return_value=True) as settled:
             _persist_identity(table)
-        settled.assert_called_once_with(table, COUNTER_KEY, ORIGINAL, CANONICAL, True)
+        settled.assert_called_once_with(table, COUNTER_KEY, ORIGINAL, CANONICAL, True, workspace=None)
         assert len(_transactions(table)) == 1
 
     def test_transient_refusals_retry_four_times_then_refuse(self, frozen_clock):
@@ -285,11 +284,11 @@ class TestPersistLegacyIdentity:
 
 
 SOURCE = {'pk': 'PROJECT#p1', 'sk': 'PRD#a'}
-ASSIGNMENT_KEY = _legacy_assignment_key(COUNTER_KEY, 'PRD#a')
+ASSIGNMENT_KEY = legacy_assignment_key(COUNTER_KEY, 'PRD#a')
 
 
 def _settled(table: MagicMock, required: bool) -> bool:
-    return _legacy_identity_settled(table, COUNTER_KEY, dict(SOURCE), CANONICAL, required)
+    return _legacy_identity_settled(table, COUNTER_KEY, dict(SOURCE), CANONICAL, required, workspace=None)
 
 
 class TestLegacyIdentitySettled:
@@ -331,16 +330,16 @@ class TestLegacyIdentitySettled:
         table = _table()
         table.get_item.side_effect = [{'Item': dict(CANONICAL)}, {}]
         original: dict[str, Any] = {'pk': 'PROJECT#p1', 'sk': None}
-        assert _legacy_identity_settled(table, COUNTER_KEY, original, CANONICAL, True) is False
+        assert _legacy_identity_settled(table, COUNTER_KEY, original, CANONICAL, True, workspace=None) is False
         assert table.get_item.call_args_list[1] == call(
-            Key=_legacy_assignment_key(COUNTER_KEY, ''), ConsistentRead=True,
+            Key=legacy_assignment_key(COUNTER_KEY, ''), ConsistentRead=True,
         )
 
 
 class TestReleaseLegacyMigration:
     def test_removes_the_lease_it_owns(self):
         table = _table()
-        _release_legacy_migration(table, COUNTER_KEY, 'me')
+        _release_legacy_migration(table, COUNTER_KEY, 'me', workspace=None)
         table.update_item.assert_called_once_with(
             Key=COUNTER_KEY,
             UpdateExpression='SET updated_at = :now REMOVE #owner, #expires',
@@ -355,7 +354,7 @@ class TestReleaseLegacyMigration:
         table = _table()
         table.update_item.side_effect = [_client_error('ConditionalCheckFailedException')]
         with patch.object(dv, 'logger') as logger:
-            _release_legacy_migration(table, COUNTER_KEY, 'me')
+            _release_legacy_migration(table, COUNTER_KEY, 'me', workspace=None)
         logger.warning.assert_not_called()
 
     @pytest.mark.parametrize(('error', 'code'), [
@@ -366,7 +365,7 @@ class TestReleaseLegacyMigration:
         table = _table()
         table.update_item.side_effect = [error]
         with patch.object(dv, 'logger') as logger:
-            _release_legacy_migration(table, COUNTER_KEY, 'me')
+            _release_legacy_migration(table, COUNTER_KEY, 'me', workspace=None)
         logger.warning.assert_called_once_with(
             'Document version migration lease release failed; lease will expire',
             extra={'error_code': code},
@@ -403,15 +402,15 @@ class TestDocumentIdentity:
             versioned_document_id(*args)
 
     def test_document_key(self):
-        assert _document_key('p1', 'prd', 'a1') == DOC_KEY
+        assert _document_key('p1', 'prd', 'a1', workspace=None) == DOC_KEY
 
     def test_counter_key(self):
-        assert _counter_key('p1', 'prd', 'launch') == SERIES_KEY
+        assert version_counter_key('p1', 'prd', 'launch') == SERIES_KEY
 
 
 class TestAllocationItem:
     def test_copies_the_committed_identity(self):
-        assert _allocation_item('p1', 'prd', 'a1', _generated(version=Decimal('1'))) == (
+        assert _allocation_item('p1', 'prd', 'a1', _generated(version=Decimal('1')), workspace=None) == (
             _allocation_row()
         )
 
@@ -429,14 +428,14 @@ class TestAllocationItem:
     ])
     def test_an_incomplete_document_is_refused(self, override):
         with pytest.raises(ServiceError) as caught:
-            _allocation_item('p1', 'prd', 'a1', _generated(**override))
+            _allocation_item('p1', 'prd', 'a1', _generated(**override), workspace=None)
         assert _refusal(caught) == 'Stored generated document allocation is incomplete'
 
 
 class TestAllocationAssertions:
     def test_a_matching_reference_passes_whatever_its_identity(self):
         row = _allocation_row(version=9, extra=1)
-        assert _assert_allocation_reference(row, 'p1', 'prd', 'a1') is None
+        assert _assert_allocation_reference(row, 'p1', 'prd', 'a1', workspace=None) is None
 
     @pytest.mark.parametrize('key', [
         'pk', 'sk', 'allocation_id', 'document_id', 'document_pk', 'document_sk',
@@ -444,7 +443,7 @@ class TestAllocationAssertions:
     ])
     def test_any_differing_reference_field_is_a_conflict(self, key):
         with pytest.raises(ServiceError) as caught:
-            _assert_allocation_reference(_allocation_row(**{key: 'x'}), 'p1', 'prd', 'a1')
+            _assert_allocation_reference(_allocation_row(**{key: 'x'}), 'p1', 'prd', 'a1', workspace=None)
         assert _refusal(caught) == CONFLICT
 
     def test_an_item_must_match_every_expected_field(self):
@@ -463,7 +462,7 @@ HISTORY_PUT = [
 
 
 def _ensure(table: MagicMock) -> None:
-    _ensure_allocation_history(table, 'p1', 'prd', 'a1', _generated())
+    _ensure_allocation_history(table, 'p1', 'prd', 'a1', _generated(), workspace=None)
 
 
 class TestEnsureAllocationHistory:
@@ -700,7 +699,7 @@ class TestPersistVersionedDocumentCommits:
             {'Put': {'TableName': 'projects', 'Item': _item(1), 'ConditionExpression': NOT_EXISTS}},
             META_BUMP,
         ]]
-        legacy['query'].assert_called_once_with(table, 'p1')
+        legacy['query'].assert_called_once_with(table, 'p1', workspace=None)
         legacy['persist'].assert_not_called()
 
     def test_a_first_allocation_continues_the_legacy_series(self, legacy):
@@ -761,7 +760,7 @@ class TestPersistVersionedDocumentCommits:
         legacy['query'].return_value = rows
         table = _store(META)
         _persist(table)
-        legacy['persist'].assert_called_once_with(table, 'p1', rows)
+        legacy['persist'].assert_called_once_with(table, 'p1', rows, workspace=None)
 
     def test_an_unmanaged_row_never_triggers_a_legacy_migration(self, legacy):
         legacy['query'].return_value = [{'sk': 'META', 'title': 'x'}]
@@ -851,7 +850,7 @@ class TestPersistVersionedDocumentRefusals:
         table.meta.client.transact_write_items.side_effect = _first_call(take_lease)
         with patch.object(dv, '_wait_for_legacy_migration', side_effect=[{}, {}]) as wait:
             assert _persist(table) == _item(1)
-        assert wait.call_args_list == [call(table, SERIES_KEY)] * 2
+        assert wait.call_args_list == [call(table, SERIES_KEY, workspace=None)] * 2
 
     def test_a_permanent_refusal_with_nothing_moved_is_re_raised(self):
         table = _store(META, {**SERIES_KEY, 'last_version': 2})
@@ -909,13 +908,13 @@ class TestReads:
     def test_get_item_is_consistent_and_always_a_dict(self, response, expected):
         table = _table()
         table.get_item.return_value = response
-        assert _get_item(table, COUNTER_KEY) == expected
+        assert _get_item(table, COUNTER_KEY, workspace=None) == expected
         table.get_item.assert_called_once_with(Key=COUNTER_KEY, ConsistentRead=True)
 
     def test_existing_document(self):
         row = {**DOC_KEY, 'version_allocation_id': 'a1'}
-        assert _existing_document(_store(row), DOC_KEY, 'a1') == row
-        assert _existing_document(_store(), DOC_KEY, 'a1') is None
+        assert _existing_document(_store(row), DOC_KEY, 'a1', workspace=None) == row
+        assert _existing_document(_store(), DOC_KEY, 'a1', workspace=None) is None
 
     def test_query_project_documents_pages_and_keeps_managed_dicts(self):
         table = _table()
@@ -924,7 +923,7 @@ class TestReads:
             {'Items': 'junk', 'LastEvaluatedKey': {'k': 2}},
             {'Items': [{'sk': 'PROTOTYPE#b'}]},
         ]
-        assert _query_project_documents(table, 'p1') == [{'sk': 'PRD#a'}, {'sk': 'PROTOTYPE#b'}]
+        assert _query_project_documents(table, 'p1', workspace=None) == [{'sk': 'PRD#a'}, {'sk': 'PROTOTYPE#b'}]
         base = {
             'KeyConditionExpression': Key('pk').eq('PROJECT#p1'),
             'ConsistentRead': True,
@@ -947,7 +946,7 @@ class TestReads:
         table = _table()
         table.query.side_effect = [page]
         expected = [] if page is None else [{'sk': 'PRD#a'}]
-        assert _query_project_documents(table, 'p1') == expected
+        assert _query_project_documents(table, 'p1', workspace=None) == expected
 
 
 class TestSeriesState:
@@ -976,7 +975,7 @@ class TestCounterMoved:
         ([{**SERIES_KEY}], None, False),
     ])
     def test_compares_the_stored_version(self, rows, observed, expected):
-        assert _counter_moved(_store(*rows), SERIES_KEY, observed) is expected
+        assert _counter_moved(_store(*rows), SERIES_KEY, observed, workspace=None) is expected
 
 
 class TestTransientReasons:
@@ -1021,11 +1020,11 @@ class TestStaleSaveGuard:
     def test_a_moved_counter_under_an_expectation_is_a_409_chained_to_the_refusal(self):
         table, error = _moved_counter()
         with pytest.raises(ConflictError) as caught:
-            _allocation_retryable(table, SERIES_KEY, 2, error, 2)
+            _allocation_retryable(table, SERIES_KEY, 2, error, 2, workspace=None)
         assert caught.value.message == STALE
         assert caught.value.__cause__ is error
 
     @pytest.mark.parametrize(('observed', 'expected', 'retryable'), [(2, None, True), (3, 3, False)])
     def test_without_an_expectation_a_moved_counter_retries(self, observed, expected, retryable):
         table, error = _moved_counter()
-        assert _allocation_retryable(table, SERIES_KEY, observed, error, expected) is retryable
+        assert _allocation_retryable(table, SERIES_KEY, observed, error, expected, workspace=None) is retryable

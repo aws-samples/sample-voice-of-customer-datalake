@@ -5,8 +5,8 @@ through shared/ws_repo.py ``ws_table`` (shared/project_tables.py ``iter_project_
 shared/ingest_tables.py ``table_view``, shared/workspace_config.py ``get_scoped_item``, shared/project_writes.py
 ``transact_project_writes``), and never sees the deployment's rows or another workspace's; without one it reads and
 writes the deployment's ``PROJECT#…`` rows exactly as before, and never sees a workspace's. The stores that are not
-per workspace yet (the document versions and their series, the access gate) refuse one. No route passes a workspace
-yet.
+per workspace yet (the comment threads and persona review, the access gate) refuse one; the document versions and
+their series are per workspace since 7.27.00 (test_document_versions_workspace.py). No route passes a workspace yet.
 """
 from __future__ import annotations
 
@@ -22,11 +22,8 @@ from shared import (
     decision_records,
     deleted_sources,
     document_comments,
-    document_history,
     document_review,
     document_series,
-    document_versions,
-    human_documents,
     persona_overlap,
     persona_replace,
     persona_save,
@@ -316,25 +313,9 @@ def test_a_persona_save_into_a_deleted_workspace_project_is_refused(table):
 
 
 # ── The stores not per workspace yet fail closed ─────────────────────────────
-
-@pytest.mark.parametrize('write', [
-    lambda table: document_versions.persist_versioned_document(table, PROJECT, 'prd', 'Trail map', 'job_1', {},
-                                                               workspace=A),
-    lambda table: human_documents.create_human_document(table, PROJECT, 'prd', {'title': 'Trail map'},
-                                                        creator_sub='sub-ada', workspace=A),
-    lambda table: document_history.edit_document(table, PROJECT, {'document_id': 'doc_1'}, {'content': 'x'},
-                                                 now=STAMP, workspace=A),
-    lambda table: document_history.list_document_versions(table, PROJECT, {'document_id': 'doc_1'}, workspace=A),
-    lambda table: document_history.restore_document_version(table, PROJECT, {'document_id': 'doc_1'}, 'r1', {},
-                                                            now=STAMP, workspace=A),
-    lambda table: document_history.delete_document_revisions(table, PROJECT, 'doc_1', workspace=A),
-    lambda table: document_history.series_versions(table, PROJECT, {'document_type': 'prd', 'base_title': 'Trail map'},
-                                                   workspace=A),
-    lambda table: document_series.latest_version(table, PROJECT, 'prd', 'Trail map', workspace=A),
-], ids=['persist', 'human', 'edit', 'list', 'restore', 'delete_revisions', 'series', 'latest'])
-def test_the_document_version_stores_refuse_a_workspace_and_write_nothing(table, write):
-    _assert_refused(table, write, 'Document versions is not per workspace yet')
-
+# The document versions and their history are per workspace since 7.27.00 (test_document_versions_workspace.py).
+# A review in a workspace may read its series (document_series.latest_version), but never files or lists its
+# comments under the deployment's DCOMMENTS# keys: those stores still refuse one (3e).
 
 THREAD = {'pk': 'DCOMMENTS#proj_shared_id#ser_0', 'sk': 'C#dc_00000000000000000000abcdef'}
 

@@ -18,7 +18,7 @@ from shared.aws import invoke_lambda_async, is_conditional_check_failure
 from shared.exceptions import ApiError, ServiceError
 from shared.job_notices import notify_project_job
 from shared.logging import logger
-from shared.project_keys import project_pk
+from shared.project_keys import job_status_pk, project_pk
 from shared.tables import get_jobs_table
 from shared.timestamps import now_iso
 
@@ -90,7 +90,7 @@ def claim_job_execution(
                 ':starting': 'starting',
                 ':now': now.isoformat(),
                 ':now_epoch': now_epoch,
-                ':running_gsi': 'STATUS#running',
+                ':running_gsi': job_status_pk('running'),
                 ':lease': lease_until,
                 ':owner': owner,
             },
@@ -200,7 +200,7 @@ def create_job(
     item = {
         'pk': project_pk(project_id),
         'sk': f'JOB#{job_id}',
-        'gsi1pk': f'STATUS#{status}',
+        'gsi1pk': job_status_pk(status),
         'gsi1sk': now,
         'job_id': job_id,
         'project_id': project_id,
@@ -249,7 +249,7 @@ def update_job_status(
         ':status': status,
         ':progress': progress,
         ':now': now,
-        ':gsi1pk': f'STATUS#{status}'
+        ':gsi1pk': job_status_pk(status)
     }
     expr_names = {'#status': 'status'}
 

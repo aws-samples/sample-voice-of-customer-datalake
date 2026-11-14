@@ -103,7 +103,8 @@ UNSCOPED_INGEST_TABLE: Final = 'ingest_table(None)'
 PROJECT_ACCESSORS: Final = frozenset({'iter_project_rows', 'transact_project_writes', 'transact_project_actions',
                                       'put_project_item', 'put_project_item_and_increment',
                                       'create_counted_project_child', 'get_scoped_item',
-                                      'create_workspace_project', 'iter_registered_project_ids'})
+                                      'create_workspace_project', 'iter_registered_project_ids',
+                                      'iter_version_rows'})
 #: The accessors whose scope may also be passed by position, and where.
 PROJECT_ACCESSOR_SCOPE_POSITION: Final = {'get_scoped_item': 2}
 UNSCOPED_PROJECT_ACCESS: Final = 'project accessor(workspace=None)'
@@ -117,9 +118,10 @@ VIEW_TYPE: Final = 'WorkspaceTable'
 LAYER_MODULE: Final = 'shared.ws_repo'
 #: Partition and object prefixes of the data path that, at the start of a string, name no workspace. ``PROJECT_ID#``
 #: is a project id's deployment-wide claim (since 7.26.00): only the layer spells it (``claim_project_id``,
-#: ``project_claim``).
+#: ``project_claim``). ``DOCUMENT_VERSIONS#`` is a project's document-version partition (since 7.27.00): only
+#: shared/project_keys.py spells it (``version_partition_key``).
 UNSCOPED_KEY_PREFIXES: Final = ('SOURCE#', 'METRIC#', 'DATE#', 'CATEGORY#', 'URGENCY#', 'CHANNEL#', 'SOURCE_RUN#',
-                                'raw/', 'silver/', 'PROJECT#', 'TYPE#PROJECT', 'PROJECT_ID#')
+                                'raw/', 'silver/', 'PROJECT#', 'TYPE#PROJECT', 'PROJECT_ID#', 'DOCUMENT_VERSIONS#')
 #: The layer's claim writer (``claim_project_id``) and the one module that may call it: the project create.
 CLAIM_WRITER: Final = ('claim_project_id', frozenset({'lambda/shared/project_writes.py'}))
 #: Modules that answer requests a client sent (the API, the public webhooks): their workspace is never read from
@@ -220,9 +222,10 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/shared/design_assets.py': (3, {'put_object': 1}),
     'lambda/shared/design_icons.py': (3, {'put_object': 1}),
     'lambda/shared/design_logo.py': (3, {'put_object': 2}),
-    'lambda/shared/document_history.py': (3, {'batch': 1, 'meta.client': 1, 'transact': 1}),
+    # Its transaction goes through `transact_project_writes` since 7.27.00 (`ws_table` in a workspace); left: the
+    # deployment's batch delete of a document's revisions (a workspace's go one checked key at a time through the layer).
+    'lambda/shared/document_history.py': (3, {'batch': 1}),
     'lambda/shared/document_share.py': (3, {'meta.client': 1, 'transact': 1}),
-    'lambda/shared/document_versions.py': (3, {'meta.client': 4, 'transact': 4}),
     'lambda/shared/earliest_date.py': (2, {'METRIC#': 1}),
     'lambda/shared/engagement_config.py': (3, {'cached_table': 1, 'get_aggregates_table': 1}),
     'lambda/shared/feature_boards_limits.py': (3, {'meta.client': 1, 'transact': 1}),
@@ -303,7 +306,8 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/shared/jobs.py': (3, {'get_jobs_table': 4}),
     'lambda/shared/mcp_oauth_consent_routes.py': (3, {'get_jobs_table': 1, 'get_projects_table': 1}),
     'lambda/shared/mcp_oauth_routes.py': (3, {'get_jobs_table': 1, 'get_projects_table': 1}),
-    'lambda/shared/project_keys.py': (3, {'PROJECT#': 1, 'TYPE#PROJECT': 1}),
+    # Its DOCUMENT_VERSIONS# is the version partition's one spelling, moved from shared/document_versions.py in 7.27.00.
+    'lambda/shared/project_keys.py': (3, {'DOCUMENT_VERSIONS#': 1, 'PROJECT#': 1, 'TYPE#PROJECT': 1}),
 }
 
 
@@ -822,8 +826,11 @@ def test_the_scan_sees_each_kind_of_raw_access(tmp_path):
         "ph = get_scoped_item(table, key, scope)\n"
         "pp = create_workspace_project(table, item, workspace=None)\n"
         "pq = iter_registered_project_ids(table, workspace=None)\n"
-        # A project id's claim, spelled outside the layer.
+        "pv = iter_version_rows(table, 'p1', workspace=None)\n"
+        "pu = iter_version_rows(table, 'p1', workspace=scope)\n"
+        # A project id's claim, and a document-version partition, spelled outside the layer and the key builders.
         "claim = f'PROJECT_ID#{project_id}'\n"
+        "versions = f'DOCUMENT_VERSIONS#PROJECT#{project_id}'\n"
         # The multi-item calls: raw on a table, a resource or a client, and a bound method kept for later ...
         "r = table.meta.client.transact_write_items(TransactItems=[])\n"
         "s = client.transact_get_items(TransactItems=[])\n"
@@ -848,7 +855,8 @@ def test_the_scan_sees_each_kind_of_raw_access(tmp_path):
         'Table': 1, 'put_object': 1, 'copy_object': 1, 'get_feedback_table': 1, 'get_aggregates_table': 1,
         'SOURCE#': 1, 'METRIC#': 1, 'raw/': 1, 'silver/': 1, 'upload_file': 1, 'upload_fileobj': 1,
         'cached_table': 1, 'generate_presigned_url': 1, 'delete_object': 1, 'DeploymentTable': 2,
-        'ingest_table(None)': 2, 'project accessor(workspace=None)': 9, 'PROJECT_ID#': 1, 'transact': 4, 'batch': 4,
+        'ingest_table(None)': 2, 'project accessor(workspace=None)': 10, 'PROJECT_ID#': 1, 'DOCUMENT_VERSIONS#': 1,
+        'transact': 4, 'batch': 4,
         # The low-level client itself (7.00.00's rule), beside the multi-item calls made on it.
         'meta.client': 3})
 

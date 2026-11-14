@@ -16,9 +16,9 @@ from shared.document_versions import (
     normalize_document_versions,
     persist_legacy_document_versions,
     persist_versioned_document,
-    version_partition_key,
 )
 from shared.exceptions import ServiceError
+from shared.project_keys import version_partition_key
 from shared.test.moto_tables import create_projects_table_with_meta
 
 
@@ -372,7 +372,7 @@ def test_legacy_backfill_uses_counter_floor_observed_during_lease_acquisition(
     original_get_item = document_versions._get_item
     counter_reads = 0
 
-    def advance_counter_before_acquire(table, key):
+    def advance_counter_before_acquire(table, key, *, workspace):
         nonlocal counter_reads
         if key.get('pk') == version_partition_key('p1'):
             counter_reads += 1
@@ -384,7 +384,7 @@ def test_legacy_backfill_uses_counter_floor_observed_during_lease_acquisition(
                     'normalized_base_title': 'launch',
                     'last_version': 1,
                 })
-        return original_get_item(table, key)
+        return original_get_item(table, key, workspace=workspace)
 
     with patch(
         'shared.document_versions._get_item',

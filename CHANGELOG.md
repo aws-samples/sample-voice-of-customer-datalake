@@ -17,6 +17,26 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.27.00] - 2026-11-14
+
+Multi-workspace, phase 3b: a project's document versions and their history can be kept inside a workspace. Internal only: nothing changes for anyone ([docs/multi-workspace.md](docs/multi-workspace.md#the-project-plan-phase-3)).
+
+### Changed
+
+- Internal: the keys of a project's document-version rows are built in one place, `lambda/shared/project_keys.py`: the version partition `DOCUMENT_VERSIONS#PROJECT#{id}` (`WS#{ws}#DOCUMENT_VERSIONS#PROJECT#{id}` inside a workspace), a series' counter, an allocation, a legacy document's assignment and an unmanaged document's saved revision. Without a workspace each is exactly the key stored today.
+- Internal: the document versions (`lambda/shared/document_versions.py`), their history (`lambda/shared/document_history.py`: edits, restores, the version list, revision deletes and a series' versions), the newest version of a series (`lambda/shared/document_series.py` `latest_version`) and hand-written documents (`lambda/shared/human_documents.py`) take a workspace and keep every row in it, through the workspace layer, which refuses any key outside it before DynamoDB. They no longer refuse a workspace. The comment threads, the persona review and the access gate still do.
+- Internal: in a workspace, a document's saved revisions are deleted one checked DeleteItem at a time (the workspace layer's batch writer still takes no deletes); the deployment's are deleted in batches, as before.
+- Internal: `project_partitions` in `lambda/shared/project_keys.py` lists the partitions keyed by a project's id alone, each with its kind and table, for the workspace export and the deletes that will use it. The project delete, a document's delete and the project bundle's id remap still work on the deployment's keys only.
+- Internal: voc-jobs' status index key, `STATUS#{status}`, is built in `project_keys.py` (`job_status_pk`) for `lambda/shared/jobs.py`: the same string.
+- Internal: the document-version keys' digests, a versioned document's id and the MCP grant's id and consent hash use the shared SHA-256 helper, `lambda/shared/digests.py` `sha256_hex` (the same values). The project bundle's id remap rebuilds a legacy assignment's key with `project_keys.py` instead of its own copy.
+- Internal: the stored-attributes audit (`scripts/audit/py_stored_attrs.py`) also sees the rows written through a write helper such as `transact_project_writes`.
+- No route, job or assistant tool passes a workspace yet: every document is versioned, edited and restored exactly as before, with the same requests.
+
+### Upgrade notes
+
+- Nothing to do: no table, index, IAM or API change. VocApiStack and VocProcessingStack change only their functions' `APP_VERSION`; VocCoreStack and VocWebSearchStack synthesize the same templates as 7.26.00, and so does VocIngestionStack unless inbound email is configured (then only its intake function's `APP_VERSION`). Every function built from `lambda/` gets new code (the shared modules change), with no change in what it does. A normal deploy (`npm run deploy:all`) does it.
+- Rollback: no stored data changes (no workspace writes a document yet), so an earlier release deploys over it as it is.
+
 ## [7.26.00] - 2026-11-14
 
 Multi-workspace, phase 3a: the project id claim and the workspace's registry of its projects. Internal only: nothing changes for anyone ([docs/multi-workspace.md](docs/multi-workspace.md#the-project-plan-phase-3)).

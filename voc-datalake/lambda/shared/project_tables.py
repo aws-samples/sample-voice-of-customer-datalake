@@ -9,7 +9,8 @@ workspace), maybe narrowed to a sort-key prefix, every page. Each page is shared
 calls go through shared/ingest_tables.py ``table_view`` and shared/workspace_config.py ``get_scoped_item``, their
 transactions through shared/project_writes.py ``transact_project_writes``. Only voc-projects is read here: the jobs
 and the participant lists are not per workspace yet. ``iter_registered_project_ids`` pages a workspace's registry of
-its project ids the same way (since 7.26.00).
+its project ids the same way (since 7.26.00), ``iter_version_rows`` a project's document-version partition (since
+7.27.00).
 """
 from __future__ import annotations
 
@@ -19,11 +20,18 @@ from types import SimpleNamespace
 from typing import Any
 
 from shared.dynamo_paging import iter_query
-from shared.project_keys import project_pk, project_registry_pk
+from shared.project_keys import project_pk, project_registry_pk, version_partition_key
 from shared.scoped_query import SortRange, query_partition
 from shared.ws_repo import WorkspaceScope, require_scope
 
-__all__ = ['iter_project_rows', 'iter_registered_project_ids']
+__all__ = ['iter_project_rows', 'iter_registered_project_ids', 'iter_version_rows']
+
+
+def _iter_partition(table: Any, partition: str, sort_prefix: str | None, kwargs: dict[str, Any], *,
+                    workspace: WorkspaceScope | None) -> Iterator[dict]:
+    sort = SortRange('sk', 'begins_with', sort_prefix) if sort_prefix is not None else None
+    pages = SimpleNamespace(query=partial(query_partition, workspace, table, 'pk', partition, sort=sort))
+    return iter_query(pages, kwargs)
 
 
 def iter_project_rows(table: Any, project_id: str, *, workspace: WorkspaceScope | None = None,
@@ -31,10 +39,16 @@ def iter_project_rows(table: Any, project_id: str, *, workspace: WorkspaceScope 
     """Every row of the project's partition (the workspace's project when given), only those whose ``sk`` begins
     with ``sort_prefix`` when given, across every page. ``kwargs``: the rest of the Query
     (``ProjectionExpression``, ``ExpressionAttributeNames``, ``ConsistentRead``…)."""
-    sort = SortRange('sk', 'begins_with', sort_prefix) if sort_prefix is not None else None
-    pages = SimpleNamespace(query=partial(query_partition, workspace, table, 'pk',
-                                          project_pk(project_id, workspace=workspace), sort=sort))
-    return iter_query(pages, kwargs)
+    return _iter_partition(table, project_pk(project_id, workspace=workspace), sort_prefix, kwargs,
+                           workspace=workspace)
+
+
+def iter_version_rows(table: Any, project_id: str, *, workspace: WorkspaceScope | None = None,
+                      sort_prefix: str | None = None, **kwargs: Any) -> Iterator[dict]:
+    """``iter_project_rows`` of the project's document-version partition (shared/project_keys.py
+    ``version_partition_key``: its series counters, allocations, legacy assignments and revisions; since 7.27.00)."""
+    return _iter_partition(table, version_partition_key(project_id, workspace=workspace), sort_prefix, kwargs,
+                           workspace=workspace)
 
 
 def iter_registered_project_ids(table: Any, *, workspace: WorkspaceScope) -> Iterator[str]:
