@@ -46,7 +46,8 @@ ENGINEERING_NODE_TYPES: Final = ('agent', 'map', 'reduce', 'board', 'quality_gat
 ENGINEERING_ROLES: Final = ('mapper', 'understander', 'hunter', 'fixer', 'builder', 'committer', 'commit-reviewer',
                             'gate-runner', 'pr-author', 'pr-reviewer', 'final-go', 'coordinator', 'coach')
 #: A board's roles: who may post its tasks (engineering.board.api POSTERS) and who claims them (the roles with a task
-#: queue, engineering.bus.schema ROLES); lockstep tests hold both.
+#: queue, engineering.bus.schema ROLES, but the gate runner, which claims only a quality gate's); lockstep tests hold
+#: both.
 BOARD_POSTERS: Final = ('builder', 'coordinator', 'hunter')
 BOARD_CLAIMERS: Final = ('builder', 'commit-reviewer', 'committer', 'final-go', 'fixer', 'hunter', 'mapper',
                          'pr-author', 'pr-reviewer', 'understander')

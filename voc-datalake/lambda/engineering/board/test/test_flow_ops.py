@@ -21,7 +21,7 @@ from engineering.board.test.test_board_ops import Board, Launcher, call
 from engineering.board.test.test_progress_repost import Bus
 from engineering.bus.publish import EventBridgePublisher
 from engineering.connectors.identity import Caller
-from engineering.connectors.test.test_records import gate_record
+from engineering.connectors.test.test_records import checked_record, gate_record
 from engineering.flow.record import FLOW_SK
 from engineering.flow.test.fixtures import TEMPLATES
 from engineering.quality_gate.record import GateRecord
@@ -70,7 +70,7 @@ def test_the_coordinator_reads_its_flows_plan_and_nobody_else_does(bugs: Board) 
     status, answer = call(bugs, COORDINATOR, op='flow')
     assert (status, answer['flow']['outcome']) == (200, 'running')
     assert steps(answer) == {'start': 'done', 'hunt': 'ready', 'board': 'collecting', 'gate': 'waiting',
-                             'pr_author': 'waiting', 'pr': 'waiting', 'human': 'waiting'}
+                             'commit': 'waiting', 'pr_author': 'waiting', 'pr': 'waiting', 'human': 'waiting'}
     assert call(bugs, FIXER, op='flow')[0] == 403
     assert call(bugs, FIXER, op='step', step='board', action='complete')[0] == 403
 
@@ -222,11 +222,15 @@ def test_a_step_or_shard_off_its_shape_is_refused(bugs: Board, body: dict[str, A
 
 
 GATE_KEY = f'ws/default/runs/{RUN}/final-go-4/commits/{"a" * 40}/_gate/attempt-1/record.json'
+RUNNER_KEY = f'ws/default/runs/{RUN}/gate-runner-3/commits/{"a" * 40}/_gate/attempt-1/record.json'
 
 
-def _ended(board: Board, role: str, step: str, *, holder: str = '', keys: tuple[str, ...] = ()) -> str:
-    """A task of ``step`` posted by the coordinator and ended done (as its agent's moves leave it)."""
-    task = board.store.post(WS, RUN, role=role, title=f'{role} work', spec={'role': role}, parent_task='', priority=0,
+def _ended(board: Board, role: str, step: str, *, holder: str = '', keys: tuple[str, ...] = (),
+           patch: str = '') -> str:
+    """A task of ``step`` posted by the coordinator (naming ``patch``) and ended done (as its agent's moves leave
+    it)."""
+    spec = {'role': role, **({'patch': patch} if patch else {})}
+    task = board.store.post(WS, RUN, role=role, title=f'{role} work', spec=spec, parent_task='', priority=0,
                             actor='coordinator-1', step=step).task
     values: dict[str, Any] = {':done': {'S': 'done'}}
     expression = 'SET #s = :done'
@@ -239,27 +243,30 @@ def _ended(board: Board, role: str, step: str, *, holder: str = '', keys: tuple[
     return task.task_id
 
 
-@pytest.mark.parametrize(('verdict', 'pr_author', 'at'), [('GO', 200, None), ('NO-GO', 409, 'human')],
+@pytest.mark.parametrize(('verdict', 'commit', 'at'), [('GO', 200, None), ('NO-GO', 409, 'human')],
                          ids=['go-record', 'no-go-record'])
 def test_a_final_go_that_ended_done_with_a_no_go_record_takes_the_gates_fail_arrow(
-        verdict: str, pr_author: int, at: str | None) -> None:
+        verdict: str, commit: int, at: str | None) -> None:
     """The gate's verdict is the GO ledger's read of the record, never the final-go task's state alone."""
     read: list[str] = []
 
     def records(key: str) -> GateRecord:
         read.append(key)
-        return GateRecord.from_dict(gate_record(verdict))
+        return GateRecord.from_dict(checked_record() if key == RUNNER_KEY else gate_record(verdict))
 
     with mock_aws():
         board = _board('bug-hunt-and-fix', gate_records=records)
         _ended(board, 'hunter', 'hunt')
         assert call(board, COORDINATOR, op='step', step='board', action='complete')[0] == 200
-        _ended(board, 'gate-runner', 'gate')
+        _ended(board, 'gate-runner', 'gate', holder='gate-runner-3', keys=(RUNNER_KEY,))
         decider = _ended(board, 'final-go', 'gate', holder='final-go-4', keys=(GATE_KEY,))
         flow = call(board, COORDINATOR, op='flow')[1]['flow']
-        assert (flow['at'], read[-1]) == (at, GATE_KEY)
-        status, _ = post(board, role='pr-author', flow_step='pr_author', title='Open the draft pull request')
-        assert status == pr_author
+        # The deciding record, and behind a GO the gate runner's GO on its tree (the GO ledger's one rule).
+        assert (flow['at'], read[-2:] if verdict == 'GO' else read[-1:]) == (
+            at, [GATE_KEY, RUNNER_KEY] if verdict == 'GO' else [GATE_KEY])
+        # The GO's step after the gate is the commit (the broker pushes only a GO'd tree).
+        status, _ = post(board, role='committer', flow_step='commit', title='Commit the fix the gate passed')
+        assert status == commit
         # The verdict is kept for the readers without the gate records (the run monitor), by its deciding task.
         rows = [row for row in run_rows(board.client, TABLE, WS, RUN, 'STEP#') if row['record']['S'] == 'verdict']
         assert [(row['task_id']['S'], row['verdict']['S']) for row in rows] == [
@@ -273,6 +280,30 @@ def test_without_the_gate_records_no_final_go_is_taken_for_a_go(bugs: Board) -> 
     _ended(bugs, 'final-go', 'gate', holder='final-go-4', keys=(GATE_KEY,))
     assert steps(call(bugs, COORDINATOR, op='flow')[1])['pr_author'] == 'waiting'
     assert post(bugs, role='pr-author', flow_step='pr_author', title='Open the draft pull request')[0] == 409
+
+
+PATCH = f'ws/default/runs/{RUN}/fixer-2/commits/{"a" * 40}/_patches/attempt-1/task-2-0a1b2c3d.diff'
+
+
+@pytest.mark.parametrize(('checked', 'named', 'status'), [
+    (checked_record(), PATCH, 200),
+    (checked_record('STOPPED', stop='tool_missing', status='fail'), PATCH, 400),
+    (checked_record('NO-GO', status='fail'), PATCH, 400),
+    (checked_record(), PATCH.replace('task-2-', 'task-9-'), 400),       # (another patch than the one checked)
+    (checked_record('STOPPED', stop='tool_missing', status='fail'), '', 200),   # (no patch: it can only say NO-GO)
+], ids=['after-a-go', 'after-stopped', 'after-no-go', 'another-patch', 'no-patch'])
+def test_a_final_go_judging_a_patch_is_taken_only_after_the_gate_runners_go_on_it(
+        checked: dict[str, Any], named: str, status: int) -> None:
+    with mock_aws():
+        board = _board('bug-hunt-and-fix', gate_records=lambda _key: GateRecord.from_dict(checked))
+        _ended(board, 'hunter', 'hunt')
+        assert call(board, COORDINATOR, op='step', step='board', action='complete')[0] == 200
+        _ended(board, 'gate-runner', 'gate', holder='gate-runner-3', keys=(RUNNER_KEY,), patch=PATCH)
+        spec = {'instructions': 'The final go.', **({'patch': named} if named else {})}
+        answer = post(board, role='final-go', flow_step='gate', title='The final go', spec=spec)
+        assert answer[0] == status, answer
+        if status == 400:
+            assert "a final go judges the patch the gate runner's checks passed on" in json.dumps(answer[1])
 
 
 def test_a_retried_post_whose_equal_task_ended_is_refused_never_made_a_new_task(bugs: Board) -> None:

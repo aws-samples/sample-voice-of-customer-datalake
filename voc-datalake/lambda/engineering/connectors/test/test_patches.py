@@ -203,6 +203,28 @@ def test_only_the_callers_own_patch_on_the_runs_commit_is_read(s3: Any, key: str
     assert host.calls == []
 
 
+@pytest.mark.parametrize('author', ['fixer-3', 'builder-4'])
+def test_the_committer_pushes_the_patch_a_fixer_or_builder_of_its_run_submitted(s3: Any, author: str) -> None:
+    patches_, _ = reader(s3, None)
+    theirs = KEY.replace(AGENT, author)
+    s3.put_object(Bucket=BUCKET, Key=theirs, Body=MODIFY)
+    assert patches_.contents(submission(theirs)).changed_paths == ('src/refund.py',)
+
+
+@pytest.mark.parametrize(('caller', 'key', 'why'), [
+    ('committer-1', KEY.replace(AGENT, 'hunter-2'), "a hunter's patch"),
+    ('committer-1', KEY.replace(AGENT, 'fixer-3').replace('task-1-', 'checkpoint-000002-'), "a fixer's checkpoint"),
+    ('committer-1', KEY.replace(AGENT, 'fixer-3').replace(RUN, '01JC8Z3K4M5N6P7Q8R9S0T1V2X'), "another run's fixer"),
+    ('fixer-5', KEY.replace(AGENT, 'fixer-3'), "another fixer's patch, for a fixer"),
+    ('committer-1', KEY.replace('task-1-', 'checkpoint-000001-'), "its own checkpoint's snapshot"),
+])
+def test_no_other_agents_patch_and_no_checkpoint_is_pushed(s3: Any, caller: str, key: str, why: str) -> None:
+    patches_, host = reader(s3, None)
+    with pytest.raises(PatchRefused):
+        patches_.contents(submission(key, agent_id=caller))
+    assert host.calls == [], why
+
+
 def test_a_patch_over_its_bound_is_refused_not_cut(s3: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(patches, 'MAX_PATCH_BYTES', len(MODIFY) - 1)
     patches_, _ = reader(s3, MODIFY)

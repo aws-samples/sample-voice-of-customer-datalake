@@ -123,7 +123,8 @@ describe('the engineering broker', () => {
     expect(objects?.Action).toBe('s3:GetObject');
     const keys = [objects?.Resource].flat().map((resource) => JSON.stringify(resource).replace(/^.*"(\/ws[^"]*)".*$/, '$1'));
     expect(keys).toStrictEqual([
-      '/ws/default/runs/*/commits/*/_patches/*', '/ws/default/runs/*/final-go-*/commits/*/_gate/*']);
+      '/ws/default/runs/*/commits/*/_patches/*', '/ws/default/runs/*/final-go-*/commits/*/_gate/*',
+      '/ws/default/runs/*/gate-runner-*/commits/*/_gate/*']);
   });
 
   it('decrypts what it reads through DynamoDB and S3 only', () => {

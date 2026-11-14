@@ -24,6 +24,7 @@ from engineering.bus.schema import WS as _WS
 
 # A commit, by its full hash (SHA-1 or SHA-256): the workspace is content-addressed by commit, never abbreviated.
 from engineering.runtime.checkpoints import SHA
+from engineering.runtime.outputs import encode_package as harness_encode_package
 
 #: The kinds of non-finding artifact an agent writes under a commit.
 ARTIFACTS = frozenset({'gate', 'logs', 'patches', 'checkpoints'})
@@ -34,7 +35,6 @@ _ENCODED = re.compile(r'(?:[A-Za-z0-9-]|=[0-9A-F]{2})(?:[A-Za-z0-9_-]|=[0-9A-F]{
 _ATTEMPT = re.compile(r'attempt-([1-9][0-9]{0,3})\Z')
 #: A repository connection's id (the broker's parameter name after its prefix: no ``/``).
 CONNECTION = re.compile(r'[A-Za-z0-9][A-Za-z0-9_-]{0,127}\Z')
-_PLAIN = re.compile(rb'[A-Za-z0-9_-]')
 
 
 class LayoutError(ValueError):
@@ -55,13 +55,11 @@ def _decode_package(segment: str) -> str | None:
 
 
 def encode_package(package: str) -> str:
-    """A package path as one key segment (the module's encoding, which ``_decode_package`` reverses)."""
+    """A package path as one key segment (the harness's encoding, which ``_decode_package`` reverses: the agents
+    write their shards' keys with it, runtime/harness/role_tools.py, which ships alone in their images)."""
     if not package or len(package) > 300:
         raise LayoutError(f'not a valid package: {package[:80]!r}')
-    raw = package.encode()
-    encoded = ''.join(chr(byte) if _PLAIN.fullmatch(bytes([byte])) and not (i == 0 and byte == ord('_'))
-                      else f'={byte:02X}' for i, byte in enumerate(raw))
-    return _check(_ENCODED, encoded, 'package')
+    return _check(_ENCODED, harness_encode_package(package), 'package')
 
 
 def knowledge_key(ws: str, connection: str, package: str, version: int, name: str) -> str:

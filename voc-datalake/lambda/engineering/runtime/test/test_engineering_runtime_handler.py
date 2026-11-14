@@ -16,55 +16,32 @@ from engineering.runtime import supervisor as supervisor_module
 from engineering.runtime.agentcore import AgentCoreRuntime
 from engineering.runtime.board_bus import SupervisorBus
 from engineering.runtime.caps import SessionPricing, SessionRates
-from engineering.runtime.harness.skills import COORDINATOR, harness_argv
+from engineering.runtime.harness.skills import COORDINATOR, SKILLS, harness_argv
 from engineering.runtime.interface import AgentSpec, RuntimeRefused, RuntimeSession, SessionsFull
 from engineering.runtime.runs import Run, RunCaps, RunNotActive, RunStore, StartReadFailed, meta_key, run_pk
 from engineering.runtime.sessions import LAUNCH_HOLD_SECONDS, StaleSession
 from engineering.runtime.supervisor import SessionBusy
-from engineering.runtime.test.conftest import BUCKET, COMMIT, ROLE_ARNS, RUN, TABLE, WORKSPACE_BUCKET
+from engineering.runtime.test.conftest import (
+    BOARD_URL,
+    BUCKET,
+    BUS,
+    COMMIT,
+    IMAGE_ARNS,
+    RUN,
+    SCHEDULE,
+    TABLE,
+    WORKSPACE_BUCKET,
+)
 from engineering.runtime.test.local_runtime import LocalAgentRuntime
 from shared import aws as shared_aws
 
-SCHEDULE = 'voc-engineering-supervisor'
 OTHER_RUN = '01JD3R4NZXQ7Y2W8K4M6P9T0CD'
 ENDED_RUN = '01JD3R4NZXQ7Y2W8K4M6P9T0EF'
+#: A fixer's launch: the role has a skill, so the runtime runs its skill's harness (the request names none).
 LAUNCH = {'action': 'launch', 'run_id': '01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'agent_id': 'fixer-1', 'role': 'fixer', 'task_id': 'task-1',
-          'language': 'python', 'connection': 'conn-1', 'commit': COMMIT, 'paths': ['src'],
-          'harness': [sys.executable, '-c', 'pass']}
+          'language': 'python', 'connection': 'conn-1', 'commit': COMMIT, 'paths': ['src']}
 
 
-#: The engineering bus the supervisor speaks on (moto's).
-BUS = 'voc-engineering'
-#: The board API's function URL the agents are handed.
-BOARD_URL = 'https://abc123def.lambda-url.us-east-1.on.aws/'
-#: The deployment's agent runtimes (the local fake runs every language; the handler's checks read these).
-IMAGE_ARNS = {'python': {'standard': 'arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/voc_eng_python-a1b2c3'},
-              'java': {'standard': 'arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/voc_eng_java-d4e5f6'}}
-
-@pytest.fixture
-def wired(aws: tuple[Any, Any], monkeypatch: pytest.MonkeyPatch) -> Any:
-    assert aws is not None  # moto's S3 and voc-engineering are up for the handler's own clients
-    monkeypatch.setattr(handler, '_runtime', LocalAgentRuntime)
-    # (the hard cap's row lives in voc-agents; here the same moto table holds it)
-    for name, value in {'RAW_DATA_BUCKET': BUCKET, 'ENGINEERING_WORKSPACE_BUCKET': WORKSPACE_BUCKET, 'ENGINEERING_TABLE': TABLE,
-                        'ENGINEERING_SETTINGS_TABLE': TABLE,
-                        'SUPERVISOR_RULE_NAME': SCHEDULE, 'ENGINEERING_AGENT_ROLE_ARNS': json.dumps(ROLE_ARNS),
-                        'ENGINEERING_BUS_NAME': BUS, 'ENGINEERING_BOARD_URL': BOARD_URL,
-                        'ENGINEERING_AGENT_RUNTIMES': json.dumps(IMAGE_ARNS),
-                        'ENGINEERING_BENCHMARK_CASES': json.dumps(['slug-cut-bug']),
-                        'AWS_DEFAULT_REGION': 'us-east-1', 'AWS_REGION': 'us-east-1'}.items():
-        monkeypatch.setenv(name, value)
-    for client in ('_dynamodb_resource', '_dynamodb_client', '_s3_client', '_lambda_client', '_eventbridge_client'):
-        monkeypatch.setattr(shared_aws, client, None)
-    monkeypatch.setattr(handler, '_supervisor_cache', None)
-    monkeypatch.setattr(handler, '_learning_cache', None)
-    handler._sts_client.cache_clear()
-    events = boto3.client('events', region_name='us-east-1')
-    events.put_rule(Name=SCHEDULE, ScheduleExpression='rate(1 minute)', State='DISABLED')
-    events.create_event_bus(Name=BUS)
-    handler.lambda_handler({'action': 'start_run', 'run_id': RUN, 'max_tasks': 50, 'goal': 'fix the parser',
-                            'repo': 'example/app', 'flow': 'bug-hunt'}, None)
-    return events
 
 
 def _state(events: Any) -> str:
@@ -1111,9 +1088,29 @@ def test_a_launch_naming_another_harness_for_a_role_with_a_skill_is_refused(wire
 
 def test_a_role_with_no_skill_yet_needs_the_requests_harness(wired: Any):
     assert wired is not None
-    launch = {key: value for key, value in LAUNCH.items() if key != 'harness'}
+    # (the coach, never launched as an agent, is the one role left with no skill)
+    coach = {**LAUNCH, 'agent_id': 'coach-1', 'role': 'coach'}
     with pytest.raises(RuntimeRefused, match='no skill yet'):
-        handler.lambda_handler(launch, None)
+        handler.lambda_handler(coach, None)
+    handler.lambda_handler({**coach, 'harness': [sys.executable, '-c', 'pass']}, None)
+    session = handler._supervisor().sessions.get(RUN, 'coach-1')
+    assert session is not None
+    assert session.harness == (sys.executable, '-c', 'pass')
+
+
+@pytest.mark.parametrize('role', sorted(SKILLS))
+def test_every_launchable_role_runs_its_skills_harness_and_is_labelled_by_it(wired: Any, role: str):
+    assert wired is not None
+    skill = SKILLS[role]
+    handler.lambda_handler({**LAUNCH, 'agent_id': f'{role}-1', 'role': role,
+                            **({'task_id': 'coordinate'} if role == 'coordinator' else {})}, None)
+    session = handler._supervisor().sessions.get(RUN, f'{role}-1')
+    assert session is not None
+    assert session.harness == harness_argv(skill) == (
+        '/usr/bin/python3', '-I', '/opt/voc/harness.py', 'run', '--adapter', 'converse', '--model', skill.model)
+    row = handler._supervisor().sessions._table.get_item(Key={'pk': f'WS#default#RUN#{RUN}',
+                                                                'sk': f'AGENT#{role}-1'})['Item']
+    assert (row['model'], row['skill_version']) == (skill.model, f'{role}@{skill.version}')
 
 
 def _on_the_board(attempt: int) -> None:

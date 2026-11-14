@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from engineering.agent_memory.recall import Recall
 from engineering.agent_memory.store import AgentMemoryStore
+from engineering.benchmark.candidate import SkillCandidate
 from engineering.benchmark.cases import load_suite
 from engineering.benchmark.runner import Scorecard, run_suite
 from engineering.knowledge.store import PackVersion
@@ -56,6 +57,11 @@ Scorecard.total_cost_usd
 SkillStore.record_benchmark
 # The pass rates a version's readers (the skill history, phase 5) show: the recorded benchmark's, else the claim.
 SkillVersion.trusted_rates
+# A role's skill version as a benchmark candidate on the harness's own loop (6.29.00), and the administrators' seed of
+# a role's shared skill from its shipped record: the benchmark step and the administrators' routes that call them
+# land later (phase 3 and phase 5); their tests drive them on the shipped cases and moto until then.
+SkillCandidate.__name__
+SkillStore.seed_shared
 
 # The scorecards' reader (engineering/learning/scorecard.py): a skill version's card over its latest runs and a
 # comparison of versions, for the scorecard screens and their administrators' routes (phase 5); the run's

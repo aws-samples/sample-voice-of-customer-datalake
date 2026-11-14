@@ -239,7 +239,9 @@ describe('cdk-nag acknowledgements', () => {
       // delivery's roles); AgentCore's are on this deployment's runtimes only, and none exist in either shape.
       // 88 -> 89: the board's read of the quality gate's records, for a flow's gate step (the GO ledger; one prefix),
       // its IAM5.
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 89, used: 89 });
+      // 89 -> 90: the engineering broker's read of the gate runners' gate records (one prefix: the GO ledger needs
+      // the gate runner's GO on the final go's tree), its IAM5.
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 90, used: 90 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

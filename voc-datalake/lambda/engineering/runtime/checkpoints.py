@@ -26,7 +26,7 @@ from engineering.runtime.tokens import TokenNotStorable
 #: The artifact kinds the runtime and the harness write, and a commit as the workspace's layout spells it (its one
 #: home: workspace/layout.py takes it from here, since the images ship this module without layout.py and the bus
 #: schema it imports); a test holds every key built here to ``layout.parse_agent_key``.
-KINDS: Final = frozenset({'checkpoints', 'patches'})
+KINDS: Final = frozenset({'checkpoints', 'patches', 'gate'})
 SHA: Final = re.compile(r'(?:[0-9a-f]{40}|[0-9a-f]{64})\Z')
 MAX_CHECKPOINT_BYTES: Final = 256 * 1024
 #: Newest checkpoints tried, newest first, before a continuation starts afresh.
@@ -54,12 +54,18 @@ def agent_prefix(run_id: str, agent_id: str) -> str:
     return f'ws/{WORKSPACE}/runs/{check_id("run_id", run_id)}/{check_id("agent_id", agent_id)}/'
 
 
-def artifact_prefix(run_id: str, agent_id: str, commit: str, attempt: int, kind: str) -> str:
-    """Where the agent's ``kind`` artifacts of its task's commit and attempt go (``workspace/layout.py``)."""
+def check_place(commit: str, attempt: int) -> None:
+    """Refuse a commit that is not a full object id, or an attempt outside 1-``MAX_ATTEMPT``: where an agent's
+    objects of its task go (its artifacts, and its outputs' shards: harness/role_tools.py)."""
     if not SHA.fullmatch(commit):
         raise RuntimeRefused('a commit is a full hexadecimal object id')
     if isinstance(attempt, bool) or not 0 < attempt <= MAX_ATTEMPT:
         raise RuntimeRefused(f'an attempt is 1-{MAX_ATTEMPT}')
+
+
+def artifact_prefix(run_id: str, agent_id: str, commit: str, attempt: int, kind: str) -> str:
+    """Where the agent's ``kind`` artifacts of its task's commit and attempt go (``workspace/layout.py``)."""
+    check_place(commit, attempt)
     if kind not in KINDS:
         raise RuntimeRefused(f'an artifact here is one of {sorted(KINDS)}')
     return f'{agent_prefix(run_id, agent_id)}commits/{commit}/_{kind}/attempt-{attempt}/'

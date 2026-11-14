@@ -13,9 +13,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from engineering.quality_gate.text import REDACTED, clip, data_block, redact
+from engineering.runtime.outputs import SEVERITIES
 from shared.llm_json import json_object_or_none
 
-SEVERITIES = ('blocking', 'should_fix', 'nit')
+# SEVERITIES ('blocking', 'should_fix', 'nit') is runtime/outputs.py's, shared with the harness, whose write_findings
+# writes them (it ships alone in the agents' images).
 MAX_FINDINGS = 20
 MAX_NITS = 3
 MAX_REASONS = 10

@@ -64,6 +64,21 @@ def final_go(client: Any, s3: Any, task: str, record: dict[str, Any] | str | Non
     return key
 
 
+def checked(client: Any, s3: Any, task: str = 'g1', tree: str = TREE, verdict: str = 'GO', *, stop: str = '',
+            state: str = 'done', updated_at: str = '2026-11-13T08:00:00+00:00', status: str = 'pass') -> str:
+    """A gate runner's task, ended ``state``, with its own record: ``verdict`` on ``tree``, one check ``status``."""
+    return final_go(client, s3, task, checked_record(verdict, tree, stop=stop, status=status), state=state,
+                    updated_at=updated_at, role='gate-runner', holder='gate-runner-3', writer='gate-runner-3')
+
+
+def checked_record(verdict: str = 'GO', tree: str = TREE, *, stop: str = '', status: str = 'pass') -> dict[str, Any]:
+    """A gate runner's record as the harness writes it: ``verdict`` on ``tree``, one check ``status``, no final go."""
+    return {'schema': 'voc-gate-record/1', 'verdict': verdict, 'stop_reason': stop, 'tree_hash': tree, 'packs': [],
+            'max_rounds': 1, 'reviewers': [], 'model_calls': 0, 'findings': [], 'final_go': None,
+            'rounds': [{'number': 1, 'checks': [{'name': 'pytest -q', 'status': status}], 'reviewed': False,
+                        'complete': True, 'finding_ids': []}]}
+
+
 def ledger(client: Any, s3: Any, host: FakeHost | None = None) -> RunRecords:
     return RunRecords(client, TABLE, WorkspaceStore(s3, BUCKET, denied_is_missing=True),
                       (host or FakeHost()).default_branch)
@@ -110,8 +125,10 @@ def test_the_latest_final_go_decides_and_only_a_go_for_exactly_the_tree_counts(s
     client, s3 = stores
     records_ = ledger(client, s3)
     assert not records_.has_go(RUN, TREE)   # (no final go yet)
+    checked(client, s3, 'g1', OTHER_TREE, updated_at='2026-11-13T08:00:00+00:00')
     final_go(client, s3, 't1', gate_record('GO', OTHER_TREE), updated_at='2026-11-13T09:00:00+00:00')
     assert (records_.has_go(RUN, OTHER_TREE), records_.has_go(RUN, TREE)) == (True, False)
+    checked(client, s3, 'g2', TREE, updated_at='2026-11-13T09:30:00+00:00')
     final_go(client, s3, 't2', gate_record('GO', TREE), updated_at='2026-11-13T10:00:00+00:00')
     # The newer verdict is the run's: the older tree's GO no longer counts.
     assert (records_.has_go(RUN, TREE), records_.has_go(RUN, OTHER_TREE), records_.has_go(RUN, '')) == (
@@ -152,9 +169,34 @@ def test_the_newest_final_go_decides_and_an_older_go_never_stands_in(stores: tup
                                                                     record: dict[str, Any] | None,
                                                                     holder: str) -> None:
     client, s3 = stores
+    checked(client, s3)
     final_go(client, s3, 't1', gate_record('GO'), updated_at='2026-11-13T09:00:00+00:00', attempt=1)
     assert ledger(client, s3).has_go(RUN, TREE)
     final_go(client, s3, 't2', record, state=state, updated_at='2026-11-13T10:00:00+00:00', attempt=2, holder=holder)
+    assert not ledger(client, s3).has_go(RUN, TREE)
+
+
+@pytest.mark.parametrize(('verdict', 'stop', 'state', 'tree', 'status'), [
+    ('STOPPED', 'tool_missing', 'done', TREE, 'fail'),
+    ('NO-GO', '', 'done', TREE, 'fail'),
+    ('GO', '', 'failed', TREE, 'pass'),           # (its task did not end done)
+    ('GO', '', 'done', OTHER_TREE, 'pass'),       # (a GO for another tree)
+    ('GO', '', 'done', TREE, 'fail'),             # (a GO a failed check contradicts)
+], ids=['stopped', 'no-go', 'failed-task', 'other-tree', 'failed-check'])
+def test_a_final_gos_go_after_a_gate_runner_that_did_not_pass_on_its_tree_is_no_go(
+        stores: tuple[Any, Any], verdict: str, stop: str, state: str, tree: str, status: str) -> None:
+    client, s3 = stores
+    checked(client, s3, 'g1', tree, verdict, stop=stop, state=state, status=status)
+    final_go(client, s3, 't1', gate_record('GO'), updated_at='2026-11-13T09:00:00+00:00')
+    assert not ledger(client, s3).has_go(RUN, TREE)
+    # No gate runner at all: no GO either; a newer gate runner's GO on the tree makes the final go's GO count.
+    checked(client, s3, 'g2', TREE, updated_at='2026-11-13T08:30:00+00:00')
+    assert ledger(client, s3).has_go(RUN, TREE)
+
+
+def test_a_final_gos_go_with_no_gate_runner_is_no_go(stores: tuple[Any, Any]) -> None:
+    client, s3 = stores
+    final_go(client, s3, 't1', gate_record('GO'))
     assert not ledger(client, s3).has_go(RUN, TREE)
 
 
@@ -169,6 +211,7 @@ def test_only_the_final_go_holders_own_record_counts(stores: tuple[Any, Any], ho
 def test_the_latest_attempt_of_a_task_wins_and_only_its_record_is_read(stores: tuple[Any, Any],
                                                                         monkeypatch: pytest.MonkeyPatch) -> None:
     client, s3 = stores
+    gate = checked(client, s3)
     final_go(client, s3, 't1', gate_record('NO-GO'), attempt=1)
     key = final_go(client, s3, 't1', gate_record('GO'), attempt=2)
     read: list[str] = []
@@ -176,7 +219,8 @@ def test_the_latest_attempt_of_a_task_wins_and_only_its_record_is_read(stores: t
     original = store.read_bytes
     monkeypatch.setattr(store, 'read_bytes', lambda k, limit: read.append(k) or original(k, limit))
     assert RunRecords(client, TABLE, store, FakeHost().default_branch).has_go(RUN, TREE)
-    assert read == [key]
+    # The deciding final go's record, then the newest gate runner's: no other.
+    assert read == [key, gate]
 
 
 def test_a_gate_record_over_its_bound_is_no_go(stores: tuple[Any, Any], monkeypatch: pytest.MonkeyPatch) -> None:

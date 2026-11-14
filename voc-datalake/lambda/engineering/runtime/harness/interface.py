@@ -34,6 +34,8 @@ Ending = Literal['done', 'paused']
 
 #: The brief's instructions a checkpoint keeps at most (a task's spec is at most 8 KB on the board).
 MAX_BRIEF: Final = 16 * 1024
+#: The submitted patch's key a checkpoint keeps at most (a longer one is no submitted patch's).
+MAX_PATCH_KEY: Final = 512
 
 @dataclass
 class AgentSession:
@@ -96,13 +98,19 @@ class AgentSession:
         seq = self.restored_seq + self.saves + 1
         position: dict[str, Any] = {'task_id': context.task_id, 'turn': turn, 'step': context.status.step[:500],
                                     'inbox': self.inbox.cursor(),
+                                    # The outputs written so far, recorded on the task when a continuation finishes.
+                                    'results': list(context.result_keys),
+                                    # The checks it ran, as the harness recorded them (a gate record's checks).
+                                    'checks': list(context.checks),
                                     # The brief, so a continuation needs no claim of a task it holds already.
                                     'brief': {'title': context.brief.title[:500],
-                                              'instructions': context.brief.instructions[:MAX_BRIEF]}}
+                                              'instructions': context.brief.instructions[:MAX_BRIEF],
+                                              'patch': context.brief.patch[:MAX_PATCH_KEY]}}
         if context.runs_code and not clean:
             try:
                 # None: the working tree is clean (every change undone), and so is the continuation's.
-                self.patch = snapshot(context, f'checkpoint-{seq:06d}')
+                # (a gate's working tree is a patch on the tree it judges, which its continuation rebuilds first)
+                self.patch = snapshot(context, f'checkpoint-{seq:06d}', context.gate_tree)
             except (OutsideCheckout, OSError) as refused:
                 # The notes and plan are saved with the last working tree saved; the continuation is told so.
                 position['patch_refused'] = str(refused)[:300]

@@ -21,12 +21,14 @@ MAX_EVENT_BYTES = 16 * 1024
 MAX_SUMMARY_BYTES = 1024
 #: The roles that claim tasks (plan v3, 4.2: a posted task is addressed to one), and so the agent roles that may
 #: speak on the bus. There are no queues: a posted task's notice is recorded by the delivery function for the
-#: role's agents to read (it wakes nobody). The IAM catalog (connectors.identity AGENT_ROLES) has three more, none
+#: role's agents to read (it wakes nobody). The IAM catalog (connectors.identity AGENT_ROLES) has two more, neither
 #: of which claims tasks: the coordinator, which plans the run on the board and speaks on the bus as the run's
-#: conductor (its own source); the coach; and the gate-runner. Adding one here lets tasks be posted for it and gives
-#: it a voice.
+#: conductor (its own source), and the coach. Adding one here lets tasks be posted for it and gives it a voice. The
+#: gate runner is one since it has a skill (6.29.00): its tasks are posted and claimed like any role's (in a run that
+#: follows a flow, only at a step that takes it: the quality gate's in the shipped templates, whose final go waits for
+#: one done, flow/conductor.py), and it speaks only its gate results (senders.py).
 ROLES = frozenset({'understander', 'hunter', 'fixer', 'committer', 'commit-reviewer', 'pr-author', 'pr-reviewer',
-                   'builder', 'final-go', 'mapper'})
+                   'builder', 'final-go', 'mapper', 'gate-runner'})
 FROM_KINDS = frozenset({'agent', 'conductor', 'supervisor', 'coach', 'human', 'system'})
 TO_KINDS = frozenset({'role', 'agent', 'conductor', 'run'})
 TYPES = frozenset({

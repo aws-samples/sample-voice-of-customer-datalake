@@ -55,9 +55,9 @@ from typing import Any, Final
 
 from engineering.board.store import COORDINATOR
 from engineering.flow.ledger import FINAL_GO_ROLE
+from engineering.flow.ledger import GATE_RUNNER_ROLE as GATE_RUNNER
 from shared.workflow_engineering import NODE_STOP_AT_PR, SCHEMA_V2
 
-GATE_RUNNER: Final = 'gate-runner'
 #: A quality gate step's verdict, as the GO ledger reads it (``flow/ledger.py``; ``record.py`` reads it for the
 #: conductor), and the one a reader without the gate records cannot tell yet.
 GO, NO_GO, UNREAD = 'go', 'no_go', 'unread'

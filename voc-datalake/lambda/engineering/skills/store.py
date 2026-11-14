@@ -46,8 +46,12 @@ skill every connection's agents fall back to) and the agent role::
   person's version is accepted as before, measured or not. A rejected version stays, as every version does.
 - **Roll back**: an administrator only, within the version's own scope: a new version restoring an earlier
   accepted one's record, current at once and logged as ``rolled_back``, so the history stays whole.
+- **Seed** (6.29.00): an administrator starts a role's shared skill from its shipped record (``seed_shared``: the
+  record the harness runs, runtime/harness/skills.py), as the shared skill's first version, proposed and accepted;
+  only while the shared skill has no version, so a seed never writes over a history. The coach proposes only on a
+  version the store holds, so a role's first is a person's: this seed, or one they write.
 - **Read**: ``current`` is the connection's own current version, else the shared skill's, else None (the role runs
-  on the platform's own instructions); ``versions`` pages through a scope's history. A connection's versions are
+  on its shipped skill, which the harness still reads from the image, not from this store); ``versions`` pages through a scope's history. A connection's versions are
   read only as the connection is (the routes check that access; this store does not).
 
 Each change returns an ``Announcement``: the bus event (``skill.proposed``, ``skill.accepted``,
@@ -71,6 +75,7 @@ from engineering.rows import create_only as _put
 from engineering.rows import get_row, transact_or_refuse
 from engineering.rows import number_value as _number
 from engineering.rows import text_value as _text
+from engineering.runtime.harness.skills import SKILLS, skill_label
 from engineering.skills.diff import Event, SkillDiff, diff, from_json, summary, to_json
 from engineering.skills.model import (
     CASE_ID,
@@ -577,6 +582,27 @@ class SkillStore:
                              'line(s) or example text(s) are copied from its version; write them in general terms')
         return self._propose(ws, SHARED, role, content, proposer=by, reason=reason, base=base,
                              benchmark=Benchmark(), promoted_from=source)
+
+    def seed_shared(self, ws: str, role: str, *, by: Actor) -> Change | None:
+        """The shared skill's first version, from the role's shipped record (runtime/harness/skills.py ``SKILLS``,
+        what its agents run): an administrator's version, proposed on no base and accepted, with the shipped label as
+        its why. Only while the shared skill has no version at all (None once it has one: a seed never writes over
+        anyone's history); a seed racing another is refused by the acceptance's own condition (the shared skill has
+        a current version by then), and its proposal stays in the history as a proposed version nobody accepted (D1:
+        no version is removed; it is two writes, the proposal and the acceptance, as every version is). The store
+        numbers it, so its first version is ``<role>@1`` here whatever the
+        shipped record's number (the coordinator ships as version 2)."""
+        _admin(by, 'seeds')
+        shipped = SKILLS.get(role)
+        if shipped is None:
+            raise SkillError(f'the {role} role ships no skill: a person writes its first version')
+        if self.versions(ws, SHARED, role, limit=1).versions:
+            return None
+        content = Skill.from_record(shipped.to_record()).content
+        proposed = self.propose_version(
+            ws, SHARED, role, content, proposer=by, base=None,
+            reason=Reason(comment=f'Seeded from the shipped skill {skill_label(shipped.name, shipped.version)}.'))
+        return self.accept_version(ws, SHARED, role, proposed.version.version, by)
 
     def _transact(self, items: list[dict[str, Any]], conflict: str) -> None:
         transact_or_refuse(self.client, items, SkillConflict(conflict))

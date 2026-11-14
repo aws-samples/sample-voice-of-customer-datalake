@@ -12,16 +12,18 @@ from typing import Any
 
 from engineering.quality_gate.review import SEVERITIES, Finding
 from engineering.quality_gate.text import cell
+from engineering.runtime.outputs import GATE_SCHEMA as SCHEMA
+from engineering.runtime.outputs import GATE_VERDICTS as VERDICTS
+from engineering.runtime.outputs import PLAIN_NAME, STOP_REASON
 
-SCHEMA = 'voc-gate-record/1'
-VERDICTS = frozenset({'GO', 'NO-GO', 'STOPPED'})
+# The record's schema name and verdicts, its plain names and stop reasons are runtime/outputs.py's, shared with the
+# harness, whose write_gate_record (the gate runner's and the final go's) writes them.
 #: What a reviser may say it did about a finding (a finding nobody acted on is ``open``).
 REVISION_OUTCOMES = frozenset({'fixed', 'disputed', 'deferred'})
 # The values the record prints as they are (the gate makes them; ``cell`` renders everything else): read back from
-# the workspace, each must have the gate's own shape, so no Markdown, link or mention gets through them.
-_PLAIN = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z')
+# the workspace, each must have the gate's own shape (a pack's or reviewer's ``PLAIN_NAME``, a ``STOP_REASON``, the
+# ones below), so no Markdown, link or mention gets through them.
 _FINDING_ID = re.compile(r'R[0-9]{1,2}-[A-Za-z0-9_.-]{1,64}-[0-9]{1,4}\Z')
-_STOP = re.compile(r'[a-z_]{0,40}\Z')
 _TREE = re.compile(r'(?:[0-9a-f]{40}|[0-9a-f]{64})?\Z')
 
 
@@ -110,7 +112,7 @@ class GateRecord:
             max_rounds=_int(data, 'max_rounds'),
             reviewers=tuple(_plain(name, 'reviewers') for name in _strs(data, 'reviewers')),
             model_calls=_int(data, 'model_calls'), own_gate=data.get('own_gate') is True,
-            stop_reason=_shaped(data, 'stop_reason', _STOP), accepted_by=_str(data, 'accepted_by'),
+            stop_reason=_shaped(data, 'stop_reason', STOP_REASON), accepted_by=_str(data, 'accepted_by'),
             tool_versions={str(k): str(v) for k, v in _map(data, 'tool_versions').items()},
             rounds=tuple(RoundRecord(number=_int(r, 'number'), reviewed=r.get('reviewed') is True,
                                      complete=r.get('complete') is not False, finding_ids=_strs(r, 'finding_ids'),
@@ -224,7 +226,7 @@ def _shaped(data: Mapping[str, Any], key: str, pattern: re.Pattern[str]) -> str:
 
 
 def _plain(value: str, key: str) -> str:
-    if not _PLAIN.fullmatch(value):
+    if not PLAIN_NAME.fullmatch(value):
         raise ValueError(f'"{key}" holds plain names only')
     return value
 

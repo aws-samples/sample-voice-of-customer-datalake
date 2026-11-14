@@ -21,8 +21,16 @@
       "reason": "three unrelated keys that happen to start with the user namespace: a conversations partition, a briefing subscriber row and a category-access row"
     },
     {
-      "key": "BEDROCK_MODEL_ID|_SONNET55::*",
-      "reason": "the platform's last-resort default model and the name of one allowlisted model; the default moves without the alias table moving"
+      "key": "BEDROCK_MODEL_ID|SONNET|_SONNET55::*",
+      "reason": "the platform's last-resort default model, the name of one allowlisted model, and the model the engineering role skills name (runtime/harness/skills.py SONNET): the default moves without the alias table moving, and the harness ships alone in the agents' images without shared/model_config.py, so its copy is held to the allowlist by test_engineering_role_skills.py"
+    },
+    {
+      "key": "HAIKU|_HAIKU55::*",
+      "reason": "the model the engineering role skills name (runtime/harness/skills.py) and its alias in the allowlist (shared/model_config.py): the harness ships alone in the agents' images without shared/, and test_engineering_role_skills.py holds its copy to ALLOWED_MODEL_IDS"
+    },
+    {
+      "key": "OPUS|_OPUS55::*",
+      "reason": "the model the engineering role skills name (runtime/harness/skills.py) and its alias in the allowlist (shared/model_config.py): the harness ships alone in the agents' images without shared/, and test_engineering_role_skills.py holds its copy to ALLOWED_MODEL_IDS"
     },
     {
       "key": "OPEN_ROW_SESSION_SK_PREFIX|ROW_SK_PREFIX::*",

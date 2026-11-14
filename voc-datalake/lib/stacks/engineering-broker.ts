@@ -20,8 +20,9 @@
  * - `dynamodb:GetItem` on the aggregates table, only in the people's flag partitions (`USERFLAGS#*`): the way of
  *   working of the person who started a run (shared/ai_mode.py), and of that row only `mode` (with its key: a
  *   `dynamodb:Attributes` condition, the read a projection);
- * - `s3:GetObject` on voc-eng-workspace's agents' patches and final-go agents' gate records only
- *   (`ws/default/runs/*\/commits/*\/_patches/*`, `ws/default/runs/*\/final-go-*\/commits/*\/_gate/*`; no ListBucket, so a key never written answers 403,
+ * - `s3:GetObject` on voc-eng-workspace's agents' patches and final-go and gate-runner agents' gate records only
+ *   (`ws/default/runs/*\/commits/*\/_patches/*`, `ws/default/runs/*\/final-go-*\/commits/*\/_gate/*`,
+ *   `ws/default/runs/*\/gate-runner-*\/commits/*\/_gate/*`; no ListBucket, so a key never written answers 403,
  *   read as missing);
  * - `kms:Decrypt` on the stack's key through DynamoDB and S3 only (no GenerateDataKey: it encrypts nothing).
  * No write to any table or bucket. The function URL has no
@@ -78,8 +79,10 @@ const BROKER_PEOPLE_PARTITIONS = 'USERFLAGS#*';
  */
 const BROKER_WORKSPACE_KEYS = [
   `ws/${ENGINEERING_WORKSPACE}/runs/*/commits/*/_patches/*`,
-  // Only a final-go agent's gate records (`<agent>` is `final-go-<n>`): the GO ledger reads no other's.
+  // Only a final-go agent's and a gate runner's gate records (`<agent>` is `final-go-<n>`, `gate-runner-<n>`): the
+  // GO ledger reads the final go's GO and the gate runner's GO on the same tree (flow/ledger.py go_tree), no other's.
   `ws/${ENGINEERING_WORKSPACE}/runs/*/final-go-*/commits/*/_gate/*`,
+  `ws/${ENGINEERING_WORKSPACE}/runs/*/gate-runner-*/commits/*/_gate/*`,
 ];
 /** The way-of-working row's attributes the broker may read (its key, and `mode`: connectors/dial.py MODE_ATTRIBUTE). */
 const BROKER_PEOPLE_ATTRIBUTES = ['pk', 'sk', 'mode'];

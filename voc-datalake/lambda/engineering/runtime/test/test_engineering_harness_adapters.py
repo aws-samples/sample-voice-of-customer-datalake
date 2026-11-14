@@ -10,9 +10,10 @@ import pytest
 
 from engineering.runtime.checkpoints import is_valid
 from engineering.runtime.harness.cli import CLAUDE, ClaudeCli, CliNotOffered, choose_cli
-from engineering.runtime.harness.converse_loop import MAX_INPUT_TOKENS, SYSTEM_PROMPT, ConverseAdapter
+from engineering.runtime.harness.converse_loop import MAX_INPUT_TOKENS, SYSTEM_PROMPT, ConverseAdapter, system_prompt
 from engineering.runtime.harness.interface import PAUSED_EXIT_CODE
 from engineering.runtime.harness.ports import PAUSE, SAVE, InboxMessage
+from engineering.runtime.harness.skills import FIXER
 from engineering.runtime.harness.tool_server import SessionFiles, answer, serve
 from engineering.runtime.harness.tools import ToolResult
 from engineering.runtime.liveness import PAUSED_EXIT_CODE as SUPERVISOR_PAUSED
@@ -33,7 +34,8 @@ def test_the_converse_loop_runs_the_tools_until_finish_and_counts_tokens(tmp_pat
                            [use('report_progress', 't2', step='found it'), use('finish', 't3', summary='fixed')]])
     assert ConverseAdapter(bedrock, 'model-a').run(w.session) == 'done'
     first = bedrock.requests[0]
-    assert first['system'] == [{'text': SYSTEM_PROMPT}]
+    # The fixer's skill is its system prompt; a role with no skill (the coach) gets the platform's own.
+    assert (first['system'], system_prompt('coach')) == ([{'text': FIXER.system_prompt()}], SYSTEM_PROMPT)
     assert {tool['toolSpec']['name'] for tool in first['toolConfig']['tools']} >= {'run', 'finish', 'read_file'}
     opening = first['messages'][0]['content'][0]['text']
     assert 'Make tests/test_parse.py pass.' in opening

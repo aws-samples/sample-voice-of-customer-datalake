@@ -5,8 +5,9 @@ checkout's commit, the run's) under the agent's own keys,
 ``ws/<ws>/runs/<run>/<agent>/commits/<commit>/_patches/attempt-<n>/<name>.diff``. The broker's push names it, and
 this reader:
 
-* takes only a key of the caller's own: the workspace's layout, the caller's run and agent, the run's commit and the
-  ``patches`` kind; anything else is refused before any read;
+* takes only a key of the caller's own, or, for the committer, one a fixer or builder of its run submitted (6.29.00:
+  the committer pushes after the gate's GO the patch the gate judged): the workspace's layout, the caller's run, the
+  run's commit and the ``patches`` kind, never a checkpoint's snapshot; anything else is refused before any read;
 * reads at most ``MAX_PATCH_BYTES``, refusing a larger patch rather than cutting it;
 * applies it file by file to the run's commit as the host has it (``RepositoryHost.file_at``): every hunk must
   match its base exactly (no fuzz, no offset), and a binary file is a literal or a delta on its base. A copy, a
@@ -33,11 +34,12 @@ from botocore.exceptions import BotoCoreError, ClientError
 from engineering.connectors.hosts import FILE_MODES, BundleContents, Commit, FileChange, Submission, Unavailable
 from engineering.connectors.identity import WORKSPACE
 from engineering.connectors.write_policy import WriteRefused
+from engineering.runtime.outputs import MAX_SUBMITTED_PATCH_BYTES, is_submitted_patch
 from engineering.workspace.layout import parse_agent_key
 from engineering.workspace.store import ObjectTooLarge, WorkspaceStore
 
-#: The largest patch the broker reads (what it took in a request before: a function URL's 6 MB).
-MAX_PATCH_BYTES: Final = 6 * 1024 * 1024
+#: The largest patch the broker reads (what it took in a request before: a function URL's 6 MB), the gate's too.
+MAX_PATCH_BYTES: Final = MAX_SUBMITTED_PATCH_BYTES
 #: The most files one push changes, and the most bytes of new content it carries.
 MAX_FILES: Final = 1000
 MAX_CONTENT_BYTES: Final = 32 * 1024 * 1024
@@ -55,6 +57,8 @@ _OCTAL: Final = re.compile(rb'[0-3][0-7]{2}')
 #: A path's control characters (C0 and DEL): never in a path the broker pushes.
 _CONTROL: Final = re.compile(rb'[\x00-\x1f\x7f]')
 _DIFF: Final = b'diff --git '
+#: The committer pushes the patch a fixer or a builder of its run submitted (the gate's GO names that tree).
+COMMITTER: Final = 'committer'
 
 
 class PatchRefused(WriteRefused):
@@ -393,10 +397,16 @@ class WorkspacePatches:
 
     def _patch(self, submission: Submission) -> bytes:
         key = parse_agent_key(submission.key) if len(submission.key) <= 512 else None
-        own = key is not None and (key.ws, key.run_id, key.agent, key.kind, key.sha) == (
-            WORKSPACE, submission.run_id, submission.agent_id, 'patches', submission.run.commit)
-        if key is None or not own or not key.name.endswith('.diff'):
-            raise PatchRefused("An agent pushes only a patch it submitted itself, on the run's commit "
+        # Its own, or (the committer's) one a fixer or builder of the run submitted at its commit, by the rule the
+        # gate's harness judges it by (runtime/outputs.py); never a checkpoint's snapshot.
+        whose = key is not None and (key.agent == submission.agent_id or (
+            submission.agent_id.startswith(f'{COMMITTER}-')
+            and is_submitted_patch(submission.key, submission.run_id, submission.run.commit)))
+        own = key is not None and whose and (key.ws, key.run_id, key.kind, key.sha) == (
+            WORKSPACE, submission.run_id, 'patches', submission.run.commit)
+        if key is None or not own or not key.name.endswith('.diff') or key.name.startswith('checkpoint-'):
+            raise PatchRefused("An agent pushes only a patch it submitted itself, or the committer a fixer's or "
+                               "builder's, on the run's commit "
                                f'(ws/{WORKSPACE}/runs/<run>/<agent>/commits/<commit>/_patches/...).')
         try:
             patch = self._workspace.read_bytes(submission.key, MAX_PATCH_BYTES)

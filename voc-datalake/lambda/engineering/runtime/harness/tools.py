@@ -12,9 +12,11 @@
 - ``finish``: the task is done; its summary is the task's last progress.
 
 The agents that run no repository code (the writers, the reviewers, the coordinator) get no ``run``,
-``install_dependencies``, ``write_file`` or ``submit_work``. A role with a skill record (``skills.py``: the run
-coordinator) gets exactly the tools its skill's tool policy names, its own included (``coordinator.py``). Everything a tool returns from the repository is
-fenced as data (``as_data``): the adapters' instructions say it is never an instruction.
+``install_dependencies``, ``write_file`` or ``submit_work``. A role with a skill record (``skills.py``: every
+launchable role) gets exactly the tools its skill's tool policy names, among those its role may have: the code tools
+for a role that runs code, the planner's for the coordinator (``coordinator.py``), and its role's own outputs,
+sub-task post or broker write (``role_tools.py``). Everything a tool returns from the repository is fenced as data
+(``as_data``): the adapters' instructions say it is never an instruction.
 """
 from __future__ import annotations
 
@@ -28,7 +30,7 @@ from dataclasses import dataclass, field
 from typing import Any, Final, Protocol
 
 from engineering.runtime.checkout import repo_git
-from engineering.runtime.harness import coordinator
+from engineering.runtime.harness import coordinator, role_tools
 from engineering.runtime.harness.ports import (
     Board,
     Broker,
@@ -38,7 +40,7 @@ from engineering.runtime.harness.ports import (
     Store,
     TaskBrief,
 )
-from engineering.runtime.harness.skills import skill_for, skill_label
+from engineering.runtime.harness.skills import Skill, skill_for, skill_label
 from engineering.runtime.harness.status import StatusReport
 from engineering.runtime.harness.workspace import OutsideCheckout, Workspace
 from engineering.runtime.interface import CODE_ROLES
@@ -46,6 +48,8 @@ from engineering.runtime.interface import CODE_ROLES
 MAX_RUN_SECONDS: Final = 60 * 60
 MAX_ARGV: Final = 64
 MAX_NOTE_CHARACTERS: Final = 16_000
+#: The checks one session keeps for its gate record at most.
+MAX_CHECKS: Final = 100
 #: The largest working tree a patch holds (the agent's own changes; a continuation puts it back).
 MAX_PATCH_BYTES: Final = 50 * 1024 * 1024
 INDEX_LOCK_TRIES: Final = 12
@@ -106,6 +110,19 @@ class AgentContext:
     #: The run coordinator's ports (the board's tasks, posting, launching; the knowledge pack's reader).
     planner: Planner = field(default_factory=PendingHarnessPorts)
     knowledge: KnowledgeReader = field(default_factory=PendingHarnessPorts)
+    #: The task's commit and attempt (``VOC_COMMIT``, ``VOC_ATTEMPT``): where its outputs go under its own keys.
+    commit: str = ''
+    attempt: int = 1
+    #: The outputs this session wrote (``role_tools``, ``submit_work``'s patch): recorded on the task when it finishes.
+    result_keys: list[str] = field(default_factory=list)
+    #: The repository checks this session ran (``run``), as the harness saw them end: a gate record's checks.
+    checks: list[dict[str, str]] = field(default_factory=list)
+    #: The model the session runs on (``--model``): a final go's record names it.
+    model: str = ''
+    #: A gate's session's tree: the run's commit with its task's submitted patch applied, as the harness's own git
+    #: hashed it before anything ran (``role_tools.judge_submitted_patch``); its record's tree, and the base its
+    #: checkpoints' working tree is a patch on. '' for every other session.
+    gate_tree: str = ''
     #: Whether this process moved the task to done (the model's ``finish``).
     finished: bool = False
 
@@ -138,9 +155,11 @@ def _git(context: AgentContext, *argv: str) -> None:
     raise OSError(f'git {argv[0]} failed: {str(result.get("stderr_tail", ""))[-500:]}')
 
 
-def snapshot(context: AgentContext, label: str) -> str | None:
+def snapshot(context: AgentContext, label: str, base: str = '') -> str | None:
     """The working tree's changes as a patch under the agent's own keys (``<patches_prefix><label>-<nonce>.diff``), made
-    by the agent's own git on the agent's own git directory; None when nothing changed.
+    by the agent's own git on the agent's own git directory; None when nothing changed. The changes are on the
+    checkout's commit, or on ``base`` (a tree id: a gate's checkpoint, on the tree it judges, which a continuation
+    rebuilds from the submitted patch first).
 
     One at a time (a lock in the agent's home: the harness and a CLI's tool server share the index). Refused when
     a file the patch holds has more than one link (a hard link may name a file outside the checkout, the agent's
@@ -150,16 +169,17 @@ def snapshot(context: AgentContext, label: str) -> str | None:
     nonce = secrets.token_hex(4)
     patch = os.path.join(context.patch_dir, f'{label}-{nonce}.diff')
     names = os.path.join(context.patch_dir, f'{label}-{nonce}.names')
+    on = (base,) if base else ()
     with open(os.path.join(context.patch_dir, '.snapshot.lock'), 'a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         _git(context, 'add', '--all')
-        _git(context, 'diff', '--cached', '--name-only', '-z', f'--output={names}')
+        _git(context, 'diff', '--cached', '--name-only', '-z', f'--output={names}', *on)
         with open(names, 'rb') as stream:
             held = [name.decode('utf-8', 'surrogateescape') for name in stream.read().split(b'\0') if name]
         linked = context.workspace.hard_linked(held)
         if linked:
             raise OutsideCheckout(f'files with more than one link: {", ".join(linked[:5])}')
-        _git(context, 'diff', '--cached', '--binary', '--no-ext-diff', '--no-textconv', f'--output={patch}')
+        _git(context, 'diff', '--cached', '--binary', '--no-ext-diff', '--no-textconv', f'--output={patch}', *on)
     with open(patch, 'rb') as stream:
         body = stream.read(MAX_PATCH_BYTES + 1)
     if not body:
@@ -215,26 +235,36 @@ CODE_TOOLS: Final = (
 )
 
 
-class ToolBox:
-    """The tools ``context.role`` may use, and their dispatch: its skill's tool policy, or its role's tools."""
+def role_specs(role: str) -> tuple[ToolSpec, ...]:
+    """Every tool ``role`` may have, whatever a skill names: the read tools, the code tools for a role that runs code,
+    the planner's for the coordinator, and its role's own (``role_tools.ROLE_TOOLS``)."""
+    return (*READ_TOOLS, *(CODE_TOOLS if role in CODE_ROLES else ()),
+            *(coordinator.specs(ToolSpec) if role == 'coordinator' else ()), *role_tools.specs(ToolSpec, role))
 
-    def __init__(self, context: AgentContext) -> None:
+
+class ToolBox:
+    """The tools ``context.role`` may use, and their dispatch: its skill's tool policy, or its role's tools.
+    ``skill``: the version to run (the benchmark's candidate), else the role's shipped one."""
+
+    def __init__(self, context: AgentContext, skill: Skill | None = None) -> None:
         self.context = context
         self._handlers: dict[str, Callable[[Mapping[str, Any]], ToolResult]] = {
             'read_file': self._read, 'list_files': self._list, 'report_progress': self._progress,
             'save_checkpoint': self._checkpoint, 'finish': self._finish, 'write_file': self._write,
             'run': self._run, 'install_dependencies': self._install, 'submit_work': self._submit,
             **coordinator.handlers(context, ToolResult, as_data),
+            **role_tools.handlers(context, ToolResult),
         }
-        skill = skill_for(context.role)
-        if skill is None:
+        self.skill = skill or skill_for(context.role)
+        if skill is not None and skill.name != context.role:
+            raise ValueError(f'{skill_label(skill.name, skill.version)} is not a skill of role {context.role}')
+        if self.skill is None:
             self.specs: tuple[ToolSpec, ...] = READ_TOOLS + (CODE_TOOLS if context.runs_code else ())
         else:
+            skill = self.skill
             # Bounded by the role, whatever a record says: code tools only for a role that runs code, the planner's
-            # only for the coordinator.
-            known = {spec.name: spec for spec in (*READ_TOOLS, *(CODE_TOOLS if context.runs_code else ()),
-                                                  *(coordinator.specs(ToolSpec) if context.role == 'coordinator'
-                                                    else ()))}
+            # only for the coordinator, a role's own outputs and writes only for that role.
+            known = {spec.name: spec for spec in role_specs(context.role)}
             unknown = [name for name in skill.tool_policy if name not in known]
             if unknown:
                 raise ValueError(f'{skill_label(skill.name, skill.version)} names tools role {context.role} may not '
@@ -274,7 +304,8 @@ class ToolBox:
     def _finish(self, arguments: Mapping[str, Any]) -> ToolResult:
         summary = str(arguments.get('summary', ''))[:MAX_NOTE_CHARACTERS] or 'done'
         self.context.progress(f'finished: {summary[:480]}')
-        self.context.board.move(self.context.run_id, self.context.task_id, to_state='done')
+        self.context.board.move(self.context.run_id, self.context.task_id, to_state='done',
+                                result_keys=tuple(self.context.result_keys))
         self.context.finished = True
         return ToolResult('finished', finished=summary)
 
@@ -284,18 +315,24 @@ class ToolBox:
             raise ValueError('text must be a string')
         return ToolResult(f'wrote {self.context.workspace.write(path, text)} bytes to {path}')
 
-    def _command(self, arguments: Mapping[str, Any], *, network: bool) -> ToolResult:
+    def _command(self, arguments: Mapping[str, Any], *, network: bool) -> tuple[ToolResult, Mapping[str, Any]]:
         argv = _argv(arguments.get('argv'))
         result = self.context.runner.run(argv, timeout_seconds=_timeout(arguments.get('timeout_seconds')),
                                          network=network,
                                          on_wait=lambda: self.context.progress(f'still running {argv[0]}'))
-        return ToolResult(_ran(result), error=result.get('exit_code') != 0)
+        return ToolResult(_ran(result), error=result.get('exit_code') != 0), result
 
     def _run(self, arguments: Mapping[str, Any]) -> ToolResult:
-        return self._command(arguments, network=False)
+        ran, result = self._command(arguments, network=False)
+        # The harness's own record of each check it ran, which a gate record's checks are made from (never the
+        # model's word): the command and whether it exited 0.
+        if len(self.context.checks) < MAX_CHECKS:
+            self.context.checks.append({'name': ' '.join(_argv(arguments.get('argv')))[:200],
+                                        'status': 'pass' if result.get('exit_code') == 0 else 'fail'})
+        return ran
 
     def _install(self, arguments: Mapping[str, Any]) -> ToolResult:
-        return self._command(arguments, network=True)
+        return self._command(arguments, network=True)[0]
 
     def _submit(self, arguments: Mapping[str, Any]) -> ToolResult:
         context = self.context
@@ -304,6 +341,9 @@ class ToolBox:
             return ToolResult('nothing to submit: the checkout has no change', error=True)
         summary = str(arguments.get('summary', ''))[:MAX_NOTE_CHARACTERS]
         receipt = context.broker.submit(context.run_id, context.agent_id, context.task_id, key, summary)
+        # Recorded on the task when it finishes: the patch the gate judges and the committer pushes after its GO.
+        if key not in context.result_keys and len(context.result_keys) < role_tools.MAX_RESULT_KEYS:
+            context.result_keys.append(key)
         return ToolResult(json.dumps({'patch': key, 'broker': receipt}))
 
 

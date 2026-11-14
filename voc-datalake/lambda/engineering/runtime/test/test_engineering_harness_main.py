@@ -1,12 +1,13 @@
 """The harness's entry point: the session from the agent's environment, its restore, its heartbeat, its exit codes."""
 import json
+import os
 import shutil
 import stat
 import subprocess
 import sys
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -18,10 +19,19 @@ from engineering.runtime.harness import main as harness_main
 from engineering.runtime.harness.board_client import InboxHttp
 from engineering.runtime.harness.cli import CliNotOffered
 from engineering.runtime.harness.main import Ports, S3Store, build_session, main
-from engineering.runtime.harness.ports import HarnessPortNotWired, PendingHarnessPorts
+from engineering.runtime.harness.ports import HarnessPortNotWired, PendingHarnessPorts, TaskBrief
+from engineering.runtime.harness.role_tools import PatchNotJudged
 from engineering.runtime.harness.runner_client import RunnerClient
 from engineering.runtime.test.conftest import BUCKET
-from engineering.runtime.test.harness_fakes import FakeBedrock, FakeBoard, FakeBroker, FakeInbox, FakeRunner, use
+from engineering.runtime.test.harness_fakes import (
+    BRIEF,
+    FakeBedrock,
+    FakeBoard,
+    FakeBroker,
+    FakeInbox,
+    FakeRunner,
+    use,
+)
 from engineering.runtime.test.test_engineering_images import IMAGES, RUNTIME, SHIPPED
 from engineering.runtime.unit_runner import Runner, serve
 from engineering.workspace.layout import parse_agent_key
@@ -143,16 +153,7 @@ def _vm_directory(root: Path, cache: Path, commit: str) -> RunnerClient:
 
 def test_a_working_tree_survives_a_continuation_on_real_git_and_lands_only_in_the_checkout(aws, tmp_path):
     s3, _ = aws
-    origin, cache = tmp_path / 'origin', tmp_path / 'cache.git'
-    git = [GIT_BIN, '-c', 'user.name=Example', '-c', 'user.email=dev@example.org', '-c', 'init.defaultBranch=main']
-    (origin / 'src').mkdir(parents=True)
-    (origin / 'src' / 'parse.py').write_text('old\n')
-    for argv in (['init', '--quiet', str(origin)], ['-C', str(origin), 'add', '.'],
-                 ['-C', str(origin), 'commit', '--quiet', '-m', 'first'], ['clone', '--quiet', '--bare', str(origin),
-                                                                        str(cache)]):
-        subprocess.run([*git, *argv], check=True, capture_output=True)
-    commit = subprocess.run([GIT_BIN, '-C', str(origin), 'rev-parse', 'HEAD'], check=True, capture_output=True,
-                            text=True).stdout.strip()
+    cache, commit = fixture_repository(tmp_path)
     first = _vm_directory(tmp_path / 'vm-1', cache, commit)
     env = _env(tmp_path, VOC_ROLE='fixer')
     session = build_session(env, s3=s3, ports=_ports(), runner=first, checkout=str(tmp_path / 'vm-1/work/repo'))
@@ -175,6 +176,135 @@ def test_a_working_tree_survives_a_continuation_on_real_git_and_lands_only_in_th
     assert (work / 'repo/repo.git/commondir').read_text() == '../repo/evil\n'
     assert not (work / 'repo.git' / 'commondir').exists()
     assert sorted(path.name for path in work.iterdir()) == ['repo', 'repo.git']
+
+
+@dataclass
+class GateBoard(FakeBoard):
+    """The board's brief of a gate's task, naming the submitted patch it judges."""
+
+    patch: str = ''
+
+    def brief(self, *, run_id: str, task_id: str) -> TaskBrief:
+        super().brief(run_id=run_id, task_id=task_id)
+        return replace(BRIEF, patch=self.patch)
+
+
+def run_git(*argv: str) -> str:
+    """The test's own git (a fixture repository is the test's, never a session's): what it prints."""
+    return subprocess.run([GIT_BIN, '-c', 'user.name=Example', '-c', 'user.email=dev@example.org', '-c',
+                           'init.defaultBranch=main', *argv], check=True, capture_output=True, text=True).stdout.strip()
+
+
+def fixture_repository(tmp_path: Path, files: dict[str, str] | None = None) -> tuple[Path, str]:
+    """A repository of ``files`` (src/parse.py by default) at ``tmp_path / 'origin'``: its bare cache (what a
+    checkout clones) and its commit."""
+    origin, cache = tmp_path / 'origin', tmp_path / 'cache.git'
+    for name, text in (files or {'src/parse.py': 'old\n'}).items():
+        (origin / name).parent.mkdir(parents=True, exist_ok=True)
+        (origin / name).write_text(text)
+    for argv in (['init', '--quiet', str(origin)], ['-C', str(origin), 'add', '.'],
+                 ['-C', str(origin), 'commit', '--quiet', '-m', 'first'], ['clone', '--quiet', '--bare', str(origin),
+                                                                        str(cache)]):
+        run_git(*argv)
+    return cache, run_git('-C', str(origin), 'rev-parse', 'HEAD')
+
+
+def test_a_gate_checks_the_submitted_patch_and_records_the_tree_git_hashed_across_a_continuation(aws, tmp_path):
+    s3, _ = aws
+    cache, commit = fixture_repository(tmp_path)
+    # The fixer's change, submitted as a patch on the run's commit (real git).
+    fixer = build_session(_env(tmp_path), s3=s3, ports=_ports(), runner=_vm_directory(tmp_path / 'vm-f', cache, commit),
+                          checkout=str(tmp_path / 'vm-f/work/repo'))
+    (tmp_path / 'vm-f/work/repo/src/parse.py').write_text('new\n')
+    submitted = json.loads(fixer.tools.call('submit_work', {'summary': 'the fix'}).text)['patch']
+    # The tree of the fixed commit, as git hashes it in the fixer's own checkout.
+    fixed = run_git(f'--git-dir={tmp_path}/vm-f/work/repo.git', 'write-tree')
+    env = _env(tmp_path, VOC_ROLE='gate-runner', VOC_AGENT_ID='gate-runner-2', VOC_TASK_ID='task-4')
+    runner = _vm_directory(tmp_path / 'vm-g1', cache, commit)
+    # The checkout opens its files to the group after git wrote them, which changes their times: a second later, they
+    # differ from the index's (git compares whole seconds), as after a slow checkout. (Its content is unchanged.)
+    time.sleep(1.1)
+    os.utime(tmp_path / 'vm-g1/work/repo/src/parse.py')
+    gate = build_session(env, s3=s3, ports=Ports(board=GateBoard(patch=submitted), inbox=FakeInbox(),
+                                                 broker=FakeBroker()),
+                         runner=runner, checkout=str(tmp_path / 'vm-g1/work/repo'))
+    # Before anything runs, the checkout holds the change and the harness hashed its tree: the fixer's.
+    assert ((tmp_path / 'vm-g1/work/repo/src/parse.py').read_text(), gate.context.gate_tree) == ('new\n', fixed)
+    # A check writes a file; the checkpoint's working tree is a patch on the judged tree, never the fix again.
+    (tmp_path / 'vm-g1/work/repo/build.log').write_text('3 passed\n')
+    key = gate.checkpoint(turn=1)
+    tree = json.loads(s3.get_object(Bucket=BUCKET, Key=key)['Body'].read())['patch']
+    snapshot = s3.get_object(Bucket=BUCKET, Key=tree)['Body'].read()
+    assert b'build.log' in snapshot
+    assert b'parse.py' not in snapshot
+    again = build_session({**env, 'VOC_RESTORE_KEY': key}, s3=s3,
+                          ports=Ports(board=GateBoard(patch='planted'), inbox=FakeInbox(), broker=FakeBroker()),
+                          runner=_vm_directory(tmp_path / 'vm-g2', cache, commit),
+                          checkout=str(tmp_path / 'vm-g2/work/repo'))
+    # The continuation judges the patch its checkpoint's brief names, hashed again, its working tree put back on top.
+    work = tmp_path / 'vm-g2/work/repo'
+    assert (again.context.gate_tree, again.context.brief.patch) == (fixed, submitted)
+    assert ((work / 'src/parse.py').read_text(), (work / 'build.log').read_text()) == ('new\n', '3 passed\n')
+    again.context.checks.append({'name': 'pytest -q', 'status': 'pass'})
+    # The check's build.log changed the checkout: hashed again by real git, its tree is not the judged one, so no GO.
+    drifted = again.tools.call('write_gate_record', {'verdict': 'GO', 'tree_hash': fixed})
+    assert drifted.error
+    assert f'not the judged {fixed}' in drifted.text
+    # Once the check's output is gone the tree is the judged one again, and its GO names it.
+    (work / 'build.log').unlink()
+    record = json.loads(again.tools.call('write_gate_record', {'verdict': 'GO', 'tree_hash': 'f' * 40}).text)['key']
+    assert json.loads(s3.get_object(Bucket=BUCKET, Key=record)['Body'].read())['tree_hash'] == fixed
+
+
+def test_on_aws_today_a_fixers_submit_work_stops_its_session_at_the_broker_not_wired_yet(aws, tmp_path):
+    s3, _ = aws
+    # The ports main wires on AWS: the board's URL, and the broker still pending.
+    fixer = build_session(_env(tmp_path), s3=s3, ports=Ports(board=FakeBoard(), inbox=FakeInbox(),
+                                                             broker=PendingHarnessPorts()),
+                          runner=FakeRunner(), checkout=str(tmp_path))
+    with pytest.raises(HarnessPortNotWired, match=r'broker\.submit'):
+        fixer.tools.call('submit_work', {'summary': 'the fix'})
+    # Its patch was written under its own keys, but nothing is recorded on its task: the gate has none to judge yet.
+    written = s3.list_objects_v2(Bucket=BUCKET, Prefix=PATCHES).get('Contents', [])
+    assert (len(written), fixer.context.result_keys) == (1, [])
+
+
+def test_a_gates_patch_that_does_not_apply_stops_the_session_before_anything_runs(aws, tmp_path):
+    s3, _ = aws
+    submitted = f'ws/default/runs/01JD3R4NZXQ7Y2W8K4M6P9T0AB/fixer-3/commits/{"c" * 40}/_patches/attempt-1/t-1.diff'
+    s3.put_object(Bucket=BUCKET, Key=submitted, Body=b'diff --git a/x b/x\n')
+    runner = FakeRunner(apply_exit=1)
+    with pytest.raises(PatchNotJudged, match='does not apply'):
+        build_session(_env(tmp_path, VOC_ROLE='final-go', VOC_AGENT_ID='final-go-4'), s3=s3,
+                      ports=Ports(board=GateBoard(patch=submitted), inbox=FakeInbox(), broker=FakeBroker()),
+                      runner=runner, checkout=str(tmp_path))
+    # (the index refreshed and the apply refused: nothing hashed, no repository code)
+    assert [call['repository_code'] for call in runner.calls] == [False, False]
+
+
+def test_the_clis_tool_server_takes_the_tree_its_harness_hashed_and_nothing_else(aws, tmp_path, monkeypatch):
+    s3, _ = aws
+    submitted = f'ws/default/runs/01JD3R4NZXQ7Y2W8K4M6P9T0AB/fixer-3/commits/{"c" * 40}/_patches/attempt-1/t-1.diff'
+    s3.put_object(Bucket=BUCKET, Key=submitted, Body=b'diff --git a/x b/x\n')
+    handed: list[dict[str, str]] = []
+
+    def adapter(args: Any, env: dict[str, str], bedrock: Any) -> Any:
+        del args
+        handed.append(dict(env))
+        return harness_main.ConverseAdapter(bedrock(), 'model-a')
+
+    monkeypatch.setattr(harness_main, 'adapter_for', adapter)
+    env = _env(tmp_path, VOC_ROLE='gate-runner', VOC_AGENT_ID='gate-runner-2', VOC_GATE_TREE='f' * 40)
+    main(['run', '--adapter', 'converse', '--model', 'model-a'], env, s3=s3,
+         ports=Ports(board=GateBoard(patch=submitted), inbox=FakeInbox(), broker=FakeBroker()),
+         runner=FakeRunner(tree='b' * 40), bedrock=lambda: FakeBedrock([[use('finish', summary='ok')]]))
+    # The harness's own tree, never the one its start named.
+    assert handed[0]['VOC_GATE_TREE'] == 'b' * 40
+    server = build_session({**env, 'VOC_GATE_TREE': 'b' * 40}, s3=s3, ports=_ports(), runner=FakeRunner(),
+                           checkout=str(tmp_path), restore=False)
+    assert server.context.gate_tree == 'b' * 40
+    assert build_session({**env, 'VOC_GATE_TREE': 'not-a-tree'}, s3=s3, ports=_ports(), runner=FakeRunner(),
+                         checkout=str(tmp_path), restore=False).context.gate_tree == ''
 
 
 def test_a_working_tree_that_does_not_apply_is_a_crash_never_a_silent_loss(aws, tmp_path):
@@ -462,7 +592,7 @@ def test_a_checkpoint_saves_the_brief_for_its_continuation(aws, tmp_path):
     s3, _ = aws
     key = _session(s3, tmp_path).checkpoint(turn=1)
     saved = json.loads(s3.get_object(Bucket=BUCKET, Key=key)['Body'].read())
-    assert set(saved['position']['brief']) == {'title', 'instructions'}
+    assert saved['position']['brief'] == {'title': BRIEF.title, 'instructions': BRIEF.instructions, 'patch': ''}
 
 
 def test_a_fresh_start_saves_its_brief_in_a_first_checkpoint_at_once(aws, tmp_path):
@@ -474,7 +604,7 @@ def test_a_fresh_start_saves_its_brief_in_a_first_checkpoint_at_once(aws, tmp_pa
     saved = json.loads(s3.get_object(Bucket=BUCKET, Key=first)['Body'].read())
     # A continuation after a crash before any save of the agent's restores it: no claim of a task it holds.
     assert (first.removeprefix(CHECKPOINTS)[:6], saved['position']['turn'], set(saved['position']['brief'])) == (
-        '000001', 0, {'title', 'instructions'})
+        '000001', 0, {'title', 'instructions', 'patch'})
 
 
 def test_a_session_ending_without_finish_sends_its_task_to_a_person_never_done(aws, tmp_path):
@@ -485,8 +615,8 @@ def test_a_session_ending_without_finish_sends_its_task_to_a_person_never_done(a
             super().progress(run_id, task_id, agent_id, step)
             calls.append(step)
 
-        def move(self, run_id: str, task_id: str, *, to_state: str) -> None:
-            super().move(run_id, task_id, to_state=to_state)
+        def move(self, run_id: str, task_id: str, *, to_state: str, result_keys: tuple[str, ...] = ()) -> None:
+            super().move(run_id, task_id, to_state=to_state, result_keys=result_keys)
             calls.append(to_state)
 
     s3, _ = aws
@@ -512,7 +642,8 @@ def test_a_refused_move_at_the_end_is_a_crash_never_a_success(aws, tmp_path):
     from engineering.runtime.harness.board_client import BoardRefused
 
     class Refused(FakeBoard):
-        def move(self, run_id: str, task_id: str, *, to_state: str) -> None:
+        def move(self, run_id: str, task_id: str, *, to_state: str, result_keys: tuple[str, ...] = ()) -> None:
+            del result_keys
             raise BoardRefused(409, f'the lease of {run_id}/{task_id} is not yours or has run out: no {to_state}')
 
     s3, _ = aws

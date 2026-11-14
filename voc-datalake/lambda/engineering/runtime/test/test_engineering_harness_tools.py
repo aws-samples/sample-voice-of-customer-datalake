@@ -117,7 +117,8 @@ def test_a_command_is_a_list_of_words_never_a_shell_string(tmp_path, argv):
 def test_an_agent_that_runs_no_code_gets_no_code_tools(tmp_path):
     w = world(tmp_path, role='committer')
     names = {spec.name for spec in w.session.tools.specs}
-    assert names == {'read_file', 'list_files', 'report_progress', 'save_checkpoint', 'finish'}
+    # Its skill's tools: the read tools and its one broker write, never a code tool.
+    assert names == {'read_file', 'list_files', 'push_commit', 'report_progress', 'save_checkpoint', 'finish'}
     assert w.session.tools.call('run', {'argv': ['make']}).error
     assert w.runner.calls == []
 

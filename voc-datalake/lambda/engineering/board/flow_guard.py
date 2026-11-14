@@ -13,15 +13,16 @@ A run without a flow is as before: a post or launch names no step, and the coord
 """
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Final
 
 from engineering.board.model import FINAL, PERSON_PREFIX, Task
 from engineering.board.store import COORDINATOR, BoardError, BoardStore, slot_sk, spec_hash
 from engineering.connectors.identity import WORKSPACE
 from engineering.flow.conductor import Flow, FlowError, Plan
-from engineering.flow.ledger import ReadRecord
+from engineering.flow.ledger import FINAL_GO_ROLE, GATE_RUNNER_ROLE, ReadRecord, checked_go, newest_record
 from engineering.flow.record import DONE, FAN_OUT, FlowRecord, step_sk
 from engineering.runtime.checkout import check_sparse_path
 from engineering.runtime.interface import RuntimeRefused
@@ -30,6 +31,8 @@ NO_FLOW = 'this run follows no flow: a task names no step (the coordinator plans
 #: The longest step id the board takes (shared/workflow_schema.py's ids are at most 64 characters), and shard.
 MAX_STEP = 64
 MAX_SHARD = 512
+#: A quality gate step's type (shared/workflow_schema.py), whose final go judges the patch its gate runner checked.
+QUALITY_GATE: Final = 'quality_gate'
 
 
 @dataclass(frozen=True)
@@ -53,6 +56,25 @@ def _step_text(body: Mapping[str, Any], key: str) -> str:
     if not isinstance(value, str) or len(value) > limit:
         raise BoardError('invalid', f'"{key}" is a string of at most {limit} characters')
     return value.strip()
+
+
+def _judges_the_checked_patch(tasks: Sequence[Task], run_id: str, step: str, spec: Mapping[str, Any],
+                              read: ReadRecord | None) -> None:
+    """A final go's task at a quality gate that names a submitted patch judges the one the gate runner's checks
+    passed on: the step's gate runner task that ended last ended done with a GO record (``ledger.checked_go``, the
+    rule the GO ledger keeps too), and named the same patch (a revised patch is checked again before its final go).
+    A final go that names none judges no tree and can only write a NO-GO (the harness's rule), so the gate's ``fail``
+    arrow stays reachable after a gate runner's NO-GO or STOPPED."""
+    patch = spec.get('patch')
+    if not patch:
+        return
+    mine = [task for task in tasks if task.flow_step == step]
+    checked = checked_go(mine, WORKSPACE, run_id, read) if read is not None else None
+    newest = newest_record(mine, WORKSPACE, run_id, GATE_RUNNER_ROLE)
+    named = json.loads(newest[0].spec).get('patch') if newest is not None else None
+    if checked is None or named != patch:
+        raise BoardError('invalid', "a final go judges the patch the gate runner's checks passed on: post it once the "
+                                    "step's last gate runner task is done with a GO, naming that task's patch")
 
 
 def _path(path: str) -> str:
@@ -118,6 +140,8 @@ class FlowGuard:
         refusal = plan.post_refusal(step, role, poster=COORDINATOR if person else poster, shard=shard)
         if refusal is not None:
             raise BoardError(*refusal)
+        if plan.flow.steps[step].type == QUALITY_GATE and role == FINAL_GO_ROLE:
+            _judges_the_checked_patch(tasks, run_id, step, spec, self.read)
         closed = (step_sk(step, DONE),)
         if plan.flow.steps[step].type != 'agent':
             return PostFields(step, shard, absent=closed)   # (a board or a gate takes several tasks at once)

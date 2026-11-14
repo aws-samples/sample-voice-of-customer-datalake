@@ -23,13 +23,17 @@ BRIEF = TaskBrief(task_id='task-1', title='Fix the failing parser test', instruc
 @dataclass
 class FakeRunner:
     """Answers each command with ``exit_code`` 0 (``apply_exit`` for ``git apply``); ``git diff --output=<file>``
-    writes ``patch`` there; ``on_wait`` is called ``waits`` times."""
+    writes ``patch`` there; ``git write-tree`` prints ``tree``; ``on_wait`` is called ``waits`` times."""
 
     patch: bytes = b'diff --git a/src/parse.py b/src/parse.py\n'
     #: What ``git diff --name-only -z`` says the patch holds.
     names: bytes = b'src/parse.py\x00'
     apply_exit: int = 0
+    #: What a repository command (``repository_code``) exits with.
+    run_exit: int = 0
     waits: int = 0
+    #: The tree id ``git write-tree`` prints.
+    tree: str = 'e' * 40
     calls: list[dict[str, Any]] = field(default_factory=list)
 
     def run(self, argv: Sequence[str], *, timeout_seconds: int, repository_code: bool = True, network: bool = False,
@@ -43,9 +47,9 @@ class FakeRunner:
             if arg.startswith('--output='):
                 with open(arg.removeprefix('--output='), 'wb') as stream:
                     stream.write(self.names if '--name-only' in argv else self.patch)
-        code = self.apply_exit if 'apply' in argv else 0
-        return {'exit_code': code, 'stdout_tail': '3 passed', 'stderr_tail': '', 'duration_seconds': 1,
-                'timed_out': False}
+        code = self.apply_exit if 'apply' in argv else (self.run_exit if repository_code else 0)
+        return {'exit_code': code, 'stdout_tail': f'{self.tree}\n' if 'write-tree' in argv else '3 passed',
+                'stderr_tail': '', 'duration_seconds': 1, 'timed_out': False}
 
 
 @dataclass
@@ -54,6 +58,8 @@ class FakeBoard:
     briefs_asked: list[tuple[str, str]] = field(default_factory=list)
     heartbeats: list[tuple[str, str, str]] = field(default_factory=list)
     moves: list[tuple[str, str, str]] = field(default_factory=list)
+    #: The result keys each move recorded, in turn.
+    results: list[tuple[str, ...]] = field(default_factory=list)
 
     def brief(self, *, run_id: str, task_id: str) -> TaskBrief:
         self.briefs_asked.append((run_id, task_id))
@@ -65,8 +71,9 @@ class FakeBoard:
     def progress(self, run_id: str, task_id: str, agent_id: str, step: str) -> None:
         self.progress_seen.append((run_id, task_id, agent_id, step))
 
-    def move(self, run_id: str, task_id: str, *, to_state: str) -> None:
+    def move(self, run_id: str, task_id: str, *, to_state: str, result_keys: tuple[str, ...] = ()) -> None:
         self.moves.append((run_id, task_id, to_state))
+        self.results.append(result_keys)
 
 
 @dataclass
@@ -97,10 +104,27 @@ class FakeInbox:
 @dataclass
 class FakeBroker:
     submitted: list[tuple[str, str, str, str, str]] = field(default_factory=list)
+    #: Every write asked for: its operation, the caller (run, agent) and its arguments.
+    writes: list[tuple[str, str, str, dict[str, Any]]] = field(default_factory=list)
 
     def submit(self, run_id: str, agent_id: str, task_id: str, patch_key: str, summary: str) -> str:
         self.submitted.append((run_id, agent_id, task_id, patch_key, summary))
         return 'broker-receipt-1'
+
+    def push(self, run_id: str, agent_id: str, *, branch: str, patch_key: str, tree_hash: str,
+             message: str) -> dict[str, Any]:
+        self.writes.append(('push_bundle', run_id, agent_id, {'branch': branch, 'patch': patch_key,
+                                                               'tree_hash': tree_hash, 'message': message}))
+        return {'branch': branch, 'tree_hash': tree_hash}
+
+    def open_draft_pr(self, run_id: str, agent_id: str, *, branch: str, title: str, body: str) -> dict[str, Any]:
+        self.writes.append(('open_or_update_draft_pr', run_id, agent_id, {'branch': branch, 'title': title,
+                                                                           'body': body}))
+        return {'number': 7, 'url': 'https://git.example.org/example/app/pull/7'}
+
+    def comment(self, run_id: str, agent_id: str, *, number: int, body: str) -> dict[str, Any]:
+        self.writes.append(('post_comment', run_id, agent_id, {'on': 'pull_request', 'number': number, 'body': body}))
+        return {'url': f'https://git.example.org/example/app/pull/{number}#issuecomment-1'}
 
 
 @dataclass
@@ -109,6 +133,9 @@ class FakeStore:
 
     def put(self, key: str, body: bytes) -> None:
         self.objects[key] = body
+
+    def get(self, key: str, limit: int) -> bytes:
+        return self.objects[key][:limit + 1]
 
 
 class FakeBedrock:
@@ -155,6 +182,7 @@ def world(tmp_path: Any, *, role: str = 'fixer') -> World:
                            store=store, status=StatusReport(home), patch_dir=os.path.join(home, '.voc', 'patches'),
                            own_prefix=agent_prefix(RUN_ID, 'fixer-1'),
                            checkpoints_prefix=artifact_prefix(RUN_ID, 'fixer-1', HARNESS_COMMIT, 1, 'checkpoints'),
-                           patches_prefix=artifact_prefix(RUN_ID, 'fixer-1', HARNESS_COMMIT, 1, 'patches'))
+                           patches_prefix=artifact_prefix(RUN_ID, 'fixer-1', HARNESS_COMMIT, 1, 'patches'),
+                           commit=HARNESS_COMMIT)
     session = AgentSession(context=context, tools=ToolBox(context), inbox=inbox, store=store)
     return World(session, runner, board, inbox, broker, store, checkout, home)

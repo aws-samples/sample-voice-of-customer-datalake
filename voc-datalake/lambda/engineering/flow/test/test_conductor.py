@@ -184,11 +184,12 @@ def test_bug_hunt_and_fix_takes_the_hunters_posts_while_it_hunts_and_stops_at_th
     first = run.plan()
     # The board collects the hunter's posts while it hunts: the hunt, then the board, both live.
     assert [(s.step, s.status) for s in first.live()] == [('hunt', READY), ('board', COLLECTING)]
-    assert first.steps['board'].roles == ('understander', 'fixer', 'committer', 'commit-reviewer')
+    assert first.steps['board'].roles == ('understander', 'fixer', 'commit-reviewer')
+    # The commit comes after the gate's GO (the broker pushes only a GO'd tree), then the draft pull request.
     assert run.drive() == [
         ('task', 'hunt', 'hunter'), ('task', 'board', 'understander'), ('complete', 'board'),
-        ('task', 'gate', 'gate-runner'), ('task', 'gate', 'final-go'), ('task', 'pr_author', 'pr-author'),
-        ('finished', 'pr')]
+        ('task', 'gate', 'gate-runner'), ('task', 'gate', 'final-go'), ('task', 'commit', 'committer'),
+        ('task', 'pr_author', 'pr-author'), ('finished', 'pr')]
     plan = run.plan()
     assert (plan.steps['gate'].verdict, plan.steps['human'].status, plan.steps['pr'].status) == ('go', SKIPPED, DONE)
 
@@ -200,8 +201,8 @@ def test_a_no_go_takes_the_gates_fail_arrow_to_a_person_and_never_to_the_pull_re
                                 ('person', 'human'), ('finished', 'human')]
     assert [task.state for task in run.tasks if task.role == 'final-go'] == ['done']
     plan = run.plan()
-    assert (plan.steps['gate'].verdict, plan.steps['pr_author'].status, plan.steps['pr'].status) == (
-        'no_go', SKIPPED, SKIPPED)
+    assert (plan.steps['gate'].verdict, plan.steps['commit'].status, plan.steps['pr_author'].status,
+            plan.steps['pr'].status) == ('no_go', SKIPPED, SKIPPED, SKIPPED)
 
 
 def test_the_feature_flow_has_the_coordinator_plan_itself_then_post_the_builders_work():
@@ -209,7 +210,7 @@ def test_the_feature_flow_has_the_coordinator_plan_itself_then_post_the_builders
     assert run.drive() == [
         ('task', 'understand', 'understander'), ('complete', 'plan'), ('task', 'board', 'builder'),
         ('complete', 'board'), ('task', 'gate', 'gate-runner'), ('task', 'gate', 'final-go'),
-        ('task', 'pr_author', 'pr-author'), ('finished', 'pr')]
+        ('task', 'commit', 'committer'), ('task', 'pr_author', 'pr-author'), ('finished', 'pr')]
 
 
 def test_the_feature_board_collects_the_coordinators_posts_while_it_plans():
@@ -217,7 +218,7 @@ def test_the_feature_board_collects_the_coordinators_posts_while_it_plans():
     run.tasks.append(StepTask('task-1', 'understand', 'understander', TASK_DONE))
     plan = run.plan()
     assert [(s.step, s.status, s.roles) for s in plan.live()] == [
-        ('plan', READY, ()), ('board', COLLECTING, ('builder', 'committer', 'commit-reviewer'))]
+        ('plan', READY, ()), ('board', COLLECTING, ('builder', 'commit-reviewer'))]
 
 
 def test_pr_review_stops_at_its_map_with_no_shard_source_and_goes_on_only_past_a_persons_decision():
@@ -487,7 +488,7 @@ def test_the_view_gives_the_live_steps_their_settings_and_what_to_do():
                       verdicts={'gate': 'go'}).view()
     by_gate = {item['step']: item for item in gate_view['steps']}
     assert (by_gate['gate']['verdict'], 'reason' in by_gate['gate']) == ('go', False)
-    assert by_gate['pr_author']['instructions']
+    assert by_gate['commit']['instructions']
     feature = {item['step']: item for item in _plan(TEMPLATES['feature']).view()['steps']}
     assert 'instructions' not in feature['understand']
     own = _plan(TEMPLATES['feature'], tasks=(StepTask('t', 'understand', 'understander', 'done'),)).view()

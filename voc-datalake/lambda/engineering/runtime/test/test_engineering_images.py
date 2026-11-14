@@ -16,7 +16,8 @@ IMAGES = Path(__file__).resolve().parents[4] / 'engineering-images'
 
 RUNTIME = IMAGES.parent / 'lambda' / 'engineering' / 'runtime'
 #: What the images run with their system python3 (3.11 on the Debian 12 based ones): the runner and the harness.
-SHIPPED_RUNTIME = ('__init__.py', 'interface.py', 'tokens.py', 'checkout.py', 'checkpoints.py', 'unit_runner.py')
+SHIPPED_RUNTIME = ('__init__.py', 'interface.py', 'tokens.py', 'checkout.py', 'checkpoints.py', 'outputs.py',
+                   'unit_runner.py')
 #: The broker's caller identity, which the runtime's agent roles come from (interface.ROLES).
 CONNECTORS = RUNTIME.parent / 'connectors'
 SHIPPED_CONNECTORS = ('__init__.py', 'identity.py')

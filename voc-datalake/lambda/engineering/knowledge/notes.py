@@ -26,13 +26,14 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from engineering.quality_gate.text import redact
+from engineering.runtime.outputs import NOTE_KINDS as KINDS
+from engineering.runtime.outputs import NOTE_SCHEMA as SCHEMA
 from engineering.workspace.findings import schema_line
 from engineering.workspace.layout import SHA
 from shared.pii_redaction import redact_text
 
-SCHEMA = 'voc-note/1'
-#: The seven documents of a pack, in the order they are rendered (docs/autonomous-engineering.md's table).
-KINDS = ('architecture', 'convention', 'review-guide', 'test-strategy', 'ci', 'glossary', 'how-we-work')
+# The schema name and KINDS, the seven documents of a pack in the order they are rendered (the doc's table), are
+# runtime/outputs.py's, shared with the harness, whose write_notes (the mapper's) writes them.
 MAX_CLAIM = 400
 MAX_SUBJECT = 80
 MAX_CITATIONS = 8

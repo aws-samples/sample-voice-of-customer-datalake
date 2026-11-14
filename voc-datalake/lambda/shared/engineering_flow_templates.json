@@ -312,7 +312,7 @@
        "y": 240
       },
       "data": {
-       "title": "Understand, fix, commit and review each bug",
+       "title": "Understand, fix and review each bug",
        "params": {
         "posters": [
          "hunter"
@@ -320,7 +320,6 @@
         "claimers": [
          "understander",
          "fixer",
-         "committer",
          "commit-reviewer"
         ],
         "until": "drained"
@@ -343,11 +342,26 @@
       }
      },
      {
-      "id": "pr_author",
+      "id": "commit",
       "type": "agent",
       "position": {
        "x": 0,
        "y": 480
+      },
+      "data": {
+       "title": "Commit the fix the gate passed",
+       "params": {
+        "role": "committer"
+       },
+       "instructions": "Commit the fixer's submitted patch, the tree the gate's GO names, to the run's branch."
+      }
+     },
+     {
+      "id": "pr_author",
+      "type": "agent",
+      "position": {
+       "x": 0,
+       "y": 600
       },
       "data": {
        "title": "Open the draft pull request",
@@ -362,7 +376,7 @@
       "type": "stop_at_pr",
       "position": {
        "x": 0,
-       "y": 600
+       "y": 720
       },
       "data": {
        "title": "Draft pull request",
@@ -401,10 +415,15 @@
       "target": "gate"
      },
      {
-      "id": "gate-pr_author",
+      "id": "gate-commit",
       "source": "gate",
-      "target": "pr_author",
+      "target": "commit",
       "label": "pass"
+     },
+     {
+      "id": "commit-pr_author",
+      "source": "commit",
+      "target": "pr_author"
      },
      {
       "id": "pr_author-pr",
@@ -478,14 +497,13 @@
        "y": 360
       },
       "data": {
-       "title": "Build, commit and review each task",
+       "title": "Build and review each task",
        "params": {
         "posters": [
          "coordinator"
         ],
         "claimers": [
          "builder",
-         "committer",
          "commit-reviewer"
         ],
         "until": "drained"
@@ -508,11 +526,26 @@
       }
      },
      {
-      "id": "pr_author",
+      "id": "commit",
       "type": "agent",
       "position": {
        "x": 0,
        "y": 600
+      },
+      "data": {
+       "title": "Commit the build the gate passed",
+       "params": {
+        "role": "committer"
+       },
+       "instructions": "Commit the builders' submitted patch, the tree the gate's GO names, to the run's branch."
+      }
+     },
+     {
+      "id": "pr_author",
+      "type": "agent",
+      "position": {
+       "x": 0,
+       "y": 720
       },
       "data": {
        "title": "Open the draft pull request",
@@ -527,7 +560,7 @@
       "type": "stop_at_pr",
       "position": {
        "x": 0,
-       "y": 720
+       "y": 840
       },
       "data": {
        "title": "Draft pull request",
@@ -571,10 +604,15 @@
       "target": "gate"
      },
      {
-      "id": "gate-pr_author",
+      "id": "gate-commit",
       "source": "gate",
-      "target": "pr_author",
+      "target": "commit",
       "label": "pass"
+     },
+     {
+      "id": "commit-pr_author",
+      "source": "commit",
+      "target": "pr_author"
      },
      {
       "id": "pr_author-pr",

@@ -26,7 +26,9 @@ def test_the_roles_are_the_agent_catalogs() -> None:
 
 def test_a_boards_roles_are_the_ones_its_api_and_queues_serve() -> None:
     assert set(POSTERS) == set(workflow_engineering.BOARD_POSTERS)
-    assert set(workflow_engineering.BOARD_CLAIMERS) == ROLES
+    # Every task role claims a board's tasks but the gate runner, which claims only its quality gate step's.
+    assert set(workflow_engineering.BOARD_CLAIMERS) == ROLES - {'gate-runner'}
+    assert 'gate-runner' in ROLES
 
 
 def test_the_packs_are_the_gate_packs_on_disk() -> None:

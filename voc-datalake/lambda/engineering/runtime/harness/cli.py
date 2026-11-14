@@ -90,7 +90,8 @@ class ClaudeCli:
 
     def command(self, session: AgentSession, config: str) -> list[str]:
         allowed = ','.join(f'mcp__{SERVER_NAME}__{spec.name}' for spec in session.tools.specs)
-        return [self._binary, '-p', '--append-system-prompt', system_prompt(session.context.role), '--tools', '',
+        prompt = system_prompt(session.context.role, session.tools.skill)
+        return [self._binary, '-p', '--append-system-prompt', prompt, '--tools', '',
                 '--strict-mcp-config', '--mcp-config', config, '--permission-mode', 'dontAsk',
                 '--allowedTools', allowed, '--no-session-persistence', '--output-format', 'text',
                 '--model', self._model_id]

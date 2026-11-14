@@ -19,7 +19,10 @@ from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Final
 
-AGENT_BRANCH_PREFIX: Final = 'voc-agent/'
+# The agents' branch prefix (``voc-agent/``) is runtime/outputs.py's, shared with the harness, whose committer's and PR
+# author's tools check a branch against it.
+from engineering.runtime.outputs import AGENT_BRANCH_PREFIX
+
 #: A run id: an ASCII letter or digit, then up to 63 more of letters, digits, ``_`` and ``-``.
 #: A branch name's rest (after ``voc-agent/{run_id}/``): an ASCII letter or digit, then up to 149 more of letters,
 #: digits, ``.``, ``_``, ``/`` and ``-`` (``branch_refusal`` also refuses ``..``, ``//`` and a trailing ``/``, ``.``

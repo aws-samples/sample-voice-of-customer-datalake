@@ -9,20 +9,20 @@ numbers…) replaced first, so no customer text or secret reaches a report or a 
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass
 from typing import Any
 
 from engineering.quality_gate.review import SEVERITIES
 from engineering.quality_gate.text import redact
+from engineering.runtime.outputs import FINDING_FILE as _PATH
+from engineering.runtime.outputs import FINDING_SCHEMA as SCHEMA
 from shared.pii_redaction import redact_text
 
-SCHEMA = 'voc-finding/1'
+# The schema and a file's shape are runtime/outputs.py's, shared with the harness, whose write_findings writes the
+# lines this reads (it ships alone in the agents' images).
 MAX_TITLE = 200
 MAX_EVIDENCE = 500
 MAX_LINE_BYTES = 8 * 1024
-#: A repository path: path characters only (no spaces, no ``@`` of an e-mail address), so a ``file`` cannot carry text.
-_PATH = re.compile(r'[A-Za-z0-9_./+-]{1,300}\Z')
 
 
 @dataclass(frozen=True)

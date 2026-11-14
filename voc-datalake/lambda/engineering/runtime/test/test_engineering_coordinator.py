@@ -13,7 +13,7 @@ from engineering.runtime.harness.coordinator import LANGUAGES, TASK_ROLES
 from engineering.runtime.harness.ports import HarnessPortNotWired, TaskSummary
 from engineering.runtime.harness.skills import COORDINATOR, Skill, SkillError, skill_for, skill_label
 from engineering.runtime.interface import MAX_TASK_PATHS
-from engineering.runtime.test.harness_fakes import FakeBedrock, use, world
+from engineering.runtime.test.harness_fakes import HARNESS_COMMIT, RUN_ID, FakeBedrock, use, world
 from shared.model_config import ALLOWED_MODEL_IDS
 
 
@@ -31,9 +31,9 @@ class FakePlanner:
         return list(self.board)
 
     def post(self, *, run_id: str, role: str, title: str, instructions: str, paths: tuple[str, ...],
-             step: str = '', shard: str = '') -> str:
+             step: str = '', shard: str = '', patch: str = '') -> str:
         self.posted.append({'run_id': run_id, 'role': role, 'title': title, 'instructions': instructions,
-                            'paths': paths, 'step': step, 'shard': shard})
+                            'paths': paths, 'step': step, 'shard': shard, 'patch': patch})
         return f'task-{len(self.posted) + 1}'
 
     def flow(self, *, run_id: str) -> dict[str, Any] | None:
@@ -72,7 +72,8 @@ def test_the_coordinators_skill_is_a_versioned_record_the_skills_store_can_keep(
     record = COORDINATOR.to_record()
     assert set(record) == {'schema', 'name', 'version', 'instructions', 'examples', 'tool_policy', 'model', 'harness'}
     assert Skill.from_record(json.loads(json.dumps(record))) == COORDINATOR
-    assert (skill_label(COORDINATOR.name, COORDINATOR.version), skill_for('coordinator'), skill_for('fixer')) == (
+    # (the coach is the one role with no skill: it is not launched as an agent)
+    assert (skill_label(COORDINATOR.name, COORDINATOR.version), skill_for('coordinator'), skill_for('coach')) == (
         'coordinator@2', COORDINATOR, None)
     # Version 2 follows the run's flow: its tools to read the plan and record the steps it does itself.
     assert {'read_flow', 'complete_step', 'fan_out'} <= set(COORDINATOR.tool_policy)
@@ -142,6 +143,28 @@ def test_a_task_is_posted_and_its_agent_launched_and_the_model_names_no_reposito
     # The run's connection and commit are the board's to take from the caller's run: the request carries neither.
     assert set(planner.launched[0]) == {'run_id', 'task_id', 'role', 'language', 'paths'}
     assert planner.posted[0]['paths'] == ('src',)
+
+
+def test_a_gates_and_the_committers_tasks_name_the_patch_a_fixer_submitted_which_the_board_lists(tmp_path):
+    w, planner, _ = _coordinator(tmp_path)
+    submitted = (f'ws/default/runs/{RUN_ID}/fixer-3/commits/{HARNESS_COMMIT}/_patches/attempt-1/'
+                 'task-2-0a1b2c3d.diff')
+    planner.board.append(TaskSummary('task-2', 'fixer', 'Fix the slug cut', 'done', result_keys=(submitted,)))
+    board = w.session.tools.call('read_board', {}).text
+    assert json.loads(board.split('\n', 1)[1].rsplit('\n', 1)[0])[0]['outputs'] == [submitted]
+    for role in ('gate-runner', 'final-go', 'committer'):
+        assert not w.session.tools.call('post_task', {'role': role, 'title': 't', 'instructions': 'i', 'step': 'gate',
+                                                      'patch': submitted}).error
+    assert [posted['patch'] for posted in planner.posted] == [submitted] * 3
+    # Only for those roles, and only a fixer's or builder's submission of this run at its commit.
+    for role, patch in (('hunter', submitted), ('gate-runner', submitted.replace('fixer-3', 'hunter-2')),
+                        ('gate-runner', submitted.replace(RUN_ID, '01OTHERRUN')),
+                        ('gate-runner', submitted.replace(HARNESS_COMMIT, 'd' * 40)),
+                        ('gate-runner', submitted.replace('task-2-', 'checkpoint-000001-'))):
+        refused = w.session.tools.call('post_task', {'role': role, 'title': 't', 'instructions': 'i', 'patch': patch})
+        assert refused.error, (role, patch)
+        assert 'patch is for a task of' in refused.text, (role, patch)
+    assert len(planner.posted) == 3
 
 
 def test_a_connection_the_model_adds_is_ignored(tmp_path):

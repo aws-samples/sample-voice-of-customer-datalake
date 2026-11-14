@@ -364,7 +364,10 @@ class BoardApi:
             raise BoardError('forbidden', 'only the run\'s coordinator lists its tasks')
         return {'tasks': [{'task_id': t.task_id, 'role': t.role, 'title': t.title, 'state': t.state,
                            'attempt': t.attempt, 'priority': t.priority, 'parent_task': t.parent_task or None,
-                           'flow_step': t.flow_step or None, 'shard': t.shard or None}
+                           'flow_step': t.flow_step or None, 'shard': t.shard or None,
+                           # (a finished task's outputs: a fixer's or builder's submitted patch, which the
+                           # coordinator names on the gate's and the committer's tasks)
+                           'result_keys': list(t.result_keys)}
                           for t in self.store.tasks(WORKSPACE, caller.run_id)]}
 
     def _flow(self, caller: Caller, body: Mapping[str, Any]) -> dict[str, Any]:

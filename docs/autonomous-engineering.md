@@ -137,8 +137,9 @@ The broker's role reads exactly these (`voc-datalake/lib/stacks/engineering-brok
 `dynamodb:GetItem` and `dynamodb:Query` on voc-engineering in the runs' partitions (`WS#*#RUN#*`), `dynamodb:GetItem`
 on the aggregates table in the people's flag partitions (`USERFLAGS#*`) and of a row only its key and `mode`
 (`dynamodb:Attributes`, `dynamodb:Select` `SPECIFIC_ATTRIBUTES`), `s3:GetObject` on the workspace's patches and the
-final-go agents' gate records (`ws/default/runs/*/commits/*/_patches/*`,
-`ws/default/runs/*/final-go-*/commits/*/_gate/*`), and `kms:Decrypt` through DynamoDB and S3;
+final-go and gate-runner agents' gate records (`ws/default/runs/*/commits/*/_patches/*`,
+`ws/default/runs/*/final-go-*/commits/*/_gate/*`, `ws/default/runs/*/gate-runner-*/commits/*/_gate/*`: the GO
+ledger's rule reads both), and `kms:Decrypt` through DynamoDB and S3;
 no write to any table or bucket.
 
 **What is built.** The GitHub client (`connectors/github.py`) reuses a cached installation token or, to mint one, signs
@@ -358,7 +359,7 @@ Each agent is a pre-made, configurable template: its **skill** (instructions, ex
 | Bug hunter | looks for defects from static signals, failing or missing tests, logs, and what this data lake's customer feedback says about the affected feature (feedback ids, counts, categories and the platform's problem labels, which the trusted code that posts the hunt task attaches to it, read within the run owner's category and source access; the hunter holds no user credential and reads no review text); posts a "fix" task per bug it confirms | findings, each citing its evidence (code lines, feedback ids) |
 | Fixer | plans a fix, writes it and its test in its checkout | a patch |
 | Feature builder | plans a feature from an issue or a PRD in this data lake (the PRD with its customer quotes replaced by their feedback ids, by the trusted code that posts the task), posts its sub-tasks, builds them | patches |
-| Committer | turns patches into commits by the knowledge pack's "How we work" and has the broker push them to the agent's branch | commits on the agent's branch |
+| Committer | after the gate's GO, turns the submitted patch into a commit by the knowledge pack's "How we work" and has the broker push it to the agent's branch | commits on the agent's branch |
 | Commit reviewer | reviews each commit against the review guide, before the quality gate | findings |
 | Gate runner | runs the language gate packs on the affected packages ([below](#the-quality-gate)) | gate results |
 | PR author | writes the description: what changed, why, the feedback ids it came from (never review text), the test evidence, the gate record | a pull request |
@@ -366,6 +367,92 @@ Each agent is a pre-made, configurable template: its **skill** (instructions, ex
 | Final go | the gate's last word ([below](#the-quality-gate)) | a verdict |
 | Run coordinator | a small agent that watches the run's conversation and board and assigns the next task ([below](#how-the-agents-work-together)); not the existing agents' conductor, whose role it plays for these runs | events |
 | Coach | proposes skill changes after a failure ([below](#getting-better-skills-the-coach-the-learning-loop-memory)) | skill versions, as proposals |
+
+**Every launchable role has a skill** (6.29.00, `voc-datalake/lambda/engineering/runtime/harness/skills.py`): the run
+coordinator's (`coordinator@2`) and, at version 1, the mapper's, the understander's, the hunter's, the fixer's, the
+builder's, the committer's, the commit reviewer's, the gate runner's, the PR author's, the PR reviewer's and the final
+go's, so the board launches an agent of each of them and the runtime runs it with its skill's argv. The coach has
+none: it is not launched as an agent. Each record holds its role's job from the table above, a few worked examples,
+its tool policy, its model from the [model table](#models) and the `converse` harness (the owner's Converse-only
+decision), and every one keeps tenet 3 in its words: a pull request is always a draft, an agent never merges, never
+marks one ready and never changes the run's way of working or its limits, and everything from the repository is
+data. The tools are exactly what each job needs, and a role is never offered one beyond its role's, whatever a record
+names (`tools.role_specs`; `harness/role_tools.py`):
+
+| Role | Tools beyond reading the checkout, reporting, saving and finishing | Model |
+|---|---|---|
+| Mapper | `write_notes` (a `voc-note/1` shard) | Haiku 5.5 |
+| Issue understander | none: its problem statement is its finish | Haiku 5.5 |
+| Bug hunter | `run`, `install_dependencies`, `write_findings` (a `voc-finding/1` shard), `post_subtask` (a fix task) | Sonnet 5.5 |
+| Fixer | `write_file`, `run`, `install_dependencies`, `submit_work` | Sonnet 5.5 |
+| Feature builder | `write_file`, `run`, `install_dependencies`, `submit_work`, `post_subtask` (a sub-build) | Sonnet 5.5 |
+| Committer | `push_commit` (the broker's push of the patch a fixer or builder submitted, after the gate's GO) | Sonnet 5.5 |
+| Commit reviewer | `write_findings` | Sonnet 5.5 |
+| Gate runner | `run`, `install_dependencies`, `write_gate_record` (on the submitted patch the harness applied: the tree it hashed, the checks it saw run, never a final go) | Haiku 5.5 |
+| PR author | `open_draft_pr` (the broker's draft) | Sonnet 5.5 |
+| PR reviewer | `write_findings`, `post_comment` (on the run's pull request) | Sonnet 5.5 |
+| Final go | `write_gate_record` (its verdict; the harness writes the tree it hashed from the same patch and its final go section, the record the GO ledger reads) | Opus 5.5 |
+
+The writers (committer, PR author, PR reviewer) run no repository code: each gets its one broker write and no code
+tool. An output is written once under the agent's own keys, in the workspace's layout (its shapes, from the schema
+names to the package encoding of a key, in `runtime/outputs.py`, which the images ship beside the harness and the
+readers import), and its key is recorded on the task when the agent finishes (a continuation keeps it, and an
+output its crashed session wrote is kept and recorded, S3's create-only refusal read as "written already"), so the
+steps after it read what the board recorded; `submit_work`'s patch is recorded on the fixer's or builder's task so.
+A GO never rests on what a model types: the harness builds a gate record field by field, the gate runner's checks are
+the commands it saw it run and how they exited (a GO only when there is one and all passed; a gate runner's record
+has no final go), the final go's section names its own session's agent and model, and the record's tree is the one
+the harness hashed; every record it builds reads back through the readers' strict `GateRecord.from_dict` (a test
+holds them together, as the module does not ship in the images).
+
+The gate judges the patch the committer pushes, end to end:
+
+1. The coordinator names the fixer's or builder's submitted patch on the gate's tasks and the committer's
+   (`post_task`'s `patch`, the task spec's; `read_board` lists each finished task's recorded outputs, the submitted
+   patch among them). It takes only the key of a patch a fixer or builder of the run submitted at its commit, never a
+   checkpoint's snapshot.
+2. Before a gate runner's or final go's session runs anything, the harness reads that patch from the run's workspace
+   and applies it to the session's fresh checkout of the run's commit, working tree and index
+   (`role_tools.judge_submitted_patch`). It takes it by the broker's rules: the same keys and size, no copy and no
+   binary file without its content (the lines the broker's reader refuses where git would apply them), and it must
+   apply exactly. Anything else stops the session before any check runs (a crash, which the supervisor continues and
+   then sends to a person). Its own git then hashes that tree (`git add --all`, `git write-tree`): the checks run on
+   the change, and the tree is the record's. The model never types it, and a task that names no patch cannot write a
+   GO. When the record is written the harness hashes the checkout again the same way, and refuses a GO when a
+   command wrote, changed or deleted a file since (the record can then only be a NO-GO or STOPPED).
+3. The tree is a function of the run's commit and the patch, so the gate runner and the final go, each hashing its
+   own checkout, write the same tree. One GO ledger rule holds for the board, the flow and the broker
+   (`flow/ledger.py` `go_tree`): the final go's GO counts only when the gate runner task that ended last ended done
+   with a GO record (checks run and passed, no stop) on the same tree; after a gate runner's NO-GO, STOPPED or
+   failure the gate takes its `fail` arrow and the broker pushes nothing. In a run that follows a flow, the board
+   takes a final go's task that names a patch only after such a gate runner GO, for that task's patch
+   (`board/flow_guard.py`); one naming none can still be posted, so the `fail` arrow stays reachable, but can only
+   write a NO-GO. A gate
+   session's checkpoints save its working tree as a patch on that tree, and its continuation applies the submitted
+   patch again (hashed again) before it puts them back.
+4. The committer pushes that submitted patch with the tree. The broker refuses unless the GO ledger's rule gives a GO
+   for exactly that tree (`has_go`: it reads the final go's and the gate runner's gate records), rebuilds the patch's commit on the host's copy of the run's commit, and moves the
+   branch only when the rebuilt tree is that tree (the host's client checks it). So a push lands only the patch the
+   gate judged; the broker takes a fixer's or builder's patch of the run only from a committer.
+
+Two limits hold today. The gate runner's checks are whichever commands its model ran (the harness records each one
+and how it exited, but nothing yet matches them to the packs' commands), so whether they were the packs' is the final
+go's to judge. And a gate judges one submitted patch, so a run pushes one: when a hunter posts several fixes, the
+coordinator names one, and the others are not pushed. Matching the checks to the packs and combining several fixes
+are follow-ups.
+
+**How far a run gets today.** On the local fake runtime with scripted models, the Bug hunt and fix template runs
+from the hunt to the draft pull request (a test). Against AWS nothing has run yet; once the owner starts one, a run
+gets as far as this: the board, the inbox and the flow work through the board's API; every agent is launched with
+its skill; the agents read the checkout, run its commands, write their outputs and post their tasks; and the run
+stops at its first call to the broker, the fixer's or builder's `submit_work`, since the harness's broker interface
+is not wired to the broker's function URL yet (it refuses, and the session crashes rather than guess): the patch is
+written under the agent's own keys but never recorded on its task, so the gate has no submitted patch to judge yet
+and nothing reaches the host. The final go's model judges from its brief (it has no tool to read the gate runner's
+record or the findings yet); its GO counts only by the GO ledger's rule above, which needs the gate runner's own GO
+on the same tree. Not done yet:
+the harness's broker client (the broker's function URL in the agent's environment and egress), the final go's read
+of the gate runner's record and the findings, and the first run, which waits for the owner.
 
 ## How the agents work together
 
@@ -490,9 +577,10 @@ What exists:
   `voc.engineering/supervisor`, an agent its own, a run's coach `voc.engineering/coach/<ws>/<run>`).
 
 Not built yet: the rest of the harness's side (its broker interface still refuses every call:
-[Runtime](#runtime-one-agentcore-session-per-agent), "Not aligned yet"); the skills of the roles other than the coordinator
-(the board's launch of such a role is refused, 409); the agents' findings in the workspace (the runtime writes their
-checkpoints and patches there). The rest of this section is the
+[Runtime](#runtime-one-agentcore-session-per-agent), "Not aligned yet"). Since 6.29.00 every launchable role has a
+skill ([the agent catalog](#the-agent-catalog)), so the board launches any of them (the coach is the one role with
+none, and a launch of a role with no skill is still refused, 409), and the agents write their findings, notes and gate
+records in the workspace beside their checkpoints and patches, each recorded on its task. The rest of this section is the
 design; where the built message types and queues differ from it, the code (`bus/schema.py`, `bus/routing.py`) is what
 holds, and the design's type table is what the next slices bring the code to or the table to.
 
@@ -635,8 +723,8 @@ change (a run follows its flow since 6.28.00, as far as the runtime can do its s
 |---|---|---|
 | Understand the repository | map shards → reduce → draft knowledge pack versions and the repository's draft tenets and review guide ([below](#the-repositorys-tenets)) | an administrator's approval |
 | Issue triage | understand → classify (bug, feature, investigation) → reproduce or locate → propose | the proposal on the issue |
-| Bug hunt and fix | hunt → understand → fix → commit → commit review → quality gate → PR | the draft pull request |
-| Feature | understand (issue or PRD) → plan → build → commit → commit review → quality gate → PR | the draft pull request |
+| Bug hunt and fix | hunt → understand → fix → commit review → quality gate → commit → PR | the draft pull request |
+| Feature | understand (issue or PRD) → plan → build → commit review → quality gate → commit → PR | the draft pull request |
 | PR review | read the PR → reviewers in parallel, one pass, against the repository's tenets and review guide → comments | the review comments |
 | Self-improvement | the coach's loop over past runs → skill-version proposals → benchmark | an administrator's acceptance |
 
@@ -649,10 +737,12 @@ human decision point) and by the editor's port of them (`frontend/src/api/engine
 templates: Understand is a map over packages, a mapper, a reduce, an understander drafting the pack, tenets and
 review guide and a repository memory write, ending at an administrator's approval; Issue triage recalls the
 repository, then an understander classifies, a hunter reproduces or locates and an understander proposes on the
-issue; Bug hunt and fix is a hunter and a board (the hunter posts; the understander, fixer, committer and commit
-reviewer claim) before the quality gate, whose GO goes to the PR author and a stop at PR and whose NO-GO to a person;
-Feature is an understander and a coordinator's plan before a board (the builder, committer and commit reviewer claim)
-and the same gate and ends; PR review recalls the tenets and review guide, maps the pull request's pages to PR
+issue; Bug hunt and fix is a hunter and a board (the hunter posts; the understander, fixer and commit reviewer
+claim) before the quality gate, whose GO goes to the committer, then the PR author and a stop at PR, and whose NO-GO
+to a person; Feature is an understander and a coordinator's plan before a board (the builder and commit reviewer
+claim) and the same gate, commit and ends (6.29.00: the commit moved after the gate, since the broker pushes only a
+tree the board's GO names; before, the templates put the committer on the board, before the gate, where its push
+could only be refused); PR review recalls the tenets and review guide, maps the pull request's pages to PR
 reviewers in parallel, reduces and comments; Self-improvement recalls the roles' lessons and runs the coach's
 self-improvement step, ending at an administrator's acceptance. The Agents API lists them for administrators where
 the module is deployed (`GET /workflows/templates`, 404 elsewhere); the library's **Start from a template** lists them from the file and opens
@@ -735,7 +825,9 @@ are API calls with the signed-in user, allowed only to whoever may make a `decis
 like everything else, and its work still goes through the gate. Cost and tokens show live per agent, per run and per
 flow (model tokens in and out per model, session seconds, events), against the run's budget.
 
-The commits are made before the gate, so the gate reviews exactly the tree that is pushed.
+The gate judges the patch a fixer or builder submitted, and the committer pushes that patch only after the gate's
+GO (6.29.00: the templates' commit step follows the gate): the broker pushes only the tree the GO names, so what is
+pushed is exactly what the gate passed.
 
 **Evidence (tenets 1 and 2).** A flow that starts from customer feedback keeps the feedback ids it used, and the PR
 description lists them. **No customer text leaves the data lake**: every write to the host carries feedback ids at
@@ -888,11 +980,11 @@ the run monitor and in the reports.
 
 | Step | Today |
 |---|---|
-| agent | runs: one task for its role (an agent step of the coordinator's own role is the coordinator's to do and record). Only a role with a skill can be launched, and only the coordinator has one yet, so the board still refuses the launch of any other role (409): the plan is followed and its tasks posted, and their work waits for the roles' skills |
+| agent | runs: one task for its role (an agent step of the coordinator's own role is the coordinator's to do and record). Only a role with a skill can be launched; since 6.29.00 every launchable role has one, so each step's agent is launched with its skill's argv (a test drives the Bug hunt and fix template on the local fake runtime with scripted models, from the hunt to the draft pull request). The first run against AWS waits for the owner, and the broker's writes for the harness's broker client |
 | map | `shard_by: packages` runs: the coordinator lists the packages from its checkout, at most the map's `shard_cap` (not checked against the checkout or the knowledge pack: the path rule, each once, the cap), and each agent step after the map takes one task per shard. `history` and `pr_pages` have no shard source yet: the map stops at a person (a person's go passes it, and the steps after it are not run) |
 | reduce | runs as the join of the map's shards: done once every shard's task is; the step after it reads their results |
 | board | runs: tasks for its claimers, posted by the coordinator and its posters, while its posters still run too; the coordinator closes it once nothing on it is under way (`until: caps`: only at the run's task cap; an empty board only when an agent other than the coordinator was to post on it) |
-| quality gate | routes by the GO ledger: the final go (only once a gate runner's task is done) takes the `pass` arrow only on a GO its gate record says, anything else the `fail` arrow, to a person. The gate's own run waits for the gate runner's skill and image ([The quality gate](#the-quality-gate)), and the broker still opens a pull request only for a gate record's GO on the exact tree |
+| quality gate | routes by the GO ledger: the final go (only once a gate runner's task is done) takes the `pass` arrow only on a GO its gate record says, anything else the `fail` arrow, to a person. The gate runner has a skill since 6.29.00 and is one of the bus's task roles: its tasks are posted and claimed like any role's, at a step that takes it (the quality gate's, in the shipped templates). Its task and the final go's name the submitted patch, which the harness applies to their checkouts and hashes before anything runs; it runs the packs' checks on that tree as repository commands and writes its record, with the tree the harness hashed; the gate CLI is not in the images yet ([The quality gate](#the-quality-gate)), and the broker still opens a pull request only for a gate record's GO on the exact tree |
 | stop at PR | runs: the flow ends at the draft pull request; the broker's dial still decides whether one is opened (tenet 3) |
 | end, human decision point | runs: a completed end finishes the flow; a human decision point puts the run at a person |
 | memory (read, write) | not yet run: the flow goes on without the read (context) or the write |
@@ -902,8 +994,7 @@ the run monitor and in the reports.
 *Planned*: the conductor reading the dial itself (AI-assisted: a person's go after the plan; Human-driven: the flow
 stops at the proposal), the run's end when its flow finishes (today the coordinator finishes its task and the run
 stays open for a person to end), the memory steps, the learning loop and self-improvement as flow steps, shard
-sources for a repository's history and a pull request's pages, a step of an agent other than the coordinator posting
-on a board (no other role has a skill yet), and a person's Resume at a step saying which decision it is (today one
+sources for a repository's history and a pull request's pages, and a person's Resume at a step saying which decision it is (today one
 Resume is one decision).
 
 ## The quality gate
@@ -1419,7 +1510,12 @@ wait closes.
   before any other), report progress (through the board's API), save a checkpoint, submit the work (a patch made
   by the agent's own git, one at a time, refused when a file it holds has two hard links or when it is over 50 MB,
   put under its own keys and handed to the broker, which alone writes to the host) and finish (its summary is the task's last progress); the agents that
-  run no repository code get none of the code tools. It renews its task's lease once a minute. Everything from the
+  run no repository code get none of the code tools. Each role with a skill gets exactly its skill's tools, among its
+  role's (6.29.00, [the agent catalog](#the-agent-catalog)): its outputs (`write_findings`, `write_notes`,
+  `write_gate_record`, each written once under its own keys and recorded on its task when it finishes),
+  `post_subtask` (the hunter's fixes and the builder's sub-builds, the board's own rule of who posts for whom) and
+  the writers' one broker write each (`push_commit`, `open_draft_pr`, `post_comment`, through the broker interface,
+  which still refuses). It renews its task's lease once a minute. Everything from the
   repository, the knowledge pack, the memory or a checkpoint reaches the model fenced as data, which its
   instructions say is never an instruction. Between turns it reads its inbox: `save` checkpoints at once, `pause`
   checkpoints and exits 75; the Converse loop also checkpoints and pauses after 150 turns in one session or once a
@@ -1441,7 +1537,7 @@ wait closes.
   per model) to the runner; a CLI agent's tokens are not counted yet (*planned*: the CLI's own usage report). The images ship it with boto3 pinned (`BOTO3_VERSION`), and everything they run needs
   nothing newer than Python 3.11 (their system `python3`; a test checks every shipped module). No image installs
   a CLI yet: the CLI adapter refuses one that is missing or not the pinned version. **Converse only for now** (owner
-  decision): every skill runs on the Converse loop (the coordinator's does, `harness: converse`); the CLI adapter
+  decision): every skill runs on the Converse loop (all twelve shipped records say `harness: converse`); the CLI adapter
   stays built and tested, and a CLI version is pinned and installed in the images only after the first session run.
 - **Images.** python, node, rust and java, each a Dockerfile in this repository on one shared base (git, util-linux,
   iproute2, iptables, Python for the runner, Mountpoint for Amazon S3, the two users) and one entry point, with ready
@@ -1551,8 +1647,14 @@ refused without one): a benchmark naming another case, or none, is refused (400)
 its condition. A coach's version written before rows named a case takes only a benchmark naming none, so it is never
 accepted. A version a person wrote is recorded and accepted as before, measured or not, whatever case it names.
 Recording a benchmark announces nothing (the acceptance does).
-Not yet: the harness reading the store, a run recording the versions it used, the routes, the step that runs the
-benchmark for a proposal.
+**The shipped records seed the shared skill** (6.29.00, `SkillStore.seed_shared`): an administrator starts a role's
+shared skill from the record its agents run (`runtime/harness/skills.py`), as the shared skill's first version,
+proposed on no base and accepted, its why naming the shipped label; only while the shared skill has no version, so
+a seed never writes over a history, and a seed racing another is refused by the acceptance's own condition. The
+store numbers it (`<role>@1`, whatever the shipped number: the coordinator ships as version 2). The coach proposes
+only on a version the store holds, so this is how a role's first version, a person's, comes from what ships.
+Not yet: the harness reading the store (its agents still run the shipped record), the route that calls the seed, a
+run recording the versions it used, the other routes, the step that runs the benchmark for a proposal.
 
 **The coach.** When an agent fails (an error, a timeout, a NO-GO, a review finding it keeps repeating, a person
 rejecting its pull request or editing it heavily), the coach reads the conversation, the task, the outputs and the
@@ -1884,12 +1986,22 @@ What exists:
   record never claims a gain the gate did not check. Its verdict is recorded on the version by the skills store, whose acceptance of a coach's version needs it ([above](#getting-better-skills-the-coach-the-learning-loop-memory)).
 - Scripted candidates in the tests (every known fix replayed; one case left unfixed; a baseline that fails a
   failure's case and a version that fixes it) prove the runner and the gate end to end on the shipped cases.
+- **A role's skill as a candidate** (6.29.00, `benchmark/candidate.py`): `SkillCandidate(skill, model_for)` runs a
+  skill version (the shipped record or one the coach proposed) on the harness's own Converse loop, with its prompt
+  and exactly its tools, on the case's copy as its checkout and the case's task as its brief; its answer is the
+  change its tools made (a git patch read from the two trees) or, for a review, the `voc-finding/1` findings it
+  wrote, and its tokens are the loop's count. Its ports are the benchmark's own: no board, no inbox, no host (the
+  broker's writes say nothing is written) and no repository command (`run` and `install_dependencies` answer that the
+  benchmark runs none: this machine is not a sandbox, so the case's own check is the only code that runs). The tests
+  drive the fixer on `slug-cut-bug` and `monorepo-units-bug`, the builder on `duration-hours-feature` and the PR
+  reviewer on `pagination-review`, each with a scripted model that answers with the case's known fix or its
+  expected findings, and a fixer version that gains on `slug-cut-bug` over one that gives up passes the gate.
 
 The coach that proposes a version is built, and names the case its version should gain on, which the recorded
 benchmark must name; the learning loop invokes it on a run's failures
 ([above](#getting-better-skills-the-coach-the-learning-loop-memory)). Still planned: the step that runs the
-benchmark for its proposal; real agents (a role's skill version
-on a model, through the harness) as candidates; the results published here; and a connection's own fixtures made
+benchmark for its proposal; a measured run of the role skills on a real model (the candidate is built: its first
+run on Bedrock waits for the owner); the results published here; and a connection's own fixtures made
 from its failures, kept with that connection. The benchmark assumes an honest candidate: a check's isolation is
 the runner's (a clean environment, a throwaway directory, a timeout, the paths a patch may change), not a
 sandbox's, and the code under test can still patch the framework that tests it. The shipped cases are the
@@ -2049,5 +2161,5 @@ and the phase that ships them names them in that row.
 | 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader; the broker's readers of the run's record, the board's GO ledger, the submitted patch and the dial, and a person's go on an AI-assisted run (6.23.00, [above](#repository-connectors); no connection can be stored yet, so every operation still answers 503, and with one every push and pull request would still be refused until the CI attestation is recorded); planned: the connection page, the attestation's record, GitLab, sparse clones and the checkout cache; the knowledge pack's package detection, shards, map step, reduce and versioned store with approval ([above](#the-knowledge-pack)), nothing invoking them yet |
 | 2 | the runtime (one AgentCore Runtime session per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API with each task's history, its agents' `inbox`, `progress`, `tasks` and `knowledge` ops, the coordinator's `coordinate` task and `launch`, the lease's refresh and the supervisor's re-post, the push to the delivery function, the workspace's layout, findings and store in its own bucket, and the administrators' run monitor (its reads, signals and answers) and the read routes for a run's board and conversation ([above](#how-the-agents-work-together)); the runtime (one session per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images, the run's start and end, the agent roles' access to the board, the broker and the bus, the delivery function: built, not yet run against AWS, [above](#runtime-one-agentcore-session-per-agent)) |
 | 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); the skills' record, diff and versioned store with an administrator's acceptance and rollback, proposed to by the coach from a run's retrospective ([above](#getting-better-skills-the-coach-the-learning-loop-memory)); the agents' memory store and its recall for a task, its role lessons drafted by a run's retrospective (recall not yet invoked by the harness; same place); the benchmark gate for skill versions (no regression, a gain on the failure's case) and its record on a version, which a coach's version needs to be accepted, nothing invoking it yet ([Evaluation](#evaluation)); the coach (a failure in, a proposed version naming its expected benchmark case out, through the skills store, with its `skill.proposed` message for the caller to publish), invoked by the learning loop (same place as the skills); the learning loop and its scorecards, built: a run's end starts its retrospective (an asynchronous invocation of the runtime), which takes at most three failures to the coach (one Converse call each, once), drafts a lesson in agent memory for each failure taken to the coach (at most three per run) for an administrator to approve, and writes one create-only scorecard row per skill version per run, read by one bounded Query per version (same place); a connection's own cases from its failures, people's reactions on the host as the loop's input, and the scorecard screens planned |
-| 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | in progress: the new editor steps' server side (engineering flows as `voc-workflow/2`, [above](#how-the-agents-work-together)), the six default flows as validated templates in one file the server lists (`GET /workflows/templates`) and the web app reads (same place), and the report builder with its administrators' REST reads ([Reports](#reports)), nothing invoking it yet; a run's start from a saved flow (6.25.00: `POST /agents/engineering/runs` and the flow page's Start a run, [How a flow starts](#how-the-agents-work-together)), which follows its own copy of the flow step by step since 6.28.00 (the conductor, the coordinator's `read_flow`, the board's check of every post and launch against the plan, a person at a step: [The flow a run follows](#the-flow-a-run-follows); memory, the learning loop, self-improvement and the history and pull-request shard sources not run yet); the agents planned |
+| 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | in progress: the new editor steps' server side (engineering flows as `voc-workflow/2`, [above](#how-the-agents-work-together)), the six default flows as validated templates in one file the server lists (`GET /workflows/templates`) and the web app reads (same place), and the report builder with its administrators' REST reads ([Reports](#reports)), nothing invoking it yet; a run's start from a saved flow (6.25.00: `POST /agents/engineering/runs` and the flow page's Start a run, [How a flow starts](#how-the-agents-work-together)), which follows its own copy of the flow step by step since 6.28.00 (the conductor, the coordinator's `read_flow`, the board's check of every post and launch against the plan, a person at a step: [The flow a run follows](#the-flow-a-run-follows); memory, the learning loop, self-improvement and the history and pull-request shard sources not run yet); the agents' skills, one per launchable role with its tools, model and the Converse harness (6.29.00, [the agent catalog](#the-agent-catalog)), launched by the board with their skills' argv and driven through the Bug hunt and fix template on the local fake runtime with scripted models; their first run on AWS waits for the owner, and their broker writes for the harness's broker client |
 | 5 | the UI: the templates and new steps in the editor, the run monitor (graph, board, conversation, live cost), skill histories and scorecards, the reports, the assistant drafting flows | in progress: the new steps in the editor (with a flow's monthly budget), Agents → Spend (the spend ledger by workflow, repository, run, agent, model or day, this month's share of each flow's budget, and the administrators' hard cap switch, [above](#cost)), and the run monitor (the flow with its steps lit: the revision the run copied, each step as the conductor reads it since 6.28.00, else its agents' steps; the run's flow budget and its alert flag, the board, the conversation, each agent as the supervisor saw it, an administrator's signals and answers, the reports with their versions; polling, no cost yet: [docs/autonomous-agents.md](autonomous-agents.md)), the assistant drafting flows behind its approval card ([above](#how-the-agents-work-together)), the assistant's "refresh the knowledge pack" (`propose_knowledge_refresh`: an approval card that only an administrator's Approve turns into the Understand flow's start, as that administrator, 6.27.00; same place), and the six templates in the library (Start from a template: an unsaved copy in the editor, saved through the library's own create; same place); live cost, skill histories, a template id in the assistant's `create_workflow` and the assistant's other run tools ("pull the latest from the repository") planned |

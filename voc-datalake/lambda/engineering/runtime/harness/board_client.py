@@ -165,9 +165,12 @@ class BoardHttp:
             self.move(run_id, task_id, to_state='in_progress')
         spec = task.get('spec')
         instructions = spec.get('instructions') if isinstance(spec, dict) else None
+        # The submitted patch the task is about (a gate's: the harness applies it before the session starts).
+        patch = spec.get('patch') if isinstance(spec, dict) else None
         return TaskBrief(task_id=task_id, title=str(task.get('title', '')),
                          instructions=instructions if isinstance(instructions, str) else json.dumps(spec,
-                                                                                                    sort_keys=True))
+                                                                                                    sort_keys=True),
+                         patch=patch if isinstance(patch, str) else '')
 
     def heartbeat(self, *, run_id: str, task_id: str, agent_id: str) -> None:
         del agent_id  # the board takes the agent from the caller's session
@@ -182,10 +185,12 @@ class BoardHttp:
         self.transport.post({'op': 'progress', 'task_id': task_id, 'epoch': self.epoch, 'step': step,
                              'waiting': False})
 
-    def move(self, run_id: str, task_id: str, *, to_state: str) -> None:
+    def move(self, run_id: str, task_id: str, *, to_state: str, result_keys: tuple[str, ...] = ()) -> None:
+        """Move the task on; ``result_keys``: the agent's own outputs of this attempt, recorded on the task (the board
+        takes only the caller's own workspace keys of the lease's attempt)."""
         self._own(run_id, task_id)
         self.transport.post({'op': 'move', 'task_id': task_id, 'epoch': self.epoch, 'to': to_state,
-                             'result_keys': []})
+                             'result_keys': list(result_keys)})
 
 
 @dataclass
@@ -279,16 +284,26 @@ class BoardPlanner:
         listed = self.transport.post({'op': 'tasks'}).get('tasks')
         if not isinstance(listed, list):
             raise BoardRefused(502, 'the board answered no task list')
-        return [TaskSummary(task_id=str(task.get('task_id', '')), role=str(task.get('role', '')),
-                            title=str(task.get('title', '')), state=str(task.get('state', '')),
-                            attempt=int(task.get('attempt', 1)), step=str(task.get('flow_step') or ''))
-                for task in listed if isinstance(task, dict)]
+        summaries: list[TaskSummary] = []
+        for task in listed:
+            if not isinstance(task, dict):
+                continue
+            # A finished task's recorded outputs (a fixer's or builder's: its submitted patch).
+            outputs = task.get('result_keys')
+            summaries.append(TaskSummary(
+                task_id=str(task.get('task_id', '')), role=str(task.get('role', '')), title=str(task.get('title', '')),
+                state=str(task.get('state', '')), attempt=int(task.get('attempt', 1)),
+                step=str(task.get('flow_step') or ''),
+                result_keys=tuple(key for key in outputs if isinstance(key, str)) if isinstance(outputs, list) else ()))
+        return summaries
 
     def post(self, *, run_id: str, role: str, title: str, instructions: str, paths: tuple[str, ...],
-             step: str = '', shard: str = '') -> str:
+             step: str = '', shard: str = '', patch: str = '') -> str:
         self._own(run_id)
-        body: dict[str, Any] = {'op': 'post', 'role': role, 'title': title,
-                                'spec': {'instructions': instructions, 'paths': list(paths)}}
+        spec: dict[str, Any] = {'instructions': instructions, 'paths': list(paths)}
+        if patch:
+            spec['patch'] = patch
+        body: dict[str, Any] = {'op': 'post', 'role': role, 'title': title, 'spec': spec}
         body.update({name: value for name, value in (('flow_step', step), ('shard', shard)) if value})
         task = self.transport.post(body).get('task')
         if not isinstance(task, dict) or not isinstance(task.get('task_id'), str):

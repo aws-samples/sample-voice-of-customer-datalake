@@ -8,7 +8,7 @@ import pytest
 
 from engineering.board.model import Task
 from engineering.board.test.table import RUN, TABLE, engineering_table
-from engineering.connectors.test.test_records import gate_record
+from engineering.connectors.test.test_records import checked_record, gate_record
 from engineering.flow import record as record_module
 from engineering.flow.conductor import UNREAD, Flow, FlowError
 from engineering.flow.record import (
@@ -98,11 +98,22 @@ def _final_go(task_id: str = 't1', state: str = 'done', *, keys: tuple[str, ...]
                 flow_step='gate')
 
 
-def _reader(verdict: str | None) -> tuple[list[str], Callable[[str], GateRecord | None]]:
+#: The gate runner's record of the step (gate-runner-3's), and its task, done before the final go.
+RUNNER_KEY = f'ws/default/runs/{RUN}/gate-runner-3/commits/{"a" * 40}/_gate/attempt-1/record.json'
+RUNNER = Task(task_id='g1', role='gate-runner', state='done', title='', spec='{}', spec_hash='', depth=0, priority=0,
+              attempt=1, lease_agent='gate-runner-3', result_keys=(RUNNER_KEY,),
+              updated_at='2026-11-14T09:00:00+00:00', flow_step='gate')
+
+
+def _reader(verdict: str | None, checked: str = 'GO') -> tuple[list[str], Callable[[str], GateRecord | None]]:
+    """The records: the final go's ``verdict`` (None: unreadable), the gate runner's ``checked``."""
     read: list[str] = []
 
     def record(key: str) -> GateRecord | None:
         read.append(key)
+        if key == RUNNER_KEY:
+            return GateRecord.from_dict(checked_record(checked, status='pass' if checked == 'GO' else 'fail',
+                                                       stop='tool_missing' if checked == 'STOPPED' else ''))
         return None if verdict is None else GateRecord.from_dict(gate_record(verdict))
     return read, record
 
@@ -119,8 +130,19 @@ def test_a_gates_verdict_is_the_go_ledgers_read_of_its_deciding_record(task: Tas
                                                                        expected: str):
     flow = Flow.from_definition(TEMPLATES['bug-hunt-and-fix'])
     read, reader = _reader(record)
-    assert gate_verdicts(flow, [task], 'default', RUN, reader, {}) == {'gate': expected}
-    assert read == ([GATE_KEY] if task.state == 'done' and task.result_keys else [])
+    assert gate_verdicts(flow, [RUNNER, task], 'default', RUN, reader, {}) == {'gate': expected}
+    deciding = [GATE_KEY] if task.state == 'done' and task.result_keys else []
+    # (the gate runner's record is read only behind a final go's GO)
+    assert read == deciding + ([RUNNER_KEY] if record == 'GO' and deciding else [])
+
+
+@pytest.mark.parametrize('checked', ['STOPPED', 'NO-GO'])
+def test_a_final_gos_go_after_a_gate_runner_that_did_not_pass_takes_the_fail_arrow(checked: str):
+    flow = Flow.from_definition(TEMPLATES['bug-hunt-and-fix'])
+    _, reader = _reader('GO', checked)
+    assert gate_verdicts(flow, [RUNNER, _final_go()], 'default', RUN, reader, {}) == {'gate': 'no_go'}
+    # And with no gate runner's record at all.
+    assert gate_verdicts(flow, [_final_go()], 'default', RUN, _reader('GO')[1], {}) == {'gate': 'no_go'}
 
 
 def test_without_a_reader_a_gates_verdict_is_the_one_the_board_recorded_else_never_a_go():

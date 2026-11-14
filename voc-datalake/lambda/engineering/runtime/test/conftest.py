@@ -1,4 +1,5 @@
 """moto's S3 and voc-agents, fakes of the ports the runtime does not own, and a supervisor on the local fake."""
+import json
 import sys
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -155,6 +156,46 @@ def aws() -> Iterator[tuple[Any, Any]]:
             BillingMode='PAY_PER_REQUEST',
         )
         yield s3, table
+
+
+#: The supervisor's schedule rule and the engineering bus (moto's), as voc-engineering-runtime's wiring names them.
+SCHEDULE = 'voc-engineering-supervisor'
+BUS = 'voc-engineering'
+#: The board API's function URL the agents are handed.
+BOARD_URL = 'https://abc123def.lambda-url.us-east-1.on.aws/'
+#: The deployment's agent runtimes (the local fake runs every language; the handler's checks read these).
+IMAGE_ARNS = {'python': {'standard': 'arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/voc_eng_python-a1b2c3'},
+              'java': {'standard': 'arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/voc_eng_java-d4e5f6'}}
+
+
+@pytest.fixture
+def wired(aws: tuple[Any, Any], monkeypatch: pytest.MonkeyPatch) -> Any:
+    """voc-engineering-runtime's handler wired from its environment on moto and the local fake, with RUN started;
+    moto's EventBridge client."""
+    from engineering.runtime import handler
+    from shared import aws as shared_aws
+    assert aws is not None  # moto's S3 and voc-engineering are up for the handler's own clients
+    monkeypatch.setattr(handler, '_runtime', LocalAgentRuntime)
+    # (the hard cap's row lives in voc-agents; here the same moto table holds it)
+    for name, value in {'RAW_DATA_BUCKET': BUCKET, 'ENGINEERING_WORKSPACE_BUCKET': WORKSPACE_BUCKET, 'ENGINEERING_TABLE': TABLE,
+                        'ENGINEERING_SETTINGS_TABLE': TABLE,
+                        'SUPERVISOR_RULE_NAME': SCHEDULE, 'ENGINEERING_AGENT_ROLE_ARNS': json.dumps(ROLE_ARNS),
+                        'ENGINEERING_BUS_NAME': BUS, 'ENGINEERING_BOARD_URL': BOARD_URL,
+                        'ENGINEERING_AGENT_RUNTIMES': json.dumps(IMAGE_ARNS),
+                        'ENGINEERING_BENCHMARK_CASES': json.dumps(['slug-cut-bug']),
+                        'AWS_DEFAULT_REGION': 'us-east-1', 'AWS_REGION': 'us-east-1'}.items():
+        monkeypatch.setenv(name, value)
+    for client in ('_dynamodb_resource', '_dynamodb_client', '_s3_client', '_lambda_client', '_eventbridge_client'):
+        monkeypatch.setattr(shared_aws, client, None)
+    monkeypatch.setattr(handler, '_supervisor_cache', None)
+    monkeypatch.setattr(handler, '_learning_cache', None)
+    handler._sts_client.cache_clear()
+    events = boto3.client('events', region_name='us-east-1')
+    events.put_rule(Name=SCHEDULE, ScheduleExpression='rate(1 minute)', State='DISABLED')
+    events.create_event_bus(Name=BUS)
+    handler.lambda_handler({'action': 'start_run', 'run_id': RUN, 'max_tasks': 50, 'goal': 'fix the parser',
+                            'repo': 'example/app', 'flow': 'bug-hunt'}, None)
+    return events
 
 
 @dataclass

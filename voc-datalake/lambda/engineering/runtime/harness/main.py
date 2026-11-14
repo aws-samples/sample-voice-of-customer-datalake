@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from typing import Any, Final
 
 from engineering.runtime.checkout import repo_git, share_working_tree
-from engineering.runtime.checkpoints import MAX_CHECKPOINT_BYTES, agent_prefix, artifact_prefix, is_valid
+from engineering.runtime.checkpoints import MAX_CHECKPOINT_BYTES, SHA, agent_prefix, artifact_prefix, is_valid
 from engineering.runtime.harness.board_client import (
     BoardHttp,
     BoardKnowledge,
@@ -44,14 +44,17 @@ from engineering.runtime.harness.ports import (
     Planner,
     TaskBrief,
 )
+from engineering.runtime.harness.role_tools import GATE_ROLES, MAX_RESULT_KEYS, judge_submitted_patch
 from engineering.runtime.harness.runner_client import RunnerClient
 from engineering.runtime.harness.status import StatusReport
 from engineering.runtime.harness.tool_server import SessionFiles, serve
-from engineering.runtime.harness.tools import MAX_PATCH_BYTES, AgentContext, Runs, ToolBox
+from engineering.runtime.harness.tools import MAX_CHECKS, MAX_PATCH_BYTES, AgentContext, Runs, ToolBox
 from engineering.runtime.harness.workspace import Workspace
 from engineering.runtime.interface import check_id
 
 CHECKOUT_ROOT: Final = '/work/repo'
+#: The tree a gate's harness hashed, handed to the CLI's tool server (which shares its checkout) in its environment.
+GATE_TREE_ENV: Final = 'VOC_GATE_TREE'
 HEARTBEAT_SECONDS: Final = 60.0
 #: The run coordinator's role (its stop without ``finish`` is a crash: ``_finished``).
 COORDINATOR_ROLE: Final = 'coordinator'
@@ -111,8 +114,15 @@ def build_session(env: Mapping[str, str], *, s3: Any, ports: Ports, runner: Runs
         patch_dir=os.path.join(home, '.voc', 'patches'), own_prefix=prefix,
         checkpoints_prefix=checkpoints,
         patches_prefix=artifact_prefix(run_id, agent_id, commit, attempt, 'patches'),
-        planner=ports.planner, knowledge=ports.knowledge)
+        planner=ports.planner, knowledge=ports.knowledge, commit=commit, attempt=attempt,
+        model=env.get('VOC_MODEL', ''))
     session = AgentSession(context=context, tools=ToolBox(context), inbox=ports.inbox, store=store)
+    if context.role in GATE_ROLES:
+        # A gate judges the submitted patch its task names: applied and hashed by the harness before anything runs
+        # (a continuation's working tree is a patch on that tree, so it goes back on after). The CLI's tool server
+        # shares the checkout the harness set up and takes the tree the harness hashed (``VOC_GATE_TREE``).
+        tree = env.get(GATE_TREE_ENV, '')
+        context.gate_tree = judge_submitted_patch(context, store) if restore else tree if SHA.fullmatch(tree) else ''
     if restored is not None:
         _restore(session, store, *restored)
     return session
@@ -139,7 +149,9 @@ def _saved_brief(restored: tuple[str, dict[str, Any]] | None, task_id: str) -> T
     if not (isinstance(brief, dict) and isinstance(brief.get('title'), str)
             and isinstance(brief.get('instructions'), str)):
         return None
-    return TaskBrief(task_id=task_id, title=brief['title'], instructions=brief['instructions'])
+    patch = brief.get('patch')
+    return TaskBrief(task_id=task_id, title=brief['title'], instructions=brief['instructions'],
+                     patch=patch if isinstance(patch, str) else '')
 
 
 def _restore(session: AgentSession, store: S3Store, name: str, state: dict[str, Any]) -> None:
@@ -155,6 +167,15 @@ def _restore(session: AgentSession, store: S3Store, name: str, state: dict[str, 
     session.inbox.resume(position.get('inbox') if isinstance(position, dict) else None)
     refused = position.get('patch_refused') if isinstance(position, dict) else None
     session.patch_refused = str(refused) if refused else None
+    # The outputs written before (role_tools): still recorded on the task when it finishes, never written again.
+    results = position.get('results') if isinstance(position, dict) else None
+    context.result_keys = [key for key in results if isinstance(key, str) and key.startswith(context.own_prefix)
+                           ][:MAX_RESULT_KEYS] if isinstance(results, list) else []
+    # The checks it ran before (a gate record's), as the harness recorded them, never as anything else said them.
+    checks = position.get('checks') if isinstance(position, dict) else None
+    context.checks = [{'name': str(check['name'])[:200], 'status': check['status']} for check in checks
+                      if isinstance(check, dict) and 'name' in check and check.get('status') in ('pass', 'fail')
+                      ][:MAX_CHECKS] if isinstance(checks, list) else []
     tree = state.get('patch')
     if isinstance(tree, str) and tree.startswith(context.patches_prefix) and context.runs_code:
         session.patch = tree
@@ -218,7 +239,8 @@ def adapter_for(args: argparse.Namespace, env: Mapping[str, str], bedrock: Calla
     choose_cli(args.cli)
     tool_env = {name: env[name] for name in ('VOC_RUN_ID', 'VOC_AGENT_ID', 'VOC_TASK_ID', 'VOC_ROLE',
                                               'VOC_WORKSPACE_BUCKET', 'VOC_COMMIT', 'VOC_ATTEMPT', 'VOC_BOARD_URL',
-                                              'AWS_REGION', 'AWS_CONFIG_FILE', 'HOME') if name in env}
+                                              'VOC_MODEL', GATE_TREE_ENV, 'AWS_REGION', 'AWS_CONFIG_FILE', 'HOME')
+                if name in env}
     return ClaudeCli(binary=args.cli_binary, version=args.cli_version, model_id=args.model,
                      home_root=os.path.join(env['HOME'], '.voc', 'cli'), region=env['AWS_REGION'],
                      aws_config=env['AWS_CONFIG_FILE'], tool_env=tool_env)
@@ -241,6 +263,10 @@ def main(argv: Sequence[str], env: Mapping[str, str] | None = None, *, s3: Any =
          bedrock: Callable[[], Any] | None = None, runner: Runs | None = None) -> int:
     args = _parser().parse_args(list(argv))
     env = dict(os.environ) if env is None else env
+    if args.command == 'run':
+        # The model the session runs on, as its argv names it (a final go's record names it; the CLI's tool server
+        # reads it from its environment).
+        env = {**env, 'VOC_MODEL': args.model}
     ports = ports or default_ports(env)
     if s3 is None:
         import boto3
@@ -271,7 +297,11 @@ def main(argv: Sequence[str], env: Mapping[str, str] | None = None, *, s3: Any =
             # A fresh start's first checkpoint, right after its claim (one write: its checkout is fresh, nothing to
             # snapshot): its brief, so a continuation reads it there and never claims the task it already holds.
             session.checkpoint(turn=0, clean=True)
-        ending = adapter_for(args, env, bedrock or _bedrock).run(session)
+        # The tool server's tree is the one this harness hashed, never one the session's start named.
+        tool_env = {name: value for name, value in env.items() if name != GATE_TREE_ENV}
+        if session.context.gate_tree:
+            tool_env[GATE_TREE_ENV] = session.context.gate_tree
+        ending = adapter_for(args, tool_env, bedrock or _bedrock).run(session)
         if ending == 'done':
             _finished(session)
     finally:

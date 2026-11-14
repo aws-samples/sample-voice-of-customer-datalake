@@ -14,8 +14,9 @@ as the board: a person's board actions go out from the API's source), ``voc.engi
 supervisor, and the delivery function's continuations), ``voc.engineering/webhook`` (repository outcomes), ``voc.engineering/conductor/<ws>/<run>``,
 ``voc.engineering/coach/<ws>/<run>`` (a run's coach: run-scoped, so the run and refs checks apply to it, and it speaks
 as ``coach``, never as ``system``) and ``voc.engineering/agent/<role>/<ws>/<run>/<agent>``, the role one of
-``VOICES``: the roles that claim tasks, and the gate runner, which sends only its gate results (``msg.finding``,
-``review.result``), never a verdict (``gate.*`` is the final-go agent's).
+``schema.ROLES``: the roles that claim tasks, the gate runner among them (it claims its quality gate step's tasks),
+which sends only its gate results (``msg.finding``, ``review.result``), never a verdict (``gate.*`` is the final-go
+agent's).
 """
 from __future__ import annotations
 
@@ -25,10 +26,8 @@ from engineering.bus.schema import ROLES, Message
 
 PREFIX = 'voc.engineering/'
 SERVICES = frozenset({'api', 'board', 'supervisor', 'webhook'})
-#: The agent roles that may speak on the bus: those that claim tasks (``schema.ROLES``, their queue-less inboxes) and
-#: the gate runner, which claims none (``ROLES`` stays the task roles).
-VOICES = ROLES | {'gate-runner'}
-#: What the gate runner may send: its gate results.
+#: What the gate runner may send: its gate results. (The agent roles that may speak on the bus are those that claim
+#: tasks, ``schema.ROLES``, their queue-less inboxes: the gate runner is one.)
 GATE_RUNNER_TYPES = frozenset({'msg.finding', 'review.result'})
 #: The ``from.kind`` values each kind of source may claim.
 FROM_KINDS = {'api': frozenset({'human'}), 'board': frozenset({'system'}),
@@ -88,7 +87,7 @@ def parse_source(source: str) -> Source | None:
         return Source(kind=parts[0])
     if len(parts) == 3 and parts[0] in {'conductor', 'coach'} and all(parts[1:]):
         return Source(kind=parts[0], ws=parts[1], run_id=parts[2])
-    if len(parts) == 5 and parts[0] == 'agent' and parts[1] in VOICES and all(parts[2:]):
+    if len(parts) == 5 and parts[0] == 'agent' and parts[1] in ROLES and all(parts[2:]):
         return Source(kind='agent', role=parts[1], ws=parts[2], run_id=parts[3], agent_id=parts[4])
     return None
 
