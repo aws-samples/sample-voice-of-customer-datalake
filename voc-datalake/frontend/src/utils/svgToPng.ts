@@ -6,8 +6,11 @@
  * then the PNG goes through the ordinary upload — the SVG bytes never leave the browser.
  *
  * Why this is safe: the SVG is loaded through an `Image` (an <img> never runs SVG
- * script nor fetches external resources) from a same-document blob URL, drawn on a
+ * script nor fetches external resources) from a `data:image/svg+xml` URL, drawn on a
  * canvas with a transparent background, and read back with `toBlob('image/png')`.
+ *
+ * Why a `data:` URL and not a `blob:` one: the site's CSP allows `img-src 'self' data:` only
+ * (lib/stacks/core-cdn.ts), so a blob URL never loads and every SVG failed as "unreadable".
  *
  * Browsers differ (see docs/company-context.md → Storage): some taint the canvas for an SVG
  * with a <foreignObject> (toBlob throws or yields null), and some refuse to draw an SVG
@@ -19,10 +22,13 @@
  * @module utils/svgToPng
  */
 
+import { textToDataUrl } from './dataUrl'
+
 const MB = 1024 * 1024
+const SVG_TYPE = 'image/svg+xml'
 /** The largest SVG the converter reads. */
 export const MAX_SVG_BYTES = MB
-/** The largest PNG it hands back (the logo route's own cap). */
+/** The largest PNG it hands back (pages/Company/logoImage.ts then makes one over the 1 MB company-logo cap smaller). */
 const MAX_PNG_BYTES = 5 * MB
 /** The longest side of the PNG, in px: small logos are scaled up for crispness, large ones down. */
 const TARGET_LONGEST_SIDE = 1024
@@ -49,7 +55,7 @@ export function isSvgConversionError(value: unknown): value is SvgConversionErro
 
 /** True for an SVG file: by its type, or by its name when the OS reported no type. */
 export function isSvgFile(file: Pick<File, 'type' | 'name'>): boolean {
-  if (file.type === 'image/svg+xml') return true
+  if (file.type === SVG_TYPE) return true
   return file.type === '' && /\.svg$/i.test(file.name)
 }
 
@@ -72,8 +78,6 @@ export interface SvgToPngDeps<I extends RasterImage> {
   /** An image that starts loading `url` (an <img> never runs SVG script). */
   createImage: (url: string) => I
   createCanvas: (width: number, height: number) => RasterCanvas<I>
-  createObjectURL: (blob: Blob) => string
-  revokeObjectURL: (url: string) => void
   timeoutMs: number
 }
 
@@ -102,8 +106,6 @@ const BROWSER_DEPS: SvgToPngDeps<HTMLImageElement> = {
   readText: (file) => file.text(),
   createImage: browserImage,
   createCanvas: browserCanvas,
-  createObjectURL: (blob) => URL.createObjectURL(blob),
-  revokeObjectURL: (url) => URL.revokeObjectURL(url),
   timeoutMs: DEFAULT_TIMEOUT_MS,
 }
 
@@ -174,7 +176,7 @@ function pngName(name: string): string {
 
 /**
  * Convert an SVG file to a PNG `File` (longest side 1024 px, transparent background).
- * Throws {@link SvgConversionError} for every failure; the blob URL is always revoked.
+ * Throws {@link SvgConversionError} for every failure.
  */
 export async function svgToPng(file: File, deps: SvgToPngDeps<HTMLImageElement> = BROWSER_DEPS): Promise<File> {
   return svgToPngWith(file, deps)
@@ -184,14 +186,10 @@ export async function svgToPng(file: File, deps: SvgToPngDeps<HTMLImageElement> 
 export async function svgToPngWith<I extends RasterImage>(file: File, deps: SvgToPngDeps<I>): Promise<File> {
   if (file.size > MAX_SVG_BYTES) throw new SvgConversionError('too_large')
   const svgText = await deps.readText(file)
-  const url = deps.createObjectURL(new Blob([svgText], { type: 'image/svg+xml' }))
-  try {
-    const image = deps.createImage(url)
-    await decodeWithin(image, deps.timeoutMs)
-    const png = await rasterise(image, targetSize(sourceSize(image, svgText)), deps)
-    if (png.size > MAX_PNG_BYTES) throw new SvgConversionError('result_too_large')
-    return new File([png], pngName(file.name), { type: 'image/png' })
-  } finally {
-    deps.revokeObjectURL(url)
-  }
+  // Typed image/svg+xml whatever the file reported (some systems give an .svg no type).
+  const image = deps.createImage(textToDataUrl(svgText, SVG_TYPE))
+  await decodeWithin(image, deps.timeoutMs)
+  const png = await rasterise(image, targetSize(sourceSize(image, svgText)), deps)
+  if (png.size > MAX_PNG_BYTES) throw new SvgConversionError('result_too_large')
+  return new File([png], pngName(file.name), { type: 'image/png' })
 }

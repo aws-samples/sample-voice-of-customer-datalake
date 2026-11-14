@@ -31,6 +31,24 @@ prompt:
   system when none is), sent as `use_design_system` on `POST /projects/{id}/build-prototype` — absent means on,
   so the agents runtime, the assistant and MCP keep reading it. The prototype's "Built from" footer says when it
   was read (`derivation.design_system_included`), and a revision keeps the base build's choice.
+- **The company logo reaches prototypes too** (with the same **Design system** box). When a logo is uploaded, the
+  prompt asks the model to write `<img src="__COMPANY_LOGO__">` wherever the company logo appears, instead of
+  drawing its own; the document generator then replaces that placeholder with the logo itself as a `data:` URL
+  (the prototype CSP allows `img-src data:` only), so the model never sees the image bytes
+  (`lambda/shared/company_logo.py`). The type comes from the file's bytes (PNG, JPEG or WebP). A logo over 1 MB is
+  left out (logged) and the model draws a wordmark as before; so does a build with no logo or with the box
+  unticked. The inlined logo is marked (`data:image/png;voc=company-logo;base64,…`): a revision sends the base
+  prototype back with exactly that image turned into the placeholder again (no other inline image), so the base
+  HTML budget is spent on markup. When a revision has no logo to use, the prompt asks for a drawn wordmark, and a
+  placeholder `<img>` the model still writes becomes the brand (or project) name as text. The prompt asks for the logo in at
+  most two places (the header and a splash or sign-in screen), and the build enforces it: only the first two
+  placeholders get the image (each use carries it in the file again), any further one becomes the wordmark text.
+  The derivation records it beside `design_system_included`: `company_logo_included` is `true` when the uploaded
+  logo was inlined, `false` when one is uploaded but was left out (over 1 MB, written before the cap, or
+  unreadable), absent when there is none or the design system was not read; the "Built from" footer says
+  "Company logo" or "Company logo left out (over 1 MB or unreadable)". The document generator
+  role reads the uploaded logos only, `company-context/design/logo_????????????.*` (not the references' previews)
+  (`s3:GetObject`, VocCoreStack's `CompanyLogoReadPolicy` managed policy, attached in VocApiStack).
 - **Category scope applies to the design system too.** Like the vision and objectives, guideline paragraphs,
   token entries and references whose text names a category the reader may not see are left out
   (`shared.scope_names.scoped_design_system`) — in `GET /settings/design-system` for a restricted caller and in
@@ -62,15 +80,25 @@ on the server). A refused field is marked and explained in place and nothing is 
 Storage: aggregates rows `SETTINGS#company_context`, `SETTINGS#design_system`, `USERCTX#{sub}`, `USERFLAGS#{sub}`
 (`sk = config`). A workspace's own vision and objectives and a person's objectives there have their keys,
 `WS#{ws}#SETTINGS#company_context` and `WS#{ws}#USERCTX#{sub}` (`lambda/shared/company_context.py`), which no route
-uses yet: they move with projects ([multi-workspace](multi-workspace.md)). Uploads (screenshots png/jpg/webp ≤ 5 MB, HTML ≤ 2 MB, the logo png/jpg/webp ≤ 5 MB) go to the raw bucket under
+uses yet: they move with projects ([multi-workspace](multi-workspace.md)). Uploads (screenshots png/jpg/webp ≤ 5 MB, HTML ≤ 2 MB, the logo png/jpg/webp ≤ 1 MB) go to the raw bucket under
 `company-context/design/` by presigned PUT and are kept when a reference is archived; the reference's logo
 **preview** (`company-context/design/logo_preview_<ref id>.png|jpg|webp`, a copy made when it was read, and the
 sanitised `.svg` beside it), and a website reference's copied icons (everything under
 `company-context/design/icons_<ref id>/`, listed once), are deleted with the archive and their keys
 (`preview_key`, `svg_preview_key`, `icons`) dropped from the row (one idempotent `DeleteObjects`; an S3 failure answers
-503 with the reference already archived, and repeating the DELETE removes it). The logo picker also takes an
+503 with the reference already archived, and repeating the DELETE removes it). A PNG, JPEG or WebP logo
+over 1 MB is **made smaller, never refused for its size** (up to 25 MB): the browser decodes it and re-encodes it at
+most 1024 px on its longest side under 1 MB, PNG first, then WebP (`pages/Company/logoImage.ts`, the ladder of
+`pages/ProjectDetail/resizeImage.ts`; never JPEG, which would put a white box behind a transparent logo; a rung the
+browser cannot encode, such as WebP where only PNG comes back, is skipped); one within 1 MB is uploaded as it is. A
+file that cannot get under 1 MB, or cannot be decoded, is explained and nothing is uploaded. The company logo is at
+most 1 MB for every client: the upload route (`POST /settings/design-system/logo`) and "Use this logo" refuse a larger
+one with a 400 (`COMPANY_LOGO_MAX_BYTES`, `lambda/shared/design_logo.py`), so the API and MCP get the same result as
+the web app and every saved logo fits a prototype. The logo picker also takes an
 SVG (≤ 1 MB): the browser draws it to a PNG (longest side 1024 px, transparent background) and uploads only that PNG, so
-the API still never receives an SVG; an SVG the browser cannot convert (some browsers refuse one with a
+the API still never receives an SVG. The SVG is loaded into an `<img>` from a `data:image/svg+xml` URL, never a
+`blob:` one: the site's CSP allows `img-src 'self' data:` only, so a blob URL is blocked (before 7.00.00 every SVG
+upload failed that way, reported as unreadable); an SVG the browser cannot convert (some browsers refuse one with a
 `<foreignObject>`, or one without a size) is explained with "export it as PNG and upload that". Figma and GitHub tokens live
 in the Secrets Manager secret `voc/design-integrations-<account>-<region>` (Core stack, KMS, kept on stack deletion unless `-c protectData=false`), JSON
 `{figma_token?, github_token?}`.
@@ -251,9 +279,20 @@ guidelines (or take them as they are when there are none yet). `changes`
 counts `{added, replaced}` per token group and for `components`, plus `guidelines_added`. The admin reviews it in the editor and saves with the usual
 `PUT /settings/design-system`. 409 when the reference has no extracted design yet or is archived.
 
+**An oversized logo on a website.** A website reference's raster logo (PNG, JPEG or WebP) over 2 MB is no longer
+refused: while the page is read, the managed browser draws it in a fresh blank tab at up to 1,024 px on its longest
+side and keeps that PNG as the reference's logo preview (marked rendered, like a drawn SVG logo), so "Use this logo"
+copies the smaller PNG (`lambda/design_capture/raster_logo.py`). Every rendered logo (an SVG or an oversized raster)
+fits the 1 MB company-logo cap: a PNG over it at 1,024 px is drawn again at 768, then 512 px
+(`lambda/design_capture/logo_render.py`). The address passes the same URL policy before the
+browser opens it; if drawing fails, the reference simply has no logo preview. A reference read before 7.00.00, or a
+GitHub repository's logo over 2 MB, still answers "Use this logo" with a 400 that says what to do: upload it as the
+company logo (the browser makes it smaller) or refresh a website reference.
+
 **Use this logo.** `POST …/references/{id}/logo` downloads the candidate server-side with the SSRF guard on the
 URL and on every redirect hop (`shared/http_utils.fetch_public_url`: sockets pinned to the vetted address, no
-https→http downgrade, no proxies), at most 2 MB, PNG/JPEG/WebP decided by the file's bytes, and stores the FILE
+https→http downgrade, no proxies), at most 2 MB downloaded and 1 MB kept (the company-logo cap, 400 above it with what
+to do), PNG/JPEG/WebP decided by the file's bytes, and stores the FILE
 (`company-context/design/logo_<12 hex>.<ext>`) — the design system itself is not changed. It answers
 `{logo_id, logo_url}` (`logo_url` a short-lived signed GET); the editor shows that logo in the same draft "Use as
 design system" fills ("it becomes the company logo when you save the design system"), and **Save design system**
@@ -261,7 +300,7 @@ sends `logo_id` with the usual `PUT /settings/design-system`, which makes it the
 is malformed or its file does not exist). Discard — the apply banner's **Discard** and the save row's **Discard changes** are one action — drops the whole draft, the drafted logo and the banner, and shows the saved logo again; the unused file is kept, like every upload.
 400 with the reason when the address is unsafe, the file is too large or not an image; 409 when there is no
 candidate. A **rendered** candidate (a website's SVG logo, above) is never downloaded: the route copies its stored
-preview PNG (`s3:GetObject` on the preview key, checked again: a PNG by its bytes, ≤ 2 MB; 400 otherwise) to a new
+preview PNG (`s3:GetObject` on the preview key, checked again: a PNG by its bytes, ≤ 1 MB; 400 otherwise) to a new
 `logo_<12 hex>.png`, same answer; **409** `Refresh the reference to read its logo again` when the preview is gone.
 
 **One address, one reference.** `POST …/references` answers **409** naming the existing reference when the URL is
@@ -280,8 +319,8 @@ Infrastructure: `voc-design-capture` runs as its own role — the managed-browse
 on the `SETTINGS#design_system`, `SETTINGS#model` and `SETTINGS#model_default` partitions and `UpdateItem` on
 `SETTINGS#design_system` only
 (`dynamodb:LeadingKeys`), KMS for the table and bucket, `s3:PutObject` on
-`company-context/design/logo_preview_*` (the logo preview: a downloaded raster candidate or the PNG the
-browser rendered from an SVG logo, and its sanitised SVG) and `company-context/design/icons_*` (the copied icons)
+`company-context/design/logo_preview_*` (the logo preview: a downloaded raster candidate, or the PNG the
+browser rendered from an SVG logo or from a raster logo over 2 MB, and the SVG's sanitised copy) and `company-context/design/icons_*` (the copied icons)
 only; env `RAW_DATA_BUCKET`; no read, no delete, no
 secrets. Its second action, `design_logo_render` (a GitHub reference's SVG logo), uses the same grants. It is never retried (a retry opens another billed
 session). The settings role may invoke it (`DESIGN_CAPTURE_FUNCTION`, by name: VocIngestionStack deploys before

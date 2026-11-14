@@ -37,9 +37,11 @@ export const KINDS = Object.freeze({
  * deny rule for each (CLAUDE_DENY_RULES) and no Grep (a search would print matching lines of a denied file).
  * The globs match file names at any depth, a top-level `.env` included (verified live); a secret under a
  * secret-shaped DIRECTORY with an ordinary file name (`secrets/config.json`) is not caught, so keep those gitignored.
+ * `.env` and `.env.*` are listed on their own (kiro.dev's own "deny reads to secrets" example spells `**\/.env` and
+ * `**\/.env.*` out); `*.env` already covered a plain `.env` in every test so far.
  */
 export const SECRET_PATHS = Object.freeze([
-  '*.env', '*.env.*', '*.pem', '*.key', '*.p12', '*.pfx', '*id_rsa*', '*id_ed25519*',
+  '.env', '.env.*', '*.env', '*.env.*', '*.pem', '*.key', '*.p12', '*.pfx', '*id_rsa*', '*id_ed25519*',
   '*credentials*', '*.secret*', '*.npmrc', '*.netrc',
 ])
 
@@ -99,6 +101,35 @@ export function chooseRunner({ mode, ci, has }) {
 export const CLAUDE_READ_RULES = 'Read(./**),Glob(./**)'
 /** Claude Code's deny rules (deny wins over allow): no read of a secret-shaped path. */
 export const CLAUDE_DENY_RULES = SECRET_PATHS.map((glob) => `Read(./**/${glob})`).join(',')
+
+/**
+ * Every repository Kiro agent's read rules, both formats (pinned against .kiro/agents/*.json by review.test.mjs).
+ * BOTH are needed, verified live with kiro-cli 3.3.0 (2026-11-13): the `toolsSettings.fs_read.deniedPaths` block is what
+ * refuses a `.env` read (an agent with only the `permissions` deny read it, against kiro.dev's "V3 does not read
+ * toolsSettings"); `permissions.rules` is the documented V3 form (a deny always wins over an allow there), kept for
+ * the release that enforces it. An agent must not pre-approve `fs_read` in `allowedTools`: that bypassed the deny too.
+ * Each secret glob is denied as a file and as a directory (`/**`), the shape kiro-cli's own upgrade gives it.
+ * A pinned SPEC, not runtime config: review.mjs never reads it; the agent JSON files carry it and the tests compare.
+ */
+const SECRET_GLOBS = SECRET_PATHS.flatMap((glob) => [`**/${glob}`, `**/${glob}/**`])
+export const KIRO_READ_SETTINGS = Object.freeze({
+  toolsSettings: { fs_read: { allowedPaths: ['./**'], deniedPaths: SECRET_PATHS.map((glob) => `**/${glob}`) } },
+  permissions: {
+    rules: [
+      { capability: 'fs_read', match: ['./**'], effect: 'allow' },
+      { capability: 'fs_read', match: SECRET_GLOBS, effect: 'deny' },
+    ],
+  },
+})
+/**
+ * An agent that writes files (the test generator): never a secret-shaped path. kiro-cli 3.3.0 refuses it through
+ * `toolsSettings.fs_write.deniedPaths` (verified live); `./**` is not enforced while `fs_write` is pre-approved.
+ */
+export const KIRO_WRITE_SETTINGS = Object.freeze({ allowedPaths: ['./**'], deniedPaths: SECRET_PATHS.map((glob) => `**/${glob}`) })
+export const KIRO_WRITE_RULES = Object.freeze([
+  { capability: 'fs_write', match: ['./**'], effect: 'allow' },
+  { capability: 'fs_write', match: SECRET_GLOBS, effect: 'deny' },
+])
 
 /**
  * The command for a runner. The prompt goes on stdin (no argument-size limit). Both are read-only AND limited to the

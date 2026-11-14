@@ -77,11 +77,12 @@ UPLOAD_TYPES: dict[str, dict[str, tuple[str, int]]] = {
     'html': {
         'text/html': ('html', 2_000_000),
     },
-    # The company logo. No SVG: an SVG is a document that can carry script.
+    # The company logo. No SVG: an SVG is a document that can carry script. At most 1 MB, so every saved logo can
+    # be inlined into a prototype (design_logo.COMPANY_LOGO_MAX_BYTES; the web app makes a larger one smaller first).
     'logo': {
-        'image/png': ('png', 5_000_000),
-        'image/jpeg': ('jpg', 5_000_000),
-        'image/webp': ('webp', 5_000_000),
+        'image/png': ('png', design_logo.COMPANY_LOGO_MAX_BYTES),
+        'image/jpeg': ('jpg', design_logo.COMPANY_LOGO_MAX_BYTES),
+        'image/webp': ('webp', design_logo.COMPANY_LOGO_MAX_BYTES),
     },
 }
 # The ``action`` of the async event Settings sends the ``voc-design-capture`` worker (lambda/design_capture).

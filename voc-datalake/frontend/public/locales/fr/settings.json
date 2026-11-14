@@ -725,6 +725,8 @@
     "uploadBadType": "{{name}} n'est pas un type de fichier accepté.",
     "uploadTooLarge": "{{name}} dépasse {{mb}} Mo.",
     "uploadFailed": "Échec du téléversement. Réessayez.",
+    "logoNotShrunk": "Impossible de réduire {{name}} sous 1 Mo. Exportez un PNG plus petit et téléversez-le.",
+    "logoUnreadable": "Impossible de lire {{name}} comme une image. Exportez-le en PNG et téléversez-le.",
     "integrations": "Intégrations de design",
     "integrationsHint": "Les jetons sont stockés chiffrés et ne sont plus jamais affichés. Laissez un champ vide pour conserver le jeton actuel.",
     "providers": {

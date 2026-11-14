@@ -166,6 +166,18 @@ class TestUseLogo:
         _, view = _call(api_gateway_event, lambda_context, 'GET', '/settings/design-system')
         assert 'logo_url' not in view   # the company logo is unchanged until Save
 
+    def test_a_candidate_over_the_1_mb_company_logo_cap_is_400_and_drafts_nothing(
+        self, api_gateway_event, lambda_context, table, s3,
+    ):
+        _seed(table)
+        fetch = MagicMock(return_value=_response(200, PNG + b'0' * 1_000_000))
+        with patch.object(design_logo, 'fetch_public_url', fetch):
+            response, body = _call(api_gateway_event, lambda_context, 'POST', self.PATH)
+        assert response['statusCode'] == 400
+        assert 'larger than 1 MB' in str(body)
+        listed = s3.list_objects_v2(Bucket=settings_handler.RAW_DATA_BUCKET).get('Contents') or []
+        assert [o['Key'] for o in listed if o['Key'].startswith('company-context/design/logo_')] == []
+
     def test_saving_the_design_system_with_the_logo_id_makes_it_the_logo(self, api_gateway_event, lambda_context, table, s3):
         _seed(table)
         with patch.object(design_logo, 'fetch_public_url', MagicMock(return_value=_response(200, PNG))):

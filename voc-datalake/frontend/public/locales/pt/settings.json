@@ -725,6 +725,8 @@
     "uploadBadType": "{{name}} não é um tipo de arquivo aceito.",
     "uploadTooLarge": "{{name}} tem mais de {{mb}} MB.",
     "uploadFailed": "Falha no envio. Tente novamente.",
+    "logoNotShrunk": "Não foi possível reduzir {{name}} para menos de 1 MB. Exporte um PNG menor e envie-o.",
+    "logoUnreadable": "Não foi possível ler {{name}} como imagem. Exporte-o como PNG e envie-o.",
     "integrations": "Integrações de design",
     "integrationsHint": "Os tokens são armazenados criptografados e nunca mais exibidos. Deixe um campo vazio para manter o token atual.",
     "providers": {

@@ -353,9 +353,10 @@ class TestPreviewAndFetchedAt:
         assert stored['extracted_design']['logo']['preview_key'] == key
         assert s3.get_object(Bucket='raw', Key=key)['Body'].read() == png
         assert stored['fetched_at'] == '2026-10-22T10:00:00+00:00'
-        # the candidate once; the other download is the icon copy's /favicon.ico (no icon link on this page)
+        # the candidate once, inside the session (before the icon copy's /favicon.ico: no icon link on this page);
+        # store_preview stores those bytes without a second download
         assert [c.args[0] for c in logo_fetch.call_args_list] == [
-            'https://kirocrew.dev/favicon.ico', 'https://kirocrew.dev/apple-touch-icon.png']
+            'https://kirocrew.dev/apple-touch-icon.png', 'https://kirocrew.dev/favicon.ico']
 
     def test_an_error_is_stamped_when_the_read_ends(self, table):
         _, stored, _, _ = _run(table, FakeCdp(_styles(), navigate={'errorText': 'net::ERR_NAME_NOT_RESOLVED'}))

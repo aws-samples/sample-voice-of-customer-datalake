@@ -2,7 +2,7 @@
   "description": "Fingerprint of the no-prefix synth. Regenerate with npx ts-node scripts/generate-baseline.ts ONLY for a change intended to alter the default templates — see the script header.",
   "stacks": {
     "VocApiStack": {
-      "templateSha256": "56a9e2276a8f654671672e622d2e9d62a408695120ef556ae87d7cdbf017b40b",
+      "templateSha256": "acbfe3e4380cfb84d64d86a9daafe61685abc317ea0b468ae0a8e16b003078ef",
       "names": {
         "physicalNames": [
           "AWS::ApiGateway::Authorizer Name = voc-board-authorizer",
@@ -187,7 +187,7 @@
       }
     },
     "VocCoreStack": {
-      "templateSha256": "4c9a8d4b635980094bdece2e41ec2c4dd334725e509b6b0ff306b16e6ec4f78e",
+      "templateSha256": "560e35e73169b54053c0d4e83ea03d96e4e3dc04bcd3681083676c2b771f68ff",
       "names": {
         "physicalNames": [
           "AWS::AppSync::Api Name = voc-events-<AWS::AccountId>-<AWS::Region>",
@@ -253,6 +253,7 @@
           "VocCoreStack:ExportsOutputRefAggregatesTable0F8EFB129CB80975",
           "VocCoreStack:ExportsOutputRefCdnSigningKeySecret1F5BD0A95EE94953",
           "VocCoreStack:ExportsOutputRefCdnSigningPublicKey67AE99272D6BC2F5",
+          "VocCoreStack:ExportsOutputRefCompanyLogoReadPolicy8D21378AC5F75BA2",
           "VocCoreStack:ExportsOutputRefConversationsTableCD91EB96EE2E4585",
           "VocCoreStack:ExportsOutputRefDesignIntegrationsSecretCD6C10D83BBE49DE",
           "VocCoreStack:ExportsOutputRefFeatureRequestsTable08A3D6C3A8E49107",
@@ -353,7 +354,7 @@
       }
     },
     "VocProcessingStack": {
-      "templateSha256": "3ca19f234b35bbd5d7fcdf691cbbe8af257a905a357526219e09e1503a38b553",
+      "templateSha256": "be88ac1626788ac6438237c6523a2e8db198561fd4f34a0bf520a09fa49119c5",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-agent-heartbeat-schedule-<AWS::AccountId>-<AWS::Region>",
