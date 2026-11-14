@@ -54,11 +54,17 @@ export const USER_POOL_STANDARD_ATTRIBUTES: cognito.StandardAttributes = {
  */
 export const USER_MESSAGES_FILES = ['auth/user_messages.py'] as const;
 
+/** The message trigger's memory: a 2.5 s cold start at 128 MB was too close to Cognito's 5 s budget (lib/sizing/policy.ts). */
+const USER_MESSAGES_MEMORY_MB = 256;
+
 /** How long an invitation's temporary password works; the pool's policy and the email both state it. */
 export const TEMPORARY_PASSWORD_DAYS = 7;
 
 /** The brand row's partition key in the aggregates table (api/settings_handler.py SETTINGS_PK). */
 export const BRAND_SETTINGS_PK = 'SETTINGS#brand';
+
+/** The design system's partition key (shared/company_context.py DESIGN_SYSTEM_PK): the invitation's accent colour. */
+export const DESIGN_SYSTEM_SETTINGS_PK = 'SETTINGS#design_system';
 
 /** The context key marking a workshop deployment: `-c workshop=true` (npm run generate:workshop-artifacts). */
 const WORKSHOP_CONTEXT = 'workshop';
@@ -103,6 +109,7 @@ export function createCoreAuth(
     architecture: lambda.Architecture.ARM_64,
     handler: 'auth/user_messages.handler',
     code: selfContainedTriggerCode(USER_MESSAGES_FILES),
+    memorySize: USER_MESSAGES_MEMORY_MB,
     timeout: cdk.Duration.seconds(10),
     description: 'App sign-in emails: the invitation (brand, inviter, workshop), password reset, resent code',
     environment: {
@@ -113,11 +120,11 @@ export function createCoreAuth(
     },
     logGroup: lambdaLogGroup(stack, 'CustomMessageLambdaLogs'),
   });
-  // Exactly the brand row (SETTINGS#brand), read only, and the table's key to decrypt it.
+  // Exactly two settings rows (SETTINGS#brand, SETTINGS#design_system), read only, and the table's key.
   customMessageLambda.addToRolePolicy(new iam.PolicyStatement({
     actions: ['dynamodb:GetItem'],
     resources: [aggregatesTable.tableArn],
-    conditions: { 'ForAllValues:StringEquals': { 'dynamodb:LeadingKeys': [BRAND_SETTINGS_PK] } },
+    conditions: { 'ForAllValues:StringEquals': { 'dynamodb:LeadingKeys': [BRAND_SETTINGS_PK, DESIGN_SYSTEM_SETTINGS_PK] } },
   }));
   kmsKey.grantDecrypt(customMessageLambda);
 

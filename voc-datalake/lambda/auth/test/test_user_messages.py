@@ -47,7 +47,7 @@ def test_names_the_brand_and_the_inviter_when_both_are_known(aggregates):
     subject, message = _send(_invitation({'invited_by': 'Luca Perrozzi'}, {'given_name': 'Ana'}))
     assert subject == 'You are invited to the Acme VoC Analytics workspace'
     assert 'Hello Ana,' in message
-    assert 'Luca Perrozzi invited you to the Acme VoC Analytics workspace.' in message
+    assert 'Luca Perrozzi invited you to the Acme VoC Analytics workspace running on AWS.' in message
     assert 'check with your VoC Analytics administrator' in message
     assert 'Acme VoC Analytics</p>' in message
     assert 'workshop' not in message.lower()
@@ -73,7 +73,7 @@ def test_points_a_workshop_participant_to_the_organizer_when_no_brand_is_set(mon
     monkeypatch.setenv('WORKSHOP', 'true')
     subject, message = _send(_invitation())
     assert subject == 'You are invited to VoC Analytics for an AWS workshop'
-    assert 'a VoC Analytics workspace set up for an AWS workshop' in message
+    assert 'a VoC Analytics workspace running on AWS, set up for an AWS workshop' in message
     assert 'check with your workshop organizer' in message
     assert 'The workshop organizer created this account' in message
 
@@ -90,7 +90,7 @@ def test_a_configured_brand_wins_over_the_workshop_wording(aggregates, monkeypat
 def test_uses_neutral_wording_without_a_brand_outside_a_workshop():
     subject, message = _send(_invitation())
     assert subject == 'You are invited to VoC Analytics'
-    assert 'You have been invited to a VoC Analytics workspace.' in message
+    assert 'You have been invited to a VoC Analytics workspace running on AWS.' in message
     assert 'check with your VoC Analytics administrator' in message
     assert 'workshop' not in message.lower()
 
@@ -158,3 +158,49 @@ def test_keeps_the_reset_and_resend_emails(source, subject):
 def test_leaves_other_messages_to_cognito():
     event = {'triggerSource': 'CustomMessage_UpdateUserAttribute', 'request': {}, 'response': {}}
     assert user_messages.handler(event, None)['response'] == {}
+
+
+def _set_colors(table, colors):
+    table.put_item(Item={**user_messages.DESIGN_SYSTEM_KEY, 'tokens': {'colors': colors}})
+
+
+def test_uses_the_design_system_primary_colour_like_prototypes_do(aggregates):
+    _set_colors(aggregates, [{'name': 'surface', 'value': '#FAFAFA'}, {'name': 'primary', 'value': '#E11D48'}])
+    _, message = _send(_invitation())
+    assert 'background: #e11d48;' in message
+    assert 'style="color: #e11d48;"' in message
+    assert '#4c51bf' not in message
+
+
+@pytest.mark.usefixtures('aggregates')
+def test_keeps_the_app_indigo_without_a_design_system():
+    _, message = _send(_invitation())
+    assert f'background: {user_messages.DEFAULT_ACCENT};' in message
+
+
+@pytest.mark.parametrize(('colors', 'accent'), [
+    pytest.param([{'name': 'brand-500', 'value': '#0EA5E9'}], '#0ea5e9', id='prefixed-name'),
+    pytest.param([{'name': 'ink', 'value': '#222'}, {'name': 'paper', 'value': '#fff'}], '#222', id='first-usable'),
+    pytest.param([{'name': 'primary', 'value': 'rgb(1,2,3)'}, {'name': 'x', 'value': '#123456'}], '#123456',
+                 id='non-hex-skipped'),
+    pytest.param([{'name': 'primary', 'value': '#fff;background:url(x)'}], user_messages.DEFAULT_ACCENT,
+                 id='css-injection-refused'),
+    pytest.param('not a list', user_messages.DEFAULT_ACCENT, id='malformed'),
+    pytest.param([], user_messages.DEFAULT_ACCENT, id='empty'),
+])
+def test_picks_only_a_plain_hex_accent(colors, accent):
+    assert user_messages.pick_accent(colors) == accent
+
+
+@pytest.mark.parametrize(('background', 'text'), [
+    ('#4c51bf', '#ffffff'), ('#e11d48', '#ffffff'), ('#111111', '#ffffff'),
+    ('#fde047', '#111111'), ('#ffffff', '#111111'), ('#fff', '#111111'),
+])
+def test_header_text_stays_readable_on_the_accent(background, text):
+    assert user_messages.text_on(background) == text
+
+
+def test_a_light_accent_gets_dark_header_text(aggregates):
+    _set_colors(aggregates, [{'name': 'primary', 'value': '#fde047'}])
+    _, message = _send(_invitation())
+    assert 'color: #111111; margin: 0; font-size: 22px;' in message
