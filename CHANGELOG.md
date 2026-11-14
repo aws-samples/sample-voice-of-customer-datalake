@@ -17,6 +17,18 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.01.03] - 2026-11-14
+
+The engineering agents' patch reader is rewritten so its tests can see every line, with the same behaviour. A refactor and tests only.
+
+### Changed
+
+- `connectors/patches.py`: every loop of the patch reader is bounded by its input, so no mutant of it can run forever. The quoted-path, file and patch loops take at most one step per byte or line, and the hunk reader is one forward pass. Three checks that could never decide are gone: the 512-character key bound (the longest key the layout accepts for a patch of the workspace is 497 characters), a mask on a three-digit octal escape, and a repeated key check. Pinned first on 15 real `git diff --cached --binary` patches and git's own result of each (`connectors/test/patch_corpus.py`, `test_patches_testable.py`). Mutation score: 938 killed, 10 survived, 10 timeouts before; 969 of 969 killed after.
+
+### Upgrade notes
+
+- No data, API or behaviour change. The Api and Processing stacks' template hashes in `voc-datalake/lib/test-support/baseline.json` move with the release number (`APP_VERSION`) only.
+
 ## [7.01.02] - 2026-11-14
 
 The engineering agents' prose check now catches a phone number at the end of a sentence or inside markdown emphasis.
