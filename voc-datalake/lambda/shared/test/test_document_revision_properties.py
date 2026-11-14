@@ -55,6 +55,11 @@ def model_changes(draw, markdown: str) -> list[dict]:
 REFS = {'T1': 'c-1', 'T2': 'c-2', 'T3': 'c-3', 'T4': 'c-4'}
 
 
+def _places(text: str, passage: str) -> int:
+    """How many places ``passage`` starts at in ``text``, overlapping ones included ('aa' starts twice in 'aaa')."""
+    return sum(text.startswith(passage, index) for index in range(len(text)))
+
+
 class TestAChangeIsKeptOnlyWhenItsQuoteIsExactlyOnceAndDisjoint:
     """Invariant: a kept change quotes text that occurs exactly once in the document, names a thread the
     pass asked about, and shares no word with another kept change. Kept plus dropped is every change the
@@ -72,7 +77,7 @@ class TestAChangeIsKeptOnlyWhenItsQuoteIsExactlyOnceAndDisjoint:
         assert [c['change_id'] for c in kept] == [f'ch_{n}' for n in range(1, len(kept) + 1)]
         spans = []
         for change in kept:
-            assert markdown.count(change['before']) == 1, change
+            assert _places(markdown, change['before']) == 1, change
             assert change['before'].strip()
             assert change['before'] != change['after']
             assert change['thread_ids']
@@ -107,7 +112,7 @@ class TestAChangeIsKeptOnlyWhenItsQuoteIsExactlyOnceAndDisjoint:
                                                                       after: str) -> None:
         kept, dropped = rev.ground_changes(
             {'changes': [{'threads': ['T1'], 'before': word, 'after': after}]}, markdown, REFS)
-        if markdown.count(word) == 1:
+        if _places(markdown, word) == 1:
             assert dropped == 0
             assert len(kept) == 1
             assert rev.apply_changes(markdown, kept) == markdown.replace(word, after, 1)

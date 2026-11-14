@@ -12,14 +12,18 @@
 import { commonPrefixLength } from '../../../utils/commonPrefix'
 import type { CommentThread, ReviseChange } from '../../../api/documentReviewSchema'
 
-/** How often `needle` occurs in `text` (non-overlapping; an empty needle never does). */
-function occurrences(text: string, needle: string): number {
-  return needle === '' ? 0 : text.split(needle).length - 1
+/**
+ * `needle` occurs at exactly one place in `text` (the server's `_only_place`). Overlapping places count: `aa` is at
+ * two places in `aaa`. An empty needle occurs nowhere.
+ */
+function occursOnce(text: string, needle: string): boolean {
+  const first = text.indexOf(needle)
+  return needle !== '' && first !== -1 && !text.slice(first + 1).includes(needle)
 }
 
 /** The change's `before` no longer occurs exactly once in the draft: it cannot be accepted. */
 export function isOutOfDate(draft: string, change: ReviseChange): boolean {
-  return occurrences(draft, change.before) !== 1
+  return !occursOnce(draft, change.before)
 }
 
 /** The draft with the change's one `before` replaced by its `after`; null when it is out of date. */

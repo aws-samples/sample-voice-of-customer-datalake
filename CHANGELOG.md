@@ -17,6 +17,23 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.01.02] - 2026-11-14
+
+Revise from comments drops a quote that occurs at two overlapping places; the rest of the revise module is mutation-tested.
+
+### Fixed
+
+- **Revise from comments** kept a change whose quote occurs at two places that overlap (`aa` in `aaa`, `a a` in `a a a`, a rule of dashes, a repeated phrase) and applied it at the first of them: the "occurs exactly once" check used a count that does not see overlapping places. Such a quote is ambiguous, so the change is now dropped and counted with the other dropped changes (`_only_place` in `lambda/shared/document_revision.py`). The draft's own check (`isOutOfDate` in `frontend/src/components/DocumentCanvas/revise/reviseChanges.ts`) counts places the same way, so a change whose quote became ambiguous in the draft is out of date there too. Found by a mutant that no test could kill.
+
+### Changed
+
+- Tests only: `lambda/shared/test/test_document_revision_survivors.py` pins what the revise module's surviving mutants changed (the refusals word for word, the evidence query, how a thread and a review reach the prompt, the recommendation and grounding caps, the default model call, every outcome's result, the warning for a thread that could not be marked, what a save holds, a saved proposal's checks). `apply_changes` now owns its precondition: two changes whose passages overlap or start at the same place are refused with a `ValueError` (it was a silent garbled splice; `ground_changes` never keeps two such changes, so no caller sees it). `document_revision.py` goes from 863 of 953 to 961 of 968 mutants killed; the 7 left are equivalent, each with its proof in `docs/mutation-notes-mut-voc-wiki.md`. The grounding property's oracle counts overlapping places.
+- As on every release, the version moves the `APP_VERSION` of the Api and Processing Lambdas, so those two template hashes in `voc-datalake/lib/test-support/baseline.json` change.
+
+### Upgrade notes
+
+- Deploy the backend stacks and the frontend together. No stored data changes. A proposal saved before this release that holds such a change shows it as out of date in the draft, so it cannot be accepted.
+
 ## [7.01.01] - 2026-11-14
 
 Property tests for the document, prototype and project rules (the mutation hardening of the wiki side, part 1).
