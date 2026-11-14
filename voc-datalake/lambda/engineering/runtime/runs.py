@@ -42,7 +42,7 @@ from engineering.board.model import Task
 from engineering.board.store import BoardStore
 from engineering.connectors.identity import WORKSPACE
 from engineering.flow.conductor import DECISION_PREFIX, GO, NO_GO, Flow, FlowError, Plan, conduct
-from engineering.flow.ledger import ReadRecord, newest_final_go
+from engineering.flow.ledger import FINAL_GO_ROLE, ReadRecord, newest_ended
 from engineering.flow.record import (
     CACHED_FLOWS,
     FLOW_SK,
@@ -163,7 +163,7 @@ def hard_capped(caps: RunCaps, *, budget_usd: float, flow: str, table: Any, now:
         raise RuntimeRefused(BUDGET_RULE)
     if not keyable(flow):
         raise RuntimeRefused('a budget is a flow\'s: the run names its workflow id')
-    month = month_of(datetime.fromtimestamp(now, UTC))
+    month = month_of(utc(now))
     budget = Decimal(str(budget_usd))
     try:
         spent = flow_month_usd(table, month, flow)
@@ -185,8 +185,13 @@ class RunNotActive(RuntimeRefused):
     """The run is not active (never started, or ended)."""
 
 
+def utc(epoch: float) -> datetime:
+    """``epoch`` as an aware UTC time: every time this module writes or measures a month by is read through it."""
+    return datetime.fromtimestamp(epoch, UTC)
+
+
 def _iso(epoch: int) -> str:
-    return datetime.fromtimestamp(epoch, UTC).isoformat().replace('+00:00', 'Z')
+    return utc(epoch).isoformat().replace('+00:00', 'Z')
 
 
 def _text(value: str) -> str:
@@ -300,8 +305,7 @@ class RunStore:
             meta['budget_usd'] = str(budget_usd)
         # The run coordinator's task, open for it alone (the board's: it claims it like any agent, so the supervisor
         # watches it by its lease).
-        coordinate = BoardStore(self._table.meta.client, name, new_id=lambda: '').coordinate_items(
-            WORKSPACE, run_id, at=_iso(now))
+        coordinate = BoardStore.coordinate_items(WORKSPACE, run_id, at=_iso(now))
         try:
             self._table.meta.client.transact_write_items(TransactItems=[
                 {'Put': {'TableName': name, 'Item': meta, 'ConditionExpression': 'attribute_not_exists(pk)'}},
@@ -325,7 +329,10 @@ class RunStore:
         update = {'TableName': name, 'Key': meta_key(run_id), 'ConditionExpression': condition,
                   'UpdateExpression': expression, 'ExpressionAttributeNames': {'#status': 'status'},
                   'ExpressionAttributeValues': {**values, ':human': 'needs_human'}}
-        for tries in range(1, STATUS_TRIES + 1):
+        lost: ClientError | None = None   # (the last try's lost race, raised once the tries are spent)
+        for tries in range(STATUS_TRIES):   # (the count is the loop's only bound)
+            if lost is not None:
+                time.sleep(STATUS_PAUSE_S * tries)   # the racing write is in flight: give it time to land
             try:
                 self._table.meta.client.transact_write_items(TransactItems=[
                     {'Update': update},
@@ -334,11 +341,13 @@ class RunStore:
             except ClientError as error:
                 if is_key_collision(error, put_index=0):
                     raise RunNotActive(f'run {run_id} is not active') from error
-                if not transaction_conflict(error) or tries == STATUS_TRIES:
+                if not transaction_conflict(error):
                     raise
+                lost = error
             else:
                 return
-            time.sleep(STATUS_PAUSE_S * tries)   # the racing write is in flight: give it time to land
+        if lost is not None:
+            raise lost
 
     def end(self, run_id: str, status: str, *, now: int, actor: str = '') -> None:
         """End a live run with ``status`` (it stays listed until ``release``); ``RunNotActive`` when it is not live."""
@@ -373,7 +382,9 @@ class RunStore:
         ``STEP#<step>#decision#…`` row in the same transaction, held to the decision point read (D4: who and when;
         the conductor passes the step, or gives a blocked one another try)."""
         waiting = self.get(run_id)
-        step = flow_step(waiting.waiting_at) if waiting is not None else ''
+        if waiting is None:   # (never started: refused before any write, as META's condition would refuse it)
+            raise RunNotActive(f'run {run_id} is not active')
+        step = flow_step(waiting.waiting_at)
         condition, values = '#status = :human AND needs_human <> :thirty', {':active': 'active',
                                                                              ':thirty': 'thirty_days', ':now': now}
         also: tuple[dict[str, Any], ...] = ()
@@ -469,10 +480,11 @@ class RunStore:
         already kept is never written over), as the supervisor."""
         at = _iso(int(time.time()))
         for step, verdict in plan.verdicts.items():
-            latest = newest_final_go([task for task in tasks if task.flow_step == step], WORKSPACE, run_id)
-            if verdict not in (GO, NO_GO) or latest is None or (step, latest[0].task_id) in recorded:
+            # (the deciding task alone: which of its records the plan read is the plan's, never needed here)
+            latest = newest_ended([task for task in tasks if task.flow_step == step], FINAL_GO_ROLE)
+            if verdict not in (GO, NO_GO) or latest is None or (step, latest.task_id) in recorded:
                 continue
-            item = verdict_item(run_pk(run_id), step, latest[0].task_id, verdict, actor=SUPERVISOR, at=at)
+            item = verdict_item(run_pk(run_id), step, latest.task_id, verdict, actor=SUPERVISOR, at=at)
             try:
                 self._table.put_item(Item=item, ConditionExpression='attribute_not_exists(sk)')
             except ClientError as error:
@@ -572,10 +584,10 @@ class TableRunControl:
         run = self._run(run_id)
         if run.budget_usd is None:
             return None
-        at = datetime.fromtimestamp(now, UTC)
+        at = utc(now)
         # In a month's first minutes, the month before too: a level it passed, or a claim it left unsaid, in its last
         # minute is said then, never lost to the turn of the month.
-        before = datetime.fromtimestamp(now - ALERT_CLAIM_SECONDS - LOOK_BACK_TICKS_SECONDS, UTC)
+        before = utc(now - ALERT_CLAIM_SECONDS - LOOK_BACK_TICKS_SECONDS)
         # (the month before only while the run's flag does not name a later one yet: once it does, it was looked at)
         months = [month for month in dict.fromkeys((month_of(before), month_of(at)))
                   if month == month_of(at) or run.budget_alert_month <= month]
@@ -611,7 +623,7 @@ class TableRunControl:
             release_alert(self._runs.table, alert.month, alert.flow, level, run_id=run_id, budget=budget)
 
     def alert_sent(self, run_id: str, alert: BudgetAlert, now: int) -> None:
-        at = datetime.fromtimestamp(now, UTC)
+        at = utc(now)
         budget = Decimal(str(alert.budget_usd))
         for level in alert.levels:
             alert_sent(self._runs.table, alert.month, alert.flow, level, run_id=run_id, budget=budget, at=at)

@@ -419,7 +419,8 @@ class BoardStore:
             refusal='the task is not open'),
             Move(task_id, CLAIMED, agent, at, current.attempt, 'claim').item(ws, run_id))
 
-    def coordinate_items(self, ws: str, run_id: str, *, at: str) -> list[dict[str, Any]]:
+    @staticmethod
+    def coordinate_items(ws: str, run_id: str, *, at: str) -> list[dict[str, Any]]:
         """The run's coordinate task and its history row, as plain Python items (numbers as ``Decimal``) for the run's
         start transaction to put, each ``attribute_not_exists``: ``RunStore.start`` writes through the resource
         table's ``meta.client.transact_write_items``, which serializes them itself. Open, attempt 1, for the

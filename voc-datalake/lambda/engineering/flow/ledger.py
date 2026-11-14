@@ -32,13 +32,18 @@ MAX_GATE_RECORD_BYTES: Final = 1024 * 1024
 ReadRecord = Callable[[str], GateRecord | None]
 
 
+def newest_ended(tasks: Iterable[Task], role: str) -> Task | None:
+    """The ``role`` task that ended last (by its last update, then its attempt), or None when none has ended."""
+    ended = [task for task in tasks if task.role == role and task.state in FINAL]
+    return max(ended, key=lambda task: (task.updated_at, task.attempt)) if ended else None
+
+
 def newest_record(tasks: Iterable[Task], ws: str, run_id: str, role: str) -> tuple[Task, str] | None:
     """The ``role`` task (a final go's, a gate runner's) that ended last and the key of its holder's latest gate
     record ('' for none), or None when no such task has ended."""
-    ended = [task for task in tasks if task.role == role and task.state in FINAL]
-    if not ended:
+    newest = newest_ended(tasks, role)
+    if newest is None:
         return None
-    newest = max(ended, key=lambda task: (task.updated_at, task.attempt))
     found: list[tuple[int, str]] = []
     for raw in newest.result_keys:
         key = parse_agent_key(raw)
