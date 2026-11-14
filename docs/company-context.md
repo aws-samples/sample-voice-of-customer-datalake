@@ -188,31 +188,49 @@ parsing (and the expat parser refuses them again), keeps only drawing elements (
 paths, masks, text, `use` / `symbol`) and presentation / geometry attributes; `script`, `foreignObject`, `style`,
 `image`, `a`, `animate` / `set` go with their content, every `on*` handler goes, `href` survives only as `#id`,
 `url()` only as `url(#id)`, and the root gets a width / height (its own, the measured box, else its `viewBox`);
-at most 100,000 characters out. **A live website's SVG logo is rendered too** (`lambda/design_capture/logo_render.py`):
-when the page's best logo is an https `.svg` of kind `header` or `og-image` that passes the URL policy and ranks
-above the raster candidate (a header SVG beats a touch icon or favicon; a header PNG still beats a header SVG),
-the managed browser draws it as an `<img>` — an image context never runs SVG script — in a separate fresh
-`about:blank` tab of the same session, after the page has been read: transparent default background, the image
-built with `createElement` and its URL handed over as a CDP call argument and set as a property (`img.src = url`,
-never in a code or markup string), its natural size clamped to 64–1024 px on the longest side, `img.decode()`
-raced against 8 s, then one PNG `Page.captureScreenshot` clipped to the image's box. The PNG is checked by its
-bytes (`png_check.py`: a PNG, ≤ 2 MB, at least 8 px a side, not fully transparent) and stored as the preview,
-`company-context/design/logo_preview_<ref id>.png`; the logo is recorded as
-`{source_url: <the SVG's URL>, content_type: image/png, rendered: true}` (GET adds `preview_url`). Any failure
-(decode timeout, no size, not a PNG, too large, empty or blank, a CDP error) just means no rendered logo — the
-raster candidate is used and the capture is unaffected; the capture log gets one `SVG logo not
-rendered` line with a short reason. The SVG's bytes are downloaded once more through the SSRF-guarded fetch
-(≤ 1 MB, an SVG by its bytes) only to keep the sanitised copy (below); the PNG is still drawn from the URL. **An inline `<svg>` logo**
-(markup in the header, no image URL) is read only when the page names no header logo image: one more evaluate
-(`lambda/design_capture/page_inline_logo.py`) picks a visible `<svg>` (≥ 24 × 12 px, not nested, not in a cookie /
-consent banner) in `header` / `nav` or a `*logo*` / `*brand*` container that is named `logo` / `brand` (id, class,
-`aria-label`, within 4 ancestors), links to the site root, or has a `<title>` saying logo; it serialises a copy with
-each element's computed fill / stroke / opacity and the root's colour (the page's stylesheets do not travel) and a
-sprite's referenced `<symbol>`. The copy is sanitised as above and drawn from a `data:` URL the same way, recorded
-with the PAGE's URL as `source_url`; anything refused or failed falls back to the raster candidate. When a candidate is found, the reader downloads it once through the same SSRF-guarded fetch as "Use this
-logo" (≤ 2 MB, type decided by its bytes) to `company-context/design/logo_preview_<ref id>.<ext>`, and GET
-returns `logo.preview_url`, a short-lived signed URL like `logo_url` (the key itself never leaves the API); any
-failure just leaves it absent. A reference's `fetched_at` is the time its read FINISHED, ready or failed.
+at most 100,000 characters out. **A live website's logo is picked by a model and photographed by the browser**
+(`lambda/design_capture/`; measured on 64 live sites: right on all of them, where the earlier fixed ranking — header
+image, touch icon, `og:image` — was right on 28 and saved a photo, a flag or a share card on 27):
+
+1. **Candidates** (`page_logo_candidates.py`, one evaluate before the design screenshots): every visible element
+   whose box starts in the first 520 px, in reading order, at most 30: `<img>`, outermost inline `<svg>`, an element
+   painted with a CSS `background-image` (a logo file or a sprite), and a home link or `*logo*` element drawn with
+   short text only — the document AND every open shadow root (web-component headers). Each carries its box, `alt` /
+   `aria-label` / `title`, its link's label, whether it is in the header, links home or sits in a cookie / consent
+   banner, and a short class chain; the `<head>` touch icons and favicons are listed apart. `og:image` is never a
+   candidate (a share card). The answer is untrusted and re-checked in Python.
+2. **The pick** (`logo_pick.py`): the header photographed with every candidate outlined in pink and numbered (the
+   marks in a closed shadow root, removed after the photo), plus the candidates' list, both fenced as `<reference>`
+   DATA, go to ONE Converse call on the **enrichment** surface (about 2,500 input tokens, 3 s). The answer may only
+   NAME a listed number (or a listed `<head>` icon kind, or no logo): text a page plants in an `alt` or a class can
+   at most make it pick another of the page's own elements, never a URL. When the call fails or answers anything
+   else, scoring rules decide (home link, logo wording, in the header, near the top, logo-shaped, never a glyph icon
+   or a consent-banner image), then the touch icon; nothing qualifying means **no logo**, never a guess.
+3. **The photo** (`logo_isolate.py`): the picked element is drawn ALONE in the page tab — `visibility: hidden` on
+   the root and on every other element that still paints (a consent backdrop), ancestor filters / opacity / blend
+   modes neutralised, a transparent default background — shot at 1x to 4x (its longest side towards 640 device px,
+   the page's `devicePixelRatio` counted), then trimmed to its painted pixels in a fresh `about:blank` tab
+   (`logo_render.trim_png`), checked by its bytes and kept within 1 MB (shot again smaller). Every change is undone
+   afterwards. The element is listed again first, so a header that re-rendered is still found. A **light** logo made
+   for a dark header (painted pixels averaging a luminance over 0.8) is drawn on the colour behind it (at least 0.3
+   darker) or on a neutral `#1f1f1f`, with a margin, so it stays visible on a white prototype; that colour is kept on
+   the stored reference as `logo.backdrop` (provenance; the API does not return it, the PNG already carries it). The tab must still show a public https page (a page may navigate itself): else only an
+   `<img>`'s own file is read.
+4. **Fallbacks and the SVG copy** (`page_logo.py`): an inline `<svg>` that paints nothing alone is drawn from its
+   sanitised copy instead (below); an `<img>` that cannot be photographed alone is read from its own file — an
+   `.svg` drawn by `logo_render.py` as an `<img>` in a fresh `about:blank` tab (URL policy checked first, the URL a CDP
+   argument set as `img.src`, never in a code string), a raster downloaded by `raster_logo.py`. A CSS background is
+   never downloaded (it may be a sprite). An inline `<svg>` is serialised with each element's computed fill / stroke /
+   opacity and the root's colour, and a sprite's referenced `<symbol>`; an `.svg` file is downloaded once through the
+   SSRF-guarded fetch (≤ 1 MB, an SVG by its bytes). Either is sanitised as above and kept as the download-only copy.
+
+The PNG is stored as the preview `company-context/design/logo_preview_<ref id>.png` and recorded as
+`{source_url, content_type: image/png, rendered: true, preview_key, svg_preview_key?, backdrop?}` (`source_url` is
+the element's https file, else the page); a downloaded raster file goes the same way through `store_preview`
+(≤ 2 MB, type decided by its bytes). A logo the design vision call proposes is dropped: the logo is only ever the one
+the session read. Any failure means no logo, never a failed capture; each step logs one short reason, never a URL.
+GET returns `logo.preview_url`, a short-lived signed URL like `logo_url` (the key itself never leaves the API).
+A reference's `fetched_at` is the time its read FINISHED, ready or failed.
 
 **Every copy is local.** What a reference shows comes from the private raw bucket, so a design never breaks or
 leaks a request when the source site changes; the stored design names a web address only as provenance
@@ -229,8 +247,8 @@ leaks a request when the source site changes; the stored design names a web addr
   become presentation attributes (a class rule over a type rule, never over the element's own `style`), checked like
   every other attribute, so a tool-exported logo keeps its colours in both the PNG and the copy.
 - **Icons.** A website capture copies the page's icons — `<link rel=icon | apple-touch-icon | mask-icon>` with their
-  `sizes`, the web manifest's icons, `og:image` when it is the logo candidate, and `/favicon.ico` when the page
-  declares no icon (`lambda/design_capture/page_icons.py`) — into `company-context/design/icons_<ref id>/<sha-256
+  `sizes`, the web manifest's icons and `/favicon.ico` when the page
+  declares no icon (`og:image` never: a share card) (`lambda/design_capture/page_icons.py`) — into `company-context/design/icons_<ref id>/<sha-256
   prefix>.<ext>` (`shared/design_icons.py`): at most 12 files, ≤ 2 MB each, at most 16 URLs tried within 20 s of the
   session, every fetch through the SSRF-guarded `fetch_public_url`, the type decided by the bytes (PNG, JPEG, WebP,
   GIF, ICO; an HTML page or anything else is skipped), identical files kept once. An SVG icon is sanitised and drawn
@@ -244,7 +262,7 @@ leaks a request when the source site changes; the stored design names a web addr
 
 | Kind | How it is read | Runs on |
 |---|---|---|
-| `website` | The AWS-managed AgentCore browser opens the page (one session, at most 120 s). ONE in-page evaluate reads the `:root` custom properties, the computed styles of body/headings/links/buttons/inputs/nav/header/footer/cards, the most-used colours, lengths and fonts, logo candidates (header image, touch icon, `og:image`) and **component samples**: per kind (buttons grouped as filled / outlined / text, links, inputs/textareas/selects, cards with a border or shadow, nav/header, `[role=tab]`, badges/chips/pill spans, tables, dialogs) up to 3 visible, distinct elements with their computed styles in the component keys and a trimmed `outerHTML` (≤ 600), plus the `:hover` / `:focus-visible` rules of same-origin stylesheets (`:hover` cannot be computed; cross-origin sheets are skipped). Filled buttons are sampled one per background (at most two, so an outlined / text button keeps a slot) and named `primary` (a coloured fill), `inverse` (light neutral) or `neutral` (dark): a purple call-to-action and a white nav button are two variants. State rules are read when their selector names a known kind OR a class a sample carries; their `var(--x)` values are resolved through the page's `:root` properties, and a rule goes on a sample only when its SUBJECT (the compound after the last combinator; pseudo-elements excluded) matches that element — all its classes on the element, its tag the element's tag; `.site-nav a:hover` is skipped (the ancestry is unknown). Then ONE vision call with up to THREE screenshots (`lambda/design_capture/page_shots.py`, `shared/design_vision.py`): the page above the fold, the header region (≤ 240 px tall; the top 160 px without a header element) and the footer region (scrolled to, ≤ 600 px tall; skipped when it already sits in the first screen), each clipped and scaled by the browser so the model reads it without resizing it (longest side ≤ 1568 px, ≤ 1.15 megapixels, at most 2×), as PNG when ≤ 1.5 MB and otherwise the same clip as a JPEG at quality 90; the prompt names each image, a header or footer failure only drops that image, and about 2,700 input tokens of images go in for a typical page (≤ 3,550). The model returns components grounded in the measured values. **The measured components win over the model's** (`shared/component_overlay.py`, by component name; a variant matches by name, else by background): their styles and focus keys override the model's, their hover REPLACES it (hover is invisible in a screenshot, so only a CSS rule is evidence — a model-guessed hover is dropped), the model's other variants follow (≤ 8), the model's description is kept and a measured snippet fills a missing `example_html`. Spacing tokens never come from layout: the page reports its centring margins (computed left = right > 0, e.g. `margin: auto` around a max-width column) and a spacing value equal to one (± 0.5 px), or a fractional px the page never measured, is dropped (`page_spacing.py`) | `voc-design-capture` (VocIngestionStack, 5 min) |
+| `website` | The AWS-managed AgentCore browser opens the page (one session, at most 120 s). ONE in-page evaluate reads the `:root` custom properties, the computed styles of body/headings/links/buttons/inputs/nav/header/footer/cards, the most-used colours, lengths and fonts, and **component samples**: per kind (buttons grouped as filled / outlined / text, links, inputs/textareas/selects, cards with a border or shadow, nav/header, `[role=tab]`, badges/chips/pill spans, tables, dialogs) up to 3 visible, distinct elements with their computed styles in the component keys and a trimmed `outerHTML` (≤ 600), plus the `:hover` / `:focus-visible` rules of same-origin stylesheets (`:hover` cannot be computed; cross-origin sheets are skipped). Filled buttons are sampled one per background (at most two, so an outlined / text button keeps a slot) and named `primary` (a coloured fill), `inverse` (light neutral) or `neutral` (dark): a purple call-to-action and a white nav button are two variants. State rules are read when their selector names a known kind OR a class a sample carries; their `var(--x)` values are resolved through the page's `:root` properties, and a rule goes on a sample only when its SUBJECT (the compound after the last combinator; pseudo-elements excluded) matches that element — all its classes on the element, its tag the element's tag; `.site-nav a:hover` is skipped (the ancestry is unknown). Then ONE vision call with up to THREE screenshots (`lambda/design_capture/page_shots.py`, `shared/design_vision.py`): the page above the fold, the header region (≤ 240 px tall; the top 160 px without a header element) and the footer region (scrolled to, ≤ 600 px tall; skipped when it already sits in the first screen), each clipped and scaled by the browser so the model reads it without resizing it (longest side ≤ 1568 px, ≤ 1.15 megapixels, at most 2×), as PNG when ≤ 1.5 MB and otherwise the same clip as a JPEG at quality 90; the prompt names each image, a header or footer failure only drops that image, and about 2,700 input tokens of images go in for a typical page (≤ 3,550). The model returns components grounded in the measured values. **The measured components win over the model's** (`shared/component_overlay.py`, by component name; a variant matches by name, else by background): their styles and focus keys override the model's, their hover REPLACES it (hover is invisible in a screenshot, so only a CSS rule is evidence — a model-guessed hover is dropped), the model's other variants follow (≤ 8), the model's description is kept and a measured snippet fills a missing `example_html`. Spacing tokens never come from layout: the page reports its centring margins (computed left = right > 0, e.g. `margin: auto` around a max-width column) and a spacing value equal to one (± 0.5 px), or a fractional px the page never measured, is dropped (`page_spacing.py`) | `voc-design-capture` (VocIngestionStack, 5 min) |
 | `github` | ONE `git/trees/{ref}?recursive=1` call ranks the whole tree: token files, Tailwind v4 theme/palette CSS, font faces, Tailwind configs, entry CSS, design docs and `.kiro/steering/*design*` (up to 12 files × 20k; the README only when nothing else exists). CSS custom properties are parsed without a model. Up to 8 UI component sources are read too (`components/ui.tsx`, then `components/ui/{button,input,card,badge,tabs,dialog,select,…}.*`; a source that fails is skipped): `cva()` variant maps, class-string maps and `a ? '…' : '…'` chains become variants, and the common Tailwind utilities are resolved to the parsed tokens without a model (`bg-accent` → the accent colour, `rounded-lg` → `--radius-lg` or 0.5rem, `px-4` → 16px, `text-sm`, `font-semibold`, `w-9` → 36px, `shadow-[…var(--x)]`, `hover:`; `shared/tailwind_components.py`). `shadow-sm` / `shadow` / `shadow-2xl` take the repository's own `--shadow-sm` / `--shadow` / `--shadow-2xl` when it defines one (resolved through its `var()`s), Tailwind v4's default otherwise; `color-mix(in srgb|oklch, …)` with literal colours and `transparent` is computed to an `rgba()` / `#hex` (`shared/css_color_mix.py`; anything else is kept as written). Plain CSS component classes are read the same
 way (`shared/css_component_rules.py`): `.btn { @apply …; }`, `.btn-ghost { background: …; color: var(--x) }`,
 `.btn-primary:not(:disabled):hover`, `.input:focus-visible { outline: …; border-color: …; box-shadow: … }` (the whole focus ring), `.badge-ok` … `.badge-aim` (every tone a variant), `.tab-active`,

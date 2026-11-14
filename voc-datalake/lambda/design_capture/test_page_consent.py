@@ -1,14 +1,19 @@
-"""The consent-banner check shared by the two page scripts (page_consent.py)."""
-import page_inline_logo as pil
+"""The consent-banner check (page_consent.py): written once, carried by the logo-candidate collector only."""
 import page_styles as ps
 import pytest
 from page_consent import CONSENT_PLACEHOLDER, IN_CONSENT_JS, with_consent_check
+from page_logo_candidates import CANDIDATES_JS
 
 
-@pytest.mark.parametrize('script', [ps.STYLES_JS, pil.INLINE_LOGO_JS], ids=['styles', 'inline logo'])
-def test_each_page_script_carries_the_check_once_and_no_placeholder(script):
-    assert CONSENT_PLACEHOLDER not in script
-    assert script.count(IN_CONSENT_JS.strip()) == 1
+def test_the_candidate_collector_carries_the_check_once_and_no_placeholder():
+    assert CONSENT_PLACEHOLDER not in CANDIDATES_JS
+    assert CANDIDATES_JS.count(IN_CONSENT_JS.strip()) == 1
+    assert 'in_consent: inConsent(el)' in CANDIDATES_JS
+
+
+def test_the_styles_script_no_longer_carries_the_check():
+    assert CONSENT_PLACEHOLDER not in ps.STYLES_JS
+    assert IN_CONSENT_JS.strip() not in ps.STYLES_JS
 
 
 def test_the_check_replaces_the_placeholder():

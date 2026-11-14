@@ -1,28 +1,82 @@
 """voc-design-capture with a fake CDP connection: no AWS, no websocket, no model.
 
 Pins the SSRF re-check after navigation, the ONE evaluate + ONE screenshot, block detection, the
-fenced vision call and the outcome written on the reference row (moto).
+fenced vision call and the outcome written on the reference row (moto). With a bucket, the logo candidates
+are listed, the pick is made (``pick_logo`` injected; None = the rules) and the picked logo read in the session.
 """
 import base64
 import importlib.util
 import json
+import struct
+import zlib
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import boto3
 import capture_handler
 import capture_worker as cw
+import page_logo
 import page_shots
 import page_styles as ps
 import pytest
+from logo_isolate import ISOLATE_JS, undo_expression
+from logo_render import TRIM_JS
 from moto import mock_aws
+from page_inline_logo import INLINE_SVG_JS
+from page_logo_candidates import candidates_expression, clear_marks_expression, mark_expression
 
+from shared import design_logo
 from shared.company_context import DESIGN_SYSTEM_PK, get_reference
 from shared.test.moto_tables import create_pk_sk_table
 
 REF_ID = 'ref_0123456789ab'
 JPEG = b'\xff\xd8\xff' + b'1' * 64
+PAGE_URL = 'https://kirocrew.dev/'
+TOUCH_URL = 'https://kirocrew.dev/apple-touch-icon.png'
+#: The page's ``<head>`` touch icon only: no on-screen candidate (the rules then take the touch icon).
+HEAD_ONLY: dict = {'url': PAGE_URL, 'candidates': [], 'head': [{'kind': 'touch-icon', 'url': TOUCH_URL,
+                                                                 'sizes': '180x180'}]}
+#: ISOLATE_JS's answer for a header logo box on the first screen.
+ISOLATED_BOX = {'x': 24, 'y': 16, 'width': 166, 'height': 52, 'vw': 1366, 'vh': 900, 'backdrop': None}
+
+
+def candidate(n: int = 1, kind: str = 'img', url: str | None = 'https://kirocrew.dev/brand/logo.png', **overrides) -> dict:
+    """One CANDIDATES_JS entry: by default a header logo linking home (the rules take it)."""
+    return {'n': n, 'kind': kind, 'url': url, 'box': {'x': 24, 'y': 16, 'w': 166, 'h': 52}, 'label': 'KiroCrew',
+            'link_label': '', 'in_header': True, 'home_link': True, 'in_consent': False, 'classes': 'site-logo',
+            'text': '', **overrides}
+
+
+def page_candidates(*candidates: dict, head: list[dict] | None = None) -> dict:
+    """CANDIDATES_JS's answer listing ``candidates`` (numbered as given) and ``head`` icons."""
+    return {'url': PAGE_URL, 'candidates': list(candidates), 'head': head or []}
+
+
+def trim_answer(png: bytes, *, backdrop: dict | None = None) -> dict:
+    """TRIM_JS's answer for a trimmed ``png`` (``backdrop``: the {r, g, b} a light logo was drawn on)."""
+    return {'data': base64.b64encode(png).decode(), 'backdrop': backdrop}
+
+
+def _chunk(kind: bytes, body: bytes) -> bytes:
+    return struct.pack('>I', len(body)) + kind + body + struct.pack('>I', zlib.crc32(kind + body))
+
+
+def png_of_rows(width: int, height: int, rows: list[bytes]) -> bytes:
+    """A real 8-bit RGBA PNG from its filtered scanlines (each: filter byte + RGBA pixels)."""
+    header = struct.pack('>IIBBBBB', width, height, 8, 6, 0, 0, 0)
+    return (b'\x89PNG\r\n\x1a\n' + _chunk(b'IHDR', header) + _chunk(b'IDAT', zlib.compress(b''.join(rows)))
+            + _chunk(b'IEND', b''))
+
+
+def png_bytes(width: int, height: int, pixel: bytes = b'\x7c\x3a\xed\xff') -> bytes:
+    """A real 8-bit RGBA PNG of one colour (``pixel`` = RGBA)."""
+    return png_of_rows(width, height, [b'\x00' + pixel * width] * height)
+
+
+#: A trimmed logo PNG the checks accept.
+TRIMMED_PNG = png_bytes(166, 52)
 BLOCKS_PATH = Path(__file__).resolve().parents[2] / 'plugins' / 'web_reviews' / 'ingestor' / 'block_detection.py'
 
 
@@ -45,26 +99,37 @@ def _styles(**overrides) -> str:
         'vars': {'--color-primary': '#7c3aed', '--font-sans': '"Space Grotesk", sans-serif', '--radius-md': '8px'},
         'elements': [{'tag': 'h1', 'font': '"Space Grotesk"', 'size': '48px'}],
         'colors': [{'value': 'rgb(124, 58, 237)', 'count': 40}], 'lengths': [], 'fonts': [],
-        'logos': [{'url': 'https://kirocrew.dev/logo.svg', 'kind': 'header'},
-                  {'url': 'https://kirocrew.dev/apple-touch-icon.png', 'kind': 'touch-icon'}],
         **overrides,
     }
     return json.dumps(page)
+
+
+@dataclass
+class LogoAnswers:
+    """What the page tab answers for the logo: the candidates (``HEAD_ONLY`` by default), ISOLATE_JS (the element
+    is gone by default, so the picked element's own file is read), TRIM_JS (in a fresh tab) and INLINE_SVG_JS."""
+    candidates: object = field(default_factory=lambda: HEAD_ONLY)
+    isolate: object = field(default_factory=lambda: {'error': 'gone'})
+    trim: object = None
+    inline: object = None
 
 
 class FakeCdp:
     """Answers the commands a capture sends; records them.
 
     The first ``Target.createTarget`` is the page tab (session ``s1``), a second one the logo render tab
-    (``s2``): its ``Runtime.callFunctionOn`` answers ``render_answer`` and its screenshot is ``logo_png``.
+    (``s2``): its ``Runtime.callFunctionOn`` answers ``render_answer`` (``logo.trim`` for TRIM_JS) and its
+    screenshot is ``logo_png``.
     """
 
     def __init__(self, styles: str, final_url: str = 'https://kirocrew.dev/', navigate: dict | None = None,
-                 render_answer: object = None, logo_png: bytes = b'', regions: list[dict] | None = None):
+                 render_answer: object = None, logo_png: bytes = b'', regions: list[dict] | None = None,
+                 logo: LogoAnswers | None = None):
         self.calls: list[tuple[str, dict]] = []
         self.routed: list[tuple[str | None, float]] = []
         self.styles, self.final_url, self.navigate = styles, final_url, navigate or {}
         self.render_answer, self.logo_png = render_answer, logo_png
+        self.logo = logo or LogoAnswers()
         #: Successive answers to ``page_shots.REGIONS_JS`` (before / after the footer scroll); none = unreadable.
         self.regions = list(regions or [])
         self.browser_session_id = ''
@@ -84,7 +149,8 @@ class FakeCdp:
         if method == 'Page.captureScreenshot':
             return {'data': base64.b64encode(self.logo_png if session_id == 's2' else JPEG).decode()}
         if method == 'Runtime.callFunctionOn':
-            return {'result': {'value': self.render_answer}}
+            answer = self.logo.trim if (params or {}).get('functionDeclaration') == TRIM_JS else self.render_answer
+            return {'result': {'value': answer}}
         if method == 'Runtime.evaluate':
             expression = str((params or {}).get('expression'))
             if expression == 'document':
@@ -92,7 +158,19 @@ class FakeCdp:
             return {'result': {'value': self._evaluate(expression)}}
         return {}
 
-    def _evaluate(self, expression: str) -> str:
+    def _logo_evaluate(self, expression: str) -> tuple[bool, object]:
+        """``(answered, value)`` for the logo expressions (candidates, marks, isolation, inline copy)."""
+        if expression == candidates_expression():
+            return True, json.dumps(self.logo.candidates)
+        if expression.startswith(f'({ISOLATE_JS})'):
+            return True, json.dumps(self.logo.isolate)
+        if expression.startswith(f'({INLINE_SVG_JS})'):
+            return True, json.dumps(self.logo.inline)
+        known = {mark_expression(): 1, clear_marks_expression(): True, undo_expression(): True,
+                 'innerWidth': 1366, 'innerHeight': 900}
+        return (True, known[expression]) if expression in known else (False, None)
+
+    def _evaluate(self, expression: str) -> object:
         if expression == cw.PROGRESS_JS:
             return json.dumps(['complete', 5000])
         if expression == 'location.href':
@@ -101,10 +179,14 @@ class FakeCdp:
             return json.dumps(self.regions.pop(0)) if self.regions else 'unreadable'
         if expression.startswith('window.scrollTo('):
             return ''
-        return self.styles
+        answered, value = self._logo_evaluate(expression)
+        return value if answered else self.styles
 
     def methods(self) -> list[str]:
         return [m for m, _ in self.calls]
+
+    def expressions(self) -> list[str]:
+        return [str(p.get('expression')) for m, p in self.calls if m == 'Runtime.evaluate']
 
 
 def _kit(cdp: FakeCdp, sessions: list[int]) -> cw.BrowserKit:
@@ -132,15 +214,16 @@ def table():
 
 
 def _run(table, cdp: FakeCdp, answer: str = ANSWER, public: bool = True, *,
-         s3=None, fetch=None, now=lambda: '2026-10-21T00:00:00+00:00'):
-    """One capture with fakes → ``(result, stored row, vision mock, sessions)``; ``s3`` given = bucket ``raw``."""
+         s3=None, fetch=None, now=lambda: '2026-10-21T00:00:00+00:00', pick_logo=None):
+    """One capture with fakes → ``(result, stored row, vision mock, sessions)``; ``s3`` given = bucket ``raw``.
+    ``pick_logo`` None = the logo pick's rules only (never Bedrock)."""
     sessions: list[int] = []
     vision = MagicMock(return_value=answer)
     deps = cw.CaptureDeps(table=table, kit=_kit(cdp, sessions), summarise_images=vision, sleep=lambda _s: None,
                           clock=iter(range(1000)).__next__, now=now, s3=s3, bucket='raw' if s3 else '',
-                          logo_fetch=fetch)
+                          logo_fetch=fetch, pick_logo=pick_logo)
     with patch.object(cw, 'validate_url', return_value=(True, '') if public else (False, 'private address')), \
-            patch.object(ps, 'validate_url', return_value=(True, '')):
+            patch.object(page_logo, 'validate_url', return_value=(True, '')):
         result = cw.run_capture({'action': 'design_capture', 'ref_id': REF_ID}, deps)
     stored = get_reference(table, REF_ID)
     assert stored is not None
@@ -156,10 +239,10 @@ class TestCapture:
         style_evaluates = [p for m, p in cdp.calls if m == 'Runtime.evaluate' and 'getComputedStyle' in p['expression']]
         assert len(style_evaluates) == 1
         assert cdp.methods().count('Page.captureScreenshot') == 1
-        assert {s for s, _ in cdp.routed if s not in (None, 's2')} == {'s1'}   # page commands go to the page tab
+        assert {s for s, _ in cdp.routed if s is not None} == {'s1'}   # page commands go to the page tab
         assert [m for (m, _), (s, _) in zip(cdp.calls, cdp.routed, strict=True) if s is None] == [
-            'Target.createTarget', 'Target.attachToTarget',              # except opening it,
-            'Target.createTarget', 'Target.attachToTarget', 'Target.closeTarget']   # and the logo render tab
+            'Target.createTarget', 'Target.attachToTarget']              # except opening it (no bucket: no logo tab)
+        assert candidates_expression() not in cdp.expressions()          # no bucket: the logo is never looked for
         vision.assert_called_once()
         (fold,), facts = vision.call_args.args
         assert (fold.region, fold.image, fold.image_format) == ('fold', JPEG, 'png')
@@ -169,7 +252,7 @@ class TestCapture:
         assert design['source'] == 'computed_styles'
         assert design['colors'] == [{'name': 'accent', 'value': '#a78bfa'}]   # the model's group wins
         assert design['radius'] == [{'name': 'radius-md', 'value': '8px'}]   # backed by the page's own vars
-        assert design['logo'] == {'source_url': 'https://kirocrew.dev/apple-touch-icon.png', 'content_type': 'image/png'}
+        assert 'logo' not in design
         assert stored['extracted_summary'] == 'Dark purple developer site.'
 
     def test_final_url_on_a_private_address_is_refused_before_reading(self, table):
@@ -260,12 +343,14 @@ class TestPageStyles:
     def test_unreadable_answer(self, raw):
         assert ps.parse_page_styles(raw, 'f') is None
 
-    def test_svg_and_http_logos_are_refused(self):
-        with patch.object(ps, 'validate_url', return_value=(True, '')):
-            assert ps.logo_candidate([{'url': 'https://a.example/logo.svg', 'kind': 'header'},
-                                      {'url': 'http://a.example/logo.png', 'kind': 'header'}]) is None
-            assert ps.logo_candidate([{'url': 'https://a.example/og.webp', 'kind': 'og-image'}]) == {
-                'source_url': 'https://a.example/og.webp', 'content_type': 'image/webp'}
+    def test_returns_no_logo_fields_since_the_logo_is_found_apart(self):
+        js = ps.STYLES_JS
+        assert 'og:image' not in js
+        assert 'inConsent' not in js
+        assert 'logos' not in ps.PAGE_LIMITS
+        styles = ps.parse_page_styles(_styles(logos=[{'url': 'https://a.example/l.png', 'kind': 'header'}]), 'f')
+        assert styles is not None
+        assert not hasattr(styles, 'logos')
 
     def test_expression_hands_the_python_limits_to_the_page(self):
         assert ps.styles_expression().endswith(f'({json.dumps(ps.PAGE_LIMITS)})')
@@ -372,3 +457,88 @@ def test_handler_passes_the_bucket_for_the_preview():
         capture_handler.lambda_handler({'action': 'design_capture', 'ref_id': REF_ID}, MagicMock())
     deps = run.call_args.args[1]
     assert (deps.s3, deps.bucket) == ('s3', 'raw')
+
+
+# ── The page's logo in the capture (7.01.00) ──
+
+class TestWithPageLogo:
+    def test_returns_the_design_without_the_model_proposed_logo_when_the_session_read_none(self):
+        design = {'summary': 'S', 'logo': {'source_url': 'https://kirocrew.dev/guess.png', 'content_type': 'image/png'}}
+        assert cw.with_page_logo(design, page_logo.PageLogo()) == {'summary': 'S'}
+
+    def test_returns_the_downloaded_raster_as_the_logo_candidate(self):
+        downloaded = design_logo.DownloadedLogo(TOUCH_URL, b'\x89PNG', 'image/png')
+        design = {'logo': {'source_url': 'https://kirocrew.dev/guess.svg', 'rendered': True}}
+        assert cw.with_page_logo(design, page_logo.PageLogo(downloaded=downloaded)) == {
+            'logo': {'source_url': TOUCH_URL, 'content_type': 'image/png'}}
+
+    def test_returns_a_non_dict_design_unchanged(self):
+        assert cw.with_page_logo(None, page_logo.PageLogo()) is None
+
+
+class _MovingCdp(FakeCdp):
+    """After the candidates were listed, the page tab shows a ``file:`` address (the page navigated itself)."""
+
+    def _evaluate(self, expression: str) -> object:
+        if expression == 'location.href' and candidates_expression() in self.expressions():
+            return 'file:///etc/passwd'
+        return super()._evaluate(expression)
+
+
+class TestThePageLogoInTheCapture:
+    @pytest.fixture
+    def s3(self, table):
+        del table
+        client = boto3.client('s3', region_name='us-east-1')
+        client.create_bucket(Bucket='raw')
+        return client
+
+    def test_returns_no_logo_and_never_asks_the_model_when_there_is_no_bucket(self, table):
+        pick = MagicMock()
+        cdp = FakeCdp(_styles(), logo=LogoAnswers(candidates=page_candidates(candidate())))
+        _, stored, _, _ = _run(table, cdp, pick_logo=pick)
+        pick.assert_not_called()
+        assert candidates_expression() not in cdp.expressions()
+        assert 'logo' not in stored['extracted_design']
+
+    def test_stores_the_isolated_logo_the_model_picked_with_its_backdrop(self, table, s3):
+        dark = {**ISOLATED_BOX, 'backdrop': {'r': 16, 'g': 16, 'b': 32}}
+        cdp = FakeCdp(_styles(), logo=LogoAnswers(
+            candidates=page_candidates(candidate(1, classes='nav'), candidate(2, url='https://kirocrew.dev/w.png')),
+            isolate=dark, trim=trim_answer(TRIMMED_PNG, backdrop={'r': 16, 'g': 16, 'b': 32})))
+        pick = MagicMock(return_value='{"logo": 2, "fallback": null}')
+        _, stored, vision, _ = _run(table, cdp, s3=s3, pick_logo=pick, fetch=MagicMock(
+            return_value=MagicMock(status_code=404, content=b'')))
+        content = pick.call_args.args[0]
+        assert content[1]['image']['source']['bytes'] == JPEG    # the marked header photo
+        assert mark_expression() in cdp.expressions()
+        assert cdp.expressions().index(clear_marks_expression()) > cdp.expressions().index(mark_expression())
+        assert stored['extracted_design']['logo'] == {
+            'source_url': 'https://kirocrew.dev/w.png', 'content_type': 'image/png', 'rendered': True,
+            'preview_key': f'company-context/design/logo_preview_{REF_ID}.png', 'backdrop': '#101020'}
+        key = stored['extracted_design']['logo']['preview_key']
+        assert s3.get_object(Bucket='raw', Key=key)['Body'].read() == TRIMMED_PNG
+        assert undo_expression() in cdp.expressions()
+        assert len(vision.call_args.args[0]) == 1                 # the marked photo is not a vision image
+
+    def test_reads_the_images_own_file_without_isolating_when_the_page_moved(self, table, s3):
+        url = 'https://kirocrew.dev/brand/logo.png'
+        png = png_bytes(32, 32)
+        fetch = MagicMock(side_effect=lambda u, **_k: MagicMock(status_code=200 if u == url else 404,
+                                                                content=png if u == url else b''))
+        cdp = _MovingCdp(_styles(), logo=LogoAnswers(candidates=page_candidates(candidate(url=url)),
+                                                     isolate=ISOLATED_BOX, trim=trim_answer(TRIMMED_PNG)))
+        _, stored, _, _ = _run(table, cdp, s3=s3, fetch=fetch)
+        assert not any(e.startswith(f'({ISOLATE_JS})') for e in cdp.expressions())
+        assert stored['extracted_design']['logo'] == {
+            'source_url': url, 'content_type': 'image/png',
+            'preview_key': f'company-context/design/logo_preview_{REF_ID}.png'}
+
+    def test_keeps_the_capture_ready_when_the_candidates_cannot_be_read(self, table, s3):
+        cdp = FakeCdp(_styles(), logo=LogoAnswers(candidates=None))
+        pick = MagicMock()
+        result, stored, _, _ = _run(table, cdp, s3=s3, pick_logo=pick, fetch=MagicMock(
+            return_value=MagicMock(status_code=404, content=b'')))
+        assert result == {'status': 'ready'}
+        pick.assert_not_called()
+        assert 'logo' not in stored['extracted_design']

@@ -17,6 +17,19 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.01.00] - 2026-11-15
+
+A website design reference finds the company's logo with a small vision call and the browser draws exactly that element, so the logo it offers is the real one instead of a photo, a flag or a share card.
+
+### Changed
+
+- Company → Design system → a **website** reference: the logo is picked from every element near the top of the page (images, inline SVGs, CSS backgrounds and text logos, inside web components too), by one small vision call that sees the header with each candidate numbered. The browser then draws that element alone, with a transparent background and trimmed to its pixels, so **Use this logo** gets what the page shows. A white logo made for a dark header is drawn on that header's colour, so it stays visible in a white prototype. When nothing on the page is the logo, the reference has no logo instead of a guess. Measured on 64 live websites, the right logo was found on all of them; before, it was right on 28 and a non-logo image was saved on 27. See [docs/company-context.md](docs/company-context.md).
+- The page's share image (`og:image`) is no longer used as the logo or copied as an icon.
+
+### Upgrade notes
+
+- Each website capture makes one more Bedrock call, on the **enrichment** surface (Settings → AI models; Claude Haiku 5.5 by default), of about 2,500 input tokens. No new permission: the capture role already invokes every allowlisted model. When the call fails, scoring rules pick the logo.
+- References read before this release keep their logo until they are fetched again (**Refresh**).
 ## [7.00.02] - 2026-11-14
 
 Fixes from an independent review of 7.00.00 and 7.00.01: large reference logos work again, prototypes never get a broken or misrecorded logo, and the repository's Kiro agents are confined further.

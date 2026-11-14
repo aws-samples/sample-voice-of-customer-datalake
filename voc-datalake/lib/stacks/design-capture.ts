@@ -6,7 +6,7 @@
  *
  * Its own least-privilege role:
  * - the managed browser (Start/Stop on aws.browser.v1, the stream connect on `*`), as web_reviews;
- * - bedrock:InvokeModel on the curated allowlist (the vision call on the utility surface);
+ * - bedrock:InvokeModel on the curated allowlist (the vision call on the utility surface, the logo pick on enrichment);
  * - voc-aggregates GetItem on the design-system and model-settings partitions only, UpdateItem on the
  *   design-system partition only (`dynamodb:LeadingKeys`), and KMS for the table;
  * - s3:PutObject on the raw bucket's `company-context/design/logo_preview_*` keys (the logo candidate's
