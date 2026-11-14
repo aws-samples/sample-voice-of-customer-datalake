@@ -32,17 +32,19 @@ export const KINDS = Object.freeze({
  * Paths shaped like a secret: never sent to a model (an untracked `.env`, key or credentials file that is not
  * gitignored). Wide on purpose; review.mjs NAMES every changed path it leaves out, in the output and in the prompt,
  * so a legitimate file caught here (a `credentials.py`) is visible, never silently unreviewed. The agents cannot
- * read them either, enforced by the tools and not the prompt: Kiro's agents deny each glob under any folder in
- * `toolsSettings.fs_read.deniedPaths` (pinned against this list by review.test.mjs), and Claude Code gets a Read
- * deny rule for each (CLAUDE_DENY_RULES) and no Grep (a search would print matching lines of a denied file).
+ * read them either, enforced by the tools and not the prompt: Kiro's agents deny each glob under any folder in both
+ * rule formats (KIRO_READ_SETTINGS, pinned against .kiro/agents/*.json by agent-guard.mjs), and Claude Code gets a
+ * Read deny rule for each (CLAUDE_DENY_RULES) and no Grep (a search would print matching lines of a denied file).
  * The globs match file names at any depth, a top-level `.env` included (verified live); a secret under a
  * secret-shaped DIRECTORY with an ordinary file name (`secrets/config.json`) is not caught, so keep those gitignored.
  * `.env` and `.env.*` are listed on their own (kiro.dev's own "deny reads to secrets" example spells `**\/.env` and
  * `**\/.env.*` out); `*.env` already covered a plain `.env` in every test so far.
+ * Before adding a glob, check that `git ls-files -- '<glob>'` lists nothing: every match also leaves the review diff.
  */
 export const SECRET_PATHS = Object.freeze([
-  '.env', '.env.*', '*.env', '*.env.*', '*.pem', '*.key', '*.p12', '*.pfx', '*id_rsa*', '*id_ed25519*',
-  '*credentials*', '*.secret*', '*.npmrc', '*.netrc',
+  '.env', '.env.*', '*.env', '*.env.*', '*.envrc', '*.pem', '*.key', '*.p12', '*.pfx', '*.ppk', '*.jks',
+  '*id_rsa*', '*id_ed25519*', '*id_ecdsa*', '*id_dsa*', '*credentials*', '*.secret*', '*.npmrc', '*.netrc',
+  '*.pypirc', '*.pgpass', '*.tfvars',
 ])
 
 /**
@@ -103,11 +105,18 @@ export const CLAUDE_READ_RULES = 'Read(./**),Glob(./**)'
 export const CLAUDE_DENY_RULES = SECRET_PATHS.map((glob) => `Read(./**/${glob})`).join(',')
 
 /**
- * Every repository Kiro agent's read rules, both formats (pinned against .kiro/agents/*.json by review.test.mjs).
- * BOTH are needed, verified live with kiro-cli 3.3.0 (2026-11-13): the `toolsSettings.fs_read.deniedPaths` block is what
- * refuses a `.env` read (an agent with only the `permissions` deny read it, against kiro.dev's "V3 does not read
- * toolsSettings"); `permissions.rules` is the documented V3 form (a deny always wins over an allow there), kept for
- * the release that enforces it. An agent must not pre-approve `fs_read` in `allowedTools`: that bypassed the deny too.
+ * Every repository Kiro agent's read rules, both formats (pinned against .kiro/agents/*.json by agent-guard.mjs).
+ * kiro-cli 3.3.0 has two agent engines, and each enforces only ONE half of the agent file (verified live,
+ * 2026-11-14):
+ *   - V2, the engine of `--no-interactive` and piped stdin when nothing selects one, enforces only `toolsSettings`
+ *     (`allowedPaths` / `deniedPaths`). A read outside the workspace needs an approval, so it fails headless.
+ *   - V3, the interactive default, enforces only `permissions.rules` (a deny always wins over an allow; its
+ *     grep_search honours the deny too).
+ * So both blocks are load-bearing: dropping `permissions` reopens interactive use, dropping `toolsSettings` reopens
+ * the headless reviews. Remaining V3 gap: a read OUTSIDE the workspace goes through on V3 without approval, even when
+ * a deny glob or an absolute deny path matches it, so `./**` confines V3 only inside the workspace. The headless
+ * runners therefore pin `--agent-engine v2` (runnerCommand, scripts/git-hooks/pre-push); interactive V3 use of an
+ * agent (`kiro-cli chat --agent …`) is not confined to the repository by these rules.
  * Each secret glob is denied as a file and as a directory (`/**`), the shape kiro-cli's own upgrade gives it.
  * A pinned SPEC, not runtime config: review.mjs never reads it; the agent JSON files carry it and the tests compare.
  */
@@ -122,13 +131,76 @@ export const KIRO_READ_SETTINGS = Object.freeze({
   },
 })
 /**
- * An agent that writes files (the test generator): never a secret-shaped path. kiro-cli 3.3.0 refuses it through
- * `toolsSettings.fs_write.deniedPaths` (verified live); `./**` is not enforced while `fs_write` is pre-approved.
+ * An agent that writes files (the test generator): inside the repository only, never a secret-shaped path. V2
+ * enforces `toolsSettings.fs_write`, V3 the `fs_write` rules. Neither format may be paired with a pre-approved
+ * `fs_write` in `allowedTools`: on V2 that let a write outside `./**` through. V3 gap, as for reads: a write outside
+ * the workspace (to /tmp, verified live) goes through on V3 without approval, even with an absolute deny rule or an
+ * `ask` rule excluding `./**`; inside the workspace the secret denies hold. No agent rule closes it today.
  */
 export const KIRO_WRITE_SETTINGS = Object.freeze({ allowedPaths: ['./**'], deniedPaths: SECRET_PATHS.map((glob) => `**/${glob}`) })
 export const KIRO_WRITE_RULES = Object.freeze([
   { capability: 'fs_write', match: ['./**'], effect: 'allow' },
   { capability: 'fs_write', match: SECRET_GLOBS, effect: 'deny' },
+])
+
+/**
+ * The shell of an agent that runs tests (the test generator): a `cd` into one of the package folders and the test
+ * runners its prompt names, nothing else; never a network client, the environment, the AWS CLI or a read of a home
+ * path. `shell` must not be pre-approved in `allowedTools` (that trusts every command). Both engines split a
+ * compound command at `;`, `&&`, `||` and `|` and check each part on its own (verified live), so
+ * `cd voc-datalake && npx vitest run …` needs both parts allowed and `… ; cat .env` is refused.
+ *   - V2 (`toolsSettings.shell`): kiro-cli anchors each regex at both ends; the arguments may not hold a shell
+ *     separator, redirection, substitution or `~`, and `denyByDefault` refuses every unlisted command instead of
+ *     prompting.
+ *   - V3 (`permissions.rules`, capability `shell`): `*` matches any characters; V3 rewrites `cd <dir>` to the
+ *     absolute path before matching (verified live), hence a `*` before each folder. The `match: ['*']` deny with
+ *     the allowed commands as `exclude` is V3's deny-by-default: V3 ran `cat .env` with no approval when nothing
+ *     denied it.
+ * LIMIT: a test runner executes the code it runs, and this agent writes that code. A test it writes can still reach
+ * the network or read a home file; these rules stop the agent from doing so with a direct command, not through a
+ * test. Review what the test generator writes before running it again.
+ */
+const TEST_DIRS = ['voc-datalake', 'voc-datalake/frontend', 'voc-datalake/lambda/stream']
+const SHELL_ARGS = '( [^;&|<>$`\\\\(){}~!\\n\\r]*)?'
+const PYTHONS = ['python', 'python3', '.venv/bin/python', 'voc-datalake/.venv/bin/python']
+const NETWORK_AND_SECRET_COMMANDS = ['curl', 'wget', 'nc', 'ncat', 'netcat', 'ssh', 'scp', 'sftp', 'rsync', 'telnet',
+  'env', 'printenv', 'aws', 'sudo']
+const PAGERS = ['cat', 'less', 'more', 'head', 'tail']
+const regexOf = (literal) => literal.replace(/[.+^${}()|[\]\\*?]/g, '\\$&')
+export const KIRO_SHELL_SETTINGS = Object.freeze({
+  allowedCommands: [
+    `cd ([^ ;&|<>$\`\\\\(){}~!\\n\\r]*/)?(${TEST_DIRS.map(regexOf).join('|')})/?`,
+    `npx vitest (run|--run)${SHELL_ARGS}`,
+    `(${PYTHONS.map(regexOf).join('|')}) -m pytest${SHELL_ARGS}`,
+    `node --test${SHELL_ARGS}`,
+    `npm (test|run test[A-Za-z0-9:_-]*)${SHELL_ARGS}`,
+  ],
+  deniedCommands: [
+    `(.*[;&|(] *)?(${NETWORK_AND_SECRET_COMMANDS.join('|')})( .*)?`,
+    `(.*[;&|(] *)?(${PAGERS.join('|')}) .*(~|\\$HOME|/Users/|/home/|/root/).*`,
+  ],
+  denyByDefault: true,
+})
+const TEST_COMMANDS = Object.freeze([
+  ...TEST_DIRS.flatMap((dir) => [`cd ${dir}`, `cd */${dir}`]),
+  'npx vitest run', 'npx vitest run *', 'npx vitest --run *',
+  ...PYTHONS.flatMap((python) => [`${python} -m pytest`, `${python} -m pytest *`]),
+  'node --test', 'node --test *',
+  'npm test', 'npm test *', 'npm run test*',
+])
+export const KIRO_SHELL_RULES = Object.freeze([
+  { capability: 'shell', match: TEST_COMMANDS, effect: 'allow' },
+  // V3's denyByDefault: every other command is refused, whatever a user-level rule allows (a deny wins over every
+  // scope's allow). Without it V3 ran `cat .env` with no approval and no matching rule (verified live).
+  { capability: 'shell', match: ['*'], exclude: TEST_COMMANDS, effect: 'deny' },
+  {
+    capability: 'shell',
+    match: [
+      ...NETWORK_AND_SECRET_COMMANDS.flatMap((command) => [command, `${command} *`]),
+      ...PAGERS.flatMap((pager) => [`${pager} *~*`, `${pager} *$HOME*`, `${pager} */Users/*`, `${pager} */home/*`, `${pager} */root/*`]),
+    ],
+    effect: 'deny',
+  },
 ])
 
 /**
@@ -138,13 +210,16 @@ export const KIRO_WRITE_RULES = Object.freeze([
  * and Glob in `dontAsk` mode with repository-scoped allow rules, no MCP servers and no saved session. Neither can
  * read a SECRET_PATHS file. The diff is
  * untrusted input, so an instruction in it can never reach a shell, a write, or a file such as ~/.aws/credentials.
+ * `--agent-engine v2` is pinned: that confinement holds on the V2 engine only (V3 reads outside the workspace without
+ * approval, KIRO_READ_SETTINGS), and without the flag the engine depends on the developer's `chat.agentEngine`
+ * setting. scripts/git-hooks/pre-push pins it the same way.
  */
 export function runnerCommand(runner, { agent, systemPrompt, model }) {
   const modelArgs = model ? ['--model', model] : []
   if (runner === 'kiro') {
     return {
       command: BINARIES.kiro,
-      args: ['chat', '--agent', agent, '--no-interactive', '--trust-tools=', '--wrap', 'never', ...modelArgs],
+      args: ['chat', '--agent', agent, '--no-interactive', '--trust-tools=', '--agent-engine', 'v2', '--wrap', 'never', ...modelArgs],
     }
   }
   if (runner === 'claude') {
