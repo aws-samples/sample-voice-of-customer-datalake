@@ -17,6 +17,23 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.01.00] - 2026-11-13
+
+The invitation email says who invited you, to which workspace, and what VoC Analytics is, so it no longer reads like phishing.
+
+### Changed
+
+- The email a new user gets (Administration → Users → add) is written by the app pool's custom-message trigger, now a tested module (`voc-datalake/lambda/auth/user_messages.py`) instead of inline code in `core-auth.ts`. It names the inviting admin ("Luca Perrozzi invited you to …", from their sign-in token, passed by `users_handler.py` as `ClientMetadata`; their email address is never sent) and the workspace: "the Acme VoC Analytics workspace running on AWS" once Administration → Brand has a name. It explains in one sentence what VoC Analytics is, gives the sign-in link, the temporary password and how long it works (7 days, now set explicitly on the pool), and says whom to ask when the invitation is unexpected. Names are HTML-escaped and stripped of control characters.
+- The invitation takes its accent colour from Company → Design system, like prototypes: the first plain hex colour token named `primary`, `brand` or `accent` (or `brand-500` style), else the first hex colour, else the app's indigo. It colours the header, the sign-in link and the password; the header text turns white or dark by WCAG contrast, so a light brand colour stays readable. Only `#rgb` / `#rrggbb` values reach the email's styles; `rgb()`, `hsl()`, keywords and anything else are ignored. The header is a solid colour: the old gradient header without a text colour showed dark text in clients that drop gradients.
+- The trigger may read only the brand and design-system rows (`GetItem` with `dynamodb:LeadingKeys` `SETTINGS#brand`, `SETTINGS#design_system`) and decrypt them, and runs at 256 MB: at 128 MB its cold start took 2.5 s against Cognito's 5 s trigger budget (measured on a workshop event; 1.6 s at 256 MB). The password-reset and resent-code emails keep their wording.
+- New `-c workshop` flag (default `false`), set by `npm run generate:workshop-artifacts`: on a workshop deployment with no brand configured, the invitation says the account was set up for an AWS workshop and points to the workshop organizer. See [docs/deployment.md](docs/deployment.md#invitation-email).
+- The old code comment said a custom invitation "doesn't work" with Cognito's default sender. It does: Cognito silently falls back to the static template unless the message contains both the username and the code placeholder. The invitation therefore keeps the user id, now labelled "Support reference", and the static template (`userInvitation`, the fallback if the trigger fails) is rewritten in the same style.
+
+### Upgrade notes
+
+- Deploy `VocCoreStack` (`npm run deploy:infra`) and `VocApiStack`. The custom-message function changes from inline code to an asset (`auth/user_messages.handler`, 256 MB) and gains one scoped `GetItem` statement plus `kms:Decrypt`; the user pool's `TemporaryPasswordValidityDays` is set to 7, Cognito's default, so existing temporary passwords are unaffected. The sender is still `no-reply@verificationemail.com`; a verified SES domain (`-c emailFrom`) is the way to change it, which this release does not do for the app pool.
+- Regenerate the workshop templates (`npm run generate:workshop-artifacts`) so they carry `-c workshop=true`.
+
 ## [7.00.01] - 2026-11-13
 
 The repository's Kiro agents can no longer read `.env`, key and credential files with their read tool.

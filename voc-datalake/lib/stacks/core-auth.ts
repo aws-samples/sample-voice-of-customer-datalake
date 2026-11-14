@@ -27,6 +27,10 @@ import { retainOnReplace } from '../utils/retain-on-replace';
 import { isDevDeployment } from '../utils/context';
 import { cognitoPlusEnabled, userPoolFeaturePlan } from '../utils/cognito-plus';
 import { grantWrites } from '../utils/table-write-grants';
+import { booleanContextFlag } from '../utils/context-flag';
+import { selfContainedTriggerCode } from '../utils/self-contained-trigger';
+import type * as kms from 'aws-cdk-lib/aws-kms';
+import type { Construct } from 'constructs';
 
 export interface CoreAuth {
   userPool: cognito.UserPool;
@@ -44,6 +48,36 @@ export const USER_POOL_STANDARD_ATTRIBUTES: cognito.StandardAttributes = {
   fullname: { required: false, mutable: true },
 };
 
+/**
+ * The files the app pool's message trigger ships, relative to `lambda/` (stdlib + boto3 only):
+ * lambda/auth/test/test_user_messages_bundle.py imports it with only these on sys.path.
+ */
+export const USER_MESSAGES_FILES = ['auth/user_messages.py'] as const;
+
+/** The message trigger's memory: a 2.5 s cold start at 128 MB was too close to Cognito's 5 s budget (lib/sizing/policy.ts). */
+const USER_MESSAGES_MEMORY_MB = 256;
+
+/** How long an invitation's temporary password works; the pool's policy and the email both state it. */
+export const TEMPORARY_PASSWORD_DAYS = 7;
+
+/** The brand row's partition key in the aggregates table (api/settings_handler.py SETTINGS_PK). */
+export const BRAND_SETTINGS_PK = 'SETTINGS#brand';
+
+/** The design system's partition key (shared/company_context.py DESIGN_SYSTEM_PK): the invitation's accent colour. */
+export const DESIGN_SYSTEM_SETTINGS_PK = 'SETTINGS#design_system';
+
+/** The context key marking a workshop deployment: `-c workshop=true` (npm run generate:workshop-artifacts). */
+const WORKSHOP_CONTEXT = 'workshop';
+
+/**
+ * Whether this deployment is for an AWS workshop: then an invitation without a configured brand names the
+ * workshop and its organizer instead of a generic administrator (lambda/auth/user_messages.py). Default false.
+ */
+function workshopDeployment(scope: Construct): boolean {
+  return booleanContextFlag(scope.node.tryGetContext(WORKSHOP_CONTEXT), WORKSHOP_CONTEXT, false,
+    'Use -c workshop=true or -c workshop=false.');
+}
+
 /** A trigger's or handler's own log group: `LOG_RETENTION` (30 days), deleted with the stack. */
 export function lambdaLogGroup(stack: cdk.Stack, id: string): logs.LogGroup {
   return new logs.LogGroup(stack, id, {
@@ -52,7 +86,9 @@ export function lambdaLogGroup(stack: cdk.Stack, id: string): logs.LogGroup {
   });
 }
 
-export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.Table, frontendDomainName: string): CoreAuth {
+export function createCoreAuth(
+  ctx: CoreBuildContext, aggregatesTable: dynamodb.Table, kmsKey: kms.IKey, frontendDomainName: string,
+): CoreAuth {
   const { stack } = ctx;
 
   // ============================================
@@ -66,16 +102,31 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
   const callbackUrls = origins.flatMap((origin) => [origin, `${origin}/callback`]);
   const logoutUrls = origins;
 
-  // Custom Message Lambda Trigger
+  // Custom message trigger (lambda/auth/user_messages.py): the invitation names the brand, the inviter and,
+  // on a workshop deployment, the AWS workshop; it also writes the password-reset and resent-code emails.
   const customMessageLambda = new lambda.Function(stack, 'CustomMessageLambda', {
     runtime: lambda.Runtime.PYTHON_3_14,
     architecture: lambda.Architecture.ARM_64,
-    handler: 'index.handler',
-    code: lambda.Code.fromInline(customMessageLambdaCode(signInUrl)),
+    handler: 'auth/user_messages.handler',
+    code: selfContainedTriggerCode(USER_MESSAGES_FILES),
+    memorySize: USER_MESSAGES_MEMORY_MB,
     timeout: cdk.Duration.seconds(10),
-    description: 'Customizes Cognito email messages for different scenarios',
+    description: 'App sign-in emails: the invitation (brand, inviter, workshop), password reset, resent code',
+    environment: {
+      AGGREGATES_TABLE: aggregatesTable.tableName,
+      SIGN_IN_URL: signInUrl,
+      WORKSHOP: String(workshopDeployment(stack)),
+      TEMP_PASSWORD_DAYS: String(TEMPORARY_PASSWORD_DAYS),
+    },
     logGroup: lambdaLogGroup(stack, 'CustomMessageLambdaLogs'),
   });
+  // Exactly two settings rows (SETTINGS#brand, SETTINGS#design_system), read only, and the table's key.
+  customMessageLambda.addToRolePolicy(new iam.PolicyStatement({
+    actions: ['dynamodb:GetItem'],
+    resources: [aggregatesTable.tableArn],
+    conditions: { 'ForAllValues:StringEquals': { 'dynamodb:LeadingKeys': [BRAND_SETTINGS_PK, DESIGN_SYSTEM_SETTINGS_PK] } },
+  }));
+  kmsKey.grantDecrypt(customMessageLambda);
 
   // Cognito User Pool
   //
@@ -100,6 +151,7 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
       requireUppercase: true,
       requireDigits: true,
       requireSymbols: true,
+      tempPasswordValidity: cdk.Duration.days(TEMPORARY_PASSWORD_DAYS),
     },
     accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
     // Opt-in passkeys (docs/deployment.md -> Passkeys): after sign-in the SPA offers to register one
@@ -119,26 +171,28 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
       emailStyle: cognito.VerificationEmailStyle.CODE,
     },
     userInvitation: {
-      emailSubject: 'VoC Analytics - Welcome! Set up your account',
+      // Only a fallback: the custom-message trigger (lambda/auth/user_messages.py) writes the real invitation,
+      // naming the brand, the inviter and the workshop. Cognito sends this text only if the trigger fails.
+      emailSubject: 'You are invited to VoC Analytics',
       emailBody: `<!DOCTYPE html>
 <html>
 <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto;">
-  <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center;">
-    <h1 style="margin: 0;">Welcome to VoC Analytics</h1>
+  <div style="background: #4c51bf; padding: 24px 30px;">
+    <h1 style="color: #ffffff; margin: 0; font-size: 22px;">Welcome to VoC Analytics</h1>
   </div>
   <div style="padding: 30px; background: #f9f9f9;">
-    <p>You have been invited to join the platform.</p>
-    <p><strong>To get started:</strong></p>
+    <p>You have been invited to a VoC Analytics workspace.</p>
+    <p>VoC (Voice of the Customer) Analytics brings your customers' feedback together and helps your team understand it with AI.</p>
+    <p><strong>To sign in:</strong></p>
     <ol>
-      <li>Go to <a href="${signInUrl}" style="color: #667eea;">${signInUrl}</a></li>
-      <li>Enter your email address</li>
-      <li>Use this temporary password:
-        <div style="font-family: monospace; font-size: 18px; font-weight: bold; color: #667eea; margin: 8px 0;">{####}</div>
+      <li>Open <a href="${signInUrl}" style="color: #4c51bf;">${signInUrl}</a></li>
+      <li>Sign in with this email address and the temporary password below:
+        <div style="font-family: monospace; font-size: 18px; font-weight: bold; color: #4c51bf; margin: 8px 0;">{####}</div>
       </li>
-      <li>Set your new password when prompted</li>
+      <li>Choose your own password when asked. The temporary one works for ${TEMPORARY_PASSWORD_DAYS} days.</li>
     </ol>
-    <p style="color: #666; font-size: 13px;">(Your account ID for reference: {username})</p>
-    <p style="margin-top: 24px;">Best regards,<br>The VoC Analytics Team</p>
+    <p>If you were not expecting this invitation, check with your VoC Analytics administrator before signing in, or ignore this email.</p>
+    <p style="color: #666; font-size: 12px;">Support reference: {username}</p>
   </div>
 </body>
 </html>`,
@@ -398,62 +452,4 @@ function createInlineCustomResourceHandler(
     description: handler.description,
     logGroup: lambdaLogGroup(ctx.stack, `${id}Logs`),
   });
-}
-
-function customMessageLambdaCode(signInUrl: string): string {
-  // Note: CustomMessage_AdminCreateUser doesn't work with COGNITO_DEFAULT email sender
-  // (known AWS bug). We handle it via userInvitation config instead.
-  // This Lambda handles ForgotPassword and ResendCode which DO work.
-  return `
-import json
-
-def handler(event, context):
-    trigger_source = event.get('triggerSource', '')
-    request = event.get('request', {})
-    code_param = request.get('codeParameter', '{####}')
-    sign_in_url = '${signInUrl}'
-    
-    # ForgotPassword - styled HTML email
-    if trigger_source == 'CustomMessage_ForgotPassword':
-        event['response']['emailSubject'] = 'VoC Analytics - Reset your password'
-        event['response']['emailMessage'] = f"""<!DOCTYPE html>
-<html>
-<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto;">
-  <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center;">
-    <h1 style="color: white; margin: 0;">Password Reset</h1>
-  </div>
-  <div style="padding: 30px; background: #f9f9f9;">
-    <p>We received a request to reset your password for VoC Analytics.</p>
-    <div style="background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;">
-      <p style="margin: 0 0 10px 0; color: #666;">Your password reset code:</p>
-      <p style="font-family: monospace; font-size: 24px; font-weight: bold; color: #667eea; margin: 0;">{code_param}</p>
-    </div>
-    <p style="color: #666; font-size: 14px;">If you did not request this, please ignore this email.</p>
-    <p style="text-align: center; margin-top: 20px;"><a href="{sign_in_url}" style="color: #667eea;">Go to VoC Analytics</a></p>
-  </div>
-</body>
-</html>"""
-    
-    # ResendCode - styled HTML email  
-    elif trigger_source == 'CustomMessage_ResendCode':
-        event['response']['emailSubject'] = 'VoC Analytics - Your verification code'
-        event['response']['emailMessage'] = f"""<!DOCTYPE html>
-<html>
-<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto;">
-  <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center;">
-    <h1 style="color: white; margin: 0;">Verification Code</h1>
-  </div>
-  <div style="padding: 30px; background: #f9f9f9;">
-    <p>Here is your verification code for VoC Analytics.</p>
-    <div style="background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;">
-      <p style="margin: 0 0 10px 0; color: #666;">Your verification code:</p>
-      <p style="font-family: monospace; font-size: 24px; font-weight: bold; color: #667eea; margin: 0;">{code_param}</p>
-    </div>
-    <p style="text-align: center; margin-top: 20px;"><a href="{sign_in_url}" style="color: #667eea;">Go to VoC Analytics</a></p>
-  </div>
-</body>
-</html>"""
-    
-    return event
-`;
 }

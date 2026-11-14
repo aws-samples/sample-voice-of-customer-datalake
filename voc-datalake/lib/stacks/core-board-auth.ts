@@ -35,8 +35,7 @@ import { acknowledgeNagOnResource } from '../utils/nag-ack';
 import { boardPoolMfaSuppressions, cognitoPlusOffSuppressions } from '../utils/nag-suppressions';
 import { cognitoPlusEnabled, userPoolFeaturePlan } from '../utils/cognito-plus';
 import { retainOnReplace } from '../utils/retain-on-replace';
-import { PY_LAMBDA_ASSET_EXCLUDES, WORKER_TREE_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
-import { pythonLambdaAsset } from '../utils/python-lambda-asset';
+import { selfContainedTriggerCode } from '../utils/self-contained-trigger';
 import type { EmailSender } from '../utils/email-sender';
 import type { CoreBuildContext } from './core-cdn';
 import { USER_POOL_STANDARD_ATTRIBUTES, lambdaLogGroup } from './core-auth';
@@ -92,42 +91,6 @@ export const BOARD_TRIGGER_FILES = [
   'shared/review_share_audience.py',
 ] as const;
 
-/** The top-level directories of {@link BOARD_TRIGGER_FILES} (`auth`, `shared`). */
-function boardTriggerDirs(): string[] {
-  return [...new Set(BOARD_TRIGGER_FILES.map((file) => file.split('/')[0] ?? ''))];
-}
-
-/**
- * Staging rules past the shared lists (they shape the asset hash): everything under `lambda/` is
- * excluded except {@link BOARD_TRIGGER_FILES} — exclude all, re-include each file's directory,
- * exclude its other entries, re-include the file — so an edit elsewhere never redeploys the triggers.
- */
-export function onlyTheTriggerFiles(): string[] {
-  return [
-    '*',
-    ...boardTriggerDirs().flatMap((dir) => [`!/${dir}/`, `/${dir}/*`]),
-    ...BOARD_TRIGGER_FILES.map((file) => `!/${file}`),
-  ];
-}
-
-/**
- * The bundling copy steps (what ships): one `mkdir` per directory, one `cp` per file, so the
- * zip holds exactly {@link BOARD_TRIGGER_FILES} beside each other as the path-style handler expects.
- */
-export function boardTriggerCopySteps(): string[] {
-  return [
-    ...boardTriggerDirs().map((dir) => `mkdir -p /asset-output/${dir}`),
-    ...BOARD_TRIGGER_FILES.map((file) => `cp /asset-input/${file} /asset-output/${file}`),
-  ];
-}
-
-/** The trigger asset: `lambda/` staged and bundled down to {@link BOARD_TRIGGER_FILES}. */
-function boardTriggerCode(): lambda.Code {
-  return pythonLambdaAsset('lambda', {
-    exclude: [...PY_LAMBDA_ASSET_EXCLUDES, ...WORKER_TREE_ASSET_EXCLUDES, ...onlyTheTriggerFiles()],
-    copy: boardTriggerCopySteps(),
-  });
-}
 
 /** One board trigger (stdlib + boto3, no layer), Python 3.14 ARM64, 30-day logs. */
 function boardTrigger(
@@ -142,7 +105,7 @@ function boardTrigger(
     // Path-style (the runtime turns `/` into `.`): `auth.board_triggers` beside `shared/`. One entry
     // point for both triggers (it dispatches on the trigger source); each function keeps its own role.
     handler: 'auth/board_triggers.handler',
-    code: boardTriggerCode(),
+    code: selfContainedTriggerCode(BOARD_TRIGGER_FILES),
     memorySize: BOARD_TRIGGER_MEMORY_MB,
     timeout: BOARD_TRIGGER_TIMEOUT,
     description: spec.description,

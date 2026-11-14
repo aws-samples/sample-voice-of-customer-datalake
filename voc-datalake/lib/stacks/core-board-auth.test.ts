@@ -14,7 +14,8 @@ import { join } from 'path';
 import * as cdk from 'aws-cdk-lib';
 import { afterAll, describe, expect, it } from 'vitest';
 
-import { BOARD_TRIGGER_FILES, boardTriggerCopySteps, onlyTheTriggerFiles } from './core-board-auth';
+import { BOARD_TRIGGER_FILES } from './core-board-auth';
+import { copyStepsFor, onlyTheseFiles } from '../utils/self-contained-trigger';
 import { PY_LAMBDA_ASSET_EXCLUDES, WORKER_TREE_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
 import { byCodeUnit } from '../utils/compare';
 
@@ -42,14 +43,14 @@ describe('board trigger asset', () => {
     // The very copy CDK's asset staging runs (IgnoreMode.GIT), with the call site's exclude list.
     const staged = join(outdir, 'staged');
     cdk.FileSystem.copyDirectory(join(__dirname, '..', '..', 'lambda'), staged, {
-      exclude: [...PY_LAMBDA_ASSET_EXCLUDES, ...WORKER_TREE_ASSET_EXCLUDES, ...onlyTheTriggerFiles()],
+      exclude: [...PY_LAMBDA_ASSET_EXCLUDES, ...WORKER_TREE_ASSET_EXCLUDES, ...onlyTheseFiles(BOARD_TRIGGER_FILES)],
       ignoreMode: cdk.IgnoreMode.GIT,
     });
     expect(walkFiles(staged).sort(byCodeUnit)).toStrictEqual(EXPECTED_FILES);
   });
 
   it('bundles each file to the same relative path, nothing else', () => {
-    expect(boardTriggerCopySteps()).toStrictEqual([
+    expect(copyStepsFor(BOARD_TRIGGER_FILES)).toStrictEqual([
       'mkdir -p /asset-output/auth',
       'mkdir -p /asset-output/shared',
       ...EXPECTED_FILES.map((file) => `cp /asset-input/${file} /asset-output/${file}`),

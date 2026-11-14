@@ -353,7 +353,10 @@ export const UNCHANGED: Readonly<Record<string, number | null>> = {
   'VocCoreStack/CustomS3AutoDeleteObjectsCustomResourceProviderHandler9D90184F': 128,
   'VocCoreStack/CdnSigningKeysProviderframeworkonEventF83ACC63': null,
   'VocCoreStack/BucketNotificationsHandler050a0587b7544547bf325f094a3db8347ECC3691': null,
-  'VocCoreStack/CustomMessageLambda448F9FBF': null,
+  // The app pool's message trigger (core-auth.ts): two GetItems and a string render, but its cold start took 2.5 s
+  // at 128 MB (2.9 s billed, 2026-11-14 on a workshop event) against Cognito's 5 s trigger budget: one step up,
+  // like the board triggers.
+  'VocCoreStack/CustomMessageLambda448F9FBF': 256,
   'VocCoreStack/AdminBootstrapProviderframeworkonEventF4719509': null,
   // The model agreements (BedrockModelAgreements under the id ImageModelAccess, bedrock-access-stack.ts):
   // deploy-time custom resource for the image model (5.45.00) and every Claude model, the CDK default.
