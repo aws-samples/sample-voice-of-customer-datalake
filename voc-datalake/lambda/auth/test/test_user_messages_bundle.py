@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 LAMBDA_ROOT = Path(__file__).resolve().parents[2]
-BUNDLE_FILES = ('auth/user_messages.py',)
+BUNDLE_FILES = ('auth/user_messages.py', 'auth/logo_signing.py')
 
 
 def _outside_the_repo(entry: str) -> bool:

@@ -17,6 +17,18 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.02.00] - 2026-11-14
+
+The invitation email shows the company logo.
+
+### Added
+
+- The invitation (Administration → Users → add) shows the logo uploaded in Company → Design system, on a white plate in the header. Cognito caps the email at 20,000 characters, so the image cannot travel inline, and the uploaded logo is private. VocCoreStack therefore gains a signed-only CloudFront path for it, `/company-context/design/logo_????????????.*` (`COMPANY_LOGO_PATH_PATTERN` in `core-cdn.ts`). The path matches an upload's key exactly, never a design reference's `logo_preview_*`, and uses the trusted key group, cache policy and origin access of `/avatars/*`. The custom-message trigger signs a link to it with the distribution's own key pair, valid for the temporary password's 7 days (`lambda/auth/logo_signing.py`). That link is a bearer credential for the logo alone, until it expires. Signing fails closed: with no logo, no key or a failed read, the email is sent without an image and never with an unsigned URL. The trigger gains `secretsmanager:GetSecretValue` on the CDN signing secret only, its own copy of the signing-deps layer (cryptography), and the key pair id in its environment.
+
+### Upgrade notes
+
+- Deploy `VocCoreStack` (`npm run deploy:infra`): one new CloudFront cache behavior and the trigger changes above. Nothing to migrate. Logos uploaded before this release show up in the next invitation.
+
 ## [7.01.00] - 2026-11-13
 
 The invitation email says who invited you, to which workspace, and what VoC Analytics is, so it no longer reads like phishing.

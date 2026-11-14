@@ -591,7 +591,12 @@ who has never heard of "VoC" can tell it is genuine:
   has a name.
 - **Look:** the accent colour of Company → Design system (the `primary`, `brand` or `accent` hex colour
   token, as prototypes use it) on the header, the link and the password, with header text that stays
-  readable on a light colour; the app's indigo without one.
+  readable on a light colour; the app's indigo without one. The uploaded logo sits in the header on a white
+  plate. It is a CloudFront-signed link valid as long as the temporary password (7 days): Cognito caps the
+  message at 20,000 characters, too small for an inline image. The logo path
+  (`/company-context/design/logo_<id>.<ext>`) refuses a request without a valid signature, like `/avatars/*`,
+  so anyone holding the email can see the logo until the link expires, and nothing else. Mail clients may
+  hold back images from an external sender until the reader allows them.
 - **What it is:** one sentence on what VoC Analytics does.
 - **What to do:** the sign-in link, the temporary password, how long it works (7 days, the pool's policy),
   and whom to ask if the invitation was unexpected: "your VoC Analytics administrator", or, on a workshop
@@ -1109,7 +1114,7 @@ rule (5-minute window):
 
 | Web ACL | Where | Protects | Rate limit per IP |
 |---|---|---|---|
-| `FrontendWebAcl` (scope `CLOUDFRONT`) | `VocWebSearchStack`, us-east-1 (CloudFront requires it there) | the SPA distribution, incl. `/avatars/*` and `/prototypes/*` | 10,000 requests |
+| `FrontendWebAcl` (scope `CLOUDFRONT`) | `VocWebSearchStack`, us-east-1 (CloudFront requires it there) | the SPA distribution, incl. `/avatars/*`, `/prototypes/*` and the company logo path | 10,000 requests |
 | `ApiWebAcl` (scope `REGIONAL`) | `VocApiStack`, the app region | the API `v1` stage (the per-method throttles stay) | 5,000 requests |
 
 The rate limit counts requests per source IP over 5 minutes, so a team behind one egress IP (an office NAT, a VPN)

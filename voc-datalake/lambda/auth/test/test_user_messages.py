@@ -204,3 +204,38 @@ def test_a_light_accent_gets_dark_header_text(aggregates):
     _set_colors(aggregates, [{'name': 'primary', 'value': '#fde047'}])
     _, message = _send(_invitation())
     assert 'color: #111111; margin: 0; font-size: 22px;' in message
+
+
+LOGO_KEY = 'company-context/design/logo_0123456789ab.png'
+
+
+def test_shows_the_uploaded_logo_through_a_signed_link_valid_as_long_as_the_invitation(aggregates, monkeypatch):
+    aggregates.put_item(Item={**user_messages.DESIGN_SYSTEM_KEY, 'logo_s3_key': LOGO_KEY})
+    _set_brand(aggregates, 'Acme')
+    calls = []
+
+    def fake_sign(key, site, days):
+        calls.append((key, site, days))
+        return 'https://voc.example.com/' + key + '?Expires=1&Signature=a~b&Key-Pair-Id=K'
+    monkeypatch.setattr(user_messages.logo_signing, 'signed_logo_url', fake_sign)
+    _, message = _send(_invitation())
+    assert calls == [(LOGO_KEY, 'https://voc.example.com', 7)]
+    assert f'<img src="https://voc.example.com/{LOGO_KEY}?Expires=1&amp;Signature=a~b&amp;Key-Pair-Id=K"' in message
+    assert 'alt="Acme logo"' in message
+
+
+@pytest.mark.usefixtures('aggregates')
+def test_sends_no_image_when_the_logo_cannot_be_signed(monkeypatch):
+    monkeypatch.setattr(user_messages.logo_signing, 'signed_logo_url', lambda *_: None)
+    _, message = _send(_invitation())
+    assert '<img' not in message
+
+
+def test_the_invitation_stays_under_cognitos_message_cap(aggregates, monkeypatch):
+    # Cognito refuses (falls back to the static template for) a message over 20,000 characters.
+    _set_brand(aggregates, 'B' * 200)
+    aggregates.put_item(Item={**user_messages.DESIGN_SYSTEM_KEY, 'logo_s3_key': LOGO_KEY,
+                              'tokens': {'colors': [{'name': 'primary', 'value': '#123456'}]}})
+    monkeypatch.setattr(user_messages.logo_signing, 'signed_logo_url', lambda *_: 'https://x/' + 'q' * 700)
+    _, message = _send(_invitation({'invited_by': 'I' * 500}, {'given_name': 'G' * 500}))
+    assert len(message) < 20_000

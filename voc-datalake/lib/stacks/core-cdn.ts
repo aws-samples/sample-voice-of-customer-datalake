@@ -25,6 +25,13 @@ import {
   cloudfrontDefaultCertSuppressions,
 } from '../utils/nag-suppressions';
 import { PROTOTYPE_BASE_CSP, prototypeCspFunctionCode } from '../utils/prototype-csp';
+
+/**
+ * The CDN path of an uploaded company logo, signed-only like `/avatars/*`: exactly
+ * `company-context/design/logo_<12 characters>.<ext>` (shared/company_logo.py `_UPLOADED_LOGO_KEY_RE`), so a
+ * design reference's `logo_preview_*` image is not served. lambda/auth/user_messages.py signs its URL.
+ */
+export const COMPANY_LOGO_PATH_PATTERN = '/company-context/design/logo_????????????.*';
 import { realtimeConnectSrc } from '../utils/realtime';
 import type { DataProtection } from '../utils/data-protection';
 
@@ -375,6 +382,17 @@ export function createCoreCdn(ctx: CoreBuildContext, inputs: CdnInputs): CoreCdn
     },
   );
   const prototypesCdnUrl = `https://${frontendDomainName}/prototypes`;
+
+  // The uploaded company logo (Company → Design system), signed like avatars, so the invitation email
+  // (lambda/auth/user_messages.py) can show it: Cognito's 20,000-character message cap rules out an inline
+  // image, and a presigned S3 URL dies with the trigger's session credentials. The pattern matches exactly an
+  // upload (`logo_<12 hex>.<ext>`, shared/company_logo.py), never a reference's `logo_preview_*`; each upload
+  // has a new key, so the shared cache policy (no in-place overwrite) holds.
+  frontendDistribution.addBehavior(
+    COMPANY_LOGO_PATH_PATTERN,
+    origins.S3BucketOrigin.withOriginAccessControl(rawDataBucket),
+    signedPathBehavior,
+  );
 
   return {
     frontendDistribution, frontendDomainName, cdnSigningSecretArn, cdnSigningKeyPairId,
