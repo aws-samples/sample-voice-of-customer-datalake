@@ -37,8 +37,9 @@ def pages(draw: st.DrawFn) -> list[list[dict[str, str]]]:
 
 
 def _walk(run: dict[str, Any]) -> handler.Walk:
-    return handler.Walk(tables={'aggregates': MagicMock()}, context=MagicMock(), event={}, run=run,
-                        filters=MagicMock(), s3=MagicMock())
+    context = MagicMock()
+    return handler.Walk(tables={'aggregates': MagicMock()}, context=context, event={}, run=run,
+                        filters=MagicMock(), s3=MagicMock(), time_left=handler._lambda_clock(context))
 
 
 # Per page, every match's tombstone is written before any match of that page is erased; the time is checked before
@@ -153,7 +154,8 @@ def test_retention_skips_and_counts_rows_that_name_no_workspace(data, pair, befo
 def test_a_run_walks_the_documented_phases(mode, field, source, workspace, stores):
     run = {'mode': mode, 'field': field, 'source': source, **({'workspace_id': workspace} if workspace else {})}
     tables = {'aggregates': MagicMock(), **{name: MagicMock() for name in stores}}
-    walk = handler.Walk(tables=tables, context=MagicMock(), event={}, run=run, filters=MagicMock(), s3=MagicMock())
+    walk = handler.Walk(tables=tables, context=MagicMock(), event={}, run=run, filters=MagicMock(), s3=MagicMock(),
+                        time_left=MagicMock())
     erase = mode == MODE_ERASE
     by_email = erase and field == 'email'
     if workspace:

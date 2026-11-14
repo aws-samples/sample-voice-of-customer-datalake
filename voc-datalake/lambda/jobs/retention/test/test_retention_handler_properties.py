@@ -29,8 +29,9 @@ JOB = 'er_0123456789ab'
 
 
 def _walk(run: dict[str, Any], event: dict[str, Any] | None = None, **tables: Any) -> handler.Walk:
-    return handler.Walk(tables={'aggregates': MagicMock(), **tables}, context=MagicMock(function_name='voc-retention'),
-                        event=event or {}, run=run, filters=MagicMock(), s3=MagicMock())
+    context = MagicMock(function_name='voc-retention')
+    return handler.Walk(tables={'aggregates': MagicMock(), **tables}, context=context, event=event or {}, run=run,
+                        filters=MagicMock(), s3=MagicMock(), time_left=handler._lambda_clock(context))
 
 
 # A workspace job's lock is renewed or released only for a run that has its job id and its workspace, with the

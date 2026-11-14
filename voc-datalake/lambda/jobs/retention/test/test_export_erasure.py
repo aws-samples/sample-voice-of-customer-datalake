@@ -127,7 +127,8 @@ def test_an_export_started_between_the_member_and_exports_phases_cannot_keep_the
         handler.handle_event(erasure_job(aws, JOB_ID, 'email', 'jane@example.com', legal_basis='GDPR'),
                              worker_context)
     phases = handler._phases(handler.Walk(handler._tables(), worker_context, {}, {'mode': 'erase', 'field': 'email'},
-                                          lambda store: retention.erase_filter('email', 'x', None, store), None))
+                                          lambda store: retention.erase_filter('email', 'x', None, store), None,
+                                          handler._lambda_clock(worker_context)))
     assert phases.index('members') < phases.index('exports') < phases.index('lineage')
     assert _versions(aws, f'ws/{WS}/exports/') == []
     assert _statuses(aws, WS) == {DONE: 'erased'}
@@ -254,7 +255,8 @@ def test_each_hand_over_renews_the_export_lock_and_marks_an_export_that_slipped_
                                   ExpressionAttributeValues={':t': (now - timedelta(minutes=59)).isoformat()})
     _export(aws, WS, RUNNING, 'queued')  # slipped in (the lock read stale to its start)
     walk = handler.Walk(handler._tables(), worker_context, {'mode': 'erase'}, run,
-                        lambda store: retention.erase_filter('email', 'x', None, store), None)
+                        lambda store: retention.erase_filter('email', 'x', None, store), None,
+                        handler._lambda_clock(worker_context))
     assert handler._hand_over(walk, handler.PHASE_ITEMS, None)['status'] == 'continued'
     assert invoke_mock.call_count == 1
     assert _statuses(aws, WS) == {RUNNING: 'erased'}

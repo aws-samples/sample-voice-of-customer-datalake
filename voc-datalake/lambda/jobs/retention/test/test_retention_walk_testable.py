@@ -217,7 +217,8 @@ class TestTheWalkItself:
 
     def _walk(self, context: MagicMock) -> handler.Walk:
         run = {'mode': 'retention', 'run_id': 'r1'}
-        return handler.Walk({'aggregates': MagicMock()}, context, {}, run, lambda _store: MagicMock(), MagicMock())
+        return handler.Walk({'aggregates': MagicMock()}, context, {}, run, lambda _store: MagicMock(), MagicMock(),
+                            handler._lambda_clock(context))
 
     def test_each_page_is_handled_then_recorded_then_followed(self, worker_context) -> None:
         steps: list[tuple[str, Any]] = []
@@ -264,3 +265,27 @@ class TestTheWalkItself:
         assert result == {'status': 'continued'}
         hand_over.assert_called_once_with(walk, 'lineage', {'k': 2})
         assert worker_context.get_remaining_time_in_millis.call_count == 2
+
+
+class TestTheClock:
+    """The walk reads the time only through the clock it is given; the Lambda's keeps a minute in reserve."""
+
+    @pytest.mark.parametrize(('remaining', 'left'), [(60_000, False), (60_001, True)])
+    def test_the_lambda_clock_keeps_sixty_seconds_in_reserve(self, worker_context, remaining: int,
+                                                             left: bool) -> None:
+        worker_context.get_remaining_time_in_millis.return_value = remaining
+        assert handler._lambda_clock(worker_context)() is left
+
+    def test_every_check_reads_the_injected_clock_not_the_context(self, worker_context) -> None:
+        checks = iter([True, False])
+        walk = handler.Walk({'aggregates': MagicMock()}, worker_context, {}, {'mode': 'retention', 'scanned': 0},
+                            lambda _store: MagicMock(), MagicMock(), lambda: next(checks))
+        erased: list[str] = []
+        with patch.object(handler, 'record_progress'), \
+                patch.object(handler, '_hand_over', side_effect=lambda _walk, _phase, cursor: cursor):
+            resumed = handler._erase_pages(walk, 'items', None,
+                                           _pages({'Items': [_key('a0'), _key('a1')], 'ScannedCount': 2}),
+                                           lambda _items: None, lambda item: erased.append(str(item['sk'])))
+        # Plenty of Lambda time, but the clock said no before the second item: the hand-over is after the first.
+        assert (erased, resumed) == (['FEEDBACK#a0'], _key('a0'))
+        worker_context.get_remaining_time_in_millis.assert_not_called()

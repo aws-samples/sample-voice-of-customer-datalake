@@ -132,11 +132,17 @@ _AWS_ERRORS: Final = (ClientError, BotoCoreError)
 
 # The scan filter of one store (shared.retention.STORE_*), built once per invocation by the mode's setup.
 Filters = Callable[[str], ConditionBase]
+# The invocation's clock: whether there is still room for one more slice before handing over.
+TimeLeft = Callable[[], bool]
 
 
 @dataclass
 class Walk:
-    """One invocation's tables, clients and state, handed to every phase."""
+    """One invocation's tables, clients, state and clock, handed to every phase.
+
+    ``time_left`` is the one clock every phase reads (``_lambda_clock`` in the Lambda); ``context`` names the
+    function a hand-over re-invokes.
+    """
 
     tables: dict[str, Any]
     context: Any
@@ -144,10 +150,16 @@ class Walk:
     run: dict[str, Any]
     filters: Filters
     s3: Any
+    time_left: TimeLeft
 
     @property
     def aggregates(self) -> Any:
         return self.tables['aggregates']
+
+
+def _lambda_clock(context: Any) -> TimeLeft:
+    """The Lambda's own clock: more than ``TIME_RESERVE_MS`` of the invocation's budget remain."""
+    return lambda: has_time_left(context, TIME_RESERVE_MS)
 
 
 def _tables() -> dict[str, Any]:
@@ -345,7 +357,7 @@ def _walk(walk: Walk, phase: str, cursor: dict | None, scan: Callable[[dict | No
         cursor = page.get('LastEvaluatedKey') or None
         if cursor is None:
             return None
-        if not has_time_left(walk.context, TIME_RESERVE_MS):
+        if not walk.time_left():
             return _hand_over(walk, phase, cursor)
 
 
@@ -359,7 +371,7 @@ def _erase_pages(walk: Walk, phase: str, cursor: dict | None, scan: Callable[[di
         tombstones(items)
         done = start
         for item in items:
-            if not has_time_left(walk.context, TIME_RESERVE_MS):
+            if not walk.time_left():
                 # After the last erased item (this page's start when none was).
                 return _Resume(done)
             erase(item)
@@ -438,7 +450,7 @@ def _sweep_raw(walk: Walk, _cursor: dict | None) -> dict | None:
     for prefix in (raw_prefix, silver_prefix):
         more = True
         while more:
-            if not has_time_left(walk.context, TIME_RESERVE_MS):
+            if not walk.time_left():
                 return _hand_over(walk, PHASE_RAW, None)
             objects, more = retention.delete_raw_prefix_page(walk.s3, RAW_DATA_BUCKET, prefix)
             walk.run['deleted_objects'] += objects
@@ -467,8 +479,7 @@ def _erase_exports(walk: Walk, _cursor: dict | None) -> dict | None:
     their objects deleted (exports.py, TENETS.md D5). Each step is idempotent, so a hand-over resumes with none."""
     if not RAW_DATA_BUCKET:
         return None
-    done = exports.clear(walk.run, walk.s3, RAW_DATA_BUCKET, walk.aggregates,
-                         lambda: has_time_left(walk.context, TIME_RESERVE_MS))
+    done = exports.clear(walk.run, walk.s3, RAW_DATA_BUCKET, walk.aggregates, walk.time_left)
     record_progress(walk.aggregates, walk.run, PHASE_EXPORTS)
     return None if done else _hand_over(walk, PHASE_EXPORTS, None)
 
@@ -617,7 +628,8 @@ def _run(tables: dict[str, Any], context: Any, event: dict[str, Any], state: dic
             # an erase event that cannot run leaves its job as it was.
             return (_finish(aggregates_table, state, STATUS_COMPLETED) if mode == MODE_RETENTION
                     else {'status': 'nothing_to_do'})
-        handed_over = _walk_phases(Walk(tables, context, event, state, filters, get_s3_client()))
+        handed_over = _walk_phases(Walk(tables, context, event, state, filters, get_s3_client(),
+                                        _lambda_clock(context)))
     except (*_AWS_ERRORS, ValueError, RuntimeError) as e:
         failure = type(e).__name__
     else:

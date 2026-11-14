@@ -202,7 +202,7 @@ class TestTheScanWalk:
         table = MagicMock()
         table.scan.side_effect = pages
         walk = handler.Walk({'feedback': table, 'aggregates': MagicMock()}, context, event, run,
-                            lambda _store: CONDITION, MagicMock())
+                            lambda _store: CONDITION, MagicMock(), handler._lambda_clock(context))
         with patch.object(handler, 'invoke_lambda_async', invoke), \
                 patch.object(handler.ItemDeleter, 'delete', autospec=True,
                              side_effect=lambda _deleter, _item, _store: _count_one_delete(run)):
