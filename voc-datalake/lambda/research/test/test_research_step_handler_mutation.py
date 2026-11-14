@@ -29,10 +29,13 @@ from boto3.dynamodb.conditions import Key
 from shared.agentic_search import AgenticSearchOutcome
 from shared.derivation import build_derivation
 from shared.persona_context import personas_prompt_context
+from shared.project_keys import NotPerWorkspaceError
 from shared.prompts import get_response_language_instruction
 from shared.test.instrumentation_fixtures import assert_handler_wrapped, assert_tracer_wrapped
+from shared.ws_repo import WorkspaceScope
 
 P, J = 'p1', 'j1'
+WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
 INFERENCE_CONFIG = {
     'system_prompt': 'SYS', 'max_tokens': 1234, 'thinking_budget': 56, 'step_name': 'cfg_step',
 }
@@ -680,10 +683,10 @@ class TestStepError:
         event: dict[str, Any] = {'project_id': P, 'job_id': J}
         if error is not None:
             event['error'] = error
-        result = rsh.step_error(event)
+        result = rsh.step_error(event, workspace=None)
         message = result['error']
         assert result == {'success': False, 'error': message}
-        job_status.assert_called_once_with(P, J, 'failed', 0, 'error', error=message)
+        job_status.assert_called_once_with(P, J, 'failed', 0, 'error', error=message, workspace=None)
         return message
 
     @pytest.mark.parametrize(('error', 'expected'), [
@@ -706,15 +709,25 @@ class TestStepError:
 
 
 class TestLambdaHandler:
-    @pytest.mark.parametrize('step', ['initialize', 'analyze', 'synthesize', 'validate', 'save', 'error'])
+    @pytest.mark.parametrize('step', ['initialize', 'analyze', 'synthesize', 'validate', 'save'])
     def test_each_step_routes_to_its_function(self, step: str) -> None:
         fake = MagicMock(return_value={'ok': step})
         with patch(f'research_step_handler.step_{step}', fake):
             assert rsh._step_function(step) is fake
 
-    def test_an_unknown_step_names_itself(self) -> None:
-        with pytest.raises(ValueError, match=r'^Unknown step: nope$'):
-            rsh._step_function('nope')
+    @pytest.mark.parametrize('step', ['nope', 'error'])
+    def test_an_unknown_step_names_itself(self, step: str) -> None:
+        with pytest.raises(ValueError, match=rf'^Unknown step: {step}$'):
+            rsh._step_function(step)
+
+    @pytest.mark.usefixtures('log')
+    @pytest.mark.parametrize('run_scope', [{}, {'workspace_id': 'nope'}, None])
+    def test_a_deployment_or_malformed_runs_error_state_fails_the_deployments_row(
+            self, lambda_context: Any, run_scope: object) -> None:
+        event = {'step': 'error', 'project_id': P, 'job_id': J, 'run_scope': run_scope}
+        with patch('research_step_handler.step_error', return_value={'success': False}) as fail:
+            assert rsh.lambda_handler(event, lambda_context) == {'success': False}
+        fail.assert_called_once_with(event, workspace=None)
 
     def test_a_step_result_is_returned_and_logged(self, lambda_context: Any, log: MagicMock) -> None:
         event = {'step': 'save'}
@@ -735,6 +748,34 @@ class TestLambdaHandler:
             rsh.lambda_handler({'step': 'analyze'}, lambda_context)
         assert raised.value is error
         log.exception.assert_called_once_with('Bedrock throttling in step analyze: slow down')
+
+    # The run's workspace (7.29.00): a state's run_scope (lambda/shared/ws_repo.py event_scope).
+    @pytest.mark.parametrize('step', ['initialize', 'analyze', 'synthesize', 'validate', 'save'])
+    @pytest.mark.usefixtures('log')
+    def test_a_workspace_runs_state_refuses_its_work_before_any_read(self, lambda_context: Any, step: str) -> None:
+        with patch(f'research_step_handler.step_{step}') as work, \
+                pytest.raises(NotPerWorkspaceError, match=r'^Project job work is not per workspace yet$'):
+            rsh.lambda_handler({'step': step, 'run_scope': {'workspace_id': WS}}, lambda_context)
+        work.assert_not_called()
+
+    @pytest.mark.usefixtures('log')
+    def test_a_workspace_runs_error_state_fails_its_own_job_row(self, lambda_context: Any) -> None:
+        event = {'step': 'error', 'project_id': P, 'job_id': J, 'run_scope': {'workspace_id': WS}}
+        with patch('research_step_handler.step_error', return_value={'success': False}) as fail:
+            assert rsh.lambda_handler(event, lambda_context) == {'success': False}
+        fail.assert_called_once_with(event, workspace=WorkspaceScope(WS))
+
+    @pytest.mark.usefixtures('log')
+    def test_a_state_naming_no_workspace_is_refused(self, lambda_context: Any) -> None:
+        with patch('research_step_handler.step_save') as work, pytest.raises(ValueError, match='workspace'):
+            rsh.lambda_handler({'step': 'save', 'run_scope': {'workspace_id': 'nope'}}, lambda_context)
+        work.assert_not_called()
+
+    def test_the_error_step_writes_the_workspaces_job_row(self, job_status: MagicMock) -> None:
+        with patch('research_step_handler.notify_project_job') as notify:
+            rsh.step_error({'project_id': P, 'job_id': J, 'error': {'Error': 'E'}}, workspace=WorkspaceScope(WS))
+        assert job_status.call_args.kwargs['workspace'] == WorkspaceScope(WS)
+        assert notify.call_args.kwargs == {'workspace': WorkspaceScope(WS)}
 
 
 class TestModuleWiring:
@@ -798,7 +839,7 @@ class TestFeedbackClaimCheck:
     @pytest.mark.usefixtures('job_status')
     def test_error_discards_the_stash(self, scratch_s3: Any) -> None:
         scratch_s3.objects[SCRATCH_KEY] = b'x'
-        rsh.step_error({'project_id': P, 'job_id': J, 'error': {'Error': 'E', 'Cause': '{}'}})
+        rsh.step_error({'project_id': P, 'job_id': J, 'error': {'Error': 'E', 'Cause': '{}'}}, workspace=None)
         assert scratch_s3.deleted == [SCRATCH_KEY, GROUNDING_KEY]
 
     def test_a_failed_cleanup_is_logged_not_raised(self, log: MagicMock) -> None:

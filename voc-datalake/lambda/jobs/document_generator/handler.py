@@ -95,12 +95,12 @@ from shared.feedback_sampling import (
 from shared.grounding import Grounding
 from shared.invocation_cost import instrumented_handler
 from shared.job_knowledge import derivation_knowledge, shared_grounding, with_guidance
-from shared.jobs import JobContext, job_handler, update_job_status
+from shared.jobs import JobContext, error_state_scope, job_handler, update_job_status
 from shared.logging import logger, metrics
 from shared.model_config import surface_context_window_tokens
 from shared.model_profile import model_profile_scope, payload_fields, profile_from_payload
 from shared.persona_context import personas_prompt_context
-from shared.project_keys import document_listing, project_pk
+from shared.project_keys import PROJECT_JOB_WORK_STORE, document_listing, project_pk, require_deployment
 from shared.prompt_labels_store import load_prompt_labels
 from shared.prompts import get_prd_generation_steps, get_prfaq_generation_steps
 from shared.prototype_pins import (
@@ -113,6 +113,7 @@ from shared.prototype_pins import (
 )
 from shared.prototypes import prototype_s3_key
 from shared.timestamps import now_iso
+from shared.ws_repo import WorkspaceScope, event_scope
 
 # Environment
 PROJECTS_TABLE = os.environ.get('PROJECTS_TABLE', '')
@@ -1992,8 +1993,8 @@ def _assemble_and_save(project_id: str, job_id: str, doc_type: str, title: str,
     return result
 
 
-def _handle_step_error(event: dict) -> dict:
-    """error step: mark the job failed (mirrors research step_error)."""
+def _handle_step_error(event: dict, *, workspace: WorkspaceScope | None) -> dict:
+    """error step: mark the job failed (mirrors research step_error), in its workspace's row when the run has one."""
     project_id = event['project_id']
     job_id = event['job_id']
     error = event.get('error', {})
@@ -2005,7 +2006,7 @@ def _handle_step_error(event: dict) -> dict:
     except (ValueError, TypeError):
         error_message = raw_cause or 'Unknown error'
     logger.error(f"Document job {job_id} failed: {error_message}")
-    update_job_status(project_id, job_id, 'failed', 0, 'error', error=str(error_message)[:500])
+    update_job_status(project_id, job_id, 'failed', 0, 'error', error=str(error_message)[:500], workspace=workspace)
     return {'success': False, 'error': str(error_message)[:500]}
 
 
@@ -2018,6 +2019,10 @@ def lambda_handler(event: dict, context) -> dict:
          Used for PRD/PR-FAQ so each LLM step gets its own 15-min Lambda budget.
       2. Direct async invoke   — legacy single-shot path (product_report,
          build_prototype, and any caller not going through the state machine).
+
+    A step's workspace is its run's ``run_scope`` (shared/ws_repo.py ``event_scope``; a direct invoke's is read by
+    ``job_handler``). The work is not per workspace yet: in one, every step but ``error`` refuses
+    (``NotPerWorkspaceError``) before it reads anything, and ``error`` marks the workspace's job row failed.
     """
     step = event.get('step')
     logger.info(f"Document generator invoked: step={step}, keys={list(event.keys())}")
@@ -2028,6 +2033,9 @@ def lambda_handler(event: dict, context) -> dict:
 
     project_id = event['project_id']
     job_id = event['job_id']
+    if step == 'error':
+        return _handle_step_error(event, workspace=error_state_scope(event))
+    require_deployment(event_scope(event), PROJECT_JOB_WORK_STORE)
 
     if step == 'gather':
         return _build_steps(project_id, job_id, event['doc_config'])
@@ -2045,8 +2053,5 @@ def lambda_handler(event: dict, context) -> dict:
             event['doc_type'], event['title'], event['feature_idea'],
             event['num_steps'],
         )
-
-    if step == 'error':
-        return _handle_step_error(event)
 
     raise ValueError(f"Unknown step: {step}")

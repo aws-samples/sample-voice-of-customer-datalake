@@ -98,7 +98,7 @@ Step kinds:
 | Kind | Runs | Model? | Notes |
 |---|---|---|---|
 | `write` | exactly one write tool with its declared arguments | no, unless it has `{{free}}` fields | most steps |
-| `wait` | polls a background job until done, failed or timed out | no | `source_run` (`SOURCE_RUN#{source}` rows written by `POST /sources/{source}/run`), `project_job` (`voc-jobs`), `scraper_run` |
+| `wait` | polls a background job until done, failed or timed out | no | `source_run` (`SOURCE_RUN#{source}` rows written by `POST /sources/{source}/run`; `WS#{ws}#SOURCE_RUN#{source}` for a plan approved in a workspace, since 7.29.00), `project_job` (`voc-jobs`, the deployment's), `scraper_run` (likewise in the plan's workspace) |
 | `think` | a focused agent with read-only server tools and the step's brief | yes | produces text (summaries, findings) for later `{{free}}` fields |
 
 Argument values in a `write`:

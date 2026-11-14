@@ -6,7 +6,8 @@ only ever reads and writes its own rows and objects. This module is the one plac
 * ``WorkspaceScope``: a verified workspace. Made only from what the server trusts: the request's resolved
   membership (``scope_of``, after shared/workspace.py ``resolve_workspace``), an asynchronous message's
   ``workspace_id`` field (``scope_from_message``: SQS bodies, Lambda async payloads, an erasure job's row, written by
-  our own code from a scope), a stored partition key (``scope_from_key``: DynamoDB Stream records; ``partition_scope`` for a
+  our own code from a scope; ``event_scope`` for a project job's or an agent run's worker, whose state machine
+  states carry it in a ``run_scope`` object), a stored partition key (``scope_from_key``: DynamoDB Stream records; ``partition_scope`` for a
   worker that reads both kinds of row, None for a deployment-wide one), or a stored control-plane routing row
   (``scope_from_lookup``: a public route's ``FORM#{id}``, a webhook's workspace ``META``, read by
   shared/workspace_routing.py). Never from a request field.
@@ -134,6 +135,7 @@ __all__ = [
     'date_pk',
     'delete_work_pk',
     'erasure_job_pk',
+    'event_scope',
     'export_job_pk',
     'exports_prefix',
     'feedback_id_pk',
@@ -147,6 +149,7 @@ __all__ = [
     'message_scope',
     'metric_pk',
     'metric_type',
+    'optional_scope',
     'partition_query',
     'partition_scope',
     'plugin_config_history_key',
@@ -174,6 +177,12 @@ __all__ = [
 
 #: The field an asynchronous message (SQS body, Lambda async payload) names its workspace in.
 WORKSPACE_FIELD: Final = 'workspace_id'
+#: The field every state of a project job's state machine (voc-document-workflow, voc-research-workflow) and of
+#: voc-agent-run passes its Lambda the run's workspace in (since 7.29.00): an object, ``{}`` for a run of the
+#: deployment, ``{workspace_id}`` for a workspace's. Its first states set it from the execution's input (an
+#: ``IsPresent`` choice), because a JSONPath parameter whose path the input lacks fails the state, so the input of a
+#: deployment run stays as it was.
+RUN_SCOPE_FIELD: Final = 'run_scope'
 #: How every partition key of a workspace starts (``ws_key``): a deployment-wide reader that pages a whole table
 #: (a Scan, a stream) leaves rows whose partition starts with it to the workspace paths.
 WORKSPACE_KEY_PREFIX: Final = 'WS#'
@@ -297,6 +306,11 @@ def scope_of(context: ResolvedWorkspace) -> WorkspaceScope:
     return WorkspaceScope(context.ws)
 
 
+def optional_scope(context: ResolvedWorkspace | None) -> WorkspaceScope | None:
+    """``scope_of`` a request's resolved membership, or None for a request that names none (the deployment's)."""
+    return None if context is None else scope_of(context)
+
+
 def scope_from_message(body: Mapping[str, Any]) -> WorkspaceScope:
     """The scope an asynchronous message names in ``workspace_id`` (written by our own code from a scope).
 
@@ -307,6 +321,22 @@ def scope_from_message(body: Mapping[str, Any]) -> WorkspaceScope:
     if not isinstance(value, str):
         raise ValueError('the message names no workspace')
     return WorkspaceScope(value)
+
+
+def event_scope(event: Mapping[str, Any]) -> WorkspaceScope | None:
+    """The workspace a project job's or an agent run's worker event names, or None for the deployment (since 7.29.00).
+
+    Either shape: an asynchronous invoke's own ``workspace_id`` (written by shared/workspace_routing.py
+    ``workspace_payload``), or a state machine state's ``run_scope`` object (``RUN_SCOPE_FIELD``). No field: the
+    deployment, as before. ValueError for a field that is there but names no workspace (``scope_from_message``), a
+    ``run_scope`` that is not an object, or an event that carries both: never run deployment-wide instead.
+    """
+    if RUN_SCOPE_FIELD in event:
+        carried = event[RUN_SCOPE_FIELD]
+        if WORKSPACE_FIELD in event or not isinstance(carried, Mapping):
+            raise ValueError('the event names its workspace twice, or not in an object')
+        event = carried
+    return scope_from_message(event) if WORKSPACE_FIELD in event else None
 
 
 def is_workspace_key(partition_key: object) -> bool:

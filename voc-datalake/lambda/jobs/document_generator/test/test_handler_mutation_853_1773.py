@@ -29,12 +29,15 @@ import pytest
 from jobs.document_generator import handler as H
 from shared.exceptions import ServiceError
 from shared.grounding import Grounding
+from shared.project_keys import NotPerWorkspaceError
 from shared.test.instrumentation_fixtures import INSTRUMENTED_HANDLER_LAYERS, handler_layers
+from shared.ws_repo import WorkspaceScope
 
 GROUNDED = Grounding(text='<company_context>C</company_context>', memory_ids=['mem_1'],
                      company_context_included=True)
 PROJECT = 'proj_1'
 JOB = 'job_1'
+WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
 
 
 def _patched(**mocks: object) -> ExitStack:
@@ -501,7 +504,7 @@ class TestHandleJob:
             H.handle_job(event)
         assert raised.value.message == 'Document generation failed'
         assert status.call_args == call(
-            PROJECT, JOB, 'failed', 0, 'error', error='Document generation failed: boom',
+            PROJECT, JOB, 'failed', 0, 'error', error='Document generation failed: boom', workspace=None,
         )
 
     def test_a_product_report_delegates_to_generate_report(self):
@@ -890,14 +893,14 @@ class TestStepErrorNamesTheCause:
     ])
     def test_the_job_is_failed_with_the_message(self, error, message):
         with patch.object(H, 'update_job_status') as status, patch.object(H, 'logger') as log:
-            result = H._handle_step_error({'project_id': PROJECT, 'job_id': JOB, 'error': error})
+            result = H._handle_step_error({'project_id': PROJECT, 'job_id': JOB, 'error': error}, workspace=None)
         assert result == {'success': False, 'error': message}
-        status.assert_called_once_with(PROJECT, JOB, 'failed', 0, 'error', error=message)
+        status.assert_called_once_with(PROJECT, JOB, 'failed', 0, 'error', error=message, workspace=None)
         assert log.error.call_args.args[0].startswith('Document job job_1 failed: ')
 
     def test_the_log_line_carries_the_uncapped_message(self):
         with patch.object(H, 'update_job_status'), patch.object(H, 'logger') as log:
-            H._handle_step_error({'project_id': PROJECT, 'job_id': JOB})
+            H._handle_step_error({'project_id': PROJECT, 'job_id': JOB}, workspace=None)
         log.error.assert_called_once_with('Document job job_1 failed: {}')
 
 
@@ -941,9 +944,48 @@ class TestLambdaHandlerDispatch:
         fail = MagicMock(return_value={'success': False})
         event = {'step': 'error', 'project_id': PROJECT, 'job_id': JOB}
         assert self._invoke(event, lambda_context, _handle_step_error=fail)[0] == {'success': False}
-        fail.assert_called_once_with(event)
+        fail.assert_called_once_with(event, workspace=None)
 
     def test_an_unknown_step_is_refused_by_name(self, lambda_context):
         with pytest.raises(ValueError, match='Unknown step') as raised:
             H.lambda_handler({'step': 'bogus', 'project_id': PROJECT, 'job_id': JOB}, lambda_context)
         assert str(raised.value) == 'Unknown step: bogus'
+
+    # The run's workspace (7.29.00): a state's run_scope (lambda/shared/ws_repo.py event_scope).
+    @pytest.mark.parametrize('step', ['gather', 'run_step', 'save'])
+    def test_a_workspace_runs_state_refuses_its_work_before_any_read(self, lambda_context, step):
+        work = MagicMock()
+        event = {'step': step, 'project_id': PROJECT, 'job_id': JOB, 'run_scope': {'workspace_id': WS},
+                 'doc_config': {}, 'index': 0, 'doc_type': 'prd', 'title': 'T', 'feature_idea': 'i', 'num_steps': 3}
+        with pytest.raises(NotPerWorkspaceError, match=r'^Project job work is not per workspace yet$'):
+            self._invoke(event, lambda_context, _build_steps=work, _run_one_step=work, _assemble_and_save=work,
+                         _read_scratch_json=work)
+        work.assert_not_called()
+
+    def test_a_workspace_runs_error_state_fails_its_own_job_row(self, lambda_context):
+        fail = MagicMock(return_value={'success': False})
+        event = {'step': 'error', 'project_id': PROJECT, 'job_id': JOB, 'run_scope': {'workspace_id': WS}}
+        self._invoke(event, lambda_context, _handle_step_error=fail)
+        fail.assert_called_once_with(event, workspace=WorkspaceScope(WS))
+
+    @pytest.mark.parametrize('run_scope', [{'workspace_id': 'nope'}, None, [WS]])
+    def test_an_error_state_with_a_malformed_scope_still_fails_the_deployments_job_row(self, lambda_context, run_scope):
+        """No workspace's row is written on a guess; the deployment's is failed only if it exists (its condition)."""
+        fail = MagicMock(return_value={'success': False})
+        event = {'step': 'error', 'project_id': PROJECT, 'job_id': JOB, 'run_scope': run_scope}
+        self._invoke(event, lambda_context, _handle_step_error=fail)
+        fail.assert_called_once_with(event, workspace=None)
+
+    def test_a_deployment_runs_state_carries_an_empty_scope(self, lambda_context):
+        build = MagicMock(return_value={'g': 1})
+        event = {'step': 'gather', 'project_id': PROJECT, 'job_id': JOB, 'doc_config': {'c': 1}, 'run_scope': {}}
+        assert self._invoke(event, lambda_context, _build_steps=build)[0] == {'g': 1}
+        build.assert_called_once_with(PROJECT, JOB, {'c': 1})
+
+    def test_the_error_step_writes_the_workspaces_job_row(self):
+        with patch('shared.jobs.get_jobs_table') as jobs_table, patch.object(H, 'logger'):
+            H._handle_step_error({'project_id': PROJECT, 'job_id': JOB, 'error': {'Cause': 'x'}},
+                                 workspace=WorkspaceScope(WS))
+        request = jobs_table.return_value.update_item.call_args.kwargs
+        assert request['Key'] == {'pk': f'WS#{WS}#PROJECT#{PROJECT}', 'sk': f'JOB#{JOB}'}
+        assert request['ExpressionAttributeValues'][':gsi1pk'] == f'WS#{WS}#STATUS#failed'

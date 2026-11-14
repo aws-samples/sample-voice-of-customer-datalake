@@ -20,6 +20,8 @@ from shared import realtime
 from shared.logging import logger
 from shared.project_keys import project_pk
 from shared.tables import get_jobs_table
+from shared.workspace_config import get_scoped_item
+from shared.ws_repo import WorkspaceScope
 
 
 def notify(starter: object, job_id: object, status: object, *, job_type: object = None,
@@ -36,11 +38,14 @@ def notify(starter: object, job_id: object, status: object, *, job_type: object 
     return realtime.publish('jobs', starter, event)
 
 
-def notify_project_job(project_id: str, job_id: str, status: str) -> bool:
+def notify_project_job(project_id: str, job_id: str, status: str, *,
+                       workspace: WorkspaceScope | None = None) -> bool:
     """Tell a project job's starter (the row's ``initiated_by``) that it ended. Never raises.
 
     No read at all without a configured Event API. A row without ``initiated_by`` (a job an
     agent or an older release started) or a failed read sends nothing: the poll still sees it.
+    ``workspace``: the job's (its row ``WS#{ws}#PROJECT#{id}`` / ``JOB#{job_id}``, read through
+    shared/workspace_config.py ``get_scoped_item``); None reads the deployment's row, as before.
     """
     if not realtime.configured():
         return False
@@ -48,15 +53,14 @@ def notify_project_job(project_id: str, job_id: str, status: str) -> bool:
     if table is None:
         return False
     try:
-        response = table.get_item(
-            Key={'pk': project_pk(project_id), 'sk': f'JOB#{job_id}'},
+        row = get_scoped_item(
+            table, {'pk': project_pk(project_id, workspace=workspace), 'sk': f'JOB#{job_id}'}, workspace,
             ProjectionExpression='initiated_by, job_type',
             ConsistentRead=True,
         )
     except (BotoCoreError, ClientError) as exc:
         logger.info('Job notice skipped: the job row was not readable', extra={'error': type(exc).__name__})
         return False
-    row = response.get('Item') if isinstance(response, dict) else None
-    if not isinstance(row, dict) or not row.get('initiated_by'):
+    if not row.get('initiated_by'):
         return False
     return notify(row.get('initiated_by'), job_id, status, job_type=row.get('job_type'), project_id=project_id)

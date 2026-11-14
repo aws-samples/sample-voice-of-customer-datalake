@@ -363,7 +363,8 @@ def drive(model: Model | None = None, max_steps: int = 300) -> dict:
     from agents.nodes import handler as nodes
     from agents.persona_panel import handler as panel
 
-    ids = {'agent_id': AGENT_ID, 'run_id': RUN_ID}
+    # Every state passes the run's scope object (lambda/agents/state_machine.py): a run of the deployment's is {}.
+    ids = {'agent_id': AGENT_ID, 'run_id': RUN_ID, 'run_scope': {}}
     step = conductor.handle({'action': 'init', **ids})
     for _ in range(max_steps):
         if step['kind'] == 'finish':

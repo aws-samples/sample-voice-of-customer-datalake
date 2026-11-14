@@ -6,6 +6,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { LOG_RETENTION } from '../utils/log-retention';
+import { RUN_SCOPE_PARAMETER, withRunScope } from '../utils/run-scope';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import type { ApiStackContext } from './api-context';
@@ -16,7 +17,9 @@ import type { ApiStackContext } from './api-context';
  * CJK documents (whose steps auto-continue past maxTokens over several Bedrock
  * calls) no longer overrun a single Lambda. Mirrors the research workflow.
  *
- * Flow: gather → step0 → step1 → step2 → [step3 if PR-FAQ] → save
+ * Flow: run scope → gather → step0 → step1 → step2 → [step3 if PR-FAQ] → save
+ * The first Choice sets `$.run_scope` from the input's optional `workspace_id`
+ * (lib/utils/run-scope.ts); every Lambda payload passes it on as `run_scope`.
  * PRD has 3 chain steps, PR-FAQ has 4 — a Choice on num_steps runs the 4th
  * step only for PR-FAQ. Each step's index drives which chain step runs; the
  * step handler reads/writes intermediate text in S3 (claim-check), so SF state
@@ -48,6 +51,7 @@ export function createDocumentStateMachine(ctx: ApiStackContext, documentStepLam
       step: 'gather',
       'job_id.$': '$.job_id',
       'project_id.$': '$.project_id',
+      ...RUN_SCOPE_PARAMETER,
       'doc_config.$': '$.doc_config',
     }),
     resultPath: '$.gathered',
@@ -69,6 +73,7 @@ export function createDocumentStateMachine(ctx: ApiStackContext, documentStepLam
         index,
         'job_id.$': '$.job_id',
         'project_id.$': '$.project_id',
+        ...RUN_SCOPE_PARAMETER,
       }),
       resultPath: sfn.JsonPath.DISCARD, // output lives in S3; nothing to thread
     });
@@ -81,6 +86,7 @@ export function createDocumentStateMachine(ctx: ApiStackContext, documentStepLam
       step: 'save',
       'job_id.$': '$.job_id',
       'project_id.$': '$.project_id',
+      ...RUN_SCOPE_PARAMETER,
       'doc_type.$': '$.gathered.doc_type',
       'title.$': '$.gathered.title',
       'feature_idea.$': '$.gathered.feature_idea',
@@ -96,6 +102,7 @@ export function createDocumentStateMachine(ctx: ApiStackContext, documentStepLam
       step: 'error',
       'job_id.$': '$.job_id',
       'project_id.$': '$.project_id',
+      ...RUN_SCOPE_PARAMETER,
       'error.$': '$.error',
     }),
   });
@@ -130,7 +137,9 @@ export function createDocumentStateMachine(ctx: ApiStackContext, documentStepLam
     .when(sfn.Condition.booleanEquals('$.gathered.replayed', true), success)
     .otherwise(generation);
 
-  const definition = gather.next(replayChoice);
+  gather.next(replayChoice);
+  // The run's workspace for every state ($.run_scope, lib/utils/run-scope.ts), before the gather.
+  const definition = withRunScope(stack, 'Doc', gather);
 
   return new sfn.StateMachine(stack, 'DocumentStateMachine', {
     stateMachineName: ctx.uniqueName('voc-document-workflow'),

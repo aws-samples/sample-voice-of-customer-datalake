@@ -20,6 +20,7 @@ from shared import agents_store
 from shared.api import clear_categories_cache
 
 AGENTS_TABLE_NAME = 'test-agents'
+WORKSPACES_TABLE_NAME = 'test-workspaces-agents'
 STATE_MACHINE_ARN = 'arn:aws:states:us-east-1:123456789012:stateMachine:voc-agent-run'
 CATEGORIES = [
     {'name': 'shipping', 'description': 'Shipping', 'subcategories': [{'name': 'late'}, {'name': 'damaged'}],
@@ -35,6 +36,13 @@ class AgentsEnv:
     aggregates: Any
     feedback: Any
     sfn: MagicMock
+    #: voc-workspaces: a plan approved in a workspace needs its approver's membership there (7.29.00, ``add_member``).
+    workspaces: Any = None
+
+    def add_member(self, ws: str, sub: str, *, role: str = 'editor', status: str = 'active') -> None:
+        """``sub`` a member of ``ws`` (its ``MEMBER#`` row), and ``ws``'s ``META`` with ``status``."""
+        self.workspaces.put_item(Item={'pk': f'WS#{ws}', 'sk': 'META', 'status': status, 'name': 'Team', 'slug': 'team'})
+        self.workspaces.put_item(Item={'pk': f'WS#{ws}', 'sk': f'MEMBER#{sub}', 'role': role})
 
 
 def _key_schema(hash_key: str, range_key: str) -> list[dict[str, str]]:
@@ -57,7 +65,7 @@ def _table(resource: Any, name: str, index: str | None, prefix: str = 'gsi1') ->
 
 @contextmanager
 def agents_env(*, with_state_machine: bool = True) -> Generator[AgentsEnv, None, None]:
-    env = {agents_store.AGENTS_TABLE_ENV: AGENTS_TABLE_NAME}
+    env = {agents_store.AGENTS_TABLE_ENV: AGENTS_TABLE_NAME, 'WORKSPACES_TABLE': WORKSPACES_TABLE_NAME}
     if with_state_machine:
         env[agents_store.STATE_MACHINE_ENV] = STATE_MACHINE_ARN
     with mock_aws(), patch.dict(os.environ, env):
@@ -65,6 +73,7 @@ def agents_env(*, with_state_machine: bool = True) -> Generator[AgentsEnv, None,
         agents = _table(resource, AGENTS_TABLE_NAME, agents_store.AGENTS_INDEX)
         aggregates = _table(resource, 'test-aggregates-agents', None)
         feedback = _table(resource, 'test-feedback-agents', 'gsi1-by-date')
+        workspaces = _table(resource, WORKSPACES_TABLE_NAME, None)
         aggregates.put_item(Item={'pk': 'SETTINGS#categories', 'sk': 'config', 'categories': CATEGORIES})
         sfn = MagicMock()
         sfn.start_execution.side_effect = lambda **kw: {'executionArn': f"{STATE_MACHINE_ARN}:{kw['name']}"}
@@ -72,7 +81,7 @@ def agents_env(*, with_state_machine: bool = True) -> Generator[AgentsEnv, None,
         clear_categories_cache()
         with patch.object(agents_store, 'get_dynamodb_resource', return_value=resource), \
                 patch.object(agents_store, 'stepfunctions_client', return_value=sfn):
-            yield AgentsEnv(resource, agents, aggregates, feedback, sfn)
+            yield AgentsEnv(resource, agents, aggregates, feedback, sfn, workspaces)
         agents_store._table_cache.clear()
         clear_categories_cache()
 

@@ -25,3 +25,13 @@ def test_an_e2e_starter_stamps_the_config_the_job_payload_reuses():
         stored = _start(config)
     assert stored[PAYLOAD_KEY] == E2E_PROFILE
     assert config[PAYLOAD_KEY] == E2E_PROFILE  # the same dict goes into the async invoke / execution input
+
+
+def test_a_job_event_names_no_workspace_until_the_switch():
+    """Every job's worker event and execution input goes through shared/workspace_routing.py workspace_payload
+    (7.29.00); no route resolves a workspace for its project yet, so the event is exactly its fields (a field a
+    config or body carried at the top level is never one: it is dropped)."""
+    import projects_handler
+    fields = {'project_id': 'p1', 'job_id': 'job_1', 'doc_config': {'doc_type': 'prd'}}
+    assert projects_handler._job_event(fields) == fields
+    assert projects_handler._job_event({**fields, 'workspace_id': 'ws_forged'}) == fields

@@ -79,10 +79,25 @@ WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
 ], ids=['named', 'any-case-trimmed', 'blank', 'none'])
 def test_approve_keeps_the_workspace_its_request_named(env, lambda_context, header, stored):
     """docs/multi-workspace.md, Request flow: each step names it to the domain Lambdas (agents/plan_identity.py)."""
+    env.add_member(WS, USER['sub'], role='viewer')
     status, body = call(lambda_context, 'POST', '/agents/plans', claims=USER, body={'plan': fixture_plan()},
                         headers=header)
     assert status == 202
     assert (ps.get_meta(env.agents, body['plan_id']) or {}).get('workspace_id') == stored
+
+
+@pytest.mark.parametrize('seed', ['non-member', 'deleting', 'unknown'])
+def test_a_non_members_approval_is_the_one_404_and_stores_no_plan(env, lambda_context, seed):
+    """Membership is the bar (7.29.00): resolved as every route resolves it, before anything is written."""
+    if seed == 'non-member':
+        env.add_member(WS, OTHER['sub'])
+    elif seed == 'deleting':
+        env.add_member(WS, USER['sub'], status='deleting')
+    status, body = call(lambda_context, 'POST', '/agents/plans', claims=USER, body={'plan': fixture_plan()},
+                        headers={'X-Workspace-Id': WS})
+    assert (status, body['error']) == (404, 'Workspace not found')
+    assert ps.list_plans(env.agents, USER['sub'], limit=10) == []
+    env.sfn.start_execution.assert_not_called()
 
 
 def test_a_malformed_workspace_header_is_the_one_404_and_starts_nothing(env, lambda_context):

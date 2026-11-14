@@ -152,7 +152,7 @@ from shared.workspace_config import get_config_item, put_config_item
 from shared.workspace_request import RequestWorkspace
 from shared.workspace_routing import workspace_payload
 from shared.workspace_settings import settings_key
-from shared.ws_repo import WorkspaceScope, scope_of
+from shared.ws_repo import WorkspaceScope, optional_scope
 
 dynamodb = get_dynamodb_resource()
 AGGREGATES_TABLE = os.environ.get("AGGREGATES_TABLE", "")
@@ -466,7 +466,7 @@ def get_resolved_problems():
     except Exception as e:
         logger.exception("Failed to get resolved problems")
         raise ServiceError(FAILED_RESOLVED_READ) from e
-    return {'resolved': _resolved_in_scope(resolved, _config_scope(context))}
+    return {'resolved': _resolved_in_scope(resolved, optional_scope(context))}
 
 
 def _resolved_key(context: WorkspaceContext | None) -> dict[str, str]:
@@ -738,12 +738,6 @@ def _brand_key(context: WorkspaceContext | None) -> dict[str, str]:
     return settings_key(context.ws, BRAND_KIND)
 
 
-def _config_scope(context: WorkspaceContext | None) -> WorkspaceScope | None:
-    """The workspace whose categories, dimensions and source profiles the request reads or writes (shared/
-    workspace_config.py); None for a request that names none (the deployment's rows, as before)."""
-    return None if context is None else scope_of(context)
-
-
 def _sees_full_config(event: dict, context: WorkspaceContext | None) -> bool:
     """Whether the caller gets a configuration in full (category owners' subs and emails, every profile field): its
     editors. Without a workspace the deployment's ``admins`` (not delegated), as before; inside one the workspace's
@@ -769,7 +763,7 @@ def get_categories_config():
     context = request_workspace(event, FAILED_CATEGORIES_READ)
     if not aggregates_table:
         return {'categories': [], 'error': 'Aggregates table not configured'}
-    scope = _config_scope(context)
+    scope = optional_scope(context)
     caller = caller_from_event(event)
     try:
         item = get_config_item(aggregates_table, CATEGORIES_KIND, CATEGORIES_SETTINGS_KEY, scope, consistent=False)
@@ -833,7 +827,7 @@ def save_categories_config():
     except ValueError as exc:
         raise ValidationError(str(exc)) from exc
     try:
-        _put_config_row(CATEGORIES_KIND, CATEGORIES_SETTINGS_KEY, _config_scope(context), 'categories', categories,
+        _put_config_row(CATEGORIES_KIND, CATEGORIES_SETTINGS_KEY, optional_scope(context), 'categories', categories,
                         event)
     except Exception as e:
         logger.exception(f"Failed to save categories config: {e}")
@@ -969,7 +963,7 @@ def start_category_reprocess():
     event = app.current_event.raw_event
     context = request_workspace(event, FAILED_REPROCESS_START, fresh=True)
     require_settings_admin(event, context)
-    scope = _config_scope(context)
+    scope = optional_scope(context)
     table = _configured_table()
     if not CATEGORY_REPROCESS_FUNCTION:
         raise ConfigurationError('Category reprocess worker not configured')
@@ -1067,7 +1061,7 @@ def get_latest_category_reprocess():
     event = app.current_event.raw_event
     context = request_workspace(event, FAILED_REPROCESS_READ)
     require_settings_admin(event, context)
-    scope = _config_scope(context)
+    scope = optional_scope(context)
     table = _configured_table()
     job = reprocess_jobs.get_latest_job(table, scope)
     if not job:
@@ -1088,7 +1082,7 @@ def cancel_category_reprocess(job_id: str):
     event = app.current_event.raw_event
     context = request_workspace(event, FAILED_REPROCESS_CANCEL, fresh=True)
     require_settings_admin(event, context)
-    scope = _config_scope(context)
+    scope = optional_scope(context)
     job = (reprocess_jobs.cancel_job(_configured_table(), job_id, **reprocess_jobs.scope_option(scope))
            if reprocess_jobs.is_job_id(job_id) else None)
     if not job:
@@ -1814,7 +1808,7 @@ def get_dimensions_route():
     workspace's own with ``X-Workspace-Id`` (any member; only the built-ins until it saves some), the deployment's
     without it."""
     context = request_workspace(app.current_event.raw_event, FAILED_DIMENSIONS_READ)
-    item = get_config_item(_configured_table(), DIMENSIONS_KIND, DIMENSIONS_SETTINGS_KEY, _config_scope(context))
+    item = get_config_item(_configured_table(), DIMENSIONS_KIND, DIMENSIONS_SETTINGS_KEY, optional_scope(context))
     try:
         dimensions = validate_dimensions(item.get('dimensions'))
     except ValueError:
@@ -1836,7 +1830,7 @@ def put_dimensions_route():
     context = request_workspace(event, FAILED_DIMENSIONS_SAVE, fresh=True)
     require_settings_admin(event, context)
     dimensions = _validated_list('dimensions', validate_dimensions)
-    _put_config_row(DIMENSIONS_KIND, DIMENSIONS_SETTINGS_KEY, _config_scope(context), 'dimensions', dimensions, event)
+    _put_config_row(DIMENSIONS_KIND, DIMENSIONS_SETTINGS_KEY, optional_scope(context), 'dimensions', dimensions, event)
     logger.info('Dimensions saved', extra={'dimensions': len(dimensions)})
     return {'success': True, 'dimensions': with_builtin_dimensions(dimensions)}
 
@@ -1849,7 +1843,7 @@ def get_sources_route():
     event = app.current_event.raw_event
     context = request_workspace(event, FAILED_SOURCES_READ)
     try:
-        profiles = load_source_profiles(_configured_table(), _config_scope(context))
+        profiles = load_source_profiles(_configured_table(), optional_scope(context))
     except ValueError:
         logger.warning('Stored source profiles are invalid; answering with none')
         profiles = []
@@ -1869,7 +1863,7 @@ def put_sources_route():
     # A write: the caller's role from the table, not the warm cache.
     context = request_workspace(event, FAILED_SOURCES_SAVE, fresh=True)
     require_settings_admin(event, context)
-    scope = _config_scope(context)
+    scope = optional_scope(context)
     if scope is not None:
         # Checked on the list as sent: normalising drops a legal basis or Radar domains sent without their field.
         problem = workspace_profiles_problem(json_object_body(app).get('sources'))

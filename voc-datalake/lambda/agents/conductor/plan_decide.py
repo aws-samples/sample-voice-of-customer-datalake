@@ -16,16 +16,18 @@ The conductor never runs a write itself, and it never trusts a step: every trans
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import timedelta
-from typing import Final
+from typing import Any, Final
 
-from agents import plan_waits
+from agents import plan_identity, plan_waits
 from agents.conductor import plan_state
 from agents.conductor.plan_state import PlanState
 from shared import agents_store
 from shared import plans_store as ps
 from shared.agents_store import iso
 from shared.timestamps import parse_iso
+from shared.ws_repo import WORKSPACE_FIELD, WorkspaceScope, scope_from_message
 
 MAX_PARALLEL_STEPS: Final = 3          # the state machine's Map concurrency
 MAX_SETTLE_PASSES: Final = 25          # > the 20-step plan limit: one change per pass at worst
@@ -61,11 +63,55 @@ def _older_than(value: object, state: PlanState, age: timedelta) -> bool:
     return moment is not None and state.now - moment >= age
 
 
-def _poll_wait(state: PlanState, step_id: str) -> bool:
+def _wait_workspace(state: PlanState, wait: Mapping[str, Any]) -> WorkspaceScope | None:
+    """Where a wait's row is: for a source or a scraper run, the plan's own workspace (its META's ``workspace_id``, the
+    workspace its approval named and its approver was a member of, api/agents_handler.py ``_approval_workspace``),
+    where a workspace's run writes it; None for a plan of the deployment and for every other kind. ValueError
+    (shared/ws_repo.py ``scope_from_message``) when the META's field names no workspace: never read deployment-wide
+    instead."""
+    if wait.get('for') not in plan_waits.WORKSPACE_KINDS or WORKSPACE_FIELD not in state.meta:
+        return None
+    return scope_from_message(state.meta)
+
+
+def _approver_gate(state: PlanState) -> tuple[dict | None, bool]:
+    """``(stop directive, polls)`` of one decide (since 7.29.00), checked once before its settle when a wait step is
+    waiting or may start in it: the approver may still act for the plan (agents/plan_identity.py ``require_approver``: still enabled,
+    the same person, and for a workspace plan still a member of that active workspace; no group listing). A refused
+    approver stops the plan (``stop``, as before a write) and nothing is read; a directory or table that cannot
+    answer leaves the waits unpolled this time (``polls`` False), every other transition as it is."""
+    if not any(state.definitions.get(step_id, {}).get('kind') == 'wait'
+               and state.status(step_id) in (ps.STEP_WAITING, ps.STEP_PENDING) for step_id in state.order):
+        return None, True
+    try:
+        plan_identity.require_approver(state.meta)
+    except plan_identity.ApproverRefused as refused:
+        return stop(state.plan_id, f'The plan stopped: {refused}'), False
+    except plan_identity.DirectoryUnavailable:
+        return None, False
+    return None, True
+
+
+def _past_timeout(state: PlanState, step_id: str) -> bool:
     row, wait = state.rows[step_id], state.definitions[step_id].get('wait') or {}
-    if _older_than(row.get('started_at'), state, timedelta(minutes=plan_waits.timeout_minutes(wait))):
-        return _fail(state, step_id, 'The wait timed out.', (ps.STEP_WAITING,))
-    result = plan_waits.poll(wait, state.outputs(think=False))
+    return _older_than(row.get('started_at'), state, timedelta(minutes=plan_waits.timeout_minutes(wait)))
+
+
+def _time_out(state: PlanState, step_id: str) -> bool:
+    """A wait past its timeout fails (nothing read); True when that changed it."""
+    return _past_timeout(state, step_id) and _fail(state, step_id, 'The wait timed out.', (ps.STEP_WAITING,))
+
+
+def _poll_wait(state: PlanState, step_id: str) -> bool:
+    """One look at a waiting step's row (the approver passed this decide's ``_approver_gate``)."""
+    wait = state.definitions[step_id].get('wait') or {}
+    if _past_timeout(state, step_id):
+        return _time_out(state, step_id)
+    try:
+        workspace = _wait_workspace(state, wait)
+    except ValueError:
+        return _fail(state, step_id, 'The plan names no workspace it may wait in.', (ps.STEP_WAITING,))
+    result = plan_waits.poll(wait, state.outputs(think=False), workspace=workspace)
     if result.status == plan_waits.WAIT_DONE:
         return ps.finish_step(plan_state.table(), state.plan_id, step_id, ps.STEP_DONE, now=state.now,
                               when=(ps.STEP_WAITING,), outputs=result.outputs) is not None
@@ -85,15 +131,16 @@ def _skip(state: PlanState, step_id: str) -> bool:
                           when=(ps.STEP_PENDING,), error=f'Skipped: step {blocker} did not complete.') is not None
 
 
-def _settle_step(state: PlanState, step_id: str) -> bool:
-    """At most one transition for one step; True when it changed something."""
+def _settle_step(state: PlanState, step_id: str, *, polls: bool) -> bool:
+    """At most one transition for one step; True when it changed something. ``polls`` False: no wait is polled, but a
+    wait past its timeout still fails."""
     status, row = state.status(step_id), state.rows[step_id]
     if status == ps.STEP_RUNNING:
         return _fail(state, step_id, 'The step stopped before it reported a result.', (ps.STEP_RUNNING,))
     if status == ps.STEP_NEEDS_APPROVAL and _older_than(row.get('pending_since'), state, APPROVAL_TIMEOUT):
         return _fail(state, step_id, 'No one approved the paused write within 30 minutes.', (ps.STEP_NEEDS_APPROVAL,))
     if status == ps.STEP_WAITING:
-        return _poll_wait(state, step_id)
+        return _poll_wait(state, step_id) if polls else _time_out(state, step_id)
     if status != ps.STEP_PENDING:
         return False
     if any(state.status(dep) in UNSUCCESSFUL for dep in state.after(step_id)):
@@ -103,9 +150,9 @@ def _settle_step(state: PlanState, step_id: str) -> bool:
     return False
 
 
-def _settle(state: PlanState) -> PlanState:
+def _settle(state: PlanState, *, polls: bool = True) -> PlanState:
     for _ in range(MAX_SETTLE_PASSES):
-        changed = [step_id for step_id in state.order if _settle_step(state, step_id)]
+        changed = [step_id for step_id in state.order if _settle_step(state, step_id, polls=polls)]
         reloaded = plan_state.load(state.plan_id, state.now)
         if reloaded is None:
             return state
@@ -187,7 +234,10 @@ def decide(plan_id: str) -> dict:
         if status == ps.PLAN_CANCELLED:
             ps.close_open_steps(plan_state.table(), plan_id, now=state.now)
         return _finish_directive(status)
-    return _directive(_settle(state))
+    stopped, polls = _approver_gate(state)
+    if stopped is not None:
+        return stopped
+    return _directive(_settle(state, polls=polls))
 
 
 def stop(plan_id: str, summary: str) -> dict:

@@ -13,7 +13,9 @@ from shared.invocation_cost import measure_invocation_cost
 from shared.logging import logger, metrics, tracer
 from shared.mcp_delegate import DelegationUnavailable
 from shared.model_profile import model_profile_scope, profile_from_payload
+from shared.project_keys import AGENT_RUNS_STORE, require_deployment
 from shared.workflow_schema import DEFAULT_WORKFLOW_ID, default_template
+from shared.ws_repo import event_scope
 
 
 def resolve_workflow(agent: dict, revision: int | None) -> tuple[WorkflowGraph, int]:
@@ -42,8 +44,14 @@ def load_graph(agent: dict, run: dict) -> WorkflowGraph:
 
 
 def build_context(event: dict) -> NodeContext:
-    """Agent + running run + node + the conductor's envelope for this step."""
+    """Agent + running run + node + the conductor's envelope for this step.
+
+    The run's workspace is its state's ``run_scope`` (shared/ws_repo.py ``event_scope``, since 7.29.00). The agent rows
+    are the deployment's, so a state that names a workspace is refused (``NotPerWorkspaceError``) before any is read;
+    the scope still reaches the context and the claims (``voc:workspace``) for when the agents move."""
     agent_id, run_id = str(event.get('agent_id') or ''), str(event.get('run_id') or '')
+    workspace = event_scope(event)
+    require_deployment(workspace, AGENT_RUNS_STORE)
     agent = store.get_agent(agent_id)
     run = store.get_run(agent_id, run_id)
     if not agent or not run:
@@ -58,7 +66,9 @@ def build_context(event: dict) -> NodeContext:
         if mate and mate.get('node_id') == node.id:
             envelope = str(mate.get('text') or '')
     return NodeContext(agent=agent, run=run, node=node, envelope=envelope,
-                       claims=principal.agent_claims(agent, model_profile=profile_from_payload(run)))
+                       claims=principal.agent_claims(agent, model_profile=profile_from_payload(run),
+                                                     workspace=workspace),
+                       workspace=workspace)
 
 
 def step_lambda_handler(execute: Callable[[dict], dict], finished_message: str) -> Callable[[dict, Any], dict]:

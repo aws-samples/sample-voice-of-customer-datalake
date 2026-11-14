@@ -97,7 +97,7 @@ def start(ctx: NodeContext) -> dict:
 
     category = dominant_category(aggregate)
     owner_sub, editors = resolve_handoff(category)
-    claims = principal.agent_claims(ctx.agent, owner_sub=owner_sub, editor_subs=editors)
+    claims = principal.agent_claims(ctx.agent, owner_sub=owner_sub, editor_subs=editors, workspace=ctx.workspace)
     payload = principal.projects('POST', '/projects', claims, body={
         'name': decision['name'], 'description': decision['description'],
         'purpose': decision['purpose'], 'visibility': _visibility(ctx.agent),

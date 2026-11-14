@@ -132,7 +132,7 @@ PHASE_3: dict[str, frozenset[str]] = {
         'POST /agents/<agent_id>/run',
         'POST /agents/<agent_id>/runs/<run_id>/cancel',
         'POST /agents/<agent_id>/runs/<run_id>/decision',
-        'POST /agents/plans',
+        # POST /agents/plans resolves its workspace since 7.29.00 (cross_workspace_worlds.py CASES).
         'POST /agents/plans/<plan_id>/cancel',
         'POST /agents/plans/<plan_id>/steps/<step_id>/approve',
         'POST /agents/plans/<plan_id>/steps/<step_id>/decline',

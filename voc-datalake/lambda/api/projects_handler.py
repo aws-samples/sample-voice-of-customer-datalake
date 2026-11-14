@@ -156,6 +156,7 @@ from shared.tables import get_aggregates_table, get_jobs_table, get_projects_tab
 from shared.timestamps import now_iso
 from shared.voting_session_close import close_project_sessions, close_row_sessions
 from shared.warm_init import warm_at_init
+from shared.workspace_routing import workspace_payload
 
 # API resolver with standard CORS
 app = create_api_resolver()
@@ -433,6 +434,19 @@ def _started_job(
     return job_id
 
 
+def _job_event(fields: dict[str, Any]) -> dict[str, Any]:
+    """A project job's worker event or state machine input: ``fields``, its workspace named only by
+    shared/workspace_routing.py ``workspace_payload`` (since 7.29.00). No route resolves a workspace for its project
+    yet (the switch, docs/multi-workspace.md 3h, passes the request's resolved membership here), so the event is
+    exactly ``fields``, as before.
+
+    The seam with assistant plans: a workspace plan's project-job wait reads the deployment's job row
+    (agents/plan_waits.py, agents/conductor/plan_decide.py) because these jobs are the deployment's. Passing a workspace
+    here moves the job's row into it, so the switch moves that wait too, in the same change;
+    agents/test/test_plan_workspace_waits.py fails until both move."""
+    return workspace_payload(fields, None)
+
+
 def _started_assist(project_id: str, job_type: str, config: dict) -> Response:
     """Start a project assist job (shared/assist_jobs.py) and answer 202 ``{success, job_id, status}``.
 
@@ -625,11 +639,11 @@ def _start_persona_import(project_id: str, body: dict) -> dict:
         'media_type': media_type
     }
     job_id = _started_job(project_id, 'import_persona', 'import_config', config)
-    invoke_lambda_async(PERSONA_IMPORTER_FUNCTION, {
+    invoke_lambda_async(PERSONA_IMPORTER_FUNCTION, _job_event({
         'project_id': project_id,
         'job_id': job_id,
         'import_config': config
-    })
+    }))
     return {'success': True, 'job_id': job_id, 'status': 'running', 'message': 'Persona import started.',
             # An import cites no customer feedback: said at the start, like every methodology step.
             'methodology': persona_evidence_marker.import_start()}
@@ -749,11 +763,11 @@ def _start_persona_generation(project_id: str, body: dict) -> dict:
         project_id, 'generate_personas', 'filters', filters, ttl_minutes=30*24*60,
         precheck=lambda: ensure_persona_feedback(filters),
     )
-    invoke_lambda_async(PERSONA_GENERATOR_FUNCTION, {
+    invoke_lambda_async(PERSONA_GENERATOR_FUNCTION, _job_event({
         'project_id': project_id,
         'job_id': job_id,
         'filters': filters
-    })
+    }))
     return {'success': True, 'job_id': job_id, 'status': 'running', 'message': 'Persona generation started.'}
 
 
@@ -819,7 +833,8 @@ def api_run_research(project_id: str):
         boto3.client('stepfunctions').start_execution(
             stateMachineArn=state_machine_arn,
             name=job_id,
-            input=json.dumps({'job_id': job_id, 'project_id': project_id, 'research_config': research_config})
+            input=json.dumps(_job_event({'job_id': job_id, 'project_id': project_id,
+                                         'research_config': research_config}))
         )
     else:
         answer = run_research(
@@ -996,14 +1011,14 @@ def _start_document_generation(project_id: str, doc_config: dict) -> tuple[str, 
         boto3.client('stepfunctions').start_execution(
             stateMachineArn=state_machine_arn,
             name=job_id,
-            input=json.dumps({'job_id': job_id, 'project_id': project_id, 'doc_config': doc_config})
+            input=json.dumps(_job_event({'job_id': job_id, 'project_id': project_id, 'doc_config': doc_config}))
         )
     else:
-        invoke_lambda_async(DOCUMENT_GENERATOR_FUNCTION, {
+        invoke_lambda_async(DOCUMENT_GENERATOR_FUNCTION, _job_event({
             'project_id': project_id,
             'job_id': job_id,
             'doc_config': doc_config
-        })
+        }))
     return job_id, assessment
 
 
@@ -1088,11 +1103,11 @@ def api_merge_documents(project_id: str):
         merge_config,
         status='pending',
     )
-    invoke_lambda_async(DOCUMENT_MERGER_FUNCTION, {
+    invoke_lambda_async(DOCUMENT_MERGER_FUNCTION, _job_event({
         'project_id': project_id,
         'job_id': job_id,
         'merge_config': merge_config,
-    })
+    }))
     return {
         'success': True,
         'job_id': job_id,
@@ -5047,11 +5062,11 @@ def api_generate_product_report(project_id: str):
 def _started_generator_job(project_id: str, job_type: str, doc_config: dict, message: str) -> dict:
     """Record a pending job and hand it to the document-generator Lambda; the route's 202-style answer."""
     job_id = _started_job(project_id, job_type, 'doc_config', doc_config, status='pending')
-    invoke_lambda_async(DOCUMENT_GENERATOR_FUNCTION, {
+    invoke_lambda_async(DOCUMENT_GENERATOR_FUNCTION, _job_event({
         'project_id': project_id,
         'job_id': job_id,
         'doc_config': doc_config,
-    })
+    }))
     return {'success': True, 'job_id': job_id, 'status': 'pending', 'message': message}
 
 

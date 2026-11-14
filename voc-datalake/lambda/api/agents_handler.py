@@ -52,17 +52,16 @@ from shared.exceptions import (
     NotFoundError,
     ValidationError,
 )
-from shared.http_cache import request_header
 from shared.logging import logger, tracer
 from shared.plan_canonical import FINGERPRINT_RE
 from shared.plan_schema import ADMIN_ONLY_PACKS, PACKS, is_plan_id, validate_plan
 from shared.project_access import Caller
 from shared.project_gate import acts_as_admin, caller_from_event, require_admin_caller
 from shared.request_body import json_object_body
+from shared.request_workspace import request_workspace
 from shared.row_ids import LONG_OPAQUE_ID_RE
 from shared.tables import get_aggregates_table
 from shared.warm_init import warm_at_init
-from shared.workspace import NOT_FOUND, WORKSPACE_HEADER, is_workspace_id
 
 AGENT_NOT_FOUND = 'Agent not found'
 RUN_NOT_FOUND = 'Run not found'
@@ -650,20 +649,16 @@ PLAN_SIGNED_IN_ONLY = 'Plans are read and managed by the signed-in user who appr
 
 
 def _approval_workspace(event: dict) -> str | None:
-    """The workspace the approval's own request named (``X-Workspace-Id``, docs/multi-workspace.md "Request flow"):
-    kept on the plan, so each step names it to the domain Lambdas it calls (agents/plan_identity.py), which resolve
-    the approver's membership there as for the approver's own request. ``None`` when it names none (no header, or a
-    blank one: the deployment as before, shared/request_workspace.py); a header that is not a workspace id is the one
-    404 of shared/workspace.py, before anything is written, so a plan never runs without the workspace its request
-    named. Membership is not judged here: a plan approved for a workspace its approver is not a member of has every
-    step refused."""
-    value = request_header(event, WORKSPACE_HEADER)
-    ws = value.strip() if isinstance(value, str) else ''
-    if not ws:
-        return None
-    if not is_workspace_id(ws):
-        raise NotFoundError(NOT_FOUND)
-    return ws
+    """The workspace the approval's own request named (``X-Workspace-Id``, docs/multi-workspace.md "Request flow"),
+    resolved as every other route resolves it (shared/request_workspace.py ``request_workspace``): the approver must be
+    a member of that active workspace now (from the table, not the warm cache), and a malformed id, an unknown or
+    deleting workspace or a non-member is the one 404, before anything is written (since 7.29.00). Membership is the
+    bar, no role: a platform admin approves there only as a member (no entry: a plan's steps carry no group to enter
+    with). It is kept on the plan, so each step names it to the domain Lambdas it calls (agents/plan_identity.py),
+    which resolve the approver's membership there again, and the conductor re-checks it before every step and every
+    wait. ``None`` when it names none (no header, or a blank one): the deployment as before."""
+    context = request_workspace(event, 'Failed to approve the plan', fresh=True, elevate=False)
+    return None if context is None else context.ws
 
 
 def _refuse_delegated(caller: Caller) -> None:
@@ -693,6 +688,8 @@ def _plan_response(plan_id: str) -> dict:
 @tracer.capture_method
 def approve_plan():
     """Approve and start a ``voc-plan/1`` plan: ``{plan, conversation_id?}`` → 202 ``{plan_id, status}``."""
+    # First: the workspace it is approved in (the one 404 for a non-member), before any answer or write.
+    workspace = _approval_workspace(app.current_event.raw_event)
     caller = _caller()
     approver = _plan_approver(caller)
     body = json_object_body(app)
@@ -703,7 +700,6 @@ def approve_plan():
         return _json(400, {'success': False, 'message': 'The plan is not valid', 'errors': errors})
     if not store.state_machine_arn():
         raise ConfigurationError('Agent runtime not configured')
-    workspace = _approval_workspace(app.current_event.raw_event)
     table, now = _agents_table(), store.utc_now()
     try:
         # Atomic: the create transaction takes one of plans_store.MAX_ACTIVE_PLANS slots or fails.

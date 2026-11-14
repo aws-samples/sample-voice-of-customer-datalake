@@ -240,6 +240,8 @@ SEEDS: dict[str, Callable[[World], Probe] | None] = {
         w, 'projects', version_partition_key(_FAM_PROJECT, workspace=SCOPE), 'REVISION#doc_fam#000001'),
     'job_status_pk': lambda w: _project_row(w, 'jobs', project_pk(_FAM_PROJECT, workspace=SCOPE), 'JOB#fam',
                                             gsi1pk=job_status_pk('completed', workspace=SCOPE), gsi1sk='2026-11-02'),
+    # A member's assist outside a project (7.29.00): its row expires a day after it starts (TTL).
+    'owner_pk': None,
     # A conversation owner's row, and a conversation and its Stop marker in that owner's partition, as the writers
     # keep them (shared/conversations.py: the owner listed first).
     'conversants_pk': lambda w: _put(w, 'conversations', {**conversant_key(SCOPE, 'sub-fam'), 'first_at': 'x'}),

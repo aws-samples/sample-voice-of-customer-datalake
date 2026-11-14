@@ -27,7 +27,8 @@ def _claims_with_every_key() -> dict[str, str]:
     cognito.admin_list_groups_for_user.return_value = {'Groups': [{'GroupName': 'users'}]}
     meta = {'approver_sub': 'sub-7', 'approver_username': 'ada', 'plan_id': 'pl_abc',
             'workspace_id': 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'}
-    with patch.object(pi, '_cognito', return_value=cognito), patch.dict('os.environ', {'USER_POOL_ID': 'pool'}):
+    with patch.object(pi, '_cognito', return_value=cognito), patch.dict('os.environ', {'USER_POOL_ID': 'pool'}), \
+            patch.object(pi, 'is_current_member', return_value=True):
         return pi.approver_claims(meta, needs_admin=False)
 
 

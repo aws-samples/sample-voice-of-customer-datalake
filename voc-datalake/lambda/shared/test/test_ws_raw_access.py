@@ -11,8 +11,8 @@ parsed, and each raw access is counted by its kind:
   resource collection's batch delete (``bucket.objects.filter(…).delete()``, ``object_versions``,
   ``multipart_uploads``), ``put`` / ``delete`` on an ``….Object(…)`` or ``….Bucket(…)`` made in the same
   expression, or the ingestors' deployment-wide table (``DeploymentTable(…)``, and ``ingest_table(None, …)`` or
-  ``table_view(None, …)`` with the literal None, and the project accessors (``PROJECT_ACCESSORS``) with a literal
-  ``workspace=None`` or, for ``get_scoped_item``, a literal None scope; a call passing a scope variable that may be
+  ``table_view(None, …)`` with the literal None, and the project and job accessors (``PROJECT_ACCESSORS``,
+  ``QUALIFIED_ACCESSORS``) with a literal ``workspace=None`` or, for ``get_scoped_item``, a literal None scope; a call passing a scope variable that may be
   None at run time, or leaving the default, is not counted);
 * a reference to a data-path table getter of shared/tables.py (``get_feedback_table``, ``get_aggregates_table``,
   ``cached_table``): called, bound to a name or passed on, by its name, an ``import … as`` alias or as an
@@ -100,11 +100,18 @@ UNSCOPED_INGEST_TABLE: Final = 'ingest_table(None)'
 #: asked, in so many words, for the deployment's rows: ``workspace=None`` as a literal, or a literal None as
 #: ``get_scoped_item``'s scope (its third positional argument). A store passes its ``workspace`` on; the default is
 #: not counted, a spelled-out None is (as ``ingest_table(None)`` is).
+#: The job stores (shared/jobs.py, shared/job_notices.py; since 7.29.00) are counted the same way.
 PROJECT_ACCESSORS: Final = frozenset({'iter_project_rows', 'transact_project_writes', 'transact_project_actions',
                                       'put_project_item', 'put_project_item_and_increment',
                                       'create_counted_project_child', 'get_scoped_item',
                                       'create_workspace_project', 'iter_registered_project_ids',
-                                      'iter_version_rows'})
+                                      'iter_version_rows', 'create_job', 'update_job_status',
+                                      'claim_job_execution', 'recover_job_execution_claim', 'notify_project_job',
+                                      'JobContext'})
+#: The job stores whose names are too common to match alone, by the module they are called through (``module.name``):
+#: shared/assist_jobs.py's request side and agents/plan_waits.py's poll (since 7.29.00).
+QUALIFIED_ACCESSORS: Final = frozenset({('assist_jobs', 'start'), ('assist_jobs', 'start_owned'),
+                                        ('assist_jobs', 'get'), ('assist_jobs', 'owner_pk'), ('plan_waits', 'poll')})
 #: The accessors whose scope may also be passed by position, and where.
 PROJECT_ACCESSOR_SCOPE_POSITION: Final = {'get_scoped_item': 2}
 UNSCOPED_PROJECT_ACCESS: Final = 'project accessor(workspace=None)'
@@ -122,9 +129,11 @@ LAYER_MODULE: Final = 'shared.ws_repo'
 #: Partition and object prefixes of the data path that, at the start of a string, name no workspace. ``PROJECT_ID#``
 #: is a project id's deployment-wide claim (since 7.26.00): only the layer spells it (``claim_project_id``,
 #: ``project_claim``). ``DOCUMENT_VERSIONS#`` is a project's document-version partition (since 7.27.00): only
-#: shared/project_keys.py spells it (``version_partition_key``).
+#: shared/project_keys.py spells it (``version_partition_key``). ``STATUS#`` is voc-jobs' status index partition
+#: (since 7.29.00): only shared/project_keys.py spells it (``job_status_pk``).
 UNSCOPED_KEY_PREFIXES: Final = ('SOURCE#', 'METRIC#', 'DATE#', 'CATEGORY#', 'URGENCY#', 'CHANNEL#', 'SOURCE_RUN#',
-                                'raw/', 'silver/', 'PROJECT#', 'TYPE#PROJECT', 'PROJECT_ID#', 'DOCUMENT_VERSIONS#')
+                                'raw/', 'silver/', 'PROJECT#', 'TYPE#PROJECT', 'PROJECT_ID#', 'DOCUMENT_VERSIONS#',
+                                'STATUS#')
 #: The layer's claim writer (``claim_project_id``) and the one module that may call it: the project create.
 CLAIM_WRITER: Final = ('claim_project_id', frozenset({'lambda/shared/project_writes.py'}))
 #: Modules that answer requests a client sent (the API, the public webhooks): their workspace is never read from
@@ -145,7 +154,8 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/agents/heartbeat/handler.py': (3, {'DATE#': 1, 'Table': 2}),
     'lambda/agents/nodes/aggregate_reviews.py': (3, {'get_aggregates_table': 1}),
     'lambda/agents/nodes/select_or_create_project.py': (3, {'get_aggregates_table': 2}),
-    'lambda/agents/plan_waits.py': (3, {'SOURCE_RUN#': 1, 'get_aggregates_table': 1, 'get_jobs_table': 1}),
+    # Its SOURCE_RUN# moved to shared/run_rows.py in 7.29.00 (source_run_partition, the workspace's too).
+    'lambda/agents/plan_waits.py': (3, {'get_aggregates_table': 1, 'get_jobs_table': 1}),
     'lambda/agents/store.py': (3, {'Table': 1}),
     # Both paths since the aggregator's slice: a workspace's record writes through `ws_table` (its keys from
     # shared/metric_keys.py `metric_partition`); METRIC#urgent moved to metric_keys (URGENT_PK). Left: the
@@ -322,11 +332,13 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/shared/document_review_routes.py': (3, {'get_projects_table': 1}),
     'lambda/shared/engagement_identity.py': (3, {'get_projects_table': 1}),
     'lambda/shared/job_notices.py': (3, {'get_jobs_table': 1}),
+    # Since 7.29.00 every job-row call on these four handles goes through `table_view` / `get_scoped_item`.
     'lambda/shared/jobs.py': (3, {'get_jobs_table': 4}),
     'lambda/shared/mcp_oauth_consent_routes.py': (3, {'get_jobs_table': 1, 'get_projects_table': 1}),
     'lambda/shared/mcp_oauth_routes.py': (3, {'get_jobs_table': 1, 'get_projects_table': 1}),
-    # Its DOCUMENT_VERSIONS# is the version partition's one spelling, moved from shared/document_versions.py in 7.27.00.
-    'lambda/shared/project_keys.py': (3, {'DOCUMENT_VERSIONS#': 1, 'PROJECT#': 1, 'TYPE#PROJECT': 1}),
+    # Its DOCUMENT_VERSIONS# is the version partition's one spelling, moved from shared/document_versions.py in 7.27.00;
+    # its STATUS# the jobs' status index partition's, shared/assist_jobs.py's own two spellings moved here in 7.29.00.
+    'lambda/shared/project_keys.py': (3, {'DOCUMENT_VERSIONS#': 1, 'PROJECT#': 1, 'STATUS#': 1, 'TYPE#PROJECT': 1}),
 }
 
 
@@ -403,7 +415,17 @@ def _call_kind(node: ast.Call) -> str | None:
         return UNSCOPED_INGEST_TABLE
     if name in PROJECT_ACCESSORS and _spells_no_workspace(node, PROJECT_ACCESSOR_SCOPE_POSITION.get(name)):
         return UNSCOPED_PROJECT_ACCESS
+    if _qualified(node) in QUALIFIED_ACCESSORS and _spells_no_workspace(node, None):
+        return UNSCOPED_PROJECT_ACCESS
     return _s3_change(node)
+
+
+def _qualified(node: ast.Call) -> tuple[str, str] | None:
+    """``(module, name)`` of a call through a plain module name (``assist_jobs.start(…)``), else None."""
+    func = node.func
+    if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+        return func.value.id, func.attr
+    return None
 
 
 def _is_none(node: ast.AST) -> bool:
@@ -637,7 +659,7 @@ def test_the_claim_writer_is_called_by_the_project_create_only():
 
 def test_no_request_facing_module_takes_its_scope_from_what_was_sent():
     """A request's workspace is its resolved membership (``scope_of``), never a field, a path or a cursor."""
-    assert [module for name in ('scope_from_message', 'scope_from_key', 'scope_from_lookup')
+    assert [module for name in ('scope_from_message', 'scope_from_key', 'scope_from_lookup', 'event_scope')
             for module in _calls_of(name) if _request_facing(module)] == []
 
 
@@ -847,6 +869,16 @@ def test_the_scan_sees_each_kind_of_raw_access(tmp_path):
         "pq = iter_registered_project_ids(table, workspace=None)\n"
         "pv = iter_version_rows(table, 'p1', workspace=None)\n"
         "pu = iter_version_rows(table, 'p1', workspace=scope)\n"
+        # The job stores (7.29.00), by name and, for the common names, through their module.
+        "jc = create_job('p1', 'research', 'config', {}, workspace=None)\n"
+        "ju = jobs.update_job_status('p1', 'j1', 'running', 10, workspace=None)\n"
+        "jx = JobContext('p1', 'j1', workspace=None)\n"
+        "jn = notify_project_job('p1', 'j1', 'failed', workspace=None)\n"
+        "jw = notify_project_job('p1', 'j1', 'failed', workspace=scope)\n"
+        "ja = assist_jobs.start(pk, 'assist_x', {}, worker_function='w', initiated_by=None, workspace=None)\n"
+        "jg = assist_jobs.get(pk, 'job_1', workspace=None)\n"
+        "jp = plan_waits.poll(wait, {}, workspace=None)\n"
+        "jd = config.get('key', workspace=None)\n"
         # A project id's claim, and a document-version partition, spelled outside the layer and the key builders.
         "claim = f'PROJECT_ID#{project_id}'\n"
         "versions = f'DOCUMENT_VERSIONS#PROJECT#{project_id}'\n"
@@ -876,7 +908,7 @@ def test_the_scan_sees_each_kind_of_raw_access(tmp_path):
         'Table': 1, 'put_object': 1, 'copy_object': 1, 'get_feedback_table': 1, 'get_aggregates_table': 1,
         'SOURCE#': 1, 'METRIC#': 1, 'raw/': 1, 'silver/': 1, 'upload_file': 1, 'upload_fileobj': 1,
         'cached_table': 1, 'generate_presigned_url': 1, 'delete_object': 1, 'DeploymentTable': 2,
-        'ingest_table(None)': 2, 'project accessor(workspace=None)': 10, 'PROJECT_ID#': 1, 'DOCUMENT_VERSIONS#': 1,
+        'ingest_table(None)': 2, 'project accessor(workspace=None)': 17, 'PROJECT_ID#': 1, 'DOCUMENT_VERSIONS#': 1,
         'transact': 4, 'batch': 5,
         # The low-level client itself (7.00.00's rule), beside the multi-item calls made on it.
         'meta.client': 3})

@@ -901,5 +901,5 @@ def test_execution_claim_stops_overlapping_direct_delivery_before_bedrock(
     assert first['success'] is True
     assert duplicate == {'success': True, 'skipped': True}
     assert claim.call_count == 2
-    recover.assert_called_once_with(prd_generation_event, lambda_context)
+    recover.assert_called_once_with(prd_generation_event, lambda_context, workspace=None)
     mock_converse_chain.assert_called_once()

@@ -338,7 +338,7 @@ class TestLeaseReclaimDecision:
         context = _context(100_000, 100_000)
 
         assert recover_job_execution_claim(EVENT, context) is True
-        mock_claim.assert_called_once_with('p1', 'j1', context)
+        mock_claim.assert_called_once_with('p1', 'j1', context, workspace=None)
         mock_time.sleep.assert_not_called()
 
     @pytest.mark.usefixtures('mock_time')
@@ -561,7 +561,7 @@ class TestJobHandlerConfigLookup:
         assert (ctx.project_id, ctx.job_id) == ('p1', 'j1')
         assert body.call_args.args[1:] == ('p1', 'j1')
         mock_update.assert_called_once_with(
-            'p1', 'j1', 'completed', 100, 'complete', result={'count': 3},
+            'p1', 'j1', 'completed', 100, 'complete', result={'count': 3}, workspace=None,
         )
 
     @pytest.mark.usefixtures('mock_update')
@@ -590,7 +590,7 @@ class TestJobHandlerLogsAndErrors:
         assert str(exc.value) == 'Job execution failed'
         assert isinstance(exc.value.__cause__, ValueError)
         mock_update.assert_called_once_with(
-            'p1', 'j1', 'failed', 0, 'error', error='Job execution failed: ' + 'x' * 200,
+            'p1', 'j1', 'failed', 0, 'error', error='Job execution failed: ' + 'x' * 200, workspace=None,
         )
         mock_logger.exception.assert_called_once_with(
             '[JOB] sample_job failed for job=j1: ' + 'x' * 500,
@@ -606,7 +606,7 @@ class TestJobHandlerLogsAndErrors:
             sample_job(EVENT)
 
         assert str(exc.value) == 'Persona generation failed'
-        assert mock_update.call_args.kwargs == {'error': 'Persona generation failed: boom'}
+        assert mock_update.call_args.kwargs == {'error': 'Persona generation failed: boom', 'workspace': None}
 
     @pytest.mark.usefixtures('mock_update')
     def test_deferred_delivery_logs_the_job_it_skipped(self, mock_logger, mock_claim):
@@ -660,7 +660,7 @@ class TestJobHandlerTerminalUserOutcomes:
 
         expected_error = f'Persona generation failed: {error.message}'
         assert result == {'success': False, 'error': expected_error}
-        mock_update.assert_called_once_with('p1', 'j1', 'failed', 0, 'error', error=expected_error)
+        mock_update.assert_called_once_with('p1', 'j1', 'failed', 0, 'error', error=expected_error, workspace=None)
         # WARNING without a traceback — not ERROR / exception, which Logs
         # Insights error queries and the ops e2e count as faults. Returning
         # (asserted above) is what keeps Lambda's own Errors metric at 0.
@@ -685,7 +685,7 @@ class TestJobHandlerTerminalUserOutcomes:
         assert str(exc.value) == 'Persona generation failed'
         assert exc.value.__cause__ is error
         mock_update.assert_called_once_with(
-            'p1', 'j1', 'failed', 0, 'error', error=f'Persona generation failed: {error}',
+            'p1', 'j1', 'failed', 0, 'error', error=f'Persona generation failed: {error}', workspace=None,
         )
         mock_logger.exception.assert_called_once()
         mock_logger.warning.assert_not_called()

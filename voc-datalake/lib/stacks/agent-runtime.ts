@@ -46,6 +46,7 @@ import {
 } from '../utils/function-names';
 import { grantClaudeModels } from '../utils/claude-model-grant';
 import { createWorkerFunction, grantInvokeByName, scheduleWorker, workerRole } from '../utils/worker-lambda';
+import { grantWorkspaceMembershipReads } from '../utils/workspace-resolution-grants';
 import { createPlanStepFunction } from './plan-step-lambda';
 import { REALTIME_HTTP_DNS_ENV, type RealtimePublishing } from '../utils/realtime';
 
@@ -97,6 +98,8 @@ export interface AgentRuntimeProps {
   jobsTable: dynamodb.ITable;
   /** The conductor re-checks a plan's approver before each step (AdminGetUser + AdminListGroupsForUser). */
   userPool: cognito.IUserPool;
+  /** The conductor re-checks a workspace plan's approver's membership before each step and wait (7.29.00). */
+  workspacesTable: dynamodb.ITable;
   /** VocCoreStack's Event API: the conductor publishes run / plan notices to `runs` (docs/realtime.md). */
   realtime: RealtimePublishing;
   /**
@@ -163,7 +166,10 @@ export class AgentRuntime extends Construct {
   }
 
   private createConductor(): lambda.Function {
-    const { memoryExtractQueue, jobsTable, userPool } = this.props;
+    const { memoryExtractQueue, jobsTable, userPool, workspacesTable } = this.props;
+    // A workspace plan's approver is re-checked as a member of its workspace (agents/plan_identity.py): the member
+    // row's role and the workspace's status, held to the resolver's projections.
+    const workspaceEnv: Record<string, string> = { WORKSPACES_TABLE: workspacesTable.tableName };
     return this.crewmate('AgentConductor', {
       serviceName: 'voc-agent-conductor',
       handler: 'agents/conductor/handler.lambda_handler',
@@ -180,6 +186,8 @@ export class AgentRuntime extends Construct {
         jobsTable.grant(role, 'dynamodb:GetItem');
         // Plans: the approver is re-checked before every step (agents/plan_identity.py).
         userPool.grant(role, 'cognito-idp:AdminGetUser', 'cognito-idp:AdminListGroupsForUser');
+        // ... and, for a plan approved in a workspace, as a member of it (GetItem on `WS#*`, resolver projections).
+        grantWorkspaceMembershipReads(workspacesTable, role);
         // Run / plan notices (docs/realtime.md): publish on exactly `runs` (VocCoreStack's managed policy).
         role.addManagedPolicy(this.props.realtime.publishPolicies.runs);
       },
@@ -187,6 +195,7 @@ export class AgentRuntime extends Construct {
         MEMORY_EXTRACT_QUEUE_URL: memoryExtractQueue.queueUrl,
         JOBS_TABLE: jobsTable.tableName,
         USER_POOL_ID: userPool.userPoolId,
+        ...workspaceEnv,
         [REALTIME_HTTP_DNS_ENV]: this.props.realtime.httpDns,
       },
       // Verification re-reads every claimed project/document AS THE AGENT through

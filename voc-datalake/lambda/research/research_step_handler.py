@@ -46,13 +46,13 @@ from shared.grounding import Grounding
 from shared.ids import timestamped_id
 from shared.job_knowledge import derivation_knowledge, shared_grounding, with_guidance
 from shared.job_notices import notify_project_job
-from shared.jobs import update_job_status
+from shared.jobs import error_state_scope, update_job_status
 
 # Shared module imports
 from shared.logging import logger, tracer
 from shared.model_config import surface_context_window_tokens
 from shared.persona_context import personas_prompt_context
-from shared.project_keys import document_keys, project_pk
+from shared.project_keys import PROJECT_JOB_WORK_STORE, document_keys, project_pk, require_deployment
 from shared.project_writes import create_counted_project_child
 from shared.prompt_labels_store import load_prompt_labels
 from shared.prompts import (
@@ -62,6 +62,7 @@ from shared.prompts import (
 from shared.research_title import research_document_title
 from shared.tables import get_feedback_table, get_projects_table
 from shared.web_search import is_web_search_configured
+from shared.ws_repo import WorkspaceScope, event_scope
 
 # Use shared table accessors - these will be initialized on first use
 feedback_table: Any = None
@@ -862,8 +863,8 @@ Public-web grounding for this report came from the following searches:
         'feedback_count': feedback_count
     }
 @tracer.capture_method
-def step_error(event: dict) -> dict:
-    """Handle errors - update job status."""
+def step_error(event: dict, *, workspace: WorkspaceScope | None) -> dict:
+    """Handle errors - update job status (the workspace's job row when the run has one)."""
     project_id = event['project_id']
     job_id = event['job_id']
     error = event.get('error', {})
@@ -881,22 +882,21 @@ def step_error(event: dict) -> dict:
         error_message = error.get('Error', 'Unknown error')
     logger.error(f"Research job {job_id} failed: {error_message}")
 
-    update_job_status(project_id, job_id, 'failed', 0, 'error', error=error_message)
-    notify_project_job(project_id, job_id, 'failed')
+    update_job_status(project_id, job_id, 'failed', 0, 'error', error=error_message, workspace=workspace)
+    notify_project_job(project_id, job_id, 'failed', workspace=workspace)
     _discard_feedback_context(job_id)
 
     return {'success': False, 'error': error_message}
 
 
 def _step_function(step: str) -> Callable[[dict], dict]:
-    """The handler for one state machine step; ValueError for an unknown step."""
+    """The handler for one work step; ValueError for an unknown step (``error`` is ``lambda_handler``'s own)."""
     steps: dict[str, Callable[[dict], dict]] = {
         'initialize': step_initialize,
         'analyze': step_analyze,
         'synthesize': step_synthesize,
         'validate': step_validate,
         'save': step_save,
-        'error': step_error,
     }
     handler = steps.get(step)
     if handler is None:
@@ -906,12 +906,21 @@ def _step_function(step: str) -> Callable[[dict], dict]:
 
 @api_handler
 def lambda_handler(event: dict, context: Any) -> dict:
-    """Main Lambda handler - routes to appropriate step function."""
+    """Main Lambda handler - routes to appropriate step function.
+
+    A step's workspace is its run's ``run_scope`` (shared/ws_repo.py ``event_scope``). The work is not per workspace
+    yet: in one, every step but ``error`` refuses (``NotPerWorkspaceError``) before it reads anything, and ``error``
+    marks the workspace's job row failed.
+    """
     step = event.get('step', 'unknown')
     logger.info(f"Executing research step: {step}")
 
     try:
-        return _step_function(step)(event)
+        if step == 'error':
+            return step_error(event, workspace=error_state_scope(event))
+        handler = _step_function(step)
+        require_deployment(event_scope(event), PROJECT_JOB_WORK_STORE)
+        return handler(event)
     except BedrockThrottlingError as e:
         # Re-raise with specific error type for Step Functions retry
         logger.exception(f"Bedrock throttling in step {step}: {e}")

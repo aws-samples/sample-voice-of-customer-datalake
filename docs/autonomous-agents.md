@@ -320,7 +320,13 @@ under `-c protectData=false` (pinned by `lib/stacks/memory-agents-stack.test.ts`
 
 An approved AI-assistant plan (`voc-plan/1`, [docs/assistant-plan-mode.md](assistant-plan-mode.md)) runs on
 `voc-agent-run` too. The execution input `{run_kind: 'plan', plan_id}` (execution name = plan id) takes the
-`Start` choice to the plan branch; agent runs keep `{agent_id, run_id}` and `Init`.
+`Start` choice to the plan branch; agent runs keep `{agent_id, run_id}` and `Init`. Before `Start`, the `RunScope`
+choice sets `$.run_scope` (`{}` for every run and plan today, whose input names no `workspace_id`), which every Lambda
+payload passes on beside its ids (7.29.00, [docs/multi-workspace.md](multi-workspace.md#the-project-plan-phase-3));
+the agent rows stay the deployment's, so the conductor and the steps refuse a state that names a workspace, but for
+the two failure states, which still mark the run's or the plan's own row failed when it is of the run's scope. A plan
+approved in a workspace waits on its source and scraper runs in that workspace (its META's `workspace_id`); approving
+it needs membership there, and the approver's membership is re-checked before every step and wait.
 
 ```
 Start ─▶ (run_kind = plan) PlanDecide ─▶ PlanRoute

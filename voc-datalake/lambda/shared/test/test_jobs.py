@@ -62,7 +62,7 @@ class TestJobContext:
         ctx = JobContext('proj_123', 'job_abc')
         ctx.update_progress(50, 'processing')
 
-        mock_update.assert_called_once_with('proj_123', 'job_abc', 'running', 50, 'processing')
+        mock_update.assert_called_once_with('proj_123', 'job_abc', 'running', 50, 'processing', workspace=None)
 
 
 @pytest.mark.usefixtures("reset_table_cache")
@@ -90,7 +90,7 @@ class TestJobHandler:
         assert result == {'success': True, 'result_key': 'result_value'}
         mock_update.assert_called_once_with(
             'proj_123', 'job_abc', 'completed', 100, 'complete',
-            result={'result_key': 'result_value'}
+            result={'result_key': 'result_value'}, workspace=None,
         )
 
     @patch('shared.jobs.update_job_status')
@@ -193,11 +193,11 @@ class TestJobExecutionClaim:
         }, context)
 
         assert result == {'success': True, 'skipped': True}
-        mock_claim.assert_called_once_with('p1', 'j1', context)
+        mock_claim.assert_called_once_with('p1', 'j1', context, workspace=None)
         mock_recover.assert_called_once_with({
             'project_id': 'p1',
             'job_id': 'j1',
             'config': {},
-        }, context)
+        }, context, workspace=None)
         body.assert_not_called()
         mock_update.assert_not_called()

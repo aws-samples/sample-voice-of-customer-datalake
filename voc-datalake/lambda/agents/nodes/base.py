@@ -20,7 +20,7 @@ commits ``updates`` to the run's context — a node never writes run state.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from agents import llm, principal
 from agents.fields import dict_field
@@ -28,6 +28,9 @@ from agents.graph import Node
 from shared import methodology as methodology_mod
 from shared.display_labels import humanize_id
 from shared.logging import logger
+
+if TYPE_CHECKING:
+    from shared.ws_repo import WorkspaceScope
 
 MAX_SUMMARY_CHARS = 500
 
@@ -44,6 +47,8 @@ class NodeContext:
     node: Node
     envelope: str
     claims: dict[str, str] = field(default_factory=dict)
+    #: The run's workspace (agents/runtime.py ``build_context``): None for every run today.
+    workspace: WorkspaceScope | None = None
 
     @property
     def agent_id(self) -> str:

@@ -1,6 +1,6 @@
 {
   "Comment": "The conductor walks an autonomous agent workflow or an approved assistant plan (agents/conductor).",
-  "StartAt": "Start",
+  "StartAt": "RunScope",
   "States": {
     "Advance": {
       "Catch": [
@@ -19,7 +19,8 @@
           "action": "advance",
           "agent_id.$": "$.agent_id",
           "node.$": "$.result.node",
-          "run_id.$": "$.run_id"
+          "run_id.$": "$.run_id",
+          "run_scope.$": "$.run_scope"
         }
       },
       "Resource": "arn:aws:states:::lambda:invoke",
@@ -64,7 +65,8 @@
           "agent_id.$": "$.agent_id",
           "mate_seq.$": "$.step.next.mate_seq",
           "node_id.$": "$.step.next.node_id",
-          "run_id.$": "$.run_id"
+          "run_id.$": "$.run_id",
+          "run_scope.$": "$.run_scope"
         }
       },
       "Resource": "arn:aws:states:::lambda:invoke",
@@ -109,7 +111,8 @@
         "Payload": {
           "action": "init",
           "agent_id.$": "$.agent_id",
-          "run_id.$": "$.run_id"
+          "run_id.$": "$.run_id",
+          "run_scope.$": "$.run_scope"
         }
       },
       "Resource": "arn:aws:states:::lambda:invoke",
@@ -151,7 +154,8 @@
           "agent_id.$": "$.agent_id",
           "mate_seq.$": "$.step.next.mate_seq",
           "node_id.$": "$.step.next.node_id",
-          "run_id.$": "$.run_id"
+          "run_id.$": "$.run_id",
+          "run_scope.$": "$.run_scope"
         }
       },
       "Resource": "arn:aws:states:::lambda:invoke",
@@ -190,7 +194,8 @@
         "FunctionName": "${ConductorFunctionArn}",
         "Payload": {
           "action": "plan_decide",
-          "plan_id.$": "$.plan_id"
+          "plan_id.$": "$.plan_id",
+          "run_scope.$": "$.run_scope"
         }
       },
       "Resource": "arn:aws:states:::lambda:invoke",
@@ -246,6 +251,7 @@
               "Payload": {
                 "action": "plan_prepare",
                 "plan_id.$": "$.plan_id",
+                "run_scope.$": "$.run_scope",
                 "step_id.$": "$.step_id"
               }
             },
@@ -298,6 +304,7 @@
                 "action": "plan_record",
                 "plan_id.$": "$.plan_id",
                 "result.$": "$.result.step",
+                "run_scope.$": "$.run_scope",
                 "step_id.$": "$.step_id"
               }
             },
@@ -363,6 +370,7 @@
                 "action": "plan_record",
                 "error.$": "$.error",
                 "plan_id.$": "$.plan_id",
+                "run_scope.$": "$.run_scope",
                 "step_id.$": "$.step_id"
               }
             },
@@ -394,6 +402,7 @@
       },
       "ItemSelector": {
         "plan_id.$": "$.plan_id",
+        "run_scope.$": "$.run_scope",
         "step_id.$": "$$.Map.Item.Value"
       },
       "ItemsPath": "$.plan.next.steps",
@@ -409,7 +418,8 @@
         "Payload": {
           "action": "plan_fail",
           "error.$": "$.error",
-          "plan_id.$": "$.plan_id"
+          "plan_id.$": "$.plan_id",
+          "run_scope.$": "$.run_scope"
         }
       },
       "Resource": "arn:aws:states:::lambda:invoke",
@@ -472,7 +482,8 @@
           "agent_id.$": "$.agent_id",
           "node_id.$": "$.step.next.node_id",
           "pending.$": "$.step.next.pending",
-          "run_id.$": "$.run_id"
+          "run_id.$": "$.run_id",
+          "run_scope.$": "$.run_scope"
         }
       },
       "Resource": "arn:aws:states:::lambda:invoke",
@@ -504,7 +515,8 @@
           "action": "fail",
           "agent_id.$": "$.agent_id",
           "error.$": "$.error",
-          "run_id.$": "$.run_id"
+          "run_id.$": "$.run_id",
+          "run_scope.$": "$.run_scope"
         }
       },
       "Resource": "arn:aws:states:::lambda:invoke",
@@ -556,6 +568,31 @@
       ],
       "Default": "Done",
       "Type": "Choice"
+    },
+    "RunScope": {
+      "Choices": [
+        {
+          "IsPresent": true,
+          "Next": "RunScopeWorkspace",
+          "Variable": "$.workspace_id"
+        }
+      ],
+      "Default": "RunScopeDeployment",
+      "Type": "Choice"
+    },
+    "RunScopeDeployment": {
+      "Next": "Start",
+      "Result": {},
+      "ResultPath": "$.run_scope",
+      "Type": "Pass"
+    },
+    "RunScopeWorkspace": {
+      "Next": "Start",
+      "Parameters": {
+        "workspace_id.$": "$.workspace_id"
+      },
+      "ResultPath": "$.run_scope",
+      "Type": "Pass"
     },
     "Start": {
       "Choices": [

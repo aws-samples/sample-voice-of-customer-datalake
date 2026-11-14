@@ -27,6 +27,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from agents import plan_identity as pi
 from shared import aws
+from shared.exceptions import ConfigurationError
 
 POOL = 'pool-42'
 META = {'approver_sub': 'sub-7', 'approver_username': 'ada', 'plan_id': 'pl_abc'}
@@ -177,8 +178,30 @@ class TestTheWorkspace:
 
     def test_a_step_names_the_workspace_of_its_plan(self):
         meta = {**META, 'workspace_id': 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'}
-        assert pi.approver_claims(meta, needs_admin=False) == {
-            **USER_ONLY, 'voc:workspace': 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'}
+        with patch.object(pi, 'is_current_member', return_value=True) as member:
+            assert pi.approver_claims(meta, needs_admin=False) == {
+                **USER_ONLY, 'voc:workspace': 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'}
+        member.assert_called_once_with('ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8', META['approver_sub'])
+
+    def test_an_approver_no_longer_a_member_stops_the_plan(self):
+        meta = {**META, 'workspace_id': 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'}
+        with patch.object(pi, 'is_current_member', return_value=False), \
+                pytest.raises(pi.ApproverRefused, match=r"^The approver is no longer a member of the plan's workspace\.$"):
+            pi.approver_claims(meta, needs_admin=False)
+
+    @pytest.mark.parametrize('error', [ClientError({'Error': {'Code': 'Throttling'}}, 'GetItem'),
+                                       ConfigurationError('Workspaces table not configured')])
+    def test_a_membership_read_that_fails_is_closed(self, error):
+        meta = {**META, 'workspace_id': 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'}
+        with patch.object(pi, 'is_current_member', side_effect=error), \
+                pytest.raises(pi.DirectoryUnavailable, match=r'^workspace membership$'):
+            pi.approver_claims(meta, needs_admin=False)
+
+    def test_a_stored_value_that_is_no_workspace_id_refuses(self):
+        with patch.object(pi, 'is_current_member') as member, \
+                pytest.raises(pi.ApproverRefused, match=r'^The plan names no workspace it may run in\.$'):
+            pi.approver_claims({**META, 'workspace_id': 'ws_short'}, needs_admin=False)
+        member.assert_not_called()
 
     @pytest.mark.parametrize('stored', [None, '', 42])
     def test_a_plan_without_one_names_none(self, stored: object):

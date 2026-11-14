@@ -853,7 +853,8 @@ ERROR when it refuses a sign-up by design.
 `voc-mcp-global-api` reserves 20 concurrent executions by default, and the workspace export job
 (`voc-workspace-export`, VocProcessingStack) reserves 10, and with `-c workspaceHardDelete=true` the workspace
 delete job (`voc-workspace-delete`) reserves 2 more, all taken from the account's unreserved Lambda pool, which must
-stay at 100 or more: an account whose concurrency quota is under 130 (132 with the hard delete on) fails the deploy
+stay at 100 or more: an account whose concurrency quota is under 130 (132 with the hard delete on, once allowed:
+refused until the per-person export) fails the deploy
 (the stack that makes the reservation that no longer fits). Either raise the quota first, or deploy with
 `-c mcpReservedConcurrency=<n>` (a whole number; the quota must then be at least `n` + 110, or `n` + 112 with the
 hard delete on) or `-c mcpReservedConcurrency=0` (no reservation: the

@@ -167,7 +167,7 @@ class TestBuildContextResult:
         assert (ctx.node.id, ctx.node.type, ctx.node.role) == ('w', 'custom_llm', 'reviewer')
         assert ctx.envelope == ''
         assert ctx.claims == CLAIMS
-        fake.agent_claims.assert_called_once_with(CUSTOM_AGENT, model_profile=None)
+        fake.agent_claims.assert_called_once_with(CUSTOM_AGENT, model_profile=None, workspace=None)
         fake.get_mate.assert_not_called()
 
     @pytest.mark.parametrize('seq', [None, '2', 2.0])

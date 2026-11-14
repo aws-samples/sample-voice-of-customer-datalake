@@ -35,7 +35,7 @@ from shared.scoped_keys import scoped_pk
 if TYPE_CHECKING:
     from shared.ws_repo import WorkspaceScope
 
-__all__ = ['DOCUMENT_COMMENTS_STORE', 'PROJECT_GATE_STORE', 'PROJECT_PREFIX', 'PROJECT_TYPE_PK', 'NotPerWorkspaceError', 'ProjectPartition',
+__all__ = ['AGENT_RUNS_STORE', 'DOCUMENT_COMMENTS_STORE', 'PROJECT_GATE_STORE', 'PROJECT_JOB_WORK_STORE', 'PROJECT_PREFIX', 'PROJECT_TYPE_PK', 'NotPerWorkspaceError', 'ProjectPartition',
            'document_keys', 'document_listing', 'document_revision_key', 'document_revisions_prefix', 'job_status_pk',
            'legacy_assignment_key', 'legacy_assignment_prefix', 'personas_index_pk', 'project_id_of',
            'project_partitions', 'project_pk', 'project_registry_key', 'project_registry_pk', 'project_type_pk',
@@ -60,6 +60,15 @@ DOCUMENT_COMMENTS_STORE: Final = 'Document comments'
 #: The project access gate (shared/project_access.py, shared/project_gate.py): the deployment's admins and public
 #: visibility decide it, so it refuses a workspace until the switch decides from the workspace's own membership.
 PROJECT_GATE_STORE: Final = 'Project gate'
+#: The work of a project job (since 7.29.00: the document generator and merger, the persona generator and importer,
+#: the research steps). Its job row is per workspace (shared/jobs.py), but the work reads the deployment's feedback,
+#: its prompt labels and company context, and writes under the deployment's object prefixes, so a job event that
+#: names a workspace marks its own row failed and does nothing else until the switch (3h).
+PROJECT_JOB_WORK_STORE: Final = 'Project job work'
+#: voc-agent-run's agent runs and plans (agents/conductor, agents/nodes, agents/persona_panel): the agent rows are the
+#: deployment's, and a plan takes its workspace from its own META, so a state that names one is refused (since 7.29.00),
+#: but for the failure states, which mark the run's or the plan's own row failed.
+AGENT_RUNS_STORE: Final = 'Agent runs'
 #: A workspace's registry of its project ids, one row per project, ``WS#{ws}#PROJECT_IDS`` / ``{id}``.
 _PROJECT_REGISTRY: Final = 'PROJECT_IDS'
 
@@ -71,7 +80,8 @@ class NotPerWorkspaceError(RuntimeError):
 
 def require_deployment(workspace: WorkspaceScope | None, store: str) -> None:
     """Fail closed (``NotPerWorkspaceError``) when a workspace reaches ``store``, a project store not per workspace
-    yet (the comments, slice 3e; the access gate, slice 3h; docs/multi-workspace.md)."""
+    yet (the comments, slice 3e; the access gate, a project job's work and the agent runs, slice 3h;
+    docs/multi-workspace.md)."""
     if workspace is not None:
         raise NotPerWorkspaceError(f'{store} is not per workspace yet')
 
@@ -187,8 +197,8 @@ def document_revision_key(project_id: str, document_id: str, revision: int, *,
 
 def job_status_pk(status: str, *, workspace: WorkspaceScope | None = None) -> str:
     """voc-jobs' ``gsi1-by-status`` partition of a project job's status: ``STATUS#{status}`` (one partition for every
-    project of the deployment), ``WS#{ws}#STATUS#{status}`` in a workspace (since 7.27.00; no job is written in one
-    yet: the jobs are slice 3c)."""
+    project of the deployment), ``WS#{ws}#STATUS#{status}`` in a workspace (since 7.27.00; the job stores write it
+    since 7.29.00, slice 3c: shared/jobs.py, shared/assist_jobs.py; no route passes a workspace yet)."""
     return scoped_pk(workspace, f'{_JOB_STATUS_PREFIX}{status}')
 
 
@@ -206,8 +216,8 @@ def project_partitions(project_id: str, *, workspace: WorkspaceScope | None = No
     export, the hard delete's projects entry and the per-project delete (slices 3g, 3h; none calls it yet): in
     voc-projects its own partition (``project_pk``) and its document versions (``version_partition_key``: the saved
     revisions hold customer text); in voc-jobs and voc-participants the same ``project_pk``. Each in the workspace when
-    given. The jobs (3c) and the participant lists (3d) still write the deployment's keys only, so in a workspace
-    their entries name where those rows will be.
+    given. The job stores write there since 7.29.00 (3c; no route passes a workspace yet), and the participant lists
+    (3d) still write the deployment's keys only, so in a workspace their entry names where those rows will be.
 
     Left out, each reached another way:
 

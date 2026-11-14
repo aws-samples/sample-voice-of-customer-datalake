@@ -1,12 +1,15 @@
 /**
- * VocProcessingStack's research workflow (Step Functions): initialize →
- * analysis → synthesis → validate → save, with one error handler. Created on
- * the stack passed in (not a child construct), so logical ids are unchanged.
+ * VocProcessingStack's research workflow (Step Functions): run scope →
+ * initialize → analysis → synthesis → validate → save, with one error handler.
+ * Created on the stack passed in (not a child construct), so logical ids are
+ * unchanged. The first Choice sets `$.run_scope` from the input's optional
+ * `workspace_id` (lib/utils/run-scope.ts); every Lambda payload passes it on.
  */
 import * as cdk from 'aws-cdk-lib';
 import type * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { LOG_RETENTION } from '../utils/log-retention';
+import { RUN_SCOPE_PARAMETER, withRunScope } from '../utils/run-scope';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import type { Construct } from 'constructs';
@@ -23,6 +26,7 @@ export function createResearchStateMachine(
       step: 'initialize',
       'job_id.$': '$.job_id',
       'project_id.$': '$.project_id',
+      ...RUN_SCOPE_PARAMETER,
       'research_config.$': '$.research_config',
     }),
     resultPath: '$.initialize_result',
@@ -72,6 +76,7 @@ export function createResearchStateMachine(
       step: 'analyze',
       'job_id.$': '$.job_id',
       'project_id.$': '$.project_id',
+      ...RUN_SCOPE_PARAMETER,
       'research_config.$': '$.research_config',
       'grounding_included.$': '$.initialize_result.grounding_included',
       'feedback_stats.$': '$.initialize_result.feedback_stats',
@@ -91,6 +96,7 @@ export function createResearchStateMachine(
       step: 'synthesize',
       'job_id.$': '$.job_id',
       'project_id.$': '$.project_id',
+      ...RUN_SCOPE_PARAMETER,
       'research_config.$': '$.research_config',
       'grounding_included.$': '$.initialize_result.grounding_included',
       'analysis.$': '$.analysis_result.analysis',
@@ -107,6 +113,7 @@ export function createResearchStateMachine(
       step: 'validate',
       'job_id.$': '$.job_id',
       'project_id.$': '$.project_id',
+      ...RUN_SCOPE_PARAMETER,
       'research_config.$': '$.research_config',
       'analysis.$': '$.analysis_result.analysis',
       'synthesis.$': '$.synthesis_result.synthesis',
@@ -123,6 +130,7 @@ export function createResearchStateMachine(
       step: 'save',
       'job_id.$': '$.job_id',
       'project_id.$': '$.project_id',
+      ...RUN_SCOPE_PARAMETER,
       'research_config.$': '$.research_config',
       'feedback_count.$': '$.initialize_result.feedback_count',
       // Executed web-search queries for the report disclosure (#207).
@@ -145,6 +153,7 @@ export function createResearchStateMachine(
       step: 'error',
       'job_id.$': '$.job_id',
       'project_id.$': '$.project_id',
+      ...RUN_SCOPE_PARAMETER,
       'error.$': '$.error',
     }),
   });
@@ -155,12 +164,14 @@ export function createResearchStateMachine(
 
   const addCatch = (step: tasks.LambdaInvoke) => step.addCatch(handleError, { resultPath: '$.error' });
 
-  const definition = addCatch(initializeStep)
+  addCatch(initializeStep)
     .next(addCatch(analysisStep))
     .next(addCatch(synthesisStep))
     .next(addCatch(validateStep))
     .next(addCatch(saveStep))
     .next(successState);
+  // The run's workspace for every state ($.run_scope, lib/utils/run-scope.ts), before the initialize step.
+  const definition = withRunScope(scope, 'Research', initializeStep);
 
   handleError.next(failState);
 

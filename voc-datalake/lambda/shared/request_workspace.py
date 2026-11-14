@@ -35,7 +35,7 @@ before. Both branches refuse (403), so the route-gate inventory counts it as a g
 from __future__ import annotations
 
 import os
-from typing import Final
+from typing import Any, Final
 
 from botocore.exceptions import BotoCoreError, ClientError
 
@@ -53,11 +53,13 @@ from shared.workspace import (
     WORKSPACE_HEADER,
     MembershipCache,
     WorkspaceContext,
+    is_active,
     require_workspace_admin,
     resolve_workspace,
+    stored_role,
 )
 
-__all__ = ['request_workspace', 'require_settings_admin', 'require_workspace_writer']
+__all__ = ['is_current_member', 'request_workspace', 'require_settings_admin', 'require_workspace_writer']
 
 #: This warm container's resolved memberships (30 s, shared/workspace.py).
 _MEMBERSHIPS: Final = MembershipCache()
@@ -77,17 +79,33 @@ def request_workspace(event: dict, public_error: str, *, fresh: bool = False,
     if not _names_a_workspace(event):
         usage_meter.attribute(None)  # the deployment as before: its Bedrock calls are the deployment's (shared/usage_meter.py)
         return None
-    table_name = os.environ.get('WORKSPACES_TABLE', '')
-    if not table_name:
-        raise ConfigurationError('Workspaces table not configured')
+    table = _workspaces_table()
     try:
-        return resolve_workspace(cached_table(get_dynamodb_resource(), table_name), event,
+        return resolve_workspace(table, event,
                                  MembershipCache() if fresh else _MEMBERSHIPS,
                                  confirm_platform_admin=confirm_live_platform_admin if elevate else _never)
     except (ClientError, BotoCoreError) as exc:
         # A failed read, live check or entry audit row: the entry is refused, the AWS error stays in the log.
         logger.exception('Error resolving the workspace')
         raise ServiceError(public_error) from exc
+
+
+def _workspaces_table() -> Any:
+    """voc-workspaces (``WORKSPACES_TABLE``); ``ConfigurationError`` when it is not configured."""
+    table_name = os.environ.get('WORKSPACES_TABLE', '')
+    if not table_name:
+        raise ConfigurationError('Workspaces table not configured')
+    return cached_table(get_dynamodb_resource(), table_name)
+
+
+def is_current_member(ws: str, sub: str) -> bool:
+    """Whether ``sub`` is a member of ``ws`` now and ``ws`` is active (its ``MEMBER#`` row, then its ``META``, each
+    read strongly consistent: shared/workspace.py ``stored_role``, ``is_active``): the check of a person a stored
+    record acts for with no request to resolve (a plan's approver before each of its steps and waits,
+    agents/plan_identity.py). A platform admin's entry counts for nothing here, as in a worker. A DynamoDB error
+    propagates; ``ConfigurationError`` without the table."""
+    table = _workspaces_table()
+    return stored_role(table, ws, sub) is not None and is_active(table, ws)
 
 
 def _never(_event: dict) -> bool:

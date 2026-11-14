@@ -9,19 +9,28 @@ its owner:
 - ``sub = agent:{agent_id}``, ``cognito:groups`` empty (never admin; only ``e2e`` for a run an e2e
   test user started, shared/model_profile.py);
 - ``voc:acting_subject`` = the agent's owner (``project_access`` caps it at editor);
-- ``voc:agent_owner_sub`` / ``voc:agent_editor_subs`` only on project creation.
+- ``voc:agent_owner_sub`` / ``voc:agent_editor_subs`` only on project creation;
+- ``voc:workspace`` = the run's workspace, when it belongs to one (since 7.29.00; the claim plans already carry,
+  agents/plan_identity.py ``WORKSPACE_CLAIM``). No run belongs to one yet: the agent rows stay the deployment's,
+  and the run's Lambdas refuse a state that names a workspace (agents/runtime.py, agents/conductor/handler.py),
+  so the claim is wired for the slice that moves the agents into workspaces.
 
-Claims derive ONLY from the stored agent row — nothing a model produced can
-reach them (``agent_claims`` takes the agent and nothing else).
+Claims derive ONLY from the stored agent row and the run's own scope (the state machine's ``run_scope``, read by
+shared/ws_repo.py ``event_scope``) — nothing a model produced can reach them.
 """
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+# The claim a plan step carries its workspace in: one name for both kinds of run.
+from agents.plan_identity import WORKSPACE_CLAIM
 from shared import project_access
 from shared.mcp_delegate import DelegationUnavailable, DomainCall, DomainResult, call_domain
 from shared.model_profile import E2E_GROUP, E2E_PROFILE
+
+if TYPE_CHECKING:
+    from shared.ws_repo import WorkspaceScope
 
 
 class RouteError(Exception):
@@ -33,7 +42,7 @@ class RouteError(Exception):
 
 
 def agent_claims(agent: dict, *, owner_sub: str = '', editor_subs: tuple[str, ...] = (),
-                 model_profile: str | None = None) -> dict[str, str]:
+                 model_profile: str | None = None, workspace: WorkspaceScope | None = None) -> dict[str, str]:
     agent_id = agent.get('agent_id')
     if not isinstance(agent_id, str) or not agent_id:
         raise DelegationUnavailable('agent record has no agent_id')
@@ -50,6 +59,8 @@ def agent_claims(agent: dict, *, owner_sub: str = '', editor_subs: tuple[str, ..
     editors = [s for s in editor_subs if s and ',' not in s and not project_access.is_synthetic_subject(s)]
     if editors:
         claims[project_access.AGENT_EDITORS_CLAIM] = ','.join(editors[:project_access.MAX_AGENT_EDITORS])
+    if workspace is not None:
+        claims[WORKSPACE_CLAIM] = workspace.ws
     return claims
 
 

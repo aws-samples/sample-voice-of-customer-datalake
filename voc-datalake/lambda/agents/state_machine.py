@@ -12,7 +12,9 @@ it with ``sfn.DefinitionBody.fromFile(...)`` and ``definitionSubstitutions``:
 Execution input: ``{"agent_id": "...", "run_id": "..."}`` (the agents API and the
 heartbeat start one execution per run, named after the run id), or
 ``{"run_kind": "plan", "plan_id": "..."}`` for an approved assistant plan (named after the
-plan id; docs/assistant-plan-mode.md). The ``Start`` choice sends a plan to its own branch:
+plan id; docs/assistant-plan-mode.md). The ``RunScope`` choice first sets ``$.run_scope`` (the run's workspace
+object, ``{}`` when the input names no ``workspace_id``: every run and plan today), which every Lambda payload passes
+on (since 7.29.00). The ``Start`` choice sends a plan to its own branch:
 ``PlanDecide`` → execute (a Map of ≤ 3 steps: prepare → voc-plan-step → record) | wait | finish.
 State stays small: ids plus the conductor's latest directive and the last node result.
 
@@ -35,8 +37,13 @@ _LAMBDA_RETRY = [{
     'IntervalSeconds': 2, 'MaxAttempts': 4, 'BackoffRate': 2, 'JitterStrategy': 'FULL',
 }]
 _CATCH = [{'ErrorEquals': ['States.ALL'], 'ResultPath': '$.error', 'Next': 'RecordFailure'}]
-_IDS = {'agent_id.$': '$.agent_id', 'run_id.$': '$.run_id'}
-_PLAN_IDS = {'plan_id.$': '$.plan_id'}
+#: The run's workspace object (shared/ws_repo.py RUN_SCOPE_FIELD), set by the first states and passed to every
+#: Lambda beside its ids (since 7.29.00). A JSONPath parameter whose path the input lacks fails the state, so the
+#: ``RunScope`` choice sets it from the input's optional ``workspace_id``: ``{workspace_id}``, or ``{}`` when the input
+#: names none (every run and plan today, whose input is unchanged).
+_RUN_SCOPE = {'run_scope.$': '$.run_scope'}
+_IDS = {'agent_id.$': '$.agent_id', 'run_id.$': '$.run_id', **_RUN_SCOPE}
+_PLAN_IDS = {'plan_id.$': '$.plan_id', **_RUN_SCOPE}
 _PLAN_CATCH = [{'ErrorEquals': ['States.ALL'], 'ResultPath': '$.error', 'Next': 'PlanRecordFailure'}]
 # Inside a plan step: only a throttle is retried — that invocation never ran. Any other Lambda
 # service error might have run the write, so it is recorded as the step's failure instead.
@@ -70,7 +77,7 @@ def _task(function: str, payload: dict[str, Any], result_key: str, result_path: 
 
 def _plan_step_states() -> dict[str, Any]:
     """One ready plan step: prepare (conductor) → voc-plan-step → record (conductor)."""
-    item_ids = {'plan_id.$': '$.plan_id', 'step_id.$': '$.step_id'}
+    item_ids = {'plan_id.$': '$.plan_id', 'step_id.$': '$.step_id', **_RUN_SCOPE}
     run_step = _task('PlanStepFunctionArn', {}, 'step', '$.result', 'PlanRecord', ids={},
                      catch=_STEP_ERROR, retry=_PLAN_STEP_RETRY)
     # The plan-step event is exactly what prepare built (claims included), nothing from the state.
@@ -108,7 +115,7 @@ def _plan_states() -> dict[str, Any]:
         'PlanExecuteSteps': {
             'Type': 'Map',
             'ItemsPath': '$.plan.next.steps',
-            'ItemSelector': {'plan_id.$': '$.plan_id', 'step_id.$': '$$.Map.Item.Value'},
+            'ItemSelector': {'plan_id.$': '$.plan_id', 'step_id.$': '$$.Map.Item.Value', **_RUN_SCOPE},
             'MaxConcurrency': PLAN_MAP_CONCURRENCY,
             'ItemProcessor': {
                 'ProcessorConfig': {'Mode': 'INLINE'},
@@ -129,8 +136,16 @@ def build_definition() -> dict[str, Any]:
     return {
         'Comment': 'The conductor walks an autonomous agent workflow or an approved assistant plan (agents/conductor).',
         'TimeoutSeconds': TIMEOUT_SECONDS,
-        'StartAt': 'Start',
+        'StartAt': 'RunScope',
         'States': {
+            'RunScope': {
+                'Type': 'Choice',
+                'Choices': [{'Variable': '$.workspace_id', 'IsPresent': True, 'Next': 'RunScopeWorkspace'}],
+                'Default': 'RunScopeDeployment',
+            },
+            'RunScopeWorkspace': {'Type': 'Pass', 'Parameters': {'workspace_id.$': '$.workspace_id'},
+                                  'ResultPath': '$.run_scope', 'Next': 'Start'},
+            'RunScopeDeployment': {'Type': 'Pass', 'Result': {}, 'ResultPath': '$.run_scope', 'Next': 'Start'},
             'Start': {
                 'Type': 'Choice',
                 'Choices': [{'And': [

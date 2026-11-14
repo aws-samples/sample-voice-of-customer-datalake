@@ -30,6 +30,8 @@ from agents_handler_fixtures import ADMIN, api, call
 from agents.test.plan_fixtures import FakeCognito, PlanEnv, PlanStep, conduct, drive, run_steps
 from shared import plans_store as ps
 from shared.plan_canonical import canonical_write_fingerprint
+from shared.run_rows import source_run_partition
+from shared.ws_repo import WorkspaceScope
 
 FIXTURE: dict = json.loads((Path(__file__).resolve().parents[2] / 'shared' / 'test' / 'fixtures'
                             / 'plan-step-example.json').read_text(encoding='utf-8'))
@@ -104,8 +106,10 @@ class Background:
     def __call__(self, _wait_number: int) -> None:
         status = 'running' if not self.source_polls else 'completed'
         self.source_polls.append(status)
-        self.env.aggregates.put_item(Item={'pk': 'SOURCE_RUN#app_reviews_ios', 'sk': 'ex_ios_1', 'status': status,
-                                           'items_found': 42})
+        # The import ran in the plan's workspace (its step named it), so its run row is that workspace's (7.29.00: the
+        # wait reads it there; before, it polled the deployment's SOURCE_RUN# row, which such a run never writes).
+        self.env.aggregates.put_item(Item={'pk': source_run_partition(WorkspaceScope(WORKSPACE), 'app_reviews_ios'),
+                                           'sk': 'ex_ios_1', 'status': status, 'items_found': 42})
         for job_id in ('job_personas', 'job_prfaq', 'job_proto'):
             self.jobs.put_item(Item={'pk': 'PROJECT#proj_example1', 'sk': f'JOB#{job_id}', 'status': 'completed'})
         steps = {row['step_id']: row for row in ps.get_steps(self.env.agents, self.plan_id)}
@@ -122,6 +126,8 @@ def cross_track(lambda_context) -> Iterator[CrossTrack]:
     with api() as env, patch.dict('os.environ', {'AGGREGATES_TABLE': AGGREGATES_TABLE, 'JOBS_TABLE': JOBS_TABLE,
                                                  'USER_POOL_ID': 'pool-1'}):
         jobs = _jobs_table(env.resource)
+        # The approver is a member of the workspace the plan is approved in (the approval and every step re-check it).
+        env.add_member(WORKSPACE, ADMIN['sub'], role='admin')
         cognito = FakeCognito(sub=ADMIN['sub'], groups=['admins', 'users'])
         background = Background(env, jobs, lambda_context)
         with patch('agents.plan_identity._cognito', return_value=cognito), \

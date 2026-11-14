@@ -26,11 +26,11 @@ def test_a_saved_research_tells_its_starter(notified: MagicMock) -> None:
 
 
 def test_a_failed_research_tells_its_starter(notified: MagicMock) -> None:
-    result = rsh.step_error({'project_id': 'p1', 'job_id': 'j1', 'error': {'Error': 'States.Timeout'}})
+    result = rsh.step_error({'project_id': 'p1', 'job_id': 'j1', 'error': {'Error': 'States.Timeout'}}, workspace=None)
     assert result['success'] is False
-    notified.assert_called_once_with('p1', 'j1', 'failed')
+    notified.assert_called_once_with('p1', 'j1', 'failed', workspace=None)
 
 
 def test_a_lost_notice_still_answers(notified: MagicMock) -> None:
     notified.return_value = False
-    assert rsh.step_error({'project_id': 'p1', 'job_id': 'j1', 'error': {}})['error'] == 'Unknown error'
+    assert rsh.step_error({'project_id': 'p1', 'job_id': 'j1', 'error': {}}, workspace=None)['error'] == 'Unknown error'

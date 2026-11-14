@@ -202,7 +202,7 @@ class TestACreatedProject:
         ):
             result = soc.start(ctx)
         assert projects.call_args_list == [call('GET', '/projects')]
-        claims.assert_called_once_with(ctx.agent, owner_sub=handoff[0], editor_subs=handoff[1])
+        claims.assert_called_once_with(ctx.agent, owner_sub=handoff[0], editor_subs=handoff[1], workspace=None)
         return result, resolve, post
 
     def test_the_dominant_category_owner_gets_the_new_project(self):

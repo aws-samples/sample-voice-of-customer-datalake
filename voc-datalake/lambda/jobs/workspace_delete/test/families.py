@@ -53,6 +53,10 @@ FAMILIES: Final = {
     # jobs' by-status), which go with the rows.
     'PROJECT_IDS': 'projects', 'project_pk': 'projects', 'version_partition_key': 'projects',
     'project_type_pk': 'projects', 'job_status_pk': 'projects',
+    # A member's assists outside a project in voc-jobs (7.29.00, shared/assist_jobs.py owner_pk; no route writes one
+    # yet): their rows hold the assist's input and answer for a day.
+    'owner_pk': ('TTL: voc-jobs WS#{ws}#ASSIST#{sub} assist rows expire a day after they start (ASSIST_JOB_TTL); '
+                 'no route writes one yet'),
     'scoped_key': _RADAR_DATA_GAP, '_releases_since': _RADAR_DATA_GAP, 'daily_rows': _RADAR_DATA_GAP,
     'item_partitions': _RADAR_DATA_GAP,
 }

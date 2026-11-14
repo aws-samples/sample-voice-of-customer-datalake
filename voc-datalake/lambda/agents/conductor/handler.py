@@ -25,20 +25,23 @@ Every answer is a ``next`` directive for the state machine::
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Final
 
 from agents import notices, pins, principal, run_memory, run_methodology, store
-from agents.conductor import plan_decide, plan_execution, planning, resume
+from agents.conductor import plan_decide, plan_execution, plan_state, planning, resume
 from agents.failure_reason import VERIFICATION_FAILURE, document_label, failure_summary
 from agents.fields import dict_field, list_field
 from agents.graph import FAILING_OUTCOMES, Node, WorkflowError, WorkflowGraph
 from agents.runtime import load_graph, resolve_workflow
 from shared import agent_run_decisions as decisions
+from shared import plans_store as ps
 from shared.aws import get_dynamodb_resource
 from shared.invocation_cost import instrumented_handler
 from shared.logging import logger
 from shared.model_profile import model_profile_scope, profile_from_payload
+from shared.project_keys import AGENT_RUNS_STORE, require_deployment
 from shared.warm_init import warm_at_init
+from shared.ws_repo import WORKSPACE_FIELD, WorkspaceScope, event_scope
 
 ENVELOPE_PREFIX = '[sent by conductor]'
 WAIT_SECONDS = 30
@@ -437,9 +440,55 @@ _PLAN_ACTIONS = {
     'plan_fail': _plan_fail,
 }
 _ACTIONS = {'init': init, 'advance': advance, 'fail': fail}
+#: The actions of the two failure states (RecordFailure, PlanRecordFailure: no Catch), which ``_scope_gate`` lets
+#: record a failure on the run's or the plan's own row.
+_FAILURE_RECORDERS = frozenset({'fail', 'plan_fail'})
+#: What a failure recorder answers when it records nothing (the state goes on to ``Failed`` whatever it answers).
+_NOT_RECORDED: Final = {'kind': 'finish', 'status': store.RUN_FAILED}
+
+
+def _row_workspace(event: dict, action: str) -> object:
+    """The workspace the failing row names: a plan's META ``workspace_id``, an agent's (none today: the agent rows
+    are the deployment's)."""
+    if action == 'plan_fail':
+        row = ps.get_meta(plan_state.table(), str(event.get('plan_id') or ''))
+    else:
+        row = store.get_agent(str(event.get('agent_id') or ''))
+    return (row or {}).get(WORKSPACE_FIELD)
+
+
+def _recorder_scope(event: dict) -> tuple[bool, WorkspaceScope | None]:
+    """``(named, scope)`` of a failure state's ``run_scope``, parsed once: ``named`` False when it names no scope."""
+    try:
+        return True, event_scope(event)
+    except ValueError:
+        return False, None
+
+
+def _scope_gate(event: dict, action: str) -> bool:
+    """Whether ``handle`` may go on (since 7.29.00; the run's workspace is its state's ``run_scope``).
+
+    Every action but the failure recorders refuses a state that names a workspace (``NotPerWorkspaceError``) or one
+    whose ``run_scope`` names none (``ValueError``), before anything is read: the agent rows are the deployment's, and
+    a plan takes its workspace from its own META. A failure recorder records only on a row of the run's own scope: in
+    a workspace, a row whose ``workspace_id`` is that workspace's; for the deployment, as before. Otherwise, and for a
+    malformed ``run_scope`` (no scope to compare), it logs and records nothing, and the execution ends at ``Failed``:
+    an agent run left ``running`` is failed by the heartbeat's stale-run rule (agents/heartbeat, ``STALE_RUN_HOURS``),
+    and a plan's execution input never names a workspace (shared/plans_store.py ``launch_plan``), so its states
+    always carry ``run_scope: {}``."""
+    if action not in _FAILURE_RECORDERS:
+        require_deployment(event_scope(event), AGENT_RUNS_STORE)
+        return True
+    named, workspace = _recorder_scope(event)
+    if named and (workspace is None or _row_workspace(event, action) == workspace.ws):
+        return True
+    logger.error('A failure state of another or no scope is not recorded', extra={'action': action, 'named': named})
+    return False
 
 
 def handle(event: dict) -> dict:
+    if not _scope_gate(event, str(event.get('action') or '')):
+        return dict(_NOT_RECORDED)
     plan_action = _PLAN_ACTIONS.get(str(event.get('action') or ''))
     if plan_action is not None:
         return store.plain(plan_action(event))

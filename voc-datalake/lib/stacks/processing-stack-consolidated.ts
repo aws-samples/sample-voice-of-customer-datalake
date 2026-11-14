@@ -386,7 +386,7 @@ export class VocProcessingStack extends VocStack {
       rawDataBucket,
       memoryExtractQueue: this.memoryExtractQueue,
       jobsTable,
-      userPool: props.userPool,
+      userPool: props.userPool, workspacesTable,
       realtime: props.realtime,
       webSearchGatewayUrl: props.webSearchGatewayUrl,
       webSearchGatewayArn: props.webSearchGatewayArn,

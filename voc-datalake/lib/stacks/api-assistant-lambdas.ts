@@ -15,7 +15,9 @@ import { snapStartFunctionProps } from '../utils/snapstart';
 import { AGGREGATES_VERSION_PARTITION, grantCacheVersionBump } from '../utils/cache-version-grants';
 import { PII_REDACTION_ENV, piiDetectionStatement } from '../utils/pii-redaction';
 import { appVersion } from '../utils/connector-version';
-import { grantWorkspaceResolution, grantWorkspaceRoleAndStatusReads } from '../utils/workspace-resolution-grants';
+import {
+  grantWorkspaceMembershipReads, grantWorkspaceResolution, grantWorkspaceRoleAndStatusReads,
+} from '../utils/workspace-resolution-grants';
 import type { ApiStackContext } from './api-context';
 import { WORKSPACE_ID_PATTERN, WORKSPACE_MEMORY_IMPORTS_PREFIX } from './core-buckets';
 import { createS3ImportLambda } from './api-s3-import-lambda';
@@ -141,6 +143,9 @@ export function createAssistantLambdas(
   aggregatesTable.grant(agentsRole, 'dynamodb:GetItem');
   kmsKey.grantEncryptDecrypt(agentsRole);
   agentRunStateMachine.grantStartExecution(agentsRole);
+  // A plan approved in a workspace: the approver's membership there, resolved as every route resolves it but
+  // without a platform admin's entry (lambda/api/agents_handler.py `_approval_workspace`, `elevate=False`; 7.29.00).
+  const agentsWorkspaceEnv = grantWorkspaceMembershipReads(ctx.props.workspacesTable, agentsRole);
   const agentExecutionsArn = stack.formatArn({
     service: 'states',
     resource: 'execution',
@@ -178,6 +183,7 @@ export function createAssistantLambdas(
       ALLOWED_ORIGIN: allowedOrigin,
       POWERTOOLS_SERVICE_NAME: 'voc-agents-api',
       LOG_LEVEL: 'INFO',
+      ...agentsWorkspaceEnv,
     },
     layers: [apiLayer],
     logGroup: ctx.logGroup('AgentsApiLogs', ctx.uniqueName('voc-agents-api')),

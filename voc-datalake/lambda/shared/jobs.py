@@ -1,6 +1,17 @@
 """
 Shared job utilities for VoC Lambda functions.
 Provides centralized job creation, status management, and job handler decorator.
+
+A job's row is ``JOB#{job_id}`` in its project's partition of voc-jobs, listed on ``gsi1-by-status`` at its status
+(shared/project_keys.py ``project_pk``, ``job_status_pk``). Every store here takes a keyword-only ``workspace``
+(since 7.29.00, slice 3c of docs/multi-workspace.md's project plan): in one, the row is ``WS#{ws}#PROJECT#{id}`` /
+``JOB#{job_id}`` and its index partition ``WS#{ws}#STATUS#{status}``, each call through shared/ws_repo.py ``ws_table``
+(shared/ingest_tables.py ``table_view``, shared/workspace_config.py ``get_scoped_item``), which refuses a key or an
+index partition outside it; without one (None, the default) every request is the one sent before. ``job_handler``
+reads the workspace from the job's event (shared/ws_repo.py ``event_scope``) and hands it to every job-row call, but
+the work itself is not per workspace yet (shared/project_keys.py ``PROJECT_JOB_WORK_STORE``): a job event that names
+a workspace marks its own row failed and does nothing else. No route passes a workspace yet. Nothing reads
+``gsi1-by-status``, so no sweeper or lister has to fan out over the workspaces' status partitions.
 """
 
 import math
@@ -16,11 +27,14 @@ from botocore.exceptions import ClientError
 
 from shared.aws import invoke_lambda_async, is_conditional_check_failure
 from shared.exceptions import ApiError, ServiceError
+from shared.ingest_tables import table_view
 from shared.job_notices import notify_project_job
 from shared.logging import logger
-from shared.project_keys import job_status_pk, project_pk
+from shared.project_keys import PROJECT_JOB_WORK_STORE, job_status_pk, project_pk, require_deployment
 from shared.tables import get_jobs_table
 from shared.timestamps import now_iso
+from shared.workspace_config import get_scoped_item
+from shared.ws_repo import WorkspaceScope, event_scope
 
 EXECUTION_LEASE_SKEW_SECONDS = 5
 EXECUTION_REQUEUE_BUDGET_RATIO = 0.9
@@ -47,6 +61,26 @@ CLAIM_CONDITION_EXPRESSION = (
 CLAIM_ATTRIBUTE_NAMES = {'#status': 'status', '#error': 'error', '#result': 'result'}
 
 
+def _job_key(project_id: str, job_id: str, *, workspace: WorkspaceScope | None) -> dict[str, str]:
+    """The job's row: ``JOB#{job_id}`` in the project's partition of voc-jobs (the workspace's when given)."""
+    return {'pk': project_pk(project_id, workspace=workspace), 'sk': f'JOB#{job_id}'}
+
+
+def error_state_scope(event: dict) -> WorkspaceScope | None:
+    """The scope a state machine's error state marks its job failed in: the run's (shared/ws_repo.py ``event_scope``),
+    or the deployment's when its ``run_scope`` names none. A workspace's job row is only ever written with a scope the
+    layer accepts (``create_job``), so a job whose run carries a malformed scope can only have the deployment's row,
+    and ``update_job_status`` changes it only if it exists (its condition): the job never stays ``running``, and no
+    workspace's row is written on a guess."""
+    try:
+        return event_scope(event)
+    except ValueError:
+        named = False
+    logger.error('An error state carried a run scope that names no workspace; failing the deployment\'s job row',
+                 extra={'named': named})
+    return None
+
+
 def has_time_left(lambda_context: Any, reserve_ms: int) -> bool:
     """More than ``reserve_ms`` of the invocation remain: room for one more slice before handing over."""
     return lambda_context.get_remaining_time_in_millis() > reserve_ms
@@ -64,8 +98,10 @@ def claim_job_execution(
     project_id: str,
     job_id: str,
     lambda_context: Any,
+    *,
+    workspace: WorkspaceScope | None = None,
 ) -> bool:
-    """Claim one direct async delivery until its Lambda deadline."""
+    """Claim one direct async delivery until its Lambda deadline (the workspace's job row when given)."""
     jobs_table = get_jobs_table()
     if not jobs_table:
         raise ValueError('JOBS_TABLE environment variable not configured')
@@ -77,8 +113,8 @@ def claim_job_execution(
     owner = str(getattr(lambda_context, 'aws_request_id', '') or 'unknown')
 
     try:
-        jobs_table.update_item(
-            Key={'pk': project_pk(project_id), 'sk': f'JOB#{job_id}'},
+        table_view(workspace, jobs_table).update_item(
+            _job_key(project_id, job_id, workspace=workspace),
             UpdateExpression=CLAIM_UPDATE_EXPRESSION,
             ConditionExpression=CLAIM_CONDITION_EXPRESSION,
             ExpressionAttributeNames=CLAIM_ATTRIBUTE_NAMES,
@@ -90,7 +126,7 @@ def claim_job_execution(
                 ':starting': 'starting',
                 ':now': now.isoformat(),
                 ':now_epoch': now_epoch,
-                ':running_gsi': job_status_pk('running'),
+                ':running_gsi': job_status_pk('running', workspace=workspace),
                 ':lease': lease_until,
                 ':owner': owner,
             },
@@ -106,8 +142,13 @@ def claim_job_execution(
 def recover_job_execution_claim(
     event: dict,
     lambda_context: Any,
+    *,
+    workspace: WorkspaceScope | None = None,
 ) -> bool:
-    """Wait for the owner, or self-redeliver before this waiter loses budget."""
+    """Wait for the owner, or self-redeliver before this waiter loses budget.
+
+    The redelivery is ``event`` itself, so it names the workspace it came with (``job_handler`` reads
+    ``workspace`` from it)."""
     project_id = event['project_id']
     job_id = event['job_id']
     jobs_table = get_jobs_table()
@@ -120,12 +161,9 @@ def recover_job_execution_claim(
         math.ceil(initial_remaining * EXECUTION_REQUEUE_BUDGET_RATIO),
     )
     while True:
-        response = jobs_table.get_item(
-            Key={'pk': project_pk(project_id), 'sk': f'JOB#{job_id}'},
-            ConsistentRead=True,
-        )
-        item = response.get('Item') if isinstance(response, dict) else None
-        if not isinstance(item, dict):
+        item = get_scoped_item(jobs_table, _job_key(project_id, job_id, workspace=workspace), workspace,
+                               ConsistentRead=True)
+        if not item:
             raise ServiceError('Job no longer exists')
         if item.get('status') == 'completed':
             return False
@@ -154,7 +192,7 @@ def recover_job_execution_claim(
         if (
             status in {'pending', 'failed'}
             or lease_until <= int(time.time())
-        ) and claim_job_execution(project_id, job_id, lambda_context):
+        ) and claim_job_execution(project_id, job_id, lambda_context, workspace=workspace):
             return True
 
         # `remaining` and `minimum_budget` are whole seconds and this line is
@@ -171,6 +209,8 @@ def create_job(
     ttl_minutes: int = 30,
     status: str = 'running',
     initiated_by: str | None = None,
+    *,
+    workspace: WorkspaceScope | None = None,
 ) -> tuple[str, str]:
     """Create a job record and return (job_id, now).
 
@@ -185,6 +225,8 @@ def create_job(
             async job runs under the Lambda's own role long after the request
             that was gated, so this is the only record of WHO asked for it.
             Omitted (not stored) when the starter is not a signed-in caller.
+        workspace: The project's workspace: the row in its partition, listed at its
+            ``WS#{ws}#STATUS#…`` (None: the deployment's, as before).
 
     Returns:
         Tuple of (job_id, created_at timestamp)
@@ -198,9 +240,8 @@ def create_job(
     ttl = int((datetime.now(UTC) + timedelta(minutes=ttl_minutes)).timestamp())
 
     item = {
-        'pk': project_pk(project_id),
-        'sk': f'JOB#{job_id}',
-        'gsi1pk': job_status_pk(status),
+        **_job_key(project_id, job_id, workspace=workspace),
+        'gsi1pk': job_status_pk(status, workspace=workspace),
         'gsi1sk': now,
         'job_id': job_id,
         'project_id': project_id,
@@ -215,8 +256,10 @@ def create_job(
     }
     if initiated_by:
         item['initiated_by'] = initiated_by
-    jobs_table.put_item(Item=item)
+    table_view(workspace, jobs_table).put_item(item)
     return job_id, now
+
+
 def update_job_status(
     project_id: str,
     job_id: str,
@@ -224,7 +267,9 @@ def update_job_status(
     progress: int,
     current_step: str | None = None,
     error: str | None = None,
-    result: dict | None = None
+    result: dict | None = None,
+    *,
+    workspace: WorkspaceScope | None = None,
 ):
     """Update job status in DynamoDB.
 
@@ -236,6 +281,7 @@ def update_job_status(
         current_step: Current step description (optional)
         error: Error message if failed (optional)
         result: Result dict if completed (optional)
+        workspace: The project's workspace (None: the deployment's row, as before)
     """
     jobs_table = get_jobs_table()
     if not jobs_table:
@@ -249,7 +295,7 @@ def update_job_status(
         ':status': status,
         ':progress': progress,
         ':now': now,
-        ':gsi1pk': job_status_pk(status)
+        ':gsi1pk': job_status_pk(status, workspace=workspace)
     }
     expr_names = {'#status': 'status'}
 
@@ -274,8 +320,8 @@ def update_job_status(
         expr_values[':ttl'] = int((datetime.now(UTC) + timedelta(days=7)).timestamp())
 
     try:
-        jobs_table.update_item(
-            Key={'pk': project_pk(project_id), 'sk': f'JOB#{job_id}'},
+        table_view(workspace, jobs_table).update_item(
+            _job_key(project_id, job_id, workspace=workspace),
             UpdateExpression=update_expr,
             ExpressionAttributeValues=expr_values,
             ExpressionAttributeNames=expr_names,
@@ -295,11 +341,12 @@ def update_job_status(
 
 
 class JobContext:
-    """Context object passed to job handlers for progress updates."""
+    """Context object passed to job handlers for progress updates (``workspace``: the job's, None the deployment)."""
 
-    def __init__(self, project_id: str, job_id: str):
+    def __init__(self, project_id: str, job_id: str, *, workspace: WorkspaceScope | None = None):
         self.project_id = project_id
         self.job_id = job_id
+        self.workspace = workspace
 
     def update_progress(self, progress: int, step: str):
         """Update job progress.
@@ -308,7 +355,9 @@ class JobContext:
             progress: Progress percentage (0-100)
             step: Current step description
         """
-        update_job_status(self.project_id, self.job_id, 'running', progress, step)
+        update_job_status(self.project_id, self.job_id, 'running', progress, step, workspace=self.workspace)
+
+
 def job_handler(error_message: str = 'Job execution failed'):
     """Decorator for async job handlers that standardizes error handling and status updates.
 
@@ -318,6 +367,11 @@ def job_handler(error_message: str = 'Job execution failed'):
 
     Args:
         error_message: Error message to use when the job fails
+
+    Workspace (since 7.29.00): the event's ``workspace_id`` (shared/ws_repo.py ``event_scope``; a field that names
+    no workspace raises ValueError before any row is touched) keys every job-row call: the claim, the redelivery,
+    the progress, the outcome and the notice. The work is not per workspace yet: with a workspace the job fails
+    (``NotPerWorkspaceError``, the 5xx path below) before the decorated function runs.
 
     Failure contract:
         - An ApiError with a 4xx status (ValidationError, NotFoundError,
@@ -340,13 +394,14 @@ def job_handler(error_message: str = 'Job execution failed'):
         def wrapper(event: dict, lambda_context: Any = None) -> dict:
             project_id = event['project_id']
             job_id = event['job_id']
+            workspace = event_scope(event)
 
             if lambda_context is not None:
                 claimed = claim_job_execution(
-                    project_id, job_id, lambda_context,
+                    project_id, job_id, lambda_context, workspace=workspace,
                 )
                 if not claimed:
-                    claimed = recover_job_execution_claim(event, lambda_context)
+                    claimed = recover_job_execution_claim(event, lambda_context, workspace=workspace)
                 if not claimed:
                     logger.info(
                         f'[JOB] Delivery deferred or already complete for '
@@ -355,7 +410,7 @@ def job_handler(error_message: str = 'Job execution failed'):
                     return {'success': True, 'skipped': True}
 
             # Create context for progress updates
-            ctx = JobContext(project_id, job_id)
+            ctx = JobContext(project_id, job_id, workspace=workspace)
 
             # Extract config - look for common config key patterns
             config = None
@@ -366,6 +421,7 @@ def job_handler(error_message: str = 'Job execution failed'):
 
             try:
                 logger.info(f"[JOB] Starting {func.__name__} for project={project_id}, job={job_id}")
+                require_deployment(workspace, PROJECT_JOB_WORK_STORE)
 
                 # Call the handler with context, IDs, and config
                 if config is not None:
@@ -374,21 +430,24 @@ def job_handler(error_message: str = 'Job execution failed'):
                     result = func(ctx, project_id, job_id)
 
                 # Mark job as completed
-                update_job_status(project_id, job_id, 'completed', 100, 'complete', result=result)
+                update_job_status(project_id, job_id, 'completed', 100, 'complete', result=result,
+                                  workspace=workspace)
                 logger.info(f"[JOB] Completed {func.__name__} for job={job_id}")
                 # Its starter's page re-reads the job now (best effort, docs/realtime.md).
-                notify_project_job(project_id, job_id, 'completed')
+                notify_project_job(project_id, job_id, 'completed', workspace=workspace)
 
                 response = {'success': True, **result}
 
             except Exception as e:
                 if _is_terminal_user_outcome(e):
-                    return _end_job_without_result(func.__name__, project_id, job_id, error_message, e)
+                    return _end_job_without_result(func.__name__, project_id, job_id, error_message, e,
+                                                   workspace=workspace)
                 logger.exception(f"[JOB] {func.__name__} failed for job={job_id}: {e}")
                 update_job_status(
                     project_id, job_id, 'failed', 0, 'error', error=_job_error_text(error_message, e),
+                    workspace=workspace,
                 )
-                notify_project_job(project_id, job_id, 'failed')
+                notify_project_job(project_id, job_id, 'failed', workspace=workspace)
                 raise ServiceError(error_message) from e
             else:
                 return response
@@ -408,7 +467,8 @@ def _job_error_text(error_message: str, error: Exception) -> str:
 
 
 def _end_job_without_result(
-    func_name: str, project_id: str, job_id: str, error_message: str, error: Exception,
+    func_name: str, project_id: str, job_id: str, error_message: str, error: Exception, *,
+    workspace: WorkspaceScope | None,
 ) -> dict:
     """Record a 4xx outcome as the job's failure and return instead of raising.
 
@@ -425,6 +485,6 @@ def _end_job_without_result(
         f"({type(error).__name__}, {status}): {error}"
     )
     error_text = _job_error_text(error_message, error)
-    update_job_status(project_id, job_id, 'failed', 0, 'error', error=error_text)
-    notify_project_job(project_id, job_id, 'failed')
+    update_job_status(project_id, job_id, 'failed', 0, 'error', error=error_text, workspace=workspace)
+    notify_project_job(project_id, job_id, 'failed', workspace=workspace)
     return {'success': False, 'error': error_text}

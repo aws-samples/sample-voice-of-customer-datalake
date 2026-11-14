@@ -450,6 +450,50 @@ def memory_world(lambda_context: Any) -> Generator[World]:
         yield World(call=_caller(memory_handler, lambda_context), doubles={'cognito': cognito})
 
 
+# ── voc-agents-api (lambda/api/agents_handler.py): a plan approved inside a workspace (7.29.00) ──
+
+#: The smallest plan the approval takes: one write step, no id of any workspace.
+_PLAN = {'schema': 'voc-plan/1', 'goal': 'Create a checkout project',
+         'steps': [{'id': 's1', 'pack': 'core', 'kind': 'write', 'title': 'Create the project',
+                    'write': {'tool': 'create_project', 'args': {'name': 'Checkout'}}, 'produces': ['project_id']}]}
+_PLAN_LITERALS = {
+    'voc-plan/1': 'the plan schema, the same everywhere',
+    'Create a checkout project': "the plan's goal, the approver's words",
+    's1': "a step id, the plan's own name for its step",
+    'core': 'a tool pack, the same in every workspace',
+    'write': 'a step kind',
+    'Create the project': "a step's title",
+    'create_project': 'a tool name, the same in every workspace',
+    'Checkout': "the new project's name, the approver's words",
+    'project_id': "the name of an output the step records, not a value",
+}
+
+
+@contextmanager
+def agents_world(lambda_context: Any) -> Generator[World]:
+    import agents_handler
+    from shared import agent_seed, agents_store
+    from shared.test.agents_fixtures import CATEGORIES, STATE_MACHINE_ARN
+
+    with ExitStack() as stack:
+        cognito = _domain_resolution(stack)
+        resource = boto3.resource('dynamodb', region_name='us-east-1')
+        pk_sk_table('agents', gsi1_index=agents_store.AGENTS_INDEX)
+        aggregates = pk_sk_table('aggregates')
+        aggregates.put_item(Item={'pk': 'SETTINGS#categories', 'sk': 'config', 'categories': CATEGORIES})
+        sfn = MagicMock(name='stepfunctions')
+        sfn.start_execution.side_effect = lambda **kw: {'executionArn': f"{STATE_MACHINE_ARN}:{kw['name']}"}
+        stack.enter_context(patch.dict('os.environ', {agents_store.AGENTS_TABLE_ENV: 'agents',
+                                                      agents_store.STATE_MACHINE_ENV: STATE_MACHINE_ARN}))
+        stack.enter_context(patch.object(agents_store, 'get_dynamodb_resource', return_value=resource))
+        stack.enter_context(patch.object(agents_store, 'stepfunctions_client', return_value=sfn))
+        stack.enter_context(patch.object(agents_handler, 'get_aggregates_table', return_value=aggregates))
+        agents_store._table_cache.clear()
+        agent_seed._settled.clear()
+        stack.callback(agents_store._table_cache.clear)
+        yield World(call=_caller(agents_handler, lambda_context), doubles={'cognito': cognito, 'stepfunctions': sfn})
+
+
 _A_STATEMENT = 'Buyers want clearer refund timelines'
 
 
@@ -460,6 +504,7 @@ WORLDS: dict[str, Callable[[Any], Any]] = {
     'chat_handler.py': chat_world,
     'memory_handler.py': memory_world,
     'mcp_oauth_consent_routes.py': tokens_world,
+    'agents_handler.py': agents_world,
 }
 
 #: (handler file, "METHOD /path") -> how to call it: exactly the workspace-scoped routes.
@@ -633,4 +678,9 @@ CASES: dict[tuple[str, str], RouteCase] = {
         literals={PLUGIN: 'a plugin of the deployment, the same source id in every workspace',
                   'redact': 'a PII policy, the same words in every workspace'},
         without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
+    # 7.29.00: the approval resolves the workspace the plan will run in; a member approves there, nobody else.
+    ('agents_handler.py', 'POST /agents/plans'): RouteCase(
+        no_ids='the header is its only id: check 1 (the plan is kept with the workspace its approver is a member of)',
+        body={'plan': _PLAN}, literals=_PLAN_LITERALS, ok_status=202,
+        without_a_workspace='a plan approved without a workspace is the deployment\'s, as before'),
 }
