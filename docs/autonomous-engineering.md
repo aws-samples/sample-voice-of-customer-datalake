@@ -458,6 +458,9 @@ What exists:
   same transaction (the actor and the operation; no past state is overwritten; a renewal or a progress report is
   not a move), and so does a re-post, which is the
   task's history; a result key a move records must be one of the caller's own workspace objects of the lease's attempt.
+  In a run that follows its flow (6.28.00), every post names the step it is for (`flow_step`, and a map's `shard`),
+  a post and a launch are taken only for a live step, and the coordinator also reads the conductor's plan (`flow`)
+  and records the steps it does itself (`step`): [The flow a run follows](#the-flow-a-run-follows).
 - **The workspace** (`workspace/`): the key layout below, voc-finding/1 shard lines (`workspace/findings.py`: a line
   off the schema is skipped and counted; credential-shaped strings and personal data are redacted) and the store
   (bounded reads, a cut read logged; create-only writes; its readers without ListBucket, the report builder, the
@@ -597,7 +600,8 @@ view shows live as a chat between the agents beside the board. The person is a p
 and "stop" are events too.
 
 **The run coordinator** (a small, cheap model) reads the conversation and the board and posts and orders the next
-tasks; it decides when an agent's work is done and when the run has reached what it is allowed. When it sees an agent
+tasks (in a run that follows a flow, only those of the steps the conductor says are ready:
+[The flow a run follows](#the-flow-a-run-follows)); it decides when an agent's work is done and when the run has reached what it is allowed. When it sees an agent
 going in circles (the same step repeated), it tells the supervisor, which alone stops an agent and re-posts its task. The flow's definition, in the workflow editor, says who may talk to whom and what ends the run (the pull
 request opened, or a human decision point).
 
@@ -624,7 +628,8 @@ the customer-text check that guards host writes also runs in the publish helper 
 so an erasure (D5) has nothing to chase there.
 
 **Default flows.** Six default engineering flows to start from, each a template in the workflow editor that a team can
-change (nothing runs a flow yet):
+change (a run follows its flow since 6.28.00, as far as the runtime can do its steps:
+[The flow a run follows](#the-flow-a-run-follows)):
 
 | Flow | Steps | Stops at |
 |---|---|---|
@@ -654,8 +659,8 @@ the module is deployed (`GET /workflows/templates`, 404 elsewhere); the library'
 an unsaved copy of the server's definition in the editor, and Save is the library's own `POST /workflows` (its validation, its 409 where the module
 is off): no write path of their own ([docs/autonomous-agents.md](autonomous-agents.md)). The step titles are in
 English in every language (the template's name and description are translated). A flow saved from one can be
-started since 6.25.00 ([How a flow starts](#how-the-agents-work-together), below), but nothing follows its steps
-yet: the run records the flow's id and budget, and its coordinator plans the work. *Planned*: the templates over MCP (their route is for
+started since 6.25.00 ([How a flow starts](#how-the-agents-work-together), below), and since 6.28.00 the run follows
+its own copy of it, step by step ([The flow a run follows](#the-flow-a-run-follows)). *Planned*: the templates over MCP (their route is for
 administrators, and an MCP token never acts as one: TENETS.md's tenet 4 gap, as for a run's reads), and marking in
 each template where the dial stops it (tenet 3: human-driven stops at the proposal or plan, AI-assisted waits for a
 person's go after the plan); today a template does not say, and the dial is enforced server side, not by the
@@ -711,8 +716,9 @@ template's steps (a saved flow records no template id; with several, the one sav
 flow and revision the card showed, or nothing. Where none is saved, the card says so and its Approve saves one from
 the template the server serves (`POST /workflows`) and starts nothing; the refresh is a second card under the same
 rules. What goes back to the model names only ids: the run's own words reach it only through `get_engineering_run`,
-as data. As for every run started today, the run records the flow and its budget but nothing follows its steps yet,
-and it reaches a repository only once a connection's credential can be stored. *Planned*: "pull the latest from the
+as data. Like every run started from a flow, it follows its copy of the flow as far as the runtime can do its steps
+([The flow a run follows](#the-flow-a-run-follows): the Understand flow's memory write is not run yet), and it
+reaches a repository only once a connection's credential can be stored. *Planned*: "pull the latest from the
 repository" from the assistant (the same card rules). An engineering run's reads and its start are
 administrators-only, so no MCP tool while an MCP token never acts as an administrator (TENETS.md's tenet 4 gap).
 
@@ -792,6 +798,98 @@ operation of it answers 503. *Planned*: the rest of this paragraph. A bug hunt i
 administrator sets or changes, checked when the agent is saved and again when the run starts), scoped to packages; in a hunt the understander writes its problem statement on the board's task, not on the host. On a public
 repository, a flow that starts from someone's text starts only from an issue or pull request a maintainer labelled
 for it. A pull request from a fork is only ever reviewed (comments), never fixed or pushed to.
+
+### The flow a run follows
+
+*Built* (6.28.00, `voc-datalake/lambda/engineering/flow/`, `board/flow_guard.py`; not yet run against AWS): a run
+started from a saved flow follows that flow's steps; the flow is the plan.
+
+- **The run's copy.** The Agents API sends the stored flow's definition and revision with the start
+  (`flow_definition`, `flow_revision`); the start function checks it again (the server's own rules, an engineering
+  flow, no cycle) and writes it into the run's own `FLOW` row in the start's transaction, create-only (D1, D4:
+  `{workflow_id, revision, definition, copied_at}`), and refuses it before anything is written otherwise. A later
+  edit of the flow never changes a run under way, and the record shows what ran. A run started without a definition
+  has no copy and runs as before: its coordinator plans from the goal, and the board takes posts with no step.
+- **The conductor** (`flow/conductor.py`, pure, no AWS) decides what comes next from the copy's graph and the run's
+  record: the tasks posted for each step (the board records each task's `flow_step` and, after a map, its `shard`),
+  the run coordinator's own step rows (`STEP#<step>#done`, `#fan_out`) and a person's decisions
+  (`STEP#<step>#decision#…`). Each step is `waiting`, `ready`, `running`, `collecting` (a board taking its posters'
+  posts while they still run), `done`, `not_yet_run`, `passed` (a person went past it), `blocked` (a task of it
+  ended without being done), `stopped` (a step the runtime cannot do that the flow cannot go on without), `human` (a
+  human decision point reached) or `skipped` (on a quality gate's arrow its verdict did not take). A step after a
+  join waits for every way that was taken. It is tested on the six default flows, each driven from its start to its
+  end with every task done and again with each task failing once (`flow/test/test_conductor.py`), and on the edge
+  cases.
+- **The coordinator's tools** (its skill, `coordinator@2`): `read_flow` returns every step's status, and the live
+  steps with their roles, settings, instructions, the shards left and what to do at them, fenced as data;
+  `post_task` names the step (and the shard); `complete_step` records an agent step of the coordinator's own role
+  (the Feature flow's plan) or closes a board; `fan_out` records a map's shards. They go through the board's `flow`
+  and `step` ops, the coordinator's alone (a replaced coordinator's session is refused them, as every coordinator
+  op).
+- **The board's check.** In a run that follows a flow, a post names a live step (`flow_step`), for a role that step
+  takes, from a poster it allows: the run coordinator for any live step, another agent only on a board step that
+  names it a poster (within the board's own rule of who posts for whom), a person for any live step or for a task of
+  their own with no step. An agent step takes one task at a time (each shard of a step after a map one), held against
+  a racing post by a `SLOT#` marker written in the post's own transaction; every post for a step holds, in the same
+  transaction, that the step was not closed (no `STEP#<step>#done`), so a post racing a board's close never lands on
+  the closed board. A retried post is answered with the equal task it repeats while that task is under way, and
+  refused once it has ended (never made a new task past the step's check). A launch is only for a task of a live step
+  (or a person's own task); a retry of a launch that got through is never refused. The final go of a quality gate is
+  taken only once a gate runner's task of the step is done, and an empty board closes only when an agent other than
+  the coordinator was to post on it (a hunter that found nothing). The caps, the coordinator's single lease and the
+  check of a replaced coordinator, the launch rules and the claim guard are unchanged.
+
+  What this holds, and what it does not: the board refuses any post or launch for a step that is not live, for a
+  role the step does not take or from a poster it does not allow, so the coordinator cannot start a later step before
+  its turn, run a step the flow does not have, or take the pass arrow of a gate without a GO. It cannot tell good work
+  from bad: a coordinator may still record its own agent step done, or close a board, with little done, and list a
+  map's shards as it likes. **A map's shards are not checked against the checkout or the knowledge pack's package
+  list**: only the checkout's path rule (relative, no `..`, no glob), each once, and the map's `shard_cap`; the steps
+  after the map then work on what was listed.
+- **A person at a step.** When the conductor says the run waits at a person (a human decision point reached, a
+  step blocked, or one stopped), the supervisor's tick puts the run at `needs_human` with the step named
+  (`flow:<step>`) and holds its agents (checkpointed, then paused), as for a spent budget. A person's Resume there is
+  their decision on the step, recorded with who and when: it passes a decision point or a stopped step, and gives a
+  blocked one another try. One decision is one more failed task allowed on the step: on a step after a map, that is
+  one more on each of its shards, so one Resume retries every shard that failed once. A run already waiting at the
+  step's decision point is not asked again; its agents stay held. A NO-GO of the quality gate takes its `fail` arrow
+  to a person; nothing reaches the pull request then.
+- **The gate's verdict is the GO ledger's** (`flow/ledger.py`, the one rule the broker's `has_go` uses too): the
+  final-go task of the step that ended last decides, and it is a GO only when it ended done and its own gate record
+  reads as a GO (verdict GO, the final go's GO, no stop). A final go that ended done with a NO-GO record, a missing or
+  unreadable record, or one off its schema takes the `fail` arrow. The board and the supervisor read the record (the
+  board's role reads the gate records' keys only, `ReadGateRecords`; the runtime's already did); the board records
+  each verdict it read (`STEP#<gate>#verdict#<task>`) for the run monitor, which reads no gate record, and which shows
+  a verdict not recorded yet as still running, never as a GO. The broker still opens a pull request only for a GO on
+  the exact tree.
+- **The run monitor and the reports** show the flow with its steps lit: the overview carries the run's own copy of
+  its flow, as its start wrote it, with its revision, each step's status and where the flow stands
+  (`flow_definition`, `flow_revision`, `flow_steps`, `flow_outcome`); the monitor draws that copy (never the flow as
+  saved since) with the conductor's lights, and every report has the flow's steps ([Reports](#reports)).
+
+What runs today, and what does not. Each step the runtime cannot do is reported as `not_yet_run`, never faked: in
+the run's record (a `STEP#<step>#not_yet_run` row the board writes when the coordinator first reads the plan), in
+the run monitor and in the reports.
+
+| Step | Today |
+|---|---|
+| agent | runs: one task for its role (an agent step of the coordinator's own role is the coordinator's to do and record). Only a role with a skill can be launched, and only the coordinator has one yet, so the board still refuses the launch of any other role (409): the plan is followed and its tasks posted, and their work waits for the roles' skills |
+| map | `shard_by: packages` runs: the coordinator lists the packages from its checkout, at most the map's `shard_cap` (not checked against the checkout or the knowledge pack: the path rule, each once, the cap), and each agent step after the map takes one task per shard. `history` and `pr_pages` have no shard source yet: the map stops at a person (a person's go passes it, and the steps after it are not run) |
+| reduce | runs as the join of the map's shards: done once every shard's task is; the step after it reads their results |
+| board | runs: tasks for its claimers, posted by the coordinator and its posters, while its posters still run too; the coordinator closes it once nothing on it is under way (`until: caps`: only at the run's task cap; an empty board only when an agent other than the coordinator was to post on it) |
+| quality gate | routes by the GO ledger: the final go (only once a gate runner's task is done) takes the `pass` arrow only on a GO its gate record says, anything else the `fail` arrow, to a person. The gate's own run waits for the gate runner's skill and image ([The quality gate](#the-quality-gate)), and the broker still opens a pull request only for a gate record's GO on the exact tree |
+| stop at PR | runs: the flow ends at the draft pull request; the broker's dial still decides whether one is opened (tenet 3) |
+| end, human decision point | runs: a completed end finishes the flow; a human decision point puts the run at a person |
+| memory (read, write) | not yet run: the flow goes on without the read (context) or the write |
+| learning loop | not yet run: the flow goes on; the run's retrospective at its end still runs for every run |
+| self-improvement | not yet run, and it is the whole of its flow's work: it stops at a person |
+
+*Planned*: the conductor reading the dial itself (AI-assisted: a person's go after the plan; Human-driven: the flow
+stops at the proposal), the run's end when its flow finishes (today the coordinator finishes its task and the run
+stays open for a person to end), the memory steps, the learning loop and self-improvement as flow steps, shard
+sources for a repository's history and a pull request's pages, a step of an agent other than the coordinator posting
+on a board (no other role has a skill yet), and a person's Resume at a step saying which decision it is (today one
+Resume is one decision).
 
 ## The quality gate
 
@@ -1357,7 +1455,10 @@ deployed only with `-c engineeringAgents=true`), the administrators' reads throu
 panel in the web app (each report's versions as Markdown, [docs/autonomous-agents.md](autonomous-agents.md)). A report (voc-report/1) is built from what the run recorded: its `META`,
 each agent's metering (`AGENT#`: skill version, model, session-seconds, tokens, metered cost), the conversation's
 count, the board's tasks and their history, and only the workspace objects their result keys name (never a listing).
-The PR report takes the quality gate's record only from an ended final-go task under the PR's head commit, checked
+Since 6.28.00 a run that follows a flow has its flow in every report (`flow`, and a **Flow** table in the Markdown):
+the revision its start copied, where the flow stands (under way, waiting at a person at a step, finished at an end)
+and every step's status and why, the steps not run yet named as such
+([The flow a run follows](#the-flow-a-run-follows)). The PR report takes the quality gate's record only from an ended final-go task under the PR's head commit, checked
 against the gate's own shapes before its Markdown goes into the description. Every version is new (an atomic
 counter, create-only objects, D1). Not built yet: its callers (the run coordinator's closing task, the supervisor,
 the write broker before it opens a PR: nothing invokes it, and no role holds an invoke on it), and
@@ -1933,5 +2034,5 @@ and the phase that ships them names them in that row.
 | 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader; the broker's readers of the run's record, the board's GO ledger, the submitted patch and the dial, and a person's go on an AI-assisted run (6.23.00, [above](#repository-connectors); no connection can be stored yet, so every operation still answers 503, and with one every push and pull request would still be refused until the CI attestation is recorded); planned: the connection page, the attestation's record, GitLab, sparse clones and the checkout cache; the knowledge pack's package detection, shards, map step, reduce and versioned store with approval ([above](#the-knowledge-pack)), nothing invoking them yet |
 | 2 | the runtime (one AgentCore Runtime session per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API with each task's history, its agents' `inbox`, `progress`, `tasks` and `knowledge` ops, the coordinator's `coordinate` task and `launch`, the lease's refresh and the supervisor's re-post, the push to the delivery function, the workspace's layout, findings and store in its own bucket, and the administrators' run monitor (its reads, signals and answers) and the read routes for a run's board and conversation ([above](#how-the-agents-work-together)); the runtime (one session per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images, the run's start and end, the agent roles' access to the board, the broker and the bus, the delivery function: built, not yet run against AWS, [above](#runtime-one-agentcore-session-per-agent)) |
 | 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); the skills' record, diff and versioned store with an administrator's acceptance and rollback, proposed to by the coach from a run's retrospective ([above](#getting-better-skills-the-coach-the-learning-loop-memory)); the agents' memory store and its recall for a task, its role lessons drafted by a run's retrospective (recall not yet invoked by the harness; same place); the benchmark gate for skill versions (no regression, a gain on the failure's case) and its record on a version, which a coach's version needs to be accepted, nothing invoking it yet ([Evaluation](#evaluation)); the coach (a failure in, a proposed version naming its expected benchmark case out, through the skills store, with its `skill.proposed` message for the caller to publish), invoked by the learning loop (same place as the skills); the learning loop and its scorecards, built: a run's end starts its retrospective (an asynchronous invocation of the runtime), which takes at most three failures to the coach (one Converse call each, once), drafts a lesson in agent memory for each failure taken to the coach (at most three per run) for an administrator to approve, and writes one create-only scorecard row per skill version per run, read by one bounded Query per version (same place); a connection's own cases from its failures, people's reactions on the host as the loop's input, and the scorecard screens planned |
-| 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | in progress: the new editor steps' server side (engineering flows as `voc-workflow/2`, [above](#how-the-agents-work-together)), the six default flows as validated templates in one file the server lists (`GET /workflows/templates`) and the web app reads (same place), and the report builder with its administrators' REST reads ([Reports](#reports)), nothing invoking it yet; a run's start from a saved flow (6.25.00: `POST /agents/engineering/runs` and the flow page's Start a run, [How a flow starts](#how-the-agents-work-together)), whose steps nothing follows yet; the agents planned |
-| 5 | the UI: the templates and new steps in the editor, the run monitor (graph, board, conversation, live cost), skill histories and scorecards, the reports, the assistant drafting flows | in progress: the new steps in the editor (with a flow's monthly budget), Agents → Spend (the spend ledger by workflow, repository, run, agent, model or day, this month's share of each flow's budget, and the administrators' hard cap switch, [above](#cost)), and the run monitor (the flow with its agents' steps lit, the run's flow budget and its alert flag, the board, the conversation, each agent as the supervisor saw it, an administrator's signals and answers, the reports with their versions; polling, no cost yet: [docs/autonomous-agents.md](autonomous-agents.md)), the assistant drafting flows behind its approval card ([above](#how-the-agents-work-together)), the assistant's "refresh the knowledge pack" (`propose_knowledge_refresh`: an approval card that only an administrator's Approve turns into the Understand flow's start, as that administrator, 6.27.00; same place), and the six templates in the library (Start from a template: an unsaved copy in the editor, saved through the library's own create; same place); live cost, skill histories, a template id in the assistant's `create_workflow` and the assistant's other run tools ("pull the latest from the repository") planned |
+| 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | in progress: the new editor steps' server side (engineering flows as `voc-workflow/2`, [above](#how-the-agents-work-together)), the six default flows as validated templates in one file the server lists (`GET /workflows/templates`) and the web app reads (same place), and the report builder with its administrators' REST reads ([Reports](#reports)), nothing invoking it yet; a run's start from a saved flow (6.25.00: `POST /agents/engineering/runs` and the flow page's Start a run, [How a flow starts](#how-the-agents-work-together)), which follows its own copy of the flow step by step since 6.28.00 (the conductor, the coordinator's `read_flow`, the board's check of every post and launch against the plan, a person at a step: [The flow a run follows](#the-flow-a-run-follows); memory, the learning loop, self-improvement and the history and pull-request shard sources not run yet); the agents planned |
+| 5 | the UI: the templates and new steps in the editor, the run monitor (graph, board, conversation, live cost), skill histories and scorecards, the reports, the assistant drafting flows | in progress: the new steps in the editor (with a flow's monthly budget), Agents → Spend (the spend ledger by workflow, repository, run, agent, model or day, this month's share of each flow's budget, and the administrators' hard cap switch, [above](#cost)), and the run monitor (the flow with its steps lit: the revision the run copied, each step as the conductor reads it since 6.28.00, else its agents' steps; the run's flow budget and its alert flag, the board, the conversation, each agent as the supervisor saw it, an administrator's signals and answers, the reports with their versions; polling, no cost yet: [docs/autonomous-agents.md](autonomous-agents.md)), the assistant drafting flows behind its approval card ([above](#how-the-agents-work-together)), the assistant's "refresh the knowledge pack" (`propose_knowledge_refresh`: an approval card that only an administrator's Approve turns into the Understand flow's start, as that administrator, 6.27.00; same place), and the six templates in the library (Start from a template: an unsaved copy in the editor, saved through the library's own create; same place); live cost, skill histories, a template id in the assistant's `create_workflow` and the assistant's other run tools ("pull the latest from the repository") planned |

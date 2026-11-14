@@ -12,11 +12,11 @@ from moto import mock_aws
 
 from engineering.board.store import BoardStore
 from engineering.board.test.table import TABLE, create_table
-from engineering.connectors import records
 from engineering.connectors.hosts import NoConnection, Unavailable
 from engineering.connectors.patches import AUTHOR
 from engineering.connectors.records import RunRecords
 from engineering.connectors.test.fakes import BASE, RUN, TREE, FakeHost
+from engineering.flow import ledger as go_ledger
 from engineering.workspace.store import WorkspaceStore
 
 BUCKET = 'voc-eng-workspace'
@@ -182,7 +182,7 @@ def test_the_latest_attempt_of_a_task_wins_and_only_its_record_is_read(stores: t
 def test_a_gate_record_over_its_bound_is_no_go(stores: tuple[Any, Any], monkeypatch: pytest.MonkeyPatch) -> None:
     client, s3 = stores
     final_go(client, s3, 't1', gate_record('GO'))
-    monkeypatch.setattr(records, 'MAX_GATE_RECORD_BYTES', 10)
+    monkeypatch.setattr(go_ledger, 'MAX_GATE_RECORD_BYTES', 10)   # (the GO ledger's own bound, flow/ledger.py)
     assert not ledger(client, s3).has_go(RUN, TREE)
 
 

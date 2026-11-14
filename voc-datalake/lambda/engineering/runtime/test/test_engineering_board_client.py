@@ -362,6 +362,45 @@ def test_the_coordinators_planner_lists_posts_and_launches_through_the_board():
         planner.tasks(run_id='01JD3R4NZXQ7Y2W8K4M6P9T0AC')
 
 
+def test_the_planner_follows_the_runs_flow_through_the_board():
+    from engineering.runtime.harness.board_client import BoardPlanner
+    plan = {'outcome': 'running', 'steps': []}
+    board = Board([{'flow': plan}, {'flow': None, 'note': 'no flow'}, {'task': {'task_id': 'task-3'}},
+                   {'step': 'map', 'recorded': True, 'flow': plan}, {'step': 'plan', 'recorded': False, 'flow': plan},
+                   {'tasks': [{'task_id': 'task-3', 'flow_step': 'mapper'}, {'task_id': 'task-4', 'flow_step': None}]}])
+    planner = BoardPlanner(board, RUN)
+    assert (planner.flow(run_id=RUN), planner.flow(run_id=RUN)) == (plan, None)
+    assert planner.post(run_id=RUN, role='mapper', title='Map core', instructions='Map it.', paths=(),
+                        step='mapper', shard='core') == 'task-3'
+    assert planner.record_step(run_id=RUN, step='map', action='fan_out', shards=('core',))['recorded'] is True
+    assert planner.record_step(run_id=RUN, step='plan', action='complete')['recorded'] is False
+    assert [task.step for task in planner.tasks(run_id=RUN)] == ['mapper', '']
+    assert board.sent[2:5] == [
+        {'op': 'post', 'role': 'mapper', 'title': 'Map core', 'spec': {'instructions': 'Map it.', 'paths': []},
+         'flow_step': 'mapper', 'shard': 'core'},
+        {'op': 'step', 'step': 'map', 'action': 'fan_out', 'shards': ['core']},
+        {'op': 'step', 'step': 'plan', 'action': 'complete'}]
+
+
+@pytest.mark.parametrize(('call', 'answer'), [
+    (lambda planner: planner.flow(run_id=RUN), {}),
+    (lambda planner: planner.flow(run_id=RUN), {'flow': []}),
+    (lambda planner: planner.record_step(run_id=RUN, step='plan', action='complete'), {'recorded': True}),
+], ids=['no-flow', 'flow-not-a-plan', 'no-step'])
+def test_a_flow_answer_off_its_shape_is_refused(call: Any, answer: dict[str, Any]):
+    from engineering.runtime.harness.board_client import BoardPlanner
+    with pytest.raises(BoardRefused, match='502'):
+        call(BoardPlanner(Board([answer]), RUN))
+
+
+def test_until_the_planner_is_wired_its_flow_tools_refuse():
+    from engineering.runtime.harness.ports import PendingHarnessPorts
+    with pytest.raises(HarnessPortNotWired, match=r'board\.flow'):
+        PendingHarnessPorts().flow(run_id=RUN)
+    with pytest.raises(HarnessPortNotWired, match=r'board\.step'):
+        PendingHarnessPorts().record_step(run_id=RUN, step='map', action='fan_out', shards=('core',))
+
+
 def test_the_knowledge_reader_answers_a_packages_approved_pack_or_none():
     from engineering.runtime.harness.board_client import BoardKnowledge
     board = Board([{'version': 3, 'text': '<data>conventions</data>'}, {'version': None}])

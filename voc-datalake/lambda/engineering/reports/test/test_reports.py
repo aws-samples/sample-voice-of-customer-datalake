@@ -129,6 +129,36 @@ def test_a_report_says_the_runs_flow_budget_and_its_flag(run: Run) -> None:
     assert 'Flow budget' not in stored(run, pr['markdown_key'])
 
 
+def test_a_report_shows_the_runs_flow_step_by_step_with_the_steps_not_run_yet(run: Run) -> None:
+    from engineering.flow.test.fixtures import put_flow
+    assert json.loads(stored(run, run.reports.build(RUN, 'goal', RUN)['key']))['flow'] is None
+    put_flow(run.client, TABLE, RUN, 'issue-triage', revision=2)
+    answer = run.reports.build(RUN, 'goal', RUN)
+    flow = json.loads(stored(run, answer['key']))['flow']
+    assert (flow['revision'], flow['outcome'], flow['at']) == (2, 'running', '')
+    assert [(step['step'], step['status']) for step in flow['steps'][:3]] == [
+        ('start', 'done'), ('memory', 'not_yet_run'), ('classify', 'ready')]
+    markdown = stored(run, answer['markdown_key'])
+    assert '### Flow' in markdown
+    assert 'Revision 2: under way' in markdown
+    assert '| `memory` | `not yet run` | `memory steps are not run yet' in markdown
+
+
+def test_a_report_says_where_the_flow_waits_for_a_person() -> None:
+    from engineering.reports.render import render_markdown
+    report = {'level': 'goal', 'subject': RUN, 'version': 1, 'run_id': RUN,
+              'run': {'goal': 'g', 'repo': 'r', 'flow': 'f', 'status': 'needs_human'}, 'tasks': {'by_state': {}},
+              'cost': {'usd': '0', 'input_tokens': 0, 'output_tokens': 0, 'microvm_seconds': 0, 'events': 0,
+                       'budget': None},
+              'time': {'started_at': '', 'ended_at': '', 'seconds': None}, 'agents': [],
+              'findings': {'total': 0, 'skipped_lines': 0, 'by_severity': {}, 'top': []},
+              'flow': {'revision': 1, 'outcome': 'needs_human', 'at': 'approval', 'reason': 'a person decides',
+                       'steps': [{'step': 'approval', 'type': 'end', 'title': '', 'status': 'human', 'reason': ''}]}}
+    markdown = render_markdown(report)
+    assert 'Revision 1: waiting at a person at `approval` (`a person decides`)' in markdown
+    assert '| `approval` | `end` | `human` | - |' in markdown
+
+
 def test_a_key_recorded_on_two_tasks_is_counted_once(run: Run) -> None:
     board = BoardStore(run.client, TABLE, new_id=lambda: 'task-again')
     _task(board, 'hunter', 'Hunt the paging module again', 'hunter-1', [shard('hunter-1', SHA)])

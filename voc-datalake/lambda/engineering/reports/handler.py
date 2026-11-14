@@ -16,6 +16,7 @@ from typing import Any
 from engineering.board.store import BoardStore
 from engineering.bus.publish import new_event_id
 from engineering.connectors.identity import WORKSPACE
+from engineering.flow.ledger import read_gate_record
 from engineering.reports.build import build_report, gather
 from engineering.reports.facts import FactsReader
 from engineering.reports.render import render_markdown
@@ -33,7 +34,7 @@ USAGE = 'run_id, and level commit (subject: its full sha) | pr (subject: its num
 
 class Reports:
     def __init__(self, client: Any, table: str, workspace: WorkspaceStore) -> None:
-        self.facts = FactsReader(client, table)
+        self.facts = FactsReader(client, table, read_gate=lambda key: read_gate_record(workspace, key))
         self.board = BoardStore(client, table, new_id=new_event_id)
         self.workspace = workspace
         self.store = ReportStore(client, table, workspace)

@@ -83,12 +83,27 @@ def test_an_admin_starts_a_saved_flow_with_its_stored_budget_as_themselves(lambd
     assert ULID.fullmatch(sent['run_id'])
     # The deployment's caps when it sets none (50 USD, 10 million tokens); the repo is the connection's id until a
     # connection's record can be read.
+    # The flow as stored now goes with the start, which copies it into the run's own record: the run follows that.
+    stored = json.loads(sent.pop('flow_definition'))
+    assert (stored['schema'], [node['id'] for node in stored['nodes']], stored['budget']) == (
+        'voc-workflow/2', [node['id'] for node in bug_fix()['nodes']], {'monthly_usd': 49.99})
     assert sent == {'action': 'start_run', 'run_id': sent['run_id'], 'max_tasks': agents_handler.RUN_TASK_CAP,
-                    'flow': workflow_id, 'budget_usd': 49.99, 'connection': 'conn-1', 'commit': COMMIT,
-                    'language': 'python', 'goal': 'Fix the paging bugs', 'actor': 'admin-sub', 'repo': 'conn-1',
-                    'max_cost_usd': 50.0, 'max_tokens': 10_000_000}
+                    'flow': workflow_id, 'flow_revision': 1, 'budget_usd': 49.99, 'connection': 'conn-1',
+                    'commit': COMMIT, 'language': 'python', 'goal': 'Fix the paging bugs', 'actor': 'admin-sub',
+                    'repo': 'conn-1', 'max_cost_usd': 50.0, 'max_tokens': 10_000_000}
     assert body == {'run': {'run_id': sent['run_id'], 'status': 'active', 'workflow_id': workflow_id,
                             'started_by': 'admin-sub'}}
+
+
+def test_a_run_starts_from_the_flows_current_revision(lambda_context: Any, start: tuple[Start, str]) -> None:
+    client, workflow_id = start
+    edited = {**bug_fix(), 'name': 'Bug hunt, edited'}
+    status, body = _call(lambda_context, 'PUT', f'/workflows/{workflow_id}',
+                         body={'definition': edited, 'expected_revision': 1})
+    assert status == 200, body
+    assert _call(lambda_context, 'POST', PATH, body=_body(workflow_id))[0] == 202
+    sent = _sent(client)
+    assert (sent['flow_revision'], json.loads(sent['flow_definition'])['name']) == (2, 'Bug hunt, edited')
 
 
 @pytest.mark.parametrize(('env', 'caps'), [

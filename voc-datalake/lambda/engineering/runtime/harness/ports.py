@@ -64,18 +64,26 @@ class TaskSummary:
     title: str
     state: str
     attempt: int = 1
+    #: The step of the run's flow it was posted for ('' for none).
+    step: str = ''
 
 
 class Planner(Protocol):
-    """The run coordinator's view of its run: ``tasks`` on the board, ``post`` a task (its id), ``launch`` one agent
-    for a task (its id). The run's connection and commit are the board's to take from the verified caller's run,
-    never anything the session sends."""
+    """The run coordinator's view of its run: ``tasks`` on the board, ``post`` a task (its id; for a step of the
+    run's flow, and a map's shard), ``launch`` one agent for a task (its id), ``flow`` (the conductor's plan of the
+    run's flow, None for a run without one) and ``record_step`` (a step it did itself, or a map's shards). The run's
+    connection and commit are the board's to take from the verified caller's run, never anything the session sends."""
 
     def tasks(self, *, run_id: str) -> list[TaskSummary]: ...
 
-    def post(self, *, run_id: str, role: str, title: str, instructions: str, paths: tuple[str, ...]) -> str: ...
+    def post(self, *, run_id: str, role: str, title: str, instructions: str, paths: tuple[str, ...],
+             step: str = '', shard: str = '') -> str: ...
 
     def launch(self, *, run_id: str, task_id: str, role: str, language: str, paths: tuple[str, ...]) -> str: ...
+
+    def flow(self, *, run_id: str) -> dict[str, Any] | None: ...
+
+    def record_step(self, *, run_id: str, step: str, action: str, shards: tuple[str, ...] = ()) -> dict[str, Any]: ...
 
 
 class KnowledgeReader(Protocol):
@@ -150,9 +158,16 @@ class PendingHarnessPorts:
     def tasks(self, *, run_id: str) -> list[TaskSummary]:
         raise self._refuse(f'board.tasks({run_id})')
 
-    def post(self, *, run_id: str, role: str, title: str, instructions: str, paths: tuple[str, ...]) -> str:
-        raise self._refuse(f'board.post({run_id}, {role}, {len(paths)} paths, {len(instructions)} characters): '
-                           f'{title[:40]}')
+    def post(self, *, run_id: str, role: str, title: str, instructions: str, paths: tuple[str, ...],
+             step: str = '', shard: str = '') -> str:
+        raise self._refuse(f'board.post({run_id}, {role}, {len(paths)} paths, {len(instructions)} characters, step '
+                           f'{step[:40]} {shard[:40]}): {title[:40]}')
+
+    def flow(self, *, run_id: str) -> dict[str, Any] | None:
+        raise self._refuse(f'board.flow({run_id})')
+
+    def record_step(self, *, run_id: str, step: str, action: str, shards: tuple[str, ...] = ()) -> dict[str, Any]:
+        raise self._refuse(f'board.step({run_id}, {step[:40]}, {action[:20]}, {len(shards)} shards)')
 
     def launch(self, *, run_id: str, task_id: str, role: str, language: str, paths: tuple[str, ...]) -> str:
         raise self._refuse(f'launch({run_id}, {task_id}, {role}, {language}, {len(paths)} paths)')

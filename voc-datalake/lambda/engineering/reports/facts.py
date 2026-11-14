@@ -5,15 +5,20 @@
 - ``AGENT#<agent>``: each agent's role, skill version and model (CHANGE 3: every report names the versions that made
   it) and its metering, which the runtime and the brokers add to (session-seconds, tokens, the cost they priced).
 - ``MSG#``: the conversation, counted (the events of the run).
+- ``FLOW``, ``STEP#`` and the ``TASK#`` rows' steps: the run's copy of its flow and each step's status as the
+  conductor reads it (engineering/flow/), steps not yet run included.
 
 A missing attribute reads as empty or zero: a report of a run still under way says what is known so far.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
+from engineering.flow.ledger import ReadRecord
+from engineering.flow.record import run_flow
 from engineering.rows import LAUNCH_HOLD, budget_view, count_run_rows, run_pk, run_rows
 from engineering.rows import amount_attr as _n
 from engineering.rows import string_attr as _s
@@ -45,6 +50,22 @@ class RunFacts:
     events: int
     #: The run's flow budget and its flag (rows.budget_view), None for a run with no budget.
     budget: dict[str, Any] | None = None
+    #: The run's flow as it ran (its copy at the start, its steps as the conductor reads them now): the revision, each
+    #: step's id, kind, title, status and reason, and where the flow stands; None for a run started without one.
+    flow_plan: dict[str, Any] | None = None
+
+
+def flow_plan(client: Any, table: str, ws: str, run_id: str, meta: Mapping[str, Any],
+              read: ReadRecord | None = None) -> dict[str, Any] | None:
+    """The run's flow for its reports (its gates' verdicts read from their records with ``read``): None without a
+    copy, or with one the conductor cannot follow."""
+    found = run_flow(client, table, ws, run_id, meta, read=read)
+    if found is None:
+        return None
+    plan = found.plan
+    return {'revision': found.revision, 'outcome': plan.outcome, 'at': plan.at, 'reason': plan.reason,
+            'steps': [{'step': state.step, 'type': state.type, 'title': found.flow.steps[state.step].title,
+                       'status': state.status, 'reason': state.reason} for state in plan.steps.values()]}
 
 
 
@@ -53,6 +74,8 @@ class FactsReader:
     #: A low-level DynamoDB client.
     client: Any
     table: str
+    #: A gate record by its key (the GO ledger's read of a flow's quality gate verdict); None: as the board recorded.
+    read_gate: ReadRecord | None = None
 
     @staticmethod
     def _launch_only(row: dict[str, Any]) -> bool:
@@ -74,4 +97,5 @@ class FactsReader:
             cost_usd=_n(row, 'cost_usd')) for row in agent_rows if not self._launch_only(row)), key=lambda agent: agent.agent))
         return RunFacts(ws=ws, run_id=run_id, goal=_s(meta, 'goal'), repo=_s(meta, 'repo'), flow=_s(meta, 'flow'),
                         status=_s(meta, 'status'), started_at=_s(meta, 'started_at'), ended_at=_s(meta, 'ended_at'),
-                        agents=agents, events=events, budget=budget_view(meta))
+                        agents=agents, events=events, budget=budget_view(meta),
+                        flow_plan=flow_plan(self.client, self.table, ws, run_id, meta, read=self.read_gate))

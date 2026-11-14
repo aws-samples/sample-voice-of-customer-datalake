@@ -24,6 +24,7 @@ from decimal import Decimal
 from typing import Any
 
 from engineering.board.model import DONE, NEEDS_HUMAN, Move, Task
+from engineering.flow.ledger import GATE_RECORD
 from engineering.quality_gate.record import GateRecord
 from engineering.reports.facts import RunFacts
 from engineering.workspace.findings import Finding, parse_shard
@@ -32,7 +33,6 @@ from engineering.workspace.layout import AgentKey, parse_agent_key
 SCHEMA = 'voc-report/1'
 #: The findings a report lists (the most severe first); its counts cover all of them.
 TOP_FINDINGS = 20
-GATE_RECORD = 'record.json'
 #: A final-go task's record counts once the task has ended with a verdict: ``done``, or ``needs_human`` (the gate
 #: stopped at a person's decision; who decided comes from the run's decision, not from the record).
 GATE_STATES = frozenset({DONE, NEEDS_HUMAN})
@@ -164,6 +164,8 @@ def build_report(level: str, subject: str, inputs: Inputs, *, version: int, buil
         'tasks': {'by_state': dict(Counter(task.state for task in inputs.tasks))},
         'findings': _findings(located, skipped),
         'gate': _gate(inputs.gate) if level == 'pr' else None,
+        # The run's flow as it ran: each step's status (not yet run ones included) and where it stands; None without.
+        'flow': facts.flow_plan,
     }
     if level != 'commit':
         report['tasks']['tree'] = [{

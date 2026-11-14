@@ -29,20 +29,36 @@ from __future__ import annotations
 import math
 import secrets
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Final
 
+from boto3.dynamodb.types import TypeSerializer
 from botocore.exceptions import BotoCoreError, ClientError
 
+from engineering.board.model import Task
 from engineering.board.store import BoardStore
 from engineering.connectors.identity import WORKSPACE
+from engineering.flow.conductor import DECISION_PREFIX, Flow, FlowError, Plan, conduct
+from engineering.flow.ledger import ReadRecord
+from engineering.flow.record import (
+    CACHED_FLOWS,
+    FLOW_SK,
+    STEP_PREFIX,
+    board_state,
+    cap_reached,
+    decision_item,
+    flow_item,
+    gate_verdicts,
+    parse_flow,
+    recorded_verdicts,
+)
 from engineering.runtime.checkout import COMMIT_RE
 from engineering.runtime.egress import REGISTRY_HOSTS
 from engineering.runtime.interface import RuntimeRefused, check_id, check_run_id
-from engineering.runtime.ports import Budget, BudgetAlert
+from engineering.runtime.ports import Budget, BudgetAlert, FlowStop
 from engineering.spend import (
     ALERT_CLAIM_SECONDS,
     alert_levels,
@@ -53,6 +69,7 @@ from engineering.spend import (
     month_of,
     release_alert,
 )
+from shared import workflow_schema
 from shared.aws import consistent_item, is_conditional_check_failure
 from shared.dynamo_paging import iter_query
 from shared.ids import is_key_collision
@@ -124,6 +141,8 @@ class Run:
     budget_alert_month: str = ''
     #: When a person last resumed the whole run (epoch seconds; 0 for never).
     resumed_at: int = 0
+    #: The decision point the run waits at ('' when it waits at none): ``budget``, ``coordinator``, ``flow:<step>``…
+    waiting_at: str = ''
 
 
 class StartReadFailed(RuntimeRefused):
@@ -195,19 +214,60 @@ def _history(run_id: str, *, status: str, actor: str, now: int, reason: str = ''
     return item
 
 
+def _flow_copy(run_id: str, flow: str, definition: str, revision: object, now: int) -> list[dict[str, Any]]:
+    """The run's ``FLOW`` row: the flow's definition, checked again here (the server's own rules, an engineering
+    flow, one the conductor can follow) and written as the stored form of what passed; ``RuntimeRefused`` before
+    anything is written otherwise."""
+    if not keyable(flow):
+        raise RuntimeRefused('a flow\'s copy is a flow\'s: the run names its workflow id')
+    if type(revision) is not int or revision < 1:   # (never a bool, which is an int too)
+        raise RuntimeRefused('the flow\'s revision is a whole number from 1')
+    checked = workflow_schema.validate_definition(workflow_schema.decode_definition(definition))
+    if checked.definition is None or checked.definition.get('schema') != workflow_schema.SCHEMA_V2:
+        raise RuntimeRefused('the run\'s flow is not an engineering flow the server\'s rules pass: save it again')
+    try:
+        Flow.from_definition(checked.definition)
+    except FlowError as error:
+        raise RuntimeRefused(str(error)) from error
+    return [flow_item(run_pk(run_id), workflow_id=flow, revision=revision,
+                      definition=workflow_schema.encode_definition(checked.definition), at=_iso(now))]
+
+
+_SERIALIZER: Final = TypeSerializer()
+
+
+def _typed(item: Mapping[str, Any]) -> dict[str, Any]:
+    """A resource table's item in the low-level shape (``{'S': ...}``), as the board's and the flow's readers take it."""
+    return {name: _SERIALIZER.serialize(value) for name, value in item.items()}
+
+
+def flow_step(reason: str) -> str:
+    """The flow's step a decision point names (``flow:<step>``), '' for any other decision point."""
+    return reason.removeprefix(DECISION_PREFIX) if reason.startswith(DECISION_PREFIX) else ''
+
+
 class RunStore:
-    def __init__(self, table: Any) -> None:
+    def __init__(self, table: Any, gate_records: ReadRecord | None = None) -> None:
+        """``gate_records``: a gate record by its key, the GO ledger's read of a flow's quality gate verdict (None:
+        the verdicts the board recorded, else none taken for a GO)."""
         self._table = table
+        self._gate_records = gate_records
+        #: The runs' copies of their flows, once read (create-only: never changed), at most ``CACHED_FLOWS``.
+        self._flow_copies: dict[str, Flow] = {}
 
     def start(self, run_id: str, *, caps: RunCaps, now: int, goal: str = '', repo: str = '', flow: str = '',
               connection: str = '', commit: str = '', language: str = '', actor: str = '',
-              budget_usd: float | None = None) -> None:
+              budget_usd: float | None = None, flow_definition: str = '', flow_revision: int = 0) -> None:
         """Write the run's ``META`` and list it for the supervisor; ``RunExists`` when it was started already.
 
         ``connection`` and ``commit`` (a full object id), when given, are what the board's ``launch`` op starts the
         run's agents on: read from here, never from the agent asking; ``language``, the repository's toolchain,
         is the image its coordinator runs in. ``budget_usd``, the flow's monthly budget (its ``budget.monthly_usd``,
-        under the flow's own rule), is what the alerts measure the flow's month against."""
+        under the flow's own rule), is what the alerts measure the flow's month against. ``flow_definition``, the
+        stored flow's definition as its JSON text (at ``flow_revision``), is copied into the run's own ``FLOW`` row in
+        the same transaction, create-only (``engineering/flow/record.py``): the run follows that copy, whatever the
+        flow becomes; refused before anything is written when it is not an engineering flow the conductor can
+        follow."""
         if connection:
             check_id('connection', connection)
         if commit and not COMMIT_RE.match(commit):
@@ -219,6 +279,7 @@ class RunStore:
         if budget_usd is not None and not keyable(flow):
             # (its alerts and its cap are keyed by the flow: one that cannot be a key would measure nothing)
             raise RuntimeRefused('a budget is a flow\'s: the run names its workflow id')
+        copy = _flow_copy(run_id, flow, flow_definition, flow_revision, now) if flow_definition else []
         name = self._table.name
         meta: dict[str, Any] = {**meta_key(run_id), 'run_id': run_id, 'status': 'active', 'started_at': _iso(now),
                                 'started_epoch': now, 'max_tasks': caps.max_tasks, 'goal': _text(goal),
@@ -242,7 +303,7 @@ class RunStore:
                 {'Put': {'TableName': name, 'Item': meta, 'ConditionExpression': 'attribute_not_exists(pk)'}},
                 {'Put': {'TableName': name, 'Item': {**_registry_key(run_id), 'run_id': run_id}}},
                 *({'Put': {'TableName': name, 'Item': item, 'ConditionExpression': 'attribute_not_exists(sk)'}}
-                  for item in coordinate),
+                  for item in (*coordinate, *copy)),
                 {'Put': {'TableName': name, 'Item': _history(run_id, status='active', actor=actor, now=now),
                          'ConditionExpression': 'attribute_not_exists(sk)'}},   # (D1: create-only)
             ])
@@ -252,9 +313,10 @@ class RunStore:
             raise
 
     def _update_status(self, run_id: str, history: dict[str, Any], expression: str, condition: str,
-                       values: dict[str, Any]) -> None:
-        """META's status change and its ``history`` row, together: ``RunNotActive`` when META's condition fails, tried
-        again (``STATUS_TRIES`` in all) when another write of META raced it."""
+                       values: dict[str, Any], also: tuple[dict[str, Any], ...] = ()) -> None:
+        """META's status change and its ``history`` row (and the create-only rows ``also``), together:
+        ``RunNotActive`` when META's condition fails, tried again (``STATUS_TRIES`` in all) when another write of META
+        raced it."""
         name = self._table.name
         update = {'TableName': name, 'Key': meta_key(run_id), 'ConditionExpression': condition,
                   'UpdateExpression': expression, 'ExpressionAttributeNames': {'#status': 'status'},
@@ -262,8 +324,9 @@ class RunStore:
         for tries in range(1, STATUS_TRIES + 1):
             try:
                 self._table.meta.client.transact_write_items(TransactItems=[
-                    {'Update': update}, {'Put': {'TableName': name, 'Item': history,
-                                                 'ConditionExpression': 'attribute_not_exists(sk)'}}])   # (D1)
+                    {'Update': update},
+                    *({'Put': {'TableName': name, 'Item': item, 'ConditionExpression': 'attribute_not_exists(sk)'}}
+                      for item in (history, *also))])   # (D1)
             except ClientError as error:
                 if is_key_collision(error, put_index=0):
                     raise RunNotActive(f'run {run_id} is not active') from error
@@ -301,12 +364,23 @@ class RunStore:
 
     def resume(self, run_id: str, *, now: int, actor: str = '') -> None:
         """A person resumed the run from its decision point: active again; ``RunNotActive`` when it was not waiting.
-        ``resumed_epoch`` records when (the supervisor gives a Resume's new coordinator its own launch window)."""
+        ``resumed_epoch`` records when (the supervisor gives a Resume's new coordinator its own launch window). At a
+        flow step's decision point (``flow:<step>``) it is also that person's decision on the step, a create-only
+        ``STEP#<step>#decision#…`` row in the same transaction, held to the decision point read (D4: who and when;
+        the conductor passes the step, or gives a blocked one another try)."""
+        waiting = self.get(run_id)
+        step = flow_step(waiting.waiting_at) if waiting is not None else ''
+        condition, values = '#status = :human AND needs_human <> :thirty', {':active': 'active',
+                                                                             ':thirty': 'thirty_days', ':now': now}
+        also: tuple[dict[str, Any], ...] = ()
+        if step:
+            condition += ' AND needs_human = :point'
+            values[':point'] = f'{DECISION_PREFIX}{step}'
+            also = (decision_item(run_pk(run_id), step, actor=_actor(actor), at=_iso(now),
+                                  nonce=secrets.token_hex(4)),)
         # Never off the 30-day decision point, which offers only "stop".
         self._update_status(run_id, _history(run_id, status='active', actor=actor, now=now, reason='resumed'),
-                            'SET #status = :active, resumed_epoch = :now REMOVE needs_human',
-                            '#status = :human AND needs_human <> :thirty',
-                            {':active': 'active', ':thirty': 'thirty_days', ':now': now})
+                            'SET #status = :active, resumed_epoch = :now REMOVE needs_human', condition, values, also)
 
     def release(self, run_id: str) -> None:
         """No agent of the ended run is live: the supervisor stops watching it (idempotent)."""
@@ -327,7 +401,8 @@ class RunStore:
                    repo=str(item.get('repo', '')), budget_usd=float(budget) if budget is not None else None,
                    budget_alert=int(item.get('budget_alert', 0)),
                    budget_alert_month=str(item.get('budget_alert_month', '')),
-                   resumed_at=int(item.get('resumed_epoch', 0)))
+                   resumed_at=int(item.get('resumed_epoch', 0)),
+                   waiting_at=str(item.get('needs_human', '')) if item.get('status') == 'needs_human' else '')
 
     def flag_budget(self, run_id: str, month: str, level: int) -> None:
         """Flag the run with the highest alert level its flow passed in ``month`` (for the run monitor and its
@@ -343,6 +418,31 @@ class RunStore:
         except ClientError as error:
             if not is_conditional_check_failure(error):
                 raise
+
+    def _typed_rows(self, run_id: str, prefix: str) -> list[dict[str, Any]]:
+        """The run's rows of a kind, in the low-level shape the board's and the flow's readers take."""
+        query = {'KeyConditionExpression': 'pk = :run AND begins_with(sk, :p)', 'ConsistentRead': True,
+                 'ExpressionAttributeValues': {':run': run_pk(run_id), ':p': prefix}}
+        return [_typed(item) for item in iter_query(self._table, query)]
+
+    def flow_plan(self, run_id: str) -> Plan | None:
+        """The conductor's plan for the run (None: it was started without a flow): its copy of its flow, kept once
+        read (it never changes), then its tasks, its step rows and META read now (engineering/flow/record.py)."""
+        flow = self._flow_copies.get(run_id)
+        if flow is None:
+            item = consistent_item(self._table, {'pk': run_pk(run_id), 'sk': FLOW_SK})
+            if item is None:
+                return None
+            flow = parse_flow(_typed(item))
+            if len(self._flow_copies) >= CACHED_FLOWS:
+                self._flow_copies.pop(next(iter(self._flow_copies)))
+            self._flow_copies[run_id] = flow
+        meta = consistent_item(self._table, meta_key(run_id))
+        tasks = [Task.from_item(item) for item in self._typed_rows(run_id, 'TASK#')]
+        rows = self._typed_rows(run_id, STEP_PREFIX)
+        verdicts = gate_verdicts(flow, tasks, WORKSPACE, run_id, self._gate_records, recorded_verdicts(rows))
+        return conduct(flow, board_state(tasks, rows, cap_reached=cap_reached(_typed(meta) if meta else None),
+                                         verdicts=verdicts))
 
     @property
     def table(self) -> Any:
@@ -402,6 +502,18 @@ class TableRunControl:
     def is_active(self, run_id: str) -> bool:
         run = self._runs.get(run_id)
         return run is not None and run.status == 'active'
+
+    def flow_stop(self, run_id: str) -> FlowStop | None:
+        """The decision point the run's flow waits at (``flow:<step>``: a human decision point reached, a step blocked
+        or one the runtime cannot do and the flow cannot go on without), else None. A run waiting at one already
+        answers it as ``waiting`` (its agents stay held, and nothing is asked again); a run without a flow, at another
+        decision point or ended, None."""
+        run = self._runs.get(run_id)
+        if run is None or run.status != 'active':
+            waiting = run is not None and bool(flow_step(run.waiting_at))
+            return FlowStop(run.waiting_at, waiting=True) if run is not None and waiting else None
+        plan = self._runs.flow_plan(run_id)
+        return FlowStop(plan.decision_point) if plan is not None and plan.decision_point else None
 
     def coordinator_awaited(self, run_id: str) -> int | None:
         run = self._runs.get(run_id)

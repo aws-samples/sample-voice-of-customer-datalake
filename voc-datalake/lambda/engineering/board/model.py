@@ -116,6 +116,10 @@ class Task:
     launched_attempt: int = 0
     launched_paths: tuple[str, ...] = ()
     launched_language: str = ''
+    #: The step of the run's flow the task was posted for ('' in a run without a flow, or a person's own task), and the
+    #: map's shard it works on (a step after a map takes one task per shard): engineering/flow/conductor.py.
+    flow_step: str = ''
+    shard: str = ''
 
     @classmethod
     def from_item(cls, item: Mapping[str, Any]) -> Task:
@@ -130,7 +134,8 @@ class Task:
             waiting=item.get('waiting', {}).get('BOOL') is True, launched_agent=_s(item, 'launched_agent'),
             launched_attempt=_n(item, 'launched_attempt'),
             launched_paths=tuple(path['S'] for path in item.get('launched_paths', {}).get('L', ()) if 'S' in path),
-            launched_language=_s(item, 'launched_language'))
+            launched_language=_s(item, 'launched_language'), flow_step=_s(item, 'flow_step'),
+            shard=_s(item, 'shard'))
 
     def paths(self) -> tuple[str, ...]:
         """The repository paths the task works on: '' (the root), its spec's ``paths`` (strings) and the paths its
@@ -150,4 +155,5 @@ class Task:
                 if self.lease_agent else None, 'result_keys': sorted(self.result_keys), 'posted_by': self.posted_by,
                 'updated_by': self.updated_by, 'updated_at': self.updated_at, 'spec_hash': self.spec_hash,
                 'progress': {'at': self.progress_at, 'step': self.step, 'waiting': self.waiting}
-                if self.progress_at else None, 'launched_agent': self.launched_agent or None}
+                if self.progress_at else None, 'launched_agent': self.launched_agent or None,
+                'flow_step': self.flow_step or None, 'shard': self.shard or None}

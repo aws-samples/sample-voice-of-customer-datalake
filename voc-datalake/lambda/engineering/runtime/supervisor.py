@@ -134,8 +134,9 @@ class Supervisor:
     board_url: str = ''
     #: The checkout an agent boots with (``checkout.checkout_commands``; the tests give a local one).
     checkout: Callable[[str, Sequence[str]], list[Command]] = field(default_factory=lambda: checkout_commands)
-    #: Runs whose budget is spent, as of their last tick: no new session starts for them.
-    _spent: set[str] = field(default_factory=set, init=False, repr=False)
+    #: Runs whose agents are held, as of their last tick (a spent budget, or the flow waiting at a person): no new
+    #: session starts for them.
+    _held: set[str] = field(default_factory=set, init=False, repr=False)
 
     def tick(self, now: int) -> dict[str, int]:
         """One pass over every live session; the number of sessions in each status afterwards."""
@@ -220,10 +221,12 @@ class Supervisor:
             return [session.status for session in results]
         budget = self.control.budget(run_id)
         if budget.exceeded:
-            self._spent.add(run_id)
+            self._held.add(run_id)
             self.control.needs_human(run_id, 'budget')
+        elif self._flow_point(run_id):
+            self._held.add(run_id)   # (held like a spent budget: a person's Resume, their decision, continues them)
         else:
-            self._spent.discard(run_id)
+            self._held.discard(run_id)
         results = [self._ticked(session, now, lambda s: self._advance(s, now)) for session in run_sessions]
         # After the moves: a level passed by this tick's writes (an agent's last, too) is said now, even if no agent of
         # the run is live by the next tick.
@@ -233,6 +236,24 @@ class Supervisor:
                       ', '.join(f'{count} {status}' for status, count in sorted(counts.items())),
                       {'tokens': str(budget.tokens), 'cost_usd': f'{budget.cost_usd:.2f}'})
         return [session.status for session in results]
+
+    def _flow_point(self, run_id: str) -> bool:
+        """An active run whose flow waits at a person (a human decision point reached, a step blocked, or one the
+        runtime cannot do and the flow cannot go on without) goes to that decision point, ``flow:<step>``, before its
+        agents move, and they are held (checkpointed, then paused) as for a spent budget: True. A failed read is
+        logged and the run goes on (the next tick reads it again)."""
+        try:
+            stop = self.control.flow_stop(run_id)
+        except Exception:
+            logger.exception('engineering supervisor: a run\'s flow could not be read', extra={'run_id': run_id})
+            return False
+        if stop is None:
+            return False
+        if not stop.waiting:   # (waiting there already: nothing to ask again, its agents stay held)
+            logger.info('engineering supervisor: a run\'s flow waits at a person',
+                        extra={'run_id': run_id, 'decision_point': stop.point})
+            self.control.needs_human(run_id, stop.point)
+        return True
 
     def _budget_alert(self, run_id: str, now: int) -> None:
         """The run's flow passed a level of its monthly budget: said to the run, at least once per flow, budget, level
@@ -397,7 +418,7 @@ class Supervisor:
             return self._end(session, ENDED_AS.get(lease.final_state, 'failed'), now)
         if session.status == 'waiting':
             return session if lease is not None and lease.waiting else self._continue(session, now, crashed=False)
-        if session.run_id in self._spent and session.after_pause not in ('hold', 'shutdown'):
+        if session.run_id in self._held and session.after_pause not in ('hold', 'shutdown'):
             return self._hold(session, now)
         session = self._follow_wait(session, lease, now)
         if not session.suspended:
@@ -618,7 +639,7 @@ class Supervisor:
     def _continue(self, session: AgentSession, now: int, *, crashed: bool) -> AgentSession:
         """End the session and go on as the same agent and task in a new one, from the last checkpoint; never for a
         task that moved on or ended (every path here: a tick, a wake, a person's Resume)."""
-        if session.run_id in self._spent:
+        if session.run_id in self._held:
             return self._end(session, 'paused', now)
         lease = self._lease(session)
         gone = self._gone(session, lease, now)
@@ -775,8 +796,8 @@ class Supervisor:
             raise RuntimeRefused(f'run {run_id} is past its 30 days: it can only be stopped')
         if self.control.budget(run_id).exceeded:
             raise RuntimeRefused(f'run {run_id} has spent its budget: raise it before resuming')
-        # Its budget is no longer spent: a held run may start sessions again.
-        self._spent.discard(run_id)
+        # Its budget is no longer spent, and a person decided: a held run may start sessions again.
+        self._held.discard(run_id)
 
     def signal_detailed(self, run_id: str, agent_id: str | None, kind: str, now: int,
                         attempt: int | None = None) -> dict[str, tuple[str, bool]]:

@@ -3,8 +3,10 @@
 - ``{"action": "start_run", "run_id", "max_tasks", "max_tokens"?, "max_cost_usd"?, "goal"?, "repo"?, "flow"?,
   "budget_usd"? (the flow's monthly budget, copied onto the run for its alerts and, with the administrators' hard
   cap on, its first start's cost cap: ``runs.hard_capped``, ``engineering/settings.py``), "connection"?,
-  "commit"?, "language"?, "actor"?}``: the run's ``META`` row and its ``coordinate`` task
-  (``runs.RunStore.start``), the supervisor's rule switched on, and, for a run with its connection, commit and
+  "commit"?, "language"?, "actor"?, "flow_definition"?, "flow_revision"?}``: the run's ``META`` row, its
+  ``coordinate`` task and, with ``flow_definition`` (the stored flow's JSON text at ``flow_revision``), its own copy
+  of the flow, which its coordinator follows (``runs.RunStore.start``, ``engineering/flow/``), the supervisor's
+  rule switched on, and, for a run with its connection, commit and
   language, its coordinator launched on that task (``coordinator-1``, on the coordinator's skill's harness). A run
   started without its connection or commit can launch no agent and read no knowledge (the board answers 409); one
   without its language gets no coordinator. A language this deployment has no agent runtime for, or a coordinator
@@ -100,6 +102,7 @@ from shared.logging import logger, metrics
 
 if TYPE_CHECKING:
     from engineering.learning.loop import LearningLoop
+    from engineering.quality_gate.record import GateRecord
     from engineering.runtime.board_bus import SessionState
 
 MAX_HARNESS_ARGS: Final = 32
@@ -182,9 +185,19 @@ def _hard_cap_on() -> bool:
         raise StartReadFailed('the hard cap\'s setting could not be read: start the run again') from error
 
 
+def _gate_record(key: str) -> GateRecord | None:
+    """A gate record from the workspace bucket (the runtime's role reads them: the GO ledger's check of a flow's
+    quality gate verdict). Built at the read: the start function, which never plans a flow, names no bucket."""
+    from engineering.flow.ledger import read_gate_record
+    from engineering.workspace.store import WorkspaceStore
+    from shared.aws import get_s3_client
+    workspace = WorkspaceStore(get_s3_client(), os.environ['ENGINEERING_WORKSPACE_BUCKET'], denied_is_missing=True)
+    return read_gate_record(workspace, key)
+
+
 def _runs() -> RunStore:
     from shared.aws import get_dynamodb_resource
-    return RunStore(get_dynamodb_resource().Table(os.environ['ENGINEERING_TABLE']))
+    return RunStore(get_dynamodb_resource().Table(os.environ['ENGINEERING_TABLE']), gate_records=_gate_record)
 
 
 def tick(_event: Mapping[str, Any]) -> dict[str, Any]:
@@ -408,12 +421,16 @@ def start_run(event: Mapping[str, Any], *, launch: bool = True) -> dict[str, Any
         # (the administrators' hard cap: what is left of the flow's month, or no start; a retry of a live run is not
         # capped again)
         caps = hard_capped(caps, budget_usd=budget_usd, flow=flow, table=runs.table, now=int(clock()))
+    definition = event.get('flow_definition', '')
+    if not isinstance(definition, str):
+        raise RuntimeRefused('flow_definition is the stored flow\'s definition, as its JSON text')
     try:
         runs.start(run_id, caps=caps, now=int(clock()), goal=str(event.get('goal', '')),
                    repo=str(event.get('repo', '')), flow=flow,
                    connection=str(event.get('connection', '')), commit=str(event.get('commit', '')),
                    language=language, actor=str(event.get('actor') or ''),
-                   budget_usd=budget_usd)
+                   budget_usd=budget_usd, flow_definition=definition,
+                   flow_revision=_optional_number(event, 'flow_revision', int) or 0)
     except RunExists:
         run = runs.get(run_id)
         if run is None or run.status in ENDED:

@@ -14,6 +14,7 @@ import { fetchApi } from './client'
 import { nextAfterOf } from './seqPages'
 import { lenientList, parseEach } from './lenientFields'
 import { isRecord } from '../lib/typeGuards'
+import { normalizeDefinition } from './workflowsApi'
 
 export const ENGINEERING_SIGNALS = ['save', 'pause', 'resume', 'shutdown', 'stop_now'] as const
 export type EngineeringSignal = (typeof ENGINEERING_SIGNALS)[number]
@@ -85,10 +86,20 @@ const RunBudgetSchema = z.object({
   alert_month: z.string().nullable().catch(null),
 }).nullable().catch(null)
 
+/** Each step's status in the run's own copy of its flow, as the conductor reads it
+ * (`lambda/engineering/flow/conductor.py`); null for a run started without a flow. */
+const FlowStepsSchema = z.record(z.string(), z.string()).nullable().catch(null)
+/** The revision of the flow the run's start copied; null for none. */
+const FlowRevisionSchema = z.number().int().positive().nullable().catch(null)
+
 const OverviewSchema = z.object({
   run: z.object({
     run_id: text, goal: text, repo: text, flow: text, status: text, started_at: maybeText, ended_at: maybeText,
     budget: RunBudgetSchema.optional().transform((budget) => budget ?? null),
+    flow_steps: FlowStepsSchema.optional().transform((steps) => steps ?? null),
+    flow_revision: FlowRevisionSchema.optional().transform((revision) => revision ?? null),
+    /** The run's own copy of its flow, as its start wrote it (what the monitor draws); null for none. */
+    flow_definition: z.unknown().optional().transform((definition) => normalizeDefinition(definition ?? null)),
   }),
   agents: eachOf(AgentSchema),
   /** The signals and answers can reach the run (the stack names the runtime and the bus); false when unsaid. */

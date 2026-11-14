@@ -21,9 +21,9 @@ from boto3.dynamodb.types import TypeDeserializer
 
 from engineering.board.model import Task
 from engineering.board.store import BoardStore
+from engineering.flow.ledger import FINAL_GO_ROLE, GATE_RECORD
 from engineering.learning.retrospective import AgentRecord, GateVerdict, RunRecord, fit
 from engineering.quality_gate.record import GateRecord
-from engineering.reports.build import GATE_RECORD
 from engineering.rows import LAUNCH_HOLD, amount_attr, get_row, run_pk, run_rows, string_attr
 from engineering.workspace.layout import parse_agent_key
 from engineering.workspace.store import WorkspaceStore
@@ -31,7 +31,6 @@ from shared.logging import logger
 
 #: The gate records one retrospective reads, at most.
 MAX_GATE_RECORDS: Final = 20
-FINAL_GO: Final = 'final-go'
 #: The supervisor's last word on an agent's failure, as the retrospective keeps it.
 LAST_FAILURE_CHARS: Final = 1_500
 #: The open blocking findings a NO-GO's evidence names, at most.
@@ -85,7 +84,7 @@ class RunRecordReader:
         keeps an agent to its own keys; a key naming another run or workspace is never read)."""
         keys: list[tuple[int, str, str]] = []
         for task in board_tasks:
-            if task.role != FINAL_GO:
+            if task.role != FINAL_GO_ROLE:
                 continue
             for raw in task.result_keys:
                 key = parse_agent_key(raw)

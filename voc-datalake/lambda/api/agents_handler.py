@@ -1145,9 +1145,10 @@ def _start_body(body: Mapping[str, Any]) -> dict[str, str]:
     return {**fields, 'commit': commit, 'goal': redact(goal)}
 
 
-def _engineering_flow_budget(workflow_id: str) -> float | None:
-    """The stored engineering flow's monthly budget (None for none): 400 for an id that names no saved workflow or an
-    agents workflow, 409 for a stored budget off its rule."""
+def _stored_flow(workflow_id: str) -> tuple[float | None, str, int]:
+    """The stored engineering flow's monthly budget (None for none), its stored definition (the JSON text the run
+    copies and follows) and its revision: 400 for an id that names no saved workflow or an agents workflow, 409 for a
+    stored budget off its rule."""
     from shared.workflow_engineering import budget_of
 
     workflow = _find_workflow(workflow_id)
@@ -1159,7 +1160,9 @@ def _engineering_flow_budget(workflow_id: str) -> float | None:
     budget, broken = budget_of(definition.get('budget'))
     if broken:
         raise ConflictError(f'the flow\'s stored budget is off its rule ({broken}): save the flow again')
-    return None if budget is None else float(budget['monthly_usd'])
+    revision = store.plain(workflow.get('revision')) or 1
+    return (None if budget is None else float(budget['monthly_usd']), workflow_schema.encode_definition(definition),
+            int(revision))
 
 
 @cache
@@ -1241,11 +1244,13 @@ def start_engineering_run():
     if not function:
         raise ServiceUnavailableError('runs cannot be started from here: the deployment names no start function')
     fields = _start_body(json_object_body(app))
-    budget_usd = _engineering_flow_budget(fields['workflow_id'])
+    budget_usd, definition, revision = _stored_flow(fields['workflow_id'])
     from engineering.bus.publish import new_event_id
 
     request: dict[str, Any] = {
         'action': 'start_run', 'run_id': new_event_id(), 'max_tasks': RUN_TASK_CAP, 'flow': fields['workflow_id'],
+        # The flow as stored now: the run copies it and follows its copy (a later edit is the next run's).
+        'flow_definition': definition, 'flow_revision': revision,
         'connection': fields['connection'], 'commit': fields['commit'], 'language': fields['language'],
         'goal': fields['goal'], 'actor': caller.subject, 'repo': _run_repo(fields['connection']),
         'max_cost_usd': _run_cap('ENGINEERING_RUN_CAP_USD', DEFAULT_RUN_CAP_USD, float),
@@ -1389,7 +1394,8 @@ def _invoke_board(function: str, payload: dict) -> dict:
 @app.post('/agents/engineering/<run_id>/board/tasks')
 @tracer.capture_method
 def post_engineering_task(run_id: str):
-    """``{role, title, spec, priority?, parent_task?}`` → ``{task, duplicate}``: a person posts a task (admin)."""
+    """``{role, title, spec, priority?, parent_task?, flow_step?, shard?}`` → ``{task, duplicate}``: a person posts a
+    task (admin); in a run that follows its flow, for a live step it names or as their own task with none."""
     return _person_board_action(run_id, {'op': 'post'})
 
 

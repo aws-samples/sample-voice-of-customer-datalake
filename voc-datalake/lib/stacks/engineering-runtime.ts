@@ -47,7 +47,7 @@ import * as sqs from 'aws-cdk-lib/aws-sqs';
 import { Construct } from 'constructs';
 
 import { capitalize } from '../plugin-loader';
-import { ENGINEERING_CACHE_PREFIX } from './core-buckets';
+import { ENGINEERING_CACHE_PREFIX, ENGINEERING_GATE_RECORD_KEYS } from './core-buckets';
 import {
   EngineeringAgentCore, buildMemoryMiB, buildRoles, grantSessions, maxSessions, refuseRemovedSettings, sessionRates,
 } from './engineering-agentcore';
@@ -88,8 +88,6 @@ const RUN_REGISTRY = 'WS#*#RUNS';
 const SKILL_PARTITIONS = 'WS#*#SKILL#*';
 const ROLE_MEMORY_PARTITIONS = 'WS#*#AMEM#ROLE#*';
 const SCORECARD_PARTITIONS = 'WS#*#SCORE#*';
-/** The quality gate's records, which a retrospective reads only where a final-go task named them (records.py). */
-const GATE_RECORD_KEYS = 'ws/*/runs/*/*/commits/*/_gate/attempt-*/record.json';
 /**
  * The benchmark's case directories (voc-datalake/engineering-benchmark/cases, lambda/engineering/benchmark/cases.py),
  * read at synth: the coach names one of them as the case its version should gain on.
@@ -491,7 +489,7 @@ class EngineeringRuntime extends Construct {
    */
   private grantLearning(props: WiredProps, role: iam.Role, functionName: string): void {
     const { engineeringTable, workspaceBucket } = props;
-    const gateRecords = workspaceBucket.arnForObjects(GATE_RECORD_KEYS);
+    const gateRecords = workspaceBucket.arnForObjects(ENGINEERING_GATE_RECORD_KEYS);
     role.addToPrincipalPolicy(new iam.PolicyStatement({
       sid: 'LearningReadsGateRecords', actions: ['s3:GetObject'], resources: [gateRecords],
     }));

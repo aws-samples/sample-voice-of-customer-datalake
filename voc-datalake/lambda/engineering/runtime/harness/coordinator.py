@@ -28,18 +28,35 @@ MAX_INSTRUCTIONS: Final = 8_000
 LANGUAGES: Final = frozenset({'java', 'node', 'python', 'rust'})
 
 
+#: A step id of the run's flow (shared/workflow_schema.py: at most 64 characters); a map's shard is a repository path.
+MAX_STEP: Final = 64
+#: The most shards a map lists (shared/workflow_engineering.py MAX_SHARD_CAP; the board holds the map's own cap).
+MAX_SHARDS: Final = 200
+
+
 def specs(tool_spec: Callable[..., Built]) -> tuple[Built, ...]:
     text = {'type': 'string'}
     paths = {'type': 'array', 'items': {'type': 'string'},
              'description': f'Repository paths (relative, no ".."), at most {MAX_TASK_PATHS}.'}
     role = {'type': 'string', 'enum': sorted(TASK_ROLES)}
+    step = {'type': 'string', 'description': 'The id of a ready step of the run\'s flow (read_flow).'}
     return (
-        tool_spec('read_board', 'The run\'s tasks on the board: each one\'s id, role, title, state and attempt.', {}),
-        tool_spec('post_task', 'Post one task for one role, with instructions a person could follow.',
-                  {'role': role, 'title': text, 'instructions': text, 'paths': paths}, ('role', 'title', 'instructions')),
+        tool_spec('read_board', 'The run\'s tasks on the board: each one\'s id, role, title, state, attempt and step.',
+                  {}),
+        tool_spec('read_flow', 'The run\'s flow: every step\'s status, and the ready ones with their roles, settings '
+                  'and what to do at them. The only steps you may work on.', {}),
+        tool_spec('post_task', 'Post one task for one role of a ready step, with instructions a person could follow.',
+                  {'role': role, 'title': text, 'instructions': text, 'paths': paths, 'step': step,
+                   'shard': {'type': 'string', 'description': 'For a step after a map: the shard the task works on.'}},
+                  ('role', 'title', 'instructions')),
         tool_spec('launch_agent', 'Launch one agent for a task you posted, in the run\'s repository at its commit.',
                   {'task_id': text, 'role': role, 'language': {'type': 'string', 'enum': sorted(LANGUAGES)},
                    'paths': paths}, ('task_id', 'role', 'language')),
+        tool_spec('complete_step', 'Record a step you did yourself (an agent step of your own role) or close a board '
+                  'once everything on it is done.', {'step': step}, ('step',)),
+        tool_spec('fan_out', 'Record a map step\'s shards: the repository\'s packages, as paths, at most its '
+                  'shard_cap.', {'step': step, 'shards': {**paths, 'description': 'Repository paths, each once.'}},
+                  ('step', 'shards')),
         tool_spec('read_knowledge', 'The repository\'s knowledge pack (its root\'s): conventions, build and test '
                   'commands, the parts that matter.', {}),
     )
@@ -68,20 +85,64 @@ def _paths(arguments: Mapping[str, Any]) -> tuple[str, ...]:
     return tuple(check_sparse_path(path) for path in raw)
 
 
+def _optional(arguments: Mapping[str, Any], name: str, limit: int) -> str:
+    """``arguments[name]`` as stripped text of at most ``limit`` characters, '' when left out."""
+    value = arguments.get(name)
+    return '' if value in (None, '') else _bounded(arguments, name, limit)
+
+
+def _shards(arguments: Mapping[str, Any]) -> tuple[str, ...]:
+    raw = arguments.get('shards')
+    if not isinstance(raw, list) or not 0 < len(raw) <= MAX_SHARDS or not all(isinstance(path, str) for path in raw):
+        raise ValueError(f'shards are 1-{MAX_SHARDS} repository paths')
+    return tuple(check_sparse_path(path) for path in raw)
+
+
+Tool = Callable[[Mapping[str, Any]], Built]
+
+
+def _flow_tools(context: Built, result: Callable[..., Built], as_data: Callable[[str, str], str]) -> dict[str, Tool]:
+    """The tools that follow the run's flow: its plan read, and the steps the coordinator does itself recorded."""
+
+    def read_flow(_arguments: Mapping[str, Any]) -> Built:
+        plan = context.planner.flow(run_id=context.run_id)
+        if plan is None:
+            return result('this run follows no flow: plan the work from the run\'s goal')
+        # (the flow's titles and instructions are a person's text: data, like the board's)
+        return result(as_data('flow', json.dumps(plan)))
+
+    def complete_step(arguments: Mapping[str, Any]) -> Built:
+        step = _bounded(arguments, 'step', MAX_STEP)
+        answer = context.planner.record_step(run_id=context.run_id, step=step, action='complete')
+        context.progress(f'completed step {step}')
+        return result(as_data('flow', json.dumps(answer.get('flow'))))
+
+    def fan_out(arguments: Mapping[str, Any]) -> Built:
+        step, shards = _bounded(arguments, 'step', MAX_STEP), _shards(arguments)
+        answer = context.planner.record_step(run_id=context.run_id, step=step, action='fan_out', shards=shards)
+        context.progress(f'listed {len(shards)} shards for step {step}')
+        return result(as_data('flow', json.dumps(answer.get('flow'))))
+
+    return {'read_flow': read_flow, 'complete_step': complete_step, 'fan_out': fan_out}
+
+
 def handlers(context: Built, result: Callable[..., Built],
              as_data: Callable[[str, str], str]) -> dict[str, Callable[[Mapping[str, Any]], Built]]:
     """The coordinator's tools, on ``context``'s planner and knowledge reader."""
 
     def read_board(_arguments: Mapping[str, Any]) -> Built:
         tasks = [{'task_id': task.task_id, 'role': task.role, 'title': task.title, 'state': task.state,
-                  'attempt': task.attempt} for task in context.planner.tasks(run_id=context.run_id)]
+                  'attempt': task.attempt, 'step': task.step or None}
+                 for task in context.planner.tasks(run_id=context.run_id)]
         return result(as_data('board', json.dumps(tasks)))
 
     def post_task(arguments: Mapping[str, Any]) -> Built:
+        shard = _optional(arguments, 'shard', 512)
         task_id = context.planner.post(run_id=context.run_id, role=_role(arguments),
                                        title=_bounded(arguments, 'title', MAX_TITLE),
                                        instructions=_bounded(arguments, 'instructions', MAX_INSTRUCTIONS),
-                                       paths=_paths(arguments))
+                                       paths=_paths(arguments), step=_optional(arguments, 'step', MAX_STEP),
+                                       shard=check_sparse_path(shard) if shard else '')
         context.progress(f'posted task {task_id}')
         return result(json.dumps({'task_id': task_id}))
 
@@ -114,5 +175,6 @@ def handlers(context: Built, result: Callable[..., Built],
                 return result(f'the board refused: {refused}', error=True)
         return call
 
-    return {name: answered(tool) for name, tool in (('read_board', read_board), ('post_task', post_task),
-                                                     ('launch_agent', launch_agent), ('read_knowledge', read_knowledge))}
+    tools = {'read_board': read_board, 'post_task': post_task, 'launch_agent': launch_agent,
+             'read_knowledge': read_knowledge, **_flow_tools(context, result, as_data)}
+    return {name: answered(tool) for name, tool in tools.items()}

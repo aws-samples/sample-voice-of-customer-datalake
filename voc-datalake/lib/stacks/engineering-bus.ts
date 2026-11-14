@@ -60,8 +60,8 @@ import { ENGINEERING_BOARD_FUNCTION_BASE_NAME } from '../utils/function-names';
 import { acknowledgeNag, acknowledgeNagOnResource, resourceFinding } from '../utils/nag-ack';
 import { createWorkerFunction, workerRole } from '../utils/worker-lambda';
 import {
-  ENGINEERING_BUDGET_ALERT_PARTITIONS, ENGINEERING_SPEND_PARTITIONS, ENGINEERING_WORKSPACE,
-  ENGINEERING_WORKSPACE_REPORTS_KEYS, ENGINEERING_WORKSPACE_RUNS_KEYS,
+  ENGINEERING_BUDGET_ALERT_PARTITIONS, ENGINEERING_GATE_RECORD_KEYS, ENGINEERING_SPEND_PARTITIONS,
+  ENGINEERING_WORKSPACE, ENGINEERING_WORKSPACE_REPORTS_KEYS, ENGINEERING_WORKSPACE_RUNS_KEYS,
 } from './core-buckets';
 import { ENGINEERING_DLQ_BASE_NAME } from './dlq-alarms';
 import { runtimeLanguages } from './engineering-agentcore';
@@ -285,8 +285,9 @@ export class EngineeringBus extends Construct {
   /**
    * The board API (its role is a publisher, as the board only). Its role also invokes the runtime's function, for the coordinator's
    * `launch` op (the board sends only the `launch` action; the coordinator role holds no invoke itself), and reads
-   * the knowledge packs' objects (`ws/<ws>/knowledge/*`) for the `knowledge` op; no ListBucket, so a missing object
-   * reads as denied, which the board reads as missing.
+   * the knowledge packs' objects (`ws/<ws>/knowledge/*`) for the `knowledge` op and the quality gate's records for a
+   * flow's gate step (the GO ledger); no ListBucket, so a missing object reads as denied, which the board reads as
+   * missing.
    */
   private createBoardApi(props: EngineeringBusProps): { fn: lambda.Function; url: string } {
     const role = workerRole(this, 'BoardRole');
@@ -300,10 +301,16 @@ export class EngineeringBus extends Construct {
     role.addToPrincipalPolicy(new iam.PolicyStatement({
       sid: 'ReadKnowledgePacks', actions: ['s3:GetObject'], resources: [knowledge],
     }));
+    // A flow's quality gate step takes its pass arrow only on a GO the GO ledger reads in the gate record itself
+    // (lambda/engineering/flow/ledger.py): the records only, never another run object.
+    const gateRecords = props.workspaceBucket.arnForObjects(ENGINEERING_GATE_RECORD_KEYS);
+    role.addToPrincipalPolicy(new iam.PolicyStatement({
+      sid: 'ReadGateRecords', actions: ['s3:GetObject'], resources: [gateRecords],
+    }));
     acknowledgeNag(role, [{
       id: 'AwsSolutions-IAM5',
-      reason: 'The knowledge packs\' objects in the workspace bucket (one prefix: their keys name the connection, package and version, known only at run time), read only',
-      findings: [resourceFinding(knowledge)],
+      reason: 'The knowledge packs\' objects in the workspace bucket (one prefix: their keys name the connection, package and version, known only at run time), and the quality gate\'s record objects (the GO ledger reads only the key a run\'s final-go task recorded), read only',
+      findings: [resourceFinding(knowledge), resourceFinding(gateRecords)],
     }]);
     // The key through DynamoDB for the table's reads and writes; through S3 only to decrypt (the board only reads
     // the knowledge packs' objects, it writes none).

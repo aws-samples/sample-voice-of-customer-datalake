@@ -125,10 +125,24 @@ def _reposted(task: Task, actor: str, *, written: bool) -> Reposted:
                     own=written or (task.updated_by == actor and task.updated_op == REPOST_OP))
 
 
-def spec_hash(role: str, parent_task: str, spec: Mapping[str, Any]) -> str:
-    """Equal tasks (role, parent, spec) hash alike, whatever the spec's key order."""
-    canonical = json.dumps([role, parent_task, spec], sort_keys=True, separators=(',', ':'))
+def spec_hash(role: str, parent_task: str, spec: Mapping[str, Any], step: str = '', shard: str = '') -> str:
+    """Equal tasks (role, parent, spec, and the flow's step and shard when given) hash alike, whatever the spec's key
+    order; a task of a run without a flow hashes as it always did."""
+    parts: list[Any] = [role, parent_task, spec]
+    if step or shard:
+        parts += [step, shard]
+    canonical = json.dumps(parts, sort_keys=True, separators=(',', ':'))
     return hashlib.sha256(canonical.encode()).hexdigest()[:32]
+
+
+#: A flow step's one-task-at-a-time marker (an agent step, or one shard of a step after a map): ``SLOT#<step>#<shard>#<n>``
+#: with ``n`` the step's (and shard's) tasks that ended before it, create-only in the post's own transaction, so two
+#: posts racing for the same step never both land.
+SLOT_PREFIX = 'SLOT#'
+
+
+def slot_sk(step: str, shard: str, ended: int) -> str:
+    return f'{SLOT_PREFIX}{step}#{shard}#{ended}'
 
 
 def _result_key(key: str, ws: str, run_id: str, agent: str, epoch: int) -> bool:
@@ -192,19 +206,15 @@ class BoardStore:
         return [Task.from_item(item) for item in run_rows(self.client, self.table, ws, run_id, 'TASK#')]
 
     def post(self, ws: str, run_id: str, *, role: str, title: str, spec: Mapping[str, Any], parent_task: str,
-             priority: int, actor: str) -> Posted:
-        if role == COORDINATOR:
-            raise BoardError('forbidden', "the coordinate task is the run start's, never posted")
-        if not spec:
-            raise BoardError('invalid', 'a task has a spec: what to do, which tells it apart from the run\'s others')
-        if len(json.dumps(spec)) > MAX_SPEC_BYTES:
-            raise BoardError('invalid', f'a task spec is at most {MAX_SPEC_BYTES} bytes: put the rest in S3')
-        depth = 0
-        if parent_task:
-            depth = self.task(ws, run_id, parent_task).depth + 1
-            if depth > MAX_DEPTH:
-                raise BoardError('cap', f'tasks nest at most {MAX_DEPTH} deep')
-        digest = spec_hash(role, parent_task, spec)
+             priority: int, actor: str, step: str = '', shard: str = '', slot: str = '',
+             absent: Sequence[str] = (), answer_only: bool = False) -> Posted:
+        """``step`` and ``shard``: the run's flow step the task is for and the map's shard it works on (recorded on the
+        task); ``slot``: the step's one-task-at-a-time marker (``slot_sk``), written create-only with it; ``absent``:
+        the run's rows that must not exist when it lands (a closed step's ``STEP#<step>#done``), held in the same
+        transaction. ``answer_only``: a retry of an equal post, answered with that task while it is under way and
+        refused once it has ended (never a new task, which would skip the step's check)."""
+        depth = self._post_depth(ws, run_id, role=role, spec=spec, parent_task=parent_task)
+        digest = spec_hash(role, parent_task, spec, step, shard)
         task_id = self.new_id()
         pk = f'WS#{ws}#RUN#{run_id}'
         at = self.now().isoformat()
@@ -214,8 +224,15 @@ class BoardStore:
                 'attempt': {'N': '1'}, 'posted_by': {'S': actor}, 'updated_by': {'S': actor}, 'updated_at': {'S': at}}
         if parent_task:
             item['parent_task'] = {'S': parent_task}
+        item.update({name: {'S': value} for name, value in (('flow_step', step), ('shard', shard)) if value})
         spec_key = {'pk': {'S': pk}, 'sk': {'S': f'SPEC#{digest}'}}
+        if answer_only:
+            return self._equal_under_way(ws, run_id, spec_key)
         marker: dict[str, Any] = {'ConditionExpression': 'attribute_not_exists(pk)'}
+        slots = [{'Put': {'TableName': self.table, 'ConditionExpression': 'attribute_not_exists(pk)',
+                          'Item': {'pk': {'S': pk}, 'sk': {'S': slot}, 'task_id': {'S': task_id}}}}] if slot else []
+        checks = [{'ConditionCheck': {'TableName': self.table, 'Key': {'pk': {'S': pk}, 'sk': {'S': sk}},
+                                      'ConditionExpression': 'attribute_not_exists(pk)'}} for sk in absent]
         for _ in range(2):   # (a second try only after the marker's task had ended)
             try:
                 self.client.transact_write_items(TransactItems=[
@@ -228,6 +245,7 @@ class BoardStore:
                     {'Put': {'TableName': self.table, 'ConditionExpression': 'attribute_not_exists(pk)', 'Item': item}},
                     {'Put': {'TableName': self.table, 'ConditionExpression': 'attribute_not_exists(pk)',
                              'Item': Move(task_id, OPEN, actor, at, 1, 'post').item(ws, run_id)}},
+                    *slots, *checks,
                 ])
             except ClientError as exc:
                 if is_key_collision(exc, put_index=1):
@@ -240,10 +258,44 @@ class BoardStore:
                     marker = {'ConditionExpression': 'task_id = :ended',
                               'ExpressionAttributeValues': {':ended': {'S': named}}}
                     continue
+                self._refused_step(exc, step, slots=len(slots), checks=len(checks))
                 self._refused_post(exc, pk)
                 raise
             return Posted(Task.from_item(item), created=True)
         raise BoardError('conflict', 'an equal task was posted at the same time: read the board and retry')
+
+    def _post_depth(self, ws: str, run_id: str, *, role: str, spec: Mapping[str, Any], parent_task: str) -> int:
+        """A post's own checks (never the coordinate task, a spec within its bound) and its depth below its parent."""
+        if role == COORDINATOR:
+            raise BoardError('forbidden', "the coordinate task is the run start's, never posted")
+        if not spec:
+            raise BoardError('invalid', 'a task has a spec: what to do, which tells it apart from the run\'s others')
+        if len(json.dumps(spec)) > MAX_SPEC_BYTES:
+            raise BoardError('invalid', f'a task spec is at most {MAX_SPEC_BYTES} bytes: put the rest in S3')
+        if not parent_task:
+            return 0
+        depth = self.task(ws, run_id, parent_task).depth + 1
+        if depth > MAX_DEPTH:
+            raise BoardError('cap', f'tasks nest at most {MAX_DEPTH} deep')
+        return depth
+
+    def _equal_under_way(self, ws: str, run_id: str, spec_key: Mapping[str, Any]) -> Posted:
+        """A retried post: the equal task its marker names, while it is under way; refused once it has ended."""
+        named = (self._get(spec_key) or {}).get('task_id', {}).get('S', '')
+        existing = self.task(ws, run_id, named) if named else None
+        if existing is None or existing.state in FINAL:
+            raise BoardError('conflict', 'the equal task this post repeats has ended: read the flow and post again')
+        return Posted(existing, created=False)
+
+    @staticmethod
+    def _refused_step(exc: ClientError, step: str, *, slots: int, checks: int) -> None:
+        """Why a post for a flow's step was refused, when it is the step's: its one-task marker (another task posted
+        for it meanwhile, index 4) or a row that must not exist (the step closed meanwhile, after the marker)."""
+        if slots and is_key_collision(exc, put_index=4):
+            raise BoardError('conflict', f'another task was posted for step {step} at the same time: read the flow '
+                                         'and the board again') from exc
+        if any(is_key_collision(exc, put_index=4 + slots + n) for n in range(checks)):
+            raise BoardError('conflict', f'step {step} was closed meanwhile: read the flow again') from exc
 
     def _refused_post(self, exc: ClientError, pk: str) -> None:
         """Why the run refused a post, when it is its META row (index 0: the run exists, under its cap)."""

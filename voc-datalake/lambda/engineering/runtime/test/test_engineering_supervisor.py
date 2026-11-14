@@ -773,6 +773,39 @@ def test_once_the_budget_is_raised_resume_brings_a_held_agent_back(world: World)
     assert world.session().continuation == 1
 
 
+def test_a_flow_waiting_at_a_person_sends_the_run_there_and_holds_its_agents(world: World):
+    world.launch(code=SLEEP)
+    _until(world, 1000, lambda s: s.status == 'working')
+    world.control.flow_points['01JD3R4NZXQ7Y2W8K4M6P9T0AB'] = 'flow:approval'
+    world.supervisor.tick(1001)
+    assert world.session().status == 'pause_requested'
+    assert world.control.humans == [('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'flow:approval')]
+    assert world.bus.kinds() == ['pause']
+    # Waiting there now: the next tick holds its agents and asks nothing again.
+    world.supervisor.tick(1002)
+    assert world.control.humans == [('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'flow:approval')]
+
+
+def test_a_held_agent_at_a_flows_decision_point_comes_back_on_a_persons_resume(world: World):
+    world.launch(code='import sys; sys.exit(75)')
+    world.control.flow_points['01JD3R4NZXQ7Y2W8K4M6P9T0AB'] = 'flow:gate'
+    _until(world, 1000, lambda s: s.status == 'paused')
+    world.control.flow_points.clear()   # (the person's decision: the flow goes on)
+    assert world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', None, 'resume', 1001) == {'fixer-1': 'booting'}
+
+
+def test_a_flow_that_cannot_be_read_leaves_the_run_going(world: World, monkeypatch: pytest.MonkeyPatch):
+    world.launch(code=SLEEP)
+    _until(world, 1000, lambda s: s.status == 'working')
+
+    def unreadable(_run_id: str) -> None:
+        raise RuntimeError('the table did not answer')
+
+    monkeypatch.setattr(world.control, 'flow_stop', unreadable)
+    world.supervisor.tick(1001)
+    assert (world.session().status, world.control.humans) == ('working', [])
+
+
 def test_a_flows_budget_alert_is_said_to_the_run_from_the_supervisor(world: World):
     world.launch(code=SLEEP)
     _until(world, 1000, lambda s: s.status == 'working')

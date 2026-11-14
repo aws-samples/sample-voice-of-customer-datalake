@@ -64,11 +64,30 @@ export function groupsInOrder(known: readonly string[], present: readonly string
 }
 
 /**
- * The steps the agents are on, lit as running. An agent's `step` is the harness's own words: a step is lit only when
- * they are one of the flow's node ids (`nodeIds`). One round each: the canvas reads rounds as an agents workflow's
- * loop rounds ("Round 2"), which an engineering flow does not have; who is on a step is the Agents panel's to say.
+ * How the canvas lights a step of the conductor's (`lambda/engineering/flow/conductor.py`): its turn, under way or at a
+ * person as running; done, or passed by a person, as done; blocked or stopped (a person decides) as failed; not run
+ * yet, or on a way not taken, dimmed. A step still waiting is left as it is.
  */
-export function liveSteps(agents: readonly EngineeringAgent[], nodeIds: ReadonlySet<string>): Map<string, StepState> {
+const FLOW_LIGHT: Readonly<Record<string, StepState['status']>> = {
+  ready: 'running', running: 'running', collecting: 'running', human: 'running',
+  done: 'done', passed: 'done', blocked: 'failed', stopped: 'failed', not_yet_run: 'idle', skipped: 'idle',
+}
+
+/**
+ * The run's steps lit. With the conductor's statuses (`flowSteps`, a run that follows its flow), each step as it is;
+ * else the steps the agents are on, lit as running (an agent's `step` is the harness's own words: a step is lit only
+ * when they are one of the flow's node ids, `nodeIds`). One round each: the canvas reads rounds as an agents
+ * workflow's loop rounds ("Round 2"), which an engineering flow does not have; who is on a step is the Agents panel's
+ * to say.
+ */
+export function liveSteps(agents: readonly EngineeringAgent[], nodeIds: ReadonlySet<string>,
+  flowSteps: Readonly<Record<string, string>> | null = null): Map<string, StepState> {
+  if (flowSteps !== null) {
+    return new Map(Object.entries(flowSteps).flatMap(([step, status]) => {
+      const light = FLOW_LIGHT[status]
+      return nodeIds.has(step) && light !== undefined ? [[step, { status: light, rounds: 1 }] as const] : []
+    }))
+  }
   return new Map(agents.flatMap((agent) => (
     agent.step !== null && nodeIds.has(agent.step) ? [[agent.step, { status: 'running', rounds: 1 }] as const] : [])))
 }

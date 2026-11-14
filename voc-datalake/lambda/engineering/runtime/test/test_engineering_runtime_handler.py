@@ -306,6 +306,21 @@ def test_a_start_copies_the_flows_monthly_budget_onto_the_run(wired: Any):
     assert run.budget_usd == 25.5
 
 
+@pytest.mark.usefixtures('wired')
+def test_a_start_copies_the_flows_definition_into_the_run_and_refuses_one_that_is_not_text() -> None:
+    from engineering.flow.test.fixtures import TEMPLATES
+    from shared.workflow_schema import encode_definition
+    definition = encode_definition(TEMPLATES['bug-hunt-and-fix'])
+    with pytest.raises(RuntimeRefused, match='JSON text'):
+        handler.lambda_handler({'action': 'start_run', 'run_id': OTHER_RUN, 'max_tasks': 5, 'flow': 'bug-hunt',
+                                'flow_definition': {'nodes': []}, 'flow_revision': 2}, None)
+    handler.lambda_handler({'action': 'start_run', 'run_id': OTHER_RUN, 'max_tasks': 5, 'flow': 'bug-hunt',
+                            'flow_definition': definition, 'flow_revision': 2}, None)
+    plan = _runs().flow_plan(OTHER_RUN)
+    assert plan is not None
+    assert ([state.step for state in plan.live()], _runs().flow_plan(RUN)) == (['hunt', 'board'], None)
+
+
 def _flow_spent(usd: str) -> None:
     """wf_cap's runs spent ``usd`` this month (a priced write, as the session store makes it)."""
     from datetime import UTC, datetime
@@ -1084,7 +1099,7 @@ def test_a_role_with_a_skill_runs_its_skills_harness_and_is_labelled_by_it(wired
                                '--model', 'global.anthropic.claude-sonnet-5-5')
     row = handler._supervisor().sessions._table.get_item(Key={'pk': f'WS#default#RUN#{RUN}',
                                                                 'sk': 'AGENT#coordinator-0'})['Item']
-    assert (row['model'], row['skill_version']) == ('global.anthropic.claude-sonnet-5-5', 'coordinator@1')
+    assert (row['model'], row['skill_version']) == ('global.anthropic.claude-sonnet-5-5', 'coordinator@2')
 
 
 def test_a_launch_naming_another_harness_for_a_role_with_a_skill_is_refused(wired: Any):

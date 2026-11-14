@@ -5,7 +5,9 @@ has numbered), and every agent as the supervisor last saw it: its session row in
 (``WS#<ws>#RUN#<run>`` / ``AGENT#<agent>``, ``engineering.runtime.sessions``): role, task, status, continuation, the inspection data
 (step, recent tool calls, last progress, heartbeat age, session state and age, why it looks stuck) and the live cost
 counters (session-seconds, tokens per model), with the totals per model and for the run, and the run's flow budget
-with its alert flag from META (``rows.budget_view``). The run's cost is to come from the run control
+with its alert flag from META (``rows.budget_view``), and the flow it follows: the revision its start copied, each
+step's status as the conductor reads it and where the flow stands (``engineering/flow/``; none for a run started
+without a flow). The run's cost is to come from the run control
 (``engineering.runtime.ports.RunControl.budget``) once it is wired.
 
 The actions (the route lets only an admin acting for themselves take them, like a run's ``decision``):
@@ -41,6 +43,7 @@ from engineering.board.model import FINAL, OPEN, PERSON_PREFIX
 from engineering.bus.publish import PublishError, new_event_id
 from engineering.bus.schema import MAX_SUMMARY_BYTES, Message, MessageError, Party, fit_summary, summary_text
 from engineering.connectors.identity import WORKSPACE
+from engineering.flow.record import run_flow
 from engineering.rows import Refused, amount_attr, budget_view, run_pk, string_attr
 from engineering.runtime.sessions import AgentSession
 from engineering.workspace.layout import ID
@@ -271,7 +274,7 @@ class RunMonitor:
                     'started_at': string_attr(meta, 'started_at') or None,
                     'ended_at': string_attr(meta, 'ended_at') or None,
                     # Its flow's monthly budget and the highest level its flow's month passed (None: no budget).
-                    'budget': budget_view(meta)},
+                    'budget': budget_view(meta), **self._flow_view(run_id, meta)},
             'agents': agents,
             # Whether the signals and answers can reach the run from here: the runtime and the bus both named (until
             # the stack wires them, every action answers 503, so the page offers none).
@@ -281,6 +284,21 @@ class RunMonitor:
                        'microvm_seconds': sum(agent['microvm_seconds'] for agent in agents),
                        'by_model': _by_model(agents)},
         }
+
+    def _flow_view(self, run_id: str, meta: Mapping[str, Any]) -> dict[str, Any]:
+        """The run's flow as it runs: the revision its start copied and when, each step's status from the conductor
+        (the canvas's steps lit) and where the flow stands; all None for a run started without a flow, or whose copy
+        cannot be followed (logged)."""
+        # (no gate records read here: a gate's verdict as the board recorded it, else not yet read)
+        found = run_flow(self.client, self.table, WORKSPACE, run_id, meta)
+        if found is None:
+            return {'flow_revision': None, 'flow_copied_at': None, 'flow_definition': None, 'flow_steps': None,
+                    'flow_outcome': None}
+        plan = found.plan
+        return {'flow_revision': found.revision or None, 'flow_copied_at': found.copied_at or None,
+                # The run's own copy, as its start wrote it: what the monitor draws (never the flow as saved since).
+                'flow_definition': found.definition, 'flow_steps': plan.lit(),
+                'flow_outcome': {'outcome': plan.outcome, 'at': plan.at or None, 'reason': _line(plan.reason)}}
 
     @property
     def actions_available(self) -> bool:

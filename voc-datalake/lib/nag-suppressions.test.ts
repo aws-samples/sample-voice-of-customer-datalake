@@ -237,7 +237,9 @@ describe('cdk-nag acknowledgements', () => {
       // prefixes), their IAM5.
       // 92 -> 88: the Lambda MicroVM grants are gone (the MicroVMs and their images, on the supervisor's and the
       // delivery's roles); AgentCore's are on this deployment's runtimes only, and none exist in either shape.
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 88, used: 88 });
+      // 88 -> 89: the board's read of the quality gate's records, for a flow's gate step (the GO ledger; one prefix),
+      // its IAM5.
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 89, used: 89 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

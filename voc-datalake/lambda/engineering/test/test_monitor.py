@@ -122,7 +122,8 @@ def test_the_overview_shows_the_run_and_its_agents_as_the_supervisor_saw_them(ru
     assert view is not None
     assert view['run'] == {'run_id': RUN, 'goal': 'Fix the paging bug', 'repo': 'example/shop', 'flow': 'wf_bugfix',
                            'status': 'running', 'started_at': '2026-11-12T08:00:00Z', 'ended_at': None,
-                           'budget': None}
+                           'budget': None, 'flow_revision': None, 'flow_copied_at': None, 'flow_definition': None,
+                           'flow_steps': None, 'flow_outcome': None}   # (a run started without a flow: nothing to light)
     coordinator, fixer = view['agents']
     assert fixer == {
         'agent': 'fixer-1', 'role': 'fixer', 'task_id': 'task-1', 'status': 'working', 'continuation': 0,
@@ -420,3 +421,23 @@ def test_a_reposted_task_has_no_agent_to_signal(run) -> None:
     with pytest.raises(MonitorError) as reposted:
         monitor.signal(RUN, parse_signal({'signal': 'pause', 'task_id': task_id, 'attempt': 1}), ADMIN)
     assert (reposted.value.kind, runtime.calls) == ('conflict', [])
+
+
+def test_the_overview_lights_the_runs_flow_from_its_own_copy(run) -> None:
+    from engineering.flow.test.fixtures import TEMPLATES, put_flow
+    client, monitor, _, _, _ = run
+    put_flow(client, TABLE, RUN, revision=7)
+    view = monitor.overview(RUN)
+    assert view is not None
+    flow = {key: value for key, value in view['run'].items() if key.startswith('flow_')}
+    assert (flow['flow_revision'], flow['flow_copied_at'], flow['flow_outcome']) == (
+        7, '2026-11-14T09:00:00Z', {'outcome': 'running', 'at': None, 'reason': None})
+    assert (flow['flow_steps']['hunt'], flow['flow_steps']['board'], flow['flow_steps']['gate']) == (
+        'ready', 'collecting', 'waiting')
+    # The run's own copy, as its start wrote it: what the monitor draws.
+    assert flow['flow_definition'] == TEMPLATES['bug-hunt-and-fix']
+    # A copy the conductor cannot follow lights nothing (and is logged); the rest of the overview stands.
+    put_flow(client, TABLE, RUN, definition='{')
+    broken = monitor.overview(RUN)
+    assert broken is not None
+    assert (broken['run']['flow_steps'], broken['run']['goal']) == (None, 'Fix the paging bug')

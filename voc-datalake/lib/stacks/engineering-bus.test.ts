@@ -328,13 +328,22 @@ describe('the engineering bus', () => {
     expect(props?.Timeout).toBe(120);
   });
 
-  it('lets the board invoke the runtime by name (its launch op) and read only the knowledge packs\' objects', () => {
+  it('lets the board invoke the runtime by name (its launch op) and read only the knowledge packs\' objects and the gate records', () => {
     const on = template('on');
     const board = functionId(on, 'voc-engineering-board');
     const invoke = statementsOf(on, board).find((statement) => statement.Action === 'lambda:InvokeFunction');
     expect(JSON.stringify(invoke?.Resource)).toContain(':function:voc-engineering-runtime-');
-    const read = statementsOf(on, board).find((statement) => statement.Action === 's3:GetObject');
-    expect(JSON.stringify(read?.Resource)).toContain('/ws/default/knowledge/*');
+    const reads = statementsOf(on, board).filter((statement) => statement.Action === 's3:GetObject')
+      .map((statement) => [statement.Sid, JSON.stringify(statement.Resource)]);
+    expect(reads.map(([sid]) => sid)).toStrictEqual(['ReadKnowledgePacks', 'ReadGateRecords']);
+    expect(reads[0]?.[1]).toContain('/ws/default/knowledge/*');
+    // (the GO ledger's read of a flow's quality gate: the records only, lambda/engineering/flow/ledger.py)
+    expect(reads[1]?.[1]).toContain('/ws/*/runs/*/*/commits/*/_gate/attempt-*/record.json');
+  });
+
+  it('names the runtime, the workspace bucket and the image languages to the board', () => {
+    const on = template('on');
+    const board = functionId(on, 'voc-engineering-board');
     expect(on.findResources('AWS::Lambda::Function')[board]?.Properties?.Environment?.Variables).toMatchObject({
       ENGINEERING_RUNTIME_FUNCTION: expect.anything(), ENGINEERING_WORKSPACE_BUCKET: expect.anything(),
       // No images configured by default: the board refuses every launch before it numbers an agent.

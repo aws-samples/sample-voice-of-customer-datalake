@@ -38,6 +38,15 @@ class Lease:
 
 
 @dataclass(frozen=True)
+class FlowStop:
+    """Where a run's flow waits at a person: its decision point (``flow:<step>``), and whether the run waits there
+    already (nothing to ask again: its agents stay held)."""
+
+    point: str
+    waiting: bool = False
+
+
+@dataclass(frozen=True)
 class Budget:
     """A run's spend and the hard caps a person set (None: no cap of that kind)."""
 
@@ -113,6 +122,11 @@ class RunControl(Protocol):
 
     def is_active(self, run_id: str) -> bool:
         """The run is active: not ended, and not waiting at a decision point."""
+        ...
+
+    def flow_stop(self, run_id: str) -> FlowStop | None:
+        """The decision point the run's flow waits at (``flow:<step>``, engineering/flow/conductor.py), and whether
+        the run waits there already; None for no flow, nothing to decide, or another decision point or an end."""
         ...
 
     def coordinator_awaited(self, run_id: str) -> int | None:

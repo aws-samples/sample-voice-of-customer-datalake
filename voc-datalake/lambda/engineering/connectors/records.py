@@ -21,27 +21,21 @@ ids (so the write rules have no review text to compare: their personal-data chec
 """
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from typing import Any, Final
 
 from botocore.exceptions import BotoCoreError, ClientError
 
-from engineering.board.model import DONE, FINAL, PERSON_PREFIX, Task
+from engineering.board.model import DONE, PERSON_PREFIX, Task
 from engineering.board.store import PERSON_GO_SK
 from engineering.connectors.hosts import ACTIVE, NO_CONNECTION, NoConnection, RunRecord, Unavailable
 from engineering.connectors.identity import WORKSPACE
 from engineering.connectors.patches import AUTHOR
+from engineering.flow.ledger import is_go, newest_final_go, read_gate_record
 from engineering.quality_gate.record import GateRecord
-from engineering.reports.build import GATE_RECORD
 from engineering.rows import get_row, run_pk, run_rows, string_attr
-from engineering.workspace.layout import parse_agent_key
-from engineering.workspace.store import ObjectTooLarge, WorkspaceStore
-from shared.logging import logger
+from engineering.workspace.store import WorkspaceStore
 
-FINAL_GO_ROLE: Final = 'final-go'
-#: The largest gate record the ledger reads (a record over it is no GO).
-MAX_GATE_RECORD_BYTES: Final = 1024 * 1024
 _UNREADABLE: Final = "The run's record could not be read; retry."
 
 
@@ -80,38 +74,17 @@ class RunRecords:
 
     def _final_go(self, run_id: str) -> tuple[str, str] | None:
         """The run's latest final-go verdict: the newest ended final-go task's state and its gate record's key ('' for
-        none), or None when no final-go task has ended."""
+        none), or None when no final-go task has ended (the GO ledger's own rule, ``flow/ledger.py``)."""
         try:
             rows = run_rows(self._client, self._table, WORKSPACE, run_id, 'TASK#')
         except (ClientError, BotoCoreError) as exc:
             raise Unavailable(_UNREADABLE) from exc
-        ended = [task for task in map(Task.from_item, rows) if task.role == FINAL_GO_ROLE and task.state in FINAL]
-        if not ended:
-            return None
-        # The newest final-go task to end decides, whatever its state: one a person blocked, that failed or that
-        # needs a person leaves no GO, whatever an older task's record says.
-        newest = max(ended, key=lambda task: (task.updated_at, task.attempt))
-        found: list[tuple[int, str]] = []
-        for raw in newest.result_keys:
-            key = parse_agent_key(raw)
-            # The task's own holder's record (the board took only its keys), a final-go agent's (the IAM grant reads
-            # no other agent's gate records).
-            if key is not None and (key.ws, key.run_id, key.kind, key.name, key.agent) == (
-                    WORKSPACE, run_id, 'gate', GATE_RECORD, newest.lease_agent) \
-                    and key.agent.startswith(f'{FINAL_GO_ROLE}-'):
-                found.append((key.attempt, raw))
-        return newest.state, max(found)[1] if found else ''
+        latest = newest_final_go(map(Task.from_item, rows), WORKSPACE, run_id)
+        return None if latest is None else (latest[0].state, latest[1])
 
     def _record(self, key: str) -> GateRecord | None:
         try:
-            body = self._workspace.read_bytes(key, MAX_GATE_RECORD_BYTES)
-            return None if body is None else GateRecord.from_dict(json.loads(body.decode('utf-8')))
-        except ObjectTooLarge:
-            logger.warning('broker: a gate record over its bound is no GO', extra={'key': key})
-            return None
-        except (ValueError, RecursionError):   # (off the schema, or nested past what json reads)
-            logger.warning('broker: a gate record off its schema is no GO', extra={'key': key})
-            return None
+            return read_gate_record(self._workspace, key)
         except (ClientError, BotoCoreError) as exc:
             raise Unavailable(_UNREADABLE) from exc
 
@@ -120,5 +93,4 @@ class RunRecords:
         if latest is None or latest[0] != DONE or not latest[1]:
             return False
         record = self._record(latest[1])
-        return (record is not None and record.verdict == 'GO' and record.final_go is not None and record.final_go.go
-                and not record.stop_reason and bool(tree_hash) and record.tree_hash == tree_hash)
+        return is_go(record) and record is not None and bool(tree_hash) and record.tree_hash == tree_hash

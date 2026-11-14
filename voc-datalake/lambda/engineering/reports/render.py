@@ -45,6 +45,26 @@ def _agent_lines(report: Mapping[str, Any]) -> list[str]:
     return lines if report['agents'] else ['', '### Agents', '', 'None recorded.']
 
 
+#: Where the run's flow stands, as a report says it.
+OUTCOMES = {'running': 'under way', 'needs_human': 'waiting at a person', 'finished': 'finished'}
+
+
+def _flow_lines(report: Mapping[str, Any]) -> list[str]:
+    """The run's flow, step by step (what ran, what runs, what was not run yet and why); none without a flow."""
+    flow = report.get('flow')
+    if not flow:
+        return []
+    outcome = OUTCOMES.get(flow['outcome'], 'unknown')
+    where = f' at {cell(flow["at"], 64)}' if flow.get('at') else ''
+    lines = ['', '### Flow', '', f'Revision {flow["revision"]}: {outcome}{where}'
+             + (f' ({cell(flow["reason"], 200)})' if flow.get('reason') else ''), '',
+             '| Step | Kind | Status | Why |', '|---|---|---|---|']
+    lines += [f'| {cell(step["title"] or step["step"], 80)} | {cell(step["type"], 20)} | '
+              f'{cell(step["status"].replace("_", " "), 20)} | {cell(step["reason"], 200) or "-"} |'
+              for step in flow['steps']]
+    return lines
+
+
 def _finding_lines(report: Mapping[str, Any]) -> list[str]:
     findings = report['findings']
     by_severity = ', '.join(f'{name} {count}' for name, count in sorted(findings['by_severity'].items())) or 'none'
@@ -66,7 +86,7 @@ def render_markdown(report: Mapping[str, Any], gate: GateRecord | None = None) -
         f'- Goal: {cell(run["goal"], 300) or "-"}', f'- Repository: {cell(run["repo"], 120) or "-"}',
         f'- Flow: {cell(run["flow"], 80) or "-"}; run {cell(report["run_id"], 40)} ({cell(run["status"], 40) or "-"})',
         f'- Tasks: {states}', '',
-        *_cost_lines(report), *_agent_lines(report), *_finding_lines(report),
+        *_cost_lines(report), *_agent_lines(report), *_flow_lines(report), *_finding_lines(report),
     ]
     text = '\n'.join(lines) + '\n'
     return text + '\n' + gate.render_markdown() if report['level'] == 'pr' and gate is not None else text

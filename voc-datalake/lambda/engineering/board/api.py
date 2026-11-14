@@ -16,7 +16,10 @@ attempt a new one; the runtime's refusals answer 409, and a first launch's bad r
 the record with a ``launch_refused`` history row (``CLEARS_LAUNCH``) so the next launch numbers a new agent; a session
 already there for the recorded agent answers 200). The board never chooses the agent's argv: the runtime derives it
 from the role's skill, so a launch of a role with no skill yet, or in a language this deployment has no image for, is
-refused (409) before an agent is numbered. The coordinator claims the run's ``coordinate`` task, which only the run's start writes
+refused (409) before an agent is numbered. In a run that follows its flow (its ``FLOW`` copy), every post names its
+step (``flow_step``, and a map's ``shard``) and is taken, like a launch, only for a step the conductor says is live
+(``flow_guard.py``); the coordinator also has ``flow`` (the conductor's plan, as data) and ``step`` (``{step, action:
+complete | fan_out, shards?}``: a step it did itself, a board it closes, a map's shards). The coordinator claims the run's ``coordinate`` task, which only the run's start writes
 (``BoardStore.coordinate_items``, in the start's transaction with META, which records the run's ``commit`` and
 ``connection``; a run started without them answers 409 to ``launch`` and ``knowledge``, since no retry can succeed).
 ``knowledge`` takes the caller's ``task_id`` and reads that one task's row: the caller must hold its live lease.
@@ -49,6 +52,7 @@ from typing import Any, Protocol
 
 from botocore.exceptions import BotoCoreError, ClientError
 
+from engineering.board.flow_guard import FlowGuard
 from engineering.board.inbox import MAX_LIMIT, Inbox
 from engineering.board.model import EVENT_OF, FINAL, NEEDS_HUMAN, OPEN, PERSON_PREFIX, Task
 from engineering.board.store import COORDINATE_TASK, COORDINATOR, BoardError, BoardStore, Posted
@@ -62,6 +66,7 @@ from engineering.connectors.identity import (
     caller_from_event,
     own_account,
 )
+from engineering.flow.ledger import ReadRecord, read_gate_record
 from engineering.knowledge.store import PackError
 from engineering.knowledge.workspaces import ROOT
 from engineering.quality_gate.text import redact
@@ -79,8 +84,9 @@ MAX_TITLE = 200
 MAX_INT = 1_000_000
 STATUS = {'invalid': 400, 'forbidden': 403, 'not_found': 404, 'conflict': 409, 'cap': 429, 'unavailable': 503}
 #: Who may post a task for whom (plan v3, 4.3 "Posting"): the coordinator plans the run, the hunter posts a fix task
-#: per confirmed bug, the builder its own sub-tasks. A flow's definition is to narrow this further; a human's posts
-#: (from the UI) are not agents' and do not come through this API.
+#: per confirmed bug, the builder its own sub-tasks. A run's flow narrows it further (``flow_guard.py``: an agent other
+#: than the coordinator posts only on a board step that names it a poster); a human's posts (from the UI) are not
+#: agents' and do not come through this API.
 POSTERS: Mapping[str, frozenset[str]] = {'coordinator': ROLES, 'hunter': frozenset({'fixer'}),
                                          'builder': frozenset({'builder'})}
 
@@ -165,17 +171,22 @@ def _post_role(body: Mapping[str, Any]) -> str:
     return role
 
 
-def _post(store: BoardStore, run_id: str, body: Mapping[str, Any], *, role: str, actor: str) -> Posted:
-    """A post's body read and written: ``{title, spec, priority?, parent_task?}`` (an agent's or a person's)."""
+def _post(store: BoardStore, flows: FlowGuard, run_id: str, body: Mapping[str, Any], *, role: str, actor: str,
+          poster: str, person: bool = False) -> Posted:
+    """A post's body read and written: ``{title, spec, priority?, parent_task?, step?, shard?}`` (an agent's or a
+    person's); in a run that follows a flow, its step checked against the conductor's plan first (``FlowGuard``)."""
     title = _text(body, 'title')
     if len(title) > MAX_TITLE or redact(title) != title:
         raise BoardError('invalid', f'"title" is at most {MAX_TITLE} characters, with nothing secret in it')
     spec = body.get('spec', {})
     if not isinstance(spec, dict):
         raise BoardError('invalid', '"spec" is an object')
-    return store.post(WORKSPACE, run_id, role=role, title=title, spec=spec,
-                      parent_task=_text(body, 'parent_task', required=False), priority=_int(body, 'priority', 0),
-                      actor=actor)
+    parent_task = _text(body, 'parent_task', required=False)
+    flow = flows.post_fields(run_id, body, role=role, poster=poster, spec=spec, parent_task=parent_task,
+                             person=person)
+    return store.post(WORKSPACE, run_id, role=role, title=title, spec=spec, parent_task=parent_task,
+                      priority=_int(body, 'priority', 0), actor=actor, step=flow.step, shard=flow.shard,
+                      slot=flow.slot, absent=flow.absent, answer_only=flow.retry)
 
 
 def _summary(text: str) -> str:
@@ -327,10 +338,12 @@ class BoardApi:
     def __init__(self, store: BoardStore, publisher: EventBridgePublisher, inbox: Inbox, *,
                  launcher: Launcher | None = None, knowledge: Knowledge | None = None,
                  skill: Callable[[str], object | None] = skill_for,
-                 images: frozenset[str] = frozenset(REGISTRY_HOSTS)) -> None:
+                 images: frozenset[str] = frozenset(REGISTRY_HOSTS),
+                 gate_records: ReadRecord | None = None) -> None:
         """``launcher`` and ``knowledge``: the coordinator's launch and the knowledge reads (None: refused);
         ``skill``: a role's skill (runtime/harness/skills.py), which the runtime launches it with; ``images``: the
-        languages this deployment has an agent runtime for (``ENGINEERING_IMAGE_LANGUAGES``)."""
+        languages this deployment has an agent runtime for (``ENGINEERING_IMAGE_LANGUAGES``); ``gate_records``: a gate
+        record by its key, the GO ledger's read of a quality gate step's verdict (None: no gate is taken for a GO)."""
         self.store = store
         self.publisher = publisher
         self.inbox = inbox
@@ -338,6 +351,7 @@ class BoardApi:
         self.knowledge = knowledge
         self.skill = skill
         self.images = images
+        self.flows = FlowGuard(store, gate_records)
 
     def _meta(self, run_id: str) -> Mapping[str, Any]:
         meta = self.store.meta(WORKSPACE, run_id)
@@ -349,8 +363,22 @@ class BoardApi:
         if caller.role != COORDINATOR:
             raise BoardError('forbidden', 'only the run\'s coordinator lists its tasks')
         return {'tasks': [{'task_id': t.task_id, 'role': t.role, 'title': t.title, 'state': t.state,
-                           'attempt': t.attempt, 'priority': t.priority, 'parent_task': t.parent_task or None}
+                           'attempt': t.attempt, 'priority': t.priority, 'parent_task': t.parent_task or None,
+                           'flow_step': t.flow_step or None, 'shard': t.shard or None}
                           for t in self.store.tasks(WORKSPACE, caller.run_id)]}
+
+    def _flow(self, caller: Caller, body: Mapping[str, Any]) -> dict[str, Any]:
+        """``flow``: the conductor's plan for the run, as the run coordinator reads it (``FlowGuard.view``)."""
+        del body
+        if caller.role != COORDINATOR:
+            raise BoardError('forbidden', 'only the run\'s coordinator reads its flow\'s plan')
+        return self.flows.view(caller.run_id, agent_id(caller))
+
+    def _step(self, caller: Caller, body: Mapping[str, Any]) -> dict[str, Any]:
+        """``step``: the run coordinator records a step it did itself, or a map's shards (``FlowGuard.step``)."""
+        if caller.role != COORDINATOR:
+            raise BoardError('forbidden', 'only the run\'s coordinator records a step of its flow')
+        return self.flows.step(caller.run_id, body, agent_id(caller))
 
     def _launch(self, caller: Caller, body: Mapping[str, Any]) -> dict[str, Any]:
         if caller.role != COORDINATOR:
@@ -364,6 +392,9 @@ class BoardApi:
             raise BoardError('invalid', f'"role" is a role that claims tasks, "language" one of {sorted(REGISTRY_HOSTS)}')
         if not recorded:   # (a retry is never refused for a skill or an image a redeploy changed meanwhile)
             self._check_launchable(role, language)
+            # In a run that follows a flow: only a task of a live step (or a person's own task), before an agent is
+            # numbered; a retry of a launch that got through is never refused for a step that moved on since.
+            self.flows.launch_check(caller.run_id, self.store.task(WORKSPACE, caller.run_id, _text(body, 'task_id')))
         meta = self._meta(caller.run_id)
         commit, connection = meta.get('commit', {}).get('S', ''), meta.get('connection', {}).get('S', '')
         if not (commit and connection):
@@ -453,7 +484,8 @@ class BoardApi:
     def _direct(self, caller: Caller, body: Mapping[str, Any]) -> dict[str, Any] | None:
         """The ops answered directly, with no board event (None: not one of them): the reads, and the launch, whose
         record is the task's history row and whose agent speaks for itself once it runs."""
-        readers = {'inbox': self._inbox, 'knowledge': self._knowledge, 'launch': self._launch}
+        readers = {'inbox': self._inbox, 'knowledge': self._knowledge, 'launch': self._launch, 'flow': self._flow,
+                   'step': self._step}
         op = body.get('op')
         if op == 'tasks':
             return self._tasks(caller)
@@ -471,7 +503,7 @@ class BoardApi:
         if role not in POSTERS.get(caller.role, frozenset()):
             raise BoardError('forbidden', f'a {caller.role} does not post {role} tasks')
         actor = agent_id(caller)
-        posted = _post(self.store, caller.run_id, body, role=role, actor=actor)
+        posted = _post(self.store, self.flows, caller.run_id, body, role=role, actor=actor, poster=caller.role)
         # An equivalent task still open may be a retry whose first event was lost: publish it again (same id), while
         # the post is still its last change (after a person's priority, say, it would be a new event, not a retry)
         # and it was this caller's (another's post, a person's above all, is never published as this agent's).
@@ -504,7 +536,8 @@ class BoardApi:
                 raise BoardError('invalid', '"result_keys" is a list')
             return Outcome(self.store.move(WORKSPACE, caller.run_id, task_id, agent=agent, epoch=epoch,
                                            to_state=_text(body, 'to'), result_keys=keys))
-        raise BoardError('invalid', 'op is post, claim, renew, progress, move, inbox, knowledge, tasks or launch')
+        raise BoardError('invalid', 'op is post, claim, renew, progress, move, inbox, knowledge, tasks, launch, flow '
+                                    'or step')
 
     def _current_coordinator(self, caller: Caller) -> None:
         """A coordinator acts only while it is the run's: the coordinate task's recorded coordinator at the task's
@@ -566,6 +599,8 @@ class PersonBoard:
 
     store: BoardStore
     publisher: Publisher
+    #: The run's flow as the board reads it (its gate records too, where the board's role reads them).
+    flows: FlowGuard | None = None
 
     def post(self, run_id: str, body: Mapping[str, Any], subject: str) -> dict[str, Any]:
         """``{role, title, spec, priority?, parent_task?}``: any role that claims tasks, within the run's caps (the
@@ -573,7 +608,8 @@ class PersonBoard:
         role like any post: when it is new, or their own post retried while it is still its last change (the same event again);
         never someone else's equal task, whose event is theirs."""
         actor = PERSON_PREFIX + subject
-        posted = _post(self.store, run_id, body, role=_post_role(body), actor=actor)
+        posted = _post(self.store, self.flows or FlowGuard(self.store), run_id, body, role=_post_role(body),
+                       actor=actor, poster=COORDINATOR, person=True)
         task = posted.task
         if posted.created or (task.posted_by == actor and _post_is_last(task)):
             self.publisher.publish(replace(_event(task, run_id), sender=Party('human', subject)))
@@ -639,16 +675,17 @@ def _from_environment() -> BoardApi:
 
     client, table = get_dynamodb_client(), os.environ['ENGINEERING_TABLE']
     runtime, bucket = os.environ.get('ENGINEERING_RUNTIME_FUNCTION', ''), os.environ.get('ENGINEERING_WORKSPACE_BUCKET', '')
-    # No ListBucket on its role: a pack object never written reads as denied, so as missing.
-    knowledge = PackStore(client, table, WorkspaceStore(get_s3_client(), bucket, denied_is_missing=True)) if bucket \
-        else None
+    # No ListBucket on its role: a pack object or a gate record never written reads as denied, so as missing.
+    workspace = WorkspaceStore(get_s3_client(), bucket, denied_is_missing=True) if bucket else None
+    knowledge = PackStore(client, table, workspace) if workspace is not None else None
     return BoardApi(BoardStore(client, table, new_id=new_event_id),
                     EventBridgePublisher(get_eventbridge_client(), os.environ['ENGINEERING_BUS_NAME'], BOARD_SOURCE),
                     Inbox(client, table),
                     launcher=LambdaLauncher(boto3.client('lambda', config=launch_client_config()), runtime) if runtime
                     else None,
                     knowledge=knowledge,
-                    images=frozenset(filter(None, os.environ.get('ENGINEERING_IMAGE_LANGUAGES', '').split(','))))
+                    images=frozenset(filter(None, os.environ.get('ENGINEERING_IMAGE_LANGUAGES', '').split(','))),
+                    gate_records=(lambda key: read_gate_record(workspace, key)) if workspace is not None else None)
 
 
 class _Kept:
@@ -663,7 +700,7 @@ class _Kept:
         return None
 
 
-def person_request(store: BoardStore, request: Mapping[str, Any]) -> dict[str, Any]:
+def person_request(store: BoardStore, request: Mapping[str, Any], flows: FlowGuard | None = None) -> dict[str, Any]:
     """A person's board action, as the Agents API asks it (``{op: post|act|go, run_id, subject, body, task_id?,
     action?}``; ``go`` is a person's go on the run, ``BoardStore.person_go``)
     through a direct invoke of this function, never its URL: the agent roles may invoke it only through the URL, so a
@@ -677,7 +714,7 @@ def person_request(store: BoardStore, request: Mapping[str, Any]) -> dict[str, A
             and isinstance(body, Mapping)):
         return {'status': 'refused', 'kind': 'invalid', 'message': 'a person request names a run, a subject and a body'}
     kept = _Kept()
-    people = PersonBoard(store, kept)
+    people = PersonBoard(store, kept, flows)
     try:
         if op == 'post':
             answer = people.post(run_id, body, subject)
@@ -711,7 +748,8 @@ def _built() -> BoardApi:
 def handler(event: Mapping[str, Any], context: Any) -> dict[str, Any]:
     if 'requestContext' not in event and isinstance(person := event.get('person'), Mapping):
         # A direct invoke (no function URL's request context): only the Agents API's role may make one.
-        return person_request(_built().store, person)
+        built = _built()
+        return person_request(built.store, person, built.flows)
     try:
         caller = caller_from_event(event, os.environ['AGENT_ROLE_NAME_PATTERN'],
                                    own_account(getattr(context, 'invoked_function_arn', '')))

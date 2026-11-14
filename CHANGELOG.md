@@ -17,6 +17,47 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.28.00] - 2026-11-14
+
+Autonomous engineering agents: a run started from a saved flow now follows that flow, step by step. The run keeps its own copy of the flow, a deterministic conductor says which steps are ready, and the board takes work only for those steps, so the model cannot skip a step or take them out of order. Steps the runtime cannot do yet are reported as not run, never faked. Off by default, and no fixed cost.
+
+### Added
+
+- The run's own copy of its flow. The Agents API's `POST /agents/engineering/runs` sends the stored flow's definition and revision with the start. The start function checks it again (the server's own rules, an engineering flow, no cycle) and writes it into the run's `FLOW` row in the start's own transaction, create-only (D1, D4: workflow id, revision, definition, when). A later edit of the flow never changes a run under way. A definition it cannot follow is refused before anything is written. A run started without one runs as before.
+- The conductor (`lambda/engineering/flow/conductor.py`, pure). From the copy's graph and the run's record (each task's step, the coordinator's step rows, a person's decisions), it gives every step a status: waiting, ready, running, collecting (a board taking its posters' posts while they still run), done, not yet run, passed, blocked, stopped, at a person, or skipped (a quality gate's other arrow). It also says where the run stands: under way, waiting at a person at a step, or finished at an end. The six default flows are tested from start to end, with every task done and with each task failing once, and so are the edge cases (joins, a gate's two ways, decisions, caps, maps).
+  - A map over `packages` takes its shards from the coordinator, which lists them from its checkout, at most the map's `shard_cap`. Each agent step after it takes one task per shard, and the reduce waits for all of them.
+  - A quality gate routes by the GO ledger's verdict (`lambda/engineering/flow/ledger.py`, the one rule the broker's `has_go` now uses too): the final-go task of the step that ended last decides, and it is a GO (`pass`) only when it ended done and its own gate record reads as a GO. A final go that ended done with a NO-GO record, a missing or unreadable record, or anything else takes `fail`, to a person. The board and the supervisor read the record; the board records each verdict it read (`STEP#<gate>#verdict#<task>`) for the run monitor, which shows one not recorded yet as still running, never as a GO.
+  - A gate's final go is taken only once a gate runner's task of the step is done.
+  - A stop at PR ends the flow at the draft pull request; the broker's dial still decides whether one is opened.
+- The coordinator's skill `coordinator@2`, with three new tools:
+  - `read_flow`: every step's status, and the ready steps with their roles, settings, instructions and what to do at them, fenced as data;
+  - `complete_step`: an agent step of the coordinator's own role (the Feature flow's plan), or a board it closes once nothing on it is under way;
+  - `fan_out`: a map's shards. They are held to the checkout's path rule, each once, and the map's `shard_cap`, and are not checked against the checkout or the knowledge pack's package list.
+  - `post_task` now names the step (and the shard). The tools go through the board's new `flow` and `step` ops, which only the run's current coordinator may use.
+- The board's check (`lambda/engineering/board/flow_guard.py`). In a run that follows a flow, the board takes a post only for a live step (`flow_step`, and a map's `shard`), for a role that step takes, and from a poster it allows:
+  - the coordinator, for any live step;
+  - another agent, only on a board step that names it a poster, within the board's own rule of who posts for whom;
+  - a person, for any live step, or for a task of their own with no step.
+  - An agent step takes one task at a time, held against a racing post by a `SLOT#` marker in the post's own transaction. Every post for a step holds, in the same transaction, that the step was not closed, so a post racing a board's close never lands on it. A retried post is answered with the equal task while it is under way and refused once that task has ended, never made a new task. A launch is taken only for a task of a live step, or a person's own task.
+  - An empty board closes only when an agent other than the coordinator was to post on it.
+  - What this holds: no post or launch for a step that is not live, a role it does not take or a poster it does not allow, and no pass arrow without a GO. What it does not: the coordinator may still record its own step done, or close a board, with little done.
+  - The caps, the coordinator's single lease, a replaced coordinator's refusal, the launch rules and the claim guard are unchanged.
+- A person at a step. When the flow waits at a person (a human decision point reached, a task that ended without being done, or a step the flow cannot go on without), the supervisor puts the run at `needs_human` with the step named (`flow:<step>`). It holds the run's agents, as for a spent budget. A person's Resume there is their decision on the step, recorded with who and when (a create-only `STEP#` row, D4): it passes a decision point or a stopped step, and gives a blocked one another try.
+- Steps not run yet. Memory steps and the learning loop are passed, and the flow goes on. Self-improvement, and a map over `history` or `pr_pages` (no shard source yet), stop at a person. The board records each step not run yet once, as a `STEP#<step>#not_yet_run` row, and the run monitor and the reports name them.
+- The run monitor draws the run's own copy of its flow (never the flow as saved since), each step lit as the conductor reads it. The API's overview (`GET /agents/engineering/<run_id>`) carries `flow_definition`, `flow_revision`, `flow_copied_at`, `flow_steps` and `flow_outcome`; the web app reads the copy and the steps' statuses, and does not show `flow_outcome`'s words yet (a planned line beside the flow). One decision on a step after a map retries every shard that failed once; a run already waiting at a step's decision point is not asked again. Every report has a `flow` section and a **Flow** table in its Markdown.
+
+### Changed
+
+- The run coordinator's skill is version 2 (`coordinator@2`). It follows the run's flow when there is one, and plans from the goal when there is none.
+- docs/autonomous-engineering.md has a new section, "The flow a run follows", with a table of what runs today and what does not. That doc and docs/autonomous-agents.md no longer say that nothing follows a flow's steps.
+
+### Upgrade notes
+
+- Lambda code (asset hashes), one grant and the web app: deploy both (`npm run deploy:frontend` too). The board's role may now read the quality gate's record objects (`ReadGateRecords`, `ws/*/runs/*/*/commits/*/_gate/attempt-*/record.json`, read only), as the runtime's already could. No route changes. A run's new rows (`FLOW`, `STEP#`, `SLOT#`) are in the run's own partition, which its writers' roles already reach. Runs started before this release have no copy of their flow and run as before.
+- Only the coordinator has a skill yet, so the board still refuses to launch any other role. A run follows its flow's plan and posts its tasks, and their work waits for those roles' skills. A run still reaches a repository only once a connection's credential can be stored.
+
+Built on the voc-autonomous branch. Off by default.
+
 ## [6.27.00] - 2026-11-13
 
 Autonomous engineering agents: an administrator can ask the AI assistant to refresh a repository's knowledge pack. The assistant only proposes: its approval card names the repository, the commit and an estimate of the minutes and the cost, and only an administrator's Approve starts the Understand flow, as that administrator. Off by default, and no fixed cost.

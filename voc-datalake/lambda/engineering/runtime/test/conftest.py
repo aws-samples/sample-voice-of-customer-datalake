@@ -12,7 +12,7 @@ from engineering.runtime.caps import Timings
 from engineering.runtime.checkpoints import CheckpointReader
 from engineering.runtime.interface import ROLES, Command
 from engineering.runtime.launcher import Launcher
-from engineering.runtime.ports import Budget, BudgetAlert, Lease
+from engineering.runtime.ports import Budget, BudgetAlert, FlowStop, Lease
 from engineering.runtime.runs import RunCaps, RunStore
 from engineering.runtime.sessions import AgentSession, SessionStore
 from engineering.runtime.supervisor import Supervisor
@@ -85,6 +85,8 @@ class FakeControl:
     released: list[BudgetAlert] = field(default_factory=list)
     #: The runs started with a coordinator to launch, and when (``coordinator_awaited``).
     awaited: dict[str, int] = field(default_factory=dict)
+    #: The decision point each run's flow waits at (``flow_stop``): none by default.
+    flow_points: dict[str, str] = field(default_factory=dict)
 
     def budget(self, run_id: str) -> Budget:
         assert run_id
@@ -103,6 +105,12 @@ class FakeControl:
     def is_active(self, run_id: str) -> bool:
         """Active until stopped or sent to a person (a Resume is the test's to model)."""
         return run_id not in self.stops and all(run != run_id for run, _reason in self.humans)
+
+    def flow_stop(self, run_id: str) -> FlowStop | None:
+        """The decision point a test's flow waits at (``flow_points``), waiting there once the run was sent to it,
+        until the run is stopped."""
+        point = None if run_id in self.stops else self.flow_points.get(run_id)
+        return None if point is None else FlowStop(point, waiting=(run_id, point) in self.humans)
 
     def coordinator_awaited(self, run_id: str) -> int | None:
         """Only for a run the test started with a coordinator to launch (``awaited``), while it is active."""

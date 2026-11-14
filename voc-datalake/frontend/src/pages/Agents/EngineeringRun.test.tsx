@@ -89,6 +89,23 @@ describe('the run monitor', () => {
     expect(screen.getByTestId('step-pr').className).not.toContain('border-accent')
   })
 
+  it('draws the run\'s own copy of its flow, its steps lit as the conductor reads them', async () => {
+    const copied = engineeringFlowView().workflow.definition
+    routes({
+      [`GET ${BASE}`]: () => engineeringOverview({
+        flow_revision: 1, flow_definition: copied,
+        flow_steps: { start: 'done', board: 'done', gate: 'blocked', pr: 'skipped', human: 'waiting' },
+      }),
+      // (the flow as saved since is not what the run follows: never read)
+      'GET /workflows/wf_flow': () => { throw new Error('the saved flow was read') },
+    })
+    renderRun()
+    const gate = await screen.findByTestId('step-gate')
+    expect(gate.className).toContain('border-danger')
+    expect(screen.getByTestId('step-board').className).not.toContain('border-accent')
+    expect(screen.getByTestId('step-pr').className).toContain('opacity-60')
+  })
+
   it('shows its agents\' status, ages, the one that looks stuck, and an agent\'s recent tool calls', async () => {
     routes()
     renderRun()
@@ -502,6 +519,21 @@ describe('liveSteps', () => {
       ['board', { status: 'running', rounds: 1 }],
     ])
     expect(liveSteps(agents, new Set()).size).toBe(0)
+  })
+
+  it('lights each step as the conductor reads it when the run follows its flow, and leaves the unknown ones', () => {
+    const { agents } = parseOverview(engineeringOverview())
+    const steps = { start: 'done', board: 'collecting', gate: 'human', pr: 'not_yet_run', human: 'waiting', x: 'done',
+      odd: 'teleported' }
+    expect(Object.fromEntries([...liveSteps(agents, new Set(['start', 'board', 'gate', 'pr', 'human', 'odd']), steps)]
+      .map(([step, state]) => [step, state.status]))).toStrictEqual(
+      { start: 'done', board: 'running', gate: 'running', pr: 'idle' })
+  })
+
+  it('reads a run with no flow copy as none', () => {
+    const { run } = parseOverview(engineeringOverview({ flow_steps: 'nope', flow_revision: -1, flow_definition: 'x' }))
+    expect([run.flow_steps, run.flow_revision, run.flow_definition]).toStrictEqual([null, null, null])
+    expect(parseOverview(engineeringOverview()).run.flow_steps).toBeNull()
   })
 })
 

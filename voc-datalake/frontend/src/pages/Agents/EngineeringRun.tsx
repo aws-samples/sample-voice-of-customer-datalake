@@ -2,8 +2,9 @@
  * @fileoverview The run monitor of an engineering run (`/agents/engineering/:runId`; plan v3 4.10, docs/autonomous-agents.md
  * "An engineering run"). The page is reached by its run id (there is no list of runs yet).
  *
- * The run's goal, status, MicroVM time and tokens (its cost once the run control reports it); the run's flow with
- * the steps its agents are on lit (the read-only canvas the agents' runs use, from the run's flow definition); and
+ * The run's goal, status, MicroVM time and tokens (its cost once the run control reports it); the run's flow (the
+ * revision its start copied, on the read-only canvas the agents' runs use) with each step lit as the conductor reads
+ * it, or, for a run that follows no flow, the steps its agents are on; and
  * beside it the Agents, Board, Conversation and Reports panels (the conversation records the signals sent too; the
  * reports are the run's commit, PR and goal reports, each version's Markdown). An admin
  * signals the run or an agent on its task, and answers the conductor or an agent, where the deployment lets the
@@ -37,13 +38,27 @@ const TABS = ['agents', 'board', 'conversation', 'reports'] as const
 type Tab = (typeof TABS)[number]
 const TAB_ICONS = { agents: Bot, board: KanbanSquare, conversation: MessagesSquare, reports: FileText }
 
-function FlowGraph({ flow, agents }: Readonly<{ flow: string; agents: readonly EngineeringAgent[] }>) {
-  const { t } = useTranslation('agents')
-  const { data, isError, isLoading } = useQuery({
-    queryKey: workflowsKeys.detail(flow), queryFn: () => workflowsApi.get(flow), enabled: flow !== '',
+/**
+ * The run's flow definition: its own copy, as its start wrote it (the one it follows, whatever the flow became
+ * since), from the overview; for a run started without one, the flow's current revision.
+ */
+function useRunFlow(run: EngineeringOverview['run']) {
+  const copied = run.flow_definition
+  const current = useQuery({
+    queryKey: workflowsKeys.detail(run.flow), queryFn: () => workflowsApi.get(run.flow),
+    enabled: run.flow !== '' && copied === null,
   })
-  const definition = data?.workflow.definition ?? null
-  const states = useMemo(() => liveSteps(agents, new Set(definition?.nodes.map((node) => node.id))), [agents, definition])
+  if (copied !== null) return { definition: copied, isError: false, isLoading: false }
+  return { definition: current.data?.workflow.definition ?? null, isError: current.isError, isLoading: current.isLoading }
+}
+
+/** The run's flow, its steps lit from the conductor's statuses when the run follows it. */
+function FlowGraph({ run, agents }: Readonly<{ run: EngineeringOverview['run']; agents: readonly EngineeringAgent[] }>) {
+  const { t } = useTranslation('agents')
+  const { flow, flow_steps: flowSteps } = run
+  const { definition, isError, isLoading } = useRunFlow(run)
+  const states = useMemo(() => liveSteps(agents, new Set(definition?.nodes.map((node) => node.id)), flowSteps),
+    [agents, definition, flowSteps])
   if (flow !== '' && isLoading) return <div className="skeleton h-full" />
   if (isError || definition === null) return <p className="p-4 text-sm text-muted">{t('engineeringRun.noFlow')}</p>
   return <WorkflowCanvas definition={definition} readOnly runStates={states} />
@@ -97,7 +112,7 @@ function RunMonitor({ runId, overview, live, readAt }: Readonly<{
       )}
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
         <section className="card p-0 h-[420px] sm:h-[520px] overflow-hidden min-w-0" aria-label={t('engineeringRun.flow')}>
-          <FlowGraph flow={overview.run.flow} agents={overview.agents} />
+          <FlowGraph run={overview.run} agents={overview.agents} />
         </section>
         <Panels runId={runId} overview={overview} live={live} canAct={canAct} readAt={readAt} />
       </div>

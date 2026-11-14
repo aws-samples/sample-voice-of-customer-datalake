@@ -281,16 +281,38 @@ class BoardPlanner:
             raise BoardRefused(502, 'the board answered no task list')
         return [TaskSummary(task_id=str(task.get('task_id', '')), role=str(task.get('role', '')),
                             title=str(task.get('title', '')), state=str(task.get('state', '')),
-                            attempt=int(task.get('attempt', 1)))
+                            attempt=int(task.get('attempt', 1)), step=str(task.get('flow_step') or ''))
                 for task in listed if isinstance(task, dict)]
 
-    def post(self, *, run_id: str, role: str, title: str, instructions: str, paths: tuple[str, ...]) -> str:
+    def post(self, *, run_id: str, role: str, title: str, instructions: str, paths: tuple[str, ...],
+             step: str = '', shard: str = '') -> str:
         self._own(run_id)
-        task = self.transport.post({'op': 'post', 'role': role, 'title': title,
-                                    'spec': {'instructions': instructions, 'paths': list(paths)}}).get('task')
+        body: dict[str, Any] = {'op': 'post', 'role': role, 'title': title,
+                                'spec': {'instructions': instructions, 'paths': list(paths)}}
+        body.update({name: value for name, value in (('flow_step', step), ('shard', shard)) if value})
+        task = self.transport.post(body).get('task')
         if not isinstance(task, dict) or not isinstance(task.get('task_id'), str):
             raise BoardRefused(502, 'the board answered no task')
         return task['task_id']
+
+    def flow(self, *, run_id: str) -> dict[str, Any] | None:
+        """The conductor's plan of the run's flow (the board's ``flow`` op), None for a run without a flow."""
+        self._own(run_id)
+        answer = self.transport.post({'op': 'flow'})
+        if 'flow' not in answer or not (answer['flow'] is None or isinstance(answer['flow'], dict)):
+            raise BoardRefused(502, 'the board answered no flow')
+        return answer['flow']
+
+    def record_step(self, *, run_id: str, step: str, action: str, shards: tuple[str, ...] = ()) -> dict[str, Any]:
+        """A step the coordinator did itself (``complete``) or a map's shards (``fan_out``): the board's ``step`` op."""
+        self._own(run_id)
+        body: dict[str, Any] = {'op': 'step', 'step': step, 'action': action}
+        if action == 'fan_out':
+            body['shards'] = list(shards)
+        answer = self.transport.post(body)
+        if not isinstance(answer.get('step'), str):
+            raise BoardRefused(502, 'the board answered no step')
+        return answer
 
     def launch(self, *, run_id: str, task_id: str, role: str, language: str, paths: tuple[str, ...]) -> str:
         self._own(run_id)

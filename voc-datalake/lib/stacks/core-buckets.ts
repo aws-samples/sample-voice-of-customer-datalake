@@ -77,6 +77,11 @@ export const ENGINEERING_WORKSPACE = 'default';
 export const ENGINEERING_WORKSPACE_REPORTS_KEYS = `ws/${ENGINEERING_WORKSPACE}/reports/*`;
 export const ENGINEERING_WORKSPACE_RUNS_KEYS = `ws/${ENGINEERING_WORKSPACE}/runs/*`;
 /**
+ * The quality gate's records (`…/_gate/attempt-<n>/record.json` under a final-go agent's keys), which the GO ledger
+ * reads (lambda/engineering/flow/ledger.py): a retrospective, and the board for a flow's quality gate step.
+ */
+export const ENGINEERING_GATE_RECORD_KEYS = 'ws/*/runs/*/*/commits/*/_gate/attempt-*/record.json';
+/**
  * The spend ledger's month partitions (`WS#<ws>#SPEND#<yyyy-mm>`, engineering/spend.py), as a `dynamodb:LeadingKeys`
  * pattern: the metering writers ADD to them in the same transaction as each priced session write.
  */

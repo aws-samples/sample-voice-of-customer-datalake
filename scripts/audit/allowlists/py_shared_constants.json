@@ -1,6 +1,10 @@
 {
   "entries": [
     {
+      "key": "STEP_PREFIX|STEP_SK_PREFIX::*",
+      "reason": "two tables' sort-key prefixes that read alike: an engineering run's flow step rows in voc-engineering (engineering/flow/record.py) and an agent plan's steps in voc-agents (shared/plans_store.py); different rows, different meanings, never one key space"
+    },
+    {
       "key": "MEMORY_MODES|SCOPE_NAMES::*",
       "reason": "an engineering flow's memory step modes (shared/workflow_engineering.py) and the MCP OAuth scopes: both read and write by coincidence, different meanings"
     },
