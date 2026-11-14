@@ -19,6 +19,7 @@ from jobs.workspace_export.test.conftest import (
     WS,
     Budget,
     World,
+    memory_item,
     queue,
     seed,
     seed_memory,
@@ -90,7 +91,7 @@ def test_the_company_memory_is_exported_and_no_row_names_a_person(world):
     assert 'memory_check' not in manifest
 
 
-def test_personal_memories_their_events_and_the_cursors_are_counted_never_exported(world):
+def test_personal_memories_and_the_cursors_are_counted_never_exported_and_their_events_neither(world):
     seed(world)
     seed_memory(world)
     queried = _queried_partitions(world)
@@ -107,6 +108,59 @@ def test_personal_memories_their_events_and_the_cursors_are_counted_never_export
     assert "owners' only" in left_out['note']
     # The personal memories' own events are never even queried.
     assert not [partition for partition in queried if any(m in partition for m in PERSONAL_IDS)]
+
+
+@pytest.mark.parametrize(('entity', 'partition', 'sk'), [
+    ('memory_company', f'WS#{WS}#MEM#company', 'MEM#mem_c1'),
+    ('memory_events', f'WS#{WS}#MEMEVT#mem_c1', '2026-11-01T00:00:00#0'),
+    ('memory_imports', f'WS#{WS}#MEMIMPORT', 'imp_1'),
+])
+def test_a_field_a_memory_row_gains_later_never_reaches_the_export(world, entity, partition, sk):
+    """Each memory entity exports only its listed fields (memory.py ``FIELDS``): a field the memory store adds to its
+    rows later stays out until the list names it."""
+    seed(world)
+    seed_memory(world)
+    # Only on the seeded row itself (never an upsert of a new key-only row).
+    world.memory.update_item(Key={'pk': partition, 'sk': sk}, UpdateExpression='SET new_person_field = :v',
+                             ConditionExpression='attribute_exists(pk)', ExpressionAttributeValues={':v': 'sub-ada'})
+    seeded = world.memory.get_item(Key={'pk': partition, 'sk': sk})['Item']
+    _run(world)
+    rows = _jsonl(_unzip(world), entity)
+    [row] = [row for row in rows if (row['pk'], row['sk']) == (partition, sk)]
+    assert 'new_person_field' not in row
+    assert set(row) == {name for name in memory.FIELDS[entity] if name in seeded}
+    assert all(set(other) <= set(memory.FIELDS[entity]) for other in rows)
+
+
+def test_a_merged_company_memory_keeps_every_listed_field_it_has(world):
+    """A merge writes merged_from on the new memory, and archived_reason and merged_into on the old ones (shared/
+    memory_store.py ``merge_memories``): an owner restoring from the export needs them all."""
+    seed(world)
+    merged = {**memory_item(WS, None, 'mem_m1'), 'merged_from': ['mem_c1', 'mem_c2'], 'conflicts_with': ['mem_c3'],
+              'created_at': '2026-11-01T00:00:00', 'updated_at': '2026-11-02T00:00:00',
+              'last_reinforced_at': '2026-11-02T00:00:00', 'confidence': '0.9', 'search_text': 'derived'}
+    archived = {**memory_item(WS, None, 'mem_m0', 'archived'), 'merged_into': 'mem_m1', 'archived_reason': 'merged',
+                'archived_at': '2026-11-02T00:00:00'}
+    for row in (merged, archived):
+        world.memory.put_item(Item=row)
+    _run(world)
+    exported = {row['memory_id']: row for row in _jsonl(_unzip(world), 'memory_company')}
+    for seeded in (merged, archived):
+        listed = {name for name in memory.FIELDS['memory_company'] if name in seeded}
+        assert set(exported[seeded['memory_id']]) == listed
+        for name in listed - {'sources'}:
+            assert exported[seeded['memory_id']][name] == (sorted(seeded[name]) if isinstance(seeded[name], set)
+                                                           else seeded[name])
+    assert {'search_text', 'gsi1pk', 'gsi1sk', 'embedding', 'supporter_set'}.isdisjoint(exported['mem_m1'])
+
+
+@pytest.mark.parametrize('sources', ['a string', {'type': 'session', 'ref': 'sess-1'}, 7])
+def test_a_sources_value_that_is_not_a_list_exports_as_an_empty_list(world, sources):
+    seed(world)
+    world.memory.put_item(Item={**memory_item(WS, None, 'mem_s1'), 'sources': sources})
+    _run(world)
+    [row] = _jsonl(_unzip(world), 'memory_company')
+    assert row['sources'] == []
 
 
 def test_a_chat_sessions_id_never_leaves_with_a_company_memory(world):

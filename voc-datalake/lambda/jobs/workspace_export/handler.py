@@ -460,8 +460,9 @@ class ExportRun:
 
     def _count_memory_left_out(self) -> None:
         """Count the personal memories and the extraction cursors (never exported: memory.py), each from where the
-        run's checkpoint left it; ``_HandOver`` when the time reaches ``TIME_RESERVE_MS``, so a count never eats into
-        the completion's reserve and the next invocation goes on with it."""
+        run's checkpoint left it. Each invocation reads at least one page of a count; after a page with more to
+        count, ``_HandOver`` once the time has reached ``TIME_RESERVE_MS``, and the next invocation goes on from the
+        checkpoint. So the counts eat into the completion's reserve by one page of each (two Queries) at most."""
         for what in COUNTED:
             state = self.run.memory_counts.setdefault(what, {})
             if not self.source.memory.count(what, state, self._time_left):

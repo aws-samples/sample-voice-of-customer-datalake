@@ -20,8 +20,9 @@ there, approximate, checkpointed across hand-overs): the personal memories (the 
 partitions of the status index, where each sits once) and the extraction cursors (``WS#{ws}#MEMCURSOR``: each points
 at a member's chat session). The personal memories' events are neither exported nor counted.
 
-Every exported row loses what names or could confirm a person (``DROPPED``): a memory's ``supporter_set`` (hashes of
-its supporters' subs) and its ``embedding`` (derived from the statement), an event's ``actor`` (a supporter hash), an
+Each memory entity exports only the fields it lists (``FIELDS``, from what the memory API shows), so what names or
+could confirm a person never leaves, nor any field added to memory rows later: a memory's ``supporter_set`` (hashes
+of its supporters' subs) and ``embedding`` (derived from the statement), an event's ``actor`` (a supporter hash), an
 import's ``created_by_hash`` and ``created_by_username``.
 """
 from __future__ import annotations
@@ -42,16 +43,30 @@ from shared.ws_repo import (
     memory_status_pk,
 )
 
-__all__ = ['COUNTED', 'DROPPED', 'ENTITIES', 'MemorySource']
+__all__ = ['COUNTED', 'ENTITIES', 'MemorySource']
 
 #: The memory entities, in the export's order (after plugin_config_history; a checkpoint names its phase).
 ENTITIES: Final = ('memory_company', 'memory_imports', 'memory_events')
-#: What an export never carries of a memory row: what names or could confirm a person, and the derived embedding.
-DROPPED: Final = {
-    'memory_company': ('embedding', 'supporter_set'),
-    'memory_events': ('actor',),
-    'memory_imports': ('created_by_hash', 'created_by_username'),
-}
+#: The fields each memory entity exports, and no other (an allowlist: a field added to memory rows later never
+#: reaches the export by default). Each is what the memory API shows (shared/memory_store.py), plus the row's key.
+#: A company memory: the store's public fields (``_PUBLIC_FIELDS`` / ``public_view``) and its sources, shown as
+#: ``_public_sources`` shows them; never its embedding, its supporters' hashes or its owner.
+COMPANY_FIELDS: Final = (
+    'pk', 'sk', 'memory_id', 'scope', 'status', 'kind', 'statement', 'categories', 'confidence', 'source_kind',
+    'supporters', 'created_at', 'last_reinforced_at', 'last_used_at', 'retention', 'expires_at', 'conflicts_with',
+    'tombstoned', 'merged_into', 'aligned_objective_ids', 'updated_at', 'sources',
+    # What a merge (shared/memory_store.py ``merge_memories``) and an archive write, which a restore needs.
+    'merged_from', 'archived_reason', 'archived_at',
+)
+#: An event, as ``append_event`` writes it (the API shows no event): its action, time and detail; never its actor.
+EVENT_FIELDS: Final = ('pk', 'sk', 'action', 'at', 'detail')
+#: An import: the store's ``public_import`` fields but who started it (``created_by_username``).
+IMPORT_FIELDS: Final = (
+    'pk', 'sk', 'import_id', 'title', 'url', 'status', 'chunks_total', 'chunks_done', 'created', 'reinforced',
+    'proposed', 'conflicts', 'dropped', 'created_at', 'updated_at', 'error', 'resolved_tier', 'flex_fallback',
+    'content_chars',
+)
+FIELDS: Final = {'memory_company': COMPANY_FIELDS, 'memory_events': EVENT_FIELDS, 'memory_imports': IMPORT_FIELDS}
 #: The memory ids one item page of the events' re-read yields, at most (the cursor carries them).
 ID_PAGE: Final = 100
 #: A page's rows (each ``(item, the cursor right after it)``) and the cursor of the next page (None: done).
@@ -79,11 +94,19 @@ def _shared_source(source: Mapping[str, Any]) -> dict[str, Any]:
 def _with_shared_sources(item: dict[str, Any]) -> dict[str, Any]:
     """``item`` with its sources as the memory API shows them (shared/memory_store.py ``_public_sources``'s allowlist:
     type and time, plus the ref only for imports and agent runs; a session id names one person's conversation and is
-    not shared), written here rather than imported: that function is the store's own."""
-    sources = item.get('sources')
-    if not isinstance(sources, list):
+    not shared; a value that is not a list is no source, ``[]``), written here rather than imported: that function is
+    the store's own."""
+    if 'sources' not in item:
         return item
-    return {**item, 'sources': [_shared_source(source) for source in sources if isinstance(source, Mapping)]}
+    sources = item['sources']
+    shown = [_shared_source(source) for source in sources if isinstance(source, Mapping)] \
+        if isinstance(sources, list) else []
+    return {**item, 'sources': shown}
+
+
+def _listed(entity: str, item: Mapping[str, Any]) -> dict[str, Any]:
+    """``item`` with only the fields ``entity`` exports (``FIELDS``)."""
+    return {name: item[name] for name in FIELDS[entity] if name in item}
 
 
 class MemorySource:
@@ -110,7 +133,7 @@ class MemorySource:
         else:
             page = self._query(memory_import_pk(self.scope), cursor.get('start'))
             found = items(page)
-        rows = [(item, {'start': key(item, TABLE_KEY)}) for item in found]
+        rows = [(_listed(entity, item), {'start': key(item, TABLE_KEY)}) for item in found]
         last = last_key(page)
         return rows, ({'start': last} if last else None)
 
@@ -128,7 +151,8 @@ class MemorySource:
             return [], {'items': last, 'done': last is None, 'ids': found, 'start': None}
         here = {'items': items_start, 'done': bool(cursor.get('done'))}
         page = self._query(memory_event_pk(self.scope, str(ids[0])), cursor.get('start'))
-        rows = [(item, {**here, 'ids': list(ids), 'start': key(item, TABLE_KEY)}) for item in items(page)]
+        rows = [(_listed('memory_events', item), {**here, 'ids': list(ids), 'start': key(item, TABLE_KEY)})
+                for item in items(page)]
         last = last_key(page)
         if last is not None:
             return rows, {**here, 'ids': list(ids), 'start': last}

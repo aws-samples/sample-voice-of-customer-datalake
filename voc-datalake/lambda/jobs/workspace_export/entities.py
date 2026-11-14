@@ -30,7 +30,6 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any, Final
 
-from jobs.workspace_export.memory import DROPPED as MEMORY_DROPPED
 from jobs.workspace_export.memory import ENTITIES as MEMORY_ENTITIES
 from jobs.workspace_export.memory import MemorySource
 from jobs.workspace_export.pages import TABLE_KEY, items, key, last_key, start
@@ -65,7 +64,7 @@ FILE_CAP: Final = 256 * 1024 * 1024
 _FEEDBACK_KEY: Final = ('pk', 'sk', 'gsi1pk', 'gsi1sk')
 #: What an export never carries of a row: a hash of a person's value (it could confirm a guessed one): an erasure's
 #: value hash, and an `account_created` audit row's email hash (shared/workspace_members.py).
-_DROPPED: Final = {'erasure_jobs': ('value_hash',), 'audit': ('email_sha256',), **MEMORY_DROPPED}
+_DROPPED: Final = {'erasure_jobs': ('value_hash',), 'audit': ('email_sha256',)}
 #: At most this many rows a feedback page (a day may hold many: the page then continues within the day).
 PAGE_LIMIT: Final = 500
 
@@ -92,9 +91,11 @@ EXCLUDED: Final = {
     'email_hashes': "An audit row's email hash (a new account's) is left out of audit.",
     'memory_embeddings': ("A memory's embedding (a vector computed from its statement) is left out of memory_company: "
                           'it is derived, and is recomputed from the statement.'),
-    'memory_people': ("What names or could confirm a person in the memory rows: a memory's supporter_set (hashes of "
-                      "its supporters' ids), an event's actor (a supporter's hash), an import's created_by_hash and "
-                      'created_by_username.'),
+    'memory_derived': ("A memory's search_text (its statement in lower case, for search) and its status index keys "
+                       '(gsi1pk, gsi1sk) are left out of memory_company: each is derived from the fields exported.'),
+    'memory_people': ('Each memory entity exports only the fields it lists, those the memory API shows (any field '
+                      "added later stays out): so never a memory's supporter_set (hashes of its supporters' ids), "
+                      "an event's actor (a supporter's hash), nor an import's created_by_hash or created_by_username."),
     'personal_memory': ("Personal memories and the extraction cursors are their owners' only (docs/memory.md): "
                         'never in the workspace export, only counted (memory.not_exported); personal memories\' '
                         'events are neither exported nor counted.'),
@@ -185,7 +186,8 @@ class Source:
             return self._import_runs_page(cursor)
         if entity in MEMORY_ENTITIES:
             rows, following = self.memory.page(entity, cursor)
-            return Page([Row(_shown(entity, item), after) for item, after in rows], following)
+            # Already only the fields each memory entity lists (memory.py ``FIELDS``).
+            return Page([Row(item, after) for item, after in rows], following)
         if entity in _AGGREGATE_PARTITIONS:
             partition, condition, values = _AGGREGATE_PARTITIONS[entity](self.scope)
             page = self._aggregates.query('pk', partition, sort_condition=condition, **_condition_values(values),
