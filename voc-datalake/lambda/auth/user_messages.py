@@ -47,6 +47,8 @@ DEFAULT_ACCENT = '#4c51bf'
 _HEX_COLOR = re.compile(r'#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})')
 #: Longest brand or inviter name printed; anything longer is cut (an email subject has to stay readable).
 MAX_NAME_CHARS = 80
+#: Cognito's own default lifetime of a temporary password, stated when TEMP_PASSWORD_DAYS is unusable.
+COGNITO_DEFAULT_TEMP_PASSWORD_DAYS = 7
 _CONTROL_CHARS = re.compile(r'[\x00-\x1f\x7f]')
 
 #: The trigger sources this module writes (the reset one is Cognito's "forgot password" flow).
@@ -237,8 +239,9 @@ def _resend_code_message(code_parameter: str, sign_in_url: str) -> tuple[str, st
 
 
 def _valid_days() -> int:
-    raw = os.environ.get('TEMP_PASSWORD_DAYS', '7')
-    return int(raw) if raw.isdigit() and int(raw) > 0 else 7
+    # Always set by the stack (core-auth.ts TEMPORARY_PASSWORD_DAYS); an unparsable value keeps Cognito's 7.
+    raw = os.environ['TEMP_PASSWORD_DAYS'].strip()
+    return int(raw) if raw.isdigit() and int(raw) > 0 else COGNITO_DEFAULT_TEMP_PASSWORD_DAYS
 
 
 def handler(event: dict, context: Any) -> dict:

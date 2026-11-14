@@ -28,6 +28,7 @@ def test_imports_with_only_the_bundled_file(tmp_path, monkeypatch):
     for name in [n for n in sys.modules if n == 'auth' or n.startswith(('auth.', 'shared'))]:
         monkeypatch.delitem(sys.modules, name)
     module = importlib.import_module('auth.user_messages')
+    assert module.__file__ is not None
     assert Path(module.__file__).resolve().is_relative_to(tmp_path.resolve())
     app_modules = [n for n in sys.modules if n.startswith('shared')]
     assert app_modules == []

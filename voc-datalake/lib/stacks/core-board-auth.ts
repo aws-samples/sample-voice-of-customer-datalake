@@ -35,7 +35,7 @@ import { acknowledgeNagOnResource } from '../utils/nag-ack';
 import { boardPoolMfaSuppressions, cognitoPlusOffSuppressions } from '../utils/nag-suppressions';
 import { cognitoPlusEnabled, userPoolFeaturePlan } from '../utils/cognito-plus';
 import { retainOnReplace } from '../utils/retain-on-replace';
-import { copyStepsFor, onlyTheseFiles, selfContainedTriggerCode } from '../utils/self-contained-trigger';
+import { selfContainedTriggerCode } from '../utils/self-contained-trigger';
 import type { EmailSender } from '../utils/email-sender';
 import type { CoreBuildContext } from './core-cdn';
 import { USER_POOL_STANDARD_ATTRIBUTES, lambdaLogGroup } from './core-auth';
@@ -91,22 +91,6 @@ export const BOARD_TRIGGER_FILES = [
   'shared/review_share_audience.py',
 ] as const;
 
-/**
- * Staging rules past the shared lists (they shape the asset hash): everything under `lambda/` is
- * excluded except {@link BOARD_TRIGGER_FILES} (lib/utils/self-contained-trigger.ts), so an edit
- * elsewhere never redeploys the triggers.
- */
-export function onlyTheTriggerFiles(): string[] {
-  return onlyTheseFiles(BOARD_TRIGGER_FILES);
-}
-
-/**
- * The bundling copy steps (what ships): one `mkdir` per directory, one `cp` per file, so the
- * zip holds exactly {@link BOARD_TRIGGER_FILES} beside each other as the path-style handler expects.
- */
-export function boardTriggerCopySteps(): string[] {
-  return copyStepsFor(BOARD_TRIGGER_FILES);
-}
 
 /** One board trigger (stdlib + boto3, no layer), Python 3.14 ARM64, 30-day logs. */
 function boardTrigger(

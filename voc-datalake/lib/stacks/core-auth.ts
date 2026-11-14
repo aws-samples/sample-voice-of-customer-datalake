@@ -73,7 +73,7 @@ const WORKSHOP_CONTEXT = 'workshop';
  * Whether this deployment is for an AWS workshop: then an invitation without a configured brand names the
  * workshop and its organizer instead of a generic administrator (lambda/auth/user_messages.py). Default false.
  */
-export function workshopDeployment(scope: Construct): boolean {
+function workshopDeployment(scope: Construct): boolean {
   return booleanContextFlag(scope.node.tryGetContext(WORKSHOP_CONTEXT), WORKSHOP_CONTEXT, false,
     'Use -c workshop=true or -c workshop=false.');
 }
