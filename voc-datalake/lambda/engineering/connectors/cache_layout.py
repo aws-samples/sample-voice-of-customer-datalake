@@ -56,6 +56,12 @@ MAX_ENTRY_FILES: Final = 1000
 #: The claim rows' partition per connection, beside the runs' (``WS#<ws>#RUN#<run>``) and their writes'.
 CLAIM_PARTITION: Final = 'WS#{ws}#CACHE#{connection}'
 CLAIM_KEY: Final = 'COMMIT#{commit}#G#{generation}'
+#: The writer's refusals of the run's commit itself (cache.py ``fetch_refusal``): a Resume keeps the commit, so the
+#: runtime's words after them say what else helps (runtime/handler.py ``_refusal_ending``).
+NO_COMMIT: Final = ('the run\'s commit is not on the repository host (git: no such commit): push it to the '
+                    'connection\'s repository, or start the run on a commit that is there')
+FSCK_REJECTED: Final = ('the commit\'s objects failed git\'s integrity check (fsck) as they were fetched: someone checks '
+                        'the repository (git fsck) and starts the run on a commit without the malformed object')
 _MB: Final = 1024 * 1024
 _DAY: Final = 86_400
 

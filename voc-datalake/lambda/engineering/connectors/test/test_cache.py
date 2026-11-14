@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -28,6 +29,7 @@ from engineering.connectors.cache import (
     S3EntryStore,
     TableFillClaims,
     authorization,
+    fetch_refusal,
     git_environment,
     redacted,
     remote_url,
@@ -520,6 +522,60 @@ def test_a_host_that_refuses_the_token_is_a_refusal_in_its_words(tmp_path: Any, 
     refused.status = status
     with pytest.raises(EntryRefused, match=f'refused the connection\'s fetch token \\(it answered {status}\\)'):
         filler(tmp_path, tokens=Tokens(error=refused)).fill(CONNECTION, COMMIT, GEN)
+
+
+@pytest.mark.parametrize(('status', 'raised'), [
+    (400, EntryRefused), (422, EntryRefused), (451, EntryRefused),   # (the request refused the same way every time)
+    (408, CacheFailed), (429, CacheFailed), (500, CacheFailed), (502, CacheFailed), (0, CacheFailed),   # (may pass)
+])
+def test_a_token_request_the_host_rejects_is_a_refusal_unless_a_later_try_may_pass(tmp_path: Any, status: int,
+                                                                                   raised: type[Exception]) -> None:
+    rejected = HostError(f'The repository host answered {status} to the token request.')
+    rejected.status = status
+    claims = FakeClaims()
+    with pytest.raises(raised) as error:
+        filler(tmp_path, claims=claims, tokens=Tokens(error=rejected)).fill(CONNECTION, COMMIT, GEN)
+    if raised is EntryRefused:
+        assert str(error.value) == (f'the repository host rejected the request for the connection\'s fetch token (it '
+                                    f'answered {status}): an administrator checks the GitHub App, its installation '
+                                    'and its access to the repository, under Agents → Connections')
+        assert claims.held[claim_key(CONNECTION, COMMIT, GEN)['sk']['S']] == ('me', NOW)   # (no hold: nothing passes)
+
+
+@pytest.mark.parametrize(('detail', 'said'), [
+    (f'fatal: remote error: upload-pack: not our ref {COMMIT}', 'push it to the connection\'s repository'),
+    (f"fatal: couldn't find remote ref {COMMIT}", 'push it to the connection\'s repository'),
+    ('error: Server does not allow request for unadvertised object', 'push it to the connection\'s repository'),
+    ("remote: Repository not found.\nfatal: repository 'https://github.com/example-org/example.git/' not found",
+     'checks the connection\'s repository, and that the GitHub App is installed on it'),
+    ('error: object 1234: badTimezone: invalid author/committer line\nfatal: fsck error in packed object',
+     'failed git\'s integrity check (fsck)'),
+])
+def test_a_fetch_that_every_later_try_would_meet_is_a_refusal_saying_what_to_do(tmp_path: Any, detail: str,
+                                                                                said: str) -> None:
+    claims, revoked = FakeClaims(), list[str]()
+    with pytest.raises(EntryRefused, match=re.escape(said)):
+        filler(tmp_path, FakeGit(fail='fetch', detail=detail), claims=claims,
+               revoke=revoked.append).fill(CONNECTION, COMMIT, GEN)
+    assert revoked == [TOKEN]
+    assert claims.held[claim_key(CONNECTION, COMMIT, GEN)['sk']['S']] == ('me', NOW)   # (let go at once)
+
+
+@pytest.mark.parametrize('detail', [
+    "fatal: unable to access 'https://github.com/example-org/example.git/': Could not resolve host: github.com",
+    'error: RPC failed; HTTP 502 curl 22 The requested URL returned error: 502',
+    'fatal: the remote end hung up unexpectedly',
+    # (another quoted name followed by "not found" is no answer that the repository is missing)
+    "fatal: unable to access 'https://github.com/example-org/example.git/': proxy 'proxy.example.com' not found",
+    "error: file 'objects/info/alternates' not found",
+])
+def test_a_fetch_that_a_later_try_may_pass_stays_a_failure(tmp_path: Any, detail: str) -> None:
+    with pytest.raises(CacheFailed, match='git fetch failed'):
+        filler(tmp_path, FakeGit(fail='fetch', detail=detail)).fill(CONNECTION, COMMIT, GEN)
+
+
+def test_a_timed_out_fetch_is_never_read_as_a_refusal() -> None:
+    assert fetch_refusal(GitFailed('fetch', 'not our ref', timed_out=True)) is None
 
 
 def test_every_git_step_is_bounded_and_the_fetch_has_its_own_limit(tmp_path: Any) -> None:

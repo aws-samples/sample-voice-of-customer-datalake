@@ -1578,7 +1578,17 @@ wait closes.
     `runtime/supervisor.py`), so it is not raised for the cache; the wait (270 s: the writer's 240 s and a cold start)
     fits inside it. A host that is busy or unreachable for the token is `CacheFailed` with its retry time (never the
     claim's `CacheBusy`); a host that refuses it (401, 403 or 404: the App's installation or its contents permission
-    removed) is `EntryRefused`, a person's at once, in those words. Each file is one PutObject (no multipart upload).
+    removed) is `EntryRefused`, a person's at once, in those words, and so is any other 4xx but 408 and 429 (a 422,
+    say: the request refused the same way every time; an administrator checks the GitHub App). Every failure a later
+    try would meet again is a refusal (`EntryRefused`, `cache.fetch_refusal`, read from git's last words), its claim
+    let go at once, each saying what a person does: a fetch the host answers with no such commit ("not our ref",
+    "couldn't find remote ref", an unadvertised object: "push it to the connection's repository, or start the run on
+    a commit that is there"; refused at the first such answer, a host's brief lag after a push included: a Resume
+    once the commit is there fills it), with no such repository (the host's "Repository not found", or git's
+    `fatal: repository '<url>' not found` in that form only: an administrator checks the
+    connection's repository and the App's installation on it), or with an object that fails git's check (`fsck
+    error`: someone checks the repository with `git fsck` and starts the run on another commit). A busy host (429,
+    5xx), a timeout and a network error stay `CacheFailed`. Each file is one PutObject (no multipart upload).
   - *When it runs.* The runtime fills the run's commit (generation `N`) before it launches the run's coordinator,
     after a read of READY found no usable generation: `launch_coordinator` (the start's hand-on) invokes the writer
     and waits (up to 270 s), then hands the launch on to a fresh invocation of itself, so a fill's wait and a
@@ -1587,7 +1597,13 @@ wait closes.
     Gateway's 29 s, which is why the start already hands the coordinator's launch on to the runtime. A whole-run
     Resume checks READY first, whatever the coordinator's state, and hands a fill on when it is missing, so an entry
     gone under a live run is filled again. A fill refused or failed is said as the run's health in the writer's own,
-    already redacted words, followed by "A Resume of the run tries again.", and the run goes to a person at the
+    already redacted words, followed by "A Resume of the run tries again." for a failure a later try may pass, or, for
+    a refusal, by what helps given its cause (`handler._refusal_ending`; never "tries again", which it would not
+    pass): a Resume keeps the run's commit, so after no such commit "A Resume of the run keeps this commit: it fills
+    the checkout once the commit is pushed; otherwise start a new run on a commit that is there.", after an object
+    failing fsck "A Resume of the run keeps this commit and would meet it again: start a new run on another commit.",
+    and after any other (the repository, the App, a cap) "Once that is put right, a Resume of the run fills the
+    checkout."; and the run goes to a person at the
     `checkout_cache` decision point. One another fill holds (another run on the same commit) is waited for, reading
     READY and the claim every 10 s for up to 210 s, and that READY serves this run too; a claim that lapses with no
     READY (that fill crashed) ends the wait, and the launch's next ask, in a fresh invocation, takes it over (at most
@@ -1625,8 +1641,11 @@ wait closes.
     two waits or kept ending with no READY), counted on the run's META row
     (`cache_failures`, `RunStore.count_cache_failure`; failures within 300 s of the last one counted are one spell,
     counted once, so racing fills that meet one outage count once; one more than an hour after the last counted starts
-    the count again at 1) and cleared by a fill that lands or a launch that finds the current entry ready; before that
-    its failure is
+    the count again at 1) and cleared by a fill that lands or a launch that finds the current entry ready, or on the
+    first transient failure once the streak is an hour old (`cache_failing_since`, its first failure's time, set beside
+    the count and kept across its restart until the same clearing; `CACHE_FAILING_LIMIT_SECONDS`), so a coordinator
+    asking less often than hourly still reaches a person rather than its agents being told to try again for ever;
+    before that its failure is
     said as health only ("The run goes on; the next launch tries again (1 of 3 failures in a row)"), and the agent
     whose launch found nothing usable still gets its refusal. A continuation (the supervisor's, or a wake's in the delivery function) looks
     the cache up again and clones the generation usable then. A supervisor's continuation that finds only `N - 1`

@@ -34,6 +34,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import os
+import re
 import secrets
 import shutil
 import subprocess
@@ -48,8 +49,10 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from engineering.connectors.cache_layout import (
     BASE_REF,
+    FSCK_REJECTED,
     MAX_ENTRY_BYTES,
     MAX_ENTRY_FILES,
+    NO_COMMIT,
     REPOSITORY_DIR,
     EntryFile,
     EntryRefused,
@@ -107,6 +110,18 @@ _SKIPPED: Final = frozenset({'FETCH_HEAD', 'ORIG_HEAD', 'index'})
 RAW_BUCKET_ENV: Final = 'RAW_DATA_BUCKET'
 #: The host's answers to the token request that mean the App may not mint it (a refusal, not a passing failure).
 TOKEN_REFUSED: Final = frozenset({401, 403, 404})
+#: The 4xx answers to the token request a later try may not meet (a timeout, a rate limit): every other 4xx refuses.
+TOKEN_PASSING: Final = frozenset({408, 429})
+#: What git's fetch of a commit by id says when the host has no such commit (never pushed, or pushed away since).
+GIT_NO_COMMIT: Final = ('not our ref', "couldn't find remote ref", 'unadvertised object', 'no such remote ref')
+#: ... when the host has no repository the token can fetch: the host's "Repository not found.", or git's own
+#: ``fatal: repository '<url>' not found`` (that form only: another quoted name and "not found" is no such answer).
+GIT_NO_REPOSITORY: Final = re.compile(r"repository not found|fatal: repository '[^'\n]*' not found")
+#: ... when an object fetched fails its check (``fetch.fsckObjects``).
+GIT_FSCK: Final = ('fsck error', 'fsckobjects')
+NO_REPOSITORY: Final = ('the repository host has no repository the connection\'s token can fetch (git: not found): an '
+                        'administrator checks the connection\'s repository, and that the GitHub App is installed on it, '
+                        'under Agents → Connections')
 
 
 class CacheBusy(RuntimeError):
@@ -210,6 +225,22 @@ def redacted(detail: str, token: str) -> str:
         if secret:
             detail = detail.replace(secret, '<redacted>')
     return ' '.join(redact(detail).split())[-MAX_GIT_ERROR:]
+
+
+def fetch_refusal(failed: GitFailed) -> str | None:
+    """The refusal a failed fetch is, in words saying what a person does, when every later try would meet it too: no
+    such commit on the host, no such repository, an object that fails its check. None for anything else (a host
+    outage, a network error, a timeout: a later try may pass). Read from git's last words, case-insensitively."""
+    if failed.timed_out:
+        return None
+    said = failed.detail.lower()
+    if any(word in said for word in GIT_NO_COMMIT):
+        return NO_COMMIT
+    if GIT_NO_REPOSITORY.search(said):
+        return NO_REPOSITORY
+    if any(word in said for word in GIT_FSCK):
+        return FSCK_REJECTED
+    return None
 
 
 def entry_files(repository: str, max_bytes: int = MAX_ENTRY_BYTES) -> list[EntryFile]:
@@ -325,6 +356,11 @@ class CacheFiller:
                 raise EntryRefused(f'the repository host refused the connection\'s fetch token (it answered '
                                    f'{error.status}): the GitHub App\'s installation or its contents permission may '
                                    'have been removed; an administrator checks it under Agents → Connections') from None
+            if 400 <= error.status < 500 and error.status not in TOKEN_PASSING:
+                # (a 422, say: the request itself is refused, the same way every time)
+                raise EntryRefused(f'the repository host rejected the request for the connection\'s fetch token (it '
+                                   f'answered {error.status}): an administrator checks the GitHub App, its '
+                                   'installation and its access to the repository, under Agents → Connections') from None
             raise CacheFailed(f'the repository host refused the fetch token ({error})') from None
         repo = os.path.join(work, REPOSITORY_DIR)
         try:   # (from the token's mint on: whatever fails, it is revoked)
@@ -335,6 +371,9 @@ class CacheFiller:
                 except GitFailed as failed:
                     if failed.step == 'fetch' and failed.timed_out:
                         raise CacheFailed(FETCH_BUDGET) from None
+                    refusal = fetch_refusal(failed) if failed.step == 'fetch' else None
+                    if refusal is not None:
+                        raise EntryRefused(refusal) from None
                     raise CacheFailed(f'git {failed.step} failed: {redacted(failed.detail, token)}') from None
                 if 'fetch' in args:
                     self._revoke(token)

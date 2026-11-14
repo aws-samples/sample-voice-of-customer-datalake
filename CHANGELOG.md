@@ -17,6 +17,43 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.05.01] - 2026-11-14
+
+The checkout cache's writer tells failures that will repeat from ones that may pass, and says what to do about them.
+Off by default (`-c engineeringAgents=true`).
+
+### Fixed
+
+- **Failures every later try would meet are refusals** (`EntryRefused`, `lambda/engineering/connectors/cache.py`
+  `fetch_refusal`), each saying what a person does, and the claim is let go at once (no 120 s hold): a fetch the host
+  answers with no such commit ("not our ref", "couldn't find remote ref", an unadvertised object): "the run's commit
+  is not on the repository host (git: no such commit): push it to the connection's repository, or start the run on a
+  commit that is there"; no such repository (the host's "Repository not found", or git's `fatal: repository '<url>'
+  not found` in that form only; another quoted name followed by "not found" stays transient): an administrator checks the connection's
+  repository and the GitHub App's installation on it; an object that fails git's check (`fsck error`): someone
+  checks the repository with `git fsck` and starts the run on another commit; and a token request the host answers
+  with any 4xx but 408 or 429 (a 422, say; 401/403/404 already were): an administrator checks the GitHub App. A
+  busy host (429, 5xx), a timeout and a network error stay transient (`CacheFailed`).
+- **A refusal never says "A Resume of the run tries again"** (`runtime/handler.py` `_refusal_ending`): after the
+  refusal's own words the run's health says what helps, by its cause. A Resume keeps the run's commit, so after
+  the commit's own refusals it says "A Resume of the run keeps this commit: it fills the checkout once the commit is
+  pushed; otherwise start a new run on a commit that is there." (no such commit) and "A Resume of the run keeps this
+  commit and would meet it again: start a new run on another commit." (an object failing fsck); after any other
+  refusal (the repository, the App, a cap), "Once that is put right, a Resume of the run fills the checkout.". Only
+  a failure a later try may pass ends "A Resume of the run tries again.". A "not our ref" answer is refused at the
+  first: a host's brief lag after a push is not told apart (the streak's count is the runtime's, for a board's
+  fills only, and the writer cannot read it); a Resume once the commit is on the host fills it.
+- **A slow streak of transient failures still reaches a person**: a coordinator asking less often than hourly
+  restarted the count at 1 each time, so its agents' launches were told to try again in a few minutes for ever. The
+  run's META row now keeps when the streak began (`cache_failing_since`, set by the first failure, kept across the
+  count's 1-hour restart, removed with the count when a fill lands or a launch finds the entry ready), and once the
+  streak is an hour old (`CACHE_FAILING_LIMIT_SECONDS`) its next transient failure goes to a person whatever the
+  count. The runtime's grant on the run's rows has no attribute condition, so the new attribute needs none.
+- `lib/nag-suppressions.test.ts`: the count's comment names the delivery function's READY read too (one
+  acknowledgement with the supervisor's).
+- `lib/test-support/baseline.json` regenerated: VocApiStack's and VocProcessingStack's template hashes moved with
+  `APP_VERSION` (7.5.1) and the Lambda asset hashes of the engineering code; no resource or name changed.
+
 ## [7.05.00] - 2026-11-14
 
 Autonomous engineering agents: the checkout cache gets its writer, so an agent's sparse checkout has something to clone.

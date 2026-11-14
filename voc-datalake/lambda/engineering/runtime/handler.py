@@ -73,6 +73,7 @@ from aws_lambda_powertools.metrics import MetricUnit
 from botocore.exceptions import BotoCoreError, ClientError
 
 from engineering.board.store import COORDINATE_TASK, COORDINATOR, MAX_AGENTS, BoardError
+from engineering.connectors.cache_layout import FSCK_REJECTED, NO_COMMIT
 from engineering.connectors.identity import WORKSPACE
 from engineering.runtime import caps, egress
 from engineering.runtime.checkout import checkout_commands
@@ -613,7 +614,9 @@ def _coordinator_not_launched(run_id: str, actor: str, error: Exception, *, back
     run to a person now, in its words, rather than at the previous generation's 28-day edge. A fill a
     board launch handed on (``board``: the coordinator is live and works) sends nobody for a transient failure
     either, until ``MAX_TRANSIENT_FILLS`` of them in a row (counted on the run's META, ``cache_failures``, cleared by
-    a fill that lands); a refusal sends the run to a person at once."""
+    a fill that lands) or one more after the streak is ``CACHE_FAILING_LIMIT_SECONDS`` old (``cache_failing_since``);
+    a refusal sends the run to a person at once. Said as health in the cache's words: a transient failure ends
+    ``RETRY_ENDING``, a refusal the ending of its cause (``_refusal_ending``)."""
     said = str(error) if isinstance(error, CheckoutUnavailable) else ''
     refused = isinstance(error, CheckoutUnavailable) and not error.transient
     if background and not refused:   # (a refusal reaches a person now, in its words, not at the 28-day edge)
@@ -621,20 +624,23 @@ def _coordinator_not_launched(run_id: str, actor: str, error: Exception, *, back
                         'current one still serves the run.')
         return {'run_id': run_id, 'status': 'active'}
     if board and isinstance(error, CheckoutUnavailable) and error.transient:
+        now = int(clock())
         try:
             # (one spell of failures counts once: a fill's lease is the window racing fills fail within)
-            failures = _runs().count_cache_failure(run_id, now=int(clock()), window=CACHE_FAILURE_WINDOW_SECONDS,
-                                                   reset_after=CACHE_FAILURE_RESET_SECONDS)
+            failures, since = _runs().count_cache_failure(run_id, now=now, window=CACHE_FAILURE_WINDOW_SECONDS,
+                                                          reset_after=CACHE_FAILURE_RESET_SECONDS)
         except Exception:   # (the count could not be kept: the run keeps working, the next launch tries again)
             logger.exception('engineering runtime: a cache failure was not counted', extra={'run_id': run_id})
-            failures = 1
-        if failures < MAX_TRANSIENT_FILLS:
+            failures, since = 1, now
+        # (bounded by time too: a coordinator asking less often than hourly never makes three in a row, and its
+        # agents would be told to try again in a few minutes for ever)
+        if failures < MAX_TRANSIENT_FILLS and now - since < CACHE_FAILING_LIMIT_SECONDS:
             _health(run_id, f'{said[:1].upper()}{said[1:]}. The run goes on; the next launch tries again '
                             f'({failures} of {MAX_TRANSIENT_FILLS} failures in a row).')
             return {'run_id': run_id, 'status': 'active'}
     try:
         if said:
-            _health(run_id, f'{said[:1].upper()}{said[1:]}. A Resume of the run tries again.')
+            _health(run_id, f'{said[:1].upper()}{said[1:]}. {_refusal_ending(said) if refused else RETRY_ENDING}')
             with contextlib.suppress(RunNotActive):
                 _runs().needs_human(run_id, CHECKOUT_CACHE_POINT, now=int(clock()), actor=actor or UNATTRIBUTED)
         else:
@@ -644,12 +650,37 @@ def _coordinator_not_launched(run_id: str, actor: str, error: Exception, *, back
     return {'run_id': run_id, 'status': 'needs_human'}
 
 
+#: What the run's health says after a failure a later try may pass.
+RETRY_ENDING: Final = 'A Resume of the run tries again.'
+#: ... after a refusal a person puts right (the repository, the App, a cap): a Resume, the same commit, then fills it.
+FIXED_ENDING: Final = 'Once that is put right, a Resume of the run fills the checkout.'
+#: ... after a refusal of the commit itself: a Resume keeps the commit, so it helps only once the commit is pushed.
+NO_COMMIT_ENDING: Final = ('A Resume of the run keeps this commit: it fills the checkout once the commit is pushed; '
+                           'otherwise start a new run on a commit that is there.')
+#: ... after an object of the commit failed its check: a Resume, the same commit, meets it again.
+FSCK_ENDING: Final = 'A Resume of the run keeps this commit and would meet it again: start a new run on another commit.'
+
+
+def _refusal_ending(said: str) -> str:
+    """The words after a refusal's own, by its cause: the commit's own refusals (cache_layout ``NO_COMMIT``,
+    ``FSCK_REJECTED``) say what a Resume, which keeps the commit, can and cannot do; every other, that a Resume fills
+    the checkout once it is put right."""
+    if NO_COMMIT in said:
+        return NO_COMMIT_ENDING
+    if FSCK_REJECTED in said:
+        return FSCK_ENDING
+    return FIXED_ENDING
+
+
 #: How many transient checkout-cache failures in a row a working run's board launches meet before a person is asked.
 MAX_TRANSIENT_FILLS: Final = 3
 #: Transient failures within this long of the last one counted are the same spell, counted once (a writer's lease).
 CACHE_FAILURE_WINDOW_SECONDS: Final = 300
 #: A failure this long after the last one counted is not "in a row": the count starts again at 1.
 CACHE_FAILURE_RESET_SECONDS: Final = 3600
+#: A streak this old (its first failure, ``cache_failing_since``, with no fill landing since) goes to a person at its
+#: next transient failure, whatever the count.
+CACHE_FAILING_LIMIT_SECONDS: Final = 3600
 
 
 def _fill_marked(run_id: str) -> None:

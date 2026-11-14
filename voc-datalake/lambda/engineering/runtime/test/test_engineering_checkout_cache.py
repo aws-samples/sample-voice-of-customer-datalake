@@ -11,10 +11,15 @@ import boto3
 import pytest
 from botocore.exceptions import ClientError
 
-from engineering.connectors.cache_layout import GENERATION_SECONDS, claim_key, ready_key
+from engineering.connectors.cache_layout import FSCK_REJECTED, GENERATION_SECONDS, NO_COMMIT, claim_key, ready_key
 from engineering.runtime import handler
 from engineering.runtime.checkout_cache import BUSY_WAIT_SECONDS, FILLING, NOT_READY, CheckoutCache
-from engineering.runtime.handler import CACHE_FAILURE_WINDOW_SECONDS, MAX_TRANSIENT_FILLS
+from engineering.runtime.handler import (
+    CACHE_FAILING_LIMIT_SECONDS,
+    CACHE_FAILURE_RESET_SECONDS,
+    CACHE_FAILURE_WINDOW_SECONDS,
+    MAX_TRANSIENT_FILLS,
+)
 from engineering.runtime.interface import RuntimeRefused
 from engineering.runtime.runs import meta_key
 from engineering.runtime.supervisor import SessionBusy
@@ -481,7 +486,8 @@ def test_a_fill_that_is_refused_launches_no_coordinator_and_sends_the_run_to_a_p
     handler.lambda_handler(COORDINATED, None)
     assert (_coordinator(), _decision_point()) == (None, ('needs_human', 'checkout_cache'))
     # (the writer's own words, as the run's health)
-    assert 'The run\'s checkout could not be cached: over the cap. A Resume of the run tries again.' in _health_said()
+    assert ('The run\'s checkout could not be cached: over the cap. Once that is put right, a Resume of the run fills '
+            'the checkout.') in _health_said()   # (a refusal: never "tries again", which only a passing failure says)
 
 
 def test_a_background_fill_that_fails_leaves_a_served_run_active_and_only_says_so(
@@ -492,6 +498,21 @@ def test_a_background_fill_that_fails_leaves_a_served_run_active_and_only_says_s
     _real_cache(monkeypatch, FakeLambda({'errorType': 'CacheFailed', 'errorMessage': 'git fetch failed'}, error=True))
     answer = handler.launch_coordinator({'run_id': OTHER_RUN, 'actor': '', 'background': True})
     assert (answer['status'], _status()) == ('active', 'active')
+
+
+@pytest.mark.parametrize(('refusal', 'ending'), [
+    (NO_COMMIT, handler.NO_COMMIT_ENDING),      # (a Resume keeps the commit: it helps once the commit is pushed)
+    (FSCK_REJECTED, handler.FSCK_ENDING),       # (a Resume would meet the same object: a new run on another commit)
+    ('the repository host has no repository the connection\'s token can fetch', handler.FIXED_ENDING),
+])
+def test_a_refusals_ending_matches_its_cause(wired: Any, monkeypatch: pytest.MonkeyPatch, refusal: str,
+                                             ending: str) -> None:
+    assert wired is not None
+    _real_cache(monkeypatch, FakeLambda({'errorType': 'EntryRefused', 'errorMessage': refusal}, error=True))
+    handler.lambda_handler(COORDINATED, None)
+    assert _decision_point() == ('needs_human', 'checkout_cache')
+    assert f'The run\'s checkout could not be cached: {refusal}. {ending}' in _health_said()
+    assert not any(handler.RETRY_ENDING in text for text in _health_said())
 
 
 #: The writer's refusal of a connection whose App was uninstalled (cache.py, a 404 to the token request).
@@ -506,8 +527,8 @@ def test_a_refused_background_fill_sends_the_run_to_a_person_now_in_the_writers_
     _real_cache(monkeypatch, FakeLambda(UNINSTALLED, error=True))
     answer = handler.launch_coordinator({'run_id': OTHER_RUN, 'actor': '', 'background': True})
     assert (answer['status'], _decision_point()) == ('needs_human', ('needs_human', 'checkout_cache'))
-    assert ('The run\'s checkout could not be cached: the repository host refused the connection\'s fetch token. A '
-            'Resume of the run tries again.') in _health_said()
+    assert ('The run\'s checkout could not be cached: the repository host refused the connection\'s fetch token. Once '
+            'that is put right, a Resume of the run fills the checkout.') in _health_said()
 
 
 def test_a_start_whose_fill_ahead_is_refused_goes_to_a_person_rather_than_wait_for_the_edge(
@@ -563,12 +584,18 @@ def _working_run_loses_its_entry(monkeypatch: pytest.MonkeyPatch, answer: dict[s
 AGENT_LAUNCH = {**LAUNCH, 'run_id': OTHER_RUN}
 
 
-def test_a_transient_fill_failure_from_a_board_launch_leaves_a_working_run_active_until_it_repeats(
-        wired: Any, monkeypatch: pytest.MonkeyPatch) -> None:
-    assert wired is not None
+def _busy_host_on_a_clock(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """OTHER_RUN working, its entry gone, the writer answering a busy host, and the runtime's clock the one returned."""
     _working_run_loses_its_entry(monkeypatch, {'errorType': 'CacheFailed', 'errorMessage': 'the host is busy'})
     now = [handler.clock()]
     monkeypatch.setattr(handler, 'clock', lambda: now[0])
+    return now
+
+
+def test_a_transient_fill_failure_from_a_board_launch_leaves_a_working_run_active_until_it_repeats(
+        wired: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    assert wired is not None
+    now = _busy_host_on_a_clock(monkeypatch)
     for _ in range(MAX_TRANSIENT_FILLS - 1):
         with pytest.raises(RuntimeRefused, match='no usable checkout'):   # (the agent reads its refusal)
             handler.launch(AGENT_LAUNCH)
@@ -584,9 +611,49 @@ def test_a_failure_long_after_the_last_starts_the_count_again(wired: Any) -> Non
     assert wired is not None
     handler.lambda_handler({**COORDINATED, 'language': ''}, None)   # (OTHER_RUN's META only: no fill needed)
     runs = handler._runs()
-    assert runs.count_cache_failure(OTHER_RUN, now=1000, window=300, reset_after=3600) == 1
-    assert runs.count_cache_failure(OTHER_RUN, now=1400, window=300, reset_after=3600) == 2
-    assert runs.count_cache_failure(OTHER_RUN, now=1400 + 3601, window=300, reset_after=3600) == 1   # (an old spell)
+    assert runs.count_cache_failure(OTHER_RUN, now=1000, window=300, reset_after=3600) == (1, 1000)
+    assert runs.count_cache_failure(OTHER_RUN, now=1100, window=300, reset_after=3600) == (1, 1000)   # (one spell)
+    assert runs.count_cache_failure(OTHER_RUN, now=1400, window=300, reset_after=3600) == (2, 1000)
+    # (an old spell: the count starts again, but the streak's start is kept until a fill lands)
+    assert runs.count_cache_failure(OTHER_RUN, now=1400 + 3601, window=300, reset_after=3600) == (1, 1000)
+    runs.clear_cache_failures(OTHER_RUN)
+    assert runs.count_cache_failure(OTHER_RUN, now=9000, window=300, reset_after=3600) == (1, 9000)
+
+
+def _later_launch_after_a_first_failure(monkeypatch: pytest.MonkeyPatch, after: float) -> None:
+    """A busy host's first failure of a streak (a board launch, refused, the run still active), then another board
+    launch ``after`` seconds later."""
+    now = _busy_host_on_a_clock(monkeypatch)
+    with pytest.raises(RuntimeRefused):
+        handler.launch(AGENT_LAUNCH)
+    assert _decision_point() == ('active', '')
+    now[0] += after
+    with pytest.raises(RuntimeRefused):
+        handler.launch(AGENT_LAUNCH)
+
+
+def test_a_streak_of_failures_far_apart_reaches_a_person_once_it_is_an_hour_old(
+        wired: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    assert wired is not None
+    # (the second, just under an hour on: "2 of 3", the streak not yet old)
+    _later_launch_after_a_first_failure(monkeypatch, CACHE_FAILING_LIMIT_SECONDS - 1)
+    now = [handler.clock()]
+    monkeypatch.setattr(handler, 'clock', lambda: now[0])
+    assert _decision_point() == ('active', '')
+    assert any('(2 of 3 failures in a row)' in text for text in _health_said())
+    now[0] += CACHE_FAILURE_RESET_SECONDS + 1   # (a coordinator asking less often than hourly)
+    with pytest.raises(RuntimeRefused):
+        handler.launch(AGENT_LAUNCH)   # (the count is back at 1, but the streak is over an hour old)
+    assert _decision_point() == ('needs_human', 'checkout_cache')
+    assert any('A Resume of the run tries again.' in text for text in _health_said())
+
+
+def test_a_streak_exactly_an_hour_old_already_reaches_a_person(wired: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    assert wired is not None
+    # (exactly an hour on: the count restarts at 1, and the hour is up)
+    _later_launch_after_a_first_failure(monkeypatch, CACHE_FAILING_LIMIT_SECONDS)
+    assert _decision_point() == ('needs_human', 'checkout_cache')
+    assert not any('2 of 3' in text for text in _health_said())
 
 
 def _one_launch_met_a_busy_host(monkeypatch: pytest.MonkeyPatch) -> None:

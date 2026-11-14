@@ -245,6 +245,11 @@ def _typed(item: Mapping[str, Any]) -> dict[str, Any]:
     return {name: _SERIALIZER.serialize(value) for name, value in item.items()}
 
 
+def _failure_count(item: Mapping[str, Any], now: int) -> tuple[int, int]:
+    """``(cache_failures, cache_failing_since)`` of a META row's attributes (a row without them: the first, now)."""
+    return int(item.get('cache_failures', 1)), int(item.get('cache_failing_since', now))
+
+
 def flow_step(reason: str) -> str:
     """The flow's step a decision point names (``flow:<step>``), '' for any other decision point."""
     return reason.removeprefix(DECISION_PREFIX) if reason.startswith(DECISION_PREFIX) else ''
@@ -445,42 +450,48 @@ class RunStore:
             if not is_conditional_check_failure(error):
                 raise
 
-    def count_cache_failure(self, run_id: str, *, now: int, window: int, reset_after: int) -> int:
+    def count_cache_failure(self, run_id: str, *, now: int, window: int, reset_after: int) -> tuple[int, int]:
         """One more transient checkout-cache failure on the run's META (``cache_failures``, a fill a board launch
-        handed on while the coordinator works), how many there have been in a row. Failures within ``window`` seconds
-        of the last one counted are one spell (one host outage, met by several racing fills): they are not counted
-        again (``cache_failed_at``); one more than ``reset_after`` seconds after the last starts the count again at
-        1 (an old spell is not this one's)."""
-        try:   # (a first failure, or one long after the last: the count starts again)
-            self._table.update_item(
-                Key=meta_key(run_id), UpdateExpression='SET cache_failures = :one, cache_failed_at = :now',
+        handed on while the coordinator works): how many there have been in a row, and when the streak began
+        (``cache_failing_since``: its first failure, kept until a fill lands or a launch finds the entry ready, so a
+        streak of failures far apart is still seen as long). Failures within ``window`` seconds of the last one
+        counted are one spell (one host outage, met by several racing fills): they are not counted again
+        (``cache_failed_at``); one more than ``reset_after`` seconds after the last starts the count again at 1."""
+        values = {':one': 1, ':now': now}
+        try:   # (a first failure, or one long after the last: the count starts again; the streak's start stays)
+            answer = self._table.update_item(
+                Key=meta_key(run_id),
+                UpdateExpression='SET cache_failures = :one, cache_failed_at = :now, '
+                                 'cache_failing_since = if_not_exists(cache_failing_since, :now)',
                 ConditionExpression='attribute_exists(pk) AND (attribute_not_exists(cache_failed_at) '
                                     'OR cache_failed_at <= :stale)',
-                ExpressionAttributeValues={':one': 1, ':now': now, ':stale': now - reset_after})
+                ExpressionAttributeValues={**values, ':stale': now - reset_after}, ReturnValues='ALL_NEW')
         except ClientError as error:
             if not is_conditional_check_failure(error):
                 raise
         else:
-            return 1
+            return _failure_count(answer.get('Attributes', {}), now)
         try:
             answer = self._table.update_item(
-                Key=meta_key(run_id), UpdateExpression='ADD cache_failures :one SET cache_failed_at = :now',
+                Key=meta_key(run_id),
+                UpdateExpression='ADD cache_failures :one SET cache_failed_at = :now, '
+                                 'cache_failing_since = if_not_exists(cache_failing_since, :now)',
                 ConditionExpression='attribute_exists(pk) AND (attribute_not_exists(cache_failed_at) '
                                     'OR cache_failed_at <= :before)',
-                ExpressionAttributeValues={':one': 1, ':now': now, ':before': now - window},
-                ReturnValues='UPDATED_NEW')
+                ExpressionAttributeValues={**values, ':before': now - window}, ReturnValues='ALL_NEW')
         except ClientError as error:
             if not is_conditional_check_failure(error):
                 raise
             item = self._table.get_item(Key=meta_key(run_id), ConsistentRead=True,
-                                        ProjectionExpression='cache_failures').get('Item') or {}
-            return int(item.get('cache_failures', 1))
-        return int(answer.get('Attributes', {}).get('cache_failures', 1))
+                                        ProjectionExpression='cache_failures, cache_failing_since').get('Item') or {}
+            return _failure_count(item, now)
+        return _failure_count(answer.get('Attributes', {}), now)
 
     def clear_cache_failures(self, run_id: str) -> None:
         """The run's count of transient checkout-cache failures back to none (a fill landed)."""
         try:
-            self._table.update_item(Key=meta_key(run_id), UpdateExpression='REMOVE cache_failures, cache_failed_at',
+            self._table.update_item(Key=meta_key(run_id),
+                                    UpdateExpression='REMOVE cache_failures, cache_failed_at, cache_failing_since',
                                     ConditionExpression='attribute_exists(cache_failures)')
         except ClientError as error:
             if not is_conditional_check_failure(error):
