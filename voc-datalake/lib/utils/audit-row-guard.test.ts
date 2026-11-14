@@ -9,7 +9,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { IamPolicySchema, TemplateResourcesSchema, type IamStatement } from '../test-support/iam-statements';
-import { cleanupAssemblyDirs, synthApp, SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
+import { cleanupAssemblyDirs, HARD_DELETE_BUILD, synthApp, SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import {
   AUDIT_DENY_CHANGE_SID, AUDIT_DENY_OTHER_PARTITION_SID, AUDIT_DENY_WRITE_SID, applyAuditRowGuard, type NamedAuditWriter,
 } from './audit-row-guard';
@@ -24,7 +24,9 @@ const AUDIT_CONDITION = { 'ForAnyValue:StringLike': { 'dynamodb:LeadingKeys': ['
  *  users API only `AUDIT#platform-admins`). */
 const AUDIT_WRITERS: Record<(typeof GUARDED_TABLES)[number], string[]> = {
   AggregatesTable: ['VocApiStack/SettingsLambdaRole', 'VocApiStack/UsersLambdaRole',
-    'VocProcessingStack/RetentionWorkerRetentionRole'],
+    'VocProcessingStack/RetentionWorkerRetentionRole',
+    // A workspace's hard delete: its tombstones (AUDIT#tombstone#* only, the one-partition Deny below).
+    'VocProcessingStack/WorkspaceDeleteWorkerDeleteRole'],
   ProjectsTable: ['VocApiStack/PersonaGeneratorRole', 'VocApiStack/ProjectsLambdaRole'],
   ParticipantsTable: ['VocApiStack/EngagementLambdaRole'],
   FeatureRequestsTable: ['VocApiStack/EngagementLambdaRole'],
@@ -35,23 +37,27 @@ const AUDIT_WRITERS: Record<(typeof GUARDED_TABLES)[number], string[]> = {
   // workspace form's form_deleted row (AUDIT#WS#* only, beside their own FORM# writes); every other role writing
   // voc-workspaces (voc-retention's de-identification) gets the forge Deny.
   WorkspacesTable: ['VocApiStack/FeedbackFormLambdaRole', 'VocApiStack/UsersLambdaRole', 'VocApiStack/WorkspaceResolutionPolicy',
-    'VocApiStack/WorkspacesLambdaRole'],
+    'VocApiStack/WorkspacesLambdaRole',
+    // A workspace's hard delete: the platform's completed row (AUDIT#workspace-deletes only).
+    'VocProcessingStack/WorkspaceDeleteWorkerDeleteRole'],
 };
 
 type Statement = IamStatement;
 
-const synthed = synthApp();
+// The hard delete as the tests build it (refused to a deployment until the per-person export exists): its job is one
+// of the audit writers when it is built.
+const synthed = synthApp({}, undefined, HARD_DELETE_BUILD);
 afterAll(cleanupAssemblyDirs);
 
-/** `<Stack>/<RoleId>` → its default policy's statements; `<Stack>/<PolicyId>` → a customer-managed policy's (the
- *  guard guards both, lib/utils/audit-row-guard.ts). */
+/** `<Stack>/<RoleId>` → its default policy's statements and those CDK split off it (`<RoleId>OverflowPolicy<n>`);
+ *  `<Stack>/<PolicyId>` → a customer-managed policy's (the guard guards both, lib/utils/audit-row-guard.ts). */
 function statementsByRole(): Map<string, Statement[]> {
   const out = new Map<string, Statement[]>();
   for (const stack of synthed.stackNames) {
     for (const [id, resource] of Object.entries(TemplateResourcesSchema.parse(synthed.template(stack)).Resources)) {
       const policy = IamPolicySchema.safeParse(resource);
       if (!policy.success) continue;
-      const role = `${stack}/${id.replace(/(?:DefaultPolicy)?[0-9A-F]{8}$/, '')}`;
+      const role = `${stack}/${id.replace(/(?:DefaultPolicy|OverflowPolicy\d+)?[0-9A-F]{8}$/, '')}`;
       out.set(role, [...(out.get(role) ?? []), ...policy.data.Properties.PolicyDocument.Statement]);
     }
   }
@@ -124,10 +130,27 @@ describe('audit rows (AUDIT#*) across every stack', () => {
       'ForAnyValue:StringNotEquals': { 'dynamodb:LeadingKeys': [partition] } });
   });
 
-  it('only the settings, users and feedback-form APIs and the workspace-resolution policy carry a one-partition deny', () => {
+  it('only the settings, users and feedback-form APIs, the workspace-resolution policy and the workspace delete carry a one-partition deny', () => {
     const holders = [...byRole].filter(([, statements]) => denied(statements, AUDIT_DENY_OTHER_PARTITION_SID) !== NO_STATEMENT);
     expect(holders.map(([role]) => role).sort(byCodeUnit)).toStrictEqual(['VocApiStack/FeedbackFormLambdaRole',
-      'VocApiStack/SettingsLambdaRole', 'VocApiStack/UsersLambdaRole', 'VocApiStack/WorkspaceResolutionPolicy']);
+      'VocApiStack/SettingsLambdaRole', 'VocApiStack/UsersLambdaRole', 'VocApiStack/WorkspaceResolutionPolicy',
+      'VocProcessingStack/WorkspaceDeleteWorkerDeleteRole']);
+  });
+
+  it('the workspace delete puts only its tombstones in voc-aggregates and its completed rows in voc-workspaces', () => {
+    const statements = byRole.get('VocProcessingStack/WorkspaceDeleteWorkerDeleteRole') ?? [];
+    const limits = statements.filter((s) => (s.Sid ?? '').startsWith(AUDIT_DENY_OTHER_PARTITION_SID))
+      .map((s) => ({ tables: tablesOf(s), condition: s.Condition }))
+      .sort((a, b) => byCodeUnit(a.tables.join(), b.tables.join()));
+    expect(limits).toStrictEqual([
+      { tables: ['AggregatesTable'], condition: { ...AUDIT_CONDITION,
+        'ForAnyValue:StringNotLike': { 'dynamodb:LeadingKeys': ['AUDIT#tombstone#*'] } } },
+      { tables: ['WorkspacesTable'], condition: { ...AUDIT_CONDITION,
+        'ForAnyValue:StringNotEquals': { 'dynamodb:LeadingKeys': ['AUDIT#workspace-deletes'] } } },
+    ]);
+    // Its batch deletes, on WS#{one id}#* only, never reach an audit row: the change-Deny holds them too.
+    expect(actionsOf(denied(statements, AUDIT_DENY_CHANGE_SID)).sort(byCodeUnit))
+      .toStrictEqual(['dynamodb:BatchWriteItem', 'dynamodb:DeleteItem', 'dynamodb:UpdateItem']);
   });
 
   // The data-path and operator APIs that resolve X-Workspace-Id (7.04.00) put a platform admin's entry row through

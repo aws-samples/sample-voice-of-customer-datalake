@@ -313,6 +313,7 @@ def _aggregate(table, records: list[dict]) -> None:
     with patch.object(aggregator, 'aggregates_table', table), \
             patch.object(aggregator, 'AGGREGATES_TABLE', table.name), \
             patch.object(aggregator, 'IDEMPOTENCY_TABLE', ''), \
+            patch.object(aggregator, 'workspace_active', lambda _scope: True), \
             patch.object(aggregator, 'lower_earliest_date', lambda _date: None), \
             patch.object(aggregator, 'data_changed', BatchBump(aggregator.bump_data_version)), \
             patch.object(aggregator, 'metrics'):
@@ -402,3 +403,55 @@ def test_a_page_that_rewrote_none_of_the_workspaces_reviews_bumps_nothing(tables
 
     assert (result['status'], result['scanned'], result['updated']) == ('completed', 1, 1)
     assert bumps == [SCOPE, SCOPE]  # after page 2, and run_job's own at the end; none after page 1
+
+
+class TestAWorkspaceNotActive:
+    """A workspace's job stops when its workspace is not active (a hard delete's fence, 7.28.00), through the real
+    status check (shared/ws_repo.py ``WorkspaceStatusCheck``) on a moto voc-workspaces."""
+
+    @pytest.fixture
+    def workspaces(self, tables):
+        from shared.ws_repo import WorkspaceStatusCheck
+
+        assert set(tables) == {'feedback', 'aggregates'}  # inside the moto tables' mock
+        table = create_pk_sk_table('test-workspaces-reprocess')
+        table.put_item(Item={'pk': f'WS#{WS}', 'sk': 'META', 'status': 'deleting'})
+        table.put_item(Item={'pk': f'WS#{OTHER}', 'sk': 'META', 'status': 'active'})
+        check = WorkspaceStatusCheck(table)
+        with patch.object(handler, 'workspace_active', check):
+            yield table
+
+    @pytest.mark.usefixtures('workspaces')
+    def test_a_deleting_workspaces_job_writes_nothing_and_ends_cancelled(self, seeded, worker_context, converse_mock):
+        job = _start(seeded)
+
+        result = run_job(_event(job), worker_context)
+
+        assert result == {'status': 'cancelled', 'reason': 'workspace_not_active'}
+        stored = jobs.get_job(seeded['aggregates'], job['sk'], SCOPE)
+        assert stored is not None
+        assert (stored['status'], stored['error']) == ('cancelled', handler.WORKSPACE_NOT_ACTIVE_ERROR)
+        converse_mock.assert_not_called()
+        assert _stored(seeded, f'WS#{WS}#SOURCE#web', 'w1')['category'] == 'rentals'
+        # No data_version bump: the delete sweeps that counter, and a bump would write it again.
+        assert 'Item' not in seeded['aggregates'].get_item(Key=data_version_key(SCOPE))
+
+    def test_a_job_whose_workspace_is_marked_deleting_between_pages_stops_before_the_next(
+            self, seeded, worker_context, converse_mock):
+        answers = iter([True, False])
+        job = _start(seeded)
+        with patch.object(handler, 'workspace_active', lambda _scope: next(answers)), \
+                patch.object(handler, 'bump_data_version') as bump:
+            result = run_job(_event(job), worker_context)
+
+        assert result['status'] == 'cancelled'
+        converse_mock.assert_not_called()
+        bump.assert_not_called()
+
+    @pytest.mark.usefixtures('workspaces', 'converse_mock')
+    def test_another_workspaces_job_runs(self, seeded, worker_context):
+        job = _start(seeded, scope=WorkspaceScope(OTHER))
+
+        result = run_job(_event(job, OTHER), worker_context)
+
+        assert result['status'] == 'completed'

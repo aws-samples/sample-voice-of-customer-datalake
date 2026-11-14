@@ -73,6 +73,7 @@ Invariants:
     and dimensions come out unchanged but whose band is missing or different
     gets a band-only update (counted as ``updated``). docs/data-quality.md.
 """
+import functools
 import json
 import os
 from datetime import UTC, datetime
@@ -120,9 +121,18 @@ from shared.reprocess_lineage import AnswerRecorder, change_stamps, job_actor, j
 from shared.reprocess_slices import ReprocessSlice, read_page, slice_from_job
 from shared.reprocess_slices import admits as slice_admits
 from shared.source_profiles import PII_SUMMARY_ONLY
+from shared.tables import get_workspaces_table
 from shared.timestamps import now_iso, parse_iso
 from shared.usefulness import USEFULNESS_FIELD, USEFULNESS_UNRATED, item_usefulness, stored_band
-from shared.ws_repo import WORKSPACE_FIELD, WorkspaceScope, category_pk, message_scope, partition_scope, urgency_pk
+from shared.ws_repo import (
+    WORKSPACE_FIELD,
+    WorkspaceScope,
+    WorkspaceStatusCheck,
+    category_pk,
+    message_scope,
+    partition_scope,
+    urgency_pk,
+)
 
 FEEDBACK_TABLE = os.environ.get('FEEDBACK_TABLE', '')
 AGGREGATES_TABLE = os.environ.get('AGGREGATES_TABLE', '')
@@ -643,11 +653,18 @@ def run_job(event: dict, context: Any) -> dict:
         return {'status': jobs.STATUS_FAILED}
     cursor = event.get('cursor') or job.get('cursor') or None
     throttle_restarts = int(event.get('throttle_restarts', 0))
+    if scope is not None and not workspace_active(scope):
+        # Before any read or write (and no data_version bump): the workspace is being deleted, or gone.
+        return _stop_for_workspace(aggregates_table, job_id, counters, token, scope)
+    stopped_for_workspace = False
     try:
         return _reprocess_pages(
             feedback_table, aggregates_table, context, job_id, job, counters, cursor, throttle_restarts, token,
             **jobs.scope_option(scope),
         )
+    except _WorkspaceNotActive:
+        stopped_for_workspace = True
+        return _stop_for_workspace(aggregates_table, job_id, counters, token, scope)
     except Exception as e:
         # Error type only, like the per-review log: an exception message or traceback
         # can quote review text (a Bedrock/Comprehend refusal echoes its input).
@@ -657,8 +674,46 @@ def run_job(event: dict, context: Any) -> dict:
         return {'status': jobs.STATUS_FAILED}
     finally:
         # Completion, hand-over, cancel or failure: whatever this invocation rewrote is
-        # visible to cached reads from now on (docs/caching.md): the workspace's own counter for its job.
-        bump_data_version(aggregates_table, **jobs.scope_option(scope))
+        # visible to cached reads from now on (docs/caching.md): the workspace's own counter for its job. Not for a
+        # workspace that is not active: its delete sweeps that counter, and a bump would write it again.
+        if not stopped_for_workspace:
+            bump_data_version(aggregates_table, **jobs.scope_option(scope))
+
+
+class _WorkspaceNotActive(Exception):
+    """A workspace's job found its workspace not active between two pages (``workspace_active``)."""
+
+
+#: What a workspace job's row says when it stops because its workspace is being deleted (or is gone).
+WORKSPACE_NOT_ACTIVE_ERROR = 'The workspace is being deleted: the reprocess stopped'
+
+
+@functools.cache
+def _status_check() -> WorkspaceStatusCheck:
+    """The container's status check of voc-workspaces (built on first use)."""
+    return WorkspaceStatusCheck(get_workspaces_table())
+
+
+def workspace_active(scope: WorkspaceScope) -> bool:
+    """Whether a workspace job's workspace is active (shared/ws_repo.py ``workspace_is_active``, cached per
+    container like every writer's: 300 s an active answer, 30 s a not-active one). A failed read raises."""
+    return _status_check()(scope)
+
+
+def _require_active(scope: WorkspaceScope | None) -> None:
+    """``_WorkspaceNotActive`` when a workspace's job finds its workspace not active (the deployment's: never)."""
+    if scope is not None and not workspace_active(scope):
+        raise _WorkspaceNotActive
+
+
+def _stop_for_workspace(aggregates_table: Any, job_id: str, counters: dict, token: str,
+                        scope: WorkspaceScope | None) -> dict:
+    """End a workspace's job ``cancelled`` because its workspace is not active (a hard delete's fence: the job
+    must not write while the delete runs, 7.28.00)."""
+    logger.info('Reprocess job stopped: its workspace is not active', extra={'job_id': job_id})
+    jobs.finish_job(aggregates_table, job_id, jobs.STATUS_CANCELLED, counters=counters,
+                    error=WORKSPACE_NOT_ACTIVE_ERROR, worker_token=token, **jobs.scope_option(scope))
+    return {'status': jobs.STATUS_CANCELLED, 'reason': 'workspace_not_active'}
 
 
 def _job_counters(job: dict) -> dict:
@@ -692,6 +747,9 @@ def _reprocess_pages(
     job_slice = slice_from_job(job)
     window = job_slice.window(parse_iso(job.get('created_at')) or datetime.now(UTC))
     while True:
+        # A workspace's job asks before each page whether its workspace is still active (a hard delete's fence:
+        # the delete waits out this cache and one invocation, so the job's last write lands before it sweeps).
+        _require_active(scope)
         updated_before = counters['updated']
         page = scan_page(feedback_table, cursor, job_slice, window, **jobs.scope_option(scope))
         for item in page.get('Items', []):

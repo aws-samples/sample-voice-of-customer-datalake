@@ -66,18 +66,33 @@ export function grantWorkspaceMembershipReads(workspacesTable: dynamodb.ITable, 
   return { WORKSPACES_TABLE: workspacesTable.tableName };
 }
 
-/** What a writer that checks a member's role and the workspace's status reads, with the keys: a `MEMBER#` row's
- *  `role` (LOCKSTEP with lambda/stream/src/assistant/session/workspace-member.ts `MEMBER_ROW_ATTRIBUTES`) and a
- *  `META`'s `status` (LOCKSTEP with lambda/stream/src/assistant/session/workspace-status.ts `STATUS_READ_ATTRIBUTES`,
- *  since 7.25.00). */
+/**
+ * The two reads of a writer's status check, siblings over one statement ({@link grantWorkspaceAttributeRead}: GetItem
+ * on `WS#*`, `dynamodb:Attributes` required and held to the list, a projection required), told apart by their lists
+ * only. The status alone, with the keys: what a writer of a workspace's data reads of its `META` (LOCKSTEP with
+ * lambda/shared/ws_repo.py `STATUS_READ_ATTRIBUTES`, which lambda/shared/test/test_ws_repo_status.py holds equal,
+ * and with lambda/stream/src/assistant/session/workspace-status.ts `STATUS_READ_ATTRIBUTES`).
+ */
+const WORKSPACE_STATUS_ATTRIBUTES = ['pk', 'sk', 'status'] as const;
+/** The status and a `MEMBER#` row's `role` (LOCKSTEP with lambda/stream/src/assistant/session/workspace-member.ts
+ *  `MEMBER_ROW_ATTRIBUTES`, since 7.25.00): {@link WORKSPACE_STATUS_ATTRIBUTES} and `role`, nothing else. */
 const ROLE_AND_STATUS_ATTRIBUTES = ['pk', 'sk', 'role', 'status'] as const;
+
+/**
+ * GetItem on voc-workspaces' `WS#*` rows, held to `pk`, `sk` and `status` ({@link WORKSPACE_STATUS_ATTRIBUTES}): a
+ * writer's status check (the ingestors, the feedback processor, the aggregator) stops for a workspace that is not
+ * `active` (docs/multi-workspace.md, "Export and delete"), and a webhook routes only to an active workspace
+ * (lambda/shared/workspace_routing.py). Nothing else of the table: no member row's role, email or name, no Query.
+ */
+export function grantWorkspaceStatusRead(role: iam.IRole, workspacesTable: dynamodb.ITable): void {
+  grantWorkspaceAttributeRead(role, workspacesTable, WORKSPACE_STATUS_ATTRIBUTES);
+}
 
 /** The reads of a writer that checks a member's role and the workspace's status and nothing else (the assistant's
  *  stream Lambda: lambda/stream/src/assistant/session/workspace-member.ts at a run's start, workspace-status.ts before
- *  each session write): GetItem on `WS#*` held to {@link ROLE_AND_STATUS_ATTRIBUTES}, never a workspace's name or
- *  slug nor a member's email. IAM cannot tell a
- *  `META` from a `MEMBER#` row (both are in `WS#{ws}`), so the code's projections pick the row's own. Returns the
- *  Lambda's `WORKSPACES_TABLE`. */
+ *  each session write): the status read's statement held to {@link ROLE_AND_STATUS_ATTRIBUTES}, never a workspace's
+ *  name or slug nor a member's email. IAM cannot tell a `META` from a `MEMBER#` row (both are in `WS#{ws}`), so the
+ *  code's projections pick the row's own. Returns the Lambda's `WORKSPACES_TABLE`. */
 export function grantWorkspaceRoleAndStatusReads(workspacesTable: dynamodb.ITable, role: iam.IRole): Record<string, string> {
   grantWorkspaceAttributeRead(role, workspacesTable, ROLE_AND_STATUS_ATTRIBUTES);
   return { WORKSPACES_TABLE: workspacesTable.tableName };

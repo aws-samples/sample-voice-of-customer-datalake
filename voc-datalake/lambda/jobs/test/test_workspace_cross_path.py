@@ -78,8 +78,17 @@ def lake() -> Iterator[dict[str, Any]]:
         aggregates = create_pk_sk_table(retention.AGGREGATES_TABLE, resource)
         for name in ('RADAR_TABLE', 'PROJECTS_TABLE', 'FEATURE_REQUESTS_TABLE', 'WORKSPACES_TABLE'):
             table_name = getattr(retention, name) or f'test-{name.lower()}'
-            create_pk_sk_table(table_name, resource)
+            created = create_pk_sk_table(table_name, resource)
             stack.enter_context(patch.object(retention, name, table_name))
+            if name == 'WORKSPACES_TABLE':
+                # Both workspaces active (4d-1): the erasure reads a META's status before it takes the export lock.
+                for ws in (WS, OTHER):
+                    created.put_item(Item={'pk': f'WS#{ws}', 'sk': 'META', 'status': 'active'})
+        # The processor's, the aggregator's and the reprocess job's status checks (4d-1, 7.28.00) answer active, as
+        # in their own suites.
+        from aggregator import handler as aggregator
+        for target in (processor, aggregator, reprocess):
+            stack.enter_context(patch.object(target, 'workspace_active', lambda _scope: True))
         aggregates.put_item(Item={**settings_key(WS, 'categories'), 'categories': WS_CATEGORIES})
         converse = MagicMock(return_value='{"category": "trail_gear", "subcategory": "brakes"}')
         llm = MagicMock(side_effect=lambda *_a, **_k: issues.insights())

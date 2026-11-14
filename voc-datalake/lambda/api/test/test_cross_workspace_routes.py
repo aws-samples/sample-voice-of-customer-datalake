@@ -125,6 +125,11 @@ BY_DESIGN: dict[tuple[str, str], str] = {
     **dict.fromkeys(
         [('workspaces_handler.py', 'POST /platform/workspaces'), ('workspaces_handler.py', 'GET /platform/workspaces')],
         'the platform console: platform admins create and list every workspace (decision 2, live-checked)'),
+    **dict.fromkeys(
+        [('workspaces_handler.py', 'POST /platform/workspaces/<ws>/delete/cancel'),
+         ('workspaces_handler.py', 'POST /platform/workspaces/<ws>/delete/resume')],
+        "the platform console: a platform admin cancels or resumes a workspace's hard delete by its id, once the "
+        "workspace answers its one 404 to everyone else (decision 17, live-checked, audited)"),
     ('users_handler.py', 'PUT /users/<username>/platform-admin'): (
         "platform-admin membership: the deployment's platform admins, not a workspace's (decision 2, live-checked)"),
     ('appearance_routes.py', 'GET /settings/appearance'): (
@@ -890,12 +895,13 @@ def test_the_shared_request_resolver_resolves_first():
     """shared/request_workspace.py ``request_workspace`` counts as a resolver: it resolves first on every path but one,
     its first statement, which answers ``None`` for a request that names no workspace before any read or write (the
     deployment as before; check 3 runs that path for every route whose case allows it, and expects the 400 for
-    every other)."""
+    every other). The one statement before that ``return`` counts the request's Bedrock calls to the deployment
+    (shared/usage_meter.py ``attribute``: a context variable, no read or write)."""
     tree = ast.parse((API_DIR.parent / 'shared' / 'request_workspace.py').read_text(encoding='utf-8'))
     function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'request_workspace')
     docstring, guard, *rest = function.body
     assert isinstance(docstring, ast.Expr)
-    assert ast.unparse(guard) == 'if not _names_a_workspace(event):\n    return None'
+    assert ast.unparse(guard) == 'if not _names_a_workspace(event):\n    usage_meter.attribute(None)\n    return None'
     function.body = [docstring, *rest]
     assert 'request_workspace' in resolving_functions(tree)[0]
 

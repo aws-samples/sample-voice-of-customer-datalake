@@ -54,7 +54,7 @@ from shared.scoped_keys import scoped_pk
 from shared.timestamps import ISO_DAY_RE
 from shared.workspace_config import get_scoped_item
 from shared.workspace_settings import settings_key
-from shared.ws_repo import WorkspaceScope
+from shared.ws_repo import WorkspaceScope, user_context_owners_pk
 
 COMPANY_CONTEXT_PK = 'SETTINGS#company_context'
 DESIGN_SYSTEM_PK = 'SETTINGS#design_system'
@@ -388,8 +388,13 @@ def put_company_context(table: Any, clean: Mapping[str, Any], *, updated_at: str
 
 def put_my_context(table: Any, sub: str, clean: Mapping[str, Any], *, updated_at: str,
                    workspace: WorkspaceScope | None = None) -> None:
-    """Replace a person's own objectives (``clean``: ``validate_my_context``'s), inside the workspace when given."""
-    table_view(workspace, table).put_item({**my_context_key(sub, workspace), **clean, 'updated_at': updated_at})
+    """Replace a person's own objectives (``clean``: ``validate_my_context``'s), inside the workspace when given.
+    In a workspace the person's row in its list of objectives owners goes first (shared/ws_repo.py
+    ``user_context_owners_pk``), so no objectives row exists that the workspace's hard delete cannot find."""
+    view = table_view(workspace, table)
+    if workspace is not None:
+        view.put_item({'pk': user_context_owners_pk(workspace), 'sk': sub})
+    view.put_item({**my_context_key(sub, workspace), **clean, 'updated_at': updated_at})
 
 
 def reference_view(item: dict) -> dict:

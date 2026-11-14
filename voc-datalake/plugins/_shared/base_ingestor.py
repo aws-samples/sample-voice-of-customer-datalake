@@ -39,6 +39,7 @@ from shared.aws import (
     get_secret,
     get_sqs_client,
     get_ssm_run_client,
+    is_conditional_check_failure,
 )
 from shared.exceptions import ConfigurationError, SecretUnreadableError, WorkspaceCredentialsNotSet
 from shared.idempotency import dedupe_claim_item
@@ -46,7 +47,7 @@ from shared.ingest_tables import ingest_table
 from shared.logging import logger, metrics, tracer
 from shared.plugin_configs import read_plugin_values
 from shared.plugin_identity import is_valid_plugin_identifier
-from shared.run_rows import source_run_partition
+from shared.run_rows import scraper_run_partition, source_run_partition
 from shared.timestamps import now_iso
 from shared.workspace_credentials import MalformedCredentials
 from shared.workspace_plugins import workspaces_with_plugin
@@ -54,8 +55,11 @@ from shared.ws_repo import (
     WATERMARK_PARTITION,
     WORKSPACE_FIELD,
     WorkspaceScope,
+    WorkspaceStatusCheck,
     WorkspaceTable,
     message_scope,
+    scope_from_message,
+    watermark_directory_key,
     watermark_key,
 )
 
@@ -80,8 +84,12 @@ RAW_DATA_BUCKET = os.environ.get("RAW_DATA_BUCKET", "")
 SECRETS_ARN = os.environ.get("SECRETS_ARN", "")
 # The workspaces' credentials parameters, `{prefix}/{ws}/credentials/{plugin}` (decision 19; lib/stacks/ingestion-stack.ts).
 WORKSPACE_PARAMETER_PREFIX = os.environ.get("WORKSPACE_PARAMETER_PREFIX", "")
-# voc-workspaces: the scheduled tick reads the workspaces that enabled this plugin (shared/workspace_plugins.py).
+# voc-workspaces: the scheduled tick reads the workspaces that enabled this plugin (shared/workspace_plugins.py), and
+# every run in a workspace (and the tick, for each workspace) reads its status first (``workspace_active``).
 WORKSPACES_TABLE = os.environ.get("WORKSPACES_TABLE", "")
+# The status check of this container (shared/ws_repo.py ``WorkspaceStatusCheck``: 300 s active, 30 s not), bound to
+# voc-workspaces on its first use (``workspace_active``).
+_status_check: WorkspaceStatusCheck | None = None
 BRAND_NAME = os.environ.get("BRAND_NAME", "")
 SOURCE_PLATFORM = os.environ.get("SOURCE_PLATFORM", "")
 AGGREGATES_TABLE = os.environ.get("AGGREGATES_TABLE", "")
@@ -115,23 +123,53 @@ def fan_out_tick(plugin_id: str) -> dict:
     that fails raises (``fan_out_once`` logs and meters it: no workspace runs on that tick). A workspace whose invoke fails is logged and counted (``IngestFanOutFailures``) and the rest
     still run; its next tick catches up from its watermarks. A tripped breaker is not checked here: the
     workspace's own run skips at once (``BaseIngestor.run``).
+
+    A workspace that is not active (``deleting``, or no ``META``: ``workspace_active``) is skipped, counted
+    (``IngestFanOutSkipped``) and not invoked; one whose status cannot be read is counted as failed and not invoked
+    either (its next tick tries again).
     """
     if not WORKSPACES_TABLE:
         raise ConfigurationError("The scheduled tick needs WORKSPACES_TABLE")
-    # voc-workspaces, the control plane (not a data-path table): read only for the PLUGIN# partition.
     # (invoke_self refuses to run without AWS_LAMBDA_FUNCTION_NAME: each workspace's invoke then counts as failed.)
-    workspaces = workspaces_with_plugin(ingest_table(None, get_dynamodb_resource(), WORKSPACES_TABLE).table, plugin_id)
-    failed = 0
+    workspaces = workspaces_with_plugin(_workspaces_table(), plugin_id)
+    failed = skipped = 0
     for ws in workspaces:
+        message = {WORKSPACE_FIELD: ws}
         try:
-            invoke_self({WORKSPACE_FIELD: ws})
+            if not workspace_active(scope_from_message(message)):
+                skipped += 1
+                continue
+            invoke_self(message)
         except (BotoCoreError, ClientError, RuntimeError) as error:
             failed += 1
             logger.exception(f"Scheduled run not started: {type(error).__name__}", extra={"workspace_id": ws})
     if failed:
         metrics.add_metric(name="IngestFanOutFailures", unit="Count", value=failed)
-    logger.info("Scheduled tick fanned out", extra={"workspaces": len(workspaces), "failed": failed})
-    return {"status": "fanned_out", "workspaces": len(workspaces) - failed, "failed": failed}
+    if skipped:
+        metrics.add_metric(name="IngestFanOutSkipped", unit="Count", value=skipped)
+    logger.info("Scheduled tick fanned out",
+                extra={"workspaces": len(workspaces), "failed": failed, "skipped": skipped})
+    return {"status": "fanned_out", "workspaces": len(workspaces) - failed - skipped, "failed": failed,
+            "skipped": skipped}
+
+
+def _workspaces_table() -> object:
+    """voc-workspaces, the control plane (not a data-path table): read only for the tick's ``PLUGIN#`` partition and
+    a workspace's ``META`` status."""
+    return ingest_table(None, get_dynamodb_resource(), WORKSPACES_TABLE).table
+
+
+def workspace_active(scope: WorkspaceScope) -> bool:
+    """Whether the run's workspace is active (shared/ws_repo.py ``workspace_is_active``: its ``META``'s status, one
+    GetItem per workspace per 300 s in this container, 30 s when not active). A failed read raises; so does a run
+    without ``WORKSPACES_TABLE``, which cannot tell a deleted workspace from a live one."""
+    # Built on first use: WORKSPACES_TABLE is optional (a deployment-wide run needs none), so not at import.
+    global _status_check
+    if not WORKSPACES_TABLE:
+        raise ConfigurationError("A run in a workspace needs WORKSPACES_TABLE to read the workspace's status")
+    if _status_check is None:
+        _status_check = WorkspaceStatusCheck(_workspaces_table())
+    return _status_check(scope)
 
 
 def _claim_the_tick(plugin_id: str, event: Mapping) -> bool:
@@ -179,7 +217,11 @@ def run_in_workspace(event: object, run: Callable[[WorkspaceScope | None], dict]
     * An event that names a workspace in ``workspace_id`` (the fan-out's runs, a continuation part of one, the API's
       Run now and scraper run in a workspace) runs ``run(scope)`` in it. One that names something that is not a
       workspace id is refused (logged and metered, ``{"status": "refused"}``; never raised, so Lambda does not retry
-      it), and never runs deployment-wide instead.
+      it), and never runs deployment-wide instead. One whose workspace is not active (``deleting``, or no ``META``:
+      ``workspace_active``) is refused the same way (``IngestorWorkspaceNotActive``, ``reason``
+      ``workspace_not_active``): nothing is built or read, and the only write is ending the run row the API wrote
+      for a Run now or a scraper run (``_end_refused_run``). A status that cannot be read raises and leaves that row
+      alone (Lambda's asynchronous retries, or the next tick, try again).
     * An event that names none (the API's Run now and scraper run without ``X-Workspace-Id``, the S3 import API's
       reprocess, an S3 upload's trigger) runs ``run(None)``: the deployment-wide path, exactly as before workspaces.
       That path stays until phase 2's last slice moves the S3 import and its trigger onto workspaces, and is then
@@ -194,9 +236,45 @@ def run_in_workspace(event: object, run: Callable[[WorkspaceScope | None], dict]
         logger.error("Ingestor event refused: its workspace_id is not a workspace id", extra={"plugin_id": SOURCE_PLATFORM})
         metrics.add_metric(name="IngestorEventRefused", unit="Count", value=1)
         return {"status": "refused", "reason": "invalid_workspace"}
+    # A status that cannot be read raises here, the run row untouched: Lambda's retry reads it again.
+    if scope is not None and not workspace_active(scope):
+        logger.warning("Ingestor event refused: its workspace is not active",
+                       extra={"plugin_id": SOURCE_PLATFORM, "workspace_id": scope.ws})
+        metrics.add_metric(name="IngestorWorkspaceNotActive", unit="Count", value=1)
+        _end_refused_run(event, scope, "workspace_not_active")
+        return {"status": "refused", "reason": "workspace_not_active"}
     if is_scheduled_tick(event):
         fan_out_once(SOURCE_PLATFORM, event)
     return run(scope)
+
+
+def _end_refused_run(event: object, scope: WorkspaceScope, reason: str) -> None:
+    """End the run row of a refused run the API started, so its Run now does not spin at ``running``: the
+    ``SOURCE_RUN#`` row (``WS#{ws}#SOURCE_RUN#{plugin}`` / ``{execution_id}``, lambda/api/integrations_handler.py), or a
+    scraper run's ``SCRAPER_RUN#`` row (``scraper_id`` in the event, lambda/api/scrapers_handler.py), set ``error``
+    with ``errors`` [``reason``], the shape a failed run ends with (``BaseIngestor._report_construction_failure``).
+
+    Only a row that is there (``attribute_exists(pk)``): an event with no execution id (a scheduled run) has none, and
+    a workspace being deleted never gets one back once its delete removed it. Never raises: the refusal stands."""
+    execution_id = event.get("execution_id") if isinstance(event, Mapping) else None
+    if not isinstance(execution_id, str) or not execution_id or not AGGREGATES_TABLE:
+        return
+    scraper_id = event.get("scraper_id") if isinstance(event, Mapping) else None
+    partition = (scraper_run_partition(scope, scraper_id) if isinstance(scraper_id, str) and scraper_id
+                 else source_run_partition(scope, SOURCE_PLATFORM))
+    try:
+        ingest_table(scope, get_dynamodb_resource(), AGGREGATES_TABLE).update_item(
+            {"pk": partition, "sk": execution_id},
+            UpdateExpression="SET #status = :status, #errors = :errors, #completed_at = :completed_at",
+            ConditionExpression="attribute_exists(pk)",
+            ExpressionAttributeNames={"#status": "status", "#errors": "errors", "#completed_at": "completed_at"},
+            ExpressionAttributeValues={":status": "error", ":errors": [reason], ":completed_at": now_iso()},
+        )
+    except ClientError as error:
+        if not is_conditional_check_failure(error):
+            logger.warning(f"Refused run's row not ended: {type(error).__name__}", extra={"workspace_id": scope.ws})
+    except BotoCoreError as error:
+        logger.warning(f"Refused run's row not ended: {type(error).__name__}", extra={"workspace_id": scope.ws})
 
 
 def read_workspace_values(scope: WorkspaceScope, plugin: str, configs_table: object) -> dict:
@@ -461,7 +539,19 @@ class BaseIngestor(ABC):
         return value if isinstance(value, str) else default
 
     def set_watermark(self, key: str, value: str):
-        """Set watermark for a specific source/key in DynamoDB (``_watermark_source``)."""
+        """Set watermark for a specific source/key in DynamoDB (``_watermark_source``).
+
+        In a workspace the watermark is listed first (``_list_watermark``): when its directory row cannot be
+        written, the watermark is not written either (logged and counted, ``WatermarkNotListed``), so no watermark
+        of a workspace is ever unlisted; the next run starts from the one before. A run in a workspace without its
+        aggregates table is a deploy fault: ``ConfigurationError`` is raised, never swallowed."""
+        if self.scope is not None:
+            try:
+                self._list_watermark(self.scope, key)
+            except (BotoCoreError, ClientError) as e:
+                logger.exception(f"Watermark not listed, so not saved: {type(e).__name__}")
+                metrics.add_metric(name="WatermarkNotListed", unit="Count", value=1)
+                return
         try:
             self.watermarks_table.put_item(
                 {
@@ -472,6 +562,16 @@ class BaseIngestor(ABC):
             )
         except (BotoCoreError, ClientError) as e:
             logger.exception(f"Failed to save watermark: {e}")
+
+    def _list_watermark(self, scope: WorkspaceScope, key: str) -> None:
+        """The watermark's directory row in voc-aggregates (shared/ws_repo.py ``watermark_directory_key``,
+        ``WS#{ws}#WATERMARK_KEYS`` / ``{plugin}#{key}``), put through the run's view of the workspace: the hard delete
+        (4d-2) finds the workspace's voc-watermarks rows through it, without a Scan. The row is its key alone, so the
+        put is unconditional and idempotent: a few such writes a run, nothing kept in the container. A run without
+        its aggregates view cannot list it: ``ConfigurationError``."""
+        if self.aggregates_table is None:
+            raise ConfigurationError("AGGREGATES_TABLE not configured: a run in a workspace cannot list its watermark")
+        self.aggregates_table.put_item(watermark_directory_key(scope, self.source_platform, key))
 
     @abstractmethod
     def fetch_new_items(self) -> Generator[dict, None, None]:

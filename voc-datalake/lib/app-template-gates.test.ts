@@ -30,7 +30,7 @@ import { z } from 'zod';
 
 import { ALL_FEATURES_CONTEXT } from './test-support/all-features-context';
 import { claudeRoleGrants, e2eProfileModels, missingModelGrants } from './test-support/bedrock-grants';
-import { cleanupAssemblyDirs, diagnostics, synthApp, type SynthResult } from './test-support/synth-app';
+import { cleanupAssemblyDirs, diagnostics, HARD_DELETE_BUILD, synthApp, type SynthResult } from './test-support/synth-app';
 import { TemplateResourcesSchema } from './test-support/template-resources';
 import { byCodeUnit } from './utils/compare';
 import { RESOURCE_STAR_ACTIONS, isReviewedResourceStarAction } from './utils/resource-star-actions';
@@ -38,7 +38,7 @@ import { RESOURCE_STAR_ACTIONS, isReviewedResourceStarAction } from './utils/res
 // Two synths for the whole file, at module level like lib/app-baseline.test.ts (~8-10 s each, out of process).
 const SHAPES: { readonly default: SynthResult; readonly allFeatures: SynthResult } = {
   default: synthApp(),
-  allFeatures: synthApp({ ...ALL_FEATURES_CONTEXT }),
+  allFeatures: synthApp({ ...ALL_FEATURES_CONTEXT }, undefined, HARD_DELETE_BUILD),
 };
 afterAll(cleanupAssemblyDirs);
 

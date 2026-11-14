@@ -17,6 +17,7 @@ input order) re-raises in the caller, and the pool is drained before returning.
 """
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from typing import Any, overload
 
 # Default cap. Small enough to stay far below DynamoDB/Cognito per-account
@@ -37,15 +38,18 @@ def ordered_map[T, R](fn: Callable[[T], R], items: Iterable[T], max_workers: int
     """``[fn(item) for item in items]``, run concurrently, results in input order.
 
     One item (or none) runs inline: there is nothing to overlap, so no pool.
+    Each item runs in its own copy of the caller's context (``contextvars``), inline too: a worker sees the caller's
+    values (the workspace its Bedrock calls are counted to, shared/usage_meter.py), and what one item sets reaches
+    neither the caller nor another item.
     """
-    work = list(items)
+    work = [(copy_context(), item) for item in items]
     if len(work) <= 1:
-        return [fn(item) for item in work]
+        return [context.run(fn, item) for context, item in work]
     workers = max(1, min(len(work), max_workers))
     with ThreadPoolExecutor(max_workers=workers) as pool:
         # `map` yields in submission order and re-raises a worker's exception
         # when its result is reached.
-        return list(pool.map(fn, work))
+        return list(pool.map(lambda pair: pair[0].run(fn, pair[1]), work))
 
 
 @overload

@@ -16,7 +16,7 @@ import { z } from 'zod';
 
 import { ALL_FEATURES_CONTEXT } from '../test-support/all-features-context';
 import { apiTemplate, apiTemplatePrefixed } from '../test-support/api-stack-template';
-import { cleanupAssemblyDirs, synthApp, SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
+import { cleanupAssemblyDirs, HARD_DELETE_BUILD, synthApp, SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import type { SynthResult } from '../test-support/synth-app';
 import { byCodeUnit } from './compare';
 
@@ -203,7 +203,7 @@ describe('Lambda log groups and log grants (retention, AwsSolutions-IAM4)', () =
 
   describe('with every context-gated feature on', () => {
     let all: SynthResult;
-    beforeAll(() => { all = synthApp({ ...ALL_FEATURES_CONTEXT }); }, SYNTH_TIMEOUT_MS);
+    beforeAll(() => { all = synthApp({ ...ALL_FEATURES_CONTEXT }, undefined, HARD_DELETE_BUILD); }, SYNTH_TIMEOUT_MS);
 
     it('grants the log writes on "*" to the API Gateway account role only', () => {
       expect(starLogWriteHolders(all)).toStrictEqual(API_GATEWAY_ROLE_ONLY);

@@ -21,7 +21,7 @@ them.
 """
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from typing import Any, Final
 
@@ -38,6 +38,7 @@ __all__ = [
     'acquire_workspace_lock',
     'job_key',
     'job_partition',
+    'lock_holder',
     'refresh_lock',
     'refresh_workspace_lock',
     'release_lock',
@@ -79,6 +80,15 @@ def refresh_lock(view: WorkspaceTable, partition: str, job_id: str, now: datetim
 def release_lock(view: WorkspaceTable, partition: str, job_id: str, now: datetime) -> None:
     """Mark the lock released, only while ``job_id`` still holds it (UpdateItem, never a delete)."""
     stamp_own_lock(_lock_update(view, partition), job_id, now, 'released_at')
+
+
+def lock_holder(view: WorkspaceTable, partition: str) -> str | None:
+    """The job id holding the lock of the workspace's job ``partition`` (its ``job_id``, released or not), or None:
+    one strongly consistent Query of the lock row (a route may Query a job partition, not GetItem it)."""
+    found = view.query('pk', partition, sort_condition='#sk = :lock', ExpressionAttributeNames={'#sk': 'sk'},
+                       ExpressionAttributeValues={':lock': WORKSPACE_LOCK_SK}, ConsistentRead=True).get('Items') or []
+    holder = found[0].get('job_id') if found and isinstance(found[0], Mapping) else None
+    return holder if isinstance(holder, str) else None
 
 
 def release_quietly(release: Callable[[], None], what: str) -> None:

@@ -24,6 +24,11 @@ export const RETENTION_FUNCTION_BASE_NAME = 'voc-retention';
  */
 export const WORKSPACE_EXPORT_FUNCTION_BASE_NAME = 'voc-workspace-export';
 /**
+ * A workspace's hard delete (VocProcessingStack, lib/stacks/workspace-delete-worker.ts). The workspaces API in
+ * VocApiStack starts and resumes it by async invoke of this name (DELETE_FUNCTION).
+ */
+export const WORKSPACE_DELETE_FUNCTION_BASE_NAME = 'voc-workspace-delete';
+/**
  * The Radar release scan (VocProcessingStack, docs/radar.md). The Radar API in VocApiStack
  * starts "Scan now" by async invoke of this name (RADAR_SCAN_FUNCTION).
  */

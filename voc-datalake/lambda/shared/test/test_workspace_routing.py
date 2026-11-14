@@ -14,7 +14,6 @@ from moto import mock_aws
 from shared.test.moto_tables import create_pk_sk_table
 from shared.workspace import WorkspaceContext
 from shared.workspace_routing import (
-    META_ROUTING_ATTRIBUTES,
     RoutedWorkspace,
     Unroutable,
     claim_lookup,
@@ -24,7 +23,7 @@ from shared.workspace_routing import (
     route_workspace_id,
     workspace_payload,
 )
-from shared.ws_repo import WorkspaceScope, scope_from_lookup
+from shared.ws_repo import STATUS_READ_ATTRIBUTES, WorkspaceScope, scope_from_lookup
 
 WS_A = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
 WS_B = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D9'
@@ -94,7 +93,7 @@ class TestRouteWorkspaceId:
     def test_an_active_workspace_routes_whatever_its_meta_says_of_a_secret(self, table):
         """Decision 19: a workspace's credentials need nothing made first, so an old ``secret_status`` is not read."""
         assert route_workspace_id(table, WS_B) == RoutedWorkspace(WorkspaceScope(WS_B))
-        assert META_ROUTING_ATTRIBUTES == ('pk', 'sk', 'status')
+        assert STATUS_READ_ATTRIBUTES == ('pk', 'sk', 'status')
 
     def test_the_meta_is_read_with_the_routing_attributes_only(self):
         """The webhook role's GetItem is limited to these attributes (lib/stacks/api-stack.ts): the read asks only for
@@ -105,7 +104,7 @@ class TestRouteWorkspaceId:
         route_workspace_id(table, WS_A)
 
         kwargs = table.get_item.call_args.kwargs
-        assert sorted(kwargs['ExpressionAttributeNames'].values()) == sorted(META_ROUTING_ATTRIBUTES)
+        assert sorted(kwargs['ExpressionAttributeNames'].values()) == sorted(STATUS_READ_ATTRIBUTES)
         assert set(kwargs['ProjectionExpression'].split(', ')) == set(kwargs['ExpressionAttributeNames'])
         assert kwargs['ConsistentRead'] is True
 

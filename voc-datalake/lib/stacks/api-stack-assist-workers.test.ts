@@ -174,8 +174,8 @@ describe('the AI assistant stream runs for 15 minutes', () => {
 
   // The workspace hard delete's fence depends on both writers' timeouts: a conversation write lands within one
   // invocation of the `deleting` mark (lambda/stream/src/assistant/session/workspace-status.ts; the chat routes
-  // resolve the workspace fresh on each write). docs/multi-workspace.md states both numbers and the fence rule
-  // (fence above their sum plus a margin), so a change to either must change the docs, and the fence, with it.
+  // resolve the workspace fresh on each write). docs/multi-workspace.md states both numbers and the fence rule (the
+  // case below), so a change to either must change the docs, and the fence, with it.
   it('pins both conversation writers\' timeouts to the numbers the hard delete fence rule names', () => {
     const chatApi = Object.entries(apiTemplate().findResources('AWS::Lambda::Function'))
       .filter(([logicalId]) => /^ChatApi[0-9A-F]{8}$/.test(logicalId));
@@ -187,6 +187,28 @@ describe('the AI assistant stream runs for 15 minutes', () => {
       chatApi: [CHAT_API_TIMEOUT.toSeconds(), chatApiTimeout],
       docs: [docs.includes('`CHAT_STREAM_TIMEOUT`, 15 minutes'), docs.includes('`CHAT_API_TIMEOUT`, 30 s')],
     }).toStrictEqual({ stream: [900, 900], chatApi: [30, 30], docs: [true, true] });
+  });
+
+  // The fence itself (lambda/shared/workspace_deletes.py FENCE): read from the Python source beside the status
+  // cache's active TTL (lambda/shared/ws_repo.py ACTIVE_STATUS_TTL_SECONDS), so the two languages cannot drift. A
+  // writer stops within the cache's TTL plus the invocation it is running: the fence must be at least that TTL plus
+  // the longer conversation writer's timeout plus a minute (docs/multi-workspace.md, "Export and delete", step 4).
+  // Raising either timeout, or the TTL, fails here until the fence (and the docs) move with it.
+  it('holds the hard delete\'s fence to the status cache plus the longer conversation writer\'s timeout plus a minute', () => {
+    const shared = join(__dirname, '..', '..', 'lambda', 'shared');
+    // A declaration the patterns no longer match reads as NaN, which fails the comparison below.
+    const fenceMinutes = /^FENCE: Final = timedelta\(minutes=(\d+)\)$/m
+      .exec(readFileSync(join(shared, 'workspace_deletes.py'), 'utf8'))?.[1] ?? 'not found';
+    const activeTtl = /^ACTIVE_STATUS_TTL_SECONDS: Final = (\d+(?:\.\d+)?)$/m
+      .exec(readFileSync(join(shared, 'ws_repo.py'), 'utf8'))?.[1] ?? 'not found';
+    const fence = Number(fenceMinutes) * 60;
+    const bound = Number(activeTtl) + Math.max(CHAT_STREAM_TIMEOUT.toSeconds(), CHAT_API_TIMEOUT.toSeconds()) + 60;
+    const docs = readFileSync(join(__dirname, '..', '..', '..', 'docs', 'multi-workspace.md'), 'utf8');
+    expect({
+      fence, bound, holds: fence >= bound,
+      inputs: [Number(activeTtl), CHAT_STREAM_TIMEOUT.toSeconds(), CHAT_API_TIMEOUT.toSeconds()],
+      docs: docs.includes('`FENCE`, 21 minutes'),
+    }).toStrictEqual({ fence: 1260, bound: 1260, holds: true, inputs: [300, 900, 30], docs: true });
   });
 
   // Same runtime as voc-plan-step (plan-runtime.test.ts), which is bundled from the same package.

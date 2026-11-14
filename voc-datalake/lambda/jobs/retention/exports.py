@@ -41,7 +41,17 @@ from typing import Any, Final
 from shared import retention
 from shared.export_jobs import ERASURE_HOLDER_PREFIX, hold_for_erasure, mark_erased, release_after_erasure
 from shared.retention import EXPORT_OBJECT_COUNTER
-from shared.ws_repo import WORKSPACE_FIELD, ExportObjects, WorkspaceScope, exports_prefix, scope_from_message, ws_table
+from shared.tables import get_workspaces_table
+from shared.ws_repo import (
+    WORKSPACE_FIELD,
+    ExportObjects,
+    WorkspaceScope,
+    WorkspaceStatusCache,
+    exports_prefix,
+    scope_from_message,
+    workspace_is_active,
+    ws_table,
+)
 
 #: The run's carried list: the workspaces whose exports it still has to clear.
 ERASED_WORKSPACES: Final = 'erased_workspaces'
@@ -54,10 +64,21 @@ def _holder(run: dict[str, Any]) -> str:
     return f"{ERASURE_HOLDER_PREFIX}{run['run_id']}"
 
 
+def _workspace_active(scope: WorkspaceScope) -> bool:
+    """Whether the workspace's ``META`` reads ``active`` now (a fresh read, no cache); True where the deployment has
+    no voc-workspaces configured (no workspace can be deleted there)."""
+    table = get_workspaces_table()
+    return True if table is None else workspace_is_active(table, scope, WorkspaceStatusCache())
+
+
 def _close(run: dict[str, Any], scope: WorkspaceScope, aggregates: Any) -> None:
-    """Take the workspace's export lock for the erasure, then mark its exports ``erased`` (step 1)."""
+    """Take the workspace's export lock for the erasure, then mark its exports ``erased`` (step 1). A workspace
+    delete holding the lock keeps it (``hold_for_erasure``: its sweeps rely on it to the end), and a workspace that is
+    not active (deleting, or deleted) gets no lock row created: one made after the delete removed the lock would
+    outlive the workspace. The exports are marked all the same (nothing is created for a row that is gone), so a
+    delete cancelled later leaves none to download."""
     jobs = ws_table(scope, aggregates)
-    hold_for_erasure(jobs, _holder(run), datetime.now(UTC))
+    hold_for_erasure(jobs, _holder(run), datetime.now(UTC), workspace_active=_workspace_active(scope))
     mark_erased(jobs, datetime.now(UTC))
 
 

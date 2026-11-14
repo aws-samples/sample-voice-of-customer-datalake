@@ -79,7 +79,9 @@ def _aggregate(table, records: list[DynamoDBRecord]) -> None:
     from aggregator import handler
 
     # A fresh batch counter: the marks these direct record_handler calls leave are never flushed into another test.
+    # Every workspace is active (the aggregator's status check has its own tests).
     with patch.object(handler, 'aggregates_table', table), patch.object(handler, 'IDEMPOTENCY_TABLE', ''), \
+            patch.object(handler, 'workspace_active', lambda _scope: True), \
             patch.object(handler, 'data_changed', BatchBump(handler.bump_data_version)):
         handler._known_earliest_date = None
         for record in records:

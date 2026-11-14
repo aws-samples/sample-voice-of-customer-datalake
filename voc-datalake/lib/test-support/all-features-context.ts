@@ -8,6 +8,10 @@
  * suppression audit, the template gates) synthesize this shape as well. It mirrors the audit synth's
  * GATED_CONTEXT (scripts/audit/py_assembly.py) plus data protection.
  *
+ * The hard delete is not a context feature: no context can build it while it is refused
+ * (lib/utils/workspace-hard-delete.ts). The suites that judge the whole app build it with this shape through the
+ * harness's own option (lib/test-support/synth-app.ts `HARD_DELETE_BUILD`).
+ *
  * Every feature here is FREE when idle. The opt-in fixed costs (`snapStart`, `enableWaf`, `performanceTier`) are
  * deliberately left out: lib/fixed-cost-guard.test.ts requires this shape to have no fixed cost, and synthesizes each
  * of them on its own (OPT_IN_FIXED_COSTS in test-support/fixed-cost-rules.ts). The per-user `cognitoPlus` plan is

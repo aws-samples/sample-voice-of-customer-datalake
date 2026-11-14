@@ -1,7 +1,10 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  // cdk.json's "app" runs bin/voc-datalake.ts; package.json scripts name the ts-node scripts.
-  "entry": ["bin/voc-datalake.ts!", "scripts/*.{ts,mjs}!", "scripts/capacity/*.ts!"],
+  // cdk.json's "app" runs bin/voc-datalake.ts; package.json scripts name the ts-node scripts. The test harness's own
+  // entry of the app (the refused hard delete built, run by lib/test-support/synth-app.ts and the audit synth) is not
+  // a production entry.
+  "entry": ["bin/voc-datalake.ts!", "scripts/*.{ts,mjs}!", "scripts/capacity/*.ts!",
+    "lib/test-support/hard-delete-app.ts"],
   "project": [
     "bin/**/*.ts!",
     "lib/**/*.ts!",

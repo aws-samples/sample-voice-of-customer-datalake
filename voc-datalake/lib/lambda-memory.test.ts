@@ -1,5 +1,6 @@
 /**
- * Pins the MemorySize of EVERY AWS::Lambda::Function the default synth emits,
+ * Pins the MemorySize of EVERY AWS::Lambda::Function the default synth emits (with the hard delete's job, which
+ * the test harness's own build adds: synth-app.ts HARD_DELETE_BUILD),
  * against the one sizing-policy table (lib/sizing/policy.ts, docs/lambda-sizing.md).
  *
  * Why a pin table. Lambda allocates CPU in proportion to memory (1,769 MB = one
@@ -37,7 +38,7 @@ import {
   nextMemoryStep,
   powerTuningPin,
 } from './sizing/policy';
-import { cleanupAssemblyDirs, synthApp, SYNTH_TIMEOUT_MS } from './test-support/synth-app';
+import { cleanupAssemblyDirs, HARD_DELETE_BUILD, synthApp, SYNTH_TIMEOUT_MS } from './test-support/synth-app';
 import { byCodeUnit } from './utils/compare';
 
 /** Functions a non-default context flag adds (so they are classified but never pinned). */
@@ -71,7 +72,9 @@ function nameStem(functionName: unknown): string | undefined {
 /** The Power Tuning records the owner has moved off (history only). */
 const SUPERSEDED_PINS = Object.entries(POWER_TUNED).filter(([, r]) => r.superseded !== undefined);
 
-const synthed = synthApp();
+// The hard delete as the tests build it (refused to a deployment until the per-person export exists): its job is
+// pinned too.
+const synthed = synthApp({}, undefined, HARD_DELETE_BUILD);
 afterAll(cleanupAssemblyDirs);
 
 interface SynthesizedFunction {

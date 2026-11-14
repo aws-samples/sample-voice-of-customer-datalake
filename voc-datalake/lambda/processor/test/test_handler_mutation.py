@@ -147,19 +147,22 @@ class TestModuleWiring:
         assert fresh.comprehend is clients['comprehend']
         assert fresh.translate is clients['translate']
 
-    def test_binds_the_feedback_and_aggregates_tables_from_the_env(self, reload_handler):
-        tables = {'fb-table': MagicMock(name='feedback'), 'agg-table': MagicMock(name='aggregates')}
+    def test_binds_the_feedback_aggregates_and_workspaces_tables_from_the_env(self, reload_handler):
+        tables = {'fb-table': MagicMock(name='feedback'), 'agg-table': MagicMock(name='aggregates'),
+                  'ws-table': MagicMock(name='workspaces')}
         resource = MagicMock()
         resource.Table.side_effect = lambda name: tables[name]
-        with patch.dict(os.environ, {'FEEDBACK_TABLE': 'fb-table', 'AGGREGATES_TABLE': 'agg-table'}), \
+        with patch.dict(os.environ, {'FEEDBACK_TABLE': 'fb-table', 'AGGREGATES_TABLE': 'agg-table',
+                                     'WORKSPACES_TABLE': 'ws-table'}), \
              patch('shared.aws.get_dynamodb_resource', return_value=resource):
             fresh = reload_handler()
 
-        assert resource.Table.call_args_list == [call('fb-table'), call('agg-table')]
+        assert resource.Table.call_args_list == [call('fb-table'), call('agg-table'), call('ws-table')]
         assert fresh.FEEDBACK_TABLE == 'fb-table'
         assert fresh.AGGREGATES_TABLE == 'agg-table'
         assert fresh.feedback_table is tables['fb-table']
         assert fresh.aggregates_table is tables['agg-table']
+        assert fresh.WORKSPACES_TABLE == 'ws-table'  # bound into the status check (shared/ws_repo.py)
 
     @pytest.mark.parametrize(('env', 'expected'), [({'PRIMARY_LANGUAGE': 'fr'}, 'fr'), ({}, 'en')])
     def test_primary_language_comes_from_the_env_and_defaults_to_en(self, reload_handler, env, expected):

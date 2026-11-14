@@ -12,11 +12,11 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { ALL_FEATURES_CONTEXT } from './test-support/all-features-context';
-import { cleanupAssemblyDirs, synthApp, type SynthResult } from './test-support/synth-app';
+import { cleanupAssemblyDirs, HARD_DELETE_BUILD, synthApp, type SynthResult } from './test-support/synth-app';
 
 const SHAPES: Readonly<Record<string, SynthResult>> = {
   default: synthApp(),
-  'all features': synthApp({ ...ALL_FEATURES_CONTEXT }),
+  'all features': synthApp({ ...ALL_FEATURES_CONTEXT }, undefined, HARD_DELETE_BUILD),
 };
 afterAll(cleanupAssemblyDirs);
 

@@ -91,7 +91,9 @@ def new_workspace_id(now_ms: int | None = None) -> str:
     return 'ws_' + ''.join(_CROCKFORD[(value >> shift) & 31] for shift in range(125, -1, -5))
 
 
-def _listing_sort_key(name: str, ws: str) -> str:
+def listing_sort_key(name: str, ws: str) -> str:
+    """The listing row's sort key: the name case-folded, then the id (the hard delete finds the row by it,
+    shared/workspace_deletes.py)."""
     return f'{name.casefold()}#{ws}'
 
 
@@ -108,7 +110,7 @@ def _creation_items(table_name: str, new: NewWorkspace, ws: str, creator: str, a
          'secret_status': CREDENTIALS_READY},
         {'pk': ws_key(ws), 'sk': f'MEMBER#{creator}', 'role': 'admin', 'invited_by': creator, 'joined_at': at},
         {'pk': f'USER#{creator}', 'sk': f'WS#{ws}', **base, 'role': 'admin'},
-        {'pk': LISTING_PK, 'sk': _listing_sort_key(new.name, ws), 'workspace_id': ws, **base, 'status': ACTIVE,
+        {'pk': LISTING_PK, 'sk': listing_sort_key(new.name, ws), 'workspace_id': ws, **base, 'status': ACTIVE,
          'created_at': at, 'secret_status': CREDENTIALS_READY},
         {'pk': audit_key(ws), 'sk': audit_sort_key(at), 'kind': WORKSPACE_CREATED, 'actor': creator, 'at': at,
          'slug': new.slug},

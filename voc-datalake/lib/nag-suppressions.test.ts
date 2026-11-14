@@ -138,16 +138,19 @@ function committedContext(): Record<string, unknown> {
 const outdirs: string[] = [];
 afterAll(() => { for (const dir of outdirs) rmSync(dir, { recursive: true, force: true }); });
 
-/** Run bin/voc-datalake.ts in process with `context`. */
-async function synthShape(context: Record<string, unknown>): Promise<Judged> {
+/** Run bin/voc-datalake.ts in process with `context`; `buildHardDelete`: with the refused hard delete built, as the
+ *  harness builds it (lib/utils/workspace-hard-delete.ts), so its findings are judged too. */
+async function synthShape(context: Record<string, unknown>, buildHardDelete = false): Promise<Judged> {
   resetRecorder();
   const outdir = mkdtempSync(join(tmpdir(), 'voc-nag-'));
   outdirs.push(outdir);
   vi.stubEnv('CDK_OUTDIR', outdir);
   vi.stubEnv('CDK_DEFAULT_ACCOUNT', SYNTH_ACCOUNT);
   vi.stubEnv('CDK_DEFAULT_REGION', SYNTH_REGION);
-  vi.stubEnv('CDK_CONTEXT_JSON', JSON.stringify({ ...committedContext(), ...context }));
+  vi.stubEnv('CDK_CONTEXT_JSON', JSON.stringify({ ...committedContext(), ...context,
+    ...(buildHardDelete ? { workspaceHardDelete: true } : {}) }));
   vi.resetModules();
+  if (buildHardDelete) (await import('./utils/workspace-hard-delete')).HARD_DELETE_TEST_SWITCH.built = true;
   await import('../bin/voc-datalake');
   vi.unstubAllEnvs();
   return judged();
@@ -214,7 +217,7 @@ describe('cdk-nag acknowledgements', () => {
   describe('over the default and the all-features synth', () => {
     let shapes: Judged[] = [];
     beforeAll(async () => {
-      shapes = [await synthShape({}), await synthShape(ALL_FEATURES_CONTEXT)];
+      shapes = [await synthShape({}), await synthShape(ALL_FEATURES_CONTEXT, true)];
     }, SYNTH_TIMEOUT_MS * 2);
 
     it('acknowledges every finding, each with a reason', () => {
@@ -246,7 +249,9 @@ describe('cdk-nag acknowledgements', () => {
       // 83: every object of one workspace, ws/{one id}/*, which the export job reads into its zip (7.20.00).
       // 84: main's 7.00.00, the document generator's read of the uploaded company logos,
       // company-context/design/logo_????????????.* (CompanyLogoReadPolicy).
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 84, used: 84 });
+      // 85: a workspace's hard delete deletes its credentials parameters, voc/ws/{one id}/credentials/*
+      // (lib/stacks/workspace-delete-worker.ts; its ws/{one id}/* versions share 83's finding).
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 85, used: 85 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

@@ -18,6 +18,7 @@ import { z } from 'zod';
 import { isRecord } from './guards';
 import type { NameInventory } from './name-inventory';
 import { byCodeUnit } from '../utils/compare';
+import { HARD_DELETE_TEST_SWITCH, WORKSPACE_HARD_DELETE_CONTEXT } from '../utils/workspace-hard-delete';
 
 const PROJECT_ROOT = join(__dirname, '..', '..');
 
@@ -308,15 +309,43 @@ export function cleanupAssemblyDirs(): void {
   }
 }
 
+/** How {@link synthApp} builds the app beyond its context (the test harness's own options; bin/ takes none). */
+export interface SynthOptions {
+  readonly buildWorkspaceHardDelete?: boolean;
+}
+
+/** The suites that pin the refused hard delete's job and grants (lib/utils/workspace-hard-delete.ts). */
+export const HARD_DELETE_BUILD: SynthOptions = { buildWorkspaceHardDelete: true };
+
+/** `build()` (an in-process synth) with the refused hard delete built, and not built again after
+ *  (lib/utils/workspace-hard-delete.ts `HARD_DELETE_TEST_SWITCH`). */
+export function withHardDeleteBuilt<T>(build: () => T): T {
+  const before = HARD_DELETE_TEST_SWITCH.built;
+  HARD_DELETE_TEST_SWITCH.built = true;
+  try {
+    return build();
+  } finally {
+    HARD_DELETE_TEST_SWITCH.built = before;
+  }
+}
+
 /**
  * Synthesize the app with the given extra context. Throws {@link SynthFailure}.
  *
  * @param region the app's region. Defaults to {@link SYNTH_REGION}, which the
  *               baseline is fingerprinted in; pass another only to observe what
  *               does and does not follow the app out of us-east-1.
+ * @param options `buildWorkspaceHardDelete`: synthesize through lib/test-support/hard-delete-app.ts (the same app,
+ *               with the refused hard delete built and `workspaceHardDelete` set), for the suites that pin its job and
+ *               grants. No context value can do that (lib/utils/workspace-hard-delete.ts).
  */
-export function synthApp(context: Record<string, unknown> = {}, region: string = SYNTH_REGION): SynthResult {
+export function synthApp(context: Record<string, unknown> = {}, region: string = SYNTH_REGION,
+  options: SynthOptions = {}): SynthResult {
   const outdir = createAssemblyDir('voc-synth-');
+  const entry = options.buildWorkspaceHardDelete
+    ? join(PROJECT_ROOT, 'lib', 'test-support', 'hard-delete-app.ts')
+    : join(PROJECT_ROOT, 'bin', 'voc-datalake.ts');
+  const synthContext = options.buildWorkspaceHardDelete ? { ...context, [WORKSPACE_HARD_DELETE_CONTEXT]: true } : context;
   try {
     // `ts-node/register` is a documented entry point; `ts-node/dist/bin` is
     // ts-node's internal file layout, and a minor release that reorganizes
@@ -325,7 +354,7 @@ export function synthApp(context: Record<string, unknown> = {}, region: string =
     // form of the `--prefer-ts-exts` flag the bin shim used to take.
     execFileSync(
       process.execPath,
-      ['-r', require.resolve('ts-node/register'), join(PROJECT_ROOT, 'bin', 'voc-datalake.ts')],
+      ['-r', require.resolve('ts-node/register'), entry],
       {
         cwd: PROJECT_ROOT,
         encoding: 'utf8',
@@ -336,7 +365,7 @@ export function synthApp(context: Record<string, unknown> = {}, region: string =
           CDK_OUTDIR: outdir,
           CDK_DEFAULT_ACCOUNT: SYNTH_ACCOUNT,
           CDK_DEFAULT_REGION: region,
-          CDK_CONTEXT_JSON: JSON.stringify({ ...baseContext(), ...context }),
+          CDK_CONTEXT_JSON: JSON.stringify({ ...baseContext(), ...synthContext }),
         },
       },
     );

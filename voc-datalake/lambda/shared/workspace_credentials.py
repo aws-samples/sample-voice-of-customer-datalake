@@ -29,7 +29,8 @@ from shared.logging import logger, metrics
 from shared.plugin_identity import is_valid_plugin_identifier
 from shared.workspace_ids import credentials_parameter_name, credentials_path
 
-__all__ = ['MalformedCredentials', 'checked_credentials', 'read_credentials', 'read_workspace', 'save_credentials']
+__all__ = ['MalformedCredentials', 'checked_credentials', 'delete_parameters', 'list_parameter_names',
+           'read_credentials', 'read_workspace', 'save_credentials']
 
 #: The standard tier's limit on one parameter's value, in bytes.
 _MAX_BYTES: Final = 4096
@@ -107,6 +108,43 @@ def save_credentials(client: Any, prefix: str, ws: str, plugin: str, *, stored: 
     name = credentials_parameter_name(prefix, ws, plugin)
     value = checked_credentials(plugin, values)
     client.put_parameter(Name=name, Value=value, Type='SecureString', KeyId=key_id, Overwrite=True, Tier='Standard')
+
+
+#: SSM's ceilings: GetParametersByPath answers at most 10 a page, DeleteParameters takes at most 10 names a call.
+PARAMETERS_PAGE: Final = 10
+
+
+def list_parameter_names(client: Any, prefix: str, ws: str) -> list[str]:
+    """The names of the first page (at most ``PARAMETERS_PAGE``) of the workspace's credentials parameters, never
+    their values: one GetParametersByPath of ``{prefix}/{ws}/credentials`` with ``WithDecryption=False`` (the hard
+    delete, lambda/jobs/workspace_delete/, holds no decrypt). Every name answered is checked to be directly under that
+    path (``ValueError`` otherwise, before any delete). No cursor: what was listed is deleted, so the next call lists
+    what is left."""
+    path = credentials_path(prefix, ws)
+    response = client.get_parameters_by_path(Path=path, Recursive=False, WithDecryption=False,
+                                             MaxResults=PARAMETERS_PAGE)
+    names = [str(parameter.get('Name') or '') for parameter in response.get('Parameters') or []]
+    _refuse_outside(path, names)
+    return names
+
+
+def _refuse_outside(path: str, names: list[str]) -> None:
+    """ValueError unless every name is one parameter directly under ``path`` (``{path}/{plugin}``)."""
+    if any(not name.startswith(f'{path}/') or not name[len(path) + 1:] or '/' in name[len(path) + 1:]
+           for name in names):
+        raise ValueError("a parameter outside the workspace's credentials")
+
+
+def delete_parameters(client: Any, prefix: str, ws: str, names: list[str]) -> int:
+    """Delete 1 to ``PARAMETERS_PAGE`` of the workspace's credentials parameters (each a name ``list_parameter_names``
+    answered: directly under the workspace's credentials path, ``ValueError`` otherwise, before the call); how many
+    SSM deleted. A name already gone (``InvalidParameters``) is done."""
+    path = credentials_path(prefix, ws)
+    if not 1 <= len(names) <= PARAMETERS_PAGE:
+        raise ValueError(f'a parameter delete takes 1 to {PARAMETERS_PAGE} names, not {len(names)}')
+    _refuse_outside(path, names)
+    response = client.delete_parameters(Names=list(names))
+    return len(response.get('DeletedParameters') or [])
 
 
 def checked_credentials(plugin: str, values: Mapping[str, Any]) -> str:

@@ -56,6 +56,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from typing import Any, Final
 
+from shared import usage_meter
 from shared.api import get_caller_subject
 from shared.audit_rows import put_new_audit_row
 from shared.dynamo_paging import iter_query
@@ -68,7 +69,7 @@ from shared.timestamps import now_iso
 
 # The id's form and the keys built from it live in shared/workspace_ids.py (no request-path imports), kept importable
 # from here: the request path's modules take them with the middleware.
-from shared.workspace_ids import is_workspace_id, ws_key
+from shared.workspace_ids import ACTIVE, is_workspace_id, ws_key
 
 #: The request header that names the workspace (HTTP header names are case-insensitive).
 WORKSPACE_HEADER: Final = 'x-workspace-id'
@@ -76,7 +77,6 @@ ROLES: Final = frozenset({'viewer', 'editor', 'admin'})
 #: The roles that write a workspace's data (docs/multi-workspace.md, "Roles": an editor, or an admin).
 EDITING_ROLES: Final = frozenset({'editor', 'admin'})
 PLATFORM_ADMIN_ENTRY: Final = 'platform_admin_entry'
-ACTIVE: Final = 'active'
 MEMBERSHIP_TTL_SECONDS: Final = 30.0
 #: A warm container keeps at most this many memberships; a full cache starts again empty.
 MAX_CACHED_MEMBERSHIPS: Final = 1024
@@ -244,6 +244,8 @@ def resolve_workspace(table: Any, event: dict, cache: MembershipCache, *,
 
     ``confirm_platform_admin`` runs only on a cache fill where the token's group would elevate the caller.
     """
+    # Counted to no one until the workspace resolves (shared/usage_meter.py): a failed resolve leaves UNATTRIBUTED.
+    usage_meter.attribute(usage_meter.UNATTRIBUTED)
     ws = _workspace_id(event)
     sub = member_subject(event)
     delegated = is_synthetic_subject(get_caller_subject(event))
@@ -255,6 +257,8 @@ def resolve_workspace(table: Any, event: dict, cache: MembershipCache, *,
     if context is None:
         context = _load(table, event, ws, platform_admin, confirm_platform_admin)
         cache.put(ws, sub, context, platform_admin)
+    # The request's Bedrock calls are counted to the workspace it resolved to (shared/usage_meter.py).
+    usage_meter.attribute(context.ws)
     if context.role == 'admin' and delegated:
         # A credential or an agent acts for its person at most as an editor, never as an admin (as for projects,
         # shared/project_access.py): it may write what its person may, but administers nothing. Capped after the

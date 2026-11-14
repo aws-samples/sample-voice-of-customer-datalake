@@ -151,6 +151,7 @@ class TestAnErasureInOneWorkspace:
         """A job of one workspace marks its exports erased (and holds the export lock) before the item scan: no
         link meanwhile; the exports phase then sweeps them and frees the lock."""
         put_workspace_feedback(aws, WS, '12345', 'tickets', author=JANE)
+        aws['workspaces'].put_item(Item={'pk': f'WS#{WS}', 'sk': 'META', 'status': 'active'})
         export = {'pk': f'WS#{WS}#JOB#export', 'sk': 'ex_01JC3Q8ZK6V7W9X2Y4A5B6C7D1'}
         aws['aggregates'].put_item(Item={**export, 'export_id': export['sk'], 'status': 'completed',
                                          'workspace_id': WS})

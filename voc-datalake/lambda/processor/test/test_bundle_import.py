@@ -47,6 +47,7 @@ def _run_probe(root: Path) -> subprocess.CompletedProcess:
         'AWS_SECRET_ACCESS_KEY': 'testing',
         'FEEDBACK_TABLE': 'feedback',
         'AGGREGATES_TABLE': 'aggregates',
+        'WORKSPACES_TABLE': 'workspaces',
         'POWERTOOLS_TRACE_DISABLED': 'true',
         'POWERTOOLS_METRICS_NAMESPACE': 'test',
     }

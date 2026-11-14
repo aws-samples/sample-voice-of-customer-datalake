@@ -43,6 +43,10 @@ SYNTH_REGION = 'us-east-1'
 # as long as us-east-1, so the prefixed names stay within the 64-character limits the default region meets.
 GATED_REGION = 'eu-west-1'
 GATED_PREFIX = 'b'  # a one-letter prefix: plugin rule names hit the 64-char limit otherwise
+# The app's entry, and the test harness's own entry of the same app with the refused hard delete built (the gated synth:
+# lib/test-support/hard-delete-app.ts; no context can build it, lib/utils/workspace-hard-delete.ts).
+APP_ENTRY = 'bin/voc-datalake.ts'
+HARD_DELETE_ENTRY = 'lib/test-support/hard-delete-app.ts'
 # Context that switches on every optional Lambda (each key is a `tryGetContext` in bin/ or lib/).
 GATED_CONTEXT: dict[str, object] = {
     'deploymentPrefix': GATED_PREFIX,
@@ -52,6 +56,8 @@ GATED_CONTEXT: dict[str, object] = {
     'emailFrom': 'noreply@voc.example.com',  # participant email + the board pool and its triggers
     'inferenceScope': 'eu',          # BEDROCK_INFERENCE_SCOPE / AVATARS_ENABLED on every Lambda
     'enableWebSearch': False,        # the one default-ON feature: its env must look optional too
+    'workspaceHardDelete': True,     # voc-workspace-delete and the delete routes' DELETE_FUNCTION, built only
+                                     # through HARD_DELETE_ENTRY (refused to the app: workspace-hard-delete.ts)
     'anthropicUseCase': {
         'companyName': 'Example Air', 'companyWebsite': 'https://example.com', 'intendedUsers': '0',
         'industryOption': 'Technology', 'useCases': 'Audit synth.', 'otherIndustryOption': '',
@@ -168,14 +174,15 @@ def _base_context(cdk_dir: Path) -> dict[str, object]:
     return {**cdk_json, **committed, 'aws:cdk:bundling-stacks': [], 'skipFrontendBuildCheck': True}
 
 
-def _synth(cdk_dir: Path, extra: dict[str, object], region: str = SYNTH_REGION) -> tuple[dict[str, dict], list[dict]]:
+def _synth(cdk_dir: Path, extra: dict[str, object], region: str = SYNTH_REGION, *,
+           entry: str = APP_ENTRY) -> tuple[dict[str, dict], list[dict]]:
     with tempfile.TemporaryDirectory(prefix='voc-audit-synth-') as outdir:
         capture_out = Path(outdir) / 'bundling.json'
         env = {**os.environ, 'TS_NODE_PREFER_TS_EXTS': 'true', 'CDK_OUTDIR': outdir,
                'CDK_DEFAULT_ACCOUNT': SYNTH_ACCOUNT, 'CDK_DEFAULT_REGION': region,
                'CDK_CONTEXT_JSON': json.dumps({**_base_context(cdk_dir), **extra}),
                'VOC_AUDIT_BUNDLING_OUT': str(capture_out)}
-        command = ['node', '-r', str(CAPTURE), '-r', 'ts-node/register', 'bin/voc-datalake.ts']
+        command = ['node', '-r', str(CAPTURE), '-r', 'ts-node/register', entry]
         done = subprocess.run(command, cwd=cdk_dir, env=env, capture_output=True, text=True, check=False)  # noqa: S603 — fixed argv: docker and the pinned build command
         if done.returncode != 0:
             raise AuditError(f'cdk synth failed ({done.returncode}):\n{done.stdout[-2000:]}\n{done.stderr[-2000:]}')
@@ -272,7 +279,7 @@ def load_assembly(cdk_dir: Path = CDK_DIR, *, refresh: bool = False, cache_dir: 
             return _decode(cached)
     templates, records = _synth(cdk_dir, {})
     functions = _functions(templates, records, cdk_dir)
-    gated_templates, gated_records = _synth(cdk_dir, GATED_CONTEXT, GATED_REGION)
+    gated_templates, gated_records = _synth(cdk_dir, GATED_CONTEXT, GATED_REGION, entry=HARD_DELETE_ENTRY)
     gated = _functions(gated_templates, gated_records, cdk_dir, GATED_PREFIX)
     layers = {**_layers(gated_templates, gated_records, cdk_dir, GATED_PREFIX), **_layers(templates, records, cdk_dir)}
     for fn in functions.values():

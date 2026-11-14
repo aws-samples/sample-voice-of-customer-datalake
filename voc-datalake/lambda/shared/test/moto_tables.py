@@ -41,6 +41,12 @@ def _create_pk_sk_table_with_index(table_name: str, resource, index: str, hash_k
     )
 
 
+def create_table_with_gsi1(resource, table_name: str, index: str):
+    """A pk/sk table with one full-projection index on gsi1pk/gsi1sk (voc-feedback's by date, voc-memory's by
+    status, shared/indexes.py)."""
+    return _create_pk_sk_table_with_index(table_name, resource, index, 'gsi1pk', 'gsi1sk')
+
+
 def create_projects_table_with_type_index(table_name: str, resource=None):
     """voc-projects as in core-stack.ts: ``pk`` + ``sk`` plus the ``gsi1-by-type`` index (``gsi1pk`` HASH,
     ``gsi1sk`` RANGE, all attributes projected)."""

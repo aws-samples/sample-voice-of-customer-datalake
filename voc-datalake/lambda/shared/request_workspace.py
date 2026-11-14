@@ -39,6 +39,7 @@ from typing import Final
 
 from botocore.exceptions import BotoCoreError, ClientError
 
+from shared import usage_meter
 from shared.api import require_admin
 from shared.aws import get_dynamodb_resource
 from shared.exceptions import AuthorizationError, ConfigurationError, ServiceError
@@ -74,6 +75,7 @@ def request_workspace(event: dict, public_error: str, *, fresh: bool = False,
     enters only with their own membership (a non-member gets the one 404), for a route whose result must act as a
     member later (an MCP token's calls carry no group). See the module docstring."""
     if not _names_a_workspace(event):
+        usage_meter.attribute(None)  # the deployment as before: its Bedrock calls are the deployment's (shared/usage_meter.py)
         return None
     table_name = os.environ.get('WORKSPACES_TABLE', '')
     if not table_name:

@@ -35,13 +35,13 @@ import {
   countedFixedCostFindings, FIXED_COST_REMEDY, fixedCostFindings, OPT_IN_FIXED_COSTS, runtimeFixedCostFindings,
   type FixedCostFinding,
 } from './test-support/fixed-cost-rules';
-import { cleanupAssemblyDirs, synthApp, type SynthResult } from './test-support/synth-app';
+import { cleanupAssemblyDirs, HARD_DELETE_BUILD, synthApp, type SynthResult } from './test-support/synth-app';
 import { byCodeUnit } from './utils/compare';
 
 // Module-level synths like lib/app-template-gates.test.ts (~8-10 s each, out of process).
 const SHAPES: readonly (readonly [string, SynthResult])[] = [
   ['default', synthApp()],
-  ['allFeatures', synthApp({ ...ALL_FEATURES_CONTEXT })],
+  ['allFeatures', synthApp({ ...ALL_FEATURES_CONTEXT }, undefined, HARD_DELETE_BUILD)],
 ];
 const OPT_IN_SHAPES: readonly (readonly [string, SynthResult, readonly RegExp[]])[] = Object.entries(OPT_IN_FIXED_COSTS)
   .map(([flag, { context, expected }]) => [flag, synthApp({ ...context }), expected] as const);

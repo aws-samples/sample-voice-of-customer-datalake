@@ -232,6 +232,12 @@ class TestTheSweepReadsOnlyWhatTheDecisionNeeds:
 # ============================================
 
 class TestTheHandlerWiring:
+    @pytest.fixture(autouse=True)
+    def _no_workspaces_table(self, monkeypatch):
+        """The deployment's memories only, unless a test names the table: lambda/conftest.py sets WORKSPACES_TABLE
+        for the writers' status checks (4d-1), and a listing of a table that does not exist would count a failure."""
+        monkeypatch.delenv('WORKSPACES_TABLE', raising=False)
+
     def test_a_missing_table_is_a_configuration_error(self, worker_context, monkeypatch):
         monkeypatch.setattr(store, 'get_memory_table', lambda: None)
         with pytest.raises(RuntimeError) as info:

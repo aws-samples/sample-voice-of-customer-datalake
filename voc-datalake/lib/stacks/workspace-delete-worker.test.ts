@@ -1,0 +1,378 @@
+/**
+ * voc-workspace-delete (lib/stacks/workspace-delete-worker.ts, VocProcessingStack; docs/multi-workspace.md "Export
+ * and delete"): its function settings and every statement of its role, pinned.
+ */
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
+
+import * as cdk from 'aws-cdk-lib';
+import type { Template } from 'aws-cdk-lib/assertions';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { z } from 'zod';
+
+import { IamPolicySchema, isAttachedToRole, roleStatements, statementActions } from '../test-support/iam-statements';
+import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
+import { cleanupAssemblyDirs, synthApp, SYNTH_TIMEOUT_MS, withHardDeleteBuilt } from '../test-support/synth-app';
+import { expectSelfInvokeOnly, findWorkerFunction, workerSettings } from '../test-support/worker-function';
+import { byCodeUnit } from '../utils/compare';
+import {
+  REQUIRED_DELETE_SWEEPS, WORKSPACE_DELETE_GRANTS, deleteGrants, requireDeleteSweeps,
+} from '../utils/workspace-delete-grants';
+import {
+  HARD_DELETE_REFUSED, WORKSPACE_HARD_DELETE_CONTEXT, workspaceHardDeleteEnabled,
+} from '../utils/workspace-hard-delete';
+import { PROCESSOR_DROP_COUNT_ATTRIBUTES } from './processing-roles';
+import {
+  CONTROL_ROW_DELETES, CONVERSATION_PARTITIONS, DELETE_AUDIT_PARTITION, DELETE_JOB_PARTITION, MEMORY_PARTITIONS, PROJECT_CLAIM_PARTITIONS,
+  PROJECTS_TABLE_PARTITIONS, TOMBSTONE_PARTITIONS,
+  WORKSPACE_DELETE_MAX_EVENT_AGE_MINUTES, WORKSPACE_DELETE_RESERVED_CONCURRENCY,
+} from './workspace-delete-worker';
+
+let template: Template;
+afterAll(cleanupAssemblyDirs);
+beforeAll(() => {
+  // The test harness's own build of the refused job (withHardDeleteBuilt, a code path the app never takes): its
+  // grants are pinned here.
+  template = withHardDeleteBuilt(() => synthProcessingTemplate({ withIndexes: true,
+    context: { [WORKSPACE_HARD_DELETE_CONTEXT]: true } }));
+});
+
+const LIB = join(__dirname, '..');
+const ROOT = join(LIB, '..');
+/** Every non-test TypeScript file of the app: bin/ and lib/ (lib/test-support is the harness, not the app). */
+function appSources(): { path: string; source: string }[] {
+  const files: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else if (/\.ts$/.test(entry.name) && !/\.(test|d)\.ts$/.test(entry.name)) files.push(path);
+    }
+  };
+  walk(join(ROOT, 'bin'));
+  walk(LIB);
+  return files.map((path) => ({ path: relative(ROOT, path), source: readFileSync(path, 'utf8') }));
+}
+
+/** Every context key the app reads: `tryGetContext('key')`, or of a module constant naming the key. */
+function contextKeysRead(): string[] {
+  const keys = new Set<string>();
+  for (const { source } of appSources()) {
+    for (const [, literal, name] of source.matchAll(/tryGetContext\(\s*(?:['"]([^'"]+)['"]|([A-Z][A-Z0-9_]*))/g)) {
+      if (literal !== undefined) keys.add(literal);
+      const constant = name === undefined ? undefined
+        : new RegExp(`const ${name}\\s*(?::[^=]+)?=\\s*['"]([^'"]+)['"]`).exec(source)?.[1];
+      if (constant !== undefined) keys.add(constant);
+    }
+  }
+  return [...keys].sort(byCodeUnit);
+}
+
+describe('nothing the app reads can build the hard delete while it is refused', () => {
+  const cdkJson = z.object({ context: z.record(z.string(), z.unknown()) }).parse(
+    JSON.parse(readFileSync(join(ROOT, 'cdk.json'), 'utf8'))).context;
+  const enabledWith = (context: Record<string, unknown>) => {
+    const stack = new cdk.Stack(new cdk.App({ context }), 'Probe');
+    return () => workspaceHardDeleteEnabled(stack);
+  };
+
+  const keys = contextKeysRead();
+  const everyKeyOn = Object.fromEntries([...keys, ...Object.keys(cdkJson)].map((key) => [key, true]));
+  const allButTheFlag = Object.fromEntries(Object.entries(everyKeyOn)
+    .filter(([key]) => key !== WORKSPACE_HARD_DELETE_CONTEXT));
+
+  it('finds the context keys the app reads, the flag among them, and cdk.json does not set it', () => {
+    expect(keys).toContain(WORKSPACE_HARD_DELETE_CONTEXT);
+    expect(keys.length).toBeGreaterThan(10);
+    expect(cdkJson).not.toHaveProperty(WORKSPACE_HARD_DELETE_CONTEXT);
+  });
+
+  it('every context key the app reads and every cdk.json value, all set to true, only refuse the synth', () => {
+    expect(enabledWith(everyKeyOn)).toThrow(HARD_DELETE_REFUSED);
+    expect(enabledWith({ ...cdkJson, ...everyKeyOn })).toThrow(HARD_DELETE_REFUSED);
+  });
+
+  it('without the flag, every other key and cdk.json value set to true builds nothing', () => {
+    expect(enabledWith(allButTheFlag)()).toBe(false);
+    expect(enabledWith({ ...cdkJson, ...allButTheFlag })()).toBe(false);
+  });
+
+  it('the job and the delete routes are built only behind that one check', () => {
+    const sources = appSources();
+    const builders = sources.filter(({ source }) => /createWorkspaceDeleteWorker\(this/.test(source));
+    expect(builders.map(({ path }) => path)).toStrictEqual(['lib/stacks/processing-stack-consolidated.ts']);
+    expect(builders[0]?.source).toMatch(/if \(workspaceHardDeleteEnabled\(this\)\) \{[\s\S]{0,800}?createWorkspaceDeleteWorker\(this/);
+    expect(sources.find(({ path }) => path === 'lib/stacks/api-workspace-delete.ts')?.source)
+      .toMatch(/const enabled = workspaceHardDeleteEnabled\(ctx\.stack\)/);
+  });
+
+  it('the harness\'s switch is called only by lib/test-support and tests, never by bin/ or the stacks', () => {
+    const callers = appSources().filter(({ path, source }) => /HARD_DELETE_TEST_SWITCH|withHardDeleteBuilt/.test(source)
+      && path !== 'lib/utils/workspace-hard-delete.ts' && !path.startsWith('lib/test-support/'));
+    expect(callers.map(({ path }) => path)).toStrictEqual([]);
+  });
+});
+
+/** The feedback processor's writes on voc-workspaces, and its WORKSPACE_HARD_DELETE. */
+function processorDropCount(on: Template): { env: unknown; statements: unknown[] } {
+  const processor = findWorkerFunction(on, 'voc-feedback-processor-');
+  const statements = Object.values(on.findResources('AWS::IAM::Policy'))
+    .map((resource) => IamPolicySchema.parse(resource).Properties)
+    .filter((properties) => isAttachedToRole(properties, processor.Role['Fn::GetAtt'][0]))
+    .flatMap((properties) => properties.PolicyDocument.Statement)
+    .filter((statement) => (statement.Effect ?? 'Allow') === 'Allow' && JSON.stringify(statement.Resource).includes('Workspaces')
+      && [...statementActions(statement)].some((action) => /PutItem|UpdateItem|DeleteItem|BatchWriteItem/.test(action)))
+    .map((statement) => ({ actions: [...statementActions(statement)].sort(byCodeUnit), condition: statement.Condition }));
+  return { env: processor.Environment.Variables.WORKSPACE_HARD_DELETE, statements };
+}
+
+describe('without -c workspaceHardDelete=true (the default)', () => {
+  it('builds no delete job, no role and no grant at all', () => {
+    const off = JSON.stringify(synthProcessingTemplate({ withIndexes: true }).toJSON());
+    expect([off.includes('voc-workspace-delete'), off.includes('WorkspaceDeleteWorker')]).toStrictEqual([false, false]);
+  });
+
+  it('gives the feedback processor no drop count: no flag in its environment, no write on voc-workspaces', () => {
+    expect(processorDropCount(synthProcessingTemplate({ withIndexes: true }))).toStrictEqual({
+      env: undefined, statements: [] });
+  });
+});
+
+describe('-c workspaceHardDelete=true is refused until the per-person export exists', () => {
+  it('fails the synth of the whole app, saying why', () => {
+    expect(() => synthApp({ workspaceHardDelete: true }))
+      .toThrow(/stays off until members can export their own conversations and personal memories/);
+  }, SYNTH_TIMEOUT_MS);
+
+  it('fails the stack\'s own synth too', () => {
+    expect(() => synthProcessingTemplate({ withIndexes: true, context: { workspaceHardDelete: true } }))
+      .toThrow(HARD_DELETE_REFUSED);
+  });
+});
+
+describe('the feedback processor with the hard delete built', () => {
+  it('adds its drops to the workspace\'s counter alone: UpdateItem of `dropped` on WS#{one id}, nothing returned, no job row', () => {
+    expect(PROCESSOR_DROP_COUNT_ATTRIBUTES).toStrictEqual(['dropped', 'pk', 'sk']);
+    expect(processorDropCount(template)).toStrictEqual({ env: 'true', statements: [{
+      actions: ['dynamodb:UpdateItem'],
+      condition: { ...keys([`WS#${ONE}`]),
+        'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['dropped', 'pk', 'sk'] },
+        StringEqualsIfExists: { 'dynamodb:ReturnValues': 'NONE' } } }] });
+    expect(JSON.stringify(processorDropCount(template).statements)).not.toContain(DELETE_JOB_PARTITION);
+  });
+});
+
+/** One workspace id in an IAM pattern: `ws_` and 26 `?` (lib/stacks/core-buckets.ts WORKSPACE_ID_PATTERN). */
+const ONE = `ws_${'?'.repeat(26)}`;
+const keys = (partitions: string[]) => ({ 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': partitions } });
+
+const worker = () => findWorkerFunction(template, 'voc-workspace-delete-');
+const statements = () => roleStatements(template, worker().Role['Fn::GetAtt'][0]);
+/** The role's policies, its inline one and the managed ones CDK moves what does not fit into. */
+const rolePolicies = () => [...Object.values(template.findResources('AWS::IAM::Policy')),
+  ...Object.values(template.findResources('AWS::IAM::ManagedPolicy'))];
+/** The role's Allow statements with their conditions (the audit-row guard's Denies kept apart). */
+const policy = (effect: 'Allow' | 'Deny') => rolePolicies()
+  .map((resource) => IamPolicySchema.parse(resource).Properties)
+  .filter((properties) => isAttachedToRole(properties, worker().Role['Fn::GetAtt'][0]))
+  .flatMap((properties) => properties.PolicyDocument.Statement)
+  .filter((statement) => (statement.Effect ?? 'Allow') === effect)
+  .map((statement) => ({ actions: [...statementActions(statement)].sort(byCodeUnit),
+    resource: JSON.stringify(statement.Resource), condition: statement.Condition }));
+const allowed = () => policy('Allow');
+/** The DynamoDB statements on one table (by its fixture id), each `{actions, index, condition}`, sorted. */
+const on = (table: string) => allowed()
+  .filter((s) => s.actions.some((action) => action.startsWith('dynamodb:')) && s.resource.includes(table))
+  .map((s) => ({ actions: s.actions, index: /\/index\/([a-z0-9-]+)/.exec(s.resource)?.[1] ?? null,
+    condition: s.condition }))
+  .sort((a, b) => byCodeUnit(JSON.stringify(a), JSON.stringify(b)));
+const sorted = <T>(rows: T[]) => [...rows].sort((a, b) => byCodeUnit(JSON.stringify(a), JSON.stringify(b)));
+
+describe('the voc-workspace-delete job', () => {
+  it('runs 15 minutes, at most two at once, no async retry, no event older than 40 minutes', () => {
+    expect(worker().Handler).toBe('jobs/workspace_delete/handler.lambda_handler');
+    expect([WORKSPACE_DELETE_RESERVED_CONCURRENCY, WORKSPACE_DELETE_MAX_EVENT_AGE_MINUTES]).toStrictEqual([2, 40]);
+    expect(workerSettings(template, 'WorkspaceDeleteWorkerDelete')).toStrictEqual({
+      sizing: [1024, 900, 2], invokeConfigs: [[0, 2400]] });
+  });
+
+  it('is told its tables, bucket, credentials path and plugins, and no secret or key', () => {
+    const variables = worker().Environment.Variables;
+    expect(Object.keys(variables)).toStrictEqual(expect.arrayContaining([
+      'FEEDBACK_TABLE', 'AGGREGATES_TABLE', 'WORKSPACES_TABLE', 'MEMORY_TABLE', 'WATERMARKS_TABLE', 'RAW_DATA_BUCKET',
+      'WORKSPACE_PARAMETER_PREFIX', 'PLUGIN_IDS', 'PROJECTS_TABLE', 'JOBS_TABLE', 'PARTICIPANTS_TABLE']));
+    expect([variables.WORKSPACE_PARAMETER_PREFIX, variables.WORKSPACE_HARD_DELETE]).toStrictEqual(['/voc/ws', 'true']);
+    expect(JSON.parse(String(variables.PLUGIN_IDS))).toStrictEqual(expect.arrayContaining(['webscraper']));
+    for (const name of ['SECRETS_ARN', 'KMS_KEY_ARN', 'WORKSPACE_PARAMETER_KEY_ARN']) expect(variables).not.toHaveProperty(name);
+  });
+
+  it('every sweep names its grants, and the job holds exactly their union', () => {
+    expect(Object.keys(WORKSPACE_DELETE_GRANTS)).toStrictEqual([
+      'credentials', 'feedback', 'counters', 'source_runs', 'failures', 'circuits', 'logs', 'scraper_runs',
+      'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'reprocess_jobs', 'watermarks', 'memory', 'exports',
+      'objects', 'radar', 'settings', 'user_contexts', 'projects', 'conversations', 'control_rows']);
+    expect([...deleteGrants()].sort(byCodeUnit)).toStrictEqual(['aggregates', 'controlRows', 'conversations',
+      'credentials', 'exportJobs', 'feedback', 'memory', 'metricTypeIndex', 'objects', 'projects', 'radar',
+      'tombstones', 'watermarks']);
+  });
+
+  it('refuses to be built while the registry lacks a sweep the docs require (the conversations, say)', () => {
+    expect(REQUIRED_DELETE_SWEEPS.filter((name) => !(name in WORKSPACE_DELETE_GRANTS))).toStrictEqual([]);
+    expect(() => requireDeleteSweeps(WORKSPACE_DELETE_GRANTS)).not.toThrow();
+    const without = Object.fromEntries(Object.entries(WORKSPACE_DELETE_GRANTS).filter(([name]) => name !== 'conversations'));
+    expect(() => requireDeleteSweeps(without)).toThrow(/needs the delete sweeps conversations/);
+  });
+
+  it('voc-conversations: BatchWriteItem and a keys-only Query of one workspace\'s owner list and owners\' partitions', () => {
+    expect(CONVERSATION_PARTITIONS).toStrictEqual([`WS#${ONE}#CONVERSANTS`, `WS#${ONE}#USER#*`]);
+    expect(on('Conversations')).toStrictEqual(sorted([
+      { actions: ['dynamodb:BatchWriteItem'], index: null, condition: keys(CONVERSATION_PARTITIONS) },
+      { actions: ['dynamodb:Query'], index: null, condition: {
+        ...keys(CONVERSATION_PARTITIONS),
+        'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk'] },
+        StringEquals: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+        Null: { 'dynamodb:Attributes': 'false' } } },
+    ]));
+    expect(worker().Environment.Variables).toHaveProperty('CONVERSATIONS_TABLE');
+  });
+
+  it('voc-projects: Query and BatchWriteItem of one workspace\'s registry and project partitions, its claims\' GetItem and DeleteItem', () => {
+    expect(PROJECTS_TABLE_PARTITIONS).toStrictEqual([`WS#${ONE}#PROJECT#*`, `WS#${ONE}#DOCUMENT_VERSIONS#PROJECT#*`,
+      `WS#${ONE}#PROJECT_IDS`]);
+    expect(PROJECT_CLAIM_PARTITIONS).toStrictEqual(['PROJECT_ID#*']);
+    expect(on('Projects')).toStrictEqual(sorted([
+      { actions: ['dynamodb:BatchWriteItem', 'dynamodb:Query'], index: null, condition: keys(PROJECTS_TABLE_PARTITIONS) },
+      { actions: ['dynamodb:DeleteItem', 'dynamodb:GetItem'], index: null, condition: keys(['PROJECT_ID#*']) },
+    ]));
+  });
+
+  it('voc-jobs and voc-participants: Query and BatchWriteItem of one workspace\'s project partitions only', () => {
+    for (const table of ['Jobs', 'Participants']) {
+      expect(on(table)).toStrictEqual([
+        { actions: ['dynamodb:BatchWriteItem', 'dynamodb:Query'], index: null, condition: keys([`WS#${ONE}#PROJECT#*`]) },
+      ]);
+    }
+  });
+
+  // CDK keeps a role's inline policy under IAM's limit by its own estimate (150 characters an unresolved ARN) and moves
+  // the rest to managed policies of the role: no override of that estimate, so a long prefix or region cannot take
+  // the real policy past IAM's limit. What moves is held as tightly (every statement above reads both kinds).
+  it('keeps its statements in its own policies: the inline one and at most a few managed overflow ones, each its role\'s alone', () => {
+    const managed = Object.entries(template.findResources('AWS::IAM::ManagedPolicy'))
+      .filter(([id]) => id.startsWith('WorkspaceDeleteWorker'))
+      .map(([, resource]) => IamPolicySchema.parse(resource).Properties);
+    expect(managed.length).toBeLessThanOrEqual(2);
+    for (const properties of managed) {
+      expect(properties.Roles).toStrictEqual([{ Ref: worker().Role['Fn::GetAtt'][0] }]);
+    }
+  });
+
+  it('voc-feedback: Query of one workspace\'s days and source partitions, BatchWriteItem on those only', () => {
+    expect(on('Feedback')).toStrictEqual(sorted([
+      { actions: ['dynamodb:BatchWriteItem', 'dynamodb:Query'], index: null, condition: keys([`WS#${ONE}#SOURCE#*`]) },
+      { actions: ['dynamodb:Query'], index: 'gsi1-by-date', condition: keys([`WS#${ONE}#DATE#*`]) },
+    ]));
+  });
+
+  it('voc-aggregates: reads and batch deletes of one workspace, its tombstones and its export rows\' mark only', () => {
+    expect(TOMBSTONE_PARTITIONS).toBe('AUDIT#tombstone#*');
+    // No deployment settings row: the closed counter families' names come from the workspace's own
+    // WS#{id}#SETTINGS#categories and #dimensions rows, under the GetItem on WS#{id}#* below (7.08.00).
+    expect(on('Aggregates')).toStrictEqual(sorted([
+      { actions: ['dynamodb:BatchWriteItem', 'dynamodb:GetItem', 'dynamodb:Query'], index: null,
+        condition: keys([`WS#${ONE}#*`]) },
+      { actions: ['dynamodb:PutItem'], index: null, condition: keys(['AUDIT#tombstone#*']) },
+      { actions: ['dynamodb:UpdateItem'], index: null, condition: keys([`WS#${ONE}#JOB#export`]) },
+      { actions: ['dynamodb:Query'], index: 'gsi1-by-metric-type', condition: keys([`WS#${ONE}#*`]) },
+    ]));
+  });
+
+  it('voc-memory: Query of one workspace\'s partitions and personal status partitions, BatchWriteItem there', () => {
+    expect(MEMORY_PARTITIONS).toStrictEqual([`WS#${ONE}#MEM#company`, `WS#${ONE}#MEMCURSOR`, `WS#${ONE}#MEMIMPORT`,
+      `WS#${ONE}#MEMEVT#*`]);
+    expect(on('Memory')).toStrictEqual(sorted([
+      { actions: ['dynamodb:BatchWriteItem'], index: null, condition: keys([`WS#${ONE}#*`]) },
+      { actions: ['dynamodb:Query'], index: null, condition: keys(MEMORY_PARTITIONS) },
+      { actions: ['dynamodb:Query'], index: 'gsi1-by-memory-status', condition: keys([`WS#${ONE}#MEMSTATUS#personal#*`]) },
+    ]));
+  });
+
+  it('voc-watermarks: BatchWriteItem of one workspace\'s watermarks only, no read', () => {
+    expect(on('Watermarks')).toStrictEqual([
+      { actions: ['dynamodb:BatchWriteItem'], index: null, condition: keys([`WS#${ONE}#*`]) }]);
+  });
+
+  it('voc-radar: reads and batch deletes of one workspace\'s partitions only (its Radar settings)', () => {
+    expect(on('Radar')).toStrictEqual([
+      { actions: ['dynamodb:BatchWriteItem', 'dynamodb:GetItem', 'dynamodb:Query'], index: null,
+        condition: keys([`WS#${ONE}#*`]) },
+    ]);
+  });
+
+  it('voc-workspaces: its job row, its audit partition, and the workspace\'s control rows by their partitions', () => {
+    expect(CONTROL_ROW_DELETES).toStrictEqual([`WS#${ONE}`, 'FORM#*', 'PLUGIN#*', 'USER#*', 'WORKSPACES']);
+    expect(on('Workspaces')).toStrictEqual(sorted([
+      { actions: ['dynamodb:DeleteItem'], index: null, condition: keys(CONTROL_ROW_DELETES) },
+      { actions: ['dynamodb:GetItem', 'dynamodb:PutItem'], index: null, condition: keys([DELETE_AUDIT_PARTITION]) },
+      { actions: ['dynamodb:Query'], index: null, condition: keys([`WS#${ONE}`]) },
+      { actions: ['dynamodb:UpdateItem'], index: null, condition: keys([DELETE_JOB_PARTITION]) },
+      { actions: ['dynamodb:UpdateItem'], index: null, condition: {
+        ...keys(['SLUG#*']),
+        'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['deleted_at', 'pk', 'sk', 'workspace_id'] } } },
+    ]));
+  });
+
+  it('holds no Scan, no table delete and no PutItem but on the audit partitions', () => {
+    const actions = new Set(allowed().flatMap((s) => s.actions));
+    expect([...actions].filter((action) => /Scan|DeleteTable|PartiQL/.test(action))).toStrictEqual([]);
+    const puts = allowed().filter((s) => s.actions.includes('dynamodb:PutItem'));
+    expect(puts.map((s) => s.condition)).toStrictEqual(expect.arrayContaining([
+      keys(['AUDIT#tombstone#*']), keys([DELETE_AUDIT_PARTITION])]));
+    expect(puts).toHaveLength(2);
+    const batches = allowed().filter((s) => s.actions.includes('dynamodb:BatchWriteItem'));
+    expect(batches.every((s) => JSON.stringify(s.condition).includes(`WS#${ONE}#`))).toBe(true);
+  });
+
+  it('S3: lists one workspace\'s versions, deletes them by version id and aborts its uploads, nothing else', () => {
+    const s3 = allowed().filter((s) => s.actions.some((action) => action.startsWith('s3:')))
+      .map((s) => ({ actions: s.actions, paths: [...s.resource.matchAll(/"\/([^"]*)"/g)].map((match) => match[1]),
+        condition: s.condition }));
+    expect(sorted(s3)).toStrictEqual(sorted([
+      { actions: ['s3:ListBucketVersions'], paths: [], condition: { StringLike: { 's3:prefix': [`ws/${ONE}/*`] } } },
+      { actions: ['s3:ListBucketMultipartUploads'], paths: [], condition: undefined },
+      { actions: ['s3:AbortMultipartUpload', 's3:DeleteObjectVersion'], paths: [`ws/${ONE}/*`], condition: undefined },
+    ]));
+  });
+
+  it('SSM: lists one workspace\'s credentials path and deletes its parameters, with no decrypt through SSM', () => {
+    const ssm = allowed().filter((s) => s.actions.some((action) => action.startsWith('ssm:')));
+    expect(ssm.map((s) => s.actions)).toStrictEqual([['ssm:GetParametersByPath'], ['ssm:DeleteParameters']]);
+    expect(ssm[0]?.resource).toContain(`voc/ws/${ONE}/credentials"`);
+    expect(ssm[1]?.resource).toContain(`voc/ws/${ONE}/credentials/*"`);
+    const viaSsm = allowed().filter((s) => JSON.stringify(s.condition ?? {}).includes('"ssm.'));
+    expect(viaSsm).toStrictEqual([]);
+  });
+
+  it('denies kms:Decrypt through SSM outright (the KMS grant on the tables\' key would otherwise allow it)', () => {
+    expect(policy('Deny').filter((s) => s.actions.includes('kms:Decrypt'))).toStrictEqual([{
+      actions: ['kms:Decrypt'], resource: '"*"',
+      condition: { StringEquals: { 'kms:ViaService': 'ssm.us-east-1.amazonaws.com' } } }]);
+  });
+
+  it('never reads a secret, and reaches nothing else', () => {
+    const services = new Set(allowed().flatMap((s) => s.actions).map((action) => action.split(':')[0] ?? ''));
+    expect([...services].sort(byCodeUnit)).toStrictEqual(['dynamodb', 'kms', 'lambda', 'logs', 's3', 'ssm']);
+    expect(allowed().flatMap((s) => s.actions).filter((action) => /GetParameter$|GetSecretValue/.test(action)))
+      .toStrictEqual([]);
+  });
+
+  it('is an audit writer of its tombstones and its completed rows only (the audit-row guard)', () => {
+    const denies = policy('Deny').map((s) => JSON.stringify(s.condition));
+    expect(denies.some((condition) => condition.includes('AUDIT#tombstone#*'))).toBe(true);
+    expect(denies.some((condition) => condition.includes(DELETE_AUDIT_PARTITION))).toBe(true);
+  });
+
+  it('invokes only itself, by its unqualified name', () => {
+    expectSelfInvokeOnly(statements(), 'voc-workspace-delete-');
+  });
+});

@@ -38,6 +38,7 @@ import time
 from shared.aws import BEDROCK_MODEL_ID, get_dynamodb_resource
 from shared.logging import logger
 from shared.model_profile import E2E_PROFILE, active_profile
+from shared.usage_meter import log_usage, remember_request
 
 MODEL_SETTINGS_PK = "SETTINGS#model"
 MODEL_SETTINGS_SK = "config"
@@ -326,24 +327,29 @@ def invocation_model_id(model_id: str) -> str:
     return prefix + model_id[len(GLOBAL_PROFILE_PREFIX):]
 
 
-def _scope_model_id_param(params: dict[str, object], **_kwargs: object) -> None:
-    """botocore ``provide-client-params`` hook (fires before validation): map ``modelId`` in place."""
+def _scope_model_id_param(params: dict[str, object], context: object = None, **_kwargs: object) -> None:
+    """botocore ``provide-client-params`` hook (fires before validation): map ``modelId`` in place, then keep the id
+    as sent (and the tier asked for) in the call's request context for the usage line (shared/usage_meter.py)."""
     model_id = params.get("modelId")
     if isinstance(model_id, str):
         params["modelId"] = invocation_model_id(model_id)
+    remember_request(params, context)
 
 
 def scope_bedrock_client[ClientT](client: ClientT) -> ClientT:
-    """Make every call on a ``bedrock-runtime`` client send the scoped model id.
+    """Make every call on a ``bedrock-runtime`` client send the scoped model id, and log its usage.
 
     Covers the raw ``converse`` / ``invoke_model`` call sites that bypass
     shared/converse.py (image input, invoke bodies). Idempotent with
-    invocation_model_id, so a caller that already maps is unaffected.
+    invocation_model_id, so a caller that already maps is unaffected. The
+    ``after-call`` hook logs one ``bedrock_usage`` line per successful model
+    call (shared/usage_meter.py, docs/multi-workspace.md "Cost per workspace").
     """
     events = getattr(getattr(client, "meta", None), "events", None)
     if events is not None:
         events.register("provide-client-params.bedrock-runtime", _scope_model_id_param,
                         unique_id="voc-inference-scope")
+        events.register("after-call.bedrock-runtime", log_usage, unique_id="voc-bedrock-usage")
     return client
 
 

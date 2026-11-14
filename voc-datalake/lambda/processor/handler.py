@@ -23,6 +23,11 @@ Two paths (docs/multi-workspace.md, phase 2), chosen per message by ``workspace_
   ``gsi4pk`` ``FEEDBACK#{id}`` and ``gsi5pk`` ``CHANNEL#{channel}`` for the two re-keyed indexes.
 * A message whose ``workspace_id`` is there but is not a workspace id is rejected like any invalid message
   (``MessageRejectedError``: the DLQ after its retries), never stored deployment-wide instead.
+* A message of a workspace that is not active (``deleting``, or no ``META``) is dropped before anything is read or
+  written: counted, logged without its content, and acked, never sent to the DLQ (``_drop_for_an_inactive_workspace``
+  says why). The status is one GetItem per workspace per 300 s per container (30 s when not active;
+  ``workspace_active``). With the hard delete on, each batch adds its drops to each such workspace's drop counter,
+  ``WS#{ws}`` / ``WSDELETE_DROPS`` (``DroppedPerWorkspace``: one UpdateItem per workspace per batch, no read).
 """
 import json
 import os
@@ -40,7 +45,7 @@ from aws_lambda_powertools.utilities.typing import LambdaContext
 from botocore.exceptions import BotoCoreError, ClientError
 from pydantic import ValidationError
 
-from shared import radar_store
+from shared import radar_store, workspace_deletes
 from shared.aws import get_bedrock_client, get_dynamodb_resource, is_conditional_check_failure
 from shared.batch import ConcurrentSqsBatchProcessor, batch_lambda_handler
 from shared.categorization import (
@@ -128,7 +133,7 @@ from shared.source_updates import (
 )
 from shared.timestamps import now_iso
 from shared.usefulness import USEFULNESS_FIELD, item_usefulness
-from shared.ws_repo import WorkspaceScope, message_scope
+from shared.ws_repo import WorkspaceScope, WorkspaceStatusCheck, message_scope
 
 # AWS Clients (using shared module for connection reuse)
 dynamodb = get_dynamodb_resource()
@@ -159,6 +164,12 @@ aggregates_table = dynamodb.Table(AGGREGATES_TABLE)
 # Other brands' reviews (Radar sources, docs/radar.md) — never voc-feedback.
 RADAR_TABLE = os.environ.get('RADAR_TABLE', '')
 radar_table = dynamodb.Table(RADAR_TABLE) if RADAR_TABLE else None
+# voc-workspaces, read only for a workspace message's META status (shared/ws_repo.py WorkspaceStatusCheck: one
+# strongly consistent GetItem per workspace per 300 s, 30 s when not active, per container). A failed read raises, so
+# the record fails and SQS retries it.
+WORKSPACES_TABLE = os.environ['WORKSPACES_TABLE']
+workspaces_table = dynamodb.Table(WORKSPACES_TABLE)
+workspace_active = WorkspaceStatusCheck(workspaces_table)
 # The Radar brand list, read at most once a minute per container (shared.radar_routing).
 radar_brand_labels = BrandLabels()
 # Marked by every record that stored a Radar review; flushed once per batch.
@@ -1074,6 +1085,54 @@ def _refuse_invalid_workspace(raw_record: dict) -> MessageRejectedError:
     return MessageRejectedError(source_platform, str(message_id), errors)
 
 
+def _drop_for_an_inactive_workspace(scope: WorkspaceScope) -> dict:
+    """A message of a workspace that is not active (``deleting``, or no ``META``: being or already deleted): nothing
+    is written, not even a log row, and the record SUCCEEDS, so SQS deletes the message.
+
+    Acked as dropped, never failed: a failed record goes to the processing DLQ after its retries, and a redrive of
+    that queue (an operator's routine fix for a bad batch) would bring the message back, and with it the workspace's
+    feedback, once its hard delete had finished. Counted (``WorkspaceMessagesDropped``) and logged with the workspace
+    id only, no content of the message."""
+    logger.warning("Dropped a message of a workspace that is not active", extra={'workspace_id': scope.ws})
+    count_metric("WorkspaceMessagesDropped")
+    dropped_messages.mark(scope)
+    return {"status": "dropped", "reason": "workspace_not_active"}
+
+
+class DroppedPerWorkspace:
+    """The messages a batch dropped, per workspace, added to each workspace's drop counter once per batch
+    (shared/workspace_deletes.py ``count_dropped``: one UpdateItem of ``dropped`` alone, no read, so the hot path
+    gains nothing and a burst of drops is one write per workspace per batch), so a cancel's audit row reports at least
+    how many were lost. Only with the hard delete on (``WORKSPACE_HARD_DELETE``, as the job's): without it there is
+    no counter. Best effort: a failed write is logged and counted (``WorkspaceDropsNotCounted``), never fails the
+    batch, whose records are already acked."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._counts: dict[str, int] = {}
+
+    def mark(self, scope: WorkspaceScope) -> None:
+        with self._lock:
+            self._counts[scope.ws] = self._counts.get(scope.ws, 0) + 1
+
+    def flush(self, table: object) -> None:
+        with self._lock:
+            counts, self._counts = self._counts, {}
+        if not workspace_deletes.hard_delete_enabled():
+            return
+        for ws, dropped in sorted(counts.items()):
+            try:
+                workspace_deletes.count_dropped(table, ws, dropped)
+            except (ClientError, BotoCoreError) as error:
+                logger.warning("Could not count the dropped messages on the workspace's drop counter",
+                               extra={'workspace_id': ws, 'error_type': type(error).__name__})
+                count_metric("WorkspaceDropsNotCounted")
+
+
+# Marked by every record dropped for a workspace that is not active; flushed once per batch.
+dropped_messages = DroppedPerWorkspace()
+
+
 def message_idempotency_key(raw_record: dict, scope: WorkspaceScope | None) -> str:
     """``idempotency_key_for`` the record, inside its workspace (``WS#{ws}#…``) for a message of one, so the same
     source item queued in two workspaces is processed in each (a ``source_platform`` holds no ``#``, so no
@@ -1118,6 +1177,8 @@ def _process_record(raw_record: dict) -> dict:
     if refused:
         logger.warning(f"Workspace refused for {source_platform}/{source_id}: not a workspace id")
         raise _refuse_invalid_workspace(raw_record)
+    if scope is not None and not workspace_active(scope):
+        return _drop_for_an_inactive_workspace(scope)
 
     # Validate the message before processing
     validated_record, validation_errors = validate_sqs_message(raw_record, scope)
@@ -1228,8 +1289,10 @@ def _register_idempotency_context(context: LambdaContext) -> None:
 
 
 def _bump_after_batch() -> None:
-    """One Radar version bump per SQS batch that stored a Radar review (docs/caching.md)."""
+    """One Radar version bump per SQS batch that stored a Radar review (docs/caching.md), and the batch's dropped
+    messages counted on each deleting workspace's drop counter (``DroppedPerWorkspace``)."""
     radar_changed.flush(radar_table)
+    dropped_messages.flush(workspaces_table)
 
 
 lambda_handler = batch_lambda_handler(

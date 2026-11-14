@@ -25,6 +25,8 @@ describe('the workspaces API\'s export routes', () => {
     const onAggregates = routeStatements()
       .filter((s) => s.actions.some((action) => action.startsWith('dynamodb:')))
       .filter((s) => /ExportsOutputFnGetAttAggregates/.test(s.resource))
+      // The delete routes' erasure-lock grants are pinned in api-workspace-delete.test.ts.
+      .filter((s) => !JSON.stringify(s.condition).includes('JOB#erasure'))
       .map((s) => ({ actions: [...s.actions].sort(byCodeUnit), condition: s.condition }))
       .sort((a, b) => byCodeUnit(a.actions.join(), b.actions.join()));
     expect(onAggregates).toStrictEqual([
@@ -37,7 +39,8 @@ describe('the workspaces API\'s export routes', () => {
     const s3 = routeStatements().filter((s) => s.actions.some((action) => action.startsWith('s3:')));
     expect(s3.map((s) => s.actions)).toStrictEqual([['s3:GetObject']]);
     expect(s3[0]?.resource).toContain(`/ws/${ONE_WORKSPACE}/exports/*`);
-    const invokes = routeStatements().filter((s) => s.actions.includes('lambda:InvokeFunction'));
+    const invokes = routeStatements().filter((s) => s.actions.includes('lambda:InvokeFunction')
+      && s.resource.includes('voc-workspace-export'));
     expect(invokes).toHaveLength(1);
     expect(invokes[0]?.resource).toContain('function:voc-workspace-export-');
   });

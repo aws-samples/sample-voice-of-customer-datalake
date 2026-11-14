@@ -37,6 +37,17 @@ only ever reads and writes its own rows and objects. This module is the one plac
   upload of an export's zip, its work objects (each tagged ``voc-export=true``, which the raw bucket's lifecycle
   expires and its policy refuses anywhere else) and a presigned download of the zip. Any key outside the prefix is
   refused before any call reaches S3.
+* ``workspace_is_active``: the one status check of every writer of a workspace's data (the scheduled fan-out, an
+  ingestor's run, the processor, the aggregator; 4d-1): a GetItem of ``META`` limited to its status, cached per
+  container in a ``WorkspaceStatusCache`` (300 s an active answer, 30 s a not-active one; ``WorkspaceStatusCheck``
+  binds it to a table). ``watermark_directory_key``: the voc-aggregates row that lists a
+  workspace's watermark, so its voc-watermarks rows are found without a Scan.
+* For the hard delete (4d-2, lambda/jobs/workspace_delete/), which runs only once the workspace is ``deleting``:
+  ``WorkspaceTable.batch_delete`` (checked BatchWriteItem deletes), ``WorkspaceObjectVersions`` (every version, delete
+  marker and open upload under ``ws/{ws}/``, listed and deleted by version id), ``WorkspaceControlRows`` (the
+  workspace's ``META``, ``MEMBER#``, ``USER#``, ``FORM#``, ``PLUGIN#`` and listing rows of voc-workspaces, each one
+  key shape), ``WorkspaceTombstones`` (a deleted item's or memory's tombstone, a conditional put of a new key in
+  ``AUDIT#tombstone#{kind}`` / ``{ws}#{id}``) and ``delete_work_pk`` (the job's own inventory partition).
 
 shared/test/test_ws_raw_access.py counts, per module outside this layer, the raw table and bucket calls and the
 unscoped data-path keys, against an allowlist of the modules not moved yet that must match exactly.
@@ -55,12 +66,17 @@ The keys (``{ws}`` is ``ws_`` + a ULID, shared/workspace.py ``is_workspace_id``)
                     pk WS#{ws}#JOB#export (a workspace's export jobs and their lock, shared/export_jobs.py)
                     pk WS#{ws}#PLUGIN_CONFIG  sk {plugin} (a plugin's config list, shared/plugin_configs.py)
                     pk WS#{ws}#PLUGIN_CONFIG#HISTORY  sk {plugin}#{iso}#{random} (a replaced list, kept, no ttl)
+                    pk WS#{ws}#WATERMARK_KEYS  sk {plugin}#{key} (lists a watermark, ``watermark_directory_key``)
+                    pk WS#{ws}#DELETE#PARTITIONS  sk {kind}#{name} (the hard delete's inventory, ``delete_work_pk``)
+                    pk AUDIT#tombstone#{kind}  sk {ws}#{id} (a deleted item's or memory's, ``WorkspaceTombstones``)
+                    pk WS#{ws}#USERCTX_SUBS  sk {sub} (who saved objectives, ``user_context_owners_pk``)
     voc-watermarks  source WS#{ws}#{plugin}#{key}
     voc-conversations  pk WS#{ws}#USER#{sub}  sk CONV#{id}, RUNCANCEL#{id} (a member's own conversations there)
                     pk WS#{ws}#CONVERSANTS  sk {sub} (who has kept a conversation there, shared/conversations.py)
     voc-memory      pk WS#{ws}#MEM#company  sk MEM#{memory_id}   gsi1pk WS#{ws}#MEMSTATUS#{scope}#{status}
                     pk WS#{ws}#MEMEVT#{memory_id}, WS#{ws}#MEMCURSOR, WS#{ws}#MEMIMPORT (shared/memory_store.py)
-    voc-workspaces  pk WS#{ws} (META, MEMBER#{sub}), pk AUDIT#WS#{ws}: read by ``control_query`` only
+    voc-workspaces  pk WS#{ws} (META, MEMBER#{sub}), pk AUDIT#WS#{ws}: read by ``control_query``; META's status by
+                    ``workspace_is_active``; the rows ``WorkspaceControlRows`` deletes (its docstring)
     voc-projects    pk PROJECT_ID#{project id}  sk CLAIM (deployment-wide: ``claim_project_id``, ``project_claim``,
                     ``release_project_claim``)
     raw bucket      ws/{ws}/raw/{source}/{yyyy}/{mm}/{dd}/{stem}/{sha16}.json, ws/{ws}/silver/..., ws/{ws}/...,
@@ -72,38 +88,51 @@ from __future__ import annotations
 
 import os
 import re
+import threading
+import time
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final, NoReturn, Protocol, Self
 
 from boto3.dynamodb.conditions import Attr, ConditionBase
+from boto3.dynamodb.types import TypeDeserializer
 from botocore.exceptions import ClientError
 
-from shared.aws import S3_MISSING_KEY_CODES, is_conditional_check_failure
-from shared.batch_get import BATCH_GET_ATTEMPTS, batch_get_all
+from shared import usage_meter
+from shared.aws import S3_MISSING_KEY_CODES, consistent_item, is_conditional_check_failure
+from shared.batch_get import BATCH_GET_ATTEMPTS, batch_get_all, unprocessed_backoff
 from shared.dynamo_paging import iter_query
 from shared.row_ids import LONG_OPAQUE_ID_RE
-from shared.workspace_ids import is_workspace_id, ws_key
+from shared.workspace_ids import ACTIVE, is_workspace_id, ws_key
+from shared.workspace_plugins import WORKSPACE_SORT_PREFIX, plugin_partition
 
 __all__ = [
     'FORM_LOOKUP_PREFIX',
     'PARTITION_ATTRIBUTES',
     'PROJECT_CLAIM_INDEX',
+    'STATUS_READ_ATTRIBUTES',
+    'TOMBSTONE_PARTITION_PREFIX',
     'WORKSPACE_FIELD',
     'WORKSPACE_KEY_PREFIX',
     'ExportObjects',
     'ListedObject',
+    'ObjectVersion',
     'OutOfScopeError',
     'ProjectClaim',
+    'WorkspaceControlRows',
+    'WorkspaceObjectVersions',
     'WorkspaceObjects',
     'WorkspaceScope',
+    'WorkspaceStatusCheck',
     'WorkspaceTable',
+    'WorkspaceTombstones',
     'category_pk',
     'channel_pk',
     'claim_project_id',
     'control_query',
     'conversants_pk',
     'date_pk',
+    'delete_work_pk',
     'erasure_job_pk',
     'export_job_pk',
     'exports_prefix',
@@ -137,6 +166,8 @@ __all__ = [
     'scraper_run_pk',
     'source_run_pk',
     'urgency_pk',
+    'user_context_owners_pk',
+    'watermark_directory_key',
     'watermark_key',
     'ws_table',
 ]
@@ -204,6 +235,27 @@ class UnprocessedKeysError(RuntimeError):
     fails rather than quietly return fewer items."""
 
 
+class UnprocessedItemsError(RuntimeError):
+    """BatchWriteItem still left deletes unprocessed after ``BATCH_WRITE_ATTEMPTS`` calls
+    (``WorkspaceTable.batch_delete``): the delete fails rather than quietly leave items behind."""
+
+
+#: BatchWriteItem's ceiling of requests a call, and how many calls one request's unprocessed items get (the first
+#: included) before ``UnprocessedItemsError``: the same bound and backoff as a BatchGetItem's (shared/batch_get.py).
+MAX_BATCH_WRITE_ITEMS: Final = 25
+BATCH_WRITE_ATTEMPTS: Final = BATCH_GET_ATTEMPTS
+
+
+def _deleted_key(request: object) -> Mapping[str, Any]:
+    """The key of a ``{'DeleteRequest': {'Key': …}}`` DynamoDB handed back unprocessed; OutOfScopeError for any other
+    request (a batch delete sends deletes only)."""
+    delete = request.get('DeleteRequest') if isinstance(request, Mapping) else None
+    key = delete.get('Key') if isinstance(delete, Mapping) else None
+    if not isinstance(key, Mapping):
+        raise OutOfScopeError('a batch delete re-sends deletes only')
+    return key
+
+
 @dataclass(frozen=True)
 class WorkspaceScope:
     """A verified workspace id. Build it with ``scope_of``, ``scope_from_message`` or ``scope_from_key``."""
@@ -269,13 +321,21 @@ def message_scope(body: object) -> tuple[bool, WorkspaceScope | None]:
     A message that names a workspace in ``workspace_id`` runs in it; one that names none (no such field) runs
     deployment-wide (``scope`` None); one whose field is there but is not a workspace id (``None`` included) is
     refused, never run deployment-wide instead.
+
+    The message's Bedrock calls are counted (shared/usage_meter.py) to its workspace, to the deployment when it
+    names none, and to no one when it is refused: UNATTRIBUTED is set first, so a refused record after a good one
+    is never counted to the good one's workspace.
     """
+    usage_meter.attribute(usage_meter.UNATTRIBUTED)
     if not isinstance(body, Mapping) or WORKSPACE_FIELD not in body:
+        usage_meter.attribute(None)
         return False, None
     try:
-        return False, scope_from_message(body)
+        scope = scope_from_message(body)
     except ValueError:
         return True, None
+    usage_meter.attribute(scope.ws)
+    return False, scope
 
 
 def scope_from_key(partition_key: object) -> WorkspaceScope:
@@ -388,6 +448,13 @@ def export_job_pk(scope: WorkspaceScope) -> str:
     return scope.key('JOB', 'export')
 
 
+def user_context_owners_pk(scope: WorkspaceScope) -> str:
+    """The list of the members who saved their own objectives in the workspace (voc-aggregates, shared/
+    company_context.py ``put_my_context``, one row per person, ``sk`` their sub): ``WS#{ws}#USERCTX_SUBS``. A Query
+    of it names every ``WS#{ws}#USERCTX#{sub}`` row, a former member's too (the hard delete's ``user_contexts``)."""
+    return scope.key('USERCTX_SUBS')
+
+
 def conversants_pk(scope: WorkspaceScope) -> str:
     """The list of the workspace's conversation owners in voc-conversations, one row per person who ever kept a
     conversation there (shared/conversations.py ``conversant_key``): ``WS#{ws}#CONVERSANTS``. A Query of it, knowing
@@ -453,6 +520,30 @@ def plugin_config_history_key(scope: WorkspaceScope, plugin: str, superseded_at:
 def watermark_key(scope: WorkspaceScope, plugin: str, key: str) -> str:
     """The ``source`` key of a plugin's watermark in voc-watermarks: ``WS#{ws}#{plugin}#{key}``."""
     return scope.key(plugin, key)
+
+
+#: The voc-aggregates partition listing a workspace's watermarks (``watermark_directory_key``).
+WATERMARK_DIRECTORY: Final = 'WATERMARK_KEYS'
+
+
+def watermark_directory_key(scope: WorkspaceScope, plugin: str, key: str) -> dict[str, str]:
+    """The directory row of one watermark in voc-aggregates: ``WS#{ws}#WATERMARK_KEYS`` / ``{plugin}#{key}``.
+
+    voc-watermarks is keyed on ``source`` alone, so a workspace's watermarks share no partition; plugins/_shared/
+    base_ingestor.py ``set_watermark`` puts this row (its key alone, so the put is idempotent) before the watermark, so the hard delete (4d-2)
+    finds every one with one Query instead of a Scan: the watermark's key is ``scope.prefix`` + the row's ``sk``
+    (``watermark_key``). Written since 4d-1 only: a deployment upgraded with workspace watermarks already written has
+    no row for them (no backfill; multi-workspace runs are new). Refuses (ValueError) an empty part."""
+    if not (plugin and key):
+        raise ValueError('a watermark directory key needs a plugin id and a key')
+    return {'pk': scope.key(WATERMARK_DIRECTORY), 'sk': f'{plugin}#{key}'}
+
+
+def delete_work_pk(scope: WorkspaceScope) -> str:
+    """The hard delete's inventory of the workspace in voc-aggregates (lambda/jobs/workspace_delete/): the partitions
+    and ids it found while it swept (``sk {kind}#{name}``), so a later sweep deletes them without a Scan:
+    ``WS#{ws}#DELETE#PARTITIONS``. Written only by that job, deleted by it last."""
+    return scope.key('DELETE', 'PARTITIONS')
 
 
 def s3_key(scope: WorkspaceScope, *parts: str) -> str:
@@ -630,6 +721,256 @@ def release_project_claim(table: Any, project_id: str, *, workspace: WorkspaceSc
     return True
 
 
+#: How long a warm container trusts a workspace's status (``workspace_is_active``), by the answer:
+#: * ``active``, 300 s: a workspace set to ``deleting`` stops every writer within this, beyond the invocation already
+#:   running, so the hard delete's fence waits it out (5 min, plus one 15-minute invocation and a minute's margin: 21
+#:   min); a longer one only lengthens that fence, and it is what keeps the hot paths' reads low;
+#: * not active, 30 s: a delete cancelled during the fence makes the workspace active again, and its messages are
+#:   dropped for at most this after (docs/multi-workspace.md, "Export and delete").
+ACTIVE_STATUS_TTL_SECONDS: Final = 300.0
+INACTIVE_STATUS_TTL_SECONDS: Final = 30.0
+#: A container keeps at most this many statuses; a full cache drops the expired ones, then the soonest to expire.
+MAX_CACHED_STATUSES: Final = 1024
+#: Exactly what ``workspace_is_active`` (and a webhook's routing, shared/workspace_routing.py) reads of a workspace's
+#: ``META``, with its keys: those roles are held to these (lib/utils/workspace-resolution-grants.ts
+#: ``grantWorkspaceStatusRead``, ``dynamodb:Attributes``).
+STATUS_READ_ATTRIBUTES: Final = ('pk', 'sk', 'status')
+
+
+class WorkspaceStatusCache:
+    """Whether each workspace is active, as one warm container last read it: an active answer for
+    ``ACTIVE_STATUS_TTL_SECONDS``, a not-active one for ``INACTIVE_STATUS_TTL_SECONDS``.
+
+    Both answers are kept, so a deleted workspace's records are not each a read; a failed read never is
+    (``workspace_is_active`` puts only what it read). Thread-safe: the processor's records run on worker threads."""
+
+    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._entries: dict[str, tuple[float, bool]] = {}
+
+    def get(self, ws: str) -> bool | None:
+        """The cached answer for ``ws``, or None when there is none or it is older than the TTL."""
+        with self._lock:
+            entry = self._entries.get(ws)
+            if entry is None:
+                return None
+            expires_at, active = entry
+            if self._clock() >= expires_at:
+                del self._entries[ws]
+                return None
+            return active
+
+    def put(self, ws: str, active: bool) -> None:
+        """Keep ``ws``'s answer for its TTL. A full cache first drops the answers already expired, then the one that
+        would expire soonest (with two TTLs the order they were put in is not the order they expire in), never the
+        whole cache."""
+        with self._lock:
+            now = self._clock()
+            self._entries.pop(ws, None)
+            if len(self._entries) >= MAX_CACHED_STATUSES:
+                for expired in [key for key, (expires_at, _active) in self._entries.items() if expires_at <= now]:
+                    del self._entries[expired]
+                while len(self._entries) >= MAX_CACHED_STATUSES:
+                    del self._entries[min(self._entries, key=lambda key: self._entries[key][0])]
+            ttl = ACTIVE_STATUS_TTL_SECONDS if active else INACTIVE_STATUS_TTL_SECONDS
+            self._entries[ws] = (now + ttl, active)
+
+
+def workspace_is_active(table: Any, scope: WorkspaceScope, cache: WorkspaceStatusCache) -> bool:
+    """Whether the workspace's ``META`` (voc-workspaces ``WS#{ws}`` / ``META``) says ``active``: every writer of a
+    workspace's data asks before it writes (the scheduled fan-out, an ingestor's run, the processor, the aggregator),
+    so a workspace set to ``deleting`` gets nothing new while its hard delete runs (4d-1).
+
+    One strongly consistent GetItem projected to ``STATUS_READ_ATTRIBUTES``, at most once per workspace per TTL in
+    ``cache`` (``WorkspaceStatusCache``: 300 s for active, 30 s for not). A missing ``META`` and any other status
+    answer False, and are cached too; a failed read raises and caches nothing, so the caller's record or run fails and
+    is retried."""
+    cached = cache.get(scope.ws)
+    if cached is not None:
+        return cached
+    found = consistent_item(table, {'pk': control_partition(scope, 'meta'), 'sk': LOOKUP_SORT_KEY},
+                            STATUS_READ_ATTRIBUTES)
+    active = found is not None and found.get('status') == ACTIVE
+    cache.put(scope.ws, active)
+    return active
+
+
+class WorkspaceStatusCheck:
+    """A writer's status check (``workspace_is_active``), bound to its voc-workspaces table and a container's own
+    cache: ``check(scope)``. The feedback processor and the aggregator each keep one at module level."""
+
+    def __init__(self, table: Any, cache: WorkspaceStatusCache | None = None) -> None:
+        self._table = table
+        self._cache = cache or WorkspaceStatusCache()
+
+    def __call__(self, scope: WorkspaceScope) -> bool:
+        """Whether ``scope``'s workspace is active; a failed read raises (nothing cached)."""
+        return workspace_is_active(self._table, scope, self._cache)
+
+
+#: The listing partition of every workspace in voc-workspaces (shared/platform_workspaces.py ``LISTING_PK``).
+LISTING_PARTITION: Final = 'WORKSPACES'
+#: A member's inverse row's partition (shared/workspace_members.py ``USER#{sub}`` / ``WS#{ws}``).
+USER_PARTITION_PREFIX: Final = 'USER#'
+#: A workspace's slug guard (shared/platform_workspaces.py): kept for good, marked deleted, so no slug is reused.
+SLUG_PARTITION_PREFIX: Final = 'SLUG#'
+#: The status a workspace's hard delete runs under (shared/workspace_deletes.py ``DELETING``).
+DELETING: Final = 'deleting'
+#: A delete of a row that names its workspace in ``workspace_id``: only this workspace's, or none (already gone).
+_NAMES_THIS_WORKSPACE: Final = 'attribute_not_exists(pk) OR workspace_id = :ws'
+
+
+def _plain_part(value: object, what: str) -> str:
+    """``value`` when it is a non-empty string with no ``#`` (so it cannot reach another key shape); else ValueError."""
+    if not isinstance(value, str) or not value or '#' in value:
+        raise ValueError(f'a control row needs a plain {what}')
+    return value
+
+
+class WorkspaceControlRows:
+    """The workspace's control-plane rows in voc-workspaces, one checked DeleteItem (or UpdateItem) each: used by the
+    hard delete (4d-2), which runs only once the workspace is ``deleting``.
+
+    Each method builds its one key shape from the scope and a plain part (no ``#``, so no other shape), and refuses
+    anything else before any call. A missing row is done (DeleteItem of an absent key changes nothing). The rows that
+    are keyed by another id (``FORM#{form id}``, the listing row, the slug guard) are changed only if they name THIS
+    workspace (``workspace_id``): one naming another is ``OutOfScopeError``, nothing changed. ``META`` goes only while
+    it reads ``deleting`` (an active workspace's ``META`` is never deleted). Every ``AUDIT#`` row stays::
+
+        WS#{ws}           / {any but META}   delete_partition_row (MEMBER#{sub}, INVITE#{id})
+        USER#{sub}        / WS#{ws}          delete_user_row
+        FORM#{form id}    / META             delete_form_lookup (its workspace_id this one)
+        PLUGIN#{plugin}   / WS#{ws}          delete_plugin_row
+        WORKSPACES        / {name}#{ws}      delete_listing_row (its workspace_id this one)
+        WS#{ws}           / META             delete_meta (its status deleting)
+        SLUG#{slug}       / META             mark_slug_deleted (kept, ``deleted_at`` set; its workspace_id this one)
+    """
+
+    def __init__(self, scope: WorkspaceScope, table: Any) -> None:
+        self.scope = scope
+        self._table = table
+
+    def delete_partition_row(self, sort_key: object) -> None:
+        """Any row of the workspace's own ``WS#{ws}`` partition but ``META`` (a ``MEMBER#{sub}`` row, an invite): the
+        partition is built from the scope, so only the sort key is the caller's. ``META`` goes by ``delete_meta``."""
+        if not isinstance(sort_key, str) or not sort_key or sort_key == LOOKUP_SORT_KEY:
+            raise ValueError('a partition row other than META needs its sort key')
+        self._table.delete_item(Key={'pk': control_partition(self.scope, 'meta'), 'sk': sort_key})
+
+    def delete_user_row(self, sub: str) -> None:
+        self._table.delete_item(Key={'pk': f'{USER_PARTITION_PREFIX}{_plain_part(sub, "member")}',
+                                     'sk': f'{WORKSPACE_SORT_PREFIX}{self.scope.ws}'})
+
+    def delete_plugin_row(self, plugin: str) -> None:
+        """``PLUGIN#{plugin}`` / ``WS#{ws}`` (shared/workspace_plugins.py ``plugin_partition``: ValueError for an id
+        that is not a plugin id)."""
+        self._table.delete_item(Key={'pk': plugin_partition(plugin), 'sk': f'{WORKSPACE_SORT_PREFIX}{self.scope.ws}'})
+
+    def delete_form_lookup(self, form_id: str) -> None:
+        self._change_naming_this_workspace(
+            {'pk': f'{FORM_LOOKUP_PREFIX}{_plain_part(form_id, "form id")}', 'sk': LOOKUP_SORT_KEY})
+
+    def delete_listing_row(self, sort_key: object) -> None:
+        """The listing row ``WORKSPACES`` / ``{name}#{ws}`` as stored: a sort key that does not end with this
+        workspace's id after a name is refused."""
+        suffix = f'#{self.scope.ws}'
+        if not isinstance(sort_key, str) or not sort_key.endswith(suffix) or len(sort_key) == len(suffix):
+            raise OutOfScopeError("not this workspace's listing row")
+        self._change_naming_this_workspace({'pk': LISTING_PARTITION, 'sk': sort_key})
+
+    def delete_meta(self) -> None:
+        """``WS#{ws}`` / ``META``, only while its status is ``deleting`` (gone already is done); ``OutOfScopeError``
+        when it reads anything else (a cancelled delete's workspace is active again: nothing is deleted)."""
+        try:
+            self._table.delete_item(Key={'pk': control_partition(self.scope, 'meta'), 'sk': LOOKUP_SORT_KEY},
+                                    ConditionExpression='attribute_not_exists(pk) OR #status = :deleting',
+                                    ExpressionAttributeNames={'#status': 'status'},
+                                    ExpressionAttributeValues={':deleting': DELETING})
+        except ClientError as error:
+            if is_conditional_check_failure(error):
+                raise OutOfScopeError('the workspace is not being deleted') from error
+            raise
+
+    def mark_slug_deleted(self, slug: str, at: str) -> None:
+        """Set ``deleted_at`` on the workspace's slug guard ``SLUG#{slug}`` / ``META`` and keep it: the slug stays
+        reserved for good. Only a guard that names this workspace (``OutOfScopeError`` otherwise, also for none)."""
+        try:
+            self._table.update_item(
+                Key={'pk': f'{SLUG_PARTITION_PREFIX}{_plain_part(slug, "slug")}', 'sk': LOOKUP_SORT_KEY},
+                UpdateExpression='SET deleted_at = if_not_exists(deleted_at, :at)',
+                ConditionExpression='workspace_id = :ws',
+                ExpressionAttributeValues={':at': at, ':ws': self.scope.ws})
+        except ClientError as error:
+            if is_conditional_check_failure(error):
+                raise OutOfScopeError("not this workspace's slug") from error
+            raise
+
+    def _change_naming_this_workspace(self, key: dict[str, str]) -> None:
+        try:
+            self._table.delete_item(Key=key, ConditionExpression=_NAMES_THIS_WORKSPACE,
+                                    ExpressionAttributeValues={':ws': self.scope.ws})
+        except ClientError as error:
+            if is_conditional_check_failure(error):
+                raise OutOfScopeError('a control row of another workspace') from error
+            raise
+
+
+#: Where every tombstone lives in voc-aggregates (under the audit-row guard, which pins ``AUDIT#*``): ``{kind}`` a
+#: deleted item's source (jobs/retention/copies.py ``tombstone_key``) or ``memory``.
+TOMBSTONE_PARTITION_PREFIX: Final = 'AUDIT#tombstone#'
+
+
+def workspace_tombstone_key(scope: WorkspaceScope, kind: str, item_id: str) -> dict[str, str]:
+    """The tombstone of one of the workspace's deleted items: ``AUDIT#tombstone#{kind}`` / ``{ws}#{item id}``.
+
+    The workspace is in the sort key, so two workspaces' copies of one source item (one id), and the deployment's
+    (``sk`` the bare id), never share a tombstone: the key voc-retention writes for the same item (its ``tombstone_key``,
+    jobs/retention/copies.py), so of the two one is kept. ValueError for an empty part."""
+    if not kind or not item_id:
+        raise ValueError('a tombstone key needs a kind and an id')
+    return {'pk': f'{TOMBSTONE_PARTITION_PREFIX}{kind}', 'sk': f'{scope.ws}#{item_id}'}
+
+
+def _plain_old_item(raw: object) -> dict[str, Any]:
+    """A failed condition's ``ALL_OLD`` item (DynamoDB's typed JSON in an error response) as plain values; ``{}``
+    when there is none."""
+    if not isinstance(raw, Mapping):
+        return {}
+    deserializer = TypeDeserializer()
+    typed: Mapping[str, Any] = raw
+    return {str(name): deserializer.deserialize(value) for name, value in typed.items()}
+
+
+#: What a tombstone never takes from its caller: its key and its workspace, both built here.
+_TOMBSTONE_FIXED: Final = frozenset({'pk', 'sk', WORKSPACE_FIELD})
+
+
+class WorkspaceTombstones:
+    """The workspace's tombstones in voc-aggregates, one conditional PutItem of a new key each (TENETS.md D4, D5).
+
+    ``put_new`` writes ``workspace_tombstone_key`` with the caller's fields (never content: the caller's rule) and the
+    workspace's ``workspace_id``; a key already there (an erasure's tombstone of the same item, or this job's own from
+    an earlier generation) is kept as it is, never overwritten. Not a batch: IAM cannot tell a batch put from a batch
+    delete, so the roles that write tombstones put them one PutItem at a time (lib/utils/audit-row-guard.ts).
+
+    Built from the workspace's own view of voc-aggregates (``ws_table``): the tombstones go to that view's table, and
+    no caller outside the layer ever holds the table itself."""
+
+    def __init__(self, aggregates: WorkspaceTable) -> None:
+        self.scope = aggregates.scope
+        # A tombstone is not a key of the view's scope: the view's one tombstone put writes it.
+        self._view = aggregates
+
+    def put_new(self, kind: str, item_id: str, fields: Mapping[str, Any]) -> dict[str, Any] | None:
+        """Write the tombstone of ``item_id``; None when written, else the one already there (kept as it is)."""
+        clashing = sorted(set(fields) & _TOMBSTONE_FIXED)
+        if clashing:
+            raise OutOfScopeError(f'a tombstone builds its own {", ".join(clashing)}')
+        item = {**fields, **workspace_tombstone_key(self.scope, kind, item_id), WORKSPACE_FIELD: self.scope.ws}
+        return self._view.put_new_tombstone(item)
+
+
 #: The folder of a workspace's exports (``ws/{ws}/exports/``) and the tag every object there carries: the raw
 #: bucket's lifecycle rule expires an object with that tag (lib/stacks/core-buckets.ts), and its policy refuses the
 #: tag on any key outside a workspace's exports, so it never reaches ``raw/`` or ``silver/``.
@@ -647,6 +988,28 @@ _LIST_PARTS_PAGE: Final = 1000
 def exports_prefix(scope: WorkspaceScope) -> str:
     """``ws/{ws}/exports/``: every export object of the workspace starts with it."""
     return f'{s3_prefix(scope)}{EXPORTS_FOLDER}/'
+
+
+def _open_uploads(s3: Any, bucket: str, prefix: str, checked: Callable[[object], str]) -> list[tuple[str, str]]:
+    """Every multipart upload still open under ``prefix``, ``(key, upload id)`` (each key ``checked``: a key outside
+    the caller's keys refuses the whole listing), across ListMultipartUploads' pages."""
+    request: dict[str, Any] = {'Bucket': bucket, 'Prefix': prefix}
+    found: list[tuple[str, str]] = []
+    while True:
+        response = s3.list_multipart_uploads(**request)
+        found.extend((checked(upload.get('Key')), str(upload['UploadId'])) for upload in response.get('Uploads') or [])
+        if not response.get('IsTruncated'):
+            return found
+        request.update(KeyMarker=response['NextKeyMarker'], UploadIdMarker=response['NextUploadIdMarker'])
+
+
+def _abort_upload(s3: Any, bucket: str, key: str, upload_id: str) -> None:
+    """Abort one upload of an already checked ``key``; one already gone (``NoSuchUpload``) is done."""
+    try:
+        s3.abort_multipart_upload(Bucket=bucket, Key=key, UploadId=upload_id)
+    except ClientError as error:
+        if error.response.get('Error', {}).get('Code') != _NO_SUCH_UPLOAD:
+            raise
 
 
 class ExportObjects:
@@ -706,24 +1069,12 @@ class ExportObjects:
     def open_uploads(self) -> list[tuple[str, str]]:
         """Every multipart upload still open under the workspace's exports, ``(key, upload id)``, across
         ListMultipartUploads' pages (an erasure aborts them: voc-retention)."""
-        request: dict[str, Any] = {'Bucket': self._bucket, 'Prefix': exports_prefix(self.scope)}
-        found: list[tuple[str, str]] = []
-        while True:
-            response = self._s3.list_multipart_uploads(**request)
-            found.extend((self._checked(upload['Key']), str(upload['UploadId']))
-                         for upload in response.get('Uploads') or [])
-            if not response.get('IsTruncated'):
-                return found
-            request.update(KeyMarker=response['NextKeyMarker'], UploadIdMarker=response['NextUploadIdMarker'])
+        return _open_uploads(self._s3, self._bucket, exports_prefix(self.scope), self._checked)
 
     def abort_multipart_upload(self, key: str, upload_id: str) -> None:
         """Abort an upload; one already gone (``NoSuchUpload``: aborted or completed since it was listed) is done.
         A completed one is a zip, which the caller's version delete removes (voc-retention lists after aborting)."""
-        try:
-            self._s3.abort_multipart_upload(Bucket=self._bucket, Key=self._checked(key), UploadId=upload_id)
-        except ClientError as error:
-            if error.response.get('Error', {}).get('Code') != _NO_SUCH_UPLOAD:
-                raise
+        _abort_upload(self._s3, self._bucket, self._checked(key), upload_id)
 
     def put_work_object(self, key: str, body: bytes) -> None:
         """A work object of a running export (a zip tail, central-directory records), tagged like the zip."""
@@ -858,6 +1209,96 @@ class WorkspaceObjects:
         return any(entry.get('Key') == key for entry in response.get('Contents') or [])
 
 
+#: S3 lists at most this many versions a page (ListObjectVersions) and deletes at most this many a call
+#: (DeleteObjects).
+VERSIONS_PAGE: Final = 1000
+
+
+@dataclass(frozen=True)
+class ObjectVersion:
+    """One version of an object, or one delete marker (both are deleted by their version id)."""
+
+    key: str
+    version_id: str
+
+
+@dataclass(frozen=True)
+class VersionPage:
+    """One page of a workspace's object versions, and where the next page starts (``(key marker, version id
+    marker)``; None: done)."""
+
+    versions: list[ObjectVersion]
+    following: tuple[str, str] | None
+
+
+@dataclass(frozen=True)
+class VersionDeleteFailure:
+    """A version DeleteObjects did not delete, with S3's code (the caller retries it or counts it)."""
+
+    key: str
+    version_id: str
+    code: str
+
+
+class WorkspaceObjectVersions:
+    """Every version, delete marker and open multipart upload under the workspace's ``s3_prefix`` (its exports
+    included), listed and deleted for good: used by the hard delete (4d-2). A sibling of ``WorkspaceObjects``
+    (read-only, current objects only), never a change to it.
+
+    Lists with ``Prefix`` ``ws/{ws}/`` only and deletes by version id only, at most ``VERSIONS_PAGE`` a call. A key
+    is the workspace's when it starts ``ws/{ws}/`` and goes on (S3 keys are literal: no ``..`` is ever resolved, so
+    such a key is still under the prefix); any other key, listed or asked for, is ``OutOfScopeError`` before a delete
+    or an abort is sent, and refuses the whole call."""
+
+    def __init__(self, scope: WorkspaceScope, s3: Any, bucket: str) -> None:
+        if not bucket:
+            raise ValueError('a workspace has its objects in a bucket')
+        self.scope, self._s3, self._bucket = scope, s3, bucket
+
+    def _checked(self, key: object) -> str:
+        prefix = s3_prefix(self.scope)
+        if not isinstance(key, str) or not key.startswith(prefix) or len(key) == len(prefix):
+            raise OutOfScopeError('a key outside the workspace')
+        return key
+
+    def list_page(self, following: tuple[str, str] | None) -> VersionPage:
+        """One page of the workspace's versions and delete markers, from ``following`` (a page's own, or None from
+        the first). A listed key outside the workspace is refused."""
+        request: dict[str, Any] = {'Bucket': self._bucket, 'Prefix': s3_prefix(self.scope), 'MaxKeys': VERSIONS_PAGE}
+        if following is not None:
+            key_marker, version_marker = following
+            request.update(KeyMarker=self._checked(key_marker), VersionIdMarker=version_marker)
+        response = self._s3.list_object_versions(**request)
+        versions = [ObjectVersion(self._checked(entry.get('Key')), str(entry.get('VersionId') or 'null'))
+                    for part in ('Versions', 'DeleteMarkers') for entry in response.get(part) or []]
+        following_page = ((str(response['NextKeyMarker']), str(response.get('NextVersionIdMarker') or ''))
+                          if response.get('IsTruncated') else None)
+        return VersionPage(versions, following_page)
+
+    def delete(self, versions: Sequence[ObjectVersion]) -> list[VersionDeleteFailure]:
+        """Delete 1 to ``VERSIONS_PAGE`` versions (none twice) in one DeleteObjects; the ones S3 did not delete. A
+        version already gone counts as deleted (S3 answers it deleted)."""
+        if not 1 <= len(versions) <= VERSIONS_PAGE:
+            raise ValueError(f'a version delete takes 1 to {VERSIONS_PAGE} versions, not {len(versions)}')
+        objects = [{'Key': self._checked(version.key), 'VersionId': version.version_id} for version in versions]
+        if len({(entry['Key'], entry['VersionId']) for entry in objects}) != len(objects):
+            raise ValueError('a version delete names one version twice')
+        response = self._s3.delete_objects(Bucket=self._bucket, Delete={'Objects': objects, 'Quiet': True})
+        return [VersionDeleteFailure(str(error.get('Key') or ''), str(error.get('VersionId') or ''),
+                                     str(error.get('Code') or ''))
+                for error in response.get('Errors') or []]
+
+    def open_uploads(self) -> list[tuple[str, str]]:
+        """Every multipart upload still open under the workspace (its exports' and any other), ``(key, upload
+        id)``, across ListMultipartUploads' pages. A listed key outside the workspace is refused."""
+        return _open_uploads(self._s3, self._bucket, s3_prefix(self.scope), self._checked)
+
+    def abort_upload(self, key: str, upload_id: str) -> None:
+        """Abort one open upload of the workspace; one already gone (``NoSuchUpload``: aborted or completed since it
+        was listed) is done (a completed one is an object, which the version delete removes)."""
+        _abort_upload(self._s3, self._bucket, self._checked(key), upload_id)
+
+
 def partition_query(partition_attribute: str, partition: str, sort_condition: str | None,
                     kwargs: Mapping[str, Any]) -> dict[str, Any]:
     """The Query request of one partition: ``#p = :p`` (then ``AND {sort_condition}``), merged with the names and
@@ -950,6 +1391,24 @@ class WorkspaceTable:
         self._check_options('put_item', kwargs)
         self._check_item(item)
         return self._unscoped_table.put_item(Item=dict(item), **kwargs)
+
+    def put_new_tombstone(self, item: Mapping[str, Any]) -> dict[str, Any] | None:
+        """The view's one write outside its partitions, for ``WorkspaceTombstones``: a put of a new key in an
+        ``AUDIT#tombstone#…`` partition whose sort key is this workspace's (``{ws}#…``); anything else is refused
+        (``OutOfScopeError``). None when written; the tombstone already there when the key was taken (kept as it is,
+        read from the failed condition's ``ALL_OLD``: no extra read)."""
+        pk, sk = item.get('pk'), item.get('sk')
+        if not (isinstance(pk, str) and pk.startswith(TOMBSTONE_PARTITION_PREFIX)
+                and isinstance(sk, str) and sk.startswith(f'{self.scope.ws}#')):
+            raise OutOfScopeError('not a tombstone of the workspace')
+        try:
+            self._unscoped_table.put_item(Item=dict(item), ConditionExpression='attribute_not_exists(pk)',
+                                          ReturnValuesOnConditionCheckFailure='ALL_OLD')
+        except ClientError as error:
+            if is_conditional_check_failure(error):
+                return _plain_old_item(error.response.get('Item'))
+            raise
+        return None
 
     def delete_item(self, key: Mapping[str, Any], **kwargs: Any) -> dict:
         self._check_options('delete_item', kwargs)
@@ -1104,8 +1563,43 @@ class WorkspaceTable:
 
     def batch_writer(self) -> WorkspaceBatchWriter:
         """``table.batch_writer()`` through the view (a context manager): each ``put_item(Item=…)`` is checked as
-        ``put_item`` checks it before it is buffered. Puts only for now (``WorkspaceBatchWriter``)."""
+        ``put_item`` checks it before it is buffered. Puts only (``WorkspaceBatchWriter``); deletes go through
+        ``batch_delete``."""
         return WorkspaceBatchWriter(self._check_item, self._unscoped_table.batch_writer())
+
+    def batch_delete(self, keys: Iterable[Mapping[str, Any]]) -> int:
+        """Delete every item ``keys`` names, and answer how many keys were sent: used by the hard delete (4d-2).
+
+        Every key is checked before anything is sent (in the scope, exactly the table's key: ``pk`` and ``sk``, or
+        ``source`` on voc-watermarks; none twice), so one key outside the scope refuses the whole call. Sent as
+        BatchWriteItem requests of up to ``MAX_BATCH_WRITE_ITEMS`` deletes on this table only; each request's
+        ``UnprocessedItems`` are checked again and re-sent with a jittered backoff, ``BATCH_WRITE_ATTEMPTS`` calls in
+        all, then ``UnprocessedItemsError`` (the requests before it stay deleted: a delete of a missing key changes
+        nothing, so the caller simply repeats the call). Deleting an absent key is not an error.
+        """
+        checked = self.check_keys(keys)
+        expected = {self.key_attribute} | ({'sk'} if self.key_attribute == 'pk' else set())
+        if any(set(key) != expected for key in checked):
+            raise ValueError(f'a batch delete names each item by its key alone: {", ".join(sorted(expected))}')
+        self._refuse_duplicates('BatchWriteItem', checked)
+        for start in range(0, len(checked), MAX_BATCH_WRITE_ITEMS):
+            self._delete_chunk(checked[start:start + MAX_BATCH_WRITE_ITEMS])
+        return len(checked)
+
+    def _delete_chunk(self, keys: list[dict[str, Any]]) -> None:
+        name = self._unscoped_table.name
+        pending: list[Any] = [{'DeleteRequest': {'Key': key}} for key in keys]
+        for attempt in range(BATCH_WRITE_ATTEMPTS):
+            if attempt:
+                unprocessed_backoff(attempt)
+            response = self._unscoped_table.meta.client.batch_write_item(RequestItems={name: pending})
+            pending = list((response.get('UnprocessedItems') or {}).get(name) or [])
+            if not pending:
+                return
+            # What DynamoDB hands back is re-sent only as deletes of keys of the scope.
+            self.check_keys(_deleted_key(request) for request in pending)
+        raise UnprocessedItemsError(
+            f'BatchWriteItem left {len(pending)} deletes unprocessed after {BATCH_WRITE_ATTEMPTS} calls')
 
     def _checked_write(self, entry: object) -> dict[str, Any]:
         """One ``TransactItems`` entry, checked, with the view's ``TableName``."""
@@ -1173,8 +1667,8 @@ class WorkspaceBatchWriter:
     writer flushes in ``__exit__`` whatever ended the block), so a caller that needs all or nothing uses
     ``transact_write_items``.
 
-    Puts only. ``delete_item`` is refused for now: the workspace's hard delete (phase 4, docs/multi-workspace.md
-    "Export and delete") adds a checked batch delete; until then a delete goes one key at a time through
+    Puts only. ``delete_item`` is refused: a batch of deletes goes through ``WorkspaceTable.batch_delete`` (every key
+    checked before any is sent, its unprocessed items retried within a bound), one delete through
     ``WorkspaceTable.delete_item``.
     """
 
@@ -1195,8 +1689,7 @@ class WorkspaceBatchWriter:
         self._writer.put_item(Item=dict(Item))
 
     def delete_item(self, **_kwargs: Any) -> NoReturn:
-        raise OutOfScopeError('a batch delete is not part of the workspace layer yet: delete one key at a time '
-                              'with WorkspaceTable.delete_item')
+        raise OutOfScopeError('the batch writer only puts: delete with WorkspaceTable.batch_delete or delete_item')
 
 
 def _checked_options(call: str, kwargs: Mapping[str, Any], allowed: frozenset[str]) -> dict[str, Any]:

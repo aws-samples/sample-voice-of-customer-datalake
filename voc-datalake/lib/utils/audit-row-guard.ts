@@ -11,7 +11,9 @@
  * admin's entry into a workspace, the workspace's creation and its membership changes, written by the workspaces
  * API, lambda/shared/workspace.py, platform_workspaces.py and workspace_members.py; a deleted user's membership
  * removals, written by the users API, `AUDIT#WS#*` only; a platform admin's entry through the metrics API or the
- * feedback edits, each `AUDIT#WS#*` only). Every role that can write in one of those
+ * feedback edits, each `AUDIT#WS#*` only; a workspace's hard delete, voc-workspace-delete: its tombstones,
+ * `AUDIT#tombstone#*` only, in voc-aggregates, and `AUDIT#workspace-deletes` only in voc-workspaces, where the
+ * workspaces API writes that partition's request and cancel rows). Every role that can write in one of those
  * tables gets, on it, an explicit Deny pinned by `dynamodb:LeadingKeys` to `AUDIT#*`:
  *
  *   - a table the role is that table's audit writer for: Deny DeleteItem, UpdateItem and BatchWriteItem (no audit
@@ -113,6 +115,12 @@ const AUDIT_WRITERS: readonly { readonly table: keyof AuditRowTables; readonly r
   // (a workspace form's FORM# lookup row, and its form_deleted audit row before the delete), so the role is named a
   // writer of AUDIT#WS#* itself (lib/stacks/api-engagement-lambdas.ts).
   { table: 'workspacesTable', rolePathSuffix: '/FeedbackFormLambdaRole', partitionKey: 'AUDIT#WS#*' },
+  // A workspace's hard delete (lib/stacks/workspace-delete-worker.ts): one tombstone per deleted item and memory
+  // (AUDIT#tombstone#<source>, AUDIT#tombstone#memory: a conditional put of a new key, shared/ws_repo.py
+  // WorkspaceTombstones), and the platform's completed row (AUDIT#workspace-deletes).
+  { table: 'aggregatesTable', rolePathSuffix: '/WorkspaceDeleteWorker/DeleteRole', partitionKey: 'AUDIT#tombstone#*' },
+  { table: 'workspacesTable', rolePathSuffix: '/WorkspaceDeleteWorker/DeleteRole',
+    partitionKey: 'AUDIT#workspace-deletes' },
 ];
 
 const TABLE_KEYS = ['aggregatesTable', 'projectsTable', 'participantsTable', 'featureRequestsTable',

@@ -24,6 +24,8 @@ import { AgentRuntime } from './agent-runtime';
 import { createBriefingWorker } from './briefing-worker';
 import { createRadarScanWorker } from './radar-scan-worker';
 import { createRetentionWorker } from './retention-worker';
+import { WORKSPACE_HARD_DELETE_ENV, workspaceHardDeleteEnabled } from '../utils/workspace-hard-delete';
+import { createWorkspaceDeleteWorker } from './workspace-delete-worker';
 import { createWorkspaceExportWorker } from './workspace-export-worker';
 import { createResearchStateMachine } from './processing-research-workflow';
 import { grantSharedMemoryRecall } from '../utils/memory-recall-grant';
@@ -32,10 +34,12 @@ import { appVersion } from '../utils/connector-version';
 import { grantSilverHistoryPut, grantWorkspaceSilverHistoryPut } from '../utils/silver-history-grants';
 import { WORKSPACE_RAW_LAYER_PREFIX } from './core-buckets';
 import { grantReadAndWrites } from '../utils/table-write-grants';
+import { grantWorkspaceStatusRead } from '../utils/workspace-resolution-grants';
 import { grantRealtimePublish, type RealtimePublishing } from '../utils/realtime';
 import { FEATURE_REQUESTS_TABLE_ENV, grantFeatureRequestEvidenceRead } from '../utils/feature-request-evidence-grant';
-import { createAggregatorRole, createProcessorRole, grantTextAnalysis } from './processing-roles';
+import { createAggregatorRole, createProcessorRole, grantProcessorDropCount, grantTextAnalysis } from './processing-roles';
 import { loadPlugins, pluginIdsWithCapability } from '../plugin-loader';
+import { WORKSPACE_PARAMETER_BASE_PATH } from '../utils/workspace-secrets';
 
 /**
  * The processor env var naming the sources whose records are refreshed in place
@@ -63,10 +67,15 @@ export interface VocProcessingStackProps extends VocStackProps {
   /** voc-feature-requests: research reads board requests as a separate evidence source (Query only); the
    *  retention worker de-identifies board rows on an erasure by email. */
   featureRequestsTable: dynamodb.Table;
-  /** The memory scanner reads assistant sessions; the extractor reads one. */
+  /** The memory scanner reads assistant sessions; the extractor reads one; a workspace's hard delete removes its
+   *  members' conversations there (only with the flag). */
   conversationsTable: dynamodb.Table;
   /** voc-workspaces: the retention worker removes the email and name from membership rows on an erasure by email. */
   workspacesTable: dynamodb.Table;
+  /** voc-watermarks: a workspace's hard delete removes its ingestion watermarks (listed in voc-aggregates). */
+  watermarksTable: dynamodb.Table;
+  /** voc-participants: a workspace's hard delete removes its projects' list links (only with the flag). */
+  participantsTable: dynamodb.Table;
   /** The agent conductor re-checks a plan's approver in Cognito (docs/assistant-plan-mode.md). */
   userPool: cognito.IUserPool;
   processingQueue: sqs.Queue;
@@ -134,10 +143,12 @@ export class VocProcessingStack extends VocStack {
     // ============================================
     // PROCESSOR + AGGREGATOR ROLES (one each, lib/stacks/processing-roles.ts)
     // ============================================
+    const { workspacesTable } = props;
     const processingRole = createProcessorRole(this, {
-      feedbackTable, aggregatesTable, idempotencyTable, radarTable: props.radarTable, processingQueue, kmsKey, rawDataBucket,
+      feedbackTable, aggregatesTable, idempotencyTable, radarTable: props.radarTable, workspacesTable, processingQueue,
+      kmsKey, rawDataBucket,
     });
-    const aggregatorRole = createAggregatorRole(this, { aggregatesTable, idempotencyTable, kmsKey });
+    const aggregatorRole = createAggregatorRole(this, { aggregatesTable, idempotencyTable, workspacesTable, kmsKey });
 
     // ============================================
     // FEEDBACK PROCESSOR LAMBDA
@@ -160,6 +171,8 @@ export class VocProcessingStack extends VocStack {
         FEEDBACK_TABLE: feedbackTable.tableName,
         AGGREGATES_TABLE: aggregatesTable.tableName,
         IDEMPOTENCY_TABLE: idempotencyTable.tableName,
+        // A workspace message's META status (dropped when not active; lambda/shared/ws_repo.py workspace_is_active).
+        WORKSPACES_TABLE: workspacesTable.tableName,
         PRIMARY_LANGUAGE: config.primaryLanguage,
         ENRICHMENT_CONCURRENCY: String(PROCESSOR_ENRICHMENT_CONCURRENCY),
         // No BEDROCK_MODEL_ID env: the enrichment model resolves through the
@@ -230,6 +243,8 @@ export class VocProcessingStack extends VocStack {
         // warning and applies counters non-transactionally, which is the
         // pre-#264 behaviour rather than an outage.
         IDEMPOTENCY_TABLE: idempotencyTable.tableName,
+        // A workspace record's META status (skipped when not active; lambda/shared/ws_repo.py workspace_is_active).
+        WORKSPACES_TABLE: workspacesTable.tableName,
         POWERTOOLS_SERVICE_NAME: 'voc-aggregator',
         LOG_LEVEL: 'INFO',
       },
@@ -283,6 +298,7 @@ export class VocProcessingStack extends VocStack {
     // ============================================
     const reprocessWorker = this.createCategoryReprocessLambda({
       feedbackTable, aggregatesTable, kmsKey, rawDataBucket, processingLayer, primaryLanguage: config.primaryLanguage,
+      workspacesTable: props.workspacesTable,
     });
     // A reprocess job's end reaches its starter (shared/reprocess_jobs.py finish_job, docs/realtime.md).
     grantRealtimePublish(props.realtime, 'jobs', [reprocessWorker]);
@@ -322,6 +338,27 @@ export class VocProcessingStack extends VocStack {
     });
     // An export's end reaches the admin who started it (lambda/jobs/workspace_export/handler.py, docs/realtime.md).
     grantRealtimePublish(props.realtime, 'jobs', [workspaceExportWorker]);
+
+    // ============================================
+    // WORKSPACE HARD DELETE (docs/multi-workspace.md "Export and delete", steps 3 and 4): built only with
+    // -c workspaceHardDelete=true (lib/utils/workspace-hard-delete.ts; off until the per-person export ships)
+    // ============================================
+    if (workspaceHardDeleteEnabled(this)) {
+      // The processor counts the messages it drops for a deleting workspace on that workspace's own drop counter,
+      // WS#{ws} / WSDELETE_DROPS, never its job row (processing-roles.ts grantProcessorDropCount).
+      this.processingLambda.addEnvironment(WORKSPACE_HARD_DELETE_ENV, 'true');
+      grantProcessorDropCount(processingRole, props.workspacesTable);
+      createWorkspaceDeleteWorker(this, 'WorkspaceDeleteWorker', {
+        uniqueName: (baseName) => this.uniqueName(baseName),
+        parameterBasePath: this.prefixed(WORKSPACE_PARAMETER_BASE_PATH),
+        layer: processingLayer,
+        kmsKey, feedbackTable, aggregatesTable, workspacesTable: props.workspacesTable,
+        memoryTable: props.memoryTable, watermarksTable: props.watermarksTable, radarTable: props.radarTable,
+        projectsTable, jobsTable, participantsTable: props.participantsTable,
+        conversationsTable: props.conversationsTable, rawDataBucket,
+        pluginIds: loadPlugins(path.join(__dirname, '../../plugins')).map((plugin) => plugin.id),
+      });
+    }
 
     // ============================================
     // MEMORY + AUTONOMOUS AGENTS
@@ -503,6 +540,7 @@ export class VocProcessingStack extends VocStack {
     rawDataBucket: s3.IBucket;
     processingLayer: lambda.ILayerVersion;
     primaryLanguage: string;
+    workspacesTable: dynamodb.ITable;
   }): lambda.Function {
     const functionName = this.uniqueName(CATEGORY_REPROCESS_FUNCTION_BASE_NAME);
     const role = new iam.Role(this, 'CategoryReprocessRole', {
@@ -524,6 +562,7 @@ export class VocProcessingStack extends VocStack {
     grantSilverHistoryPut(deps.rawDataBucket, role);
     grantWorkspaceSilverHistoryPut(deps.rawDataBucket, role);
     deps.kmsKey.grantEncryptDecrypt(role);
+    grantWorkspaceStatusRead(role, deps.workspacesTable); // a workspace job stops when it is not active (7.28.00)
     // 'enrichment'/'utilities' surfaces are repointable via the picker (issue #96).
     grantClaudeModels(role, 'invoke');
     grantTextAnalysis(role, ['comprehend:DetectSentiment', 'comprehend:DetectDominantLanguage']);
@@ -556,6 +595,7 @@ export class VocProcessingStack extends VocStack {
       environment: {
         FEEDBACK_TABLE: deps.feedbackTable.tableName,
         AGGREGATES_TABLE: deps.aggregatesTable.tableName,
+        WORKSPACES_TABLE: deps.workspacesTable.tableName,
         RAW_DATA_BUCKET: deps.rawDataBucket.bucketName,
         // The Silver contract's pipeline_version (lambda/shared/silver_provenance.py).
         APP_VERSION: appVersion(),

@@ -250,31 +250,36 @@ def test_the_deployments_revision_delete_goes_in_batches_as_before(table):
 
 
 @pytest.mark.parametrize('scope', [A, B], ids=_name)
-def test_a_workspaces_revision_delete_is_one_checked_delete_per_row(table, scope):
+def test_a_workspaces_revision_delete_is_the_layers_checked_batch_delete(table, scope):
+    """Through ``WorkspaceTable.batch_delete`` (the hard delete's one batch-delete path): requests of 25 on the
+    workspace's version partition only, no single DeleteItem."""
     _thirty_revisions(table)
     client = table.meta.client
-    with (patch.object(client, 'batch_write_item') as batched,
+    with (patch.object(client, 'batch_write_item', wraps=client.batch_write_item) as sent,
           patch.object(client, 'delete_item', wraps=client.delete_item) as deleted):
         _untouched(table, scope, lambda: document_history.delete_document_revisions(table, PROJECT, 'doc_1',
                                                                                     workspace=scope))
-    batched.assert_not_called()
-    assert deleted.call_count == 30
-    assert {recorded.kwargs['Key']['pk'] for recorded in deleted.call_args_list} == {
+    deleted.assert_not_called()
+    requests = [recorded.kwargs['RequestItems'][TABLE] for recorded in sent.call_args_list]
+    assert [len(request) for request in requests] == [25, 5]
+    assert {entry['DeleteRequest']['Key']['pk'] for request in requests for entry in request} == {
         version_partition_key(PROJECT, workspace=scope)}
     assert list(_rows(table, scope)) == [(project_pk(PROJECT, workspace=scope), 'META')]
 
 
-def test_a_refused_revision_key_stops_the_delete_before_the_next(table):
+def test_a_refused_revision_key_deletes_nothing(table):
+    """Every key is checked before anything is sent: one outside the workspace refuses the whole delete."""
     rows = [document_revision_key(PROJECT, 'doc_1', 1, workspace=A), document_revision_key(PROJECT, 'doc_1', 1),
             document_revision_key(PROJECT, 'doc_1', 2, workspace=A)]
     for key in rows:
         table.put_item(Item=key)
+    client = table.meta.client
     with (patch.object(document_history, 'iter_version_rows', return_value=iter(rows)),
+          patch.object(client, 'batch_write_item', wraps=client.batch_write_item) as sent,
           pytest.raises(OutOfScopeError, match='a key outside the workspace')):
         document_history.delete_document_revisions(table, PROJECT, 'doc_1', workspace=A)
-    assert _row(table, rows[1])
-    assert _row(table, rows[2])
-    assert not _row(table, rows[0])
+    sent.assert_not_called()
+    assert all(_row(table, key) for key in rows)
 
 
 # ── Fail closed: a row or index key of another scope ─────────────────────────

@@ -36,7 +36,8 @@ export interface EngagementInputs {
 
 /** The chat API Lambda's timeout (voc-chat-api, lambda/api/chat_handler.py): a chat route's write lands within it of
  *  its fresh workspace resolution, so the workspace hard delete's fence depends on it (docs/multi-workspace.md,
- *  "Export and delete", step 4: the fence is above it plus CHAT_STREAM_TIMEOUT and a margin). */
+ *  "Export and delete", step 4: the fence is at least the status cache's TTL plus the longer of it and
+ *  CHAT_STREAM_TIMEOUT plus a minute; api-stack-assist-workers.test.ts holds it there). */
 export const CHAT_API_TIMEOUT = cdk.Duration.seconds(30);
 
 /** A membership's two rows (lambda/shared/workspace_members.py): `WS#{ws}` / `MEMBER#{sub}` and `USER#{sub}` / `WS#{ws}`. */

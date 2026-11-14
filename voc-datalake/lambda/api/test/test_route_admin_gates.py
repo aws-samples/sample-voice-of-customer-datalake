@@ -160,7 +160,11 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         'PUT /users/<username>/platform-admin',
     }),
     # The platform console (docs/multi-workspace.md → Control plane): an admin gate, then the platform-admin one.
-    'workspaces_handler.py': frozenset({'POST /platform/workspaces'}),
+    # A workspace's hard delete, cancelled during its fence or resumed when it stopped ("Export and delete").
+    'workspaces_handler.py': frozenset({
+        'POST /platform/workspaces', 'POST /platform/workspaces/<ws>/delete/cancel',
+        'POST /platform/workspaces/<ws>/delete/resume',
+    }),
 }
 
 # Routes for platform admins only (docs/multi-workspace.md → Control plane): each is also in ADMIN_ONLY (a write)
@@ -169,7 +173,10 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
 PLATFORM_GATE = 'require_platform_admin'
 PLATFORM_ADMIN_ONLY: dict[str, frozenset[str]] = {
     'users_handler.py': frozenset({'PUT /users/<username>/platform-admin'}),
-    'workspaces_handler.py': frozenset({'POST /platform/workspaces', 'GET /platform/workspaces'}),
+    'workspaces_handler.py': frozenset({
+        'POST /platform/workspaces', 'GET /platform/workspaces', 'POST /platform/workspaces/<ws>/delete/cancel',
+        'POST /platform/workspaces/<ws>/delete/resume',
+    }),
     # What every workspace of the deployment shares (docs/multi-workspace.md, "Per-workspace configuration"): the
     # start theme (decision 7) and the alarms on the deployment's own Lambdas.
     'appearance_routes.py': frozenset({'PUT /settings/appearance'}),
@@ -193,6 +200,8 @@ WORKSPACE_ADMIN_ONLY: dict[str, frozenset[str]] = {
         # The workspace's export (docs/multi-workspace.md, "Export and delete"): start it, and sign a 15-minute
         # download link of a completed one (an audited read of the whole workspace's data).
         'POST /me/workspaces/current/export', 'POST /me/workspaces/current/export/link',
+        # Its hard delete (decision 17): the slug typed, a basis, audited.
+        'POST /me/workspaces/current/delete',
     }),
 }
 # Reads for a workspace's admins only, gated like the writes above: the status of the export of the whole
@@ -548,6 +557,8 @@ def test_the_platform_gate_raises_authorization_error():
     ('users_handler.py', 'PUT /users/<username>/platform-admin'),
     ('workspaces_handler.py', 'POST /platform/workspaces'),
     ('workspaces_handler.py', 'GET /platform/workspaces'),
+    ('workspaces_handler.py', 'POST /platform/workspaces/<ws>/delete/cancel'),
+    ('workspaces_handler.py', 'POST /platform/workspaces/<ws>/delete/resume'),
 ])
 def test_removing_the_platform_gate_is_detected(handler, route):
     tree = ast.parse((API_DIR / handler).read_text(encoding='utf-8'))

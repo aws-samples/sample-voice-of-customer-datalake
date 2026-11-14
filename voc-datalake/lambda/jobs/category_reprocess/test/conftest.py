@@ -32,6 +32,13 @@ def tables():
 
 
 @pytest.fixture(autouse=True)
+def workspaces_active():
+    """A workspace job's status check (7.28.00) answers active; test_workspace_reprocess.py runs the real one."""
+    with patch.object(handler, 'workspace_active', lambda _scope: True):
+        yield
+
+
+@pytest.fixture(autouse=True)
 def kept_versions():
     """``keep_silver_version`` as a mock: every suite here sees the calls, none writes S3."""
     mock = MagicMock(return_value=None)

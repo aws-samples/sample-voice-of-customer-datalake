@@ -295,7 +295,13 @@ from shared.stream_claims import release as release_reversal
 from shared.stream_claims import reversal_key
 from shared.timestamps import now_iso
 from shared.usefulness import USEFULNESS_UNRATED, stored_band
-from shared.ws_repo import WorkspaceScope, is_workspace_key, scope_from_key, ws_table
+from shared.ws_repo import (
+    WorkspaceScope,
+    WorkspaceStatusCheck,
+    is_workspace_key,
+    scope_from_key,
+    ws_table,
+)
 
 if TYPE_CHECKING:
     from mypy_boto3_dynamodb.type_defs import TransactWriteItemTypeDef
@@ -306,6 +312,11 @@ dynamodb = get_dynamodb_resource()
 # Configuration
 AGGREGATES_TABLE = os.environ['AGGREGATES_TABLE']
 aggregates_table = dynamodb.Table(AGGREGATES_TABLE)
+# voc-workspaces, read only for a workspace record's META status (shared/ws_repo.py WorkspaceStatusCheck: one strongly
+# consistent GetItem per workspace per 300 s, 30 s when not active, per container). A failed read raises, so the record
+# fails and the stream retries it. A deployment-wide record reads nothing new.
+WORKSPACES_TABLE = os.environ['WORKSPACES_TABLE']
+workspace_active = WorkspaceStatusCheck(dynamodb.Table(WORKSPACES_TABLE))
 
 # The dedupe table for stream records (issue #264). Empty when the function has not
 # been given it, which is not fatal: the aggregates are still written, exactly as
@@ -373,6 +384,9 @@ CONFLICTED_METRIC = "AggregateTransactionConflicted"
 # deployment-wide. A WELL-FORMED workspace record (`WS#{ws}#…`) is aggregated into that
 # workspace's own counters — see "Two paths" below.
 WORKSPACE_SKIPPED_METRIC = "AggregatorWorkspaceRecordsSkipped"
+# INACTIVE_WORKSPACE_METRIC counts a record of a workspace that is not active (`deleting`, or no `META`): its
+# counters are not moved, because the hard delete removes them (and the delete's own REMOVE records arrive here too).
+INACTIVE_WORKSPACE_METRIC = "AggregatorInactiveWorkspaceRecordsSkipped"
 
 # --- Two paths: the deployment's counters and each workspace's ----------------
 # 🔑 A STREAM RECORD'S WORKSPACE COMES FROM ITS KEY (docs/multi-workspace.md, "Request
@@ -2384,6 +2398,14 @@ def _skip_unscoped_workspace_record() -> dict:
     return {"status": "skipped", "reason": "unscoped workspace key"}
 
 
+def _skip_inactive_workspace_record(scope: WorkspaceScope) -> dict:
+    """A record of a workspace that is not active: counted (`INACTIVE_WORKSPACE_METRIC`) and left alone, no counter
+    and no data version moved (its hard delete removes the workspace's counters)."""
+    logger.info("Skipping a feedback record of a workspace that is not active", extra={"workspace_id": scope.ws})
+    metrics.add_metric(name=INACTIVE_WORKSPACE_METRIC, unit="Count", value=1)
+    return {"status": "skipped", "reason": "workspace not active"}
+
+
 def record_handler(record: DynamoDBRecord) -> dict:
     """Process a single DynamoDB Stream record.
 
@@ -2401,7 +2423,8 @@ def record_handler(record: DynamoDBRecord) -> dict:
     while still being separately visible as REFUSED_METRIC.
 
     A workspace's record (`pk` `WS#{ws}#…`) does all of this in that workspace's counters
-    (see "Two paths"); a `WS#` key naming no workspace is skipped and counted.
+    (see "Two paths"); a `WS#` key naming no workspace is skipped and counted, and so is a record of a workspace that
+    is not active (`workspace_active`).
     """
     event_name = _event_name(record)
     logger.info(f"Processing record: event_name={event_name}")
@@ -2409,6 +2432,8 @@ def record_handler(record: DynamoDBRecord) -> dict:
     refused, scope = record_scope(getattr(record, 'raw_event', None))
     if refused:
         return _skip_unscoped_workspace_record()
+    if scope is not None and not workspace_active(scope):
+        return _skip_inactive_workspace_record(scope)
     with in_scope(scope):
         return _handle_record(record, event_name)
 
@@ -3025,13 +3050,22 @@ _COALESCED_EVENTS = ('INSERT', 'REMOVE')
 def _run_kind(raw: object) -> tuple[str, WorkspaceScope | None] | None:
     """The run a record joins: its event (INSERT or REMOVE) AND its scope, so a run never mixes the deployment's
     records with a workspace's, nor two workspaces' (see "Two paths"). None for a record handled alone (a `WS#` key
-    naming no workspace too: `record_handler` skips it, so it never joins a run's transaction)."""
+    naming no workspace too, and a record of a workspace that is not active or whose status cannot be read:
+    `record_handler` skips the first two and fails the third, so none joins a run's transaction)."""
     if not isinstance(raw, Mapping):
         return None
     refused, scope = record_scope(raw)
     name = raw.get('eventName')
     if refused or name not in _COALESCED_EVENTS:
         return None
+    if scope is not None:
+        try:
+            if not workspace_active(scope):
+                return None
+        except (BotoCoreError, ClientError):
+            # Handled alone: `record_handler` reads the status again (a failed read is never cached) and fails this
+            # one record, not the whole batch.
+            return None
     return name, scope
 
 

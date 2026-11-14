@@ -49,6 +49,7 @@ and files named here are the planned ones unless the table lists them.
 | 7.25.00 | A prerequisite of the hard delete ([Export and delete](#export-and-delete), steps 3 and 4): **no conversation is written in a workspace that is not active.** The sweep finds a workspace's conversations through its list of conversation owners (7.19.00), so a row listed or saved after the workspace is marked `deleting` could land in a partition it never finds. **Stream Lambda** (`lambda/stream/src/assistant/session/workspace-status.ts`): one reader of the `META` status, `readWorkspaceStatus` (a strongly consistent GetItem of `WS#{ws}` / `META` projected to `pk`, `sk` and `status`, uncached), used fresh at the run's start (`workspace-member.ts`, after the member's row) and, through a short cache, before every session write inside the workspace (`store.ts` `put`): before the owner row (`WS#{ws}#CONVERSANTS`) and before the `CONV#` row. A missing `META` or any status but `active` is the one 404 (`WorkspaceNotFoundError`, `Workspace not found`) and nothing is written. A failed read sends nothing and is never kept; the next write reads again. A store made without the check writes nothing inside a workspace. An `active` answer is kept 300 s per warm container and a not-active one 30 s, timed from when the read was sent: the TTLs the hard delete's planned Python status check will use (not merged; today the chat routes resolve each write's workspace fresh, with no status cache). An older read returning late never replaces a newer answer, so it can let through at most one write, inside the run bound below. A write the check refuses is logged and counted once as a failed session write (`AssistantSessionWriteFailed`, by its error's name), and the run sends no later write (`writer.ts`, as when superseded); it goes on answering, unsaved. The stream's DynamoDB client bounds each request at 10 s. **What bounds the last write**: the run's timeout, not the cache. Every run reads the status fresh at its start, so a run that starts after the mark writes nothing; the handler waits for its saves before it returns, so a run that started before the mark writes its last row within one invocation of it (`CHAT_STREAM_TIMEOUT`, 15 minutes, `lib/stacks/api-assistant-lambdas.ts`). The cache never extends that past the run's end; the per-write check only stops such a run sooner. The delete's fence (not built yet) depends on that bound and the chat routes' below (the rule: [Export and delete](#export-and-delete), step 4); `api-stack-assist-workers.test.ts` pins both values to the ones written here. **Chat routes** (`lambda/api/chat_handler.py`): every write (both save shapes, rename, Stop, delete) resolves the workspace with `fresh=True` (`shared/request_workspace.py`: strongly consistent reads of the member's row and `META`, never the warm cache) before it writes, and a `deleting` or missing workspace gets the one 404 there; a write lands within the chat API Lambda's own timeout of its resolution (`CHAT_API_TIMEOUT`, 30 s, `lib/stacks/api-engagement-lambdas.ts`). New: Stop (`POST /chat/conversations/{id}/cancel`) inside a workspace lists the caller among its conversation owners (put if absent, `_Caller.list_as_owner`) before the `RUNCANCEL#` marker, as a save does, so no marker sits in a partition the list does not name; no `CONV#` row is needed (a run can be stopped before its first save). The stream Lambda writes no marker itself (it only reads one). Follow-up: these routes may share the hard delete's status check once it is merged. **Other writers**: none. The memory extractor (GetItem) and scanner (a Query of `gsi1-by-kind-updated-at`) only read voc-conversations, and the export job only counts (7.24.00); no agent, plan step, MCP route or other job has a grant on it. **IAM**: the stream role's GetItem on voc-workspaces stays held to `WS#*` by `dynamodb:LeadingKeys`, with `dynamodb:Attributes` now `pk`, `sk`, `role` and `status` only (before: the resolver's six, `name` and `slug` too, which it never read; `lib/utils/workspace-resolution-grants.ts` `grantWorkspaceRoleAndStatusReads`), the attributes required (`Null` false). Tests: `workspace-status.test.ts` (a deleting workspace and one with no `META`: no owner row and no conversation; a failed read; the TTLs from when the read was sent; an out-of-order read; the writer stopping; a run marked deleting after its start) and `lambda/api/test/test_chat_workspace.py` (both save shapes and Stop, deleting and no `META`, the warm cache primed first: no owner row, no `CONV#` or `RUNCANCEL#` row; Stop lists the owner first, and outside a workspace lists nobody) |
 | 7.26.00 | Phase 3's claim and registry, slice 3a of [the project plan](#the-project-plan-phase-3) (plumbing, no behaviour change). **Claim** (voc-projects, deployment-wide): `PROJECT_ID#{id}` / `CLAIM`, with `workspace_id` and `claimed_at`. Built only by `lambda/shared/ws_repo.py` `claim_project_id(project_id, *, workspace, claimed_at) -> ProjectClaim` (a `ProjectClaim` holds only the id, the workspace and the time, never a key or an item; its constructor takes the layer's private token, it cannot be changed or subclassed), which checks an id of the project id shape (`shared/row_ids.py` `LONG_OPAQUE_ID_RE`: no `#`, at most 128 characters) and refuses (`OutOfScopeError`) any other id and anything but a `WorkspaceScope` (the deployment, a bare id). Written only inside a scoped transaction: `WorkspaceTable.transact_write_items(items, *, claim=…)` takes exactly one claim and builds its Put itself (`_claim_entry`: the key from the id, checked again, `workspace_id` its own workspace's, the claim's time, `attribute_not_exists(pk)`), first (`PROJECT_CLAIM_INDEX` 0); a claim of another workspace, anything whose type is not exactly `ProjectClaim`, an instance made without its constructor, a transaction on any table but voc-projects (the table named by `PROJECTS_TABLE`), or a caller's own entry outside the workspace (a hand-built `PROJECT_ID#` Put included) is refused before anything is sent, and the deployment's path (`transact_project_writes` without a workspace) refuses a claim. Read by `project_claim(table, project_id) -> WorkspaceScope | None`: a strongly consistent GetItem projected to `workspace_id`, the scope built by the layer; None when there is no claim, ValueError for a claim that names no workspace id (never read as the deployment's); a caller uses the answer only to route, applies that workspace's own access check, and never echoes the id. Released by `release_project_claim(table, project_id, *, workspace) -> bool`: a DeleteItem conditioned on the claim naming that workspace (False, nothing deleted, otherwise); its caller is the workspace delete (3g). **Why voc-projects**: the claim sits beside the rows it routes to (`project_pk`'s `PROJECT#{id}` and `WS#{ws}#PROJECT#{id}` are both there), so the create, its readers (the public links, the product-doc extractor, the MCP pins) and the projects API's role need no other table; a table of its own would be one more to provision, grant and back up for one row per project. **Registry**: `WS#{ws}#PROJECT_IDS` / `{id}` (`created_at`) in voc-projects, built by `lambda/shared/project_keys.py` `project_registry_key(project_id, *, workspace)` (`project_registry_pk(workspace)`), read by `lambda/shared/project_tables.py` `iter_registered_project_ids(table, *, workspace) -> Iterator[str]`: a strongly consistent Query of the registry through `scoped_query.query_partition` (`ws_table`), every page, projected to `sk`, ids only; a workspace only. Every claim a workspace holds has its registry row (they are written in one transaction), so the registry lists every claim. **Create** (`api/projects.py` `create_project(body, caller, *, workspace=None)`, `shared/project_writes.py` `create_workspace_project`): with a workspace, the `META` keyed `WS#{ws}#PROJECT#{id}` (its `gsi1pk` `WS#{ws}#TYPE#PROJECT`) is checked to be that workspace's, then ONE scoped transaction (`transact_project_writes(…, workspace=, claim=)` through `ws_table`) puts the claim, the `META` and the registry row, each only if absent: all or nothing, so no claim is ever left without its project. A claim already held cancels it with ConditionalCheckFailed at the claim's index, which `shared/ids.py` `write_with_fresh_id(put_index=PROJECT_CLAIM_INDEX)` takes for a collision: a fresh id, once (a second one propagates, as a same-second collision's does); any other cancellation is raised as it came, not retried. The deployment's creates never put a claim (decided); why that is safe is written in 3h. A clash on the `META` or the registry row while the claim is free (cancelled at index 1 or 2) is not retried either: no create makes one, since the claim is written with both, so it means a row left by hand or a bug, and the create fails rather than mint around it. Without a workspace the create sends the one conditional PutItem it always sent (pinned request for request in `api/test/test_project_create_workspace.py`): no claim and no registry row, now or after the switch. No route passes a workspace. **IAM**: none yet (no role passes a workspace); the grant the switch adds is written in 3h below. **Guard** (`shared/test/test_ws_raw_access.py`): the claim's Put, GetItem and DeleteItem are the layer's own; `PROJECT_ID#` joins the unscoped key prefixes (only the layer spells it), `claim_project_id` is called by `shared/project_writes.py` only, and a literal `workspace=None` to `create_workspace_project` or `iter_registered_project_ids` is counted. Every create condition in the project stores (`api/projects.py`, `shared/project_writes.py`, `shared/document_versions.py`, `shared/document_history.py`) now names `project_writes.NEW_ROW_CONDITION` (the same string). **Load**: a workspace create is one three-item transaction (twice the write units of three puts) instead of one PutItem; the claim keys spread over every project id; a workspace's creates share two partitions of their own, its `META` index partition `WS#{ws}#TYPE#PROJECT` and its registry `WS#{ws}#PROJECT_IDS` (one write per create in each). Tests: `shared/test/test_project_claims.py`, `api/test/test_project_create_workspace.py` (moto) |
 | 7.27.00 | Phase 3's document versions and history, slice 3b of [the project plan](#the-project-plan-phase-3) (plumbing, no behaviour change). **Keys** (`lambda/shared/project_keys.py`, each with the keyword-only `workspace`, None giving exactly today's key): `version_partition_key` (`DOCUMENT_VERSIONS#PROJECT#{id}`; `WS#{ws}#DOCUMENT_VERSIONS#PROJECT#{id}` in a workspace, through `scoped_pk`), `version_counter_key` (`{TYPE}#{sha256 of the normalized base title}`), `version_allocation_key` (`ALLOCATION#{TYPE}#{sha256 of the allocation id}`), `document_revision_key` (`REVISION#{document id}#{n:06d}`, prefix `document_revisions_prefix`); `legacy_assignment_key` / `legacy_assignment_prefix` (`LEGACY_ASSIGNMENT#{counter sk}#…`) take the series' counter key and sit in its partition, so in its scope. `lambda/shared/document_versions.py` spelled these before; `DOCUMENT_VERSIONS#` is now built only in `project_keys.py` (the raw-access guard counts it there once; tests and docstrings quote the stored value). Their digests, and `versioned_document_id`'s, are `lambda/shared/digests.py` `sha256_hex`, as are the MCP grant's id and consent challenge hash (`mcp_oauth_grants.py`, which had its own copy): the same strings. **The partitions keyed by a project's id**: `project_partitions(project_id, *, workspace=None)` lists them, each a `ProjectPartition(kind, table_env, partition)`: `project` and `versions` in `PROJECTS_TABLE` (`PROJECT#{id}`, `DOCUMENT_VERSIONS#PROJECT#{id}`), `jobs` in `JOBS_TABLE` and `lists` in `PARTICIPANTS_TABLE` (`PROJECT#{id}`), each `WS#{ws}#…` in a workspace (the jobs and the lists are not written there yet, 3c and 3d); the table names are the existing constants (`shared/ws_repo.py` `PROJECTS_TABLE_ENV`, `shared/engagement_config.py` `PARTICIPANTS_TABLE_ENV`) and `shared/tables.py`'s new `JOBS_TABLE_ENV`. Left out, each reached another way: the comment threads (`DCOMMENTS#{project}#{series}`, one partition per series, derived from the project's series), the review links' `DOCSHARE#{id}` rows (deployment-wide), the S3 objects (`ws/{ws}/` prefixes), the id's claim and the registry row (kept on a project delete), and the workspace's own `LIST#` / `PERSON#` rows in voc-participants with their `project_ids` attributes, which a delete must clean. **Jobs' status key**: `job_status_pk(status, *, workspace=None)` (`STATUS#{status}`; `WS#{ws}#STATUS#{status}` in a workspace), used by `shared/jobs.py` for the three places it spelled it (the same string; `shared/assist_jobs.py` still spells its own, 3c). No caller of `project_partitions` yet: its callers are the workspace export and the hard delete's projects entry (3g) and the per-project delete (3h), and until then it is on the reachability allow-list. **Access**: a version partition is read through `lambda/shared/project_tables.py` `iter_version_rows` (the paging of `iter_project_rows`, over `scoped_query.query_partition`) or, for the version list's one page of revisions, `query_partition` itself; single items through `workspace_config.get_scoped_item` and `ingest_tables.table_view` (the lease's renew, raise and release); every transaction (the lease's acquire, a legacy document's assignment, an allocation's history, a new version, an unmanaged edit's snapshot) through `project_writes.transact_project_writes`. A revision delete deletes one key per revision its paged Query reads, so it is bounded by the rows read: the deployment's in batches through the table's own `batch_writer`, as before; a workspace's one scoped DeleteItem at a time (`WorkspaceTable.delete_item`, its key checked), stopping at the first refused key before any later one is sent. The layer's batch writer still refuses deletes (boto3 retries unprocessed items without a cap, and it checks only the key); the revision delete switches to `WorkspaceTable.batch_delete` (checked keys, duplicates refused, bounded retries) when the hard delete's track merges. **Stores threaded** (public functions keyword-only `workspace`, default the deployment; every private helper `*, workspace` with no default): `document_versions` (`persist_versioned_document`, `persist_legacy_document_versions` and the legacy-series migration, `get_versioned_document_by_allocation`, `preserve_versioned_document_allocation`), `document_history` (`edit_document`, `list_document_versions`, `restore_document_version`, `delete_document_revisions`, `series_versions`), `document_series.latest_version` and `human_documents.create_human_document` (its listing `gsi1pk` from `document_listing` in the same scope); their `require_deployment` refusals are gone. Without a workspace every request is the one sent before (same keys, conditions, write order and parameters: the mutation suites pin them unchanged, and `shared/test/test_document_versions_workspace.py` pins a create's and an edit's transactions key for key). No route, job or assistant tool passes a workspace. **Fail closed**: a workspace store handed a row or an index key of another scope (a deployment document, a `gsi1pk` without the workspace) is refused (`OutOfScopeError`) before anything is written; what stays refused (`NotPerWorkspaceError`): a series' comment threads and its persona review (`document_comments`, `document_review.run_review`, 3e), so a review route that reads a workspace's series still never files or lists its comments under the deployment's `DCOMMENTS#` keys, and the access gate (`project_access.resolve_access`, `project_gate`, 3h). **Still on the deployment's keys** (no workspace reaches them yet): `api/projects.py` `delete_document` and the project delete (`delete_project`), which sweep only the deployment's `DOCUMENT_VERSIONS#PROJECT#{id}`, and the project bundle's `scripts/project_bundle/remap.py` `_allocated_ids` and `exporter.py`, which read only the deployment's version partition (through `project_keys`); 3g and 3h move the per-project delete and the export onto `project_partitions`, so they reach `WS#{ws}#DOCUMENT_VERSIONS#PROJECT#{id}`, and the export holds the saved revisions too (they hold customer text). **Guard** (`shared/test/test_ws_raw_access.py`): `shared/document_versions.py` leaves the allow-list (it held four raw transactions, `meta.client` 4 and `transact` 4); `shared/document_history.py` goes from `batch` 1, `meta.client` 1, `transact` 1 to `batch` 1 (the deployment's batch delete); `DOCUMENT_VERSIONS#` joins the unscoped key prefixes (counted once, in `shared/project_keys.py`), and a literal `workspace=None` to `iter_version_rows` is counted (none today). **Load**: unchanged on the deployment's path; in a workspace each project's version rows share one partition, `WS#{ws}#DOCUMENT_VERSIONS#PROJECT#{id}`, as they do per project today, and a revision delete there costs one DeleteItem per revision (the deployment's one BatchWriteItem per 25) until `batch_delete`. **Audit**: `scripts/audit/py_stored_attrs.py` counts a write through a write helper (`transact_project_writes` and the like) as a write, following the variables the calling function builds (`transaction = [...]`, `transaction.append(...)`) and the module's own item builders, so the rows these stores write through the layer stay audited; `document_history.py` `replaced_at` keeps its allow-list entry, and the three attributes it now sees as well are allow-listed with their reasons (`document_versions.py` `document_pk`, `plugin_configs.py` `superseded_by_sub`, `reprocess_jobs.py` `last_config`). Tests: `shared/test/test_document_versions_workspace.py` (moto: the deployment and two workspaces, one project id: the counter, an allocation and its replay, the legacy migration, a human document created, edited and restored, `latest_version`, an unmanaged edit, restore and revision delete, a revision delete (the deployment's batches, a workspace's checked deletes, and a refused key stopping it), each leaving the other scopes' rows untouched), `shared/test/test_project_keys.py` (the keys, `project_partitions` and `job_status_pk`, literal), `scripts/audit/test_py_stored_attrs.py` (a write through a helper) |
+| 7.28.00 | The voc-multiplayer-b track's hard-delete slices (4d-1, 4d-2) and its cost slice A merged, wired to 7.25.00 to 7.27.00. **Phase 4d-1**: nothing writes into a workspace that is not active ([Export and delete](#export-and-delete), step 3): every writer of a workspace's data reads its `META` status first (`lambda/shared/ws_repo.py` `workspace_is_active`, one strongly consistent GetItem projected to `pk`, `sk` and `status`, cached per container by `WorkspaceStatusCache`, 300 s an active answer and 30 s a not-active one; `WorkspaceStatusCheck` binds it to a table): the scheduled fan-out skips such a workspace, an ingestor's run there is refused, the processor drops its messages (acked and counted, `WorkspaceMessagesDropped`) and the aggregator skips its stream records; an ingestor's watermark in a workspace is listed first in a directory row, `WS#{ws}#WATERMARK_KEYS` / `{plugin}#{key}` in voc-aggregates, so the delete finds every watermark with one Query. IAM: the ingestor, webhook, processor and aggregator roles read only a workspace's status (`grantWorkspaceStatusRead`). **Phase 4d-2**: a workspace's hard delete (decision 17; [Export and delete](#export-and-delete), steps 3 and 4; TENETS.md D5). **Behind a deployment flag that is refused for now**: a synth with `-c workspaceHardDelete=true` (`lib/utils/workspace-hard-delete.ts`) fails, saying the hard delete stays off until members can export their own conversations and personal memories (the gate in [Export and delete](#export-and-delete); TENETS.md D5's "offers an export first"); the per-person export slice lifts the refusal. There is no supported or unsupported way to turn it on until then: nothing the app reads (context, `cdk.json`, a context file, `-c`) builds the job, a test sets every context key the app reads and every `cdk.json` value to true and finds the check refuses (and builds nothing without the flag), another that the job is built only behind that check, and only the repository's tests and audits build the job, through a code path of the test harness that `bin/` never takes (`lib/test-support/hard-delete-app.ts`, `withHardDeleteBuilt`), to pin its code and grants. Built, the flag makes the job `voc-workspace-delete` and the routes' grants and sets `WORKSPACE_HARD_DELETE=true` on the workspaces API; off, neither the job nor any of its grants exists, and the request and the resume answer 403 "Deleting a workspace is not available in this deployment" before reading or writing anything (a platform admin's entry row included); the cancel, and the grants it needs, work whatever the flag (it only restores a workspace, so a delete left in its fence when the flag is turned off can still be cancelled). It stays off until the per-person export ships: a delete destroys members' conversations and personal memories, of which they have no copy. **Routes** (the workspaces API): `POST /me/workspaces/current/delete` `{confirm_slug, legal_basis}` (a workspace admin or an entered platform admin, the role read from the table; the slug typed exactly and a basis without personal data, 400 otherwise; 409 while an export or an erasure runs; 202 with the job, `waiting` in its 21-minute fence, and its `job_id`, the workspace's id: the requester's workspace answers the one 404 from then on, so only a platform admin can act on the delete, by that id: cancel or resume it, each answering the job; a read route to follow it comes with the platform console's delete view): the workspace's export and erasure locks taken for `delete-{ws}`, then one transaction: `META` and the listing row `deleting`, the job row `WSDELETE` / `{ws}`, and an `AUDIT#WS#{ws}` and an `AUDIT#workspace-deletes` row; a repeat that meets the same job answers it. `POST /platform/workspaces/{ws}/delete/cancel` (platform admins, until the job begins deleting, which is normally the end of its fence, and later for a job that never began: the workspace `active` again, audited, the locks freed, its counters marked for `rebuild_aggregates.py --workspace` in the answer, on the row (carried to a later request's row) and by the `WorkspaceCountersRebuildRequired` metric, at least how many messages were dropped, from the drop counter, in its audit rows) and `…/delete/resume` (a failed or stalled job, from its checkpoint, audited). **The job** `voc-workspace-delete` (`lambda/jobs/workspace_delete/`: `handler.py`, the registry `sweeps.py`): the generation claim on the job row (an event carries the generation to claim and nothing else: every invocation resumes from the row's checkpoint; the request writes `progress_at`, so a start never claimed reads stalled an hour later and resumes), the fence (waited for two minutes at a time, each step a hand-over, so a waiting delete holds one of the job's two reserved slots only briefly and a third delete requested meanwhile gets one within minutes; `waiting` → `running`, raced by a cancel on the same row; the row, never the event, says whether the fence is over: a row `waiting` runs the fence whatever the event names, and no progress past it is recorded on a row that is not `running`), then the sweeps in order (credentials, feedback with one tombstone per item first, counters, the other aggregates families, watermarks, memory with one tombstone per memory, exports, every object version and upload under `ws/{ws}/`, its Radar settings, the workspace's settings rows, its members' objectives rows (a former member's too), its projects, its members' conversations (a former member's too), the control-plane rows), a verify pass, the inventory and the export `LOCK` (held to the last step, so no export starts and an erasure leaves it alone), the platform's `completed` row (counts, never a row's content) and the job `completed`. Counters: the closed families are listed whatever an item holds (every sentiment label; each configured category with `other`, its subcategories and its sentiment pairs; each configured dimension's values, from the workspace's own `WS#{ws}#SETTINGS#categories` and `WS#{ws}#SETTINGS#dimensions`, never the deployment's; the default categories when it saved none), the open ones (tags, channels, sources, personas…) from the items and the metric-type index; an open value nothing names any more stays until the counters' 90-day TTL. The verify pass re-checks what the job can list (the inventory's partitions, the fixed ones, the owner lists, the versions and uploads, the credentials path, the control partition): it proves those empty, not that nothing of the workspace is left anywhere (TENETS.md D5 names the gaps); rows found send the job back to the first sweep once, then fail it at the first sweep with its rounds reset, so a resume sweeps and verifies again and never completes while rows remain. Writes back off and retry on a throttle; a hand-over whose invoke fails fails the row before the error is raised; a job stopped after 600 hand-overs is resumable, each resume granting 600 more, at most 10 resumes (then the 409 says an operator must look at the row and the logs); an erasure meeting a workspace that is not active creates no export lock row (its META read first: the retention role's GetItem of a META's status); kept: `AUDIT#WS#{ws}`, the tombstones, the platform rows, the job row and the slug guard (marked `deleted_at`, never reused). Entry kinds: a set of partitions listed once, an owner list (its partitions in full, then the list last, so a stopped sweep resumes from it), or pages of their own; the memory partitions are one enumeration shared with the export (`lambda/shared/memory_partitions.py`). Reserved: MCP tokens (none names a workspace until phase 3). **Layer** (`lambda/shared/ws_repo.py`): `WorkspaceTable.batch_delete` (every key checked before any call, BatchWriteItem of 25, unprocessed items re-checked and retried, then `UnprocessedItemsError`), `WorkspaceObjectVersions`, `WorkspaceControlRows`, `WorkspaceTombstones` (a conditional put of a new key: an erasure's tombstone of the same item is kept) and `delete_work_pk`; the counter partitions come from the aggregator's own key function, read as `rebuild_aggregates.py` reads it. **Guards**: a lockstep test holds every `WS#{ws}#` key family the code builds to a sweep or a named KEPT / TTL reason, and `SWEEPS` to `WORKSPACE_DELETE_GRANTS`; the route-gate inventory lists the three routes; the raw-access allowlist names `shared/workspace_deletes.py`'s two control-plane transactions; `lib/customer-data-deletes.test.ts` and the audit-row guard name the new role. IAM, cost and load: step 4. **Wired in this merge.** *Projects* (slice 3g's delete part): the registry's RESERVED entry becomes the `projects` sweep (`lambda/jobs/workspace_delete/sweeps.py`, before the control rows): for every id `iter_registered_project_ids` reads from `WS#{ws}#PROJECT_IDS` (deleted projects included), each partition `project_partitions(id, workspace=…)` names is deleted in its own table through `WorkspaceTable.batch_delete`, then `release_project_claim` (only a claim naming this workspace goes; another workspace's is kept and counted, `project_claims_of_another_workspace`), then the id's registry row, last; the verify pass checks the registry is empty; `test/families.py` names the registry, the project and version partitions and their index partitions (`project_type_pk`, `job_status_pk`). IAM (the `projects` grant, VocProcessingStack, only with the flag): Query and BatchWriteItem on `WS#{one id}#PROJECT#*`, `#DOCUMENT_VERSIONS#PROJECT#*` and `#PROJECT_IDS` in voc-projects and on `WS#{one id}#PROJECT#*` in voc-jobs and voc-participants (a new reference to voc-participants from VocProcessingStack), GetItem and DeleteItem on `PROJECT_ID#*`; `lib/customer-data-deletes.test.ts` lists the role on the three tables. Tests (`test_sweeps.py` `TestProjects`): a claim naming another workspace is kept, only registry ids are attempted, a stop between the release and the registry row resumes, the versions partition is swept. *Status grant*: `grantWorkspaceStatusRead` and 7.25.00's `grantWorkspaceRoleAndStatusReads` are siblings over one statement (`grantWorkspaceAttributeRead`), told apart by their attribute lists, both pinned by `lib/utils/workspace-resolution-grants.test.ts` (with the stream Lambda's projections). *Fence*: `lib/stacks/api-stack-assist-workers.test.ts` reads `FENCE` (`lambda/shared/workspace_deletes.py`) and `ACTIVE_STATUS_TTL_SECONDS` from the Python source and holds the fence to the TTL plus the longer of `CHAT_STREAM_TIMEOUT` and `CHAT_API_TIMEOUT` plus a minute (step 4's rule, which 7.25.00 wrote as their sum: the writers run side by side, so the longer bounds them). *Reprocess*: a workspace's category reprocess job reads its workspace's status too (at each invocation's start and before each page; the reprocess role's GetItem of `WS#*` held to `pk`, `sk`, `status`) and stops `cancelled` when it is not active, so a reprocess running when a delete is requested writes nothing past the fence. *Cancel*: allowed until the job begins deleting (the row still in the fence phase), also past `fence_at` for a job that never began. *One batch delete*: a workspace's revision delete (`shared/document_history.py` `delete_document_revisions`, 7.27.00) goes through `WorkspaceTable.batch_delete`, every key checked before anything is sent; the deployment's path is unchanged. **Cost per workspace, slice A** (`lambda/shared/usage_meter.py`): each successful text-model call from the Python Lambdas logs one `bedrock_usage` line (the workspace it is counted to, or `DEPLOYMENT` / `UNATTRIBUTED`; the model id, the operation, the service tier and the token counts; never a prompt or a response), `bedrock_usage_unreadable` when the usage cannot be read; not yet counted: the streaming assistant and avatar images. *Conversations*: the registry's RESERVED entry becomes the `conversations` sweep (an owner list, after the projects and before the control rows): for each sub on `WS#{ws}#CONVERSANTS` in voc-conversations its whole `WS#{ws}#USER#{sub}` (its `CONV#` and `RUNCANCEL#` rows) goes through `WorkspaceTable.batch_delete`, every read of keys alone, then the list last, so a stopped delete resumes from it; the deployment's `USER#{sub}` is never named; the verify pass checks the list is gone; IAM (the `conversations` grant, only in a build of the job): BatchWriteItem on voc-conversations held to `WS#{one id}#CONVERSANTS` and `WS#{one id}#USER#*`, and Query there for the keys alone (`dynamodb:Attributes` `pk` and `sk`, named, and `dynamodb:Select` `SPECIFIC_ATTRIBUTES`); a build of the job fails while the registry lacks any sweep step 4 names (`REQUIRED_DELETE_SWEEPS`, `lib/utils/workspace-delete-grants.ts`, which a Python test holds equal to `SWEEPS`). Conversations saved before 7.19.00 are found only if `scripts/conversations/backfill_conversants.py` ran (decision 21: fresh deployments only, so none), and the verify pass cannot see a partition missing from the owner list. *Dropped messages*: with the job built the processor adds each batch's drops for a workspace to that workspace's drop counter, `WS#{ws}` / `WSDELETE_DROPS` (put at 0 by the request, one UpdateItem of `dropped` per workspace per batch only while it exists, no read, nothing returned; the processor's role may update `pk`, `sk` and `dropped` alone on `WS#{one id}` rows, `dynamodb:ReturnValues` NONE, and has no access to the job rows), and the cancel's and the completed audit rows report at least that many (`dropped_messages`: a lower bound, counting is best effort and a batch can land after the count is read); the cancel deletes the counter, the delete sweeps it. *Request*: the request's transaction carries a `ClientRequestToken`, stored on the job row as `request_token`, and an error after it committed (a lost answer, a retry meeting its own rows) still invokes the job; a failure that finds no job row reads it again a second later before it frees its locks, so a concurrent request committing meanwhile keeps them (a narrower window, not a proof). *Projects*: a registry id not shaped like a project id is counted (`project_ids_malformed`) and its registry row deleted, nothing else touched. Not yet: the web app's delete dialog and the platform console's cancel and resume |
 
 Today one deployment is one tenant ([TENETS.md](../TENETS.md), tenet 6 gap: "One deployment is one tenant"). Every
 signed-in person sees the same feedback, settings, projects and agents, and the Cognito `admins` group administers
@@ -612,8 +613,8 @@ The rest, in order, each slice plumbing with no change in behaviour until the sw
   its kind and table (no caller yet). Still on the deployment's keys: `api/projects.py` `delete_document` and the
   project delete (they sweep only the deployment's versions partition), and the project bundle's
   `scripts/project_bundle/remap.py` `_allocated_ids` and `exporter.py` (both build the key through `project_keys`, but
-  only the deployment's). In a workspace a revision delete goes one checked DeleteItem at a time until it switches to
-  `WorkspaceTable.batch_delete` with the hard delete's merge.
+  only the deployment's). In a workspace a revision delete goes through `WorkspaceTable.batch_delete` (since 7.28.00,
+  the hard delete's one batch-delete path).
 - **3c, jobs**: voc-jobs' status index per workspace (`gsi1pk` `WS#{ws}#STATUS#{status}`: today's `STATUS#…` is one
   partition for every project, which `ws_table` refuses on a workspace's row; its builder, `project_keys.py`
   `job_status_pk`, landed in 7.27.00 and `shared/jobs.py` uses it, so the slice passes the workspace to it, and moves
@@ -644,7 +645,8 @@ The rest, in order, each slice plumbing with no change in behaviour until the sw
   `lambda/jobs/workspace_export/entities.py`), found through the registry (`iter_registered_project_ids`, 7.26.00),
   each project's rows through `project_partitions` (7.27.00), so the export reaches
   `WS#{ws}#DOCUMENT_VERSIONS#PROJECT#{id}` and holds the saved revisions (they hold customer text); the hard delete's
-  projects entry, and an erasure, reaching them (`lambda/jobs/retention/handler.py`). Deleting one project keeps its
+  projects entry (done, 7.28.00: [Export and delete](#export-and-delete), step 4), and an erasure, reaching them
+  (`lambda/jobs/retention/handler.py`). Deleting one project keeps its
   registry row, marked deleted (`deleted_at`), and its claim, so its id is never reused and the registry still lists
   every claim; only the workspace's delete releases claims (`release_project_claim`, for every id the registry lists)
   and removes the registry rows, in that order for each id: release the claim, then delete its registry row, so a
@@ -784,9 +786,37 @@ A plugin's config list is not a credential and is not in SSM: it is a row of voc
 
 ## Cost per workspace
 
-- Every Bedrock call logs `workspace_id`, the model and its input and output tokens (`shared/converse.py` and the
+- The aim: each Bedrock model call logs `workspace_id`, the model and its tokens (`shared/converse.py` and the
   stream Lambda's model client already centralise those calls). A daily rollup writes `WS#{ws}#COST` rows by date,
   and the platform console shows cost per workspace per day and month (tokens × list price, labelled an estimate).
+- **Slice A, the usage line (decision 9).** Every successful Converse or InvokeModel call on a Python
+  `bedrock-runtime` client made by `shared/model_config.py` `scope_bedrock_client` (the one through
+  `shared/aws.py` `get_bedrock_client`, and the capacity probe's) logs one INFO line `bedrock_usage`
+  (`shared/usage_meter.py`, a botocore `after-call` hook beside the inference-scope hook; no caller changed), with
+  numbers and ids only, never a prompt or a response: `workspace_id`, `model_id` as sent (after the inference scope),
+  `operation`, `service_tier` (the one Bedrock answered with, else the one asked for, else `default`), `input_tokens`,
+  `output_tokens`, `cache_read_tokens` and `cache_write_tokens` (`USAGE_FIELDS`). Converse reads the response's
+  `usage`, InvokeModel the `x-amzn-bedrock-*-token-count` headers. An answer whose usage cannot be read logs
+  `bedrock_usage_unreadable` with the operation and the reason, and the call goes on: logging never raises into the
+  caller. The product-document extractor, which cannot import `shared/`, logs the same line for its one Converse
+  call (counted `UNATTRIBUTED`; `product_doc_extractor/test/test_usage_lockstep.py` pins the fields).
+- **Not counted yet.** ConverseStream is not metered on the Python side: no Python code streams (the streaming
+  assistant is the TypeScript stream Lambda, whose mirror of the line is its owner's follow-up). The image clients of
+  `shared/avatar.py` and `shared/image_model_status.py` are not counted either: an image is priced per image, a
+  follow-up.
+- **The attribution rule.** A call is counted to the workspace its context names, `DEPLOYMENT`, or `UNATTRIBUTED`.
+  `resolve_workspace` names the request's workspace (`UNATTRIBUTED` until it resolves), `request_workspace` names
+  `DEPLOYMENT` for a request that names none, and `ws_repo.message_scope` names the message's workspace,
+  `DEPLOYMENT` for a deployment-wide message and `UNATTRIBUTED` for a refused one. `scope_from_message` only builds
+  a scope and attributes nothing. A test pins those call sites. Every invocation starts `UNATTRIBUTED`
+  (`measure_invocation_cost` resets it, so a warm container never carries the last workspace on),
+  `shared/concurrency.py` runs each task in a copy of its caller's context, and a raw thread pool's tasks never
+  attribute (pinned by the test above), so their calls stay `UNATTRIBUTED`, never a wrong workspace. So an area whose handler resolves its workspace another way stays `UNATTRIBUTED` until its owner
+  calls `usage_meter.attribute(scope)` at its handler entry: the project, document, research, competitive-watch,
+  briefing, memory and agent handlers, and the streaming assistant's mirror of the line.
+- Slice A logs tokens only and prices nothing. Slice B adds the dated price list (from the public Amazon Bedrock
+  pricing page only, a model it cannot read listed as unpriced with the reason), the daily rollup that uses it,
+  `GET /platform/costs` and its stack.
 - Also counted: reviews ingested, scraper and browser sessions, Comprehend and Translate characters. (A workspace's
   credentials parameters cost nothing a month: decision 19.)
 - Scale today (this repo keeps no separate load model, so the notes live here): a workspace's erasure (7.09.00) and its category
@@ -829,11 +859,15 @@ controller's own request, with its stated basis and a tombstone per deleted item
    conversations in between, so whether a given member started using the assistant can be seen that way. A member
    gets no copy of their own conversations from it. Their owners are listed since 7.19.00 (`WS#{ws}#CONVERSANTS`,
    above), so the count reaches every member's partition, a former member's too, by Query on the workspace's own
-   partitions, and the delete (step 4) can.
-   **Gate on the hard delete (step 4):** it does not ship until a member can export their own conversations and
+   partitions, and the delete's conversations entry (step 4) finds them the same way.
+   **Gate on the hard delete (step 4):** a synth with `-c workspaceHardDelete=true` fails (7.28.00,
+   `lib/utils/workspace-hard-delete.ts` `HARD_DELETE_REFUSED`) until a member can export their own conversations and
    their own personal memories, from inside the workspace, before it is deleted. D5's "offers an export first"
    requires it: the workspace's export holds neither, so without that per-person export a delete would lose them.
-   That per-person export is planned; it is not built.
+   That per-person export is planned; it is not built, and its slice lifts the refusal. Until then there is no way,
+   supported or not, to turn the hard delete on: nothing the app reads builds it, and only this repository's tests
+   and audits build the job, through the test harness's own code path that `bin/` never takes
+   (`lib/test-support/hard-delete-app.ts`, `withHardDeleteBuilt`), to pin its code and its grants.
    Open (owner decision): whether a workspace's export should ever hold its members' conversations (each person's
    own, or all of them for a controller's request). Until the owner decides otherwise only the people are counted.
    Open (TENETS.md D5, older than workspaces): an erasure by email reaches neither the memory items nor the
@@ -844,20 +878,248 @@ controller's own request, with its stated basis and a tombstone per deleted item
    or recorded with the request), or their email on those rows, so the job could find the person's conversations
    (at `USER#{sub}`, and through each workspace's list of conversation owners) and personal memories; and a rule for
    a memory or a message that names the person in its text.
-3. The admin confirms by typing the slug. The workspace's status becomes `deleting`: every request is refused and its
-   schedules stop. Every writer of its conversations checks the status before it lists an owner or saves one (the
-   chat routes on each write, the stream Lambda at a run's start and before each session write: 7.25.00, above), so
-   the last such write lands within one invocation of the mark (15 minutes for the stream Lambda) and the delete's
-   sweep, after its fence, finds every conversation through the list of owners.
-4. The delete job (self re-invoking and checkpointed, like `voc-retention`) deletes every `WS#{ws}#` partition of
-   every table, every `ws/{ws}/` object with all its versions, its credentials parameters (by path), its MCP tokens, memberships, slug,
-   its enabled plugins (the `PLUGIN#{plugin}` / `WS#{ws}` rows of `voc-workspaces`: keyed by the plugin, so a sweep
-   of the `WS#{ws}#` partitions does not reach them) and the share grants it gave or used. Copies other workspaces already imported stay theirs (TENETS.md, D8,
-   settled above). One audit row stays in a platform partition (name, who, when, counts), with no customer data.
-   **Fence rule** (7.25.00): the job sweeps only after a fence from the `deleting` mark of at least
-   `CHAT_STREAM_TIMEOUT` (15 minutes) + `CHAT_API_TIMEOUT` (the chat API Lambda's, 30 s) + a margin for requests in
-   flight and clock skew, since each conversation writer's last write lands within its own timeout of the mark.
-   Raising either timeout raises the fence, and the delete's own test must pin the fence above that sum.
+3. The admin confirms by typing the slug. Since 4d-2 (7.28.00) that is `POST /me/workspaces/current/delete`
+   `{confirm_slug, legal_basis}` (the workspaces API; `voc-datalake/lambda/shared/workspace_deletes.py`), for the
+   workspace's admins: a member admin, or a platform admin who entered (live-checked and audited), the role read from
+   the table. The slug must be the workspace's exactly and the basis passes the erasure's rule (at most 300 characters,
+   no email, phone number or similar: it is kept for good); 400 otherwise, before anything is written. While an export
+   or an erasure of the workspace runs the answer is 409 (its export lock, or its erasure lock, or an erasure holding
+   the export lock), and nothing changes. Otherwise the request takes both locks for `delete-{ws}`, then in ONE
+   transaction moves `META` and the `WORKSPACES` listing row from `active` to `deleting` (with `deleting_at`), writes
+   the job row `WSDELETE` / `{ws}` (conditional on no row or a cancelled one, so it is also the one delete per
+   workspace) and two audit rows, `AUDIT#WS#{ws}` (kind `workspace_delete_requested`) and the platform's
+   `AUDIT#workspace-deletes` (kind `requested`: who, the basis, the name and slug); then it invokes
+   `voc-workspace-delete` with `{workspace_id}` and answers 202 `{delete: {workspace_id, status: 'waiting', phase:
+   'fence', requested_at, deleting_at, fence_at, counts}}`. The transaction carries a `ClientRequestToken`, which the job row
+   also stores (`request_token`); on any error of it the request reads the job row, and one that is its own (that
+   token alone, since two tabs of one admin can share a `requested_at`: it committed, and only the answer was lost or a retry met its own rows) goes on to the invoke, while any other
+   failure that still finds no job row on a second read, a second later, frees the locks it took (so a concurrent
+   request whose transaction commits meanwhile keeps them; one committing later than that could still find them
+   freed). The same transaction puts the workspace's drop counter at 0 (below). A repeat whose transaction meets another request's job answers that job; once the workspace reads `deleting`, every route, this one too, answers its one 404. A failed invoke leaves the
+   job `failed` in its fence, which a platform admin cancels or resumes; the requester's 500 says so ("The workspace
+   is marked for deletion, but its delete could not start. Ask a platform admin to cancel or resume it."). The workspace's status becomes
+   `deleting`: every request is refused and its schedules stop. Since 4d-1 (7.28.00) every writer of a workspace's
+   data checks that status before it writes
+   (`voc-datalake/lambda/shared/ws_repo.py` `workspace_is_active`), so nothing new arrives while the delete runs:
+   - **the scheduled fan-out** skips a workspace that is not active (`IngestFanOutSkipped`), and **an ingestor's run**
+     in one is refused before it builds or reads anything (`IngestorWorkspaceNotActive`, `workspace_not_active`);
+   - **the feedback processor** drops such a workspace's message before validation: counted
+     (`WorkspaceMessagesDropped`), logged with the workspace id and no content, no row written, and the message
+     acked, never failed. A failed message would reach the processing DLQ after its retries, and a redrive of that
+     queue (the routine fix for a bad batch) would bring the workspace's feedback back after its delete had
+     finished;
+   - **the aggregator** skips its stream records (`AggregatorInactiveWorkspaceRecordsSkipped`), the delete's own
+     `REMOVE`s included: the workspace's counters go with it, so nothing is decremented;
+   - **a workspace's category reprocess** (7.28.00) asks at each invocation's start and before each page, and stops
+     `cancelled` ("The workspace is being deleted: the reprocess stopped"), with no further rewrite and no
+     data_version bump;
+   - **the conversation writers** (7.25.00, above) check it before they list an owner or save a conversation: the
+     chat routes resolve the workspace fresh on each write, and the stream Lambda reads the status fresh at a run's
+     start and again, through a short cache, before each session write
+     (`lambda/stream/src/assistant/session/workspace-status.ts`); a `deleting`
+     or missing workspace gets the one 404 and nothing is written. So the last such write lands within one
+     invocation of the mark (15 minutes for the stream Lambda, 30 s for the chat routes), and the delete's
+     conversations entry (step 4) finds every conversation through the list of owners.
+
+   So while a workspace is `deleting`, its messages in flight (queued before the change, or sent by a run that began
+   within the 300 s a container may still hold `active`) are dropped once the processor reads `deleting`: acked and
+   counted, never stored, so there is no item and no tombstone for them (TENETS.md, D5's gaps). A cancel during the
+   fence does not bring them back (and a container that read `deleting` keeps dropping for up to 30 s after the
+   cancel). With the hard delete built, the processor also adds each SQS batch's drops for a workspace to that
+   workspace's drop counter, `WS#{ws}` / `WSDELETE_DROPS` (`dropped`; `lambda/processor/handler.py`
+   `DroppedPerWorkspace`, `lambda/shared/workspace_deletes.py` `count_dropped`), a row apart from the job row: the
+   request puts it at 0 in its transaction, a cancel deletes it in its own, and the delete sweeps it with the
+   workspace's control rows. One UpdateItem per workspace per batch, `ADD dropped`, only while the counter exists
+   (`attribute_exists(pk)`, so none is made for a workspace with no delete, or again after one), no read and nothing
+   returned; a failed one is logged and counted (`WorkspaceDropsNotCounted`), never fails the batch. The count is a
+   lower bound: counting is best effort, and a batch can land after a cancel or the delete has read the counter. The
+   processor's role may UpdateItem `pk`, `sk` and `dropped` alone (`dynamodb:Attributes`) with `dynamodb:ReturnValues`
+   NONE, on `WS#{one id}` rows; IAM cannot pin the sort key, so that reaches any row of a workspace's control
+   partition, only ever to add a `dropped` number, and the code writes the counter alone; it has no access to the job
+   rows (`WSDELETE`). Only in a build of the job. Load: at most one write per processor container per deleting
+   workspace per batch, on that workspace's own counter (a busy deleting workspace with 20 containers busy: about 4
+   writes a second at a 5-second batching window, far under an item's 1,000); nothing changes for an active workspace
+   or a deployment-wide message.
+
+   **Cancel** (4d-2): `POST /platform/workspaces/{ws}/delete/cancel`, a platform admin (live-checked), until the job
+   begins deleting: while its row is still in the `fence` phase, which is normally its 21-minute fence, and later
+   only for a job that never began (its start's invoke failed, or the flag was turned off; 7.28.00: the row's state
+   decides, not `fence_at`, so such a workspace is never left `deleting` for good). One transaction moves the job row
+   from `waiting` (or `failed`, still in the fence phase) to `cancelled`,
+   `META` and the listing row back to `active`, and writes both audit rows (kinds `workspace_delete_cancelled`,
+   `cancelled`); then both locks are freed. The job ends the fence by moving the same row `waiting` → `running`, so of
+   a cancel and the fence's end exactly one wins; after it the cancel answers 409, and a repeat answers the cancelled
+   job. The cancel's audit rows report at least how many messages were dropped meanwhile (`dropped_messages`: the
+   drop counter as the cancel read it, which the same transaction deletes; what a container drops in the 30 s it
+   may still read the workspace as not active is not in it, and `WorkspaceMessagesDropped` counts them
+   deployment-wide; the delete's `completed` row reports the counter the same way), and the job
+   row and the audit row mark the counters for a rebuild (`counters_rebuild`): the operator runs
+   `voc-datalake/scripts/retention/rebuild_aggregates.py --workspace ws_… --apply` once the stream has settled (the
+   script refuses a window with items processed in the last 24 hours, `--allow-recent` after checking the
+   aggregator's IteratorAge). It is not run by the cancel: right after one, records still in the stream would be
+   counted twice.
+
+   Not active means any status but `active`, or no `META` at all. The check is one strongly consistent GetItem of
+   `WS#{ws}` / `META`, projected to its status; each role is held to `pk`, `sk` and `status` of `WS#*` rows
+   (`grantWorkspaceStatusRead`, `dynamodb:Attributes`). Each warm container keeps the answer (`WorkspaceStatusCache`,
+   `voc-datalake/lambda/shared/ws_repo.py`): an `active` one for 300 s, a not-active one for 30 s, so a long active
+   TTL only lengthens the delete's fence and a short not-active one keeps a cancel's loss window short; a failed read
+   is not kept and fails the run or record, which is retried. So a writer stops within 300 s plus the invocation
+   already running (at most 15 minutes): the delete job (4d-2) waits 21 minutes after `deleting` (5 + 15 + 1 of
+   margin) before it deletes anything. A Run now or a scraper run refused this way ends the `running` row the API
+   wrote (`error`, `workspace_not_active`), only if that row is still there; a status that cannot be read is not a
+   refusal: the run raises, its row untouched, and Lambda's retry reads the status again. A deployment-wide run,
+   message or record reads nothing new.
+
+   **Load.** Each read is one strongly consistent GetItem (one read request unit, the `META` row is far under 4 KB).
+   The total, at most: busy workspaces × warm containers ÷ 300 s, for the processor and the aggregator each (a
+   container reads a workspace only when one of its records arrives, and then at most once per 300 s; a workspace
+   being deleted at most once per 30 s; a cold cache has no single-flight, so the processor's worker threads, 5 at
+   once in a batch of up to 10, can each read the same workspace once before the first answer is kept), plus the
+   ingestors: one read per run in a workspace, and on each scheduled
+   tick one read per enabled workspace, made one after another before the invokes.
+   - Worked through for 1,000 busy workspaces, 20 processor containers (its concurrency cap) and, say, 4 aggregator
+     containers (one per stream shard; no parallelization factor is set): (20 + 4) × 1,000 ÷ 300 = 80 reads a second
+     at the worst, when every container sees every workspace every 300 s; about 207 million reads a month, about $26
+     at the on-demand price of $0.125 per million reads. Real traffic is far below it: a processor batch is at most 10
+     messages, so a container sees at most 10 workspaces per batch.
+   - The tick: per plugin and tick, 1,000 sequential GetItems (a few seconds of the tick's run, before its
+     deployment-wide run; a 5-minute schedule is about 290,000 reads a month per plugin, about $0.04), and each
+     invoked run reads once more, in its own container.
+   - Per partition: each workspace's `WS#{ws}` partition gets at most 24 ÷ 300, under one read every 10 s, from the
+     processor and the aggregator, far under a partition's 3,000 a second.
+   - 10×, 10,000 busy workspaces: 800 reads a second at the worst (about $260 a month), far under the table's
+     default on-demand ceiling of 40,000 read units a second, no quota to raise; per partition unchanged; the tick
+     spends tens of seconds reading 10,000 statuses one after another, the first ceiling to watch (the fix is
+     batching them, BatchGetItem of 100, or reading only those the tick will invoke).
+   - A deployment-wide message, record or run reads nothing new.
+
+   **The watermark directory.** voc-watermarks is keyed on `source` alone, so a workspace's watermarks share no
+   partition. Since 4d-1 an ingestor's `set_watermark` in a workspace first puts a directory row in voc-aggregates,
+   `WS#{ws}#WATERMARK_KEYS` / `{plugin}#{key}`: the key alone, so an unconditional put each time the watermark is set
+   is idempotent (a few writes a run), and it writes no watermark it could not list (counted,
+   `WatermarkNotListed`); the delete finds every watermark with one Query. Watermarks written before 4d-1 have
+   no row and are not backfilled: workspace runs are new, so this holds for fresh deployments only.
+
+   The repository layer's checked deletes came with the job that calls them (4d-2, step 4): 4d-1 deleted nothing.
+4. The delete job, `voc-workspace-delete` (4d-2, 7.28.00; `voc-datalake/lambda/jobs/workspace_delete/`,
+   VocProcessingStack), self re-invoking and checkpointed like the export:
+   - **Claim and fence.** Each invocation claims its generation on the job row (generation 0 only from `waiting`
+     within the hour of its request, generation g only from g - 1 within the hour of its last progress), so a
+     duplicate, stale or late delivery changes nothing. Nothing is deleted before the row's `fence_at`
+     (`deleting_at` + 21 minutes: every writer's cached `active` has expired, 5 minutes, and the invocation each was
+     running has ended, 15, plus a minute): generation 0 sleeps toward it and hands over before its timeout; at the
+     fence it moves the row `waiting` → `running` (the race with a cancel, above). From then on each invocation first
+     reads `META`: one that reads `active` again stops the job.
+   - **The fence rule.** `FENCE`, 21 minutes (`voc-datalake/lambda/shared/workspace_deletes.py`), is at least the
+     status cache's active TTL (300 s, `ACTIVE_STATUS_TTL_SECONDS` in `voc-datalake/lambda/shared/ws_repo.py`) plus
+     the longer of the two conversation writers' timeouts, `CHAT_STREAM_TIMEOUT` (15 minutes,
+     `voc-datalake/lib/stacks/api-assistant-lambdas.ts`) and `CHAT_API_TIMEOUT` (30 s,
+     `voc-datalake/lib/stacks/api-engagement-lambdas.ts`), plus a minute for requests in flight and clock skew:
+     300 + 900 + 60 = 1,260 s. Each writer's last write lands within its own timeout of the status read it acted
+     on, and the writers run side by side, so the longer timeout bounds them (not their sum). Raising either timeout
+     or the TTL raises the fence: `voc-datalake/lib/stacks/api-stack-assist-workers.test.ts` reads `FENCE` and the
+     TTL from the Python source and fails until the fence, and this paragraph, move with them.
+   - **The sweeps**, in order, each a named phase run a page at a time from its checkpoint (the registry `SWEEPS`,
+     `sweeps.py`, the shape of the export's entities; `lib/utils/workspace-delete-grants.ts` names the same sweeps with
+     their grants, and a test keeps the two equal): the credentials (`GetParametersByPath` of the workspace's
+     credentials path with no decryption, then `DeleteParameters`); the feedback (the `gsi1-by-date` day partitions
+     from the workspace's first known day to the day after, listing each source partition found, then a strongly
+     consistent Query of each listed source partition and of each plugin's; each page lists the counter partitions its
+     items touched in the inventory, writes one tombstone per item, `AUDIT#tombstone#<source>` / `{ws}#{id}`, a put of a
+     new key paced near 800 a second, then batch-deletes the page); the counters (every listed partition, the fixed
+     ones and those the `metric_type` index names); the run rows (`SOURCE_RUN#`, by source and plugin), the breaker's
+     `FAILURES#` and `CIRCUIT#`, the `LOGS#` rows, `SCRAPER_RUN#` (by the scraper ids of the config lists and their
+     history), the config lists and history, the forms (each form's id kept for its lookup row), the import runs (an
+     owner list: the summary partition names each run's detail partition, deleted in full, the list last) and the
+     erasure jobs, then the category reprocess jobs and their lock (`WS#{ws}#JOB#category_reprocess`, 7.13.00); the
+     watermarks (through their directory rows); the memory (the company memories, the personal ones
+     through the four `MEMSTATUS#personal#*` index partitions, the cursors and imports: `voc-datalake/lambda/shared/
+     memory_partitions.py`, the partitions the export reads; one tombstone per memory, `AUDIT#tombstone#memory` /
+     `{ws}#{memory id}`, then its `MEMEVT#` events and the memory); the exports (every export marked `erased`, its open
+     uploads aborted, its job rows deleted); every version, delete marker and open upload under `ws/{ws}/`; the
+     workspace's Radar settings in voc-radar (`WS#{ws}#SETTINGS#radar`: config and brands); the workspace's settings
+     rows (`WS#{ws}#SETTINGS#{brand, categories, company_context, dimensions, resolved_problems, sources}`, after the
+     counters sweep has listed the closed families from them into the inventory: a later round re-derives only the
+     defaults and walks the inventory, which still lists round 1's partitions); each member's own objectives row,
+     `WS#{ws}#USERCTX#{sub}`, a former member's too, from the list of who saved some (`WS#{ws}#USERCTX_SUBS`, put by
+     the save before the row; the list deleted last); the projects (7.28.00: every id the workspace's registry
+     `WS#{ws}#PROJECT_IDS` lists, its project deleted or not, `iter_registered_project_ids`; for each id every
+     partition `project_partitions` names, each in its table, its rows and its document versions in voc-projects, its
+     jobs in voc-jobs and its list links in voc-participants, deleted through `WorkspaceTable.batch_delete`; then its
+     claim `PROJECT_ID#{id}` released, `release_project_claim`, only while it names this workspace, a claim another
+     workspace holds kept and counted; then its registry row, last, so a delete stopped anywhere resumes from the
+     registry; an id the registry does not list is never attempted, and a registry row whose id is not shaped like
+     a project id is counted, `project_ids_malformed`, and deleted, nothing else touched); the members' conversations
+     (7.28.00: an owner list over `WS#{ws}#CONVERSANTS` in voc-conversations, one row per person who ever kept a
+     conversation in the workspace, a former member too; for each, the whole `WS#{ws}#USER#{sub}`, its `CONV#` and
+     `RUNCANCEL#` rows, through `WorkspaceTable.batch_delete`, every read of keys alone; the list last, so a delete
+     stopped anywhere resumes from it; a person's own `USER#{sub}` outside the workspace is never named. Only the
+     partitions the list names are reached: conversations saved in a workspace before 7.19.00, when the list began,
+     are found only if `scripts/conversations/backfill_conversants.py` ran (Upgrading, above); under decision 21
+     (fresh deployments only) there are none. The verify pass checks the list is gone, and cannot see a partition
+     the list never named); the
+     control-plane rows (the rows of `WS#{ws}` but `META`, each member's `USER#` row, each form's `FORM#` lookup and the
+     listing row only where they name this workspace, each plugin's `PLUGIN#` row, then `META`, only while it reads
+     `deleting`; `SLUG#{slug}` is marked `deleted_at` and kept, so the slug is never reused). An inventory partition,
+     `WS#{ws}#DELETE#PARTITIONS`, holds what a sweep found for a later one.
+   - **Verify.** Every listed partition, the fixed ones, the owner lists (the conversations' included), the versions
+     and uploads, the credentials path, the project registry and `WS#{ws}` must hold nothing: anything found sends the job back to the first sweep once (every sweep is idempotent), then
+     fails it, naming the families (never a key). Then the inventory goes, the platform's `completed` row is written
+     (counts, what is kept; no content, no member's sub), and the job ends `completed`.
+   - **Kept:** `AUDIT#WS#{ws}`, the tombstones, `AUDIT#workspace-deletes`, the job row, the slug guard; until they
+     expire, the idempotency claims (no content, two days), backups and logs, and the counters of a category the
+     deployment configured before 7.08.00 (when a workspace's items were enriched with the deployment's categories)
+     whose items were all erased before the delete, until the counters' 90-day TTL (TENETS.md D5's gaps). Not reached
+     yet (the registry's GAP entries, `jobs/workspace_delete/test/families.py`): voc-radar's data rows in a workspace
+     (items, review markers, counters, releases), read with a workspace and written by nothing yet. Reserved: MCP
+     tokens name no workspace until phase 3 (an empty entry says so); the share grants it gave or used come with sharing. A
+     project's rows outside the partitions keyed by its id are not reached yet either: its comment threads
+     (`DCOMMENTS#…`, deployment-only until 3e), its review links (`DOCSHARE#…`) and the workspace's own `LIST#` and
+     `PERSON#` rows in voc-participants (3d). Copies other workspaces already imported stay theirs (TENETS.md, D8,
+     settled above).
+   - **Failure and resume.** Any failure ends the job `failed` with its error's type and its checkpoint on the row;
+     `POST /platform/workspaces/{ws}/delete/resume` (a platform admin, audited `resumed`) invokes a failed job, or
+     one that has not moved for an hour, again from its checkpoint at its next generation; a job still moving or
+     finished answers 409. At most 600 generations, two invocations at once in the deployment (reserved concurrency),
+     no async retry, events older than 40 minutes dropped.
+   - **IAM** (`lib/stacks/workspace-delete-worker.ts`): every key held to one workspace id (`ws_` and 26 `?`):
+     BatchWriteItem only on `WS#{id}#*` (voc-feedback's `WS#{id}#SOURCE#*`; IAM cannot tell a batch's deletes from its
+     puts, and `dynamodb:Attributes` held to `pk` and `sk` would still pass a key-only put, so the code alone keeps
+     the batches to deletes, but for the inventory's key-only puts in voc-aggregates), Query of its partitions and index
+     partitions, PutItem only on `AUDIT#tombstone#*` (voc-aggregates) and `AUDIT#workspace-deletes` (voc-workspaces;
+     the audit-row guard names it the writer of those two only), DeleteItem on voc-workspaces' `WS#{id}`, `USER#*`,
+     `FORM#*`, `PLUGIN#*` and `WORKSPACES` (the code builds each key or deletes only a row naming the workspace),
+     UpdateItem of `deleted_at` on `SLUG#*` and of its own job row; S3 `ListBucketVersions` with the `s3:prefix`
+     `ws/{id}/*`, `DeleteObjectVersion` and `AbortMultipartUpload` under it, `ListBucketMultipartUploads` on the
+     bucket (that action takes no `s3:prefix` condition, so the role could list the key and upload id of every open
+     upload in the bucket, other workspaces' and the deployment's included, but no object's data; the code lists
+     `ws/{ws}/` only; accepted); for the conversations (7.28.00), Query and BatchWriteItem on
+     `WS#{id}#CONVERSANTS` and `WS#{id}#USER#*` in voc-conversations, each Query for the keys alone
+     (`dynamodb:Attributes` `pk` and `sk`, which must be named, and `dynamodb:Select` `SPECIFIC_ATTRIBUTES`: no
+     message, title or `first_at` is read); SSM `GetParametersByPath` and `DeleteParameters` on the workspace's credentials path, no decrypt; for
+     the projects (7.28.00), Query and BatchWriteItem on `WS#{id}#PROJECT#*`, `WS#{id}#DOCUMENT_VERSIONS#PROJECT#*`
+     and `WS#{id}#PROJECT_IDS` in voc-projects and on `WS#{id}#PROJECT#*` in voc-jobs and voc-participants, and
+     GetItem and DeleteItem on `PROJECT_ID#*` in voc-projects: a claim's key names no workspace, so IAM reaches every
+     claim and cannot tie one to the workspace being deleted; the code does (`release_project_claim`'s condition that
+     the claim names this workspace, and the ids come only from that workspace's own registry); KMS
+     for the tables; its own invoke. No Scan anywhere. The workspaces API gains the erasure lock's Put, Update and
+     Query, an UpdateItem of `status` and `deleting_at` only on `WS#*` and `WORKSPACES`, Put and Update of `WSDELETE`,
+     Put of `AUDIT#workspace-deletes`, and the job's invoke (`lib/stacks/api-workspace-delete.ts`).
+   - **Load** (S1). A delete is rare and its own: one invocation at a time per workspace, two in the deployment. Its
+     reads are Queries of the deleted workspace's own partitions, one per day of its feedback span and one per listed
+     partition, plus a page of 1,000 object versions per DeleteObjects; its writes are batch deletes of 25 and one
+     tombstone put per item and per memory, paced near 800 a second into `AUDIT#tombstone#<source>`, a partition
+     voc-retention's tombstones share (under its 1,000 writes a second; a delete beside a large erasure of the same
+     source may be throttled, and retried). About $22-44 per 5 million items on demand. No hot key of another
+     workspace is touched; the control plane's `WORKSPACES` and `WSDELETE` partitions take a handful of writes per
+     delete (and the processor's drop counts while it is deleting, step 3). 10×: ten workspaces deleting queue behind the two invocations, each waiting in Lambda's throttling
+     retries (40 minutes), then resumed by a platform admin. The projects entry adds one Query of the registry per
+     100 ids and, per project, one Query per partition page (four partitions), the batch deletes of its rows, one
+     DeleteItem of its claim (a GetItem more when the claim is not released: none, or another workspace's) and one
+     delete of its registry row; each claim is its own key, spread over every project id, and no other workspace's
+     partition is read. The conversations entry adds one Query of the owner list per 100 owners and, per owner, one
+     Query per 100 rows of their partition and its batch deletes, keys only; each owner's partition is their own.
 5. With `protectData` the tables stay protected; this is item-level deletion, so it still works.
 
 ## Tenet questions, settled (owner, 2026-11-12)

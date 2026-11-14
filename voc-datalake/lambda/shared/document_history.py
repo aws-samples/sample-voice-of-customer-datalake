@@ -344,11 +344,11 @@ def delete_document_revisions(table: Any, project_id: str, document_id: str, *,
                               workspace: WorkspaceScope | None = None) -> None:
     """Remove an unmanaged document's saved revisions (its own rows only), in ``workspace``'s project when given.
 
-    One delete per saved revision the paged Query reads, so the loop is bounded by the rows it read. The
-    deployment's go in batches (the table's ``batch_writer``), as before. A workspace's go one scoped DeleteItem at a
-    time (``WorkspaceTable.delete_item``, its key checked to be the workspace's), and a refused key stops the loop
-    before any later one is sent: the layer's batch writer takes no deletes (boto3's retries of unprocessed items
-    have no cap)."""
+    One delete per saved revision the paged Query reads, so the work is bounded by the rows it read. The
+    deployment's go in batches (the table's ``batch_writer``), as before. A workspace's go through the layer's one
+    batch delete (``WorkspaceTable.batch_delete``, the hard delete's too): every key checked to be the workspace's
+    before anything is sent, so a refused key deletes nothing; none twice; BatchWriteItem requests of 25, their
+    unprocessed items re-checked and retried a bounded number of times."""
     rows = iter_version_rows(table, project_id, workspace=workspace, sort_prefix=document_revisions_prefix(document_id),
                              ProjectionExpression='pk, sk', ConsistentRead=True)
     if workspace is None:
@@ -356,8 +356,4 @@ def delete_document_revisions(table: Any, project_id: str, document_id: str, *,
             for item in rows:
                 batch.delete_item(Key={'pk': item['pk'], 'sk': item['sk']})
         return
-    # Switches to WorkspaceTable.batch_delete (checked keys, duplicates refused, bounded retries) when the
-    # workspace hard delete's track merges (docs/multi-workspace.md, the 7.27.00 row).
-    view = ws_table(workspace, table)
-    for item in rows:
-        view.delete_item({'pk': item['pk'], 'sk': item['sk']})
+    ws_table(workspace, table).batch_delete({'pk': item['pk'], 'sk': item['sk']} for item in rows)

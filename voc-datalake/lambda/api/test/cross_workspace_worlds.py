@@ -126,6 +126,9 @@ def _caller(handler: Any, lambda_context: Any, **tables: Any) -> Callable[..., t
 
 def _seed_workspace(table: Any, ws: str, name: str, slug: str, members: dict[str, str]) -> None:
     table.put_item(Item={'pk': f'WS#{ws}', 'sk': 'META', 'name': name, 'slug': slug, 'status': 'active'})
+    # The platform console's listing row a creation writes (shared/platform_workspaces.py): a hard delete moves it.
+    table.put_item(Item={'pk': 'WORKSPACES', 'sk': f'{name.lower()}#{ws}', 'workspace_id': ws, 'name': name,
+                         'slug': slug, 'status': 'active'})
     for sub, role in members.items():
         table.put_item(Item={'pk': f'WS#{ws}', 'sk': f'MEMBER#{sub}', 'role': role,
                              'email': f'{sub.removeprefix("sub-")}@example.com', 'name': sub})
@@ -205,6 +208,9 @@ def _export_world(stack: ExitStack, workspaces_handler: Any) -> MagicMock:
     stack.enter_context(patch.object(workspaces_handler, 'RAW_DATA_BUCKET', 'raw-bucket'))
     stack.enter_context(patch.object(workspaces_handler, 'EXPORT_FUNCTION', 'voc-workspace-export'))
     stack.enter_context(patch.object(workspaces_handler, 'invoke_lambda_async', export_invoke))
+    # The hard delete (4d-2, shared/workspace_deletes.py) on, with its job's invoke (the same double).
+    stack.enter_context(patch.dict('os.environ', {'WORKSPACE_HARD_DELETE': 'true'}))
+    stack.enter_context(patch.object(workspaces_handler, 'DELETE_FUNCTION', 'voc-workspace-delete'))
     return export_invoke
 
 
@@ -352,6 +358,8 @@ _CURSOR_IDS = {'A': {'cursor': _members_cursor(WS_A, 'sub-ada')},
                UNKNOWN: {'cursor': _members_cursor(WS_UNKNOWN, 'sub-nobody')}}
 
 _A_ROLE = 'a workspace role (admin, editor or viewer), the same words in every workspace'
+#: A hard delete's stated basis (shared/workspace_deletes.py: no personal data).
+_DELETE_BASIS = 'Customer contract ended (ticket 4512)'
 
 #: handler file -> the world its routes run in.
 # ── voc-chat-api (lambda/api/chat_handler.py): the caller's conversations inside a workspace ──
@@ -484,6 +492,12 @@ CASES: dict[tuple[str, str], RouteCase] = {
         no_ids="the header is its only id: check 1 (B's completed export; A reads only its own)"),
     ('workspaces_handler.py', 'POST /me/workspaces/current/export/link'): RouteCase(
         no_ids="the header is its only id: check 1 (a link signed in A names A's export, never B's)"),
+    # The hard delete (4d-2, shared/workspace_deletes.py): A's request moves A's META and listing row only.
+    ('workspaces_handler.py', 'POST /me/workspaces/current/delete'): RouteCase(
+        no_ids="the workspace is the header: check 1 (the slug typed is compared with the header's workspace's)",
+        body={'confirm_slug': 'acme', 'legal_basis': _DELETE_BASIS}, ok_status=202,
+        literals={'acme': "A's own slug typed as the approval, compared with the header's workspace, never looked up",
+                  _DELETE_BASIS: 'the basis the admin typed, kept in the audit rows'}),
     ('settings_handler.py', 'GET /settings/resolved-problems'): RouteCase(
         no_ids='the header is its only id: check 1 (B resolved a problem; A lists only its own)',
         without_a_workspace=_AS_BEFORE),
