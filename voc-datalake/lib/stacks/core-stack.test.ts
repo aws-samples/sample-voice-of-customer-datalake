@@ -31,6 +31,7 @@ import { SYNTH_ACCOUNT, SYNTH_TIMEOUT_MS, cdkJsonContextStrict, committedFeature
 import { claudeRoleGrantOf, missingModelGrants } from '../test-support/bedrock-grants';
 import { byCodeUnit } from '../utils/compare';
 import { PROTOTYPE_BASE_CSP, prototypeCspFunctionCode } from '../utils/prototype-csp';
+import { COMPANY_LOGO_PATH_PATTERN } from './core-cdn';
 
 /** The construct of `stack` that renders the resource `logicalId`. */
 function constructRendering(stack: cdk.Stack, logicalId: string): cdk.CfnElement {
@@ -560,7 +561,7 @@ describe('VocCoreStack S3 server access logging', () => {
  * covered without anyone remembering to extend them.
  */
 describe('VocCoreStack CloudFront private asset paths (issue #229)', () => {
-  const PRIVATE_PATHS = ['/avatars/*', '/prototypes/*'];
+  const PRIVATE_PATHS = ['/avatars/*', '/prototypes/*', COMPANY_LOGO_PATH_PATTERN];
 
   const BehaviorSchema = z.object({
     PathPattern: z.string(),

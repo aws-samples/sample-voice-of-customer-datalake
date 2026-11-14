@@ -29,6 +29,7 @@ import { cognitoPlusEnabled, userPoolFeaturePlan } from '../utils/cognito-plus';
 import { grantWrites } from '../utils/table-write-grants';
 import { booleanContextFlag } from '../utils/context-flag';
 import { selfContainedTriggerCode } from '../utils/self-contained-trigger';
+import { SIGNING_LAYER_DIR, dependencyLayer } from '../utils/dependency-layers';
 import type * as kms from 'aws-cdk-lib/aws-kms';
 import type { Construct } from 'constructs';
 
@@ -52,7 +53,7 @@ export const USER_POOL_STANDARD_ATTRIBUTES: cognito.StandardAttributes = {
  * The files the app pool's message trigger ships, relative to `lambda/` (stdlib + boto3 only):
  * lambda/auth/test/test_user_messages_bundle.py imports it with only these on sys.path.
  */
-export const USER_MESSAGES_FILES = ['auth/user_messages.py'] as const;
+export const USER_MESSAGES_FILES = ['auth/user_messages.py', 'auth/logo_signing.py'] as const;
 
 /** The message trigger's memory: a 2.5 s cold start at 128 MB was too close to Cognito's 5 s budget (lib/sizing/policy.ts). */
 const USER_MESSAGES_MEMORY_MB = 256;
@@ -86,8 +87,15 @@ export function lambdaLogGroup(stack: cdk.Stack, id: string): logs.LogGroup {
   });
 }
 
+/** The CDN signing key pair the invitation's logo link is signed with (core-cdn.ts, shared with avatars). */
+export interface CdnSigning {
+  secretArn: string;
+  keyPairId: string;
+}
+
 export function createCoreAuth(
   ctx: CoreBuildContext, aggregatesTable: dynamodb.Table, kmsKey: kms.IKey, frontendDomainName: string,
+  cdnSigning: CdnSigning,
 ): CoreAuth {
   const { stack } = ctx;
 
@@ -117,7 +125,13 @@ export function createCoreAuth(
       SIGN_IN_URL: signInUrl,
       WORKSHOP: String(workshopDeployment(stack)),
       TEMP_PASSWORD_DAYS: String(TEMPORARY_PASSWORD_DAYS),
+      // The logo link (auth/logo_signing.py): signed with the CDN key pair, for COMPANY_LOGO_PATH_PATTERN.
+      CDN_SIGNING_SECRET_ARN: cdnSigning.secretArn,
+      CDN_SIGNING_KEY_PAIR_ID: cdnSigning.keyPairId,
     },
+    // cryptography, for the RSA-SHA1 signature CloudFront requires (lambda/layers/signing-deps).
+    layers: [dependencyLayer(stack, 'UserMessagesSigningDepsLayer', SIGNING_LAYER_DIR,
+      'CloudFront URL-signing crypto for the invitation email logo link (ARM64/Graviton)')],
     logGroup: lambdaLogGroup(stack, 'CustomMessageLambdaLogs'),
   });
   // Exactly two settings rows (SETTINGS#brand, SETTINGS#design_system), read only, and the table's key.
@@ -127,6 +141,11 @@ export function createCoreAuth(
     conditions: { 'ForAllValues:StringEquals': { 'dynamodb:LeadingKeys': [BRAND_SETTINGS_PK, DESIGN_SYSTEM_SETTINGS_PK] } },
   }));
   kmsKey.grantDecrypt(customMessageLambda);
+  // The CDN signing key, read to sign the logo link (the secret is encrypted with the same key granted above).
+  customMessageLambda.addToRolePolicy(new iam.PolicyStatement({
+    actions: ['secretsmanager:GetSecretValue'],
+    resources: [cdnSigning.secretArn],
+  }));
 
   // Cognito User Pool
   //

@@ -525,7 +525,9 @@ export class VocCoreStack extends VocStack {
     // ============================================
     // COGNITO AUTH (core-auth.ts)
     // ============================================
-    const auth = createCoreAuth(buildContext, this.aggregatesTable, this.kmsKey, this.frontendDomainName);
+    const auth = createCoreAuth(buildContext, this.aggregatesTable, this.kmsKey, this.frontendDomainName, {
+      secretArn: this.cdnSigningSecretArn, keyPairId: this.cdnSigningKeyPairId,
+    });
     this.userPool = auth.userPool;
     this.userPoolClient = auth.userPoolClient;
     this.identityPool = auth.identityPool;

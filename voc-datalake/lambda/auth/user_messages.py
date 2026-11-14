@@ -17,8 +17,11 @@ silently, unless the message contains BOTH ``request.usernameParameter`` and ``r
 ``invitation_message`` therefore always carries both (the username is a random id, shown as a support
 reference). Every value that does not come from the deployment itself is HTML-escaped.
 
-Reads only, and never raises for the brand lookup: an unreadable brand means the neutral wording.
-Stdlib + the runtime's boto3 only (no layer); lib/stacks/core-auth.ts ships this one file.
+Reads only, and never raises for the brand, design-system or logo lookups: an unreadable value means the
+neutral wording, the app's colour, no logo. The logo is a CloudFront-signed link valid as long as the temporary
+password (auth/logo_signing.py): Cognito caps the message at 20,000 characters, so no inline image.
+Stdlib + the runtime's boto3 (+ cryptography from the signing-deps layer, for the logo); lib/stacks/core-auth.ts
+ships this file and auth/logo_signing.py.
 """
 from __future__ import annotations
 
@@ -32,8 +35,13 @@ from typing import Any
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
+from auth import logo_signing
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+#: The design-system row's attribute holding the uploaded logo's object key (shared/company_logo.py LOGO_KEY_ATTR).
+LOGO_KEY_ATTR = 'logo_s3_key'
 
 BRAND_KEY = {'pk': 'SETTINGS#brand', 'sk': 'config'}
 #: The design system (Company → Design system, shared/company_context.py DESIGN_SYSTEM_PK): its colour tokens give
@@ -141,10 +149,20 @@ def pick_accent(colors: Any) -> str:
     return usable[0][1].lower() if usable else DEFAULT_ACCENT
 
 
-def accent_color() -> str:
+def design_system() -> dict:
+    """The design-system row (tokens, the uploaded logo's key), or {} when missing or unreadable."""
+    return _read_settings(DESIGN_SYSTEM_KEY, 'Design system')
+
+
+def accent_color(design: dict) -> str:
     """The invitation's accent: the design system's (as prototypes use it), or the app's own indigo."""
-    tokens = _read_settings(DESIGN_SYSTEM_KEY, 'Design system').get('tokens')
+    tokens = design.get('tokens')
     return pick_accent(tokens.get('colors') if isinstance(tokens, dict) else None)
+
+
+def logo_url(design: dict, sign_in_url: str, valid_days: int) -> str | None:
+    """A signed link to the uploaded company logo, valid as long as the temporary password; None without one."""
+    return logo_signing.signed_logo_url(design.get(LOGO_KEY_ATTR), sign_in_url, valid_days)
 
 
 def text_on(background: str) -> str:
@@ -171,12 +189,13 @@ def _sign_in_url() -> str:
     return os.environ.get('SIGN_IN_URL', '').rstrip('/')
 
 
-def _page(title: str, body: str, accent: str = DEFAULT_ACCENT) -> str:
-    """The shared frame: a solid header in ``accent`` with readable text (no gradient: some clients drop it)."""
+def _page(title: str, body: str, accent: str = DEFAULT_ACCENT, logo: str = '') -> str:
+    """The shared frame: a solid header in ``accent`` with readable text (no gradient: some clients drop it),
+    and ``logo`` (a ready ``<img>`` tag) above the title when there is one."""
     return f"""<!DOCTYPE html>
 <html>
 <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto;">
-  <div style="background: {accent}; padding: 24px 30px;">
+  <div style="background: {accent}; padding: 24px 30px;">{logo}
     <h1 style="color: {text_on(accent)}; margin: 0; font-size: 22px;">{title}</h1>
   </div>
   <div style="padding: 30px; background: #f9f9f9;">
@@ -186,11 +205,21 @@ def _page(title: str, body: str, accent: str = DEFAULT_ACCENT) -> str:
 </html>"""
 
 
+def _logo_tag(url: str | None, brand: str) -> str:
+    """The header's logo: a white plate keeps any logo legible on any accent; '' without a URL."""
+    if not url:
+        return ''
+    alt = html.escape(f'{brand} logo' if brand else 'Company logo')
+    return (f'\n    <div style="display: inline-block; background: #ffffff; border-radius: 6px; padding: 6px 10px; '
+            f'margin-bottom: 14px;"><img src="{html.escape(url)}" alt="{alt}" height="36" '
+            f'style="display: block; height: 36px; max-width: 220px; border: 0;"></div>')
+
+
 def invitation_message(*, audience: Audience, inviter: str, given_name: str, sign_in_url: str,
                        username_parameter: str, code_parameter: str, valid_days: int,
-                       accent: str = DEFAULT_ACCENT) -> tuple[str, str]:
+                       accent: str = DEFAULT_ACCENT, logo: str | None = None) -> tuple[str, str]:
     """(subject, html) for an invitation. ``audience``, ``inviter`` and ``given_name`` are unescaped;
-    ``accent`` must already be a validated hex colour (``pick_accent``)."""
+    ``accent`` must already be a validated hex colour (``pick_accent``), ``logo`` a signed URL or None."""
     workspace = html.escape(audience.workspace)
     who = f'{html.escape(inviter)} invited you to {workspace}' if inviter else f'You have been invited to {workspace}'
     greeting = f'Hello {html.escape(given_name)},' if given_name else 'Hello,'
@@ -214,7 +243,7 @@ def invitation_message(*, audience: Audience, inviter: str, given_name: str, sig
     <p>If you were not expecting this invitation, check with {html.escape(audience.contact)} before signing in, or ignore this email. Nobody from VoC Analytics will ask you for your password by email or phone.</p>
     <p style="color: #666; font-size: 12px;">Support reference: {username_parameter}</p>
     <p style="margin-top: 24px;">{html.escape(audience.signature)}</p>"""
-    return audience.subject, _page('Welcome to VoC Analytics', body, accent)
+    return audience.subject, _page('Welcome to VoC Analytics', body, accent, _logo_tag(logo, audience.brand))
 
 
 def _forgot_password_message(code_parameter: str, sign_in_url: str) -> tuple[str, str]:
@@ -253,6 +282,8 @@ def handler(event: dict, context: Any) -> dict:
     if source == INVITATION_SOURCE:
         attributes = request.get('userAttributes') or {}
         metadata = request.get('clientMetadata') or {}
+        design = design_system()
+        valid_days = _valid_days()
         subject, message = invitation_message(
             audience=Audience(brand=brand_name(), workshop=_workshop()),
             inviter=clean_name(metadata.get('invited_by')),
@@ -260,8 +291,9 @@ def handler(event: dict, context: Any) -> dict:
             sign_in_url=sign_in_url,
             username_parameter=request.get('usernameParameter') or '{username}',
             code_parameter=code_parameter,
-            valid_days=_valid_days(),
-            accent=accent_color(),
+            valid_days=valid_days,
+            accent=accent_color(design),
+            logo=logo_url(design, sign_in_url, valid_days),
         )
     elif source == RESET_SOURCE:
         subject, message = _forgot_password_message(code_parameter, sign_in_url)

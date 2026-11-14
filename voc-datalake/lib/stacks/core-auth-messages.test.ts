@@ -13,6 +13,7 @@ import { defined, isRecord, itemAt, recordAt } from '../test-support/guards';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import { BRAND_SETTINGS_PK, DESIGN_SYSTEM_SETTINGS_PK, TEMPORARY_PASSWORD_DAYS, USER_MESSAGES_FILES } from './core-auth';
 import { copyStepsFor, onlyTheseFiles } from '../utils/self-contained-trigger';
+import { COMPANY_LOGO_PATH_PATTERN } from './core-cdn';
 
 const HANDLER = 'auth/user_messages.handler';
 const APP_POOL = { UserPoolName: Match.objectLike({ 'Fn::Join': ['', Match.arrayWith(['voc-user-pool-'])] }) };
@@ -50,11 +51,47 @@ describe('app pool custom-message trigger', () => {
   it('runs the bundled auth/user_messages.py, not inline code', () => {
     const { props } = only(template, 'AWS::Lambda::Function', { Handler: HANDLER });
     expect(props.Code).not.toHaveProperty('ZipFile');
-    expect([...USER_MESSAGES_FILES]).toStrictEqual(['auth/user_messages.py']);
-    expect(onlyTheseFiles(USER_MESSAGES_FILES)).toStrictEqual(['*', '!/auth/', '/auth/*', '!/auth/user_messages.py']);
+    expect([...USER_MESSAGES_FILES]).toStrictEqual(['auth/user_messages.py', 'auth/logo_signing.py']);
+    expect(onlyTheseFiles(USER_MESSAGES_FILES)).toStrictEqual(
+      ['*', '!/auth/', '/auth/*', '!/auth/user_messages.py', '!/auth/logo_signing.py']);
     expect(copyStepsFor(USER_MESSAGES_FILES)).toStrictEqual([
-      'mkdir -p /asset-output/auth', 'cp /asset-input/auth/user_messages.py /asset-output/auth/user_messages.py',
+      'mkdir -p /asset-output/auth',
+      'cp /asset-input/auth/user_messages.py /asset-output/auth/user_messages.py',
+      'cp /asset-input/auth/logo_signing.py /asset-output/auth/logo_signing.py',
     ]);
+  });
+
+  it('can sign the logo link: the CDN key pair in its environment and the crypto layer', () => {
+    expect(triggerEnvironment(template)).toMatchObject({
+      CDN_SIGNING_SECRET_ARN: { Ref: expect.stringMatching(/^CdnSigningKeySecret/) },
+      CDN_SIGNING_KEY_PAIR_ID: { Ref: expect.stringMatching(/^CdnSigningPublicKey/) },
+    });
+    const { props } = only(template, 'AWS::Lambda::Function', { Handler: HANDLER });
+    expect(props.Layers).toHaveLength(1);
+  });
+
+  it('may read the CDN signing key and no other secret', () => {
+    const secretReads = triggerStatements(template).filter((s) => JSON.stringify(s.Action).includes('secretsmanager:'));
+    expect(secretReads).toHaveLength(1);
+    expect(itemAt(secretReads, 0).Action).toBe('secretsmanager:GetSecretValue');
+    expect(JSON.stringify(itemAt(secretReads, 0).Resource)).toContain('CdnSigningKeySecret');
+  });
+
+  it('serves the uploaded logo, and nothing else under company-context/, only with a CDN signature', () => {
+    const distributions = Object.values(template.findResources('AWS::CloudFront::Distribution'));
+    const behaviors = distributions.flatMap((d) => {
+      const list = recordAt(d, 'Properties', 'DistributionConfig')?.CacheBehaviors;
+      return Array.isArray(list) ? list.filter(isRecord) : [];
+    });
+    const logo = behaviors.filter((b) => b.PathPattern === COMPANY_LOGO_PATH_PATTERN);
+    expect(logo).toHaveLength(1);
+    expect(itemAt(logo, 0)).toMatchObject({
+      ViewerProtocolPolicy: 'redirect-to-https', AllowedMethods: ['GET', 'HEAD'],
+      TrustedKeyGroups: [{ Ref: expect.stringMatching(/^CdnSigningKeyGroup/) }],
+    });
+    expect(COMPANY_LOGO_PATH_PATTERN).toBe('/company-context/design/logo_????????????.*');
+    // No other behavior reaches the company-context/ prefix (references, previews, product docs stay unserved).
+    expect(behaviors.filter((b) => String(b.PathPattern).startsWith('/company-context/'))).toHaveLength(1);
   });
 
   it('is the pool\'s custom-message trigger', () => {
