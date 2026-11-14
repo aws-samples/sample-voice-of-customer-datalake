@@ -698,6 +698,8 @@
     "uploadBadType": "{{name}} は対応していないファイル形式です。",
     "uploadTooLarge": "{{name}} は {{mb}} MB を超えています。",
     "uploadFailed": "アップロードに失敗しました。もう一度お試しください。",
+    "logoNotShrunk": "{{name}} を 1 MB 未満に縮小できませんでした。より小さい PNG を書き出してアップロードしてください。",
+    "logoUnreadable": "{{name}} を画像として読み込めませんでした。PNG として書き出してアップロードしてください。",
     "integrations": "デザイン連携",
     "integrationsHint": "トークンは暗号化して保存され、再表示されません。空欄のままにすると現在のトークンを維持します。",
     "providers": {

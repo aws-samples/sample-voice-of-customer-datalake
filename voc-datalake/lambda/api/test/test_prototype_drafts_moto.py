@@ -450,6 +450,32 @@ class TestApplyingADraft:
         assert document['prototype_url'] == f'https://cdn.example/prototypes/{PROJECT}/{new_id}.html?Signature=s'
         assert document['source_prd_id'] == 'prd_1'
 
+    @pytest.mark.parametrize(('drafted', 'recorded'), [
+        # The draft decided the logo again (the merge of main's 7.00.00): its answer, not the base's.
+        ({'company_logo': {'included': False}}, False),
+        ({'company_logo': {'included': True}}, True),
+        # No logo to use when it was drafted: no claim either way.
+        ({'company_logo': {'included': None}}, None),
+        # A draft recorded before it decided the logo: the base's derivation, as it always was.
+        ({}, True),
+    ])
+    def test_the_version_records_the_logo_the_draft_decided_and_keeps_the_rest_of_the_derivation(
+            self, world, drafted, recorded):
+        v1 = world.prototype('job_1', '<h1>One</h1>')
+        v2 = world.prototype('job_22', '<h1>Two</h1>', revised_from_id=v1['document_id'],
+                             derivation={'design_system_included': True, 'company_logo_included': True})
+        detail = {'summary': SUMMARY, 'base_document_id': v2['document_id'], 'base_version': v2['version'],
+                  'instruction': INSTRUCTION, **drafted}
+        world.draft(v2, draft=detail)
+
+        status, body = world.call(EDITOR, 'POST', f'{world.draft_path(v2["document_id"])}/apply')
+
+        assert status == 201, body
+        derivation = body['document']['derivation']
+        assert derivation.get('company_logo_included') == recorded
+        assert ('company_logo_included' in derivation) is (recorded is not None)
+        assert derivation['design_system_included'] is True
+
     def test_the_version_carries_the_drafts_html_with_its_own_pin_form(self, world):
         _, v2 = _two_versions(world)
         world.draft(v2, html=inject_pin_widget('<!DOCTYPE html><html><body><footer>Sticky</footer></body></html>',

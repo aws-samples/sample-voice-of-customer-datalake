@@ -34,6 +34,7 @@ from typing import Any, Final
 from botocore.exceptions import ClientError
 
 from shared.aws import S3_CONDITIONAL_WRITE_CONFLICTS, is_missing_s3_object
+from shared.derivation import DERIVATION_FIELD
 from shared.document_history import EDIT_KIND_REVISE, series_versions
 from shared.document_versions import get_versioned_document_by_allocation
 from shared.engagement_common import update_existing
@@ -322,6 +323,30 @@ def apply_draft(store: PrototypeStore, project_id: str, job: Mapping[str, Any], 
         return landed, False
 
 
+#: The draft detail's record of the company logo it decided (``{included: True | False | None}``, as the
+#: derivation's ``company_logo_included``): the job decides the logo again, as a revision does.
+DRAFT_LOGO_KEY: Final = 'company_logo'
+
+
+def _with_draft_logo(derivation: object, draft: Mapping[str, Any]) -> dict[str, Any] | None:
+    """The base's derivation with the draft's own ``company_logo_included`` (None: keep the base's as it is).
+
+    A draft recorded before the job decided the logo has no ``company_logo``: the version keeps its base's
+    derivation, as it always did. Otherwise the draft's answer replaces the base's, and an unrecorded one
+    (no logo uploaded, or none read) removes it, so the "Built from" footer never claims a logo the draft
+    did not put there. A base with no derivation at all (built before derivations were recorded) gets none here
+    either: the version may show the logo without saying so, an under-claim, never a claim it did not earn.
+    """
+    logo = draft.get(DRAFT_LOGO_KEY)
+    if not isinstance(derivation, Mapping) or not isinstance(logo, Mapping):
+        return None
+    updated = {key: value for key, value in derivation.items() if key != 'company_logo_included'}
+    included = logo.get('included')
+    if isinstance(included, bool):
+        updated['company_logo_included'] = included
+    return updated
+
+
 def _write_applied_version(store: PrototypeStore, project_id: str, draft: Mapping[str, Any], base: Mapping[str, Any],
                            *, allocation_id: str, draft_id: str, now: str, actor: Mapping[str, str]) -> dict:
     html = _read_draft_html(store.s3, store.bucket, project_id, draft_id)
@@ -338,6 +363,9 @@ def _write_applied_version(store: PrototypeStore, project_id: str, draft: Mappin
     llm_metadata = _llm_metadata(draft)
     if llm_metadata is not None:
         provenance['llm_metadata'] = llm_metadata
+    derivation = _with_draft_logo(base.get(DERIVATION_FIELD), draft)
+    if derivation is not None:
+        provenance[DERIVATION_FIELD] = derivation
     # The draft is model HTML with no walkthrough (stripped by the job): the version keeps its base's steps.
     steps = extract_steps(version_html(store.s3, store.bucket, project_id, base))
     return version_from_html(store, project_id, base, html, allocation_id=allocation_id, now=now,

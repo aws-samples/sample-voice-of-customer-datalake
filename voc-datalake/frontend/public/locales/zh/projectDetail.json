@@ -35,6 +35,8 @@
       "webSearchesUsed_other": "{{count, number}} 次网络搜索",
       "companyContext": "公司背景",
       "designSystem": "公司设计系统",
+      "companyLogo": "公司徽标",
+      "companyLogoLeftOut": "已省略公司徽标（超过 1 MB 或无法读取）",
       "roles": {
         "mergeInput": "合并来源",
         "prototypePrd": "原型来源 PRD",

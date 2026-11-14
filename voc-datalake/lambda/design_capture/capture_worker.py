@@ -28,9 +28,11 @@ One reference, one page, one browser session of at most ``SESSION_SECONDS``:
    like the token editor;
 8. a rendered logo's PNG is stored as the PREVIEW and its sanitised SVG beside it, download-only
    (``page_logo.stored_logo``), recorded as ``logo: {source_url: <svg url>, content_type: 'image/png',
-   rendered: True, preview_key, svg_preview_key?}``; otherwise the raster candidate (if any) is downloaded
-   through the SSRF-guarded fetch as a PREVIEW (``shared.design_logo.store_preview``: ≤ 2 MB,
-   PNG/JPEG/WebP by its bytes). Either way the key is ``company-context/design/logo_preview_<ref id>.<ext>``;
+   rendered: True, preview_key, svg_preview_key?}``; otherwise the raster candidate (if any), downloaded
+   inside the session through the SSRF-guarded fetch (``raster_logo``: ≤ 2 MB, PNG/JPEG/WebP by its bytes),
+   is stored as a PREVIEW (``shared.design_logo.store_preview``; a model-proposed logo elsewhere is downloaded
+   then). A raster candidate over 2 MB is drawn smaller in a fresh tab instead (6b's renderer, ≤ 1024 px) and
+   recorded like a rendered SVG (``rendered: True``, ``source_url`` = the raster URL). Either way the key is ``company-context/design/logo_preview_<ref id>.<ext>``;
    the icons go to ``company-context/design/icons_<ref id>/`` and are recorded as ``extracted_design.icons``.
    Those two prefixes are the only S3 writes this worker may do.
 
@@ -64,6 +66,7 @@ from page_styles import (
     parse_page_styles,
     styles_expression,
 )
+from raster_logo import read_raster_logo
 
 from shared import company_context, design_icons, design_logo, design_references, design_vision
 from shared.cdp_page import HTTP_ERROR_RESPONSE, PROGRESS_JS, SettleTimings, wait_until_settled
@@ -122,6 +125,8 @@ class CapturedPage:
     inline_svg: InlineSvg | None = None
     #: The page's icons, downloaded (and an SVG one drawn) for the local copies (``shared.design_icons``).
     icons: list[design_icons.FetchedIcon] = field(default_factory=list)
+    #: The raster logo candidate, downloaded in the session (stored by ``store_preview`` without a second fetch).
+    raster_logo: design_logo.DownloadedLogo | None = None
 
 
 # ── The page ────────────────────────────────────────────────────────────────
@@ -207,12 +212,18 @@ def capture_page(cdp: Cdp, url: str, deps: CaptureDeps) -> CapturedPage:
 
 
 def render_logo(cdp: Cdp, page: CapturedPage, deps: CaptureDeps) -> CapturedPage:
-    """``page`` with its SVG logo rendered to a PNG (and its sanitised SVG copy), when it has one (``page_logo``).
+    """``page`` with its SVG logo rendered to a PNG (and its sanitised SVG copy), when it has one (``page_logo``);
+    otherwise, with a bucket, its raster candidate downloaded — or drawn smaller when over 2 MB (``raster_logo``).
 
     Runs after the page work, in its own fresh tab (``logo_render``); any failure keeps ``page`` as it was.
     """
     rendered = render_page_logo(cdp, page.styles, page.inline_svg, deps.logo_fetch)
-    return replace(page, rendered_logo=rendered) if rendered else page
+    if rendered:
+        return replace(page, rendered_logo=rendered)
+    if not deps.bucket:
+        return page
+    raster = read_raster_logo(cdp, page.styles, deps.logo_fetch)
+    return replace(page, rendered_logo=raster.rendered, raster_logo=raster.downloaded)
 
 
 def copy_icons(cdp: Cdp, page: CapturedPage, deps: CaptureDeps) -> CapturedPage:
@@ -296,7 +307,9 @@ def _read(item: dict, deps: CaptureDeps, trace: _Trace) -> tuple[str, dict | Non
                            reason=f'browser_{type(exc).__name__}') from exc
     summary, design = design_from_page(page, deps)
     ref_id = str(item['id'])
-    return summary, with_icons(stored_logo(design, page.rendered_logo, ref_id, deps.s3, deps.bucket), page, ref_id, deps)
+    design = stored_logo(design, page.rendered_logo, ref_id, deps.s3, deps.bucket)
+    design = design_logo.store_preview(design, ref_id, deps.s3, deps.bucket, deps.logo_fetch, page.raster_logo)
+    return summary, with_icons(design, page, ref_id, deps)
 
 
 def with_icons(design: dict | None, page: CapturedPage, ref_id: str, deps: CaptureDeps) -> dict | None:
@@ -317,7 +330,6 @@ def run_capture(event: dict, deps: CaptureDeps) -> dict:
     trace = _Trace()
     try:
         summary, design = _read(item, deps, trace)
-        design = design_logo.store_preview(design, ref_id, deps.s3, deps.bucket, deps.logo_fetch)
         outcome = design_references.ready_outcome(summary, design, deps.now())
     except CaptureError as exc:
         trace.failed(exc.reason, exc.http_status)

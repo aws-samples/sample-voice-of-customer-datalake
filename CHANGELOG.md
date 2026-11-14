@@ -17,6 +17,58 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.01.00] - 2026-11-14
+
+The project branch takes in main's 7.00.00 and 7.00.01: the company logo in prototypes (at most 1 MB for every client) and the Kiro agents kept away from secret files, on top of 6.17.00. Sections 7.00.01, 7.00.00 and 6.05.00 (from main) below are main's, under their own numbers; this branch reconciles its numbering when it goes to main.
+
+### Changed
+
+- A prototype built or revised on this branch shows the uploaded company logo (main's 7.00.00) and keeps its walkthrough and tester-pin widget: a revision's earlier HTML reaches the model without the pin widget or the walkthrough and with the logo back as its placeholder, and the built prototype gets the logo inlined, then its walkthrough and the pin widget.
+- A prototype draft (**Edit with the assistant** or **Incorporate**, 6.12.00 and 6.15.00) is a revision too: the base's inlined logo reaches the model as its placeholder (base64 no longer takes the prior-HTML cap), the uploaded logo is asked for and inlined in the draft, so **Apply** stores a version that shows it, and with no logo to use any more the model draws a wordmark (a leftover logo spot shows the project's name). The applied version's "Built from" footer (`derivation.company_logo_included`) says what the draft did, not what its base did; a draft made before this release keeps its base's, as before.
+- `scripts/validate.sh` runs main's `dependency-overrides` tests in "node: dependency scripts tests"; main's pre-push hook test runs in this branch's "node: git hook tests" step (every `scripts/git-hooks/*.test.mjs`), once.
+
+### Upgrade notes
+
+- Deploy the stacks (`npm run deploy:infra`, which deploys `VocCoreStack` before `VocApiStack`: `VocCoreStack` gains the `CompanyLogoReadPolicy` managed policy, attached by `VocApiStack` to the document generator job role), the stream Lambda and the frontend (`npm run deploy:frontend`), together.
+- **Breaking (from main's 7.00.00):** an API or MCP client that uploads its own company logo (`POST /settings/design-system/logo`) must send at most 1 MB (it was 5 MB), and **Use this logo** refuses a candidate over 1 MB (it was 2 MB); both answer 400 with what to do. The web app makes a larger image smaller before it uploads.
+- A developer whose kiro-cli upgraded the agent files locally should take the committed versions (`git checkout -- .kiro/agents`), as main's 7.00.01 says.
+- As on every release, the version moves the `APP_VERSION` of the Api and Processing Lambdas, so those two template hashes in `voc-datalake/lib/test-support/baseline.json` change.
+
+## [7.00.01] - 2026-11-13
+
+The repository's Kiro agents can no longer read `.env`, key and credential files with their read tool.
+
+### Fixed
+
+- The four hook agents in `.kiro/agents/` (first-principles, quality and security review, test generator) could read any file on the machine, `.env` and `~/.aws` included: they pre-approved `fs_read` in `allowedTools`, had no path limit and denied nothing. Every agent now carries the same rules as the two AI review agents behind the `tenets: AI review` / `commit: AI review` gate steps, built from one list (`SECRET_PATHS` in `scripts/ai-review/lib.mjs`, now naming `.env` and `.env.*` outright): reads of the repository only (`./**`), never a secret-shaped path, in both formats, and no read tool pre-approved. Verified live with kiro-cli 3.3.0: the agents read repository files without a prompt and are refused `.env`; it takes the `toolsSettings` block (an agent with only the documented V3 `permissions` deny read `.env`), and a pre-approved `fs_read` bypassed the deny, so a test now pins all three for every agent. The test generator also may not write a secret-shaped path. No agent file carries a machine-specific `kiroUpgrade` marker any more.
+- Two gaps remain, both verified with kiro-cli 3.3.0 and outside what agent rules can close: the `grep` tool of `first-principles-reviewer` prints lines from a denied `.env` (kiro-cli's search ignores the deny rules and `.kiroignore`, against its own documentation), and `test-generator` keeps the shell and the pre-approved writes it needs, so it can still print a file with a shell command or write outside the repository. Keep secrets out of the working tree, or gitignored.
+
+### Upgrade notes
+
+- Nothing to deploy: tooling only. A version bump moves only the `APP_VERSION` of the Api and Processing Lambdas, so those two template hashes in `voc-datalake/lib/test-support/baseline.json` change, as on every release. A developer whose kiro-cli upgraded these agent files locally should take the committed versions (`git checkout -- .kiro/agents`).
+
+## [7.00.00] - 2026-11-13
+
+Prototypes show the company logo uploaded in the design system, an SVG logo can be uploaded again, and a large logo is made smaller instead of refused.
+
+### Added
+
+- A prototype now shows the company logo from Company → Design system (`/company?tab=design`) wherever it shows the company's logo, instead of a logo the model draws. The model writes a placeholder and the build puts the uploaded logo in its place as an inline image, so the prototype stays one offline file. It follows the build dialog's **Design system** box, and the prototype's "Built from" footer says whether the logo was used or left out (`derivation.company_logo_included`). A logo over 1 MB is left out and the prototype gets a drawn wordmark, as before. A revision uses the logo uploaded when it is built: when there is none any more (or the box is unticked), the model is told to draw a wordmark instead, and a leftover logo spot shows the brand or project name as text, never an empty image. Other inline images in a prototype are never mistaken for the logo. See [docs/company-context.md → How the AI uses them](docs/company-context.md#how-the-ai-uses-them).
+- Company → Design system → **Upload logo** makes a large PNG, JPEG or WebP logo smaller in the browser instead of refusing it (up to 25 MB, was refused over 5 MB): at most 1,024 px on its longest side and under 1 MB, PNG first, then WebP so transparency is kept. A logo within 1 MB is uploaded as it is. See [docs/company-context.md](docs/company-context.md).
+- A website design reference whose logo is a PNG, JPEG or WebP over 2 MB gets a logo preview again: the managed browser that reads the page draws it at up to 1,024 px and keeps that PNG, so **Use this logo** works (it was refused with "The logo is larger than 2 MB"). A GitHub repository's logo over 2 MB, or a reference read before this release, still cannot be used directly, and the message now says what to do: upload it as the company logo, or refresh a website reference.
+
+### Changed
+
+- **Breaking:** the company logo is at most 1 MB for every client: `POST /settings/design-system/logo` (was 5 MB) and **Use this logo** (`POST /settings/design-system/references/{id}/logo`, was 2 MB) answer 400 above it, so an API or MCP caller gets the same result as the web app, whose upload makes the image smaller first, and every saved logo fits a prototype.
+
+### Fixed
+
+- Company → Design system → **Upload logo** refused every SVG file with "could not be read as an SVG image. Export it as PNG and upload that." The browser converts an SVG to PNG before the upload, and it loaded the SVG from a `blob:` URL, which the site's Content-Security-Policy (`img-src 'self' data:`) blocks. It now loads it from a `data:` URL, and the policy is unchanged. PNG, JPEG and WebP uploads were not affected.
+
+### Upgrade notes
+
+- Deploy the stacks (`npm run deploy:infra`, which deploys `VocCoreStack` before `VocApiStack`) and the frontend (`npm run deploy:frontend`). `VocCoreStack` gains one managed policy, `CompanyLogoReadPolicy` (`s3:GetObject` on the uploaded logos only, `company-context/design/logo_????????????.*` in the raw data bucket, so not the design references' logo previews), and `VocApiStack` attaches it to the document generator job role (`voc-job-document-generator`). **Breaking (the reason for the major version):** an API or MCP client that uploads its own company logo (`POST /settings/design-system/logo`) must send at most 1 MB (it was 5 MB), and **Use this logo** refuses a candidate over 1 MB (it was 2 MB); both answer 400 with what to do. The web app is not affected: it makes a larger image smaller before it uploads. Nothing else changes. Prototypes built before this release keep the logo they were built with; build or revise one to get the uploaded logo.
+
 ## [6.17.00] - 2026-11-14
 
 A prototype can walk people through itself: a skippable, step-by-step guide that editors write, the last part of the Prototype builder ([docs/prototype-builder.md](docs/prototype-builder.md)).
@@ -286,6 +338,37 @@ Projects > Documents opens each document as a page you edit in place, and every 
 
 - Frontend only: `npm run deploy:frontend`. No stack, route or stored data changes.
 - To use the review gate locally, from the repo's top level: `hooks=$(git config core.hooksPath || git rev-parse --git-path hooks)`, then `cp scripts/git-hooks/pre-commit "$hooks/pre-commit" && chmod +x "$hooks/pre-commit"` (CONTRIBUTING.md, "Review gate before commit"). The hooks directory is per clone, so it also checks the clone's other worktrees, and refuses a branch without `scripts/ai-review/gate.mjs`.
+
+## [6.05.00] - 2026-11-11 (from main)
+
+The repository's tooling needs Node.js 24, and the minimatch and fast-xml-parser security alerts are fixed.
+
+### Changed
+
+- Node.js 24.15+ is now the only supported line for the local tooling (root `package.json` `engines`, was `^22.22.2 || >=24.15.0`; `tools/kiro-acp-bridge` was `>=18.0.0`). It is the line CI and the Node Lambdas (`nodejs24.x`) already ran; Node 22 was never tested in CI. README, CONTRIBUTING and [docs/deployment.md](docs/deployment.md) say so.
+
+### Security
+
+- minimatch (GHSA-g3hv-75wg-m249, denial of service through glob-part amplification): every copy from 7.0.0 up to 11.0.1 is forced to `^11.0.1` by an npm override in `voc-datalake/`, `voc-datalake/frontend/` and `voc-datalake/lambda/stream/`. These copies are all used by build and lint tooling (ESLint, typescript-eslint, eslint-plugin-sonarjs, Stryker); the repository-root project holds no minimatch. minimatch 11 drops `makeRe` and `AST`, which none of those use. The stream Lambda's `eslint-plugin-import-x`, which did, moves to 4.18.1, the first release that supports minimatch 11. glob 10 does not work on minimatch 11 (a pattern matches nothing), so the frontend's `quick-temp` (behind `i18next-parser`, the `i18n:extract` authoring tool) gets rimraf 6.1.4 through a second override, which brings glob 14, built for minimatch 11. When a lint-tooling bump brings a new minimatch consumer, check that it does not need `makeRe`, `AST` or glob 13 or older before keeping the override; when `quick-temp` changes, check that it still calls rimraf's `sync`, which the rimraf 6 override relies on. `scripts/dependency-overrides.test.mjs` (a `validate.sh` step) fails when any of the six committed lockfiles holds a minimatch in the vulnerable range other than the copy bundled in `aws-cdk-lib`, a glob older than 14 on minimatch 11, or an unaudited `quick-temp`. The copy bundled inside `aws-cdk-lib` stays at 10.2.6: npm cannot override a bundled dependency, and no `aws-cdk-lib` release ships minimatch 11 yet. That copy only matches the repository's own asset-exclude patterns at synth time and never sees user input.
+- fast-xml-parser (GHSA-474x-hrwr-fgx4, quadratic CPU use on unterminated stop-node tags) moves from 5.11.2 to 5.12.0 in the frontend lockfile. `aws-amplify` pulls it in through `@aws-amplify/storage`. The SPA imports only `aws-amplify/auth`.
+
+### Upgrade notes
+
+- Nothing to do for a deployment of the platform. A redeploy changes only the release number the Api and Processing Lambdas record (`APP_VERSION`, `6.5.0`), as every release does; that and the stream lockfile (the assistant's NodejsFunction `depsLockFilePath`) are why those two stacks' template hashes in `voc-datalake/lib/test-support/baseline.json` move, and no other stack's.
+- Run `npm ci` again in `voc-datalake/`, `voc-datalake/frontend/` and `voc-datalake/lambda/stream/` to pick up the new lockfiles.
+- Deploy from Node.js 24.15+ (`node --version`). On Node 22, npm warns `EBADENGINE`, and newer tooling may not run. On Node 24, `npm ci` in `voc-datalake/frontend/` still warns `EBADENGINE` once, for `i18next-parser` 9.4.0 (its latest release declares Node 22 or older); that warning is expected, and the tool runs on Node 24.
+
+## [6.04.08] - 2026-11-11
+
+Workshop templates no longer reserve Lambda concurrency, so a Workshop Studio event's VocApiStack completes.
+
+### Fixed
+
+- `npm run generate:workshop-artifacts` synthesizes with `-c mcpReservedConcurrency=0`. Workshop Studio event accounts have only 110 unreserved Lambda executions (of a 1000 quota), and AWS keeps at least 100 unreserved, so the Global MCP endpoint's default reservation of 20 failed VocApiStack ("decreases account's UnreservedConcurrentExecution below its minimum value of [100]"). Without a reservation the endpoint shares the pool; its API Gateway method throttle (`GLOBAL_MCP_METHOD_THROTTLE` in `voc-datalake/lib/stacks/global-mcp.ts`) bounds the request rate, though not the concurrency. `voc-datalake/scripts/workshop-artifacts.test.ts` pins the flag, and `voc-datalake/lib/stacks/api-stack-mcp-global-ops.test.ts` already pins that 0 omits `ReservedConcurrentExecutions` instead of throttling to zero. See [docs/mcp.md](docs/mcp.md).
+
+### Upgrade notes
+
+- Nothing changes for a deployment from `npm run deploy:infra`: the MCP endpoint keeps its reservation of 20 by default. Regenerate the workshop templates (`npm run generate:workshop-artifacts`) and republish them to the workshop's `development` assets.
 
 ## [6.04.07] - 2026-11-11
 

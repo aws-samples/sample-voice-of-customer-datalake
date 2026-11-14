@@ -126,7 +126,7 @@ def tsc  repo                               "node: AI review tests"             
 # (`tenets`, `commit`), so validate-affected.sh never spends a model call; they run in the full gate, once per release.
 def tsc  tenets                             "tenets: AI review"                  'cd "$ROOT" && node scripts/ai-review/review.mjs --kind tenets'
 def lint commit                             "commit: AI review"                  'cd "$ROOT" && node scripts/ai-review/review.mjs --kind commit'
-def tsc  repo                               "node: dependency scripts tests"     'cd "$ROOT" && node --test scripts/dependency-audit.test.mjs scripts/dependency-freshness.test.mjs scripts/scheduled-failure-watch.test.mjs'
+def tsc  repo                               "node: dependency scripts tests"     'cd "$ROOT" && node --test scripts/dependency-audit.test.mjs scripts/dependency-freshness.test.mjs scripts/dependency-overrides.test.mjs scripts/scheduled-failure-watch.test.mjs'
 def tsc  repo                               "node: git hook tests"               'cd "$ROOT" && node --test scripts/git-hooks/*.test.mjs'
 def tsc  repo                               "node: validate.sh scheduling"      'cd "$ROOT" && node --test scripts/validate.test.mjs'
 # Secrets in the working tree (.gitleaks.toml: default rules + the platform's token formats, build

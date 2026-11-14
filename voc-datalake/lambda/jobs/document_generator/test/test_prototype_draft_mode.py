@@ -21,6 +21,8 @@ import boto3
 import pytest
 from moto import mock_aws
 
+from jobs.document_generator.handler import BuildLogo
+from shared.company_logo import LOGO_INSTRUCTION, LOGO_MARKER, LOGO_PLACEHOLDER, LOGO_REMOVED_INSTRUCTION
 from shared.converse import ConverseResult
 from shared.document_versions import persist_versioned_document, versioned_document_id
 from shared.prototype_drafts import (
@@ -142,6 +144,8 @@ class TestADraft:
             'summary': 'Checkout: the summary is a sticky footer\nHome: unchanged',
             'base_document_id': base['document_id'], 'base_version': 1, 'instruction': INSTRUCTION,
             'llm_metadata': {'model': 'model-that-answered', 'prompt_version': DRAFT_PROMPT_VERSION},
+            # No logo uploaded: Apply records none (shared/prototype_drafts.py).
+            'company_logo': {'included': None},
         }
 
     def test_the_html_is_written_at_the_jobs_draft_key_with_no_metadata_and_no_row(self, world):
@@ -272,6 +276,60 @@ class TestADraft:
 
         assert answer['success'] is False
         assert world.s3.list_objects_v2(Bucket=BUCKET, Prefix=f'prototypes/{PROJECT}/drafts/').get('KeyCount') == 0
+
+
+#: A logo as the build inlines it (main's 7.00.00): marked, so a revision can turn it back into the placeholder.
+LOGO_URL = f'data:image/png;{LOGO_MARKER};base64,' + 'A' * 4000
+
+
+class TestTheCompanyLogoInADraft:
+    """A draft is a revision: the logo the base inlined reaches the model as the placeholder, and the uploaded
+    logo (7.00.00) is inlined in the draft, so Apply stores a version that shows it."""
+
+    def _base_with_logo(self, world: World) -> dict:
+        doc_id = versioned_document_id(PROJECT, 'prototype', 'job_build')
+        page = f'<!DOCTYPE html><html><body><header><img src="{LOGO_URL}" alt="Acme"></header></body></html>'
+        world.s3.put_object(Bucket=BUCKET, Key=prototype_s3_key(PROJECT, doc_id), Body=page.encode())
+        return persist_versioned_document(world.projects, PROJECT, 'prototype', 'Checkout', 'job_build', {
+            'content': '', 'prototype_format': 'html', 'created_at': '2026-05-01T00:00:00+00:00'})
+
+    def _answer_with_placeholder(self, world: World) -> None:
+        page = f'<!DOCTYPE html><html><body><header><img src="{LOGO_PLACEHOLDER}" alt="Acme"></header></body></html>'
+        world.converse.return_value = ConverseResult(text=f'<change_summary>Home: x</change_summary>{page}',
+                                                     model_id='m')
+
+    def test_the_base_logo_reaches_the_model_as_the_placeholder_not_as_base64(self, world):
+        base = self._base_with_logo(world)
+
+        world.run(world.job(base))
+
+        prompt = world.prompt()
+        assert LOGO_PLACEHOLDER in prompt
+        assert 'A' * 100 not in prompt
+
+    def test_the_uploaded_logo_is_asked_for_and_inlined_in_the_draft(self, world):
+        base = self._base_with_logo(world)
+        self._answer_with_placeholder(world)
+
+        with patch('jobs.document_generator.handler._company_logo', return_value=BuildLogo(LOGO_URL, True)):
+            world.run(world.job(base))
+
+        assert LOGO_INSTRUCTION in world.prompt()
+        body = world.draft_object()['Body'].read().decode()
+        assert LOGO_URL in body
+        assert LOGO_PLACEHOLDER not in body
+        assert world.row()['draft']['company_logo'] == {'included': True}
+
+    def test_with_no_logo_to_use_the_model_draws_a_wordmark_and_a_leftover_spot_shows_the_name(self, world):
+        base = self._base_with_logo(world)
+        self._answer_with_placeholder(world)
+
+        world.run(world.job(base))
+
+        assert LOGO_REMOVED_INSTRUCTION in world.prompt()
+        body = world.draft_object()['Body'].read().decode()
+        assert LOGO_PLACEHOLDER not in body
+        assert '<span class="company-wordmark" style="font-weight:700">Shop</span>' in body
 
 
 PIN_A = 'pin_20260502000000000001aaaaaa'

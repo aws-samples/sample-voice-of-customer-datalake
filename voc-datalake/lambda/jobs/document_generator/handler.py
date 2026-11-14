@@ -50,7 +50,16 @@ from boto3.dynamodb.conditions import Key
 from shared import category_access, methodology
 from shared.api import validate_date_basis
 from shared.aws import get_dynamodb_resource, get_s3_client
-from shared.company_context import company_context_block, design_system_block
+from shared.company_context import CONFIG_SK, DESIGN_SYSTEM_PK, company_context_block, design_system_block
+from shared.company_logo import (
+    LOGO_INSTRUCTION,
+    LOGO_REMOVED_INSTRUCTION,
+    company_logo_data_url,
+    has_company_logo,
+    has_logo_placeholder,
+    inline_logo,
+    with_logo_placeholder,
+)
 from shared.converse import converse_chain
 from shared.derivation import (
     DERIVATION_FIELD,
@@ -97,6 +106,7 @@ from shared.prompts import get_prd_generation_steps, get_prfaq_generation_steps
 from shared.prototype_drafts import (
     DRAFT_FIELD,
     DRAFT_JOB_TYPE,
+    DRAFT_LOGO_KEY,
     DRAFT_PROMPT_VERSION,
     KIND_FEEDBACK,
     accepted_pins,
@@ -503,6 +513,34 @@ def _prototype_org_sections(grounding: Grounding | None = None, *,
     design_section = f'\n\n{design_block}\n\n{DESIGN_SYSTEM_INSTRUCTION}' if design_block else ''
     company_section = f'\n\n{company_block}\n\n{COMPANY_CONTEXT_INSTRUCTION}' if company_block else ''
     return design_section, company_section
+
+
+class BuildLogo(NamedTuple):
+    """The company logo for one prototype build."""
+    #: The logo as a ``data:`` URL, or None (opted out, none uploaded, too large, unreadable).
+    data_url: str | None = None
+    #: The derivation's ``company_logo_included``: True inlined, False uploaded but left out, None not recorded.
+    included: bool | None = None
+
+
+def _company_logo(with_design_system: bool) -> BuildLogo:
+    """The company logo for this build (``BuildLogo``).
+
+    The logo belongs to the design system, so the build dialog's "Design system" box decides
+    for it too. Never raises: a failed read builds the prototype without the logo (not recorded).
+    """
+    table = _aggregates_table() if with_design_system else None
+    if table is None:
+        return BuildLogo()
+    try:
+        row = table.get_item(Key={'pk': DESIGN_SYSTEM_PK, 'sk': CONFIG_SK}).get('Item')
+    except Exception as exc:  # noqa: BLE001 - optional prompt context must never fail a build
+        logger.warning('Company logo unavailable for the prototype', extra={'error_type': type(exc).__name__})
+        return BuildLogo()
+    if not has_company_logo(row):
+        return BuildLogo()
+    data_url = company_logo_data_url(row, _s3(), SCRATCH_BUCKET)
+    return BuildLogo(data_url, data_url is not None)
 
 
 def _design_system_record(requested: bool, section: str) -> bool | None:
@@ -1317,8 +1355,9 @@ def _revision_feedback_section(project_id: str, base: dict | None, feedback: str
     # The pin widget and the walkthrough are ours, not the model's: both are re-injected
     # (the widget with the revision's own form, the base's steps) after generation, so the
     # model never sees them.
+    # An inlined company logo goes back to its placeholder: base64 would eat the prior-HTML cap.
     raw = _prior_prototype_html(project_id, base) if prior is None else prior
-    prior_html = strip_walkthrough(strip_pin_widget(raw))
+    prior_html = with_logo_placeholder(strip_walkthrough(strip_pin_widget(raw)))
     prior_block = (
         f'\n\nEXISTING PROTOTYPE (revise this):\n{prior_html[:PROTOTYPE_PRIOR_CAP]}' if prior_html else ''
     )
@@ -1452,6 +1491,14 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     with_design_system = _use_design_system(doc_config)
     design_system_section, company_context_section = _prototype_org_sections(
         grounding, with_design_system=with_design_system)
+    # The model writes a placeholder for the uploaded logo; the image is inlined after generation.
+    logo = _company_logo(with_design_system)
+    logo_url = logo.data_url
+    if logo_url:
+        design_system_section += f'\n\n{LOGO_INSTRUCTION}'
+    elif has_logo_placeholder(feedback_section):
+        # The base prototype showed the uploaded logo, and there is none to use now: a drawn wordmark instead.
+        feedback_section += f'\n\n{LOGO_REMOVED_INSTRUCTION}'
 
     user_prompt = PROTOTYPE_HTML_USER_TEMPLATE.format(
         project_name=project_name,
@@ -1485,7 +1532,8 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     # A model-written walkthrough block (a fake one, or the base's echoed) never reaches a stored object; a
     # revision keeps its base version's steps (docs/prototype-builder.md, Part 1), a fresh build has none.
     base_steps = extract_steps(prior) if prior is not None else _base_steps(project_id, base)
-    html = _with_pin_widget(project_id, doc_id, title, inject_walkthrough(strip_walkthrough(html), base_steps))
+    html = inline_logo(strip_walkthrough(html), logo_url, brand or project_name)
+    html = _with_pin_widget(project_id, doc_id, title, inject_walkthrough(html, base_steps))
 
     ctx.update_progress(80, 'saving_prototype')
 
@@ -1558,6 +1606,7 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
             # was told not to read it (a revision inherits that choice), omitted
             # when it was asked for but none is configured.
             design_system_included=_design_system_record(with_design_system, design_system_section),
+            company_logo_included=logo.included,
             **derivation_knowledge(grounding),
         ),
         'created_at': now,
@@ -1687,7 +1736,9 @@ def _draft_prototype(ctx, projects_table, project_id: str, job_id: str, doc_conf
     base = _document_by_id(projects_table, project_id, 'PROTOTYPE#', base_id) if base_id else None
     if base is None:
         raise NotFoundError('The prototype version this draft was asked on no longer exists.')
-    prior_html = strip_walkthrough(strip_pin_widget(version_html(_s3(), SCRATCH_BUCKET, project_id, base)))
+    # The company logo WE inlined goes back to its placeholder, as in a revision: base64 would eat the prior-HTML cap.
+    prior_html = with_logo_placeholder(
+        strip_walkthrough(strip_pin_widget(version_html(_s3(), SCRATCH_BUCKET, project_id, base))))
     instruction = str(doc_config.get('instruction') or '').strip()
     if not instruction:
         raise ValidationError('The draft has no instruction.')
@@ -1704,6 +1755,14 @@ def _draft_prototype(ctx, projects_table, project_id: str, job_id: str, doc_conf
     with_design_system = (base.get(DERIVATION_FIELD) or {}).get('design_system_included') is not False
     design_system_section, company_context_section = _prototype_org_sections(
         grounding, with_design_system=with_design_system)
+    # The logo uploaded now, as a revision does (7.00.00): the model keeps the placeholder, the image is inlined
+    # after; with none to use any more, the model draws a wordmark where the base showed the logo.
+    logo = _company_logo(with_design_system)
+    logo_url = logo.data_url
+    if logo_url:
+        design_system_section += f'\n\n{LOGO_INSTRUCTION}'
+    elif has_logo_placeholder(prior_html):
+        design_system_section += f'\n\n{LOGO_REMOVED_INSTRUCTION}'
     sections = {'project_name': project_name, 'design_system_section': design_system_section,
                 'company_context_section': company_context_section, 'lang_hint': lang_hint,
                 'prior_html': prior_html[:PROTOTYPE_PRIOR_CAP]}
@@ -1732,10 +1791,15 @@ def _draft_prototype(ctx, projects_table, project_id: str, job_id: str, doc_conf
         'summary': summary, 'base_document_id': base_id, 'base_version': int(doc_config['base_version']),
         'instruction': instruction,
         'llm_metadata': pass_llm_metadata(answering_model(reply, 'prototype'), DRAFT_PROMPT_VERSION),
+        # Apply records it as the version's ``company_logo_included`` (shared/prototype_drafts.py).
+        DRAFT_LOGO_KEY: {'included': logo.included},
         **detail,
     })
     # Neither the widget nor a walkthrough block (the model may echo or fake one): Apply adds the base's steps.
-    put_draft_html(_s3(), SCRATCH_BUCKET, project_id, job_id, strip_walkthrough(strip_pin_widget(html)))
+    # The logo is inlined here, so Apply stores it as it is. A leftover placeholder becomes the project's name: a
+    # draft carries no brand (only a build's dialog sends one), where a build's wordmark uses the brand first.
+    draft = inline_logo(strip_walkthrough(strip_pin_widget(html)), logo_url, project_name)
+    put_draft_html(_s3(), SCRATCH_BUCKET, project_id, job_id, draft)
     ctx.update_progress(100, 'saved')
     return {'draft_id': job_id}
 

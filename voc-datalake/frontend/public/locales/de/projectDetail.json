@@ -35,6 +35,8 @@
       "webSearchesUsed_other": "{{count, number}} Websuchen",
       "companyContext": "Unternehmenskontext",
       "designSystem": "Designsystem des Unternehmens",
+      "companyLogo": "Firmenlogo",
+      "companyLogoLeftOut": "Firmenlogo ausgelassen (über 1 MB oder nicht lesbar)",
       "roles": {
         "mergeInput": "Zusammengeführt",
         "prototypePrd": "Prototyp-Quelle PRD",

@@ -1,6 +1,6 @@
 {
   "name": "voice-of-customer-datalake",
-  "version": "6.17.0",
+  "version": "7.1.0",
   "description": "Voice of the Customer Data Lake - Unified customer feedback intelligence platform",
   "private": true,
   "scripts": {
@@ -69,7 +69,7 @@
   "author": "",
   "license": "MIT",
   "engines": {
-    "node": "^22.22.2 || >=24.15.0"
+    "node": ">=24.15.0"
   },
   "devDependencies": {
     "jscpd": "5.4.2",

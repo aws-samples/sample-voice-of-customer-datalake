@@ -698,6 +698,8 @@
     "uploadBadType": "{{name}} 不是受支持的文件类型。",
     "uploadTooLarge": "{{name}} 超过 {{mb}} MB。",
     "uploadFailed": "上传失败，请重试。",
+    "logoNotShrunk": "无法将 {{name}} 缩小到 1 MB 以下。请导出更小的 PNG 后上传。",
+    "logoUnreadable": "无法将 {{name}} 作为图片读取。请导出为 PNG 后上传。",
     "integrations": "设计集成",
     "integrationsHint": "令牌加密存储，且不会再次显示。留空即保留当前令牌。",
     "providers": {

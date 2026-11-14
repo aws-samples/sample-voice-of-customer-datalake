@@ -35,6 +35,8 @@
       "webSearchesUsed_other": "웹 검색 {{count, number}}회",
       "companyContext": "회사 컨텍스트",
       "designSystem": "회사 디자인 시스템",
+      "companyLogo": "회사 로고",
+      "companyLogoLeftOut": "회사 로고가 생략됨(1MB 초과 또는 읽을 수 없음)",
       "roles": {
         "mergeInput": "병합 원본",
         "prototypePrd": "프로토타입 원본 PRD",
