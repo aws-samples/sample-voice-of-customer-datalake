@@ -58,8 +58,21 @@ refusals apart.
    job, duplicated, late or out of order, keep its row equal to a model of the generation protocol (a generation is
    claimed once, from the state just before it, while fresh; only the holding generation writes progress; nothing
    revives an erased export); each step's exact conditional UpdateItem; an erasure marks only its exports by their own
-   ids; and what a reader sees of every row shape (expired, stalled, never started). Not covered here:
-   `jobs/retention` (see "Not done").
+   ids; and what a reader sees of every row shape (expired, stalled, never started). The erasure worker
+   (`lambda/jobs/retention/`): `test_retention_properties.py` (per page every tombstone before any delete, the time
+   checked before each delete, a hand-over that resumes right after the last item erased; a job naming a workspace
+   touches only its rows; the daily run skips and counts rows whose `WS#` key names no workspace; the documented
+   phases; tombstones of the deployment's and each workspace's copy never share a key and carry no content),
+   `test_retention_handler_properties.py` (every hand-over renews the run's locks and carries the run; lock calls
+   never fail the run; each step hands on its phase, cursor and value; the lineage pass follows what was deleted) and
+   `test_retention_copies_properties.py` (each tombstone's id and time; a delete adds to its counts; a whole-file
+   upload goes only with a whole-source erasure of its own source, once).
+1a. **The project-id claim** (merged from origin/voc-multiplayer 8f2c1854, `ws_repo.py` `claim_project_id`,
+   `ProjectClaim`, `project_claim`, `release_project_claim`, the transaction's `claim`): the one row a workspace
+   writes outside its partitions. Properties (`test_ws_claims_properties.py`): a claim is made only for a real
+   workspace and a project id; it cannot be forged, changed or subclassed; it is written first, by the view, with the
+   workspace's own rows or not at all, counted in the 100; a read routes only to the workspace it names; a workspace
+   frees only its own claim.
 8. **Limits and credentials** (`lambda/shared/workspace_credentials.py`, the SSM store and its 4096-byte limit; the
    other workspace limits are constants checked where they are used: `MAX_TRANSACT_ITEMS` in component 2,
    `MAX_NAMED_WORKSPACES` in component 4). Properties (`test_workspace_credentials_properties.py`): what is saved is
@@ -84,6 +97,14 @@ in the project's escalation list) for a reviewer to accept or for a rewrite that
 | `workspace_members.py::change_role` | 21: `_refuse_last_admin(…, before, role)` -> `(…, before, None)` | same: `after` only matters for an admin-to-admin change, which never gets there |
 | `workspace_members.py::_remove_deleted_users_membership` | 4, 5, 6, 13: the context's `role=''`, `name=…`, `slug=…` -> `None` / `'XXXX'` | the context is only for `_audit`, which reads its `ws` and `platform_admin` |
 
+Escalated as untestable as written (a timeout, not an equivalence): `jobs/retention/handler.py::_walk` is
+`while True:` bounded only by the Lambda clock and the page cursor. Mutants that make a scan ignore its cursor
+(`_erase_from_boards` 32, `_mark_lineage` 31) timed out before the step properties caught them; the two left,
+`_deleted_anything` 16 and 17 (`or 0` -> `or 1`, which turn the lineage pass on for every run), loop in
+the worker's own moto suite (its multi-page scans in `lambda/jobs/retention/test/`; the property files patch
+`_erase_pages` / `_walk` out) until the mutant's time limit. The rewrite (a page cap per invocation, the clock
+injected) is in the escalation list, queued by the coordinator.
+
 ## Tooling notes
 
 - `lambda/shared/test/test_workspace_ids.py::test_it_imports_nothing_but_the_standard_library` fails under every
@@ -103,6 +124,9 @@ in the project's escalation list) for a reviewer to accept or for a rewrite that
 | 7 | `ws_repo.py` 492-720 (`ExportObjects`, `WorkspaceObjects`; 446 mutants) | 223 / 31 / 192 / 0 | 446 / 0 / 0 / 0 |
 | 7 | `export_jobs.py` 128-335 (the job row and its view; 471 mutants) | 407 / 22 / 42 / 0 | 471 / 0 / 0 / 0 |
 | 8 | `workspace_credentials.py` (all, 160 mutants) | 143 / 17 / 0 / 0 | 159 / 1 / 0 / 0 (1 escalated) |
+| 1a | `ws_repo.py`, the lines 8f2c1854 changed (the project-id claim; 154 mutants) | 141 / 9 / 4 / 0 | 154 / 0 / 0 / 0 |
+| 7 | `jobs/retention/handler.py` 215-519 (scoping, hand-overs, locks, phases; 618 mutants) | 535 / 79 / 0 / 4 | 616 / 0 / 0 / 2 (the 2 timeouts escalated: `_walk`) |
+| 7 | `jobs/retention/copies.py` (all, 235 mutants) | 217 / 18 / 0 / 0 | 235 / 0 / 0 / 0 |
 
 "Before" for `workspace.py` is `test_workspace.py`; for `workspace_members.py` `test_workspace_members.py` and
 `test_workspace_members_user_delete.py`; for `erasure_jobs.py` the erasure routes' and the retention worker's tests;
@@ -122,9 +146,9 @@ answer with no `Error` field, the defaults of a bare GetObject answer; and `is_a
 
 ## Not done
 
-- `jobs/retention` (the worker's sweep, the tombstone-first rule) and `export_jobs.py` 336-431 (the routes' steps:
-  start, status, link, which `test_export_jobs.py` covers): no properties yet; the retention worker is a multi-module
-  job whose sweep needs its own model, the next session's first item.
+- `export_jobs.py` 336-431 (the routes' start, status and link steps, which `test_export_jobs.py` covers) and the
+  retention worker's other modules (`boards.py`, `boards_rekey.py`, `members.py`, `lineage.py`, `exports.py`,
+  `runs.py`): not mutated here; their rules are pinned by the worker's own suite (which has its own mutation file).
 
 ## Bugs found by the properties
 
