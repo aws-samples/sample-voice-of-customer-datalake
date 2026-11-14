@@ -85,3 +85,10 @@ def worker_context():
     context.function_name = 'voc-retention'
     context.get_remaining_time_in_millis.return_value = 900_000
     return context
+
+
+@pytest.fixture
+def three_a_page():
+    """Pages of three rows, so a few items make several pages."""
+    with patch.object(handler, 'PAGE_SIZE', 3):
+        yield

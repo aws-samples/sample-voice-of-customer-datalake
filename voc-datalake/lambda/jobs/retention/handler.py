@@ -44,8 +44,8 @@ A run walks its PHASES in order, each paged and time-budgeted:
 
 Each deleted item first gets a tombstone (``copies.py``); its kept Silver versions
 (``silver/{source}/{feedback_id}/``) are deleted with it (``shared/retention.delete_item``). Before the Lambda's
-budget runs out the worker re-invokes itself with its phase, the phase's scan
-cursor and its running state (``runs.py``). Deletes are idempotent, so a
+budget runs out, or once a phase has read ``MAX_PAGES`` pages, the worker re-invokes itself with its phase, the
+phase's scan cursor and its running state (``runs.py``). Deletes are idempotent, so a
 duplicate delivery or an overlapping daily run only repeats no-ops. Every
 finished run (and every failure) writes one audit row (``pk AUDIT#retention``).
 
@@ -127,6 +127,11 @@ TIME_RESERVE_MS: Final = 60 * 1000
 # A runaway guard: a chain this long means something is wrong (the table would
 # have to hold millions of matching items); it stops and fails loudly instead.
 MAX_GENERATIONS: Final = 500
+# The most pages one phase reads in one invocation (a million rows scanned at PAGE_SIZE): past it the phase hands
+# over exactly as when the time runs low, so every loop of the walk is finite whatever the clock says. A store whose
+# pages come back in under 84 ms reaches it before the clock (14 minutes of budget): one more hand-over per million
+# rows, the same reads. With MAX_GENERATIONS a run stops (fails) past 500 million rows scanned.
+MAX_PAGES: Final = 10_000
 
 _AWS_ERRORS: Final = (ClientError, BotoCoreError)
 
@@ -346,9 +351,9 @@ def _walk(walk: Walk, phase: str, cursor: dict | None, scan: Callable[[dict | No
 
     ``scan(cursor)`` reads one page; ``handle(page, cursor)`` works through it and
     returns ``_Resume`` when the time ran out mid-page. The cursor is checkpointed
-    across self re-invocations.
+    across self re-invocations. At most ``MAX_PAGES`` pages, then a hand-over at the next one.
     """
-    while True:
+    for _page in range(MAX_PAGES):
         page = scan(cursor)
         resume = handle(page, cursor)
         if resume is not None:
@@ -359,6 +364,14 @@ def _walk(walk: Walk, phase: str, cursor: dict | None, scan: Callable[[dict | No
             return None
         if not walk.time_left():
             return _hand_over(walk, phase, cursor)
+    return _page_cap(walk, phase, cursor)
+
+
+def _page_cap(walk: Walk, phase: str, cursor: dict | None) -> dict:
+    """The phase read ``MAX_PAGES`` pages in this invocation: hand over from ``cursor``, as when the time runs low."""
+    logger.warning('Retention phase read its page cap in one invocation; handing over',
+                   extra={'phase': phase, 'pages': MAX_PAGES})
+    return _hand_over(walk, phase, cursor)
 
 
 def _erase_pages(walk: Walk, phase: str, cursor: dict | None, scan: Callable[[dict | None], dict],
@@ -441,21 +454,31 @@ def _sweep_raw(walk: Walk, _cursor: dict | None) -> dict | None:
     The per-item archives and kept Silver versions went with their items; this
     removes what no item points at any more (an archive whose item failed
     processing, an older copy). Each page lists from the start of the prefix
-    (what was listed is gone), so a hand-over carries no cursor.
+    (what was listed is gone), so a hand-over carries no cursor. At most ``MAX_PAGES`` pages a prefix, then a
+    hand-over.
     """
     source = str(walk.run.get('source') or '')
     raw_prefix, silver_prefix = retention.raw_source_prefix(source), retention.silver_source_prefix(source)
     if raw_prefix is None or silver_prefix is None or not RAW_DATA_BUCKET:
         return None
     for prefix in (raw_prefix, silver_prefix):
-        more = True
-        while more:
-            if not walk.time_left():
-                return _hand_over(walk, PHASE_RAW, None)
-            objects, more = retention.delete_raw_prefix_page(walk.s3, RAW_DATA_BUCKET, prefix)
-            walk.run['deleted_objects'] += objects
-            record_progress(walk.aggregates, walk.run, PHASE_RAW)
+        handed_over = _sweep_prefix(walk, prefix)
+        if handed_over is not None:
+            return handed_over
     return None
+
+
+def _sweep_prefix(walk: Walk, prefix: str) -> dict | None:
+    """Delete every object version under ``prefix``, page by page; a hand-over result, or None once it is empty."""
+    for _page in range(MAX_PAGES):
+        if not walk.time_left():
+            return _hand_over(walk, PHASE_RAW, None)
+        objects, more = retention.delete_raw_prefix_page(walk.s3, RAW_DATA_BUCKET, prefix)
+        walk.run['deleted_objects'] += objects
+        record_progress(walk.aggregates, walk.run, PHASE_RAW)
+        if not more:
+            return None
+    return _page_cap(walk, PHASE_RAW, None)
 
 
 def _erase_from_boards(walk: Walk, cursor: dict | None) -> dict | None:
