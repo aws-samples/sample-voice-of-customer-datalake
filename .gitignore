@@ -1,5 +1,5 @@
-# Dependencies
-node_modules/
+# Dependencies (no trailing slash: a worktree may link node_modules to a shared install, and a link is not a directory)
+node_modules
 
 # Build output
 dist/
@@ -23,6 +23,8 @@ __pycache__/
 *.so
 .Python
 .venv/
+# Hypothesis's example database (property tests): local, rebuilt by each run; the regressions are @example cases.
+.hypothesis/
 
 # Lambda layers (built artifacts)
 voc-datalake/lambda/layers/*/python/

@@ -198,6 +198,8 @@ MODULE_FLOORS: dict[str, int] = {
     'test_mcp_global_tools_mutation': 218,
     # 1 -> 2 (6.10.00): every name starts with its area, the list grouped by area.
     'test_mcp_global_tools_budget': 2,
+    # 7.01.01: property tests of resolve_tool (a listed, renamed or unknown name over generated arguments).
+    'test_mcp_global_tools_properties': 5,
     # 5.63.00: the tools' new reach (urgent, github/entities, include_similar), their
     # follow-up reads, the prompts/resources catalogue, and the endpoint's alarms.
     'test_mcp_global_tools_reach': 16,

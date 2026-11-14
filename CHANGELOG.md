@@ -17,6 +17,15 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.01.01] - 2026-11-14
+
+Property tests for the document, prototype and project rules (the mutation hardening of the wiki side, part 1).
+
+### Changed
+
+- Tests only, no behaviour change: Hypothesis property tests (256 examples each) for the document version and title rules, Revise from comments' thread selection, grounding and applying changes, the revise provenance (`llm_metadata`), prototype versions, project access (a token's or an agent's caller is never an admin; the member list's order) and the MCP tool names and routing. They share one settings object (`lambda/shared/test/property_settings.py`: no per-example deadline; derandomized, with no example database, under mutmut, so a mutation score is repeatable). `project_access.py`'s mutation score goes from 396 to 398 of 401 killed; the other 3 are equivalent, listed with their proof. The MCP gate (`scripts/mcp_gate.py`) holds the new MCP property module to a floor of 5 tests. `hypothesis` is pinned in `voc-datalake/requirements-dev.txt`; `.hypothesis/` is git-ignored, and `node_modules` is ignored also when it is a link to a shared install. The mutation notes are in `docs/mutation-notes-mut-voc-wiki.md`.
+- As on every release, the version moves the `APP_VERSION` of the Api and Processing Lambdas, so those two template hashes in `voc-datalake/lib/test-support/baseline.json` change.
+
 ## [7.01.00] - 2026-11-14
 
 The project branch takes in main's 7.00.00 and 7.00.01: the company logo in prototypes (at most 1 MB for every client) and the Kiro agents kept away from secret files, on top of 6.17.00. Sections 7.00.01, 7.00.00 and 6.05.00 (from main) below are main's, under their own numbers; this branch reconciles its numbering when it goes to main.
