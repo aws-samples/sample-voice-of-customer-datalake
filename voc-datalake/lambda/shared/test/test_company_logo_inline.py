@@ -105,3 +105,17 @@ def test_the_wordmark_is_safe_inside_a_template_literal():
     out = inline_logo('<script>a.innerHTML = `<img src="__COMPANY_LOGO__">`</script>', None, 'Pay`${x}` <Air>')
     assert out.document == '<script>a.innerHTML = `<b>Pay&#96;&#36;{x}&#96; &lt;Air&gt;</b>`</script>'
 
+
+# PR #559 review: a backslash or a newline in the name would break a quoted script string.
+def test_the_wordmark_is_one_line_with_no_backslash():
+    out = inline_logo('<script>a = "<img src=\'__COMPANY_LOGO__\'>"</script>', None, 'Example\\\nAir\r\n Co')
+    assert out.document == '<script>a = "<b>Example&#92; Air Co</b>"</script>'
+
+
+# PR #559 review: an <img> with a long srcset or inline style still takes its logo place.
+def test_a_long_img_tag_still_takes_a_logo_place():
+    tag = '<img style="' + 'x' * 5_000 + '" src="__COMPANY_LOGO__">'
+    out = inline_logo(tag, 'data:image/png;base64,AAAA', 'Example Air')
+    assert out.uses == 1
+    assert out.document.endswith('src="data:image/png;base64,AAAA">')
+

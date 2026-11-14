@@ -1,5 +1,5 @@
 /**
- * The fail-closed spec of the repository's Kiro agents (.kiro/agents/), checked by review.test.mjs.
+ * The fail-closed spec of the repository's Kiro agents (.kiro/agents/), checked by agent-guard.test.mjs.
  *
  * WHY: an agent file decides what a coding agent may read, write and run on a developer's machine, and the pre-push
  * reviews feed it untrusted diffs. A denylist of tool names lets every name or field it does not know through, so
@@ -53,7 +53,8 @@ export function expectedToolsSettings(spec) {
   }
 }
 
-const globRegex = (glob) => new RegExp(`^${glob.replace(/[.+^${}()|[\]\\]/g, '\\$&').replaceAll('*', '.*')}$`)
+// A shell glob: `*` any characters, `?` one character; every other regex character is literal.
+export const globRegex = (glob) => new RegExp(`^${glob.replace(/[.+^${}()|[\]\\]/g, '\\$&').replaceAll('*', '.*').replaceAll('?', '.')}$`)
 const SECRET_REGEXES = SECRET_PATHS.map(globRegex)
 
 /** Why a `resources` entry is refused, or null: only a literal repository file that is not secret-shaped. */

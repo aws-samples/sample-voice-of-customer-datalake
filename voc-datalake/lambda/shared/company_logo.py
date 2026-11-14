@@ -55,7 +55,7 @@ _MARKED_LOGO_RE = re.compile(r'data:image/(?:png|jpeg|webp);' + re.escape(LOGO_M
 _PLACEHOLDER_RE = re.compile(re.escape(LOGO_PLACEHOLDER), re.IGNORECASE)
 #: An ``<img>`` tag naming the placeholder. Bounded (an attribute run of at most 2,000 characters on each side) so a
 #: long run of ``<img`` without ``>`` cannot make the match quadratic.
-_PLACEHOLDER_IMG_RE = re.compile(r'<img\b[^>]{0,2000}?' + re.escape(LOGO_PLACEHOLDER) + r'[^>]{0,2000}>', re.IGNORECASE)
+_PLACEHOLDER_IMG_RE = re.compile(r'<img\b[^>]{0,8000}?' + re.escape(LOGO_PLACEHOLDER) + r'[^>]{0,8000}>', re.IGNORECASE)
 
 LOGO_INSTRUCTION = (
     f'COMPANY LOGO: the company has its own logo. Wherever the prototype shows the company logo or '
@@ -142,7 +142,8 @@ def inline_logo(document: str, data_url: str | None, wordmark: str) -> InlinedLo
     uses = 0
     # No quotes, and no backtick or `$`, so the wordmark is safe in an attribute, a quoted script string and a
     # template literal alike (as character references the browser shows the same text).
-    text = '<b>' + html.escape(wordmark).replace('`', '&#96;').replace('$', '&#36;') + '</b>'
+    safe = html.escape(' '.join(wordmark.split()))  # one line: a newline would end a quoted script string
+    text = '<b>' + safe.replace('\\', '&#92;').replace('`', '&#96;').replace('$', '&#36;') + '</b>'
 
     image = data_url or ''
 

@@ -168,6 +168,14 @@ const PYTHONS = ['python', 'python3', '.venv/bin/python', 'voc-datalake/.venv/bi
 const NETWORK_AND_SECRET_COMMANDS = ['curl', 'wget', 'nc', 'ncat', 'netcat', 'ssh', 'scp', 'sftp', 'rsync', 'telnet',
   'env', 'printenv', 'aws', 'sudo']
 const PAGERS = ['cat', 'less', 'more', 'head', 'tail']
+/**
+ * Arguments that point a test runner at code other than the repository's tests: a config or setup file, a preloaded
+ * or inline module, another package or project folder (`npm --prefix /tmp/x test` runs that folder's `scripts.test`).
+ * Refused wherever they appear (the prompt's commands use none), and so is any absolute or `..` path argument.
+ */
+const CODE_LOADING_FLAGS = ['-p', '-c', '-C', '-r', '-e', '--eval', '--print', '--prefix', '--config', '--root', '--dir',
+  '--require', '--import', '--loader', '--experimental-loader', '--env-file', '--rootdir', '--confcutdir',
+  '--globalSetup', '--setupFiles']
 const regexOf = (literal) => literal.replace(/[.+^${}()|[\]\\*?]/g, '\\$&')
 export const KIRO_SHELL_SETTINGS = Object.freeze({
   allowedCommands: [
@@ -181,6 +189,9 @@ export const KIRO_SHELL_SETTINGS = Object.freeze({
   deniedCommands: [
     `(.*[;&|(] *)?(${NETWORK_AND_SECRET_COMMANDS.join('|')})( .*)?`,
     `(.*[;&|(] *)?(${PAGERS.join('|')}) .*(~|\\$HOME|/Users/|/home/|/root/).*`,
+    `.* (${CODE_LOADING_FLAGS.map(regexOf).join('|')})([= ].*)?`,
+    '.*[ =]/.*',
+    '.*\\.\\..*',
   ],
   denyByDefault: true,
 })
@@ -202,6 +213,20 @@ export const KIRO_SHELL_RULES = Object.freeze([
       ...NETWORK_AND_SECRET_COMMANDS.flatMap((command) => [command, `${command} *`]),
       ...PAGERS.flatMap((pager) => [`${pager} *~*`, `${pager} *$HOME*`, `${pager} */Users/*`, `${pager} */home/*`, `${pager} */root/*`]),
     ],
+    effect: 'deny',
+  },
+  // What V2's argument regexes refuse, as V3 globs (V3's allow globs take any argument): code-loading flags, absolute
+  // and `..` paths, substitution and `~`. Only the exact `cd <folder>` forms are exempt (V3 rewrites a `cd` to an
+  // absolute path first): a broader `cd *` exemption let `cd voc-datalake && node --test --import ./x.mjs` run x.mjs
+  // on V3 (verified live). Redirections are not matched here: kiro-cli checks them as writes (V2 refuses one outside
+  // the repository or to a secret-shaped path; V3 writes anywhere, verified live), so no command rule can stop them.
+  {
+    capability: 'shell',
+    match: [
+      ...CODE_LOADING_FLAGS.flatMap((flag) => [`* ${flag}`, `* ${flag} *`, `* ${flag}=*`]),
+      '* /*', '*=/*', '*..*', '*~*', '*$(*', '*`*',
+    ],
+    exclude: TEST_DIRS.flatMap((dir) => [`cd ${dir}`, `cd */${dir}`]),
     effect: 'deny',
   },
 ])
