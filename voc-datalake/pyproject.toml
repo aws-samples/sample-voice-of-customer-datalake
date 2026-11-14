@@ -94,6 +94,8 @@ ignore_names = [
 # "wires every route each API handler registers" (lib/stacks/api-stack.test.ts) reports that instead.
 ignore_decorators = [
     "@pytest.fixture",
+    # A pytest plugin's hook (scripts/mutmut_run.py ImportNameRecorder): pytest calls it by its name.
+    "@pytest.hookimpl",
     "@app.get",
     "@app.post",
     "@app.put",

@@ -5,7 +5,8 @@
   python scripts/mutmut_run.py [--only-lines <path>:<from>-<to>[,...]] <mutmut command> [args...]   # from the stage
 
 ``baseline`` runs the tests unmutated in this process, then writes every name the module was imported
-under (one per line) to <names-out>. mutmut 3 links a test to a mutant by the module's import name
+under (one per line) to <names-out>, including names a fixture dropped from ``sys.modules`` again (they
+are collected before every test's teardown). mutmut 3 links a test to a mutant by the module's import name
 (``shared.llm_json``), which it derives from the file's path below its working directory, so the
 shell script needs that name to build the stage. It exits with pytest's exit code.
 
@@ -26,6 +27,8 @@ import re
 import sys
 from collections.abc import Iterable
 from pathlib import Path
+
+import pytest
 
 # pytest.ini's addopts turn on coverage for the whole suite; a mutation run needs none of it.
 PYTEST_OPTS = ['-o', 'addopts=', '-q', '-p', 'no:cacheprovider']
@@ -71,11 +74,35 @@ def import_names(module: str, modules: dict[str, object]) -> list[str]:
     return sorted(names, key=lambda name: (-len(name), name))
 
 
-def baseline(names_out: str, module: str, tests: list[str]) -> int:
-    import pytest
+class ImportNameRecorder:
+    """A pytest plugin that collects *module*'s import names before every test's teardown.
 
-    exit_code = int(pytest.main([*PYTEST_OPTS, *tests]))
-    names = import_names(module, dict(sys.modules))
+    A fixture may load a module and drop it from ``sys.modules`` again when it tears down (the project
+    export's tests load ``project_bundle.exporter`` that way), so ``sys.modules`` after the run may no
+    longer hold it. Names seen at any point, in the order first seen, plus those left at the end.
+    """
+
+    def __init__(self, module: str) -> None:
+        self.module = module
+        self.seen: dict[str, None] = {}
+
+    def record(self, modules: dict[str, object]) -> None:
+        for name in import_names(self.module, modules):
+            self.seen.setdefault(name, None)
+
+    def names(self, modules: dict[str, object]) -> list[str]:
+        self.record(modules)
+        return sorted(self.seen, key=lambda name: (-len(name), name))
+
+    @pytest.hookimpl(tryfirst=True)   # before pytest's own teardown, which runs the fixtures' finalizers
+    def pytest_runtest_teardown(self) -> None:
+        self.record(dict(sys.modules))
+
+
+def baseline(names_out: str, module: str, tests: list[str]) -> int:
+    recorder = ImportNameRecorder(module)
+    exit_code = int(pytest.main([*PYTEST_OPTS, *tests], plugins=[recorder]))
+    names = recorder.names(dict(sys.modules))
     Path(names_out).write_text(''.join(f'{name}\n' for name in names), encoding='utf-8')
     return exit_code
 

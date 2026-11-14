@@ -17,7 +17,7 @@ import hashlib
 import re
 import time
 import unicodedata
-from collections.abc import Iterable, Iterator
+from collections.abc import Container, Iterable, Iterator
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
@@ -195,14 +195,10 @@ def normalize_document_versions(documents: Iterable[dict[str, Any]]) -> list[dic
                 assigned[candidate.index] = claim
                 used.add(claim)
 
-        next_free = 1
-        for candidate in ordered:
-            if candidate.index in assigned:
-                continue
-            while next_free in used:
-                next_free += 1
-            assigned[candidate.index] = next_free
-            used.add(next_free)
+        unassigned = [candidate for candidate in ordered if candidate.index not in assigned]
+        free = _lowest_free_versions(used, 1, len(unassigned), len(unassigned) + len(used))
+        for position, candidate in enumerate(unassigned):
+            assigned[candidate.index] = free[position]
 
         for candidate in candidates:
             version = assigned[candidate.index]
@@ -213,6 +209,19 @@ def normalize_document_versions(documents: Iterable[dict[str, Any]]) -> list[dic
             })
 
     return output
+
+
+def _lowest_free_versions(taken: Container[int], start: int, count: int, limit: int) -> list[int]:
+    """The *count* lowest versions from *start* up that *taken* does not hold, looking at *limit* numbers at most.
+
+    Callers pass ``limit = count + len(taken)``: of that many consecutive numbers at most ``len(taken)`` are
+    taken, so *count* free ones are always among them. Running past the limit is a broken fill: it fails at
+    once instead of counting forever.
+    """
+    free = [version for version in range(start, start + limit) if version not in taken][:count]
+    if len(free) < count:
+        raise ServiceError(f'Document version fill found {len(free)} of {count} free versions in {limit} numbers')
+    return free
 
 
 def persist_legacy_document_versions(
@@ -444,12 +453,12 @@ def _assign_unpersisted_legacy_versions(
             assigned[identity] = suffix_version
             used_by[suffix_version] = identity
 
-    next_free = counter_floor + 1
-    for identity, _document in _unassigned_documents(ordered, assigned):
-        while next_free in used_by:
-            next_free += 1
-        assigned[identity] = next_free
-        used_by[next_free] = identity
+    # Each identity once, in order: two rows under one identity (no sort key) share one version.
+    unassigned = list(dict.fromkeys(identity for identity, _document in _unassigned_documents(ordered, assigned)))
+    free = _lowest_free_versions(used_by, counter_floor + 1, len(unassigned), len(unassigned) + len(used_by))
+    for position, identity in enumerate(unassigned):
+        assigned[identity] = free[position]
+        used_by[free[position]] = identity
 
 
 def _requires_legacy_persistence(document: dict[str, Any]) -> bool:
@@ -1417,7 +1426,8 @@ def _positive_int(value: object) -> int | None:
             return None
         parsed = int(value)
         return parsed if parsed > 0 else None
-    if isinstance(value, str) and value.isdigit():
+    # isdecimal, not isdigit: a superscript or circled digit is a "digit" that int() cannot parse.
+    if isinstance(value, str) and value.isdecimal():
         parsed = int(value)
         return parsed if parsed > 0 else None
     return None

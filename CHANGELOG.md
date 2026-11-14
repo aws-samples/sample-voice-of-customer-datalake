@@ -17,6 +17,20 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.01.03] - 2026-11-14
+
+A stored document version written as an odd digit no longer breaks the project's reads; mutation testing reaches the project export without touching the tree, the version fill is bounded, and the rest of the wiki side is mutation-tested.
+
+### Fixed
+
+- A document row whose stored `version` is a text of a superscript or circled digit (`'²'`, `'①'`) made every read of its project fail: `str.isdigit()` accepted it and `int()` then raised. It now counts as no stored version, like any other unreadable one (`_positive_int` in `lambda/shared/document_versions.py` asks `str.isdecimal()`).
+
+### Changed
+
+- Mutation testing reaches the project export and no longer loops on the version fill. `scripts/mutate-python.sh` copies the module's own top directory into the stage, and refuses (exit 3, before mutmut starts) when the mutants would land in the repository. `scripts/mutmut_run.py baseline` also counts a module a fixture loads and drops again (through a pytest hook, which vulture now counts as used: `@pytest.hookimpl` joins the decorators in `pyproject.toml` that register a function with its framework). `normalize_document_versions` and the legacy fill pick free versions through one bounded `_lowest_free_versions`, which looks at no more numbers than documents plus claims and fails at once past that. Behaviour is unchanged, pinned by tests written first. Scores: exporter.py 426/426, document_versions.py 2555/14/0 (was 2528/14/4).
+- Tests only: property and example tests for document versions and series (`test_document_versions_series_properties.py`, `test_document_versions_survivors.py`), the global MCP tools (`test_mcp_global_tools_survivors.py`, held by the MCP gate to a floor of 16), prototype versions (`test_prototype_versions_survivors.py`), feedback incorporation and the feedback list (`test_prototype_incorporation_properties.py`, `test_prototype_feedback_properties.py`), document sections (`test_document_sections_properties.py`) and the project export (`test_project_bundle_exporter_properties.py`, `test_project_bundle_exporter_survivors.py`). Mutants killed: `mcp_global_tools.py` 1023 -> 1047 of 1050, `prototype_versions.py` 339 -> 378 of 381, `prototype_incorporation.py` 326 -> 358 of 359, `prototype_feedback.py` 493 -> 527 of 528, `document_versions.py` 2463 of 2546 (in two slices) -> 2555 of 2569 with no timeout (with the bounded fill above), `exporter.py` 426 of 426; every survivor left is equivalent, with its proof in `docs/mutation-notes-mut-voc-wiki.md`. One known bug is pinned by a strict xfail and written down there (a title ending in two "(vN)" suffixes changes series between write and read).
+- As on every release, the version moves the `APP_VERSION` of the Api and Processing Lambdas, so those two template hashes in `voc-datalake/lib/test-support/baseline.json` change.
+
 ## [7.01.02] - 2026-11-14
 
 Revise from comments drops a quote that occurs at two overlapping places; the rest of the revise module is mutation-tested.

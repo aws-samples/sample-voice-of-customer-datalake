@@ -16,10 +16,13 @@
 # mutmut 3 never edits the source tree. It mutates a copy in `mutants/` below its working directory and
 # names each mutant after the module's IMPORT name (`shared.llm_json.x_first_json_object__mutmut_1`), so
 # the run happens in a stage outside the repository ($TMPDIR/mutate-python-<checksum of this checkout>,
-# rebuilt by every run): `repo/voc-datalake/` is a copy of voc-datalake's Python tree (lambda/ and plugins/
-# as git lists them, untracked files included, and the top-level files; every other entry, and the
-# repository root's, is a symlink to the real one), and `mutants` points at the copy of the directory the
-# tests import the module from (lambda/ for `shared.*`, lambda/api/ for a handler, ...).
+# rebuilt by every run): `repo/voc-datalake/` is a copy of voc-datalake's Python tree (lambda/, plugins/ and
+# the module's own top directory, e.g. scripts/, as git lists them, untracked files included, and the
+# top-level files; every other entry, and the repository root's, is a symlink to the real one), and `mutants`
+# points at the copy of the directory the tests import the module from (lambda/ for `shared.*`, lambda/api/
+# for a handler, scripts/ for `project_bundle.*`, ...). A run whose mutants would still land in the tree (a
+# module in an ignored directory) is refused before mutmut starts (exit 3).
+# Its stub test: lambda/shared/test/test_mutate_python_stage.py.
 # MUTMUT_RUNNER_TIMEOUT (default 120 s) bounds each mutant; MUTMUT_MAX_CHILDREN (default 1) runs mutants in parallel.
 # mutmut 3 mutates only function and method bodies, and skips decorated functions (except
 # @staticmethod/@classmethod): module-level code and e.g. `@app.get` routes get no mutants.
@@ -102,8 +105,14 @@ if [[ -n "$IMPORT_ROOT" ]]; then UP="$(sed -E 's|[^/]+|..|g' <<<"$IMPORT_ROOT")/
 if [[ "$(basename "$STAGE")" != mutate-python-* ]]; then echo "Unexpected stage path $STAGE" >&2; exit 2; fi
 rm -rf -- "$STAGE"
 mkdir -p "$COPY"
+# The copied directories: lambda/ and plugins/, and the module's own top directory when it is another one
+# (scripts/ for scripts/project_bundle/exporter.py): mutmut writes its mutants below `mutants`, so the
+# directory they land in must be a copy, never a link back into the tree (checked below, before mutmut runs).
+COPIED=(lambda plugins)
+MODULE_TOP="${MODULE%%/*}"
+if [[ "$MODULE" == */* && " ${COPIED[*]} " != *" $MODULE_TOP "* ]]; then COPIED+=("$MODULE_TOP"); fi
 # Copies keep their mtime: mutmut mutates a copy only while it is not newer than its source.
-git ls-files -z --cached --others --exclude-standard -- lambda plugins ':(glob)*' \
+git ls-files -z --cached --others --exclude-standard -- "${COPIED[@]}" ':(glob)*' \
   ':(exclude)lambda/stream' ':(exclude)lambda/layers' \
   | while IFS= read -r -d '' file; do [[ -f "$file" ]] && printf '%s\0' "$file"; done \
   | tar -c --null -T - -f - | tar -x -p -f - -C "$COPY"
@@ -121,6 +130,19 @@ for entry in lambda/stream lambda/layers; do [[ -e "$entry" ]] && ln -s "$ROOT/$
 ln -s "repo/voc-datalake/${IMPORT_ROOT:-.}" "$STAGE/mutants"
 # mutmut reads the source from <stage>/<source path>: the real module, through a symlink.
 ln -s "$ROOT/${IMPORT_ROOT:+$IMPORT_ROOT/}${SOURCE_PATH%%/*}" "$STAGE/${SOURCE_PATH%%/*}"
+# The mutants must land in the stage: refuse when `mutants`, or the directory the module's mutants are
+# written to, resolves into the repository (a module in an ignored or linked directory, which no copy holds).
+TREE="$(cd "$(git rev-parse --show-toplevel)" && pwd -P)"
+for target in "$STAGE/mutants" "$(dirname "$STAGE/mutants/$SOURCE_PATH")"; do
+  # Both exist (a copy or a link); `pwd -P` resolves every link on the way, on Linux and macOS alike.
+  resolved="$(cd "$target" 2>/dev/null && pwd -P || echo "$TREE")"
+  if [[ "$resolved" == "$TREE" || "$resolved" == "$TREE"/* ]]; then
+    echo "Refusing to mutate $MODULE: its mutants would be written to $resolved, inside the repository" \
+      "($TREE), because the stage holds no copy of it (git lists no file there, or it is a link)." \
+      "Nothing was mutated; the stage is $STAGE." >&2
+    exit 3
+  fi
+done
 
 toml_list() { local sep="" item; printf '['; for item in "$@"; do printf "%s'%s'" "$sep" "$item"; sep=", "; done; printf ']'; }
 SELECTION=()
