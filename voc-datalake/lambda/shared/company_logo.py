@@ -53,9 +53,6 @@ LOGO_MARKER = 'voc=company-logo'
 _MARKED_LOGO_RE = re.compile(r'data:image/(?:png|jpeg|webp);' + re.escape(LOGO_MARKER) + r';base64,[A-Za-z0-9+/]*={0,2}')
 #: The placeholder in any case (the prompt spells it in capitals; a model may not).
 _PLACEHOLDER_RE = re.compile(re.escape(LOGO_PLACEHOLDER), re.IGNORECASE)
-#: An ``<img>`` tag naming the placeholder. Bounded (an attribute run of at most 8,000 characters on each side; a longer tag is not matched) so a
-#: long run of ``<img`` without ``>`` cannot make the match quadratic.
-_PLACEHOLDER_IMG_RE = re.compile(r'<img\b[^>]{0,8000}?' + re.escape(LOGO_PLACEHOLDER) + r'[^>]{0,8000}>', re.IGNORECASE)
 
 LOGO_INSTRUCTION = (
     f'COMPANY LOGO: the company has its own logo. Wherever the prototype shows the company logo or '
@@ -130,6 +127,29 @@ class InlinedLogo(NamedTuple):
     uses: int
 
 
+def _placeholder_img_tags(document: str) -> list[tuple[int, int]]:
+    """``(start, end)`` of every ``<img …>`` tag naming the placeholder, in order, whatever the tag's length.
+
+    Found from each placeholder outwards (the nearest ``<img`` before it with no ``>`` in between, the first ``>``
+    after it), not by one regex over the document, so a model output full of ``<img`` without ``>`` costs one pass
+    per placeholder and no tag is too long to match.
+    """
+    lower = document.lower()
+    tags: list[tuple[int, int]] = []
+    for match in _PLACEHOLDER_RE.finditer(document):
+        if tags and match.start() < tags[-1][1]:
+            continue  # a second placeholder in the tag already found
+        start = lower.rfind('<img', 0, match.start())
+        after = document[start + 4:start + 5]
+        if start == -1 or document.find('>', start, match.start()) != -1 or not (after.isspace() or after in '/>'):
+            continue  # not inside an <img …> tag
+        end = document.find('>', match.end())
+        if end == -1:
+            break  # no `>` after this point: no later placeholder can sit in a closed tag either
+        tags.append((start, end + 1))
+    return tags
+
+
 def inline_logo(document: str, data_url: str | None, wordmark: str) -> InlinedLogo:
     """``document`` with the first ``MAX_LOGO_USES`` placeholder ``<img>`` tags showing the logo.
 
@@ -147,21 +167,24 @@ def inline_logo(document: str, data_url: str | None, wordmark: str) -> InlinedLo
 
     image = data_url or ''
 
-    def swap(match: re.Match[str]) -> str:
-        # Each occurrence that gets the image is a use (an `src` and a `srcset` naming it in one tag are two), so the
-        # file never carries the base64 more than MAX_LOGO_USES times. A tag gets the image in every occurrence or
-        # not at all (a half-blank `srcset` would show nothing on a high-density screen): one that does not fit the
-        # uses left becomes the wordmark.
-        nonlocal uses
-        tag = match.group(0)
+    # Each occurrence that gets the image is a use (an `src` and a `srcset` naming it in one tag are two), so the
+    # file never carries the base64 more than MAX_LOGO_USES times. A tag gets the image in every occurrence or not
+    # at all (a half-blank `srcset` would show nothing on a high-density screen): one that does not fit the uses
+    # left becomes the wordmark.
+    pieces: list[str] = []
+    done = 0
+    for start, end in _placeholder_img_tags(document):
+        tag = document[start:end]
         needed = len(_PLACEHOLDER_RE.findall(tag))
-        if not image or uses + needed > MAX_LOGO_USES:
-            return text
-        uses += needed
-        return _PLACEHOLDER_RE.sub(lambda _m: image, tag)
-
-    document = _PLACEHOLDER_IMG_RE.sub(swap, document)
-    return InlinedLogo(_PLACEHOLDER_RE.sub(BLANK_IMAGE, document), uses)
+        if image and uses + needed <= MAX_LOGO_USES:
+            uses += needed
+            tag = _PLACEHOLDER_RE.sub(lambda _m: image, tag)
+        else:
+            tag = text
+        pieces += [document[done:start], tag]
+        done = end
+    pieces.append(document[done:])
+    return InlinedLogo(_PLACEHOLDER_RE.sub(BLANK_IMAGE, ''.join(pieces)), uses)
 
 
 def logo_record(uploaded: bool, uses: int) -> bool | None:

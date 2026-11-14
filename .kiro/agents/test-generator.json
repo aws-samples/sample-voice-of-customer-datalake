@@ -89,6 +89,7 @@
         "(.*[;&|(] *)?(curl|wget|nc|ncat|netcat|ssh|scp|sftp|rsync|telnet|env|printenv|aws|sudo)( .*)?",
         "(.*[;&|(] *)?(cat|less|more|head|tail) .*(~|\\$HOME|/Users/|/home/|/root/).*",
         ".* (-p|-c|-C|-r|-e|--eval|--print|--prefix|--config|--root|--dir|--require|--import|--loader|--experimental-loader|--env-file|--rootdir|--confcutdir|--globalSetup|--setupFiles)([= ].*)?",
+        ".* -(p|c|C|r|e)[^ ]+.*",
         ".*[ =]/.*",
         ".*\\.\\..*"
       ],
@@ -392,11 +393,16 @@
           "* --setupFiles",
           "* --setupFiles *",
           "* --setupFiles=*",
+          "* -p*",
+          "* -c*",
+          "* -C*",
+          "* -r*",
+          "* -e*",
           "* /*",
           "*=/*",
           "*..*",
           "*~*",
-          "*$(*",
+          "*$*",
           "*`*"
         ],
         "exclude": [

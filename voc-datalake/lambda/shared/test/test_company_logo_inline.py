@@ -114,8 +114,27 @@ def test_the_wordmark_is_one_line_with_no_backslash():
 
 # PR #559 review: an <img> with a long srcset or inline style still takes its logo place.
 def test_a_long_img_tag_still_takes_a_logo_place():
-    tag = '<img style="' + 'x' * 5_000 + '" src="__COMPANY_LOGO__">'
+    tag = '<img style="' + 'x' * 50_000 + '" src="__COMPANY_LOGO__">'
     out = inline_logo(tag, 'data:image/png;base64,AAAA', 'Example Air')
     assert out.uses == 1
     assert out.document.endswith('src="data:image/png;base64,AAAA">')
+
+
+def test_a_placeholder_outside_any_img_tag_takes_no_place():
+    doc = '<p>__COMPANY_LOGO__</p><image src="__COMPANY_LOGO__"><img alt="x">__COMPANY_LOGO__'
+    out = inline_logo(doc, 'data:image/png;base64,AAAA', 'Example Air')
+    assert out.uses == 0
+    assert '__COMPANY_LOGO__' not in out.document
+    assert 'data:image/png;base64,AAAA' not in out.document
+
+
+# Review: with no `>` left, every later placeholder used to scan to the end of the document (k x n).
+@pytest.mark.timing
+def test_many_placeholders_after_an_unclosed_img_are_handled_in_one_pass():
+    doc = '<img ' + '__COMPANY_LOGO__ ' * 20_000 + 'x' * 200_000
+    started = time.perf_counter()
+    out = inline_logo(doc, 'data:image/png;base64,AAAA', 'Example Air')
+    assert time.perf_counter() - started < 1.0
+    assert out.uses == 0
+    assert '__COMPANY_LOGO__' not in out.document
 
