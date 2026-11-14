@@ -109,12 +109,12 @@ from shared.persona_evidence import EVIDENCE_FEEDBACK_IDS_FIELD, resolve_evidenc
 from shared.persona_knowledge import PERSONA_KNOWLEDGE_STEP, persona_knowledge_fields, with_persona_knowledge
 from shared.project_access import Caller
 from shared.project_keys import (
-    PROJECT_PREFIX,
-    PROJECT_TYPE_PK,
     document_keys,
     document_listing,
     personas_index_pk,
+    project_id_of,
     project_pk,
+    project_type_pk,
 )
 from shared.project_writes import (
     PROJECT_DELETION_ATTRIBUTE,
@@ -449,7 +449,7 @@ def _iter_project_index_rows() -> Iterator[dict]:
     """Every project META row on the by-type index, newest first, all pages."""
     return _paginated_items({
         'IndexName': PROJECTS_BY_TYPE_INDEX,
-        'KeyConditionExpression': Key('gsi1pk').eq(PROJECT_TYPE_PK),
+        'KeyConditionExpression': Key('gsi1pk').eq(project_type_pk()),
         'ScanIndexForward': False,
     })
 
@@ -501,7 +501,7 @@ def create_project(body: dict, caller: Caller) -> dict:
         item = {
             'pk': project_pk(project_id),
             'sk': 'META',
-            'gsi1pk': PROJECT_TYPE_PK,
+            'gsi1pk': project_type_pk(),
             'gsi1sk': now,
             'project_id': project_id,
             'name': body.get('name', 'New Project'),
@@ -974,9 +974,10 @@ def _viewable_ids(project_ids: list[str], caller: Caller) -> set[str]:
     before any partition read or URL signing on the caller's behalf."""
     keys = [{'pk': project_pk(project_id), 'sk': 'META'} for project_id in project_ids]
     metas = batch_get_all(projects_table, keys, failure=ServiceError('Failed to read projects'))
+    # The ids were checked (LONG_OPAQUE_ID_RE: no `#`), so each META read back names its project's id.
     return {
-        str(meta['pk'])[len(PROJECT_PREFIX):] for meta in metas
-        if isinstance(meta.get('pk'), str) and not is_project_tombstone(meta)
+        project_id for meta in metas
+        if (project_id := project_id_of(meta.get('pk'))) is not None and not is_project_tombstone(meta)
         and project_access.resolve_access(meta, caller).can_view
     }
 

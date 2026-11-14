@@ -11,8 +11,9 @@ parsed, and each raw access is counted by its kind:
   resource collection's batch delete (``bucket.objects.filter(…).delete()``, ``object_versions``,
   ``multipart_uploads``), ``put`` / ``delete`` on an ``….Object(…)`` or ``….Bucket(…)`` made in the same
   expression, or the ingestors' deployment-wide table (``DeploymentTable(…)``, and ``ingest_table(None, …)`` or
-  ``table_view(None, …)`` with the literal None; a call passing a scope variable that may be None at run time is
-  not counted);
+  ``table_view(None, …)`` with the literal None, and the project accessors (``PROJECT_ACCESSORS``) with a literal
+  ``workspace=None`` or, for ``get_scoped_item``, a literal None scope; a call passing a scope variable that may be
+  None at run time, or leaving the default, is not counted);
 * a reference to a data-path table getter of shared/tables.py (``get_feedback_table``, ``get_aggregates_table``,
   ``cached_table``): called, bound to a name or passed on, by its name, an ``import … as`` alias or as an
   attribute (``tables.get_aggregates_table``);
@@ -94,6 +95,16 @@ RAW_GETTERS: Final = frozenset({'get_feedback_table', 'get_aggregates_table', 'c
 #: The ingestors' deployment-wide table (shared/ingest_tables.py): built directly, or asked for with no scope.
 DEPLOYMENT_TABLE: Final = 'DeploymentTable'
 UNSCOPED_INGEST_TABLE: Final = 'ingest_table(None)'
+#: The project stores' own accessors (shared/project_tables.py, shared/project_writes.py, shared/workspace_config.py)
+#: asked, in so many words, for the deployment's rows: ``workspace=None`` as a literal, or a literal None as
+#: ``get_scoped_item``'s scope (its third positional argument). A store passes its ``workspace`` on; the default is
+#: not counted, a spelled-out None is (as ``ingest_table(None)`` is).
+PROJECT_ACCESSORS: Final = frozenset({'iter_project_rows', 'transact_project_writes', 'transact_project_actions',
+                                      'put_project_item', 'put_project_item_and_increment',
+                                      'create_counted_project_child', 'get_scoped_item'})
+#: The accessors whose scope may also be passed by position, and where.
+PROJECT_ACCESSOR_SCOPE_POSITION: Final = {'get_scoped_item': 2}
+UNSCOPED_PROJECT_ACCESS: Final = 'project accessor(workspace=None)'
 #: DynamoDB's multi-item calls and the kind each is counted in. ``WorkspaceTable`` has the same methods, so a call
 #: on one of its views (``VIEW_BUILDERS``, ``VIEW_TYPE``) is scoped, not raw.
 MULTI_ITEM_KINDS: Final = {'transact_write_items': 'transact', 'transact_get_items': 'transact',
@@ -232,7 +243,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/shared/plans_store.py': (3, {'meta.client': 2, 'transact': 2}),
     'lambda/shared/platform_workspaces.py': (0, {'meta.client': 1, 'transact': 1}),
     'lambda/shared/plugin_circuit.py': (2, {'get_aggregates_table': 2}),
-    'lambda/shared/project_writes.py': (3, {'meta.client': 2, 'transact': 2}),
+    # Both writers' transactions go through `transact_project_writes` since 7.21.00 (`ws_table` in a workspace); left:
+    # the deployment's one call on the table's client.
+    'lambda/shared/project_writes.py': (3, {'meta.client': 1, 'transact': 1}),
     'lambda/shared/prompt_labels_store.py': (3, {'Table': 1}),
     'lambda/shared/radar_store.py': (3, {'meta.client': 1, 'transact': 1}),
     'lambda/shared/radar_views.py': (3, {'METRIC#': 1}),
@@ -359,7 +372,20 @@ def _call_kind(node: ast.Call) -> str | None:
     if (name in ('ingest_table', 'table_view') and node.args and isinstance(node.args[0], ast.Constant)
             and node.args[0].value is None):
         return UNSCOPED_INGEST_TABLE
+    if name in PROJECT_ACCESSORS and _spells_no_workspace(node, PROJECT_ACCESSOR_SCOPE_POSITION.get(name)):
+        return UNSCOPED_PROJECT_ACCESS
     return _s3_change(node)
+
+
+def _is_none(node: ast.AST) -> bool:
+    return isinstance(node, ast.Constant) and node.value is None
+
+
+def _spells_no_workspace(node: ast.Call, position: int | None) -> bool:
+    """A literal ``workspace=None`` (or ``scope=None``), or a literal None at the accessor's scope position."""
+    if any(keyword.arg in ('workspace', 'scope') and _is_none(keyword.value) for keyword in node.keywords):
+        return True
+    return position is not None and len(node.args) > position and _is_none(node.args[position])
 
 
 def _reference_kind(node: ast.AST, getters: dict[str, str]) -> str | None:
@@ -770,6 +796,17 @@ def test_the_scan_sees_each_kind_of_raw_access(tmp_path):
         "o = ingest_table(scope, resource, 'voc-aggregates')\n"
         "p = table_view(None, table)\n"
         "q = table_view(scope, table)\n"
+        # The project accessors: a spelled-out workspace=None is the deployment's path, a scope passed on is not.
+        "pr = iter_project_rows(table, 'p1', workspace=None)\n"
+        "pw = project_writes.transact_project_writes(table, [], workspace=None)\n"
+        "ps = iter_project_rows(table, 'p1', workspace=scope)\n"
+        "pd = iter_project_rows(table, 'p1')\n"
+        "pi = put_project_item(table, 'p1', item, workspace=None)\n"
+        "pa = transact_project_actions(table, 'p1', [], workspace=None)\n"
+        "pc = put_project_item_and_increment(table, 'p1', item, 'document_count', workspace=None)\n"
+        "pn = create_counted_project_child(table, 'p1', 'doc', build, workspace=None)\n"
+        "pg = get_scoped_item(table, key, None)\n"
+        "ph = get_scoped_item(table, key, scope)\n"
         # The multi-item calls: raw on a table, a resource or a client, and a bound method kept for later ...
         "r = table.meta.client.transact_write_items(TransactItems=[])\n"
         "s = client.transact_get_items(TransactItems=[])\n"
@@ -794,7 +831,7 @@ def test_the_scan_sees_each_kind_of_raw_access(tmp_path):
         'Table': 1, 'put_object': 1, 'copy_object': 1, 'get_feedback_table': 1, 'get_aggregates_table': 1,
         'SOURCE#': 1, 'METRIC#': 1, 'raw/': 1, 'silver/': 1, 'upload_file': 1, 'upload_fileobj': 1,
         'cached_table': 1, 'generate_presigned_url': 1, 'delete_object': 1, 'DeploymentTable': 2,
-        'ingest_table(None)': 2, 'transact': 4, 'batch': 4,
+        'ingest_table(None)': 2, 'project accessor(workspace=None)': 7, 'transact': 4, 'batch': 4,
         # The low-level client itself (7.00.00's rule), beside the multi-item calls made on it.
         'meta.client': 3})
 

@@ -15,36 +15,33 @@ import hashlib
 import re
 from typing import Any, Final
 
-from boto3.dynamodb.conditions import Key
-
 from shared.document_history import series_base, series_versions
 from shared.document_versions import (
     MERGE_VERSIONED_DOCUMENT_TYPES,
     managed_document_type,
     normalized_base_title,
 )
-from shared.dynamo_paging import iter_query
 from shared.exceptions import NotFoundError, ValidationError
-from shared.project_keys import project_pk
+from shared.project_tables import iter_project_rows
 from shared.text_clip import collapse_whitespace
+from shared.workspace_config import get_scoped_item
+from shared.ws_repo import WorkspaceScope
 
 COMMENTABLE_TYPES: Final = MERGE_VERSIONED_DOCUMENT_TYPES
 DOCUMENT_NOT_FOUND: Final = 'Document not found'
 NOT_COMMENTABLE: Final = 'Comments are available on PR/FAQ and PRD documents only'
 
 
-def find_document(table: Any, project_id: str, document_id: str) -> dict:
-    """The stored document row (content included); 404 when absent."""
-    query = {
-        'KeyConditionExpression': Key('pk').eq(project_pk(project_id)),
-        'ConsistentRead': True,
-        'ProjectionExpression': 'pk, sk, document_id',
-    }
-    match = next((row for row in iter_query(table, query) if row.get('document_id') == document_id), None)
+def find_document(table: Any, project_id: str, document_id: str, *,
+                  workspace: WorkspaceScope | None = None) -> dict:
+    """The stored document row (content included); 404 when absent (``workspace``'s project when given)."""
+    rows = iter_project_rows(table, project_id, workspace=workspace, ConsistentRead=True,
+                             ProjectionExpression='pk, sk, document_id')
+    match = next((row for row in rows if row.get('document_id') == document_id), None)
     if match is None:
         raise NotFoundError(DOCUMENT_NOT_FOUND)
-    item = table.get_item(Key={'pk': match['pk'], 'sk': match['sk']}, ConsistentRead=True).get('Item')
-    if not isinstance(item, dict) or item.get('document_id') != document_id:
+    item = get_scoped_item(table, {'pk': match['pk'], 'sk': match['sk']}, workspace, ConsistentRead=True)
+    if item.get('document_id') != document_id:
         raise NotFoundError(DOCUMENT_NOT_FOUND)
     return item
 
@@ -72,9 +69,12 @@ def series_of(project_id: str, document: dict) -> dict[str, str]:
             'base_title': base}
 
 
-def latest_version(table: Any, project_id: str, document_type: str, base: str) -> dict | None:
-    """The newest stored version of the series, or None when every version was deleted."""
-    versions = series_versions(table, project_id, {'document_type': document_type, 'base_title': base})
+def latest_version(table: Any, project_id: str, document_type: str, base: str, *,
+                   workspace: WorkspaceScope | None = None) -> dict | None:
+    """The newest stored version of the series, or None when every version was deleted. Not per workspace yet (a
+    series is the document versions' store): ``series_versions`` refuses a ``workspace`` (``NotPerWorkspaceError``)."""
+    versions = series_versions(table, project_id, {'document_type': document_type, 'base_title': base},
+                               workspace=workspace)
     return versions[0] if versions else None
 
 

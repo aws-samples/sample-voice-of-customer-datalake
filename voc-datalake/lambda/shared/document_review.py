@@ -18,18 +18,17 @@ from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Final
 
-from boto3.dynamodb.conditions import Key
-
 from shared import document_comments as comments
 from shared.converse import converse
 from shared.document_series import collapse, plain_text
-from shared.dynamo_paging import iter_query
 from shared.exceptions import ValidationError
 from shared.logging import logger
 from shared.memory_store import parse_json_object
 from shared.persona_context import persona_prompt_block
-from shared.project_keys import project_pk
+from shared.project_keys import DOCUMENT_COMMENTS_STORE, require_deployment
+from shared.project_tables import iter_project_rows
 from shared.prompt_safety import DATA_NOTICE, data_block
+from shared.ws_repo import WorkspaceScope
 
 MAX_REVIEW_PERSONAS: Final = 6
 PERSONA_CONCURRENCY: Final = 3
@@ -70,10 +69,11 @@ def validate_persona_ids(body: Mapping[str, Any]) -> list[str] | None:
     return list(dict.fromkeys(raw))
 
 
-def project_personas(table: Any, project_id: str) -> list[dict[str, Any]]:
-    query = {'KeyConditionExpression': Key('pk').eq(project_pk(project_id)) & Key('sk').begins_with('PERSONA#'),
-             'ConsistentRead': True}
-    return [row for row in iter_query(table, query) if isinstance(row.get('persona_id'), str)]
+def project_personas(table: Any, project_id: str, *,
+                     workspace: WorkspaceScope | None = None) -> list[dict[str, Any]]:
+    """The project's personas (``workspace``'s project when given, shared/project_tables.py)."""
+    rows = iter_project_rows(table, project_id, workspace=workspace, sort_prefix='PERSONA#', ConsistentRead=True)
+    return [row for row in rows if isinstance(row.get('persona_id'), str)]
 
 
 def pick_personas(personas: Sequence[dict[str, Any]], wanted: list[str] | None) -> list[dict[str, Any]]:
@@ -183,8 +183,12 @@ def _file(table: Any, *, project_id: str, series_id: str, document: Mapping[str,
 
 
 def run_review(table: Any, *, project_id: str, series_id: str, document: Mapping[str, Any], document_type: str,
-               personas: Sequence[Mapping[str, Any]], invoke: Invoke = _default_invoke) -> dict[str, Any]:
-    """Consult ``personas`` on ``document`` and file their comments; the job's ``result``."""
+               personas: Sequence[Mapping[str, Any]], invoke: Invoke = _default_invoke,
+               workspace: WorkspaceScope | None = None) -> dict[str, Any]:
+    """Consult ``personas`` on ``document`` and file their comments; the job's ``result``. Not per workspace yet
+    (it files comment threads, shared/document_comments.py): a ``workspace`` is refused (``NotPerWorkspaceError``)
+    before any model call, so a workspace's document is never reviewed into the deployment's threads."""
+    require_deployment(workspace, DOCUMENT_COMMENTS_STORE)
     text = plain_text(document.get('content'))[:MAX_DOCUMENT_CHARS]
     if not text:
         raise ValidationError('The document is empty; write something to review first')

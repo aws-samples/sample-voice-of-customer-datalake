@@ -18,8 +18,10 @@ from shared.company_personas import is_company_container
 from shared.exceptions import AuthorizationError, NotFoundError, ValidationError
 from shared.gate_reads import read_gate_item
 from shared.project_access import Caller, ProjectAccess
+from shared.project_keys import PROJECT_GATE_STORE, require_deployment
 from shared.project_writes import PROJECT_DELETION_ATTRIBUTE, is_project_tombstone
 from shared.row_ids import LONG_OPAQUE_ID_RE
+from shared.ws_repo import WorkspaceScope
 
 PROJECT_NOT_FOUND = 'Project not found'
 # No LEVEL_VIEW entry: a caller who cannot view is answered 404 before the level
@@ -54,7 +56,7 @@ def require_admin_caller(caller: Caller) -> None:
         raise AuthorizationError('Admin access required')
 
 
-def read_gate_meta(table: Any, project_id: str) -> dict | None:
+def read_gate_meta(table: Any, project_id: str, *, workspace: WorkspaceScope | None = None) -> dict | None:
     """The project's META, projected to what the decision needs, or None.
 
     A failed read raises ServiceError (a JSON 500) rather than leaking a raw
@@ -63,7 +65,11 @@ def read_gate_meta(table: Any, project_id: str) -> dict | None:
 
     The company persona library's reserved container is never a project: it reads as
     missing here, so every gate that reads META (and every non-admin) answers it 404.
+
+    Not per workspace yet: a ``workspace`` is refused (``NotPerWorkspaceError``), see
+    ``require_project_level``.
     """
+    require_deployment(workspace, PROJECT_GATE_STORE)
     if is_company_container(project_id):
         return None
     return read_gate_item(
@@ -79,12 +85,19 @@ def require_project_level(
     level: str,
     *,
     missing_message: str = PROJECT_NOT_FOUND,
+    workspace: WorkspaceScope | None = None,
 ) -> ProjectAccess:
     """The caller's access at ``level`` or above, else the prescribed refusal.
 
     Admins are decided without a read (``read_meta`` is not called), so every
     admin path costs what it did before per-project permissions existed.
+
+    The gate is the deployment's and refuses a ``workspace`` (``NotPerWorkspaceError``): ``caller.is_admin``
+    is the deployment's ``admins`` group and ``visibility: public`` grants edit to every signed-in user, so
+    either would open a workspace's project to people outside it. The switch (slice 3h,
+    docs/multi-workspace.md) decides a workspace's project from that workspace's own membership.
     """
+    require_deployment(workspace, PROJECT_GATE_STORE)
     if caller.is_admin:
         return ProjectAccess(role=project_access.ROLE_ADMIN)
     meta = read_meta()
@@ -98,12 +111,15 @@ def require_project_level(
     return access
 
 
-def require_viewable_pin(table: Any, project_id: object, caller: Caller) -> str | None:
+def require_viewable_pin(table: Any, project_id: object, caller: Caller, *,
+                         workspace: WorkspaceScope | None = None) -> str | None:
     """The optional project pin of an MCP credential (token or OAuth grant), which ``caller`` must be able to view.
 
     ``None`` / ``''`` = no pin. Checked for admins too (who skip the access gate), so a pin always names a
-    project that exists. Raises ValidationError (malformed id), NotFoundError or AuthorizationError.
+    project that exists. Raises ValidationError (malformed id), NotFoundError or AuthorizationError. Not per
+    workspace yet: a ``workspace`` is refused (``NotPerWorkspaceError``), see ``require_project_level``.
     """
+    require_deployment(workspace, PROJECT_GATE_STORE)
     if project_id is None or project_id == '':
         return None
     if not isinstance(project_id, str) or not LONG_OPAQUE_ID_RE.fullmatch(project_id):

@@ -47,6 +47,10 @@ ALLOWED_UNUSED_EXPORTS: dict[str, frozenset[str]] = {
         'OutOfScopeError', 'PARTITION_ATTRIBUTES', 'metric_pk', 'metric_type', 'scope_from_key', 'scope_from_message',
         'scope_of',
     }),
+    # The error the stores not per workspace yet raise through `require_deployment` (docs/multi-workspace.md, the
+    # project plan): what a caller would catch, raised by name nowhere else; each slice that threads a store keeps it
+    # until the last refusal goes.
+    'lambda/shared/project_keys': frozenset({'NotPerWorkspaceError'}),
 }
 
 

@@ -17,6 +17,19 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.21.00] - 2026-11-14
+
+Multi-workspace, phase 3 groundwork: the project stores can keep a workspace's project rows. Internal only: nothing changes for anyone ([docs/multi-workspace.md](docs/multi-workspace.md)).
+
+### Changed
+
+- Internal: every project key builder (`lambda/shared/project_keys.py`) takes an optional workspace and gives that workspace's keys (`WS#{ws}#PROJECT#{id}`, its `#DOCUMENTS` and `#PERSONAS` index partitions, `WS#{ws}#TYPE#PROJECT`); without one it gives exactly today's keys. The project writes, the company persona library, decisions, the deleted-source notices, the document finder, the persona review list and the persona save, count, overlap, clear and protection stores take an optional workspace too, and inside one they read and write only through the workspace layer. The document versions and their series, a series' comment threads and persona review, and the project access gate are not per workspace yet: they refuse a workspace rather than use the deployment's rows or the deployment's access rules. No route, job or assistant tool passes a workspace yet: every project, document, persona and job is read and written exactly as before.
+- Internal: reading several projects' details at once (`GET /projects?ids=…`) now skips a stored project row whose key has a `#` after the project id. No write makes such a row, and the ids the route reads are checked to contain none, so nothing changes in practice.
+
+### Upgrade notes
+
+- Nothing to do: no stack, table, IAM or API change. Every function built from `lambda/` gets new code (the shared modules change), with no change in what it does.
+
 ## [7.20.00] - 2026-11-14
 
 Multi-workspace, phase 4b: the voc-multiplayer-b track's export-objects slice merged. A workspace's export now also holds the workspace's own files ([docs/multi-workspace.md](docs/multi-workspace.md#export-and-delete)). Its memory items and its members' conversations are still not exported (the open gap of 7.17.00).

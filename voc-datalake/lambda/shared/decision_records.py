@@ -31,16 +31,18 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
-from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
 from shared.derivation import ROLE_REFERENCE, build_derivation, derivation_source
-from shared.dynamo_paging import iter_query
 from shared.exceptions import ConflictError, NotFoundError, ValidationError
+from shared.ingest_tables import table_view
 from shared.project_access import Caller
 from shared.project_keys import document_keys, project_pk
+from shared.project_tables import iter_project_rows
 from shared.project_writes import create_counted_project_child, projects_table_name, transact_project_actions
 from shared.timestamps import now_iso
+from shared.workspace_config import get_scoped_item
+from shared.ws_repo import WorkspaceScope
 
 DECISION_DOCUMENT_TYPE = 'decision'
 VERDICTS = ('pursue', 'park', 'reject')
@@ -178,21 +180,19 @@ def decision_derivation(decision: Mapping[str, Any]) -> dict:
 
 # ── Storage ──────────────────────────────────────────────────────────────────
 
-def _project_document_ids(table: Any, project_id: str) -> set[str]:
-    query: dict[str, Any] = {
-        'KeyConditionExpression': Key('pk').eq(project_pk(project_id)),
-        'ProjectionExpression': 'document_id',
-        'ConsistentRead': True,
-    }
-    return {str(i['document_id']) for i in iter_query(table, query) if i.get('document_id')}
+def _project_document_ids(table: Any, project_id: str, *, workspace: WorkspaceScope | None) -> set[str]:
+    rows = iter_project_rows(table, project_id, workspace=workspace, ProjectionExpression='document_id',
+                             ConsistentRead=True)
+    return {str(i['document_id']) for i in rows if i.get('document_id')}
 
 
-def _require_documents_exist(table: Any, project_id: str, document_ids: list[str], own_id: str = '') -> None:
+def _require_documents_exist(table: Any, project_id: str, document_ids: list[str], own_id: str = '', *,
+                             workspace: WorkspaceScope | None) -> None:
     if not document_ids:
         return
     if own_id in document_ids:
         raise ValidationError('A decision cannot cite itself as evidence')
-    missing = [d for d in document_ids if d not in _project_document_ids(table, project_id)]
+    missing = [d for d in document_ids if d not in _project_document_ids(table, project_id, workspace=workspace)]
     if missing:
         raise ValidationError(f'evidence.document_ids names {len(missing)} document(s) not in this project')
 
@@ -201,35 +201,37 @@ def _decided(caller: Caller, now: str) -> dict[str, str]:
     return {'decided_by': caller.subject, 'decided_by_name': caller.username, 'decided_at': now}
 
 
-def create_decision(table: Any, project_id: str, body: Mapping[str, Any], caller: Caller) -> dict:
-    """Create a decision document; answers ``{success, document}``."""
+def create_decision(table: Any, project_id: str, body: Mapping[str, Any], caller: Caller, *,
+                    workspace: WorkspaceScope | None = None) -> dict:
+    """Create a decision document; answers ``{success, document}`` (in ``workspace``'s project when given)."""
     fields = validated_fields(body, partial=False)
     title = fields.pop('title')
-    _require_documents_exist(table, project_id, fields['evidence']['document_ids'])
+    _require_documents_exist(table, project_id, fields['evidence']['document_ids'], workspace=workspace)
     now_dt = datetime.now(UTC)
     now = now_dt.isoformat()
     decision = {**fields, **_decided(caller, now), 'history': []}
 
     def build(doc_id: str) -> dict:
         return {
-            **document_keys(project_id, f'DOC#{doc_id}', now),
+            **document_keys(project_id, f'DOC#{doc_id}', now, workspace=workspace),
             'document_id': doc_id, 'document_type': DECISION_DOCUMENT_TYPE,
             'title': title, 'content': render_content(title, decision), 'decision': decision,
             'derivation': decision_derivation(decision), 'revision': 1,
             'created_at': now, 'updated_at': now,
         }
 
-    item = create_counted_project_child(table, project_id, 'doc', build, now=now_dt)
+    item = create_counted_project_child(table, project_id, 'doc', build, now=now_dt, workspace=workspace)
     return {'success': True, 'document': item}
 
 
-def stored_decision(table: Any, project_id: str, document_id: str) -> dict:
+def stored_decision(table: Any, project_id: str, document_id: str, *,
+                    workspace: WorkspaceScope | None = None) -> dict:
     """The decision document, or 404 (a missing id and a non-decision document alike)."""
     if not EVIDENCE_ID_RE.match(document_id):
         raise NotFoundError('Decision not found')
-    item = table.get_item(Key={'pk': project_pk(project_id), 'sk': f'DOC#{document_id}'},
-                          ConsistentRead=True).get('Item')
-    if not isinstance(item, dict) or item.get('document_type') != DECISION_DOCUMENT_TYPE:
+    item = get_scoped_item(table, {'pk': project_pk(project_id, workspace=workspace), 'sk': f'DOC#{document_id}'},
+                           workspace, ConsistentRead=True)
+    if item.get('document_type') != DECISION_DOCUMENT_TYPE:
         raise NotFoundError('Decision not found')
     return item
 
@@ -256,17 +258,18 @@ def _revision(item: Mapping[str, Any]) -> int:
 
 
 def update_decision(table: Any, project_id: str, document_id: str, body: Mapping[str, Any],
-                    caller: Caller) -> dict:
+                    caller: Caller, *, workspace: WorkspaceScope | None = None) -> dict:
     """Apply an edit in place (revision + 1); answers ``{success, document}``."""
     expected = validated_expected_revision(body.get('expected_revision'))
     fields = validated_fields(body, partial=True)
-    stored = stored_decision(table, project_id, document_id)
+    stored = stored_decision(table, project_id, document_id, workspace=workspace)
     observed = _revision(stored)
     if expected is not None and expected != observed:
         raise ConflictError(STALE_DECISION_MESSAGE)
     title = fields.pop('title', None) or str(stored.get('title') or '')
     if 'evidence' in fields:
-        _require_documents_exist(table, project_id, fields['evidence']['document_ids'], own_id=document_id)
+        _require_documents_exist(table, project_id, fields['evidence']['document_ids'], own_id=document_id,
+                                 workspace=workspace)
     now = now_iso()
     decision = _next_decision(stored, fields, caller, now)
     changes = {'title': title, 'content': render_content(title, decision), 'decision': decision,
@@ -280,7 +283,7 @@ def update_decision(table: Any, project_id: str, document_id: str, body: Mapping
             'ConditionExpression': '#type = :type AND #rev = :observed',
             'ExpressionAttributeNames': {**names, '#type': 'document_type', '#rev': 'revision'},
             'ExpressionAttributeValues': {**values, ':type': DECISION_DOCUMENT_TYPE, ':observed': observed},
-        }}])
+        }}], workspace=workspace)
     except ClientError as error:
         if error.response.get('Error', {}).get('Code') == 'TransactionCanceledException':
             raise ConflictError(STALE_DECISION_MESSAGE) from error
@@ -317,10 +320,11 @@ def pursue_doc_config(decision_item: Mapping[str, Any], body: Mapping[str, Any])
     return config
 
 
-def record_seeded_prfaq(table: Any, item: Mapping[str, Any], job_id: str) -> None:
+def record_seeded_prfaq(table: Any, item: Mapping[str, Any], job_id: str, *,
+                        workspace: WorkspaceScope | None = None) -> None:
     """Note on the decision which PR/FAQ job it seeded (outside ``decision``, so edits keep it)."""
-    table.update_item(
-        Key={'pk': item['pk'], 'sk': item['sk']},
+    table_view(workspace, table).update_item(
+        {'pk': item['pk'], 'sk': item['sk']},
         UpdateExpression='SET seeded_prfaq_job_id = :job, seeded_prfaq_at = :at',
         ConditionExpression='attribute_exists(pk)',
         ExpressionAttributeValues={':job': job_id, ':at': now_iso()},

@@ -339,7 +339,7 @@ class TestTheSave:
             'title': 'T',
         }
         world.put_and_increment.assert_called_once_with(
-            world.projects, PROJECT_ID, expected_item, 'document_count',
+            world.projects, PROJECT_ID, expected_item, 'document_count', workspace=None,
         )
         world.persist.assert_not_called()
         world.lookup.assert_not_called()

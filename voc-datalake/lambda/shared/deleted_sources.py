@@ -19,14 +19,14 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final, Literal
 
-from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
 from shared.aws import is_conditional_check_failure
 from shared.derivation import DERIVATION_FIELD
-from shared.dynamo_paging import iter_query
+from shared.ingest_tables import table_view
 from shared.logging import logger
-from shared.project_keys import project_pk
+from shared.project_tables import iter_project_rows
+from shared.ws_repo import OutOfScopeError, WorkspaceScope
 
 __all__ = ['DOCUMENT_SORT_KEY_PREFIXES', 'DeletedSource', 'mark_citing_documents']
 
@@ -99,14 +99,15 @@ def _merged(existing: list[dict[str, Any]], new: list[dict[str, str]]) -> list[d
     return merged[-MAX_DELETED_SOURCES:]
 
 
-def _mark(table: Any, item: Mapping[str, Any], entries: list[dict[str, str]]) -> bool:
+def _mark(table: Any, item: Mapping[str, Any], entries: list[dict[str, str]], *,
+          workspace: WorkspaceScope | None) -> bool:
     existing = _already(item.get(DELETED_SOURCES_FIELD))
     merged = _merged(existing, entries)
     if merged == existing:
         return False
     try:
-        table.update_item(
-            Key={'pk': item['pk'], 'sk': item['sk']},
+        table_view(workspace, table).update_item(
+            {'pk': item['pk'], 'sk': item['sk']},
             UpdateExpression='SET #deleted = :deleted',
             ConditionExpression='attribute_exists(pk)',
             ExpressionAttributeNames={'#deleted': DELETED_SOURCES_FIELD},
@@ -119,12 +120,8 @@ def _mark(table: Any, item: Mapping[str, Any], entries: list[dict[str, str]]) ->
     return True
 
 
-def _documents(table: Any, project_id: str) -> Iterable[Mapping[str, Any]]:
-    query: dict[str, Any] = {
-        'KeyConditionExpression': Key('pk').eq(project_pk(project_id)),
-        'ProjectionExpression': _PROJECTION,
-    }
-    for item in iter_query(table, query):
+def _documents(table: Any, project_id: str, *, workspace: WorkspaceScope | None) -> Iterable[Mapping[str, Any]]:
+    for item in iter_project_rows(table, project_id, workspace=workspace, ProjectionExpression=_PROJECTION):
         sk = item.get('sk')
         if isinstance(sk, str) and sk.startswith(DOCUMENT_SORT_KEY_PREFIXES):
             yield item
@@ -132,17 +129,22 @@ def _documents(table: Any, project_id: str) -> Iterable[Mapping[str, Any]]:
 
 def mark_citing_documents(
     table: Any, project_id: str, deleted: Sequence[DeletedSource], *, deleted_at: str,
+    workspace: WorkspaceScope | None = None,
 ) -> int:
-    """Mark every document of the project that cites one of ``deleted``; how many were marked."""
+    """Mark every document of the project that cites one of ``deleted``; how many were marked (in ``workspace``'s
+    project when given, through its ``ws_table`` view). A key outside the workspace is a programming error and is
+    raised (``OutOfScopeError``), never logged away as a best-effort failure."""
     if not deleted or table is None:
         return 0
     marked = 0
     try:
-        for item in _documents(table, project_id):
+        for item in _documents(table, project_id, workspace=workspace):
             entries = [s.entry(deleted_at) for s in deleted
                        if s.id in _cited_ids(item, s.kind) and s.id != item.get('document_id')]
-            if entries and _mark(table, item, entries):
+            if entries and _mark(table, item, entries, workspace=workspace):
                 marked += 1
+    except OutOfScopeError:
+        raise
     except Exception as exc:  # noqa: BLE001 - best effort: the delete it follows has already happened
         logger.warning('Could not mark the documents that cited a deleted source',
                        extra={'project_id': project_id, 'error_type': type(exc).__name__})

@@ -1,4 +1,10 @@
-"""Atomic project-partition writes guarded by the retained META tombstone."""
+"""Atomic project-partition writes guarded by the retained META tombstone.
+
+Every writer takes an optional workspace (plumbing since 7.21.00: no route passes one yet, docs/multi-workspace.md):
+None writes the deployment's ``PROJECT#{id}`` rows exactly as before, through the table's own client; a workspace
+writes its ``WS#{ws}#PROJECT#{id}`` rows through shared/ws_repo.py ``ws_table`` (``transact_project_writes``), which
+refuses an entry outside the workspace before the transaction is sent.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +16,7 @@ from typing import Any
 from shared.ids import write_with_fresh_id
 from shared.project_keys import project_pk
 from shared.timestamps import now_iso
+from shared.ws_repo import OutOfScopeError, WorkspaceScope, ws_table
 
 PROJECT_DELETION_ATTRIBUTE = 'deletion_started_at'
 PROJECT_DELETING_STATUS = 'deleting'
@@ -44,8 +51,8 @@ PROJECT_WRITABLE_ATTRIBUTE_VALUES = {
 PUT_AND_INCREMENT_PUT_INDEX = 0
 
 
-def project_meta_key(project_id: str) -> dict[str, str]:
-    return {'pk': project_pk(project_id), 'sk': 'META'}
+def project_meta_key(project_id: str, *, workspace: WorkspaceScope | None = None) -> dict[str, str]:
+    return {'pk': project_pk(project_id, workspace=workspace), 'sk': 'META'}
 
 
 def is_project_tombstone(item: dict[str, Any] | None) -> bool:
@@ -84,13 +91,13 @@ def projects_table_name(table) -> str:
 
 
 def project_writable_condition(
-    table_name: str, project_id: str,
+    table_name: str, project_id: str, *, workspace: WorkspaceScope | None = None,
 ) -> dict[str, Any]:
     """DynamoDB condition check shared by every project child mutation."""
     return {
         'ConditionCheck': {
             'TableName': table_name,
-            'Key': project_meta_key(project_id),
+            'Key': project_meta_key(project_id, workspace=workspace),
             'ConditionExpression': PROJECT_WRITABLE_CONDITION,
             'ExpressionAttributeNames': dict(
                 PROJECT_WRITABLE_ATTRIBUTE_NAMES,
@@ -102,22 +109,51 @@ def project_writable_condition(
     }
 
 
+def transact_project_writes(
+    table,
+    entries: list[dict[str, Any]],
+    *,
+    workspace: WorkspaceScope | None = None,
+) -> None:
+    """One TransactWriteItems of ``entries`` (boto3's client shape, each naming ``table`` in ``TableName``).
+
+    Without a workspace: exactly ``table.meta.client.transact_write_items(TransactItems=entries)``. In one: through
+    ``ws_table``, every entry checked to name this table (``OutOfScopeError`` otherwise: the layer sends to its own)
+    and to stay inside the workspace, before anything is sent.
+    """
+    if workspace is None:
+        table.meta.client.transact_write_items(TransactItems=entries)
+        return
+    table_name = projects_table_name(table)
+    scoped_entries = []
+    for entry in entries:
+        [(action, body)] = entry.items()
+        if body.get('TableName') != table_name:
+            raise OutOfScopeError('a workspace transaction writes its own table only')
+        scoped_entries.append({action: {field: value for field, value in body.items() if field != 'TableName'}})
+    ws_table(workspace, table).transact_write_items(scoped_entries)
+
+
 def transact_project_actions(
     table,
     project_id: str,
     actions: list[dict[str, Any]],
+    *,
+    workspace: WorkspaceScope | None = None,
 ) -> None:
     """Commit child-only actions iff the project META row is writable."""
-    table.meta.client.transact_write_items(TransactItems=[
-        project_writable_condition(projects_table_name(table), project_id),
+    transact_project_writes(table, [
+        project_writable_condition(projects_table_name(table), project_id, workspace=workspace),
         *actions,
-    ])
+    ], workspace=workspace)
 
 
 def put_project_item(
     table,
     project_id: str,
     item: dict[str, Any],
+    *,
+    workspace: WorkspaceScope | None = None,
 ) -> None:
     """Create one project child without allowing overwrite or resurrection."""
     transact_project_actions(table, project_id, [{
@@ -128,7 +164,7 @@ def put_project_item(
                 'attribute_not_exists(pk) AND attribute_not_exists(sk)'
             ),
         },
-    }])
+    }], workspace=workspace)
 
 
 def put_project_item_and_increment(
@@ -136,11 +172,13 @@ def put_project_item_and_increment(
     project_id: str,
     item: dict[str, Any],
     count_attribute: str,
+    *,
+    workspace: WorkspaceScope | None = None,
 ) -> None:
     """Atomically create one child and increment its project META count."""
     table_name = projects_table_name(table)
     now = str(item.get('created_at') or now_iso())
-    table.meta.client.transact_write_items(TransactItems=[
+    transact_project_writes(table, [
         {
             'Put': {
                 'TableName': table_name,
@@ -153,7 +191,7 @@ def put_project_item_and_increment(
         {
             'Update': {
                 'TableName': table_name,
-                'Key': project_meta_key(project_id),
+                'Key': project_meta_key(project_id, workspace=workspace),
                 'UpdateExpression': (
                     'SET #count = if_not_exists(#count, :zero) + :one, '
                     'updated_at = :now'
@@ -171,7 +209,7 @@ def put_project_item_and_increment(
                 },
             },
         },
-    ])
+    ], workspace=workspace)
 
 
 def create_counted_project_child(
@@ -181,6 +219,7 @@ def create_counted_project_child(
     build_item: Callable[[str], dict[str, Any]],
     *,
     now: datetime | None = None,
+    workspace: WorkspaceScope | None = None,
 ) -> dict[str, Any]:
     """Mint a ``prefix`` id, build the document from it, put it and bump the project's ``document_count``.
 
@@ -190,7 +229,7 @@ def create_counted_project_child(
     """
     def write(child_id: str) -> dict[str, Any]:
         item = build_item(child_id)
-        put_project_item_and_increment(table, project_id, item, 'document_count')
+        put_project_item_and_increment(table, project_id, item, 'document_count', workspace=workspace)
         return item
 
     return write_with_fresh_id(prefix, write, put_index=PUT_AND_INCREMENT_PUT_INDEX, now=now)

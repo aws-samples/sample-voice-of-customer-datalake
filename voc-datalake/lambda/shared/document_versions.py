@@ -29,7 +29,7 @@ from botocore.exceptions import ClientError
 from shared.dynamo_paging import iter_query, query_all
 from shared.exceptions import ConflictError, ServiceError, ValidationError
 from shared.logging import logger
-from shared.project_keys import PROJECT_PREFIX, project_pk
+from shared.project_keys import DOCUMENT_VERSIONS_STORE, PROJECT_PREFIX, project_pk, require_deployment
 from shared.project_writes import (
     PROJECT_WRITABLE_ATTRIBUTE_NAMES,
     PROJECT_WRITABLE_ATTRIBUTE_VALUES,
@@ -41,6 +41,7 @@ from shared.project_writes import (
     project_writable_condition as _project_writable_condition,
 )
 from shared.timestamps import now_iso
+from shared.ws_repo import WorkspaceScope
 
 VERSIONED_DOCUMENT_TYPES = frozenset({'prd', 'prfaq', 'prototype'})
 # What a merge may produce (`POST /projects/{id}/merge`, the merge job), and which of those are
@@ -1186,8 +1187,12 @@ def persist_versioned_document(
     item_fields: dict[str, Any],
     *,
     expected_last_version: int | None = None,
+    workspace: WorkspaceScope | None = None,
 ) -> dict[str, Any]:
     """Atomically persist one version-managed document and return its item.
+
+    Not per workspace yet (its counter, allocation and legacy-series rows have no workspace keys,
+    docs/multi-workspace.md, slice 3b): a ``workspace`` is refused (``NotPerWorkspaceError``) before anything is read.
 
     ``allocation_id`` must be stable across retries (job id for generated and
     merged documents). It produces a deterministic document key, while the
@@ -1200,6 +1205,7 @@ def persist_versioned_document(
     counter is not retried. A replay of an allocation that already landed still
     returns its document (checked first).
     """
+    require_deployment(workspace, DOCUMENT_VERSIONS_STORE)
     document_id = versioned_document_id(project_id, document_type, allocation_id)
     requested_base, _ = split_versioned_title(requested_title)
     requested_normalized = normalized_base_title(requested_base, document_type)

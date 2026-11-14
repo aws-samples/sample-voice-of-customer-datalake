@@ -1402,7 +1402,7 @@ class TestCreateDocument:
             'created_at': '2026-03-04T05:06:07+00:00',
             'updated_at': '2026-03-04T05:06:07+00:00',
         }
-        put.assert_called_once_with(table, 'proj-1', item, 'document_count')
+        put.assert_called_once_with(table, 'proj-1', item, 'document_count', workspace=None)
         assert result == {'success': True, 'document': item}
 
     def test_an_untitled_custom_document_is_the_default(self):

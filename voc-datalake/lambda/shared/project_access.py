@@ -48,9 +48,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
-from shared.project_keys import project_pk
+from shared.project_keys import PROJECT_GATE_STORE, project_pk, require_deployment
+
+if TYPE_CHECKING:
+    from shared.ws_repo import WorkspaceScope
 
 VISIBILITY_PUBLIC: Final = 'public'
 VISIBILITY_PRIVATE: Final = 'private'
@@ -309,12 +312,18 @@ def project_members(meta: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
     return members
 
 
-def resolve_access(meta: Mapping[str, Any] | None, caller: Caller) -> ProjectAccess:
+def resolve_access(meta: Mapping[str, Any] | None, caller: Caller, *,
+                   workspace: WorkspaceScope | None = None) -> ProjectAccess:
     """Effective access for ``caller`` on the project described by ``meta``.
 
     ``meta`` of None (missing project) yields no access; existence checks and
     tombstones are the caller's concern so this stays a pure policy function.
+
+    The deployment's policy only: a ``workspace`` is refused (``NotPerWorkspaceError``), because the admin
+    bypass (the deployment's ``admins``) and ``public`` visibility would reach past the workspace's members. A
+    workspace's project is decided from its own membership in the switch (docs/multi-workspace.md, slice 3h).
     """
+    require_deployment(workspace, PROJECT_GATE_STORE)
     if not meta:
         return ProjectAccess(role=None)
     role = _base_role(meta, caller)
