@@ -28,7 +28,9 @@ def _export(aws: dict[str, Any], ws: str, export_id: str, status: str) -> None:
 
 
 def _seed_exports(aws: dict[str, Any], ws: str) -> str:
-    """A completed export (its zip written twice: two versions; one work object) and a running one (an open upload)."""
+    """A completed export (its zip written twice: two versions; one work object) and a running one (an open upload),
+    in an active workspace (its META: an erasure takes the export lock of an active workspace only)."""
+    aws['workspaces'].put_item(Item={'pk': f'WS#{ws}', 'sk': 'META', 'status': 'active'})
     prefix = f'ws/{ws}/exports/'
     for _ in range(2):
         aws['s3'].put_object(Bucket=BUCKET, Key=f'{prefix}{DONE}/workspace-export.zip', Body=b'PK zip')

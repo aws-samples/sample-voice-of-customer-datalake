@@ -20,6 +20,15 @@ import { cleanupAssemblyDirs, synthApp } from './test-support/synth-app';
 import { byCodeUnit } from './utils/compare';
 
 const RETENTION_ROLE = 'VocProcessingStack/RetentionWorkerRetentionRole';
+/** A workspace's hard delete (decision 17, docs/multi-workspace.md "Export and delete"; lib/stacks/workspace-delete-worker.ts):
+ * the data controller's own request, with its stated basis, the slug typed as approval, audited, one tombstone per item
+ * and memory first. Every key one workspace id's (`ws_` and 26 `?`), BatchWriteItem only on its own partitions. */
+const DELETE_ROLE = 'VocProcessingStack/WorkspaceDeleteWorkerDeleteRole';
+const ONE_WORKSPACE = `ws_${'?'.repeat(26)}`;
+const WORKSPACE_DELETE: Deleter = {
+  scope: [`WS#${ONE_WORKSPACE}#*`],
+  why: 'a workspace\'s hard delete (decision 17): every partition of one workspace, after its tombstones',
+};
 const PROJECTS_API = 'VocApiStack/ProjectsLambdaRole';
 const PERSONA_GENERATOR = 'VocApiStack/PersonaGeneratorRole';
 const ENGAGEMENT_API = 'VocApiStack/EngagementLambdaRole';
@@ -47,6 +56,7 @@ const INGESTOR_ROLES = [
 const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>> = {
   FeedbackTable: {
     [RETENTION_ROLE]: { scope: WHOLE_TABLE, why: 'erasure requests and declared retention limits (docs/source-policies.md)' },
+    [DELETE_ROLE]: { scope: [`WS#${ONE_WORKSPACE}#SOURCE#*`], why: WORKSPACE_DELETE.why },
   },
   AggregatesTable: {
     'VocApiStack/IntegrationsLambdaRole': WORKSPACE_CIRCUIT_ROW,
@@ -61,6 +71,7 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
       why: 'a deleted Prioritization row with its ballots, and a closed vote\'s pointer',
     },
     [SETTINGS_API]: { scope: ['BRIEFSUB'], why: 'the morning-brief subscriber row when a user turns the brief off' },
+    [DELETE_ROLE]: WORKSPACE_DELETE,
   },
   ProjectsTable: {
     [PROJECTS_API]: { scope: WHOLE_TABLE, why: 'workspace deletes: projects, personas, documents, revisions, comments, links' },
@@ -80,8 +91,8 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
   ConversationsTable: {
     'VocApiStack/ChatLambdaRole': { scope: WHOLE_TABLE, why: 'DELETE /chat/conversations/{id} (the caller\'s own)' },
   },
-  // Nothing is deleted in these: memory forgets by tombstone, agents archive.
-  MemoryTable: {},
+  // Memory forgets by tombstone and agents archive; only a workspace's hard delete removes a workspace's memory.
+  MemoryTable: { [DELETE_ROLE]: WORKSPACE_DELETE },
   AgentsTable: {},
   RadarTable: {
     [RETENTION_ROLE]: { scope: WHOLE_TABLE, why: 'erasure and retention reach Radar reviews and their dedupe markers (docs/radar.md)' },
@@ -90,7 +101,7 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
   // customer data (D5 covers feedback and raw items); a removal is audited first (AUDIT#WS#, under the audit-row
   // guard). IAM pins the partition, not the sort key: `WS#*` also reaches META, which only the code keeps out
   // (lambda/shared/workspace_members.py; its tests pin the keys it deletes); SLUG#, WORKSPACES and AUDIT# stay out.
-  // Workspace delete is still an open tenet question for phase 4. The users API deletes a deleted user's memberships
+  // Workspace delete was settled by decision 17 (phase 4d-2, its role below). The users API deletes a deleted user's memberships
   // (6.11.00, lambda/shared/workspace_members.py remove_user_memberships), each audited first, in the same scope.
   WorkspacesTable: {
     'VocApiStack/WorkspacesLambdaRole': { scope: ['USER#*', 'WS#*'], why: 'membership removal: MEMBER# and USER# rows only' },
@@ -100,6 +111,13 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
     // A workspace form's lookup row (routing configuration, not customer data; lambda/shared/workspace_routing.py
     // release_lookup, conditional on the row naming the workspace): removed with the form it routes to.
     'VocApiStack/FeedbackFormLambdaRole': { scope: ['FORM#*'], why: 'a deleted workspace form\'s FORM#{id} lookup row' },
+    // A workspace's hard delete: its own partition (META last, only while deleting; MEMBER# and the rest), its
+    // members' USER# rows, its forms' FORM# rows and the listing row only where they name it, its PLUGIN# rows; its
+    // AUDIT#WS# trail and slug guard stay (shared/ws_repo.py WorkspaceControlRows builds each key, tested).
+    [DELETE_ROLE]: {
+      scope: ['FORM#*', 'PLUGIN#*', 'USER#*', 'WORKSPACES', `WS#${ONE_WORKSPACE}`],
+      why: 'a workspace\'s hard delete (decision 17): its control-plane rows, never its audit trail',
+    },
   },
 };
 
@@ -114,7 +132,14 @@ const DYNAMO_WRITE = /^dynamodb:(PutItem|UpdateItem|DeleteItem|BatchWriteItem|Pa
  * voc-retention, for an erasure by email (updates `email` and `name` only, under `WS#`: lambda/jobs/retention/members.py).
  */
 const WORKSPACE_WRITERS: Readonly<Record<string, Scope>> = {
-  'VocApiStack/WorkspacesLambdaRole': ['AUDIT#WS#*', 'SLUG#*', 'USER#*', 'WORKSPACES', 'WS#*'],
+  // Since 4d-2 also a hard delete's request, cancel and resume: its job row (WSDELETE), the platform's audit rows
+  // (AUDIT#workspace-deletes), and META's and the listing row's status (lib/stacks/api-workspace-delete.ts: on
+  // `WS#{one id}` exactly).
+  'VocApiStack/WorkspacesLambdaRole': ['AUDIT#WS#*', 'AUDIT#workspace-deletes', 'SLUG#*', 'USER#*', 'WORKSPACES', 'WS#*',
+    `WS#${ONE_WORKSPACE}`, 'WSDELETE'],
+  // The hard delete itself: its job row, its completed audit row, the slug guard's deleted_at, the control rows.
+  [DELETE_ROLE]: ['AUDIT#workspace-deletes', 'FORM#*', 'PLUGIN#*', 'SLUG#*', 'USER#*', 'WORKSPACES',
+    `WS#${ONE_WORKSPACE}`, 'WSDELETE'],
   'VocApiStack/UsersLambdaRole': ['AUDIT#WS#*', 'USER#*', 'WS#*'],
   [RETENTION_ROLE]: ['WS#*'],
   // The data-path APIs that resolve X-Workspace-Id: a platform admin's entry audit row only (PutItem, a new row;
@@ -159,13 +184,20 @@ const RAW_BUCKET_DELETERS: Readonly<Record<string, Readonly<Record<string, strin
   // D5: an erasure by email and a retention window are legal obligations that reach every copy, a workspace's
   // included (the deployment's erasure, the deployment's source profiles a workspace's items are processed under; a
   // whole-source erasure never deletes there, in code: lambda/shared/retention.py `reaches_workspaces`).
-  'ws/*/raw/': { [RETENTION_ROLE]: 'an erasure by email or a retention window reaches every raw version of a workspace\'s matching item' },
-  'ws/*/silver/': { [RETENTION_ROLE]: 'an erasure by email or a retention window reaches every kept version of a workspace\'s matching item' },
+  'ws/*/raw/': {
+    [RETENTION_ROLE]: 'an erasure by email or a retention window reaches every raw version of a workspace\'s matching item',
+    [DELETE_ROLE]: 'a workspace\'s hard delete (decision 17): every version under ws/{one id}/, after the items\' tombstones',
+  },
+  'ws/*/silver/': {
+    [RETENTION_ROLE]: 'an erasure by email or a retention window reaches every kept version of a workspace\'s matching item',
+    [DELETE_ROLE]: 'a workspace\'s hard delete (decision 17): every version under ws/{one id}/',
+  },
   // D5: an export is a derived copy. The export job deletes only its own work objects (never a zip), when its row says
   // it may not go on (an erasure marked it erased): the rest expires by its tag.
   'ws/*/exports/': {
     [RETENTION_ROLE]: 'an erasure that reached a workspace deletes every version of its exports',
     'VocProcessingStack/WorkspaceExportWorkerExportRole': 'an export that may not go on deletes the work objects it wrote',
+    [DELETE_ROLE]: 'a workspace\'s hard delete (decision 17): its exports go with it',
   },
   'avatars/': {
     [PROJECTS_API]: 'project / persona deletes and superseded avatars',
@@ -195,7 +227,10 @@ function roleOf(stack: string, policyId: string): string {
   return `${stack}/${policyId.replace(/DefaultPolicy[0-9A-F]{8}$/, '')}`;
 }
 
-const synthed = synthApp();
+// With the hard delete on (-c workspaceHardDelete=true, lib/utils/workspace-hard-delete.ts): every role that can
+// delete when a deployment turns it on. Off (the default), its job and grants are not built at all
+// (workspace-delete-worker.test.ts, api-workspace-delete.test.ts).
+const synthed = synthApp({ workspaceHardDelete: true });
 afterAll(cleanupAssemblyDirs);
 
 function allowGrants(): Grant[] {
@@ -321,8 +356,9 @@ describe('customer-data, workspace and audit deletes across every stack', () => 
 
   it('voc-retention reaches voc-workspaces to de-identify only (Scan, UpdateItem of email and name under WS#*)', () => {
     const onWorkspaces = grants.filter((g) => g.role === RETENTION_ROLE).filter(onTable('WorkspacesTable'));
+    // GetItem: a META's status only (grantWorkspaceStatusRead), before an erasure takes a workspace's export lock.
     expect([...new Set(onWorkspaces.flatMap((g) => g.actions))].sort(byCodeUnit))
-      .toStrictEqual(['dynamodb:Scan', 'dynamodb:UpdateItem']);
+      .toStrictEqual(['dynamodb:GetItem', 'dynamodb:Scan', 'dynamodb:UpdateItem']);
     const update = onWorkspaces.find((g) => g.actions.includes('dynamodb:UpdateItem'));
     expect(update?.condition).toStrictEqual({
       'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] },

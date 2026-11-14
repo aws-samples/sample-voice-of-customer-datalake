@@ -189,6 +189,13 @@ export function apiTemplatePrefixed(): Template {
   return cachedPrefixed;
 }
 
+/** `-c workspaceHardDelete=true`: the hard delete's routes granted (lib/utils/workspace-hard-delete.ts). */
+let cachedHardDelete: Template | undefined;
+export function apiTemplateHardDelete(): Template {
+  cachedHardDelete ??= synthApiTemplate({ workspaceHardDelete: true });
+  return cachedHardDelete;
+}
+
 /** The transitional first-deploy shape. */
 let cachedFlagged: Template | undefined;
 export function apiTemplateFlagged(): Template {

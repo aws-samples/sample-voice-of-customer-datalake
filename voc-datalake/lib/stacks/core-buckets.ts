@@ -15,7 +15,8 @@
  * (Silver history), and the same two in every tenant workspace, `ws/{ws}/raw/` and `ws/{ws}/silver/`
  * (TENETS.md D1): they keep history, so nothing under them ever expires,
  * current or noncurrent, and a bucket-policy statement refuses any PutObject under them that
- * could overwrite (no `If-None-Match`). Only voc-retention deletes there (lawful erasure / a declared retention period). The raw
+ * could overwrite (no `If-None-Match`). Only voc-retention deletes there (lawful erasure / a declared retention period),
+ * and, under one workspace's `ws/{ws}/` only, voc-workspace-delete (that workspace's hard delete, decision 17). The raw
  * bucket's workspace prefixes have no noncurrent rule either: a workspace delete removes every
  * version itself (RAW_BUCKET_WORKSPACE_PREFIXES); only `scratch/` expires, and a workspace export's objects
  * (`ws/{ws}/exports/`), by their `voc-export=true` tag, which the bucket policy refuses anywhere else.
@@ -46,7 +47,8 @@ export const RAW_LAYER_PREFIX = 'raw/';
 /**
  * Silver history: a feedback item as it was before each in-place change (lambda/shared/silver_provenance.py),
  * `silver/{source}/{feedback_id}/{stamp}-{sha8}.json`. Same contract as `raw/` (TENETS.md D1): written once
- * (If-None-Match), never overwritten, no lifecycle rule expires it; only voc-retention deletes it, with its item.
+ * (If-None-Match), never overwritten, no lifecycle rule expires it; only voc-retention deletes it, with its item (and,
+ * under a deleted workspace's `ws/{ws}/`, voc-workspace-delete).
  */
 export const SILVER_HISTORY_PREFIX = 'silver/';
 /**
@@ -66,7 +68,8 @@ export const WORKSPACE_RAW_LAYER_PREFIX = `${WORKSPACE_DATA_PREFIX}${WORKSPACE_I
 /** A tenant workspace's Silver history, `ws/{ws}/silver/`: as `silver/` (no writer yet; the processor's slice). */
 export const WORKSPACE_SILVER_HISTORY_PREFIX = `${WORKSPACE_DATA_PREFIX}${WORKSPACE_ID_PATTERN}/${SILVER_HISTORY_PREFIX}`;
 /**
- * The append-only layers of the raw data bucket: write-once, kept forever (only voc-retention deletes), at the
+ * The append-only layers of the raw data bucket: write-once, kept forever (only voc-retention deletes, and
+ * voc-workspace-delete a deleted workspace's whole `ws/{ws}/`), at the
  * bucket's root and in every workspace (D1 holds per workspace too). IAM resource patterns, so
  * `WORKSPACE_ID_PATTERN` stands for one workspace id; a lifecycle rule cannot match them by prefix, and none may
  * cover `ws/` (core-buckets.test.ts).
@@ -307,8 +310,8 @@ export function createCoreBuckets(
   });
 
   // Raw customer data is immutable and never deleted while the platform runs (only voc-retention
-  // deletes under raw/); deleting the stack empties and deletes it unless protectData keeps it
-  // (createPrivateVersionedBucket).
+  // deletes under raw/, and voc-workspace-delete every version under one deleted workspace's ws/{ws}/);
+  // deleting the stack empties and deletes it unless protectData keeps it (createPrivateVersionedBucket).
   const rawDataBucket = createPrivateVersionedBucket(scope, 'RawDataBucket', {
     bucketName: names.rawData,
     kmsKey,

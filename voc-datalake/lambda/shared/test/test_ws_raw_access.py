@@ -161,6 +161,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/jobs/retention/boards.py': (3, {'raw/': 1}),
     'lambda/jobs/retention/boards_rekey.py': (3, {'transact': 1}),
     'lambda/jobs/retention/handler.py': (3, {'Table': 3}),
+    # 4d-2: the deployment's category and dimension settings (SETTINGS#categories, SETTINGS#dimensions), read for
+    # the closed counter families the delete lists; they move to the workspace with the settings (phase 3).
+    'lambda/jobs/workspace_delete/handler.py': (3, {'ingest_table(None)': 1}),
     'lambda/memory/extractor/handler.py': (3, {'Table': 1, 'get_aggregates_table': 3}),
     'lambda/memory/scanner/handler.py': (3, {'Table': 1}),
     # The processor's two paths (docs/multi-workspace.md) go through shared/ingest_tables.py `table_view` (its message's
@@ -229,6 +232,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/shared/tables.py': (2, {'Table': 2}),
     'lambda/shared/user_flags.py': (3, {'Table': 1, 'batch': 1, 'transact': 1}),
     'lambda/shared/workspace_members.py': (3, {'transact': 1}),
+    # The hard delete's request and its cancel (4d-2): each one transaction on voc-workspaces' control plane (META and
+    # the listing row's status, the job row, the audit rows), like a workspace's creation above; no data-path key.
+    'lambda/shared/workspace_deletes.py': (3, {'transact': 2}),
     # voc-workspaces opened deployment-wide (one helper, `_workspaces_table`) for the tick's fan-out (the control
     # plane's PLUGIN# list) and, since 4d-1, a workspace's META status before a run or a fan-out invoke. Its run row's
     # partition moved to shared/run_rows.py (source_run_partition), the spelling the API uses too. transact: the

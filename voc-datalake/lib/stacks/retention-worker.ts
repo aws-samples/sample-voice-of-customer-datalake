@@ -40,7 +40,8 @@
  *     index; a paged, time-budgeted Scan once per job, never on a request path, lambda/jobs/retention/members.py) and
  *     UpdateItem pinned to `WS#*` and to the attributes `email` and `name` (REMOVEd from a `MEMBER#` row; IAM cannot
  *     pin the sort key, so `META` is in reach of IAM and kept out by the code) — no Put, no Delete, no other
- *     attribute; the audit-row guard denies it any write of an `AUDIT#` row there;
+ *     attribute; the audit-row guard denies it any write of an `AUDIT#` row there; and GetItem of a `META`'s status
+ *     only (`grantWorkspaceStatusRead`: an erasure creates no export lock for a workspace that is not active);
  *   - lambda:InvokeFunction on its own unqualified name (time-budget hand-over).
  */
 import * as cdk from 'aws-cdk-lib';
@@ -64,6 +65,7 @@ import { PY_LAMBDA_ASSET_EXCLUDES, WORKER_TREE_ASSET_EXCLUDES } from '../utils/l
 import { pythonLambdaAsset } from '../utils/python-lambda-asset';
 import { grantKeyScopedWrites } from '../utils/table-write-grants';
 import { grantInvokeByName, scheduleWorker, workerRole } from '../utils/worker-lambda';
+import { grantWorkspaceStatusRead } from '../utils/workspace-request-grants';
 
 /** The request partitions of voc-feature-requests (`FR#{id}`: META + its +1s), the only rows the worker re-keys. */
 const FEATURE_REQUEST_PARTITIONS = 'FR#*';
@@ -146,6 +148,9 @@ export function createRetentionWorker(scope: Construct, id: string, props: Reten
   // email index), then REMOVE email and name, on `WS#*` and those two attributes only.
   workspacesTable.grant(role, 'dynamodb:Scan');
   grantKeyScopedWrites(workspacesTable, role, ['UpdateItem'], [WORKSPACE_PARTITIONS], MEMBER_PERSON_ATTRIBUTES);
+  // A workspace's META status before its export lock is taken (lambda/jobs/retention/exports.py: no lock row is
+  // created for a workspace that is deleting or deleted).
+  grantWorkspaceStatusRead(role, workspacesTable);
   kmsKey.grantEncryptDecrypt(role);
   role.addToPrincipalPolicy(new iam.PolicyStatement({
     sid: 'DeleteRawArchiveObjects',

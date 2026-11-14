@@ -42,7 +42,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from shared.audit_rows import put_new_audit_row
 from shared.aws import is_conditional_check_failure
 from shared.dynamo_values import plain
-from shared.erasure_jobs import WORKSPACE_LOCK_SK, acquire_lock, release_lock, release_quietly
+from shared.erasure_jobs import WORKSPACE_LOCK_SK, acquire_lock, lock_holder, release_lock, release_quietly
 from shared.logging import logger
 from shared.platform_workspaces import new_workspace_id
 from shared.source_erasure import STALE_AFTER
@@ -52,6 +52,7 @@ from shared.workspace_routing import workspace_payload
 from shared.ws_repo import ExportObjects, WorkspaceScope, WorkspaceTable, export_job_pk
 
 __all__ = [
+    'DELETE_HOLDER_PREFIX',
     'ERASURE_HOLDER_PREFIX',
     'EXPORT_JOB_TYPE',
     'ErasureHoldsExports',
@@ -59,6 +60,7 @@ __all__ = [
     'LinkUnavailable',
     'claim_generation',
     'expires_at',
+    'export_lock_key',
     'export_status',
     'finish_job',
     'hold_for_erasure',
@@ -116,6 +118,8 @@ class ErasureHoldsExports(ExportRunning):
 
 #: The holder an erasure takes the export lock under: ``erasure-{run id}`` (jobs/retention/exports.py).
 ERASURE_HOLDER_PREFIX: Final = 'erasure-'
+#: The holder a workspace delete takes it under: ``delete-{ws}`` (shared/workspace_deletes.py ``holder``).
+DELETE_HOLDER_PREFIX: Final = 'delete-'
 
 
 class LinkUnavailable(Exception):
@@ -232,13 +236,25 @@ def finish_job(view: WorkspaceTable, export_id: str, status: str, fields: Mappin
                                {':queued': EXPORT_QUEUED, ':running': EXPORT_RUNNING})
 
 
-def hold_for_erasure(view: WorkspaceTable, holder: str, now: datetime) -> None:
-    """Take the workspace's export lock for an erasure's sweep (``holder``: the erasure run's id), whoever holds it:
-    every export that holds it is marked ``erased`` right after (``mark_erased``), and while the erasure holds it a
-    start answers 409, so no export begins under the sweep. Taken again at each pass (it renews ``locked_at``);
-    ``release_after_erasure`` frees it after the last sweep, or it goes stale after ``STALE_AFTER``."""
-    view.update_item(_lock_key(view.scope), UpdateExpression='SET job_id = :holder, locked_at = :now REMOVE released_at',
-                     ExpressionAttributeValues={':holder': holder, ':now': now.isoformat()})
+def hold_for_erasure(view: WorkspaceTable, holder: str, now: datetime, *, workspace_active: bool) -> None:
+    """Take the workspace's export lock for an erasure's sweep (``holder``: the erasure run's id), whoever holds it
+    but a workspace delete: every export that holds it is marked ``erased`` right after (``mark_erased``), and while
+    the erasure holds it a start answers 409, so no export begins under the sweep. Taken again at each pass (it
+    renews ``locked_at``); ``release_after_erasure`` frees it after the last sweep, or it goes stale after
+    ``STALE_AFTER``. Nothing is written while a delete holds it (``DELETE_HOLDER_PREFIX``: the delete keeps it to its
+    last step, and deletes every export of the workspace itself), nor, for a workspace that is not ``active``
+    (``workspace_active`` False: deleting, or deleted), when there is no lock row: no export can start there, and a
+    lock created after the delete removed it would outlive the workspace."""
+    condition = 'attribute_not_exists(job_id) OR NOT begins_with(job_id, :delete)'
+    try:
+        view.update_item(export_lock_key(view.scope),
+                         UpdateExpression='SET job_id = :holder, locked_at = :now REMOVE released_at',
+                         ConditionExpression=condition if workspace_active else f'attribute_exists(pk) AND ({condition})',
+                         ExpressionAttributeValues={':holder': holder, ':now': now.isoformat(),
+                                                    ':delete': DELETE_HOLDER_PREFIX})
+    except ClientError as error:
+        if not is_conditional_check_failure(error):
+            raise
 
 
 def release_after_erasure(view: WorkspaceTable, holder: str, now: datetime) -> None:
@@ -246,7 +262,8 @@ def release_after_erasure(view: WorkspaceTable, holder: str, now: datetime) -> N
     release_lock(view, export_job_pk(view.scope), holder, now)
 
 
-def _lock_key(scope: WorkspaceScope) -> dict[str, str]:
+def export_lock_key(scope: WorkspaceScope) -> dict[str, str]:
+    """The workspace's export LOCK row (the hard delete holds it to its last step, then deletes it)."""
     return {'pk': export_job_pk(scope), 'sk': WORKSPACE_LOCK_SK}
 
 
@@ -275,10 +292,17 @@ _VIEW_FIELDS: Final = ('created_at', 'started_at', 'completed_at', 'expires_at',
                        'size_bytes', 'error')
 
 
+def progress_stalled(row: Mapping[str, Any], now: datetime, unfinished: tuple[str, ...], created: str) -> bool:
+    """A job row in one of the ``unfinished`` statuses that has not moved (``progress_at``, else its ``created``
+    time) for ``STALE_AFTER``: its invocation died, or its hand-over was dropped. The export's rule, and the
+    workspace delete's (shared/workspace_deletes.py)."""
+    moved = parse_iso(row.get('progress_at')) or parse_iso(row.get(created))
+    return row.get('status') in unfinished and (moved is None or now - moved > STALE_AFTER)
+
+
 def _stalled(row: Mapping[str, Any], now: datetime) -> bool:
-    """An unfinished job that has not moved for ``STALE_AFTER``: its invocation died (its lock is free again)."""
-    moved = parse_iso(row.get('progress_at')) or parse_iso(row.get('created_at'))
-    return row.get('status') in _UNFINISHED and (moved is None or now - moved > STALE_AFTER)
+    """An unfinished export that has not moved for ``STALE_AFTER`` (its lock is free again)."""
+    return progress_stalled(row, now, _UNFINISHED, 'created_at')
 
 
 def job_view(row: Mapping[str, Any], now: datetime) -> dict[str, Any]:
@@ -352,11 +376,8 @@ def start_export(view: WorkspaceTable, workspaces: Any, context: WorkspaceContex
 def _held_by_erasure(view: WorkspaceTable) -> bool:
     """Whether the export lock that refused a start is an erasure's (one Query of the lock row: the API may Query
     the export partition, not GetItem it)."""
-    items = view.query('pk', export_job_pk(view.scope), sort_condition='#sk = :lock',
-                       ExpressionAttributeNames={'#sk': 'sk'}, ExpressionAttributeValues={':lock': WORKSPACE_LOCK_SK},
-                       ConsistentRead=True).get('Items') or []
-    holder = items[0].get('job_id') if items and isinstance(items[0], Mapping) else None
-    return isinstance(holder, str) and holder.startswith(ERASURE_HOLDER_PREFIX)
+    holder = lock_holder(view, export_job_pk(view.scope))
+    return holder is not None and holder.startswith(ERASURE_HOLDER_PREFIX)
 
 
 def _fail_unstarted(view: WorkspaceTable, export_id: str, now: datetime) -> None:

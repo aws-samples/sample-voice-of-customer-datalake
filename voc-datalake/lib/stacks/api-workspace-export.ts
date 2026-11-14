@@ -18,19 +18,25 @@ import type { ApiStackContext } from './api-context';
 import { WORKSPACE_EXPORTS_PREFIX } from './core-buckets';
 import { EXPORT_JOB_PARTITION } from './workspace-export-worker';
 
+/** PutItem, UpdateItem and Query of one workspace's job partition in voc-aggregates (its lock and its job rows). */
+export function grantJobPartition(role: iam.IRole, aggregatesTable: ApiStackContext['props']['aggregatesTable'],
+  partition: string, sid: string): void {
+  grantKeyScopedWrites(aggregatesTable, role, ['PutItem', 'UpdateItem'], [partition]);
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid,
+    actions: ['dynamodb:Query'],
+    resources: [aggregatesTable.tableArn],
+    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [partition] } },
+  }));
+}
+
 /** The export routes' grants and where they find the job (env). */
 export function grantWorkspaceExportRoutes(ctx: ApiStackContext, workspacesLambda: lambda.Function): void {
   const { aggregatesTable, rawDataBucket } = ctx.props;
   const role = workspacesLambda.role;
   if (role === undefined) throw new Error('the workspaces API has no role');
   const exportFunctionName = ctx.uniqueName(WORKSPACE_EXPORT_FUNCTION_BASE_NAME);
-  grantKeyScopedWrites(aggregatesTable, role, ['PutItem', 'UpdateItem'], [EXPORT_JOB_PARTITION]);
-  role.addToPrincipalPolicy(new iam.PolicyStatement({
-    sid: 'QueryWorkspaceExportJobs',
-    actions: ['dynamodb:Query'],
-    resources: [aggregatesTable.tableArn],
-    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [EXPORT_JOB_PARTITION] } },
-  }));
+  grantJobPartition(role, aggregatesTable, EXPORT_JOB_PARTITION, 'QueryWorkspaceExportJobs');
   role.addToPrincipalPolicy(new iam.PolicyStatement({
     sid: 'SignWorkspaceExportDownloads',
     actions: ['s3:GetObject'],

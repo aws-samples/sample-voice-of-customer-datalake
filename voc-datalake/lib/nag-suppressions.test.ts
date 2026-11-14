@@ -243,7 +243,9 @@ describe('cdk-nag acknowledgements', () => {
       // 81: an export's own work objects, ws/{one id}/exports/*/work/*, which an export that may not go on deletes
       // (lib/stacks/workspace-export-worker.ts).
       // 82: every object of one workspace, ws/{one id}/*, which the export job reads into its zip (slice 4b).
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 82, used: 82 });
+      // 83: a workspace's hard delete deletes its credentials parameters, voc/ws/{one id}/credentials/*
+      // (lib/stacks/workspace-delete-worker.ts; its ws/{one id}/* versions share 82's finding).
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 83, used: 83 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

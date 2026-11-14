@@ -22,9 +22,11 @@ import { addGsi1 } from './api-stack-fixture';
 import { fixtureBucket, fixtureQueue, fixtureRealtime } from './fixture-resources';
 import { itemAt, valueAt } from './guards';
 
-export function synthProcessingTemplate(options: { withIndexes?: boolean } = {}): Template {
+export function synthProcessingTemplate(
+  options: { withIndexes?: boolean; context?: Record<string, unknown> } = {},
+): Template {
   // Skip asset bundling (Docker) — template assertions only need structure.
-  const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [] } });
+  const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [], ...options.context } });
   const env = { account: '111111111111', region: 'us-east-1' };
   const deps = new cdk.Stack(app, 'TestDeps', { env });
 
@@ -50,6 +52,7 @@ export function synthProcessingTemplate(options: { withIndexes?: boolean } = {})
     featureRequestsTable: makeTable('FeatureRequests'),
     conversationsTable: makeTable('Conversations'),
     workspacesTable: makeTable('Workspaces'),
+    watermarksTable: makeTable('Watermarks'),
   };
   const stack = new VocProcessingStack(app, 'TestProcessing', {
     env,

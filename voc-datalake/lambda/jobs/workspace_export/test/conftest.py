@@ -17,11 +17,12 @@ from boto3.dynamodb.types import Binary
 from moto import mock_aws
 from suite_clock import suite_midday
 
+from jobs.test.lambda_budget import LambdaBudget
 from jobs.workspace_export import handler
 from jobs.workspace_export.zip_stream import PartSink
 from shared.indexes import FEEDBACK_BY_DATE_INDEX, MEMORY_BY_STATUS_INDEX
 from shared.test.export_s3_double import ExportS3
-from shared.test.moto_tables import create_pk_sk_table
+from shared.test.moto_tables import create_pk_sk_table, create_table_with_gsi1
 
 WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
 OTHER = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D9'
@@ -58,20 +59,6 @@ class World:
     invoke: MagicMock
     notify: MagicMock
     memory: Any
-
-
-def _table_with_gsi1(resource: Any, name: str, index: str) -> Any:
-    """A pk/sk table with one full-projection index on gsi1pk/gsi1sk (voc-feedback's by date, voc-memory's by
-    status, shared/indexes.py)."""
-    return resource.create_table(
-        TableName=name, BillingMode='PAY_PER_REQUEST',
-        KeySchema=[{'AttributeName': 'pk', 'KeyType': 'HASH'}, {'AttributeName': 'sk', 'KeyType': 'RANGE'}],
-        AttributeDefinitions=[{'AttributeName': attribute, 'AttributeType': 'S'}
-                              for attribute in ('pk', 'sk', 'gsi1pk', 'gsi1sk')],
-        GlobalSecondaryIndexes=[{
-            'IndexName': index, 'Projection': {'ProjectionType': 'ALL'},
-            'KeySchema': [{'AttributeName': 'gsi1pk', 'KeyType': 'HASH'},
-                          {'AttributeName': 'gsi1sk', 'KeyType': 'RANGE'}]}])
 
 
 def memory_item(ws: str, owner: str | None, memory_id: str, status: str = 'active') -> dict[str, Any]:
@@ -173,10 +160,10 @@ def queue(world: World, export_id: str = EXPORT_ID, ws: str = WS) -> dict[str, A
 def world() -> Iterator[World]:
     with mock_aws():
         resource = boto3.resource('dynamodb', region_name='us-east-1')
-        feedback = _table_with_gsi1(resource, handler.FEEDBACK_TABLE, FEEDBACK_BY_DATE_INDEX)
+        feedback = create_table_with_gsi1(resource, handler.FEEDBACK_TABLE, FEEDBACK_BY_DATE_INDEX)
         aggregates = create_pk_sk_table(handler.AGGREGATES_TABLE, resource)
         workspaces = create_pk_sk_table(WORKSPACES_TABLE, resource)
-        memory = _table_with_gsi1(resource, MEMORY_TABLE, MEMORY_BY_STATUS_INDEX)
+        memory = create_table_with_gsi1(resource, MEMORY_TABLE, MEMORY_BY_STATUS_INDEX)
         s3 = ExportS3(BUCKET, min_part=SMALL_MIN)
         invoke, notify = MagicMock(), MagicMock(return_value=True)
         with patch.object(handler, 'get_dynamodb_resource', return_value=resource), \
@@ -190,16 +177,7 @@ def world() -> Iterator[World]:
             yield World(feedback, aggregates, workspaces, s3, invoke, notify, memory)
 
 
-class Budget:
-    """A Lambda context whose time runs low after ``checks`` looks at the clock (one invocation's budget)."""
+class Budget(LambdaBudget):
+    """The export's Lambda context (jobs/test/lambda_budget.py)."""
 
     function_name = 'voc-workspace-export'
-
-    def __init__(self, checks: int | None = None) -> None:
-        self._left = checks
-
-    def get_remaining_time_in_millis(self) -> int:
-        if self._left is None:
-            return 900_000
-        self._left -= 1
-        return 900_000 if self._left >= 0 else 60_000

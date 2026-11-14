@@ -25,9 +25,10 @@ BATCH_GET_ATTEMPTS: Final = 5
 BATCH_GET_BACKOFF_SECONDS: Final = 0.05
 
 
-def _backoff(attempt: int) -> None:
-    # AWS's guidance for UnprocessedKeys: back off before re-asking, with full jitter so concurrent readers spread
-    # out (a random wait up to 0.1, 0.2, 0.4 and 0.8 s before the second to the fifth call).
+def unprocessed_backoff(attempt: int) -> None:
+    """AWS's guidance for a batch call's unprocessed keys or items: back off before re-asking, with full jitter so
+    concurrent callers spread out (a random wait up to 0.1, 0.2, 0.4 and 0.8 s before the second to the fifth call).
+    Also the layer's batch delete (shared/ws_repo.py ``WorkspaceTable.batch_delete``)."""
     time.sleep(random.uniform(0, BATCH_GET_BACKOFF_SECONDS * 2 ** attempt))  # noqa: S311 — jitter needs no cryptographic randomness
 
 
@@ -38,7 +39,7 @@ def _chunk(table: Any, keys: Sequence[Mapping[str, Any]], read_options: Mapping[
     rows: list[dict] = []
     for attempt in range(BATCH_GET_ATTEMPTS):
         if attempt:
-            _backoff(attempt)
+            unprocessed_backoff(attempt)
         response = table.meta.client.batch_get_item(RequestItems=request)
         rows.extend(item for item in (response.get('Responses') or {}).get(table.name, [])
                     if isinstance(item, dict))

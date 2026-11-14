@@ -47,6 +47,14 @@
         "voc-datalake/lambda/shared/prioritization_axes.py"
       ],
       "reason": "optional-field validators whose 400 wording and rules are each route's contract: form fields checked unstripped ('must be a string'), company-context lists ('may hold at most N entries'), dimension config lists raising ValueError ('At most N <what> are allowed'), draft intent text ('must be text' / 'is too long (at most N characters)', stripped after the check), Prioritization axis text (stripped before the check, '' -> None); one helper would need the type, exception, strip order and both messages as parameters"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/shared/radar_exa_key.py",
+        "voc-datalake/lambda/shared/ws_repo.py"
+      ],
+      "name": "_deleted_key",
+      "reason": "unrelated: a batch delete's re-sent key, checked to be a DeleteRequest (the workspace layer), and an Exa API key's format check; they only share the nested-get-and-raise shape"
     }
   ]
 }

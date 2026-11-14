@@ -22,6 +22,8 @@ export const ALL_FEATURES_CONTEXT: Readonly<Record<string, unknown>> = {
   inboundEmailDomain: 'voc.example.com',
   emailFrom: 'noreply@voc.example.com',
   protectData: true,
+  // A workspace's hard delete (lib/utils/workspace-hard-delete.ts): its job and grants, free when idle.
+  workspaceHardDelete: true,
   anthropicUseCase: {
     companyName: 'Example Air', companyWebsite: 'https://example.com', intendedUsers: '0',
     industryOption: 'Technology', useCases: 'Nag suppression audit synth.', otherIndustryOption: '',

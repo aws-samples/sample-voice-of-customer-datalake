@@ -15,6 +15,7 @@
     {"key": "VocIngestionStack/IngestorSyntheticReviews6B711D80::INGEST_SCHEDULE_RULE_NAME", "reason": "Unscheduled plugin: no schedule rule exists to name (docs/plugin-architecture.md)."},
     {"key": "VocIngestionStack/IngestorS3Import121F4967::IDEMPOTENCY_TABLE", "reason": "Unscheduled plugin: voc-idempotency holds only the scheduled tick's claim (base_ingestor.py _claim_the_tick), handed to scheduled plugins only; without it a tick-shaped event claims nothing, fans out to no workspace (logged and metered) and runs deployment-wide (docs/multi-workspace.md)."},
     {"key": "VocIngestionStack/IngestorSyntheticReviews6B711D80::IDEMPOTENCY_TABLE", "reason": "Unscheduled plugin: no tick to claim; a tick-shaped event fans out to no workspace (logged and metered) and runs deployment-wide (docs/multi-workspace.md)."},
+    {"key": "VocProcessingStack/WorkspaceDeleteWorkerDelete670E8D4B::IDEMPOTENCY_TABLE", "reason": "Read at import by lambda/aggregator/handler.py, whose counter key function the workspace delete reuses to list a workspace's counter partitions (as scripts/retention/rebuild_aggregates.py does); the delete writes no stream claim, so the '' default is never used."},
     {"key": "*::CDN_SIGNED_URL_TTL_SECONDS", "kind": "read-never-set-fatal", "reason": "Documented operator knob (docs/project-workspace.md: 'which no stack sets, so the fallback of 3600 s applies'); the subscript sits in try/except KeyError, so it is not fatal."}
   ]
 }

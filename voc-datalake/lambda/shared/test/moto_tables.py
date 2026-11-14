@@ -25,6 +25,20 @@ def create_pk_sk_table(table_name: str, resource=None):
     )
 
 
+def create_table_with_gsi1(resource, table_name: str, index: str):
+    """A pk/sk table with one full-projection index on gsi1pk/gsi1sk (voc-feedback's by date, voc-memory's by
+    status, shared/indexes.py)."""
+    return resource.create_table(
+        TableName=table_name, BillingMode='PAY_PER_REQUEST',
+        KeySchema=[{'AttributeName': 'pk', 'KeyType': 'HASH'}, {'AttributeName': 'sk', 'KeyType': 'RANGE'}],
+        AttributeDefinitions=[{'AttributeName': attribute, 'AttributeType': 'S'}
+                              for attribute in ('pk', 'sk', 'gsi1pk', 'gsi1sk')],
+        GlobalSecondaryIndexes=[{
+            'IndexName': index, 'Projection': {'ProjectionType': 'ALL'},
+            'KeySchema': [{'AttributeName': 'gsi1pk', 'KeyType': 'HASH'},
+                          {'AttributeName': 'gsi1sk', 'KeyType': 'RANGE'}]}])
+
+
 def create_aggregates_table_with_metric_index(table_name: str, resource=None):
     """voc-aggregates as in core-stack.ts: ``pk`` + ``sk`` plus the ``gsi1-by-metric-type`` index
     (``metric_type`` HASH, ``pk`` RANGE, all attributes projected)."""

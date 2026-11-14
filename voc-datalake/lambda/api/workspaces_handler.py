@@ -59,6 +59,28 @@ the warm 30 s cache, as the other reads do: a platform admin's polling writes no
                                          inside its 7 days (409 otherwise), recorded first in an export_link_issued
                                          audit row.
 
+The hard delete of the workspace X-Workspace-Id names (shared/workspace_deletes.py; the job:
+lambda/jobs/workspace_delete/), decision 17, for its admins (a member admin, or a platform admin who entered: live-checked
+and audited), the role read from the table:
+    POST /me/workspaces/current/delete   {confirm_slug, legal_basis} -> 202 {delete: {job_id, workspace_id,
+                                         status: 'waiting', phase: 'fence', requested_at, deleting_at, fence_at,
+                                         progress_at, counts}}: the slug
+                                         typed exactly (400 otherwise) and a basis without personal data (400); 409
+                                         while an export or an erasure runs; takes the workspace's export and erasure
+                                         locks, then in one transaction sets META and the listing row `deleting`,
+                                         writes the job row and an audit row in AUDIT#WS#{ws} and in
+                                         AUDIT#workspace-deletes; then invokes voc-workspace-delete. A repeat that
+                                         meets the same job answers it; once the workspace is `deleting`, every route
+                                         (this one too) answers the workspace's one 404.
+    POST /platform/workspaces/{ws}/delete/cancel   -> {delete}: a platform admin, during the 21-minute fence only
+                                         (409 after), moves it back to `active` (audited); the messages dropped
+                                         meanwhile are lost and its counters are marked for a rebuild.
+    POST /platform/workspaces/{ws}/delete/resume   -> {delete}: a platform admin invokes a failed or stalled delete
+                                         again from its checkpoint (409 for one still moving or finished; audited).
+The request and the resume answer 403 "not available in this deployment", writing nothing, unless the deployment
+turns the hard delete on (``-c workspaceHardDelete=true``: WORKSPACE_HARD_DELETE ``true``; off until the per-person
+export ships). The cancel works whatever the flag: it only restores a workspace.
+
 The /platform routes are for platform admins only: an administrator (``require_admin``), the token's
 ``platform-admins`` group (``require_platform_admin``), then the live check (shared/platform_admin.py: the live
 Cognito membership and an enabled account), so a revoked or disabled platform admin is refused (403) at once.
@@ -101,6 +123,13 @@ from shared.workspace import (
     require_workspace_admin,
     resolve_workspace,
 )
+from shared.workspace_deletes import (
+    cancel_delete,
+    parse_delete_request,
+    request_delete,
+    require_hard_delete,
+    resume_delete,
+)
 from shared.workspace_members import (
     MemberAccountError,
     add_member,
@@ -113,7 +142,7 @@ from shared.workspace_members import (
     parse_role_change,
     remove_member,
 )
-from shared.ws_repo import ExportObjects, WorkspaceTable, scope_of
+from shared.ws_repo import ExportObjects, WorkspaceScope, WorkspaceTable, scope_of
 
 WORKSPACES_TABLE = os.environ.get('WORKSPACES_TABLE', '')
 USER_POOL_ID = os.environ.get('USER_POOL_ID', '')
@@ -122,6 +151,8 @@ USER_POOL_ID = os.environ.get('USER_POOL_ID', '')
 AGGREGATES_TABLE = os.environ.get('AGGREGATES_TABLE', '')
 RAW_DATA_BUCKET = os.environ.get('RAW_DATA_BUCKET', '')
 EXPORT_FUNCTION = os.environ.get('EXPORT_FUNCTION', '')
+# A workspace's hard delete (shared/workspace_deletes.py): the job that sweeps it.
+DELETE_FUNCTION = os.environ.get('DELETE_FUNCTION', '')
 # The fixed answers of a fault (#263: never the AWS text).
 FAILED_LIST = 'Failed to list your workspaces'
 FAILED_CURRENT = WORKSPACE_FAULT
@@ -138,6 +169,9 @@ EXPORT_NOT_DOWNLOADABLE = ('No export can be downloaded: the newest is not compl
                            'Start a new export')
 EXPORT_ALREADY_RUNNING = 'An export of this workspace is already running: wait for it to finish, then start another'
 EXPORT_ERASURE_RUNNING = 'An erasure is running in this workspace: start the export when it ends'
+FAILED_START_DELETE = 'Failed to start the delete'
+FAILED_CANCEL_DELETE = 'Failed to cancel the delete'
+FAILED_RESUME_DELETE = 'Failed to resume the delete'
 
 app = create_api_resolver()
 # The warm container's resolved memberships (30 s, shared/workspace.py).
@@ -354,6 +388,74 @@ def workspace_export_link() -> dict:
         logger.exception('Error signing a workspace export link')
         raise ServiceError(FAILED_EXPORT_LINK) from exc
     return {'link': link}
+
+
+def _start_delete_job(payload: dict) -> None:
+    """The delete job's async invoke (``payload`` built by shared/workspace_deletes.py)."""
+    invoke_lambda_async(DELETE_FUNCTION, payload)
+
+
+def _workspace_aggregates(scope: WorkspaceScope) -> WorkspaceTable:
+    """A workspace's view of voc-aggregates (its export and erasure locks), or 500 when it is not configured."""
+    if not AGGREGATES_TABLE:
+        raise ConfigurationError('Aggregates table not configured')
+    return ingest_table(scope, get_dynamodb_resource(), AGGREGATES_TABLE)
+
+
+@app.post('/me/workspaces/current/delete')
+def delete_workspace():  # a Response: the resolver validates a return annotation, so none here
+    event = app.current_event.raw_event
+    # The deployment flag first: off, nothing is read or written (not even a platform admin's entry row).
+    require_hard_delete()
+    # The body next: a bad one is refused before a platform admin's entry writes its audit row.
+    request = parse_delete_request(json_object_body(app))
+    context = _workspace(event, FAILED_START_DELETE, fresh=True)
+    require_workspace_admin(context)
+    if not DELETE_FUNCTION:
+        # Before the locks: a deployment that cannot start the job never holds a workspace's export or erasure.
+        raise ConfigurationError('Delete function not configured')
+    try:
+        job = request_delete(get_workspaces_table(), _export_jobs(context), context, get_caller_subject(event),
+                             request, _start_delete_job, datetime.now(UTC))
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception('Error starting a workspace delete')
+        raise ServiceError(FAILED_START_DELETE) from exc
+    return Response(status_code=202, content_type=content_types.APPLICATION_JSON, body=json.dumps({'delete': job}))
+
+
+@app.post('/platform/workspaces/<ws>/delete/cancel')
+def cancel_workspace_delete(ws: str) -> dict:
+    # Whatever the deployment flag: a cancel only restores a workspace (one left waiting in its fence when the flag
+    # was turned off would otherwise stay `deleting` for good).
+    event = app.current_event.raw_event
+    require_admin(event)
+    require_platform_admin(event)
+    _require_live_platform_admin(event, FAILED_CANCEL_DELETE)
+    try:
+        job = cancel_delete(get_workspaces_table(), _workspace_aggregates, ws, get_caller_subject(event),
+                            datetime.now(UTC))
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception('Error cancelling a workspace delete')
+        raise ServiceError(FAILED_CANCEL_DELETE) from exc
+    return {'delete': job}
+
+
+@app.post('/platform/workspaces/<ws>/delete/resume')
+def resume_workspace_delete(ws: str) -> dict:
+    event = app.current_event.raw_event
+    require_hard_delete()
+    require_admin(event)
+    require_platform_admin(event)
+    _require_live_platform_admin(event, FAILED_RESUME_DELETE)
+    if not DELETE_FUNCTION:
+        raise ConfigurationError('Delete function not configured')
+    try:
+        job = resume_delete(get_workspaces_table(), ws, get_caller_subject(event), _start_delete_job,
+                            datetime.now(UTC))
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception('Error resuming a workspace delete')
+        raise ServiceError(FAILED_RESUME_DELETE) from exc
+    return {'delete': job}
 
 
 @app.post('/platform/workspaces')

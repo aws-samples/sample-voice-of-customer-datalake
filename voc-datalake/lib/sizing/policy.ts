@@ -384,6 +384,9 @@ export const UNCHANGED: Readonly<Record<string, number | null>> = {
   // A workspace's export (phase 4, docs/multi-workspace.md): DEFLATE of every row is CPU-bound, and a 64 MB part is
   // buffered before it goes up; one vCPU, the Python cap (the design's 2048 MB would buy RAM, not speed; unmeasured, new).
   'voc-workspace-export': 1769,
+  // A workspace's hard delete (phase 4d-2): paged Queries, batch deletes and one tombstone put per item, I/O-bound;
+  // the aggregator's key function runs per item to list its counters (unmeasured, new).
+  'voc-workspace-delete': 1024,
   'voc-agent-nodes': 1024,
   'voc-agent-persona-panel': 1024,
   // Plan mode: one step of an approved assistant plan (Node, built from lambda/stream; the same

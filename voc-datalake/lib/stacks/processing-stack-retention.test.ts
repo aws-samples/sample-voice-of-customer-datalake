@@ -86,7 +86,9 @@ describe('voc-retention worker', () => {
   });
 
   it('scans workspaces and updates only email and name under WS#* (it de-identifies membership rows)', () => {
-    expect(allowedActions(statements(), 'dynamodb:', 'Workspaces')).toStrictEqual(['dynamodb:Scan', 'dynamodb:UpdateItem']);
+    // GetItem: a META's status only, before an erasure takes a workspace's export lock (jobs/retention/exports.py).
+    expect(allowedActions(statements(), 'dynamodb:', 'Workspaces'))
+      .toStrictEqual(['dynamodb:GetItem', 'dynamodb:Scan', 'dynamodb:UpdateItem']);
     const update = statements().filter((s) => s.effect === 'Allow' && s.resource.includes('Workspaces')
       && s.actions.includes('dynamodb:UpdateItem'));
     expect(update.map((s) => s.actions)).toStrictEqual([['dynamodb:UpdateItem']]);

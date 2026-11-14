@@ -212,7 +212,8 @@ export class IngestorRoles {
     } = this.grants;
     watermarksTable.grantReadWriteData(role);
     // Run rows and counters (Put + Update, _shared/base_ingestor.py, the webscraper), and a workspace watermark's
-    // directory row (`WS#{ws}#WATERMARK_KEYS`, put if absent: base_ingestor.py `_list_watermark`); the circuit breaker
+    // directory row (`WS#{ws}#WATERMARK_KEYS`: its key alone, put unconditionally each time, so idempotent;
+    // base_ingestor.py `_list_watermark`; the hard delete finds every watermark by it); the circuit breaker
     // (_shared/circuit_breaker.py) deletes only its own CIRCUIT# rows (deployment-wide and per workspace) when it closes.
     grantReadAndWrites(aggregatesTable, role, ['PutItem', 'UpdateItem']);
     // A run in a workspace (and the tick, per workspace) reads its META status first: GetItem of `WS#*` held to pk, sk

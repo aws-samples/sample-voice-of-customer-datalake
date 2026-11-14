@@ -4,19 +4,17 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import boto3
 import pytest
 from botocore.exceptions import ClientError
 from moto import mock_aws
-from moto_helpers import invoke, pk_sk_table, rest_event
+from moto_helpers import invoke, rest_event
 from test_workspaces_members_routes import ADA, EDI, NOR, PAT, VIC, WS
+from workspaces_api_world import workspaces_api
 
 import workspaces_handler
-from shared.test.cognito_doubles import live_cognito
 from shared.test.export_s3_double import ExportS3
-from shared.workspace import MembershipCache
 
 # The callers are the members routes' (ADA the admin, EDI an editor, VIC a viewer, NOR a deployment admin who is
 # not a member, PAT a platform admin).
@@ -40,23 +38,9 @@ class World:
 def world() -> Iterator[World]:
     started = MagicMock()
     with mock_aws():
-        resource = boto3.resource('dynamodb', region_name='us-east-1')
         s3 = ExportS3(BUCKET)
-        with patch.object(workspaces_handler, 'memberships', MembershipCache()), \
-                patch.object(workspaces_handler, 'USER_POOL_ID', 'us-east-1_pool'), \
-                patch.object(workspaces_handler, 'get_cognito_idp_client', return_value=live_cognito()), \
-                patch.object(workspaces_handler, 'get_dynamodb_resource', return_value=resource), \
-                patch.object(workspaces_handler, 'get_s3_client', return_value=s3), \
-                patch.object(workspaces_handler, 'AGGREGATES_TABLE', 'aggregates'), \
-                patch.object(workspaces_handler, 'RAW_DATA_BUCKET', BUCKET), \
-                patch.object(workspaces_handler, 'EXPORT_FUNCTION', FUNCTION), \
-                patch.object(workspaces_handler, 'invoke_lambda_async', started):
-            workspaces = pk_sk_table('workspaces')
-            aggregates = pk_sk_table('aggregates')
-            workspaces.put_item(Item={'pk': f'WS#{WS}', 'sk': 'META', 'name': 'Acme Outfitters', 'slug': 'acme',
-                                      'status': 'active'})
-            for claims, role in ((ADA, 'admin'), (EDI, 'editor'), (VIC, 'viewer')):
-                workspaces.put_item(Item={'pk': f'WS#{WS}', 'sk': f'MEMBER#{claims["sub"]}', 'role': role})
+        with workspaces_api({'RAW_DATA_BUCKET': BUCKET, 'EXPORT_FUNCTION': FUNCTION, 'invoke_lambda_async': started},
+                            {'get_s3_client': s3}) as (workspaces, aggregates):
             yield World(workspaces, aggregates, s3, started)
 
 

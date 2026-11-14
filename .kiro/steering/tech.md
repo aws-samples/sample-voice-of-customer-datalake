@@ -133,6 +133,32 @@ timeout. Permissions: feedback Scan/GetItem/UpdateItem, aggregates
 Get/Put/Update/Query, raw-bucket read (`raw/*`), KMS, Bedrock, Comprehend,
 Translate, invoke itself.
 
+Not behind API Gateway (Processing stack), built only with `-c workspaceHardDelete=true` (off by default, until the
+per-person export ships; off, the request and the resume answer 403 and write nothing, the cancel still works): `voc-workspace-delete` —
+`lambda/jobs/workspace_delete/handler.py` (phase
+4d-2, docs/multi-workspace.md "Export and delete" step 4; `lib/stacks/workspace-delete-worker.ts`), async invoke by
+name from `POST /me/workspaces/current/delete` and `POST /platform/workspaces/{ws}/delete/resume` (env
+`DELETE_FUNCTION` on the workspaces API) with `{workspace_id}` (and `run`, its checkpoint, at a hand-over or a resume).
+`POST /platform/workspaces/{ws}/delete/cancel` (during the fence) moves the same row. Its rows, all in voc-workspaces
+(`lambda/shared/workspace_deletes.py`): the job `WSDELETE` / `{ws}` (status `waiting` → `running` → `completed` or
+`failed`, or `cancelled`; phase, generation, checkpoint, counts, the request's who, when and basis, `counters_rebuild`
+after a cancel; kept for good) and the platform's `AUDIT#workspace-deletes` / `{iso}#{random}` (requested, cancelled,
+resumed, completed: counts, never a row's content), beside the workspace's own `AUDIT#WS#{ws}`. It claims each
+generation on its job row, deletes nothing before the row's `fence_at` (21 minutes after `deleting`; the row's status
+and phase, not the event, decide), then runs the registry `SWEEPS` (`sweeps.py`) a page at a time, one tombstone per
+item and per memory before its delete (a conditional put of a new key, near 800 a second; throttled writes back off
+and retry), a verify pass (re-checks what it can list, not that nothing is left anywhere), the inventory and the
+export `LOCK` last, and the platform's `completed` audit row. 1,024 MB, reserved concurrency 2, no async retry, events
+older than 40 minutes dropped, at most 600 generations. Permissions (each delete and data read on keys of one
+workspace id's shape): BatchWriteItem only on `WS#{one id}#*` (voc-feedback `WS#{one id}#SOURCE#*`), Query of its
+partitions and index partitions, GetItem of the deployment's `SETTINGS#categories` and `SETTINGS#dimensions` (the
+closed counter families), PutItem only on `AUDIT#tombstone#*` and `AUDIT#workspace-deletes`, DeleteItem of the
+control-plane rows (`WS#{one id}`, `USER#*`, `FORM#*`, `PLUGIN#*`, `WORKSPACES`), UpdateItem of `SLUG#*` `deleted_at`
+and of its job row; S3 version listing with the `s3:prefix` `ws/{one id}/*`, `DeleteObjectVersion` and
+`AbortMultipartUpload` under it, `ListBucketMultipartUploads` bucket-wide (keys and ids only); SSM
+`GetParametersByPath` and `DeleteParameters` on the workspace's credentials path, kms:Decrypt via SSM denied; KMS;
+invoke itself. No Scan.
+
 Not behind API Gateway (Processing stack): `voc-workspace-export` — `lambda/jobs/workspace_export/handler.py`
 (phase 4a, docs/multi-workspace.md "Export and delete"; `lib/stacks/workspace-export-worker.ts`), async invoke by
 name from `POST /me/workspaces/current/export` (env `EXPORT_FUNCTION` on the workspaces API) with

@@ -52,6 +52,7 @@ GATED_CONTEXT: dict[str, object] = {
     'emailFrom': 'noreply@voc.example.com',  # participant email + the board pool and its triggers
     'inferenceScope': 'eu',          # BEDROCK_INFERENCE_SCOPE / AVATARS_ENABLED on every Lambda
     'enableWebSearch': False,        # the one default-ON feature: its env must look optional too
+    'workspaceHardDelete': True,     # voc-workspace-delete and the delete routes' DELETE_FUNCTION
     'anthropicUseCase': {
         'companyName': 'Example Air', 'companyWebsite': 'https://example.com', 'intendedUsers': '0',
         'industryOption': 'Technology', 'useCases': 'Audit synth.', 'otherIndustryOption': '',

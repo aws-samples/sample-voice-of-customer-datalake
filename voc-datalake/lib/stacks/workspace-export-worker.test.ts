@@ -4,12 +4,10 @@
  */
 import type { Template } from 'aws-cdk-lib/assertions';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { z } from 'zod';
 
-import { itemAt } from '../test-support/guards';
 import { IamPolicySchema, isAttachedToRole, roleStatements, statementActions } from '../test-support/iam-statements';
 import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
-import { expectSelfInvokeOnly, findWorkerFunction } from '../test-support/worker-function';
+import { expectSelfInvokeOnly, findWorkerFunction, workerSettings } from '../test-support/worker-function';
 import { byCodeUnit } from '../utils/compare';
 import {
   CONTROL_PARTITIONS, EXPORT_JOB_PARTITION, MEMORY_TABLE_PARTITIONS, WORKSPACE_DATE_PARTITIONS,
@@ -40,33 +38,12 @@ const on = (table: string) => allowed()
   .map((s) => ({ actions: [...s.actions].sort(byCodeUnit), condition: s.condition }))
   .sort((a, b) => byCodeUnit(a.actions.join(), b.actions.join()));
 
-const PropertiesSchema = z.object({
-  Properties: z.object({ MemorySize: z.number(), Timeout: z.number(), ReservedConcurrentExecutions: z.number() })
-    .loose(),
-});
-const InvokeConfigSchema = z.object({
-  Properties: z.object({
-    FunctionName: z.object({ Ref: z.string() }),
-    MaximumRetryAttempts: z.number(),
-    MaximumEventAgeInSeconds: z.number(),
-  }).loose(),
-});
-
 describe('the voc-workspace-export job', () => {
   it('runs one vCPU for 15 minutes, at most ten at once, no async retry, no event older than 40 minutes', () => {
     expect(worker().Handler).toBe('jobs/workspace_export/handler.lambda_handler');
-    const found = Object.entries(template.findResources('AWS::Lambda::Function'))
-      .filter(([logicalId]) => logicalId.startsWith('WorkspaceExportWorkerExport'));
-    expect(found).toHaveLength(1);
-    const [id, fn] = itemAt(found, 0);
-    const { Properties: properties } = PropertiesSchema.parse(fn);
-    expect([properties.MemorySize, properties.Timeout, properties.ReservedConcurrentExecutions])
-      .toStrictEqual([1769, 900, WORKSPACE_EXPORT_RESERVED_CONCURRENCY]);
-    const configs = Object.values(template.findResources('AWS::Lambda::EventInvokeConfig'))
-      .map((resource) => InvokeConfigSchema.safeParse(resource).data?.Properties)
-      .filter((config) => config?.FunctionName.Ref === id);
-    expect([...configs.map((config) => [config?.MaximumRetryAttempts, config?.MaximumEventAgeInSeconds]),
-      [WORKSPACE_EXPORT_RESERVED_CONCURRENCY, WORKSPACE_EXPORT_MAX_EVENT_AGE_MINUTES]])
+    const { sizing, invokeConfigs } = workerSettings(template, 'WorkspaceExportWorkerExport');
+    expect(sizing).toStrictEqual([1769, 900, WORKSPACE_EXPORT_RESERVED_CONCURRENCY]);
+    expect([...invokeConfigs, [WORKSPACE_EXPORT_RESERVED_CONCURRENCY, WORKSPACE_EXPORT_MAX_EVENT_AGE_MINUTES]])
       // 40 minutes of throttling retries plus the 15-minute timeout stay inside the lock's hour.
       .toStrictEqual([[0, WORKSPACE_EXPORT_MAX_EVENT_AGE_MINUTES * 60], [10, 40]]);
   });

@@ -31,16 +31,13 @@ from collections.abc import Callable, Mapping
 from typing import Any, Final
 
 from jobs.workspace_export.pages import TABLE_KEY, items, key, last_key, start
-from shared.indexes import MEMORY_BY_STATUS_INDEX
-from shared.memory_policy import SCOPE_PERSONAL, STATUSES
+from shared.memory_partitions import CURSORS, memory_partitions
 from shared.ws_repo import (
     WorkspaceScope,
     WorkspaceTable,
     memory_company_pk,
-    memory_cursor_pk,
     memory_event_pk,
     memory_import_pk,
-    memory_status_pk,
 )
 
 __all__ = ['COUNTED', 'ENTITIES', 'MemorySource']
@@ -158,12 +155,12 @@ class MemorySource:
             return rows, {**here, 'ids': list(ids), 'start': last}
         return rows, {**here, 'ids': list(ids[1:]), 'start': None}
 
-    def _counted_partitions(self, what: str) -> list[tuple[str, str, dict[str, str]]]:
-        """Where ``what`` (``COUNTED``) is counted: (partition attribute, partition, index), in order."""
-        if what == 'personal_memories':
-            index = {'IndexName': MEMORY_BY_STATUS_INDEX}
-            return [('gsi1pk', memory_status_pk(self.scope, SCOPE_PERSONAL, status), index) for status in STATUSES]
-        return [('pk', memory_cursor_pk(self.scope), {})]
+    def _counted_partitions(self, what: str) -> list[tuple[str, str, dict[str, Any]]]:
+        """Where ``what`` (``COUNTED``) is counted: (partition attribute, partition, index), in order: the personal
+        status partitions or the cursors of shared/memory_partitions.py, the ones the hard delete deletes."""
+        wanted = (lambda part: part.personal) if what == 'personal_memories' else (lambda part: part.name == CURSORS)
+        return [(part.attribute, part.partition, part.query_options()) for part in memory_partitions(self.scope)
+                if wanted(part)]
 
     def count(self, what: str, state: dict[str, Any], time_left: Callable[[], bool]) -> bool:
         """Go on counting ``what`` from ``state`` (the run's checkpoint: ``part``, the partition it is in, ``cursor``,

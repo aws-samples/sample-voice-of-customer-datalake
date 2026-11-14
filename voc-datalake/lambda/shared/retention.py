@@ -96,6 +96,7 @@ __all__ = [
     'FEEDBACK_SK_PREFIX',
     'STORE_FEEDBACK',
     'STORE_RADAR',
+    'UNKNOWN_SOURCE',
     'delete_item',
     'delete_radar_item',
     'delete_raw_prefix_page',
@@ -103,7 +104,9 @@ __all__ = [
     'erase_filter',
     'holds_files',
     'import_originals_prefix',
+    'item_feedback_id',
     'item_scope',
+    'item_source',
     'raw_source_prefix',
     'retention_cutoffs',
     'retention_filter',
@@ -145,6 +148,24 @@ ERASURE_OPTIONAL_COUNTERS: Final = (BOARD_COUNTER, MEMBER_COUNTER, WORKSPACE_ITE
 # Where a matched item lives: voc-feedback, or voc-radar (another brand's review, docs/radar.md).
 STORE_FEEDBACK: Final = 'feedback'
 STORE_RADAR: Final = 'radar'
+#: The source an item without one is tombstoned under (``AUDIT#tombstone#unknown``): voc-retention's and a
+#: workspace's hard delete's (jobs/retention/copies.py, jobs/workspace_delete/sweeps.py).
+UNKNOWN_SOURCE: Final = 'unknown'
+
+
+def item_source(item: Mapping[str, Any]) -> str:
+    """The source an item was ingested from (its ``source_platform``), ``UNKNOWN_SOURCE`` for none: the partition of
+    its tombstone (voc-retention's and the hard delete's)."""
+    source = item.get('source_platform')
+    return source if isinstance(source, str) and source else UNKNOWN_SOURCE
+
+
+def item_feedback_id(item: Mapping[str, Any]) -> str:
+    """An item's id: its ``feedback_id``, else its sort key without ``FEEDBACK#`` (its tombstone's id)."""
+    feedback_id = item.get('feedback_id')
+    if isinstance(feedback_id, str) and feedback_id:
+        return feedback_id
+    return str(item['sk']).removeprefix(FEEDBACK_SK_PREFIX)
 _RADAR_PK_PREFIX: Final = 'RADAR#'
 _RADAR_ITEMS_MARK: Final = '#ITEMS#'
 _WHOLE_UPLOAD_PREFIXES: Final = ('raw/csv_upload/', 'raw/json_upload/')

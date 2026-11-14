@@ -24,7 +24,9 @@ const AUDIT_CONDITION = { 'ForAnyValue:StringLike': { 'dynamodb:LeadingKeys': ['
  *  users API only `AUDIT#platform-admins`). */
 const AUDIT_WRITERS: Record<(typeof GUARDED_TABLES)[number], string[]> = {
   AggregatesTable: ['VocApiStack/SettingsLambdaRole', 'VocApiStack/UsersLambdaRole',
-    'VocProcessingStack/RetentionWorkerRetentionRole'],
+    'VocProcessingStack/RetentionWorkerRetentionRole',
+    // A workspace's hard delete: its tombstones (AUDIT#tombstone#* only, the one-partition Deny below).
+    'VocProcessingStack/WorkspaceDeleteWorkerDeleteRole'],
   ProjectsTable: ['VocApiStack/PersonaGeneratorRole', 'VocApiStack/ProjectsLambdaRole'],
   ParticipantsTable: ['VocApiStack/EngagementLambdaRole'],
   FeatureRequestsTable: ['VocApiStack/EngagementLambdaRole'],
@@ -39,12 +41,15 @@ const AUDIT_WRITERS: Record<(typeof GUARDED_TABLES)[number], string[]> = {
   WorkspacesTable: ['VocApiStack/FeedbackEditLambdaRole', 'VocApiStack/FeedbackFormLambdaRole',
     'VocApiStack/IntegrationsLambdaRole',
     'VocApiStack/MetricsLambdaRole', 'VocApiStack/ScrapersLambdaRole', 'VocApiStack/UsersLambdaRole',
-    'VocApiStack/WorkspacesLambdaRole'],
+    'VocApiStack/WorkspacesLambdaRole',
+    // A workspace's hard delete: the platform's completed row (AUDIT#workspace-deletes only).
+    'VocProcessingStack/WorkspaceDeleteWorkerDeleteRole'],
 };
 
 type Statement = IamStatement;
 
-const synthed = synthApp();
+// The hard delete on (-c workspaceHardDelete=true): its job is one of the audit writers when a deployment builds it.
+const synthed = synthApp({ workspaceHardDelete: true });
 afterAll(cleanupAssemblyDirs);
 
 /** `<Stack>/<RoleId>` → its default policy's statements. */
@@ -127,12 +132,29 @@ describe('audit rows (AUDIT#*) across every stack', () => {
       'ForAnyValue:StringNotEquals': { 'dynamodb:LeadingKeys': [partition] } });
   });
 
-  it('only the settings, users, metrics, feedback-edit, feedback-form, integrations and scrapers APIs carry a one-partition deny', () => {
+  it('only the settings, users, metrics, feedback-edit, feedback-form, integrations and scrapers APIs and the workspace delete carry a one-partition deny', () => {
     const holders = [...byRole].filter(([, statements]) => denied(statements, AUDIT_DENY_OTHER_PARTITION_SID) !== NO_STATEMENT);
     expect(holders.map(([role]) => role).sort(byCodeUnit)).toStrictEqual([
       'VocApiStack/FeedbackEditLambdaRole', 'VocApiStack/FeedbackFormLambdaRole', 'VocApiStack/IntegrationsLambdaRole',
       'VocApiStack/MetricsLambdaRole',
-      'VocApiStack/ScrapersLambdaRole', 'VocApiStack/SettingsLambdaRole', 'VocApiStack/UsersLambdaRole']);
+      'VocApiStack/ScrapersLambdaRole', 'VocApiStack/SettingsLambdaRole', 'VocApiStack/UsersLambdaRole',
+      'VocProcessingStack/WorkspaceDeleteWorkerDeleteRole']);
+  });
+
+  it('the workspace delete puts only its tombstones in voc-aggregates and its completed rows in voc-workspaces', () => {
+    const statements = byRole.get('VocProcessingStack/WorkspaceDeleteWorkerDeleteRole') ?? [];
+    const limits = statements.filter((s) => (s.Sid ?? '').startsWith(AUDIT_DENY_OTHER_PARTITION_SID))
+      .map((s) => ({ tables: tablesOf(s), condition: s.Condition }))
+      .sort((a, b) => byCodeUnit(a.tables.join(), b.tables.join()));
+    expect(limits).toStrictEqual([
+      { tables: ['AggregatesTable'], condition: { ...AUDIT_CONDITION,
+        'ForAnyValue:StringNotLike': { 'dynamodb:LeadingKeys': ['AUDIT#tombstone#*'] } } },
+      { tables: ['WorkspacesTable'], condition: { ...AUDIT_CONDITION,
+        'ForAnyValue:StringNotEquals': { 'dynamodb:LeadingKeys': ['AUDIT#workspace-deletes'] } } },
+    ]);
+    // Its batch deletes, on WS#{one id}#* only, never reach an audit row: the change-Deny holds them too.
+    expect(actionsOf(denied(statements, AUDIT_DENY_CHANGE_SID)).sort(byCodeUnit))
+      .toStrictEqual(['dynamodb:BatchWriteItem', 'dynamodb:DeleteItem', 'dynamodb:UpdateItem']);
   });
 
   it.each(['VocApiStack/MetricsLambdaRole', 'VocApiStack/FeedbackEditLambdaRole', 'VocApiStack/IntegrationsLambdaRole',

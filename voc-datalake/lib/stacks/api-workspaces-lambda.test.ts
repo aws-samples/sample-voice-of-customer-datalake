@@ -10,7 +10,8 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import {
-  actionsWithPrefix, apiMethods, apiTemplate, functionIdForHandler, nonOptions, policyStatementsOf, resolveMethod,
+  actionsWithPrefix, apiMethods, apiTemplate, apiTemplateHardDelete, functionIdForHandler, nonOptions,
+  policyStatementsOf, resolveMethod,
   serviceEnvironment,
 } from '../test-support/api-stack-template';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
@@ -18,9 +19,12 @@ import { byCodeUnit } from '../utils/compare';
 
 beforeAll(() => {
   apiTemplate();
+  apiTemplateHardDelete();
 }, SYNTH_TIMEOUT_MS);
 
-const statements = () => policyStatementsOf(apiTemplate(), 'WorkspacesLambdaRole');
+// The role with the hard delete on (-c workspaceHardDelete=true): its own grants plus the delete routes'; off, the
+// delete routes' are not there (api-workspace-delete.test.ts).
+const statements = () => policyStatementsOf(apiTemplateHardDelete(), 'WorkspacesLambdaRole');
 const withPrefix = (prefix: string) => statements().filter((s) => s.actions.some((action) => action.startsWith(prefix)));
 // The export routes' grants on voc-aggregates (its export jobs only) are pinned in api-workspace-export.test.ts.
 const onWorkspaces = () => withPrefix('dynamodb:').filter((s) => /ExportsOutputFnGetAttWorkspaces/.test(s.resource));
@@ -57,7 +61,16 @@ describe('the voc-workspaces-api Lambda', () => {
         'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['USER#*', 'WS#*'] },
         'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'role', 'sk'] } } },
       // No `secret_status` update any more: a new workspace's META and listing row are written whole at creation.
-    ]);
+      // The delete routes' (lib/stacks/api-workspace-delete.ts, pinned in api-workspace-delete.test.ts): the
+      // platform's delete audit rows, the job row, and META's and the listing row's status.
+      { actions: ['dynamodb:PutItem'], condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [
+        'AUDIT#workspace-deletes'] } } },
+      { actions: ['dynamodb:PutItem', 'dynamodb:UpdateItem'], condition: { 'ForAllValues:StringLike': {
+        'dynamodb:LeadingKeys': ['WSDELETE'] } } },
+      { actions: ['dynamodb:UpdateItem'], condition: {
+        'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WORKSPACES', `WS#ws_${'?'.repeat(26)}`] },
+        'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['deleting_at', 'pk', 'sk', 'status', 'workspace_id'] } } },
+    ].sort((a, b) => byCodeUnit(a.actions.join() + JSON.stringify(a.condition), b.actions.join() + JSON.stringify(b.condition))));
   });
 
   // The fixture's tables all carry an index (api-stack-fixture.ts), so CDK names it in the read grant; the writes
@@ -66,9 +79,10 @@ describe('the voc-workspaces-api Lambda', () => {
     const others = withPrefix('dynamodb:').filter((s) => !/ExportsOutputFnGetAttWorkspaces/.test(s.resource));
     expect(others.length > 0 && others.every((s) => /ExportsOutputFnGetAttAggregates/.test(s.resource))).toBe(true);
     const resources = onWorkspaces().map((s) => s.resource);
-    expect(resources).toHaveLength(5);
+    // Five of its own, three of the delete routes'.
+    expect(resources).toHaveLength(8);
     expect(resources.join('\n').match(/ExportsOutputFnGetAtt[A-Za-z]+/g)?.sort(byCodeUnit))
-      .toStrictEqual(Array<string>(6).fill('ExportsOutputFnGetAttWorkspaces'));
+      .toStrictEqual(Array<string>(9).fill('ExportsOutputFnGetAttWorkspaces'));
   });
 
   it('reads the caller\'s groups and account, finds and creates accounts, on the user pool only', () => {

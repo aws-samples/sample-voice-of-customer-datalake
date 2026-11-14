@@ -8,6 +8,7 @@
     {"key": "lambda/shared/document_history.py::edited_from_id", "reason": "Version provenance (which document a restore was edited from), stored with restored_from_id/_version for the version history audit."},
     {"key": "lambda/shared/document_history.py::replaced_at", "reason": "Audit timestamp on a superseded revision snapshot (saved_at is served; replaced_at records when it stopped being current)."},
     {"key": "lambda/shared/jobs.py::execution_owner", "reason": "Operator diagnostic: the aws_request_id holding a job's execution lease, matched against CloudWatch logs when a job is stuck."},
-    {"key": "lambda/shared/document_share.py::revoked_by", "reason": "Audit trail on a turned-off review link (the row is kept with revoked = true): who turned it off, for an operator reading the table."}
+    {"key": "lambda/shared/document_share.py::revoked_by", "reason": "Audit trail on a turned-off review link (the row is kept with revoked = true): who turned it off, for an operator reading the table."},
+    {"key": "lambda/shared/workspace_deletes.py::dropped_messages", "reason": "Audit row of a cancelled workspace delete (AUDIT#workspace-deletes, under the audit-row guard): why the messages dropped while the workspace was deleting are not counted, and where to find them, for an operator reading the trail."}
   ]
 }

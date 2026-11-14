@@ -1,8 +1,20 @@
 {
   "entries": [
     {
-      "key": "ACCESS_SK_PREFIX|SUBSCRIBER_SK_PREFIX|USER_PK_PREFIX::*",
-      "reason": "three unrelated keys that happen to start with the user namespace: a conversations partition, a briefing subscriber row and a category-access row"
+      "key": "ACCESS_SK_PREFIX|SUBSCRIBER_SK_PREFIX|USER_PARTITION_PREFIX|USER_PK_PREFIX::*",
+      "reason": "four unrelated keys that happen to start with the user namespace: a conversations partition, a briefing subscriber row, a category-access row and a member's voc-workspaces inverse row (the workspace layer builds it to delete it, shared/ws_repo.py WorkspaceControlRows)"
+    },
+    {
+      "key": "COMPLETED::lambda/shared/assist_jobs.py,lambda/shared/workspace_deletes.py",
+      "reason": "assist jobs and workspace deletes are separate job kinds with their own lifecycles; equal status words are not one contract"
+    },
+    {
+      "key": "FAILED::lambda/shared/assist_jobs.py,lambda/shared/workspace_deletes.py",
+      "reason": "assist jobs and workspace deletes are separate job kinds with their own lifecycles"
+    },
+    {
+      "key": "RUNNING::lambda/shared/assist_jobs.py,lambda/shared/workspace_deletes.py",
+      "reason": "assist jobs and workspace deletes are separate job kinds with their own lifecycles"
     },
     {
       "key": "BEDROCK_MODEL_ID|_SONNET55::*",

@@ -403,6 +403,30 @@ What it keeps:
 | Logs, run records and circuit-breaker rows of the source | Operational rows, not customer feedback |
 | The tombstones and the audit row | The record of the deletion (no content) |
 
+### Deleting a whole workspace (not released yet)
+
+A workspace's hard delete ([Multi-workspace](multi-workspace.md#export-and-delete), steps 3 and 4; decision 17)
+is the data controller's own request, not an erasure: a workspace admin types its slug and states the basis, which is
+checked like an erasure's `legal_basis` (no email, phone number or similar: it is kept for good). It is the one
+other job that deletes feedback and raw items (`voc-workspace-delete`), and only that workspace's:
+
+- **It and an erasure never run together in one workspace.** The request is refused (409) while the workspace's own
+  erasure runs, or while a deployment erasure holds the workspace's exports; it takes the workspace's erasure lock, and
+  once the workspace reads `deleting` the erasure routes answer its one 404.
+- **The same tombstones.** Each item gets `AUDIT#tombstone#<source>` / `<ws>#<feedback_id>` before it is deleted,
+  the key an erasure writes for the same item: a tombstone already there (an erasure's) is kept as it was. Each memory
+  gets `AUDIT#tombstone#memory` / `<ws>#<memory_id>` (an erasure does not reach memory yet). None holds content,
+  a member's sub, a session or a conversation id; the job's `mode` is `workspace_delete`, with the request's basis.
+- **What it removes:** every row of the workspace it can list without a Scan (its feedback, counters, run, breaker and
+  log rows, config lists and history, forms, import runs, erasure and export jobs, watermarks, memory), every version
+  of every object under `ws/<ws>/` (raw, Silver, exports, imports' originals included), its credentials parameters and
+  its control-plane rows.
+- **What stays:** the workspace's audit trail (`AUDIT#WS#<ws>`), the tombstones, the platform's
+  `AUDIT#workspace-deletes` rows (who, when, the basis, counts), the job row, and the slug guard (marked deleted, so the
+  slug is never reused); the processing claims in `voc-idempotency` until their TTL, and backups and logs until they
+  expire (TENETS.md D5's gaps). A cancel during its 21-minute fence brings the workspace back; the messages dropped
+  meanwhile are lost.
+
 ### What erasure does not reach
 
 Retention and erasure delete **feedback items, Radar reviews, their own per-item raw

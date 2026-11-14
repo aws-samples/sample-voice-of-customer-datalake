@@ -677,7 +677,7 @@ class TestTheMultiItemCalls:
 
     def test_the_batch_writer_refuses_a_delete(self):
         backing = _backing()
-        with (pytest.raises(OutOfScopeError, match='batch delete is not part of the workspace layer yet'),
+        with (pytest.raises(OutOfScopeError, match='the batch writer only puts'),
               ws_table(A, backing).batch_writer() as writer):
             writer.delete_item(Key=_key(A, 'f1'))
         assert backing.batch_writer.return_value.delete_item.call_count == 0

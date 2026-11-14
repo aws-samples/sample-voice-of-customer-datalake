@@ -1,5 +1,6 @@
 /**
- * Pins the MemorySize of EVERY AWS::Lambda::Function the default synth emits,
+ * Pins the MemorySize of EVERY AWS::Lambda::Function the default synth emits (with the hard delete's job, which
+ * `-c workspaceHardDelete=true` adds),
  * against the one sizing-policy table (lib/sizing/policy.ts, docs/lambda-sizing.md).
  *
  * Why a pin table. Lambda allocates CPU in proportion to memory (1,769 MB = one
@@ -71,7 +72,8 @@ function nameStem(functionName: unknown): string | undefined {
 /** The Power Tuning records the owner has moved off (history only). */
 const SUPERSEDED_PINS = Object.entries(POWER_TUNED).filter(([, r]) => r.superseded !== undefined);
 
-const synthed = synthApp();
+// The hard delete on (-c workspaceHardDelete=true): its job is pinned too, for the deployments that build it.
+const synthed = synthApp({ workspaceHardDelete: true });
 afterAll(cleanupAssemblyDirs);
 
 interface SynthesizedFunction {

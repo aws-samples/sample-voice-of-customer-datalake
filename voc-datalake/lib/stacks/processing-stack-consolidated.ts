@@ -24,6 +24,8 @@ import { AgentRuntime } from './agent-runtime';
 import { createBriefingWorker } from './briefing-worker';
 import { createRadarScanWorker } from './radar-scan-worker';
 import { createRetentionWorker } from './retention-worker';
+import { workspaceHardDeleteEnabled } from '../utils/workspace-hard-delete';
+import { createWorkspaceDeleteWorker } from './workspace-delete-worker';
 import { createWorkspaceExportWorker } from './workspace-export-worker';
 import { createResearchStateMachine } from './processing-research-workflow';
 import { grantSharedMemoryRecall } from '../utils/memory-recall-grant';
@@ -35,6 +37,7 @@ import { grantRealtimePublish, type RealtimePublishing } from '../utils/realtime
 import { FEATURE_REQUESTS_TABLE_ENV, grantFeatureRequestEvidenceRead } from '../utils/feature-request-evidence-grant';
 import { createAggregatorRole, createProcessorRole, grantTextAnalysis } from './processing-roles';
 import { loadPlugins, pluginIdsWithCapability } from '../plugin-loader';
+import { WORKSPACE_PARAMETER_BASE_PATH } from '../utils/workspace-secrets';
 
 /**
  * The processor env var naming the sources whose records are refreshed in place
@@ -66,6 +69,8 @@ export interface VocProcessingStackProps extends VocStackProps {
   conversationsTable: dynamodb.Table;
   /** voc-workspaces: the retention worker removes the email and name from membership rows on an erasure by email. */
   workspacesTable: dynamodb.Table;
+  /** voc-watermarks: a workspace's hard delete removes its ingestion watermarks (listed in voc-aggregates). */
+  watermarksTable: dynamodb.Table;
   /** The agent conductor re-checks a plan's approver in Cognito (docs/assistant-plan-mode.md). */
   userPool: cognito.IUserPool;
   processingQueue: sqs.Queue;
@@ -326,6 +331,26 @@ export class VocProcessingStack extends VocStack {
     });
     // An export's end reaches the admin who started it (lambda/jobs/workspace_export/handler.py, docs/realtime.md).
     grantRealtimePublish(props.realtime, 'jobs', [workspaceExportWorker]);
+
+    // ============================================
+    // WORKSPACE HARD DELETE (docs/multi-workspace.md "Export and delete", steps 3 and 4): built only with
+    // -c workspaceHardDelete=true (lib/utils/workspace-hard-delete.ts; off until the per-person export ships)
+    // ============================================
+    if (workspaceHardDeleteEnabled(this)) {
+      createWorkspaceDeleteWorker(this, 'WorkspaceDeleteWorker', {
+        uniqueName: (baseName) => this.uniqueName(baseName),
+        parameterBasePath: this.prefixed(WORKSPACE_PARAMETER_BASE_PATH),
+        layer: processingLayer,
+        kmsKey,
+        feedbackTable,
+        aggregatesTable,
+        workspacesTable: props.workspacesTable,
+        memoryTable: props.memoryTable,
+        watermarksTable: props.watermarksTable,
+        rawDataBucket,
+        pluginIds: loadPlugins(path.join(__dirname, '../../plugins')).map((plugin) => plugin.id),
+      });
+    }
 
     // ============================================
     // MEMORY + AUTONOMOUS AGENTS

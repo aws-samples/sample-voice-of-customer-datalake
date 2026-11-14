@@ -24,25 +24,16 @@ from jobs.retention import exports
 from jobs.retention.runs import MODE_ERASE, note_erased_source, note_review_file
 from shared import retention
 from shared.legal_basis import legal_basis_or_legacy
-from shared.retention import FEEDBACK_SK_PREFIX, SOURCE_FIELD, STORE_FEEDBACK, STORE_RADAR, WORKSPACE_ITEM_COUNTER
+from shared.retention import SOURCE_FIELD, STORE_FEEDBACK, STORE_RADAR, WORKSPACE_ITEM_COUNTER, item_source
+from shared.retention import item_feedback_id as _feedback_id
 from shared.timestamps import now_iso
-from shared.ws_repo import WorkspaceScope
+from shared.ws_repo import TOMBSTONE_PARTITION_PREFIX, WorkspaceScope
 
-TOMBSTONE_PK_PREFIX: Final = 'AUDIT#tombstone#'
-_UNKNOWN_SOURCE: Final = 'unknown'
-
-
-def item_source(item: Mapping[str, Any]) -> str:
-    """The source an item was ingested from (its ``source_platform``)."""
-    source = item.get('source_platform')
-    return source if isinstance(source, str) and source else _UNKNOWN_SOURCE
+#: The layer's spelling (shared/ws_repo.py, whose ``workspace_tombstone_key`` the hard delete writes with: the same
+#: key for the same item, so one of the two tombstones is kept, never both).
+TOMBSTONE_PK_PREFIX: Final = TOMBSTONE_PARTITION_PREFIX
 
 
-def _feedback_id(item: Mapping[str, Any]) -> str:
-    feedback_id = item.get('feedback_id')
-    if isinstance(feedback_id, str) and feedback_id:
-        return feedback_id
-    return str(item['sk']).removeprefix(FEEDBACK_SK_PREFIX)
 
 
 def tombstone_key(source: str, feedback_id: str, scope: WorkspaceScope | None = None) -> dict[str, str]:

@@ -328,7 +328,7 @@ def test_an_export_that_completes_between_the_read_and_the_mark_is_still_marked(
 def test_an_erasure_holds_the_lock_whoever_held_it_and_frees_only_its_own(tables):
     view, aggregates, workspaces = tables
     acquire_lock(view, PARTITION, 'ex_01JC3Q8ZK6V7W9X2Y4A5B6C7D8', NOW, _held())
-    export_jobs.hold_for_erasure(view, 'erasure-run1', NOW)
+    export_jobs.hold_for_erasure(view, 'erasure-run1', NOW, workspace_active=True)
     assert (_lock(aggregates)['job_id'], 'released_at' in _lock(aggregates)) == ('erasure-run1', False)
     with pytest.raises(export_jobs.ExportRunning):  # a start during the sweep: the usual 409
         export_jobs.start_export(view, workspaces, CONTEXT, 'sub-ada', MagicMock(), NOW)
@@ -337,5 +337,25 @@ def test_an_erasure_holds_the_lock_whoever_held_it_and_frees_only_its_own(tables
     export_jobs.release_after_erasure(view, 'erasure-run1', NOW)
     export_jobs.start_export(view, workspaces, CONTEXT, 'sub-ada', MagicMock(), NOW)
     # A released lock taken again by a later pass (a hand-over) is held again.
-    export_jobs.hold_for_erasure(view, 'erasure-run2', NOW)
+    export_jobs.hold_for_erasure(view, 'erasure-run2', NOW, workspace_active=True)
     assert 'released_at' not in _lock(aggregates)
+
+
+@pytest.mark.parametrize('active', [True, False])
+def test_an_erasure_leaves_the_lock_to_a_workspace_delete_that_holds_it(tables, active):
+    """The delete keeps the export lock to its last step (its sweeps rely on it): an erasure meeting it there
+    writes nothing."""
+    view, aggregates, _ = tables
+    acquire_lock(view, PARTITION, f'{export_jobs.DELETE_HOLDER_PREFIX}{view.scope.ws}', NOW, _held())
+    before = _lock(aggregates)
+    export_jobs.hold_for_erasure(view, 'erasure-run1', NOW, workspace_active=active)
+    assert _lock(aggregates) == before
+
+
+def test_an_erasure_creates_no_lock_row_for_a_workspace_that_is_not_active(tables):
+    """Deleting or deleted: a lock made after the delete removed its own would outlive the workspace."""
+    view, aggregates, _ = tables
+    export_jobs.hold_for_erasure(view, 'erasure-run1', NOW, workspace_active=False)
+    assert 'Item' not in aggregates.get_item(Key=export_jobs.export_lock_key(view.scope))
+    export_jobs.hold_for_erasure(view, 'erasure-run1', NOW, workspace_active=True)
+    assert _lock(aggregates)['job_id'] == 'erasure-run1'

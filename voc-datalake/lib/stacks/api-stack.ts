@@ -51,6 +51,7 @@ import { grantRealtimePublish } from '../utils/realtime';
 import { addApiRoutes } from './api-routes';
 import { createRadarLambda } from './api-radar-lambda';
 import { createParticipantsLambda } from './api-participants-lambda';
+import { grantWorkspaceDeleteRoutes } from './api-workspace-delete';
 import { grantWorkspaceExportRoutes } from './api-workspace-export';
 import { createWorkspacesLambda } from './api-workspaces-lambda';
 import { emailSenderOf } from '../utils/email-sender';
@@ -276,6 +277,8 @@ export class VocApiStack extends VocStack {
     // A workspace's export (docs/multi-workspace.md "Export and delete"): its routes' grants; the job is
     // VocProcessingStack's (workspace-export-worker.ts), invoked by name.
     grantWorkspaceExportRoutes(ctx, workspacesLambda);
+    // Its hard delete: the request, the cancel and the resume (the job: workspace-delete-worker.ts, by name).
+    grantWorkspaceDeleteRoutes(ctx, workspacesLambda);
     const assistant = createAssistantLambdas(ctx, {
       projectsLambda: projects.projectsLambda,
       metricsLambda: data.metricsLambda,
