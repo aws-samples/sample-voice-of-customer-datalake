@@ -13,15 +13,15 @@ One reference, one page, one browser session of at most ``SESSION_SECONDS``:
 5b. one more evaluate lists the page's numbered LOGO CANDIDATES (``page_logo_candidates``: images, inline SVGs,
    CSS backgrounds and text logos near the top, open shadow roots included), and the header is photographed with
    each candidate outlined and numbered (``page_logo.marked_header``);
+5c. ONE small vision call on the enrichment surface names the candidate that is the logo (``logo_pick``, on the
+   untouched page; the scoring rules decide when it cannot answer, then the touch icon; ``og:image`` never);
 6. THREE screenshots for the ONE vision call (``page_shots``): the page above the fold, the header region
    and the footer region, each sized so the model reads it without resizing (PNG, or JPEG when large);
-6b. ONE small vision call on the enrichment surface names the candidate that is the logo (``logo_pick``; it runs BEFORE
-   step 6, on the untouched page; the scoring rules decide when it cannot answer, then the touch icon; ``og:image``
-   never). After step 6 the picked element is
+6b. the picked element is
    photographed ALONE in the page tab — everything else hidden, a transparent background, trimmed to its pixels in
    a fresh ``about:blank`` tab, a light logo drawn on its dark header colour (``logo_isolate``); beside it a
-   sanitised SVG copy when the element is an inline ``<svg>`` or an ``.svg`` file (``page_logo``). When it cannot be
-   photographed alone, an ``<img>``'s own file is read instead (an SVG drawn by ``logo_render``, a raster
+   sanitised SVG copy when the element is an inline ``<svg>`` or an ``<img>`` of an ``.svg`` file (``page_logo``). When it cannot be
+   photographed alone, an ``<img>``'s own file is read instead (an SVG downloaded, sanitised and drawn by ``logo_render``, a raster
    downloaded by ``raster_logo``); no candidate at all means no logo, never a guess;
 6c. the page's icons (favicons, touch icons, manifest icons) are
    downloaded through the SSRF-guarded fetch, within ``ICONS_BUDGET_SECONDS`` (``page_icons``,

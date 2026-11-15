@@ -201,7 +201,8 @@ image, touch icon, `og:image` — was right on 28 and saved a photo, a flag or a
    candidate (a share card). The answer is untrusted and re-checked in Python.
 2. **The pick** (`logo_pick.py`): the header photographed with every candidate outlined in pink and numbered (the
    marks in a closed shadow root, removed after the photo), plus the candidates' list, both fenced as `<reference>`
-   DATA, go to ONE Converse call on the **enrichment** surface (about 2,500 input tokens, 3 s). The answer may only
+   DATA, go to ONE Converse call on the **enrichment** surface (about 2,500 input tokens; measured at 3 to 6 s, not a bound: it runs within the 120 s session, and a failed call
+   falls back to the rules). The answer may only
    NAME a listed number (or a listed `<head>` icon kind, or no logo): text a page plants in an `alt` or a class can
    at most make it pick another of the page's own elements, never a URL. When the call fails or answers anything
    else, scoring rules decide (home link, logo wording, in the header, near the top, logo-shaped, never a glyph icon
