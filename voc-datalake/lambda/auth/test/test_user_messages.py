@@ -291,4 +291,3 @@ def test_the_settings_table_is_built_with_the_short_timeouts(monkeypatch):
     monkeypatch.setattr(user_messages.boto3, 'resource', fake_resource)
     assert user_messages._aggregates_table() == 'aggregates'
     assert built == [('dynamodb', {'config': user_messages.logo_signing.AWS_CALL_CONFIG})]
-

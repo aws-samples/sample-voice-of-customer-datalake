@@ -89,7 +89,8 @@ def test_a_signature_for_another_object_does_not_verify(signing):
 @pytest.mark.usefixtures('signing')
 @pytest.mark.parametrize('key', [
     None, '', 'company-context/design/logo_preview_0123456789ab.png', 'company-context/design/logo_0123.png',
-    'avatars/p/x.png', 'company-context/design/logo_0123456789ab.svg', '../company-context/design/logo_0123456789ab.png',
+    'avatars/p/x.png', 'company-context/design/logo_0123456789ab.svg',
+    '../company-context/design/logo_0123456789ab.png',
 ])
 def test_signs_nothing_but_an_uploaded_logo_key(key):
     assert logo_signing.signed_logo_url(key, SITE, 7, now=NOW) is None
@@ -124,7 +125,8 @@ def test_fails_closed_for_a_key_that_is_not_rsa(monkeypatch):
     monkeypatch.setattr(logo_signing, '_secrets', None)
     with mock_aws():
         arn = boto3.client('secretsmanager', region_name='us-east-1').create_secret(
-            Name='cdn-signing', SecretString=json.dumps({'privateKeyPem': _pem(ec.generate_private_key(ec.SECP256R1()))})
+            Name='cdn-signing',
+            SecretString=json.dumps({'privateKeyPem': _pem(ec.generate_private_key(ec.SECP256R1()))}),
         )['ARN']
         monkeypatch.setenv('CDN_SIGNING_SECRET_ARN', arn)
         monkeypatch.setenv('CDN_SIGNING_KEY_PAIR_ID', 'K2EXAMPLE')
@@ -167,6 +169,10 @@ def test_the_secret_client_is_built_with_the_short_timeouts(monkeypatch):
 
 
 @pytest.mark.usefixtures('signing')
-@pytest.mark.parametrize('site', ['https:///x', 'https://user:pw@d111.cloudfront.net', 'https://d111.cloudfront.net:8443'])
+@pytest.mark.parametrize('site', [
+    'https:///x', 'https://user:pw@d111.cloudfront.net', 'https://d111.cloudfront.net:8443',
+    # Ports urlsplit cannot parse: `.port` raises ValueError, which must cost only the logo.
+    'https://d111.cloudfront.net:99999', 'https://d111.cloudfront.net:abc', 'https://[::1',
+])
 def test_refuses_a_site_setting_that_is_not_a_plain_origin(site):
     assert logo_signing.signed_logo_url(KEY, site, 7, now=NOW) is None
