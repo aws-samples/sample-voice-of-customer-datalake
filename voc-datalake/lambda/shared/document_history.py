@@ -24,8 +24,8 @@ inside one request; a second tab that loaded the document earlier used to save
 straight over the first tab's edit (it became a version, but silently). An edit may
 carry ``expected_revision`` — the revision it loaded (unmanaged: ``revision``, unset
 = 1; managed: the ``version`` of the series head it edited) — and is refused with a
-409 when the document moved on since. Absent, there is no check: the assistant's and
-MCP's ``update_document`` send none, exactly as before.
+409 when the document moved on since. Absent, there is no check: the assistant's
+``update_document`` and MCP's ``documents_update`` send none, exactly as before.
 
 **Per workspace** (plumbing since 7.27.00: no route passes one yet, docs/multi-workspace.md, the project plan 3b):
 every operation takes ``workspace``. Without one the requests are exactly the deployment's; in one, the series is
@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Mapping
 from decimal import Decimal
 from typing import Any
 
@@ -47,9 +48,11 @@ from shared.document_versions import (
     normalize_document_versions,
     normalized_base_title,
     persist_versioned_document,
+    series_head_version,
     split_versioned_title,
 )
 from shared.exceptions import ConflictError, NotFoundError, ValidationError
+from shared.model_config import model_label
 from shared.project_keys import document_revision_key, document_revisions_prefix, version_partition_key
 from shared.project_tables import iter_project_rows, iter_version_rows
 from shared.project_writes import NEW_ROW_CONDITION, projects_table_name, transact_project_writes
@@ -65,6 +68,9 @@ UNMANAGED_VERSION_RE = re.compile(r'^r([1-9]\d{0,5})\Z')
 
 EDIT_KIND_EDIT = 'edit'
 EDIT_KIND_RESTORE = 'restore'
+# "Revise from comments" applied for an AI-driven person (shared/document_revision.py), or a
+# person's save of its proposal once the pass is checked (verify_saved_proposal).
+EDIT_KIND_REVISE = 'revise'
 # One wording for both kinds of document (the managed series check lives in document_versions).
 STALE_DOCUMENT_MESSAGE = STALE_SERIES_MESSAGE
 
@@ -73,7 +79,7 @@ STALE_DOCUMENT_MESSAGE = STALE_SERIES_MESSAGE
 # (content, timestamps, edit_kind and edited_from_id are always set afresh.)
 _ROW_IDENTITY_FIELDS = frozenset({
     'pk', 'sk', 'document_id', 'title', 'base_title', 'version', 'version_allocation_id',
-    'restored_from_id', 'restored_from_version',
+    'restored_from_id', 'restored_from_version', 'edited_by', 'revise_job_id', 'llm_metadata',
 })
 
 
@@ -87,6 +93,15 @@ def validated_edit_id(raw: object, content: str) -> str:
         return hashlib.sha256(content.encode()).hexdigest()[:32]
     if not isinstance(raw, str) or not OPAQUE_ID_RE.fullmatch(raw):
         raise ValidationError('edit_id must be 1-64 letters, digits, "-" or "_"')
+    return raw
+
+
+def validated_revise_job_id(raw: object) -> str | None:
+    """A save's ``revise_job_id`` (None when absent): an opaque id, checked against the job by the caller."""
+    if raw is None:
+        return None
+    if not isinstance(raw, str) or not OPAQUE_ID_RE.fullmatch(raw):
+        raise ValidationError('revise_job_id must be the job id of a Revise from comments pass')
     return raw
 
 
@@ -162,7 +177,17 @@ def _managed_version_view(row: dict, *, current: bool) -> dict:
         'version': row['version'], 'title': row.get('title'),
         'content': row.get('content') or '', 'created_at': row.get('created_at'), 'current': current,
         'edit_kind': row.get('edit_kind'), 'restored_from_version': row.get('restored_from_version'),
+        'llm_metadata': _llm_metadata_view(row.get('llm_metadata')),
     }
+
+
+def _llm_metadata_view(stored: object) -> dict | None:
+    """A revised version's ``llm_metadata`` (``{model, prompt_version}``) plus the model's display label
+    (``model_label``: the allowlist's, None for a model no longer on it); None for a version no AI wrote."""
+    if not isinstance(stored, Mapping) or not isinstance(stored.get('model'), str):
+        return None
+    return {'model': stored['model'], 'prompt_version': stored.get('prompt_version'),
+            'model_label': model_label(stored['model'])}
 
 
 # ── Unmanaged revisions ──────────────────────────────────────────────────────
@@ -235,21 +260,43 @@ def _unmanaged_version_view(row: dict, revision: int, *, current: bool, created_
 
 # ── Public operations ────────────────────────────────────────────────────────
 
+def saves_nothing(document: Mapping[str, Any], body: dict, title: str | None = None) -> bool:
+    """``body`` (with ``title``, as for ``edit_document``) leaves the content and the title as stored:
+    ``edit_document``'s no-op, which a caller's own checks of the save run after."""
+    content = _content_of(body, dict(document))
+    new_title = title if title is not None else str(document.get('title') or '')
+    return content == (document.get('content') or '') and new_title == (document.get('title') or '')
+
+
 def edit_document(table: Any, project_id: str, document: dict, body: dict, *, now: str,
-                  title: str | None = None, workspace: WorkspaceScope | None = None) -> dict:
+                  title: str | None = None, revise: Mapping[str, Any] | None = None,
+                  workspace: WorkspaceScope | None = None) -> dict:
     """Apply an edit as a new version. ``title`` is the new title of an UNMANAGED document.
 
     ``body['expected_revision']`` (optional) is the revision the caller loaded; a
     document that moved on since is a ConflictError (409), never a silent overwrite.
     Checked after the no-change return: an edit that saves nothing clobbers nothing.
     ``workspace``: the project's scope (``document`` is a row of it).
+
+    ``revise`` (``{edited_by, revise_job_id, llm_metadata?}``, verified by the caller first:
+    ``shared.document_revision.verify_saved_proposal``) is a person saving the "Revise from
+    comments" proposal they accepted: a PR/FAQ / PRD only, recorded like the applied pass
+    (``edit_kind`` ``revise``, ``edited_by`` the person's ``{sub, kind}``) plus the pass's job id and,
+    when its result names them, the pass's model and prompt version (``llm_metadata``).
     """
     expected = validated_expected_revision(body.get('expected_revision'))
+    if revise is not None:
+        _revised_type(document)
     content = _content_of(body, document)
     new_title = title if title is not None else str(document.get('title') or '')
-    if content == (document.get('content') or '') and new_title == (document.get('title') or ''):
+    if saves_nothing(document, body, title):
         return {'success': True, 'unchanged': True, 'document': document}
-    provenance = {'edit_kind': EDIT_KIND_EDIT}
+    provenance: dict[str, Any] = {'edit_kind': EDIT_KIND_EDIT}
+    if revise is not None:
+        provenance = {'edit_kind': EDIT_KIND_REVISE, 'edited_by': dict(revise['edited_by']),
+                      'revise_job_id': str(revise['revise_job_id'])}
+        if isinstance(revise.get('llm_metadata'), Mapping):
+            provenance['llm_metadata'] = dict(revise['llm_metadata'])
     document_type = managed_document_type(document)
     if document_type is not None:
         allocation_id = f"edit:{document['document_id']}:{validated_edit_id(body.get('edit_id'), content)}"
@@ -294,20 +341,30 @@ def restore_document_version(table: Any, project_id: str, document: dict, versio
     project when given."""
     document_type = managed_document_type(document)
     if document_type == 'prototype':
-        raise ValidationError('Prototypes are restored through the prototype revision workflow')
+        # The restore route sends a prototype to shared/prototype_versions.restore_prototype_version first
+        # (its HTML is in S3, not in content); this guards any other caller.
+        raise ValidationError('Prototypes are restored through the prototype restore (Back to vN)')
     if document_type is not None:
         return _restore_managed(table, project_id, document_type, document, version_id, body, now=now,
                                 workspace=workspace)
     return _restore_unmanaged(table, project_id, document, version_id, now=now, workspace=workspace)
 
 
-def _restore_managed(table: Any, project_id: str, document_type: str, document: dict, version_id: str,
-                     body: dict, *, now: str, workspace: WorkspaceScope | None) -> dict:
-    series = _series_documents(table, project_id, document, document_type, workspace=workspace)
+def restore_rows(table: Any, project_id: str, document: dict, version_id: str, *,
+                 workspace: WorkspaceScope | None = None) -> tuple[dict, dict]:
+    """``(the version to restore, the series head)`` of a managed ``document``'s series; 404 when
+    ``version_id`` is not a version of it (a prose restore here, a prototype's in shared/prototype_versions.py).
+    ``workspace``: the project's scope (its own partition only)."""
+    series = series_versions(table, project_id, document, workspace=workspace)
     source = next((row for row in series if row.get('document_id') == version_id), None)
     if source is None:
         raise NotFoundError('Version not found')
-    latest = series[0]
+    return source, series[0]
+
+
+def _restore_managed(table: Any, project_id: str, document_type: str, document: dict, version_id: str,
+                     body: dict, *, now: str, workspace: WorkspaceScope | None) -> dict:
+    source, latest = restore_rows(table, project_id, document, version_id, workspace=workspace)
     content = str(source.get('content') or '')
     if content == (latest.get('content') or ''):
         return {'success': True, 'unchanged': True, 'document': latest}
@@ -319,6 +376,45 @@ def _restore_managed(table: Any, project_id: str, document_type: str, document: 
                                             'restored_from_version': source['version']},
                                 workspace=workspace)
     return {'success': True, 'document': item}
+
+
+def _revised_type(document: dict) -> str:
+    document_type = managed_document_type(document)
+    if document_type is None or document_type == 'prototype':
+        raise ValidationError('Only a PR/FAQ or PRD is revised from comments')
+    return document_type
+
+
+def _revise_allocation_id(document: dict, revise_id: str) -> str:
+    return f"revise:{document['document_id']}:{revise_id}"
+
+
+def require_series_head(table: Any, project_id: str, document: dict) -> None:
+    """The stale-series ConflictError (409) when the PR/FAQ / PRD ``document`` is no longer its series' head:
+    a version was saved since it was read. ``revise_document`` checks it again in its write. The deployment's
+    projects only: its one caller, Revise from comments (shared/document_revision.py), is not per workspace yet."""
+    document_type = _revised_type(document)
+    if series_head_version(table, project_id, document_type, series_base(document)) != int(document['version']):
+        raise ConflictError(STALE_SERIES_MESSAGE)
+
+
+def revise_document(table: Any, project_id: str, document: dict, content: str, *, revise_id: str, now: str,
+                    actor: dict[str, str], llm_metadata: Mapping[str, str]) -> dict:
+    """The revised ``content`` of a PR/FAQ / PRD as the NEXT version of its series (never an overwrite).
+
+    Conditioned on ``document`` still being the series head (409 otherwise: someone saved since the
+    pass read it); ``revise_id`` is the version's allocation id (the write is idempotent). The row
+    records who asked (``edited_by``: the starter's ``{sub, kind}``), ``edit_kind`` ``revise`` and
+    what wrote it (``llm_metadata``: ``{model, prompt_version}``, shared.document_revision.pass_llm_metadata).
+    The deployment's projects only, as ``require_series_head``: Revise from comments is not per workspace yet.
+    """
+    document_type = _revised_type(document)
+    provenance = {'edit_kind': EDIT_KIND_REVISE, 'edited_from_id': document['document_id'], 'edited_by': dict(actor),
+                  'llm_metadata': dict(llm_metadata)}
+    return _new_managed_version(table, project_id, document_type, document, content,
+                                allocation_id=_revise_allocation_id(document, revise_id), now=now,
+                                provenance=provenance, expected_last_version=int(document['version']),
+                                workspace=None)
 
 
 def _restore_unmanaged(table: Any, project_id: str, document: dict, version_id: str, *, now: str,

@@ -3,6 +3,7 @@
  * first-load group claimed before its lazy twin, and a group matches only its own packages' folders.
  */
 import { describe, expect, it } from 'vitest'
+import VENDOR_CHUNKS from '../../vendorChunks.json' with { type: 'json' }
 import { vendorChunkGroups } from '../../vendorChunkGroups.ts'
 
 const CHUNKS = { 'vendor-react': ['react', 'react-dom'], 'vendor-query': ['@tanstack/react-query'] }
@@ -40,5 +41,40 @@ describe('vendorChunkGroups', () => {
 
   it('returns no groups for an empty map', () => {
     expect(vendorChunkGroups({})).toStrictEqual([])
+  })
+
+  it('gives a folder named inside a package to its own entry only, in both tiers', () => {
+    const groups = vendorChunkGroups({ 'vendor-editor': ['@tiptap/react', 'react-dom'], 'vendor-editor-menus': ['@tiptap/react/dist/menus', 'react-dom/server'] })
+    const claim = (moduleId: string) => groups.filter((g) => g.test(moduleId)).map((g) => `${g.name}:${String(g.priority)}`)
+
+    expect(claim('/app/node_modules/@tiptap/react/dist/menus/index.js')).toStrictEqual(['vendor-editor-menus:1', 'vendor-editor-menus:0'])
+    expect(claim('/app/node_modules/@tiptap/react/dist/index.js')).toStrictEqual(['vendor-editor:1', 'vendor-editor:0'])
+    expect(claim('/app/node_modules/react-dom/server.js')).toStrictEqual(['vendor-editor:1', 'vendor-editor:0'])
+    expect(claim('/app/node_modules/react-dom/server/index.js')).toStrictEqual(['vendor-editor-menus:1', 'vendor-editor-menus:0'])
+  })
+})
+
+describe('the editor chunks (vendorChunks.json)', () => {
+  const groups = vendorChunkGroups(VENDOR_CHUNKS)
+  const chunkOf = (moduleId: string) => groups.find((g) => g.test(moduleId))?.name
+
+  it.each<[moduleId: string, chunk: string]>([
+    // What the text needs: the editor core and the schema's extensions.
+    ['/app/node_modules/@tiptap/core/dist/index.js', 'vendor-editor'],
+    ['/app/node_modules/@tiptap/react/dist/index.js', 'vendor-editor'],
+    ['/app/node_modules/@tiptap/extension-table/dist/index.js', 'vendor-editor'],
+    // What loads after it (editor/CanvasChrome.tsx): the format bar's menus, the block handle, their positioning.
+    ['/app/node_modules/@tiptap/react/dist/menus/index.js', 'vendor-editor-menus'],
+    ['/app/node_modules/@tiptap/extension-bubble-menu/dist/index.js', 'vendor-editor-menus'],
+    ['/app/node_modules/@floating-ui/dom/dist/floating-ui.dom.mjs', 'vendor-editor-menus'],
+    ['/app/node_modules/@tiptap/extension-drag-handle/dist/index.js', 'vendor-editor-menus'],
+    ['/app/node_modules/@tiptap/extension-drag-handle-react/dist/index.js', 'vendor-editor-menus'],
+  ])('puts %s in %s', (moduleId, chunk) => {
+    expect(chunkOf(moduleId)).toBe(chunk)
+  })
+
+  it('lists the editor core before its menus, so the menus never capture it as a dependency', () => {
+    const names = Object.keys(VENDOR_CHUNKS)
+    expect(names.indexOf('vendor-editor')).toBeLessThan(names.indexOf('vendor-editor-menus'))
   })
 })

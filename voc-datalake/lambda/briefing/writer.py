@@ -31,6 +31,7 @@ from shared.grounding import GROUNDING_GUIDANCE
 from shared.logging import logger
 from shared.prompt_safety import data_block
 from shared.prompts import get_response_language_instruction
+from shared.text_clip import stripped_head as _clip
 
 SURFACE: Final = 'utility'
 MAX_TITLE_CHARS: Final = 120
@@ -88,10 +89,6 @@ class Words:
     model_calls: int = 0
     failed: bool = False
     extra: list[BriefCard] = field(default_factory=list)
-
-
-def _clip(value: object, limit: int) -> str:
-    return value.strip()[:limit] if isinstance(value, str) else ''
 
 
 def parse_json_object(text: str) -> dict[str, Any]:

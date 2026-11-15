@@ -4,20 +4,13 @@
  * regeneration polls the library's job route.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fetchApi, resetFetchApi, routeFetchApi as route } from '@test/fetchApiRoutes'
+import { fetchApi, resetFetchApi, routeFetchApi as route, sentFetchApiBody as sent } from '@test/fetchApiRoutes'
 
 vi.mock('./client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 
 const { companyPersonasApi } = await import('./companyPersonasApi')
 
 const START = { success: true, job_id: 'job_1', status: 'running', message: 'started' }
-
-function sent(path: string, method: string): unknown {
-  const call = fetchApi.mock.calls.find(([endpoint, options]) => endpoint === path && (options?.method ?? 'GET') === method)
-  expect(call, `${method} ${path} was not called`).toBeDefined()
-  const body = call?.[1]?.body
-  return typeof body === 'string' ? JSON.parse(body) : undefined
-}
 
 beforeEach(() => {
   resetFetchApi()

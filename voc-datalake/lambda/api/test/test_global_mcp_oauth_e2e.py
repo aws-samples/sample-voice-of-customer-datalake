@@ -53,7 +53,7 @@ class TestSignedInClient:
         client = _client(oauth, signed_in)
 
         assert set(client.tool_names()) == READ_TOOLS | WRITE_TOOLS
-        is_error, listed = tool_payload(client.call('list_projects'))
+        is_error, listed = tool_payload(client.call('projects_list'))
         assert not is_error
         assert ALPHA in [p['project_id'] for p in listed['projects']]
         assert BETA not in [p['project_id'] for p in listed['projects']]
@@ -67,34 +67,34 @@ class TestSignedInClient:
 
     def test_every_tool_call_is_audited_on_the_grant(self, oauth):
         signed_in = oauth.sign_in('alice')
-        _client(oauth, signed_in).call('list_projects')
+        _client(oauth, signed_in).call('projects_list')
         grant_id = grants.grant_id(oauth.world.subs['alice'], signed_in.client_id)
         events = oauth.world.jobs.query(KeyConditionExpression='pk = :pk',
                                         ExpressionAttributeValues={':pk': gt.audit_pk(grant_id)})['Items']
-        assert [(e['tool'], e['outcome']) for e in events] == [('list_projects', 'ok')]
+        assert [(e['tool'], e['outcome']) for e in events] == [('projects_list', 'ok')]
 
     def test_a_read_consent_offers_read_tools_only_and_refuses_a_write(self, oauth):
         client = _client(oauth, oauth.sign_in('alice', scope='read'))
         assert set(client.tool_names()) == READ_TOOLS
-        is_error, message = tool_payload(client.call('create_document', {'project_id': ALPHA, 'title': 'x',
+        is_error, message = tool_payload(client.call('documents_create', {'project_id': ALPHA, 'title': 'x',
                                                                           'content': 'y'}))
         assert is_error
         assert 'read-only' in message
 
     def test_a_project_pin_confines_project_tools(self, oauth):
         client = _client(oauth, oauth.sign_in('alice', project_id=ALPHA))
-        is_error, message = tool_payload(client.call('get_project', {'project_id': 'proj_gamma'}))
+        is_error, message = tool_payload(client.call('projects_get', {'project_id': 'proj_gamma'}))
         assert is_error
         assert 'scoped to project' in message
 
     def test_run_agent_is_never_offered_to_a_non_admin(self, oauth):
-        assert 'run_agent' not in _client(oauth, oauth.sign_in('alice')).tool_names()
-        assert 'run_agent' in _client(oauth, oauth.sign_in('root')).tool_names()
+        assert 'agents_run' not in _client(oauth, oauth.sign_in('alice')).tool_names()
+        assert 'agents_run' in _client(oauth, oauth.sign_in('root')).tool_names()
 
     def test_a_demoted_admin_loses_run_agent_at_the_next_call(self, oauth):
         client = _client(oauth, oauth.sign_in('root'))
         oauth.world.cognito.demote('root')
-        is_error, message = tool_payload(client.call('run_agent', {'agent_id': oauth.world.agent_id}))
+        is_error, message = tool_payload(client.call('agents_run', {'agent_id': oauth.world.agent_id}))
         assert is_error
         assert 'administrator' in message
 

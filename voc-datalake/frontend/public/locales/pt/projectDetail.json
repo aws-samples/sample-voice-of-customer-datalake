@@ -16,10 +16,7 @@
     "create": "Criar",
     "createDocument": "Criar Documento",
     "creating": "Criando...",
-    "editDocument": "Editar Documento",
     "preview": "Visualizar",
-    "saveChanges": "Salvar Alterações",
-    "saving": "Salvando...",
     "titleLabel": "Título",
     "titlePlaceholder": "Título do documento..."
   },
@@ -43,7 +40,7 @@
       "companyContext": "Contexto da empresa",
       "designSystem": "Sistema de design da empresa",
       "companyLogo": "Logotipo da empresa",
-      "companyLogoLeftOut": "Logotipo da empresa omitido (mais de 1 MB ou ilegível)",
+      "companyLogoLeftOut": "Logotipo da empresa não utilizado",
       "roles": {
         "mergeInput": "Mesclado",
         "prototypePrd": "PRD de origem do protótipo",
@@ -56,8 +53,20 @@
       "visualsUsed_other": "{{count, number}} maquetes utilizadas",
       "visualsUsed_many": "{{count, number}} de visuais utilizados"
     },
-    "editDocument": "Editar documento",
     "newDocument": "Novo Documento",
+    "sections": {
+      "label": "Seções de documentos",
+      "prd": "PRD",
+      "prfaq": "PR/FAQ",
+      "prototypes": "Protótipos",
+      "documents": "Documentos",
+      "toggle_one": "{{name}}, {{count, number}} documento",
+      "toggle_other": "{{name}}, {{count, number}} documentos",
+      "new": "Novo",
+      "newPrd": "Novo PRD",
+      "newPrfaq": "Novo PR/FAQ",
+      "newPrototype": "Novo protótipo"
+    },
     "noDocuments": "Nenhum documento",
     "ordinal": "{{ordinal}} de {{total, number}}",
     "versions": {
@@ -66,6 +75,8 @@
       "label": "v{{n}}",
       "current": "Atual",
       "edited": "Editada",
+      "revised": "Revisada a partir dos comentários",
+      "revisedWith": "Revisada a partir dos comentários · {{model}}",
       "restoredFrom": "Restaurada de v{{n}}",
       "open": "Abrir",
       "openNamed": "Abrir {{label}}",
@@ -116,6 +127,9 @@
       "feedbackPlaceholder": "p. ex., Mude isto para a visão do painel de administração — mostre aprovações, gestão de usuários e métricas em vez das telas de usuário final.",
       "feedbackRebased": "Um documento a partir do qual este protótipo foi criado já não existe, por isso a revisão usará o mais recente desse tipo.",
       "feedbackSubmit": "Regenerar",
+      "backTo": "Voltar para v{{n}}",
+      "restoreThis": "Restaurar v{{n}}",
+      "backHint": "Salva v{{n}} novamente como a versão mais recente. Nada é excluído.",
       "feedbackTitle": "Dê feedback para regenerar este protótipo",
       "needsDocs": "Crie primeiro um PRD ou um PR/FAQ para habilitar a criação do protótipo",
       "previewLabel": "Prévia ao vivo",
@@ -130,7 +144,55 @@
       "visuals": "Maquetes visuais ({{total, number}})",
       "visualsFailed": "{{total, number}} com falha — envie novamente para usar",
       "visualsLimit": "No máximo {{max, number}} maquetes por build",
-      "visualsNotReady": "{{total, number}} ainda em processamento"
+      "visualsNotReady": "{{total, number}} ainda em processamento",
+      "draft": {
+        "heading": "Rascunho pronto: aplicado a uma pré-visualização, não salvo",
+        "previewHeading": "Pré-visualização do rascunho",
+        "previewLabel": "Pré-visualização",
+        "showDraft": "Rascunho",
+        "showCurrent": "Atual",
+        "instructionLabel": "Instrução:",
+        "summaryLabel": "O que mudou",
+        "stale": "O protótipo mudou desde este rascunho: peça de novo na versão mais recente",
+        "apply": "Aplicar como v{{n}}",
+        "discard": "Descartar",
+        "applyFailed": "Não foi possível aplicar o rascunho. Tente de novo.",
+        "discardFailed": "Não foi possível descartar o rascunho. Tente de novo.",
+        "noPreview": "A pré-visualização deste rascunho não está disponível aqui.",
+        "frameTitle": "{{title}} (rascunho)",
+        "outcomesLabel": "Por item",
+        "done": "Feito",
+        "notDone": "Não feito",
+        "outcomeItem": "{{screen}}: “{{text}}”",
+        "outcomePin": "Pin {{n}}",
+        "noScreen": "(sem tela)",
+        "withheld_one": "{{count, number}} pin selecionado retido (texto em forma de instrução): não enviado à IA",
+        "withheld_many": "{{count, number}} de pins selecionados retidos (texto em forma de instrução): não enviados à IA",
+        "withheld_other": "{{count, number}} pins selecionados retidos (texto em forma de instrução): não enviados à IA",
+        "incorporationResult": "Aplicado como v{{version}}: {{marked}}, {{replied}}.",
+        "markedCount_one": "{{count, number}} pin marcado como incorporado",
+        "markedCount_many": "{{count, number}} de pins marcados como incorporados",
+        "markedCount_other": "{{count, number}} pins marcados como incorporados",
+        "repliedCount_one": "{{count, number}} motivo da IA publicado como resposta",
+        "repliedCount_many": "{{count, number}} de motivos da IA publicados como respostas",
+        "repliedCount_other": "{{count, number}} motivos da IA publicados como respostas",
+        "notWritten": "Não escrito: {{place}}: {{reason}}",
+        "dismissResult": "Fechar",
+        "notWrittenReason": {
+          "pin_gone": "o pin já não existe",
+          "already_addressed": "já estava marcado como tratado",
+          "already_resolved": "já estava resolvido",
+          "thread_full": "sua conversa está cheia (50 respostas)",
+          "note_withheld": "o motivo parecia uma instrução, então não foi publicado",
+          "other": "não foi possível escrever",
+          "reopened": "uma pessoa editora reabriu desde então"
+        },
+        "incorporationResultNoVersion": "Aplicado: {{marked}}, {{replied}}."
+      },
+      "assistant": {
+        "button": "Editar com o assistente",
+        "prompt": "Altere este protótipo: "
+      }
     },
     "revision": {
       "feedback": "Comentários: {{feedback}}",
@@ -239,7 +301,8 @@
       "generateProductReport": "Geração de relatório do produto",
       "importPersona": "Importação de Persona",
       "mergeDocuments": "Mesclagem de Documentos",
-      "research": "Pesquisa"
+      "research": "Pesquisa",
+      "draftPrototype": "Rascunho de protótipo"
     },
     "completedCount_many": "{{count, number}} concluídos",
     "moreFailedCount_many": "{{count, number}} mais com falha"
@@ -684,5 +747,218 @@
     "erasedSummary_one": "{{count, number}} avaliação ou solicitação de quadro citada foi apagada (base legal registrada)",
     "erasedSummary_other": "{{count, number}} avaliações ou solicitações de quadro citadas foram apagadas (base legal registrada)",
     "erasedSummary_many": "{{count, number}} de avaliações ou solicitações citadas foram apagadas (base legal registrada)"
+  },
+  "canvas": {
+    "editor": {
+      "placeholder": "Escreva ou digite / para ver os blocos",
+      "task": "Concluído",
+      "slash": {
+        "label": "Blocos",
+        "empty": "Nenhum bloco corresponde a “{{query}}”"
+      },
+      "blocks": {
+        "paragraph": "Texto",
+        "heading1": "Título 1",
+        "heading2": "Título 2",
+        "heading3": "Título 3",
+        "bulletList": "Lista com marcadores",
+        "orderedList": "Lista numerada",
+        "taskList": "Lista de tarefas",
+        "blockquote": "Citação",
+        "callout": "Destaque",
+        "codeBlock": "Código",
+        "table": "Tabela",
+        "divider": "Divisor",
+        "image": "Imagem"
+      },
+      "callout": {
+        "note": "Nota",
+        "tip": "Dica",
+        "important": "Importante",
+        "warning": "Aviso",
+        "caution": "Cuidado"
+      },
+      "format": {
+        "toolbar": "Formatação do texto",
+        "bold": "Negrito",
+        "italic": "Itálico",
+        "strike": "Tachado",
+        "code": "Código embutido",
+        "link": "Link",
+        "turnInto": "Transformar em",
+        "comment": "Comentar"
+      },
+      "link": {
+        "title": "Link",
+        "url": "Endereço do link",
+        "placeholder": "https://… ou /caminho",
+        "apply": "Aplicar",
+        "remove": "Remover link",
+        "cancel": "Cancelar",
+        "invalid": "Use um endereço web (https://…), um e-mail ou um caminho deste aplicativo (/…)."
+      },
+      "image": {
+        "title": "Inserir uma imagem",
+        "url": "Endereço da imagem",
+        "alt": "Texto alternativo",
+        "altHint": "Descreva a imagem para quem não pode vê-la.",
+        "insert": "Inserir",
+        "cancel": "Cancelar",
+        "invalidUrl": "Use um endereço web (https://…) ou um caminho deste aplicativo (/…).",
+        "altRequired": "Adicione texto alternativo: é o que recebe quem não pode ver a imagem."
+      },
+      "handle": {
+        "label": "Arraste para mover o bloco ou clique para abrir o menu dele",
+        "menu": "Ações do bloco",
+        "moveUp": "Mover para cima",
+        "moveDown": "Mover para baixo",
+        "turnInto": "Transformar em",
+        "duplicate": "Duplicar",
+        "delete": "Excluir",
+        "back": "Voltar"
+      }
+    },
+    "page": {
+      "loading": "Carregando o documento…",
+      "titleLabel": "Título do documento",
+      "contents": "Sumário",
+      "evidence": "Evidências",
+      "evidenceEmpty": "Nenhuma avaliação ou pedido de funcionalidade foi registrado para este documento.",
+      "showAll": "Mostrar tudo ({{n, number}})",
+      "featureRequests": "Pedidos de funcionalidades"
+    },
+    "comments": {
+      "hint": "Para comentar um trecho, selecione-o e pressione Comentar, ou pressione Ctrl+Alt+M (⌘⌥M num Mac).",
+      "draftOpen": "Termine ou cancele primeiro o comentário que está a escrever.",
+      "selectFirst": "Selecione primeiro um trecho do documento (no máximo 500 caracteres) e depois comente-o.",
+      "tabs": {
+        "label": "Comentários e evidências",
+        "comments": "Comentários",
+        "evidence": "Evidências"
+      }
+    },
+    "actions": {
+      "assistant": {
+        "added": "Adicionado",
+        "banner": "O assistente sugere alterações neste documento",
+        "diffLabel": "Alterações sugeridas",
+        "draftNote": "Você tem alterações não salvas. A sugestão é comparada com a versão salva e, ao aprová-la, uma nova versão é salva sobre ela.",
+        "hide": "Ocultar alterações",
+        "newTitle": "Novo título: {{title}}",
+        "noChanges": "A sugestão é igual ao texto salvo.",
+        "otherVersion": "Proposto sobre a v{{proposed}}; esta página mostra a v{{current}}.",
+        "removed": "Removido",
+        "replacesSince": "Aprovar salva a sugestão como a próxima versão e substitui as alterações feitas desde a v{{proposed}} (elas continuam no Histórico). As alterações abaixo a comparam com esta página.",
+        "review": "Revisar",
+        "stats": "Blocos adicionados: {{added, number}} · removidos: {{removed, number}}",
+        "tooLarge": "Longo demais para comparar bloco a bloco. A sugestão completa:",
+        "unchanged": "Blocos sem alteração: {{count, number}}"
+      },
+      "discard": "Descartar",
+      "discardHint": "Descartar suas alterações e voltar à versão salva",
+      "exportSavedHint": "A exportação usa a versão salva. Salve primeiro para incluir suas alterações.",
+      "history": "Histórico",
+      "save": "Salvar",
+      "saveHint": "Salvar uma nova versão (Ctrl+S ou ⌘S)",
+      "status": {
+        "saved": "Salvo · {{version}} · {{when}}",
+        "savedNoVersion": "Salvo · {{when}}",
+        "saving": "Salvando…",
+        "unsaved": "Alterações não salvas"
+      },
+      "toolbarLabel": "Ações do documento"
+    },
+    "revise": {
+      "addressedBy": {
+        "ai": "Atendido por uma versão que a IA revisou",
+        "user": "Atendido por uma versão salva a partir das alterações sugeridas"
+      },
+      "addressedIn": "Atendido na v{{version}}",
+      "applied": {
+        "banner_one": "Revisado a partir de {{count, number}} comentário como v{{version}}",
+        "banner_many": "Revisado a partir de {{count, number}} comentários como v{{version}}",
+        "banner_other": "Revisado a partir de {{count, number}} comentários como v{{version}}",
+        "reviewAgain": "Revisar novamente",
+        "status": "Sua forma de trabalhar deixa a IA escrever: ela salvou a revisão como uma nova versão. Desfazer restaura a anterior.",
+        "undo": "Desfazer",
+        "undoAnyway": "Desfazer mesmo assim",
+        "undoFailed": "Não foi possível restaurar a versão anterior. Restaure-a pelo histórico.",
+        "undoKeep": "Manter",
+        "undoNewer": "A v{{version}} foi salva depois desta revisão. Desfazer restaura a versão da qual a revisão partiu, então também removeria as alterações salvas desde então.",
+        "undoing": "Restaurando a versão anterior…",
+        "undone": "Desfeito: a versão anterior foi restaurada como uma nova versão."
+      },
+      "button": "Revisar a partir dos comentários",
+      "close": "Fechar",
+      "failed": "A revisão a partir dos comentários falhou. Tente novamente.",
+      "filterAddressed": "Atendidos",
+      "hint": "Sugere alterações nas partes de que tratam os comentários respondidos ou resolvidos, a partir dos comentários e das evidências do documento",
+      "noThreads": "Primeiro responda a um comentário ou resolva-o.",
+      "saveFirst": "Primeiro salve ou descarte as alterações aceitas.",
+      "proposal": {
+        "accept": "Aceitar",
+        "acceptAll": "Aceitar todas",
+        "acceptNamed": "Aceitar a alteração {{position}}",
+        "added": "Adicionado",
+        "answers": "Responde a:",
+        "change": "Alteração {{position}}",
+        "deleted": "(o trecho é removido)",
+        "dropped_one": "{{count, number}} sugestão foi deixada de fora: o trecho dela não está no texto.",
+        "dropped_many": "{{count, number}} sugestões foram deixadas de fora: os trechos delas não estão no texto.",
+        "dropped_other": "{{count, number}} sugestões foram deixadas de fora: os trechos delas não estão no texto.",
+        "intro": "Aceite ou rejeite cada alteração. As alterações aceitas vão para o seu rascunho; Salvar as transforma em uma nova versão.",
+        "listLabel": "Alterações sugeridas",
+        "markFailed": "Salvo, mas não foi possível marcar os comentários como atendidos. Tente novamente mais tarde.",
+        "markPartial": "Salvo, mas alguns comentários atingiram o limite de marcações e não puderam ser marcados como atendidos; os demais foram. Inicie um novo comentário para esses.",
+        "marked_one": "Salvo: {{count, number}} comentário está marcado como atendido na v{{version}}.",
+        "marked_many": "Salvo: {{count, number}} comentários estão marcados como atendidos na v{{version}}.",
+        "marked_other": "Salvo: {{count, number}} comentários estão marcados como atendidos na v{{version}}.",
+        "none": "Não foi possível sugerir nenhuma alteração a partir destes comentários. As recomendações dizem o que fazer em vez disso.",
+        "reject": "Rejeitar",
+        "rejectAll": "Rejeitar todas",
+        "rejectNamed": "Rejeitar a alteração {{position}}",
+        "removed": "Removido",
+        "saveNote": "As alterações aceitas estão no seu rascunho. Salve para transformá-las em uma nova versão.",
+        "state": {
+          "accepted": "Aceita",
+          "addressed": "Salva",
+          "outOfDate": "Desatualizada: o trecho mudou",
+          "rejected": "Rejeitada"
+        },
+        "status_one": "{{count, number}} alteração sugerida.",
+        "status_many": "{{count, number}} alterações sugeridas.",
+        "status_other": "{{count, number}} alterações sugeridas.",
+        "title": "Alterações sugeridas"
+      },
+      "refused": {
+        "explain": "Nada foi salvo: suas alterações continuam aqui. Salve-as como sua própria edição.",
+        "fallback": "Este salvamento não pôde ser registrado como revisão.",
+        "saveAsOwn": "Salvar como minha edição"
+      },
+      "recommendations": {
+        "listLabel": "Recomendações",
+        "status_one": "{{count, number}} recomendação. Nada no documento foi alterado.",
+        "status_many": "{{count, number}} recomendações. Nada no documento foi alterado.",
+        "status_other": "{{count, number}} recomendações. Nada no documento foi alterado.",
+        "title": "Recomendações a partir dos comentários",
+        "why": "Sua forma de trabalhar com IA pede apenas recomendações: a IA não escreve este documento por você."
+      },
+      "reviewAgain": "Pedir às personas que revisem novamente",
+      "running": "Revisando a partir dos comentários…",
+      "showThread": "Mostrar o comentário: {{label}}",
+      "threadGone": "(comentário excluído)"
+    },
+    "focus": {
+      "announce": "Tela cheia. Pressione Esc para sair.",
+      "button": "Tela cheia",
+      "hint": "Tela cheia (Ctrl+Shift+F ou ⌘⇧F)"
+    },
+    "menu": {
+      "commentsHeading": "Comentários abertos",
+      "includeComments": "Incluir comentários abertos",
+      "saved": "Salvo",
+      "trigger": "Arquivo",
+      "wholeDocument": "Sobre o documento inteiro"
+    }
   }
 }

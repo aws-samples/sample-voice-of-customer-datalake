@@ -6,6 +6,7 @@ import type { DocumentDerivation } from './derivation'
 import type { DeletedSource } from './deletedSources'
 import type { ErasedEvidence } from './erasedEvidence'
 import type { MethodologyBlock } from './methodologySchema'
+import type { DocumentSectionId } from './documentSections'
 // The credential vocabulary lives with its schema for the same reason: the
 // declared type and the runtime validation cannot drift apart.
 import type { CategoryOverride } from './feedbackSchema'
@@ -512,6 +513,11 @@ export interface ProjectDocument {
    * while feature gates use KnownProjectDocumentType inventories explicitly.
    */
   document_type: string
+  /**
+   * The list section (`GET /projects/{id}`, computed from `document_type` on read; api/documentSections.ts). Absent
+   * from an older API and on documents built in the page: read it through `sectionOf`, which falls back to the table.
+   */
+  section?: DocumentSectionId
   /** Legacy DynamoDB sort key, retained for records awaiting metadata backfill. */
   sk?: string
   title: string
@@ -583,6 +589,8 @@ export interface ProjectDocument {
    */
   revised_from_id?: string | null
   revision_feedback?: string
+  /** A prototype version written by applying a draft (docs/prototype-builder.md parts 2-3): that draft's id. */
+  revised_from_draft_id?: string | null
   /**
    * What this document cited and that was later deleted (api/deletedSources.ts); the ids stay
    * in `derivation`. Always a list after the boundary; absent on hand-built test documents.

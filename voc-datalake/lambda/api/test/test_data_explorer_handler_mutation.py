@@ -86,7 +86,7 @@ class TestTheColdStartModuleState:
         assert (h.RAW_DATA_BUCKET, h.FEEDBACK_TABLE, h.PROCESSING_QUEUE_URL) == (
             BUCKET, 'test-feedback', QUEUE_URL)
         assert h.RAW_PREFIX == 'raw/'
-        assert frozenset({'PreconditionFailed', 'ConditionalRequestConflict'}) == h._OBJECT_EXISTS_ERROR_CODES
+        assert frozenset({'PreconditionFailed', 'ConditionalRequestConflict'}) == h.S3_CONDITIONAL_WRITE_CONFLICTS
         assert h._IMAGE_EXTENSIONS == ('jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico')
         assert h._MAX_PREVIEW_BYTES == 1048576
         assert h._TRUNCATION_MARKER == '\n\n... [truncated - file too large]'

@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitest/config'
+import { canvasAlias } from './canvasResolve.ts'
 import { changelogPlugin } from './changelogPlugin.ts'
 import { streamResolve } from './streamSource.ts'
 import react from '@vitejs/plugin-react'
@@ -28,6 +29,9 @@ export default defineConfig({
     // timeout; with 32 the suite passes in 61 s (a run at the default took ~115 s and failed on that hook). The CDK
     // suite caps its own (voc-datalake/vitest.config.ts).
     maxWorkers: Math.min(32, availableParallelism()),
+    // Node loads node_modules itself, past resolve.alias: the drag handle goes through Vite so its Yjs imports
+    // bind to the canvas's stand-in (canvasResolve.ts), as in the build.
+    server: { deps: { inline: ['@tiptap/extension-drag-handle', '@tiptap/extension-drag-handle-react'] } },
     // The per-file coverage gate (docs/coverage-gate.md) reads this through scripts/validate.sh, which adds
     // `--coverage.enabled --coverage.reporter=json-summary` on the command line.
     coverage: {
@@ -57,7 +61,9 @@ export default defineConfig({
     dedupe: streamResolve.dedupe,
     alias: {
       ...streamResolve.alias,
-      '@': path.resolve(import.meta.dirname, './src'),
+      // The canvas's stand-in for Yjs, as in the dev server and the build (canvasResolve.ts).
+      ...canvasAlias,
+      '@':path.resolve(import.meta.dirname, './src'),
       '@test': path.resolve(import.meta.dirname, './src/test'),
     },
   },

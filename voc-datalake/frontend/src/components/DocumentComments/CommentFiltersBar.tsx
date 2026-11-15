@@ -1,6 +1,6 @@
 /**
  * @fileoverview The comment view's toolbar: how many open threads, filter by author (teammates,
- * personas, one persona, reviewers), show resolved, and "Comment on the whole document".
+ * personas, one persona, reviewers), show resolved, only the addressed ones, and "Comment on the whole document".
  *
  * @module components/DocumentComments/CommentFiltersBar
  */
@@ -36,7 +36,7 @@ export default function CommentFiltersBar({ threads, filter, onFilterChange, onC
       {kinds.length > 1 ? (
         <>
           <label htmlFor={authorId} className="sr-only">{t('documentComments.filterAuthor')}</label>
-          <select id={authorId} className="input w-auto py-1 text-sm" value={filter.author}
+          <select id={authorId} className="select select-sm w-auto" value={filter.author}
             onChange={(event) => {
               const value = event.target.value
               if (isAuthorFilter(value)) onFilterChange({ ...filter, author: value, personaId: '' })
@@ -49,7 +49,7 @@ export default function CommentFiltersBar({ threads, filter, onFilterChange, onC
       {filter.author === 'persona' && personas.length > 1 ? (
         <>
           <label htmlFor={personaId} className="sr-only">{t('documentComments.filterPersona')}</label>
-          <select id={personaId} className="input w-auto py-1 text-sm" value={filter.personaId}
+          <select id={personaId} className="select select-sm w-auto" value={filter.personaId}
             onChange={(event) => onFilterChange({ ...filter, personaId: event.target.value })}>
             <option value="">{t('documentComments.everyPersona')}</option>
             {personas.map((persona) => <option key={persona.personaId} value={persona.personaId}>{persona.name}</option>)}
@@ -61,6 +61,14 @@ export default function CommentFiltersBar({ threads, filter, onFilterChange, onC
           onChange={(event) => onFilterChange({ ...filter, showResolved: event.target.checked })} />
         {t('documentComments.showResolved')}
       </label>
+      {/* Offered once a version has answered a thread (or while it is on, so it can be turned off). */}
+      {filter.addressedOnly || threads.some((thread) => thread.addressed !== null) ? (
+        <label className="inline-flex items-center gap-1.5 text-muted">
+          <input type="checkbox" checked={filter.addressedOnly}
+            onChange={(event) => onFilterChange({ ...filter, addressedOnly: event.target.checked })} />
+          {t('projectDetail:canvas.revise.filterAddressed')}
+        </label>
+      ) : null}
       {onCommentWhole === undefined ? null : (
         <button type="button" className="btn btn-secondary btn-sm ml-auto" onClick={onCommentWhole}>
           <MessageSquarePlus size={14} aria-hidden />{t('documentComments.commentWhole')}

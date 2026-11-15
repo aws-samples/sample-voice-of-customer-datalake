@@ -1,4 +1,4 @@
-"""``search_feature_requests`` on ``/mcp/global`` (docs/mcp.md): the feedback boards' search as the minter.
+"""``feature_requests_search`` on ``/mcp/global`` (docs/mcp.md): the feedback boards' search as the minter.
 
 The tool calls ``GET /feature-requests/search`` on the engagement function. Board routes resolve the
 caller through ``shared.engagement_identity.board_viewer``, which reads the pool from ``iss`` and needs a
@@ -26,7 +26,7 @@ from shared.mcp_global_tools import (
     board_route_claims,
 )
 
-SEARCH = TOOLS_BY_NAME['search_feature_requests']
+SEARCH = TOOLS_BY_NAME['feature_requests_search']
 APP_POOL = 'eu-west-1_AppPool1'
 BOARD_POOL = 'eu-west-1_BoardPool1'
 ROW = {'token_id': 'gmt_tok1', 'scope': 'read', 'created_by': 'alice-sub', 'created_by_username': 'alice'}
@@ -65,7 +65,7 @@ class TestTheRoute:
     def test_is_a_read_tool_on_a_board_route(self):
         assert (SEARCH.write, SEARCH.admin_only, SEARCH.project_scoped, SEARCH.board_route) == (False, False, False, True)
         assert [tool.name for tool in TOOLS_BY_NAME.values() if tool.board_route] == [
-            'search_feature_requests', 'write_feature_request']
+            'feature_requests_search', 'feature_requests_write']
 
 
 class TestTheResult:
@@ -106,7 +106,7 @@ class TestTheClaims:
         assert (viewer.pool, viewer.is_admin, viewer.email, viewer.name) == ('app', False, 'alice@example.com', 'Alice Example')
 
     def test_no_other_tool_gets_them(self):
-        _, _, call_domain = _run({}, DomainResult(200, {'projects': []}), tool=TOOLS_BY_NAME['list_projects'])
+        _, _, call_domain = _run({}, DomainResult(200, {'projects': []}), tool=TOOLS_BY_NAME['projects_list'])
         assert {'iss', 'email_verified'} & set(call_domain.call_args.kwargs['claims']) == set()
 
     def test_the_issuer_is_never_taken_from_the_request(self):

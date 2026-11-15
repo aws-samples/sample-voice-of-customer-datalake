@@ -165,6 +165,6 @@ The aggregator also keeps a daily per-channel counter, `METRIC#daily_channel#<ch
     `channel`, `tag` and `dims` (an object, `{"product": "app"}`).
   - `get_metrics` takes `metric: "dimensions"` with a `key`, and applies `source` and the
     same filters to every metric (`github` takes the filters but not `source`).
-- **MCP** ([mcp.md](mcp.md)): `list_dimensions` reads the definitions. `search_feedback` and
-  `get_metrics` take `source`, `channel`, `tag` and `dims` (on every metrics view), and
-  `get_metrics` has `view: "dimensions"` with a `key`.
+- **MCP** ([mcp.md](mcp.md)): `feedback_list_dimensions` reads the definitions. `feedback_search` and
+  `feedback_get_metrics` take `source`, `channel`, `tag` and `dims` (on every metrics view), and
+  `feedback_get_metrics` has `view: "dimensions"` with a `key`.

@@ -16,10 +16,7 @@
     "create": "作成",
     "createDocument": "ドキュメントを作成",
     "creating": "作成中...",
-    "editDocument": "ドキュメントを編集",
     "preview": "プレビュー",
-    "saveChanges": "変更を保存",
-    "saving": "保存中...",
     "titleLabel": "タイトル",
     "titlePlaceholder": "ドキュメントのタイトル..."
   },
@@ -39,7 +36,7 @@
       "companyContext": "会社のコンテキスト",
       "designSystem": "会社のデザインシステム",
       "companyLogo": "会社のロゴ",
-      "companyLogoLeftOut": "会社のロゴは省略されました（1 MB 超または読み込み不可）",
+      "companyLogoLeftOut": "会社のロゴは使用されていません",
       "roles": {
         "mergeInput": "マージ元",
         "prototypePrd": "プロトタイプの元PRD",
@@ -51,8 +48,20 @@
       "visualsUsed_one": "ビジュアル{{count, number}}件を使用",
       "visualsUsed_other": "ビジュアル{{count, number}}件を使用"
     },
-    "editDocument": "ドキュメントを編集",
     "newDocument": "新規ドキュメント",
+    "sections": {
+      "label": "ドキュメントのセクション",
+      "prd": "PRD",
+      "prfaq": "PR/FAQ",
+      "prototypes": "プロトタイプ",
+      "documents": "ドキュメント",
+      "toggle_one": "{{name}}、ドキュメント{{count, number}}件",
+      "toggle_other": "{{name}}、ドキュメント{{count, number}}件",
+      "new": "新規",
+      "newPrd": "新規PRD",
+      "newPrfaq": "新規PR/FAQ",
+      "newPrototype": "新規プロトタイプ"
+    },
     "noDocuments": "ドキュメントなし",
     "ordinal": "{{total, number}} 件中 {{ordinal}} 件目",
     "versions": {
@@ -61,6 +70,8 @@
       "label": "v{{n}}",
       "current": "現在",
       "edited": "編集済み",
+      "revised": "コメントをもとに改訂",
+      "revisedWith": "コメントをもとに改訂 · {{model}}",
       "restoredFrom": "v{{n}} から復元",
       "open": "開く",
       "openNamed": "{{label}} を開く",
@@ -109,6 +120,9 @@
       "feedbackPlaceholder": "例: これを管理者ダッシュボード画面に変えて — エンドユーザー画面の代わりに承認、ユーザー管理、指標を表示して。",
       "feedbackRebased": "このプロトタイプのもとになった文書が存在しないため、改訂ではその種類の最新の文書を使用します。",
       "feedbackSubmit": "再生成",
+      "backTo": "v{{n}} に戻す",
+      "restoreThis": "v{{n}} を復元",
+      "backHint": "v{{n}} を最新バージョンとして保存し直します。何も削除されません。",
       "feedbackTitle": "フィードバックを与えてこのプロトタイプを再生成",
       "needsDocs": "プロトタイプ作成を有効にするには、まず PRD または PR/FAQ を作成してください",
       "previewLabel": "ライブプレビュー",
@@ -123,7 +137,52 @@
       "visuals": "ビジュアルモックアップ ({{total, number}})",
       "visualsFailed": "{{total, number}} 件は処理に失敗しました — 再アップロードしてください",
       "visualsLimit": "1 回のビルドで最大 {{max, number}} 件のモックアップ",
-      "visualsNotReady": "{{total, number}} 件は処理中です"
+      "visualsNotReady": "{{total, number}} 件は処理中です",
+      "draft": {
+        "heading": "下書きの準備ができました：プレビューに適用済み、未保存",
+        "previewHeading": "下書きのプレビュー",
+        "previewLabel": "プレビュー",
+        "showDraft": "下書き",
+        "showCurrent": "現在",
+        "instructionLabel": "指示：",
+        "summaryLabel": "変更点",
+        "stale": "この下書きの作成後にプロトタイプが変更されました：最新バージョンでもう一度依頼してください",
+        "apply": "v{{n}} として適用",
+        "discard": "破棄",
+        "applyFailed": "下書きを適用できませんでした。もう一度お試しください。",
+        "discardFailed": "下書きを破棄できませんでした。もう一度お試しください。",
+        "noPreview": "この下書きのプレビューはここでは利用できません。",
+        "frameTitle": "{{title}}（下書き）",
+        "outcomesLabel": "項目ごと",
+        "done": "対応済み",
+        "notDone": "未対応",
+        "outcomeItem": "{{screen}}：「{{text}}」",
+        "outcomePin": "ピン {{n}}",
+        "noScreen": "（画面なし）",
+        "withheld_one": "選択したピン {{count, number}} 件を保留しました（指示のようなテキスト）：AI には送信していません",
+        "withheld_other": "選択したピン {{count, number}} 件を保留しました（指示のようなテキスト）：AI には送信していません",
+        "incorporationResult": "v{{version}} として適用しました：{{marked}}、{{replied}}。",
+        "markedCount_one": "{{count, number}} 件のピンを反映済みにしました",
+        "markedCount_other": "{{count, number}} 件のピンを反映済みにしました",
+        "repliedCount_one": "{{count, number}} 件の AI の理由を返信として投稿しました",
+        "repliedCount_other": "{{count, number}} 件の AI の理由を返信として投稿しました",
+        "notWritten": "書き込めませんでした：{{place}}：{{reason}}",
+        "dismissResult": "閉じる",
+        "notWrittenReason": {
+          "pin_gone": "ピンがもう存在しません",
+          "already_addressed": "すでに対応済みになっていました",
+          "already_resolved": "すでに解決済みでした",
+          "thread_full": "スレッドがいっぱいです（返信 50 件）",
+          "note_withheld": "理由が指示のように読めたため、投稿しませんでした",
+          "other": "書き込めませんでした",
+          "reopened": "その後、編集者が再オープンしました"
+        },
+        "incorporationResultNoVersion": "適用しました：{{marked}}、{{replied}}。"
+      },
+      "assistant": {
+        "button": "アシスタントで編集",
+        "prompt": "このプロトタイプを変更してください："
+      }
     },
     "revision": {
       "feedback": "フィードバック: {{feedback}}",
@@ -228,7 +287,8 @@
       "generateProductReport": "製品レポート生成",
       "importPersona": "ペルソナインポート",
       "mergeDocuments": "ドキュメントマージ",
-      "research": "リサーチ"
+      "research": "リサーチ",
+      "draftPrototype": "プロトタイプの下書き"
     }
   },
   "notFound": {
@@ -658,5 +718,213 @@
     "featureRequestLink": "リクエスト {{id}}",
     "erasedSummary_one": "引用されたレビューまたはボードのリクエスト{{count, number}}件が消去されました（法的根拠を記録済み）",
     "erasedSummary_other": "引用されたレビューまたはボードのリクエスト{{count, number}}件が消去されました（法的根拠を記録済み）"
+  },
+  "canvas": {
+    "editor": {
+      "placeholder": "入力するか、/ でブロックを選択",
+      "task": "完了",
+      "slash": {
+        "label": "ブロック",
+        "empty": "「{{query}}」に一致するブロックはありません"
+      },
+      "blocks": {
+        "paragraph": "テキスト",
+        "heading1": "見出し 1",
+        "heading2": "見出し 2",
+        "heading3": "見出し 3",
+        "bulletList": "箇条書きリスト",
+        "orderedList": "番号付きリスト",
+        "taskList": "ToDo リスト",
+        "blockquote": "引用",
+        "callout": "コールアウト",
+        "codeBlock": "コード",
+        "table": "表",
+        "divider": "区切り線",
+        "image": "画像"
+      },
+      "callout": {
+        "note": "メモ",
+        "tip": "ヒント",
+        "important": "重要",
+        "warning": "警告",
+        "caution": "注意"
+      },
+      "format": {
+        "toolbar": "テキストの書式",
+        "bold": "太字",
+        "italic": "斜体",
+        "strike": "取り消し線",
+        "code": "インラインコード",
+        "link": "リンク",
+        "turnInto": "変換",
+        "comment": "コメント"
+      },
+      "link": {
+        "title": "リンク",
+        "url": "リンク先のアドレス",
+        "placeholder": "https://… または /パス",
+        "apply": "適用",
+        "remove": "リンクを削除",
+        "cancel": "キャンセル",
+        "invalid": "Web アドレス (https://…)、メールアドレス、またはこのアプリ内のパス (/…) を入力してください。"
+      },
+      "image": {
+        "title": "画像を挿入",
+        "url": "画像のアドレス",
+        "alt": "代替テキスト",
+        "altHint": "画像を見ることができない人のために、画像の内容を説明してください。",
+        "insert": "挿入",
+        "cancel": "キャンセル",
+        "invalidUrl": "Web アドレス (https://…) またはこのアプリ内のパス (/…) を入力してください。",
+        "altRequired": "代替テキストを入力してください。画像を見ることができない人にはこれが伝わります。"
+      },
+      "handle": {
+        "label": "ドラッグしてブロックを移動、クリックでメニューを開く",
+        "menu": "ブロックの操作",
+        "moveUp": "上へ移動",
+        "moveDown": "下へ移動",
+        "turnInto": "変換",
+        "duplicate": "複製",
+        "delete": "削除",
+        "back": "戻る"
+      }
+    },
+    "page": {
+      "loading": "ドキュメントを読み込んでいます…",
+      "titleLabel": "ドキュメントのタイトル",
+      "contents": "目次",
+      "evidence": "根拠",
+      "evidenceEmpty": "このドキュメントには、レビューや機能リクエストが記録されていません。",
+      "showAll": "すべて表示（{{n, number}}）",
+      "featureRequests": "機能リクエスト"
+    },
+    "comments": {
+      "hint": "箇所にコメントするには、テキストを選択して［コメント］を押すか、Ctrl+Alt+M（Mac では ⌘⌥M）を押します。",
+      "draftOpen": "まず書きかけのコメントを完了するか、キャンセルしてください。",
+      "selectFirst": "まずドキュメントの箇所（500 文字まで）を選択してから、コメントしてください。",
+      "tabs": {
+        "label": "コメントと根拠",
+        "comments": "コメント",
+        "evidence": "根拠"
+      }
+    },
+    "actions": {
+      "assistant": {
+        "added": "追加",
+        "banner": "アシスタントがこのドキュメントの変更を提案しています",
+        "diffLabel": "提案された変更",
+        "draftNote": "保存されていない変更があります。提案は保存済みのバージョンと比較され、承認するとその上に新しいバージョンが保存されます。",
+        "hide": "変更を隠す",
+        "newTitle": "新しいタイトル: {{title}}",
+        "noChanges": "提案は保存済みのテキストと同じです。",
+        "otherVersion": "v{{proposed}} に対する提案です。このページには v{{current}} が表示されています。",
+        "removed": "削除",
+        "replacesSince": "承認すると、提案が次のバージョンとして保存され、v{{proposed}} 以降の変更は置き換えられます（変更は履歴に残ります）。下の変更はこのページとの比較です。",
+        "review": "確認",
+        "stats": "追加されたブロック: {{added, number}} · 削除: {{removed, number}}",
+        "tooLarge": "長すぎるため、ブロックごとに比較できません。提案の全文:",
+        "unchanged": "変更のないブロック: {{count, number}}"
+      },
+      "discard": "破棄",
+      "discardHint": "変更を破棄して保存済みのバージョンに戻る",
+      "exportSavedHint": "エクスポートには保存済みのバージョンが使われます。変更を含めるには先に保存してください。",
+      "history": "履歴",
+      "save": "保存",
+      "saveHint": "新しいバージョンを保存（Ctrl+S または ⌘S）",
+      "status": {
+        "saved": "保存済み · {{version}} · {{when}}",
+        "savedNoVersion": "保存済み · {{when}}",
+        "saving": "保存中…",
+        "unsaved": "未保存の変更"
+      },
+      "toolbarLabel": "ドキュメントの操作"
+    },
+    "revise": {
+      "addressedBy": {
+        "ai": "AI が改訂したバージョンで対応済み",
+        "user": "提案された変更から保存したバージョンで対応済み"
+      },
+      "addressedIn": "v{{version}} で対応済み",
+      "applied": {
+        "banner_one": "{{count, number}} 件のコメントをもとに v{{version}} として改訂しました",
+        "banner_other": "{{count, number}} 件のコメントをもとに v{{version}} として改訂しました",
+        "reviewAgain": "もう一度レビュー",
+        "status": "あなたの AI との働き方では AI が書けるため、改訂を新しいバージョンとして保存しました。元に戻すと前のバージョンを復元します。",
+        "undo": "元に戻す",
+        "undoAnyway": "それでも元に戻す",
+        "undoFailed": "前のバージョンを復元できませんでした。履歴から復元してください。",
+        "undoKeep": "このままにする",
+        "undoNewer": "この改訂の後に v{{version}} が保存されています。元に戻すと改訂の元になったバージョンを復元するため、その後に保存された変更も取り消されます。",
+        "undoing": "前のバージョンを復元しています…",
+        "undone": "元に戻しました。前のバージョンを新しいバージョンとして復元しました。"
+      },
+      "button": "コメントをもとに改訂",
+      "close": "閉じる",
+      "failed": "コメントをもとにした改訂に失敗しました。もう一度お試しください。",
+      "filterAddressed": "対応済み",
+      "hint": "返信済みまたは解決済みのコメントが指摘している箇所について、コメントとドキュメントの根拠をもとに変更を提案します",
+      "noThreads": "まずコメントに返信するか、解決してください。",
+      "saveFirst": "まず承認した変更を保存するか、破棄してください。",
+      "proposal": {
+        "accept": "承認",
+        "acceptAll": "すべて承認",
+        "acceptNamed": "変更 {{position}} を承認",
+        "added": "追加",
+        "answers": "対応するコメント:",
+        "change": "変更 {{position}}",
+        "deleted": "(この箇所は削除されます)",
+        "dropped_one": "{{count, number}} 件の提案を除外しました。該当する箇所が本文にありません。",
+        "dropped_other": "{{count, number}} 件の提案を除外しました。該当する箇所が本文にありません。",
+        "intro": "変更ごとに承認または却下してください。承認した変更は下書きに入り、保存すると新しいバージョンになります。",
+        "listLabel": "提案された変更",
+        "markFailed": "保存しましたが、コメントを対応済みにできませんでした。後でもう一度お試しください。",
+        "markPartial": "保存しましたが、一部のコメントは対応済みの記録が上限に達しているため対応済みにできませんでした。その他のコメントは対応済みになりました。それらには新しいコメントを作成してください。",
+        "marked_one": "保存しました。{{count, number}} 件のコメントを v{{version}} で対応済みにしました。",
+        "marked_other": "保存しました。{{count, number}} 件のコメントを v{{version}} で対応済みにしました。",
+        "none": "これらのコメントからは変更を提案できませんでした。代わりに何をすべきかは推奨事項を参照してください。",
+        "reject": "却下",
+        "rejectAll": "すべて却下",
+        "rejectNamed": "変更 {{position}} を却下",
+        "removed": "削除",
+        "saveNote": "承認した変更は下書きに入っています。保存すると新しいバージョンになります。",
+        "state": {
+          "accepted": "承認済み",
+          "addressed": "保存済み",
+          "outOfDate": "古い提案: 該当箇所が変更されています",
+          "rejected": "却下済み"
+        },
+        "status_one": "{{count, number}} 件の変更が提案されました。",
+        "status_other": "{{count, number}} 件の変更が提案されました。",
+        "title": "提案された変更"
+      },
+      "refused": {
+        "explain": "何も保存されていません。変更内容はそのまま残っています。代わりに自分の編集として保存してください。",
+        "fallback": "この保存は改訂として記録できませんでした。",
+        "saveAsOwn": "自分の編集として保存"
+      },
+      "recommendations": {
+        "listLabel": "推奨事項",
+        "status_one": "推奨事項 {{count, number}} 件。ドキュメントは何も変更されていません。",
+        "status_other": "推奨事項 {{count, number}} 件。ドキュメントは何も変更されていません。",
+        "title": "コメントからの推奨事項",
+        "why": "あなたの AI との働き方では推奨事項のみです。AI がこのドキュメントを代わりに書くことはありません。"
+      },
+      "reviewAgain": "ペルソナにもう一度レビューを依頼",
+      "running": "コメントをもとに改訂しています…",
+      "showThread": "コメントを表示: {{label}}",
+      "threadGone": "(コメントは削除されました)"
+    },
+    "focus": {
+      "announce": "全画面表示です。Esc キーで終了します。",
+      "button": "全画面",
+      "hint": "全画面 (Ctrl+Shift+F または ⌘⇧F)"
+    },
+    "menu": {
+      "commentsHeading": "未解決のコメント",
+      "includeComments": "未解決のコメントを含める",
+      "saved": "保存済み",
+      "trigger": "ファイル",
+      "wholeDocument": "ドキュメント全体について"
+    }
   }
 }

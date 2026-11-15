@@ -381,7 +381,7 @@ export function useProjectMutations({
 }
 
 /** A custom document to create (the create mutation's variables). */
-export interface DocumentDraft {
+interface DocumentDraft {
   title: string
   content: string
 }
@@ -393,17 +393,21 @@ export interface DocumentUpdate {
   content: string
   /** The revision the editor loaded (documentEdit.documentRevision); absent = no stale check. */
   expectedRevision?: number
+  /**
+   * The job id of the "Revise from comments" pass whose accepted changes the content holds: sent as
+   * `revise_job_id`, the server checks that pass and records the version as a revise (D4), or answers 400.
+   */
+  reviseJobId?: string
 }
 
 interface UseDocumentMutationsProps {
   id: string | undefined
-  selectedDoc: ProjectDocument | null
   setSelectedDoc: (d: ProjectDocument | null) => void
 }
 
+/** Create (a custom document, from the create modal) and delete. Edits are the canvas's: {@link useUpdateDocument}. */
 export function useDocumentMutations({
   id,
-  selectedDoc,
   setSelectedDoc,
 }: UseDocumentMutationsProps) {
   const queryClient = useQueryClient()
@@ -428,35 +432,37 @@ export function useDocumentMutations({
     },
   })
 
-  const updateDocMut = useMutation({
-    mutationFn: (data: DocumentUpdate) =>
-      projectsApi.updateDocument(projectId, data.docId, {
+  return {
+    createDocMut,
+    deleteDocMut,
+  }
+}
+
+/**
+ * The save of an existing document: `PUT /projects/{id}/documents/{doc}`, ONE new
+ * version per call (D1: the server never overwrites; it records the time and the
+ * version, D4). Resolves with the version just saved (a PRD / PR/FAQ version has a
+ * new id), or null when the server answered without one.
+ */
+export function useUpdateDocument(id: string | undefined) {
+  const queryClient = useQueryClient()
+  const projectId = id ?? ''
+  return useMutation({
+    mutationFn: (data: DocumentUpdate) => {
+      const body = {
         ...(data.title === undefined ? {} : { title: data.title }),
         content: data.content,
         ...(data.expectedRevision === undefined ? {} : { expected_revision: data.expectedRevision }),
         // A fresh id per save, so the server can tell a replayed request from a second save.
         edit_id: crypto.randomUUID(),
-      }),
-    onSuccess: (result, variables) => {
-      void queryClient.invalidateQueries({ queryKey: projectKey(id) })
-      if (selectedDoc?.document_id !== variables.docId) return
-      // Every edit is a new version, and a PRD / PR/FAQ version has a new id:
-      // show the version just saved (the edited one stays in Versions).
-      if (result.document !== null) {
-        setSelectedDoc(result.document)
-      } else {
-        setSelectedDoc({
-          ...selectedDoc,
-          ...(variables.title === undefined ? {} : { title: variables.title }),
-          content: variables.content,
-        })
       }
+      // A plain edit names no pass (the server records it as an edit).
+      return data.reviseJobId === undefined
+        ? projectsApi.updateDocument(projectId, data.docId, body)
+        : projectsApi.updateDocument(projectId, data.docId, body, data.reviseJobId)
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: projectKey(id) })
     },
   })
-
-  return {
-    createDocMut,
-    deleteDocMut,
-    updateDocMut,
-  }
 }

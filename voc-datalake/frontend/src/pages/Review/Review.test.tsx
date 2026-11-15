@@ -5,11 +5,12 @@
  * comments. A revoked, expired or not-for-you link says one "not available".
  */
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { renderWithQueryClient } from '@test/query-client'
 import { stubRangeLayout } from '@test/stubRangeLayout'
+import { selectText } from '@test/selectText'
 import { ApiError } from '../../lib/errors'
 import { useAuthStore } from '../../store/authStore'
 import { useBoardSessionStore } from '../../store/boardSessionStore'
@@ -68,6 +69,11 @@ function renderAt(shareId: string) {
       <Routes><Route path="/review/:shareId" element={<Review />} /></Routes>
     </MemoryRouter>,
   )
+}
+
+/** Selects `[start, end)` of the shared document's paragraph. */
+function selectInDocument(start: number, end: number): void {
+  selectText(screen.getByText('Customers wait two weeks for a refund.'), start, end)
 }
 
 beforeAll(() => stubRangeLayout())
@@ -150,6 +156,29 @@ describe('the review page', () => {
 
     await waitFor(() => expect(boardFetch).toHaveBeenCalledWith(`/review/${SHARE_ID}/comments`,
       expect.objectContaining({ method: 'POST', body: JSON.stringify({ text: 'Say how long a bank transfer takes' }) })))
+  })
+
+  it('never replaces a comment being written when the reviewer selects another passage', async () => {
+    fakeAuth()
+    useBoardSessionStore.setState({ status: 'signedIn', email: 'sam@example.com' })
+    const user = userEvent.setup()
+    renderAt(SHARE_ID)
+    await screen.findByText('Which refund method?')
+    const column = screen.getByTestId('reading-column')
+    const commentOn = async (start: number, end: number) => {
+      selectInDocument(start, end)
+      fireEvent.pointerUp(column.querySelector('.md-content') ?? column)
+      await user.click(await within(column).findByRole('button', { name: 'Comment' }))
+    }
+    await commentOn(15, 24)
+    await user.type(screen.getByLabelText('Add a comment'), 'Which method?')
+
+    await commentOn(0, 9)
+
+    expect(screen.getByText('Finish or cancel the comment you are writing first.')).toBeInTheDocument()
+    expect(screen.getByLabelText('Add a comment')).toHaveValue('Which method?')
+    expect(screen.getByRole('complementary', { name: 'Comments' }).querySelector('blockquote')).toHaveTextContent('two weeks')
+    expect(boardFetch.mock.calls.filter(([, options]) => options?.method === 'POST')).toStrictEqual([])
   })
 
   it('gives a reviewer no resolve or delete', async () => {

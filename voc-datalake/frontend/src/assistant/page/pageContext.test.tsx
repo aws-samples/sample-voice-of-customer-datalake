@@ -8,8 +8,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TestRouter } from '@test/TestRouter'
 import { agentsKeys } from '../../api/agentsApi'
 import { routes } from '../../routes'
-import { MAX_FACET_FILTER_CHARS, MAX_PAGE_FILTER_CHARS, NO_MATCH_FILTER_VALUE } from '@stream/assistant/contract'
-import { PAGE_PATTERNS, pageContextFromLocation } from './pageContext'
+import { MAX_FACET_FILTER_CHARS, MAX_ID_LENGTH, MAX_PAGE_FILTER_CHARS, NO_MATCH_FILTER_VALUE } from '@stream/assistant/contract'
+import { PAGE_PATTERNS, pageContextFromLocation, selectedDocumentId } from './pageContext'
 import { usePageContext } from './usePageContext'
 import type { ReactNode } from 'react'
 
@@ -31,6 +31,14 @@ describe('pageContextFromLocation', () => {
     ['/nowhere', '', { kind: 'other', path: '/nowhere' }],
   ])('%s%s', (pathname, search, expected) => {
     expect(pageContextFromLocation({ pathname, search })).toStrictEqual(expected)
+  })
+
+  it('reads the open document only on a project\'s Documents tab, within MAX_ID_LENGTH', () => {
+    const project = { kind: 'project', tab: 'documents' } as const
+    expect(selectedDocumentId(project, '?tab=documents&doc=proto_3')).toBe('proto_3')
+    expect(selectedDocumentId(project, `?doc=${'x'.repeat(MAX_ID_LENGTH)}`)).toBe('x'.repeat(MAX_ID_LENGTH))
+    expect(selectedDocumentId(project, `?doc=${'x'.repeat(MAX_ID_LENGTH + 1)}`)).toBeUndefined()
+    expect(selectedDocumentId({ kind: 'project', tab: 'personas' }, '?doc=proto_3')).toBeUndefined()
   })
 
   it('drops over-long ids', () => {
@@ -118,6 +126,49 @@ describe('usePageContext', () => {
   it('has no title when the project is not cached', () => {
     const result = renderAt('/projects/p2')
     expect(result.current).toStrictEqual({ kind: 'project', path: '/projects/p2', projectId: 'p2' })
+  })
+
+  // docs/prototype-builder.md, part 2: the open prototype is the panel's subject ("Editing: …").
+  const PROJECT_WITH_DOCS = {
+    project: { name: 'Checkout revamp' }, personas: [],
+    documents: [
+      { document_id: 'proto_3', document_type: 'prototype', title: 'Checkout flow (v3)' },
+      { document_id: 'prd_1', document_type: 'prd', title: 'Checkout PRD (v1)' },
+    ],
+  }
+  const cached = () => {
+    const client = new QueryClient()
+    client.setQueryData(['project', 'p1'], PROJECT_WITH_DOCS)
+    return client
+  }
+
+  it('names the prototype open on the Documents tab as documentId, titled by it', () => {
+    const result = renderAt('/projects/p1?tab=documents&doc=proto_3', cached())
+    expect(result.current).toStrictEqual({
+      kind: 'project', path: '/projects/p1', projectId: 'p1', tab: 'documents', documentId: 'proto_3', title: 'Checkout flow (v3)',
+    })
+  })
+
+  it('cuts a long prototype title to the contract bound', () => {
+    const client = new QueryClient()
+    client.setQueryData(['project', 'p1'], { ...PROJECT_WITH_DOCS, documents: [{ document_id: 'proto_3', document_type: 'prototype', title: 'x'.repeat(300) }] })
+    expect(renderAt('/projects/p1?tab=documents&doc=proto_3', client).current.title).toBe('x'.repeat(120))
+  })
+
+  it.each([
+    ['another document type open', '/projects/p1?tab=documents&doc=prd_1'],
+    ['an id the project does not list', '/projects/p1?tab=documents&doc=gone_1'],
+    ['another tab', '/projects/p1?tab=overview&doc=proto_3'],
+    ['no document open', '/projects/p1?tab=documents'],
+  ])('sets no documentId with %s', (_case, entry) => {
+    const result = renderAt(entry, cached())
+    expect(result.current.documentId).toBeUndefined()
+    expect(result.current.title).toBe('Checkout revamp')
+  })
+
+  it('sets no documentId before the project is cached, nor on another page', () => {
+    expect(renderAt('/projects/p1?tab=documents&doc=proto_3').current.documentId).toBeUndefined()
+    expect(renderAt('/feedback?tab=documents&doc=proto_3', cached()).current.documentId).toBeUndefined()
   })
 
   it("titles an agent page with the cached agent's name, not its id", () => {

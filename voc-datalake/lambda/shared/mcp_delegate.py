@@ -11,7 +11,7 @@ every domain's permissions inverts the domain-isolation pattern this repo
 mandates (see the 20 KB role-policy ceiling in the coding standards) and marches
 toward that ceiling with no synth-time warning. It also removes a whole class of
 drift — an in-process tool is a SECOND implementation of a route, and one of
-them had already diverged: the old `get_project` tool recognised 2 of the 6
+them had already diverged: the old in-process project tool recognised 2 of the 6
 document sort-key prefixes, so an MCP client silently saw a third of a project's
 documents and was told nothing was filtered.
 

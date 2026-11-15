@@ -332,6 +332,24 @@
       "off": "Aus",
       "onNote": "Geplante Importe laufen wieder, und ein ausgelöster Schutzschalter wird geschlossen.",
       "offNote": "Geplante Importe werden gestoppt. Bereits Importiertes bleibt unverändert."
+    },
+    "prototypeDraft": {
+      "prototype": "Prototyp:",
+      "instruction": "Anweisung für den Entwurf",
+      "note": "Das erstellt nur einen Entwurf. Er erscheint auf der Seite des Prototyps, sobald er fertig ist, und nichts wird gespeichert, bis Sie ihn dort übernehmen.",
+      "pins_one": "{{count, number}} ausgewählter Tester-Pin",
+      "pins_other": "{{count, number}} ausgewählte Tester-Pins",
+      "noScreen": "(kein Bildschirm)",
+      "pinsInstruction": "Nur die Pin-IDs werden gesendet: Der Server liest diese Pins selbst und schreibt die Anweisung (das ausgewählte Tester-Feedback einarbeiten, pro Pin beantwortet: erledigt oder nicht erledigt)."
+    },
+    "walkthrough": {
+      "remove": "Der Rundgang wird entfernt.",
+      "step": "Schritt {{n}} von {{total}}",
+      "position": "eine Position auf {{screen}}",
+      "thisScreen": "diesem Bildschirm",
+      "replaces_one": "Ersetzt den {{count, number}} gespeicherten Schritt.",
+      "replaces_other": "Ersetzt die {{count, number}} gespeicherten Schritte.",
+      "note": "Speichern erstellt eine neue Version des Prototyps; Betrachtende sehen die Schritte, wenn sie ihn öffnen."
     }
   },
   "tools": {
@@ -519,6 +537,13 @@
       "title": "Benutzer anlegen",
       "titleWith_one": "{{count, number}} Benutzer anlegen",
       "titleWith_other": "{{count, number}} Benutzer anlegen"
+    },
+    "draft_prototype_revision": {
+      "title": "Eine Prototyp-Überarbeitung entwerfen"
+    },
+    "set_prototype_walkthrough": {
+      "title": "Einen Rundgang für den Prototyp speichern",
+      "titleRemove": "Den Rundgang des Prototyps entfernen"
     }
   }
 }

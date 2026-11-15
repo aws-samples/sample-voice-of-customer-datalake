@@ -8,6 +8,7 @@
   },
   "panel": {
     "title": "어시스턴트",
+    "editing": "편집 중: {{title}}",
     "using": "사용 중: {{context}}",
     "newChat": "새 채팅",
     "sessions": "이전 대화",
@@ -290,6 +291,12 @@
     "heading": {
       "persona": "페르소나",
       "document": "문서"
+    },
+    "sections": {
+      "prd": "PRD",
+      "prfaq": "PR/FAQ",
+      "prototypes": "프로토타입",
+      "documents": "문서"
     },
     "limit": {
       "persona": "메시지당 페르소나는 최대 {{max, number}}개입니다.",

@@ -16,10 +16,7 @@
     "create": "Create",
     "createDocument": "Create Document",
     "creating": "Creating...",
-    "editDocument": "Edit Document",
     "preview": "Preview",
-    "saveChanges": "Save Changes",
-    "saving": "Saving...",
     "titleLabel": "Title",
     "titlePlaceholder": "Document title..."
   },
@@ -39,7 +36,7 @@
       "companyContext": "Company context",
       "designSystem": "Company design system",
       "companyLogo": "Company logo",
-      "companyLogoLeftOut": "Company logo left out (over 1 MB or unreadable)",
+      "companyLogoLeftOut": "Company logo not used",
       "roles": {
         "mergeInput": "Merged in",
         "prototypePrd": "Prototype source PRD",
@@ -51,8 +48,20 @@
       "visualsUsed_one": "{{count, number}} visual used",
       "visualsUsed_other": "{{count, number}} visuals used"
     },
-    "editDocument": "Edit document",
     "newDocument": "New Document",
+    "sections": {
+      "label": "Document sections",
+      "prd": "PRD",
+      "prfaq": "PR/FAQ",
+      "prototypes": "Prototypes",
+      "documents": "Documents",
+      "toggle_one": "{{name}}, {{count, number}} document",
+      "toggle_other": "{{name}}, {{count, number}} documents",
+      "new": "New",
+      "newPrd": "New PRD",
+      "newPrfaq": "New PR/FAQ",
+      "newPrototype": "New prototype"
+    },
     "noDocuments": "No documents",
     "ordinal": "{{ordinal}} of {{total, number}}",
     "versions": {
@@ -61,6 +70,8 @@
       "label": "v{{n}}",
       "current": "Current",
       "edited": "Edited",
+      "revised": "Revised from comments",
+      "revisedWith": "Revised from comments · {{model}}",
       "restoredFrom": "Restored from v{{n}}",
       "open": "Open",
       "openNamed": "Open {{label}}",
@@ -109,6 +120,9 @@
       "feedbackPlaceholder": "e.g. Change this to the admin dashboard view — show approvals, user management, and metrics instead of the end-user screens.",
       "feedbackRebased": "A document this prototype was built from no longer exists, so the revision will use the latest of that type instead.",
       "feedbackSubmit": "Regenerate",
+      "backTo": "Back to v{{n}}",
+      "restoreThis": "Restore v{{n}}",
+      "backHint": "Saves v{{n}} again as the newest version. Nothing is deleted.",
       "feedbackTitle": "Give feedback to regenerate this prototype",
       "needsDocs": "Create a PRD or a PR/FAQ first to enable prototype build",
       "previewLabel": "Live preview",
@@ -123,7 +137,52 @@
       "visuals": "Visual mockups ({{total, number}})",
       "visualsFailed": "{{total, number}} failed to process — upload again to use",
       "visualsLimit": "At most {{max, number}} visuals per build",
-      "visualsNotReady": "{{total, number}} still being processed"
+      "visualsNotReady": "{{total, number}} still being processed",
+      "draft": {
+        "heading": "Draft ready: applied to a preview, not saved",
+        "previewHeading": "Draft preview",
+        "previewLabel": "Preview",
+        "showDraft": "Draft",
+        "showCurrent": "Current",
+        "instructionLabel": "Instruction:",
+        "summaryLabel": "What changed",
+        "stale": "The prototype changed since this draft: ask again on the newest version",
+        "apply": "Apply as v{{n}}",
+        "discard": "Discard",
+        "applyFailed": "The draft couldn't be applied. Try again.",
+        "discardFailed": "The draft couldn't be discarded. Try again.",
+        "noPreview": "A preview of this draft is not available here.",
+        "frameTitle": "{{title}} (draft)",
+        "outcomesLabel": "Per item",
+        "done": "Done",
+        "notDone": "Not done",
+        "outcomeItem": "{{screen}}: “{{text}}”",
+        "outcomePin": "Pin {{n}}",
+        "noScreen": "(no screen)",
+        "withheld_one": "{{count, number}} selected pin withheld (instruction-shaped text): not sent to the AI",
+        "withheld_other": "{{count, number}} selected pins withheld (instruction-shaped text): not sent to the AI",
+        "incorporationResult": "Applied as v{{version}}: {{marked}}, {{replied}}.",
+        "markedCount_one": "{{count, number}} pin marked incorporated",
+        "markedCount_other": "{{count, number}} pins marked incorporated",
+        "repliedCount_one": "{{count, number}} AI reason posted as a reply",
+        "repliedCount_other": "{{count, number}} AI reasons posted as replies",
+        "notWritten": "Not written: {{place}}: {{reason}}",
+        "dismissResult": "Dismiss",
+        "notWrittenReason": {
+          "pin_gone": "the pin no longer exists",
+          "already_addressed": "it was already marked addressed",
+          "already_resolved": "it was already resolved",
+          "thread_full": "its thread is full (50 replies)",
+          "note_withheld": "the reason read like an instruction, so it was not posted",
+          "other": "it could not be written",
+          "reopened": "an editor reopened it since"
+        },
+        "incorporationResultNoVersion": "Applied: {{marked}}, {{replied}}."
+      },
+      "assistant": {
+        "button": "Edit with the assistant",
+        "prompt": "Change this prototype: "
+      }
     },
     "revision": {
       "feedback": "Feedback: {{feedback}}",
@@ -228,7 +287,8 @@
       "generateProductReport": "Product Report Generation",
       "importPersona": "Persona Import",
       "mergeDocuments": "Document Merge",
-      "research": "Research"
+      "research": "Research",
+      "draftPrototype": "Prototype Draft"
     }
   },
   "notFound": {
@@ -658,5 +718,213 @@
     "citedNote": "The reviews the persona's supporting evidence names. A citation that named no review it read is kept as text only.",
     "erasedSummary_one": "{{count, number}} cited review or board request was erased (legal basis recorded)",
     "erasedSummary_other": "{{count, number}} cited reviews or board requests were erased (legal basis recorded)"
+  },
+  "canvas": {
+    "editor": {
+      "placeholder": "Write, or type / for blocks",
+      "task": "Done",
+      "slash": {
+        "label": "Blocks",
+        "empty": "No block matches “{{query}}”"
+      },
+      "blocks": {
+        "paragraph": "Text",
+        "heading1": "Heading 1",
+        "heading2": "Heading 2",
+        "heading3": "Heading 3",
+        "bulletList": "Bulleted list",
+        "orderedList": "Numbered list",
+        "taskList": "To-do list",
+        "blockquote": "Quote",
+        "callout": "Callout",
+        "codeBlock": "Code",
+        "table": "Table",
+        "divider": "Divider",
+        "image": "Image"
+      },
+      "callout": {
+        "note": "Note",
+        "tip": "Tip",
+        "important": "Important",
+        "warning": "Warning",
+        "caution": "Caution"
+      },
+      "format": {
+        "toolbar": "Text formatting",
+        "bold": "Bold",
+        "italic": "Italic",
+        "strike": "Strikethrough",
+        "code": "Inline code",
+        "link": "Link",
+        "turnInto": "Turn into",
+        "comment": "Comment"
+      },
+      "link": {
+        "title": "Link",
+        "url": "Link address",
+        "placeholder": "https://… or /path",
+        "apply": "Apply",
+        "remove": "Remove link",
+        "cancel": "Cancel",
+        "invalid": "Use a web address (https://…), an email address or a path in this app (/…)."
+      },
+      "image": {
+        "title": "Insert an image",
+        "url": "Image address",
+        "alt": "Alt text",
+        "altHint": "Describe the image for people who cannot see it.",
+        "insert": "Insert",
+        "cancel": "Cancel",
+        "invalidUrl": "Use a web address (https://…) or a path in this app (/…).",
+        "altRequired": "Add alt text: it is what people who cannot see the image get."
+      },
+      "handle": {
+        "label": "Drag to move the block, or click for its menu",
+        "menu": "Block actions",
+        "moveUp": "Move up",
+        "moveDown": "Move down",
+        "turnInto": "Turn into",
+        "duplicate": "Duplicate",
+        "delete": "Delete",
+        "back": "Back"
+      }
+    },
+    "page": {
+      "loading": "Loading the document…",
+      "titleLabel": "Document title",
+      "contents": "Contents",
+      "evidence": "Evidence",
+      "evidenceEmpty": "No reviews or feature requests were recorded for this document.",
+      "showAll": "Show all ({{n, number}})",
+      "featureRequests": "Feature requests"
+    },
+    "comments": {
+      "hint": "To comment on a passage, select it and press Comment, or press Ctrl+Alt+M (⌘⌥M on a Mac).",
+      "draftOpen": "Finish or cancel the comment you are writing first.",
+      "selectFirst": "Select a passage of the document first (at most 500 characters), then comment on it.",
+      "tabs": {
+        "label": "Comments and evidence",
+        "comments": "Comments",
+        "evidence": "Evidence"
+      }
+    },
+    "actions": {
+      "assistant": {
+        "added": "Added",
+        "banner": "The assistant suggests changes to this document",
+        "diffLabel": "Suggested changes",
+        "draftNote": "You have unsaved changes. The suggestion is compared with the saved version, and approving it saves a new version on top of that one.",
+        "hide": "Hide changes",
+        "newTitle": "New title: {{title}}",
+        "noChanges": "The suggestion matches the saved text.",
+        "otherVersion": "Proposed on v{{proposed}}; this page shows v{{current}}.",
+        "removed": "Removed",
+        "replacesSince": "Approving saves the suggestion as the next version and replaces the changes made since v{{proposed}} (they stay in History). The changes below compare it with this page.",
+        "review": "Review",
+        "stats": "Blocks added: {{added, number}} · removed: {{removed, number}}",
+        "tooLarge": "Too long to compare block by block. The full suggestion:",
+        "unchanged": "Unchanged blocks: {{count, number}}"
+      },
+      "discard": "Discard",
+      "discardHint": "Throw away your changes and go back to the saved version",
+      "exportSavedHint": "Export uses the saved version. Save first to include your changes.",
+      "history": "History",
+      "save": "Save",
+      "saveHint": "Save a new version (Ctrl+S or ⌘S)",
+      "status": {
+        "saved": "Saved · {{version}} · {{when}}",
+        "savedNoVersion": "Saved · {{when}}",
+        "saving": "Saving…",
+        "unsaved": "Unsaved changes"
+      },
+      "toolbarLabel": "Document actions"
+    },
+    "revise": {
+      "addressedBy": {
+        "ai": "Answered by a version the AI revised",
+        "user": "Answered by a version saved from the suggested changes"
+      },
+      "addressedIn": "Addressed in v{{version}}",
+      "applied": {
+        "banner_one": "Revised from {{count, number}} comment as v{{version}}",
+        "banner_other": "Revised from {{count, number}} comments as v{{version}}",
+        "reviewAgain": "Review again",
+        "status": "Your way of working lets the AI write: it saved the revision as a new version. Undo restores the previous one.",
+        "undo": "Undo",
+        "undoAnyway": "Undo anyway",
+        "undoFailed": "The previous version could not be restored. Restore it from History.",
+        "undoKeep": "Keep it",
+        "undoNewer": "v{{version}} was saved after this revision. Undo restores the version the revision started from, so it would also remove the changes saved since.",
+        "undoing": "Restoring the previous version…",
+        "undone": "Undone: the previous version is restored as a new version."
+      },
+      "button": "Revise from comments",
+      "close": "Close",
+      "failed": "Revise from comments failed. Please try again.",
+      "filterAddressed": "Addressed",
+      "hint": "Suggests changes to the parts the answered or resolved comments are about, from the comments and the document's evidence",
+      "noThreads": "Reply to a comment or resolve it first.",
+      "saveFirst": "Save or discard the accepted changes first.",
+      "proposal": {
+        "accept": "Accept",
+        "acceptAll": "Accept all",
+        "acceptNamed": "Accept change {{position}}",
+        "added": "Added",
+        "answers": "Answers:",
+        "change": "Change {{position}}",
+        "deleted": "(the passage is removed)",
+        "dropped_one": "{{count, number}} suggestion was left out: its passage is not in the text.",
+        "dropped_other": "{{count, number}} suggestions were left out: their passages are not in the text.",
+        "intro": "Accept or reject each change. Accepted changes go into your draft; Save makes them a new version.",
+        "listLabel": "Suggested changes",
+        "markFailed": "Saved, but the comments could not be marked as addressed. Please try again later.",
+        "markPartial": "Saved, but some comments have reached their limit of addressed marks and could not be marked; the others were. Start a new comment for those.",
+        "marked_one": "Saved: {{count, number}} comment is marked as addressed in v{{version}}.",
+        "marked_other": "Saved: {{count, number}} comments are marked as addressed in v{{version}}.",
+        "none": "No change could be suggested from these comments. The recommendations say what to do instead.",
+        "reject": "Reject",
+        "rejectAll": "Reject all",
+        "rejectNamed": "Reject change {{position}}",
+        "removed": "Removed",
+        "saveNote": "Accepted changes are in your draft. Save to make them a new version.",
+        "state": {
+          "accepted": "Accepted",
+          "addressed": "Saved",
+          "outOfDate": "Out of date: the passage has changed",
+          "rejected": "Rejected"
+        },
+        "status_one": "{{count, number}} change suggested.",
+        "status_other": "{{count, number}} changes suggested.",
+        "title": "Suggested changes"
+      },
+      "refused": {
+        "explain": "Nothing was saved: your changes are still here. Save them as your own edit instead.",
+        "fallback": "This save could not be recorded as a revision.",
+        "saveAsOwn": "Save as my own edit"
+      },
+      "recommendations": {
+        "listLabel": "Recommendations",
+        "status_one": "{{count, number}} recommendation. Nothing in the document was changed.",
+        "status_other": "{{count, number}} recommendations. Nothing in the document was changed.",
+        "title": "Recommendations from the comments",
+        "why": "Your way of working with AI asks for recommendations only: the AI does not write this document for you."
+      },
+      "reviewAgain": "Ask personas to review again",
+      "running": "Revising from comments…",
+      "showThread": "Show the comment: {{label}}",
+      "threadGone": "(comment deleted)"
+    },
+    "focus": {
+      "announce": "Full screen. Press Escape to leave.",
+      "button": "Full screen",
+      "hint": "Full screen (Ctrl+Shift+F or ⌘⇧F)"
+    },
+    "menu": {
+      "commentsHeading": "Open comments",
+      "includeComments": "Include open comments",
+      "saved": "Saved",
+      "trigger": "File",
+      "wholeDocument": "On the whole document"
+    }
   }
 }

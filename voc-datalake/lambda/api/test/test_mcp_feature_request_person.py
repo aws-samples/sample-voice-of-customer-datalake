@@ -17,7 +17,7 @@ from shared.mcp_delegate import DomainCall, DomainResult, build_proxy_event
 from shared.mcp_global_tools import TOOLS_BY_NAME, MinterIdentity
 from shared.participants_settings import SETTINGS_KEY
 
-WRITE = TOOLS_BY_NAME['write_feature_request']
+WRITE = TOOLS_BY_NAME['feature_requests_write']
 ALICE = MinterIdentity(email='alice@acme.example', name='Alice Example')
 TOKEN_A = {'token_id': 'gmt_tokA', 'scope': 'write', 'created_by': 'alice-sub', 'created_by_username': 'alice'}
 TOKEN_B = {**TOKEN_A, 'token_id': 'gmt_tokB'}

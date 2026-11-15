@@ -5,10 +5,18 @@
  * the same space the server matches persona quotes in (lambda/shared/document_series.py
  * `plain_text` + `collapse`). `indexText` walks the text nodes once and keeps, per collapsed
  * character, the node and offset it came from, so a match turns back into a DOM `Range`
- * (highlighted with the CSS Custom Highlight API, never by rewriting React's DOM).
+ * (highlighted with the CSS Custom Highlight API, never by rewriting the DOM: on the canvas the
+ * editor owns it).
+ *
+ * Two rules make the canvas' DOM index like the rendered Markdown and the server's plain text:
+ * a block boundary (paragraph, heading, list item, table cell, line break …) counts as one space
+ * even when no whitespace text node sits between the blocks, and an element marked
+ * `data-anchor-skip` (the editor's own controls and labels: drag handles, a code block's
+ * language, a callout's label) is not part of the text at all.
  *
  * @module components/DocumentComments/anchors
  */
+import { commonPrefixLength } from '../../utils/commonPrefix'
 import type { TextQuoteAnchor } from '../../api/documentReviewSchema'
 
 /** How much text around a selection is kept to tell repeated quotes apart. */
@@ -32,25 +40,57 @@ export interface TextIndex {
 
 const isSpace = (char: string) => /\s/.test(char)
 
-/** Every text node under `node`, in document order. */
-function textNodes(node: Node): Text[] {
-  return node instanceof Text ? [node] : [...node.childNodes].flatMap(textNodes)
+/** Elements whose edges separate words: the server's plain text has whitespace there. */
+const BLOCK_TAGS = new Set([
+  'ADDRESS', 'ARTICLE', 'ASIDE', 'BLOCKQUOTE', 'BR', 'DD', 'DETAILS', 'DIV', 'DL', 'DT', 'FIGCAPTION', 'FIGURE',
+  'FOOTER', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HEADER', 'HR', 'LI', 'OL', 'P', 'PRE', 'SECTION', 'SUMMARY',
+  'TABLE', 'TBODY', 'TD', 'TFOOT', 'TH', 'THEAD', 'TR', 'UL',
+])
+
+/** Marks UI chrome inside the document (drag handles, labels): never indexed. */
+const SKIP_ATTRIBUTE = 'data-anchor-skip'
+
+/** A text node, or a block edge (a word break with no text of its own). */
+type Piece = Text | 'break'
+
+/** The text nodes under `node` in document order, a break at every block's edges, skipped chrome left out. */
+function pieces(node: Node): Piece[] {
+  if (node instanceof Text) return [node]
+  if (!(node instanceof Element)) return [...node.childNodes].flatMap(pieces)
+  if (node.hasAttribute(SKIP_ATTRIBUTE)) return []
+  const inner = [...node.childNodes].flatMap(pieces)
+  return BLOCK_TAGS.has(node.tagName) ? ['break', ...inner, 'break'] : inner
+}
+
+/** A piece's characters with their sources (a break stays a break). */
+function characters(piece: Piece): (CharSource | 'break')[] {
+  return piece === 'break' ? ['break'] : Array.from({ length: piece.data.length }, (_, offset) => ({ node: piece, offset }))
 }
 
 /** One pass over the container's text nodes. */
 export function indexText(root: Node): TextIndex {
   const chars: string[] = []
   const sources: CharSource[] = []
-  for (const node of textNodes(root)) {
-    const value = node.data
-    for (const offset of Array.from({ length: value.length }, (_, at) => at)) {
-      const char = value.charAt(offset)
-      const space = isSpace(char)
-      // Collapse a run (also across nodes) and drop leading space.
-      if (space && (chars.length === 0 || chars.at(-1) === ' ')) continue
-      chars.push(space ? ' ' : char)
-      sources.push({ node, offset })
+  // A block edge since the last character: one space, written just before the next visible one.
+  const pending = { break: false }
+  for (const item of pieces(root).flatMap(characters)) {
+    if (item === 'break') {
+      pending.break = true
+      continue
     }
+    const char = item.node.data.charAt(item.offset)
+    const space = isSpace(char)
+    const afterWord = chars.length > 0 && chars.at(-1) !== ' '
+    if (!space && pending.break && afterWord) {
+      // The break's space points at the character after it; a quote never starts or ends on a space.
+      chars.push(' ')
+      sources.push(item)
+    }
+    if (!space) pending.break = false
+    // Collapse a run (also across nodes) and drop leading space.
+    if (space && !afterWord) continue
+    chars.push(space ? ' ' : char)
+    sources.push(item)
   }
   return { text: chars.join(''), sources }
 }
@@ -65,18 +105,11 @@ function collapse(text: string): string {
   return collapseRuns(text).trim()
 }
 
-/** How many leading characters `a` and `b` share. */
-function commonHead(a: string, b: string): number {
-  const limit = Math.min(a.length, b.length)
-  const firstMiss = Array.from({ length: limit }, (_, at) => at).find((at) => a.charAt(at) !== b.charAt(at))
-  return firstMiss ?? limit
-}
-
 const reversed = (text: string) => Array.from(text).reverse().join('')
 
 /** How many trailing characters `a` and `b` share. */
 function commonTail(a: string, b: string): number {
-  return commonHead(reversed(a), reversed(b))
+  return commonPrefixLength(reversed(a), reversed(b))
 }
 
 const escapeRegExp = (text: string) => text.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`)
@@ -95,7 +128,7 @@ function locate(index: TextIndex, anchor: TextQuoteAnchor): number | null {
   const suffix = collapseRuns(anchor.suffix)
   const score = (start: number) =>
     commonTail(index.text.slice(Math.max(0, start - CONTEXT_CHARS), start), prefix)
-    + commonHead(index.text.slice(start + exact.length, start + exact.length + CONTEXT_CHARS), suffix)
+    + commonPrefixLength(index.text.slice(start + exact.length, start + exact.length + CONTEXT_CHARS), suffix)
   const best = occurrences(index.text, exact).reduce<{ start: number; score: number } | null>((winner, start) => {
     const candidate = { start, score: score(start) }
     return winner === null || candidate.score > winner.score ? candidate : winner
@@ -120,6 +153,11 @@ export function anchorRange(root: Node, anchor: TextQuoteAnchor, index: TextInde
   return start === null ? null : rangeOf(index, start, collapse(anchor.exact).length)
 }
 
+/** The anchor's quote is found in the indexed text (located as anchorRange locates it). */
+export function anchorFound(index: TextIndex, anchor: TextQuoteAnchor): boolean {
+  return locate(index, anchor) !== null
+}
+
 /** The collapsed position of a DOM point (the first indexed character at or after it). */
 function positionOf(index: TextIndex, node: Node, offset: number): number {
   const at = index.sources.findIndex((source) => {
@@ -136,7 +174,8 @@ function headingBefore(root: Element, range: Range): string {
   const before = headings.filter((heading) =>
     (heading.compareDocumentPosition(range.startContainer) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
     || heading.contains(range.startContainer))
-  return collapse(before.at(-1)?.textContent ?? '').slice(0, MAX_HEADING_CHARS)
+  const heading = before.at(-1)
+  return heading === undefined ? '' : collapse(indexText(heading).text).slice(0, MAX_HEADING_CHARS)
 }
 
 /** The anchor of a selection inside `root`, or null (nothing selected there, or too long). */

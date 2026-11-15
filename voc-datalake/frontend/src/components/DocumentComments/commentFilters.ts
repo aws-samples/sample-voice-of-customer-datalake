@@ -13,12 +13,18 @@ export interface CommentFilter {
   /** One persona's threads only ('' = every persona); read when `author` is `persona`. */
   readonly personaId: string
   readonly showResolved: boolean
+  /** Only the threads a version answered ("Revise from comments"), resolved or not. */
+  readonly addressedOnly: boolean
 }
 
-export const DEFAULT_FILTER: CommentFilter = { author: 'all', personaId: '', showResolved: false }
+export const DEFAULT_FILTER: CommentFilter = { author: 'all', personaId: '', showResolved: false, addressedOnly: false }
+
+/** The filter that shows every thread (a recommendation's link to its thread, whatever the filter hid). */
+export const SHOW_EVERY_THREAD: CommentFilter = { ...DEFAULT_FILTER, showResolved: true }
 
 export function matchesFilter(thread: CommentThread, filter: CommentFilter): boolean {
-  if (!filter.showResolved && thread.status === 'resolved') return false
+  if (filter.addressedOnly && thread.addressed === null) return false
+  if (!filter.showResolved && !filter.addressedOnly && thread.status === 'resolved') return false
   if (filter.author === 'all') return true
   if (thread.author.kind !== filter.author) return false
   return filter.author !== 'persona' || filter.personaId === '' || thread.author.persona_id === filter.personaId

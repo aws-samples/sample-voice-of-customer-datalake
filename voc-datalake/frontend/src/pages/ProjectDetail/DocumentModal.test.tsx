@@ -3,52 +3,29 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import DocumentModal from './DocumentModal'
 import { DocumentModalWrapper } from './ProjectModals'
-import type { ProjectDocument } from '../../api/types'
 import { required } from '../../components/component-spec-fixtures'
 
-describe('DocumentModal', () => {
-  const defaultProps = {
-    isEditing: false,
-    title: '',
-    content: '',
-    isSaving: false,
-    onTitleChange: vi.fn(),
-    onContentChange: vi.fn(),
-    onSave: vi.fn(),
-    onClose: vi.fn(),
-  }
+/** The editor props both the dialog and its wrapper take: an empty, idle form. */
+const defaultProps = {
+  title: '',
+  content: '',
+  isSaving: false,
+  onTitleChange: vi.fn(),
+  onContentChange: vi.fn(),
+  onSave: vi.fn(),
+  onClose: vi.fn(),
+}
 
-  it('renders Create Document header when not editing', () => {
+describe('DocumentModal', () => {
+
+  it('renders Create Document header', () => {
     render(<DocumentModal {...defaultProps} />)
     expect(screen.getByText('Create Document')).toBeInTheDocument()
-  })
-
-  it('renders Edit Document header when editing', () => {
-    render(<DocumentModal {...defaultProps} isEditing={true} />)
-    expect(screen.getByText('Edit Document')).toBeInTheDocument()
   })
 
   it('renders title input with value', () => {
     render(<DocumentModal {...defaultProps} title="My Title" />)
     expect(screen.getByPlaceholderText('Document title...')).toHaveValue('My Title')
-  })
-
-  it('disables the title input when the title is version-managed', async () => {
-    const user = userEvent.setup()
-    const onTitleChange = vi.fn()
-    render(
-      <DocumentModal
-        {...defaultProps}
-        title="Launch (v2)"
-        titleReadOnly={true}
-        onTitleChange={onTitleChange}
-      />,
-    )
-
-    const titleInput = screen.getByPlaceholderText('Document title...')
-    expect(titleInput).toBeDisabled()
-    await user.type(titleInput, 'Different')
-    expect(onTitleChange).not.toHaveBeenCalled()
   })
 
   it('renders content textarea with value', () => {
@@ -60,7 +37,7 @@ describe('DocumentModal', () => {
     const user = userEvent.setup()
     const onTitleChange = vi.fn()
     render(<DocumentModal {...defaultProps} onTitleChange={onTitleChange} />)
-    
+
     await user.type(screen.getByPlaceholderText('Document title...'), 'New')
     // A controlled input held at '', so each keystroke reports just that key.
     expect(onTitleChange.mock.calls).toStrictEqual([['N'], ['e'], ['w']])
@@ -70,7 +47,7 @@ describe('DocumentModal', () => {
     const user = userEvent.setup()
     const onContentChange = vi.fn()
     render(<DocumentModal {...defaultProps} onContentChange={onContentChange} />)
-    
+
     await user.type(screen.getByPlaceholderText(/Write your document/), 'Text')
     expect(onContentChange.mock.calls).toStrictEqual([['T'], ['e'], ['x'], ['t']])
   })
@@ -113,7 +90,7 @@ describe('DocumentModal', () => {
   it('closes on Escape when nothing changed since it opened', async () => {
     const user = userEvent.setup()
     const onClose = vi.fn()
-    render(<DocumentModal {...defaultProps} isEditing title="Saved title" content="Saved body" onClose={onClose} />)
+    render(<DocumentModal {...defaultProps} title="Saved title" content="Saved body" onClose={onClose} />)
     await user.keyboard('{Escape}')
     expect(onClose).toHaveBeenCalledTimes(1)
   })
@@ -138,11 +115,6 @@ describe('DocumentModal', () => {
     expect(screen.getByText('Creating...')).toBeInTheDocument()
   })
 
-  it('shows Saving... when editing and isSaving', () => {
-    render(<DocumentModal {...defaultProps} isEditing={true} title="T" content="C" isSaving={true} />)
-    expect(screen.getByText('Saving...')).toBeInTheDocument()
-  })
-
   it('renders preview when content is provided', () => {
     render(<DocumentModal {...defaultProps} content="# Heading" />)
     expect(screen.getByText('Preview')).toBeInTheDocument()
@@ -157,53 +129,23 @@ describe('DocumentModal', () => {
     const user = userEvent.setup()
     const onSave = vi.fn()
     render(<DocumentModal {...defaultProps} title="Title" content="Content" onSave={onSave} />)
-    
+
     await user.click(screen.getByRole('button', { name: /Create/i }))
     expect(onSave).toHaveBeenCalledTimes(1)
   })
 })
 
-describe('DocumentModalWrapper managed titles', () => {
-  const managedCases: { name: string; document: ProjectDocument }[] = [
-    {
-      name: 'current prototype type',
-      document: {
-        document_id: 'prototype-1',
-        document_type: 'prototype',
-        title: 'Checkout prototype (v2)',
-        content: '<html><body>Checkout</body></html>',
-        created_at: '2026-09-02T00:00:00Z',
-      },
-    },
-    {
-      name: 'legacy managed sort key',
-      document: {
-        document_id: 'legacy-1',
-        document_type: 'custom',
-        sk: 'PROTOTYPE#legacy-1',
-        title: 'Legacy prototype (v1)',
-        content: 'legacy content',
-        created_at: '2026-09-01T00:00:00Z',
-      },
-    },
-  ]
+describe('DocumentModalWrapper', () => {
+  it('renders nothing while the New document dialog is closed', () => {
+    const { container } = render(<DocumentModalWrapper showModal={false} {...defaultProps} />)
+    expect(container).toBeEmptyDOMElement()
+  })
 
-  it.each(managedCases)('keeps the canonical title read-only for $name', ({ document }) => {
-    render(
-      <DocumentModalWrapper
-        showModal={true}
-        editingDoc={document}
-        title={document.title}
-        content={document.content}
-        isSaving={false}
-        onTitleChange={vi.fn()}
-        onContentChange={vi.fn()}
-        onSave={vi.fn()}
-        onClose={vi.fn()}
-      />,
-    )
-
-    expect(screen.getByPlaceholderText('Document title...')).toBeDisabled()
-    expect(screen.getByPlaceholderText('Document title...')).toHaveValue(document.title)
+  // Create only: an existing document is edited in place on its canvas, never in this dialog.
+  it('opens the create dialog with an editable title', () => {
+    render(<DocumentModalWrapper showModal {...defaultProps} title="Notes" />)
+    expect(screen.getByRole('dialog', { name: 'Create Document' })).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Document title...')).toBeEnabled()
+    expect(screen.queryByText('Edit Document')).not.toBeInTheDocument()
   })
 })

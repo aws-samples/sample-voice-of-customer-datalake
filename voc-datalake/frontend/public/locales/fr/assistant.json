@@ -8,6 +8,7 @@
   },
   "panel": {
     "title": "Assistant",
+    "editing": "Modification : {{title}}",
     "using": "Contexte : {{context}}",
     "newChat": "Nouvelle conversation",
     "sessions": "Conversations précédentes",
@@ -292,6 +293,12 @@
     "heading": {
       "persona": "Personas",
       "document": "Documents"
+    },
+    "sections": {
+      "prd": "PRD",
+      "prfaq": "PR/FAQ",
+      "prototypes": "Prototypes",
+      "documents": "Documents"
     },
     "limit": {
       "persona": "Au plus {{max, number}} personas par message.",

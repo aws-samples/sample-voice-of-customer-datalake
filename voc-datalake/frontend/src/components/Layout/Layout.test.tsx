@@ -76,6 +76,7 @@ vi.mock('../ReviewModal/ReviewModalHost', () => ({
 }))
 
 import Layout from './Layout'
+import { setFocusViewActive } from '../DocumentCanvas/page/focusView'
 import { useThemeStore } from '../../theme/themeStore'
 import { WORKSPACE_THEME_CHOICE } from '../../theme/themeCatalog'
 import { useAuthStore, useIsAdmin } from '../../store/authStore'
@@ -577,6 +578,40 @@ describe('nav sections and gating (Listen → Understand → Build → Validate,
     const host = await screen.findByTestId('review-modal-host')
     const following = screen.getByTestId('assistant-root').compareDocumentPosition(host) & Node.DOCUMENT_POSITION_FOLLOWING
     expect(following).not.toBe(0)
+  })
+})
+
+// A document page in focus view (DocumentCanvas/page/focusView) has the whole window.
+describe('Layout while a document page is in focus view', () => {
+  it('hides the sidebar, the header and the assistant launcher, keeps the page, and brings them back after', async () => {
+    onTestFinished(() => { act(() => { setFocusViewActive(false) }) })
+    render(<Layout />, { wrapper: createWrapper() })
+    expect(await screen.findByText('Test Brand')).toBeInTheDocument()
+    act(() => { setFocusViewActive(true) })
+    expect(shell()).toStrictEqual({ sidebar: false, header: false, breadcrumbs: false, launcherHidden: 'true', padded: false, page: true })
+
+    act(() => { setFocusViewActive(false) })
+    expect(shell()).toStrictEqual({ sidebar: true, header: true, breadcrumbs: true, launcherHidden: 'false', padded: true, page: true })
+  })
+})
+
+/** What of the shell is on screen: the sidebar (the brand), the header, the launcher, the page and its padding. */
+function shell() {
+  return {
+    sidebar: screen.queryByText('Test Brand') !== null,
+    header: screen.queryByTestId('header-title') !== null,
+    breadcrumbs: screen.queryByTestId('breadcrumbs') !== null,
+    launcherHidden: screen.getByTestId('assistant-root').dataset['launcherHidden'],
+    padded: screen.getByTestId('page-scroller').classList.contains('p-4'),
+    page: screen.queryByText('Dashboard Content') !== null,
+  }
+}
+
+describe('Layout without a page in focus view', () => {
+  it('keeps the launcher shown and the page padded', async () => {
+    render(<Layout />, { wrapper: createWrapper() })
+    expect(await screen.findByText('Test Brand')).toBeInTheDocument()
+    expect(shell()).toStrictEqual({ sidebar: true, header: true, breadcrumbs: true, launcherHidden: 'false', padded: true, page: true })
   })
 })
 

@@ -211,6 +211,9 @@ function lastRun(): RunAgentInput {
 beforeEach(() => {
   runAgentMock.mockReset()
   vi.mocked(cancelServerRun).mockClear()
+  // After a Stop the runtime polls the stored session a second later (adoptAfterStop); it holds nothing newer here,
+  // so the tab keeps its own copy. Unprogrammed, the poll read `undefined` and threw once the file outlived it.
+  vi.mocked(getSession).mockReset().mockResolvedValue(null)
   useThreadStore.getState().reset()
 })
 

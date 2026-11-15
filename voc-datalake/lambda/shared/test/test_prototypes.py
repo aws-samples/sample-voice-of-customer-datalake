@@ -84,12 +84,47 @@ class TestNoCryptoDependencyForWriters:
     A module-scope `from shared.cloudfront_signing import sign_url` made that
     writer depend on `cryptography` at COLD START, so detaching the layer that
     carries it would have taken prototype generation down for a dependency the
-    job does not use. The import is now inside `prototype_signed_url`; this test
+    job does not use. The import is now inside `_signed_prototype_path`; this test
     is what stops someone hoisting it back to the top of the file.
     """
 
     def test_importing_the_module_does_not_pull_in_cryptography(self, imports_cryptography):
         assert not imports_cryptography('shared.prototypes'), (
             'Importing shared.prototypes pulled in cryptography. Keep the '
-            'shared.cloudfront_signing import inside prototype_signed_url.'
+            'shared.cloudfront_signing import inside _signed_prototype_path.'
         )
+
+
+class TestPrototypeDraftKeyAndUrl:
+    """A draft (docs/prototype-builder.md, part 2): its own key under the project's prototype prefix,
+    in `drafts/`, which the `/prototypes/*/drafts/*` behaviour serves; its URL is that key, signed."""
+
+    CDN = 'https://d111.cloudfront.net/prototypes'
+
+    def test_key_layout(self):
+        from shared.prototypes import prototype_draft_s3_key
+        assert prototype_draft_s3_key('proj_1', 'job_2') == 'prototypes/proj_1/drafts/job_2.html'
+
+    @pytest.mark.usefixtures("cdn_signing_configured")
+    def test_the_signed_url_is_the_drafts_key(self):
+        from shared.prototypes import prototype_draft_s3_key, prototype_draft_signed_url
+
+        url = prototype_draft_signed_url('proj_9', 'job_9', cdn_url=f'{self.CDN}/')
+
+        assert url is not None
+        assert url.split('?')[0] == f'{self.CDN}/proj_9/drafts/job_9.html'
+        assert urlparse(url).path == f'/{prototype_draft_s3_key("proj_9", "job_9")}'
+        assert set(parse_qs(urlparse(url).query)) == {'Expires', 'Signature', 'Key-Pair-Id'}
+
+    @pytest.mark.usefixtures("cdn_signing_configured")
+    @pytest.mark.parametrize(('project_id', 'draft_id', 'cdn_url'), [
+        ('', 'job_1', CDN), ('p', '', CDN), ('p', 'job_1', ''),
+    ])
+    def test_none_without_an_id_or_a_cdn_base(self, project_id, draft_id, cdn_url):
+        from shared.prototypes import prototype_draft_signed_url
+        with patch.dict('os.environ', {'PROTOTYPES_CDN_URL': ''}):
+            assert prototype_draft_signed_url(project_id, draft_id, cdn_url=cdn_url) is None
+
+    def test_none_when_signing_is_unavailable(self):
+        from shared.prototypes import prototype_draft_signed_url
+        assert prototype_draft_signed_url('p', 'job_1', cdn_url=self.CDN) is None

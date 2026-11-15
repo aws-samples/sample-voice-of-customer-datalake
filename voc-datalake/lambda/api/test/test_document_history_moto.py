@@ -72,7 +72,7 @@ def _versions(document_id: str) -> list[dict]:
 def _restore(document_id: str, version_id: str) -> dict:
     from projects import restore_document
 
-    return restore_document(PROJECT, document_id, version_id, {})
+    return restore_document(PROJECT, document_id, version_id, {}, actor={'sub': 'u1', 'kind': 'user'})
 
 
 class TestAManagedEditIsTheNextVersion:
@@ -235,7 +235,7 @@ class TestASecondTabsStaleSaveIsAConflictNotAnOverwrite:
         assert [v['content'] for v in _versions(v1['document_id'])] == ['# racing tab', '# v1 text']
 
     def test_without_expected_revision_there_is_no_check(self, table):
-        """The assistant's and MCP's update_document send no revision: unchanged behaviour."""
+        """The assistant's and MCP's ``documents_update`` send no revision: unchanged behaviour."""
         _custom_doc(table)
         _edit('doc_1', {'content': 'tab A'})
 

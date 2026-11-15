@@ -188,7 +188,10 @@ GIT DIFF:
 $(cat "$chunk_file")"
     # --trust-tools= trusts nothing beyond each agent's own read-only `allowedTools` (.kiro/agents/*.json):
     # the diff is untrusted input, so an instruction planted in it can never reach a shell or a write.
-    kiro-cli chat --agent "${agent}-reviewer" --no-interactive --trust-tools= "$prompt" \
+    # --agent-engine v2: the agents' repository-only read rules hold headless on the V2 engine (V3 reads outside the
+    # workspace without approval), and without the flag the engine depends on the developer's chat.agentEngine
+    # setting. scripts/ai-review/lib.mjs (runnerCommand) pins the same; review.test.mjs checks this line.
+    kiro-cli chat --agent "${agent}-reviewer" --no-interactive --trust-tools= --agent-engine v2 "$prompt" \
       > "${RESULTS_DIR}/${agent}_${idx}.txt" 2>&1 &
     echo "$!" >> "${RESULTS_DIR}/pids.txt"
   done

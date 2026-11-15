@@ -1,11 +1,13 @@
 /**
  * @fileoverview A comment or reply box: a textarea, Send and Cancel. Keeps the text when the save
- * fails (the error is shown, the person retries).
+ * fails (the error is shown, the person retries). Ctrl/⌘+Enter sends; Escape closes an empty box and leaves a
+ * box with text as it is.
  *
  * @module components/DocumentComments/CommentComposer
  */
 import { Loader2, Send } from 'lucide-react'
 import { useId, useState } from 'react'
+import type { KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { serverReason } from '../../lib/errors'
 
@@ -18,9 +20,11 @@ interface CommentComposerProps {
   readonly onSubmit: (text: string) => Promise<unknown>
   readonly onCancel?: () => void
   readonly autoFocus?: boolean
+  /** Every change of the text (a draft with text is never replaced: CommentedDocument). */
+  readonly onTextChange?: (text: string) => void
 }
 
-export default function CommentComposer({ label, submitLabel, onSubmit, onCancel, autoFocus = false }: CommentComposerProps) {
+export default function CommentComposer({ label, submitLabel, onSubmit, onCancel, autoFocus = false, onTextChange }: CommentComposerProps) {
   const { t } = useTranslation('components')
   const id = useId()
   const [text, setText] = useState('')
@@ -39,6 +43,18 @@ export default function CommentComposer({ label, submitLabel, onSubmit, onCancel
       setBusy(false)
     }
   }
+  // The keyboard of the comment boxes people know: Ctrl/⌘+Enter sends; Escape closes a box with nothing in it, and a
+  // box with text keeps it (Cancel throws it away). Either way the box takes the key (preventDefault), so what is
+  // around it (the draft card, the focus view) leaves it alone.
+  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault()
+      void submit()
+    } else if (event.key === 'Escape' && onCancel !== undefined) {
+      event.preventDefault()
+      if (text.trim() === '') onCancel()
+    }
+  }
   return (
     <form className="space-y-2" onSubmit={(event) => { event.preventDefault(); void submit() }}>
       <label htmlFor={id} className="sr-only">{label}</label>
@@ -50,7 +66,9 @@ export default function CommentComposer({ label, submitLabel, onSubmit, onCancel
         placeholder={label}
         value={text}
         autoFocus={autoFocus}
-        onChange={(event) => setText(event.target.value)}
+        aria-keyshortcuts="Control+Enter Meta+Enter"
+        onKeyDown={onKeyDown}
+        onChange={(event) => { setText(event.target.value); onTextChange?.(event.target.value) }}
       />
       {error === null ? null : <p role="alert" className="text-xs text-danger">{error}</p>}
       <div className="flex justify-end gap-2">

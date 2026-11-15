@@ -36,6 +36,19 @@ Repeat `--project` for several projects, or pass `--all` for every live project 
 projects and verification fixtures are skipped). `--out` must be a new or empty directory. A
 project that does not exist or is deleted stops the export before anything is written.
 
+The bundle's `manifest.json` lists one summary per project: its id, name, owner and members,
+`rows`, `objects`, `skipped_credentials`, and `document_sections`, the number of documents in
+each section of the project's documents list ([prototype-builder.md → Part 4](prototype-builder.md#part-4-documents-in-sections)),
+always all four keys, zeros included:
+
+```json
+"document_sections": {"prd": 1, "prfaq": 1, "prototypes": 2, "documents": 3}
+```
+
+The counts are worked out from each document's type on export and are only a summary: the
+rows themselves are exported as stored, nothing is added to them, and the import does not read
+the counts, so a bundle written before them imports the same way.
+
 ## Import
 
 Preview first. `--dry-run` resolves every owner and member and prints the rows and objects it
@@ -76,7 +89,7 @@ list. To retry it, delete the partial rows or run again with `--new-ids`.
 | Document version counters and allocations | projects table, `DOCUMENT_VERSIONS#PROJECT#{id}` | Version numbers continue where they were. |
 | Comment threads and replies | projects table, `DCOMMENTS#{id}#{series}` / `C#…` | |
 | Prototype pin forms and pins | aggregates table, `FEEDBACK_FORM` / `FORM#pf_…`, `PINS#{form}` | |
-| Prototype HTML, uploaded product docs, persona avatars | raw bucket, `prototypes/{id}/`, `projects/{id}/product_docs/`, `avatars/…` | Content type, cache control and metadata are kept. |
+| Prototype HTML, uploaded product docs, persona avatars | raw bucket, `prototypes/{id}/` (not its `drafts/`), `projects/{id}/product_docs/`, `avatars/…` | Content type, cache control and metadata are kept. |
 
 References are rewritten on the way in:
 
@@ -97,6 +110,8 @@ References are rewritten on the way in:
 - **Review links** (`DOCSHARE#…`, the series' `SHARE` row, reviewer rate counters) and **MCP
   tokens**. These are credentials. Create new review links on the target.
 - **Jobs** (the jobs table): progress rows for runs that already finished, with a TTL.
+- **Prototype drafts** (`prototypes/{id}/drafts/`, [prototype-builder.md](prototype-builder.md), part 2):
+  a draft lives as long as its job, so on the target nothing could open or apply it.
 - **The agent that created a project** (`created_by_agent`): agents belong to their deployment.
 - Feedback, participant lists and project links, Prioritization rows, and agents: they
   reference the source deployment's own data and people.

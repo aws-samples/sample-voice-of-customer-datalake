@@ -74,7 +74,7 @@ function ControlledDocumentHost({ revision, onClose }: Readonly<{ revision: numb
   return (
     <div data-revision={revision}>
       <DocumentModal
-        isEditing title={title} content={content} isSaving={false}
+        title={title} content={content} isSaving={false}
         onTitleChange={setTitle} onContentChange={setContent} onSave={() => Promise.resolve()} onClose={onClose}
       />
     </div>

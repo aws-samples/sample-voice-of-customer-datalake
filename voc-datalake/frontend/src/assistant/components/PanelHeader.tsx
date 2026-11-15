@@ -72,10 +72,14 @@ function ContextChip({ page }: Readonly<{ page: PageContext }>) {
   // A kind or label with no translation reads as the generic "This page", never as a raw key.
   const pageName = t(`pages.${pageLabelKey(page)}`, { defaultValue: t('pages.other') })
   const label = page.title !== undefined ? `${pageName}: ${page.title}` : pageName
+  // A prototype open on its pane (docs/prototype-builder.md, part 2): its title, "Editing: Checkout (v3)".
+  const text = page.documentId !== undefined && page.title !== undefined
+    ? t('panel.editing', { title: page.title })
+    : t('panel.using', { context: label })
   return (
     // Wraps rather than truncating (200 % zoom, long project names); the badge's pill radius softens when it wraps.
-    <span className="badge badge-accent inline-block max-w-full whitespace-normal break-words [overflow-wrap:anywhere]" title={label}>
-      {t('panel.using', { context: label })}
+    <span className="badge badge-accent inline-block max-w-full whitespace-normal break-words [overflow-wrap:anywhere]" title={text}>
+      {text}
     </span>
   )
 }

@@ -17,6 +17,28 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.33.00] - 2026-11-15
+
+Merge of voc-wiki into voc-multiplayer: the document canvas and "Revise from comments", a project's documents in sections, the Prototype builder (Back to vN, drafts from an instruction or from tester pins, the Feedback view, the guided walkthrough), the MCP tools named by area, and main's 7.00.02 (company logo and Kiro agent fixes), which voc-wiki had taken in. Sections 7.02.00, 7.01.00 and 6.17.00 to 6.05.00 marked (voc-wiki) below are that branch's own releases, under their own numbers, and 7.00.02 (from main) is main's; this branch's own sections keep theirs. What each feature does is in those sections and in [docs/document-canvas.md](docs/document-canvas.md), [docs/document-review.md](docs/document-review.md) and [docs/prototype-builder.md](docs/prototype-builder.md).
+
+### Changed
+
+- Projects are still the deployment's (phase 3), so everything voc-wiki adds to them is too: its new reads and writes of a project's rows build their keys through `shared/project_keys.py` (`project_pk`, `document_listing`) like every other project module, and the raw-access guard (`lambda/shared/test/test_ws_raw_access.py`) counts its new table and object accesses as phase 3 entries (the projects routes' prototype reads, the prototype store's pin-form table, a draft's job row, a version's and a draft's write-once HTML put).
+- Document history (`shared/document_history.py`) keeps its per-workspace plumbing (7.27.00) and gains voc-wiki's revise operations with it: `edit_document`'s `revise` and `restore_rows` take the project's `workspace` like the other operations (no route passes one yet), and voc-wiki's `series_head_version` (`shared/document_versions.py`) is ported onto this branch's key builders and readers (`version_counter_key`, the workspace-aware query and read, here with the deployment's scope): it, `require_series_head` and `revise_document` serve only Revise from comments and the prototype's Back to vN and draft Apply, which are not per workspace yet. A comment thread's addressed mark (`record_addressed`, `shared/document_comments.py`) refuses a workspace as every other comment read and write does (comments are not per workspace yet).
+- Two voc-multiplayer tests follow voc-wiki's code: the MCP follow-up read test names `feedback_get`, and the routes voc-wiki adds (the prototype drafts, outline, feedback and walkthrough, Revise from comments, the comments' addressed marks) are listed as phase 3 in the cross-workspace suite's pending routes (`lambda/api/test/cross_workspace_pending.py`), with the other project routes.
+- Internal: `py_stored_attrs`' allowlist names the four prompt-template sections of a prototype draft, which the detector took for job-row attributes; the document generator reads a project's name in one helper (`_project_name`).
+- MCP: voc-wiki's tool names by area (`feedback_search`, `projects_get`, `documents_create`, …) replace the old ones on this branch too, and the tools keep this branch's workspace rule (a token minted in a workspace acts in it, docs/mcp.md); the old note under `feedback_edit` that MCP reaches only the deployment's feedback, which that rule had outdated, is gone.
+- The review gate keeps one implementation, voc-wiki's (`scripts/ai-review/gate.mjs`, its tests and the fail-closed `scripts/git-hooks/pre-commit`): both branches had built one; voc-wiki's checks each round's five reviews by name and a hook that refuses a commit when node or the gate is missing. CONTRIBUTING.md keeps its one "Review gate before commit" section, with this branch's rule for the deterministic step (`scripts/validate-affected.sh` during the rounds, the full `npm run validate` before the final go). This branch's gate tests go with its implementation; voc-wiki's cover the same rules, and a checkout without the gate is now refused rather than let through.
+- Tests: voc-multiplayer's persona model-stamp tests, whose helper voc-wiki replaced with `shared.converse.answering_model`, are kept against the new call site (`_surviving_personas`, `lambda/api/test/test_projects_mutation_1266_2671.py`).
+- Settings, Sources and Users keep this branch's `useExpiringValue` for their saved messages; voc-wiki's `useResetAfter` stays for the AI model section's saved badge, and voc-wiki's test that the Users panel's message timer is cancelled on unmount is kept beside this branch's.
+- The frontend's Vitest keeps this branch's cap of 32 workers and adds voc-wiki's inlining of the drag handle; `scripts/validate.sh` runs both branches' dev-mock tests.
+
+### Upgrade notes
+
+- Deploy as voc-wiki's 6.05.00 to 7.02.00 and main's 7.00.02 say (`npm run deploy:infra`, then the frontend).
+- An MCP client still reaches a tool by its old name (`tools/call` accepts it, `tools/list` shows only the new names), until a later release removes the old ones (voc-wiki's 6.10.00: [docs/mcp.md](docs/mcp.md)).
+- As on every release, the version moves the `APP_VERSION` of the Api and Processing Lambdas, so those template hashes in `voc-datalake/lib/test-support/baseline.json` change.
+
 ## [7.32.00] - 2026-11-15
 
 Merge of voc-multiplayer-mut: property tests of the workspace isolation layer and its jobs, and the retention worker's paged walk made testable and bounded. What a deployment can see: a retention or erasure phase of more than a million rows now hands over once per million rows even with time left, and a run stops (fails, audited) past about 500 million rows scanned; a store that answers a page with the cursor it was read from stops the run too, a safety stop DynamoDB never triggers ([docs/mutation-notes-mut-voc-mp.md](docs/mutation-notes-mut-voc-mp.md), [docs/mutation-notes-testable-voc-mp.md](docs/mutation-notes-testable-voc-mp.md)).
@@ -1008,6 +1030,334 @@ The design for serving several separate teams from one deployment, each in its o
 ### Added
 
 - [docs/multi-workspace.md](docs/multi-workspace.md): the multi-workspace design (status: design, nothing built yet). One deployment, every row keyed `WS#{ws}#…` and every object under `ws/{ws}/`; a `VocControlStack` with the `voc-workspaces` table (workspaces, members, invites, slugs, audit); a `platform-admins` group that creates workspaces and enters any of them (audited); roles per workspace (admin, editor, viewer); `/w/{slug}/…` URLs and an `X-Workspace-Id` header resolved by shared middleware that answers 404 to non-members; the public entry points, per-workspace configuration, one credentials secret per workspace (about $0.40 a month each, the one fixed cost the design adds), cost per workspace, export and delete (and its D5 trade-off), the five phases and the guards phase 1 adds (the raw-access static test, the cross-workspace suite, a two-workspace end-to-end check).
+
+## [7.02.00] - 2026-11-15 (voc-wiki)
+
+The project branch takes in main's 7.00.02 (fixes to the company logo and further confinement of the Kiro agents) on top of 7.01.00. Section 7.00.02 (from main) below is main's, under its own number; this branch reconciles its numbering when it goes to main.
+
+### Changed
+
+- A prototype draft (**Edit with the assistant** or **Incorporate**) follows main's 7.00.02 logo rules as builds do: a leftover logo spot becomes plain bold text, only `<img>` tags take a logo place, and the applied version's "Built from" footer says "Company logo" only when the draft actually shows it ("Company logo not used" when one is uploaded but the draft placed none).
+
+### Upgrade notes
+
+- Deploy as main's 7.00.02 says (`npm run deploy:infra`, then the frontend).
+- As on every release, the version moves the `APP_VERSION` of the Api and Processing Lambdas, so those two template hashes in `voc-datalake/lib/test-support/baseline.json` change.
+
+## [7.01.00] - 2026-11-14 (voc-wiki)
+
+The project branch takes in main's 7.00.00 and 7.00.01: the company logo in prototypes (at most 1 MB for every client) and the Kiro agents kept away from secret files, on top of 6.17.00. Sections 7.00.01, 7.00.00 and 6.05.00 (from main) below are main's, under their own numbers; this branch reconciles its numbering when it goes to main.
+
+### Changed
+
+- A prototype built or revised on this branch shows the uploaded company logo (main's 7.00.00) and keeps its walkthrough and tester-pin widget: a revision's earlier HTML reaches the model without the pin widget or the walkthrough and with the logo back as its placeholder, and the built prototype gets the logo inlined, then its walkthrough and the pin widget.
+- A prototype draft (**Edit with the assistant** or **Incorporate**, 6.12.00 and 6.15.00) is a revision too: the base's inlined logo reaches the model as its placeholder (base64 no longer takes the prior-HTML cap), the uploaded logo is asked for and inlined in the draft, so **Apply** stores a version that shows it, and with no logo to use any more the model draws a wordmark (a leftover logo spot shows the project's name). The applied version's "Built from" footer (`derivation.company_logo_included`) says what the draft did, not what its base did; a draft made before this release keeps its base's, as before.
+- `scripts/validate.sh` runs main's `dependency-overrides` tests in "node: dependency scripts tests"; main's pre-push hook test runs in this branch's "node: git hook tests" step (every `scripts/git-hooks/*.test.mjs`), once.
+
+### Upgrade notes
+
+- Deploy the stacks (`npm run deploy:infra`, which deploys `VocCoreStack` before `VocApiStack`: `VocCoreStack` gains the `CompanyLogoReadPolicy` managed policy, attached by `VocApiStack` to the document generator job role), the stream Lambda and the frontend (`npm run deploy:frontend`), together.
+- **Breaking (from main's 7.00.00):** an API or MCP client that uploads its own company logo (`POST /settings/design-system/logo`) must send at most 1 MB (it was 5 MB), and **Use this logo** refuses a candidate over 1 MB (it was 2 MB); both answer 400 with what to do. The web app makes a larger image smaller before it uploads.
+- A developer whose kiro-cli upgraded the agent files locally should take the committed versions (`git checkout -- .kiro/agents`), as main's 7.00.01 says.
+- As on every release, the version moves the `APP_VERSION` of the Api and Processing Lambdas, so those two template hashes in `voc-datalake/lib/test-support/baseline.json` change.
+
+## [6.17.00] - 2026-11-14 (voc-wiki)
+
+A prototype can walk people through itself: a skippable, step-by-step guide that editors write, the last part of the Prototype builder ([docs/prototype-builder.md](docs/prototype-builder.md)).
+
+### Added
+
+- **A guided walkthrough** inside a prototype: one to ten steps, each a small popup pointing at an element (or a place on a screen), with **Next**, **Back**, **Skip** and **Don't show again** and "Step 2 of 5"; the last step's Next reads **Done**. It starts by itself the first time a person opens a version that has one, and **Show walkthrough** in the preview's header replays it. "Don't show again" is remembered per person for the whole series in the app; opened on its own link, the walkthrough shows on every load and the flag lasts that visit. It works from the keyboard (Left and Right move, Esc skips), names itself to screen readers, respects reduced motion, and becomes a bottom sheet on a phone.
+- **The Walkthrough editor** beside an editor's preview: add a step by clicking an element of the prototype, reorder, edit the text, preview unsaved steps, then save, which makes a new version (earlier versions keep their own steps). **Draft with the assistant** suggests steps from the prototype's screens and the PRD / PR/FAQ it was built from; they land in the editor, marked to check where they point, and nothing is saved until the editor saves.
+- `GET …/prototypes/{document_id}/walkthrough` (viewers), `PUT …/walkthrough` (editors; `{steps, edit_id}`, a new version, 409 when a newer version exists) and `POST …/walkthrough/draft` (editors; a job whose result is the suggested steps). MCP `documents_get_prototype_walkthrough`, `documents_set_prototype_walkthrough` and `documents_draft_prototype_walkthrough`; the assistant's `set_prototype_walkthrough`, whose approval card previews the steps.
+- Every prototype version written from now on carries the walkthrough's runtime (with no steps when it has none), so the editor can point steps at elements; a version written before 6.17.00 shows a note in the editor instead. A walkthrough is kept across revisions, Back to vN and applied drafts.
+
+### Fixed
+
+- A prototype's preview fits its pane: beside a long documents list the pane used to grow with the list, so the bottom of a tall prototype (a walkthrough popup included) could not be reached; on a phone the preview was a 150-pixel strip and now takes at least half the screen.
+
+### Security
+
+- The steps live only in the version's HTML, as a data block the server writes, re-validates on read and screens for instruction-shaped text; a block a model writes (nested or decoy copies included) is stripped from every model output, and the platform never puts the steps in a model's prompt (MCP clients read them through `documents_get_prototype_walkthrough`). Messages from the prototype's frame only change the page's own state and the viewer's local flag.
+
+### Upgrade notes
+
+- Deploy the Api stack, the stream Lambda and the frontend together.
+
+## [6.16.00] - 2026-11-14 (voc-wiki)
+
+A project's documents in the steps of the method: PRD, PR/FAQ, Prototypes, Documents (the Prototype builder, part 4; [docs/prototype-builder.md](docs/prototype-builder.md)).
+
+### Added
+
+- The Documents tab lists a project's documents in four sections, always in that order: **PRD**, **PR/FAQ**, **Prototypes** and **Documents** (research reports, custom documents, product reports, decision records and any later type). Each section is a disclosure with its count, open on every visit; documents are listed last edit first. An empty section still shows, with a count of 0 and its **New** action (for editors: the writing wizards, the prototype build dialog, New document). Below 1280 px the sections are a row of buttons above the document strip, so the strip never scrolls sideways through all four sections.
+- `GET /projects/{id}` gives every document its `section` (`prd`, `prfaq`, `prototypes`, `documents`), computed on read by one helper (`lambda/shared/document_sections.py`). The project export's manifest counts each project's documents per section; the rows are unchanged, so older bundles still import.
+- The assistant's `#document` mentions list documents grouped the same way.
+
+### Changed
+
+- MCP `projects_get` and the assistant's `get_project` list a project's documents as `document_sections: [{section, documents}]`, in the same order and with every section kept. The assistant's tool no longer answers the flat list.
+
+### Deprecated
+
+- MCP `projects_get`'s flat `documents` list: it is still answered in 6.16.00, beside `document_sections`, and a later release removes it. Move MCP clients and saved prompts to `document_sections`.
+
+## [6.15.00] - 2026-11-14 (voc-wiki)
+
+Turn tester feedback into the next version of a prototype: select pins, get a draft that says what it did with each, apply it, and the pins are marked (the Prototype builder, part 3 complete; [docs/prototype-builder.md](docs/prototype-builder.md)).
+
+### Added
+
+- **Incorporate** in a prototype's Feedback dialog, for editors: up to 50 selected pins start one draft. The server reads the pins itself and writes the instruction; only pin ids are sent, never text. Pins whose text reads like an instruction to the AI are withheld and never reach the model.
+- The draft banner says per item what the AI did: **Done** and what changed, or **Not done** and why. After **Apply**, the Done pins show **Incorporated in vN**, each Not done pin gets one reply shown as "AI reason, approved by an editor", and a line says what was marked, replied and what could not be written (a pin gone, already addressed or resolved, reopened by an editor since, a full thread, a withheld reason). A retried Apply finishes that work without writing anything twice, and never re-marks a pin an editor reopened. The applied version records the draft it came from (`revised_from_draft_id`). Only the selected pins are ever touched.
+- `POST …/prototypes/{document_id}/drafts` takes `{pin_ids}` (1 to 50) as well as `{instruction}` (exactly one of the two); the draft read adds `kind`, `outcomes`, `withheld` and `ignored`; Apply's answer adds `incorporation`. The applied version records "Incorporated N pins (k done)".
+- MCP `documents_draft_prototype_revision` takes `pin_ids`, and the assistant's `draft_prototype_revision` too (ids only, after reading `get_prototype_feedback`); its card lists where the selected pins are, never their text.
+
+### Security
+
+- A pin's text reaches the model only inside the pins data block, and a pin flagged after it was selected is withheld again when the draft runs. A model-written reply is stored and shown as the AI's, with whoever applied the draft recorded as its approver (the editor in the app, the token over MCP), never as a person's words.
+
+## [6.14.00] - 2026-11-13 (voc-wiki)
+
+Edit a prototype from the chat bubble: ask the assistant for a change, approve it, and the draft shows on the prototype's page to apply or discard (the Prototype builder, part 2 complete).
+
+### Added
+
+- **Edit with the assistant** in a prototype preview's header, for editors: opens the assistant with the prototype in its context (the chip reads "Editing: Checkout (v3)") and a starter in the composer, nothing sent.
+- The assistant's **draft_prototype_revision** tool: its approval card shows the prototype and the exact instruction; approving starts a draft, which appears in the prototype's draft banner when it is ready. The assistant cannot apply a draft: applying stays on the page, beside the preview.
+- `GET /projects/{id}/prototypes/{document_id}/outline` (anyone who can view the project): a version's screens, headings and visible text, with no code and no tester pins, capped (40 screens, 200 lines, 12,000 characters; `truncated` says so). The assistant reads it through its `get_prototype_outline` tool, so it can name what to change; MCP clients through `documents_get_prototype_outline`.
+- The page context names the open prototype (`documentId`), so the assistant's tools default to it. It is a hint only: every route checks access itself.
+
+### Security
+
+- The assistant reads the outline only inside a `<prototype_outline>` data block; the route defangs data-block tags in every line it answers, and `prototype_outline` joins the tag lists of both the stream and the Python prompts. The outline parser is bounded (the first 512 KB of a page, 256 levels of nesting, its lines and characters) and linear, so a prototype's markup cannot make it quadratic.
+
+### Upgrade notes
+
+- Deploy the Api stack and the stream Lambda with or before the frontend: the button's tool and the outline route are new.
+
+## [6.13.00] - 2026-11-13 (voc-wiki)
+
+Everything testers said about a prototype in one place: the Prototype builder's part 3, its read side.
+
+### Added
+
+- **Feedback** on an HTML prototype, for editors: one dialog with every version's pins and their replies, grouped by screen and element, near-identical pins at one place folded into one item ("3 testers said this"), in the same order every time. Each item shows where, which version, when, its status and replies. Items are selectable (Select all in a group, a "N selected, M pins" count, at most 50 pins); turning a selection into a revision comes with the next part of the builder. An item whose text reads like an instruction says "Not sent to the AI" and cannot be selected.
+- `GET /projects/{id}/prototypes/{document_id}/feedback` (editors), with `partial` when a version's list reaches 200 pins (that version in `cut`) or the series has more than 25 versions (`older_versions_unread`).
+- MCP `documents_list_prototype_feedback` and the assistant's `get_prototype_feedback` tool. Neither passes on the text of a flagged item or pin.
+
+### Upgrade notes
+
+- Deploy the Api stack (and the stream Lambda, for the assistant's tool) with or before the frontend: the dialog reads the new route.
+
+## [6.12.00] - 2026-11-13 (voc-wiki)
+
+A prototype can be changed by asking in words: the change comes back as a draft to preview, then is applied as a new version or discarded (the Prototype builder, part 2's second slice).
+
+### Added
+
+- **Prototype drafts.** `POST /projects/{id}/prototypes/{document_id}/drafts` with `{instruction}` (up to 2,000 characters) starts a job that drafts the change on the newest version of the series. Nothing is saved, and the job's result names only the `draft_id`. `GET …/drafts/{draft_id}` (editors) answers the instruction, the AI's summary of what changed and a signed preview link. `POST …/drafts/{draft_id}/apply` saves the draft as the next version: 201 the first time, 200 with the same version on a retry, 409 when a version was saved since the draft. The version records the instruction, who applied it (`edited_by`) and the model (`llm_metadata`), and gets its own pin form. `DELETE …/drafts/{draft_id}` discards a draft (only a draft job of that series; the banner uses the job's existing delete). A draft can be opened and applied for 7 days.
+- **The draft banner** on a prototype's pane, for editors: "Draft ready: applied to a preview, not saved", the instruction, the summary, a Draft / Current toggle, **Apply as vN** and **Discard**. A draft whose series moved on offers only Discard.
+- **MCP:** `documents_draft_prototype_revision`, `documents_get_prototype_draft` (no preview link), `documents_apply_prototype_draft` and `documents_discard_prototype_draft`.
+
+### Changed
+
+- A restore or apply that is refused with a reason (a version whose HTML is gone, an early screen spec) shows the server's reason; a draft whose prototype moved on says "The prototype changed since this draft: ask again on the newest version"; "Try again" stays for errors a retry can fix, a 429 included.
+
+### Security
+
+- Drafts are served from their own CloudFront behaviour, `/prototypes/*/drafts/*`, ahead of `/prototypes/*`, with a stricter policy: the sandbox without `allow-popups`, no `connect-src` and no pin-form exception. The app's draft frame drops the popups permission too, and pin messages from a draft are ignored. A draft is in no project read and no project export.
+
+### Upgrade notes
+
+- Deploy the Core stack (the new CloudFront behaviour) before or with the Api stack and the frontend.
+
+## [6.11.00] - 2026-11-13 (voc-wiki)
+
+A prototype can go back to an earlier version in one click (the Prototype builder, part 2's first slice).
+
+### Added
+
+- **Back to vN** on a prototype's pane, for editors: on the newest version it reads "Back to v3", on an older one "Restore v2". One click saves that version's HTML as the next version of the series; nothing is deleted. It uses the existing restore route (`POST /projects/{id}/documents/{document_id}/versions/{version_id}/restore`), which used to refuse a prototype, so API callers and scripts get it too.
+- The restored version gets its own pin form, so a pin left on it lands on it, not on the version it came from. A retried request with the same `edit_id` is the same version. The version records who restored it (`edited_by`) and which version it came from (`restored_from_id`, `restored_from_version`), and is never reported "unchanged". The oldest prototypes, whose HTML is stored in the document itself, are restored too. An early JSON screen spec cannot be (400), and a version whose stored HTML is gone answers 404.
+
+### Changed
+
+- The projects API Lambda (and its assist twin, which shares its environment) gets `PIN_SUBMIT_API_BASE`, the same value as the document generator's, so a restored prototype opened on its own link can post pins.
+
+### Upgrade notes
+
+- Deploy the Api stack and the frontend together: the restore route and the projects Lambda's environment change with the button.
+- The MCP tool names before 6.10.00, and `generate` with `step: revise`, are still accepted in 6.11.00. Their removal, announced for 6.11.00, moves to a later release, whose upgrade notes will say so.
+
+## [6.10.01] - 2026-11-13 (voc-wiki)
+
+The Prototype builder's spec.
+
+### Added
+
+- `docs/prototype-builder.md`: what prototypes are today, the four parts of the Prototype builder (guided demo, edits from a chat bubble, feedback into the prototype, documents in sections) with their data model, planned routes and authorization, tools, security boundary, cost, tests and tenet check, the order they are built in, the decisions taken and the two questions left for the owner. Nothing is built yet.
+
+## [6.10.00] - 2026-11-13 (voc-wiki)
+
+The MCP tools are easier for a model to find: names start with their area, descriptions say what each tool is for, and Revise from comments has its own tools.
+
+### Added
+
+- MCP `documents_revise_from_comments` (start Revise from comments on a PR/FAQ or PRD; read the result with `projects_get_job`) and `documents_mark_comments_addressed` (mark or clear threads as addressed by a version). Same routes, write scope and project pin as before.
+
+### Changed
+
+- Every MCP tool is renamed to start with its area (`feedback_`, `memory_`, `company_`, `projects_`, `documents_`, `agents_`, `feature_requests_`, `radar_`, `prioritization_`), and `tools/list` is grouped by area. Each description says what the tool does, its main nouns and verbs, when to use it and its key arguments. The server instructions, prompts, skill, docs and Connect page use the new names; `docs/mcp.md` and the skill are tested to name exactly the listed tools.
+- The `tools/list` budget goes from 4,000 to 10,000 estimated tokens (about 6,000 today); clients cache the list.
+- `projects_generate` (formerly `generate`) no longer lists `step: revise`.
+- `docs/mcp.md` notes that VoC's own assistant adds tool search (model-side tool search, or a `find_tools` returning tool references) once it passes about 15 tools a page; it has 100 tools today, 21 to 40 a page, so that is the next step.
+- The MCP test floors (`scripts/mcp_gate.py`) rise with the new tests; `test_mcp_global_tokens_mutation`'s floor is re-based from 147 to 139, the count it has had since 5.47.04 moved eight of its cases (still tested) to `shared.timestamps`.
+
+### Deprecated
+
+- The MCP tool names before 6.10.00 and `generate` with `step: revise`. 6.11.00 removes them: move clients, skills and saved prompts to the new names (docs/mcp.md, "Renamed in 6.10.00").
+
+### Fixed
+
+- The canvas's check whether a stored HTML block may stay open finds each block type's end the way the Markdown parser does (string searches, no regex), so `<!-->`, `<!--->` and `<?>` count as closed; a comment ended only by `--!>` stays open, as the parser reads it. CodeQL (now run locally in strict mode) reports nothing.
+
+### Upgrade notes
+
+- Deploy every stack (`npm run deploy:infra`) and the frontend. The names before 6.10.00 still work on `tools/call` for this release (not listed, audited under the new name), and so does `generate` with `step: revise`.
+
+## [6.09.00] - 2026-11-12 (voc-wiki)
+
+A version written by Revise from comments records which model and prompt wrote it, and the follow-ups of 6.08.00.
+
+### Added
+
+- **Which AI wrote a revised version** (D4): every Revise-from-comments pass's result names the model that answered (`model_id`, the one the call reports, so a capacity fallback is named) and the prompt version (`prompt_version`; new `REVISE_PROMPT_VERSION` 1.0.0, pinned to a digest of the prompts, withheld-text branches included, so a prompt change must bump it). A version an applied pass writes, and a person's checked save of a proposal, carry `llm_metadata: {model, prompt_version}` (the shape personas use); it is never carried to later versions or restores. `GET …/versions` lists each version's `llm_metadata` with the model's label, and History shows "Revised from comments · <model>". One shared `answering_model` (shared/converse.py) for personas and revise passes.
+
+### Changed
+
+- A refused revise save (`revise_job_id` that does not check out) answers 400 with `code: revise_refused`; only that refusal offers "Save as my own edit", other 400s show the normal save error.
+- Full screen brings the page's header to the top of the window (however far down the page was) and then focuses the canvas without scrolling it (the editor handle's `focus({ scroll: false })`, which also asks the browser not to scroll on a phone), instead of scrolling back afterwards.
+- The canvas perf spec gates on long tasks only and reports keystroke timings (a shared machine's load made the keystroke bar fail on good code); its comment states the revise limit right.
+
+### Fixed
+
+- A revise thread link wraps its quote (two lines at most) instead of cutting it on a phone.
+
+### Upgrade notes
+
+- Deploy every stack and the frontend (`npm run deploy:infra`, `npm run deploy:frontend`): the projects Lambda records `llm_metadata` on revised versions and answers `code: revise_refused`. No new route, resource or permission; versions written before this release read `llm_metadata: null`.
+
+## [6.08.00] - 2026-11-12 (voc-wiki)
+
+The document page fits every width and works from the keyboard, and the canvas stays fast on long documents with a lighter editor.
+
+### Changed
+
+- **Long documents and a lighter editor**: typing in a 200,000-character document no longer stalls after each pause (the longest main-thread task 957 ms → about 60 ms; at 60,000 characters 276 ms → none over 50 ms): the Markdown written after a change costs the edited blocks, not the document, and heading ids are read again only when a heading changes. The editor's lazy chunk is smaller (`vendor-editor` 161 → 144 kB gzip): the format bar, block handle, "/" menu and popovers load right after the text (`vendor-editor-menus`, 18 kB gzip). The Markdown written is unchanged, byte for byte; the entry chunk does not grow. New dev-mock spec `e2e/tests/document-canvas-perf.spec.ts`.
+
+### Fixed
+
+- **Accessibility and widths**: the File menu opens inside a phone's screen; Full screen opens with the page's header in view; the stale-save banner's buttons meet AA contrast; the Revise-from-comments panel keeps Close in its corner; the comment filters use the select style. In a comment or reply box Ctrl/⌘+Enter sends and Escape closes an empty box but keeps one with text, so a draft is no longer lost to Escape; focus returns to Reply. New dev-mock spec `e2e/tests/document-canvas-a11y.spec.ts` (axe and the keyboard at 1440 to 360 px, both themes).
+
+## [6.07.00] - 2026-11-12 (voc-wiki)
+
+A saved revision proposal is recorded as one only after the server checks it, and the dev-mock end-to-end suite is green again.
+
+### Changed
+
+- **Saving a Revise-from-comments proposal** ([docs/document-review.md](docs/document-review.md#saving-a-proposal)): `PUT /projects/{id}/documents/{doc}` takes `revise_job_id` (the pass's assist job) instead of trusting `edit_kind: revise` from the client. The server records `edit_kind: revise`, `edited_by` and `revise_job_id` only when the job is a completed revise pass of this project with a proposal, started by the caller, on the same series, and at least one of its changes is new in the saved text relative to the version being edited (an `after` it holds more often than that version did, or a deletion (or trim) whose `before` occurs less often than in that version); a pass past its expiry is refused even before DynamoDB removes it, and an unchanged save stays the no-op; otherwise it answers 400 and writes nothing. A deletion-only proposal is saved as a revise too. On a refusal the canvas keeps the draft, shows the reason and offers **Save as my own edit** (the same text as a plain edit, with the revision check). `revise_job_id` and `edited_by` are not copied onto later versions.
+- The assistant's proposed change shows on the canvas also when it names another version of the same PR/FAQ or PRD, labelled "Proposed on vN; this page shows vM". When vN is older than the page's version, the diff is against this page (what approving produces: the next version holds the proposal, replacing the changes made since vN, which stay in History) and the banner says so; a proposal on a newer version is diffed against that version.
+- A newer version skipped while the canvas had unsaved changes is followed once the canvas is clean again (never back to an older version after a save).
+- When some threads could not be marked addressed (a full history) the canvas says so and that the others were. `POST …/comments/addressed`'s 409 for some marked carries a machine-readable `code` (`addressed_some_full`), which the canvas reads instead of the message: any API error can now carry a `code` beside `error` (`ApiError.code`).
+- Settings' "saved" note uses the shared `useResetAfter` hook.
+
+### Fixed
+
+- The dev mock lists `GET /feedback` newest first, like the API, so a just-uploaded CSV dataset's rows are on the first page (`csv-dataset-update.spec.ts`), and answers a second, non-admin app user (`x-mock-board-viewer: user`) so the feature-request spec's second +1 is its own (`feature-requests.spec.ts`). The dev mock no longer copies `edited_by` onto later versions. The full mock end-to-end suite passes (203 passed, 0 failed).
+
+### Upgrade notes
+
+- Deploy every stack and the frontend (`npm run deploy:infra`, `npm run deploy:frontend`): the projects Lambda checks `revise_job_id`.
+
+## [6.06.00] - 2026-11-12 (voc-wiki)
+
+The document canvas gets a full-screen view, one File menu, and a revision pass from the comments.
+
+### Added
+
+- **Revise from comments** on a PR/FAQ or PRD ([docs/document-review.md](docs/document-review.md#revise-from-comments)): `POST /projects/{id}/documents/{doc}/revise-from-comments` (an assist job on the `documents` model surface) reads the answered threads (resolved, or open with a reply, not yet addressed) and up to 20 of the document's source reviews, and answers by the caller's way of working ([docs/ways-of-working.md](docs/ways-of-working.md#revise-from-comments)): recommendations (one per thread, nothing written), a proposal (changes whose `before` is found exactly once in the version, accepted or rejected one by one on the canvas, then saved as a new version), or, for AI-driven, applied (the server writes the next version with `edit_kind: revise` and `edited_by`, D1/D4, and marks the threads). An autonomous caller that may not write gets recommendations. `POST …/comments/addressed` (`{thread_ids, addressed?}`) marks threads addressed by the version in the path, or clears the mark with `addressed: false` (the canvas's Undo of an applied pass); each thread keeps an append-only `addressed_history` and shows `addressed: {version, at, by_kind}`. A proposal saved from the canvas is recorded with `edit_kind: revise`. MCP: `generate` with `step: revise` (with `mark_addressed: true|false` and `thread_ids` it marks or clears instead, by the version `document_id` names); one step, not two tools, because `tools/list` sits at its 4,000-token budget (the repeated pinned-token note moved into the server instructions to make room). The canvas shows the outcome (recommendations linked to their threads; the proposal as a per-change diff with Accept / Reject / Out of date; the applied banner with Undo and Review again), "Addressed in vN" badges and an Addressed filter, and "Ask personas to review again" after a pass.
+- **Full screen** on the document page (Ctrl/⌘+Shift+F, Esc leaves; `?view=focus` in the address): the canvas and comment rail fill the window, the rest of the app hidden.
+- **The File menu** on the document page: Save with its state, Share for review, Download as Markdown, Print or save as PDF (optionally with the open comments), the other export formats, History and Delete. The export menus now share the app's menu-button keyboard handling.
+
+### Fixed
+
+- Comment bubbles in the margin are laid out from their measured heights, so a tall card no longer covers the next one's Reply button.
+
+### Upgrade notes
+
+- Deploy every stack (`npm run deploy:infra`) and the frontend (`npm run deploy:frontend`): two new routes on the projects Lambda (no new resource, permission or cost). Existing threads read `addressed: null`.
+
+## [6.05.00] - 2026-11-11 (voc-wiki)
+
+Projects > Documents opens each document as a page you edit in place, and every commit can be held to a recorded review gate.
+
+### Added
+
+- **The document canvas** ([docs/document-canvas.md](docs/document-canvas.md)). A prose document opens as a page: a reading column, the title (editable in place for research and custom documents; a PR/FAQ or PRD title stays the series'), an outline of its headings (a **Contents** disclosure on narrow screens), and evidence cards for the reviews and board requests it was written from. Editing happens in place on a block editor built on TipTap 3.33.1 and ProseMirror (MIT): paragraphs, headings, lists, to-dos, quotes, callouts (Markdown alerts), code, tables, dividers and images; a "/" block menu, Markdown shortcuts, a floating format bar, links (http, https, mailto and app paths only), and a handle on each block to drag it, with a keyboard path (Alt+Shift+Up/Down, the handle's menu). The editor is lazy-loaded with the page (`vendor-editor`, about 161 kB gzip); the entry chunk does not grow.
+- **Save in place.** **Save** (or Ctrl/⌘+S) writes one new version through the existing document PUT with `expected_revision` and a fresh `edit_id` (D1, D4); there is no autosave. A stale save shows **Load the latest** / **Save mine anyway**; leaving with unsaved changes asks first. The header carries the status, Discard, Save, Share (PR/FAQ, PRD), Export (the saved version), **History** (the versions, with restore) and Delete; on a phone, Discard and Save are pinned to the bottom of the screen while there are unsaved changes.
+- **Comments on the canvas.** On a PR/FAQ or PRD, select text and choose **Comment** in the format bar (or Ctrl/⌘+Alt+M); threads, replies, resolve, filters, persona reviews and the share-for-review link work as before, in a side rail with **Comments** and **Evidence** tabs. A thread whose quote is edited away moves to "Not found in this version" as you type. Text-quote anchors skip the editor's own controls and treat block edges as one space, the same text the server matches against.
+- **The assistant's proposed document change on the canvas**: a banner, then a block-level diff over the saved text with the same Approve / Decline as the assistant's approval card (one approval, one write path).
+- **Review gate tooling**: `scripts/ai-review/gate.mjs` records a GO for the staged tree (the review rounds, each finding and its outcome, the final verdict) under `.cache/ai-review/gate/`, and `scripts/git-hooks/pre-commit` refuses a commit whose staged tree has no GO record (CONTRIBUTING.md, "Review gate before commit"). Tests: `scripts/ai-review/gate.test.mjs`, `scripts/git-hooks/pre-commit.test.mjs`.
+
+### Changed
+
+- The document pane's Edit button and edit dialog are gone for prose documents (the canvas is the editor); **New document** keeps its dialog, which is now create-only, and opens the new document on the canvas.
+- The Markdown stays the stored format: untouched blocks are written back byte for byte, and anything without a block (raw HTML, footnotes, reference definitions) is kept as written. A round-trip test runs every template, generated layout and dev-mock document (`src/components/DocumentCanvas/markdown/roundTrip.test.ts`).
+- The external review page reads with the canvas's typography; a comment draft with text is never replaced by a new selection.
+- A resolved comment card is marked by its background and a dashed border instead of lowered opacity (which failed AA contrast).
+- The dev mock: proj_1 has a PR/FAQ and a PRD series of three versions using every block, seeded comment threads and evidence; the document PUT checks `edit_id` like the API.
+- `projectsApi.updateDocument` and `createDocument` return `{ document }`, normalised by `normalizeProjectDocument` (a failed call already throws).
+
+### Fixed
+
+- The frontend unit suite under load: vitest now runs at most 64 workers (`vitest.config.ts`; the default on a many-core machine queued every worker's module fetches behind one server, so lazy chunks loaded in `beforeAll` timed out), and the lazy-page preloads are top-level imports instead of hooks with their own timeout.
+- Self-clearing notes in Sources, User administration, Settings and the S3 import explorer cancel their timer on unmount (`src/hooks/useResetAfter.ts`); a test run could otherwise end with "window is not defined". The assistant runtime test mocks the session poll that follows a Stop.
+- A raw-Markdown block pasted back into the canvas stays a raw block instead of becoming a code block.
+- `lambda/api/test/test_prototype_pins.py` seeds no source profiles, as the other feedback-form suites do: with the suite's frozen clock, a failed profile read cached by an earlier test on the same pytest worker never expired, and the form submit answered 503 at random.
+
+### Upgrade notes
+
+- Frontend only: `npm run deploy:frontend`. No stack, route or stored data changes.
+- To use the review gate locally, from the repo's top level: `hooks=$(git config core.hooksPath || git rev-parse --git-path hooks)`, then `cp scripts/git-hooks/pre-commit "$hooks/pre-commit" && chmod +x "$hooks/pre-commit"` (CONTRIBUTING.md, "Review gate before commit"). The hooks directory is per clone, so it also checks the clone's other worktrees, and refuses a branch without `scripts/ai-review/gate.mjs`.
+
+## [7.00.02] - 2026-11-14 (from main)
+
+Fixes from an independent review of 7.00.00 and 7.00.01: large reference logos work again, prototypes never get a broken or misrecorded logo, and the repository's Kiro agents are confined further.
+
+### Fixed
+
+- A design reference's logo between 1 and 5 MB is drawn smaller when the reference is read, so **Use this logo** accepts it. Since 7.00.00 a website or GitHub logo of 1 to 2 MB was refused, because it was only drawn smaller above 2 MB. A GitHub repository's raster logo is handed to the managed browser like its SVG logo already is; when it cannot be drawn, the reference's guidelines ask for a PNG under 1 MB. See [docs/company-context.md → An oversized reference logo](docs/company-context.md).
+- Prototypes: when no logo is available, the company name is written as plain bold text that cannot break the prototype's scripts (it was a `<span>` with quoted attributes, which broke a script that held the logo in a string). Only `<img>` tags take one of the two logo places, in any letter case; a placeholder in a comment, CSS or a script no longer uses one up.
+- A prototype's "Built from" footer says "Company logo" only when the logo actually appears in the prototype, and "Company logo not used" when one is uploaded but does not (it recorded that the logo was read, even when the model placed none). A design system that holds only a logo is no longer listed as "Design system".
+- Company → Design system → **Upload logo** in a browser that cannot encode WebP: a large logo now falls back to a smaller PNG (768, then 512 px) instead of being refused.
+- 7.00.01 said that kiro-cli's V3 engine ignores an agent's `permissions` rules. It does not: kiro-cli has two engines, and the headless one (`--no-interactive`, which the review runners use) is V2, which enforces only `toolsSettings`, while interactive V3 enforces only `permissions.rules`. Both blocks stay in every agent, for that reason. The grep gap named there is closed (below), and `test-generator` is not run by a hook.
+
+### Security
+
+- Drawing a reference's logo smaller (verified live with the managed browser: a 5 MB logo is drawn in about 26 s, 3 MB in 13 s) downloads it once through the platform's address checks (the SSRF guard on every redirect, sockets pinned to the vetted address), at most 5 MB and a PNG, JPEG or WebP by its bytes; the managed browser draws those bytes from a `data:` URL and never fetches the address itself (it used to re-download the raw URL, outside the guard).
+- The AI review runners (`scripts/ai-review/review.mjs` and the optional pre-push hook) pin kiro-cli's V2 engine (`--agent-engine v2`), which keeps their reads inside the repository; the engine used to depend on each developer's `chat.agentEngine` setting.
+- `first-principles-reviewer` no longer has the `grep` and `glob` tools, which printed lines from a denied `.env` on the V2 engine; it searches by listing folders and reading files with its read tool.
+- `test-generator` no longer pre-approves every shell command and every write. Its shell runs only the repository's test runners (`npx vitest run`, `pytest` through the venv, `node --test`, `npm test`, `npm run test…`, optionally after a `cd` into a package folder); network clients, `env`, `printenv`, the AWS CLI, reads of home paths, absolute or `..` paths, and flags that load other code or another project (`--prefix`, `-C`, `--config`, `-c`, `--import`, `--require`, `-r`, `-p`, `-e`, `--env-file`, `--root`, `--rootdir`) are refused, on both engines (verified live: `npm run test --prefix <elsewhere>` and `node --test --import <file>` used to run that code).
+- Secret-shaped paths also include `.envrc`, `.pypirc`, `.pgpass`, ECDSA and DSA keys, `.ppk`, `.jks` and `.tfvars` files: they are never sent for review and the agents cannot read them (no tracked file matches).
+- The agent-configuration test is an allowlist: it fails on any agent, tool, field, `resources` entry, hook, MCP server or agent-shaped file in `.kiro/agents` that is not listed (`scripts/ai-review/agent-guard.mjs`).
+- The document generator's read of the company logo names the exact `.png`, `.jpg` and `.webp` keys.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:infra`, then the frontend). No new resource; the `CompanyLogoReadPolicy` managed policy changes in place.
+- A company logo over 1 MB saved before 7.00.00 still shows in the app but is left out of every prototype ("Company logo not used"): upload it again (the browser makes it smaller). A reference read before this release keeps its old preview: refresh it so a large logo is drawn smaller.
+- Used interactively (kiro-cli's V3 engine), the repository's Kiro agents can still read and write files outside the repository without asking; agent rules cannot prevent that today. Inside the repository secret-shaped paths are refused on both engines. The four agents pinned to `claude-opus-4.6` do not start on V3 in accounts where that model is unavailable. On V3, a shell redirection (`> file`) is checked as a write, so it can also write outside the repository (V2 refuses it). A test that `test-generator` writes can do anything when it runs: read its tests before running them.
 
 ## [7.00.01] - 2026-11-13
 

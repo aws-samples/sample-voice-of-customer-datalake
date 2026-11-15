@@ -8,6 +8,7 @@
   },
   "panel": {
     "title": "アシスタント",
+    "editing": "編集中：{{title}}",
     "using": "参照中: {{context}}",
     "newChat": "新しいチャット",
     "sessions": "過去の会話",
@@ -290,6 +291,12 @@
     "heading": {
       "persona": "ペルソナ",
       "document": "ドキュメント"
+    },
+    "sections": {
+      "prd": "PRD",
+      "prfaq": "PR/FAQ",
+      "prototypes": "プロトタイプ",
+      "documents": "ドキュメント"
     },
     "limit": {
       "persona": "1 回のメッセージで指定できるペルソナは最大 {{max, number}} 件です。",

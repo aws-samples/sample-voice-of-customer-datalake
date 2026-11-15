@@ -256,7 +256,7 @@ calls as before for a deployment key, so reinforcing, editing, archiving and mer
 retrieval, conflict checks, listing, counts, cursors and imports take an optional workspace. The memory API (since 7.15.00) acts in the workspace a request names: every `/memory` route resolves it
 first (`lambda/api/memory_handler.py`, its first middleware; fresh for a write, the warm cache for a read and for
 the assistant's `POST /memory/retrieve`, its `used` marks included) and reads and writes that workspace's
-memories, the stream assistant's recall and the MCP `search_memory` tool included (both send the header); inside one
+memories, the stream assistant's recall and the MCP `memory_search` tool included (both send the header); inside one
 its admins curate (the deployment's `admins` group and the `memory_reviewer` flag grant nothing there), a viewer
 reads only, and a page import is the workspace's (its record, its page under `ws/{ws}/memory-imports/`, its queue
 message naming the workspace). Without the header, the

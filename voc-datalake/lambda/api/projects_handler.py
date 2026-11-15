@@ -81,14 +81,18 @@ from projects import (
     update_project_member,
 )
 from shared import (
+    ai_mode,
     ai_writing,
     assist_jobs,
     category_access,
     category_gate,
     company_personas_routes,
     decision_records,
+    document_comments,
+    document_history,
     document_review,
     document_review_routes,
+    document_revision,
     document_series,
     draft_intent,
     feature_request_context,
@@ -98,7 +102,12 @@ from shared import (
     persona_evidence_marker,
     project_access,
     project_gate,
+    prototype_drafts,
+    prototype_feedback,
+    prototype_outline,
     prototype_pins,
+    prototype_walkthrough,
+    prototype_walkthrough_draft,
     row_lineage_ack,
 )
 from shared import prioritization_axes as axes_mod
@@ -106,6 +115,7 @@ from shared.api import (
     MAX_PERSONAS_PER_GENERATION,
     api_handler,
     create_api_resolver,
+    decimal_default,
     get_caller_subject,
     # Appended rather than sorted in, to avoid a conflict with #344 and #330 while
     # they are open; sort this block once both have landed.
@@ -150,6 +160,8 @@ from shared.project_writes import (
     is_project_tombstone,
     is_verification_fixture,
 )
+from shared.prototype_versions import save_walkthrough, version_html
+from shared.prototypes import prototype_draft_signed_url
 from shared.request_body import json_body_value, json_object_body
 from shared.row_ids import MAX_KEY_SEGMENT_ID_LEN, is_clampable_number, validated_row_id
 from shared.tables import get_aggregates_table, get_jobs_table, get_projects_table
@@ -250,23 +262,25 @@ def _request_caller() -> Caller:
     return caller
 
 
-def _require_ai_writing(project_id: str, doc_type: object) -> None:
+def _require_ai_writing(project_id: str, doc_type: object) -> ai_mode.AiMode | None:
     """403 with a coaching message unless the AI may write ``doc_type`` here (shared/ai_writing.py).
 
     Only prfaq / prd are gated. An autonomous call (agent, plan step, MCP token) writes for
     the person it acts as AND for the project's owner when that is someone else (an agent
-    hands its project to a category owner): both must work AI-driven.
+    hands its project to a category owner): both must work AI-driven. Answers the caller's
+    mode it read (None for an ungated type).
     """
     if not ai_writing.is_gated(doc_type):
-        return
+        return None
     kind = ai_writing.writing_kind(app.current_event.raw_event)
     subject = _request_caller().subject
     table = get_aggregates_table()
-    ai_writing.require_ai_writing(table, subject, doc_type, kind)
+    caller_mode = ai_writing.require_ai_writing(table, subject, doc_type, kind)
     if kind == ai_writing.KIND_AUTONOMOUS:
         owner = (_gate_meta(project_id) or {}).get('owner_sub')
         if isinstance(owner, str) and owner and owner != subject and not project_access.is_synthetic_subject(owner):
             ai_writing.require_ai_writing(table, owner, doc_type, kind)
+    return caller_mode
 
 
 def _require_autonomous_edit_allowed(project_id: str, document_id: str) -> None:
@@ -1119,9 +1133,20 @@ def api_merge_documents(project_id: str):
 @app.put("/projects/<project_id>/documents/<document_id>")
 @tracer.capture_method
 def api_update_document(project_id: str, document_id: str):
+    """``{title?, content?, edit_id?, expected_revision?, revise_job_id?}``: one new version.
+
+    ``revise_job_id`` = the "Revise from comments" pass whose proposal the person accepted on the
+    canvas: the server checks the pass (docs/document-review.md) and records ``edit_kind`` ``revise``,
+    ``edited_by`` them and the job id (D4), or answers 400. ``edit_kind`` is the server's to record:
+    one in the body is ignored, like any other key the route does not read.
+    """
     body = json_object_body(app)
+    revise_job_id = document_history.validated_revise_job_id(body.get('revise_job_id'))
     _require_autonomous_edit_allowed(project_id, document_id)
-    return update_document(project_id, document_id, body)
+    proposal = None if revise_job_id is None else document_revision.ProposalSave(
+        job_id=revise_job_id, job=_project_job_row(project_id, revise_job_id),
+        caller_sub=_request_caller().subject, actor=actor_from_event(app.current_event.raw_event))
+    return update_document(project_id, document_id, body, proposal=proposal)
 
 
 @app.get("/projects/<project_id>/documents/<document_id>/versions")
@@ -1134,9 +1159,10 @@ def api_document_versions(project_id: str, document_id: str):
 @app.post("/projects/<project_id>/documents/<document_id>/versions/<version_id>/restore")
 @tracer.capture_method
 def api_restore_document_version(project_id: str, document_id: str, version_id: str):
-    """Restore = a NEW version carrying that version's content; nothing is rewritten."""
+    """Restore = a NEW version carrying that version's content; nothing is rewritten (a prototype: Back to vN)."""
     _require_autonomous_edit_allowed(project_id, document_id)
-    return restore_document(project_id, document_id, version_id, json_object_body(app))
+    return restore_document(project_id, document_id, version_id, json_object_body(app),
+                            actor=actor_from_event(app.current_event.raw_event))
 
 
 @app.delete("/projects/<project_id>/documents/<document_id>")
@@ -1179,12 +1205,18 @@ def api_get_job_status(project_id: str, job_id: str):
     return _job_status(project_id, job_id)
 
 
-def _job_status(project_id: str, job_id: str) -> dict:
+def _project_job_row(project_id: str, job_id: str) -> dict | None:
+    """The project's job row (config included: never answered as is), or None."""
     # Consistent: an assist's first poll lands milliseconds after its start wrote the row.
     response = get_jobs_table().get_item(
         Key={'pk': project_pk(project_id), 'sk': f'JOB#{job_id}'}, ConsistentRead=True,
     )
     item = response.get('Item')
+    return item if isinstance(item, dict) else None
+
+
+def _job_status(project_id: str, job_id: str) -> dict:
+    item = _project_job_row(project_id, job_id)
     if not item:
         raise NotFoundError('Job not found')
     return {
@@ -1249,6 +1281,11 @@ def _job_list(project_id: str) -> dict:
 @app.delete("/projects/<project_id>/jobs/<job_id>")
 @tracer.capture_method
 def api_delete_job(project_id: str, job_id: str):
+    return _delete_job_row(project_id, job_id)
+
+
+def _delete_job_row(project_id: str, job_id: str) -> dict:
+    """Delete one job row of the project (a missing row is no error); the job DELETE and a draft's Discard."""
     get_jobs_table().delete_item(Key={'pk': project_pk(project_id), 'sk': f'JOB#{job_id}'})
     return {'success': True}
 
@@ -4803,8 +4840,8 @@ def _validated_product_doc_ids(project_id: str, raw: Any, field: str) -> list[st
 _PIN_DOCUMENT_ID_RE = re.compile(r'^[A-Za-z0-9_\-]{1,128}\Z')
 
 
-def _pin_form_for(project_id: str, document_id: str) -> str:
-    """EDIT on the project, the prototype exists, and its pin form id — else 4xx."""
+def _pin_prototype_row(project_id: str, document_id: str, *, whole: bool = False) -> dict:
+    """EDIT on the project and the prototype's row (only its key unless ``whole``) — else 4xx."""
     _project_access_for(project_id, _request_caller(), project_access.LEVEL_EDIT)
     if not _PIN_DOCUMENT_ID_RE.fullmatch(document_id):
         raise ValidationError('Invalid document id')
@@ -4813,10 +4850,16 @@ def _pin_form_for(project_id: str, document_id: str) -> str:
         raise ConfigurationError('Projects table not configured')
     item = table.get_item(
         Key={'pk': project_pk(project_id), 'sk': f'PROTOTYPE#{document_id}'},
-        ProjectionExpression='pk',
+        **({} if whole else {'ProjectionExpression': 'pk'}),
     ).get('Item')
     if not item:
         raise NotFoundError('Prototype not found')
+    return item
+
+
+def _pin_form_for(project_id: str, document_id: str) -> str:
+    """EDIT on the project, the prototype exists, and its pin form id — else 4xx."""
+    _pin_prototype_row(project_id, document_id)
     return prototype_pins.pin_form_id(document_id)
 
 
@@ -4863,6 +4906,22 @@ def list_prototype_pins(project_id: str, document_id: str):
         raise ValidationError('status must be open, addressed or resolved')
     pins = prototype_pins.list_pins(_pins_table(), form_id, status)
     return {'form_id': form_id, 'document_id': document_id, 'count': len(pins), 'pins': pins}
+
+
+@app.get("/projects/<project_id>/prototypes/<document_id>/feedback")
+@tracer.capture_method
+def list_prototype_feedback(project_id: str, document_id: str):
+    """The series' pins grouped and deduplicated (``?status=``, ``?version=``), with ``partial``.
+
+    EDIT (``_ROUTE_OVERRIDES`` and here), as reading pins is: an item may quote what a tester typed.
+    """
+    # The whole row: its type, title and version name its series (the HTML itself is in S3).
+    row = _pin_prototype_row(project_id, document_id, whole=True)
+    query = app.current_event.query_string_parameters or {}
+    status = prototype_feedback.checked_status(query.get('status'))
+    version = prototype_feedback.checked_version(query.get('version'))
+    return prototype_feedback.read_feedback(get_projects_table(), _pins_table(), project_id, row,
+                                            status=status, version=version)
 
 
 @app.post("/projects/<project_id>/prototypes/<document_id>/pins/<pin_id>/replies")
@@ -4937,6 +4996,194 @@ def resolve_addressed_prototype_pins(project_id: str, document_id: str):
     """Resolve ADDRESSED pins after the revision that addressed them passed review."""
     return _batch_status_change(project_id, document_id, prototype_pins.STATUS_RESOLVED,
                                 (prototype_pins.STATUS_ADDRESSED,))
+
+
+# ---- Prototype drafts (docs/prototype-builder.md, part 2) ----------------------
+#
+# A draft is a finished `draft_prototype` job plus its own object; Apply makes it
+# the next version, Discard deletes its job row: its own DELETE below (a draft job of
+# this series only, what the MCP tool calls), or the job DELETE the page uses
+# (`DELETE /projects/{id}/jobs/{job_id}`). The gate requires EDIT for all four draft
+# routes: the two POSTs and the DELETE by default, the GET by its `_ROUTE_OVERRIDES`
+# entry (the summary is model text about an unapplied change, for editors). Every
+# check is in shared/prototype_drafts.py; the job row, never the request, names the
+# draft's object. The outline after them is a GET at VIEW.
+
+def _draft_job(project_id: str, document_id: str, draft_id: str) -> tuple[dict, dict, dict]:
+    """``(job row, its draft detail, the draft's base)``, the base a version of ``document_id``'s series; or a 404."""
+    document = projects.prototype_document(project_id, document_id)
+    job = _project_job_row(project_id, draft_id)
+    draft = prototype_drafts.usable_draft(job, now_epoch=int(time.time()))
+    if job is None or draft is None:
+        raise NotFoundError(prototype_drafts.DRAFT_NOT_FOUND)
+    base = prototype_drafts.drafted_base(get_projects_table(), project_id, document, draft)
+    return job, dict(draft), base
+
+
+@app.post("/projects/<project_id>/prototypes/<document_id>/drafts")
+@tracer.capture_method
+def api_start_prototype_draft(project_id: str, document_id: str):
+    """``{instruction | pin_ids, response_language?}``: a draft of the series' newest version, as a job.
+
+    Exactly one of ``instruction`` (an editor's words) and ``pin_ids`` (1 to 50 pins of this series:
+    Incorporate, Part 3; flagged pins withheld, the instruction the server's). The base is the head of
+    ``document_id``'s series when the request arrives, whichever version it names. Its HTML must be
+    readable (Back to vN's rule): an early JSON spec is a 400, a lost object a 404, both before any job.
+    The job's result is ``{draft_id}``.
+    """
+    body = json_object_body(app)
+    request = prototype_drafts.validated_request(body)
+    document = projects.prototype_document(project_id, document_id)
+    config = prototype_drafts.draft_config(projects.prototype_store(), project_id, document, request,
+                                           body.get('response_language'))
+    # The starter's category scope, as every generator job records it: the company memories
+    # the draft's grounding reads are those the editor may see.
+    config[category_access.SCOPE_CONFIG_KEY] = _caller_category_scope()
+    return _started_generator_job(project_id, prototype_drafts.DRAFT_JOB_TYPE, config, 'Prototype draft started.')
+
+
+@app.get("/projects/<project_id>/prototypes/<document_id>/drafts/<draft_id>")
+@tracer.capture_method
+def api_get_prototype_draft(project_id: str, document_id: str, draft_id: str):
+    """``{draft_id, base_document_id, base_version, instruction, summary, preview_url, completed_at}``."""
+    job, draft, _ = _draft_job(project_id, document_id, draft_id)
+    preview_url = prototype_draft_signed_url(project_id, str(job['job_id']))
+    return prototype_drafts.draft_view(job, draft, preview_url)
+
+
+@app.post("/projects/<project_id>/prototypes/<document_id>/drafts/<draft_id>/apply")
+@tracer.capture_method
+def api_apply_prototype_draft(project_id: str, document_id: str, draft_id: str):
+    """The draft as the next version: 201 ``{success, document}`` when this call wrote it, 200 on a replay.
+
+    409 when the series moved past the draft's base (ask again on the newest version). A feedback
+    draft's answer adds ``incorporation: {marked, replied, not_written}``: after the version, on every
+    call (a replay finishes the set), its Done pins marked addressed and its Not done reasons posted.
+    """
+    _require_autonomous_edit_allowed(project_id, document_id)
+    job, draft, base = _draft_job(project_id, document_id, draft_id)
+    store = projects.prototype_store()
+    actor = actor_from_event(app.current_event.raw_event)
+    item, created = prototype_drafts.apply_draft(store, project_id, job, draft, base, now=now_iso(), actor=actor)
+    answer: dict[str, Any] = {'success': True, 'document': projects.signed_prototype_document(item, project_id)}
+    incorporation = prototype_drafts.incorporation_of(store, job, draft, item, actor=actor, now=now_iso())
+    if incorporation is not None:
+        answer['incorporation'] = incorporation
+    if not created:
+        return answer
+    return Response(status_code=201, content_type=content_types.APPLICATION_JSON,
+                    body=json.dumps(answer, default=decimal_default))
+
+
+@app.delete("/projects/<project_id>/prototypes/<document_id>/drafts/<draft_id>")
+@tracer.capture_method
+def api_discard_prototype_draft(project_id: str, document_id: str, draft_id: str):
+    """Discard: the draft's job row deleted, as the job DELETE does; ``{success: true}``.
+
+    Only a draft job of this prototype's series, in any state (a draft still being made can
+    be discarded too): any other job is a 404, so this route deletes nothing but drafts. The
+    SPA's job DELETE stays; this is the one the MCP tool calls.
+    """
+    document = projects.prototype_document(project_id, document_id)
+    job = _project_job_row(project_id, draft_id)
+    base_id = prototype_drafts.drafted_base_id(job)
+    if job is None or base_id is None:
+        raise NotFoundError(prototype_drafts.DRAFT_NOT_FOUND)
+    prototype_drafts.drafted_base(get_projects_table(), project_id, document, {'base_document_id': base_id})
+    return _delete_job_row(project_id, draft_id)
+
+
+@app.get("/projects/<project_id>/prototypes/<document_id>/outline")
+@tracer.capture_method
+def api_prototype_outline(project_id: str, document_id: str):
+    """``{document_id, version, title, screens: [{route, headings, text}], truncated}`` of that version.
+
+    VIEW (the default for a GET): only what anyone who can open the prototype sees, never pins
+    (shared/prototype_outline.py). An early JSON spec is a 400, a version whose object is gone a 404.
+    """
+    document = projects.prototype_document(project_id, document_id)
+    store = projects.prototype_store()
+    outline = prototype_outline.outline_of(version_html(store.s3, store.bucket, project_id, document))
+    version = document.get('version')
+    return {'document_id': document_id, 'version': int(version) if version is not None else None, **outline}
+
+
+# ---- The walkthrough (docs/prototype-builder.md, Part 1) ---------------------------
+#
+# The steps live only in the version's HTML (shared/prototype_walkthrough.py): the GET reads
+# them (VIEW), the PUT saves them as a new version (EDIT), the draft is an assist job that
+# writes nothing (EDIT: it spends a model call).
+
+ASSIST_WALKTHROUGH_DRAFT = 'assist_walkthrough_draft'
+
+
+@app.get("/projects/<project_id>/prototypes/<document_id>/walkthrough")
+@tracer.capture_method
+def api_get_prototype_walkthrough(project_id: str, document_id: str):
+    """``{steps}`` of that version: its block, re-validated (``[]`` for none, or one that fails)."""
+    document = projects.prototype_document(project_id, document_id)
+    store = projects.prototype_store()
+    return {'steps': prototype_walkthrough.extract_steps(version_html(store.s3, store.bucket, project_id, document))}
+
+
+@app.put("/projects/<project_id>/prototypes/<document_id>/walkthrough")
+@tracer.capture_method
+def api_put_prototype_walkthrough(project_id: str, document_id: str):
+    """``{steps, edit_id?}`` → 201 ``{success, document}``: a new version with these steps (``[]``: none).
+
+    ``edit_kind: edit``; 409 when the series moved past ``document_id``'s version; the same ``edit_id``
+    answers the version it made (200). A step that fails validation is a 400 naming it and the field.
+    """
+    body = json_object_body(app)
+    steps = prototype_walkthrough.validate_steps(body.get('steps'))
+    document = projects.prototype_document(project_id, document_id)
+    item, created = save_walkthrough(projects.prototype_store(), project_id, document, steps, body.get('edit_id'),
+                                     now=now_iso(), actor=actor_from_event(app.current_event.raw_event))
+    answer = {'success': True, 'document': projects.signed_prototype_document(item, project_id)}
+    if not created:
+        return answer
+    return Response(status_code=201, content_type=content_types.APPLICATION_JSON,
+                    body=json.dumps(answer, default=decimal_default))
+
+
+@app.post("/projects/<project_id>/prototypes/<document_id>/walkthrough/draft")
+@tracer.capture_method
+def api_draft_prototype_walkthrough(project_id: str, document_id: str):
+    """``{response_language?}``: 202 + an assist job whose ``result`` is ``{steps}``; nothing is written (the
+    editor saves, or not). The steps are written in ``response_language``, else in the prototype's language."""
+    body = json_object_body(app)
+    document = projects.prototype_document(project_id, document_id)
+    store = projects.prototype_store()
+    # Refused now (400 early spec, 404 lost object) rather than minutes later in the job.
+    version_html(store.s3, store.bucket, project_id, document)
+    return _started_assist(project_id, ASSIST_WALKTHROUGH_DRAFT,
+                           {'project_id': project_id, 'document_id': document_id,
+                            'response_language': body.get('response_language')})
+
+
+def _walkthrough_sources(project_id: str, document: dict) -> list[tuple[str, str]]:
+    """The PRD and PR/FAQ the prototype was built from (``source_prd_id`` / ``source_prfaq_id``), as text."""
+    table = get_projects_table()
+    sources: list[tuple[str, str]] = []
+    for label, prefix, key in (('PRD', 'PRD#', 'source_prd_id'), ('PR/FAQ', 'PRFAQ#', 'source_prfaq_id')):
+        source_id = document.get(key)
+        if not isinstance(source_id, str) or not source_id:
+            continue
+        row = table.get_item(Key={'pk': project_pk(project_id), 'sk': f'{prefix}{source_id}'}).get('Item') or {}
+        content = row.get('content')
+        if isinstance(content, str) and content:
+            sources.append((label, content))
+    return sources
+
+
+def _walkthrough_draft_work(config: dict) -> dict:
+    project_id = config['project_id']
+    document = projects.prototype_document(project_id, config['document_id'])
+    store = projects.prototype_store()
+    outline = prototype_outline.outline_of(version_html(store.s3, store.bucket, project_id, document))
+    return prototype_walkthrough_draft.draft_steps(outline=outline,
+                                                   sources=_walkthrough_sources(project_id, document),
+                                                   language=config.get('response_language'))
 
 
 @app.post("/projects/<project_id>/build-prototype")
@@ -5142,16 +5389,78 @@ def start_persona_review(project_id: str, document_id: str):
     })
 
 
-def _persona_review_work(config: dict) -> dict:
+def _assist_document(config: dict) -> tuple[Any, str, dict, dict]:
+    """A document assist job's projects table, project id, document and its series, from the job config."""
     table = get_projects_table()
     project_id = config['project_id']
     document = document_series.find_document(table, project_id, config['document_id'])
-    series = document_series.series_of(project_id, document)
+    return table, project_id, document, document_series.series_of(project_id, document)
+
+
+def _persona_review_work(config: dict) -> dict:
+    table, project_id, document, series = _assist_document(config)
     personas = document_review.pick_personas(
         document_review.project_personas(table, project_id), _assist_body(config).get('persona_ids'))
     return document_review.run_review(
         table, project_id=project_id, series_id=series['series_id'], document=document,
         document_type=series['document_type'], personas=personas)
+
+
+# ---- Revise a PR/FAQ / PRD from its comments (shared/document_revision.py, docs/document-review.md) ----
+#
+# EDIT on the project (a POST's default), like the persona review. The outcome follows the caller's way
+# of working (recommendations / proposal / applied), decided here from the request's claims and stored
+# in the job config: the worker never sees the request.
+
+ASSIST_REVISE_FROM_COMMENTS = document_revision.ASSIST_JOB_TYPE
+
+
+def _revise_outcome(project_id: str, doc_type: str) -> str:
+    """What the pass may do for this caller: the one AI-writing gate decides whether the AI may write
+    (a refusal recommends only); then the caller's mode, as the gate read it, decides. A mode that
+    could not be read fails the start, as it fails every other AI-writing route."""
+    try:
+        caller_mode = _require_ai_writing(project_id, doc_type)
+    except ai_writing.ModeUnreadableError:
+        raise
+    except AuthorizationError:
+        return document_revision.OUTCOME_RECOMMENDATIONS
+    return document_revision.writing_outcome(caller_mode)
+
+
+@app.post("/projects/<project_id>/documents/<document_id>/revise-from-comments")
+@tracer.capture_method
+def start_revise_from_comments(project_id: str, document_id: str):
+    """202 + an assist job: ``{thread_ids?: [≤50]}``; ``result`` = ``{outcome, recommendations, changes, …}``."""
+    wanted = document_revision.validate_body(json_object_body(app))
+    table = get_projects_table()
+    if not table:
+        raise ConfigurationError('Projects table not configured')
+    document = document_series.find_document(table, project_id, document_id)
+    series = document_series.series_of(project_id, document)
+    threads = document_revision.select_threads(
+        document_comments.list_threads(table, project_id, series['series_id']), document, wanted)
+    document_revision.require_revisable(document, threads)
+    return _started_assist(project_id, ASSIST_REVISE_FROM_COMMENTS, {
+        'project_id': project_id, 'document_id': document_id,
+        document_revision.SERIES_CONFIG_KEY: series['series_id'],
+        'body_json': json.dumps({'thread_ids': [t['comment_id'] for t in threads]}),
+        'outcome': _revise_outcome(project_id, series['document_type']),
+        'revise_id': document_revision.new_revise_id(),
+        'actor': actor_from_event(app.current_event.raw_event),
+        category_access.SCOPE_CONFIG_KEY: _caller_category_scope(),
+    })
+
+
+def _revise_work(config: dict) -> dict:
+    table, project_id, document, series = _assist_document(config)
+    evidence = document_revision.read_evidence(
+        projects.feedback_table, document, config.get(category_access.SCOPE_CONFIG_KEY))
+    return document_revision.run_revision(
+        table, project_id=project_id, series_id=series['series_id'], document=document,
+        document_type=series['document_type'], wanted=_assist_body(config).get('thread_ids'),
+        outcome=str(config.get('outcome')), revise_id=str(config['revise_id']),
+        actor=dict(config.get('actor') or {}), evidence=evidence)
 
 
 ASSIST_WORK = {
@@ -5167,6 +5476,10 @@ ASSIST_WORK = {
     # The message the route already answered when the model call failed.
     ASSIST_PERSONA_AVATAR: assist_jobs.Work(_avatar_assist_work, 'Avatar generation failed'),
     ASSIST_PERSONA_REVIEW: assist_jobs.Work(_persona_review_work, 'The persona review failed. Please try again.'),
+    ASSIST_REVISE_FROM_COMMENTS: assist_jobs.Work(
+        _revise_work, 'Revising from comments failed. Please try again.'),
+    ASSIST_WALKTHROUGH_DRAFT: assist_jobs.Work(
+        _walkthrough_draft_work, 'Could not draft the walkthrough. Please try again.'),
 }
 
 # Document comments and review links (shared/document_review_routes.py, docs/document-review.md). Included

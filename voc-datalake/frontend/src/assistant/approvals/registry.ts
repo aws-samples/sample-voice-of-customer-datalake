@@ -26,6 +26,8 @@ import * as us from './userSchemas'
 import * as users from './userExecutors'
 import * as ps from './planSchemas'
 import * as plans from './planExecutors'
+import * as pr from './prototypeSchemas'
+import * as prototypes from './prototypeExecutors'
 import * as ri from './reviewImportSchemas'
 import * as reviewImport from './reviewImportExecutors'
 import * as rs from './radarSchemas'
@@ -49,6 +51,8 @@ import { DocumentDiffPreview } from './previews/DocumentDiffPreview'
 import { FeedbackCategoryPreview } from './previews/FeedbackCategoryPreview'
 import { PersonaChangesPreview, ProductContextPreview } from './previews/FieldChangesPreview'
 import { JobPreview } from './previews/JobPreview'
+import { PrototypeDraftPreview } from './previews/PrototypeDraftPreview'
+import { PrototypeWalkthroughPreview } from './previews/PrototypeWalkthroughPreview'
 import type { ComponentType } from 'react'
 import type { z } from 'zod'
 import type { ClientToolName, PageContext } from '@stream/assistant/contract'
@@ -126,8 +130,8 @@ const DEFINITIONS: readonly WriteToolDefinition[] = [
     Preview: FeedbackCategoryPreview,
   }),
   defineWriteTool({
-    name: 'update_document', argsSchema: s.updateDocumentArgs, execute: executors.updateDocument,
-    title: (_a, t) => t(toolTitleKey('update_document')), Preview: DocumentDiffPreview,
+    name: s.UPDATE_DOCUMENT_TOOL, argsSchema: s.updateDocumentArgs, execute: executors.updateDocument,
+    title: (_a, t) => t(toolTitleKey(s.UPDATE_DOCUMENT_TOOL)), Preview: DocumentDiffPreview,
   }),
   defineWriteTool({
     name: 'create_document', argsSchema: s.createDocumentArgs, execute: executors.createDocument,
@@ -174,6 +178,15 @@ const DEFINITIONS: readonly WriteToolDefinition[] = [
     name: 'build_prototype', argsSchema: ps.buildPrototypeArgs, execute: plans.buildPrototype,
     title: (a, t) => (a.title === undefined ? t(toolTitleKey('build_prototype')) : t('assistantTools:tools.build_prototype.titleWith', { title: a.title })),
     Preview: JobPreview,
+  }),
+  defineWriteTool({
+    name: 'draft_prototype_revision', argsSchema: pr.draftPrototypeRevisionArgs, execute: prototypes.draftPrototypeRevision,
+    title: (_a, t) => t(toolTitleKey('draft_prototype_revision')), Preview: PrototypeDraftPreview,
+  }),
+  defineWriteTool({
+    name: 'set_prototype_walkthrough', argsSchema: pr.setPrototypeWalkthroughArgs, execute: prototypes.setPrototypeWalkthrough,
+    title: (a, t) => t(a.steps.length === 0 ? 'assistantTools:tools.set_prototype_walkthrough.titleRemove' : toolTitleKey('set_prototype_walkthrough')),
+    Preview: PrototypeWalkthroughPreview,
   }),
   defineWriteTool({
     name: 'update_feedback_form', argsSchema: s.updateFeedbackFormArgs, execute: executors.updateFeedbackForm,

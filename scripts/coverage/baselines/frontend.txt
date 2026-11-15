@@ -23,7 +23,6 @@ voc-datalake/frontend/src/components/CategoriesManager/CategoryDetailsEditor.tsx
 voc-datalake/frontend/src/components/DimensionsManager/BuiltinDimensionCard.tsx 0.00   # 0/3
 voc-datalake/frontend/src/components/DimensionsManager/DimensionValueRow.tsx 62.50   # 5/8
 voc-datalake/frontend/src/components/DocumentComments/CommentFiltersBar.tsx 66.66   # 10/15
-voc-datalake/frontend/src/components/DocumentComments/useSelectionAnchor.ts 60.71   # 17/28
 voc-datalake/frontend/src/components/DocumentExportMenu/DocumentExportMenu.tsx 50.00   # 22/44
 voc-datalake/frontend/src/components/DocumentExportMenu/DocumentPDFContent.tsx 5.55   # 1/18
 voc-datalake/frontend/src/components/FeedbackRedirect.tsx 0.00   # 0/2

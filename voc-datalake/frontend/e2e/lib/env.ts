@@ -47,6 +47,24 @@ export const MOCK_SPEC_NAMES: readonly string[] = [
   'workspace-admin',
   // 6.14.00: the two-workspace check (another workspace's id and address answer not-found; mock only).
   'cross-workspace',
+  // 6.05: the document canvas (needs the mock's read-only project; mock only until run on a deployment).
+  'document-canvas',
+  // The document canvas's accessibility and widths (mock only, as document-canvas).
+  'document-canvas-a11y',
+  // The Documents tab's list in its four sections (the mock project's fixed counts; mock only).
+  'document-sections',
+  // The canvas on 60,000- and 200,000-character documents (creates them; mock only, as the canvas spec).
+  'document-canvas-perf',
+  // The Prototype builder (docs/prototype-builder.md): Back to vN writes a version (mock only).
+  'prototype-back',
+  // Prototype drafts: Apply writes a version, Discard deletes a job (mock only).
+  'prototype-draft',
+  // The prototype Feedback view (builds two prototype versions; mock only).
+  'prototype-feedback',
+  // Incorporate (part 3): a draft from tester pins, Apply's marks and replies (mock only).
+  'prototype-incorporate',
+  // The guided walkthrough (part 1): starts once, replays, the editor saves a version (mock only).
+  'prototype-walkthrough',
 ]
 
 /** Matches a path of one of `MOCK_SPEC_NAMES` (Playwright `testMatch`). */

@@ -77,10 +77,18 @@ def _refusal(doc_type: str, kind: str) -> AuthorizationError:
         f'"Review my draft", or ask an administrator to unlock "{label} with AI".')
 
 
-def require_ai_writing(table: Any, subject: str, doc_type: object, kind: str) -> None:
-    """403 unless ``subject`` may have the AI write ``doc_type`` in a ``kind`` call."""
+class ModeUnreadableError(AuthorizationError):
+    """The way of working could not be read: a refusal to retry, never a decision about the person."""
+
+
+def require_ai_writing(table: Any, subject: str, doc_type: object, kind: str) -> ai_mode.AiMode | None:
+    """403 unless ``subject`` may have the AI write ``doc_type`` in a ``kind`` call.
+
+    Answers the mode it read (None for an ungated type: nothing is read), so a caller that also
+    needs the person's mode reads it once.
+    """
     if not is_gated(doc_type):
-        return
+        return None
     gated = str(doc_type)
     if not subject or subject.startswith(SYNTHETIC_SUBJECT_PREFIXES):
         raise _refusal(gated, kind)
@@ -88,6 +96,7 @@ def require_ai_writing(table: Any, subject: str, doc_type: object, kind: str) ->
         mode = ai_mode.get_ai_mode(table, subject)
     except (ClientError, BotoCoreError) as exc:
         logger.exception('Way-of-working read failed; refusing AI writing')
-        raise AuthorizationError('Could not check your way of working with AI. Please retry.') from exc
+        raise ModeUnreadableError('Could not check your way of working with AI. Please retry.') from exc
     if not allows(mode, gated, kind):
         raise _refusal(gated, kind)
+    return mode

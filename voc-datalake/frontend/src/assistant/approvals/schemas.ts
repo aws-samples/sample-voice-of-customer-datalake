@@ -58,6 +58,9 @@ export const setFeedbackCategoryArgs = z.strictObject({
   subcategory: nonEmpty(MAX_CATEGORY_NAME).optional(),
 })
 
+/** The write tool that rewrites a stored document's content (its pending call is shown as a diff on the canvas). */
+export const UPDATE_DOCUMENT_TOOL = 'update_document'
+
 export const updateDocumentArgs = z.strictObject({
   project_id: idSchema,
   document_id: idSchema,

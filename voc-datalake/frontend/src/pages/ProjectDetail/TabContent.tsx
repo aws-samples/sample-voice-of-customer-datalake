@@ -12,7 +12,7 @@ import type {
   Tab, NoteItem,
 } from './types'
 import type {
-  ProjectDocument,
+  DocType, ProjectDocument,
 } from '../../api/types'
 import type {
   ProjectPersona,
@@ -42,10 +42,12 @@ interface TabContentProps extends OverviewPassThrough {
   readonly onImportPersona: () => void
   /** Opens "Copy from…" (the library or another project); editors only. */
   readonly onCopyPersonas: () => void
-  readonly onSelectDoc: (d: ProjectDocument | null) => void
-  readonly onEditDoc: () => void
+  /** The page's GUARDED selection: it asks first while the open document has unsaved changes. */
+  readonly onSelectDoc: (d: ProjectDocument) => void
   readonly onDeleteDoc: () => void
   readonly onCreateDoc: () => void
+  /** The Documents tab's PRD / PR/FAQ New: the document wizard with that type. */
+  readonly onWriteDocument: (docType: DocType) => void
 }
 
 export default function TabContent({
@@ -74,9 +76,9 @@ export default function TabContent({
   onImportPersona,
   onCopyPersonas,
   onSelectDoc,
-  onEditDoc,
   onDeleteDoc,
   onCreateDoc,
+  onWriteDocument,
   onJobStarted,
 }: TabContentProps) {
   if (activeTab === 'overview') {
@@ -144,11 +146,14 @@ export default function TabContent({
       // the API 404s on an id it cannot resolve, which would make a
       // visually-grounded prototype unrevisable for good.
       productDocs={productDocs}
+      // For the Prototypes section's New: the same build dialog, sources and rule as the Overview card.
+      methodology={methodology}
+      designSystem={designSystem}
       selectedDoc={selectedDoc}
       onSelectDoc={onSelectDoc}
-      onEditDoc={onEditDoc}
       onDeleteDoc={onDeleteDoc}
       onCreateDoc={onCreateDoc}
+      onWriteDocument={onWriteDocument}
       onJobStarted={onJobStarted}
       isDeleting={isDeleting}
     />

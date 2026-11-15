@@ -133,10 +133,10 @@ describe('connect schema boundary', () => {
   it('keeps only the four audit facts', () => {
     const detail = TokenDetailResponseSchema.parse({
       token: { token_id: 'tok_1' },
-      events: [{ tool: 'search_feedback', at: 't', outcome: 'ok', arguments: { q: 'secret' } }],
+      events: [{ tool: 'feedback_search', at: 't', outcome: 'ok', arguments: { q: 'secret' } }],
     })
     const event = detail.events.at(0)
-    expect(event).toMatchObject({ tool: 'search_feedback', at: 't', outcome: 'ok' })
+    expect(event).toMatchObject({ tool: 'feedback_search', at: 't', outcome: 'ok' })
     expect(Object.keys(event ?? {}).filter((key) => !['tool', 'at', 'project_id', 'outcome'].includes(key))).toStrictEqual([])
   })
 })

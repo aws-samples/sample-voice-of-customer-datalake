@@ -2172,6 +2172,76 @@
   },
   {
     "file": "api/projectsApi.ts",
+    "method": "GET",
+    "call": "walkthroughPath(projectId, documentId)",
+    "probes": [
+      {
+        "path": "/projects/proj_1/prototypes/proto_1/walkthrough"
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "PUT",
+    "call": "walkthroughPath(projectId, documentId)",
+    "probes": [
+      {
+        "path": "/projects/proj_1/prototypes/proto_1/walkthrough",
+        "body": {
+          "steps": [],
+          "edit_id": "probe-1"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/prototypes/${encodeURIComponent(documentId)}/walkthrough/draft`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/prototypes/proto_1/walkthrough/draft",
+        "body": {
+          "response_language": "en"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/prototypes/${encodeURIComponent(documentId)}/drafts`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/prototypes/proto_1/drafts",
+        "body": {
+          "instruction": "make the summary sticky"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "GET",
+    "call": "`/projects/${projectId}/prototypes/${encodeURIComponent(documentId)}/drafts/${encodeURIComponent(draftId)}`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/prototypes/proto_1/drafts/job_probe"
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/prototypes/${encodeURIComponent(documentId)}/drafts/${encodeURIComponent(draftId)}/apply`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/prototypes/proto_1/drafts/job_probe/apply"
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
     "method": "POST",
     "call": "`/projects/${projectId}/document`",
     "probes": [
@@ -2594,6 +2664,16 @@
     "probes": [
       {
         "path": "/projects/proj_1/prototypes/proto_1/pins"
+      }
+    ]
+  },
+  {
+    "file": "api/prototypeFeedbackSchema.ts",
+    "method": "GET",
+    "call": "feedbackPath(projectId, documentId)",
+    "probes": [
+      {
+        "path": "/projects/proj_1/prototypes/proto_1/feedback"
       }
     ]
   },
@@ -4469,6 +4549,28 @@
       {
         "path": "/projects/proj_1/documents/prfaq_1/persona-review",
         "body": {}
+      }
+    ]
+  },
+  {
+    "file": "api/documentReviewApi.ts",
+    "method": "POST",
+    "call": "`${documentPath(projectId, documentId)}/revise-from-comments`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/documents/prd_1/revise-from-comments",
+        "body": {}
+      }
+    ]
+  },
+  {
+    "file": "api/documentReviewApi.ts",
+    "method": "POST",
+    "call": "`${documentPath(projectId, documentId)}/comments/addressed`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/documents/prd_1/comments/addressed",
+        "body": { "thread_ids": ["dc_00000000000000000000000000"], "addressed": true }
       }
     ]
   },

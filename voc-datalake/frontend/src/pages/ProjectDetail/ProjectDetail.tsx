@@ -5,14 +5,15 @@
  */
 import { Loader2 } from 'lucide-react'
 import {
-  useState, useCallback, useEffect,
+  useState, useCallback, useEffect, useRef,
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   useParams, useNavigate, useSearchParams,
 } from 'react-router-dom'
-import { useDocumentSave } from './useDocumentSave'
+import { useFocusViewActive } from '../../components/DocumentCanvas/page/focusView'
 import ProjectSharingModal from '../../components/ProjectSharingModal/ProjectSharingModal'
+import { useGuardedAction } from '../../components/UnsavedChangesGuard/guardRegistry'
 import { useConfigStore } from '../../store/configStore'
 import JobsBadge from './JobsBadge'
 import ProjectHeader from './ProjectHeader'
@@ -38,6 +39,32 @@ import { useProjectWizardState } from './useProjectWizardState'
 import WizardSection from './WizardSection'
 import { parseTab } from './types'
 import type { Tab } from './types'
+import type { ProjectDocument } from '../../api/types'
+import type { Project } from '../../api/projectTypes'
+import type { ComponentProps } from 'react'
+
+/** The project's header (with its jobs badge) and, for a viewer, the read-only banner. */
+function ProjectHeading({ project, canEdit, jobs, onShare, onDismissJob, onBack }: Readonly<{
+  project: Project; canEdit: boolean; jobs: ComponentProps<typeof JobsBadge>['jobs']
+  onShare: () => void; onDismissJob: (jobId: string) => void; onBack: () => void
+}>) {
+  return (
+    <>
+      <ProjectHeader
+        name={project.name}
+        description={project.description}
+        visibility={project.visibility}
+        onShare={onShare}
+        projectId={project.project_id}
+        // Background jobs: one header badge on every tab, opening the jobs panel. Dismissing a
+        // job is a DELETE the gate refuses for viewers, so they get no handler and no button.
+        status={<JobsBadge jobs={jobs} onDismiss={canEdit ? onDismissJob : undefined} />}
+        onBack={onBack}
+      />
+      {canEdit ? null : <ReadOnlyBanner />}
+    </>
+  )
+}
 
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>()
@@ -87,6 +114,14 @@ export default function ProjectDetail() {
 
   // The Documents tab's selection, deep-linkable as `?doc=<id>`.
   const docSelection = useDocumentSelection(data?.documents)
+  // Selecting another document, or another tab, while the open one has unsaved changes asks
+  // first (its canvas registers the guard: DocumentCanvas/actions/useCanvasDocument). A route
+  // change and closing the window are caught by that guard itself.
+  const guarded = useGuardedAction()
+  const focusView = useFocusViewActive()
+  const { setSelectedDoc } = docSelection
+  const selectDoc = useCallback((doc: ProjectDocument) => guarded(() => setSelectedDoc(doc)), [guarded, setSelectedDoc])
+  const changeTab = useCallback((tab: Tab) => guarded(() => setActiveTab(tab)), [guarded, setActiveTab])
 
   // Mutations
   const {
@@ -113,11 +148,10 @@ export default function ProjectDetail() {
   const { updatePersonaMut, deletePersonaMut, saveNotes } = personaMutations
 
   const {
-    createDocMut, deleteDocMut, updateDocMut,
+    createDocMut, deleteDocMut,
   } = useDocumentMutations({
     id,
-    selectedDoc: docSelection.selectedDoc,
-    setSelectedDoc: docSelection.setSelectedDoc,
+    setSelectedDoc,
   })
 
   // Handlers
@@ -151,14 +185,21 @@ export default function ProjectDetail() {
     confirm.closeConfirm()
   }, [confirm, deletePersonaMut, deleteDocMut])
 
-  // The document save returns its promise (resolve = saved, reject = failed), like the
-  // persona save (usePersonaMutations), so the editor's unsaved-changes guard can wait (E2E F6).
-  const documentSave = useDocumentSave({
-    projectId: id,
-    queryClient,
-    docModal,
-    updateDoc: updateDocMut.mutateAsync,
-    createDoc: createDocMut.mutateAsync,
+  // "New document": create, then open it on its canvas. Returns its promise (resolve = created,
+  // reject = failed), so the modal's unsaved-changes guard can wait (E2E F6).
+  const { closeModal: closeDocModal, newDocTitle, newDocContent, showDocModal } = docModal
+  // Opened once the modal is gone: its own guard (still holding the typed text) must not ask.
+  const created = useRef<ProjectDocument | null>(null)
+  const createDocument = useCallback(async () => {
+    const result = await createDocMut.mutateAsync({ title: newDocTitle, content: newDocContent })
+    created.current = result.document
+    closeDocModal()
+  }, [createDocMut, newDocTitle, newDocContent, closeDocModal])
+  useEffect(() => {
+    const document = created.current
+    if (document === null || showDocModal) return
+    created.current = null
+    selectDoc(document)
   })
 
   // Loading state
@@ -195,21 +236,13 @@ export default function ProjectDetail() {
   const canEdit = canEditProject(project)
 
   return (
-    <div className="space-y-6">
-      <ProjectHeader
-        name={project.name}
-        description={project.description}
-        visibility={project.visibility}
-        onShare={() => setShowSharing(true)}
-        projectId={project.project_id}
-        // Background jobs: one header badge on every tab, opening the jobs panel. Dismissing a
-        // job is a DELETE the gate refuses for viewers, so they get no handler and no button.
-        status={<JobsBadge jobs={jobs} onDismiss={canEdit ? (jobId: string) => dismissJobMut.mutate(jobId) : undefined} />}
-        onBack={() => {
-          void navigate('/projects')
-        }}
-      />
-      {canEdit ? null : <ReadOnlyBanner />}
+    // A document page in focus view has the window: the project's header, banner and tabs step aside (in place, so
+    // the tab's content never remounts).
+    <div className={focusView ? undefined : 'space-y-6'}>
+      {focusView ? null : (
+        <ProjectHeading project={project} canEdit={canEdit} jobs={jobs} onShare={() => setShowSharing(true)}
+          onDismissJob={(jobId) => dismissJobMut.mutate(jobId)} onBack={() => { void navigate('/projects') }} />
+      )}
       <ProjectSharingModal
         isOpen={showSharing}
         onClose={() => setShowSharing(false)}
@@ -219,12 +252,14 @@ export default function ProjectDetail() {
           void navigate('/projects')
         }}
       />
-      <ProjectTabs
-        activeTab={activeTab}
-        personasCount={personas.length}
-        documentsCount={documents.length}
-        onTabChange={setActiveTab}
-      />
+      {focusView ? null : (
+        <ProjectTabs
+          activeTab={activeTab}
+          personasCount={personas.length}
+          documentsCount={documents.length}
+          onTabChange={changeTab}
+        />
+      )}
 
       <WizardSection
         activeWizard={wizard.activeWizard}
@@ -286,10 +321,10 @@ export default function ProjectDetail() {
         onSaveNotes={saveNotes}
         onImportPersona={() => importModal.setShowImportModal(true)}
         onCopyPersonas={() => setShowCopyPersonas(true)}
-        onSelectDoc={docSelection.setSelectedDoc}
-        onEditDoc={() => docSelection.selectedDoc && docModal.openEditModal(docSelection.selectedDoc)}
+        onSelectDoc={selectDoc}
         onDeleteDoc={() => docSelection.selectedDoc && confirm.openDocumentConfirm(docSelection.selectedDoc.document_id)}
         onCreateDoc={docModal.openCreateModal}
+        onWriteDocument={wizard.openDocWizard}
         onJobStarted={handleJobStarted}
       />
 
@@ -305,15 +340,13 @@ export default function ProjectDetail() {
 
       <DocumentModalWrapper
         showModal={docModal.showDocModal}
-        editingDoc={docModal.editingDoc}
-        title={docModal.newDocTitle}
-        content={docModal.newDocContent}
-        isSaving={docModal.editingDoc ? updateDocMut.isPending : createDocMut.isPending}
+        title={newDocTitle}
+        content={newDocContent}
+        isSaving={createDocMut.isPending}
         onTitleChange={docModal.setNewDocTitle}
         onContentChange={docModal.setNewDocContent}
-        onSave={documentSave.save}
-        onClose={docModal.closeModal}
-        conflict={documentSave.conflict}
+        onSave={createDocument}
+        onClose={closeDocModal}
       />
 
       <ConfirmModalWrapper

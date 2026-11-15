@@ -34,15 +34,18 @@ function appImports(): Set<string> {
   return new Set(names.filter((name) => name !== '' && !name.startsWith('@test')))
 }
 
-function dependenciesOf(pkg: string): string[] {
-  const manifest: unknown = JSON.parse(readFileSync(join(FRONTEND, 'node_modules', pkg, 'package.json'), 'utf8'))
+/** The package an entry names: itself, or the package a folder entry (`@tiptap/react/dist/menus`) is inside. */
+const packageOf = (entry: string): string => entry.split('/').slice(0, entry.startsWith('@') ? 2 : 1).join('/')
+
+function dependenciesOf(entry: string): string[] {
+  const manifest: unknown = JSON.parse(readFileSync(join(FRONTEND, 'node_modules', packageOf(entry), 'package.json'), 'utf8'))
   const deps = typeof manifest === 'object' && manifest !== null && 'dependencies' in manifest ? manifest.dependencies : undefined
   return typeof deps === 'object' && deps !== null ? Object.keys(deps) : []
 }
 
 describe('vendor chunks', () => {
   it('lists every dependency of a chunked vendor that the app imports itself', () => {
-    const listed = new Set(Object.values(VENDOR_CHUNKS).flat())
+    const listed = new Set(Object.values(VENDOR_CHUNKS).flat().map(packageOf))
     const imported = appImports()
     const riders = [...listed].flatMap((pkg) =>
       dependenciesOf(pkg).filter((dep) => imported.has(dep) && !listed.has(dep)).map((dep) => `${dep} (in ${pkg}'s chunk)`))

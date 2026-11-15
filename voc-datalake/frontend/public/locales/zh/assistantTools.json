@@ -332,6 +332,24 @@
       "off": "关闭",
       "onNote": "计划导入将重新运行，已触发的断路器会被关闭。",
       "offNote": "计划导入将停止。已导入的内容不受影响。"
+    },
+    "prototypeDraft": {
+      "prototype": "原型：",
+      "instruction": "草稿收到的指令",
+      "note": "这只会生成草稿。草稿就绪后会显示在原型页面上，在那里应用之前不会保存任何内容。",
+      "pins_one": "{{count, number}} 个所选测试者图钉",
+      "pins_other": "{{count, number}} 个所选测试者图钉",
+      "noScreen": "（无屏幕）",
+      "pinsInstruction": "只发送图钉 ID：服务器自行读取这些图钉并编写指令（采纳所选的测试者反馈，逐个图钉回答已完成或未完成）。"
+    },
+    "walkthrough": {
+      "remove": "导览将被移除。",
+      "step": "第 {{n}} 步，共 {{total}} 步",
+      "position": "{{screen}} 上的位置",
+      "thisScreen": "此屏幕",
+      "replaces_one": "替换已保存的 {{count, number}} 个步骤。",
+      "replaces_other": "替换已保存的 {{count, number}} 个步骤。",
+      "note": "保存会生成原型的新版本；打开它的人会看到这些步骤。"
     }
   },
   "tools": {
@@ -519,6 +537,13 @@
       "title": "创建用户",
       "titleWith_one": "创建 {{count, number}} 个用户",
       "titleWith_other": "创建 {{count, number}} 个用户"
+    },
+    "draft_prototype_revision": {
+      "title": "起草原型修订"
+    },
+    "set_prototype_walkthrough": {
+      "title": "保存原型导览",
+      "titleRemove": "移除原型的导览"
     }
   }
 }

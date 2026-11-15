@@ -16,10 +16,7 @@
     "create": "创建",
     "createDocument": "创建文档",
     "creating": "创建中...",
-    "editDocument": "编辑文档",
     "preview": "预览",
-    "saveChanges": "保存更改",
-    "saving": "保存中...",
     "titleLabel": "标题",
     "titlePlaceholder": "文档标题..."
   },
@@ -39,7 +36,7 @@
       "companyContext": "公司背景",
       "designSystem": "公司设计系统",
       "companyLogo": "公司徽标",
-      "companyLogoLeftOut": "已省略公司徽标（超过 1 MB 或无法读取）",
+      "companyLogoLeftOut": "未使用公司徽标",
       "roles": {
         "mergeInput": "合并来源",
         "prototypePrd": "原型来源 PRD",
@@ -51,8 +48,20 @@
       "visualsUsed_one": "已使用 {{count, number}} 份视觉稿",
       "visualsUsed_other": "已使用 {{count, number}} 份视觉稿"
     },
-    "editDocument": "编辑文档",
     "newDocument": "新建文档",
+    "sections": {
+      "label": "文档分区",
+      "prd": "PRD",
+      "prfaq": "PR/FAQ",
+      "prototypes": "原型",
+      "documents": "文档",
+      "toggle_one": "{{name}}，{{count, number}} 个文档",
+      "toggle_other": "{{name}}，{{count, number}} 个文档",
+      "new": "新建",
+      "newPrd": "新建 PRD",
+      "newPrfaq": "新建 PR/FAQ",
+      "newPrototype": "新建原型"
+    },
     "noDocuments": "无文档",
     "ordinal": "第 {{ordinal}} 个，共 {{total, number}} 个",
     "versions": {
@@ -61,6 +70,8 @@
       "label": "v{{n}}",
       "current": "当前",
       "edited": "已编辑",
+      "revised": "根据评论修订",
+      "revisedWith": "根据评论修订 · {{model}}",
       "restoredFrom": "从 v{{n}} 恢复",
       "open": "打开",
       "openNamed": "打开 {{label}}",
@@ -109,6 +120,9 @@
       "feedbackPlaceholder": "例如：把这个改成管理员仪表板视图 — 显示审批、用户管理和指标，而不是最终用户界面。",
       "feedbackRebased": "此原型所基于的文档已不存在，因此修订将使用该类型的最新文档。",
       "feedbackSubmit": "重新生成",
+      "backTo": "恢复到 v{{n}}",
+      "restoreThis": "恢复 v{{n}}",
+      "backHint": "将 v{{n}} 重新保存为最新版本。不会删除任何内容。",
       "feedbackTitle": "提供反馈以重新生成此原型",
       "needsDocs": "请先创建 PRD 或 PR/FAQ 以启用原型构建",
       "previewLabel": "实时预览",
@@ -123,7 +137,52 @@
       "visuals": "视觉稿（{{total, number}}）",
       "visualsFailed": "{{total, number}} 份处理失败 — 请重新上传后使用",
       "visualsLimit": "每次构建最多 {{max, number}} 份视觉稿",
-      "visualsNotReady": "{{total, number}} 份仍在处理中"
+      "visualsNotReady": "{{total, number}} 份仍在处理中",
+      "draft": {
+        "heading": "草稿已就绪：已应用到预览，尚未保存",
+        "previewHeading": "草稿预览",
+        "previewLabel": "预览",
+        "showDraft": "草稿",
+        "showCurrent": "当前",
+        "instructionLabel": "指令：",
+        "summaryLabel": "更改内容",
+        "stale": "此草稿生成后原型已更改：请在最新版本上重新提出",
+        "apply": "应用为 v{{n}}",
+        "discard": "丢弃",
+        "applyFailed": "无法应用草稿，请重试。",
+        "discardFailed": "无法丢弃草稿，请重试。",
+        "noPreview": "此处无法查看此草稿的预览。",
+        "frameTitle": "{{title}}（草稿）",
+        "outcomesLabel": "逐项结果",
+        "done": "已完成",
+        "notDone": "未完成",
+        "outcomeItem": "{{screen}}：“{{text}}”",
+        "outcomePin": "图钉 {{n}}",
+        "noScreen": "（无屏幕）",
+        "withheld_one": "已保留 {{count, number}} 个所选图钉（像指令的文本）：未发送给 AI",
+        "withheld_other": "已保留 {{count, number}} 个所选图钉（像指令的文本）：未发送给 AI",
+        "incorporationResult": "已应用为 v{{version}}：{{marked}}，{{replied}}。",
+        "markedCount_one": "{{count, number}} 个图钉标记为已采纳",
+        "markedCount_other": "{{count, number}} 个图钉标记为已采纳",
+        "repliedCount_one": "{{count, number}} 条 AI 理由已作为回复发布",
+        "repliedCount_other": "{{count, number}} 条 AI 理由已作为回复发布",
+        "notWritten": "未写入：{{place}}：{{reason}}",
+        "dismissResult": "关闭",
+        "notWrittenReason": {
+          "pin_gone": "该图钉已不存在",
+          "already_addressed": "它已被标记为已处理",
+          "already_resolved": "它已被解决",
+          "thread_full": "其讨论串已满（50 条回复）",
+          "note_withheld": "理由读起来像指令，因此未发布",
+          "other": "无法写入",
+          "reopened": "此后有编辑者重新打开了它"
+        },
+        "incorporationResultNoVersion": "已应用：{{marked}}，{{replied}}。"
+      },
+      "assistant": {
+        "button": "使用助手编辑",
+        "prompt": "修改此原型："
+      }
     },
     "revision": {
       "feedback": "反馈：{{feedback}}",
@@ -228,7 +287,8 @@
       "generateProductReport": "产品报告生成",
       "importPersona": "用户角色导入",
       "mergeDocuments": "文档合并",
-      "research": "研究"
+      "research": "研究",
+      "draftPrototype": "原型草稿"
     }
   },
   "notFound": {
@@ -658,5 +718,213 @@
     "featureRequestLink": "需求 {{id}}",
     "erasedSummary_one": "{{count, number}} 条引用的评论或看板请求已被删除（已记录法律依据）",
     "erasedSummary_other": "{{count, number}} 条引用的评论或看板请求已被删除（已记录法律依据）"
+  },
+  "canvas": {
+    "editor": {
+      "placeholder": "输入内容，或键入 / 选择块",
+      "task": "已完成",
+      "slash": {
+        "label": "块",
+        "empty": "没有与“{{query}}”匹配的块"
+      },
+      "blocks": {
+        "paragraph": "文本",
+        "heading1": "标题 1",
+        "heading2": "标题 2",
+        "heading3": "标题 3",
+        "bulletList": "项目符号列表",
+        "orderedList": "编号列表",
+        "taskList": "待办事项列表",
+        "blockquote": "引用",
+        "callout": "标注",
+        "codeBlock": "代码",
+        "table": "表格",
+        "divider": "分隔线",
+        "image": "图片"
+      },
+      "callout": {
+        "note": "注释",
+        "tip": "提示",
+        "important": "重要",
+        "warning": "警告",
+        "caution": "注意"
+      },
+      "format": {
+        "toolbar": "文本格式",
+        "bold": "粗体",
+        "italic": "斜体",
+        "strike": "删除线",
+        "code": "行内代码",
+        "link": "链接",
+        "turnInto": "转换为",
+        "comment": "评论"
+      },
+      "link": {
+        "title": "链接",
+        "url": "链接地址",
+        "placeholder": "https://… 或 /路径",
+        "apply": "应用",
+        "remove": "移除链接",
+        "cancel": "取消",
+        "invalid": "请使用网址（https://…）、电子邮件地址或本应用中的路径（/…）。"
+      },
+      "image": {
+        "title": "插入图片",
+        "url": "图片地址",
+        "alt": "替代文本",
+        "altHint": "为看不到图片的人描述这张图片。",
+        "insert": "插入",
+        "cancel": "取消",
+        "invalidUrl": "请使用网址（https://…）或本应用中的路径（/…）。",
+        "altRequired": "请添加替代文本：看不到图片的人将获得这段文字。"
+      },
+      "handle": {
+        "label": "拖动以移动该块，或点击打开其菜单",
+        "menu": "块操作",
+        "moveUp": "上移",
+        "moveDown": "下移",
+        "turnInto": "转换为",
+        "duplicate": "复制",
+        "delete": "删除",
+        "back": "返回"
+      }
+    },
+    "page": {
+      "loading": "正在加载文档…",
+      "titleLabel": "文档标题",
+      "contents": "目录",
+      "evidence": "依据",
+      "evidenceEmpty": "此文档没有记录任何评价或功能需求。",
+      "showAll": "全部显示（{{n, number}}）",
+      "featureRequests": "功能需求"
+    },
+    "comments": {
+      "hint": "要评论某段文字，请选中它并按“评论”，或按 Ctrl+Alt+M（Mac 上为 ⌘⌥M）。",
+      "draftOpen": "请先完成或取消正在撰写的评论。",
+      "selectFirst": "请先选中文档中的一段文字（最多 500 个字符），然后再评论。",
+      "tabs": {
+        "label": "评论和依据",
+        "comments": "评论",
+        "evidence": "依据"
+      }
+    },
+    "actions": {
+      "assistant": {
+        "added": "已添加",
+        "banner": "助手建议修改此文档",
+        "diffLabel": "建议的修改",
+        "draftNote": "你有未保存的更改。建议与已保存的版本进行比较，批准后将在该版本之上保存一个新版本。",
+        "hide": "隐藏修改",
+        "newTitle": "新标题：{{title}}",
+        "noChanges": "建议与已保存的文本相同。",
+        "otherVersion": "针对 v{{proposed}} 提出；此页面显示的是 v{{current}}。",
+        "removed": "已删除",
+        "replacesSince": "批准后，该建议将保存为下一个版本，并替换自 v{{proposed}} 以来所做的更改（这些更改仍保留在历史记录中）。下方的更改是与此页面的对比。",
+        "review": "查看",
+        "stats": "添加的块：{{added, number}} · 删除：{{removed, number}}",
+        "tooLarge": "内容太长，无法逐块比较。完整建议：",
+        "unchanged": "未更改的块：{{count, number}}"
+      },
+      "discard": "放弃",
+      "discardHint": "放弃你的更改并返回已保存的版本",
+      "exportSavedHint": "导出使用已保存的版本。请先保存以包含你的更改。",
+      "history": "历史记录",
+      "save": "保存",
+      "saveHint": "保存新版本（Ctrl+S 或 ⌘S）",
+      "status": {
+        "saved": "已保存 · {{version}} · {{when}}",
+        "savedNoVersion": "已保存 · {{when}}",
+        "saving": "正在保存…",
+        "unsaved": "未保存的更改"
+      },
+      "toolbarLabel": "文档操作"
+    },
+    "revise": {
+      "addressedBy": {
+        "ai": "已由 AI 修订的版本处理",
+        "user": "已由根据建议更改保存的版本处理"
+      },
+      "addressedIn": "已在 v{{version}} 中处理",
+      "applied": {
+        "banner_one": "已根据 {{count, number}} 条评论修订为 v{{version}}",
+        "banner_other": "已根据 {{count, number}} 条评论修订为 v{{version}}",
+        "reviewAgain": "再次评审",
+        "status": "按照你与 AI 的工作方式，AI 可以写作：它已将修订保存为新版本。撤销会恢复上一个版本。",
+        "undo": "撤销",
+        "undoAnyway": "仍然撤销",
+        "undoFailed": "无法恢复上一个版本。请从历史记录中恢复。",
+        "undoKeep": "保留",
+        "undoNewer": "此修订之后已保存 v{{version}}。撤销会恢复此修订所依据的版本，因此也会移除之后保存的更改。",
+        "undoing": "正在恢复上一个版本…",
+        "undone": "已撤销：上一个版本已恢复为新版本。"
+      },
+      "button": "根据评论修订",
+      "close": "关闭",
+      "failed": "根据评论修订失败。请重试。",
+      "filterAddressed": "已处理",
+      "hint": "根据评论和文档的依据，针对已回复或已解决的评论所涉及的部分提出更改建议",
+      "noThreads": "请先回复或解决一条评论。",
+      "saveFirst": "请先保存或放弃已接受的更改。",
+      "proposal": {
+        "accept": "接受",
+        "acceptAll": "全部接受",
+        "acceptNamed": "接受更改 {{position}}",
+        "added": "新增",
+        "answers": "对应评论：",
+        "change": "更改 {{position}}",
+        "deleted": "（此段落将被删除）",
+        "dropped_one": "已略去 {{count, number}} 条建议：其段落不在正文中。",
+        "dropped_other": "已略去 {{count, number}} 条建议：其段落不在正文中。",
+        "intro": "逐条接受或拒绝更改。接受的更改会进入你的草稿；保存后成为新版本。",
+        "listLabel": "建议的更改",
+        "markFailed": "已保存，但无法将评论标记为已处理。请稍后重试。",
+        "markPartial": "已保存，但部分评论的已处理标记已达上限，无法标记为已处理；其他评论已标记。请为这些评论新建评论。",
+        "marked_one": "已保存：{{count, number}} 条评论已标记为在 v{{version}} 中处理。",
+        "marked_other": "已保存：{{count, number}} 条评论已标记为在 v{{version}} 中处理。",
+        "none": "无法根据这些评论提出更改。建议说明了可以改做什么。",
+        "reject": "拒绝",
+        "rejectAll": "全部拒绝",
+        "rejectNamed": "拒绝更改 {{position}}",
+        "removed": "删除",
+        "saveNote": "接受的更改已在你的草稿中。保存即可成为新版本。",
+        "state": {
+          "accepted": "已接受",
+          "addressed": "已保存",
+          "outOfDate": "已过时：该段落已更改",
+          "rejected": "已拒绝"
+        },
+        "status_one": "建议了 {{count, number}} 处更改。",
+        "status_other": "建议了 {{count, number}} 处更改。",
+        "title": "建议的更改"
+      },
+      "refused": {
+        "explain": "未保存任何内容：你的更改仍在这里。请改为将其保存为你自己的编辑。",
+        "fallback": "此次保存无法记录为修订。",
+        "saveAsOwn": "保存为我自己的编辑"
+      },
+      "recommendations": {
+        "listLabel": "建议",
+        "status_one": "{{count, number}} 条建议。文档未做任何更改。",
+        "status_other": "{{count, number}} 条建议。文档未做任何更改。",
+        "title": "来自评论的建议",
+        "why": "按照你与 AI 的工作方式，只提供建议：AI 不会替你撰写此文档。"
+      },
+      "reviewAgain": "请角色再次评审",
+      "running": "正在根据评论修订…",
+      "showThread": "显示评论：{{label}}",
+      "threadGone": "（评论已删除）"
+    },
+    "focus": {
+      "announce": "全屏。按 Esc 键退出。",
+      "button": "全屏",
+      "hint": "全屏（Ctrl+Shift+F 或 ⌘⇧F）"
+    },
+    "menu": {
+      "commentsHeading": "未解决的评论",
+      "includeComments": "包含未解决的评论",
+      "saved": "已保存",
+      "trigger": "文件",
+      "wholeDocument": "针对整个文档"
+    }
   }
 }
