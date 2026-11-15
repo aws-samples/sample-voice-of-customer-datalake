@@ -17,6 +17,61 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.07.00] - 2026-11-15
+
+Autonomous engineering agents: administrators read the agents' skill versions and their scorecards, read only, through
+the Agents API and Agents → Skills. Off by default (`-c engineeringAgents=true`), and no fixed cost.
+
+### Added
+
+- **The skills' reads** (`lambda/engineering/skills/views.py`, `store.py`; docs/autonomous-engineering.md, "The
+  administrators' reads"): for an administrator acting for themselves (a delegated MCP credential gets 403; 404 while
+  the module is off), every input checked (400) and every read a GetItem or one bounded Query of one partition.
+  `GET /agents/engineering/skills?connection=` → each role with a version in the scope (the shared skills, or one
+  connection's own), its current version, the numbers handed out and its newest version's summary;
+  `GET …/skills/<role>/versions?connection=&page=` → the history 20 a page, newest first, each version with its status,
+  why, who proposed it and when, who accepted or rejected it and when, the version a rollback restores, its base, its
+  expected case, its events from the `LOG#` rows and its benchmark (the proposer's claimed rates apart from the measured
+  ones); the next page's token is the server's, checked against the scope it was made for. `GET
+  …/skills/<role>/versions/<n>` → one version's whole record, how the coach made it and its diff from its base.
+- **The scorecards' read**: `GET /agents/engineering/scorecards/<role>?connection=&versions=` → `version_card` per
+  version (at most 10, each once) on the connection's own scorecards, each card labelled with where its number comes
+  from (`source: shipped`: a session names its version `<role>@<n>` without its scope, and every session runs the
+  shipped skill until the harness reads the store, which the answer's `scope_known: false` and the screen say); by
+  default the shipped version and the shipped ones before it, at most 5, never mixed with the store's numbers. A
+  scorecard is a connection's: the shared scope is 400.
+- **A promoted version's source is never answered**: the events' Query filters on the readable events, so DynamoDB
+  drops the `promoted_from` log row before it answers, and the store drops any other event again in code; no answer
+  names another connection. A history page whose versions sit far apart reads its events in ranges of at most 100
+  numbers, one Query each.
+- **Agents → Skills** (administrators, with the module on): a scope picker, the scope's roles, a role's history a page
+  at a time (status badges, the benchmark marked measured or claimed, the events), a version's diff as plain lines added
+  and removed (never read as HTML) with its whole record, and a role's scorecards on a connection in a table (pass rate,
+  tasks done, failed and needing a person, review rounds, attempts, cost, time), with empty, loading and failed states
+  that say what to do, in all nine locales. No action is offered on a version. The dev mock serves fictional versions.
+
+### Changed
+
+- docs/autonomous-engineering.md and docs/deployment.md: the read side of the skills and scorecards moves from planned
+  to built; accepting, rejecting, rolling back, promoting and recording a benchmark through a route stay planned.
+- `lib/test-support/baseline.json` regenerated.
+
+### Tests
+
+- The routes on moto: each one's answer, the shared scope and a connection reading only its own partitions, the
+  measured benchmark apart from the claim, paging newest first and every tampered or foreign page token refused, the
+  scorecards asked for and by default, each input off its shape 400, a missing version 404, 403 for a plain user and
+  an administrator's MCP credential, 404 with the module off or its package absent, 503 on a failed read, and a
+  promoted version's source connection in no answer.
+- The store's new reads: their bounds, nothing below the first version, a page's events followed past a short answer.
+- CDK: the reads use the Agents API's one table read (GetItem and Query, no condition), with no new statement.
+- The web app: each screen's states (roles, history, detail and its diff, scorecards and the versions a person names),
+  the view's rules and the answers' parsing.
+
+### Upgrade notes
+
+- Nothing to migrate and no new permission: the Agents API's role already reads `voc-engineering` for the run views.
+
 ## [7.06.01] - 2026-11-15
 
 The GitLab connector's time bounds after a push's first commit, counted by their real worst case. Off by default

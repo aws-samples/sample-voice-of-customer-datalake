@@ -59,6 +59,15 @@ describe('the engineering run reads', () => {
     expect(objects.map((statement) => statement.resource)).toStrictEqual([expect.stringMatching(/"\/ws\/default\/reports\/\*"/)]);
   });
 
+  it('read the skills\' history and the scorecards (WS#*#SKILL#*, WS#*#SCORE#*) with the one table read: no new statement', () => {
+    // (7.07.00: GET /agents/engineering/skills…, …/scorecards/<role> read with the GetItem and Query the run views
+    // already have on the whole table, which covers those partitions; a narrower statement beside it would add nothing)
+    const reads = engineeringStatements(on()).filter((statement) => statement.actions.some((action) => action.startsWith('dynamodb:')));
+    expect(reads.map((statement) => [...statement.actions].sort(byCodeUnit))).toStrictEqual([['dynamodb:GetItem', 'dynamodb:Query']]);
+    expect(reads[0]?.condition).toBeUndefined();
+    expect(JSON.stringify(reads)).not.toMatch(/LeadingKeys|BatchGet|Scan/);
+  });
+
   it('send a person\'s board actions to the board\'s function, by its name, which its own role writes', () => {
     const invokes = policyStatementsOf(on(), 'AgentsLambdaRole')
       .filter((statement) => statement.actions.includes('lambda:InvokeFunction') && /voc-engineering-board/.test(statement.resource));

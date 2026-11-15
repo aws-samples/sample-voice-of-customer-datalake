@@ -764,6 +764,55 @@
     ]
   },
   {
+    "file": "api/engineeringSkillsApi.ts",
+    "method": "GET",
+    "call": "historyPath(connection, role, page)",
+    "probes": [
+      {
+        "path": "/agents/engineering/skills/fixer/versions?connection="
+      },
+      {
+        "path": "/agents/engineering/skills/fixer/versions?connection=storefront"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringSkillsApi.ts",
+    "method": "GET",
+    "call": "scorecardsPath(connection, role, versions)",
+    "probes": [
+      {
+        "path": "/agents/engineering/scorecards/fixer?connection=storefront"
+      },
+      {
+        "path": "/agents/engineering/scorecards/fixer?connection=storefront&versions=2%2C1"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringSkillsApi.ts",
+    "method": "GET",
+    "call": "skillsPath(connection)",
+    "probes": [
+      {
+        "path": "/agents/engineering/skills?connection="
+      },
+      {
+        "path": "/agents/engineering/skills?connection=storefront"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringSkillsApi.ts",
+    "method": "GET",
+    "call": "versionPath(connection, role, version)",
+    "probes": [
+      {
+        "path": "/agents/engineering/skills/fixer/versions/2?connection="
+      }
+    ]
+  },
+  {
     "file": "api/engineeringSpendApi.ts",
     "method": "GET",
     "call": "'/agents/engineering/settings'",

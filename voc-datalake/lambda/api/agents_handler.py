@@ -33,7 +33,9 @@ Permissions:
   (``POST``/``DELETE …/connections/<id>/ci-attestation``, engineering/connectors/attestations.py: create-only
   version rows beside the connection's, each with its audit row), and a run's start
   (``POST /agents/engineering/runs``, a saved engineering flow on a stored connection's commit: the start
-  function, below); while the engineering agents are off every caller gets 404.
+  function, below), and the agents' skills and scorecards, read only (``GET /agents/engineering/skills``,
+  ``…/skills/<role>/versions[/<version>]``, ``GET /agents/engineering/scorecards/<role>``: engineering/skills/views.py);
+  while the engineering agents are off every caller gets 404.
 
 Own role (20 KB policy limit): the agents table (read/write), the aggregates table
 (read: category access rows + categories config), ``states:StartExecution`` and
@@ -895,6 +897,75 @@ def decline_plan_step(plan_id: str, step_id: str):
 
 ENGINEERING_RUN_NOT_FOUND = 'Engineering run not found'
 _VERSION = re.compile(r'[0-9]{1,4}\Z')
+
+
+# The agents' skills and their scorecards (engineering/skills/views.py; docs/autonomous-engineering.md, "Getting
+# better"): read only, by administrators acting for themselves (a delegated credential gets 403), 404 while the module
+# is off. Registered before the run's routes, whose ``<run_id>`` would read ``skills`` and ``scorecards`` as a run id.
+_SKILL_ERRORS = {'invalid': ValidationError, 'not_found': NotFoundError, 'forbidden': AuthorizationError,
+                 'conflict': ConflictError}
+
+
+def _skill_views() -> Any:
+    """The skills' reads: 404 while the module is off, then 403 for anyone but an administrator."""
+    _engineering_on()
+    require_admin_caller(_caller())
+    from engineering.skills.views import SkillViews
+    from shared.aws import get_dynamodb_client
+
+    return SkillViews(get_dynamodb_client(), os.environ['ENGINEERING_TABLE'])
+
+
+def _skill_read(read: Any) -> Any:
+    """``read()``, its refusals answered with their status and a failed read with 503."""
+    from engineering.learning.scorecard import ScorecardError
+    from engineering.skills.model import SkillError
+
+    try:
+        return read()
+    except SkillError as refused:
+        raise _SKILL_ERRORS[refused.kind](str(refused)) from None
+    except ScorecardError as refused:
+        raise ValidationError(str(refused)) from None
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception('engineering: the skills could not be read')
+        raise ServiceUnavailableError('the skills could not be read: retry') from exc
+
+
+@app.get('/agents/engineering/skills')
+@tracer.capture_method(capture_response=False)
+def list_engineering_skills():
+    """``?connection=<id>`` (empty or left out: the shared skills) → ``{connection, roles: [{role, current_version,
+    versions, latest}]}``: each role with a version in the scope, its newest version's summary line."""
+    views = _skill_views()
+    return _skill_read(lambda: views.roles(_query('connection') or ''))
+
+
+@app.get('/agents/engineering/skills/<role>/versions')
+@tracer.capture_method(capture_response=False)
+def list_engineering_skill_versions(role: str):
+    """``?connection=&page=<token>`` → ``{connection, role, current_version, versions: [...], next_page}``: a page of
+    the role's history, newest first, each version with its events and its benchmark (claimed and measured)."""
+    views = _skill_views()
+    return _skill_read(lambda: views.history(_query('connection') or '', role, _query('page') or ''))
+
+
+@app.get('/agents/engineering/skills/<role>/versions/<version>')
+@tracer.capture_method(capture_response=False)
+def get_engineering_skill_version(role: str, version: str):
+    """``?connection=`` → ``{connection, role, version: {..., record, diff, made_with}}``: one version, its whole
+    record and its diff from its base; 404 when the scope has no such version."""
+    views = _skill_views()
+    return _skill_read(lambda: views.version(_query('connection') or '', role, version))
+
+
+@app.get('/agents/engineering/scorecards/<role>')
+@tracer.capture_method(capture_response=False)
+def get_engineering_scorecards(role: str):
+    """``?connection=<id>&versions=<n,n,…>`` → ``{connection, role, versions, cards}``: each version's scorecard over
+    its latest runs on the connection (at most 10 versions; by default the shipped one and the newest few)."""
+    views = _skill_views()
+    return _skill_read(lambda: views.scorecards(_query('connection') or '', role, _query('versions')))
 
 
 def _engineering_tables(run_id: str) -> tuple[str, str]:

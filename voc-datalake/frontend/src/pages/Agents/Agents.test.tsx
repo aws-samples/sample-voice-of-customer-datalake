@@ -417,3 +417,35 @@ describe('Agents list — the Connections tab', () => {
     expect(connectionCalls()).toStrictEqual([])
   })
 })
+
+describe('Agents list — the Skills tab', () => {
+  const skillCalls = () => fetchApi.mock.calls.map(([path]) => path).filter((path) => path.startsWith('/agents/engineering/skills'))
+
+  it('an admin has it while the engineering agents are on, and it lists the shared skills', async () => {
+    engineeringModule.available = true
+    route({
+      'GET /agents/engineering/connections': () => ({ connections: [], limit: 20 }),
+      'GET /agents/engineering/skills?connection=': () => ({ connection: '', roles: [] }),
+    })
+    renderList('/agents?tab=skills')
+    expect(await screen.findByRole('tab', { name: 'Skills', selected: true })).toBeInTheDocument()
+    expect(await screen.findByText(/No shared skill has a version yet/)).toBeInTheDocument()
+  })
+
+  it('without the engineering agents there is none, and ?tab=skills shows the agents', async () => {
+    route({ 'GET /agents': () => ({ items: [] }) })
+    renderList('/agents?tab=skills')
+    expect(await screen.findByRole('tab', { name: 'Agents', selected: true })).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Skills' })).not.toBeInTheDocument()
+    expect(skillCalls()).toStrictEqual([])
+  })
+
+  it('a non-admin has no tabs and never reads the skills', async () => {
+    engineeringModule.available = true
+    adminFlag.isAdmin = false
+    route({ 'GET /agents': () => ({ items: [] }) })
+    renderList('/agents?tab=skills')
+    expect(await screen.findByText('No autonomous agents yet')).toBeInTheDocument()
+    expect(skillCalls()).toStrictEqual([])
+  })
+})

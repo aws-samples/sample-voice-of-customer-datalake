@@ -9,7 +9,7 @@ counter to update in place; a version's history is its rows), in the ``voc-engin
 
 ``<version>`` is the session rows' label (``<role>@<n>``; ``none`` for a role with no skill yet, ``unlabelled`` for a
 label off that shape). One connection's rows are its own partition, so its scorecards are read only as the
-connection is (the routes, planned, check that access; this store does not). A retried retrospective finds its row
+connection is (the administrators' routes, engineering/skills/views.py, check that access; this store does not). A retried retrospective finds its row
 written and leaves it (``written`` False).
 
 ``version_card`` aggregates one version's latest runs with ONE bounded Query of its partition (newest run first, at

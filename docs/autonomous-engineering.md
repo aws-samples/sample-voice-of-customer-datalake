@@ -2164,9 +2164,11 @@ benchmark gate on a coach's version ([Evaluation](#evaluation)), the coach that 
 (`voc-datalake/lambda/engineering/coach/`), the agents' memory store with its recall for a task
 (`voc-datalake/lambda/engineering/agent_memory/`), and the learning loop with its scorecards
 (`voc-datalake/lambda/engineering/learning/`), which a run's end starts: it takes the run's failures to the coach,
-drafts lessons in memory and writes a scorecard row per skill version. Still to come: the harness reading the
-skills store and the recall, people's reactions on the host as an input, and the administrators' and people's
-routes and screens (phases 4 and 5).
+drafts lessons in memory and writes a scorecard row per skill version, and since 7.07.00 the administrators' read
+side of the skills and the scorecards (the routes and Agents → Skills, [below](#the-administrators-reads)). Still to
+come: the harness reading the skills store and the recall, people's reactions on the host as an input, the
+administrators' actions on a version (accept, reject, roll back, promote, record a benchmark, seed) as routes and
+buttons, and the people's routes and screens (phases 4 and 5).
 
 **Skills, visibly and reversibly.** An agent's skill (instructions, examples, tool policy, model, harness) is
 versioned. Each version keeps its diff, why it changed (the run, the failure, the person's comment), the benchmark
@@ -2225,7 +2227,65 @@ a seed never writes over a history, and a seed racing another is refused by the 
 store numbers it (`<role>@1`, whatever the shipped number: the coordinator ships as version 2). The coach proposes
 only on a version the store holds, so this is how a role's first version, a person's, comes from what ships.
 Not yet: the harness reading the store (its agents still run the shipped record), the route that calls the seed, a
-run recording the versions it used, the other routes, the step that runs the benchmark for a proposal.
+run recording the versions it used, the routes that write (propose, accept, reject, roll back, promote, record a
+benchmark), the step that runs the benchmark for a proposal.
+
+<a id="the-administrators-reads"></a>**The administrators' reads** (7.07.00, `voc-datalake/lambda/engineering/skills/views.py`,
+the Agents API's routes, the web app's Agents → Skills): read only, for an administrator acting for themselves (403
+for anyone else, a delegated MCP credential included; no MCP tool), 404 while the module is off, every input checked
+(400) and every read bounded: a GetItem, or one Query of one partition with a page cap, never a whole-table read.
+
+- `GET /agents/engineering/skills?connection=<id>` (empty or left out: the shared skills) → `{connection, roles}`:
+  each role with a version in the scope, in the catalog's order, with its current version, the version numbers its
+  counter has handed out (`versions`; a proposal refused after its number was taken leaves a gap) and its newest
+  version's status and summary line. A `HEAD` GetItem per role (13) and, for a role that has one, one Query of its
+  newest version.
+- `GET /agents/engineering/skills/<role>/versions?connection=&page=<token>` → `{connection, role, current_version,
+  versions, next_page}`: the history 20 versions a page, newest first (`SkillStore.lines`, one Query reading each row
+  without its record and its diff). Each version: its number, status, summary, why (`{run_id, failure, comment}`), who
+  proposed it (`proposed_by`, `proposed_by_kind`: `agent` for the coach) and when, who accepted or rejected it and
+  when, the version a rollback restores, its base (`{shared, version}`: the scope's own or the shared skill's, never
+  another connection's), `expected_case`, its benchmark (`{claimed, measured}`: the rates the proposer gave, a claim
+  only, apart from the benchmark an administrator recorded, the rates readers trust; the model's
+  `SkillVersion.trusted_rates` property picks the same, and is not a field of the answer) and its events from the
+  `LOG#` rows (accepted, rejected with its comment, rolled back, benchmarked: who and when; `SkillStore.events`, one
+  Query per range of at most 100 version numbers, so a page whose versions sit far apart is read in a few ranges,
+  at most one a version). `next_page` is an opaque token the server makes and checks: it names the scope it was
+  made for and an unkeyed checksum (it catches a corrupted token, not a forged one), the scope is checked again, and
+  only its version number is used, formatted into this scope's key, so a token from another scope, or changed, is
+  refused (400) and a forged one reads nothing more.
+- `GET /agents/engineering/skills/<role>/versions/<n>?connection=` → `{connection, role, version}`: one version (1
+  to 999999; 404 when the scope has none), its line as above, its whole record (instructions, examples, tool policy,
+  model, harness), how the coach made it (`made_with`) and its diff from its base (`skills/diff.py`'s stored diff:
+  instruction lines and examples added and removed, the tools added and dropped, the model and harness moves).
+- `GET /agents/engineering/scorecards/<role>?connection=<id>&versions=<n,n,…>` → `{connection, role, versions,
+  cards, source, scope_known}`: `version_card` per version (`compare`: at most 10, each once), on the connection's
+  own scorecards (400 without a connection: a scorecard row is a connection's). **The sessions cannot tell a
+  version's scope**: a session names its skill `<role>@<n>`, with no scope, so a shared store version and a shipped
+  one of the same number would read the same; the harness runs only the shipped skills today, so every scorecard
+  number is a shipped skill's, and each card says so (`source: shipped`; the answer's `scope_known: false`, and the
+  screen says it in words). A scorecard number is never one of the history's. By default the role's shipped version
+  and the shipped ones before it (at most 5; none for a role that ships no skill), never mixed with the store's
+  numbers. Once the harness reads the store, its labels must carry the scope for a card to name another source.
+  Each card: its source, the runs read, the
+  pass rate, tasks done, failed and needing a person, re-posts, review rounds, attempts, cost, session seconds,
+  whether older runs were left out (`more`) and the time they span.
+
+**A promoted version's source is never answered**: the reads leave `promoted_from` out entirely. The events' Query
+filters on the readable events (`READABLE_EVENTS`), so DynamoDB drops the `LOG#<n>#promoted_from` row before it
+answers, and the store drops any event not among them again in code before it answers; only `SkillStore.promotion_source` reads it,
+and no route calls it yet. **The grant**: none new. The Agents API's role already has `dynamodb:GetItem` and
+`dynamodb:Query` on the whole `voc-engineering` table for the run views (with the stack's key through DynamoDB,
+`AgentsTablesKey`), which covers the skills' (`WS#*#SKILL#*`) and the scorecards' (`WS#*#SCORE#*`) partitions; a
+narrower `dynamodb:LeadingKeys` statement beside it would add nothing, so none is added (pinned in
+`lib/stacks/api-engineering-reads.test.ts`); narrowing the one table read to the partitions the API reads is a
+follow-up. Nothing appears while the module is off. **The screens** (Agents → Skills, administrators, only while the
+module is on): a scope picker (the shared skills, or a stored connection), the scope's roles in a table, a role's
+history a page at a time (each version's status badge, summary, why, who and when, the benchmark marked measured or
+claimed, its events), a version's detail with its diff as plain lines added and removed (the record's text is shown
+as text, never read as HTML) and its whole record, and a role's scorecards on a connection in a table (up to 10
+versions named by number). The scope, the role and the version are view options in the address (`?tab=skills&
+connection=&role=&version=`). No action is offered on a version.
 
 **The coach.** When an agent fails (an error, a timeout, a NO-GO, a review finding it keeps repeating, a person
 rejecting its pull request or editing it heavily), the coach reads the conversation, the task, the outputs and the
@@ -2373,9 +2433,10 @@ What exists (`voc-datalake/lambda/engineering/learning/`, behind `-c engineering
   the code's `attribute_not_exists` keeps each one create-only.
 
 Still planned: people's reactions on the host as the port's real source (review comments, edits after merge,
-reverts: with the broker's host reads), and with them the scorecards' human edits; the scorecard screens and the
-administrators' routes that read `version_card`; "what the agents learned" and "what improved since the last run" in
-the goal report; the conversation's excerpts in a failure's evidence.
+reverts: with the broker's host reads), and with them the scorecards' human edits; "what the agents learned" and
+"what improved since the last run" in the goal report; the conversation's excerpts in a failure's evidence. (The
+scorecard screen and the administrators' route that reads `version_card` are built since 7.07.00:
+[the administrators' reads](#the-administrators-reads).)
 
 **Agent memory.** The [memory](memory.md) layer gains an agents part, with three scopes: per repository (confirmed
 conventions, reviewer preferences, recurring bugs and their fixes, flaky tests, what the gates usually catch), per

@@ -52,7 +52,10 @@ skill every connection's agents fall back to) and the agent role::
   version the store holds, so a role's first is a person's: this seed, or one they write.
 - **Read**: ``current`` is the connection's own current version, else the shared skill's, else None (the role runs
   on its shipped skill, which the harness still reads from the image, not from this store); ``versions`` pages through a scope's history. A connection's versions are
-  read only as the connection is (the routes check that access; this store does not).
+  read only as the connection is (the routes check that access; this store does not). The administrators' reads
+  (7.07.00, engineering/skills/views.py): ``head`` (the scope's counter and current version), ``lines`` (the history
+  newest first, each row read without its record and diff), ``detail`` (one row: the version and its line) and
+  ``events`` (a page's log rows, the ``READABLE_EVENTS`` only: never a promoted version's source).
 
 Each change returns an ``Announcement``: the bus event (``skill.proposed``, ``skill.accepted``,
 ``skill.rolled_back``) the caller publishes, with the summary line made from the diff.
@@ -89,6 +92,7 @@ from engineering.skills.model import (
     normalised,
 )
 from engineering.workspace.layout import CONNECTION
+from shared.dynamo_paging import query_all
 from shared.ids import is_key_collision
 from shared.model_config import ALLOWED_MODEL_IDS
 
@@ -107,6 +111,8 @@ MIN_COPIED_TEXT: Final = 20
 MAX_ITEM_BYTES: Final = 256 * 1024
 #: Versions a page of ``versions`` holds at most.
 MAX_PAGE: Final = 100
+#: The highest version number a key holds (``VER#<version:06d>``, sorted as text).
+MAX_VERSION: Final = 999_999
 
 
 class SkillNotFound(SkillError):
@@ -265,6 +271,91 @@ class SkillVersion:
                    made_with=_made_with(item.get('made_with_model'), item.get('made_with_prompt')))
 
 
+#: What a history line reads of a version row: everything but its record and its diff (most of a row's up to
+#: ``MAX_ITEM_BYTES``), so a page of lines stays small.
+LINE_ATTRIBUTES: Final = (
+    'version', 'status', 'summary', 'reason_run', 'reason_failure', 'reason_comment', 'proposed_by',
+    'proposed_by_kind', 'created_at', 'accepted_by', 'accepted_at', 'rejected_by', 'rejected_at', 'restores',
+    'base_connection', 'base_version', 'benchmark_before', 'benchmark_after', 'benchmark_run', 'expected_case')
+#: The log events a reader is answered. ``promoted_from`` is never one: it names another connection, and only
+#: ``promotion_source`` reads it.
+READABLE_EVENTS: Final = (ACCEPTED, REJECTED, ROLLED_BACK, BENCHMARKED)
+
+
+@dataclass(frozen=True)
+class VersionLine:
+    """A version as its scope's history shows it, read without its record and its diff: its status, the summary
+    line, why (the run, the failure, a comment), who proposed it and when, who accepted or rejected it and when, the
+    version a rollback restored, its base, the proposer's claimed pass rates and the recorded (measured) benchmark."""
+
+    version: int
+    status: str
+    summary: str
+    reason_run: str
+    reason_failure: str
+    reason_comment: str
+    proposed_by: str
+    proposed_by_kind: str
+    created_at: str
+    accepted_by: str
+    accepted_at: str
+    rejected_by: str
+    rejected_at: str
+    restores: int
+    base: SkillRef | None
+    #: The proposer's pass rates: only their claim.
+    claimed: Benchmark
+    #: The benchmark an administrator recorded on it: the rates readers trust.
+    measured: RecordedBenchmark | None
+    expected_case: str
+
+    @classmethod
+    def from_item(cls, item: Mapping[str, Any]) -> VersionLine:
+        try:
+            measured = _recorded(item.get('benchmark_run'))
+        except ValueError as exc:   # json.JSONDecodeError and SkillError are ValueErrors
+            raise SkillError(f'a stored version is not readable: {exc}') from exc
+        return cls(version=_number(item.get('version')), status=_text(item.get('status')),
+                   summary=_text(item.get('summary')), reason_run=_text(item.get('reason_run')),
+                   reason_failure=_text(item.get('reason_failure')), reason_comment=_text(item.get('reason_comment')),
+                   proposed_by=_text(item.get('proposed_by')), proposed_by_kind=_text(item.get('proposed_by_kind')),
+                   created_at=_text(item.get('created_at')), accepted_by=_text(item.get('accepted_by')),
+                   accepted_at=_text(item.get('accepted_at')), rejected_by=_text(item.get('rejected_by')),
+                   rejected_at=_text(item.get('rejected_at')), restores=_number(item.get('restores')),
+                   base=_ref(item.get('base_connection'), item.get('base_version')),
+                   claimed=Benchmark(_rate(item.get('benchmark_before')), _rate(item.get('benchmark_after'))),
+                   measured=measured, expected_case=_text(item.get('expected_case')))
+
+
+@dataclass(frozen=True)
+class LinePage:
+    """A page of a scope's history, newest first; ``next_before`` is the ``before`` of the next page (None: the last
+    page)."""
+
+    lines: Sequence[VersionLine]
+    next_before: int | None
+
+
+@dataclass(frozen=True)
+class LogEvent:
+    """A version's log row as a reader sees it: what happened, who, when, and the comment given with it."""
+
+    version: int
+    event: str
+    by: str
+    at: str
+    comment: str
+
+
+@dataclass(frozen=True)
+class ScopeHead:
+    """A scope's ``HEAD`` row: its current version (0: none accepted yet) and how many version numbers it has handed
+    out (a proposal refused after its number was taken leaves a gap)."""
+
+    current_version: int
+    versions: int
+
+
 @dataclass(frozen=True)
 class VersionPage:
     """A page of a scope's versions, oldest first; ``next_after`` is the ``after`` of the next page (None: the
@@ -414,6 +505,58 @@ class SkillStore:
         page = [SkillVersion.from_item(item) for item in answer.get('Items', [])]
         more = bool(page) and 'LastEvaluatedKey' in answer
         return VersionPage(page, page[-1].version if more else None)
+
+    def detail(self, ws: str, connection: str, role: str, version: int) -> tuple[SkillVersion, VersionLine]:
+        """One version row, read once: the whole version, and its line as the history shows it."""
+        item = _found(get_row(self.client, self.table, self._key(ws, connection, role, f'VER#{version:06d}')))
+        return SkillVersion.from_item(item), VersionLine.from_item(item)
+
+    def head(self, ws: str, connection: str, role: str) -> ScopeHead | None:
+        """The scope's ``HEAD`` row, one GetItem (None: nobody has proposed a version in this scope)."""
+        found = get_row(self.client, self.table, self._key(ws, connection, role, HEAD))
+        if found is None:
+            return None
+        return ScopeHead(_number(found.get('current_version')), _number(found.get('versions')))
+
+    def lines(self, ws: str, connection: str, role: str, *, before: int = 0, limit: int = 20) -> LinePage:
+        """The scope's versions below version ``before`` (0: from the newest), newest first, at most ``limit`` (1 to
+        ``MAX_PAGE``): one Query of the scope's partition, each row read without its record and its diff."""
+        if isinstance(limit, bool) or not 0 < limit <= MAX_PAGE or not 0 <= before <= MAX_VERSION:
+            raise SkillError(f'a page holds 1-{MAX_PAGE} versions, below a version number')
+        if before == 1:
+            return LinePage((), None)
+        names = {f'#a{index}': name for index, name in enumerate(LINE_ATTRIBUTES)}
+        answer = self.client.query(
+            TableName=self.table, ConsistentRead=True, Limit=limit, ScanIndexForward=False,
+            KeyConditionExpression='pk = :pk AND sk BETWEEN :first AND :last',
+            ProjectionExpression=', '.join(names), ExpressionAttributeNames=names,
+            ExpressionAttributeValues={':pk': {'S': _pk(ws, connection, role)}, ':first': {'S': 'VER#000001'},
+                                       ':last': {'S': f'VER#{before - 1:06d}' if before else f'VER#{MAX_VERSION}'}})
+        page = [VersionLine.from_item(item) for item in answer.get('Items', [])]
+        more = bool(page) and 'LastEvaluatedKey' in answer and page[-1].version > 1
+        return LinePage(page, page[-1].version if more else None)
+
+    def events(self, ws: str, connection: str, role: str, low: int, high: int) -> list[LogEvent]:
+        """The log rows of versions ``low`` to ``high`` (at most ``MAX_PAGE`` versions), oldest first: the
+        ``READABLE_EVENTS`` only: filtered by DynamoDB before it answers, so a promoted version's source does not
+        reach this code, and dropped here again should any other row come back. One Query of the scope's partition (a page of versions' log rows fits one DynamoDB page;
+        a short one is followed), at most ``len(READABLE_EVENTS)`` rows a version."""
+        if not 0 < low <= high <= MAX_VERSION or high - low >= MAX_PAGE:
+            raise SkillError(f'the events of 1-{MAX_PAGE} versions are read at once')
+        request: dict[str, Any] = {
+            'TableName': self.table, 'ConsistentRead': True,
+            'KeyConditionExpression': 'pk = :pk AND sk BETWEEN :first AND :last',
+            'FilterExpression': '#e IN (' + ', '.join(f':e{index}' for index in range(len(READABLE_EVENTS))) + ')',
+            'ProjectionExpression': '#v, #e, #b, #t, #c',
+            'ExpressionAttributeNames': {'#v': 'version', '#e': 'event', '#b': 'by', '#t': 'at', '#c': 'comment'},
+            'ExpressionAttributeValues': {
+                ':pk': {'S': _pk(ws, connection, role)}, ':first': {'S': f'LOG#{low:06d}#'},
+                ':last': {'S': f'LOG#{high:06d}#~'},
+                **{f':e{index}': {'S': event} for index, event in enumerate(READABLE_EVENTS)}}}
+        rows = query_all(self.client, request, max_items=len(READABLE_EVENTS) * (high - low + 1))
+        return [LogEvent(_number(item.get('version')), _text(item.get('event')), _text(item.get('by')),
+                         _text(item.get('at')), _text(item.get('comment')))
+                for item in rows if _text(item.get('event')) in READABLE_EVENTS]
 
     def current(self, ws: str, connection: str, role: str) -> SkillVersion | None:
         """The skill the role's agents run for ``connection`` (``''``: the shared one), None when there is none."""

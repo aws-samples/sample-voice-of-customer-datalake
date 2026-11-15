@@ -3,15 +3,16 @@
  * run and spend; admins create agents here (created DISABLED, like the
  * assistant's `create_agent`). Admins also get a Workflows tab (`?tab=workflows`,
  * where `/agents/workflows` lands): the workflow library; and, when the engineering
- * agents are on, a Spend tab (`?tab=spend`): what they spent, from the spend ledger, and a Connections tab
- * (`?tab=connections`): the repository connections they reach a repository through.
+ * agents are on, a Spend tab (`?tab=spend`): what they spent, from the spend ledger, a Connections tab
+ * (`?tab=connections`): the repository connections they reach a repository through, and a Skills tab
+ * (`?tab=skills`): their skill versions' history and scorecards, read only.
  *
  * @module pages/Agents/Agents
  */
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { Bot, CircleDollarSign, Hand, KeyRound, Plus, Workflow } from 'lucide-react'
+import { Bot, CircleDollarSign, GraduationCap, Hand, KeyRound, Plus, Workflow } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { IconTabs } from '../../components/IconTabs/IconTabs'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
@@ -26,6 +27,7 @@ import { useAgentList, useCreateAgent } from './useAgents'
 import { WorkflowLibrary } from './WorkflowLibrary'
 import { EngineeringSpend } from './EngineeringSpend'
 import { EngineeringConnections } from './EngineeringConnections'
+import { EngineeringSkills } from './EngineeringSkills'
 import { AgentRowActions } from './AgentRowActions'
 import { PlansList } from './PlansList'
 import { prefetch } from '../../lib/prefetch'
@@ -92,15 +94,15 @@ function AgentRow({ agent, isAdmin }: Readonly<{ agent: Agent; isAdmin: boolean 
   )
 }
 
-const VIEWS = ['agents', 'workflows', 'spend', 'connections'] as const
+const VIEWS = ['agents', 'workflows', 'spend', 'connections', 'skills'] as const
 type AgentsView = (typeof VIEWS)[number]
 const VIEW_ICONS: Readonly<Record<AgentsView, LucideIcon>> = {
-  agents: Bot, workflows: Workflow, spend: CircleDollarSign, connections: KeyRound,
+  agents: Bot, workflows: Workflow, spend: CircleDollarSign, connections: KeyRound, skills: GraduationCap,
 }
 /** The engineering agents' views: their reads answer 404 while the module is off. */
-const ENGINEERING_VIEWS: ReadonlySet<AgentsView> = new Set(['spend', 'connections'])
+const ENGINEERING_VIEWS: ReadonlySet<AgentsView> = new Set(['spend', 'connections', 'skills'])
 
-/** The views an admin has: Spend and Connections only while the engineering agents are on. */
+/** The views an admin has: Spend, Connections and Skills only while the engineering agents are on. */
 const adminViews = (): readonly AgentsView[] => (isEngineeringAvailable() ? VIEWS : VIEWS.filter((id) => !ENGINEERING_VIEWS.has(id)))
 
 /** `?tab=` picks the view (`/agents/workflows` lands on the library); only admins have the library and the spend. */
@@ -173,6 +175,7 @@ export default function Agents() {
         {view === 'workflows' && <WorkflowLibrary />}
         {view === 'spend' && <EngineeringSpend />}
         {view === 'connections' && <EngineeringConnections />}
+        {view === 'skills' && <EngineeringSkills />}
       </div>
       {creating && <CreateAgentDialog onClose={() => setCreating(false)} />}
     </div>
