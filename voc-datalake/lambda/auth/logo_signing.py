@@ -41,6 +41,15 @@ def is_uploaded_logo_key(value: Any) -> bool:
 
 
 _signer_cache: list = []  # the built signer, once: a FAILURE is not cached, so a transient error is retried
+_secrets = None
+
+
+def _secrets_client():
+    """One Secrets Manager client per container, built on first use (like user_messages._aggregates_table)."""
+    global _secrets
+    if _secrets is None:
+        _secrets = boto3.client('secretsmanager')
+    return _secrets
 
 
 def _rsa_signer():
@@ -69,7 +78,7 @@ def _build_rsa_signer():
         logger.warning('Logo signing unavailable: cryptography is not installed (signing-deps layer)')
         return None
     try:
-        secret = json.loads(boto3.client('secretsmanager').get_secret_value(SecretId=secret_arn)['SecretString'])
+        secret = json.loads(_secrets_client().get_secret_value(SecretId=secret_arn)['SecretString'])
         key = serialization.load_pem_private_key(secret['privateKeyPem'].encode('utf-8'), password=None)
     except (BotoCoreError, ClientError, KeyError, TypeError, ValueError) as error:
         logger.warning('Logo signing unavailable: %s', type(error).__name__)
