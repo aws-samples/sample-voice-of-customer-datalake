@@ -1,10 +1,22 @@
 """Which candidate is the logo (``logo_pick``): the model's answer re-checked, the rules and the touch icon as
 fallbacks, and the fenced user turn. The model call is a fake; Bedrock is never called.
 """
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
-from logo_pick import HEAD_ICON, MODEL, PICK_SYSTEM_PROMPT, RULES, LogoPick, choose_logo, parse_pick, pick_content
+from logo_pick import (
+    HEAD_ICON,
+    MODEL,
+    PICK_SYSTEM_PROMPT,
+    RULES,
+    SURFACE,
+    LogoPick,
+    ModelAnswer,
+    ask_logo_model,
+    choose_logo,
+    parse_pick,
+    pick_content,
+)
 from page_logo_candidates import HeadIcon, LogoCandidates
 from test_page_logo_candidates import logo_candidate
 
@@ -13,6 +25,8 @@ from shared.design_vision import PageShot
 PAGE = 'https://kirocrew.dev/'
 TOUCH = HeadIcon('touch-icon', 'https://kirocrew.dev/apple-touch-icon.png', '180x180')
 MARKED = PageShot('header', b'\x89PNG-marked', 'png', 1366, 600)
+#: The model id a fake pick call answers with.
+PICK_MODEL = 'global.anthropic.claude-haiku-5-5'
 
 
 #: Candidate 1 is what the rules take; 2 is a plain header image.
@@ -52,18 +66,19 @@ class TestParsePick:
 
 
 class TestChooseLogo:
-    def test_uses_the_models_answer(self):
-        ask = MagicMock(return_value='{"logo": 2}')
-        assert choose_logo(FOUND, MARKED, 'KiroCrew', ask) == LogoPick(number=2, picked_by=MODEL)
+    def test_uses_the_models_answer_and_records_the_model_that_gave_it(self):
+        ask = MagicMock(return_value=ModelAnswer('{"logo": 2}', PICK_MODEL))
+        assert choose_logo(FOUND, MARKED, 'KiroCrew', ask) == LogoPick(number=2, picked_by=MODEL, model_id=PICK_MODEL)
         ask.assert_called_once()
 
     def test_falls_back_to_the_rules_when_the_model_raises(self):
         ask = MagicMock(side_effect=TimeoutError('read timed out'))
         assert choose_logo(FOUND, MARKED, 'KiroCrew', ask) == LogoPick(number=1, picked_by=RULES)
 
-    def test_falls_back_to_the_rules_when_the_answer_is_unusable(self):
-        assert choose_logo(FOUND, None, 'KiroCrew', MagicMock(return_value='{"logo": 7}')) == LogoPick(
-            number=1, picked_by=RULES)
+    def test_falls_back_to_the_rules_with_no_model_recorded_when_the_answer_is_unusable(self):
+        pick = choose_logo(FOUND, None, 'KiroCrew', MagicMock(return_value=ModelAnswer('{"logo": 7}', PICK_MODEL)))
+        assert pick == LogoPick(number=1, picked_by=RULES)
+        assert pick.model_id is None
 
     def test_returns_no_logo_without_calling_the_model_when_the_page_offers_nothing(self):
         ask = MagicMock()
@@ -77,12 +92,30 @@ class TestChooseLogo:
         found = LogoCandidates(PAGE, WEAK.candidates, (HeadIcon('icon', 'https://kirocrew.dev/f.png'),))
         assert choose_logo(found, None, 'KiroCrew', None) == LogoPick()
 
-    def test_uses_the_rules_without_a_model(self):
-        assert choose_logo(FOUND, MARKED, 'KiroCrew', None) == LogoPick(number=1, picked_by=RULES)
+    def test_uses_the_rules_without_a_model_and_records_no_model(self):
+        pick = choose_logo(FOUND, MARKED, 'KiroCrew', None)
+        assert pick == LogoPick(number=1, picked_by=RULES)
+        assert pick.model_id is None
 
     def test_keeps_an_explicit_no_logo_from_the_model(self):
-        assert choose_logo(FOUND, MARKED, 'KiroCrew', MagicMock(return_value='{"logo": null}')) == LogoPick(
-            picked_by=MODEL)
+        ask = MagicMock(return_value=ModelAnswer('{"logo": null}', PICK_MODEL))
+        assert choose_logo(FOUND, MARKED, 'KiroCrew', ask) == LogoPick(picked_by=MODEL, model_id=PICK_MODEL)
+
+
+class TestAskLogoModel:
+    def test_sends_the_enrichment_surfaces_resolved_model_and_returns_it_with_the_text(self):
+        response = {'output': {'message': {'content': [{'text': '{"logo": '}, {'reasoningContent': {}},
+                                                       {'text': '1}'}]}}}
+        content = [{'text': 'x'}]
+        with patch('shared.model_config.get_active_model_id', return_value=PICK_MODEL) as resolve, \
+                patch('shared.converse.converse_blocks', return_value=response) as converse, \
+                patch('shared.aws.get_bedrock_client', return_value='bedrock'):
+            answer = ask_logo_model(content)
+        assert answer == ModelAnswer('{"logo": 1}', PICK_MODEL)
+        resolve.assert_called_once_with(SURFACE)
+        assert converse.call_args.args == ('bedrock', content)
+        assert converse.call_args.kwargs['model_id'] == PICK_MODEL
+        assert converse.call_args.kwargs['surface'] == SURFACE == 'enrichment'
 
 
 class TestPickContent:

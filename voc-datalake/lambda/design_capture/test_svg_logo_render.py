@@ -17,6 +17,7 @@ import capture_worker as cw
 import logo_render
 import png_check
 import pytest
+from logo_pick import ModelAnswer
 from test_design_capture_worker import (  # noqa: F401 - fixture
     ANSWER,
     JPEG,
@@ -31,6 +32,7 @@ from test_design_capture_worker import (  # noqa: F401 - fixture
     png_of_rows,
     table,
 )
+from test_logo_pick import PICK_MODEL
 
 from shared.company_context import get_reference
 from shared.http_utils import UnsafeURLError
@@ -113,7 +115,7 @@ class TestTheSvgLogoIsRendered:
         assert result == {'status': 'ready'}
         assert stored['extracted_design']['logo'] == {
             'source_url': SVG, 'content_type': 'image/png', 'rendered': True, 'preview_key': PREVIEW_KEY,
-            'svg_preview_key': SVG_KEY}
+            'svg_preview_key': SVG_KEY, 'picked_by': 'rules'}
         obj = s3.get_object(Bucket='raw', Key=PREVIEW_KEY)
         assert (obj['ContentType'], obj['Body'].read()) == ('image/png', LOGO_PNG)
         svg = s3.get_object(Bucket='raw', Key=SVG_KEY)
@@ -167,9 +169,12 @@ class TestTheSvgLogoIsRendered:
 class TestWhatIsNotRendered:
     def test_downloads_the_raster_the_model_picked_and_renders_nothing(self, table, s3):  # noqa: F811 — pytest fixture parameter named like the imported fixture
         cdp = _page_with(SVG, RASTER, render_answer=BOX, logo_png=LOGO_PNG)
-        _, stored, raster = _capture(table, s3, cdp, pick_logo=MagicMock(return_value='{"logo": 2}'))
-        assert stored['extracted_design']['logo']['source_url'] == RASTER
-        assert 'rendered' not in stored['extracted_design']['logo']
+        pick = MagicMock(return_value=ModelAnswer('{"logo": 2}', PICK_MODEL))
+        _, stored, raster = _capture(table, s3, cdp, pick_logo=pick)
+        logo = stored['extracted_design']['logo']
+        assert logo['source_url'] == RASTER
+        assert (logo['picked_by'], logo['pick_model']) == ('model', PICK_MODEL)
+        assert 'rendered' not in logo
         assert cdp.methods().count('Target.createTarget') == 1
         assert logo_downloads(raster) == [RASTER]
 

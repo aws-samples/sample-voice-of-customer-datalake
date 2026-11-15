@@ -214,20 +214,26 @@ image, touch icon, `og:image` — was right on 28 and saved a photo, a flag or a
    afterwards. The element is listed again first, so a header that re-rendered is still found. A **light** logo made
    for a dark header (painted pixels averaging a luminance over 0.8) is drawn on the colour behind it (at least 0.3
    darker) or on a neutral `#1f1f1f`, with a margin, so it stays visible on a white prototype; that colour is kept on
-   the stored reference as `logo.backdrop` (provenance; the API does not return it, the PNG already carries it). The tab must still show a public https page (a page may navigate itself): else only an
+   the stored reference as `logo.backdrop`. The tab must still show the read page's origin (a page may navigate
+   itself; checked again in the same evaluate that isolates the element): else only an
    `<img>`'s own file is read.
 4. **Fallbacks and the SVG copy** (`page_logo.py`): an inline `<svg>` that paints nothing alone is drawn from its
-   sanitised copy instead (below); an `<img>` that cannot be photographed alone is read from its own file — an
-   `.svg` drawn by `logo_render.py` as an `<img>` in a fresh `about:blank` tab (URL policy checked first, the URL a CDP
-   argument set as `img.src`, never in a code string), a raster downloaded by `raster_logo.py`. A CSS background is
-   never downloaded (it may be a sprite). An inline `<svg>` is serialised with each element's computed fill / stroke /
-   opacity and the root's colour, and a sprite's referenced `<symbol>`; an `.svg` file is downloaded once through the
-   SSRF-guarded fetch (≤ 1 MB, an SVG by its bytes). Either is sanitised as above and kept as the download-only copy.
+   sanitised copy instead (below); an `<img>` that cannot be photographed alone is read from its own file, always
+   through the SSRF-guarded fetch (every redirect re-checked): an `.svg` is downloaded (≤ 1 MB, an SVG by its bytes),
+   sanitised and drawn by `logo_render.py` from a `data:` URL in a fresh `about:blank` tab (the browser never fetches
+   the address), a raster is downloaded by `raster_logo.py`. A CSS background is never downloaded (it may be a
+   sprite). An inline `<svg>` is serialised with each element's computed fill / stroke / opacity and the root's
+   colour, and a sprite's referenced `<symbol>`; the copy of an `<img>`'s `.svg` is its sanitised download. Either is
+   kept as the download-only copy.
 
-The PNG is stored as the preview `company-context/design/logo_preview_<ref id>.png` and recorded as
-`{source_url, content_type: image/png, rendered: true, preview_key, svg_preview_key?, backdrop?}` (`source_url` is
+The pick runs before the design screenshots (the page untouched), the photo after them: isolating restyles the page,
+so nothing reads it afterwards (the page is first scrolled back to the top and given 1 s, for a sticky header that
+hid on scroll). The PNG is stored as the preview `company-context/design/logo_preview_<ref id>.png` and recorded as
+`{source_url, content_type: image/png, rendered: true, preview_key, svg_preview_key?}` (`source_url` is
 the element's https file, else the page); a downloaded raster file goes the same way through `store_preview`
-(≤ 2 MB, type decided by its bytes). A logo the design vision call proposes is dropped: the logo is only ever the one
+(≤ 2 MB, type decided by its bytes). The stored row also keeps, as provenance, `backdrop?`, `picked_by`
+(`model` / `rules` / `head_icon`) and `pick_model` (the model id that answered), so a model-made choice stays
+traceable; the API does not return them. A logo the design vision call proposes is dropped: the logo is only ever the one
 the session read. Any failure means no logo, never a failed capture; each step logs one short reason, never a URL.
 GET returns `logo.preview_url`, a short-lived signed URL like `logo_url` (the key itself never leaves the API).
 A reference's `fetched_at` is the time its read FINISHED, ready or failed.

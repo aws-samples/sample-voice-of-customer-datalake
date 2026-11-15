@@ -55,10 +55,13 @@ RESTASH_SLACK_PX: Final = 4
 @dataclass(frozen=True)
 class PageLogo:
     """What the session read of the logo: a PNG the browser drew (``rendered``), or a raster file downloaded
-    (``downloaded``, stored after the vision call), or the URL of one it read and refused (never fetched again)."""
+    (``downloaded``, stored after the vision call), or the URL of one it read and refused (never fetched again);
+    and how it was picked (``logo_pick``: ``picked_by``, and the ``pick_model`` that answered)."""
     rendered: RenderedLogo | None = None
     downloaded: design_logo.DownloadedLogo | None = None
     refused_url: str | None = None
+    picked_by: str = ''
+    pick_model: str | None = None
 
 
 def _pixels(value: object) -> float | None:
@@ -115,7 +118,7 @@ def _svg_copy(tab: PageTab, candidate: LogoCandidate, fetch: design_icons.Fetch 
         if candidate.kind == 'inline-svg':
             inline = parse_inline_logo(tab.evaluate(inline_svg_expression(candidate.n)))
             return _sanitised(inline.markup, (inline.width, inline.height)) if inline is not None else None
-        if candidate.kind in ('img', 'css-bg') and _is_svg_file(candidate.url):
+        if candidate.kind == 'img' and _is_svg_file(candidate.url):
             return downloaded_svg(str(candidate.url), fetch)
     except Exception as exc:  # noqa: BLE001 - a CDP error or a timeout: no SVG copy, the PNG is still read
         logger.info('SVG logo copy not read', extra={'reason': type(exc).__name__})

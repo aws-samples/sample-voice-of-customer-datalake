@@ -84,7 +84,11 @@ def _preview(s3) -> bytes | None:  # noqa: F811 - fixture parameter
     return s3.get_object(Bucket='raw', Key=PREVIEW_KEY)['Body'].read()
 
 
-RENDERED = {'source_url': LOGO, 'content_type': 'image/png', 'rendered': True, 'preview_key': PREVIEW_KEY}
+#: How a capture stores it: the rules picked it (no model in these tests).
+RENDERED = {'source_url': LOGO, 'content_type': 'image/png', 'rendered': True, 'preview_key': PREVIEW_KEY,
+            'picked_by': 'rules'}
+#: The same logo kept as a plain (not rendered) preview.
+PLAIN = {'source_url': LOGO, 'content_type': 'image/png', 'preview_key': PREVIEW_KEY, 'picked_by': 'rules'}
 
 
 def _assert_refused_once(cdp: FakeCdp, result: dict, stored: dict, fetch: MagicMock) -> None:
@@ -116,8 +120,7 @@ class TestARasterOverTheCompanyLogoCapIsShrunk:
         cdp = _cdp(render_answer={'error': 'decode_failed'}, logo_png=LOGO_PNG)
         result, stored, fetch = _capture(table, s3, cdp, _served(MID_PNG))
         assert result == {'status': 'ready'}
-        assert stored['extracted_design']['logo'] == {'source_url': LOGO, 'content_type': 'image/png',
-                                                      'preview_key': PREVIEW_KEY}
+        assert stored['extracted_design']['logo'] == PLAIN
         assert _preview(s3) == MID_PNG
         assert len(_logo_downloads(fetch)) == 1
 
@@ -163,8 +166,7 @@ class TestEveryOtherCandidateIsAsBefore:
     def test_a_logo_up_to_1_mb_is_downloaded_once_and_stored_with_no_render_tab(self, table, s3, body):  # noqa: F811
         cdp = _cdp(render_answer=BOX, logo_png=LOGO_PNG)
         _, stored, fetch = _capture(table, s3, cdp, _served(body))
-        assert stored['extracted_design']['logo'] == {'source_url': LOGO, 'content_type': 'image/png',
-                                                      'preview_key': PREVIEW_KEY}
+        assert stored['extracted_design']['logo'] == PLAIN
         assert _preview(s3) == body
         assert cdp.methods().count('Target.createTarget') == 1
         assert len(_logo_downloads(fetch)) == 1

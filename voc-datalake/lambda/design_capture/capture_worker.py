@@ -15,8 +15,9 @@ One reference, one page, one browser session of at most ``SESSION_SECONDS``:
    each candidate outlined and numbered (``page_logo.marked_header``);
 6. THREE screenshots for the ONE vision call (``page_shots``): the page above the fold, the header region
    and the footer region, each sized so the model reads it without resizing (PNG, or JPEG when large);
-6b. ONE small vision call on the enrichment surface names the candidate that is the logo (``logo_pick``; the
-   scoring rules decide when it cannot answer, then the touch icon; ``og:image`` never). The picked element is
+6b. ONE small vision call on the enrichment surface names the candidate that is the logo (``logo_pick``; it runs BEFORE
+   step 6, on the untouched page; the scoring rules decide when it cannot answer, then the touch icon; ``og:image``
+   never). After step 6 the picked element is
    photographed ALONE in the page tab — everything else hidden, a transparent background, trimmed to its pixels in
    a fresh ``about:blank`` tab, a light logo drawn on its dark header colour (``logo_isolate``); beside it a
    sanitised SVG copy when the element is an inline ``<svg>`` or an ``.svg`` file (``page_logo``). When it cannot be
@@ -51,7 +52,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Final
 from urllib.parse import urlparse
 
-from logo_pick import AskModel, ask_logo_model, choose_logo
+from logo_pick import AskModel, LogoPick, ask_logo_model, choose_logo
 from logo_render import COMMAND_TIMEOUT_SECONDS, Cdp, render_svg_logo
 from page_components import measured_components
 from page_icons import icon_refs
@@ -85,6 +86,8 @@ SETTLE_POLL_SECONDS: Final = 1.0
 ICONS_BUDGET_SECONDS: Final = 20.0
 #: The managed browser's viewport (web_reviews ``agentcore_browser.VIEWPORT``), for an unreadable measurement.
 VIEWPORT: Final = (1366.0, 900.0)
+#: How long a sticky header gets to slide back in after the page is scrolled to the top, before the logo photo.
+HEADER_SETTLE_SECONDS: Final = 1.0
 PROCESSABLE_STATUSES: Final = ('pending', 'ready', 'error')
 
 
@@ -203,10 +206,11 @@ def capture_page(cdp: Cdp, url: str, deps: CaptureDeps) -> CapturedPage:
     if problem is not None:
         raise problem
     found, marked = _logo_candidates(tab, styles.url) if deps.bucket else (None, None)
-    # The logo is read before the design shots: the footer shot scrolls the page, and a sticky header that hides
-    # on scroll would not be back in place for the logo afterwards.
-    logo = _read_logo(tab, cdp, styles, found, marked, deps) if found is not None else PageLogo()
-    return CapturedPage(styles, take_shots(tab, deps.sleep, VIEWPORT), logo=logo)
+    pick = _pick(found, marked, styles, deps) if found is not None else LogoPick()
+    shots = take_shots(tab, deps.sleep, VIEWPORT)
+    # The picked logo is photographed LAST: isolating it restyles the page, so nothing may read the page after it.
+    logo = _read_logo(tab, cdp, found, pick, deps) if found is not None and pick.found else PageLogo()
+    return CapturedPage(styles, shots, logo=logo)
 
 
 def _logo_candidates(tab: _Tab, page_url: str) -> tuple[LogoCandidates | None, design_vision.PageShot | None]:
@@ -220,17 +224,29 @@ def _logo_candidates(tab: _Tab, page_url: str) -> tuple[LogoCandidates | None, d
         return None, None
 
 
-def _read_logo(tab: _Tab, cdp: Cdp, styles: PageStyles, found: LogoCandidates, marked: design_vision.PageShot | None,
-               deps: CaptureDeps) -> PageLogo:
-    """The pick (``logo_pick``), then the picked logo read (``page_logo``); no logo on any failure."""
+def _pick(found: LogoCandidates, marked: design_vision.PageShot | None, styles: PageStyles,
+          deps: CaptureDeps) -> LogoPick:
+    """The pick (``logo_pick``: never raises by itself; no pick on anything unexpected)."""
     try:
-        pick = choose_logo(found, marked, styles.title, deps.pick_logo)
-        if not pick.found:
-            return PageLogo()
-        return read_page_logo(tab, cdp, found, pick, deps.logo_fetch, can_isolate=_still_public(tab))
+        return choose_logo(found, marked, styles.title, deps.pick_logo)
+    except Exception as exc:  # noqa: BLE001 - no logo, never no capture
+        logger.info('Logo not picked', extra={'reason': type(exc).__name__})
+        return LogoPick()
+
+
+def _read_logo(tab: _Tab, cdp: Cdp, found: LogoCandidates, pick: LogoPick, deps: CaptureDeps) -> PageLogo:
+    """The picked logo read (``page_logo``), with how it was picked; no logo on any failure.
+
+    The page is scrolled back to the top first and given ``HEADER_SETTLE_SECONDS``: the footer shot scrolled it,
+    and a sticky header that hides on scroll slides back in place only then."""
+    try:
+        tab.evaluate("window.scrollTo({ top: 0, left: 0, behavior: 'instant' })")
+        deps.sleep(HEADER_SETTLE_SECONDS)
+        logo = read_page_logo(tab, cdp, found, pick, deps.logo_fetch, can_isolate=_still_public(tab))
     except Exception as exc:  # noqa: BLE001 - a CDP error or a timeout: no logo, never no capture
         logger.info('Logo not read', extra={'reason': type(exc).__name__})
         return PageLogo()
+    return replace(logo, picked_by=pick.picked_by, pick_model=pick.model_id)
 
 
 def _still_public(tab: _Tab) -> bool:
@@ -276,6 +292,16 @@ def design_from_page(page: CapturedPage, deps: CaptureDeps) -> tuple[str, dict |
     deterministic = {**tokens, 'components': measured}
     summary, design = design_references.design_outcome(answer, 'computed_styles', deterministic)
     return summary, overlay_components(without_layout_artefacts(with_page_logo(design, page.logo), styles), measured)
+
+
+def with_pick_record(design: dict | None, logo: PageLogo) -> dict | None:
+    """``design`` whose stored logo records how it was picked (``picked_by``: model / rules / head_icon) and the
+    model that answered (``pick_model``), so a model-made choice stays traceable (tenet D4)."""
+    current = design.get('logo') if isinstance(design, dict) else None
+    if not isinstance(design, dict) or not isinstance(current, dict) or not logo.picked_by:
+        return design
+    record = {'picked_by': logo.picked_by, **({'pick_model': logo.pick_model} if logo.pick_model else {})}
+    return {**design, 'logo': {**current, **record}}
 
 
 def with_page_logo(design: dict | None, logo: PageLogo) -> dict | None:
@@ -341,6 +367,7 @@ def _read(item: dict, deps: CaptureDeps, trace: _Trace) -> tuple[str, dict | Non
     design = stored_logo(design, page.logo.rendered, ref_id, deps.s3, deps.bucket)
     design = design_logo.store_preview(design, ref_id, deps.s3, deps.bucket, deps.logo_fetch, page.logo.downloaded,
                                        page.logo.refused_url)
+    design = with_pick_record(design, page.logo)
     return summary, with_icons(design, page, ref_id, deps)
 
 

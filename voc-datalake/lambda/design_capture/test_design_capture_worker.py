@@ -22,10 +22,12 @@ import page_shots
 import page_styles as ps
 import pytest
 from logo_isolate import ISOLATE_JS, undo_expression
+from logo_pick import ModelAnswer
 from logo_render import TRIM_JS
 from moto import mock_aws
 from page_inline_logo import INLINE_SVG_JS
 from page_logo_candidates import candidates_expression, clear_marks_expression, mark_expression
+from test_logo_pick import PICK_MODEL
 
 from shared import design_logo
 from shared.company_context import DESIGN_SYSTEM_PK, get_reference
@@ -215,12 +217,12 @@ def table():
 
 
 def _run(table, cdp: FakeCdp, answer: str = ANSWER, public: bool = True, *,
-         s3=None, fetch=None, now=lambda: '2026-10-21T00:00:00+00:00', pick_logo=None):
+         s3=None, fetch=None, now=lambda: '2026-10-21T00:00:00+00:00', pick_logo=None, sleep=lambda _s: None):
     """One capture with fakes → ``(result, stored row, vision mock, sessions)``; ``s3`` given = bucket ``raw``.
-    ``pick_logo`` None = the logo pick's rules only (never Bedrock)."""
+    ``pick_logo`` None = the logo pick's rules only (never Bedrock); ``sleep`` the capture's waits (none by default)."""
     sessions: list[int] = []
     vision = MagicMock(return_value=answer)
-    deps = cw.CaptureDeps(table=table, kit=_kit(cdp, sessions), summarise_images=vision, sleep=lambda _s: None,
+    deps = cw.CaptureDeps(table=table, kit=_kit(cdp, sessions), summarise_images=vision, sleep=sleep,
                           clock=iter(range(1000)).__next__, now=now, s3=s3, bucket='raw' if s3 else '',
                           logo_fetch=fetch, pick_logo=pick_logo)
     with patch.object(cw, 'validate_url', return_value=(True, '') if public else (False, 'private address')):
@@ -506,7 +508,7 @@ class TestThePageLogoInTheCapture:
         cdp = FakeCdp(_styles(), logo=LogoAnswers(
             candidates=page_candidates(candidate(1, classes='nav'), candidate(2, url='https://kirocrew.dev/w.png')),
             isolate=dark, trim=trim_answer(TRIMMED_PNG, backdrop={'r': 16, 'g': 16, 'b': 32})))
-        pick = MagicMock(return_value='{"logo": 2, "fallback": null}')
+        pick = MagicMock(return_value=ModelAnswer('{"logo": 2, "fallback": null}', PICK_MODEL))
         _, stored, vision, _ = _run(table, cdp, s3=s3, pick_logo=pick, fetch=MagicMock(
             return_value=MagicMock(status_code=404, content=b'')))
         content = pick.call_args.args[0]
@@ -515,7 +517,8 @@ class TestThePageLogoInTheCapture:
         assert cdp.expressions().index(clear_marks_expression()) > cdp.expressions().index(mark_expression())
         assert stored['extracted_design']['logo'] == {
             'source_url': 'https://kirocrew.dev/w.png', 'content_type': 'image/png', 'rendered': True,
-            'preview_key': f'company-context/design/logo_preview_{REF_ID}.png', 'backdrop': '#101020'}
+            'preview_key': f'company-context/design/logo_preview_{REF_ID}.png', 'backdrop': '#101020',
+            'picked_by': 'model', 'pick_model': PICK_MODEL}
         key = stored['extracted_design']['logo']['preview_key']
         assert s3.get_object(Bucket='raw', Key=key)['Body'].read() == TRIMMED_PNG
         assert undo_expression() in cdp.expressions()
@@ -532,7 +535,7 @@ class TestThePageLogoInTheCapture:
         assert not any(e.startswith(f'({ISOLATE_JS})') for e in cdp.expressions())
         assert stored['extracted_design']['logo'] == {
             'source_url': url, 'content_type': 'image/png',
-            'preview_key': f'company-context/design/logo_preview_{REF_ID}.png'}
+            'preview_key': f'company-context/design/logo_preview_{REF_ID}.png', 'picked_by': 'rules'}
 
     def test_keeps_the_capture_ready_when_the_candidates_cannot_be_read(self, table, s3):
         cdp = FakeCdp(_styles(), logo=LogoAnswers(candidates=None))
