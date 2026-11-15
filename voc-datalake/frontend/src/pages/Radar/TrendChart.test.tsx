@@ -68,7 +68,10 @@ describe('Radar TrendChart', () => {
   })
 
   it('spans the whole window, one point a day ending today', () => {
-    draw(TREND, 30)
+    // A point inside the window (a fixed date drifts out of a 30-day window as the calendar moves on, and an
+    // older point is drawn as an extra day).
+    const inWindow = new Date(Date.now() - 5 * 86_400_000).toISOString().slice(0, 10)
+    draw([{ date: inWindow, count: 9800, avg_sentiment: -0.4 }], 30)
     const chart = screen.getByTestId('chart')
     expect(chart.dataset.days).toBe('30')
     expect(chart.dataset.last).toBe(new Date().toISOString().slice(0, 10))
