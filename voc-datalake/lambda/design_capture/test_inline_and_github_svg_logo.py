@@ -90,7 +90,7 @@ class TestTheInlineSvgLogo:
         assert result == {'status': 'ready'}
         assert stored['extracted_design']['logo'] == {
             'source_url': PAGE, 'content_type': 'image/png', 'rendered': True, 'preview_key': PREVIEW_KEY,
-            'svg_preview_key': SVG_KEY}
+            'svg_preview_key': SVG_KEY, 'picked_by': 'rules'}
         assert s3.get_object(Bucket='raw', Key=PREVIEW_KEY)['Body'].read() == LOGO_PNG
         assert logo_downloads(raster) == []   # inline markup: nothing to download
         assert _inline_expressions(cdp) == [pil.inline_svg_expression(1)]   # exactly the picked candidate
@@ -114,7 +114,8 @@ class TestTheInlineSvgLogo:
         assert result == {'status': 'ready'}
         assert len(_inline_expressions(cdp)) == 1
         assert stored['extracted_design']['logo'] == {'source_url': PAGE, 'content_type': 'image/png',
-                                                      'rendered': True, 'preview_key': PREVIEW_KEY}
+                                                      'rendered': True, 'preview_key': PREVIEW_KEY,
+                                                      'picked_by': 'rules'}
         assert logo_downloads(raster) == []
 
     @pytest.mark.parametrize(('isolate', 'trim'), [

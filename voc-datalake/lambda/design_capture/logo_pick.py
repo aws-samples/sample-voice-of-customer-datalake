@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Final
 
 from page_logo_candidates import HEAD_KINDS, LogoCandidates, listing, rules_pick
@@ -54,17 +54,26 @@ HEAD_ICON: Final = 'head_icon'
 
 @dataclass(frozen=True)
 class LogoPick:
-    """The candidate number that is the logo, or the ``<head>`` icon kind to use instead, and who decided."""
+    """The candidate number that is the logo, or the ``<head>`` icon kind to use instead, who decided, and the model
+    that answered (when one did): kept with the stored logo, so a model-made choice is traceable (tenet D4)."""
     number: int | None = None
     fallback: str | None = None
     picked_by: str = ''
+    model_id: str | None = None
 
     @property
     def found(self) -> bool:
         return self.number is not None or self.fallback is not None
 
 
-AskModel = Callable[[Sequence[dict]], str]
+@dataclass(frozen=True)
+class ModelAnswer:
+    """The pick call's raw text and the model id that produced it."""
+    text: str
+    model_id: str
+
+
+AskModel = Callable[[Sequence[dict]], ModelAnswer]
 
 
 def pick_content(found: LogoCandidates, marked: PageShot | None, title: str) -> list[dict]:
@@ -110,7 +119,9 @@ def choose_logo(found: LogoCandidates, marked: PageShot | None, title: str, ask:
         return LogoPick()
     if ask is not None:
         try:
-            pick = parse_pick(ask(pick_content(found, marked, title)), found)
+            answer = ask(pick_content(found, marked, title))
+            pick = parse_pick(answer.text, found)
+            pick = replace(pick, model_id=answer.model_id) if pick is not None else None
         except Exception as exc:  # noqa: BLE001 - a Bedrock error or a timeout: the rules decide instead
             logger.info('Logo pick call failed', extra={'reason': type(exc).__name__})
             pick = None
@@ -125,13 +136,15 @@ def choose_logo(found: LogoCandidates, marked: PageShot | None, title: str, ask:
     return pick
 
 
-def ask_logo_model(content: Sequence[dict]) -> str:
-    """The model's raw answer to the ONE pick call (production collaborator)."""
+def ask_logo_model(content: Sequence[dict]) -> ModelAnswer:
+    """The model's raw answer to the ONE pick call, with the model id the surface resolved (production collaborator)."""
     from shared.aws import get_bedrock_client
     from shared.converse import converse_blocks
+    from shared.model_config import get_active_model_id
 
+    model_id = get_active_model_id(SURFACE)
     response = converse_blocks(get_bedrock_client(), content, surface=SURFACE, system_prompt=PICK_SYSTEM_PROMPT,
-                               max_tokens=PICK_MAX_TOKENS, max_retries=1, step_name=STEP_NAME,
+                               max_tokens=PICK_MAX_TOKENS, max_retries=1, step_name=STEP_NAME, model_id=model_id,
                                call_label='client.converse(logo pick)')
     blocks = response.get('output', {}).get('message', {}).get('content', [])
-    return ''.join(b.get('text', '') for b in blocks if isinstance(b, dict))
+    return ModelAnswer(''.join(b.get('text', '') for b in blocks if isinstance(b, dict)), model_id)

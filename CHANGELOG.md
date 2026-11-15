@@ -31,6 +31,7 @@ A website design reference finds the company's logo with a small vision call and
 - Each website capture makes one more Bedrock call, on the **enrichment** surface (Settings → AI models; Claude Haiku 5.5 by default), of about 2,500 input tokens. No new permission: the capture role already invokes every allowlisted model. When the call fails, scoring rules pick the logo.
 - References read before this release keep their logo until they are fetched again (**Refresh**).
 - VocIngestionStack updates the `voc-design-capture` code. VocApiStack and VocProcessingStack change only by the app version their Lambdas record; no resource is replaced.
+
 ## [7.00.02] - 2026-11-14
 
 Fixes from an independent review of 7.00.00 and 7.00.01: large reference logos work again, prototypes never get a broken or misrecorded logo, and the repository's Kiro agents are confined further.

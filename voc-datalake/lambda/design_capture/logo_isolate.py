@@ -204,6 +204,18 @@ def _within_cap(tab: PageTab, cdp: Cdp, box: _Box) -> IsolatedLogo | None:
     return None
 
 
+def _restore(tab: PageTab) -> None:
+    """Undo the isolation and reset the default background, each on its own (one failing never skips the other)."""
+    try:
+        tab.evaluate(undo_expression())
+    except Exception as exc:  # noqa: BLE001 - logged; the page is read last, so nothing reads it afterwards
+        logger.info('Logo isolation not undone', extra={'reason': type(exc).__name__})
+    try:
+        tab.call('Emulation.setDefaultBackgroundColorOverride', {})
+    except Exception as exc:  # noqa: BLE001 - as above
+        logger.info('Default background not reset', extra={'reason': type(exc).__name__})
+
+
 def isolate_logo(tab: PageTab, cdp: Cdp, number: int, page_url: str) -> IsolatedLogo | None:
     """Candidate ``number`` photographed alone (see the module docstring), or None (logged); only while the tab still
     shows ``page_url``'s origin. The page is left as it was (``UNDO_JS``, the default background restored) whatever
@@ -214,8 +226,7 @@ def isolate_logo(tab: PageTab, cdp: Cdp, number: int, page_url: str) -> Isolated
             tab.call('Emulation.setDefaultBackgroundColorOverride', {'color': TRANSPARENT})
             return _within_cap(tab, cdp, box)
         finally:
-            tab.evaluate(undo_expression())
-            tab.call('Emulation.setDefaultBackgroundColorOverride', {})
+            _restore(tab)
     except IsolateRefused as exc:
         logger.info('Logo not isolated', extra={'reason': str(exc)})
     except Exception as exc:  # noqa: BLE001 - a CDP error or a timeout: no isolated logo, never no capture

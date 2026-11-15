@@ -230,3 +230,37 @@ class TestIsolateLogo:
         tab = FakeTab()
         tab.call = MagicMock(return_value={'data': '***'})
         assert _isolate(tab, TrimmedPng(LOGO))[0] is None
+
+
+class TestRestore:
+    def test_resets_the_background_even_when_the_undo_raises(self):
+        tab = MagicMock()
+        tab.evaluate.side_effect = RuntimeError('Runtime.evaluate timed out')
+        with patch.object(li, 'logger') as log:
+            li._restore(tab)
+        tab.evaluate.assert_called_once_with(li.undo_expression())
+        tab.call.assert_called_once_with('Emulation.setDefaultBackgroundColorOverride', {})
+        log.info.assert_called_once_with('Logo isolation not undone', extra={'reason': 'RuntimeError'})
+
+    def test_undoes_even_when_the_background_reset_raises(self):
+        tab = MagicMock()
+        tab.call.side_effect = TimeoutError('closed')
+        with patch.object(li, 'logger') as log:
+            li._restore(tab)
+        tab.evaluate.assert_called_once_with(li.undo_expression())
+        log.info.assert_called_once_with('Default background not reset', extra={'reason': 'TimeoutError'})
+
+    def test_an_isolation_whose_undo_fails_still_resets_the_background_and_returns_the_logo(self):
+        tab = _UndoFailsTab()
+        isolated, _ = _isolate(tab, TrimmedPng(LOGO))
+        assert isolated == li.IsolatedLogo(LOGO, None)
+        assert tab.calls[-1] == ('Emulation.setDefaultBackgroundColorOverride', {})
+
+
+class _UndoFailsTab(FakeTab):
+    """A page tab whose UNDO_JS evaluate raises (a CDP timeout while cleaning up)."""
+
+    def evaluate(self, expression: str) -> object:
+        if expression == li.undo_expression():
+            raise RuntimeError('Runtime.evaluate timed out')
+        return super().evaluate(expression)

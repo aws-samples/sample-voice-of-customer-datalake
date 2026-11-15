@@ -148,6 +148,14 @@ class TestIsolated:
         assert '<path' in logo.rendered.svg
         assert fetch.call_args.args[0] == SVG_URL
 
+    def test_never_downloads_a_css_background_svg_as_the_copy(self):
+        fetch = _fetch(SITE_SVG)
+        logo, _ = _read(_found(logo_candidate(1, kind='css-bg', url=SVG_URL)), LogoPick(number=1),
+                        isolated=IsolatedLogo(PNG), fetch=fetch)
+        assert logo.rendered is not None
+        assert logo.rendered.svg is None
+        fetch.assert_not_called()
+
     def test_swallows_a_failing_svg_copy_and_keeps_the_png(self):
         tab = MagicMock()
         tab.evaluate.side_effect = RuntimeError('Runtime.evaluate timed out')
