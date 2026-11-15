@@ -15,6 +15,7 @@ import logging
 import os
 import re
 import struct
+from pathlib import Path
 
 import pytest
 
@@ -28,6 +29,7 @@ from shared.model_config import ALLOWED_MODEL_IDS, SURFACE_DEFAULTS
 TEST_BUCKET = 'test-raw-data-bucket'
 TEST_PROJECTS_TABLE = 'test-projects'
 TEST_AGGREGATES_TABLE = 'test-aggregates'
+TEST_WORKSPACES_TABLE = 'test-workspaces'
 
 DOCUMENTS_DEFAULT_MODEL = SURFACE_DEFAULTS['documents']
 OTHER_ALLOWED_MODEL = next(m for m in sorted(ALLOWED_MODEL_IDS) if m != DOCUMENTS_DEFAULT_MODEL)
@@ -35,10 +37,15 @@ OTHER_ALLOWED_MODEL = next(m for m in sorted(ALLOWED_MODEL_IDS) if m != DOCUMENT
 os.environ['RAW_DATA_BUCKET'] = TEST_BUCKET
 os.environ['PROJECTS_TABLE'] = TEST_PROJECTS_TABLE
 os.environ['AGGREGATES_TABLE'] = TEST_AGGREGATES_TABLE
+os.environ['WORKSPACES_TABLE'] = TEST_WORKSPACES_TABLE
 os.environ['MODEL_ALLOWLIST'] = json.dumps(sorted(ALLOWED_MODEL_IDS))
 os.environ['DEFAULT_MODEL_ID'] = DOCUMENTS_DEFAULT_MODEL
 os.environ['MAX_IMAGE_BYTES'] = '3750000'
 os.environ['MAX_IMAGE_DIMENSION_PX'] = '8000'
+
+#: voc-datalake/schemas/project-keys-cases.json: the keys this function spells, which shared/'s tests read too.
+PROJECT_KEYS_SPEC: dict = json.loads(
+    (Path(__file__).resolve().parents[3] / 'schemas' / 'project-keys-cases.json').read_text(encoding='utf-8'))
 
 MAX_IMAGE_BYTES = int(os.environ['MAX_IMAGE_BYTES'])
 MAX_IMAGE_DIMENSION_PX = int(os.environ['MAX_IMAGE_DIMENSION_PX'])
@@ -272,6 +279,39 @@ def _extractor_lines_reach_caplog(caplog):
     finally:
         handler.logger.removeHandler(caplog.handler)
         handler.logger.setLevel(previous_level)
+
+
+@pytest.fixture
+def json_logs(extractor):
+    """Capture what the handler's OWN formatter writes, one dict per line.
+
+    Attached to the same logger the handler uses, with the module's formatter, so
+    this exercises the real thing rather than a re-implementation of it. The level
+    is forced to INFO belt-and-braces: the module sets it at import, but a reload
+    under a monkeypatched LOG_LEVEL could leave it somewhere else. (Formatted at
+    emit time, not afterwards: the context fields are merged from a dict that is
+    cleared when the record finishes.)
+    """
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(extractor.JsonFormatter())
+    logger = extractor.logger
+    previous_level = logger.level
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+
+    def _lines() -> list[dict]:
+        handler.flush()
+        return [json.loads(line) for line in stream.getvalue().splitlines() if line.strip()]
+
+    try:
+        yield _lines
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(previous_level)
+        # The handler clears this itself; belt and braces, so one failing test
+        # cannot leak a doc_id into the next.
+        extractor._log_context.clear()
 
 
 @pytest.fixture

@@ -12,6 +12,14 @@ WHAT IT DOES
     the API's read path can fail a stalled record first and a late extraction must
     not undo that — see _update_doc.
 
+    A workspace's upload (docs/multi-workspace.md, the project plan, 3f) is
+    `ws/{ws}/projects/{id}/product_docs/raw/{doc}.{ext}`, notified by the stack's
+    `ws/` rules. It is extracted inside that workspace only (its record under
+    `WS#{ws}#PROJECT#{id}`, its text under `ws/{ws}/projects/{id}/product_docs/
+    extracted/`), and only when the project's claim (`PROJECT_ID#{id}` / `CLAIM`)
+    names that same workspace and the workspace is active; see
+    _process_workspace_upload. Anything else is refused, and nothing is written.
+
     Text (.md/.txt): reading the bytes IS the extraction — they are copied through
     byte-for-byte.
     Images (png/jpeg/gif/webp): Bedrock describes the design in enough detail that
@@ -57,7 +65,7 @@ import re
 import struct
 import sys
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from urllib.parse import unquote_plus
 
 import boto3
@@ -246,6 +254,51 @@ RAW_KEY_PATTERN = re.compile(
 )
 
 DOC_SK_PREFIX = 'PRODUCT_DOC#'
+
+# ── A workspace's uploads (docs/multi-workspace.md, the project plan, 3f) ─────
+# The stack notifies this function of objects under `ws/` that end in one of
+# UPLOAD_EXTENSIONS (one rule per extension: an S3 rule takes one prefix and one
+# suffix, and no prefix can name "every workspace's product_docs/raw/"), so most
+# `ws/` objects never reach it; the strict pattern below is what keeps every
+# other one out, this function's own `.txt` output included.
+#
+# Every key below is spelled here because this bundle cannot import shared/
+# (module docstring). schemas/project-keys-cases.json holds each one, and both
+# this function's tests and shared/'s read it, so the two spellings cannot drift:
+# the claim (shared/ws_repo.py `project_claim`), the workspace's META
+# (`workspace_is_active`), the project partition (shared/project_keys.py
+# `project_pk`) and the object keys (api/product_context.py `product_doc_raw_key`).
+WORKSPACE_OBJECT_PREFIX = 'ws/'
+#: The extensions api/product_context.py ALLOWED_CONTENT_TYPES gives an upload, and the stack's `ws/` suffixes.
+UPLOAD_EXTENSIONS = ('gif', 'jpg', 'md', 'png', 'txt', 'webp')
+#: `ws_` + a ULID (shared/workspace_ids.py `_WORKSPACE_ID`), as the start of the key and in a claim.
+WORKSPACE_ID_REGEX = r'ws_[0-7][0-9A-HJKMNP-TV-Z]{25}'
+WORKSPACE_ID_PATTERN = re.compile(WORKSPACE_ID_REGEX)
+#: A project or document id: the opaque-id shape (shared/row_ids.py LONG_OPAQUE_ID_RE), so no `.`, `/`, `%` or `#`.
+OPAQUE_ID_REGEX = r'[A-Za-z0-9_-]{1,128}'
+#: A workspace's upload, matched whole: one workspace id, a project id and a document id of the opaque-id shape (so
+#: no `..`, no empty or extra segment and no escaped separator), and one known extension. shared/'s tests hold both
+#: id expressions to shared/'s.
+WORKSPACE_RAW_KEY_PATTERN = re.compile(
+    rf'ws/(?P<workspace_id>{WORKSPACE_ID_REGEX})/projects/(?P<project_id>{OPAQUE_ID_REGEX})'
+    rf'/product_docs/raw/(?P<doc_id>{OPAQUE_ID_REGEX})\.(?P<ext>{"|".join(UPLOAD_EXTENSIONS)})'
+)
+#: A `ws/` key that names a product-doc upload but fails the pattern is refused (logged), not quietly ignored.
+_WORKSPACE_UPLOAD_MARKER = '/product_docs/raw/'
+#: The deployment-wide claim of a project id (shared/ws_repo.py PROJECT_CLAIM_PREFIX, PROJECT_CLAIM_SORT_KEY), and the
+#: one attribute read of it (WORKSPACE_FIELD).
+PROJECT_CLAIM_PREFIX = 'PROJECT_ID#'
+PROJECT_CLAIM_SORT_KEY = 'CLAIM'
+CLAIM_WORKSPACE_FIELD = 'workspace_id'
+#: A workspace's META in voc-workspaces (shared/ws_repo.py `workspace_is_active`): read for its status only.
+WORKSPACES_TABLE = os.environ.get('WORKSPACES_TABLE', '')
+WORKSPACE_META_SORT_KEY = 'META'
+WORKSPACE_STATUS_ATTRIBUTES = ('pk', 'sk', 'status')
+#: What the extractor reads of a workspace's document record (its GetItem's projection, all its role may read there).
+DOC_READ_ATTRIBUTES = ('content_type', 'pk', 's3_raw_key', 'sk', 'status')
+WORKSPACE_ACTIVE = 'active'
+#: The reason a workspace's image upload fails with, shown to the user (the model picks are the deployment's yet).
+WORKSPACE_IMAGE_MESSAGE = "Images can't be described in a workspace yet. Upload the design as a .md or .txt file."
 
 # The statuses this handler may read from AND write over. `ready` and `failed`
 # are terminal and deliberately absent: see _update_doc for why writing over a
@@ -643,19 +696,41 @@ def _dimensions_from_head(fmt: str, head: bytes) -> tuple[int, int] | None:
 
 # ── DynamoDB record read / terminal writes ──────────────────────────────────
 
-def _get_doc(project_id: str, doc_id: str) -> dict | None:
+def _project_pk(project_id: str, workspace: str | None = None) -> str:
+    """The project's partition: `PROJECT#{id}`, or `WS#{ws}#PROJECT#{id}` in a workspace (shared/project_keys.py)."""
+    partition = f'PROJECT#{project_id}'
+    return partition if workspace is None else f'WS#{workspace}#{partition}'
+
+
+def _get_doc(project_id: str, doc_id: str, *, workspace: str | None = None) -> dict | None:
     """The product-doc record, or None when it is gone.
 
     The user can delete a document while its extraction is in flight, so a
     missing record is an ordinary outcome, not an error.
+
+    In a workspace the read is projected to DOC_READ_ATTRIBUTES, the attributes
+    this function uses, which is all its role may read of a workspace's record;
+    the deployment's read is the unprojected one it always sent.
     """
+    key = {'pk': _project_pk(project_id, workspace), 'sk': f'{DOC_SK_PREFIX}{doc_id}'}
+    projected: dict = {}
+    if workspace is not None:
+        names = {f'#a{index}': attribute for index, attribute in enumerate(DOC_READ_ATTRIBUTES)}
+        projected = {'ProjectionExpression': ', '.join(names), 'ExpressionAttributeNames': names}
     try:
-        return _table(PROJECTS_TABLE).get_item(
-            Key={'pk': f'PROJECT#{project_id}', 'sk': f'{DOC_SK_PREFIX}{doc_id}'}
-        ).get('Item')
+        return _table(PROJECTS_TABLE).get_item(Key=key, **projected).get('Item')
     except Exception as e:  # noqa: BLE001 - a lost record must not raise
-        logger.warning(f'Could not read product doc {doc_id}: {e}')
+        _warn_unread_or_unwritten('Could not read product doc', doc_id, e, workspace)
         return None
+
+
+def _warn_unread_or_unwritten(what: str, doc_id: str, error: Exception, workspace: str | None) -> None:
+    """A failed read or write of the record: the deployment's line as it always was (the error's text included);
+    a workspace's names the error's type alone, never its text (which can carry a key or an id)."""
+    if workspace is None:
+        logger.warning(f'{what} {doc_id}: {error}')
+    else:
+        logger.warning(what, extra={'error_class': type(error).__name__})
 
 
 # jscpd:ignore-start — deliberate copy of shared/aws.py::is_conditional_check_failure:
@@ -680,8 +755,8 @@ def _is_conditional_check_failure(error: Exception) -> bool:
 # jscpd:ignore-end of the accepted pair
 
 
-def _log_refused_write(project_id: str, doc_id: str, values: dict) -> None:
-    """Say WHICH of the three causes refused the write. They mean different things.
+def _log_refused_write(project_id: str, doc_id: str, values: dict, *, workspace: str | None = None) -> bool:
+    """Say WHICH of the three causes refused the write. They mean different things. True when the record is gone.
 
     A record that is simply gone was deleted mid-flight — ordinary housekeeping,
     logged at INFO.
@@ -702,10 +777,10 @@ def _log_refused_write(project_id: str, doc_id: str, values: dict) -> None:
 
     Costs one extra get_item, and only on a path that is already exceptional.
     """
-    current = _get_doc(project_id, doc_id)
+    current = _get_doc(project_id, doc_id, workspace=workspace)
     if current is None:
         logger.info(f'Product doc {doc_id} was deleted mid-extraction; write skipped')
-        return
+        return True
     status = current.get('status')
     if status in TERMINAL_STATUSES:
         logger.warning(
@@ -713,7 +788,7 @@ def _log_refused_write(project_id: str, doc_id: str, values: dict) -> None:
             f'{sorted(values)} onto it - the API already gave this document up as '
             f'stalled and told the user to upload it again'
         )
-        return
+        return False
     # Deliberately shares no vocabulary with the line above: an operator greps for
     # the stall wording, so a malformed record must not match that grep, not even
     # inside a denial.
@@ -722,10 +797,18 @@ def _log_refused_write(project_id: str, doc_id: str, values: dict) -> None:
         f'overwrite {sorted(values)} onto it - the record is malformed or predates '
         f'the status field, so no read path put it in this state'
     )
+    return False
 
 
-def _update_doc(project_id: str, doc_id: str, values: dict) -> None:
-    """Write `values` onto the record, but ONLY while it is still non-terminal.
+#: What `_update_doc` answers: the write landed, the record is gone, or it was refused or failed otherwise.
+WRITE_LANDED = 'landed'
+WRITE_GONE = 'gone'
+WRITE_NOT_LANDED = 'not_landed'
+
+
+def _update_doc(project_id: str, doc_id: str, values: dict, *, workspace: str | None = None) -> str:
+    """Write `values` onto the record, but ONLY while it is still non-terminal. Answers WRITE_LANDED, WRITE_GONE
+    (refused: the record was deleted) or WRITE_NOT_LANDED.
 
     `status` and `error` are DynamoDB reserved words, so they are aliased — same
     pattern as shared/jobs.py::update_job_status. The condition needs its own
@@ -756,7 +839,7 @@ def _update_doc(project_id: str, doc_id: str, values: dict) -> None:
     status_values = {f':s{i}': s for i, s in enumerate(NON_TERMINAL_STATUSES)}
     try:
         _table(PROJECTS_TABLE).update_item(
-            Key={'pk': f'PROJECT#{project_id}', 'sk': f'{DOC_SK_PREFIX}{doc_id}'},
+            Key={'pk': _project_pk(project_id, workspace), 'sk': f'{DOC_SK_PREFIX}{doc_id}'},
             UpdateExpression=expression,
             ConditionExpression=(
                 'attribute_exists(pk) AND #doc_status IN '
@@ -770,12 +853,14 @@ def _update_doc(project_id: str, doc_id: str, values: dict) -> None:
         )
     except Exception as e:  # noqa: BLE001 - a bookkeeping write must not fail the batch
         if _is_conditional_check_failure(e):
-            _log_refused_write(project_id, doc_id, values)
-        else:
-            logger.warning(f'Could not update product doc {doc_id}: {e}')
+            gone = _log_refused_write(project_id, doc_id, values, workspace=workspace)
+            return WRITE_GONE if gone else WRITE_NOT_LANDED
+        _warn_unread_or_unwritten('Could not update product doc', doc_id, e, workspace)
+        return WRITE_NOT_LANDED
+    return WRITE_LANDED
 
 
-def _mark_extracting(project_id: str, doc_id: str) -> None:
+def _mark_extracting(project_id: str, doc_id: str, *, workspace: str | None = None) -> str:
     """Publish the in-flight state, once, before the slow work starts.
 
     `extracting` was declared in three places and written in none: the UI renders
@@ -788,32 +873,119 @@ def _mark_extracting(project_id: str, doc_id: str) -> None:
 
     Best-effort by construction: _update_doc swallows its failures, so a lost
     badge write cannot abort the extraction that follows. `pending` is stallable
-    too, so a document whose badge never landed is not stranded either.
+    too, so a document whose badge never landed is not stranded either. (In a
+    workspace the caller stops on a lost write instead: it answers whether it landed.)
     """
-    _update_doc(project_id, doc_id, {'status': 'extracting'})
+    return _update_doc(project_id, doc_id, {'status': 'extracting'}, workspace=workspace)
 
 
-def _mark_failed(project_id: str, doc_id: str, message: str) -> None:
+def _mark_failed(project_id: str, doc_id: str, message: str, *, workspace: str | None = None) -> None:
     """Terminal failure with a short, user-facing reason.
 
     `message` is shown in the UI, so it never carries a stack trace, an AWS
     error string or an S3 key — callers pass a sentence, not an exception.
     """
     logger.info(f'Product doc {doc_id} failed: {message}')
-    _update_doc(project_id, doc_id, {'status': 'failed', 'error': message})
+    _update_doc(project_id, doc_id, {'status': 'failed', 'error': message}, workspace=workspace)
 
 
-def _mark_ready(project_id: str, doc_id: str, extracted_key: str, chars: int) -> None:
-    _update_doc(project_id, doc_id, {
+def _mark_ready(project_id: str, doc_id: str, extracted_key: str, chars: int, *,
+                workspace: str | None = None) -> str:
+    return _update_doc(project_id, doc_id, {
         'status': 'ready',
         'error': None,
         's3_extracted_key': extracted_key,
         'extracted_chars': chars,
-    })
+    }, workspace=workspace)
 
 
-def _extracted_key(project_id: str, doc_id: str) -> str:
-    return f'projects/{project_id}/product_docs/extracted/{doc_id}.txt'
+def _delete_own_output(bucket: str, key: str, version_id: object, doc_id: str) -> None:
+    """The record was deleted while this ran, after its delete swept the document's objects (api/product_context.py
+    `delete_doc`), so the text just put would outlive it: delete it again, the exact version put when the bucket
+    is versioned (a plain delete there would only hide it). Never raises: a failed delete is logged by its type."""
+    request: dict[str, Any] = {'Bucket': bucket, 'Key': key}
+    if isinstance(version_id, str) and version_id:
+        request['VersionId'] = version_id
+    try:
+        _s3().delete_object(**request)
+    except Exception as e:  # noqa: BLE001 - the cleanup of a deleted record's text must not fail the batch
+        logger.warning('Could not delete the text of a deleted product doc', extra={'error_class': type(e).__name__})
+        return
+    logger.info(f'Product doc {doc_id} was deleted mid-extraction; its text was deleted too')
+
+
+def _extracted_key(project_id: str, doc_id: str, workspace: str | None = None) -> str:
+    """Where the text goes: `projects/{id}/product_docs/extracted/{doc}.txt`, under `ws/{ws}/` in a workspace."""
+    key = f'projects/{project_id}/product_docs/extracted/{doc_id}.txt'
+    return key if workspace is None else f'{WORKSPACE_OBJECT_PREFIX}{workspace}/{key}'
+
+
+# ── A workspace's upload: the claim and the status, before anything is written ─
+
+class _Refused(Exception):
+    """A workspace upload this function will not touch. Its one argument is the error type, the only thing logged."""
+
+
+def _claim_key(project_id: str) -> dict[str, str]:
+    """The claim of a project id (shared/ws_repo.py `_project_claim_key`); the id is already the opaque-id shape."""
+    return {'pk': f'{PROJECT_CLAIM_PREFIX}{project_id}', 'sk': PROJECT_CLAIM_SORT_KEY}
+
+
+def _workspace_meta_key(workspace: str) -> dict[str, str]:
+    """The workspace's META in voc-workspaces (shared/ws_repo.py `control_partition(scope, 'meta')`, LOOKUP_SORT_KEY)."""
+    return {'pk': f'WS#{workspace}', 'sk': WORKSPACE_META_SORT_KEY}
+
+
+def _claimed_workspace(project_id: str) -> str:
+    """The workspace the project id is claimed for: a strongly consistent GetItem of the claim, projected to its
+    workspace id, as shared/ws_repo.py `project_claim` reads it. `_Refused` when there is no claim (a deployment
+    project, or none), when it names no workspace id, or when it cannot be read: never a guess."""
+    try:
+        item = _table(PROJECTS_TABLE).get_item(
+            Key=_claim_key(project_id), ConsistentRead=True,
+            ProjectionExpression='#ws', ExpressionAttributeNames={'#ws': CLAIM_WORKSPACE_FIELD},
+        ).get('Item')
+    except Exception:  # noqa: BLE001 - an unread claim refuses the upload; the error is not logged with it
+        raise _Refused('claim_unreadable') from None
+    if not isinstance(item, dict):
+        raise _Refused('claim_missing')
+    workspace = item.get(CLAIM_WORKSPACE_FIELD)
+    if not isinstance(workspace, str) or WORKSPACE_ID_PATTERN.fullmatch(workspace) is None:
+        raise _Refused('claim_malformed')
+    return workspace
+
+
+def _require_active(workspace: str) -> None:
+    """`_Refused` unless the workspace's META says `active` (shared/ws_repo.py `workspace_is_active`: every writer of
+    a workspace's data asks before it writes, so a workspace being deleted gets nothing new). One strongly consistent
+    GetItem, projected to WORKSPACE_STATUS_ATTRIBUTES; no cache, as this function handles one upload a record."""
+    if not WORKSPACES_TABLE:
+        raise _Refused('status_unconfigured')
+    names = {f'#a{index}': attribute for index, attribute in enumerate(WORKSPACE_STATUS_ATTRIBUTES)}
+    try:
+        item = _table(WORKSPACES_TABLE).get_item(
+            Key=_workspace_meta_key(workspace), ConsistentRead=True,
+            ProjectionExpression=', '.join(names), ExpressionAttributeNames=names,
+        ).get('Item')
+    except Exception:  # noqa: BLE001 - an unread status refuses the upload; the error is not logged with it
+        raise _Refused('status_unreadable') from None
+    if not isinstance(item, dict) or item.get('status') != WORKSPACE_ACTIVE:
+        raise _Refused('workspace_not_active')
+
+
+def _require_admitted(project_id: str, workspace: str) -> None:
+    """`_Refused` unless the project's claim names `workspace` (the one its upload key is under) and that workspace
+    is active: an upload placed under another workspace's prefix, or one for a deployment project, gets nothing."""
+    if _claimed_workspace(project_id) != workspace:
+        raise _Refused('claim_mismatch')
+    _require_active(workspace)
+
+
+def _refuse(error_type: str) -> None:
+    """The one line a refused workspace upload logs: its error type, no key, id or exception text (the record's
+    log context is cleared first; a refusal ends the record's processing)."""
+    _log_context.clear()
+    logger.warning('Refused a workspace upload; nothing was written', extra={'error_type': error_type})
 
 
 class _ExtractionError(Exception):
@@ -958,6 +1130,10 @@ def _process_record(record: dict) -> None:
     # `%20`, and a raw key would then miss both the pattern and the object.
     key = unquote_plus(obj.get('key') or '')
 
+    if key.startswith(WORKSPACE_OBJECT_PREFIX):
+        _process_workspace_upload(key, bucket, obj)
+        return
+
     match = RAW_KEY_PATTERN.fullmatch(key)
     if not match:
         logger.info(f'Ignoring {key or "(no key)"} - not a product-doc upload')
@@ -981,10 +1157,73 @@ def _process_record(record: dict) -> None:
         _log_context.clear()
 
 
-def _extract_document(project_id: str, doc_id: str, bucket: str, key: str, obj: dict) -> None:
+def _process_workspace_upload(key: str, bucket: str, obj: dict) -> None:
+    """A `ws/` object: extract it inside its workspace, or refuse it with nothing written.
+
+    The key must match WORKSPACE_RAW_KEY_PATTERN whole (another `ws/` object, this function's own output included,
+    is ignored; a key that names a product-doc upload but does not match is refused). Then, before any write, the
+    project's claim must name the key's workspace (so an upload placed under another workspace's prefix, or one for
+    a deployment project, is refused) and that workspace must be active. Each refusal logs its error type alone.
+    """
+    match = WORKSPACE_RAW_KEY_PATTERN.fullmatch(key)
+    if match is None:
+        if _WORKSPACE_UPLOAD_MARKER in key:
+            _refuse('malformed_key')
+        else:
+            logger.info('Ignoring a workspace object - not a product-doc upload')
+        return
+    workspace, project_id, doc_id = match.group('workspace_id', 'project_id', 'doc_id')
+    try:
+        _require_admitted(project_id, workspace)
+    except _Refused as refusal:
+        _refuse(str(refusal))
+        return
+    _log_context.update({'workspace_id': workspace, 'project_id': project_id, 'doc_id': doc_id, 's3_key': key})
+    try:
+        _extract_document(project_id, doc_id, bucket, key, obj, workspace=workspace)
+    finally:
+        # As in _process_record: the next record must not inherit this one's fields.
+        _log_context.clear()
+
+
+def _workspace_may_extract(project_id: str, doc_id: str, doc: dict, key: str, workspace: str) -> bool:
+    """A workspace record's own checks, before the `extracting` write: False (and handled) when the record names
+    another object (refused, nothing written) or is an image (marked failed in its workspace with
+    WORKSPACE_IMAGE_MESSAGE, no model setting read: never left `pending` for the stall check to advise an upload
+    again)."""
+    if doc.get('s3_raw_key') != key:
+        _refuse('raw_key_mismatch')
+        return False
+    if str(doc.get('content_type')) in CONVERSE_IMAGE_FORMATS:
+        _mark_failed(project_id, doc_id, WORKSPACE_IMAGE_MESSAGE, workspace=workspace)
+        return False
+    return True
+
+
+def _still_active(workspace: str) -> bool:
+    """The status read again just before the text is put: a workspace set to `deleting` while this ran must not get
+    text under its prefix after its delete swept it (refused, nothing more written)."""
+    try:
+        _require_active(workspace)
+    except _Refused as refusal:
+        _refuse(str(refusal))
+        return False
+    return True
+
+
+def _extract_document(project_id: str, doc_id: str, bucket: str, key: str, obj: dict, *,
+                      workspace: str | None = None) -> None:
     """Extract ONE registered product document. Split from _process_record so that
-    the log context above is set and cleared around the whole of it."""
-    doc = _get_doc(project_id, doc_id)
+    the log context above is set and cleared around the whole of it.
+
+    In a workspace (`workspace`, already checked against the project's claim) every
+    read and write is that workspace's, and three more checks hold: the record must
+    name this very object (`s3_raw_key`), the `extracting` write must land, and the
+    workspace must still be active just before the text is put; each refuses with
+    nothing more written. An image is marked failed there, with WORKSPACE_IMAGE_MESSAGE:
+    describing it reads the model picks (`SETTINGS#model`), which are not per
+    workspace yet, and this function never falls back to the deployment's."""
+    doc = _get_doc(project_id, doc_id, workspace=workspace)
     if not doc:
         # Deleted mid-flight, or an object nobody registered. Nothing to update.
         logger.info(f'No product doc record for {doc_id}; skipping')
@@ -997,23 +1236,29 @@ def _extract_document(project_id: str, doc_id: str, bucket: str, key: str, obj: 
         logger.info(f'Product doc {doc_id} is already {doc.get("status")}; skipping')
         return
 
-    # Before the S3 reads and the Bedrock call, not after: the whole value of the
-    # state is that it is visible WHILE the slow part runs.
-    _mark_extracting(project_id, doc_id)
-
     # A missing type reads as 'None', which no branch accepts, like any other.
     content_type = str(doc.get('content_type'))
+    if workspace is not None and not _workspace_may_extract(project_id, doc_id, doc, key, workspace):
+        return
+
+    # Before the S3 reads and the Bedrock call, not after: the whole value of the
+    # state is that it is visible WHILE the slow part runs. In a workspace a lost
+    # write stops the extraction: no text is written for a record that may be gone.
+    if _mark_extracting(project_id, doc_id, workspace=workspace) != WRITE_LANDED and workspace is not None:
+        _refuse('extracting_not_written')
+        return
+
     try:
         text, payload = _extract_by_type(bucket, key, content_type, obj)
     except _ExtractionError as e:
-        _mark_failed(project_id, doc_id, str(e))
+        _mark_failed(project_id, doc_id, str(e), workspace=workspace)
         return
     except Exception:
         # Every failure is a terminal `failed`: Bedrock throttling, S3 errors,
         # decode failures. The user gets a sentence; the traceback goes to the log
         # only (logger.exception already attaches it).
         logger.exception(f'Extraction failed for {doc_id}')
-        _mark_failed(project_id, doc_id, 'Text extraction failed. Please try uploading again.')
+        _mark_failed(project_id, doc_id, 'Text extraction failed. Please try uploading again.', workspace=workspace)
         return
 
     # An empty or whitespace-only extraction is a FAILURE, never `ready`.
@@ -1022,18 +1267,30 @@ def _extract_document(project_id: str, doc_id: str, bucket: str, key: str, obj: 
     # contributes nothing while claiming to be usable — the same lie, by another
     # route, that this rung exists to remove.
     if not text.strip():
-        _mark_failed(project_id, doc_id, 'No text could be extracted from this file.')
+        _mark_failed(project_id, doc_id, 'No text could be extracted from this file.', workspace=workspace)
         return
 
-    extracted_key = _extracted_key(project_id, doc_id)
-    _s3().put_object(
+    if workspace is not None and not _still_active(workspace):
+        return
+
+    _store_text(project_id, doc_id, bucket, payload, len(text), workspace=workspace)
+
+
+def _store_text(project_id: str, doc_id: str, bucket: str, payload: bytes, chars: int, *,
+                workspace: str | None) -> None:
+    """Put the text, then mark the record ready; a record deleted meanwhile gets its text taken back, since its
+    delete may already have swept the document's objects."""
+    extracted_key = _extracted_key(project_id, doc_id, workspace)
+    put = _s3().put_object(
         Bucket=bucket,
         Key=extracted_key,
         Body=payload,
         ContentType='text/plain; charset=utf-8',
     )
-    _mark_ready(project_id, doc_id, extracted_key, len(text))
-    logger.info(f'Product doc {doc_id} ready ({len(text)} chars)')
+    if _mark_ready(project_id, doc_id, extracted_key, chars, workspace=workspace) == WRITE_GONE:
+        _delete_own_output(bucket, extracted_key, (put or {}).get('VersionId'), doc_id)
+        return
+    logger.info(f'Product doc {doc_id} ready ({chars} chars)')
 
 
 def lambda_handler(event, context=None):

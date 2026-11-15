@@ -645,8 +645,17 @@ def _body_text(body: dict | None, key: str) -> str:
 def product_doc_raw_key(project_id: str, doc_id: str, ext: str, *, workspace: WorkspaceScope | None = None) -> str:
     """Where a product document's upload goes: ``projects/{id}/product_docs/raw/{doc}.{ext}``, which the product-doc
     extractor is triggered on (product_doc_extractor/handler.py ``RAW_KEY_PATTERN``). In a workspace (since 7.37.00; no route
-    passes one yet) the same key under ``ws/{ws}/``, which the extractor is not triggered on until 3f."""
+    passes one yet) the same key under ``ws/{ws}/``, which the extractor takes since 7.38.00 (3f: its ``ws/`` rules and
+    ``WORKSPACE_RAW_KEY_PATTERN``, the project's claim naming that workspace); this key is also the record's
+    ``s3_raw_key``, which the extractor holds the event's key to."""
     return scoped_object_key(workspace, f'projects/{project_id}/product_docs/raw/{doc_id}.{ext}')
+
+
+def product_doc_extracted_key(project_id: str, doc_id: str, *, workspace: WorkspaceScope | None = None) -> str:
+    """Where the product-doc extractor puts a document's text: ``projects/{id}/product_docs/extracted/{doc}.txt``
+    (under ``ws/{ws}/`` in a workspace), derivable from the ids alone, so a delete reaches it before the record names
+    it (product_doc_extractor/handler.py ``_extracted_key``; schemas/project-keys-cases.json pins the two)."""
+    return scoped_object_key(workspace, f'projects/{project_id}/product_docs/extracted/{doc_id}.txt')
 
 
 @tracer.capture_method
@@ -750,7 +759,13 @@ def create_upload_url(project_id: str, body: dict) -> dict:
 
 @tracer.capture_method
 def delete_doc(project_id: str, doc_id: str, *, actor: Mapping[str, str] | None = None) -> dict:
-    """Delete a product doc: its raw and extracted objects (every version), then the row.
+    """Delete a product doc: the row, then its raw and extracted objects (every version).
+
+    The extracted text is reached by its derivable key too (``product_doc_extracted_key``), since the row names it
+    only once the extraction is ready: a document deleted mid-extraction left its text behind before 7.38.00. The
+    row goes first, so an extraction that puts its text after this sweep finds the row gone when it marks it ready,
+    and deletes that text itself (product_doc_extractor/handler.py ``_delete_own_output``); one that put it before
+    is swept here. A failed object delete is logged, as before; the row is deleted either way.
 
     The delete is recorded (``shared.delete_audit``), and a document that used it as a
     visual says so (``shared.deleted_sources``).
@@ -766,8 +781,13 @@ def delete_doc(project_id: str, doc_id: str, *, actor: Mapping[str, str] | None 
     if not item:
         raise NotFoundError('document not found')
 
+    projects_table.delete_item(
+        Key={'pk': project_pk(project_id), 'sk': f'{DOC_SK_PREFIX}{doc_id}'}
+    )
+
     if bucket:
-        keys = [key for key in (item.get('s3_raw_key'), item.get('s3_extracted_key')) if isinstance(key, str) and key]
+        stored = (item.get('s3_raw_key'), item.get('s3_extracted_key'))
+        keys = [key for key in (*stored, product_doc_extracted_key(project_id, doc_id)) if isinstance(key, str) and key]
         try:
             refused = delete_every_version_of_keys(_s3(), bucket, keys)
         except (ClientError, BotoCoreError) as e:
@@ -775,10 +795,6 @@ def delete_doc(project_id: str, doc_id: str, *, actor: Mapping[str, str] | None 
         else:
             if refused:
                 logger.warning(f'{refused} object version(s) of product doc {doc_id} could not be deleted')
-
-    projects_table.delete_item(
-        Key={'pk': project_pk(project_id), 'sk': f'{DOC_SK_PREFIX}{doc_id}'}
-    )
     record_delete(projects_table, kind='product_doc', target={'project_id': project_id, 'doc_id': doc_id}, actor=actor)
     mark_citing_documents(projects_table, project_id, [DeletedSource('product_doc', doc_id)], deleted_at=now_iso())
     return {'success': True}

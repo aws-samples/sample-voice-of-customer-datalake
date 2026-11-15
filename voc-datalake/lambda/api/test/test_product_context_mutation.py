@@ -622,6 +622,8 @@ class TestCreateUploadUrl:
 # ── delete_doc ───────────────────────────────────────────────────────────────
 
 DOC_KEY = {'pk': 'PROJECT#p1', 'sk': 'PRODUCT_DOC#d1'}
+#: The extractor's text of p1's d1, by its derivable key (product_doc_extracted_key).
+EXTRACTED_KEY = 'projects/p1/product_docs/extracted/d1.txt'
 
 
 class TestDeleteDoc:
@@ -639,30 +641,35 @@ class TestDeleteDoc:
         table.get_item.assert_called_once_with(Key=DOC_KEY)
         table.delete_item.assert_not_called()
 
-    def test_every_version_of_both_objects_goes_then_the_record_and_the_delete_is_recorded(self, table):
+    def test_the_record_goes_then_every_version_of_its_objects_and_the_delete_is_recorded(self, table):
         table.get_item.return_value = {'Item': {'s3_raw_key': 'raw/k', 's3_extracted_key': 'ext/k'}}
         s3 = MagicMock()
         actor = {'sub': 'u-1', 'kind': 'user'}
+        order = MagicMock(return_value=None)
+        table.delete_item.side_effect = lambda **kw: order('row', kw)
         with patch.object(pc, '_s3', return_value=s3), \
-                patch.object(pc, 'delete_every_version_of_keys', return_value=0) as sweep, \
+                patch.object(pc, 'delete_every_version_of_keys', side_effect=lambda *a: order('objects', a) or 0), \
                 patch.object(pc, 'record_delete') as record, \
                 patch.object(pc, 'mark_citing_documents') as mark:
             assert pc.delete_doc('p1', 'd1', actor=actor) == {'success': True}
-        sweep.assert_called_once_with(s3, 'test-raw-data-bucket', ['raw/k', 'ext/k'])
-        table.delete_item.assert_called_once_with(Key=DOC_KEY)
+        # The row first: an extraction that puts its text after the sweep finds the row gone and takes it back.
+        assert order.call_args_list == [
+            call('row', {'Key': DOC_KEY}),
+            call('objects', (s3, 'test-raw-data-bucket', ['raw/k', 'ext/k', EXTRACTED_KEY]))]
         record.assert_called_once_with(table, kind='product_doc', target={'project_id': 'p1', 'doc_id': 'd1'},
                                        actor=actor)
         assert mark.call_args.args[:2] == (table, 'p1')
         assert [(d.kind, d.id) for d in mark.call_args.args[2]] == [('product_doc', 'd1')]
 
-    def test_missing_keys_are_not_deleted(self, table):
-        table.get_item.return_value = {'Item': {'s3_raw_key': '', 's3_extracted_key': None}}
+    def test_a_document_deleted_mid_extraction_loses_its_text_too(self, table):
+        """While extracting, the row names no extracted key yet; the text's derivable key is deleted all the same."""
+        table.get_item.return_value = {'Item': {'s3_raw_key': '', 's3_extracted_key': None, 'status': 'extracting'}}
         s3 = MagicMock()
-        with patch.object(pc, '_s3', return_value=s3), patch.object(pc, 'record_delete'), \
-                patch.object(pc, 'mark_citing_documents'):
+        with patch.object(pc, '_s3', return_value=s3), \
+                patch.object(pc, 'delete_every_version_of_keys', return_value=0) as sweep, \
+                patch.object(pc, 'record_delete'), patch.object(pc, 'mark_citing_documents'):
             pc.delete_doc('p1', 'd1')
-        s3.delete_objects.assert_not_called()
-        s3.get_paginator.assert_not_called()
+        sweep.assert_called_once_with(s3, 'test-raw-data-bucket', [EXTRACTED_KEY])
         table.delete_item.assert_called_once_with(Key=DOC_KEY)
 
     def test_a_failed_object_delete_is_logged_and_the_record_still_goes(self, table):

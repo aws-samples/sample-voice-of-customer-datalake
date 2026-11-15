@@ -28,7 +28,6 @@ import {
 // to `cdk synth` inside `synthApp()`, and its sole module-level work is a `join()`
 // on two path constants.
 import { SYNTH_ACCOUNT, SYNTH_TIMEOUT_MS, cdkJsonContextStrict, committedFeatureFlags } from '../test-support/synth-app';
-import { claudeRoleGrantOf, missingModelGrants } from '../test-support/bedrock-grants';
 import { byCodeUnit } from '../utils/compare';
 import { PROTOTYPE_BASE_CSP, PROTOTYPE_DRAFT_CSP, prototypeCspFunctionCode } from '../utils/prototype-csp';
 
@@ -64,8 +63,8 @@ function constructRendering(stack: cdk.Stack, logicalId: string): cdk.CfnElement
  *
  * These flags DO change this file's other blocks, which is intended and worth
  * naming rather than discovering: `@aws-cdk/aws-iam:minimizePolicies` merges IAM
- * statements, so the extractor role's default policy carries 6 statements here
- * against 10 under a bare `App`, the CDN signing-key policy 1 against 2, and the
+ * statements, so the extractor role's default policy carried 6 statements here
+ * against 10 under a bare `App` (before its 7.38.00 grants by key), the CDN signing-key policy 1 against 2, and the
  * KMS key policy 5 against 6. No assertion's outcome changes — the extractor's
  * S3 read and write statements have different resources and so never merge — but
  * a case that counts statements must be written against these numbers.
@@ -157,13 +156,16 @@ describe('VocCoreStack synth context', () => {
       `${resource}'s statement count moved: either the synth context lost `
       + '@aws-cdk/aws-iam:minimizePolicies, or this policy gained a statement. Both want reading.';
 
-    // 8: the Claude grant lives in the stack's shared managed policies (lib/utils/claude-model-grant.ts); the app's
+    // 12: the Claude grant lives in the stack's shared managed policies (lib/utils/claude-model-grant.ts); the app's
     // rewrites (lib/utils/app-aspects.ts) add the DynamoDB-only KMS statement, the writes to its own log group and
-    // the one audit-row Deny on voc-projects, which it writes but holds no audit row of (audit-row-guard.ts).
+    // the one audit-row Deny on voc-projects, which it writes but holds no audit row of (audit-row-guard.ts). Since
+    // 7.38.00 its voc-projects and voc-aggregates grants are by key (the document rows, their read and written
+    // attributes; a claim's attributes; the model rows), it reads a workspace's status, and its S3 grants are exact
+    // (core-product-doc-extractor.test.ts).
     expect(
       statementCount('AWS::IAM::Policy', 'ProductDocExtractorLambdaServiceRoleDefaultPolicy', 'PolicyDocument'),
       because('the doc-extractor role'),
-    ).toBe(8);
+    ).toBe(12);
     // 2: its secret + the writes to its own log group (lib/utils/app-aspects.ts).
     expect(
       statementCount('AWS::IAM::Policy', 'CdnSigningKeysLambdaServiceRoleDefaultPolicy', 'PolicyDocument'),
@@ -1221,14 +1223,6 @@ describe('VocCoreStack product doc extractor', () => {
     return FunctionSchema.parse(itemAt(extractors, 0)[1].Properties);
   }
 
-  /** Statements from the extractor role's default policy. */
-  function extractorPolicyStatements(): { Action?: unknown; Resource?: unknown }[] {
-    const policies = Object.entries(synthCoreTemplate().findResources('AWS::IAM::Policy'))
-      .filter(([logicalId]) => logicalId.startsWith('ProductDocExtractorLambdaServiceRoleDefaultPolicy'));
-    expect(policies, 'expected exactly one extractor role policy').toHaveLength(1);
-    return itemAt(policies, 0)[1].Properties.PolicyDocument.Statement;
-  }
-
   it('exists as an ARM Python function with a 120s timeout', () => {
     const fn = extractorFunction();
 
@@ -1288,10 +1282,12 @@ describe('VocCoreStack product doc extractor', () => {
       }).optional(),
       LambdaFunctionArn: z.object({ 'Fn::GetAtt': z.array(z.string()) }),
     })).parse(itemAt(notifications, 0).Properties.NotificationConfiguration.LambdaFunctionConfigurations);
-    // ONE rule: S3 permits a single prefix per rule and rejects overlapping
-    // rules for the same event type, so this cannot be narrowed per project.
-    expect(configs).toHaveLength(1);
-    const config = itemAt(configs, 0);
+    // ONE rule for the deployment's uploads: S3 permits a single prefix per rule and rejects overlapping
+    // rules for the same event type, so this cannot be narrowed per project. (A workspace's uploads have rules of
+    // their own, `ws/` by extension: core-product-doc-extractor.test.ts.)
+    const deployment = configs.filter((c) => !JSON.stringify(c.Filter).includes('"ws/"'));
+    expect(deployment).toHaveLength(1);
+    const config = itemAt(deployment, 0);
     expect({ events: config.Events, filterRules: config.Filter?.Key.FilterRules }).toStrictEqual({
       events: ['s3:ObjectCreated:*'],
       filterRules: [{ Name: 'prefix', Value: 'projects/' }],
@@ -1301,35 +1297,8 @@ describe('VocCoreStack product doc extractor', () => {
     expect(config.LambdaFunctionArn['Fn::GetAtt'].at(0)).toMatch(/^ProductDocExtractorLambda/);
   });
 
-  it('grants Bedrock invoke on the allowlisted models only', () => {
-    // The Claude grant is the stack's shared managed policies, not the inline policy.
-    expect(extractorPolicyStatements().filter((s) => JSON.stringify(s.Action).includes('bedrock:'))).toStrictEqual([]);
-    const grant = claudeRoleGrantOf('Core', synthCoreTemplate().toJSON(), 'ProductDocExtractorLambdaServiceRole');
-    // Every allowlisted model in all three parts, and nothing that would let it reach another one.
-    expect(missingModelGrants([grant], ALLOWED_MODEL_IDS, 'global')).toStrictEqual([]);
-    expect(grant.statements.flatMap((s) => s.resources).filter((arn) => arn.includes('*'))).toStrictEqual([]);
-  });
-
-  it('scopes the S3 write to the extracted/ prefix and never to raw/', () => {
-    // A write grant reaching raw/ would let this role overwrite the user's own
-    // uploads — including the input it is about to read.
-    const writeStatements = extractorPolicyStatements().filter(
-      (s) => Array.isArray(s.Action) && s.Action.includes('s3:PutObject'),
-    );
-    expect(writeStatements).toHaveLength(1);
-
-    const rendered = JSON.stringify(itemAt(writeStatements, 0).Resource);
-    expect(rendered).toContain('/projects/*/product_docs/extracted/*');
-    expect(rendered).not.toContain('product_docs/raw');
-  });
-
-  it('scopes the S3 read to the raw/ upload prefix', () => {
-    const readStatements = extractorPolicyStatements().filter(
-      (s) => Array.isArray(s.Action) && s.Action.includes('s3:GetObject'),
-    );
-    expect(readStatements).toHaveLength(1);
-    expect(JSON.stringify(itemAt(readStatements, 0).Resource)).toContain('/projects/*/product_docs/raw/*');
-  });
+  // Its Bedrock, KMS, table and S3 grants (the write never reaching raw/, which would let it overwrite the input it
+  // reads): core-product-doc-extractor.test.ts.
 
   it('injects a MODEL_ALLOWLIST that parses to a non-empty array of allowlisted ids', () => {
     // The handler cannot import shared/model_config.py (powertools would force a

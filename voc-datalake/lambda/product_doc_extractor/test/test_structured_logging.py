@@ -86,36 +86,6 @@ def reload_extractor(extractor):
             handler.setStream(stream)
 
 
-@pytest.fixture
-def json_logs(extractor):
-    """Capture what the handler's OWN formatter writes, one dict per line.
-
-    Attached to the same logger the handler uses, with the module's formatter, so
-    this exercises the real thing rather than a re-implementation of it. The level
-    is forced to INFO belt-and-braces: the module sets it at import, but a reload
-    under a monkeypatched LOG_LEVEL could leave it somewhere else.
-    """
-    stream = io.StringIO()
-    handler = logging.StreamHandler(stream)
-    handler.setFormatter(extractor.JsonFormatter())
-    logger = extractor.logger
-    previous_level = logger.level
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
-
-    def _lines() -> list[dict]:
-        handler.flush()
-        return [json.loads(line) for line in stream.getvalue().splitlines() if line.strip()]
-
-    try:
-        yield _lines
-    finally:
-        logger.removeHandler(handler)
-        logger.setLevel(previous_level)
-        # The handler clears this itself; belt and braces, so one failing test
-        # cannot leak a doc_id into the next.
-        extractor._log_context.clear()
-
 
 class TestEveryLineIsJson:
     def test_a_line_parses_and_carries_level_message_and_service(self, extractor, json_logs):

@@ -3,7 +3,6 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as s3 from 'aws-cdk-lib/aws-s3';
-import * as s3n from 'aws-cdk-lib/aws-s3-notifications';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
@@ -25,7 +24,7 @@ import { createCoreCdn, type CoreBuildContext } from './core-cdn';
 import { createCoreBuckets, engineeringCacheWriterRoleArn, createEngineeringWorkspaceBucket } from './core-buckets';
 import { retainOnReplace } from '../utils/retain-on-replace';
 import { dataProtectionOf, type DataProtection } from '../utils/data-protection';
-import { grantReadAndWrites } from '../utils/table-write-grants';
+import { grantProductDocExtractor, notifyProductDocExtractor } from './core-product-doc-extractor';
 import { ALARM_NAME_PREFIX, ALARM_TOPIC_BASE_NAME, API_ASYNC_FAILURES_QUEUE_BASE_NAME, ENGINEERING_DLQ_BASE_NAME, INGEST_SCHEDULE_DLQ_BASE_NAME, createAlarmTopic, createApiAsyncFailureQueue } from './dlq-alarms';
 import { allowEventBridgeToScheduleDlq } from './ingestion-schedule-dlq';
 import { engineeringAgentsEnabled } from './engineering-broker';
@@ -477,6 +476,8 @@ export class VocCoreStack extends VocStack {
         PROJECTS_TABLE: this.projectsTable.tableName,
         // Read-only: the model picker's per-surface overrides live here.
         AGGREGATES_TABLE: this.aggregatesTable.tableName,
+        // A workspace's `META` status only, read before a workspace upload is written (3f).
+        WORKSPACES_TABLE: this.workspacesTable.tableName,
         // Rendered from the one allowlist in lib/utils/model-allowlist.ts, so the
         // handler validates configured models against the same list the IAM
         // grants below are built from — no second copy to rot.
@@ -511,35 +512,15 @@ export class VocCoreStack extends VocStack {
       }),
     });
 
-    // Prefix-scoped both ways, and asymmetrically: it reads only what users
-    // upload and writes only where its own output goes. Without the narrower
-    // write scope this role could overwrite any raw upload in the bucket.
-    const productDocReadKeys = 'projects/*/product_docs/raw/*';
-    const productDocWriteKeys = 'projects/*/product_docs/extracted/*';
-    this.rawDataBucket.grantRead(productDocExtractor, productDocReadKeys);
-    // Put only: the extractor writes its output and never deletes (a document delete is the projects API's).
-    this.rawDataBucket.grantPut(productDocExtractor, productDocWriteKeys);
-    // One conditional UpdateItem on the document row (handler.py); nothing else is written.
-    grantReadAndWrites(this.projectsTable, productDocExtractor, ['UpdateItem']);
-    this.aggregatesTable.grantReadData(productDocExtractor);
+    // Its grants by key and its notification rules (the deployment's `projects/`, a workspace's `ws/` by upload
+    // extension): lib/stacks/core-product-doc-extractor.ts.
+    const productDocKeys = grantProductDocExtractor(productDocExtractor, {
+      rawDataBucket: this.rawDataBucket, projectsTable: this.projectsTable,
+      workspacesTable: this.workspacesTable, aggregatesTable: this.aggregatesTable,
+    });
     this.kmsKey.grantEncryptDecrypt(productDocExtractor);
     grantClaudeModelsToFunction(productDocExtractor, 'invoke');
-
-    // ONE notification rule, filtered on the broad `projects/` prefix. S3 allows
-    // only one prefix per rule and rejects overlapping rules on the same event
-    // type, so narrowing this to `product_docs/raw/` would mean a rule per
-    // project — impossible, the ids are runtime values. The handler's
-    // RAW_KEY_PATTERN guard is what makes the broad prefix safe: it also drops
-    // this function's OWN output under `product_docs/extracted/`, which would
-    // otherwise re-trigger it in a loop.
-    //
-    // First use of a `prefix` filter in this repo — the existing notifications
-    // (S3 import in the ingestion stack) filter by suffix only.
-    this.rawDataBucket.addEventNotification(
-      s3.EventType.OBJECT_CREATED,
-      new s3n.LambdaDestination(productDocExtractor),
-      { prefix: 'projects/' },
-    );
+    notifyProductDocExtractor(this.rawDataBucket, productDocExtractor);
 
     // bin/voc-datalake.ts gives this stack no stack-wide acknowledgement, so
     // everything the grants above generate is acknowledged HERE: prefix-scoped
@@ -548,8 +529,8 @@ export class VocCoreStack extends VocStack {
     acknowledgeNag(productDocExtractor, [
       {
         id: 'AwsSolutions-IAM5',
-        reason: 'Object-level S3 access is already narrowed to the two product-doc prefixes; the trailing wildcard is the object name, and the middle wildcard is the runtime project id.',
-        findings: [productDocReadKeys, productDocWriteKeys]
+        reason: 'Object-level S3 access is already narrowed to the two product-doc prefixes, the deployment\'s and one workspace\'s (each `?` one character of the workspace id); the trailing wildcard is the object name, and the middle wildcard is the runtime project id.',
+        findings: productDocKeys
           .map((keys) => resourceFinding(this.rawDataBucket.arnForObjects(keys))),
       },
     ]);

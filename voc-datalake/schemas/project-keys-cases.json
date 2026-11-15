@@ -1,0 +1,79 @@
+{
+  "description": "Every key the product-doc extractor (lambda/product_doc_extractor/handler.py, a stdlib-only bundle that cannot import shared/) spells itself, in both scopes: its upload and output objects (api/product_context.py product_doc_raw_key and product_doc_extracted_key, api/projects.py product_docs_project_prefix), the document's row (shared/project_keys.py project_pk, api/product_context.py DOC_SK_PREFIX), the project id's claim and its read (shared/ws_repo.py project_claim), and the workspace's META status read (shared/ws_repo.py workspace_is_active). The extractor's tests (lambda/product_doc_extractor/test/test_project_keys_lockstep.py) and shared/'s (lambda/shared/test/test_project_keys_cases.py) read these cases. workspace null: the deployment's keys, which read no claim and no status (claim_read and status_read null). upload_extensions: the extensions an upload's key ends in (api/product_context.py ALLOWED_CONTENT_TYPES), which are also the stack's ws/ notification suffixes (lib/stacks/core-product-doc-extractor.ts). doc_row_attributes: every attribute the extractor's UpdateItem of a document row names (its key, its condition and its writes), which the stack's grant is held to. doc_read_attributes: what it reads of a workspace's document record (its GetItem's projection, the stack's grant there; each is an attribute the upload route writes). model_rows: the voc-aggregates partitions of the model picks and the deployment's default (shared/model_config.py), its only reads there (sort key config). rejected_keys: S3 event keys (URL-encoded, as an event carries them) that name a workspace's product_docs/raw/ but that the extractor refuses before any read; each names its bad segment (decoded) and the rule that refuses it: workspace_id (shared/workspace_ids.py is_workspace_id), opaque_id (a project or document id, shared/row_ids.py LONG_OPAQUE_ID_RE), extension (not an upload extension) or shape (a segment where none goes, or one too many), which shared/'s suite checks.",
+  "upload_extensions": ["gif", "jpg", "md", "png", "txt", "webp"],
+  "doc_row_attributes": ["error", "extracted_chars", "pk", "s3_extracted_key", "sk", "status"],
+  "doc_read_attributes": ["content_type", "pk", "s3_raw_key", "sk", "status"],
+  "model_rows": ["SETTINGS#model", "SETTINGS#model_default"],
+  "rejected_keys": [
+    { "why": "unknown-extension", "rule": "extension", "segment": "pdf", "key": "ws/ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8/projects/proj_20261115101500_a1b2c3d4/product_docs/raw/0123456789abcdef.pdf" },
+    { "why": "dot-dot", "rule": "opaque_id", "segment": "..", "key": "ws/ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8/projects/../projects/proj_20261115101500_a1b2c3d4/product_docs/raw/0123456789abcdef.md" },
+    { "why": "encoded-slash", "rule": "opaque_id", "segment": "proj_20261115101500_a1b2c3d4/../proj_other", "key": "ws/ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8/projects/proj_20261115101500_a1b2c3d4%2F..%2Fproj_other/product_docs/raw/0123456789abcdef.md" },
+    { "why": "nested", "rule": "shape", "segment": "nested", "key": "ws/ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8/projects/proj_20261115101500_a1b2c3d4/product_docs/raw/nested/0123456789abcdef.md" },
+    { "why": "two-workspaces", "rule": "shape", "segment": "ws", "key": "ws/ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8/ws/ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D9/projects/proj_20261115101500_a1b2c3d4/product_docs/raw/0123456789abcdef.md" },
+    { "why": "empty-segment", "rule": "shape", "segment": "", "key": "ws/ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8//projects/proj_20261115101500_a1b2c3d4/product_docs/raw/0123456789abcdef.md" },
+    { "why": "lowercase-id", "rule": "workspace_id", "segment": "ws_01jc3q8zk6v7w9x2y4a5b6c7d8", "key": "ws/ws_01jc3q8zk6v7w9x2y4a5b6c7d8/projects/proj_20261115101500_a1b2c3d4/product_docs/raw/0123456789abcdef.md" },
+    { "why": "excluded-letter-in-id", "rule": "workspace_id", "segment": "ws_01JC3Q8ZK6V7W9X2Y4A5B6C7DU", "key": "ws/ws_01JC3Q8ZK6V7W9X2Y4A5B6C7DU/projects/proj_20261115101500_a1b2c3d4/product_docs/raw/0123456789abcdef.md" },
+    { "why": "hash", "rule": "opaque_id", "segment": "proj_20261115101500_a1b2c3d4#x", "key": "ws/ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8/projects/proj_20261115101500_a1b2c3d4%23x/product_docs/raw/0123456789abcdef.md" },
+    { "why": "double-extension", "rule": "opaque_id", "segment": "0123456789abcdef.md", "key": "ws/ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8/projects/proj_20261115101500_a1b2c3d4/product_docs/raw/0123456789abcdef.md.md" },
+    { "why": "trailing-newline", "rule": "extension", "segment": "md\n", "key": "ws/ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8/projects/proj_20261115101500_a1b2c3d4/product_docs/raw/0123456789abcdef.md%0A" },
+    { "why": "no-workspace-id", "rule": "workspace_id", "segment": "ws_", "key": "ws/ws_/projects/proj_20261115101500_a1b2c3d4/product_docs/raw/0123456789abcdef.md" }
+  ],
+  "cases": [
+    {
+      "workspace": null,
+      "project_id": "proj_20261115101500_a1b2c3d4",
+      "doc_id": "0123456789abcdef",
+      "ext": "md",
+      "raw_key": "projects/proj_20261115101500_a1b2c3d4/product_docs/raw/0123456789abcdef.md",
+      "extracted_key": "projects/proj_20261115101500_a1b2c3d4/product_docs/extracted/0123456789abcdef.txt",
+      "doc_prefix": "projects/proj_20261115101500_a1b2c3d4/product_docs/",
+      "doc_row": { "pk": "PROJECT#proj_20261115101500_a1b2c3d4", "sk": "PRODUCT_DOC#0123456789abcdef" },
+      "claim_read": null,
+      "status_read": null
+    },
+    {
+      "workspace": "ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8",
+      "project_id": "proj_20261115101500_a1b2c3d4",
+      "doc_id": "0123456789abcdef",
+      "ext": "md",
+      "raw_key": "ws/ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8/projects/proj_20261115101500_a1b2c3d4/product_docs/raw/0123456789abcdef.md",
+      "extracted_key": "ws/ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8/projects/proj_20261115101500_a1b2c3d4/product_docs/extracted/0123456789abcdef.txt",
+      "doc_prefix": "ws/ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8/projects/proj_20261115101500_a1b2c3d4/product_docs/",
+      "doc_row": { "pk": "WS#ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8#PROJECT#proj_20261115101500_a1b2c3d4", "sk": "PRODUCT_DOC#0123456789abcdef" },
+      "claim_read": {
+        "Key": { "pk": "PROJECT_ID#proj_20261115101500_a1b2c3d4", "sk": "CLAIM" },
+        "ConsistentRead": true,
+        "ProjectionExpression": "#ws",
+        "ExpressionAttributeNames": { "#ws": "workspace_id" }
+      },
+      "status_read": {
+        "Key": { "pk": "WS#ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8", "sk": "META" },
+        "ConsistentRead": true,
+        "ProjectionExpression": "#a0, #a1, #a2",
+        "ExpressionAttributeNames": { "#a0": "pk", "#a1": "sk", "#a2": "status" }
+      }
+    },
+    {
+      "workspace": "ws_7ZZZZZZZZZZZZZZZZZZZZZZZZZ",
+      "project_id": "proj-Other_9",
+      "doc_id": "fedcba9876543210",
+      "ext": "webp",
+      "raw_key": "ws/ws_7ZZZZZZZZZZZZZZZZZZZZZZZZZ/projects/proj-Other_9/product_docs/raw/fedcba9876543210.webp",
+      "extracted_key": "ws/ws_7ZZZZZZZZZZZZZZZZZZZZZZZZZ/projects/proj-Other_9/product_docs/extracted/fedcba9876543210.txt",
+      "doc_prefix": "ws/ws_7ZZZZZZZZZZZZZZZZZZZZZZZZZ/projects/proj-Other_9/product_docs/",
+      "doc_row": { "pk": "WS#ws_7ZZZZZZZZZZZZZZZZZZZZZZZZZ#PROJECT#proj-Other_9", "sk": "PRODUCT_DOC#fedcba9876543210" },
+      "claim_read": {
+        "Key": { "pk": "PROJECT_ID#proj-Other_9", "sk": "CLAIM" },
+        "ConsistentRead": true,
+        "ProjectionExpression": "#ws",
+        "ExpressionAttributeNames": { "#ws": "workspace_id" }
+      },
+      "status_read": {
+        "Key": { "pk": "WS#ws_7ZZZZZZZZZZZZZZZZZZZZZZZZZ", "sk": "META" },
+        "ConsistentRead": true,
+        "ProjectionExpression": "#a0, #a1, #a2",
+        "ExpressionAttributeNames": { "#a0": "pk", "#a1": "sk", "#a2": "status" }
+      }
+    }
+  ]
+}

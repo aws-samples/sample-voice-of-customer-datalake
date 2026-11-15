@@ -4,8 +4,8 @@ Every key builder of a project's objects takes a keyword-only ``workspace``: the
 prototypes (shared/prototypes.py, api/projects.py ``prototype_project_prefix``) and the product documents
 (api/product_context.py ``product_doc_raw_key``, api/projects.py ``product_docs_project_prefix``). In a workspace each
 key is the deployment's under ``ws/{ws}/`` (shared/ws_repo.py ``s3_prefix``, through shared/scoped_keys.py
-``scoped_object_key``); without one it is exactly the deployment's key. No route passes a workspace yet, and the
-product-doc extractor stays on the deployment's ``projects/`` keys (3f).
+``scoped_object_key``); without one it is exactly the deployment's key. No route passes a workspace yet; since 3f
+(7.38.00) the product-doc extractor takes a workspace's upload key too (its own suite: test_workspace_uploads.py).
 """
 from __future__ import annotations
 
@@ -68,15 +68,18 @@ def test_the_sweep_prefixes_hold_the_writers_keys_in_each_scope(scope):
         projects.prototype_project_prefix(PROJECT, workspace=scope))
 
 
-def test_the_extractor_stays_on_the_deployments_keys():
-    """3f moves the extractor; until then its trigger pattern matches the deployment's upload key only. (Imported
-    here, not at collection: the extractor reads its configuration when it is first imported, after its own suite's
-    conftest has set it.)"""
+def test_the_extractor_reads_each_scopes_upload_key_with_its_own_pattern():
+    """Since 3f (7.38.00) the extractor takes a workspace's upload key too, with a pattern of its own; the deployment's
+    pattern still matches the deployment's key only. (Imported here, not at collection: the extractor reads its
+    configuration when it is first imported, after its own suite's conftest has set it.)"""
     from product_doc_extractor import handler as extractor
 
-    assert extractor.RAW_KEY_PATTERN.match(product_context.product_doc_raw_key(PROJECT, 'doc_1', 'pdf'))
-    assert extractor.RAW_KEY_PATTERN.match(product_context.product_doc_raw_key(PROJECT, 'doc_1', 'pdf',
-                                                                                workspace=A)) is None
+    deployment = product_context.product_doc_raw_key(PROJECT, 'doc_1', 'md')
+    workspace = product_context.product_doc_raw_key(PROJECT, 'doc_1', 'md', workspace=A)
+    assert [bool(extractor.RAW_KEY_PATTERN.fullmatch(key)) for key in (deployment, workspace)] == [True, False]
+    match = extractor.WORKSPACE_RAW_KEY_PATTERN.fullmatch(workspace)
+    assert match is not None
+    assert match.group('workspace_id', 'project_id', 'doc_id') == (A.ws, PROJECT, 'doc_1')
 
 
 def test_each_scope_lists_only_its_own_avatars(s3):

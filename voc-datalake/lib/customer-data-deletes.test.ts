@@ -238,7 +238,12 @@ const RAW_BUCKET_DELETERS: Readonly<Record<string, Readonly<Record<string, strin
     [PERSONA_GENERATOR]: 'the avatars of the personas a replace removes',
   },
   'prototypes/': { [PROJECTS_API]: 'document and project deletes' },
-  'projects/*/product_docs/': { [PROJECTS_API]: 'product-doc and project deletes' },
+  'projects/*/product_docs/': {
+    [PROJECTS_API]: 'product-doc and project deletes',
+    // 7.38.00: only `extracted/*` (its own output), only the version it just put, and only when the record was
+    // deleted while it was being put (the document's delete had already swept it): never an upload.
+    'VocCoreStack/ProductDocExtractorLambdaServiceRole': 'its own extracted text, of a record deleted mid-extraction',
+  },
   'company-context/': { [SETTINGS_API]: 'the design-capture previews (icons_*, logo_preview_*) it replaces' },
   'memory-imports/': {},
 };

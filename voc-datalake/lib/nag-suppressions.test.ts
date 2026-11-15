@@ -278,7 +278,9 @@ describe('cdk-nag acknowledgements', () => {
       // acknowledgement (one helper, the same finding and reason).
       // 95 -> 96: the engineering runtime's create of a run's one reactions schedule (7.10.00, engineering-reactions.ts:
       // one schedule group, names voc-eng-reactions-<run>, create only), its IAM5.
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 109, used: 109 });
+      // 109 -> 111: the product-doc extractor's read and put of one workspace's product documents (7.38.00, 3f:
+      // `ws/{one id}/projects/*/product_docs/raw/*` and `…/extracted/*`), two findings of its one acknowledgement.
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 111, used: 111 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

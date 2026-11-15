@@ -284,7 +284,12 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # module-level voc-feedback, voc-aggregates and voc-radar the view is taken of; and since 4d-1 voc-workspaces,
     # read only for a workspace message's META status (shared/ws_repo.py `workspace_is_active`, the control plane).
     'lambda/processor/handler.py': (2, {'Table': 4}),
-    'lambda/product_doc_extractor/handler.py': (3, {'PROJECT#': 2, 'Table': 1, 'put_object': 1}),
+    # A stdlib-only bundle with no shared/ (its module docstring): since 3f (7.38.00) it spells the project partition
+    # once (`_project_pk`, the workspace's `WS#{ws}#PROJECT#{id}` built from it) and a project id's claim
+    # (`PROJECT_ID#{id}`, read only), each pinned to shared/'s by schemas/project-keys-cases.json; and it deletes
+    # only its own text, put a moment before, when the record was deleted meanwhile (`_delete_own_output`).
+    'lambda/product_doc_extractor/handler.py': (3, {'PROJECT#': 1, 'PROJECT_ID#': 1, 'Table': 1, 'delete_object': 1,
+                                                    'put_object': 1}),
     'lambda/research/research_step_handler.py': (3, {'delete_object': 1, 'get_feedback_table': 1, 'get_projects_table': 1, 'put_object': 2}),
     'lambda/shared/agent_run_resume.py': (3, {'meta.client': 1, 'transact': 1}),
     'lambda/shared/agents_store.py': (3, {'Table': 1, 'meta.client': 3, 'transact': 3}),
