@@ -37,6 +37,10 @@ def test_finds_the_accent_in_the_colour_tokens_the_design_system_writer_stores()
 
 def test_reads_the_logo_attribute_and_key_shape_the_logo_upload_writes():
     assert user_messages.LOGO_KEY_ATTR == company_logo.LOGO_KEY_ATTR
-    uploaded = company_logo.LOGO_KEY_PREFIX + '0123456789ab.png'
-    assert logo_signing.is_uploaded_logo_key(uploaded)
-    assert not logo_signing.is_uploaded_logo_key(company_logo.LOGO_KEY_PREFIX + 'preview_0123456789ab.png')
+    # The signer's copy of the uploaded-key rule agrees with company_logo's on every edge, accepted or refused.
+    prefix = company_logo.LOGO_KEY_PREFIX
+    for key in (prefix + '0123456789ab.png', prefix + '0123456789ab.jpg', prefix + '0123456789ab.webp',
+                prefix + 'preview_0123456789ab.png', prefix + '0123456789AB.png', prefix + '0123456789a.png',
+                prefix + '0123456789ab.svg', prefix + '0123456789ab.png.exe', 'x/' + prefix + '0123456789ab.png'):
+        accepted_by_upload = company_logo.logo_keys({company_logo.LOGO_KEY_ATTR: key}) == [key]
+        assert logo_signing.is_uploaded_logo_key(key) is accepted_by_upload, key

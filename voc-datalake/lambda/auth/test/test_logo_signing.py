@@ -150,3 +150,9 @@ def test_a_signing_error_costs_the_logo_not_the_invitation(monkeypatch):
         raise ValueError('bad key')
     monkeypatch.setattr(logo_signing.CloudFrontSigner, 'generate_presigned_url', broken)
     assert logo_signing.signed_logo_url(KEY, SITE, 7, now=NOW) is None
+
+
+@pytest.mark.usefixtures('signing')
+def test_signs_on_the_site_origin_only_whatever_the_setting_carries():
+    url, _ = _signed(site=SITE + '/login?next=/x#frag')
+    assert url.startswith(f'{SITE}/{KEY}?')
