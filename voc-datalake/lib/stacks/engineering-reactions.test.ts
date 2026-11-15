@@ -115,12 +115,12 @@ describe('people\'s reactions on the host', () => {
   it.each([['7', '7'], [30, '30']])('takes -c engineeringReactionsDelayDays=%s', (days, expected) => {
     const { template } = runtimeStack({ engineeringAgents: 'true', engineeringReactionsDelayDays: days });
     expect(supervisorEnv(template).ENGINEERING_REACTIONS_DELAY_DAYS).toBe(expected);
-  });
+  }, SYNTH_TIMEOUT_MS);
 
   it.each([['0'], ['31'], ['2.5'], ['three']])('refuses -c engineeringReactionsDelayDays=%s at synth', (days) => {
     expect(() => runtimeStack({ engineeringAgents: 'true', engineeringReactionsDelayDays: days }))
       .toThrow(/engineeringReactionsDelayDays is a whole number of days from 1 to 30/);
-  });
+  }, SYNTH_TIMEOUT_MS);
 
   it('names its schedules as the runtime does (learning/reactions_read.py SCHEDULE_PREFIX)', () => {
     const source = fs.readFileSync(path.join(__dirname, '../../lambda/engineering/learning/reactions_read.py'), 'utf8');

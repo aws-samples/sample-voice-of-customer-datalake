@@ -13,6 +13,12 @@ Routes:
                                 who is not a member. A platform admin who is not a member admin enters as admin
                                 when the live check confirms them, and the entry is audited (shared/workspace.py
                                 resolve_workspace); an entry whose audit row cannot be written is refused.
+    PUT /me/workspaces/current  {name} -> {workspace: {id, name, slug, role, platform_admin}}: renames the workspace
+                                X-Workspace-Id names (shared/workspace_rename.py), for its admins only (403 for an
+                                editor or a viewer; the role read from the table): the audit row, then one
+                                transaction of META and the listing row, then every member's "my workspaces" row.
+                                400 for a bad name (the create's rules), 409 when it was renamed or marked deleting
+                                meanwhile; the slug never changes. The same name repeats the members' sync only.
     POST /platform/workspaces   {name, slug} -> 201 {workspace: {id, name, slug, role: 'admin', secret_status}}:
                                 a new workspace with the caller as its admin, in one transaction
                                 (shared/platform_workspaces.py). 400 for a bad name or slug, 409 for a slug
@@ -93,8 +99,7 @@ and audited), the role read from the table:
     POST /platform/workspaces/{ws}/delete/resume   -> {delete}: a platform admin invokes a failed or stalled delete
                                          again from its checkpoint (409 for one still moving or finished; audited).
 The request and the resume answer 403 "not available in this deployment", writing nothing, unless the deployment
-turns the hard delete on (``-c workspaceHardDelete=true``: WORKSPACE_HARD_DELETE ``true``; off until the per-person
-export ships). The cancel works whatever the flag: it only restores a workspace.
+turns the hard delete on (``-c workspaceHardDelete=true``: WORKSPACE_HARD_DELETE ``true``; off by default). The cancel works whatever the flag: it only restores a workspace.
 
 The /platform routes are for platform admins only: an administrator (``require_admin``), the token's
 ``platform-admins`` group (``require_platform_admin``), then the live check (shared/platform_admin_gate.py
@@ -168,6 +173,7 @@ from shared.workspace_plugin_settings import (
     set_plugin_enabled,
     workspace_plugins,
 )
+from shared.workspace_rename import parse_rename, rename_workspace
 from shared.ws_repo import ExportObjects, WorkspaceScope, WorkspaceTable, scope_of
 
 WORKSPACES_TABLE = os.environ.get('WORKSPACES_TABLE', '')
@@ -183,6 +189,7 @@ DELETE_FUNCTION = os.environ.get('DELETE_FUNCTION', '')
 FAILED_LIST = 'Failed to list your workspaces'
 FAILED_CURRENT = WORKSPACE_FAULT
 FAILED_CREATE = 'Failed to create the workspace'
+FAILED_RENAME = 'Failed to rename the workspace'
 FAILED_PLATFORM_LIST = 'Failed to list the workspaces'
 FAILED_MEMBERS = 'Failed to list the members'
 FAILED_ADD_MEMBER = 'Failed to add the member'
@@ -254,6 +261,22 @@ def current_workspace() -> dict:
         'id': context.ws, 'name': context.name, 'slug': context.slug, 'role': context.role,
         'platform_admin': context.platform_admin,
     }}
+
+
+@app.put('/me/workspaces/current')
+def rename_current_workspace() -> dict:
+    event = app.current_event.raw_event
+    # The body first: a bad one is refused before a platform admin's entry writes its audit row.
+    name = parse_rename(json_object_body(app))
+    context = _workspace(event, FAILED_RENAME, fresh=True)
+    require_workspace_admin(context)
+    try:
+        workspace = rename_workspace(get_workspaces_table(), context, name, get_caller_subject(event))
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception('Error renaming a workspace')
+        raise ServiceError(FAILED_RENAME) from exc
+    memberships.invalidate_workspace(context.ws)
+    return {'workspace': workspace}
 
 
 @app.get('/me/workspaces/current/members')
@@ -502,7 +525,8 @@ def create_platform_workspace():  # a Response: the resolver validates a return 
     require_live_platform_admin(event, FAILED_CREATE)
     new = parse_new_workspace(json_object_body(app))
     try:
-        ws = create_workspace(get_workspaces_table(), new, get_caller_subject(event))
+        # Every plugin the deployment offers starts on (7.40.00); Workspace settings turns one off.
+        ws = create_workspace(get_workspaces_table(), new, get_caller_subject(event), enabled_plugin_ids())
     except (ClientError, BotoCoreError) as exc:
         logger.exception('Error creating a workspace')
         raise ServiceError(FAILED_CREATE) from exc

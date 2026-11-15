@@ -8,6 +8,8 @@
  *   twice (a second mock would exit with EADDRINUSE).
  * - Ctrl+C stops both; if either exits on its own, the other is stopped too.
  * - Extra arguments go to Vite: `npm run dev -- --port 5191`.
+ * - Vite gets VITE_ENABLE_WORKSPACE_DELETE=true (Workspace settings offers "Delete workspace", which the mock
+ *   serves) unless the environment sets it: `VITE_ENABLE_WORKSPACE_DELETE=false npm run dev` hides it.
  *
  * Stdlib only, so it adds no dependency.
  */
@@ -38,8 +40,11 @@ function stopAll(code) {
   process.exitCode = code
 }
 
+/** The mock serves features a deployment turns on by flag; the dev server offers them unless the environment says otherwise. */
+const DEV_ENV = { ...process.env, VITE_ENABLE_WORKSPACE_DELETE: process.env.VITE_ENABLE_WORKSPACE_DELETE ?? 'true' }
+
 function start(label, args) {
-  const child = spawn(NPM, args, { cwd: FRONTEND_DIR, stdio: 'inherit', env: process.env })
+  const child = spawn(NPM, args, { cwd: FRONTEND_DIR, stdio: 'inherit', env: DEV_ENV })
   child.on('exit', (code, signal) => {
     if (signal === null && code !== 0) console.error(`[dev] ${label} exited with code ${code}`)
     stopAll(code ?? 0)

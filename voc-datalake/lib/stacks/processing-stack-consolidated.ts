@@ -349,7 +349,7 @@ export class VocProcessingStack extends VocStack {
 
     // ============================================
     // WORKSPACE HARD DELETE (docs/multi-workspace.md "Export and delete", steps 3 and 4): built only with
-    // -c workspaceHardDelete=true (lib/utils/workspace-hard-delete.ts; off until the per-person export ships)
+    // -c workspaceHardDelete=true (lib/utils/workspace-hard-delete.ts; off by default)
     // ============================================
     if (workspaceHardDeleteEnabled(this)) {
       // The processor counts the messages it drops for a deleting workspace on that workspace's own drop counter,

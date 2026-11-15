@@ -278,6 +278,52 @@
         "erased": "Deleted by an erasure"
       }
     },
+    "rename": {
+      "title": "Workspace name",
+      "description": "The name every member sees in the header's workspace menu and in the list of workspaces.",
+      "address": "Address:",
+      "readOnly": "Only this workspace's admins can rename it.",
+      "open": "Rename",
+      "dialogTitle": "Rename the workspace",
+      "slugStays": "Its address, {{address}}, stays the same: links and bookmarks keep working.",
+      "label": "Name",
+      "save": "Save",
+      "nameInvalid": "Enter a name of 1 to {{max, number}} characters.",
+      "nameControl": "The name cannot contain control characters, such as tabs or line breaks.",
+      "done": "The workspace is now called {{name}}."
+    },
+    "delete": {
+      "title": "Delete workspace",
+      "permanent": "Deleting this workspace is permanent and cannot be undone.",
+      "itemsTitle": "Deleting it removes, for everyone:",
+      "items": {
+        "feedback": "All its feedback and imports",
+        "projects": "Its projects, documents, prototypes and personas",
+        "agents": "Its agents and workflows",
+        "settings": "Its settings, plugins and credentials",
+        "files": "Its files",
+        "members": "All members' access to it",
+        "conversations": "Every member's assistant conversations and personal memories in this workspace",
+        "companyMemory": "Its company memory"
+      },
+      "notInExport": "The export does not include members' assistant conversations or personal memories: once the workspace is deleted, they are gone for good.",
+      "exportFirst": "Export the workspace first to keep a copy of its feedback, configuration, members and audit history.",
+      "exportLink": "Go to Export",
+      "open": "Delete workspace…",
+      "dialogTitle": "Delete {{name}}?",
+      "permanentFor": "This permanently deletes {{name}} for every member. It cannot be undone.",
+      "typeSlug": "Type the workspace's slug, {{slug}}, to confirm",
+      "reasonLabel": "Reason for deleting",
+      "reasonHint": "Kept for good in the audit log. For example: \"Team closed, ticket #123\". Never write a name, an email address or a phone number here.",
+      "understood": "I understand that deleting this workspace cannot be undone.",
+      "confirm": "Delete workspace",
+      "deleting": "Deleting…",
+      "doneTitle": "{{name}} is being deleted",
+      "doneGone": "It is gone for every member now: nobody can open it any more.",
+      "doneBackground": "Its data is deleted in the background, starting about 20 minutes from now.",
+      "doneBackgroundAt": "Its data is deleted in the background, starting at about {{time}} (some 20 minutes from now).",
+      "leave": "Go to my workspaces"
+    },
     "config": {
       "categoriesTitle": "Categories",
       "categoriesDescription": "This workspace's own categories classify its feedback. A new workspace has none: its feedback is classified with the built-in default categories until its admins add some. Nothing is copied from the deployment's categories.",
@@ -320,7 +366,14 @@
       "genericWithReason": "That did not work: {{reason}}",
       "exportRunning": "An export of this workspace is already running. Wait for it to finish.",
       "exportErasureRunning": "An erasure is running in this workspace. Start the export when it ends.",
-      "exportNotDownloadable": "This export can no longer be downloaded. Start a new export."
+      "exportNotDownloadable": "This export can no longer be downloaded. Start a new export.",
+      "renameChangedMeanwhile": "The workspace changed meanwhile. Reload the page and try again.",
+      "deleteSlugMismatch": "That is not this workspace's slug. Type it exactly to confirm the delete.",
+      "deleteExportRunning": "An export of this workspace is running. Wait for it to finish, then delete the workspace.",
+      "deleteErasureRunning": "An erasure is running in this workspace. Delete the workspace when it ends.",
+      "deleteChangedMeanwhile": "The workspace changed while the delete was being requested. Reload the page and try again.",
+      "deleteUnavailable": "Deleting a workspace is not available in this deployment.",
+      "deleteNotStarted": "The workspace is marked for deletion, but its delete could not start. Ask a platform admin to cancel or resume it."
     }
   },
   "timeRange": {

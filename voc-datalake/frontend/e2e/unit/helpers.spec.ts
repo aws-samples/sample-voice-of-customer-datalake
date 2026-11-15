@@ -339,6 +339,20 @@ test('the ledger keeps tokens and memories with their owner, and drops unknown k
   expect(ENTITY_KINDS).toEqual(expect.arrayContaining(['agent', 'workflow', 'token', 'memory']))
 })
 
+test('the ledger keeps the workspace a review page lives in (cleanup acts in it), and drops a malformed one', () => {
+  const file = path.join(OUT_DIR, 'created.json')
+  fs.rmSync(file, { force: true })
+  recordCreated('workspace', 'ws_1', 'e2e-unit-1-workspace')
+  recordCreated('review-page', 'app_1', 'e2e-unit-1-review-page', undefined, 'ws_1')
+  const written: unknown = JSON.parse(fs.readFileSync(file, 'utf8'))
+  fs.writeFileSync(file, JSON.stringify([...(Array.isArray(written) ? written : []), { kind: 'review-page', id: 'app_2', name: 'e2e-unit-1-x', workspace: 7 }]))
+  expect(readLedger().map((e) => [e.kind, e.id, e.workspace ?? null])).toStrictEqual([
+    ['workspace', 'ws_1', null],
+    ['review-page', 'app_1', 'ws_1'],
+  ])
+  expect(ENTITY_KINDS).toEqual(expect.arrayContaining(['workspace', 'review-page']))
+})
+
 // ------------------------------------------------------ one mock switch ----
 
 /** The suite's own sources plus its Playwright configs (where a second switch would also hide). */

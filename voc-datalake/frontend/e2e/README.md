@@ -52,6 +52,8 @@ are listed there with their reason).
 | `E2E_RAW_BUCKET` (optional) | The raw-data bucket for the s3 avatar sweep proof; default: the `RawDataBucketName` output of `E2E_CORE_STACK` (default `VocCoreStack`), read with a read-only `describe-stacks`. Without either, s3 step 12 still deletes the project but skips the S3 proof and says why |
 | `E2E_CORE_STACK` (optional) | The core stack name for that lookup (`<prefix>-VocCoreStack` for a prefixed deployment) |
 | `E2E_SWEEP_LEFTOVERS` (optional) | `1`: cleanup also deletes leftovers of earlier aborted runs (default: only this run's ledger entries) |
+| `E2E_WORKSPACE_LIFECYCLE` (optional) | `1`: run `workspace-lifecycle.spec.ts` (alone; see "Workspace lifecycle on a deployment") |
+| `E2E_WORKSPACE_KEEP` (optional) | `1`: let that spec run on a deployment without `features.workspaceDelete`, where its workspace can never be removed |
 
 Credentials are read from the environment only. Sessions are saved to `$E2E_OUT/.auth/` (`e2e/.auth/` without `E2E_OUT`; `E2E_AUTH_DIR` overrides) in a mode-700 directory, each file mode 600, and are gitignored, because they hold tokens. Following `E2E_OUT` keeps parallel runs from overwriting each other's sessions. When the run's cleanup ends (pass or fail) it deletes that `.auth` folder, unless `E2E_AUTH_DIR` named it or `E2E_KEEP_AUTH=1` is set, so no token stays on disk after a run; the working-tree secret scan (`scripts/gitleaks-tree.sh`) skips `.auth/` like the other gitignored folders. Nothing prints a password or a token.
 
@@ -129,7 +131,7 @@ Each model call sees the whole conversation, so the assistant specs never contin
    - `prioritization-requests.spec.ts`: both roles, read-only. Loading `/prioritization` sends one `GET /projects?ids=…` per 200 listed projects (naming each once) and no per-project `GET /projects/{id}`. Also runs against the dev mock (`E2E_MOCK=1`).
    - `dashboard-data.spec.ts`: also holds the dashboard UI to the data on a 30-day window (never the "workspace is empty" welcome when there is feedback), and shows the welcome for an injected all-zero summary.
    - `modals.spec.ts` also checks that Add Data Source offers only the plugins the deployment enables (`GET /sources/status` keys), each tile opening with no API 4xx; `writes.spec.ts` also parses one undated review in Manual Import, sees the date gate disable Import, and cancels at the preview (no confirm call).
-3. `cleanup` (teardown of `setup`): deletes only the entities THIS run recorded in `created.json` (entries carry the run id), then lists each collection again. Kinds without a delete route are retired the product's way, from the ledger only: agents then workflows archived, global MCP tokens revoked and memories forgotten, each as its owner. Proof goes to `cleanup-proof.json`. `E2E_SWEEP_LEFTOVERS=1` also sweeps leftovers of earlier aborted runs (`e2e-<digits>-*`, or with `E2E_TRACK` only `e2e-<track>-<digits>-*`). It never touches a name that does not match.
+3. `cleanup` (teardown of `setup`): deletes only the entities THIS run recorded in `created.json` (entries carry the run id), then lists each collection again. Kinds without a delete route are retired the product's way, from the ledger only: agents then workflows archived, global MCP tokens revoked and memories forgotten, each as its owner. Workspaces and the review pages saved in them (`workspace-lifecycle.spec.ts`) are retired from the ledger too, as the admin with each workspace's `X-Workspace-Id`: a review page is deleted unless its workspace already answers 404; a workspace still open is deleted with its slug and the reason "e2e cleanup" when `/config.json` has `features.workspaceDelete`, else its other members are removed, its plugins turned off and it is reported kept (`finding`). Proof goes to `cleanup-proof.json`. `E2E_SWEEP_LEFTOVERS=1` also sweeps leftovers of earlier aborted runs (`e2e-<digits>-*`, or with `E2E_TRACK` only `e2e-<track>-<digits>-*`). It never touches a name that does not match.
 
 ## Local dev mock (`E2E_MOCK=1`)
 
@@ -137,7 +139,7 @@ Each model call sees the whole conversation, so the assistant specs never contin
 
 ```bash
 cd voc-datalake/frontend
-PORT=3417 node mock-server.js &   VITE_API_ENDPOINT=http://localhost:3417 npx vite --port 5417 --strictPort &
+PORT=3417 node mock-server.js &   VITE_ENABLE_WORKSPACE_DELETE=true VITE_API_ENDPOINT=http://localhost:3417 npx vite --port 5417 --strictPort &
 cd e2e && E2E_MOCK=1 E2E_SITE=http://localhost:5417 E2E_API=http://localhost:3417 E2E_OUT=/tmp/e2e-mock \
   npx playwright test -c playwright.config.ts            # or name spec files to run only those
 ```
@@ -146,7 +148,7 @@ cd e2e && E2E_MOCK=1 E2E_SITE=http://localhost:5417 E2E_API=http://localhost:341
 
 `workspaces.spec.ts` (6.12.00, [docs/multi-workspace.md](../../../docs/multi-workspace.md)) runs ONLY there: it turns on the mock's two workspaces (`PUT /__mock/workspaces`, `mock-workspaces.js`; off again afterwards, so the other mock specs keep the app without workspaces), then checks that `/` shows the picker with both, that choosing Acme Outfitters from `/dashboard` lands on `/w/acme/dashboard` with acme's id in every call's `X-Workspace-Id`, that the header's workspace menu switches to `/w/juniper/dashboard` with a full page load and juniper's id, and that an unknown slug shows "Workspace not found". It needs the mock's two fictional workspaces, which a deployment does not have.
 
-`workspace-admin.spec.ts` (6.13.00) runs ONLY there too, on the same switch (on for the spec, off again afterwards; each switch starts the mock's workspaces afresh): the platform console (Administration → Privacy & access → Workspaces, inside `/w/acme/`) creates a workspace and enters it with a full page load to `/w/acme-field/`; the members page of acme adds `editor@example.com` as an Editor, makes them a Viewer and shows the last-admin refusal when the caller demotes themselves; in juniper (an editor there) the list is read-only and Leave workspace, confirmed, loads `/` without it; and the console enters juniper, which the caller is then not a member of, as admin, every call naming juniper. The mock has no sign-in, so the spec stores the mock caller's identity (`voc-auth`, its `sub`) for each page: the members page finds the caller's own row by it. On a deployment it would create a workspace and change memberships, which cannot be undone yet.
+`workspace-admin.spec.ts` (6.13.00) runs ONLY there too, on the same switch (on for the spec, off again afterwards; each switch starts the mock's workspaces afresh): the platform console (Administration → Privacy & access → Workspaces, inside `/w/acme/`) creates a workspace and enters it with a full page load to `/w/acme-field/`; the members page of acme adds `editor@example.com` as an Editor, makes them a Viewer and shows the last-admin refusal when the caller demotes themselves; in juniper (an editor there) the list is read-only and Leave workspace, confirmed, loads `/` without it; and the console enters juniper, which the caller is then not a member of, as admin, every call naming juniper. Since 7.40.00 also, in Workspace settings: Rename (a blank name cannot be saved, a name past 80 characters never fits the field, a tab is refused in the dialog, none of them sending anything; a good name is one `PUT /me/workspaces/current` with acme's `X-Workspace-Id`, the card and the header's menu show it, the address stays `/w/acme/`; the old name is put back), and Delete workspace on a workspace the spec creates (`acme-popup`): Delete stays disabled until the slug is typed exactly, a reason is given and "I understand" is ticked; the last dialog's "Go to my workspaces" loads `/` without it and `/w/acme-popup/` is "Workspace not found". The delete step needs Vite started with `VITE_ENABLE_WORKSPACE_DELETE=true` (as above; the repo root's `scripts/dev-with-mock.mjs` sets it). The mock has no sign-in, so the spec stores the mock caller's identity (`voc-auth`, its `sub`) for each page: the members page finds the caller's own row by it. The deployment's side of create, rename, members and delete is `workspace-lifecycle.spec.ts` (below).
 
 `cross-workspace.spec.ts` (6.14.00) runs ONLY there too: it turns on the switch with the caller a member of acme only (`PUT /__mock/workspaces {"enabled": true, "member": "acme"}`, which also makes the caller no platform admin to the workspace routes; off again afterwards) and checks that the address `/w/juniper/members` shows "Workspace not found" with acme as a link and no app. The API's side of the same rule, route by route, is `lambda/api/test/test_cross_workspace_routes.py`.
 
@@ -191,6 +193,32 @@ motion: the anonymity note, a folded item ("2 testers said this", v1, v2), its c
 count `aria-live`), Select all in this group, and Escape back to Feedback; each state passes axe with no serious or
 critical finding and scrolls nothing sideways. On a deployment it would build prototypes (an LLM job).
 
+## Workspace lifecycle on a deployment (`E2E_WORKSPACE_LIFECYCLE=1`, run alone)
+
+`tests/workspace-lifecycle.spec.ts` (7.40.00) drives one workspace through its life as the admin test user, who must
+be a platform admin (the `platform-admins` Cognito group: `GET /platform/workspaces` answers 200, else the spec skips
+and says so): create `e2e-<run id>-workspace` at the slug `e2e-<run id>` and enter it, rename it (the caller's
+`GET /me/workspaces` and `GET /platform/workspaces` read the new name, the slug unchanged), add e2e-user as a viewer
+(by their id token's email; they list and enter it, a rename is a 403) and remove them again, Run now of web_reviews
+before the workspace enabled it (the declared 409, never a 500), enable it, save one review page
+(https://example.com/, 1 page, Manual only) and run it (never a 500: before the 7.40.00 IAM fix it answered "Failed to
+open the workspace"; a 409 is accepted only with its reason), look at `/w/<slug>/workspace-settings` (the name card,
+and the delete card exactly when `/config.json` has `features.workspaceDelete`), then delete it with its slug and "e2e
+cleanup" (`GET /me/workspaces/current` the declared 404, the platform list `deleting`). Without the delete flag it turns
+the plugin off and leaves the workspace to the cleanup, and it runs at all there only with `E2E_WORKSPACE_KEEP=1`:
+such a workspace can never be removed. The workspace and its review page are in the ledger the moment their ids are
+known (kinds `workspace` and `review-page`), so the cleanup retires them whatever fails.
+
+It is opt-in and runs ALONE (no shard group; `unit/shard-groups.spec.ts`): the creator stays the workspace's admin
+member until the delete job removes its rows (its fence is about 21 minutes after the delete), and `GET /me/workspaces`
+lists it until then, so the workspace gate sends the admin test user's every page outside `/w/` into it (one
+workspace) or to the picker (several). Start no other run against the deployment before `GET /platform/workspaces`
+no longer lists it.
+
+```bash
+E2E_WORKSPACE_LIFECYCLE=1 npx playwright test -c playwright.config.ts --project=admin tests/workspace-lifecycle.spec.ts
+```
+
 ## QA track s1 (`E2E_TRACK=s1` only)
 
 `tests/s1-a-data.spec.ts` and `tests/s1-b-assistant.spec.ts` skip unless `E2E_TRACK=s1`, because they write feedback that cannot be deleted:
@@ -234,6 +262,7 @@ mock (`E2E_MOCK=1`, no login, user step skipped); the header comment has the com
 - `lib/aws.ts`: the one AWS CLI runner (read-only), account/region, physical names, Step Functions execution timings.
 - `lib/recorder.ts` stores `durationMs` and `ttfbMs` per call.
 - `lib/inject.ts`: `injectFailure(page, { method, path, query?, failure })` answers matching API calls in the browser (a status with the API's JSON error body and CORS headers, any status and body, or a timeout); `withoutInjected(problems, …specs)` drops exactly the problems it caused from a `runStep` verdict.
+- `lib/api.ts` `apiCall(role, method, path, body, { workspace })` sends `X-Workspace-Id` as the SPA does inside `/w/{slug}/`; `lib/workspaces.ts`: a run's workspace slug, the site's `features`, the paged platform list and lenient reads of the workspace routes' answers.
 - `lib/mcp.ts`: `mcpToolsList(token)` calls `/mcp/global` as an assistant does. `lib/workflows.ts`: archive from the Workflow library (the API instead when a name is not unique).
 
 ## Ops checks (read-only, `E2E_OPS=1` only)

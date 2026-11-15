@@ -271,6 +271,52 @@
         "erased": "Usunięty przez usunięcie danych"
       }
     },
+    "rename": {
+      "title": "Nazwa obszaru roboczego",
+      "description": "Nazwa, którą wszyscy członkowie widzą w menu obszarów roboczych w nagłówku i na liście obszarów roboczych.",
+      "address": "Adres:",
+      "readOnly": "Tylko administratorzy tego obszaru roboczego mogą zmienić jego nazwę.",
+      "open": "Zmień nazwę",
+      "dialogTitle": "Zmień nazwę obszaru roboczego",
+      "slugStays": "Jego adres, {{address}}, pozostaje bez zmian: linki i zakładki nadal działają.",
+      "label": "Nazwa",
+      "save": "Zapisz",
+      "nameInvalid": "Wpisz nazwę o długości od 1 do {{max, number}} znaków.",
+      "nameControl": "Nazwa nie może zawierać znaków sterujących, takich jak tabulatory czy podziały wierszy.",
+      "done": "Obszar roboczy nazywa się teraz {{name}}."
+    },
+    "delete": {
+      "title": "Usuń obszar roboczy",
+      "permanent": "Usunięcie tego obszaru roboczego jest trwałe i nie można go cofnąć.",
+      "itemsTitle": "Usunięcie go kasuje, dla wszystkich:",
+      "items": {
+        "feedback": "Wszystkie jego opinie i importy",
+        "projects": "Jego projekty, dokumenty, prototypy i persony",
+        "agents": "Jego agentów i przepływy pracy",
+        "settings": "Jego ustawienia, wtyczki i dane uwierzytelniające",
+        "files": "Jego pliki",
+        "members": "Dostęp wszystkich członków",
+        "conversations": "Rozmowy z asystentem i pamięć osobistą każdego członka w tym obszarze roboczym",
+        "companyMemory": "Jego pamięć firmy"
+      },
+      "notInExport": "Eksport nie obejmuje rozmów członków z asystentem ani ich pamięci osobistej: po usunięciu obszaru roboczego przepadają one na zawsze.",
+      "exportFirst": "Najpierw wyeksportuj obszar roboczy, aby zachować kopię jego opinii, konfiguracji, członków i historii audytu.",
+      "exportLink": "Przejdź do eksportu",
+      "open": "Usuń obszar roboczy…",
+      "dialogTitle": "Usunąć {{name}}?",
+      "permanentFor": "To trwale usuwa {{name}} dla wszystkich członków. Nie można tego cofnąć.",
+      "typeSlug": "Aby potwierdzić, wpisz slug obszaru roboczego: {{slug}}",
+      "reasonLabel": "Powód usunięcia",
+      "reasonHint": "Zapisywany na zawsze w dzienniku audytu. Na przykład: „Zespół rozwiązany, zgłoszenie #123”. Nigdy nie wpisuj tu imienia i nazwiska, adresu e-mail ani numeru telefonu.",
+      "understood": "Rozumiem, że usunięcia tego obszaru roboczego nie można cofnąć.",
+      "confirm": "Usuń obszar roboczy",
+      "deleting": "Usuwanie…",
+      "doneTitle": "{{name}} jest usuwany",
+      "doneGone": "Nie jest już dostępny dla żadnego członka: nikt nie może go otworzyć.",
+      "doneBackground": "Jego dane są usuwane w tle, począwszy od około 20 minut od teraz.",
+      "doneBackgroundAt": "Jego dane są usuwane w tle, począwszy od około {{time}} (za mniej więcej 20 minut).",
+      "leave": "Przejdź do moich obszarów roboczych"
+    },
     "config": {
       "categoriesTitle": "Kategorie",
       "categoriesDescription": "Własne kategorie tego obszaru roboczego klasyfikują jego opinie. Nowy obszar roboczy nie ma żadnych: jego opinie są klasyfikowane według wbudowanych kategorii domyślnych, dopóki jego administratorzy nie dodadzą własnych. Nic nie jest kopiowane z kategorii wdrożenia.",
@@ -313,7 +359,14 @@
       "genericWithReason": "Nie udało się: {{reason}}",
       "exportRunning": "Eksport tego obszaru roboczego już trwa. Poczekaj, aż się zakończy.",
       "exportErasureRunning": "W tym obszarze roboczym trwa usuwanie danych. Rozpocznij eksport, gdy się zakończy.",
-      "exportNotDownloadable": "Tego eksportu nie można już pobrać. Rozpocznij nowy eksport."
+      "exportNotDownloadable": "Tego eksportu nie można już pobrać. Rozpocznij nowy eksport.",
+      "renameChangedMeanwhile": "Obszar roboczy zmienił się w międzyczasie. Odśwież stronę i spróbuj ponownie.",
+      "deleteSlugMismatch": "To nie jest slug tego obszaru roboczego. Wpisz go dokładnie, aby potwierdzić usunięcie.",
+      "deleteExportRunning": "Trwa eksport tego obszaru roboczego. Poczekaj, aż się zakończy, a potem usuń obszar roboczy.",
+      "deleteErasureRunning": "W tym obszarze roboczym trwa usuwanie danych. Usuń obszar roboczy, gdy się zakończy.",
+      "deleteChangedMeanwhile": "Obszar roboczy zmienił się podczas wysyłania żądania usunięcia. Odśwież stronę i spróbuj ponownie.",
+      "deleteUnavailable": "Usuwanie obszaru roboczego nie jest dostępne w tym wdrożeniu.",
+      "deleteNotStarted": "Obszar roboczy jest oznaczony do usunięcia, ale usuwanie nie mogło się rozpocząć. Poproś administratora platformy o anulowanie lub wznowienie."
     }
   },
   "timeRange": {

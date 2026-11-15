@@ -182,3 +182,28 @@ describe('prechecks against GET /scrapers (before any card)', () => {
     expect(deps.calls).toStrictEqual([{ call: { fn: 'scrapers', method: 'GET', path: '/scrapers', resource: '/scrapers' }, sub: 'user-sub' }]);
   });
 });
+
+describe('categories first (guidance only, never a refusal)', () => {
+  const NOTE = 'Before proposing it, read list_categories: with none configured, set categories up with the user first '
+    + '(Categories first).';
+  const descriptionOf = (name: string) => toolOf(name).spec.toolSpec?.description ?? '';
+
+  it.each(['create_scraper', 'create_app_connector'])('%s tells the model to read list_categories before it proposes', (name) => {
+    expect(descriptionOf(name)).toContain(NOTE);
+    // plan_catalogue shows only the first sentence: the rule for plans lives in the core guidance.
+    expect(descriptionOf(name).split('. ')[0]).not.toContain('list_categories');
+  });
+
+  it('update_scraper (an existing source) carries no categories rule', () => {
+    expect(descriptionOf('update_scraper')).not.toContain('list_categories');
+  });
+
+  it.each([
+    ['create_scraper', BASE, { 'GET /scrapers': { scrapers: [] } }],
+    ['create_app_connector', WEB, {}],
+  ])('%s is not refused, and reads no categories, when none are configured', async (name, args, routes) => {
+    const deps = fakeDeps({ ...routes, 'GET /settings/categories': { categories: [], updated_at: null } });
+    expect(await toolOf(name, {}, deps).precheck?.(args, admin)).toBeUndefined();
+    expect(deps.calls.map(({ call }) => call.path)).not.toContain('/settings/categories');
+  });
+});

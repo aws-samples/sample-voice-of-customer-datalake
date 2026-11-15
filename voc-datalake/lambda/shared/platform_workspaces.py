@@ -11,12 +11,16 @@ Creating a workspace is ONE DynamoDB transaction (all or nothing), every put con
     USER#{sub}      / WS#{ws}           name, slug, role admin: the creator's "my workspaces" row
     WORKSPACES      / {name}#{ws}       workspace_id, name, slug, status, created_at, secret_status: the listing row
     AUDIT#WS#{ws}   / {iso}#{random}    kind workspace_created, actor, at, slug (under the audit-row guard)
+    PLUGIN#{plugin} / WS#{ws}           enabled_by (the creator), enabled_at: one per plugin the deployment offers
+                                        (7.40.00: every plugin starts on in a new workspace; Workspace settings
+                                        turns one off; shared/workspace_plugin_settings.py)
 
 No row carries ``ttl``: only ``INVITE#`` rows expire (lib/customer-data-deletes.test.ts pins it).
 
 The listing partition ``WORKSPACES`` is sorted by the name (case-folded) and then the id, so the list is one paged
 Query, never a Scan. It is a single partition read only by platform admins and written once per created
-workspace, far under a partition's limits. A later rename or status change moves or updates the listing row too.
+workspace, far under a partition's limits. A rename (shared/workspace_rename.py) moves the listing row to its new
+sort key; a status change (the hard delete) updates it.
 
 Nothing else is made for a new workspace (decision 19): its plugin credentials are SSM Parameter Store
 SecureStrings, one per plugin, created by the first save in the workspace (shared/workspace_credentials.py),
@@ -31,7 +35,7 @@ import re
 import secrets
 import time
 import unicodedata
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
@@ -44,6 +48,7 @@ from shared.logging import logger
 from shared.request_body import reject_unknown_fields, validated_text
 from shared.timestamps import now_iso
 from shared.workspace import ACTIVE, audit_key, audit_sort_key, is_workspace_id, text_fields, ws_key
+from shared.workspace_plugin_settings import plugin_key
 
 NAME_MAX_CHARS: Final = 80
 #: 3 to 40 of a-z, 0-9 and '-', neither first nor last a '-'.
@@ -60,6 +65,8 @@ _CROCKFORD: Final = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
 _TIME_BITS: Final = 48
 _RANDOM_BITS: Final = 80
 _FRESH: Final = 'attribute_not_exists(pk)'
+#: A transaction holds at most 100 items: the creation's six rows, and one per plugin of the deployment.
+MAX_PLUGINS_AT_CREATE: Final = 94
 
 
 @dataclass(frozen=True)
@@ -70,12 +77,19 @@ class NewWorkspace:
     slug: str
 
 
+def validated_workspace_name(value: object) -> str:
+    """A workspace's name (a create's, a rename's): 1 to ``NAME_MAX_CHARS`` characters once trimmed, no control
+    character; a 400 that says what to fix otherwise."""
+    name = validated_text(value, 'name', NAME_MAX_CHARS, required=True)
+    if any(unicodedata.category(char) == 'Cc' for char in name):
+        raise ValidationError('name must not contain control characters')
+    return name
+
+
 def parse_new_workspace(body: Mapping[str, Any]) -> NewWorkspace:
     """``{name, slug}`` validated, or a 400 that says what to fix."""
     reject_unknown_fields(body, ('name', 'slug'))
-    name = validated_text(body.get('name'), 'name', NAME_MAX_CHARS, required=True)
-    if any(unicodedata.category(char) == 'Cc' for char in name):
-        raise ValidationError('name must not contain control characters')
+    name = validated_workspace_name(body.get('name'))
     slug = body.get('slug')
     if not isinstance(slug, str) or not _SLUG.fullmatch(slug):
         raise ValidationError('slug must be 3 to 40 characters of a-z, 0-9 and "-", not starting or ending with "-"')
@@ -101,9 +115,11 @@ def _put(table_name: str, item: dict[str, Any]) -> dict[str, Any]:
     return {'Put': {'TableName': table_name, 'Item': item, 'ConditionExpression': _FRESH}}
 
 
-def _creation_items(table_name: str, new: NewWorkspace, ws: str, creator: str, at: str) -> list[dict[str, Any]]:
+def _creation_items(table_name: str, new: NewWorkspace, ws: str, creator: str, at: str,
+                    plugins: Sequence[str] = ()) -> list[dict[str, Any]]:
     """The transaction's puts (see the module docstring); the slug guard is first, so a 409 reads index 0."""
     base = {'name': new.name, 'slug': new.slug}
+    enabled = [{**plugin_key(plugin, ws), 'enabled_by': creator, 'enabled_at': at} for plugin in plugins]
     return [_put(table_name, item) for item in (
         {'pk': f'SLUG#{new.slug}', 'sk': 'META', 'workspace_id': ws, 'created_at': at},
         {'pk': ws_key(ws), 'sk': 'META', **base, 'status': ACTIVE, 'created_by': creator, 'created_at': at,
@@ -114,17 +130,21 @@ def _creation_items(table_name: str, new: NewWorkspace, ws: str, creator: str, a
          'created_at': at, 'secret_status': CREDENTIALS_READY},
         {'pk': audit_key(ws), 'sk': audit_sort_key(at), 'kind': WORKSPACE_CREATED, 'actor': creator, 'at': at,
          'slug': new.slug},
+        *enabled,
     )]
 
 
-def create_workspace(table: Any, new: NewWorkspace, creator: str) -> str:
-    """Write the new workspace in one transaction and return its id; 409 when the slug is taken."""
+def create_workspace(table: Any, new: NewWorkspace, creator: str, plugins: Sequence[str] = ()) -> str:
+    """Write the new workspace in one transaction, every plugin of ``plugins`` (the deployment's) on, and return its
+    id; 409 when the slug is taken."""
+    if len(plugins) > MAX_PLUGINS_AT_CREATE:
+        raise ValueError(f'at most {MAX_PLUGINS_AT_CREATE} plugins fit in the creation transaction')
     ws = new_workspace_id()
     try:
         # The token makes botocore's retry of a create whose answer was lost succeed (DynamoDB keeps it idempotent
         # for 10 minutes) instead of failing its own slug guard as a false 409.
         table.meta.client.transact_write_items(
-            TransactItems=_creation_items(table.name, new, ws, creator, now_iso()), ClientRequestToken=ws)
+            TransactItems=_creation_items(table.name, new, ws, creator, now_iso(), plugins), ClientRequestToken=ws)
     except ClientError as exc:
         if is_key_collision(exc, put_index=0):
             raise ConflictError(SLUG_TAKEN) from exc

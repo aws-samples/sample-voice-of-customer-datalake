@@ -137,10 +137,9 @@ feedback Scan/GetItem/UpdateItem, aggregates GetItem/UpdateItem, raw-bucket read
 (`raw/*` and one workspace's `ws/{ws}/raw/*`), PutObject on `silver/*` and one
 workspace's `ws/{ws}/silver/*`, KMS, Bedrock, Comprehend, Translate, invoke itself.
 
-Not behind API Gateway (Processing stack), built only with `-c workspaceHardDelete=true`, which a synth refuses until
-the per-person export ships (`HARD_DELETE_REFUSED`; nothing the app reads can turn it on; only the repository's tests
-and audits build it, through the test harness's own path, `lib/test-support/hard-delete-app.ts`, that `bin/` never
-takes; off, the request and the resume answer 403 and write nothing, the cancel still works): `voc-workspace-delete` —
+Not behind API Gateway (Processing stack), built only with `-c workspaceHardDelete=true` (off by default; since
+7.40.00 no longer refused until a per-person export ships, owner decision; off, the request and the resume answer 403
+and write nothing, the cancel still works): `voc-workspace-delete` —
 `lambda/jobs/workspace_delete/handler.py` (phase
 4d-2, docs/multi-workspace.md "Export and delete" step 4; `lib/stacks/workspace-delete-worker.ts`), async invoke by
 name from `POST /me/workspaces/current/delete` and `POST /platform/workspaces/{ws}/delete/resume` (env

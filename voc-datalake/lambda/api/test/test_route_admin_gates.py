@@ -224,6 +224,8 @@ WORKSPACE_ADMIN_ONLY: dict[str, frozenset[str]] = {
         'POST /me/workspaces/current/export', 'POST /me/workspaces/current/export/link',
         # Its hard delete (decision 17): the slug typed, a basis, audited.
         'POST /me/workspaces/current/delete',
+        # Its rename (7.40.00, shared/workspace_rename.py): the name only, the slug stays; audited.
+        'PUT /me/workspaces/current',
     }),
 }
 # Reads for a workspace's admins only, gated like the writes above: the status of the export of the whole

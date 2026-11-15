@@ -184,14 +184,14 @@ describe('feedback edit Lambda (PUT /feedback/{id}/category, PUT /feedback/{id}/
 // (lambda/shared/workspace_request.py) through the stack's one workspace-resolution policy, as the settings API does
 // (platform-admin-writes.test.ts pins what that policy allows: GetItem on WS#* and AUDIT#WS#*, PutItem on AUDIT#WS#*
 // only), and run the live platform-admin check in Cognito; nothing else of the control plane.
-// The operator APIs also read, from their own policy, a PLUGIN# row's key: a run in a workspace starts only a plugin
-// the workspace enabled (7.14.00, lambda/shared/workspace_plugin_settings.py require_plugin_enabled, which projects
-// pk); a read naming no attributes is refused (Null); nothing else there.
+// The operator APIs also read, from their own policy, a PLUGIN# row's key (pk and sk: DynamoDB counts the request's
+// Key in dynamodb:Attributes): a run in a workspace starts only a plugin the workspace enabled (7.14.00,
+// lambda/shared/workspace_plugin_settings.py require_plugin_enabled); a read naming no attributes is refused (Null).
 const PLUGIN_KEY_READ = [{
   actions: ['dynamodb:GetItem'],
   condition: {
     'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['PLUGIN#*'] },
-    'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk'] },
+    'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk'] },
     StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
     Null: { 'dynamodb:Attributes': 'false' },
   },

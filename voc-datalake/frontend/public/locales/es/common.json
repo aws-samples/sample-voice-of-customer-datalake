@@ -281,6 +281,52 @@
         "erased": "Borrada por una eliminación"
       }
     },
+    "rename": {
+      "title": "Nombre del espacio de trabajo",
+      "description": "El nombre que todos los miembros ven en el menú de espacios de trabajo del encabezado y en la lista de espacios de trabajo.",
+      "address": "Dirección:",
+      "readOnly": "Solo los administradores de este espacio de trabajo pueden cambiarle el nombre.",
+      "open": "Cambiar nombre",
+      "dialogTitle": "Cambiar el nombre del espacio de trabajo",
+      "slugStays": "Su dirección, {{address}}, no cambia: los enlaces y marcadores siguen funcionando.",
+      "label": "Nombre",
+      "save": "Guardar",
+      "nameInvalid": "Introduce un nombre de 1 a {{max, number}} caracteres.",
+      "nameControl": "El nombre no puede contener caracteres de control, como tabulaciones o saltos de línea.",
+      "done": "El espacio de trabajo ahora se llama {{name}}."
+    },
+    "delete": {
+      "title": "Eliminar el espacio de trabajo",
+      "permanent": "Eliminar este espacio de trabajo es permanente y no se puede deshacer.",
+      "itemsTitle": "Al eliminarlo se borra, para todos:",
+      "items": {
+        "feedback": "Todos sus comentarios e importaciones",
+        "projects": "Sus proyectos, documentos, prototipos y arquetipos",
+        "agents": "Sus agentes y flujos de trabajo",
+        "settings": "Su configuración, plugins y credenciales",
+        "files": "Sus archivos",
+        "members": "El acceso de todos los miembros",
+        "conversations": "Las conversaciones con el asistente y la memoria personal de cada miembro en este espacio de trabajo",
+        "companyMemory": "Su memoria de la empresa"
+      },
+      "notInExport": "La exportación no incluye las conversaciones con el asistente ni la memoria personal de los miembros: una vez eliminado el espacio de trabajo, se pierden para siempre.",
+      "exportFirst": "Exporta antes el espacio de trabajo para conservar una copia de sus comentarios, configuración, miembros e historial de auditoría.",
+      "exportLink": "Ir a Exportación",
+      "open": "Eliminar el espacio de trabajo…",
+      "dialogTitle": "¿Eliminar {{name}}?",
+      "permanentFor": "Esto elimina {{name}} de forma permanente para todos los miembros. No se puede deshacer.",
+      "typeSlug": "Escribe el slug del espacio de trabajo, {{slug}}, para confirmar",
+      "reasonLabel": "Motivo de la eliminación",
+      "reasonHint": "Se guarda para siempre en el registro de auditoría. Por ejemplo: «Equipo disuelto, ticket #123». Nunca escribas aquí un nombre, una dirección de correo ni un número de teléfono.",
+      "understood": "Entiendo que eliminar este espacio de trabajo no se puede deshacer.",
+      "confirm": "Eliminar el espacio de trabajo",
+      "deleting": "Eliminando…",
+      "doneTitle": "{{name}} se está eliminando",
+      "doneGone": "Ya no está disponible para ningún miembro: nadie puede abrirlo.",
+      "doneBackground": "Sus datos se eliminan en segundo plano, empezando dentro de unos 20 minutos.",
+      "doneBackgroundAt": "Sus datos se eliminan en segundo plano a partir de las {{time}} aproximadamente (dentro de unos 20 minutos).",
+      "leave": "Ir a mis espacios de trabajo"
+    },
     "config": {
       "categoriesTitle": "Categorías",
       "categoriesDescription": "Las categorías propias de este espacio de trabajo clasifican sus comentarios. Un espacio de trabajo nuevo no tiene ninguna: sus comentarios se clasifican con las categorías predeterminadas integradas hasta que sus administradores añadan algunas. No se copia nada de las categorías de la implementación.",
@@ -323,7 +369,14 @@
       "genericWithReason": "No funcionó: {{reason}}",
       "exportRunning": "Ya hay una exportación de este espacio de trabajo en curso. Espera a que termine.",
       "exportErasureRunning": "Hay una eliminación en curso en este espacio de trabajo. Inicia la exportación cuando termine.",
-      "exportNotDownloadable": "Esta exportación ya no se puede descargar. Inicia una nueva exportación."
+      "exportNotDownloadable": "Esta exportación ya no se puede descargar. Inicia una nueva exportación.",
+      "renameChangedMeanwhile": "El espacio de trabajo cambió mientras tanto. Recarga la página e inténtalo de nuevo.",
+      "deleteSlugMismatch": "Ese no es el slug de este espacio de trabajo. Escríbelo exactamente para confirmar la eliminación.",
+      "deleteExportRunning": "Hay una exportación de este espacio de trabajo en curso. Espera a que termine y luego elimina el espacio de trabajo.",
+      "deleteErasureRunning": "Hay una eliminación de datos en curso en este espacio de trabajo. Elimina el espacio de trabajo cuando termine.",
+      "deleteChangedMeanwhile": "El espacio de trabajo cambió mientras se solicitaba la eliminación. Recarga la página e inténtalo de nuevo.",
+      "deleteUnavailable": "Eliminar un espacio de trabajo no está disponible en esta implementación.",
+      "deleteNotStarted": "El espacio de trabajo está marcado para eliminarse, pero la eliminación no pudo empezar. Pide a un administrador de la plataforma que la cancele o la reanude."
     }
   },
   "timeRange": {

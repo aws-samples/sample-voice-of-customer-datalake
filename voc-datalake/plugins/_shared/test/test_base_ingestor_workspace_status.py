@@ -304,3 +304,40 @@ class TestTheWatermarkDirectory:
         ingestor_yielding(scope=None).set_watermark('last_id', '42')
 
         assert [put['source'] for put in _puts(listing)] == ['test_source#last_id']
+
+
+@pytest.mark.usefixtures('workspaces')
+class TestAScheduledRunWithNothingSaved:
+    """Every plugin starts on in a new workspace (7.40.00): a scheduled run where nothing is saved for the plugin is
+    skipped quietly (no Lambda error: no async retry, no ingestor-errors alarm); a Run now still fails, saying so."""
+
+    def _not_set(self, _scope):
+        from shared.exceptions import WorkspaceCredentialsNotSet
+
+        raise WorkspaceCredentialsNotSet('nothing saved')
+
+    def test_the_fan_outs_run_is_skipped_and_counted(self):
+        with patch.object(base_ingestor, 'metrics') as metrics:
+            result = base_ingestor.run_in_workspace({'workspace_id': WS}, self._not_set)
+        assert result == {'status': 'skipped', 'reason': 'not_configured'}
+        metrics.add_metric.assert_called_once_with(name='IngestorNotConfigured', unit='Count', value=1)
+
+    def test_a_run_now_still_raises(self):
+        from shared.exceptions import WorkspaceCredentialsNotSet
+
+        with pytest.raises(WorkspaceCredentialsNotSet):
+            base_ingestor.run_in_workspace({'workspace_id': WS, 'execution_id': 'exec-1'}, self._not_set)
+
+    def test_another_configuration_error_still_raises(self):
+        def broken(_scope):
+            raise ConfigurationError('malformed')
+
+        with pytest.raises(ConfigurationError):
+            base_ingestor.run_in_workspace({'workspace_id': WS}, broken)
+
+    @pytest.mark.parametrize(('event', 'scheduled'), [
+        ({'workspace_id': WS}, True), ({'workspace_id': WS, 'execution_id': ''}, True),
+        ({'workspace_id': WS, 'execution_id': 'exec-1'}, False), ('not a mapping', False),
+    ])
+    def test_a_scheduled_workspace_run_is_one_without_an_execution_id(self, event, scheduled):
+        assert base_ingestor.is_scheduled_workspace_run(event) is scheduled

@@ -24,6 +24,9 @@ import { SECTION_TITLE } from '../Settings/sectionTitle'
 /** How often the status is read again while the export is being made. */
 export const EXPORT_POLL_MS = 5000
 
+/** The card's id: the delete card's "Go to Export" moves focus here (the card takes focus, not the tab order). */
+export const EXPORT_CARD_ID = 'workspace-export'
+
 const BADGE: Record<WorkspaceExport['status'], string> = {
   queued: 'badge-muted', running: 'badge-muted', completed: 'badge-ok', failed: 'badge-danger', expired: 'badge-muted',
   erased: 'badge-warn',
@@ -32,7 +35,7 @@ const BADGE: Record<WorkspaceExport['status'], string> = {
 export default function WorkspaceExportCard({ workspaceId, isAdmin }: Readonly<{ workspaceId: string; isAdmin: boolean }>) {
   const { t } = useTranslation()
   return (
-    <section className="card space-y-4" aria-labelledby="workspace-export-title">
+    <section id={EXPORT_CARD_ID} tabIndex={-1} className="card space-y-4 scroll-mt-4 outline-none" aria-labelledby="workspace-export-title">
       <div>
         <div className="flex items-center gap-2 mb-1">
           <PackageOpen className="text-accent" size={16} aria-hidden="true" />

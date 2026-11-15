@@ -376,6 +376,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/shared/persona_feedback_preview.py': (2, {'meta.client': 1}),
     'lambda/shared/request_workspace.py': (0, {'cached_table': 1}),
     'lambda/shared/workspace_plugin_settings.py': (0, {'meta.client': 1, 'transact': 1}),
+    # A workspace's rename (7.40.00): one transaction on voc-workspaces' control plane (META's name, the listing row's
+    # move, the acting admin's check), like a workspace's creation; no data-path key.
+    'lambda/shared/workspace_rename.py': (0, {'meta.client': 1, 'transact': 1}),
     # The projects' and jobs' tables (get_projects_table, get_jobs_table) and the PROJECT# / TYPE#PROJECT keys,
     # counted since phase 3's project key builder (shared/project_keys.py): the projects, their jobs and
     # every reader of those tables move with projects (phase 3), the MCP tokens' and grants' rows in them

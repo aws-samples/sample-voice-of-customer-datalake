@@ -189,6 +189,25 @@ describe('isWebSearchAvailable', () => {
     await loadRuntimeConfig()
     expect(isEngineeringAvailable()).toBe(true)
   })
+
+  it('reads features.workspaceDelete only as true, and VITE_ENABLE_WORKSPACE_DELETE on the mock-only path', async () => {
+    const answers = []
+    for (const features of [{ workspaceDelete: true }, { workspaceDelete: false }, undefined]) {
+      vi.resetModules()
+      stubConfigJson(features === undefined ? baseConfig : { ...baseConfig, features })
+      const { loadRuntimeConfig, isWorkspaceDeleteAvailable } = await import('./runtimeConfig')
+      answers.push(isWorkspaceDeleteAvailable())   // (before the config loads)
+      await loadRuntimeConfig()
+      answers.push(isWorkspaceDeleteAvailable())
+    }
+    expect(answers).toStrictEqual([false, true, false, false, false, false])
+    vi.resetModules()
+    vi.stubEnv('VITE_ENABLE_WORKSPACE_DELETE', 'true')
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('config.json unavailable')))
+    const { loadRuntimeConfig, isWorkspaceDeleteAvailable } = await import('./runtimeConfig')
+    await loadRuntimeConfig()
+    expect(isWorkspaceDeleteAvailable()).toBe(true)
+  })
 })
 
 describe('board pool and email capability', () => {

@@ -281,6 +281,52 @@
         "erased": "Apagada por uma eliminação"
       }
     },
+    "rename": {
+      "title": "Nome do espaço de trabalho",
+      "description": "O nome que todos os membros veem no menu de espaços de trabalho do cabeçalho e na lista de espaços de trabalho.",
+      "address": "Endereço:",
+      "readOnly": "Somente os administradores deste espaço de trabalho podem renomeá-lo.",
+      "open": "Renomear",
+      "dialogTitle": "Renomear o espaço de trabalho",
+      "slugStays": "O endereço dele, {{address}}, continua o mesmo: links e favoritos continuam funcionando.",
+      "label": "Nome",
+      "save": "Salvar",
+      "nameInvalid": "Digite um nome de 1 a {{max, number}} caracteres.",
+      "nameControl": "O nome não pode conter caracteres de controle, como tabulações ou quebras de linha.",
+      "done": "O espaço de trabalho agora se chama {{name}}."
+    },
+    "delete": {
+      "title": "Excluir o espaço de trabalho",
+      "permanent": "Excluir este espaço de trabalho é permanente e não pode ser desfeito.",
+      "itemsTitle": "A exclusão remove, para todos:",
+      "items": {
+        "feedback": "Todo o feedback e as importações dele",
+        "projects": "Os projetos, documentos, protótipos e arquétipos dele",
+        "agents": "Os agentes e fluxos de trabalho dele",
+        "settings": "As configurações, plug-ins e credenciais dele",
+        "files": "Os arquivos dele",
+        "members": "O acesso de todos os membros",
+        "conversations": "As conversas com o assistente e a memória pessoal de cada membro neste espaço de trabalho",
+        "companyMemory": "A memória da empresa dele"
+      },
+      "notInExport": "A exportação não inclui as conversas dos membros com o assistente nem a memória pessoal deles: depois que o espaço de trabalho é excluído, elas se perdem para sempre.",
+      "exportFirst": "Exporte o espaço de trabalho antes para guardar uma cópia do feedback, da configuração, dos membros e do histórico de auditoria dele.",
+      "exportLink": "Ir para Exportação",
+      "open": "Excluir o espaço de trabalho…",
+      "dialogTitle": "Excluir {{name}}?",
+      "permanentFor": "Isto exclui {{name}} permanentemente para todos os membros. Não pode ser desfeito.",
+      "typeSlug": "Digite o slug do espaço de trabalho, {{slug}}, para confirmar",
+      "reasonLabel": "Motivo da exclusão",
+      "reasonHint": "Fica guardado para sempre no log de auditoria. Por exemplo: \"Equipe encerrada, ticket #123\". Nunca digite aqui um nome, um endereço de e-mail ou um número de telefone.",
+      "understood": "Entendo que a exclusão deste espaço de trabalho não pode ser desfeita.",
+      "confirm": "Excluir o espaço de trabalho",
+      "deleting": "Excluindo…",
+      "doneTitle": "{{name}} está sendo excluído",
+      "doneGone": "Ele já não está disponível para nenhum membro: ninguém consegue mais abri-lo.",
+      "doneBackground": "Os dados dele são excluídos em segundo plano, começando daqui a cerca de 20 minutos.",
+      "doneBackgroundAt": "Os dados dele são excluídos em segundo plano a partir de cerca de {{time}} (daqui a uns 20 minutos).",
+      "leave": "Ir para meus espaços de trabalho"
+    },
     "config": {
       "categoriesTitle": "Categorias",
       "categoriesDescription": "As categorias próprias deste espaço de trabalho classificam seus feedbacks. Um espaço de trabalho novo não tem nenhuma: seus feedbacks são classificados com as categorias padrão integradas até que seus administradores adicionem algumas. Nada é copiado das categorias da implantação.",
@@ -323,7 +369,14 @@
       "genericWithReason": "Não funcionou: {{reason}}",
       "exportRunning": "Já está em curso uma exportação deste espaço de trabalho. Aguarde que termine.",
       "exportErasureRunning": "Está em curso uma eliminação neste espaço de trabalho. Inicie a exportação quando terminar.",
-      "exportNotDownloadable": "Esta exportação já não pode ser transferida. Inicie uma nova exportação."
+      "exportNotDownloadable": "Esta exportação já não pode ser transferida. Inicie uma nova exportação.",
+      "renameChangedMeanwhile": "O espaço de trabalho mudou nesse meio-tempo. Recarregue a página e tente novamente.",
+      "deleteSlugMismatch": "Esse não é o slug deste espaço de trabalho. Digite-o exatamente para confirmar a exclusão.",
+      "deleteExportRunning": "Uma exportação deste espaço de trabalho está em andamento. Aguarde terminar e depois exclua o espaço de trabalho.",
+      "deleteErasureRunning": "Uma eliminação de dados está em andamento neste espaço de trabalho. Exclua o espaço de trabalho quando ela terminar.",
+      "deleteChangedMeanwhile": "O espaço de trabalho mudou enquanto a exclusão era solicitada. Recarregue a página e tente novamente.",
+      "deleteUnavailable": "A exclusão de espaços de trabalho não está disponível nesta implantação.",
+      "deleteNotStarted": "O espaço de trabalho foi marcado para exclusão, mas a exclusão não pôde começar. Peça a um administrador da plataforma que a cancele ou retome."
     }
   },
   "timeRange": {

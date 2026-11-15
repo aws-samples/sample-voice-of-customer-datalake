@@ -16,12 +16,24 @@
  *    Disable turns it off again.
  * 6. The platform console, inside acme, edits the deployment's default brand: the save names no workspace, and the
  *    deployment's brand (read without the header) has the new name; the spec puts the old one back.
+ * 7. In acme, Workspace settings → "Workspace name" → Rename (7.40.00): a blank name cannot be saved and a name over
+ *    80 characters is refused in the dialog, neither sending anything; a good one is one `PUT /me/workspaces/current`
+ *    carrying acme's `X-Workspace-Id`, and the card and the header's workspace menu show the new name while the
+ *    address stays `/w/acme/` (the slug never changes). The spec puts the old name back.
+ * 8. Workspace settings → "Delete workspace" (7.40.00) on a workspace the spec creates for it (acme-popup): the
+ *    dialog's Delete stays disabled until the slug is typed exactly, a reason is given and "I understand" is ticked;
+ *    the delete is one `POST /me/workspaces/current/delete` (`confirm_slug`, `legal_basis`) with its id, the last
+ *    dialog says it is being deleted, "Go to my workspaces" is a full page load to `/` that no longer offers it, and
+ *    `/w/acme-popup/` is "Workspace not found" (its `GET /me/workspaces/current` a 404).
  *
- * MOCK ONLY: on a deployment these would create a workspace and change real memberships, and a workspace cannot be
- * deleted yet (phase 4). The mock's state lives in its process: the spec turns its workspaces on
- * (`PUT /__mock/workspaces`, which starts them afresh) and off again afterwards, so the other mock specs keep the app
- * without workspaces. The mock has no sign-in, so each page gets admin-demo's identity (its `sub`, which the members
- * page compares to find the caller's own row) in the app's stored session.
+ * MOCK ONLY: on a deployment these would create a workspace and change real memberships (the deployment-side
+ * lifecycle, which deletes what it made, is workspace-lifecycle.spec.ts). The mock's state lives in its process: the
+ * spec turns its workspaces on (`PUT /__mock/workspaces`, which starts them afresh) and off again afterwards, which
+ * also drops the rename, the extra workspaces and the delete, so the other mock specs keep the app without
+ * workspaces. The mock has no sign-in, so each page gets admin-demo's identity (its `sub`, which the members page
+ * compares to find the caller's own row) in the app's stored session. Step 8 needs the dev server started with
+ * `VITE_ENABLE_WORKSPACE_DELETE=true` (the dev mock's `features.workspaceDelete`; the repo root's
+ * scripts/dev-with-mock.mjs sets it), else the page offers no delete and the step fails saying so.
  *
  *   E2E_MOCK=1 E2E_SITE=http://127.0.0.1:<VP> E2E_API=http://127.0.0.1:<MP> E2E_OUT=/tmp/e2e-mock \
  *     npx playwright test -c playwright.config.ts --reporter=line tests/workspace-admin.spec.ts
@@ -29,8 +41,9 @@
 import { expect, type Page, type Request } from '@playwright/test'
 import { test } from '../lib/test'
 import { apiCall } from '../lib/api'
+import { dialogNamed } from '../lib/dialogs'
 import { apiUrl, MOCK } from '../lib/env'
-import { assertStep, roleOf, site } from '../lib/fixtures'
+import { assertStep, escapeRegExp, roleOf, site } from '../lib/fixtures'
 import { isRecord } from '../lib/guards'
 
 /** common.json workspaces.* strings (English). */
@@ -41,7 +54,16 @@ const TEXT = {
   lastAdmin: 'A workspace needs an admin: make another member an admin first.',
   acmeBrand: 'Acme Outfitters Trail Gear',
   deploymentBrand: 'Acme Outfitters Basecamp',
+  renamed: 'Acme Outfitters Trail Co-op',
+  popup: 'Acme Outfitters Pop-up',
+  deleteReason: 'Pop-up season over, ticket #2207',
 } as const
+
+/** The workspace step 8 creates and deletes (mock-workspaces.js: platform admins create one). */
+const POPUP_SLUG = 'acme-popup'
+
+/** platformWorkspacesApi.ts WORKSPACE_NAME_MAX (platform_workspaces.py validated_workspace_name). */
+const NAME_MAX = 80
 
 /** The console's address inside acme (the gate shows the picker for an address without a workspace). */
 const CONSOLE = '/w/acme/admin?tab=access&section=workspaces'
@@ -54,14 +76,35 @@ async function signInAsMockCaller(page: Page): Promise<void> {
   })
 }
 
-/** The id of the mock workspace `slug`, read from the platform list (so the spec never copies an id). */
-async function workspaceId(slug: string): Promise<string> {
+/** The mock workspace `slug` as the platform list answers it (`{}` when it lists none). */
+async function platformRow(slug: string): Promise<Record<string, unknown>> {
   const { status, body } = await apiCall('admin', 'GET', '/platform/workspaces')
   expect(status).toBe(200)
   const rows = isRecord(body) && Array.isArray(body['workspaces']) ? body['workspaces'] : []
   const row: unknown = rows.find((candidate: unknown) => isRecord(candidate) && candidate['slug'] === slug)
-  return isRecord(row) && typeof row['id'] === 'string' ? row['id'] : ''
+  return isRecord(row) ? row : {}
 }
+
+/** The id of the mock workspace `slug`, read from the platform list (so the spec never copies an id). */
+async function workspaceId(slug: string): Promise<string> {
+  const id = (await platformRow(slug))['id']
+  return typeof id === 'string' ? id : ''
+}
+
+/** Every `method` request to the API path `pathname` the page sends from now on. */
+function apiRequestsTo(page: Page, method: string, pathname: string): Request[] {
+  const seen: Request[] = []
+  const origin = new URL(apiUrl()).origin
+  page.on('request', (request) => {
+    const url = new URL(request.url())
+    if (url.origin === origin && url.pathname === pathname && request.method() === method) seen.push(request)
+  })
+  return seen
+}
+
+/** The header's workspace menu button for `name` with the Admin role (either label: with or without others to switch to). */
+const workspaceMenuButton = (page: Page, name: string) =>
+  page.getByRole('button', { name: new RegExp(`^Workspace: ${escapeRegExp(name)}, Admin\\.`) })
 
 /** The distinct X-Workspace-Id values of the API requests a document under `documentPath` sends from now on. */
 function workspaceIdsSent(page: Page, documentPath: string): () => string[] {
@@ -196,6 +239,118 @@ test.describe('workspace administration', () => {
         // The deployment's brand as it was, every field, for the specs after this one.
         await apiCall('admin', 'PUT', '/settings/brand', before)
       }
+    })
+  })
+
+  test('a workspace admin renames the workspace from Workspace settings; its address stays', async ({ page }, testInfo) => {
+    await assertStep(page, roleOf(testInfo), 'workspace-admin-07-rename', async () => {
+      const acmeId = await workspaceId('acme')
+      expect(acmeId).not.toBe('')
+      try {
+        await page.goto(site('/w/acme/workspace-settings'), { waitUntil: 'domcontentloaded' })
+        const card = page.getByRole('region', { name: 'Workspace name' })
+        await expect(card.getByText(TEXT.acme, { exact: true })).toBeVisible()
+        await expect(card).toContainText('Address: /w/acme')
+        const puts = apiRequestsTo(page, 'PUT', '/me/workspaces/current')
+
+        await card.getByRole('button', { name: 'Rename' }).click()
+        const dialog = dialogNamed(page, 'Rename the workspace')
+        await expect(dialog).toContainText('Its address, /w/acme, stays the same')
+        const field = dialog.getByLabel('Name', { exact: true })
+        const save = dialog.getByRole('button', { name: 'Save', exact: true })
+        await expect(field).toHaveValue(TEXT.acme)
+        // Blank once trimmed: nothing to save.
+        await field.fill('   ')
+        await expect(save).toBeDisabled()
+        // Over 80 characters: the field takes the first 80 only (its maxlength), so a longer name is never sent.
+        await field.fill('x'.repeat(NAME_MAX + 1))
+        await expect(field).toHaveValue('x'.repeat(NAME_MAX))
+        // A control character (a tab): refused in the dialog, which stays open.
+        await field.fill(`${TEXT.acme}\tTrail`)
+        await save.click()
+        await expect(dialog.getByRole('alert')).toHaveText('The name cannot contain control characters, such as tabs or line breaks.')
+        expect(puts, 'no PUT for a name the dialog refuses').toHaveLength(0)
+
+        await field.fill(`  ${TEXT.renamed}  `)
+        const [put] = await Promise.all([
+          page.waitForRequest((request) => request.method() === 'PUT' && new URL(request.url()).pathname === '/me/workspaces/current'),
+          save.click(),
+        ])
+        expect(put.headers()['x-workspace-id']).toBe(acmeId)
+        expect(put.postDataJSON()).toStrictEqual({ name: TEXT.renamed })
+        await expect(card.getByRole('status')).toHaveText(`The workspace is now called ${TEXT.renamed}.`)
+        await expect(dialogNamed(page, 'Rename the workspace')).toHaveCount(0)
+        await expect(card.getByText(TEXT.renamed, { exact: true })).toBeVisible()
+        await expect(workspaceMenuButton(page, TEXT.renamed)).toBeVisible()
+        // The slug, so the address, is unchanged: on the card, in the page's URL and on the server.
+        await expect(card).toContainText('Address: /w/acme')
+        expect(new URL(page.url()).pathname).toBe('/w/acme/workspace-settings')
+        expect(puts).toHaveLength(1)
+        expect(await platformRow('acme')).toMatchObject({ id: acmeId, name: TEXT.renamed, slug: 'acme' })
+      } finally {
+        // acme's name as it was, for the steps after this one (the switch's next call starts afresh anyway).
+        await apiCall('admin', 'PUT', '/me/workspaces/current', { name: TEXT.acme }, { workspace: acmeId })
+      }
+    })
+  })
+
+  test('a workspace admin deletes a workspace from Workspace settings: confirmed, gone, not found', async ({ page }, testInfo) => {
+    await assertStep(page, roleOf(testInfo), 'workspace-admin-08-delete', async () => {
+      // Its own workspace (the caller its admin), so the steps above keep theirs.
+      expect((await apiCall('admin', 'POST', '/platform/workspaces', { name: TEXT.popup, slug: POPUP_SLUG })).status).toBe(201)
+      const popupId = await workspaceId(POPUP_SLUG)
+      expect(popupId).not.toBe('')
+      await page.goto(site(`/w/${POPUP_SLUG}/workspace-settings`), { waitUntil: 'domcontentloaded' })
+      await expect(page.getByRole('heading', { name: 'Workspace settings', level: 1 })).toBeVisible()
+      await expect(page.getByRole('region', { name: 'Workspace name' })).toBeVisible()
+      const card = page.getByRole('region', { name: 'Delete workspace' })
+      await expect(card, 'no delete card: start the dev server with VITE_ENABLE_WORKSPACE_DELETE=true (scripts/dev-with-mock.mjs does)').toBeVisible()
+      await expect(card).toContainText('Deleting this workspace is permanent and cannot be undone.')
+
+      await card.getByRole('button', { name: 'Delete workspace…' }).click()
+      const dialog = dialogNamed(page, `Delete ${TEXT.popup}?`)
+      const slug = dialog.getByLabel(`Type the workspace's slug, ${POPUP_SLUG}, to confirm`)
+      const reason = dialog.getByLabel('Reason for deleting')
+      const understood = dialog.getByLabel('I understand that deleting this workspace cannot be undone.')
+      const confirm = dialog.getByRole('button', { name: 'Delete workspace', exact: true })
+      await expect(confirm).toBeDisabled()
+      // Reason and "I understand" with the slug not typed exactly (one letter short, then in capitals): disabled.
+      await reason.fill(TEXT.deleteReason)
+      await understood.check()
+      await slug.fill(POPUP_SLUG.slice(0, -1))
+      await expect(confirm).toBeDisabled()
+      await slug.fill(POPUP_SLUG.toUpperCase())
+      await expect(confirm).toBeDisabled()
+      await slug.fill(POPUP_SLUG)
+      await expect(confirm).toBeEnabled()
+      // Each of the other two taken away disables it again.
+      await reason.fill('')
+      await expect(confirm).toBeDisabled()
+      await reason.fill(TEXT.deleteReason)
+      await understood.uncheck()
+      await expect(confirm).toBeDisabled()
+      await understood.check()
+      await expect(confirm).toBeEnabled()
+
+      const [request] = await Promise.all([
+        page.waitForRequest((sent) => sent.method() === 'POST' && new URL(sent.url()).pathname === '/me/workspaces/current/delete'),
+        confirm.click(),
+      ])
+      expect(request.headers()['x-workspace-id']).toBe(popupId)
+      expect(request.postDataJSON()).toStrictEqual({ confirm_slug: POPUP_SLUG, legal_basis: TEXT.deleteReason })
+      const done = dialogNamed(page, `${TEXT.popup} is being deleted`)
+      await expect(done.getByRole('status')).toContainText('It is gone for every member now: nobody can open it any more.')
+      await Promise.all([page.waitForEvent('load'), done.getByRole('button', { name: 'Go to my workspaces' }).click()])
+      expect(new URL(page.url()).pathname).toBe('/')
+      // The list still names it until the job removes its rows; the page offers the others only.
+      await expect(page.getByRole('heading', { name: 'Choose a workspace' })).toBeVisible()
+      await expect(page.getByRole('navigation', { name: 'Your workspaces' }).getByRole('link', { name: new RegExp(escapeRegExp(TEXT.popup)) })).toHaveCount(0)
+
+      expect((await apiCall('admin', 'GET', '/me/workspaces/current', undefined, { workspace: popupId, expect: [404] })).status).toBe(404)
+      expect((await platformRow(POPUP_SLUG))['status']).toBe('deleting')
+      await page.goto(site(`/w/${POPUP_SLUG}/`), { waitUntil: 'domcontentloaded' })
+      await expect(page.getByRole('heading', { name: 'Workspace not found' })).toBeVisible()
+      await expect(page.getByRole('navigation', { name: 'Main' })).toHaveCount(0)
     })
   })
 })

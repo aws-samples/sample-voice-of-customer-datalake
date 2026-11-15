@@ -1,6 +1,8 @@
 // Workspaces mock, in the wire shapes of lambda/api/workspaces_handler.py (docs/multi-workspace.md):
 //   GET  /me/workspaces                          → {workspaces: [{id, name, slug, role}]}, by name
 //   GET  /me/workspaces/current                  → {workspace: {id, name, slug, role, platform_admin}} for X-Workspace-Id
+//   PUT  /me/workspaces/current                  {name} → the same answer, renamed (the workspace's admins; the slug
+//        stays): 400 for a name of 0 or over 80 characters once trimmed, or with a control character (workspace_rename.py)
 //   GET  /me/workspaces/current/members          → {members: [{sub, role, email, name, invited_by, joined_at}], next_cursor}
 //   POST /me/workspaces/current/members          {email, role} → 201 {member: {…, account: 'existing'|'created'}}
 //   PUT  /me/workspaces/current/members/{sub}    {role} → {member: {sub, role}}
@@ -49,6 +51,7 @@ const LAST_ADMIN = 'A workspace needs an admin: make another member an admin fir
 const ALREADY_MEMBER = 'That person is already a member of this workspace';
 const EMAIL_ELSEWHERE = 'An account already uses this email under another spelling: add it as that account writes it';
 const SLUG_TAKEN = 'That slug is taken: choose another';
+const CONTROL_CHARACTER = /\p{Cc}/u;
 const NOT_PLATFORM_ADMIN = 'Platform admin access required';
 
 const ACME_ID = 'ws_01JCACME0000000000000000A1';
@@ -247,6 +250,32 @@ function currentWorkspace(req, send, shared) {
   return send(200, { workspace: { id, name, slug, role: entry.role, platform_admin: entry.platformAdmin } });
 }
 
+/** The 400 of a rename's body (platform_workspaces.py `validated_workspace_name`), or null; `name` is trimmed. */
+function renameRefusal(body) {
+  const unknown = Object.keys(body ?? {}).filter((field) => field !== 'name').sort();
+  if (unknown.length > 0) return `Unknown field(s): ${unknown.join(', ')}`;
+  const value = body?.name ?? '';
+  if (typeof value !== 'string') return 'name must be a string';
+  const name = value.trim();
+  if (name === '') return 'name is required';
+  if ([...name].length > NAME_MAX) return `name must be at most ${NAME_MAX} characters`;
+  return CONTROL_CHARACTER.test(name) ? 'name must not contain control characters' : null;
+}
+
+/** `PUT /me/workspaces/current` {name}: the body first, then the workspace, then its admins only (workspace_rename.py). */
+function renameWorkspace(req, res, send, shared) {
+  shared.collectJson(req, res, (body) => {
+    const refusal = renameRefusal(body);
+    if (refusal !== null) return send(400, { success: false, error: refusal });
+    const entry = resolve(req, shared);
+    if (entry.refusal) return send(entry.refusal[0], { success: false, error: entry.refusal[1] });
+    if (entry.role !== 'admin') return send(403, { success: false, error: NOT_WORKSPACE_ADMIN });
+    // The member rows answer the new name too (`GET /me/workspaces` reads the workspace's own name here).
+    entry.workspace.name = body.name.trim();
+    return currentWorkspace(req, send, shared);
+  });
+}
+
 /** The switch's fixtures; with `member` (a slug) the caller keeps only that workspace's membership. */
 function switchFixtures(member, shared) {
   const workspaces = fixtures(shared.mockCaller.sub, shared.mockSub);
@@ -282,13 +311,17 @@ function control(req, res, send, shared) {
   });
 }
 
-/** Handle the workspace, members, platform and `/__mock/workspaces` routes; returns true when the request was taken. */
+/** Handle the workspace (and its rename), members, platform and `/__mock/workspaces` routes; true when the request was taken. */
 export function handleWorkspaceRoutes(req, res, url, send, shared) {
   if (url.pathname === CONTROL_ROUTE && req.method === 'PUT') {
     control(req, res, send, shared);
     return true;
   }
   if (handleMembers(req, res, url, send, shared) || handlePlatform(req, res, url, send, shared)) return true;
+  if (url.pathname === '/me/workspaces/current' && req.method === 'PUT') {
+    renameWorkspace(req, res, send, shared);
+    return true;
+  }
   if (req.method !== 'GET') return false;
   if (url.pathname === '/me/workspaces') {
     send(200, { workspaces: myWorkspaces(shared) });

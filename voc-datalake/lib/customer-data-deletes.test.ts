@@ -134,8 +134,9 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
   // (6.11.00, lambda/shared/workspace_members.py remove_user_memberships), each audited first, in the same scope.
   WorkspacesTable: {
     'VocApiStack/WorkspacesLambdaRole': {
-      scope: ['PLUGIN#*', 'USER#*', 'WS#*'],
-      why: 'membership removal (MEMBER# and USER# rows only) and a disabled plugin\'s PLUGIN# row: configuration',
+      scope: ['PLUGIN#*', 'WORKSPACES', 'USER#*', 'WS#*'],
+      why: 'membership removal (MEMBER# and USER# rows only), a disabled plugin\'s PLUGIN# row and a renamed workspace\'s '
+        + 'old listing row (moved to its new sort key, 7.40.00): configuration',
     },
     'VocApiStack/UsersLambdaRole': {
       scope: ['USER#*', 'WS#*'], why: 'a deleted user\'s memberships: their MEMBER# and USER# rows only, before the account goes',

@@ -35,6 +35,8 @@ export interface StepInputs {
   signals: { feedback_present: boolean; feedback_form_configured: boolean } | undefined
   /** Number of scrapers configured; only fetched when the signals cannot prove a source. */
   scraperCount: number | undefined
+  /** Number of review pages and app connectors configured (the Data sources page's app-config cards); read with the scrapers. */
+  appConfigCount: number | undefined
   sessionCount: number | undefined
   projects: readonly Project[] | undefined
 }
@@ -56,15 +58,18 @@ export function ownsAProject(projects: readonly Project[], userSub: string | und
 }
 
 /**
- * A source is connected when a feedback form or a scraper is configured — or
- * when feedback has arrived at all, since it can only come from a source
- * (plugins, manual import).
+ * A source is connected when a feedback form, a scraper, or a review page / app
+ * connector is configured — or when feedback has arrived at all, since it can
+ * only come from a source (plugins, manual import).
  */
-export function sourceConnected(inputs: Pick<StepInputs, 'signals' | 'scraperCount'>): boolean | undefined {
-  const { signals, scraperCount } = inputs
+export function sourceConnected(
+  inputs: Pick<StepInputs, 'signals' | 'scraperCount' | 'appConfigCount'>,
+): boolean | undefined {
+  const { signals, scraperCount, appConfigCount } = inputs
   if (signals?.feedback_present === true || signals?.feedback_form_configured === true) return true
-  if (scraperCount !== undefined) return scraperCount > 0
-  return undefined
+  if ((scraperCount ?? 0) > 0 || (appConfigCount ?? 0) > 0) return true
+  if (scraperCount === undefined || appConfigCount === undefined) return undefined
+  return false
 }
 
 /** Whether the scraper list must be read to settle the source step. */

@@ -278,6 +278,52 @@
         "erased": "Durch eine Löschung entfernt"
       }
     },
+    "rename": {
+      "title": "Name des Arbeitsbereichs",
+      "description": "Der Name, den alle Mitglieder im Arbeitsbereichsmenü der Kopfzeile und in der Liste der Arbeitsbereiche sehen.",
+      "address": "Adresse:",
+      "readOnly": "Nur die Admins dieses Arbeitsbereichs können ihn umbenennen.",
+      "open": "Umbenennen",
+      "dialogTitle": "Arbeitsbereich umbenennen",
+      "slugStays": "Seine Adresse {{address}} bleibt gleich: Links und Lesezeichen funktionieren weiter.",
+      "label": "Name",
+      "save": "Speichern",
+      "nameInvalid": "Geben Sie einen Namen mit 1 bis {{max, number}} Zeichen ein.",
+      "nameControl": "Der Name darf keine Steuerzeichen wie Tabulatoren oder Zeilenumbrüche enthalten.",
+      "done": "Der Arbeitsbereich heißt jetzt {{name}}."
+    },
+    "delete": {
+      "title": "Arbeitsbereich löschen",
+      "permanent": "Das Löschen dieses Arbeitsbereichs ist endgültig und lässt sich nicht rückgängig machen.",
+      "itemsTitle": "Beim Löschen wird für alle entfernt:",
+      "items": {
+        "feedback": "Sein gesamtes Feedback und alle Importe",
+        "projects": "Seine Projekte, Dokumente, Prototypen und Personas",
+        "agents": "Seine Agenten und Workflows",
+        "settings": "Seine Einstellungen, Plugins und Zugangsdaten",
+        "files": "Seine Dateien",
+        "members": "Der Zugriff aller Mitglieder darauf",
+        "conversations": "Die Assistenten-Unterhaltungen und das persönliche Gedächtnis jedes Mitglieds in diesem Arbeitsbereich",
+        "companyMemory": "Sein Unternehmensgedächtnis"
+      },
+      "notInExport": "Der Export enthält weder die Assistenten-Unterhaltungen noch das persönliche Gedächtnis der Mitglieder: Sobald der Arbeitsbereich gelöscht ist, sind sie unwiderruflich verloren.",
+      "exportFirst": "Exportieren Sie den Arbeitsbereich zuerst, um eine Kopie seines Feedbacks, seiner Konfiguration, seiner Mitglieder und seines Prüfverlaufs zu behalten.",
+      "exportLink": "Zum Export",
+      "open": "Arbeitsbereich löschen…",
+      "dialogTitle": "{{name}} löschen?",
+      "permanentFor": "Damit wird {{name}} für alle Mitglieder endgültig gelöscht. Das lässt sich nicht rückgängig machen.",
+      "typeSlug": "Geben Sie zur Bestätigung den Slug des Arbeitsbereichs ein: {{slug}}",
+      "reasonLabel": "Grund für das Löschen",
+      "reasonHint": "Wird dauerhaft im Audit-Protokoll gespeichert. Zum Beispiel: „Team aufgelöst, Ticket #123“. Geben Sie hier niemals einen Namen, eine E-Mail-Adresse oder eine Telefonnummer ein.",
+      "understood": "Ich verstehe, dass sich das Löschen dieses Arbeitsbereichs nicht rückgängig machen lässt.",
+      "confirm": "Arbeitsbereich löschen",
+      "deleting": "Wird gelöscht…",
+      "doneTitle": "{{name}} wird gelöscht",
+      "doneGone": "Er ist jetzt für alle Mitglieder verschwunden: Niemand kann ihn mehr öffnen.",
+      "doneBackground": "Seine Daten werden im Hintergrund gelöscht, beginnend in etwa 20 Minuten.",
+      "doneBackgroundAt": "Seine Daten werden im Hintergrund gelöscht, beginnend gegen {{time}} (in etwa 20 Minuten).",
+      "leave": "Zu meinen Arbeitsbereichen"
+    },
     "config": {
       "categoriesTitle": "Kategorien",
       "categoriesDescription": "Die eigenen Kategorien dieses Arbeitsbereichs ordnen sein Feedback ein. Ein neuer Arbeitsbereich hat keine: Sein Feedback wird mit den integrierten Standardkategorien eingeordnet, bis seine Admins eigene anlegen. Von den Kategorien der Bereitstellung wird nichts übernommen.",
@@ -320,7 +366,14 @@
       "genericWithReason": "Das hat nicht funktioniert: {{reason}}",
       "exportRunning": "Ein Export dieses Arbeitsbereichs läuft bereits. Warten Sie, bis er fertig ist.",
       "exportErasureRunning": "In diesem Arbeitsbereich läuft eine Löschung. Starten Sie den Export, wenn sie beendet ist.",
-      "exportNotDownloadable": "Dieser Export kann nicht mehr heruntergeladen werden. Starten Sie einen neuen Export."
+      "exportNotDownloadable": "Dieser Export kann nicht mehr heruntergeladen werden. Starten Sie einen neuen Export.",
+      "renameChangedMeanwhile": "Der Arbeitsbereich hat sich inzwischen geändert. Laden Sie die Seite neu und versuchen Sie es erneut.",
+      "deleteSlugMismatch": "Das ist nicht der Slug dieses Arbeitsbereichs. Geben Sie ihn genau ein, um das Löschen zu bestätigen.",
+      "deleteExportRunning": "Ein Export dieses Arbeitsbereichs läuft. Warten Sie, bis er fertig ist, und löschen Sie den Arbeitsbereich dann.",
+      "deleteErasureRunning": "In diesem Arbeitsbereich läuft eine Löschung. Löschen Sie den Arbeitsbereich, wenn sie beendet ist.",
+      "deleteChangedMeanwhile": "Der Arbeitsbereich hat sich geändert, während das Löschen angefordert wurde. Laden Sie die Seite neu und versuchen Sie es erneut.",
+      "deleteUnavailable": "Das Löschen eines Arbeitsbereichs ist in dieser Bereitstellung nicht verfügbar.",
+      "deleteNotStarted": "Der Arbeitsbereich ist zum Löschen markiert, aber das Löschen konnte nicht starten. Bitten Sie einen Plattform-Admin, es abzubrechen oder fortzusetzen."
     }
   },
   "timeRange": {

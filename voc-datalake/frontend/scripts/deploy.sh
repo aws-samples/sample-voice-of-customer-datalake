@@ -80,6 +80,8 @@ EMAIL_AVAILABLE=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="EmailAv
 PASSKEY_AVAILABLE=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="PasskeyAvailable") | .OutputValue // "false"')
 # "true" only on a deployment with -c engineeringAgents=true (VocApiStack's EngineeringAvailable).
 ENGINEERING_AVAILABLE=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="EngineeringAvailable") | .OutputValue // "false"')
+# "true" only on a deployment with -c workspaceHardDelete=true (VocApiStack's WorkspaceDeleteAvailable).
+WORKSPACE_DELETE_AVAILABLE=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="WorkspaceDeleteAvailable") | .OutputValue // "false"')
 BOARD_USER_POOL_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="BoardUserPoolId") | .OutputValue // empty')
 BOARD_CLIENT_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="BoardUserPoolClientId") | .OutputValue // empty')
 BOARD_SIGN_IN=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="BoardSignInMode") | .OutputValue // "email_otp"')
@@ -119,6 +121,7 @@ echo "  Cognito Region: $COGNITO_REGION"
 echo "  Identity Pool: $IDENTITY_POOL_ID"
 echo "  Email: $EMAIL_AVAILABLE"
 echo "  Engineering: $ENGINEERING_AVAILABLE"
+echo "  Workspace delete: $WORKSPACE_DELETE_AVAILABLE"
 echo "  Board Pool: ${BOARD_USER_POOL_ID:-none}"
 echo "  Realtime: ${REALTIME_DNS:-none}"
 
@@ -147,6 +150,7 @@ jq -n \
   --argjson email "$([ "$EMAIL_AVAILABLE" = "true" ] && echo true || echo false)" \
   --argjson passkey "$([ "$PASSKEY_AVAILABLE" = "true" ] && echo true || echo false)" \
   --argjson engineering "$([ "$ENGINEERING_AVAILABLE" = "true" ] && echo true || echo false)" \
+  --argjson workspaceDelete "$([ "$WORKSPACE_DELETE_AVAILABLE" = "true" ] && echo true || echo false)" \
   --arg boardUserPoolId "$BOARD_USER_POOL_ID" \
   --arg boardClientId "$BOARD_CLIENT_ID" \
   --arg boardSignIn "$BOARD_SIGN_IN" \
@@ -165,7 +169,8 @@ jq -n \
       webSearch: $webSearch,
       email: $email,
       passkey: $passkey,
-      engineering: $engineering
+      engineering: $engineering,
+      workspaceDelete: $workspaceDelete
     }
   } + (if $boardUserPoolId != "" and $boardClientId != "" then {
     board: {

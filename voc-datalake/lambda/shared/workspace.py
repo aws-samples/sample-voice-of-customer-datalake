@@ -131,6 +131,12 @@ class MembershipCache:
         for platform_admin in (False, True):
             self._entries.pop((ws, sub, platform_admin), None)
 
+    def invalidate_workspace(self, ws: str) -> None:
+        """Forget every member's resolved ``ws`` in this container (a rename changes the name each holds). Other warm
+        containers keep theirs until the TTL ends (30 s)."""
+        for key in [key for key in self._entries if key[0] == ws]:
+            del self._entries[key]
+
 
 def _workspace_id(event: Mapping[str, Any]) -> str:
     value = request_header(event, WORKSPACE_HEADER)

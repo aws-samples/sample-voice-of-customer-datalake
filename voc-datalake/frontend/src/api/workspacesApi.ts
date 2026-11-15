@@ -1,6 +1,6 @@
 /**
- * @fileoverview The caller's workspaces (`GET /me/workspaces`, `GET /me/workspaces/current`;
- * lambda/api/workspaces_handler.py, docs/multi-workspace.md).
+ * @fileoverview The caller's workspaces (`GET /me/workspaces`, `GET /me/workspaces/current`), and the rename of the
+ * current one (`PUT /me/workspaces/current`; lambda/api/workspaces_handler.py, docs/multi-workspace.md).
  *
  * `/me/workspaces` lists the workspaces the caller is a member of, by name, each with the role of its
  * membership row; `/current` answers the workspace `X-Workspace-Id` names as the caller may act in it (a 404
@@ -12,6 +12,7 @@
  */
 import { z } from 'zod'
 import { fetchApi } from './client'
+import { put } from './requestKit'
 import { isWorkspaceSlug } from '../workspace/workspacePath'
 import type { CurrentWorkspace } from '../workspace/currentWorkspace'
 
@@ -53,4 +54,10 @@ export const workspacesApi = {
   list: async (): Promise<CurrentWorkspace[]> => readMyWorkspaces(await fetchApi<unknown>('/me/workspaces')),
   /** Sent with the current workspace's `X-Workspace-Id` (api/baseUrl.ts); rejects with the API's 404 for a non-member. */
   current: async (): Promise<CurrentWorkspace> => CurrentSchema.parse(await fetchApi<unknown>('/me/workspaces/current')).workspace,
+  /**
+   * Rename the current workspace (its admins; the slug, so its address, stays): the workspace as `current` answers
+   * it. Its refusals are workspaceRefusals.ts `RENAME_REFUSALS`.
+   */
+  rename: async (name: string): Promise<CurrentWorkspace> =>
+    CurrentSchema.parse(await fetchApi<unknown>('/me/workspaces/current', put({ name }))).workspace,
 }

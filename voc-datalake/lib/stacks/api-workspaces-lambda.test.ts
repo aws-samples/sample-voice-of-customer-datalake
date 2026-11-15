@@ -61,9 +61,10 @@ describe('the voc-workspaces-api Lambda', () => {
       .sort((a, b) => byCodeUnit(a.actions.join() + JSON.stringify(a.condition), b.actions.join() + JSON.stringify(b.condition)));
     expect(shape).toStrictEqual([
       { actions: ['dynamodb:ConditionCheckItem'], condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] } } },
-      // A member's removal: their MEMBER# and USER# rows (IAM pins the partition, not the sort key); a plugin disabled.
+      // A member's removal: their MEMBER# and USER# rows (IAM pins the partition, not the sort key); a plugin disabled;
+      // a renamed workspace's old listing row (7.40.00).
       { actions: ['dynamodb:DeleteItem'], condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [
-        'PLUGIN#*', 'USER#*', 'WS#*'] } } },
+        'PLUGIN#*', 'WORKSPACES', 'USER#*', 'WS#*'] } } },
       { actions: ['dynamodb:GetItem', 'dynamodb:Query'], condition: undefined },
       // A create's rows, an add's rows, the audits, and an enabled plugin's PLUGIN#{plugin} / WS#{ws} row (7.14.00).
       { actions: ['dynamodb:PutItem'], condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [
@@ -72,6 +73,10 @@ describe('the voc-workspaces-api Lambda', () => {
       { actions: ['dynamodb:UpdateItem'], condition: {
         'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['USER#*', 'WS#*'] },
         'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'role', 'sk'] } } },
+      // A rename (7.40.00): `name` alone, on META and the members' USER# rows.
+      { actions: ['dynamodb:UpdateItem'], condition: {
+        'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['USER#*', 'WS#*'] },
+        'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['name', 'pk', 'sk'] } } },
       // No `secret_status` update any more: a new workspace's META and listing row are written whole at creation.
       // The delete routes' (lib/stacks/api-workspace-delete.ts, pinned in api-workspace-delete.test.ts): the
       // platform's delete audit rows, the job row, and META's and the listing row's status.
@@ -91,10 +96,10 @@ describe('the voc-workspaces-api Lambda', () => {
     const others = withPrefix('dynamodb:').filter((s) => !/ExportsOutputFnGetAttWorkspaces/.test(s.resource));
     expect(others.length > 0 && others.every((s) => /ExportsOutputFnGetAttAggregates/.test(s.resource))).toBe(true);
     const resources = onWorkspaces().map((s) => s.resource);
-    // Five of its own, three of the delete routes'.
-    expect(resources).toHaveLength(8);
+    // Six of its own, three of the delete routes'.
+    expect(resources).toHaveLength(9);
     expect(resources.join('\n').match(/ExportsOutputFnGetAtt[A-Za-z]+/g)?.sort(byCodeUnit))
-      .toStrictEqual(Array<string>(9).fill('ExportsOutputFnGetAttWorkspaces'));
+      .toStrictEqual(Array<string>(10).fill('ExportsOutputFnGetAttWorkspaces'));
   });
 
   it('may Query the cost rows only on voc-aggregates (GET /platform/costs), and is told the table', () => {

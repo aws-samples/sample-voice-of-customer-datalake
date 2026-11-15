@@ -222,23 +222,34 @@ function getFeedbackItemTool(deps: ToolDeps): ServerToolDefinition {
   });
 }
 
+/**
+ * An unrestricted caller who sees no category: none is configured (a failed read throws instead), so new reviews
+ * get the processor's generic defaults (shared/categorization.py DEFAULT_CATEGORIES). Told to the model with the
+ * categories-first rule (guidance.ts) so it sets categories up before it proposes a data source; nothing is refused.
+ */
+const NO_CATEGORIES_NOTE = 'No categories are configured yet: new reviews are classified into generic default '
+  + 'categories until an administrator saves some. Before proposing a new data source, ask the user what they are '
+  + 'reviewing and propose categories (Categories first).';
+
+function categoriesNote(restricted: boolean, count: number): string | undefined {
+  if (restricted) return 'Only the categories this user may see are listed.';
+  return count === 0 ? NO_CATEGORIES_NOTE : undefined;
+}
+
 function listCategoriesTool(deps: ToolDeps): ServerToolDefinition {
   const spec = toolSpec(
     'list_categories',
     'The feedback categories the signed-in user can see: name (the id used in filters and in '
       + 'set_feedback_category), description, the product it belongs to, and its subcategories. Read this before '
-      + 'proposing a category change or filtering by category.',
+      + 'proposing a category change, filtering by category or proposing a new data source.',
     {},
   );
   return serverTool('list_categories', 'core', spec, async (input, ctx) => {
     parseToolInput(z.object({}).strict(), input);
     const { restricted, categories } = await readVisibleCategories(deps, ctx);
+    const note = categoriesNote(restricted, categories.length);
     return {
-      content: jsonResult({
-        count: categories.length,
-        ...(restricted ? { note: 'Only the categories this user may see are listed.' } : {}),
-        categories,
-      }),
+      content: jsonResult({ count: categories.length, ...(note === undefined ? {} : { note }), categories }),
     };
   });
 }

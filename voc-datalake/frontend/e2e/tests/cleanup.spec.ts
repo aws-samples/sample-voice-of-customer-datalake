@@ -12,6 +12,13 @@
  * (`DELETE` archives; agents first, because a workflow an active agent runs
  * answers 409), global MCP tokens revoked and memories forgotten, each as the
  * role that owns it.
+ *
+ * Workspaces (7.40.00, tests/workspace-lifecycle.spec.ts) and the review pages saved in them, from the ledger only,
+ * as the admin (a platform admin), each call with the workspace's `X-Workspace-Id`: a review page is deleted unless
+ * its workspace already answers 404 (being deleted: everything in it goes); a workspace still open is deleted with
+ * its slug and the reason "e2e cleanup" when the site's `features.workspaceDelete` is on. Without that flag it cannot
+ * be removed at all: its other members are removed and its plugins turned off, and it is reported as kept (a
+ * `finding` annotation), the admin test user still its admin.
  */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -22,6 +29,10 @@ import { isRecord } from '../lib/guards'
 import { E2E_PREFIX, OUT_DIR, RUN_ID, SUITE_NAME, removeAuthDir, type Role } from '../lib/env'
 import { runLedger, type Created, type EntityKind } from '../lib/ledger'
 import { deleteConversations, runConversations } from '../lib/runCleanup'
+import { cognitoSubFor } from '../lib/session'
+import {
+  E2E_DELETE_REASON, WEB_REVIEWS, answeredWorkspace, errorText, platformWorkspace, workspaceDeleteAvailable, workspacePlugins,
+} from '../lib/workspaces'
 
 interface Collection {
   kind: EntityKind
@@ -97,6 +108,80 @@ async function retireOwned(ledger: readonly Created[], proof: ProofLine[]): Prom
   }
 }
 
+/** Whether workspace `ws` still opens for the admin (`GET /me/workspaces/current` 200), and its slug; a 404: being deleted or gone. */
+async function openWorkspace(ws: string): Promise<{ status: number; ms: number; slug: string | null }> {
+  const res = await apiCall('admin', 'GET', '/me/workspaces/current', undefined, { workspace: ws, expect: [404] })
+  return { status: res.status, ms: res.ms, slug: answeredWorkspace(res.body)?.slug ?? null }
+}
+
+/** This run's review pages, each in its workspace, unless that workspace is already going (then they go with it). */
+async function deleteReviewPages(ledger: readonly Created[], proof: ProofLine[]): Promise<void> {
+  for (const page of ledger.filter((e) => e.kind === 'review-page' && isLedgerName(e.name) && e.workspace !== undefined)) {
+    const ws = page.workspace ?? ''
+    const open = await openWorkspace(ws)
+    if (open.status === 404) {
+      proof.push({ action: `DELETE /integrations/${WEB_REVIEWS}/apps/{${page.name}}`, status: 0, ms: 0, detail: `${page.id}: not sent, its workspace ${ws} answers 404 (deleting): the page goes with it` })
+      continue
+    }
+    const res = await apiCall('admin', 'DELETE', `/integrations/${WEB_REVIEWS}/apps/${encodeURIComponent(page.id)}`, undefined, { workspace: ws })
+    proof.push({ action: `DELETE /integrations/${WEB_REVIEWS}/apps/{${page.name}}`, status: res.status, ms: res.ms, detail: `${page.id} in ${ws}` })
+    expect.soft(res.status, `delete review page ${page.id}: ${errorText(res.body)}`).toBe(200)
+    const after = await apiCall('admin', 'GET', `/integrations/${WEB_REVIEWS}/apps`, undefined, { workspace: ws })
+    const left = listOf(after.body, 'apps').filter((app) => app['id'] === page.id)
+    proof.push({ action: `GET /integrations/${WEB_REVIEWS}/apps (after)`, status: after.status, ms: after.ms, detail: `${ws}: still listed ${left.length}` })
+    expect.soft(left, `review page ${page.id} still listed`).toEqual([])
+  }
+}
+
+/** A workspace that cannot be deleted here: every member but the admin removed, every plugin turned off. */
+async function retireKeptWorkspace(entry: Created, proof: ProofLine[]): Promise<void> {
+  const ws = entry.id
+  const admin = cognitoSubFor('admin')
+  const members = await apiCall('admin', 'GET', '/me/workspaces/current/members?limit=100', undefined, { workspace: ws })
+  expect.soft(members.status, `members of ${ws}: ${errorText(members.body)}`).toBe(200)
+  for (const sub of listOf(members.body, 'members').map((m) => stringField(m, 'sub') ?? '').filter((s) => s !== '' && s !== admin)) {
+    const res = await apiCall('admin', 'DELETE', `/me/workspaces/current/members/${encodeURIComponent(sub)}`, undefined, { workspace: ws })
+    proof.push({ action: `DELETE /me/workspaces/current/members/{member} of {${entry.name}}`, status: res.status, ms: res.ms, detail: ws })
+    expect.soft(res.status, `remove a member of ${ws}: ${errorText(res.body)}`).toBe(200)
+  }
+  const plugins = await apiCall('admin', 'GET', '/me/workspaces/current/plugins', undefined, { workspace: ws })
+  expect.soft(plugins.status, `plugins of ${ws}: ${errorText(plugins.body)}`).toBe(200)
+  for (const plugin of workspacePlugins(plugins.body).filter((p) => p.enabled)) {
+    const res = await apiCall('admin', 'PUT', `/me/workspaces/current/plugins/${encodeURIComponent(plugin.id)}`, { enabled: false }, { workspace: ws })
+    proof.push({ action: `PUT /me/workspaces/current/plugins/${plugin.id} {enabled: false} in {${entry.name}}`, status: res.status, ms: res.ms, detail: ws })
+    expect.soft(res.status, `turn ${plugin.id} off in ${ws}: ${errorText(res.body)}`).toBe(200)
+  }
+  test.info().annotations.push({
+    type: 'finding',
+    description: `workspace ${entry.name} (${ws}) kept: this deployment cannot delete a workspace (no features.workspaceDelete); its other members removed, its plugins off, the admin test user still its admin`,
+  })
+}
+
+/** This run's workspaces: deleted with their slug (with the deployment's delete flag), else retired as far as can be. */
+async function retireWorkspaces(ledger: readonly Created[], proof: ProofLine[]): Promise<void> {
+  const workspaces = ledger.filter((e) => e.kind === 'workspace' && isLedgerName(e.name))
+  if (workspaces.length === 0) return
+  const deleteOn = await workspaceDeleteAvailable()
+  for (const entry of workspaces) {
+    const open = await openWorkspace(entry.id)
+    if (open.status === 404) {
+      const row = await platformWorkspace(entry.id).catch((error: unknown) => ({ id: entry.id, name: '', slug: '', status: `unreadable: ${String(error)}` }))
+      proof.push({ action: `GET /me/workspaces/current {${entry.name}}`, status: open.status, ms: open.ms, detail: `already deleting (the spec's own delete); platform list: ${row?.status ?? 'not listed (removed)'}` })
+      expect.soft(row === null || row.status === 'deleting', `workspace ${entry.id} answers 404 but is listed ${row?.status ?? ''}`).toBe(true)
+      continue
+    }
+    expect.soft(open.status, `open workspace ${entry.id}`).toBe(200)
+    if (open.status !== 200) continue
+    if (!deleteOn || open.slug === null) {
+      await retireKeptWorkspace(entry, proof)
+      continue
+    }
+    const res = await apiCall('admin', 'POST', '/me/workspaces/current/delete', { confirm_slug: open.slug, legal_basis: E2E_DELETE_REASON }, { workspace: entry.id })
+    proof.push({ action: `POST /me/workspaces/current/delete {${entry.name}}`, status: res.status, ms: res.ms, detail: `${entry.id}: ${errorText(res.body) || 'deleting'}` })
+    expect.soft(res.status, `delete workspace ${entry.id}: ${errorText(res.body)}`).toBe(202)
+  }
+}
+
 async function listed(role: Role, c: Collection): Promise<Array<{ id: string; name: string }>> {
   const res = await apiCall(role, 'GET', c.list)
   return listOf(res.body, c.key)
@@ -149,6 +234,9 @@ test('cleanup: delete this run\'s e2e entities and prove it', async () => {
 
   await archiveAgentsAndWorkflows(ledger, proof)
   await retireOwned(ledger, proof)
+  // Review pages first: they are deleted inside their workspace, which must still open.
+  await deleteReviewPages(ledger, proof)
+  await retireWorkspaces(ledger, proof)
 
   fs.mkdirSync(OUT_DIR, { recursive: true })
   fs.writeFileSync(path.join(OUT_DIR, 'cleanup-proof.json'), JSON.stringify({ at: new Date().toISOString(), ledger, proof }, null, 2))

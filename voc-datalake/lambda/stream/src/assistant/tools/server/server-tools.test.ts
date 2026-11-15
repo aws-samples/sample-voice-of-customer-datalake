@@ -122,6 +122,33 @@ describe('list_categories', () => {
     expect(result.content).not.toContain('"note"');
   });
 
+  // Categories first (guidance.ts): an empty configuration tells the model to set categories up before a data source.
+  it.each([
+    ['nothing was ever saved', { categories: [], updated_at: null }],
+    ['the saved list is empty', { categories: [], updated_at: '2026-01-01' }],
+  ])('tells an unrestricted caller that no categories are configured when %s', async (_label, config) => {
+    const deps = fakeDeps({ 'GET /feedback/access': { all: true, categories: [], ...ALL_SOURCES }, 'GET /settings/categories': config });
+    const result = await serverTool(deps, 'list_categories').execute({}, fakeContext());
+    expect(JSON.parse(result.content)).toStrictEqual({
+      count: 0,
+      note: 'No categories are configured yet: new reviews are classified into generic default categories until an '
+        + 'administrator saves some. Before proposing a new data source, ask the user what they are reviewing and '
+        + 'propose categories (Categories first).',
+      categories: [],
+    });
+  });
+
+  it('never tells a restricted caller who sees none that none are configured', async () => {
+    const deps = fakeDeps({
+      'GET /feedback/access': { all: false, categories: ['returns'], ...ALL_SOURCES },
+      'GET /settings/categories': CONFIG,
+    });
+    const result = await serverTool(deps, 'list_categories').execute({}, fakeContext());
+    expect(JSON.parse(result.content)).toStrictEqual({
+      count: 0, note: 'Only the categories this user may see are listed.', categories: [],
+    });
+  });
+
   it('reports a failed config read as unavailable, not as zero categories', async () => {
     const deps = fakeDeps({
       'GET /feedback/access': { all: true, categories: [], ...ALL_SOURCES },

@@ -13,6 +13,10 @@
  *   dimensions card its "Classify review types"): the workspace's own reprocess job, replaying its reviews only.
  * - The workspace's export (since 7.17.00, WorkspaceExportCard.tsx): its admins start one, follow it and download
  *   it for 7 days; its other members are told who can.
+ * - The workspace's name (since 7.40.00, WorkspaceNameCard.tsx): every member reads it and its address; its admins
+ *   rename it (`PUT /me/workspaces/current`), the slug and so the address unchanged.
+ * - The workspace's delete (since 7.40.00, WorkspaceDeleteCard.tsx), last: for its admins only, and only on a
+ *   deployment that turns it on (config.json `features.workspaceDelete`, runtimeConfig.ts); nobody else sees it.
  *
  * The deployment's own sections of Administration stay there, for the deployment's `admins`: this page holds only
  * what the server keys by workspace. The server decides every save; the page only hides what the caller's role
@@ -36,6 +40,7 @@ import PageLoader from '../../components/PageLoader/PageLoader'
 import NotFound from '../../components/RouteErrorBoundary/NotFound'
 import { brandSettingsKey, useBrandSettings } from '../../hooks/useBrandSettings'
 import { api } from '../../api/client'
+import { isWorkspaceDeleteAvailable } from '../../runtimeConfig'
 import { useConfigStore } from '../../store/configStore'
 import { useCurrentWorkspace } from '../../workspace/currentWorkspace'
 import type { CurrentWorkspace } from '../../workspace/currentWorkspace'
@@ -43,7 +48,9 @@ import { useServerRole } from '../../workspace/useMyWorkspaces'
 import { BRAND_REFUSALS } from '../../workspace/workspaceRefusals'
 import BrandEditorCard from '../Settings/BrandEditorCard'
 import { useBrandForm } from '../Settings/useSettingsSync'
+import WorkspaceDeleteCard from './WorkspaceDeleteCard'
 import WorkspaceExportCard from './WorkspaceExportCard'
+import WorkspaceNameCard from './WorkspaceNameCard'
 import WorkspacePluginsCard from './WorkspacePluginsCard'
 
 export default function WorkspaceSettings() {
@@ -60,10 +67,12 @@ function WorkspaceSettingsFor({ workspace }: Readonly<{ workspace: CurrentWorksp
   return (
     <div className="max-w-4xl mx-auto min-w-0 w-full space-y-4 sm:space-y-6">
       <PageTitle title={t('workspaces.settings.title')} subtitle={t('workspaces.settings.subtitle', { name: workspace.name })} />
+      <WorkspaceNameCard workspace={workspace} isAdmin={isAdmin} />
       <WorkspaceBrandCard isAdmin={isAdmin} />
       <WorkspacePluginsCard workspaceId={workspace.id} isAdmin={isAdmin} />
       <WorkspaceConfigCards isAdmin={isAdmin} />
       <WorkspaceExportCard workspaceId={workspace.id} isAdmin={isAdmin} />
+      {isAdmin && isWorkspaceDeleteAvailable() ? <WorkspaceDeleteCard workspace={workspace} /> : null}
     </div>
   )
 }

@@ -138,8 +138,8 @@ function committedContext(): Record<string, unknown> {
 const outdirs: string[] = [];
 afterAll(() => { for (const dir of outdirs) rmSync(dir, { recursive: true, force: true }); });
 
-/** Run bin/voc-datalake.ts in process with `context`; `buildHardDelete`: with the refused hard delete built, as the
- *  harness builds it (lib/utils/workspace-hard-delete.ts), so its findings are judged too. */
+/** Run bin/voc-datalake.ts in process with `context`; `buildHardDelete`: with `-c workspaceHardDelete=true`
+ *  (lib/utils/workspace-hard-delete.ts), so the hard delete's findings are judged too. */
 async function synthShape(context: Record<string, unknown>, buildHardDelete = false): Promise<Judged> {
   resetRecorder();
   const outdir = mkdtempSync(join(tmpdir(), 'voc-nag-'));
@@ -150,7 +150,6 @@ async function synthShape(context: Record<string, unknown>, buildHardDelete = fa
   vi.stubEnv('CDK_CONTEXT_JSON', JSON.stringify({ ...committedContext(), ...context,
     ...(buildHardDelete ? { workspaceHardDelete: true } : {}) }));
   vi.resetModules();
-  if (buildHardDelete) (await import('./utils/workspace-hard-delete')).HARD_DELETE_TEST_SWITCH.built = true;
   await import('../bin/voc-datalake');
   vi.unstubAllEnvs();
   return judged();

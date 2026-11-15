@@ -11,8 +11,15 @@ import { isRecord } from './guards'
 import { OUT_DIR, RUN_ID, RUN_PREFIX, type Role } from './env'
 import { withFileLock } from './fileLock'
 
-/** `token` is a global MCP token (`/connect/tokens`); `memory` and `token` are owned by `role`, like conversations. */
-export const ENTITY_KINDS = ['project', 'feedback-form', 'scraper', 'conversation', 'agent', 'workflow', 'agent-run', 'memory', 'token', 'board'] as const
+/**
+ * `token` is a global MCP token (`/connect/tokens`); `memory` and `token` are owned by `role`, like conversations.
+ * `workspace` is a workspace a platform admin created (`POST /platform/workspaces`); `review-page` is a web_reviews
+ * page saved inside one (`POST /integrations/web_reviews/apps` with its `X-Workspace-Id`, kept as `workspace`).
+ */
+export const ENTITY_KINDS = [
+  'project', 'feedback-form', 'scraper', 'conversation', 'agent', 'workflow', 'agent-run', 'memory', 'token', 'board',
+  'workspace', 'review-page',
+] as const
 export type EntityKind = (typeof ENTITY_KINDS)[number]
 
 const isEntityKind = (value: unknown): value is EntityKind => ENTITY_KINDS.some((kind) => kind === value)
@@ -35,6 +42,8 @@ export interface Created {
    * deleted s3's project mid-generation because both ran in one shard's ledger.
    */
   spec?: string
+  /** The workspace the entity lives in (its `X-Workspace-Id`), when it lives in one (a `review-page`). */
+  workspace?: string
 }
 
 const FILE = path.join(OUT_DIR, 'created.json')
@@ -49,7 +58,8 @@ export function readLedger(): Created[] {
     isRecord(item) && isEntityKind(item['kind']) && typeof item['id'] === 'string' && typeof item['name'] === 'string'
     && (item['runId'] === undefined || typeof item['runId'] === 'string')
     && (item['role'] === undefined || isRole(item['role']))
-    && (item['spec'] === undefined || typeof item['spec'] === 'string'))
+    && (item['spec'] === undefined || typeof item['spec'] === 'string')
+    && (item['workspace'] === undefined || typeof item['workspace'] === 'string'))
 }
 
 /** The running test's spec file name (`s2-agents.spec.ts`), or undefined outside a test. */
@@ -80,8 +90,11 @@ export function specLedger(spec: string | undefined = currentSpec()): Created[] 
   return spec === undefined ? [] : runLedger().filter((e) => e.spec === spec)
 }
 
-/** Append an entry; one already recorded by this run (same kind and id) is not repeated. */
-export function recordCreated(kind: EntityKind, id: string, name: string, role?: Role): void {
+/**
+ * Append an entry; one already recorded by this run (same kind and id) is not repeated. `workspace`: the workspace
+ * the entity lives in (cleanup acts in it with that `X-Workspace-Id`).
+ */
+export function recordCreated(kind: EntityKind, id: string, name: string, role?: Role, workspace?: string): void {
   fs.mkdirSync(OUT_DIR, { recursive: true })
   const spec = currentSpec()
   withFileLock(`${FILE}.lock`, () => {
@@ -90,6 +103,7 @@ export function recordCreated(kind: EntityKind, id: string, name: string, role?:
     const entry: Created = {
       kind, id, name, at: new Date().toISOString(), runId: RUN_ID,
       ...(role === undefined ? {} : { role }), ...(spec === undefined ? {} : { spec }),
+      ...(workspace === undefined ? {} : { workspace }),
     }
     // Write-then-rename: a reader never sees a half-written file.
     fs.writeFileSync(`${FILE}.tmp`, JSON.stringify([...ledger, entry], null, 2))

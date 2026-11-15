@@ -59,6 +59,8 @@ interface World {
   sessions: unknown[]
   projects: unknown[]
   scrapers: unknown[]
+  /** The web_reviews plugin's review pages (`GET /integrations/web_reviews/apps`). */
+  reviewPages: unknown[]
   agents: unknown[]
   briefCards: unknown[]
   /** What `GET /feedback/access` answers: the caller's scope. */
@@ -71,7 +73,7 @@ const FULL_ACCESS = { all: true, categories: [], sources_all: true, sources: [],
 function emptyWorld(): World {
   return {
     preference: { state: 'active', visible: true, signals: NO_SIGNALS },
-    categories: [], sessions: [], projects: [], scrapers: [], agents: [], briefCards: [], access: FULL_ACCESS,
+    categories: [], sessions: [], projects: [], scrapers: [], reviewPages: [], agents: [], briefCards: [], access: FULL_ACCESS,
   }
 }
 
@@ -81,7 +83,7 @@ function doneWorld(): World {
     categories: [{ id: 'c1', name: 'delivery', product: 'Shop', subcategories: [] }],
     sessions: [{ id: 'thread_1', title: 'Top complaints', kind: 'assistant', updatedAt: '2026-10-06T10:00:00Z' }],
     projects: [{ project_id: 'p1', name: 'Mine', owner: { sub: 'me-sub', username: 'me', email: '' } }],
-    scrapers: [], agents: [], briefCards: [], access: FULL_ACCESS,
+    scrapers: [], reviewPages: [], agents: [], briefCards: [], access: FULL_ACCESS,
   }
 }
 
@@ -121,6 +123,7 @@ function serve(): void {
     [`GET ${SESSIONS}`]: () => ({ conversations: server.world.sessions }),
     'GET /projects': () => ({ projects: server.world.projects }),
     'GET /scrapers': () => ({ scrapers: server.world.scrapers }),
+    'GET /integrations/web_reviews/apps': () => ({ apps: server.world.reviewPages }),
     'GET /settings/my-briefing': () => ({ enabled: false, hour: 8, time_zone: 'UTC', language: 'en', email: false }),
     'GET /settings/my-briefing/brief': () => ({ status: 'ready', cards: server.world.briefCards, card_state: {} }),
     'GET /agents': () => ({ items: server.world.agents }),
@@ -309,7 +312,16 @@ describe('onboarding buddy', () => {
     renderHome()
     await findBuddy()
     await waitFor(() => expect(stepStatuses()['source']).toBe('done'))
-    expect(calls('GET', '/scrapers')).toHaveLength(0)
+    expect([calls('GET', '/scrapers'), calls('GET', '/integrations/web_reviews/apps')].map((c) => c.length))
+      .toStrictEqual([0, 0])
+  })
+
+  it('counts a review page as a connected source when no scraper exists (7.40.00)', async () => {
+    server.world = { ...emptyWorld(), reviewPages: [{ id: 'be12e985', name: 'Amazon Connect TrustRadius' }] }
+    serve()
+    renderHome()
+    await findBuddy()
+    await waitFor(() => expect(stepStatuses()['source']).toBe('done'))
   })
 
   it('gives a non-admin only the steps they can take: no categories, source or import step', async () => {
@@ -317,7 +329,8 @@ describe('onboarding buddy', () => {
     renderHome()
     await findBuddy()
     await waitFor(() => expect(Object.keys(stepStatuses())).toStrictEqual(['assistant', 'project']))
-    expect(calls('GET', '/scrapers')).toHaveLength(0)
+    expect([calls('GET', '/scrapers'), calls('GET', '/integrations/web_reviews/apps')].map((c) => c.length))
+      .toStrictEqual([0, 0])
   })
 
   it('treats a restricted caller as unable to set up, and says what the tiles count (owner rule 2026-10-21)', async () => {

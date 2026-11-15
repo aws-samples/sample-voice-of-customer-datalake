@@ -43,6 +43,7 @@ import { s3ImportIngestorDeployed } from './api-s3-import-lambda';
 import { createDataLambdas } from './api-data-lambdas';
 import { createEngagementLambdas } from './api-engagement-lambdas';
 import { engineeringAgentsEnabled } from './engineering-broker';
+import { workspaceHardDeleteEnabled } from '../utils/workspace-hard-delete';
 import { createVerificationFixtureProvider } from './api-fixture-provider';
 import { createApiGateway, restApiBaseUrl } from './api-gateway';
 import { createJobLambdas } from './api-job-lambdas';
@@ -423,6 +424,8 @@ export class VocApiStack extends VocStack {
         passkey: true,
         // The engineering agents module (-c engineeringAgents=true): the SPA offers "New engineering flow" only then.
         engineering: engineeringAgentsEnabled(this),
+        // A workspace's hard delete (-c workspaceHardDelete=true): Workspace settings offers "Delete workspace" only then.
+        workspaceDelete: workspaceHardDeleteEnabled(this),
       },
       // The board pool (/board and /review): its ids and how it emails sign-in codes.
       ...boardRuntimeConfig(props, emailSenderOf(this.node) !== undefined),
@@ -486,6 +489,13 @@ export class VocApiStack extends VocStack {
         description: 'The engineering agents module is deployed (drives the frontend features.engineering flag)',
       });
     }
+    // Only with -c workspaceHardDelete=true (deploy.sh reads a missing output as false).
+    if (workspaceHardDeleteEnabled(this)) {
+      new cdk.CfnOutput(this, 'WorkspaceDeleteAvailable', {
+        value: 'true',
+        description: 'A workspace can be hard deleted (drives the frontend features.workspaceDelete flag)',
+      });
+    }
   }
 
   // ============================================
@@ -512,7 +522,7 @@ export class VocApiStack extends VocStack {
    * GetItem on voc-workspaces' `WS#*` partitions only, of a `META`'s status only (`grantWorkspaceStatusRead`: `pk`,
    * `sk`, `status`, `dynamodb:Attributes`, with the projection the code always sends, lambda/shared/ws_repo.py
    * STATUS_READ_ATTRIBUTES), so IAM keeps a MEMBER# row's email and name out of reach, and of `PLUGIN#*` rows their
-   * `pk` only (the workspace enabled the plugin, 7.14.00); no write. And GetParameter
+   * key only (the workspace enabled the plugin, 7.14.00); no write. And GetParameter
    * (and kms:Decrypt through SSM) on `voc/ws/{one workspace id}/credentials/{plugin}` of the webhook plugins only
    * (decision 19, lib/utils/workspace-secrets.ts). Returns the parameter prefix's environment.
    */

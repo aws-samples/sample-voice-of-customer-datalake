@@ -5,9 +5,15 @@
  * - One ECR repository per language image (engineering-images/), made with the flag: nothing runs from them until a
  *   deployment names a pushed image (`-c engineeringImages`). They bill only for the images stored in them.
  * - Per language with an image, an AgentCore runtime of every agent's size (AgentCore's default: 2 vCPU and 8 GB,
- *   billed per second for the CPU used and the memory), and, unless `-c engineeringBuildMemoryMiB=0`, a build runtime
+ *   billed per second for the CPU used and the memory), and, with `-c engineeringBuildMemoryMiB=8192`, a build runtime
  *   for the roles that build and test (`-c engineeringBuildRoles`, the gate runner by default) whose resource
- *   configuration (`MinimumMemoryInMiB` 8192) commits 2 vCPU and 8 GB and bursts to 8 vCPU and 32 GB (32 GB disk).
+ *   configuration (`ResourceConfigurations`, `MinimumMemoryInMiB` 8192) commits 2 vCPU and 8 GB and bursts to 8 vCPU
+ *   and 32 GB (32 GB disk). Opt-in since 7.40.00 (0, no build runtime, by default): CloudFormation is rolling the
+ *   property out region by region (on 2026-11-15 us-east-2's `AWS::BedrockAgentCore::Runtime` schema had it,
+ *   us-east-1, us-west-2, eu-west-1, eu-central-1 and ap-northeast-1 did not), and where it has not arrived the
+ *   deploy fails CloudFormation's early validation ("Unsupported property [ResourceConfigurations]") before any
+ *   change. Check a region with `aws cloudformation describe-type --type RESOURCE --type-name
+ *   AWS::BedrockAgentCore::Runtime` (the schema's `properties`).
  *   Every runtime ends a session after an hour with no work (`IdleRuntimeSessionTimeout`, above the supervisor's
  *   45-minute hold of a waiting agent; an agent waiting on the model is busy) and at 8 hours (`MaxLifetime`; the
  *   supervisor continues an agent before then). Nothing is always on: no session runs between runs, and a committed
@@ -19,10 +25,12 @@
  *   nothing else. A session has no other AWS right of its own; the run's inputs are read with the agent role's
  *   15-minute session the launcher hands its agent user (engineering-runtime.ts).
  *
- * The runtime resource is the L1 `CfnRuntime` of the pinned aws-cdk-lib; it has no property for the resource
- * configuration yet, so `ResourceConfigurations` is set as a property override, with the name the control plane's
- * CreateAgentRuntime gives it (`resourceConfigurations`). Written from the developer guide and the API's model, not yet
- * checked by a real deployment.
+ * The runtime resource is the L1 `CfnRuntime` of the pinned aws-cdk-lib (2.275.0), which has no property for the
+ * resource configuration, so `ResourceConfigurations` is a property override, in CloudFormation's own name and shape
+ * (`[{ MinimumMemoryInMiB }]`, us-east-2's registry schema, 2026-11-15). aws-cdk-lib 2.277.0 has it typed
+ * (`resourceConfigurations`) but also knows Python 3.15, which the dependency rule (docs/dependencies.md) would move
+ * every Lambda to: a separate upgrade. The standard runtimes ran on a real deployment (us-west-2, 2026-11-15); a build
+ * runtime has not yet.
  */
 import * as cdk from 'aws-cdk-lib';
 import * as agentcore from 'aws-cdk-lib/aws-bedrockagentcore';
@@ -40,7 +48,7 @@ const IMAGE_LANGUAGES = ['java', 'node', 'python', 'rust'];
 const IMAGES_CONTEXT = 'engineeringImages';
 /** `-c engineeringAgentNetwork='{"vpcId":"vpc-…","subnetIds":["subnet-…",…]}'`: where the sessions run. */
 const NETWORK_CONTEXT = 'engineeringAgentNetwork';
-/** `-c engineeringBuildMemoryMiB=8192|0`: the build runtimes' resource configuration (0: none). */
+/** `-c engineeringBuildMemoryMiB=0|8192`: the build runtimes' resource configuration (0, the default: none). */
 const BUILD_MEMORY_CONTEXT = 'engineeringBuildMemoryMiB';
 /** `-c engineeringBuildRoles='["gate-runner"]'`: the roles that run on the build runtimes. */
 const BUILD_ROLES_CONTEXT = 'engineeringBuildRoles';
@@ -55,7 +63,8 @@ export const DEFAULT_RATES: Readonly<Record<string, string>> = {
 };
 /** runtime/caps.py MAX_USD_PER_HOUR and PRICE_DIGITS: a rate a few orders of magnitude off fails the synth. */
 const MAX_USD_PER_HOUR = 10;
-/** The only resource configuration offered: 4096 (1 vCPU and 4 GB committed) is below the 2 vCPU and 8 GB floor. */
+/** The build runtimes' one resource configuration: 4096 (1 vCPU and 4 GB committed) is below the 2 vCPU and 8 GB
+ *  floor. Opt-in (the module comment: CloudFormation's regional rollout of the property). */
 const BUILD_MEMORY_MIB = 8192;
 /** The account's active sessions per region (the service's quota in us-east-1 and us-west-2). */
 const SESSION_QUOTA = 5000;
@@ -120,10 +129,11 @@ function agentNetwork(scope: Construct): AgentNetwork | undefined {
   return { vpcId: value.vpcId, subnetIds: value.subnetIds.map(String) };
 }
 
-/** `-c engineeringBuildMemoryMiB`: 8192 by default, or 0 (no build runtime: every role at the standard size). */
+/** `-c engineeringBuildMemoryMiB`: 0 by default (no build runtime: every role at the standard size), or 8192 (the
+ *  build runtimes, where CloudFormation has the property: the module comment). */
 export function buildMemoryMiB(scope: Construct): number {
   const raw: unknown = scope.node.tryGetContext(BUILD_MEMORY_CONTEXT);
-  if (raw === undefined || raw === null || raw === '') return BUILD_MEMORY_MIB;
+  if (raw === undefined || raw === null || raw === '') return 0;
   const text = String(raw).trim();
   if (text !== '0' && text !== String(BUILD_MEMORY_MIB)) {
     throw new Error(`${BUILD_MEMORY_CONTEXT} is ${BUILD_MEMORY_MIB} or 0 (4096 is below the 2 vCPU and 8 GB floor).`);

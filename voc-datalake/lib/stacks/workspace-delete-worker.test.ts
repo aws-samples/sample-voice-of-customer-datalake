@@ -12,15 +12,13 @@ import { z } from 'zod';
 
 import { IamPolicySchema, isAttachedToRole, roleStatements, statementActions } from '../test-support/iam-statements';
 import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
-import { cleanupAssemblyDirs, synthApp, SYNTH_TIMEOUT_MS, withHardDeleteBuilt } from '../test-support/synth-app';
+import { cleanupAssemblyDirs, synthApp, SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import { expectSelfInvokeOnly, findWorkerFunction, workerSettings } from '../test-support/worker-function';
 import { byCodeUnit } from '../utils/compare';
 import {
   REQUIRED_DELETE_SWEEPS, WORKSPACE_DELETE_GRANTS, deleteGrants, requireDeleteSweeps,
 } from '../utils/workspace-delete-grants';
-import {
-  HARD_DELETE_REFUSED, WORKSPACE_HARD_DELETE_CONTEXT, workspaceHardDeleteEnabled,
-} from '../utils/workspace-hard-delete';
+import { WORKSPACE_HARD_DELETE_CONTEXT, workspaceHardDeleteEnabled } from '../utils/workspace-hard-delete';
 import { PROCESSOR_DROP_COUNT_ATTRIBUTES } from './processing-roles';
 import {
   CONTROL_ROW_DELETES, CONVERSATION_PARTITIONS, DELETE_AUDIT_PARTITION, DELETE_JOB_PARTITION, MEMORY_PARTITIONS, PROJECT_CLAIM_PARTITIONS,
@@ -32,10 +30,8 @@ import {
 let template: Template;
 afterAll(cleanupAssemblyDirs);
 beforeAll(() => {
-  // The test harness's own build of the refused job (withHardDeleteBuilt, a code path the app never takes): its
-  // grants are pinned here.
-  template = withHardDeleteBuilt(() => synthProcessingTemplate({ withIndexes: true,
-    context: { [WORKSPACE_HARD_DELETE_CONTEXT]: true } }));
+  // The job with -c workspaceHardDelete=true: its grants are pinned here.
+  template = synthProcessingTemplate({ withIndexes: true, context: { [WORKSPACE_HARD_DELETE_CONTEXT]: true } });
 });
 
 const LIB = join(__dirname, '..');
@@ -69,13 +65,11 @@ function contextKeysRead(): string[] {
   return [...keys].sort(byCodeUnit);
 }
 
-describe('nothing the app reads can build the hard delete while it is refused', () => {
+describe('only -c workspaceHardDelete=true builds the hard delete', () => {
   const cdkJson = z.object({ context: z.record(z.string(), z.unknown()) }).parse(
     JSON.parse(readFileSync(join(ROOT, 'cdk.json'), 'utf8'))).context;
-  const enabledWith = (context: Record<string, unknown>) => {
-    const stack = new cdk.Stack(new cdk.App({ context }), 'Probe');
-    return () => workspaceHardDeleteEnabled(stack);
-  };
+  const enabledWith = (context: Record<string, unknown>) =>
+    workspaceHardDeleteEnabled(new cdk.Stack(new cdk.App({ context }), 'Probe'));
 
   const keys = contextKeysRead();
   const everyKeyOn = Object.fromEntries([...keys, ...Object.keys(cdkJson)].map((key) => [key, true]));
@@ -88,14 +82,14 @@ describe('nothing the app reads can build the hard delete while it is refused', 
     expect(cdkJson).not.toHaveProperty(WORKSPACE_HARD_DELETE_CONTEXT);
   });
 
-  it('every context key the app reads and every cdk.json value, all set to true, only refuse the synth', () => {
-    expect(enabledWith(everyKeyOn)).toThrow(HARD_DELETE_REFUSED);
-    expect(enabledWith({ ...cdkJson, ...everyKeyOn })).toThrow(HARD_DELETE_REFUSED);
+  it('the flag builds it; every other key and cdk.json value set to true builds nothing', () => {
+    expect(enabledWith(everyKeyOn)).toBe(true);
+    expect(enabledWith(allButTheFlag)).toBe(false);
+    expect(enabledWith({ ...cdkJson, ...allButTheFlag })).toBe(false);
   });
 
-  it('without the flag, every other key and cdk.json value set to true builds nothing', () => {
-    expect(enabledWith(allButTheFlag)()).toBe(false);
-    expect(enabledWith({ ...cdkJson, ...allButTheFlag })()).toBe(false);
+  it('a value other than true or false fails the synth', () => {
+    expect(() => enabledWith({ [WORKSPACE_HARD_DELETE_CONTEXT]: 'yes' })).toThrow(/workspaceHardDelete/);
   });
 
   it('the job and the delete routes are built only behind that one check', () => {
@@ -105,12 +99,6 @@ describe('nothing the app reads can build the hard delete while it is refused', 
     expect(builders[0]?.source).toMatch(/if \(workspaceHardDeleteEnabled\(this\)\) \{[\s\S]{0,800}?createWorkspaceDeleteWorker\(this/);
     expect(sources.find(({ path }) => path === 'lib/stacks/api-workspace-delete.ts')?.source)
       .toMatch(/const enabled = workspaceHardDeleteEnabled\(ctx\.stack\)/);
-  });
-
-  it('the harness\'s switch is called only by lib/test-support and tests, never by bin/ or the stacks', () => {
-    const callers = appSources().filter(({ path, source }) => /HARD_DELETE_TEST_SWITCH|withHardDeleteBuilt/.test(source)
-      && path !== 'lib/utils/workspace-hard-delete.ts' && !path.startsWith('lib/test-support/'));
-    expect(callers.map(({ path }) => path)).toStrictEqual([]);
   });
 });
 
@@ -139,16 +127,12 @@ describe('without -c workspaceHardDelete=true (the default)', () => {
   });
 });
 
-describe('-c workspaceHardDelete=true is refused until the per-person export exists', () => {
-  it('fails the synth of the whole app, saying why', () => {
-    expect(() => synthApp({ workspaceHardDelete: true }))
-      .toThrow(/stays off until members can export their own conversations and personal memories/);
+describe('-c workspaceHardDelete=true (owner decision, 7.40.00)', () => {
+  it('synthesizes the whole app with the delete job', () => {
+    const synthed = synthApp({ workspaceHardDelete: true });
+    const templates = synthed.stackNames.map((name) => JSON.stringify(synthed.template(name)));
+    expect(templates.some((body) => body.includes('voc-workspace-delete'))).toBe(true);
   }, SYNTH_TIMEOUT_MS);
-
-  it('fails the stack\'s own synth too', () => {
-    expect(() => synthProcessingTemplate({ withIndexes: true, context: { workspaceHardDelete: true } }))
-      .toThrow(HARD_DELETE_REFUSED);
-  });
 });
 
 describe('the feedback processor with the hard delete built', () => {

@@ -159,6 +159,14 @@ describe('toolGuidance', () => {
     expect(toolGuidance(projectSet)).toContain('status "executed"');
   });
 
+  it('asks for categories before a new data source on every page, the project page (a plan step) included', () => {
+    for (const kind of ['project', 'scrapers', 'radar', 'dashboard'] as const) {
+      const guidance = toolGuidance(selectToolset(catalogue, options(kind, { isAdmin: true })));
+      expect(guidance).toContain('- Categories first (administrators): before proposing a NEW data source');
+      expect(guidance).toContain('You cannot save categories yourself.');
+    }
+  });
+
   it('mentions web search only when it is offered', () => {
     expect(toolGuidance(selectToolset(catalogue, options('dashboard')))).not.toContain('web_search');
     expect(toolGuidance(selectToolset(catalogue, options('dashboard', { webSearch: true })))).toContain('web_search');

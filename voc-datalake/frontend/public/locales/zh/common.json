@@ -278,6 +278,52 @@
         "erased": "已因删除操作移除"
       }
     },
+    "rename": {
+      "title": "工作区名称",
+      "description": "所有成员在页眉的工作区菜单和工作区列表中看到的名称。",
+      "address": "地址：",
+      "readOnly": "只有此工作区的管理员可以重命名它。",
+      "open": "重命名",
+      "dialogTitle": "重命名工作区",
+      "slugStays": "它的地址 {{address}} 保持不变：链接和书签仍然有效。",
+      "label": "名称",
+      "save": "保存",
+      "nameInvalid": "请输入 1 到 {{max, number}} 个字符的名称。",
+      "nameControl": "名称不能包含制表符或换行符等控制字符。",
+      "done": "工作区现在名为 {{name}}。"
+    },
+    "delete": {
+      "title": "删除工作区",
+      "permanent": "删除此工作区是永久性的，无法撤销。",
+      "itemsTitle": "删除后，以下内容将对所有人移除：",
+      "items": {
+        "feedback": "其所有反馈和导入",
+        "projects": "其项目、文档、原型和用户画像",
+        "agents": "其智能体和工作流",
+        "settings": "其设置、插件和凭据",
+        "files": "其文件",
+        "members": "所有成员对它的访问权限",
+        "conversations": "每位成员在此工作区中与助手的对话和个人记忆",
+        "companyMemory": "其公司记忆"
+      },
+      "notInExport": "导出不包含成员与助手的对话或个人记忆：工作区一旦删除，它们将永久丢失。",
+      "exportFirst": "请先导出工作区，以保留其反馈、配置、成员和审计记录的副本。",
+      "exportLink": "前往导出",
+      "open": "删除工作区…",
+      "dialogTitle": "删除 {{name}}？",
+      "permanentFor": "这将为所有成员永久删除 {{name}}，且无法撤销。",
+      "typeSlug": "请输入工作区的 slug {{slug}} 以确认",
+      "reasonLabel": "删除原因",
+      "reasonHint": "将永久保存在审计日志中。例如：“团队解散，工单 #123”。切勿在此填写姓名、电子邮件地址或电话号码。",
+      "understood": "我了解删除此工作区后无法撤销。",
+      "confirm": "删除工作区",
+      "deleting": "正在删除…",
+      "doneTitle": "正在删除 {{name}}",
+      "doneGone": "它现在对所有成员都已消失：任何人都无法再打开它。",
+      "doneBackground": "其数据将在大约 20 分钟后开始在后台删除。",
+      "doneBackgroundAt": "其数据将从大约 {{time}}（约 20 分钟后）开始在后台删除。",
+      "leave": "前往我的工作区"
+    },
     "config": {
       "categoriesTitle": "类别",
       "categoriesDescription": "此工作区自己的类别用于对其反馈进行分类。新工作区没有类别：在其管理员添加之前，其反馈按内置默认类别分类。不会从部署的类别复制任何内容。",
@@ -320,7 +366,14 @@
       "genericWithReason": "操作未成功：{{reason}}",
       "exportRunning": "此工作区的导出已在进行中。请等待其完成。",
       "exportErasureRunning": "此工作区正在进行删除操作。请在其结束后再开始导出。",
-      "exportNotDownloadable": "此导出已无法下载。请开始新的导出。"
+      "exportNotDownloadable": "此导出已无法下载。请开始新的导出。",
+      "renameChangedMeanwhile": "工作区在此期间已更改。请重新加载页面后重试。",
+      "deleteSlugMismatch": "这不是此工作区的 slug。请准确输入以确认删除。",
+      "deleteExportRunning": "此工作区的导出正在进行。请等待其完成，然后再删除工作区。",
+      "deleteErasureRunning": "此工作区正在进行删除操作。请在其结束后再删除工作区。",
+      "deleteChangedMeanwhile": "在请求删除期间工作区已更改。请重新加载页面后重试。",
+      "deleteUnavailable": "此部署不支持删除工作区。",
+      "deleteNotStarted": "工作区已标记为删除，但删除未能开始。请让平台管理员取消或恢复它。"
     }
   },
   "timeRange": {

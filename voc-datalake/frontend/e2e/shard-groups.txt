@@ -3,6 +3,10 @@
 # 25 min against production with 8 shards in parallel (6.04.02). unit/shard-groups.spec.ts fails when a spec under
 # tests/ is in no group or in two; the specs that cannot run here are listed there with their reason (QA tracks
 # s1 / s2 run alone, csv-dataset-update, workspaces, workspace-admin and cross-workspace run on the dev mock only).
+# workspace-lifecycle (7.40.00) is in no group on purpose: opt-in (E2E_WORKSPACE_LIFECYCLE=1), it runs alone with
+# --project=admin, because the workspace it creates sends the admin test user's pages outside /w/ into it (the
+# gate's one-workspace redirect) until its delete job removes it, ~21 min after the delete: a shard beside it would
+# land there.
 
 design-screens  workers=6 --fully-parallel tests/design-screens.spec.ts
 design-overlays workers=4 --fully-parallel tests/design-overlays.spec.ts tests/i18n-smoke.spec.ts

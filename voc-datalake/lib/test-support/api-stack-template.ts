@@ -20,7 +20,6 @@ import { z } from 'zod';
 
 import { VocApiStack } from '../stacks/api-stack';
 import { WORKSPACE_HARD_DELETE_CONTEXT } from '../utils/workspace-hard-delete';
-import { withHardDeleteBuilt } from './synth-app';
 import { apiStackDependencyProps, indexedTableFactory } from './api-stack-fixture';
 import { applyAppAspects } from '../utils/app-aspects';
 import { byCodeUnit } from '../utils/compare';
@@ -191,11 +190,10 @@ export function apiTemplatePrefixed(): Template {
   return cachedPrefixed;
 }
 
-/** The refused hard delete as the test harness builds it (`withHardDeleteBuilt`, lib/utils/workspace-hard-delete.ts):
- *  its routes granted. */
+/** The API stack with `-c workspaceHardDelete=true` (lib/utils/workspace-hard-delete.ts): its routes granted. */
 let cachedHardDelete: Template | undefined;
 export function apiTemplateHardDelete(): Template {
-  cachedHardDelete ??= withHardDeleteBuilt(() => synthApiTemplate({ [WORKSPACE_HARD_DELETE_CONTEXT]: true }));
+  cachedHardDelete ??= synthApiTemplate({ [WORKSPACE_HARD_DELETE_CONTEXT]: true });
   return cachedHardDelete;
 }
 

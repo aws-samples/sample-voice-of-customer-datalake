@@ -1,7 +1,8 @@
 /**
  * The workspace's settings page: not a page outside a workspace; the brand, which its admins save (also outside the
  * deployment's `admins`) and everyone else reads, a refusal said in words; the plugins the deployment offers, with
- * Enable and Disable for an admin only, an enable the server holds back said as such and offered no more.
+ * Enable and Disable for an admin only, an enable the server holds back said as such and offered no more; the name,
+ * which everyone reads and its admins rename; the delete, for its admins on a deployment that turns it on only.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
@@ -21,6 +22,13 @@ vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => ({
     saveCategoriesConfig: (config: unknown) => m.fetchApi('/settings/categories', { method: 'PUT', body: JSON.stringify(config) }),
   },
 })))
+
+/** Whether the mocked deployment turns the workspace delete on (config.json `features.workspaceDelete`). */
+const deployment = vi.hoisted(() => ({ workspaceDelete: false }))
+vi.mock('../../runtimeConfig', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../runtimeConfig')>(),
+  isWorkspaceDeleteAvailable: () => deployment.workspaceDelete,
+}))
 
 import { fetchApi, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
 import type { RouteHandler } from '@test/fetchApiRoutes'
@@ -61,6 +69,7 @@ const brandName = () => screen.findByLabelText('Brand Name')
 
 beforeEach(() => {
   resetFetchApi()
+  deployment.workspaceDelete = false
   // Not in the deployment's `admins`: inside a workspace only the workspace's role counts.
   useAuthStore.setState({ user: { username: 'ada', email: 'ada@example.com', groups: ['users'], sub: 'sub-ada' } })
 })
@@ -216,5 +225,40 @@ describe('WorkspaceSettings: the plugins', () => {
     list.mockImplementation(() => ({ plugins: OFFERED }))
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
     expect(await screen.findByRole('list', { name: 'Plugins this deployment offers' })).toBeInTheDocument()
+  })
+})
+
+describe("WorkspaceSettings: the workspace's name and its delete", () => {
+  it('shows every member the name and its address, and offers Rename to its admins only', async () => {
+    renderPage(JUNIPER)
+    const name = await screen.findByRole('region', { name: 'Workspace name' })
+    expect(name).toHaveTextContent('Juniper Trail Co.')
+    expect(name).toHaveTextContent('/w/juniper')
+    expect(within(name).queryByRole('button', { name: 'Rename' })).not.toBeInTheDocument()
+  })
+
+  it('offers its admins the delete, last, on a deployment that turns it on', async () => {
+    deployment.workspaceDelete = true
+    renderPage(ACME)
+    expect(within(await screen.findByRole('region', { name: 'Workspace name' })).getByRole('button', { name: 'Rename' })).toBeEnabled()
+    const del = screen.getByRole('region', { name: 'Delete workspace' })
+    // After the export it points to.
+    const exportCard = screen.getByRole('region', { name: 'Export' })
+    expect(exportCard.compareDocumentPosition(del) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(within(del).getByRole('button', { name: 'Delete workspace…' })).toBeEnabled()
+  })
+
+  it('offers no delete on a deployment that does not turn it on, even to an admin', async () => {
+    renderPage(ACME)
+    await screen.findByRole('region', { name: 'Workspace name' })
+    expect(screen.queryByRole('region', { name: 'Delete workspace' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Delete workspace…' })).not.toBeInTheDocument()
+  })
+
+  it('shows no delete to a member who is not an admin, even when the deployment turns it on', async () => {
+    deployment.workspaceDelete = true
+    renderPage(JUNIPER)
+    await screen.findByRole('region', { name: 'Workspace name' })
+    expect(screen.queryByRole('region', { name: 'Delete workspace' })).not.toBeInTheDocument()
   })
 })

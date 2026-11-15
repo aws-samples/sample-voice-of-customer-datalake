@@ -3243,6 +3243,16 @@
     ]
   },
   {
+    "file": "api/scrapersApi.ts",
+    "method": "GET",
+    "call": "`/integrations/${encodeURIComponent(id)}/apps`",
+    "probes": [
+      {
+        "path": "/integrations/web_reviews/apps"
+      }
+    ]
+  },
+  {
     "file": "api/aiModeApi.ts",
     "method": "GET",
     "call": "'/users/me/ai-mode'",
@@ -3495,6 +3505,20 @@
     ]
   },
   {
+    "file": "api/workspaceDeleteApi.ts",
+    "method": "POST",
+    "call": "'/me/workspaces/current/delete'",
+    "probes": [
+      {
+        "path": "/me/workspaces/current/delete",
+        "body": {
+          "confirm_slug": "acme",
+          "legal_basis": "Team closed, ticket #123"
+        }
+      }
+    ]
+  },
+  {
     "file": "api/workspacePluginsApi.ts",
     "method": "GET",
     "call": "'/me/workspaces/current/plugins'",
@@ -3540,6 +3564,19 @@
     "probes": [
       {
         "path": "/me/workspaces/current"
+      }
+    ]
+  },
+  {
+    "file": "api/workspacesApi.ts",
+    "method": "PUT",
+    "call": "'/me/workspaces/current'",
+    "probes": [
+      {
+        "path": "/me/workspaces/current",
+        "body": {
+          "name": "Acme Outfitters"
+        }
       }
     ]
   },

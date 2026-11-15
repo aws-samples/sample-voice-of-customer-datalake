@@ -9,7 +9,7 @@ import { DEFAULT_RATES, IDLE_TIMEOUT_SECONDS, MAX_LIFETIME_SECONDS } from './eng
 const DIGEST = `sha256:${'a'.repeat(64)}`;
 const byName = (a: string, b: string): number => a.localeCompare(b, 'en');
 const NETWORK = { vpcId: 'vpc-0abc1234def567890', subnetIds: ['subnet-0abc1234def567890', 'subnet-0123456789abcdef0'] };
-/** Two languages with an image, in a network: their runtimes, the build ones included. */
+/** Two languages with an image, in a network: their runtimes (one each: no build runtime yet). */
 const WITH_RUNTIMES = {
   engineeringAgents: 'true', engineeringImages: { python: DIGEST, rust: 'v7' }, engineeringAgentNetwork: NETWORK,
 };
@@ -59,27 +59,35 @@ describe('the agents\' sessions on AgentCore Runtime (-c engineeringAgents=true)
     expect([count(bare, 'AWS::BedrockAgentCore::Runtime'), count(bare, 'AWS::EC2::SecurityGroup')]).toStrictEqual([0, 0]);
   });
 
-  it('runs every agent at the default size and the roles that build and test on a runtime that bursts to 32 GB', () => {
+  it('runs every agent, the roles that build and test too, at the default size unless 8192 is asked for', () => {
+    // A build runtime is opt-in (CloudFormation rolls ResourceConfigurations out region by region): by default no
+    // runtime carries the property, which an early validation without it refuses.
     const made = runtimes(wired);
-    expect([...made.keys()].sort(byName)).toStrictEqual(
-      ['voc_eng_python', 'voc_eng_python_build', 'voc_eng_rust', 'voc_eng_rust_build']);
-    expect(made.get('voc_eng_python')?.ResourceConfigurations).toBeUndefined();
-    expect(made.get('voc_eng_rust_build')?.ResourceConfigurations).toStrictEqual([{ MinimumMemoryInMiB: 8192 }]);
+    expect([...made.keys()].sort(byName)).toStrictEqual(['voc_eng_python', 'voc_eng_rust']);
+    expect([...made.values()].map((runtime) => runtime.ResourceConfigurations)).toStrictEqual([undefined, undefined]);
     expect(JSON.parse(String(supervisorEnv(wired).ENGINEERING_BUILD_ROLES))).toStrictEqual(['gate-runner']);
   });
+
+  it('with -c engineeringBuildMemoryMiB=8192 adds a build runtime per language that bursts to 32 GB', () => {
+    const built = runtimes(runtimeStack({ ...WITH_RUNTIMES, engineeringBuildMemoryMiB: '8192' }).template);
+    expect([...built.keys()].sort(byName)).toStrictEqual(
+      ['voc_eng_python', 'voc_eng_python_build', 'voc_eng_rust', 'voc_eng_rust_build']);
+    expect([built.get('voc_eng_python')?.ResourceConfigurations, built.get('voc_eng_rust_build')?.ResourceConfigurations])
+      .toStrictEqual([undefined, [{ MinimumMemoryInMiB: 8192 }]]);
+  }, SYNTH_TIMEOUT_MS);
 
   it('runs platform version V2 over HTTP, ends an idle session after an hour and every session at 8 hours', () => {
     expect(count(wired, 'AWS::BedrockAgentCore::Runtime', {
       PlatformVersion: 'V2', ProtocolConfiguration: 'HTTP',
       LifecycleConfiguration: { IdleRuntimeSessionTimeout: 3600, MaxLifetime: 28800 },
-    })).toBe(4);
+    })).toBe(2);
     expect([IDLE_TIMEOUT_SECONDS, MAX_LIFETIME_SECONDS]).toStrictEqual([3600, 8 * 3600]);
   });
 
   it('runs the image named for its language, by digest or by tag, from its own repository', () => {
     const uri = (name: string) => JSON.stringify(runtimes(wired).get(name)?.AgentRuntimeArtifact);
     expect(uri('voc_eng_python')).toMatch(new RegExp(`PythonImages.*@${DIGEST}`));
-    expect(uri('voc_eng_rust_build')).toMatch(/RustImages.*:v7/);
+    expect(uri('voc_eng_rust')).toMatch(/RustImages.*:v7/);
   });
 
   it('runs every session in the deployment\'s subnets, behind a group that lets nothing in and only 443 out', () => {
@@ -88,7 +96,7 @@ describe('the agents\' sessions on AgentCore Runtime (-c engineeringAgents=true)
         SecurityGroups: [{ 'Fn::GetAtt': [Match.stringLikeRegexp('SessionsSecurityGroup'), 'GroupId'] }],
         Subnets: NETWORK.subnetIds,
       } },
-    })).toBe(4);
+    })).toBe(2);
     const [group] = Object.values(wired.findResources('AWS::EC2::SecurityGroup'));
     expect(group?.Properties?.SecurityGroupIngress).toBeUndefined();
     expect(group?.Properties?.SecurityGroupEgress).toStrictEqual([
@@ -119,15 +127,16 @@ describe('the agents\' sessions on AgentCore Runtime (-c engineeringAgents=true)
 
   it('hands the runtime its runtimes, sizes, rates and session ceiling; the board the languages it may launch', () => {
     const env = supervisorEnv(wired);
-    expect(JSON.stringify(env.ENGINEERING_AGENT_RUNTIMES)).toMatch(/python.*standard.*build.*rust/);
-    expect([env.ENGINEERING_BUILD_MEMORY_MIB, env.ENGINEERING_MAX_SESSIONS]).toStrictEqual(['8192', '5000']);
+    // One standard runtime per language, no build one (the default).
+    expect(JSON.stringify(env.ENGINEERING_AGENT_RUNTIMES)).toMatch(/^(?!.*build).*python.*standard.*rust.*standard/);
+    expect([env.ENGINEERING_BUILD_MEMORY_MIB, env.ENGINEERING_MAX_SESSIONS]).toStrictEqual(['0', '5000']);
     expect(JSON.parse(String(env.ENGINEERING_SESSION_RATES))).toStrictEqual(DEFAULT_RATES);
     expect(functionEnv(wired, 'voc-engineering-delivery').ENGINEERING_AGENT_RUNTIMES).toStrictEqual(env.ENGINEERING_AGENT_RUNTIMES);
   });
 });
 
 describe('the sessions\' deployment settings', () => {
-  it('takes its own sizes, rates and ceiling: no build runtime with 0, the roles named, lower rates', () => {
+  it('takes its own sizes, rates and ceiling: 0 named, the roles named, lower rates', () => {
     const template = runtimeStack({
       ...WITH_RUNTIMES, engineeringBuildMemoryMiB: '0', engineeringMaxSessions: '200',
       engineeringSessionRates: JSON.stringify({ ...DEFAULT_RATES, vcpuHour: '0.05' }),
@@ -137,7 +146,8 @@ describe('the sessions\' deployment settings', () => {
     expect(JSON.parse(String(supervisorEnv(template).ENGINEERING_SESSION_RATES)).vcpuHour).toBe('0.05');
     const roles = runtimeStack({ ...WITH_RUNTIMES, engineeringBuildRoles: '["fixer","gate-runner"]' }).template;
     expect(supervisorEnv(roles).ENGINEERING_BUILD_ROLES).toBe('["fixer","gate-runner"]');
-  });
+    // Two synths in one test: the synth allowance, not the 5 s default (it timed out under a loaded machine).
+  }, SYNTH_TIMEOUT_MS);
 
   it.each([
     ['an image without a network', { engineeringImages: { python: 'v1' } }, /engineeringAgentNetwork/],

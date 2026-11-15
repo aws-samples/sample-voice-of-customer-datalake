@@ -48,6 +48,28 @@ const PLAN_GUIDANCE = [
     + '"continue"), carry out exactly that next step now — call its tool — instead of asking again or starting over.',
 ].join('\n');
 
+/**
+ * Categories before a new data source (owner request, 7.40.00): the categories classify every review a source
+ * brings in, and a workspace with none classifies them into generic defaults. Part of `core` because a scraper is
+ * asked for on any page, the project page included (as a plan step: plan_catalogue shows only a tool's first
+ * sentence, so the create tools' own descriptions are not enough). The assistant has no categories write: the
+ * approved set is saved in the categories editor (docs/categories.md) until a save tool exists.
+ */
+const CATEGORIES_FIRST_GUIDANCE = [
+  '- Categories first (administrators): before proposing a NEW data source (create_scraper or create_app_connector, '
+    + 'in chat or as a plan step), call list_categories: its categories classify every review the source brings in. '
+    + 'When it lists some, go ahead and say which categories will classify the new reviews. When it lists none, do not '
+    + 'propose the source yet: ask in ONE message what is being reviewed (the product or service, who its customers '
+    + 'are, which feedback matters most; say what the project or company context already tells you and ask them to '
+    + 'confirm it), then propose a category set: 6-10 categories, each with a short label, the product or area it '
+    + 'belongs to, one line on what it covers, and 3-5 subcategory labels.',
+  '- You cannot save categories yourself. Once the user approves the set, ask them to save it in the categories '
+    + 'editor (Workspace settings → Categories in a workspace, otherwise Administration → Taxonomy → '
+    + 'Categories; it makes each id from the label) and to tell you when it is saved; then call list_categories again '
+    + 'and propose the source. If they want the source first, propose it and say its reviews get generic default '
+    + 'categories until categories are saved (a reprocess re-classifies them later).',
+].join('\n');
+
 const PACK_GUIDANCE: Record<ToolPack, string> = {
   core: [
     '- Counts, trends and distributions: get_metrics (exact, whole dataset). Finding and quoting feedback: '
@@ -57,6 +79,7 @@ const PACK_GUIDANCE: Record<ToolPack, string> = {
       + 'older: get_metrics(metric="summary", days) gives the real total for that period.',
     '- Categories (name, description, product) the user can see: list_categories. The user only sees feedback in '
       + 'their categories; never speculate about others.',
+    CATEGORIES_FIRST_GUIDANCE,
     '- Dimensions (product, module, user type, ...) and their values: list_dimensions. Filter feedback and metrics '
       + 'with dims={key: value} (exact keys and values from list_dimensions), channel and tag; '
       + 'get_metrics(metric="dimensions", key) counts per value.',
@@ -125,8 +148,9 @@ const PACK_GUIDANCE: Record<ToolPack, string> = {
       + 'user which result each URL came from. Competitors: name them from search results (comparison and "alternatives" '
       + 'pages), cite where each came from, and search each one\u2019s pages the same way. Apps: find_app_store_app, then pick '
       + 'the candidate whose developer is that company.',
-    '- Creating a connector (administrators) — follow these steps: (1) list_scrapers, so the new id is unused and '
-      + 'you do not duplicate an existing scraper; (2) optionally analyze_scraper_url for css selectors (a suggestion, '
+    '- Creating a connector (administrators) — follow these steps: (1) list_categories (with none, Categories first '
+      + 'above comes before the connector) and list_scrapers, so the new id is unused and you do not duplicate an '
+      + 'existing scraper; (2) optionally analyze_scraper_url for css selectors (a suggestion, '
       + 'nothing is saved); (3) propose ONE create_scraper (or create_app_connector for an App Store / Google Play '
       + 'app) with complete arguments, enabled false unless the user asked to schedule it. Change an existing one '
       + 'with update_scraper (only the fields to change).',

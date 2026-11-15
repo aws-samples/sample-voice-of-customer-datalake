@@ -8,6 +8,8 @@
  * and create (409 for a taken slug), and the platform-admin grant and revoke (users routes in mock-server.js). Also a
  * workspace's plugins and brand (mock-workspace-settings.js: every enable held with 409, a disable answered, the brand
  * per workspace for its admins) and the deployment's brand and default model without the header (mock-server.js).
+ * The current workspace's rename (its admins; the name trimmed, 1 to 80 characters, no control character) and its
+ * delete (mock-workspace-delete.js: the slug typed exactly, a legal basis, no export running; then the one 404).
  *
  * Run: node --test scripts/mock-workspaces.test.mjs
  */
@@ -185,6 +187,43 @@ describe('mock workspaces', () => {
           [403, { success: false, error: 'Workspace admin access required' }])
       }
       assert.equal((await inWorkspace(undefined, 'GET', EXPORT))[0], 400)
+    })
+
+    it('renames the workspace for its admins, trimmed, the slug kept, and lists it by its new name', async () => {
+      const { acme, juniper } = await mine()
+      const renamed = { ...acme, name: 'Acme Trail Gear', platform_admin: false }
+      assert.deepEqual(await inWorkspace(acme.id, 'PUT', '/me/workspaces/current', { name: '  Acme Trail Gear  ' }), [200, { workspace: renamed }])
+      assert.deepEqual((await mine()).acme, { ...acme, name: 'Acme Trail Gear' })
+      for (const [name, error] of [['', 'name is required'], ['a'.repeat(81), 'name must be at most 80 characters'],
+        ['Acme\tTrail', 'name must not contain control characters']]) {
+        assert.deepEqual(await inWorkspace(acme.id, 'PUT', '/me/workspaces/current', { name }), [400, { success: false, error }])
+      }
+      assert.deepEqual(await inWorkspace(acme.id, 'PUT', '/me/workspaces/current', { name: 'Acme', slug: 'acme-2' }),
+        [400, { success: false, error: 'Unknown field(s): slug' }])
+      assert.deepEqual(await inWorkspace(juniper.id, 'PUT', '/me/workspaces/current', { name: 'Juniper' }),
+        [403, { success: false, error: 'Workspace admin access required' }])
+    })
+
+    it('deletes the workspace for its admins once the slug is typed exactly, then answers its one 404 (mock-workspace-delete.js)', async () => {
+      const { acme, juniper } = await mine()
+      const DELETE = '/me/workspaces/current/delete'
+      const basis = 'Team closed, ticket #123'
+      assert.deepEqual(await inWorkspace(acme.id, 'POST', DELETE, { confirm_slug: 'acm', legal_basis: basis }),
+        [400, { success: false, error: "Type the workspace's slug exactly to confirm the delete" }])
+      assert.match((await inWorkspace(acme.id, 'POST', DELETE, { confirm_slug: 'acme', legal_basis: 'asked by vic@example.com' }))[1].error,
+        /must not contain personal data/)
+      assert.deepEqual(await inWorkspace(juniper.id, 'POST', DELETE, { confirm_slug: 'juniper', legal_basis: basis }),
+        [403, { success: false, error: 'Workspace admin access required' }])
+      await inWorkspace(acme.id, 'POST', EXPORT, {})
+      assert.equal((await inWorkspace(acme.id, 'POST', DELETE, { confirm_slug: 'acme', legal_basis: basis }))[0], 409)
+      // The export runs to its end (queued, running, completed on the reads), then the delete is taken.
+      for (let read = 0; read < 2; read += 1) await inWorkspace(acme.id, 'GET', EXPORT)
+      const [status, { delete: job }] = await inWorkspace(acme.id, 'POST', DELETE, { confirm_slug: 'acme', legal_basis: basis })
+      assert.deepEqual([status, job.job_id, job.status, job.phase], [202, acme.id, 'waiting', 'fence'])
+      assert.equal(Date.parse(job.fence_at) - Date.parse(job.requested_at), 21 * 60_000)
+      assert.deepEqual(await current(acme.id), [404, { success: false, error: 'Workspace not found' }])
+      // Still listed, as on the server until the job removes its rows.
+      assert.ok('acme' in await mine())
     })
 
     it('lets a platform admin who is not a member enter as admin', async () => {

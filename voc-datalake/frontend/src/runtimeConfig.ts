@@ -75,6 +75,8 @@ const RuntimeConfigSchema = z.object({
     passkey: z.boolean().optional(),
     /** The engineering agents module is deployed (-c engineeringAgents=true); otherwise no "New engineering flow". */
     engineering: z.boolean().optional(),
+    /** A workspace's admins may delete it (-c workspaceHardDelete=true); otherwise Workspace settings offers no delete. */
+    workspaceDelete: z.boolean().optional(),
   }).optional(),
   /**
    * The feature-request board's own Cognito user pool (docs/feature-requests.md), present only when
@@ -149,6 +151,15 @@ export function isWebSearchAvailable(): boolean {
  */
 export function isEngineeringAvailable(): boolean {
   return configState.config?.features?.engineering === true
+}
+
+/**
+ * Whether this deployment lets a workspace's admins delete it (`features.workspaceDelete`, the deployment's
+ * `-c workspaceHardDelete=true`), so Workspace settings offers "Delete workspace". The server refuses the delete
+ * (403) without the flag either way. Safe to call before config load (returns false).
+ */
+export function isWorkspaceDeleteAvailable(): boolean {
+  return configState.config?.features?.workspaceDelete === true
 }
 
 /**
@@ -237,6 +248,8 @@ function getEnvConfig(): RuntimeConfig {
     webSearch: getEnvString('VITE_ENABLE_WEB_SEARCH') === 'true',
     // VITE_ENABLE_ENGINEERING=true offers "New engineering flow" against the dev mock.
     engineering: getEnvString('VITE_ENABLE_ENGINEERING') === 'true',
+    // VITE_ENABLE_WORKSPACE_DELETE=true offers "Delete workspace" against the dev mock (`npm run dev` sets it).
+    workspaceDelete: getEnvString('VITE_ENABLE_WORKSPACE_DELETE') === 'true',
   }
   const envConfig = {
     apiEndpoint: getEnvString('VITE_API_ENDPOINT'),

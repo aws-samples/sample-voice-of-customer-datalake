@@ -61,6 +61,16 @@ export function forgetWorkspaceStores(): void {
 }
 
 /**
+ * Forget the workspace `slug`'s own records of the three stores, in localStorage and sessionStorage: a workspace its
+ * admin has just deleted leaves no conversation in view, draft or filters in this browser for a workspace that later
+ * takes its slug.
+ */
+export function forgetWorkspaceRecords(slug: string): void {
+  const records = new Set<string>(WORKSPACE_STORES.map((name) => `${name}:w/${slug}`))
+  for (const storage of BROWSER_STORAGES) removeMatching(storage, (key) => records.has(key))
+}
+
+/**
  * Forget every record of the store `name` but this page load's own (the plain one and every workspace's): "Reset
  * local settings" resets this browser's config, in every workspace, not only the one in view.
  */

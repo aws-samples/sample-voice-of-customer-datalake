@@ -1,7 +1,7 @@
 /**
  * The workspaces API, `voc-workspaces-api` (VocApiStack, docs/multi-workspace.md; handler
  * lambda/api/workspaces_handler.py): the multi-workspace control plane, on GET, POST, PUT and DELETE /me/{proxy+}
- * (`/me/workspaces`, `/me/workspaces/current`, `/me/workspaces/current/members[/{sub}]`,
+ * (`/me/workspaces`, `/me/workspaces/current` (GET, and PUT: a rename), `/me/workspaces/current/members[/{sub}]`,
  * `/me/workspaces/current/plugins[/{plugin_id}]`) and GET + POST
  * /platform/{proxy+} (`/platform/workspaces`, platform admins only).
  *
@@ -11,7 +11,8 @@
  *     after a retried put); PutItem only where the partition key matches the partitions a create writes, an add
  *     writes and an entry or a membership change audits ({@link WORKSPACE_WRITE_PARTITIONS}, `dynamodb:LeadingKeys`;
  *     a create or an add is one TransactWriteItems, authorised per item), every put conditional on a new key;
- *     UpdateItem on `WS#*` and `USER#*` with the attribute `role` only (a role change); DeleteItem on `WS#*`
+ *     UpdateItem on `WS#*` and `USER#*` with the attribute `role` only (a role change), or `name` only (a rename:
+ *     META and the members' `USER#` rows); DeleteItem on `WORKSPACES` (a rename's old listing row), `WS#*`
  *     and `USER#*` ({@link MEMBERSHIP_PARTITIONS}: a removal's `MEMBER#` and `USER#` rows; IAM cannot pin a sort key,
  *     so `META` in `WS#*` is in reach of IAM and kept out by the code) and on `PLUGIN#*` (a workspace's plugin
  *     disabled, lambda/shared/workspace_plugin_settings.py; its PutItem there, since 7.14.00, is the enable); ConditionCheckItem on `WS#*`. The audit-row
@@ -42,9 +43,10 @@ const WORKSPACES_HANDLER_FILE = 'workspaces_handler.py';
 const WORKSPACE_WRITE_PARTITIONS = ['AUDIT#WS#*', 'PLUGIN#*', 'SLUG#*', 'USER#*', 'WORKSPACES', 'WS#*'];
 /** A membership's two rows (lambda/shared/workspace_members.py): `WS#{ws}` / `MEMBER#{sub}` and `USER#{sub}` / `WS#{ws}`. */
 const MEMBERSHIP_PARTITIONS = ['USER#*', 'WS#*'];
-/** What the workspaces API deletes: a removal's two membership rows, and a disabled plugin's
- * `PLUGIN#{plugin}` / `WS#{ws}` row (lambda/shared/workspace_plugin_settings.py). */
-const DELETE_PARTITIONS = ['PLUGIN#*', ...MEMBERSHIP_PARTITIONS];
+/** What the workspaces API deletes: a removal's two membership rows, a disabled plugin's
+ * `PLUGIN#{plugin}` / `WS#{ws}` row (lambda/shared/workspace_plugin_settings.py), and a renamed workspace's old listing
+ * row `WORKSPACES` / `{old name}#{ws}` (lambda/shared/workspace_rename.py, which puts it again under the new name). */
+const DELETE_PARTITIONS = ['PLUGIN#*', 'WORKSPACES', ...MEMBERSHIP_PARTITIONS];
 
 /** The deployment's enabled plugins (lib/stacks/api-data-lambdas.ts `enabledSourcesEnv`): a workspace's ceiling. */
 export interface WorkspacesInputs {
@@ -59,8 +61,10 @@ export function createWorkspacesLambda(ctx: ApiStackContext, inputs: WorkspacesI
   grantKeyScopedWrites(workspacesTable, role, ['PutItem'], WORKSPACE_WRITE_PARTITIONS);
   // A member's role change (lambda/shared/workspace_members.py change_role): `role` alone on their MEMBER# and USER# rows
   // (IAM pins only the partition key, so `WS#*` also reaches META; the code writes `role` on MEMBER# rows only).
-  // Nothing else is updated: a new workspace's META and listing row are written whole by its creation.
   grantKeyScopedWrites(workspacesTable, role, ['UpdateItem'], MEMBERSHIP_PARTITIONS, ['pk', 'role', 'sk']);
+  // A rename (lambda/shared/workspace_rename.py): `name` alone on the workspace's META row and each member's USER# row
+  // (its listing row is moved by a delete and a put, above and below).
+  grantKeyScopedWrites(workspacesTable, role, ['UpdateItem'], MEMBERSHIP_PARTITIONS, ['name', 'pk', 'sk']);
   // A member's removal (remove_member): their MEMBER# and USER# rows. IAM pins only the partition key, so `WS#*` also
   // reaches that partition's META row; the code names MEMBER# keys only (tested), and SLUG#, WORKSPACES and AUDIT#
   // (the audit-row guard's Deny as well) stay out of reach.

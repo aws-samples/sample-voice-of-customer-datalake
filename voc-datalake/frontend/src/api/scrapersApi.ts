@@ -20,6 +20,21 @@ export const scrapersApi = {
     return { scrapers: normalizeScrapers(response.scrapers ?? []) }
   },
 
+  /** How many app configs (review pages, app connectors) `pluginIds` hold in the request's workspace
+   *  (`GET /integrations/{source}/apps`); a plugin whose list fails counts 0, as the Data sources page then shows
+   *  no card for it. */
+  countAppConfigs: async (pluginIds: readonly string[]): Promise<number> => {
+    const counts = await Promise.all(pluginIds.map(async (id) => {
+      try {
+        const response = await fetchApi<{ apps?: unknown[] }>(`/integrations/${encodeURIComponent(id)}/apps`)
+        return response.apps?.length ?? 0
+      } catch {
+        return 0
+      }
+    }))
+    return counts.reduce((sum, n) => sum + n, 0)
+  },
+
   getScraperTemplates: () => fetchApi<{ templates: ScraperTemplate[] }>('/scrapers/templates'),
 
   /**

@@ -43,10 +43,8 @@ SYNTH_REGION = 'us-east-1'
 # as long as us-east-1, so the prefixed names stay within the 64-character limits the default region meets.
 GATED_REGION = 'eu-west-1'
 GATED_PREFIX = 'b'  # a one-letter prefix: plugin rule names hit the 64-char limit otherwise
-# The app's entry, and the test harness's own entry of the same app with the refused hard delete built (the gated synth:
-# lib/test-support/hard-delete-app.ts; no context can build it, lib/utils/workspace-hard-delete.ts).
+# The app's entry (the gated synth too: its context turns the hard delete on, lib/utils/workspace-hard-delete.ts).
 APP_ENTRY = 'bin/voc-datalake.ts'
-HARD_DELETE_ENTRY = 'lib/test-support/hard-delete-app.ts'
 # Context that switches on every optional Lambda (each key is a `tryGetContext` in bin/ or lib/).
 GATED_CONTEXT: dict[str, object] = {
     'deploymentPrefix': GATED_PREFIX,
@@ -59,8 +57,7 @@ GATED_CONTEXT: dict[str, object] = {
     'emailFrom': 'noreply@voc.example.com',  # participant email + the board pool and its triggers
     'inferenceScope': 'eu',          # BEDROCK_INFERENCE_SCOPE / AVATARS_ENABLED on every Lambda
     'enableWebSearch': False,        # the one default-ON feature: its env must look optional too
-    'workspaceHardDelete': True,     # voc-workspace-delete and the delete routes' DELETE_FUNCTION, built only
-                                     # through HARD_DELETE_ENTRY (refused to the app: workspace-hard-delete.ts)
+    'workspaceHardDelete': True,     # voc-workspace-delete and the delete routes' DELETE_FUNCTION
     'anthropicUseCase': {
         'companyName': 'Example Air', 'companyWebsite': 'https://example.com', 'intendedUsers': '0',
         'industryOption': 'Technology', 'useCases': 'Audit synth.', 'otherIndustryOption': '',
@@ -306,7 +303,7 @@ def load_assembly(cdk_dir: Path = CDK_DIR, *, refresh: bool = False, cache_dir: 
             return _decode(cached)
     templates, records = _synth(cdk_dir, {})
     functions = _functions(templates, records, cdk_dir)
-    gated_templates, gated_records = _synth(cdk_dir, GATED_CONTEXT, GATED_REGION, entry=HARD_DELETE_ENTRY)
+    gated_templates, gated_records = _synth(cdk_dir, GATED_CONTEXT, GATED_REGION)
     gated = _functions(gated_templates, gated_records, cdk_dir, GATED_PREFIX)
     layers = {**_layers(gated_templates, gated_records, cdk_dir, GATED_PREFIX), **_layers(templates, records, cdk_dir)}
     merge_gated(functions, gated)

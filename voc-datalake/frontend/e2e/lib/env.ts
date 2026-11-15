@@ -47,6 +47,8 @@ export const MOCK_SPEC_NAMES: readonly string[] = [
   'workspace-admin',
   // 6.14.00: the two-workspace check (another workspace's id and address answer not-found; mock only).
   'cross-workspace',
+  // 7.40.00: a workspace's life on a deployment (create … delete); it skips on the mock, whose side is workspace-admin.
+  'workspace-lifecycle',
   // 6.05: the document canvas (needs the mock's read-only project; mock only until run on a deployment).
   'document-canvas',
   // The document canvas's accessibility and widths (mock only, as document-canvas).

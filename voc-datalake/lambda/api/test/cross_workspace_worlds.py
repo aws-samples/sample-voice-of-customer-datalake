@@ -511,6 +511,10 @@ WORLDS: dict[str, Callable[[Any], Any]] = {
 CASES: dict[tuple[str, str], RouteCase] = {
     ('workspaces_handler.py', 'GET /me/workspaces/current'): RouteCase(
         no_ids='the header is its only id: check 1'),
+    # The rename (7.40.00, shared/workspace_rename.py): A's META, A's listing row and A's members' rows only.
+    ('workspaces_handler.py', 'PUT /me/workspaces/current'): RouteCase(
+        no_ids='the workspace is the header: check 1 (the new name is text the admin typed)',
+        body={'name': 'Acme Renamed'}, literals={'Acme Renamed': 'the new name the admin typed, not an id'}),
     ('workspaces_handler.py', 'GET /me/workspaces/current/members'): RouteCase(
         ids=_CURSOR_IDS, query={'cursor': '{cursor}'}, refused_status=400),
     # A new email from a deployment admin: the path that creates a Cognito account.

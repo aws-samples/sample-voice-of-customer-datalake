@@ -340,7 +340,7 @@ describe("a workspace's webhook endpoint", () => {
 
   it('reads only the routing attributes of WS#* rows and the key of PLUGIN#* rows of voc-workspaces, and writes none', () => {
     // IAM, not only the code, keeps a MEMBER# row's email and name out of the webhook's reach; a read naming no
-    // attributes is refused (Null), and of a PLUGIN# row (the workspace enabled the plugin, 7.14.00) only its pk.
+    // attributes is refused (Null), and of a PLUGIN# row (the workspace enabled the plugin, 7.14.00) only its key.
     const onWorkspaces = roleStatements().filter((s) => JSON.stringify(s.Resource).includes('Workspaces'));
     const attributeRead = (partition: string, attributes: string[]) => ({ actions: ['dynamodb:GetItem'], condition: {
       'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [partition] },
@@ -349,7 +349,7 @@ describe("a workspace's webhook endpoint", () => {
       Null: { 'dynamodb:Attributes': 'false' },
     } })
     expect(onWorkspaces.map((s) => ({ actions: actionsOf(s), condition: s.Condition })))
-      .toStrictEqual([attributeRead('WS#*', ['pk', 'sk', 'status']), attributeRead('PLUGIN#*', ['pk'])]);
+      .toStrictEqual([attributeRead('WS#*', ['pk', 'sk', 'status']), attributeRead('PLUGIN#*', ['pk', 'sk'])]);
   });
 
   it('grants exactly the attributes the routing read projects', () => {

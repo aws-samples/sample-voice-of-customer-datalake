@@ -69,8 +69,9 @@ describe('the workspaces API\'s delete routes', () => {
         'ForAllValues:StringEquals': { 'dynamodb:Attributes': DELETE_STATUS_ATTRIBUTES } } },
     ].sort((a, b) => byCodeUnit(JSON.stringify(a), JSON.stringify(b))));
     const deletes = onTable(/ExportsOutputFnGetAttWorkspaces/).filter((s) => s.actions.includes('dynamodb:DeleteItem'));
-    // The delete routes add no DeleteItem: the role's own are a member's removal and a disabled plugin's row (7.14.00).
-    expect(deletes.map((s) => s.condition)).toStrictEqual([keys(['PLUGIN#*', 'USER#*', 'WS#*'])]);
+    // The delete routes add no DeleteItem: the role's own are a member's removal, a disabled plugin's row (7.14.00) and
+    // a renamed workspace's old listing row (7.40.00).
+    expect(deletes.map((s) => s.condition)).toStrictEqual([keys(['PLUGIN#*', 'WORKSPACES', 'USER#*', 'WS#*'])]);
   });
 
   it('invoke only the delete job by name (beside the export job) and are told its name', () => {

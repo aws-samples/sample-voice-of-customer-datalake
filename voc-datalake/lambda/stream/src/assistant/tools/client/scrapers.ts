@@ -34,6 +34,13 @@ import type { z } from 'zod';
 const urlProperty = (description: string) => ({ type: 'string', maxLength: SCRAPER_LIMITS.maxUrlLength, description });
 const selector = (description: string) => stringProperty(description, SCRAPER_LIMITS.maxTextField);
 
+/**
+ * The categories-first rule (tools/guidance.ts "Categories first"): categories classify every review a new source
+ * brings in, so the model reads them before it proposes one. Guidance only: nothing is refused for it.
+ */
+const CATEGORIES_FIRST_NOTE = 'Before proposing it, read list_categories: with none configured, set categories up '
+  + 'with the user first (Categories first).';
+
 /** Marks a Radar source (docs/radar.md): the reviews it brings in go to that other brand's Radar, never to our feedback. */
 const RADAR_BRAND_PROPERTY = stringProperty(
   'Radar source: the key of a tracked OTHER brand (get_radar view "brands"; add one with save_radar_brands first). '
@@ -86,7 +93,7 @@ function createScraper(deps: ToolDeps): ClientToolDefinition {
     pack: 'scrapers',
     description: 'Create a NEW web scraper (admin). Call list_scrapers first and pick an id no scraper uses — a create '
       + 'never overwrites. For css, analyze_scraper_url can suggest selectors. It is saved disabled with no schedule '
-      + 'unless the user asked for one; running it is a separate run_scraper step.',
+      + `unless the user asked for one; running it is a separate run_scraper step. ${CATEGORIES_FIRST_NOTE}`,
     properties: { id: stringProperty('New scraper id: 1-64 letters, digits, "_" or "-".', MAX_SCRAPER_ID_LENGTH), ...SCRAPER_PROPERTIES },
     required: ['id', 'name', 'extraction_method'],
     schema: createScraperArgsSchema,
@@ -130,7 +137,7 @@ const createAppConnector = (deps: ToolDeps) => defineClientTool({
     + 'manual runs only (frequency_minutes 0) unless the user asked for a schedule. A web_reviews connector\u2019s reviews '
     + 'import as their own source "web_<site>_<app_name>" (app_name "Example Air" on a www.trustpilot.com page is '
     + 'web_trustpilot_example_air), named once when it is created and kept if it is renamed. With radar_brand its reviews '
-    + 'go to Radar (that other brand), never to our own feedback.',
+    + `go to Radar (that other brand), never to our own feedback. ${CATEGORIES_FIRST_NOTE}`,
   properties: {
     source: { type: 'string', enum: ['app_reviews_ios', 'app_reviews_android', 'web_reviews'], description: 'Which store, or web_reviews for a review web page.' },
     app_name: stringProperty('Short name (letters, digits, spaces, ".", "_", "-").', APP_CONNECTOR_LIMITS.maxAppName),

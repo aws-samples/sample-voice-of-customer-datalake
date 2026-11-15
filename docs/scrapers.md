@@ -144,6 +144,8 @@ from a name, and to say when no page was found.
 
 These tools are not on the global MCP server (`/mcp/global`).
 
+**Categories first.** Before it proposes a new scraper or app connector, the assistant reads the workspace's categories (`list_categories`): they classify every review the source brings in. With none configured it asks what is being reviewed (the product or service, its customers, the feedback that matters), proposes a category set (6-10 categories with their product, a line each and 3-5 subcategories), and asks you to save it in the categories editor ([categories.md](categories.md)) before it proposes the source; until categories are saved, reviews are classified into generic default categories.
+
 ### Write rules
 
 The "a create never overwrites" and "a stale update is refused" rules above are enforced by the API, not only by

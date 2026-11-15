@@ -8,14 +8,14 @@
  * Mock only: it builds prototypes and writes versions. The dev mock's prototypes carry the walkthrough block
  * (mock-project-actions.js withWalkthrough) and the cards #order-status and #checkout-summary the steps point at.
  */
-import { expect, type FrameLocator, type Page } from '@playwright/test'
+import { expect, type FrameLocator, type Locator, type Page } from '@playwright/test'
 import { test } from '../lib/test'
 import { expectNoSeriousAxe, expectNoSidewaysScrolling } from '../lib/a11y'
 import { apiCall, stringField } from '../lib/api'
 import { revealDocumentRow } from '../lib/canvas'
 import { MOCK, RUN_PREFIX } from '../lib/env'
 import { isRecord } from '../lib/guards'
-import { roleOf, settle, site } from '../lib/fixtures'
+import { escapeRegExp, roleOf, settle, site } from '../lib/fixtures'
 
 const PROJECT = 'proj_1'
 /** The mock job completes on its second read; a few more reads is the margin. */
@@ -24,6 +24,18 @@ const STEPS = [
   { title: 'Where your order is', body: 'This card says when the parcel arrives.', selector: '#order-status' },
   { title: 'Pay in one place', body: 'The total includes shipping.', selector: '#checkout-summary' },
 ]
+
+/** Step 1's title once the editor has changed it, and the step it adds (saved as v3). */
+const RENAMED_TITLE = 'Your order, at a glance'
+const PICKED_TITLE = 'Place the order'
+
+/**
+ * The walkthrough's popup in a prototype's frame: a dialog named by its step's title (shared/static/
+ * prototype-walkthrough.js), so by name, never "the dialog" (unit/helpers.spec.ts, verify F3). It renames itself at
+ * every step: any of the titles these versions hold.
+ */
+const POPUP_NAME = new RegExp(`^(?:${[...STEPS.map((step) => step.title), RENAMED_TITLE, PICKED_TITLE].map(escapeRegExp).join('|')})$`)
+const popupIn = (frame: FrameLocator): Locator => frame.getByRole('dialog', { name: POPUP_NAME })
 
 /** Builds v1 of the `title` series through the mock's job; returns its document id. */
 async function build(title: string): Promise<string> {
@@ -67,7 +79,7 @@ for (const width of [1440, 390]) {
 
       // The first open starts it by itself.
       const frame = await openDocument(page, `${base} (v2)`)
-      const popup = frame.getByRole('dialog')
+      const popup = popupIn(frame)
       await expect(popup).toBeVisible({ timeout: 20_000 })
       await expect(popup).toContainText('Step 1 of 2')
       await expect(popup.getByRole('heading', { name: STEPS[0]?.title })).toBeVisible()
@@ -84,40 +96,40 @@ for (const width of [1440, 390]) {
       // Seen: opening the version again does not start it; Show walkthrough replays it.
       const again = await openDocument(page, `${base} (v2)`)
       await settle(page, 1500)
-      await expect(again.getByRole('dialog')).toBeHidden()
+      await expect(popupIn(again)).toBeHidden()
       await page.getByRole('button', { name: 'Show walkthrough' }).click()
-      await expect(again.getByRole('dialog')).toContainText('Step 1 of 2')
-      await again.getByRole('dialog').getByRole('button', { name: 'Skip' }).click()
-      await expect(again.getByRole('dialog')).toBeHidden()
+      await expect(popupIn(again)).toContainText('Step 1 of 2')
+      await popupIn(again).getByRole('button', { name: 'Skip' }).click()
+      await expect(popupIn(again)).toBeHidden()
       await page.getByRole('button', { name: 'Show walkthrough' }).click()
-      await expect(again.getByRole('dialog')).toBeVisible()
+      await expect(popupIn(again)).toBeVisible()
       // The prototype's own viewport stays on the page: its frame is never taller than the window, whatever the
       // documents list beside it holds (a stretched frame put the fixed popup below the page's visible area).
       const frameBox = await page.locator(`iframe[title="${base} (v2)"]`).boundingBox()
       expect(frameBox?.height ?? Infinity).toBeLessThanOrEqual(page.viewportSize()?.height ?? 0)
       await page.screenshot({ path: testInfo.outputPath(`walkthrough-popup-${String(width)}.png`) })
-      await again.getByRole('dialog').getByRole('button', { name: "Don't show again" }).click()
-      await expect(again.getByRole('dialog')).toBeHidden()
+      await popupIn(again).getByRole('button', { name: "Don't show again" }).click()
+      await expect(popupIn(again)).toBeHidden()
 
       // The editor: a new title for step 1, and a third step picked in the preview; saved as v3 (a new file).
       await page.getByRole('button', { name: 'Walkthrough', exact: true }).click()
       const editor = page.getByTestId('walkthrough-editor')
       await expect(editor.getByTestId('walkthrough-step-2')).toBeVisible()
       await checkState(page, 'editor')
-      const renamed = 'Your order, at a glance'
+      const renamed = RENAMED_TITLE
       await editor.getByTestId('walkthrough-step-1').getByLabel('Title').fill(renamed)
       await editor.getByRole('button', { name: 'Add a step' }).click()
       await again.locator('#checkout-summary').click()
       const picked = editor.getByTestId('walkthrough-step-3')
       await expect(picked).toBeVisible()
-      await picked.getByLabel('Title').fill('Place the order')
+      await picked.getByLabel('Title').fill(PICKED_TITLE)
       await picked.getByLabel('Text').fill('One button sends it.')
       await checkState(page, 'editor with a picked step')
       await editor.getByRole('button', { name: 'Save as a new version' }).click()
       await expect(page.getByRole('heading', { name: `${base} (v3)`, level: 2 })).toBeVisible({ timeout: 20_000 })
 
       // v3 is a version this viewer has not seen, but Don't show again (on v2) is kept for the series: no autostart.
-      const newest = page.frameLocator(`iframe[title="${base} (v3)"]`).getByRole('dialog')
+      const newest = popupIn(page.frameLocator(`iframe[title="${base} (v3)"]`))
       await settle(page, 1500)
       await expect(newest).toBeHidden()
 
@@ -128,7 +140,7 @@ for (const width of [1440, 390]) {
       await newest.getByRole('button', { name: 'Next' }).click()
       await newest.getByRole('button', { name: 'Next' }).click()
       await expect(newest).toContainText('Step 3 of 3')
-      await expect(newest.getByRole('heading', { name: 'Place the order' })).toBeVisible()
+      await expect(newest.getByRole('heading', { name: PICKED_TITLE })).toBeVisible()
       await expect(newest.getByRole('button', { name: 'Done' })).toBeEnabled()
     })
   })

@@ -78,6 +78,16 @@ export function cognitoSubFor(role: Role): string {
   return sub
 }
 
+/**
+ * The signed-in role's email, from the id token's `email` claim, or null when the token carries none. What a
+ * workspace's members route adds a person by (`POST /me/workspaces/current/members {email}`): taken from the token so
+ * the add finds that very account, never a guessed address (an admin's add of an unknown email creates an account).
+ */
+export function cognitoEmailFor(role: Role): string | null {
+  const email = idTokenClaim(role, 'email')
+  return typeof email === 'string' && email.trim() !== '' ? email.trim() : null
+}
+
 /** Cognito groups of the signed-in role, from the id token's `cognito:groups` (a JSON array claim). */
 export function cognitoGroupsFor(role: Role): string[] {
   const groups = idTokenClaim(role, 'cognito:groups')

@@ -18,12 +18,12 @@ const project = (overrides: Partial<Project>): Project => ({
 const NO_SIGNALS = { feedback_present: false, feedback_form_configured: false }
 
 const EMPTY: StepInputs = {
-  canSetUp: true, userSub: 'me', categories: [], signals: NO_SIGNALS, scraperCount: 0, sessionCount: 0, projects: [],
+  canSetUp: true, userSub: 'me', categories: [], signals: NO_SIGNALS, scraperCount: 0, appConfigCount: 0, sessionCount: 0, projects: [],
 }
 const DONE: StepInputs = {
   canSetUp: true, userSub: 'me', categories: [category('App')],
   signals: { feedback_present: true, feedback_form_configured: false },
-  scraperCount: undefined, sessionCount: 2, projects: [project({ owner: { sub: 'me', username: 'me', email: '' } })],
+  scraperCount: undefined, appConfigCount: undefined, sessionCount: 2, projects: [project({ owner: { sub: 'me', username: 'me', email: '' } })],
 }
 
 const statuses = (inputs: StepInputs) => Object.fromEntries(deriveSteps(inputs).map((s) => [s.id, s.status]))
@@ -43,7 +43,7 @@ describe('deriveSteps', () => {
   })
 
   it('keeps a step pending while its evidence loads, and never counts it', () => {
-    const loading: StepInputs = { ...EMPTY, categories: undefined, signals: undefined, scraperCount: undefined, sessionCount: undefined, projects: undefined }
+    const loading: StepInputs = { ...EMPTY, categories: undefined, signals: undefined, scraperCount: undefined, appConfigCount: undefined, sessionCount: undefined, projects: undefined }
     expect(new Set(Object.values(statuses(loading)))).toStrictEqual(new Set(['pending']))
     expect(progressOf(deriveSteps(loading))).toStrictEqual({ done: 0, total: 5, ready: false })
   })
@@ -73,14 +73,19 @@ describe('categoriesReady', () => {
 })
 
 describe('sourceConnected', () => {
-  it('is proven by a form, by feedback, or by a configured scraper', () => {
+  it('is proven by a form, by feedback, by a configured scraper, or by a review page / app connector', () => {
+    const none = { scraperCount: undefined, appConfigCount: undefined }
     expect([
-      sourceConnected({ signals: { ...NO_SIGNALS, feedback_form_configured: true }, scraperCount: undefined }),
-      sourceConnected({ signals: { ...NO_SIGNALS, feedback_present: true }, scraperCount: undefined }),
-      sourceConnected({ signals: NO_SIGNALS, scraperCount: 1 }),
-      sourceConnected({ signals: NO_SIGNALS, scraperCount: 0 }),
-      sourceConnected({ signals: NO_SIGNALS, scraperCount: undefined }),
-    ]).toStrictEqual([true, true, true, false, undefined])
+      sourceConnected({ signals: { ...NO_SIGNALS, feedback_form_configured: true }, ...none }),
+      sourceConnected({ signals: { ...NO_SIGNALS, feedback_present: true }, ...none }),
+      sourceConnected({ signals: NO_SIGNALS, scraperCount: 1, appConfigCount: undefined }),
+      // Review pages only, no scraper: the case a workspace with four review pages showed as "To do" (7.40.00).
+      sourceConnected({ signals: NO_SIGNALS, scraperCount: 0, appConfigCount: 4 }),
+      sourceConnected({ signals: NO_SIGNALS, scraperCount: undefined, appConfigCount: 1 }),
+      sourceConnected({ signals: NO_SIGNALS, scraperCount: 0, appConfigCount: 0 }),
+      sourceConnected({ signals: NO_SIGNALS, scraperCount: 0, appConfigCount: undefined }),
+      sourceConnected({ signals: NO_SIGNALS, ...none }),
+    ]).toStrictEqual([true, true, true, true, true, false, undefined, undefined])
   })
 
   it('reads the scraper list only when the signals cannot settle it', () => {

@@ -7,7 +7,8 @@
  * of lambda/shared/workspace_members.py, workspace_plugin_settings.py, platform_workspaces.py, user_admin_guard.py
  * and users_handler.py; `workspaceRefusals.lockstep.test.ts` fails when one changes on one side only. A refusal no
  * row names shows the
- * generic message, with the server's own reason when it gave one.
+ * generic message, with the server's own reason when it gave one. The rename's and the delete's texts are
+ * workspace_rename.py's and workspace_deletes.py's.
  *
  * @module workspace/workspaceRefusals
  */
@@ -87,6 +88,34 @@ export const EXPORT_REFUSALS: readonly Refusal[] = [
   { status: 409, reason: 'No export can be downloaded: the newest is not completed, or its 7 days are over. Start a new export', messageKey: 'common:workspaces.errors.exportNotDownloadable' },
   { status: 403, messageKey: 'common:workspaces.errors.notWorkspaceAdmin' },
   { status: 404, messageKey: 'common:workspaces.errors.workspaceGone' },
+]
+
+/** The refusals of `PUT /me/workspaces/current` (workspace_rename.py, platform_workspaces.py, workspace.py). */
+export const RENAME_REFUSALS: readonly Refusal[] = [
+  { status: 409, reason: 'The workspace changed meanwhile: reload and try again', messageKey: 'common:workspaces.errors.renameChangedMeanwhile' },
+  { status: 403, reason: 'You are no longer an admin of this workspace', messageKey: 'common:workspaces.errors.noLongerAdmin' },
+  { status: 403, messageKey: 'common:workspaces.errors.notWorkspaceAdmin' },
+  { status: 404, messageKey: 'common:workspaces.errors.workspaceGone' },
+]
+
+/**
+ * The refusals of `POST /me/workspaces/current/delete` (workspace_deletes.py, workspaces_handler.py). A reason the
+ * server refused (no reason given, too long, personal data in it: shared/legal_basis.py) is said in its own words.
+ * The 500 after the workspace was marked `deleting` says who can act on it now.
+ */
+export const DELETE_REFUSALS: readonly Refusal[] = [
+  { status: 400, reason: "Type the workspace's slug exactly to confirm the delete", messageKey: 'common:workspaces.errors.deleteSlugMismatch' },
+  { status: 409, reason: 'An export of this workspace is running: wait for it to finish, then delete the workspace', messageKey: 'common:workspaces.errors.deleteExportRunning' },
+  { status: 409, reason: 'An erasure is running in this workspace: delete the workspace when it ends', messageKey: 'common:workspaces.errors.deleteErasureRunning' },
+  { status: 409, reason: 'The workspace changed while the delete was being requested. Reload and try again', messageKey: 'common:workspaces.errors.deleteChangedMeanwhile' },
+  { status: 403, reason: 'Deleting a workspace is not available in this deployment', messageKey: 'common:workspaces.errors.deleteUnavailable' },
+  { status: 403, messageKey: 'common:workspaces.errors.notWorkspaceAdmin' },
+  { status: 404, messageKey: 'common:workspaces.errors.workspaceGone' },
+  {
+    status: 500,
+    reason: 'The workspace is marked for deletion, but its delete could not start. Ask a platform admin to cancel or resume it.',
+    messageKey: 'common:workspaces.errors.deleteNotStarted',
+  },
 ]
 
 /** The refusals of `PUT /settings/brand` inside a workspace (`require_settings_admin`, request_workspace.py). */

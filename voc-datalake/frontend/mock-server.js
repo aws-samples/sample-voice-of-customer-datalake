@@ -31,6 +31,7 @@ import { handleFeatureRequestRoutes } from './mock-feature-requests.js';
 import { handleWorkspaceRoutes } from './mock-workspaces.js';
 import { handleWorkspaceSettingsRoutes } from './mock-workspace-settings.js';
 import { handleWorkspaceExportRoutes } from './mock-workspace-export.js';
+import { handleWorkspaceDeleteRoutes } from './mock-workspace-delete.js';
 import { handleDataQualityRoutes, stampBands } from './mock-data-quality.js';
 import { handleFeedbackCatalogueRoutes } from './mock-feedback-catalogue.js';
 import { handlePersonaRoutes } from './mock-personas.js';
@@ -1406,7 +1407,8 @@ function handleDomainModules(req, res, url) {
     || handleFeatureRequestRoutes(req, res, url, send, shared)
     || handleWorkspaceRoutes(req, res, url, send, shared)
     || handleWorkspaceSettingsRoutes(req, res, url, send, shared)
-    || handleWorkspaceExportRoutes(req, res, url, send, shared);
+    || handleWorkspaceExportRoutes(req, res, url, send, shared)
+    || handleWorkspaceDeleteRoutes(req, res, url, send, shared);
 }
 
 function handleParameterizedExtras(req, res, url) {

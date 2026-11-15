@@ -2,7 +2,8 @@
  * The browser-saved state of a workspace: the assistant's UI record, the manual-import draft and the config store's
  * filters are saved per workspace inside one (`<name>:w/{slug}`), so what was saved in acme is not seen in juniper and
  * is back on return to acme; outside a workspace they keep their deployment-wide names. Sign-out and an expired
- * session forget every workspace's records; "Reset local settings" forgets every config record but the page's own.
+ * session forget every workspace's records; "Reset local settings" forgets every config record but the page's own; a
+ * workspace's delete forgets its own records.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { stubLocationAssign } from '../test/location'
@@ -119,5 +120,15 @@ describe('forgetOtherRecords (Reset local settings)', () => {
     const { forgetOtherRecords } = await helpersAt('/account')
     forgetOtherRecords('voc-config')
     expect(savedKeys()).toStrictEqual(['voc-assistant-ui', 'voc-assistant-ui:w/acme', 'voc-config', 'voc-manual-import', 'voc-manual-import:w/juniper', 'voc-theme'])
+  })
+})
+
+describe('forgetWorkspaceRecords (a workspace its admin deleted)', () => {
+  it("removes that workspace's records of the three stores, in both storages, and nothing else", async () => {
+    seed()
+    const { forgetWorkspaceRecords } = await helpersAt('/w/juniper/workspace-settings')
+    forgetWorkspaceRecords('juniper')
+    expect(savedKeys()).toStrictEqual(['voc-assistant-ui', 'voc-assistant-ui:w/acme', 'voc-config', 'voc-config:w/acme', 'voc-manual-import', 'voc-theme'])
+    expect(Object.keys(window.sessionStorage)).toStrictEqual(['voc-refused-workspaces'])
   })
 })

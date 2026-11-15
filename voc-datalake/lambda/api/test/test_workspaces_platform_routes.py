@@ -72,6 +72,23 @@ def test_a_platform_admin_creates_a_workspace_and_is_its_admin(world, lambda_con
     assert _call(world, lambda_context, 'GET', '/me/workspaces')[1]['workspaces'][0]['id'] == ws
 
 
+def test_a_new_workspace_starts_with_every_plugin_of_the_deployment_on(world, lambda_context, monkeypatch):
+    """7.40.00: no admin has to enable a plugin first; Workspace settings turns one off."""
+    from shared.workspace_plugins import workspaces_with_plugin
+
+    monkeypatch.setenv('ENABLED_SOURCES', '["webscraper", "web_reviews", "app_reviews_ios"]')
+    status, body = _call(world, lambda_context, 'POST', '/platform/workspaces', body=BODY)
+    ws = body['workspace']['id']
+    assert status == 201
+    assert [workspaces_with_plugin(world.table, plugin) for plugin in ('webscraper', 'web_reviews', 'app_reviews_ios')] \
+        == [[ws], [ws], [ws]]
+    plugins = _call(world, lambda_context, 'GET', '/me/workspaces/current/plugins', headers={'X-Workspace-Id': ws})[1]
+    assert {plugin['id']: plugin['enabled'] for plugin in plugins['plugins']} == {
+        'webscraper': True, 'web_reviews': True, 'app_reviews_ios': True}
+    row = world.table.get_item(Key={'pk': 'PLUGIN#web_reviews', 'sk': f'WS#{ws}'})['Item']
+    assert row['enabled_by'] == 'sub-pat'
+
+
 def test_a_create_makes_no_secret_and_no_parameter(world, lambda_context):
     """Decision 19: a workspace's credentials are SSM parameters made by their first save, so the create makes
     nothing beyond its rows (no monthly cost per workspace), whatever the request names."""

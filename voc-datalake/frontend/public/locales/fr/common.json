@@ -281,6 +281,52 @@
         "erased": "Supprimé par un effacement"
       }
     },
+    "rename": {
+      "title": "Nom de l’espace de travail",
+      "description": "Le nom que tous les membres voient dans le menu des espaces de travail de l’en-tête et dans la liste des espaces de travail.",
+      "address": "Adresse :",
+      "readOnly": "Seuls les administrateurs de cet espace de travail peuvent le renommer.",
+      "open": "Renommer",
+      "dialogTitle": "Renommer l’espace de travail",
+      "slugStays": "Son adresse, {{address}}, reste la même : les liens et les favoris continuent de fonctionner.",
+      "label": "Nom",
+      "save": "Enregistrer",
+      "nameInvalid": "Saisissez un nom de 1 à {{max, number}} caractères.",
+      "nameControl": "Le nom ne peut pas contenir de caractères de contrôle, comme des tabulations ou des retours à la ligne.",
+      "done": "L’espace de travail s’appelle désormais {{name}}."
+    },
+    "delete": {
+      "title": "Supprimer l’espace de travail",
+      "permanent": "La suppression de cet espace de travail est définitive et irréversible.",
+      "itemsTitle": "Le supprimer efface, pour tout le monde :",
+      "items": {
+        "feedback": "Tous ses retours et ses imports",
+        "projects": "Ses projets, documents, prototypes et profils",
+        "agents": "Ses agents et ses workflows",
+        "settings": "Ses paramètres, ses plugins et ses identifiants",
+        "files": "Ses fichiers",
+        "members": "L’accès de tous ses membres",
+        "conversations": "Les conversations avec l’assistant et la mémoire personnelle de chaque membre dans cet espace de travail",
+        "companyMemory": "Sa mémoire d’entreprise"
+      },
+      "notInExport": "L’export ne contient ni les conversations avec l’assistant ni la mémoire personnelle des membres : une fois l’espace de travail supprimé, elles sont perdues pour de bon.",
+      "exportFirst": "Exportez d’abord l’espace de travail pour garder une copie de ses retours, de sa configuration, de ses membres et de son historique d’audit.",
+      "exportLink": "Aller à l’export",
+      "open": "Supprimer l’espace de travail…",
+      "dialogTitle": "Supprimer {{name}} ?",
+      "permanentFor": "Cette action supprime définitivement {{name}} pour tous les membres. Elle est irréversible.",
+      "typeSlug": "Saisissez le slug de l’espace de travail, {{slug}}, pour confirmer",
+      "reasonLabel": "Motif de la suppression",
+      "reasonHint": "Conservé pour toujours dans le journal d’audit. Par exemple : « Équipe dissoute, ticket #123 ». N’écrivez jamais ici un nom, une adresse e-mail ou un numéro de téléphone.",
+      "understood": "Je comprends que la suppression de cet espace de travail est irréversible.",
+      "confirm": "Supprimer l’espace de travail",
+      "deleting": "Suppression…",
+      "doneTitle": "{{name}} est en cours de suppression",
+      "doneGone": "Il n’est plus accessible à aucun membre : plus personne ne peut l’ouvrir.",
+      "doneBackground": "Ses données sont supprimées en arrière-plan ; cela commence dans une vingtaine de minutes.",
+      "doneBackgroundAt": "Ses données sont supprimées en arrière-plan à partir d’environ {{time}} (dans une vingtaine de minutes).",
+      "leave": "Aller à mes espaces de travail"
+    },
     "config": {
       "categoriesTitle": "Catégories",
       "categoriesDescription": "Les catégories propres à cet espace de travail classent ses retours. Un nouvel espace de travail n’en a aucune : ses retours sont classés avec les catégories par défaut intégrées jusqu’à ce que ses administrateurs en ajoutent. Rien n’est copié des catégories du déploiement.",
@@ -323,7 +369,14 @@
       "genericWithReason": "Cela n’a pas fonctionné : {{reason}}",
       "exportRunning": "Un export de cet espace de travail est déjà en cours. Attendez qu’il se termine.",
       "exportErasureRunning": "Un effacement est en cours dans cet espace de travail. Lancez l’export quand il sera terminé.",
-      "exportNotDownloadable": "Cet export ne peut plus être téléchargé. Lancez un nouvel export."
+      "exportNotDownloadable": "Cet export ne peut plus être téléchargé. Lancez un nouvel export.",
+      "renameChangedMeanwhile": "L’espace de travail a changé entre-temps. Rechargez la page et réessayez.",
+      "deleteSlugMismatch": "Ce n’est pas le slug de cet espace de travail. Saisissez-le exactement pour confirmer la suppression.",
+      "deleteExportRunning": "Un export de cet espace de travail est en cours. Attendez qu’il se termine, puis supprimez l’espace de travail.",
+      "deleteErasureRunning": "Un effacement est en cours dans cet espace de travail. Supprimez l’espace de travail quand il sera terminé.",
+      "deleteChangedMeanwhile": "L’espace de travail a changé pendant la demande de suppression. Rechargez la page et réessayez.",
+      "deleteUnavailable": "La suppression d’un espace de travail n’est pas disponible dans ce déploiement.",
+      "deleteNotStarted": "L’espace de travail est marqué pour suppression, mais sa suppression n’a pas pu démarrer. Demandez à un administrateur de la plateforme de l’annuler ou de la reprendre."
     }
   },
   "timeRange": {

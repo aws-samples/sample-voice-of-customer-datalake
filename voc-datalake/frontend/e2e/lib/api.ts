@@ -15,9 +15,14 @@ export interface ApiResult {
   body: unknown
 }
 
-/** `expect`: the 4xx statuses this call is MEANT to be refused with, so the log sweep counts them as expected. */
+/**
+ * `expect`: the 4xx statuses this call is MEANT to be refused with, so the log sweep counts them as expected.
+ * `workspace`: the workspace id the call acts in, sent as `X-Workspace-Id` as the SPA does inside `/w/{slug}/`
+ * (docs/multi-workspace.md); absent, the call acts outside any workspace (the deployment's own data).
+ */
 export interface ApiCallOptions {
   expect?: ExpectedStatuses
+  workspace?: string
 }
 
 /**
@@ -30,11 +35,13 @@ function mockHeaders(role: Role): Record<string, string> {
 
 export async function apiCall(role: Role, method: string, path: string, body?: unknown, options: ApiCallOptions = {}): Promise<ApiResult> {
   const started = performance.now()
+  const headers: Record<string, string> = MOCK ? mockHeaders(role) : { Authorization: idTokenFor(role), 'Content-Type': 'application/json' }
+  if (options.workspace !== undefined) headers['X-Workspace-Id'] = options.workspace
   const response = await e2eFetch(`${apiUrl()}${path}`, {
     method,
-    headers: MOCK ? mockHeaders(role) : { Authorization: idTokenFor(role), 'Content-Type': 'application/json' },
+    headers,
     body: body === undefined ? undefined : JSON.stringify(body),
-  }, options)
+  }, { expect: options.expect })
   return resultOf(response, started)
 }
 

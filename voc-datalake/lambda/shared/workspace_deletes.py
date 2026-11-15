@@ -149,9 +149,9 @@ COUNTERS_REBUILD: Final = 'required: scripts/retention/rebuild_aggregates.py --w
 _UNFINISHED: Final = (WAITING, RUNNING)
 
 
-#: The deployment flag (``-c workspaceHardDelete=true``, lib/utils/workspace-hard-delete.ts): off by default, and
-#: off until the per-person export ships (a delete destroys members' conversations and personal memories, of which
-#: they have no copy yet).
+#: The deployment flag (``-c workspaceHardDelete=true``, lib/utils/workspace-hard-delete.ts): off by default. A delete
+#: destroys members' conversations and personal memories, of which the workspace's export holds no copy: the web app
+#: says so before the admin confirms (owner decision, 7.40.00).
 HARD_DELETE_ENV: Final = 'WORKSPACE_HARD_DELETE'
 HARD_DELETE_DISABLED: Final = 'Deleting a workspace is not available in this deployment'
 

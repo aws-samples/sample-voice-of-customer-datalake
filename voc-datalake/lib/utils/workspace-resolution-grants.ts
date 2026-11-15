@@ -105,10 +105,12 @@ export function grantWorkspaceResolution(workspacesTable: dynamodb.ITable, role:
   return { WORKSPACES_TABLE: workspacesTable.tableName };
 }
 
-/** A `PLUGIN#{plugin}` / `WS#{ws}` row's key, the one attribute a check of whether a workspace enabled a plugin
- *  reads (lambda/shared/workspace_plugin_settings.py `require_plugin_enabled` projects `pk`): with
- *  {@link PLUGIN_ROW_PARTITIONS}, the attribute-limited read the operator APIs and the webhooks hold (7.14.00). */
-export const PLUGIN_ROW_KEY = ['pk'] as const;
+/** A `PLUGIN#{plugin}` / `WS#{ws}` row's key, all a check of whether a workspace enabled a plugin reads
+ *  (lambda/shared/workspace_plugin_settings.py `require_plugin_enabled` projects `pk`): with
+ *  {@link PLUGIN_ROW_PARTITIONS}, the attribute-limited read the operator APIs and the webhooks hold (7.14.00).
+ *  Both key attributes: DynamoDB counts the request's Key in `dynamodb:Attributes`, so with `pk` alone every GetItem
+ *  of the row was AccessDenied (7.40.00: Run now in a workspace answered "Failed to open the workspace"). */
+export const PLUGIN_ROW_KEY = ['pk', 'sk'] as const;
 export const PLUGIN_ROW_PARTITIONS = ['PLUGIN#*'] as const;
 
 /**

@@ -245,7 +245,26 @@ def run_in_workspace(event: object, run: Callable[[WorkspaceScope | None], dict]
         return {"status": "refused", "reason": "workspace_not_active"}
     if is_scheduled_tick(event):
         fan_out_once(SOURCE_PLATFORM, event)
-    return run(scope)
+    try:
+        return run(scope)
+    except WorkspaceCredentialsNotSet:
+        if scope is None or not is_scheduled_workspace_run(event):
+            raise
+        # Every plugin is on in a new workspace (7.40.00): a scheduled run where nothing is saved for it yet is not a
+        # failure (no Lambda error, so no async retry and no ingestor-errors alarm), only counted.
+        logger.info("Scheduled run skipped: nothing is saved for this plugin in the workspace",
+                    extra={"plugin_id": SOURCE_PLATFORM, "workspace_id": scope.ws})
+        metrics.add_metric(name="IngestorNotConfigured", unit="Count", value=1)
+        return {"status": "skipped", "reason": "not_configured"}
+
+
+def is_scheduled_workspace_run(event: object) -> bool:
+    """Whether *event* is a workspace's scheduled run (the fan-out's ``{"workspace_id": ws}``): no ``execution_id``,
+    which the API's Run now and scraper run always carry."""
+    if not isinstance(event, Mapping):
+        return False
+    execution_id = event.get("execution_id")
+    return not (isinstance(execution_id, str) and execution_id)
 
 
 def _end_refused_run(event: object, scope: WorkspaceScope, reason: str) -> None:
@@ -331,7 +350,9 @@ class BaseIngestor(ABC):
         try:
             self.secrets = self._load_secrets()
         except ConfigurationError as error:
-            self._report_construction_failure(error)
+            # A workspace's scheduled run with nothing saved is skipped by run_in_workspace, not reported as failed.
+            if not (isinstance(error, WorkspaceCredentialsNotSet) and scope is not None and not execution_id):
+                self._report_construction_failure(error)
             raise
 
     def _report_construction_failure(self, error: Exception) -> None:
