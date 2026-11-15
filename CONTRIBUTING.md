@@ -216,6 +216,24 @@ of each step's status and duration, and every step's full log is in `.cache/vali
 other lanes, see [docs/coverage-gate.md](docs/coverage-gate.md#tests-that-assert-a-time-budget)), `--dry-run` (every
 command a no-op, to test the runner). `VALIDATE_PYTEST_WORKERS` sets the pytest-xdist worker count (default: CPUs − 4).
 
+#### On a big machine: the pool and the caches in RAM
+A build machine with many cores and a lot of RAM sets one line in its shell profile, `export VOC_VALIDATE_JOBS=32`
+(a laptop and CI leave it unset and keep the lanes above). Then `npm run validate` runs every step as a job of its
+own, up to that many at once, the longest chain first (by the last run's step timings), and keeps the only orders
+the lanes kept: the vite build before the audit synth and the CDK suite (both stage `frontend/dist`), the synth before
+the detector tests (they read its cache). The steps, their commands, the report and the exit code are the same; the
+first failure stops the run and is named (`--keep-going` runs every step whose prerequisites passed). CodeQL's two
+languages run side by side. With the pool, when `/dev/shm` exists, the rebuildable caches (`.cache/codeql`,
+`.cache/coverage`, `.cache/audit`, `.cache/validate/tsc`) move to `/dev/shm/voc-validate-<uid>/<tree>/` with links at
+their old paths, and every step's `TMPDIR` (the CDK synths' asset staging, pytest's `tmp_path`) is a folder of the
+run's own there, removed when it ends (`scripts/validate-ram.sh`; `VOC_VALIDATE_RAM=<absolute dir>` picks another
+folder, `off` leaves the caches where they are). Only folders this user made and nobody else can open are used.
+With the pool the CDK suite and the detector tests also run on more workers (CPUs / 6 and CPUs / 12). The step logs stay on disk, so `--failed` works after a reboot. After a reboot `/dev/shm`
+is empty: the next run makes the folders again and runs cold (CodeQL's databases and the audit synth are rebuilt),
+nothing to do by hand. To put a cache back on disk, remove its link (`rm .cache/codeql`); the next run without RAM
+makes it a plain folder. Measured on a 192-core machine that other work kept busy: the lanes 498-534 s, the pool
+257-310 s, both green on the same tree (CHANGELOG 7.40.01). The banner says which mode ran (`validate: pool of 32 jobs, …, caches and TMPDIR in RAM (…)`).
+
 pytest runs in several processes in any order, so a test must not depend on another test having run or on a
 fixed path; tests that must share one process are marked `@pytest.mark.xdist_group('<name>')`. Parametrize ids
 must be the same in every process (no random values in an id: pass `ids=`). An order audit, on demand (not a gate,

@@ -31,6 +31,18 @@
 #      VALIDATE_SKIP_CODEQL=1 (skip the CodeQL step), CODEQL_THREADS (default: half the CPUs),
 #      AI_REVIEW=auto|kiro|claude|off (the AI reviews; scripts/ai-review/review.mjs),
 #      VALIDATE_LOG_ROOT (where runs are logged and --failed looks for the newest one; default .cache/validate/logs).
+# A big machine (one setting per machine, e.g. in its shell profile; unset on a laptop and in CI = the lanes above):
+#      VOC_VALIDATE_JOBS=N (N > 1): the POOL. Every step is a job of its own, up to N at once, the longest chain first
+#        (by the last run's timings); the few orders the lanes kept are kept (`needs` below). Same steps, same
+#        commands, same report and exit code; the first failure stops the run (--keep-going: every step whose
+#        prerequisites passed still runs). CodeQL's two languages run side by side, the CDK suite on
+#        VALIDATE_CDK_VITEST_WORKERS (CPUs/6, 4-32) workers, the detector tests on VALIDATE_AUDIT_TEST_WORKERS
+#        (CPUs/12, 2-16) xdist workers; pytest on CPUs/2 workers and CodeQL on CPUs/4 threads a language, unless set.
+#      VOC_VALIDATE_RAM=<dir>|off: the rebuildable caches (.cache/{codeql,coverage,audit,validate/tsc}) and every
+#        step's TMPDIR in RAM, the old paths kept as links (scripts/validate-ram.sh). Default with the pool:
+#        /dev/shm/voc-validate-<uid> when /dev/shm exists, else off; used only when it is this user's own (mode
+#        700). After a reboot the links' folders come back empty: a cold run, nothing breaks; with RAM off a
+#        dangling link is replaced by an empty folder, a live one is kept and named.
 #
 # bash 3.2 (macOS /bin/bash) compatible on purpose: no associative arrays, no `wait -n`.
 set -euo pipefail
@@ -49,6 +61,7 @@ if [[ -z "${PYTHON_BIN:-}" ]]; then
 fi
 PATH="$(dirname "$PYTHON_BIN"):$PATH"   # ruff, vulture, pytest from the same environment
 CPUS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
+PYTEST_WORKERS_GIVEN="${VALIDATE_PYTEST_WORKERS:+1}"   # the pool sizes them itself unless given
 if [[ -z "${VALIDATE_PYTEST_WORKERS:-}" ]]; then
   VALIDATE_PYTEST_WORKERS=$(( CPUS > 6 ? CPUS - 4 : 2 ))
 fi
@@ -76,11 +89,36 @@ while [[ $# -gt 0 ]]; do
     --pytest-first) PYTEST_FIRST=1 ;;
     --dry-run) DRY_RUN=1 ;;
     --failed) FAILED_ONLY=1 ;;
-    -h|--help) sed -n '2,33p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,47p' "$0"; exit 0 ;;
     *) printf 'validate: unknown option %s (see --help)\n' "$1" >&2; exit 2 ;;
   esac
   shift
 done
+POOL_JOBS="${VOC_VALIDATE_JOBS:-0}"
+[[ "$POOL_JOBS" =~ ^[0-9]+$ ]] || { printf 'validate: VOC_VALIDATE_JOBS must be a number (got %s)\n' "$POOL_JOBS" >&2; exit 2; }
+[[ "$SERIAL" -eq 1 ]] && POOL_JOBS=0   # --serial means one step after another
+# The pool's machine has the cores for wider suites (measured on 192 cores, each the same tests and results): CodeQL's
+# languages side by side (scripts/codeql.sh); the CDK suite on CPUs / 6 workers, 4 to 32, instead of its config's 4
+# (sized for a 12-core laptop; 32 workers: 185 s -> 91 s); the detector tests, independent read-only scans of the
+# tree, on CPUs / 12 pytest-xdist workers, 2 to 16, one file per worker (16: 190 s -> 46 s). Unset = the suites' own
+# defaults (the lanes, CI); each can be set by hand like VALIDATE_PYTEST_WORKERS.
+clamp() { local v=$(( $1 )); (( v < $2 )) && v=$2; (( v > $3 )) && v=$3; printf '%s' "$v"; }
+VALIDATE_CDK_VITEST_WORKERS="${VALIDATE_CDK_VITEST_WORKERS:-}"; VALIDATE_AUDIT_TEST_WORKERS="${VALIDATE_AUDIT_TEST_WORKERS:-}"
+# The big consumers share the cores instead of each taking all of them (the lanes ran them partly one after another):
+# pytest on CPUs / 2 workers, each CodeQL language on CPUs / 4 threads (the step's default is CPUs / 2), unless set.
+# The stream suite beside every other job takes the CDK suite's load timeouts (a beforeAll import crossed vitest's 10 s
+# default twice in the pool's runs; a timeout is not an assertion).
+VALIDATE_POOL=""
+if [[ "$POOL_JOBS" -gt 1 ]]; then
+  VALIDATE_POOL=1
+  export CODEQL_PARALLEL="${CODEQL_PARALLEL:-1}"
+  export CODEQL_THREADS="${CODEQL_THREADS:-$(clamp "CPUS / 4" 1 4096)}"
+  # (--pytest-first runs it alone, before the pool: it keeps every core then)
+  [[ -n "$PYTEST_WORKERS_GIVEN" || "$PYTEST_FIRST" -eq 1 ]] || VALIDATE_PYTEST_WORKERS="$(clamp "CPUS / 2" 2 4096)"
+  VALIDATE_CDK_VITEST_WORKERS="${VALIDATE_CDK_VITEST_WORKERS:-$(clamp "CPUS / 6" 4 32)}"
+  VALIDATE_AUDIT_TEST_WORKERS="${VALIDATE_AUDIT_TEST_WORKERS:-$(clamp "CPUS / 12" 2 16)}"
+fi
+export VALIDATE_CDK_VITEST_WORKERS VALIDATE_AUDIT_TEST_WORKERS VALIDATE_POOL
 
 # ---- Steps: lane | groups | name | command (run with `bash -euo pipefail -c`) ----
 # Lanes (measured: their critical paths are about equal): py (Python lint, types, pytest-xdist),
@@ -90,8 +128,14 @@ done
 # stage frontend/dist as an asset), web (the frontend vitest suite, which needs no build); sec (CodeQL).
 # CI runs each lane as its own job (.github/workflows/quality-gates.yml, `--lane <name>`), so a lane's
 # steps never share a runner with another lane's.
-S_LANE=(); S_GROUPS=(); S_NAME=(); S_CMD=()
-def() { S_LANE+=("$1"); S_GROUPS+=("$2"); S_NAME+=("$3"); S_CMD+=("$4"); }
+S_LANE=(); S_GROUPS=(); S_NAME=(); S_CMD=(); S_NEEDS=()
+def() { S_LANE+=("$1"); S_GROUPS+=("$2"); S_NAME+=("$3"); S_CMD+=("$4"); S_NEEDS+=(""); }
+# `needs <step> <earlier step>...`: in the pool (VOC_VALIDATE_JOBS) <step> starts only after each named step that this
+# run selected has passed. The lanes keep these orders by running their steps one after another.
+step_index() { local i; for i in "${!S_NAME[@]}"; do [[ "${S_NAME[$i]}" == "$1" ]] && { printf '%s' "$i"; return 0; }; done
+  printf 'validate: no step named %s\n' "$1" >&2; return 1; }
+needs() { local s d; s="$(step_index "$1")" || exit 2; shift
+  for d in "$@"; do d="$(step_index "$d")" || exit 2; S_NEEDS[$s]="${S_NEEDS[$s]} $d"; done; }
 
 # Python (voc-datalake/: ruff.toml, pyproject.toml, pytest.ini, pyrightconfig.json)
 def py   python,python-static               "ruff"                               'cd "$CDK" && ruff check lambda plugins scripts'
@@ -128,7 +172,7 @@ def tsc  tenets                             "tenets: AI review"                 
 def lint commit                             "commit: AI review"                  'cd "$ROOT" && node scripts/ai-review/review.mjs --kind commit'
 def tsc  repo                               "node: dependency scripts tests"     'cd "$ROOT" && node --test scripts/dependency-audit.test.mjs scripts/dependency-freshness.test.mjs scripts/dependency-overrides.test.mjs scripts/scheduled-failure-watch.test.mjs'
 def tsc  repo                               "node: git hook tests"               'cd "$ROOT" && node --test scripts/git-hooks/*.test.mjs'
-def tsc  repo                               "node: validate.sh scheduling"      'cd "$ROOT" && node --test scripts/validate.test.mjs'
+def tsc  repo                               "node: validate.sh scheduling"      'cd "$ROOT" && node --test scripts/validate.test.mjs scripts/validate-ram.test.mjs scripts/codeql.test.mjs'
 # Secrets in the working tree (.gitleaks.toml: default rules + the platform's token formats, build
 # output and dependencies allowlisted by path; .gitleaksignore for reviewed fingerprints).
 def lint repo                               "gitleaks: working tree"             'cd "$ROOT" && bash scripts/gitleaks-tree.sh'
@@ -174,13 +218,20 @@ def test frontend,frontend-static,cdk,cdk-tests,audit,audit-py-synth,audit-tools
 # worst exit wins), so the cache is built once and no two synths ever write it at the same time. The synth
 # stages frontend/dist (VocApiStack's website asset), so the step follows the vite build, which carries its
 # group for that reason, and comes before the vitest suites so a failing suite cannot leave it unrun.
-def test audit,audit-py-synth               "audit: py_reachability + py_env_contract + py_iam_contract + py_layers + py_sfn_errors + py_shared_constants + py_doc_refs + clones_struct.py --kind function" 'cd "$ROOT" && rc=0 && for d in scripts/audit/py_reachability.py scripts/audit/py_env_contract.py scripts/audit/py_iam_contract.py scripts/audit/py_layers.py scripts/audit/py_sfn_errors.py scripts/audit/py_shared_constants.py scripts/audit/py_doc_refs.py "scripts/audit/clones_struct.py --kind function"; do "$PYTHON_BIN" $d || { r=$?; echo "audit: $d exited $r"; [ "$r" -gt "$rc" ] && rc=$r; }; done; exit "$rc"'
+def test audit,audit-py-synth               "audit: py_reachability + py_env_contract + py_iam_contract + py_layers + py_sfn_errors + py_shared_constants + py_doc_refs + clones_struct.py --kind function" 'cd "$ROOT" && if [ -n "${VALIDATE_DISK_TMPDIR:-}" ]; then export TMPDIR="$VALIDATE_DISK_TMPDIR"; fi && rc=0 && for d in scripts/audit/py_reachability.py scripts/audit/py_env_contract.py scripts/audit/py_iam_contract.py scripts/audit/py_layers.py scripts/audit/py_sfn_errors.py scripts/audit/py_shared_constants.py scripts/audit/py_doc_refs.py "scripts/audit/clones_struct.py --kind function"; do "$PYTHON_BIN" $d || { r=$?; echo "audit: $d exited $r"; [ "$r" -gt "$rc" ] && rc=$r; }; done; exit "$rc"'
 # The detector tests synth the app too (test_py_reachability, test_py_sfn_errors, test_py_shared_constants
 # read the real tree), so they run in this lane after the vite build, never where frontend/dist is missing.
-def test audit,audit-tools                  "audit: detector tests"              'cd "$ROOT" && "$PYTHON_BIN" -m pytest -c scripts/audit/pytest.ini scripts/audit && node --test scripts/audit/*.test.mjs'
-def test cdk,cdk-tests                      "vitest: CDK app"                    'cd "$CDK" && npx vitest run --testTimeout "$VALIDATE_VITEST_TIMEOUT_MS" --hookTimeout "$VALIDATE_VITEST_TIMEOUT_MS"'
-def test stream,stream-tests                "vitest: stream Lambda"              'cd "$STREAM" && rm -rf "$ROOT/.cache/coverage/stream" && npx vitest run --coverage.enabled --coverage.reporter=json-summary --coverage.reportsDirectory="$ROOT/.cache/coverage/stream" && cd "$ROOT" && node scripts/coverage/check-per-file-coverage.mjs $COVERAGE_PRUNE --suite stream'
+def test audit,audit-tools                  "audit: detector tests"              'cd "$ROOT" && if [ -n "${VALIDATE_DISK_TMPDIR:-}" ]; then export TMPDIR="$VALIDATE_DISK_TMPDIR"; fi && "$PYTHON_BIN" -m pytest -c scripts/audit/pytest.ini scripts/audit ${VALIDATE_AUDIT_TEST_WORKERS:+-n "$VALIDATE_AUDIT_TEST_WORKERS" --dist loadfile} && node --test scripts/audit/*.test.mjs'
+def test cdk,cdk-tests                      "vitest: CDK app"                    'cd "$CDK" && npx vitest run --testTimeout "$VALIDATE_VITEST_TIMEOUT_MS" --hookTimeout "$VALIDATE_VITEST_TIMEOUT_MS" ${VALIDATE_CDK_VITEST_WORKERS:+--maxWorkers "$VALIDATE_CDK_VITEST_WORKERS"}'
+def test stream,stream-tests                "vitest: stream Lambda"              'cd "$STREAM" && rm -rf "$ROOT/.cache/coverage/stream" && npx vitest run ${VALIDATE_POOL:+--testTimeout "$VALIDATE_VITEST_TIMEOUT_MS" --hookTimeout "$VALIDATE_VITEST_TIMEOUT_MS"} --coverage.enabled --coverage.reporter=json-summary --coverage.reportsDirectory="$ROOT/.cache/coverage/stream" && cd "$ROOT" && node scripts/coverage/check-per-file-coverage.mjs $COVERAGE_PRUNE --suite stream'
 def web  frontend,frontend-tests            "vitest: frontend"                   'cd "$FRONTEND" && rm -rf "$ROOT/.cache/coverage/frontend" && npx vitest run --testTimeout "$VALIDATE_VITEST_TIMEOUT_MS" --coverage.enabled --coverage.reporter=json-summary --coverage.reportsDirectory="$ROOT/.cache/coverage/frontend" && cd "$ROOT" && node scripts/coverage/check-per-file-coverage.mjs $COVERAGE_PRUNE --suite frontend'
+# The test lane's orders, for the pool: the synth step and the CDK suite stage frontend/dist; the detector tests read
+# the synth cache (.cache/audit/) that the synth step writes, so no two synths write it at once. Nothing else in
+# any lane depends on an earlier step of its lane.
+AUDIT_SYNTH="audit: py_reachability + py_env_contract + py_iam_contract + py_layers + py_sfn_errors + py_shared_constants + py_doc_refs + clones_struct.py --kind function"
+needs "$AUDIT_SYNTH" "vite build: frontend"
+needs "audit: detector tests" "vite build: frontend" "$AUDIT_SYNTH"
+needs "vitest: CDK app" "vite build: frontend"
 
 # Code-audit detectors (scripts/audit/, docs/code-audit.md): dead code, renamed clones and re-implemented
 # helpers the gates above cannot see. Each exits 0 clean, 1 findings, 2 cannot run, and any non-zero exit
@@ -282,15 +333,52 @@ if [[ "$PYTEST_FIRST" -eq 1 ]]; then
 fi
 # --dry-run: the same scheduling, lanes and report, with every command replaced by a no-op (tests the runner).
 # VALIDATE_DRY_RUN_FAIL=<step name> makes that one step exit 1 instead, so a test can drive the failure paths.
+# VALIDATE_DRY_RUN_CMD replaces the no-op (it sees the step's name in $VALIDATE_STEP): a test of the pool records
+# when each step starts and ends with it.
 if [[ "$DRY_RUN" -eq 1 ]]; then
   for i in "${!S_CMD[@]}"; do
-    if [[ "${S_NAME[$i]}" == "${VALIDATE_DRY_RUN_FAIL:-}" ]]; then S_CMD[$i]='exit 1'; else S_CMD[$i]=':'; fi
+    if [[ "${S_NAME[$i]}" == "${VALIDATE_DRY_RUN_FAIL:-}" ]]; then S_CMD[$i]="${VALIDATE_DRY_RUN_CMD:-:}; exit 1"; else S_CMD[$i]="${VALIDATE_DRY_RUN_CMD:-:}"; fi
   done
 fi
 
 # ---- Run ----
 LOG_DIR="${VALIDATE_LOG_DIR:-$LOG_ROOT/$(date +%Y%m%d-%H%M%S)}"
-mkdir -p "$LOG_DIR" "$TSC_CACHE"
+# RAM (VOC_VALIDATE_RAM, scripts/validate-ram.sh): the caches' links are made (or mended after a reboot) before
+# anything writes them; a dry run touches nothing. Every step's TMPDIR (the CDK synths' asset staging, pytest's
+# tmp_path) is a folder of this run's own in RAM, removed when the run ends.
+RAM_DIR=""
+case "${VOC_VALIDATE_RAM:-}" in
+  off) ;;
+  '') if [[ "$POOL_JOBS" -gt 1 && -d /dev/shm && -w /dev/shm ]]; then RAM_DIR="/dev/shm/voc-validate-$(id -u)"; fi ;;
+  *) RAM_DIR="$VOC_VALIDATE_RAM" ;;
+esac
+RAM_NOTE="caches on disk"
+RAM_TMP=""
+if [[ "$DRY_RUN" -eq 0 ]]; then
+  RAM_TREE="$(bash "$ROOT/scripts/validate-ram.sh" "$ROOT" "$RAM_DIR")" || { echo "validate: RAM setup failed; the caches stay where they are" >&2; RAM_TREE=""; }
+  # The run's own TMPDIR, t/<pid> in the private folder validate-ram.sh made and checked (it first removes those of
+  # runs killed outright, which never ran their EXIT trap). Short on purpose, no longer than a Mac's: a Unix socket's
+  # path has 108 bytes at most, and a test reads a check's output cut at a fixed width with this path in it
+  # (benchmark/test/test_runner.py: a longer TMPDIR moves the cut).
+  [[ -z "$RAM_TREE" ]] || RAM_TMP="$(bash "$ROOT/scripts/validate-ram.sh" --run-tmp "$RAM_DIR" "$$")" || RAM_TMP=""
+  if [[ -n "$RAM_TMP" ]]; then
+    # The synths of the audit (scripts/audit/py_assembly.py) keep the system's temp folder: py_layers' verdict
+    # depends on the order the synth's output folder lists its templates, and tmpfs lists them in another order than
+    # the disk (a false finding; see CHANGELOG 7.40.01). Those steps run with TMPDIR="$VALIDATE_DISK_TMPDIR".
+    VALIDATE_DISK_TMPDIR="${TMPDIR:-/tmp}"; export VALIDATE_DISK_TMPDIR
+    TMPDIR="$RAM_TMP"; export TMPDIR
+    trap 'bash "$ROOT/scripts/validate-ram.sh" --remove "$RAM_TMP"' EXIT
+    RAM_NOTE="caches and TMPDIR in RAM ($RAM_TREE)"
+  elif [[ -n "$RAM_TREE" ]]; then
+    RAM_NOTE="caches in RAM ($RAM_TREE), TMPDIR on disk"
+  else
+    RAM_DIR=""
+  fi
+elif [[ -n "$RAM_DIR" ]]; then
+  RAM_NOTE="caches in RAM ($RAM_DIR, not touched by a dry run)"
+fi
+mkdir -p "$LOG_DIR"
+[[ "$DRY_RUN" -eq 1 ]] || mkdir -p "$TSC_CACHE"   # a dry run needs no build info (and leaves a dangling link be)
 [[ "$DRY_RUN" -eq 1 ]] && : > "$LOG_DIR/dry-run"   # --failed ignores dry runs (outside a dry run itself)
 RESULTS="$LOG_DIR/results.tsv"   # index \t exit code \t seconds
 STARTED="$LOG_DIR/started.tsv"   # index
@@ -298,22 +386,26 @@ STARTED="$LOG_DIR/started.tsv"   # index
 step_log() { printf '%s/%02d-%s.log' "$LOG_DIR" "$1" "$(printf '%s' "${S_NAME[$1]}" | tr -cs 'A-Za-z0-9' '-' | sed 's/-$//')"; }
 exec 3>&1   # progress lines go to the console from every lane
 
+run_step() {  # lane label, step index -> the step's exit code; its result line in $RESULTS
+  local lane="$1" i="$2" rc t0 dur
+  printf '%s\n' "$i" >> "$STARTED"
+  printf '%s  [%-6s] start  %s\n' "$(date +%T)" "$lane" "${S_NAME[$i]}" >&3
+  t0=$(date +%s)
+  rc=0
+  VALIDATE_STEP="${S_NAME[$i]}" bash -euo pipefail -c "${S_CMD[$i]}" > "$(step_log "$i")" 2>&1 < /dev/null || rc=$?
+  dur=$(( $(date +%s) - t0 ))
+  printf '%s\t%s\t%s\n' "$i" "$rc" "$dur" >> "$RESULTS"
+  if [[ "$rc" -ne 0 ]]; then
+    printf '%s  [%-6s] FAIL   %s (%ss, exit %s)\n' "$(date +%T)" "$lane" "${S_NAME[$i]}" "$dur" "$rc" >&3
+    return "$rc"
+  fi
+  printf '%s  [%-6s] ok     %s (%ss)\n' "$(date +%T)" "$lane" "${S_NAME[$i]}" "$dur" >&3
+}
 run_lane() {
-  local lane="$1" i rc t0 dur
+  local lane="$1" i
   for i in "${!S_NAME[@]}"; do
     [[ "${S_LANE[$i]}" == "$lane" ]] && selected "$i" || continue
-    printf '%s\n' "$i" >> "$STARTED"
-    printf '%s  [%-6s] start  %s\n' "$(date +%T)" "$lane" "${S_NAME[$i]}" >&3
-    t0=$(date +%s)
-    rc=0
-    bash -euo pipefail -c "${S_CMD[$i]}" > "$(step_log "$i")" 2>&1 < /dev/null || rc=$?
-    dur=$(( $(date +%s) - t0 ))
-    printf '%s\t%s\t%s\n' "$i" "$rc" "$dur" >> "$RESULTS"
-    if [[ "$rc" -ne 0 ]]; then
-      printf '%s  [%-6s] FAIL   %s (%ss, exit %s)\n' "$(date +%T)" "$lane" "${S_NAME[$i]}" "$dur" "$rc" >&3
-      return 1
-    fi
-    printf '%s  [%-6s] ok     %s (%ss)\n' "$(date +%T)" "$lane" "${S_NAME[$i]}" "$dur" >&3
+    run_step "$lane" "$i" || return 1
   done
 }
 
@@ -327,6 +419,81 @@ kill_tree() {  # a lane and every process it started (never anything else)
   # step as a failure of its own.
   local p
   for p in $(tree_pids "$1"); do kill "$p" 2>/dev/null || true; done
+}
+
+# ---- The pool (VOC_VALIDATE_JOBS > 1) ----
+# Order: the longest chain first. A step's weight is its duration in the newest earlier real run it passed in (of the
+# last 20; a narrow run such as --only tenets does not hide the others; 0 when unknown)
+# plus the heaviest weight among the steps that need it, so the vite build (2 s) that three long steps wait for
+# starts at once. Ties keep the definition order. Prints the step indexes in start order.
+pool_order() {
+  local i d runs=() w=() below=()
+  while IFS= read -r t; do   # the 20 newest real runs, newest first: a step's weight is its newest passed duration
+    [[ -e "${t%/timings.tsv}/dry-run" ]] && continue
+    [[ "${t%/timings.tsv}" == "$LOG_DIR" ]] && continue
+    runs+=("$t"); [[ "${#runs[@]}" -ge 20 ]] && break
+  done < <(ls -1t "$LOG_ROOT"/*/timings.tsv 2>/dev/null || true)
+  for i in "${!S_NAME[@]}"; do below[$i]=0; done
+  for (( i = ${#S_NAME[@]} - 1; i >= 0; i-- )); do
+    d=0
+    [[ "${#runs[@]}" -gt 0 ]] && d="$(awk -F'\t' -v n="${S_NAME[$i]}" '$1 == "ok" && $4 == n && $2 ~ /^[0-9]+$/ { print $2; exit }' "${runs[@]}")"
+    w[$i]=$(( ${d:-0} + below[$i] ))
+    for d in ${S_NEEDS[$i]}; do [[ "${w[$i]}" -gt "${below[$d]}" ]] && below[$d]="${w[$i]}"; done
+  done
+  for i in "${!S_NAME[@]}"; do
+    if [[ "${S_LANE[$i]}" != "$FIRST_LANE" ]] && selected "$i"; then printf '%s %s\n' "${w[$i]}" "$i"; fi
+  done | sort -k1,1nr -k2,2n | awk '{ print $2 }'
+}
+# Runs every selected step (but a --pytest-first one, already run) as its own job, at most $POOL_JOBS at once; a
+# step starts once every step it needs (that this run selected) passed, and is not-run when one of them did not.
+# Fail fast as the lanes: the first failure stops the running jobs and starts no other (--keep-going: no stop).
+# Sets FAILED and STOPPED; the report reads $RESULTS and $STARTED as for the lanes.
+run_pool() {
+  local order=() i d k ready running=0 left st=() pid=()
+  order=($(pool_order))
+  left=${#order[@]}
+  for i in "${order[@]}"; do st[$i]=wait; done
+  PIDS=()
+  trap 'stop_all; exit 130' INT TERM
+  while [[ "$left" -gt 0 || "$running" -gt 0 ]]; do
+    for i in "${order[@]}"; do   # reap
+      [[ "${st[$i]}" == run ]] || continue
+      kill -0 "${pid[$i]}" 2>/dev/null && continue
+      rc=0; wait "${pid[$i]}" || rc=$?
+      running=$(( running - 1 ))
+      PIDS=(); for k in "${order[@]}"; do [[ "${st[$k]}" == run && "$k" != "$i" ]] && PIDS+=("${pid[$k]}"); done
+      if [[ "$rc" -eq 0 ]]; then st[$i]=ok; continue; fi
+      st[$i]=bad; FAILED=1
+      if [[ "$FAIL_FAST" -eq 1 && "$STOPPED" -eq 0 && ( "$left" -gt 0 || "$running" -gt 0 ) ]]; then
+        STOPPED=1; STOP_CAUSE="$i"; left=0
+        printf '%s  validate: %s failed; stopping the other jobs (--keep-going to let them finish)\n' "$(date +%T)" "${S_NAME[$i]}"
+        stop_all
+      fi
+    done
+    [[ "$STOPPED" -eq 1 ]] && left=0
+    for i in "${order[@]}"; do   # start
+      [[ "$left" -gt 0 && "$running" -lt "$POOL_JOBS" ]] || break
+      [[ "${st[$i]}" == wait ]] || continue
+      ready=1
+      for d in ${S_NEEDS[$i]}; do
+        case "${st[$d]:-}" in
+          ''|ok) ;;                 # not selected in this run, or passed
+          bad|skip) ready=skip ;;   # a step it needs did not pass: it does not run (reported not-run)
+          *) [[ "$ready" == skip ]] || ready=0 ;;
+        esac
+      done
+      if [[ "$ready" == skip ]]; then st[$i]=skip; left=$(( left - 1 )); continue; fi
+      [[ "$ready" -eq 1 ]] || continue
+      run_step "${S_LANE[$i]}" "$i" &
+      pid[$i]=$!; st[$i]=run; running=$(( running + 1 )); left=$(( left - 1 ))
+      PIDS=(); for k in "${order[@]}"; do [[ "${st[$k]}" == run ]] && PIDS+=("${pid[$k]}"); done
+    done
+    if [[ "$left" -gt 0 && "$running" -eq 0 ]]; then   # cannot happen (a step's needs come first in the order)
+      printf 'validate: pool: %s step(s) left with nothing running\n' "$left" >&2; FAILED=1; break
+    fi
+    [[ "$left" -gt 0 || "$running" -gt 0 ]] && sleep 0.2
+  done
+  trap - INT TERM
 }
 
 LANES=()
@@ -345,10 +512,14 @@ fi
 T_ALL=$(date +%s)
 FIRST_NOTE=""; [[ "$HAS_FIRST" -eq 1 ]] && FIRST_NOTE=" after pytest alone"
 COVERAGE_NOTE="coverage baseline strict (CI)"; [[ -n "$COVERAGE_PRUNE" ]] && COVERAGE_NOTE="coverage baseline: graduated rows pruned (local)"
-printf 'validate: %s lane(s) [%s]%s, pytest workers %s, %s, logs in %s\n' "${#LANES[@]}" "${LANES[*]:-}" "$FIRST_NOTE" "$VALIDATE_PYTEST_WORKERS" "$COVERAGE_NOTE" "$LOG_DIR"
+if [[ "$POOL_JOBS" -gt 1 ]]; then
+  printf 'validate: pool of %s jobs%s, pytest workers %s, %s, %s, logs in %s\n' "$POOL_JOBS" "$FIRST_NOTE" "$VALIDATE_PYTEST_WORKERS" "$RAM_NOTE" "$COVERAGE_NOTE" "$LOG_DIR"
+else
+  printf 'validate: %s lane(s) [%s]%s, pytest workers %s, %s%s, logs in %s\n' "${#LANES[@]}" "${LANES[*]:-}" "$FIRST_NOTE" "$VALIDATE_PYTEST_WORKERS" "$COVERAGE_NOTE" "${RAM_DIR:+, $RAM_NOTE}" "$LOG_DIR"
+fi
 PIDS=(); DONE=()
 stop_all() { local p; for p in "${PIDS[@]+"${PIDS[@]}"}"; do kill_tree "$p"; done; }   # bash 3.2 + set -u: empty-safe
-FAILED=0; STOPPED=0
+FAILED=0; STOPPED=0; STOP_CAUSE=""   # the pool's step whose failure stopped the run: never "stopped" itself
 if [[ "$HAS_FIRST" -eq 1 ]]; then
   run_lane "$FIRST_LANE" &
   PIDS+=("$!")
@@ -364,6 +535,9 @@ if [[ "$HAS_FIRST" -eq 1 ]]; then
     fi
   fi
 fi
+if [[ "$POOL_JOBS" -gt 1 && "${#LANES[@]}" -gt 0 ]]; then
+  run_pool
+else
 for lane in "${LANES[@]+"${LANES[@]}"}"; do
   run_lane "$lane" &
   PIDS+=("$!"); DONE+=(0)
@@ -389,6 +563,7 @@ while [[ "$remaining" -gt 0 ]]; do
   [[ "$remaining" -gt 0 ]] && sleep 1
 done
 trap - INT TERM
+fi
 TOTAL=$(( $(date +%s) - T_ALL ))
 
 # ---- Report ----
@@ -400,7 +575,7 @@ for i in "${!S_NAME[@]}"; do
   if [[ -n "$r" ]]; then
     rc="${r%%$'\t'*}"; dur="${r##*$'\t'}"
     if [[ "$rc" -eq 0 ]]; then status=ok
-    elif [[ "$STOPPED" -eq 1 && ( "$rc" -eq 143 || "$rc" -eq 137 ) ]]; then status=stopped
+    elif [[ "$STOPPED" -eq 1 && "$i" != "$STOP_CAUSE" && ( "$rc" -eq 143 || "$rc" -eq 137 ) ]]; then status=stopped
     else status=FAIL
     fi
   elif grep -qx "$i" "$STARTED"; then status=stopped; dur=-
@@ -420,7 +595,7 @@ fi
 if [[ "$FAILED" -ne 0 ]]; then
   while IFS=$'\t' read -r i rc _dur; do
     [[ "$rc" -eq 0 ]] && continue
-    [[ "$STOPPED" -eq 1 && ( "$rc" -eq 143 || "$rc" -eq 137 ) ]] && continue   # stopped, not failed
+    [[ "$STOPPED" -eq 1 && "$i" != "$STOP_CAUSE" && ( "$rc" -eq 143 || "$rc" -eq 137 ) ]] && continue   # stopped, not failed
     log="$(step_log "$i")"
     printf '\n======== FAILED: %s (exit %s) — last 80 lines of %s ========\n' "${S_NAME[$i]}" "$rc" "$log"
     tail -n 80 "$log"

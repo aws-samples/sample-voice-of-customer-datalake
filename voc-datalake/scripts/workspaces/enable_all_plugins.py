@@ -73,7 +73,7 @@ def deployment_plugins(function_name: str, region: str | None) -> list[str]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or '').split('\n\n')[0])
     parser.add_argument('--table', required=True, help='the voc-workspaces table name')
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument('--plugins', help='the plugin ids, a JSON list')

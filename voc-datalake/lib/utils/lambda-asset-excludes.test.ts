@@ -180,6 +180,10 @@ describe('root staging behavior (aws-cdk-lib IgnoreStrategy.git)', () => {
     'node_modules/.bin/tsc',
     '.venv/.gitignore',
     '.ruff_cache/.gitignore',
+    // Hypothesis's local state (gitignored): every pytest run rewrites .hypothesis/constants and makes and removes
+    // .hypothesis/tmp, so hashing it churned every ingestor's hash and a synth beside pytest could hit ENOENT.
+    '.hypothesis/constants/0a1b',
+    '.hypothesis/tmp/x',
     'frontend/.env.local',
     '.env.local',
   ])('prunes repo metadata and tool dirs with their dot-children: %s', (path) => {

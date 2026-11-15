@@ -141,6 +141,26 @@ def test_the_cache_key_changes_with_a_file_the_stacks_read_at_synth(tmp_path: Pa
     assert cache_key(cdk) != before
 
 
+def test_the_cache_is_written_whole_by_a_rename_and_read_back(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Several processes read the cache at once (validate.sh's pool, detector tests on xdist workers): it is written
+    beside the cache file and renamed over it, so no reader ever parses half a file."""
+    import py_assembly
+
+    cdk = tmp_path / 'voc-datalake'
+    cdk.mkdir()
+    monkeypatch.setattr(py_assembly, '_synth', lambda *_a, **_k: ({'S': {'Resources': {}}}, []))
+    renames: list[tuple[str, str]] = []
+    real_replace = py_assembly.os.replace
+    monkeypatch.setattr(py_assembly.os, 'replace',
+                        lambda src, dst: (renames.append((Path(src).name, Path(dst).name)), real_replace(src, dst)))
+    cache_dir = tmp_path / 'cache'
+    written = py_assembly.load_assembly(cdk, cache_dir=cache_dir)
+    (cache_file,) = list(cache_dir.iterdir())   # no partial file left beside it
+    assert renames == [(f'{cache_file.name}.{py_assembly.os.getpid()}.tmp', cache_file.name)]
+    monkeypatch.setattr(py_assembly, '_synth', lambda *_a, **_k: pytest.fail('a fresh cache is read, not synthesized'))
+    assert py_assembly.load_assembly(cdk, cache_dir=cache_dir).templates == written.templates
+
+
 def test_the_cache_key_changes_with_the_root_package_json(tmp_path: Path) -> None:
     cdk = tmp_path / 'voc-datalake'
     cdk.mkdir()

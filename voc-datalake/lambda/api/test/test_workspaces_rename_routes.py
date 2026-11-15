@@ -7,19 +7,14 @@ from typing import Any
 import pytest
 from moto import mock_aws
 from moto_helpers import invoke, pk_sk_table, rest_event
+from test_workspaces_members_routes import ADA, PAT, VIC, WS
+from workspaces_api_world import handler_doubles
 
 import workspaces_handler
-from shared import platform_admin_gate
-from shared.test.cognito_doubles import live_cognito
-from shared.workspace import MembershipCache
 from shared.workspace_rename import WORKSPACE_RENAMED, sync_member_names
 
-WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
 OTHER = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D9'
 CURRENT = '/me/workspaces/current'
-ADA = {'sub': 'sub-ada', 'cognito:username': 'ada', 'cognito:groups': 'users'}
-VIC = {'sub': 'sub-vic', 'cognito:username': 'vic', 'cognito:groups': 'users'}
-PAT = {'sub': 'sub-pat', 'cognito:username': 'pat', 'cognito:groups': '[admins, platform-admins]'}
 
 
 @dataclass
@@ -34,12 +29,7 @@ def _listing(name: str, ws: str = WS, slug: str = 'acme', status: str = 'active'
 
 @pytest.fixture
 def world(monkeypatch) -> Iterator[World]:
-    monkeypatch.setattr(workspaces_handler, 'memberships', MembershipCache())
-    monkeypatch.setattr(workspaces_handler, 'USER_POOL_ID', 'us-east-1_pool')
-    monkeypatch.setenv('USER_POOL_ID', 'us-east-1_pool')
-    cognito = live_cognito()
-    monkeypatch.setattr(workspaces_handler, 'get_cognito_idp_client', lambda: cognito)
-    monkeypatch.setattr(platform_admin_gate, 'get_cognito_idp_client', lambda: cognito)
+    handler_doubles(monkeypatch)
     with mock_aws():
         table = pk_sk_table('workspaces')
         rows = [

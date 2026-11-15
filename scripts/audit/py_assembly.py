@@ -314,7 +314,11 @@ def load_assembly(cdk_dir: Path = CDK_DIR, *, refresh: bool = False, cache_dir: 
                 merged.setdefault(section, {}).setdefault(logical, body)
     assembly = Assembly(templates, functions, layers)
     cache_file.parent.mkdir(parents=True, exist_ok=True)
-    cache_file.write_text(json.dumps(_encode(assembly, key, cdk_dir)), encoding='utf-8')
+    # Written beside it, then renamed over it: a reader in another process (validate.sh's pool runs the detector
+    # tests on several workers) sees the old file or the new one, never half of one.
+    partial = cache_file.with_name(f'{cache_file.name}.{os.getpid()}.tmp')
+    partial.write_text(json.dumps(_encode(assembly, key, cdk_dir)), encoding='utf-8')
+    os.replace(partial, cache_file)
     return assembly
 
 

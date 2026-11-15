@@ -150,6 +150,9 @@ function renderHome(entry: string | Partial<Location> = FROM_SIDEBAR) {
 
 const calls = (method: string, path: string) =>
   fetchApi.mock.calls.filter(([endpoint, options]) => endpoint === path && (options?.method ?? 'GET') === method)
+/** How often Home read the scraper list and the review-page apps. */
+const sourceListReads = () =>
+  [calls('GET', '/scrapers'), calls('GET', '/integrations/web_reviews/apps')].map((c) => c.length)
 
 const putBodies = (): unknown[] =>
   calls('PUT', PATH).map(([, options]): unknown => (typeof options?.body === 'string' ? JSON.parse(options.body) : null))
@@ -312,8 +315,7 @@ describe('onboarding buddy', () => {
     renderHome()
     await findBuddy()
     await waitFor(() => expect(stepStatuses()['source']).toBe('done'))
-    expect([calls('GET', '/scrapers'), calls('GET', '/integrations/web_reviews/apps')].map((c) => c.length))
-      .toStrictEqual([0, 0])
+    expect(sourceListReads()).toStrictEqual([0, 0])
   })
 
   it('counts a review page as a connected source when no scraper exists (7.40.00)', async () => {
@@ -329,8 +331,7 @@ describe('onboarding buddy', () => {
     renderHome()
     await findBuddy()
     await waitFor(() => expect(Object.keys(stepStatuses())).toStrictEqual(['assistant', 'project']))
-    expect([calls('GET', '/scrapers'), calls('GET', '/integrations/web_reviews/apps')].map((c) => c.length))
-      .toStrictEqual([0, 0])
+    expect(sourceListReads()).toStrictEqual([0, 0])
   })
 
   it('treats a restricted caller as unable to set up, and says what the tiles count (owner rule 2026-10-21)', async () => {

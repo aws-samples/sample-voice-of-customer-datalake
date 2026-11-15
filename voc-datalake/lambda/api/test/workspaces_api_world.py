@@ -4,9 +4,10 @@ members routes' ADA the admin, EDI an editor, VIC a viewer). Call inside an acti
 from collections.abc import Generator, Mapping
 from contextlib import ExitStack, contextmanager
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import boto3
+import pytest
 from moto_helpers import pk_sk_table
 from test_workspaces_members_routes import ADA, EDI, VIC, WS
 
@@ -14,6 +15,18 @@ import workspaces_handler
 from shared import platform_admin_gate
 from shared.test.cognito_doubles import live_cognito
 from shared.workspace import MembershipCache
+
+
+def handler_doubles(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    """The handler's fresh membership cache and user pool, and one live Cognito for it and the platform-admin gate,
+    through ``monkeypatch`` (for a suite that seeds its own tables). Returns that Cognito."""
+    monkeypatch.setattr(workspaces_handler, 'memberships', MembershipCache())
+    monkeypatch.setattr(workspaces_handler, 'USER_POOL_ID', 'us-east-1_pool')
+    monkeypatch.setenv('USER_POOL_ID', 'us-east-1_pool')
+    cognito = live_cognito()
+    monkeypatch.setattr(workspaces_handler, 'get_cognito_idp_client', lambda: cognito)
+    monkeypatch.setattr(platform_admin_gate, 'get_cognito_idp_client', lambda: cognito)
+    return cognito
 
 
 @contextmanager

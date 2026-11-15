@@ -9,11 +9,9 @@ import pytest
 from botocore.exceptions import ClientError
 from moto import mock_aws
 from moto_helpers import invoke, pk_sk_table, rest_event
+from workspaces_api_world import handler_doubles
 
 import workspaces_handler
-from shared import platform_admin_gate
-from shared.test.cognito_doubles import live_cognito
-from shared.workspace import MembershipCache
 
 WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
 PLUGINS = '/me/workspaces/current/plugins'
@@ -32,12 +30,7 @@ class World:
 @pytest.fixture
 def world(monkeypatch) -> Iterator[World]:
     monkeypatch.setenv('ENABLED_SOURCES', CEILING)
-    monkeypatch.setattr(workspaces_handler, 'memberships', MembershipCache())
-    monkeypatch.setattr(workspaces_handler, 'USER_POOL_ID', 'us-east-1_pool')
-    monkeypatch.setenv('USER_POOL_ID', 'us-east-1_pool')
-    cognito = live_cognito()
-    monkeypatch.setattr(workspaces_handler, 'get_cognito_idp_client', lambda: cognito)
-    monkeypatch.setattr(platform_admin_gate, 'get_cognito_idp_client', lambda: cognito)
+    cognito = handler_doubles(monkeypatch)
     with mock_aws():
         table = pk_sk_table('workspaces')
         rows = [{'pk': f'WS#{WS}', 'sk': 'META', 'name': 'Acme Outfitters', 'slug': 'acme', 'status': 'active'},

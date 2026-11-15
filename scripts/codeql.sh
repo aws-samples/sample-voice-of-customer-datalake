@@ -62,16 +62,37 @@ analyze() { # lang db-dir
   echo "   sarif: $sarif"
 }
 
-LANGS=${CODEQL_LANGS:-"javascript-typescript python"}   # space-separated subset to (re)scan
-for lang in $LANGS; do
-  case "$lang" in
-    javascript-typescript) db="$OUT/db-js" ;;
-    python) db="$OUT/db-py" ;;
-    *) echo "unknown language: $lang" >&2; exit 2 ;;
+db_of() { # lang -> its database directory
+  case "$1" in
+    javascript-typescript) echo "$OUT/db-js" ;;
+    python) echo "$OUT/db-py" ;;
+    *) echo "unknown language: $1" >&2; return 2 ;;
   esac
-  build_db "$lang" "$db" .
-  analyze "$lang" "$db"
-done
+}
+LANGS=${CODEQL_LANGS:-"javascript-typescript python"}   # space-separated subset to (re)scan
+for lang in $LANGS; do db_of "$lang" >/dev/null || exit 2; done
+# CODEQL_PARALLEL=1 (validate.sh's pool, VOC_VALIDATE_JOBS, sets it): the languages' database builds and analyses run
+# side by side, each with CODEQL_THREADS threads and its own log; the logs are printed in order and any failure
+# fails the run. Default: one language after the other.
+if [ "${CODEQL_PARALLEL:-0}" = 1 ]; then
+  pids=(); logs=()
+  for lang in $LANGS; do
+    log="$OUT/$lang.log"; logs+=("$log")
+    ( build_db "$lang" "$(db_of "$lang")" . && analyze "$lang" "$(db_of "$lang")" ) > "$log" 2>&1 &
+    pids+=("$!")
+  done
+  failed=0
+  for k in "${!pids[@]}"; do
+    wait "${pids[$k]}" || { failed=1; echo "codeql: the ${logs[$k]} run failed" >&2; }
+    cat "${logs[$k]}"
+  done
+  [ "$failed" = 0 ] || exit 1
+else
+  for lang in $LANGS; do
+    build_db "$lang" "$(db_of "$lang")" .
+    analyze "$lang" "$(db_of "$lang")"
+  done
+fi
 
 sarifs=()
 for lang in $LANGS; do sarifs+=("$OUT/$lang.sarif"); done
