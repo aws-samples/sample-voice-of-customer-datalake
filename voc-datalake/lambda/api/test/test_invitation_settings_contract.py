@@ -25,3 +25,12 @@ def test_reads_the_brand_row_and_field_the_brand_route_writes(api_gateway_event,
 
 def test_reads_the_design_system_row_the_design_system_writes():
     assert user_messages.DESIGN_SYSTEM_KEY == {'pk': company_context.DESIGN_SYSTEM_PK, 'sk': company_context.CONFIG_SK}
+
+
+def test_finds_the_accent_in_the_colour_tokens_the_design_system_writer_stores(monkeypatch):
+    # The route stores validate_design_system's output as the row (settings_handler.put_design_system_route).
+    stored = company_context.validate_design_system(
+        {'tokens': {'colors': [{'name': 'surface', 'value': '#fafafa'}, {'name': 'primary', 'value': '#be123c'}],
+                    'typography': []}})
+    monkeypatch.setattr(user_messages, '_read_settings', lambda key, _what: stored if key == user_messages.DESIGN_SYSTEM_KEY else {})
+    assert user_messages.accent_color() == '#be123c'

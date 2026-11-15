@@ -229,3 +229,13 @@ def test_a_light_accent_gets_dark_header_text(aggregates):
     _set_colors(aggregates, [{'name': 'primary', 'value': '#fde047'}])
     _, message = _send(_invitation())
     assert 'color: #111111; margin: 0; font-size: 22px;' in message
+
+
+@pytest.mark.parametrize('bad', ['#fff;background:url(x)', 'red', '', 'rgb(1,2,3)'])
+def test_only_a_plain_hex_accent_reaches_the_styles(bad):
+    _, message = user_messages.invitation_message(
+        audience=user_messages.Audience(brand='', workshop=False), inviter='', given_name='',
+        sign_in_url='https://voc.example.com', username_parameter='{username}', code_parameter='{####}',
+        valid_days=7, accent=bad)
+    assert f'background: {user_messages.DEFAULT_ACCENT};' in message
+    assert f'color: {bad};' not in message

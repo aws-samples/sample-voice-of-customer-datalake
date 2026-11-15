@@ -72,7 +72,14 @@ describe('app pool custom-message trigger', () => {
       Action: 'dynamodb:GetItem',
       Condition: { 'ForAllValues:StringEquals': { 'dynamodb:LeadingKeys': [BRAND_SETTINGS_PK, DESIGN_SYSTEM_SETTINGS_PK] } },
     });
-    expect(statements.some((s) => JSON.stringify(s.Action).includes('kms:Decrypt'))).toBe(true);
+    const decrypt = statements.filter((s) => JSON.stringify(s.Action).includes('kms:'));
+    expect(decrypt).toHaveLength(1);
+    expect(itemAt(decrypt, 0)).toMatchObject({
+      Action: 'kms:Decrypt',
+      Condition: { StringEquals: { 'kms:ViaService': [
+        { 'Fn::Join': ['', expect.arrayContaining([expect.stringMatching(/^dynamodb\./)])] },
+      ] } },
+    });
   });
 
   it('is not a workshop deployment by default, and states the pool\'s temporary-password lifetime', () => {

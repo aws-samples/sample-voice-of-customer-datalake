@@ -590,8 +590,9 @@ who has never heard of "VoC" can tell it is genuine:
   sent) and the workspace: "the *Acme* VoC Analytics workspace running on AWS" once Administration → Brand
   has a name.
 - **Look:** the accent colour of Company → Design system (the `primary`, `brand` or `accent` hex colour
-  token, as prototypes use it) on the header, the link and the password, with header text that stays
-  readable on a light colour; the app's indigo without one.
+  token, as prototypes use it) on the header, and on the link and the password when it is readable on
+  the light body (WCAG AA, otherwise near-black), with header text that stays readable on a light colour;
+  the app's indigo without one.
 - **What it is:** one sentence on what VoC Analytics does.
 - **What to do:** the sign-in link, the temporary password, how long it works (7 days, the pool's policy),
   and whom to ask if the invitation was unexpected: "your VoC Analytics administrator", or, on a workshop
