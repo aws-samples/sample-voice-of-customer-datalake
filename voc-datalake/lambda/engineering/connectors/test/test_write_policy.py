@@ -65,6 +65,17 @@ def test_allows_ordinary_paths() -> None:
     assert write_policy.path_refusals(['src/app.py', 'docs/ci.md', '.github/CODEOWNERS']) == []
 
 
+def test_refuses_the_ci_definitions_the_host_names_for_the_repository() -> None:
+    # (GitLab: the project's own CI file and what it includes from the project, as its CI lint resolves them)
+    named = ['ops/pipeline.yml', '/ci/build.yml']
+    found = write_policy.path_refusals(['ci/build.yml', 'ops/pipeline.yml', 'ops/readme.md'], named)
+    assert [r.message for r in found] == ['An agent never changes the CI definitions (ci/build.yml).',
+                                          'An agent never changes the CI definitions (ops/pipeline.yml).']
+    with pytest.raises(WriteRefused, match=r'ci/build\.yml'):
+        write_policy.check_ci_definitions(['src/a.py', 'ci/build.yml'], named)
+    write_policy.check_ci_definitions(['src/a.py'], named)
+
+
 def test_check_push_names_every_reason() -> None:
     with pytest.raises(WriteRefused) as caught:
         write_policy.check_push('main', 'main', RUN, ['.github/workflows/ci.yml'])

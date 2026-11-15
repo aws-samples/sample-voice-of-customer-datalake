@@ -19,6 +19,7 @@ from moto import mock_aws
 from engineering.connectors import cache
 from engineering.connectors.cache import (
     FAILED_HOLD_SECONDS,
+    FETCH_DENIED,
     FETCH_TIMEOUT_SECONDS,
     GIT_OPTIONS,
     LEASE_SECONDS,
@@ -51,7 +52,7 @@ from engineering.connectors.cache_layout import (
     previous_usable,
     ready_key,
 )
-from engineering.connectors.hosts import HostBusy, HostError, NoConnection
+from engineering.connectors.hosts import FetchAccess, HostBusy, HostError, NoConnection
 
 CONNECTION = 'conn-1'
 COMMIT = 'c' * 40
@@ -261,11 +262,13 @@ class Tokens:
     error: Exception | None = None
     asked: list[str] = field(default_factory=list)
 
-    def __call__(self, connection: str) -> tuple[str, str]:
+    access: FetchAccess = field(default_factory=lambda: FetchAccess(REPOSITORY, TOKEN))
+
+    def __call__(self, connection: str) -> FetchAccess:
         self.asked.append(connection)
         if self.error is not None:
             raise self.error
-        return REPOSITORY, TOKEN
+        return self.access
 
 
 def filler(tmp_path: Any, git: FakeGit | None = None, store: FakeStore | None = None,
@@ -273,6 +276,55 @@ def filler(tmp_path: Any, git: FakeGit | None = None, store: FakeStore | None = 
            **change: Any) -> CacheFiller:
     return CacheFiller(git=git or FakeGit(), store=store or FakeStore(), claims=claims or FakeClaims(),
                        tokens=tokens or Tokens(), clock=clock, holder=lambda: 'me', scratch=str(tmp_path), **change)
+
+
+#: A GitLab connection's own project token (in two parts: no secret scanner takes it for one).
+GITLAB_TOKEN = 'glpat-' + 'exampleTokenForTests0123'
+GITLAB_PROJECT = 'example-org/payments/refund-service'
+
+
+def test_a_gitlab_fetch_reaches_the_projects_url_with_the_token_as_oauth2_by_environment_alone(tmp_path: Any) -> None:
+    git, revoked = FakeGit(), list[str]()
+    tokens = Tokens(access=FetchAccess(GITLAB_PROJECT, GITLAB_TOKEN, host='gitlab', revocable=False))
+    assert filler(tmp_path, git, tokens=tokens, revoke=revoked.append).fill(CONNECTION, COMMIT, GEN) == 'filled'
+    args, env, _timeout = next(call for call in git.calls if 'fetch' in call[0])
+    header = base64.b64encode(f'oauth2:{GITLAB_TOKEN}'.encode()).decode()
+    assert f'https://gitlab.com/{GITLAB_PROJECT}.git' in args
+    assert (env['GIT_CONFIG_KEY_0'], env['GIT_CONFIG_VALUE_0']) == (
+        f'http.https://gitlab.com/{GITLAB_PROJECT}.git.extraHeader', f'Authorization: Basic {header}')
+    assert GITLAB_TOKEN not in ' '.join(arg for call in git.calls for arg in call[0])
+    assert revoked == []   # (a project token is the connection's own: no revocation call is made for it)
+
+
+@pytest.mark.parametrize('repository', ['example-org', 'a/../b', 'group/p.git', 'https://evil/x'])
+def test_only_a_gitlab_project_path_becomes_a_gitlab_remote(repository: str) -> None:
+    with pytest.raises(EntryRefused, match='GitLab project path'):
+        remote_url(repository, 'gitlab')
+
+
+def test_a_host_the_cache_does_not_know_is_no_remote() -> None:
+    with pytest.raises(EntryRefused):
+        remote_url(REPOSITORY, 'elsewhere')
+
+
+def test_a_git_failure_never_holds_either_hosts_header_form_of_the_token() -> None:
+    detail = f'{authorization(GITLAB_TOKEN, "gitlab")} {authorization(GITLAB_TOKEN, "gitlab").split()[-1]}'
+    said = redacted(detail, GITLAB_TOKEN)
+    assert GITLAB_TOKEN not in said
+    assert authorization(GITLAB_TOKEN, 'gitlab').split()[-1] not in said
+
+
+@pytest.mark.parametrize('said', ['remote: HTTP Basic: Access denied. The provided password or token is incorrect',
+                                  'fatal: Authentication failed for https://gitlab.com/x.git/',
+                                  'error: The requested URL returned error: 403'])
+def test_a_token_the_host_refuses_is_a_refusal_a_person_fixes(said: str) -> None:
+    assert fetch_refusal(GitFailed('fetch', said)) == FETCH_DENIED
+
+
+@pytest.mark.parametrize('said', ['error: The requested URL returned error: 429',
+                                  'error: The requested URL returned error: 503'])
+def test_a_rate_limit_or_an_outage_is_transient(said: str) -> None:
+    assert fetch_refusal(GitFailed('fetch', said)) is None
 
 
 def test_a_fill_fetches_the_one_commit_lays_out_the_repository_then_writes_ready_last(tmp_path: Any) -> None:
@@ -394,7 +446,7 @@ def test_the_fetch_gets_only_what_is_left_of_the_deadline_after_a_slow_mint(tmp_
     now = [NOW]
 
     class SlowTokens(Tokens):
-        def __call__(self, connection: str) -> tuple[str, str]:
+        def __call__(self, connection: str) -> FetchAccess:
             now[0] += 120   # (two minutes to mint the token)
             return super().__call__(connection)
 
@@ -446,7 +498,7 @@ def test_a_fill_with_too_little_time_left_for_its_fetch_stops_in_its_own_words(t
     now = [NOW]
 
     class StuckTokens(Tokens):
-        def __call__(self, connection: str) -> tuple[str, str]:
+        def __call__(self, connection: str) -> FetchAccess:
             now[0] += 200
             return super().__call__(connection)
 
@@ -473,9 +525,9 @@ def test_a_repository_off_its_shape_after_the_mint_still_revokes_the_token(tmp_p
     revoked: list[str] = []
 
     class OddRepository(Tokens):
-        def __call__(self, connection: str) -> tuple[str, str]:
+        def __call__(self, connection: str) -> FetchAccess:
             self.asked.append(connection)
-            return 'example-org', TOKEN
+            return FetchAccess('example-org', TOKEN)
 
     with pytest.raises(EntryRefused, match='owner/name'):
         filler(tmp_path, tokens=OddRepository(), revoke=revoked.append).fill(CONNECTION, COMMIT, GEN)
@@ -503,7 +555,7 @@ def test_the_token_is_in_no_argument_no_log_and_only_the_fetchs_environment(tmp_
 
 
 @pytest.mark.parametrize(('error', 'raised', 'said'), [
-    (NoConnection('no repository connection is configured'), EntryRefused, 'no usable GitHub App credential'),
+    (NoConnection('no repository connection is configured'), EntryRefused, 'no usable credential'),
     # (a busy host is no other fill's claim: never CacheBusy, which the runtime waits out)
     (HostBusy('rate limited', retry_after=42), CacheFailed, 'busy or unreachable: try again in 42 s'),
     (HostError('The repository host answered 404 to the token request.'), CacheFailed, 'answered 404'),

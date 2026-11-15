@@ -14,6 +14,7 @@ import pytest
 
 from engineering.connectors.cache import CacheFiller, SubprocessGit, remote_url
 from engineering.connectors.cache_layout import BASE_REF, generation_at
+from engineering.connectors.hosts import FetchAccess
 from engineering.runtime.checkout import CHECKOUT_DIR, GIT_DIR, checkout_commands, repo_git
 
 GIT = shutil.which('git') or '/usr/bin/git'
@@ -100,7 +101,7 @@ def _fill(tmp_path: Path) -> tuple[Path, str]:
     scratch.mkdir()
     generation = generation_at(time.time())
     filler = CacheFiller(git=LocalOrigin(origin), store=DirectoryStore(bucket), claims=NoClaims(),
-                         tokens=lambda _connection: (REPOSITORY, TOKEN), scratch=str(scratch))
+                         tokens=lambda _connection: FetchAccess(REPOSITORY, TOKEN), scratch=str(scratch))
     assert filler.fill(CONNECTION, commit, generation) == 'filled'
     assert filler.fill(CONNECTION, commit, generation) == 'ready'
     return bucket / 'engineering/cache' / CONNECTION / commit / f'g{generation}', commit

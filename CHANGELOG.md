@@ -17,6 +17,108 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.06.00] - 2026-11-14
+
+Autonomous engineering agents: a GitLab repository connector beside GitHub's, on gitlab.com. A connection is GitHub's
+or GitLab's, and the broker and the checkout cache's writer serve each on its own host's client. Off by default
+(`-c engineeringAgents=true`), and no fixed cost.
+
+### Added
+
+- **A GitLab connection** (`lambda/engineering/connectors/connections.py`, `gitlab_api.py`; docs/autonomous-engineering.md,
+  "Repository connectors"): `PUT /agents/engineering/connections/<id>` takes `{host: "gitlab", repository:
+  "<namespace>/<project>", default_branch, credential?: {token}, reason?}`, the project's path as its address shows it
+  (nested groups too) and a project access token for exactly that project, role Developer, scopes `api`,
+  `read_repository` and `write_repository`, with an expiry. Before anything is stored the Agents API (its first call
+  outside AWS, on a save only) asks gitlab.com three times, each read sent once with 6 s at most, the token only in
+  the `Authorization` header (`GET /api/v4/personal_access_tokens/self`: active, the scopes, an expiry after today,
+  its user; `GET /api/v4/projects/<path>`: the project at that path, the token's user its direct member with the role
+  Developer; `GET /api/v4/user`: that user is this project's own bot, `bot: true` and named
+  `project_<project_id>_bot_<random>`, so a personal access token or another project's token is refused, "use a
+  project access token of this project"): 400 saying what to change, never the token, or 503 when GitLab cannot be
+  asked; nothing stored on either. The token goes to the connection's SSM SecureString like the App's key (the same path, the same put and delete
+  grant, KMS through SSM), with the project's id and path as GitLab spells them and the expiry; the row holds
+  `host: gitlab` and `token_expires_at`, never the token. A row with no `host` is GitHub's: no migration. A host change,
+  like a repository change, needs the credential again, is refused while a run of the connection is live, and voids the
+  CI attestation. The list answers each credential as `{kind, set, app_id, installation_id, expires_at}` (`kind`
+  `app` or `project_token`).
+- **The GitLab client** (`connectors/gitlab.py`, `GitLabHost`, the `RepositoryHost` contract): reads of a file and of
+  history on the run's branch, an issue or a merge request with a page of its notes (diff notes as review comments,
+  approvals as reviews), a patch's base file; pages by `X-Next-Page`, a read lost or answered 502/503/504 sent again
+  once, a write never; a rate limit answered 503 with `Retry-After`; the host's own words kept in an error only after
+  the token and anything credential-shaped are cut out. A push through the Commits API's actions, held to the broker's
+  checked tree before anything is written (GitLab answers no commit's tree id, so the client works it out as git does
+  from the tree listings: `gitlab_tree.py`, pinned against real git), its branch head checked as the lease, a new
+  branch created by its first commit (`start_sha`); since the Commits API has no lease on an existing branch, each new
+  commit's parent and the last tree are read back, and a mismatch, or any failure once the first commit is written,
+  is an unknown outcome (the broker's write claim closed unknown, never made again); a branch the push created is
+  then deleted when its head, checked just before (a read, then an unconditional delete: GitLab has no conditional
+  one), is one of the push's own commits, and the outcome says what landed and whether it was. A push writes at most
+  20 commits, and no later commit starts without the invocation's time for it and the final read-back. The first
+  commit's updates and deletions carry `last_commit_id` (a partial lease). The reads before the write are bounded (400
+  requests, and the invocation's remaining time less 30 s, `hosts.WRITE_READY_BY`): past either the push is refused
+  with nothing written. A draft merge request (`Draft: …`), opened or updated only when the branch has the checked tree
+  and checked again afterwards (closed, unknown, when the check fails); an open one is the run's only when it is from
+  this project (not a fork) into the run's default branch. Notes with their links.
+- **GitLab's CI definitions, pinned or refused** (`connectors/gitlab_ci.py`, `ci_yaml.py`): agents push only to
+  repositories whose CI configuration uses plain local includes and GitLab's own templates; shared CI from other
+  projects, remote includes and components are not supported for now (an owner decision: the token reads this project
+  alone). Before a push the broker reads the project's `ci_config_path` (missing: refused; empty: `.gitlab-ci.yml`;
+  another project's file, this project by `@`, a URL: refused), parses each CI file with PyYAML 6.0.3's composer held
+  strict (`ci_yaml.py`; a new layer of the broker's own, `engineering-ci-deps`, credited in THIRD-PARTY-LICENSES.md:
+  non-UTF-8 input, a BOM, a lone carriage return, U+0085/U+2028/U+2029/U+FFFD, a second document, anchors and
+  aliases, `<<`, tags but `!reference`, duplicate keys and escaped or non-ASCII keys refuse) and walks `include` as
+  structure: only `local` with a literal path (whose file is walked the same way, at most 10 deep and 50 files) and
+  `template`; `project`, `remote`, `component`, `rules` or any other key, and a `*`, `$`, `[[` or backslash anywhere
+  in an include, refuse. Every job's `trigger` is walked the same way: a child pipeline's local file is pinned and
+  walked, anything else in its `include` refuses, and a multi-project trigger (another project's CI) is allowed. GitLab's CI lint is a cross-check (not valid, an include of any kind but `local` or
+  `template`, or a local one the walk did not reach: refused). The CI file and every local file reached (paths normalised)
+  are never added, changed, deleted or renamed (`write_policy.check_ci_definitions`). A refusal names the include:
+  "The repository's CI configuration includes <it>, which the broker can't read and pin; agents can't push to it while
+  it does."
+- **The broker's check of GitLab's branch rules** (`gitlab.py` `ci_protection`): the protected branches (at most five
+  pages), "Pipelines must succeed" (the required check) and, where the API shows it, the push rule. The default branch
+  must be protected with no force push and push and merge for Maintainers only, a merge must need a passing pipeline
+  (and a skipped pipeline must not count as one: `allow_merge_on_skipped_pipeline` on, or not answered, refuses),
+  the agent's branch must be unprotected and the push rule's branch pattern must take it; each refusal a 409 in the
+  same shape as GitHub's (`CiProtection.problems`), and rules the token cannot read refused, failing closed.
+- **One client per connection** (`connectors/router.py` `HostRouter`, `credentials.py`): the stored credential says
+  the host, and every broker operation and the cache writer's fetch go to that host's client. The two clients share
+  one transport bound to its host (`transport.py`).
+- **The checkout cache fetches from GitLab** (`cache.py`): `https://gitlab.com/<namespace>/<project>.git`, the token in
+  the same `GIT_CONFIG_*` extra header as `Basic` of `oauth2:<token>`, never in an argument. A project token is the
+  connection's own long-lived credential, so no revocation call is made for it after the fetch. A missing project or
+  commit and git's access-denied answers (401, 403) are refusals saying what a person does; 429 and 5xx stay
+  transient.
+- **Agents → Connections**: the add and edit dialog chooses the host (GitHub or GitLab), with the project's path, a
+  write-only token field and GitLab's guidance (the role, the three scopes, the expiry of at most a year and its
+  replacement); a GitLab connection shows its host and its token's expiry (a warning within 30 days, and once it has
+  passed); the CI attestation's six points are worded for GitLab on a GitLab connection (protected variables, the job
+  token's least access, `id_tokens` pinned to protected branches, no shared or instance runner for unprotected
+  branches, no merge-request pipeline with secrets, the protected default branch with pipelines that must succeed, a
+  skipped one not counting, and plain local CI includes). In all nine locales. A shared radio
+  group (`components/RadioChoices`) serves the host choice and the decision form's verdict.
+
+### Changed
+
+- docs/autonomous-engineering.md and docs/deployment.md: GitLab moves from planned to built (the scopes, the save's
+  check, the client, the branch rules check, the attestation's wording, the cache's fetch, the egress, the expiry); a
+  self-managed GitLab instance stays planned for the owner to decide (its base URL is one constant,
+  `gitlab_api.py` `GITLAB_HOST`).
+- `lib/test-support/baseline.json` regenerated: the template hashes moved with `APP_VERSION` (7.6.0) and the Lambda
+  asset hashes of the engineering code; no resource or name changed.
+
+### Upgrade notes
+
+- With the module on, the broker gets one new resource: a second Python layer, `EngineeringBrokerCiDepsLayer`
+  (`lambda/layers/engineering-ci-deps`, PyYAML), so a deploy builds one more layer (Docker or Finch, as the others).
+  Developers' and CI's backend venvs install its requirements too (docs/deployment.md).
+- No new IAM statement or egress rule. The broker, the cache writer and the Agents API are Lambdas outside
+  any VPC, as before; each client is held to its one host by its transport (`api.github.com`, `gitlab.com`), and the
+  Agents API reaches gitlab.com only for a GitLab save's token check. Nothing changes with the module off.
+- A GitLab token expires (at most a year after it was made): replace it before then by editing the connection with
+  the new token. An expired one makes the connection's reads and writes fail until it is replaced.
+
 ## [7.05.01] - 2026-11-14
 
 The checkout cache's writer tells failures that will repeat from ones that may pass, and says what to do about them.

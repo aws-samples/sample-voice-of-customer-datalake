@@ -705,6 +705,54 @@
     "emptyHint": "Add one so the engineering agents can work on a repository.",
     "branch": "Default branch: {{branch}}",
     "kind": "GitHub App",
+    "kindToken": "GitLab project access token",
+    "hostLabel": "Repository host",
+    "hosts": {
+      "github": "GitHub",
+      "gitlab": "GitLab"
+    },
+    "expiry": {
+      "on": "Token expires on {{date}}.",
+      "soonBadge": "Token expires soon",
+      "soon": "It expires on {{date}}, within {{days, number}} days: make a new token and save it on this connection.",
+      "expiredBadge": "Token expired",
+      "expired": "It expired on {{date}}: the agents cannot reach the project until you save a new token on this connection.",
+      "unknown": "The token’s expiry is not known: save the connection with its token again."
+    },
+    "gitlab": {
+      "keepHint": "The stored token is never shown. Leave the token empty to keep it; a new host or project needs a token again.",
+      "fields": {
+        "project": "Project path",
+        "token": "Project access token"
+      },
+      "hints": {
+        "project": "The project’s path as in its address: group/project, or group/subgroup/project.",
+        "token": "The project access token (glpat-…), shown once when it is made. It is checked with GitLab, sent once and never shown again."
+      },
+      "invalid": {
+        "repository": "Enter the project’s path as in its address: group/project or group/subgroup/project.",
+        "tokenEmpty": "Paste the project access token: a new connection needs its credential.",
+        "tokenNeeded": "Paste the project access token again: a new host or project is stored with it.",
+        "token": "Paste the whole project access token: it starts with glpat-."
+      },
+      "guidance": {
+        "title": "What the GitLab token needs",
+        "token": "Create a project access token in this project only (in the project's settings, under Access tokens): role Developer, scopes api, read_repository and write_repository. Never Maintainer or Owner, and never a group or personal token.",
+        "expiry": "GitLab tokens expire, at most a year after they are made. Make the next token before this one expires and save it on the connection: the page warns you 30 days ahead.",
+        "branch": "Protect the default branch (no force push, push and merge for Maintainers only), require pipelines to succeed before a merge, and leave voc-agent/* branches unprotected."
+      },
+      "ci": {
+        "points": {
+          "protected_secrets": "CI/CD variables that hold secrets are protected, so only pipelines on protected branches get them.",
+          "read_only_token": "The CI/CD job token has the least access: its allowlist holds only the projects the pipelines need, and no job pushes with it.",
+          "oidc_pinned": "Cloud access through OIDC (id_tokens) is pinned to protected branches (the token’s ref_protected claim).",
+          "no_self_hosted_runner": "No shared, group or instance runner with access to secrets or private networks runs jobs for unprotected branches: such runners are protected.",
+          "no_privileged_pull_request": "No pipeline runs merge request code with secrets: no merge request pipeline for forks in this project, and no protected variable reaches one.",
+          "branch_rules": "The default branch is protected (no force push, push and merge for Maintainers), pipelines must succeed before a merge (a skipped pipeline does not count as a success), the CI configuration uses only plain local includes and GitLab's own templates (shared CI from other projects, remote includes and components are not supported), and voc-agent/* branches stay unprotected."
+        },
+        "checked": "The broker also reads the protected branches at each push and merge request: the default branch protected with no force push and push and merge for Maintainers, pipelines required to succeed, and voc-agent/* branches not protected."
+      }
+    },
     "appIds": "App {{appId}}, installation {{installationId}}",
     "set": "Set",
     "notSet": "Not set",

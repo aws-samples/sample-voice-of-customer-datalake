@@ -17,6 +17,7 @@ import { fetchApi, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
 import { at } from '@test/defined'
 import { sortedStrings } from '@test/stringLists'
 import { said } from '@test/describedField'
+import { openAddConnection, saveConnection } from '@test/connectionDialog'
 import { ApiError } from '../../lib/errors'
 import type { RouteHandler } from '@test/fetchApiRoutes'
 
@@ -44,11 +45,8 @@ function renderConnections(routes: Record<string, RouteHandler>) {
 }
 
 const calls = (method: string) => fetchApi.mock.calls.filter(([, options]) => options?.method === method)
-const openAdd = async () => {
-  await userEvent.click(await screen.findByRole('button', { name: 'Add connection' }))
-  return screen.getByRole('dialog', { name: 'Add a repository connection' })
-}
-const save = (dialog: HTMLElement) => userEvent.click(within(dialog).getByRole('button', { name: 'Save connection' }))
+const openAdd = openAddConnection
+const save = saveConnection
 
 async function pasteKey(dialog: HTMLElement, key = PEM) {
   within(dialog).getByLabelText('Private key').focus()

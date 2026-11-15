@@ -3,6 +3,30 @@
   "entries": [
     {
       "files": [
+        "voc-datalake/lambda/engineering/connectors/github.py",
+        "voc-datalake/lambda/engineering/connectors/gitlab.py"
+      ],
+      "name": "open_or_update_draft_pr",
+      "reason": "the two hosts' clients of one RepositoryHost step (hosts.py): the same order of checks, each over its own host's API (GitHub's pulls with a draft flag and a scoped token, GitLab's merge requests with a Draft: title); the shared part, the check after the write and its close, is one function (hosts.checked_after_write)"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/engineering/connectors/github.py",
+        "voc-datalake/lambda/engineering/connectors/gitlab.py"
+      ],
+      "name": "read",
+      "reason": "each host's RepositoryHost.read: one call of the shared dispatch (hosts.read_page) with its own file, history and thread readers; the readers differ, the call's shape cannot"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/engineering/connectors/github.py",
+        "voc-datalake/lambda/engineering/connectors/gitlab.py"
+      ],
+      "name": "_read_history",
+      "reason": "each host's history read: the same page shape over different query names (sha vs ref_name), item fields (commit.committer.date vs committed_date) and pagination (Link vs X-Next-Page); folding them would move the host's API into a parameter table"
+    },
+    {
+      "files": [
         "voc-datalake/lambda/product_doc_extractor/handler.py",
         "voc-datalake/lambda/shared/invocation_cost.py",
         "voc-datalake/lambda/shared/aws.py"

@@ -759,6 +759,54 @@
     "emptyHint": "Fügen Sie eine hinzu, damit die Engineering-Agenten an einem Repository arbeiten können.",
     "branch": "Standard-Branch: {{branch}}",
     "kind": "GitHub App",
+    "kindToken": "GitLab-Projektzugriffstoken",
+    "hostLabel": "Repository-Host",
+    "hosts": {
+      "github": "GitHub",
+      "gitlab": "GitLab"
+    },
+    "expiry": {
+      "on": "Das Token läuft am {{date}} ab.",
+      "soonBadge": "Token läuft bald ab",
+      "soon": "Es läuft am {{date}} ab, in höchstens {{days, number}} Tagen: Erstellen Sie ein neues Token und speichern Sie es in dieser Verbindung.",
+      "expiredBadge": "Token abgelaufen",
+      "expired": "Es ist am {{date}} abgelaufen: Die Agenten erreichen das Projekt erst wieder, wenn Sie ein neues Token in dieser Verbindung speichern.",
+      "unknown": "Das Ablaufdatum des Tokens ist nicht bekannt: Speichern Sie die Verbindung erneut mit ihrem Token."
+    },
+    "gitlab": {
+      "keepHint": "Das gespeicherte Token wird nie angezeigt. Lassen Sie das Token leer, um es zu behalten; ein neuer Host oder ein neues Projekt braucht wieder ein Token.",
+      "fields": {
+        "project": "Projektpfad",
+        "token": "Projektzugriffstoken"
+      },
+      "hints": {
+        "project": "Der Pfad des Projekts wie in seiner Adresse: gruppe/projekt oder gruppe/untergruppe/projekt.",
+        "token": "Das Projektzugriffstoken (glpat-…), das beim Erstellen einmal angezeigt wird. Es wird bei GitLab geprüft, einmal gesendet und nie wieder angezeigt."
+      },
+      "invalid": {
+        "repository": "Geben Sie den Pfad des Projekts wie in seiner Adresse ein: gruppe/projekt oder gruppe/untergruppe/projekt.",
+        "tokenEmpty": "Fügen Sie das Projektzugriffstoken ein: Eine neue Verbindung braucht ihre Anmeldedaten.",
+        "tokenNeeded": "Fügen Sie das Projektzugriffstoken erneut ein: Ein neuer Host oder ein neues Projekt wird damit gespeichert.",
+        "token": "Fügen Sie das ganze Projektzugriffstoken ein: Es beginnt mit glpat-."
+      },
+      "guidance": {
+        "title": "Was das GitLab-Token braucht",
+        "token": "Erstellen Sie ein Projektzugriffstoken nur in diesem Projekt (in den Einstellungen des Projekts, unter Zugriffstoken): Rolle Developer, Bereiche api, read_repository und write_repository. Nie Maintainer oder Owner und nie ein Gruppen- oder persönliches Token.",
+        "expiry": "GitLab-Tokens laufen ab, höchstens ein Jahr nach ihrer Erstellung. Erstellen Sie das nächste Token, bevor dieses abläuft, und speichern Sie es in der Verbindung: Die Seite warnt Sie 30 Tage vorher.",
+        "branch": "Schützen Sie den Standard-Branch (kein Force-Push, Push und Merge nur für Maintainer), verlangen Sie erfolgreiche Pipelines vor einem Merge und lassen Sie voc-agent/*-Branches ungeschützt."
+      },
+      "ci": {
+        "points": {
+          "protected_secrets": "CI/CD-Variablen mit Geheimnissen sind geschützt, sodass nur Pipelines auf geschützten Branches sie erhalten.",
+          "read_only_token": "Das CI/CD-Job-Token hat die geringsten Rechte: Seine Zulassungsliste enthält nur die Projekte, die die Pipelines brauchen, und kein Job pusht damit.",
+          "oidc_pinned": "Cloud-Zugriff über OIDC (id_tokens) ist an geschützte Branches gebunden (der Claim ref_protected des Tokens).",
+          "no_self_hosted_runner": "Kein gemeinsamer, Gruppen- oder Instanz-Runner mit Zugriff auf Geheimnisse oder private Netzwerke führt Jobs für ungeschützte Branches aus: Solche Runner sind geschützt.",
+          "no_privileged_pull_request": "Keine Pipeline führt Merge-Request-Code mit Geheimnissen aus: keine Merge-Request-Pipeline für Forks in diesem Projekt, und keine geschützte Variable erreicht eine.",
+          "branch_rules": "Der Standard-Branch ist geschützt (kein Force-Push, Push und Merge für Maintainer), Pipelines müssen vor einem Merge erfolgreich sein (eine übersprungene Pipeline zählt nicht als Erfolg), die CI-Konfiguration nutzt nur einfache lokale Includes und GitLabs eigene Vorlagen (geteilte CI aus anderen Projekten, Remote-Includes und Komponenten werden nicht unterstützt), und voc-agent/*-Branches bleiben ungeschützt."
+        },
+        "checked": "Der Broker liest bei jedem Push und Merge Request auch die geschützten Branches: der Standard-Branch geschützt ohne Force-Push, mit Push und Merge für Maintainer, erfolgreiche Pipelines verlangt und voc-agent/*-Branches nicht geschützt."
+      }
+    },
     "appIds": "App {{appId}}, Installation {{installationId}}",
     "set": "Gesetzt",
     "notSet": "Nicht gesetzt",

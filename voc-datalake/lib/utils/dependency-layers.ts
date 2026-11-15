@@ -46,6 +46,12 @@ export const SIGNING_LAYER_FUNCTION_IDS: readonly string[] = [
  * function (pinned in dependency-layers.test.ts).
  */
 
+/**
+ * PyYAML: the engineering broker's strict reader of a GitLab project's CI files
+ * (`engineering/connectors/ci_yaml.py`); attached to the broker alone (lib/stacks/engineering-broker.ts).
+ */
+export const ENGINEERING_CI_LAYER_DIR = 'lambda/layers/engineering-ci-deps';
+
 /** lxml: the HTML parser the inbound-email intake hands to BeautifulSoup (`email_intake/mime.py`). */
 export const EMAIL_INTAKE_LAYER_DIR = 'lambda/layers/email-intake-deps';
 

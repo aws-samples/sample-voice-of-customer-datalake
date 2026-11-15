@@ -16,6 +16,7 @@ from engineering.connectors.credentials import (
     CredentialUnusable,
     ParameterStoreCredentials,
     parse_credential,
+    parse_stored,
 )
 from engineering.connectors.hosts import NoConnection
 from engineering.connectors.test.app_keys import APP_ID, INSTALLATION_ID, OWNER, REPOSITORY, parameter_value, pem
@@ -115,3 +116,46 @@ def test_refuses_a_value_that_is_not_a_github_app_credential(text: str) -> None:
 
 def test_an_installation_id_may_be_a_string_of_digits() -> None:
     assert parse_credential(parameter_value(installation_id='42')).installation_id == 42
+
+
+# --- a GitLab connection's project token (7.06.00) ------------------------------------------------------------------
+
+GITLAB_TOKEN = 'glpat-' + 'exampleTokenForTests0123'   # (in two parts: no secret scanner takes it for a token)
+
+
+def gitlab_value(**change: Any) -> str:
+    return json.dumps({'host': 'gitlab', 'project_id': 4242, 'repository': 'example-org/payments/refund-service',
+                       'token': GITLAB_TOKEN, 'expires_at': '2027-11-01', **change})
+
+
+def test_a_gitlab_parameter_is_its_project_and_token_and_never_shows_the_token(ssm: Any) -> None:
+    store(ssm, 'conn-gl', gitlab_value())
+    source = ParameterStoreCredentials(PREFIX, client=lambda: ssm)
+    found = source.gitlab('conn-gl')
+    assert (found.project_id, found.repository, found.token, found.expires_at) == (
+        4242, 'example-org/payments/refund-service', GITLAB_TOKEN, '2027-11-01')
+    assert GITLAB_TOKEN not in repr(found)
+    assert source.stored('conn-gl') == found
+
+
+def test_each_hosts_reader_refuses_the_other_hosts_credential(ssm: Any) -> None:
+    store(ssm, 'conn-gl', gitlab_value())
+    store(ssm, 'conn-gh', parameter_value())
+    source = ParameterStoreCredentials(PREFIX, client=lambda: ssm)
+    with pytest.raises(CredentialUnusable):
+        source.get('conn-gl')
+    with pytest.raises(CredentialUnusable):
+        source.gitlab('conn-gh')
+    with pytest.raises(CredentialUnusable):
+        parse_credential(gitlab_value())
+
+
+@pytest.mark.parametrize('text', [
+    gitlab_value(host='bitbucket'), gitlab_value(project_id='0'), gitlab_value(project_id=True),
+    gitlab_value(repository='no-namespace'), gitlab_value(repository='a/../b'), gitlab_value(token='ghp_x'),
+    gitlab_value(token=None),
+])
+def test_a_gitlab_value_off_its_shape_is_unusable_and_never_quoted(text: str) -> None:
+    with pytest.raises(CredentialUnusable) as caught:
+        parse_stored(text)
+    assert GITLAB_TOKEN not in str(caught.value)

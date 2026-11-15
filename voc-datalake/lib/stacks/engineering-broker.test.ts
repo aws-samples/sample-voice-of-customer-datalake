@@ -199,6 +199,12 @@ describe('the engineering broker', () => {
     expect(layers).toContain('EngineeringBrokerSigningDepsLayer');
   });
 
+  it('carries the YAML reader of GitLab CI files in a layer of its own', () => {
+    const on = template('on');
+    const layers = JSON.stringify(on.findResources('AWS::Lambda::Function')[brokerId(on)]?.Properties?.Layers);
+    expect(layers).toContain('EngineeringBrokerCiDepsLayer');
+  });
+
   it('puts a deployment prefix on the voc segment of the parameters\' path', () => {
     expect(engineeringParameterPrefix(undefined)).toBe('/voc/engineering/');
     expect(engineeringParameterPrefix('qa')).toBe('/qa-voc/engineering/');

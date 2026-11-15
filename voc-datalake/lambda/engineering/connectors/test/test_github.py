@@ -18,11 +18,8 @@ from engineering.connectors.broker import Broker
 from engineering.connectors.github import (
     API_HOST,
     JWT_SECONDS,
-    MAX_RESPONSE_BYTES,
     TOKEN_MARGIN_SECONDS,
     GitHubHost,
-    HttpsTransport,
-    Response,
     app_jwt,
     next_page,
     rate_limit_retry,
@@ -44,6 +41,7 @@ from engineering.connectors.hosts import (
 from engineering.connectors.identity import Caller
 from engineering.connectors.test.app_keys import APP_ID, INSTALLATION_ID, credential, private_key
 from engineering.connectors.test.fakes import BASE, BOT, BRANCH, RUN, TREE, FakeWrites, bundle_contents, connector
+from engineering.connectors.transport import MAX_RESPONSE_BYTES, HttpsTransport, Response
 from engineering.connectors.write_policy import WriteRefused
 
 NOW = 1_800_000_000.0
@@ -818,10 +816,10 @@ def test_the_branch_caches_keep_at_most_their_bound_the_oldest_going_first(monke
     host = client(api)
     for branch in ('one', 'two', 'three', 'three'):
         host.default_branch('c', branch)
-    assert [key[2] for key in host._confirmed_branches] == ['two', 'three']
+    assert [key[2] for key in host._cached.confirmed_branches] == ['two', 'three']
     host.default_branch('c', 'one')   # (dropped: looked up again)
     assert api.calls().count(('GET', f'{REPO}/git/ref/heads/one')) == 2
-    assert len(host._confirmed_branches) == 2
+    assert len(host._cached.confirmed_branches) == 2
 
 
 def test_a_stored_default_branch_the_host_does_not_have_is_refused_and_not_kept() -> None:
@@ -926,7 +924,7 @@ def test_the_kept_checks_hold_at_most_their_bound(monkeypatch: pytest.MonkeyPatc
     host = client(api)
     for branch in branches:
         host.ci_protection('c', 'main', branch)
-    assert [key[3] for key in host._ci_checks] == branches[1:]
+    assert [key[3] for key in host._cached.ci_checks] == branches[1:]
 
 
 # --- the HTTPS transport --------------------------------------------------------------------------------------------
@@ -974,7 +972,7 @@ def transport(reply: FakeAnswer | Exception, *, send_fails: bool = False) -> tup
     def connect(host: str, timeout: float, context: object) -> FakeConnection:
         made.append(FakeConnection(host, timeout, context, reply, send_fails))
         return made[-1]
-    return HttpsTransport(connect=connect), made
+    return HttpsTransport(connect=connect, host=API_HOST, repeatable=github._TOKEN_PATH), made
 
 
 def test_the_transport_talks_only_to_the_api_host_and_lower_cases_headers() -> None:
@@ -1022,5 +1020,7 @@ def test_a_write_that_never_left_is_retryable() -> None:
 
 
 def test_the_default_transport_is_https() -> None:
-    assert isinstance(GitHubHost(lambda _: credential())._transport, HttpsTransport)
-    assert github.HttpsTransport()._connect is http.client.HTTPSConnection
+    default = GitHubHost(lambda _: credential())._transport
+    assert isinstance(default, HttpsTransport)
+    assert (default._host, default._repeatable) == (API_HOST, github._TOKEN_PATH)
+    assert HttpsTransport()._connect is http.client.HTTPSConnection

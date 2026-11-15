@@ -1,7 +1,8 @@
 /**
  * @fileoverview Agents → Connections (administrators, while the engineering agents are on): the repository
  * connections the engineering agents reach a repository through (`GET /agents/engineering/connections`). Each shows
- * its repository, default branch, its GitHub App's ids and whether its credential is set (never the private key),
+ * its host (GitHub or GitLab), repository, default branch, its GitHub App's ids or its GitLab token's expiry (a
+ * warning within 30 days of it, a danger once past), whether its credential is set (never the key or the token),
  * and who changed it last; an administrator adds one, edits one (an empty private key keeps the stored credential),
  * or removes one after a confirmation that says live runs on it lose access within five minutes. Each shows its CI
  * attestation too (CiAttestation.tsx): an administrator attests that the repository's CI meets the setup guide, which
@@ -16,7 +17,8 @@ import { GitBranch, KeyRound, Plus } from 'lucide-react'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import { engineeringConnectionsApi, engineeringConnectionsKeys, isCiAttested } from '../../api/engineeringConnectionsApi'
 import { useConfigStore } from '../../store/configStore'
-import { formatDateTime } from '../../utils/dateUtils'
+import { formatCalendarDay, formatDateTime } from '../../utils/dateUtils'
+import { EXPIRY_WARNING_DAYS, todayUtc, tokenExpiry } from './connectionRules'
 import { AttestDialog, CiAttestationLine, WithdrawConfirm } from './CiAttestation'
 import { ConnectionDialog } from './ConnectionDialog'
 import { CredentialGuidance } from './ConnectionFields'
@@ -37,6 +39,26 @@ interface RowActions {
   onWithdraw: (c: EngineeringConnection) => void
 }
 
+/** A GitLab token's expiry: its day, a warning within the last `EXPIRY_WARNING_DAYS`, a danger badge once past. */
+function TokenExpiryLine({ expiresAt }: Readonly<{ expiresAt: string | null }>) {
+  const { t, i18n } = useTranslation('agents')
+  const expiry = tokenExpiry(expiresAt, todayUtc())
+  if (expiry.state === 'none') return <p className="text-[12px] text-warn">{t('connections.expiry.unknown')}</p>
+  const date = formatCalendarDay(expiry.date, i18n.language)
+  if (expiry.state === 'ok') return <p className="text-[12px] text-muted">{t('connections.expiry.on', { date })}</p>
+  const soon = expiry.state === 'soon'
+  return (
+    <p className="flex flex-wrap items-center gap-2 text-[12px]">
+      <span className={soon ? 'badge badge-warn' : 'badge badge-danger'}>
+        {soon ? t('connections.expiry.soonBadge') : t('connections.expiry.expiredBadge')}
+      </span>
+      <span className={soon ? 'text-warn' : 'text-danger'}>
+        {soon ? t('connections.expiry.soon', { date, days: EXPIRY_WARNING_DAYS }) : t('connections.expiry.expired', { date })}
+      </span>
+    </p>
+  )
+}
+
 function ConnectionRow({ connection, actions }: Readonly<{ connection: EngineeringConnection; actions: RowActions }>) {
   const { t, i18n } = useTranslation('agents')
   const { repository, credential } = connection
@@ -53,8 +75,9 @@ function ConnectionRow({ connection, actions }: Readonly<{ connection: Engineeri
           </span>
         </p>
         <p className="flex flex-wrap items-center gap-2 text-[12px]">
+          <span className="badge badge-muted">{t(`connections.hosts.${connection.host}`)}</span>
           <span className="badge badge-muted inline-flex items-center gap-1">
-            <KeyRound size={12} aria-hidden="true" /> {t('connections.kind')}
+            <KeyRound size={12} aria-hidden="true" /> {connection.host === 'gitlab' ? t('connections.kindToken') : t('connections.kind')}
           </span>
           {credential.app_id !== null && credential.installation_id !== null && (
             <span className="font-mono text-muted">
@@ -66,6 +89,7 @@ function ConnectionRow({ connection, actions }: Readonly<{ connection: Engineeri
           </span>
           {!credential.set && <span className="text-warn">{t('connections.notSetHint')}</span>}
         </p>
+        {connection.host === 'gitlab' && credential.set && <TokenExpiryLine expiresAt={credential.expires_at} />}
         <CiAttestationLine connection={connection} />
         {when !== '' && (
           <p className="text-[12px] text-muted">

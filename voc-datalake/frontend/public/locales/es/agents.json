@@ -765,6 +765,54 @@
     "emptyHint": "Añada una para que los agentes de ingeniería puedan trabajar en un repositorio.",
     "branch": "Rama predeterminada: {{branch}}",
     "kind": "GitHub App",
+    "kindToken": "Token de acceso de proyecto de GitLab",
+    "hostLabel": "Host del repositorio",
+    "hosts": {
+      "github": "GitHub",
+      "gitlab": "GitLab"
+    },
+    "expiry": {
+      "on": "El token caduca el {{date}}.",
+      "soonBadge": "El token caduca pronto",
+      "soon": "Caduca el {{date}}, en {{days, number}} días o menos: cree un token nuevo y guárdelo en esta conexión.",
+      "expiredBadge": "Token caducado",
+      "expired": "Caducó el {{date}}: los agentes no pueden acceder al proyecto hasta que guarde un token nuevo en esta conexión.",
+      "unknown": "No se conoce la caducidad del token: guarde la conexión de nuevo con su token."
+    },
+    "gitlab": {
+      "keepHint": "El token guardado nunca se muestra. Deje el token vacío para conservarlo; un host o un proyecto nuevos necesitan un token otra vez.",
+      "fields": {
+        "project": "Ruta del proyecto",
+        "token": "Token de acceso de proyecto"
+      },
+      "hints": {
+        "project": "La ruta del proyecto tal como aparece en su dirección: grupo/proyecto o grupo/subgrupo/proyecto.",
+        "token": "El token de acceso de proyecto (glpat-…), que se muestra una vez al crearlo. Se comprueba con GitLab, se envía una vez y nunca se vuelve a mostrar."
+      },
+      "invalid": {
+        "repository": "Introduzca la ruta del proyecto tal como aparece en su dirección: grupo/proyecto o grupo/subgrupo/proyecto.",
+        "tokenEmpty": "Pegue el token de acceso de proyecto: una conexión nueva necesita su credencial.",
+        "tokenNeeded": "Pegue de nuevo el token de acceso de proyecto: un host o un proyecto nuevos se guardan con él.",
+        "token": "Pegue el token de acceso de proyecto completo: empieza por glpat-."
+      },
+      "guidance": {
+        "title": "Lo que necesita el token de GitLab",
+        "token": "Cree un token de acceso de proyecto solo en este proyecto (en la configuración del proyecto, en Tokens de acceso): rol Developer, ámbitos api, read_repository y write_repository. Nunca Maintainer ni Owner, y nunca un token de grupo ni personal.",
+        "expiry": "Los tokens de GitLab caducan, como mucho un año después de crearse. Cree el siguiente token antes de que caduque este y guárdelo en la conexión: la página le avisa con 30 días de antelación.",
+        "branch": "Proteja la rama predeterminada (sin force push, push y merge solo para Maintainers), exija que las pipelines terminen bien antes de un merge y deje sin proteger las ramas voc-agent/*."
+      },
+      "ci": {
+        "points": {
+          "protected_secrets": "Las variables de CI/CD que guardan secretos están protegidas, así que solo las reciben las pipelines de ramas protegidas.",
+          "read_only_token": "El token de trabajo de CI/CD tiene el mínimo acceso: su lista de permitidos solo incluye los proyectos que necesitan las pipelines, y ningún trabajo hace push con él.",
+          "oidc_pinned": "El acceso a la nube mediante OIDC (id_tokens) está limitado a ramas protegidas (la reclamación ref_protected del token).",
+          "no_self_hosted_runner": "Ningún runner compartido, de grupo o de instancia con acceso a secretos o redes privadas ejecuta trabajos de ramas no protegidas: esos runners están protegidos.",
+          "no_privileged_pull_request": "Ninguna pipeline ejecuta código de merge requests con secretos: ninguna pipeline de merge request para forks en este proyecto, y ninguna variable protegida llega a una.",
+          "branch_rules": "La rama predeterminada está protegida (sin force push, push y merge para Maintainers), las pipelines deben terminar bien antes de un merge (una pipeline omitida no cuenta como éxito), la configuración de CI usa solo includes locales simples y las plantillas propias de GitLab (no se admiten CI compartida de otros proyectos, includes remotos ni componentes) y las ramas voc-agent/* siguen sin protección."
+        },
+        "checked": "El intermediario también lee las ramas protegidas en cada push y merge request: la rama predeterminada protegida sin force push y con push y merge para Maintainers, pipelines obligatorias y ramas voc-agent/* sin proteger."
+      }
+    },
     "appIds": "App {{appId}}, instalación {{installationId}}",
     "set": "Guardada",
     "notSet": "Sin guardar",

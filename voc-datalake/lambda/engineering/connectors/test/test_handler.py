@@ -16,6 +16,7 @@ from engineering.connectors.broker import Broker
 from engineering.connectors.connections import PARAMETER_PREFIX_ENV
 from engineering.connectors.dial import WaysOfWorking
 from engineering.connectors.github import GitHubHost
+from engineering.connectors.gitlab import GitLabHost
 from engineering.connectors.hosts import (
     NO_CONNECTION,
     STORED_BRANCH_MISSING,
@@ -34,6 +35,7 @@ from engineering.connectors.hosts import (
 )
 from engineering.connectors.patches import WorkspacePatches
 from engineering.connectors.records import RunRecords
+from engineering.connectors.router import HostRouter
 from engineering.connectors.test.fakes import (
     ACCOUNT,
     BASE,
@@ -303,7 +305,9 @@ def test_with_the_parameter_prefix_the_broker_holds_the_github_client_and_still_
     # Without the engineering table and the workspace bucket named, no run is read and nothing reaches GitHub (or SSM).
     assert (response['statusCode'], json.loads(response['body'])) == (503, {'error': NO_CONNECTION})
     assert connected is not None
-    assert isinstance(connected.host, GitHubHost)
+    assert isinstance(connected.host, HostRouter)
+    assert (isinstance(connected.host._github, GitHubHost), isinstance(connected.host._gitlab, GitLabHost)) == (
+        True, True)
     assert (connected.runs, connected.ledger, connected.bundles, connected.dial) == (UNCONNECTED,) * 4
     assert handler.broker_for('')._connector is None
 

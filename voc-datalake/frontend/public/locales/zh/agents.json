@@ -759,6 +759,54 @@
     "emptyHint": "添加一个连接，工程智能体即可在仓库中工作。",
     "branch": "默认分支：{{branch}}",
     "kind": "GitHub App",
+    "kindToken": "GitLab 项目访问令牌",
+    "hostLabel": "代码仓库托管方",
+    "hosts": {
+      "github": "GitHub",
+      "gitlab": "GitLab"
+    },
+    "expiry": {
+      "on": "令牌将于 {{date}} 过期。",
+      "soonBadge": "令牌即将过期",
+      "soon": "它将于 {{date}} 过期，不超过 {{days, number}} 天：请新建一个令牌并保存到此连接。",
+      "expiredBadge": "令牌已过期",
+      "expired": "它已于 {{date}} 过期：在你为此连接保存新令牌之前，代理无法访问该项目。",
+      "unknown": "令牌的过期日期未知：请带上令牌重新保存此连接。"
+    },
+    "gitlab": {
+      "keepHint": "已保存的令牌从不显示。将令牌留空即可保留；更换托管方或项目需要重新提供令牌。",
+      "fields": {
+        "project": "项目路径",
+        "token": "项目访问令牌"
+      },
+      "hints": {
+        "project": "项目地址中的路径：group/project 或 group/subgroup/project。",
+        "token": "项目访问令牌（glpat-…），创建时只显示一次。它会经 GitLab 校验，只发送一次，之后不再显示。"
+      },
+      "invalid": {
+        "repository": "请输入项目地址中的路径：group/project 或 group/subgroup/project。",
+        "tokenEmpty": "请粘贴项目访问令牌：新连接需要它的凭证。",
+        "tokenNeeded": "请重新粘贴项目访问令牌：新的托管方或项目会与它一起保存。",
+        "token": "请粘贴完整的项目访问令牌：它以 glpat- 开头。"
+      },
+      "guidance": {
+        "title": "GitLab 令牌需要什么",
+        "token": "只在此项目中创建项目访问令牌（在项目设置的“访问令牌”中）：角色 Developer，范围 api、read_repository 和 write_repository。不要使用 Maintainer 或 Owner，也不要使用群组令牌或个人令牌。",
+        "expiry": "GitLab 令牌会过期，最长为创建后一年。请在此令牌过期前创建下一个令牌并保存到连接：本页面会提前 30 天提醒你。",
+        "branch": "保护默认分支（禁止强制推送，推送和合并仅限 Maintainer），要求合并前流水线成功，并让 voc-agent/* 分支保持不受保护。"
+      },
+      "ci": {
+        "points": {
+          "protected_secrets": "含有密钥的 CI/CD 变量已受保护，只有受保护分支上的流水线能获得它们。",
+          "read_only_token": "CI/CD 作业令牌的权限最小：其允许列表只包含流水线需要的项目，且没有作业用它推送。",
+          "oidc_pinned": "通过 OIDC（id_tokens）访问云服务仅限受保护分支（令牌的 ref_protected 声明）。",
+          "no_self_hosted_runner": "能访问密钥或私有网络的共享、群组或实例 Runner 不会为未受保护的分支运行作业：这类 Runner 已受保护。",
+          "no_privileged_pull_request": "没有流水线带着密钥运行合并请求的代码：此项目中没有面向派生项目的合并请求流水线，受保护变量也不会传给它。",
+          "branch_rules": "默认分支已受保护（禁止强制推送，推送和合并仅限 Maintainer），合并前流水线必须成功（跳过的流水线不算成功），CI 配置只使用简单的本地 include 和 GitLab 自带的模板（暂不支持其他项目的共享 CI、远程 include 和组件），voc-agent/* 分支保持不受保护。"
+        },
+        "checked": "代理服务在每次推送和合并请求时也会读取受保护分支：默认分支受保护、禁止强制推送、推送和合并仅限 Maintainer，要求流水线成功，且 voc-agent/* 分支未受保护。"
+      }
+    },
     "appIds": "App {{appId}}，安装 {{installationId}}",
     "set": "已设置",
     "notSet": "未设置",

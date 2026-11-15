@@ -765,6 +765,54 @@
     "emptyHint": "Adicione uma para que os agentes de engenharia possam trabalhar em um repositório.",
     "branch": "Branch padrão: {{branch}}",
     "kind": "GitHub App",
+    "kindToken": "Token de acesso ao projeto do GitLab",
+    "hostLabel": "Host do repositório",
+    "hosts": {
+      "github": "GitHub",
+      "gitlab": "GitLab"
+    },
+    "expiry": {
+      "on": "O token expira em {{date}}.",
+      "soonBadge": "O token expira em breve",
+      "soon": "Ele expira em {{date}}, em até {{days, number}} dias: crie um token novo e salve-o nesta conexão.",
+      "expiredBadge": "Token expirado",
+      "expired": "Ele expirou em {{date}}: os agentes não alcançam o projeto até você salvar um token novo nesta conexão.",
+      "unknown": "A validade do token não é conhecida: salve a conexão novamente com o token."
+    },
+    "gitlab": {
+      "keepHint": "O token salvo nunca é exibido. Deixe o token vazio para mantê-lo; um host ou projeto novo precisa de um token outra vez.",
+      "fields": {
+        "project": "Caminho do projeto",
+        "token": "Token de acesso ao projeto"
+      },
+      "hints": {
+        "project": "O caminho do projeto como no endereço dele: grupo/projeto ou grupo/subgrupo/projeto.",
+        "token": "O token de acesso ao projeto (glpat-…), exibido uma vez ao ser criado. Ele é verificado com o GitLab, enviado uma vez e nunca exibido de novo."
+      },
+      "invalid": {
+        "repository": "Digite o caminho do projeto como no endereço dele: grupo/projeto ou grupo/subgrupo/projeto.",
+        "tokenEmpty": "Cole o token de acesso ao projeto: uma conexão nova precisa da credencial.",
+        "tokenNeeded": "Cole o token de acesso ao projeto de novo: um host ou projeto novo é salvo com ele.",
+        "token": "Cole o token de acesso ao projeto inteiro: ele começa com glpat-."
+      },
+      "guidance": {
+        "title": "O que o token do GitLab precisa",
+        "token": "Crie um token de acesso ao projeto só neste projeto (nas configurações do projeto, em Tokens de acesso): papel Developer, escopos api, read_repository e write_repository. Nunca Maintainer ou Owner, e nunca um token de grupo ou pessoal.",
+        "expiry": "Os tokens do GitLab expiram, no máximo um ano depois de criados. Crie o próximo token antes que este expire e salve-o na conexão: a página avisa com 30 dias de antecedência.",
+        "branch": "Proteja o branch padrão (sem force push, push e merge só para Maintainers), exija que os pipelines passem antes de um merge e deixe os branches voc-agent/* sem proteção."
+      },
+      "ci": {
+        "points": {
+          "protected_secrets": "As variáveis de CI/CD com segredos são protegidas, então só os pipelines de branches protegidos as recebem.",
+          "read_only_token": "O token de job de CI/CD tem o menor acesso: a lista de permissões dele tem só os projetos de que os pipelines precisam, e nenhum job faz push com ele.",
+          "oidc_pinned": "O acesso à nuvem por OIDC (id_tokens) é restrito a branches protegidos (a claim ref_protected do token).",
+          "no_self_hosted_runner": "Nenhum runner compartilhado, de grupo ou de instância com acesso a segredos ou redes privadas roda jobs de branches não protegidos: esses runners são protegidos.",
+          "no_privileged_pull_request": "Nenhum pipeline roda código de merge request com segredos: nenhum pipeline de merge request para forks neste projeto, e nenhuma variável protegida chega a um.",
+          "branch_rules": "O branch padrão é protegido (sem force push, push e merge para Maintainers), os pipelines devem passar antes de um merge (um pipeline ignorado não conta como sucesso), a configuração de CI usa só includes locais simples e os templates do próprio GitLab (CI compartilhada de outros projetos, includes remotos e componentes não são suportados) e os branches voc-agent/* continuam sem proteção."
+        },
+        "checked": "O intermediário também lê os branches protegidos a cada push e merge request: o branch padrão protegido sem force push e com push e merge para Maintainers, pipelines obrigatórios e branches voc-agent/* sem proteção."
+      }
+    },
     "appIds": "App {{appId}}, instalação {{installationId}}",
     "set": "Definida",
     "notSet": "Não definida",

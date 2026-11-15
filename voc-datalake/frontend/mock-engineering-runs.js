@@ -492,26 +492,47 @@ function settingsRoute(req, res, send, shared) {
 }
 
 // ── The repository connections (GET /agents/engineering/connections, PUT|DELETE …/connections/<id>) ──
-// The engineering connectors' `connections` module's rules. The GitHub App's private key is taken and never answered: a connection says only
-// whether its credential is set, and the App's ids. A save without a credential keeps the stored one (a new connection,
-// or a new repository, needs it); a live run on 'storefront' refuses its repository change (409).
+// The engineering connectors' `connections` module's rules. The GitHub App's private key and the GitLab project access
+// token are taken and never answered: a connection says only whether its credential is set, and the App's ids or the
+// token's expiry. A save without a credential keeps the stored one (a new connection, or a new host or repository,
+// needs it); a live run on 'storefront' refuses its repository change (409). The demo's GitLab token (the mock checks
+// no host) expires 60 days after its save; 'docs-site's stored one within the warning's 30 days.
 const CONNECTION_PATH = /^\/agents\/engineering\/connections(?:\/([^/]*)(\/ci-attestation)?)?$/;
 const CONNECTION_LIMIT = 20;
 const CONNECTION_FIELDS = ['host', 'repository', 'default_branch', 'credential'];
 const CREDENTIAL_FIELDS = ['app_id', 'installation_id', 'private_key'];
 const LIVE_RUN_CONNECTIONS = new Set(['storefront']);
+/** A calendar day `days` from today (UTC), `YYYY-MM-DD`: a GitLab token's expiry. */
+const dayAhead = (days) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
 const connections = new Map([['storefront', {
   connection_id: 'storefront', host: 'github', repository: 'example-org/storefront', default_branch: 'main',
-  credential: { kind: 'app', set: true, app_id: '104729', installation_id: '7919001' },
+  credential: { kind: 'app', set: true, app_id: '104729', installation_id: '7919001', expires_at: null },
   created_at: minutesAgo(60 * 24 * 9), created_by: 'admin-demo', updated_at: minutesAgo(60 * 24 * 2), updated_by: 'admin-demo',
   version: 3,
+}], ['docs-site', {
+  connection_id: 'docs-site', host: 'gitlab', repository: 'example-group/web/docs-site', default_branch: 'main',
+  credential: { kind: 'project_token', set: true, app_id: null, installation_id: null, expires_at: dayAhead(12) },
+  created_at: minutesAgo(60 * 24 * 340), created_by: 'admin-demo', updated_at: minutesAgo(60 * 24 * 340), updated_by: 'admin-demo',
+  version: 1,
 }]]);
 const DIGITS = /^[1-9]\d{0,19}$/;
+const GITLAB_TOKEN = /^glpat-[A-Za-z0-9_.-]{20,300}$/;
+const PROJECT_SEGMENT = /^\w[\w.-]*$/;
 const PEM = /^-----BEGIN (RSA |)PRIVATE KEY-----\n(?:[A-Za-z0-9+/=]{1,76}\n)+-----END \1PRIVATE KEY-----$/;
 const BRANCH = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$/;
 
+/** A GitLab save's credential state (never the token), or the 400 message of a bad one. */
+function tokenState(credential) {
+  if (typeof credential !== 'object' || credential === null || Object.keys(credential).join() !== 'token'
+    || typeof credential.token !== 'string' || !GITLAB_TOKEN.test(credential.token)) {
+    return 'credential is {token}: the GitLab project access token (glpat-…)';
+  }
+  return { kind: 'project_token', set: true, app_id: null, installation_id: null, expires_at: dayAhead(60) };
+}
+
 /** The stored credential's state for a save's credential (never the key), or the 400 message of a bad one. */
-function credentialState(credential) {
+function credentialState(credential, host) {
+  if (host === 'gitlab') return tokenState(credential);
   if (typeof credential !== 'object' || credential === null
     || Object.keys(credential).sort().join() !== CREDENTIAL_FIELDS.join()) {
     return 'credential is {app_id, installation_id, private_key}: the GitHub App\'s';
@@ -522,7 +543,22 @@ function credentialState(credential) {
   if (typeof key !== 'string' || !PEM.test(key.replaceAll('\r\n', '\n').trim())) {
     return 'private_key is an unencrypted RSA private key in PEM';
   }
-  return { kind: 'app', set: true, app_id: String(appId), installation_id: String(installationId) };
+  return { kind: 'app', set: true, app_id: String(appId), installation_id: String(installationId), expires_at: null };
+}
+
+/** A GitLab project's path: `group/project`, nested groups allowed (at most 21 segments, 255 characters). */
+function isProjectPath(path) {
+  if (typeof path !== 'string') return false;
+  const segments = path.split('/');
+  return path.length <= 255 && segments.length >= 2 && segments.length <= 21
+    && segments.every((part) => PROJECT_SEGMENT.test(part) && part !== '.' && part !== '..'
+      && !part.endsWith('.git') && !part.endsWith('.atom'));
+}
+
+function isGitHubRepository(repository) {
+  const [owner = '', name = '', ...rest] = typeof repository === 'string' ? repository.split('/') : [];
+  return rest.length === 0 && /^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/.test(owner) && /^[A-Za-z0-9._-]{1,100}$/.test(name)
+    && name !== '.' && name !== '..';
 }
 
 function isBranch(branch) {
@@ -535,20 +571,20 @@ function isBranch(branch) {
 function connectionBodyIssue(id, body) {
   if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(id)) return 'the connection id is 1 to 63 lower-case letters, digits or "-"';
   if (!body || Object.keys(body).some((key) => !CONNECTION_FIELDS.includes(key))) return 'the body is {host, repository, default_branch, credential?}';
-  if (body.host !== 'github') return 'host is github (GitLab is planned)';
-  const [owner = '', name = '', ...rest] = typeof body.repository === 'string' ? body.repository.split('/') : [];
-  const repoOk = rest.length === 0 && /^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/.test(owner) && /^[A-Za-z0-9._-]{1,100}$/.test(name)
-    && name !== '.' && name !== '..';
-  if (!repoOk) return 'repository is the GitHub repository as owner/name';
+  if (body.host !== 'github' && body.host !== 'gitlab') return 'host is github or gitlab';
+  if (body.host === 'gitlab' && !isProjectPath(body.repository)) {
+    return 'repository is the GitLab project\'s path (group/project, nested groups allowed)';
+  }
+  if (body.host === 'github' && !isGitHubRepository(body.repository)) return 'repository is the GitHub repository as owner/name';
   if (!isBranch(body.default_branch)) return 'default_branch is a branch name git accepts, not an agent\'s voc-agent/ branch';
   return null;
 }
 
 /** The credential a save leaves stored, or the 400 message: a save without one keeps the stored one. */
 function savedCredential(before, body) {
-  if (body.credential !== undefined && body.credential !== null) return credentialState(body.credential);
+  if (body.credential !== undefined && body.credential !== null) return credentialState(body.credential, body.host);
   if (before === undefined) return 'credential is needed to add a connection';
-  if (before.repository !== body.repository || !before.credential.set) {
+  if (before.repository !== body.repository || before.host !== body.host || !before.credential.set) {
     return 'credential is needed again: the stored one holds the repository it was saved with';
   }
   return before.credential;
@@ -563,17 +599,19 @@ function saveConnection(id, body) {
   if (before === undefined && connections.size >= CONNECTION_LIMIT) {
     return [409, { message: `at most ${CONNECTION_LIMIT} connections: remove one to add another` }];
   }
-  if (before !== undefined && before.repository !== body.repository && LIVE_RUN_CONNECTIONS.has(id)) {
+  // (a host change is a move too, as the server's connections.py `_moved` has it)
+  const moved = before !== undefined && (before.repository !== body.repository || (before.host ?? 'github') !== body.host);
+  if (moved && LIVE_RUN_CONNECTIONS.has(id)) {
     return [409, { message: '1 run(s) of this connection are live: the repository changes once they end (or stop them first)' }];
   }
   const now = new Date().toISOString();
   const connection = {
-    connection_id: id, host: 'github', repository: body.repository, default_branch: body.default_branch, credential,
+    connection_id: id, host: body.host, repository: body.repository, default_branch: body.default_branch, credential,
     created_at: before?.created_at ?? now, created_by: before?.created_by ?? 'admin-demo', updated_at: now, updated_by: 'admin-demo',
     version: (before?.version ?? 0) + 1,
   };
   connections.set(id, connection);
-  if (before !== undefined && before.repository !== body.repository) voidAttestation(id, 'repository_changed');
+  if (moved) voidAttestation(id, 'repository_changed');
   return [200, { connection: withAttestation(connection), created: before === undefined }];
 }
 

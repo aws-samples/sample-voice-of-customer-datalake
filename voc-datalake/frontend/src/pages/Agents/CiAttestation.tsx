@@ -3,8 +3,9 @@
  * who recorded or withdrew it and when, or why it was voided; recording one (`POST …/connections/<id>/ci-attestation`)
  * after the administrator confirms every point of the setup guide; and withdrawing it (`DELETE`) after a confirmation.
  *
- * A push to an agent branch can start the repository's own pipelines, and the GitHub App cannot read the settings that
- * keep them harmless, so the broker refuses every push and pull request on a connection until an administrator attests
+ * A push to an agent branch can start the repository's own pipelines, and neither the GitHub App nor a GitLab
+ * Developer token can read the settings that keep them harmless (the points keep their ids; a GitLab connection's
+ * dialog names GitLab's settings: protected variables, the job token, id_tokens, runners, merge request pipelines), so the broker refuses every push and pull request on a connection until an administrator attests
  * them (docs/autonomous-engineering.md, "The target's CI"). The server records each change as a create-only version
  * with an audit row; a change of the connection's repository, or its removal, voids it.
  *
@@ -87,6 +88,8 @@ export function AttestDialog({ connection, onClose, onRecorded }: Readonly<{
   const [note, setNote] = useState('')
   const [missing, setMissing] = useState(false)
   const boxes = useRef<Partial<Record<CiPoint, HTMLInputElement | null>>>({})
+  // (the same six points by id; a GitLab project's settings by GitLab's names for them)
+  const gitlab = connection.host === 'gitlab'
   const record = useMutation({
     // (the repository and version this dialog shows: the server refuses the attestation once either changed)
     mutationFn: () => engineeringConnectionsApi.attest(connection, note),
@@ -121,13 +124,13 @@ export function AttestDialog({ connection, onClose, onRecorded }: Readonly<{
                 setMissing(false)
                 setChecked((current) => ({ ...current, [point]: event.target.checked }))
               }} />
-            <span>{t(`connections.ci.points.${point}`)}</span>
+            <span>{gitlab ? t(`connections.gitlab.ci.points.${point}`) : t(`connections.ci.points.${point}`)}</span>
           </label>
         ))}
       </fieldset>
       {missing && <p id={issueId} role="alert" className="text-[12px] text-danger">{t('connections.ci.dialog.allPoints')}</p>}
       <NoteField value={note} onChange={setNote} />
-      <p className="text-[12px] text-muted">{t('connections.ci.dialog.checked')}</p>
+      <p className="text-[12px] text-muted">{gitlab ? t('connections.gitlab.ci.checked') : t('connections.ci.dialog.checked')}</p>
     </ConnectionFormModal>
   )
 }

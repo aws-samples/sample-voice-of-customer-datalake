@@ -14,6 +14,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
 from unittest.mock import patch
+from urllib.parse import quote
 
 import boto3
 import pytest
@@ -23,14 +24,21 @@ from agents_handler_fixtures import call as _call
 
 import agents_handler
 from engineering.board.test.table import TABLE, create_table
-from engineering.connectors import credentials, handler
+from engineering.connectors import connections, credentials, handler
 from engineering.connectors.attestations import POINTS
 from engineering.connectors.broker import NOT_ATTESTED, OTHER_REPOSITORY
 from engineering.connectors.connections import LOG_PREFIX, PARTITION
-from engineering.connectors.github import GitHubHost, Response
+from engineering.connectors.github import GitHubHost
+from engineering.connectors.gitlab import GitLabHost
+from engineering.connectors.gitlab_api import check_token
 from engineering.connectors.hosts import CI_DEFAULT_UNPROTECTED, NO_CONNECTION, STORED_BRANCH_MISSING
 from engineering.connectors.test.app_keys import APP_ID, INSTALLATION_ID, OWNER, REPOSITORY, connection_body, pem
 from engineering.connectors.test.fakes import BRANCH, OTHER_RUN, PATTERN, RUN, STARTER, TREE, role_arn, url_event
+from engineering.connectors.test.gitlab_fakes import PROJECT as GITLAB_PROJECT
+from engineering.connectors.test.gitlab_fakes import PROJECT_ID, FakeGitLab
+from engineering.connectors.test.gitlab_fakes import TOKEN as GITLAB_TOKEN
+from engineering.connectors.test.gitlab_fakes import P as GITLAB_P
+from engineering.connectors.test.gitlab_fakes import answer as gitlab_answer
 from engineering.connectors.test.test_github import (
     NOW,
     REPO,
@@ -44,6 +52,7 @@ from engineering.connectors.test.test_github import (
 )
 from engineering.connectors.test.test_handler import lambda_context as broker_context
 from engineering.connectors.test.test_records import checked, final_go, gate_record, meta
+from engineering.connectors.transport import Response
 from engineering.runtime.runs import RunCaps, RunStore
 from shared.ai_mode import set_ai_mode
 from shared.test.agents_fixtures import AGENTS_TABLE_NAME
@@ -93,7 +102,8 @@ def test_an_administrator_adds_lists_changes_and_removes_a_connection(lambda_con
     assert _call(lambda_context, 'GET', PATH) == (200, {'connections': [], 'limit': 20})
     status, saved = _call(lambda_context, 'PUT', connection_path(), body=body())
     assert (status, saved['created'], saved['connection']['credential']) == (
-        200, True, {'kind': 'app', 'set': True, 'app_id': APP_ID, 'installation_id': str(INSTALLATION_ID)})
+        200, True, {'kind': 'app', 'set': True, 'app_id': APP_ID, 'installation_id': str(INSTALLATION_ID),
+                    'expires_at': None})
     assert saved['connection']['updated_by'] == 'alice'
     assert _call(lambda_context, 'GET', PATH)[1]['connections'] == [saved['connection']]
     # The branch alone changes without the credential, which stays as stored.
@@ -178,11 +188,12 @@ def test_without_the_parameters_path_or_key_a_save_is_503_and_the_list_still_rea
 def broker_call(api: FakeGitHub, role: str, session: str, operation: str,
                 args: dict[str, Any]) -> tuple[int, dict[str, Any]]:
     """One operation through the broker's Lambda as ``role`` (its session ``session``), in a fresh container (its
-    caches empty), against ``api``."""
+    caches empty), against ``api`` (either host's: each client is handed it, and the router picks by credential)."""
     handler.broker_for.cache_clear()
     credentials._ssm.cache_clear()
     try:
         with patch.object(handler, 'GitHubHost', lambda read: GitHubHost(read, api, clock=Clock())), \
+                patch.object(handler, 'GitLabHost', lambda read: GitLabHost(read, api, clock=Clock())), \
                 patch('shared.aws.get_dynamodb_client', return_value=boto3.client('dynamodb', region_name='us-east-1')), \
                 patch('shared.aws.get_s3_client', return_value=boto3.client('s3', region_name='us-east-1')):
             response = handler.lambda_handler(
@@ -232,6 +243,66 @@ def test_the_broker_answers_a_runs_read_once_its_connection_is_stored_and_503_on
     # refuses every operation again.
     assert _call(lambda_context, 'DELETE', connection_path())[0] == 200
     assert broker_read(api) == (503, {'error': NO_CONNECTION})
+
+
+#: A GitLab connection's save, with its project access token.
+GITLAB_SAVE = {'host': 'gitlab', 'repository': GITLAB_PROJECT, 'default_branch': 'main',
+               'credential': {'token': GITLAB_TOKEN}}
+
+
+def gitlab_check(api: FakeGitLab) -> Any:
+    """The save's check of a GitLab token, against ``api`` instead of gitlab.com."""
+    return lambda token, project, today: check_token(token, project, today, transport=api)
+
+
+def gitlab_api() -> FakeGitLab:
+    """gitlab.com for the connection ``refunds`` on ``GITLAB_PROJECT``: its token's facts, its project, and a file."""
+    token = {'active': True, 'revoked': False, 'scopes': ['api', 'read_repository', 'write_repository'],
+             'expires_at': '2027-11-01', 'user_id': 9001}
+    bot = {'id': 9001, 'username': f'project_{PROJECT_ID}_bot_4ffca233d8298ea1', 'bot': True}
+    project = {'id': PROJECT_ID, 'path_with_namespace': GITLAB_PROJECT, 'default_branch': 'main',
+               'permissions': {'project_access': {'access_level': 30}}}
+    return (FakeGitLab().on('GET', '/api/v4/personal_access_tokens/self', gitlab_answer(200, token))
+            .on('GET', '/api/v4/user', gitlab_answer(200, bot))
+            .on('GET', f'/api/v4/projects/{quote(GITLAB_PROJECT, safe="")}', gitlab_answer(200, project))
+            .on('GET', GITLAB_P, gitlab_answer(200, project))
+            .on('GET', f'{GITLAB_P}/repository/files/README.md/raw?ref=main', Response(200, {}, b'# Docs\n')))
+
+
+def test_a_gitlab_connection_saved_through_the_route_is_what_the_broker_serves_a_run_with(
+        lambda_context: Any, broker_env: Env, caplog: pytest.LogCaptureFixture) -> None:
+    api = gitlab_api()
+    gitlab = GITLAB_SAVE
+    with patch.object(connections, 'check_token', gitlab_check(api)), caplog.at_level(logging.INFO):
+        status, saved = _call(lambda_context, 'PUT', connection_path(), body=gitlab)
+    assert (status, saved['connection']['credential']['kind'], saved['connection']['credential']['expires_at']) == (
+        200, 'project_token', '2027-11-01')
+    assert GITLAB_TOKEN not in json.dumps(saved) + caplog.text
+    broker_env.start_run(repo=GITLAB_PROJECT)
+    assert broker_read(api) == (200, {'result': {'content': '# Docs\n', 'next_cursor': None}})
+
+
+@pytest.mark.parametrize(('project', 'status', 'said'), [
+    ({'id': PROJECT_ID, 'path_with_namespace': 'example-org/other', 'permissions': {}}, 400, 'another project'),
+    ({'id': PROJECT_ID, 'path_with_namespace': GITLAB_PROJECT, 'permissions': {'project_access': {'access_level': 40}}},
+     400, 'Maintainer'),
+])
+def test_a_gitlab_token_that_is_not_the_projects_developer_is_refused_and_nothing_stored(
+        lambda_context: Any, env: Env, project: dict[str, Any], status: int, said: str) -> None:
+    api = gitlab_api().on('GET', f'/api/v4/projects/{quote(GITLAB_PROJECT, safe="")}', gitlab_answer(200, project))
+    gitlab = GITLAB_SAVE
+    with patch.object(connections, 'check_token', gitlab_check(api)):
+        answered = _call(lambda_context, 'PUT', connection_path(), body=gitlab)
+    assert (answered[0], said in answered[1]['error'], GITLAB_TOKEN in json.dumps(answered)) == (status, True, False)
+    assert env.ssm.describe_parameters()['Parameters'] == []
+
+
+def test_a_gitlab_that_cannot_be_asked_is_503(lambda_context: Any, env: Env) -> None:
+    api = FakeGitLab().on('GET', '/api/v4/personal_access_tokens/self', gitlab_answer(503, {}))
+    gitlab = GITLAB_SAVE
+    with patch.object(connections, 'check_token', gitlab_check(api)):
+        assert _call(lambda_context, 'PUT', connection_path(), body=gitlab)[0] == 503
+    assert env.ssm.describe_parameters()['Parameters'] == []
 
 
 def test_the_broker_serves_a_run_on_its_connections_stored_default_branch_only_while_the_host_has_it(

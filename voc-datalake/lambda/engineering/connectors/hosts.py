@@ -1,6 +1,7 @@
 """What the broker needs from a repository host, the run's record, the board and the dial, host-neutral.
 
-The GitHub client is ``github.GitHubHost`` (docs/autonomous-engineering.md, "Repository connectors"); the run's
+The host clients are ``github.GitHubHost`` and ``gitlab.GitLabHost``, and the broker reaches the one a connection's
+credential names through ``router.HostRouter`` (docs/autonomous-engineering.md, "Repository connectors"); the run's
 record and the board's GO ledger are ``records.RunRecords``, the submitted patch's reader ``patches.WorkspacePatches``
 and the way of working ``dial.WaysOfWorking``. A deployment that names none of their stores gets ``UNCONNECTED`` in
 their place, so every permitted operation answers ``NoConnection``.
@@ -8,7 +9,9 @@ their place, so every permitted operation answers ``NoConnection``.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from collections.abc import Callable
+from contextvars import ContextVar
+from dataclasses import dataclass, field
 from typing import Final, Literal, Protocol
 
 from engineering.connectors.write_policy import BrokerError, WriteRefused
@@ -20,6 +23,44 @@ NO_CONNECTION: Final = 'no repository connection is configured'
 OBJECT_ID: Final = re.compile(r'(?:[0-9a-f]{40}|[0-9a-f]{64})')
 #: The git modes a pushed file may have: a file, an executable, a symbolic link (never a submodule or a tree).
 FILE_MODES: Final = frozenset({'100644', '100755', '120000'})
+
+
+#: When (epoch seconds) the current broker call must have finished what it reads before a write, so the write and its
+#: read-back still fit in the invocation: set by the broker's handler from Lambda's remaining time
+#: (``handler.lambda_handler``), ``None`` outside an invocation. A host client that reads much before a write (GitLab's
+#: push) refuses, writing nothing, once it is past.
+WRITE_READY_BY: Final[ContextVar[float | None]] = ContextVar('write_ready_by', default=None)
+#: What a call keeps of Lambda's remaining time for a write and its read-back, after its reads before the write: the
+#: invocation ends this long after ``WRITE_READY_BY``.
+WRITE_RESERVE_SECONDS: Final = 30
+_NUMBER: Final = re.compile(r'[1-9][0-9]{0,9}')
+
+
+def remaining_until(context: object, now: float, margin: float) -> float | None:
+    """When, on the clock that reads ``now``, an invocation must be done less ``margin`` seconds: Lambda's remaining
+    time (``context``'s ``get_remaining_time_in_millis``); ``None`` without a context that gives it."""
+    remaining = getattr(context, 'get_remaining_time_in_millis', None)
+    millis = remaining() if callable(remaining) else None
+    if not isinstance(millis, (int, float)) or isinstance(millis, bool):
+        return None
+    return now + millis / 1000 - margin
+#: A read's page number (the cursor the clients hand out).
+PAGE_NUMBER: Final = re.compile(r'[1-9][0-9]{0,4}')
+
+
+def keep[K, V](cache: dict[K, V], key: K, value: V, limit: int) -> None:
+    """``cache[key] = value``, the oldest entries dropped first so it never holds more than ``limit``: the clients'
+    bounded caches (default branches, confirmed branches, branch rules that passed)."""
+    cache.pop(key, None)
+    while len(cache) >= limit:
+        del cache[next(iter(cache))]
+    cache[key] = value
+
+
+def fresh[K, V](cache: dict[K, tuple[V, float]], key: K, now: float) -> V | None:
+    """What ``cache`` keeps for ``key`` while it is not yet due to be read again at ``now``, else ``None``."""
+    held = cache.get(key)
+    return held[0] if held is not None and now < held[1] else None
 
 
 class NoConnection(Exception):
@@ -55,6 +96,54 @@ class NotFound(HostError):
 class InvalidTarget(HostError):
     """A read's target or cursor is not one the client asks the host for (a path outside the repository, a cursor
     it did not hand out)."""
+
+
+def repository_path(target: str) -> str:
+    """``target`` when it is a path inside the repository (no empty, ``.`` or ``..`` part, no control character or
+    backslash), never one that climbs out of it; ``InvalidTarget`` otherwise."""
+    parts = target.split('/')
+    if any(part in {'', '.', '..'} for part in parts) or any(ord(c) < 32 or c == '\\' for c in target):
+        raise InvalidTarget('The target is a path inside the repository: no empty, "." or ".." part.')
+    return target
+
+
+def read_page(kind: ReadKind, target: str, cursor: str | None, file: Callable[[], ReadPage],
+              history: Callable[[str], ReadPage], thread: Callable[[str, str], ReadPage]) -> ReadPage:
+    """A read by its kind, on the client's own readers: a file (whole, no cursor), history (the page ``cursor``
+    names), or an issue's or a pull (merge) request's thread (its number, the page)."""
+    if kind == 'file':
+        if cursor is not None:
+            raise InvalidTarget('A file is read whole; it has no pages.')
+        return file()
+    page = cursor_page(cursor)
+    return history(page) if kind == 'history' else thread(issue_number(target), page)
+
+
+def file_page(found: bytes | None) -> ReadPage:
+    """A file read's page: its whole text, ``NotFound`` when the branch has no such file (``None``), and a file that is
+    not UTF-8 text refused rather than read lossily."""
+    if found is None:
+        raise NotFound("The repository has no such file on the run's default branch.")
+    try:
+        return ReadPage(content=found.decode('utf-8'), next_cursor=None)
+    except UnicodeDecodeError:
+        raise InvalidTarget('The file is not UTF-8 text; the broker reads text files only.') from None
+
+
+def cursor_page(cursor: str | None) -> str:
+    """The page a read's cursor names ('1' for none): only a page number the broker handed out."""
+    if cursor is None:
+        return '1'
+    if not PAGE_NUMBER.fullmatch(cursor):
+        raise InvalidTarget('The cursor is not one the broker handed out.')
+    return cursor
+
+
+def issue_number(target: str) -> str:
+    """``target`` when it is an issue's or a pull (merge) request's number, ``InvalidTarget`` otherwise."""
+    if not _NUMBER.fullmatch(target):
+        raise InvalidTarget('The target is the number of an issue or a pull request.')
+    return target
 
 
 class OutcomeUnknown(HostError):
@@ -200,10 +289,71 @@ class CiProtection:
     required_checks: tuple[str, ...]
     agent_branch_protected: bool
     checked_at: float = 0.0
+    #: What else the host's own rules leave open, in the refusal's words (GitLab's: a force push or a Developer's
+    #: push or merge allowed on the default branch, a push rule that refuses the agent's branch); empty when nothing.
+    problems: tuple[str, ...] = ()
 
     @property
     def passes(self) -> bool:
-        return self.default_branch_protected and bool(self.required_checks) and not self.agent_branch_protected
+        return (self.default_branch_protected and bool(self.required_checks) and not self.agent_branch_protected
+                and not self.problems)
+
+
+@dataclass
+class BranchCaches:
+    """A host client's bounded caches (``keep``), per connection and repository: its default branch and when it is read
+    again; a stored default branch the host has and when it is looked up again; branch rules that passed the CI check
+    (default branch, agent branch) and when they are read again."""
+
+    default_branches: dict[tuple[str, str], tuple[str, float]] = field(default_factory=dict)
+    confirmed_branches: dict[tuple[str, str, str], float] = field(default_factory=dict)
+    ci_checks: dict[tuple[str, str, str, str], tuple[CiProtection, float]] = field(default_factory=dict)
+
+
+def stray_changes(contents: BundleContents, writable: Callable[[FileChange], bool], refusal: str) -> list[str]:
+    """Why a bundle's commits are not the ones the write rules checked, or cannot be written: a change outside
+    ``changed_paths``, or a change the client does not write (``writable`` False: ``refusal``, with its path)."""
+    listed = set(contents.changed_paths)
+    changes = [change for commit in contents.commits for change in commit.changes]
+    found = [f'A pushed commit changes a path the bundle does not list ({path}).'
+             for path in sorted({c.path for c in changes} - listed)]
+    found += [f'{refusal} ({path}).' for path in sorted({c.path for c in changes if not writable(c)})]
+    return found
+
+
+def require_pushable(contents: BundleContents, tree_hash: str, stray: list[str]) -> None:
+    """A push's checks of its own bundle, before any request: at least one commit, nothing ``stray`` (the client's
+    ``stray_changes``), and the head's tree the one the broker checked."""
+    if not contents.commits:
+        raise WriteRefused('A pushed bundle carries at least one commit.')
+    if stray:
+        raise WriteRefused(' '.join(stray))
+    if contents.tree_hash != tree_hash:
+        raise Conflict("The bundle's head does not have the tree the broker checked.")
+
+
+def require_base(head: str | None, contents: BundleContents) -> None:
+    """The lease: an existing branch's ``head`` must be the bundle's base (``None``: a new branch)."""
+    if head is not None and head != contents.base:
+        raise Conflict('The branch has moved since the bundle was made (its head is not the bundle\'s base); '
+                       'fetch it and make the bundle again.')
+
+
+def checked_after_write(ref: PullRequestRef, opened: bool, check: Callable[[], None],
+                        close: Callable[[], None], noun: str = 'pull request') -> PullRequestRef:
+    """``ref`` once ``check`` (its head has the checked tree) passes after the write. Whatever stops the check (the
+    branch moved, a rate limit, a host error), one this call ``opened`` is closed, and since the write has gone out
+    (opened, or its text updated) the outcome is unknown, never a refusal: the broker's claim is closed unknown and the
+    write never made again."""
+    try:
+        check()
+    except Exception as exc:
+        if opened:
+            close()
+        why = exc.reason if isinstance(exc, BrokerError) else type(exc).__name__
+        raise OutcomeUnknown(f'The {noun} was {"opened" if opened else "updated"}, but its check after the write did '
+                             f'not pass ({why}); whether it stands as asked is not known.') from exc
+    return ref
 
 
 #: What a push or a pull request is refused with when the host's branch rules are not what the setup guide asks.
@@ -220,9 +370,24 @@ def ci_refusal(found: CiProtection) -> str | None:
     """Why ``found`` refuses a push or a pull request, None when it passes."""
     if not found.default_branch_protected:
         return CI_DEFAULT_UNPROTECTED
+    if found.problems:
+        return found.problems[0]
     if not found.required_checks:
         return CI_NO_REQUIRED_CHECKS
     return CI_AGENT_BRANCH_PROTECTED if found.agent_branch_protected else None
+
+
+@dataclass(frozen=True)
+class FetchAccess:
+    """What the checkout cache's fetch of a connection's repository uses (``cache.py``): the host (``github`` or
+    ``gitlab``), the repository's path on it, and a read token (``repr`` leaves it out). ``revocable``: the token was
+    minted for this fetch and is revoked after it (GitHub's installation token); a GitLab project access token is the
+    connection's own long-lived credential, so no revocation call is made for it (it would cut the connection)."""
+
+    repository: str
+    token: str = field(repr=False)
+    host: str = 'github'
+    revocable: bool = True
 
 
 @dataclass(frozen=True)

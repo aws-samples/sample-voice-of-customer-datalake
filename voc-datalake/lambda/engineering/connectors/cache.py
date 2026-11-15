@@ -12,7 +12,9 @@ redirect and no submodule, from a fresh directory under ``/tmp`` that is removed
 1. ``git init --bare`` (no template: no sample hooks), ``uploadpack.allowFilter`` set (the agents clone with
    ``--filter=blob:none``);
 2. ``git fetch --depth=1 --no-tags https://github.com/<owner>/<repo>.git <commit>``, with an installation token for
-   ``contents: read`` on the connection's one repository (``github.GitHubHost.fetch_token``, the broker's own minting);
+   ``contents: read`` on the connection's one repository (``github.GitHubHost.fetch_token``, the broker's own minting),
+   or, for a GitLab connection, ``https://gitlab.com/<namespace>/<project>.git`` with its own project access token
+   (``router.HostRouter.fetch_access``);
 3. ``refs/heads/voc-base`` set to the commit (the fetch's refspec), HEAD pointed at it, the commit checked to be
    there, the objects repacked into one pack (the ref stays one loose file: S3 keeps no empty directory, and git
    needs the ``refs/`` directory to open a repository);
@@ -21,8 +23,9 @@ redirect and no submodule, from a fresh directory under ``/tmp`` that is removed
 
 The token reaches git only through its environment (``GIT_CONFIG_COUNT``/``KEY``/``VALUE``: an ``http.extraHeader``
 for that repository's URL, ``Authorization: Basic`` of ``x-access-token:<token>``, as the host documents for an App
-installation token over https), and only for the fetch: never in a URL, an argument, a file, a log line or an error
-(a git failure's words are redacted before they are raised).
+installation token over https, or of ``oauth2:<token>`` for a GitLab token), and only for the fetch: never in a URL,
+an argument, a file, a log line or an error (a git failure's words are redacted before they are raised). A minted
+GitHub token is revoked after the fetch; a GitLab project token is the connection's own and is not.
 
 Two fills of one commit are kept apart by a claim row in voc-engineering (``WS#<ws>#CACHE#<connection>``,
 ``COMMIT#<commit>#G#<N>``): a conditional put that holds a lease (``LEASE_SECONDS``, longer than the function may run), so
@@ -65,7 +68,8 @@ from engineering.connectors.cache_layout import (
     ready_key,
 )
 from engineering.connectors.connections import PARAMETER_PREFIX_ENV, REPOSITORY
-from engineering.connectors.hosts import HostBusy, HostError, NoConnection
+from engineering.connectors.gitlab_api import GITLAB_URL, is_project_path
+from engineering.connectors.hosts import FetchAccess, HostBusy, HostError, NoConnection, remaining_until
 from engineering.quality_gate.text import redact
 from engineering.workspace.store import DENIED_CODES, MISSING_CODES, WRITE_BACKOFF_S, WRITE_TRIES
 from shared.invocation_cost import measure_invocation_cost
@@ -99,6 +103,15 @@ MIN_FETCH_SECONDS: Final = 10
 #: The most of a git failure's words that are kept (after redaction).
 MAX_GIT_ERROR: Final = 300
 HOST_URL: Final = 'https://github.com/'
+#: Each host's web address (the fetch's remote) and the user name of its token's Basic authorization: an App's
+#: installation token goes as ``x-access-token``, a GitLab project access token as ``oauth2`` (as each host documents
+#: for a token over https).
+_REMOTES: Final = {'github': (HOST_URL, 'x-access-token'), 'gitlab': (GITLAB_URL, 'oauth2')}
+#: What git says when the host refuses the token itself (expired, revoked, or without read access): a refusal.
+GIT_DENIED: Final = ('http basic: access denied', 'authentication failed', 'returned error: 401',
+                     'returned error: 403')
+FETCH_DENIED: Final = ('the repository host refused the connection\'s token (git: access denied): it may have expired '
+                       'or lost its access; an administrator replaces it under Agents → Connections')
 #: What every git command runs with: no hooks, no file-system monitor, no credential helper, https the only protocol,
 #: no redirect, no submodule, every fetched object checked.
 GIT_OPTIONS: Final = ('-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-c', 'credential.helper=',
@@ -120,8 +133,8 @@ GIT_NO_REPOSITORY: Final = re.compile(r"repository not found|fatal: repository '
 #: ... when an object fetched fails its check (``fetch.fsckObjects``).
 GIT_FSCK: Final = ('fsck error', 'fsckobjects')
 NO_REPOSITORY: Final = ('the repository host has no repository the connection\'s token can fetch (git: not found): an '
-                        'administrator checks the connection\'s repository, and that the GitHub App is installed on it, '
-                        'under Agents → Connections')
+                        'administrator checks the connection\'s repository, and that the GitHub App is installed on it '
+                        '(or the GitLab token is the project\'s), under Agents → Connections')
 
 
 class CacheBusy(RuntimeError):
@@ -200,28 +213,34 @@ def git_environment(home: str) -> dict[str, str]:
             'GIT_NO_REPLACE_OBJECTS': '1'}
 
 
-def remote_url(repository: str) -> str:
-    """``https://github.com/<owner>/<name>.git``: only a repository of the stored shape."""
-    if not REPOSITORY.fullmatch(repository) or repository.split('/')[1] in {'.', '..'}:
+def remote_url(repository: str, host: str = 'github') -> str:
+    """``https://github.com/<owner>/<name>.git``, or ``https://gitlab.com/<namespace>/<project>.git``: only a
+    repository of the host's stored shape."""
+    if host == 'gitlab':
+        if not is_project_path(repository):
+            raise EntryRefused('the connection\'s repository is not a GitLab project path (group/project)')
+    elif host != 'github' or not REPOSITORY.fullmatch(repository) or repository.split('/')[1] in {'.', '..'}:
         raise EntryRefused('the connection\'s repository is not an owner/name')
-    return f'{HOST_URL}{repository}.git'
+    return f'{_REMOTES[host][0]}{repository}.git'
 
 
-def authorization(token: str) -> str:
-    """The header git sends: ``Authorization: Basic`` of ``x-access-token:<token>``."""
-    return 'Authorization: Basic ' + base64.b64encode(f'x-access-token:{token}'.encode()).decode('ascii')
+def authorization(token: str, host: str = 'github') -> str:
+    """The header git sends: ``Authorization: Basic`` of ``x-access-token:<token>`` (GitHub) or ``oauth2:<token>``
+    (GitLab)."""
+    return 'Authorization: Basic ' + base64.b64encode(f'{_REMOTES[host][1]}:{token}'.encode()).decode('ascii')
 
 
-def token_environment(repository: str, token: str) -> dict[str, str]:
+def token_environment(repository: str, token: str, host: str = 'github') -> dict[str, str]:
     """The token's one way into git: an ``http.<url>.extraHeader`` for that repository's URL, by environment."""
-    return {'GIT_CONFIG_COUNT': '1', 'GIT_CONFIG_KEY_0': f'http.{remote_url(repository)}.extraHeader',
-            'GIT_CONFIG_VALUE_0': authorization(token)}
+    return {'GIT_CONFIG_COUNT': '1', 'GIT_CONFIG_KEY_0': f'http.{remote_url(repository, host)}.extraHeader',
+            'GIT_CONFIG_VALUE_0': authorization(token, host)}
 
 
 def redacted(detail: str, token: str) -> str:
-    """A git failure's words with the token, its header form and any credential-shaped string cut out, at most
-    ``MAX_GIT_ERROR`` characters, on one line."""
-    for secret in (authorization(token), authorization(token).removeprefix('Authorization: Basic '), token):
+    """A git failure's words with the token, its header forms (either host's) and any credential-shaped string cut
+    out, at most ``MAX_GIT_ERROR`` characters, on one line."""
+    headers = [authorization(token, host) for host in _REMOTES] if token else []
+    for secret in (*headers, *(header.removeprefix('Authorization: Basic ') for header in headers), token):
         if secret:
             detail = detail.replace(secret, '<redacted>')
     return ' '.join(redact(detail).split())[-MAX_GIT_ERROR:]
@@ -240,6 +259,8 @@ def fetch_refusal(failed: GitFailed) -> str | None:
         return NO_REPOSITORY
     if any(word in said for word in GIT_FSCK):
         return FSCK_REJECTED
+    if any(word in said for word in GIT_DENIED):
+        return FETCH_DENIED
     return None
 
 
@@ -277,9 +298,12 @@ class CacheFiller:
     git: GitRunner
     store: EntryStore
     claims: FillClaims
-    #: ``connection`` → ``(owner/name, token)``: ``GitHubHost.fetch_token``, contents: read on that repository.
-    tokens: Callable[[str], tuple[str, str]]
-    #: The token revoked after the fetch (``GitHubHost.revoke_fetch_token``; tests record it).
+    #: ``connection`` → its host, repository and read token (``router.HostRouter.fetch_access``: a GitHub installation
+    #: token for contents: read on that repository, minted now; or the GitLab connection's own project token).
+    tokens: Callable[[str], FetchAccess]
+    #: A minted token revoked after the fetch (``GitHubHost.revoke_fetch_token``; tests record it): never a GitLab
+    #: project token, the connection's own long-lived credential: no revocation call is made for it (it would cut the
+    #: connection).
     revoke: Callable[[str], None] = field(default=lambda _token: None)
     clock: Callable[[], float] = time.time
     holder: Callable[[], str] = field(default=lambda: secrets.token_hex(16))
@@ -343,9 +367,9 @@ class CacheFiller:
         """The repository (``owner/name``) and the files of its entry, built in ``work`` (the fill ends by
         ``deadline``, by ``clock``: the fetch gets what is left of it)."""
         try:
-            repository, token = self.tokens(connection)
+            access = self.tokens(connection)
         except NoConnection:
-            raise EntryRefused('the connection has no usable GitHub App credential: an administrator stores it under '
+            raise EntryRefused('the connection has no usable credential: an administrator stores it under '
                                'Agents → Connections') from None
         except HostBusy as busy:
             # (not CacheBusy: that one means another fill holds the claim, which the runtime waits out)
@@ -362,9 +386,9 @@ class CacheFiller:
                                    f'answered {error.status}): an administrator checks the GitHub App, its '
                                    'installation and its access to the repository, under Agents → Connections') from None
             raise CacheFailed(f'the repository host refused the fetch token ({error})') from None
-        repo = os.path.join(work, REPOSITORY_DIR)
-        try:   # (from the token's mint on: whatever fails, it is revoked)
-            for args, step_env, limit in _steps(work, repo, repository, token, commit):
+        repo, token = os.path.join(work, REPOSITORY_DIR), access.token
+        try:   # (from the token's mint on: whatever fails, a minted one is revoked)
+            for args, step_env, limit in _steps(work, repo, access, commit):
                 timeout = self._fetch_budget(deadline) if 'fetch' in args else limit
                 try:
                     self.git(args, env=step_env, timeout=timeout)
@@ -374,14 +398,14 @@ class CacheFiller:
                     refusal = fetch_refusal(failed) if failed.step == 'fetch' else None
                     if refusal is not None:
                         raise EntryRefused(refusal) from None
-                    raise CacheFailed(f'git {failed.step} failed: {redacted(failed.detail, token)}') from None
+                    raise CacheFailed(f'git {failed.step} failed: {redacted(failed.detail, access.token)}') from None
                 if 'fetch' in args:
-                    self._revoke(token)
+                    self._revoke(token, access.revocable)
                     token = ''   # (no step after the fetch holds it)
         finally:
             if token:
-                self._revoke(token)
-        return repository, entry_files(repo, self.max_bytes)
+                self._revoke(token, access.revocable)
+        return access.repository, entry_files(repo, self.max_bytes)
 
     def _fetch_budget(self, deadline: float) -> float:
         """The fetch's time limit: ``FETCH_TIMEOUT_SECONDS`` at most, and never more than what is left of the
@@ -392,25 +416,29 @@ class CacheFiller:
                               'again')
         return min(float(FETCH_TIMEOUT_SECONDS), left)
 
-    def _revoke(self, token: str) -> None:
-        """The token revoked once the fetch is over: best effort, never retried, a failure only logged."""
+    def _revoke(self, token: str, revocable: bool) -> None:
+        """A minted token revoked once the fetch is over: best effort, never retried, a failure only logged. A
+        connection's own token (``revocable`` False: GitLab's project token) is left as it is."""
+        if not revocable:
+            return
         try:
             self.revoke(token)
         except HostError:   # (the host's refusal, a rate limit or a lost connection: the client's only failures)
             logger.warning('engineering cache: the fetch token was not revoked (it lapses within the hour)')
 
 
-def _steps(work: str, repo: str, repository: str, token: str,
+def _steps(work: str, repo: str, access: FetchAccess,
            commit: str) -> list[tuple[list[str], Mapping[str, str], float]]:
     """The fill's git steps, each with its environment (only the fetch's holds the token) and its time limit."""
-    url, env = remote_url(repository), git_environment(work)
+    url, env = remote_url(access.repository, access.host), git_environment(work)
     git_dir = f'--git-dir={repo}'
     return [
         (['init', '--bare', '--quiet', '--template=', repo], env, STEP_TIMEOUT_SECONDS),
         ([git_dir, 'config', 'uploadpack.allowFilter', 'true'], env, STEP_TIMEOUT_SECONDS),
         ([git_dir, 'fetch', '--depth=1', '--no-tags', '--no-recurse-submodules', '--no-write-fetch-head',
           '--quiet', url, f'{commit}:{BASE_REF}'],
-         {**env, **token_environment(repository, token)}, FETCH_TIMEOUT_SECONDS),   # (bounded by the deadline)
+         {**env, **token_environment(access.repository, access.token, access.host)},
+         FETCH_TIMEOUT_SECONDS),   # (bounded by the deadline)
         ([git_dir, 'symbolic-ref', 'HEAD', BASE_REF], env, STEP_TIMEOUT_SECONDS),
         ([git_dir, 'cat-file', '-e', f'{commit}^{{commit}}'], env, STEP_TIMEOUT_SECONDS),
         # (Its one ref stays a loose file, never packed: S3 has no empty directory, and git takes a directory for a
@@ -526,18 +554,16 @@ class TableFillClaims:
 
 @cache
 def _filler() -> CacheFiller:
-    """The filler on this container's clients, built once: the connections' SSM credentials and the broker's GitHub
-    client, the raw bucket, voc-engineering."""
+    """The filler on this container's clients, built once: the connections' SSM credentials and the broker's host
+    clients (each connection on its own host's), the raw bucket, voc-engineering."""
     import boto3
 
-    from engineering.connectors.credentials import ParameterStoreCredentials
-    from engineering.connectors.github import GitHubHost
-    from engineering.connectors.handler import TABLE_ENV
+    from engineering.connectors.handler import TABLE_ENV, host_router
 
-    host = GitHubHost(ParameterStoreCredentials(os.environ[PARAMETER_PREFIX_ENV]).get)
+    host = host_router(os.environ[PARAMETER_PREFIX_ENV])
     return CacheFiller(git=SubprocessGit(), store=S3EntryStore(boto3.client('s3'), os.environ[RAW_BUCKET_ENV]),
                        claims=TableFillClaims(boto3.client('dynamodb'), os.environ[TABLE_ENV]),
-                       tokens=host.fetch_token, revoke=host.revoke_fetch_token)
+                       tokens=host.fetch_access, revoke=host.revoke_fetch_token)
 
 
 #: What a fill leaves of Lambda's remaining time: the function's 240 s less FILL_DEADLINE_SECONDS.
@@ -547,13 +573,7 @@ REMAINING_MARGIN_SECONDS: Final = 10
 def invocation_ends_by(context: object, now: float) -> float | None:
     """When, on the clock that reads ``now``, the invocation must be done: Lambda's remaining time (``context``'s
     ``get_remaining_time_in_millis``) less ``REMAINING_MARGIN_SECONDS``; None without a context that gives it."""
-    remaining = getattr(context, 'get_remaining_time_in_millis', None)
-    if not callable(remaining):
-        return None
-    millis = remaining()
-    if not isinstance(millis, (int, float)) or isinstance(millis, bool):
-        return None
-    return now + millis / 1000 - REMAINING_MARGIN_SECONDS
+    return remaining_until(context, now, REMAINING_MARGIN_SECONDS)
 
 
 @measure_invocation_cost

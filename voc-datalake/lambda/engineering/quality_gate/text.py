@@ -19,7 +19,7 @@ _SECRET_PATTERNS = (
     re.compile(r'\b(?:AKIA|ASIA)[0-9A-Z]{16}\b'),                       # cloud access key ids
     re.compile(r'\bgh[pousr]_[A-Za-z0-9]{30,}\b'),                       # GitHub tokens
     re.compile(r'\bgithub_pat_[A-Za-z0-9_]{40,}\b'),
-    re.compile(r'\bglpat-[A-Za-z0-9_-]{20,}\b'),                          # GitLab tokens
+    re.compile(r'\bglpat-[A-Za-z0-9_.-]{20,}'),                           # GitLab tokens (newer ones hold dots)
     re.compile(r'-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----'),
     # A quoted value under a secret-like name, in code, JSON or YAML: api_key = "…", "DB_PASSWORD": "…".
     re.compile(r'(?i)["\']?[\w.-]*(?:secret|token|password|passwd|api[_-]?key|access[_-]?key)[\w.-]*["\']?\s*[:=]\s*'

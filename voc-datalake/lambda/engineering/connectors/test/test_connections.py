@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 import logging
 import secrets
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -36,7 +36,13 @@ from engineering.connectors.connections import (
     parse_request,
     stored_connection,
 )
-from engineering.connectors.credentials import ParameterStoreCredentials, parse_credential
+from engineering.connectors.credentials import (
+    GitLabTokenCredential,
+    ParameterStoreCredentials,
+    parse_credential,
+    parse_stored,
+)
+from engineering.connectors.gitlab_api import TokenFacts, TokenRefused
 from engineering.connectors.hosts import NoConnection
 from engineering.connectors.test.app_keys import (
     APP_ID,
@@ -64,9 +70,10 @@ class Env:
     key_id: str
     live: dict[str, list[str]] = field(default_factory=dict)
 
-    def store(self, *, prefix: str = PREFIX, key_id: str | None = None, ssm: Any = None) -> ConnectionStore:
+    def store(self, *, prefix: str = PREFIX, key_id: str | None = None, ssm: Any = None,
+              gitlab: Callable[[str, str, date], TokenFacts] | None = None) -> ConnectionStore:
         return ConnectionStore(self.table, lambda: ssm or self.ssm, prefix, self.key_id if key_id is None else key_id,
-                               lambda connection: self.live.get(connection, []), clock=lambda: WHEN)
+                               lambda connection: self.live.get(connection, []), clock=lambda: WHEN, gitlab=gitlab)
 
     def rows(self) -> list[dict[str, Any]]:
         return self.table.scan()['Items']
@@ -108,7 +115,8 @@ def test_a_new_connection_stores_its_credential_where_the_broker_reads_it(env: E
     assert env.ssm.describe_parameters()['Parameters'][0]['KeyId'] == env.key_id   # (the stack's own key)
     assert connection == {
         'connection_id': 'refunds', 'host': 'github', 'repository': f'{OWNER}/{REPOSITORY}', 'default_branch': 'main',
-        'credential': {'kind': 'app', 'set': True, 'app_id': APP_ID, 'installation_id': str(INSTALLATION_ID)},
+        'credential': {'kind': 'app', 'set': True, 'app_id': APP_ID, 'installation_id': str(INSTALLATION_ID),
+                       'expires_at': None},
         'created_at': WHEN.isoformat(), 'created_by': 'alice', 'updated_at': WHEN.isoformat(), 'updated_by': 'alice',
         'version': 1, 'ci_attestation': None}   # (none until an administrator confirms the setup guide's points)
     assert env.store().list() == [connection]
@@ -135,6 +143,7 @@ def test_every_change_writes_a_create_only_audit_row_with_who_when_and_what(env:
         'pk': PARTITION, 'connection_id': 'refunds', 'action': 'created', 'by': 'admin-sub', 'by_name': 'alice',
         'at': WHEN.isoformat(), 'version': 1}
     assert created['changes'] == {
+        'host': {'from': None, 'to': 'github'},
         'repository': {'from': None, 'to': f'{OWNER}/{REPOSITORY}'}, 'default_branch': {'from': None, 'to': 'main'},
         'app_id': {'from': None, 'to': APP_ID}, 'installation_id': {'from': None, 'to': str(INSTALLATION_ID)},
         'credential': 'replaced'}
@@ -429,7 +438,8 @@ def test_a_removal_ssm_refuses_keeps_the_connection(env: Env) -> None:
 @pytest.mark.parametrize('settings', [{'prefix': ''}, {'key_id': ''}])
 def test_without_the_parameter_path_or_key_nothing_is_stored(env: Env, settings: dict[str, str]) -> None:
     with pytest.raises(ConnectionRefused, match='names no parameter path or key') as refused:
-        env.store(**settings).save('refunds', parse_request(body()), ADMIN)
+        env.store(prefix=settings.get('prefix', PREFIX), key_id=settings.get('key_id')).save(
+            'refunds', parse_request(body()), ADMIN)
     assert refused.value.kind == 'unavailable'
 
 
@@ -456,7 +466,9 @@ def _too_large() -> str:
 
 
 @pytest.mark.parametrize(('change', 'reason'), [
-    ({'host': 'gitlab'}, 'host is github'),
+    ({'host': 'bitbucket'}, 'host is github or gitlab'),
+    # (a GitLab save takes a project token, never the App's credential)
+    ({'host': 'gitlab'}, 'credential is {token}'),
     ({'repository': 'example-org'}, 'owner/name'),
     ({'repository': 'example-org/..'}, 'owner/name'),
     ({'repository': 'example-org/a/b'}, 'owner/name'),
@@ -720,3 +732,94 @@ def test_the_live_runs_are_the_registrys_runs_of_the_connection_that_have_not_en
               'r4': ('other', 'active')}
     runs.get.side_effect = lambda run_id: MagicMock(connection=status[run_id][0], status=status[run_id][1])
     assert live_runs_of(runs)('refunds') == ['r1', 'r2']
+
+
+# --- a GitLab connection (7.06.00) ----------------------------------------------------------------------------------
+
+GITLAB_TOKEN = 'glpat-' + 'exampleTokenForTests0123'   # (in two parts: no secret scanner takes it for a token)
+GITLAB_PROJECT = 'example-org/payments/refund-service'
+
+
+@dataclass
+class FakeCheck:
+    """The save's check of a token against GitLab (``gitlab_api.check_token``): what it was asked, and its answer."""
+
+    refused: TokenRefused | None = None
+    asked: list[tuple[str, str, date]] = field(default_factory=list)
+
+    def __call__(self, token: str, project: str, today: date) -> TokenFacts:
+        self.asked.append((token, project, today))
+        if self.refused is not None:
+            raise self.refused
+        return TokenFacts(project_id=4242, project='Example-Org/payments/refund-service', expires_at='2027-11-01')
+
+
+def gitlab_body(**change: Any) -> dict[str, Any]:
+    return {'host': 'gitlab', 'repository': GITLAB_PROJECT, 'default_branch': 'main',
+            'credential': {'token': GITLAB_TOKEN}, **change}
+
+
+def test_a_gitlab_connection_is_checked_once_and_stored_where_the_broker_reads_it(
+        env: Env, caplog: pytest.LogCaptureFixture) -> None:
+    check = FakeCheck()
+    with caplog.at_level(logging.INFO):
+        connection, created = env.store(gitlab=check).save('docs', parse_request(gitlab_body()), ADMIN)
+    assert (created, check.asked) == (True, [(GITLAB_TOKEN, GITLAB_PROJECT, WHEN.date())])
+    assert parse_stored(env.parameter('docs')['Value']) == GitLabTokenCredential(
+        project_id=4242, repository='Example-Org/payments/refund-service', token=GITLAB_TOKEN, expires_at='2027-11-01')
+    assert (connection['host'], connection['repository'], connection['credential']) == (
+        'gitlab', 'Example-Org/payments/refund-service',
+        {'kind': 'project_token', 'set': True, 'app_id': None, 'installation_id': None, 'expires_at': '2027-11-01'})
+    assert GITLAB_TOKEN not in json.dumps([env.rows(), connection], default=str) + caplog.text
+
+
+def test_a_gitlab_branch_change_keeps_the_token_and_asks_gitlab_nothing(env: Env) -> None:
+    check = FakeCheck()
+    env.store(gitlab=check).save('docs', parse_request(gitlab_body()), ADMIN)
+    changed, _ = env.store(gitlab=check).save('docs', parse_request(gitlab_body(
+        repository='Example-Org/payments/refund-service', default_branch='develop', credential=None)), ADMIN)
+    assert (len(check.asked), changed['default_branch'], changed['credential']['expires_at']) == (1, 'develop',
+                                                                                                  '2027-11-01')
+    assert env.audits()[-1]['changes'] == {'default_branch': {'from': 'main', 'to': 'develop'}, 'credential': 'kept'}
+
+
+@pytest.mark.parametrize('kind', ['invalid', 'unavailable'])
+def test_a_token_gitlab_refuses_stores_nothing(env: Env, kind: Any) -> None:
+    check = FakeCheck(refused=TokenRefused(kind, 'credential: the token\'s role is Maintainer'))
+    with pytest.raises(ConnectionRefused, match='Maintainer') as refused:
+        env.store(gitlab=check).save('docs', parse_request(gitlab_body()), ADMIN)
+    assert refused.value.kind == kind
+    assert (env.ssm.describe_parameters()['Parameters'], env.rows()) == ([], [])
+
+
+def test_a_host_change_needs_the_other_hosts_credential(env: Env) -> None:
+    save(env)
+    with pytest.raises(ConnectionRefused, match='credential is needed again'):
+        env.store(gitlab=FakeCheck()).save('refunds', parse_request(gitlab_body(credential=None)), ADMIN)
+    moved, _ = env.store(gitlab=FakeCheck()).save('refunds', parse_request(gitlab_body()), ADMIN)
+    assert (moved['host'], moved['credential']['kind'], moved['credential']['app_id']) == ('gitlab', 'project_token',
+                                                                                          None)
+    assert env.audits()[-1]['changes']['host'] == {'from': 'github', 'to': 'gitlab'}
+
+
+@pytest.mark.parametrize(('change', 'reason'), [
+    ({'repository': 'no-namespace'}, 'GitLab project'),
+    ({'repository': 'group/project.git'}, 'GitLab project'),
+    ({'credential': {'token': 'ghp_not_gitlab'}}, 'credential is {token}'),
+    ({'credential': {'token': GITLAB_TOKEN, 'extra': 1}}, 'credential is {token}'),
+    ({'credential': {'app_id': APP_ID, 'installation_id': '1', 'private_key': 'k'}}, 'credential is {token}'),
+])
+def test_a_gitlab_save_off_its_rules_names_the_field_never_the_token(change: dict[str, Any], reason: str) -> None:
+    with pytest.raises(ConnectionRefused, match=reason) as refused:
+        parse_request(gitlab_body(**change))
+    assert GITLAB_TOKEN not in str(refused.value)
+
+
+def test_a_project_token_never_shows_in_its_repr() -> None:
+    request = parse_request(gitlab_body())
+    assert GITLAB_TOKEN not in repr(request)
+
+
+def test_a_gitlab_projects_path_is_one_an_attestation_takes() -> None:
+    request = parse_attestation({'points': list(POINTS), 'repository': GITLAB_PROJECT, 'version': 2})
+    assert request.repository == GITLAB_PROJECT

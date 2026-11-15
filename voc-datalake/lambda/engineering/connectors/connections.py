@@ -3,16 +3,19 @@ connections and credentials).
 
 A connection is a row in voc-agents and, while it holds a credential, one SSM Parameter Store SecureString:
 
-* the row, ``CONNECTIONS#<ws>`` / ``CONNECTION#<id>``: the host (``github``), the repository (``owner/name``), the
-  default branch, the GitHub App's ids (not secret), whether a credential is set, who created and last changed it,
+* the row, ``CONNECTIONS#<ws>`` / ``CONNECTION#<id>``: the host (``github``, or since 7.06.00 ``gitlab``; a row with
+  none is GitHub's), the repository (``owner/name``, or a GitLab project's path), the default branch, the GitHub App's
+  ids or the day a GitLab token expires (not secret), whether a credential is set, who created and last changed it,
   and its version (each change is conditioned on the version read, so two administrators never overwrite each
   other unseen). A removed connection keeps its row, marked removed (the table's writers never delete: the
   history stays readable), and is listed no more;
 * the credential, ``{prefix}<id>`` (``/[<prefix>-]voc/engineering/<id>``, the name the broker's reader reads:
   ``credentials.py``), standard tier, encrypted with the stack's customer-managed key, holding the JSON the reader
-  parses: ``app_id``, ``installation_id``, ``repository`` and ``private_key``. It is written here and read only by
-  the broker: this code never reads it back (its role has no ``ssm:GetParameter``), and the private key is never
-  answered, logged, put in an error, or stored anywhere but the parameter;
+  parses: ``app_id``, ``installation_id``, ``repository`` and ``private_key``; or a GitLab project's id and path, its
+  project access token and its expiry, once the token passed its check against gitlab.com (``gitlab_api.check_token``:
+  the project's own, role Developer, the scopes, an expiry). It is written here and read only by the broker and the
+  checkout cache's writer: this code never reads it back (its role has no ``ssm:GetParameter``), and the private key
+  or the token is never answered, logged, put in an error, or stored anywhere but the parameter;
 * every change, a create-only audit row in the same partition, ``LOG#<at>#<hex>`` (D4: who, when, what changed:
   the fields' old and new values, and for the credential only ``replaced`` / ``kept`` / ``removed``; and why, when
   the administrator says: an optional ``reason``, one line of at most ``MAX_REASON`` characters, credential-shaped
@@ -44,14 +47,15 @@ import json
 import re
 import secrets
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
-from datetime import UTC, datetime
+from dataclasses import dataclass, replace
+from datetime import UTC, date, datetime
 from typing import Any, Final, Literal
 
 from botocore.exceptions import BotoCoreError, ClientError
 
 from engineering.connectors import attestations
 from engineering.connectors.attestations import ATTESTED, POINTS, WITHDRAWN
+from engineering.connectors.gitlab_api import TOKEN, TokenFacts, TokenRefused, check_token, is_project_path
 from engineering.connectors.identity import WORKSPACE
 from engineering.runtime.outputs import AGENT_BRANCH_PREFIX
 from engineering.settings import UNNAMED
@@ -71,7 +75,7 @@ LOG_PREFIX: Final = 'LOG#'
 MAX_CONNECTIONS: Final = 20
 #: A standard parameter's largest value (a larger one is an advanced parameter, which has a monthly charge).
 MAX_PARAMETER_BYTES: Final = 4096
-HOSTS: Final = ('github',)
+HOSTS: Final = ('github', 'gitlab')
 #: A connection id: what a run's ``connection`` names (runtime/interface.py ``check_id``), lower case.
 CONNECTION_ID: Final = re.compile(r'[a-z0-9][a-z0-9-]{0,62}')
 #: ``owner/name`` as GitHub spells them (the broker's reader holds a stored value to the same rule).
@@ -85,15 +89,16 @@ _PEM: Final = re.compile(r'-----BEGIN (RSA |)PRIVATE KEY-----\n(?:[A-Za-z0-9+/=]
 _RSA_ENCRYPTION: Final = bytes.fromhex('06092a864886f70d010101')
 _FIELDS: Final = frozenset({'host', 'repository', 'default_branch', 'credential', 'reason'})
 _CREDENTIAL_FIELDS: Final = frozenset({'app_id', 'installation_id', 'private_key'})
-#: The row's fields an audit row records the change of (never the private key).
-_AUDITED: Final = ('repository', 'default_branch', 'app_id', 'installation_id')
+#: The row's fields an audit row records the change of (never the private key or the token).
+_AUDITED: Final = ('host', 'repository', 'default_branch', 'app_id', 'installation_id', 'token_expires_at')
 _MAX_NAME: Final = 128
 #: The longest reason a change takes (one line; longer is refused, never cut).
 MAX_REASON: Final = 500
 #: A CI attestation or withdrawal of a connection that changed after the administrator reviewed it (409).
 _REVIEWED_CHANGED: Final = 'the connection changed meanwhile: reload it, review its repository again and try again'
 #: The fields of a row the view answers as text or null.
-_OPTIONAL_TEXT: Final = ('app_id', 'installation_id', 'created_at', 'created_by', 'updated_at', 'updated_by')
+_OPTIONAL_TEXT: Final = ('app_id', 'installation_id', 'token_expires_at', 'created_at', 'created_by', 'updated_at',
+                         'updated_by')
 
 Kind = Literal['invalid', 'not_found', 'conflict', 'unavailable']
 
@@ -124,14 +129,24 @@ class AppCredential:
 
 
 @dataclass(frozen=True)
+class ProjectToken:
+    """A GitLab project access token as a save sends it (``repr`` leaves it out)."""
+
+    token: str
+
+    def __repr__(self) -> str:
+        return 'ProjectToken(<redacted>)'
+
+
+@dataclass(frozen=True)
 class ConnectionRequest:
-    """A checked save: the host, the repository, the default branch, when the save replaces it the credential, and
-    the administrator's reason ('' for none)."""
+    """A checked save: the host, the repository, the default branch, when the save replaces it the credential (the
+    host's own kind), and the administrator's reason ('' for none)."""
 
     host: str
     repository: str
     default_branch: str
-    credential: AppCredential | None
+    credential: AppCredential | ProjectToken | None
     reason: str = ''
 
 
@@ -157,11 +172,30 @@ def is_branch_name(branch: str) -> bool:
             and all(part and not part.startswith('.') and not part.endswith('.lock') for part in components))
 
 
-def _repository(value: object) -> str:
+def _repository(value: object, host: str = 'github') -> str:
+    if host == 'gitlab':
+        if not isinstance(value, str) or not is_project_path(value):
+            raise _invalid('repository is the GitLab project\'s path, as its address shows it (group/project, or '
+                           'group/subgroup/project)')
+        return value
     match = REPOSITORY.fullmatch(value) if isinstance(value, str) else None
     if match is None or match.group('name') in {'.', '..'}:
         raise _invalid('repository is the GitHub repository as owner/name')
     return match.group(0)
+
+
+def is_repository(value: str) -> bool:
+    """A repository either host's connections take: GitHub's ``owner/name`` or a GitLab project's path."""
+    match = REPOSITORY.fullmatch(value)
+    return (match is not None and match.group('name') not in {'.', '..'}) or is_project_path(value)
+
+
+def _project_token(value: object) -> ProjectToken:
+    """A GitLab project access token's shape (``glpat-`` and its body), or a refusal that never quotes it."""
+    token = value.get('token') if isinstance(value, dict) and set(value) == {'token'} else None
+    if not isinstance(token, str) or not TOKEN.fullmatch(token.strip()):
+        raise _invalid('credential is {token}: the GitLab project access token (glpat-…), pasted whole')
+    return ProjectToken(token=token.strip())
 
 
 def _digits(value: object, name: str) -> str:
@@ -220,16 +254,17 @@ def parse_request(body: Mapping[str, object]) -> ConnectionRequest:
     """A save's body, each field checked (``ConnectionRefused('invalid')`` naming the field, never its value)."""
     if not set(body) <= _FIELDS or not {'host', 'repository', 'default_branch'} <= set(body):
         raise _invalid('the body is {host, repository, default_branch, credential?, reason?}')
-    if body['host'] not in HOSTS:
-        raise _invalid('host is github (GitLab is planned)')
+    host = body['host']
+    if host not in HOSTS:
+        raise _invalid('host is github or gitlab (gitlab.com)')
     branch = body['default_branch']
     if not isinstance(branch, str) or not is_branch_name(branch):
         raise _invalid('default_branch is a branch name git accepts (letters, digits, ".", "_", "-" and "/", at most '
                        '255), not an agent\'s voc-agent/ branch')
     credential = body.get('credential')
-    return ConnectionRequest(host=str(body['host']), repository=_repository(body['repository']), default_branch=branch,
-                             credential=None if credential is None else _credential(credential),
-                             reason=parse_reason(body.get('reason')))
+    parsed = None if credential is None else (_project_token(credential) if host == 'gitlab' else _credential(credential))
+    return ConnectionRequest(host=str(host), repository=_repository(body['repository'], str(host)),
+                             default_branch=branch, credential=parsed, reason=parse_reason(body.get('reason')))
 
 
 @dataclass(frozen=True)
@@ -251,8 +286,9 @@ def parse_attestation(body: Mapping[str, object]) -> AttestationRequest:
         raise _invalid('the body is {points, repository, version, reason?}: the setup guide\'s points confirmed for '
                        'the repository and the connection version reviewed')
     repository, version = body['repository'], body['version']
-    if not isinstance(repository, str) or not REPOSITORY.fullmatch(repository):
-        raise _invalid('repository is the connection\'s repository as owner/name, as the attestation reviewed it')
+    if not isinstance(repository, str) or not is_repository(repository):
+        raise _invalid('repository is the connection\'s repository (owner/name, or a GitLab project\'s path), as the '
+                       'attestation reviewed it')
     if isinstance(version, bool) or not isinstance(version, int) or version < 1:
         raise _invalid('version is the connection\'s version the attestation reviewed (a positive whole number)')
     points = body['points']
@@ -265,6 +301,13 @@ def parse_attestation(body: Mapping[str, object]) -> AttestationRequest:
         raise _invalid(f'every point of the setup guide is confirmed: not yet {", ".join(missing)}')
     return AttestationRequest(points=POINTS, repository=repository, version=version,
                               reason=parse_reason(body.get('reason')))
+
+
+def gitlab_parameter_value(facts: TokenFacts, token: ProjectToken) -> str:
+    """A GitLab connection's parameter JSON, as the broker's reader parses it (credentials.py ``parse_stored``): the
+    project's id and path and the token's expiry as the save's check found them, and the token."""
+    return json.dumps({'host': 'gitlab', 'project_id': facts.project_id, 'repository': facts.project,
+                       'token': token.token, 'expires_at': facts.expires_at})
 
 
 def parameter_value(repository: str, credential: AppCredential) -> str:
@@ -285,16 +328,35 @@ def view(item: Mapping[str, Any], attestation: Mapping[str, Any] | None = None) 
     """A stored connection as the API answers it: never a secret, only whether the credential is set; and its CI
     attestation's newest version (``attestation``, None for none)."""
     texts = {field: item[field] if isinstance(item.get(field), str) and item[field] else None for field in _OPTIONAL_TEXT}
+    host = str(item.get('host', 'github'))
     return {
-        'connection_id': str(item.get('connection_id', '')), 'host': str(item.get('host', 'github')),
+        'connection_id': str(item.get('connection_id', '')), 'host': host,
         'repository': str(item.get('repository', '')), 'default_branch': str(item.get('default_branch', '')),
-        'credential': {'kind': 'app', 'set': item.get('credential_set') is True,
-                       'app_id': texts['app_id'], 'installation_id': texts['installation_id']},
+        # (a GitLab connection's token expires on its own date, at most a year out: the page warns before it does)
+        'credential': {'kind': 'project_token' if host == 'gitlab' else 'app', 'set': item.get('credential_set') is True,
+                       'app_id': texts['app_id'], 'installation_id': texts['installation_id'],
+                       'expires_at': texts['token_expires_at']},
         **{field: texts[field] for field in ('created_at', 'created_by', 'updated_at', 'updated_by')},
         # (what an attestation names as the version it reviewed: any change of the connection moves it)
         'version': int(item.get('version', 0)),
         'ci_attestation': attestations.view(attestation),
     }
+
+
+def _moved(earlier: Mapping[str, Any], request: ConnectionRequest) -> bool:
+    """Whether a save points a stored connection elsewhere: another repository, or another host."""
+    return earlier.get('repository') != request.repository or earlier.get('host', 'github') != request.host
+
+
+def _credential_fields(credential: AppCredential | ProjectToken | None, facts: TokenFacts | None,
+                       earlier: Mapping[str, Any]) -> dict[str, Any]:
+    """The row's facts of its credential (never the secret): a GitHub App's ids, or when a GitLab token expires; a save
+    without a credential keeps the stored ones (its host unchanged: ``_check_save``)."""
+    if isinstance(credential, AppCredential):
+        return {'app_id': credential.app_id, 'installation_id': str(credential.installation_id)}
+    if credential is not None:
+        return {'token_expires_at': facts.expires_at if facts is not None else None}
+    return {field: earlier.get(field) for field in ('app_id', 'installation_id', 'token_expires_at')}
 
 
 def _key(connection_id: str) -> dict[str, str]:
@@ -321,17 +383,31 @@ def _canceled(error: ClientError) -> bool:
 
 class ConnectionStore:
     """The connections over voc-agents (a boto3 ``Table``), SSM (a client) and the runs' registry (``live_runs``: the
-    runs of a connection that have not ended)."""
+    runs of a connection that have not ended). ``gitlab``: the check of a GitLab token against its project when a save
+    carries one (``gitlab_api.check_token``, on gitlab.com; tests inject a fake)."""
 
     def __init__(self, table: Any, ssm: Callable[[], Any], prefix: str, key_id: str,
-                 live_runs: Callable[[str], Sequence[str]], clock: Callable[[], datetime] = lambda: datetime.now(UTC)
-                 ) -> None:
+                 live_runs: Callable[[str], Sequence[str]], clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+                 gitlab: Callable[[str, str, date], TokenFacts] | None = None) -> None:
         self._table = table
         self._ssm = ssm
         self._prefix = prefix
         self._key_id = key_id
         self._live_runs = live_runs
         self._clock = clock
+        self._gitlab = gitlab if gitlab is not None else check_token
+
+    def _checked_token(self, request: ConnectionRequest) -> tuple[ConnectionRequest, TokenFacts | None]:
+        """A GitLab save's token checked against its project, once, before anything is stored (``ConnectionRefused``
+        saying what to change, never the token): the request with the project's path as GitLab spells it, and what
+        the check found. Any other save is as it came."""
+        if not isinstance(request.credential, ProjectToken):
+            return request, None
+        try:
+            facts = self._gitlab(request.credential.token, request.repository, self._clock().astimezone(UTC).date())
+        except TokenRefused as refused:
+            raise ConnectionRefused(refused.kind, str(refused)) from None
+        return replace(request, repository=facts.project), facts
 
     # --- reads ------------------------------------------------------------------------------------------------
 
@@ -393,10 +469,9 @@ class ConnectionStore:
                 raise _invalid('credential is needed to add a connection')
             if sum(1 for item in self._rows() if item.get('removed') is not True) >= MAX_CONNECTIONS:
                 raise ConnectionRefused('conflict', f'at most {MAX_CONNECTIONS} connections: remove one to add another')
-        elif request.credential is None and (earlier.get('credential_set') is not True
-                                              or earlier.get('repository') != request.repository):
-            raise _invalid('credential is needed again: the stored one holds the repository it was saved with')
-        if before is not None and earlier.get('repository') != request.repository:
+        elif request.credential is None and (earlier.get('credential_set') is not True or _moved(earlier, request)):
+            raise _invalid('credential is needed again: the stored one holds the host and repository it was saved with')
+        if before is not None and _moved(earlier, request):
             runs = self._live_runs(connection_id)
             if runs:
                 raise ConnectionRefused('conflict', f'{len(runs)} run(s) of this connection are live: the repository '
@@ -407,6 +482,7 @@ class ConnectionStore:
         connection as stored and whether it was created."""
         check_connection_id(connection_id)
         name = self._parameter(connection_id)
+        request, facts = self._checked_token(request)
         try:
             before = self._row(connection_id)
             self._check_save(connection_id, request, before)
@@ -414,19 +490,20 @@ class ConnectionStore:
             raise ConnectionRefused('unavailable', 'the connection could not be read: retry') from exc
         earlier: Mapping[str, Any] = before or {}
         live = before is not None and earlier.get('removed') is not True
-        moved = live and earlier.get('repository') != request.repository
+        moved = live and _moved(earlier, request)
         # (a repository change voids the attestation: it stood for the repository the connection had)
         attestation = self._newest_attestation(connection_id) if live else None
         credential = request.credential
-        if credential is not None:
+        if isinstance(credential, AppCredential):
             self._put_credential(name, parameter_value(request.repository, credential), connection_id)
+        elif isinstance(credential, ProjectToken) and facts is not None:
+            self._put_credential(name, gitlab_parameter_value(facts, credential), connection_id)
         at, who = self._clock().astimezone(UTC).isoformat(), _name(actor.name)
         # (a save without a credential is one of a live connection whose credential is set: _check_save)
         item: dict[str, Any] = {
             **_key(connection_id), 'connection_id': connection_id, 'host': request.host,
             'repository': request.repository, 'default_branch': request.default_branch, 'credential_set': True,
-            'app_id': credential.app_id if credential else earlier.get('app_id'),
-            'installation_id': str(credential.installation_id) if credential else earlier.get('installation_id'),
+            **_credential_fields(credential, facts, earlier),
             'created_at': earlier.get('created_at') if live else at,
             'created_by': earlier.get('created_by') if live else who,
             'updated_at': at, 'updated_by': who, 'version': int(earlier.get('version', 0)) + 1,
@@ -434,7 +511,8 @@ class ConnectionStore:
         item = {key: value for key, value in item.items() if value is not None}
         changes: dict[str, Any] = {
             field: {'from': earlier.get(field) if live else None, 'to': item.get(field)}
-            for field in _AUDITED if not live or earlier.get(field) != item.get(field)}
+            for field in _AUDITED if (not live or earlier.get(field) != item.get(field))
+            and (field in item or (live and earlier.get(field) is not None))}
         changes['credential'] = 'replaced' if credential is not None else 'kept'
         void = self._void(attestation if moved else None, attestations.REPOSITORY_CHANGED, actor, at)
         if void is not None:
@@ -444,7 +522,8 @@ class ConnectionStore:
         undo = self._credential_undo(connection_id, name, live, actor) if credential is not None else None
         self._write(item, before, audit, undo=undo, extra=() if void is None else (void,))
         logger.info('engineering connection saved', extra={'connection_id': connection_id, 'connection_created': not live,
-                                                            'credential_replaced': credential is not None})
+                                                            'credential_replaced': credential is not None,
+                                                            'host': request.host})
         return view(item, attestation if void is None else void['Put']['Item']), not live
 
     def _void(self, attestation: Mapping[str, Any] | None, cause: str, actor: Actor, at: str) -> dict[str, Any] | None:

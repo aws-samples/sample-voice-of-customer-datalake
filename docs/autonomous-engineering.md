@@ -93,16 +93,23 @@ the API below) with its GitHub App credential, which goes to the SSM parameter t
 connection is served instead of answered 503, and, since 7.04.00, the CI attestation's record: an administrator
 attests that the repository's CI meets the setup guide ("The target's CI", below), and the broker
 serves a push or a pull request only while that attestation holds and the host's branch rules pass its own read-only
-check; a file or history read is of the run's own default branch. Planned: the run's issue and pull request and its
-cited reviews on the run's record, sparse clones, the GitLab client, and the first
-real run against a repository (it waits for the owner).
+check; a file or history read is of the run's own default branch, and, since 7.06.00, the GitLab client
+(`connectors/gitlab.py`, gitlab.com): a connection is GitHub's or GitLab's, its credential a GitHub App's or a GitLab
+project access token, and the broker and the checkout cache's writer serve each connection on its own host's client
+(`connectors/router.py`), below. Planned: the run's issue and pull request and its cited reviews on the run's record,
+sparse clones, a self-managed GitLab instance (its base URL is one constant today, `gitlab_api.py` `GITLAB_HOST`; the
+owner decides whether a connection names its own), and the first real run against a repository (it waits for the
+owner).
 
 **The connections (7.03.00).** Administrators acting for themselves (a delegated MCP credential gets 403), only where
 the module is deployed (404 otherwise), through the Agents API (`voc-datalake/lambda/engineering/connectors/connections.py`):
 
-- `GET /agents/engineering/connections` → `{connections, limit}`: each connection's id, host, repository, default
-  branch, who created and last changed it, of its credential only whether it is set and the App's two ids (not
-  secret), its `version` (any change of the connection moves it), and its CI attestation's newest version
+- `GET /agents/engineering/connections` → `{connections, limit}`: each connection's id, host (`github` or `gitlab`; a
+  row stored before 7.06.00 is `github`), repository, default branch, who created and last changed it, of its
+  credential only `{kind, set, app_id, installation_id, expires_at}` (`kind` `app` with the App's two ids, not secret,
+  or, for GitLab, `project_token` with the day the token expires as GitLab reported it at the save; the page shows it,
+  warns within 30 days and says so once it has passed), its `version` (any change of the connection moves it), and
+  its CI attestation's newest version
   (`ci_attestation`, null for none, below). One Query of the
   connections' partition, and one Query of one row per connection for its attestation (at most 20).
 - `PUT /agents/engineering/connections/<id>` `{host: "github", repository: "owner/name", default_branch,
@@ -111,8 +118,13 @@ the module is deployed (404 otherwise), through the Agents API (`voc-datalake/la
   branch a name git takes, ASCII, at most 255 characters, never an agent's `voc-agent/` branch; the credential the
   App's id and installation id (digits) and its private key, an unencrypted RSA key in PEM (PKCS#1 as GitHub hands
   it out, or PKCS#8), with the rest at most 4 KB (a standard parameter: no monthly charge). Every refusal names the
-  field, never its value. The credential is needed to add a connection and to change its repository (it is stored
-  with the key); a save without it keeps the stored one (the branch alone changes). A repository change while a run of
+  field, never its value. The credential is needed to add a connection and to change its host or repository (it is
+  stored with them); a save without it keeps the stored one (the branch alone changes). A GitLab connection (7.06.00)
+  is `{host: "gitlab", repository: "<namespace>/<project>", default_branch, credential?: {token}, reason?}`: the
+  project's path as its address shows it (a group and up to 19 subgroups, then the project: 2 to 21 parts of letters,
+  digits, `_`, `.` and `-`, at most 255 characters, no `..`, no part ending `.git` or `.atom`), and a project access
+  token (`glpat-` and its body), checked once against gitlab.com before anything is stored (below). A host change
+  while a run of the connection has not ended is refused like a repository change. A repository change while a run of
   the connection has not ended (the runs' registry, then each run's META) is refused, 409; so is a 21st connection,
   and a change made meanwhile (each change is conditioned on the version read). That 409 reads the runs, then writes,
   so a run started between the two is not seen: it is a courtesy, not the guarantee. What guarantees that a run never
@@ -176,8 +188,30 @@ parameters, never `ssm:GetParameter` (`voc-datalake/lib/stacks/api-assistant-lam
 for the role: DynamoDB (`voc-agents`, the aggregates table, `voc-engineering`), S3 (`kms:Decrypt`, for the workspace's
 reports) and SSM (the statement above), each a `kms:ViaService` condition, and no unconditioned grant: it can call
 KMS itself for nothing, so it can encrypt or decrypt nothing outside those services (pinned by the same test). A run
-starts only on a stored connection (400 otherwise), and its `repo` and `default_branch` are the connection's. GitHub
-only: GitLab's project access token is planned.
+starts only on a stored connection (400 otherwise), and its `repo` and `default_branch` are the connection's.
+
+**A GitLab connection (7.06.00, `connectors/gitlab_api.py` `check_token`).** gitlab.com only. Its credential is a
+project access token for exactly the connection's project, role Developer, scopes `api`, `read_repository` and
+`write_repository`, with an expiry (GitLab's tokens expire, at most a year after they are made). A save that carries
+one asks gitlab.com three times before anything is stored (each read sent once, 6 s at most, so the save ends inside
+the API's 29 s), with the token in the `Authorization` header alone:
+`GET /api/v4/personal_access_tokens/self` (what a token reads of itself: active, not revoked, those three scopes, an
+expiry after today, and its user's id), `GET /api/v4/projects/<the path, encoded>` (the project at that path must be
+the one GitLab answers, case aside, with the token's user a direct member with the role Developer, 30; a Guest,
+Reporter, Maintainer or Owner token is refused) and `GET /api/v4/user` (the token's user must be this project's own
+bot: `bot: true`, the same id, and named as GitLab names a project access token's bot,
+`project_<project_id>_bot_<random>`, or `project_<project_id>_bot<n>` for older tokens). So a personal access token
+(its user a person, who reaches every project they can, even as a direct Developer member) or another project's token
+is refused: "use a project access token of this project". A
+refusal is 400 saying what to change (the scope missing, the role found, the day it expired), never the token; a
+GitLab that cannot be asked (a rate limit, an outage, no answer) is 503, and nothing is stored. The parameter then
+holds `{"host": "gitlab", "project_id", "repository", "token", "expires_at"}`, the project's id and path as GitLab
+spells them; the row holds `host: gitlab` and `token_expires_at` (the day, not secret), never the token; a row with no
+`host` (stored before 7.06.00) is GitHub's, with no migration. The token is never answered, logged or put in an error,
+and the Agents API reads it back no more than it does a private key. This check is the Agents API's one reach outside
+AWS: its Lambda is not in a VPC, as before, so it needs nothing new for it. Replacing a token before it expires is an
+edit of the connection with the new one (the same check); an expired token makes every read and write of the
+connection fail at GitLab (401: the broker's 502, the cache writer's refusal) until it is replaced.
 
 **The CI attestation's record (7.04.00, `connectors/attestations.py`).** Each change of a connection's attestation is a
 create-only version row in a partition of that connection's attestations alone, `CONNECTIONS#default#CI#<id>` /
@@ -192,7 +226,17 @@ voided`. A voided attestation stays void: changing the repository back does not 
 is attested again. The partitions match `CONNECTIONS#*`, so every other role that writes `voc-agents` is denied writes
 to them too (`denyHardCapWrites`). On Agents → Connections each connection shows whether its CI is attested, by whom
 and when (or that it was withdrawn or voided, and why), with **Attest CI** (a dialog listing the six points, each a
-checkbox that must be ticked, and an optional note) or **Withdraw CI** (after a confirmation).
+checkbox that must be ticked, and an optional note) or **Withdraw CI** (after a confirmation). For a GitLab connection
+(7.06.00) the six points keep their ids and are worded for GitLab: CI/CD variables that hold secrets are protected,
+so only pipelines on protected branches get them (`protected_secrets`); the CI/CD job token has the least access (no
+project on its allowlist beyond what the pipelines need, no job pushes with it: `read_only_token`); cloud trust
+through OIDC (`id_tokens`) is pinned to protected branches (`oidc_pinned`); no shared, group or instance runner with
+access to secrets or networks runs jobs for unprotected branches (`no_self_hosted_runner`); no pipeline runs
+merge-request code with secrets (`no_privileged_pull_request`); and the default branch is protected (no force push,
+push and merge for Maintainers), pipelines must succeed before a merge (a skipped one not counting as a success), the
+CI configuration uses only plain local includes and GitLab's own templates (shared CI from other projects, remote
+includes and components are not supported for now), and `voc-agent/*` stays unprotected
+(`branch_rules`).
 
 **What the broker reads (6.23.00).** Reads only, of rows and objects other code writes:
 
@@ -229,7 +273,21 @@ checkbox that must be ticked, and an optional note) or **Withdraw CI** (after a 
   branch rules were read, and the required checks' names (at most 20). The check covers only those two things: the
   App's token cannot read the CI settings themselves (secrets, environments, runners, the workflow token's default),
   nor whether the App's own pushes are limited to `voc-agent/*` (the `branch_rules` point), so those stay the
-  administrator's attestation.
+  administrator's attestation. On a GitLab connection (7.06.00, `gitlab.py` `ci_protection`, with the connection's
+  Developer token; at most seven requests, none a write) the broker reads the project's protected branches (at most
+  five pages of 100; more is refused, failing closed), its "Pipelines must succeed" setting
+  (`only_allow_merge_if_pipeline_succeeds`, which stands as the required check, recorded as `pipelines must succeed`)
+  and, where the API shows it to the token, its push rule. The default branch must be covered by a protected branch
+  rule (its name or a wildcard), and every rule that covers it (GitLab applies the most permissive) must allow no
+  force push and push and merge for Maintainers only (or no one: access levels 0, 40 or 60, no user, group or deploy
+  key let in by name); a merge without a passing pipeline must be off, and so must "Skipped pipelines are considered
+  successful" (`allow_merge_on_skipped_pipeline`: on, or not answered, refuses); the agent's branch must be covered by
+  no rule;
+  and a push rule's branch name pattern, when it is shown, must take the agent's branch (a pattern the broker's
+  regular expressions cannot read refuses, failing closed). Each refusal is a 409 in the same shape, saying what to
+  change. A token that may not read the protected branches (403) is refused too, failing closed: on gitlab.com a
+  Developer is expected to read them (to be confirmed on the first real connection, below). Code owner approval is
+  read by no point of the attestation, so the check does not require it.
 - **The GO ledger**: the run's `TASK#` rows (one Query of its partition). The final-go task that ended last
   (done, failed or needing a person, a person's block included) is the run's verdict whatever its state, with the
   gate record its own holder, a final-go agent, recorded last (`_gate/attempt-<n>/record.json`); an older task's
@@ -310,10 +368,107 @@ written (issue or pull request number, branch, tree hash, commit count), never a
 durable audit row of each write (D4) is still planned (the broker's one write, since 7.02.00, is each write's claim
 row, which records its outcome but not who asked for it in D4's form).
 
+The GitLab client (7.06.00, `connectors/gitlab.py`, over `gitlab_api.py`) holds the same contract with the
+connection's project access token, which it uses as it is (nothing is minted, nothing revoked): every request goes
+to `gitlab.com` under `/api/v4/projects/<id>` through one transport, no redirect followed, the token only in the
+`Authorization` header. Reads: a file raw on the run's branch (`ref`), history (`ref_name`, `path`), an issue or a
+merge request with a page of its notes (system notes left out; a merge request's diff notes as its review comments
+with their path and line, its approvals as its reviews, on the first page), a patch's base file at the run's commit.
+Pages follow `X-Next-Page` (the cursor is that page number, nothing else); a read lost on the way or answered 502,
+503 or 504 is sent again once (two tries in all), a write never; a rate limit (429 with `Retry-After` or
+`RateLimit-Reset`) is never waited out, it is answered 503 with `Retry-After`. What GitLab says of a refusal (its
+`message`) is kept in the error only after the token and anything credential-shaped are cut out, on one line, at
+most 200 characters. GitLab's API answers no commit's tree id, so the client works it out as git does
+(`gitlab_tree.py`, pinned against real git by its tests): a branch's tree from its head's root listing, and a push's
+from the base commit's listings of the directories it changes (at most 200 directories of at most 2,000 entries
+each: more is refused, nothing written). A push is refused before anything is written when a commit changes a path
+the bundle does not list, writes a symbolic link (the Commits API's actions cannot), or changes a CI definition the
+project names (below); when the branch's head is not the bundle's base, or, for a new branch, the base is not an
+ancestor of the default branch's head (`merge_base`); and when the tree its changes give on the base is not the
+checked tree. The reads before the write are bounded: at most 400 requests, and none past the invocation's
+remaining time less 30 s (`hosts.WRITE_READY_BY`, set by the broker's handler from Lambda's context); past either the
+push is refused with nothing written (its claim closed refused, never left open). Then each commit is one Commits API
+call (`POST …/repository/commits`, its actions create, update, delete and, where the mode is not the one GitLab would
+leave, `chmod`; content in base64; author and committer the token's bot); the first commit's updates and deletions
+carry each file's last commit at the base (`last_commit_id`, read with one `HEAD` of the file: a partial lease, so a
+file changed meanwhile refuses the commit, 400, nothing written). A new branch is created by its first commit
+(`start_sha`: GitLab refuses it, 400, when the branch was created meanwhile, a conflict with nothing written). The
+Commits API has no lease on an existing branch's head, so after the write each new commit's parent and the last one's
+tree are read back: a commit that landed on another head or with another tree, or any failure once the first commit
+is written (a rate limit or a lost read-back included), is an unknown outcome (never answered as refused, never made
+again for that attempt). A push writes at most 20 commits (more is refused before anything is written), and no later
+commit starts unless the invocation still has the time it and the final read-back need (20 s); short of it the push
+stops there. A branch this push created is then deleted when its head, checked just before, is one of the push's own
+commits: a read, then an unconditional delete (GitLab has no conditional one, so a push landing between the two is
+not protected); the outcome's words say what landed and whether the branch was deleted or left. A draft merge request is opened
+(title `Draft: …`, against the run's default branch, the source branch kept; an open one is the run's only when it is
+from this project, not a fork, and into that branch) or its title and description updated only when the branch's head has the
+checked tree, and checked again afterwards, as on GitHub: a merge request the client just opened is closed when the
+check fails, and the outcome is unknown. An update keeps the `Draft:` title, so it stays (or becomes again) a draft.
+A note's link is `https://gitlab.com/<project>/-/issues/<n>#note_<id>` (or `/-/merge_requests/`). The client has no
+method for a merge, an approval, settings, protected branches, members, webhooks or variables.
+
+**CI definitions on GitLab (`connectors/gitlab_ci.py`).** An agent never changes a CI definition, so before a GitLab
+push the broker pins the project's CI definitions at the bundle's base, and refuses every push it cannot pin, failing
+closed. **Agents push only to GitLab repositories whose CI configuration uses plain local includes and GitLab's own
+templates.** Shared CI from other projects, remote includes and components are not supported for now (an owner
+decision): the connection's token reads this project alone, so the broker cannot see what they hold or include.
+
+- The CI file, `ci_config_path` from the project: an answer without the key is unresolved; an empty value is
+  `.gitlab-ci.yml`; a file of another project (`<file>@<namespace>/<project>`), this project by `@`, a URL, or a path
+  that climbs out is refused.
+- Each CI file is parsed, not scanned (`connectors/ci_yaml.py`: PyYAML 6.0.3's pure-Python composer, from the
+  broker's own `engineering-ci-deps` layer, held strict; JSON is YAML too). Before it is read, input that is not
+  UTF-8, a byte-order mark, a carriage return without its line feed, U+0085, U+2028, U+2029 or U+FFFD refuses; in it,
+  a second document, an anchor or an alias, a merge key (`<<`), a tag other than the standard ones and `!reference`
+  (kept opaque), a duplicate key at any level, or a key that is not printable ASCII or is written with an escape
+  refuses. Its top level must be a mapping, and its `include` is walked as structure: a string (a local path, or a
+  remote one when it is a URL), a mapping, or a list of those. A mapping may hold only `local`, `template` (with
+  `inputs`), `project`, `file`, `ref` and `remote`; `rules`, `component` or any other key refuses, and so does a `*`,
+  a `$`, a `[[` or a backslash (an escaped double-quoted value included) in any value of it at any depth.
+- `local` with a literal path is allowed, and the file it names is read at the base and walked by the same rules
+  (at most 10 deep and 50 files); `template` (GitLab's own) is allowed; `project` (this project, whatever its ref, or
+  another), `remote` and `component` are refused.
+- Every job's `trigger`, in every file the walk reaches, is walked too: a child pipeline's `include` (a string, a
+  list or a mapping) names CI definitions GitLab's lint does not list, so a literal `local` file is pinned and walked
+  and a `template` allowed, and `project`, `artifact`, `remote`, `component`, a `$`, a glob or anything else refuses,
+  naming it. A multi-project trigger (`trigger: <project>`, `trigger: {project: ...}`) is allowed: it runs another
+  project's CI and puts nothing of this repository in CI. A job (any top-level key but the global keywords) whose
+  value is not a mapping is unreadable, and refuses.
+
+Known refusals and limits of the walk:
+
+- A job that `extends` another may add only how its child pipeline runs (`trigger: {strategy: depend}`, `forward`):
+  GitLab merges that into the extended job's `trigger`, whose `include` the walk has already pinned wherever that
+  job is defined (a hidden job included). The same `trigger: {strategy: depend}` without `extends`, or with an
+  `include` of its own beyond the rules, refuses; so does `trigger: !reference [...]` (the walk cannot follow it).
+- An empty top-level value (`variables:` with nothing under it, a job with no body) is not a mapping, so it refuses.
+- The lint cross-check covers the parent pipeline's includes only: GitLab's lint does not list child pipelines,
+  whose files the walk pins itself.
+- A multi-project trigger (`trigger: {project: ...}`, a `$X` in it included) runs another project's CI with the
+  variables the job forwards; protecting that project's pipelines is that project's own.
+- GitLab's CI lint at the base (`GET …/ci/lint?content_ref=<base>`) is a cross-check: an answer that is not `valid`,
+  an include it resolved of any kind but `local` or `template`, or a local one the walk did not reach, refuses, so
+  GitLab's own reading of the files catches any reading the broker's missed.
+
+Paths are normalised (`./`, a leading `/`) before they are compared. The CI definitions are the CI file and every
+local file the walk reached, beside the paths the write rules know (`.gitlab-ci.yml` and the `.gitlab` CI folder): a
+push that adds, changes, deletes or renames any of them is refused (`write_policy.check_ci_definitions`). A refusal
+names the include: "The repository's CI configuration includes <it>, which the broker can't read and pin; agents can't
+push to it while it does." The attestation stays the boundary for what the token cannot read (variables, runners).
+
 | Host | Credential | Permissions it holds | Never |
 |---|---|---|---|
 | GitHub | a GitHub App installed on the chosen repositories; each token is minted for one repository and the permissions the step needs, refreshed before it expires | `metadata: read`, `contents: write`, `pull_requests: write`, `issues: write` | `administration`, `workflows`, `secrets`, `actions`, `members`, any organization permission |
-| GitLab | a project access token, role Developer, scope `api` (no narrower scope covers merge requests and comments; it includes the repository read and write scopes), with an expiry; the connection page shows when it expires and takes its replacement | the same, through the API | Maintainer or Owner role; group tokens |
+| GitLab (gitlab.com) | a project access token for exactly the connection's project, role Developer, scopes `api`, `read_repository` and `write_repository` (`api` alone covers merge requests and notes; the repository scopes are what git's fetch and the Commits API name), with an expiry of at most a year; checked against the project at each save; the connection page shows when it expires, warns within 30 days, and takes its replacement | the Developer role's, through the API and git over https | Maintainer or Owner role; group or personal tokens; a self-managed instance (planned) |
+
+**Egress.** The broker and the checkout cache's writer are Lambdas outside any VPC, so their way out is Lambda's own,
+as for `api.github.com` before: what holds each to its host is the code. Each client's transport is bound to one host
+when it is made (`transport.py` `HttpsTransport`: `api.github.com` for the GitHub client, `gitlab.com` for the GitLab
+client; a path, never a URL, no redirect), and the cache writer's remote is one of two fixed prefixes
+(`https://github.com/`, `https://gitlab.com/`) with git's redirects off. The Agents API reaches `gitlab.com` only for
+a save's token check, through the same bound transport. The agents' own sessions reach no host of either: nothing new
+is on their allowlists.
 
 **The broker.** One Lambda, the connector's broker, is the only code that holds a host credential: no agent's
 session ever holds one. Agents ask it for typed operations, and each role may invoke only the operations it needs;
@@ -337,8 +492,9 @@ push or pull request the dial holds (above); any push or pull request without th
 its tree (since 6.23.00 every push, not only one to a branch with an open pull request); a push with other than
 exactly one head ref; a merge, an approval; any call to
 settings, branch protection, members, webhooks or secrets; a change to the CI definition paths it knows (the GitHub
-workflows and actions folders, the GitLab CI files: best effort, since a pipeline can include other files; the CI
-attestation below is the real boundary, and the GitHub App holds no `workflows` permission); a write that carries
+workflows and actions folders, the GitLab CI files, and on GitLab, since 7.06.00, the project's own CI file and what it
+includes from the project, "CI definitions on GitLab" above: best effort, since a pipeline can include other files; the
+CI attestation below is the real boundary, and the GitHub App holds no `workflows` permission); a write that carries
 customer text (below): a verbatim sentence of a cited review anywhere the agents wrote (comments, the pull request's
 body, commit messages, the lines a diff adds; split at full stops and line breaks, compared after Unicode
 compatibility normalisation, invisible format characters dropped), and personal data in their prose (comments, the
@@ -368,20 +524,27 @@ Of all that, the broker checks only two things for itself, with the App's read-o
 request (above): that the default branch is protected with at least one required check, and that the agent's
 branch is not protected. Everything else, the `branch_rules` point's limit of the App's pushes to `voc-agent/*`
 included, is the administrator's attestation alone. GitLab is the same (a Developer token cannot
-read the CI/CD variables); its attestation is planned with its client.
+read the CI/CD variables, the job token's settings or the runners), so its attestation (7.06.00) is the same six
+points in GitLab's words ("The CI attestation's record", above), and the broker checks for itself what its token reads
+of the branch rules ("What the broker reads", above).
 
 **Credentials** are SSM Parameter Store SecureString parameters under the stack's customer-managed KMS key (the
 standard tier has no monthly charge), one per connection, `/voc/engineering/{connection_id}` (`{workspace_id}/` is
 prefixed once multi-workspace lands; a prefixed deployment puts its prefix on the `voc` segment,
 `/<prefix>-voc/engineering/…`). A GitHub connection's value is JSON: `app_id`, `installation_id`, `repository`
-(`owner/name`) and `private_key` (the App's PEM key). The Agents API writes and deletes them (an administrator's
-save or removal, above), and never reads one. Only the broker reads them (`connectors/credentials.py`:
+(`owner/name`) and `private_key` (the App's PEM key); a GitLab connection's (7.06.00) `host: gitlab`, `project_id`,
+`repository` (the project's path), `token` and `expires_at`. The Agents API writes and deletes them (an administrator's
+save or removal, above), and never reads one. Only the broker and the checkout cache's writer read them
+(`connectors/credentials.py`:
 `ssm:GetParameter` on that path only, `kms:Decrypt` on the stack's key only through SSM and only for those
 parameters), decrypted, kept in memory five minutes at most; a missing or malformed one answers 503 and is logged by
 connection id and error code only. They are never put in a model's context, an event, a log line, a checkpoint or a
 session. Stopping a run turns the broker off for that run at once: every further operation is refused before any
 token is used. Tokens are not revoked early: each is minted for one repository and one operation's permissions, held
-only by the broker, and expires within the hour.
+only by the broker, and expires within the hour. A GitLab project access token is the connection's own, long-lived
+credential (it lapses on its expiry, at most a year out), so it is never minted and no revocation call is made for
+it: revoking it would cut the connection itself. Removing the connection deletes its parameter; revoking the token is
+done in the project's settings.
 
 **Who can read and use.** Connections, the code read from them, the knowledge packs, the conversations and the
 workspace are readable by administrators only by default; a non-admin sees an engineering run only when an
@@ -1539,7 +1702,8 @@ wait closes.
     days from its expiry, and the old generation is never read near its deletion; nothing is renewed or rewritten.
     The writer refuses a generation more than one away from its own clock's.
   - *The fill.* `git init --bare` (no template, so no sample hooks), then `git fetch --depth=1 --no-tags
-    https://github.com/<owner>/<repo>.git <commit>:refs/heads/voc-base`, HEAD set, the commit checked, the repack, in
+    https://github.com/<owner>/<repo>.git <commit>:refs/heads/voc-base` (a GitLab connection's, since 7.06.00:
+    `https://gitlab.com/<namespace>/<project>.git`), HEAD set, the commit checked, the repack, in
     a fresh directory under `/tmp` removed afterwards. Every git command runs with the system and global config,
     hooks, the file-system monitor, credential helpers and terminal prompts off, https the only protocol, no
     redirect, no submodule and every fetched object checked, from an environment it is given whole (nothing inherited).
@@ -1551,7 +1715,15 @@ wait closes.
     failure's words are redacted (the token, its header form, anything credential-shaped) and cut before they are
     raised. Once the fetch is over (or has failed) the token is revoked (`DELETE /installation/token`, best effort:
     sent once, never retried, a failure only logged; the token lapses within the hour anyway) and forgotten by the
-    container.
+    container. A GitLab connection (7.06.00) fetches with its own project access token, read from its SSM parameter
+    (`router.py` `fetch_access`), the same way: `GIT_CONFIG_KEY_0=http.https://gitlab.com/<namespace>/<project>.git
+    .extraHeader`, `GIT_CONFIG_VALUE_0=Authorization: Basic <base64 of oauth2:<token>>`, never in a URL, an argument
+    or an error (both hosts' header forms are redacted). A project access token is long-lived (it expires on its own
+    date, at most a year out) and is the connection's own, not one minted for the fetch, so no revocation call is
+    made after it: revoking it would cut the connection, which stands until an administrator replaces or removes it. The same classification holds: git's "Authentication failed",
+    "HTTP Basic: Access denied" or an answer of 401 or 403 is a refusal (an administrator replaces the token, which
+    may have expired or lost its access), a missing project or commit is a refusal as above, and a 429 or a 5xx is a
+    failure a later try may not meet.
   - *The claim.* Two fills of one commit's generation are kept apart by a claim row in `voc-engineering`: `pk`
     `WS#default#CACHE#<connection>`, `sk` `COMMIT#<commit>#G#<N>`, attributes `holder` and `expires_at` only. A fill
     takes it
@@ -2545,7 +2717,7 @@ and the phase that ships them names them in that row.
 | Phase | Scope | Status |
 |---|---|---|
 | 0 | this design, the benchmark harness and its fixtures | design written; the benchmark harness (the `voc-bench/1` cases, the runner, scorecards) and its four fixtures built, nothing invoking them yet ([Evaluation](#evaluation)) |
-| 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader; the broker's readers of the run's record, the board's GO ledger, the submitted patch and the dial, and a person's go on an AI-assisted run (6.23.00, [above](#repository-connectors)); the harness's client of the broker, the agents' reads and writes signed as their own sessions (7.02.00); the connections, stored by administrators with their GitHub App credential in the SSM parameter the broker reads, with an audit row per change (7.03.00); the CI attestation's record, attested and withdrawn by administrators with an audit row each and voided by a repository change, which every push and pull request waits for, beside the broker's own read-only check of the branch rules, and file and history reads on the run's stored default branch (7.04.00); the checkout cache's writer, one immutable entry per connection and commit filled before a run's coordinator is launched (7.05.00); planned: GitLab, sparse clones, the dependency caches' filler and the first real run; the knowledge pack's package detection, shards, map step, reduce and versioned store with approval ([above](#the-knowledge-pack)), nothing invoking them yet |
+| 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader; the broker's readers of the run's record, the board's GO ledger, the submitted patch and the dial, and a person's go on an AI-assisted run (6.23.00, [above](#repository-connectors)); the harness's client of the broker, the agents' reads and writes signed as their own sessions (7.02.00); the connections, stored by administrators with their GitHub App credential in the SSM parameter the broker reads, with an audit row per change (7.03.00); the CI attestation's record, attested and withdrawn by administrators with an audit row each and voided by a repository change, which every push and pull request waits for, beside the broker's own read-only check of the branch rules, and file and history reads on the run's stored default branch (7.04.00); the checkout cache's writer, one immutable entry per connection and commit filled before a run's coordinator is launched (7.05.00); the GitLab client on gitlab.com, a GitLab connection's project access token checked against its project at each save, its expiry on the connection page, its CI attestation in GitLab's words and the broker's own check of its protected branches, and the cache's GitLab fetch (7.06.00); planned: a self-managed GitLab instance, sparse clones, the dependency caches' filler and the first real run; the knowledge pack's package detection, shards, map step, reduce and versioned store with approval ([above](#the-knowledge-pack)), nothing invoking them yet |
 | 2 | the runtime (one AgentCore Runtime session per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API with each task's history, its agents' `inbox`, `progress`, `tasks` and `knowledge` ops, the coordinator's `coordinate` task and `launch`, the lease's refresh and the supervisor's re-post, the push to the delivery function, the workspace's layout, findings and store in its own bucket, and the administrators' run monitor (its reads, signals and answers) and the read routes for a run's board and conversation ([above](#how-the-agents-work-together)); the runtime (one session per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images, the run's start and end, the agent roles' access to the board, the broker and the bus, the delivery function: built, not yet run against AWS, [above](#runtime-one-agentcore-session-per-agent)) |
 | 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); the skills' record, diff and versioned store with an administrator's acceptance and rollback, proposed to by the coach from a run's retrospective ([above](#getting-better-skills-the-coach-the-learning-loop-memory)); the agents' memory store and its recall for a task, its role lessons drafted by a run's retrospective (recall not yet invoked by the harness; same place); the benchmark gate for skill versions (no regression, a gain on the failure's case) and its record on a version, which a coach's version needs to be accepted, nothing invoking it yet ([Evaluation](#evaluation)); the coach (a failure in, a proposed version naming its expected benchmark case out, through the skills store, with its `skill.proposed` message for the caller to publish), invoked by the learning loop (same place as the skills); the learning loop and its scorecards, built: a run's end starts its retrospective (an asynchronous invocation of the runtime), which takes at most three failures to the coach (one Converse call each, once), drafts a lesson in agent memory for each failure taken to the coach (at most three per run) for an administrator to approve, and writes one create-only scorecard row per skill version per run, read by one bounded Query per version (same place); a connection's own cases from its failures, people's reactions on the host as the loop's input, and the scorecard screens planned |
 | 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | in progress: the new editor steps' server side (engineering flows as `voc-workflow/2`, [above](#how-the-agents-work-together)), the six default flows as validated templates in one file the server lists (`GET /workflows/templates`) and the web app reads (same place), and the report builder with its administrators' REST reads ([Reports](#reports)), nothing invoking it yet; a run's start from a saved flow (6.25.00: `POST /agents/engineering/runs` and the flow page's Start a run, [How a flow starts](#how-the-agents-work-together)), which follows its own copy of the flow step by step since 6.28.00 (the conductor, the coordinator's `read_flow`, the board's check of every post and launch against the plan, a person at a step: [The flow a run follows](#the-flow-a-run-follows); memory, the learning loop, self-improvement and the history and pull-request shard sources not run yet); the agents' skills, one per launchable role with its tools, model and the Converse harness (6.29.00, [the agent catalog](#the-agent-catalog)), launched by the board with their skills' argv and driven through the Bug hunt and fix template on the local fake runtime with scripted models; their first run on AWS waits for the owner, and their broker writes for the harness's broker client |

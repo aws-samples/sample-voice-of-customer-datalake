@@ -5,9 +5,10 @@
  * records or withdraws an administrator's attestation that the repository's CI meets the setup guide (the broker
  * refuses every push and pull request on a connection while none holds; a repository change or a removal voids it).
  *
- * The credential, a GitHub App's (its ids and its private key), is write-only: the server stores it in SSM and no
- * answer ever carries the key back; a connection says only whether one is set, and the App's ids. A save sends it to
- * add a connection or to change its repository or App, and leaves it out to keep the stored one. A connection the
+ * The credential is write-only: a GitHub App's (its ids and its private key) or a GitLab project access token. The
+ * server stores it in SSM and no answer ever carries it back; a connection says only whether one is set, and the
+ * App's ids (GitHub) or the token's expiry as GitLab reported it at the save (GitLab). A save sends it to add a
+ * connection or to change its host, repository or App, and leaves it out to keep the stored one. A connection the
  * answer cannot read is left out (never shown with made-up fields), but an answer without a list is an error, never
  * "no connections".
  *
@@ -25,11 +26,19 @@ const DEFAULT_CONNECTION_LIMIT = 20
 /** A text the server may leave out: null then, never made up. */
 const optionalText = () => z.string().nullable().catch(null)
 
+/** The repository hosts a connection reaches. */
+export const CONNECTION_HOSTS = ['github', 'gitlab'] as const
+
+export type ConnectionHost = (typeof CONNECTION_HOSTS)[number]
+
 const CredentialStateSchema = z.object({
-  kind: z.literal('app').catch('app'),
+  /** A GitHub App (`app`) or a GitLab project access token (`project_token`). */
+  kind: z.enum(['app', 'project_token']).catch('app'),
   set: z.boolean().catch(false),
   app_id: optionalText(),
   installation_id: optionalText(),
+  /** A GitLab token's expiry (`YYYY-MM-DD`), as GitLab reported it at the save; null for none known. */
+  expires_at: optionalText(),
 })
 
 /**
@@ -65,7 +74,7 @@ export type CiAttestation = z.output<typeof CiAttestationSchema>
 
 const ConnectionSchema = z.object({
   connection_id: z.string().min(1),
-  host: z.string().catch('github'),
+  host: z.enum(CONNECTION_HOSTS).catch('github'),
   repository: z.string().min(1),
   default_branch: z.string().catch('main'),
   credential: CredentialStateSchema,
@@ -89,20 +98,26 @@ export interface ConnectionList {
   limit: number
 }
 
-/** The GitHub App credential a save sends: never read back, never kept anywhere but the request. */
-interface CredentialInput {
+/** The credential a save sends (a GitHub App's, a GitLab token): never read back, never kept but in the request. */
+interface AppCredentialInput {
   app_id: string
   installation_id: string
   private_key: string
 }
 
-export interface ConnectionRequest {
-  host: 'github'
+interface TokenCredentialInput {
+  token: string
+}
+
+interface ConnectionFields {
   repository: string
   default_branch: string
-  /** Left out to keep the stored credential (the repository and the App's ids unchanged). */
-  credential?: CredentialInput
 }
+
+/** A save; its credential left out to keep the stored one (the host, the repository and the App's ids unchanged). */
+export type ConnectionRequest =
+  | (ConnectionFields & { host: 'github'; credential?: AppCredentialInput })
+  | (ConnectionFields & { host: 'gitlab'; credential?: TokenCredentialInput })
 
 export interface SavedConnection {
   connection: EngineeringConnection

@@ -792,6 +792,54 @@
     "emptyHint": "Dodaj połączenie, aby agenci inżynieryjni mogli pracować w repozytorium.",
     "branch": "Domyślna gałąź: {{branch}}",
     "kind": "GitHub App",
+    "kindToken": "Token dostępu do projektu GitLab",
+    "hostLabel": "Host repozytorium",
+    "hosts": {
+      "github": "GitHub",
+      "gitlab": "GitLab"
+    },
+    "expiry": {
+      "on": "Token wygasa {{date}}.",
+      "soonBadge": "Token wkrótce wygaśnie",
+      "soon": "Wygasa {{date}}, w ciągu najwyżej {{days, number}} dni: utwórz nowy token i zapisz go w tym połączeniu.",
+      "expiredBadge": "Token wygasł",
+      "expired": "Wygasł {{date}}: agenci nie mają dostępu do projektu, dopóki nie zapiszesz nowego tokenu w tym połączeniu.",
+      "unknown": "Data wygaśnięcia tokenu jest nieznana: zapisz połączenie ponownie z jego tokenem."
+    },
+    "gitlab": {
+      "keepHint": "Zapisany token nigdy nie jest pokazywany. Zostaw pole tokenu puste, aby go zachować; nowy host lub projekt wymaga ponownie tokenu.",
+      "fields": {
+        "project": "Ścieżka projektu",
+        "token": "Token dostępu do projektu"
+      },
+      "hints": {
+        "project": "Ścieżka projektu taka jak w jego adresie: grupa/projekt lub grupa/podgrupa/projekt.",
+        "token": "Token dostępu do projektu (glpat-…), pokazywany raz przy tworzeniu. Jest sprawdzany w GitLab, wysyłany raz i nigdy więcej nie jest pokazywany."
+      },
+      "invalid": {
+        "repository": "Wpisz ścieżkę projektu taką jak w jego adresie: grupa/projekt lub grupa/podgrupa/projekt.",
+        "tokenEmpty": "Wklej token dostępu do projektu: nowe połączenie potrzebuje swoich poświadczeń.",
+        "tokenNeeded": "Wklej token dostępu do projektu ponownie: nowy host lub projekt jest z nim zapisywany.",
+        "token": "Wklej cały token dostępu do projektu: zaczyna się od glpat-."
+      },
+      "guidance": {
+        "title": "Czego potrzebuje token GitLab",
+        "token": "Utwórz token dostępu do projektu tylko w tym projekcie (w ustawieniach projektu, w sekcji Tokeny dostępu): rola Developer, zakresy api, read_repository i write_repository. Nigdy Maintainer ani Owner i nigdy token grupy ani osobisty.",
+        "expiry": "Tokeny GitLab wygasają najpóźniej rok po utworzeniu. Utwórz kolejny token, zanim ten wygaśnie, i zapisz go w połączeniu: strona ostrzega 30 dni wcześniej.",
+        "branch": "Chroń gałąź domyślną (bez force push, push i merge tylko dla Maintainerów), wymagaj powodzenia potoków przed scaleniem i zostaw gałęzie voc-agent/* niechronione."
+      },
+      "ci": {
+        "points": {
+          "protected_secrets": "Zmienne CI/CD z sekretami są chronione, więc dostają je tylko potoki na chronionych gałęziach.",
+          "read_only_token": "Token zadania CI/CD ma najmniejszy dostęp: jego lista dozwolonych zawiera tylko projekty potrzebne potokom, a żadne zadanie nie wykonuje nim push.",
+          "oidc_pinned": "Dostęp do chmury przez OIDC (id_tokens) jest ograniczony do chronionych gałęzi (oświadczenie ref_protected tokenu).",
+          "no_self_hosted_runner": "Żaden współdzielony, grupowy ani instancyjny runner z dostępem do sekretów lub sieci prywatnych nie uruchamia zadań dla niechronionych gałęzi: takie runnery są chronione.",
+          "no_privileged_pull_request": "Żaden potok nie uruchamia kodu merge requestu z sekretami: brak potoków merge requestów dla forków w tym projekcie i żadna chroniona zmienna do nich nie trafia.",
+          "branch_rules": "Gałąź domyślna jest chroniona (bez force push, push i merge dla Maintainerów), potoki muszą się powieść przed scaleniem (pominięty potok nie liczy się jako sukces), konfiguracja CI używa tylko prostych lokalnych include i własnych szablonów GitLaba (współdzielone CI z innych projektów, zdalne include i komponenty nie są obsługiwane), a gałęzie voc-agent/* pozostają niechronione."
+        },
+        "checked": "Pośrednik przy każdym push i merge requeście odczytuje też chronione gałęzie: gałąź domyślna chroniona bez force push, z push i merge dla Maintainerów, wymagane powodzenie potoków i niechronione gałęzie voc-agent/*."
+      }
+    },
     "appIds": "Aplikacja {{appId}}, instalacja {{installationId}}",
     "set": "Zapisane",
     "notSet": "Niezapisane",

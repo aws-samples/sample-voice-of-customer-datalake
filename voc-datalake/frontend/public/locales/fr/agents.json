@@ -765,6 +765,54 @@
     "emptyHint": "Ajoutez-en une pour que les agents d’ingénierie puissent travailler sur un dépôt.",
     "branch": "Branche par défaut : {{branch}}",
     "kind": "GitHub App",
+    "kindToken": "Jeton d’accès au projet GitLab",
+    "hostLabel": "Hébergeur du dépôt",
+    "hosts": {
+      "github": "GitHub",
+      "gitlab": "GitLab"
+    },
+    "expiry": {
+      "on": "Le jeton expire le {{date}}.",
+      "soonBadge": "Le jeton expire bientôt",
+      "soon": "Il expire le {{date}}, dans {{days, number}} jours au plus : créez un nouveau jeton et enregistrez-le sur cette connexion.",
+      "expiredBadge": "Jeton expiré",
+      "expired": "Il a expiré le {{date}} : les agents ne peuvent plus atteindre le projet tant que vous n’avez pas enregistré un nouveau jeton sur cette connexion.",
+      "unknown": "L’expiration du jeton n’est pas connue : enregistrez à nouveau la connexion avec son jeton."
+    },
+    "gitlab": {
+      "keepHint": "Le jeton enregistré n’est jamais affiché. Laissez le jeton vide pour le garder ; un nouvel hébergeur ou un nouveau projet demande à nouveau un jeton.",
+      "fields": {
+        "project": "Chemin du projet",
+        "token": "Jeton d’accès au projet"
+      },
+      "hints": {
+        "project": "Le chemin du projet tel qu’il figure dans son adresse : groupe/projet ou groupe/sous-groupe/projet.",
+        "token": "Le jeton d’accès au projet (glpat-…), affiché une seule fois à sa création. Il est vérifié auprès de GitLab, envoyé une fois et jamais réaffiché."
+      },
+      "invalid": {
+        "repository": "Saisissez le chemin du projet tel qu’il figure dans son adresse : groupe/projet ou groupe/sous-groupe/projet.",
+        "tokenEmpty": "Collez le jeton d’accès au projet : une nouvelle connexion a besoin de son identifiant.",
+        "tokenNeeded": "Collez à nouveau le jeton d’accès au projet : un nouvel hébergeur ou un nouveau projet est enregistré avec lui.",
+        "token": "Collez le jeton d’accès au projet en entier : il commence par glpat-."
+      },
+      "guidance": {
+        "title": "Ce dont le jeton GitLab a besoin",
+        "token": "Créez un jeton d’accès au projet dans ce seul projet (dans les paramètres du projet, sous Jetons d’accès) : rôle Developer, portées api, read_repository et write_repository. Jamais Maintainer ni Owner, et jamais un jeton de groupe ou personnel.",
+        "expiry": "Les jetons GitLab expirent, au plus un an après leur création. Créez le jeton suivant avant que celui-ci n’expire et enregistrez-le sur la connexion : la page vous prévient 30 jours à l’avance.",
+        "branch": "Protégez la branche par défaut (pas de force push, push et merge réservés aux Maintainers), exigez la réussite des pipelines avant un merge et laissez les branches voc-agent/* non protégées."
+      },
+      "ci": {
+        "points": {
+          "protected_secrets": "Les variables CI/CD qui contiennent des secrets sont protégées : seules les pipelines des branches protégées les reçoivent.",
+          "read_only_token": "Le jeton de job CI/CD a le moins d’accès possible : sa liste d’autorisation ne contient que les projets dont les pipelines ont besoin, et aucun job ne pousse avec lui.",
+          "oidc_pinned": "L’accès au cloud par OIDC (id_tokens) est limité aux branches protégées (la revendication ref_protected du jeton).",
+          "no_self_hosted_runner": "Aucun runner partagé, de groupe ou d’instance ayant accès à des secrets ou à des réseaux privés n’exécute de jobs pour des branches non protégées : ces runners sont protégés.",
+          "no_privileged_pull_request": "Aucune pipeline n’exécute le code d’une merge request avec des secrets : pas de pipeline de merge request pour les forks dans ce projet, et aucune variable protégée ne l’atteint.",
+          "branch_rules": "La branche par défaut est protégée (pas de force push, push et merge pour les Maintainers), les pipelines doivent réussir avant un merge (un pipeline ignoré ne compte pas comme une réussite), la configuration CI n’utilise que des includes locaux simples et les modèles de GitLab (la CI partagée d’autres projets, les includes distants et les composants ne sont pas pris en charge) et les branches voc-agent/* restent non protégées."
+        },
+        "checked": "L’intermédiaire lit aussi les branches protégées à chaque push et merge request : la branche par défaut protégée sans force push, avec push et merge pour les Maintainers, la réussite des pipelines exigée et les branches voc-agent/* non protégées."
+      }
+    },
     "appIds": "App {{appId}}, installation {{installationId}}",
     "set": "Enregistré",
     "notSet": "Non enregistré",

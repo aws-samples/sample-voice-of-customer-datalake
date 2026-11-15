@@ -7,11 +7,12 @@
  * The only code that will hold a repository host's credential. It takes the caller's role, run and agent from the
  * request's assumed-role identity (lambda/engineering/connectors/identity.py), never from the body.
  *
- * What exists: the caller identity, the operations per role, the write rules and the GitHub client
- * (lambda/engineering/connectors/github.py), which reads a connection's GitHub App credential from the SSM
- * SecureString `/[<prefix>-]voc/engineering/{connection_id}` (credentials.py); the run's record, the board's GO
- * ledger and a person's go (records.py), the committer's submitted patch (patches.py) and the dial (dial.py), all
- * read, never written. Beyond writing its own log group (lib/utils/lambda-log-grants.ts), the role holds exactly:
+ * What exists: the caller identity, the operations per role, the write rules and the GitHub and GitLab clients
+ * (lambda/engineering/connectors/github.py, gitlab.py, each connection on its own host's: router.py), which read a
+ * connection's GitHub App credential or GitLab project access token from the SSM SecureString
+ * `/[<prefix>-]voc/engineering/{connection_id}` (credentials.py; the same grant below covers both); the run's record,
+ * the board's GO ledger and a person's go (records.py), the committer's submitted patch (patches.py) and the dial
+ * (dial.py), all read, never written. Beyond writing its own log group (lib/utils/lambda-log-grants.ts), the role holds exactly:
  * - `ssm:GetParameter` on the connections' parameters (no other parameter, no put or delete) and `kms:Decrypt` on
  *   the stack's key through SSM (`kms:ViaService`) only for those parameters (the `PARAMETER_ARN` context);
  * - `dynamodb:GetItem` and `dynamodb:Query` on voc-engineering, only in the runs' partitions (`WS#*#RUN#*`, as a
@@ -46,7 +47,7 @@ import type * as s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 
 import { booleanContextFlag } from '../utils/context-flag';
-import { SIGNING_LAYER_DIR, dependencyLayer } from '../utils/dependency-layers';
+import { ENGINEERING_CI_LAYER_DIR, SIGNING_LAYER_DIR, dependencyLayer } from '../utils/dependency-layers';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 import { createWorkerFunction, workerRole } from '../utils/worker-lambda';
 import { ENGINEERING_WORKSPACE } from './core-buckets';
@@ -181,6 +182,9 @@ export class EngineeringBroker extends Construct {
     // cryptography signs the GitHub App's JWT (RS256): the signing layer, for this one function of the stack.
     broker.addLayers(dependencyLayer(this, 'SigningDepsLayer', SIGNING_LAYER_DIR,
       'RS256 signing for the engineering broker (GitHub App JWT; ARM64/Graviton)'));
+    // PyYAML reads a GitLab project's CI files before a push (connectors/ci_yaml.py): its own small layer.
+    broker.addLayers(dependencyLayer(this, 'CiDepsLayer', ENGINEERING_CI_LAYER_DIR,
+      'YAML reader for the engineering broker (GitLab CI files; ARM64/Graviton)'));
     this.connectionParameters = { prefix: parameterPrefix, arns: engineeringParameterArns(stack, props.deploymentPrefix) };
     grantConnectionCredentials(role, props.kmsKey, this.connectionParameters.arns);
     grantRunRecordReads(role, props);

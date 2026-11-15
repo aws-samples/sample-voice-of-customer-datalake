@@ -759,6 +759,54 @@
     "emptyHint": "엔지니어링 에이전트가 저장소에서 작업할 수 있도록 연결을 추가하세요.",
     "branch": "기본 브랜치: {{branch}}",
     "kind": "GitHub App",
+    "kindToken": "GitLab 프로젝트 액세스 토큰",
+    "hostLabel": "저장소 호스트",
+    "hosts": {
+      "github": "GitHub",
+      "gitlab": "GitLab"
+    },
+    "expiry": {
+      "on": "토큰은 {{date}}에 만료됩니다.",
+      "soonBadge": "토큰이 곧 만료됩니다",
+      "soon": "{{date}}, {{days, number}}일 이내에 만료됩니다. 새 토큰을 만들어 이 연결에 저장하세요.",
+      "expiredBadge": "토큰 만료됨",
+      "expired": "{{date}}에 만료되었습니다. 이 연결에 새 토큰을 저장할 때까지 에이전트가 프로젝트에 접근할 수 없습니다.",
+      "unknown": "토큰의 만료일을 알 수 없습니다. 토큰과 함께 연결을 다시 저장하세요."
+    },
+    "gitlab": {
+      "keepHint": "저장된 토큰은 표시되지 않습니다. 유지하려면 토큰을 비워 두세요. 새 호스트나 프로젝트에는 토큰이 다시 필요합니다.",
+      "fields": {
+        "project": "프로젝트 경로",
+        "token": "프로젝트 액세스 토큰"
+      },
+      "hints": {
+        "project": "주소에 나오는 프로젝트 경로: group/project 또는 group/subgroup/project.",
+        "token": "만들 때 한 번만 표시되는 프로젝트 액세스 토큰(glpat-…)입니다. GitLab에서 확인되고, 한 번 전송되며, 다시 표시되지 않습니다."
+      },
+      "invalid": {
+        "repository": "주소에 나오는 프로젝트 경로를 입력하세요: group/project 또는 group/subgroup/project.",
+        "tokenEmpty": "프로젝트 액세스 토큰을 붙여 넣으세요. 새 연결에는 자격 증명이 필요합니다.",
+        "tokenNeeded": "프로젝트 액세스 토큰을 다시 붙여 넣으세요. 새 호스트나 프로젝트는 토큰과 함께 저장됩니다.",
+        "token": "프로젝트 액세스 토큰 전체를 붙여 넣으세요. glpat-로 시작합니다."
+      },
+      "guidance": {
+        "title": "GitLab 토큰에 필요한 것",
+        "token": "이 프로젝트에서만 프로젝트 액세스 토큰을 만드세요(프로젝트 설정의 액세스 토큰에서). 역할 Developer, 범위 api, read_repository, write_repository. Maintainer나 Owner, 그룹 토큰이나 개인 토큰은 사용하지 마세요.",
+        "expiry": "GitLab 토큰은 만료되며, 만든 뒤 최대 1년입니다. 이 토큰이 만료되기 전에 다음 토큰을 만들어 연결에 저장하세요. 이 페이지가 30일 전에 알려 드립니다.",
+        "branch": "기본 브랜치를 보호하고(force push 금지, push와 병합은 Maintainer만), 병합 전에 파이프라인 성공을 요구하며, voc-agent/* 브랜치는 보호하지 마세요."
+      },
+      "ci": {
+        "points": {
+          "protected_secrets": "비밀을 담은 CI/CD 변수는 보호되어 있어 보호된 브랜치의 파이프라인만 받습니다.",
+          "read_only_token": "CI/CD 작업 토큰의 권한은 최소입니다. 허용 목록에는 파이프라인에 필요한 프로젝트만 있고, 이 토큰으로 push하는 작업은 없습니다.",
+          "oidc_pinned": "OIDC(id_tokens)를 통한 클라우드 접근은 보호된 브랜치로 제한됩니다(토큰의 ref_protected 클레임).",
+          "no_self_hosted_runner": "비밀이나 사설 네트워크에 접근할 수 있는 공유, 그룹 또는 인스턴스 러너는 보호되지 않은 브랜치의 작업을 실행하지 않습니다. 그런 러너는 보호되어 있습니다.",
+          "no_privileged_pull_request": "비밀과 함께 병합 요청 코드를 실행하는 파이프라인은 없습니다. 이 프로젝트에는 포크용 병합 요청 파이프라인이 없고, 보호된 변수가 거기에 전달되지 않습니다.",
+          "branch_rules": "기본 브랜치는 보호되어 있고(force push 금지, push와 병합은 Maintainer), 병합 전에 파이프라인이 성공해야 하며(건너뛴 파이프라인은 성공으로 치지 않음), CI 구성은 단순한 로컬 include와 GitLab 자체 템플릿만 사용하고(다른 프로젝트의 공유 CI, 원격 include, 컴포넌트는 지원하지 않음), voc-agent/* 브랜치는 보호되지 않습니다."
+        },
+        "checked": "브로커도 push와 병합 요청마다 보호된 브랜치를 읽습니다. 기본 브랜치가 force push 없이 보호되고 push와 병합이 Maintainer에게만 허용되며, 파이프라인 성공이 필수이고, voc-agent/* 브랜치가 보호되지 않았는지 확인합니다."
+      }
+    },
     "appIds": "App {{appId}}, 설치 {{installationId}}",
     "set": "설정됨",
     "notSet": "설정 안 됨",

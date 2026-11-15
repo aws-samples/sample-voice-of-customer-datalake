@@ -8,8 +8,8 @@ moved, another tree); 422 a refusal by the write rules or of the submitted patch
 repository connection, the run's records or the way of working unreadable for now, or the host rate limiting (with
 ``Retry-After``). Every refusal carries ``{"error": <plain reason>}``.
 
-The broker's connector: the GitHub client (``github.GitHubHost``) over the connections' SSM credentials, once the
-stack names their prefix; with the engineering table, the workspace bucket and the aggregates table named too, the
+The broker's connector: the GitHub and GitLab clients (``github.GitHubHost``, ``gitlab.GitLabHost``, each connection on
+its own host's: ``router.HostRouter``) over the connections' SSM credentials, once the stack names their prefix; with the engineering table, the workspace bucket and the aggregates table named too, the
 run's record and the board's GO ledger (``records.RunRecords``), the submitted patch's reader
 (``patches.WorkspacePatches``) and the dial (``dial.WaysOfWorking``), and, with voc-agents named
 (``ENGINEERING_CONNECTIONS_TABLE``), the connections' CI attestations (``records.RunRecords.attested``; without it no
@@ -24,6 +24,7 @@ import base64
 import binascii
 import json
 import os
+import time
 from collections.abc import Callable, Mapping
 from functools import lru_cache
 from typing import Any, Final
@@ -33,10 +34,13 @@ from engineering.connectors.connections import PARAMETER_PREFIX_ENV
 from engineering.connectors.credentials import ParameterStoreCredentials
 from engineering.connectors.dial import WaysOfWorking
 from engineering.connectors.github import GitHubHost
+from engineering.connectors.gitlab import GitLabHost
 from engineering.connectors.hosts import (
     NO_CONNECTION,
     OBJECT_ID,
     UNCONNECTED,
+    WRITE_READY_BY,
+    WRITE_RESERVE_SECONDS,
     CommentTarget,
     Conflict,
     Connector,
@@ -47,6 +51,7 @@ from engineering.connectors.hosts import (
     NotFound,
     ReadKind,
     Unavailable,
+    remaining_until,
 )
 from engineering.connectors.identity import (
     OPEN_OR_UPDATE_DRAFT_PR,
@@ -60,6 +65,7 @@ from engineering.connectors.identity import (
 )
 from engineering.connectors.patches import WorkspacePatches
 from engineering.connectors.records import RunRecords, WriteClaims
+from engineering.connectors.router import HostRouter
 from engineering.connectors.write_policy import WriteRefused
 from engineering.runtime.interface import MAX_ATTEMPT
 from engineering.workspace.store import WorkspaceStore
@@ -242,6 +248,13 @@ def handle(event: Mapping[str, object], role_name_pattern: str, account: str, br
     return response
 
 
+def host_router(parameter_prefix: str) -> HostRouter:
+    """Both host clients over the connections' SSM credentials under ``parameter_prefix``, each connection served by
+    its own host's (the broker's, and the checkout cache's writer's)."""
+    store = ParameterStoreCredentials(parameter_prefix)
+    return HostRouter(store.stored, GitHubHost(store.get), GitLabHost(store.gitlab))
+
+
 @lru_cache(maxsize=1)
 def broker_for(parameter_prefix: str, table: str = '', bucket: str = '', aggregates: str = '',
                agents: str = '') -> Broker:
@@ -251,7 +264,7 @@ def broker_for(parameter_prefix: str, table: str = '', bucket: str = '', aggrega
     it is unnamed); no connector without a prefix."""
     if not parameter_prefix:
         return Broker(None)
-    host = GitHubHost(ParameterStoreCredentials(parameter_prefix).get)
+    host = host_router(parameter_prefix)
     if not (table and bucket and aggregates):
         return Broker(Connector(host=host, bundles=UNCONNECTED, runs=UNCONNECTED, ledger=UNCONNECTED,
                                 dial=UNCONNECTED, writes=UNCONNECTED))
@@ -269,7 +282,12 @@ def broker_for(parameter_prefix: str, table: str = '', bucket: str = '', aggrega
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     account = own_account(getattr(context, 'invoked_function_arn', None))
     environ = os.environ
-    return handle(event, environ.get(ROLE_NAME_PATTERN_ENV, ''), account,
-                  broker_for(environ.get(PARAMETER_PREFIX_ENV, ''), environ.get(TABLE_ENV, ''),
-                             environ.get(BUCKET_ENV, ''), environ.get(AGGREGATES_ENV, ''),
-                             environ.get(CONNECTIONS_TABLE_ENV, '')))
+    # (the reads before a write end by Lambda's remaining time less what the write and its read-back need)
+    ready = WRITE_READY_BY.set(remaining_until(context, time.time(), WRITE_RESERVE_SECONDS))
+    try:
+        return handle(event, environ.get(ROLE_NAME_PATTERN_ENV, ''), account,
+                      broker_for(environ.get(PARAMETER_PREFIX_ENV, ''), environ.get(TABLE_ENV, ''),
+                                 environ.get(BUCKET_ENV, ''), environ.get(AGGREGATES_ENV, ''),
+                                 environ.get(CONNECTIONS_TABLE_ENV, '')))
+    finally:
+        WRITE_READY_BY.reset(ready)
