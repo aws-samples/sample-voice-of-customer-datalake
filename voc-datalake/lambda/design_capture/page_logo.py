@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from typing import Final
 from urllib.parse import urlparse
 
-from logo_isolate import PageTab, isolate_logo
+from logo_isolate import PageTab, isolate_logo, origin_of
 from logo_pick import LogoPick
 from logo_render import Cdp, render_svg_logo
 from page_inline_logo import inline_svg_expression, parse_inline_logo
@@ -42,8 +42,8 @@ from rendered_logo import RenderedLogo
 
 from shared import design_assets, design_icons, design_logo, design_svg
 from shared.design_vision import PageShot
+from shared.llm_json import json_object_or_none
 from shared.logging import logger
-from shared.url_policy import validate_url
 
 #: The marked photo covers the candidates' band (``TOP_PX``) plus room for the boxes that start near its end.
 MARKED_HEADER_PX: Final = TOP_PX + 80
@@ -123,14 +123,13 @@ def _svg_copy(tab: PageTab, candidate: LogoCandidate, fetch: design_icons.Fetch 
 
 
 def _file_logo(cdp: Cdp, url: str, fetch: design_icons.Fetch | None, svg: str | None) -> PageLogo:
-    """The logo read from its own file: an SVG drawn by the browser (which fetches it itself, so its address is
-    checked against the URL policy first), else a raster downloaded through the SSRF-guarded fetch."""
+    """The logo read from its own file, always through the SSRF-guarded fetch (every redirect re-checked): an SVG
+    downloaded and sanitised, then drawn by the browser from a ``data:`` URL (the browser never fetches the address
+    itself), else a raster downloaded (``raster_logo``)."""
     if _is_svg_file(url):
-        if not validate_url(url)[0]:
-            logger.info('Logo file not read', extra={'reason': 'url_not_allowed'})
-            return PageLogo()
-        png = render_svg_logo(cdp, url)
-        return PageLogo(rendered=RenderedLogo(url, png, svg)) if png else PageLogo()
+        markup = svg or downloaded_svg(url, fetch)
+        png = render_svg_logo(cdp, design_svg.svg_data_url(markup)) if markup else None
+        return PageLogo(rendered=RenderedLogo(url, png, markup)) if png else PageLogo()
     raster = read_raster_logo(cdp, url, fetch)
     return PageLogo(rendered=raster.rendered, downloaded=raster.downloaded, refused_url=raster.refused_url)
 
@@ -138,12 +137,17 @@ def _file_logo(cdp: Cdp, url: str, fetch: design_icons.Fetch | None, svg: str | 
 def _restashed(tab: PageTab, found: LogoCandidates, candidate: LogoCandidate) -> LogoCandidate:
     """``candidate`` as the page shows it NOW: the candidates are listed again (a page that re-rendered its
     header replaced the stashed elements) and the one of the same kind at the same place (±4 px) is taken;
-    ``candidate`` itself when none matches or the list cannot be read."""
+    ``candidate`` itself when none matches, the list cannot be read, or the tab shows another origin now (the
+    isolation refuses that page too)."""
     try:
-        again = parse_candidates(tab.evaluate(candidates_expression()), found.page_url)
+        raw = tab.evaluate(candidates_expression())
     except Exception as exc:  # noqa: BLE001 - a CDP error: the first stash is used as it is
         logger.info('Logo candidates not listed again', extra={'reason': type(exc).__name__})
         return candidate
+    listed_at = json_object_or_none(raw) or {}
+    if origin_of(str(listed_at.get('url') or '')) != origin_of(found.page_url):
+        return candidate
+    again = parse_candidates(raw, found.page_url)
     same = (c for c in again.candidates if c.kind == candidate.kind
             and all(abs(a - b) <= RESTASH_SLACK_PX for a, b in ((c.x, candidate.x), (c.y, candidate.y),
                                                                   (c.width, candidate.width), (c.height, candidate.height))))
@@ -153,7 +157,7 @@ def _restashed(tab: PageTab, found: LogoCandidates, candidate: LogoCandidate) ->
 def _isolated(tab: PageTab, cdp: Cdp, found: LogoCandidates, candidate: LogoCandidate, svg: str | None) -> PageLogo | None:
     """The element photographed alone; for an inline ``<svg>`` that paints nothing alone (it borrows paint from
     elsewhere in the page), its sanitised copy drawn as an image instead."""
-    isolated = isolate_logo(tab, cdp, _restashed(tab, found, candidate).n)
+    isolated = isolate_logo(tab, cdp, _restashed(tab, found, candidate).n, found.page_url)
     source = candidate.url if candidate.url and candidate.url.startswith('https://') else found.page_url
     if isolated is not None:
         return PageLogo(rendered=RenderedLogo(source, isolated.png, svg, isolated.backdrop))

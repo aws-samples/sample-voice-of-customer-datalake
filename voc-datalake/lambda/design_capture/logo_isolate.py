@@ -26,6 +26,7 @@ import math
 import re
 from dataclasses import dataclass
 from typing import Final
+from urllib.parse import urlsplit
 
 from logo_render import TRANSPARENT, Cdp, colour_of, trim_png
 from page_logo_candidates import STASH
@@ -91,7 +92,7 @@ ISOLATE_JS: Final = r"""
     };
     const r = el.getBoundingClientRect();
     return JSON.stringify({ x: r.left + scrollX, y: r.top + scrollY, width: r.width, height: r.height,
-                            vw: innerWidth, vh: innerHeight, dpr: devicePixelRatio || 1, backdrop });
+                            vw: innerWidth, vh: innerHeight, dpr: devicePixelRatio || 1, origin: location.origin, backdrop });
   } catch (e) {
     return JSON.stringify({ error: 'script' });
   }
@@ -139,8 +140,18 @@ def _number(value: object) -> float:
     return float(value)
 
 
-def parse_box(raw: object) -> _Box:
-    """ISOLATE_JS's answer; IsolateRefused when it failed or the box is empty or outside the first screen."""
+def origin_of(url: str) -> str:
+    """``scheme://host[:port]`` of ``url`` as ``location.origin`` spells it, '' when unreadable."""
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return ''
+    return f'{parts.scheme}://{parts.netloc.rsplit("@", 1)[-1]}'.lower() if parts.scheme and parts.netloc else ''
+
+
+def parse_box(raw: object, page_url: str) -> _Box:
+    """ISOLATE_JS's answer; IsolateRefused when it failed, the box is empty or outside the first screen, or the tab
+    no longer shows ``page_url``'s origin (the page navigated itself after it was checked: nothing is shot)."""
     try:
         data = json.loads(raw) if isinstance(raw, str) else None
     except ValueError:
@@ -149,6 +160,9 @@ def parse_box(raw: object) -> _Box:
         raise IsolateRefused('no_answer')
     if data.get('error') is not None:
         raise IsolateRefused(re.sub(r'[^a-z_]', '', str(data['error']))[:20] or 'error')
+    origin = data.get('origin')
+    if not isinstance(origin, str) or not origin or origin.lower() != origin_of(page_url):
+        raise IsolateRefused('page_moved')
     x, y, width, height, vw, vh = (_number(data.get(k)) for k in ('x', 'y', 'width', 'height', 'vw', 'vh'))
     if width < 4 or height < 4:
         raise IsolateRefused('empty_box')
@@ -175,10 +189,6 @@ def _shoot(tab: PageTab, box: _Box, scale: float) -> bytes:
         raise IsolateRefused('bad_screenshot') from exc
 
 
-def hex_colour(colour: dict[str, int] | None) -> str | None:
-    return '#{r:02x}{g:02x}{b:02x}'.format(**colour) if colour else None
-
-
 def _within_cap(tab: PageTab, cdp: Cdp, box: _Box) -> IsolatedLogo | None:
     """Shoot, trim and check; over the 1 MB cap, shoot again smaller (the page stays isolated meanwhile)."""
     scale = shot_scale(box.width * box.device_pixel_ratio, box.height * box.device_pixel_ratio)
@@ -194,12 +204,13 @@ def _within_cap(tab: PageTab, cdp: Cdp, box: _Box) -> IsolatedLogo | None:
     return None
 
 
-def isolate_logo(tab: PageTab, cdp: Cdp, number: int) -> IsolatedLogo | None:
-    """Candidate ``number`` photographed alone (see the module docstring), or None (logged). The page is left as
-    it was (``UNDO_JS``, the default background restored) whatever happens."""
+def isolate_logo(tab: PageTab, cdp: Cdp, number: int, page_url: str) -> IsolatedLogo | None:
+    """Candidate ``number`` photographed alone (see the module docstring), or None (logged); only while the tab still
+    shows ``page_url``'s origin. The page is left as it was (``UNDO_JS``, the default background restored) whatever
+    happens."""
     try:
         try:
-            box = parse_box(tab.evaluate(isolate_expression(number)))
+            box = parse_box(tab.evaluate(isolate_expression(number)), page_url)
             tab.call('Emulation.setDefaultBackgroundColorOverride', {'color': TRANSPARENT})
             return _within_cap(tab, cdp, box)
         finally:

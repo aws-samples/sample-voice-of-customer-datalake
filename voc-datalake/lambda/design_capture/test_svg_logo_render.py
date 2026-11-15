@@ -1,18 +1,20 @@
-"""A picked ``<img>`` logo whose file is an SVG, when the element cannot be photographed alone, is drawn by the
-managed browser to a PNG and kept as a sanitised SVG beside it (``page_logo._file_logo`` → ``logo_render``).
+"""A picked ``<img>`` logo whose file is an SVG, when the element cannot be photographed alone, is downloaded through
+the SSRF-guarded fetch, sanitised, and drawn by the managed browser from a ``data:`` URL to a PNG, the sanitised SVG
+kept beside it (``page_logo._file_logo`` → ``logo_render``).
 
 Fake CDP (``test_design_capture_worker.FakeCdp``: the page tab is ``s1``, the render tab ``s2``; the isolation
-answers ``gone`` by default, so the element's own file is read), moto S3. Pins: the URL handed over as a CDP argument
-and set as a property (never in a code or markup string), a non-https or policy-refused SVG never drawn, every render
-failure being no logo with the capture still ready, the PNG checks, and the stored logo shape.
+answers ``gone`` by default, so the element's own file is read), moto S3. Pins: the render tab only ever handed a
+``data:`` URL as a CDP argument (never the SVG's address, never in a code or markup string), a non-https, refused or
+non-SVG file never drawn, every render failure being no logo with the capture still ready, the PNG checks, and the
+stored logo shape.
 """
+import base64
 import json
 from unittest.mock import MagicMock, patch
 
 import boto3
 import capture_worker as cw
 import logo_render
-import page_logo
 import png_check
 import pytest
 from test_design_capture_worker import (  # noqa: F401 - fixture
@@ -31,6 +33,7 @@ from test_design_capture_worker import (  # noqa: F401 - fixture
 )
 
 from shared.company_context import get_reference
+from shared.http_utils import UnsafeURLError
 
 SVG = 'https://kirocrew.dev/brand/logo.svg'
 RASTER = 'https://kirocrew.dev/logo.png'
@@ -38,6 +41,7 @@ PREVIEW_KEY = f'company-context/design/logo_preview_{REF_ID}.png'
 SVG_KEY = f'company-context/design/logo_preview_{REF_ID}.svg'
 BOX = {'x': 0, 'y': 0, 'width': 240, 'height': 64}
 LOGO_PNG = png_bytes(240, 64)
+DATA_PREFIX = 'data:image/svg+xml;base64,'
 
 
 @pytest.fixture
@@ -53,9 +57,12 @@ SITE_SVG = (b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 32"><styl
             b'<script>steal()</script><path class="a" d="M0 0h120v32H0z"/></svg>')
 
 
-def _server(svg_body: bytes):
-    """The fetch fake: ``svg_body`` for an ``.svg`` URL, a small PNG for anything else."""
+def _server(svg_body: bytes, *, svg_allowed: bool = True):
+    """The guarded-fetch fake: ``svg_body`` for an ``.svg`` URL (or the SSRF guard's refusal when not
+    ``svg_allowed``), a small PNG for anything else."""
     def served(url: str, **_kwargs) -> MagicMock:
+        if url.endswith('.svg') and not svg_allowed:
+            raise UnsafeURLError(url, 'private address')
         return MagicMock(status_code=200, content=svg_body if url.endswith('.svg') else png_bytes(32, 32))
     return served
 
@@ -67,16 +74,11 @@ def logo_downloads(fetch: MagicMock) -> list[str]:
 
 def _capture(table, s3, cdp: FakeCdp, *, svg_allowed: bool = True, answer: str = ANSWER,  # noqa: F811 — pytest fixture parameter named like the imported fixture
              svg_body: bytes = SITE_SVG, pick_logo=None):
-    raster = MagicMock(side_effect=_server(svg_body))
+    raster = MagicMock(side_effect=_server(svg_body, svg_allowed=svg_allowed))
     deps = cw.CaptureDeps(table=table, kit=_kit(cdp, []), summarise_images=MagicMock(return_value=answer),
                           sleep=lambda _s: None, clock=iter(range(1000)).__next__, now=lambda: '2026-10-27T00:00:00+00:00',
                           s3=s3, bucket='raw', logo_fetch=raster, pick_logo=pick_logo)
-
-    def policy(url: str) -> tuple[bool, str]:
-        return (svg_allowed or not url.endswith('.svg'), 'private address')
-
-    with patch.object(cw, 'validate_url', return_value=(True, '')), \
-            patch.object(page_logo, 'validate_url', side_effect=policy):
+    with patch.object(cw, 'validate_url', return_value=(True, '')):
         result = cw.run_capture({'action': 'design_capture', 'ref_id': REF_ID}, deps)
     stored = get_reference(table, REF_ID)
     assert stored is not None
@@ -120,13 +122,7 @@ class TestTheSvgLogoIsRendered:
         assert 'fill="#7c3aed"' in markup   # the file's own sheet carried over as an attribute
         assert 'script' not in markup
         assert '<style' not in markup
-        assert logo_downloads(raster) == [SVG]   # once, for the copy; the PNG is still drawn from the URL
-
-    def test_keeps_only_the_png_when_the_svg_url_serves_no_svg(self, table, s3):  # noqa: F811 — pytest fixture parameter named like the imported fixture
-        cdp = _page_with(SVG, render_answer=BOX, logo_png=LOGO_PNG)
-        _, stored, _ = _capture(table, s3, cdp, svg_body=b'<!doctype html><html>blocked</html>')
-        assert 'svg_preview_key' not in stored['extracted_design']['logo']
-        assert stored['extracted_design']['logo']['rendered'] is True
+        assert logo_downloads(raster) == [SVG]   # once, through the guarded fetch; the PNG is drawn from those bytes
 
     def test_draws_in_its_own_transparent_tab_and_photographs_the_image_box(self, table, s3):  # noqa: F811 — pytest fixture parameter named like the imported fixture
         cdp = _page_with(SVG, render_answer=BOX, logo_png=LOGO_PNG)
@@ -140,17 +136,32 @@ class TestTheSvgLogoIsRendered:
         assert ('Target.createTarget', {'url': 'about:blank'}) in cdp.calls
         assert ('Target.closeTarget', {'targetId': 't2'}) in cdp.calls
 
-    def test_hands_the_url_over_as_a_call_argument_never_in_code_or_markup(self, table, s3):  # noqa: F811 — pytest fixture parameter named like the imported fixture
+    def test_the_render_tab_only_ever_receives_a_data_url_of_the_guarded_download(self, table, s3):  # noqa: F811 — pytest fixture parameter named like the imported fixture
         cdp = _page_with(SVG, render_answer=BOX, logo_png=LOGO_PNG)
-        _capture(table, s3, cdp)
+        _, stored, raster = _capture(table, s3, cdp)
         (_, draw), = [c for c in cdp.calls if c[0] == 'Runtime.callFunctionOn']
-        assert draw['arguments'][0] == {'value': SVG}
-        assert SVG not in draw['functionDeclaration']
+        url = draw['arguments'][0]['value']
+        assert url.startswith(DATA_PREFIX)
+        assert url not in draw['functionDeclaration']
         assert 'img.src = url' in draw['functionDeclaration']
         assert 'innerHTML' not in logo_render.RENDER_JS
         assert 'Page.setDocumentContent' not in cdp.methods()
-        # The URL appears in exactly one place across every render-tab command: that argument value.
-        assert sum(json.dumps(params).count(SVG) for _, params in _render_calls(cdp)) == 1
+        # The SVG's own address never reaches the render tab: no command carries it, and no navigation happens.
+        assert all(SVG not in json.dumps(params) for _, params in _render_calls(cdp))
+        assert 'Page.navigate' not in [m for m, _ in _render_calls(cdp)]
+        # The drawn bytes are the guarded fetch's download, sanitised (the script gone), and the stored SVG copy.
+        assert logo_downloads(raster) == [SVG]
+        drawn = base64.b64decode(url.removeprefix(DATA_PREFIX)).decode('utf-8')
+        assert 'steal' not in drawn
+        assert '<path' in drawn
+        stored_svg = s3.get_object(Bucket='raw', Key=stored['extracted_design']['logo']['svg_preview_key'])
+        assert stored_svg['Body'].read().decode() == drawn
+
+    def test_draws_nothing_when_the_svg_url_serves_no_svg_and_nothing_was_isolated(self, table, s3):  # noqa: F811 — pytest fixture parameter named like the imported fixture
+        cdp = _page_with(SVG, render_answer=BOX, logo_png=LOGO_PNG)
+        _, stored, _ = _capture(table, s3, cdp, svg_body=b'<!doctype html><html>blocked</html>')
+        assert 'logo' not in stored['extracted_design']
+        assert _render_calls(cdp) == []
 
 
 class TestWhatIsNotRendered:

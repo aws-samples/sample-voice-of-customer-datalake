@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import logo_isolate as li
 import pytest
 from logo_render import TrimmedPng
-from test_design_capture_worker import ISOLATED_BOX, png_bytes
+from test_design_capture_worker import ISOLATED_BOX, PAGE_URL, png_bytes
 
 from shared.design_logo import COMPANY_LOGO_MAX_BYTES
 
@@ -51,23 +51,23 @@ class FakeTab:
 
 def _isolate(tab: FakeTab, *trimmed: TrimmedPng | None):
     with patch.object(li, 'trim_png', side_effect=list(trimmed)) as trim:
-        return li.isolate_logo(tab, MagicMock(), 2), trim
+        return li.isolate_logo(tab, MagicMock(), 2, PAGE_URL), trim
 
 
 class TestParseBox:
     def test_returns_the_box_and_its_backdrop(self):
-        box = li.parse_box(json.dumps({**ISOLATED_BOX, 'backdrop': {'r': 16, 'g': 32, 'b': 48}}))
+        box = li.parse_box(json.dumps({**ISOLATED_BOX, 'backdrop': {'r': 16, 'g': 32, 'b': 48}}), PAGE_URL)
         assert (box.x, box.y, box.width, box.height, box.backdrop) == (24, 16, 166, 52, {'r': 16, 'g': 32, 'b': 48})
 
     @pytest.mark.parametrize('backdrop', [{'r': 300, 'g': 0, 'b': 0}, {'r': True, 'g': 0, 'b': 0}, 'black', None])
     def test_drops_an_unreadable_backdrop(self, backdrop):
-        assert li.parse_box(json.dumps({**ISOLATED_BOX, 'backdrop': backdrop})).backdrop is None
+        assert li.parse_box(json.dumps({**ISOLATED_BOX, 'backdrop': backdrop}), PAGE_URL).backdrop is None
 
     @pytest.mark.parametrize(('error', 'reason'), [('gone', 'gone'), ('Bad <b>X</b>!; drop', 'adbbdrop'), ('!!', 'error'),
                                                    ('x' * 50, 'x' * 20)])
     def test_sanitises_the_error_code(self, error, reason):
         with pytest.raises(li.IsolateRefused) as refused:
-            li.parse_box(json.dumps({'error': error}))
+            li.parse_box(json.dumps({'error': error}), PAGE_URL)
         assert str(refused.value) == reason
 
     @pytest.mark.parametrize(('raw', 'reason'), [
@@ -83,7 +83,50 @@ class TestParseBox:
     ])
     def test_refuses_an_unusable_answer(self, raw, reason):
         with pytest.raises(li.IsolateRefused, match=f'^{reason}$'):
-            li.parse_box(raw)
+            li.parse_box(raw, PAGE_URL)
+
+    @pytest.mark.parametrize('origin', [
+        pytest.param('https://evil.example', id='another-site'),
+        pytest.param('http://kirocrew.dev', id='another-scheme'),
+        pytest.param('https://kirocrew.dev:8443', id='another-port'),
+        pytest.param('', id='empty'),
+        pytest.param(None, id='null'),
+        pytest.param(7, id='not-a-string'),
+    ])
+    def test_refuses_a_page_that_moved_to_another_origin(self, origin):
+        with pytest.raises(li.IsolateRefused, match=r'^page_moved$'):
+            li.parse_box(json.dumps({**ISOLATED_BOX, 'origin': origin}), PAGE_URL)
+
+    def test_refuses_an_answer_that_names_no_origin(self):
+        box = {k: v for k, v in ISOLATED_BOX.items() if k != 'origin'}
+        with pytest.raises(li.IsolateRefused, match=r'^page_moved$'):
+            li.parse_box(json.dumps(box), PAGE_URL)
+
+    def test_refuses_when_the_page_url_itself_is_unreadable(self):
+        with pytest.raises(li.IsolateRefused, match=r'^page_moved$'):
+            li.parse_box(json.dumps(ISOLATED_BOX), 'not a url')
+
+    def test_accepts_the_same_origin_on_another_path(self):
+        box = li.parse_box(json.dumps({**ISOLATED_BOX, 'origin': 'https://KiroCrew.dev'}), 'https://kirocrew.dev/a/b?q=1#x')
+        assert (box.x, box.width) == (24, 166)
+
+
+class TestOriginOf:
+    @pytest.mark.parametrize(('url', 'origin'), [
+        ('https://kirocrew.dev/', 'https://kirocrew.dev'),
+        ('https://kirocrew.dev/a/b?q=1#frag', 'https://kirocrew.dev'),
+        ('https://kirocrew.dev:8443/x', 'https://kirocrew.dev:8443'),
+        ('https://user:secret@kirocrew.dev/x', 'https://kirocrew.dev'),
+        ('https://a@b@kirocrew.dev/', 'https://kirocrew.dev'),
+        ('HTTPS://KiroCrew.DEV/Path', 'https://kirocrew.dev'),
+        ('', ''),
+        ('not a url', ''),
+        ('/relative/path', ''),
+        ('https://', ''),
+        ('http://[::1', ''),                     # urlsplit raises ValueError
+    ])
+    def test_spells_the_origin_like_location_origin(self, url, origin):
+        assert li.origin_of(url) == origin
 
 
 class TestShotScale:
@@ -131,7 +174,7 @@ class TestIsolateLogo:
     @pytest.mark.parametrize(('dpr', 'ratio'), [(None, 1.0), (0.5, 1.0), (3, 3.0), (9, li.MAX_DEVICE_PIXEL_RATIO)])
     def test_reads_the_device_pixel_ratio_within_bounds(self, dpr, ratio):
         box = {**ISOLATED_BOX} if dpr is None else {**ISOLATED_BOX, 'dpr': dpr}
-        assert li.parse_box(json.dumps(box)).device_pixel_ratio == ratio
+        assert li.parse_box(json.dumps(box), PAGE_URL).device_pixel_ratio == ratio
 
     def test_returns_none_when_every_shot_is_over_the_cap(self):
         tab = FakeTab()
@@ -161,10 +204,20 @@ class TestIsolateLogo:
         assert tab.left_as_it_was()
         log.info.assert_called_once_with('Logo not isolated', extra={'reason': 'cdp_RuntimeError'})
 
+    def test_shoots_nothing_when_the_tab_now_shows_another_origin(self):
+        tab = FakeTab(box={**ISOLATED_BOX, 'origin': 'https://evil.example'})
+        with patch.object(li, 'logger') as log:
+            isolated, trim = _isolate(tab)
+        assert isolated is None
+        assert tab.shot_scales() == []
+        trim.assert_not_called()
+        assert tab.left_as_it_was()
+        log.info.assert_called_once_with('Logo not isolated', extra={'reason': 'page_moved'})
+
     def test_returns_none_on_a_cdp_error_in_the_isolating_evaluate(self):
         tab = FakeTab()
         tab.evaluate = MagicMock(side_effect=RuntimeError('closed'))
-        assert li.isolate_logo(tab, MagicMock(), 1) is None
+        assert li.isolate_logo(tab, MagicMock(), 1, PAGE_URL) is None
 
     @pytest.mark.parametrize('backdrop', ['#101020', None])
     def test_names_the_backdrop_the_trim_drew_the_logo_on(self, backdrop):
