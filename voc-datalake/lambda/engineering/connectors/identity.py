@@ -9,6 +9,13 @@ caller's assumed-role ARN, ``arn:aws:sts::<account>:assumed-role/<role name>/<se
   26-character run id (a ULID) and a short index, inside the 64 characters a session name allows.
 
 The caller's role, run and agent come from there and from nowhere else: never from the request body.
+
+One more caller (7.10.00): voc-engineering-runtime itself, for the reactions read alone (``REACTIONS``). Its Lambda
+execution role's session, ``arn:aws:sts::<account>:assumed-role/<the runtime's role name>/<its function name>`` (Lambda
+names the session after the function, and no agent can assume that role), checked the same way: the broker's own
+account, the role name and the function name the stack hands the broker (``runtime_caller_from_event``). It speaks for
+no run of its own (``RUNTIME_ROLE``, ``run_id`` ''): the run it asks about is the request's, and the broker reads
+everything else from that run's record.
 """
 from __future__ import annotations
 
@@ -27,6 +34,10 @@ READ: Final = 'read'
 POST_COMMENT: Final = 'post_comment'
 PUSH_BUNDLE: Final = 'push_bundle'
 OPEN_OR_UPDATE_DRAFT_PR: Final = 'open_or_update_draft_pr'
+#: The runtime's one operation (7.10.00): people's reactions to an ended run's pull request, read only.
+REACTIONS: Final = 'reactions'
+#: The role a runtime caller has (never an agent role, so no agent operation is ``permitted`` for it).
+RUNTIME_ROLE: Final = 'runtime'
 #: The agent catalog's roles, as their IAM role names spell them.
 AGENT_ROLES: Final = frozenset({
     'mapper', 'understander', 'hunter', 'fixer', 'builder', 'committer', 'commit-reviewer', 'gate-runner',
@@ -98,3 +109,13 @@ def caller_from_event(event: Mapping[str, object], role_name_pattern: str, accou
         raise UnknownCaller
     return Caller(role=agent_role(arn.group('role'), role_name_pattern), run_id=session.group('run'),
                   agent_index=int(session.group('agent')))
+
+
+def runtime_caller_from_event(event: Mapping[str, object], role_name: str, function_name: str, account: str) -> Caller:
+    """voc-engineering-runtime of ``account`` (the broker's own), its execution role ``role_name`` in the session
+    Lambda names ``function_name``; ``UnknownCaller`` for anything else, and when either name is unset."""
+    arn = _ASSUMED_ROLE.fullmatch(_user_arn(event))
+    if (arn is None or not (account and role_name and function_name) or arn.group('account') != account
+            or arn.group('role') != role_name or arn.group('session') != function_name):
+        raise UnknownCaller
+    return Caller(role=RUNTIME_ROLE, run_id='', agent_index=0)

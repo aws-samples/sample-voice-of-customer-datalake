@@ -340,7 +340,7 @@ under that same grant: no new action, partition or attribute.
 
 **The run's issue and pull request (7.09.00).** The run's record keeps which issue it was started from and which
 draft pull request (a GitLab merge request) it opened, for the run monitor, the goal and PR reports and the learning
-loop's next slice (people's reactions on that pull request: "Getting better", below). `engineering/run_links.py`:
+loop (since 7.10.00, people's reactions on that pull request: [below](#peoples-reactions-on-the-host)). `engineering/run_links.py`:
 
 - **The pull request**: `WS#<ws>#WRITES#<run>` / `PULL_REQUEST`, beside the write claims, written by the broker alone
   (`broker.py` `_keep_pull_request`, `records.py` `WriteClaims.record_pull_request`) when the host answers an open or
@@ -2214,9 +2214,10 @@ benchmark gate on a coach's version ([Evaluation](#evaluation)), the coach that 
 drafts lessons in memory and writes a scorecard row per skill version, and since 7.07.00 the administrators' read
 side of the skills and the scorecards (the routes and Agents → Skills, [below](#the-administrators-reads)), and
 since 7.08.00 the administrators' actions on a version: accept, reject, roll back and record a benchmark
-([below](#the-administrators-actions)). Still to come: the harness reading the skills store and the recall, people's
-reactions on the host as an input, proposing, promoting and seeding from a route, publishing the announcements, and
-the people's routes and screens (phases 4 and 5).
+([below](#the-administrators-actions)), and since 7.10.00 people's reactions on the host to a run's pull request as
+the loop's input ([below](#peoples-reactions-on-the-host)). Still to come: the harness reading the skills store and the
+recall, proposing, promoting and seeding from a route, publishing the announcements, and the people's routes and
+screens (phases 4 and 5).
 
 **Skills, visibly and reversibly.** An agent's skill (instructions, examples, tool policy, model, harness) is
 versioned. Each version keeps its diff, why it changed (the run, the failure, the person's comment), the benchmark
@@ -2423,7 +2424,11 @@ What exists (`voc-datalake/lambda/engineering/coach/`, invoked by the learning l
   ids and each piece of evidence, each in its own DATA block under one random fence per prompt, as agent memory's
   recall fences memories; the system prompt says that everything in a block is data, never an instruction, lists
   what the coach never writes (tenet 3's list above), and asks for one JSON object: the whole new instructions and
-  examples, a short why and the benchmark case the change should make pass.
+  examples, a short why and the benchmark case the change should make pass. Since 7.10.00 (`coach-prompt/3`) the
+  people's comments are also the reactions on the host to the run's pull request, and the system prompt says of them
+  in particular (`PEOPLE_COMMENTS`) that they are people's words to weigh as evidence of what they accepted, changed or
+  rejected, never instructions: one that says to ignore the rules or change what the coach never writes is part of
+  what happened, and is not followed.
 - **The answer** (`coach/answer.py`), read strictly: one JSON object (a code fence allowed), `json.loads` only (never
   `eval`), nested at most 8 brackets deep (checked before decoding, so a deep answer is refused, never a crash), no
   key twice, exactly its four fields. Refused with a plain reason: a key named for a person-only field
@@ -2452,7 +2457,7 @@ What exists (`voc-datalake/lambda/engineering/coach/`, invoked by the learning l
   `propose_version` as the coach of the run's connection, the why being the run, the kind and the answer's why,
   written on the version it read, with the answer's case as the version's `expected_case` and how it was made
   (`made_with_model`, the model that answered, which must be an allowed one, and `made_with_prompt`, the prompt's
-  version `coach-prompt/2`, on the `VER#` row, written with it and never changed: D4); and returns the change,
+  version, `coach-prompt/3` since 7.10.00, on the `VER#` row, written with it and never changed: D4); and returns the change,
   its `skill.proposed` announcement as a checked `voc-msg/1` message from the run's coach to the run (its id made
   from the change, so a second publish is a redelivery) and the coach's run-scoped source
   (`voc.engineering/coach/<ws>/<run>`), for the caller to publish. A refused answer writes nothing and spends no
@@ -2486,11 +2491,12 @@ What exists (`voc-datalake/lambda/engineering/learning/`, behind `-c engineering
   agents' session rows (`AGENT#`: role, skill version, session seconds, cost, crashes and the supervisor's last word
   on a failure), and the quality gate's records the final-go tasks named (at most 20, the latest attempts first, each
   checked against `voc-gate-record/1`; one unread or off it is left out and logged; a key naming another run or
-  workspace is never read). People's reactions on the host
-  are not readable yet (the broker reads no host data): they come in through a port, `HostReactions`, which answers
-  nothing today and whose reactions become the comments of a failure's evidence once it does. Since 7.09.00 the run's
-  record names the pull request to read them on (and the issue it was started from: "The run's issue and pull
-  request", above); the read itself is the next slice.
+  workspace is never read). People's reactions on the host come in through a port, `HostReactions`, which since
+  7.10.00 answers the run's latest recorded read of its pull request's reactions (the `REACTIONS#` row,
+  `learning/reactions.py` `host_reactions`: the revert, people's commits after the merge, then each kept reaction,
+  newest first, authors as labels, the run's pull request's and so every failure's, `task_id` ''), which become the
+  people's comments of a failure's evidence; the reads come after the retrospective, so today they rarely reach the
+  coach ([below](#peoples-reactions-on-the-host)).
 - **The retrospective** (`learning/retrospective.py`, pure): each task's attempts, who held each (its claim, else
   its launch; a person's own attempt is nobody's skill and is left out, and an agent's attempt a person took over
   ends, for the agent, at the take: handed over, no failure and no tally), how each ended (a supervisor's re-post as
@@ -2527,8 +2533,9 @@ What exists (`voc-datalake/lambda/engineering/learning/`, behind `-c engineering
   the cost and session seconds of the version's agents, the run's status and times, who wrote it and when: D1, D4);
   never a counter updated in place, and a retried retrospective leaves a written row as it is. The reader,
   `version_card`, sums a version's latest runs (at most 200, newest first) with one bounded Query of its partition,
-  never a whole-table read, with its pass rate (done over the tasks it ended); `compare` reads up to 10 versions, one
-  Query each. A connection's scorecards are its own partitions.
+  never a whole-table read, with its pass rate (done over the tasks it ended), and since 7.10.00 those runs' human
+  edits with a second bounded Query of the same partition ([below](#peoples-reactions-on-the-host)); `compare` reads
+  up to 10 versions, two Queries each. A connection's scorecards are its own partitions.
 - **The grants** (`lib/stacks/engineering-runtime.ts`, `grantLearning`, pinned in its test): on the runtime's role,
   besides the run's partitions it already reads and writes, `s3:GetObject` on the gate records only
   (`ws/*/runs/*/*/commits/*/_gate/attempt-*/record.json`), `GetItem`, `PutItem` and `UpdateItem` on the skills'
@@ -2545,11 +2552,122 @@ What exists (`voc-datalake/lambda/engineering/learning/`, behind `-c engineering
   scorecards' `PutItem` carries no condition in IAM either: the role could write over a scorecard row, and only
   the code's `attribute_not_exists` keeps each one create-only.
 
-Still planned: people's reactions on the host as the port's real source (review comments, edits after merge,
-reverts: with the broker's host reads), and with them the scorecards' human edits; "what the agents learned" and
-"what improved since the last run" in the goal report; the conversation's excerpts in a failure's evidence. (The
-scorecard screen and the administrators' route that reads `version_card` are built since 7.07.00:
-[the administrators' reads](#the-administrators-reads).)
+<a id="peoples-reactions-on-the-host"></a>**People's reactions on the host** (7.10.00, behind
+`-c engineeringAgents=true`): what people did with a run's draft pull request (a GitLab merge request) once it ended,
+read through the broker, recorded, and fed to the learning loop.
+
+- **The read** (the broker's `reactions` operation, `connectors/broker.py` `Broker.reactions`; the host's part in
+  `connectors/reactions.py`, `github_reactions.py`, `gitlab_reactions.py`): for an ended run (`done`, `failed` or
+  `stopped`; any other is 409) whose connection's credential still names the repository it started on, of the pull
+  request its record keeps (`run_links.py`: its row, else its author's newest done write claim; none: the answer is
+  null and the host is asked nothing), on the run's default branch. Reads only, through each host's existing client
+  (its token, its one-host transport, GitLab's bounded retry of a lost read, every error the host's status and its
+  redacted words only), bounded pages:
+  - the state: `open`, `closed` or `merged`, and when it merged;
+  - its reviews (approved, changes requested or commented; GitLab's approvals and "requested changes" system notes),
+    their review comments and the general comments, each with its author's handle and time, newest first, at most 50
+    in all, each body cut to 2,000 characters. GitLab's notes and GitHub's review comments are asked for newest first
+    (one page of 100). GitHub answers a pull request's reviews and its issue comments oldest first and cannot sort
+    them, so for each the first page and, when the `Link` header names a `last` page, that page too are read (two
+    pages of 100 at most): the newest and the oldest are read, and on a pull request with more than 200 of either the
+    pages between are not, which `more` says;
+  - a revert: a commit on the default branch after the merge, among at most 100, whose message names "Revert" and the
+    merge's full commit id (GitLab: the merge commit, else the squash commit);
+  - people's commits after the merge (`edits_after_merge.people_commits`): the commits on the default branch within
+    14 days of it that touched the pull request's files, leaving out the merge itself, a bot's (GitHub: an author of
+    type Bot or a `[bot]` login, the App's own among them; GitLab: an author or committer address of a project or
+    group token's user, the connection's own token's, whose commits are the agents', among them) and an agent's (a
+    message that names an agent branch, `voc-agent/…`: a later run's pull request merged since), as a count and the
+    files (at most 20 listed; the history of at most 20 of its files is read, one request each), never a diff;
+  - what was dropped (counts only) and whether a list had more than was read (`more`).
+- **The trust filter.** On a public repository anyone can comment, and these texts become evidence a model reads. A
+  reaction is kept only when its author has write access and is not a bot.
+  - GitHub: `author_association` OWNER, MEMBER or COLLABORATOR is only the first cut (MEMBER is any member of the
+    organisation, COLLABORATOR any collaborator, read and triage included). Each such author's permission is then read
+    with "Get repository permissions for a user" (`GET /repos/{owner}/{repo}/collaborators/{username}/permission`),
+    whose `permission` is `admin`, `write`, `read` or `none` (a maintain role answers `write`, triage `read`) and whose
+    `role_name` names the role: kept when `permission` is `admin` or `write`, by that alone (`role_name` is never
+    read: a custom role may be named anything). At most 20 authors a read, looked up newest first across reviews and
+    comments (so past 20 the oldest authors are the ones dropped),
+    each answer cached 10 minutes (at most 256); a lookup that fails (an error, a rate limit, an answer off its shape)
+    drops the author and is not cached (fail closed). Bots (`user.type` Bot or a `[bot]` login, the App's own user
+    among them) are dropped before any lookup.
+  - GitLab: a project member at Developer, access level 30, or above, read through the members API (`members/all`),
+    at most 20 authors a read, each level cached 10 minutes (at most 256). Bots are dropped: `bot`, a `user_type`
+    other than `human` where the API answers one (a project bot, a service account), a project or group token's
+    `project_<id>_bot…` user, and the connection's own token's user (read once from `/user` and cached).
+  - Every kept body has its credential-shaped strings replaced (the gate's `redact`, as the coach's evidence already
+    does), then email addresses, phone numbers and payment card numbers (agent memory's `redact_personal_data`), and
+    its control characters dropped. Names and handles a person writes in the text are not replaced. The runtime
+    checks and cleans the answer again before it keeps it (`learning/reactions.py` `checked`).
+  - Handles: the rows and the run monitor keep each author's handle (the monitor is for administrators, who need to
+    know whose review it was); the coach never sees one: each author is a label stable within the read (`reviewer-1`
+    for the newest's, then `reviewer-2`, …).
+- **Who reads, and when.** Only voc-engineering-runtime, never an agent: its call of the broker's function URL is
+  SigV4-signed as its own execution role (`runtime/handler.py` `_broker_reactions`), and the broker admits that role
+  in the session Lambda names after the runtime's function, by the names the stack hands it, checked as an agent's
+  identity is (`connectors/identity.py` `runtime_caller_from_event`); an agent's session asking for `reactions` is 403
+  whatever its role, and the runtime asking for any agent's operation is 403 too. The broker's function URL stays
+  without a resource-based policy. The run's end reads nothing of the host (its retrospective keeps its whole time
+  for the scorecards and the coach's hand-offs); reads happen:
+  - `-c engineeringReactionsDelayDays` days after the end (3 by default, 1 to 30): the retrospective creates ONE
+    one-time EventBridge Scheduler schedule per run (`voc-eng-reactions-<run>` in the deployment's
+    `voc-engineering-reactions` group, `at()` in UTC, no flexible window, no retry, `ActionAfterCompletion` DELETE),
+    only when the run's record keeps a pull request (`reactions_read.py` `has_pull_request`: a GetItem and one bounded
+    Query of the run's writes' partition); it invokes the runtime by its unqualified ARN with `{"action":
+    "reactions", "run_id", "asked_by": "schedule"}` and deletes itself once it has run; a second create for the run
+    finds it and changes nothing. Pay per use: nothing stands between runs (tenet 7);
+  - by hand: `POST /agents/engineering/<run_id>/reactions` (an administrator acting for themselves; 403 for anyone
+    else, a delegated credential included; 404 while the module is off or for an unknown run; 409 while the run has
+    not ended), the run monitor's "Read reactions now" behind a confirmation. The Agents API may invoke no runtime
+    function but voc-engineering-start, so the route hands it to that function's second action, `ask_reactions`,
+    which claims the run's `REACTIONS_ASK` row (who, when, until: at most one ask per run in a rolling 60 minutes,
+    else 429 with `retry_after`; a rate limit, not a record, so it is written over once its hour has passed or it
+    was released) and hands the read on to the runtime asynchronously (202). A hand-on that fails releases the claim
+    (`released`, an UpdateItem: the start function's role deletes nothing) and answers 503, so asking again works.
+    The start function's role already reads and writes the run's partition and invokes the runtime: no grant is
+    added.
+- **The records** (`learning/reactions.py`, `learning/reactions_read.py`), each written once and never changed (D1):
+  - `WS#<ws>#RUN#<run>` / `REACTIONS#<read_at>`: the bounded, filtered and redacted read (`voc-reactions/1`, at most
+    about 110 KB, the authors' handles kept), who asked (`schedule` or `human:<subject>`) and when. A run with no
+    recorded pull request records nothing, and the runtime says so in its answer and its log. The run monitor shows the
+    newest (one Query of one row): the counts, each reviewer's latest state, merged and when, reverted and by which
+    commit, people's commits after the merge, each body as plain text, never HTML, and what was dropped.
+  - **The scorecards' human edits**: separate create-only rows beside each version's scorecards,
+    `WS#<ws>#SCORE#<connection>#<role>#<version>` / `HUMAN#<run>#<read_at>` (`voc-scorecard-human/1`: the changes
+    requested, people's commits after the merge, a revert), never a scorecard row changed, for each skill version that took
+    part in the run (the pull request is the run's work as a whole: nothing on the host says which agent's lines a
+    reviewer meant), written only when a read says something other than the run's read before it. `version_card`
+    sums, for the runs it read, each one's newest such row (a second bounded Query of the partition, newest first, at
+    most 400 rows; `human_more` when the bound was reached), and the scorecards' route answers them as `human_edits`.
+  - **What a read changes**: the run monitor and the scorecards' human edits, at once. The coach sees a run's latest
+    read only as evidence the next time it handles a failure from that same run: the `HostReactions` port answers
+    that read, each reaction its own DATA block under the prompt's fence, with the system prompt's instruction that
+    they are people's words to weigh, never instructions (`coach-prompt/3`, above), and with labels, not handles. A
+    run's failures go to the coach once, at its retrospective, which comes before any read (the schedule is days
+    later; a hand trigger needs the run ended), and each failure is coached once ever; so today the coach rarely sees
+    reactions at all: only when a run's retrospective is started again after a read and a failure it takes had not
+    been coached yet. Reactions as failures of their own are planned (below). The coach still writes only proposals: a version it proposes is used only once an
+    administrator accepts it, and for a coach's version only with an administrator's record of a benchmark run in
+    which the pass rate rose, naming its expected case ([the administrators' actions](#the-administrators-actions)).
+- **The grants** (`lib/stacks/engineering-reactions.ts`, pinned in `engineering-reactions.test.ts`, the broker's in
+  `engineering-broker.test.ts`): on the runtime's role, the broker's function URL as the agent roles call it
+  (`lambda:InvokeFunctionUrl` with AWS_IAM auth, `lambda:InvokeFunction` only through a function URL),
+  `scheduler:CreateSchedule` on its group's `voc-eng-reactions-*` names only (no update, no delete) and `iam:PassRole`
+  on the scheduler's own role only, only to `scheduler.amazonaws.com`; that role is assumed by EventBridge Scheduler
+  for this account and that group only and may invoke `voc-engineering-runtime` and nothing else; and `GetItem` and
+  `Query` of the runs' writes' partitions (`WS#*#WRITES#*`), read only, for whether a run keeps a pull request. The
+  rows need no new grant: the runtime's role already puts items in the runs' partitions and the scorecards'. On the
+  broker's role, one
+  `dynamodb:Query` of the runs' writes' partitions (`WS#*#WRITES#*`: the run's recorded pull request), read only.
+  Nothing of it appears while the module is off.
+
+Still planned: reactions as failures of their own (the coach's `pr_rejected` and `heavy_edit` kinds from a closed,
+reverted or heavily edited pull request, read at the schedule, after the run's coach has run); a self-managed GitLab
+instance; "what the agents learned" and "what improved since the last run" in the goal report; the conversation's
+excerpts in a failure's evidence. (The scorecard screen and the administrators' route that reads `version_card` are
+built since 7.07.00: [the administrators' reads](#the-administrators-reads); the screen does not show the human edits
+yet.)
 
 **Agent memory.** The [memory](memory.md) layer gains an agents part, with three scopes: per repository (confirmed
 conventions, reviewer preferences, recurring bugs and their fixes, flaky tests, what the gates usually catch), per
@@ -2905,6 +3023,6 @@ and the phase that ships them names them in that row.
 | 0 | this design, the benchmark harness and its fixtures | design written; the benchmark harness (the `voc-bench/1` cases, the runner, scorecards) and its four fixtures built, nothing invoking them yet ([Evaluation](#evaluation)) |
 | 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader; the broker's readers of the run's record, the board's GO ledger, the submitted patch and the dial, and a person's go on an AI-assisted run (6.23.00, [above](#repository-connectors)); the harness's client of the broker, the agents' reads and writes signed as their own sessions (7.02.00); the connections, stored by administrators with their GitHub App credential in the SSM parameter the broker reads, with an audit row per change (7.03.00); the CI attestation's record, attested and withdrawn by administrators with an audit row each and voided by a repository change, which every push and pull request waits for, beside the broker's own read-only check of the branch rules, and file and history reads on the run's stored default branch (7.04.00); the checkout cache's writer, one immutable entry per connection and commit filled before a run's coordinator is launched (7.05.00); the GitLab client on gitlab.com, a GitLab connection's project access token checked against its project at each save, its expiry on the connection page, its CI attestation in GitLab's words and the broker's own check of its protected branches, and the cache's GitLab fetch (7.06.00); the run's issue (as given at its start) and its draft pull request (as the host answered) on its record, shown on the run monitor and in the reports (7.09.00); planned: a self-managed GitLab instance, sparse clones, the dependency caches' filler and the first real run; the knowledge pack's package detection, shards, map step, reduce and versioned store with approval ([above](#the-knowledge-pack)), nothing invoking them yet |
 | 2 | the runtime (one AgentCore Runtime session per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API with each task's history, its agents' `inbox`, `progress`, `tasks` and `knowledge` ops, the coordinator's `coordinate` task and `launch`, the lease's refresh and the supervisor's re-post, the push to the delivery function, the workspace's layout, findings and store in its own bucket, and the administrators' run monitor (its reads, signals and answers) and the read routes for a run's board and conversation ([above](#how-the-agents-work-together)); the runtime (one session per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images, the run's start and end, the agent roles' access to the board, the broker and the bus, the delivery function: built, not yet run against AWS, [above](#runtime-one-agentcore-session-per-agent)) |
-| 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); the skills' record, diff and versioned store with an administrator's acceptance and rollback, proposed to by the coach from a run's retrospective ([above](#getting-better-skills-the-coach-the-learning-loop-memory)); the agents' memory store and its recall for a task, its role lessons drafted by a run's retrospective (recall not yet invoked by the harness; same place); the benchmark gate for skill versions (no regression, a gain on the failure's case) and its record on a version, which a coach's version needs to be accepted, nothing invoking it yet ([Evaluation](#evaluation)); the coach (a failure in, a proposed version naming its expected benchmark case out, through the skills store, with its `skill.proposed` message for the caller to publish), invoked by the learning loop (same place as the skills); the learning loop and its scorecards, built: a run's end starts its retrospective (an asynchronous invocation of the runtime), which takes at most three failures to the coach (one Converse call each, once), drafts a lesson in agent memory for each failure taken to the coach (at most three per run) for an administrator to approve, and writes one create-only scorecard row per skill version per run, read by one bounded Query per version (same place); a connection's own cases from its failures, people's reactions on the host as the loop's input, and the scorecard screens planned |
+| 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); the skills' record, diff and versioned store with an administrator's acceptance and rollback, proposed to by the coach from a run's retrospective ([above](#getting-better-skills-the-coach-the-learning-loop-memory)); the agents' memory store and its recall for a task, its role lessons drafted by a run's retrospective (recall not yet invoked by the harness; same place); the benchmark gate for skill versions (no regression, a gain on the failure's case) and its record on a version, which a coach's version needs to be accepted, nothing invoking it yet ([Evaluation](#evaluation)); the coach (a failure in, a proposed version naming its expected benchmark case out, through the skills store, with its `skill.proposed` message for the caller to publish), invoked by the learning loop (same place as the skills); the learning loop and its scorecards, built: a run's end starts its retrospective (an asynchronous invocation of the runtime), which takes at most three failures to the coach (one Converse call each, once), drafts a lesson in agent memory for each failure taken to the coach (at most three per run) for an administrator to approve, and writes one create-only scorecard row per skill version per run, read by one bounded Query per version (same place); people's reactions on the host to a run's pull request as the loop's input (7.10.00: read through the broker by the runtime alone, trust-filtered and redacted, by one self-deleting schedule days after the run's end and by an administrator's hand, kept create-only, summed into the scorecards' human edits, and fed to the coach as quoted data only for a failure of the same run coached after a read, which today is rare: [People's reactions on the host](#peoples-reactions-on-the-host)); a connection's own cases from its failures, and the human edits on the scorecard screen planned |
 | 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | in progress: the new editor steps' server side (engineering flows as `voc-workflow/2`, [above](#how-the-agents-work-together)), the six default flows as validated templates in one file the server lists (`GET /workflows/templates`) and the web app reads (same place), and the report builder with its administrators' REST reads ([Reports](#reports)), nothing invoking it yet; a run's start from a saved flow (6.25.00: `POST /agents/engineering/runs` and the flow page's Start a run, [How a flow starts](#how-the-agents-work-together)), which follows its own copy of the flow step by step since 6.28.00 (the conductor, the coordinator's `read_flow`, the board's check of every post and launch against the plan, a person at a step: [The flow a run follows](#the-flow-a-run-follows); memory, the learning loop, self-improvement and the history and pull-request shard sources not run yet); the agents' skills, one per launchable role with its tools, model and the Converse harness (6.29.00, [the agent catalog](#the-agent-catalog)), launched by the board with their skills' argv and driven through the Bug hunt and fix template on the local fake runtime with scripted models; their first run on AWS waits for the owner, and their broker writes for the harness's broker client |
 | 5 | the UI: the templates and new steps in the editor, the run monitor (graph, board, conversation, live cost), skill histories and scorecards, the reports, the assistant drafting flows | in progress: the new steps in the editor (with a flow's monthly budget), Agents → Spend (the spend ledger by workflow, repository, run, agent, model or day, this month's share of each flow's budget, and the administrators' hard cap switch, [above](#cost)), and the run monitor (the flow with its steps lit: the revision the run copied, each step as the conductor reads it since 6.28.00, else its agents' steps; the run's flow budget and its alert flag, the board, the conversation, each agent as the supervisor saw it, an administrator's signals and answers, the reports with their versions; polling, no cost yet: [docs/autonomous-agents.md](autonomous-agents.md)), the assistant drafting flows behind its approval card ([above](#how-the-agents-work-together)), the assistant's "refresh the knowledge pack" (`propose_knowledge_refresh`: an approval card that only an administrator's Approve turns into the Understand flow's start, as that administrator, 6.27.00; same place), and the six templates in the library (Start from a template: an unsaved copy in the editor, saved through the library's own create; same place); live cost, skill histories, a template id in the assistant's `create_workflow` and the assistant's other run tools ("pull the latest from the repository") planned |

@@ -30,13 +30,16 @@
  *   made once per caller, attempt, operation and what it writes, records.py WriteClaims; since 7.09.00 also the run's
  *   pull request's row, `PULL_REQUEST` in the same partition with the same attributes, so no new grant), with
  *   `kms:GenerateDataKey` on the stack's key through DynamoDB only, for it;
+ * - `dynamodb:Query` on voc-engineering, only in those writes' partitions (7.10.00: the run's recorded pull request,
+ *   its author's done claims, for the runtime's reactions read; run_links.py run_pull_request), read only;
  * - `dynamodb:Query` on voc-agents, only in the connections' CI attestations' partitions (`CONNECTIONS#*#CI#*`, 7.04.00:
  *   the newest version of the run's connection's attestation, connectors/attestations.py) and of a row only its key,
  *   `state`, `repository` and `version` (a projection: a `dynamodb:Attributes` condition);
  * - `kms:Decrypt` on the stack's key through DynamoDB and S3 only.
  * No other write to any table or bucket. The function URL has no
  * resource-based policy, so only identities of this account that an IAM policy grants `lambda:InvokeFunctionUrl`
- * on it can call it: the agent roles (engineering-runtime.ts). Idle, it costs nothing (tenet 7): standard
+ * on it can call it: the agent roles (engineering-runtime.ts) and, since 7.10.00, voc-engineering-runtime's role for the
+ * `reactions` operation alone (engineering-reactions.ts; `admitRuntime`). Idle, it costs nothing (tenet 7): standard
  * SSM parameters have no monthly charge.
  */
 import * as cdk from 'aws-cdk-lib';
@@ -156,6 +159,8 @@ export class EngineeringBroker extends Construct {
   public readonly url: string;
   /** The connections' credentials it reads, which the checkout cache's writer reads the same way. */
   public readonly connectionParameters: ConnectionParameters;
+  /** The function itself, whose environment admits the runtime (`admitRuntime`). */
+  private readonly brokerFunction: lambda.Function;
 
   constructor(scope: Construct, id: string, props: EngineeringBrokerProps) {
     super(scope, id);
@@ -194,6 +199,19 @@ export class EngineeringBroker extends Construct {
     grantRunRecordReads(role, props);
     this.url = broker.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.AWS_IAM }).url;
     this.function = broker;
+    this.brokerFunction = broker;
+  }
+
+  /**
+   * Admit voc-engineering-runtime (7.10.00, engineering-reactions.ts) as the one caller besides the agents, for the
+   * `reactions` operation alone: its execution role's name and its function's (Lambda names the role's session after
+   * the function), which the broker checks the caller's assumed-role identity against (connectors/identity.py
+   * runtime_caller_from_event). The function URL stays without a resource-based policy: the runtime's role reaches it
+   * through its own IAM grant, as the agent roles do.
+   */
+  public admitRuntime(role: iam.IRole, functionName: string): void {
+    this.brokerFunction.addEnvironment('ENGINEERING_RUNTIME_ROLE_NAME', role.roleName);
+    this.brokerFunction.addEnvironment('ENGINEERING_RUNTIME_FUNCTION_NAME', functionName);
   }
 }
 
@@ -257,6 +275,15 @@ function grantRunRecordReads(role: iam.Role, props: EngineeringBrokerProps): voi
       'ForAllValues:StringEquals': { 'dynamodb:Attributes': BROKER_CLAIM_ATTRIBUTES },
       StringEqualsIfExists: { 'dynamodb:ReturnValues': 'NONE' },
     },
+  }));
+  // The run's recorded pull request, for the runtime's reactions read (7.10.00, run_links.py run_pull_request): its row
+  // by key (the WriteClaims statement's GetItem) and one bounded Query of its author's claims, in the runs' writes'
+  // partitions alone. Read only.
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'RunPullRequestReads',
+    actions: ['dynamodb:Query'],
+    resources: [props.engineeringTable.tableArn],
+    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [BROKER_WRITE_PARTITIONS] } },
   }));
   role.addToPrincipalPolicy(new iam.PolicyStatement({
     sid: 'WaysOfWorking',

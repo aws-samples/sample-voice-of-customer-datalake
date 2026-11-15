@@ -21,7 +21,14 @@
   ``failure``: the ended run's scorecards written, and each failure it takes to the coach (at most three) handed on
   as an invocation of its own with its key; with it: that failure to the coach (one Converse call at most, ever)
   and a lesson draft to agent memory. Run apart from the end because a coach's call takes up to minutes: the end
-  stays as fast as before, and each failure gets the function's whole time limit. Never raises.
+  stays as fast as before, and each failure gets the function's whole time limit. Never raises. Before the
+  scorecards, a run with a recorded pull request gets its one reactions schedule (7.10.00, below); nothing of the
+  host is read here.
+- ``{"action": "reactions", "run_id", "asked_by"?, "actor"?}`` (7.10.00): people's reactions to the ended run's
+  recorded pull request, read through the broker's ``reactions`` operation as this function's own role and recorded
+  (``learning/reactions_read.py``): the run's one EventBridge Scheduler schedule (``asked_by`` ``schedule``, created at
+  its retrospective, deleting itself after it runs) or a person's hand trigger (``actor``, through voc-engineering-
+  start). A run with no recorded pull request records nothing and says so. Never raises.
 - ``{"action": "tick"}``: the supervisor's EventBridge rule, every minute while any run is listed
   (``supervisor.Supervisor.tick``), then settled; records the heartbeat metrics.
 - Settling: an ended run without a live agent is no longer listed (``RunStore.release``), its retrospective handed
@@ -45,10 +52,13 @@ recorded in the run's inbox and its addressees woken (``delivery.py``).
 
 ``start_handler`` is voc-engineering-start's entry point, the same code with a role of its own that holds only what
 a start needs (engineering-start.ts): the Agents API's ``POST /agents/engineering/runs``, whose role may invoke that
-function and never this one. It takes ``start_run`` and nothing else: an event naming any other action, or none, is
-refused before anything is read, so the API's grant can start a run and never tick, launch, signal or end one. It
-writes the run and answers; the coordinator's launch is handed on to this function's ``launch_coordinator``
-(``{"run_id", "actor"}``, asynchronous, never raising: a failure sends the run to a person).
+function and never this one. It takes ``start_run`` and, since 7.10.00, ``ask_reactions`` (an administrator's hand
+trigger of an ended run's reactions read, ``POST /agents/engineering/<run_id>/reactions``: once per run and hour, then
+handed on to this function's ``reactions``), and nothing else: an event naming any other action, or none, is
+refused before anything is read, so the API's grant can start a run and ask for an ended run's reactions, and never
+tick, launch, signal or end one. It writes the run and answers; the coordinator's launch is handed on to this
+function's ``launch_coordinator`` (``{"run_id", "actor"}``, asynchronous, never raising: a failure sends the run to a
+person).
 
 ``actor`` is who asked (a person's id: the run monitor sends it with its signals, the Agents API with a start; nothing
 ends a run with it yet): a
@@ -123,6 +133,7 @@ from shared.logging import logger, metrics
 
 if TYPE_CHECKING:
     from engineering.learning.loop import LearningLoop
+    from engineering.learning.reactions_read import ReactionsRead
     from engineering.quality_gate.record import GateRecord
     from engineering.runtime.board_bus import SessionState
 
@@ -134,6 +145,8 @@ _supervisor_cache: Supervisor | None = None
 _learning_cache: LearningLoop | None = None
 #: This invocation's function (its Lambda context's name), where the learning steps are handed on; '' with none.
 _function_name = ''
+#: This invocation's function's ARN (its Lambda context's), the target of a run's reactions schedule; '' with none.
+_function_arn = ''
 clock: Callable[[], float] = time.time
 
 
@@ -889,13 +902,17 @@ def _learning() -> LearningLoop:
         skills = SkillStore(client, table)
         # No ListBucket: a gate record never written answers 403, read as missing (and counted).
         workspace = WorkspaceStore(get_s3_client(), os.environ['ENGINEERING_WORKSPACE_BUCKET'], denied_is_missing=True)
+        from engineering.learning.reactions import ReactionsStore, host_reactions
         cases = json.loads(os.environ['ENGINEERING_BENCHMARK_CASES'])
+        reactions = ReactionsStore(client, table)
         _learning_cache = LearningLoop(
             reader=RunRecordReader(client, table, workspace), scorecards=ScorecardStore(client, table),
             # A role's lessons only: no person memory is learned here, so no user is looked up.
             memory=AgentMemoryStore(client, table, is_user=lambda _user: False),
             coach=lambda: Coach(skills, BedrockCoachModel()),
-            cases=tuple(str(case) for case in cases) if isinstance(cases, list) else ())
+            cases=tuple(str(case) for case in cases) if isinstance(cases, list) else (),
+            # (7.10.00: the HostReactions port answers the run's latest recorded read, one Query of one row)
+            reactions=lambda run: host_reactions(reactions.latest(run.ws, run.run_id)))
     return _learning_cache
 
 
@@ -913,7 +930,97 @@ def retrospective(event: Mapping[str, Any]) -> dict[str, Any]:
         return {'run_id': run_id, 'status': 'failed'}
 
 
+@cache
+def _scheduler_client() -> Any:
+    import boto3
+    return boto3.client('scheduler')
+
+
+@cache
+def _own_credentials() -> Any:
+    """This function's own role's credentials (Lambda's environment), which sign its call of the broker."""
+    import boto3
+    return boto3.Session().get_credentials()
+
+
+def _broker_reactions(run_id: str) -> object:
+    """The broker's ``reactions`` answer for ``run_id`` (its ``reactions``: a ``voc-reactions/1``, or None for no
+    recorded pull request): one call of its function URL, SigV4-signed as this function's role, the one caller besides
+    the agents the broker admits, and for this operation alone."""
+    from engineering.learning.reactions_broker import BrokerReactions
+    return BrokerReactions(url=os.environ['ENGINEERING_BROKER_URL'], region=os.environ.get('AWS_REGION', 'us-east-1'),
+                           credentials=_own_credentials())(run_id)
+
+
+def _reactions_read() -> ReactionsRead:
+    from engineering.learning.reactions import ReactionsStore
+    from engineering.learning.reactions_read import ReactionsRead
+    from engineering.learning.scorecard import ScorecardStore
+    from shared.aws import get_dynamodb_client
+    client, table = get_dynamodb_client(), os.environ['ENGINEERING_TABLE']
+    return ReactionsRead(client=client, table=table, broker=_broker_reactions, store=ReactionsStore(client, table),
+                         scorecards=ScorecardStore(client, table))
+
+
+def _asked_by(event: Mapping[str, Any]) -> str:
+    """Who asked for a read: a person (``actor``, the hand trigger), else the schedule (the only other caller)."""
+    from engineering.board.model import PERSON_PREFIX
+    from engineering.learning.reactions import SCHEDULE
+    actor = event.get('actor')
+    return f'{PERSON_PREFIX}{actor[:200]}' if isinstance(actor, str) and actor else SCHEDULE
+
+
+def reactions_action(event: Mapping[str, Any]) -> dict[str, Any]:
+    """The ``reactions`` action: ``{"run_id", "asked_by"?: "schedule", "actor"?}`` (the run's schedule, or a person's
+    hand trigger handed on by voc-engineering-start): one read of the ended run's reactions through the broker,
+    recorded (``learning/reactions_read.py``); a run with no recorded pull request records nothing and says so. Never
+    raises (an asynchronous invocation: nothing retries it)."""
+    run_id = str(event.get('run_id', ''))
+    asked_by = _asked_by(event)
+    try:
+        check_run_id(run_id)
+        answer = _reactions_read().read(WORKSPACE, run_id, asked_by)
+    except Exception:
+        logger.exception('engineering reactions: the read failed', extra={'run_id': run_id, 'asked_by': asked_by})
+        return {'run_id': run_id, 'status': 'failed'}
+    logger.info('engineering reactions', extra={**answer, 'asked_by': asked_by})
+    return answer
+
+
+def _reactions_at_end(run_id: str) -> None:
+    """At an ended run's retrospective: its one reactions schedule, ``ENGINEERING_REACTIONS_DELAY_DAYS`` on, only when
+    its record keeps a pull request (``has_pull_request``: two reads of its own rows, never the host). Nothing is read
+    of the host here: the schedule and a person's hand trigger are the reads, so the retrospective keeps its time. Best
+    effort: logged, never raised."""
+    from engineering.learning.reactions_read import has_pull_request
+    from shared.aws import get_dynamodb_client
+    try:
+        if not has_pull_request(get_dynamodb_client(), os.environ['ENGINEERING_TABLE'], WORKSPACE, run_id):
+            logger.info('engineering reactions: no recorded pull request, no schedule', extra={'run_id': run_id})
+            return
+        _schedule_reactions(run_id)
+    except Exception:
+        logger.exception('engineering reactions: the schedule was not created', extra={'run_id': run_id})
+
+
+def _schedule_reactions(run_id: str) -> None:
+    """The run's one schedule (``ReactionsSchedule``), invoking this function (its own ARN) later; none where the
+    deployment names no group or role (a local run, the tests)."""
+    from datetime import UTC, datetime
+
+    from engineering.learning.reactions_read import ReactionsSchedule, delay_days
+    group, role = os.environ.get('ENGINEERING_REACTIONS_GROUP', ''), os.environ.get('ENGINEERING_REACTIONS_ROLE_ARN', '')
+    if not (group and role and _function_arn):
+        logger.info('engineering reactions: no schedule in this deployment', extra={'run_id': run_id})
+        return
+    schedule = ReactionsSchedule(_scheduler_client(), group, role,
+                                 delay_days(os.environ.get('ENGINEERING_REACTIONS_DELAY_DAYS')))
+    created = schedule.create(run_id, _function_arn, datetime.fromtimestamp(clock(), UTC))
+    logger.info('engineering reactions scheduled', extra={'run_id': run_id, 'created': created, 'days': schedule.days})
+
+
 def _retrospect(run_id: str) -> dict[str, Any]:
+    _reactions_at_end(run_id)   # (the schedule only: no host read here)
     summary = _learning().retrospective(WORKSPACE, run_id)
     for key in summary.to_coach:
         _hand_on({'action': 'retrospective', 'run_id': run_id, 'failure': key})
@@ -1066,6 +1173,44 @@ def delivery_handler(event: Mapping[str, Any], context: object) -> dict[str, Any
 
 #: The one action voc-engineering-start takes (``start_handler``).
 START_ACTION: Final = 'start_run'
+#: ... and its other one (7.10.00): an administrator's hand trigger of an ended run's reactions read.
+ASK_REACTIONS_ACTION: Final = 'ask_reactions'
+
+
+def ask_reactions(event: Mapping[str, Any]) -> dict[str, Any]:
+    """voc-engineering-start's ``ask_reactions`` (``{"run_id", "actor"}``, the Agents API's ``POST
+    /agents/engineering/<run_id>/reactions``, an administrator acting for themselves): for an ended run, at most once
+    per run in a rolling hour (the run's ``REACTIONS_ASK`` row: ``ReactionsStore.claim_ask``), the read handed on to
+    voc-engineering-runtime's ``reactions`` (asynchronously: the broker's read does not fit behind API Gateway's 29 s),
+    answered ``{"status": "asked"}``; ``{"status": "too_soon", "retry_after": <seconds>}`` while the hour's ask holds.
+    A hand-on that fails releases the claim (``release_ask``) before it is raised, so asking again works. A run that is
+    unknown or has not ended is refused (``RuntimeRefused``), nothing written."""
+    from engineering.learning.reactions import ReactionsStore
+    from shared.aws import get_dynamodb_client, invoke_lambda_async
+    run_id, actor = str(event.get('run_id', '')), str(event.get('actor') or '')[:200]
+    check_run_id(run_id)
+    if not actor:
+        raise RuntimeRefused('a hand trigger names the person who asked')
+    run = _runs().get(run_id)
+    if run is None:
+        raise RuntimeRefused('no such run')
+    if run.status not in ENDED:
+        raise RuntimeRefused("the run has not ended: its pull request's reactions are read once it has")
+    store = ReactionsStore(get_dynamodb_client(), os.environ['ENGINEERING_TABLE'])
+    asked = store.claim_ask(WORKSPACE, run_id, actor)
+    if asked.retry_after:
+        return {'run_id': run_id, 'status': 'too_soon', 'retry_after': asked.retry_after}
+    try:
+        invoke_lambda_async(os.environ['ENGINEERING_RUNTIME_FUNCTION'], {'action': 'reactions', 'run_id': run_id,
+                                                                         'actor': actor})
+    except Exception:
+        with contextlib.suppress(Exception):   # (the claim stays until its hour ends when even this fails: logged)
+            store.release_ask(WORKSPACE, run_id, asked.claim)
+        logger.exception('engineering reactions: the read was not handed on; the ask is released',
+                         extra={'run_id': run_id})
+        raise
+    logger.info('engineering reactions asked for', extra={'run_id': run_id})
+    return {'run_id': run_id, 'status': 'asked'}
 
 
 class StartFailed(RuntimeError):
@@ -1104,19 +1249,23 @@ def _hand_on_launch(run_id: str, actor: str) -> None:
 @metrics.log_metrics
 @measure_invocation_cost
 def start_handler(event: Mapping[str, Any], context: object) -> dict[str, Any]:
-    """voc-engineering-start: the Agents API's start of a run (``{"action": "start_run", ...}``). Every other action,
-    and an event naming none, is refused before anything is read: the API's role may invoke this function only
-    (engineering-start.ts, pinned by its test), so it can start a run and nothing more.
+    """voc-engineering-start: the Agents API's start of a run (``{"action": "start_run", ...}``) and, since 7.10.00,
+    its hand trigger of an ended run's reactions read (``ask_reactions``). Every other action, and an event naming
+    none, is refused before anything is read: the API's role may invoke this function only (engineering-start.ts,
+    pinned by its test), so it can start a run and ask for an ended run's reactions, and nothing more.
 
     It answers as soon as the run is written (its refusals, all before the write, are raised as they are): it writes
     the run and switches the rule on (``start_run`` with ``launch=False``), then hands the coordinator's launch on to
     voc-engineering-runtime (``launch_coordinator``, asynchronously: a session's start does not fit behind API
     Gateway's 29 s). Any failure once the run exists is ``StartFailed``, naming it; the run is sent to a person first
     (the hand-on failed: still active), so it is never left active with nobody to launch its coordinator."""
+    if event.get('action') == ASK_REACTIONS_ACTION:
+        return ask_reactions(event)
     if event.get('action') != START_ACTION:
         logger.warning('engineering start: an action other than start_run refused',
                        extra={'action': str(event.get('action'))[:40]})
-        raise RuntimeRefused(f'this function only starts a run (action {START_ACTION!r})')
+        raise RuntimeRefused(f'this function only starts a run (action {START_ACTION!r}) or asks for an ended '
+                             f"run's reactions ({ASK_REACTIONS_ACTION!r})")
     run_id, actor = str(event.get('run_id', '')), str(event.get('actor') or '')
     try:
         answer = start_run(event, launch=False)
@@ -1143,7 +1292,7 @@ def start_handler(event: Mapping[str, Any], context: object) -> dict[str, Any]:
 
 ACTIONS: Final[dict[str, Callable[[Mapping[str, Any]], dict[str, Any]]]] = {
     'start_run': start_run, 'end_run': end_run, 'tick': tick, 'launch': launch, 'signal': signal_action,
-    'retrospective': retrospective, 'launch_coordinator': launch_coordinator,
+    'retrospective': retrospective, 'launch_coordinator': launch_coordinator, 'reactions': reactions_action,
 }
 
 
@@ -1151,8 +1300,9 @@ ACTIONS: Final[dict[str, Callable[[Mapping[str, Any]], dict[str, Any]]]] = {
 @measure_invocation_cost
 def lambda_handler(event: Mapping[str, Any], context: Any) -> dict[str, Any]:
     """``context``: Lambda's (None in the tests): its function name is where the learning steps are handed on."""
-    global _function_name
+    global _function_name, _function_arn
     _function_name = str(context.function_name) if context is not None else ''
+    _function_arn = str(getattr(context, 'invoked_function_arn', '') or '') if context is not None else ''
     action = ACTIONS.get(str(event.get('action')))
     if action is None:
         raise RuntimeRefused(f'unknown action {event.get("action")!r}')

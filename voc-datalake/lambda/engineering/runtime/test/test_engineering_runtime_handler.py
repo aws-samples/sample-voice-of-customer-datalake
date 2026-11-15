@@ -1283,7 +1283,8 @@ def test_the_start_function_writes_the_run_as_the_person_who_asked_and_hands_its
         'admin-sub', 'admin-sub', 'active', True)
 
 
-@pytest.mark.parametrize('action', ['tick', 'launch', 'signal', 'end_run', 'retrospective', 'START_RUN', None])
+@pytest.mark.parametrize('action', ['tick', 'launch', 'signal', 'end_run', 'retrospective', 'reactions', 'START_RUN',
+                                    None])
 def test_the_start_function_refuses_every_other_action_before_anything_is_read(
         wired: Any, monkeypatch: pytest.MonkeyPatch, action: str | None):
     assert wired is not None

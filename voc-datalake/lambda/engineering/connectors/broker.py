@@ -30,7 +30,9 @@ record that could not be written is read back from the write's done claim.
 
 Every write the host accepts gets an operational log line: the operation, the caller, and what was written (the
 issue or pull request number, the branch, the tree hash), never a body, a patch or a credential. It is not the
-audit record. Each write's claim row keeps its outcome (claimed, done with its answer, refused or unknown), its
+audit record. The one operation that is no agent's, ``reactions`` (7.10.00), is voc-engineering-runtime's alone
+(``identity.runtime_caller_from_event``): people's reactions to an ended run's recorded pull request, read only
+(``Broker.reactions``). Each write's claim row keeps its outcome (claimed, done with its answer, refused or unknown), its
 operation and when, under the agent's key; it is not the audit row of D4 (who asked, in the run's log), which is
 still planned.
 """
@@ -72,9 +74,11 @@ from engineering.connectors.identity import (
     POST_COMMENT,
     PUSH_BUNDLE,
     READ,
+    RUNTIME_ROLE,
     Caller,
     agent_id,
 )
+from engineering.connectors.reactions import PullRequestReactions
 from engineering.connectors.write_policy import (
     WriteRefused,
     branch_refusal,
@@ -85,6 +89,7 @@ from engineering.connectors.write_policy import (
     check_text,
 )
 from engineering.run_links import pull_request_link
+from engineering.runtime.runs import ENDED
 from shared.ai_mode import MODE_AI_ASSISTED, MODE_AI_DRIVEN
 from shared.logging import logger, metrics
 
@@ -312,6 +317,42 @@ class Broker:
                     'ci': ci}
 
         return _pull_request(_once(connector, caller, OPEN_OR_UPDATE_DRAFT_PR, attempt, open_draft, branch, title, body))
+
+    def reactions(self, caller: Caller, run_id: str) -> PullRequestReactions | None:
+        """People's reactions to an ended run's recorded pull request (7.10.00): the runtime's operation alone (an
+        agent's session, whatever its role, is ``NotPermitted``). The run is the request's (the runtime acts for any
+        run), and everything else is its record's: an ended run (``NotNow`` before), whose connection's credential
+        still names the repository it started on, and the pull request its record keeps (``run_links``), read on the
+        run's default branch. None when the run has no connection or no recorded pull request: nothing is asked of the
+        host. Reads only (``RepositoryHost.reactions``)."""
+        if caller.role != RUNTIME_ROLE:
+            raise NotPermitted(f'The {caller.role} role may not read reactions.')
+        if self._connector is None:
+            raise NoConnection(NO_CONNECTION)
+        connector = self._connector
+        run = connector.runs.run(run_id)
+        if run is None:
+            raise NotNow('The run is not one the broker knows.')
+        if run.status not in ENDED:   # (the runs' own statuses once ended: done, failed, stopped)
+            raise NotNow(NOT_ENDED)
+        if not run.connection_id:
+            return None
+        if connector.host.repository(run.connection_id) != run.repository:
+            raise NotNow(OTHER_REPOSITORY)
+        link = connector.writes.pull_request(run_id, run.repository)
+        if link is None:
+            return None
+        branch = connector.host.default_branch(run.connection_id, run.stored_default_branch)
+        found = connector.host.reactions(run.connection_id, link.number, link.url, branch)
+        if found.host != link.host:   # (the connection moved to another host since: never read as the run's)
+            raise NotNow(OTHER_REPOSITORY)
+        logger.info('broker read reactions', extra={
+            'run_id': run_id, 'connection_id': run.connection_id, 'number': link.number, 'state': found.state,
+            'kept': len(found.items), 'outsiders': found.dropped.outsiders, 'bots': found.dropped.bots})
+        return found
+
+
+NOT_ENDED: Final = "The run has not ended; its pull request's reactions are read once it has."
 
 
 #: Why a pull request the host answered with is not kept on the run's record (logged, never said to the agent: the

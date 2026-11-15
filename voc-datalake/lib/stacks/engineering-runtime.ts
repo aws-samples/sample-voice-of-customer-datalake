@@ -8,6 +8,7 @@
  *   the Agents API (POST /agents/engineering/runs) ────────▶ voc-engineering-start {action: start_run} (only that)
  *   a run's start / its end ──────────────▶ voc-engineering-runtime {action: start_run / end_run} (and the rule)
  *   a coordinator's launch (waited for) ──▶ voc-engineering-cache {connection, commit, generation} (the cache's writer)
+ *   a run's one reactions schedule ───────▶ voc-engineering-runtime {action: reactions} (engineering-reactions.ts)
  *
  * One AgentCore Runtime session (its own microVM) per agent, on its language's runtime (engineering-agentcore.ts: the
  * images' repositories, the runtimes, their network and their execution role). Its agent user gets a 15-minute session
@@ -59,6 +60,7 @@ import { grantClaudeModels } from '../utils/claude-model-grant';
 import { booleanContextFlag } from '../utils/context-flag';
 import { type ConnectionParameters, engineeringAgentsEnabled } from './engineering-broker';
 import { CACHE_READY_KEYS, createEngineeringCache } from './engineering-cache';
+import { grantReactions } from './engineering-reactions';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 import { createEngineeringStart } from './engineering-start';
 import { createWorkerFunction, grantInvokeByName, workerRole } from '../utils/worker-lambda';
@@ -144,6 +146,11 @@ export interface EngineeringPeers {
   brokerUrl: string;
   /** The connections' credentials the broker reads: the checkout cache's writer reads them the same way. */
   connectionParameters: ConnectionParameters;
+  /**
+   * The broker's admission of voc-engineering-runtime's role, in the session named after its function, for its
+   * `reactions` operation alone (7.10.00, engineering-reactions.ts; EngineeringBroker.admitRuntime).
+   */
+  admitRuntime: (role: iam.IRole, functionName: string) => void;
 }
 
 
@@ -181,6 +188,8 @@ function flag(scope: Construct, name: string): boolean {
 
 /** The source the supervisor speaks with on the bus (lambda/engineering/runtime/board_bus.py SOURCE). */
 const SUPERVISOR_SOURCE = 'voc.engineering/supervisor';
+/** voc-engineering-runtime's name before the stack's naming. */
+const RUNTIME_FUNCTION = 'voc-engineering-runtime';
 
 class EngineeringRuntime extends Construct {
   constructor(scope: Construct, id: string, props: WiredProps) {
@@ -202,8 +211,13 @@ class EngineeringRuntime extends Construct {
     // The checkout cache's writer: the supervisor fills a run's commit before its coordinator's launch (only it: the
     // start and the delivery never launch an agent).
     const cacheWriter = this.grantCheckoutCache(props, supervisorRole);
+    // People's reactions on the host (7.10.00): the broker's read, the one schedule per run and its role.
+    const reactions = grantReactions(this, {
+      uniqueName: props.uniqueName, runtimeRole: supervisorRole, runtimeFunctionName: props.uniqueName(RUNTIME_FUNCTION),
+      broker: props.peers.broker, admitRuntime: props.peers.admitRuntime, engineeringTable: props.engineeringTable,
+    });
     const fn = this.createSupervisor(props, supervisorRole, agentRoles, ruleName,
-      { ...environment, ENGINEERING_CACHE_FUNCTION: cacheWriter.functionName });
+      { ...environment, ENGINEERING_CACHE_FUNCTION: cacheWriter.functionName, ...reactions });
     createEngineeringStart(this, { ...props, ruleName, environment, runtime: fn });
     this.createRule(props.peers.deadLetterQueue, fn, ruleName);
     // A wake's continuation looks the cache up again (the generation it clones), as the supervisor's does.
@@ -498,7 +512,7 @@ class EngineeringRuntime extends Construct {
       actions: ['events:EnableRule', 'events:DisableRule'],
       resources: [stack.formatArn({ service: 'events', resource: 'rule', resourceName: ruleName })],
     }));
-    const functionName = uniqueName('voc-engineering-runtime');
+    const functionName = uniqueName(RUNTIME_FUNCTION);
     this.grantLearning(props, role, functionName);
     return createWorkerFunction(this, 'EngineeringSupervisor', {
       tree: 'engineering',

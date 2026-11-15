@@ -202,6 +202,19 @@ _THROTTLED = ClientError({'Error': {'Code': 'ThrottlingException', 'Message': 's
 _MOVED = ClientError({'Error': {'Code': 'ConditionalCheckFailedException', 'Message': 'moved'}}, 'UpdateItem')
 
 
+def test_the_reactions_read_takes_the_recorded_pull_request_of_the_runs_own_repository(client: Any) -> None:
+    claims = WriteClaims(client, TABLE, clock=lambda: 1_000)
+    assert claims.pull_request(RUN, REPOSITORY) is None
+    claims.record_pull_request(RUN, _link())
+    assert claims.pull_request(RUN, REPOSITORY) == _link()
+    assert claims.pull_request(RUN, 'example-org/another-service') is None
+
+
+def test_a_pull_request_that_cannot_be_read_for_the_reactions_is_unavailable() -> None:
+    with pytest.raises(Unavailable):
+        WriteClaims(_Failing(_THROTTLED, on='get_item'), TABLE).pull_request(RUN, REPOSITORY)
+
+
 @pytest.mark.parametrize('table', [
     _Failing(_THROTTLED), _Failing(EndpointConnectionError(endpoint_url='https://dynamodb')),
     _Failing(_THROTTLED, on='get_item'), _Failing(_MOVED),

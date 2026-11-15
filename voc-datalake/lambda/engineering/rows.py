@@ -9,6 +9,7 @@ from typing import Any
 
 from botocore.exceptions import ClientError
 
+from shared.aws import is_conditional_check_failure
 from shared.dynamo_paging import count_query, query_all
 from shared.ids import is_key_collision
 
@@ -120,6 +121,17 @@ def amount_attr(item: Mapping[str, Any], key: str) -> Decimal:
 def create_only(item: Mapping[str, Any], table: str) -> dict[str, Any]:
     """A transaction's Put of ``item`` that fails when its key exists (versions, logs: written once)."""
     return {'Put': {'TableName': table, 'Item': item, 'ConditionExpression': 'attribute_not_exists(pk)'}}
+
+
+def put_once(client: Any, table: str, item: Mapping[str, Any]) -> bool:
+    """``item`` written once (``attribute_not_exists``); False when its key was written already, never over it."""
+    try:
+        client.put_item(TableName=table, Item=item, ConditionExpression='attribute_not_exists(pk)')
+    except ClientError as exc:
+        if is_conditional_check_failure(exc):
+            return False
+        raise
+    return True
 
 
 def transact_or_refuse(client: Any, items: list[dict[str, Any]], refused: Exception) -> None:

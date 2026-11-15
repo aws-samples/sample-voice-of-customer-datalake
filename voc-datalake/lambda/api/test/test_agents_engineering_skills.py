@@ -199,7 +199,8 @@ def test_the_scorecards_compare_the_versions_asked_for_on_the_connections_own_ro
         # (fixer ships as version 1: a version 2 asked for by number never shipped, and its card says so)
         'version': 2, 'source': 'not_shipped', 'label': 'fixer@2', 'runs': 1, 'pass_rate': 0.75, 'tasks_done': 6, 'tasks_failed': 1,
         'needs_human': 1, 'reposts': 0, 'review_rounds': 2, 'attempts': 4, 'cost_usd': 0.75, 'seconds': 600,
-        'more': False, 'since': '2026-11-13T08:00:00Z', 'until': '2026-11-13T09:00:00Z'}
+        'more': False, 'since': '2026-11-13T08:00:00Z', 'until': '2026-11-13T09:00:00Z',
+        'human_edits': {'runs': 0, 'changes_requested': 0, 'people_commits_after_merge': 0, 'reverts': 0, 'more': False}}
     other = _call(lambda_context, 'GET', SCORES, query={'connection': OTHER, 'versions': '2'})[1]
     assert other['cards'][0]['runs'] == 0
 

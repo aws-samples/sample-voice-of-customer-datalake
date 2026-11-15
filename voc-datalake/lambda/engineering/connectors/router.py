@@ -23,6 +23,7 @@ from engineering.connectors.hosts import (
     ReadPage,
     RepositoryHost,
 )
+from engineering.connectors.reactions import PullRequestReactions
 
 
 class HostRouter:
@@ -64,6 +65,9 @@ class HostRouter:
     def open_or_update_draft_pr(self, connection_id: str, branch: str, base: str, title: str, body: str,
                                 tree_hash: str) -> PullRequestRef:
         return self._host(connection_id).open_or_update_draft_pr(connection_id, branch, base, title, body, tree_hash)
+
+    def reactions(self, connection_id: str, number: int, url: str, branch: str) -> PullRequestReactions:
+        return self._host(connection_id).reactions(connection_id, number, url, branch)
 
     def fetch_access(self, connection_id: str) -> FetchAccess:
         """The checkout cache's fetch of the connection's repository: GitHub's installation token for ``contents:

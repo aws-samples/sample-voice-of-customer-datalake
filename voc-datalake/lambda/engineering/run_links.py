@@ -280,6 +280,12 @@ def _pull_request(client: Any, table: str, ws: str, run_id: str, repository: str
     return repaired
 
 
+def run_pull_request(client: Any, table: str, ws: str, run_id: str, repository: str) -> PullRequestLink | None:
+    """The run's pull request as ``run_links`` reads it (its row, else its newest done write claim), for the broker's
+    reactions read (7.10.00): one consistent GetItem and one bounded Query of the run's writes' partition."""
+    return _pull_request(client, table, ws, run_id, repository)
+
+
 def _log_rebuild(run_id: str, row: str, number: int) -> None:
     """A warning the first time this container rebuilds this run's record from this row and claim (the overview polls
     every few seconds), debug after."""

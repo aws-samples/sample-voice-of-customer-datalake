@@ -56,14 +56,15 @@ def test_a_versions_row_for_a_run_is_written_once_and_never_over(store: Scorecar
     assert (item['run_status']['S'], item['run_ended_at']['S']) == ('done', '2026-11-13T09:00:00Z')
 
 
-def test_a_card_sums_a_versions_latest_runs_with_one_query(store: ScorecardStore) -> None:
+def test_a_card_sums_a_versions_latest_runs_with_two_bounded_queries(store: ScorecardStore) -> None:
     for run_id in RUNS:
         store.write(run(run_id), LINE)
     store.write(run(RUNS[0]), ScoreLine('fixer', 'fixer@2', tasks_failed=4))   # another version: its own partition
     store.write(run(RUNS[0], 'conn-other'), LINE)                              # another connection: its own
     store.client.calls.clear()
     card = store.version_card(WS, CONN, 'fixer', 'fixer@1', runs=4)
-    assert store.client.calls == ['query']
+    # (its runs, then their human edits: 7.10.00)
+    assert store.client.calls == ['query', 'query']
     assert (card.runs, card.tasks_done, card.tasks_failed, card.needs_human, card.reposts) == (4, 8, 4, 4, 4)
     assert (card.review_rounds, card.attempts, card.seconds, card.cost_usd) == (12, 20, 1200, Decimal('5.00'))
     assert (card.latest_run, card.more) == (RUNS[-1], True)
@@ -79,13 +80,13 @@ def test_a_card_of_a_version_with_no_runs(store: ScorecardStore) -> None:
     assert (card.runs, card.latest_run, card.pass_rate, card.cost_usd) == (0, '', None, Decimal(0))
 
 
-def test_compare_reads_one_query_per_version(store: ScorecardStore) -> None:
+def test_compare_reads_two_queries_per_version(store: ScorecardStore) -> None:
     store.write(run(), LINE)
     store.write(run(), ScoreLine('fixer', 'fixer@2', tasks_done=1))
     store.client.calls.clear()
     cards = store.compare(WS, CONN, 'fixer', ['fixer@1', 'fixer@2'])
     assert [card.tasks_done for card in cards] == [2, 1]
-    assert store.client.calls == ['query', 'query']
+    assert store.client.calls == ['query'] * 4
 
 
 @pytest.mark.parametrize('call', [

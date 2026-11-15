@@ -203,15 +203,17 @@ def test_the_evidence_is_the_attempts_own_record_bounded_and_redacted() -> None:
     assert found.comments == ()
 
 
-def test_host_reactions_are_an_empty_port_today_and_become_comments_when_they_come() -> None:
+def test_host_reactions_become_the_comments_of_their_tasks_and_of_every_failure_for_the_runs_pull_request() -> None:
     assert no_host_reactions(record()) == ()
     reactions = (HostReaction('t-units', 'comment', 'Please keep the parser change small. ' * 60),
-                 HostReaction('t-slug', 'revert', 'Reverted: it broke the release.'))
+                 HostReaction('t-slug', 'revert', 'Reverted: it broke the release.'),
+                 HostReaction('', 'revert', 'The merge was reverted.'))
     retro = build_retrospective(record(), lambda _run: reactions)
     failed = next(failure for failure in retro.failures if failure.how == 'failed')
-    [comment] = evidence(failed, retro.run, retro.reactions).comments
+    comment, run_wide = evidence(failed, retro.run, retro.reactions).comments
     assert comment.startswith('comment: Please keep')
     assert len(comment) <= COMMENT_CHARS
+    assert run_wide == 'revert: The merge was reverted.'
 
 
 def test_a_huge_task_is_cut_to_fit_and_the_evidence_stays_inside_the_coachs_bound() -> None:

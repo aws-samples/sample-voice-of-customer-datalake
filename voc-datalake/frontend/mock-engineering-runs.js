@@ -10,6 +10,7 @@
 //                     outcome (each agent's status, or why not); 503 when the agent is busy
 //                     (MOCK_ENGINEERING_AGENT_BUSY=1), the request recorded
 //   POST …/messages   {to: 'conductor' | 'agent', agent?, text, thread_id?}: admin; 404 for an agent not in the run
+//   POST …/reactions  {}: admin; an ended run's reactions read asked for (202); 409 while it runs, 429 within the hour
 //   POST …/board/tasks {role, title, spec, priority?}: admin; a person posts a task (403 for the coordinator's role)
 //   POST …/board/tasks/<task_id>/<action>: take {over?} | block {reason} | priority {priority} | move {to} | release (the
 //                     last two only on a task the mock's admin took); 409 for an ended task or another person's hold without over
@@ -187,7 +188,42 @@ function overview() {
       messages: run.messages.length, microvm_seconds: run.agents.reduce((sum, a) => sum + a.microvm_seconds, 0),
       by_model: [...byModel.values()].sort((a, b) => a.model.localeCompare(b.model)),
     },
+    reactions: SAMPLE_REACTIONS,
   };
+}
+
+// The latest read of people's reactions to the run's pull request (lambda/engineering/learning/reactions.py view):
+// kept only for people with write access, bodies redacted and plain text.
+const SAMPLE_REACTIONS = {
+  schema: 'voc-reactions/1',
+  pull_request: { host: 'github', number: 42, url: 'https://github.com/example-org/storefront/pull/42' },
+  state: 'merged', merged_at: '2026-11-12T10:00:00Z', merge_commit: 'a'.repeat(40),
+  items: [
+    { kind: 'review', state: 'approved', author: 'robin-maintainer', at: '2026-11-12T09:40:00Z', body: 'Looks right now.' },
+    { kind: 'review_comment', state: '', author: 'robin-maintainer', at: '2026-11-12T09:10:00Z',
+      body: 'This sort is not stable for equal prices.' },
+    { kind: 'review', state: 'changes_requested', author: 'robin-maintainer', at: '2026-11-12T09:05:00Z',
+      body: 'Please keep the old order for ties.' },
+    { kind: 'comment', state: '', author: 'sam-collaborator', at: '2026-11-11T16:00:00Z', body: 'Thanks for the fix.' },
+  ],
+  dropped: { outsiders: 2, bots: 1 },
+  reverted: false, revert_commit: '',
+  edits_after_merge: { people_commits: 1, files: ['src/sort.ts'], paths_read: 3, paths_total: 3 },
+  more: false, read_at: '2026-11-13T10:00:00.000000Z', asked_by: 'schedule',
+  counts: { approved: 1, changes_requested: 1, commented: 0, review_comments: 1, comments: 1 },
+  reviewers: [{ reviewer: 'robin-maintainer', state: 'approved', at: '2026-11-12T09:40:00Z' }],
+};
+let reactionsAskedAt = 0;
+
+/** An administrator's hand trigger (`POST …/reactions`): 409 while the run is under way, at most once an hour. */
+function askReactions() {
+  if (run.meta.ended_at === null) return [409, { message: "The run has not ended: its pull request's reactions are read once it has." }];
+  const now = Date.now();
+  if (now - reactionsAskedAt < 3_600_000) {
+    return [429, { error: "This run's reactions were asked for in this hour already: ask again later.", retry_after: 1800 }];
+  }
+  reactionsAskedAt = now;
+  return [202, { reactions: { status: 'asked' } }];
 }
 
 function conversation(url) {
@@ -416,6 +452,7 @@ function routePost(sub, rest, body) {
   if (rest.length > 0) return [404, { message: 'Engineering run not found' }];
   if (sub === 'signals') return signal(body ?? {});
   if (sub === 'messages') return answer(body ?? {});
+  if (sub === 'reactions') return askReactions();
   return [404, { message: 'Engineering run not found' }];
 }
 
@@ -718,9 +755,12 @@ const START_CHECKS = [
 
 function startRun(body) {
   const fields = body && typeof body === 'object' ? body : {};
-  const wellFormed = Object.keys(fields).every((key) => START_FIELDS.includes(key))
-    && START_FIELDS.every((key) => typeof fields[key] === 'string');
-  if (!wellFormed) return [400, { message: 'the body is {workflow_id, connection, commit, language, goal}, each a string' }];
+  // (`issue`, optional since 7.09.00: a whole number from 1, as the server takes it)
+  const issueOk = fields.issue === undefined
+    || (Number.isInteger(fields.issue) && fields.issue >= 1 && fields.issue <= 2147483647);
+  const wellFormed = Object.keys(fields).every((key) => START_FIELDS.includes(key) || key === 'issue')
+    && START_FIELDS.every((key) => typeof fields[key] === 'string') && issueOk;
+  if (!wellFormed) return [400, { message: 'the body is {workflow_id, connection, commit, language, goal, issue?}, each a string but issue' }];
   const failed = START_CHECKS.find(([passes]) => !passes(fields));
   if (failed) return [400, { message: failed[1] }];
   // 202, as the server: the run is written and its coordinator's launch is under way.

@@ -36,8 +36,9 @@ Permissions:
   function, below), and the agents' skills and scorecards, read only (``GET /agents/engineering/skills``,
   ``…/skills/<role>/versions[/<version>]``, ``GET /agents/engineering/scorecards/<role>``: engineering/skills/views.py)
   and an administrator's actions on a version (``POST …/skills/<role>/versions/<version>/accept``, ``…/reject``,
-  ``…/rollback``, ``…/benchmark``: engineering/skills/actions.py, the store's own transactions);
-  while the engineering agents are off every caller gets 404.
+  ``…/rollback``, ``…/benchmark``: engineering/skills/actions.py, the store's own transactions), and an ended run's
+  reactions read asked for by hand (``POST /agents/engineering/<run_id>/reactions``, 7.10.00: the start function's
+  ``ask_reactions``, below); while the engineering agents are off every caller gets 404.
 
 Own role (20 KB policy limit): the agents table (read/write), the aggregates table
 (read: category access rows + categories config), ``states:StartExecution`` and
@@ -47,7 +48,8 @@ ConditionCheckItem on the ``WS#*#SKILL#*`` partitions only, what the skills stor
 function (``ENGINEERING_BOARD_FUNCTION``), which makes a person's board actions with its own role and hands the
 events back for this role to publish as the person (engineering/board/api.py person_request), and
 ``lambda:InvokeFunction`` on the start function (``ENGINEERING_START_FUNCTION``, voc-engineering-start: the runtime's
-code and role, which runs ``start_run`` and refuses every other action; never the runtime's own function), and
+code and role, which runs ``start_run`` and, since 7.10.00, ``ask_reactions``, and refuses every other action; never
+the runtime's own function), and
 ``ssm:PutParameter`` and ``ssm:DeleteParameter`` on the connections' parameters only, with ``kms:Encrypt`` and
 ``kms:GenerateDataKey`` on the stack's key through SSM for them (no ``ssm:GetParameter``); it is to add
 ``lambda:InvokeFunction`` on ``voc-engineering-runtime`` (the run
@@ -1082,10 +1084,10 @@ def _acting_monitor(run_id: str) -> tuple[Any, Caller]:
     """The monitor and its caller for an action, checked before the body is read: while the module is off every
     caller gets 404, then anyone but an administrator 403, then a bad or unknown run id 404."""
     monitor = _monitor(run_id)
-    if not monitor.run_exists(run_id):
-        raise NotFoundError(ENGINEERING_RUN_NOT_FOUND)
     caller = _caller()
     require_admin_caller(caller)
+    if not monitor.run_exists(run_id):
+        raise NotFoundError(ENGINEERING_RUN_NOT_FOUND)
     return monitor, caller
 
 
@@ -1730,6 +1732,57 @@ def give_engineering_go(run_id: str):
     answer = _person_board_action(run_id, {'op': 'go'}, publishes=False)
     logger.info('Engineering run given a go', extra={'run_id': run_id, 'go_written': answer.get('go', {}).get('created')})
     return answer
+
+
+def _ask_reactions(function: str, run_id: str, actor: str) -> dict[str, Any]:
+    """The start function's answer to ``ask_reactions`` (``{status, retry_after?}``): its refusal (an unknown run, one
+    not ended) is 409 in its words, any other failure 503 (asking again is safe: the hour's claim is create-only)."""
+    try:
+        response = _start_client().invoke(FunctionName=function, InvocationType='RequestResponse', Payload=json.dumps(
+            {'action': 'ask_reactions', 'run_id': run_id, 'actor': actor}).encode())
+        payload = json.loads(response['Payload'].read() or b'{}')
+    except (ClientError, BotoCoreError, ValueError, KeyError, OSError) as exc:
+        logger.exception('engineering: the reactions read could not be asked for')
+        raise ServiceUnavailableError('the engineering runtime could not be reached: ask again') from exc
+    answer: dict[str, Any] = payload if isinstance(payload, dict) else {}
+    if response.get('FunctionError'):
+        if answer.get('errorType') == 'RuntimeRefused':
+            raise ConflictError(str(answer.get('errorMessage') or 'the runtime refused it')[:500])
+        raise ServiceUnavailableError('the reactions read could not be asked for: ask again')
+    if answer.get('status') not in ('asked', 'too_soon'):
+        raise ServiceUnavailableError('the reactions read could not be asked for: ask again')
+    return answer
+
+
+@app.post('/agents/engineering/<run_id>/reactions')
+@tracer.capture_method
+def ask_engineering_reactions(run_id: str):
+    """``{}`` → 202 ``{reactions: {status: asked}}``: an administrator acting for themselves (a delegated credential
+    gets 403; 404 while the module is off or for an unknown run) asks for an ended run's pull request's reactions to be
+    read now (7.10.00), through voc-engineering-start's ``ask_reactions`` (this role invokes no other runtime
+    function), which hands the read on: the run monitor shows it once it is recorded. 409 while the run has not ended;
+    429 when this run's read was asked for in this clock hour already (at most once an hour per run, a create-only
+    row), with ``retry_after`` seconds."""
+    monitor, caller = _acting_monitor(run_id)
+    if json_object_body(app):
+        raise ValidationError('the body is {}')
+    try:
+        ended = monitor.ended(run_id)
+    except (ClientError, BotoCoreError) as exc:
+        raise ServiceUnavailableError('the run could not be read: retry') from exc
+    if not ended:
+        raise ConflictError("The run has not ended: its pull request's reactions are read once it has.")
+    function = os.environ.get('ENGINEERING_START_FUNCTION', '')
+    if not function:
+        raise ServiceUnavailableError('reactions cannot be asked for from here: the deployment names no start function')
+    answer = _ask_reactions(function, run_id, caller.subject)
+    if answer['status'] == 'too_soon':
+        wait = answer.get('retry_after')
+        seconds = wait if isinstance(wait, int) and not isinstance(wait, bool) and wait > 0 else 3600
+        return _json(429, {'error': "This run's reactions were asked for in this hour already: ask again later.",
+                           'retry_after': seconds})
+    logger.info('Engineering reactions asked for', extra={'run_id': run_id})
+    return _json(202, {'reactions': {'status': 'asked'}})
 
 
 # Build the AWS clients during INIT, not on the first request (shared/warm_init.py).

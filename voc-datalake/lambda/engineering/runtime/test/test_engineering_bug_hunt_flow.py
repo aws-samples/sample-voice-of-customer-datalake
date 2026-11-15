@@ -37,6 +37,7 @@ from engineering.connectors.hosts import (
 )
 from engineering.connectors.identity import Caller
 from engineering.connectors.patches import WorkspacePatches
+from engineering.connectors.reactions import PullRequestReactions
 from engineering.connectors.records import RunRecords, WriteClaims
 from engineering.flow.ledger import read_gate_record
 from engineering.flow.test.fixtures import TEMPLATES
@@ -152,6 +153,9 @@ class GitHost:
             raise Conflict("The branch's head is not the checked tree.")
         self.writes.append(('open_or_update_draft_pr', branch, tree_hash))
         return PULL_REQUEST
+
+    def reactions(self, connection_id: str, number: int, url: str, branch: str) -> PullRequestReactions:
+        raise AssertionError(f'no reactions read in this flow ({connection_id}, {number} at {url} on {branch})')
 
 
 @dataclass

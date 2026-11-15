@@ -14,7 +14,7 @@ from engineering.board import api as api_module
 from engineering.board.api import BoardApi, handler
 from engineering.board.inbox import Inbox
 from engineering.board.store import BoardError, BoardStore
-from engineering.board.test.table import RUN, TABLE, board, engineering_table
+from engineering.board.test.table import RUN, TABLE, board, engineering_table, set_status
 from engineering.board.test.test_inbox import notice
 from engineering.bus.publish import EventBridgePublisher, PublishError
 from engineering.bus.schema import MessageError, parse
@@ -297,9 +297,7 @@ def test_a_persons_request_that_is_not_one_is_refused_and_writes_nothing(person:
 
 
 def _status(client: Any, status: str) -> None:
-    client.update_item(TableName=TABLE, Key={'pk': {'S': f'WS#default#RUN#{RUN}'}, 'sk': {'S': 'META'}},
-                       UpdateExpression='SET #s = :s', ExpressionAttributeNames={'#s': 'status'},
-                       ExpressionAttributeValues={':s': {'S': status}})
+    set_status(client, status)
 
 
 def test_a_persons_go_is_written_once_and_hands_back_no_event() -> None:

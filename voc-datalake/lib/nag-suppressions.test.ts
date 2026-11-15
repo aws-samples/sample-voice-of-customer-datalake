@@ -248,7 +248,9 @@ describe('cdk-nag acknowledgements', () => {
       // function (a wake's continuation), one acknowledgement for both (engineering-runtime.ts grantCacheReadyReads:
       // the same finding and reason), their IAM5. Its read of the connections' parameters is the broker's own
       // acknowledgement (one helper, the same finding and reason).
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 95, used: 95 });
+      // 95 -> 96: the engineering runtime's create of a run's one reactions schedule (7.10.00, engineering-reactions.ts:
+      // one schedule group, names voc-eng-reactions-<run>, create only), its IAM5.
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 96, used: 96 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

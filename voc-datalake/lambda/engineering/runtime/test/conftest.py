@@ -187,6 +187,28 @@ IMAGE_ARNS = {'python': {'standard': 'arn:aws:bedrock-agentcore:us-east-1:123456
               'java': {'standard': 'arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/voc_eng_java-d4e5f6'}}
 
 
+class NoPullRequest:
+    """The broker's function URL as urllib's opener reaches it: every reactions read answers no recorded pull request;
+    the requests it was sent are kept."""
+
+    def __init__(self) -> None:
+        self.sent: list[Any] = []
+
+    def open(self, request: Any, timeout: float) -> Any:
+        from engineering.runtime.test.broker_stub import Answer
+        del timeout
+        self.sent.append(request)
+        return Answer(b'{"result": {"reactions": null}}')
+
+
+class FakeCredentials:
+    """The runtime's own role's credentials, fictional."""
+
+    def get_frozen_credentials(self) -> Any:
+        from botocore.credentials import ReadOnlyCredentials
+        return ReadOnlyCredentials('AKIDEXAMPLE', 'secret', 'session-token')
+
+
 @pytest.fixture
 def wired(aws: tuple[Any, Any], monkeypatch: pytest.MonkeyPatch) -> Any:
     """voc-engineering-runtime's handler wired from its environment on moto and the local fake, with RUN started;
@@ -197,6 +219,11 @@ def wired(aws: tuple[Any, Any], monkeypatch: pytest.MonkeyPatch) -> Any:
     monkeypatch.setattr(handler, '_runtime', LocalAgentRuntime)
     # Every run's commit is in the checkout cache (READY); test_engineering_checkout_cache.py drives the real one.
     monkeypatch.setattr(handler, '_checkout_cache', ReadyCache)
+    # The broker's function URL, for the runtime's reactions read, answers no recorded pull request (the broker's own
+    # tests drive a real one): no function URL is called from a test, and the call is signed with fake credentials.
+    from engineering.learning import reactions_broker
+    monkeypatch.setattr(reactions_broker, '_OPENER', NoPullRequest())
+    monkeypatch.setattr(handler, '_own_credentials', FakeCredentials)
     # (the hard cap's row lives in voc-agents; here the same moto table holds it)
     for name, value in {'RAW_DATA_BUCKET': BUCKET, 'ENGINEERING_WORKSPACE_BUCKET': WORKSPACE_BUCKET, 'ENGINEERING_TABLE': TABLE,
                         'ENGINEERING_SETTINGS_TABLE': TABLE,

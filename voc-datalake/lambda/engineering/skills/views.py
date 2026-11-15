@@ -199,7 +199,11 @@ def card_view(number: int, card: VersionCard) -> dict[str, Any]:
             'tasks_done': card.tasks_done, 'tasks_failed': card.tasks_failed, 'needs_human': card.needs_human,
             'reposts': card.reposts, 'review_rounds': card.review_rounds, 'attempts': card.attempts,
             'cost_usd': float(card.cost_usd), 'seconds': card.seconds, 'more': card.more, 'since': card.since,
-            'until': card.until}
+            'until': card.until,
+            # (7.10.00: what people's reactions on the host say a person had to do, learning/scorecard.py)
+            'human_edits': {'runs': card.runs_with_human_edits, 'changes_requested': card.changes_requested,
+                            'people_commits_after_merge': card.people_commits_after_merge, 'reverts': card.reverts,
+                            'more': card.human_more}}
 
 
 def check_versions(raw: str | None) -> list[int] | None:

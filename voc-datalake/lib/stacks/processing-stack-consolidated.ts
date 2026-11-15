@@ -378,6 +378,7 @@ export class VocProcessingStack extends VocStack {
         deadLetterQueue: bus.dlq, bus: bus.bus, board: bus.board, boardUrl: bus.boardUrl, broker: broker.function,
         brokerUrl: broker.url, connectionParameters: broker.connectionParameters,
         addPublisher: (statementId, role, source) => bus.addPublisher(statementId, role, source),
+        admitRuntime: (role, functionName) => broker.admitRuntime(role, functionName),
       };
     }
     // The engineering agents' runtime (one AgentCore session per agent): only with `-c engineeringAgents=true`

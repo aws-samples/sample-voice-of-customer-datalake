@@ -640,6 +640,17 @@
     ]
   },
   {
+    "file": "api/engineeringReactionsApi.ts",
+    "method": "POST",
+    "call": "`/agents/engineering/${encodeURIComponent(runId)}/reactions`",
+    "probes": [
+      {
+        "path": "/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3/reactions",
+        "body": {}
+      }
+    ]
+  },
+  {
     "file": "api/engineeringRunsApi.ts",
     "method": "POST",
     "call": "'/agents/engineering/runs'",

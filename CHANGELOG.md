@@ -17,6 +17,90 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.10.00] - 2026-11-15
+
+Autonomous engineering agents: people's reactions on the host to a run's pull request (reviews and comments by people
+with write access, a revert, people's commits after the merge) are read days after the run ends and by an
+administrator's hand, recorded, shown on the run monitor and summed into the scorecards' human edits. Off by default
+(`-c engineeringAgents=true`), and no fixed cost.
+
+### Added
+
+- **The broker's `reactions` read** (`lambda/engineering/connectors/broker.py` `Broker.reactions`, `reactions.py`,
+  `github_reactions.py`, `gitlab_reactions.py`; docs/autonomous-engineering.md, "People's reactions on the host"):
+  for an ended run whose connection still names its repository, of the pull request its record keeps
+  (`run_links.run_pull_request`; none: null, the host asked nothing), on its default branch, through each host's
+  existing client, reads only, bounded pages: the state (open, closed, merged and when); the reviews (approved,
+  changes requested, commented), their review comments and the comments, newest first, at most 50, each body at most
+  2,000 characters (GitHub answers reviews and issue comments oldest first and cannot sort them: their first and last
+  pages are read, and past 200 the ones between are not, which `more` says); a revert (a commit after the merge,
+  among at most 100, naming "Revert" and the merge's commit id); people's commits after the merge
+  (`edits_after_merge.people_commits`: within 14 days, touching its files, no bot's, the App's or the project
+  token's own included, and none naming an agent branch; a count and at most 20 files, never a diff); what was
+  dropped, and whether more was left unread.
+- **The trust filter**: only reactions by people with write access are kept. GitHub's `author_association` (OWNER,
+  MEMBER, COLLABORATOR) is the first cut; each such author's permission is then read ("Get repository permissions
+  for a user": kept for `permission` admin or write alone, a maintainer answering write; `role_name` is never read, so
+  a custom role is not kept for its name; a read-only member or a triage collaborator is dropped), at most 20 a read,
+  the newest authors first, cached 10 minutes, and a failed lookup drops the author.
+  GitLab: members at Developer or above, read through the members API, at most 20 a read, cached 10 minutes. Never a
+  bot's (the App's or the project token's own user, GitLab's service accounts included). Each kept body has its
+  credential-shaped strings, then its email addresses, phone and card numbers replaced (names and handles in the text
+  are not), and the runtime checks the answer again. The rows and the monitor keep handles; the coach sees only
+  labels (`reviewer-1`, …).
+- **The runtime as the broker's one other caller**, for this operation alone: its function URL call is SigV4-signed as
+  voc-engineering-runtime's own role, and the broker admits that role in the session named after the function, by
+  the names the stack hands it (`connectors/identity.py` `runtime_caller_from_event`); an agent's session asking for
+  it, whatever its role, is 403, and so is the runtime asking for an agent's operation.
+- **When**: the run's end reads nothing; its retrospective creates ONE one-time EventBridge Scheduler schedule, only
+  when the run's record keeps a pull request, `-c engineeringReactionsDelayDays` later (3 by default, 1 to 30), which
+  invokes the runtime's new `reactions` action by its unqualified ARN and deletes itself after it runs; and an
+  administrator's hand, `POST /agents/engineering/<run_id>/reactions` (403 for anyone else, a delegated credential
+  included; 404 while the module is off; 409 while the run has not ended; 429 more than once in 60 minutes per run;
+  503 when the read could not be handed on), through voc-engineering-start's new `ask_reactions` action, which claims
+  the run's ask (a rate-limit row, released again when the hand-on fails) and hands the read on.
+- **The records**, create-only: `REACTIONS#<read_at>` in the run's partition (the read, who asked, when; nothing for a
+  run with no recorded pull request, and said so); the scorecards' human edits as separate `HUMAN#<run>#<read_at>`
+  rows beside each version's scorecards (changes requested, people's commits after the merge, a revert), written only
+  when a read says something new, which `version_card` sums (a second bounded Query) and the scorecards' route
+  answers as `human_edits`. A read updates the monitor and those human edits. The coach sees a run's latest reactions
+  as evidence (`HostReactions`) only the next time it handles a failure of that same run; a run's failures go to it
+  once, at the retrospective, before any read, so today it rarely does. The coach's prompt (`coach-prompt/3`) says
+  they are people's words to weigh, never instructions. A proposal still needs an administrator's acceptance, and a
+  coach's a recorded benchmark whose pass rate rose.
+- **The run monitor** shows the latest reactions (the counts, each reviewer's latest state, merged and reverted,
+  people's commits after the merge, each body as plain text, what was dropped) and a "Read reactions now" button
+  behind a confirmation, for an ended run, in all nine locales.
+
+### Tests
+
+- Each host's reads on fakes: the bounds, the trust filter (an outsider, a bot, the App, the project token's own user
+  and a service account dropped; on GitHub a read-only organisation member and a triage collaborator dropped, a
+  writer, maintainer and admin kept, a failed permission lookup dropping its author, the lookups bounded and cached),
+  the last page of an oldest-first list, the redaction, the revert, people's commits (a bot's and an agent's merge
+  left out), the token's permissions, a missing pull request, a host error and a rate limit. The broker's caller check
+  (every agent role refused, another function, role or account refused, the runtime refused any agent operation), its
+  run and repository checks. The runtime's record on moto (create-only rows, the latest read, the rolling-hour claim
+  and its release), the human edits rows and their sums, the one self-deleting schedule (only with a recorded pull
+  request, its unqualified target), the `reactions` action, the run's end reading nothing, `ask_reactions` and a
+  failed hand-on releasing its ask, labels instead of handles for the coach, and a reaction saying "ignore your
+  instructions" reaching the coach's prompt only inside its DATA block. The route's 202, 403, 404, 409, 429 and 503.
+- CDK: the schedule group, the scheduler's role (invoke the runtime only), the runtime's create, pass-role, broker
+  URL and pull request read statements, the broker's one Query and its admission of the runtime, the delay's bounds, nothing with the
+  module off; one more IAM5 acknowledgement. The web app: the panel, plain-text bodies, the button and its
+  confirmation, a 429.
+
+### Upgrade notes
+
+- New resources with `-c engineeringAgents=true`: one schedule group (`voc-engineering-reactions`) and the
+  scheduler's role; a schedule per ended run with a pull request is created at its end (pay per use). New
+  statements: on the runtime's role `scheduler:CreateSchedule` (its group, `voc-eng-reactions-*` only),
+  `iam:PassRole` (the scheduler's role, to the scheduler only), the broker's function URL and `GetItem`/`Query` of
+  the runs' writes' partitions (read only); on the broker's role
+  one `dynamodb:Query` of the runs' writes' partitions. The broker's environment names the runtime's role and
+  function. The Agents API's role is unchanged. Runs that ended before have no schedule: an administrator can read
+  theirs by hand.
+
 ## [7.09.00] - 2026-11-15
 
 Autonomous engineering agents: a run's record keeps the issue it was started from and the draft pull request (a

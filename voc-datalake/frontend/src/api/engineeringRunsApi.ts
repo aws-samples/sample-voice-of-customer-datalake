@@ -12,9 +12,10 @@ import { z } from 'zod'
 import { post } from './requestKit'
 import { fetchApi } from './client'
 import { nextAfterOf } from './seqPages'
-import { lenientList, parseEach } from './lenientFields'
+import { eachOf, lenientList } from './lenientFields'
 import { isRecord } from '../lib/typeGuards'
 import { normalizeDefinition } from './workflowsApi'
+import { ReactionsSchema } from './engineeringReactionsApi'
 
 export const ENGINEERING_SIGNALS = ['save', 'pause', 'resume', 'shutdown', 'stop_now'] as const
 export type EngineeringSignal = (typeof ENGINEERING_SIGNALS)[number]
@@ -26,8 +27,6 @@ export const MAX_ANSWER_BYTES = 1024
 const text = z.string().catch('')
 const maybeText = z.string().nullable().catch(null)
 const count = z.number().catch(0)
-/** A list whose entries are each parsed by `schema` (their defaults applied); a bad one costs itself. */
-const eachOf = <T>(schema: z.ZodType<T>) => z.unknown().optional().transform((value) => parseEach(schema, value))
 
 /** The board states in which a task is over: its agent is no longer signalled through it. */
 export const FINAL_TASK_STATES: readonly string[] = ['done', 'failed', 'needs_human']
@@ -122,6 +121,8 @@ const OverviewSchema = z.object({
   actions_available: z.boolean().catch(false),
   totals: z.object({ messages: count, microvm_seconds: count, by_model: eachOf(TokensSchema) })
     .catch({ messages: 0, microvm_seconds: 0, by_model: [] }),
+  /** The latest read of people's reactions to the run's pull request (7.10.00); null for none. */
+  reactions: ReactionsSchema.optional().transform((reactions) => reactions ?? null),
 })
 export type EngineeringOverview = z.output<typeof OverviewSchema>
 

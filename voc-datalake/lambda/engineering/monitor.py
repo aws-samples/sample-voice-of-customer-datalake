@@ -8,7 +8,9 @@ counters (session-seconds, tokens per model), with the totals per model and for 
 with its alert flag from META (``rows.budget_view``), and the flow it follows: the revision its start copied, each
 step's status as the conductor reads it and where the flow stands (``engineering/flow/``; none for a run started
 without a flow), and (7.09.00) the issue it was started from and its pull request, each its host, number and checked
-address (``engineering/run_links.py``; None for none). The run's cost is to come from the run control
+address (``engineering/run_links.py``; None for none), and (7.10.00) the latest read of people's reactions on the
+host to that pull request (``engineering/learning/reactions.py``; None for none). The run's cost is to come from the
+run control
 (``engineering.runtime.ports.RunControl.budget``) once it is wired.
 
 The actions (the route lets only an admin acting for themselves take them, like a run's ``decision``):
@@ -45,8 +47,11 @@ from engineering.bus.publish import PublishError, new_event_id
 from engineering.bus.schema import MAX_SUMMARY_BYTES, Message, MessageError, Party, fit_summary, summary_text
 from engineering.connectors.identity import WORKSPACE
 from engineering.flow.record import run_flow
+from engineering.learning.reactions import ReactionsStore
+from engineering.learning.reactions import view as reactions_view
 from engineering.rows import Refused, amount_attr, budget_view, run_pk, string_attr
 from engineering.run_links import run_links
+from engineering.runtime.runs import ENDED
 from engineering.runtime.sessions import AgentSession
 from engineering.workspace.layout import ID
 from shared.logging import logger
@@ -287,7 +292,18 @@ class RunMonitor:
             'totals': {'messages': int(amount_attr(meta, 'msg_seq')),
                        'microvm_seconds': sum(agent['microvm_seconds'] for agent in agents),
                        'by_model': _by_model(agents)},
+            # People's reactions on the host to its pull request, the latest read (7.10.00; None for none: one Query
+            # of one row, learning/reactions.py).
+            'reactions': reactions_view(ReactionsStore(self.client, self.table).latest(WORKSPACE, run_id)),
         }
+
+    def ended(self, run_id: str) -> bool:
+        """The run has ended (done, failed or stopped): its reactions may be read (``MonitorError`` not_found for no
+        run)."""
+        meta = self._get(run_id, 'META')
+        if meta is None:
+            raise MonitorError('not_found', 'Engineering run not found')
+        return string_attr(meta, 'status') in ENDED
 
     def _flow_view(self, run_id: str, meta: Mapping[str, Any]) -> dict[str, Any]:
         """The run's flow as it runs: the revision its start copied and when, each step's status from the conductor

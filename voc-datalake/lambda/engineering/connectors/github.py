@@ -29,6 +29,10 @@ pull request with its thread, a patch's base file at the run's commit, and, for 
 (7.04.00, ``ci_protection``), what any reader of the repository sees of its branch rules: a branch's ``protected``
 and classic required checks, and the ruleset rules that apply to a branch's name.
 
+Since 7.10.00 it also reads people's reactions to the run's pull request (``reactions``, ``github_reactions.py``):
+its reviews and comments with their authors' associations, the commits on the default branch after its merge and its
+files' names.
+
 The client has no method for a merge, an approval, settings, a change of branch protection, members, webhooks or
 secrets.
 Every request goes to ``api.github.com`` through one ``Transport`` (tests inject a fake): the token travels only in
@@ -44,12 +48,14 @@ import re
 import time
 from collections.abc import Callable, Mapping
 from datetime import datetime
+from functools import partial
 from typing import Final
 from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 
+from engineering.connectors import github_reactions
 from engineering.connectors.credentials import GitHubAppCredential
 from engineering.connectors.hosts import (
     FILE_MODES,
@@ -81,6 +87,7 @@ from engineering.connectors.hosts import (
     require_pushable,
     stray_changes,
 )
+from engineering.connectors.reactions import PullRequestReactions, writer_permission
 from engineering.connectors.transport import (
     DEFAULT_RETRY_SECONDS,
     HttpsTransport,
@@ -134,6 +141,10 @@ DEFAULT_BRANCH_SECONDS: Final = 300
 #: The most entries each branch cache keeps (connections times branches stay small; the oldest goes first).
 MAX_CACHED_BRANCHES: Final = 256
 _DRAFT: Final[Permissions] = {'contents': 'read', 'pull_requests': 'write'}
+#: The reactions read (``github_reactions.py``): the pull request, its reviews and comments, the default branch's commits.
+_REACTIONS: Final[Permissions] = {'contents': 'read', 'issues': 'read', 'pull_requests': 'read'}
+#: How long a reaction's author's write access is kept before it is read again.
+WRITER_SECONDS: Final = 600
 #: How long branch rules that passed the CI check are kept before they are read again.
 CI_CHECK_SECONDS: Final = 300
 #: The ruleset rules of one branch the check reads (one page): a branch with any is protected.
@@ -233,6 +244,8 @@ class GitHubHost:
         self._tokens: dict[tuple[str, int, str, tuple[tuple[str, str], ...]], tuple[str, float]] = {}
         #: By (connection, owner/repository, ...): the default branches, the stored ones confirmed, the rules passed.
         self._cached = BranchCaches()
+        #: By (connection, owner/repository, login): whether a reaction's author may write, and when it is read again.
+        self._writers: dict[tuple[str, str, str], tuple[bool, float]] = {}
 
     # --- HTTP -------------------------------------------------------------------------------------------------
 
@@ -443,6 +456,32 @@ class GitHubHost:
             content[key] = _items(_json(response), fields)
             cursors += [c for c in [next_page(response.headers)] if c is not None]
         return ReadPage(content=json.dumps(content), next_cursor=cursors[0] if cursors else None)
+
+    def reactions(self, connection_id: str, number: int, url: str, branch: str) -> PullRequestReactions:
+        """People's reactions to pull request ``number`` (7.10.00, ``github_reactions.py``): reads only, with a token
+        for reading the pull request, its comments and the repository's contents."""
+        def get(path: str) -> Response:
+            return self._api(connection_id, _REACTIONS, 'GET', path, 'the reactions read', ok=(200, 404))
+
+        return github_reactions.read(get, url, number, branch, partial(self._writes, connection_id))
+
+    def _writes(self, connection_id: str, login: str) -> bool:
+        """Whether ``login`` may write to the connection's repository (GitHub's "Get repository permissions for a
+        user": ``reactions.writer_permission``), kept ``WRITER_SECONDS``; a lookup that fails (an error, a rate
+        limit, an answer off its shape) is False and is not kept (fail closed)."""
+        credential = self._credentials(connection_id)
+        key, now = (connection_id, f'{credential.owner}/{credential.repository}', login), self._clock()
+        held = fresh(self._writers, key, now)
+        if held is not None:
+            return held
+        try:
+            response = self._api(connection_id, _REACTIONS, 'GET', f'/collaborators/{quote(login, safe="")}/permission',
+                                 'the reactions read')
+            writes = writer_permission(_json(response))
+        except BrokerError:
+            return False
+        keep(self._writers, key, (writes, now + WRITER_SECONDS), MAX_CACHED_BRANCHES)
+        return writes
 
     def _open_pull_request(self, connection_id: str, permissions: Permissions, branch: str) -> PullRequestRef | None:
         credential = self._credentials(connection_id)

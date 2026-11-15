@@ -57,6 +57,15 @@ describe('the engineering broker', () => {
     expect(functionUrlAuthTypes(on, id)).toStrictEqual(['AWS_IAM']);
   });
 
+  it('admits the runtime by its execution role\'s name and its function\'s, for the reactions read (7.10.00)', () => {
+    const on = template('on');
+    const variables = JSON.stringify(on.findResources('AWS::Lambda::Function')[brokerId(on)]?.Properties?.Environment);
+    // The role is the runtime's own (a reference to it, never a pattern), and the session Lambda names after its
+    // function (connectors/identity.py runtime_caller_from_event checks both).
+    expect(variables).toMatch(/"ENGINEERING_RUNTIME_ROLE_NAME":\{"Ref":"EngineeringRuntimeEngineeringSupervisorRole\w+"\}/);
+    expect(variables).toMatch(/"ENGINEERING_RUNTIME_FUNCTION_NAME":\{"Fn::Join":\["",\["voc-engineering-runtime-",/);
+  });
+
   it('grants nobody a way in: no resource-based permission on the broker', () => {
     const on = template('on');
     const id = brokerId(on);
@@ -71,9 +80,10 @@ describe('the engineering broker', () => {
     const actions = statements.flatMap((statement) => [statement.Action].flat()).sort(byCodeUnit);
     // Reads, and the one write of its claim rows (PutItem, UpdateItem, their GenerateDataKey): no DeleteItem,
     // PutObject or other write anywhere on its role.
+    // (7.10.00: one more Query, of the runs' writes' partitions, for the reactions read: RunPullRequestReads)
     expect(actions).toStrictEqual([
       'dynamodb:GetItem', 'dynamodb:GetItem', 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:Query',
-      'dynamodb:Query', 'dynamodb:UpdateItem',
+      'dynamodb:Query', 'dynamodb:Query', 'dynamodb:UpdateItem',
       'kms:Decrypt', 'kms:Decrypt', 'kms:GenerateDataKey', 'logs:CreateLogStream', 'logs:PutLogEvents',
       's3:GetObject', 'ssm:GetParameter',
     ]);
@@ -93,6 +103,15 @@ describe('the engineering broker', () => {
     });
     // The stack's one customer-managed key (an import from the test's dependency stack), never "*".
     expect(JSON.stringify(decrypt?.Resource)).toContain('Fn::ImportValue');
+  });
+
+  it('reads the run\'s recorded pull request by one Query of the runs\' writes\' partitions alone (7.10.00)', () => {
+    const reads = brokerStatements(template('on')).find((statement) => statement.Sid === 'RunPullRequestReads');
+    expect(reads).toMatchObject({
+      Effect: 'Allow', Action: 'dynamodb:Query',
+      Condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#WRITES#*'] } },
+    });
+    expect(JSON.stringify(reads?.Resource)).toMatch(/^\{"Fn::ImportValue":"[^"]*GetAttEngineering[^"]*Arn[^"]*"\}$/);
   });
 
   it('reads the runs\' rows of voc-engineering only in the runs\' partitions', () => {

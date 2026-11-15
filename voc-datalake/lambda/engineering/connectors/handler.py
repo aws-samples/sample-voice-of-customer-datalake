@@ -17,6 +17,10 @@ run is attested, so every push and pull request is refused). Without them, ``hos
 
 Nothing from the body is logged or echoed (it may hold a bundle, a comment, or a token pasted by mistake): the log
 line has the operation, the caller's role, run and agent index, and the status.
+
+``reactions`` (7.10.00, ``{"run_id"}``) is voc-engineering-runtime's alone: its execution role in the session named
+after its function (``ENGINEERING_RUNTIME_ROLE_NAME``, ``ENGINEERING_RUNTIME_FUNCTION_NAME``), checked as an agent's
+identity is; an agent asking for it is refused 403, and the runtime asking for any other operation is too.
 """
 from __future__ import annotations
 
@@ -24,6 +28,7 @@ import base64
 import binascii
 import json
 import os
+import re
 import time
 from collections.abc import Callable, Mapping
 from functools import lru_cache
@@ -57,11 +62,13 @@ from engineering.connectors.identity import (
     OPEN_OR_UPDATE_DRAFT_PR,
     POST_COMMENT,
     PUSH_BUNDLE,
+    REACTIONS,
     READ,
     Caller,
     UnknownCaller,
     caller_from_event,
     own_account,
+    runtime_caller_from_event,
 )
 from engineering.connectors.patches import WorkspacePatches
 from engineering.connectors.records import RunRecords, WriteClaims
@@ -89,6 +96,10 @@ AGGREGATES_ENV: Final = 'AGGREGATES_TABLE'
 #: broker's own name for it: the Agents API's ``AGENTS_TABLE`` (shared/agents_store.py) is the table the broker reads of
 #: only the attestations' partitions.
 CONNECTIONS_TABLE_ENV: Final = 'ENGINEERING_CONNECTIONS_TABLE'
+#: voc-engineering-runtime's execution role and function names (engineering-reactions.ts): the one caller besides the
+#: agents, for the reactions read alone (identity.py ``runtime_caller_from_event``). Unset: no runtime is admitted.
+RUNTIME_ROLE_NAME_ENV: Final = 'ENGINEERING_RUNTIME_ROLE_NAME'
+RUNTIME_FUNCTION_ENV: Final = 'ENGINEERING_RUNTIME_FUNCTION_NAME'
 
 
 class BadRequest(Exception):
@@ -202,11 +213,27 @@ def _open_or_update_draft_pr(broker: Broker, caller: Caller, args: Mapping[str, 
     return {'number': ref.number, 'url': ref.url}
 
 
+#: A run id (a ULID), as the runtime's reactions read names the run it asks about.
+_RUN_ID: Final = re.compile(r'[0-9A-HJKMNP-TV-Z]{26}')
+
+
+def _reactions(broker: Broker, caller: Caller, args: Mapping[str, object]) -> dict[str, object]:
+    """``{run_id}`` (the runtime's alone): ``{"reactions": <voc-reactions/1> | null}``, null when the run has no
+    recorded pull request."""
+    _keys(args, {'run_id'})
+    run_id = _text(args, 'run_id', MAX_NAME)
+    if not _RUN_ID.fullmatch(run_id):
+        raise BadRequest('run_id is a run id (a ULID).')
+    found = broker.reactions(caller, run_id)
+    return {'reactions': None if found is None else found.view()}
+
+
 _OPERATIONS: Final[Mapping[str, Callable[[Broker, Caller, Mapping[str, object]], dict[str, object]]]] = {
     READ: _read,
     POST_COMMENT: _post_comment,
     PUSH_BUNDLE: _push_bundle,
     OPEN_OR_UPDATE_DRAFT_PR: _open_or_update_draft_pr,
+    REACTIONS: _reactions,
 }
 
 
@@ -235,11 +262,26 @@ def _answer(event: Mapping[str, object], caller: Caller, broker: Broker) -> tupl
         return operation, _refusal(exc)
 
 
-def handle(event: Mapping[str, object], role_name_pattern: str, account: str, broker: Broker) -> dict[str, Any]:
-    """The function URL's response to ``event``, for callers of ``account`` (the broker's own)."""
+def _caller(event: Mapping[str, object], role_name_pattern: str, account: str,
+            runtime: tuple[str, str]) -> Caller | None:
+    """An agent of a run, else voc-engineering-runtime (``runtime``: its role's and its function's names), else None."""
     try:
-        caller = caller_from_event(event, role_name_pattern, account)
+        return caller_from_event(event, role_name_pattern, account)
     except UnknownCaller:
+        pass
+    try:
+        return runtime_caller_from_event(event, runtime[0], runtime[1], account)
+    except UnknownCaller:
+        return None
+
+
+def handle(event: Mapping[str, object], role_name_pattern: str, account: str, broker: Broker,
+           runtime: tuple[str, str] = ('', '')) -> dict[str, Any]:
+    """The function URL's response to ``event``, for callers of ``account`` (the broker's own): an agent of a run,
+    or voc-engineering-runtime (``runtime``: its execution role's name and its function's, which Lambda names its
+    session after; ``('', '')``: none admitted)."""
+    caller = _caller(event, role_name_pattern, account, runtime)
+    if caller is None:
         logger.warning('broker call refused', extra={'status': 403})
         return _response(403, {'error': 'The caller is not an engineering agent.'})
     operation, response = _answer(event, caller, broker)
@@ -288,6 +330,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         return handle(event, environ.get(ROLE_NAME_PATTERN_ENV, ''), account,
                       broker_for(environ.get(PARAMETER_PREFIX_ENV, ''), environ.get(TABLE_ENV, ''),
                                  environ.get(BUCKET_ENV, ''), environ.get(AGGREGATES_ENV, ''),
-                                 environ.get(CONNECTIONS_TABLE_ENV, '')))
+                                 environ.get(CONNECTIONS_TABLE_ENV, '')),
+                      (environ.get(RUNTIME_ROLE_NAME_ENV, ''), environ.get(RUNTIME_FUNCTION_ENV, '')))
     finally:
         WRITE_READY_BY.reset(ready)

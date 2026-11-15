@@ -13,9 +13,10 @@ What it reads (``records.RunRecord``, built by ``records.RunRecordReader`` from 
   crashes and the last failure the supervisor recorded (the run monitor's inspection data);
 - the run's ``META``: its connection, status and times.
 
-What it cannot read yet: people's reactions on the host (review comments on the agents' pull requests, edits after a
-merge, reverted commits), since the broker reads no host data. They come in through ``HostReactions``, a port that
-answers nothing today (``no_host_reactions``), and become the comments of a failure's evidence once it does.
+People's reactions on the host (7.10.00: the reviews and comments on the run's pull request by people with write
+access, the edits after its merge, a revert) come in through ``HostReactions``, a port the runtime answers with the
+run's latest recorded read (``reactions.host_reactions``; ``no_host_reactions`` where nothing is wired), and become the
+people's comments of every failure's evidence: they are the run's pull request's, no one task's (``task_id`` '').
 
 What it gives:
 
@@ -121,8 +122,8 @@ class RunRecord:
 
 @dataclass(frozen=True)
 class HostReaction:
-    """A person's reaction on the host to an agent's work on a task: a review comment, an edit after the merge, a
-    revert (none is readable yet: the broker reads no host data)."""
+    """A person's reaction on the host to the agents' work: a review or a comment, an edit after the merge, a revert;
+    of one task (``task_id``), or of the run's pull request as a whole (``task_id`` '')."""
 
     task_id: str
     kind: Literal['comment', 'edit_after_merge', 'revert']
@@ -134,7 +135,7 @@ type HostReactions = Callable[[RunRecord], Sequence[HostReaction]]
 
 
 def no_host_reactions(_run: RunRecord) -> tuple[HostReaction, ...]:
-    """What the host's reactions are today: none (the broker reads no host data yet)."""
+    """No reactions: the port where nothing reads them (the runtime wires ``reactions.host_reactions``)."""
     return ()
 
 
@@ -372,8 +373,9 @@ def _gate_text(gate: GateVerdict) -> str:
 
 def evidence(failure: FailedAttempt, run: RunRecord, reactions: Sequence[HostReaction] = ()) -> Evidence:
     """What the coach reads about the failure: the task, how the attempt ended and its moves, the agent's last
-    failure, the gate's verdict for a NO-GO, and people's reactions to the task (none yet). Each piece is cut to fit
-    and redacted; the coach's ``Evidence`` checks and redacts it again."""
+    failure, the gate's verdict for a NO-GO, and people's reactions to the task and to the run's pull request (at most
+    ``MAX_COMMENTS``, in the port's order). Each piece is cut to fit and redacted; the coach's ``Evidence`` checks and
+    redacts it again, and its prompt fences each as data."""
     attempt = failure.attempt
     task = attempt.task
     spec = task.spec or '{}'
@@ -389,7 +391,7 @@ def evidence(failure: FailedAttempt, run: RunRecord, reactions: Sequence[HostRea
     if failure.gate is not None:
         outputs.append(fit(_gate_text(failure.gate), OUTPUT_CHARS))
     comments = tuple(fit(f'{reaction.kind}: {reaction.text}', COMMENT_CHARS) for reaction in reactions
-                     if reaction.task_id == task.task_id)[:MAX_COMMENTS]
+                     if reaction.task_id in (task.task_id, ''))[:MAX_COMMENTS]
     return Evidence(task=fit(f'{task.title}\n\n{spec}', TASK_CHARS), outputs=tuple(outputs), comments=comments)
 
 

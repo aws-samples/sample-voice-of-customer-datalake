@@ -149,6 +149,12 @@ def text_unless_missing(response: Response, *keys: str) -> str | None:
     return None if response.status == 404 else text_of(dig(json_of(response), *keys[:-1]), keys[-1])
 
 
+def list_of(response: Response) -> list[object]:
+    """A list answer's items: [] for a 404, or for an answer that is not a list (the reactions reads)."""
+    data = json_of(response) if response.status == 200 else []
+    return data if isinstance(data, list) else []
+
+
 def items_of(data: object, fields: Mapping[str, tuple[str, ...]]) -> list[dict[str, object]]:
     """Each item of a list answer, as ``fields`` (name -> the keys to it) pick it."""
     return [{name: dig(item, *keys) for name, keys in fields.items()}

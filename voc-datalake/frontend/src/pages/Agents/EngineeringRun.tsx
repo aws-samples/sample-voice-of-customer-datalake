@@ -26,6 +26,7 @@ import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import { useIsAdmin, useMySub } from '../../store/authStore'
 import { BackToAgents } from './BackToAgents'
 import { EngineeringRunHeader } from './EngineeringRunHeader'
+import { EngineeringRunReactions } from './EngineeringRunReactions'
 import { AgentsPanel, BoardPanel } from './EngineeringRunPanels'
 import { ConversationPanel } from './EngineeringConversation'
 import { ReportsPanel } from './EngineeringReports'
@@ -116,6 +117,7 @@ function RunMonitor({ runId, overview, live, readAt }: Readonly<{
         </section>
         <Panels runId={runId} overview={overview} live={live} canAct={canAct} readAt={readAt} />
       </div>
+      <EngineeringRunReactions runId={runId} status={overview.run.status} reactions={overview.reactions} isAdmin={isAdmin} />
     </>
   )
 }

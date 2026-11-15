@@ -13,7 +13,18 @@ connection is (the administrators' routes, engineering/skills/views.py, check th
 written and leaves it (``written`` False).
 
 ``version_card`` aggregates one version's latest runs with ONE bounded Query of its partition (newest run first, at
-most ``MAX_RUNS``), never a whole-table read; ``compare`` reads a few versions, one Query each.
+most ``MAX_RUNS``), and their human edits with a second (below), never a whole-table read; ``compare`` reads a few
+versions, two Queries each.
+
+**The human edits** (7.10.00): what people's reactions on the host say a person had to do for a run (reviews requesting
+changes, commits editing the pull request's files after its merge, a revert: ``reactions.human_edits``), as separate
+create-only rows beside the version's scorecards, never a scorecard row changed::
+
+    WS#<ws>#SCORE#<connection>#<role>#<version> / HUMAN#<run>#<read_at>   voc-scorecard-human/1
+
+written by the reactions read (``reactions_read.py``) for each version that took part in the run, only when a read
+says something other than the run's read before it. ``version_card`` sums, for the runs it read, each run's newest
+such row (a second bounded Query, newest first, at most ``MAX_HUMAN_ROWS``).
 """
 from __future__ import annotations
 
@@ -24,14 +35,11 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Final
 
-from botocore.exceptions import ClientError
-
 from engineering.bus.schema import ULID, WS
 from engineering.connectors.identity import AGENT_ROLES
 from engineering.learning.retrospective import NO_VERSION, OFF_SHAPE_VERSION, VERSION_LABEL, RunRecord, ScoreLine
-from engineering.rows import amount_attr, string_attr, text_value
+from engineering.rows import amount_attr, put_once, string_attr, text_value
 from engineering.workspace.layout import CONNECTION
-from shared.aws import is_conditional_check_failure
 
 SCHEMA: Final = 'voc-scorecard/1'
 #: A version's runs one card reads, at most (one Query page: each row is well under 1 KB).
@@ -41,8 +49,16 @@ DEFAULT_RUNS: Final = 50
 MAX_COMPARED: Final = 10
 #: Who writes a scorecard row (D4): the run's retrospective, trusted code.
 WRITER: Final = 'retrospective'
+#: Who writes a human edits row: the reactions read, trusted code.
+HUMAN_WRITER: Final = 'reactions'
 _COUNTS: Final = ('tasks_done', 'tasks_failed', 'needs_human', 'reposts', 'review_rounds', 'attempts', 'seconds')
 _RUN_KEY: Final = re.compile(r'RUN#(?P<run>[0-9A-HJKMNP-TV-Z]{26})\Z')
+HUMAN_SCHEMA: Final = 'voc-scorecard-human/1'
+HUMAN_PREFIX: Final = 'HUMAN#'
+#: The human edits' rows one card reads, at most (newest first; each run's newest counts).
+MAX_HUMAN_ROWS: Final = 400
+_HUMAN_KEY: Final = re.compile(r'HUMAN#(?P<run>[0-9A-HJKMNP-TV-Z]{26})#[0-9T:.Z-]{1,40}\Z')
+_HUMAN_COUNTS: Final = ('changes_requested', 'people_commits_after_merge', 'reverted')
 
 
 class ScorecardError(ValueError):
@@ -90,6 +106,14 @@ class VersionCard:
     #: Who wrote the newest row, and when (D4).
     latest_written_by: str = ''
     latest_written_at: str = ''
+    #: The human edits of the runs read (7.10.00): how many of them people's reactions say needed a person's edit,
+    #: and the changes requested, people's commits after the merge (no bot's, no agent's) and the reverts in all;
+    #: ``human_more`` when the bound on their rows was reached (an older run's may have been left out).
+    runs_with_human_edits: int = 0
+    changes_requested: int = 0
+    people_commits_after_merge: int = 0
+    reverts: int = 0
+    human_more: bool = False
 
     @property
     def pass_rate(self) -> float | None:
@@ -121,13 +145,7 @@ class ScorecardStore:
             'cost_usd': {'N': str(line.cost_usd)}, 'written_by': {'S': WRITER},
             'written_at': {'S': self.now().isoformat()},
             **{name: {'N': str(getattr(line, name))} for name in _COUNTS}}
-        try:
-            self.client.put_item(TableName=self.table, Item=item, ConditionExpression='attribute_not_exists(pk)')
-        except ClientError as exc:
-            if is_conditional_check_failure(exc):
-                return False
-            raise
-        return True
+        return put_once(self.client, self.table, item)
 
     def version_card(self, ws: str, connection: str, role: str, version: str, *,
                      runs: int = DEFAULT_RUNS) -> VersionCard:
@@ -145,7 +163,13 @@ class ScorecardStore:
 
         latest = _RUN_KEY.fullmatch(string_attr(items[0], 'sk')) if items else None
         newest, oldest = (items[0], items[-1]) if items else ({}, {})
+        human, human_more = self._human(score_pk(ws, connection, role, version),
+                                        {string_attr(item, 'run_id') for item in items})
         return VersionCard(connection=connection, role=role, version=version, runs=len(items),
+                           runs_with_human_edits=sum(any(row.values()) for row in human),
+                           changes_requested=sum(row['changes_requested'] for row in human),
+                           people_commits_after_merge=sum(row['people_commits_after_merge'] for row in human),
+                           reverts=sum(row['reverted'] for row in human), human_more=human_more,
                            tasks_done=total('tasks_done'), tasks_failed=total('tasks_failed'),
                            needs_human=total('needs_human'), reposts=total('reposts'),
                            review_rounds=total('review_rounds'), attempts=total('attempts'), seconds=total('seconds'),
@@ -155,6 +179,39 @@ class ScorecardStore:
                            until=text_value(newest.get('run_ended_at')),
                            latest_written_by=text_value(newest.get('written_by')),
                            latest_written_at=text_value(newest.get('written_at')))
+
+    def _human(self, pk: str, runs: set[str]) -> tuple[list[dict[str, int]], bool]:
+        """Each of ``runs``' newest human edits row (one Query, newest first, at most ``MAX_HUMAN_ROWS``), and whether
+        the bound was reached."""
+        answer = self.client.query(
+            TableName=self.table, ConsistentRead=True, Limit=MAX_HUMAN_ROWS, ScanIndexForward=False,
+            KeyConditionExpression='pk = :pk AND begins_with(sk, :human)',
+            ExpressionAttributeValues={':pk': {'S': pk}, ':human': {'S': HUMAN_PREFIX}})
+        rows: list[dict[str, Any]] = answer.get('Items', [])
+        newest: dict[str, dict[str, int]] = {}
+        for row in rows:
+            key = _HUMAN_KEY.fullmatch(string_attr(row, 'sk'))
+            run = key.group('run') if key else ''
+            if run in runs and run not in newest:   # (newest first: a run's first row is its latest read)
+                newest[run] = {name: int(amount_attr(row, name)) for name in _HUMAN_COUNTS}
+        return list(newest.values()), len(rows) == MAX_HUMAN_ROWS
+
+    def write_human(self, run: RunRecord, role: str, version: str, read_at: str, *, changes_requested: int,
+                    people_commits_after_merge: int, reverted: bool) -> bool:
+        """A version's human edits for ``run`` as one read found them (``read_at``), created once
+        (``attribute_not_exists``); False when that row was written already. Never a scorecard row changed."""
+        if not ULID.fullmatch(run.run_id):
+            raise ScorecardError('a run id is a ULID')
+        item: dict[str, Any] = {
+            'pk': {'S': score_pk(run.ws, run.connection, role, version)},
+            'sk': {'S': f'{HUMAN_PREFIX}{run.run_id}#{read_at[:40]}'},
+            'schema': {'S': HUMAN_SCHEMA}, 'connection': {'S': run.connection}, 'role': {'S': role},
+            'version': {'S': version}, 'run_id': {'S': run.run_id}, 'read_at': {'S': read_at[:40]},
+            'changes_requested': {'N': str(changes_requested)},
+            'people_commits_after_merge': {'N': str(people_commits_after_merge)},
+            'reverted': {'N': '1' if reverted else '0'}, 'written_by': {'S': HUMAN_WRITER},
+            'written_at': {'S': self.now().isoformat()}}
+        return put_once(self.client, self.table, item)
 
     def compare(self, ws: str, connection: str, role: str, versions: Sequence[str]) -> list[VersionCard]:
         """A few versions of one role side by side, each over its latest ``DEFAULT_RUNS`` runs (at most

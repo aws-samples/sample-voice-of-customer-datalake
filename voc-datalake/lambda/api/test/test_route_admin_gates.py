@@ -70,6 +70,8 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         'POST /agents/engineering/<run_id>/board/tasks', 'POST /agents/engineering/<run_id>/board/tasks/<task_id>/<action>',
         # A person's go on an engineering run (what an AI-assisted run's push waits for): the same gate.
         'POST /agents/engineering/<run_id>/go',
+        # An administrator's hand trigger of an ended run's reactions read (7.10.00): the same gate.
+        'POST /agents/engineering/<run_id>/reactions',
         # The administrators' hard cap on engineering runs (engineering/settings.py): an admin acting for themselves.
         'PUT /agents/engineering/settings',
         # The repository connections and their credentials (engineering/connectors/connections.py): the same gate.

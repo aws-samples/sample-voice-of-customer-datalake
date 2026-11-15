@@ -32,6 +32,13 @@ def start_run(dynamo: Any, run_id: str = RUN, max_tasks: int = 10) -> None:
                                            'max_tasks': {'N': str(max_tasks)}})
 
 
+def set_status(dynamo: Any, status: str, run_id: str = RUN) -> None:
+    """The run's META status set to ``status`` (an end, a person's decision point)."""
+    dynamo.update_item(TableName=TABLE, Key={'pk': {'S': f'WS#default#RUN#{run_id}'}, 'sk': {'S': 'META'}},
+                       UpdateExpression='SET #s = :s', ExpressionAttributeNames={'#s': 'status'},
+                       ExpressionAttributeValues={':s': {'S': status}})
+
+
 @contextmanager
 def engineering_table(max_tasks: int = 10, run_id: str = RUN) -> Generator[Any]:
     """A low-level DynamoDB client on the table; the run exists (the run's start writes its META row)."""

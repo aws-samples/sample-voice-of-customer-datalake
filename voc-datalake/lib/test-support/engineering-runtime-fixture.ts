@@ -18,7 +18,7 @@ import { fixtureBucket } from './fixture-resources';
 export const ACCOUNT = 'arn:aws:lambda:us-east-1:111111111111';
 
 /** The bus's and the broker's parts the runtime takes, as references, and the sources pinned on the bus. */
-function fakePeers(stack: cdk.Stack, kmsKey: kms.IKey, pins: Map<string, string>): EngineeringPeers {
+function fakePeers(stack: cdk.Stack, kmsKey: kms.IKey, pins: Map<string, string>, admitted: Admitted[]): EngineeringPeers {
   return {
     // A queue on the stack's key, as voc-engineering-dlq is.
     deadLetterQueue: new sqs.Queue(stack, 'EngineeringDLQ', { encryption: sqs.QueueEncryption.KMS, encryptionMasterKey: kmsKey }),
@@ -33,10 +33,20 @@ function fakePeers(stack: cdk.Stack, kmsKey: kms.IKey, pins: Map<string, string>
     connectionParameters: {
       prefix: '/voc/engineering/', arns: 'arn:aws:ssm:us-east-1:111111111111:parameter/voc/engineering/*',
     },
+    admitRuntime: (role: iam.IRole, functionName: string) => {
+      admitted.push({ role: stack.resolve(role.roleName), functionName });
+    },
   };
 }
 
-export interface RuntimeStack { template: Template; added: boolean; pins: Map<string, string> }
+/** A runtime the broker was asked to admit: its role's name (resolved) and its function's. */
+export interface Admitted { role: unknown; functionName: string }
+
+export interface RuntimeStack {
+  template: Template; added: boolean; pins: Map<string, string>;
+  /** The runtimes the broker was asked to admit (the broker's own test pins what it does with them). */
+  admitted: Admitted[];
+}
 
 /** A stack with only the runtime's dependencies, under `context`; `withPeers: false` leaves out the bus and broker. */
 export function runtimeStack(context: Record<string, unknown>, withPeers = true): RuntimeStack {
@@ -44,6 +54,7 @@ export function runtimeStack(context: Record<string, unknown>, withPeers = true)
   const stack = new cdk.Stack(app, 'EngineeringTest', { env: { account: '111111111111', region: 'us-east-1' } });
   const kmsKey = new kms.Key(stack, 'Key');
   const pins = new Map<string, string>();
+  const admitted: Admitted[] = [];
   const added = addEngineeringRuntime(stack, {
     uniqueName: (baseName) => baseName,
     layer: lambda.LayerVersion.fromLayerVersionArn(stack, 'Layer', 'arn:aws:lambda:us-east-1:111111111111:layer:deps:1'),
@@ -58,9 +69,9 @@ export function runtimeStack(context: Record<string, unknown>, withPeers = true)
     }),
     rawDataBucket: fixtureBucket(stack, 'Raw'),
     workspaceBucket: fixtureBucket(stack, 'Workspace'),
-    peers: withPeers ? fakePeers(stack, kmsKey, pins) : undefined,
+    peers: withPeers ? fakePeers(stack, kmsKey, pins, admitted) : undefined,
   });
-  return { template: Template.fromStack(stack), added, pins };
+  return { template: Template.fromStack(stack), added, pins, admitted };
 }
 
 /** How many resources of `type` match `properties`. */

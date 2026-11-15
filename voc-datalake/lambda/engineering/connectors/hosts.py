@@ -14,6 +14,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Final, Literal, Protocol
 
+from engineering.connectors.reactions import PullRequestReactions
 from engineering.connectors.write_policy import BrokerError, WriteRefused
 from engineering.run_links import PullRequestLink
 
@@ -453,6 +454,11 @@ class RepositoryHost(Protocol):
     def open_or_update_draft_pr(self, connection_id: str, branch: str, base: str, title: str, body: str,
                                 tree_hash: str) -> PullRequestRef: ...
 
+    def reactions(self, connection_id: str, number: int, url: str, branch: str) -> PullRequestReactions:
+        """People's reactions to the pull request ``number`` (its record's address ``url``), the revert and the edits
+        after its merge on ``branch`` (7.10.00, ``reactions.py``): reads only, bounded, trust-filtered, redacted."""
+        ...
+
 
 class BundleReader(Protocol):
     def contents(self, submission: Submission) -> BundleContents:
@@ -507,6 +513,11 @@ class WriteLedger(Protocol):
         run's record names one on another head (never repointed); ``Unavailable`` when it cannot be written."""
         ...
 
+    def pull_request(self, run_id: str, repository: str) -> PullRequestLink | None:
+        """The run's recorded pull request (``run_links.run_pull_request``: its row, else its newest done write
+        claim), None for none; ``Unavailable`` when it cannot be read."""
+        ...
+
 
 class Unconnected:
     """The patch reader, run records, GO ledger and dial where the deployment names none of their stores: every call
@@ -541,6 +552,9 @@ class Unconnected:
         raise NoConnection(NO_CONNECTION)
 
     def record_pull_request(self, run_id: str, link: PullRequestLink) -> bool:  # noqa: ARG002 - the protocol's
+        raise NoConnection(NO_CONNECTION)
+
+    def pull_request(self, run_id: str, repository: str) -> PullRequestLink | None:  # noqa: ARG002 - the protocol's
         raise NoConnection(NO_CONNECTION)
 
 

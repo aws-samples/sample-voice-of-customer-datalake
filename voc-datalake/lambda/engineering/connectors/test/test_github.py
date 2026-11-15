@@ -729,11 +729,12 @@ def test_no_token_or_jwt_is_ever_in_a_url_or_a_log_line(caplog: pytest.LogCaptur
 
 def test_the_client_has_no_merge_approve_settings_or_revoke_method() -> None:
     public = {name for name in dir(GitHubHost) if not name.startswith('_')}
-    # Reads (a patch's base file, the default branch, the credential's repository, the branch rules) and the three
-    # writes, and the checkout cache's read-only fetch token: nothing else (no method changes a branch rule).
+    # Reads (a patch's base file, the default branch, the credential's repository, the branch rules, the reactions to
+    # a pull request) and the three writes, and the checkout cache's read-only fetch token: nothing else (no method
+    # changes a branch rule).
     assert public == {'read', 'file_at', 'default_branch', 'repository', 'ci_protection', 'post_comment',
                       'branch_tree_hash', 'push_bundle', 'open_or_update_draft_pr', 'fetch_token',
-                      'revoke_fetch_token'}
+                      'revoke_fetch_token', 'reactions'}
 
 
 def test_a_revoked_fetch_token_is_deleted_once_and_never_reused() -> None:

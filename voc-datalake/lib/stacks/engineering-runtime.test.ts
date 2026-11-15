@@ -342,11 +342,17 @@ describe('with -c engineeringAgents=true', () => {
     expect(supervisor).toMatch(/"Workspace\w*","Arn"\]\},"\/ws\/\*\/runs\/\*\/\*\/commits\/\*\/_checkpoints/);
     // No AgentCore grant without a runtime (engineering-agentcore.test.ts has them).
     expect(supervisor).not.toMatch(/bedrock-agentcore|Microvm/);
-    expect(supervisor).not.toMatch(/s3:DeleteObject|s3:PutObject|dynamodb:\*|s3:\*|iam:|gsi1|engineering\/runs\//);
+    expect(supervisor).not.toMatch(/s3:DeleteObject|s3:PutObject|dynamodb:\*|s3:\*|gsi1|engineering\/runs\//);
     template.hasResourceProperties('AWS::Lambda::Function', {
       FunctionName: 'voc-engineering-runtime',
       Environment: { Variables: Match.objectLike({ ENGINEERING_TABLE: Match.anyValue() }) },
     });
+  });
+
+  it('gives the supervisor one IAM action: the pass of the reactions schedule\'s role, never an IAM write', () => {
+    // (to EventBridge Scheduler alone, 7.10.00: engineering-reactions.test.ts pins the statement)
+    expect(policyText(template, 'EngineeringSupervisorRole').match(/"iam:\w+"/g))
+      .toStrictEqual(['"iam:PassRole"', '"iam:PassedToService"']);
   });
 
   it('gives the delivery only what a wake needs: the runs\' rows, the checkpoints, the launch, its DLQ (no runtime yet)', () => {
@@ -476,8 +482,9 @@ describe('with -c engineeringAgents=true', () => {
       const invoke = statement('LearningHandsOnToItself');
       expect(invoke).toMatchObject({ Effect: 'Allow', Action: 'lambda:InvokeFunction' });
       expect(JSON.stringify(invoke?.Resource)).toMatch(/:function:voc-engineering-runtime"\]\]\}$/);
-      // (the other: the checkout cache's writer, engineering-cache.test.ts)
-      expect(policyText(template, 'EngineeringSupervisorRole').match(/lambda:InvokeFunction"/g)).toHaveLength(2);
+      // (the others: the checkout cache's writer, engineering-cache.test.ts; the broker, only through its function URL,
+      // for the reactions read, engineering-reactions.test.ts)
+      expect(policyText(template, 'EngineeringSupervisorRole').match(/lambda:InvokeFunction"/g)).toHaveLength(3);
     });
 
     it('lets the runtime call the allowlisted Claude models (the coach), and the delivery none', () => {

@@ -33,7 +33,12 @@ Writes, and how each holds the broker's ``tree_hash``:
   branch's head has ``tree_hash``, and checked again afterwards: when its head does not have it, or the check fails,
   one the client just opened is closed and the outcome is unknown, never refused, since the host already wrote.
 
-The client has no method for a merge, an approval, settings, protected branches, members, webhooks or variables.
+Since 7.10.00 it also reads people's reactions to the run's merge request (``reactions``, ``gitlab_reactions.py``):
+its notes, the commits on the default branch after its merge and its files' names, and a note author's access level
+(the members API, read only).
+
+The client has no method for a merge, an approval, settings, protected branches, a change of members, webhooks or
+variables.
 """
 from __future__ import annotations
 
@@ -46,6 +51,7 @@ from dataclasses import dataclass
 from typing import Final
 from urllib.parse import quote, urlencode
 
+from engineering.connectors import gitlab_reactions
 from engineering.connectors.credentials import GitLabTokenCredential
 from engineering.connectors.gitlab_api import GITLAB_URL, READ_TRIES, gitlab_transport, next_page, project_ref, send
 from engineering.connectors.gitlab_api import REQUEST_SECONDS as GITLAB_REQUEST_SECONDS
@@ -82,6 +88,7 @@ from engineering.connectors.hosts import (
     require_pushable,
     stray_changes,
 )
+from engineering.connectors.reactions import PullRequestReactions
 from engineering.connectors.transport import (
     Response,
     Transport,
@@ -97,6 +104,9 @@ from engineering.connectors.write_policy import BrokerError, WriteRefused, check
 from shared.logging import logger
 
 PAGE_SIZE: Final = 30
+#: How long a project member's access level, and the connection's own token's user, are kept (the reactions read's
+#: trust filter, ``gitlab_reactions.py``).
+MEMBER_SECONDS: Final = 600
 #: How long a connection's default branch (the host's, or the stored one the host confirmed) is kept.
 DEFAULT_BRANCH_SECONDS: Final = 300
 #: How long branch rules that passed the CI check are kept before they are read again.
@@ -283,6 +293,10 @@ class GitLabHost:
         self._cached = BranchCaches()
         #: The reads a push makes before it writes, counted and timed while they run (``_PreWrite``).
         self._budget: _PreWrite | None = None
+        #: By (connection, project[, user]): the token's own user's id, a member's access level; and when each is read
+        #: again (``MEMBER_SECONDS``, at most ``MAX_CACHED`` each).
+        self._own_users: dict[tuple[str, int], tuple[int, float]] = {}
+        self._levels: dict[tuple[str, int, int], tuple[int, float]] = {}
 
     # --- HTTP -------------------------------------------------------------------------------------------------
 
@@ -364,6 +378,39 @@ class GitLabHost:
                 content['reviews'] = [{'author': dig(entry, 'user', 'username'), 'state': 'approved'}
                                       for entry in (approved if isinstance(approved, list) else [])]
         return ReadPage(content=json.dumps(content), next_cursor=next_page(response.headers))
+
+    def reactions(self, connection_id: str, number: int, url: str, branch: str) -> PullRequestReactions:
+        """People's reactions to merge request ``number`` (7.10.00, ``gitlab_reactions.py``): reads only, with the
+        connection's token, its authors' access levels read through the members API (cached ``MEMBER_SECONDS``)."""
+        return gitlab_reactions.read(
+            lambda path: self._api(connection_id, 'GET', path, 'the reactions read', ok=(200, 404)), url, number,
+            branch, lambda: self._own_user(connection_id), lambda user: self._member_level(connection_id, user))
+
+    def _own_user(self, connection_id: str) -> int:
+        """The id of the connection's token's own user (``GET /user``), kept ``MEMBER_SECONDS``."""
+        credential = self._credentials(connection_id)
+        key, now = (connection_id, credential.project_id), self._clock()
+        held = fresh(self._own_users, key, now)
+        if held is not None:
+            return held
+        user = int_of(json_of(send(self._transport, self._clock, 'GET', '/user', credential.token,
+                                   'the reactions read')), 'id')
+        keep(self._own_users, key, (user, now + MEMBER_SECONDS), MAX_CACHED)
+        return user
+
+    def _member_level(self, connection_id: str, user: int) -> int:
+        """``user``'s access level on the project, inherited ones included (``/members/all/<id>``; 0 for no member),
+        kept ``MEMBER_SECONDS``."""
+        credential = self._credentials(connection_id)
+        key, now = (connection_id, credential.project_id, user), self._clock()
+        held = fresh(self._levels, key, now)
+        if held is not None:
+            return held
+        response = self._api(connection_id, 'GET', f'/members/all/{user}', 'the reactions read', ok=(200, 404))
+        level = dig(json_of(response), 'access_level') if response.status == 200 else 0
+        found = level if isinstance(level, int) and not isinstance(level, bool) else 0
+        keep(self._levels, key, (found, now + MEMBER_SECONDS), MAX_CACHED)
+        return found
 
     def default_branch(self, connection_id: str, stored: str = '') -> str:
         """``stored`` once the project has it (one branch lookup, kept ``DEFAULT_BRANCH_SECONDS``;

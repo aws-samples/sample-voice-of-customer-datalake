@@ -28,9 +28,12 @@ code writes; the broker writes none of them:
   or voided one, none, or a deployment that names no agents table, is not attested, so the push or pull request is
   refused.
 
-Not read: the run's issue (META's ``issue``) and its pull request (7.09.00: recorded for the run monitor, the reports
-and the learning loop, not yet taken as the issue and pull request an agent may comment on, so no comment is
-accepted), and the reviews behind its feedback ids (not recorded yet, so the write rules have no review text to
+* the run's pull request (7.10.00, ``WriteClaims.pull_request``): for the runtime's reactions read only (its row and
+  its author's done claims, ``run_links.run_pull_request``: a GetItem and one bounded Query of the run's writes).
+
+Not read: the run's issue (META's ``issue``), its pull request as the one an agent may comment on (7.09.00: recorded
+for the run monitor, the reports and the learning loop, not yet taken as that, so no comment is accepted), and the
+reviews behind its feedback ids (not recorded yet, so the write rules have no review text to
 compare: their personal-data checks still run).
 """
 from __future__ import annotations
@@ -66,6 +69,7 @@ from engineering.run_links import (
     PULL_REQUEST_SK,
     PullRequestLink,
     merged,
+    run_pull_request,
     stored_link,
     writes_pk,
 )
@@ -228,6 +232,15 @@ class WriteClaims:
             if self._write_pull_request(key, becomes, None if item is None else earlier):
                 return True
         raise Unavailable(_NOT_RECORDED)
+
+    def pull_request(self, run_id: str, repository: str) -> PullRequestLink | None:
+        """The run's recorded pull request (``run_links.run_pull_request``), for the reactions read (7.10.00): its row,
+        else its newest done write claim, only when it is ``repository``'s own; ``Unavailable`` when it cannot be
+        read."""
+        try:
+            return run_pull_request(self._client, self._table, WORKSPACE, run_id, repository)
+        except (ClientError, BotoCoreError) as exc:
+            raise Unavailable(_UNREADABLE) from exc
 
     def _pull_request_row(self, key: dict[str, Any]) -> dict[str, Any] | None:
         try:

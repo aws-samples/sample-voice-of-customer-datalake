@@ -33,7 +33,12 @@ describe('parseOverview', () => {
     expect(overview.totals).toStrictEqual({
       messages: 3, microvm_seconds: 900, by_model: [{ model: 'model-a', input_tokens: 2000, output_tokens: 400 }],
     })
-    expect(Object.keys(overview)).toStrictEqual(['run', 'agents', 'actions_available', 'totals'])
+    expect(Object.keys(overview)).toStrictEqual(['run', 'agents', 'actions_available', 'totals', 'reactions'])
+  })
+
+  it('reads no reactions read as none, and a read off its shape as none too', () => {
+    expect(parseOverview(engineeringOverview()).reactions).toBeNull()
+    expect(parseOverview({ ...engineeringOverview(), reactions: { state: 'merged' } }).reactions).toBeNull()
   })
 
   it('reads the run\'s issue and pull request, and a link off its shape as none', () => {
