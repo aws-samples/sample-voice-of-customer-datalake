@@ -1,10 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync, readFileSync, readdirSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { buildPrompt, capDiff, chooseRunner, KINDS, KIRO_READ_SETTINGS, KIRO_WRITE_RULES, KIRO_WRITE_SETTINGS, onPath, parseVerdict, runnerCommand, SECRET_PATHS } from './lib.mjs'
+import { buildPrompt, capDiff, chooseRunner, KINDS, KIRO_READ_SETTINGS, onPath, parseVerdict, runnerCommand, SECRET_PATHS } from './lib.mjs'
 import { isCi, kindFromArgs } from './review.mjs'
 
 const ROOT = join(import.meta.dirname, '..', '..')
@@ -284,64 +284,60 @@ test('the commit review sends the commit messages and uses its own agent and cac
   }
 })
 
-// Verified live with kiro-cli 2.37 (5.72.01): an agent with tools ['read'], nothing in allowedTools and
-// toolsSettings.fs_read.allowedPaths ['./**'] reads ./ files without a prompt; a read of /tmp/… fails in
-// --no-interactive with "tool permission approval is not supported"; a read matching deniedPaths fails with "the
-// arguments supplied are forbidden". Claude Code (dontAsk, the rules above) DENIED a read outside ./ and of a
-// Read-denied ./.env. This pins those configurations.
+// Verified live with kiro-cli 3.3.0 (2026-11-14), headless on the V2 engine the runners pin: an agent with tools
+// ['read'], nothing in allowedTools and toolsSettings.fs_read.allowedPaths ['./**'] reads ./ files without a prompt;
+// a read of /tmp/… fails in --no-interactive with "tool permission approval is not supported"; a read matching
+// deniedPaths fails with "the arguments supplied are forbidden". Interactive V3 enforces the `permissions` half
+// instead (secret paths refused), but reads outside the workspace there without approval (lib.mjs →
+// KIRO_READ_SETTINGS). Claude Code (dontAsk, the rules above) DENIED a read outside ./ and of a Read-denied ./.env.
+// This pins those configurations; agent-guard.test.mjs pins every agent in the folder.
 test('both Kiro review agents can read only inside the repository, and trust nothing', () => {
   for (const agent of ['tenets-reviewer', 'commit-reviewer']) {
     const config = JSON.parse(readFileSync(join(ROOT, `.kiro/agents/${agent}.json`), 'utf8'))
     assert.deepEqual(config.tools, ['read', 'thinking'], agent)
     assert.deepEqual(config.allowedTools, ['thinking'], agent)
+    // Both formats, always: headless V2 enforces only `toolsSettings`, interactive V3 only `permissions`.
     assert.deepEqual(config.toolsSettings, KIRO_READ_SETTINGS.toolsSettings, agent)
-    // Both formats, always: kiro-cli 3.3.0 refuses a secret read through `toolsSettings` (verified live, against its
-    // docs), and `permissions` is the documented V3 form. Never drop either block.
     assert.deepEqual(config.permissions, KIRO_READ_SETTINGS.permissions, agent)
     assert.equal(config.prompt, `file://./prompts/${agent}.md`)
   }
 })
 
-// Agents that may skip the read rules, each with its reason. Empty: every agent in .kiro/agents reads files.
-const AGENTS_WITHOUT_FILE_ACCESS = new Map()
-
-test('every Kiro agent in the repository reads (and writes) only the repository, never a secret-shaped path', () => {
-  // Fail closed: EVERY agent carries the exact V3 read rules (deny always wins over allow), unless it is named in
-  // AGENTS_WITHOUT_FILE_ACCESS. Under kiro-cli V3 the hook agents allowed fs_read on the whole disk and denied
-  // nothing before 7.00.01. The rules cover the read and write tools; kiro-cli 3.3.0's grep ignores them (CHANGELOG).
-  const dir = join(ROOT, '.kiro/agents')
-  const agents = readdirSync(dir).filter((name) => name.endsWith('.json'))
-  assert.ok(agents.length >= 6, 'the agents folder was read')
-  for (const name of agents) {
-    const config = JSON.parse(readFileSync(join(dir, name), 'utf8'))
-    // A machine-specific upgrade marker invites kiro-cli to regenerate the file (and drop the deny): never committed.
-    assert.equal(config.kiroUpgrade, undefined, `${name}: no kiroUpgrade marker is committed`)
-    if (AGENTS_WITHOUT_FILE_ACCESS.has(name)) continue
-    const rules = config.permissions?.rules ?? []
-    const of = (capability) => rules.filter((rule) => rule.capability === capability)
-    // kiro-cli 3.3.0 refuses a secret read through toolsSettings, and V3 documents permissions: both, always.
-    assert.deepEqual(of('fs_read'), KIRO_READ_SETTINGS.permissions.rules, `${name}: the V3 read rules`)
-    assert.deepEqual(config.toolsSettings?.fs_read, KIRO_READ_SETTINGS.toolsSettings.fs_read, `${name}: the read deniedPaths`)
-    // A pre-approved read tool bypassed the deny in kiro-cli 3.3.0 (verified live): reads are approved by the rules.
-    const preapproved = (config.allowedTools ?? []).filter((tool) => ['fs_read', 'read', 'grep', 'glob', '*', '@builtin'].includes(tool))
-    assert.deepEqual(preapproved, [], `${name}: no read tool in allowedTools`)
-    // Fail closed: decided by what the agent CAN do (a write tool), not by whether it already has write rules.
-    const writes = of('fs_write')
-    const canWrite = [...(config.tools ?? []), ...(config.allowedTools ?? [])]
-      .some((tool) => ['write', 'fs_write', '*', '@builtin'].includes(tool))
-    if (canWrite || writes.length > 0) {
-      assert.deepEqual(writes, KIRO_WRITE_RULES, `${name}: the V3 write rules`)
-      assert.deepEqual(config.toolsSettings?.fs_write, KIRO_WRITE_SETTINGS, `${name}: the write deniedPaths`)
-    }
+test('both headless Kiro runners pin the V2 engine', () => {
+  // V2 is the engine that confines reads to the repository headless; without the flag a developer's
+  // chat.agentEngine setting picks the engine.
+  const kiro = runnerCommand('kiro', { agent: 'commit-reviewer', systemPrompt: 'S' })
+  assert.deepEqual(kiro.args.slice(kiro.args.indexOf('--agent-engine'), kiro.args.indexOf('--agent-engine') + 2), ['--agent-engine', 'v2'])
+  // The pre-push hook: every kiro-cli call in the script carries the same flags.
+  const hook = readFileSync(join(ROOT, 'scripts/git-hooks/pre-push'), 'utf8')
+  const calls = hook.split('\n').filter((line) => /^\s*kiro-cli chat /.test(line))
+  assert.equal(calls.length, 1, 'one kiro-cli call in the hook')
+  for (const call of calls) {
+    assert.match(call, /(^| )--agent-engine v2( |$)/)
+    assert.match(call, /(^| )--no-interactive( |$)/)
+    assert.match(call, /(^| )--trust-tools=( |$)/)
+    assert.doesNotMatch(call, /--trust-all-tools|(^| )-a( |$)/)
   }
 })
 
-test('the V3 deny list names .env and .env.* outright, as files and as directories', () => {
-  // kiro.dev does not say whether `*` matches an empty name, so `**/*.env` alone may not cover a plain `.env`.
+test('the deny list names .env and .env.* outright, as files and as directories', () => {
+  // kiro-cli V2 refuses a plain `.env` under both `**/.env` and `**/*.env` (its error names both); the explicit
+  // entries follow kiro.dev's own example and do not depend on how `*` treats an empty name.
   const denied = KIRO_READ_SETTINGS.permissions.rules.find((rule) => rule.effect === 'deny').match
   for (const glob of ['**/.env', '**/.env/**', '**/.env.*', '**/.env.*/**']) assert.ok(denied.includes(glob), glob)
   const allows = KIRO_READ_SETTINGS.permissions.rules.filter((rule) => rule.effect === 'allow')
   assert.deepEqual(allows, [{ capability: 'fs_read', match: ['./**'], effect: 'allow' }])
+})
+
+test('only the known-wide *credentials* glob matches tracked files, so the review diff keeps the rest', () => {
+  // SECRET_PATHS also drives REVIEW_PATHSPEC: a tracked match is left out of every review (named, never sent). The
+  // `*credentials*` matches (mock-credentials.js, mcp_credentials.py, their tests) are known and named; any other
+  // glob matching a tracked file is a new silent gap. Check `git ls-files -- '<glob>'` before adding a glob.
+  // `:(glob)**/<glob>` matches at any depth: a plain `.env` pathspec is literal and would see only the root file.
+  const pathspecs = SECRET_PATHS.filter((glob) => glob !== '*credentials*').map((glob) => `:(glob)**/${glob}`)
+  const tracked = spawnSync('git', ['ls-files', '--', ...pathspecs], { cwd: ROOT, encoding: 'utf8' })
+  assert.equal(tracked.status, 0, tracked.stderr)
+  assert.equal(tracked.stdout.trim(), '')
 })
 
 test('a timeout stops the agent, is a skip, and is not cached', () => {

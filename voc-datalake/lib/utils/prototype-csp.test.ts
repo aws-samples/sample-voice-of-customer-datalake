@@ -13,7 +13,9 @@ import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { PIN_SUBMIT_URL_METADATA_KEY, PROTOTYPE_BASE_CSP, prototypeCspFunctionCode } from './prototype-csp';
+import {
+  PIN_SUBMIT_URL_METADATA_KEY, PROTOTYPE_BASE_CSP, PROTOTYPE_DRAFT_CSP, prototypeCspFunctionCode,
+} from './prototype-csp';
 
 const META_HEADER = `x-amz-meta-${PIN_SUBMIT_URL_METADATA_KEY}`;
 const DOC_ID = 'doc_proto_20260801_abc123';
@@ -117,6 +119,29 @@ describe('every prototype document gets an opaque origin', () => {
     const csp = cspOf(URI, SUBMIT_URL) ?? '';
     expect(csp.endsWith(`; connect-src ${SUBMIT_URL};`)).toBe(true);
     expect(sandboxTokens(csp)).not.toContain('connect-src');
+  });
+});
+
+describe('a prototype draft gets the narrower draft policy', () => {
+  it('is the base policy with a sandbox of scripts only', () => {
+    expect(PROTOTYPE_DRAFT_CSP).toBe(
+      "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; " +
+      "frame-ancestors 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; sandbox allow-scripts;",
+    );
+    expect(PROTOTYPE_DRAFT_CSP).toBe(PROTOTYPE_BASE_CSP.replace('sandbox allow-scripts allow-popups;', 'sandbox allow-scripts;'));
+  });
+
+  it('opens no popup, connects nowhere and never shares the app origin', () => {
+    expect(sandboxTokens(PROTOTYPE_DRAFT_CSP)).toStrictEqual(['allow-scripts']);
+    expect(PROTOTYPE_DRAFT_CSP).not.toContain('connect-src');
+    expect(PROTOTYPE_DRAFT_CSP).not.toContain('allow-popups');
+    expect(PROTOTYPE_DRAFT_CSP).not.toContain('allow-same-origin');
+  });
+
+  it('could get no pin exception from the CSP function, which is not on its behaviour either', () => {
+    // A draft key does not match the function's prototype path, so even a misattached
+    // function would answer BASE without a connect-src, never a pin exception.
+    expect(cspOf('/prototypes/proj_1/drafts/job_0123456789abcdef.html', SUBMIT_URL)).toBe(PROTOTYPE_BASE_CSP);
   });
 });
 

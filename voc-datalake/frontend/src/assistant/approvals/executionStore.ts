@@ -54,6 +54,12 @@ export function isExecuting(interruptId: string): boolean {
   return entryOf(interruptId)?.phase === 'executing'
 }
 
+/** The recorded outcome, once resolved (a caller that awaited `approve` reads what it did). */
+export function outcomeOf(interruptId: string): ToolOutcome | undefined {
+  const entry = entryOf(interruptId)
+  return entry?.phase === 'resolved' ? entry.outcome : undefined
+}
+
 export function useExecutionEntry(interruptId: string): ExecutionEntry | undefined {
   return useExecutionStore((s) => ownEntry(s.entries, interruptId))
 }

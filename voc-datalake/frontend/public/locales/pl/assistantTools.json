@@ -352,7 +352,29 @@
     "unknownCategory": "Kategoria „{{category}}” nie jest dostępna dla Ciebie — zmiana zostanie odrzucona.",
     "brandMerged": "Ustawienia po zapisaniu (pola, których nie wymieniono, zachowają bieżącą wartość):",
     "agent": "Agent",
-    "run": "Uruchomienie"
+    "run": "Uruchomienie",
+    "prototypeDraft": {
+      "prototype": "Prototyp:",
+      "instruction": "Polecenie dla wersji roboczej",
+      "note": "To tworzy tylko wersję roboczą. Pojawi się na stronie prototypu, gdy będzie gotowa, a nic nie zostanie zapisane, dopóki jej tam nie zastosujesz.",
+      "pins_one": "{{count, number}} wybrana pinezka testera",
+      "pins_few": "{{count, number}} wybrane pinezki testerów",
+      "pins_many": "{{count, number}} wybranych pinezek testerów",
+      "pins_other": "{{count, number}} wybranej pinezki testerów",
+      "noScreen": "(brak ekranu)",
+      "pinsInstruction": "Wysyłane są tylko identyfikatory pinezek: serwer sam je odczytuje i pisze polecenie (uwzględnić wybrane opinie testerów, z odpowiedzią dla każdej pinezki: zrobione lub niezrobione)."
+    },
+    "walkthrough": {
+      "remove": "Przewodnik zostanie usunięty.",
+      "step": "Krok {{n}} z {{total}}",
+      "position": "pozycję na ekranie {{screen}}",
+      "thisScreen": "ten ekran",
+      "replaces_one": "Zastępuje {{count, number}} zapisany krok.",
+      "replaces_few": "Zastępuje {{count, number}} zapisane kroki.",
+      "replaces_many": "Zastępuje {{count, number}} zapisanych kroków.",
+      "replaces_other": "Zastępuje {{count, number}} zapisanego kroku.",
+      "note": "Zapis tworzy nową wersję prototypu; osoby, które go otworzą, zobaczą kroki."
+    }
   },
   "tools": {
     "create_participant_list": {
@@ -547,6 +569,13 @@
       "titleWith_other": "Utwórz {{count, number}} użytkowników",
       "titleWith_few": "Utwórz {{count, number}} użytkowników",
       "titleWith_many": "Utwórz {{count, number}} użytkowników"
+    },
+    "draft_prototype_revision": {
+      "title": "Przygotuj wersję roboczą zmian prototypu"
+    },
+    "set_prototype_walkthrough": {
+      "title": "Zapisz przewodnik prototypu",
+      "titleRemove": "Usuń przewodnik prototypu"
     }
   }
 }

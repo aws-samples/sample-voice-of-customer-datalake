@@ -253,7 +253,8 @@ describe('cdk-nag acknowledgements', () => {
       // (lib/stacks/workspace-delete-worker.ts; its ws/{one id}/* versions share 83's finding).
       // 86-89: the cost rollup's Logs Insights reads (lib/stacks/cost-rollup-worker.ts): DescribeLogGroups on
       // log-group:*, StartQuery on the voc-* Lambda groups and their streams, GetQueryResults and StopQuery on *.
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 89, used: 89 });
+      // 88: main's 7.00.02 (through voc-wiki) names the logo keys exactly, so one acknowledgement goes.
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 88, used: 88 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

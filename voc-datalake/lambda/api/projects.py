@@ -42,7 +42,7 @@ from shared.aws import get_cognito_idp_client as _get_cognito_client
 from shared.aws import get_s3_client
 from shared.batch_get import batch_get_all
 from shared.company_personas import is_company_container
-from shared.converse import ConverseResult, converse_chain, converse_detailed
+from shared.converse import ConverseResult, answering_model, converse_chain, converse_detailed
 from shared.decision_records import DECISION_DOCUMENT_TYPE
 from shared.delete_audit import record_delete
 from shared.deleted_sources import DOCUMENT_SORT_KEY_PREFIXES, DeletedSource, mark_citing_documents
@@ -51,7 +51,10 @@ from shared.document_history import (
     edit_document,
     list_document_versions,
     restore_document_version,
+    saves_nothing,
 )
+from shared.document_revision import ProposalSave, verify_saved_proposal
+from shared.document_sections import row_section
 from shared.document_versions import (
     VERSIONED_DOCUMENT_TYPES,
     get_versioned_document_by_allocation,
@@ -102,7 +105,7 @@ from shared.indexes import PROJECTS_BY_TYPE_INDEX
 
 # Shared module imports
 from shared.logging import logger, metrics, tracer
-from shared.model_config import get_active_model_id, surface_context_window_tokens
+from shared.model_config import surface_context_window_tokens
 from shared.persona_context import personas_prompt_context
 from shared.persona_evidence import EVIDENCE_FEEDBACK_IDS_FIELD, resolve_evidence_ids
 from shared.persona_knowledge import PERSONA_KNOWLEDGE_STEP, persona_knowledge_fields, with_persona_knowledge
@@ -141,12 +144,14 @@ from shared.prompts import (
     get_persona_generation_steps,
     get_research_analysis_steps,
 )
+from shared.prototype_pins import PIN_SUBMIT_API_BASE_ENV
+from shared.prototype_versions import PrototypeStore, restore_prototype_version
 from shared.prototypes import prototype_s3_key, prototype_signed_url
 from shared.research_title import research_document_title
 from shared.row_ids import LONG_OPAQUE_ID_RE
 from shared.s3_versions import delete_every_version, delete_every_version_of_keys
 from shared.scoped_keys import scoped_object_key
-from shared.tables import get_feedback_table, get_jobs_table, get_projects_table
+from shared.tables import get_aggregates_table, get_feedback_table, get_jobs_table, get_projects_table
 from shared.timestamps import now_iso
 from shared.ws_repo import OUTSIDE_ENTRY_INDEX, WorkspaceScope
 
@@ -944,6 +949,9 @@ def get_project(project_id: str, caller: Caller | None = None, *, include_person
     # Normalize copies for this response only. GET must remain read-only and
     # latency-bounded; durable legacy assignment happens on managed mutations.
     documents = normalize_document_versions(documents)
+    # The list's section (docs/prototype-builder.md, part 4): computed on read, never stored; a legacy row
+    # with no document_type is in its sort key's section.
+    documents = [{**document, 'section': row_section(document)} for document in documents]
 
     # "Copy to Kiro" reads the prompt from here, so the constant is not duplicated
     # in the frontend bundle. COMPUTED, never stored: keep it out of every update
@@ -1849,20 +1857,6 @@ def _run_persona_step(step: dict, user: str | None = None) -> ConverseResult:
     )
 
 
-def _persona_model_id(result: ConverseResult | None) -> str:
-    """The model a persona-writing call reported running on.
-
-    Re-resolving the picker after the run is wrong: it caches per container
-    (~60 s), so an admin switching the AI model during a multi-minute run would
-    make the stamp name a model that never wrote these personas. The picker is
-    consulted only when the result carries no model (a stand-in that does not
-    report one); converse_detailed always sets it.
-    """
-    if result is not None and result.model_id:
-        return result.model_id
-    return get_active_model_id(PERSONA_SURFACE)
-
-
 @dataclass(frozen=True)
 class _PlannedPersona:
     """One persona the plan step assigned: who it is and which evidence it covers."""
@@ -2129,7 +2123,7 @@ def _surviving_personas(outcomes: list[_PersonaWrite]) -> _PersonaBatch:
         personas=[outcome.persona for outcome in survivors if outcome.persona is not None],
         tiers=[outcome.tier for outcome in survivors],
         dropped=len(outcomes) - len(survivors),
-        model_id=_persona_model_id(survivors[0].result),
+        model_id=answering_model(survivors[0].result, PERSONA_SURFACE),
     )
 
 
@@ -3102,12 +3096,17 @@ def _refuse_decision_edit(document: dict) -> None:
 
 
 @tracer.capture_method
-def update_document(project_id: str, document_id: str, body: dict) -> dict:
+def update_document(project_id: str, document_id: str, body: dict, *,
+                    proposal: ProposalSave | None = None) -> dict:
     """Save an edit as a NEW version; the previous content stays retrievable.
 
     A PRD / PR/FAQ edit is the next version of its series (a new document, like a
     regeneration); a research / custom edit keeps its id and saves what it replaces
-    as a revision. See ``shared.document_history``. Answers the saved document.
+    as a revision. See ``shared.document_history``. ``proposal``: the save names the
+    "Revise from comments" pass whose proposal it holds (``revise_job_id``); it is recorded
+    as a revise only when ``shared.document_revision.verify_saved_proposal`` says so (else
+    400), with the pass's model and prompt version. Answers the
+    saved document.
     """
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
@@ -3136,7 +3135,12 @@ def update_document(project_id: str, document_id: str, body: dict) -> dict:
             'Prototype content is stored in S3 and cannot be updated through '
             'generic document CRUD. Use the prototype revision workflow.'
         )
-    return edit_document(projects_table, project_id, document, body, now=now_iso(), title=title)
+    revise = None
+    # An unchanged save is edit_document's no-op, whatever pass it names.
+    if proposal is not None and not saves_nothing(document, body, title):
+        content = body.get('content') if isinstance(body.get('content'), str) else document.get('content') or ''
+        revise = verify_saved_proposal(proposal, project_id=project_id, document=document, content=str(content))
+    return edit_document(projects_table, project_id, document, body, now=now_iso(), title=title, revise=revise)
 
 
 @tracer.capture_method
@@ -3152,13 +3156,53 @@ def stored_document_type(project_id: str, document_id: str) -> str | None:
     return managed_document_type(_source_document_item(project_id, document_id))
 
 
+def prototype_store() -> PrototypeStore:
+    """Where this Lambda's prototype versions and drafts live (the pin forms are in the aggregates table)."""
+    if not projects_table:
+        raise ConfigurationError('Projects table not configured')
+    pins_table = get_aggregates_table()
+    if not pins_table:
+        raise ConfigurationError('Aggregates table not configured')
+    return PrototypeStore(table=projects_table, pins_table=pins_table, s3=get_s3_client(),
+                          bucket=os.environ.get('RAW_DATA_BUCKET', ''),
+                          api_base=os.environ.get(PIN_SUBMIT_API_BASE_ENV))
+
+
+def prototype_document(project_id: str, document_id: str) -> dict:
+    """The ``PROTOTYPE#`` row ``document_id`` names in this project; 404 for anything else."""
+    if not projects_table:
+        raise ConfigurationError('Projects table not configured')
+    item = projects_table.get_item(
+        Key={'pk': project_pk(project_id), 'sk': f'PROTOTYPE#{document_id}'}, ConsistentRead=True,
+    ).get('Item')
+    if not item:
+        raise NotFoundError('Prototype not found')
+    return item
+
+
+def signed_prototype_document(item: dict, project_id: str) -> dict:
+    """A prototype row as a route answers it: with the fresh signed URL the project read would mint."""
+    return _with_signed_prototype_url(dict(item), project_id)
+
+
 @tracer.capture_method
-def restore_document(project_id: str, document_id: str, version_id: str, body: dict) -> dict:
-    """Restore = a new version with an earlier version's content."""
+def restore_document(project_id: str, document_id: str, version_id: str, body: dict, *,
+                     actor: Mapping[str, str]) -> dict:
+    """Restore = a new version with an earlier version's content.
+
+    A prototype's is Back to vN (docs/prototype-builder.md): vN's HTML as a new version
+    with its own pin form (shared/prototype_versions.py; the pin forms live in the
+    aggregates table), recorded ``edited_by`` ``actor``.
+    """
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
     document = _source_document_item(project_id, document_id)
     _refuse_decision_edit(document)
+    if managed_document_type(document) == 'prototype':
+        answer = restore_prototype_version(prototype_store(), project_id, document, version_id, body, now=now_iso(),
+                                           actor=actor)
+        # The SPA shows the answered row at once: it needs the fresh signed URL the project read would mint.
+        return {**answer, 'document': _with_signed_prototype_url(dict(answer['document']), project_id)}
     return restore_document_version(projects_table, project_id, document, version_id, body,
                                     now=now_iso())
 

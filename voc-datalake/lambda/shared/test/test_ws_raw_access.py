@@ -129,14 +129,18 @@ PARTICIPANT_ACCESSORS: Final = frozenset({
 #: The comment threads, persona review and review links and a project's object keys (since 7.35.00, slice 3e:
 #: shared/document_comments.py, shared/document_review.py, shared/document_share.py and the review routes' helpers,
 #: shared/avatar.py, shared/prototypes.py, api/projects.py's object prefixes, api/product_context.py's upload key),
-#: counted the same way.
+#: counted the same way. With them, what the 7.35.00 merge threaded of voc-wiki's paths: a thread's addressed marks,
+#: the series head and the revised version (shared/document_versions.py, shared/document_history.py), a draft's base
+#: (shared/prototype_drafts.py) and a draft's object key and URL (shared/prototypes.py).
 COMMENT_AND_OBJECT_ACCESSORS: Final = frozenset({
     'put_thread', 'get_thread', 'list_threads', 'append_reply', 'set_status', 'delete_thread', 'thread_item',
     'comment_key', 'run_review', 'current_share', 'create_share', 'revoke_share', 'count_reviewer_write',
     'avatar_prefix', 'avatar_object_key', 'avatar_object_keys', 'persona_avatar_keys', 'avatar_key_from_uri',
     'delete_superseded_avatars', 'generate_persona_avatar', 'prototype_s3_key', 'prototype_project_prefix',
     'product_docs_project_prefix', 'product_doc_raw_key', 'scoped_object_key', 'get_avatar_cdn_url',
-    'prototype_signed_url'})
+    'prototype_signed_url', 'record_addressed', 'record_threads_addressed', 'series_head_version',
+    'require_series_head', 'revise_document', 'series_head', 'drafted_base', 'prototype_draft_s3_key',
+    'prototype_draft_signed_url'})
 #: The accessors whose scope may also be passed by position, and where.
 PROJECT_ACCESSOR_SCOPE_POSITION: Final = {'get_scoped_item': 2, 'scoped_calls': 1, 'scoped_rows': 1,
                                           'rows_by_id_in': 1, 'scoped_object_key': 0}
@@ -224,8 +228,10 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/api/metrics_handler.py': (2, {'Table': 2, 'batch': 1, 'meta.client': 1}),
     'lambda/api/product_context.py': (3, {'generate_presigned_url': 1, 'get_projects_table': 1}),
     # transact: 2, one of them the client's method kept as `transact` and called later.
-    'lambda/api/projects.py': (3, {'batch': 3, 'copy_object': 1, 'get_feedback_table': 1, 'get_jobs_table': 1, 'get_projects_table': 1, 'meta.client': 2, 'transact': 2}),
-    'lambda/api/projects_handler.py': (3, {'batch': 1, 'get_aggregates_table': 12, 'get_jobs_table': 3, 'get_projects_table': 11, 'meta.client': 3, 'transact': 2}),
+    # voc-wiki's prototype builder (merged in 7.33.00): projects.py's prototype store reads the pin forms' table
+    # (get_aggregates_table), projects_handler.py's prototype routes read the projects table five more times.
+    'lambda/api/projects.py': (3, {'batch': 3, 'copy_object': 1, 'get_aggregates_table': 1, 'get_feedback_table': 1, 'get_jobs_table': 1, 'get_projects_table': 1, 'meta.client': 2, 'transact': 2}),
+    'lambda/api/projects_handler.py': (3, {'batch': 1, 'get_aggregates_table': 12, 'get_jobs_table': 3, 'get_projects_table': 16, 'meta.client': 3, 'transact': 2}),
     'lambda/api/radar_handler.py': (3, {'cached_table': 1, 'get_aggregates_table': 1}),
     'lambda/api/s3_import_handler.py': (
         2, {'delete_object': 1, 'generate_presigned_url': 1, 'get_aggregates_table': 2, 'put_object': 1}),
@@ -251,7 +257,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # Stays raw by design: voc-aggregates for the DEPLOYMENT#COST and UNATTRIBUTED#COST rows (no workspace's; a
     # workspace's WS#{ws}#COST goes through ws_table) and voc-workspaces for a META's status (the control plane).
     'lambda/jobs/cost_rollup/handler.py': (0, {'Table': 2}),
-    'lambda/jobs/document_generator/handler.py': (3, {'Table': 6, 'delete_objects': 1, 'put_object': 2}),
+    # Since 7.33.00 (voc-wiki) a prototype draft reads and records its job row (get_jobs_table) and the HTML puts
+    # moved to shared/prototype_versions.py and shared/prototype_drafts.py.
+    'lambda/jobs/document_generator/handler.py': (3, {'Table': 6, 'delete_objects': 1, 'get_jobs_table': 2, 'put_object': 1}),
     'lambda/jobs/document_merger/handler.py': (3, {'Table': 2}),
     'lambda/jobs/persona_importer/handler.py': (3, {'Table': 1}),
     'lambda/jobs/radar_scan/handler.py': (3, {'Table': 2}),
@@ -377,6 +385,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/shared/jobs.py': (3, {'get_jobs_table': 4}),
     'lambda/shared/mcp_oauth_consent_routes.py': (3, {'get_jobs_table': 1, 'get_projects_table': 1}),
     'lambda/shared/mcp_oauth_routes.py': (3, {'get_jobs_table': 1, 'get_projects_table': 1}),
+    # voc-wiki's prototype builder (7.33.00): a version's and a draft's HTML, each one write-once put.
+    'lambda/shared/prototype_drafts.py': (3, {'put_object': 1}),
+    'lambda/shared/prototype_versions.py': (3, {'put_object': 1}),
     # Its DOCUMENT_VERSIONS# is the version partition's one spelling, moved from shared/document_versions.py in 7.27.00;
     # its STATUS# the jobs' status index partition's, shared/assist_jobs.py's own two spellings moved here in 7.29.00.
     # Its DCOMMENTS# and DCRATE#: a series' comment partition and a reviewer's counter, moved here in 7.35.00 from

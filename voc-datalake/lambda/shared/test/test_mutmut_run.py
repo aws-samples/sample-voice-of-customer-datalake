@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
+import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
@@ -68,3 +70,47 @@ def test_import_names_lists_every_name_the_file_was_loaded_under_longest_first(
         'builtins_like': SimpleNamespace(),
     }
     assert driver.import_names(str(module), modules) == ['shared.llm_json', 'llm_json']
+
+
+def test_the_recorder_keeps_names_a_module_no_longer_has_at_the_end(driver: ModuleType, tmp_path: Path) -> None:
+    module = tmp_path / 'exporter.py'
+    module.write_text('', encoding='utf-8')
+    recorder = driver.ImportNameRecorder(str(module))
+    recorder.record({'exporter': SimpleNamespace(__file__=str(module))})
+    recorder.record({'project_bundle.exporter': SimpleNamespace(__file__=str(module))})
+    recorder.record({'exporter': SimpleNamespace(__file__=str(module))})
+    assert recorder.names({'other': SimpleNamespace(__file__=str(tmp_path / 'other.py'))}) == [
+        'project_bundle.exporter', 'exporter',
+    ]
+    assert recorder.names({'z.exporter': SimpleNamespace(__file__=str(module))}) == [
+        'project_bundle.exporter', 'z.exporter', 'exporter',
+    ]
+
+
+def test_the_baseline_names_a_module_a_fixture_loads_and_drops_again(tmp_path: Path) -> None:
+    """The project export's tests: a module fixture loads `project_bundle.exporter`, its teardown removes it."""
+    package = tmp_path / 'scripts' / 'project_bundle'
+    package.mkdir(parents=True)
+    (package / '__init__.py').write_text('', encoding='utf-8')
+    (package / 'exporter.py').write_text('def f():\n    return 1\n', encoding='utf-8')
+    (tmp_path / 'test_export.py').write_text(
+        'import sys\n'
+        'import pytest\n'
+        f'sys.path.insert(0, {str(tmp_path / "scripts")!r})\n'
+        '@pytest.fixture(scope="module")\n'
+        'def ex():\n'
+        '    import project_bundle.exporter\n'
+        '    yield project_bundle.exporter\n'
+        '    for name in [n for n in sys.modules if n.startswith("project_bundle")]:\n'
+        '        sys.modules.pop(name)\n'
+        'def test_f(ex):\n'
+        '    assert ex.f() == 1\n',
+        encoding='utf-8',
+    )
+    names = tmp_path / 'names.txt'
+    result = subprocess.run(  # noqa: S603 (this interpreter, a fixed program)
+        [sys.executable, str(SCRIPT), 'baseline', str(names), 'scripts/project_bundle/exporter.py', 'test_export.py'],
+        cwd=tmp_path, capture_output=True, text=True, timeout=120, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert names.read_text(encoding='utf-8') == 'project_bundle.exporter\n'

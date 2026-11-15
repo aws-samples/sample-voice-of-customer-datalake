@@ -243,6 +243,14 @@ class TestEveryErrorHandlerAnswersItsStatusBodyAndLogLine:
         # the ApiError catch-all, which keeps the status but logs a stack trace instead.
         assert logger.mock_calls == [getattr(call, log_method)(f'{prefix}: it broke')]
 
+    def test_an_errors_code_is_added_beside_success_and_error(self):
+        app = _app_with_route('/fail', _raising(ConflictError('it broke', code='some_code')))
+        with patch('shared.api.logger'):
+            result = _resolve(app, '/fail')
+
+        assert result['statusCode'] == 409
+        assert json.loads(result['body']) == {'success': False, 'error': 'it broke', 'code': 'some_code'}
+
     def test_payload_too_large_answers_both_keys_as_a_warning(self):
         app = _app_with_route('/big', _raising(PayloadTooLargeError('too big')))
         with patch('shared.api.logger') as logger:

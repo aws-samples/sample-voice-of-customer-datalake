@@ -220,6 +220,9 @@ describe('projectsApi', () => {
       ['updateDocument sends PUT request with document updates',
         () => projectsApi.updateDocument('p1', 'd1', { title: 'Updated Title', content: '# Updated Content' }),
         '/projects/p1/documents/d1', 'PUT', { title: 'Updated Title', content: '# Updated Content' }],
+      ['updateDocument names the revise pass of a saved proposal (the server records the revise, never edit_kind)',
+        () => projectsApi.updateDocument('p1', 'd1', { content: 'C', edit_id: 'e1' }, 'job_r1'),
+        '/projects/p1/documents/d1', 'PUT', { content: 'C', edit_id: 'e1', revise_job_id: 'job_r1' }],
       ['deleteDocument sends DELETE request for document',
         () => projectsApi.deleteDocument('p1', 'd1'), '/projects/p1/documents/d1', 'DELETE', undefined],
     ])('%s', async (_title, call, path, method, body, response = OK) => {
@@ -297,6 +300,18 @@ describe('projectsApi', () => {
       expect(result.project).toMatchObject({ project_id: 'p1', visibility: 'private', access: { can_manage: false } })
     })
 
+    // The page opens the created document at once: it gets the same boundary as an edit's answer.
+    it.each([
+      ['createDocument', () => projectsApi.createDocument('p1', { title: 'T', content: 'C', document_type: 'custom' })],
+      ['updateDocument', () => projectsApi.updateDocument('p1', 'd1', { content: 'C' })],
+    ])('%s normalises the returned document and refuses one with no id', async (_name, call) => {
+      respond({ success: true, document: { document_id: 'd1', document_type: 'custom', title: 7, revision: -2 } })
+      expect((await call()).document).toMatchObject({ document_id: 'd1', title: '', content: '', revision: undefined })
+
+      respond({ success: true, document: { document_type: 'custom', title: 'T', content: 'C' } })
+      expect((await call()).document).toBeNull()
+    })
+
     it('setVisibility PUTs the visibility', async () => {
       respond({ success: true, visibility: 'public' })
       await projectsApi.setVisibility('p1', 'public')
@@ -353,6 +368,77 @@ describe('projectsApi', () => {
       expect(lastCall()).toStrictEqual({
         url: `${API}/projects/p1/owner`, method: 'POST', body: { sub: 's1' },
       })
+    })
+  })
+
+  // Prototype drafts (docs/prototype-builder.md, part 2): read (a 404 is "no draft") and Apply.
+  describe('prototype drafts', () => {
+    const DRAFT = {
+      draft_id: 'job_1', base_document_id: 'proto_2', base_version: 2, instruction: 'make the footer sticky',
+      summary: 'Checkout: the footer sticks\nCart: unchanged', preview_url: 'https://cdn.example.com/prototypes/p1/drafts/job_1.html?Signature=x',
+    }
+
+    it.each([
+      ['an instruction', { instruction: 'make the footer sticky' }],
+      ['selected pins (ids only, part 3)', { pin_ids: ['pin_00000000000000000001abcdef'] }],
+    ])('starts a draft from %s and the reply language', async (_case, request) => {
+      mockJsonOnce({ success: true, job_id: 'job_1', status: 'pending', message: 'Prototype draft started.' })
+
+      const started = await projectsApi.startPrototypeDraft('p1', 'proto_2', request, 'de')
+
+      expectFetchedWith(`${API}/projects/p1/prototypes/proto_2/drafts`, { method: 'POST' })
+      expect(requestBody()).toStrictEqual({ ...request, response_language: 'de' })
+      expect(started.job_id).toBe('job_1')
+    })
+
+    it('reads a draft through its own route, normalised (what the page does not read is dropped)', async () => {
+      mockJsonOnce({ ...DRAFT, completed_at: '2026-11-13T10:00:00Z' })
+
+      const draft = await projectsApi.getPrototypeDraft('p1', 'proto_2', 'job_1')
+
+      expectFetchedWith(`${API}/projects/p1/prototypes/proto_2/drafts/job_1`)
+      expect(draft).toStrictEqual({ ...DRAFT, kind: 'chat', outcomes: [], withheld: [] })
+    })
+
+    it('reads a feedback draft\'s outcomes and withheld pins, dropping an outcome it cannot show (and `ignored`)', async () => {
+      const outcomes = [{ pin_id: 'pin_1', outcome: 'done', note: 'Moved it' }, { pin_id: 'pin_2', outcome: 'maybe', note: 'x' }]
+      mockJsonOnce({ ...DRAFT, kind: 'feedback', outcomes, withheld: ['pin_9'], ignored: ['pin_x'] })
+
+      const draft = await projectsApi.getPrototypeDraft('p1', 'proto_2', 'job_1')
+
+      expect(draft).toStrictEqual({ ...DRAFT, kind: 'feedback', outcomes: [outcomes[0]], withheld: ['pin_9'] })
+    })
+
+    it('reads a 404 as no draft (expired, discarded, another series) and rethrows anything else', async () => {
+      mockStatusOnce(404)
+      await expect(projectsApi.getPrototypeDraft('p1', 'proto_2', 'job_1')).resolves.toBeNull()
+
+      mockStatusOnce(500)
+      await expect(projectsApi.getPrototypeDraft('p1', 'proto_2', 'job_1')).rejects.toMatchObject({ status: 500 })
+    })
+
+    it('applies through its own route and answers the version it wrote, normalised', async () => {
+      mockJsonOnce({ success: true, document: { document_id: 'proto_3', document_type: 'prototype', title: 'Checkout (v3)', version: 3 } })
+
+      const applied = await projectsApi.applyPrototypeDraft('p1', 'proto_2', 'job_1')
+
+      expectFetchedWith(`${API}/projects/p1/prototypes/proto_2/drafts/job_1/apply`, { method: 'POST' })
+      expect(applied.document).toMatchObject({ document_id: 'proto_3', version: 3 })
+      expect(applied.incorporation).toBeNull()
+    })
+
+    it('reads a feedback draft\'s Apply: its marks, replies and what it could not write', async () => {
+      const incorporation = { marked: ['pin_1'], replied: ['pin_2'], not_written: [{ pin_id: 'pin_3', reason: 'Its thread is full' }] }
+      mockJsonOnce({ success: true, document: { document_id: 'proto_3', document_type: 'prototype', title: 'Checkout (v3)', version: 3 }, incorporation })
+
+      const applied = await projectsApi.applyPrototypeDraft('p1', 'proto_2', 'job_1')
+
+      expect(applied.incorporation).toStrictEqual(incorporation)
+    })
+
+    it('rejects a stale Apply (409) like any refusal', async () => {
+      mockStatusOnce(409)
+      await expect(projectsApi.applyPrototypeDraft('p1', 'proto_2', 'job_1')).rejects.toMatchObject({ status: 409 })
     })
   })
 })

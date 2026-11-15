@@ -8,6 +8,7 @@
  */
 import { z } from 'zod'
 import { deletedSourcesOrUndefined } from './deletedSources'
+import { DOCUMENT_SECTIONS } from './documentSections'
 import { optionalErasedEvidenceSchema } from './erasedEvidence'
 import { parseEach } from './lenientFields'
 import { optionalMethodologyBlock, optionalProjectMethodology } from './methodologySchema'
@@ -170,6 +171,8 @@ function withLegacyManagedDocumentType(raw: unknown): unknown {
 const ProjectDocumentSchema = z.preprocess(withLegacyManagedDocumentType, z.looseObject({
   document_id: z.string().min(1),
   document_type: z.string().trim().min(1),
+  // The read's list section; one this bundle does not know is dropped, so `sectionOf` falls back to the table.
+  section: z.enum(DOCUMENT_SECTIONS).optional().catch(undefined),
   title: z.string().catch(''),
   base_title: optionalString,
   version: z.number().int().positive().optional().catch(undefined),
@@ -191,6 +194,7 @@ const ProjectDocumentSchema = z.preprocess(withLegacyManagedDocumentType, z.loos
   input_feedback_ids: optionalStringArray,
   erased_evidence: optionalErasedEvidenceSchema,
   revised_from_id: optionalNullableString,
+  revised_from_draft_id: optionalNullableString,
   revision_feedback: optionalString,
   // A persona / document / product doc this one cited and that was later deleted: read by the
   // transform below (api/deletedSources.ts), the key omitted when there is none.
@@ -312,6 +316,15 @@ export function normalizeProjectDocument(raw: unknown): ProjectDocument | null {
 // ── Document versions (GET /projects/{id}/documents/{doc}/versions) ──
 // A PRD / PR-FAQ version is a document row of its own (`version_id` = its
 // document_id); a research / custom version is a saved revision (`r{n}`).
+
+// What wrote a revised version (D4, `llm_metadata`): the model that answered the "Revise from
+// comments" pass and its display label (null when the model has left the allowlist: the id is shown
+// instead). Only what History reads; null for a version no AI wrote.
+const DocumentVersionLlmSchema = z.object({
+  model: z.string().min(1),
+  model_label: z.string().min(1).nullable().optional().catch(null),
+})
+
 const DocumentVersionSchema = z.object({
   version_id: z.string().min(1),
   document_id: optionalString,
@@ -320,8 +333,10 @@ const DocumentVersionSchema = z.object({
   content: z.string().catch(''),
   created_at: z.string().nullable().catch(null),
   current: z.boolean().catch(false),
-  edit_kind: z.enum(['edit', 'restore']).nullable().optional().catch(null),
+  // `revise`: a "Revise from comments" pass applied, or its proposal saved by the person (D4).
+  edit_kind: z.enum(['edit', 'restore', 'revise']).nullable().optional().catch(null),
   restored_from_version: z.number().int().positive().nullable().optional().catch(null),
+  llm_metadata: DocumentVersionLlmSchema.nullable().optional().catch(null),
 })
 export type DocumentVersion = z.output<typeof DocumentVersionSchema>
 

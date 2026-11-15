@@ -117,7 +117,9 @@ const updateDocument: Executor<UpdateDocumentArgs> = async (args, ctx) => {
 const createDocument: Executor<CreateDocumentArgs> = async (args, ctx) => {
   const res = await projectsApi.createDocument(args.project_id, { title: args.title, content: args.content, document_type: 'custom' })
   refreshAfterWrite(ctx, keysFor.projectRecord(args.project_id))
-  return { summary: `Created document "${args.title}" (${res.document.document_id}).`, data: { document_id: res.document.document_id } }
+  const documentId = res.document?.document_id
+  if (documentId === undefined) return { summary: `Created document "${args.title}".` }
+  return { summary: `Created document "${args.title}" (${documentId}).`, data: { document_id: documentId } }
 }
 
 const deleteDocument: Executor<DeleteDocumentArgs> = async (args, ctx) => {

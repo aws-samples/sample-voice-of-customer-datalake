@@ -15,7 +15,9 @@
 // Wired into mock-server.js by handleDomainModules (runs before its inline routes).
 
 import { createHash, randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { autofillPrfaq, suggestDocumentBrief } from './mock-ai-drafts.js';
+import { documentSeriesKey, versionLlmView } from './mock-document-review.js';
 import {
   NO_SOURCE_MESSAGE, documentRequestUse, generationMethodology, importStartMethodology, importedPersonaMarker,
   prototypeBlocked,
@@ -246,14 +248,15 @@ const isAssistJob = (record) => typeof record.job_type === 'string' && record.jo
  * the route used to send synchronously. An error answer is still sent as is (the
  * real route checks its preconditions before it starts the job); a success
  * becomes 202 + a job that completes on its FIRST poll with that very body.
+ * `config` is the job row's config (never answered by a poll), as the real start stores it.
  */
-export function startProjectAssistJob(projectId, jobType, answer) {
+export function startProjectAssistJob(projectId, jobType, answer, config = {}) {
   const [status, body] = answer;
   if (status !== 200) return answer;
   const [, started] = startJob(projectId, {
     jobType, status: 'pending', runningStep: 'running', errorMessage: 'Request failed', complete: () => body,
   });
-  jobs.get(started.job_id).assist = true;
+  Object.assign(jobs.get(started.job_id), { assist: true, config });
   return [202, { success: true, job_id: started.job_id, status: 'pending' }];
 }
 
@@ -653,7 +656,9 @@ const seriesOf = (detail, doc) => {
     .filter((d) => d.document_type === doc.document_type && splitVersionedTitle(d.base_title ?? d.title)[0].toLowerCase() === series)
     .sort((a, b) => (b.version ?? 1) - (a.version ?? 1));
 };
-const ROW_IDENTITY = new Set(['document_id', 'title', 'base_title', 'version', 'created_at', 'updated_at', 'content', 'edited_from_id', 'edit_kind', 'restored_from_id', 'restored_from_version']);
+// document_history._ROW_IDENTITY_FIELDS (plus what is set afresh): `edited_by`, `revise_job_id` and `llm_metadata`
+// describe the version a revise wrote, never a later one derived from it.
+const ROW_IDENTITY = new Set(['document_id', 'title', 'base_title', 'version', 'created_at', 'updated_at', 'content', 'edited_from_id', 'edit_kind', 'restored_from_id', 'restored_from_version', 'edited_by', 'revise_job_id', 'llm_metadata', 'revised_from_draft_id']);
 
 function newManagedVersion(ctx, source, content, provenance) {
   const carried = Object.fromEntries(Object.entries(source).filter(([key]) => !ROW_IDENTITY.has(key)));
@@ -686,41 +691,213 @@ function editedTitle(body, doc, managed) {
     : [null, bad('title must be a non-empty string')];
 }
 
-/** update_document: a new version; managed types keep their series title; prototype HTML is not CRUD content. */
 /**
- * The real handler's no-clobber check (shared/document_history.py): `expected_revision`
- * is the revision the editor loaded — a series' head `version` for a PRD / PR-FAQ, the
- * edit counter (unset = 1) otherwise. Absent: no check. Else a 400, or a 409 when stale.
+ * validated_expected_revision (shared/document_history.py): the revision the editor loaded
+ * — a series' head `version` for a PRD / PR-FAQ, the edit counter (unset = 1) otherwise.
+ * Absent / null: no check. Checked BEFORE the no-change return (a malformed one is a 400 even
+ * then); whether it is stale is checked after it (an edit that saves nothing clobbers nothing).
  */
-function staleSave(ctx, doc, managed) {
-  if (!own(ctx.body, 'expected_revision')) return null;
-  const expected = ctx.body.expected_revision;
-  if (!Number.isInteger(expected) || expected < 1) {
-    return bad('expected_revision must be the revision you loaded (a whole number ≥ 1)');
-  }
-  const current = managed ? (seriesOf(ctx.detail, doc)[0]?.version ?? 1) : currentRevision(doc);
-  return expected === current
-    ? null
-    : [409, { success: false, error: 'The document was changed by someone else; reload it and try again' }];
+function expectedRevisionOf(body) {
+  if (!own(body, 'expected_revision') || body.expected_revision === null) return [null, null];
+  const expected = body.expected_revision;
+  return Number.isInteger(expected) && expected >= 1
+    ? [expected, null]
+    : [null, bad('expected_revision must be the revision you loaded (a whole number ≥ 1)')];
 }
 
+const STALE_DOCUMENT = [409, { success: false, error: 'The document was changed by someone else; reload it and try again' }];
+const OPAQUE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** validated_revise_job_id: the pass a save of its proposal names (null when absent). */
+function reviseJobIdOf(body) {
+  if (!own(body, 'revise_job_id') || body.revise_job_id === null) return [null, null];
+  return typeof body.revise_job_id === 'string' && OPAQUE_ID.test(body.revise_job_id)
+    ? [body.revise_job_id, null]
+    : [null, bad('revise_job_id must be the job id of a Revise from comments pass')];
+}
+
+// document_series.plain_text, its steps in its order: block markers, links, images, emphasis and table pipes go.
+// Its line patterns run here line by line (the same result once whitespace is collapsed, and linear; only where
+// its `\s` runs across lines, e.g. a divider then marker-only lines, does the API drop a little more).
+const isFence = (line) => line.trimStart().startsWith('```') || line.trimStart().startsWith('~~~');
+function isTableSeparator(line) {
+  const row = line.trim();
+  const inner = row.slice(row.startsWith('|') ? 1 : 0, row.endsWith('|') && row.length > 1 ? -1 : undefined);
+  return inner.split('|').every((cell) => /^:?-{2,}:?$/.test(cell.trim()));
+}
+const isDivider = (line) => /^[-*_]{3,}$/.test(line.replace(/\s/g, ''));
+const LINE_MARKERS = [
+  /^\s{0,3}#{1,6}\s+/, // headings
+  /^\s{0,3}>\s?/, // quotes
+  /^\s*(?:[-*+]|\p{Nd}{1,9}[.)])\s+(?:\[[ xX]\]\s+)?/u, // list items and to-dos
+];
+
+/** `[words](target)` (`![words](target)` when `bang`) as its words, left to right like the API's regex. */
+function unlink(text, bang) {
+  let out = '';
+  let at = 0;
+  let open = text.indexOf('[');
+  while (open !== -1) {
+    const start = bang ? open - 1 : open;
+    const close = text.indexOf(']', open);
+    const end = close !== -1 && text[close + 1] === '(' ? text.indexOf(')', close) : -1;
+    const found = start >= at && (!bang || text[start] === '!') && end !== -1;
+    if (found) {
+      out += text.slice(at, start) + text.slice(open + 1, close);
+      at = end + 1;
+    }
+    open = text.indexOf('[', found ? at : open + 1);
+  }
+  return out + text.slice(at);
+}
+
+function plainText(markdown) {
+  const lines = String(markdown).split('\n').map((line) => (isFence(line) || isTableSeparator(line) ? ' ' : line));
+  const unlinked = unlink(unlink(lines.join('\n'), true), false).split('\n').map((line) => {
+    const marked = LINE_MARKERS.reduce((text, pattern) => text.replace(pattern, ' '), line);
+    return isDivider(marked) ? ' ' : marked;
+  });
+  return unlinked.join('\n')
+    .replace(/<\/?[A-Za-z][^>]*>/g, ' ')
+    .replace(/(\*\*|__|~~|`)/g, '')
+    .replace(/(?<![\p{L}\p{N}_*])\*(?=\S)|(?<=\S)\*(?![\p{L}\p{N}_*])/gu, '')
+    .replaceAll('|', ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** How often `passage` occurs in `text`, verbatim and as plain text (0 when it has none): `[verbatim, plain]`. */
+function occurrences(text, passage) {
+  const count = (haystack, needle) => (needle === '' ? 0 : haystack.split(needle).length - 1);
+  return [count(text, passage), count(plainText(text), plainText(passage))];
+}
+
+/**
+ * document_revision.holds_a_change: at least one change is NEW in the saved text relative to the edited version's:
+ * a non-empty `after` occurs more often (verbatim, or as plain text); or its `before` occurs less often, verbatim and
+ * as plain text (when it has any), while its non-empty `after` is in the saved text and does not occur less often
+ * (a deletion, or a trim whose `after` is a piece of its `before`).
+ */
+export function holdsAChange(content, edited, changes) {
+  return Array.isArray(changes) && changes.some((change) => {
+    if (!isPlainObject(change) || typeof change.after !== 'string') return false;
+    const { after, before } = change;
+    const hasAfter = after.trim() !== '';
+    const [afterNow, afterWas] = hasAfter ? [occurrences(content, after), occurrences(edited, after)] : [[0, 0], [0, 0]];
+    if (afterNow[0] > afterWas[0] || afterNow[1] > afterWas[1]) return true;
+    if (typeof before !== 'string' || before.trim() === '') return false;
+    const [now, was] = [occurrences(content, before), occurrences(edited, before)];
+    const beforeGone = now[0] < was[0] && (now[1] < was[1] || plainText(before) === '');
+    // Only a deletion or a trim: the `after` is a piece of the `before` (verbatim, or as plain text).
+    const flatAfter = plainText(after);
+    const trimmed = !hasAfter || before.includes(after) || (flatAfter !== '' && plainText(before).includes(flatAfter));
+    // "Less often" as for the before: verbatim and as plain text; a trim may change the kept words' markup.
+    const afterKept = !hasAfter
+      || ((afterNow[0] >= afterWas[0] || afterNow[1] >= afterWas[1]) && (afterNow[0] > 0 || afterNow[1] > 0));
+    return beforeGone && trimmed && afterKept;
+  });
+}
+
+/**
+ * document_revision.verify_saved_proposal: the `revise` provenance of a save naming its pass, or the
+ * 400. The job is this project's revise pass, completed with a proposal, started by the same caller,
+ * of the edited document's series, and one of its changes is new in the saved text; never a quiet relabel.
+ * Each of its refusals carries the code `revise_refused` (the document type's 400 is projects.py's, without it).
+ */
+function verifiedProposal(ctx, doc, content, jobId) {
+  const refused = (error) => [null, [400, { success: false, error, code: 'revise_refused' }]];
+  const entry = jobs.get(jobId);
+  const record = entry?.projectId === ctx.projectId ? entry.record : null;
+  if (record?.job_type !== 'assist_revise_from_comments') return refused('That revision was not found in this project');
+  if (record.status !== 'completed' || record.result?.outcome !== 'proposal') {
+    return refused('That revision has no proposal to save: it is still running, failed or only recommended');
+  }
+  const caller = ctx.shared.mockCaller?.sub ?? MOCK_CALLER_SUB;
+  if (record.initiated_by !== caller) return refused('That revision was started by someone else: save it as your own edit');
+  if (doc.document_type !== 'prfaq' && doc.document_type !== 'prd') {
+    return [null, bad('Comments are available on PR/FAQ and PRD documents only')];
+  }
+  if (entry.config?.series_key !== documentSeriesKey(ctx.projectId, doc)) return refused('That revision is of another document');
+  if (!holdsAChange(content, String(doc.content ?? ''), record.result.changes)) return refused('This save does not hold a change from that revision');
+  return [{ edited_by: { sub: caller, kind: 'user' }, revise_job_id: jobId, ...passLlmMetadata(record.result) }, null];
+}
+
+/** document_revision.verify_saved_proposal's llm_metadata: the pass's own model and prompt version; none unrecorded. */
+function passLlmMetadata(result) {
+  const { model_id: modelId, prompt_version: promptVersion } = result;
+  if (typeof modelId !== 'string' || !modelId || typeof promptVersion !== 'string' || !promptVersion) return {};
+  return { llm_metadata: { model: modelId, prompt_version: promptVersion } };
+}
+
+/** The new version's provenance: a checked proposal save records the person and the pass (D4). */
+function editProvenance(doc, revise) {
+  const provenance = { edit_kind: revise ? 'revise' : 'edit', edited_from_id: doc.document_id };
+  return revise ? { ...provenance, ...revise } : provenance;
+}
+
+/** validated_edit_id: the caller's idempotency key for one save, or a digest of the content. */
+function editIdOf(body, content) {
+  if (!own(body, 'edit_id') || body.edit_id === null) {
+    return [createHash('sha256').update(content).digest('hex').slice(0, 32), null];
+  }
+  return typeof body.edit_id === 'string' && OPAQUE_ID.test(body.edit_id)
+    ? [body.edit_id, null]
+    : [null, bad('edit_id must be 1-64 letters, digits, "-" or "_"')];
+}
+
+// persist_versioned_document's allocation records: `${projectId}:${type}:${allocation id}` → the
+// document it made, so a retried save (same `edit:{source}:{edit_id}`) replays that version
+// instead of making another, and is never refused as stale by the version it made itself.
+const allocations = new Map();
+
+function allocatedManagedVersion(ctx, source, allocationId, expected, build) {
+  const key = `${ctx.projectId}:${source.document_type}:${allocationId}`;
+  const replayed = findDocument(ctx.detail, allocations.get(key) ?? '');
+  if (replayed) return [200, { success: true, document: replayed }];
+  if (expected !== null && expected !== (seriesOf(ctx.detail, source)[0]?.version ?? 1)) return STALE_DOCUMENT;
+  const saved = build();
+  allocations.set(key, saved.document_id);
+  return [200, { success: true, document: saved }];
+}
+
+/** A save's body checks (revise_job_id, expected_revision, content) and the pass it names:
+ *  `[{expected, content, revise}, null]`, or `[null, the 400]`. Any other key (`edit_kind` too) is ignored.
+ *  An unchanged save is the no-op, whatever pass it names: the pass is not checked. */
+function checkedSave(ctx, doc, title) {
+  const [expected, expectedError] = expectedRevisionOf(ctx.body);
+  const [reviseJobId, reviseJobIdError] = reviseJobIdOf(ctx.body);
+  const refusal = reviseJobIdError ?? expectedError;
+  if (refusal) return [null, refusal];
+  if (own(ctx.body, 'content') && typeof ctx.body.content !== 'string') return [null, bad('content must be a string')];
+  const content = own(ctx.body, 'content') ? ctx.body.content : (doc.content ?? '');
+  const unchanged = content === (doc.content ?? '') && title === doc.title;
+  const [revise, reviseError] = reviseJobId === null || unchanged ? [null, null] : verifiedProposal(ctx, doc, content, reviseJobId);
+  return reviseError ? [null, reviseError] : [{ expected, content, revise, unchanged }, null];
+}
+
+/** update_document (projects.py + document_history.edit_document): every save is a new version, never an overwrite. */
 function updateDocument(ctx, documentId) {
   const doc = findDocument(ctx.detail, documentId);
   if (!doc) return [404, { success: false, error: 'Document not found' }];
+  if (doc.document_type === 'decision') return bad('Decision records are edited through PUT /projects/{id}/decisions/{document_id}.');
   const managed = VERSIONED_DOC_TYPES.has(doc.document_type);
   const [title, titleError] = editedTitle(ctx.body, doc, managed);
   if (titleError) return titleError;
   if (own(ctx.body, 'content') && doc.document_type === 'prototype') {
     return bad('Prototype content is stored in S3 and cannot be updated through generic document CRUD. Use the prototype revision workflow.');
   }
-  const content = typeof ctx.body.content === 'string' ? ctx.body.content : (doc.content ?? '');
-  if (content === (doc.content ?? '') && title === doc.title) return [200, { success: true, unchanged: true, document: doc }];
-  const stale = staleSave(ctx, doc, managed);
-  if (stale) return stale;
-  const saved = managed
-    ? newManagedVersion(ctx, doc, content, { edit_kind: 'edit', edited_from_id: doc.document_id })
-    : replaceUnmanaged(ctx, doc, { content, title, provenance: { edit_kind: 'edit' } });
-  return [200, { success: true, document: saved }];
+  const [save, refusal] = checkedSave(ctx, doc, title);
+  if (refusal) return refusal;
+  const { expected, content, revise, unchanged } = save;
+  if (unchanged) return [200, { success: true, unchanged: true, document: doc }];
+  const [editId, editIdError] = editIdOf(ctx.body, content);
+  if (editIdError) return editIdError;
+  if (managed) {
+    return allocatedManagedVersion(ctx, doc, `edit:${doc.document_id}:${editId}`, expected,
+      () => newManagedVersion(ctx, doc, content, editProvenance(doc, revise)));
+  }
+  if (expected !== null && expected !== currentRevision(doc)) return STALE_DOCUMENT;
+  return [200, { success: true, document: replaceUnmanaged(ctx, doc, { content, title, provenance: { edit_kind: 'edit' } }) }];
 }
 
 /** GET …/documents/{id}/versions: newest first, with content. */
@@ -731,7 +908,7 @@ function listDocumentVersions(ctx, documentId) {
     const versions = seriesOf(ctx.detail, doc).map((d, index) => ({
       version_id: d.document_id, document_id: d.document_id, version: d.version ?? 1, title: d.title,
       content: d.content ?? '', created_at: d.created_at, current: index === 0,
-      edit_kind: d.edit_kind ?? null, restored_from_version: d.restored_from_version ?? null,
+      edit_kind: d.edit_kind ?? null, restored_from_version: d.restored_from_version ?? null, llm_metadata: versionLlmView(d.llm_metadata),
     }));
     return [200, { success: true, managed: true, versions }];
   }
@@ -746,21 +923,51 @@ function listDocumentVersions(ctx, documentId) {
   return [200, { success: true, managed: false, versions: [current, ...earlier] }];
 }
 
+// shared/prototype_versions._PROTOTYPE_ROW_FIELDS beyond ROW_IDENTITY: what described the version a restore copies.
+const PROTOTYPE_ROW_ONLY = ['job_id', 'revised_from_id', 'revised_from_draft_id', 'revision_feedback'];
+
+/** prototype_versions.version_html's rule: inline content is HTML when marked so or shaped like a document. */
+const isInlineHtml = (row) => (row.content ?? '') === '' || row.prototype_format === 'html' || /^\s*<(?:!doctype html|html)/i.test(row.content);
+/** prototype_versions.version_html's 400 for an early JSON screen spec (Back to vN and a draft's base alike). */
+const EARLY_SPEC = bad('This prototype is an early screen spec, not HTML. Build a new prototype instead.');
+
+/**
+ * Back to vN (shared/prototype_versions.restore_prototype_version): a NEW version from vN's HTML
+ * (inline here: the mock has no S3), recorded `edited_by` the caller. Never "unchanged": a stored
+ * prototype row's `content` is empty on both sides, so the server skips that check.
+ */
+function restorePrototypeVersion(ctx, doc, versionId) {
+  const series = seriesOf(ctx.detail, doc);
+  const source = series.find((d) => d.document_id === versionId);
+  if (!source) return [404, { success: false, error: 'Version not found' }];
+  if (!isInlineHtml(source)) return EARLY_SPEC;
+  const [latest] = series;
+  const [editId, editIdError] = editIdOf(ctx.body, versionId);
+  if (editIdError) return editIdError;
+  const carried = Object.fromEntries(Object.entries(source).filter(([key]) => !PROTOTYPE_ROW_ONLY.includes(key)));
+  return allocatedManagedVersion(ctx, latest, `restore:${versionId}:${editId}`, null, () => newManagedVersion(ctx, carried, source.content ?? '', {
+    edit_kind: 'restore', edited_from_id: latest.document_id, edited_by: { sub: ctx.shared.mockCaller?.sub ?? MOCK_CALLER_SUB, kind: 'user' },
+    restored_from_id: versionId, restored_from_version: source.version ?? 1,
+  }));
+}
+
 /** POST …/versions/{version_id}/restore: a NEW version with that version's content. */
 function restoreDocumentVersion(ctx, documentId, versionId) {
   const doc = findDocument(ctx.detail, documentId);
   if (!doc) return [404, { success: false, error: 'Document not found' }];
-  if (doc.document_type === 'prototype') return bad('Prototypes are restored through the prototype revision workflow');
+  if (doc.document_type === 'prototype') return restorePrototypeVersion(ctx, doc, versionId);
   if (VERSIONED_DOC_TYPES.has(doc.document_type)) {
     const series = seriesOf(ctx.detail, doc);
     const source = series.find((d) => d.document_id === versionId);
     if (!source) return [404, { success: false, error: 'Version not found' }];
     const [latest] = series;
-    if ((source.content ?? '') === (latest.content ?? '')) return [200, { success: true, unchanged: true, document: latest }];
-    const saved = newManagedVersion(ctx, latest, source.content ?? '', {
+    const content = source.content ?? '';
+    if (content === (latest.content ?? '')) return [200, { success: true, unchanged: true, document: latest }];
+    const [editId, editIdError] = editIdOf(ctx.body, content);
+    if (editIdError) return editIdError;
+    return allocatedManagedVersion(ctx, latest, `restore:${versionId}:${editId}`, null, () => newManagedVersion(ctx, latest, content, {
       edit_kind: 'restore', edited_from_id: latest.document_id, restored_from_id: versionId, restored_from_version: source.version ?? 1,
-    });
-    return [200, { success: true, document: saved }];
+    }));
   }
   const revision = Number(/^r([1-9]\d*)$/.exec(versionId)?.[1] ?? NaN);
   if (revision === currentRevision(doc)) return [200, { success: true, unchanged: true, document: doc }];
@@ -866,7 +1073,9 @@ function startPrototypeBuild(ctx) {
       // Inline HTML (the legacy srcDoc path): the mock has no signed CloudFront URL to mint.
       const title = config.title ?? defaultPrototypeTitle(prd, prfaq, `Prototype: ${detail.project?.name ?? 'Project'}`);
       const doc = addVersionedDocument(ctx.shared, detail, 'prototype', title, {
-        content: prototypeHtml(title, [prd, prfaq].filter(Boolean), config.feedback),
+        // Every version carries the walkthrough block (6.17.00); a revision keeps its base's steps, a fresh build has none.
+        content: withWalkthrough(prototypeHtml(title, [prd, prfaq].filter(Boolean), config.feedback),
+          config.base ? walkthroughStepsOf(findDocument(detail, config.base)) : []),
         prototype_format: 'html',
         source_prd_id: prd?.document_id ?? null, source_prfaq_id: prfaq?.document_id ?? null,
         ...(config.feedback ? { revised_from_id: config.base, revision_feedback: config.feedback.slice(0, 2000) } : {}),
@@ -875,6 +1084,409 @@ function startPrototypeBuild(ctx) {
       return { document_id: doc.document_id, title: doc.title };
     },
   }), block);
+}
+
+// ── Prototype drafts (docs/prototype-builder.md, part 2) ────────────────────
+// A draft is a finished `draft_prototype` job: its detail (and, the mock having no S3, its HTML)
+// lives on the job entry, never on the job record a job route answers, so the job DELETE (Discard)
+// removes it. Its preview is served by this mock at /mock-prototype-drafts/{draft_id}.html.
+
+const MAX_INSTRUCTION_CHARS = 2000;
+const DRAFT_LLM = { model: 'mock', prompt_version: 'prototype-draft-mock-1' };
+const DRAFT_PREVIEW_PATH = /^\/mock-prototype-drafts\/([^/]+)\.html$/;
+const PROTOTYPE_NOT_FOUND = [404, { success: false, error: 'Prototype not found' }];
+const DRAFT_NOT_FOUND = [404, { success: false, error: 'Draft not found' }];
+const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+/** The prototype `documentId` names in this project, or null. */
+function prototypeOf(ctx, documentId) {
+  const doc = findDocument(ctx.detail, documentId);
+  return doc?.document_type === 'prototype' ? doc : null;
+}
+
+/** The mock's draft "HTML": the base's, with a visible note of the instruction at the top of its body. */
+function draftHtml(base, instruction) {
+  const note = `<p data-draft-note style="margin:0;padding:8px 24px;background:#fff4d6;color:#1d2330;font:13px system-ui,sans-serif">Draft: ${escapeHtml(instruction)}</p>`;
+  // A draft carries no walkthrough (Apply puts the base's steps back).
+  const html = withoutWalkthrough(base.content || prototypeHtml(base.title ?? 'Prototype', [], ''));
+  return /<body[^>]*>/i.test(html) ? html.replace(/<body[^>]*>/i, (open) => `${open}${note}`) : `${note}${html}`;
+}
+
+/** POST /prototypes/{document_id}/drafts: `{instruction}` or `{pin_ids}` (exactly one) → a draft job on the series' newest version. */
+function startPrototypeDraft(ctx, documentId) {
+  const { body } = ctx;
+  // A null is absent, as the route reads it.
+  const hasPins = own(body, 'pin_ids') && body.pin_ids !== null;
+  const hasInstruction = own(body, 'instruction') && body.instruction !== null;
+  if (hasPins && hasInstruction) return bad('Give an instruction or pin_ids, not both');
+  if (!hasPins && !hasInstruction) return bad('Give an instruction or pin_ids');
+  if (hasPins) return startFeedbackDraft(ctx, documentId);
+  if (typeof body.instruction !== 'string') return bad('instruction must be a string');
+  const instruction = body.instruction.trim();
+  if (instruction === '' || instruction.length > MAX_INSTRUCTION_CHARS) return bad(`instruction must be 1-${MAX_INSTRUCTION_CHARS} characters`);
+  const doc = prototypeOf(ctx, documentId);
+  if (!doc) return PROTOTYPE_NOT_FOUND;
+  const [base] = seriesOf(ctx.detail, doc);
+  if (!isInlineHtml(base)) return EARLY_SPEC;
+  const started = startJob(ctx.projectId, {
+    jobType: 'draft_prototype', status: 'pending', message: 'Prototype draft started.',
+    runningStep: 'invoking_bedrock', errorMessage: 'Prototype draft failed', complete: () => ({}),
+  });
+  const entry = jobs.get(started[1].job_id);
+  const baseId = base.document_id;
+  const baseVersion = base.version ?? 1;
+  entry.complete = (detail) => {
+    const row = findDocument(detail, baseId);
+    if (!row) throw new Error('The prototype this draft revises no longer exists');
+    const quoted = instruction.slice(0, 120);
+    entry.draft = {
+      kind: 'chat', base_document_id: baseId, base_version: baseVersion, instruction, html: draftHtml(row, instruction),
+      summary: `All screens: changed as asked ("${quoted}")\nHeader: a draft note names the instruction`,
+    };
+    return { draft_id: entry.record.job_id };
+  };
+  return started;
+}
+
+// ── Incorporate (part 3): a draft from selected tester pins, ids only ──────────
+// The server reads the pins itself across the series' versions, withholds the flagged ones (fail closed: a pin
+// not marked unflagged is flagged, as the feedback read treats it) and writes the instruction; the mock "model"
+// answers Done for every other accepted pin and Not done for the rest. Apply's version names the draft
+// (`revised_from_draft_id`), as the server's does.
+
+const MAX_DRAFT_PINS = 50;
+const INCORPORATE_INSTRUCTION = 'Incorporate the selected tester feedback';
+const NOT_DONE_NOTE = 'It needs data the prototype does not have (mock).';
+
+/** `[pin_ids, null]` or `[null, the 400]`: at most 50 well-formed pin ids as sent, then a repeated one folded (the server's order and words). */
+function checkedPinIds(raw) {
+  if (!Array.isArray(raw) || raw.length === 0) return [null, bad('pin_ids must be a non-empty list')];
+  if (raw.length > MAX_DRAFT_PINS) return [null, bad(`at most ${MAX_DRAFT_PINS} pin_ids are allowed`)];
+  if (!raw.every((id) => typeof id === 'string' && PIN_ID.test(id))) return [null, bad('pin_ids holds an invalid pin id')];
+  return [[...new Set(raw)], null];
+}
+
+/** Every pin of the series (each version's form), by id, with its version's document id. */
+function seriesPinMap(ctx, doc) {
+  const byId = new Map();
+  for (const version of seriesOf(ctx.detail, doc)) {
+    const [pins] = pinsFor(ctx, version.document_id);
+    for (const pin of pins ?? []) byId.set(pin.pin_id, { pin, documentId: version.document_id });
+  }
+  return byId;
+}
+
+/** The mock model's answer per accepted pin: every other one Done (what changed), the rest Not done (why). */
+function mockOutcomes(accepted) {
+  return accepted.map(({ pin }, index) => {
+    const where = stringOr(anchorOf(pin).text_snippet, '') || routeOf(pin) || 'the screen';
+    return index % 2 === 0
+      ? { pin_id: pin.pin_id, outcome: 'done', note: `Changed "${where}" as the tester asked (mock).` }
+      : { pin_id: pin.pin_id, outcome: 'not_done', note: NOT_DONE_NOTE };
+  });
+}
+
+function startFeedbackDraft(ctx, documentId) {
+  const [pinIds, refusal] = checkedPinIds(ctx.body.pin_ids);
+  if (refusal) return refusal;
+  const doc = prototypeOf(ctx, documentId);
+  if (!doc) return PROTOTYPE_NOT_FOUND;
+  const [base] = seriesOf(ctx.detail, doc);
+  if (!isInlineHtml(base)) return EARLY_SPEC;
+  const series = seriesPinMap(ctx, doc);
+  const unknown = pinIds.filter((id) => !series.has(id));
+  if (unknown.length > 0) return bad(`${unknown.length} of the selected pins are not pins of this prototype`);
+  const found = pinIds.map((id) => series.get(id));
+  const withheld = found.filter(({ pin }) => pin.flagged !== false).map(({ pin }) => pin.pin_id);
+  const accepted = found.filter(({ pin }) => pin.flagged === false);
+  if (accepted.length === 0) return bad('Every selected pin was withheld: its text reads like an instruction to the AI');
+  const started = startJob(ctx.projectId, {
+    jobType: 'draft_prototype', status: 'pending', message: 'Prototype draft started.',
+    runningStep: 'invoking_bedrock', errorMessage: 'Prototype draft failed', complete: () => ({}),
+  });
+  const entry = jobs.get(started[1].job_id);
+  const baseId = base.document_id;
+  const baseVersion = base.version ?? 1;
+  entry.complete = (detail) => {
+    const row = findDocument(detail, baseId);
+    if (!row) throw new Error('The prototype this draft revises no longer exists');
+    const outcomes = mockOutcomes(accepted);
+    const done = outcomes.filter((o) => o.outcome === 'done').length;
+    entry.draft = {
+      kind: 'feedback', base_document_id: baseId, base_version: baseVersion, instruction: INCORPORATE_INSTRUCTION,
+      html: draftHtml(row, `${INCORPORATE_INSTRUCTION} (${accepted.length} pins)`),
+      summary: `All screens: ${done} of ${accepted.length} tester pins incorporated\nHeader: a draft note names the incorporation`,
+      outcomes, withheld,
+      accepted: accepted.map(({ pin, documentId: pinDocument }) => ({ pin_id: pin.pin_id, document_id: pinDocument })),
+    };
+    return { draft_id: entry.record.job_id };
+  };
+  return started;
+}
+
+/** "Incorporated N pins (k done)" ("1 pin"), the version's revision_feedback, as the server words it. */
+function incorporatedFeedback(draft) {
+  const count = draft.outcomes.length;
+  const done = draft.outcomes.filter((o) => o.outcome === 'done').length;
+  return `Incorporated ${count} pin${count === 1 ? '' : 's'} (${done} done)`;
+}
+
+/**
+ * Apply's marks and replies for a feedback draft, run on EVERY call (a replay finishes the set): Done pins marked
+ * addressed by the new version (an open one; one this version already marked counts as marked), Not done pins
+ * given one model-written reply (its id derived from the draft and the pin, so a replay writes none twice). Only
+ * the accepted pins are touched; what could not be written is reported, the version stands.
+ */
+function incorporate(ctx, draftId, draft, newDocumentId) {
+  const result = { marked: [], replied: [], not_written: [] };
+  const caller = ctx.shared.mockCaller ?? {};
+  for (const outcome of draft.outcomes) {
+    const accepted = draft.accepted.find((a) => a.pin_id === outcome.pin_id);
+    const [pins] = accepted ? pinsFor(ctx, accepted.document_id) : [null];
+    const pin = (pins ?? []).find((p) => p.pin_id === outcome.pin_id);
+    if (!pin) {
+      result.not_written.push({ pin_id: outcome.pin_id, reason: 'pin_gone' });
+    } else if (outcome.outcome === 'done') {
+      markIncorporated(pin, newDocumentId, draft, result);
+    } else {
+      replyWithReason(pin, `ai_${draftId}_${pin.pin_id}`, outcome.note, caller, result);
+    }
+  }
+  return result;
+}
+
+/**
+ * A Done pin: marked once (the draft remembers it). A replay finds it marked by this version, or, when an editor
+ * reopened it since, reports `reopened` and leaves it open (a person's reopen is never undone by a retry).
+ */
+function markIncorporated(pin, newDocumentId, draft, result) {
+  const marked = draft.markedPins ?? (draft.markedPins = new Set());
+  if (pin.status === 'addressed' && pin.addressed_by === newDocumentId) {
+    result.marked.push(pin.pin_id);
+  } else if (pin.status === 'open' && marked.has(pin.pin_id)) {
+    result.not_written.push({ pin_id: pin.pin_id, reason: 'reopened' });
+  } else if (pin.status === 'open') {
+    Object.assign(pin, { status: 'addressed', addressed_by: newDocumentId, updated_at: nowIso() });
+    marked.add(pin.pin_id);
+    result.marked.push(pin.pin_id);
+  } else {
+    result.not_written.push({ pin_id: pin.pin_id, reason: pin.status === 'resolved' ? 'already_resolved' : 'already_addressed' });
+  }
+}
+
+function replyWithReason(pin, replyId, note, caller, result) {
+  const replies = Array.isArray(pin.replies) ? pin.replies : [];
+  if (replies.some((r) => r.id === replyId)) {
+    result.replied.push(pin.pin_id);
+    return;
+  }
+  // The server posts no model note that reads like an instruction (prompt_safety.injection_findings; the mock's
+  // main patterns of it, readsLikeAnInstruction below).
+  if (readsLikeAnInstruction(note)) {
+    result.not_written.push({ pin_id: pin.pin_id, reason: 'note_withheld' });
+    return;
+  }
+  if (replies.length >= MAX_REPLIES) {
+    result.not_written.push({ pin_id: pin.pin_id, reason: 'thread_full' });
+    return;
+  }
+  const at = nowIso();
+  pin.replies = [...replies, {
+    id: replyId, by: 'ai', name: 'AI', text: note.slice(0, MAX_REPLY_CHARS), at, kind: 'ai', llm_metadata: { ...DRAFT_LLM },
+    approved_by: { sub: caller.sub ?? MOCK_CALLER_SUB, kind: 'user' },
+  }];
+  pin.updated_at = at;
+  result.replied.push(pin.pin_id);
+}
+
+/** The job entry of a finished draft of `documentId`'s series in this project, or null (every refusal is a 404). */
+function draftEntry(ctx, documentId, draftId) {
+  const doc = prototypeOf(ctx, documentId);
+  const entry = jobs.get(draftId);
+  if (!doc || entry?.projectId !== ctx.projectId || !entry.draft) return null;
+  if (entry.record.job_type !== 'draft_prototype' || entry.record.status !== 'completed') return null;
+  const inSeries = seriesOf(ctx.detail, doc).some((d) => d.document_id === entry.draft.base_document_id);
+  return inSeries ? { doc, entry } : null;
+}
+
+/** GET /prototypes/{document_id}/drafts/{draft_id} (EDIT). */
+function getPrototypeDraft(ctx, documentId, draftId) {
+  const found = draftEntry(ctx, documentId, draftId);
+  if (!found) return DRAFT_NOT_FOUND;
+  const { record, draft } = found.entry;
+  const feedback = draft.kind === 'feedback'
+    ? { outcomes: cloneJson(draft.outcomes), withheld: [...draft.withheld] }
+    : {};
+  return [200, {
+    draft_id: record.job_id, base_document_id: draft.base_document_id, base_version: draft.base_version,
+    kind: draft.kind, instruction: draft.instruction, summary: draft.summary,
+    preview_url: `${ctx.origin}/mock-prototype-drafts/${encodeURIComponent(record.job_id)}.html`,
+    completed_at: record.completed_at, ...feedback,
+  }];
+}
+
+/**
+ * POST …/drafts/{draft_id}/apply: the draft as the next version (`apply:{draft_id}` allocation), 201 for the
+ * call that wrote it and 200 with the same version on a replay; 409 once the series moved past the base.
+ */
+function applyPrototypeDraft(ctx, documentId, draftId) {
+  const found = draftEntry(ctx, documentId, draftId);
+  if (!found) return DRAFT_NOT_FOUND;
+  const { draft } = found.entry;
+  const base = findDocument(ctx.detail, draft.base_document_id);
+  if (!base) return DRAFT_NOT_FOUND;
+  const key = `${ctx.projectId}:prototype:apply:${draftId}`;
+  // A feedback draft's marks and replies run after the version on every call, replays included.
+  const answer = (status, document) => [status, {
+    success: true, document,
+    ...(draft.kind === 'feedback' ? { incorporation: incorporate(ctx, draftId, draft, document.document_id) } : {}),
+  }];
+  const replayed = findDocument(ctx.detail, allocations.get(key) ?? '');
+  if (replayed) return answer(200, replayed);
+  if ((seriesOf(ctx.detail, base)[0]?.version ?? 1) !== draft.base_version) return STALE_DOCUMENT;
+  const carried = Object.fromEntries(Object.entries(base).filter(([field]) => !PROTOTYPE_ROW_ONLY.includes(field)));
+  const feedback = draft.kind === 'feedback' ? incorporatedFeedback(draft) : draft.instruction.slice(0, MAX_INSTRUCTION_CHARS);
+  // version_from_html: the applied version keeps its base's walkthrough.
+  const saved = newManagedVersion(ctx, carried, withWalkthrough(draft.html, walkthroughStepsOf(base)), {
+    edit_kind: 'revise', revised_from_id: base.document_id, revised_from_draft_id: draftId, revision_feedback: feedback,
+    edited_by: { sub: ctx.shared.mockCaller?.sub ?? MOCK_CALLER_SUB, kind: 'user' }, llm_metadata: { ...DRAFT_LLM },
+  });
+  allocations.set(key, saved.document_id);
+  return answer(201, saved);
+}
+
+/** GET /mock-prototype-drafts/{draft_id}.html: the draft's page (the stand-in for its signed CloudFront URL). */
+function serveDraftPreview(req, res, url) {
+  const match = req.method === 'GET' ? url.pathname.match(DRAFT_PREVIEW_PATH) : null;
+  if (!match) return false;
+  const html = jobs.get(safeDecode(match[1]))?.draft?.html;
+  res.writeHead(html ? 200 : 404, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.end(html ?? '<!doctype html><title>Not found</title><p>This draft is gone.</p>');
+  return true;
+}
+
+// ── Walkthrough (docs/prototype-builder.md Part 1; shared/prototype_walkthrough.py) ──────────
+// The steps live only in the version's HTML, as the server injects them: the steps block and the runtime
+// (lambda/shared/static/prototype-walkthrough.js, read once here) between the two voc-walkthrough comments, before
+// </body>. A mock prototype is inline HTML, so the runtime runs in the dev mock's preview too.
+
+const WALKTHROUGH_START = '<!-- voc-walkthrough:start -->';
+const WALKTHROUGH_END = '<!-- voc-walkthrough:end -->';
+const WALKTHROUGH_RUNTIME = readFileSync(new URL('../lambda/shared/static/prototype-walkthrough.js', import.meta.url), 'utf8');
+const WALKTHROUGH_LIMITS = { steps: 10, title: 80, body: 280, selector: 512, route: 300 };
+const WALKTHROUGH_BLOCK = /<!-- voc-walkthrough:start -->[\s\S]*?<!-- voc-walkthrough:end -->/g;
+const STEPS_JSON = /<script type="application\/json" id="voc-walkthrough-steps">([\s\S]*?)<\/script>/g;
+/** The draft job's placeholder place: the model cannot see the screen, the editor re-points the step. */
+const DRAFT_ANCHOR_BOX = { x: 0.3, y: 0.3, w: 0.4, h: 0.4 };
+
+const withoutWalkthrough = (html) => String(html ?? '').replace(WALKTHROUGH_BLOCK, '');
+
+/** The HTML with its walkthrough block replaced by `steps` (`[]` still writes the block: the editor's picker needs the runtime). */
+function withWalkthrough(html, steps) {
+  const data = JSON.stringify({ steps }).replace(/</g, '\\u003c');
+  const block = `${WALKTHROUGH_START}<script type="application/json" id="voc-walkthrough-steps">${data}</script>`
+    + `<script>${WALKTHROUGH_RUNTIME}\nwindow.VoCWalkthrough && window.VoCWalkthrough.init();</script>${WALKTHROUGH_END}`;
+  const clean = withoutWalkthrough(html);
+  return /<\/body>/i.test(clean) ? clean.replace(/<\/body>/i, `${block}</body>`) : `${clean}${block}`;
+}
+
+/** step N's problem, the route's wording ("step 2: title …"), or null when it is a step. */
+function walkthroughStepProblem(raw, index) {
+  const n = index + 1;
+  if (!isPlainObject(raw)) return `step ${n}: must be an object`;
+  const text = (value, max) => typeof value === 'string' && value.trim() !== '' && value.trim().length <= max;
+  if (!text(raw.title, WALKTHROUGH_LIMITS.title)) return `step ${n}: title must be 1-${WALKTHROUGH_LIMITS.title} characters`;
+  if (!text(raw.body, WALKTHROUGH_LIMITS.body)) return `step ${n}: body must be 1-${WALKTHROUGH_LIMITS.body} characters`;
+  if (raw.selector !== undefined && !text(raw.selector, WALKTHROUGH_LIMITS.selector)) return `step ${n}: selector must be 1-${WALKTHROUGH_LIMITS.selector} characters`;
+  const box = isPlainObject(raw.anchor) ? raw.anchor.bbox : undefined;
+  const shares = isPlainObject(box) && ['x', 'y', 'w', 'h'].every((k) => typeof box[k] === 'number' && box[k] >= 0 && box[k] <= 1);
+  if (raw.anchor !== undefined && !shares) return `step ${n}: anchor.bbox must hold x, y, w and h as shares from 0 to 1`;
+  if (raw.selector === undefined && raw.anchor === undefined) return `step ${n}: give a selector or an anchor`;
+  return null;
+}
+
+/** A clean copy of a valid step (texts trimmed, only the step's own fields). */
+function cleanWalkthroughStep(raw) {
+  const step = { title: raw.title.trim(), body: raw.body.trim() };
+  if (raw.selector !== undefined) step.selector = raw.selector.trim();
+  if (raw.anchor !== undefined) {
+    const { x, y, w, h } = raw.anchor.bbox;
+    step.anchor = { route: stringOr(raw.anchor.route, '').slice(0, WALKTHROUGH_LIMITS.route), bbox: { x, y, w, h } };
+  }
+  return step;
+}
+
+/**
+ * As the server writes a step: ONE leading '#' is dropped from its route ('#checkout' → 'checkout', '##x' → '#x'),
+ * once, on the write (a read never drops another).
+ */
+function writtenRoute(step) {
+  if (!step.anchor) return step;
+  return { ...step, anchor: { ...step.anchor, route: step.anchor.route.replace(/^#/, '') } };
+}
+
+/**
+ * The steps a document's HTML carries, extracted and re-validated: a block that fails gives none. As the server, the
+ * LAST block is read (the server's own sits last; a copy in the prototype's own markup earlier never wins).
+ */
+function walkthroughStepsOf(doc) {
+  const match = [...String(doc?.content ?? '').matchAll(STEPS_JSON)].at(-1);
+  if (!match) return [];
+  try {
+    const steps = JSON.parse(match[1]).steps;
+    if (!Array.isArray(steps) || steps.length > WALKTHROUGH_LIMITS.steps) return [];
+    return steps.every((step, i) => walkthroughStepProblem(step, i) === null) ? steps.map(cleanWalkthroughStep) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** GET …/prototypes/{document_id}/walkthrough (VIEW). */
+function getWalkthrough(ctx, documentId) {
+  const doc = prototypeOf(ctx, documentId);
+  if (!doc) return PROTOTYPE_NOT_FOUND;
+  return [200, { steps: walkthroughStepsOf(doc) }];
+}
+
+/**
+ * PUT …/walkthrough (EDIT): `{steps, edit_id?}` → a NEW version with these steps (`[]` empties the block),
+ * `edit_kind: edit`; 201, 200 on a replay of the same edit_id; 409 when the series moved past this version.
+ */
+function saveWalkthrough(ctx, documentId) {
+  const doc = prototypeOf(ctx, documentId);
+  if (!doc) return PROTOTYPE_NOT_FOUND;
+  const { steps } = ctx.body;
+  if (!Array.isArray(steps)) return bad('steps must be a list');
+  if (steps.length > WALKTHROUGH_LIMITS.steps) return bad(`at most ${WALKTHROUGH_LIMITS.steps} steps are allowed`);
+  const problem = steps.map(walkthroughStepProblem).find((p) => p !== null);
+  if (problem) return bad(problem);
+  const [editId, editIdError] = editIdOf(ctx.body, JSON.stringify(steps));
+  if (editIdError) return editIdError;
+  const key = `${ctx.projectId}:prototype:walkthrough:${documentId}:${editId}`;
+  const replayed = findDocument(ctx.detail, allocations.get(key) ?? '');
+  if (replayed) return [200, { success: true, document: replayed }];
+  if ((seriesOf(ctx.detail, doc)[0]?.version ?? 1) !== (doc.version ?? 1)) return STALE_DOCUMENT;
+  const carried = Object.fromEntries(Object.entries(doc).filter(([field]) => !PROTOTYPE_ROW_ONLY.includes(field)));
+  const saved = newManagedVersion(ctx, carried, withWalkthrough(doc.content ?? '', steps.map(cleanWalkthroughStep).map(writtenRoute)), {
+    edit_kind: 'edit', edited_from_id: doc.document_id, edited_by: { sub: ctx.shared.mockCaller?.sub ?? MOCK_CALLER_SUB, kind: 'user' },
+  });
+  allocations.set(key, saved.document_id);
+  return [201, { success: true, document: saved }];
+}
+
+/**
+ * POST …/walkthrough/draft (EDIT) `{response_language?}`: an assist job whose result is `{steps}`, nothing written;
+ * each step's place a placeholder. As the server, a body that is not a JSON object is refused and an empty one
+ * is none (the route's 'object' body); the mock's canned steps are English whatever the language.
+ */
+function draftWalkthrough(ctx, documentId) {
+  const doc = prototypeOf(ctx, documentId);
+  if (!doc) return PROTOTYPE_NOT_FOUND;
+  const anchor = { route: '', bbox: { ...DRAFT_ANCHOR_BOX } };
+  return startProjectAssistJob(ctx.projectId, 'assist_walkthrough_draft', [200, { steps: [
+    { title: 'Your order at a glance', body: 'This card says when the parcel arrives and why the date changed.', anchor },
+    { title: 'Place the order', body: 'The total includes shipping, so the price you see is the price you pay.', anchor },
+  ] }]);
 }
 
 // ── AI helpers (assist jobs: their answer is the job `result`, see `assisted`) ──
@@ -1020,6 +1632,196 @@ function changePinStatus(ctx, documentId, pinId, action) {
   return [200, { success: true, pin: publicPin(pin) }];
 }
 
+// ── Prototype feedback (lambda/shared/prototype_feedback.py; GET …/prototypes/{id}/feedback) ──
+// Every version's pins of the series (newest VERSION_LIST_LIMIT versions, each list
+// capped at 200 as list_pins is), grouped by route and folded the way the backend's
+// pure function does: same position and near-identical text, flagged pins never fold.
+
+const FEEDBACK_VERSION_LIMIT = 25;
+const FEEDBACK_PIN_CAP = 200;
+const FOLD_CENTRE_TOLERANCE = 0.05;
+const FOLD_JACCARD = 0.8;
+// checked_version's and read_feedback's ValidationError messages, word for word.
+const VERSION_INVALID = 'version must be a positive version number';
+const VERSION_NOT_IN_SERIES = 'version is not a version of this prototype';
+
+/** Code-point order (Python's `sorted` on str), never the locale's. */
+function byText(a, b) {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+}
+
+/** normalised_text: Python's `[^\w\s]` keeps letters, digits and `_` (and whitespace); whitespace collapsed. */
+const normalisedText = (text) => (typeof text === 'string' ? text : '').toLowerCase()
+  .replace(/[^\p{L}\p{N}_\s]/gu, '').replace(/\s+/g, ' ').trim();
+
+function textsMatch(a, b) {
+  const left = normalisedText(a);
+  const right = normalisedText(b);
+  if (left === right) return true;
+  const wordsA = new Set(left.split(' ').filter(Boolean));
+  const wordsB = new Set(right.split(' ').filter(Boolean));
+  const union = new Set([...wordsA, ...wordsB]);
+  if (union.size === 0) return false;
+  const shared = [...wordsA].filter((word) => wordsB.has(word)).length;
+  return shared / union.size >= FOLD_JACCARD;
+}
+
+const anchorOf = (pin) => (isPlainObject(pin.anchor) ? pin.anchor : {});
+const routeOf = (pin) => stringOr(anchorOf(pin).route, '');
+const selectorOf = (pin) => stringOr(anchorOf(pin).selector, '');
+
+// The mock screens nothing else, so the main patterns of shared/prompt_safety.py injection_findings live
+// here: an anchor field matching one is named in `unsafe_fields` (prototype_pins.unsafe_anchor_fields).
+const ANCHOR_TEXT_FIELDS = ['route', 'selector', 'text_snippet'];
+const INJECTION_PATTERNS = [
+  /\b(system|developer)\s+prompt\b|\bdeveloper\s+(message|instructions?)\b/i,
+  /\byou\s+are\s+now\b|\bact\s+as\s+(an?\s+)?(unrestricted|jailbroken|dan)\b/i,
+  /^[ \t]*(?:human|assistant)[ \t]*:/im,
+  /<\|?(im_start|im_end|system|endoftext)\|?>/i,
+];
+// ignore_instructions in two steps: a verb, then within 40 characters of its sentence a word like "previous"
+// and, within 30 more, one like "instructions".
+const IGNORE_VERB = /\b(?:ignore|disregard|forget|override)\b/gi;
+const IGNORE_WHAT = /\b(?:previous|prior|above|earlier|all|any|your|the)\b[^.\n]{0,30}\b(?:instructions?|prompts?|rules|directions)\b/i;
+const IGNORE_WINDOW = 40;
+
+function asksToIgnore(text) {
+  return [...text.matchAll(IGNORE_VERB)].some((verb) => {
+    const [clause] = text.slice(verb.index + verb[0].length).split(/[.\n]/, 1);
+    const what = IGNORE_WHAT.exec(clause);
+    return what !== null && what.index <= IGNORE_WINDOW;
+  });
+}
+
+const readsLikeAnInstruction = (text) => asksToIgnore(text) || INJECTION_PATTERNS.some((pattern) => pattern.test(text));
+const unsafeAnchorFields = (anchor) => ANCHOR_TEXT_FIELDS.filter((key) => readsLikeAnInstruction(stringOr(anchor[key], '')));
+
+/** _centre: the bbox is stored in percent of the tester's viewport, so the centre's share is (x + w/2) / 100. */
+function centreOf(pin) {
+  const { bbox } = anchorOf(pin);
+  const box = isPlainObject(bbox) ? bbox : {};
+  const num = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
+  return [(num(box.x) + num(box.w) / 2) / 100, (num(box.y) + num(box.h) / 2) / 100];
+}
+
+/** same_position compares the difference rounded to 6 places (0.30 - 0.25 is a hair over 0.05). */
+const withinTolerance = (a, b) => Math.round(Math.abs(a - b) * 1e6) / 1e6 <= FOLD_CENTRE_TOLERANCE;
+
+function samePosition(a, b) {
+  if (routeOf(a) !== routeOf(b)) return false;
+  const [selectorA, selectorB] = [selectorOf(a), selectorOf(b)];
+  if (selectorA || selectorB) return selectorA === selectorB;
+  const [ax, ay] = centreOf(a);
+  const [bx, by] = centreOf(b);
+  return withinTolerance(ax, bx) && withinTolerance(ay, by);
+}
+
+/** A reply as the read lists it; one an incorporation wrote (part 3) also carries its kind, llm_metadata and approver. */
+const replyView = (reply) => ({
+  by: reply.by ?? null, name: reply.name ?? null, text: reply.text ?? null, at: reply.at ?? null,
+  ...(reply.kind === 'ai' ? { kind: 'ai', llm_metadata: cloneJson(reply.llm_metadata), approved_by: cloneJson(reply.approved_by) } : {}),
+});
+
+/** pin_view: one pin as the answer lists it. */
+const feedbackPin = (pin) => ({
+  pin_id: stringOr(pin.pin_id, ''), document_id: stringOr(pin.document_id, ''),
+  version: Number.isInteger(pin.version) ? pin.version : null,
+  status: stringOr(pin.status, '') || 'open', created_at: stringOr(pin.created_at, ''),
+  addressed_by: typeof pin.addressed_by === 'string' && pin.addressed_by ? pin.addressed_by : null,
+  flagged: pin.flagged !== false, text: stringOr(pin.comment, ''),
+  replies: (Array.isArray(pin.replies) ? pin.replies : []).filter(isPlainObject).map(replyView),
+});
+
+/** Compare two key lists field by field, in code-point order. */
+const byKeys = (left, right) => left.reduce((order, key, index) => order || byText(key, right[index]), 0);
+const pinSortKey = (pin) => [routeOf(pin), selectorOf(pin), stringOr(pin.created_at, ''), stringOr(pin.pin_id, ''), stringOr(pin.document_id, '')];
+
+/** One route's pins (already in (selector, created_at, pin_id) order) folded into items. */
+function foldPins(pins) {
+  const items = [];
+  for (const pin of pins) {
+    const into = pin.flagged !== false ? undefined
+      : items.find((item) => item.first.flagged === false && samePosition(item.first, pin) && textsMatch(item.first.comment, pin.comment));
+    if (into) into.pins.push(pin);
+    else items.push({ first: pin, pins: [pin] });
+  }
+  return items
+    .map(({ first, pins: folded }) => ({
+      item_id: stringOr(first.pin_id, ''), pin_ids: folded.map((p) => stringOr(p.pin_id, '')), count: folded.length,
+      flagged: first.flagged !== false, text: stringOr(first.comment, ''),
+      anchor: { route: routeOf(first), selector: selectorOf(first), text_snippet: stringOr(anchorOf(first).text_snippet, '') },
+      unsafe_fields: unsafeAnchorFields(anchorOf(first)),
+      first_at: stringOr(first.created_at, ''), pins: folded.map(feedbackPin),
+    }))
+    .sort((a, b) => byKeys([a.anchor.selector, a.first_at, a.item_id], [b.anchor.selector, b.first_at, b.item_id]));
+}
+
+/**
+ * group_pins: the pins (each with its series `document_id` and `version`) grouped by route ("" for
+ * none, routes in code-point order) and folded into items; the same pins in any order, the same answer.
+ */
+export function groupFeedbackPins(pins) {
+  const sorted = [...pins].sort((a, b) => byKeys(pinSortKey(a), pinSortKey(b)));
+  const routes = [...new Set(sorted.map(routeOf))];
+  return routes.map((route) => ({
+    route, route_unsafe: readsLikeAnInstruction(route), items: foldPins(sorted.filter((p) => routeOf(p) === route)),
+  }));
+}
+
+/** The series' versions, newest first: a proj_1 id that names no document is a series of one. */
+function feedbackSeries(ctx, documentId) {
+  const doc = findDocument(ctx.detail, documentId);
+  if (!doc) return [{ document_id: documentId, version: 1 }];
+  return seriesOf(ctx.detail, doc).map((d) => ({ document_id: d.document_id, version: Number.isInteger(d.version) ? d.version : 1 }));
+}
+
+/** checked_version: absent or empty is no filter, else 1 to 6 ASCII digits and at least 1: `[version, the 400]`. */
+function checkedVersion(raw) {
+  if (raw === null || raw === '') return [null, null];
+  if (!/^\d{1,6}$/.test(raw) || Number(raw) < 1) return [null, bad(VERSION_INVALID)];
+  return [Number(raw), null];
+}
+
+/** The pins read_feedback reads: each version's list (capped as list_pins is), the capped ones in `cut`. */
+function seriesPins(ctx, read, status) {
+  const cut = [];
+  const pins = read.flatMap((entry) => {
+    const [versionPins] = pinsFor(ctx, entry.document_id);
+    const listed = (versionPins ?? [])
+      .filter((p) => status === null || p.status === status)
+      .sort((a, b) => byText(a.pin_id, b.pin_id))
+      .slice(0, FEEDBACK_PIN_CAP);
+    if (listed.length >= FEEDBACK_PIN_CAP) cut.push({ ...entry, reason: 'pin_cap' });
+    return listed.map((p) => ({ ...p, ...entry }));
+  });
+  return { pins, cut };
+}
+
+function prototypeFeedback(ctx, documentId) {
+  const [, error] = pinsFor(ctx, documentId);
+  if (error) return error;
+  const status = ctx.params.get('status') || null;
+  if (status !== null && !PIN_STATUSES.includes(status)) return bad('status must be open, addressed or resolved');
+  const [version, versionError] = checkedVersion(ctx.params.get('version'));
+  if (versionError) return versionError;
+  const series = feedbackSeries(ctx, documentId);
+  // read_feedback: a version filter looks through the WHOLE series and leaves no version unread.
+  const read = version === null ? series.slice(0, FEEDBACK_VERSION_LIMIT) : series.filter((v) => v.version === version);
+  if (read.length === 0) return bad(VERSION_NOT_IN_SERIES);
+  const olderUnread = version === null ? series.length - read.length : 0;
+  const { pins, cut } = seriesPins(ctx, read, status);
+  return [200, {
+    document_id: documentId,
+    versions_read: read,
+    partial: cut.length > 0 || olderUnread > 0,
+    cut,
+    older_versions_unread: olderUnread,
+    pin_count: pins.length,
+    groups: groupFeedbackPins(pins),
+  }];
+}
+
 // ── Route table ─────────────────────────────────────────────────────────────
 // `pattern` matches the path after `/projects/{id}`. `body`: 'none' (GET/DELETE),
 // 'lenient' (the backend's `json_body or {}`) or 'object' (json_object_body: a
@@ -1051,7 +1853,16 @@ const ROUTES = [
   { method: 'POST', pattern: /^\/prfaq-autofill$/, body: 'lenient', run: assisted('assist_prfaq_autofill', autofillPrfaq) },
   { method: 'POST', pattern: /^\/build-prototype$/, body: 'object', run: startPrototypeBuild },
 
+  { method: 'GET', pattern: /^\/prototypes\/([^/]+)\/walkthrough$/, run: getWalkthrough },
+  { method: 'PUT', pattern: /^\/prototypes\/([^/]+)\/walkthrough$/, body: 'object', run: saveWalkthrough },
+  { method: 'POST', pattern: /^\/prototypes\/([^/]+)\/walkthrough\/draft$/, body: 'object', run: draftWalkthrough },
+
+  { method: 'POST', pattern: /^\/prototypes\/([^/]+)\/drafts$/, body: 'object', run: startPrototypeDraft },
+  { method: 'GET', pattern: /^\/prototypes\/([^/]+)\/drafts\/([^/]+)$/, run: getPrototypeDraft },
+  { method: 'POST', pattern: /^\/prototypes\/([^/]+)\/drafts\/([^/]+)\/apply$/, body: 'lenient', run: applyPrototypeDraft },
+
   { method: 'GET', pattern: /^\/prototypes\/([^/]+)\/pins$/, run: listPins },
+  { method: 'GET', pattern: /^\/prototypes\/([^/]+)\/feedback$/, run: prototypeFeedback },
   { method: 'POST', pattern: /^\/prototypes\/([^/]+)\/pins\/([^/]+)\/replies$/, body: 'object', run: replyToPin },
   { method: 'POST', pattern: /^\/prototypes\/([^/]+)\/pins\/([^/]+)\/resolve$/, body: 'object', run: (ctx, doc, pin) => changePinStatus(ctx, doc, pin, 'resolve') },
   { method: 'POST', pattern: /^\/prototypes\/([^/]+)\/pins\/([^/]+)\/reopen$/, body: 'object', run: (ctx, doc, pin) => changePinStatus(ctx, doc, pin, 'reopen') },
@@ -1071,16 +1882,17 @@ function routeBody(route, raw) {
   return [isPlainObject(raw) ? raw : {}, null];
 }
 
-function dispatch(route, { projectId, groups, raw, params, shared }) {
+function dispatch(route, { projectId, groups, raw, params, shared, origin }) {
   const detail = detailOf(shared, projectId);
   if (!detail) return NOT_FOUND;
   const [body, error] = routeBody(route, raw);
   if (error) return error;
-  return route.run({ projectId, detail, body, params, shared }, ...groups);
+  return route.run({ projectId, detail, body, params, shared, origin }, ...groups);
 }
 
 /** Handle the project action routes above; returns true when the request was taken. */
 export function handleProjectActionRoutes(req, res, url, send, shared) {
+  if (serveDraftPreview(req, res, url)) return true;
   const match = url.pathname.match(PROJECT_PATH);
   if (!match) return false;
   const projectId = safeDecode(match[1]);
@@ -1091,11 +1903,11 @@ export function handleProjectActionRoutes(req, res, url, send, shared) {
     send(...NOT_FOUND);
     return true;
   }
-  return serveRoute(req, res, { projectId, rest: match[2], params: url.searchParams, send, shared });
+  return serveRoute(req, res, { projectId, rest: match[2], params: url.searchParams, send, shared, origin: url.origin });
 }
 
 /** Find and run the route for `rest` on `projectId`; false when no route takes it. */
-function serveRoute(req, res, { projectId, rest, params, send, shared, routes = ROUTES, bodyPatch }) {
+function serveRoute(req, res, { projectId, rest, params, send, shared, routes = ROUTES, bodyPatch, origin = '' }) {
   const route = routes.find((r) => r.method === req.method && r.pattern.test(rest));
   if (!route) return false;
   const groups = rest.match(route.pattern).slice(1).map(safeDecode);
@@ -1103,7 +1915,7 @@ function serveRoute(req, res, { projectId, rest, params, send, shared, routes = 
   const respond = (raw) => {
     // A patch always lands: on a non-object body it is the whole body (never a lost override).
     const patched = bodyPatch ? { ...(isPlainObject(raw) ? raw : {}), ...bodyPatch } : raw;
-    const [status, payload] = dispatch(route, { projectId, groups, raw: patched, params, shared });
+    const [status, payload] = dispatch(route, { projectId, groups, raw: patched, params, shared, origin });
     send(status, payload);
   };
   if (route.body) {

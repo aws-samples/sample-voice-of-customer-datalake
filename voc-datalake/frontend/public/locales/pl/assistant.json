@@ -8,6 +8,7 @@
   },
   "panel": {
     "title": "Asystent",
+    "editing": "Edycja: {{title}}",
     "using": "Kontekst: {{context}}",
     "newChat": "Nowy czat",
     "sessions": "Poprzednie rozmowy",
@@ -326,6 +327,12 @@
     "heading": {
       "persona": "Persony",
       "document": "Dokumenty"
+    },
+    "sections": {
+      "prd": "PRD",
+      "prfaq": "PR/FAQ",
+      "prototypes": "Prototypy",
+      "documents": "Dokumenty"
     },
     "limit": {
       "persona": "Najwyżej {{max, number}} person na wiadomość.",

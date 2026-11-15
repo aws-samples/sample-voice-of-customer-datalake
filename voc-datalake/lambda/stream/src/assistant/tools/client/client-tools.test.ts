@@ -40,6 +40,8 @@ const VALID: Record<string, Record<string, unknown>> = {
   create_participant_list: { name: 'Beta customers', kind: 'beta' },
   add_participants: { list_id: 'lst_0123456789abcdef', people: [{ email: 'ana@example.com' }] },
   build_prototype: { title: 'Checkout prototype' },
+  draft_prototype_revision: { document_id: 'doc_1', instruction: 'Make the summary a sticky footer' },
+  set_prototype_walkthrough: { document_id: 'doc_1', steps: [{ title: 'Start', body: 'Pick a plan', selector: '#plan' }] },
   cancel_plan: { plan_id: 'pl_0123456789ab' },
   propose_plan: {
     schema: 'voc-plan/1',

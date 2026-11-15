@@ -44,8 +44,9 @@ A run walks its PHASES in order, each paged and time-budgeted:
 
 Each deleted item first gets a tombstone (``copies.py``); its kept Silver versions
 (``silver/{source}/{feedback_id}/``) are deleted with it (``shared/retention.delete_item``). Before the Lambda's
-budget runs out the worker re-invokes itself with its phase, the phase's scan
-cursor and its running state (``runs.py``). Deletes are idempotent, so a
+budget runs out, or once a phase has read ``MAX_PAGES`` pages, the worker re-invokes itself with its phase, the
+phase's scan cursor and its running state (``runs.py``). A scan that answers with the cursor it was read from
+fails the run (``CursorStuck``) rather than reading the same page again. Deletes are idempotent, so a
 duplicate delivery or an overlapping daily run only repeats no-ops. Every
 finished run (and every failure) writes one audit row (``pk AUDIT#retention``).
 
@@ -60,7 +61,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Final
+from typing import Any, Final, NoReturn
 
 from boto3.dynamodb.conditions import ConditionBase
 from botocore.exceptions import BotoCoreError, ClientError
@@ -127,16 +128,27 @@ TIME_RESERVE_MS: Final = 60 * 1000
 # A runaway guard: a chain this long means something is wrong (the table would
 # have to hold millions of matching items); it stops and fails loudly instead.
 MAX_GENERATIONS: Final = 500
+# The most pages one phase reads in one invocation (a million rows scanned at PAGE_SIZE): past it the phase hands
+# over exactly as when the time runs low, so every loop of the walk is finite whatever the clock says. A store whose
+# pages come back in under 84 ms reaches it before the clock (14 minutes of budget): one more hand-over per million
+# rows, the same reads. With MAX_GENERATIONS a run stops (fails) past 500 million rows scanned.
+MAX_PAGES: Final = 10_000
 
 _AWS_ERRORS: Final = (ClientError, BotoCoreError)
 
 # The scan filter of one store (shared.retention.STORE_*), built once per invocation by the mode's setup.
 Filters = Callable[[str], ConditionBase]
+# The invocation's clock: whether there is still room for one more slice before handing over.
+TimeLeft = Callable[[], bool]
 
 
 @dataclass
 class Walk:
-    """One invocation's tables, clients and state, handed to every phase."""
+    """One invocation's tables, clients, state and clock, handed to every phase.
+
+    ``time_left`` is the one clock every phase reads (``_lambda_clock`` in the Lambda); ``context`` names the
+    function a hand-over re-invokes.
+    """
 
     tables: dict[str, Any]
     context: Any
@@ -144,10 +156,16 @@ class Walk:
     run: dict[str, Any]
     filters: Filters
     s3: Any
+    time_left: TimeLeft
 
     @property
     def aggregates(self) -> Any:
         return self.tables['aggregates']
+
+
+def _lambda_clock(context: Any) -> TimeLeft:
+    """The Lambda's own clock: more than ``TIME_RESERVE_MS`` of the invocation's budget remain."""
+    return lambda: has_time_left(context, TIME_RESERVE_MS)
 
 
 def _tables() -> dict[str, Any]:
@@ -334,19 +352,43 @@ def _walk(walk: Walk, phase: str, cursor: dict | None, scan: Callable[[dict | No
 
     ``scan(cursor)`` reads one page; ``handle(page, cursor)`` works through it and
     returns ``_Resume`` when the time ran out mid-page. The cursor is checkpointed
-    across self re-invocations.
+    across self re-invocations. At most ``MAX_PAGES`` pages, then a hand-over at the next one. A page whose
+    ``LastEvaluatedKey`` is the cursor it was read from stops the run (``CursorStuck``) before it is handled, so it
+    is never worked through twice; a longer cycle (A, B, A) is bounded by the page cap.
     """
-    while True:
+    for _page in range(MAX_PAGES):
         page = scan(cursor)
+        following = page.get('LastEvaluatedKey') or None
+        if following is not None and following == cursor:
+            _cursor_stuck(phase)
         resume = handle(page, cursor)
         if resume is not None:
             return _hand_over(walk, phase, resume.cursor)
         record_progress(walk.aggregates, walk.run, phase)
-        cursor = page.get('LastEvaluatedKey') or None
-        if cursor is None:
+        if following is None:
             return None
-        if not has_time_left(walk.context, TIME_RESERVE_MS):
+        cursor = following
+        if not walk.time_left():
             return _hand_over(walk, phase, cursor)
+    return _page_cap(walk, phase, cursor)
+
+
+class CursorStuck(RuntimeError):
+    """A scan answered with the cursor it was read from: the walk would read that page forever."""
+
+
+def _cursor_stuck(phase: str) -> NoReturn:
+    """Stop the run: it fails and is audited like any other failure (``_run``). The cursor is a row key (it may
+    name a person), so only the phase is logged."""
+    logger.error('Retention scan returned the cursor it started from; stopping the run', extra={'phase': phase})
+    raise CursorStuck(phase)
+
+
+def _page_cap(walk: Walk, phase: str, cursor: dict | None) -> dict:
+    """The phase read ``MAX_PAGES`` pages in this invocation: hand over from ``cursor``, as when the time runs low."""
+    logger.warning('Retention phase read its page cap in one invocation; handing over',
+                   extra={'phase': phase, 'pages': MAX_PAGES})
+    return _hand_over(walk, phase, cursor)
 
 
 def _erase_pages(walk: Walk, phase: str, cursor: dict | None, scan: Callable[[dict | None], dict],
@@ -359,7 +401,7 @@ def _erase_pages(walk: Walk, phase: str, cursor: dict | None, scan: Callable[[di
         tombstones(items)
         done = start
         for item in items:
-            if not has_time_left(walk.context, TIME_RESERVE_MS):
+            if not walk.time_left():
                 # After the last erased item (this page's start when none was).
                 return _Resume(done)
             erase(item)
@@ -429,21 +471,31 @@ def _sweep_raw(walk: Walk, _cursor: dict | None) -> dict | None:
     The per-item archives and kept Silver versions went with their items; this
     removes what no item points at any more (an archive whose item failed
     processing, an older copy). Each page lists from the start of the prefix
-    (what was listed is gone), so a hand-over carries no cursor.
+    (what was listed is gone), so a hand-over carries no cursor. At most ``MAX_PAGES`` pages a prefix, then a
+    hand-over.
     """
     source = str(walk.run.get('source') or '')
     raw_prefix, silver_prefix = retention.raw_source_prefix(source), retention.silver_source_prefix(source)
     if raw_prefix is None or silver_prefix is None or not RAW_DATA_BUCKET:
         return None
     for prefix in (raw_prefix, silver_prefix):
-        more = True
-        while more:
-            if not has_time_left(walk.context, TIME_RESERVE_MS):
-                return _hand_over(walk, PHASE_RAW, None)
-            objects, more = retention.delete_raw_prefix_page(walk.s3, RAW_DATA_BUCKET, prefix)
-            walk.run['deleted_objects'] += objects
-            record_progress(walk.aggregates, walk.run, PHASE_RAW)
+        handed_over = _sweep_prefix(walk, prefix)
+        if handed_over is not None:
+            return handed_over
     return None
+
+
+def _sweep_prefix(walk: Walk, prefix: str) -> dict | None:
+    """Delete every object version under ``prefix``, page by page; a hand-over result, or None once it is empty."""
+    for _page in range(MAX_PAGES):
+        if not walk.time_left():
+            return _hand_over(walk, PHASE_RAW, None)
+        objects, more = retention.delete_raw_prefix_page(walk.s3, RAW_DATA_BUCKET, prefix)
+        walk.run['deleted_objects'] += objects
+        record_progress(walk.aggregates, walk.run, PHASE_RAW)
+        if not more:
+            return None
+    return _page_cap(walk, PHASE_RAW, None)
 
 
 def _erase_from_boards(walk: Walk, cursor: dict | None) -> dict | None:
@@ -467,8 +519,7 @@ def _erase_exports(walk: Walk, _cursor: dict | None) -> dict | None:
     their objects deleted (exports.py, TENETS.md D5). Each step is idempotent, so a hand-over resumes with none."""
     if not RAW_DATA_BUCKET:
         return None
-    done = exports.clear(walk.run, walk.s3, RAW_DATA_BUCKET, walk.aggregates,
-                         lambda: has_time_left(walk.context, TIME_RESERVE_MS))
+    done = exports.clear(walk.run, walk.s3, RAW_DATA_BUCKET, walk.aggregates, walk.time_left)
     record_progress(walk.aggregates, walk.run, PHASE_EXPORTS)
     return None if done else _hand_over(walk, PHASE_EXPORTS, None)
 
@@ -556,7 +607,6 @@ _PHASE_RUNNERS: Final[dict[str, Callable[[Walk, dict | None], dict | None]]] = {
 # ============================================
 
 def _finish(aggregates_table: Any, run: dict[str, Any], status: str, error: str | None = None) -> dict:
-    run.pop('_progress', None)
     if run.get('job_id'):
         finished = finish_erasure_job(aggregates_table, run, status, error)
         # Completed or failed: the next erasure of this source may start (each release frees only its own job's lock).
@@ -592,7 +642,8 @@ def handle_event(event: dict[str, Any], context: Any) -> dict:
     finally:
         # After deletes (a hand-over, completion or failure): cached reads move on. A job that names a workspace
         # deleted that workspace's items only: its own data_version moves (WS#{ws}#METRIC#meta), not the deployment's.
-        named = job_scope(state) if state.get('job_id') else None
+        # (Only ``_workspace_job`` puts a workspace on the run, beside its job id.)
+        named = job_scope(state)
         if named is not None:
             if _workspace_items(state) > before[2]:
                 bump_data_version(tables['aggregates'], named)
@@ -617,7 +668,8 @@ def _run(tables: dict[str, Any], context: Any, event: dict[str, Any], state: dic
             # an erase event that cannot run leaves its job as it was.
             return (_finish(aggregates_table, state, STATUS_COMPLETED) if mode == MODE_RETENTION
                     else {'status': 'nothing_to_do'})
-        handed_over = _walk_phases(Walk(tables, context, event, state, filters, get_s3_client()))
+        handed_over = _walk_phases(Walk(tables, context, event, state, filters, get_s3_client(),
+                                        _lambda_clock(context)))
     except (*_AWS_ERRORS, ValueError, RuntimeError) as e:
         failure = type(e).__name__
     else:

@@ -87,8 +87,8 @@ class TestLegacyClient:
         params = {'name': 'prfaq_from_feedback', 'arguments': {'topic': 'Lost bags'}}
         read_text = _prompt_text(world.client(world.mint('alice', scope='read')).request('prompts/get', params))
         write_text = _prompt_text(world.client(world.mint('alice', scope='write')).request('prompts/get', params))
-        assert 'create_document' not in read_text
-        assert 'Only when the user confirms, save it with create_document' in write_text
+        assert 'documents_create' not in read_text
+        assert 'Only when the user confirms, save it with documents_create' in write_text
 
     def test_a_prompt_get_is_audited_without_its_arguments(self, world):
         minted = world.mint('alice', scope='read')

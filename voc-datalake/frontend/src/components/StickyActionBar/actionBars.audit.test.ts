@@ -58,6 +58,7 @@ const EXEMPT: Readonly<Record<string, string>> = {
   AddMemberForm: 'Members → Add a member: a one-line add form (email, role, Add) above the list, nothing left unsaved',
   CreateWorkspaceForm: 'Administration → Workspaces: a two-field create form above the list, nothing left unsaved',
   WorkspaceExportCard: 'Workspace settings → Export: Start an export and Download act at once on the server; no form, nothing left unsaved',
+  ProposalReview: 'Revise from comments: per-change Accept and Accept all put text into the draft; the save is the page bar\'s own Save',
   McpJsonSnippets: 'Connect → mcp.json: the pressed client of a toggle group (aria-pressed) wears the primary style; nothing is saved',
   DataQualitySectionProfile: 'Data Explorer → Data quality: the pressed facet of a toggle group (aria-pressed) wears the primary style; nothing is saved',
   'RouteErrorBoundary/index': 'error-state retry, centred in the page',
@@ -89,7 +90,8 @@ const EXEMPT: Readonly<Record<string, string>> = {
   MemoryEditor: 'inline Save inside one memory card, one of many in the memory list',
   PrioritizationHeader: 'Save sits in the page header',
   RoomVotePanel: 'Open room vote is a per-row control in the expanded row',
-  DocumentsTab: 'New document is a tab-header action',
+  WalkthroughEditor: 'Save as a new version ends the walkthrough editor\'s side panel beside the prototype preview, inside the panel\'s own scroll, not the page\'s form',
+  PrototypeDraftBanner: 'Apply as vN sits in the draft banner at the top of the prototype pane, above the preview, left-aligned; no form to save',
   DecisionsTab: 'New decision is a tab-header action',
   DecisionCard: 'per-decision Draft PR/FAQ, one of many in the decision list',
   OverviewTab: 'per-step card CTAs in the overview grid',
@@ -112,6 +114,7 @@ const EXEMPT: Readonly<Record<string, string>> = {
   DocumentComments: 'the Comment button floats next to the selected text in the document, not a form row',
   CommentComposer: 'inline Post in the margin beside one thread or selection, one of many in the comment rail',
   ReferenceDesignPreview: 'per-reference Use as design system, one of many in the references list (it only loads a draft)',
+  DocumentActionsBar: 'the canvas\'s Save and Discard register themselves as an action bar (useRegisterActionBar) and pin to the bottom on a phone while dirty',
 }
 
 const isDialog = (text: string): boolean => /ModalShell|dialog-footer/.test(text)

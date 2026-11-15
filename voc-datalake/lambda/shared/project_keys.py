@@ -43,7 +43,8 @@ if TYPE_CHECKING:
     from shared.ws_repo import WorkspaceScope
 
 __all__ = ['AGENT_RUNS_STORE', 'COMMENT_SERIES_PREFIX', 'PROJECT_GATE_STORE', 'PROJECT_JOB_WORK_STORE',
-           'PROJECT_PREFIX', 'PROJECT_TYPE_PK', 'REVIEWER_ROUTES_STORE', 'NotPerWorkspaceError', 'ProjectPartition',
+           'PROJECT_PREFIX', 'PROJECT_TYPE_PK', 'PROTOTYPE_BUILDER_STORE', 'REVIEWER_ROUTES_STORE',
+           'REVISE_FROM_COMMENTS_STORE', 'NotPerWorkspaceError', 'ProjectPartition',
            'comment_series_item', 'comments_pk', 'document_keys', 'document_listing', 'document_revision_key',
            'document_revisions_prefix', 'job_status_pk',
            'legacy_assignment_key', 'legacy_assignment_prefix', 'personas_index_pk', 'project_id_of',
@@ -89,6 +90,16 @@ PROJECT_JOB_WORK_STORE: Final = 'Project job work'
 #: deployment's, and a plan takes its workspace from its own META, so a state that names one is refused (since 7.29.00),
 #: but for the failure states, which mark the run's or the plan's own row failed.
 AGENT_RUNS_STORE: Final = 'Agent runs'
+#: "Revise from comments" (shared/document_revision.py; its series-head check and its next version,
+#: shared/document_history.py ``require_series_head`` / ``revise_document``): it reads the deployment's feedback as
+#: evidence and writes the series' next version on the deployment's version keys, so a workspace is refused (since the
+#: merge in 7.35.00) until the switch (3h) threads it.
+REVISE_FROM_COMMENTS_STORE: Final = 'Revise from comments'
+#: The Prototype builder (docs/prototype-builder.md: shared/prototype_versions.py ``PrototypeStore`` and its HTML
+#: objects, shared/prototype_drafts.py, shared/prototype_feedback.py, shared/prototype_incorporation.py; the series
+#: head of shared/document_versions.py ``series_head_version``): its version rows, draft job rows, pin-form reads and
+#: objects are the deployment's, so a workspace is refused (since the merge in 7.35.00) until the switch (3h).
+PROTOTYPE_BUILDER_STORE: Final = 'Prototype builder'
 #: A workspace's registry of its project ids, one row per project, ``WS#{ws}#PROJECT_IDS`` / ``{id}``.
 _PROJECT_REGISTRY: Final = 'PROJECT_IDS'
 
@@ -100,7 +111,8 @@ class NotPerWorkspaceError(RuntimeError):
 
 def require_deployment(workspace: WorkspaceScope | None, store: str) -> None:
     """Fail closed (``NotPerWorkspaceError``) when a workspace reaches ``store``, a project store not per workspace
-    yet (the access gate, a project job's work, the agent runs and a review link's reviewer routes, slice 3h;
+    yet (the access gate, a project job's work, the agent runs, a review link's reviewer routes, Revise from
+    comments and the Prototype builder, slice 3h;
     docs/multi-workspace.md)."""
     if workspace is not None:
         raise NotPerWorkspaceError(f'{store} is not per workspace yet')

@@ -15,7 +15,7 @@ import type { ProductDocStatus, ProjectDocument } from './types'
 export interface ProjectJob {
   success?: boolean
   job_id: string
-  job_type: 'research' | 'generate_personas' | 'generate_prd' | 'generate_prfaq' | 'generate_product_report' | 'build_prototype' | 'merge_documents' | 'import_persona'
+  job_type: 'research' | 'generate_personas' | 'generate_prd' | 'generate_prfaq' | 'generate_product_report' | 'build_prototype' | 'draft_prototype' | 'merge_documents' | 'import_persona'
   status: 'pending' | 'running' | 'completed' | 'failed'
   progress: number
   current_step?: string

@@ -203,6 +203,39 @@ class TestDocumentVersionBoundaries:
         mock_table.transact_write_items.assert_not_called()
         mock_table.meta.client.transact_write_items.assert_not_called()
 
+    @patch('projects.projects_table')
+    def test_get_project_carries_each_documents_section_computed_on_read(self, mock_table):
+        """docs/prototype-builder.md part 4: `section` on every document, an unknown type in Documents.
+
+        A legacy managed row with no `document_type` (awaiting the metadata backfill) is in its sort key's section.
+        """
+        rows = [
+            ('PRD#a', 'prd'), ('PRFAQ#b', 'prfaq'), ('PROTOTYPE#c', 'prototype'), ('RESEARCH#d', 'research'),
+            ('DOC#e', 'custom'), ('DOC#f', 'decision'), ('PRODUCT_REPORT#g', 'product_report'),
+            ('DOC#h', 'a_type_added_later'), ('DOC#i', None),
+            ('PRD#j', None), ('PROTOTYPE#k', None), ('PRFAQ#l', None),
+        ]
+        mock_table.query.return_value = {'Items': [
+            {'pk': 'PROJECT#p1', 'sk': 'META', 'project_id': 'p1', 'name': 'Project'},
+            {'pk': 'PROJECT#p1', 'sk': 'PERSONA#x', 'persona_id': 'x', 'name': 'Pat'},
+            *({'pk': 'PROJECT#p1', 'sk': sk, 'document_id': sk.split('#')[1], 'document_type': document_type,
+               'title': sk, 'created_at': '2026-01-01'} for sk, document_type in rows),
+        ]}
+
+        from projects import get_project
+
+        read = get_project('p1')
+
+        assert {d['document_id']: d['section'] for d in read['documents']} == {
+            'a': 'prd', 'b': 'prfaq', 'c': 'prototypes', 'd': 'documents', 'e': 'documents', 'f': 'documents',
+            'g': 'documents', 'h': 'documents', 'i': 'documents', 'j': 'prd', 'k': 'prototypes', 'l': 'prfaq'}
+        assert 'section' not in read['personas'][0]
+        assert 'sections' not in read  # no second, derived list
+        # Computed on read: nothing is written, the legacy rows included.
+        writes = ('put_item', 'update_item', 'delete_item', 'transact_write_items')
+        assert [name for name in writes if getattr(mock_table, name).called] == []
+        assert not mock_table.meta.client.transact_write_items.called
+
     @pytest.mark.parametrize('document_type', [
         'prototype', 'research', 'product_report', 'PRD', 'PRFAQ', 'custom ',
     ])

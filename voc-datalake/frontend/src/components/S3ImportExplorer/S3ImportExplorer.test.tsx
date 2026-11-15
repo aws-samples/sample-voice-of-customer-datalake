@@ -6,6 +6,7 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { renderWithQueryClient } from '../../test/query-client'
 import { useLocale } from '../../test/i18n-locale'
+import { timerOnCleanup } from '../../test/timeoutWatch'
 import deComponents from '../../../public/locales/de/components.json'
 import type { S3ImportFile } from '../../api/types'
 
@@ -60,9 +61,16 @@ async function openNewSourceForm(): Promise<UserEvent> {
 
 /** Mount and drop `file` on the upload input (the `accept` filter is off so unsupported types reach the component). */
 async function uploadFile(file: File) {
+  const upload = await mountUploader()
+  await upload(file)
+}
+
+/** Mount and wait for the upload input; drop a file on it with the returned function. */
+async function mountUploader(): Promise<(file: File) => Promise<void>> {
   const user = userEvent.setup({ applyAccept: false })
   renderExplorer()
-  await user.upload(await screen.findByLabelText('Drop files here or click to upload'), file)
+  const input = await screen.findByLabelText('Drop files here or click to upload')
+  return (file) => user.upload(input, file)
 }
 
 function resetApiMocks() {
@@ -189,6 +197,25 @@ describe('S3ImportExplorer', () => {
       expect(await screen.findByText('Uploaded reviews.csv')).toBeInTheDocument()
       expect(mockGetS3UploadUrl).toHaveBeenCalledWith('reviews.csv', 'default', 'text/csv')
       expect(fetch).toHaveBeenCalledWith('https://s3.example/put', expect.objectContaining({ method: 'PUT', headers: { 'Content-Type': 'text/csv' } }))
+    })
+
+    it('cancels the error note\'s timer when the explorer goes away, so nothing fires after it', async () => {
+      // Mounted first: finding the input starts the query helpers' own 5000 ms timeout, the error note's delay too.
+      const upload = await mountUploader()
+      const timer = await timerOnCleanup(5000, async () => {
+        await upload(new File(['x'], 'notes.txt', { type: 'text/plain' }))
+        return screen.findByText(/Unsupported file type: notes\.txt/)
+      })
+      expect(timer).toStrictEqual({ started: true, pendingBefore: true, cancelledByCleanup: true })
+    })
+
+    it('cancels the success note\'s timer when the explorer goes away, so nothing fires after it', async () => {
+      mockGetS3UploadUrl.mockResolvedValue({ success: true, upload_url: 'https://s3.example/put' })
+      const timer = await timerOnCleanup(3000, async () => {
+        await uploadFile(new File(['a,b'], 'reviews.csv', { type: 'text/csv' }))
+        return screen.findByText('Uploaded reviews.csv')
+      })
+      expect(timer).toStrictEqual({ started: true, pendingBefore: true, cancelledByCleanup: true })
     })
 
     it('reports a missing upload URL with the translated fallback reason', async () => {

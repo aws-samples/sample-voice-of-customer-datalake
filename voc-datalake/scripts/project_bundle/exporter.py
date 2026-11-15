@@ -10,16 +10,19 @@ What a project owns on main (enumerated from `api/projects.py` `delete_project`,
   row, which points at a review link;
 * aggregates table: each prototype's pin form (`FEEDBACK_FORM` / `FORM#pf_…`, carrying the
   project id) and its pins (`PINS#{form_id}` / `PIN#…`);
-* raw bucket: `prototypes/{id}/`, `projects/{id}/product_docs/`, and every `avatars/…` object
-  a row names by `s3://<bucket>/…` URI.
+* raw bucket: `prototypes/{id}/` (without its prototype drafts, `drafts/`),
+  `projects/{id}/product_docs/`, and every `avatars/…` object a row names by `s3://<bucket>/…` URI.
 
 NOT carried: review links (`DOCSHARE#…`, `DCRATE#…`) and MCP tokens (credentials), jobs
-(the jobs table: transient progress rows with a TTL), feedback, participant links and
+(the jobs table: transient progress rows with a TTL) and the prototype drafts that live as long
+as their job, feedback, participant links and
 Prioritization rows (they reference the deployment's own people and data).
 """
 from __future__ import annotations
 
+import sys
 from collections.abc import Iterable, Iterator
+from pathlib import Path
 from typing import Any
 
 from boto3.dynamodb.conditions import Attr, Key
@@ -40,6 +43,9 @@ CONTAINER_ATTRIBUTE = 'kind'
 # Credential-shaped rows are never exported, wherever they sit.
 CREDENTIAL_ATTRIBUTES = frozenset({'token_hash', 'secret_hash'})
 CREDENTIAL_SK_PREFIXES = ('TOKEN#', 'MCPTOKEN', 'APITOKEN')
+# The document rows of a project's partition: `shared/deleted_sources.py` DOCUMENT_SORT_KEY_PREFIXES, which the
+# project read lists (that module needs the Lambda layer's packages; the test keeps the two the same).
+DOCUMENT_SORT_KEY_PREFIXES = ('PRD#', 'PRFAQ#', 'RESEARCH#', 'DOC#', 'PRODUCT_REPORT#', 'PROTOTYPE#')
 
 
 class ExportError(Exception):
@@ -113,12 +119,18 @@ def _uris(value: Any, prefix: str) -> Iterator[str]:
 
 
 def object_keys(s3: Any, bucket: str, project_id: str, rows: list[dict[str, Any]]) -> list[str]:
-    """The project's prototype and product-doc objects, plus every avatar its rows name."""
+    """The project's prototype and product-doc objects, plus every avatar its rows name.
+
+    Prototype drafts (`prototypes/{id}/drafts/`, docs/prototype-builder.md part 2) are left out:
+    a draft lives as long as its job row, and jobs are not carried, so on the target nothing
+    could ever open or apply one.
+    """
     keys: list[str] = []
+    drafts = f'prototypes/{project_id}/drafts/'
     paginator = s3.get_paginator('list_objects_v2')
     for prefix in (f'prototypes/{project_id}/', f'projects/{project_id}/product_docs/'):
         for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-            keys.extend(entry['Key'] for entry in page.get('Contents', []))
+            keys.extend(entry['Key'] for entry in page.get('Contents', []) if not entry['Key'].startswith(drafts))
     named = {key for row in rows for key in _uris(row, f's3://{bucket}/') if key.startswith('avatars/')}
     return keys + sorted(named - set(keys))
 
@@ -146,6 +158,26 @@ def _meta(table: Any, project_id: str) -> dict[str, Any]:
     if CONTAINER_ATTRIBUTE in meta:
         raise ExportError(f'{project_id} is a reserved container ({meta[CONTAINER_ATTRIBUTE]}), not a project')
     return meta
+
+
+def document_section_counts(project_id: str, rows: list[dict[str, Any]]) -> dict[str, int]:
+    """The manifest's documents per section (docs/prototype-builder.md, part 4), every section, zeros included.
+
+    The documents are the rows the project read lists (`DOCUMENT_SORT_KEY_PREFIXES` in the project's own
+    partition); the section table is `lambda/shared/document_sections.py`, standard library only. A legacy row
+    with no `document_type` counts in its sort key's section, as the project read lists it.
+    """
+    lambda_dir = str(Path(__file__).resolve().parents[2] / 'lambda')
+    if lambda_dir not in sys.path:
+        sys.path.insert(0, lambda_dir)
+    from shared.document_sections import SECTION_ORDER, row_section
+
+    pk = f'PROJECT#{project_id}'
+    counts: dict[str, int] = dict.fromkeys(SECTION_ORDER, 0)
+    for row in rows:
+        if row.get('pk') == pk and str(row.get('sk', '')).startswith(DOCUMENT_SORT_KEY_PREFIXES):
+            counts[row_section(row)] += 1
+    return counts
 
 
 def member_summary(meta: dict[str, Any]) -> list[dict[str, Any]]:
@@ -190,4 +222,5 @@ class Exporter:
             'owner_email': meta.get('owner_email'), 'members': member_summary(meta),
             'rows': len(kept) + len(aggregate_rows), 'objects': objects,
             'skipped_credentials': len(project_rows) - len(kept),
+            'document_sections': document_section_counts(project_id, kept),
         }

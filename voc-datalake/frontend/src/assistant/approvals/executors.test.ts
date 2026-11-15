@@ -113,7 +113,7 @@ describe('write-tool executors', () => {
   })
 
   it('update_document sends content (+title) and refreshes the project record', async () => {
-    m.projectsApi.updateDocument.mockResolvedValue({ success: true, document: null })
+    m.projectsApi.updateDocument.mockResolvedValue({ document: null })
     const { run, invalidatedKeys } = setup()
     await run('update_document', { project_id: P, document_id: 'd1', content: 'body', title: 'New', change_summary: 's' })
     const [projectId, documentId, body] = m.projectsApi.updateDocument.mock.calls[0] ?? ['', '', {}]
@@ -124,7 +124,7 @@ describe('write-tool executors', () => {
 
   // QA s3 F4: an edit is a new version, so the model must be told the NEW id.
   it('update_document reports the saved version and its id', async () => {
-    m.projectsApi.updateDocument.mockResolvedValue({ success: true, document: { document_id: 'prd_v3', version: 3 } })
+    m.projectsApi.updateDocument.mockResolvedValue({ document: { document_id: 'prd_v3', version: 3 } })
     const { run } = setup()
     const result = await run('update_document', { project_id: P, document_id: 'prd_v2', content: 'body', change_summary: 'tightened scope' })
     expect(result.data).toStrictEqual({ document_id: 'prd_v3' })
@@ -132,11 +132,18 @@ describe('write-tool executors', () => {
   })
 
   it('create_document creates a custom document', async () => {
-    m.projectsApi.createDocument.mockResolvedValue({ success: true, document: { document_id: 'doc_7' } })
+    m.projectsApi.createDocument.mockResolvedValue({ document: { document_id: 'doc_7' } })
     const { run } = setup()
     const result = await run('create_document', { project_id: P, title: 'T', content: 'C' })
     expect(m.projectsApi.createDocument).toHaveBeenCalledWith(P, { title: 'T', content: 'C', document_type: 'custom' })
     expect(result.data).toStrictEqual({ document_id: 'doc_7' })
+  })
+
+  it('create_document names no id when the answer carried no document the client can read', async () => {
+    m.projectsApi.createDocument.mockResolvedValue({ document: null })
+    const { run } = setup()
+    const result = await run('create_document', { project_id: P, title: 'T', content: 'C' })
+    expect([result.summary, result.data]).toStrictEqual(['Created document "T".', undefined])
   })
 
   it('delete_document → projectsApi.deleteDocument', async () => {

@@ -42,9 +42,10 @@ its results stay in your projects. To run a plan again, ask again and approve th
   but they always show an approval card when they run. The plan card marks them "will ask again".
 - **Some writes are never part of a plan** (`CARD_ONLY_WRITE_TOOLS`): `save_brand_settings`, `create_user`,
   `create_users`, `update_user`, `set_user_access`, `import_reviews`, `save_radar_brands`, `run_radar_scan`,
-  `create_participant_list` and `add_participants`. They stay ordinary chat writes with their own card, because
-  their cards re-check what you saw, send several requests, carry rows from the conversation, or call an API the
-  plan runner cannot reach.
+  `create_participant_list`, `add_participants` and `draft_prototype_revision`. They stay ordinary chat writes with
+  their own card, because their cards re-check what you saw, send several requests, carry rows from the
+  conversation, or call an API the plan runner cannot reach; a prototype draft is for the person on the
+  prototype's page, who applies it there ([prototype-builder.md](prototype-builder.md), part 2).
 - **PR/FAQ and PRD writing follows your way of working with AI.** A plan step that writes a PR/FAQ or PRD is
   autonomous AI writing: the Projects API refuses it unless you (and the project owner) work AI-driven, and the
   assistant does not propose such a step for anyone else ([ways-of-working.md](ways-of-working.md)).

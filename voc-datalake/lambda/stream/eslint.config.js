@@ -51,6 +51,7 @@ export const BROWSER_SAFE_FILES = [
   'src/assistant/tools/dimension-patterns.ts',
   'src/assistant/tools/format.ts',
   'src/assistant/tools/server/assist-job-values.ts',
+  'src/assistant/tools/server/document-sections.ts',
   'src/assistant/tools/server/memory-shape.ts',
   'src/lib/is-record.ts',
 ]

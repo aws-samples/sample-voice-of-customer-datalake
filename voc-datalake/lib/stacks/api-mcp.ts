@@ -18,13 +18,13 @@ export interface McpDelegates {
   settingsLambda: lambda.Function;
   memoryLambda: lambda.Function;
   agentsLambda: lambda.Function;
-  /** voc-engagement-api: `search_feature_requests` reads GET /feature-requests/search (docs/mcp.md). */
+  /** voc-engagement-api: `feature_requests_search` reads GET /feature-requests/search (docs/mcp.md). */
   engagementLambda: lambda.Function;
-  /** voc-radar-api: `read_radar` reads GET /radar and a brand's reviews (docs/mcp.md). */
+  /** voc-radar-api: `radar_read` reads GET /radar and a brand's reviews (docs/mcp.md). */
   radarLambda: lambda.Function;
-  /** voc-feedback-edit-api: `edit_feedback` writes PUT /feedback/{id}/category|dimensions (docs/mcp.md). */
+  /** voc-feedback-edit-api: `feedback_edit` writes PUT /feedback/{id}/category|dimensions (docs/mcp.md). */
   feedbackEditLambda: lambda.Function;
-  /** voc-integrations-api: `get_feedback_catalogue sources: true` reads GET /sources/status (docs/mcp.md). */
+  /** voc-integrations-api: `feedback_get_catalogue sources: true` reads GET /sources/status (docs/mcp.md). */
   integrationsLambda: lambda.Function;
 }
 

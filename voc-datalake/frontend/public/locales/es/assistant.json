@@ -8,6 +8,7 @@
   },
   "panel": {
     "title": "Asistente",
+    "editing": "Editando: {{title}}",
     "using": "Contexto: {{context}}",
     "newChat": "Nuevo chat",
     "sessions": "Conversaciones anteriores",
@@ -292,6 +293,12 @@
     "heading": {
       "persona": "Personas",
       "document": "Documentos"
+    },
+    "sections": {
+      "prd": "PRD",
+      "prfaq": "PR/FAQ",
+      "prototypes": "Prototipos",
+      "documents": "Documentos"
     },
     "limit": {
       "persona": "Como máximo {{max, number}} personas por mensaje.",

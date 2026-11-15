@@ -39,6 +39,8 @@ export interface ClientToolConfig<T extends Record<string, unknown>> {
   feedbackScoped?: boolean;
   /** Fill a missing `agent_id` from `ctx.page.agentId` (the agent on screen). */
   agentScoped?: boolean;
+  /** Fill a missing `document_id` from `ctx.page.documentId` (the prototype on screen). */
+  documentScoped?: boolean;
   summarize(args: T): string;
   /** See `ClientToolDefinition.precheck`; receives the parsed args. */
   precheck?: (args: T, ctx: AssistantRunContext) => Promise<string | undefined>;
@@ -51,6 +53,7 @@ const PAGE_DEFAULTS = [
   { flag: 'projectScoped', arg: 'project_id', field: 'projectId' },
   { flag: 'feedbackScoped', arg: 'feedback_id', field: 'feedbackId' },
   { flag: 'agentScoped', arg: 'agent_id', field: 'agentId' },
+  { flag: 'documentScoped', arg: 'document_id', field: 'documentId' },
 ] as const;
 
 type ScopingFlags = Pick<ClientToolConfig<Record<string, unknown>>, (typeof PAGE_DEFAULTS)[number]['flag']>;

@@ -21,7 +21,8 @@ import { Users, FileText, Search, Sparkles, Shuffle, Package, Wand2, AlertCircle
 import { useTranslation } from 'react-i18next'
 import { deriveOverviewState, type OverviewState, type OverviewStepState, type RecommendableStep } from './overviewState'
 import { canEditProject } from './projectAccess'
-import { usePrototypeBuild, type PrototypeBuildControl } from './usePrototypeBuild'
+import { useProjectPrototypeBuild } from './useProjectPrototypeBuild'
+import type { PrototypeBuildControl } from './usePrototypeBuild'
 import type { ReactNode } from 'react'
 import type { TFunction } from 'i18next'
 import type { ProjectDocument } from '../../api/types'
@@ -75,29 +76,17 @@ export default function OverviewTab({
   onJobStarted,
 }: OverviewTabProps) {
   const { t } = useTranslation('projectDetail')
-  const {
-    steps, nextStep: derivedNextStep, prototypeSources,
-  } = deriveOverviewState({
+  const overview = deriveOverviewState({
     personas,
     documents,
     methodology,
     productContext,
     productDocs,
   })
+  const { steps, nextStep: derivedNextStep } = overview
 
-  const prototypeBuild = usePrototypeBuild({
-    projectId: project.project_id,
-    hasPrd: prototypeSources.hasPrd,
-    hasPrfaq: prototypeSources.hasPrfaq,
-    hasExistingPrototype: steps.prototype.hasOutput,
-    prdOptions: prototypeSources.prdOptions,
-    prfaqOptions: prototypeSources.prfaqOptions,
-    researchOptions: prototypeSources.researchOptions,
-    visualOptions: prototypeSources.visualOptions,
-    visualsExtracting: prototypeSources.visualsExtracting,
-    visualsFailed: prototypeSources.visualsFailed,
-    design: designSystem,
-    onJobStarted,
+  const prototypeBuild = useProjectPrototypeBuild({
+    projectId: project.project_id, state: overview, designSystem, onJobStarted,
   })
 
   const canEdit = canEditProject(project)

@@ -13,8 +13,11 @@ import ModalShell from '../../components/ModalShell/ModalShell'
 import PrototypeLinkActions, { PrototypeLinkLifetimeNote } from '../../components/PrototypeLinkActions'
 import PrototypeRenderer from '../../components/PrototypeRenderer'
 import PrototypePinsReview from '../../components/PrototypePins/PrototypePinsReview'
+import PrototypeFeedbackDialog from '../../components/PrototypeFeedback/PrototypeFeedbackDialog'
+import EditWithAssistantButton from './EditWithAssistantButton'
 import { parsePrototypeSpec, looksLikeHtmlDocument } from '../../components/prototypeSpec'
 import type { InheritedExtraSources } from './documentLineage'
+import type { ProjectDocument } from '../../api/types'
 
 // ── Prototype feedback → regenerate ──────────────────────────────────────────
 // The generated prototype is usually a user-facing view. This lets the reviewer
@@ -228,7 +231,7 @@ function LegacyHtmlActions({
 
 export function PrototypeView({
   projectId, documentId, html, url, title, prototypeFormat, sourcePrdId, sourcePrfaqId,
-  sourcesDropped, extraSources, canEdit, onJobStarted,
+  sourcesDropped, extraSources, canEdit, onJobStarted, seriesKey, onSelectDoc,
 }: {
   readonly projectId: string
   readonly documentId: string
@@ -246,6 +249,10 @@ export function PrototypeView({
   /** False for a viewer: no "revise with feedback" (it starts a billable job the gate would refuse). */
   readonly canEdit: boolean
   readonly onJobStarted?: () => void
+  /** The prototype series (the walkthrough's "don't show again" is per series). */
+  readonly seriesKey?: string
+  /** Selects the version a saved walkthrough wrote (editors' walkthrough editor). */
+  readonly onSelectDoc?: (doc: ProjectDocument) => void
 }) {
   const { t } = useTranslation('projectDetail')
   // Shared by the lifetime note and the anchors that describe themselves with it.
@@ -282,6 +289,15 @@ export function PrototypeView({
             {url ? <PrototypeLinkLifetimeNote url={url} noteId={lifetimeNoteId} /> : null}
           </span>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 min-w-0">
+            {/* Every pin of the series, grouped (docs/prototype-builder.md Part 3). The route is EDIT,
+                so a viewer is never offered it. */}
+            {/* Edit with the assistant (part 2): a draft revision proposed through the assistant's card. */}
+            {canEdit ? (
+              <>
+                <EditWithAssistantButton />
+                <PrototypeFeedbackDialog projectId={projectId} documentId={documentId} />
+              </>
+            ) : null}
             {canEdit ? (
               <PrototypeFeedbackButton
                 projectId={projectId}
@@ -309,7 +325,7 @@ export function PrototypeView({
           </div>
         </div>
         <PrototypePinsReview projectId={projectId} documentId={documentId} url={url} html={html} title={title}
-          canEdit={canEdit} />
+          canEdit={canEdit} seriesKey={seriesKey} onSelectDoc={onSelectDoc} />
       </div>
     )
   }

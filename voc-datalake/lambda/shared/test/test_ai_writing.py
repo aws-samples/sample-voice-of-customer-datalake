@@ -104,7 +104,8 @@ class TestTheRules:
             self, mode: str, doc_type: str, kind: str, allowed: bool):
         with patch.object(ai_mode, 'get_ai_mode', return_value=MODES[mode]):
             if allowed:
-                assert ai_writing.require_ai_writing(MagicMock(), 'sub-ada', doc_type, kind) is None
+                expected = MODES[mode] if ai_writing.is_gated(doc_type) else None
+                assert ai_writing.require_ai_writing(MagicMock(), 'sub-ada', doc_type, kind) == expected
             else:
                 assert _refusal(MagicMock(), 'sub-ada', doc_type, kind).status_code == 403
 
@@ -173,6 +174,7 @@ class TestFailingClosed:
         error = _refusal(table, 'sub-ada', 'prfaq', kind)
 
         assert (error.status_code, error.message) == (403, UNREADABLE)
+        assert isinstance(error, ai_writing.ModeUnreadableError)
         assert error.__cause__ is failure
 
     def test_an_unexpected_error_is_not_swallowed_as_a_refusal(self):
@@ -193,14 +195,16 @@ class TestFailingClosed:
     def test_no_mode_row_is_ai_driven_and_allows_autonomous_writing(self):
         table = _table_with(None)
 
-        assert ai_writing.require_ai_writing(table, 'sub-ada', 'prd', AUTONOMOUS) is None
+        assert ai_writing.require_ai_writing(table, 'sub-ada', 'prd', AUTONOMOUS) == ai_mode.AiMode(
+            mode=ai_mode.MODE_AI_DRIVEN)
         table.get_item.assert_called_once_with(
             Key={'pk': 'USERFLAGS#sub-ada', 'sk': 'ai_mode'}, ConsistentRead=True)
 
     def test_the_stored_row_of_the_subject_decides(self):
         table = _table_with({'mode': 'human_driven', 'ai_writing_prd': True})
 
-        assert ai_writing.require_ai_writing(table, 'sub-ada', 'prd', INTERACTIVE) is None
+        assert ai_writing.require_ai_writing(table, 'sub-ada', 'prd', INTERACTIVE) == ai_mode.AiMode(
+            mode=ai_mode.MODE_HUMAN_DRIVEN, unlocked=frozenset({'prd'}))
         assert _refusal(table, 'sub-ada', 'prfaq', INTERACTIVE).message == HD_PRFAQ_COACHING
 
 

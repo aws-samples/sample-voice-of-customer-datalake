@@ -2,6 +2,11 @@
 // Uses shared fetchApi from client.ts for consistent 401 retry + token refresh
 import { del, post, put } from './requestKit'
 import { fetchApi } from './client'
+import { apiErrorStatus } from './apiErrorStatus'
+import { normalizeIncorporation, normalizePrototypeDraft } from './prototypeDraftSchema'
+import type { Incorporation, PrototypeDraft } from './prototypeDraftSchema'
+import { normalizeWalkthroughSteps } from './prototypeWalkthroughSchema'
+import type { WalkthroughStep } from './prototypeWalkthroughSchema'
 import { getDateBasisBodyParams } from './baseUrl'
 import {
   normalizeDocumentVersions, normalizeMemberCandidates, normalizeProject, normalizeProjectDetail,
@@ -43,6 +48,20 @@ import type {
 
 /** = MAX_PROJECT_DETAIL_BATCH in lambda/api/projects.py (the server answers 400 above it). */
 export const MAX_PROJECT_DETAIL_BATCH = 200
+
+const HTTP_NOT_FOUND = 404
+
+const walkthroughPath = (projectId: string, documentId: string) =>
+  `/projects/${projectId}/prototypes/${encodeURIComponent(documentId)}/walkthrough`
+
+/** What a draft is made from: an editor's instruction, or selected tester pins (ids only, part 3). */
+export type DraftRequest = { readonly instruction: string } | { readonly pin_ids: readonly string[] }
+
+/** Apply's answer: the version it wrote (null when the answer names none) and, for a feedback draft, its marks. */
+export interface AppliedDraft {
+  readonly document: ProjectDocument | null
+  readonly incorporation: Incorporation | null
+}
 
 /** A JSON POST's request init (`post(...)` is what check-mock-coverage reads as POST). */
 
@@ -289,15 +308,15 @@ export const projectsApi = {
   dismissJob: (projectId: string, jobId: string) =>
     fetchApi<{ success: boolean }>(`/projects/${projectId}/jobs/${jobId}`, del()),
 
-  createDocument: (projectId: string, data: {
+  /** The created document, normalised like an edit's (null when the answer carries none the page can show). */
+  createDocument: async (projectId: string, data: {
     title: string;
     content: string;
     document_type?: 'custom'
-  }) =>
-    fetchApi<{
-      success: boolean;
-      document: ProjectDocument
-    }>(`/projects/${projectId}/documents`, post(data)),
+  }): Promise<{ document: ProjectDocument | null }> => {
+    const raw = await fetchApi<unknown>(`/projects/${projectId}/documents`, post(data))
+    return { document: normalizeProjectDocument(asRecord(raw)?.document) }
+  },
 
   /**
    * A PR/FAQ or PRD written by hand: the next version of its series, `origin: human`
@@ -320,16 +339,21 @@ export const projectsApi = {
    * fresh `edit_id` per save so a retried request replays instead of duplicating,
    * and the `expected_revision` the editor loaded (`documentRevision`) so a save
    * over someone else's newer one is a 409 rather than a silent overwrite.
+   * `reviseJobId` (the `job_id` of the "Revise from comments" pass whose proposal the person
+   * accepted, a PR/FAQ or PRD) sends `revise_job_id`: the server checks that pass (this project's,
+   * a proposal, started by the same person, of this series, and the text holds one of its changes)
+   * and records the version as a revise by them (D4), or answers 400. Absent, a plain edit.
    */
   updateDocument: async (projectId: string, documentId: string, data: {
     title?: string;
     content?: string;
     edit_id?: string;
     expected_revision?: number
-  }): Promise<{ success: boolean; document: ProjectDocument | null }> => {
-    const raw = await fetchApi<unknown>(`/projects/${projectId}/documents/${documentId}`, put(data))
-    const record = asRecord(raw)
-    return { success: record?.success === true, document: normalizeProjectDocument(record?.document) }
+  }, reviseJobId?: string): Promise<{ document: ProjectDocument | null }> => {
+    // A failed save throws (fetchApi); the answer's `success` adds nothing to that.
+    const body = reviseJobId === undefined ? data : { ...data, revise_job_id: reviseJobId }
+    const raw = await fetchApi<unknown>(`/projects/${projectId}/documents/${documentId}`, put(body))
+    return { document: normalizeProjectDocument(asRecord(raw)?.document) }
   },
 
   /** Every version of a document, newest first, with content (open / compare). */
@@ -444,6 +468,72 @@ export const projectsApi = {
       status: string;
       message: string
     }>(`/projects/${projectId}/build-prototype`, post(body)),
+
+  // ── Prototype drafts (docs/prototype-builder.md, part 2; EDIT on the project) ──
+  // A draft is a finished `draft_prototype` job plus its own object: no document row until Apply.
+  // Discard is the job delete (`dismissJob`), which makes the draft GET and Apply 404 at once.
+
+  /**
+   * Starts a draft of `documentId`'s series: from an editor's instruction (1–2,000 characters; the assistant's
+   * `draft_prototype_revision`), or from selected tester pins (part 3's Incorporate: 1–50 pin ids, never their
+   * text; the server reads the pins itself and writes the instruction). A job whose result is `{draft_id}`. The
+   * base is the series' newest version when the job starts, whichever version `documentId` names.
+   */
+  startPrototypeDraft: (projectId: string, documentId: string, request: DraftRequest, responseLanguage: string) =>
+    fetchApi<{
+      success: boolean;
+      job_id: string;
+      status: string;
+      message: string
+    }>(`/projects/${projectId}/prototypes/${encodeURIComponent(documentId)}/drafts`, post({
+      ...('pin_ids' in request ? { pin_ids: [...request.pin_ids] } : { instruction: request.instruction }),
+      response_language: responseLanguage,
+    })),
+
+  /** A finished draft of this series, or null when there is none to show (404: expired, discarded, another series). */
+  getPrototypeDraft: async (projectId: string, documentId: string, draftId: string): Promise<PrototypeDraft | null> => {
+    try {
+      return normalizePrototypeDraft(await fetchApi<unknown>(
+        `/projects/${projectId}/prototypes/${encodeURIComponent(documentId)}/drafts/${encodeURIComponent(draftId)}`))
+    } catch (error: unknown) {
+      if (apiErrorStatus(error) === HTTP_NOT_FOUND) return null
+      throw error
+    }
+  },
+
+  /**
+   * Writes the draft as the next version of its series (no body: the base comes from the job): the version,
+   * the same one on a replay of an Apply that already landed (201 the first time, 200 after). A series that
+   * moved past the draft's base is a 409. For a feedback draft, `incorporation` says which pins it marked,
+   * which it replied to and which it could not (every call finishes the set, replays included).
+   */
+  applyPrototypeDraft: async (projectId: string, documentId: string, draftId: string): Promise<AppliedDraft> => {
+    const raw = await fetchApi<unknown>(
+      `/projects/${projectId}/prototypes/${encodeURIComponent(documentId)}/drafts/${encodeURIComponent(draftId)}/apply`, post())
+    const record = asRecord(raw)
+    return { document: normalizeProjectDocument(record?.document), incorporation: normalizeIncorporation(record?.incorporation) }
+  },
+
+  // ── Prototype walkthrough (docs/prototype-builder.md Part 1) ──
+
+  /** The version's walkthrough steps, extracted and re-validated by the server (none when it has none). VIEW. */
+  getPrototypeWalkthrough: async (projectId: string, documentId: string): Promise<WalkthroughStep[]> =>
+    normalizeWalkthroughSteps(await fetchApi<unknown>(walkthroughPath(projectId, documentId))),
+
+  /**
+   * Saves the steps as a NEW version of the series (`[]` removes the walkthrough); the answer's `document` is it.
+   * `editId` makes a retried save the same version; a series that moved past `documentId` is a 409. EDIT.
+   */
+  savePrototypeWalkthrough: async (projectId: string, documentId: string, steps: readonly WalkthroughStep[], editId: string): Promise<ProjectDocument | null> => {
+    const raw = await fetchApi<unknown>(walkthroughPath(projectId, documentId), put({ steps, edit_id: editId }))
+    return normalizeProjectDocument(asRecord(raw)?.document)
+  },
+
+  /** Steps drafted from the PRD / PR/FAQ the prototype was built from and its outline: an assist job, nothing saved. EDIT. */
+  draftPrototypeWalkthrough: (projectId: string, documentId: string, responseLanguage: string): Promise<WalkthroughStep[]> =>
+    projectAssist(projectId,
+      () => fetchApi<unknown>(`/projects/${projectId}/prototypes/${encodeURIComponent(documentId)}/walkthrough/draft`, post({ response_language: responseLanguage })),
+      normalizeWalkthroughSteps),
 
   generateProductReport: (projectId: string, body: { response_language?: string; title?: string }) =>
     fetchApi<{

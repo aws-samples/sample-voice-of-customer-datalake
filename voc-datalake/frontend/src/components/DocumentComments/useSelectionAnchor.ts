@@ -1,6 +1,7 @@
 /**
- * @fileoverview The text a reader selected inside the document, as an anchor plus where to show
- * the "Comment" button (just below the selection, inside the document's box).
+ * @fileoverview Where to show the "Comment" button for text a reader selected inside the document
+ * (just below the selection, inside the document's box). Only a selection that makes an anchor
+ * counts; the comment itself reads the anchor again when it is made (CommentedDocument).
  *
  * Read on `pointerup` / `keyup` inside the document (a mouse drag, a touch selection, Shift+arrows),
  * cleared when the selection collapses. Nothing is read while `enabled` is false.
@@ -10,11 +11,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { anchorOfSelection } from './anchors'
 import type { RefObject } from 'react'
-import type { TextQuoteAnchor } from '../../api/documentReviewSchema'
 import { noCleanup } from '../../hooks/noCleanup'
 
-export interface SelectionAnchor {
-  readonly anchor: TextQuoteAnchor
+interface SelectionAnchor {
   /** Offset of the button from the document's top-left, in px. */
   readonly top: number
   readonly left: number
@@ -27,14 +26,13 @@ export function useSelectionAnchor(rootRef: RefObject<HTMLElement | null>, enabl
   const read = useCallback(() => {
     const root = rootRef.current
     const selection = typeof window === 'undefined' ? null : window.getSelection()
-    const anchor = root === null ? null : anchorOfSelection(root, selection)
-    if (root === null || anchor === null || selection === null) {
+    if (root === null || selection === null || anchorOfSelection(root, selection) === null) {
       setSelected(null)
       return
     }
     const box = selection.getRangeAt(0).getBoundingClientRect()
     const origin = root.getBoundingClientRect()
-    setSelected({ anchor, top: box.bottom - origin.top + BUTTON_OFFSET_PX, left: Math.max(0, box.left - origin.left) })
+    setSelected({ top: box.bottom - origin.top + BUTTON_OFFSET_PX, left: Math.max(0, box.left - origin.left) })
   }, [rootRef])
   useEffect(() => {
     const root = rootRef.current

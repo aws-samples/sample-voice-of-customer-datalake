@@ -46,7 +46,6 @@ if TYPE_CHECKING:
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from boto3.dynamodb.conditions import Key
-from botocore.exceptions import ClientError
 
 from shared import category_access, methodology
 from shared.api import validate_date_basis
@@ -59,6 +58,7 @@ from shared.company_logo import (
     has_company_logo,
     has_logo_placeholder,
     inline_logo,
+    logo_record,
     with_logo_placeholder,
 )
 from shared.converse import converse_chain
@@ -70,6 +70,7 @@ from shared.derivation import (
     build_derivation,
     derivation_source,
 )
+from shared.document_revision import pass_llm_metadata
 from shared.document_versions import (
     get_versioned_document_by_allocation,
     persist_versioned_document,
@@ -78,6 +79,7 @@ from shared.document_versions import (
 )
 from shared.document_writer_brief import clean_stored_text, prompt_feature_idea, with_writer_brief
 from shared.dynamo_paging import iter_query
+from shared.exceptions import NotFoundError, ValidationError
 from shared.feature_request_context import document_context, input_feature_request_fields
 from shared.feedback import (
     feedback_char_budget,
@@ -103,15 +105,31 @@ from shared.persona_context import personas_prompt_context
 from shared.project_keys import PROJECT_JOB_WORK_STORE, document_listing, project_pk, require_deployment
 from shared.prompt_labels_store import load_prompt_labels
 from shared.prompts import get_prd_generation_steps, get_prfaq_generation_steps
+from shared.prototype_drafts import (
+    DRAFT_FIELD,
+    DRAFT_JOB_TYPE,
+    DRAFT_LOGO_KEY,
+    DRAFT_PROMPT_VERSION,
+    KIND_FEEDBACK,
+    accepted_pins,
+    draft_object_exists,
+    parse_change_summary,
+    put_draft_html,
+    record_draft,
+)
+from shared.prototype_incorporation import parse_pin_outcomes
 from shared.prototype_pins import (
     PIN_SUBMIT_API_BASE_ENV,
     ensure_pin_form,
+    get_pin,
+    incorporation_pins_block,
     inject_pin_widget,
     pin_submit_url,
-    prototype_object_metadata,
     strip_pin_widget,
 )
-from shared.prototypes import prototype_s3_key
+from shared.prototype_versions import put_prototype_html, read_prototype_html, version_html
+from shared.prototype_walkthrough import extract_steps, inject_walkthrough, strip_walkthrough
+from shared.tables import get_jobs_table
 from shared.timestamps import now_iso
 from shared.ws_repo import WorkspaceScope, event_scope
 
@@ -504,8 +522,9 @@ class BuildLogo(NamedTuple):
     """The company logo for one prototype build."""
     #: The logo as a ``data:`` URL, or None (opted out, none uploaded, too large, unreadable).
     data_url: str | None = None
-    #: The derivation's ``company_logo_included``: True inlined, False uploaded but left out, None not recorded.
-    included: bool | None = None
+    #: Whether a logo is uploaded and the design system was read (``company_logo.logo_record`` then records
+    #: whether any use was inlined).
+    uploaded: bool = False
 
 
 def _company_logo(with_design_system: bool) -> BuildLogo:
@@ -525,7 +544,7 @@ def _company_logo(with_design_system: bool) -> BuildLogo:
     if not has_company_logo(row):
         return BuildLogo()
     data_url = company_logo_data_url(row, _s3(), SCRATCH_BUCKET)
-    return BuildLogo(data_url, data_url is not None)
+    return BuildLogo(data_url, True)
 
 
 def _design_system_record(requested: bool, section: str) -> bool | None:
@@ -942,37 +961,12 @@ def _put_prototype_html(
 
     A replay may find the object created by an earlier attempt whose DynamoDB
     transaction did not complete. Conditional conflicts therefore read the
-    existing winner instead of assuming the attempted content won.
+    existing winner instead of assuming the attempted content won. The pin submit
+    URL rides as object metadata: the prototype CSP function
+    (lib/utils/prototype-csp.ts) reads it to allow exactly that one connect-src.
     """
-    s3 = _s3()
-    key = prototype_s3_key(project_id, doc_id)
-    # The pin submit URL rides as object metadata: the prototype CSP function
-    # (lib/utils/prototype-csp.ts) reads it to allow exactly that one connect-src.
-    metadata = prototype_object_metadata(doc_id, html, os.environ.get(PIN_SUBMIT_API_BASE_ENV))
-    try:
-        response = s3.put_object(
-            Bucket=SCRATCH_BUCKET,
-            Key=key,
-            Body=html.encode('utf-8'),
-            ContentType='text/html; charset=utf-8',
-            IfNoneMatch='*',
-            Metadata=metadata,
-        )
-    except ClientError as error:
-        code = error.response.get('Error', {}).get('Code')
-        if code not in {'PreconditionFailed', 'ConditionalRequestConflict'}:
-            raise
-        response = s3.head_object(Bucket=SCRATCH_BUCKET, Key=key)
-
-    etag = response.get('ETag')
-    if not etag:
-        raise RuntimeError('S3 did not identify the winning prototype object.')
-
-    identity = {'prototype_etag': etag}
-    version_id = response.get('VersionId')
-    if version_id:
-        identity['prototype_version_id'] = version_id
-    return identity
+    return put_prototype_html(_s3(), SCRATCH_BUCKET, project_id, doc_id, html,
+                              os.environ.get(PIN_SUBMIT_API_BASE_ENV))
 
 
 def _get_prototype_html(project_id: str, doc_id: str) -> str:
@@ -980,8 +974,7 @@ def _get_prototype_html(project_id: str, doc_id: str) -> str:
     feedback-driven regeneration, which needs the prior prototype's content to
     revise rather than start from scratch.
     """
-    obj = _s3().get_object(Bucket=SCRATCH_BUCKET, Key=prototype_s3_key(project_id, doc_id))
-    return obj['Body'].read().decode('utf-8')
+    return read_prototype_html(_s3(), SCRATCH_BUCKET, project_id, doc_id)
 
 
 def _document_by_id(projects_table, project_id: str, sk_prefix: str, document_id: str) -> dict | None:
@@ -1252,9 +1245,7 @@ def _base_prototype(projects_table, project_id: str, base_prototype_id: str) -> 
     """
     if not base_prototype_id:
         return None
-    item = projects_table.get_item(
-        Key={'pk': project_pk(project_id), 'sk': f'PROTOTYPE#{base_prototype_id}'},
-    ).get('Item')
+    item = _document_by_id(projects_table, project_id, 'PROTOTYPE#', base_prototype_id)
     if not item:
         raise RuntimeError(
             f'base_prototype_id: no PROTOTYPE document "{base_prototype_id}" in this project.'
@@ -1344,14 +1335,32 @@ def _prior_prototype_html(project_id: str, base: dict | None) -> str:
         return legacy
 
 
-def _revision_feedback_section(project_id: str, base: dict | None, feedback: str) -> str:
-    """The USER FEEDBACK prompt section of a feedback-driven revision."""
+def _base_steps(project_id: str, base: dict | None) -> list[dict]:
+    """The walkthrough steps of the prototype a revision is built on (none for a fresh build).
+
+    A base whose HTML cannot be read gives none: the revision still builds (its prompt never needed it
+    when no feedback came with the id), it only starts without a walkthrough.
+    """
+    if base is None:
+        return []
+    try:
+        return extract_steps(_prior_prototype_html(project_id, base))
+    except RuntimeError:
+        logger.warning('Base prototype HTML unreadable; the revision starts without a walkthrough')
+        return []
+
+
+def _revision_feedback_section(project_id: str, base: dict | None, feedback: str, prior: str | None = None) -> str:
+    """The USER FEEDBACK prompt section of a feedback-driven revision (``prior``: the base's HTML, read once
+    by the caller; else read here)."""
     # Cap the prior HTML so the prompt stays within budget; the model gets
     # enough to understand structure/style and revise it toward the feedback.
-    # The pin widget is ours, not the model's: it is re-injected (with the
-    # revision's own form) after generation, so the model never sees it.
+    # The pin widget and the walkthrough are ours, not the model's: both are re-injected
+    # (the widget with the revision's own form, the base's steps) after generation, so the
+    # model never sees them.
     # An inlined company logo goes back to its placeholder: base64 would eat the prior-HTML cap.
-    prior_html = with_logo_placeholder(strip_pin_widget(_prior_prototype_html(project_id, base)))
+    raw = _prior_prototype_html(project_id, base) if prior is None else prior
+    prior_html = with_logo_placeholder(strip_walkthrough(strip_pin_widget(raw)))
     prior_block = (
         f'\n\nEXISTING PROTOTYPE (revise this):\n{prior_html[:PROTOTYPE_PRIOR_CAP]}' if prior_html else ''
     )
@@ -1381,6 +1390,18 @@ def default_prototype_title(prd: Mapping | None, prfaq: Mapping | None, fallback
             base = series_base_title(raw, document_type)[:PROTOTYPE_TITLE_BASE_CAP].rstrip()
             return f'{base} prototype'
     return fallback
+
+
+def _finished_build_html(project_id: str, doc_id: str, title: str, html: str, base_steps: list,
+                         logo_url: str | None, wordmark: str) -> tuple[str, int]:
+    """A built or revised prototype's HTML as it is stored, and how many logo uses it holds.
+
+    A model-written walkthrough block (a fake one, or the base's echoed) never reaches a stored object: it is
+    stripped, the logo is inlined (main's rules, shared/company_logo.py), then the revision's base steps (a fresh
+    build has none: docs/prototype-builder.md, Part 1) and the pin widget go back in.
+    """
+    inlined, logo_uses = inline_logo(strip_walkthrough(html), logo_url, wordmark)
+    return _with_pin_widget(project_id, doc_id, title, inject_walkthrough(inlined, base_steps)), logo_uses
 
 
 def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_config: dict) -> dict:
@@ -1424,8 +1445,7 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     if not prd and not prfaq:
         raise RuntimeError('No PRD or PR/FAQ found for this project. Generate at least one first.')
 
-    proj_resp = projects_table.get_item(Key={'pk': project_pk(project_id), 'sk': 'META'})
-    project_name = (proj_resp.get('Item') or {}).get('name') or 'Project'
+    project_name = _project_name(projects_table, project_id)
 
     title = doc_config.get('title') or default_prototype_title(prd, prfaq, f'Prototype: {project_name}')
 
@@ -1472,7 +1492,9 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     # job whether or not feedback was sent alongside it. Absent, null or blank
     # still means "this build is not a revision".
     base = _base_prototype(projects_table, project_id, base_prototype_id)
-    feedback_section = _revision_feedback_section(project_id, base, feedback) if feedback else ''
+    # Read once: a feedback revision's prompt and the steps it keeps come from the same HTML.
+    prior = _prior_prototype_html(project_id, base) if feedback and base is not None else None
+    feedback_section = _revision_feedback_section(project_id, base, feedback, prior) if feedback else ''
 
     # The company design system + company knowledge (Settings → Company and the
     # company memories), read only once every source above resolved. Both ''
@@ -1484,6 +1506,8 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     design_system_section, company_context_section = _prototype_org_sections(
         grounding, with_design_system=with_design_system)
     # The model writes a placeholder for the uploaded logo; the image is inlined after generation.
+    # Recorded from the design system itself, before the logo instruction (a logo alone is not a design system).
+    design_system_included = _design_system_record(with_design_system, design_system_section)
     logo = _company_logo(with_design_system)
     logo_url = logo.data_url
     if logo_url:
@@ -1521,8 +1545,9 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     html = _extract_html(raw)
     if not html:
         raise RuntimeError('Prototype model did not return an HTML document.')
-    html = inline_logo(html, logo_url, brand or project_name)
-    html = _with_pin_widget(project_id, doc_id, title, html)
+    base_steps = extract_steps(prior) if prior is not None else _base_steps(project_id, base)
+    html, logo_uses = _finished_build_html(project_id, doc_id, title, html, base_steps,
+                                           logo_url, brand or project_name)
 
     ctx.update_progress(80, 'saving_prototype')
 
@@ -1593,8 +1618,8 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
             # True when the design system reached the prompt, False when the build
             # was told not to read it (a revision inherits that choice), omitted
             # when it was asked for but none is configured.
-            design_system_included=_design_system_record(with_design_system, design_system_section),
-            company_logo_included=logo.included,
+            design_system_included=design_system_included,
+            company_logo_included=logo_record(logo.uploaded, logo_uses),
             **derivation_knowledge(grounding),
         ),
         'created_at': now,
@@ -1621,6 +1646,181 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     )
     ctx.update_progress(100, 'saved')
     return {'document_id': item['document_id'], 'title': item['title']}
+
+
+# A draft (docs/prototype-builder.md, part 2) is the build's prompt with its grounding, asked for one
+# change and a summary of it. The build's system prompt says "the HTML and nothing else", so this
+# replaces that one rule for a draft; every other rule of the build holds.
+PROTOTYPE_DRAFT_OUTPUT_RULES = """
+
+THIS REQUEST IS A DRAFT REVISION, AND ITS OUTPUT FORMAT REPLACES "OUTPUT FORMAT" ABOVE:
+- First a <change_summary> block: plain text, one line per change in the form "screen: what changed", at most 12 lines, no HTML and no Markdown.
+- Then the full revised HTML document, starting with <!DOCTYPE html> and ending with </html>.
+- Nothing before, between or after them."""
+
+PROTOTYPE_DRAFT_USER_TEMPLATE = """Revise the clickable HTML prototype below as the editor asks. Make the change asked for and keep everything else as it is.
+
+PROJECT: {project_name}
+{design_system_section}{company_context_section}
+
+EDITOR'S INSTRUCTION:
+{instruction}
+
+Answer with the <change_summary> block first (at most 12 lines, "screen: what changed"), then the full revised HTML document. Keep the offline-first single-HTML rules. {lang_hint}
+
+EXISTING PROTOTYPE (revise this):
+{prior_html}"""
+
+# A feedback draft (Part 3's Incorporate): the same draft, made from tester pins the editor selected, which
+# reach the model only inside the <prototype_pins> DATA block (incorporation_pins_block), answered per pin id.
+PROTOTYPE_INCORPORATE_OUTPUT_RULES = """
+
+THIS REQUEST IS A DRAFT REVISION FROM TESTER FEEDBACK, AND ITS OUTPUT FORMAT REPLACES "OUTPUT FORMAT" ABOVE:
+- First a <change_summary> block: plain text, one line per change in the form "screen: what changed", at most 12 lines, no HTML and no Markdown.
+- Then a <pin_outcomes> block: one line for every pin id in the tester pins, exactly "pin_id: Done: what changed" or "pin_id: Not done: why" (it contradicts the PRD, needs data the prototype does not have, or conflicts with another selected pin). Plain text, one line each.
+- Then the full revised HTML document, starting with <!DOCTYPE html> and ending with </html>.
+- Nothing before, between or after them."""
+
+PROTOTYPE_INCORPORATE_USER_TEMPLATE = """Revise the clickable HTML prototype below to address the tester feedback the editor selected. Change what the feedback asks for where it fits the product, and keep everything else as it is.
+
+PROJECT: {project_name}
+{design_system_section}{company_context_section}
+
+{pins_block}
+
+Answer with the <change_summary> block first (at most 12 lines, "screen: what changed"), then the <pin_outcomes> block (one line per pin id: Done or Not done, and why), then the full revised HTML document. Keep the offline-first single-HTML rules. {lang_hint}
+
+EXISTING PROTOTYPE (revise this):
+{prior_html}"""
+
+
+def _incorporation_input(doc_config: dict) -> tuple[str, list[str], list[str]]:
+    """``(the pins DATA block, the ids it carries, every withheld id)`` of a feedback draft's accepted pins.
+
+    The pins are read again by key (the start resolved them; one may have gone since), and the block
+    withholds a flagged pin again (fail closed). No pin left to send ends the job (a 4xx: nothing to draft).
+    """
+    table = _aggregates_table()
+    if table is None:
+        raise RuntimeError('The pins table is not configured.')
+    pins = [pin for pin in (get_pin(table, str(entry.get('form_id')), str(entry.get('pin_id')))
+                            for entry in accepted_pins(doc_config))
+            if pin is not None]
+    block, withheld_now = incorporation_pins_block(pins)
+    raw_withheld = doc_config.get('withheld')
+    earlier = [str(pin_id) for pin_id in raw_withheld] if isinstance(raw_withheld, list) else []
+    withheld = list(dict.fromkeys([*earlier, *withheld_now]))
+    sent = [str(pin.get('pin_id')) for pin in pins if str(pin.get('pin_id')) not in withheld]
+    if not block:
+        raise ValidationError('No selected pin can be sent to the AI.')
+    return block, sent, withheld
+
+
+def _project_name(projects_table, project_id: str) -> str:
+    """The project's name from its ``META`` row ('Project' when it has none)."""
+    item = projects_table.get_item(Key={'pk': project_pk(project_id), 'sk': 'META'}).get('Item') or {}
+    return item.get('name') or 'Project'
+
+
+def _prior_draft_attempt(project_id: str, job_id: str) -> bool:
+    """Whether an earlier delivery of this job already stored its detail AND its object.
+
+    The detail is written before the object, so both present means one attempt wrote both and
+    they describe the same HTML: the job completes without a second model call. Anything less
+    is drafted again (the object, write-once, is only ever written after its own detail).
+    """
+    row = get_jobs_table().get_item(Key={'pk': project_pk(project_id), 'sk': f'JOB#{job_id}'},
+                                    ConsistentRead=True).get('Item') or {}
+    return isinstance(row.get(DRAFT_FIELD), Mapping) and draft_object_exists(_s3(), SCRATCH_BUCKET, project_id, job_id)
+
+
+def _draft_prototype(ctx, projects_table, project_id: str, job_id: str, doc_config: dict) -> dict:
+    """One draft: the base version's HTML revised by the editor's instruction, stored as the job's draft.
+
+    A feedback draft (``kind: feedback``) is revised from the selected tester pins instead, given as
+    ``incorporation_pins_block``'s DATA block, and its detail adds the per-pin ``outcomes`` (accepted
+    ids only), ``withheld`` and ``ignored`` (``parse_pin_outcomes``). Nothing is marked here: Apply does.
+    Writes no document row and no pin form: the detail (``summary``, the base, the
+    instruction, ``llm_metadata``) on the job row, then the HTML at the job's draft key
+    with no metadata, the pin widget stripped (the model may echo one). The result is
+    exactly ``{draft_id}``, which the job status shows a viewer too. The base is re-read
+    by id; a series that moved past it still gets its draft (Apply then answers 409).
+    """
+    from shared.converse import answering_model, converse_detailed
+
+    if _prior_draft_attempt(project_id, job_id):
+        ctx.update_progress(100, 'saved')
+        return {'draft_id': job_id}
+    base_id = str(doc_config.get('base_document_id') or '')
+    base = _document_by_id(projects_table, project_id, 'PROTOTYPE#', base_id) if base_id else None
+    if base is None:
+        raise NotFoundError('The prototype version this draft was asked on no longer exists.')
+    # The company logo WE inlined goes back to its placeholder, as in a revision: base64 would eat the prior-HTML cap.
+    prior_html = with_logo_placeholder(
+        strip_walkthrough(strip_pin_widget(version_html(_s3(), SCRATCH_BUCKET, project_id, base))))
+    instruction = str(doc_config.get('instruction') or '').strip()
+    if not instruction:
+        raise ValidationError('The draft has no instruction.')
+    feedback = doc_config.get('kind') == KIND_FEEDBACK
+    pins_block, sent, withheld = _incorporation_input(doc_config) if feedback else ('', [], [])
+
+    project_name = _project_name(projects_table, project_id)
+    korean = str(doc_config.get('response_language')).startswith('ko')
+    lang_hint = 'Write the UI text in Korean.' if korean else 'Match the language of the existing prototype.'
+    # The grounding a revision gets: company knowledge in the system prompt, and the design
+    # system unless the base was built without it (a revision inherits that choice).
+    grounding = _document_grounding(doc_config, fallback_query=str(base.get('title') or ''))
+    with_design_system = (base.get(DERIVATION_FIELD) or {}).get('design_system_included') is not False
+    design_system_section, company_context_section = _prototype_org_sections(
+        grounding, with_design_system=with_design_system)
+    # The logo uploaded now, as a revision does (7.00.00): the model keeps the placeholder, the image is inlined
+    # after; with none to use any more, the model draws a wordmark where the base showed the logo.
+    logo = _company_logo(with_design_system)
+    logo_url = logo.data_url
+    if logo_url:
+        design_system_section += f'\n\n{LOGO_INSTRUCTION}'
+    elif has_logo_placeholder(prior_html):
+        design_system_section += f'\n\n{LOGO_REMOVED_INSTRUCTION}'
+    sections = {'project_name': project_name, 'design_system_section': design_system_section,
+                'company_context_section': company_context_section, 'lang_hint': lang_hint,
+                'prior_html': prior_html[:PROTOTYPE_PRIOR_CAP]}
+    if feedback:
+        user_prompt = PROTOTYPE_INCORPORATE_USER_TEMPLATE.format(pins_block=pins_block, **sections)
+        rules = PROTOTYPE_INCORPORATE_OUTPUT_RULES
+    else:
+        user_prompt = PROTOTYPE_DRAFT_USER_TEMPLATE.format(instruction=instruction, **sections)
+        rules = PROTOTYPE_DRAFT_OUTPUT_RULES
+    system_prompt = with_guidance(PROTOTYPE_HTML_SYSTEM_PROMPT + rules, grounding)
+
+    ctx.update_progress(40, 'invoking_bedrock')
+    reply = converse_detailed(prompt=user_prompt, system_prompt=system_prompt, surface='prototype',
+                              max_tokens=32000, step_name='draft_prototype')
+    summary, rest = parse_change_summary(reply.text)
+    detail: dict = {}
+    if feedback:
+        outcomes, ignored, rest = parse_pin_outcomes(rest, sent)
+        detail = {'kind': KIND_FEEDBACK, 'outcomes': outcomes, 'withheld': withheld, 'ignored': ignored}
+    html = _extract_html(rest)
+    if not html:
+        raise RuntimeError('Prototype model did not return an HTML document.')
+
+    ctx.update_progress(80, 'saving_draft')
+    # Neither the widget nor a walkthrough block (the model may echo or fake one): Apply adds the base's steps.
+    # The logo is inlined here, so Apply stores it as it is. A leftover placeholder becomes the project's name: a
+    # draft carries no brand (only a build's dialog sends one), where a build's wordmark uses the brand first.
+    draft, logo_uses = inline_logo(strip_walkthrough(strip_pin_widget(html)), logo_url, project_name)
+    record_draft(get_jobs_table(), project_id, job_id, {
+        'summary': summary, 'base_document_id': base_id, 'base_version': int(doc_config['base_version']),
+        'instruction': instruction,
+        'llm_metadata': pass_llm_metadata(answering_model(reply, 'prototype'), DRAFT_PROMPT_VERSION),
+        # Apply records it as the version's ``company_logo_included`` (shared/prototype_drafts.py): as a build
+        # does, True only when the logo was actually inlined (company_logo.logo_record).
+        DRAFT_LOGO_KEY: {'included': logo_record(logo.uploaded, logo_uses)},
+        **detail,
+    })
+    put_draft_html(_s3(), SCRATCH_BUCKET, project_id, job_id, draft)
+    ctx.update_progress(100, 'saved')
+    return {'draft_id': job_id}
 
 
 @job_handler(error_message='Document generation failed')
@@ -1675,6 +1875,11 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, doc_config: dict) 
     if doc_type == 'build_prototype':
         ctx.update_progress(20, 'loading_source_documents')
         return _generate_prototype(ctx, projects_table, project_id, job_id, doc_config)
+
+    # A draft of an editor's instruction (docs/prototype-builder.md, part 2): no row, one object.
+    if doc_type == DRAFT_JOB_TYPE:
+        ctx.update_progress(20, 'loading_base_prototype')
+        return _draft_prototype(ctx, projects_table, project_id, job_id, doc_config)
 
     # Resolved BEFORE anything is read or billed: an unmapped type fails the job
     # here with a clear message instead of being generated as something else.

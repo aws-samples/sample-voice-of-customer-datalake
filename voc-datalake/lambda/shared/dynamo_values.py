@@ -29,6 +29,12 @@ def as_count(value: object) -> int:
     return int(value) if isinstance(value, int | Decimal) and not isinstance(value, bool) else 0
 
 
+def as_text(item: Mapping[str, Any], field: str) -> str:
+    """A stored item's string attribute; '' when it is missing or not a string."""
+    value = item.get(field)
+    return value if isinstance(value, str) else ''
+
+
 def plain(value: Any) -> Any:
     """``value`` with every Decimal, set, tuple and mapping made JSON-safe, recursively."""
     if isinstance(value, Decimal):

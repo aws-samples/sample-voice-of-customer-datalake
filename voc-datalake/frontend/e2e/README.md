@@ -152,6 +152,45 @@ cd e2e && E2E_MOCK=1 E2E_SITE=http://localhost:5417 E2E_API=http://localhost:341
 
 `csv-dataset-update.spec.ts` (issue #411, [docs/csv-import.md](../../../docs/csv-import.md)) runs ONLY there: a CSV upload under a dataset name is previewed and imported, then the corrected file is previewed (one row to update, its before / after text) and confirmed with `apply_updates`; the API refuses an unconfirmed change (409) and `GET /feedback` holds the corrected text once. On a deployment it would write feedback, which has no delete route.
 
+`document-canvas.spec.ts` (6.05, the document canvas; helpers in `lib/canvas.ts`) runs ONLY there for now, on documents
+it creates itself in `proj_1` (`e2e-<run id>-canvas …`): edit in place (the `## ` shortcut, "/" → To-do list, the
+format bar's Bold), Save as one PUT with the loaded `expected_revision` ("Saved · v2", kept after a reload), Discard
+(nothing sent), the two-page conflict (409, the banner, Load the latest), the leave guard, comments on a PR/FAQ
+(Comment from the format bar, reply, resolve, Show resolved, the Comments | Evidence tabs), Share for review (create,
+Copy, Turn off link), History (Restore v1 → v3 on the canvas), the outline, the read-only canvas of `proj_2`, a
+keyboard-only save (Tab, Ctrl+S) and widths 360 / 390 / 768 / 1024 / 1440 with no sideways scroll.
+
+`document-canvas-a11y.spec.ts` (the same page's accessibility and widths; checks in `lib/a11y.ts`) runs ONLY there too,
+on a PR/FAQ and a research note it creates in `proj_1`, with reduced motion; each state passes axe (WCAG 2.2 AA and best
+practice) with no serious or critical finding and scrolls nothing sideways. At 1440 / 1024 / 768 / 390 / 360 in dark
+and light: reading, the File menu (inside the window), History, Share for review, the Evidence tab, a reply box and
+Full screen (opening with the page's header on screen). At 360 dark: Escape out of History and Share back to File,
+Escape closing an empty reply box (focus back on Reply), Ctrl+Enter posting a reply, and the Revise from comments
+outcome (Close on its heading's line). The stale-save banner at 1440 and 360 in both themes; the read-only page of
+`proj_2` at 1440 and 390 in light. The editor's own menus are `document-canvas`'s.
+
+`document-sections.spec.ts` (the Documents tab's list in its four sections, docs/prototype-builder.md Part 4; checks in
+`lib/a11y.ts`) runs ONLY there too, on `proj_1` with reduced motion, creating nothing: at 1440 the four sections (PRD,
+PR/FAQ, Prototypes, Documents) in order with the counts of the project read (each document's `section`), all open,
+each section's New, Enter and Space folding and unfolding PR/FAQ (its rows gone and back, Tab on to its New), every
+section open again after a reload, and the Prototypes New opening the build dialog (Escape closes it, nothing built);
+at 390 the row of section buttons above the strip, the first section with documents open, Enter on Documents putting
+its rows in the strip, the row inside the window. Each state passes axe with no serious or critical finding and
+scrolls nothing sideways. `lib/canvas.ts` `revealDocumentRow` opens a row's section below 1280 px for the specs that
+open a document there.
+
+`document-canvas-perf.spec.ts` (the canvas on long documents) runs ONLY there too: it creates a 60,000- and a 200,000-character document in
+`proj_1` (`e2e-<run id>-canvas perf …`), types three bursts with pauses into a paragraph with a citation, and reads the
+browser's Event Timing and Long Tasks: no main-thread task over 200 ms (the slowest keystroke is reported but held to no bar:
+a loaded machine stretches keystrokes, and no keystroke number told the old code from the new; the numbers go to `$E2E_OUT/canvas-perf-<size>.json`).
+
+`prototype-feedback.spec.ts` (the prototype Feedback view, docs/prototype-builder.md Part 3; checks in `lib/a11y.ts`) runs
+ONLY there too: it builds two versions of one prototype in `proj_1` (`e2e-<run id>-feedback prototype …`; the mock seeds
+each version with the same pins, so every item folds two testers), opens v2's Feedback at 1440 and 360 with reduced
+motion: the anonymity note, a folded item ("2 testers said this", v1, v2), its checkbox ("1 selected, 2 pins", the
+count `aria-live`), Select all in this group, and Escape back to Feedback; each state passes axe with no serious or
+critical finding and scrolls nothing sideways. On a deployment it would build prototypes (an LLM job).
+
 ## QA track s1 (`E2E_TRACK=s1` only)
 
 `tests/s1-a-data.spec.ts` and `tests/s1-b-assistant.spec.ts` skip unless `E2E_TRACK=s1`, because they write feedback that cannot be deleted:

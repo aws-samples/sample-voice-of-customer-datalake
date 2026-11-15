@@ -48,7 +48,7 @@ The assistant then appears under **Signed-in assistants**. Signing it out there 
 3. Pick your client in the `mcp.json` card and save the file where the card says (table below). The Claude Code,
    Cursor and Kiro snippets read the token from the `VOC_MCP_TOKEN` environment variable, so the file holds no
    secret. Set it in the shell that starts the client: `export VOC_MCP_TOKEN='<YOUR_VOC_TOKEN>'`.
-4. Start the client and check that it lists the VoC tools. Call `list_projects` or `search_feedback` to test.
+4. Start the client and check that it lists the VoC tools. Call `projects_list` or `feedback_search` to test.
 
 | Client | File | Header value |
 |---|---|---|
@@ -104,11 +104,11 @@ The token can only narrow that:
 
 | Setting | Values | Effect |
 |---|---|---|
-| `scope` | `read` / `write` (required, no default) | `read` sees only the read tools; `write` adds document writes, `generate`, `edit_feedback`, `score_prioritization` and `write_feature_request` |
-| `project_id` | optional pin | Project tools (`get_project`, `get_document`, `create_document`, `update_document`, `generate`, `get_job`, `get_prioritization`) are confined to that project and default to it; `list_projects` shows only it; `get_prioritization` keeps only its rows; `run_agent` and `score_prioritization` (it reaches rows of every project the minter can see) are not offered and are refused. Workspace-wide reads (feedback, metrics, categories, memory, company context, agents) still answer |
+| `scope` | `read` / `write` (required, no default) | `read` sees only the read tools; `write` adds document writes (`documents_create`, `documents_update`, `documents_revise_from_comments`, `documents_mark_comments_addressed`, `documents_draft_prototype_revision`, `documents_apply_prototype_draft`, `documents_discard_prototype_draft`, `documents_set_prototype_walkthrough`, `documents_draft_prototype_walkthrough`), `projects_generate`, `feedback_edit`, `prioritization_score` and `feature_requests_write` |
+| `project_id` | optional pin | Project tools (`projects_get`, `projects_generate`, `projects_get_job`, `documents_get`, `documents_list_prototype_feedback`, `documents_create`, `documents_update`, `documents_revise_from_comments`, `documents_mark_comments_addressed`, `documents_get_prototype_outline`, the three walkthrough tools, the four prototype-draft tools, `prioritization_get`) are confined to that project and default to it; `projects_list` shows only it; `prioritization_get` keeps only its rows; `agents_run` and `prioritization_score` (it reaches rows of every project the minter can see) are not offered and are refused. Workspace-wide reads (feedback, metrics, categories, memory, company context, agents) still answer. The tools' `project_id` schema carries no description; the server's `initialize` instructions say once that a pinned token fills it |
 | `expires_in_days` | 1–90, default 30 (the Connect page offers 1, 7, 30 or 90 days) | Always set; there is no non-expiring global token. Tokens minted by releases before 3.02.00 keep their stored expiry (up to 365 days) |
 
-`run_agent` (agent runs are admin-only) is offered only to a **write** token minted by
+`agents_run` (agent runs are admin-only) is offered only to a **write** token minted by
 an **admin**, and on every call the handler re-checks with `AdminListGroupsForUser`
 that the minter is *still* in `admins`. Only then does it add the claim
 `voc:mcp_agent_run=true`, which `agents_handler.run_agent` honours for an `mcp:`
@@ -117,15 +117,30 @@ credential is still not an admin anywhere else.
 
 ## Tools
 
+**Names and descriptions.** Every tool's name starts with its area: `feedback_`, `memory_`, `company_`,
+`projects_`, `documents_`, `agents_`, `feature_requests_`, `radar_`, `prioritization_` (`AREAS` in
+`lambda/shared/mcp_global_tools.py`), and `tools/list` lists them grouped by area, so a client that lists or
+searches tools by name finds an area's tools together. Each description is written for a model choosing a tool:
+what it does, its main nouns and verbs (and the words a person might use for them: review, vote, upvote,
+roadmap), when to use it, its key arguments and, for a write, that it needs a write token and the user's
+confirmation. The names changed in 6.10.00 ([Renamed in 6.10.00](#renamed-in-61000)).
+
+**Budget.** The whole list (what an administrator's write token is shown: 35 tools) stays under an estimated
+10,000 tokens (`test_mcp_global_tools_budget.py`). Clients cache it: a 2026-07-28 client is
+told so by `tools/list` itself (`ttlMs` 5 minutes, `cacheScope: "private"`, [Protocol](#protocol)), a legacy
+client keeps it for the session, and a client that caches its prompt prefix pays for the list once per
+conversation, not on every turn. Past about 10,000 tokens a client is better served by searching tools on demand,
+which is what the budget keeps it from needing.
+
 A board route (`/feature-requests/*`) resolves its caller from the verified `iss` claim and needs a verified
-email (`shared/engagement_identity.py`). For `search_feature_requests` and `write_feature_request` the delegated claims therefore also carry
+email (`shared/engagement_identity.py`). For `feature_requests_search` and `feature_requests_write` the delegated claims therefore also carry
 `iss` = this deployment's APP user pool (the MCP function's own `USER_POOL_ID`, never the request),
 `email` and `name` = the minter's, read from Cognito on the call (only a verified email; otherwise the board route
 refuses, 403) and `email_verified=true`. A request or +1 made over MCP is therefore the person's: one person supports
 a request once however many tokens they hold, and the subject stays the credential (`mcp:<token_id>`), so the token
 is still in the audit log. No other tool gets these claims (`board_route_claims` in `lambda/shared/mcp_global_tools.py`).
 
-**`search_feature_requests` sees exactly what its minter sees in the app, never more.** A global token's minter is
+**`feature_requests_search` sees exactly what its minter sees in the app, never more.** A global token's minter is
 always an app-pool user, and an app-pool user uses every non-archived board (board audiences limit only board-pool
 users), so the credential reads every non-archived board, never an archived one, and is never a board admin:
 `cognito:groups` stays empty even when an admin minted the token, so the admin-only view of archived boards is out
@@ -138,42 +153,105 @@ MCP call never sees an archived board.
 
 | Tool | Scope | Route (domain Lambda) |
 |---|---|---|
-| `search_feedback` | read | `GET /feedback/search` (query ≥ 2 chars) or `GET /feedback` (metrics); filters `category`, `sentiment`, `source`, `channel`, `tag`, `dims` (object → `key:value,…`); `urgent: true` adds `urgent=1` to either route, so only high-urgency items are listed and every other filter still applies (`/feedback/urgent` is not used: it has no text search, so `query` and `urgent` could not combine) |
-| `get_feedback` | read | `GET /feedback/{id}` (metrics); `include_similar: true` also reads `GET /feedback/{id}/similar?limit=5` and adds `similar` (≤ 5 rows: id, source, dates, category, sentiment, urgency, rating, title, problem summary, `text` cut at 500 characters). The second read is best effort: a refusal or fault becomes `similar_error`, the item is still returned |
-| `get_metrics` | read | `GET /metrics/{summary\|sentiment\|categories\|sources\|personas\|dimensions\|github}` (metrics); `view=entities` reads `GET /feedback/entities`, the filter values in use (categories, sources, personas, channels, tags, dimensions, top issues) with counts; `dimensions` needs `key`; every view takes `source`, `channel`, `tag`, `dims` (`github` always reads the GitHub Issues source) |
-| `list_categories` | read | `GET /settings/categories` (settings) |
-| `list_dimensions` | read | `GET /settings/dimensions` (settings): dimension keys and allowed values ([dimensions.md](dimensions.md)) |
-| `search_memory` | read | `POST /memory/retrieve` (memory) — company + the minter's personal memories, category-filtered |
-| `get_company_context` | read | `GET /settings/company-context` (settings) |
-| `list_projects` | read | `GET /projects` (projects) |
-| `get_project` | read | `GET /projects/{id}` (projects) — documents as titles/ids only |
-| `get_document` | read | `GET /projects/{id}` (projects) — one document in full |
-| `list_agents` | read | `GET /agents` (agents) |
-| `get_agent_run` | read | `GET /agents/{id}/runs/{run_id}`, or without `run_id` `GET /agents/{id}/runs?limit=` (agents) — follow a run `run_agent` started |
-| `search_feature_requests` | read | `GET /feature-requests/search` (engagement) — feedback-board requests the minter may see; `query` → `q`, `board` / `category` / `status` (comma lists), `days` (0–3650, 0 = all time, not sent), `limit` (1–50, default 25). Only the slim fields reach the client (`request_id`, `board_id`, `title`, `description` ≤ 1000 chars, `status`, `supporters`, `category`, `sentiment`, `problem_summary`, `created_at`; never an email or a name), with `total` and `truncated`. Board requests are a separate source from feedback, cited as `[FR:<request_id>]` ([feature-requests.md](feature-requests.md)). `boards: true` reads `GET /feature-requests/boards` instead: the boards the minter can see, without storage keys |
-| `get_job` | read | `GET /projects/{id}/jobs/{job_id}` (projects) — a job `generate` started: `job_id`, `status`, `progress`, `current_step`, `job_type`, timestamps, `error`, `result` (a PR/FAQ, PRD or prototype result carries its `methodology` block); never who started it |
-| `read_radar` | read | `GET /radar` (radar) without `brand`: the brands and their totals (the scan settings dropped); with `brand`: `GET /radar/brands/{brand}/reviews?days=&limit=` (`days` 1–365, default 90; `limit` 1–50, default 20). Other brands' reviews, never counted as ours ([radar.md](radar.md)) |
-| `create_document` | write | `POST /projects/{id}/documents` (projects) — custom markdown documents |
-| `update_document` | write | `PUT /projects/{id}/documents/{doc}` (projects); a PR/FAQ or PRD only when the minter (and the project owner) work AI-driven, else denied ([ways-of-working.md](ways-of-working.md)) |
-| `generate` | write, project | One methodology step, through the route the web app calls (projects): `step: personas` → `POST /projects/{id}/personas/generate` (`count` 1–10, default 3, always `keep_existing_personas: true`), `research` → `POST /projects/{id}/research` (`brief` = the question), `prfaq` / `prd` → `POST /projects/{id}/document` (`brief` = `feature_idea`; feedback read by default), `prototype` → `POST /projects/{id}/build-prototype`. Answers `step`, `job_id`, `status`, `message` and the route's `methodology` block (absent for personas). The route's own refusals answer as tool errors: the way of working for a PR/FAQ / PRD (an MCP token is an autonomous caller: the minter and the project owner must work AI-driven, [ways-of-working.md](ways-of-working.md)) and the 409 of a prototype with no PRD or PR/FAQ ([project-workspace.md → Methodology](project-workspace.md#methodology)) |
-| `get_feedback_catalogue` | read | `GET /feedback/catalogue` (metrics): every stored attribute of a feedback item, with type, meaning, setting step, PII class, `redact` / `summary_only` effect and allowed values ([data-catalogue.md](data-catalogue.md)). `sources: true` reads `GET /sources/status` (integrations) instead: each source's schedule (`enabled`, `schedule`) and circuit breaker, never its last error (admins only). Enabling, disabling, resetting and running a source are admin-only routes: no tool |
-| `get_prioritization` | read, project | `GET /projects/prioritization` (projects): the rows whose project the minter can view, the minter's own `scores`, the team `aggregates`, the scoring `axes` and `config_version`. With a project (the argument or the pin) only that project's rows, scores and aggregates |
-| `edit_feedback` | write | `PUT /feedback/{id}/category` (`category` + optional `subcategory`) or `PUT /feedback/{id}/dimensions` (`dimensions` key → value or null, `tags`), never both in one call (feedback edit); the route's category and source access apply. The MCP tools do not send `X-Workspace-Id` yet, so they read and edit the deployment's feedback only: a workspace's feedback is reachable through the REST API alone until MCP tokens pin a workspace (phase 3, [Multi-workspace](multi-workspace.md)) |
-| `score_prioritization` | write, not pinned | `PATCH /projects/prioritization` (projects) with `{scores: {row_id: {axis: 1–5}}}` for one row: the route's validation (the active axes), its VIEW check on the row's project (a hidden row is 404) and its frozen-row rules apply. The ballot is the **minter's own**: the route keys a delegated `mcp:` ballot on the minter (`voc:acting_subject`), so a person never votes twice, and a token that acts for nobody is refused (403). The axes (`PUT /projects/prioritization/config`) are admin-only: no tool |
-| `write_feature_request` | write | Without `request_id`: `POST /feature-requests` (engagement), `{board?, title, description?, fields?}` on a board the minter can see (omitted = the seeded board); with `request_id`: `POST /feature-requests/{id}/supports` (a +1, `fields?`). The board's audience, archive / pause (409), template fields (400), one +1 per person (409) and `anyone`-board rate limit (429) apply. Both are recorded under the minter's verified email and name, as if they posted in the app: one +1 per person and request, whichever token they use. Status changes, deletes and promotion are board-admin routes: no tool |
-| `run_agent` | write + admin-minted | `POST /agents/{id}/run` (agents) |
+| `feedback_search` | read | `GET /feedback/search` (query ≥ 2 chars) or `GET /feedback` (metrics); filters `category`, `sentiment`, `source`, `channel`, `tag`, `dims` (object → `key:value,…`); `urgent: true` adds `urgent=1` to either route, so only high-urgency items are listed and every other filter still applies (`/feedback/urgent` is not used: it has no text search, so `query` and `urgent` could not combine) |
+| `feedback_get` | read | `GET /feedback/{id}` (metrics); `include_similar: true` also reads `GET /feedback/{id}/similar?limit=5` and adds `similar` (≤ 5 rows: id, source, dates, category, sentiment, urgency, rating, title, problem summary, `text` cut at 500 characters). The second read is best effort: a refusal or fault becomes `similar_error`, the item is still returned |
+| `feedback_get_metrics` | read | `GET /metrics/{summary\|sentiment\|categories\|sources\|personas\|dimensions\|github}` (metrics); `view=entities` reads `GET /feedback/entities`, the filter values in use (categories, sources, personas, channels, tags, dimensions, top issues) with counts; `dimensions` needs `key`; every view takes `source`, `channel`, `tag`, `dims` (`github` always reads the GitHub Issues source) |
+| `feedback_list_categories` | read | `GET /settings/categories` (settings) |
+| `feedback_list_dimensions` | read | `GET /settings/dimensions` (settings): dimension keys and allowed values ([dimensions.md](dimensions.md)) |
+| `memory_search` | read | `POST /memory/retrieve` (memory) — company + the minter's personal memories, category-filtered |
+| `company_get_context` | read | `GET /settings/company-context` (settings) |
+| `projects_list` | read | `GET /projects` (projects) |
+| `projects_get` | read | `GET /projects/{id}` (projects) — the project, its personas (id, name, tagline) and its documents grouped by section, last edit first within each, in `document_sections`: `[{section, documents}]` for `prd`, `prfaq`, `prototypes` and `documents` (every other type, and any type added later), always all four in that order, an empty one as `[]`, each document as ids, type, titles, version and times only, last edit first (`updated_at`, else `created_at`; ties by `document_id`; a legacy row with no type is in its sort key's section) ([prototype-builder.md → Part 4](prototype-builder.md#part-4-documents-in-sections)). The flat `documents` list (the same summaries, in the read's order) is still answered in 6.16.00 and deprecated: read `document_sections`; a later release removes `documents` and says so in its upgrade notes |
+| `documents_get` | read | `GET /projects/{id}` (projects) — one document in full |
+| `documents_list_prototype_feedback` | read, project | `GET /projects/{id}/prototypes/{doc}/feedback` (projects, EDIT on the project: a pin may quote what a tester typed): the testers' pins of the prototype's series (its newest 25 versions, 200 pins each), grouped by screen and folded where several testers said the same thing at one place, with each pin's version, status, `addressed_by` and replies; `partial` (with `cut` and `older_versions_unread`) when a list was capped. Optional `status`. A flagged item or pin (instruction-shaped text) carries no `text` and no `replies`, only its ids, place, version, status and `flagged: true`; an element text, selector or route that reads like an instruction is judged on its own and left out (a screen's route sent as `""`); a pin's text is capped at 600 characters and its newest 5 replies (name, text ≤ 300, time, and `kind: "ai"` on an AI reason an editor approved) are sent ([prototype-builder.md → Part 3](prototype-builder.md#part-3-feedback-into-the-prototype)). Read only: to incorporate items, pass their pin ids to `documents_draft_prototype_revision` |
+| `agents_list` | read | `GET /agents` (agents) |
+| `agents_get_run` | read | `GET /agents/{id}/runs/{run_id}`, or without `run_id` `GET /agents/{id}/runs?limit=` (agents) — follow a run `agents_run` started |
+| `feature_requests_search` | read | `GET /feature-requests/search` (engagement) — feedback-board requests the minter may see; `query` → `q`, `board` / `category` / `status` (comma lists), `days` (0–3650, 0 = all time, not sent), `limit` (1–50, default 25). Only the slim fields reach the client (`request_id`, `board_id`, `title`, `description` ≤ 1000 chars, `status`, `supporters`, `category`, `sentiment`, `problem_summary`, `created_at`; never an email or a name), with `total` and `truncated`. Board requests are a separate source from feedback, cited as `[FR:<request_id>]` ([feature-requests.md](feature-requests.md)). `boards: true` reads `GET /feature-requests/boards` instead: the boards the minter can see, without storage keys |
+| `projects_get_job` | read | `GET /projects/{id}/jobs/{job_id}` (projects) — a job `projects_generate`, `documents_revise_from_comments` or `documents_draft_prototype_revision` started: `job_id`, `status`, `progress`, `current_step`, `job_type`, timestamps, `error`, `result` (a PR/FAQ, PRD or prototype result carries its `methodology` block; a draft's is only `draft_id`); never who started it |
+| `radar_read` | read | `GET /radar` (radar) without `brand`: the brands and their totals (the scan settings dropped); with `brand`: `GET /radar/brands/{brand}/reviews?days=&limit=` (`days` 1–365, default 90; `limit` 1–50, default 20). Other brands' reviews, never counted as ours ([radar.md](radar.md)) |
+| `documents_create` | write | `POST /projects/{id}/documents` (projects) — custom markdown documents |
+| `documents_update` | write | `PUT /projects/{id}/documents/{doc}` (projects); a PR/FAQ or PRD only when the minter (and the project owner) work AI-driven, else denied ([ways-of-working.md](ways-of-working.md)). Always recorded as an `edit`: it sends no `revise_job_id`, which only a save of a checked "Revise from comments" proposal carries ([document-review.md → Saving a proposal](document-review.md#saving-a-proposal)) |
+| `projects_generate` | write, project | One methodology step, through the route the web app calls (projects): `step: personas` → `POST /projects/{id}/personas/generate` (`count` 1–10, default 3, always `keep_existing_personas: true`), `research` → `POST /projects/{id}/research` (`brief` = the question), `prfaq` / `prd` → `POST /projects/{id}/document` (`brief` = `feature_idea`; feedback read by default), `prototype` → `POST /projects/{id}/build-prototype`. Answers `step`, `job_id`, `status`, `message` and the route's `methodology` block (absent for personas). The route's own refusals answer as tool errors: the way of working for a PR/FAQ / PRD (an MCP token is an autonomous caller: the minter and the project owner must work AI-driven, [ways-of-working.md](ways-of-working.md)) and the 409 of a prototype with no PRD or PR/FAQ ([project-workspace.md → Methodology](project-workspace.md#methodology)). Only the methodology steps: "Revise from comments" has its own two tools (below; before 6.10.00 it was `generate` with `step: revise`) |
+| `documents_revise_from_comments` | write, project | "Revise from comments" on a PR/FAQ or PRD (`document_id`, optional `thread_ids` ≤ 50): `POST /projects/{id}/documents/{doc}/revise-from-comments` (projects), answering `job_id`, `status`, `message`; `projects_get_job` reads the result ([document-review.md → Revise from comments](document-review.md#revise-from-comments)). An MCP token is autonomous, so the result is `recommendations` unless the minter and the project owner work AI-driven, when it is `applied` (the server writes the next version and marks the threads, best effort: `addressed_thread_ids` lists those it marked). The route's refusals are tool errors (a 400 when no thread is waiting, or the document is empty or too long) |
+| `documents_mark_comments_addressed` | write, project | `POST /projects/{id}/documents/{doc}/comments/addressed` (projects) with `{thread_ids, addressed}`: marks those threads addressed by the version `document_id` names (`addressed` true, the default) or clears that (`addressed: false`), answering the threads. `thread_ids` and `addressed` reach the route as given: its 400 (not a list of 1 to 50 comment ids) is the tool's error |
+| `documents_draft_prototype_revision` | write, project | A prototype draft from an instruction or from tester pins ([prototype-builder.md](prototype-builder.md), parts 2 and 3): `POST /projects/{id}/prototypes/{doc}/drafts` (projects) with `{instruction}` (1–2,000 characters, checked by the tool first) or `{pin_ids}` (1–50 ids from `documents_list_prototype_feedback`, passed as given: the route refuses another series' pins and withholds flagged ones); exactly one of the two, else a tool error. Answering `job_id`, `status`, `message`. The draft is made on the newest version of `document_id`'s series; nothing is saved. `projects_get_job` follows the job: its `result` is exactly `{draft_id}`. The route's refusals are tool errors (a 404 for no such prototype; a 400 for an early JSON screen spec, more than 50 pin ids, pins of another series, or a selection whose every pin is withheld) |
+| `documents_get_prototype_outline` | read, project | `GET /projects/{id}/prototypes/{doc}/outline` (projects; view): the version's `title`, its `screens` (each a `route`, its `headings` and visible `text` lines) and `truncated`, extracted on the server from its HTML with the pin widget, scripts, styles and hidden text left out (the first 512 KB read; at most 40 screens, 200 lines of 300 characters, 12,000 characters in all, title and routes counted; `lambda/shared/prototype_outline.py`). Never pins. An early JSON screen spec is the route's 400, a lost object its 404 |
+| `documents_get_prototype_walkthrough` | read, project | `GET /projects/{id}/prototypes/{doc}/walkthrough` (projects; view): that version's guided walkthrough, `{steps}` (`title`, `body`, `selector` or `anchor` {route, bbox}), extracted from its HTML and re-validated; `[]` when it has none ([prototype-builder.md](prototype-builder.md), Part 1) |
+| `documents_set_prototype_walkthrough` | write, project | `PUT /projects/{id}/prototypes/{doc}/walkthrough` (projects) with `{steps, edit_id?}` (steps passed as given; the route's 400 names the step and the field): the next version with these steps (`edit_kind: edit`, `edited_by`, `edited_from_id`), answering `success` and the version without storage keys or its signed URL. `document_id` must be the newest version (409 otherwise); the same `edit_id` gives the same version; `[]` removes the steps |
+| `documents_draft_prototype_walkthrough` | write, project | `POST /projects/{id}/prototypes/{doc}/walkthrough/draft` (projects): an assist job whose result, read with `projects_get_job`, is `{steps}` the AI drafted from the version's outline and the PRD / PR/FAQ it was built from (DATA blocks); nothing is saved |
+| `documents_get_prototype_draft` | read, project | `GET /projects/{id}/prototypes/{doc}/drafts/{draft_id}` (projects; EDIT on the project, so a token whose minter only views it is refused): `draft_id`, `kind` (`chat` or `feedback`), `base_document_id`, `base_version`, `instruction`, `summary` (the model's, plain text) and `completed_at`; a feedback draft adds `outcomes` (`{pin_id, outcome: done | not_done, note}` per accepted pin sent to the model; a selected pin deleted before the job ran has none), `withheld` and `ignored` pin ids. The route's signed `preview_url` is dropped, as every signed URL is (`public()`): the preview is for the person on the prototype page. A draft that is unfinished, expired, discarded or of another series is a 404 |
+| `documents_apply_prototype_draft` | write, project | `POST /projects/{id}/prototypes/{doc}/drafts/{draft_id}/apply` (projects): the draft as the next version (`edit_kind: revise`, `revised_from_id` the base, `revision_feedback` the instruction, `edited_by` the token, `llm_metadata`), answering `success` and the version without storage keys or its signed `prototype_url`. A feedback draft's version says "Incorporated N pins (k done)", and the answer adds `incorporation: {marked, replied, not_written: [{pin_id, reason}]}` (its Done pins marked addressed, its Not done pins given an AI-marked reply with `approved_by` the token, `{sub: 'mcp:<token id>', kind: 'mcp'}`, on every call). Applying again gives the same version; a version saved since the draft's base is the route's 409 (ask again on the newest version) |
+| `documents_discard_prototype_draft` | write, project | `DELETE /projects/{id}/prototypes/{doc}/drafts/{draft_id}` (projects; `document_id` and `draft_id` required): the draft's job deleted, so the draft is gone at once for everyone (its GET and Apply are 404). The route deletes only a draft job of `document_id`'s series, in any state; any other job is a 404, so the tool cannot delete another job. Saved versions are untouched |
+| `feedback_get_catalogue` | read | `GET /feedback/catalogue` (metrics): every stored attribute of a feedback item, with type, meaning, setting step, PII class, `redact` / `summary_only` effect and allowed values ([data-catalogue.md](data-catalogue.md)). `sources: true` reads `GET /sources/status` (integrations) instead: each source's schedule (`enabled`, `schedule`) and circuit breaker, never its last error (admins only). Enabling, disabling, resetting and running a source are admin-only routes: no tool |
+| `prioritization_get` | read, project | `GET /projects/prioritization` (projects): the rows whose project the minter can view, the minter's own `scores`, the team `aggregates`, the scoring `axes` and `config_version`. With a project (the argument or the pin) only that project's rows, scores and aggregates |
+| `feedback_edit` | write | `PUT /feedback/{id}/category` (`category` + optional `subcategory`) or `PUT /feedback/{id}/dimensions` (`dimensions` key → value or null, `tags`), never both in one call (feedback edit); the route's category and source access apply |
+| `prioritization_score` | write, not pinned | `PATCH /projects/prioritization` (projects) with `{scores: {row_id: {axis: 1–5}}}` for one row: the route's validation (the active axes), its VIEW check on the row's project (a hidden row is 404) and its frozen-row rules apply. The ballot is the **minter's own**: the route keys a delegated `mcp:` ballot on the minter (`voc:acting_subject`), so a person never votes twice, and a token that acts for nobody is refused (403). The axes (`PUT /projects/prioritization/config`) are admin-only: no tool |
+| `feature_requests_write` | write | Without `request_id`: `POST /feature-requests` (engagement), `{board?, title, description?, fields?}` on a board the minter can see (omitted = the seeded board); with `request_id`: `POST /feature-requests/{id}/supports` (a +1, `fields?`). The board's audience, archive / pause (409), template fields (400), one +1 per person (409) and `anyone`-board rate limit (429) apply. Both are recorded under the minter's verified email and name, as if they posted in the app: one +1 per person and request, whichever token they use. Status changes, deletes and promotion are board-admin routes: no tool |
+| `agents_run` | write + admin-minted | `POST /agents/{id}/run` (agents) |
 
 **Not tools, and why.** Every import route (`/scrapers/manual/*` paste / CSV / JSON, `/s3-import/*`) is admin-only
 (the handlers' `admins_only` middleware, #242: importing writes customer data), and an MCP token is never admin, so
 there is no import tool. The same holds for source enable / disable / reset / run, the Prioritization axes and a board
 request's status.
 
-The catalogue lives in `lambda/shared/mcp_global_tools.py` (the step, Radar and feedback-edit tools in
-`lambda/shared/mcp_global_tools_steps.py`, the catalogue, Prioritization and board-write tools in
+The catalogue lives in `lambda/shared/mcp_global_tools.py` (the step, Revise from comments, prototype-draft,
+Radar and feedback-edit tools in `lambda/shared/mcp_global_tools_steps.py`, the catalogue, Prioritization and board-write tools in
 `lambda/shared/mcp_global_tools_work.py`, the shared helpers in `lambda/shared/mcp_global_kit.py`). Ids from arguments must
 match `^[A-Za-z0-9_-]{1,128}$` before they are put in a route path; results drop
 storage keys and every signed URL. A route's 4xx is a tool error (`isError: true`)
 the model can act on; a 5xx or an invoke fault is JSON-RPC `-32603`.
+
+### Renamed in 6.10.00
+
+6.10.00 renamed every tool to start with its area and split "Revise from comments" out of `generate`.
+`tools/list` shows only the new names. For this release `tools/call` still accepts each old name and runs its
+new tool with the same arguments, the same scope, pin and admin checks, and the same route (`RENAMED` and
+`resolve_tool` in `lambda/shared/mcp_global_tools.py`); the audit log records the new name. **A later release
+removes them** (planned for 6.11.00, still accepted there; the release that removes them says so in its upgrade
+notes): move clients, skills and saved prompts to the new names now.
+
+| Before 6.10.00 | From 6.10.00 |
+|---|---|
+| `search_feedback` | `feedback_search` |
+| `get_feedback` | `feedback_get` |
+| `get_metrics` | `feedback_get_metrics` |
+| `list_categories` | `feedback_list_categories` |
+| `list_dimensions` | `feedback_list_dimensions` |
+| `get_feedback_catalogue` | `feedback_get_catalogue` |
+| `edit_feedback` | `feedback_edit` |
+| `search_memory` | `memory_search` |
+| `get_company_context` | `company_get_context` |
+| `list_projects` | `projects_list` |
+| `get_project` | `projects_get` |
+| `generate` (`step` personas, research, prfaq, prd, prototype) | `projects_generate` |
+| `generate` with `step: revise` | `documents_revise_from_comments` (`document_id`, `thread_ids`) |
+| `generate` with `step: revise` and `mark_addressed` | `documents_mark_comments_addressed` (`document_id`, `thread_ids`, `addressed` = the old `mark_addressed`) |
+| `get_job` | `projects_get_job` |
+| `get_document` | `documents_get` |
+| `create_document` | `documents_create` |
+| `update_document` | `documents_update` |
+| `list_agents` | `agents_list` |
+| `get_agent_run` | `agents_get_run` |
+| `run_agent` | `agents_run` |
+| `search_feature_requests` | `feature_requests_search` |
+| `write_feature_request` | `feature_requests_write` |
+| `read_radar` | `radar_read` |
+| `get_prioritization` | `prioritization_get` |
+| `score_prioritization` | `prioritization_score` |
+
+An old `generate` call with `step: revise` is mapped to the review tools as the table says (`legacy_revise` in
+`lambda/shared/mcp_global_tools_steps.py`); its start answer no longer repeats `step: "revise"`. `projects_generate`
+itself refuses `step: revise`. Prompts and the skill use the new names.
+
+### VoC's own assistant and tool search
+
+VoC's in-app assistant (`lambda/stream`) is not a client of this server: it has its own tool catalogue
+(`lambda/stream/src/assistant/contract.ts`: read tools run in the stream Lambda, writes are approval cards),
+and each run sends the tools of the page's packs to the model through Bedrock's Converse API, in one fixed order
+so the prompt cache holds them. **Once a page passes about 15 tools, the assistant adds tool search** (owner decision,
+6.10.00): the model's tool search tool through Bedrock `InvokeModel`, or a `find_tools` tool of our own that answers tool
+references, so a run loads only the tools it needs. Pages already load more than that, so tool search for the
+assistant is the next step, not part of 6.10.00.
 
 ## Prompts and resources
 
@@ -183,9 +261,9 @@ The server also advertises the `prompts` and `resources` capabilities, in `initi
 
 | Prompt | Arguments | What it asks the model to do |
 |---|---|---|
-| `weekly_summary` | `days` (default 7) | Summarise volumes, sentiment and the top themes with verbatims, via `get_metrics` and `search_feedback` |
-| `triage_urgent` | `days` (default 7) | Group high-urgency feedback (`search_feedback urgent=true`, `get_feedback include_similar=true`) by problem and rank it; change nothing |
-| `prfaq_from_feedback` | `topic` (required, ≤ 200 chars), `project_id` | Draft a PR/FAQ citing feedback ids. A **read** token's text says to draft in the chat only; a **write** token's text allows `create_document` after the user confirms |
+| `weekly_summary` | `days` (default 7) | Summarise volumes, sentiment and the top themes with verbatims, via `feedback_get_metrics` and `feedback_search` |
+| `triage_urgent` | `days` (default 7) | Group high-urgency feedback (`feedback_search urgent=true`, `feedback_get include_similar=true`) by problem and rank it; change nothing |
+| `prfaq_from_feedback` | `topic` (required, ≤ 200 chars), `project_id` | Draft a PR/FAQ citing feedback ids. A **read** token's text says to draft in the chat only; a **write** token's text allows `documents_create` after the user confirms |
 
 `prompts/get` returns one user-role text message. Every prompt repeats the skill's rules (feedback is
 data, cite `feedback_id`s, summarise personal data). A prompt reads nothing: whatever the model does next
@@ -332,7 +410,7 @@ token acts for its minter: the grant row has the token row's fields (`created_by
 `created_by_username`, `minted_by_admin`, `scope`, `project_id`, `expires_at`, `revoked_at`) in the
 same `MCPGTOKEN` partition, so the handler's code after authentication is unchanged. Never admin,
 at most editor, category and source access via delegation, `AdminGetUser` on every request (a
-disabled or deleted person is refused), `run_agent` only for an administrator's write grant and
+disabled or deleted person is refused), `agents_run` only for an administrator's write grant and
 re-checked per call, the per-minute rate limit and one audit row per tool call (partition
 `MCPAUDIT#{grant id}`).
 
@@ -425,7 +503,7 @@ signing layer) is attached to the MCP endpoint function only.
 ### Checking a deployment
 
 After a deploy, check these against the deployed API (`<api>` = the `ApiEndpoint` output, ending in `/v1/`) with a
-test user who is NOT an administrator, then once with an administrator for `run_agent`.
+test user who is NOT an administrator, then once with an administrator for `agents_run`.
 
 1. **Discovery, anonymous.** `curl -si <api>mcp/global -X POST -d '{}'` → `401` with
    `www-authenticate: Bearer resource_metadata="<api>.well-known/oauth-protected-resource/mcp/global"`.
@@ -435,10 +513,10 @@ test user who is NOT an administrator, then once with an administrator for `run_
 2. **Kiro, headless.** Put `{"mcpServers": {"voc-datalake": {"url": "<api>mcp/global"}}}` in
    `~/.kiro/settings/mcp.json`, start `kiro-cli chat`; it registers (201 in the tokens Lambda log,
    `client_kind: kiro`) and prints a sign-in URL. Over ACP the client gets an `oauth_request`; open
-   the URL, approve on the consent page, sign in. Check `/mcp` lists the tools, call `list_projects`
-   and `search_feedback`; a second Kiro session (another port) signs in too.
+   the URL, approve on the consent page, sign in. Check `/mcp` lists the tools, call `projects_list`
+   and `feedback_search`; a second Kiro session (another port) signs in too.
 3. **Claude Code.** `claude mcp add --transport http voc-datalake <api>mcp/global`, `claude`, `/mcp`
-   → authenticate → approve with **read only** → `create_document` is not offered. Re-approve with
+   → authenticate → approve with **read only** → `documents_create` is not offered. Re-approve with
    read and write: the first session's token is refused at once (new consent = new grant).
 4. **Cursor.** Add the same `mcp.json` entry to `~/.cursor/mcp.json`, connect, approve. Cursor may
    sign in via its web callback: that is `-c mcpOAuthCursorCallbacks`.
@@ -511,13 +589,18 @@ the REST proxy event API Gateway delivers — with tokens minted through the rea
 API and every tool delegated in-process to the real projects and agents handlers over
 moto tables. It covers a read-only token, a write token creating and updating a
 document, revoked / expired / disabled-minter / tampered tokens, a project-scoped
-token refused outside its project, and `run_agent` for non-admin, admin and demoted
+token refused outside its project, and `agents_run` for non-admin, admin and demoted
 minters. `test_global_mcp_protocol.py` and `test_global_mcp_tokens_api.py` cover the
 envelope, argument validation and the token API. `lambda/shared/test/test_mcp_global_tools_budget.py`
-keeps the whole `tools/list` under an estimated 4,000 tokens (ChatGPT connectors are reported to
-refuse servers past about 5,000): a new tool or a wordy description fails there first. To stay inside it, a
-tool publishes only the annotations that differ from the MCP defaults (`readOnlyHint`, `openWorldHint: false`, and
-`destructiveHint: false` on a write tool); the display name is the top-level `title`.
+keeps the whole `tools/list` under an estimated 10,000 tokens (4,000 before 6.10.00; the list is cached by
+clients, [Tools → Budget](#tools)) and every name prefixed by its area: a new tool or a wordy description fails
+there first. To stay inside it, a tool publishes only the annotations that differ from the MCP defaults
+(`readOnlyHint`, `openWorldHint: false`, and `destructiveHint: false` on a write tool); the display name is the
+top-level `title`. The same e2e file covers the two review tools with a pinned token (a pass started, threads
+marked and cleared, another project refused, a read token refused) and the names before 6.10.00 (unlisted, still
+answering, audited under the new names); `test_mcp_global_tools_mutation.py` pins the rename table.
+`lambda/shared/test/test_mcp_global_tools_steps.py` pins the outline tool and the four prototype-draft tools' routes and arguments, and
+that neither the draft nor the applied version carries a signed URL out.
 `lambda/api/test/test_mcp_global_work_tools.py` covers the catalogue, Prioritization and board-write tools (routes,
 refusals, the pin, the board claims), and `test_projects_prioritization_delegated.py` that a token's ballot is its
 minter's own.

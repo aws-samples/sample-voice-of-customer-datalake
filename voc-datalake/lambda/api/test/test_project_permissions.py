@@ -284,6 +284,27 @@ class TestGateRefusalsReachTheExceptionHandlers:
     def test_viewer_cannot_edit(self, call):
         assert call(VIEWER, 'PUT', '/projects/p1', body={'name': 'x'}) == (403, CANNOT_EDIT)
 
+    @pytest.mark.parametrize(('method', 'path'), [
+        # A prototype draft (docs/prototype-builder.md, part 2): its start, its GET (an EDIT override), Apply and Discard.
+        ('POST', '/projects/p1/prototypes/d1/drafts'),
+        ('GET', '/projects/p1/prototypes/d1/drafts/job_0123456789abcdef'),
+        ('POST', '/projects/p1/prototypes/d1/drafts/job_0123456789abcdef/apply'),
+        ('DELETE', '/projects/p1/prototypes/d1/drafts/job_0123456789abcdef'),
+        # The walkthrough (Part 1): its save and its draft.
+        ('PUT', '/projects/p1/prototypes/d1/walkthrough'),
+        ('POST', '/projects/p1/prototypes/d1/walkthrough/draft'),
+        # Back to vN of a prototype goes through the restore route, a write.
+        ('POST', '/projects/p1/documents/d1/versions/d0/restore'),
+    ])
+    @pytest.mark.usefixtures('private_project')
+    def test_viewer_cannot_draft_read_apply_or_discard_a_draft_or_restore(self, call, method, path):
+        assert call(VIEWER, method, path, body={'instruction': 'Blue'}) == (403, CANNOT_EDIT)
+
+    @pytest.mark.usefixtures('private_project')
+    def test_viewer_cannot_read_a_prototypes_feedback(self, call):
+        # A GET, so a viewer's by default: listed at edit in _ROUTE_OVERRIDES (it quotes what testers typed).
+        assert call(VIEWER, 'GET', '/projects/p1/prototypes/prototype_1/feedback') == (403, CANNOT_EDIT)
+
     @pytest.mark.usefixtures('private_project')
     def test_editor_cannot_manage(self, call):
         assert call(EDITOR, 'DELETE', '/projects/p1') == (403, CANNOT_MANAGE)

@@ -109,10 +109,19 @@ in, a timeout, or CI = the step prints why and passes, so the gate runs on every
   `AI_REVIEW_BASE=<ref>` diffs against another base.
 - The same change is reviewed once: answers are cached in `.cache/ai-review/` (`AI_REVIEW_CACHE=0` re-runs).
 - The agents can only read, and only inside the repository (Kiro: `.kiro/agents/tenets-reviewer.json` and
-  `commit-reviewer.json`, the read tool with `allowedPaths: ['./**']` and nothing trusted; Claude Code: Read and Glob
-  in `dontAsk` mode with repository-scoped allow rules, no MCP servers). Paths shaped like a secret (`.env`, `*.pem`,
+  `commit-reviewer.json`, the read tool with `./**` allowed and nothing trusted, run on kiro-cli's V2 engine
+  (`--agent-engine v2`), which keeps headless reads inside the repository; Claude Code: Read and Glob in `dontAsk`
+  mode with repository-scoped allow rules, no MCP servers). Paths shaped like a secret (`.env`, `*.pem`,
   `*credentials*`, … `SECRET_PATHS` in `scripts/ai-review/lib.mjs`) are left out of the diff and named in the
-  output, and the tools themselves refuse to read them (Kiro `deniedPaths`, Claude Code deny rules). The diff is
+  output, and the tools themselves refuse to read them (Kiro: `toolsSettings` `deniedPaths`, which V2 enforces, and
+  `permissions.rules`, which V3 enforces, both generated from that list and pinned for every agent in
+  `.kiro/agents` by `scripts/ai-review/agent-guard.test.mjs`; Claude Code deny rules).
+- The guard test checks the agent files against a hand-written model of each kiro-cli engine, not kiro-cli itself.
+  After changing the agents' rules or upgrading kiro-cli, re-probe both engines by hand: in a throwaway folder outside
+  the repository (`git init`, dummy files only, never real secrets), copy an agent file, give it a prompt that calls
+  the tool as asked and prints errors verbatim, and run
+  `kiro-cli chat --agent <copy> --agent-engine v2|v3 --no-interactive --trust-tools= --wrap never` once per engine
+  for a repository read, a `.env` read and the shell commands in question. The diff is
   treated as data. They are
   language models: a PASS is not proof, and two runs can differ. `validate-affected.sh` never runs them (groups
   `tenets` and `commit`).
@@ -245,32 +254,6 @@ copy), and `lambda/stream/src/browser-safe.test.ts` fails when the SPA imports a
 or a listed module imports a stream file, that the list does not name. When the SPA needs something the stream
 module does not have (its own message, an SPA-only builder), put it in a small SPA module next to its users.
 
-### The review gate (before each commit)
-With the hook installed, a commit lands only with a GO record for exactly the tree it commits. The hook gates every
-`git commit` of the clone, on every branch (a clean merge, cherry-pick, rebase or revert runs no pre-commit hook), and
-`git commit --no-verify` skips it: it keeps the discipline, it is not a lock.
-
-1. The deterministic gate is green (`scripts/validate-affected.sh` for the touched groups, the full
-   `scripts/validate.sh` before each push).
-2. At most three review rounds on the staged change: `AI_REVIEW_CACHE=0 npm run validate:tenets`,
-   `AI_REVIEW_CACHE=0 npm run validate:commit`, and the security, quality and first-principles reviewers
-   (`.kiro/agents/prompts/`). Every blocking finding is fixed, every should-fix fixed or answered; then the
-   deterministic gate again, and the next round. A round with no blocking finding ends the loop (another round
-   within the three, say one a reviewer missed, is allowed: it only adds review).
-3. A final reviewer that wrote and reviewed none of it reads the change and the rounds' findings and answers GO or
-   NO-GO. NO-GO, or a blocking finding left after round 3: split or rework the change and start again.
-4. `node scripts/ai-review/gate.mjs record <record.json>` stores the rounds and the verdict for the staged tree. Write
-   the record outside the repository (inside it, it is an untracked file, which `record` refuses); its format, the
-   severity names and the rules are at the top of `scripts/ai-review/gate.mjs`.
-5. The pre-commit hook (`scripts/git-hooks/pre-commit`, `gate.mjs check`) refuses a commit whose staged tree has no
-   valid GO record. Install it once per clone, into the hooks directory git actually uses (the one `core.hooksPath`
-   names, else the repository's own, which its linked worktrees share):
-   `hooks="$(git rev-parse --git-path hooks)" && cp scripts/git-hooks/pre-commit "$hooks/pre-commit" && chmod +x "$hooks/pre-commit"`.
-   Add the line `node scripts/ai-review/gate.mjs check` prints ("review gate: N rounds, GO") to the commit message.
-   On a checkout without `gate.mjs` (an older branch) the hook says so and lets the commit through.
-
-`node --test scripts/ai-review/gate.test.mjs` runs the gate and the hook in a scratch repository.
-
 ### Optional: AI review before push
 `scripts/git-hooks/pre-push` reviews the diff you are pushing with three Kiro CLI agents (`.kiro/agents/`), run in
 parallel on each chunk of the diff:
@@ -287,6 +270,60 @@ review that did not finish ask before pushing (and block without a terminal). Th
 is not installed, or with `SKIP_AI_REVIEW=1`. Git does not run it until you install it in your clone:
 `cp scripts/git-hooks/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push`. Its parsing of the agents'
 output is tested by `node --test scripts/git-hooks/pre-push.test.mjs`.
+
+### Review gate before commit
+The rule for every commit is the review gate, in this order (the pre-commit hook below enforces the record of it once
+installed):
+
+1. The deterministic gate is green: `scripts/validate-affected.sh` for the touched groups while the rounds go on,
+   and the full `npm run validate` once on the final tree before the final go (and before each push).
+2. At most three review rounds, each on exactly the change about to be committed: `AI_REVIEW_CACHE=0 npm run
+   validate:tenets`, `AI_REVIEW_CACHE=0 npm run validate:commit`, and the `security-reviewer`, `quality-reviewer` and
+   `first-principles-reviewer` agents (`.kiro/agents/`). Every blocking finding is fixed (or rejected with a reason);
+   a round with no blocking finding ends the loop. The two `validate:` reviews read the working tree (unstaged and
+   untracked files included) against the merge base, so stage the whole change first and leave nothing else in the
+   working tree. A review that printed `skipped:` (a timeout, no CLI, no base to diff against) did not run, even
+   though it exited 0: rerun it before its round counts. If the third round still has a blocking finding, there is
+   no GO for this change: split or rework it and start the gate again at round 1.
+3. One fresh agent, which took no part in the rounds, answers GO or NO-GO. Only a GO is committed; after a NO-GO,
+   rework the change and start again at round 1.
+4. The GO is recorded: write the record as JSON outside the working tree (or in an ignored path) and run `node
+   scripts/ai-review/gate.mjs record --file <record.json>`. `record` refuses while the working tree differs from the
+   index: an unstaged change to a tracked file (`git diff --quiet` fails) or an untracked file that is not ignored
+   (`git ls-files --others --exclude-standard` lists it). So the tree the reviews read is the tree that is committed.
+
+The record is `{ tree, rounds: [{ round, reviews: [{ reviewer, findings: [{ id, severity, summary,
+outcome, note }] }] }], go: { verdict, reasons }, recordedAt? }`: `tree` is `git write-tree` of the index (what is
+staged), `reviewer` one of `tenets`, `commit`, `security`, `quality`, `first-principles` (each exactly once per
+round), `severity` one of `blocking`, `should-fix`, `nit`, `outcome` one of `fixed`, `rejected`, `deferred`.
+`record` refuses it unless the verdict is GO with its reasons, there are one to three rounds numbered in order, every
+round but the last had a blocking finding and the last has none, no blocking finding is deferred, a rejected one has a
+note, `tree` is the tree staged now and the working tree is the index. It always records the staged tree (it takes no
+`--tree`). It keeps the record in `.cache/ai-review/gate/<tree>.json` (ignored by git; `recordedAt` is filled in when
+absent). `gate.mjs check` exits 0 when the staged tree has a GO record and 1 with what to do when it has none;
+`gate.mjs show` prints the record and the line for the commit message (`review gate: 2 rounds, GO`); both
+take `--tree <hash>` to look at another tree's record. Stage anything after the record and the tree changes: review that change and record again.
+
+`scripts/git-hooks/pre-commit` calls `gate.mjs`'s `main(['check'])` (with `NODE_OPTIONS` unset) and lets the commit
+through only when it answers 0: a gate that exits without answering, a missing node or a missing `gate.mjs` is a
+refusal. It judges the index git commits, so `git commit -a` with changes that were not staged at review time is
+refused. No environment variable skips it; only git's own `git commit --no-verify` does. Git does not run it until
+you install it in your clone, into `core.hooksPath` when that is set, else the clone's hooks directory (run from the
+top level, where a relative `core.hooksPath` is resolved):
+
+```bash
+hooks=$(git config core.hooksPath || git rev-parse --git-path hooks)
+cp scripts/git-hooks/pre-commit "$hooks/pre-commit" && chmod +x "$hooks/pre-commit"
+```
+
+The hooks directory belongs to the clone and is shared by all its worktrees, so the hook then checks every commit in
+every worktree and on every branch, as intended: a branch whose checkout has no `scripts/ai-review/gate.mjs` is refused
+(fail closed). Tested by `node --test scripts/ai-review/gate.test.mjs scripts/git-hooks/pre-commit.test.mjs` (both
+are `validate.sh` steps).
+
+The record is written by you or your agent and lives only on your machine: the gate checks its shape and that it names
+the staged tree, not that the reviews it lists ran or found what it says. The hook runs the `gate.mjs` of the
+checked-out tree, so a local edit to that file changes the check. CI does not see any of it.
 
 
 ## Finding contributions to work on

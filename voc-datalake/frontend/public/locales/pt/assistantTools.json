@@ -342,6 +342,26 @@
       "off": "Desativado",
       "onNote": "As importações agendadas voltam a rodar e um disjuntor acionado é fechado.",
       "offNote": "As importações agendadas param. Nada do que já foi importado muda."
+    },
+    "prototypeDraft": {
+      "prototype": "Protótipo:",
+      "instruction": "Instrução que o rascunho recebe",
+      "note": "Isto só cria um rascunho. Ele aparece na página do protótipo quando fica pronto, e nada é salvo até você aplicá-lo lá.",
+      "pins_one": "{{count, number}} pin de tester selecionado",
+      "pins_many": "{{count, number}} de pins de testers selecionados",
+      "pins_other": "{{count, number}} pins de testers selecionados",
+      "noScreen": "(sem tela)",
+      "pinsInstruction": "Só os IDs dos pins são enviados: o servidor lê esses pins e escreve a instrução (incorporar o feedback selecionado dos testers, respondido por pin: feito ou não feito)."
+    },
+    "walkthrough": {
+      "remove": "O tour guiado é removido.",
+      "step": "Passo {{n}} de {{total}}",
+      "position": "uma posição em {{screen}}",
+      "thisScreen": "esta tela",
+      "replaces_one": "Substitui a {{count, number}} etapa salva.",
+      "replaces_many": "Substitui as {{count, number}} de etapas salvas.",
+      "replaces_other": "Substitui as {{count, number}} etapas salvas.",
+      "note": "Salvar cria uma nova versão do protótipo; quem abrir verá os passos."
     }
   },
   "tools": {
@@ -533,6 +553,13 @@
       "titleWith_one": "Criar {{count, number}} usuário",
       "titleWith_other": "Criar {{count, number}} usuários",
       "titleWith_many": "Criar {{count, number}} usuários"
+    },
+    "draft_prototype_revision": {
+      "title": "Rascunhar uma revisão do protótipo"
+    },
+    "set_prototype_walkthrough": {
+      "title": "Salvar um tour guiado do protótipo",
+      "titleRemove": "Remover o tour guiado do protótipo"
     }
   }
 }

@@ -541,22 +541,28 @@ class TestDeleteProjectSweepsBothPartitionsAndCollectsPersonaIds:
 
 
 # ---------------------------------------------------------------------------
-# Provenance: the model stamp
+# Provenance: the model stamp (since 7.33.00 through shared.converse.answering_model, voc-wiki's; the call site's
+# cases kept from voc-multiplayer's tests of the old _persona_model_id)
 # ---------------------------------------------------------------------------
 
 
 class TestThePersonaModelStamp:
+    @staticmethod
+    def _batch(result):
+        write = projects._PersonaWrite(entry=MagicMock(), persona={'name': 'P'}, result=result, tier='full')
+        return projects._surviving_personas([write])
+
     def test_the_model_the_synthesis_step_ran_on_wins(self):
         result = chain_results(['[]'])[0]
         assert result.model_id
-        with patch.object(projects, 'get_active_model_id') as picker:
-            assert projects._persona_model_id(result) == result.model_id
+        with patch('shared.converse.get_active_model_id') as picker:
+            assert self._batch(result).model_id == result.model_id
         picker.assert_not_called()
 
     def test_a_result_without_a_model_consults_the_picker_for_the_persona_surface(self):
         bare = chain_results(['[]'], model_id='')[0]
-        with patch.object(projects, 'get_active_model_id', return_value='picked-model') as picker:
-            assert projects._persona_model_id(bare) == 'picked-model'
+        with patch('shared.converse.get_active_model_id', return_value='picked-model') as picker:
+            assert self._batch(bare).model_id == 'picked-model'
         picker.assert_called_once_with('documents')
 
 
@@ -1469,7 +1475,7 @@ class TestUpdateDocument:
         result, edit = self._update({'sk': 'DOC#d1', 'document_type': 'custom', 'title': 'Old'},
                                     {'title': 'New', 'content': '# new'})
         assert result == {'success': True}
-        assert edit.call_args.kwargs == {'now': '2026-03-04T05:06:07+00:00', 'title': 'New'}
+        assert edit.call_args.kwargs == {'now': '2026-03-04T05:06:07+00:00', 'title': 'New', 'revise': None}
         assert edit.call_args.args[3] == {'title': 'New', 'content': '# new'}
 
     @pytest.mark.parametrize('title', ['', '   ', 7])

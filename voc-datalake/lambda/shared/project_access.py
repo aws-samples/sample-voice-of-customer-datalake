@@ -94,7 +94,7 @@ DELEGATED_SUBJECT_PREFIX: Final = 'mcp:'
 # builds `requestContext.authorizer.claims` from the verified JWT alone.
 ACTING_SUBJECT_CLAIM: Final = 'voc:acting_subject'
 # Claim the GLOBAL MCP Lambda (api/mcp_global_handler.py) adds to exactly one kind
-# of delegated call: `run_agent`, after it has verified, per call, that the token is
+# of delegated call: `agents_run`, after it has verified, per call, that the token is
 # a write token minted by an administrator who is STILL an administrator in
 # Cognito. Honoured only beside a delegated `mcp:` subject acting for a person (see
 # delegated_agent_run_allowed) — API Gateway never produces either from a JWT.
@@ -252,7 +252,7 @@ def _human_sub(value: str) -> str:
 
 
 def delegated_agent_run_allowed(claims: Mapping[str, Any]) -> bool:
-    """True for a global-MCP ``run_agent`` call the MCP Lambda has cleared.
+    """True for a global-MCP ``agents_run`` call the MCP Lambda has cleared.
 
     The ONE delegated path to an admin-only action, and deliberately narrow: an
     ``mcp:`` subject, acting for a real person, carrying ``MCP_AGENT_RUN_CLAIM``
@@ -456,6 +456,11 @@ _ROUTE_OVERRIDES: Final = (
     ('POST', ('documents', '*', 'comments', '*', 'resolve'), LEVEL_VIEW),
     ('POST', ('documents', '*', 'comments', '*', 'reopen'), LEVEL_VIEW),
     ('DELETE', ('documents', '*', 'comments', '*'), LEVEL_VIEW),
+    # A prototype draft (docs/prototype-builder.md, part 2) is for editors: its summary is model text
+    # about a change no one has applied yet, and its preview URL signs model HTML not yet a version.
+    ('GET', ('prototypes', '*', 'drafts', '*'), LEVEL_EDIT),
+    # A prototype series' feedback quotes what testers typed: read at edit, as its pins are.
+    ('GET', ('prototypes', '*', 'feedback'), LEVEL_EDIT),
 )
 
 

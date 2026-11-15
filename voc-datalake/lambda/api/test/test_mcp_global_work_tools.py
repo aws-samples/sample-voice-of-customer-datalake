@@ -1,7 +1,7 @@
 """The catalogue, Prioritization and board-write tools on ``/mcp/global`` (shared/mcp_global_tools_work.py).
 
 Each is ONE existing route called as the minter: the route, its arguments and refusals, the
-scope (write tools only for a write token; ``score_prioritization`` never for a project-pinned
+scope (write tools only for a write token; ``prioritization_score`` never for a project-pinned
 token), the project narrowing of the Prioritization read, and the board-route claims of the
 board write (an app-pool viewer, never admin).
 """
@@ -15,10 +15,10 @@ import mcp_global_handler as h
 from shared.mcp_delegate import DomainResult
 from shared.mcp_global_tools import TOOLS_BY_NAME, InvalidToolArgument, MinterIdentity
 
-CATALOGUE = TOOLS_BY_NAME['get_feedback_catalogue']
-PRIORITIZATION = TOOLS_BY_NAME['get_prioritization']
-SCORE = TOOLS_BY_NAME['score_prioritization']
-BOARD_WRITE = TOOLS_BY_NAME['write_feature_request']
+CATALOGUE = TOOLS_BY_NAME['feedback_get_catalogue']
+PRIORITIZATION = TOOLS_BY_NAME['prioritization_get']
+SCORE = TOOLS_BY_NAME['prioritization_score']
+BOARD_WRITE = TOOLS_BY_NAME['feature_requests_write']
 APP_POOL = 'eu-west-1_AppPool1'
 READ_ROW = {'token_id': 'gmt_tok1', 'scope': 'read', 'created_by': 'alice-sub'}
 WRITE_ROW = {**READ_ROW, 'scope': 'write'}

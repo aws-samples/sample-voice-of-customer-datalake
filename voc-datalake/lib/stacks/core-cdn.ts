@@ -1,7 +1,7 @@
 /**
  * VocCoreStack's CloudFront layer: the SPA distribution with its security
  * headers, the CloudFront URL-signing key pair (issue #229), the private
- * /avatars/* and /prototypes/* behaviors, and the design-integrations secret.
+ * /avatars/*, /prototypes/* and prototype-draft behaviors, and the design-integrations secret.
  * Created on the stack itself (not a child construct), so logical ids are unchanged.
  */
 import * as cdk from 'aws-cdk-lib';
@@ -24,7 +24,7 @@ import {
   cloudFrontWafOffSuppressions,
   cloudfrontDefaultCertSuppressions,
 } from '../utils/nag-suppressions';
-import { PROTOTYPE_BASE_CSP, prototypeCspFunctionCode } from '../utils/prototype-csp';
+import { PROTOTYPE_BASE_CSP, PROTOTYPE_DRAFT_CSP, prototypeCspFunctionCode } from '../utils/prototype-csp';
 import { realtimeConnectSrc } from '../utils/realtime';
 import type { DataProtection } from '../utils/data-protection';
 
@@ -365,9 +365,30 @@ export function createCoreCdn(ctx: CoreBuildContext, inputs: CdnInputs): CoreCdn
     runtime: cloudfront.FunctionRuntime.JS_2_0,
     comment: 'Prototype CSP: base policy, plus connect-src for its own pin submit URL',
   });
+  // Prototype DRAFTS (`prototypes/{project}/drafts/{job}.html`, docs/prototype-builder.md
+  // part 2): model HTML no editor has applied yet. Added BEFORE /prototypes/*, because
+  // CloudFront takes the first behaviour whose pattern matches and /prototypes/* matches a
+  // draft too: a draft must never get the live policy. Same origin, key group and cache as
+  // a live prototype (a draft key is write-once too), its own narrower policy
+  // (PROTOTYPE_DRAFT_CSP: no allow-popups, no connect-src), and NO viewer-response function,
+  // so nothing can widen it; `override: true` because no function owns the header here.
+  const prototypeDraftHeadersPolicy = new cloudfront.ResponseHeadersPolicy(stack, 'PrototypeDraftHeadersPolicy', {
+    securityHeadersBehavior: {
+      contentSecurityPolicy: { contentSecurityPolicy: PROTOTYPE_DRAFT_CSP, override: true },
+      contentTypeOptions: { override: true },
+    },
+  });
+  // One origin object for both behaviours: CloudFront binds it once, so a draft is read
+  // through exactly the origin (and origin access control) a live prototype is.
+  const prototypesOrigin = origins.S3BucketOrigin.withOriginAccessControl(rawDataBucket);
+  frontendDistribution.addBehavior(
+    '/prototypes/*/drafts/*',
+    prototypesOrigin,
+    { ...signedPathBehavior, responseHeadersPolicy: prototypeDraftHeadersPolicy },
+  );
   frontendDistribution.addBehavior(
     '/prototypes/*',
-    origins.S3BucketOrigin.withOriginAccessControl(rawDataBucket),
+    prototypesOrigin,
     {
       ...signedPathBehavior, // prototypes are immutable per doc_id, so the same cache policy fits
       responseHeadersPolicy: prototypeHeadersPolicy,

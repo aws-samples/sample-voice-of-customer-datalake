@@ -5,10 +5,11 @@
  * @module components/DocumentComments/CommentThreadCard
  */
 import clsx from 'clsx'
-import { CheckCircle2, ExternalLink, MessageSquare, RotateCcw, ShieldAlert, Trash2, User, UserRound } from 'lucide-react'
+import { CheckCheck, CheckCircle2, ExternalLink, MessageSquare, RotateCcw, ShieldAlert, Trash2, User, UserRound } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import CommentComposer from './CommentComposer'
+import { useInlineEditor } from '../../hooks/useInlineEditor'
 import { formatDateTime } from '../../utils/dateUtils'
 import type { CommentActions, ViewedVersion } from './commentTypes'
 import type { CommentAuthor, CommentThread } from '../../api/documentReviewSchema'
@@ -25,9 +26,10 @@ function AuthorLine({ author, at }: Readonly<{ author: CommentAuthor; at: string
   const { t, i18n } = useTranslation('components')
   const Icon = AUTHOR_ICONS[author.kind]
   return (
-    <div className="flex items-center gap-1.5 text-xs text-muted min-w-0">
+    // The name is never cut short: in a narrow margin the kind and the time wrap under it instead.
+    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted min-w-0">
       <Icon size={12} aria-hidden className="shrink-0" />
-      <span className="font-medium text-text truncate">{author.name || t(`documentComments.authorKind.${author.kind}`)}</span>
+      <span className="font-medium text-text min-w-0 break-words [overflow-wrap:anywhere]">{author.name || t(`documentComments.authorKind.${author.kind}`)}</span>
       <span className="shrink-0">· {t(`documentComments.authorKind.${author.kind}`)}</span>
       {at === '' ? null : <span className="ml-auto shrink-0 font-mono">{formatDateTime(at, i18n.language, '', 'short')}</span>}
     </div>
@@ -44,6 +46,11 @@ function ThreadBadges({ thread, viewed }: Readonly<{ thread: CommentThread; view
       )}
       {otherVersion ? <span className="badge badge-muted">{t('documentComments.onVersion', { version: thread.version })}</span> : null}
       {thread.status === 'resolved' ? <span className="badge badge-ok">{t('documentComments.resolved')}</span> : null}
+      {thread.addressed === null ? null : (
+        <span className="badge badge-info" title={thread.addressed.by_kind === 'ai' ? t('projectDetail:canvas.revise.addressedBy.ai') : t('projectDetail:canvas.revise.addressedBy.user')}>
+          <CheckCheck size={10} aria-hidden />{t('projectDetail:canvas.revise.addressedIn', { version: thread.addressed.version })}
+        </span>
+      )}
       {thread.flagged ? (
         <span className="badge badge-warn" title={t('documentComments.flaggedHint')}>
           <ShieldAlert size={10} aria-hidden />{t('documentComments.flagged')}
@@ -94,12 +101,19 @@ interface CommentThreadCardProps {
 
 export default function CommentThreadCard({ thread, actions, viewed, active, onActivate }: CommentThreadCardProps) {
   const { t } = useTranslation('components')
-  const [replying, setReplying] = useState(false)
+  // The reply box opens in place of Reply and, closed (sent, cancelled, Escape), hands focus back to it. Its Escape is
+  // the composer's own (an empty box closes, text stays), so the hook's onKeyDown is not used.
+  const { open: replying, openEditor: openReply, close: closeReply, triggerRef: replyButton, editorRef: replyBox } = useInlineEditor()
+  const resolved = thread.status === 'resolved'
   return (
     <article
       aria-label={t('documentComments.threadBy', { name: thread.author.name })}
-      className={clsx('rounded-lg border bg-card p-3 space-y-2 text-sm transition-shadow',
-        active ? 'border-warn shadow-md' : 'border-border', thread.status === 'resolved' && 'opacity-75')}
+      // Focusable from a link to it (a recommendation's "Show the comment"), never a Tab stop of its own.
+      data-thread-id={thread.comment_id} tabIndex={-1}
+      // A resolved thread recedes through its surface (a quieter background, a dashed edge) and its badge,
+      // never through opacity: its text keeps the theme's own contrast (AA).
+      className={clsx('rounded-lg border p-3 space-y-2 text-sm transition-shadow focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
+        resolved ? 'bg-bg-accent border-dashed' : 'bg-card', active ? 'border-warn shadow-md' : 'border-border')}
       onFocus={() => onActivate(thread.comment_id)}
       onMouseEnter={() => onActivate(thread.comment_id)}
       onMouseLeave={() => onActivate(null)}
@@ -124,11 +138,13 @@ export default function CommentThreadCard({ thread, actions, viewed, active, onA
         </ul>
       )}
       {replying ? (
-        <CommentComposer label={t('documentComments.replyPlaceholder')} submitLabel={t('documentComments.reply')} autoFocus
-          onSubmit={async (text) => { await actions.reply(thread.comment_id, text); setReplying(false) }}
-          onCancel={() => setReplying(false)} />
+        <div ref={replyBox}>
+          <CommentComposer label={t('documentComments.replyPlaceholder')} submitLabel={t('documentComments.reply')}
+            onSubmit={async (text) => { await actions.reply(thread.comment_id, text); closeReply() }}
+            onCancel={closeReply} />
+        </div>
       ) : (
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setReplying(true)}>
+        <button ref={replyButton} type="button" className="btn btn-ghost btn-sm" onClick={openReply}>
           <MessageSquare size={14} aria-hidden />{t('documentComments.reply')}
         </button>
       )}

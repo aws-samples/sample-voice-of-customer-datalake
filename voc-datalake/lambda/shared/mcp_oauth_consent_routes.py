@@ -12,7 +12,7 @@ Served through the existing ``/connect/{proxy+}`` (Cognito authorizer), so no ne
 * ``DELETE /connect/oauth/grants/{grant_id}`` — revoke at once: the next request of every token is a 401.
 
 The grant gets the SAME identity as a token the person mints: never admin, ≤ editor, ``minted_by_admin``
-from the caller's groups (``run_agent`` is still re-checked in Cognito per call), the pin checked for
+from the caller's groups (``agents_run`` is still re-checked in Cognito per call), the pin checked for
 view access. A delegated credential (an MCP token or grant) can do none of this.
 
 Cognito signs the person in AGAIN after consent (the SPA signs in with SRP, so there is no hosted-UI

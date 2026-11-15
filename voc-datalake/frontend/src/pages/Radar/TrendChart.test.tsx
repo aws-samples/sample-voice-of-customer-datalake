@@ -38,7 +38,10 @@ vi.mock('recharts', () => {
   }
 })
 
-const TREND = [{ date: '2026-10-16', count: 9800, avg_sentiment: -0.4 }]
+// Dated relative to today, inside every window the tests draw: a fixed date fell out of the 30-day window as the
+// calendar moved, and the chart rightly keeps a point outside the window (31 days then, not 30).
+const FIVE_DAYS_AGO = new Date(Date.now() - 5 * 86_400_000).toISOString().slice(0, 10)
+const TREND = [{ date: FIVE_DAYS_AGO, count: 9800, avg_sentiment: -0.4 }]
 const draw = (trend = TREND, days = 30, onReadAll = vi.fn()) =>
   render(<TrendChart trend={trend} days={days} onDay={() => {}} onReadAll={onReadAll} />)
 

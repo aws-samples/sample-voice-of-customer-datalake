@@ -16,10 +16,7 @@
     "create": "생성",
     "createDocument": "문서 생성",
     "creating": "생성 중...",
-    "editDocument": "문서 편집",
     "preview": "미리보기",
-    "saveChanges": "변경 사항 저장",
-    "saving": "저장 중...",
     "titleLabel": "제목",
     "titlePlaceholder": "문서 제목..."
   },
@@ -39,7 +36,7 @@
       "companyContext": "회사 컨텍스트",
       "designSystem": "회사 디자인 시스템",
       "companyLogo": "회사 로고",
-      "companyLogoLeftOut": "회사 로고가 생략됨(1MB 초과 또는 읽을 수 없음)",
+      "companyLogoLeftOut": "회사 로고가 사용되지 않음",
       "roles": {
         "mergeInput": "병합 원본",
         "prototypePrd": "프로토타입 원본 PRD",
@@ -51,8 +48,20 @@
       "visualsUsed_one": "비주얼 {{count, number}}개 사용",
       "visualsUsed_other": "비주얼 {{count, number}}개 사용"
     },
-    "editDocument": "문서 편집",
     "newDocument": "새 문서",
+    "sections": {
+      "label": "문서 섹션",
+      "prd": "PRD",
+      "prfaq": "PR/FAQ",
+      "prototypes": "프로토타입",
+      "documents": "문서",
+      "toggle_one": "{{name}}, 문서 {{count, number}}개",
+      "toggle_other": "{{name}}, 문서 {{count, number}}개",
+      "new": "새로 만들기",
+      "newPrd": "새 PRD",
+      "newPrfaq": "새 PR/FAQ",
+      "newPrototype": "새 프로토타입"
+    },
     "noDocuments": "문서 없음",
     "ordinal": "{{total, number}}개 중 {{ordinal}}번째",
     "versions": {
@@ -61,6 +70,8 @@
       "label": "v{{n}}",
       "current": "현재",
       "edited": "편집됨",
+      "revised": "댓글을 바탕으로 수정됨",
+      "revisedWith": "댓글을 바탕으로 수정됨 · {{model}}",
       "restoredFrom": "v{{n}}에서 복원",
       "open": "열기",
       "openNamed": "{{label}} 열기",
@@ -109,6 +120,9 @@
       "feedbackPlaceholder": "예: 이걸 관리자 대시보드 화면으로 바꿔줘 — 사용자 화면 대신 승인·사용자관리·지표를 보여줘.",
       "feedbackRebased": "이 프로토타입의 원본 문서가 더 이상 존재하지 않으므로 수정에는 해당 유형의 최신 문서를 사용합니다.",
       "feedbackSubmit": "재생성",
+      "backTo": "v{{n}}(으)로 되돌리기",
+      "restoreThis": "v{{n}} 복원",
+      "backHint": "v{{n}}을(를) 최신 버전으로 다시 저장합니다. 삭제되는 것은 없습니다.",
       "feedbackTitle": "피드백을 주어 프로토타입을 재생성합니다",
       "needsDocs": "프로토타입 생성은 PRD 또는 PR/FAQ가 있어야 활성화됩니다",
       "previewLabel": "미리보기",
@@ -123,7 +137,52 @@
       "visuals": "비주얼 목업 ({{total, number}}개)",
       "visualsFailed": "{{total, number}}개는 처리에 실패했습니다 — 다시 업로드하세요",
       "visualsLimit": "한 번의 빌드에 최대 {{max, number}}개 목업",
-      "visualsNotReady": "{{total, number}}개는 처리 중입니다"
+      "visualsNotReady": "{{total, number}}개는 처리 중입니다",
+      "draft": {
+        "heading": "초안 준비됨: 미리보기에 적용됨, 저장되지 않음",
+        "previewHeading": "초안 미리보기",
+        "previewLabel": "미리보기",
+        "showDraft": "초안",
+        "showCurrent": "현재",
+        "instructionLabel": "지시:",
+        "summaryLabel": "변경 사항",
+        "stale": "이 초안 이후 프로토타입이 변경되었습니다: 최신 버전에서 다시 요청하세요",
+        "apply": "v{{n}}(으)로 적용",
+        "discard": "버리기",
+        "applyFailed": "초안을 적용하지 못했습니다. 다시 시도하세요.",
+        "discardFailed": "초안을 버리지 못했습니다. 다시 시도하세요.",
+        "noPreview": "이 초안의 미리보기는 여기에서 사용할 수 없습니다.",
+        "frameTitle": "{{title}} (초안)",
+        "outcomesLabel": "항목별",
+        "done": "완료",
+        "notDone": "미완료",
+        "outcomeItem": "{{screen}}: “{{text}}”",
+        "outcomePin": "핀 {{n}}",
+        "noScreen": "(화면 없음)",
+        "withheld_one": "선택한 핀 {{count, number}}개 보류(지시처럼 보이는 텍스트): AI에 보내지 않음",
+        "withheld_other": "선택한 핀 {{count, number}}개 보류(지시처럼 보이는 텍스트): AI에 보내지 않음",
+        "incorporationResult": "v{{version}}(으)로 적용됨: {{marked}}, {{replied}}.",
+        "markedCount_one": "핀 {{count, number}}개를 반영됨으로 표시함",
+        "markedCount_other": "핀 {{count, number}}개를 반영됨으로 표시함",
+        "repliedCount_one": "AI 사유 {{count, number}}개를 답글로 게시함",
+        "repliedCount_other": "AI 사유 {{count, number}}개를 답글로 게시함",
+        "notWritten": "쓰지 못함: {{place}}: {{reason}}",
+        "dismissResult": "닫기",
+        "notWrittenReason": {
+          "pin_gone": "핀이 더 이상 없습니다",
+          "already_addressed": "이미 처리됨으로 표시되어 있었습니다",
+          "already_resolved": "이미 해결되었습니다",
+          "thread_full": "스레드가 가득 찼습니다(답글 50개)",
+          "note_withheld": "사유가 지시처럼 보여 게시하지 않았습니다",
+          "other": "쓸 수 없었습니다",
+          "reopened": "이후 편집자가 다시 열었습니다"
+        },
+        "incorporationResultNoVersion": "적용됨: {{marked}}, {{replied}}."
+      },
+      "assistant": {
+        "button": "어시스턴트로 편집",
+        "prompt": "이 프로토타입을 변경해 주세요: "
+      }
     },
     "revision": {
       "feedback": "피드백: {{feedback}}",
@@ -228,7 +287,8 @@
       "generateProductReport": "제품 보고서 생성",
       "importPersona": "페르소나 가져오기",
       "mergeDocuments": "문서 병합",
-      "research": "조사"
+      "research": "조사",
+      "draftPrototype": "프로토타입 초안"
     }
   },
   "notFound": {
@@ -658,5 +718,213 @@
     "featureRequestLink": "요청 {{id}}",
     "erasedSummary_one": "인용된 리뷰 또는 보드 요청 {{count, number}}개가 삭제됨(법적 근거 기록됨)",
     "erasedSummary_other": "인용된 리뷰 또는 보드 요청 {{count, number}}개가 삭제됨(법적 근거 기록됨)"
+  },
+  "canvas": {
+    "editor": {
+      "placeholder": "입력하거나 /를 눌러 블록을 선택하세요",
+      "task": "완료",
+      "slash": {
+        "label": "블록",
+        "empty": "“{{query}}”와 일치하는 블록이 없습니다"
+      },
+      "blocks": {
+        "paragraph": "텍스트",
+        "heading1": "제목 1",
+        "heading2": "제목 2",
+        "heading3": "제목 3",
+        "bulletList": "글머리 기호 목록",
+        "orderedList": "번호 매기기 목록",
+        "taskList": "할 일 목록",
+        "blockquote": "인용",
+        "callout": "콜아웃",
+        "codeBlock": "코드",
+        "table": "표",
+        "divider": "구분선",
+        "image": "이미지"
+      },
+      "callout": {
+        "note": "참고",
+        "tip": "팁",
+        "important": "중요",
+        "warning": "경고",
+        "caution": "주의"
+      },
+      "format": {
+        "toolbar": "텍스트 서식",
+        "bold": "굵게",
+        "italic": "기울임꼴",
+        "strike": "취소선",
+        "code": "인라인 코드",
+        "link": "링크",
+        "turnInto": "변환",
+        "comment": "댓글"
+      },
+      "link": {
+        "title": "링크",
+        "url": "링크 주소",
+        "placeholder": "https://… 또는 /경로",
+        "apply": "적용",
+        "remove": "링크 제거",
+        "cancel": "취소",
+        "invalid": "웹 주소(https://…), 이메일 주소 또는 이 앱의 경로(/…)를 사용하세요."
+      },
+      "image": {
+        "title": "이미지 삽입",
+        "url": "이미지 주소",
+        "alt": "대체 텍스트",
+        "altHint": "이미지를 볼 수 없는 사람을 위해 이미지를 설명하세요.",
+        "insert": "삽입",
+        "cancel": "취소",
+        "invalidUrl": "웹 주소(https://…) 또는 이 앱의 경로(/…)를 사용하세요.",
+        "altRequired": "대체 텍스트를 추가하세요. 이미지를 볼 수 없는 사람에게 전달되는 내용입니다."
+      },
+      "handle": {
+        "label": "드래그하여 블록을 이동하거나 클릭하여 메뉴 열기",
+        "menu": "블록 작업",
+        "moveUp": "위로 이동",
+        "moveDown": "아래로 이동",
+        "turnInto": "변환",
+        "duplicate": "복제",
+        "delete": "삭제",
+        "back": "뒤로"
+      }
+    },
+    "page": {
+      "loading": "문서를 불러오는 중…",
+      "titleLabel": "문서 제목",
+      "contents": "목차",
+      "evidence": "근거",
+      "evidenceEmpty": "이 문서에 기록된 리뷰나 기능 요청이 없습니다.",
+      "showAll": "모두 보기({{n, number}})",
+      "featureRequests": "기능 요청"
+    },
+    "comments": {
+      "hint": "구절에 댓글을 달려면 텍스트를 선택하고 [댓글]을 누르거나 Ctrl+Alt+M(Mac에서는 ⌘⌥M)을 누르세요.",
+      "draftOpen": "먼저 작성 중인 댓글을 마치거나 취소하세요.",
+      "selectFirst": "먼저 문서에서 구절(최대 500자)을 선택한 다음 댓글을 다세요.",
+      "tabs": {
+        "label": "댓글 및 근거",
+        "comments": "댓글",
+        "evidence": "근거"
+      }
+    },
+    "actions": {
+      "assistant": {
+        "added": "추가됨",
+        "banner": "어시스턴트가 이 문서의 변경을 제안합니다",
+        "diffLabel": "제안된 변경",
+        "draftNote": "저장하지 않은 변경 사항이 있습니다. 제안은 저장된 버전과 비교되며, 승인하면 그 위에 새 버전이 저장됩니다.",
+        "hide": "변경 숨기기",
+        "newTitle": "새 제목: {{title}}",
+        "noChanges": "제안이 저장된 텍스트와 같습니다.",
+        "otherVersion": "v{{proposed}}에 대한 제안입니다. 이 페이지에는 v{{current}}이(가) 표시됩니다.",
+        "removed": "삭제됨",
+        "replacesSince": "승인하면 제안이 다음 버전으로 저장되고 v{{proposed}} 이후의 변경 사항을 대체합니다(변경 사항은 기록에 남습니다). 아래 변경 사항은 이 페이지와 비교한 것입니다.",
+        "review": "검토",
+        "stats": "추가된 블록: {{added, number}} · 삭제: {{removed, number}}",
+        "tooLarge": "너무 길어서 블록별로 비교할 수 없습니다. 전체 제안:",
+        "unchanged": "변경 없는 블록: {{count, number}}"
+      },
+      "discard": "취소",
+      "discardHint": "변경 사항을 버리고 저장된 버전으로 돌아가기",
+      "exportSavedHint": "내보내기는 저장된 버전을 사용합니다. 변경 사항을 포함하려면 먼저 저장하세요.",
+      "history": "기록",
+      "save": "저장",
+      "saveHint": "새 버전 저장(Ctrl+S 또는 ⌘S)",
+      "status": {
+        "saved": "저장됨 · {{version}} · {{when}}",
+        "savedNoVersion": "저장됨 · {{when}}",
+        "saving": "저장 중…",
+        "unsaved": "저장하지 않은 변경 사항"
+      },
+      "toolbarLabel": "문서 작업"
+    },
+    "revise": {
+      "addressedBy": {
+        "ai": "AI가 수정한 버전에서 반영됨",
+        "user": "제안된 변경 사항으로 저장한 버전에서 반영됨"
+      },
+      "addressedIn": "v{{version}}에서 반영됨",
+      "applied": {
+        "banner_one": "댓글 {{count, number}}개를 바탕으로 v{{version}}(으)로 수정했습니다",
+        "banner_other": "댓글 {{count, number}}개를 바탕으로 v{{version}}(으)로 수정했습니다",
+        "reviewAgain": "다시 검토",
+        "status": "AI와 일하는 방식상 AI가 작성할 수 있어 수정본을 새 버전으로 저장했습니다. 실행 취소하면 이전 버전을 복원합니다.",
+        "undo": "실행 취소",
+        "undoAnyway": "그래도 실행 취소",
+        "undoFailed": "이전 버전을 복원하지 못했습니다. 기록에서 복원하세요.",
+        "undoKeep": "유지",
+        "undoNewer": "이 수정 이후에 v{{version}}이(가) 저장되었습니다. 실행 취소하면 수정의 기준이 된 버전을 복원하므로 그 뒤에 저장된 변경도 사라집니다.",
+        "undoing": "이전 버전을 복원하는 중…",
+        "undone": "실행 취소됨: 이전 버전이 새 버전으로 복원되었습니다."
+      },
+      "button": "댓글을 바탕으로 수정",
+      "close": "닫기",
+      "failed": "댓글을 바탕으로 한 수정에 실패했습니다. 다시 시도하세요.",
+      "filterAddressed": "반영됨",
+      "hint": "답글이 달렸거나 해결된 댓글이 다루는 부분에 대해 댓글과 문서의 근거를 바탕으로 변경을 제안합니다",
+      "noThreads": "먼저 댓글에 답글을 달거나 해결하세요.",
+      "saveFirst": "먼저 수락한 변경 사항을 저장하거나 취소하세요.",
+      "proposal": {
+        "accept": "수락",
+        "acceptAll": "모두 수락",
+        "acceptNamed": "변경 {{position}} 수락",
+        "added": "추가됨",
+        "answers": "관련 댓글:",
+        "change": "변경 {{position}}",
+        "deleted": "(이 부분이 삭제됩니다)",
+        "dropped_one": "제안 {{count, number}}개를 제외했습니다. 해당 부분이 본문에 없습니다.",
+        "dropped_other": "제안 {{count, number}}개를 제외했습니다. 해당 부분이 본문에 없습니다.",
+        "intro": "변경마다 수락하거나 거절하세요. 수락한 변경은 초안에 들어가고, 저장하면 새 버전이 됩니다.",
+        "listLabel": "제안된 변경",
+        "markFailed": "저장했지만 댓글을 반영됨으로 표시하지 못했습니다. 나중에 다시 시도하세요.",
+        "markPartial": "저장했지만 일부 댓글은 반영 표시 한도에 도달해 반영됨으로 표시하지 못했습니다. 나머지는 표시했습니다. 해당 댓글은 새 댓글로 시작하세요.",
+        "marked_one": "저장됨: 댓글 {{count, number}}개가 v{{version}}에서 반영됨으로 표시되었습니다.",
+        "marked_other": "저장됨: 댓글 {{count, number}}개가 v{{version}}에서 반영됨으로 표시되었습니다.",
+        "none": "이 댓글들로는 변경을 제안할 수 없었습니다. 대신 할 일은 권장 사항을 참고하세요.",
+        "reject": "거절",
+        "rejectAll": "모두 거절",
+        "rejectNamed": "변경 {{position}} 거절",
+        "removed": "삭제됨",
+        "saveNote": "수락한 변경이 초안에 있습니다. 저장하면 새 버전이 됩니다.",
+        "state": {
+          "accepted": "수락됨",
+          "addressed": "저장됨",
+          "outOfDate": "오래됨: 해당 부분이 바뀌었습니다",
+          "rejected": "거절됨"
+        },
+        "status_one": "변경 {{count, number}}개가 제안되었습니다.",
+        "status_other": "변경 {{count, number}}개가 제안되었습니다.",
+        "title": "제안된 변경"
+      },
+      "refused": {
+        "explain": "아무것도 저장되지 않았습니다. 변경 내용은 그대로 있습니다. 대신 내 편집으로 저장하세요.",
+        "fallback": "이 저장을 수정본으로 기록하지 못했습니다.",
+        "saveAsOwn": "내 편집으로 저장"
+      },
+      "recommendations": {
+        "listLabel": "권장 사항",
+        "status_one": "권장 사항 {{count, number}}개. 문서는 변경되지 않았습니다.",
+        "status_other": "권장 사항 {{count, number}}개. 문서는 변경되지 않았습니다.",
+        "title": "댓글에서 나온 권장 사항",
+        "why": "AI와 일하는 방식상 권장 사항만 제공합니다. AI가 이 문서를 대신 작성하지 않습니다."
+      },
+      "reviewAgain": "페르소나에게 다시 검토 요청",
+      "running": "댓글을 바탕으로 수정하는 중…",
+      "showThread": "댓글 보기: {{label}}",
+      "threadGone": "(삭제된 댓글)"
+    },
+    "focus": {
+      "announce": "전체 화면입니다. Esc 키를 눌러 종료하세요.",
+      "button": "전체 화면",
+      "hint": "전체 화면 (Ctrl+Shift+F 또는 ⌘⇧F)"
+    },
+    "menu": {
+      "commentsHeading": "열린 댓글",
+      "includeComments": "열린 댓글 포함",
+      "saved": "저장됨",
+      "trigger": "파일",
+      "wholeDocument": "문서 전체에 대한 댓글"
+    }
   }
 }

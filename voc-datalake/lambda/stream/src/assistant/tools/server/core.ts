@@ -278,7 +278,8 @@ function getProjectTool(deps: ToolDeps): ServerToolDefinition {
     'get_project',
     'Overview of one project (defaults to the project open on the current page): the signed-in user\u2019s access '
       + '(role, can_edit, can_manage), metadata, its personas (id, name, tagline) and its documents (id, title, type, '
-      + 'size). Does not return document text — use get_documents for that.',
+      + 'size) in document_sections, in order: prd, prfaq, prototypes, documents (everything else). Does not return '
+      + 'document text — use get_documents for that.',
     { project_id: idProperty('Project id; omit to use the project on screen.') },
   );
   return serverTool('get_project', 'core', spec, async (input, ctx) => {

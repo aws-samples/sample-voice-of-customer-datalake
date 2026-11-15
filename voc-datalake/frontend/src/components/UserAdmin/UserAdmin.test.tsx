@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { renderWithQueryClient } from '../../test/query-client'
+import { timerOnCleanup } from '../../test/timeoutWatch'
 import type { CognitoUser } from '../../api/types'
 import { required } from '../component-spec-fixtures'
 import { cognitoUser } from './userAdmin-fixtures'
@@ -274,6 +275,15 @@ describe('UserAdmin', () => {
       expect(mockDisableUser).toHaveBeenCalledWith(cognitoUser().username)
       expect(screen.queryByText('Disable User')).not.toBeInTheDocument()
       await waitFor(() => { expect(screen.queryByText('User disabled')).not.toBeInTheDocument() }, { timeout: 5000 })
+    })
+
+    it('cancels the message timer when the panel goes away, so nothing fires after it', async () => {
+      const timer = await timerOnCleanup(3000, async () => {
+        const user = await renderOneUser()
+        await user.selectOptions(firstRoleSelect(), 'admins')
+        return screen.findByText('User role updated')
+      })
+      expect(timer).toStrictEqual({ started: true, pendingBefore: true, cancelledByCleanup: true })
     })
   })
 })

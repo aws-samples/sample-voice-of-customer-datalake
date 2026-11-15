@@ -8,12 +8,15 @@
 // title, as the server keys them), so a comment made on one version shows on the next. The mock's
 // one caller is the project's team AND, on /review, the reviewer `reviewer@example.com`.
 // The persona review is an assist job of the project registry (shared.startProjectAssistJob),
-// filing one quote per persona that is found verbatim in the document.
+// filing one quote per persona that is found verbatim in the document. So is "Revise from
+// comments" (reviseRoute: recommendations, proposal or applied), and `…/comments/addressed` marks
+// threads by the path's version, or clears them (`addressed: false`), appending to their history. proj_1's PRD and PR/FAQ start with a few threads (SEEDED_THREADS), seeded on the first
+// request of this module.
 // Wired into mock-server.js by handleDomainModules.
 
 import { randomBytes } from 'node:crypto';
 
-const DOC_PATH = /^\/projects\/([^/]+)\/documents\/([^/]+)\/(comments|share|persona-review)(?:\/([^/]+)(?:\/(replies|resolve|reopen))?)?$/;
+const DOC_PATH = /^\/projects\/([^/]+)\/documents\/([^/]+)\/(comments|share|persona-review|revise-from-comments)(?:\/([^/]+)(?:\/(replies|resolve|reopen))?)?$/;
 const REVIEW_PATH = /^\/review\/([^/]+)(?:\/comments(?:\/([^/]+)\/replies)?)?$/;
 const SHARE_ID = /^shr_[0-9a-f]{32}$/;
 const COMMENTABLE = new Set(['prfaq', 'prd']);
@@ -36,6 +39,21 @@ const newCommentId = () => `dc_${String(Date.now() * 1000).padStart(20, '0')}${r
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const baseTitle = (doc) => String(doc.base_title ?? doc.title ?? '').trim().replace(/\(v\d+\)$/i, '').trim().toLowerCase();
 const seriesKey = (projectId, doc) => `${projectId}#${doc.document_type}#${baseTitle(doc)}`;
+/** A document's series key (document_series.series_of), for a save naming its revise pass (mock-project-actions.js). */
+export const documentSeriesKey = seriesKey;
+
+// What a pass records about the AI that wrote it (document_revision: the `documents` surface's model,
+// REVISE_PROMPT_VERSION): on its result (`model_id`, `prompt_version`) and, as
+// `llm_metadata: {model, prompt_version}`, on the version it writes or a saved proposal.
+const REVISE_MODEL = 'global.anthropic.claude-sonnet-5-5';
+const REVISE_PROMPT_VERSION = '1.0.0';
+// model_config.model_label for the mock's revise model; any other id has no label (shown as its id).
+const MODEL_LABELS = new Map([[REVISE_MODEL, 'Claude Sonnet 5.5']]);
+/** document_history._llm_metadata_view: a stored `llm_metadata` plus its model's label, or null. */
+export function versionLlmView(llm) {
+  if (!isObject(llm) || typeof llm.model !== 'string') return null;
+  return { model: llm.model, prompt_version: llm.prompt_version ?? null, model_label: MODEL_LABELS.get(llm.model) ?? null };
+}
 const seriesId = (key) => `ser_${Buffer.from(key).toString('hex').slice(0, 24)}`;
 
 function textOf(body, field, required = true) {
@@ -61,7 +79,7 @@ function newThread(doc, author, text, anchor, extra = {}) {
   const at = nowIso();
   return {
     comment_id: newCommentId(), document_id: doc.document_id, version: doc.version ?? 1, text, anchor,
-    status: 'open', flagged: false, created_at: at, updated_at: at, author, replies: [], from_review_link: false, ...extra,
+    status: 'open', flagged: false, created_at: at, updated_at: at, author, replies: [], from_review_link: false, addressed: null, ...extra,
   };
 }
 
@@ -77,9 +95,16 @@ function replaceThread(key, thread) {
   return thread;
 }
 
+/** A thread as the API answers it (the addressed history stays server-side). */
+function threadView(thread) {
+  const view = { ...thread };
+  delete view.addressed_history;
+  return view;
+}
+
 /** A thread as the reviewer sees it: no teammate's sub, no other address. */
 const reviewerView = (thread) => ({
-  ...thread,
+  ...threadView(thread),
   author: { kind: thread.author.kind, name: thread.author.name },
   replies: thread.replies.map((reply) => ({ ...reply, author: { kind: reply.author.kind, name: reply.author.name } })),
 });
@@ -134,15 +159,165 @@ function personaReview(detail, doc, key) {
   return [200, { document_id: doc.document_id, version: doc.version ?? 1, personas: results, filed: results.reduce((n, r) => n + r.filed, 0) }];
 }
 
+// ── Revise from comments (lambda/shared/document_revision.py) ──────────────────────────────
+// The outcome follows the caller's way of working: MOCK_REVISE_OUTCOME=recommendations|proposal|applied
+// picks one; else the mock caller's mode when the server hands it over (shared.aiModeOf), else
+// "proposal". A thread's change is a canned rewrite of its quote when the quote occurs exactly once
+// in the version's Markdown (REWRITES, the seeded threads' quotes), so every `before` is verbatim.
+const REVISE_OUTCOMES = ['recommendations', 'proposal', 'applied'];
+const MAX_REVISE_THREADS = 50;
+const COMMENT_ID = /^dc_\d{20}[0-9a-f]{6}$/;
+const REWRITES = new Map([
+  ["Quiet hours are 21:00 to 08:00 in the customer's time zone",
+    "Quiet hours are 21:00 to 08:00 in the customer's time zone, except for an order the customer marked as urgent"],
+  ['Tell the customer about a delay within minutes of the carrier event',
+    'Tell the customer about a delay within minutes of the carrier event (a late carrier event is covered in 4.3)'],
+  ['at most once a day unless it moves again', 'at most once a day per parcel, even if it moves again'],
+  ['Delivery contacts per 1,000 orders', 'Delivery contacts per 1,000 orders (support report, last quarter)'],
+]);
+
+function reviseOutcome(shared) {
+  const forced = process.env.MOCK_REVISE_OUTCOME;
+  if (REVISE_OUTCOMES.includes(forced)) return forced;
+  const mode = typeof shared.aiModeOf === 'function' ? shared.aiModeOf(shared.mockCaller?.username)?.mode : null;
+  if (mode === 'ai_driven') return 'applied';
+  return mode === 'human_driven' ? 'recommendations' : 'proposal';
+}
+
+function threadIdsOf(raw, required) {
+  if (raw === undefined && !required) return null;
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > MAX_REVISE_THREADS || !raw.every((id) => COMMENT_ID.test(id))) {
+    throw new Error(`thread_ids must be a list of 1 to ${MAX_REVISE_THREADS} comment ids`);
+  }
+  return [...new Set(raw)];
+}
+
+const placedIn = (content) => (thread) => thread.anchor === null || content.includes(thread.anchor.exact);
+const answered = (thread) => thread.status === 'resolved' || thread.replies.length > 0;
+
+function revisableThreads(key, doc, wanted) {
+  const content = String(doc.content ?? '');
+  const chosen = wanted === null
+    ? threadsOf(key).filter((t) => answered(t) && !t.addressed)
+    : threadsOf(key).filter((t) => wanted.includes(t.comment_id));
+  return chosen.filter(placedIn(content)).slice(0, MAX_REVISE_THREADS);
+}
+
+function proposedChanges(threads, content) {
+  return threads.flatMap((thread) => {
+    const before = thread.anchor?.exact;
+    const after = before === undefined ? undefined : REWRITES.get(before);
+    if (after === undefined || content.split(before).length !== 2) return [];
+    return [{ thread_ids: [thread.comment_id], before, after, reason: `Answers: "${thread.text.slice(0, 80)}"` }];
+  }).map((change, index) => ({ change_id: `ch_${index + 1}`, ...change }));
+}
+
+// document_comments.MAX_ADDRESSED_HISTORY: append-only (D1), one more is a 409, like replies past 50.
+const MAX_ADDRESSED_HISTORY = 100;
+const ADDRESSED_FULL = 'This comment has reached its limit of addressed marks; start a new comment';
+const ADDRESSED_SOME_FULL = 'Some comments have reached their limit of addressed marks and were not marked; '
+  + 'the others were. Start a new comment for those';
+
+/** Append `entry` to each thread of `ids`, in order: `{marked, full}`. A full thread does not stop the others
+ * (record_threads_addressed tries every thread; the route then answers its 409, the applied pass skips it). */
+function appendAddressed(key, ids, entry) {
+  const marked = [];
+  let full = false;
+  for (const thread of threadsOf(key).filter((t) => ids.includes(t.comment_id))) {
+    if ((thread.addressed_history ?? []).length >= MAX_ADDRESSED_HISTORY) {
+      full = true;
+      continue;
+    }
+    marked.push(replaceThread(key, {
+      ...thread, updated_at: entry.at,
+      addressed_history: [...(thread.addressed_history ?? []), entry],
+      addressed: entry.addressed ? { version: entry.version, at: entry.at, by_kind: entry.by_kind } : null,
+    }));
+  }
+  return { marked, full };
+}
+
+/** The route's 409 when a thread's history is full; "some marked" has its machine-readable `code` (ApiError.code). */
+function fullAnswer(marked) {
+  return marked.length === 0
+    ? [409, { success: false, error: ADDRESSED_FULL }]
+    : [409, { success: false, error: ADDRESSED_SOME_FULL, code: 'addressed_some_full' }];
+}
+
+function addressedEntry(doc, byKind, addressed) {
+  return { version: doc.version ?? 1, document_id: doc.document_id, at: nowIso(), by_kind: byKind, addressed };
+}
+
+/** `{thread_ids, addressed?: boolean = true}`: `doc` (the path's version) marks or clears the threads.
+ * Each call is appended to the thread's `addressed_history` (D1); `addressed` is the newest mark, else null. */
+function recordAddressed(key, doc, body, byKind) {
+  if (Object.keys(body).some((field) => field !== 'thread_ids' && field !== 'addressed')) throw new Error('body must be {thread_ids, addressed?}');
+  const addressed = body.addressed ?? true;
+  if (typeof addressed !== 'boolean') throw new Error('addressed must be true or false');
+  const ids = threadIdsOf(body.thread_ids, true);
+  if (!threadsOf(key).some((t) => ids.includes(t.comment_id))) return bad(404, 'Comment not found');
+  const { marked, full } = appendAddressed(key, ids, addressedEntry(doc, byKind, addressed));
+  return full ? fullAnswer(marked) : [200, { threads: marked.map(threadView) }];
+}
+
+/** The applied revision: the next version of the series (D1), its threads addressed by the AI. */
+function applyRevision({ detail, doc, key }, changes, shared) {
+  const base = String(doc.base_title ?? doc.title ?? '').trim().replace(/\(v\d+\)$/i, '').trim();
+  const series = detail.documents.filter((d) => seriesKey('', d) === seriesKey('', doc));
+  const version = Math.max(...series.map((d) => d.version ?? 1)) + 1;
+  const content = changes.reduce((text, change) => text.replace(change.before, change.after), String(doc.content ?? ''));
+  // The row's own identity is never carried (document_history._ROW_IDENTITY_FIELDS): a saved pass's id stays on its version.
+  const carried = { ...doc };
+  delete carried.revise_job_id;
+  delete carried.llm_metadata;
+  const revised = {
+    ...carried, document_id: shared.nextMockId(doc.document_type), title: `${base} (v${version})`, base_title: base, version,
+    content, created_at: nowIso(), updated_at: nowIso(), edit_kind: 'revise', edited_from_id: doc.document_id,
+    edited_by: { sub: shared.mockCaller?.sub ?? '', kind: 'user' },
+    llm_metadata: { model: REVISE_MODEL, prompt_version: REVISE_PROMPT_VERSION },
+  };
+  detail.documents.push(revised);
+  const answeredIds = [...new Set(changes.flatMap((change) => change.thread_ids))];
+  // The version is written: a thread that cannot be marked is left out, never a failed pass.
+  const { marked } = appendAddressed(key, answeredIds, addressedEntry(revised, 'ai', true));
+  return {
+    applied_version: { document_id: revised.document_id, version },
+    addressed_thread_ids: marked.map((thread) => thread.comment_id),
+  };
+}
+
+function reviseRoute(ctx, body, shared) {
+  if (Object.keys(body).some((field) => field !== 'thread_ids')) return bad(400, 'body must be {thread_ids?}');
+  const threads = revisableThreads(ctx.key, ctx.doc, threadIdsOf(body.thread_ids, false));
+  if (threads.length === 0) return bad(400, 'No comments to revise from yet: reply to a comment or resolve it first');
+  const outcome = reviseOutcome(shared);
+  const recommendations = threads.map((thread) => ({
+    thread_id: thread.comment_id,
+    text: REWRITES.has(thread.anchor?.exact)
+      ? `Reword "${thread.anchor.exact}" so it answers this comment, and keep the evidence it cites.`
+      : 'No change needed in the text: reply to the comment to close it.',
+  }));
+  const changes = outcome === 'recommendations' ? [] : proposedChanges(threads, String(ctx.doc.content ?? ''));
+  const result = {
+    outcome, base_document_id: ctx.doc.document_id, base_version: ctx.doc.version ?? 1, recommendations, changes,
+    applied_version: null, addressed_thread_ids: [], dropped: 0,
+    model_id: REVISE_MODEL, prompt_version: REVISE_PROMPT_VERSION,
+  };
+  const answer = outcome === 'applied' && changes.length > 0 ? { ...result, ...applyRevision(ctx, changes, shared) }
+    : { ...result, outcome: outcome === 'applied' ? 'recommendations' : outcome };
+  // The job keeps the series the pass read (its config's series_id): a save of the proposal is checked against it.
+  return shared.startProjectAssistJob(ctx.projectId, 'assist_revise_from_comments', [200, answer], { series_key: ctx.key });
+}
+
 function threadAction(key, commentId, action, body) {
   const thread = threadsOf(key).find((row) => row.comment_id === commentId);
   if (!thread) return bad(404, 'Comment not found');
   if (action === 'replies') {
     if (thread.replies.length >= MAX_REPLIES) return bad(409, 'This thread has reached its reply limit');
     const reply = { reply_id: randomBytes(6).toString('hex'), author: TEAM_AUTHOR, text: textOf(body, 'text'), flagged: false, at: nowIso() };
-    return [200, { thread: replaceThread(key, { ...thread, replies: [...thread.replies, reply], updated_at: reply.at }) }];
+    return [200, { thread: threadView(replaceThread(key, { ...thread, replies: [...thread.replies, reply], updated_at: reply.at })) }];
   }
-  return [200, { thread: replaceThread(key, { ...thread, status: action === 'resolve' ? 'resolved' : 'open', updated_at: nowIso() }) }];
+  return [200, { thread: threadView(replaceThread(key, { ...thread, status: action === 'resolve' ? 'resolved' : 'open', updated_at: nowIso() })) }];
 }
 
 function shareRoute(req, projectId, doc, key, body) {
@@ -162,10 +337,13 @@ function commentsRoute(req, { doc, key, series, commentId, action }, body) {
   if (commentId === undefined) {
     if (req.method === 'GET') {
       const share = activeShare(key);
-      return [200, { series, document_id: doc.document_id, threads: threadsOf(key), share: share ? shareView(share) : null, can_edit: true }];
+      return [200, { series, document_id: doc.document_id, threads: threadsOf(key).map(threadView), share: share ? shareView(share) : null, can_edit: true }];
     }
     if (req.method === 'POST') return [200, { thread: addThread(key, newThread(doc, TEAM_AUTHOR, textOf(payload, 'text'), anchorOf(payload.anchor))) }];
     return bad(405, 'Method not allowed');
+  }
+  if (commentId === 'addressed') {
+    return req.method === 'POST' ? recordAddressed(key, doc, payload, 'user') : bad(405, 'Method not allowed');
   }
   if (req.method === 'DELETE' && action === undefined) {
     threadsBySeries.set(key, threadsOf(key).filter((row) => row.comment_id !== commentId));
@@ -185,6 +363,11 @@ function documentRoute(req, match, body, shared) {
   if (kind === 'persona-review') {
     return req.method === 'POST'
       ? shared.startProjectAssistJob(projectId, 'assist_persona_review', personaReview(detail, doc, key))
+      : bad(405, 'Method not allowed');
+  }
+  if (kind === 'revise-from-comments') {
+    return req.method === 'POST'
+      ? reviseRoute({ detail, doc, key, projectId }, body ?? {}, shared)
       : bad(405, 'Method not allowed');
   }
   if (kind === 'share') return shareRoute(req, projectId, doc, key, body);
@@ -226,6 +409,61 @@ function reviewRoute(req, match, body, shared) {
   return [200, { thread: reviewerView(replaceThread(key, { ...thread, replies: [...thread.replies, reply] })) }];
 }
 
+// ── Seeded threads (the document canvas's demo, proj_1's PRD and PR/FAQ series) ─────────────
+// Each anchor's `exact` is text of the series head in mock-server.js, so the canvas finds it.
+const TEAMMATE = { kind: 'user', sub: 'sub-viewer-demo', name: 'viewer-demo' };
+const DANA = { kind: 'persona', persona_id: 'persona_1', name: 'Deadline-Driven Dana' };
+const VICTOR = { kind: 'persona', persona_id: 'persona_2', name: 'Value-Hunter Victor' };
+const anchored = (exact, heading) => ({ exact, prefix: '', suffix: '', heading });
+const SEEDED_THREADS = [
+  { projectId: 'proj_1', documentId: 'prd_1', threads: [
+    { author: DANA, version: 3, daysOld: 1, anchor: anchored("Quiet hours are 21:00 to 08:00 in the customer's time zone", '4.2 Message rules'),
+      text: 'My trips start at 07:00. A message at 08:00 is too late: let me turn quiet hours off for an order I marked as urgent.',
+      replies: [{ author: TEAM_AUTHOR, daysOld: 0.5, text: 'Good point. Adding an "urgent order" exception to 4.2 in the next version.' }] },
+    { author: TEAMMATE, version: 2, daysOld: 3, status: 'resolved', anchor: anchored('Tell the customer about a delay within minutes of the carrier event', '3.1 Goals'),
+      text: 'Five minutes is not something we can promise when the carrier event itself is late.',
+      replies: [{ author: TEAM_AUTHOR, daysOld: 2, text: 'Changed to "within minutes", and the warning in 4.3 says what happens for late events.' }] },
+    { author: TEAMMATE, version: 3, daysOld: 0.2, anchor: null,
+      text: 'Ready for the leadership review on Thursday once the quiet-hours question is settled.', replies: [] },
+  ] },
+  { projectId: 'proj_1', documentId: 'prfaq_1', threads: [
+    { author: VICTOR, version: 3, daysOld: 1, anchor: anchored('at most once a day unless it moves again', 'Customer FAQ'),
+      text: 'Once a day is fine. If you message me twice about the same parcel, I turn the messages off.',
+      replies: [{ author: TEAM_AUTHOR, daysOld: 0.6, text: 'Fair. We will say "once a day per parcel" in the FAQ.' }] },
+    // A persona review's verdict is that persona's comment on the whole document (shared/document_review.py).
+    { author: VICTOR, version: 3, daysOld: 1, anchor: null, verdict: 'positive',
+      text: 'Clear and honest. I would trust these messages, as long as there are not too many of them.', replies: [] },
+    { author: TEAMMATE, version: 3, daysOld: 0.5, anchor: anchored('Delivery contacts per 1,000 orders', 'Internal FAQ'),
+      text: 'Where does the 42 come from? Please link the support report.',
+      replies: [{ author: TEAM_AUTHOR, daysOld: 0.3, text: 'It is last quarter\'s support report; naming it in the table.' }] },
+  ] },
+];
+const ago = (days) => new Date(Date.now() - days * DAY_MS).toISOString();
+let seeded = false;
+
+function seedThreads(shared) {
+  if (seeded) return;
+  seeded = true;
+  for (const { projectId, documentId, threads } of SEEDED_THREADS) {
+    const doc = shared.mockProjectDetails[projectId]?.documents?.find((row) => row.document_id === documentId);
+    if (!doc) continue;
+    const key = seriesKey(projectId, doc);
+    for (const { author, version, daysOld, status = 'open', anchor, text, verdict, replies } of threads) {
+      const at = ago(daysOld);
+      const versionDoc = shared.mockProjectDetails[projectId].documents
+        .find((row) => seriesKey(projectId, row) === key && (row.version ?? 1) === version) ?? doc;
+      addThread(key, {
+        ...newThread(versionDoc, author, text, anchor, verdict ? { verdict } : {}),
+        status, created_at: at, updated_at: replies.length > 0 ? ago(replies.at(-1).daysOld) : at,
+        ...(status === 'resolved' ? { status_by: TEAM_AUTHOR.sub } : {}),
+        replies: replies.map((reply) => ({
+          reply_id: randomBytes(6).toString('hex'), author: reply.author, text: reply.text, flagged: false, at: ago(reply.daysOld),
+        })),
+      });
+    }
+  }
+}
+
 function guarded(route) {
   try {
     return route();
@@ -238,6 +476,7 @@ export function handleDocumentReviewRoutes(req, res, url, send, shared) {
   const documentMatch = url.pathname.match(DOC_PATH);
   const reviewMatch = documentMatch ? null : url.pathname.match(REVIEW_PATH);
   if (!documentMatch && !reviewMatch) return false;
+  seedThreads(shared);
   const respond = (body) => send(...guarded(() => (documentMatch
     ? documentRoute(req, documentMatch, body, shared)
     : reviewRoute(req, reviewMatch, body, shared))));

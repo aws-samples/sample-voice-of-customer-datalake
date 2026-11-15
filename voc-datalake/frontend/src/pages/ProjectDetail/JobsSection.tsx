@@ -52,6 +52,7 @@ const JOB_TYPE_KEYS: Partial<Record<string, string>> = {
   generate_personas: 'jobs.types.generatePersonas',
   generate_product_report: 'jobs.types.generateProductReport',
   build_prototype: 'jobs.types.buildPrototype',
+  draft_prototype: 'jobs.types.draftPrototype',
   import_persona: 'jobs.types.importPersona',
   merge_documents: 'jobs.types.mergeDocuments',
 }

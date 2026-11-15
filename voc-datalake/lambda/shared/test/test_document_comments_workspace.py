@@ -98,6 +98,51 @@ def test_a_reply_a_status_and_a_delete_stay_in_their_scope(table):
     assert [len(dc.list_threads(table, PROJECT, SERIES, workspace=scope)) for scope in (None, B)] == [1, 1]
 
 
+def _addressed(version: int, *, addressed: bool = True) -> dict[str, Any]:
+    return dc.addressed_entry(version=version, document_id=f'doc_{version}', by_kind=dc.ADDRESSED_BY_USER,
+                              by_sub='sub-ada', addressed=addressed)
+
+
+def test_an_addressed_mark_stays_in_its_scope(table):
+    """Revise from comments' mark (voc-wiki's ``record_addressed``, merged in 7.35.00) is kept in the thread's own
+    workspace: the deployment's and the other workspace's threads of the same ids keep no mark."""
+    made = {_name(scope): _thread(table, scope) for scope in SCOPES}
+    marked = dc.record_threads_addressed(table, [made[A.ws]], _addressed(2), workspace=A)
+    assert [row['addressed']['version'] for row in marked] == [2]
+    cleared = dc.record_addressed(table, marked[0], _addressed(3, addressed=False), workspace=A)
+    assert (cleared['addressed'], len(cleared['addressed_history'])) == (None, 2)
+    for scope in (None, B):
+        [row] = dc.list_threads(table, PROJECT, SERIES, workspace=scope)
+        assert ('addressed' in row, 'addressed_history' in row) == (False, False)
+
+
+@pytest.mark.parametrize('owner', [None, B], ids=['deployment', 'other-workspace'])
+def test_an_addressed_mark_on_another_scopes_thread_is_refused_and_nothing_changes(table, owner):
+    other = _thread(table, owner)
+    before = table.scan()['Items']
+    with pytest.raises(OutOfScopeError, match='outside the workspace'):
+        dc.record_addressed(table, other, _addressed(2), workspace=A)
+    with pytest.raises(OutOfScopeError, match='outside the workspace'):
+        dc.record_threads_addressed(table, [other], _addressed(2), workspace=A)
+    assert table.scan()['Items'] == before
+
+
+def test_the_deployments_addressed_mark_is_the_request_sent_before(table):
+    item = _thread(table, None)
+    recording = Recording(table)
+    entry = _addressed(2)
+    dc.record_addressed(recording, item, entry)
+    assert recording.calls == [('update_item', {
+        'Key': {'pk': item['pk'], 'sk': item['sk']},
+        'UpdateExpression': ('SET addressed_history = list_append(if_not_exists(addressed_history, :empty), :entry), '
+                             'addressed = :current, updated_at = :now'),
+        'ConditionExpression': ('attribute_exists(sk) AND (attribute_not_exists(addressed_history) '
+                                'OR size(addressed_history) < :max)'),
+        'ExpressionAttributeValues': {':empty': [], ':entry': [dict(entry)], ':max': dc.MAX_ADDRESSED_HISTORY,
+                                      ':now': entry['at'], ':current': dict(entry)},
+        'ReturnValues': 'ALL_NEW', 'ReturnValuesOnConditionCheckFailure': 'ALL_OLD'})]
+
+
 @pytest.mark.parametrize('call', [
     lambda table, other: dc.put_thread(table, other, workspace=A),
     lambda table, other: dc.append_reply(table, other, dc.reply_item({'kind': 'user'}, 'x'), workspace=A),

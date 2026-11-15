@@ -45,33 +45,48 @@ describe('uploadableLogo', () => {
     expect(await failureOf(uploadableLogo(imageFile('broken.png', 'image/png', 2_000_000)))).toBe('unreadable')
   })
 
-  // Regression (commit review): a browser that cannot encode WebP answers PNG bytes, once uploaded as image/webp.
-  it('skips a rung the browser answers with another type, and never labels PNG bytes as WebP', async () => {
-    stubImaging(1024, 1024)
-    class PngOnlyCanvas {
+  /** A canvas whose WebP encode answers PNG (a browser without WebP encoding); PNG bytes ≈ `perPixel` × pixels. */
+  function pngOnlyCanvas(perPixel: number, drawn: number[] = []) {
+    return class {
       readonly width: number
       readonly height: number
-      constructor(width: number, height: number) { this.width = width; this.height = height }
+      constructor(width: number, height: number) { this.width = width; this.height = height; drawn.push(width) }
       getContext() { return { fillStyle: '', fillRect: () => {}, drawImage: () => {} } }
-      convertToBlob(options: { type: string }): Promise<Blob> {
-        // PNG rung: 1.2 MB, over the target; every WebP rung comes back as PNG.
-        const size = options.type === 'image/png' ? 1_200_000 : (this.width * this.height) / 4
+      convertToBlob(): Promise<Blob> {
         const blob = new Blob([new Uint8Array(8)], { type: 'image/png' })
-        Object.defineProperty(blob, 'size', { value: size })
+        Object.defineProperty(blob, 'size', { value: Math.round(this.width * this.height * perPixel) })
         return Promise.resolve(blob)
       }
     }
-    vi.stubGlobal('OffscreenCanvas', PngOnlyCanvas)
+  }
+
+  // Regression (7.00.00 review): without WebP encoding the ladder had no smaller PNG, so such a logo was refused.
+  it('without WebP encoding, falls back to a smaller PNG instead of refusing the logo', async () => {
+    stubImaging(1024, 1024)
+    // 1024 px PNG: 1.2 MB (over the target); 768 px: about 0.68 MB.
+    const drawn: number[] = []
+    vi.stubGlobal('OffscreenCanvas', pngOnlyCanvas(1.15, drawn))
+    const small = await uploadableLogo(imageFile('logo.png', 'image/png', 2_000_000))
+    expect([small.type, small.name]).toStrictEqual(['image/png', 'logo.png'])
+    // PNG 1024 (too big), four WebP rungs (answered as PNG, skipped), then the PNG 768 rung wins.
+    expect(drawn).toStrictEqual([1024, 1024, 1024, 768, 512, 768])
+  })
+
+  // Regression (commit review): a WebP rung answered with PNG bytes was once uploaded labelled image/webp.
+  it('never labels PNG bytes as WebP, and refuses a logo no rung gets under 1 MB', async () => {
+    stubImaging(1024, 1024)
+    vi.stubGlobal('OffscreenCanvas', pngOnlyCanvas(5))
     expect(await failureOf(uploadableLogo(imageFile('logo.png', 'image/png', 2_000_000)))).toBe('too-large')
   })
 })
 
 describe('LOGO_IMAGE_POLICY', () => {
-  it('keeps transparency on every rung: PNG first, then WebP, never JPEG', () => {
-    const types = LOGO_IMAGE_POLICY.ladder.map((step) => step.type)
-    expect(types[0]).toBe('image/png')
-    expect(types).not.toContain('image/jpeg')
-    expect(new Set(types.slice(1))).toStrictEqual(new Set(['image/webp']))
+  it('keeps transparency on every rung: PNG, then WebP, then smaller PNGs, never JPEG', () => {
+    const rungs = LOGO_IMAGE_POLICY.ladder.map((step) => `${step.type}@${step.maxEdge}`)
+    expect(rungs).toStrictEqual([
+      'image/png@1024', 'image/webp@1024', 'image/webp@1024', 'image/webp@768', 'image/webp@512',
+      'image/png@768', 'image/png@512',
+    ])
   })
 
   it('never goes over 1024 px or 1 MB', () => {

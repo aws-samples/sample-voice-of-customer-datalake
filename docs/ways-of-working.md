@@ -66,18 +66,47 @@ The UI only follows the mode. The Projects API enforces it in `lambda/shared/ai_
 Gated routes (PR/FAQ / PRD only):
 
 - `POST /projects/{id}/document` (generate; agent nodes `write_prfaq`, `write_prd` and
-  `revise_document` go through it, and so does MCP `generate` with `step` `prfaq` / `prd`);
+  `revise_document` go through it, and so does MCP `projects_generate` with `step` `prfaq` / `prd`);
 - `POST /projects/{id}/decisions/{doc}/pursue` (seeds a PR/FAQ);
 - `POST /projects/{id}/documents/merge` with `output_type` `prfaq` / `prd`;
 - `POST /projects/{id}/prfaq-autofill` and `POST /projects/{id}/documents/suggest-brief`;
 - `PUT /projects/{id}/documents/{doc}` and `.../versions/{v}/restore`, for autonomous callers only:
   a person's own edit is their text and stays allowed in every mode. This covers MCP
-  `update_document` and plan `update_document` steps;
+  `documents_update` and plan `update_document` steps;
 - `POST /projects/{id}/documents` with `document_type` `prfaq` / `prd` for autonomous callers
   (a person writing by hand is always allowed).
 
 A refused agent step fails with a plain sentence in the run log. A refused MCP call is audited as
 `denied`.
+
+## Revise from comments
+
+[Revise from comments](document-review.md#revise-from-comments) on a PR/FAQ or PRD is never refused for
+the way of working: it does as much as the mode allows, and the outcome is decided when the pass starts
+(an MCP token starts it with `documents_revise_from_comments`).
+The route asks the gate above itself (the same check, the owner rule included): if the gate would
+refuse the write, the pass recommends; if it would allow it, the caller's own mode, as the gate read
+it (one read), picks `applied` (AI-driven) or `proposal`.
+
+| Caller | Human-driven | Human-driven, type unlocked | AI-assisted | AI-driven |
+|---|---|---|---|---|
+| interactive (the person in the SPA) | `recommendations` | `proposal` | `proposal` | `applied` |
+| autonomous (agent, plan step, MCP token) | `recommendations` | `recommendations` | `recommendations` | `applied` (the project's owner too must be AI-driven, else `recommendations`) |
+
+- `recommendations`: one suggestion per thread; nothing is written (like persona review).
+- `proposal`: the changes come back to the canvas; the person accepts or rejects each and saves the
+  version themselves (their own save, so allowed in every mode, sent with the pass's `revise_job_id`; the
+  server checks the pass and records it like an applied pass: `edit_kind` `revise`, the person in `edited_by`,
+  and the pass's model and prompt version in `llm_metadata`).
+- `applied`: the server writes the next version itself (who asked, and the model and prompt version
+  that wrote it, are recorded on it) and marks the
+  threads addressed; History restores the previous one, and the canvas's Undo also clears the marks
+  (`POST …/comments/addressed` with `addressed: false`).
+
+No person to evaluate (a legacy MCP token without a minter) gives `recommendations`. An unreadable
+mode row (the caller's, or for an autonomous call the owner's) fails the start with the gate's
+"Could not check your way of working with AI. Please retry." (403), as on every gated route: it is
+not a decision about the person, so it never quietly downgrades the pass.
 
 The read fails closed: an unreadable mode row refuses the write (Projects API) or locks AI writing
 for the run (assistant). There is no mode row = AI-driven.

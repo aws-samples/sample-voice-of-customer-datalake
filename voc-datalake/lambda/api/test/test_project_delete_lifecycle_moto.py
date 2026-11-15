@@ -158,8 +158,10 @@ def test_the_sweep_prefixes_match_the_writers_key_layout():
     import product_context
     from product_doc_extractor import handler as extractor
     from projects import product_docs_project_prefix, prototype_project_prefix
-    from shared.prototypes import prototype_s3_key
+    from shared.prototypes import prototype_draft_s3_key, prototype_s3_key
 
     assert prototype_s3_key('p1', 'd1').startswith(prototype_project_prefix('p1'))
+    # A prototype draft's object goes with its project too (docs/prototype-builder.md, part 2).
+    assert prototype_draft_s3_key('p1', 'job_1').startswith(prototype_project_prefix('p1'))
     assert extractor._extracted_key('p1', 'd1').startswith(product_docs_project_prefix('p1'))
     assert "f'projects/{project_id}/product_docs/raw/" in inspect.getsource(product_context)

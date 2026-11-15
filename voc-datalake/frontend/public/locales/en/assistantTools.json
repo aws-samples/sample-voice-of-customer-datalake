@@ -332,6 +332,24 @@
       "off": "Off",
       "onNote": "Scheduled imports run again, and a tripped circuit breaker is closed.",
       "offNote": "Scheduled imports stop. Nothing already imported is touched."
+    },
+    "prototypeDraft": {
+      "prototype": "Prototype:",
+      "instruction": "Instruction the draft gets",
+      "note": "This makes a draft only. It shows on the prototype’s page when it is ready, and nothing is saved until you apply it there.",
+      "pins_one": "{{count, number}} selected tester pin",
+      "pins_other": "{{count, number}} selected tester pins",
+      "noScreen": "(no screen)",
+      "pinsInstruction": "Only the pin ids are sent: the server reads these pins itself and writes the instruction (incorporate the selected tester feedback, answered per pin: Done or Not done)."
+    },
+    "walkthrough": {
+      "remove": "The walkthrough is removed.",
+      "step": "Step {{n}} of {{total}}",
+      "position": "a position on {{screen}}",
+      "thisScreen": "this screen",
+      "replaces_one": "Replaces the {{count, number}} saved step.",
+      "replaces_other": "Replaces the {{count, number}} saved steps.",
+      "note": "Saving writes a new version of the prototype; viewers see the steps when they open it."
     }
   },
   "tools": {
@@ -519,6 +537,13 @@
       "title": "Create users",
       "titleWith_one": "Create {{count, number}} user",
       "titleWith_other": "Create {{count, number}} users"
+    },
+    "draft_prototype_revision": {
+      "title": "Draft a prototype revision"
+    },
+    "set_prototype_walkthrough": {
+      "title": "Save a prototype walkthrough",
+      "titleRemove": "Remove the prototype's walkthrough"
     }
   }
 }

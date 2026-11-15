@@ -22,6 +22,11 @@ const NOT_GROUPED: Readonly<Record<string, string>> = {
   'tests/workspaces.spec.ts': 'dev mock only (it needs the mock\'s two fictional workspaces)',
   'tests/workspace-admin.spec.ts': 'dev mock only (creates a workspace and changes memberships, which a deployment cannot undo yet)',
   'tests/cross-workspace.spec.ts': 'dev mock only (it needs the mock\'s two fictional workspaces)',
+  'tests/document-canvas.spec.ts': 'dev mock only (its viewer step needs the mock read-only project)',
+  'tests/document-canvas-a11y.spec.ts': 'dev mock only (its viewer step needs the mock read-only project)',
+  'tests/document-sections.spec.ts': 'dev mock only (the counts are the mock project\'s)',
+  'tests/document-canvas-perf.spec.ts': 'dev mock only (writes two long documents; mock only, as the canvas spec)',
+  'tests/prototype-feedback.spec.ts': 'dev mock only (builds two prototype versions, an LLM job on a deployment)',
   'tests/cleanup.spec.ts': 'the shared teardown, run by every group',
 }
 
