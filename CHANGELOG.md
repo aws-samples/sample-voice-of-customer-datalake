@@ -17,6 +17,19 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.36.00] - 2026-11-15
+
+Merge of main's 7.01.00 (8 commits): a website design reference picks the company's logo with a small vision call over numbered candidates and the browser draws that element alone; the page's share image is never the logo. Section 7.01.00 (from main) below is main's, under its own number.
+
+### Changed
+
+- The logo pick lands as main wrote it; the design capture's role keeps this branch's read of the default-model partition, which the pick's model choice reads here (`voc-datalake/lib/stacks/design-capture.ts`). The Radar trend chart test stays as this branch has it (main's fix of the same aged-out date was already in it).
+
+### Upgrade notes
+
+- Deploy as main's 7.01.00 says: each website capture makes one more Bedrock call on the enrichment surface (Claude Haiku 5.5 by default, or the deployment's pinned default model when one is set at deploy); references read before keep their logo until refreshed.
+- As on every release, the version moves the `APP_VERSION` of the Api and Processing Lambdas, so those template hashes in `voc-datalake/lib/test-support/baseline.json` change.
+
 ## [7.35.00] - 2026-11-15
 
 Merge of voc-autonomous into voc-multiplayer: the autonomous engineering agents (the repository broker and its GitHub and GitLab connectors, the run's task board, bus and conversation, the MicroVM and AgentCore runtimes, the quality gate and gate packs, skills, the knowledge pack, the learning loop and scorecards, the spend ledger and budgets, the engineering flows and the run monitor), all off unless a deployment is built with `-c engineeringAgents=true`. Sections 7.10.00 to 7.01.00 and 6.29.00 to 6.04.09 marked (voc-autonomous) below are that branch's own releases, under their own numbers. What each part does is in those sections and in [docs/autonomous-engineering.md](docs/autonomous-engineering.md).
@@ -1413,6 +1426,25 @@ Projects > Documents opens each document as a page you edit in place, and every 
 
 - Frontend only: `npm run deploy:frontend`. No stack, route or stored data changes.
 - To use the review gate locally, from the repo's top level: `hooks=$(git config core.hooksPath || git rev-parse --git-path hooks)`, then `cp scripts/git-hooks/pre-commit "$hooks/pre-commit" && chmod +x "$hooks/pre-commit"` (CONTRIBUTING.md, "Review gate before commit"). The hooks directory is per clone, so it also checks the clone's other worktrees, and refuses a branch without `scripts/ai-review/gate.mjs`.
+
+## [7.01.00] - 2026-11-15 (from main)
+
+A website design reference finds the company's logo with a small vision call and the browser draws exactly that element, so the logo it offers is the real one instead of a photo, a flag or a share card.
+
+### Changed
+
+- Company → Design system → a **website** reference: the logo is picked from every element near the top of the page (images, inline SVGs, CSS backgrounds and text logos, inside web components too), by one small vision call that sees the header with each candidate numbered. The browser then draws that element alone, with a transparent background and trimmed to its pixels, so **Use this logo** gets what the page shows. A white logo made for a dark header is drawn on that header's colour, so it stays visible in a white prototype. When nothing on the page is the logo, the reference has no logo instead of a guess. Measured on 64 live websites with this release, a clean, correct logo was found on every one of the 61 the browser could read (3 blocked it); before, the right logo was found on 28 and a non-logo image was saved on 27. The pick's model call gives up after 25 s and is not started late in the browser session; the scoring rules decide then. See [docs/company-context.md](docs/company-context.md).
+- The page's share image (`og:image`) is no longer used as the logo or copied as an icon.
+
+### Fixed
+
+- A Radar trend chart TEST (not the chart) pinned a fixed date and failed once that date fell outside its 30-day window; the chart keeps drawing a returned point outside the window as an extra day, as designed.
+
+### Upgrade notes
+
+- Each website capture makes one more Bedrock call, on the **enrichment** surface (Settings → AI models; Claude Haiku 5.5 by default), of about 2,500 input tokens. No new permission: the capture role already invokes every allowlisted model. When the call fails, scoring rules pick the logo.
+- References read before this release keep their logo until they are fetched again (**Refresh**).
+- VocIngestionStack updates the `voc-design-capture` code. VocApiStack and VocProcessingStack change only by the app version their Lambdas record; no resource is replaced.
 
 ## [7.00.02] - 2026-11-14 (from main)
 
