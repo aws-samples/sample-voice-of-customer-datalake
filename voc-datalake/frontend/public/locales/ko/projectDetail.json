@@ -7,18 +7,9 @@
     "personaTitle": "페르소나를 삭제하시겠습니까?"
   },
   "documentModal": {
-    "cancel": "취소",
     "conflict": "그사이 다른 사람이 이 문서의 최신 버전을 저장했습니다.",
     "conflictReload": "최신 버전 불러오기",
-    "conflictSaveAnyway": "그래도 내 변경 저장",
-    "contentLabel": "콘텐츠 (Markdown)",
-    "contentPlaceholder": "Markdown으로 문서를 작성하세요...",
-    "create": "생성",
-    "createDocument": "문서 생성",
-    "creating": "생성 중...",
-    "preview": "미리보기",
-    "titleLabel": "제목",
-    "titlePlaceholder": "문서 제목..."
+    "conflictSaveAnyway": "그래도 내 변경 저장"
   },
   "documents": {
     "deleteDocument": "문서 삭제",
@@ -60,7 +51,11 @@
       "new": "새로 만들기",
       "newPrd": "새 PRD",
       "newPrfaq": "새 PR/FAQ",
-      "newPrototype": "새 프로토타입"
+      "newPrototype": "새 프로토타입",
+      "newBlank": "빈 문서",
+      "newBlankHint": "개요만 있는 빈 {{type}}: 페이지에서 이름을 지정하고 작성합니다.",
+      "newWizard": "마법사로 만들기",
+      "newWizardHint": "먼저 근거를 선택하고 안내 질문에 답합니다."
     },
     "noDocuments": "문서 없음",
     "ordinal": "{{total, number}}개 중 {{ordinal}}번째",
@@ -207,6 +202,25 @@
       "documentsSkipped_one": "선택한 참고 문서 {{count, number}}개가 제외되었습니다(처음 {{cap, number}}개만 읽습니다).",
       "documentsSkipped_other": "선택한 참고 문서 {{count, number}}개가 제외되었습니다(처음 {{cap, number}}개만 읽습니다).",
       "handWritten": "직접 작성한 문서: 아직 고객 피드백을 인용하지 않습니다."
+    },
+    "blank": {
+      "untitled": {
+        "custom": "제목 없는 문서",
+        "prd": "제목 없는 PRD",
+        "prfaq": "제목 없는 PR/FAQ"
+      },
+      "numbered": "{{title}} {{n}}",
+      "nameRequired": "먼저 이름을 지정하세요.",
+      "nameTaken": "이 프로젝트에는 이미 “{{title}}”(이)라는 {{type}}이(가) 있습니다. 이 이름으로는 그 문서에 버전만 추가됩니다. 다른 이름을 선택하세요.",
+      "createFailed": "{{type}}을(를) 만들 수 없습니다. 다시 시도하세요.",
+      "createDocumentFailed": "문서를 만들 수 없습니다. 다시 시도하세요.",
+      "draftLabel": "새 {{type}}",
+      "handWritten": "직접 작성",
+      "nameHint": "{{type}}의 이름을 지정한 다음 Enter 키를 눌러 작성을 시작하세요. 이름은 모든 버전에 유지되므로 {{type}}을(를) 만든 후에는 변경할 수 없습니다.",
+      "creating": "만드는 중…",
+      "startWriting": "작성 시작",
+      "cancel": "취소",
+      "outlineNote": "{{type}}이(가) 개요와 함께 여기에 열리며, 바로 작성할 수 있습니다."
     }
   },
   "imageErrors": {
@@ -796,7 +810,9 @@
       "evidence": "근거",
       "evidenceEmpty": "이 문서에 기록된 리뷰나 기능 요청이 없습니다.",
       "showAll": "모두 보기({{n, number}})",
-      "featureRequests": "기능 요청"
+      "featureRequests": "기능 요청",
+      "titleHint": "클릭하여 이름을 바꿉니다. Enter는 저장, Escape는 취소합니다.",
+      "titleRequired": "문서에는 이름이 필요합니다."
     },
     "comments": {
       "hint": "구절에 댓글을 달려면 텍스트를 선택하고 [댓글]을 누르거나 Ctrl+Alt+M(Mac에서는 ⌘⌥M)을 누르세요.",
@@ -923,8 +939,36 @@
       "commentsHeading": "열린 댓글",
       "includeComments": "열린 댓글 포함",
       "saved": "저장됨",
-      "trigger": "파일",
-      "wholeDocument": "문서 전체에 대한 댓글"
+      "trigger": "문서",
+      "wholeDocument": "문서 전체에 대한 댓글",
+      "rename": "이름 바꾸기"
+    },
+    "menubar": {
+      "label": "문서 메뉴",
+      "edit": "편집",
+      "format": "서식",
+      "insert": "삽입",
+      "view": "보기",
+      "undo": "실행 취소",
+      "redo": "다시 실행",
+      "link": "링크…",
+      "image": "이미지…",
+      "comments": "댓글",
+      "fullWidth": "전체 너비",
+      "commentsButton_one": "댓글, 열림 {{count, number}}개",
+      "commentsButton_other": "댓글, 열림 {{count, number}}개",
+      "commentsHint": "댓글 표시 또는 숨기기"
+    },
+    "meta": {
+      "label": "문서 세부 정보",
+      "author": "작성자: {{name}}",
+      "owner": "소유자: {{name}}",
+      "edited": "편집: {{when}}",
+      "words_one": "{{count, number}}단어",
+      "words_other": "{{count, number}}단어",
+      "minutes_one": "{{count, number}}분 분량",
+      "minutes_other": "{{count, number}}분 분량",
+      "wordsAndMinutes": "{{words}} · {{minutes}}"
     }
   }
 }

@@ -82,6 +82,11 @@ export interface DocumentSave {
   readonly reviseRefused: { readonly message: string | null } | null
   /** "Save as my own edit": the refused save again, as a plain edit (no pass named; the same revision check). */
   readonly saveAsOwnEdit: () => Promise<void>
+  /**
+   * Rename a research / custom document: ONE new version carrying only `title` (the stored content stays, so text
+   * typed and not saved stays the draft), with the revision check (a 409 is the conflict, like a save's).
+   */
+  readonly rename: (title: string) => Promise<void>
 }
 
 /** 400: the server refused the body; with `REVISE_REFUSED_CODE`, the pass a revise save names (`reviseRefused`). */
@@ -93,6 +98,8 @@ const REVISE_REFUSED_CODE = 'revise_refused'
 interface SaveMode {
   readonly checked: boolean
   readonly asRevise: boolean
+  /** A rename: only this title is sent (no content: the server keeps the stored text). */
+  readonly title?: string
 }
 
 /**
@@ -109,6 +116,21 @@ function updateOf(document: ProjectDocument, sent: DocumentEdits, checked: boole
     ...(checked ? { expectedRevision: documentRevision(document) } : {}),
     ...(versionManaged && reviseJobId !== null ? { reviseJobId } : {}),
   }
+}
+
+/** A rename's PUT: the title alone, checked against the revision the canvas holds. */
+function renameOf(document: ProjectDocument, title: string): DocumentUpdate {
+  return { docId: document.document_id, title, expectedRevision: documentRevision(document) }
+}
+
+/** What `mode` sends over `document`, and the edits it stands for (a rename: the title over the stored text). */
+function requestOf(mode: SaveMode, document: ProjectDocument, edits: () => DocumentEdits, reviseJobId: (content: string) => string | null) {
+  if (mode.title !== undefined) {
+    return { sent: { title: mode.title, content: document.content }, variables: renameOf(document, mode.title) }
+  }
+  const sent = edits()
+  const revise = mode.asRevise ? reviseJobId(sent.content) : null
+  return { sent, variables: updateOf(document, sent, mode.checked, revise) }
 }
 
 /**
@@ -144,13 +166,11 @@ export function useDocumentSave({
   }, [projectId, queryClient, stored])
 
   /** Save the edits; an answer for a canvas that moved on since resolves and changes nothing (see `generation`). */
-  const update = useCallback(async ({ checked, asRevise }: SaveMode) => {
+  const update = useCallback(async (mode: SaveMode) => {
+    const { checked } = mode
     const sentOn = generation()
     const current = () => generation() === sentOn
-    const sent = edits()
-    const document = stored()
-    const reviseJobId = asRevise ? (revised?.(sent.content) ?? null) : null
-    const variables = updateOf(document, sent, checked, reviseJobId)
+    const { sent, variables } = requestOf(mode, stored(), edits, (content) => revised?.(content) ?? null)
     try {
       const result = await updateDoc(variables)
       if (!current()) return
@@ -181,6 +201,8 @@ export function useDocumentSave({
     [refused, update],
   )
 
+  const rename = useCallback((title: string) => update({ checked: true, asRevise: false, title }), [update])
+
   // A failed refetch rejects: the conflict stays on screen, and the draft with it. An answer for a canvas that
   // moved on (Discard, another version followed, a save landed) or that was typed on meanwhile changes nothing:
   // what is on the canvas now is newer than what the load was asked over.
@@ -207,6 +229,6 @@ export function useDocumentSave({
 
   return {
     save, saveAnyway, loadLatest, loading, conflict, clearConflict,
-    reviseRefused: refused === null ? null : { message: refused.message }, saveAsOwnEdit,
+    reviseRefused: refused === null ? null : { message: refused.message }, saveAsOwnEdit, rename,
   }
 }

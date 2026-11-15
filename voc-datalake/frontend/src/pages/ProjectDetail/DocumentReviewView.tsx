@@ -46,6 +46,11 @@ interface DocumentReviewViewProps {
   readonly evidence?: ReactNode
   /** The page's canvas (useCanvasDocument): "Revise from comments" follows its saves, reloads and selects through it. */
   readonly canvas: ReviseCanvas
+  /** The page hid the comments panel (View → Comments); starting a comment shows it again (`onRevealRail`). */
+  readonly railHidden?: boolean
+  readonly onRevealRail?: () => void
+  /** The caret goes to the start of the text once the editor is there (a document just created blank). */
+  readonly autoFocus?: boolean
 }
 
 type ReviewState = { readonly kind: 'idle' } | { readonly kind: 'running' }
@@ -116,6 +121,7 @@ function useEditedText({ generation }: ReviseCanvas, onChange: ((markdown: strin
 
 export default function DocumentReviewView({
   projectId, document, markdown, hasPersonas, editable, onChange, handleRef, onOutlineChange, evidence, canvas,
+  railHidden, onRevealRail, autoFocus,
 }: DocumentReviewViewProps) {
   const { t } = useTranslation('components')
   const comments = useDocumentComments(projectId, document.document_id)
@@ -170,6 +176,7 @@ export default function DocumentReviewView({
     <CommentedDocument contentRoot={contentRoot} revision={draft}
       threads={threads} viewed={{ documentId: document.document_id }}
       actions={actions} canComment={canComment} commentRef={commenting} renderRail={renderRail}
+      railHidden={railHidden} onRevealRail={onRevealRail}
       // Comments are extra: the document itself always shows.
       notice={comments.query.isError ? <p role="alert" className="text-xs text-warn">{t('documentComments.loadFailed')}</p> : null}
       toolbar={toolbar}>
@@ -179,7 +186,7 @@ export default function DocumentReviewView({
       ) : null}
       <CanvasEditor markdown={markdown} editable={editable} ariaLabel={document.title} onChange={change}
         onOutlineChange={onOutlineChange} onCommentSelection={canComment ? onCommentSelection : undefined}
-        handleRef={setHandle} className={READING_TEXT_CLASS} />
+        handleRef={setHandle} className={READING_TEXT_CLASS} autoFocus={autoFocus} />
     </CommentedDocument>
   )
 }

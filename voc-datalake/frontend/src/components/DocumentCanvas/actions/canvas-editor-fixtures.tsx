@@ -18,6 +18,9 @@ export function FakeCanvasEditor({ markdown, editable, ariaLabel, onChange, hand
     scrollToHeading: () => { /* a textarea has no headings */ },
     focus: () => root.current?.focus(),
     clearSelection: () => { root.current?.setSelectionRange(root.current.selectionEnd, root.current.selectionEnd) },
+    // A textarea has none of the editor's commands.
+    run: () => false,
+    can: () => false,
   }), [])
   return (
     <textarea ref={root} aria-label={ariaLabel} readOnly={!editable} value={value}

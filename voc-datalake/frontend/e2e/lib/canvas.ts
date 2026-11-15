@@ -4,9 +4,10 @@
  * components.json `documentComments`, `reviewShare`, `unsavedChanges`), so a renamed label fails loudly here.
  *
  * - the canvas: a `textbox` named by the document's title (CanvasEditor, contenteditable);
- * - the page's action bar: the group "Document actions" with the save status (`role=status`), Discard, Save, Full
- *   screen (the focus view, `?view=focus`) and the "File" menu (Save, Share for review, Copy, Download as Markdown,
- *   Print or save as PDF, Include open comments, Download as TXT, Copy to Kiro, History, Delete document);
+ * - the page's action bar: the group "Document actions" with its menu bar (the group "Document menus": the
+ *   "Document" menu — Save, Rename, Share for review, Copy, Download as Markdown, Print or save as PDF, Include open
+ *   comments, Download as TXT, Copy to Kiro, History, Delete document — then Edit, Format, Insert, View), the save
+ *   status (`role=status`), Discard, Save and Full screen (the focus view, `?view=focus`);
  * - the outline: the navigation "Contents"; the floating format bar: the toolbar "Text formatting"; the "/" menu: the
  *   listbox "Blocks".
  */
@@ -40,12 +41,15 @@ export const saveStatus = (page: Page): Locator => actionsBar(page).getByRole('s
 
 export const barButton = (page: Page, name: string): Locator => actionsBar(page).getByRole('button', { name, exact: true })
 
-/** The page's "File" menu (DocumentMenu) and its button in the bar. */
-export const fileMenu = (page: Page): Locator => page.getByRole('menu', { name: 'File', exact: true })
+/** The name of the page's first menu, "Document" (DocumentMenu; "File" before 7.38.00), and of its button in the bar. */
+export const DOCUMENT_MENU = 'Document'
 
-/** Opens the File menu (unless open) and returns its item `name` (a menuitem, or the "Include open comments" checkbox). */
+/** The page's "Document" menu (DocumentMenu) and its button in the bar. */
+export const fileMenu = (page: Page): Locator => page.getByRole('menu', { name: DOCUMENT_MENU, exact: true })
+
+/** Opens the Document menu (unless open) and returns its item `name` (a menuitem, or the "Include open comments" checkbox). */
 export async function fileMenuItem(page: Page, name: string): Promise<Locator> {
-  if (await fileMenu(page).count() === 0) await barButton(page, 'File').click()
+  if (await fileMenu(page).count() === 0) await barButton(page, DOCUMENT_MENU).click()
   await expect(fileMenu(page)).toBeVisible()
   return fileMenu(page).getByRole('menuitem', { name, exact: true }).or(fileMenu(page).getByRole('menuitemcheckbox', { name, exact: true }))
 }

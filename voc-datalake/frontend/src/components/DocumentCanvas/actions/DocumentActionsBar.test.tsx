@@ -1,6 +1,7 @@
 /**
  * The document page's action bar: the save status (version and time of the stored version, "Unsaved changes",
- * "Saving…"), Save / Discard for editors only, "Full screen" (the focus view's toggle) and the "File" menu: Save with
+ * "Saving…"), Save / Discard for editors only, "Full screen" (the focus view's toggle) and the "Document" menu, the
+ * first of its menu bar (the other menus: DocumentActionsBar.menubar.test.tsx): Save with
  * its state, Share for a PR/FAQ or PRD only, the exports of the saved version (the PDF optionally with the open
  * comments), History (restoring a version selects it, which reloads the canvas) and Delete; the conflict banner under
  * it. The menu is a WAI-ARIA menu button (arrow keys, Escape back to the button).
@@ -150,14 +151,17 @@ describe('DocumentActionsBar: status, Save and Discard', () => {
     expect(screen.getByRole('button', { name: actions.save }).closest('[data-action-bar]')).not.toBeNull()
   })
 
-  it('keeps Save, Discard, Full screen and File in one group at the end of the row, File last (a phone wraps it whole)', () => {
+  it('opens the row with the menu bar (Document first), and keeps Save, Discard and Full screen in one group at its end', () => {
     renderBar()
     const bar = screen.getByRole('group', { name: actions.toolbarLabel })
+    const menus = screen.getByRole('group', { name: enProjectDetail.canvas.menubar.label })
     const controls = screen.getByTestId('document-actions-controls')
-    const inControls = [actions.save, actions.discard, enProjectDetail.canvas.focus.button, menuText.trigger]
+    const inControls = [actions.save, actions.discard, enProjectDetail.canvas.focus.button]
       .map((name) => controls.contains(screen.getByRole('button', { name })))
-    expect({ inControls, last: bar.lastElementChild === controls, fileLast: controls.lastElementChild?.contains(fileButton()) })
-      .toStrictEqual({ inControls: [true, true, true, true], last: true, fileLast: true })
+    expect({
+      inControls, last: bar.lastElementChild === controls, first: bar.firstElementChild === menus,
+      documentFirst: within(menus).getAllByRole('button')[0] === fileButton(),
+    }).toStrictEqual({ inControls: [true, true, true], last: true, first: true, documentFirst: true })
   })
 
   it('says "Saving…" while a save is in flight', () => {

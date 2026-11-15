@@ -7,18 +7,9 @@
     "personaTitle": "Delete Persona?"
   },
   "documentModal": {
-    "cancel": "Cancel",
     "conflict": "Someone saved a newer version of this document meanwhile.",
     "conflictReload": "Load the latest",
-    "conflictSaveAnyway": "Save mine anyway",
-    "contentLabel": "Content (Markdown)",
-    "contentPlaceholder": "Write your document in Markdown...",
-    "create": "Create",
-    "createDocument": "Create Document",
-    "creating": "Creating...",
-    "preview": "Preview",
-    "titleLabel": "Title",
-    "titlePlaceholder": "Document title..."
+    "conflictSaveAnyway": "Save mine anyway"
   },
   "documents": {
     "deleteDocument": "Delete document",
@@ -60,7 +51,11 @@
       "new": "New",
       "newPrd": "New PRD",
       "newPrfaq": "New PR/FAQ",
-      "newPrototype": "New prototype"
+      "newPrototype": "New prototype",
+      "newBlank": "Blank",
+      "newBlankHint": "An empty {{type}} from its outline: you name it and write it on the page.",
+      "newWizard": "With the wizard",
+      "newWizardHint": "Choose the evidence and answer the guided questions first."
     },
     "noDocuments": "No documents",
     "ordinal": "{{ordinal}} of {{total, number}}",
@@ -207,6 +202,25 @@
       "documentsSkipped_one": "{{count, number}} selected reference document was left out (only the first {{cap, number}} are read).",
       "documentsSkipped_other": "{{count, number}} selected reference documents were left out (only the first {{cap, number}} are read).",
       "handWritten": "Written by hand: cites no customer feedback yet."
+    },
+    "blank": {
+      "untitled": {
+        "custom": "Untitled document",
+        "prd": "Untitled PRD",
+        "prfaq": "Untitled PR/FAQ"
+      },
+      "numbered": "{{title}} {{n}}",
+      "nameRequired": "Give it a name first.",
+      "nameTaken": "This project already has a {{type}} named “{{title}}”: this name would only add a version to it. Choose another name.",
+      "createFailed": "The {{type}} could not be created. Try again.",
+      "createDocumentFailed": "The document could not be created. Try again.",
+      "draftLabel": "New {{type}}",
+      "handWritten": "Written by hand",
+      "nameHint": "Name your {{type}}, then press Enter to start writing. Its name stays with every version, so it cannot change once the {{type}} is created.",
+      "creating": "Creating…",
+      "startWriting": "Start writing",
+      "cancel": "Cancel",
+      "outlineNote": "The {{type}} opens here with its outline, for you to write in."
     }
   },
   "imageErrors": {
@@ -796,7 +810,9 @@
       "evidence": "Evidence",
       "evidenceEmpty": "No reviews or feature requests were recorded for this document.",
       "showAll": "Show all ({{n, number}})",
-      "featureRequests": "Feature requests"
+      "featureRequests": "Feature requests",
+      "titleHint": "Click to rename. Enter saves, Escape cancels.",
+      "titleRequired": "A document needs a name."
     },
     "comments": {
       "hint": "To comment on a passage, select it and press Comment, or press Ctrl+Alt+M (⌘⌥M on a Mac).",
@@ -923,8 +939,36 @@
       "commentsHeading": "Open comments",
       "includeComments": "Include open comments",
       "saved": "Saved",
-      "trigger": "File",
-      "wholeDocument": "On the whole document"
+      "trigger": "Document",
+      "wholeDocument": "On the whole document",
+      "rename": "Rename"
+    },
+    "menubar": {
+      "label": "Document menus",
+      "edit": "Edit",
+      "format": "Format",
+      "insert": "Insert",
+      "view": "View",
+      "undo": "Undo",
+      "redo": "Redo",
+      "link": "Link…",
+      "image": "Image…",
+      "comments": "Comments",
+      "fullWidth": "Full width",
+      "commentsButton_one": "Comments, {{count, number}} open",
+      "commentsButton_other": "Comments, {{count, number}} open",
+      "commentsHint": "Show or hide the comments"
+    },
+    "meta": {
+      "label": "Document details",
+      "author": "By {{name}}",
+      "owner": "Owner: {{name}}",
+      "edited": "Edited {{when}}",
+      "words_one": "{{count, number}} word",
+      "words_other": "{{count, number}} words",
+      "minutes_one": "{{count, number}} min read",
+      "minutes_other": "{{count, number}} min read",
+      "wordsAndMinutes": "{{words}} · {{minutes}}"
     }
   }
 }

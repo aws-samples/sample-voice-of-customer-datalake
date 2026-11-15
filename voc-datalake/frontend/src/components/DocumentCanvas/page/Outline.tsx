@@ -73,7 +73,7 @@ export default function Outline({ items, onNavigate, className }: OutlineProps) 
   }
   return (
     <nav aria-label={t('canvas.page.contents')} onKeyDown={closeOnEscape}
-      className={clsx('min-w-0 lg:sticky lg:top-4 lg:self-start', className)}>
+      className={clsx('min-w-0 lg:sticky lg:top-20 lg:self-start', className)}>
       <button ref={toggleRef} type="button" aria-expanded={open} aria-controls={listId}
         className="lg:hidden btn btn-secondary btn-sm w-full justify-between" onClick={() => setOpen((value) => !value)}>
         {t('canvas.page.contents')}

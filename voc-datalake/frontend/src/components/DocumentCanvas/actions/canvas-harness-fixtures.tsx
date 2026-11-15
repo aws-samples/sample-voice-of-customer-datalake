@@ -36,6 +36,7 @@ export function Harness({ document, onSelectDoc, canvasProject, Editor = FakeCan
       <p data-testid="generation">{state.generation}</p>
       <p data-testid="editable">{`${String(state.editable)}/${String(state.titleEditable)}`}</p>
       <button type="button" onClick={() => { state.save().catch(ignoreRejection) }}>save</button>
+      <button type="button" onClick={() => { state.rename('Renamed').catch(ignoreRejection) }}>rename</button>
       <button type="button" onClick={state.discard}>discard</button>
       <button type="button" onClick={() => state.markRevised(revisedBy)}>revised</button>
       <button type="button" onClick={() => state.markRevised(null)}>not revised</button>

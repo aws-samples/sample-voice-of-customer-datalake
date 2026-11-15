@@ -7,18 +7,9 @@
     "personaTitle": "ペルソナを削除しますか?"
   },
   "documentModal": {
-    "cancel": "キャンセル",
     "conflict": "この間に、誰かがこのドキュメントの新しいバージョンを保存しました。",
     "conflictReload": "最新を読み込む",
-    "conflictSaveAnyway": "自分の変更をそのまま保存",
-    "contentLabel": "コンテンツ (Markdown)",
-    "contentPlaceholder": "ドキュメントをMarkdownで作成...",
-    "create": "作成",
-    "createDocument": "ドキュメントを作成",
-    "creating": "作成中...",
-    "preview": "プレビュー",
-    "titleLabel": "タイトル",
-    "titlePlaceholder": "ドキュメントのタイトル..."
+    "conflictSaveAnyway": "自分の変更をそのまま保存"
   },
   "documents": {
     "deleteDocument": "ドキュメントを削除",
@@ -60,7 +51,11 @@
       "new": "新規",
       "newPrd": "新規PRD",
       "newPrfaq": "新規PR/FAQ",
-      "newPrototype": "新規プロトタイプ"
+      "newPrototype": "新規プロトタイプ",
+      "newBlank": "白紙",
+      "newBlankHint": "アウトラインだけの空の{{type}}。ページ上で名前を付けて書きます。",
+      "newWizard": "ウィザードで作成",
+      "newWizardHint": "先にエビデンスを選び、ガイド付きの質問に答えます。"
     },
     "noDocuments": "ドキュメントなし",
     "ordinal": "{{total, number}} 件中 {{ordinal}} 件目",
@@ -207,6 +202,25 @@
       "documentsSkipped_one": "選択した参照ドキュメント {{count, number}} 件が除外されました(最初の {{cap, number}} 件のみ読み込まれます)。",
       "documentsSkipped_other": "選択した参照ドキュメント {{count, number}} 件が除外されました(最初の {{cap, number}} 件のみ読み込まれます)。",
       "handWritten": "手書きの文書です。まだ顧客フィードバックを引用していません。"
+    },
+    "blank": {
+      "untitled": {
+        "custom": "無題のドキュメント",
+        "prd": "無題のPRD",
+        "prfaq": "無題のPR/FAQ"
+      },
+      "numbered": "{{title}} {{n}}",
+      "nameRequired": "先に名前を付けてください。",
+      "nameTaken": "このプロジェクトには「{{title}}」という{{type}}がすでにあります。この名前ではそのバージョンが増えるだけです。別の名前を選んでください。",
+      "createFailed": "{{type}}を作成できませんでした。もう一度お試しください。",
+      "createDocumentFailed": "ドキュメントを作成できませんでした。もう一度お試しください。",
+      "draftLabel": "新規{{type}}",
+      "handWritten": "手書き",
+      "nameHint": "{{type}}に名前を付け、Enterキーを押して書き始めます。名前はすべてのバージョンで共通のため、{{type}}の作成後は変更できません。",
+      "creating": "作成中…",
+      "startWriting": "書き始める",
+      "cancel": "キャンセル",
+      "outlineNote": "{{type}}はここにアウトライン付きで開き、そのまま書き込めます。"
     }
   },
   "imageErrors": {
@@ -796,7 +810,9 @@
       "evidence": "根拠",
       "evidenceEmpty": "このドキュメントには、レビューや機能リクエストが記録されていません。",
       "showAll": "すべて表示（{{n, number}}）",
-      "featureRequests": "機能リクエスト"
+      "featureRequests": "機能リクエスト",
+      "titleHint": "クリックして名前を変更。Enterで保存、Escapeで取り消し。",
+      "titleRequired": "ドキュメントには名前が必要です。"
     },
     "comments": {
       "hint": "箇所にコメントするには、テキストを選択して［コメント］を押すか、Ctrl+Alt+M（Mac では ⌘⌥M）を押します。",
@@ -923,8 +939,36 @@
       "commentsHeading": "未解決のコメント",
       "includeComments": "未解決のコメントを含める",
       "saved": "保存済み",
-      "trigger": "ファイル",
-      "wholeDocument": "ドキュメント全体について"
+      "trigger": "ドキュメント",
+      "wholeDocument": "ドキュメント全体について",
+      "rename": "名前を変更"
+    },
+    "menubar": {
+      "label": "ドキュメントのメニュー",
+      "edit": "編集",
+      "format": "書式",
+      "insert": "挿入",
+      "view": "表示",
+      "undo": "元に戻す",
+      "redo": "やり直す",
+      "link": "リンク…",
+      "image": "画像…",
+      "comments": "コメント",
+      "fullWidth": "全幅",
+      "commentsButton_one": "コメント、未解決{{count, number}}件",
+      "commentsButton_other": "コメント、未解決{{count, number}}件",
+      "commentsHint": "コメントを表示または非表示"
+    },
+    "meta": {
+      "label": "ドキュメントの詳細",
+      "author": "作成者: {{name}}",
+      "owner": "オーナー: {{name}}",
+      "edited": "編集: {{when}}",
+      "words_one": "{{count, number}}語",
+      "words_other": "{{count, number}}語",
+      "minutes_one": "{{count, number}}分で読めます",
+      "minutes_other": "{{count, number}}分で読めます",
+      "wordsAndMinutes": "{{words}} · {{minutes}}"
     }
   }
 }

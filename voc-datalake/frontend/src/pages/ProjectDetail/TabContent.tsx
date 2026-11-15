@@ -17,6 +17,7 @@ import type {
 import type {
   ProjectPersona,
 } from '../../api/projectTypes'
+import type { BlankDocumentControls } from './useBlankDocument'
 
 /** The fields the page hands straight through to the Overview tab. */
 type OverviewPassThrough = Pick<OverviewTabProps,
@@ -45,8 +46,9 @@ interface TabContentProps extends OverviewPassThrough {
   /** The page's GUARDED selection: it asks first while the open document has unsaved changes. */
   readonly onSelectDoc: (d: ProjectDocument) => void
   readonly onDeleteDoc: () => void
-  readonly onCreateDoc: () => void
-  /** The Documents tab's PRD / PR/FAQ New: the document wizard with that type. */
+  /** New without the wizard on the Documents tab (useBlankDocument). */
+  readonly blank: BlankDocumentControls
+  /** The Documents tab's PRD / PR/FAQ New → With the wizard: the document wizard with that type. */
   readonly onWriteDocument: (docType: DocType) => void
 }
 
@@ -77,7 +79,7 @@ export default function TabContent({
   onCopyPersonas,
   onSelectDoc,
   onDeleteDoc,
-  onCreateDoc,
+  blank,
   onWriteDocument,
   onJobStarted,
 }: TabContentProps) {
@@ -152,7 +154,7 @@ export default function TabContent({
       selectedDoc={selectedDoc}
       onSelectDoc={onSelectDoc}
       onDeleteDoc={onDeleteDoc}
-      onCreateDoc={onCreateDoc}
+      blank={blank}
       onWriteDocument={onWriteDocument}
       onJobStarted={onJobStarted}
       isDeleting={isDeleting}

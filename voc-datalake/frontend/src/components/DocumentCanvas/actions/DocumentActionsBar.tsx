@@ -1,17 +1,20 @@
 /**
- * @fileoverview The document page's action bar: the save status, Discard and Save, "Full screen" (the focus view) and
- * the "File" menu (DocumentMenu: Save, Share, every export, History, Delete), then the stale-save conflict.
+ * @fileoverview The document page's top bar, an editing canvas's: its menu bar (Document · Edit · Format · Insert ·
+ * View; menuBar.ts), the save status, then the comments button (a PR/FAQ or PRD: the panel's toggle with its open
+ * threads), Discard and Save, and "Full screen" (the focus view); the stale-save conflict under it.
  *
- * A viewer sees the status, Full screen and the menu with the exports and History only: every other control would
- * 403. Export always exports the SAVED version (what the link, the review page and the assistant read); while the
- * canvas holds unsaved changes the menu says so. On a phone the bar wraps, and while there is something to save,
- * Discard and Save sit in a bar fixed to the bottom of the screen, registered as the bottom safe area
- * (components/StickyActionBar/actionBarRegistry) so the assistant launcher lifts above it.
+ * Document is DocumentMenu (Save, Rename, Share, every export, History, Delete); Edit, Format and Insert are the
+ * editor's own actions (canvasMenus.ts), offered on an editable canvas only; View switches the comments panel, the
+ * outline, the width and full screen. A viewer sees Document (the exports and History only: every other control
+ * would 403), View, the status and Full screen. Export always exports the SAVED version (what the link, the review
+ * page and the assistant read); while the canvas holds unsaved changes the menu says so. On a phone the bar wraps,
+ * and while there is something to save, Discard and Save sit in a bar fixed to the bottom of the screen, registered
+ * as the bottom safe area (components/StickyActionBar/actionBarRegistry) so the assistant launcher lifts above it.
  *
  * @module components/DocumentCanvas/actions/DocumentActionsBar
  */
 import clsx from 'clsx'
-import { Loader2, Maximize2, Minimize2, Save, Undo2 } from 'lucide-react'
+import { Loader2, Maximize2, MessageSquare, Minimize2, Save, Undo2 } from 'lucide-react'
 import { useRef } from 'react'
 import type { RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -20,6 +23,9 @@ import { useRegisterActionBar } from '../../StickyActionBar/actionBarRegistry'
 import { isVersionManagedDocument } from '../../../api/documentLineage'
 import { ConflictBanner, ReviseRefusedBanner } from './ConflictBanner'
 import DocumentMenu from './DocumentMenu'
+import CanvasMenu from './CanvasMenu'
+import { editEntries, formatEntries, insertEntries, viewEntries, type CanvasViewControls } from './canvasMenus'
+import { onMenuBarKeyDown } from './menuBar'
 import { saveIgnoringFailure } from '../../UnsavedChangesGuard/useSnapshotGuard'
 import { formatRelativeDate } from '../../../utils/dateUtils'
 import type { DocumentMenuProps } from './DocumentMenu'
@@ -32,6 +38,10 @@ interface DocumentActionsBarProps extends DocumentMenuProps {
   readonly focus: FocusViewControls
   /** The "Full screen" button: the page puts focus back on it when the focus view closes. */
   readonly focusButtonRef: RefObject<HTMLButtonElement | null>
+  /** What View switches (absent: no View menu, as in a spec of the bar alone). */
+  readonly view?: CanvasViewControls
+  /** The open comment threads, for the comments button (absent: the document has no comments panel). */
+  readonly openThreads?: number
 }
 
 /** The stored version's number: a PRD / PR/FAQ series version, or a research / custom edit count. */
@@ -97,21 +107,61 @@ function FocusButton({ active, onToggle, buttonRef }: Readonly<{
   )
 }
 
-export default function DocumentActionsBar({ focus, focusButtonRef, ...menu }: DocumentActionsBarProps) {
+/** The comments panel's toggle: its icon and the open threads; pressed while the panel shows. */
+function CommentsButton({ open, count, onToggle }: Readonly<{ open: boolean; count: number; onToggle: () => void }>) {
+  const { t } = useTranslation('projectDetail')
+  return (
+    <button type="button" className="btn btn-ghost btn-sm" aria-pressed={open} onClick={onToggle}
+      aria-label={t('canvas.menubar.commentsButton', { count })} title={t('canvas.menubar.commentsHint')}
+      data-testid="canvas-comments-button">
+      <MessageSquare size={14} aria-hidden="true" />
+      <span aria-hidden="true" className="font-mono">{count}</span>
+    </button>
+  )
+}
+
+/** Document, then (an editable canvas) Edit, Format and Insert, then View: one row of menus the arrow keys walk. */
+function MenuBar({ menu, focus, view }: Readonly<{
+  menu: DocumentMenuProps; focus: FocusViewControls; view?: CanvasViewControls
+}>) {
+  const { t } = useTranslation('projectDetail')
+  const { state } = menu
+  const handle = () => state.handleRef.current
+  const fullScreen = { on: focus.active, toggle: focus.toggle }
+  return (
+    <div role="group" aria-label={t('canvas.menubar.label')} data-testid="document-menubar" onKeyDown={onMenuBarKeyDown}
+      className="flex flex-wrap items-center gap-0.5">
+      <DocumentMenu {...menu} />
+      {state.editable ? (
+        <>
+          <CanvasMenu label={t('canvas.menubar.edit')} entries={() => editEntries(handle, t)} />
+          <CanvasMenu label={t('canvas.menubar.format')} entries={() => formatEntries(handle, t)} />
+          <CanvasMenu label={t('canvas.menubar.insert')} entries={() => insertEntries(handle, t)} />
+        </>
+      ) : null}
+      {view === undefined ? null : <CanvasMenu label={t('canvas.menubar.view')} entries={() => viewEntries(view, fullScreen, t)} />}
+    </div>
+  )
+}
+
+export default function DocumentActionsBar({ focus, focusButtonRef, view, openThreads, ...menu }: DocumentActionsBarProps) {
   const { t } = useTranslation('projectDetail')
   const { document, state } = menu
+  const comments = view?.comments
   return (
     <div className="space-y-2">
       <div role="group" aria-label={t('canvas.actions.toolbarLabel')} data-testid="document-actions-bar"
-        className="flex flex-wrap items-center gap-2">
+        className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <MenuBar menu={menu} focus={focus} view={view} />
         <SaveStatus document={document} state={state} />
-        {/* One group at the row's end: on a phone it wraps under the status as a whole, so "File" stays at the right
-            edge and its menu (right-aligned to it) opens inside the screen, never past its left edge. */}
+        {/* One group at the row's end: on a phone it wraps under the status as a whole. */}
         <div data-testid="document-actions-controls" className="ml-auto flex flex-wrap items-center justify-end gap-2">
+          {comments === undefined || openThreads === undefined ? null : (
+            <CommentsButton open={comments.on} count={openThreads} onToggle={comments.toggle} />
+          )}
           {/* The canvas's own rule: an editor of the project, a document edited on its canvas. */}
           {state.editable ? <SaveButtons state={state} /> : null}
           <FocusButton active={focus.active} onToggle={focus.toggle} buttonRef={focusButtonRef} />
-          <DocumentMenu {...menu} />
         </div>
       </div>
       {state.conflict === null ? null : <ConflictBanner conflict={state.conflict} />}

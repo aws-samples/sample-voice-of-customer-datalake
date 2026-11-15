@@ -3043,7 +3043,9 @@ def create_document(project_id: str, body: dict, *, creator_sub: str = '') -> di
     """Create a custom document, or a hand-written PR/FAQ / PRD from a blank template.
 
     ``prfaq`` / ``prd`` join their series as a person's draft (shared/human_documents.py);
-    the route gates an autonomous caller first (shared/ai_writing.py).
+    the route gates an autonomous caller first (shared/ai_writing.py). A custom document may
+    start blank (``content`` absent or ``''``: the page's "New" opens an empty canvas, written
+    and saved there); it records its creator's ``created_by_sub`` like a hand-written one.
     """
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
@@ -3060,8 +3062,8 @@ def create_document(project_id: str, body: dict, *, creator_sub: str = '') -> di
             'Only custom, prfaq and prd documents can be created directly. Every other '
             'managed or workflow document type must use its dedicated route.'
         )
-    if not content:
-        raise ValidationError('Content is required')
+    if not isinstance(content, str):
+        raise ValidationError('content must be a string')
 
     now_dt = datetime.now(UTC)
     now = now_dt.isoformat()
@@ -3075,6 +3077,7 @@ def create_document(project_id: str, body: dict, *, creator_sub: str = '') -> di
             'content': content,
             'created_at': now,
             'updated_at': now,
+            **({'created_by_sub': creator_sub} if creator_sub else {}),
         }
 
     item = create_counted_project_child(

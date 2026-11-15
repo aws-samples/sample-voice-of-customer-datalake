@@ -58,6 +58,14 @@ export interface CanvasDocument {
   readonly content: string
   readonly title: string
   readonly setTitle: (title: string) => void
+  /**
+   * Rename the document (a research / custom one; a PRD / PR/FAQ title is its series' own): saved at once as ONE new
+   * version carrying only the title, after a save on its way. Unsaved text stays the draft. Rejects on failure (the
+   * title then stays unsaved, with the conflict when it was one).
+   */
+  readonly rename: (title: string) => Promise<void>
+  /** The text being written (the editor's last change): the page counts its words. */
+  readonly draft: string
   /** The editor's onChange. */
   readonly onChange: (markdown: string) => void
   readonly dirty: boolean
@@ -312,6 +320,7 @@ export function useCanvasDocument({ project, document, onSelectDoc }: CanvasDocu
   const update = useUpdateDocument(project.project_id)
   const {
     save: saveChecked, saveAnyway: saveUnchecked, conflict, loadLatest, loading, clearConflict, reviseRefused, saveAsOwnEdit: savePlain,
+    rename: renameStored,
   } = useDocumentSave({
     projectId: project.project_id, stored, edits, generation, revised, updateDoc: update.mutateAsync,
     onSaved: adoptSaved,
@@ -347,6 +356,13 @@ export function useCanvasDocument({ project, document, onSelectDoc }: CanvasDocu
     return Promise.resolve()
   }, [clearConflict, fly, holdsChanges])
   const saveAnyway = useCallback(() => saveOnce(saveUnchecked), [saveOnce, saveUnchecked])
+  const rename = useCallback(function renameNow(next: string): Promise<void> {
+    // A save on its way: rename the version it stores.
+    if (inFlight.current !== null) return inFlight.current.then(() => renameNow(next))
+    if (!titleEditable) return Promise.resolve()
+    changeTitle(next)
+    return next === held.current.baseline.title ? Promise.resolve() : fly(() => renameStored(next))
+  }, [changeTitle, fly, renameStored, titleEditable])
   const saveAsOwnEdit = useCallback(() => saveOnce(savePlain), [saveOnce, savePlain])
 
   const discard = useCallback(() => {
@@ -403,6 +419,8 @@ export function useCanvasDocument({ project, document, onSelectDoc }: CanvasDocu
     content: baseline.content,
     title,
     setTitle: changeTitle,
+    rename,
+    draft,
     onChange: changeDraft,
     dirty,
     saving: update.isPending,

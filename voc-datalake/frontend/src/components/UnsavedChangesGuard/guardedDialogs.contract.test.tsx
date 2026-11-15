@@ -5,8 +5,8 @@
  * fresh copy of its data while the guard is open (a list refetch), Cancel keeps
  * the edit and the editor open, and the next close asks again.
  *
- * Covers PersonaEditModal, DocumentModal, EditUserModal and ScraperEditor
- * (FormEditor runs the contract in its own spec).
+ * Covers PersonaEditModal, EditUserModal and ScraperEditor (FormEditor runs the contract in its own spec; a new
+ * project document has no dialog since 7.38.00: it opens blank on its canvas, whose guard is the canvas's own).
  */
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
@@ -24,7 +24,6 @@ vi.mock('../../api/scrapersApi', async (importOriginal) => scrapersApiStubModule
 vi.mock('../../api/client', () => ({ api: { updateUser: () => Promise.resolve({ success: true }) } }))
 
 const { default: PersonaEditModal } = await import('../../pages/ProjectDetail/PersonaEditModal')
-const { default: DocumentModal } = await import('../../pages/ProjectDetail/DocumentModal')
 const { default: EditUserModal } = await import('../UserAdmin/EditUserModal')
 const { default: ScraperEditor } = await import('../../pages/Scrapers/ScraperEditor')
 
@@ -68,33 +67,12 @@ function ControlledPersonaHost({ revision, onClose }: Readonly<{ revision: numbe
   )
 }
 
-function ControlledDocumentHost({ revision, onClose }: Readonly<{ revision: number; onClose: () => void }>) {
-  const [title, setTitle] = useState('Launch plan')
-  const [content, setContent] = useState('Body')
-  return (
-    <div data-revision={revision}>
-      <DocumentModal
-        title={title} content={content} isSaving={false}
-        onTitleChange={setTitle} onContentChange={setContent} onSave={() => Promise.resolve()} onClose={onClose}
-      />
-    </div>
-  )
-}
-
 describe('editor dialogs — Cancel keeps the draft and stays guarded (R2 contract)', () => {
   it('PersonaEditModal', async () => {
     const onClose = vi.fn()
     await expectCancelKeepsDraftGuarded(dialogScenario({
       host: (revision) => <ControlledPersonaHost revision={revision} onClose={onClose} />,
       field: 'Name', typed: ' L.', expected: 'Ada L.', onClose,
-    }))
-  })
-
-  it('DocumentModal', async () => {
-    const onClose = vi.fn()
-    await expectCancelKeepsDraftGuarded(dialogScenario({
-      host: (revision) => <ControlledDocumentHost revision={revision} onClose={onClose} />,
-      field: 'Title', typed: ' v2', expected: 'Launch plan v2', onClose,
     }))
   })
 

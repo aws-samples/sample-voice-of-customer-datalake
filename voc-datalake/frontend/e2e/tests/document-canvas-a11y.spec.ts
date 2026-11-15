@@ -30,7 +30,7 @@ import { expect, type Locator, type Page } from '@playwright/test'
 import { test } from '../lib/test'
 import { expectInsideWindow, expectNoSeriousAxe, expectNoSidewaysScrolling } from '../lib/a11y'
 import { apiCall, listOf, stringField } from '../lib/api'
-import { CANVAS_TEXT, addComment, barButton, canvasOf, createDocument, fileMenu, fileMenuItem, revealDocumentRow, saveStatus, storedDocument } from '../lib/canvas'
+import { CANVAS_TEXT, DOCUMENT_MENU, addComment, barButton, canvasOf, createDocument, fileMenu, fileMenuItem, revealDocumentRow, saveStatus, storedDocument } from '../lib/canvas'
 import { dialogNamed } from '../lib/dialogs'
 import { MOCK, RUN_PREFIX } from '../lib/env'
 import { pinTheme, roleOf, site, type Theme } from '../lib/fixtures'
@@ -115,7 +115,7 @@ test.describe('document canvas: accessibility and widths', () => {
         await openPage(page, PRFAQ)
         await expectStateClean(page, 'reading')
 
-        await barButton(page, 'File').click()
+        await barButton(page, DOCUMENT_MENU).click()
         await expectInsideWindow(page, fileMenu(page), 'the File menu')
         await expectStateClean(page, 'the File menu')
         for (const [item, dialog] of MENU_DIALOGS) {
@@ -195,7 +195,7 @@ test.describe('document canvas: accessibility and widths', () => {
   test('the keyboard: Escape out of History and Share back to File, a reply box\'s Escape and Ctrl+Enter; Revise from comments at 360', async ({ page }) => {
     await atWidth(page, 360, 'dark')
     await openPage(page, PRFAQ)
-    const file = barButton(page, 'File')
+    const file = barButton(page, DOCUMENT_MENU)
     for (const [item, dialog] of MENU_DIALOGS) {
       await (await fileMenuItem(page, item)).click()
       await expect(dialogNamed(page, dialog)).toBeVisible()

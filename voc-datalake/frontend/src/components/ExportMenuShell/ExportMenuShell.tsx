@@ -21,6 +21,7 @@ import { useId } from 'react'
 import type { ReactNode } from 'react'
 import { useCopiedFlag } from '../../hooks/useCopiedFlag'
 import { useMenuButton } from '../ProfileMenu/useMenuButton'
+import { MENUBAR_POPUP_CLASS, MENUBAR_TRIGGER_CLASS } from '../DocumentCanvas/actions/menuBar'
 
 /** The user-facing labels of the shell's own items, already translated by the caller. */
 interface ExportMenuLabels {
@@ -54,15 +55,43 @@ export interface ExportMenuShellProps {
   readonly children?: (menu: MenuSlot) => ReactNode
   /** The id of a text describing the export items (e.g. "Export uses the saved version"). */
   readonly exportDescribedBy?: string
-  /** A labelled button ("File") instead of the kebab icon. */
+  /** A labelled button instead of the kebab icon. */
   readonly labelled?: boolean
+  /**
+   * A menu of the document page's menu bar ("Document"; DocumentCanvas/actions/menuBar): its quiet labelled button
+   * (`data-menubar-trigger`, so the bar's arrow keys reach it) and the menu under its start. Implies `labelled`.
+   */
+  readonly menuBar?: boolean
 }
 
 const MENU_ITEM_CLASS = 'menu-item py-2.5 sm:py-1.5 active:bg-bg-hover'
 
+function triggerClass(labelled: boolean, menuBar: boolean): string {
+  if (menuBar) return MENUBAR_TRIGGER_CLASS
+  return labelled ? 'btn btn-secondary btn-sm' : 'icon-btn p-2 rounded-lg'
+}
+
+/** The trigger's look and name: a kebab is named by its label (`aria-label`, `title`), a labelled one by its text. */
+function triggerAttributes(label: string, labelled: boolean, menuBar: boolean) {
+  const named = labelled || menuBar
+  return {
+    className: triggerClass(labelled, menuBar),
+    'data-menubar-trigger': menuBar ? '' : undefined,
+    title: named ? undefined : label,
+    'aria-label': named ? undefined : label,
+  }
+}
+
+/** The trigger's face: the bar's plain label, a labelled button, or the kebab. */
+function TriggerContent({ label, labelled, menuBar }: Readonly<{ label: string; labelled: boolean; menuBar: boolean }>) {
+  if (menuBar) return <>{label}</>
+  if (labelled) return <><MoreHorizontal size={14} aria-hidden="true" />{label}</>
+  return <MoreVertical size={18} aria-hidden="true" />
+}
+
 export default function ExportMenuShell({
   labels, onCopy, onDownloadMarkdown, onDownloadPDF, onDownloadTXT, leading, afterPdf, children, exportDescribedBy,
-  labelled = false,
+  labelled = false, menuBar = false,
 }: ExportMenuShellProps) {
   const { open: isOpen, buttonRef, menuRef, toggle, close, onButtonKeyDown, onMenuKeyDown } = useMenuButton()
   const panelId = useId()
@@ -103,20 +132,18 @@ export default function ExportMenuShell({
         type="button"
         onClick={toggle}
         onKeyDown={onButtonKeyDown}
-        className={labelled ? 'btn btn-secondary btn-sm' : 'icon-btn p-2 rounded-lg'}
-        title={labelled ? undefined : labels.trigger}
-        aria-label={labelled ? undefined : labels.trigger}
+        {...triggerAttributes(labels.trigger, labelled, menuBar)}
         aria-expanded={isOpen}
         aria-haspopup="menu"
         aria-controls={isOpen ? panelId : undefined}
       >
-        {labelled ? <><MoreHorizontal size={14} aria-hidden="true" />{labels.trigger}</> : <MoreVertical size={18} aria-hidden="true" />}
+        <TriggerContent label={labels.trigger} labelled={labelled} menuBar={menuBar} />
       </button>
 
       {isOpen ? <div
         ref={menuRef}
         id={panelId}
-        className="menu absolute right-0 top-full mt-1 z-20 w-60 max-w-[calc(100vw-2rem)]"
+        className={menuBar ? MENUBAR_POPUP_CLASS : 'menu absolute right-0 top-full mt-1 z-20 w-60 max-w-[calc(100vw-2rem)]'}
         role="menu"
         aria-labelledby={triggerId}
         aria-orientation="vertical"

@@ -20,33 +20,6 @@ export function useSelectionState() {
   }
 }
 
-/** The create modal ("New document"). An existing document is edited in place on its canvas. */
-export function useDocModalState() {
-  const [showDocModal, setShowDocModal] = useState(false)
-  const [newDocTitle, setNewDocTitle] = useState('')
-  const [newDocContent, setNewDocContent] = useState('')
-
-  const openCreateModal = useCallback(() => {
-    setShowDocModal(true)
-  }, [])
-
-  const closeModal = useCallback(() => {
-    setShowDocModal(false)
-    setNewDocTitle('')
-    setNewDocContent('')
-  }, [])
-
-  return {
-    showDocModal,
-    newDocTitle,
-    setNewDocTitle,
-    newDocContent,
-    setNewDocContent,
-    openCreateModal,
-    closeModal,
-  }
-}
-
 export function useImportModalState() {
   const [showImportModal, setShowImportModal] = useState(false)
   // 'text' remains the default and is still a valid type, so the modal always

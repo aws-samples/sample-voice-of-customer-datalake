@@ -3,8 +3,6 @@
  */
 import { useTranslation } from 'react-i18next'
 import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
-import DocumentModal from './DocumentModal'
-import type { DocumentEditorProps } from './DocumentModal'
 import ImportPersonaModal from './ImportPersonaModal'
 import CopyPersonasModal from './CopyPersonasModal'
 import PersonaEditModal from './PersonaEditModal'
@@ -91,16 +89,6 @@ export function CopyPersonasModalWrapper({ showModal, projectId, onClose, onCopi
 }>) {
   if (!showModal) return null
   return <CopyPersonasModal projectId={projectId} onClose={onClose} onCopied={onCopied} />
-}
-
-interface DocumentModalWrapperProps extends DocumentEditorProps {
-  readonly showModal: boolean
-}
-
-/** The New document dialog (create only: an existing document is edited in place on its canvas). */
-export function DocumentModalWrapper({ showModal, ...editor }: DocumentModalWrapperProps) {
-  if (!showModal) return null
-  return <DocumentModal {...editor} />
 }
 
 interface ConfirmModalWrapperProps {

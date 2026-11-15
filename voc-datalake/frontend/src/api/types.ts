@@ -559,6 +559,8 @@ export interface ProjectDocument {
   methodology?: MethodologyBlock
   /** `'human'` for a PR/FAQ / PRD written by hand from a blank template (shared/human_documents.py). */
   origin?: string
+  /** The person who created it (a hand-written PR/FAQ / PRD, a blank custom document); absent on generated ones. */
+  created_by_sub?: string
   // ── Pre-`derivation` lineage, still written, now declared ──
   // These were on the wire long before this interface acknowledged them, and
   // `resolveDerivation` reads them for documents that predate `derivation`.

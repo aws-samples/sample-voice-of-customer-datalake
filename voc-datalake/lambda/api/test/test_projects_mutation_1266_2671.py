@@ -1385,13 +1385,13 @@ class TestSuggestResearchQuestions(_Assist):
 
 
 class TestCreateDocument:
-    def _create(self, body: dict) -> tuple[dict, MagicMock, MagicMock]:
+    def _create(self, body: dict, creator_sub: str = '') -> tuple[dict, MagicMock, MagicMock]:
         table = MagicMock()
         with patch.object(projects, 'projects_table', table), \
                 patch.object(project_writes, 'put_project_item_and_increment') as put, \
                 frozen_clock(projects) as dt:
             dt.now.return_value = NOW_DT
-            result = projects.create_document('proj-1', body)
+            result = projects.create_document('proj-1', body, creator_sub=creator_sub)
         return result, put, table
 
     def test_the_stored_item_field_for_field_and_the_counter_it_increments(self):
@@ -1417,12 +1417,25 @@ class TestCreateDocument:
         assert result['document']['document_type'] == 'custom'
 
     @pytest.mark.parametrize('body', [{'title': 'Notes'}, {'title': 'Notes', 'content': ''}])
-    def test_missing_content_is_refused_before_any_write(self, body):
+    def test_a_blank_custom_document_is_stored_with_empty_content(self, body):
+        # The Documents section's New opens an empty canvas: the text is written and saved there.
+        result, put, _table = self._create(body)
+        stored = put.call_args.args[2]
+        assert stored['content'] == ''
+        assert stored['title'] == 'Notes'
+        assert result['document'] == stored
+
+    def test_the_creator_is_recorded_when_known(self):
+        result, _put, _table = self._create({'title': 'Notes', 'content': ''}, creator_sub='user-sub-1')
+        assert result['document']['created_by_sub'] == 'user-sub-1'
+
+    @pytest.mark.parametrize('content', [None, 7, ['x'], {'text': 'x'}])
+    def test_content_that_is_not_a_string_is_refused_before_any_write(self, content):
         with patch.object(projects, 'projects_table', MagicMock()), \
                 patch.object(project_writes, 'put_project_item_and_increment') as put, \
                 pytest.raises(ValidationError) as exc:
-            projects.create_document('proj-1', body)
-        assert str(exc.value) == 'Content is required'
+            projects.create_document('proj-1', {'title': 'Notes', 'content': content})
+        assert str(exc.value) == 'content must be a string'
         put.assert_not_called()
 
     @pytest.mark.parametrize('document_type', ['prototype', 'research', 'product_report'])

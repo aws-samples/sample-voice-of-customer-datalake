@@ -32,9 +32,11 @@ export default function CanvasChrome({ editor, editable, container, controller, 
 
   useEffect(() => {
     controller.setOpenLink(() => openAt('link', editor.state.selection.to))
+    controller.setOpenImage(() => openAt('image', editor.state.selection.from))
     controller.setOpenBlockMenu((pos) => setPopover({ kind: 'block', pos, anchor: anchorAt(editor, pos + 1, container) }))
     return () => {
       controller.setOpenLink(null)
+      controller.setOpenImage(null)
       controller.setOpenBlockMenu(null)
     }
   }, [editor, container, controller, openAt])

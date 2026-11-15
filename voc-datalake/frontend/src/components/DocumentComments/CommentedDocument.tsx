@@ -11,6 +11,10 @@
  * thread whose quote is gone from the text is listed under "Not found in this version", next to
  * the comments on the whole document. The host decides who may do what (`CommentActions`).
  *
+ * The page may hide the rail (View → Comments, its comments button: `railHidden`): the text then takes the width, the
+ * rail stays mounted (a draft keeps its text), and starting a comment or showing a thread asks for it back
+ * (`onRevealRail`).
+ *
  * A comment on a passage starts from the current selection (`commentOnSelection`, through
  * `commentRef`: the canvas' floating bar, the Markdown view's floating button) or from the
  * keyboard: ⌘/Ctrl+Alt+M inside the document. A draft with text is never replaced: a second
@@ -38,6 +42,8 @@ type MarginStyle = CSSProperties & Record<'--margin-height', string>
 
 /** The reading column beside its rail from xl up (room for both); the rail under the text below xl. */
 const DOCUMENT_GRID_CLASS = 'flex flex-col gap-6 xl:grid xl:grid-cols-[minmax(0,1fr)_18rem] xl:gap-8'
+/** The rail hidden: the reading column alone. */
+const DOCUMENT_ALONE_CLASS = 'flex flex-col gap-6'
 
 /** Beside its passage from xl up; in the stacked list under the document, in reading order, below xl. */
 const BUBBLE_CLASS = 'xl:absolute xl:inset-x-0 xl:top-[var(--bubble-top)]'
@@ -75,6 +81,10 @@ interface CommentedDocumentProps {
   /** Wraps the comment rail (a tab panel beside the evidence); the rail as is by default. */
   readonly renderRail?: (rail: ReactNode) => ReactNode
   readonly commentRef?: Ref<CommentedDocumentHandle>
+  /** The page hid the rail (it stays mounted, out of sight and of the accessibility tree). */
+  readonly railHidden?: boolean
+  /** A comment was started, or a thread asked for, while the rail is hidden: the page shows it again. */
+  readonly onRevealRail?: () => void
 }
 
 function ThreadSection({ title, threads, render }: Readonly<{
@@ -134,6 +144,7 @@ const identity = (rail: ReactNode) => rail
 
 export default function CommentedDocument({
   children, contentRoot, revision, threads, viewed, actions, canComment, toolbar, notice, renderRail = identity, commentRef,
+  railHidden = false, onRevealRail,
 }: CommentedDocumentProps) {
   const { t } = useTranslation('components')
   const marginRef = useRef<HTMLDivElement>(null)
@@ -157,8 +168,9 @@ export default function CommentedDocument({
     draftText.current = ''
     setDraft(next)
     setMessage('')
+    onRevealRail?.()
     return true
-  }, [draft, draftHasText, t])
+  }, [draft, draftHasText, onRevealRail, t])
   const closeDraft = useCallback(() => {
     draftText.current = ''
     setDraft(null)
@@ -183,9 +195,10 @@ export default function CommentedDocument({
     const thread = threads.find((row) => row.comment_id === commentId)
     if (thread === undefined) return
     if (!matchesFilter(thread, filter)) setFilter(SHOW_EVERY_THREAD)
+    onRevealRail?.()
     setActiveId(commentId)
     setShown(commentId)
-  }, [threads, filter])
+  }, [threads, filter, onRevealRail])
   useEffect(() => {
     if (shown === null) return
     const card = [...(railRef.current?.querySelectorAll<HTMLElement>('[data-thread-id]') ?? [])]
@@ -242,8 +255,8 @@ export default function CommentedDocument({
     </aside>
   )
   return (
-    <div className={DOCUMENT_GRID_CLASS}>
-      <div className={clsx('relative', READING_COLUMN_CLASS)} data-testid="reading-column"
+    <div className={railHidden ? DOCUMENT_ALONE_CLASS : DOCUMENT_GRID_CLASS}>
+      <div className={clsx('relative', READING_COLUMN_CLASS)} data-testid="reading-column" data-reading-column=""
         onKeyDown={(event) => {
           if (!isCommentShortcut(event)) return
           event.preventDefault()
@@ -251,7 +264,7 @@ export default function CommentedDocument({
         }}>
         {children}
       </div>
-      {renderRail(rail)}
+      <div hidden={railHidden} className="min-w-0">{renderRail(rail)}</div>
     </div>
   )
 }

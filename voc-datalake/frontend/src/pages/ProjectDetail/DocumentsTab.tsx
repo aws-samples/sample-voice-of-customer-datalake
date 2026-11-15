@@ -2,7 +2,9 @@
  * DocumentsTab - Documents list and detail view, plus the prototype builder.
  *
  * The list is in the project's four sections (DocumentList), each with its New for an editor: the PRD and PR/FAQ
- * writing wizards, the prototype build dialog, and New document.
+ * sections' a menu, "Blank" (named in the draft pane, BlankDocumentDraft, then written on its page) or "With the
+ * wizard" (the writing wizard); the prototype build dialog; and New document, a blank document created at once and
+ * opened on its page with its title selected (useBlankDocument). No modal.
  *
  * A prose document opens on its page (components/DocumentCanvas/page/DocumentPage, lazy-loaded so the editor's
  * bundle loads only on this tab), edited in place there; its Export, Delete and Save live in the page's action bar.
@@ -10,10 +12,11 @@
  */
 
 import clsx from 'clsx'
-import { FileText, Loader2 } from 'lucide-react'
+import { ClipboardList, FilePlus2, FileText, Loader2 } from 'lucide-react'
 import { lazy, Suspense } from 'react'
 import { useTranslation } from 'react-i18next'
 import DocumentList, { type SectionNewAction } from './DocumentList'
+import BlankDocumentDraft from './BlankDocumentDraft'
 import { canEditProject } from './projectAccess'
 import { seriesKeyOf } from './documentEdit'
 import { deriveOverviewState } from './overviewState'
@@ -27,6 +30,8 @@ import type { DesignSystem } from '../../api/designSystemApi'
 import type { ProjectMethodology } from '../../api/methodologySchema'
 import type { DocType, ProjectDocument } from '../../api/types'
 import type { Project, ProductDoc } from '../../api/projectTypes'
+import type { GatedDocType } from '../../api/aiModeApi'
+import type { BlankDocumentControls, FreshDocument } from './useBlankDocument'
 import ErasedEvidenceNote from './ErasedEvidenceNote'
 import FeedbackCorpus from './FeedbackCorpus'
 import { featureRequestIdsOf } from './featureRequestCitations'
@@ -60,9 +65,9 @@ interface DocumentsTabProps {
   readonly designSystem?: DesignSystem
   readonly onSelectDoc: (doc: ProjectDocument) => void
   readonly onDeleteDoc: () => void
-  /** The Documents section's New: the existing New document. */
-  readonly onCreateDoc: () => void
-  /** The PRD and PR/FAQ sections' New: the document wizard with that type (the Overview card's own). */
+  /** New without the wizard: the Documents section's New, and the PRD and PR/FAQ sections' "Blank" (useBlankDocument). */
+  readonly blank: BlankDocumentControls
+  /** The PRD and PR/FAQ sections' "With the wizard": the document wizard with that type (the Overview card's own). */
   readonly onWriteDocument: (docType: DocType) => void
   /**
    * A prototype revision or build was started. Only the jobs panel needs to know: the
@@ -82,7 +87,7 @@ export default function DocumentsTab({
   designSystem,
   onSelectDoc,
   onDeleteDoc,
-  onCreateDoc,
+  blank,
   onWriteDocument,
   onJobStarted,
   isDeleting,
@@ -99,9 +104,10 @@ export default function DocumentsTab({
   })
   const newActions = canEdit
     ? sectionNewActions({
-      build: prototypeBuild, needsDocs: overview.steps.prototype.missingUpstream, onCreateDoc, onWriteDocument, t,
+      build: prototypeBuild, needsDocs: overview.steps.prototype.missingUpstream, blank, onWriteDocument, t,
     })
     : undefined
+  const { pending, fresh } = canEdit ? blank : { pending: null, fresh: null }
 
   return (
     <div className={focusView ? undefined : 'space-y-4'}>
@@ -111,18 +117,20 @@ export default function DocumentsTab({
         {focusView ? null : (
           <DocumentList documents={documents} selectedDoc={selectedDoc} onSelectDoc={onSelectDoc} newActions={newActions} />
         )}
-        {selectedDoc === null ? (
+        {pending === null ? null : <BlankDocumentDraft pending={pending} documents={documents} blank={blank} />}
+        {pending === null && selectedDoc === null ? (
           <div data-testid="document-detail-pane" className={clsx(PANE, 'lg:min-h-[500px]')}>
             <div className="flex flex-col items-center justify-center gap-3 h-full min-h-[240px] text-sm text-muted text-center">
               <FileText size={20} aria-hidden />
               {t('documents.selectDocument')}
             </div>
           </div>
-        ) : (
+        ) : null}
+        {pending === null && selectedDoc !== null ? (
           <SelectedDocument project={project} document={selectedDoc} documents={documents} productDocs={productDocs}
             canEdit={canEdit} onSelectDoc={onSelectDoc} onDeleteDoc={onDeleteDoc} onJobStarted={onJobStarted}
-            isDeleting={isDeleting} />
-        )}
+            isDeleting={isDeleting} openOn={freshFocus(fresh, selectedDoc)} onOpened={blank.consumeFresh} />
+        ) : null}
       </div>
       {/* Opened by the Prototypes section's New; nothing is built until its own button is pressed. */}
       {canEdit ? <PrototypeBuildWizard build={prototypeBuild} t={t} /> : null}
@@ -130,22 +138,42 @@ export default function DocumentsTab({
   )
 }
 
+/** Where the page of `document` opens its focus: the fresh document's own (once), else nowhere in particular. */
+function freshFocus(fresh: FreshDocument | null, document: ProjectDocument): FreshDocument['focus'] | undefined {
+  return fresh?.documentId === document.document_id ? fresh.focus : undefined
+}
+
+/** A PRD / PR/FAQ section's New: "Blank" or "With the wizard". */
+function writeChoices(type: GatedDocType, blank: BlankDocumentControls, onWriteDocument: (docType: DocType) => void,
+  t: TFunction<'projectDetail'>): SectionNewAction {
+  const name = type === 'prd' ? t('documents.sections.prd') : t('documents.sections.prfaq')
+  return {
+    onClick: () => onWriteDocument(type),
+    choices: [
+      { id: 'blank', label: t('documents.sections.newBlank'), description: t('documents.sections.newBlankHint', { type: name }),
+        icon: FilePlus2, onSelect: () => blank.startManaged(type) },
+      { id: 'wizard', label: t('documents.sections.newWizard'), description: t('documents.sections.newWizardHint'),
+        icon: ClipboardList, onSelect: () => onWriteDocument(type) },
+    ],
+  }
+}
+
 /**
- * Each section's New for an editor: PRD and PR/FAQ open the document wizard with that type, Prototypes the build
- * dialog (disabled with its reason while the project has no PRD or PR/FAQ, or while a build is starting), Documents
- * the existing New document.
+ * Each section's New for an editor: PRD and PR/FAQ a menu (Blank, With the wizard), Prototypes the build dialog
+ * (disabled with its reason while the project has no PRD or PR/FAQ, or while a build is starting), Documents a blank
+ * document at once (busy while it is created; a failure said under it).
  */
-function sectionNewActions({ build, needsDocs, onCreateDoc, onWriteDocument, t }: {
+function sectionNewActions({ build, needsDocs, blank, onWriteDocument, t }: {
   readonly build: PrototypeBuildControl
   /** The project has no PRD and no PR/FAQ to build from (the build route's 409; the server's methodology says so). */
   readonly needsDocs: boolean
-  readonly onCreateDoc: () => void
+  readonly blank: BlankDocumentControls
   readonly onWriteDocument: (docType: DocType) => void
   readonly t: TFunction<'projectDetail'>
 }): Record<DocumentSectionId, SectionNewAction> {
   return {
-    prd: { onClick: () => onWriteDocument('prd') },
-    prfaq: { onClick: () => onWriteDocument('prfaq') },
+    prd: writeChoices('prd', blank, onWriteDocument, t),
+    prfaq: writeChoices('prfaq', blank, onWriteDocument, t),
     prototypes: {
       onClick: build.onClick,
       disabled: needsDocs || build.busy,
@@ -153,8 +181,14 @@ function sectionNewActions({ build, needsDocs, onCreateDoc, onWriteDocument, t }
       reason: needsDocs ? t('documents.prototype.needsDocs') : undefined,
       status: <PrototypeBuildStatus build={build} />,
     },
-    documents: { onClick: onCreateDoc },
+    documents: { onClick: blank.startCustom, busy: blank.creatingCustom, status: <BlankCreateStatus failed={blank.customFailed} /> },
   }
+}
+
+/** A blank document that could not be created, said under the Documents section (always mounted: it is heard). */
+function BlankCreateStatus({ failed }: Readonly<{ failed: boolean }>) {
+  const { t } = useTranslation('projectDetail')
+  return <p role="status" className={clsx('text-xs text-danger', !failed && 'sr-only')}>{failed ? t('documents.blank.createDocumentFailed') : null}</p>
 }
 
 /**
@@ -182,15 +216,19 @@ function pageKey(document: ProjectDocument): string {
   return series === '' ? `doc:${document.document_id}` : `series:${document.document_type}:${series}`
 }
 
-/** A prototype in its preview pane; every other document on its page. */
-function SelectedDocument(props: PrototypePaneProps) {
+/** A prototype in its preview pane; every other document on its page (a fresh one opening on `openOn`). */
+function SelectedDocument(props: PrototypePaneProps & {
+  readonly openOn: FreshDocument['focus'] | undefined
+  readonly onOpened: () => void
+}) {
   const { document } = props
   if (document.document_type === 'prototype') return <PrototypePane {...props} />
   return (
     <Suspense fallback={<PageLoading />}>
       {/* Keyed: a page's draft, outline and comments belong to one document (a PRD / PR/FAQ: its series). */}
       <DocumentPage key={pageKey(document)} project={props.project} document={document} documents={props.documents}
-        canEdit={props.canEdit} onSelectDoc={props.onSelectDoc} onDeleteDoc={props.onDeleteDoc} isDeleting={props.isDeleting} />
+        canEdit={props.canEdit} onSelectDoc={props.onSelectDoc} onDeleteDoc={props.onDeleteDoc} isDeleting={props.isDeleting}
+        openOn={props.openOn} onOpened={props.onOpened} />
     </Suspense>
   )
 }

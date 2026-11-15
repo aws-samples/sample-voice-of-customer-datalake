@@ -19,9 +19,13 @@ import type { ReactNode } from 'react'
 import type { ProjectDocument } from '../../../api/types'
 import type { OutlineItem } from '../editor/CanvasEditor'
 
-const handle = { root: vi.fn(), getMarkdown: vi.fn(), setMarkdown: vi.fn(), scrollToHeading: vi.fn(), focus: vi.fn(), clearSelection: vi.fn() }
+const handle = {
+  root: vi.fn(), getMarkdown: vi.fn(), setMarkdown: vi.fn(), scrollToHeading: vi.fn(), focus: vi.fn(), clearSelection: vi.fn(),
+  run: vi.fn(() => true), can: vi.fn(() => true),
+}
 const canvasState = {
-  content: '', title: 'Notes', setTitle: vi.fn(), onChange: vi.fn(), dirty: false, saving: false,
+  content: '', title: 'Notes', setTitle: vi.fn(), rename: vi.fn(() => Promise.resolve()), draft: '', onChange: vi.fn(),
+  dirty: false, saving: false,
   save: vi.fn(), discard: vi.fn(), conflict: null, titleEditable: true, handleRef: { current: handle },
   editable: true, selectDoc: vi.fn(), reloadLatest: vi.fn(), guardDialog: null, reviseRefused: null,
 }
@@ -87,14 +91,15 @@ function doc(overrides: Partial<ProjectDocument>): ProjectDocument {
 }
 
 /** `onCanvas`: the stored text the canvas is on (its baseline); the selected document's own by default. */
-function renderPage(document: ProjectDocument, canEdit = true, onCanvas = document.content, entry = '/projects/proj-1?tab=documents') {
+function renderPage(document: ProjectDocument, canEdit = true, onCanvas = document.content, entry = '/projects/proj-1?tab=documents',
+  opening: { openOn?: 'title' | 'text'; onOpened?: () => void } = {}) {
   // The canvas's own rule (useCanvasDocument): a viewer's canvas is never editable.
   if (!canEdit) canvasState.editable = false
   canvasState.content = onCanvas
   return render(
     <MemoryRouter initialEntries={[entry]}>
       <DocumentPage project={canEdit ? editor : viewer} document={document} documents={[document]} canEdit={canEdit}
-        onSelectDoc={vi.fn()} onDeleteDoc={vi.fn()} isDeleting={false} />
+        onSelectDoc={vi.fn()} onDeleteDoc={vi.fn()} isDeleting={false} {...opening} />
     </MemoryRouter>,
   )
 }
@@ -107,6 +112,12 @@ beforeEach(() => {
   comments.query.isSuccess = true
   vi.clearAllMocks()
 })
+
+/** The selection inside a text field: [start, end]. */
+function selectedRange(field: HTMLElement): [number | null, number | null] {
+  if (!(field instanceof HTMLInputElement)) throw new Error('not a text field')
+  return [field.selectionStart, field.selectionEnd]
+}
 
 describe('DocumentPage: a document with no comments (research, custom)', () => {
   it('is edited in place: the editable canvas on the stored content', () => {
@@ -124,15 +135,76 @@ describe('DocumentPage: a document with no comments (research, custom)', () => {
     expect(screen.getByTestId('canvas')).toHaveTextContent(STORED)
   })
 
-  it('makes the title an inline field that Enter leaves for the text', async () => {
+  it('renames in place: typing changes nothing yet, Enter saves the new name and leaves for the text', async () => {
     const user = userEvent.setup()
     renderPage(doc({}))
     const title = screen.getByRole('textbox', { name: 'Document title' })
-    expect(title).toHaveValue('Notes')
     await user.type(title, 'X')
-    expect(canvasState.setTitle).toHaveBeenLastCalledWith('NotesX')
+    expect([title.getAttribute('value'), canvasState.rename.mock.calls.length]).toStrictEqual(['NotesX', 0])
     await user.keyboard('{Enter}')
+    expect(canvasState.rename.mock.calls).toStrictEqual([['NotesX']])
     expect(handle.focus).toHaveBeenCalledWith()
+  })
+
+  it('saves the new name when the title is left, once, and trims it', async () => {
+    const user = userEvent.setup()
+    renderPage(doc({}))
+    const title = screen.getByRole('textbox', { name: 'Document title' })
+    await user.clear(title)
+    await user.type(title, '  Field notes  ')
+    await user.tab()
+    expect(canvasState.rename.mock.calls).toStrictEqual([['Field notes']])
+  })
+
+  it('puts the saved name back on Escape, saving nothing', async () => {
+    const user = userEvent.setup()
+    renderPage(doc({}))
+    const title = screen.getByRole('textbox', { name: 'Document title' })
+    await user.type(title, ' draft')
+    await user.keyboard('{Escape}')
+    expect(title).toHaveValue('Notes')
+    await user.tab()
+    expect(canvasState.rename).not.toHaveBeenCalled()
+  })
+
+  it('refuses an empty name: Enter says why and keeps the field, leaving it puts the saved name back', async () => {
+    const user = userEvent.setup()
+    renderPage(doc({}))
+    const title = screen.getByRole('textbox', { name: 'Document title' })
+    await user.clear(title)
+    await user.keyboard('{Enter}')
+    expect(title).toHaveAccessibleDescription('A document needs a name.')
+    expect([title.getAttribute('aria-invalid'), handle.focus.mock.calls.length]).toStrictEqual(['true', 0])
+    await user.tab()
+    expect([title.getAttribute('aria-invalid'), canvasState.rename.mock.calls.length, title.getAttribute('value')])
+      .toStrictEqual([null, 0, 'Notes'])
+  })
+
+  it('saves nothing when the name is left unchanged', async () => {
+    const user = userEvent.setup()
+    renderPage(doc({}))
+    const title = screen.getByRole('textbox', { name: 'Document title' })
+    await user.type(title, 'X{Backspace}')
+    await user.keyboard('{Enter}')
+    expect(canvasState.rename).not.toHaveBeenCalled()
+  })
+
+  it('opens a document just created blank on its title, selected, and says it took the focus', () => {
+    const onOpened = vi.fn()
+    renderPage(doc({}), true, STORED, undefined, { openOn: 'title', onOpened })
+    const title = screen.getByRole('textbox', { name: 'Document title' })
+    expect(title).toHaveFocus()
+    expect(selectedRange(title)).toStrictEqual([0, 'Notes'.length])
+    expect(onOpened).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows its details under the title: the owner, when it was edited, its words and type', () => {
+    canvasState.draft = 'Two words'
+    onTestFinished(() => { canvasState.draft = '' })
+    renderPage(doc({ updated_at: new Date().toISOString() }))
+    const details = screen.getByRole('list', { name: 'Document details' })
+    expect(within(details).getAllByRole('listitem').map((chip) => chip.textContent))
+      .toStrictEqual(['Edited now', '2 words · 1 min read', 'CUSTOM'])
   })
 
   it('shows the evidence beside the text and its type', () => {
@@ -294,7 +366,7 @@ describe('DocumentPage: the focus view', () => {
     renderPage(doc({}))
     await user.click(screen.getByRole('button', { name: 'Full screen' }))
     await nextFrame()
-    // The pane's own header (title, save status, Full screen): a null here would not equal the element scrolled.
+    // The pane's own header (its menu bar, save status, Full screen): a null here would not equal the element scrolled.
     expect(scrolled).toStrictEqual([screen.getByTestId('document-detail-pane').querySelector(':scope > header')])
     expect(Element.prototype.scrollIntoView).toHaveBeenCalledExactlyOnceWith({ block: 'start', behavior: 'auto' })
     expect(handle.focus).toHaveBeenCalledExactlyOnceWith({ scroll: false })

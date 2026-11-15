@@ -21,6 +21,7 @@ interface Waiting<T> { readonly at: number; readonly request: T }
 /** The block menu waits for "the block at the caret", read when it opens (the text may have changed meanwhile). */
 interface WaitingRequests {
   link: Waiting<true> | null
+  image: Waiting<true> | null
   toolbar: Waiting<true> | null
   blockMenu: Waiting<() => number | null> | null
 }
@@ -34,10 +35,11 @@ interface WaitingRequests {
 export class CanvasController {
   private slash: KeyHandler | null = null
   private link: (() => void) | null = null
+  private image: (() => void) | null = null
   private toolbar: (() => void) | null = null
   private blockMenu: ((pos: number) => void) | null = null
   private pointer: Pointer | null = null
-  private readonly waiting: WaitingRequests = { link: null, toolbar: null, blockMenu: null }
+  private readonly waiting: WaitingRequests = { link: null, image: null, toolbar: null, blockMenu: null }
 
   /** The canvas notes the pointer from the start, so the block handle, which loads later, shows where it already is. */
   setPointer(pointer: Pointer | null) { this.pointer = pointer }
@@ -55,6 +57,11 @@ export class CanvasController {
     this.link = handler
     if (handler && this.take('link')) handler()
   }
+  /** The image dialog at the caret (the "/" menu's Image; the page's Insert → Image). */
+  setOpenImage(handler: (() => void) | null) {
+    this.image = handler
+    if (handler && this.take('image')) handler()
+  }
   setFocusToolbar(handler: (() => void) | null) {
     this.toolbar = handler
     if (handler && this.take('toolbar')) handler()
@@ -70,6 +77,10 @@ export class CanvasController {
   openLink(): void {
     if (this.link) this.link()
     else this.waiting.link = { at: Date.now(), request: true }
+  }
+  openImage(): void {
+    if (this.image) this.image()
+    else this.waiting.image = { at: Date.now(), request: true }
   }
   focusToolbar(): void {
     if (this.toolbar) this.toolbar()

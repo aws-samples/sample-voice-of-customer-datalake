@@ -24,7 +24,7 @@
  *     it (390), Escape leaves (focus back on the button), Ctrl+Shift+F, a reload keeps it, the button leaves it; it adds
  *     no history entry (after a save in it, Back goes to the page before, never the older version); a draft goes
  *     through it without the leave guard.
- * 13. The File menu: keyboard (Enter opens on Save, arrows wrap, End, Escape back to File, not leaving anything else),
+ * 13. The Document menu: keyboard (Enter opens on Save, arrows wrap, End, Escape back to it, not leaving anything else),
  *     Save with its state (Saved / Unsaved changes) and one PUT, Share opens its dialog; Download as Markdown is the
  *     stored text (an unsaved edit is not in it); the PDF's print document without, then with "Include open comments"
  *     (the quote and the comment), each rendered to a PDF file.
@@ -54,7 +54,7 @@ import { test } from '../lib/test'
 import { expectNoSidewaysScrolling } from '../lib/a11y'
 import { apiCall, listOf, stringField } from '../lib/api'
 import {
-  CANVAS_TEXT, DOCUMENT_PUT, REVISE_TEXT, actionsBar, addComment, addressedIn, barButton, revisePanel, canvasOf, caretAtEnd, clickSave, createDocument, documentRow, fileMenu, fileMenuItem,
+  CANVAS_TEXT, DOCUMENT_MENU, DOCUMENT_PUT, REVISE_TEXT, actionsBar, addComment, addressedIn, barButton, revisePanel, canvasOf, caretAtEnd, clickSave, createDocument, documentRow, fileMenu, fileMenuItem,
   blockTexts, dragBlock, formatBar, openDocument, replaceCanvasText, saveStatus, savedAt, selectInCanvas, storedDocument,
 } from '../lib/canvas'
 import { dialogNamed } from '../lib/dialogs'
@@ -669,12 +669,12 @@ test.describe('document canvas', () => {
     })
   })
 
-  test('File menu: the keyboard (open, arrows, Esc), Save and its state, Share opens its dialog', async ({ page }) => {
+  test('Document menu: the keyboard (open, arrows, Esc), Save and its state, Share opens its dialog', async ({ page }) => {
     const title = titled('menu')
     await createDocument(PROJECT, { title, content: PRFAQ_BODY, document_type: 'prfaq' })
     await assertStep(page, 'admin', 'canvas-menu-keyboard', async () => {
       const canvas = await openDocument(page, PROJECT, title)
-      const file = barButton(page, 'File')
+      const file = barButton(page, DOCUMENT_MENU)
       await expect(file).toHaveAttribute('aria-haspopup', 'menu')
       await file.focus()
       await page.keyboard.press('Enter')

@@ -4,7 +4,7 @@ import { renderWithQueryClient as render } from '@test/query-client'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import DocumentsTab from './DocumentsTab'
-import { documentsTabStubs, makeProject, preloadDocumentPage } from './project-detail-fixtures'
+import { blankStubs, documentsTabStubs, makeProject, preloadDocumentPage } from './project-detail-fixtures'
 import { EDITOR_ACCESS, VIEWER_ACCESS } from './projectAccess-fixtures'
 import type { ProjectDocument } from '../../api/types'
 import type { Project } from '../../api/projectTypes'
@@ -46,13 +46,13 @@ describe('DocumentsTab', () => {
     expect(screen.getAllByText('No documents')).toHaveLength(4)
   })
 
-  it('calls onCreateDoc when New Document button is clicked', async () => {
+  it('creates a blank document at once when New Document is clicked (no dialog)', async () => {
     const user = userEvent.setup()
-    const onCreateDoc = vi.fn()
-    renderWithRouter(<DocumentsTab {...defaultProps} onCreateDoc={onCreateDoc} />)
-    
+    const blank = blankStubs()
+    renderWithRouter(<DocumentsTab {...defaultProps} blank={blank} />)
+
     await user.click(screen.getByRole('button', { name: /New Document/i }))
-    expect(onCreateDoc).toHaveBeenCalledTimes(1)
+    expect([blank.startCustom.mock.calls.length, screen.queryByRole('dialog')]).toStrictEqual([1, null])
   })
 
   // The prose page is lazy-loaded (the editor's bundle loads only on this tab); its action bar holds the versions.
@@ -98,12 +98,12 @@ describe('DocumentsTab', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Test Content' })).toBeInTheDocument()
   })
 
-  // Edited in place: no Edit (pencil) button and no edit modal; Delete is in the page bar's File menu.
-  it('offers Delete in the page bar\'s File menu and no Edit button for a prose document', async () => {
+  // Edited in place: no Edit (pencil) button and no edit modal; Delete is in the page bar's Document menu.
+  it('offers Delete in the page bar\'s Document menu and no Edit button for a prose document', async () => {
     const user = userEvent.setup()
     renderWithRouter(<DocumentsTab {...defaultProps} documents={[mockDoc]} selectedDoc={mockDoc} />)
     const bar = await screen.findByTestId('document-actions-bar')
-    await user.click(within(bar).getByRole('button', { name: 'File' }))
+    await user.click(within(bar).getByRole('button', { name: 'Document' }))
     expect(screen.getByRole('menuitem', { name: 'Delete document' })).toBeInTheDocument()
     expect(screen.queryByTitle('Edit document')).not.toBeInTheDocument()
   })
@@ -113,7 +113,7 @@ describe('DocumentsTab', () => {
     const onDeleteDoc = vi.fn()
     renderWithRouter(<DocumentsTab {...defaultProps} documents={[mockDoc]} selectedDoc={mockDoc} onDeleteDoc={onDeleteDoc} />)
 
-    await user.click(await screen.findByRole('button', { name: 'File' }))
+    await user.click(await screen.findByRole('button', { name: 'Document' }))
     await user.click(screen.getByRole('menuitem', { name: 'Delete document' }))
     expect(onDeleteDoc).toHaveBeenCalledTimes(1)
   })
@@ -224,7 +224,7 @@ describe('DocumentsTab', () => {
       const user = userEvent.setup()
       renderWithRouter(<DocumentsTab {...defaultProps} project={viewerProject} documents={[mockDoc]} selectedDoc={mockDoc} />)
       expect(await screen.findByRole('heading', { name: 'Test Document' })).toBeInTheDocument()
-      await user.click(screen.getByRole('button', { name: 'File' }))
+      await user.click(screen.getByRole('button', { name: 'Document' }))
       expect(screen.getByRole('menuitem', { name: /download as markdown/i })).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: /Edit document/i })).not.toBeInTheDocument()
       expect(screen.queryByRole('menuitem', { name: /Delete document/i })).not.toBeInTheDocument()
@@ -259,7 +259,7 @@ describe('DocumentsTab', () => {
     const user = userEvent.setup()
     renderWithRouter(<DocumentsTab {...defaultProps} project={editorProject} documents={[mockDoc]} selectedDoc={mockDoc} />)
     expect(screen.getByRole('button', { name: /New Document/i })).toBeInTheDocument()
-    await user.click(await screen.findByRole('button', { name: 'File' }))
+    await user.click(await screen.findByRole('button', { name: 'Document' }))
     expect(screen.getByRole('menuitem', { name: /Delete document/i })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Edit document/i })).not.toBeInTheDocument()
   })

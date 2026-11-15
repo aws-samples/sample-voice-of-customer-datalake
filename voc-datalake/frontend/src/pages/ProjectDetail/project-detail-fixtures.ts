@@ -10,6 +10,8 @@ import { QueryClient } from '@tanstack/react-query'
 import { emptyProductContext } from './productContextFields'
 import type { ProjectDocument } from '../../api/types'
 import type { ProductContext, Project, ProjectPersona } from '../../api/projectTypes'
+import type { BlankDocumentControls } from './useBlankDocument'
+import type { GatedDocType } from '../../api/aiModeApi'
 
 /** The API endpoint every ProjectDetail spec reports from the config store. */
 const TEST_API_ENDPOINT = 'https://api.example.com/v1'
@@ -69,10 +71,23 @@ export function makeDocument(overrides: Partial<ProjectDocument> = {}): ProjectD
 }
 
 /** The DocumentsTab callbacks a spec stubs but never asserts on, plus the idle delete state. */
+/** What a spec may set of a page's blank-document state (its actions stay spies). */
+type BlankState = Pick<BlankDocumentControls, 'creatingCustom' | 'customFailed' | 'pending' | 'creatingPending' | 'pendingFailed' | 'fresh'>
+
+/** A page's blank-document controls (useBlankDocument) with nothing pending, every action a spy. */
+export function blankStubs(state: Partial<BlankState> = {}) {
+  const idle: BlankState = { creatingCustom: false, customFailed: false, pending: null, creatingPending: false, pendingFailed: false, fresh: null }
+  return {
+    startCustom: vi.fn<() => void>(), startManaged: vi.fn<(type: GatedDocType) => void>(),
+    createPending: vi.fn<(title: string) => void>(), cancelPending: vi.fn<() => void>(), consumeFresh: vi.fn<() => void>(),
+    ...idle, ...state,
+  }
+}
+
 export function documentsTabStubs() {
   return {
     onDeleteDoc: vi.fn(),
-    onCreateDoc: vi.fn(),
+    blank: blankStubs(),
     onWriteDocument: vi.fn(),
     isDeleting: false,
   }

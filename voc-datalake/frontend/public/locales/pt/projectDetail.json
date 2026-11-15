@@ -7,18 +7,9 @@
     "personaTitle": "Deletar Persona?"
   },
   "documentModal": {
-    "cancel": "Cancelar",
     "conflict": "Entretanto, alguém salvou uma versão mais recente deste documento.",
     "conflictReload": "Carregar a mais recente",
-    "conflictSaveAnyway": "Salvar a minha mesmo assim",
-    "contentLabel": "Conteúdo (Markdown)",
-    "contentPlaceholder": "Escreva seu documento em Markdown...",
-    "create": "Criar",
-    "createDocument": "Criar Documento",
-    "creating": "Criando...",
-    "preview": "Visualizar",
-    "titleLabel": "Título",
-    "titlePlaceholder": "Título do documento..."
+    "conflictSaveAnyway": "Salvar a minha mesmo assim"
   },
   "documents": {
     "deleteDocument": "Deletar documento",
@@ -65,7 +56,11 @@
       "new": "Novo",
       "newPrd": "Novo PRD",
       "newPrfaq": "Novo PR/FAQ",
-      "newPrototype": "Novo protótipo"
+      "newPrototype": "Novo protótipo",
+      "newBlank": "Em branco",
+      "newBlankHint": "Um {{type}} vazio com a sua estrutura: você dá o nome e escreve na página.",
+      "newWizard": "Com o assistente",
+      "newWizardHint": "Escolha primeiro as evidências e responda às perguntas guiadas."
     },
     "noDocuments": "Nenhum documento",
     "ordinal": "{{ordinal}} de {{total, number}}",
@@ -217,6 +212,25 @@
       "documentsSkipped_one": "{{count, number}} documento de referência selecionado ficou de fora (só os primeiros {{cap, number}} são lidos).",
       "documentsSkipped_other": "{{count, number}} documentos de referência selecionados ficaram de fora (só os primeiros {{cap, number}} são lidos).",
       "handWritten": "Escrito à mão: ainda não cita feedback de clientes."
+    },
+    "blank": {
+      "untitled": {
+        "custom": "Documento sem título",
+        "prd": "PRD sem título",
+        "prfaq": "PR/FAQ sem título"
+      },
+      "numbered": "{{title}} {{n}}",
+      "nameRequired": "Dê-lhe um nome primeiro.",
+      "nameTaken": "Este projeto já tem um {{type}} chamado “{{title}}”: este nome só lhe acrescentaria uma versão. Escolha outro nome.",
+      "createFailed": "Não foi possível criar o {{type}}. Tente novamente.",
+      "createDocumentFailed": "Não foi possível criar o documento. Tente novamente.",
+      "draftLabel": "Novo {{type}}",
+      "handWritten": "Escrito à mão",
+      "nameHint": "Dê um nome ao seu {{type}} e pressione Enter para começar a escrever. O nome acompanha cada versão, por isso não pode mudar depois de o {{type}} ser criado.",
+      "creating": "Criando…",
+      "startWriting": "Começar a escrever",
+      "cancel": "Cancelar",
+      "outlineNote": "O {{type}} abre aqui com a sua estrutura, para você escrever nele."
     }
   },
   "imageErrors": {
@@ -825,7 +839,9 @@
       "evidence": "Evidências",
       "evidenceEmpty": "Nenhuma avaliação ou pedido de funcionalidade foi registrado para este documento.",
       "showAll": "Mostrar tudo ({{n, number}})",
-      "featureRequests": "Pedidos de funcionalidades"
+      "featureRequests": "Pedidos de funcionalidades",
+      "titleHint": "Clique para renomear. Enter salva, Esc cancela.",
+      "titleRequired": "Um documento precisa de um nome."
     },
     "comments": {
       "hint": "Para comentar um trecho, selecione-o e pressione Comentar, ou pressione Ctrl+Alt+M (⌘⌥M num Mac).",
@@ -957,8 +973,36 @@
       "commentsHeading": "Comentários abertos",
       "includeComments": "Incluir comentários abertos",
       "saved": "Salvo",
-      "trigger": "Arquivo",
-      "wholeDocument": "Sobre o documento inteiro"
+      "trigger": "Documento",
+      "wholeDocument": "Sobre o documento inteiro",
+      "rename": "Renomear"
+    },
+    "menubar": {
+      "label": "Menus do documento",
+      "edit": "Editar",
+      "format": "Formatar",
+      "insert": "Inserir",
+      "view": "Exibir",
+      "undo": "Desfazer",
+      "redo": "Refazer",
+      "link": "Link…",
+      "image": "Imagem…",
+      "comments": "Comentários",
+      "fullWidth": "Largura total",
+      "commentsButton_one": "Comentários, {{count, number}} aberto",
+      "commentsButton_other": "Comentários, {{count, number}} abertos",
+      "commentsHint": "Mostrar ou ocultar os comentários"
+    },
+    "meta": {
+      "label": "Detalhes do documento",
+      "author": "Por {{name}}",
+      "owner": "Proprietário: {{name}}",
+      "edited": "Editado: {{when}}",
+      "words_one": "{{count, number}} palavra",
+      "words_other": "{{count, number}} palavras",
+      "minutes_one": "{{count, number}} min de leitura",
+      "minutes_other": "{{count, number}} min de leitura",
+      "wordsAndMinutes": "{{words}} · {{minutes}}"
     }
   }
 }

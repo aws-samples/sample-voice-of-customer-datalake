@@ -264,3 +264,39 @@ describe('two bubbles of nearby passages', () => {
     await waitFor(() => expect(topOf('Comment by Ana')).toBe(100))
   })
 })
+
+/** A harness whose rail the page has hidden; `onReveal` stands in for the page showing it again. */
+function HiddenRailHarness({ onReveal, onHandle }: Readonly<{
+  onReveal: () => void; onHandle?: (handle: CommentedDocumentHandle | null) => void
+}>) {
+  const root = useRef<HTMLDivElement>(null)
+  return (
+    <CommentedDocument contentRoot={() => root.current} revision="v1" threads={[QUOTED]} viewed={{ documentId: 'doc_1' }}
+      actions={ACTIONS} canComment commentRef={onHandle} railHidden onRevealRail={onReveal}>
+      <div ref={root} data-testid="content">
+        <p>Customers wait two weeks for a refund.</p>
+      </div>
+    </CommentedDocument>
+  )
+}
+
+describe('a rail the page hid (View → Comments)', () => {
+  it('is out of sight and of the accessibility tree, and the text takes the width', async () => {
+    render(<HiddenRailHarness onReveal={vi.fn()} />)
+    expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
+    expect(screen.queryByRole('article', { name: 'Comment by Rui' })).not.toBeInTheDocument()
+    const column = screen.getByTestId('reading-column')
+    expect([column.parentElement?.className.includes('xl:grid'), column.hasAttribute('data-reading-column')]).toStrictEqual([false, true])
+    await waitFor(() => expect(registry.get('voc-comment')?.ranges.map(String)).toStrictEqual(['two weeks']))
+  })
+
+  it('asks the page to show it again when a comment is started, or a thread asked for', () => {
+    const onReveal = vi.fn()
+    const handle: { current: CommentedDocumentHandle | null } = { current: null }
+    render(<HiddenRailHarness onReveal={onReveal} onHandle={(value) => { handle.current = value }} />)
+    selectQuote()
+    act(() => { handle.current?.commentOnSelection() })
+    act(() => { handle.current?.showThread('c1') })
+    expect(onReveal).toHaveBeenCalledTimes(2)
+  })
+})

@@ -380,17 +380,12 @@ export function useProjectMutations({
   }
 }
 
-/** A custom document to create (the create mutation's variables). */
-interface DocumentDraft {
-  title: string
-  content: string
-}
-
 /** A save of an existing document (the update mutation's variables). */
 export interface DocumentUpdate {
   docId: string
   title?: string
-  content: string
+  /** Absent: a rename (the server keeps the stored content; research / custom documents only). */
+  content?: string
   /** The revision the editor loaded (documentEdit.documentRevision); absent = no stale check. */
   expectedRevision?: number
   /**
@@ -405,24 +400,13 @@ interface UseDocumentMutationsProps {
   setSelectedDoc: (d: ProjectDocument | null) => void
 }
 
-/** Create (a custom document, from the create modal) and delete. Edits are the canvas's: {@link useUpdateDocument}. */
+/** Delete. A blank document is created by useBlankDocument; edits are the canvas's: {@link useUpdateDocument}. */
 export function useDocumentMutations({
   id,
   setSelectedDoc,
 }: UseDocumentMutationsProps) {
   const queryClient = useQueryClient()
   const projectId = id ?? ''
-
-  const createDocMut = useMutation({
-    mutationFn: (data: DocumentDraft) =>
-      projectsApi.createDocument(projectId, {
-        ...data,
-        document_type: 'custom',
-      }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: projectKey(id) })
-    },
-  })
 
   const deleteDocMut = useMutation({
     mutationFn: (docId: string) => projectsApi.deleteDocument(projectId, docId),
@@ -433,7 +417,6 @@ export function useDocumentMutations({
   })
 
   return {
-    createDocMut,
     deleteDocMut,
   }
 }
@@ -451,7 +434,7 @@ export function useUpdateDocument(id: string | undefined) {
     mutationFn: (data: DocumentUpdate) => {
       const body = {
         ...(data.title === undefined ? {} : { title: data.title }),
-        content: data.content,
+        ...(data.content === undefined ? {} : { content: data.content }),
         ...(data.expectedRevision === undefined ? {} : { expected_revision: data.expectedRevision }),
         // A fresh id per save, so the server can tell a replayed request from a second save.
         edit_id: crypto.randomUUID(),

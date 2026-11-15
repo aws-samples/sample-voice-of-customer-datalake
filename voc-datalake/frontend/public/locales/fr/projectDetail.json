@@ -7,18 +7,9 @@
     "personaTitle": "Supprimer le persona ?"
   },
   "documentModal": {
-    "cancel": "Annuler",
     "conflict": "Entre-temps, quelqu’un a enregistré une version plus récente de ce document.",
     "conflictReload": "Charger la plus récente",
-    "conflictSaveAnyway": "Enregistrer la mienne quand même",
-    "contentLabel": "Contenu (Markdown)",
-    "contentPlaceholder": "Rédigez votre document en Markdown...",
-    "create": "Créer",
-    "createDocument": "Créer un document",
-    "creating": "Création en cours...",
-    "preview": "Aperçu",
-    "titleLabel": "Titre",
-    "titlePlaceholder": "Titre du document..."
+    "conflictSaveAnyway": "Enregistrer la mienne quand même"
   },
   "documents": {
     "deleteDocument": "Supprimer le document",
@@ -65,7 +56,11 @@
       "new": "Nouveau",
       "newPrd": "Nouveau PRD",
       "newPrfaq": "Nouveau PR/FAQ",
-      "newPrototype": "Nouveau prototype"
+      "newPrototype": "Nouveau prototype",
+      "newBlank": "Vierge",
+      "newBlankHint": "Un {{type}} vide avec son plan : vous le nommez et l’écrivez sur la page.",
+      "newWizard": "Avec l’assistant",
+      "newWizardHint": "Choisissez d’abord les éléments probants et répondez aux questions guidées."
     },
     "noDocuments": "Aucun document",
     "ordinal": "{{ordinal}} sur {{total, number}}",
@@ -217,6 +212,25 @@
       "documentsSkipped_one": "{{count, number}} document de référence sélectionné a été laissé de côté (seuls les {{cap, number}} premiers sont lus).",
       "documentsSkipped_other": "{{count, number}} documents de référence sélectionnés ont été laissés de côté (seuls les {{cap, number}} premiers sont lus).",
       "handWritten": "Écrit à la main : ne cite encore aucun avis client."
+    },
+    "blank": {
+      "untitled": {
+        "custom": "Document sans titre",
+        "prd": "PRD sans titre",
+        "prfaq": "PR/FAQ sans titre"
+      },
+      "numbered": "{{title}} {{n}}",
+      "nameRequired": "Donnez-lui d’abord un nom.",
+      "nameTaken": "Ce projet a déjà un {{type}} nommé « {{title}} » : ce nom ne ferait qu’y ajouter une version. Choisissez un autre nom.",
+      "createFailed": "Le {{type}} n’a pas pu être créé. Réessayez.",
+      "createDocumentFailed": "Le document n’a pas pu être créé. Réessayez.",
+      "draftLabel": "Nouveau {{type}}",
+      "handWritten": "Écrit à la main",
+      "nameHint": "Nommez votre {{type}}, puis appuyez sur Entrée pour commencer à écrire. Son nom accompagne chaque version : il ne peut plus changer une fois le {{type}} créé.",
+      "creating": "Création…",
+      "startWriting": "Commencer à écrire",
+      "cancel": "Annuler",
+      "outlineNote": "Le {{type}} s’ouvre ici avec son plan, pour que vous y écriviez."
     }
   },
   "imageErrors": {
@@ -825,7 +839,9 @@
       "evidence": "Éléments probants",
       "evidenceEmpty": "Aucun avis ni aucune demande de fonctionnalité n’a été enregistré pour ce document.",
       "showAll": "Tout afficher ({{n, number}})",
-      "featureRequests": "Demandes de fonctionnalités"
+      "featureRequests": "Demandes de fonctionnalités",
+      "titleHint": "Cliquez pour renommer. Entrée enregistre, Échap annule.",
+      "titleRequired": "Un document a besoin d’un nom."
     },
     "comments": {
       "hint": "Pour commenter un passage, sélectionnez-le et appuyez sur Commenter, ou appuyez sur Ctrl+Alt+M (⌘⌥M sur un Mac).",
@@ -957,8 +973,36 @@
       "commentsHeading": "Commentaires ouverts",
       "includeComments": "Inclure les commentaires ouverts",
       "saved": "Enregistré",
-      "trigger": "Fichier",
-      "wholeDocument": "Sur l’ensemble du document"
+      "trigger": "Document",
+      "wholeDocument": "Sur l’ensemble du document",
+      "rename": "Renommer"
+    },
+    "menubar": {
+      "label": "Menus du document",
+      "edit": "Édition",
+      "format": "Format",
+      "insert": "Insertion",
+      "view": "Affichage",
+      "undo": "Annuler",
+      "redo": "Rétablir",
+      "link": "Lien…",
+      "image": "Image…",
+      "comments": "Commentaires",
+      "fullWidth": "Pleine largeur",
+      "commentsButton_one": "Commentaires, {{count, number}} ouvert",
+      "commentsButton_other": "Commentaires, {{count, number}} ouverts",
+      "commentsHint": "Afficher ou masquer les commentaires"
+    },
+    "meta": {
+      "label": "Détails du document",
+      "author": "Par {{name}}",
+      "owner": "Propriétaire : {{name}}",
+      "edited": "Modifié : {{when}}",
+      "words_one": "{{count, number}} mot",
+      "words_other": "{{count, number}} mots",
+      "minutes_one": "{{count, number}} min de lecture",
+      "minutes_other": "{{count, number}} min de lecture",
+      "wordsAndMinutes": "{{words}} · {{minutes}}"
     }
   }
 }

@@ -11,6 +11,12 @@
  * 2. At 390: the sections become a row of section buttons above the strip, in order with their counts, the first
  *    section with documents open; Enter on Documents puts its rows in the strip and takes the PRD's out; the page
  *    scrolls nothing sideways and the row of buttons fits the window; axe as above.
+ * 3. New without the wizard (7.38.00), in the dark and the light theme: the Documents New opens a blank document at
+ *    once (no dialog) on its page, its predefined title focused; typing names it and Enter saves the title alone (one
+ *    PUT, no content) and moves on to the text, which Save stores. The PRD New is a menu (Blank, With the wizard);
+ *    Blank opens the draft pane on "Untitled PRD…", Enter files the hand-written PRD under the typed name (one POST)
+ *    and opens its page; View → Comments hides its comments panel and the comments button brings it back; the page's
+ *    menu bar walks with the arrow keys; axe has no serious or critical finding.
  *
  * MOCK ONLY (the mock's fixed project; the counts change with every document a deployment's project gains). From
  * voc-datalake/frontend:
@@ -24,10 +30,10 @@ import { expect, type Locator, type Page } from '@playwright/test'
 import { test } from '../lib/test'
 import { expectInsideWindow, expectNoSeriousAxe, expectNoSidewaysScrolling } from '../lib/a11y'
 import { apiCall, listOf, stringField } from '../lib/api'
-import { documentSectionButtons, documentsPath } from '../lib/canvas'
+import { DOCUMENT_MENU, DOCUMENT_PUT, actionsBar, canvasOf, clickSave, documentSectionButtons, documentsPath } from '../lib/canvas'
 import { dialogNamed } from '../lib/dialogs'
 import { MOCK, SCREENS_DIR } from '../lib/env'
-import { roleOf, site } from '../lib/fixtures'
+import { isApi, pinTheme, roleOf, site, type Theme } from '../lib/fixtures'
 
 const PROJECT = 'proj_1'
 /** The sections in their one order, with their English names (projectDetail.json documents.sections). */
@@ -154,4 +160,76 @@ test.describe('documents in sections', () => {
     await expectNoSeriousAxe(page, '390 Documents')
     await shot(page, '390-documents')
   })
+
+  for (const theme of ['dark', 'light'] as const satisfies readonly Theme[]) {
+    test(`${theme}: New without the wizard: a blank document named in place, a blank PRD named first`, async ({ page }) => {
+      await pinTheme(page, theme)
+      await atWidth(page, 1440)
+      await page.goto(site(documentsPath(PROJECT)), { waitUntil: 'domcontentloaded' })
+
+      // Documents → New: no dialog; the page opens on its predefined title, selected, which typing replaces.
+      await page.getByRole('button', { name: 'New Document', exact: true }).click({ timeout: 20_000 })
+      const title = page.getByRole('textbox', { name: 'Document title', exact: true })
+      await expect(title).toBeFocused({ timeout: 20_000 })
+      await expect(title).toHaveValue(/^Untitled document( \d+)?$/)
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+      await shot(page, `${theme}-blank-document`)
+      const name = `Blank notes ${theme} ${String(Date.now())}`
+      const renamed = page.waitForResponse((res) => isApi(res, 'PUT', DOCUMENT_PUT))
+      await page.keyboard.type(name)
+      await page.keyboard.press('Enter')
+      const rename = await renamed
+      expect(rename.status()).toBe(200)
+      const sent: unknown = JSON.parse(rename.request().postData() ?? '{}')
+      expect(sent, 'the rename sends the title alone').toMatchObject({ title: name })
+      expect(Object.keys(sent ?? {}), 'no content: the stored text stays').not.toContain('content')
+      const canvas = canvasOf(page, name)
+      await expect(canvas, 'Enter moves on to the text').toBeFocused()
+      await page.keyboard.type('The first line of a blank page.')
+      expect((await clickSave(page)).status()).toBe(200)
+
+      // The menu bar: Document · Edit · Format · Insert · View, walked with the arrow keys.
+      const menus = actionsBar(page).getByRole('group', { name: 'Document menus', exact: true })
+      await expect(menus.getByRole('button')).toHaveText([DOCUMENT_MENU, 'Edit', 'Format', 'Insert', 'View'])
+      await menus.getByRole('button', { name: 'Format', exact: true }).focus()
+      await page.keyboard.press('ArrowRight')
+      await expect(menus.getByRole('button', { name: 'Insert', exact: true })).toBeFocused()
+      await page.keyboard.press('Enter')
+      await expect(page.getByRole('menuitem', { name: 'Link…', exact: true })).toBeFocused()
+      await shot(page, `${theme}-insert-menu`)
+      await page.keyboard.press('Escape')
+
+      // PRD → New → Blank: named in the draft pane first, then filed and opened.
+      await page.getByRole('button', { name: 'New PRD', exact: true }).click()
+      await expect(page.getByRole('menuitem', { name: 'Blank', exact: true })).toBeFocused()
+      await expect(page.getByRole('menuitem', { name: 'With the wizard', exact: true })).toBeVisible()
+      await page.getByRole('menuitem', { name: 'Blank', exact: true }).click()
+      const draft = page.getByRole('region', { name: 'New PRD', exact: true })
+      await expect(draft.getByRole('textbox', { name: 'Document title', exact: true })).toBeFocused()
+      await expect(draft.getByRole('textbox', { name: 'Document title', exact: true })).toHaveValue(/^Untitled PRD( \d+)?$/)
+      await expectNoSeriousAxe(page, `${theme} blank PRD draft`)
+      await shot(page, `${theme}-blank-prd-draft`)
+      const prdName = `Blank PRD ${theme} ${String(Date.now())}`
+      const filed = page.waitForResponse((res) => isApi(res, 'POST', /\/projects\/[^/]+\/documents$/))
+      await page.keyboard.type(prdName)
+      await page.keyboard.press('Enter')
+      expect((await filed).status()).toBe(200)
+      await expect(page.getByRole('heading', { level: 2, name: new RegExp(`^${prdName}`) })).toBeVisible({ timeout: 20_000 })
+      await expect(draft).toHaveCount(0)
+
+      // View → Comments hides the panel; the comments button brings it back.
+      const rail = page.getByRole('tablist', { name: 'Comments and evidence', exact: true })
+      await expect(rail).toBeVisible()
+      await menus.getByRole('button', { name: 'View', exact: true }).click()
+      await page.getByRole('menuitemcheckbox', { name: 'Comments', exact: true }).click()
+      await expect(rail).toBeHidden()
+      const commentsButton = actionsBar(page).getByTestId('canvas-comments-button')
+      await expect(commentsButton).toHaveAttribute('aria-pressed', 'false')
+      await commentsButton.click()
+      await expect(rail).toBeVisible()
+      await expectNoSeriousAxe(page, `${theme} blank PRD page`)
+      await expectNoSidewaysScrolling(page, `${theme} blank PRD page`)
+      await shot(page, `${theme}-blank-prd-page`)
+    })
+  }
 })

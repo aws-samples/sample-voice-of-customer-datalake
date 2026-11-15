@@ -7,18 +7,9 @@
     "personaTitle": "Persona löschen?"
   },
   "documentModal": {
-    "cancel": "Abbrechen",
     "conflict": "Inzwischen hat jemand eine neuere Version dieses Dokuments gespeichert.",
     "conflictReload": "Neueste laden",
-    "conflictSaveAnyway": "Meine trotzdem speichern",
-    "contentLabel": "Inhalt (Markdown)",
-    "contentPlaceholder": "Schreiben Sie Ihr Dokument in Markdown...",
-    "create": "Erstellen",
-    "createDocument": "Dokument erstellen",
-    "creating": "Wird erstellt...",
-    "preview": "Vorschau",
-    "titleLabel": "Titel",
-    "titlePlaceholder": "Dokumenttitel..."
+    "conflictSaveAnyway": "Meine trotzdem speichern"
   },
   "documents": {
     "deleteDocument": "Dokument löschen",
@@ -60,7 +51,11 @@
       "new": "Neu",
       "newPrd": "Neues PRD",
       "newPrfaq": "Neues PR/FAQ",
-      "newPrototype": "Neuer Prototyp"
+      "newPrototype": "Neuer Prototyp",
+      "newBlank": "Leer",
+      "newBlankHint": "Ein leeres {{type}} mit seiner Gliederung: Sie benennen und schreiben es auf der Seite.",
+      "newWizard": "Mit dem Assistenten",
+      "newWizardHint": "Wählen Sie zuerst die Belege und beantworten Sie die geführten Fragen."
     },
     "noDocuments": "Keine Dokumente",
     "ordinal": "{{ordinal}} von {{total, number}}",
@@ -207,6 +202,25 @@
       "documentsSkipped_one": "{{count, number}} ausgewähltes Referenzdokument wurde ausgelassen (nur die ersten {{cap, number}} werden gelesen).",
       "documentsSkipped_other": "{{count, number}} ausgewählte Referenzdokumente wurden ausgelassen (nur die ersten {{cap, number}} werden gelesen).",
       "handWritten": "Von Hand geschrieben: zitiert noch kein Kundenfeedback."
+    },
+    "blank": {
+      "untitled": {
+        "custom": "Unbenanntes Dokument",
+        "prd": "Unbenanntes PRD",
+        "prfaq": "Unbenanntes PR/FAQ"
+      },
+      "numbered": "{{title}} {{n}}",
+      "nameRequired": "Geben Sie ihm zuerst einen Namen.",
+      "nameTaken": "Dieses Projekt hat bereits ein {{type}} namens „{{title}}“: Mit diesem Namen käme dort nur eine Version hinzu. Wählen Sie einen anderen Namen.",
+      "createFailed": "Das {{type}} konnte nicht erstellt werden. Versuchen Sie es erneut.",
+      "createDocumentFailed": "Das Dokument konnte nicht erstellt werden. Versuchen Sie es erneut.",
+      "draftLabel": "Neues {{type}}",
+      "handWritten": "Von Hand geschrieben",
+      "nameHint": "Benennen Sie Ihr {{type}} und drücken Sie die Eingabetaste, um mit dem Schreiben zu beginnen. Der Name gilt für jede Version und lässt sich nicht mehr ändern, sobald das {{type}} erstellt ist.",
+      "creating": "Wird erstellt…",
+      "startWriting": "Mit dem Schreiben beginnen",
+      "cancel": "Abbrechen",
+      "outlineNote": "Das {{type}} öffnet sich hier mit seiner Gliederung, damit Sie hineinschreiben können."
     }
   },
   "imageErrors": {
@@ -796,7 +810,9 @@
       "evidence": "Belege",
       "evidenceEmpty": "Für dieses Dokument wurden keine Bewertungen oder Feature-Wünsche erfasst.",
       "showAll": "Alle anzeigen ({{n, number}})",
-      "featureRequests": "Feature-Wünsche"
+      "featureRequests": "Feature-Wünsche",
+      "titleHint": "Zum Umbenennen klicken. Die Eingabetaste speichert, Escape bricht ab.",
+      "titleRequired": "Ein Dokument braucht einen Namen."
     },
     "comments": {
       "hint": "Um eine Textstelle zu kommentieren, markieren Sie sie und klicken Sie auf „Kommentieren“, oder drücken Sie Strg+Alt+M (⌘⌥M auf dem Mac).",
@@ -923,8 +939,36 @@
       "commentsHeading": "Offene Kommentare",
       "includeComments": "Offene Kommentare einbeziehen",
       "saved": "Gespeichert",
-      "trigger": "Datei",
-      "wholeDocument": "Zum ganzen Dokument"
+      "trigger": "Dokument",
+      "wholeDocument": "Zum ganzen Dokument",
+      "rename": "Umbenennen"
+    },
+    "menubar": {
+      "label": "Dokumentmenüs",
+      "edit": "Bearbeiten",
+      "format": "Format",
+      "insert": "Einfügen",
+      "view": "Ansicht",
+      "undo": "Rückgängig",
+      "redo": "Wiederholen",
+      "link": "Link…",
+      "image": "Bild…",
+      "comments": "Kommentare",
+      "fullWidth": "Volle Breite",
+      "commentsButton_one": "Kommentare, {{count, number}} offen",
+      "commentsButton_other": "Kommentare, {{count, number}} offen",
+      "commentsHint": "Kommentare ein- oder ausblenden"
+    },
+    "meta": {
+      "label": "Dokumentdetails",
+      "author": "Von {{name}}",
+      "owner": "Inhaber: {{name}}",
+      "edited": "Bearbeitet: {{when}}",
+      "words_one": "{{count, number}} Wort",
+      "words_other": "{{count, number}} Wörter",
+      "minutes_one": "{{count, number}} Min. Lesezeit",
+      "minutes_other": "{{count, number}} Min. Lesezeit",
+      "wordsAndMinutes": "{{words}} · {{minutes}}"
     }
   }
 }

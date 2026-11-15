@@ -12,13 +12,14 @@
  * into the button's name anyway and a list of them broke the page outline (h1 → h4).
  */
 import clsx from 'clsx'
-import { ChevronRight, Plus } from 'lucide-react'
+import { ChevronRight, Loader2, Plus } from 'lucide-react'
 import { useId, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { isVersionManagedDocument, ordinalByType, type DocumentOrdinal } from '../../api/documentLineage'
 import { byNewestEdit, groupBySection, lastEdit, sectionOf, type DocumentSectionGroup, type DocumentSectionId } from '../../api/documentSections'
 import { DocumentTypeBadge } from '../../components/DocumentTypeBadge/DocumentTypeBadge'
 import { DocumentOrdinalLabel } from './DocumentLabels'
+import SectionNewMenu, { type SectionNewChoice } from './SectionNewMenu'
 import { formatDate } from '../../utils/dateUtils'
 import type { ReactNode } from 'react'
 import type { TFunction } from 'i18next'
@@ -26,7 +27,12 @@ import type { ProjectDocument } from '../../api/types'
 
 /** A section's New: what it opens, and whether (and why) it cannot be used now. */
 export interface SectionNewAction {
+  /** What New does; ignored when it is a menu (`choices`). */
   readonly onClick: () => void
+  /** New is a menu of these (the PRD / PR/FAQ: Blank, With the wizard) instead of one action. */
+  readonly choices?: readonly SectionNewChoice[]
+  /** Its action is on its way (a blank document being created): disabled, with a spinner. */
+  readonly busy?: boolean
   readonly disabled?: boolean
   /** Why it is disabled, said under the section's heading (and as the button's description). */
   readonly reason?: string
@@ -167,7 +173,6 @@ function SectionHeader({ listId, texts, count, expanded, onToggle, newAction }: 
   onToggle: () => void
   newAction?: SectionNewAction
 }>) {
-  const { t } = useTranslation('projectDetail')
   const reasonId = `${listId}-reason`
   const reason = newAction?.disabled === true ? newAction.reason : undefined
   return (
@@ -182,16 +187,30 @@ function SectionHeader({ listId, texts, count, expanded, onToggle, newAction }: 
           </button>
         </h2>
         {newAction === undefined ? null : (
-          <button type="button" onClick={newAction.onClick} disabled={newAction.disabled} aria-label={texts.newLabel}
-            aria-describedby={reason === undefined ? undefined : reasonId}
-            className="btn btn-secondary btn-sm ml-auto flex-shrink-0">
-            <Plus size={14} aria-hidden />{t('documents.sections.new')}
-          </button>
+          <SectionNewButton action={newAction} label={texts.newLabel} describedBy={reason === undefined ? undefined : reasonId} />
         )}
       </div>
       {reason === undefined ? null : <p id={reasonId} className="text-xs text-muted">{reason}</p>}
       {newAction?.status}
     </>
+  )
+}
+
+/** A section's New: one button, or the menu of its ways to start (`choices`). */
+function SectionNewButton({ action, label, describedBy }: Readonly<{
+  action: SectionNewAction; label: string; describedBy: string | undefined
+}>) {
+  const { t } = useTranslation('projectDetail')
+  const disabled = action.disabled === true || action.busy === true
+  if (action.choices !== undefined) {
+    return <SectionNewMenu label={label} choices={action.choices} disabled={disabled} describedBy={describedBy} />
+  }
+  return (
+    <button type="button" onClick={action.onClick} disabled={disabled} aria-label={label} aria-describedby={describedBy}
+      aria-busy={action.busy === true ? true : undefined} className="btn btn-secondary btn-sm ml-auto flex-shrink-0">
+      {action.busy === true ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Plus size={14} aria-hidden />}
+      {t('documents.sections.new')}
+    </button>
   )
 }
 

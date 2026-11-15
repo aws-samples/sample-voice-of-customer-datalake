@@ -1,6 +1,6 @@
 /**
- * @fileoverview One comment thread: who wrote it (a teammate, a persona, an outside reviewer),
- * the quoted passage, the text, its replies, and the actions its host allows.
+ * @fileoverview One comment thread: who wrote it (a teammate, a persona, an outside reviewer; their initial as an
+ * avatar, toned by kind), the quoted passage, the text, its replies, and the actions its host allows.
  *
  * @module components/DocumentComments/CommentThreadCard
  */
@@ -22,13 +22,31 @@ const AUTHOR_ICONS: Readonly<Record<CommentAuthor['kind'], LucideIcon>> = {
   reviewer: ExternalLink,
 }
 
+/** Each kind of author has its own tone, so a persona's comment reads apart from a teammate's at a glance. */
+const AVATAR_TONES: Readonly<Record<CommentAuthor['kind'], string>> = {
+  user: 'bg-accent-subtle text-accent-text',
+  persona: 'bg-aim-subtle text-aim',
+  reviewer: 'bg-info-subtle text-info',
+}
+
+/** The author's initial in a circle (their kind's icon when they have no name); the name beside it says who. */
+function AuthorAvatar({ author }: Readonly<{ author: CommentAuthor }>) {
+  const Icon = AUTHOR_ICONS[author.kind]
+  const initial = Array.from(author.name.trim()).at(0)?.toLocaleUpperCase()
+  return (
+    <span aria-hidden className={clsx('inline-flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold',
+      AVATAR_TONES[author.kind])}>
+      {initial ?? <Icon size={11} />}
+    </span>
+  )
+}
+
 function AuthorLine({ author, at }: Readonly<{ author: CommentAuthor; at: string }>) {
   const { t, i18n } = useTranslation('components')
-  const Icon = AUTHOR_ICONS[author.kind]
   return (
     // The name is never cut short: in a narrow margin the kind and the time wrap under it instead.
     <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted min-w-0">
-      <Icon size={12} aria-hidden className="shrink-0" />
+      <AuthorAvatar author={author} />
       <span className="font-medium text-text min-w-0 break-words [overflow-wrap:anywhere]">{author.name || t(`documentComments.authorKind.${author.kind}`)}</span>
       <span className="shrink-0">· {t(`documentComments.authorKind.${author.kind}`)}</span>
       {at === '' ? null : <span className="ml-auto shrink-0 font-mono">{formatDateTime(at, i18n.language, '', 'short')}</span>}

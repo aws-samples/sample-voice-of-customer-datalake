@@ -1,6 +1,7 @@
 /**
- * @fileoverview The document page's "File" menu (a WAI-ARIA menu button: arrow keys, Home / End, Escape, focus back on
- * the button): Save (with its state: Saved / Saving… / Unsaved changes; inert while there is nothing to save), Share
+ * @fileoverview The document page's "Document" menu, the first of its menu bar (a WAI-ARIA menu button: arrow keys,
+ * Home / End, Escape, focus back on the button; menuBar.ts): Save (with its state: Saved / Saving… / Unsaved changes;
+ * inert while there is nothing to save), Rename (a research / custom document: focus on its title, selected), Share
  * (the review link of a PR/FAQ or PRD), then every export of the saved version (DocumentExportMenu: copy, Markdown,
  * PDF with "Include open comments", TXT, Copy to Kiro), then History and Delete.
  *
@@ -10,7 +11,7 @@
  * @module components/DocumentCanvas/actions/DocumentMenu
  */
 import clsx from 'clsx'
-import { History, Loader2, Save, Share2, Trash2 } from 'lucide-react'
+import { History, Loader2, PenLine, Save, Share2, Trash2 } from 'lucide-react'
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import DialogClose from '../../DialogClose/DialogClose'
@@ -44,6 +45,8 @@ export interface DocumentMenuProps {
   readonly threads: readonly CommentThread[] | null
   readonly onDeleteDoc: () => void
   readonly isDeleting: boolean
+  /** Rename: the page puts focus on the title, selected (offered while the title is editable). */
+  readonly onRename?: () => void
 }
 
 const ITEM_CLASS = 'menu-item py-2.5 sm:py-1.5 active:bg-bg-hover'
@@ -97,7 +100,7 @@ function HistoryDialog({ project, document, canEdit, state, onClose }: Readonly<
 type Dialog = 'share' | 'history' | null
 
 export default function DocumentMenu({
-  project, document, canEdit, state, share, threads, onDeleteDoc, isDeleting,
+  project, document, canEdit, state, share, threads, onDeleteDoc, isDeleting, onRename,
 }: DocumentMenuProps) {
   const { t } = useTranslation('projectDetail')
   const { t: tComponents } = useTranslation('components')
@@ -113,10 +116,16 @@ export default function DocumentMenu({
   return (
     <>
       <DocumentExportMenu document={document} project={project} threads={threads} triggerLabel={t('canvas.menu.trigger')}
-        exportDescribedBy={state.dirty ? hintId : undefined}
+        menuBar exportDescribedBy={state.dirty ? hintId : undefined}
         leading={({ close }) => (
           <>
             {state.editable ? <SaveItem state={state} close={close} /> : null}
+            {state.editable && state.titleEditable && onRename !== undefined ? (
+              <button type="button" role="menuitem" className={ITEM_CLASS} onClick={then(close, onRename)}>
+                <PenLine size={16} className="flex-shrink-0" aria-hidden="true" />
+                <span className="truncate">{t('canvas.menu.rename')}</span>
+              </button>
+            ) : null}
             {showShare ? (
               <button type="button" role="menuitem" aria-haspopup="dialog" className={ITEM_CLASS}
                 onClick={then(close, () => setDialog('share'))}>

@@ -16,6 +16,7 @@ import { noCleanup } from '../../../hooks/noCleanup'
 import type { CalloutKind } from '../markdown/callout'
 import { markdownToDoc } from '../markdown/convert'
 import { canvasExtensions } from '../markdown/extensions'
+import { canRunCommand, runCommand, type CanvasCommand } from './commands'
 import { CanvasController, CanvasKeys } from './controller'
 import { HeadingIds, headingsOf } from './headingIds'
 import { orNothing } from './orNothing'
@@ -42,6 +43,10 @@ export interface CanvasEditorHandle {
   readonly focus: (options?: { readonly scroll?: boolean }) => void
   /** Collapse the selection to its end without moving focus (a comment took it): the format bar closes. */
   readonly clearSelection: () => void
+  /** Run one of the editor's own commands (the page's Edit / Format / Insert menus); false when it could not. */
+  readonly run: (command: CanvasCommand) => boolean
+  /** Whether `command` can run now (editable; something to undo / redo). */
+  readonly can: (command: CanvasCommand) => boolean
 }
 export interface CanvasEditorProps {
   readonly markdown: string
@@ -52,6 +57,8 @@ export interface CanvasEditorProps {
   readonly onCommentSelection?: () => void
   readonly handleRef?: React.Ref<CanvasEditorHandle>
   readonly className?: string
+  /** Put the caret at the start of the text once the editor is there (a document just created blank). */
+  readonly autoFocus?: boolean
 }
 
 const EMPTY_CLASS = 'canvas-empty'
@@ -108,7 +115,7 @@ function useExtensions(controller: CanvasController) {
 }
 
 export default function CanvasEditor({
-  markdown, editable, ariaLabel, onChange, onOutlineChange, onCommentSelection, handleRef, className,
+  markdown, editable, ariaLabel, onChange, onOutlineChange, onCommentSelection, handleRef, className, autoFocus = false,
 }: CanvasEditorProps) {
   const [container, setContainer] = useState<HTMLDivElement | null>(null)
   const [controller] = useState(() => new CanvasController())
@@ -121,6 +128,7 @@ export default function CanvasEditor({
     editable,
     immediatelyRender: false,
     shouldRerenderOnTransaction: false,
+    autofocus: autoFocus && editable ? 'start' : false,
     editorProps: { attributes: { 'aria-label': ariaLabel, role: 'textbox', 'aria-multiline': 'true', class: 'canvas-editor__content' } },
   })
   const { flush, replace } = useCanvasSync(editor, { markdown, onChange, onOutlineChange })
@@ -151,7 +159,9 @@ export default function CanvasEditor({
     clearSelection: () => {
       if (editor && !editor.isDestroyed && !editor.state.selection.empty) editor.commands.setTextSelection(editor.state.selection.to)
     },
-  }), [editor, flush, replace])
+    run: (command) => runCommand(editor, controller, command),
+    can: (command) => canRunCommand(editor, command),
+  }), [controller, editor, flush, replace])
 
   return (
     <div ref={setContainer} className={clsx('canvas-editor', className)} data-editable={editable}>

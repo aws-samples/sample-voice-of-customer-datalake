@@ -17,6 +17,15 @@ the platform package version.
 
 ## [Unreleased]
 
+### Added
+
+- Project documents without a modal: **Documents → New** creates a blank custom document at once under the first free name ("Untitled document", "Untitled document 2"…, every locale), opens its page and selects the title for an inline rename (Enter saves and moves into the text, leaving the field saves, Esc restores; an empty name is refused; a rename is one PUT of `{title, expected_revision, edit_id}`). **PRD → New** and **PR/FAQ → New** are a menu: **With the wizard** (today's flow) or **Blank**, a draft pane with "Untitled PRD" / "Untitled PR/FAQ" selected in the large title, filed through the hand-written route on Enter or Start writing (a PRD's or PR/FAQ's title is its series identity, so it is set once, before filing; an existing series' name is refused).
+- The document page as an editing canvas: a top bar with the menus **Document · Edit · Format · Insert · View** (WAI-ARIA menu buttons, arrow keys between menus; every item an action the editor already had, with its shortcut; Edit, Format and Insert only on an editable canvas), the save status, a comments button with the open-thread count and full screen; under it the large inline-editable title and chips (author or owner, edited, words and minutes to read, type); a wide centred sheet with a ~70ch reading column; a hideable comments panel whose thread cards show the author's initial. The menu formerly labelled "File" is **Document**.
+
+### Changed
+
+- `POST /projects/{id}/documents` (`lambda/api/projects.py` `create_document`): a custom document may be created with empty or missing `content` (the blank canvas; before, 400 "Content is required"); a `content` that is not a string is refused (400); custom documents record `created_by_sub`. The frontend's `DocumentUpdate.content` is optional (a title-only rename).
+
 ## [7.40.01] - 2026-11-15
 
 `validate.sh` uses a big machine when it has one: with `VOC_VALIDATE_JOBS=N` (one line in that machine's shell profile) every step is a job of its own, its rebuildable caches and every step's temp files live in RAM, and the wider suites run on more workers. A laptop and CI leave it unset and run exactly as before. Measured on the 192-core build machine, on one tree, while other work kept it busy (load 80-185): the lanes 498, 527 (this release's parent's script) and 534 s (this script, unset), the pool 257 and 310 s with `VOC_VALIDATE_JOBS=32`, every run green; the pool is now bound by pytest (~250 s). Also: the ingestor assets no longer hash Hypothesis's local state, and 7.40.00's pyright and jscpd findings are fixed.

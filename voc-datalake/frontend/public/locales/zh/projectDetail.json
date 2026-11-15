@@ -7,18 +7,9 @@
     "personaTitle": "删除人物角色？"
   },
   "documentModal": {
-    "cancel": "取消",
     "conflict": "在此期间，有人保存了此文档的更新版本。",
     "conflictReload": "加载最新版本",
-    "conflictSaveAnyway": "仍然保存我的修改",
-    "contentLabel": "内容（Markdown）",
-    "contentPlaceholder": "用 Markdown 编写您的文档...",
-    "create": "创建",
-    "createDocument": "创建文档",
-    "creating": "创建中...",
-    "preview": "预览",
-    "titleLabel": "标题",
-    "titlePlaceholder": "文档标题..."
+    "conflictSaveAnyway": "仍然保存我的修改"
   },
   "documents": {
     "deleteDocument": "删除文档",
@@ -60,7 +51,11 @@
       "new": "新建",
       "newPrd": "新建 PRD",
       "newPrfaq": "新建 PR/FAQ",
-      "newPrototype": "新建原型"
+      "newPrototype": "新建原型",
+      "newBlank": "空白",
+      "newBlankHint": "只有大纲的空白 {{type}}：在页面上为它命名并撰写。",
+      "newWizard": "使用向导",
+      "newWizardHint": "先选择证据，再回答引导问题。"
     },
     "noDocuments": "无文档",
     "ordinal": "第 {{ordinal}} 个，共 {{total, number}} 个",
@@ -207,6 +202,25 @@
       "documentsSkipped_one": "有 {{count, number}} 份所选参考文档被省略(只读取前 {{cap, number}} 份)。",
       "documentsSkipped_other": "有 {{count, number}} 份所选参考文档被省略(只读取前 {{cap, number}} 份)。",
       "handWritten": "手动撰写:尚未引用任何客户反馈。"
+    },
+    "blank": {
+      "untitled": {
+        "custom": "无标题文档",
+        "prd": "无标题 PRD",
+        "prfaq": "无标题 PR/FAQ"
+      },
+      "numbered": "{{title}} {{n}}",
+      "nameRequired": "请先为它命名。",
+      "nameTaken": "此项目中已有名为“{{title}}”的 {{type}}：使用这个名称只会为它增加一个版本。请换一个名称。",
+      "createFailed": "无法创建 {{type}}。请重试。",
+      "createDocumentFailed": "无法创建文档。请重试。",
+      "draftLabel": "新建 {{type}}",
+      "handWritten": "手动撰写",
+      "nameHint": "为你的 {{type}} 命名，然后按 Enter 开始撰写。名称会保留在每个版本中，因此 {{type}} 创建后无法更改。",
+      "creating": "正在创建…",
+      "startWriting": "开始撰写",
+      "cancel": "取消",
+      "outlineNote": "{{type}} 将带着大纲在这里打开，供你直接撰写。"
     }
   },
   "imageErrors": {
@@ -796,7 +810,9 @@
       "evidence": "依据",
       "evidenceEmpty": "此文档没有记录任何评价或功能需求。",
       "showAll": "全部显示（{{n, number}}）",
-      "featureRequests": "功能需求"
+      "featureRequests": "功能需求",
+      "titleHint": "点击即可重命名。按 Enter 保存，按 Escape 取消。",
+      "titleRequired": "文档需要一个名称。"
     },
     "comments": {
       "hint": "要评论某段文字，请选中它并按“评论”，或按 Ctrl+Alt+M（Mac 上为 ⌘⌥M）。",
@@ -923,8 +939,36 @@
       "commentsHeading": "未解决的评论",
       "includeComments": "包含未解决的评论",
       "saved": "已保存",
-      "trigger": "文件",
-      "wholeDocument": "针对整个文档"
+      "trigger": "文档",
+      "wholeDocument": "针对整个文档",
+      "rename": "重命名"
+    },
+    "menubar": {
+      "label": "文档菜单",
+      "edit": "编辑",
+      "format": "格式",
+      "insert": "插入",
+      "view": "视图",
+      "undo": "撤销",
+      "redo": "重做",
+      "link": "链接…",
+      "image": "图片…",
+      "comments": "评论",
+      "fullWidth": "全宽",
+      "commentsButton_one": "评论，{{count, number}} 条未解决",
+      "commentsButton_other": "评论，{{count, number}} 条未解决",
+      "commentsHint": "显示或隐藏评论"
+    },
+    "meta": {
+      "label": "文档详情",
+      "author": "作者：{{name}}",
+      "owner": "所有者：{{name}}",
+      "edited": "编辑于 {{when}}",
+      "words_one": "{{count, number}} 个字词",
+      "words_other": "{{count, number}} 个字词",
+      "minutes_one": "阅读约 {{count, number}} 分钟",
+      "minutes_other": "阅读约 {{count, number}} 分钟",
+      "wordsAndMinutes": "{{words}} · {{minutes}}"
     }
   }
 }

@@ -1,8 +1,8 @@
 /**
  * The page edits a document in place on its canvas (voc-wiki): Save writes ONE new
  * version through the document PUT with the revision the canvas loaded and a fresh edit
- * id; a 409 shows the conflict; leaving a dirty document asks first; a new document opens
- * on its canvas. The editor itself is a stand-in (canvas-editor-fixtures), so these specs
+ * id; a 409 shows the conflict; leaving a dirty document asks first (a new blank document:
+ * ProjectDetail.blankDocument.test.tsx). The editor itself is a stand-in (canvas-editor-fixtures), so these specs
  * pin the page's wiring, not TipTap.
  */
 import { screen, waitFor, within } from '@testing-library/react'
@@ -26,7 +26,6 @@ const {
 const mockListProductDocs = vi.fn<(...args: unknown[]) => unknown>()
 type EditBody = { title?: string; content?: string; edit_id?: string; expected_revision?: number }
 const mockUpdateDocument = vi.fn<(projectId: string, documentId: string, body: EditBody) => unknown>()
-const mockCreateDocument = vi.fn<(projectId: string, body: unknown) => unknown>()
 
 /** The n-th save's (project, document, body), with the fresh edit id reduced to its type. */
 function savedEdit(n = 0): unknown {
@@ -42,7 +41,6 @@ vi.mock('../../api/projectsApi', () => ({
     listProductDocs: (...args: unknown[]) => mockListProductDocs(...args),
     updateDocument: (projectId: string, documentId: string, body: EditBody) =>
       mockUpdateDocument(projectId, documentId, body),
-    createDocument: (projectId: string, body: unknown) => mockCreateDocument(projectId, body),
     dismissJob: vi.fn(),
     updateProject: vi.fn(),
   },
@@ -341,25 +339,6 @@ describe('ProjectDetail unsaved changes', () => {
 
     expect(screen.getByRole('textbox', { name: 'Notes' })).toHaveValue('loaded text')
     expect(saveButton()).toBeDisabled()
-  })
-})
-
-describe('ProjectDetail new document', () => {
-  it('opens the created document on its canvas', async () => {
-    primeProjectWith([customDocument])
-    const created: ProjectDocument = { ...otherDocument, document_id: 'doc-new', title: 'Fresh page', content: 'Hello' }
-    mockCreateDocument.mockResolvedValue({ success: true, document: created })
-    const user = userEvent.setup()
-    renderPage()
-    await user.click(await screen.findByRole('tab', { name: /documents/i }))
-
-    await user.click(screen.getByRole('button', { name: enProjectDetail.documents.newDocument }))
-    await user.type(screen.getByPlaceholderText(enProjectDetail.documentModal.titlePlaceholder), 'Fresh page')
-    await user.type(screen.getByPlaceholderText(enProjectDetail.documentModal.contentPlaceholder), 'Hello')
-    await user.click(screen.getByRole('button', { name: enProjectDetail.documentModal.create }))
-
-    expect(await screen.findByRole('textbox', { name: 'Fresh page' })).toHaveValue('Hello')
-    expect(mockCreateDocument).toHaveBeenCalledWith('proj-1', { title: 'Fresh page', content: 'Hello', document_type: 'custom' })
   })
 })
 

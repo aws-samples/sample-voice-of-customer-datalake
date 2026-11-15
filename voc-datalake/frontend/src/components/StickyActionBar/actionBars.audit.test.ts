@@ -59,6 +59,7 @@ const EXEMPT: Readonly<Record<string, string>> = {
   CreateWorkspaceForm: 'Administration → Workspaces: a two-field create form above the list, nothing left unsaved',
   WorkspaceExportCard: 'Workspace settings → Export: Start an export and Download act at once on the server; no form, nothing left unsaved',
   ProposalReview: 'Revise from comments: per-change Accept and Accept all put text into the draft; the save is the page bar\'s own Save',
+  BlankDocumentDraft: 'Documents → New PRD / PR/FAQ → Blank: Start writing sits right under the name being typed, at the top of the pane (Enter does the same); nothing else is left unsaved',
   McpJsonSnippets: 'Connect → mcp.json: the pressed client of a toggle group (aria-pressed) wears the primary style; nothing is saved',
   DataQualitySectionProfile: 'Data Explorer → Data quality: the pressed facet of a toggle group (aria-pressed) wears the primary style; nothing is saved',
   'RouteErrorBoundary/index': 'error-state retry, centred in the page',

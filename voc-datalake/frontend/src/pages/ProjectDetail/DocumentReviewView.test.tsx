@@ -45,6 +45,7 @@ vi.mock('../../components/DocumentCanvas/editor/CanvasEditor', async () => {
     useImperativeHandle(handleRef, (): CanvasEditorHandle => ({
       root: () => root.current, getMarkdown: () => text, setMarkdown: setText, focus: () => root.current?.focus(),
       scrollToHeading: () => { /* no headings to scroll to in these specs */ }, clearSelection,
+      run: () => false, can: () => false,
     }), [text])
     return (
       <div>

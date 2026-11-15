@@ -8,7 +8,8 @@
  *   comments" for a commented document (PR/FAQ, PRD): the open threads placed in the printed text (or on the whole
  *   document), each with its quote, after the text
  *
- * The document page's "File" menu is this menu with the page's own items around the exports (`leading`, `children`).
+ * The document page's "Document" menu (its menu bar's first) is this menu with the page's own items around the exports
+ * (`leading`, `children`).
  *
  * @module components/DocumentExportMenu
  */
@@ -43,6 +44,8 @@ interface DocumentExportMenuProps {
   threads?: readonly CommentThread[] | null
   /** A labelled trigger with this text instead of the "Download options" kebab. */
   triggerLabel?: string
+  /** The trigger is a menu of the page's menu bar (ExportMenuShell `menuBar`). */
+  menuBar?: boolean
   /** Items before the exports, and after them (ExportMenuShell's slots). */
   leading?: (menu: MenuSlot) => ReactNode
   children?: (menu: MenuSlot) => ReactNode
@@ -174,7 +177,7 @@ function KiroSection({
 }
 
 export default function DocumentExportMenu({
-  document: doc, project, threads = null, triggerLabel, leading, children, exportDescribedBy,
+  document: doc, project, threads = null, triggerLabel, menuBar = false, leading, children, exportDescribedBy,
 }: Readonly<DocumentExportMenuProps>) {
   const [copiedKiro, flashCopiedKiro] = useCopiedFlag()
   const [includeComments, setIncludeComments] = useState(false)
@@ -251,6 +254,7 @@ export default function DocumentExportMenu({
         downloadTXT: t('documentExport.downloadTXT'),
       }}
       labelled={triggerLabel !== undefined}
+      menuBar={menuBar}
       onCopy={copyContent}
       onDownloadMarkdown={downloadAsMarkdown}
       onDownloadPDF={downloadAsPDF}

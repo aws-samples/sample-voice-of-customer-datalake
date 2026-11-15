@@ -74,3 +74,21 @@ describe('CommentThreadCard', () => {
       expect(screen.getByRole('button', { name: 'Reply' })).toHaveFocus()
     })
 })
+
+describe('CommentThreadCard: who wrote it', () => {
+  it('shows each author\'s initial as an avatar, toned by kind, out of the accessibility tree (the name says who)', () => {
+    const card = renderCard({
+      ...THREAD,
+      replies: [
+        { reply_id: 'r1', author: { kind: 'persona', name: 'ében' }, text: 'Two weeks.', flagged: false, at: '' },
+        { reply_id: 'r2', author: { kind: 'reviewer', name: '' }, text: 'Agreed.', flagged: false, at: '' },
+      ],
+    })
+    const avatars = [...card.querySelectorAll<HTMLElement>('span[aria-hidden].rounded-full')]
+    expect(avatars.map((avatar) => [avatar.textContent, avatar.className.includes('bg-accent-subtle')
+      || avatar.className.includes('bg-aim-subtle') || avatar.className.includes('bg-info-subtle')]))
+      .toStrictEqual([['A', true], ['É', true], ['', true]])
+    // A reviewer with no name gets their kind's icon instead of an initial.
+    expect(avatars[2]?.querySelector('svg')).not.toBeNull()
+  })
+})

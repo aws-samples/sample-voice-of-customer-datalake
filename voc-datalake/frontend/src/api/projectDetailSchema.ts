@@ -204,6 +204,8 @@ const ProjectDocumentSchema = z.preprocess(withLegacyManagedDocumentType, z.loos
   // What the document skipped of the methodology, and its evidence count (api/methodologySchema.ts).
   methodology: optionalMethodologyBlock,
   origin: optionalString,
+  // Who created it (a hand-written PR/FAQ / PRD, a custom document since 7.38.00): the page names them.
+  created_by_sub: optionalString,
 }).transform(({ deleted_sources: raw, ...doc }) => {
   const deletedSources = deletedSourcesOrUndefined(raw)
   return deletedSources === undefined ? doc : { ...doc, deleted_sources: deletedSources }

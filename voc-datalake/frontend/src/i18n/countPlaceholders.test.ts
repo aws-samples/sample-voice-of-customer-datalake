@@ -43,6 +43,8 @@ const LEFT_PLAIN: Readonly<Record<string, { params: readonly string[]; why: stri
   'briefing:cards.openReview': { params: ['n'], why: ORDINAL },
   'decisions:picker.linked': { params: ['n'], why: ORDINAL },
   'decisions:releaseWatch.evidenceItem': { params: ['n'], why: ORDINAL },
+  // The number of a blank document's predefined name ("Untitled document 2"): part of a stored title, never grouped.
+  'projectDetail:documents.blank.numbered': { params: ['n'], why: ORDINAL },
   'projectDetail:documents.prototype.backTo': { params: ['n'], why: ORDINAL },
   'projectDetail:documents.prototype.restoreThis': { params: ['n'], why: ORDINAL },
   'projectDetail:documents.prototype.backHint': { params: ['n'], why: ORDINAL },
