@@ -231,7 +231,7 @@ def test_a_light_accent_gets_dark_header_text(aggregates):
     assert 'color: #111111; margin: 0; font-size: 22px;' in message
 
 
-@pytest.mark.parametrize('bad', ['#fff;background:url(x)', 'red', '', 'rgb(1,2,3)'])
+@pytest.mark.parametrize('bad', ['#fff;background:url(x)', 'red', '', 'rgb(1,2,3)', None])
 def test_only_a_plain_hex_accent_reaches_the_styles(bad):
     _, message = user_messages.invitation_message(
         audience=user_messages.Audience(brand='', workshop=False), inviter='', given_name='',
