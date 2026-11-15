@@ -50,7 +50,8 @@ export const USER_POOL_STANDARD_ATTRIBUTES: cognito.StandardAttributes = {
 };
 
 /**
- * The files the app pool's message trigger ships, relative to `lambda/` (stdlib + boto3 only):
+ * The files the app pool's message trigger ships, relative to `lambda/` (stdlib + boto3, plus `cryptography`
+ * from its signing-deps layer for the logo link):
  * lambda/auth/test/test_user_messages_bundle.py imports it with only these on sys.path.
  */
 export const USER_MESSAGES_FILES = ['auth/user_messages.py', 'auth/logo_signing.py'] as const;

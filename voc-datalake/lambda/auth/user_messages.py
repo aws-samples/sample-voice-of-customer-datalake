@@ -252,7 +252,7 @@ def _logo_tag(url: str | None, brand: str) -> str:
 
 def invitation_message(*, audience: Audience, inviter: str, given_name: str, sign_in_url: str,
                        username_parameter: str, code_parameter: str, valid_days: int,
-                       accent: str = DEFAULT_ACCENT, logo: str | None = None) -> tuple[str, str]:
+                       accent: str | None = DEFAULT_ACCENT, logo: str | None = None) -> tuple[str, str]:
     """(subject, html) for an invitation. ``inviter``, ``given_name`` and ``audience.brand`` are caller data,
     passed unescaped (escaped here); the rest of ``audience`` is fixed wording;
     ``accent`` is re-checked (``safe_accent``): only a plain hex colour reaches the styles; ``logo`` is a signed

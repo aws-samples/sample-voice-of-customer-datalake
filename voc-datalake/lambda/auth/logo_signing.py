@@ -25,6 +25,7 @@ import os
 import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import urlsplit
 
 import boto3
 from botocore.config import Config
@@ -101,13 +102,14 @@ def _build_rsa_signer():
 
 def signed_logo_url(key: Any, site_url: str, valid_days: int, *, now: datetime | None = None) -> str | None:
     """The logo at ``site_url`` + ``/`` + ``key``, signed until ``valid_days`` from ``now``; None when it cannot be."""
-    if not is_uploaded_logo_key(key) or not site_url.startswith('https://') or valid_days <= 0:
+    if not is_uploaded_logo_key(key) or urlsplit(site_url).scheme != 'https' or valid_days <= 0:
         return None
     signer = _rsa_signer()
     if signer is None:
         return None
     expires = (now or datetime.now(UTC)) + timedelta(days=valid_days)
-    url = f'{site_url.rstrip("/")}/{key}'
+    site = urlsplit(site_url)  # the distribution's origin only: never a path, query or fragment of the setting
+    url = f'https://{site.netloc}/{key}'
     try:
         return CloudFrontSigner(os.environ['CDN_SIGNING_KEY_PAIR_ID'], signer).generate_presigned_url(
             url, date_less_than=expires)
