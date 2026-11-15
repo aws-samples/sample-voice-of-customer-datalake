@@ -7,7 +7,8 @@ has numbered), and every agent as the supervisor last saw it: its session row in
 counters (session-seconds, tokens per model), with the totals per model and for the run, and the run's flow budget
 with its alert flag from META (``rows.budget_view``), and the flow it follows: the revision its start copied, each
 step's status as the conductor reads it and where the flow stands (``engineering/flow/``; none for a run started
-without a flow). The run's cost is to come from the run control
+without a flow), and (7.09.00) the issue it was started from and its pull request, each its host, number and checked
+address (``engineering/run_links.py``; None for none). The run's cost is to come from the run control
 (``engineering.runtime.ports.RunControl.budget``) once it is wired.
 
 The actions (the route lets only an admin acting for themselves take them, like a run's ``decision``):
@@ -45,6 +46,7 @@ from engineering.bus.schema import MAX_SUMMARY_BYTES, Message, MessageError, Par
 from engineering.connectors.identity import WORKSPACE
 from engineering.flow.record import run_flow
 from engineering.rows import Refused, amount_attr, budget_view, run_pk, string_attr
+from engineering.run_links import run_links
 from engineering.runtime.sessions import AgentSession
 from engineering.workspace.layout import ID
 from shared.logging import logger
@@ -274,7 +276,9 @@ class RunMonitor:
                     'started_at': string_attr(meta, 'started_at') or None,
                     'ended_at': string_attr(meta, 'ended_at') or None,
                     # Its flow's monthly budget and the highest level its flow's month passed (None: no budget).
-                    'budget': budget_view(meta), **self._flow_view(run_id, meta)},
+                    'budget': budget_view(meta), **self._flow_view(run_id, meta),
+                    # The issue it was started from and its pull request (each None for none: run_links.py).
+                    **run_links(self.client, self.table, WORKSPACE, run_id, meta)},
             'agents': agents,
             # Whether the signals and answers can reach the run from here: the runtime and the bus both named (until
             # the stack wires them, every action answers 503, so the page offers none).

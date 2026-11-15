@@ -21,7 +21,12 @@ its caller never heard back from answers the first outcome and is never made twi
 unknown (``OutcomeUnknown``, 502), and the write is not made again for that attempt.
 
 A pull request is always a draft: the host opens one as a draft, an update changes only its title and body, and
-there is no operation that marks one ready or merges it, in any mode.
+there is no operation that marks one ready or merges it, in any mode. Since 7.09.00, a pull request the host answered
+an open or an update with is kept on the run's record (``_keep_pull_request``, ``engineering/run_links.py``): its host,
+number, URL and branches, only when it is the run's own repository's from the run's branch, keyed on that branch (a
+new number on it, after a person closed the draft, replaces the old one, which is kept as superseded; another branch
+never); a write whose outcome is unknown records nothing until a later open or update finds it by its branch, and a
+record that could not be written is read back from the write's done claim.
 
 Every write the host accepts gets an operational log line: the operation, the caller, and what was written (the
 issue or pull request number, the branch, the tree hash), never a body, a patch or a credential. It is not the
@@ -79,8 +84,9 @@ from engineering.connectors.write_policy import (
     check_push,
     check_text,
 )
+from engineering.run_links import pull_request_link
 from shared.ai_mode import MODE_AI_ASSISTED, MODE_AI_DRIVEN
-from shared.logging import logger
+from shared.logging import logger, metrics
 
 #: Beyond reading, which every agent may do: the one write each writing role needs, and no other.
 _WRITES: Final[Mapping[str, str]] = {
@@ -297,9 +303,46 @@ class Broker:
             ref = connector.host.open_or_update_draft_pr(run.connection_id, branch, run.default_branch, title, body,
                                                          tree_hash)
             _wrote(caller, OPEN_OR_UPDATE_DRAFT_PR, run, branch=branch, tree_hash=tree_hash, number=ref.number)
-            return {'number': ref.number, 'url': ref.url, 'ci': ci}
+            # (the host answered with it, so it stands: kept on the run's record; an answer that never came, an
+            # outcome unknown, records nothing, and the next open or update finds it by its branch)
+            _keep_pull_request(connector, caller, run, branch, ref)
+            # (the claim keeps what the record keeps, so a record that could not be written is read back from it:
+            # run_links.py)
+            return {'number': ref.number, 'url': ref.url, 'head': ref.head, 'base': ref.base, 'host': ref.host,
+                    'ci': ci}
 
         return _pull_request(_once(connector, caller, OPEN_OR_UPDATE_DRAFT_PR, attempt, open_draft, branch, title, body))
+
+
+#: Why a pull request the host answered with is not kept on the run's record (logged, never said to the agent: the
+#: write was made).
+_NOT_OURS: Final = 'not the run\'s own (another repository, host, address or branch)'
+_ANOTHER: Final = 'the run\'s record names a pull request on another branch, which is never repointed'
+_UNRECORDED: Final = 'the record could not be written; it is read back from the write claim until it is'
+#: Counted (namespace ``VoC``, the broker's service) at each record the broker could not write.
+PULL_REQUEST_UNRECORDED_METRIC: Final = 'EngineeringPullRequestUnrecorded'
+
+
+def _keep_pull_request(connector: Connector, caller: Caller, run: RunRecord, branch: str,
+                       ref: PullRequestRef) -> None:
+    """Keep the pull request the host answered with on the run's record (``run_links.py``): only when it is the run's
+    own (its repository on its host's own domain, from the run's ``branch``), keyed on that branch
+    (``WriteClaims.record_pull_request``). Never raises: the write was made, and its answer is the agent's whatever
+    becomes of the record; one that cannot be written is logged and counted (``PULL_REQUEST_UNRECORDED_METRIC``), and
+    the readers take it from the write's done claim meanwhile."""
+    link = pull_request_link(ref.host, run.repository, ref.number, ref.url, ref.head, ref.base)
+    why = ''
+    if link is None or link.head != branch:
+        why = _NOT_OURS
+    else:
+        try:
+            why = '' if connector.writes.record_pull_request(caller.run_id, link) else _ANOTHER
+        except Unavailable:
+            why = _UNRECORDED
+            metrics.add_metric(name=PULL_REQUEST_UNRECORDED_METRIC, unit='Count', value=1)
+    if why:
+        logger.warning('broker pull request not recorded', extra={'run_id': caller.run_id, 'number': ref.number,
+                                                                  'why': why})
 
 
 def _pull_request(done: Mapping[str, object]) -> PullRequestRef:

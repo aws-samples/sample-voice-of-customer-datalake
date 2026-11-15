@@ -8,6 +8,9 @@ The three levels share one shape and differ in what they cover:
   commit), whose Markdown goes into the pull request's description;
 - ``goal`` (subject: the run id): the whole run.
 
+The goal and PR reports name the issue the run was started from and its pull request (7.09.00), as the run's record
+keeps them (``engineering/run_links.py``).
+
 A report reads only the keys the board recorded on the run's tasks (never a listing of the workspace), names the
 agents and skill versions that made it, and carries the run's metering (events, session-seconds, tokens, the cost the
 brokers priced) and time. It holds code findings, not customer text: the finding reader has already redacted them.
@@ -150,7 +153,10 @@ def build_report(level: str, subject: str, inputs: Inputs, *, version: int, buil
     report: dict[str, Any] = {
         'schema': SCHEMA, 'level': level, 'ws': facts.ws, 'run_id': facts.run_id, 'subject': subject,
         'version': version, 'built_at': built_at, 'head': head or None,
-        'run': {'goal': facts.goal, 'repo': facts.repo, 'flow': facts.flow, 'status': facts.status},
+        'run': {'goal': facts.goal, 'repo': facts.repo, 'flow': facts.flow, 'status': facts.status,
+                # The issue the run was started from and its pull request: the goal and PR reports name them.
+                'issue': facts.issue if level != 'commit' else None,
+                'pull_request': facts.pull_request if level != 'commit' else None},
         'agents': [{'agent': a.agent, 'role': a.role, 'skill_version': a.skill_version, 'model': a.model}
                    for a in agents],
         'cost': {'events': facts.events, 'microvm_seconds': sum(a.microvm_seconds for a in agents),

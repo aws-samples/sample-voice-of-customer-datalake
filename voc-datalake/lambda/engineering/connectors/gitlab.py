@@ -90,6 +90,7 @@ from engineering.connectors.transport import (
     items_of,
     json_of,
     text_of,
+    text_or_empty,
     text_unless_missing,
 )
 from engineering.connectors.write_policy import BrokerError, WriteRefused, check_ci_definitions
@@ -658,7 +659,7 @@ class GitLabHost:
             ours = [item for item in (found if isinstance(found, list) else [])
                     if dig(item, 'source_project_id') == project_id and dig(item, 'target_branch') == base]
             if ours:
-                return PullRequestRef(number=int_of(ours[0], 'iid'), url=text_of(ours[0], 'web_url'))
+                return _merge_request_ref(ours[0])
             page = next_page(response.headers)
             if page is None:
                 return None
@@ -678,7 +679,7 @@ class GitLabHost:
             created = json_of(self._api(connection_id, 'POST', '/merge_requests', 'the draft merge request',
                                         ok=(201,), body={**text, 'source_branch': branch, 'target_branch': base,
                                                          'remove_source_branch': False}))
-            ref = PullRequestRef(number=int_of(created, 'iid'), url=text_of(created, 'web_url'))
+            ref = _merge_request_ref(created)
         number = ref.number
         return checked_after_write(
             ref, opened, lambda: self._require_merge_request_tree(connection_id, number, tree_hash),
@@ -690,6 +691,14 @@ class GitLabHost:
                       body={'state_event': 'close'})
         except (BrokerError, NoConnection, ValueError, OSError):
             logger.warning('engineering merge request not closed', extra={'pull_request': number})
+
+
+def _merge_request_ref(found: object) -> PullRequestRef:
+    """A merge request as GitLab answers it (its create, its lookup): the IID, the URL, its source and target
+    branches."""
+    return PullRequestRef(number=int_of(found, 'iid'), url=text_of(found, 'web_url'),
+                          head=text_or_empty(found, 'source_branch'), base=text_or_empty(found, 'target_branch'),
+                          host='gitlab')
 
 
 def _actions(changes: tuple[FileChange, ...], present: dict[str, str],

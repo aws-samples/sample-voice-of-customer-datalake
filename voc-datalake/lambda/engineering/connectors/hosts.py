@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import Final, Literal, Protocol
 
 from engineering.connectors.write_policy import BrokerError, WriteRefused
+from engineering.run_links import PullRequestLink
 
 ReadKind = Literal['file', 'history', 'issue', 'pull_request']
 CommentTarget = Literal['issue', 'pull_request']
@@ -196,8 +197,15 @@ class ReadPage:
 
 @dataclass(frozen=True)
 class PullRequestRef:
+    """A pull (merge) request as the host answered it: its number (GitLab's IID), its URL, and, as the host's answer
+    names them (7.09.00: what the run's record keeps, ``run_links.py``), its head and base branches ('' when the answer
+    did not say) and the host kind of the client that read it (``github`` or ``gitlab``; '' for none)."""
+
     number: int
     url: str
+    head: str = ''
+    base: str = ''
+    host: str = ''
 
 
 @dataclass(frozen=True)
@@ -493,6 +501,12 @@ class WriteLedger(Protocol):
         """The claim's outcome (``WRITE_DONE`` with the answer, ``WRITE_REFUSED``, ``WRITE_UNKNOWN``)."""
         ...
 
+    def record_pull_request(self, run_id: str, link: PullRequestLink) -> bool:
+        """Keep ``link`` as the run's pull request, keyed on its head branch (``run_links.merged``): True when recorded
+        (the first, the same one, or a new number on the same head, the earlier kept as superseded), False when the
+        run's record names one on another head (never repointed); ``Unavailable`` when it cannot be written."""
+        ...
+
 
 class Unconnected:
     """The patch reader, run records, GO ledger and dial where the deployment names none of their stores: every call
@@ -524,6 +538,9 @@ class Unconnected:
 
     def close(self, run_id: str, key: str, state: str,  # noqa: ARG002 - the protocol's signature
               result: dict[str, object] | None = None) -> None:  # noqa: ARG002 - the protocol's signature
+        raise NoConnection(NO_CONNECTION)
+
+    def record_pull_request(self, run_id: str, link: PullRequestLink) -> bool:  # noqa: ARG002 - the protocol's
         raise NoConnection(NO_CONNECTION)
 
 

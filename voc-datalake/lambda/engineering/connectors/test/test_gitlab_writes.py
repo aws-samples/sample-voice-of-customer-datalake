@@ -568,7 +568,7 @@ def draftable(api: FakeGitLab, open_mrs: list[dict[str, Any]], mr_root: dict[str
 def test_a_draft_merge_request_is_opened_with_a_draft_title_when_the_branch_has_the_tree() -> None:
     api = draftable(FakeGitLab(), open_mrs=[])
     ref = client(api).open_or_update_draft_pr('conn-1', BRANCH, 'main', 'Fix the total', 'Body', TREE)
-    assert ref == PullRequestRef(8, 'https://gitlab.com/x/-/merge_requests/8')
+    assert ref == PullRequestRef(8, 'https://gitlab.com/x/-/merge_requests/8', host='gitlab')
     assert api.bodies('POST', f'{P}/merge_requests') == [{
         'title': 'Draft: Fix the total', 'description': 'Body', 'source_branch': BRANCH, 'target_branch': 'main',
         'remove_source_branch': False}]

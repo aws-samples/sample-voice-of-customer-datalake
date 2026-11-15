@@ -17,6 +17,58 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.09.00] - 2026-11-15
+
+Autonomous engineering agents: a run's record keeps the issue it was started from and the draft pull request (a
+GitLab merge request) it opened, and the run monitor and the reports show them. Off by default
+(`-c engineeringAgents=true`), and no fixed cost.
+
+### Added
+
+- **The run's pull request on its record** (`lambda/engineering/run_links.py`; docs/autonomous-engineering.md, "The
+  run's issue and pull request"): when the host answers an open or an update of the run's draft pull request with
+  it, the broker keeps its host kind, number (GitLab's IID), URL and head and base branches in
+  `WS#<ws>#WRITES#<run>` / `PULL_REQUEST`, beside the write claims (`records.py`
+  `WriteClaims.record_pull_request`). Keyed on the head branch, compared on the number and the head alone: the same
+  pull request again updates its base and address; a new number on the same head (a person closed the draft and
+  the next open made another) replaces it, the earlier numbers kept in `superseded` (at most 20, the oldest
+  dropped); one on another head is refused. Kept only when the URL is exactly that number's address in the run's
+  own repository on its host's own domain over https (GitHub's `owner/name`, GitLab's project path), and its head
+  the run's branch; the address kept is the one rebuilt from them; never a token, a title, a body or other host
+  text. A write whose outcome is unknown records nothing until a later open or update finds the pull request by
+  its branch on the host (the clients' existing lookup). A record that cannot be written is logged, counted
+  (`EngineeringPullRequestUnrecorded`) and never fails the write; the done write claim keeps the same answer, and
+  the readers take it from there while the row is missing or older. The GitHub and GitLab clients now answer a pull
+  request's head and base branches (`head.ref`/`base.ref`, `source_branch`/`target_branch`) and their host kind.
+- **The run's issue**: nothing carried one, so `POST /agents/engineering/runs` takes an optional `issue` (a whole
+  number from 1 to 2,147,483,647; 400 otherwise), and Start a run has an optional Issue field. The start writes it to
+  META's `issue` once, `{host, number, url, verified: false}`, its address built from the stored connection's host
+  and repository: recorded as given and labelled unverified (only the broker holds the connection's credential).
+- **Shown**: the run overview (`GET /agents/engineering/<run_id>`) answers `run.issue` and `run.pull_request` (null
+  for none), each read back only when its address passes the same check; the run monitor links them, opened in a new
+  tab with `rel="noopener noreferrer"`, only when the address is https on the record's host's domain under the run's
+  repository (otherwise shown unlinked), an unverified issue saying so; the goal and PR reports name them, in code
+  spans (a report references nothing on the host). In all nine locales.
+
+### Tests
+
+- The broker on fakes: the pull request kept on an open and on an update, on GitHub and on GitLab; an outcome
+  unknown recording nothing until the next attempt's answer; a draft closed and opened again replacing it; a foreign
+  domain, scheme, repository, host or branch not kept; a record that cannot be written never failing the write and
+  read back from its done claim. The row on moto: the same number updating its base, a new number on the branch
+  replacing it, another branch refused, the superseded numbers bounded, its first time kept, a write failing or
+  racing every try unavailable, only the attributes the broker's grant allows (read from the stack); the readers
+  taking a newer done claim, never an older, unknown or other branch's one.
+  The clients' answers with their branches. The issue on the start (API and runtime, both hosts, each refusal), the
+  overview's fields, the read-back checks, and the goal, PR and commit reports.
+- CDK: the broker's one DynamoDB write statement is still the claims'. The web app: the URL check, the links' target
+  and `rel`, the merge request's wording, an unlinked address, the start form's issue field.
+
+### Upgrade notes
+
+- No IAM change: the pull request's row is written under the broker's existing claims grant. Runs started before
+  have neither an issue nor a recorded pull request (null); nothing to migrate.
+
 ## [7.08.00] - 2026-11-15
 
 Autonomous engineering agents: administrators accept, reject and roll back the agents' skill versions and record a

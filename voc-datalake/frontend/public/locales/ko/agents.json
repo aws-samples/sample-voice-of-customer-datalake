@@ -618,19 +618,22 @@
       "connection": "저장소 연결",
       "commit": "커밋",
       "language": "언어",
-      "goal": "목표"
+      "goal": "목표",
+      "issue": "이슈(선택)"
     },
     "hints": {
       "connection": "연결 ID: 영문자, 숫자, 하이픈으로 최대 63자.",
       "commit": "실행을 시작할 커밋의 전체 ID: 16진수 40자.",
       "language": "저장소의 도구 체인: 에이전트는 그 언어의 샌드박스 이미지에서 작업합니다.",
-      "goal": "실행의 목적을 한 줄, 최대 500자로."
+      "goal": "실행의 목적을 한 줄, 최대 500자로.",
+      "issue": "실행의 출발점인 저장소 이슈의 번호입니다. 입력한 그대로 기록됩니다."
     },
     "invalid": {
       "connection": "연결 ID를 입력하세요: 영문자, 숫자 또는 하이픈 1~63자.",
       "commit": "전체 커밋 ID를 입력하세요: 0~9와 a~f로 된 40자.",
       "goalEmpty": "실행의 목적을 적어 주세요.",
-      "goalLong": "목표는 {{max, number}}자 이하로 적어 주세요."
+      "goalLong": "목표는 {{max, number}}자 이하로 적어 주세요.",
+      "issue": "이슈 번호를 1 이상의 정수로 입력하거나 비워 두세요."
     },
     "languages": {
       "java": "Java",
@@ -1118,6 +1121,13 @@
     "byModel": "모델별 토큰",
     "budget": "흐름 예산: 월 {{amount}}",
     "budgetPassed": "{{month}}: 예산의 {{percent}}% 사용",
+    "links": {
+      "issue": "이슈 #{{number}}",
+      "pullRequest": "풀 리퀘스트 #{{number}}",
+      "mergeRequest": "머지 리퀘스트 !{{number}}",
+      "asGiven": "시작할 때 입력한 그대로, 호스트에서 확인하지 않음",
+      "opens": "{{label}}(새 탭에서 열림)"
+    },
     "actionsUnavailable": "이 배포에서는 아직 신호와 답변을 보낼 수 없습니다. 실행 모니터가 엔지니어링 런타임과 버스에 연결되어 있지 않습니다.",
     "runSignals": "실행 전체",
     "agentSignals": "에이전트 {{agent}}",

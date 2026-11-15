@@ -623,19 +623,22 @@
       "connection": "Connexion au dépôt",
       "commit": "Commit",
       "language": "Langage",
-      "goal": "Objectif"
+      "goal": "Objectif",
+      "issue": "Ticket (facultatif)"
     },
     "hints": {
       "connection": "L’identifiant de la connexion : lettres, chiffres et tirets, 63 au plus.",
       "commit": "L’identifiant complet du commit de départ : 40 caractères hexadécimaux.",
       "language": "La chaîne d’outils du dépôt : les agents travaillent dans l’image isolée de ce langage.",
-      "goal": "À quoi sert l’exécution, sur une ligne de 500 caractères au plus."
+      "goal": "À quoi sert l’exécution, sur une ligne de 500 caractères au plus.",
+      "issue": "Le numéro du ticket du dépôt dont part l’exécution. Il est enregistré tel quel."
     },
     "invalid": {
       "connection": "Saisissez l’identifiant de la connexion : 1 à 63 lettres, chiffres ou tirets.",
       "commit": "Saisissez l’identifiant complet du commit : 40 caractères, de 0 à 9 et de a à f.",
       "goalEmpty": "Indiquez à quoi sert l’exécution.",
-      "goalLong": "L’objectif ne doit pas dépasser {{max, number}} caractères."
+      "goalLong": "L’objectif ne doit pas dépasser {{max, number}} caractères.",
+      "issue": "Saisissez le numéro du ticket, un nombre entier à partir de 1, ou laissez le champ vide."
     },
     "languages": {
       "java": "Java",
@@ -1124,6 +1127,13 @@
     "byModel": "Jetons par modèle",
     "budget": "Budget du flux : {{amount}} par mois",
     "budgetPassed": "{{month}} : {{percent}} % du budget dépensé",
+    "links": {
+      "issue": "Ticket #{{number}}",
+      "pullRequest": "Demande de tirage #{{number}}",
+      "mergeRequest": "Demande de fusion !{{number}}",
+      "asGiven": "tel que donné au départ, non vérifié sur l’hébergeur",
+      "opens": "{{label}} (s’ouvre dans un nouvel onglet)"
+    },
     "actionsUnavailable": "Ce déploiement ne peut pas encore envoyer de signaux ni de réponses : il ne relie pas le moniteur de l'exécution au runtime et au bus d'ingénierie.",
     "runSignals": "Toute l’exécution",
     "agentSignals": "Agent {{agent}}",

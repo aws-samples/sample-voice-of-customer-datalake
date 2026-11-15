@@ -1,8 +1,10 @@
 """What the broker reads of a run's own record, and its one write there (docs/autonomous-engineering.md, "Repository
 connectors").
 
-The broker's one write is a write's claim row, in a partition of the run's writes alone (``WriteClaims``, 7.02.00). Otherwise reads only, of rows and objects
-other code writes; the broker writes none of them:
+The broker's writes are a write's claim row, in a partition of the run's writes alone (``WriteClaims``, 7.02.00), and,
+in that partition with a claim row's attributes, the run's pull request once the host answered with it (7.09.00,
+``WriteClaims.record_pull_request``, ``engineering/run_links.py``). Otherwise reads only, of rows and objects other
+code writes; the broker writes none of them:
 
 * the run: ``WS#<ws>#RUN#<run>`` / ``META`` (``runtime/runs.py``), read strongly consistent for the caller's run
   alone (its session names it): its status, connection, commit, the person who started it and its ``repo`` (the
@@ -26,8 +28,10 @@ other code writes; the broker writes none of them:
   or voided one, none, or a deployment that names no agents table, is not attested, so the push or pull request is
   refused.
 
-Not recorded yet, so not read: the run's issue and pull request (so no comment is accepted) and the reviews behind
-its feedback ids (so the write rules have no review text to compare: their personal-data checks still run).
+Not read: the run's issue (META's ``issue``) and its pull request (7.09.00: recorded for the run monitor, the reports
+and the learning loop, not yet taken as the issue and pull request an agent may comment on, so no comment is
+accepted), and the reviews behind its feedback ids (not recorded yet, so the write rules have no review text to
+compare: their personal-data checks still run).
 """
 from __future__ import annotations
 
@@ -57,6 +61,14 @@ from engineering.connectors.patches import AUTHOR
 from engineering.flow.ledger import go_tree, read_gate_record
 from engineering.quality_gate.record import GateRecord
 from engineering.rows import get_row, run_pk, run_rows, string_attr
+from engineering.run_links import (
+    PULL_REQUEST_OP,
+    PULL_REQUEST_SK,
+    PullRequestLink,
+    merged,
+    stored_link,
+    writes_pk,
+)
 from engineering.workspace.store import WorkspaceStore
 
 _UNREADABLE: Final = "The run's record could not be read; retry."
@@ -126,12 +138,8 @@ class RunRecords:
 
 #: A write's claim row, in a partition of the run's writes alone (``writes_pk``), so the broker's write grant reaches no
 #: other row of the run: ``WS#<ws>#WRITES#<run>`` / ``WRITE#<agent>#<attempt>#<operation>#<digest>``.
+#: The partition (``run_links.writes_pk``) holds the run's pull request too (``record_pull_request``).
 WRITE_PREFIX: Final = 'WRITE#'
-
-
-def writes_pk(ws: str, run_id: str) -> str:
-    """The partition of a run's write claims (beside, never inside, the run's own ``WS#<ws>#RUN#<run>``)."""
-    return f'WS#{ws}#WRITES#{run_id}'
 
 
 class WriteClaims:
@@ -140,7 +148,7 @@ class WriteClaims:
     ``sk``, ``state``, ``op``, ``at``, ``result`` and ``closed_at``, and the broker's IAM grant allows those alone
     (engineering-broker.ts ``BROKER_CLAIM_ATTRIBUTES``). A claim is taken again only after a refusal (nothing
     was written); a done write's row keeps its answer (a number, a URL, a branch and tree: never a body), so a repeat
-    is answered with it."""
+    is answered with it. The run's pull request row (``record_pull_request``) has the same attributes."""
 
     def __init__(self, client: Any, table: str, clock: Callable[[], float] = time.time) -> None:
         self._client = client
@@ -199,3 +207,56 @@ class WriteClaims:
                 ExpressionAttributeNames={'#state': 'state', **({'#result': 'result'} if result is not None else {})})
         except (ClientError, BotoCoreError) as exc:
             raise Unavailable("The write's outcome could not be recorded.") from exc
+
+    def record_pull_request(self, run_id: str, link: PullRequestLink) -> bool:
+        """Keep ``link`` as the run's pull request, keyed on its head (``run_links.merged``): none recorded, or one on
+        the same head (the same number: its base and URL updated; a new one: it replaces it, the earlier kept in
+        ``superseded``), True; one on another head, False, the row unchanged. Read, then written on the condition
+        that the row is still what was read (none, or its exact ``result``), tried again when it moved meanwhile
+        (``PULL_REQUEST_TRIES``). ``at`` is when it was first recorded, ``closed_at`` when last written. A claim row's
+        attributes only (``op``, ``at``, ``closed_at``, ``result``)."""
+        key = {'pk': {'S': writes_pk(WORKSPACE, run_id)}, 'sk': {'S': PULL_REQUEST_SK}}
+        for _ in range(PULL_REQUEST_TRIES):
+            item = self._pull_request_row(key)
+            earlier = '' if item is None else string_attr(item, 'result')
+            current = stored_link(earlier) if item is not None else None
+            becomes = merged(current, link)
+            if becomes is None:
+                return False
+            if becomes.result() == earlier:
+                return True
+            if self._write_pull_request(key, becomes, None if item is None else earlier):
+                return True
+        raise Unavailable(_NOT_RECORDED)
+
+    def _pull_request_row(self, key: dict[str, Any]) -> dict[str, Any] | None:
+        try:
+            return get_row(self._client, self._table, key)
+        except (ClientError, BotoCoreError) as exc:
+            raise Unavailable(_NOT_RECORDED) from exc
+
+    def _write_pull_request(self, key: dict[str, Any], link: PullRequestLink, earlier: str | None) -> bool:
+        """Write ``link`` while the row is still ``earlier`` (None: no row); False when it moved meanwhile."""
+        values: dict[str, Any] = {':result': {'S': link.result()}, ':op': {'S': PULL_REQUEST_OP},
+                                  ':now': {'N': str(int(self._clock()))}}
+        if earlier is not None:
+            values[':earlier'] = {'S': earlier}
+        try:
+            self._client.update_item(
+                TableName=self._table, Key=key,
+                UpdateExpression='SET #result = :result, #op = :op, #at = if_not_exists(#at, :now), closed_at = :now',
+                ConditionExpression='attribute_not_exists(pk)' if earlier is None else '#result = :earlier',
+                ExpressionAttributeNames={'#result': 'result', '#op': 'op', '#at': 'at'},
+                ExpressionAttributeValues=values)
+        except ClientError as exc:
+            if exc.response.get('Error', {}).get('Code') == 'ConditionalCheckFailedException':
+                return False
+            raise Unavailable(_NOT_RECORDED) from exc
+        except BotoCoreError as exc:
+            raise Unavailable(_NOT_RECORDED) from exc
+        return True
+
+
+_NOT_RECORDED: Final = "The run's pull request could not be recorded."
+#: How many times a record of the run's pull request is read and written when another write moved it meanwhile.
+PULL_REQUEST_TRIES: Final = 3

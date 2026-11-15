@@ -618,19 +618,22 @@
       "connection": "リポジトリ接続",
       "commit": "コミット",
       "language": "言語",
-      "goal": "目的"
+      "goal": "目的",
+      "issue": "Issue（任意）"
     },
     "hints": {
       "connection": "接続の ID：英数字とハイフン、63 文字以内。",
       "commit": "実行を開始するコミットの完全な ID：16 進数 40 文字。",
       "language": "リポジトリのツールチェーン：エージェントはその言語のサンドボックスイメージで作業します。",
-      "goal": "実行の目的を 1 行、500 文字以内で。"
+      "goal": "実行の目的を 1 行、500 文字以内で。",
+      "issue": "実行の起点となる、リポジトリの Issue の番号。入力されたとおりに記録されます。"
     },
     "invalid": {
       "connection": "接続の ID を入力してください：英数字またはハイフンで 1〜63 文字。",
       "commit": "完全なコミット ID を入力してください：0〜9 と a〜f の 40 文字。",
       "goalEmpty": "実行の目的を入力してください。",
-      "goalLong": "目的は {{max, number}} 文字以内にしてください。"
+      "goalLong": "目的は {{max, number}} 文字以内にしてください。",
+      "issue": "Issue の番号を 1 以上の整数で入力するか、空のままにしてください。"
     },
     "languages": {
       "java": "Java",
@@ -1118,6 +1121,13 @@
     "byModel": "モデル別のトークン",
     "budget": "フローの予算：月 {{amount}}",
     "budgetPassed": "{{month}}：予算の {{percent}}% を使用",
+    "links": {
+      "issue": "Issue #{{number}}",
+      "pullRequest": "プルリクエスト #{{number}}",
+      "mergeRequest": "マージリクエスト !{{number}}",
+      "asGiven": "開始時に入力されたとおり、ホストでは未確認",
+      "opens": "{{label}}（新しいタブで開きます）"
+    },
     "actionsUnavailable": "このデプロイからはまだシグナルや回答を送信できません。実行モニターがエンジニアリングのランタイムとバスに接続されていません。",
     "runSignals": "実行全体",
     "agentSignals": "エージェント {{agent}}",

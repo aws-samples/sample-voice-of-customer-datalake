@@ -9,14 +9,14 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { ApiError, AuthError } from '../../lib/errors'
 import {
-  MAX_CONNECTION_ID, MAX_RUN_GOAL, RUN_LANGUAGES, startOutcomeOf, startRunIssues, startRunRequest,
+  MAX_CONNECTION_ID, MAX_ISSUE_NUMBER, MAX_RUN_GOAL, RUN_LANGUAGES, startOutcomeOf, startRunIssues, startRunRequest,
 } from './startRunRules'
 import type { StartRunForm } from './startRunRules'
 
 const ROOT = join(__dirname, '../../../..')
 const read = (path: string) => readFileSync(join(ROOT, path), 'utf8')
 const COMMIT = '0123456789abcdef0123456789abcdef01234567'
-const FORM: StartRunForm = { connection: 'conn-1', commit: COMMIT, language: 'python', goal: 'Fix it' }
+const FORM: StartRunForm = { connection: 'conn-1', commit: COMMIT, language: 'python', goal: 'Fix it', issue: '' }
 
 /** The number a `NAME = 123` or `NAME: Final = 123` line sets in `source`. */
 function pythonNumber(source: string, name: string): number {
@@ -29,6 +29,7 @@ describe('the start rules: form ⇄ server', () => {
   it('bound the goal and the connection id as the server does', () => {
     expect(pythonNumber(read('lambda/api/agents_handler.py'), 'MAX_RUN_GOAL')).toBe(MAX_RUN_GOAL)
     expect(pythonNumber(read('lambda/engineering/runtime/interface.py'), 'MAX_ID_LENGTH')).toBe(MAX_CONNECTION_ID)
+    expect(pythonNumber(read('lambda/engineering/run_links.py'), 'MAX_NUMBER')).toBe(MAX_ISSUE_NUMBER)
   })
 
   it('offer exactly the languages with an image', () => {
@@ -56,6 +57,11 @@ describe('startRunIssues', () => {
     [{ goal: 'x'.repeat(501) }, { goal: 'goalLong' }],
     // (counted in characters: 500 emoji are 500, not 1,000 UTF-16 units)
     [{ goal: '🙂'.repeat(501) }, { goal: 'goalLong' }],
+    [{ issue: '0' }, { issue: 'issue' }],
+    [{ issue: '-3' }, { issue: 'issue' }],
+    [{ issue: '1.5' }, { issue: 'issue' }],
+    [{ issue: '#12' }, { issue: 'issue' }],
+    [{ issue: String(MAX_ISSUE_NUMBER + 1) }, { issue: 'issue' }],
   ])('says what is wrong (%o)', (change, issues) => {
     expect(startRunIssues({ ...FORM, ...change })).toStrictEqual(issues)
   })
@@ -101,8 +107,13 @@ describe('startOutcomeOf', () => {
 describe('startRunRequest', () => {
   it('trims, lower-cases the commit and puts the goal on one line', () => {
     expect(startRunRequest('wf_1', { connection: ' conn-1 ', commit: COMMIT.toUpperCase(), language: 'rust',
-      goal: ' Fix\n the   bug ' })).toStrictEqual({
+      goal: ' Fix\n the   bug ', issue: ' ' })).toStrictEqual({
       workflow_id: 'wf_1', connection: 'conn-1', commit: COMMIT, language: 'rust', goal: 'Fix the bug',
     })
+  })
+
+  it('sends the issue as a number only when one was given', () => {
+    expect(startRunIssues({ ...FORM, issue: ` ${String(MAX_ISSUE_NUMBER)} ` })).toStrictEqual({})
+    expect(startRunRequest('wf_1', { ...FORM, issue: ' 42 ' }).issue).toBe(42)
   })
 })

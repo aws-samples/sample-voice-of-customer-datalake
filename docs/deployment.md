@@ -756,6 +756,11 @@ missing, the alarms themselves say whether alerting is on.
 | `engineering-dlq` (only with `-c engineeringAgents=true`) | `voc-engineering-dlq` (Processing): the engineering bus rule's undelivered events, the router's, the delivery function's and the report builder's failed invocations, the supervisor's undelivered ticks | Max of `ApproximateNumberOfMessagesVisible` > 0 over one 5-minute period |
 | `engineering-denied-reads` (only with `-c engineeringAgents=true`) | `VoC` `EngineeringWorkspaceDeniedReads` of the engineering workspace's readers (`voc-agents-api`, `voc-engineering-board`, `voc-engineering-reports`, `voc-engineering-runtime`: a run's retrospective reading its gate records), one metric-math `SUM`: reads S3 denied that they took as missing | Sum over 5 minutes > 20 (a plain missing object counts too; a broken bucket or KMS key policy shows well above that). The service names are the same in every deployment, so two deployments with the module in one account and region share the count (see "CloudWatch metrics co-mingle") |
 
+Planned: an alarm on `VoC` `EngineeringPullRequestUnrecorded` of `voc-engineering-broker` (7.09.00: a run's pull
+request the broker could not record; the readers take it from the write's done claim meanwhile,
+[docs/autonomous-engineering.md](autonomous-engineering.md), "The run's issue and pull request"). Nothing alarms on it
+yet.
+
 Missing data is never breaching, so an idle queue or function stays OK.
 
 **Recipients.** All alarms notify ONE SNS topic, `voc-ops-alarms-<account>-<region>`,

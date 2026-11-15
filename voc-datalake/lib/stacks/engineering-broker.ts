@@ -27,7 +27,8 @@
  *   read as missing);
  * - `dynamodb:GetItem`, `dynamodb:PutItem` and `dynamodb:UpdateItem` on voc-engineering, only in the runs' writes'
  *   partitions (`WS#*#WRITES#*`, never a run's own) and of a row only a write claim's attributes (7.02.00: each write
- *   made once per caller, attempt, operation and what it writes, records.py WriteClaims), with
+ *   made once per caller, attempt, operation and what it writes, records.py WriteClaims; since 7.09.00 also the run's
+ *   pull request's row, `PULL_REQUEST` in the same partition with the same attributes, so no new grant), with
  *   `kms:GenerateDataKey` on the stack's key through DynamoDB only, for it;
  * - `dynamodb:Query` on voc-agents, only in the connections' CI attestations' partitions (`CONNECTIONS#*#CI#*`, 7.04.00:
  *   the newest version of the run's connection's attestation, connectors/attestations.py) and of a row only its key,
@@ -105,7 +106,10 @@ const BROKER_WORKSPACE_KEYS = [
 ];
 /** The way-of-working row's attributes the broker may read (its key, and `mode`: connectors/dial.py MODE_ATTRIBUTE). */
 const BROKER_PEOPLE_ATTRIBUTES = ['pk', 'sk', 'mode'];
-/** A write's claim row's attributes, all the broker may write (connectors/records.py WriteClaims). */
+/**
+ * A write's claim row's attributes, all the broker may write (connectors/records.py WriteClaims; the run's pull
+ * request's row uses `op`, `at` and `result` of them: run_links.py).
+ */
 const BROKER_CLAIM_ATTRIBUTES = ['pk', 'sk', 'state', 'op', 'at', 'result', 'closed_at'];
 /** The runs' writes' partitions (`WS#<ws>#WRITES#<run>`, records.py writes_pk): the claim rows', and nothing else. */
 const BROKER_WRITE_PARTITIONS = 'WS#*#WRITES#*';

@@ -3,7 +3,7 @@
 ``WS#<ws>#RUN#<run>`` / ``META`` is the run's own row: the board counts its tasks on it (``task_count``, under
 the run's ``max_tasks``), the inbox router numbers its conversation on it (``msg_seq``), the delivery function
 numbers its inbox on it (``inbox_seq``, ``delivery.py``), the reports read its
-goal, repository, flow, status and times, the supervisor its caps and its start, and the connector's broker its
+goal, repository, flow, status, times and the issue it was started from (``issue``, 7.09.00), the supervisor its caps and its start, and the connector's broker its
 status, connection, commit and ``started_by`` (the person who started it, whose way of working its dial reads:
 ``connectors/records.py``). The run's start writes it,
 once; its end sets its status and end time. Nothing else here ever writes over the board's, the router's or the
@@ -56,6 +56,7 @@ from engineering.flow.record import (
     recorded_verdicts,
     verdict_item,
 )
+from engineering.run_links import issue_link
 from engineering.runtime.checkout import COMMIT_RE
 from engineering.runtime.egress import REGISTRY_HOSTS
 from engineering.runtime.interface import RuntimeRefused, check_id, check_run_id
@@ -250,6 +251,17 @@ def _failure_count(item: Mapping[str, Any], now: int) -> tuple[int, int]:
     return int(item.get('cache_failures', 1)), int(item.get('cache_failing_since', now))
 
 
+def _issue_item(issue: int, host: str, repo: str) -> dict[str, Any] | None:
+    """META's ``issue`` for the issue a run starts from (``run_links.py``), None for none (0); ``RuntimeRefused``,
+    before anything is written, for a number off the rule or a repository or host it cannot be addressed on."""
+    if not issue:
+        return None
+    link = issue_link(host, repo, issue)
+    if link is None:
+        raise RuntimeRefused('an issue is a number from 1, of the repository of a connection on a known host')
+    return link.item()
+
+
 def flow_step(reason: str) -> str:
     """The flow's step a decision point names (``flow:<step>``), '' for any other decision point."""
     return reason.removeprefix(DECISION_PREFIX) if reason.startswith(DECISION_PREFIX) else ''
@@ -269,7 +281,7 @@ class RunStore:
     def start(self, run_id: str, *, caps: RunCaps, now: int, goal: str = '', repo: str = '', flow: str = '',
               connection: str = '', commit: str = '', language: str = '', actor: str = '',
               budget_usd: float | None = None, flow_definition: str = '', flow_revision: int = 0,
-              default_branch: str = '') -> None:
+              default_branch: str = '', issue: int = 0, host: str = '') -> None:
         """Write the run's ``META`` and list it for the supervisor; ``RunExists`` when it was started already.
 
         ``connection`` and ``commit`` (a full object id), when given, are what the board's ``launch`` op starts the
@@ -279,9 +291,12 @@ class RunStore:
         stored flow's definition as its JSON text (at ``flow_revision``), is copied into the run's own ``FLOW`` row in
         the same transaction, create-only (``engineering/flow/record.py``): the run follows that copy, whatever the
         flow becomes; refused before anything is written when it is not an engineering flow the conductor can
-        follow."""
+        follow. ``issue``, the issue the run was started from (0 for none), on ``repo`` at ``host`` (the stored
+        connection's kind), goes into META's ``issue`` with its address, once, as given: not read from the host
+        (``engineering/run_links.py``)."""
         if connection:
             check_id('connection', connection)
+        issue_item = _issue_item(issue, host, repo)
         if commit and not COMMIT_RE.match(commit):
             raise RuntimeRefused('a commit is a full hexadecimal object id')
         if language and language not in REGISTRY_HOSTS:
@@ -308,6 +323,8 @@ class RunStore:
             meta['max_cost_usd'] = str(caps.max_cost_usd)
         if budget_usd is not None:
             meta['budget_usd'] = str(budget_usd)
+        if issue_item is not None:
+            meta['issue'] = issue_item
         # The run coordinator's task, open for it alone (the board's: it claims it like any agent, so the supervisor
         # watches it by its lease).
         coordinate = BoardStore(self._table.meta.client, name, new_id=lambda: '').coordinate_items(

@@ -137,6 +137,12 @@ def dig(value: object, *keys: str) -> object:
     return value
 
 
+def text_or_empty(value: object, *keys: str) -> str:
+    """The text at ``keys`` of an answer, '' when it has none (what the record keeps only when it is there)."""
+    found = dig(value, *keys)
+    return found if isinstance(found, str) else ''
+
+
 def text_unless_missing(response: Response, *keys: str) -> str | None:
     """``None`` for a 404 (the host has no such thing), else the text at ``keys`` of the answer (``HostError``
     without it)."""

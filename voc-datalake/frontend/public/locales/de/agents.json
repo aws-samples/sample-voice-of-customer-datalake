@@ -618,19 +618,22 @@
       "connection": "Repository-Verbindung",
       "commit": "Commit",
       "language": "Sprache",
-      "goal": "Ziel"
+      "goal": "Ziel",
+      "issue": "Issue (optional)"
     },
     "hints": {
       "connection": "Die ID der Verbindung: Buchstaben, Ziffern und Bindestriche, höchstens 63.",
       "commit": "Die vollständige Commit-ID, von der der Lauf startet: 40 Hexadezimalzeichen.",
       "language": "Die Toolchain des Repositorys: Die Agenten arbeiten im Sandbox-Image dieser Sprache.",
-      "goal": "Wofür der Lauf ist, in einer Zeile mit höchstens 500 Zeichen."
+      "goal": "Wofür der Lauf ist, in einer Zeile mit höchstens 500 Zeichen.",
+      "issue": "Die Nummer des Issues im Repository, von dem der Lauf ausgeht. Sie wird so gespeichert, wie sie angegeben wird."
     },
     "invalid": {
       "connection": "Geben Sie die ID der Verbindung ein: 1 bis 63 Buchstaben, Ziffern oder Bindestriche.",
       "commit": "Geben Sie die vollständige Commit-ID ein: 40 Zeichen, 0 bis 9 und a bis f.",
       "goalEmpty": "Geben Sie an, wofür der Lauf ist.",
-      "goalLong": "Das Ziel darf höchstens {{max, number}} Zeichen lang sein."
+      "goalLong": "Das Ziel darf höchstens {{max, number}} Zeichen lang sein.",
+      "issue": "Geben Sie die Nummer des Issues ein, eine ganze Zahl ab 1, oder lassen Sie das Feld leer."
     },
     "languages": {
       "java": "Java",
@@ -1118,6 +1121,13 @@
     "byModel": "Tokens pro Modell",
     "budget": "Budget des Ablaufs: {{amount}} im Monat",
     "budgetPassed": "{{month}}: {{percent}} % des Budgets ausgegeben",
+    "links": {
+      "issue": "Issue #{{number}}",
+      "pullRequest": "Pull-Request #{{number}}",
+      "mergeRequest": "Merge-Request !{{number}}",
+      "asGiven": "wie beim Start angegeben, nicht beim Host geprüft",
+      "opens": "{{label}} (öffnet sich in einem neuen Tab)"
+    },
     "actionsUnavailable": "Signale und Antworten lassen sich von dieser Bereitstellung noch nicht senden: Sie verbindet die Laufüberwachung nicht mit der Engineering-Laufzeit und dem Bus.",
     "runSignals": "Der ganze Lauf",
     "agentSignals": "Agent {{agent}}",

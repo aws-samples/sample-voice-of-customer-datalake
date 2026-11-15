@@ -618,19 +618,22 @@
       "connection": "仓库连接",
       "commit": "提交",
       "language": "语言",
-      "goal": "目标"
+      "goal": "目标",
+      "issue": "议题（可选）"
     },
     "hints": {
       "connection": "连接的 ID：字母、数字和连字符，最多 63 个。",
       "commit": "运行起点提交的完整 ID：40 个十六进制字符。",
       "language": "仓库的工具链：智能体在该语言的沙盒镜像中工作。",
-      "goal": "运行的用途，一行，最多 500 个字符。"
+      "goal": "运行的用途，一行，最多 500 个字符。",
+      "issue": "运行所依据的仓库议题的编号。按输入原样记录。"
     },
     "invalid": {
       "connection": "请输入连接的 ID：1 到 63 个字母、数字或连字符。",
       "commit": "请输入完整的提交 ID：40 个字符，0 到 9 和 a 到 f。",
       "goalEmpty": "请说明运行的用途。",
-      "goalLong": "目标最多 {{max, number}} 个字符。"
+      "goalLong": "目标最多 {{max, number}} 个字符。",
+      "issue": "请输入议题编号（从 1 开始的整数），或留空。"
     },
     "languages": {
       "java": "Java",
@@ -1118,6 +1121,13 @@
     "byModel": "按模型的令牌",
     "budget": "流程预算：每月 {{amount}}",
     "budgetPassed": "{{month}}：已花费预算的 {{percent}}%",
+    "links": {
+      "issue": "议题 #{{number}}",
+      "pullRequest": "拉取请求 #{{number}}",
+      "mergeRequest": "合并请求 !{{number}}",
+      "asGiven": "按开始时的输入记录，未在托管平台上核实",
+      "opens": "{{label}}（在新标签页中打开）"
+    },
     "actionsUnavailable": "此部署尚无法发送信号和回复：它没有将运行监视器连接到工程运行时和总线。",
     "runSignals": "整个运行",
     "agentSignals": "智能体 {{agent}}",

@@ -465,19 +465,22 @@
       "connection": "Repository connection",
       "commit": "Commit",
       "language": "Language",
-      "goal": "Goal"
+      "goal": "Goal",
+      "issue": "Issue (optional)"
     },
     "hints": {
       "connection": "The connection’s id: letters, digits and hyphens, at most 63.",
       "commit": "The full commit id the run starts from: 40 hexadecimal characters.",
       "language": "The repository’s toolchain: the agents work in that language’s sandbox image.",
-      "goal": "What the run is for, on one line of at most 500 characters."
+      "goal": "What the run is for, on one line of at most 500 characters.",
+      "issue": "The number of the repository’s issue the run works from. It is recorded as given."
     },
     "invalid": {
       "connection": "Enter the connection’s id: 1 to 63 letters, digits or hyphens.",
       "commit": "Enter the full commit id: 40 characters, 0 to 9 and a to f.",
       "goalEmpty": "Say what the run is for.",
-      "goalLong": "Keep the goal to {{max, number}} characters or fewer."
+      "goalLong": "Keep the goal to {{max, number}} characters or fewer.",
+      "issue": "Enter the issue’s number, a whole number from 1, or leave it empty."
     },
     "languages": {
       "java": "Java",
@@ -1064,6 +1067,13 @@
     "byModel": "Tokens per model",
     "budget": "Flow budget: {{amount}} a month",
     "budgetPassed": "{{month}}: {{percent}}% of the budget spent",
+    "links": {
+      "issue": "Issue #{{number}}",
+      "pullRequest": "Pull request #{{number}}",
+      "mergeRequest": "Merge request !{{number}}",
+      "asGiven": "as given at the start, not checked on the host",
+      "opens": "{{label}} (opens in a new tab)"
+    },
     "actionsUnavailable": "Signals and answers can't be sent from this deployment yet: it doesn't connect the run monitor to the engineering runtime and bus.",
     "runSignals": "The whole run",
     "agentSignals": "Agent {{agent}}",

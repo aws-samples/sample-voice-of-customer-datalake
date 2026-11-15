@@ -123,7 +123,8 @@ def test_the_overview_shows_the_run_and_its_agents_as_the_supervisor_saw_them(ru
     assert view['run'] == {'run_id': RUN, 'goal': 'Fix the paging bug', 'repo': 'example/shop', 'flow': 'wf_bugfix',
                            'status': 'running', 'started_at': '2026-11-12T08:00:00Z', 'ended_at': None,
                            'budget': None, 'flow_revision': None, 'flow_copied_at': None, 'flow_definition': None,
-                           'flow_steps': None, 'flow_outcome': None}   # (a run started without a flow: nothing to light)
+                           'flow_steps': None, 'flow_outcome': None,   # (a run started without a flow: nothing to light)
+                           'issue': None, 'pull_request': None}   # (started from no issue, no pull request yet)
     coordinator, fixer = view['agents']
     assert fixer == {
         'agent': 'fixer-1', 'role': 'fixer', 'task_id': 'task-1', 'status': 'working', 'continuation': 0,

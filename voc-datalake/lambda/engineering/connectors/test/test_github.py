@@ -445,7 +445,7 @@ def writes(api: FakeGitHub) -> list[tuple[str, str, Any]]:
 def test_a_draft_pull_request_is_opened_when_the_branch_has_the_tree_and_checked_after() -> None:
     api = draftable(FakeGitHub(), open_prs=[])
     ref = client(api).open_or_update_draft_pr('c', BRANCH, 'main', 'Fix', 'From fb_01.', TREE)
-    assert ref == PullRequestRef(number=8, url='https://h/pull/8')
+    assert ref == PullRequestRef(number=8, url='https://h/pull/8', host='github')
     assert writes(api) == [('POST', f'{REPO}/pulls',
                             {'title': 'Fix', 'body': 'From fb_01.', 'head': BRANCH, 'base': 'main', 'draft': True})]
     assert api.calls()[-2:] == [('GET', f'{REPO}/pulls/8'), ('GET', f'{REPO}/git/commits/{PR_HEAD}')]
@@ -454,7 +454,7 @@ def test_a_draft_pull_request_is_opened_when_the_branch_has_the_tree_and_checked
 def test_an_open_pull_request_gets_its_text_updated_only() -> None:
     api = draftable(FakeGitHub(), open_prs=[{'number': 7, 'html_url': 'https://h/pull/7'}])
     ref = client(api).open_or_update_draft_pr('c', BRANCH, 'main', 'Fix', 'Body', TREE)
-    assert ref == PullRequestRef(number=7, url='https://h/pull/7')
+    assert ref == PullRequestRef(number=7, url='https://h/pull/7', host='github')
     assert writes(api) == [('PATCH', f'{REPO}/pulls/7', {'title': 'Fix', 'body': 'Body'})]
 
 

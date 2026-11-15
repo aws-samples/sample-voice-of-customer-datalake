@@ -623,19 +623,22 @@
       "connection": "Conexão do repositório",
       "commit": "Commit",
       "language": "Linguagem",
-      "goal": "Objetivo"
+      "goal": "Objetivo",
+      "issue": "Issue (opcional)"
     },
     "hints": {
       "connection": "O id da conexão: letras, dígitos e hifens, no máximo 63.",
       "commit": "O id completo do commit de onde a execução parte: 40 caracteres hexadecimais.",
       "language": "As ferramentas do repositório: os agentes trabalham na imagem isolada dessa linguagem.",
-      "goal": "Para que serve a execução, em uma linha de no máximo 500 caracteres."
+      "goal": "Para que serve a execução, em uma linha de no máximo 500 caracteres.",
+      "issue": "O número da issue do repositório da qual a execução parte. É registrado como informado."
     },
     "invalid": {
       "connection": "Informe o id da conexão: de 1 a 63 letras, dígitos ou hifens.",
       "commit": "Informe o id completo do commit: 40 caracteres, de 0 a 9 e de a a f.",
       "goalEmpty": "Diga para que serve a execução.",
-      "goalLong": "O objetivo pode ter no máximo {{max, number}} caracteres."
+      "goalLong": "O objetivo pode ter no máximo {{max, number}} caracteres.",
+      "issue": "Informe o número da issue, um número inteiro a partir de 1, ou deixe em branco."
     },
     "languages": {
       "java": "Java",
@@ -1124,6 +1127,13 @@
     "byModel": "Tokens por modelo",
     "budget": "Orçamento do fluxo: {{amount}} por mês",
     "budgetPassed": "{{month}}: {{percent}}% do orçamento gasto",
+    "links": {
+      "issue": "Issue #{{number}}",
+      "pullRequest": "Pull request #{{number}}",
+      "mergeRequest": "Merge request !{{number}}",
+      "asGiven": "como informado no início, não verificado no host",
+      "opens": "{{label}} (abre em uma nova aba)"
+    },
     "actionsUnavailable": "Esta implantação ainda não pode enviar sinais nem respostas: ela não conecta o monitor da execução ao runtime e ao barramento de engenharia.",
     "runSignals": "Toda a execução",
     "agentSignals": "Agente {{agent}}",

@@ -25,7 +25,7 @@ describe('parseOverview', () => {
     expect(overview.run).toStrictEqual({
       run_id: 'RUN1', goal: 'Fix the paging bugs', repo: 'example-org/storefront', flow: 'wf_flow', status: 'running',
       started_at: '2026-11-12T08:00:00Z', ended_at: null, budget: null, flow_steps: null, flow_revision: null,
-      flow_definition: null,
+      flow_definition: null, issue: null, pull_request: null,
     })
     expect(overview.agents.map((agent) => [agent.agent, agent.status, agent.task_id, agent.tokens.length])).toStrictEqual([
       ['coordinator-0', 'waiting', null, 1], ['fixer-1', 'working', 'task-1', 1], ['final-go-1', 'working', 'task-3', 0],
@@ -34,6 +34,12 @@ describe('parseOverview', () => {
       messages: 3, microvm_seconds: 900, by_model: [{ model: 'model-a', input_tokens: 2000, output_tokens: 400 }],
     })
     expect(Object.keys(overview)).toStrictEqual(['run', 'agents', 'actions_available', 'totals'])
+  })
+
+  it('reads the run\'s issue and pull request, and a link off its shape as none', () => {
+    const issue = { host: 'gitlab', number: 3, url: 'https://gitlab.com/example-org/storefront/-/issues/3', verified: false }
+    const linked = parseOverview(engineeringOverview({ issue, pull_request: { host: 'code-host', number: 7, url: 'u' } }))
+    expect([linked.run.issue, linked.run.pull_request]).toStrictEqual([issue, null])
   })
 
   it('reads the flow a run follows: the revision it copied and each step\'s status', () => {

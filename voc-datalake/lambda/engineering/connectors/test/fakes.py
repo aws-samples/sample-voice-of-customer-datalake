@@ -24,6 +24,7 @@ from engineering.connectors.hosts import (
     WriteClaim,
     WriteLedger,
 )
+from engineering.run_links import PullRequestLink, merged
 
 RUN = '01JC8Z3K4M5N6P7Q8R9S0T1V2W'
 OTHER_RUN = '01JC8Z3K4M5N6P7Q8R9S0T1V2X'
@@ -218,6 +219,15 @@ class FakeWrites:
         if self.claims[(run_id, key)].state != WRITE_CLAIMED:
             raise ValueError(f'{key} is closed already')
         self.claims[(run_id, key)] = WriteClaim(state, result)
+
+    #: Each run's pull request as recorded (keyed on its head, as ``records.WriteClaims.record_pull_request``).
+    pull_requests: dict[str, PullRequestLink] = field(default_factory=dict)
+
+    def record_pull_request(self, run_id: str, link: PullRequestLink) -> bool:
+        becomes = merged(self.pull_requests.get(run_id), link)
+        if becomes is not None:
+            self.pull_requests[run_id] = becomes
+        return becomes is not None
 
 
 def connector(host: RepositoryHost | None = None, bundles: FakeBundles | None = None, runs: FakeRuns | None = None,

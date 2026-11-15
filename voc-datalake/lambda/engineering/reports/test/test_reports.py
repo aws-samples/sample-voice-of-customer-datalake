@@ -308,7 +308,8 @@ def test_facts_and_tasks_follow_every_page() -> None:
     client.get_item.return_value = {'Item': {}}
     client.query.side_effect = [
         {'Items': [{'sk': {'S': 'AGENT#a-1'}, 'cost_usd': {'N': 'not a number'}}], 'LastEvaluatedKey': {'k': 1}},
-        {'Items': [{'sk': {'S': 'AGENT#a-2'}}]}, {'Count': 2}]
+        {'Items': [{'sk': {'S': 'AGENT#a-2'}}]}, {'Count': 2},
+        {'Items': []}]   # (the pull request author's write claims: run_links.py)
     facts = FactsReader(client, TABLE).read('default', RUN)
     assert facts is not None
     assert [(a.agent, a.cost_usd) for a in facts.agents] == [('a-1', 0), ('a-2', 0)]
@@ -333,3 +334,48 @@ def test_facts_read_what_is_there_and_zero_for_the_rest() -> None:
     assert facts is not None
     assert [agent.agent for agent in facts.agents] == ['a-1']
     assert (facts.goal, facts.events, facts.agents[0].cost_usd, facts.agents[0].role) == ('', 0, 0, '')
+
+
+# --- the run's issue and pull request (7.09.00, engineering/run_links.py) ---------------------------------------------
+
+_BRANCH = f'voc-agent/{RUN}/fix-paging'
+
+
+def _links(run: Run, host: str = 'github') -> None:
+    """The run started from issue 12 of ``acme/shop`` (as given), and its pull request (merge request) 7."""
+    paths = ('-/issues/12', '-/merge_requests/7') if host == 'gitlab' else ('issues/12', 'pull/7')
+    issue, pull = (f'https://{host}.com/acme/shop/{path}' for path in paths)
+    run.client.update_item(TableName=TABLE, Key={'pk': {'S': PK}, 'sk': {'S': 'META'}},
+                           UpdateExpression='SET #issue = :i', ExpressionAttributeNames={'#issue': 'issue'},
+                           ExpressionAttributeValues={':i': {'M': {'host': {'S': host}, 'number': {'N': '12'},
+                                                                   'url': {'S': issue}, 'verified': {'BOOL': False}}}})
+    result = json.dumps({'host': host, 'number': 7, 'url': pull, 'head': _BRANCH, 'base': 'main'})
+    run.client.put_item(TableName=TABLE, Item={'pk': {'S': f'WS#default#WRITES#{RUN}'}, 'sk': {'S': 'PULL_REQUEST'},
+                                               'op': {'S': 'pull_request'}, 'at': {'N': '1'}, 'result': {'S': result}})
+
+
+@pytest.mark.parametrize('level', ['goal', 'pr'])
+def test_the_goal_and_pr_reports_name_the_runs_issue_and_pull_request(run: Run, level: str) -> None:
+    _links(run)
+    answer = run.reports.build(RUN, level, RUN if level == 'goal' else '7', SHA)
+    report = json.loads(stored(run, answer['key']))
+    assert (report['run']['issue']['number'], report['run']['pull_request']['number']) == (12, 7)
+    markdown = stored(run, answer['markdown_key'])
+    # (in code spans: the PR report's description references, links and mentions nothing on the host)
+    assert ('- Issue: `#12` `https://github.com/acme/shop/issues/12` (as given at the start, not checked on the '
+            'host)') in markdown
+    assert f'- Pull request: `#7` `https://github.com/acme/shop/pull/7`, `{_BRANCH}` into `main`' in markdown
+
+
+def test_a_report_names_a_merge_request_as_gitlab_does(run: Run) -> None:
+    _links(run, 'gitlab')
+    markdown = stored(run, run.reports.build(RUN, 'goal', RUN)['markdown_key'])
+    assert '- Merge request: `!7` `https://gitlab.com/acme/shop/-/merge_requests/7`' in markdown
+
+
+def test_a_commit_report_and_a_run_without_them_name_neither(run: Run) -> None:
+    plain = stored(run, run.reports.build(RUN, 'goal', RUN)['markdown_key'])
+    _links(run)
+    commit = json.loads(stored(run, run.reports.build(RUN, 'commit', SHA)['key']))
+    assert ('- Issue:' in plain, '- Pull request:' in plain) == (False, False)
+    assert (commit['run']['issue'], commit['run']['pull_request']) == (None, None)

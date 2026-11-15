@@ -87,6 +87,7 @@ from engineering.connectors.transport import (
     Response,
     Transport,
     asked_wait,
+    text_or_empty,
     text_unless_missing,
 )
 from engineering.connectors.transport import dig as _dig
@@ -211,6 +212,13 @@ def _ruleset_checks(rules: list[object]) -> tuple[str, ...]:
             listed = _dig(rule, 'parameters', 'required_status_checks')
             names += [_dig(check, 'context') for check in (listed if isinstance(listed, list) else [])]
     return _check_names(names)
+
+
+def _pull_request_ref(found: object) -> PullRequestRef:
+    """A pull request as GitHub answers it (its create, its lookup): the number, the URL, its head and base branches."""
+    return PullRequestRef(number=_int(found, 'number'), url=_text(found, 'html_url'),
+                          head=text_or_empty(found, 'head', 'ref'), base=text_or_empty(found, 'base', 'ref'),
+                          host='github')
 
 
 class GitHubHost:
@@ -441,7 +449,7 @@ class GitHubHost:
         query = urlencode({'state': 'open', 'head': f'{credential.owner}:{branch}', 'per_page': 1})
         found = _json(self._api(connection_id, permissions, 'GET', f'/pulls?{query}', 'the pull request lookup'))
         first = found[0] if isinstance(found, list) and found else None
-        return None if first is None else PullRequestRef(number=_int(first, 'number'), url=_text(first, 'html_url'))
+        return None if first is None else _pull_request_ref(first)
 
     def branch_tree_hash(self, connection_id: str, branch: str) -> str | None:
         return self._branch_tree(connection_id, _BRANCH, branch)
@@ -541,7 +549,7 @@ class GitHubHost:
             created = _json(self._api(connection_id, _DRAFT, 'POST', '/pulls', 'the draft pull request', ok=(201,),
                                       body={'title': title, 'body': body, 'head': branch, 'base': base,
                                             'draft': True}))
-            ref = PullRequestRef(number=_int(created, 'number'), url=_text(created, 'html_url'))
+            ref = _pull_request_ref(created)
         number = ref.number
         # (a pull request this call opened is never left open unchecked)
         return checked_after_write(

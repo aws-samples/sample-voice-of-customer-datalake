@@ -130,6 +130,15 @@ describe('the engineering broker', () => {
       /"kms:EncryptionContext:aws:dynamodb:tableName":\{"Fn::ImportValue":"[^"]*RefEngineering[^"]*"\}/);
   });
 
+  it('keeps the run\'s pull request under the claims\' grant: no other write on any table (7.09.00)', () => {
+    // The pull request's row (records.py WriteClaims.record_pull_request) is in the writes' partition with a claim
+    // row's attributes only, so the broker gains no write: WriteClaims stays its one DynamoDB write statement.
+    const writes = /^dynamodb:(?:Put|Update|Delete|BatchWrite|TransactWrite|PartiQL)/;
+    const writers = brokerStatements(template('on'))
+      .filter((statement) => [statement.Action].flat().some((action) => writes.test(action)));
+    expect(writers.map((statement) => statement.Sid)).toStrictEqual(['WriteClaims']);
+  });
+
   it('reads a person\'s way of working from the aggregates table\'s flag partitions only', () => {
     const modes = brokerStatements(template('on')).find((statement) => statement.Sid === 'WaysOfWorking');
     // Of that row, only its mode (and its key), by a projection: never the whole item or another attribute.

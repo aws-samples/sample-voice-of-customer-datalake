@@ -1370,6 +1370,8 @@ MAX_RUN_GOAL = 500
 #: How long the API waits for the start (under API Gateway's 29 s); a start is never retried by the client.
 START_READ_TIMEOUT_SECONDS = 25
 _START_FIELDS = frozenset({'workflow_id', 'connection', 'commit', 'language', 'goal'})
+#: The start's optional fields: the issue the run starts from (a number, ``_start_issue``).
+_START_OPTIONAL = frozenset({'issue'})
 _RUN_COMMIT = re.compile(r'[0-9a-f]{40}\Z')
 #: The runtime's refusals a person can act on, all before anything is written (its error types): 409 with its own
 #: words (no image for the language, the hard cap with nothing left of the flow's month).
@@ -1396,29 +1398,47 @@ def _run_cap(name: str, default: float, kind: type) -> Any:
     return value
 
 
-def _run_connection(connection: str) -> dict[str, str]:
+def _run_connection(connection: str, issue: int | None = None) -> dict[str, Any]:
     """The run's ``repo`` (as its reports and the spend ledger group it) and ``default_branch``: the stored
     connection's repository (``owner/name``) and default branch, copied onto the run (the broker serves the run on
-    that branch once the host confirms it has it: connectors/records.py). 400 for a connection that is not stored:
-    its broker would refuse every operation."""
+    that branch once the host confirms it has it: connectors/records.py); with the ``issue`` the run starts from, it
+    and the connection's ``host``, which the start addresses it on. 400 for a connection that is not stored: its
+    broker would refuse every operation."""
     from engineering.connectors.connections import stored_connection
 
     stored = _connection_call(lambda: stored_connection(_agents_table(), connection))
     if stored is None:
         raise ValidationError('connection names no stored repository connection: add it under Agents → Connections')
-    return {'repo': str(stored['repository']), 'default_branch': str(stored['default_branch'])}
+    run: dict[str, Any] = {'repo': str(stored['repository']), 'default_branch': str(stored['default_branch'])}
+    if issue is not None:
+        run.update(issue=issue, host=str(stored.get('host') or 'github'))
+    return run
+
+
+def _start_issue(body: Mapping[str, Any]) -> int | None:
+    """The optional ``issue`` the run starts from: a whole number from 1 to ``run_links.MAX_NUMBER`` (400 otherwise),
+    None when left out. Recorded as given (the API holds no credential to read the host with: run_links.py)."""
+    from engineering.run_links import MAX_NUMBER, valid_number
+
+    issue = body.get('issue')
+    if issue is not None and not valid_number(issue):
+        raise ValidationError('issue is the number of an issue of the repository: a whole number from 1 to '
+                              f'{MAX_NUMBER}')
+    return issue if isinstance(issue, int) else None
 
 
 def _start_body(body: Mapping[str, Any]) -> dict[str, str]:
     """The request's fields, each checked (400 for anything off): a workflow id, a connection's short id, a commit of
     40 hexadecimal characters (lower-cased), a language with an agent image, and a goal on one line, at most
-    ``MAX_RUN_GOAL`` characters, credential-shaped text redacted."""
+    ``MAX_RUN_GOAL`` characters, credential-shaped text redacted (the optional ``issue``: ``_start_issue``)."""
     from engineering.quality_gate.text import redact
     from engineering.runtime.egress import REGISTRY_HOSTS
     from engineering.runtime.interface import RuntimeRefused, check_id
 
-    if not set(body) <= _START_FIELDS or not all(isinstance(body.get(name), str) for name in _START_FIELDS):
-        raise ValidationError('the body is {workflow_id, connection, commit, language, goal}, each a string')
+    strings = all(isinstance(body.get(name), str) for name in _START_FIELDS)
+    if not set(body) <= _START_FIELDS | _START_OPTIONAL or not strings:
+        raise ValidationError('the body is {workflow_id, connection, commit, language, goal}, each a string, and '
+                              'an optional issue number')
     fields = {name: str(body[name]).strip() for name in _START_FIELDS}
     try:
         check_id('connection', fields['connection'])
@@ -1522,7 +1542,8 @@ def _invoke_start(function: str, request: dict[str, Any]) -> dict[str, Any]:
 @app.post('/agents/engineering/runs')
 @tracer.capture_method
 def start_engineering_run():
-    """``{workflow_id, connection, commit, language, goal}`` → 202 ``{run: {run_id, status, workflow_id, started_by}}``:
+    """``{workflow_id, connection, commit, language, goal, issue?}`` → 202 ``{run: {run_id, status, workflow_id,
+    started_by}}`` (``issue``, 7.09.00: the number of the issue the run starts from, recorded as given):
     an administrator acting for themselves (a delegated credential gets 403) starts a saved engineering flow (404 while
     the module is off). The run's id is minted here; its flow's budget is the stored workflow's, its caps the
     deployment's; the runtime records who started it and when (META's ``started_by``, its ``RUNLOG#`` row: D4). 202:
@@ -1533,7 +1554,8 @@ def start_engineering_run():
     function = os.environ.get('ENGINEERING_START_FUNCTION', '')
     if not function:
         raise ServiceUnavailableError('runs cannot be started from here: the deployment names no start function')
-    fields = _start_body(json_object_body(app))
+    raw = json_object_body(app)
+    fields, issue = _start_body(raw), _start_issue(raw)
     budget_usd, definition, revision = _stored_flow(fields['workflow_id'])
     from engineering.bus.publish import new_event_id
 
@@ -1542,7 +1564,8 @@ def start_engineering_run():
         # The flow as stored now: the run copies it and follows its copy (a later edit is the next run's).
         'flow_definition': definition, 'flow_revision': revision,
         'connection': fields['connection'], 'commit': fields['commit'], 'language': fields['language'],
-        'goal': fields['goal'], 'actor': caller.subject, **_run_connection(fields['connection']),
+        # (with an issue, it and the stored connection's host: the start records it with its address)
+        'goal': fields['goal'], 'actor': caller.subject, **_run_connection(fields['connection'], issue),
         'max_cost_usd': _run_cap('ENGINEERING_RUN_CAP_USD', DEFAULT_RUN_CAP_USD, float),
         'max_tokens': _run_cap('ENGINEERING_RUN_TOKEN_CAP', DEFAULT_RUN_TOKEN_CAP, int),
     }

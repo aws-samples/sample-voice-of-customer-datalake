@@ -7,6 +7,8 @@
 - ``MSG#``: the conversation, counted (the events of the run).
 - ``FLOW``, ``STEP#`` and the ``TASK#`` rows' steps: the run's copy of its flow and each step's status as the
   conductor reads it (engineering/flow/), steps not yet run included.
+- META's ``issue`` and ``WS#<ws>#WRITES#<run>`` / ``PULL_REQUEST``: the issue the run was started from and its pull
+  request, each read back only when its address is the run's repository's own (``engineering/run_links.py``).
 
 A missing attribute reads as empty or zero: a report of a run still under way says what is known so far.
 """
@@ -22,6 +24,7 @@ from engineering.flow.record import run_flow
 from engineering.rows import LAUNCH_HOLD, budget_view, count_run_rows, run_pk, run_rows
 from engineering.rows import amount_attr as _n
 from engineering.rows import string_attr as _s
+from engineering.run_links import run_links
 
 
 @dataclass(frozen=True)
@@ -53,6 +56,9 @@ class RunFacts:
     #: The run's flow as it ran (its copy at the start, its steps as the conductor reads them now): the revision, each
     #: step's id, kind, title, status and reason, and where the flow stands; None for a run started without one.
     flow_plan: dict[str, Any] | None = None
+    #: The issue the run was started from and its pull request (``run_links.py`` views), None for none.
+    issue: dict[str, Any] | None = None
+    pull_request: dict[str, Any] | None = None
 
 
 def flow_plan(client: Any, table: str, ws: str, run_id: str, meta: Mapping[str, Any],
@@ -95,7 +101,9 @@ class FactsReader:
             model=_s(row, 'model'), microvm_seconds=int(_n(row, 'microvm_seconds')),
             input_tokens=int(_n(row, 'input_tokens')), output_tokens=int(_n(row, 'output_tokens')),
             cost_usd=_n(row, 'cost_usd')) for row in agent_rows if not self._launch_only(row)), key=lambda agent: agent.agent))
+        links = run_links(self.client, self.table, ws, run_id, meta)
         return RunFacts(ws=ws, run_id=run_id, goal=_s(meta, 'goal'), repo=_s(meta, 'repo'), flow=_s(meta, 'flow'),
                         status=_s(meta, 'status'), started_at=_s(meta, 'started_at'), ended_at=_s(meta, 'ended_at'),
                         agents=agents, events=events, budget=budget_view(meta),
-                        flow_plan=flow_plan(self.client, self.table, ws, run_id, meta, read=self.read_gate))
+                        flow_plan=flow_plan(self.client, self.table, ws, run_id, meta, read=self.read_gate),
+                        issue=links['issue'], pull_request=links['pull_request'])

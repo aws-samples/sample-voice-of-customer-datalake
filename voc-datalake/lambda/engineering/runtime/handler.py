@@ -534,7 +534,8 @@ def start_run(event: Mapping[str, Any], *, launch: bool = True) -> dict[str, Any
                    connection=str(event.get('connection', '')), commit=str(event.get('commit', '')),
                    language=language, actor=str(event.get('actor') or ''),
                    budget_usd=budget_usd, flow_definition=definition,
-                   flow_revision=_optional_number(event, 'flow_revision', int) or 0)
+                   flow_revision=_optional_number(event, 'flow_revision', int) or 0,
+                   issue=_optional_number(event, 'issue', int) or 0, host=str(event.get('host', '')))
     except RunExists:
         run = runs.get(run_id)
         if run is None or run.status in ENDED:

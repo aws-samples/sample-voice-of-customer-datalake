@@ -623,19 +623,22 @@
       "connection": "Conexión al repositorio",
       "commit": "Commit",
       "language": "Lenguaje",
-      "goal": "Objetivo"
+      "goal": "Objetivo",
+      "issue": "Incidencia (opcional)"
     },
     "hints": {
       "connection": "El id de la conexión: letras, dígitos y guiones, 63 como máximo.",
       "commit": "El id completo del commit desde el que parte la ejecución: 40 caracteres hexadecimales.",
       "language": "Las herramientas del repositorio: los agentes trabajan en la imagen aislada de ese lenguaje.",
-      "goal": "Para qué es la ejecución, en una línea de 500 caracteres como máximo."
+      "goal": "Para qué es la ejecución, en una línea de 500 caracteres como máximo.",
+      "issue": "El número de la incidencia del repositorio de la que parte la ejecución. Se guarda tal como se indica."
     },
     "invalid": {
       "connection": "Escribe el id de la conexión: de 1 a 63 letras, dígitos o guiones.",
       "commit": "Escribe el id completo del commit: 40 caracteres, de 0 a 9 y de a a f.",
       "goalEmpty": "Di para qué es la ejecución.",
-      "goalLong": "El objetivo no puede pasar de {{max, number}} caracteres."
+      "goalLong": "El objetivo no puede pasar de {{max, number}} caracteres.",
+      "issue": "Escribe el número de la incidencia, un número entero desde 1, o déjalo vacío."
     },
     "languages": {
       "java": "Java",
@@ -1124,6 +1127,13 @@
     "byModel": "Tokens por modelo",
     "budget": "Presupuesto del flujo: {{amount}} al mes",
     "budgetPassed": "{{month}}: gastado el {{percent}} % del presupuesto",
+    "links": {
+      "issue": "Incidencia #{{number}}",
+      "pullRequest": "Solicitud de incorporación #{{number}}",
+      "mergeRequest": "Solicitud de fusión !{{number}}",
+      "asGiven": "tal como se indicó al inicio, sin comprobar en el host",
+      "opens": "{{label}} (se abre en una pestaña nueva)"
+    },
     "actionsUnavailable": "Esta implementación aún no puede enviar señales ni respuestas: no conecta el monitor de la ejecución con el entorno de ejecución y el bus de ingeniería.",
     "runSignals": "Toda la ejecución",
     "agentSignals": "Agente {{agent}}",

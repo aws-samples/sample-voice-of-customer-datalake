@@ -1,6 +1,7 @@
 /**
  * @fileoverview "Start a run" of a saved engineering flow (`POST /agents/engineering/runs`, administrators): the
- * repository connection, the commit the run starts from, the repository's language and the run's goal, checked as
+ * repository connection, the commit the run starts from, the repository's language, the run's goal and, optionally, the
+ * number of the issue it starts from (recorded as given), checked as
  * the server checks them, before anything is sent. The flow's monthly budget is the stored flow's,
  * never set here. On success the run monitor opens on the new run; a refusal (no image for the language, the hard cap
  * with nothing left of the month, a launch still under way) is said in the server's words.
@@ -22,8 +23,8 @@ import { MAX_RUN_GOAL, RUN_LANGUAGES, startOutcomeOf, startRunIssues, startRunRe
 import type { RunLanguage, StartRunForm, StartRunIssues } from './startRunRules'
 import type { WorkflowSummary } from '../../api/workflowsApi'
 
-type TextKey = 'connection' | 'commit' | 'goal'
-const FIELD_ORDER: readonly TextKey[] = ['connection', 'commit', 'goal']
+type TextKey = 'connection' | 'commit' | 'goal' | 'issue'
+const FIELD_ORDER: readonly TextKey[] = ['connection', 'commit', 'goal', 'issue']
 
 function StartRunTextField({ field, value, issue, multiline = false, inputRef, onChange }: Readonly<{
   field: TextKey; value: string; issue: string | undefined; multiline?: boolean
@@ -41,7 +42,7 @@ function StartRunTextField({ field, value, issue, multiline = false, inputRef, o
         return multiline
           ? <textarea {...shared} className="input w-full" rows={3} />
           : <input {...shared} className={field === 'commit' ? 'input w-full font-mono' : 'input w-full'}
-              autoComplete="off" spellCheck={false} />
+              autoComplete="off" spellCheck={false} inputMode={field === 'issue' ? 'numeric' : undefined} />
       }}
     </LabeledField>
   )
@@ -52,7 +53,7 @@ export function StartRunDialog({ workflow, onClose }: Readonly<{ workflow: Workf
   const navigate = useNavigate()
   const errorText = useActionError()
   const titleId = useId()
-  const [form, setForm] = useState<StartRunForm>({ connection: '', commit: '', language: 'python', goal: '' })
+  const [form, setForm] = useState<Required<StartRunForm>>({ connection: '', commit: '', language: 'python', goal: '', issue: '' })
   const [issues, setIssues] = useState<StartRunIssues>({})
   const fields = useRef<Partial<Record<TextKey, HTMLInputElement | HTMLTextAreaElement | null>>>({})
   const start = useMutation({
@@ -107,6 +108,8 @@ export function StartRunDialog({ workflow, onClose }: Readonly<{ workflow: Workf
             onChange={(language) => setForm((current) => ({ ...current, language }))} />
           <StartRunTextField field="goal" value={form.goal} issue={issueText('goal')} multiline
             inputRef={(element) => { fields.current.goal = element }} onChange={change('goal')} />
+          <StartRunTextField field="issue" value={form.issue} issue={issueText('issue')}
+            inputRef={(element) => { fields.current.issue = element }} onChange={change('issue')} />
           <p className="text-[12px] text-muted">
             {budget === null ? t('startRun.noBudget') : t('startRun.budget', { amount: budget })}
           </p>
