@@ -56,7 +56,10 @@ export const USER_POOL_STANDARD_ATTRIBUTES: cognito.StandardAttributes = {
  */
 export const USER_MESSAGES_FILES = ['auth/user_messages.py', 'auth/logo_signing.py'] as const;
 
-/** The message trigger's memory: a 2.5 s cold start at 128 MB was too close to Cognito's 5 s budget (lib/sizing/policy.ts). */
+/**
+ * The message trigger's memory (lib/sizing/policy.ts): at 128 MB a cold start took 2.5 s, too close to Cognito's
+ * 5 s budget. Measured before the signing-deps layer; the layer's cryptography is imported only when a logo is signed.
+ */
 const USER_MESSAGES_MEMORY_MB = 256;
 
 /** How long an invitation's temporary password works; the pool's policy and the email both state it. */

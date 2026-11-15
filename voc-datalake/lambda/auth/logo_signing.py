@@ -100,21 +100,36 @@ def _build_rsa_signer():
     return lambda message: key.sign(message, padding.PKCS1v15(), hashes.SHA1())  # noqa: S303 - CloudFront's format
 
 
+def _plain_https_host(site_url: Any) -> str | None:
+    """The host of ``site_url`` when it is a plain https origin (no credentials, no port), else None.
+
+    Never raises: ``.port`` raises ValueError on a port it cannot parse, and urlsplit does on a malformed IPv6
+    host; a bad setting costs only the logo.
+    """
+    try:
+        site = urlsplit(site_url)
+        if site.scheme != 'https' or not site.hostname or site.username or site.port is not None:
+            return None
+    except (TypeError, ValueError):
+        return None
+    return site.hostname
+
+
 def signed_logo_url(key: Any, site_url: str, valid_days: int, *, now: datetime | None = None) -> str | None:
     """The logo at ``site_url`` + ``/`` + ``key``, signed until ``valid_days`` from ``now``; None when it cannot be."""
-    site = urlsplit(site_url)
-    # The distribution's own origin only: https, a host, no credentials or port the setting might carry.
-    if (not is_uploaded_logo_key(key) or site.scheme != 'https' or not site.hostname or site.username
-            or site.port is not None or valid_days <= 0):
+    if not is_uploaded_logo_key(key) or valid_days <= 0:
+        return None
+    host = _plain_https_host(site_url)
+    if host is None:
         return None
     signer = _rsa_signer()
     if signer is None:
         return None
     expires = (now or datetime.now(UTC)) + timedelta(days=valid_days)
-    url = f'https://{site.hostname}/{key}'  # never a path, query or fragment of the setting
+    url = f'https://{host}/{key}'  # never a path, query or fragment of the setting
     try:
         return CloudFrontSigner(os.environ['CDN_SIGNING_KEY_PAIR_ID'], signer).generate_presigned_url(
             url, date_less_than=expires)
-    except Exception as error:  # noqa: BLE001 — any signing failure costs the logo, never the invitation
+    except Exception as error:  # noqa: BLE001 - any signing failure costs the logo, never the invitation
         logger.warning('Logo signing failed: %s', type(error).__name__)
         return None
