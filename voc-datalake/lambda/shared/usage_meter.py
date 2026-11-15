@@ -28,6 +28,7 @@ workspace.
 """
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Mapping, MutableMapping
 from contextvars import ContextVar
 from typing import Any, Final
@@ -187,4 +188,5 @@ def _emit(base: Mapping[str, Any], answered_tier: object, tokens: Mapping[str, i
 def _unreadable(operation: str, error: BaseException) -> None:
     """The operation and the error's kind only: a parse error's text could quote the response."""
     reason = str(error) if isinstance(error, UnreadableUsage) else type(error).__name__
-    logger.warning(UNREADABLE_LINE, extra={'operation': operation, 'reason': reason})
+    with contextlib.suppress(Exception):  # the warning itself must never fail the call it reports on
+        logger.warning(UNREADABLE_LINE, extra={'operation': operation, 'reason': reason})

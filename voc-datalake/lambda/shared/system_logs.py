@@ -113,8 +113,11 @@ def query_string(level: str) -> str:
             f'| sort @timestamp desc | limit {ROW_LIMIT}')
 
 
-def _batches(names: list[str], max_queries: int) -> Iterable[list[str]]:
-    for start in range(0, min(len(names), GROUPS_PER_QUERY * max_queries), GROUPS_PER_QUERY):
+def log_group_batches(names: list[str], max_queries: int | None = None) -> Iterable[list[str]]:
+    """``names`` in batches of ``GROUPS_PER_QUERY`` (one query each), at most ``max_queries`` of them (None: all;
+    the cost rollup's, lambda/jobs/cost_rollup/handler.py, reads every group)."""
+    limit = len(names) if max_queries is None else min(len(names), GROUPS_PER_QUERY * max_queries)
+    for start in range(0, limit, GROUPS_PER_QUERY):
         yield names[start:start + GROUPS_PER_QUERY]
 
 
@@ -122,9 +125,9 @@ def query_plan(targets: list[LogTarget], level: str) -> list[tuple[list[str], st
     """(log group names, query string) per query: ≤ 4 Lambda batches, then workflows, then the API."""
     def names(source: str) -> list[str]:
         return [target.name for target in targets if target.source == source]
-    plan = [(batch, query_string(level)) for batch in _batches(names(SOURCE_LAMBDA), MAX_LAMBDA_QUERIES)]
-    plan += [(batch, workflow_query(ROW_LIMIT)) for batch in _batches(names(SOURCE_WORKFLOW), 1)]
-    plan += [(batch, api_query(level, ROW_LIMIT)) for batch in _batches(names(SOURCE_API), 1)]
+    plan = [(batch, query_string(level)) for batch in log_group_batches(names(SOURCE_LAMBDA), MAX_LAMBDA_QUERIES)]
+    plan += [(batch, workflow_query(ROW_LIMIT)) for batch in log_group_batches(names(SOURCE_WORKFLOW), 1)]
+    plan += [(batch, api_query(level, ROW_LIMIT)) for batch in log_group_batches(names(SOURCE_API), 1)]
     return plan
 
 

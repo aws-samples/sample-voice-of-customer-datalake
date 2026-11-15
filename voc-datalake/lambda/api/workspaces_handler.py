@@ -21,6 +21,13 @@ Routes:
     GET /platform/workspaces    {workspaces: [{id, name, slug, status, created_at, secret_status}], next_cursor}: every
                                 workspace by name, ?limit= (1-100, default 25) and ?cursor= (one Query of the
                                 listing partition, never a Scan).
+    GET /platform/costs         {estimate: true, label, currency, price_as_of, price_source, from, to, workspaces:
+                                [{id, name, slug, status, days, total}], next_cursor, deployment?,
+                                unattributed?}: the Bedrock cost estimate per workspace (shared/platform_costs.py,
+                                the rows of lambda/jobs/cost_rollup/), ?from= and ?to= (UTC days, at most 92, `to`
+                                not after today; 400 otherwise), ?limit= (1-25, default 20) and ?cursor= (the
+                                listing's); one Query per workspace, the deployment's and unattributed rows on the
+                                first page. Each read logs `platform_costs_read` with the caller's sub and the range.
 
 The members of the workspace X-Workspace-Id names (shared/workspace_members.py), each resolved like /current (400
 without the header, the one 404 for a non-member; a platform admin enters as admin, live-checked and audited):
@@ -100,7 +107,7 @@ A DynamoDB or Cognito fault answers a fixed 500, never the AWS error text, which
 
 import json
 import os
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any, Final
 
 from aws_lambda_powertools.event_handler import Response, content_types
@@ -123,6 +130,7 @@ from shared.ingest_tables import ingest_table
 from shared.logging import logger
 from shared.platform_admin import require_platform_admin
 from shared.platform_admin_gate import confirm_live_platform_admin, require_live_platform_admin
+from shared.platform_costs import cost_page, parse_cost_limit, parse_range
 from shared.platform_workspaces import CREDENTIALS_READY, create_workspace, list_workspaces, parse_new_workspace
 from shared.request_body import json_object_body
 from shared.tables import cached_table
@@ -192,6 +200,7 @@ EXPORT_ERASURE_RUNNING: Final = 'An erasure is running in this workspace: start 
 FAILED_START_DELETE = 'Failed to start the delete'
 FAILED_CANCEL_DELETE = 'Failed to cancel the delete'
 FAILED_RESUME_DELETE = 'Failed to resume the delete'
+FAILED_PLATFORM_COSTS = 'Failed to read the costs'
 
 app = create_api_resolver()
 # The warm container's resolved memberships (30 s, shared/workspace.py).
@@ -502,6 +511,36 @@ def create_platform_workspace():  # a Response: the resolver validates a return 
     workspace = {'id': ws, 'name': new.name, 'slug': new.slug, 'role': 'admin', 'secret_status': CREDENTIALS_READY}
     return Response(status_code=201, content_type=content_types.APPLICATION_JSON,
                     body=json.dumps({'workspace': workspace}))
+
+
+def _utc_today() -> date:
+    return datetime.now(UTC).date()
+
+
+def get_cost_table() -> Any:
+    """voc-aggregates, for the cost rows (shared/platform_costs.py), or 500 when it is not configured."""
+    if not AGGREGATES_TABLE:
+        raise ConfigurationError('Aggregates table not configured')
+    return cached_table(get_dynamodb_resource(), AGGREGATES_TABLE)
+
+
+@app.get('/platform/costs')
+def platform_costs() -> dict:
+    event = app.current_event.raw_event
+    require_admin(event)
+    require_platform_admin(event)
+    require_live_platform_admin(event, FAILED_PLATFORM_COSTS)
+    params = app.current_event.query_string_parameters or {}
+    chosen = parse_range(params, _utc_today())
+    limit = parse_cost_limit(params.get('limit'))
+    logger.info('platform_costs_read', extra={'caller_sub': get_caller_subject(event),
+                                              'from': chosen.start.isoformat(), 'to': chosen.end.isoformat()})
+    try:
+        return cost_page(get_workspaces_table(), get_cost_table(), chosen, limit=limit,
+                         cursor=params.get('cursor') or None)
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception('Error reading the costs')
+        raise ServiceError(FAILED_PLATFORM_COSTS) from exc
 
 
 @app.get('/platform/workspaces')

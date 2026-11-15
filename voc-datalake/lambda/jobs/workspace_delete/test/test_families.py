@@ -26,6 +26,7 @@ from shared.conversations import conversant_key, conversation_partition
 from shared.import_runs import LIST_PK
 from shared.memory_store import append_event, company_pk, cursor_key, import_key, scope_pk, status_partition
 from shared.onboarding import FEEDBACK_FORM_PK
+from shared.platform_costs import cost_partition
 from shared.project_keys import (
     job_status_pk,
     project_pk,
@@ -185,6 +186,7 @@ SEEDS: dict[str, Callable[[World], Probe] | None] = {
     'reprocess_job_pk': lambda w: _aggregate(w, reprocess_job_pk(SCOPE), 'rp_fam', status='completed'),
     **{f'SETTINGS#{kind}': (lambda w, kind=kind: _aggregate(w, settings_key(WS, kind)['pk'], 'config', kind=kind))
        for kind in WORKSPACE_SETTINGS_KINDS},
+    'COST': lambda w: _aggregate(w, cost_partition(SCOPE), '2026-11-01', schema=1, totals={'calls': 1}),
     # A member's own objectives, saved as the settings API saves them (its owner row first), and a former
     # member's owner row whose objectives row is already gone.
     'my_context_key': _my_context,

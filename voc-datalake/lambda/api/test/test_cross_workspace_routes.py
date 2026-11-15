@@ -125,6 +125,9 @@ BY_DESIGN: dict[tuple[str, str], str] = {
     **dict.fromkeys(
         [('workspaces_handler.py', 'POST /platform/workspaces'), ('workspaces_handler.py', 'GET /platform/workspaces')],
         'the platform console: platform admins create and list every workspace (decision 2, live-checked)'),
+    ('workspaces_handler.py', 'GET /platform/costs'): (
+        "the platform console: every workspace's cost estimate, by workspace id, for platform admins (decision 9, "
+        'live-checked, each read logged)'),
     **dict.fromkeys(
         [('workspaces_handler.py', 'POST /platform/workspaces/<ws>/delete/cancel'),
          ('workspaces_handler.py', 'POST /platform/workspaces/<ws>/delete/resume')],

@@ -394,6 +394,9 @@ export const UNCHANGED: Readonly<Record<string, number | null>> = {
   'voc-plan-step': 1024,
   // Radar release scan: web search + a few model calls per brand, I/O-bound; unmeasured, new in 5.04.00.
   'voc-radar-scan': 512,
+  // Cost per workspace's daily rollup: a few Logs Insights queries polled, a row per workspace-day; I/O-bound, no
+  // model call (unmeasured, new).
+  'voc-cost-rollup': 256,
   // VocWebSearchStack
   'VocWebSearchStack/AWS679f53fac002430cb0da5b7982bd22872D164C4C': 512,
 };

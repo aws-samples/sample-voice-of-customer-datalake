@@ -72,6 +72,7 @@ from shared.metric_keys import (
     metric_type_partition,
 )
 from shared.onboarding import FEEDBACK_FORM_PK
+from shared.platform_costs import cost_partition
 from shared.plugin_identity import is_valid_plugin_identifier
 from shared.project_keys import project_partitions, project_registry_key
 from shared.project_tables import iter_registered_project_ids
@@ -995,8 +996,10 @@ def _settings(ctx: Context) -> Iterator[str]:
     """The workspace's settings partitions (``WORKSPACE_SETTINGS_KINDS``). Swept after every reader of them: the
     counters sweep lists the closed families' partitions from the categories and dimensions into the inventory once;
     a later round of it (a resume, or the verify pass sending the job back) re-derives only the defaults, and walks
-    the inventory, which still lists round 1's partitions."""
+    the inventory, which still lists round 1's partitions. With them, the workspace's cost rows (``WS#{ws}#COST``,
+    shared/platform_costs.py: the daily rollup writes none for a workspace that is not active)."""
     yield from (settings_key(ctx.scope.ws, kind)['pk'] for kind in WORKSPACE_SETTINGS_KINDS)
+    yield cost_partition(ctx.scope)
 
 
 #: The aggregates families swept partition by partition (``_partitions_sweep``), in order, with how each finds its

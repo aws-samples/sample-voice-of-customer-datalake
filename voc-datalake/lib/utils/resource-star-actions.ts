@@ -69,8 +69,8 @@ export const RESOURCE_STAR_ACTIONS: Readonly<Record<string, ResourceStarGrant>> 
   'xray:GetSamplingTargets': { reason: SFN_TRACING },
   'xray:PutTelemetryRecords': { reason: SFN_TRACING },
   'xray:PutTraceSegments': { reason: SFN_TRACING },
-  'logs:GetQueryResults': { reason: `System -> Logs diagnostics polls a Logs Insights query by id; the action ${NO_RESOURCE_TYPE} (StartQuery is scoped to named log groups)` },
-  'logs:StopQuery': { reason: `System -> Logs diagnostics stops its own Logs Insights query by id; the action ${NO_RESOURCE_TYPE}` },
+  'logs:GetQueryResults': { reason: `System -> Logs diagnostics and the cost rollup (voc-cost-rollup) poll a Logs Insights query by id; the action ${NO_RESOURCE_TYPE} (StartQuery is scoped to named log groups)` },
+  'logs:StopQuery': { reason: `System -> Logs diagnostics and the cost rollup (voc-cost-rollup) stop their own Logs Insights query by id; the action ${NO_RESOURCE_TYPE}` },
   'cloudwatch:GetMetricData': { reason: `Failure-queue ages for System -> Logs; the action ${NO_RESOURCE_TYPE}` },
   'kms:Decrypt': {
     reason: 'Failure-queue peek decrypts through SQS only: the queue keys live in two stacks and no key ARN crosses a stack, so the grant is "*" narrowed by kms:ViaService and the SQS encryption context',

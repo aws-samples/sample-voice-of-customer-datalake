@@ -2,7 +2,7 @@
   "description": "Fingerprint of the no-prefix synth. Regenerate with npx ts-node scripts/generate-baseline.ts ONLY for a change intended to alter the default templates — see the script header.",
   "stacks": {
     "VocApiStack": {
-      "templateSha256": "617a6808f9fc15d275e71dd8cebeb3f42d9a6412951f6c1a818d2f7226a30061",
+      "templateSha256": "dfd73762a8f1d00190796c51561201aeb3e0f7eb14cb3f4d3d6ba781acfdd44f",
       "names": {
         "physicalNames": [
           "AWS::ApiGateway::Authorizer Name = voc-board-authorizer",
@@ -354,11 +354,12 @@
       }
     },
     "VocProcessingStack": {
-      "templateSha256": "af9100d49d8a9e6993c378c9041fad7cc233ec681365bccc487678aa7e1dd7e2",
+      "templateSha256": "9f639bdb855a13f1f16be60b0dc2797930da541cd6cba4236970b6ef52830099",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-agent-heartbeat-schedule-<AWS::AccountId>-<AWS::Region>",
           "AWS::Events::Rule Name = voc-briefing-dispatch-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Events::Rule Name = voc-cost-rollup-schedule-<AWS::AccountId>-<AWS::Region>",
           "AWS::Events::Rule Name = voc-memory-retention-schedule-<AWS::AccountId>-<AWS::Region>",
           "AWS::Events::Rule Name = voc-memory-scanner-schedule-<AWS::AccountId>-<AWS::Region>",
           "AWS::Events::Rule Name = voc-radar-scan-schedule-<AWS::AccountId>-<AWS::Region>",
@@ -370,6 +371,7 @@
           "AWS::Lambda::Function FunctionName = voc-aggregation-processor-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-briefing-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-category-reprocess-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-cost-rollup-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-feedback-processor-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-memory-extractor-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-memory-retention-<AWS::AccountId>-<AWS::Region>",
@@ -386,6 +388,7 @@
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-aggregation-processor-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-briefing-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-category-reprocess-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-cost-rollup-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-feedback-processor-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-memory-extractor-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-memory-retention-<AWS::AccountId>-<AWS::Region>",
@@ -426,6 +429,8 @@
           "arn:aws:lambda:us-east-1:111111111111:function:voc-scrapers-api-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:lambda:us-east-1:111111111111:function:voc-settings-api-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:lambda:us-east-1:111111111111:function:voc-workspace-export-<AWS::AccountId>-<AWS::Region>",
+          "arn:aws:logs:us-east-1:111111111111:log-group:/aws/lambda/voc-*-<AWS::AccountId>-<AWS::Region>",
+          "arn:aws:logs:us-east-1:111111111111:log-group:/aws/lambda/voc-*-<AWS::AccountId>-<AWS::Region>:*",
           "arn:aws:ssm:us-east-1:111111111111:parameter/voc/radar/exa-api-key"
         ],
         "environmentNames": [
@@ -442,6 +447,7 @@
           "POWERTOOLS_SERVICE_NAME = voc-aggregator",
           "POWERTOOLS_SERVICE_NAME = voc-briefing",
           "POWERTOOLS_SERVICE_NAME = voc-category-reprocess",
+          "POWERTOOLS_SERVICE_NAME = voc-cost-rollup",
           "POWERTOOLS_SERVICE_NAME = voc-memory-extractor",
           "POWERTOOLS_SERVICE_NAME = voc-memory-retention",
           "POWERTOOLS_SERVICE_NAME = voc-memory-scanner",
@@ -453,7 +459,8 @@
           "PROJECTS_FUNCTION = voc-projects-api-<AWS::AccountId>-<AWS::Region>",
           "RADAR_EXA_PARAMETER = /voc/radar/exa-api-key",
           "SCRAPERS_FUNCTION = voc-scrapers-api-<AWS::AccountId>-<AWS::Region>",
-          "SETTINGS_FUNCTION = voc-settings-api-<AWS::AccountId>-<AWS::Region>"
+          "SETTINGS_FUNCTION = voc-settings-api-<AWS::AccountId>-<AWS::Region>",
+          "SYSTEM_LOG_GROUP_PATTERN = /aws/lambda/voc-*-<AWS::AccountId>-<AWS::Region>"
         ]
       }
     },

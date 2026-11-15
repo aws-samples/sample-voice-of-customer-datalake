@@ -251,7 +251,9 @@ describe('cdk-nag acknowledgements', () => {
       // company-context/design/logo_????????????.* (CompanyLogoReadPolicy).
       // 85: a workspace's hard delete deletes its credentials parameters, voc/ws/{one id}/credentials/*
       // (lib/stacks/workspace-delete-worker.ts; its ws/{one id}/* versions share 83's finding).
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 85, used: 85 });
+      // 86-89: the cost rollup's Logs Insights reads (lib/stacks/cost-rollup-worker.ts): DescribeLogGroups on
+      // log-group:*, StartQuery on the voc-* Lambda groups and their streams, GetQueryResults and StopQuery on *.
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 89, used: 89 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

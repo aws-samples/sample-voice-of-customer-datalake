@@ -27,6 +27,8 @@ describe('the workspaces API\'s export routes', () => {
       .filter((s) => /ExportsOutputFnGetAttAggregates/.test(s.resource))
       // The delete routes' erasure-lock grants are pinned in api-workspace-delete.test.ts.
       .filter((s) => !JSON.stringify(s.condition).includes('JOB#erasure'))
+      // GET /platform/costs' Query of the cost rows is pinned in api-workspaces-lambda.test.ts.
+      .filter((s) => !JSON.stringify(s.condition).includes('#COST'))
       .map((s) => ({ actions: [...s.actions].sort(byCodeUnit), condition: s.condition }))
       .sort((a, b) => byCodeUnit(a.actions.join(), b.actions.join()));
     expect(onAggregates).toStrictEqual([

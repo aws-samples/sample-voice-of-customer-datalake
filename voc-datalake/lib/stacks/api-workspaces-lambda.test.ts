@@ -97,6 +97,17 @@ describe('the voc-workspaces-api Lambda', () => {
       .toStrictEqual(Array<string>(9).fill('ExportsOutputFnGetAttWorkspaces'));
   });
 
+  it('may Query the cost rows only on voc-aggregates (GET /platform/costs), and is told the table', () => {
+    const costs = withPrefix('dynamodb:').filter((s) => JSON.stringify(s.condition ?? {}).includes('#COST'));
+    expect(costs.map(({ actions, condition }) => ({ actions, condition }))).toStrictEqual([{
+      actions: ['dynamodb:Query'],
+      condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [
+        `WS#ws_${'?'.repeat(26)}#COST`, 'DEPLOYMENT#COST', 'UNATTRIBUTED#COST'] } },
+    }]);
+    expect(costs[0]?.resource).toMatch(/ExportsOutputFnGetAttAggregates/);
+    expect(JSON.stringify(environment().AGGREGATES_TABLE)).toMatch(/Aggregates/);
+  });
+
   it('reads the caller\'s groups and account, finds and creates accounts, on the user pool only', () => {
     const cognito = withPrefix('cognito-idp:');
     expect(cognito.map((s) => [...s.actions].sort(byCodeUnit))).toStrictEqual([[

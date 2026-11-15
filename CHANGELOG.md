@@ -17,6 +17,26 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.30.00] - 2026-11-15
+
+Multi-workspace, cost per workspace (slice B): the voc-multiplayer-b track's daily cost estimate per workspace merged, for the platform console ([docs/multi-workspace.md](docs/multi-workspace.md)). Every model is unpriced for now, so tokens are counted and every estimate with calls in it is `null` until a deployer fills in the price list.
+
+### Added
+
+- A dated Bedrock price list, `voc-datalake/lambda/shared/model_prices.py` (USD per million tokens by model id and service tier, from the public Amazon Bedrock pricing page only). Every model is unpriced for now: tokens are counted, every estimate with calls in it is `null` (one with none reads `"0.000000"`), and every day reads `complete: false`. docs/multi-workspace.md says how a deployer fills it in.
+- `voc-cost-rollup` (VocProcessingStack): at 02:15 UTC it rolls up yesterday and the day before from the `bedrock_usage` lines (Logs Insights over the deployment's `voc-*` Lambda log groups, 50 to a query) into one row per workspace-day, `WS#{ws}#COST`, plus `DEPLOYMENT#COST` and `UNATTRIBUTED#COST`, kept with no TTL. A day is written only when every query completed under the result cap; a rerun overwrites it. A workspace that is not active gets no row (its calls go to the deployment's `deleted_workspaces`). A backfill (`{"days": [...]}`, async invoke) reaches at most 29 days back.
+- `GET /platform/costs` on the workspaces API (platform admins, live-checked): per workspace, a page at a time, and on the first page the deployment's and the unattributed calls; `days` and a `total`, labelled an estimate with its currency and price date. `?from=`/`?to=` (at most 92 days), `?limit=` (1-25), `?cursor=`. Each read is logged with the caller and the range.
+- A workspace's hard delete (still refused at synth, 7.28.00) also deletes its `WS#{ws}#COST` rows, inside the existing settings sweep.
+
+### Changed
+
+- IAM: the new rollup role may DescribeLogGroups, StartQuery on the `voc-*` Lambda log groups, GetQueryResults and StopQuery on `*` (they take no resource type), PutItem on the three cost partitions, read a workspace `META`'s status, and use the Core key; it has no Bedrock access. IAM lets it read any line those Lambdas logged; only the code, which sends one fixed query and keeps the counts of the `bedrock_usage` lines, holds it to numbers and ids (TENETS tenet 6). The workspaces API may Query the three cost partitions of voc-aggregates and is told `AGGREGATES_TABLE`.
+- Internal: a Radar trend chart test no longer depends on a fixed date (its one review had aged out of the 30-day window, so the chart rightly showed it as a 31st point); no change in the app.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all` from the repo root). VocProcessingStack gains one Lambda, its role, log group and schedule (no reserved concurrency, so the account's concurrency quota stated in tech.md is unchanged; no fixed cost); in VocApiStack the workspaces API's role and environment change. No other stack changes. Cost rows start with the first run after the deploy; a backfill can add the 29 days before it.
+
 ## [7.29.00] - 2026-11-14
 
 Multi-workspace, phase 3c: a project's jobs can be kept inside a workspace, and every job's worker learns which workspace it runs in ([docs/multi-workspace.md](docs/multi-workspace.md#the-project-plan-phase-3)). Two behaviour changes for assistant plans: a plan approved in a workspace now sees its source and scraper runs finish, and approving a plan in a workspace needs membership there (a plan also stops when its approver loses access). Everything else is internal.

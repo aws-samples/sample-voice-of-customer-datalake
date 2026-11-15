@@ -17,6 +17,8 @@
  *     disabled, lambda/shared/workspace_plugin_settings.py; its PutItem there, since 7.14.00, is the enable); ConditionCheckItem on `WS#*`. The audit-row
  *     guard (lib/utils/audit-row-guard.ts, which names this role the table's audit writer) denies it changing or
  *     removing an audit row. No BatchWriteItem or Scan;
+ *   - voc-aggregates: Query of the cost rows only (`WS#<one id>#COST`, `DEPLOYMENT#COST`, `UNATTRIBUTED#COST`,
+ *     `dynamodb:LeadingKeys`; GET /platform/costs, platform admins);
  *   - Cognito AdminListGroupsForUser + AdminGetUser on the user pool: the live platform-admin check
  *     (lambda/shared/platform_admin.py); ListUsers (an email's account, a member's email by sub) and AdminCreateUser
  *     (a new member's account, the temporary password emailed): adding a member (lambda/shared/workspace_members.py);
@@ -30,6 +32,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 
 import { grantKeyScopedWrites } from '../utils/table-write-grants';
 import type { ApiStackContext } from './api-context';
+import { COST_PARTITIONS } from './cost-rollup-worker';
 
 const WORKSPACES_API_FUNCTION_BASE_NAME = 'voc-workspaces-api';
 const WORKSPACES_HANDLER_FILE = 'workspaces_handler.py';
@@ -49,7 +52,7 @@ export interface WorkspacesInputs {
 }
 
 export function createWorkspacesLambda(ctx: ApiStackContext, inputs: WorkspacesInputs): lambda.Function {
-  const { workspacesTable, kmsKey, userPool } = ctx.props;
+  const { workspacesTable, aggregatesTable, kmsKey, userPool } = ctx.props;
   const functionName = ctx.uniqueName(WORKSPACES_API_FUNCTION_BASE_NAME);
   const role = ctx.role('WorkspacesLambdaRole');
   workspacesTable.grant(role, 'dynamodb:Query', 'dynamodb:GetItem');
@@ -71,6 +74,14 @@ export function createWorkspacesLambda(ctx: ApiStackContext, inputs: WorkspacesI
     conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] } },
   }));
   kmsKey.grantEncryptDecrypt(role);
+  // GET /platform/costs (lambda/shared/platform_costs.py): a Query of the cost rows only, a workspace's
+  // (`WS#<one id>#COST`), the deployment's and the unattributed ones, in voc-aggregates.
+  role.addToPolicy(new iam.PolicyStatement({
+    sid: 'QueryCostRows',
+    actions: ['dynamodb:Query'],
+    resources: [aggregatesTable.tableArn],
+    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': COST_PARTITIONS } },
+  }));
   // The live platform-admin check (lambda/shared/platform_admin.py): the caller's groups and enabled state; adding a
   // member (workspace_members.py): find the email's account (ListUsers, filtered on the email or a member's sub) or
   // create it (AdminCreateUser, which emails the temporary password).
@@ -79,6 +90,8 @@ export function createWorkspacesLambda(ctx: ApiStackContext, inputs: WorkspacesI
 
   const environment: Record<string, string> = {
     WORKSPACES_TABLE: workspacesTable.tableName,
+    // The cost rows (GET /platform/costs); the export routes read their job rows there too (api-workspace-export.ts).
+    AGGREGATES_TABLE: aggregatesTable.tableName,
     USER_POOL_ID: userPool.userPoolId,
     // The deployment's plugins (cdk.context.json): the ceiling a workspace picks its plugins from.
     ENABLED_SOURCES: inputs.enabledSourcesEnv,

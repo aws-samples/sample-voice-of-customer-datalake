@@ -68,7 +68,8 @@ describe('Radar TrendChart', () => {
   })
 
   it('spans the whole window, one point a day ending today', () => {
-    draw(TREND, 30)
+    // A review dated today, so it sits inside the window whatever day the test runs (a fixed date ages out of it).
+    draw([{ date: new Date().toISOString().slice(0, 10), count: 9800, avg_sentiment: -0.4 }], 30)
     const chart = screen.getByTestId('chart')
     expect(chart.dataset.days).toBe('30')
     expect(chart.dataset.last).toBe(new Date().toISOString().slice(0, 10))
