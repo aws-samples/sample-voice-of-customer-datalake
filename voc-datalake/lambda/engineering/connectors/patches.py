@@ -50,8 +50,13 @@ _HUNK: Final = re.compile(rb'@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@')
 _MODE: Final = re.compile(rb'(?:old|new|deleted file|new file) mode ([0-7]{6})')
 _INDEX: Final = re.compile(rb'index [0-9a-f]+\.\.[0-9a-f]+(?: ([0-7]{6}))?')
 _LITERAL: Final = re.compile(rb'(literal|delta) (\d{1,10})')
-_ESCAPES: Final = {ord('a'): 7, ord('b'): 8, ord('t'): 9, ord('n'): 10, ord('v'): 11, ord('f'): 12, ord('r'): 13,
-                   ord('"'): 34, ord('\\'): 92}
+#: git's C escapes in a quoted path: the escaped byte (the one after the backslash) and the byte it stands for.
+_ESCAPES: Final = {b'a': 7, b'b': 8, b't': 9, b'n': 10, b'v': 11, b'f': 12, b'r': 13, b'"': 34, b'\\': 92}
+#: The codecs: a path's and an added line's (UTF-8), and UTF-16 text's two byte orders.
+_UTF8: Final = 'utf-8'
+_UTF16_ORDERS: Final = ('utf-16-le', 'utf-16-be')
+#: The whitespace text may hold besides its printable characters (git's text, not all that Python calls space).
+_TEXT_WHITESPACE: Final = frozenset('\t\n\r\f\v')
 _NO_NEWLINE: Final = b'\\ No newline at end of file'
 _OCTAL: Final = re.compile(rb'[0-3][0-7]{2}')
 #: A path's control characters (C0 and DEL): never in a path the broker pushes.
@@ -87,18 +92,17 @@ def _unquote(token: bytes) -> bytes:
     if len(token) < 2 or not token.endswith(b'"'):
         raise PatchRefused('The patch names a path git would not write.')
     out, body, i = bytearray(), token[1:-1], 0
-    while i < len(body):
-        char = body[i]
-        if char != ord('\\'):
-            out.append(char)
+    for _ in range(len(body)):   # (each step reads at least one byte, so the body's length bounds the steps)
+        if i >= len(body):
+            break
+        if body[i] != ord('\\'):
+            out.append(body[i])
             i += 1
-            continue
-        escaped = body[i + 1:i + 2]
-        if _OCTAL.fullmatch(body[i + 1:i + 4]):
-            out.append(int(body[i + 1:i + 4], 8) & 0xFF)
+        elif _OCTAL.fullmatch(body[i + 1:i + 4]):   # (three octal digits from 0-3: at most 0o377, one byte)
+            out.append(int(body[i + 1:i + 4], 8))
             i += 4
-        elif escaped and escaped[0] in _ESCAPES:
-            out.append(_ESCAPES[escaped[0]])
+        elif (escaped := _ESCAPES.get(body[i + 1:i + 2])) is not None:
+            out.append(escaped)
             i += 2
         else:
             raise PatchRefused('The patch names a path git would not write.')
@@ -114,7 +118,7 @@ def _path(raw: bytes, prefix: bytes = b'') -> str:
     if _CONTROL.search(name):
         raise PatchRefused('The patch names a path with a control character.')
     try:
-        path = name[len(prefix):].decode('utf-8')
+        path = name[len(prefix):].decode(_UTF8)
     except UnicodeDecodeError:
         raise PatchRefused('The patch names a path that is not UTF-8.') from None
     if any(part in {'', '.', '..', '.git'} for part in path.split('/')):
@@ -125,7 +129,9 @@ def _path(raw: bytes, prefix: bytes = b'') -> str:
 def _quoted_end(rest: bytes) -> int:
     """The index just after the double-quoted name ``rest`` starts with (0: it has no closing quote)."""
     i = 1
-    while i < len(rest):
+    for _ in range(len(rest)):   # (each step passes at least one byte)
+        if i >= len(rest):
+            break
         if rest[i] == ord('\\'):
             i += 2
         elif rest[i] == ord('"'):
@@ -150,25 +156,46 @@ def _header_paths(rest: bytes) -> tuple[str, str]:
     return _path(rest[:half], b'a/'), _path(rest[half + 1:], b'b/')
 
 
+def _first(lines: list[bytes], start: int, found: Callable[[bytes], bool]) -> int:
+    """The index of the first line from ``lines[start]`` on that is ``found``; ``len(lines)`` when none is."""
+    return next((at for at in range(start, len(lines)) if found(lines[at])), len(lines))
+
+
+def _blank(line: bytes) -> bool:
+    return not line
+
+
+def _file_start(line: bytes) -> bool:
+    return line.startswith(_DIFF)
+
+
+def _header_end(line: bytes) -> bool:
+    """The line after a file's extended header lines: the next file, its ``---`` line, its binary part, or a blank."""
+    return not line or line.startswith((_DIFF, b'--- ', b'GIT binary patch'))
+
+
 def _hunk_lines(lines: list[bytes], i: int, old: int, new: int) -> tuple[list[tuple[bytes, bytes]], int]:
     """A hunk's lines (kind, line with its newline), from ``lines[i]``; the index after it."""
     body: list[tuple[bytes, bytes]] = []
     seen_old = seen_new = 0
-    while i < len(lines) and (seen_old < old or seen_new < new):
-        line = lines[i]
+    # (the index after the last line taken, and whether that line was a body line, which a no-newline mark may follow)
+    end, markable = i, False
+    for at in range(i, len(lines)):
+        line = lines[at]
+        if markable and line == _NO_NEWLINE:   # (the body line before it has no final newline)
+            body[-1] = (body[-1][0], body[-1][1][:-1])
+            end, markable = at + 1, False
+            continue
         kind = line[:1]
-        if kind not in {b' ', b'-', b'+'}:
+        if (seen_old >= old and seen_new >= new) or kind not in {b' ', b'-', b'+'}:
             break
         body.append((kind, line[1:] + b'\n'))
         seen_old += kind != b'+'
         seen_new += kind != b'-'
-        i += 1
-        if i < len(lines) and lines[i] == _NO_NEWLINE:
-            body[-1] = (kind, body[-1][1][:-1])
-            i += 1
+        end, markable = at + 1, True
     if (seen_old, seen_new) != (old, new):
         raise PatchRefused("A hunk of the patch does not have the lines its header counts.")
-    return body, i
+    return body, end
 
 
 def _binary(lines: list[bytes], i: int) -> tuple[tuple[bytes, int, bytes], int]:
@@ -177,9 +204,9 @@ def _binary(lines: list[bytes], i: int) -> tuple[tuple[bytes, int, bytes], int]:
     head = _LITERAL.fullmatch(lines[i]) if i < len(lines) else None
     if head is None:
         raise PatchRefused('A binary file of the patch has no literal or delta.')
-    data, i = bytearray(), i + 1
-    while i < len(lines) and lines[i]:
-        line = lines[i]
+    start = i + 1   # (its data lines, up to the blank line that ends them)
+    end, data = _first(lines, start, _blank), bytearray()
+    for line in lines[start:end]:
         size = line[0] - ord('A') + 1 if 65 <= line[0] <= 90 else line[0] - ord('a') + 27 if 97 <= line[0] <= 122 \
             else 0
         if not size or len(line) - 1 != (size + 3) // 4 * 5:
@@ -188,10 +215,8 @@ def _binary(lines: list[bytes], i: int) -> tuple[tuple[bytes, int, bytes], int]:
             data += base64.b85decode(line[1:])[:size]
         except ValueError:
             raise PatchRefused('A binary file of the patch is not encoded the way git encodes it.') from None
-        i += 1
-    while i < len(lines) and not lines[i].startswith(_DIFF):   # the reverse part, which a push does not need
-        i += 1
-    return (head.group(1), int(head.group(2)), bytes(data)), i
+    # (then past the reverse part, which a push does not need, to the next file)
+    return (head.group(1), int(head.group(2)), bytes(data)), _first(lines, end, _file_start)
 
 
 def _header_line(file: _FilePatch, line: bytes) -> None:
@@ -224,10 +249,10 @@ def _file(lines: list[bytes], i: int) -> tuple[_FilePatch, int]:
     """One file's part, from its ``diff --git`` line at ``lines[i]``; the index of the next part."""
     file = _FilePatch()
     file.old_path, file.new_path = _header_paths(lines[i][len(_DIFF):])
-    i += 1
-    while i < len(lines) and not lines[i].startswith((_DIFF, b'--- ', b'GIT binary patch')) and lines[i]:
-        _header_line(file, lines[i])
-        i += 1
+    end = _first(lines, i + 1, _header_end)
+    for line in lines[i + 1:end]:
+        _header_line(file, line)
+    i = end
     if i < len(lines) and lines[i] == b'GIT binary patch':
         file.binary, i = _binary(lines, i + 1)
     elif i + 1 < len(lines) and lines[i].startswith(b'--- ') and lines[i + 1].startswith(b'+++ '):
@@ -236,12 +261,14 @@ def _file(lines: list[bytes], i: int) -> tuple[_FilePatch, int]:
         if lines[i + 1] != b'+++ /dev/null':
             file.new_path = _path(lines[i + 1][4:], b'b/')
         i += 2
-        while i < len(lines) and (hunk := _HUNK.match(lines[i])) is not None:
+        for _ in range(len(lines)):   # (each hunk takes at least its own header line: never more hunks than lines)
+            hunk = _HUNK.match(lines[i]) if i < len(lines) else None
+            if hunk is None:
+                break
             old, new = (int(hunk.group(n)) if hunk.group(n) is not None else 1 for n in (2, 4))
             body, i = _hunk_lines(lines, i + 1, old, new)
             file.hunks.append((int(hunk.group(1)), old, body))
-    while i < len(lines) and not lines[i]:
-        i += 1
+    i = _first(lines, i, bool)   # (past blank lines)
     if i < len(lines) and not lines[i].startswith(_DIFF):
         raise PatchRefused('The patch has a line the broker cannot read.')
     if not (file.old_path and file.new_path):
@@ -258,7 +285,9 @@ def parse(patch: bytes) -> list[_FilePatch]:
         raise PatchRefused('The submitted patch changes nothing the broker can read.')
     files: list[_FilePatch] = []
     i = 0
-    while i < len(lines):
+    for _ in range(len(lines)):   # (each file's part takes at least its diff line)
+        if i >= len(lines):
+            break
         file, i = _file(lines, i)
         files.append(file)
         if len(files) > MAX_FILES:
@@ -297,13 +326,15 @@ def _byte(data: bytes, at: int) -> int:
 
 
 def _varint(data: bytes, at: int) -> tuple[int, int]:
+    """A delta's size: seven bits a byte, low first, up to the byte without its high bit; the index after it."""
     value = shift = 0
-    while True:
-        byte = _byte(data, at)
+    for here in range(at, len(data)):
+        byte = data[here]
         value |= (byte & 0x7F) << shift
-        shift, at = shift + 7, at + 1
+        shift += 7
         if not byte & 0x80:
-            return value, at
+            return value, here + 1
+    raise PatchRefused(_BAD_DELTA)   # (cut short: its last byte still says more follow)
 
 
 def _copy_op(op: int, delta: bytes, at: int) -> tuple[int, int, int]:
@@ -365,12 +396,12 @@ def _require_binary(content: bytes) -> None:
 def _utf16_text(probe: bytes) -> bool:
     """``probe`` reads as UTF-16 text: every character printable or whitespace, in one byte order or the other."""
     usable = probe[:len(probe) - len(probe) % 2]
-    for encoding in ('utf-16-le', 'utf-16-be'):
+    for encoding in _UTF16_ORDERS:
         try:
             text = usable.decode(encoding).removeprefix(_BOM)
         except UnicodeDecodeError:
             continue
-        if text and all(char.isprintable() or char in '\t\n\r\f\v' for char in text):
+        if text and all(char.isprintable() or char in _TEXT_WHITESPACE for char in text):
             return True
     return False
 
@@ -396,15 +427,18 @@ class WorkspacePatches:
         self._base = base
 
     def _patch(self, submission: Submission) -> bytes:
-        key = parse_agent_key(submission.key) if len(submission.key) <= 512 else None
+        # (the layout bounds every part of a key, so the longest one it takes in the workspace is 497 characters)
+        key = parse_agent_key(submission.key)
         # Its own, or (the committer's) one a fixer or builder of the run submitted at its commit, by the rule the
-        # gate's harness judges it by (runtime/outputs.py); never a checkpoint's snapshot.
-        whose = key is not None and (key.agent == submission.agent_id or (
-            submission.agent_id.startswith(f'{COMMITTER}-')
-            and is_submitted_patch(submission.key, submission.run_id, submission.run.commit)))
-        own = key is not None and whose and (key.ws, key.run_id, key.kind, key.sha) == (
-            WORKSPACE, submission.run_id, 'patches', submission.run.commit)
-        if key is None or not own or not key.name.endswith('.diff') or key.name.startswith('checkpoint-'):
+        # gate's harness judges it by (runtime/outputs.py); a patch on the run's commit, never a checkpoint's snapshot.
+        own = (key is not None
+               and (key.agent == submission.agent_id or (
+                   submission.agent_id.startswith(f'{COMMITTER}-')
+                   and is_submitted_patch(submission.key, submission.run_id, submission.run.commit)))
+               and (key.ws, key.run_id, key.kind, key.sha) == (
+                   WORKSPACE, submission.run_id, 'patches', submission.run.commit)
+               and key.name.endswith('.diff') and not key.name.startswith('checkpoint-'))
+        if not own:
             raise PatchRefused("An agent pushes only a patch it submitted itself, or the committer a fixer's or "
                                "builder's, on the run's commit "
                                f'(ws/{WORKSPACE}/runs/<run>/<agent>/commits/<commit>/_patches/...).')
@@ -455,7 +489,7 @@ class WorkspacePatches:
                     raise PatchRefused(
                         f'The patch carries more than {MAX_CONTENT_BYTES // (1024 * 1024)} MB of content.')
                 changes.append(change)
-        added = [line.decode('utf-8', errors='replace').removesuffix('\n') for file in files
+        added = [line.decode(_UTF8, 'replace').removesuffix('\n') for file in files
                  for _, _, body in file.hunks for kind, line in body if kind == b'+']
         commit = Commit(message=submission.message, author=AUTHOR, committer=AUTHOR, changes=tuple(changes))
         return BundleContents(heads=(f'refs/heads/{submission.branch}',), tree_hash=submission.tree_hash,

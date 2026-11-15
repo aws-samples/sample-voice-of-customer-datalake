@@ -82,10 +82,10 @@ from engineering.connectors.reactions import PullRequestReactions
 from engineering.connectors.write_policy import (
     WriteRefused,
     branch_refusal,
+    check_ci_definitions,
     check_commit_identities,
     check_commit_message,
     check_heads,
-    check_push,
     check_text,
 )
 from engineering.run_links import pull_request_link
@@ -276,7 +276,8 @@ class Broker:
             run_id=caller.run_id, agent_id=agent_id(caller), run=run, key=patch, branch=branch, tree_hash=tree_hash,
             message=message))
         check_heads(contents.heads)
-        check_push(branch, run.default_branch, caller.run_id, contents.changed_paths)
+        # (the branch was judged in _open_write, before anything was read; a host's own named CI files are its client's)
+        check_ci_definitions(contents.changed_paths, ())
         for commit in contents.commits:
             check_commit_identities(commit.author, commit.committer, run.bot_addresses)
             check_commit_message(commit.message, run.cited_reviews, run.bot_addresses)

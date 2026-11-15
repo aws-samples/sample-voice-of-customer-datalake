@@ -76,15 +76,14 @@ def test_refuses_the_ci_definitions_the_host_names_for_the_repository() -> None:
     write_policy.check_ci_definitions(['src/a.py'], named)
 
 
-def test_check_push_names_every_reason() -> None:
+def test_a_push_check_names_the_ci_definition_it_knows_by_its_place() -> None:
     with pytest.raises(WriteRefused) as caught:
-        write_policy.check_push('main', 'main', RUN, ['.github/workflows/ci.yml'])
-    assert 'default branch' in caught.value.reason
+        write_policy.check_ci_definitions(['src/app.py', '.github/workflows/ci.yml'], ())
     assert '.github/workflows/ci.yml' in caught.value.reason
 
 
-def test_check_push_passes_an_allowed_push() -> None:
-    write_policy.check_push(f'voc-agent/{RUN}/fix-1', 'main', RUN, ['src/app.py'])
+def test_a_push_check_passes_ordinary_paths() -> None:
+    write_policy.check_ci_definitions(['src/app.py', 'docs/ci.md'], ())
     assert write_policy.path_refusals(['src/app.py']) == []
 
 
