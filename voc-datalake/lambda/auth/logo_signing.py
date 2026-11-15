@@ -115,7 +115,6 @@ def signed_logo_url(key: Any, site_url: str, valid_days: int, *, now: datetime |
     try:
         return CloudFrontSigner(os.environ['CDN_SIGNING_KEY_PAIR_ID'], signer).generate_presigned_url(
             url, date_less_than=expires)
-    # Any signing failure, cryptography's included, costs the logo, never the invitation.
-    except Exception as error:  # noqa: BLE001
+    except Exception as error:  # noqa: BLE001 — any signing failure costs the logo, never the invitation
         logger.warning('Logo signing failed: %s', type(error).__name__)
         return None
