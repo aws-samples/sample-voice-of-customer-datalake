@@ -962,12 +962,13 @@
     "byCoach": "dem Coach ({{who}})",
     "proposedBy": "Vorgeschlagen von {{who}}, {{at}}",
     "notMeasured": "Kein Benchmark erfasst.",
-    "measured": "Gemessen",
+    "measured": "Erfassung einer Administratorin oder eines Administrators",
     "rates": "Erfolgsquote {{before}} → {{after}}",
     "benchmarkPassed": "bestanden",
     "benchmarkFailed": "nicht bestanden",
     "failureCase": "Fehlerfall {{name}}",
     "measuredBy": "erfasst von {{who}}, {{at}}",
+    "runRef": "Lauf {{ref}}",
     "claimed": "Angegeben",
     "claimedHint": "vom Vorschlagenden angegeben, nicht gemessen",
     "event": {
@@ -1016,6 +1017,60 @@
     "backToHistory": "Zurück zum Verlauf",
     "versionMissing": "Version {{version}} gibt es in diesem Bereich nicht. Gehen Sie zurück zum Verlauf und wählen Sie eine andere.",
     "versionFailed": "Die Version konnte nicht geladen werden. Versuchen Sie es gleich noch einmal.",
+    "actions": {
+      "label": "Aktionen für diese Version",
+      "reason": "Grund (optional)",
+      "noCurrent": "keiner aktuellen Version",
+      "sharedVersion": "der gemeinsamen v{{version}}",
+      "connectionVersion": "v{{version}} dieser Verbindung",
+      "writtenOn": "Geschrieben auf {{version}}.",
+      "baseNotInUse": "Ihre Basis ist nicht die jetzt genutzte Version ({{current}}): Das Annehmen wird abgelehnt. Schlagen Sie sie auf der genutzten Version erneut vor.",
+      "changed": "Das hat sich geändert, seit Sie es geöffnet haben. Die Ansicht wurde neu geladen: Schließen Sie dies, prüfen Sie die Version und versuchen Sie es erneut.",
+      "refused": "Die Aktion wurde abgelehnt: {{message}}",
+      "held": {
+        "unmeasured": "Annehmen ist gesperrt: Die Version des Coachs wird erst angenommen, wenn die Erfassung eines Benchmark-Laufs durch eine Administratorin oder einen Administrator (Quoten, Fälle und Urteil, wie sie eingegeben wurden) zeigt, dass er bestanden hat und die Erfolgsquote gestiegen ist, mit Nennung des erwarteten Falls. Erfassen Sie zuerst den Benchmark.",
+        "failed": "Annehmen ist gesperrt: Laut der Erfassung ihres Benchmark-Laufs hat die Version des Coachs nicht bestanden und wird nie angenommen. Ein neuer Vorschlag entsteht aus einem neuen Fehler, oder schreiben Sie die Korrektur als eigene Version.",
+        "noGain": "Annehmen ist gesperrt: In der Erfassung ihres Benchmark-Laufs stieg die Erfolgsquote nicht, oder der erwartete Fall ist nicht genannt, daher wird die Version des Coachs nie angenommen."
+      },
+      "accept": {
+        "button": "Annehmen",
+        "title": "Version {{version}} annehmen?",
+        "message": "Die aktuelle Version dieses Bereichs wechselt von {{from}} zu {{to}}.",
+        "confirm": "Version annehmen"
+      },
+      "reject": {
+        "button": "Ablehnen",
+        "title": "Version {{version}} ablehnen?",
+        "message": "Version {{version}} bleibt im Verlauf, als abgelehnt markiert. Die aktuelle Version ändert sich nicht.",
+        "confirm": "Version ablehnen"
+      },
+      "rollback": {
+        "button": "Auf diese Version zurücksetzen",
+        "title": "Auf Version {{version}} zurücksetzen?",
+        "message": "Eine neue Version, die Version {{version}} wiederherstellt, wird anstelle von {{from}} aktuell. Jede Version bleibt im Verlauf.",
+        "confirm": "Zurücksetzen"
+      },
+      "benchmark": {
+        "button": "Benchmark erfassen",
+        "title": "Benchmark von Version {{version}} erfassen",
+        "message": "Dies ist die Erfassung eines Benchmark-Laufs durch eine Administratorin oder einen Administrator: Quoten, Fälle und Urteil, wie Sie sie eingeben; hier misst nichts sie. Sie wird einmal erfasst und nie geändert. Bei der Version des Coachs muss der Fehlerfall ihr erwarteter Fall sein, und Annehmen braucht eine gestiegene Erfolgsquote.",
+        "runRef": "Verweis auf den Lauf (optional: eine Kennung oder ein Link)",
+        "confirm": "Benchmark erfassen",
+        "before": "Erfolgsquote vorher (%)",
+        "after": "Erfolgsquote nachher (%)",
+        "cases": "Fälle (einer pro Zeile oder durch Kommas getrennt)",
+        "passed": "Das Gate wurde bestanden",
+        "reasons": "Gründe (einer pro Zeile)",
+        "failureCase": "Fehlerfall",
+        "invalid": {
+          "rates": "Geben Sie beide Erfolgsquoten als Zahlen von 0 bis 100 an.",
+          "cases": "Nennen Sie jeden Fall einmal, in Kleinbuchstaben, Ziffern und Bindestrichen.",
+          "reasons": "Geben Sie mindestens einen Grund an, einen pro Zeile.",
+          "failureCase": "Der Fehlerfall muss einer der Fälle sein.",
+          "regressed": "Ein bestandener Lauf hat nachher keine niedrigere Erfolgsquote als vorher: Erfassen Sie ihn als nicht bestanden, oder prüfen Sie die Quoten."
+        }
+      }
+    },
     "scores": {
       "title": "Scorecards",
       "hint": "Wie jede Version in ihren letzten Läufen auf dieser Verbindung abgeschnitten hat. Die Erfolgsquote ist die Zahl der erledigten Aufgaben geteilt durch die abgeschlossenen.",
@@ -1043,6 +1098,7 @@
       "sourceColumn": "Nummer von",
       "source": {
         "shipped": "Ausgelieferter Skill",
+        "not_shipped": "Nie ausgeliefert: keine Sitzung lief mit dieser Nummer",
         "shared": "Gemeinsamer Skill",
         "connection": "Skill dieser Verbindung",
         "unknown": "Unbekannt"

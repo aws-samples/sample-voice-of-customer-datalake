@@ -16,6 +16,8 @@ import { ApiError } from '../../lib/errors'
 import { BenchmarkLines, SkillStatusBadge, VersionEvents, VersionWhy } from './SkillHistory'
 import { useSkillFormats } from './skillFormats'
 import { diffIsEmpty } from './skillsView'
+import { SkillActions } from './SkillActions'
+import type { ActionTarget } from './SkillActionParts'
 import type { ReactNode } from 'react'
 import type { SkillDiff, SkillRole, SkillVersionDetail as Detail } from '../../api/engineeringSkillsApi'
 
@@ -109,9 +111,10 @@ function BaseText({ base }: Readonly<{ base: Detail['base'] }>) {
   return t(base.shared ? 'skills.baseShared' : 'skills.base', { version: base.version })
 }
 
-function DetailBody({ detail, current }: Readonly<{ detail: Detail; current: number }>) {
+function DetailBody({ target }: Readonly<{ target: ActionTarget }>) {
   const { t } = useTranslation('agents')
   const format = useSkillFormats()
+  const { detail, current } = target
   const { base, made_with: made } = detail
   return (
     <div className="space-y-3">
@@ -119,6 +122,7 @@ function DetailBody({ detail, current }: Readonly<{ detail: Detail; current: num
         <SkillStatusBadge status={detail.status} current={detail.version === current} />
         <span className="text-[12px] text-muted">{t('skills.proposedBy', { who: detail.proposed_by, at: format.at(detail.proposed_at) })}</span>
       </div>
+      <SkillActions target={target} />
       <p className="text-sm text-text-strong break-words [overflow-wrap:anywhere]">{detail.summary}</p>
       <VersionWhy why={detail.why} restores={detail.restores} />
       <p className="text-[12px] text-muted">
@@ -135,7 +139,10 @@ function DetailBody({ detail, current }: Readonly<{ detail: Detail; current: num
 }
 
 export function SkillVersionDetail({ connection, role, version, current, onBack }: Readonly<{
-  connection: string; role: SkillRole; version: number; current: number; onBack: () => void
+  connection: string; role: SkillRole; version: number
+  /** The scope's own current version, and the shared skill's (what a connection with none of its own runs). */
+  current: Readonly<{ own: number; shared: number }>
+  onBack: () => void
 }>) {
   const { t } = useTranslation('agents')
   const configured = useConfigStore((s) => s.config.apiEndpoint) !== ''
@@ -156,7 +163,8 @@ export function SkillVersionDetail({ connection, role, version, current, onBack 
       {read.isError && !missing && (
         <LoadFailed message={t('skills.versionFailed')} onRetry={() => void read.refetch()} retrying={read.isFetching} />
       )}
-      {read.data !== undefined && <DetailBody detail={read.data} current={current} />}
+      {read.data !== undefined && (
+        <DetailBody target={{ connection, role, detail: read.data, current: current.own, sharedCurrent: current.shared }} />)}
     </section>
   )
 }

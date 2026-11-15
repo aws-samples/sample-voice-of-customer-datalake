@@ -995,12 +995,13 @@
     "byCoach": "coacha ({{who}})",
     "proposedBy": "Zaproponowana przez: {{who}}, {{at}}",
     "notMeasured": "Brak zapisanego benchmarku.",
-    "measured": "Zmierzono",
+    "measured": "Zapis administratora",
     "rates": "odsetek zaliczeń {{before}} → {{after}}",
     "benchmarkPassed": "zaliczony",
     "benchmarkFailed": "niezaliczony",
     "failureCase": "przypadek błędu {{name}}",
     "measuredBy": "zapisał(a): {{who}}, {{at}}",
+    "runRef": "przebieg {{ref}}",
     "claimed": "Deklarowane",
     "claimedHint": "podane przez proponującego, niezmierzone",
     "event": {
@@ -1049,6 +1050,60 @@
     "backToHistory": "Wróć do historii",
     "versionMissing": "Wersji {{version}} nie ma w tym zakresie. Wróć do historii i wybierz inną.",
     "versionFailed": "Nie udało się wczytać wersji. Spróbuj ponownie za chwilę.",
+    "actions": {
+      "label": "Działania na tej wersji",
+      "reason": "Powód (opcjonalnie)",
+      "noCurrent": "braku bieżącej wersji",
+      "sharedVersion": "wspólnej v{{version}}",
+      "connectionVersion": "v{{version}} tego połączenia",
+      "writtenOn": "Napisana na {{version}}.",
+      "baseNotInUse": "Jej podstawa nie jest wersją używaną teraz ({{current}}): akceptacja zostanie odrzucona. Zaproponuj ją ponownie na używanej wersji.",
+      "changed": "To się zmieniło, odkąd to otworzono. Widok został wczytany ponownie: zamknij to, sprawdź wersję i spróbuj ponownie.",
+      "refused": "Działanie zostało odrzucone: {{message}}",
+      "held": {
+        "unmeasured": "Akceptacja jest wyłączona: wersja coacha jest akceptowana dopiero, gdy zapis przebiegu benchmarku dokonany przez administratora (odsetki, przypadki i werdykt w takiej postaci, w jakiej je wpisał) pokazuje zaliczenie i wzrost odsetka zaliczeń, ze wskazaniem oczekiwanego przypadku. Najpierw zapisz benchmark.",
+        "failed": "Akceptacja jest wyłączona: według zapisu przebiegu benchmarku wersja coacha go nie zaliczyła, więc nigdy nie zostanie zaakceptowana. Nowa propozycja powstaje z nowego błędu albo napisz poprawkę jako własną wersję.",
+        "noGain": "Akceptacja jest wyłączona: w zapisie przebiegu benchmarku odsetek zaliczeń nie wzrósł albo nie wskazano oczekiwanego przypadku, więc wersja coacha nigdy nie zostanie zaakceptowana."
+      },
+      "accept": {
+        "button": "Zaakceptuj",
+        "title": "Zaakceptować wersję {{version}}?",
+        "message": "Bieżąca wersja tego zakresu zmienia się z {{from}} na {{to}}.",
+        "confirm": "Zaakceptuj wersję"
+      },
+      "reject": {
+        "button": "Odrzuć",
+        "title": "Odrzucić wersję {{version}}?",
+        "message": "Wersja {{version}} zostaje w historii, oznaczona jako odrzucona. Bieżąca wersja się nie zmienia.",
+        "confirm": "Odrzuć wersję"
+      },
+      "rollback": {
+        "button": "Przywróć tę wersję",
+        "title": "Przywrócić wersję {{version}}?",
+        "message": "Nowa wersja przywracająca wersję {{version}} staje się bieżąca zamiast {{from}}. Każda wersja zostaje w historii.",
+        "confirm": "Przywróć"
+      },
+      "benchmark": {
+        "button": "Zapisz benchmark",
+        "title": "Zapisz benchmark wersji {{version}}",
+        "message": "To zapis przebiegu benchmarku dokonany przez administratora: odsetki, przypadki i werdykt w takiej postaci, w jakiej je wpiszesz; nic tutaj ich nie mierzy. Zapisuje się go raz i nigdy nie zmienia. Dla wersji coacha przypadek błędu musi być jej oczekiwanym przypadkiem, a akceptacja wymaga odsetka zaliczeń, który wzrósł.",
+        "runRef": "Odwołanie do przebiegu (opcjonalnie: identyfikator lub link)",
+        "confirm": "Zapisz benchmark",
+        "before": "Odsetek zaliczeń przed (%)",
+        "after": "Odsetek zaliczeń po (%)",
+        "cases": "Przypadki (jeden w wierszu lub rozdzielone przecinkami)",
+        "passed": "Kontrola zaliczona",
+        "reasons": "Powody (jeden w wierszu)",
+        "failureCase": "Przypadek błędu",
+        "invalid": {
+          "rates": "Podaj oba odsetki zaliczeń jako liczby od 0 do 100.",
+          "cases": "Podaj każdy przypadek raz, małymi literami, cyframi i łącznikami.",
+          "reasons": "Podaj co najmniej jeden powód, jeden w wierszu.",
+          "failureCase": "Przypadek błędu musi być jednym z przypadków.",
+          "regressed": "Zaliczony przebieg nie może mieć niższego odsetka zaliczeń po niż przed: zapisz go jako niezaliczony albo sprawdź odsetki."
+        }
+      }
+    },
     "scores": {
       "title": "Karty wyników",
       "hint": "Jak każda wersja poradziła sobie w ostatnich przebiegach na tym połączeniu. Odsetek zaliczeń to liczba wykonanych zadań do liczby zakończonych.",
@@ -1076,6 +1131,7 @@
       "sourceColumn": "Numer z",
       "source": {
         "shipped": "Dostarczona umiejętność",
+        "not_shipped": "Nigdy niedostarczona: żadna sesja nie użyła tego numeru",
         "shared": "Wspólna umiejętność",
         "connection": "Umiejętność tego połączenia",
         "unknown": "Nieznane"

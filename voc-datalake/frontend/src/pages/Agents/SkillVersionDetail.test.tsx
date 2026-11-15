@@ -32,7 +32,7 @@ const detail = (fields: Record<string, unknown> = {}) => ({ connection: '', role
 
 function renderDetail(routes: Record<string, RouteHandler>, onBack = vi.fn<() => void>()) {
   routeFetchApi(routes, { missStatus: 500 })
-  renderWithQueryClient(<SkillVersionDetail connection="" role="fixer" version={2} current={1} onBack={onBack} />)
+  renderWithQueryClient(<SkillVersionDetail connection="" role="fixer" version={2} current={{ own: 1, shared: 0 }} onBack={onBack} />)
   return onBack
 }
 

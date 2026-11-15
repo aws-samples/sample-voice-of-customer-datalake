@@ -34,13 +34,16 @@ Permissions:
   version rows beside the connection's, each with its audit row), and a run's start
   (``POST /agents/engineering/runs``, a saved engineering flow on a stored connection's commit: the start
   function, below), and the agents' skills and scorecards, read only (``GET /agents/engineering/skills``,
-  ``…/skills/<role>/versions[/<version>]``, ``GET /agents/engineering/scorecards/<role>``: engineering/skills/views.py);
+  ``…/skills/<role>/versions[/<version>]``, ``GET /agents/engineering/scorecards/<role>``: engineering/skills/views.py)
+  and an administrator's actions on a version (``POST …/skills/<role>/versions/<version>/accept``, ``…/reject``,
+  ``…/rollback``, ``…/benchmark``: engineering/skills/actions.py, the store's own transactions);
   while the engineering agents are off every caller gets 404.
 
 Own role (20 KB policy limit): the agents table (read/write), the aggregates table
 (read: category access rows + categories config), ``states:StartExecution`` and
 ``states:StopExecution`` on ``voc-agent-run`` only; with the engineering agents on, their stack adds reads of
-their table and workspace bucket (never a write: GetItem and Query) and ``lambda:InvokeFunction`` on the board's
+their table and workspace bucket (GetItem and Query), the skills' writes (PutItem, UpdateItem and
+ConditionCheckItem on the ``WS#*#SKILL#*`` partitions only, what the skills store's transactions use; no delete) and ``lambda:InvokeFunction`` on the board's
 function (``ENGINEERING_BOARD_FUNCTION``), which makes a person's board actions with its own role and hands the
 events back for this role to publish as the person (engineering/board/api.py person_request), and
 ``lambda:InvokeFunction`` on the start function (``ENGINEERING_START_FUNCTION``, voc-engineering-start: the runtime's
@@ -916,8 +919,8 @@ def _skill_views() -> Any:
     return SkillViews(get_dynamodb_client(), os.environ['ENGINEERING_TABLE'])
 
 
-def _skill_read(read: Any) -> Any:
-    """``read()``, its refusals answered with their status and a failed read with 503."""
+def _skill_read(read: Any, failed: str = 'the skills could not be read: retry') -> Any:
+    """``read()``, its refusals answered with their status and a failed call with 503 (``failed``: what it says)."""
     from engineering.learning.scorecard import ScorecardError
     from engineering.skills.model import SkillError
 
@@ -928,8 +931,8 @@ def _skill_read(read: Any) -> Any:
     except ScorecardError as refused:
         raise ValidationError(str(refused)) from None
     except (ClientError, BotoCoreError) as exc:
-        logger.exception('engineering: the skills could not be read')
-        raise ServiceUnavailableError('the skills could not be read: retry') from exc
+        logger.exception('engineering: a skills call failed')
+        raise ServiceUnavailableError(failed) from exc
 
 
 @app.get('/agents/engineering/skills')
@@ -957,6 +960,65 @@ def get_engineering_skill_version(role: str, version: str):
     record and its diff from its base; 404 when the scope has no such version."""
     views = _skill_views()
     return _skill_read(lambda: views.version(_query('connection') or '', role, version))
+
+
+def _skill_actions() -> Any:
+    """The skills' actions for the administrator calling: 404 while the module is off, then 403 for anyone but an
+    administrator acting for themselves (a delegated credential included)."""
+    _engineering_on()
+    caller = _caller()
+    require_admin_caller(caller)
+    from engineering.knowledge.store import Actor
+    from engineering.skills.actions import SkillActions
+    from engineering.skills.store import SkillStore
+    from shared.aws import get_dynamodb_client
+
+    return SkillActions(SkillStore(get_dynamodb_client(), os.environ['ENGINEERING_TABLE']),
+                        Actor(caller.subject, 'person', admin=True))
+
+
+_SKILL_NOT_SAVED = 'the skill version could not be saved: read it again and retry'
+
+
+@app.post('/agents/engineering/skills/<role>/versions/<version>/accept')
+@tracer.capture_method(capture_response=False)
+def accept_engineering_skill_version(role: str, version: str):
+    """``?connection=`` ``{expected_status, expected_current, reason?}`` → ``{connection, role, version, event,
+    announcement}``: the proposed version becomes the scope's current one (the store's transaction: its base still
+    current, and a coach's version only once its recorded benchmark passed with a gain on its expected case); 409
+    when the version or the current one changed since the screen read them."""
+    actions = _skill_actions()
+    return _skill_read(lambda: actions.accept(_query('connection') or '', role, version, json_object_body(app)),
+                       _SKILL_NOT_SAVED)
+
+
+@app.post('/agents/engineering/skills/<role>/versions/<version>/reject')
+@tracer.capture_method(capture_response=False)
+def reject_engineering_skill_version(role: str, version: str):
+    """``?connection=`` ``{expected_status, reason?}`` → the version, marked rejected (it stays), and its event."""
+    actions = _skill_actions()
+    return _skill_read(lambda: actions.reject(_query('connection') or '', role, version, json_object_body(app)),
+                       _SKILL_NOT_SAVED)
+
+
+@app.post('/agents/engineering/skills/<role>/versions/<version>/rollback')
+@tracer.capture_method(capture_response=False)
+def roll_back_engineering_skill(role: str, version: str):
+    """``?connection=`` ``{expected_current, reason?}`` → the new version restoring ``version`` (an earlier accepted
+    one of the same scope), current at once, its event and its announcement."""
+    actions = _skill_actions()
+    return _skill_read(lambda: actions.roll_back(_query('connection') or '', role, version, json_object_body(app)),
+                       _SKILL_NOT_SAVED)
+
+
+@app.post('/agents/engineering/skills/<role>/versions/<version>/benchmark')
+@tracer.capture_method(capture_response=False)
+def record_engineering_skill_benchmark(role: str, version: str):
+    """``?connection=`` ``{expected_status, before, after, cases, passed, reasons, failure_case, reason?}`` → the
+    version with its benchmark recorded, once (a coach's version names the case it expected to gain on)."""
+    actions = _skill_actions()
+    return _skill_read(lambda: actions.benchmark(_query('connection') or '', role, version, json_object_body(app)),
+                       _SKILL_NOT_SAVED)
 
 
 @app.get('/agents/engineering/scorecards/<role>')

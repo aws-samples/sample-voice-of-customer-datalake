@@ -968,12 +968,13 @@
     "byCoach": "el coach ({{who}})",
     "proposedBy": "Propuesta por {{who}}, {{at}}",
     "notMeasured": "No hay benchmark registrado.",
-    "measured": "Medido",
+    "measured": "Registro de un administrador",
     "rates": "tasa de aciertos {{before}} → {{after}}",
     "benchmarkPassed": "superado",
     "benchmarkFailed": "no superado",
     "failureCase": "caso del fallo {{name}}",
     "measuredBy": "registrado por {{who}}, {{at}}",
+    "runRef": "ejecución {{ref}}",
     "claimed": "Declarado",
     "claimedHint": "lo indicó quien la propuso, sin medir",
     "event": {
@@ -1022,6 +1023,60 @@
     "backToHistory": "Volver al historial",
     "versionMissing": "La versión {{version}} no está en este ámbito. Vuelve al historial y elige otra.",
     "versionFailed": "No se pudo cargar la versión. Inténtalo de nuevo en un momento.",
+    "actions": {
+      "label": "Acciones sobre esta versión",
+      "reason": "Motivo (opcional)",
+      "noCurrent": "ninguna versión actual",
+      "sharedVersion": "la v{{version}} compartida",
+      "connectionVersion": "la v{{version}} de esta conexión",
+      "writtenOn": "Escrita sobre {{version}}.",
+      "baseNotInUse": "Su base no es la versión en uso ahora ({{current}}): aceptarla será rechazado. Proponla de nuevo sobre la versión en uso.",
+      "changed": "Ha cambiado desde que lo abriste. La pantalla se ha vuelto a cargar: cierra esto, revisa la versión e inténtalo de nuevo.",
+      "refused": "La acción fue rechazada: {{message}}",
+      "held": {
+        "unmeasured": "Aceptar está desactivado: la versión del coach solo se acepta cuando el registro de una ejecución de benchmark hecho por un administrador (sus tasas, casos y veredicto tal como los introduce) muestra que se superó y que la tasa de aciertos subió, nombrando su caso esperado. Registra primero el benchmark.",
+        "failed": "Aceptar está desactivado: el registro de su ejecución de benchmark dice que no se superó, así que la versión del coach nunca se acepta. Una propuesta nueva surge de un fallo nuevo, o escribe la corrección como versión propia.",
+        "noGain": "Aceptar está desactivado: en el registro de su ejecución de benchmark la tasa de aciertos no subió, o no se nombra su caso esperado, así que la versión del coach nunca se acepta."
+      },
+      "accept": {
+        "button": "Aceptar",
+        "title": "¿Aceptar la versión {{version}}?",
+        "message": "La versión actual de este ámbito pasa de {{from}} a {{to}}.",
+        "confirm": "Aceptar versión"
+      },
+      "reject": {
+        "button": "Rechazar",
+        "title": "¿Rechazar la versión {{version}}?",
+        "message": "La versión {{version}} queda en el historial, marcada como rechazada. La versión actual no cambia.",
+        "confirm": "Rechazar versión"
+      },
+      "rollback": {
+        "button": "Volver a esta versión",
+        "title": "¿Volver a la versión {{version}}?",
+        "message": "Una versión nueva que restaura la versión {{version}} pasa a ser la actual en lugar de {{from}}. Todas las versiones quedan en el historial.",
+        "confirm": "Volver"
+      },
+      "benchmark": {
+        "button": "Registrar benchmark",
+        "title": "Registrar el benchmark de la versión {{version}}",
+        "message": "Este es el registro de una ejecución de benchmark hecho por un administrador: sus tasas, casos y veredicto tal como los introduces; nada aquí los mide. Se registra una vez y nunca cambia. Para la versión del coach, el caso del fallo debe ser su caso esperado, y Aceptar necesita una tasa de aciertos que haya subido.",
+        "runRef": "Referencia a la ejecución (opcional: un id o un enlace)",
+        "confirm": "Registrar benchmark",
+        "before": "Tasa de aciertos antes (%)",
+        "after": "Tasa de aciertos después (%)",
+        "cases": "Casos (uno por línea o separados por comas)",
+        "passed": "El control se superó",
+        "reasons": "Motivos (uno por línea)",
+        "failureCase": "Caso del fallo",
+        "invalid": {
+          "rates": "Indica ambas tasas de aciertos como números de 0 a 100.",
+          "cases": "Indica cada caso una vez, en minúsculas, dígitos y guiones.",
+          "reasons": "Indica al menos un motivo, uno por línea.",
+          "failureCase": "El caso del fallo debe ser uno de los casos.",
+          "regressed": "Una ejecución superada no puede tener una tasa de aciertos menor después que antes: regístrala como no superada, o revisa las tasas."
+        }
+      }
+    },
     "scores": {
       "title": "Fichas de resultados",
       "hint": "Cómo le fue a cada versión en sus últimas ejecuciones en esta conexión. La tasa de aciertos es el número de tareas hechas entre las que terminó.",
@@ -1049,6 +1104,7 @@
       "sourceColumn": "Número de",
       "source": {
         "shipped": "Habilidad incluida",
+        "not_shipped": "Nunca incluida: ninguna sesión usó este número",
         "shared": "Habilidad compartida",
         "connection": "Habilidad de esta conexión",
         "unknown": "Desconocido"

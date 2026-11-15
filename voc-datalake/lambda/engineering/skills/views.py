@@ -68,6 +68,16 @@ _PAGE_SCHEMA: Final = 'voc-skill-page/1'
 #: store version and a shipped one would read the same), and the harness runs only the shipped skills today, so
 #: every scorecard number is a shipped skill's. Once the harness reads the store, its labels must carry the scope.
 SCORE_SOURCE: Final = 'shipped'
+#: A number asked for that no shipped skill of the role ever had (above its shipped version, or a role that ships
+#: none): no session ran it, so its card is labelled so, never as shipped.
+NOT_SHIPPED: Final = 'not_shipped'
+
+
+def score_source(role: str, number: int) -> str:
+    """Where the card of ``role``'s version ``number`` comes from: a shipped skill's (1 to the shipped version),
+    else ``NOT_SHIPPED``."""
+    shipped = SKILLS.get(role)
+    return SCORE_SOURCE if shipped is not None and number <= shipped.version else NOT_SHIPPED
 
 
 def check_connection(connection: str) -> str:
@@ -130,7 +140,7 @@ def _measured(recorded: RecordedBenchmark | None) -> dict[str, Any] | None:
     run = recorded.run
     return {'before': run.before, 'after': run.after, 'passed': run.passed, 'gained': run.gained,
             'failure_case': run.failure_case, 'cases': len(run.cases), 'reasons': list(run.reasons),
-            'by': recorded.by, 'at': recorded.at}
+            'run_ref': run.run_ref, 'by': recorded.by, 'at': recorded.at}
 
 
 def _event(event: LogEvent) -> dict[str, str]:
@@ -184,7 +194,7 @@ def shipped_versions(role: str) -> list[int]:
 
 
 def card_view(number: int, card: VersionCard) -> dict[str, Any]:
-    return {'version': number, 'source': SCORE_SOURCE, 'label': card.version, 'runs': card.runs,
+    return {'version': number, 'source': score_source(card.role, number), 'label': card.version, 'runs': card.runs,
             'pass_rate': card.pass_rate,
             'tasks_done': card.tasks_done, 'tasks_failed': card.tasks_failed, 'needs_human': card.needs_human,
             'reposts': card.reposts, 'review_rounds': card.review_rounds, 'attempts': card.attempts,

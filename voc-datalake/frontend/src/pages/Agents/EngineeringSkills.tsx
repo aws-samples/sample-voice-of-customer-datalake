@@ -126,7 +126,12 @@ function RolePanel({ view, role, onView }: Readonly<{ view: SkillsView; role: Sk
   const roles = useQuery({
     queryKey: engineeringSkillsKeys.roles(connection), queryFn: () => engineeringSkillsApi.roles(connection), enabled: configured,
   })
+  // (a connection with no version of its own runs the shared skill's current one: the approval card names it)
+  const shared = useQuery({
+    queryKey: engineeringSkillsKeys.roles(''), queryFn: () => engineeringSkillsApi.roles(''), enabled: configured && connection !== '',
+  })
   const current = roles.data?.find((line) => line.role === role)?.current_version ?? 0
+  const fallback = connection === '' ? 0 : shared.data?.find((line) => line.role === role)?.current_version ?? 0
   return (
     <div className="space-y-4">
       <button type="button" className="btn btn-ghost btn-sm" onClick={() => onView({ role: null, version: null })}>
@@ -137,7 +142,8 @@ function RolePanel({ view, role, onView }: Readonly<{ view: SkillsView; role: Sk
       </h2>
       {version === null
         ? <SkillHistory connection={connection} role={role} onOpen={(next) => onView({ version: next })} />
-        : <SkillVersionDetail connection={connection} role={role} version={version} current={current} onBack={() => onView({ version: null })} />}
+        : <SkillVersionDetail connection={connection} role={role} version={version} current={{ own: current, shared: fallback }}
+          onBack={() => onView({ version: null })} />}
       <SkillScorecards key={`${connection}-${role}`} connection={connection} role={role} />
     </div>
   )

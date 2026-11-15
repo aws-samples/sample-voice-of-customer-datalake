@@ -63,6 +63,7 @@ const EXEMPT: Readonly<Record<string, string>> = {
   RunsTab: 'Run now heads the runs list',
   Agents: 'New agent is a page-header action',
   EngineeringConnections: 'Add connection is a section-header action beside the title (it opens a dialog, whose footer holds Save)',
+  SkillActions: 'Accept is one of a version\'s actions beside its status; it opens an approval card, whose footer holds the confirmation',
   WorkflowPage: 'Start a run is a page-header action beside the title (it opens a dialog)',
   WorkflowEditor: 'Save sits in the editor toolbar above the canvas, top of the page, next to Save as',
   EngineeringConversation: 'Send is a chat composer\'s, under the conversation it adds to (a message, not a form\'s save row)',

@@ -764,6 +764,37 @@
     ]
   },
   {
+    "file": "api/engineeringSkillActionsApi.ts",
+    "method": "POST",
+    "call": "actionPath(connection, role, version, action)",
+    "probes": [
+      {
+        "path": "/agents/engineering/skills/fixer/versions/2/benchmark?connection=storefront",
+        "body": {
+          "expected_status": "proposed",
+          "before": 1,
+          "after": 1,
+          "cases": ["pagination-review"],
+          "passed": true,
+          "reasons": ["no regression"],
+          "failure_case": "pagination-review"
+        }
+      },
+      {
+        "path": "/agents/engineering/skills/fixer/versions/2/reject?connection=storefront",
+        "body": { "expected_status": "proposed", "reason": "Too slow for small fixes." }
+      },
+      {
+        "path": "/agents/engineering/skills/fixer/versions/1/rollback?connection=",
+        "body": { "expected_current": 3 }
+      },
+      {
+        "path": "/agents/engineering/skills/coordinator/versions/1/accept?connection=",
+        "body": { "expected_status": "accepted", "expected_current": 1 }
+      }
+    ]
+  },
+  {
     "file": "api/engineeringSkillsApi.ts",
     "method": "GET",
     "call": "historyPath(connection, role, page)",

@@ -968,12 +968,13 @@
     "byCoach": "le coach ({{who}})",
     "proposedBy": "Proposée par {{who}}, {{at}}",
     "notMeasured": "Aucun benchmark enregistré.",
-    "measured": "Mesuré",
+    "measured": "Relevé d’un administrateur",
     "rates": "taux de réussite {{before}} → {{after}}",
     "benchmarkPassed": "réussi",
     "benchmarkFailed": "échoué",
     "failureCase": "cas de l’échec {{name}}",
     "measuredBy": "enregistré par {{who}}, {{at}}",
+    "runRef": "exécution {{ref}}",
     "claimed": "Déclaré",
     "claimedHint": "indiqué par l’auteur de la proposition, non mesuré",
     "event": {
@@ -1022,6 +1023,60 @@
     "backToHistory": "Retour à l’historique",
     "versionMissing": "La version {{version}} n’existe pas dans cette portée. Revenez à l’historique et choisissez-en une autre.",
     "versionFailed": "La version n’a pas pu être chargée. Réessayez dans un instant.",
+    "actions": {
+      "label": "Actions sur cette version",
+      "reason": "Raison (facultative)",
+      "noCurrent": "aucune version actuelle",
+      "sharedVersion": "la v{{version}} partagée",
+      "connectionVersion": "la v{{version}} de cette connexion",
+      "writtenOn": "Écrite sur {{version}}.",
+      "baseNotInUse": "Sa base n’est pas la version utilisée maintenant ({{current}}) : l’accepter sera refusé. Proposez-la de nouveau sur la version utilisée.",
+      "changed": "Cela a changé depuis que vous l’avez ouvert. L’écran a été rechargé : fermez ceci, vérifiez la version et réessayez.",
+      "refused": "L’action a été refusée : {{message}}",
+      "held": {
+        "unmeasured": "Accepter est désactivé : la version du coach n’est acceptée qu’une fois que le relevé d’une exécution de benchmark par un administrateur (ses taux, cas et verdict tels qu’il les saisit) montre une réussite et un taux de réussite en hausse, en nommant son cas attendu. Enregistrez d’abord le benchmark.",
+        "failed": "Accepter est désactivé : le relevé de son exécution de benchmark indique un échec, la version du coach ne sera donc jamais acceptée. Une nouvelle proposition vient d’un nouvel échec, ou écrivez la correction comme votre propre version.",
+        "noGain": "Accepter est désactivé : dans le relevé de son exécution de benchmark, le taux de réussite n’a pas augmenté, ou son cas attendu n’est pas nommé, la version du coach ne sera donc jamais acceptée."
+      },
+      "accept": {
+        "button": "Accepter",
+        "title": "Accepter la version {{version}} ?",
+        "message": "La version actuelle de cette portée passe de {{from}} à {{to}}.",
+        "confirm": "Accepter la version"
+      },
+      "reject": {
+        "button": "Refuser",
+        "title": "Refuser la version {{version}} ?",
+        "message": "La version {{version}} reste dans l’historique, marquée comme refusée. La version actuelle ne change pas.",
+        "confirm": "Refuser la version"
+      },
+      "rollback": {
+        "button": "Revenir à cette version",
+        "title": "Revenir à la version {{version}} ?",
+        "message": "Une nouvelle version qui rétablit la version {{version}} devient actuelle à la place de {{from}}. Toutes les versions restent dans l’historique.",
+        "confirm": "Revenir"
+      },
+      "benchmark": {
+        "button": "Enregistrer le benchmark",
+        "title": "Enregistrer le benchmark de la version {{version}}",
+        "message": "Ceci est le relevé d’une exécution de benchmark par un administrateur : ses taux, cas et verdict tels que vous les saisissez ; rien ici ne les mesure. Il est enregistré une fois et ne change jamais. Pour la version du coach, le cas de l’échec doit être son cas attendu, et Accepter exige un taux de réussite en hausse.",
+        "runRef": "Référence de l’exécution (facultative : un identifiant ou un lien)",
+        "confirm": "Enregistrer le benchmark",
+        "before": "Taux de réussite avant (%)",
+        "after": "Taux de réussite après (%)",
+        "cases": "Cas (un par ligne ou séparés par des virgules)",
+        "passed": "Le contrôle a réussi",
+        "reasons": "Raisons (une par ligne)",
+        "failureCase": "Cas de l’échec",
+        "invalid": {
+          "rates": "Indiquez les deux taux de réussite par des nombres de 0 à 100.",
+          "cases": "Indiquez chaque cas une fois, en minuscules, chiffres et tirets.",
+          "reasons": "Indiquez au moins une raison, une par ligne.",
+          "failureCase": "Le cas de l’échec doit faire partie des cas.",
+          "regressed": "Une exécution réussie ne peut pas avoir un taux de réussite plus bas après qu’avant : enregistrez-la comme échouée, ou vérifiez les taux."
+        }
+      }
+    },
     "scores": {
       "title": "Fiches de résultats",
       "hint": "Comment chaque version s’est comportée lors de ses dernières exécutions sur cette connexion. Le taux de réussite est le nombre de tâches faites rapporté aux tâches terminées.",
@@ -1049,6 +1104,7 @@
       "sourceColumn": "Numéro de",
       "source": {
         "shipped": "Compétence livrée",
+        "not_shipped": "Jamais livrée : aucune session n’a utilisé ce numéro",
         "shared": "Compétence partagée",
         "connection": "Compétence de cette connexion",
         "unknown": "Inconnu"

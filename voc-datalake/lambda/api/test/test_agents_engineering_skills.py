@@ -18,32 +18,24 @@ from unittest.mock import patch
 
 import pytest
 from agents_handler_fixtures import ADMIN, USER
-from agents_handler_fixtures import api as _api
 from agents_handler_fixtures import call as _call
 from botocore.exceptions import ClientError
+from engineering_skills_fixtures import CONN, DELEGATED_ADMIN, OTHER, PERSON, WS, engineering_skills, propose_as_coach
 
-from engineering.board.test.table import TABLE, create_table
-from engineering.knowledge.store import Actor
+from engineering.board.test.table import TABLE
 from engineering.learning.retrospective import RunRecord, ScoreLine
 from engineering.learning.scorecard import ScorecardStore
-from engineering.skills.model import BenchmarkRun, MadeWith, Reason
+from engineering.skills.model import BenchmarkRun, Reason
 from engineering.skills.store import SHARED, SkillRef, SkillStore
-from engineering.skills.test.fixtures import INSTRUCTIONS, RUN, SONNET, content, stricter
+from engineering.skills.test.fixtures import INSTRUCTIONS, content, stricter
 from engineering.skills.views import page_token
 
-WS = 'default'
-CONN, OTHER = 'conn-harbor', 'conn-lantern'
 SKILLS = '/agents/engineering/skills'
 HISTORY = f'{SKILLS}/fixer/versions'
 SCORES = '/agents/engineering/scorecards/fixer'
-PERSON = Actor('admin-sub', 'person', admin=True)
-COACH = Actor('coach-0', 'agent', connection=CONN)
 CASES = ('slug-cut-bug', 'pagination-review')
 GAINED = BenchmarkRun(before=0.5, after=1.0, cases=CASES, passed=True, failure_case='slug-cut-bug',
                       reasons=("slug-cut-bug, the failure's case, gained",))
-#: An MCP credential an administrator minted: delegated, so never an administrator here.
-DELEGATED_ADMIN = {'sub': 'mcp:tok_1', 'cognito:username': 'alice', 'voc:acting_subject': 'admin-sub',
-                   'cognito:groups': 'admins'}
 PATHS = (SKILLS, HISTORY, f'{HISTORY}/1', SCORES)
 
 
@@ -66,9 +58,7 @@ class Env:
 
     def coach_v1(self) -> None:
         """The coach's version for CONN on the shared v1, measured with a gain and accepted."""
-        self.skills.propose_version(WS, CONN, 'fixer', stricter(), proposer=COACH, base=SkillRef(SHARED, 1),
-                                    reason=Reason(RUN, 'no_go', 'The gate caught an untested change.'),
-                                    expected_case='slug-cut-bug', made_with=MadeWith(SONNET, 'coach-prompt/2'))
+        propose_as_coach(self.skills)
         self.skills.record_benchmark(WS, CONN, 'fixer', 1, GAINED, PERSON)
         self.skills.accept_version(WS, CONN, 'fixer', 1, PERSON)
 
@@ -82,12 +72,9 @@ class Env:
 
 @pytest.fixture
 def env(monkeypatch: pytest.MonkeyPatch) -> Iterator[Env]:
-    with _api():
-        client = create_table()
-        monkeypatch.setenv('ENGINEERING_AGENTS', 'on')
-        monkeypatch.setenv('ENGINEERING_TABLE', TABLE)
-        with patch('shared.aws.get_dynamodb_client', return_value=client):
-            yield Env(client, SkillStore(client, TABLE))
+    """The reads' tables, with the readers' helpers."""
+    with engineering_skills(monkeypatch) as table:
+        yield Env(*table)
 
 
 def test_an_administrator_reads_the_shared_roles_their_history_and_a_versions_diff(lambda_context: Any,
@@ -124,7 +111,7 @@ def test_a_connection_reads_its_own_versions_with_the_benchmark_measured_apart_f
     assert (line['proposed_by_kind'], line['expected_case'], line['benchmark']['claimed']) == ('agent', 'slug-cut-bug', None)
     assert line['benchmark']['measured'] == {'before': 0.5, 'after': 1.0, 'passed': True, 'gained': True,
                                              'failure_case': 'slug-cut-bug', 'cases': 2, 'reasons': list(GAINED.reasons),
-                                             'by': 'admin-sub', 'at': line['benchmark']['measured']['at']}
+                                             'run_ref': '', 'by': 'admin-sub', 'at': line['benchmark']['measured']['at']}
     assert [event['event'] for event in line['events']] == ['accepted', 'benchmarked']
 
 
@@ -209,7 +196,8 @@ def test_the_scorecards_compare_the_versions_asked_for_on_the_connections_own_ro
     status, body = _call(lambda_context, 'GET', SCORES, query={'connection': CONN, 'versions': '2,1'})
     assert (status, body['versions'], [c['label'] for c in body['cards']]) == (200, [2, 1], ['fixer@2', 'fixer@1'])
     assert body['cards'][0] == {
-        'version': 2, 'source': 'shipped', 'label': 'fixer@2', 'runs': 1, 'pass_rate': 0.75, 'tasks_done': 6, 'tasks_failed': 1,
+        # (fixer ships as version 1: a version 2 asked for by number never shipped, and its card says so)
+        'version': 2, 'source': 'not_shipped', 'label': 'fixer@2', 'runs': 1, 'pass_rate': 0.75, 'tasks_done': 6, 'tasks_failed': 1,
         'needs_human': 1, 'reposts': 0, 'review_rounds': 2, 'attempts': 4, 'cost_usd': 0.75, 'seconds': 600,
         'more': False, 'since': '2026-11-13T08:00:00Z', 'until': '2026-11-13T09:00:00Z'}
     other = _call(lambda_context, 'GET', SCORES, query={'connection': OTHER, 'versions': '2'})[1]

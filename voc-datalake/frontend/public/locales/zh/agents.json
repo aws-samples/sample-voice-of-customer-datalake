@@ -962,12 +962,13 @@
     "byCoach": "教练（{{who}}）",
     "proposedBy": "提议者：{{who}}，{{at}}",
     "notMeasured": "未记录基准测试。",
-    "measured": "实测",
+    "measured": "管理员的记录",
     "rates": "通过率 {{before}} → {{after}}",
     "benchmarkPassed": "通过",
     "benchmarkFailed": "未通过",
     "failureCase": "失败用例 {{name}}",
     "measuredBy": "记录者：{{who}}，{{at}}",
+    "runRef": "运行 {{ref}}",
     "claimed": "声明",
     "claimedHint": "由提议者给出，未经测量",
     "event": {
@@ -1016,6 +1017,60 @@
     "backToHistory": "返回历史记录",
     "versionMissing": "此范围内没有版本 {{version}}。请返回历史记录并选择其他版本。",
     "versionFailed": "无法加载该版本。请稍后重试。",
+    "actions": {
+      "label": "对此版本的操作",
+      "reason": "原因（可选）",
+      "noCurrent": "无当前版本",
+      "sharedVersion": "共享 v{{version}}",
+      "connectionVersion": "此连接的 v{{version}}",
+      "writtenOn": "基于 {{version}} 编写。",
+      "baseNotInUse": "它的基础版本不是当前正在使用的版本（{{current}}）：接受将被拒绝。请基于正在使用的版本重新提议。",
+      "changed": "自你打开后它已更改。页面已重新加载：请关闭此窗口，检查该版本后重试。",
+      "refused": "操作被拒绝：{{message}}",
+      "held": {
+        "unmeasured": "无法接受：只有当管理员对一次基准测试运行的记录（按其输入的通过率、用例和结论）显示它已通过且通过率上升、并指明其预期用例后，教练的版本才会被接受。请先记录基准测试。",
+        "failed": "无法接受：基准测试运行的记录显示未通过，因此教练的版本永远不会被接受。新的提议来自新的失败，或者将修复写成你自己的版本。",
+        "noGain": "无法接受：在基准测试运行的记录中，通过率没有上升，或未指明其预期用例，因此教练的版本永远不会被接受。"
+      },
+      "accept": {
+        "button": "接受",
+        "title": "接受版本 {{version}}？",
+        "message": "此范围的当前版本将从 {{from}} 变为 {{to}}。",
+        "confirm": "接受版本"
+      },
+      "reject": {
+        "button": "拒绝",
+        "title": "拒绝版本 {{version}}？",
+        "message": "版本 {{version}} 将以已拒绝状态保留在历史记录中。当前版本不变。",
+        "confirm": "拒绝版本"
+      },
+      "rollback": {
+        "button": "回滚到此版本",
+        "title": "回滚到版本 {{version}}？",
+        "message": "一个恢复版本 {{version}} 的新版本将取代 {{from}} 成为当前版本。所有版本都保留在历史记录中。",
+        "confirm": "回滚"
+      },
+      "benchmark": {
+        "button": "记录基准测试",
+        "title": "记录版本 {{version}} 的基准测试",
+        "message": "这是管理员对一次基准测试运行的记录：通过率、用例和结论按你输入的内容记录，此处不会进行测量。它只记录一次，之后不会更改。对于教练的版本，失败用例必须是其预期用例，并且接受需要通过率上升。",
+        "runRef": "运行的引用（可选：ID 或链接）",
+        "confirm": "记录基准测试",
+        "before": "之前的通过率（%）",
+        "after": "之后的通过率（%）",
+        "cases": "用例（每行一个或用逗号分隔）",
+        "passed": "门禁已通过",
+        "reasons": "原因（每行一个）",
+        "failureCase": "失败用例",
+        "invalid": {
+          "rates": "请将两个通过率填写为 0 到 100 之间的数字。",
+          "cases": "每个用例只填写一次，使用小写字母、数字和连字符。",
+          "reasons": "请至少填写一个原因，每行一个。",
+          "failureCase": "失败用例必须是其中一个用例。",
+          "regressed": "已通过的运行，之后的通过率不能低于之前：请将其记录为未通过，或检查通过率。"
+        }
+      }
+    },
     "scores": {
       "title": "记分卡",
       "hint": "每个版本在此连接上最近几次运行中的表现。通过率是已完成任务占已结束任务的比例。",
@@ -1043,6 +1098,7 @@
       "sourceColumn": "编号来源",
       "source": {
         "shipped": "随附技能",
+        "not_shipped": "从未随附：没有会话运行过这个编号",
         "shared": "共享技能",
         "connection": "此连接的技能",
         "unknown": "未知"

@@ -17,6 +17,70 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.08.00] - 2026-11-15
+
+Autonomous engineering agents: administrators accept, reject and roll back the agents' skill versions and record a
+proposal's benchmark, from Agents → Skills. Off by default (`-c engineeringAgents=true`), and no fixed cost.
+
+### Added
+
+- **The actions** (`lambda/engineering/skills/actions.py`; docs/autonomous-engineering.md, "The administrators'
+  actions"): `POST /agents/engineering/skills/<role>/versions/<n>/accept`, `…/reject`, `…/rollback` and `…/benchmark`
+  (`?connection=`, empty for the shared skill), for an administrator acting for themselves (a delegated MCP credential
+  gets 403; 404 while the module is off). Each runs the skills store's own function and transaction
+  (`accept_version`, `reject_version`, `roll_back_to`, `record_benchmark`), takes what the screen showed (the
+  version's status, the scope's current version) and answers 409 "it changed since you opened it" when it moved, 400
+  for a body off its shape, and 409 or 400 in the store's words for its refusals (a coach's version without a
+  record of a benchmark run in which the pass rate rose, naming its expected case, a second benchmark, a benchmark naming another
+  case, a rollback to a version never accepted, a base no longer current). A transaction that loses its race to
+  another administrator's change is said as "it changed since you opened it" too, so the screen reads it again. A
+  rollback's current version is checked by the store and held as its transaction's condition (`roll_back_to`'s new
+  `expected_current`). An optional reason, credential-shaped strings redacted, is kept on the action's log row
+  (`accept_version` and `record_benchmark` take one too). Each answers the version as it is now, its event and its
+  announcement; a failed write is 503 "could not be saved".
+- **The benchmark is an administrator's record of a benchmark run (its rates, cases and verdict as they enter
+  them)**, linked to no measurement, with an optional reference to the run (`run_ref`: an id or a link, at most 300
+  characters); it and each reason are redacted. `BenchmarkRun.gained` (what a coach's acceptance needs) holds only
+  when the record passed and the pass rate rose, naming its expected case: equal rates are no gain. A new record whose
+  verdict is passed but whose pass rate fell is refused where it is written (`check_recordable`, in
+  `record_benchmark`); a row written before still reads, shown as recorded, and never lets a version be accepted.
+- TENETS.md, tenet 6's row: the Agents API's writes on the skills' partitions, kept create-only by the code alone.
+- **The announcements** (`skill.accepted`, `skill.rolled_back`) are kept on the action's create-only log row (id,
+  type, line) and answered with `published: false`: the Agents API is not one of the engineering bus's publishers,
+  and that policy is not widened here. Publishing them is planned.
+- **IAM**: the Agents API's role gets `dynamodb:PutItem`, `dynamodb:UpdateItem` and `dynamodb:ConditionCheckItem` on
+  `voc-engineering`, keyed to the skills' `WS#*#SKILL#*` partitions (`dynamodb:LeadingKeys`, with `Null` `false`
+  beside it), what the store's transactions use; no delete; the key through DynamoDB as before. Nothing while the
+  module is off.
+- **Agents → Skills**: on a version's detail, Accept, Reject, Record benchmark and Roll back to this version, each
+  behind an approval card that says what changes (from which version to which, the shared skill's version for a
+  connection with none of its own, the change's summary, its base flagged when it is not the version in use, the
+  record of a coach's benchmark run) with an optional reason; Accept off (focusable, its reason read out) for a
+  coach's version without a record in which the pass rate rose, naming its expected case; the benchmark form, saying it records what the administrator
+  enters, prefilled with a coach's expected case, with an optional reference to the run; a 409 reads the screen
+  again and says so; in all nine locales. The dev mock answers the actions.
+
+### Fixed
+
+- A scorecard asked for by a number the role never shipped is labelled "never shipped" (`not_shipped`), not shipped.
+
+### Tests
+
+- The routes on moto: each action's happy path, 404 off, 403 for a plain user and an administrator's MCP credential,
+  400 for each body or path off its shape, 409 when the status or the current version moved (nothing written), a
+  moved base, a rejection losing its race to an acceptance (409, it changed), a coach's version refused without a
+  record in which the pass rate rose, after a failed one and with equal rates, a second benchmark and one naming another case
+  refused, a passed verdict whose rate fell refused, a rollback to a version never accepted refused, a connection's
+  scope touched alone, the reason, the benchmark's reasons and its run reference redacted, the announcement on its
+  log row.
+- CDK: the write statement exactly, and nothing with the module off. The web app: the approval cards, Accept held
+  back, the benchmark form, the 409 path and another refusal.
+
+### Upgrade notes
+
+- With the module on, the Agents API's role gains writes on the skills' partitions of `voc-engineering`. Nothing to
+  migrate.
+
 ## [7.07.00] - 2026-11-15
 
 Autonomous engineering agents: administrators read the agents' skill versions and their scorecards, read only, through

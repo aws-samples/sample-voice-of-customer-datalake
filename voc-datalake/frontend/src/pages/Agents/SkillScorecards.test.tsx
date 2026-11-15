@@ -50,6 +50,12 @@ describe('Agents → Skills: a role\'s scorecards', () => {
     expect(within(screen.getByRole('row', { name: /^Version 1/ })).getAllByRole('cell')[0]).toHaveTextContent('Not known')
   })
 
+  it('labels a number asked for that never shipped as such, never as shipped', async () => {
+    renderScores({ [DEFAULT]: () => ({ scope_known: false, versions: [7], cards: [card(7, { source: 'not_shipped', runs: 0 })] }) })
+    const row = await screen.findByRole('row', { name: /^Version 7/ })
+    expect(within(row).getAllByRole('cell')[0]).toHaveTextContent('Never shipped: no session ran this number')
+  })
+
   it('reads the versions a person names', async () => {
     renderScores({
       [DEFAULT]: () => ({ versions: [2], cards: [card(2)] }),

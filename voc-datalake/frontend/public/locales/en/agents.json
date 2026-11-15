@@ -908,12 +908,13 @@
     "byCoach": "the coach ({{who}})",
     "proposedBy": "Proposed by {{who}}, {{at}}",
     "notMeasured": "No benchmark recorded.",
-    "measured": "Measured",
+    "measured": "Administrator’s record",
     "rates": "pass rate {{before}} → {{after}}",
     "benchmarkPassed": "passed",
     "benchmarkFailed": "failed",
     "failureCase": "failure case {{name}}",
     "measuredBy": "recorded by {{who}}, {{at}}",
+    "runRef": "run {{ref}}",
     "claimed": "Claimed",
     "claimedHint": "given by the proposer, not measured",
     "event": {
@@ -962,6 +963,60 @@
     "backToHistory": "Back to the history",
     "versionMissing": "Version {{version}} is not in this scope. Go back to the history and pick another.",
     "versionFailed": "The version could not be loaded. Try again in a moment.",
+    "actions": {
+      "label": "Actions on this version",
+      "reason": "Reason (optional)",
+      "noCurrent": "no current version",
+      "sharedVersion": "shared v{{version}}",
+      "connectionVersion": "this connection’s v{{version}}",
+      "writtenOn": "Written on {{version}}.",
+      "baseNotInUse": "Its base is not the version in use now ({{current}}): accepting it will be refused. Propose it again on the version in use.",
+      "changed": "It changed since you opened it. The screen has read it again: close this, check the version and try again.",
+      "refused": "The action was refused: {{message}}",
+      "held": {
+        "unmeasured": "Accept is off: the coach’s version is accepted only once an administrator’s record of a benchmark run (its rates, cases and verdict as they enter them) shows it passed and the pass rate rose, naming its expected case. Record the benchmark first.",
+        "failed": "Accept is off: the administrator’s record of its benchmark run says it failed, so the coach’s version is never accepted. A new proposal comes from a new failure, or write the fix as your own version.",
+        "noGain": "Accept is off: in the administrator’s record of its benchmark run, the pass rate did not rise, or its expected case is not named, so the coach’s version is never accepted."
+      },
+      "accept": {
+        "button": "Accept",
+        "title": "Accept version {{version}}?",
+        "message": "The current version of this scope moves from {{from}} to {{to}}.",
+        "confirm": "Accept version"
+      },
+      "reject": {
+        "button": "Reject",
+        "title": "Reject version {{version}}?",
+        "message": "Version {{version}} stays in the history, marked rejected. The current version does not change.",
+        "confirm": "Reject version"
+      },
+      "rollback": {
+        "button": "Roll back to this version",
+        "title": "Roll back to version {{version}}?",
+        "message": "A new version restoring version {{version}} becomes current in place of {{from}}. Every version stays in the history.",
+        "confirm": "Roll back"
+      },
+      "benchmark": {
+        "button": "Record benchmark",
+        "title": "Record the benchmark of version {{version}}",
+        "message": "This is an administrator’s record of a benchmark run: its rates, cases and verdict as you enter them; nothing here measures them. It is recorded once and never changed. For the coach’s version, the failure’s case must be its expected case, and Accept needs a pass rate that rose.",
+        "runRef": "Reference to the run (optional: an id or a link)",
+        "confirm": "Record benchmark",
+        "before": "Pass rate before (%)",
+        "after": "Pass rate after (%)",
+        "cases": "Cases (one per line or comma)",
+        "passed": "The gate passed",
+        "reasons": "Reasons (one per line)",
+        "failureCase": "Failure’s case",
+        "invalid": {
+          "rates": "Give both pass rates as numbers from 0 to 100.",
+          "cases": "List each case once, in lower-case letters, digits and hyphens.",
+          "reasons": "Give at least one reason, one per line.",
+          "failureCase": "The failure’s case must be one of the cases.",
+          "regressed": "A run that passed cannot have a lower pass rate after than before: record it as failed, or check the rates."
+        }
+      }
+    },
     "scores": {
       "title": "Scorecards",
       "hint": "How each version did over its latest runs on this connection. The pass rate is tasks done over the tasks it ended.",
@@ -989,6 +1044,7 @@
       "sourceColumn": "Number of",
       "source": {
         "shipped": "Shipped skill",
+        "not_shipped": "Never shipped: no session ran this number",
         "shared": "Shared skill",
         "connection": "This connection’s skill",
         "unknown": "Not known"

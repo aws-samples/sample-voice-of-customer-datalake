@@ -2165,10 +2165,11 @@ benchmark gate on a coach's version ([Evaluation](#evaluation)), the coach that 
 (`voc-datalake/lambda/engineering/agent_memory/`), and the learning loop with its scorecards
 (`voc-datalake/lambda/engineering/learning/`), which a run's end starts: it takes the run's failures to the coach,
 drafts lessons in memory and writes a scorecard row per skill version, and since 7.07.00 the administrators' read
-side of the skills and the scorecards (the routes and Agents → Skills, [below](#the-administrators-reads)). Still to
-come: the harness reading the skills store and the recall, people's reactions on the host as an input, the
-administrators' actions on a version (accept, reject, roll back, promote, record a benchmark, seed) as routes and
-buttons, and the people's routes and screens (phases 4 and 5).
+side of the skills and the scorecards (the routes and Agents → Skills, [below](#the-administrators-reads)), and
+since 7.08.00 the administrators' actions on a version: accept, reject, roll back and record a benchmark
+([below](#the-administrators-actions)). Still to come: the harness reading the skills store and the recall, people's
+reactions on the host as an input, proposing, promoting and seeding from a route, publishing the announcements, and
+the people's routes and screens (phases 4 and 5).
 
 **Skills, visibly and reversibly.** An agent's skill (instructions, examples, tool policy, model, harness) is
 versioned. Each version keeps its diff, why it changed (the run, the failure, the person's comment), the benchmark
@@ -2227,8 +2228,9 @@ a seed never writes over a history, and a seed racing another is refused by the 
 store numbers it (`<role>@1`, whatever the shipped number: the coordinator ships as version 2). The coach proposes
 only on a version the store holds, so this is how a role's first version, a person's, comes from what ships.
 Not yet: the harness reading the store (its agents still run the shipped record), the route that calls the seed, a
-run recording the versions it used, the routes that write (propose, accept, reject, roll back, promote, record a
-benchmark), the step that runs the benchmark for a proposal.
+run recording the versions it used, the routes that propose and promote (accepting, rejecting, rolling back and
+recording a benchmark have routes since 7.08.00, [below](#the-administrators-actions)), the step that runs the
+benchmark for a proposal.
 
 <a id="the-administrators-reads"></a>**The administrators' reads** (7.07.00, `voc-datalake/lambda/engineering/skills/views.py`,
 the Agents API's routes, the web app's Agents → Skills): read only, for an administrator acting for themselves (403
@@ -2246,7 +2248,8 @@ for anyone else, a delegated MCP credential included; no MCP tool), 404 while th
   proposed it (`proposed_by`, `proposed_by_kind`: `agent` for the coach) and when, who accepted or rejected it and
   when, the version a rollback restores, its base (`{shared, version}`: the scope's own or the shared skill's, never
   another connection's), `expected_case`, its benchmark (`{claimed, measured}`: the rates the proposer gave, a claim
-  only, apart from the benchmark an administrator recorded, the rates readers trust; the model's
+  only, apart from an administrator's record of a benchmark run, its rates, cases and verdict as they entered them
+  (with their optional `run_ref`), the rates acceptance goes by; the model's
   `SkillVersion.trusted_rates` property picks the same, and is not a field of the answer) and its events from the
   `LOG#` rows (accepted, rejected with its comment, rolled back, benchmarked: who and when; `SkillStore.events`, one
   Query per range of at most 100 version numbers, so a page whose versions sit far apart is read in a few ranges,
@@ -2267,14 +2270,15 @@ for anyone else, a delegated MCP credential included; no MCP tool), 404 while th
   screen says it in words). A scorecard number is never one of the history's. By default the role's shipped version
   and the shipped ones before it (at most 5; none for a role that ships no skill), never mixed with the store's
   numbers. Once the harness reads the store, its labels must carry the scope for a card to name another source.
-  Each card: its source, the runs read, the
+  A number asked for that the role never shipped (above its shipped version, or a role that ships none) is labelled
+  `not_shipped` (7.08.00), never shipped. Each card: its source, the runs read, the
   pass rate, tasks done, failed and needing a person, re-posts, review rounds, attempts, cost, session seconds,
   whether older runs were left out (`more`) and the time they span.
 
 **A promoted version's source is never answered**: the reads leave `promoted_from` out entirely. The events' Query
 filters on the readable events (`READABLE_EVENTS`), so DynamoDB drops the `LOG#<n>#promoted_from` row before it
 answers, and the store drops any event not among them again in code before it answers; only `SkillStore.promotion_source` reads it,
-and no route calls it yet. **The grant**: none new. The Agents API's role already has `dynamodb:GetItem` and
+and no route calls it yet. **The grant** of the reads: none new (the actions' write grant is below). The Agents API's role already has `dynamodb:GetItem` and
 `dynamodb:Query` on the whole `voc-engineering` table for the run views (with the stack's key through DynamoDB,
 `AgentsTablesKey`), which covers the skills' (`WS#*#SKILL#*`) and the scorecards' (`WS#*#SCORE#*`) partitions; a
 narrower `dynamodb:LeadingKeys` statement beside it would add nothing, so none is added (pinned in
@@ -2285,7 +2289,67 @@ history a page at a time (each version's status badge, summary, why, who and whe
 claimed, its events), a version's detail with its diff as plain lines added and removed (the record's text is shown
 as text, never read as HTML) and its whole record, and a role's scorecards on a connection in a table (up to 10
 versions named by number). The scope, the role and the version are view options in the address (`?tab=skills&
-connection=&role=&version=`). No action is offered on a version.
+connection=&role=&version=`). The actions on a version are [below](#the-administrators-actions) (7.08.00).
+
+<a id="the-administrators-actions"></a>**The administrators' actions** (7.08.00,
+`voc-datalake/lambda/engineering/skills/actions.py`, the Agents API's routes, the version's detail in Agents → Skills):
+for an administrator acting for themselves (403 for anyone else, a delegated MCP credential included), 404 while the
+module is off. Each is the skills store's own function and transaction (its checks are never re-implemented): the
+route checks the body (400), then what the screen showed against what is stored (409, "it changed since you opened
+it"), takes an optional `reason` (at most 2,000 characters, its credential-shaped strings redacted, kept on the
+action's `LOG#` row), and answers `{connection, role, version, event, announcement}`: the version as it is now, the
+action's log event and the announcement. The connection is the query's `?connection=` (empty: the shared skill), and
+every key is that scope's, so an administrator acts on one scope's partition at a time.
+
+- `POST /agents/engineering/skills/<role>/versions/<n>/accept` `{expected_status, expected_current, reason?}`:
+  `SkillStore.accept_version` (its base still current, checked before and in its transaction; a coach's version only
+  once an administrator's record of a benchmark run on it says it passed and the pass rate rose, naming its
+  `expected_case`, else 409 saying what
+  is missing). `expected_status` is `proposed` (anything else is 400).
+- `…/reject` `{expected_status, reason?}`: `reject_version`; the version stays, marked rejected.
+- `…/rollback` `{expected_current, reason?}`: `roll_back_to` version `<n>`, an earlier accepted version of the same
+  scope (else 409), as a new version current at once; answered as that new version.
+- `…/benchmark` `{expected_status, before, after, cases, passed, reasons, failure_case, run_ref?, reason?}`:
+  `record_benchmark`, once (a second is 409): **an administrator's record of a benchmark run (its rates, cases and
+  verdict as they enter them)**, linked to no measurement here; `run_ref`, optional, is their reference to the run (an
+  id or a link, at most 300 characters), and it and each of the reasons are redacted as a reason is. The failure's
+  case rules above hold (a coach's version takes only its `expected_case`, else 400). The model's own rules
+  (`BenchmarkRun`): a new record whose verdict is passed but whose pass rate fell (`after` below `before`) is refused
+  where it is written (400; `check_recordable`, called by `record_benchmark`, so every writer inherits it), while a
+  row written before reads as recorded; and what a coach's acceptance needs (`gained`) is a passed verdict in which
+  the pass rate rose (`after` above `before`), naming its expected case: equal rates, or a fallen rate in an old row,
+  never let a version be accepted.
+
+A 409 that starts "it changed since you opened it" means what the screen showed moved, whether the action's own
+read saw it or its transaction's condition did (another administrator's change landing between the two): the screen
+reads it again. Any other 409 is the store's own refusal, said in its words. A rollback hands the current version the person saw to
+`roll_back_to` (`expected_current`), which compares it with the one it reads and holds that one as its transaction's
+condition, so a version accepted meanwhile is never replaced silently.
+
+**The announcements** (`skill.accepted`, `skill.rolled_back`; a rejection and a benchmark announce nothing, as the
+store has it): the Agents API's role is not one of the engineering bus's publishers (the bus policy denies
+`events:PutEvents` to every principal but the board, the supervisor and the agent roles, each with its own source),
+and the bus lives in another stack than the API, so publishing would mean widening that policy across stacks. It is
+not widened: the store keeps each announcement (its id, type and line) on the action's create-only `LOG#` row, the
+answer returns it with `published: false`, and publishing it from the API's own source (`voc.engineering/api`, which
+`bus/senders.py` already allows for these types) is planned. **The grant**: one statement on the Agents API's role
+(`SkillDecisions`): `dynamodb:PutItem`, `dynamodb:UpdateItem` and `dynamodb:ConditionCheckItem` on `voc-engineering`
+with `dynamodb:LeadingKeys` `WS#*#SKILL#*` (`ForAllValues:StringLike`, beside `Null` `false` so a request naming
+no key never matches it vacuously), exactly what the store's writes use (a
+transaction is authorised by its items' actions); no delete; the key through DynamoDB is `AgentsTablesKey`'s;
+nothing while the module is off (pinned in `lib/stacks/api-engineering-reads.test.ts`). **The screens**: on a
+version's detail, Accept and Reject (a proposed version), Record benchmark (a proposed version with none) and Roll
+back to this version (an earlier accepted one, while the scope has a current version), each behind an approval card
+that says what changes (from which version to which, naming the shared skill's version a connection with none of its
+own runs, the change's summary, its base, flagged when it is not the version in use, and for a coach's version the
+record of its benchmark run), with an optional reason. Accept stays off (focusable, its reason read out) for a
+coach's version without an administrator's record of a benchmark run in which the pass rate rose, naming its expected
+case. The
+benchmark form, which says it records what the administrator enters, takes the pass rates in percent, the cases, the
+verdict, its reasons, the failure's case, prefilled with a coach's `expected_case`, and an optional reference to the
+run. A 409 reads the screen again
+and says it changed since it was opened. Still planned: proposing, promoting and seeding from a route, and publishing
+the announcements.
 
 **The coach.** When an agent fails (an error, a timeout, a NO-GO, a review finding it keeps repeating, a person
 rejecting its pull request or editing it heavily), the coach reads the conversation, the task, the outputs and the

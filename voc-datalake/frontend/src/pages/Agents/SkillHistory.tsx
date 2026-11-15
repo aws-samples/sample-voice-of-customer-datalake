@@ -52,6 +52,7 @@ export function BenchmarkLines({ benchmark }: Readonly<{ benchmark: SkillVersion
           </span>
           {measured.failure_case !== '' && <> · {t('skills.failureCase', { name: measured.failure_case })}</>}
           {' '}<span className="text-muted">{t('skills.measuredBy', { who: measured.by, at: format.at(measured.at) })}</span>
+          {measured.run_ref !== '' && <> · <span className="break-all">{t('skills.runRef', { ref: measured.run_ref })}</span></>}
         </li>
       )}
       {claimed !== null && (

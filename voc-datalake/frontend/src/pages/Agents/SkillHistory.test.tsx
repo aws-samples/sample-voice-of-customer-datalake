@@ -48,7 +48,7 @@ describe('Agents → Skills: a role\'s history', () => {
   it('shows a measured benchmark apart from a proposer\'s claim, labelled as each', async () => {
     renderHistory({ [FIRST_PAGE]: () => ({ current_version: 1, next_page: null, versions: [
       line(2, { benchmark: { measured: MEASURED, claimed: { before: 0.4, after: 0.9 } } })] }) })
-    expect(await screen.findByText('Measured')).toBeInTheDocument()
+    expect(await screen.findByText('Administrator’s record')).toBeInTheDocument()
     expect(screen.getByText('Claimed')).toBeInTheDocument()
     expect(screen.getByText('given by the proposer, not measured')).toBeInTheDocument()
     expect(screen.getByText(/pass rate 50% → 100%/)).toBeInTheDocument()

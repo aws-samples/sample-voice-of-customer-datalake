@@ -37,9 +37,9 @@ export type SkillRoleLine = z.output<typeof RoleSchema>
 const EventSchema = z.object({ event: text, by: text, at: text, comment: text })
 const MeasuredSchema = z.object({
   before: z.number(), after: z.number(), passed: z.boolean(), gained: z.boolean().catch(false), failure_case: text,
-  cases: count, reasons: z.array(z.string()).catch([]), by: text, at: text,
+  cases: count, reasons: z.array(z.string()).catch([]), run_ref: text, by: text, at: text,
 })
-const LineSchema = z.object({
+export const LineSchema = z.object({
   version: z.number().int().positive(),
   status: text,
   summary: text,
@@ -88,8 +88,9 @@ const DetailSchema = LineSchema.extend({
 })
 export type SkillVersionDetail = z.output<typeof DetailSchema>
 
-/** Where a scorecard's version number comes from (views.py SCORE_SOURCE: only `shipped` today). */
-const SCORE_SOURCES = ['shipped', 'shared', 'connection'] as const
+/** Where a scorecard's version number comes from (views.py score_source: `shipped`, or `not_shipped` for a number
+ * no shipped skill of the role had). */
+const SCORE_SOURCES = ['shipped', 'not_shipped', 'shared', 'connection'] as const
 const CardSchema = z.object({
   version: z.number().int().positive(),
   // (a source the page does not know is shown as unknown, never as one it is not)
@@ -158,6 +159,10 @@ const scorecardsPath = (connection: string, role: SkillRole, versions: readonly 
   `/agents/engineering/scorecards/${encodeURIComponent(role)}?${query(connection, versions.length === 0 ? {} : { versions: versions.join(',') })}`
 
 export const engineeringSkillsKeys = {
+  /** Every skills read (what an action makes stale). */
+  all: () => ['engineering-skills'] as const,
+  /** Every scorecards read. */
+  allScorecards: () => ['engineering-scorecards'] as const,
   roles: (connection: string) => ['engineering-skills', connection] as const,
   history: (connection: string, role: SkillRole) => ['engineering-skills', connection, role] as const,
   version: (connection: string, role: SkillRole, version: number) => ['engineering-skills', connection, role, version] as const,

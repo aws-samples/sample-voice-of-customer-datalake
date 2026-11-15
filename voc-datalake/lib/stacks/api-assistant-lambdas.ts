@@ -24,6 +24,7 @@ import { ENGINEERING_WORKSPACE_REPORTS_KEYS } from './core-buckets';
 import { grantInvokeByName } from '../utils/worker-lambda';
 import { engineeringAgentsEnabled, engineeringParameterArns, engineeringParameterPrefix } from './engineering-broker';
 import { engineeringRunCaps } from './engineering-start';
+import { SKILL_PARTITIONS } from './engineering-runtime';
 
 /**
  * The assistant's run ceiling: the Lambda timeout AND the /chat/stream
@@ -71,7 +72,8 @@ export interface AssistantLambdas {
 /**
  * With `-c engineeringAgents=true`, the agents API's reads of an engineering run (`/agents/engineering/<run_id>/…`,
  * lambda/engineering/views.py): GetItem and Query on voc-engineering (a run's rows, and the spend ledger's month
- * partitions for `GET /agents/engineering/spend`), never a write; `lambda:InvokeFunction` on the board's function
+ * partitions for `GET /agents/engineering/spend`), and its one write, the skills' partitions (`SkillDecisions`: an
+ * administrator's actions on a skill version); `lambda:InvokeFunction` on the board's function
  * for a person's board actions (its own role writes them) and on the start function for a run's start (never the
  * runtime's own function), and GetObject on the workspace
  * bucket's reports only, with `kms:Decrypt` on the stack's key through S3 alone (the table's key comes with the role's
@@ -87,6 +89,21 @@ function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, 
     throw new Error('engineeringAgents needs VocCoreStack\'s voc-engineering table and voc-eng-workspace bucket');
   }
   engineeringTable.grant(role, 'dynamodb:GetItem', 'dynamodb:Query');
+  // An administrator's actions on a skill version (7.08.00, lambda/engineering/skills/actions.py through the skills
+  // store): accept, reject, roll back, record a benchmark. Exactly what the store's writes use, on the skills'
+  // partitions only: UpdateItem (a version's status, the HEAD's current version and its counter's ADD), PutItem (a
+  // create-only version or log row) and ConditionCheckItem (the shared HEAD an acceptance checks); a transaction is
+  // authorised by its items' own actions. No delete. The key through DynamoDB is AgentsTablesKey's.
+  role.addToPolicy(new iam.PolicyStatement({
+    sid: 'SkillDecisions',
+    actions: ['dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:ConditionCheckItem'],
+    resources: [engineeringTable.tableArn],
+    // (Null false: a request that names no partition key never matches ForAllValues vacuously)
+    conditions: {
+      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [SKILL_PARTITIONS] },
+      Null: { 'dynamodb:LeadingKeys': 'false' },
+    },
+  }));
   // A person's board actions go through the board's function (engineering/board/api.py person_request), invoked
   // directly: its own role writes the change, and hands the events back for this role to publish as the person. This
   // role writes no row of the table. The agent roles may invoke the board only through its function URL

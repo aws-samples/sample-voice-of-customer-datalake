@@ -1358,7 +1358,7 @@ function handleDomainModules(req, res, url) {
     || handleAlertRoutes(req, res, url, send, shared)
     || handleEmailInboxRoutes(req, res, url, send, shared)
     || handlePlanRoutes(req, res, url, send, shared)
-    || handleEngineeringSkillRoutes(req, res, url, send)
+    || handleEngineeringSkillRoutes(req, res, url, send, shared)
     || handleEngineeringRunRoutes(req, res, url, send, shared)
     || handleDecisionRoutes(req, res, url, send, shared)
     || handleRadarRoutes(req, res, url, send, shared)

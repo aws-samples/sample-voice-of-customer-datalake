@@ -41,8 +41,9 @@ const firstDiff = (lines, examples) => ({
 const why = (comment, run = '', failure = '') => ({ run_id: run, failure, comment });
 const event = (name, by, at, comment = '') => ({ event: name, by, at, comment });
 const measured = (before, after, passed, failureCase, at) => ({
-  before, after, passed, gained: passed && failureCase !== '', failure_case: failureCase, cases: 4,
-  reasons: [passed ? `${failureCase}, the failure’s case, gained` : 'pagination-review regressed'], by: 'admin-demo', at,
+  before, after, passed, gained: passed && failureCase !== '' && after > before, failure_case: failureCase, cases: 4,
+  reasons: [passed ? `${failureCase}, the failure’s case, gained` : 'pagination-review regressed'],
+  run_ref: passed ? 'bench-run-0412' : '', by: 'admin-demo', at,
 });
 
 function version(n, fields) {
@@ -178,7 +179,9 @@ function scorecards(connection, role, raw) {
     const label = `${role}@${n}`;
     const card = connection === 'storefront' ? (CARDS[label] ?? EMPTY_CARD) : EMPTY_CARD;
     const ended = card.tasks_done + card.tasks_failed + card.needs_human;
-    return { version: n, source: 'shipped', label, ...card, pass_rate: ended === 0 ? null : card.tasks_done / ended,
+    // (a number no shipped skill of the role had is labelled so, never as shipped: views.py score_source)
+    const source = n <= shipped ? 'shipped' : 'not_shipped';
+    return { version: n, source, label, ...card, pass_rate: ended === 0 ? null : card.tasks_done / ended,
       more: false, since: card.runs ? daysAgo(14) : '', until: card.runs ? daysAgo(1) : '' };
   });
   return [200, { connection, role, source: 'shipped', scope_known: false, versions: numbers, cards }];
@@ -203,8 +206,106 @@ function answer(url) {
     : detail(connection, role, decodeURIComponent(versions[2]));
 }
 
-export function handleEngineeringSkillRoutes(req, res, url, send) {
+// ── An administrator's actions (POST …/versions/<n>/accept|reject|rollback|benchmark; skills/actions.py) ──
+// The server's checks, in its words: what the screen showed (409 "it changed since you opened it"), a coach's version
+// accepted only after a benchmark that passed with a gain on its expected case, a benchmark recorded once naming that
+// case, a rollback only to an earlier accepted version. Each answers the version as it is now and its event.
+const ACTION_PATH = /^\/agents\/engineering\/skills\/([^/]+)\/versions\/([^/]+)\/(accept|reject|rollback|benchmark)$/;
+const CHANGED = 'it changed since you opened it';
+const MAX_REASON = 2000;
+const currentOf = (versions) => versions.filter((v) => v.status === 'accepted').at(-1)?.version ?? 0;
+const changed = (what) => [409, { error: `${CHANGED}: ${what}; read it again` }];
+
+function done(connection, role, version, name, reason) {
+  const at = new Date().toISOString();
+  const event = { event: name, by: 'sub-admin-demo', at, comment: reason };
+  version.events = [...version.events, event];
+  return [200, { connection, role, version: line(version), event, announcement: null }];
+}
+
+const ACTIONS = {
+  accept(versions, version, body) {
+    if (body.expected_current !== currentOf(versions)) return changed('the current version moved');
+    const measured = version.benchmark.measured;
+    if (version.proposed_by_kind === 'agent' && !(measured?.passed && measured.gained)) {
+      return [409, { error: `version ${version.version} is the coach's and has no passing benchmark: it is accepted only once its benchmark passed, with no regression and a gain on the failure's case` }];
+    }
+    Object.assign(version, { status: 'accepted', accepted_by: 'sub-admin-demo', accepted_at: new Date().toISOString() });
+    return 'accepted';
+  },
+  reject(_versions, version) {
+    Object.assign(version, { status: 'rejected', rejected_by: 'sub-admin-demo', rejected_at: new Date().toISOString() });
+    return 'rejected';
+  },
+  benchmark(_versions, version, body) {
+    if (version.benchmark.measured) return [409, { error: `version ${version.version}'s benchmark is recorded already: a version is measured once` }];
+    const okRates = [body.before, body.after].every((r) => typeof r === 'number' && r >= 0 && r <= 1);
+    if (!okRates || !Array.isArray(body.cases) || body.cases.length === 0 || !Array.isArray(body.reasons) || body.reasons.length === 0) {
+      return [400, { error: 'a recorded benchmark has both pass rates, 1-100 cases and its reasons' }];
+    }
+    if (body.passed === true && body.after < body.before) {
+      return [400, { error: 'a benchmark that passed has no lower pass rate after than before: record it as failed, or check the rates' }];
+    }
+    if (version.proposed_by_kind === 'agent' && body.failure_case !== version.expected_case) {
+      return [400, { error: `version ${version.version} is the coach's, proposed to gain on ${version.expected_case}: its benchmark names that failure's case, not ${body.failure_case || 'none'}` }];
+    }
+    version.benchmark = { ...version.benchmark, measured: { before: body.before, after: body.after, passed: body.passed === true,
+      // (a gain: passed, on a named failure's case, with a pass rate that rose: model.py BenchmarkRun.gained)
+      gained: body.passed === true && body.failure_case !== '' && body.after > body.before, failure_case: body.failure_case,
+      cases: body.cases.length, reasons: body.reasons, run_ref: typeof body.run_ref === 'string' ? body.run_ref : '',
+      by: 'sub-admin-demo', at: new Date().toISOString() } };
+    return 'benchmarked';
+  },
+};
+
+function rollBack(connection, role, versions, target, body, reason) {
+  const current = currentOf(versions);
+  if (body.expected_current !== current) return changed('the current version moved');
+  if (target.status !== 'accepted') return [409, { error: `version ${target.version} was never accepted: only an accepted version is restored` }];
+  if (target.version === current) return [409, { error: `version ${target.version} is current already` }];
+  const restored = version(versions.length + 1, {
+    ...Object.fromEntries(Object.entries(target).filter(([name]) => !['version', 'events'].includes(name))),
+    summary: `Rolled back to v${target.version}`, why: why(reason || `rolled back to v${target.version}`), restores: target.version,
+    base: { shared: connection === '', version: current }, benchmark: { claimed: null, measured: null }, proposed_at: new Date().toISOString(),
+  });
+  versions.push(restored);
+  return done(connection, role, restored, 'rolled_back', reason);
+}
+
+function act(connection, role, raw, name, body) {
+  const versions = SCOPES[connection]?.[role] ?? [];
+  const target = VERSION.test(raw) ? versions.find((v) => v.version === Number(raw)) : undefined;
+  if (!VERSION.test(raw)) return [400, { error: 'a version is a whole number from 1 to 999999' }];
+  if (!target) return [404, { error: 'no such skill version' }];
+  const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+  if (reason.length > MAX_REASON) return [400, { error: `reason is text of at most ${MAX_REASON} characters` }];
+  if (name === 'rollback') return rollBack(connection, role, versions, target, body, reason);
+  if (body.expected_status !== 'proposed') {
+    return [400, { error: 'expected_status is proposed: only a proposed version is accepted, rejected or benchmarked' }];
+  }
+  if (body.expected_status !== target.status) return changed(`version ${target.version} was ${body.expected_status} and is ${target.status} now`);
+  if (target.status !== 'proposed') return [409, { error: `version ${target.version} is ${target.status}` }];
+  const result = ACTIONS[name](versions, target, body);
+  return typeof result === 'string' ? done(connection, role, target, result, reason) : result;
+}
+
+function actionRoute(req, res, url, send, shared, match) {
+  const role = decodeURIComponent(match[1]);
+  const connection = scopeOf(url);
+  if (req.method !== 'POST') return send(405, { message: 'Method not allowed' });
+  if (!isAdmin()) return send(403, { message: 'Admin access required' });
+  if (!ROLES.includes(role)) return send(400, { error: `role is one of the agent roles: ${ROLES.join(', ')}` });
+  if (connection === null) return send(400, { error: 'connection is a connection id, or empty for the shared skills' });
+  return shared.collectJson(req, res, (body) => send(...act(connection, role, decodeURIComponent(match[2]), match[3], body ?? {})));
+}
+
+export function handleEngineeringSkillRoutes(req, res, url, send, shared) {
   const path = url.pathname;
+  const action = ACTION_PATH.exec(path);
+  if (action) {
+    actionRoute(req, res, url, send, shared, action);
+    return true;
+  }
   if (!SKILLS_PATH.test(path) && !HISTORY_PATH.test(path) && !SCORES_PATH.test(path)) return false;
   if (req.method !== 'GET') send(405, { message: 'Method not allowed' });
   else if (!isAdmin()) send(403, { message: 'Admin access required' });

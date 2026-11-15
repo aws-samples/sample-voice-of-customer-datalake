@@ -89,7 +89,7 @@ const RUN_REGISTRY = 'WS#*#RUNS';
  * drafts one (agent_memory/model.py: `WS#<ws>#AMEM#ROLE#<connection>#<role>`), and the scorecards, one create-only
  * row per version per run (learning/scorecard.py: `WS#<ws>#SCORE#<connection>#<role>#<version>`).
  */
-const SKILL_PARTITIONS = 'WS#*#SKILL#*';
+export const SKILL_PARTITIONS = 'WS#*#SKILL#*';
 const ROLE_MEMORY_PARTITIONS = 'WS#*#AMEM#ROLE#*';
 const SCORECARD_PARTITIONS = 'WS#*#SCORE#*';
 /**

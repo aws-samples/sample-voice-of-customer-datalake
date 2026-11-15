@@ -968,12 +968,13 @@
     "byCoach": "o coach ({{who}})",
     "proposedBy": "Proposta por {{who}}, {{at}}",
     "notMeasured": "Nenhum benchmark registado.",
-    "measured": "Medido",
+    "measured": "Registo de um administrador",
     "rates": "taxa de sucesso {{before}} → {{after}}",
     "benchmarkPassed": "aprovado",
     "benchmarkFailed": "reprovado",
     "failureCase": "caso da falha {{name}}",
     "measuredBy": "registado por {{who}}, {{at}}",
+    "runRef": "execução {{ref}}",
     "claimed": "Declarado",
     "claimedHint": "indicado por quem a propôs, não medido",
     "event": {
@@ -1022,6 +1023,60 @@
     "backToHistory": "Voltar ao histórico",
     "versionMissing": "A versão {{version}} não existe neste âmbito. Volte ao histórico e escolha outra.",
     "versionFailed": "Não foi possível carregar a versão. Tente novamente daqui a pouco.",
+    "actions": {
+      "label": "Ações sobre esta versão",
+      "reason": "Motivo (opcional)",
+      "noCurrent": "nenhuma versão atual",
+      "sharedVersion": "a v{{version}} partilhada",
+      "connectionVersion": "a v{{version}} desta conexão",
+      "writtenOn": "Escrita sobre {{version}}.",
+      "baseNotInUse": "A sua base não é a versão em uso agora ({{current}}): aceitá-la será recusado. Proponha-a de novo sobre a versão em uso.",
+      "changed": "Isto mudou desde que o abriu. O ecrã foi recarregado: feche isto, verifique a versão e tente novamente.",
+      "refused": "A ação foi recusada: {{message}}",
+      "held": {
+        "unmeasured": "Aceitar está desativado: a versão do coach só é aceite quando o registo de uma execução de benchmark feito por um administrador (as suas taxas, casos e veredicto tal como os introduz) mostra que passou e que a taxa de sucesso subiu, indicando o seu caso esperado. Registe primeiro o benchmark.",
+        "failed": "Aceitar está desativado: o registo da sua execução de benchmark diz que falhou, por isso a versão do coach nunca é aceite. Uma nova proposta vem de uma nova falha, ou escreva a correção como versão própria.",
+        "noGain": "Aceitar está desativado: no registo da sua execução de benchmark a taxa de sucesso não subiu, ou o seu caso esperado não é indicado, por isso a versão do coach nunca é aceite."
+      },
+      "accept": {
+        "button": "Aceitar",
+        "title": "Aceitar a versão {{version}}?",
+        "message": "A versão atual deste âmbito passa de {{from}} para {{to}}.",
+        "confirm": "Aceitar versão"
+      },
+      "reject": {
+        "button": "Rejeitar",
+        "title": "Rejeitar a versão {{version}}?",
+        "message": "A versão {{version}} fica no histórico, marcada como rejeitada. A versão atual não muda.",
+        "confirm": "Rejeitar versão"
+      },
+      "rollback": {
+        "button": "Voltar a esta versão",
+        "title": "Voltar à versão {{version}}?",
+        "message": "Uma nova versão que restaura a versão {{version}} passa a ser a atual em vez de {{from}}. Todas as versões ficam no histórico.",
+        "confirm": "Voltar"
+      },
+      "benchmark": {
+        "button": "Registar benchmark",
+        "title": "Registar o benchmark da versão {{version}}",
+        "message": "Este é o registo de uma execução de benchmark feito por um administrador: as suas taxas, casos e veredicto tal como os introduz; nada aqui os mede. É registado uma vez e nunca muda. Para a versão do coach, o caso da falha tem de ser o seu caso esperado, e Aceitar precisa de uma taxa de sucesso que tenha subido.",
+        "runRef": "Referência à execução (opcional: um id ou uma ligação)",
+        "confirm": "Registar benchmark",
+        "before": "Taxa de sucesso antes (%)",
+        "after": "Taxa de sucesso depois (%)",
+        "cases": "Casos (um por linha ou separados por vírgulas)",
+        "passed": "A verificação passou",
+        "reasons": "Motivos (um por linha)",
+        "failureCase": "Caso da falha",
+        "invalid": {
+          "rates": "Indique ambas as taxas de sucesso como números de 0 a 100.",
+          "cases": "Indique cada caso uma vez, em minúsculas, dígitos e hífenes.",
+          "reasons": "Indique pelo menos um motivo, um por linha.",
+          "failureCase": "O caso da falha tem de ser um dos casos.",
+          "regressed": "Uma execução que passou não pode ter uma taxa de sucesso menor depois do que antes: registe-a como falhada, ou verifique as taxas."
+        }
+      }
+    },
     "scores": {
       "title": "Fichas de resultados",
       "hint": "Como cada versão se saiu nas suas últimas execuções nesta conexão. A taxa de sucesso é o número de tarefas concluídas sobre as que terminou.",
@@ -1049,6 +1104,7 @@
       "sourceColumn": "Número de",
       "source": {
         "shipped": "Habilidade incluída",
+        "not_shipped": "Nunca incluída: nenhuma sessão usou este número",
         "shared": "Habilidade partilhada",
         "connection": "Habilidade desta conexão",
         "unknown": "Desconhecido"

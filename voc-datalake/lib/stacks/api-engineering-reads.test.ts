@@ -51,21 +51,40 @@ describe('the engineering run reads', () => {
     expect(JSON.stringify(env.ENGINEERING_WORKSPACE_BUCKET)).toMatch(/Fn::ImportValue.*EngineeringWorkspace/);
   });
 
-  it('grant the agents API only reads of the table and the reports: no write of any kind', () => {
+  it('grant the agents API reads of the table and the reports, and writes of the skills\' partitions alone', () => {
     const statements = engineeringStatements(on());
-    expect(actionsWithPrefix(statements, '')).toStrictEqual(['dynamodb:GetItem', 'dynamodb:Query', 's3:GetObject']);
-    expect(JSON.stringify(statements)).not.toMatch(/Delete|Put|Update|BatchWrite/);
+    const unconditioned = statements.filter((statement) => statement.condition === undefined);
+    expect(actionsWithPrefix(unconditioned, '')).toStrictEqual(['dynamodb:GetItem', 'dynamodb:Query', 's3:GetObject']);
+    expect(JSON.stringify(statements)).not.toMatch(/Delete|BatchWrite/);
     const objects = statements.filter((statement) => statement.actions.includes('s3:GetObject'));
     expect(objects.map((statement) => statement.resource)).toStrictEqual([expect.stringMatching(/"\/ws\/default\/reports\/\*"/)]);
   });
 
-  it('read the skills\' history and the scorecards (WS#*#SKILL#*, WS#*#SCORE#*) with the one table read: no new statement', () => {
+  it('read the skills\' history and the scorecards (WS#*#SKILL#*, WS#*#SCORE#*) with the one table read', () => {
     // (7.07.00: GET /agents/engineering/skills…, …/scorecards/<role> read with the GetItem and Query the run views
     // already have on the whole table, which covers those partitions; a narrower statement beside it would add nothing)
-    const reads = engineeringStatements(on()).filter((statement) => statement.actions.some((action) => action.startsWith('dynamodb:')));
+    const reads = engineeringStatements(on()).filter((statement) => statement.actions.includes('dynamodb:Query'));
     expect(reads.map((statement) => [...statement.actions].sort(byCodeUnit))).toStrictEqual([['dynamodb:GetItem', 'dynamodb:Query']]);
     expect(reads[0]?.condition).toBeUndefined();
-    expect(JSON.stringify(reads)).not.toMatch(/LeadingKeys|BatchGet|Scan/);
+    expect(JSON.stringify(reads)).not.toMatch(/BatchGet|Scan/);
+  });
+
+  it('write the skills\' partitions with exactly the store\'s actions, keyed by dynamodb:LeadingKeys', () => {
+    // (7.08.00: an administrator's accept, reject, rollback and benchmark, the skills store's transactions)
+    const writes = policyStatementsOf(on(), 'AgentsLambdaRole').filter((statement) => /Engineering/.test(statement.resource)
+      && statement.actions.some((action) => /Put|Update|ConditionCheck/.test(action)));
+    expect(writes.map((statement) => [...statement.actions].sort(byCodeUnit))).toStrictEqual(
+      [['dynamodb:ConditionCheckItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem']]);
+    expect(writes[0]?.condition).toStrictEqual({
+      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#SKILL#*'] },
+      Null: { 'dynamodb:LeadingKeys': 'false' },
+    });
+    expect(writes[0]?.resource).toMatch(/^\{"Fn::ImportValue":"[^"]*Engineering/);
+  });
+
+  it('give the agents API no write of the engineering table while the module is off', () => {
+    const statements = policyStatementsOf(apiTemplate(), 'AgentsLambdaRole');
+    expect(JSON.stringify(statements)).not.toMatch(/SKILL|ConditionCheckItem/);
   });
 
   it('send a person\'s board actions to the board\'s function, by its name, which its own role writes', () => {
