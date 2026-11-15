@@ -385,9 +385,11 @@ each: more is refused, nothing written). A push is refused before anything is wr
 the bundle does not list, writes a symbolic link (the Commits API's actions cannot), or changes a CI definition the
 project names (below); when the branch's head is not the bundle's base, or, for a new branch, the base is not an
 ancestor of the default branch's head (`merge_base`); and when the tree its changes give on the base is not the
-checked tree. The reads before the write are bounded: at most 400 requests, and none past the invocation's
-remaining time less 30 s (`hosts.WRITE_READY_BY`, set by the broker's handler from Lambda's context); past either the
-push is refused with nothing written (its claim closed refused, never left open). Then each commit is one Commits API
+checked tree. The reads before the write are bounded: at most 400 requests, and none that could, with its retry,
+end past the invocation's remaining time less 65 s (`hosts.WRITE_READY_BY` and `WRITE_RESERVE_SECONDS`, set by the
+broker's handler from Lambda's context); and the first commit starts only if it, a page of its read-back and a
+stop's reserve fit. Past any of them the push is refused with nothing written (its claim closed refused, never left
+open; "push fewer changes at once"). Then each commit is one Commits API
 call (`POST …/repository/commits`, its actions create, update, delete and, where the mode is not the one GitLab would
 leave, `chmod`; content in base64; author and committer the token's bot); the first commit's updates and deletions
 carry each file's last commit at the base (`last_commit_id`, read with one `HEAD` of the file: a partial lease, so a
@@ -396,14 +398,22 @@ file changed meanwhile refuses the commit, 400, nothing written). A new branch i
 Commits API has no lease on an existing branch's head, so after the write each new commit's parent and the last one's
 tree are read back: a commit that landed on another head or with another tree, or any failure once the first commit
 is written (a rate limit or a lost read-back included), is an unknown outcome (never answered as refused, never made
-again for that attempt). A push writes at most 20 commits (more is refused before anything is written), and no later
-commit starts unless the invocation still has the time it and the final read-back need (20 s); short of it the push
-stops there. A branch this push created is then deleted when its head, checked just before, is one of the push's own
-commits: a read, then an unconditional delete (GitLab has no conditional one, so a push landing between the two is
-not protected); the outcome's words say what landed and whether the branch was deleted or left. A draft merge request is opened
-(title `Draft: …`, against the run's default branch, the source branch kept; an open one is the run's only when it is
-from this project, not a fork, and into that branch) or its title and description updated only when the branch's head has the
-checked tree, and checked again afterwards, as on GitHub: a merge request the client just opened is closed when the
+again for that attempt). A push writes at most 20 commits (more is refused before anything is written). The time
+after the first commit follows one model (`gitlab.py`), each step by its worst case: a request waits at most 10 s, a
+read is sent at most twice (20 s), a write once (10 s). A stop keeps 35 s: the undo's read and delete (30 s) and the
+answer (5 s). So no later commit starts unless it and a page of the read-back (30 s) and that reserve fit; no page of
+the final read-back starts that would end inside the reserve (the read-back is cut short, and the outcome says so);
+and the reserve the reads before the write leave is 10 + 20 + 35 = 65 s. A branch this push created is then deleted
+when its head, checked just before, is one of the push's own commits: a read, then an unconditional delete (GitLab
+has no conditional one, so a push landing between the two is not protected), and only when both still fit before the
+invocation's end; otherwise it is left. The outcome's words say what landed and whether the branch was deleted or
+left. These times are assumptions, not guarantees: http.client's timeout is per socket operation (a slow trickle of
+bytes can outlast it) and the name lookup is not covered, and closing the write's claim is a DynamoDB write under
+boto3's default timeouts and retries. Past them, Lambda's own timeout ends the call: the claim is left open, a repeat
+of the write is answered unknown, and the write is never made twice. A draft merge request is opened (title
+`Draft: …`, against the run's default branch, the source branch kept; an open one is the run's only when it is from
+this project, not a fork, and into that branch) or its title and description updated only when the branch's head has
+the checked tree, and checked again afterwards, as on GitHub: a merge request the client just opened is closed when the
 check fails, and the outcome is unknown. An update keeps the `Draft:` title, so it stays (or becomes again) a draft.
 A note's link is `https://gitlab.com/<project>/-/issues/<n>#note_<id>` (or `/-/merge_requests/`). The client has no
 method for a merge, an approval, settings, protected branches, members, webhooks or variables.
@@ -439,9 +449,11 @@ decision): the connection's token reads this project alone, so the broker cannot
 Known refusals and limits of the walk:
 
 - A job that `extends` another may add only how its child pipeline runs (`trigger: {strategy: depend}`, `forward`):
-  GitLab merges that into the extended job's `trigger`, whose `include` the walk has already pinned wherever that
-  job is defined (a hidden job included). The same `trigger: {strategy: depend}` without `extends`, or with an
-  `include` of its own beyond the rules, refuses; so does `trigger: !reference [...]` (the walk cannot follow it).
+  GitLab merges that into the extended job's `trigger`. When that job is in one of this repository's CI files (a
+  hidden job included), the walk has already read its `trigger` and pinned what it includes; when it comes from a
+  GitLab template, it is GitLab's own fixed content, which the walk does not read. The same
+  `trigger: {strategy: depend}` without `extends`, or with an `include` of its own beyond the rules, refuses; so does
+  `trigger: !reference [...]` (the walk cannot follow it).
 - An empty top-level value (`variables:` with nothing under it, a job with no body) is not a mapping, so it refuses.
 - The lint cross-check covers the parent pipeline's includes only: GitLab's lint does not list child pipelines,
   whose files the walk pins itself.

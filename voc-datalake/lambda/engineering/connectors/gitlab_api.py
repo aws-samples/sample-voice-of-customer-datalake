@@ -111,7 +111,12 @@ def next_page(headers: Mapping[str, str]) -> str | None:
 CHECK_TIMEOUT_SECONDS: Final = 6.0
 
 
-def gitlab_transport(timeout: float = 10.0) -> Transport:
+#: How long one request to gitlab.com may wait (the transport's timeout): the unit of the broker's time model
+#: (``gitlab.py``).
+REQUEST_SECONDS: Final = 10.0
+
+
+def gitlab_transport(timeout: float = REQUEST_SECONDS) -> Transport:
     """``gitlab.com`` over HTTPS, the one host the GitLab paths reach."""
     return HttpsTransport(timeout, host=GITLAB_HOST)
 

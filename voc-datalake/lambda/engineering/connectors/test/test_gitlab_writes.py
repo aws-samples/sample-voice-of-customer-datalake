@@ -14,6 +14,7 @@ from engineering.connectors.broker import Broker
 from engineering.connectors.credentials import GitHubAppCredential, GitLabTokenCredential
 from engineering.connectors.github import GitHubHost
 from engineering.connectors.gitlab import GitLabHost
+from engineering.connectors.gitlab_api import gitlab_transport
 from engineering.connectors.gitlab_tree import TreeEntry, blob_id, tree_id
 from engineering.connectors.hosts import (
     WRITE_READY_BY,
@@ -54,7 +55,7 @@ from engineering.connectors.test.gitlab_fakes import (
     client,
     credential,
 )
-from engineering.connectors.transport import Response
+from engineering.connectors.transport import HttpsTransport, Response
 from engineering.connectors.write_policy import WriteRefused
 
 NEW = 'd' * 40
@@ -288,6 +289,86 @@ def test_a_later_commit_with_too_little_time_left_stops_and_removes_the_branch_t
     with pytest.raises(OutcomeUnknown, match=r'ran out of time.*1 of its 2 commit\(s\) landed.*was deleted'):
         client(api, clock).push_bundle('conn-1', BRANCH, bundle(commits=2), TREE, 'main')
     assert writes(api) == [('POST', COMMITS), ('DELETE', f'{P}/repository/branches/{QUOTED_BRANCH}')]
+
+
+def _first_commit_landing(clock: Clock, left: float) -> FakeGitLab:
+    """A new branch's one-commit push whose commit lands with ``left`` seconds of the invocation remaining."""
+    def reply(_sent: Any) -> Response:
+        clock.now = CALL_ENDS - left
+        return answer(201, {'id': NEW, 'parent_ids': [BASE]})
+    return pushable(FakeGitLab()).on('POST', COMMITS, reply).on(
+        'DELETE', f'{P}/repository/branches/{QUOTED_BRANCH}', answer(204, {}))
+
+
+def test_a_read_back_with_no_time_for_its_next_page_is_cut_short_and_the_branch_undone() -> None:
+    clock = Clock()
+    api = _first_commit_landing(clock, gitlab.DELETE_RESERVE_SECONDS + gitlab.READ_SECONDS - 1)
+    with pytest.raises(OutcomeUnknown, match=r'read-back of the pushed tree was cut short.*was deleted'):
+        client(api, clock).push_bundle('conn-1', BRANCH, bundle(), TREE, 'main')
+    assert ('GET', tree_path(NEW)) not in api.calls()
+
+
+def test_an_undo_that_would_not_fit_is_skipped_and_says_the_branch_was_left() -> None:
+    clock = Clock()
+    api = _first_commit_landing(clock, gitlab.UNDO_SECONDS + gitlab.ANSWER_SECONDS - 1)
+    with pytest.raises(OutcomeUnknown, match='was left: no time remained to delete it'):
+        client(api, clock).push_bundle('conn-1', BRANCH, bundle(), TREE, 'main')
+    assert writes(api) == [('POST', COMMITS)]
+
+
+def test_a_read_back_with_just_the_time_for_its_page_reads_it() -> None:
+    clock = Clock()
+    api = _first_commit_landing(clock, gitlab.DELETE_RESERVE_SECONDS + gitlab.READ_SECONDS)
+    client(api, clock).push_bundle('conn-1', BRANCH, bundle(), TREE, 'main')
+    assert ('GET', tree_path(NEW)) in api.calls()
+
+
+def test_an_undo_that_just_fits_deletes_the_branch() -> None:
+    clock = Clock()
+    api = _first_commit_landing(clock, gitlab.UNDO_SECONDS + gitlab.ANSWER_SECONDS)
+    with pytest.raises(OutcomeUnknown, match=r'cut short.*was deleted'):
+        client(api, clock).push_bundle('conn-1', BRANCH, bundle(), TREE, 'main')
+    assert writes(api)[-1] == ('DELETE', f'{P}/repository/branches/{QUOTED_BRANCH}')
+
+
+@pytest.mark.parametrize(('late', 'starts'), [(1, False), (0, True)], ids=['a second short', 'just fits'])
+def test_the_first_commit_starts_only_if_it_its_read_back_and_the_stop_fit(late: int, starts: bool) -> None:
+    clock = Clock()
+    need = gitlab.LATER_COMMIT_SECONDS + gitlab.DELETE_RESERVE_SECONDS
+
+    def lease(_sent: Any) -> Response:   # (the last read before the write ends this late)
+        clock.now = CALL_ENDS - need + late
+        return answer(200, None, {'x-gitlab-last-commit-id': LAST})
+
+    api = pushable(FakeGitLab()).on('HEAD', f'{P}/repository/files/src%2Frefund.py?ref={BASE}', lease)
+    if starts:
+        client(api, clock).push_bundle('conn-1', BRANCH, bundle(), TREE, 'main')
+    else:
+        with pytest.raises(WriteRefused, match='push fewer changes'):
+            client(api, clock).push_bundle('conn-1', BRANCH, bundle(), TREE, 'main')
+    assert (('POST', COMMITS) in writes(api)) is starts
+
+
+@pytest.mark.parametrize(('start', 'refused'), [(0, False), (1, True)], ids=['ends on the line', 'a second over'])
+def test_a_read_before_the_write_starts_only_if_it_and_its_retry_end_by_the_line(start: int, refused: bool) -> None:
+    budget = gitlab._PreWrite(ends_by=NOW)
+    if refused:
+        with pytest.raises(WriteRefused, match='push fewer changes'):
+            budget.spend(NOW - gitlab.READ_SECONDS + start)
+    else:
+        budget.spend(NOW - gitlab.READ_SECONDS + start)
+    assert budget.used == 1
+
+
+def test_the_time_models_request_is_the_gitlab_transports_timeout() -> None:
+    transport = gitlab_transport()
+    assert isinstance(transport, HttpsTransport)
+    assert transport._timeout == gitlab.REQUEST_SECONDS
+
+
+def test_the_write_reserve_holds_a_first_commit_a_page_of_its_read_back_and_the_stop() -> None:
+    assert WRITE_RESERVE_SECONDS >= gitlab.WRITE_SECONDS + gitlab.READ_SECONDS + gitlab.DELETE_RESERVE_SECONDS
+    assert gitlab.READ_SECONDS == gitlab.REQUEST_SECONDS * 2   # (a read and its one retry: gitlab_api.READ_TRIES)
 
 
 def test_a_later_commit_starts_when_its_time_and_the_stops_reserve_just_fit() -> None:

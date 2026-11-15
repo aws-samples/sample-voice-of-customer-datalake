@@ -47,7 +47,8 @@ from typing import Final
 from urllib.parse import quote, urlencode
 
 from engineering.connectors.credentials import GitLabTokenCredential
-from engineering.connectors.gitlab_api import GITLAB_URL, gitlab_transport, next_page, project_ref, send
+from engineering.connectors.gitlab_api import GITLAB_URL, READ_TRIES, gitlab_transport, next_page, project_ref, send
+from engineering.connectors.gitlab_api import REQUEST_SECONDS as GITLAB_REQUEST_SECONDS
 from engineering.connectors.gitlab_ci import CI_UNRESOLVED, pinned
 from engineering.connectors.gitlab_tree import TreeEntry, algorithm_of, directories, rebuilt, tree_id
 from engineering.connectors.hosts import (
@@ -205,12 +206,31 @@ def _stray_changes(contents: BundleContents) -> list[str]:
 #: The most commits one push writes (each is one Commits API call after the first is on the host): more is refused
 #: before anything is written.
 MAX_COMMITS_PER_PUSH: Final = 20
-#: What a later commit needs of the invocation's time: its own request and the final read-back of the tree (each
-#: request at most the transport's 10 s).
-LATER_COMMIT_SECONDS: Final = 20
-#: What a stop between commits still needs of the invocation's time: the branch's head read, its delete and the
-#: answer, so a push that stops can undo the branch it created before Lambda's end.
-DELETE_RESERVE_SECONDS: Final = 25
+# The time model of the work after the first commit, each step by its worst case. One request waits at most the
+# transport's 10 s (``REQUEST_SECONDS``); a read is sent at most ``gitlab_api.READ_TRIES`` (2) times, so 20 s; a write
+# is sent once, 10 s. The final read-back of the tree is one read per page, up to ``MAX_TREE_PAGES``: it is bounded
+# by time, not by a count (no page starts that would end inside the stop's reserve; past it the read-back is cut
+# short and the outcome unknown). Undoing a new branch is a read of its head and a delete: 20 + 10 = 30 s; answering
+# the caller after it, 5 s. So:
+#   DELETE_RESERVE_SECONDS = UNDO_SECONDS + ANSWER_SECONDS                     = 30 + 5  = 35
+#   LATER_COMMIT_SECONDS   = WRITE_SECONDS + READ_SECONDS (a commit, then a page) = 10 + 20 = 30
+#   hosts.WRITE_RESERVE_SECONDS >= WRITE_SECONDS + READ_SECONDS + DELETE_RESERVE_SECONDS = 10 + 20 + 35 = 65
+#   (the first commit, a page of its read-back, and the stop: pinned by the tests).
+# Every read before the write starts only if it, with its retry, ends before the line (``_PreWrite.spend``), and the
+# first commit starts only if it, a page of its read-back and the stop's reserve fit, so the 65 s hold as written.
+# These are assumptions, not guarantees: http.client's timeout is per socket operation (a slow trickle of bytes can
+# outlast it) and the name lookup is not covered; closing the write's claim is a DynamoDB write under boto3's default
+# timeouts and retries. Past them, Lambda's own timeout ends the call: the claim is left open, a repeat is answered
+# unknown (``broker.EARLIER_UNKNOWN``), and the write is never made twice.
+REQUEST_SECONDS: Final = GITLAB_REQUEST_SECONDS
+READ_SECONDS: Final = REQUEST_SECONDS * READ_TRIES
+WRITE_SECONDS: Final = REQUEST_SECONDS
+UNDO_SECONDS: Final = READ_SECONDS + WRITE_SECONDS
+ANSWER_SECONDS: Final = 5
+#: What a stop still needs of the invocation's time: the undo of the branch it created and the answer.
+DELETE_RESERVE_SECONDS: Final = UNDO_SECONDS + ANSWER_SECONDS
+#: What a later commit needs before the stop's reserve: its own request and at least one page of the read-back.
+LATER_COMMIT_SECONDS: Final = WRITE_SECONDS + READ_SECONDS
 #: The most requests a push makes before it writes (its CI files, branch, listings): more is refused, nothing written.
 MAX_PREWRITE_REQUESTS: Final = 400
 PREWRITE_SPENT: Final = ('The push read more of the repository host than it may before writing (its requests or its '
@@ -227,8 +247,10 @@ class _PreWrite:
     used: int = 0
 
     def spend(self, now: float) -> None:
+        """Count one request about to start: refused unless its worst case (a read and its retry, ``READ_SECONDS``)
+        ends by ``ends_by``, so no read in flight runs past the line."""
         self.used += 1
-        if self.used > MAX_PREWRITE_REQUESTS or now > self.ends_by:
+        if self.used > MAX_PREWRITE_REQUESTS or now + READ_SECONDS > self.ends_by:
             raise WriteRefused(PREWRITE_SPENT)
 
 
@@ -367,12 +389,17 @@ class GitLabHost:
         return text_unless_missing(self._api(connection_id, 'GET', f'/repository/branches/{_quoted(branch)}',
                                              'the branch lookup', ok=(200, 404)), 'commit', 'id')
 
-    def _listing(self, connection_id: str, ref: str, directory: str) -> dict[str, TreeEntry]:
+    def _listing(self, connection_id: str, ref: str, directory: str,
+                 pages_by: float | None = None) -> dict[str, TreeEntry]:
         """The entries of ``directory`` ('' for the root) at ``ref`` by name: empty for a directory it does not have.
-        At most ``MAX_TREE_PAGES`` pages: a directory with more is refused."""
+        At most ``MAX_TREE_PAGES`` pages: a directory with more is refused. ``pages_by``: no page read starts unless
+        its worst case (``READ_SECONDS``) ends by then; past it, the read is cut short (``Conflict``)."""
         entries: dict[str, TreeEntry] = {}
         page: str | None = '1'
         for _ in range(MAX_TREE_PAGES):
+            if pages_by is not None and self._clock() + READ_SECONDS > pages_by:
+                raise Conflict('The read-back of the pushed tree was cut short: the invocation had no time left for '
+                               'its next page.')
             fields = {'ref': ref, 'per_page': TREE_PAGE, 'page': page, **({'path': directory} if directory else {})}
             response = self._api(connection_id, 'GET', f'/repository/tree?{urlencode(fields)}', 'the tree read',
                                  ok=(200, 404))
@@ -387,9 +414,9 @@ class GitLabHost:
         raise WriteRefused(f'A directory the push reads holds more than {MAX_TREE_PAGES * TREE_PAGE} entries: the '
                            'broker does not work out its tree.')
 
-    def _tree_of(self, connection_id: str, commit: str) -> str:
-        """The tree id of ``commit``: its root listing's entries, hashed as git does."""
-        return tree_id(self._listing(connection_id, commit, '').values(), algorithm_of(commit))
+    def _tree_of(self, connection_id: str, commit: str, pages_by: float | None = None) -> str:
+        """The tree id of ``commit``: its root listing's entries, hashed as git does (``pages_by``: ``_listing``'s)."""
+        return tree_id(self._listing(connection_id, commit, '', pages_by).values(), algorithm_of(commit))
 
     def branch_tree_hash(self, connection_id: str, branch: str) -> str | None:
         head = self._head(connection_id, branch)
@@ -516,6 +543,10 @@ class GitLabHost:
             leases = self._file_leases(connection_id, contents, present)
         finally:
             self._budget = None
+        call_ends = ends_by + WRITE_RESERVE_SECONDS
+        if self._clock() + LATER_COMMIT_SECONDS + DELETE_RESERVE_SECONDS > call_ends:
+            # (the first commit, a page of its read-back and a stop must all fit: else nothing is written)
+            raise WriteRefused(PREWRITE_SPENT)
         first = self._commit(connection_id, branch, contents.commits[0], present,
                              contents.base if head is None else None, leases)
         if first.status == 400:
@@ -523,12 +554,11 @@ class GitLabHost:
                            'nothing was pushed: fetch it and make the bundle again.')
         written: list[str] = []
         try:
-            self._land(connection_id, branch, contents, tree_hash, present, first, written,
-                       ends_by + WRITE_RESERVE_SECONDS)
+            self._land(connection_id, branch, contents, tree_hash, present, first, written, call_ends)
         except Exception as exc:
             # (the first commit is on the host: whatever stops the rest, a rate limit, a lost read-back or the time
             # left included, the outcome is unknown, never a refusal with nothing written)
-            undone = self._undo_new_branch(connection_id, branch, head is None, written)
+            undone = self._undo_new_branch(connection_id, branch, head is None, written, call_ends)
             why = exc.reason if isinstance(exc, BrokerError) else type(exc).__name__
             raise OutcomeUnknown(f'The push wrote its first commit, but what followed did not pass ({why}); '
                                  f'{len(written)} of its {len(contents.commits)} commit(s) landed as checked; {undone}; '
@@ -563,9 +593,10 @@ class GitLabHost:
               present: dict[str, str], first: Response, written: list[str], ends_by: float) -> None:
         """The rest of a push once its first commit is written: each commit on the one before it (the parent read
         back: the Commits API has no lease), the later commits, and the last one's tree read back. ``written``: the
-        ids of the commits this push made, as it makes them. No later commit starts unless what it and the final
-        read-back need (``LATER_COMMIT_SECONDS``), and what a stop then needs to delete the branch and answer
-        (``DELETE_RESERVE_SECONDS``), still fit before ``ends_by``, the invocation's end."""
+        ids of the commits this push made, as it makes them. No later commit starts unless it and a page of the
+        read-back (``LATER_COMMIT_SECONDS``), and what a stop then needs to delete the branch and answer
+        (``DELETE_RESERVE_SECONDS``), still fit before ``ends_by``, the invocation's end; and no page of the read-back
+        starts that would end inside that reserve (the read-back is cut short instead)."""
         parent, made = contents.base, first
         for index, commit in enumerate(contents.commits):
             if index:
@@ -581,14 +612,19 @@ class GitLabHost:
                                'meanwhile).')
             written.append(made_id)
             parent = made_id
-        if self._tree_of(connection_id, parent) != tree_hash:
+        if self._tree_of(connection_id, parent, ends_by - DELETE_RESERVE_SECONDS) != tree_hash:
             raise Conflict('The pushed commit has another tree than the one checked.')
 
-    def _undo_new_branch(self, connection_id: str, branch: str, created: bool, ours: list[str]) -> str:
-        """Delete the branch this push created, its commits not as checked, but only while its head is still one of
-        this push's commits (``ours``): someone else's push since is never deleted. What became of it, in words."""
+    def _undo_new_branch(self, connection_id: str, branch: str, created: bool, ours: list[str],
+                         ends_by: float) -> str:
+        """Delete the branch this push created, its commits not as checked, but only while its head, read just before,
+        is still one of this push's commits (``ours``): someone else's push since is never deleted. No undo starts
+        unless its read and its delete (``UNDO_SECONDS``) and the answer fit before ``ends_by``. What became of the
+        branch, in words."""
         if not created:
             return 'the branch, there before the push, was left as it is'
+        if self._clock() + UNDO_SECONDS + ANSWER_SECONDS > ends_by:
+            return 'the branch this push created was left: no time remained to delete it'
         try:
             head = self._head(connection_id, branch)
             if head is None:

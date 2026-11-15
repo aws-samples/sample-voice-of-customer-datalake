@@ -31,8 +31,10 @@ FILE_MODES: Final = frozenset({'100644', '100755', '120000'})
 #: push) refuses, writing nothing, once it is past.
 WRITE_READY_BY: Final[ContextVar[float | None]] = ContextVar('write_ready_by', default=None)
 #: What a call keeps of Lambda's remaining time for a write and its read-back, after its reads before the write: the
-#: invocation ends this long after ``WRITE_READY_BY``.
-WRITE_RESERVE_SECONDS: Final = 30
+#: invocation ends this long after ``WRITE_READY_BY``. GitLab's push needs the most: its first commit (10 s), a page
+#: of its read-back (a read with its retry, 20 s) and a stop's undo and answer (35 s: ``gitlab.py``'s time model),
+#: 10 + 20 + 35 = 65. On the broker's 120 s, the reads before a write keep 55 s.
+WRITE_RESERVE_SECONDS: Final = 65
 _NUMBER: Final = re.compile(r'[1-9][0-9]{0,9}')
 
 

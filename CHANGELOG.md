@@ -17,6 +17,43 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.06.01] - 2026-11-15
+
+The GitLab connector's time bounds after a push's first commit, counted by their real worst case. Off by default
+(`-c engineeringAgents=true`).
+
+### Fixed
+
+- **One time model for the work after the first commit** (`lambda/engineering/connectors/gitlab.py`): the reserves
+  assumed one 10 s request per step, but a read is sent up to twice (`gitlab_api.READ_TRIES`: 20 s), the final
+  read-back of the tree is one read per page, and the undo had no time check. Each step is now counted by its worst
+  case, the constants following from it (shown in a comment): a request 10 s, a read 20 s, a write 10 s; a stop keeps
+  35 s (the undo's read and delete, 30 s, and the answer, 5 s); a later commit starts only when it and a page of the
+  read-back (30 s) and that reserve fit; and the reserve the reads before the write leave (`hosts.WRITE_RESERVE_SECONDS`)
+  is 10 + 20 + 35 = 65 s (it was 30 s). On the broker's 120 s the reads before a write had about 90 s and now have
+  about 55 s, so a very large push is refused honestly, with nothing written, saying "push fewer changes at once"
+  (the broker's timeout is unchanged). Each of those reads starts only if it and its retry end by the line, and the
+  first commit only if it, a page of its read-back and the stop's reserve fit, so the 65 s hold as written. The
+  request's 10 s is one constant, the GitLab transport's own timeout (`gitlab_api.REQUEST_SECONDS`). The times are
+  assumptions (http.client's timeout is per socket operation, the name lookup is not covered, and closing the claim
+  is a DynamoDB write under boto3's defaults); past them Lambda's timeout ends the call, the claim stays open, a
+  repeat is answered unknown, and nothing is written twice.
+- **The final read-back is bounded by time**: no page starts that would end inside the stop's reserve; past it the
+  read-back is cut short and the outcome is unknown, saying so.
+- **The undo has its own time check**: no delete of the branch the push created starts unless its read and its delete
+  and the answer fit before the invocation's end; otherwise the branch is left, and the outcome says so.
+- docs/autonomous-engineering.md: a GitLab template's job is GitLab's own fixed content, which the walk does not read
+  (it said "pinned wherever that job is defined"); the time model above.
+
+### Clarifications of 7.06.00
+
+- A job that `extends` another may add to its `trigger` only `strategy` and `forward` (how its child pipeline runs):
+  GitLab merges them into the extended job's `trigger`, so this is allowed; with an `include` of its own beyond the
+  rules, or without `extends`, it refuses.
+- 7.06.00 kept a 25 s reserve for a stop's delete and answer; this release replaces it with the 35 s above.
+- `lib/test-support/baseline.json` regenerated: VocApiStack's and VocProcessingStack's template hashes moved with
+  `APP_VERSION` (7.6.1) and the Lambda asset hashes of the engineering code; no resource or name changed.
+
 ## [7.06.00] - 2026-11-14
 
 Autonomous engineering agents: a GitLab repository connector beside GitHub's, on gitlab.com. A connection is GitHub's

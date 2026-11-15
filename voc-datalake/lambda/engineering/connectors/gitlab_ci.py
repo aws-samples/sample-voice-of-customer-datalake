@@ -135,7 +135,8 @@ def _include_value(value: Node) -> list[str]:
 
 
 #: What a job's own ``trigger`` may hold when the job ``extends`` another: only how the pipeline runs. GitLab merges it
-#: into the extended job's ``trigger``, whose ``include`` the walk already reads and pins wherever that job is defined.
+#: into the extended job's ``trigger``: one in this repository's CI files the walk has already read and pinned, one
+#: from a GitLab template is GitLab's own fixed content, not read by the walk.
 _TRIGGER_SETTINGS: Final = frozenset({'strategy', 'forward'})
 
 
