@@ -274,3 +274,21 @@ def test_the_invitation_stays_under_cognitos_message_cap(aggregates, monkeypatch
     monkeypatch.setattr(user_messages.logo_signing, 'signed_logo_url', lambda *_: 'https://x/' + 'q' * 700)
     _, message = _send(_invitation({'invited_by': 'I' * 500}, {'given_name': 'G' * 500}))
     assert len(message) < 20_000
+
+
+def test_the_settings_table_is_built_with_the_short_timeouts(monkeypatch):
+    built = []
+
+    class FakeResource:
+        def Table(self, name):
+            return name
+
+    def fake_resource(service, **kwargs):
+        built.append((service, kwargs))
+        return FakeResource()
+    monkeypatch.setenv('AGGREGATES_TABLE', 'aggregates')
+    monkeypatch.setattr(user_messages, '_table', None)
+    monkeypatch.setattr(user_messages.boto3, 'resource', fake_resource)
+    assert user_messages._aggregates_table() == 'aggregates'
+    assert built == [('dynamodb', {'config': user_messages.logo_signing.AWS_CALL_CONFIG})]
+
