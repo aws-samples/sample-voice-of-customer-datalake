@@ -4,7 +4,7 @@ Without a workspace a store calls the table itself, exactly as it always did: ``
 table, and ``scoped_rows`` / ``rows_by_id_in`` send the deployment's own request, so every request the deployment
 sends is the one it sent before. In a workspace every call goes through the workspace layer (shared/ws_repo.py
 ``ws_table``), which refuses a key, an item, an index partition or a cursor outside the workspace before DynamoDB:
-``scoped_calls`` is shared/ingest_tables.py ``ScopedUpdates`` (boto3's call shape over the view), ``scoped_rows`` is
+shared/ingest_tables.py ``scoped_calls`` gives ``ScopedUpdates`` (boto3's call shape over the view), ``scoped_rows`` is
 shared/scoped_query.py ``iter_partition``, and the multi-item calls (``rows_by_id_in``, ``delete_many``,
 ``transact``) are the view's own. The keys are
 shared/participants_keys.py's.
@@ -19,19 +19,12 @@ from botocore.exceptions import ClientError
 from shared.dynamo_paging import iter_query
 from shared.engagement_common import rows_by_id
 from shared.exceptions import ServiceError
-from shared.ingest_tables import ScopedUpdates
 from shared.logging import logger
 from shared.scoped_query import iter_partition
 from shared.ws_repo import UnprocessedKeysError, WorkspaceScope, ws_table
 
 #: How many times ``unlist_if_empty`` sends its transaction when a concurrent write cancels it.
 UNLIST_ATTEMPTS = 3
-
-
-def scoped_calls(table: Any, workspace: WorkspaceScope | None) -> Any:
-    """The table itself without a workspace, else its boto3-shaped single-item calls through the workspace's view
-    (shared/ingest_tables.py ``ScopedUpdates``)."""
-    return table if workspace is None else ScopedUpdates(workspace, table)
 
 
 def scoped_rows(table: Any, workspace: WorkspaceScope | None, partition: str, *, attribute: str = 'pk',

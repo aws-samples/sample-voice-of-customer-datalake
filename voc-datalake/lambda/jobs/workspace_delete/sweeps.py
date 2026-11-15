@@ -19,7 +19,7 @@ The entry kinds: a fixed set of partitions listed once into the inventory, then 
 (``_partitions_sweep``); an owner list (``owner_list_sweep``: a partition of rows naming further partitions of the same
 table, each deleted in full, then the list itself LAST, so a sweep stopped anywhere resumes from the list: the import
 runs, the members' objectives, the people and lists, the conversations); and entries with their own pages (the feedback, the counters, the
-memory, the objects, the projects, the control rows). ``Sweep.partitions`` is an entry's enumeration of what it reads, where it has
+memory, the objects, the projects with each project's comments child, the review links, the control rows). ``Sweep.partitions`` is an entry's enumeration of what it reads, where it has
 a fixed one; the memory's is shared/memory_partitions.py, the export's too.
 
 What a tombstone or an audit row holds: counts and item ids only (a feedback id, a memory id: ``{ws}#{memory id}``),
@@ -34,6 +34,7 @@ partitions (its sweep's name). It is deleted last, after the verify pass reads i
 from __future__ import annotations
 
 import json
+import re
 import time
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
@@ -76,11 +77,22 @@ from shared.onboarding import FEEDBACK_FORM_PK
 from shared.participants_keys import indexed_partitions, participants_index_pk
 from shared.platform_costs import cost_partition
 from shared.plugin_identity import is_valid_plugin_identifier
-from shared.project_keys import ProjectPartition, project_partitions, project_registry_key
+from shared.project_keys import (
+    COMMENT_SERIES_PREFIX,
+    ProjectPartition,
+    comments_pk,
+    project_partitions,
+    project_pk,
+    project_registry_key,
+    review_link_key,
+    review_link_registry_key,
+    review_link_registry_pk,
+)
 from shared.project_tables import iter_registered_project_ids
 from shared.radar_keys import radar_settings_key
 from shared.radar_store import SENTIMENT_LABELS
 from shared.retention import STORE_FEEDBACK, UNKNOWN_SOURCE, item_feedback_id, item_source
+from shared.review_share_audience import is_share_id
 from shared.row_ids import LONG_OPAQUE_ID_RE
 from shared.tables import JOBS_TABLE_ENV
 from shared.workspace_credentials import delete_parameters, list_parameter_names
@@ -110,6 +122,7 @@ from shared.ws_repo import (
     plugin_config_pk,
     project_claim,
     release_project_claim,
+    release_share_route,
     reprocess_job_pk,
     scraper_run_pk,
     source_run_pk,
@@ -212,7 +225,8 @@ class Context:
     #: voc-projects itself, for the two reads and the one delete the layer makes by its own key builders: the
     #: registry's Query (shared/project_tables.py ``iter_registered_project_ids``, through its own view of the
     #: workspace) and a project id's claim, ``PROJECT_ID#{id}`` (shared/ws_repo.py ``project_claim``,
-    #: ``release_project_claim``), which is outside every workspace by design.
+    #: ``release_project_claim``), which is outside every workspace by design, as is a review link's routing row,
+    #: ``DOCSHARE#{id}`` (``release_share_route``, the docshares entry).
     project_claims: Any
     #: voc-conversations: the workspace's list of conversation owners (``WS#{ws}#CONVERSANTS``) and each owner's
     #: ``WS#{ws}#USER#{sub}`` (the ``conversations`` entry), read for their keys alone.
@@ -412,31 +426,48 @@ def owner_list_sweep(name: str, owners: OwnerList) -> Sweep:
     The verify pass checks the list is gone (``OWNER_LISTS``)."""
     def pages(ctx: Context, cursor: dict[str, Any] | None) -> Batch:
         listed_view, owned = owners.view_of(ctx), owners.list_partition(ctx.scope)
-        here = cursor or {'stage': 'list', 'list_start': None, 'list_done': False, 'todo': [], 'start': None}
+        here = cursor or {'stage': 'list', **LIST_START}
         if here['stage'] == 'drop':
             # No cursor: what was read is deleted, so each page reads what is left of the list.
             rows = items(_page(listed_view, 'pk', owned, None, Limit=PAGE, ConsistentRead=True, **owners.query))
             return Batch(rows, {'stage': 'drop'} if rows else None)
-        todo = list(here.get('todo') or [])
-        if todo:
-            page = _page(listed_view, 'pk', todo[0], here.get('start'), Limit=PAGE, ConsistentRead=True,
-                         **owners.query)
-            following = last_key(page)
-            return Batch(items(page), {**here, 'start': following} if following else {**here, 'todo': todo[1:],
-                                                                                       'start': None})
-        if here.get('list_done'):
-            return Batch([], {'stage': 'drop'})
-        page = _page(listed_view, 'pk', owned, here.get('list_start'), Limit=PAGE, ConsistentRead=True,
-                     **owners.query)
-        following = last_key(page)
-        named = sorted({partition for row in items(page) for partition in owners.listed(ctx.scope, row)
-                        if ctx.scope.owns(partition) and partition != owned})
-        return Batch([], {'stage': 'list', 'list_start': following, 'list_done': following is None, 'todo': named,
-                          'start': None})
+
+        def named(rows: list[dict[str, Any]]) -> list[str]:
+            return sorted({partition for row in rows for partition in owners.listed(ctx.scope, row)
+                           if ctx.scope.owns(partition) and partition != owned})
+
+        rows, following = list_stage(listed_view, owned, here, named, list_query=owners.query, row_query=owners.query)
+        return Batch(rows, {'stage': 'drop'} if following is None else following)
 
     # The list's table only (its grant group shares the table's name): the list and its partitions are all there,
     # and the entry keeps nothing in the inventory.
     return Sweep(name, owners.table, pages, delete_keys(owners.view_of), grants=(owners.table,))
+
+
+#: Where an owner list's list stage starts (``list_stage``'s cursor).
+LIST_START: Final[Mapping[str, Any]] = {'list_start': None, 'list_done': False, 'todo': [], 'start': None}
+
+
+def list_stage(view: WorkspaceTable, listing: str, here: Mapping[str, Any],
+               named: Callable[[list[dict[str, Any]]], list[str]], *, list_query: Mapping[str, Any],
+               row_query: Mapping[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    """One step of an owner list's list stage (``{list_start, list_done, todo, start}``, beside any other field of
+    ``here``): a page of the partition each name in ``todo`` holds (``row_query``), then the next page of the list
+    ``listing`` (``list_query``), whose rows ``named`` turns into the next ``todo``. The rows read and the cursor after
+    them; None once the list and every partition it names are read. The list itself is left for its owner to delete
+    last (``owner_list_sweep``'s drop stage; the projects entry's series list goes with the project's partition), so
+    a stop anywhere resumes from it."""
+    todo = list(here.get('todo') or [])
+    if todo:
+        page = _page(view, 'pk', todo[0], here.get('start'), Limit=PAGE, ConsistentRead=True, **row_query)
+        following = last_key(page)
+        return items(page), ({**here, 'start': following} if following else {**here, 'todo': todo[1:], 'start': None})
+    if here.get('list_done'):
+        return [], None
+    page = _page(view, 'pk', listing, here.get('list_start'), Limit=PAGE, ConsistentRead=True, **list_query)
+    following = last_key(page)
+    return [], {**here, 'list_start': following, 'list_done': following is None, 'todo': named(items(page)),
+                'start': None}
 
 
 def walk_listed(ctx: Context, table_view: WorkspaceTable, kind: str, cursor: Mapping[str, Any],
@@ -850,17 +881,23 @@ def _delete_objects(ctx: Context, batch: Batch) -> int:
 _TABLE: Final = 'table'
 #: The projects cursor's mark of its last stage: the workspace's company persona library (``_library_page``).
 _LIBRARY: Final = 'library'
+#: The projects cursor's per-project comments child (``_comment_page``): where it is, and whether it is done.
+_COMMENTS: Final = 'comments'
+_COMMENTS_DONE: Final = 'comments_done'
+#: A series id's shape (shared/document_series.py ``series_id``: ``ser_`` + 24 hex).
+_SERIES_ID: Final = re.compile(r'ser_[0-9a-f]{24}')
 
 
 def _project_pages(ctx: Context, cursor: dict[str, Any] | None) -> Batch:
     """The workspace's projects, from its registry ``WS#{ws}#PROJECT_IDS`` (shared/project_tables.py
     ``iter_registered_project_ids``: every id the workspace ever claimed, its project deleted or not), a page of ids
-    at a time (``{todo, part, start}``). For each id, in order: every partition ``project_partitions`` names in the
-    workspace (its own rows and its document versions in voc-projects, its jobs in voc-jobs, its lists in
-    voc-participants), a page at a time, each row deleted by its table's key; then its claim released
-    (``_release_claim``); then its registry row, LAST, so a sweep stopped anywhere (between the release and the
-    registry row too) still finds the id in the registry and goes on from there. Only ids the registry lists are
-    attempted: an id is never taken from a row or a key. A registry row whose id is not shaped like a project id
+    at a time (``{todo, part, start}``). For each id, in order: its comments child (``_comment_page``: every series
+    the project's partition lists, each series' comment partition in full); every partition ``project_partitions``
+    names in the workspace (its own rows, the series list among them, and its document versions in voc-projects, its
+    jobs in voc-jobs, its lists in voc-participants), a page at a time, each row deleted by its table's key; then its
+    claim released (``_release_claim``); then its registry row, LAST, so a sweep stopped anywhere (between the release
+    and the registry row too) still finds the id in the registry and goes on from there. Only ids the registry lists
+    are attempted: an id is never taken from a row or a key. A registry row whose id is not shaped like a project id
     (``LONG_OPAQUE_ID_RE``, the claim's own rule) names no claim and no partition the code writes: it is counted
     (``project_ids_malformed``) and its row deleted, nothing else touched, so it cannot stop every resume."""
     here = cursor or {'todo': [], 'part': 0, 'start': None}
@@ -885,6 +922,8 @@ def _project_pages(ctx: Context, cursor: dict[str, Any] | None) -> Batch:
         _remove(ctx.projects, [project_registry_key(project_id, workspace=ctx.scope)])
         ctx.count('project_ids_malformed')
         return Batch([], {'todo': todo[1:], 'part': 0, 'start': None})
+    if not here.get(_COMMENTS_DONE):
+        return _comment_page(ctx, here, project_id)
     partitions = project_partitions(project_id, workspace=ctx.scope)
     if index < len(partitions):
         return _partition_page(ctx, here, partitions[index], index)
@@ -892,6 +931,30 @@ def _project_pages(ctx: Context, cursor: dict[str, Any] | None) -> Batch:
     _remove(ctx.projects, [project_registry_key(project_id, workspace=ctx.scope)])
     ctx.count('project_ids')
     return Batch([], {'todo': todo[1:], 'part': 0, 'start': None})
+
+
+def _comment_page(ctx: Context, here: Mapping[str, Any], project_id: str) -> Batch:
+    """One step of a project's comments child (``list_stage``'s cursor under ``comments``): the project's own
+    partition is an owner list of its commented series (``COMMENT_SERIES#{series}`` rows, keys alone, shared/
+    project_keys.py ``comment_series_key``), each naming its comment partition in the workspace (``comments_pk``: its
+    threads and its review link's pointer), read a page at a time, each row deleted by its key. The list rows
+    themselves go with the project's partition, after every series, so a stop anywhere resumes from the list. A
+    listed series not shaped like a series id names no partition the code writes: counted
+    (``comment_series_malformed``), nothing reached."""
+    def named(rows: list[dict[str, Any]]) -> list[str]:
+        listed = [str(row['sk']).removeprefix(COMMENT_SERIES_PREFIX) for row in rows]
+        series = [each for each in listed if _SERIES_ID.fullmatch(each)]
+        ctx.count('comment_series_malformed', len(listed) - len(series))
+        ctx.count('comment_series', len(series))
+        return [comments_pk(project_id, each, workspace=ctx.scope) for each in series]
+
+    series_list = {**KEYS_ONLY, 'sort_condition': 'begins_with(#sk, :series)',
+                   'ExpressionAttributeValues': {':series': COMMENT_SERIES_PREFIX}}
+    rows, following = list_stage(ctx.projects, project_pk(project_id, workspace=ctx.scope),
+                                 here.get(_COMMENTS) or LIST_START, named, list_query=series_list, row_query=KEYS_ONLY)
+    if following is None:
+        return Batch([], {**here, _COMMENTS: None, _COMMENTS_DONE: True})
+    return Batch([{**key(row, TABLE_KEY), _TABLE: PROJECTS_TABLE_ENV} for row in rows], {**here, _COMMENTS: following})
 
 
 def _partition_page(ctx: Context, here: Mapping[str, Any], part: ProjectPartition, index: int) -> Batch:
@@ -933,6 +996,50 @@ def _delete_project_rows(ctx: Context, batch: Batch) -> int:
         rows = [row for row in batch.rows if row[_TABLE] == table_env]
         deleted += _remove(ctx.project_table(table_env), _keys(rows))
     return deleted
+
+
+# ── review links ───────────────────────────────────────────────────────────────────────────────────────────────
+
+def _review_link_pages(ctx: Context, _cursor: dict[str, Any] | None) -> Batch:
+    """A page of the workspace's review link registry, ``WS#{ws}#DOCSHARE_IDS`` (keys alone; shared/project_keys.py
+    ``review_link_registry_pk``). No cursor into it: each id's row is deleted when its link is done, so each page
+    reads what is left, and a sweep stopped anywhere resumes from the registry."""
+    rows = items(_page(ctx.projects, 'pk', review_link_registry_pk(ctx.scope), None, Limit=PAGE, ConsistentRead=True,
+                       **KEYS_ONLY))
+    return Batch(rows, {} if rows else None)
+
+
+def _delete_review_links(ctx: Context, batch: Batch) -> int:
+    """For each registered link id, in order: its deployment-wide routing row released (``_release_route``), then the
+    link's own row in the workspace (``WS#{ws}#DOCSHARE#{id}``), then its registry row, LAST. Only ids the registry
+    lists are attempted. A registry row whose id is not shaped like a link id names no routing row the code writes: it
+    is counted (``share_ids_malformed``) and its row deleted, nothing else touched. The link's pointer in its series'
+    comment partition went with the projects entry's comments child."""
+    deleted = 0
+    for row in batch.rows:
+        share_id = str(row['sk'])
+        if is_share_id(share_id):
+            _release_route(ctx, share_id)
+            deleted += _remove(ctx.projects, [review_link_key(share_id, workspace=ctx.scope)])
+            ctx.count('share_ids')
+        else:
+            # The workspace only in the log, never the id (a malformed value could be anything a writer put there).
+            logger.warning('Workspace delete skipped a registry row not shaped like a review link id',
+                           extra={'workspace_id': ctx.scope.ws})
+            ctx.count('share_ids_malformed')
+        deleted += _remove(ctx.projects, [review_link_registry_key(share_id, workspace=ctx.scope)])
+    return deleted
+
+
+def _release_route(ctx: Context, share_id: str) -> None:
+    """The link's routing row, ``DOCSHARE#{id}``, deleted only while it names this workspace (shared/ws_repo.py
+    ``release_share_route``'s condition: IAM reaches every ``DOCSHARE#`` row, the deployment's own links included, so
+    this condition is what keeps the delete to the workspace's routes). One not released (none left after a stop, the
+    deployment's link, or another workspace's route) is kept, counted, and never read."""
+    if unthrottled(lambda: release_share_route(ctx.project_claims, share_id, workspace=ctx.scope)):
+        ctx.count('share_routes_released')
+    else:
+        ctx.count('share_routes_not_released')
 
 
 # ── control rows ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -1084,9 +1191,14 @@ SWEEPS: Final = (
     _family('radar'),
     _family('settings'),
     owner_list_sweep('user_contexts', OWNER_LISTS['user_contexts']),
+    # The workspace's review links first, so every project's links go dark before its rows: for each link its
+    # registry names, the deployment-wide routing row is released only while it names this workspace, then the
+    # link's own row, then its registry row last.
+    Sweep('docshares', 'docshares', _review_link_pages, _delete_review_links, grants=('docshares',)),
     # The registry WS#{ws}#PROJECT_IDS names each project's partitions in voc-projects, voc-jobs and voc-participants
-    # (shared/project_keys.py project_partitions), found without a Scan; each id's claim is released, then its
-    # registry row goes last (_project_pages).
+    # (shared/project_keys.py project_partitions), found without a Scan: each project's comment partitions first (its
+    # listed series, the comments child), then its own partitions; each id's claim is released, then its registry row
+    # goes last (_project_pages).
     Sweep('projects', 'projects', _project_pages, _delete_project_rows, grants=('projects',)),
     # The workspace's people and lists in voc-participants: the index WS#{ws}#PARTICIPANTS names each list's, person's
     # and address guard's partition, each deleted in full (its META, its members or list mirrors), then the index

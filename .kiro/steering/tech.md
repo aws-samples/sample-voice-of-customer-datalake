@@ -163,10 +163,16 @@ control-plane rows (`WS#{one id}`, `USER#*`, `FORM#*`, `PLUGIN#*`, `WORKSPACES`)
 and of its job row; S3 version listing with the `s3:prefix` `ws/{one id}/*`, `DeleteObjectVersion` and
 `AbortMultipartUpload` under it, `ListBucketMultipartUploads` bucket-wide (keys and ids only); SSM
 `GetParametersByPath` and `DeleteParameters` on the workspace's credentials path, kms:Decrypt via SSM denied; for
-its projects (7.28.00) Query and BatchWriteItem on `WS#{one id}#PROJECT#*`, `#DOCUMENT_VERSIONS#PROJECT#*` and
-`#PROJECT_IDS` in voc-projects and on `WS#{one id}#PROJECT#*` in voc-jobs and voc-participants, and GetItem and
-DeleteItem on `PROJECT_ID#*` in voc-projects (a claim's key names no workspace: only the code, which releases a claim
-only while it names this workspace, of an id from its own registry, keeps it to its own); KMS; invoke itself. No
+its projects (7.28.00) Query and BatchWriteItem on `WS#{one id}#PROJECT#*`, `#DOCUMENT_VERSIONS#PROJECT#*`,
+`#DCOMMENTS#*` (7.35.00) and `#PROJECT_IDS` in voc-projects and on `WS#{one id}#PROJECT#*` in voc-jobs and
+voc-participants, and GetItem and DeleteItem on `PROJECT_ID#*` in voc-projects (a claim's key names no workspace: only
+the code, which releases a claim only while it names this workspace, of an id from its own registry, keeps it to its
+own); for its review links (7.35.00) Query and BatchWriteItem on `WS#{one id}#DOCSHARE_IDS`, BatchWriteItem alone
+on `#DOCSHARE#*` in voc-projects, and DeleteItem alone on `DOCSHARE#*` (a link's routing row; the deployment's own links share the key, so
+only the code, which deletes a route only while it names this workspace, of an id from its own registry, keeps it to
+its own); for its people and lists (7.31.00) Query (keys only) and BatchWriteItem on `WS#{one id}#PARTICIPANTS`,
+`#LIST#*`, `#PERSON#*` and `#EMAIL#*` in voc-participants; for its members' conversations (7.28.00) Query (keys
+only) and BatchWriteItem on `WS#{one id}#CONVERSANTS` and `#USER#*` in voc-conversations; KMS; invoke itself. No
 Scan.
 
 Not behind API Gateway (Processing stack): `voc-workspace-export` — `lambda/jobs/workspace_export/handler.py`

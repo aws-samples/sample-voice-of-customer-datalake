@@ -69,16 +69,25 @@ const MEMORY_BY_STATUS_INDEX = 'gsi1-by-memory-status';
 /** The memory partitions read by their own key (the personal memories through the status index). */
 export const MEMORY_PARTITIONS = [`WS#${ONE}#MEM#company`, `WS#${ONE}#MEMCURSOR`, `WS#${ONE}#MEMIMPORT`,
   `WS#${ONE}#MEMEVT#*`];
-/** A workspace project's partitions (lambda/shared/project_keys.py `project_partitions`): in voc-projects its own and
- * its document versions, in voc-jobs and voc-participants its own; and the workspace's registry of its project ids
- * (`project_registry_pk`), in voc-projects. */
+/** A workspace project's partitions (lambda/shared/project_keys.py `project_partitions`): in voc-projects its own, its
+ * document versions and its series' comment partitions (`comments_pk`, listed in its own partition), in voc-jobs and
+ * voc-participants its own; and the workspace's registry of its project ids (`project_registry_pk`), in voc-projects. */
 const PROJECT_PARTITION = `WS#${ONE}#PROJECT#*`;
 export const PROJECTS_TABLE_PARTITIONS = [PROJECT_PARTITION, `WS#${ONE}#DOCUMENT_VERSIONS#PROJECT#*`,
-  `WS#${ONE}#PROJECT_IDS`];
+  `WS#${ONE}#DCOMMENTS#*`, `WS#${ONE}#PROJECT_IDS`];
 const PROJECT_PARTITIONS_ELSEWHERE = [PROJECT_PARTITION];
 /** A project id's claim (lambda/shared/ws_repo.py `PROJECT_ID#{id}` / `CLAIM`): deployment-wide by design, so IAM
  * reaches every claim; the code releases only one that names this workspace, of an id from its own registry. */
 export const PROJECT_CLAIM_PARTITIONS = ['PROJECT_ID#*'];
+/** A workspace's review links in voc-projects: its registry of link ids (lambda/shared/project_keys.py
+ * `review_link_registry_pk`), read and batch-deleted, and each link's own row (`review_link_key`), batch-deleted by
+ * its key alone, never read. */
+export const REVIEW_LINK_REGISTRY = [`WS#${ONE}#DOCSHARE_IDS`];
+export const REVIEW_LINK_ROWS = [`WS#${ONE}#DOCSHARE#*`];
+/** A review link's routing row (lambda/shared/ws_repo.py `DOCSHARE#{id}` / `META`): deployment-wide by design (a
+ * deployment's own link has the same key), so IAM reaches every one; the code deletes only a route naming this
+ * workspace, of an id from its own registry, and never reads one. */
+export const REVIEW_LINK_ROUTE_PARTITIONS = ['DOCSHARE#*'];
 /** voc-conversations: a workspace's list of conversation owners and each owner's partition there
  * (lambda/shared/conversations.py), never the deployment's `USER#{sub}`. */
 export const CONVERSATION_PARTITIONS = [`WS#${ONE}#CONVERSANTS`, `WS#${ONE}#USER#*`];
@@ -236,6 +245,23 @@ function grantProjects(role: iam.Role, { projectsTable, jobsTable, participantsT
     resources: [projectsTable.tableArn], conditions: keys(PROJECT_CLAIM_PARTITIONS) }));
 }
 
+/** The `docshares` grant (lib/utils/workspace-delete-grants.ts): the review link registry read and batch-deleted,
+ * the links' own rows batch-deleted, one workspace's only; the links' routing rows deleted (DeleteItem, conditioned
+ * in the code). Neither a link nor a route is ever read. */
+function grantReviewLinks(role: iam.Role, { projectsTable }: WorkspaceDeleteWorkerProps): void {
+  sweep(role, [projectsTable], REVIEW_LINK_REGISTRY);
+  sweep(role, [projectsTable], REVIEW_LINK_ROWS, []);
+  role.addToPolicy(new iam.PolicyStatement({ actions: ['dynamodb:DeleteItem'],
+    resources: [projectsTable.tableArn], conditions: keys(REVIEW_LINK_ROUTE_PARTITIONS) }));
+}
+
+/** The grants built around voc-projects' rows outside a workspace (a project id's claim, a review link's route). */
+const PROJECTS_TABLE_GRANTS: Partial<Record<DeleteGrant,
+  (role: iam.Role, props: WorkspaceDeleteWorkerProps) => void>> = {
+  projects: grantProjects,
+  docshares: grantReviewLinks,
+};
+
 /** The grants whose sweep reads for the keys alone (`sweepKeysOnly`): the table and its partitions. */
 const KEYS_ONLY_SWEEPS: Partial<Record<DeleteGrant,
   (props: WorkspaceDeleteWorkerProps) => readonly [dynamodb.ITable, readonly string[]]>> = {
@@ -251,6 +277,11 @@ const KEYS_ONLY_SWEEPS: Partial<Record<DeleteGrant,
 function grant(scope: Construct, role: iam.Role, which: DeleteGrant, props: WorkspaceDeleteWorkerProps): void {
   const { feedbackTable, aggregatesTable, workspacesTable, memoryTable, watermarksTable, radarTable, rawDataBucket } = props;
   if (grantOnAggregates(role, which, aggregatesTable)) return;
+  const onProjects = PROJECTS_TABLE_GRANTS[which];
+  if (onProjects !== undefined) {
+    onProjects(role, props);
+    return;
+  }
   const keysOnly = KEYS_ONLY_SWEEPS[which];
   if (keysOnly !== undefined) {
     const [table, partitions] = keysOnly(props);
@@ -294,9 +325,6 @@ function grant(scope: Construct, role: iam.Role, which: DeleteGrant, props: Work
     }
     case 'credentials':
       grantCredentials(cdk.Stack.of(scope), role, props.parameterBasePath);
-      return;
-    case 'projects':
-      grantProjects(role, props);
       return;
     case 'controlRows':
       query(role, workspacesTable.tableArn, [WORKSPACE_CONTROL_PARTITION]);

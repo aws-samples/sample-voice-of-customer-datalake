@@ -39,6 +39,7 @@ from typing import Any, Final
 from shared.delete_audit import record_delete_once
 from shared.digests import sha256_hex
 from shared.engagement_common import conditional_write
+from shared.ingest_tables import scoped_calls
 from shared.logging import logger
 from shared.participants_asks import RESPONSE_SK, UNSUBSCRIBE_SK, hashed_token_key, recipient_key
 from shared.participants_keys import (
@@ -53,7 +54,7 @@ from shared.participants_keys import (
 )
 from shared.participants_lists import remove_member
 from shared.participants_store import require_person
-from shared.participants_tables import delete_many, scoped_calls, scoped_rows, unlist_if_empty
+from shared.participants_tables import delete_many, scoped_rows, unlist_if_empty
 from shared.project_keys import NotPerWorkspaceError
 from shared.timestamps import now_iso
 from shared.ws_repo import WORKSPACE_FIELD, WorkspaceScope, workspace_tombstone_key, ws_table

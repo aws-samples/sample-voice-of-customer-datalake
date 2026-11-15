@@ -26,12 +26,17 @@
  *     no object's data; the code asks for `ws/{id}/` only. Accepted (docs/multi-workspace.md, step 4's IAM);
  *   - SSM: the workspace's credentials path listed and its parameters deleted; kms:Decrypt through SSM is denied
  *     outright (lib/stacks/workspace-delete-worker.ts), so no value is ever read;
- *   - `projects`: Query of the registry `WS#{id}#PROJECT_IDS` and of each project's partitions (`WS#{id}#PROJECT#*`
- *     and `WS#{id}#DOCUMENT_VERSIONS#PROJECT#*` in voc-projects, `WS#{id}#PROJECT#*` in voc-jobs and
- *     voc-participants), BatchWriteItem on those; GetItem and DeleteItem of the ids' claims, `PROJECT_ID#*`, which
- *     name no workspace in their key, so IAM cannot tie a claim to the workspace being deleted: the code does
- *     (shared/ws_repo.py release_project_claim's condition that the claim names this workspace, and the ids come only
- *     from that workspace's own registry);
+ *   - `projects`: Query of the registry `WS#{id}#PROJECT_IDS` and of each project's partitions (`WS#{id}#PROJECT#*`,
+ *     `WS#{id}#DOCUMENT_VERSIONS#PROJECT#*` and its series' comment partitions `WS#{id}#DCOMMENTS#*` in voc-projects,
+ *     `WS#{id}#PROJECT#*` in voc-jobs and voc-participants), BatchWriteItem on those; GetItem and DeleteItem of the
+ *     ids' claims, `PROJECT_ID#*`, which name no workspace in their key, so IAM cannot tie a claim to the workspace
+ *     being deleted: the code does (shared/ws_repo.py release_project_claim's condition that the claim names this
+ *     workspace, and the ids come only from that workspace's own registry);
+ *   - `docshares` (before `projects`): in voc-projects, Query and BatchWriteItem of the review link registry
+ *     `WS#{id}#DOCSHARE_IDS`, BatchWriteItem alone of the links' own rows `WS#{id}#DOCSHARE#*` (never read);
+ *     DeleteItem (no read) of the links' routing rows `DOCSHARE#*`, which
+ *     name no workspace in their key (the deployment's own links share it): the code deletes one only while it names
+ *     this workspace (shared/ws_repo.py release_share_route's condition), of an id from that workspace's registry;
  *   - `participants`: in voc-participants, Query and BatchWriteItem of the workspace's index `WS#{id}#PARTICIPANTS`
  *     and of the partitions it names, `WS#{id}#LIST#*`, `WS#{id}#PERSON#*` and `WS#{id}#EMAIL#*` only, never the
  *     deployment's; every Query for the keys alone (`dynamodb:Attributes` `pk` and `sk`, named, and
@@ -44,8 +49,8 @@
  */
 export type DeleteGrant =
   | 'aggregates' | 'metricTypeIndex' | 'tombstones' | 'exportJobs' | 'feedback'
-  | 'watermarks' | 'memory' | 'objects' | 'credentials' | 'controlRows' | 'radar' | 'projects' | 'participants'
-  | 'conversations';
+  | 'watermarks' | 'memory' | 'objects' | 'credentials' | 'controlRows' | 'radar' | 'projects' | 'docshares'
+  | 'participants' | 'conversations';
 
 /** Each sweep (SWEEPS' names, in order) and the grants it needs. */
 export const WORKSPACE_DELETE_GRANTS: Readonly<Record<string, readonly DeleteGrant[]>> = {
@@ -69,6 +74,7 @@ export const WORKSPACE_DELETE_GRANTS: Readonly<Record<string, readonly DeleteGra
   radar: ['radar', 'aggregates'],
   settings: ['aggregates'],
   user_contexts: ['aggregates'],
+  docshares: ['docshares'],
   projects: ['projects'],
   participants: ['participants'],
   conversations: ['conversations'],
@@ -84,8 +90,8 @@ export const WORKSPACE_DELETE_GRANTS: Readonly<Record<string, readonly DeleteGra
 export const REQUIRED_DELETE_SWEEPS: readonly string[] = [
   'credentials', 'feedback', 'counters', 'source_runs', 'failures', 'circuits', 'logs', 'scraper_runs',
   'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'reprocess_jobs', 'watermarks', 'memory',
-  'exports', 'objects', 'radar', 'settings', 'user_contexts', 'projects', 'participants', 'conversations',
-  'control_rows',
+  'exports', 'objects', 'radar', 'settings', 'user_contexts', 'docshares', 'projects', 'participants',
+  'conversations', 'control_rows',
 ];
 
 /** Throws, naming them, when `registry` lacks any of `REQUIRED_DELETE_SWEEPS`. */

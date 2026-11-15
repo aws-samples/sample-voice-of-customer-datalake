@@ -20,7 +20,7 @@ from typing import Any
 from shared.ids import write_with_fresh_id
 from shared.project_keys import project_pk, project_registry_key
 from shared.timestamps import now_iso
-from shared.ws_repo import OutOfScopeError, ProjectClaim, WorkspaceScope, claim_project_id, ws_table
+from shared.ws_repo import OutOfScopeError, OutsideEntry, WorkspaceScope, claim_project_id, ws_table
 
 #: A create's own condition: the new row's key is free.
 NEW_ROW_CONDITION = 'attribute_not_exists(pk) AND attribute_not_exists(sk)'
@@ -120,18 +120,19 @@ def transact_project_writes(
     entries: list[dict[str, Any]],
     *,
     workspace: WorkspaceScope | None = None,
-    claim: ProjectClaim | None = None,
+    outside: OutsideEntry | None = None,
 ) -> None:
     """One TransactWriteItems of ``entries`` (boto3's client shape, each naming ``table`` in ``TableName``).
 
     Without a workspace: exactly ``table.meta.client.transact_write_items(TransactItems=entries)``. In one: through
     ``ws_table``, every entry checked to name this table (``OutOfScopeError`` otherwise: the layer sends to its own)
-    and to stay inside the workspace, before anything is sent. ``claim`` (a workspace's only): the project id's
-    claim the layer built (shared/ws_repo.py ``claim_project_id``), put first in the same transaction.
+    and to stay inside the workspace, before anything is sent. ``outside`` (a workspace's only): the one entry
+    outside it the layer built (shared/ws_repo.py ``claim_project_id``, a project id's claim, or ``route_share_id``,
+    since 7.35.00 a review link's routing row), put first in the same transaction.
     """
     if workspace is None:
-        if claim is not None:
-            raise OutOfScopeError('a project claim names a workspace, never the deployment')
+        if outside is not None:
+            raise OutOfScopeError('an entry outside a workspace names a workspace, never the deployment')
         table.meta.client.transact_write_items(TransactItems=entries)
         return
     table_name = projects_table_name(table)
@@ -141,17 +142,17 @@ def transact_project_writes(
         if body.get('TableName') != table_name:
             raise OutOfScopeError('a workspace transaction writes its own table only')
         scoped_entries.append({action: {field: value for field, value in body.items() if field != 'TableName'}})
-    ws_table(workspace, table).transact_write_items(scoped_entries, claim=claim)
+    ws_table(workspace, table).transact_write_items(scoped_entries, outside=outside)
 
 
 def create_workspace_project(table, item: dict[str, Any], *, workspace: WorkspaceScope) -> None:
     """Write a new project's ``META`` (``item``, keyed ``WS#{ws}#PROJECT#{id}`` / ``META``) in ``workspace``.
 
     One scoped transaction, all or nothing: the id's deployment-wide claim (``claim_project_id``, first, at
-    ``PROJECT_CLAIM_INDEX``, put only if no claim of the id exists), the ``META`` and the project's registry row
+    ``OUTSIDE_ENTRY_INDEX``, put only if no claim of the id exists), the ``META`` and the project's registry row
     (``project_registry_key``), each put only if absent. A claim already held cancels it with
     ConditionalCheckFailed at the claim's index, which shared/ids.py ``write_with_fresh_id(put_index=
-    PROJECT_CLAIM_INDEX)`` takes for a collision (a fresh id, once); any other cancellation is raised as it came.
+    OUTSIDE_ENTRY_INDEX)`` takes for a collision (a fresh id, once); any other cancellation is raised as it came.
     Nothing is written in either case, so no claim is ever left without its project.
     """
     project_id = item.get('project_id')
@@ -164,7 +165,7 @@ def create_workspace_project(table, item: dict[str, Any], *, workspace: Workspac
     transact_project_writes(table, [
         {'Put': {'TableName': table_name, 'Item': item, 'ConditionExpression': NEW_ROW_CONDITION}},
         {'Put': {'TableName': table_name, 'Item': registry_row, 'ConditionExpression': NEW_ROW_CONDITION}},
-    ], workspace=workspace, claim=claim)
+    ], workspace=workspace, outside=claim)
 
 
 def transact_project_actions(

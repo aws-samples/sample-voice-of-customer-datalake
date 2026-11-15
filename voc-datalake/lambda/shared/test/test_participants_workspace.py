@@ -23,6 +23,7 @@ from moto import mock_aws
 from shared import participants_erasure, participants_lists, participants_store, participants_tables
 from shared.exceptions import NotFoundError
 from shared.indexes import PARTICIPANTS_LISTING_INDEX
+from shared.ingest_tables import scoped_calls
 from shared.participants_asks import asks_of_person, create_ask, token_workspace
 from shared.participants_erasure import erase_person
 from shared.participants_intake import collect_people
@@ -62,7 +63,7 @@ from shared.participants_store import (
     remember_token,
     update_person,
 )
-from shared.participants_tables import scoped_calls, unlist_if_empty
+from shared.participants_tables import unlist_if_empty
 from shared.project_keys import NotPerWorkspaceError, project_pk
 from shared.test.moto_tables import create_table_with_gsi1
 from shared.ws_repo import WORKSPACE_FIELD, OutOfScopeError, WorkspaceScope

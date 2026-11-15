@@ -2,7 +2,7 @@
 7.26.00).
 
 The claim, ``PROJECT_ID#{id}`` / ``CLAIM`` in voc-projects, is deployment-wide and the workspace layer's own entry
-(shared/ws_repo.py ``claim_project_id``, a ``ProjectClaim``): the one entry outside the workspace a scoped
+(shared/ws_repo.py ``claim_project_id``, an ``OutsideEntry`` of kind ``claim``): the one entry outside the workspace a scoped
 transaction takes, put first and only if absent, so it is written with the project's ``META`` and registry row or
 not at all (shared/project_writes.py ``create_workspace_project``). Its reader (``project_claim``) answers the
 workspace; ``release_project_claim`` deletes it only while it names that workspace. The registry,
@@ -24,9 +24,9 @@ from shared.project_tables import iter_registered_project_ids
 from shared.project_writes import NEW_ROW_CONDITION, create_workspace_project, transact_project_writes
 from shared.test.moto_tables import create_pk_sk_table
 from shared.ws_repo import (
-    PROJECT_CLAIM_INDEX,
+    OUTSIDE_ENTRY_INDEX,
     OutOfScopeError,
-    ProjectClaim,
+    OutsideEntry,
     WorkspaceScope,
     claim_project_id,
     project_claim,
@@ -84,7 +84,7 @@ def test_a_claim_is_put_first_in_the_workspaces_transaction_naming_its_workspace
     create_workspace_project(table, _meta(PROJECT, A), workspace=A)
 
     [items] = sent
-    assert items[PROJECT_CLAIM_INDEX] == {'Put': {
+    assert items[OUTSIDE_ENTRY_INDEX] == {'Put': {
         'TableName': PROJECTS, 'ConditionExpression': 'attribute_not_exists(pk)',
         'Item': {**CLAIM_KEY, 'workspace_id': A.ws, 'claimed_at': STAMP}}}
     assert table.get_item(Key=CLAIM_KEY)['Item'] == {**CLAIM_KEY, 'workspace_id': A.ws, 'claimed_at': STAMP}
@@ -93,22 +93,22 @@ def test_a_claim_is_put_first_in_the_workspaces_transaction_naming_its_workspace
 def test_a_claim_is_built_by_the_layer_only():
     claim = claim_project_id(PROJECT, workspace=A, claimed_at=STAMP)
 
-    assert (claim.project_id, claim.scope, claim.claimed_at) == (PROJECT, A, STAMP)
-    with pytest.raises(TypeError, match='built by claim_project_id only'):
-        ProjectClaim(object(), A, PROJECT, STAMP)
+    assert (claim.kind, claim.item_id, claim.scope, claim.at, claim.ttl) == ('claim', PROJECT, A, STAMP, None)
+    with pytest.raises(TypeError, match='built by claim_project_id or route_share_id only'):
+        OutsideEntry(object(), 'claim', A, PROJECT, STAMP)
     held = '_scope'
     with pytest.raises(AttributeError, match='cannot be changed'):
         setattr(claim, held, B)
     with pytest.raises(TypeError, match='cannot be subclassed'):
-        type('ForgedClaim', (ProjectClaim,), {})
+        type('ForgedClaim', (OutsideEntry,), {})
 
 
 def test_a_forged_or_foreign_claim_is_refused_before_anything_is_sent(table):
     entry = {'Put': {'Item': project_registry_key(PROJECT, workspace=A), 'ConditionExpression': NEW_ROW_CONDITION}}
-    unbuilt = object.__new__(ProjectClaim)
+    unbuilt = object.__new__(OutsideEntry)
     for claim in (unbuilt, claim_project_id(PROJECT, workspace=B, claimed_at=STAMP), NOT_A_CLAIM):
         with pytest.raises(OutOfScopeError, match='of its own workspace'):
-            ws_table(A, table).transact_write_items([entry], claim=claim)
+            ws_table(A, table).transact_write_items([entry], outside=claim)
     assert _keys(table) == []
 
 
@@ -118,10 +118,10 @@ def test_a_claim_is_written_in_the_projects_table_only(table, monkeypatch):
     claim = claim_project_id(PROJECT, workspace=A, claimed_at=STAMP)
 
     with pytest.raises(OutOfScopeError, match='projects table only'):
-        ws_table(A, other).transact_write_items([entry], claim=claim)
+        ws_table(A, other).transact_write_items([entry], outside=claim)
     monkeypatch.delenv('PROJECTS_TABLE')
     with pytest.raises(OutOfScopeError, match='projects table only'):
-        ws_table(A, table).transact_write_items([entry], claim=claim)
+        ws_table(A, table).transact_write_items([entry], outside=claim)
     assert other.scan()['Items'] == []
     assert _keys(table) == []
 
@@ -159,7 +159,7 @@ def test_a_callers_own_claim_entry_stays_refused(table):
 
 def test_the_deployment_takes_no_claim(table):
     with pytest.raises(OutOfScopeError, match='never the deployment'):
-        transact_project_writes(table, [], claim=claim_project_id(PROJECT, workspace=A, claimed_at=STAMP))
+        transact_project_writes(table, [], outside=claim_project_id(PROJECT, workspace=A, claimed_at=STAMP))
     assert _keys(table) == []
 
 
@@ -182,7 +182,7 @@ def test_a_held_claim_cancels_the_create_at_the_claims_index_and_writes_nothing(
     with pytest.raises(ClientError, match='TransactionCanceled') as cancelled:
         create_workspace_project(table, _meta(PROJECT, A), workspace=A)
 
-    assert is_key_collision(cancelled.value, put_index=PROJECT_CLAIM_INDEX)
+    assert is_key_collision(cancelled.value, put_index=OUTSIDE_ENTRY_INDEX)
     assert _keys(table) == [(f'PROJECT_ID#{PROJECT}', 'CLAIM')]
     assert project_claim(table, PROJECT) == B
 
@@ -195,7 +195,7 @@ def test_another_cancellation_is_not_a_claim_collision_and_leaves_no_claim(table
     with pytest.raises(ClientError, match='TransactionCanceled') as cancelled:
         create_workspace_project(table, _meta(PROJECT, A), workspace=A)
 
-    assert not is_key_collision(cancelled.value, put_index=PROJECT_CLAIM_INDEX)
+    assert not is_key_collision(cancelled.value, put_index=OUTSIDE_ENTRY_INDEX)
     assert _keys(table) == [(project_registry_pk(A), PROJECT)]
     assert project_claim(table, PROJECT) is None
 

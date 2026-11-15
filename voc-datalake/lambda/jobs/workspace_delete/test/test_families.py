@@ -8,6 +8,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+from unittest.mock import patch
 
 from jobs.workspace_delete.sweeps import WORKSPACE_SETTINGS_KINDS
 from jobs.workspace_delete.test.conftest import (
@@ -23,6 +24,8 @@ from jobs.workspace_delete.test.conftest import (
 from jobs.workspace_delete.test.families import FAMILIES
 from shared.company_context import my_context_key, put_my_context
 from shared.conversations import conversant_key, conversation_partition
+from shared.document_comments import put_thread, thread_item, user_author
+from shared.document_share import create_share
 from shared.import_runs import LIST_PK
 from shared.memory_store import append_event, company_pk, cursor_key, import_key, scope_pk, status_partition
 from shared.onboarding import FEEDBACK_FORM_PK
@@ -34,6 +37,7 @@ from shared.project_keys import (
     project_pk,
     project_registry_key,
     project_type_pk,
+    review_link_registry_key,
     version_partition_key,
 )
 from shared.radar_keys import radar_settings_key
@@ -146,6 +150,36 @@ def _project_row(world: World, table: str, pk: str, sk: str, **fields: Any) -> P
     return _put(world, table, {'pk': pk, 'sk': sk, **fields})
 
 
+#: The family project's series (shared/document_series.py's shape).
+_FAM_SERIES = 'ser_' + 'f' * 24
+
+
+def _comment(world: World) -> Probe:
+    """A thread of the family project's series (shared/document_comments.py: its series listed first)."""
+    _registered(world)
+    item = thread_item(project_id=_FAM_PROJECT, series_id=_FAM_SERIES, document={'document_id': 'doc_fam', 'version': 1},
+                       author=user_author('sub-fam', 'Fam'), text='Fam', anchor=None, workspace=SCOPE)
+    put_thread(world.projects, item, workspace=SCOPE)
+    return Probe('projects', {'pk': item['pk'], 'sk': item['sk']})
+
+
+def _review_link(world: World, which: str) -> Probe:
+    """A review link of the family project, as shared/document_share.py makes it in the workspace: its routing row,
+    its own row, its series' pointer and listing, and its registry row, in one transaction."""
+    _registered(world)
+    # The layer writes a routing row in voc-projects only (the table PROJECTS_TABLE names).
+    with patch.dict('os.environ', {'PROJECTS_TABLE': world.projects.name}):
+        share, _created = create_share(
+            world.projects, project_id=_FAM_PROJECT, document_id='doc_fam',
+            series={'series_id': 'ser_' + 'e' * 24, 'document_type': 'prd', 'base_title': 'Fam'},
+            creator={'sub': 'sub-fam', 'name': 'Fam'},
+            values={'audience': {'mode': 'anyone', 'domains': [], 'emails': []}, 'expires_in_days': 30},
+            workspace=SCOPE)
+    if which == 'registry':
+        return Probe('projects', review_link_registry_key(str(share['share_id']), workspace=SCOPE))
+    return Probe('projects', {'pk': share['pk'], 'sk': share['sk']})
+
+
 def _event(world: World) -> Probe:
     """An event of a company memory the seed holds, as the store appends it."""
     append_event(world.memory, 'mem_c1', 'reinforced', workspace=SCOPE)
@@ -251,6 +285,12 @@ SEEDS: dict[str, Callable[[World], Probe] | None] = {
         w, 'projects', version_partition_key(_FAM_PROJECT, workspace=SCOPE), 'REVISION#doc_fam#000001'),
     'job_status_pk': lambda w: _project_row(w, 'jobs', project_pk(_FAM_PROJECT, workspace=SCOPE), 'JOB#fam',
                                             gsi1pk=job_status_pk('completed', workspace=SCOPE), gsi1sk='2026-11-02'),
+    # A comment thread of the family project, as the store writes it (its series listed in the project first).
+    'comments_pk': _comment,
+    # A review link of the workspace, as the share store writes it (its route, its row and its registry row).
+    'DOCSHARE_IDS': lambda w: _review_link(w, 'registry'),
+    'review_link_key': lambda w: _review_link(w, 'link'),
+    'reviewer_rate_pk': None,
     # A workspace's person (its META, guard and index rows), and an index row naming a list with no rows left.
     'participants_partition': _participant,
     'PARTICIPANTS': lambda w: _put(w, 'participants', participants_index_key(

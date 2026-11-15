@@ -145,9 +145,10 @@ from shared.prototypes import prototype_s3_key, prototype_signed_url
 from shared.research_title import research_document_title
 from shared.row_ids import LONG_OPAQUE_ID_RE
 from shared.s3_versions import delete_every_version, delete_every_version_of_keys
+from shared.scoped_keys import scoped_object_key
 from shared.tables import get_feedback_table, get_jobs_table, get_projects_table
 from shared.timestamps import now_iso
-from shared.ws_repo import PROJECT_CLAIM_INDEX, WorkspaceScope
+from shared.ws_repo import OUTSIDE_ENTRY_INDEX, WorkspaceScope
 
 # The instructions "Copy to Kiro" on a document pastes ahead of that document.
 # ONE definition only: the frontend reads it from the get_project response's
@@ -540,7 +541,7 @@ def create_project(body: dict, caller: Caller, *, workspace: WorkspaceScope | No
     # the second one 500'd on this condition (shared/ids.py). In a workspace a
     # claim already held cancels the one transaction at the claim's index, and
     # is retried the same way; nothing was written.
-    put_index = None if workspace is None else PROJECT_CLAIM_INDEX
+    put_index = None if workspace is None else OUTSIDE_ENTRY_INDEX
     item = write_with_fresh_id('proj', put_project, put_index=put_index, now=now_dt)
     return {'success': True, 'project': _with_sharing_fields(item, caller)}
 
@@ -1285,22 +1286,22 @@ def _start_project_deletion(
     raise ServiceError('Could not establish the project deletion fence. Please retry.')
 
 
-def prototype_project_prefix(project_id: str) -> str:
-    """Every prototype object one project owns, and nothing another owns.
+def prototype_project_prefix(project_id: str, *, workspace: WorkspaceScope | None = None) -> str:
+    """Every prototype object one project owns, and nothing another owns (under `ws/{ws}/` in a workspace).
 
     The trailing slash is load-bearing: `prototypes/proj_1` alone also matches
     `prototypes/proj_10/...`. Pinned to `prototype_s3_key` by a lockstep test.
     """
-    return f'prototypes/{project_id}/'
+    return scoped_object_key(workspace, f'prototypes/{project_id}/')
 
 
-def product_docs_project_prefix(project_id: str) -> str:
-    """Every product-doc object (raw upload and extracted text) one project owns.
+def product_docs_project_prefix(project_id: str, *, workspace: WorkspaceScope | None = None) -> str:
+    """Every product-doc object (raw upload and extracted text) one project owns (under `ws/{ws}/` in a workspace).
 
     Trailing slash for the same reason as `prototype_project_prefix`. Pinned to
     product_context / product_doc_extractor's key builders by a lockstep test.
     """
-    return f'projects/{project_id}/product_docs/'
+    return scoped_object_key(workspace, f'projects/{project_id}/product_docs/')
 
 
 @tracer.capture_method

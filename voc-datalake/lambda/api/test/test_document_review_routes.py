@@ -15,7 +15,9 @@ from handler_events_fixtures import call_route
 from moto import mock_aws
 
 from shared import document_share
+from shared.project_keys import REVIEWER_ROUTES_STORE, NotPerWorkspaceError, require_deployment
 from shared.test.moto_tables import create_pk_sk_table
+from shared.ws_repo import WorkspaceScope
 
 BOARD_POOL = 'us-east-1_boardpool'
 APP_POOL = 'us-east-1_testpool'
@@ -284,6 +286,35 @@ def test_a_link_whose_series_has_no_version_left_is_gone(call, table):
     for key in ({'pk': 'PROJECT#p1', 'sk': 'PRFAQ#d1'}, {'pk': 'PROJECT#p1', 'sk': 'PRFAQ#d2'}):
         table.delete_item(Key=key)
     assert call('GET', _review_path(share), _reviewer())[0]['statusCode'] == 404
+
+
+def test_a_link_kept_in_a_workspace_is_refused_and_nothing_is_written(call, table):
+    """docs/multi-workspace.md 3e: the reviewer routes resolve a link's workspace from its routing row, and refuse
+    one that names a workspace (Review link reviewers, NotPerWorkspaceError: a 500) until the projects API checks the
+    workspace's status before a write (3h)."""
+    workspace, share_id = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8', 'shr_' + 'f' * 32
+    table.put_item(Item={'pk': f'DOCSHARE#{share_id}', 'sk': 'META', 'workspace_id': workspace, 'routed_at': 'x'})
+    table.put_item(Item={'pk': f'WS#{workspace}#DOCSHARE#{share_id}', 'sk': 'META', 'share_id': share_id,
+                         'project_id': 'p1', 'series_id': 'ser_' + 'a' * 24, 'document_type': 'prfaq',
+                         'base_title': 'Launch', 'audience': {'mode': 'anyone', 'domains': [], 'emails': []},
+                         'revoked': False, 'expires_at_epoch': 4_000_000_000})
+    before = table.scan()['Items']
+    path = f'/review/{share_id}'
+    refused: list[tuple] = []
+
+    def refusing(scope, store):
+        try:
+            require_deployment(scope, store)
+        except NotPerWorkspaceError as error:
+            refused.append((scope, store, str(error)))
+            raise
+
+    with patch('shared.document_review_routes.require_deployment', refusing):
+        assert call('GET', path, _reviewer())[0]['statusCode'] == 500
+        assert call('POST', f'{path}/comments', _reviewer(), {'text': 'from rev'})[0]['statusCode'] == 500
+    assert refused == [(WorkspaceScope(workspace), REVIEWER_ROUTES_STORE,
+                        'Review link reviewers is not per workspace yet')] * 2
+    assert table.scan()['Items'] == before
 
 
 # ── persona review start ────────────────────────────────────────────────────

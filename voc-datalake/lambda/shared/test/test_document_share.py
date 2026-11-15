@@ -198,13 +198,16 @@ def test_the_team_view_carries_the_review_path_and_whether_it_is_active(table, c
 
 def test_an_anyone_link_admits_a_verified_reviewer(table):
     share, _ = _create(table)
-    assert ds.require_share_for(table, share['share_id'], REVIEWER)['share_id'] == share['share_id']
+    found, workspace = ds.require_share_for(table, share['share_id'], REVIEWER)
+    assert found['share_id'] == share['share_id']
+    # A deployment's link names no workspace.
+    assert workspace is None
 
 
 def test_a_list_link_admits_only_its_audience(table):
     share, _ = _create(table, audience={'mode': 'list', 'domains': ['partner.example'], 'emails': ['ann@x.example']})
-    assert ds.require_share_for(table, share['share_id'], REVIEWER)
-    assert ds.require_share_for(table, share['share_id'], 'ann@x.example')
+    assert ds.require_share_for(table, share['share_id'], REVIEWER)[0] == share
+    assert ds.require_share_for(table, share['share_id'], 'ann@x.example')[0] == share
     with pytest.raises(NotFoundError, match=ds.LINK_GONE):
         ds.require_share_for(table, share['share_id'], 'eve@evil.example')
 
@@ -212,7 +215,7 @@ def test_a_list_link_admits_only_its_audience(table):
 def test_an_expired_link_admits_nobody(table, clock):
     share, _ = _create(table, expires_in_days=1)
     clock['now'] = NOW + 86_400 - 1
-    assert ds.require_share_for(table, share['share_id'], REVIEWER)
+    assert ds.require_share_for(table, share['share_id'], REVIEWER)[0] == share
     clock['now'] = NOW + 86_400
     with pytest.raises(NotFoundError, match=ds.LINK_GONE):
         ds.require_share_for(table, share['share_id'], REVIEWER)

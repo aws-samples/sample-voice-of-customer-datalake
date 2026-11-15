@@ -15,9 +15,12 @@ found in this version" and kept.
 Text is type-checked and capped here; text that reads like an instruction to a model is kept
 but ``flagged`` (shared.prompt_safety), as prototype pins are. Nothing here logs content.
 
-Not per workspace yet (docs/multi-workspace.md, the project plan): every read and write takes a ``workspace`` only to
-refuse it (``NotPerWorkspaceError``), so a review route that reads a workspace's document never files or lists its
-comments under the deployment's ``DCOMMENTS#`` keys.
+Per workspace since 7.35.00 (docs/multi-workspace.md, the project plan, 3e; no route passes one yet): every read and
+write takes a keyword-only ``workspace``. Without one each request is the one sent before, on the table itself. In
+one, the thread is ``WS#{ws}#DCOMMENTS#{project}#{series}`` (shared/project_keys.py ``comments_pk``), every call goes
+through the workspace layer (shared/ingest_tables.py ``ScopedUpdates``, shared/scoped_query.py ``iter_partition``),
+and a new thread first lists its series in the project's own partition (``comment_series_key``, put if absent), so
+the hard delete finds the comment partition from the project.
 """
 from __future__ import annotations
 
@@ -29,18 +32,19 @@ from datetime import UTC, datetime
 from itertools import islice
 from typing import Any, Final
 
-from boto3.dynamodb.conditions import Key
+from botocore.exceptions import ClientError
 
-from shared.dynamo_paging import iter_query
+from shared.aws import is_conditional_check_failure
 from shared.dynamo_values import plain
 from shared.exceptions import ValidationError
-from shared.project_keys import DOCUMENT_COMMENTS_STORE, require_deployment
+from shared.ingest_tables import ScopedUpdates, scoped_calls
+from shared.project_keys import comment_series_item, comments_pk
 from shared.prompt_safety import injection_findings
 from shared.request_body import validated_text
+from shared.scoped_query import iter_partition
 from shared.timestamps import now_iso
-from shared.ws_repo import WorkspaceScope
+from shared.ws_repo import OutOfScopeError, WorkspaceScope
 
-COMMENTS_PK_PREFIX: Final = 'DCOMMENTS#'
 COMMENT_SK_PREFIX: Final = 'C#'
 STATUS_OPEN: Final = 'open'
 STATUS_RESOLVED: Final = 'resolved'
@@ -62,12 +66,21 @@ _COMMENT_ID_PREFIX: Final = 'dc_'
 _COMMENT_ID_RE: Final = re.compile(r'^dc_[0-9]{20}[0-9a-f]{6}\Z')
 
 
-def comments_pk(project_id: str, series_id: str) -> str:
-    return f'{COMMENTS_PK_PREFIX}{project_id}#{series_id}'
+def comment_key(project_id: str, series_id: str, comment_id: str, *,
+                workspace: WorkspaceScope | None = None) -> dict[str, str]:
+    """A thread's key in its series' partition (``comments_pk``; the workspace's when given)."""
+    return {'pk': comments_pk(project_id, series_id, workspace=workspace), 'sk': f'{COMMENT_SK_PREFIX}{comment_id}'}
 
 
-def comment_key(project_id: str, series_id: str, comment_id: str) -> dict[str, str]:
-    return {'pk': comments_pk(project_id, series_id), 'sk': f'{COMMENT_SK_PREFIX}{comment_id}'}
+def list_series(table: Any, project_id: str, series_id: str, *, workspace: WorkspaceScope) -> None:
+    """List the series among the project's commented ones (``comment_series_item``, put if absent: a thread never
+    rewrites a listed series' row), before its comment partition gets a row; a workspace's only."""
+    item = comment_series_item(project_id, series_id, now_iso(), workspace=workspace)
+    try:
+        ScopedUpdates(workspace, table).put_item(Item=item, ConditionExpression='attribute_not_exists(pk)')
+    except ClientError as error:
+        if not is_conditional_check_failure(error):
+            raise
 
 
 def new_comment_id(now: datetime | None = None) -> str:
@@ -143,13 +156,13 @@ def reviewer_author(email_lc: str, name: str = '') -> dict[str, str]:
 
 def thread_item(*, project_id: str, series_id: str, document: Mapping[str, Any], author: Mapping[str, Any],
                 text: str, anchor: Mapping[str, str] | None, share_id: str = '',
-                extra: Mapping[str, Any] | None = None) -> dict[str, Any]:
-    """A new thread row on the version ``document``."""
+                extra: Mapping[str, Any] | None = None, workspace: WorkspaceScope | None = None) -> dict[str, Any]:
+    """A new thread row on the version ``document`` (in the workspace's series partition when given)."""
     moment = datetime.now(UTC)
     comment_id = new_comment_id(moment)
     at = moment.isoformat()
     return {
-        **comment_key(project_id, series_id, comment_id),
+        **comment_key(project_id, series_id, comment_id, workspace=workspace),
         'comment_id': comment_id, 'project_id': project_id, 'series_id': series_id,
         'document_id': str(document.get('document_id', '')), 'version': document.get('version'),
         'author': dict(author), 'text': text, 'anchor': dict(anchor) if anchor else None,
@@ -165,33 +178,39 @@ def reply_item(author: Mapping[str, Any], text: str) -> dict[str, Any]:
 
 
 def put_thread(table: Any, item: Mapping[str, Any], *, workspace: WorkspaceScope | None = None) -> None:
-    require_deployment(workspace, DOCUMENT_COMMENTS_STORE)
-    table.put_item(Item=dict(item), ConditionExpression='attribute_not_exists(sk)')
+    """Write a new thread (``thread_item``, of the same scope). In a workspace its series is listed in the project's
+    partition first (``list_series``), and a thread whose partition is not its series' is refused
+    (``OutOfScopeError``) before anything is written, so the list names every partition a thread is in."""
+    if workspace is not None:
+        project_id, series_id = str(item.get('project_id') or ''), str(item.get('series_id') or '')
+        if not project_id or item.get('pk') != comments_pk(project_id, series_id, workspace=workspace):
+            raise OutOfScopeError("a thread is written in its own series' partition")
+        list_series(table, project_id, series_id, workspace=workspace)
+    scoped_calls(table, workspace).put_item(Item=dict(item), ConditionExpression='attribute_not_exists(sk)')
 
 
 def get_thread(table: Any, project_id: str, series_id: str, comment_id: str, *,
                workspace: WorkspaceScope | None = None) -> dict[str, Any] | None:
-    require_deployment(workspace, DOCUMENT_COMMENTS_STORE)
     if not is_comment_id(comment_id):
         return None
-    item = table.get_item(Key=comment_key(project_id, series_id, comment_id), ConsistentRead=True).get('Item')
+    key = comment_key(project_id, series_id, comment_id, workspace=workspace)
+    item = scoped_calls(table, workspace).get_item(Key=key, ConsistentRead=True).get('Item')
     return item if isinstance(item, dict) else None
 
 
 def list_threads(table: Any, project_id: str, series_id: str, *,
                  workspace: WorkspaceScope | None = None) -> list[dict[str, Any]]:
-    """The series' threads, oldest first, at most ``MAX_THREADS_LISTED``."""
-    require_deployment(workspace, DOCUMENT_COMMENTS_STORE)
-    query = {'KeyConditionExpression': Key('pk').eq(comments_pk(project_id, series_id))
-             & Key('sk').begins_with(COMMENT_SK_PREFIX), 'ConsistentRead': True}
-    return list(islice(iter_query(table, query), MAX_THREADS_LISTED))
+    """The series' threads, oldest first, at most ``MAX_THREADS_LISTED`` (shared/scoped_query.py ``iter_partition``:
+    without a workspace the Query sent before, ``Key('pk').eq(…) & Key('sk').begins_with('C#')``)."""
+    rows = iter_partition(workspace, table, 'pk', comments_pk(project_id, series_id, workspace=workspace),
+                          sort_prefix=COMMENT_SK_PREFIX, ConsistentRead=True)
+    return list(islice(rows, MAX_THREADS_LISTED))
 
 
 def append_reply(table: Any, item: Mapping[str, Any], reply: Mapping[str, Any], *,
                  workspace: WorkspaceScope | None = None) -> dict[str, Any]:
     """Add ``reply`` to the thread (capped); raises the conditional failure past ``MAX_REPLIES``."""
-    require_deployment(workspace, DOCUMENT_COMMENTS_STORE)
-    response = table.update_item(
+    response = scoped_calls(table, workspace).update_item(
         Key={'pk': item['pk'], 'sk': item['sk']},
         UpdateExpression='SET replies = list_append(if_not_exists(replies, :empty), :reply), updated_at = :now',
         ConditionExpression='attribute_exists(sk) AND (attribute_not_exists(replies) OR size(replies) < :max)',
@@ -204,8 +223,7 @@ def append_reply(table: Any, item: Mapping[str, Any], reply: Mapping[str, Any], 
 def set_status(table: Any, item: Mapping[str, Any], status: str, actor_name: str, *,
                workspace: WorkspaceScope | None = None) -> dict[str, Any]:
     """Resolve or reopen; raises the conditional failure when the thread is gone."""
-    require_deployment(workspace, DOCUMENT_COMMENTS_STORE)
-    response = table.update_item(
+    response = scoped_calls(table, workspace).update_item(
         Key={'pk': item['pk'], 'sk': item['sk']},
         UpdateExpression='SET #status = :status, status_by = :by, updated_at = :now',
         ConditionExpression='attribute_exists(sk)',
@@ -217,8 +235,7 @@ def set_status(table: Any, item: Mapping[str, Any], status: str, actor_name: str
 
 
 def delete_thread(table: Any, item: Mapping[str, Any], *, workspace: WorkspaceScope | None = None) -> None:
-    require_deployment(workspace, DOCUMENT_COMMENTS_STORE)
-    table.delete_item(Key={'pk': item['pk'], 'sk': item['sk']})
+    scoped_calls(table, workspace).delete_item(Key={'pk': item['pk'], 'sk': item['sk']})
 
 
 # ── Views ───────────────────────────────────────────────────────────────────

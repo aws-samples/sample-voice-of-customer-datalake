@@ -12,7 +12,8 @@ parsed, and each raw access is counted by its kind:
   ``multipart_uploads``), ``put`` / ``delete`` on an ``….Object(…)`` or ``….Bucket(…)`` made in the same
   expression, or the ingestors' deployment-wide table (``DeploymentTable(…)``, and ``ingest_table(None, …)`` or
   ``table_view(None, …)`` with the literal None, and the project, job and participants accessors
-  (``PROJECT_ACCESSORS``, ``QUALIFIED_ACCESSORS``, ``PARTICIPANT_ACCESSORS``) with a literal ``workspace=None`` or, for ``get_scoped_item``, a literal None scope; a call passing a scope variable that may be
+  (``PROJECT_ACCESSORS``, ``QUALIFIED_ACCESSORS``, ``PARTICIPANT_ACCESSORS``, ``COMMENT_AND_OBJECT_ACCESSORS``) with a
+  literal ``workspace=None`` or, for ``get_scoped_item``, a literal None scope; a call passing a scope variable that may be
   None at run time, or leaving the default, is not counted);
 * a reference to a data-path table getter of shared/tables.py (``get_feedback_table``, ``get_aggregates_table``,
   ``cached_table``): called, bound to a name or passed on, by its name, an ``import … as`` alias or as an
@@ -33,7 +34,8 @@ parsed, and each raw access is counted by its kind:
 * a string that STARTS a data-path partition or object key without the workspace (``'SOURCE#…'``,
   ``f'METRIC#{name}'``, ``'raw/'`` …: ``UNSCOPED_KEY_PREFIXES``): such a key can only name the deployment-wide
   partition, never one workspace's. A project id's claim (``PROJECT_ID#{id}``) is one: only the layer spells it, and
-  only the project create calls its writer (``CLAIM_WRITER``).
+  only the project create calls its writer (``CLAIM_WRITER``); a review link's routing row (``DOCSHARE#{id}``) is
+  another, whose writer only the review link create calls (``ROUTE_WRITER``).
 
 ``ALLOWED`` names, per module, the phase that moves it (2: the data path, 3: everything else; docs/multi-workspace.md
 "Phases"; 0: it stays raw by design, the control plane and the handle plumbing) and how many of EACH kind it still holds. A module's counts must match exactly: a new raw access fails
@@ -124,9 +126,20 @@ PARTICIPANT_ACCESSORS: Final = frozenset({
     'delete_list', 'link', 'unlink', 'project_links', 'collect_people', 'erase_person', 'asks_of_person', 'create_ask',
     'scoped_calls', 'scoped_rows', 'rows_by_id_in', 'copy_personas', 'read_source_personas', 'promote',
     'require_project_access', 'can_view_project', 'brand_name'})
+#: The comment threads, persona review and review links and a project's object keys (since 7.35.00, slice 3e:
+#: shared/document_comments.py, shared/document_review.py, shared/document_share.py and the review routes' helpers,
+#: shared/avatar.py, shared/prototypes.py, api/projects.py's object prefixes, api/product_context.py's upload key),
+#: counted the same way.
+COMMENT_AND_OBJECT_ACCESSORS: Final = frozenset({
+    'put_thread', 'get_thread', 'list_threads', 'append_reply', 'set_status', 'delete_thread', 'thread_item',
+    'comment_key', 'run_review', 'current_share', 'create_share', 'revoke_share', 'count_reviewer_write',
+    'avatar_prefix', 'avatar_object_key', 'avatar_object_keys', 'persona_avatar_keys', 'avatar_key_from_uri',
+    'delete_superseded_avatars', 'generate_persona_avatar', 'prototype_s3_key', 'prototype_project_prefix',
+    'product_docs_project_prefix', 'product_doc_raw_key', 'scoped_object_key', 'get_avatar_cdn_url',
+    'prototype_signed_url'})
 #: The accessors whose scope may also be passed by position, and where.
 PROJECT_ACCESSOR_SCOPE_POSITION: Final = {'get_scoped_item': 2, 'scoped_calls': 1, 'scoped_rows': 1,
-                                          'rows_by_id_in': 1}
+                                          'rows_by_id_in': 1, 'scoped_object_key': 0}
 UNSCOPED_PROJECT_ACCESS: Final = 'project accessor(workspace=None)'
 #: DynamoDB's multi-item calls and the kind each is counted in. ``WorkspaceTable`` has the same methods, so a call
 #: on one of its views (``VIEW_BUILDERS``, ``VIEW_TYPE``) is scoped, not raw.
@@ -145,12 +158,19 @@ LAYER_MODULE: Final = 'shared.ws_repo'
 #: shared/project_keys.py spells it (``version_partition_key``). ``STATUS#`` is voc-jobs' status index partition
 #: (since 7.29.00): only shared/project_keys.py spells it (``job_status_pk``). ``LIST#``, ``PERSON#``, ``EMAIL#``,
 #: ``LISTS`` and ``PEOPLE`` are voc-participants' lists, people, address guards and their ``gsi1`` partitions (since
-#: 7.31.00): only shared/participants_keys.py spells them.
+#: 7.31.00): only shared/participants_keys.py spells them. ``DCOMMENTS#`` and ``DCRATE#`` are a series' comment
+#: partition and a reviewer's daily counter (since 7.35.00): only shared/project_keys.py spells them; ``DOCSHARE#`` is
+#: a review link's row (a workspace's link's routing row): only shared/review_share_audience.py (the trigger bundle's
+#: stdlib copy) spells it.
 UNSCOPED_KEY_PREFIXES: Final = ('SOURCE#', 'METRIC#', 'DATE#', 'CATEGORY#', 'URGENCY#', 'CHANNEL#', 'SOURCE_RUN#',
                                 'raw/', 'silver/', 'PROJECT#', 'TYPE#PROJECT', 'PROJECT_ID#', 'DOCUMENT_VERSIONS#',
-                                'STATUS#', 'LIST#', 'PERSON#', 'EMAIL#', 'LISTS', 'PEOPLE')
+                                'STATUS#', 'LIST#', 'PERSON#', 'EMAIL#', 'LISTS', 'PEOPLE', 'DCOMMENTS#', 'DCRATE#',
+                                'DOCSHARE#')
 #: The layer's claim writer (``claim_project_id``) and the one module that may call it: the project create.
 CLAIM_WRITER: Final = ('claim_project_id', frozenset({'lambda/shared/project_writes.py'}))
+#: The layer's review link route writer (``route_share_id``, since 7.35.00) and the one module that may call it: the
+#: review link create.
+ROUTE_WRITER: Final = ('route_share_id', frozenset({'lambda/shared/document_share.py'}))
 #: Modules that answer requests a client sent (the API, the public webhooks): their workspace is never read from
 #: what the client sent.
 REQUEST_FACING: Final = ('lambda/api/', 'plugins/_shared/base_webhook.py')
@@ -270,7 +290,6 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # Its transaction goes through `transact_project_writes` since 7.27.00 (`ws_table` in a workspace); left: the
     # deployment's batch delete of a document's revisions (a workspace's go through `WorkspaceTable.batch_delete`).
     'lambda/shared/document_history.py': (3, {'batch': 1}),
-    'lambda/shared/document_share.py': (3, {'meta.client': 1, 'transact': 1}),
     'lambda/shared/earliest_date.py': (2, {'METRIC#': 1}),
     'lambda/shared/engagement_config.py': (3, {'cached_table': 1, 'get_aggregates_table': 1}),
     'lambda/shared/feature_boards_limits.py': (3, {'meta.client': 1, 'transact': 1}),
@@ -360,7 +379,13 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/shared/mcp_oauth_routes.py': (3, {'get_jobs_table': 1, 'get_projects_table': 1}),
     # Its DOCUMENT_VERSIONS# is the version partition's one spelling, moved from shared/document_versions.py in 7.27.00;
     # its STATUS# the jobs' status index partition's, shared/assist_jobs.py's own two spellings moved here in 7.29.00.
-    'lambda/shared/project_keys.py': (3, {'DOCUMENT_VERSIONS#': 1, 'PROJECT#': 1, 'STATUS#': 1, 'TYPE#PROJECT': 1}),
+    # Its DCOMMENTS# and DCRATE#: a series' comment partition and a reviewer's counter, moved here in 7.35.00 from
+    # shared/document_comments.py and shared/document_share.py (each a workspace's too, through scoped_pk).
+    'lambda/shared/project_keys.py': (3, {'DCOMMENTS#': 1, 'DCRATE#': 1, 'DOCUMENT_VERSIONS#': 1, 'PROJECT#': 1,
+                                          'STATUS#': 1, 'TYPE#PROJECT': 1}),
+    # A review link's DOCSHARE# (7.35.00): the one spelling, which the board pool's stdlib-only trigger bundle ships
+    # and shared/project_keys.py review_link_key scopes for a workspace.
+    'lambda/shared/review_share_audience.py': (3, {'DOCSHARE#': 1}),
     # voc-participants' keys, moved here in 7.31.00 from shared/participants_store.py, participants_lists.py,
     # participants_asks.py and participants_erasure.py (each a workspace's too, through scoped_pk).
     'lambda/shared/participants_keys.py': (3, {'EMAIL#': 1, 'LIST#': 1, 'LISTS': 1, 'PEOPLE': 1, 'PERSON#': 1}),
@@ -438,7 +463,7 @@ def _call_kind(node: ast.Call) -> str | None:
     if (name in ('ingest_table', 'table_view') and node.args and isinstance(node.args[0], ast.Constant)
             and node.args[0].value is None):
         return UNSCOPED_INGEST_TABLE
-    if (name in PROJECT_ACCESSORS | PARTICIPANT_ACCESSORS
+    if (name in PROJECT_ACCESSORS | PARTICIPANT_ACCESSORS | COMMENT_AND_OBJECT_ACCESSORS
             and _spells_no_workspace(node, PROJECT_ACCESSOR_SCOPE_POSITION.get(name))):
         return UNSCOPED_PROJECT_ACCESS
     if _qualified(node) in QUALIFIED_ACCESSORS and _spells_no_workspace(node, None):
@@ -683,6 +708,13 @@ def test_the_claim_writer_is_called_by_the_project_create_only():
     assert set(_calls_of(name)) == callers
 
 
+def test_the_route_writer_is_called_by_the_review_link_create_only():
+    """A review link's routing row is the layer's other write outside a workspace (``DOCSHARE#{id}``), and only a
+    workspace's link create makes it (shared/document_share.py ``create_share``)."""
+    name, callers = ROUTE_WRITER
+    assert set(_calls_of(name)) == callers
+
+
 def test_no_request_facing_module_takes_its_scope_from_what_was_sent():
     """A request's workspace is its resolved membership (``scope_of``), never a field, a path or a cursor."""
     assert [module for name in ('scope_from_message', 'scope_from_key', 'scope_from_lookup', 'event_scope')
@@ -913,6 +945,15 @@ def test_the_scan_sees_each_kind_of_raw_access(tmp_path):
         "qe = persona_copy.copy_personas(table, s3, 'b', workspace=None)\n"
         "qf = engagement_config.brand_name(workspace=None)\n"
         "qg = f'PERSON#{person_id}'\n"
+        # The comment, review link and object stores (7.35.00): by name, and scoped_object_key by position too.
+        "qh = comments.put_thread(table, item, workspace=None)\n"
+        "qi = document_share.create_share(table, project_id='p', series={}, document_id='d', creator={}, values={},"
+        " workspace=None)\n"
+        "qj = prototype_s3_key('p', 'd', workspace=None)\n"
+        "qk = scoped_object_key(None, 'prototypes/p/')\n"
+        "ql = scoped_object_key(scope, 'prototypes/p/')\n"
+        "thread_pk = f'DCOMMENTS#{project_id}#{series_id}'\n"
+        "link = f'DOCSHARE#{share_id}'\n"
         # A project id's claim, and a document-version partition, spelled outside the layer and the key builders.
         "claim = f'PROJECT_ID#{project_id}'\n"
         "versions = f'DOCUMENT_VERSIONS#PROJECT#{project_id}'\n"
@@ -942,8 +983,8 @@ def test_the_scan_sees_each_kind_of_raw_access(tmp_path):
         'Table': 1, 'put_object': 1, 'copy_object': 1, 'get_feedback_table': 1, 'get_aggregates_table': 1,
         'SOURCE#': 1, 'METRIC#': 1, 'raw/': 1, 'silver/': 1, 'upload_file': 1, 'upload_fileobj': 1,
         'cached_table': 1, 'generate_presigned_url': 1, 'delete_object': 1, 'DeploymentTable': 2,
-        'ingest_table(None)': 2, 'project accessor(workspace=None)': 22, 'PROJECT_ID#': 1, 'DOCUMENT_VERSIONS#': 1,
-        'PERSON#': 1,
+        'ingest_table(None)': 2, 'project accessor(workspace=None)': 26, 'PROJECT_ID#': 1, 'DOCUMENT_VERSIONS#': 1,
+        'PERSON#': 1, 'DCOMMENTS#': 1, 'DOCSHARE#': 1,
         'transact': 4, 'batch': 5,
         # The low-level client itself (7.00.00's rule), beside the multi-item calls made on it.
         'meta.client': 3})

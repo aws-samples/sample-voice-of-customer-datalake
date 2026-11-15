@@ -24,7 +24,8 @@ import {
 import { PROCESSOR_DROP_COUNT_ATTRIBUTES } from './processing-roles';
 import {
   CONTROL_ROW_DELETES, CONVERSATION_PARTITIONS, DELETE_AUDIT_PARTITION, DELETE_JOB_PARTITION, MEMORY_PARTITIONS, PROJECT_CLAIM_PARTITIONS,
-  PARTICIPANT_PARTITIONS, PROJECTS_TABLE_PARTITIONS, TOMBSTONE_PARTITIONS,
+  PARTICIPANT_PARTITIONS, PROJECTS_TABLE_PARTITIONS, REVIEW_LINK_REGISTRY, REVIEW_LINK_ROUTE_PARTITIONS, REVIEW_LINK_ROWS,
+  TOMBSTONE_PARTITIONS,
   WORKSPACE_DELETE_MAX_EVENT_AGE_MINUTES, WORKSPACE_DELETE_RESERVED_CONCURRENCY,
 } from './workspace-delete-worker';
 
@@ -214,10 +215,11 @@ describe('the voc-workspace-delete job', () => {
     expect(Object.keys(WORKSPACE_DELETE_GRANTS)).toStrictEqual([
       'credentials', 'feedback', 'counters', 'source_runs', 'failures', 'circuits', 'logs', 'scraper_runs',
       'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'reprocess_jobs', 'watermarks', 'memory', 'exports',
-      'objects', 'radar', 'settings', 'user_contexts', 'projects', 'participants', 'conversations', 'control_rows']);
+      'objects', 'radar', 'settings', 'user_contexts', 'docshares', 'projects', 'participants', 'conversations',
+      'control_rows']);
     expect([...deleteGrants()].sort(byCodeUnit)).toStrictEqual(['aggregates', 'controlRows', 'conversations',
-      'credentials', 'exportJobs', 'feedback', 'memory', 'metricTypeIndex', 'objects', 'participants', 'projects',
-      'radar', 'tombstones', 'watermarks']);
+      'credentials', 'docshares', 'exportJobs', 'feedback', 'memory', 'metricTypeIndex', 'objects', 'participants',
+      'projects', 'radar', 'tombstones', 'watermarks']);
   });
 
   it('refuses to be built while the registry lacks a sweep the docs require (the conversations, say)', () => {
@@ -236,13 +238,17 @@ describe('the voc-workspace-delete job', () => {
     expect(worker().Environment.Variables).toHaveProperty('CONVERSATIONS_TABLE');
   });
 
-  it('voc-projects: Query and BatchWriteItem of one workspace\'s registry and project partitions, its claims\' GetItem and DeleteItem', () => {
+  it('voc-projects: one workspace\'s registries, project, comment and link partitions; claims\' GetItem and DeleteItem, routes\' DeleteItem', () => {
     expect(PROJECTS_TABLE_PARTITIONS).toStrictEqual([`WS#${ONE}#PROJECT#*`, `WS#${ONE}#DOCUMENT_VERSIONS#PROJECT#*`,
-      `WS#${ONE}#PROJECT_IDS`]);
-    expect(PROJECT_CLAIM_PARTITIONS).toStrictEqual(['PROJECT_ID#*']);
+      `WS#${ONE}#DCOMMENTS#*`, `WS#${ONE}#PROJECT_IDS`]);
+    expect([PROJECT_CLAIM_PARTITIONS, REVIEW_LINK_ROUTE_PARTITIONS]).toStrictEqual([['PROJECT_ID#*'], ['DOCSHARE#*']]);
+    expect([REVIEW_LINK_REGISTRY, REVIEW_LINK_ROWS]).toStrictEqual([[`WS#${ONE}#DOCSHARE_IDS`], [`WS#${ONE}#DOCSHARE#*`]]);
     expect(on('Projects')).toStrictEqual(sorted([
       { actions: ['dynamodb:BatchWriteItem', 'dynamodb:Query'], index: null, condition: keys(PROJECTS_TABLE_PARTITIONS) },
+      { actions: ['dynamodb:BatchWriteItem', 'dynamodb:Query'], index: null, condition: keys(REVIEW_LINK_REGISTRY) },
+      { actions: ['dynamodb:BatchWriteItem'], index: null, condition: keys(REVIEW_LINK_ROWS) },
       { actions: ['dynamodb:DeleteItem', 'dynamodb:GetItem'], index: null, condition: keys(['PROJECT_ID#*']) },
+      { actions: ['dynamodb:DeleteItem'], index: null, condition: keys(['DOCSHARE#*']) },
     ]));
   });
 

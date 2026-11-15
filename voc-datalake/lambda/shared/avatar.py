@@ -10,7 +10,7 @@ import hashlib
 import json
 import os
 import threading
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 import boto3
 
@@ -28,9 +28,13 @@ from shared.avatar_failure import (
 from shared.logging import logger, tracer
 from shared.prompts import format_prompt, get_avatar_prompt_config
 from shared.s3_versions import delete_every_version
+from shared.scoped_keys import scoped_object_key
+from shared.ws_repo import has_plain_segments
 
 if TYPE_CHECKING:
     from mypy_boto3_bedrock_runtime import BedrockRuntimeClient
+
+    from shared.ws_repo import WorkspaceScope
 
 # `shared.cloudfront_signing` (and through it `cryptography`) is imported LAZILY
 # inside get_avatar_cdn_url — the only function here that signs. The rest of this
@@ -193,10 +197,17 @@ AVATAR_CACHE_CONTROL = 'public, max-age=31536000, immutable'
 AVATAR_DIGEST_CHARS = 24
 
 
-def avatar_object_key(persona_id: str, image_data: bytes, image_format: str) -> str:
+def avatar_prefix(*, workspace: WorkspaceScope | None = None) -> str:
+    """Where a scope's avatar objects live: ``avatars/`` for the deployment, ``ws/{ws}/avatars/`` in a workspace
+    (shared/scoped_keys.py ``scoped_object_key``; docs/multi-workspace.md, the project plan, 3d and 3e)."""
+    return scoped_object_key(workspace, AVATAR_KEY_PREFIX)
+
+
+def avatar_object_key(persona_id: str, image_data: bytes, image_format: str, *,
+                      workspace: WorkspaceScope | None = None) -> str:
     """The S3 key one generated image is stored under: new per image, never reused.
 
-    Content-addressed (`avatars/{persona_id}/{sha256}.{ext}`). The key used to be
+    Content-addressed (`avatars/{persona_id}/{sha256}.{ext}`; under ``ws/{ws}/`` in a workspace). The key used to be
     `avatars/{persona_id}.{ext}`, overwritten by every regeneration, while the
     object is served `immutable` for a year and the `/avatars/*` CloudFront cache
     key ignores the query string (so the signature does not bust it either): a
@@ -205,10 +216,10 @@ def avatar_object_key(persona_id: str, image_data: bytes, image_format: str) -> 
     long-lived immutable caching becomes correct rather than harmful.
     """
     digest = hashlib.sha256(image_data).hexdigest()[:AVATAR_DIGEST_CHARS]
-    return f'{AVATAR_KEY_PREFIX}{persona_id}/{digest}.{image_format}'
+    return f'{avatar_prefix(workspace=workspace)}{persona_id}/{digest}.{image_format}'
 
 
-def avatar_object_keys(persona_id: str) -> tuple[str, ...]:
+def avatar_object_keys(persona_id: str, *, workspace: WorkspaceScope | None = None) -> tuple[str, ...]:
     """Every LEGACY flat key one persona's avatar may occupy (`avatars/{id}.{ext}`).
 
     The flat key embedded the image format, so a persona regenerated across an
@@ -216,31 +227,49 @@ def avatar_object_keys(persona_id: str) -> tuple[str, ...]:
     Current images live under the persona's prefix instead; see
     ``persona_avatar_keys`` for the complete inventory. A caller deleting on behalf
     of a project must still check ownership (see AVATAR_OWNER_METADATA_KEY).
+    A workspace has none: its avatars are all content-addressed (the flat keys predate it).
     """
+    if workspace is not None:
+        return ()
     return tuple(f'{AVATAR_KEY_PREFIX}{persona_id}.{extension}' for extension in _HISTORICAL_EXTENSIONS)
 
 
-def persona_avatar_keys(s3_client, bucket: str, persona_id: str) -> list[str]:
-    """Every key one persona's avatar may occupy: the legacy flat keys + its prefix.
+def persona_avatar_keys(s3_client, bucket: str, persona_id: str, *,
+                        workspace: WorkspaceScope | None = None) -> list[str]:
+    """Every key one persona's avatar may occupy: the legacy flat keys + its prefix (the workspace's when given).
 
     The flat keys are candidates (they may not exist — the owner HEAD answers
     that); the per-persona prefix is listed, so every image ever generated for the
     persona is found, however many regenerations ago. A listing failure raises: a
     sweep that silently saw nothing would leave the objects behind for good.
     """
-    keys = list(avatar_object_keys(persona_id))
+    keys = list(avatar_object_keys(persona_id, workspace=workspace))
     paginator = s3_client.get_paginator('list_objects_v2')
-    for page in paginator.paginate(Bucket=bucket, Prefix=f'{AVATAR_KEY_PREFIX}{persona_id}/'):
+    for page in paginator.paginate(Bucket=bucket, Prefix=f'{avatar_prefix(workspace=workspace)}{persona_id}/'):
         keys.extend(entry['Key'] for entry in page.get('Contents', []) if isinstance(entry.get('Key'), str))
     return keys
 
 
-def avatar_key_from_uri(s3_uri: object, bucket: str) -> str | None:
-    """The key an `s3://{bucket}/avatars/...` URI names, or None for anything else."""
-    prefix = f's3://{bucket}/{AVATAR_KEY_PREFIX}'
+def avatar_key_from_uri(s3_uri: object, bucket: str, *, workspace: WorkspaceScope | None = None) -> str | None:
+    """The key an `s3://{bucket}/avatars/...` URI names (``ws/{ws}/avatars/…`` in a workspace), or None for anything
+    else: another bucket's, another scope's avatar, or a key that is not a plain path (``is_plain_key``), which could
+    name another place than its prefix says (``ws/A/avatars/../../B/…``)."""
+    prefix = f's3://{bucket}/{avatar_prefix(workspace=workspace)}'
     if not isinstance(s3_uri, str) or not s3_uri.startswith(prefix):
         return None
-    return s3_uri.removeprefix(f's3://{bucket}/')
+    key = s3_uri.removeprefix(f's3://{bucket}/')
+    return key if is_plain_key(key) else None
+
+
+#: Characters a stored avatar key never holds: an escape (``%2e%2e``), a Windows separator or a query, each of which a
+#: reader of the key (S3, CloudFront, a browser) may read as something else.
+_NOT_IN_A_KEY: Final = frozenset('%\\?')
+
+
+def is_plain_key(key: str) -> bool:
+    """Whether ``key`` names only what it reads: plain segments (shared/ws_repo.py ``has_plain_segments``: none empty,
+    ``.`` or ``..``) and none of ``%``, ``\\`` or ``?``."""
+    return has_plain_segments(key) and not _NOT_IN_A_KEY.intersection(key)
 
 
 def avatar_object_owner(s3_client, bucket: str, key: str) -> str | None:
@@ -264,7 +293,7 @@ def avatar_object_owner(s3_client, bucket: str, key: str) -> str | None:
 
 def delete_superseded_avatars(
     s3_client, bucket: str, persona_id: str, *, keep: str, project_id: str | None,
-    previous_key: str | None = None,
+    previous_key: str | None = None, workspace: WorkspaceScope | None = None,
 ) -> None:
     """Remove this persona's earlier avatar images once a new one is referenced.
 
@@ -280,10 +309,11 @@ def delete_superseded_avatars(
     An object stamped by ANOTHER project is always kept: persona ids are not
     unique across projects. Every version of a removed image goes
     (``shared.s3_versions``). Best-effort: a failure is logged, never raised —
-    the new avatar is already live.
+    the new avatar is already live. In a workspace only its own avatars are candidates (``persona_avatar_keys`` of
+    the workspace).
     """
     try:
-        candidates = persona_avatar_keys(s3_client, bucket, persona_id)
+        candidates = persona_avatar_keys(s3_client, bucket, persona_id, workspace=workspace)
     except Exception as e:  # noqa: BLE001 - cleanup must not fail the regeneration
         logger.warning(f"[PERSONA_AVATAR] Could not list superseded avatars of {persona_id}: {e}")
         candidates = []
@@ -397,7 +427,8 @@ def avatars_enabled() -> bool:
 
 @tracer.capture_method
 def generate_persona_avatar(
-    persona_data: dict, s3_bucket: str | None = None, project_id: str | None = None,
+    persona_data: dict, s3_bucket: str | None = None, project_id: str | None = None, *,
+    workspace: WorkspaceScope | None = None,
 ) -> dict:
     """
     Generate an AI avatar image for a persona.
@@ -411,6 +442,8 @@ def generate_persona_avatar(
         project_id: The owning project, stamped on the object as
             AVATAR_OWNER_METADATA_KEY. Without it the object carries no owner and
             a project delete declines to remove it (the safe direction).
+        workspace: The project's workspace: the image is stored under ``ws/{ws}/avatars/`` (``avatar_object_key``);
+            None (every caller today) keeps the deployment's ``avatars/``.
 
     Returns:
         dict with 'avatar_url' (S3 URI or None) and 'avatar_prompt' (the prompt used);
@@ -464,7 +497,7 @@ def generate_persona_avatar(
         image_data = base64.b64decode(images[0])
         stage = 'upload'
         avatar_url = _store_avatar_image(
-            image_data, image_model['output_format'], persona_id, s3_bucket, project_id,
+            image_data, image_model['output_format'], persona_id, s3_bucket, project_id, workspace=workspace,
         )
     except Exception as e:  # noqa: BLE001 - every failure degrades to "no avatar", with its reason
         failure = failure_from_exception(e, model_id=model_id, region=model_region, stage=stage)
@@ -523,10 +556,11 @@ def _no_image(result: dict, image_model: dict, persona_id: str, avatar_prompt: s
 
 
 def _store_avatar_image(
-    image_data: bytes, image_format: str, persona_id: str, s3_bucket: str, project_id: str | None,
+    image_data: bytes, image_format: str, persona_id: str, s3_bucket: str, project_id: str | None, *,
+    workspace: WorkspaceScope | None = None,
 ) -> str:
-    """Upload one generated image; its ``s3://`` URI."""
-    s3_key = avatar_object_key(persona_id, image_data, image_format)
+    """Upload one generated image (under the workspace's prefix when given); its ``s3://`` URI."""
+    s3_key = avatar_object_key(persona_id, image_data, image_format, workspace=workspace)
 
     logger.info(f"[PERSONA_AVATAR] Uploading avatar to S3: s3://{s3_bucket}/{s3_key}")
 
@@ -562,7 +596,19 @@ def _store_avatar_image(
     return f"s3://{s3_bucket}/{s3_key}"
 
 
-def get_avatar_cdn_url(s3_uri: str | None, cdn_url: str | None = None) -> str | None:
+def _workspace_avatar_url(_key: str) -> str | None:
+    """A workspace avatar's URL, its key already checked to be the reader's own: None until the switch (3h) decides
+    how a workspace's objects are served (a CloudFront behaviour for ``ws/{ws}/`` paths, or presigned S3), as for a
+    workspace's prototype (shared/prototypes.py ``prototype_signed_url``); no served path exists yet."""
+    return None
+
+
+#: How every workspace's object key starts (shared/ws_repo.py ``s3_prefix``): the deployment's reader signs none.
+_WORKSPACE_OBJECTS: Final = 'ws/'
+
+
+def get_avatar_cdn_url(s3_uri: str | None, cdn_url: str | None = None, *,
+                       workspace: WorkspaceScope | None = None, bucket: str | None = None) -> str | None:
     """Convert S3 URI to a SIGNED CloudFront CDN URL for avatar images.
 
     S3 URI format: s3://bucket/avatars/{persona_id}/{digest}.{ext}
@@ -585,6 +631,13 @@ def get_avatar_cdn_url(s3_uri: str | None, cdn_url: str | None = None) -> str | 
     Args:
         s3_uri: S3 URI of the avatar image
         cdn_url: Optional CDN URL override, defaults to AVATARS_CDN_URL env var
+        workspace: The reader's workspace (3e; no caller passes one yet). A persona's ``avatar_url`` is
+            editable, so only a key of the reader's own scope is accepted (and a workspace's is not signed until 3h,
+            which adds its serving path): in a workspace a key under its own
+            ``ws/{ws}/avatars/`` of the avatars bucket (``avatar_key_from_uri``: a URI naming another bucket is
+            refused), for the deployment never a workspace's ``ws/…`` key; anything else is None.
+        bucket: The avatars bucket a workspace's URI must name (default: RAW_DATA_BUCKET, where avatars are
+            written); with none known, a workspace's avatar is not signed.
 
     Returns:
         Signed CloudFront CDN URL, or None if it cannot be produced
@@ -603,9 +656,20 @@ def get_avatar_cdn_url(s3_uri: str | None, cdn_url: str | None = None) -> str | 
         # `avatars/`: `{persona_id}/{digest}.jpeg`, or a legacy `{persona_id}.jpeg`.
         # A URI outside that prefix keeps the old reading (its last segment).
         key = s3_uri.removeprefix('s3://').partition('/')[2]
+        if workspace is not None:
+            # A workspace's avatar (3e): only a key under its own `ws/{ws}/avatars/` of the avatars bucket reaches
+            # `_workspace_avatar_url`, which gives None until the switch (3h) adds the serving path (the `/avatars/*`
+            # behaviour serves the deployment's prefix only). Another bucket, another workspace's key or the
+            # deployment's is refused before it.
+            avatars_bucket = bucket or os.environ.get('RAW_DATA_BUCKET', '')
+            own = avatar_key_from_uri(s3_uri, avatars_bucket, workspace=workspace) if avatars_bucket else None
+            return _workspace_avatar_url(own) if own else None
+        # The deployment's reader: never a workspace's key, and never a key that is not a plain path (one could climb
+        # out of `avatars/`, `avatars/../ws/A/…`, or hide a `ws/` behind an empty segment, `//ws/…`).
+        if key.startswith(_WORKSPACE_OBJECTS) or not is_plain_key(key):
+            return None
         filename = (key.removeprefix(AVATAR_KEY_PREFIX) if key.startswith(AVATAR_KEY_PREFIX)
                     else s3_uri.split('/')[-1])
-
         # Lazy on purpose — see the note beside the imports at the top.
         from shared.cloudfront_signing import sign_url
 

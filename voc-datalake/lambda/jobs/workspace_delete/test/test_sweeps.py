@@ -86,8 +86,8 @@ def test_the_entries_run_in_the_designs_order():
     assert [sweep.name for sweep in SWEEPS] == [
         'credentials', 'feedback', 'counters', 'source_runs', 'failures', 'circuits', 'logs', 'scraper_runs',
         'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'reprocess_jobs', 'watermarks', 'memory',
-        'exports', 'objects', 'radar', 'settings', 'user_contexts', 'projects', 'participants', 'conversations',
-        'control_rows']
+        'exports', 'objects', 'radar', 'settings', 'user_contexts', 'docshares', 'projects', 'participants',
+        'conversations', 'control_rows']
 
 
 def test_only_the_feedback_and_the_memory_are_tombstoned():

@@ -9,7 +9,15 @@ persisted in DynamoDB; now that the URL must carry a fresh signature (issue
 #229), the reader derives it instead — so the format is shared code rather than
 a convention repeated in two files.
 """
+from __future__ import annotations
+
 import os
+from typing import TYPE_CHECKING
+
+from shared.scoped_keys import scoped_object_key
+
+if TYPE_CHECKING:
+    from shared.ws_repo import WorkspaceScope
 
 # `shared.cloudfront_signing` is imported LAZILY inside prototype_signed_url,
 # not here. It pulls in `cryptography`, and the document-generator job imports
@@ -20,13 +28,17 @@ import os
 # importer does have the layer; this keeps that from being load-bearing.)
 
 
-def prototype_s3_key(project_id: str, doc_id: str) -> str:
+def prototype_s3_key(project_id: str, doc_id: str, *, workspace: WorkspaceScope | None = None) -> str:
     """S3 key for a generated prototype's HTML, under the `/prototypes/*` prefix
-    that the frontend distribution's cache behavior serves."""
-    return f"prototypes/{project_id}/{doc_id}.html"
+    that the frontend distribution's cache behavior serves. In a workspace (since
+    7.35.00; no caller passes one yet) the same key under `ws/{ws}/`, which that
+    behavior does not serve yet: the switch (3h) decides how a workspace's
+    prototype is shown."""
+    return scoped_object_key(workspace, f"prototypes/{project_id}/{doc_id}.html")
 
 
-def prototype_signed_url(project_id: str, doc_id: str, cdn_url: str | None = None) -> str | None:
+def prototype_signed_url(project_id: str, doc_id: str, cdn_url: str | None = None, *,
+                         workspace: WorkspaceScope | None = None) -> str | None:
     """Signed CloudFront URL for a generated prototype, or None.
 
     None means the prototype cannot be shown: either PROTOTYPES_CDN_URL is not
@@ -35,7 +47,13 @@ def prototype_signed_url(project_id: str, doc_id: str, cdn_url: str | None = Non
     restricted by a trusted key group, so it would 403, and prototype HTML is
     derived from PRDs and PR-FAQs, which is exactly the content that must not
     be reachable without a signature.
+
+    A workspace's prototype (its key under `ws/{ws}/`, 3e) is never signed
+    yet: None until the switch (3h) decides how a workspace's prototype is
+    served, so no URL ever names the deployment's `/prototypes/` path for it.
     """
+    if workspace is not None:
+        return None
     prototypes_cdn_url = cdn_url or os.environ.get('PROTOTYPES_CDN_URL', '')
     if not prototypes_cdn_url or not project_id or not doc_id:
         return None

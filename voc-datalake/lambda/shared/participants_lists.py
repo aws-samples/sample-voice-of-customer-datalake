@@ -34,6 +34,7 @@ from shared.engagement_common import (
 )
 from shared.exceptions import NotFoundError, ValidationError
 from shared.indexes import PARTICIPANTS_LISTING_INDEX
+from shared.ingest_tables import scoped_calls
 from shared.participants_keys import (
     LIST_PARTITION_PREFIX,
     list_key,
@@ -52,7 +53,6 @@ from shared.participants_tables import (
     cancellation_codes,
     delete_many,
     rows_by_id_in,
-    scoped_calls,
     scoped_rows,
     transact,
 )

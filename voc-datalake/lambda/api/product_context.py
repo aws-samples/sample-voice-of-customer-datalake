@@ -47,11 +47,14 @@ from shared.project_writes import (
     put_project_item,
 )
 from shared.s3_versions import delete_every_version_of_keys
+from shared.scoped_keys import scoped_object_key
 from shared.tables import get_projects_table
 from shared.timestamps import now_iso
 
 if TYPE_CHECKING:
     from mypy_boto3_dynamodb.type_defs import QueryInputTableQueryTypeDef
+
+    from shared.ws_repo import WorkspaceScope
 
 projects_table = get_projects_table()
 s3 = None
@@ -639,6 +642,13 @@ def _body_text(body: dict | None, key: str) -> str:
     return value.strip() if isinstance(value, str) else ''
 
 
+def product_doc_raw_key(project_id: str, doc_id: str, ext: str, *, workspace: WorkspaceScope | None = None) -> str:
+    """Where a product document's upload goes: ``projects/{id}/product_docs/raw/{doc}.{ext}``, which the product-doc
+    extractor is triggered on (product_doc_extractor/handler.py ``RAW_KEY_PATTERN``). In a workspace (since 7.35.00; no route
+    passes one yet) the same key under ``ws/{ws}/``, which the extractor is not triggered on until 3f."""
+    return scoped_object_key(workspace, f'projects/{project_id}/product_docs/raw/{doc_id}.{ext}')
+
+
 @tracer.capture_method
 def create_upload_url(project_id: str, body: dict) -> dict:
     """
@@ -692,7 +702,7 @@ def create_upload_url(project_id: str, body: dict) -> dict:
 
     doc_id = _new_doc_id()
     ext = ALLOWED_CONTENT_TYPES[content_type]
-    s3_raw_key = f'projects/{project_id}/product_docs/raw/{doc_id}.{ext}'
+    s3_raw_key = product_doc_raw_key(project_id, doc_id, ext)
     now = now_iso()
 
     item = {

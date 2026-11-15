@@ -34,6 +34,7 @@ from shared.engagement_common import (
 )
 from shared.exceptions import ConflictError, NotFoundError
 from shared.indexes import PARTICIPANTS_LISTING_INDEX
+from shared.ingest_tables import scoped_calls
 from shared.participants_keys import (
     PARTICIPANT_ASKS_STORE,
     PARTICIPANT_SETTINGS_STORE,
@@ -43,7 +44,7 @@ from shared.participants_keys import (
     person_key,
 )
 from shared.participants_settings import may_add_person
-from shared.participants_tables import rows_by_id_in, scoped_calls, scoped_rows, transact
+from shared.participants_tables import rows_by_id_in, scoped_rows, transact
 from shared.project_keys import require_deployment
 from shared.ws_repo import WorkspaceScope
 

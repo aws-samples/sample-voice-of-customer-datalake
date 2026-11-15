@@ -20,7 +20,8 @@ request's resolved membership only; resumed by ``POST /platform/workspaces/{ws}/
    the next generation only (the next invocation reads the checkpoint from the row). Every invocation past the fence
    first reads the workspace's ``META``: one that reads ``active`` stops the job (``failed``), whatever the phase;
 4. **verifies** (``verify``): every partition the inventory lists, each fixed partition, the workspace's versions and
-   open uploads, its credentials path, its project registry and its control partition must hold nothing (a re-check of what the job can
+   open uploads, its credentials path, its project and review link registries and its control partition must hold
+   nothing (a re-check of what the job can
    list, not a proof that nothing of the workspace is left anywhere: TENETS.md D5's gaps); anything found sends the
    job back to the first sweep once (every sweep is idempotent), then fails it naming the families left (never a
    key), checkpointed at the first sweep with its rounds reset, so a resume sweeps and verifies again;
@@ -79,7 +80,7 @@ from shared.ingest_tables import ingest_table
 from shared.invocation_cost import instrumented_handler
 from shared.jobs import has_time_left
 from shared.logging import logger
-from shared.project_keys import project_partitions, project_registry_pk
+from shared.project_keys import project_partitions, project_registry_pk, review_link_registry_pk
 from shared.tables import get_workspaces_table
 from shared.timestamps import now_iso, parse_iso
 from shared.warm_init import warm_at_init
@@ -496,6 +497,12 @@ def _projects_left(run: DeleteRun, _start: object) -> tuple[int, Any]:
     return int(partition_has_rows(run.ctx.projects, project_registry_pk(run.scope))), None
 
 
+def _review_links_left(run: DeleteRun, _start: object) -> tuple[int, Any]:
+    """The review link registry's rows go last, each after its link's routing row and its own row, so a registry
+    still holding a row means the docshares sweep did not finish."""
+    return int(partition_has_rows(run.ctx.projects, review_link_registry_pk(run.scope))), None
+
+
 def _library_left(run: DeleteRun, _start: object) -> tuple[int, Any]:
     """The workspace's company persona library: no registry lists it, so each of its partitions is checked
     (``project_partitions`` of the container, in its table: voc-projects, voc-jobs, voc-participants)."""
@@ -518,6 +525,7 @@ VERIFY_CHECKS: Final[tuple[tuple[str, Check], ...]] = (
     ('memory', _memory_left),
     ('exports', _exports_left),
     ('objects', _objects_left),
+    ('docshares', _review_links_left),
     ('projects', _projects_left),
     ('persona_library', _library_left),
     ('control_rows', _control_left),

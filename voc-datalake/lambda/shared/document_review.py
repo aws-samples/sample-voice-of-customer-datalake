@@ -25,7 +25,6 @@ from shared.exceptions import ValidationError
 from shared.logging import logger
 from shared.memory_store import parse_json_object
 from shared.persona_context import persona_prompt_block
-from shared.project_keys import DOCUMENT_COMMENTS_STORE, require_deployment
 from shared.project_tables import iter_project_rows
 from shared.prompt_safety import DATA_NOTICE, data_block
 from shared.ws_repo import WorkspaceScope
@@ -161,7 +160,7 @@ def _existing_keys(threads: Sequence[Mapping[str, Any]]) -> set[tuple[str, str, 
 
 
 def _file(table: Any, *, project_id: str, series_id: str, document: Mapping[str, Any], persona: Mapping[str, Any],
-          review: Mapping[str, Any], seen: set[tuple[str, str, str]]) -> int:
+          review: Mapping[str, Any], seen: set[tuple[str, str, str]], workspace: WorkspaceScope | None) -> int:
     author = comments.persona_author(str(persona['persona_id']), str(persona.get('name') or ''))
     document_id = str(document.get('document_id'))
     filed = 0
@@ -177,7 +176,7 @@ def _file(table: Any, *, project_id: str, series_id: str, document: Mapping[str,
         seen.add(key)
         comments.put_thread(table, comments.thread_item(
             project_id=project_id, series_id=series_id, document=document, author=author,
-            text=text, anchor=anchor, extra=extra))
+            text=text, anchor=anchor, extra=extra, workspace=workspace), workspace=workspace)
         filed += 1
     return filed
 
@@ -185,17 +184,16 @@ def _file(table: Any, *, project_id: str, series_id: str, document: Mapping[str,
 def run_review(table: Any, *, project_id: str, series_id: str, document: Mapping[str, Any], document_type: str,
                personas: Sequence[Mapping[str, Any]], invoke: Invoke = _default_invoke,
                workspace: WorkspaceScope | None = None) -> dict[str, Any]:
-    """Consult ``personas`` on ``document`` and file their comments; the job's ``result``. Not per workspace yet
-    (it files comment threads, shared/document_comments.py): a ``workspace`` is refused (``NotPerWorkspaceError``)
-    before any model call, so a workspace's document is never reviewed into the deployment's threads."""
-    require_deployment(workspace, DOCUMENT_COMMENTS_STORE)
+    """Consult ``personas`` on ``document`` and file their comments; the job's ``result``. The threads are read and
+    filed in ``workspace``'s series partition when given (shared/document_comments.py, since 7.35.00), the
+    deployment's otherwise; no assist runs its work in a workspace yet (shared/assist_jobs.py ``ASSIST_WORK_STORE``)."""
     text = plain_text(document.get('content'))[:MAX_DOCUMENT_CHARS]
     if not text:
         raise ValidationError('The document is empty; write something to review first')
     prompt = data_block('document', text)
     with ThreadPoolExecutor(max_workers=PERSONA_CONCURRENCY) as pool:
         reviews = list(pool.map(lambda p: _consult(p, document_type, prompt, text, invoke), personas))
-    seen = _existing_keys(comments.list_threads(table, project_id, series_id))
+    seen = _existing_keys(comments.list_threads(table, project_id, series_id, workspace=workspace))
     results = []
     for persona, review in zip(personas, reviews, strict=True):
         name = str(persona.get('name') or 'Persona')[:comments.MAX_NAME_CHARS]
@@ -203,7 +201,7 @@ def run_review(table: Any, *, project_id: str, series_id: str, document: Mapping
             results.append({'persona_id': persona['persona_id'], 'name': name, 'ok': False, 'filed': 0, 'dropped': 0})
             continue
         filed = _file(table, project_id=project_id, series_id=series_id, document=document, persona=persona,
-                      review=review, seen=seen)
+                      review=review, seen=seen, workspace=workspace)
         results.append({'persona_id': persona['persona_id'], 'name': name, 'ok': True, 'stance': review['stance'],
                         'filed': filed, 'dropped': review['dropped']})
     return {'document_id': document.get('document_id'), 'version': document.get('version'),

@@ -2,11 +2,13 @@
 import pytest
 
 from shared.project_keys import (
-    DOCUMENT_COMMENTS_STORE,
     PROJECT_PREFIX,
     PROJECT_TYPE_PK,
+    REVIEWER_ROUTES_STORE,
     NotPerWorkspaceError,
     ProjectPartition,
+    comment_series_key,
+    comments_pk,
     document_keys,
     document_listing,
     document_revision_key,
@@ -20,10 +22,14 @@ from shared.project_keys import (
     project_pk,
     project_type_pk,
     require_deployment,
+    review_link_key,
+    review_link_registry_key,
+    reviewer_rate_pk,
     version_allocation_key,
     version_counter_key,
     version_partition_key,
 )
+from shared.review_share_audience import share_key
 from shared.test.document_versions_fixtures import sha
 from shared.ws_repo import WorkspaceScope
 
@@ -95,9 +101,44 @@ def test_project_id_of_reads_a_partition_for_one_scope(partition_key, scope, exp
 
 
 def test_a_store_not_per_workspace_refuses_one():
-    require_deployment(None, DOCUMENT_COMMENTS_STORE)
-    with pytest.raises(NotPerWorkspaceError, match='Document comments is not per workspace yet'):
-        require_deployment(A, DOCUMENT_COMMENTS_STORE)
+    require_deployment(None, REVIEWER_ROUTES_STORE)
+    with pytest.raises(NotPerWorkspaceError, match=r'^Review link reviewers is not per workspace yet$'):
+        require_deployment(A, REVIEWER_ROUTES_STORE)
+
+
+SERIES = 'ser_' + 'a' * 24
+SHARE = 'shr_' + 'b' * 32
+
+
+def test_the_comment_and_link_keys_are_the_deployments_stored_keys():
+    assert comments_pk('proj_1', SERIES) == f'DCOMMENTS#proj_1#{SERIES}'
+    assert comments_pk('proj_1', SERIES, workspace=None) == f'DCOMMENTS#proj_1#{SERIES}'
+    assert review_link_key(SHARE) == {'pk': f'DOCSHARE#{SHARE}', 'sk': 'META'}
+    assert review_link_key(SHARE, workspace=None) == share_key(SHARE)
+    assert reviewer_rate_pk(SHARE, 'd' * 24) == f"DCRATE#{SHARE}#{'d' * 24}"
+
+
+def test_a_workspaces_comment_and_link_keys_are_the_same_keys_inside_it():
+    assert comments_pk('proj_1', SERIES, workspace=A) == f'WS#{WS_A}#DCOMMENTS#proj_1#{SERIES}'
+    assert comment_series_key('proj_1', SERIES, workspace=A) == {
+        'pk': f'WS#{WS_A}#PROJECT#proj_1', 'sk': f'COMMENT_SERIES#{SERIES}'}
+    assert review_link_registry_key(SHARE, workspace=A) == {'pk': f'WS#{WS_A}#DOCSHARE_IDS', 'sk': SHARE}
+    assert reviewer_rate_pk(SHARE, 'd' * 24, workspace=A) == f"WS#{WS_A}#DCRATE#{SHARE}#{'d' * 24}"
+
+
+def test_a_workspaces_link_key_is_inside_it():
+    assert review_link_key(SHARE, workspace=A) == {'pk': f'WS#{WS_A}#DOCSHARE#{SHARE}', 'sk': 'META'}
+    assert A.owns(review_link_key(SHARE, workspace=A)['pk'])
+    assert not B.owns(review_link_key(SHARE, workspace=A)['pk'])
+
+
+@pytest.mark.parametrize('call', [
+    lambda: comment_series_key('proj_1', '', workspace=A),
+    lambda: review_link_registry_key('', workspace=A),
+], ids=['series', 'registry'])
+def test_a_listing_row_names_its_id(call):
+    with pytest.raises(ValueError, match='names'):
+        call()
 
 
 COUNTER_SK = 'PRD#1fef41e791b4745c34c15e7d36a86b18613c4711303ef591186f6c8605c53304'   # sha256 of 'trail map'

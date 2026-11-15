@@ -92,6 +92,14 @@ export const BOARD_TRIGGER_FILES = [
   'shared/review_share_audience.py',
 ] as const;
 
+/**
+ * The voc-projects partitions the PreSignUp trigger may read: a review link's `DOCSHARE#{id}` row (a deployment's
+ * link, or a workspace link's routing row, lambda/shared/review_share_audience.py), and nothing else. A workspace's
+ * link row (`WS#{ws}#DOCSHARE#{id}`) is not read while the trigger refuses every workspace link; the switch (3h) adds
+ * its grant with the read that uses it.
+ */
+const BOARD_TRIGGER_PROJECT_KEYS = ['DOCSHARE#*'] as const;
+
 /** The top-level directories of {@link BOARD_TRIGGER_FILES} (`auth`, `shared`). */
 function boardTriggerDirs(): string[] {
   return [...new Set(BOARD_TRIGGER_FILES.map((file) => file.split('/')[0] ?? ''))];
@@ -188,10 +196,16 @@ export function createBoardAuth(ctx: CoreBuildContext, inputs: BoardAuthInputs):
     description: 'Board sign-up: an address some board or an active review link admits',
     environment,
   });
-  // Exactly the item reads it needs (SETTINGS rows; one DOCSHARE#{id} / META) and the key — no index, no write.
+  // Exactly the item reads it needs and the key — no index, no write: the SETTINGS rows of voc-participants, and in
+  // voc-projects a review link's rows only (BOARD_TRIGGER_PROJECT_KEYS).
   preSignUp.addToRolePolicy(new iam.PolicyStatement({
     actions: ['dynamodb:GetItem'],
-    resources: [participantsTable.tableArn, projectsTable.tableArn],
+    resources: [participantsTable.tableArn],
+  }));
+  preSignUp.addToRolePolicy(new iam.PolicyStatement({
+    actions: ['dynamodb:GetItem'],
+    resources: [projectsTable.tableArn],
+    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [...BOARD_TRIGGER_PROJECT_KEYS] } },
   }));
   kmsKey.grantDecrypt(preSignUp);
 

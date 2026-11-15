@@ -4,9 +4,10 @@ Each threaded store takes ``workspace`` (keyword-only): in one it reads and writ
 through shared/ws_repo.py ``ws_table`` (shared/project_tables.py ``iter_project_rows`` over shared/scoped_query.py,
 shared/ingest_tables.py ``table_view``, shared/workspace_config.py ``get_scoped_item``, shared/project_writes.py
 ``transact_project_writes``), and never sees the deployment's rows or another workspace's; without one it reads and
-writes the deployment's ``PROJECT#…`` rows exactly as before, and never sees a workspace's. The stores that are not
-per workspace yet (the comment threads and persona review, the access gate) refuse one; the document versions and
-their series are per workspace since 7.27.00 (test_document_versions_workspace.py). No route passes a workspace yet.
+writes the deployment's ``PROJECT#…`` rows exactly as before, and never sees a workspace's. The access gate refuses
+one; the document versions and their series are per workspace since 7.27.00 (test_document_versions_workspace.py),
+the comment threads, persona review and review links since 7.35.00 (test_document_comments_workspace.py). No route
+passes a workspace yet.
 """
 from __future__ import annotations
 
@@ -21,7 +22,6 @@ from shared import (
     company_personas,
     decision_records,
     deleted_sources,
-    document_comments,
     document_review,
     document_series,
     persona_overlap,
@@ -311,38 +311,3 @@ def test_a_persona_save_into_a_deleted_workspace_project_is_refused(table):
         persona_save.require_writable_project(table, PROJECT, workspace=A)
     persona_save.require_writable_project(table, PROJECT)
 
-
-# ── The stores not per workspace yet fail closed ─────────────────────────────
-# The document versions and their history are per workspace since 7.27.00 (test_document_versions_workspace.py).
-# A review in a workspace may read its series (document_series.latest_version), but never files or lists its
-# comments under the deployment's DCOMMENTS# keys: those stores still refuse one (3e).
-
-THREAD = {'pk': 'DCOMMENTS#proj_shared_id#ser_0', 'sk': 'C#dc_00000000000000000000abcdef'}
-
-
-@pytest.mark.parametrize('call', [
-    lambda table: document_comments.put_thread(table, THREAD, workspace=A),
-    lambda table: document_comments.get_thread(table, PROJECT, 'ser_0', 'dc_00000000000000000000abcdef',
-                                               workspace=A),
-    lambda table: document_comments.list_threads(table, PROJECT, 'ser_0', workspace=A),
-    lambda table: document_comments.append_reply(table, THREAD, {'at': STAMP}, workspace=A),
-    lambda table: document_comments.set_status(table, THREAD, 'resolved', 'ada', workspace=A),
-    lambda table: document_comments.delete_thread(table, THREAD, workspace=A),
-    lambda table: document_review.run_review(table, project_id=PROJECT, series_id='ser_0',
-                                             document={'content': 'Trail map'}, document_type='prd',
-                                             personas=[], invoke=_no_model, workspace=A),
-], ids=['put', 'get', 'list', 'reply', 'status', 'delete', 'review'])
-def test_the_comment_stores_refuse_a_workspace_and_write_nothing(table, call):
-    _assert_refused(table, call, 'Document comments is not per workspace yet')
-
-
-def _no_model(_prompt: str, _system: str) -> str:
-    raise AssertionError('a refused review never calls a model')
-
-
-def _assert_refused(table, call, message: str) -> None:
-    _meta(table, A)
-    with pytest.raises(NotPerWorkspaceError, match=message):
-        call(table)
-    assert table.scan()['Items'] == [{'pk': _pk(A), 'sk': 'META', 'project_id': PROJECT, 'document_count': 0,
-                                      'persona_count': 0}]

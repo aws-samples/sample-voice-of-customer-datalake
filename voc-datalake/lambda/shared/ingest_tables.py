@@ -21,7 +21,7 @@ from typing import Any, overload
 
 from shared.ws_repo import WorkspaceScope, WorkspaceTable, partition_query, ws_table
 
-__all__ = ['DeploymentTable', 'ingest_table', 'table_view', 'update_with_key']
+__all__ = ['DeploymentTable', 'ingest_table', 'scoped_calls', 'table_view', 'update_with_key']
 
 
 class DeploymentTable:
@@ -101,6 +101,13 @@ class ScopedUpdates:
 
     def delete_item(self, **request: Any) -> dict:
         return _with_key(self._view.delete_item, request, 'Key')
+
+
+def scoped_calls(table: Any, workspace: WorkspaceScope | None) -> Any:
+    """The table itself without a workspace (every request the one sent before), else its boto3-shaped single-item
+    calls through the workspace's view (``ScopedUpdates``), which refuses a key outside it: the participants stores
+    (since 7.31.00), the comment threads and the review links (since 7.35.00)."""
+    return table if workspace is None else ScopedUpdates(workspace, table)
 
 
 def _with_key(call: Any, request: Mapping[str, Any], field: str) -> dict:

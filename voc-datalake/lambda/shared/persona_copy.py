@@ -20,7 +20,7 @@ from datetime import UTC, datetime
 from typing import Any, Final, Literal
 
 from shared import persona_evidence_marker
-from shared.avatar import AVATAR_CACHE_CONTROL, AVATAR_KEY_PREFIX, AVATAR_OWNER_METADATA_KEY, avatar_key_from_uri
+from shared.avatar import AVATAR_CACHE_CONTROL, AVATAR_OWNER_METADATA_KEY, avatar_key_from_uri, avatar_prefix
 from shared.exceptions import NotFoundError
 from shared.ids import timestamped_id
 from shared.logging import logger
@@ -29,7 +29,7 @@ from shared.project_gate import PROJECT_NOT_FOUND
 from shared.project_keys import personas_index_pk, project_pk
 from shared.s3_versions import delete_every_version
 from shared.workspace_config import get_scoped_item
-from shared.ws_repo import OutOfScopeError, WorkspaceScope, s3_prefix
+from shared.ws_repo import OutOfScopeError, WorkspaceScope
 
 SourceScope = Literal['project', 'company']
 
@@ -69,28 +69,14 @@ def copied_from(
     return provenance
 
 
-def _avatar_prefix(workspace: WorkspaceScope | None) -> str:
-    """Where the scope's avatars are: ``avatars/``, or ``ws/{ws}/avatars/`` in a workspace."""
-    return AVATAR_KEY_PREFIX if workspace is None else f'{s3_prefix(workspace)}{AVATAR_KEY_PREFIX}'
-
-
-def _avatar_key(uri: object, bucket: str, workspace: WorkspaceScope | None) -> str | None:
-    """The key an ``s3://{bucket}/…`` avatar URI names under the scope's avatar prefix, or None for anything else."""
-    if workspace is None:
-        return avatar_key_from_uri(uri, bucket)
-    prefix = f's3://{bucket}/'
-    if not isinstance(uri, str) or not uri.startswith(f'{prefix}{_avatar_prefix(workspace)}'):
-        return None
-    return uri.removeprefix(prefix)
-
-
 def _copy_avatar(s3: Any, bucket: str, source_uri: object, new_id: str, target: str,
                  workspace: WorkspaceScope | None) -> str | None:
-    """``s3://`` URI of the new persona's own copy of the source avatar, or None (logged)."""
-    source_key = _avatar_key(source_uri, bucket, workspace) if bucket else None
+    """``s3://`` URI of the new persona's own copy of the source avatar, or None (logged). Both keys under the
+    scope's avatar prefix (shared/avatar.py ``avatar_prefix``: ``avatars/``, ``ws/{ws}/avatars/`` in a workspace)."""
+    source_key = avatar_key_from_uri(source_uri, bucket, workspace=workspace) if bucket else None
     if source_key is None:
         return None
-    target_key = f'{_avatar_prefix(workspace)}{new_id}/{source_key.rsplit("/", 1)[-1]}'
+    target_key = f'{avatar_prefix(workspace=workspace)}{new_id}/{source_key.rsplit("/", 1)[-1]}'
     try:
         head = s3.head_object(Bucket=bucket, Key=source_key)
         s3.copy_object(
@@ -109,7 +95,7 @@ def _copy_avatar(s3: Any, bucket: str, source_uri: object, new_id: str, target: 
 def _sweep_copied_avatars(s3: Any, bucket: str, items: list[dict], workspace: WorkspaceScope | None) -> None:
     """Best effort: remove the avatar objects this copy made for rows that were never saved (every version)."""
     for item in items:
-        key = _avatar_key(item.get('avatar_url'), bucket, workspace)
+        key = avatar_key_from_uri(item.get('avatar_url'), bucket, workspace=workspace)
         if key is None:
             continue
         try:

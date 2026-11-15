@@ -78,11 +78,16 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
     [PERSONA_GENERATOR]: { scope: WHOLE_TABLE, why: 'replace mode deletes the personas it replaces' },
     // A workspace's hard delete (7.28.00): its projects' partitions and document versions, its registry, and the
     // ids' claims. PROJECT_ID#* names no workspace in its key, so IAM reaches every claim: the code deletes only a
-    // claim naming this workspace (release_project_claim's condition), of an id read from its own registry.
+    // claim naming this workspace (release_project_claim's condition), of an id read from its own registry. Since
+    // 7.35.00 also its series' comment partitions, its review links and their registry, and the links' routing rows:
+    // DOCSHARE#* names no workspace either (a deployment's own link shares it), and the code deletes only a route
+    // naming this workspace (release_share_route's condition), of an id read from its own registry.
     [DELETE_ROLE]: {
-      scope: ['PROJECT_ID#*', `WS#${ONE_WORKSPACE}#DOCUMENT_VERSIONS#PROJECT#*`, `WS#${ONE_WORKSPACE}#PROJECT#*`,
-        `WS#${ONE_WORKSPACE}#PROJECT_IDS`],
-      why: 'a workspace\'s hard delete (decision 17): its projects, their registry and their id claims',
+      scope: ['DOCSHARE#*', 'PROJECT_ID#*', `WS#${ONE_WORKSPACE}#DCOMMENTS#*`, `WS#${ONE_WORKSPACE}#DOCSHARE#*`,
+        `WS#${ONE_WORKSPACE}#DOCSHARE_IDS`, `WS#${ONE_WORKSPACE}#DOCUMENT_VERSIONS#PROJECT#*`,
+        `WS#${ONE_WORKSPACE}#PROJECT#*`, `WS#${ONE_WORKSPACE}#PROJECT_IDS`],
+      why: 'a workspace\'s hard delete (decision 17): its projects, comments and review links, their registries, their '
+        + 'id claims and link routes',
     },
   },
   JobsTable: {

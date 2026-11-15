@@ -221,20 +221,20 @@ describe('board user pool', () => {
     expect(JSON.stringify(fn?.[1])).toMatch(/"FRONTEND_URL":\{"Fn::Join":\["",\["https:\/\/",\{"Fn::GetAtt":\["FrontendDistribution/);
   });
 
-  it('the pre-sign-up trigger may read participants + projects items (review links), decrypt and write its own logs — nothing else', () => {
+  it('the pre-sign-up trigger may read participants items and review links\' rows only, decrypt and write its own logs — nothing else', () => {
     const policy = Object.entries(coreWithBoard().findResources('AWS::IAM::Policy'))
       .find(([id]) => id.startsWith('BoardPreSignUpLambdaServiceRoleDefaultPolicy'));
     const statements = z.object({ Properties: z.object({ PolicyDocument: z.object({ Statement: z.array(z.object({
-      Action: z.union([z.string(), z.array(z.string())]), Resource: z.unknown(),
+      Action: z.union([z.string(), z.array(z.string())]), Resource: z.unknown(), Condition: z.unknown().optional(),
     })) }) }) }).parse(policy?.[1]).Properties.PolicyDocument.Statement;
-    expect(statements.map((s) => [s.Action, JSON.stringify(s.Resource)])).toStrictEqual([
-      ['dynamodb:GetItem', JSON.stringify([
-        { 'Fn::GetAtt': [tableNamed(coreWithBoard(), 'voc-participants').id, 'Arn'] },
-        { 'Fn::GetAtt': [tableNamed(coreWithBoard(), 'voc-projects').id, 'Arn'] },
-      ])],
-      ['kms:Decrypt', JSON.stringify({ 'Fn::GetAtt': [onlyKmsKeyId(coreWithBoard()), 'Arn'] })],
+    expect(statements.map((s) => [s.Action, JSON.stringify(s.Resource), s.Condition ?? null])).toStrictEqual([
+      ['dynamodb:GetItem', JSON.stringify({ 'Fn::GetAtt': [tableNamed(coreWithBoard(), 'voc-participants').id, 'Arn'] }),
+        null],
+      ['dynamodb:GetItem', JSON.stringify({ 'Fn::GetAtt': [tableNamed(coreWithBoard(), 'voc-projects').id, 'Arn'] }),
+        { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['DOCSHARE#*'] } }],
+      ['kms:Decrypt', JSON.stringify({ 'Fn::GetAtt': [onlyKmsKeyId(coreWithBoard()), 'Arn'] }), null],
       [['logs:CreateLogStream', 'logs:PutLogEvents'],
-        JSON.stringify({ 'Fn::GetAtt': [onlyLogGroupId(coreWithBoard(), 'BoardPreSignUpLambdaLogs'), 'Arn'] })],
+        JSON.stringify({ 'Fn::GetAtt': [onlyLogGroupId(coreWithBoard(), 'BoardPreSignUpLambdaLogs'), 'Arn'] }), null],
     ]);
   });
 

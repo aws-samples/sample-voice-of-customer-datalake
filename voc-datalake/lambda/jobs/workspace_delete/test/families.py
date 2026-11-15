@@ -55,6 +55,15 @@ FAMILIES: Final = {
     # jobs' by-status), which go with the rows.
     'PROJECT_IDS': 'projects', 'project_pk': 'projects', 'version_partition_key': 'projects',
     'project_type_pk': 'projects', 'job_status_pk': 'projects',
+    # A project's series' comment partitions (7.35.00, shared/project_keys.py comments_pk: its threads and its review
+    # link's pointer), each listed in the project's own partition (comment_series_key), which the projects entry's
+    # comments child reads first.
+    'comments_pk': 'projects',
+    # A workspace's review links (7.35.00): the registry WS#{ws}#DOCSHARE_IDS and each link's own row
+    # (review_link_key); their deployment-wide routing rows are the layer's (shared/ws_repo.py route_share_id).
+    'DOCSHARE_IDS': 'docshares', 'review_link_key': 'docshares',
+    'reviewer_rate_pk': ("TTL: voc-projects WS#{ws}#DCRATE#{share}#{digest} counters hold a count only and expire two "
+                         "days after their day; no reviewer route writes one in a workspace yet"),
     # A workspace's people and lists in voc-participants (7.31.00, shared/participants_keys.py): every LIST#, PERSON#
     # and EMAIL# partition and the gsi1 LISTS and PEOPLE partitions (participants_partition), found through the
     # workspace's index WS#{ws}#PARTICIPANTS. A project's links to them are in its own partition (projects, above).

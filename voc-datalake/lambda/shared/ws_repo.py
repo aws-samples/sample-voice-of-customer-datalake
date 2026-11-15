@@ -31,9 +31,15 @@ only ever reads and writes its own rows and objects. This module is the one plac
   ``WS#{ws}#…`` keys, so ``ws_table`` refuses them). The export job's reader (phase 4).
 * ``claim_project_id`` / ``project_claim`` / ``release_project_claim``: the deployment-wide claim of a project id
   made in a workspace, ``PROJECT_ID#{id}`` / ``CLAIM`` in voc-projects (docs/multi-workspace.md, the project plan,
-  3a): a ``ProjectClaim`` the layer builds and puts (only if absent) inside the workspace's own transaction
-  (``WorkspaceTable.transact_write_items``'s ``claim``), its strongly consistent read, and its conditional delete.
-  The only key outside a workspace the layer writes for one; as a caller's own entry, ``ws_table`` refuses it.
+  3a): an ``OutsideEntry`` of kind ``claim`` the layer builds and puts (only if absent) inside the workspace's own
+  transaction (``WorkspaceTable.transact_write_items``'s ``outside``), its strongly consistent read, and its
+  conditional delete. One of the two keys outside a workspace the layer writes for one; as a caller's own entry,
+  ``ws_table`` refuses it.
+* ``route_share_id`` / ``read_share_route`` / ``release_share_route``: the other one (since 7.35.00, 3e), a review
+  link's deployment-wide routing row ``DOCSHARE#{id}`` / ``META`` naming the workspace the link is kept in: an
+  ``OutsideEntry`` of kind ``route`` (with the link's ``ttl``) put the same way, the one GetItem the reviewer routes
+  send (a row naming no workspace is the deployment's link itself), and its conditional delete. The one ``outside``
+  parameter takes one entry, so a transaction holds at most one outside its workspace.
 * ``ExportObjects``: the workspace's export objects, ``ws/{ws}/exports/…`` only (``exports_prefix``): the multipart
   upload of an export's zip, its work objects (each tagged ``voc-export=true``, which the raw bucket's lifecycle
   expires and its policy refuses anywhere else) and a presigned download of the zip. Any key outside the prefix is
@@ -80,6 +86,8 @@ The keys (``{ws}`` is ``ws_`` + a ULID, shared/workspace.py ``is_workspace_id``)
                     ``workspace_is_active``; the rows ``WorkspaceControlRows`` deletes (its docstring)
     voc-projects    pk PROJECT_ID#{project id}  sk CLAIM (deployment-wide: ``claim_project_id``, ``project_claim``,
                     ``release_project_claim``)
+                    pk DOCSHARE#{share id}  sk META (deployment-wide; a workspace's link's route: ``route_share_id``,
+                    ``read_share_route``, ``release_share_route``)
     raw bucket      ws/{ws}/raw/{source}/{yyyy}/{mm}/{dd}/{stem}/{sha16}.json, ws/{ws}/silver/..., ws/{ws}/...,
                     ws/{ws}/exports/{export id}/… (``ExportObjects``)
     SSM parameters  {prefix}/{ws}/credentials/{plugin} (prefix /voc/ws, /<deployment prefix>-voc/ws in a prefixed
@@ -93,7 +101,7 @@ import threading
 import time
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Final, NoReturn, Protocol, Self
+from typing import Any, Final, NamedTuple, NoReturn, Protocol, Self
 
 from boto3.dynamodb.conditions import Attr, ConditionBase
 from boto3.dynamodb.types import TypeDeserializer
@@ -103,14 +111,15 @@ from shared import usage_meter
 from shared.aws import S3_MISSING_KEY_CODES, consistent_item, is_conditional_check_failure
 from shared.batch_get import BATCH_GET_ATTEMPTS, batch_get_all, unprocessed_backoff
 from shared.dynamo_paging import iter_query
+from shared.review_share_audience import is_share_id, routing_of, share_key
 from shared.row_ids import LONG_OPAQUE_ID_RE
 from shared.workspace_ids import ACTIVE, is_workspace_id, ws_key
 from shared.workspace_plugins import WORKSPACE_SORT_PREFIX, plugin_partition
 
 __all__ = [
     'FORM_LOOKUP_PREFIX',
+    'OUTSIDE_ENTRY_INDEX',
     'PARTITION_ATTRIBUTES',
-    'PROJECT_CLAIM_INDEX',
     'STATUS_READ_ATTRIBUTES',
     'TOMBSTONE_PARTITION_PREFIX',
     'WORKSPACE_FIELD',
@@ -119,7 +128,7 @@ __all__ = [
     'ListedObject',
     'ObjectVersion',
     'OutOfScopeError',
-    'ProjectClaim',
+    'OutsideEntry',
     'WorkspaceControlRows',
     'WorkspaceObjectVersions',
     'WorkspaceObjects',
@@ -140,6 +149,7 @@ __all__ = [
     'exports_prefix',
     'feedback_id_pk',
     'feedback_key',
+    'has_plain_segments',
     'is_workspace_key',
     'memory_company_pk',
     'memory_cursor_pk',
@@ -157,9 +167,12 @@ __all__ = [
     'plugin_config_key',
     'plugin_config_pk',
     'project_claim',
+    'read_share_route',
     'release_project_claim',
+    'release_share_route',
     'reprocess_job_pk',
     'require_scope',
+    'route_share_id',
     's3_key',
     's3_prefix',
     'scope_from_key',
@@ -576,10 +589,17 @@ def delete_work_pk(scope: WorkspaceScope) -> str:
     return scope.key('DELETE', 'PARTITIONS')
 
 
+def has_plain_segments(path: str) -> bool:
+    """Whether every ``/``-separated segment of ``path`` is a name: none empty (no leading, trailing or doubled
+    ``/``), ``.`` or ``..``, so the path names no other place than it reads. The one segment rule of the object keys
+    the layer builds and checks (``s3_key``, ``ExportObjects``, ``WorkspaceObjects``) and of shared/avatar.py's."""
+    return all(segment not in ('', '.', '..') for segment in path.split('/'))
+
+
 def s3_key(scope: WorkspaceScope, *parts: str) -> str:
     """An object key inside the workspace: ``ws/{ws}/a/b``. Refuses empty, ``.`` and ``..`` segments."""
     segments = [segment for part in parts for segment in part.split('/')]
-    if not segments or any(segment in ('', '.', '..') for segment in segments):
+    if not segments or not has_plain_segments('/'.join(segments)):
         raise ValueError('an object key needs non-empty segments')
     return '/'.join(('ws', scope.ws, *segments))
 
@@ -638,20 +658,20 @@ def require_scope(workspace: object, refusal: str) -> None:
 #: public link, the product-doc extractor or an MCP pin that knows only the id finds its workspace here, and no two
 #: workspaces hold one id (docs/multi-workspace.md, the project plan, 3a). It is written only inside the scoped
 #: transaction that writes the project's ``META`` and registry row (``WorkspaceTable.transact_write_items``'s
-#: ``claim``), so it never exists without them. The deployment's creates never put one: a reader that knows only an
+#: ``outside``), so it never exists without them. The deployment's creates never put one: a reader that knows only an
 #: id looks up the deployment's ``PROJECT#{id}`` row as well as the claim, and refuses when both exist (3h).
 PROJECT_CLAIM_PREFIX: Final = 'PROJECT_ID#'
 PROJECT_CLAIM_SORT_KEY: Final = 'CLAIM'
-#: Where the claim's Put sits in its transaction: a held claim is the cancellation reason at this index
-#: (shared/ids.py ``write_with_fresh_id(put_index=...)``).
-PROJECT_CLAIM_INDEX: Final = 0
-#: The environment variable naming voc-projects (shared/tables.py ``get_projects_table``): the one table a claim is
-#: written in.
+#: Where the entry outside the workspace (a claim, a route) sits in its transaction: a held claim is the
+#: cancellation reason at this index (shared/ids.py ``write_with_fresh_id(put_index=...)``).
+OUTSIDE_ENTRY_INDEX: Final = 0
+#: The environment variable naming voc-projects (shared/tables.py ``get_projects_table``): the one table an entry
+#: outside a workspace is written in.
 PROJECTS_TABLE_ENV: Final = 'PROJECTS_TABLE'
-_CLAIMED_AT: Final = 'claimed_at'
-_CLAIM_TOKEN: Final = object()
 _NOT_THE_DEPLOYMENT: Final = 'a project claim names a workspace, never the deployment'
-_NOT_A_CLAIM: Final = "a transaction's claim is a project claim of its own workspace"
+_ROUTE_NOT_THE_DEPLOYMENT: Final = 'a share route names a workspace, never the deployment'
+_NOT_OURS: Final = "a transaction's entry outside its workspace is a project claim or a share route of its own workspace"
+_OUTSIDE_TOKEN: Final = object()
 
 
 def _project_claim_key(project_id: object) -> dict[str, str]:
@@ -662,59 +682,113 @@ def _project_claim_key(project_id: object) -> dict[str, str]:
     return {'pk': f'{PROJECT_CLAIM_PREFIX}{project_id}', 'sk': PROJECT_CLAIM_SORT_KEY}
 
 
-class ProjectClaim:
-    """A project id's claim for one workspace, built only by ``claim_project_id``: the one entry outside the
-    workspace a ``WorkspaceTable.transact_write_items`` takes (its ``claim``). It holds the id, the workspace and the
-    time only, never a key or an item: the transaction builds the Put itself (``WorkspaceTable._claim_entry``). Fixed
-    once built, and never subclassed."""
+def _share_route_key(share_id: object) -> dict[str, str]:
+    """``{pk, sk}`` of a review link id's routing row; the id must have the link id shape (``shr_`` + 32 hex), so the
+    key is a link's and no other row's (``OutOfScopeError`` otherwise)."""
+    if not is_share_id(share_id):
+        raise OutOfScopeError('a share route names a review link id')
+    return share_key(share_id)
 
-    __slots__ = ('_claimed_at', '_project_id', '_scope')
-    _claimed_at: str
-    _project_id: str
+
+class _OutsideKind(NamedTuple):
+    """What one kind of entry outside a workspace is: its name, its key, the field its time is kept in, and the
+    refusal of the deployment."""
+
+    name: str
+    key: Callable[[object], dict[str, str]]
+    at_field: str
+    not_the_deployment: str
+    #: Whether the row expires (a ``ttl``, a positive epoch second): a route with its link, never a claim.
+    expires: bool
+
+    def ttl_fits(self, ttl: object) -> bool:
+        """A claim's ``ttl`` is None; a route's a positive int (not a bool)."""
+        if not self.expires:
+            return ttl is None
+        return isinstance(ttl, int) and not isinstance(ttl, bool) and ttl > 0
+
+
+#: The two kinds of row outside every workspace the layer writes for one (docs/multi-workspace.md, the project plan):
+#: a project id's claim (3a, kept for good) and a review link's routing row (3e, expiring with its link).
+_OUTSIDE_KINDS: Final[Mapping[str, _OutsideKind]] = {
+    'claim': _OutsideKind('project claim', _project_claim_key, 'claimed_at', _NOT_THE_DEPLOYMENT, expires=False),
+    'route': _OutsideKind('share route', _share_route_key, 'routed_at', _ROUTE_NOT_THE_DEPLOYMENT, expires=True),
+}
+
+
+class OutsideEntry:
+    """The one entry outside its workspace a ``WorkspaceTable.transact_write_items`` takes (its ``outside``): a
+    project id's claim (``kind`` ``claim``, built only by ``claim_project_id``) or a review link's routing row
+    (``route``, built only by ``route_share_id``). It holds the kind, the workspace, the id, the time and, for a
+    route, the link's ``ttl``: never a key or an item, which the transaction builds itself
+    (``WorkspaceTable._outside_entry``). Fixed once built, and never subclassed; one parameter takes one, so a
+    transaction holds at most one entry outside its workspace."""
+
+    __slots__ = ('_at', '_item_id', '_kind', '_scope', '_ttl')
+    _at: str
+    _item_id: str
+    _kind: str
     _scope: WorkspaceScope
+    _ttl: int | None
 
     def __init_subclass__(cls) -> NoReturn:
-        raise TypeError('a ProjectClaim cannot be subclassed')
+        raise TypeError('an OutsideEntry cannot be subclassed')
 
-    def __init__(self, token: object, scope: WorkspaceScope, project_id: str, claimed_at: str) -> None:
-        if token is not _CLAIM_TOKEN:
-            raise TypeError('a project claim is built by claim_project_id only')
-        for name, value in (('_scope', scope), ('_project_id', project_id), ('_claimed_at', claimed_at)):
+    def __init__(self, token: object, kind: str, scope: WorkspaceScope, item_id: str, at: str,
+                 ttl: int | None = None) -> None:
+        if token is not _OUTSIDE_TOKEN:
+            raise TypeError('an outside entry is built by claim_project_id or route_share_id only')
+        for name, value in (('_kind', kind), ('_scope', scope), ('_item_id', item_id), ('_at', at), ('_ttl', ttl)):
             object.__setattr__(self, name, value)
 
     def __setattr__(self, name: str, value: object) -> None:
-        raise AttributeError('a ProjectClaim cannot be changed')
+        raise AttributeError('an OutsideEntry cannot be changed')
 
     def __delattr__(self, name: str) -> None:
-        raise AttributeError('a ProjectClaim cannot be changed')
+        raise AttributeError('an OutsideEntry cannot be changed')
+
+    @property
+    def kind(self) -> str:
+        """``claim`` or ``route``."""
+        return self._kind
 
     @property
     def scope(self) -> WorkspaceScope:
-        """The workspace the id is claimed for."""
+        """The workspace the id is claimed for, or the link routed to."""
         return self._scope
 
     @property
-    def project_id(self) -> str:
-        """The id claimed."""
-        return self._project_id
+    def item_id(self) -> str:
+        """The project id claimed, or the link id routed."""
+        return self._item_id
 
     @property
-    def claimed_at(self) -> str:
-        """When it was claimed (the project's ``created_at``)."""
-        return self._claimed_at
+    def at(self) -> str:
+        """When (the project's or the link's ``created_at``)."""
+        return self._at
+
+    @property
+    def ttl(self) -> int | None:
+        """A route's expiry (the link's own ``ttl``), so a dead route expires with its link; a claim's is None."""
+        return self._ttl
 
 
-def claim_project_id(project_id: str, *, workspace: WorkspaceScope, claimed_at: str) -> ProjectClaim:
-    """The claim of ``project_id`` for ``workspace``, to write in that workspace's transaction (``claim=``).
+def _outside(kind: str, item_id: str, workspace: WorkspaceScope, at: str, ttl: int | None = None) -> OutsideEntry:
+    """An entry of ``kind`` for a real workspace only (``OutOfScopeError`` for the deployment or anything but a
+    ``WorkspaceScope``, and for an id of another shape); nothing is sent here."""
+    spec = _OUTSIDE_KINDS[kind]
+    require_scope(workspace, spec.not_the_deployment)
+    if not at:
+        raise ValueError(f'a {spec.name} says when it was made')
+    if not spec.ttl_fits(ttl):
+        raise ValueError(f"a {spec.name}'s ttl is {'a positive epoch second' if spec.expires else 'none'}")
+    spec.key(item_id)
+    return OutsideEntry(_OUTSIDE_TOKEN, kind, workspace, item_id, at, ttl)
 
-    Only a real workspace claims: the deployment (None), or anything but a ``WorkspaceScope``, is refused
-    (``OutOfScopeError``), as is an id not of the project id shape; nothing is sent here.
-    """
-    require_scope(workspace, _NOT_THE_DEPLOYMENT)
-    if not claimed_at:
-        raise ValueError('a project claim says when it was made')
-    _project_claim_key(project_id)
-    return ProjectClaim(_CLAIM_TOKEN, workspace, project_id, claimed_at)
+
+def claim_project_id(project_id: str, *, workspace: WorkspaceScope, claimed_at: str) -> OutsideEntry:
+    """The claim of ``project_id`` for ``workspace``, to write in that workspace's transaction (``outside=``)."""
+    return _outside('claim', project_id, workspace, claimed_at)
 
 
 def project_claim(table: Any, project_id: str) -> WorkspaceScope | None:
@@ -739,9 +813,17 @@ def project_claim(table: Any, project_id: str) -> WorkspaceScope | None:
 def release_project_claim(table: Any, project_id: str, *, workspace: WorkspaceScope) -> bool:
     """Delete ``project_id``'s claim, only while it names ``workspace`` (the workspace's delete, 3g). False when there
     is no such claim (none, or another workspace's): nothing is deleted then."""
-    require_scope(workspace, _NOT_THE_DEPLOYMENT)
+    return _release_naming(table, _project_claim_key, project_id, workspace, _NOT_THE_DEPLOYMENT)
+
+
+def _release_naming(table: Any, key_of: Callable[[object], dict[str, str]], row_id: str, workspace: WorkspaceScope,
+                    refusal: str) -> bool:
+    """A DeleteItem of the row ``key_of(row_id)`` conditioned on it naming ``workspace`` (``WORKSPACE_FIELD``; a
+    real workspace only, ``refusal`` otherwise): False, nothing deleted, when it does not (no row, a row naming
+    none, another workspace's)."""
+    require_scope(workspace, refusal)
     try:
-        table.delete_item(Key=_project_claim_key(project_id), ConditionExpression='#ws = :ws',
+        table.delete_item(Key=key_of(row_id), ConditionExpression='#ws = :ws',
                           ExpressionAttributeNames={'#ws': WORKSPACE_FIELD},
                           ExpressionAttributeValues={':ws': workspace.ws})
     except ClientError as error:
@@ -749,6 +831,53 @@ def release_project_claim(table: Any, project_id: str, *, workspace: WorkspaceSc
             return False
         raise
     return True
+
+
+#: A review link made in a workspace (docs/multi-workspace.md, the project plan, 3e) keeps one deployment-wide routing
+#: row, ``DOCSHARE#{share id}`` / ``META`` (shared/review_share_audience.py ``share_key``), naming its workspace
+#: (``WORKSPACE_FIELD``), when (``routed_at``) and its expiry (``ttl``), nothing else: the link itself is the workspace's own row
+#: (shared/project_keys.py ``review_link_key``). The board pool's PreSignUp trigger and the reviewer routes know only
+#: the id, so they find the workspace here. A deployment's link IS its ``DOCSHARE#{id}`` row, which names no workspace,
+#: as before. The routing row is written only inside the scoped transaction that writes the link and the workspace's
+#: registry row (``WorkspaceTable.transact_write_items``'s ``outside``), so it never exists without them, and it
+#: carries the link's own ``ttl``, so a dead route expires with its link.
+
+
+def route_share_id(share_id: str, *, workspace: WorkspaceScope, routed_at: str, ttl: int) -> OutsideEntry:
+    """The route of review link ``share_id`` to ``workspace``, expiring at ``ttl`` (the link's own), to write in that
+    workspace's transaction (``outside=``)."""
+    return _outside('route', share_id, workspace, routed_at, ttl)
+
+
+class SharedLink(NamedTuple):
+    """What a review link id's ``DOCSHARE#{id}`` row names (``read_share_route``): the deployment's link itself
+    (``share``, ``scope`` None); a workspace's routing row (``scope``, ``share`` None: the link is that workspace's own
+    row); or nothing (both None: no row, or a row naming anything but a workspace id, never read as the
+    deployment's)."""
+
+    share: dict[str, Any] | None
+    scope: WorkspaceScope | None
+
+
+def read_share_route(table: Any, share_id: str) -> SharedLink:
+    """One strongly consistent GetItem of ``DOCSHARE#{share_id}`` / ``META`` in voc-projects (the request the
+    deployment's reviewer routes always sent), read as shared/review_share_audience.py ``routing_of`` reads it: a row
+    naming no workspace is the deployment's link, a routing row gives its workspace's scope (built here), and a row
+    naming anything but a workspace id gives nothing, so the caller refuses it.
+
+    A caller uses the scope only to route: it reads the link from that workspace (shared/project_keys.py
+    ``review_link_key``), keeps it only when it is the link of this id (``routed_share``), and never echoes the
+    workspace id it found."""
+    response = table.get_item(Key=_share_route_key(share_id), ConsistentRead=True)
+    share, workspace_id = routing_of(response.get('Item'))
+    return SharedLink(share, None if workspace_id is None else WorkspaceScope(workspace_id))
+
+
+def release_share_route(table: Any, share_id: str, *, workspace: WorkspaceScope) -> bool:
+    """Delete review link ``share_id``'s routing row, only while it names ``workspace`` (the workspace's delete, its
+    ``docshares`` entry). False when there is no such row (none, the deployment's own link, or another workspace's
+    route): nothing is deleted then."""
+    return _release_naming(table, _share_route_key, share_id, workspace, _ROUTE_NOT_THE_DEPLOYMENT)
 
 
 #: How long a warm container trusts a workspace's status (``workspace_is_active``), by the answer:
@@ -1062,7 +1191,7 @@ class ExportObjects:
         prefix = exports_prefix(self.scope)
         if not isinstance(key, str) or not key.startswith(prefix):
             raise OutOfScopeError("a key outside the workspace's exports")
-        if any(segment in ('', '.', '..') for segment in key[len(prefix):].split('/')):
+        if not has_plain_segments(key[len(prefix):]):
             raise OutOfScopeError("a key outside the workspace's exports")
         return key
 
@@ -1202,7 +1331,7 @@ class WorkspaceObjects:
     def _checked(self, key: object) -> str:
         prefix = s3_prefix(self.scope)
         if (not isinstance(key, str) or not key.startswith(prefix) or key.startswith(exports_prefix(self.scope))
-                or any(segment in ('', '.', '..') for segment in key[len(prefix):].split('/'))):
+                or not has_plain_segments(key[len(prefix):])):
             raise OutOfScopeError("a key outside the workspace's own objects")
         return key
 
@@ -1532,7 +1661,7 @@ class WorkspaceTable:
             raise OutOfScopeError('a scanned row outside the workspace')
         return response
 
-    def transact_write_items(self, items: Sequence[Mapping[str, Any]], *, claim: ProjectClaim | None = None,
+    def transact_write_items(self, items: Sequence[Mapping[str, Any]], *, outside: OutsideEntry | None = None,
                              **kwargs: Any) -> dict:
         """One ``TransactWriteItems`` on this table: 1 to 100 entries, each ``{'Put': {'Item': …}}``,
         ``{'Update': {'Key': …, 'UpdateExpression': …}}``, ``{'Delete': {'Key': …}}`` or
@@ -1543,14 +1672,15 @@ class WorkspaceTable:
         nothing of it is written. Only ``ClientRequestToken``, ``ReturnConsumedCapacity`` and
         ``ReturnItemCollectionMetrics`` are passed on.
 
-        ``claim``: a project id's claim for this same workspace (``claim_project_id``), the one entry outside the
-        workspace a transaction takes, put first (``PROJECT_CLAIM_INDEX``, counted in the 100), so the claim is
-        written with the project's rows or not at all. A claim for another workspace, or anything but a
-        ``ProjectClaim``, is refused; a caller's own entry outside the workspace stays refused.
+        ``outside``: the one entry outside the workspace a transaction takes (an ``OutsideEntry`` for this same
+        workspace: a project id's claim, ``claim_project_id``, or a review link's routing row, ``route_share_id``),
+        put first (``OUTSIDE_ENTRY_INDEX``, counted in the 100) and only if absent, so it is written with the rows it
+        belongs to or not at all. One for another workspace, or anything but an ``OutsideEntry``, is refused; a
+        caller's own entry outside the workspace stays refused.
         """
         options = _checked_options('TransactWriteItems', kwargs, _TRANSACT_WRITE_OPTIONS)
         entries = list(items)
-        claimed = [] if claim is None else [self._claim_entry(claim)]
+        claimed = [] if outside is None else [self._outside_entry(outside)]
         if not 1 <= len(entries) + len(claimed) <= MAX_TRANSACT_ITEMS:
             raise ValueError(f'a TransactWriteItems takes 1 to {MAX_TRANSACT_ITEMS} entries, '
                              f'not {len(entries) + len(claimed)}')
@@ -1559,22 +1689,25 @@ class WorkspaceTable:
                                 [body.get('Key') or body['Item'] for entry in checked for body in entry.values()])
         return self._unscoped_table.meta.client.transact_write_items(TransactItems=[*claimed, *checked], **options)
 
-    def _claim_entry(self, claim: object) -> dict[str, Any]:
-        """The claim's Put, built here from the claim's id and time and this view's own workspace and table: only a
-        ``ProjectClaim`` itself (``type`` checked, not ``isinstance``), complete, of this workspace, of a well-formed
-        id, on voc-projects (``PROJECTS_TABLE_ENV``); ``OutOfScopeError`` otherwise, before anything is sent."""
-        if type(claim) is not ProjectClaim:
-            raise OutOfScopeError(_NOT_A_CLAIM)
+    def _outside_entry(self, outside: object) -> dict[str, Any]:
+        """The outside entry's Put, built here from its kind, id, time and expiry and this view's own workspace and
+        table: only an ``OutsideEntry`` itself (``type`` checked, not ``isinstance``), complete, of this workspace,
+        of a well-formed id, on voc-projects (``PROJECTS_TABLE_ENV``); ``OutOfScopeError`` otherwise, before anything
+        is sent."""
+        if type(outside) is not OutsideEntry:
+            raise OutOfScopeError(_NOT_OURS)
         try:
-            scope, project_id, claimed_at = claim.scope, claim.project_id, claim.claimed_at
+            kind, scope, item_id, at, ttl = outside.kind, outside.scope, outside.item_id, outside.at, outside.ttl
         except AttributeError as error:  # an instance made without its constructor (``object.__new__``)
-            raise OutOfScopeError(_NOT_A_CLAIM) from error
-        if scope != self.scope or not claimed_at:
-            raise OutOfScopeError(_NOT_A_CLAIM)
+            raise OutOfScopeError(_NOT_OURS) from error
+        spec = _OUTSIDE_KINDS.get(kind)
+        if spec is None or scope != self.scope or not at or not spec.ttl_fits(ttl):
+            raise OutOfScopeError(_NOT_OURS)
+        item = {**spec.key(item_id), WORKSPACE_FIELD: self.scope.ws, spec.at_field: at,
+                **({'ttl': ttl} if spec.expires else {})}
         table_name = self._unscoped_table.name
         if not table_name or table_name != os.environ.get(PROJECTS_TABLE_ENV):
-            raise OutOfScopeError('a project claim is written in the projects table only')
-        item = {**_project_claim_key(project_id), WORKSPACE_FIELD: self.scope.ws, _CLAIMED_AT: claimed_at}
+            raise OutOfScopeError(f'a {spec.name} is written in the projects table only')
         return {'Put': {'TableName': table_name, 'Item': item, 'ConditionExpression': 'attribute_not_exists(pk)'}}
 
     def batch_get_item(self, keys: Iterable[Mapping[str, Any]], **kwargs: Any) -> list[dict]:

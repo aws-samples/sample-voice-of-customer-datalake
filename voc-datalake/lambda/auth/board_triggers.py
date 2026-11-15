@@ -7,8 +7,9 @@ items of voc-participants decide the boards: the boards' derived audience row (`
 company domains) and the engagement settings' ``company_domains``. Without an audience row (no
 board saved yet) the company domains alone decide, as before boards; an empty list lets nobody
 in. A review link is named by the sign-up's ``ClientMetadata.share_id`` and read from the
-projects table (``DOCSHARE#{id}`` / ``META``, ``shared.review_share_audience``). Anything else is
-refused with ``domain_not_allowed``, which the SPA shows.
+projects table (``DOCSHARE#{id}`` / ``META``, ``shared.review_share_audience``; a link kept in a
+workspace, whose row only routes, is refused until the switch). Anything else is refused with
+``domain_not_allowed``, which the SPA shows.
 
 A self sign-up is NOT confirmed here (5.45.00): Cognito emails it a confirmation code and the
 account exists only once that code is entered, so owning the inbox is the proof. Auto-confirming
@@ -46,7 +47,7 @@ from shared.participants_settings import (
     board_audience_admits,
     from_item,
 )
-from shared.review_share_audience import is_share_id, share_admits, share_key
+from shared.review_share_audience import REVIEWER_ROUTES_STORE, is_share_id, routing_of, share_admits, share_key
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -115,13 +116,22 @@ def _boards_admit(email_lc: str) -> bool:
 
 
 def _review_link_admits(event: dict, email_lc: str) -> bool:
-    """The sign-up names an active review link (``ClientMetadata.share_id``) that admits the email."""
+    """The sign-up names an active review link (``ClientMetadata.share_id``) that admits the email.
+
+    The ``DOCSHARE#{id}`` row is read, as before: a row naming no workspace is the deployment's link. A routing row
+    (a link kept in a workspace, docs/multi-workspace.md 3e) is refused, as the reviewer routes refuse it
+    (``REVIEWER_ROUTES_STORE``), until the switch (3h) gives this trigger the workspace's status check; a row naming
+    anything but a workspace id refuses too. A routing row is never itself read as a link."""
     metadata = _request(event).get('clientMetadata')
     share_id = metadata.get('share_id') if isinstance(metadata, dict) else None
     if not is_share_id(share_id) or not os.environ.get('PROJECTS_TABLE'):
         return False
     item = get_projects_table().get_item(Key=share_key(share_id), ConsistentRead=True).get('Item')
-    return share_admits(item if isinstance(item, dict) else None, email_lc, int(time.time()))
+    share, workspace_id = routing_of(item)
+    if workspace_id is not None:
+        logger.info('Board sign-up refused: %s is not per workspace yet', REVIEWER_ROUTES_STORE)
+        return False
+    return share_admits(share, email_lc, int(time.time()))
 
 
 def pre_sign_up_handler(event: dict, _context: Any) -> dict:
