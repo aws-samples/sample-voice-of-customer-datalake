@@ -91,7 +91,6 @@ export const BOARD_TRIGGER_FILES = [
   'shared/review_share_audience.py',
 ] as const;
 
-
 /** One board trigger (stdlib + boto3, no layer), Python 3.14 ARM64, 30-day logs. */
 function boardTrigger(
   ctx: CoreBuildContext,

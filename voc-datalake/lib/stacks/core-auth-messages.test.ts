@@ -1,7 +1,8 @@
 /**
  * The app pool's custom-message trigger (core-auth.ts → lambda/auth/user_messages.py):
  * - it is a real, self-contained asset (`auth/user_messages.handler`, only USER_MESSAGES_FILES), no inline code;
- * - it may read exactly the brand row (GetItem, LeadingKeys SETTINGS#brand) and decrypt with the table's key;
+ * - it may read exactly the brand and design-system rows (GetItem, LeadingKeys SETTINGS#brand and
+ *   SETTINGS#design_system) and decrypt with the table's key;
  * - `-c workshop` reaches it as WORKSHOP (default false), and the temporary-password lifetime it states is the
  *   pool's own policy;
  * - the static invitation (Cognito's fallback when the trigger fails) still carries both required placeholders.
