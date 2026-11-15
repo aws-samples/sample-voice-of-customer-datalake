@@ -2,11 +2,16 @@
 its header had ``HEADER_SETTLE_SECONDS``, and stored with how it was picked (``picked_by`` / ``pick_model``).
 A fake CDP connection; no AWS but moto, no model.
 """
+from unittest.mock import MagicMock
+
 import boto3
 import capture_worker as cw
 import pytest
 from logo_isolate import ISOLATE_JS
+from logo_pick import ModelAnswer
 from page_logo import PageLogo
+from page_logo_candidates import LogoCandidates
+from page_styles import PageStyles
 from test_design_capture_worker import (  # noqa: F401 - fixture
     ISOLATED_BOX,
     TRIMMED_PNG,
@@ -19,6 +24,7 @@ from test_design_capture_worker import (  # noqa: F401 - fixture
     trim_answer,
 )
 from test_logo_pick import PICK_MODEL
+from test_page_logo_candidates import logo_candidate
 from test_page_shots import REGIONS, SCROLLED, ShotCdp
 
 SCROLL_TOP = "window.scrollTo({ top: 0, left: 0, behavior: 'instant' })"
@@ -96,3 +102,24 @@ class TestWithPickRecord:
     def test_records_nothing_for_a_logo_nobody_picked(self):
         design = {'logo': {'source_url': 'https://kirocrew.dev/l.png'}}
         assert cw.with_pick_record(design, PageLogo()) == design
+
+
+class TestPickDeadline:
+    """The model is not asked late in the browser session: its call must leave the shots and the photo their time."""
+
+    @staticmethod
+    def _pick(elapsed: float):
+        found = LogoCandidates('https://kirocrew.dev/', (logo_candidate(1),))
+        ask = MagicMock(return_value=ModelAnswer('{"logo": 1}', PICK_MODEL))
+        deps = cw.CaptureDeps(table=None, kit=MagicMock(), pick_logo=ask, clock=lambda: 100.0 + elapsed)
+        return cw._pick(found, None, PageStyles(url='https://kirocrew.dev/', title='Kiro'), deps, 100.0), ask
+
+    def test_asks_the_model_early_in_the_session(self):
+        pick, ask = self._pick(cw.PICK_LATEST_START_SECONDS - 1)
+        ask.assert_called_once()
+        assert pick.picked_by == 'model'
+
+    def test_lets_the_rules_decide_past_the_latest_start(self):
+        pick, ask = self._pick(cw.PICK_LATEST_START_SECONDS + 1)
+        ask.assert_not_called()
+        assert pick.picked_by == 'rules'

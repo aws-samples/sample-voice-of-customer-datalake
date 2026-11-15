@@ -1,8 +1,10 @@
 """Which candidate is the logo (``logo_pick``): the model's answer re-checked, the rules and the touch icon as
 fallbacks, and the fenced user turn. The model call is a fake; Bedrock is never called.
 """
+import json
 from unittest.mock import MagicMock, patch
 
+import logo_pick
 import pytest
 from logo_pick import (
     HEAD_ICON,
@@ -47,8 +49,10 @@ class TestParsePick:
     def test_returns_the_fallback_only_when_the_page_lists_that_icon(self):
         assert parse_pick('{"logo": null, "fallback": "touch-icon"}', FOUND) == LogoPick(fallback='touch-icon',
                                                                                          picked_by=MODEL)
-        assert parse_pick('{"logo": null, "fallback": "icon"}', FOUND) == LogoPick(picked_by=MODEL)
-        assert parse_pick('{"logo": null, "fallback": "og-image"}', FOUND) == LogoPick(picked_by=MODEL)
+
+    @pytest.mark.parametrize('fallback', ['icon', 'og-image', 'TOUCH-ICON', 7])
+    def test_returns_none_for_a_fallback_the_page_does_not_list_so_the_rules_decide(self, fallback):
+        assert parse_pick(json.dumps({'logo': None, 'fallback': fallback}), FOUND) is None
 
     def test_returns_an_empty_model_pick_for_an_explicit_nologo_candidate(self):
         pick = parse_pick('{"logo": null, "fallback": null, "why": "only a cookie banner"}', FOUND)
@@ -73,7 +77,9 @@ class TestChooseLogo:
 
     def test_falls_back_to_the_rules_when_the_model_raises(self):
         ask = MagicMock(side_effect=TimeoutError('read timed out'))
-        assert choose_logo(FOUND, MARKED, 'KiroCrew', ask) == LogoPick(number=1, picked_by=RULES)
+        with patch.object(logo_pick, 'logger') as log:
+            assert choose_logo(FOUND, MARKED, 'KiroCrew', ask) == LogoPick(number=1, picked_by=RULES)
+        log.warning.assert_called_once_with('Logo pick call failed: TimeoutError')   # visible in log sweeps
 
     def test_falls_back_to_the_rules_with_no_model_recorded_when_the_answer_is_unusable(self):
         pick = choose_logo(FOUND, None, 'KiroCrew', MagicMock(return_value=ModelAnswer('{"logo": 7}', PICK_MODEL)))
@@ -109,13 +115,28 @@ class TestAskLogoModel:
         content = [{'text': 'x'}]
         with patch('shared.model_config.get_active_model_id', return_value=PICK_MODEL) as resolve, \
                 patch('shared.converse.converse_blocks', return_value=response) as converse, \
-                patch('shared.aws.get_bedrock_client', return_value='bedrock'):
+                patch.object(logo_pick, '_bedrock_client', return_value='bedrock'):
             answer = ask_logo_model(content)
         assert answer == ModelAnswer('{"logo": 1}', PICK_MODEL)
         resolve.assert_called_once_with(SURFACE)
         assert converse.call_args.args == ('bedrock', content)
         assert converse.call_args.kwargs['model_id'] == PICK_MODEL
         assert converse.call_args.kwargs['surface'] == SURFACE == 'enrichment'
+
+    def test_uses_its_own_client_with_a_short_read_timeout_and_one_attempt(self):
+        logo_pick._pick_client = None
+        try:
+            with patch('boto3.client', return_value='client') as make:
+                assert logo_pick._bedrock_client() == 'client'
+                assert logo_pick._bedrock_client() == 'client'   # cached
+            make.assert_called_once()
+            config = make.call_args.kwargs['config']
+            assert (config.read_timeout, config.connect_timeout) == (logo_pick.PICK_READ_TIMEOUT_SECONDS,
+                                                                     logo_pick.PICK_CONNECT_TIMEOUT_SECONDS)
+            assert config.retries == {'max_attempts': 1, 'mode': 'standard'}
+            assert logo_pick.PICK_READ_TIMEOUT_SECONDS <= 30
+        finally:
+            logo_pick._pick_client = None
 
 
 class TestPickContent:
