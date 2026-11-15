@@ -605,6 +605,334 @@
     ]
   },
   {
+    "file": "api/engineeringConnectionsApi.ts",
+    "method": "GET",
+    "call": "'/agents/engineering/connections'",
+    "probes": [
+      {
+        "path": "/agents/engineering/connections"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringConnectionsApi.ts",
+    "method": "PUT",
+    "call": "connectionPath(connectionId)",
+    "probes": [
+      {
+        "path": "/agents/engineering/connections/storefront",
+        "body": {
+          "host": "github",
+          "repository": "example-org/storefront",
+          "default_branch": "trunk"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringConnectionsApi.ts",
+    "method": "DELETE",
+    "call": "connectionPath(connectionId)",
+    "probes": [
+      {
+        "path": "/agents/engineering/connections/retired"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringConnectionsApi.ts",
+    "method": "POST",
+    "call": "attestationPath(connection.connection_id)",
+    "probes": [
+      {
+        "path": "/agents/engineering/connections/storefront/ci-attestation",
+        "body": {
+          "points": [
+            "protected_secrets",
+            "read_only_token",
+            "oidc_pinned",
+            "no_self_hosted_runner",
+            "no_privileged_pull_request",
+            "branch_rules"
+          ],
+          "repository": "example-org/storefront",
+          "version": 3
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringConnectionsApi.ts",
+    "method": "DELETE",
+    "call": "attestationPath(connectionId)",
+    "probes": [
+      {
+        "path": "/agents/engineering/connections/storefront/ci-attestation"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringReactionsApi.ts",
+    "method": "POST",
+    "call": "`/agents/engineering/${encodeURIComponent(runId)}/reactions`",
+    "probes": [
+      {
+        "path": "/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3/reactions",
+        "body": {}
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRunsApi.ts",
+    "method": "POST",
+    "call": "'/agents/engineering/runs'",
+    "probes": [
+      {
+        "path": "/agents/engineering/runs",
+        "body": {
+          "workflow_id": "wf_7c2d9e41a0b3",
+          "connection": "conn-storefront",
+          "commit": "0123456789abcdef0123456789abcdef01234567",
+          "language": "node",
+          "goal": "Fix the paging bugs"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRunsApi.ts",
+    "method": "GET",
+    "call": "engineeringRunPath(runId)",
+    "probes": [
+      {
+        "path": "/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRunsApi.ts",
+    "method": "GET",
+    "call": "engineeringRunPath(runId, '/board')",
+    "probes": [
+      {
+        "path": "/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3/board"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRunsApi.ts",
+    "method": "GET",
+    "call": "engineeringRunPath(runId, `/conversation?after=${after}`)",
+    "probes": [
+      {
+        "path": "/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3/conversation?after=0"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRunsApi.ts",
+    "method": "POST",
+    "call": "engineeringRunPath(runId, '/board/tasks')",
+    "probes": [
+      {
+        "path": "/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3/board/tasks",
+        "body": {
+          "role": "hunter",
+          "title": "Look at the export",
+          "spec": {
+            "instructions": "Check the CSV export"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRunsApi.ts",
+    "method": "POST",
+    "call": "engineeringRunPath(runId, `/board/tasks/${encodeURIComponent(taskId)}/${action}`)",
+    "probes": [
+      {
+        "path": "/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3/board/tasks/task-fix-sort/priority",
+        "body": {
+          "priority": 5
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRunsApi.ts",
+    "method": "GET",
+    "call": "engineeringRunPath(runId, '/reports')",
+    "probes": [
+      {
+        "path": "/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3/reports"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRunsApi.ts",
+    "method": "GET",
+    "call": "engineeringRunPath(runId, path)",
+    "probes": [
+      {
+        "path": "/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3/reports/goal/01JDA7K3M9Q2R5T8V0W4X6Y1Z3?version=2"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRunsApi.ts",
+    "method": "POST",
+    "call": "engineeringRunPath(runId, '/signals')",
+    "probes": [
+      {
+        "path": "/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3/signals",
+        "body": {
+          "signal": "save"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRunsApi.ts",
+    "method": "POST",
+    "call": "engineeringRunPath(runId, '/messages')",
+    "probes": [
+      {
+        "path": "/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3/messages",
+        "body": {
+          "to": "conductor",
+          "text": "Skip the docs task"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringSkillActionsApi.ts",
+    "method": "POST",
+    "call": "actionPath(connection, role, version, action)",
+    "probes": [
+      {
+        "path": "/agents/engineering/skills/fixer/versions/2/benchmark?connection=storefront",
+        "body": {
+          "expected_status": "proposed",
+          "before": 1,
+          "after": 1,
+          "cases": ["pagination-review"],
+          "passed": true,
+          "reasons": ["no regression"],
+          "failure_case": "pagination-review"
+        }
+      },
+      {
+        "path": "/agents/engineering/skills/fixer/versions/2/reject?connection=storefront",
+        "body": { "expected_status": "proposed", "reason": "Too slow for small fixes." }
+      },
+      {
+        "path": "/agents/engineering/skills/fixer/versions/1/rollback?connection=",
+        "body": { "expected_current": 3 }
+      },
+      {
+        "path": "/agents/engineering/skills/coordinator/versions/1/accept?connection=",
+        "body": { "expected_status": "accepted", "expected_current": 1 }
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringSkillsApi.ts",
+    "method": "GET",
+    "call": "historyPath(connection, role, page)",
+    "probes": [
+      {
+        "path": "/agents/engineering/skills/fixer/versions?connection="
+      },
+      {
+        "path": "/agents/engineering/skills/fixer/versions?connection=storefront"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringSkillsApi.ts",
+    "method": "GET",
+    "call": "scorecardsPath(connection, role, versions)",
+    "probes": [
+      {
+        "path": "/agents/engineering/scorecards/fixer?connection=storefront"
+      },
+      {
+        "path": "/agents/engineering/scorecards/fixer?connection=storefront&versions=2%2C1"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringSkillsApi.ts",
+    "method": "GET",
+    "call": "skillsPath(connection)",
+    "probes": [
+      {
+        "path": "/agents/engineering/skills?connection="
+      },
+      {
+        "path": "/agents/engineering/skills?connection=storefront"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringSkillsApi.ts",
+    "method": "GET",
+    "call": "versionPath(connection, role, version)",
+    "probes": [
+      {
+        "path": "/agents/engineering/skills/fixer/versions/2?connection="
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringSpendApi.ts",
+    "method": "GET",
+    "call": "'/agents/engineering/settings'",
+    "probes": [
+      {
+        "path": "/agents/engineering/settings"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringSpendApi.ts",
+    "method": "PUT",
+    "call": "'/agents/engineering/settings'",
+    "probes": [
+      {
+        "path": "/agents/engineering/settings",
+        "body": {
+          "hard_cap": false
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringSpendApi.ts",
+    "method": "GET",
+    "call": "`/agents/engineering/spend?${params.toString()}`",
+    "probes": [
+      {
+        "path": "/agents/engineering/spend?month=2026-11&by=workflow"
+      },
+      {
+        "path": "/agents/engineering/spend?month=2026-11&by=run&workflow=wf_7c2d9e41a0b3"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringTemplates.ts",
+    "method": "GET",
+    "call": "'/workflows/templates'",
+    "probes": [
+      {
+        "path": "/workflows/templates"
+      }
+    ]
+  },
+  {
     "file": "api/participantsApi.ts",
     "method": "GET",
     "call": "'/participants/settings'",

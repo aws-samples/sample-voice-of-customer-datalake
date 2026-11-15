@@ -23,7 +23,7 @@ their bookkeeping in a partition of their own, ``DOCUMENT_VERSIONS#PROJECT#{id}`
 
 A series' comment threads and its review link's pointer sit in ``DCOMMENTS#{project}#{series}`` (``comments_pk``), a
 review link in ``DOCSHARE#{id}`` (``review_link_key``) and a reviewer's daily counter in ``DCRATE#…``
-(``reviewer_rate_pk``); in a workspace (since 7.35.00) each inside it, the project's commented series listed in its
+(``reviewer_rate_pk``); in a workspace (since 7.37.00) each inside it, the project's commented series listed in its
 own partition (``comment_series_key``), the workspace's links in ``WS#{ws}#DOCSHARE_IDS`` (``review_link_registry_key``)
 and each link's deployment-wide routing row the workspace layer's own (shared/ws_repo.py ``route_share_id``).
 
@@ -93,12 +93,12 @@ AGENT_RUNS_STORE: Final = 'Agent runs'
 #: "Revise from comments" (shared/document_revision.py; its series-head check and its next version,
 #: shared/document_history.py ``require_series_head`` / ``revise_document``): it reads the deployment's feedback as
 #: evidence and writes the series' next version on the deployment's version keys, so a workspace is refused (since the
-#: merge in 7.35.00) until the switch (3h) threads it.
+#: merge in 7.37.00) until the switch (3h) threads it.
 REVISE_FROM_COMMENTS_STORE: Final = 'Revise from comments'
 #: The Prototype builder (docs/prototype-builder.md: shared/prototype_versions.py ``PrototypeStore`` and its HTML
 #: objects, shared/prototype_drafts.py, shared/prototype_feedback.py, shared/prototype_incorporation.py; the series
 #: head of shared/document_versions.py ``series_head_version``): its version rows, draft job rows, pin-form reads and
-#: objects are the deployment's, so a workspace is refused (since the merge in 7.35.00) until the switch (3h).
+#: objects are the deployment's, so a workspace is refused (since the merge in 7.37.00) until the switch (3h).
 PROTOTYPE_BUILDER_STORE: Final = 'Prototype builder'
 #: A workspace's registry of its project ids, one row per project, ``WS#{ws}#PROJECT_IDS`` / ``{id}``.
 _PROJECT_REGISTRY: Final = 'PROJECT_IDS'
@@ -229,7 +229,7 @@ def document_revision_key(project_id: str, document_id: str, revision: int, *,
 
 def comments_pk(project_id: str, series_id: str, *, workspace: WorkspaceScope | None = None) -> str:
     """The partition of a series' comment threads and of its review link's pointer row (``SHARE``):
-    ``DCOMMENTS#{project}#{series}``, ``WS#{ws}#DCOMMENTS#{project}#{series}`` in a workspace (since 7.35.00). The
+    ``DCOMMENTS#{project}#{series}``, ``WS#{ws}#DCOMMENTS#{project}#{series}`` in a workspace (since 7.37.00). The
     series id is the same in every scope (shared/document_series.py ``series_id``: project ids are unique in the
     deployment)."""
     return scoped_pk(workspace, f'{_COMMENTS_PREFIX}{project_id}#{series_id}')
@@ -237,7 +237,7 @@ def comments_pk(project_id: str, series_id: str, *, workspace: WorkspaceScope | 
 
 def comment_series_key(project_id: str, series_id: str, *, workspace: WorkspaceScope) -> dict[str, str]:
     """A project's row listing one of its commented series, in the project's own partition:
-    ``WS#{ws}#PROJECT#{id}`` / ``COMMENT_SERIES#{series}`` (a workspace's only, since 7.35.00). Put (if absent) before
+    ``WS#{ws}#PROJECT#{id}`` / ``COMMENT_SERIES#{series}`` (a workspace's only, since 7.37.00). Put (if absent) before
     the series' comment partition gets its first row, so the hard delete finds every one by a Query of the project's
     partition (``comments_pk`` of each listed series), without a Scan; deleted with the project's partition."""
     if not series_id:
@@ -257,13 +257,13 @@ def comment_series_item(project_id: str, series_id: str, listed_at: str, *, work
 
 def review_link_key(share_id: str, *, workspace: WorkspaceScope | None = None) -> dict[str, str]:
     """A review link's row: the deployment's ``DOCSHARE#{id}`` / ``META`` (shared/review_share_audience.py
-    ``share_key``); a workspace's ``WS#{ws}#DOCSHARE#{id}`` / ``META`` (since 7.35.00), whose deployment-wide
+    ``share_key``); a workspace's ``WS#{ws}#DOCSHARE#{id}`` / ``META`` (since 7.37.00), whose deployment-wide
     ``DOCSHARE#{id}`` row only routes to it (shared/ws_repo.py ``route_share_id``)."""
     return {'pk': scoped_pk(workspace, f'{SHARE_PK_PREFIX}{share_id}'), 'sk': SHARE_SK}
 
 
 def review_link_registry_pk(workspace: WorkspaceScope) -> str:
-    """The workspace's registry of its review link ids in voc-projects: ``WS#{ws}#DOCSHARE_IDS`` (since 7.35.00). The
+    """The workspace's registry of its review link ids in voc-projects: ``WS#{ws}#DOCSHARE_IDS`` (since 7.37.00). The
     hard delete's ``docshares`` entry Queries it to release every routing row the workspace holds."""
     return workspace.key(_REVIEW_LINK_REGISTRY)
 
@@ -310,10 +310,10 @@ def project_partitions(project_id: str, *, workspace: WorkspaceScope | None = No
 
     * the comment threads, ``DCOMMENTS#{project}#{series}``: one partition per series; in a workspace each series is
       listed in the project's own partition (``comment_series_key``), which the hard delete reads first (since
-      7.35.00);
+      7.37.00);
     * the review links' rows: the deployment's ``DOCSHARE#{id}``; a workspace's ``WS#{ws}#DOCSHARE#{id}`` and its
       deployment-wide routing row, found through the workspace's ``WS#{ws}#DOCSHARE_IDS`` registry;
-    * the S3 objects (avatars, product documents, prototypes; under ``ws/{ws}/`` in a workspace since 7.35.00,
+    * the S3 objects (avatars, product documents, prototypes; under ``ws/{ws}/`` in a workspace since 7.37.00,
       shared/avatar.py, shared/prototypes.py, api/projects.py, api/product_context.py);
     * the id's claim and the workspace's registry row (kept on a project delete: shared/ws_repo.py);
     * the workspace's own ``LIST#`` / ``PERSON#`` / ``EMAIL#`` rows in voc-participants (and the ``project_ids``

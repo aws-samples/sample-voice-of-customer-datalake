@@ -1,5 +1,5 @@
 """The hard delete's comments child (of the projects entry) and its docshares entry, on moto (docs/multi-workspace.md,
-the project plan, 3e; 7.35.00): a workspace's comment partitions, found from each registered project's list of its
+the project plan, 3e; 7.37.00): a workspace's comment partitions, found from each registered project's list of its
 commented series, and its review links, found from its registry, each routing row released only while it names the
 workspace; nothing of the other workspace or the deployment is touched, and a stop anywhere resumes."""
 from __future__ import annotations

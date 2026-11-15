@@ -1,25 +1,19 @@
-"""A live website's INLINE ``<svg>`` logo (an ``<svg>`` element in the header, not an ``<img src=….svg>``).
+"""A standalone copy of the picked INLINE ``<svg>`` logo (an ``<svg>`` element in the page, not an ``<img src=….svg>``).
 
-Many sites draw their logo as markup in the header, so ``page_styles`` (which names image URLs only)
-finds no logo at all. When the page names no ``header`` logo image, the capture worker runs ONE more
-``Runtime.evaluate`` in the page tab (``inline_logo_expression``): ``INLINE_LOGO_JS`` picks the inline SVG
-that looks like the logo and serialises a standalone copy of it:
+When the logo the pick chose (``logo_pick``) is an inline SVG, the capture worker runs ONE more
+``Runtime.evaluate`` in the page tab (``inline_svg_expression``): ``INLINE_SVG_JS`` serialises a standalone copy of
+that stashed candidate (``page_logo_candidates.STASH``), kept beside the PNG as a download-only SVG:
 
-- candidates are ``<svg>`` elements in ``header`` / ``nav`` or in / named by a ``*logo*`` / ``*brand*``
-  container, never inside a cookie / consent banner, never nested in another SVG, visible and at least
-  ``MIN_WIDTH`` by ``MIN_HEIGHT`` px (icons such as a 16 px search glass are smaller);
-- one is a LOGO when it, or one of its ``LOGO_ANCESTORS`` nearest ancestors, has an id / class /
-  ``aria-label`` naming ``logo`` or ``brand``, or is a link to the site's root (``/``), or the SVG's own
-  ``<title>`` says ``logo``; inside ``header`` / ``nav`` first, then the highest on the page;
-- the copy carries each element's COMPUTED ``fill`` / ``stroke`` / opacity (when the element sets none
-  itself and the value is not a ``url()``) and the root's computed ``color`` (``currentColor``), since the
-  page's stylesheets do not travel with it; a ``<use href="#id">`` whose symbol lives elsewhere in the
-  document (an icon sprite) gets that symbol copied into a ``<defs>``;
+- the copy carries each element's COMPUTED ``fill`` / ``stroke`` / opacity (when the element sets none itself and
+  the value is not a ``url()``) and the root's computed ``color`` (``currentColor``), since the page's stylesheets
+  do not travel with it; a ``<use href="#id">`` whose symbol lives elsewhere in the document (an icon sprite) gets
+  that symbol copied into a ``<defs>``;
 - the answer is ``{svg, width, height}`` (the measured box) or null; a serialisation longer than
   ``MAX_INLINE_SVG_CHARS`` is dropped in the page (a cut SVG would not parse anyway).
 
-The markup is untrusted: ``shared.design_svg.sanitize_svg`` rebuilds it deny-by-default before the
-browser draws it as an image (``logo_render``) — see that module.
+The markup is untrusted: ``shared.design_svg.sanitize_svg`` rebuilds it deny-by-default (``page_logo``) — see that
+module. The PNG the reference records is the browser's own drawing of the element (``logo_isolate``), so a copy that
+does not survive sanitising only means no SVG download.
 """
 from __future__ import annotations
 
@@ -27,52 +21,21 @@ import json
 from dataclasses import dataclass
 from typing import Final
 
-from page_consent import with_consent_check
+from page_logo_candidates import STASH
 
 from shared.llm_json import json_object_or_none
 
-MIN_WIDTH: Final = 24
-MIN_HEIGHT: Final = 12
-LOGO_ANCESTORS: Final = 4
-MAX_CANDIDATES: Final = 40
+MIN_SIDE: Final = 8
 MAX_COPIED_ELEMENTS: Final = 3_000
 MAX_INLINE_SVG_CHARS: Final = 200_000
-INLINE_LIMITS: Final = {'min_w': MIN_WIDTH, 'min_h': MIN_HEIGHT, 'ancestors': LOGO_ANCESTORS,
-                        'candidates': MAX_CANDIDATES, 'copied': MAX_COPIED_ELEMENTS, 'chars': MAX_INLINE_SVG_CHARS}
+INLINE_LIMITS: Final = {'copied': MAX_COPIED_ELEMENTS, 'chars': MAX_INLINE_SVG_CHARS, 'stash': STASH}
 
-INLINE_LOGO_JS: Final = with_consent_check(r"""
-((L) => {
+INLINE_SVG_JS: Final = r"""
+((L, n) => {
   try {
-    const LOGO = /logo|brand/i;
-    /*IN_CONSENT*/
-    const classOf = (node) => typeof node.className === 'string' ? node.className
-      : (node.className && node.className.baseVal) || '';
-    const labelOf = (node) => [node.id || '', classOf(node), node.getAttribute('aria-label') || ''].join(' ');
-    const isRootLink = (node) => {
-      if (node.tagName !== 'A') return false;
-      try { const u = new URL(node.getAttribute('href') || '', location.href);
-            return u.origin === location.origin && (u.pathname === '/' || u.pathname === ''); } catch (e) { return false; }
-    };
-    const looksLikeLogo = (svg) => {
-      let node = svg;
-      for (let i = 0; node && node !== document.body && i <= L.ancestors; i += 1, node = node.parentElement) {
-        if (LOGO.test(labelOf(node)) || isRootLink(node)) return true;
-      }
-      const title = svg.querySelector('title');
-      return !!(title && /logo/i.test(title.textContent || ''));
-    };
-    const selector = 'header svg, nav svg, [class*=logo i] svg, [id*=logo i] svg, [class*=brand i] svg, svg[class*=logo i], svg[aria-label*=logo i]';
-    const placed = [];
-    for (const svg of Array.from(document.querySelectorAll(selector)).slice(0, L.candidates)) {
-      if (svg.parentElement && svg.parentElement.closest('svg')) continue;
-      const r = svg.getBoundingClientRect(); const s = getComputedStyle(svg);
-      if (r.width < L.min_w || r.height < L.min_h || s.visibility === 'hidden' || s.display === 'none') continue;
-      if (inConsent(svg) || !looksLikeLogo(svg)) continue;
-      placed.push({ svg, r, framed: svg.closest('header, nav') ? 0 : 1, top: r.top + scrollY });
-    }
-    placed.sort((a, b) => a.framed - b.framed || a.top - b.top);
-    if (!placed.length) return JSON.stringify(null);
-    const { svg, r } = placed[0];
+    const svg = (window[L.stash] || [])[n - 1];
+    if (!svg || !svg.isConnected || String(svg.tagName).toLowerCase() !== 'svg') return JSON.stringify(null);
+    const r = svg.getBoundingClientRect();
     const copy = svg.cloneNode(true);
     const PAINT = ['fill', 'stroke', 'stroke-width', 'opacity', 'fill-opacity', 'stroke-opacity'];
     const originals = [svg, ...Array.from(svg.querySelectorAll('*'))].slice(0, L.copied);
@@ -87,11 +50,12 @@ INLINE_LOGO_JS: Final = with_consent_check(r"""
     });
     copy.setAttribute('color', getComputedStyle(svg).color);
     const ids = new Set(Array.from(copy.querySelectorAll('[id]')).map((el) => el.id));
+    const lookup = svg.getRootNode && svg.getRootNode().getElementById ? svg.getRootNode() : document;
     let defs = null;
     for (const use of Array.from(copy.querySelectorAll('use'))) {
       const ref = use.getAttribute('href') || use.getAttribute('xlink:href') || '';
       if (!ref.startsWith('#') || ids.has(ref.slice(1))) continue;
-      const symbol = document.getElementById(ref.slice(1));
+      const symbol = lookup.getElementById(ref.slice(1)) || document.getElementById(ref.slice(1));
       if (!symbol || !symbol.closest('svg')) continue;
       if (!defs) { defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs'); copy.insertBefore(defs, copy.firstChild); }
       defs.appendChild(symbol.cloneNode(true)); ids.add(ref.slice(1));
@@ -104,7 +68,7 @@ INLINE_LOGO_JS: Final = with_consent_check(r"""
     return JSON.stringify(null);
   }
 })
-""")
+"""
 
 
 @dataclass(frozen=True)
@@ -115,9 +79,9 @@ class InlineSvg:
     height: float
 
 
-def inline_logo_expression() -> str:
-    """``INLINE_LOGO_JS`` called with ``INLINE_LIMITS`` — the optional second ``Runtime.evaluate``."""
-    return f'({INLINE_LOGO_JS})({json.dumps(INLINE_LIMITS)})'
+def inline_svg_expression(number: int) -> str:
+    """``INLINE_SVG_JS`` for stashed candidate ``number``."""
+    return f'({INLINE_SVG_JS})({json.dumps(INLINE_LIMITS)}, {int(number)})'
 
 
 def _number(value: object) -> float | None:
@@ -134,12 +98,6 @@ def parse_inline_logo(raw: object) -> InlineSvg | None:
     markup, width, height = data.get('svg'), _number(data.get('width')), _number(data.get('height'))
     if not isinstance(markup, str) or not markup or len(markup) > MAX_INLINE_SVG_CHARS:
         return None
-    if width is None or height is None or width < MIN_WIDTH or height < MIN_HEIGHT:
+    if width is None or height is None or width < MIN_SIDE or height < MIN_SIDE:
         return None
     return InlineSvg(markup, width, height)
-
-
-def wants_inline_logo(logos: list[dict], page_url: str) -> bool:
-    """Whether to look for an inline SVG logo: the page names no ``header`` logo image, and the page is https
-    (a rendered logo is recorded with the page as its ``source_url``, which must be https)."""
-    return page_url.startswith('https://') and not any(logo.get('kind') == 'header' for logo in logos)

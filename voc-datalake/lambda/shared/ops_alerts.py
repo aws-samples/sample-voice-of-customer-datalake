@@ -26,6 +26,11 @@ What is alarmed, and from where, comes from CDK as environment variables:
 * ``OPS_ALERTS_MCP_SERVICE`` — the global MCP function's Powertools service name: four
   spike alarms on its custom metrics (namespace ``VoC-MCP-Global``, ``MCP_ALARMS``), each
   the Sum over one 5-minute period above its named threshold (docs/mcp.md → Alarms).
+* ``OPS_ALERTS_ENGINEERING_SERVICES`` — only with the engineering agents module: the Powertools service names of the
+  engineering workspace's readers that take a denied read as missing (the Agents API, the board, the report builder).
+  ONE metric math alarm SUMs their ``EngineeringWorkspaceDeniedReads`` (namespace ``VoC``) over 5 minutes above
+  ``ENGINEERING_DENIED_READS_THRESHOLD``: a plain missing object counts too, so a few a period are normal, and a
+  broken bucket or key policy shows as the count rising well above that.
 """
 from __future__ import annotations
 
@@ -58,6 +63,12 @@ MCP_TOOL_DENIED_THRESHOLD: Final = 20   # scope / pin / admin / route 403 refusa
 MCP_TOOL_FAILED_THRESHOLD: Final = 5    # tool calls a server fault stopped (-32603)
 MCP_RATE_LIMITED_THRESHOLD: Final = 30  # 429s from the per-token budget
 
+# The engineering workspace's readers without ListBucket (engineering/workspace/store.py counts each denied read it
+# takes as missing, in the shared `VoC` namespace, with the Powertools `service` dimension).
+ENGINEERING_METRICS_NAMESPACE: Final = 'VoC'
+ENGINEERING_DENIED_READS_METRIC: Final = 'EngineeringWorkspaceDeniedReads'
+ENGINEERING_DENIED_READS_THRESHOLD: Final = 20   # per 5 minutes, across the readers
+
 # Deliberately simple and linear (every repetition is bounded or separated by a
 # literal): a local part, one `@`, then two or more dot-separated domain labels.
 # SNS sends the recipient a confirmation mail, which is the real check.
@@ -83,6 +94,7 @@ class AlertTargets:
     aggregator_function: str
     ingestor_functions: tuple[str, ...]
     mcp_service: str = ''
+    engineering_services: tuple[str, ...] = ()
 
 
 def _csv(raw: str | None) -> list[str]:
@@ -113,6 +125,7 @@ def load_targets(env: Mapping[str, str] | None = None) -> AlertTargets | None:
         aggregator_function=source.get('OPS_ALERTS_AGGREGATOR_FUNCTION', '').strip(),
         ingestor_functions=tuple(_csv(source.get('OPS_ALERTS_INGESTOR_FUNCTIONS'))),
         mcp_service=source.get('OPS_ALERTS_MCP_SERVICE', '').strip(),
+        engineering_services=tuple(_csv(source.get('OPS_ALERTS_ENGINEERING_SERVICES'))),
     )
 
 
@@ -168,23 +181,28 @@ def _iterator_age_alarm(targets: AlertTargets, function_name: str) -> dict[str, 
     }
 
 
-def _ingestor_alarm(targets: AlertTargets, slug: str, functions: list[str]) -> dict[str, Any]:
+def _summed(namespace: str, metric: str, dimension: str, values: Iterable[str], label: str) -> list[dict[str, Any]]:
+    """A metric math alarm's ``Metrics``: the 5-minute Sum of ``metric`` for each dimension value, and their SUM."""
     metrics: list[dict[str, Any]] = [{
         'Id': f'm{index}',
         'MetricStat': {
-            'Metric': {'Namespace': 'AWS/Lambda', 'MetricName': 'Errors',
-                       'Dimensions': [{'Name': 'FunctionName', 'Value': name}]},
+            'Metric': {'Namespace': namespace, 'MetricName': metric,
+                       'Dimensions': [{'Name': dimension, 'Value': value}]},
             'Period': PERIOD_SECONDS,
             'Stat': 'Sum',
         },
         'ReturnData': False,
-    } for index, name in enumerate(functions)]
+    } for index, value in enumerate(values)]
     ids = ','.join(metric['Id'] for metric in metrics)
-    metrics.append({'Id': 'total', 'Expression': f'SUM([{ids}])', 'Label': 'Ingestor errors', 'ReturnData': True})
+    metrics.append({'Id': 'total', 'Expression': f'SUM([{ids}])', 'Label': label, 'ReturnData': True})
+    return metrics
+
+
+def _ingestor_alarm(targets: AlertTargets, slug: str, functions: list[str]) -> dict[str, Any]:
     description = 'A data-source ingestor reported errors. Check Administration → System → Logs and the ingestor logs.'
     return {
         **_base(targets, slug, description),
-        'Metrics': metrics,
+        'Metrics': _summed('AWS/Lambda', 'Errors', 'FunctionName', functions, 'Ingestor errors'),
         **_ANY_IN_ONE_PERIOD,
     }
 
@@ -211,6 +229,19 @@ def _mcp_alarm(targets: AlertTargets, slug: str, metric: str, threshold: int, de
     }
 
 
+def _engineering_denied_reads_alarm(targets: AlertTargets) -> dict[str, Any]:
+    metrics = _summed(ENGINEERING_METRICS_NAMESPACE, ENGINEERING_DENIED_READS_METRIC, 'service',
+                      targets.engineering_services, 'Denied workspace reads')
+    description = ('Many reads of the engineering workspace bucket were denied and taken as missing: a bucket or KMS '
+                   'key policy may be broken. Check the board, report builder and agents API logs for '
+                   '"workspace: a denied read taken as missing".')
+    return {
+        **_base(targets, 'engineering-denied-reads', description),
+        'Metrics': metrics,
+        'Threshold': ENGINEERING_DENIED_READS_THRESHOLD, 'EvaluationPeriods': 1, 'DatapointsToAlarm': 1,
+    }
+
+
 def alarm_definitions(targets: AlertTargets) -> list[dict[str, Any]]:
     """Every alarm alerting creates, as ``PutMetricAlarm`` arguments."""
     alarms = [_queue_alarm(targets, slug, queue) for slug, queue in targets.queues]
@@ -226,6 +257,8 @@ def alarm_definitions(targets: AlertTargets) -> list[dict[str, Any]]:
         alarms.append(_ingestor_alarm(targets, 'ingestor-errors' if number == 1 else f'ingestor-errors-{number}', chunk))
     if targets.mcp_service:
         alarms.extend(_mcp_alarm(targets, *alarm) for alarm in MCP_ALARMS)
+    if targets.engineering_services:
+        alarms.append(_engineering_denied_reads_alarm(targets))
     return alarms
 
 

@@ -79,7 +79,7 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
     // A workspace's hard delete (7.28.00): its projects' partitions and document versions, its registry, and the
     // ids' claims. PROJECT_ID#* names no workspace in its key, so IAM reaches every claim: the code deletes only a
     // claim naming this workspace (release_project_claim's condition), of an id read from its own registry. Since
-    // 7.35.00 also its series' comment partitions, its review links and their registry, and the links' routing rows:
+    // 7.37.00 also its series' comment partitions, its review links and their registry, and the links' routing rows:
     // DOCSHARE#* names no workspace either (a deployment's own link shares it), and the code deletes only a route
     // naming this workspace (release_share_route's condition), of an id read from its own registry.
     [DELETE_ROLE]: {

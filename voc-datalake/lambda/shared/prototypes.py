@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 def prototype_s3_key(project_id: str, doc_id: str, *, workspace: WorkspaceScope | None = None) -> str:
     """S3 key for a generated prototype's HTML, under the `/prototypes/*` prefix
     that the frontend distribution's cache behavior serves. In a workspace (since
-    7.35.00; no caller passes one yet) the same key under `ws/{ws}/`, which that
+    7.37.00; no caller passes one yet) the same key under `ws/{ws}/`, which that
     behavior does not serve yet: the switch (3h) decides how a workspace's
     prototype is shown."""
     return scoped_object_key(workspace, f"prototypes/{project_id}/{doc_id}.html")

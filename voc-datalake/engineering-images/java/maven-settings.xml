@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The dependency step's Maven settings (the `code` user's ~/.m2/settings.xml, docs/autonomous-engineering.md → Runtime):
+  Maven reads no HTTPS_PROXY, so its downloads are pointed at the dependency step's own egress proxy on loopback
+  (unit_runner.CODE_PROXY_PORT), the only way out the entry point's firewall leaves `code`. The firewall, not this
+  file, is what holds it there: without the proxy, Maven reaches nothing.
+-->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+  <proxies>
+    <proxy>
+      <id>voc-dependency-step</id>
+      <active>true</active>
+      <protocol>https</protocol>
+      <host>127.0.0.1</host>
+      <port>3129</port>
+    </proxy>
+  </proxies>
+</settings>

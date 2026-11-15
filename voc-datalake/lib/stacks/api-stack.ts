@@ -37,11 +37,12 @@ import {
 import { pythonLambdaAsset } from '../utils/python-lambda-asset';
 import { isDevDeployment } from '../utils/context';
 import { VocStack, VocStackProps } from '../utils/voc-stack';
-import type { ApiStackContext } from './api-context';
+import type { ApiCodeOptions, ApiStackContext } from './api-context';
 import { createAssistantLambdas } from './api-assistant-lambdas';
 import { s3ImportIngestorDeployed } from './api-s3-import-lambda';
 import { createDataLambdas } from './api-data-lambdas';
 import { createEngagementLambdas } from './api-engagement-lambdas';
+import { engineeringAgentsEnabled } from './engineering-broker';
 import { createVerificationFixtureProvider } from './api-fixture-provider';
 import { createApiGateway, restApiBaseUrl } from './api-gateway';
 import { createJobLambdas } from './api-job-lambdas';
@@ -72,6 +73,12 @@ export interface VocApiStackProps extends VocStackProps {
   memoryTable: dynamodb.Table;
   /** voc-agents — served by the agents API (docs/autonomous-agents.md). */
   agentsTable: dynamodb.Table;
+  /**
+   * voc-engineering and voc-eng-workspace (VocCoreStack, only with -c engineeringAgents=true): the agents API reads an
+   * engineering run's board, conversation and reports from them (`/agents/engineering/<run_id>/…`).
+   */
+  engineeringTable?: dynamodb.ITable;
+  engineeringWorkspaceBucket?: s3.IBucket;
   /** voc-radar — served by the Radar API (docs/radar.md). */
   radarTable: dynamodb.Table;
   /** voc-participants — the engagement API (people, lists, asks); the feedback-form API attributes responses. */
@@ -207,7 +214,7 @@ export class VocApiStack extends VocStack {
      * @param handlerFileName - The handler file name (e.g., 'metrics_handler.py')
      * @returns Lambda Code asset with only the required files
      */
-    const createApiLambdaCode = (handlerFileName: string): lambda.Code => {
+    const createApiLambdaCode = (handlerFileName: string, options: ApiCodeOptions = {}): lambda.Code => {
       const providerSourceExcludes = handlerFileName === 'verification_fixture_provider.py'
         ? []
         : VERIFICATION_FIXTURE_PROVIDER_ASSET_EXCLUDES;
@@ -216,6 +223,9 @@ export class VocApiStack extends VocStack {
         // provider source affects only its own bundle, not every API Lambda.
         exclude: [
           ...PY_LAMBDA_ASSET_EXCLUDES, ...WORKER_TREE_ASSET_EXCLUDES,
+          // With `engineering`, the engineering agents' package ships beside the handler (the agents API's
+          // /agents/engineering/* reads, only with -c engineeringAgents=true); every other bundle leaves it out.
+          ...(options.engineering ? ['!/engineering/'] : []),
           ...providerSourceExcludes,
           '/aggregator/',
           '/jobs/',
@@ -233,6 +243,7 @@ export class VocApiStack extends VocStack {
           // its other branches are dev-only. Keep it root-level.
           'if [ -d /asset-input/api/prompts ]; then cp -r /asset-input/api/prompts /asset-output/; fi',
           'if [ -d /asset-input/api/static ]; then cp -r /asset-input/api/static /asset-output/; fi',
+          ...(options.engineering ? ['cp -r /asset-input/engineering /asset-output/'] : []),
         ],
       });
     };
@@ -410,6 +421,8 @@ export class VocApiStack extends VocStack {
         email: emailSenderOf(this.node) !== undefined,
         // Opt-in passkeys: the app user pool allows WebAuthn sign-in (core-auth.ts), on every deployment.
         passkey: true,
+        // The engineering agents module (-c engineeringAgents=true): the SPA offers "New engineering flow" only then.
+        engineering: engineeringAgentsEnabled(this),
       },
       // The board pool (/board and /review): its ids and how it emails sign-in codes.
       ...boardRuntimeConfig(props, emailSenderOf(this.node) !== undefined),
@@ -463,6 +476,14 @@ export class VocApiStack extends VocStack {
       new cdk.CfnOutput(this, 'EmailAvailable', {
         value: 'true',
         description: 'Participant email can be sent (-c emailFrom; drives the frontend features.email flag)',
+      });
+    }
+    // Only with -c engineeringAgents=true, so the default templates gain no output (config.json still carries
+    // `features.engineering: false`): deploy.sh reads a missing output as false.
+    if (engineeringAgentsEnabled(this)) {
+      new cdk.CfnOutput(this, 'EngineeringAvailable', {
+        value: 'true',
+        description: 'The engineering agents module is deployed (drives the frontend features.engineering flag)',
       });
     }
   }

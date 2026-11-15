@@ -1,5 +1,5 @@
 """The board pool's PreSignUp trigger and a review link kept in a workspace (docs/multi-workspace.md, the project plan,
-3e; 7.35.00).
+3e; 7.37.00).
 
 A link made in a workspace is that workspace's own row, and its ``DOCSHARE#{id}`` row only routes to it
 (``workspace_id``). The trigger reads the ``DOCSHARE#`` row as before and resolves the workspace from it; a routing

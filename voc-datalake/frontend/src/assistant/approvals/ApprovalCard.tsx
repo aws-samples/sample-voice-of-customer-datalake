@@ -24,7 +24,7 @@ import { DetailsDisclosure } from './previews/FieldDiff'
 import { getWriteTool } from './registry'
 import { useApprovalFlow, useExecutionContext } from './useApprovalFlow'
 import { useExpiry } from './useExpiry'
-import { ShownContext, createShownRecord } from './shown'
+import { ApprovalHoldContext, ShownContext, createShownRecord } from './shown'
 import type { ShownRecord } from './shown'
 import { checkArgs, isApprovable, isDestructive } from './approvalGate'
 import type { ArgsCheck } from './approvalGate'
@@ -110,10 +110,12 @@ function PendingBody({ props, shown, titleId, title, definition, check, expiry, 
   // `shown` carries what this card displayed (job window/language, brand base) to the executor.
   const ctx = useExecutionContext(shown, props.conversationId)
   const [confirmed, setConfirmed] = useState(false)
+  // (a preview holds Approve while what the card needs is not in: ApprovalHoldContext)
+  const [held, setHeld] = useState(false)
   const { interrupt, page, disabled = false } = props
   const destructive = isDestructive(interrupt, definition)
   const adminBlocked = definition?.adminOnly === true && !ctx.isAdmin
-  const canApprove = isApprovable({ definition, check, expiry, adminBlocked, destructive, confirmed, disabled, phase })
+  const canApprove = isApprovable({ definition, check, expiry, adminBlocked, destructive, confirmed, disabled, phase, held })
   const showConfirm = destructive && check.ok && !expiry.expired && phase !== 'declining'
 
   const handleApprove = () => {
@@ -125,7 +127,9 @@ function PendingBody({ props, shown, titleId, title, definition, check, expiry, 
       <CardHeader titleId={titleId} title={title} destructive={destructive} projectId={interrupt.metadata?.projectId} expiry={expiry} />
       <InterruptMessage message={interrupt.message} />
       <div className="max-h-96 overflow-auto">
-        <PreviewSection definition={definition} check={check} page={page} toolName={props.toolCall.name} />
+        <ApprovalHoldContext.Provider value={setHeld}>
+          <PreviewSection definition={definition} check={check} page={page} toolName={props.toolCall.name} />
+        </ApprovalHoldContext.Provider>
       </div>
       {adminBlocked && <p className="text-[12px] text-warn">{t('card.adminOnly')}</p>}
       {showConfirm && <DestructiveConfirm checked={confirmed} disabled={phase === 'executing' || disabled} onChange={setConfirmed} />}

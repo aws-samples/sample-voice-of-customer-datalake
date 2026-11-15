@@ -36,12 +36,13 @@ export interface ScheduleDeadLetterQueueProps {
  * reference or key → queue → rule → key cycle appears. Least privilege: only
  * `kms:GenerateDataKey` / `kms:Decrypt`, only under the SQS encryption context of
  * that one queue's ARN, only from this account. A deployment with no scheduled
- * plugin has no such queue, and the statement then matches nothing.
+ * plugin has no such queue, and the statement then matches nothing. The engineering bus's dead-letter queue
+ * (engineering-bus.ts) takes the same statement under its own `sid`.
  */
-export function allowEventBridgeToScheduleDlq(key: kms.Key, queueName: string): void {
+export function allowEventBridgeToScheduleDlq(key: kms.Key, queueName: string, sid = EVENTBRIDGE_DLQ_KEY_SID): void {
   const stack = cdk.Stack.of(key);
   key.addToResourcePolicy(new iam.PolicyStatement({
-    sid: EVENTBRIDGE_DLQ_KEY_SID,
+    sid,
     principals: [new iam.ServicePrincipal('events.amazonaws.com')],
     actions: ['kms:GenerateDataKey', 'kms:Decrypt'],
     resources: ['*'],

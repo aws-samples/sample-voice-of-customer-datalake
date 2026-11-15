@@ -393,7 +393,7 @@ def require_series_head(table: Any, project_id: str, document: dict, *,
                         workspace: WorkspaceScope | None = None) -> None:
     """The stale-series ConflictError (409) when the PR/FAQ / PRD ``document`` is no longer its series' head:
     a version was saved since it was read. ``revise_document`` checks it again in its write. Read in ``workspace``
-    when given (since 7.35.00); its one caller, Revise from comments (shared/document_revision.py), refuses a
+    when given (since 7.37.00); its one caller, Revise from comments (shared/document_revision.py), refuses a
     workspace until the switch (3h), so none passes one yet."""
     document_type = _revised_type(document)
     head = series_head_version(table, project_id, document_type, series_base(document), workspace=workspace)
@@ -410,7 +410,7 @@ def revise_document(table: Any, project_id: str, document: dict, content: str, *
     pass read it); ``revise_id`` is the version's allocation id (the write is idempotent). The row
     records who asked (``edited_by``: the starter's ``{sub, kind}``), ``edit_kind`` ``revise`` and
     what wrote it (``llm_metadata``: ``{model, prompt_version}``, shared.document_revision.pass_llm_metadata).
-    Written in ``workspace`` when given (since 7.35.00), as ``require_series_head``; Revise from comments refuses a
+    Written in ``workspace`` when given (since 7.37.00), as ``require_series_head``; Revise from comments refuses a
     workspace until the switch (3h), so none passes one yet.
     """
     document_type = _revised_type(document)

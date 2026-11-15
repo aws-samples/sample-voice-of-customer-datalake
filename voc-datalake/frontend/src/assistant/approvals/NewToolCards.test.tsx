@@ -9,6 +9,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 
 vi.mock('../../api/client', (importOriginal) => import('@test/fetchApiRoutes').then((h) => h.clientWithMockedFetchApi(importOriginal)))
+// (a new engineering flow's card needs the module: one test turns it on)
+vi.mock('../../runtimeConfig', (importOriginal) =>
+  import('@test/engineeringModule').then((m) => m.runtimeConfigModule(importOriginal)))
 vi.mock('../../store/authStore', () => import('@test/fetchApiRoutes').then((m) => m.authStoreModule()))
 
 import ApprovalCard from './ApprovalCard'
@@ -17,6 +20,8 @@ import type { ApprovalCardProps, ApprovalResolution, AssistantToolCall } from '.
 import { stubElementScrollIntoView } from '../../test/stubScrollTo'
 import { adminFlag, fetchApi } from '@test/fetchApiRoutes'
 import { wfEdge, wfNode as node } from '@test/workflowFixtures'
+import { engineeringFlowView } from '@test/engineeringRunFixtures'
+import { engineeringModule } from '@test/engineeringModule'
 
 const FUTURE = () => new Date(Date.now() + 10 * 60_000).toISOString()
 const CURRENT = {
@@ -35,6 +40,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   resetExecutions()
   adminFlag.isAdmin = true
+  engineeringModule.available = false
   // jsdom has no scrollIntoView (ApprovalCard scrolls its actions into view);
   // the returned teardown removes the stub again.
   return stubElementScrollIntoView()
@@ -83,6 +89,31 @@ describe('new tool approval cards', () => {
     expect(screen.getByText('Persona review')).toBeInTheDocument()
     expect(screen.getByText('Write PR/FAQ → End')).toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it.each([
+    [{ monthly_usd: 50 }, { monthly_usd: 80 }, 'Monthly budget: $50.00 → $80.00'],
+    [undefined, { monthly_usd: 80 }, 'Monthly budget set to $80.00'],
+    [{ monthly_usd: 50 }, undefined, 'Monthly budget removed (it was $50.00)'],
+  ])('update_workflow says an engineering flow\'s budget change in dollars (%o → %o)', async (was, now, text) => {
+    const flow = engineeringFlowView().workflow.definition
+    const withBudget = (budget: { monthly_usd: number } | undefined) => (budget === undefined ? flow : { ...flow, budget })
+    fetchApi.mockResolvedValue({ workflow: { workflow_id: 'wf_flow', name: 'Fix', revision: 1, definition: withBudget(was) }, revisions: [] })
+    renderCard({ id: 't9', name: 'update_workflow', args: { workflow_id: 'wf_flow', expected_revision: 1, definition: withBudget(now), change_summary: 'budget' } })
+    expect(await screen.findByText(text)).toBeInTheDocument()
+    expect(screen.queryByText(/budget:/i, { selector: 'p.text-text' })).not.toBeInTheDocument()
+  })
+
+  it('create_workflow says the budget it sets, in dollars', () => {
+    engineeringModule.available = true   // (a new engineering flow needs the module)
+    const flow = engineeringFlowView().workflow.definition
+    renderCard({ id: 't11', name: 'create_workflow', args: { definition: { ...flow, budget: { monthly_usd: 5 } } } })
+    expect(screen.getByText('Monthly budget set to $5.00')).toBeInTheDocument()
+  })
+
+  it('update_workflow refuses a budget on an agents workflow', () => {
+    renderCard({ id: 't10', name: 'update_workflow', args: { workflow_id: 'wf_2', expected_revision: 2, definition: { ...PROPOSED, budget: { monthly_usd: 5 } }, change_summary: 's' } })
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled()
   })
 
   it('update_workflow built on an older revision warns the save will be refused', async () => {

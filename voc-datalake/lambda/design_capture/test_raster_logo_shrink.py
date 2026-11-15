@@ -3,15 +3,25 @@
 Fake CDP (``test_design_capture_worker.FakeCdp``: the page tab is ``s1``, the render tab ``s2``), moto S3.
 Pins (7.00.02): the logo is downloaded ONCE through the guarded fetch (≤ 5 MB) and typed by its bytes; a logo over
 1 MB (not only over 2 MB) is drawn, from a ``data:`` URL of those bytes, so the browser fetches nothing; the PNG is
-stored and recorded like a rendered SVG; a failed render keeps a plain preview up to 2 MB, none above; over 5 MB
-there is no preview and one INFO line; a logo up to 1 MB is stored as downloaded, with no render tab.
+stored and recorded like a rendered SVG; a failed render keeps a plain preview up to 2 MB, no logo above; over 5 MB
+there is no logo and one INFO line; a logo up to 1 MB is stored as downloaded, with no render tab. Since 7.01.00 the
+logo is the picked ``<img>`` candidate (``page_logo``), and a candidate refused in the session is no logo at all.
 """
 import base64
 from unittest.mock import MagicMock, patch
 
 import pytest
 import raster_logo
-from test_design_capture_worker import ANSWER, REF_ID, FakeCdp, _run, _styles, table  # noqa: F401 - fixture
+from test_design_capture_worker import (  # noqa: F401 - fixture
+    REF_ID,
+    FakeCdp,
+    LogoAnswers,
+    _run,
+    _styles,
+    candidate,
+    page_candidates,
+    table,
+)
 from test_svg_logo_render import BOX, LOGO_PNG, png_bytes, s3  # noqa: F401 - fixture
 
 from shared.design_logo import COMPANY_LOGO_MAX_BYTES, MAX_LOGO_BYTES, RASTER_SHRINK_MAX_BYTES
@@ -54,8 +64,10 @@ def _served(content: bytes) -> MagicMock:
     return MagicMock(status_code=200, content=content)
 
 
-def _page() -> str:
-    return _styles(logos=[{'url': LOGO, 'kind': 'header'}])
+def _cdp(**kw) -> FakeCdp:
+    """A page whose header ``<img>`` (the rules' pick) is ``LOGO``; it cannot be photographed alone (the fake's
+    isolation answers ``gone``), so its own file is read."""
+    return FakeCdp(_styles(), logo=LogoAnswers(candidates=page_candidates(candidate(url=LOGO))), **kw)
 
 
 def _logo_downloads(fetch: MagicMock) -> list:
@@ -72,13 +84,26 @@ def _preview(s3) -> bytes | None:  # noqa: F811 - fixture parameter
     return s3.get_object(Bucket='raw', Key=PREVIEW_KEY)['Body'].read()
 
 
-RENDERED = {'source_url': LOGO, 'content_type': 'image/png', 'rendered': True, 'preview_key': PREVIEW_KEY}
+#: How a capture stores it: the rules picked it (no model in these tests).
+RENDERED = {'source_url': LOGO, 'content_type': 'image/png', 'rendered': True, 'preview_key': PREVIEW_KEY,
+            'picked_by': 'rules'}
+#: The same logo kept as a plain (not rendered) preview.
+PLAIN = {'source_url': LOGO, 'content_type': 'image/png', 'preview_key': PREVIEW_KEY, 'picked_by': 'rules'}
+
+
+def _assert_refused_once(cdp: FakeCdp, result: dict, stored: dict, fetch: MagicMock) -> None:
+    """A candidate refused in the session: the capture is ready, no render tab opened (the page tab only), no
+    logo is recorded, and the logo was downloaded exactly once."""
+    assert result == {'status': 'ready'}
+    assert cdp.methods().count('Target.createTarget') == 1
+    assert 'logo' not in stored['extracted_design']
+    assert len(_logo_downloads(fetch)) == 1
 
 
 class TestARasterOverTheCompanyLogoCapIsShrunk:
     @pytest.mark.parametrize('body', [pytest.param(MID_PNG, id='1.5-MB'), pytest.param(BIG_PNG, id='3-MB')])
     def test_it_is_drawn_from_its_own_bytes_and_stored_as_the_rendered_preview(self, table, s3, body):  # noqa: F811
-        cdp = FakeCdp(_page(), render_answer=BOX, logo_png=LOGO_PNG)
+        cdp = _cdp(render_answer=BOX, logo_png=LOGO_PNG)
         result, stored, fetch = _capture(table, s3, cdp, _served(body))
         assert result == {'status': 'ready'}
         assert stored['extracted_design']['logo'] == RENDERED
@@ -92,41 +117,38 @@ class TestARasterOverTheCompanyLogoCapIsShrunk:
         assert download.kwargs['max_bytes'] == RASTER_SHRINK_MAX_BYTES + 1
 
     def test_a_failed_render_of_a_logo_up_to_2_mb_keeps_it_as_a_plain_preview(self, table, s3):  # noqa: F811
-        cdp = FakeCdp(_page(), render_answer={'error': 'decode_failed'}, logo_png=LOGO_PNG)
+        cdp = _cdp(render_answer={'error': 'decode_failed'}, logo_png=LOGO_PNG)
         result, stored, fetch = _capture(table, s3, cdp, _served(MID_PNG))
         assert result == {'status': 'ready'}
-        assert stored['extracted_design']['logo'] == {'source_url': LOGO, 'content_type': 'image/png',
-                                                      'preview_key': PREVIEW_KEY}
+        assert stored['extracted_design']['logo'] == PLAIN
         assert _preview(s3) == MID_PNG
         assert len(_logo_downloads(fetch)) == 1
 
     def test_a_failed_render_of_a_logo_over_2_mb_leaves_no_preview_and_no_second_download(self, table, s3):  # noqa: F811
-        cdp = FakeCdp(_page(), render_answer={'error': 'decode_failed'}, logo_png=LOGO_PNG)
+        cdp = _cdp(render_answer={'error': 'decode_failed'}, logo_png=LOGO_PNG)
         with patch('logo_render.logger') as log:
             result, stored, fetch = _capture(table, s3, cdp, _served(BIG_PNG))
         assert result == {'status': 'ready'}
-        assert stored['extracted_design']['logo'] == {'source_url': LOGO, 'content_type': 'image/png'}
+        assert 'logo' not in stored['extracted_design']   # a refused candidate is no logo
         assert _preview(s3) is None
         assert len(_logo_downloads(fetch)) == 1
         reasons = [c.kwargs['extra'] for c in log.info.call_args_list if c.args[0] == 'Oversized logo not rendered']
         assert reasons == [{'reason': 'decode_failed'}]
-        assert cdp.calls[-1][0] == 'Target.closeTarget'
+        methods = [call[0] for call in cdp.calls]
+        last_render = max(i for i, m in enumerate(methods) if m == 'Runtime.callFunctionOn')
+        assert 'Target.closeTarget' in methods[last_render:]   # the render tab is closed after the failed draw
 
     def test_a_logo_over_5_mb_is_not_drawn_has_no_preview_and_logs_once(self, table, s3):  # noqa: F811
-        cdp = FakeCdp(_page(), render_answer=BOX, logo_png=LOGO_PNG)
+        cdp = _cdp(render_answer=BOX, logo_png=LOGO_PNG)
         with patch.object(raster_logo, 'logger') as log:
-            result, stored, fetch = _capture(table, s3, cdp, _served(HUGE_PNG))
-        assert result == {'status': 'ready'}
-        assert cdp.methods().count('Target.createTarget') == 1     # the page tab only
-        assert 'preview_key' not in stored['extracted_design']['logo']
-        assert len(_logo_downloads(fetch)) == 1
+            _assert_refused_once(cdp, *_capture(table, s3, cdp, _served(HUGE_PNG)))
         log.info.assert_called_once_with('Logo candidate not downloaded', extra={'reason': 'over_shrink_cap'})
 
     def test_a_large_body_that_is_not_a_png_jpeg_or_webp_never_reaches_the_browser(self, table, s3):  # noqa: F811
-        cdp = FakeCdp(_page(), render_answer=BOX, logo_png=LOGO_PNG)
+        cdp = _cdp(render_answer=BOX, logo_png=LOGO_PNG)
         _, stored, _ = _capture(table, s3, cdp, _served(b'GIF89a' + b'\x00' * 1_500_000))
         assert cdp.methods().count('Target.createTarget') == 1
-        assert 'rendered' not in stored['extracted_design']['logo']
+        assert 'logo' not in stored['extracted_design']
 
 
 class TestEveryOtherCandidateIsAsBefore:
@@ -136,20 +158,15 @@ class TestEveryOtherCandidateIsAsBefore:
         pytest.param(UnsafeURLError(LOGO, 'private address'), id='unsafe-address'),
     ])
     def test_a_refusal_for_another_reason_is_not_rendered_and_leaves_no_preview(self, table, s3, logo):  # noqa: F811
-        cdp = FakeCdp(_page(), render_answer=BOX, logo_png=LOGO_PNG)
-        result, stored, fetch = _capture(table, s3, cdp, logo)
-        assert result == {'status': 'ready'}
-        assert cdp.methods().count('Target.createTarget') == 1
-        assert stored['extracted_design']['logo'] == {'source_url': LOGO, 'content_type': 'image/png'}
-        assert len(_logo_downloads(fetch)) == 1                    # store_preview does not try again
+        cdp = _cdp(render_answer=BOX, logo_png=LOGO_PNG)
+        _assert_refused_once(cdp, *_capture(table, s3, cdp, logo))   # store_preview does not try again
 
     @pytest.mark.parametrize('body', [pytest.param(SMALL_PNG, id='small'),
                                       pytest.param(_png_of(COMPANY_LOGO_MAX_BYTES), id='exactly-1-MB')])
     def test_a_logo_up_to_1_mb_is_downloaded_once_and_stored_with_no_render_tab(self, table, s3, body):  # noqa: F811
-        cdp = FakeCdp(_page(), render_answer=BOX, logo_png=LOGO_PNG)
+        cdp = _cdp(render_answer=BOX, logo_png=LOGO_PNG)
         _, stored, fetch = _capture(table, s3, cdp, _served(body))
-        assert stored['extracted_design']['logo'] == {'source_url': LOGO, 'content_type': 'image/png',
-                                                      'preview_key': PREVIEW_KEY}
+        assert stored['extracted_design']['logo'] == PLAIN
         assert _preview(s3) == body
         assert cdp.methods().count('Target.createTarget') == 1
         assert len(_logo_downloads(fetch)) == 1

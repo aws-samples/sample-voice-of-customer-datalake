@@ -3,7 +3,8 @@
  * read-only run graph), and the incremental event merge.
  */
 import { describe, it, expect } from 'vitest'
-import { mergeEvents, stepStates } from './runState'
+import { stepStates } from './runState'
+import { mergeBySeq as mergeEvents } from '../../api/seqPages'
 import type { RunEvent } from '../../api/agentsApi'
 import { at } from '@test/defined'
 

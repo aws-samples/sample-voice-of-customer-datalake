@@ -254,7 +254,31 @@ describe('cdk-nag acknowledgements', () => {
       // 86-89: the cost rollup's Logs Insights reads (lib/stacks/cost-rollup-worker.ts): DescribeLogGroups on
       // log-group:*, StartQuery on the voc-* Lambda groups and their streams, GetQueryResults and StopQuery on *.
       // 88: main's 7.00.02 (through voc-wiki) names the logo keys exactly, so one acknowledgement goes.
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 88, used: 88 });
+      // voc-autonomous's (merged in 7.35.00, its own count 75 -> 96 from the same base, so 88 + 21 = 109):
+      // 81 -> 84: the engineering report builder's workspace reads and report writes, and the agents API's report reads.
+      // 84 -> 89: the engineering delivery function's own role (the agents' checkpoints, the MicroVMs and their
+      // images: 3), the engineering DLQ, no longer a role queue's redrive target (no role queues), so its SQS3, and the
+      // board's read of the knowledge packs' objects (one prefix), its IAM5.
+      // 89 -> 90: the engineering runtime's read of the quality gate's records for a run's retrospective (one
+      // prefix), its IAM5.
+      // 90 -> 92: the engineering broker's reads of the agents' submitted patches and of the gate records (two
+      // prefixes), their IAM5.
+      // 92 -> 88: the Lambda MicroVM grants are gone (the MicroVMs and their images, on the supervisor's and the
+      // delivery's roles); AgentCore's are on this deployment's runtimes only, and none exist in either shape.
+      // 88 -> 89: the board's read of the quality gate's records, for a flow's gate step (the GO ledger; one prefix),
+      // its IAM5.
+      // 89 -> 90: the engineering broker's read of the gate runners' gate records (one prefix: the GO ledger needs
+      // the gate runner's GO on the final go's tree), its IAM5.
+      // 90 -> 91: 7.00.00's CompanyLogoReadPolicy IAM5 (VocCoreStack; 74 -> 75 on main), merged in 7.01.00.
+      // 91 -> 92: the agents API's put and delete of the repository connections' parameters (one path), its IAM5.
+      // 92 -> 95: the checkout cache's writer (7.05.00): its writes under engineering/cache/ and its read of the
+      // entries' READY markers (two prefixes), and the read of those markers by the supervisor and by the delivery
+      // function (a wake's continuation), one acknowledgement for both (engineering-runtime.ts grantCacheReadyReads:
+      // the same finding and reason), their IAM5. Its read of the connections' parameters is the broker's own
+      // acknowledgement (one helper, the same finding and reason).
+      // 95 -> 96: the engineering runtime's create of a run's one reactions schedule (7.10.00, engineering-reactions.ts:
+      // one schedule group, names voc-eng-reactions-<run>, create only), its IAM5.
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 109, used: 109 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

@@ -1,0 +1,11 @@
+{
+  "name": "field-kit-units",
+  "version": "1.0.0",
+  "description": "A fictional package written for the Voice of Customer sample's benchmark.",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}

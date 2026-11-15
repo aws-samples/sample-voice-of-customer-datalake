@@ -1,4 +1,4 @@
-"""Review links per workspace (docs/multi-workspace.md, the project plan, 3e; 7.35.00).
+"""Review links per workspace (docs/multi-workspace.md, the project plan, 3e; 7.37.00).
 
 In a workspace a link is ``WS#{ws}#DOCSHARE#{id}`` / ``META``, its series' pointer and listing and its registry row
 ``WS#{ws}#DOCSHARE_IDS`` / ``{id}`` are the workspace's, and its ``DOCSHARE#{id}`` row is a deployment-wide routing

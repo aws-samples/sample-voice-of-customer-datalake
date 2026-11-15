@@ -23,6 +23,8 @@ import { AGGREGATOR_FUNCTION_BASE_NAME, AGGREGATOR_STREAM_FAILURES_BASE_NAME, FE
 import { AgentRuntime } from './agent-runtime';
 import { createBriefingWorker } from './briefing-worker';
 import { createCostRollupWorker } from './cost-rollup-worker';
+import { ENGINEERING_ROLE_NAME_TEMPLATE as ROLE_NAMES } from './engineering-broker';
+import { addProcessingEngineering } from './processing-engineering';
 import { createRadarScanWorker } from './radar-scan-worker';
 import { createRetentionWorker } from './retention-worker';
 import { WORKSPACE_HARD_DELETE_ENV, workspaceHardDeleteEnabled } from '../utils/workspace-hard-delete';
@@ -63,6 +65,10 @@ export interface VocProcessingStackProps extends VocStackProps {
   memoryTable: dynamodb.Table;
   /** voc-agents — agents, workflows, runs, run events, crewmate transcripts. */
   agentsTable: dynamodb.Table;
+  /** voc-engineering — the engineering bus's board and conversations; VocCoreStack makes it only with -c engineeringAgents=true. */
+  engineeringTable?: dynamodb.ITable;
+  /** voc-eng-workspace — the engineering runs' findings and reports; VocCoreStack makes it only with -c engineeringAgents=true. */
+  engineeringWorkspaceBucket?: s3.IBucket;
   /** voc-radar — the processor routes Radar sources' reviews here; the release scan writes here (docs/radar.md). */
   radarTable: dynamodb.Table;
   /** voc-feature-requests: research reads board requests as a separate evidence source (Query only); the
@@ -121,6 +127,7 @@ const PROCESSOR_ENRICHMENT_CONCURRENCY = 5;
  * - Retention / erasure worker, voc-retention (daily + POST /settings/erasure; retention-worker.ts)
  * - Memory workers: scanner, memory-extract queue + extractor, retention (memory-workers.ts)
  * - Autonomous-agent runtime: heartbeat, conductor, persona panel, voc-agent-run (agent-runtime.ts)
+ * - Only with -c engineeringAgents=true: the engineering agents' broker, bus and runtime (processing-engineering.ts)
  */
 export class VocProcessingStack extends VocStack {
   public readonly processingLambda: lambda.Function;
@@ -401,6 +408,10 @@ export class VocProcessingStack extends VocStack {
     // Cost per workspace's daily rollup of the Bedrock usage lines (docs/multi-workspace.md, "Cost per workspace").
     createCostRollupWorker(this, 'CostRollupWorker', { uniqueName, layer: processingLayer, kmsKey, aggregatesTable,
       workspacesTable: props.workspacesTable, lambdaLogGroupPattern: this.uniqueNamePattern('/aws/lambda/voc-*') });
+    // The engineering agents (docs/autonomous-engineering.md): only with -c engineeringAgents=true (processing-engineering.ts).
+    addProcessingEngineering(this, { uniqueName, layer: processingLayer, kmsKey, deploymentPrefix: this.deploymentPrefix,
+      aggregatesTable, agentsTable: props.agentsTable, rawDataBucket, engineeringTable: props.engineeringTable,
+      engineeringWorkspaceBucket: props.engineeringWorkspaceBucket, roleNamePattern: this.uniqueNamePattern(ROLE_NAMES) });
 
     // ============================================
     // RESEARCH WORKFLOW (Step Functions)

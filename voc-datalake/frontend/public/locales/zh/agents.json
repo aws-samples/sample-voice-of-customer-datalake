@@ -18,7 +18,10 @@
   "views": {
     "label": "智能体页面分区",
     "agents": "智能体",
-    "workflows": "工作流"
+    "workflows": "工作流",
+    "spend": "费用",
+    "connections": "连接",
+    "skills": "技能"
   },
   "list": {
     "title": "自主智能体",
@@ -66,7 +69,14 @@
     "renameNamed": "重命名 {{name}}",
     "renameTitle": "重命名此工作流",
     "renameConflict": "在此期间有人修改了此工作流，或它是内置工作流。请刷新后重试。",
-    "renameFailed": "无法重命名该工作流。"
+    "renameFailed": "无法重命名该工作流。",
+    "newEngineeringFlow": "新建工程流程",
+    "createEngineeringTitle": "新建工程流程",
+    "createEngineeringHint": "工程流程让自主工程智能体在一个仓库上工作，并以供人审阅的拉取请求结束。它从“开始 → 结束”起步：从面板添加“工程”步骤。",
+    "engineeringKind": "工程",
+    "fromTemplate": "从模板开始",
+    "templatesTitle": "从模板开始",
+    "templatesHint": "六个可作为起点的默认工程流程。选择一个会在编辑器中打开副本：在你保存之前不会保存任何内容。"
   },
   "fields": {
     "name": "名称",
@@ -337,6 +347,10 @@
       "until": "直到",
       "maxRounds": "最大轮数",
       "description": "描述",
+      "monthlyBudget": "月度预算（美元）",
+      "monthlyBudgetHint": "此流程的运行在一个自然月（UTC）内可花费的金额。随流程保存：目前不会停止运行，也不会发出提醒。",
+      "monthlyBudgetInvalid": "请输入以美元和美分计（最多两位小数）、介于 0.01 美元到 {{largest}} 之间的金额，或留空表示无预算。",
+      "monthlyBudgetNone": "无预算",
       "arrowTarget": "指向步骤",
       "arrowTargetNone": "选择一个步骤…",
       "joinLoop": "循环"
@@ -398,7 +412,46 @@
     "switchMessage": "您对 {{name}} 未保存的更改将丢失。",
     "switchConfirm": "切换工作流",
     "switched": "此代理现在运行 {{name}}。",
-    "switchFailed": "无法将代理切换到该工作流。"
+    "switchFailed": "无法将代理切换到该工作流。",
+    "engineering": {
+      "role": "角色",
+      "skillVersion": "技能版本",
+      "skillVersionHint": "'latest'（最新已接受的版本）或像 v3 这样的版本。",
+      "model": "模型",
+      "modelHint": "模型 ID；留空则使用默认模型。",
+      "budgetShare": "运行预算份额",
+      "budgetShareHint": "0.01 到 1 之间的比例；各智能体的份额合计不超过 1。留空：没有自己的份额。",
+      "shardBy": "拆分依据",
+      "shardByOptions": {
+        "packages": "包",
+        "history": "历史时间窗",
+        "pr_pages": "PR 页面"
+      },
+      "shardCap": "分片上限",
+      "posters": "谁发布任务",
+      "claimers": "谁领取任务",
+      "until": "运行到",
+      "untilOptions": {
+        "drained": "所有任务完成",
+        "caps": "达到上限"
+      },
+      "maxRounds": "评审轮次（上限）",
+      "packsAuto": "在仓库中自动检测检查包",
+      "packs": "检查包",
+      "finalGoModel": "最终放行模型",
+      "mode": "模式",
+      "modeOptions": {
+        "read": "读取",
+        "write": "写入"
+      },
+      "scope": "谁的记忆",
+      "scopeOptions": {
+        "repo": "仓库",
+        "role": "角色",
+        "person": "个人"
+      },
+      "limit": "读取记忆上限"
+    }
   },
   "paletteGroups": {
     "flow": "流程",
@@ -406,7 +459,8 @@
     "documents": "文档",
     "review": "评审",
     "prototype": "原型",
-    "delivery": "交付"
+    "delivery": "交付",
+    "engineering": "工程"
   },
   "edgeLabels": {
     "pass": "通过",
@@ -499,6 +553,42 @@
     "end": {
       "label": "结束",
       "description": "运行结束的位置。"
+    },
+    "agent": {
+      "label": "智能体",
+      "description": "带有角色（fixer、hunter、committer 等）、技能版本和预算份额的智能体。"
+    },
+    "map": {
+      "label": "拆分",
+      "description": "将工作拆成分片（包、历史时间窗、PR 页面），由智能体并行处理。"
+    },
+    "reduce": {
+      "label": "汇总",
+      "description": "拆分出的分片在此汇合，得出一个结果。"
+    },
+    "board": {
+      "label": "看板",
+      "description": "任务看板：一些角色发布任务，另一些角色领取并完成，直到清空。"
+    },
+    "quality_gate": {
+      "label": "质量关卡",
+      "description": "对变更的检查和评审轮次：GO 继续到 PR，NO-GO 交给人来决定。"
+    },
+    "learning_loop": {
+      "label": "学习循环",
+      "description": "一次回顾，把这次运行学到的内容写入记忆。"
+    },
+    "self_improvement": {
+      "label": "自我改进",
+      "description": "教练提出更好的技能版本并进行基准测试。"
+    },
+    "memory": {
+      "label": "记忆",
+      "description": "读取或写入仓库、某个角色或某个人的记忆。"
+    },
+    "stop_at_pr": {
+      "label": "止于 PR",
+      "description": "流程以一个供人审阅的拉取请求结束：从不合并任何内容。"
     }
   },
   "loopUntilHint": {
@@ -519,6 +609,45 @@
   "workflowPage": {
     "title": "工作流",
     "subtitle": "来自工作流库的工作流。运行它的智能体使用其最新保存的修订版本。"
+  },
+  "startRun": {
+    "action": "开始运行",
+    "title": "开始运行 {{name}}",
+    "description": "运行会以最后保存的版本，在已连接仓库的一个提交上启动此流程。只有存储了连接的凭据后，它才会访问该仓库。",
+    "fields": {
+      "connection": "仓库连接",
+      "commit": "提交",
+      "language": "语言",
+      "goal": "目标",
+      "issue": "议题（可选）"
+    },
+    "hints": {
+      "connection": "连接的 ID：字母、数字和连字符，最多 63 个。",
+      "commit": "运行起点提交的完整 ID：40 个十六进制字符。",
+      "language": "仓库的工具链：智能体在该语言的沙盒镜像中工作。",
+      "goal": "运行的用途，一行，最多 500 个字符。",
+      "issue": "运行所依据的仓库议题的编号。按输入原样记录。"
+    },
+    "invalid": {
+      "connection": "请输入连接的 ID：1 到 63 个字母、数字或连字符。",
+      "commit": "请输入完整的提交 ID：40 个字符，0 到 9 和 a 到 f。",
+      "goalEmpty": "请说明运行的用途。",
+      "goalLong": "目标最多 {{max, number}} 个字符。",
+      "issue": "请输入议题编号（从 1 开始的整数），或留空。"
+    },
+    "languages": {
+      "java": "Java",
+      "node": "JavaScript 和 TypeScript",
+      "python": "Python",
+      "rust": "Rust"
+    },
+    "budget": "其月度预算即流程的预算：{{amount}}。",
+    "noBudget": "该流程没有月度预算。",
+    "submit": "开始运行",
+    "openRun": "打开运行",
+    "mayHaveStarted": "运行可能已经开始：在开始另一个运行之前，请先查看运行列表。",
+    "openRuns": "查看流程的运行",
+    "saveFirst": "请先保存流程：运行使用已保存的版本。"
   },
   "validation": {
     "scope": "请至少选择一个类别或子类别，或关注所有类别。",
@@ -585,6 +714,613 @@
         "label": "关闭运行",
         "help": "不再运行任何步骤。运行产生的内容保留在项目中。"
       }
+    }
+  },
+  "spend": {
+    "hint": "工程智能体的花费（来自费用台账）：每个会话的费用、令牌和 MicroVM 时间，以运行时的计量为准。目前费用只包含 MicroVM 时间：模型令牌已计数，但尚未计价。月份按 UTC 计算。",
+    "month": "月份",
+    "groupBy": "分组依据",
+    "by": {
+      "workflow": "工作流",
+      "repo": "代码库",
+      "run": "运行",
+      "agent": "智能体",
+      "model": "模型",
+      "day": "日期"
+    },
+    "cost": "费用",
+    "tokensIn": "输入令牌",
+    "tokensOut": "输出令牌",
+    "microvm": "MicroVM 时间",
+    "budget": "月度预算",
+    "budgetHint": "每个工作流当前的月度预算，以及本月已花费的比例（目前仅含 MicroVM 时间）。",
+    "budgetShare": "{{percent}}%",
+    "noBudget": "无预算",
+    "overBudget": "超出预算",
+    "hardCap": "按每个工作流的月度预算强制封顶",
+    "hardCapHint": "默认关闭。开启后：从有预算的工作流启动的运行会获得一个费用上限，即该工作流本月剩余的金额；没有剩余时不会启动。每个运行的上限在启动时确定，因此同一工作流同时进行的多个运行合计可能超出预算（目前仅含 MicroVM 时间）。 会话时间按部署的 AgentCore 费率计价；模型令牌会计数，但尚未计价。",
+    "hardCapFailed": "无法保存封顶设置。请重试。",
+    "hardCapSaving": "正在保存…",
+    "hardCapUnread": "无法加载封顶设置。",
+    "none": "未记录",
+    "otherModels": "其他模型",
+    "workflowRuns": "{{name}}：查看其运行",
+    "inRun": "运行 {{run}}",
+    "onlyWorkflow": "工作流：{{name}}",
+    "allWorkflows": "显示所有工作流",
+    "tableCaption": "{{month}}的费用，分组依据：{{by}}",
+    "loadFailed": "无法加载费用。",
+    "truncated": "本月的行数超过一次读取的上限：显示的数字为下限。",
+    "empty": "{{month}}没有费用。"
+  },
+  "connections": {
+    "title": "代码仓库连接",
+    "intro": "工程智能体通过连接访问代码仓库：连接包括仓库、其默认分支以及为它们保存的凭据。已保存的凭据不会再向任何人显示。",
+    "add": "添加连接",
+    "limitReached": "此部署最多可保存 {{limit, number}} 个连接。请先移除一个，再添加新的连接。",
+    "loadFailed": "无法加载代码仓库连接。",
+    "emptyTitle": "还没有代码仓库连接",
+    "emptyHint": "添加一个连接，工程智能体即可在仓库中工作。",
+    "branch": "默认分支：{{branch}}",
+    "kind": "GitHub App",
+    "kindToken": "GitLab 项目访问令牌",
+    "hostLabel": "代码仓库托管方",
+    "hosts": {
+      "github": "GitHub",
+      "gitlab": "GitLab"
+    },
+    "expiry": {
+      "on": "令牌将于 {{date}} 过期。",
+      "soonBadge": "令牌即将过期",
+      "soon": "它将于 {{date}} 过期，不超过 {{days, number}} 天：请新建一个令牌并保存到此连接。",
+      "expiredBadge": "令牌已过期",
+      "expired": "它已于 {{date}} 过期：在你为此连接保存新令牌之前，代理无法访问该项目。",
+      "unknown": "令牌的过期日期未知：请带上令牌重新保存此连接。"
+    },
+    "gitlab": {
+      "keepHint": "已保存的令牌从不显示。将令牌留空即可保留；更换托管方或项目需要重新提供令牌。",
+      "fields": {
+        "project": "项目路径",
+        "token": "项目访问令牌"
+      },
+      "hints": {
+        "project": "项目地址中的路径：group/project 或 group/subgroup/project。",
+        "token": "项目访问令牌（glpat-…），创建时只显示一次。它会经 GitLab 校验，只发送一次，之后不再显示。"
+      },
+      "invalid": {
+        "repository": "请输入项目地址中的路径：group/project 或 group/subgroup/project。",
+        "tokenEmpty": "请粘贴项目访问令牌：新连接需要它的凭证。",
+        "tokenNeeded": "请重新粘贴项目访问令牌：新的托管方或项目会与它一起保存。",
+        "token": "请粘贴完整的项目访问令牌：它以 glpat- 开头。"
+      },
+      "guidance": {
+        "title": "GitLab 令牌需要什么",
+        "token": "只在此项目中创建项目访问令牌（在项目设置的“访问令牌”中）：角色 Developer，范围 api、read_repository 和 write_repository。不要使用 Maintainer 或 Owner，也不要使用群组令牌或个人令牌。",
+        "expiry": "GitLab 令牌会过期，最长为创建后一年。请在此令牌过期前创建下一个令牌并保存到连接：本页面会提前 30 天提醒你。",
+        "branch": "保护默认分支（禁止强制推送，推送和合并仅限 Maintainer），要求合并前流水线成功，并让 voc-agent/* 分支保持不受保护。"
+      },
+      "ci": {
+        "points": {
+          "protected_secrets": "含有密钥的 CI/CD 变量已受保护，只有受保护分支上的流水线能获得它们。",
+          "read_only_token": "CI/CD 作业令牌的权限最小：其允许列表只包含流水线需要的项目，且没有作业用它推送。",
+          "oidc_pinned": "通过 OIDC（id_tokens）访问云服务仅限受保护分支（令牌的 ref_protected 声明）。",
+          "no_self_hosted_runner": "能访问密钥或私有网络的共享、群组或实例 Runner 不会为未受保护的分支运行作业：这类 Runner 已受保护。",
+          "no_privileged_pull_request": "没有流水线带着密钥运行合并请求的代码：此项目中没有面向派生项目的合并请求流水线，受保护变量也不会传给它。",
+          "branch_rules": "默认分支已受保护（禁止强制推送，推送和合并仅限 Maintainer），合并前流水线必须成功（跳过的流水线不算成功），CI 配置只使用简单的本地 include 和 GitLab 自带的模板（暂不支持其他项目的共享 CI、远程 include 和组件），voc-agent/* 分支保持不受保护。"
+        },
+        "checked": "代理服务在每次推送和合并请求时也会读取受保护分支：默认分支受保护、禁止强制推送、推送和合并仅限 Maintainer，要求流水线成功，且 voc-agent/* 分支未受保护。"
+      }
+    },
+    "appIds": "App {{appId}}，安装 {{installationId}}",
+    "set": "已设置",
+    "notSet": "未设置",
+    "notSetHint": "缺少已保存的凭据：请编辑此连接，并连同凭据重新保存。",
+    "updated": "{{who}} 于 {{when}} 更新",
+    "unknownEditor": "未知",
+    "edit": "编辑",
+    "editLabel": "编辑 {{repository}}",
+    "remove": "移除",
+    "removeLabel": "移除 {{repository}}",
+    "created": "已添加 {{repository}}。",
+    "saved": "已保存 {{repository}}。",
+    "removed": "已移除 {{repository}}。",
+    "guidance": {
+      "title": "凭据需要具备什么",
+      "app": "创建一个 GitHub App，并只安装在此仓库上。仓库权限：Contents、Pull requests 和 Issues 设为 Read and write，Metadata 设为 Read-only。不要授予其他权限：不需要 Administration、Workflows、Secrets、Actions 或组织权限。",
+      "token": "App 本身从不交给智能体：代理服务在每一步签发一个有效期一小时的令牌，只针对此仓库，只含该步骤所需的 App 权限（Contents、Pull requests 和 Issues 的读写；Metadata 只读；从不含管理权限）。",
+      "branch": "请保护默认分支，并只允许智能体推送到名为 voc-agent/* 的分支。"
+    },
+    "dialog": {
+      "addTitle": "添加代码仓库连接",
+      "editTitle": "编辑到 {{repository}} 的连接",
+      "description": "工程智能体使用此连接读取仓库并提出修改。",
+      "stored": "已存储的凭据：",
+      "keepHint": "已存储的凭据永远不会显示。私钥留空即可保留它；更换仓库、App ID 或安装 ID 时需要再次提供私钥。",
+      "save": "保存连接"
+    },
+    "fields": {
+      "connectionId": "连接 ID",
+      "repository": "仓库",
+      "defaultBranch": "默认分支",
+      "appId": "App ID",
+      "installationId": "安装 ID",
+      "privateKey": "私钥"
+    },
+    "hints": {
+      "connectionId": "小写字母、数字和连字符，最多 63 个字符。添加连接后不能更改。",
+      "connectionIdFixed": "在添加连接时选定，不能更改。",
+      "repository": "owner/name，与仓库地址中的写法相同。",
+      "defaultBranch": "智能体开始工作并提交修改建议的分支。",
+      "appId": "App 的数字 ID。",
+      "installationId": "App 在此仓库上的安装的数字 ID。",
+      "privateKey": "App 的私钥：GitHub 生成的整个 .pem 文件，最多约 4 KB。只发送一次，之后不再显示。"
+    },
+    "invalid": {
+      "connectionId": "请输入由 1 到 63 个小写字母、数字或连字符组成、以字母或数字开头的 ID。",
+      "repository": "请按 owner/name 的格式输入仓库。",
+      "defaultBranch": "请输入分支名称：仅限字母、数字、“.”、“_”、“-” 和 “/”，最多 {{max, number}} 个字符，不含 “..”，且不能是 voc-agent/ 分支。",
+      "appId": "请输入 App ID：仅限数字。",
+      "installationId": "请输入安装 ID：仅限数字。",
+      "privateKeyEmpty": "请粘贴 App 的私钥：新连接需要凭据。",
+      "privateKeyNeeded": "请再次粘贴 App 的私钥：新的仓库、App ID 或安装 ID 会和私钥一起存储。",
+      "privateKey": "请粘贴完整的未加密 RSA 私钥 PEM 块，从 BEGIN 行到 END 行。",
+      "privateKeyLarge": "密钥超过了凭据能容纳的大小（约 4 KB）：请使用 App 自己的私钥。"
+    },
+    "confirm": {
+      "title": "要移除 {{repository}} 吗？",
+      "message": "这会移除此连接及其已保存的凭据。正在 {{repository}} 上工作的运行会在五分钟内失去访问权限：在重新保存连接之前，它们的读取和写入都会失败。",
+      "confirm": "移除连接"
+    },
+    "errors": {
+      "invalid": "有字段被拒绝。请检查各字段后重新保存。",
+      "forbidden": "只有管理员可以更改连接。",
+      "notFound": "未找到此连接，或者工程智能体已关闭。",
+      "conflict": "现在无法更改此连接：请先停止它正在进行的运行，或移除另一个连接。",
+      "unavailable": "连接暂时不可用。请稍后重试。",
+      "generic": "无法更改此连接。请重试。"
+    },
+    "ci": {
+      "attested": "CI 已确认",
+      "notAttested": "CI 未确认",
+      "attestedBy": "由 {{who}} 于 {{when}} 确认：智能体可以推送到 voc-agent/* 分支并创建拉取请求草稿。",
+      "none": "在管理员确认此仓库的 CI 不会向智能体分支提供任何有价值的东西之前，智能体不会向此仓库推送任何内容。",
+      "withdrawnBy": "由 {{who}} 于 {{when}} 撤回：在再次确认之前，智能体不会推送任何内容。",
+      "voidedRepository": "连接的仓库已更改，确认已失效：请确认此仓库的 CI。",
+      "voidedRemoved": "连接已移除，确认已失效：请再次确认其 CI。",
+      "unknownPerson": "一位管理员",
+      "attest": "确认 CI",
+      "attestLabel": "确认 {{repository}} 的 CI",
+      "withdrawAction": "撤回 CI 确认",
+      "withdrawLabel": "撤回 {{repository}} 的 CI 确认",
+      "recorded": "{{repository}} 的 CI 确认已记录。",
+      "withdrawn": "{{repository}} 的 CI 确认已撤回。",
+      "points": {
+        "protected_secrets": "CI 密钥仅限受保护的分支（带分支规则的环境）：智能体分支得不到任何密钥。",
+        "read_only_token": "工作流的默认令牌为只读，且没有工作流请求写入权限。",
+        "oidc_pinned": "通过 OIDC（id-token: write）的云访问仅限受保护的分支或环境。",
+        "no_self_hosted_runner": "没有自托管运行器接收来自未受保护分支的作业。",
+        "no_privileged_pull_request": "在拉取请求上以默认分支上下文运行的工作流（pull_request_target，或使用触发运行产物的 workflow_run）都不会检出、运行或下载拉取请求的代码或产物。",
+        "branch_rules": "默认分支受仓库的必需检查保护，且应用只能推送到 voc-agent/* 分支。"
+      },
+      "dialog": {
+        "title": "确认 {{repository}} 的 CI",
+        "description": "推送到智能体分支可能会启动仓库自己的流水线，而流水线会运行智能体可以更改的代码。请为此仓库逐项确认：您的姓名和时间会一并记录。",
+        "legend": "在未受保护的分支上，仓库的 CI 得不到任何有价值的东西：",
+        "allPoints": "请确认每一项：只有全部满足后，智能体才会推送。",
+        "note": "备注（可选）",
+        "noteHint": "您检查了什么或原因：与确认一并保存。一行，最多 {{max, number}} 个字符。",
+        "checked": "每次推送和拉取请求时，代理服务还会读取分支规则：默认分支须受必需检查保护，voc-agent/* 分支须不受保护。",
+        "save": "记录确认"
+      },
+      "withdraw": {
+        "title": "撤回 {{repository}} 的 CI 确认？",
+        "message": "在管理员再次确认其 CI 之前，智能体在 {{repository}} 上的下一次推送或拉取请求都会被拒绝。",
+        "confirm": "撤回确认"
+      }
+    }
+  },
+  "skills": {
+    "hint": "每个工程智能体都按一项技能工作：它的指令、示例、工具、模型和运行框架。每次更改都是一个新版本，连同更改原因、提议者和接受者以及基准测试一起保存。共享技能适用于所有没有自有版本的连接。",
+    "scope": "技能范围",
+    "shared": "共享技能",
+    "connection": "连接 {{name}}",
+    "connectionsFailed": "无法加载连接，因此只提供共享技能和地址中的连接。",
+    "rolesCaption": "在此范围内有技能版本的智能体角色",
+    "columns": {
+      "role": "角色",
+      "current": "当前版本",
+      "versions": "版本数",
+      "latest": "最近更改"
+    },
+    "openRole": "打开 {{role}} 的历史记录",
+    "role": {
+      "mapper": "映射者",
+      "understander": "问题理解者",
+      "hunter": "缺陷猎手",
+      "fixer": "修复者",
+      "builder": "功能构建者",
+      "committer": "提交者",
+      "commit-reviewer": "提交审阅者",
+      "gate-runner": "门禁执行者",
+      "pr-author": "拉取请求作者",
+      "pr-reviewer": "拉取请求审阅者",
+      "final-go": "最终批准",
+      "coordinator": "运行协调者",
+      "coach": "教练"
+    },
+    "noneAccepted": "尚无已接受的版本",
+    "version": "版本 {{version}}",
+    "current": "当前",
+    "loading": "正在加载技能…",
+    "rolesFailed": "无法加载技能。请稍后重试。",
+    "emptyShared": "还没有任何共享技能有版本。智能体使用本次发布附带的技能。",
+    "emptyConnection": "此连接没有自有的技能版本。其智能体使用共享技能。",
+    "backToRoles": "所有角色",
+    "roleTitle": "{{role}} · {{scope}}",
+    "status": {
+      "accepted": "已接受",
+      "proposed": "已提议",
+      "rejected": "已拒绝"
+    },
+    "byCoach": "教练（{{who}}）",
+    "proposedBy": "提议者：{{who}}，{{at}}",
+    "notMeasured": "未记录基准测试。",
+    "measured": "管理员的记录",
+    "rates": "通过率 {{before}} → {{after}}",
+    "benchmarkPassed": "通过",
+    "benchmarkFailed": "未通过",
+    "failureCase": "失败用例 {{name}}",
+    "measuredBy": "记录者：{{who}}，{{at}}",
+    "runRef": "运行 {{ref}}",
+    "claimed": "声明",
+    "claimedHint": "由提议者给出，未经测量",
+    "event": {
+      "accepted": "接受者：{{who}}，{{at}}",
+      "rejected": "拒绝者：{{who}}，{{at}}",
+      "rolled_back": "回滚者：{{who}}，{{at}}",
+      "benchmarked": "基准测试记录者：{{who}}，{{at}}",
+      "other": "{{event}}：{{who}}，{{at}}"
+    },
+    "restores": "恢复版本 {{version}}。",
+    "fromRun": "来自运行 {{run}}（{{failure}}）。",
+    "openVersion": "打开版本 {{version}} 及其更改",
+    "historyTitle": "历史记录",
+    "historyFailed": "无法加载历史记录。请稍后重试。",
+    "historyEmpty": "此角色在此范围内没有版本。",
+    "moreFailed": "无法加载较早的版本。请选择“加载较早的版本”重试。",
+    "loadMore": "加载较早的版本",
+    "diff": {
+      "added": "新增：",
+      "removed": "删除：",
+      "title": "相对其基础版本的更改",
+      "firstTitle": "第一个版本：所有内容都是新的",
+      "none": "相对其基础版本没有更改。",
+      "instructions": "指令",
+      "examples": "示例",
+      "example": "情况：{{situation}} | 做法：{{action}}",
+      "tools": "工具策略",
+      "reordered": "工具策略中的工具相同，只是顺序不同。",
+      "model": "模型：{{from}} → {{to}}",
+      "harness": "运行框架：{{from}} → {{to}}",
+      "nothing": "（无）"
+    },
+    "record": {
+      "title": "完整技能",
+      "model": "模型",
+      "harness": "运行框架",
+      "tools": "工具",
+      "instructions": "指令",
+      "examples": "示例（{{n, number}}）"
+    },
+    "noBase": "未基于任何更早的版本编写。",
+    "baseShared": "基于共享版本 {{version}} 编写。",
+    "base": "基于版本 {{version}} 编写。",
+    "expectedCase": "预期修复用例 {{name}}",
+    "madeWith": "使用 {{model}} 和提示词 {{prompt}} 生成",
+    "backToHistory": "返回历史记录",
+    "versionMissing": "此范围内没有版本 {{version}}。请返回历史记录并选择其他版本。",
+    "versionFailed": "无法加载该版本。请稍后重试。",
+    "actions": {
+      "label": "对此版本的操作",
+      "reason": "原因（可选）",
+      "noCurrent": "无当前版本",
+      "sharedVersion": "共享 v{{version}}",
+      "connectionVersion": "此连接的 v{{version}}",
+      "writtenOn": "基于 {{version}} 编写。",
+      "baseNotInUse": "它的基础版本不是当前正在使用的版本（{{current}}）：接受将被拒绝。请基于正在使用的版本重新提议。",
+      "changed": "自你打开后它已更改。页面已重新加载：请关闭此窗口，检查该版本后重试。",
+      "refused": "操作被拒绝：{{message}}",
+      "held": {
+        "unmeasured": "无法接受：只有当管理员对一次基准测试运行的记录（按其输入的通过率、用例和结论）显示它已通过且通过率上升、并指明其预期用例后，教练的版本才会被接受。请先记录基准测试。",
+        "failed": "无法接受：基准测试运行的记录显示未通过，因此教练的版本永远不会被接受。新的提议来自新的失败，或者将修复写成你自己的版本。",
+        "noGain": "无法接受：在基准测试运行的记录中，通过率没有上升，或未指明其预期用例，因此教练的版本永远不会被接受。"
+      },
+      "accept": {
+        "button": "接受",
+        "title": "接受版本 {{version}}？",
+        "message": "此范围的当前版本将从 {{from}} 变为 {{to}}。",
+        "confirm": "接受版本"
+      },
+      "reject": {
+        "button": "拒绝",
+        "title": "拒绝版本 {{version}}？",
+        "message": "版本 {{version}} 将以已拒绝状态保留在历史记录中。当前版本不变。",
+        "confirm": "拒绝版本"
+      },
+      "rollback": {
+        "button": "回滚到此版本",
+        "title": "回滚到版本 {{version}}？",
+        "message": "一个恢复版本 {{version}} 的新版本将取代 {{from}} 成为当前版本。所有版本都保留在历史记录中。",
+        "confirm": "回滚"
+      },
+      "benchmark": {
+        "button": "记录基准测试",
+        "title": "记录版本 {{version}} 的基准测试",
+        "message": "这是管理员对一次基准测试运行的记录：通过率、用例和结论按你输入的内容记录，此处不会进行测量。它只记录一次，之后不会更改。对于教练的版本，失败用例必须是其预期用例，并且接受需要通过率上升。",
+        "runRef": "运行的引用（可选：ID 或链接）",
+        "confirm": "记录基准测试",
+        "before": "之前的通过率（%）",
+        "after": "之后的通过率（%）",
+        "cases": "用例（每行一个或用逗号分隔）",
+        "passed": "门禁已通过",
+        "reasons": "原因（每行一个）",
+        "failureCase": "失败用例",
+        "invalid": {
+          "rates": "请将两个通过率填写为 0 到 100 之间的数字。",
+          "cases": "每个用例只填写一次，使用小写字母、数字和连字符。",
+          "reasons": "请至少填写一个原因，每行一个。",
+          "failureCase": "失败用例必须是其中一个用例。",
+          "regressed": "已通过的运行，之后的通过率不能低于之前：请将其记录为未通过，或检查通过率。"
+        }
+      }
+    },
+    "scores": {
+      "title": "记分卡",
+      "hint": "每个版本在此连接上最近几次运行中的表现。通过率是已完成任务占已结束任务的比例。",
+      "pickConnection": "记分卡属于某个连接。请在上方选择一个连接来比较其版本。",
+      "compareLabel": "要比较的版本",
+      "compareHint": "最多 {{max, number}} 个版本号，用逗号分隔。留空则显示最新的版本。",
+      "compare": "比较",
+      "invalid": {
+        "empty": "请至少输入一个版本号，例如 3, 2。",
+        "notNumbers": "请使用从 1 开始的整数版本号，用逗号分隔。",
+        "tooMany": "一次最多比较 {{max, number}} 个版本。",
+        "repeated": "每个版本只能填写一次。"
+      },
+      "caption": "{{role}} 的记分卡",
+      "version": "版本",
+      "passRate": "通过率",
+      "runs": "运行次数",
+      "done": "已完成",
+      "failed": "失败",
+      "needsHuman": "需要人工",
+      "reviewRounds": "审阅轮次",
+      "attempts": "尝试次数",
+      "cost": "成本",
+      "time": "时间",
+      "sourceColumn": "编号来源",
+      "source": {
+        "shipped": "随附技能",
+        "not_shipped": "从未随附：没有会话运行过这个编号",
+        "shared": "共享技能",
+        "connection": "此连接的技能",
+        "unknown": "未知"
+      },
+      "scopeUnknown": "这些编号是随附技能的版本，而不是上方历史记录中的版本：智能体会话只用编号指明版本，不说明它属于哪个技能；在智能体从此历史记录读取技能之前，每个会话都使用随附技能。",
+      "latestOnly": "仅最近的运行",
+      "loadFailed": "无法加载记分卡。请稍后重试。",
+      "empty": "此连接上还没有这些版本的记分卡。"
+    }
+  },
+  "engineeringRun": {
+    "untitled": "工程运行",
+    "statusUnknown": "状态未知",
+    "started": "开始于 {{when}}",
+    "ended": "结束于 {{when}}",
+    "totals": "MicroVM 时间：{{seconds, number}} 秒 · 消息：{{messages, number}}",
+    "byModel": "按模型的令牌",
+    "budget": "流程预算：每月 {{amount}}",
+    "budgetPassed": "{{month}}：已花费预算的 {{percent}}%",
+    "reactions": {
+      "title": "人们在托管平台上的反应",
+      "none": "尚未读取任何反应。运行结束时会读取一次，几天后会再读取一次。",
+      "readAt": "读取于 {{when}}，{{by}}",
+      "by": { "run_end": "在运行结束时", "schedule": "由计划任务", "person": "应管理员请求" },
+      "state": { "open": "打开", "closed": "已关闭", "merged": "已合并" },
+      "merged": "合并于 {{when}}",
+      "reverted": "合并后被提交 {{commit}} 还原",
+      "counts": "评审：{{approved}} 个批准，{{changes}} 个要求修改，{{commented}} 个评论。评审评论：{{reviewComments}}。评论：{{comments}}。",
+      "edits_one": "合并后的修改：14 天内有 {{count, number}} 个提交修改了它的文件：{{files}}",
+      "edits_other": "合并后的修改：14 天内有 {{count, number}} 个提交修改了它的文件：{{files}}",
+      "noEdits": "合并后没有修改它的文件。",
+      "dropped": "已排除：来自没有写入权限的人 {{outsiders}} 条，来自机器人 {{bots}} 条。",
+      "more": "未读取更早的反应或提交。",
+      "reviewers": "每位评审者的最新评审",
+      "items": "反应（最新在前）",
+      "itemLine": "{{author}} 的{{kind}}，{{when}}",
+      "kind": { "review": "评审", "review_comment": "评审评论", "comment": "评论" },
+      "reviewState": { "approved": "已批准", "changes_requested": "要求修改", "commented": "已评论" },
+      "ask": {
+        "button": "立即读取反应",
+        "notEnded": "运行结束后可用。",
+        "confirmTitle": "立即读取反应？",
+        "confirmMessage": "这会在托管平台上重新读取该拉取请求的评审和评论，并记录有写入权限的人所说的内容。每次运行的反应每小时最多可手动读取一次。",
+        "confirm": "立即读取",
+        "asked": "已请求：读取后反应会显示在这里。",
+        "tooSoon": "本小时内已请求过此运行的反应。请稍后再试。",
+        "failed": "无法请求读取：{{reason}}",
+        "retry": "请稍后再试。"
+      }
+    },
+    "links": {
+      "issue": "议题 #{{number}}",
+      "pullRequest": "拉取请求 #{{number}}",
+      "mergeRequest": "合并请求 !{{number}}",
+      "asGiven": "按开始时的输入记录，未在托管平台上核实",
+      "opens": "{{label}}（在新标签页中打开）"
+    },
+    "actionsUnavailable": "此部署尚无法发送信号和回复：它没有将运行监视器连接到工程运行时和总线。",
+    "runSignals": "整个运行",
+    "agentSignals": "智能体 {{agent}}",
+    "signals": {
+      "save": "保存",
+      "pause": "暂停",
+      "resume": "继续",
+      "shutdown": "关闭",
+      "stop_now": "立即停止"
+    },
+    "signalSent": "已发送。",
+    "signalFor": "{{signal}} — {{target}}",
+    "stopNowTitle": "不保存就立即停止？",
+    "stopNowMessage": "工作会立即停止，不留检查点：尚未保存的内容都会丢失。若要保留，请改用“关闭”。",
+    "errors": {
+      "forbidden": "只有管理员可以这样做。",
+      "notFound": "此运行或任务已不存在：请重新加载运行。",
+      "movedOn": "自你查看以来情况已变（另一次尝试，或运行已结束）：请重新加载运行后再试。",
+      "unavailable": "暂时无法连接到运行：请稍后再试。",
+      "generic": "操作未成功：请重试。"
+    },
+    "agent": {
+      "step": "步骤",
+      "vm": "MicroVM",
+      "heartbeat": "心跳",
+      "progress": "最近进展",
+      "metering": "用量",
+      "stuck": "似乎卡住了：{{reason}}",
+      "inspect": "最近的工具调用（{{n, number}}）",
+      "noTools": "还没有工具调用。",
+      "for": "已 {{age}}",
+      "ago": "{{age}}前",
+      "started": "开始",
+      "continuation": "第 {{n, number}} 次续接",
+      "microvmTime": "MicroVM 时间 {{seconds, number}} 秒"
+    },
+    "noAgents": "还没有智能体开始工作。",
+    "noTasks": "看板上还没有任务。",
+    "task": {
+      "meta": "{{role}} · 第 {{attempt}} 次尝试",
+      "heldBy": "由 {{agent}} 处理",
+      "history": "历史（{{n, number}}）",
+      "move": "{{state}} · {{by}} · {{when}}（第 {{attempt}} 次尝试）"
+    },
+    "states": {
+      "open": "待领取",
+      "claimed": "已领取",
+      "in_progress": "进行中",
+      "in_review": "审核中",
+      "needs_human": "需要人处理",
+      "failed": "失败",
+      "done": "完成"
+    },
+    "fromTo": "{{from}} → {{to}}",
+    "reply": "回复",
+    "replyTo": "回复 {{who}}",
+    "answerTo": "发送给",
+    "conductor": "运行的指挥者",
+    "replyingIn": "在线程 {{thread}} 中回复",
+    "newThread": "开始新线程",
+    "answer": "你的消息",
+    "bytes": "{{used, number}} / {{max, number}} 字节",
+    "send": "发送",
+    "noMessages": "还没有消息。",
+    "tabs": {
+      "agents": "智能体",
+      "board": "看板",
+      "conversation": "对话",
+      "reports": "报告"
+    },
+    "board": {
+      "post": "发布任务",
+      "role": "角色",
+      "title": "标题",
+      "instructions": "要做什么",
+      "postSubmit": "发布",
+      "posted": "已发布。",
+      "controls": "任务 {{task}}",
+      "take": "接手",
+      "takeOver": "接管",
+      "moveTo": "移至{{state}}",
+      "block": "阻止",
+      "priority": "优先级",
+      "setPriority": "设置优先级",
+      "reason": "原因",
+      "blockSubmit": "阻止该任务",
+      "takeOverTitle": "接管此任务?",
+      "takeOverMessage": "另一人正在处理 ({{holder}}):接管后归您,对方的操作会被拒绝。",
+      "duplicate": "看板上已有相同的任务:没有发布新任务。",
+      "blockOverTitle": "阻止此任务?",
+      "blockOverMessage": "另一人正在处理 ({{holder}}):阻止后对方的处理随之结束。",
+      "release": "交还给代理"
+    },
+    "panels": "运行的代理、看板、对话和报告",
+    "reports": {
+      "title": "报告：{{subject}}",
+      "version": "版本",
+      "latest": "最新 (v{{n, number}})",
+      "versionN": "v{{n, number}}",
+      "builtAt": "生成于 {{when}}",
+      "readFailed": "无法读取此报告。",
+      "missing": "此版本从未写入（生成未完成）。请选择其他版本。",
+      "loadFailed": "无法加载报告。",
+      "none": "尚未生成任何报告。",
+      "entry": "{{subject}} (v{{n, number}})",
+      "levels": {
+        "goal": "目标",
+        "pr": "拉取请求",
+        "commit": "提交"
+      }
+    },
+    "flow": "运行的流程，标出智能体所在的步骤",
+    "noFlow": "无法读取运行的流程：其余内容照常显示。",
+    "notFound": "找不到工程运行",
+    "notFoundHint": "请检查运行 ID。只有在开启了工程智能体的部署中，且只对能看到所有类别的人，才会显示工程运行。",
+    "modelTokens": "{{model}}：输入 {{input, number}}，输出 {{output, number}}",
+    "agentStatus": "{{agent}}：{{status}}",
+    "agentNotApplied": "{{agent}}：{{status}}（未应用）",
+    "status": {
+      "booting": "启动中",
+      "working": "工作中",
+      "pause_requested": "已请求暂停",
+      "waiting": "等待中",
+      "paused": "已暂停",
+      "done": "完成",
+      "failed": "失败",
+      "stopped": "已停止",
+      "reposted": "已重新发布"
+    }
+  },
+  "templatePage": {
+    "title": "从模板新建工程流程",
+    "subtitle": "默认流程的副本。按需修改，然后点击保存，将其添加到工作流库。",
+    "notFound": "此处无法使用该模板：只有部署了工程智能体模块的环境才提供模板。",
+    "adminOnly": "只有管理员可以从模板创建工程流程。请联系管理员，或返回工作流库。",
+    "loadFailed": "无法加载该模板。",
+    "backToLibrary": "返回工作流库"
+  },
+  "templates": {
+    "understandRepository": {
+      "name": "了解代码仓库",
+      "description": "逐个包梳理代码仓库，起草其知识包、原则和评审指南，供管理员批准。"
+    },
+    "issueTriage": {
+      "name": "问题分诊",
+      "description": "阅读一个问题，将其归类为缺陷、功能或调查，复现或定位它，并在问题上提出下一步。"
+    },
+    "bugHunt": {
+      "name": "查找并修复缺陷",
+      "description": "在指定的包中查找缺陷，逐一修复并评审，通过质量门禁，停在一个草稿拉取请求。"
+    },
+    "feature": {
+      "name": "基于问题或 PRD 的功能",
+      "description": "基于问题或 PRD 构建功能：理解、规划、构建、提交并评审，通过质量门禁，停在一个草稿拉取请求。"
+    },
+    "prReview": {
+      "name": "PR 评审",
+      "description": "依据代码仓库的原则和评审指南，一次性并行评审拉取请求的各页，并留下评审意见。"
+    },
+    "selfImprovement": {
+      "name": "自我改进",
+      "description": "教练阅读过往运行，提出新的技能版本并进行基准测试；由管理员逐一接受或拒绝。"
     }
   }
 }

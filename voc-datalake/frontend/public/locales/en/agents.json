@@ -18,7 +18,10 @@
   "views": {
     "label": "Agents page sections",
     "agents": "Agents",
-    "workflows": "Workflows"
+    "workflows": "Workflows",
+    "spend": "Spend",
+    "connections": "Connections",
+    "skills": "Skills"
   },
   "list": {
     "title": "Autonomous agents",
@@ -66,7 +69,14 @@
     "renameNamed": "Rename {{name}}",
     "renameTitle": "Rename this workflow",
     "renameConflict": "Someone changed this workflow meanwhile, or it is the built-in one. Reload and try again.",
-    "renameFailed": "The workflow couldn’t be renamed."
+    "renameFailed": "The workflow couldn’t be renamed.",
+    "newEngineeringFlow": "New engineering flow",
+    "createEngineeringTitle": "New engineering flow",
+    "createEngineeringHint": "An engineering flow runs autonomous engineering agents on a repository and ends on a pull request for people to review. It starts as Start → End: add the Engineering steps from the palette.",
+    "engineeringKind": "Engineering",
+    "fromTemplate": "Start from a template",
+    "templatesTitle": "Start from a template",
+    "templatesHint": "Six default engineering flows to start from. Choosing one opens a copy in the editor: nothing is saved until you save it."
   },
   "fields": {
     "name": "Name",
@@ -366,6 +376,10 @@
       "until": "Until",
       "maxRounds": "Maximum rounds",
       "description": "Description",
+      "monthlyBudget": "Monthly budget (US dollars)",
+      "monthlyBudgetHint": "What this flow’s runs may spend in a calendar month (UTC). Recorded with the flow: nothing is stopped or alerted on yet.",
+      "monthlyBudgetInvalid": "Enter an amount in dollars and cents from $0.01 to {{largest}}, or leave it empty for none.",
+      "monthlyBudgetNone": "No budget",
       "arrowTarget": "To step",
       "arrowTargetNone": "Choose a step…",
       "joinLoop": "Loop"
@@ -398,11 +412,89 @@
     "switchMessage": "Your unsaved changes to {{name}} will be lost.",
     "switchConfirm": "Switch workflow",
     "switched": "This agent now runs {{name}}.",
-    "switchFailed": "The agent couldn't be switched to that workflow."
+    "switchFailed": "The agent couldn't be switched to that workflow.",
+    "engineering": {
+      "role": "Role",
+      "skillVersion": "Skill version",
+      "skillVersionHint": "'latest' (the latest accepted) or a version such as v3.",
+      "model": "Model",
+      "modelHint": "A model id; leave it empty for the default.",
+      "budgetShare": "Share of the run budget",
+      "budgetShareHint": "A fraction from 0.01 to 1; the agents' shares add up to at most 1. Empty: no share of its own.",
+      "shardBy": "Shard by",
+      "shardByOptions": {
+        "packages": "Packages",
+        "history": "History windows",
+        "pr_pages": "PR pages"
+      },
+      "shardCap": "Most shards",
+      "posters": "Who posts tasks",
+      "claimers": "Who claims tasks",
+      "until": "Runs until",
+      "untilOptions": {
+        "drained": "Every task is done",
+        "caps": "A cap is reached"
+      },
+      "maxRounds": "Review rounds (most)",
+      "packsAuto": "Detect the gate packs in the repository",
+      "packs": "Gate packs",
+      "finalGoModel": "Final-go model",
+      "mode": "Mode",
+      "modeOptions": {
+        "read": "Read",
+        "write": "Write"
+      },
+      "scope": "Whose memory",
+      "scopeOptions": {
+        "repo": "The repository",
+        "role": "The role",
+        "person": "The person"
+      },
+      "limit": "Most memories read"
+    }
   },
   "workflowPage": {
     "title": "Workflow",
     "subtitle": "A workflow from the library. Agents that run it use its newest saved revision."
+  },
+  "startRun": {
+    "action": "Start a run",
+    "title": "Start a run of {{name}}",
+    "description": "The run starts this flow as last saved, on one commit of a connected repository. It reaches the repository only once the connection’s credential is stored.",
+    "fields": {
+      "connection": "Repository connection",
+      "commit": "Commit",
+      "language": "Language",
+      "goal": "Goal",
+      "issue": "Issue (optional)"
+    },
+    "hints": {
+      "connection": "The connection’s id: letters, digits and hyphens, at most 63.",
+      "commit": "The full commit id the run starts from: 40 hexadecimal characters.",
+      "language": "The repository’s toolchain: the agents work in that language’s sandbox image.",
+      "goal": "What the run is for, on one line of at most 500 characters.",
+      "issue": "The number of the repository’s issue the run works from. It is recorded as given."
+    },
+    "invalid": {
+      "connection": "Enter the connection’s id: 1 to 63 letters, digits or hyphens.",
+      "commit": "Enter the full commit id: 40 characters, 0 to 9 and a to f.",
+      "goalEmpty": "Say what the run is for.",
+      "goalLong": "Keep the goal to {{max, number}} characters or fewer.",
+      "issue": "Enter the issue’s number, a whole number from 1, or leave it empty."
+    },
+    "languages": {
+      "java": "Java",
+      "node": "JavaScript and TypeScript",
+      "python": "Python",
+      "rust": "Rust"
+    },
+    "budget": "Its monthly budget is the flow’s: {{amount}}.",
+    "noBudget": "The flow has no monthly budget.",
+    "submit": "Start the run",
+    "openRun": "Open the run",
+    "mayHaveStarted": "The run may have been started: check the runs list before you start another.",
+    "openRuns": "See the flow’s runs",
+    "saveFirst": "Save the flow first: a run uses the saved version."
   },
   "paletteGroups": {
     "flow": "Flow",
@@ -410,7 +502,8 @@
     "documents": "Documents",
     "review": "Review",
     "prototype": "Prototype",
-    "delivery": "Delivery"
+    "delivery": "Delivery",
+    "engineering": "Engineering"
   },
   "edgeLabels": {
     "pass": "Pass",
@@ -453,7 +546,43 @@
     "collect_prototype_feedback": { "label": "Collect tester pins", "description": "Reads the open pins testers dropped on the prototype, for the next revision." },
     "revise_prototype": { "label": "Revise prototype", "description": "Changes the prototype from the review's objections." },
     "handoff": { "label": "Hand off", "description": "Gives the project to the owner of its main category." },
-    "end": { "label": "End", "description": "Where the run finishes." }
+    "end": { "label": "End", "description": "Where the run finishes." },
+    "agent": {
+      "label": "Agent",
+      "description": "An agent with a role (fixer, hunter, committer…), its skill version and its share of the budget."
+    },
+    "map": {
+      "label": "Map",
+      "description": "Split the work into shards (packages, history windows, PR pages) that agents take in parallel."
+    },
+    "reduce": {
+      "label": "Reduce",
+      "description": "Where a map's shards meet again: one result from all of them."
+    },
+    "board": {
+      "label": "Board",
+      "description": "A task board: some roles post tasks, others claim and do them, until it is drained."
+    },
+    "quality_gate": {
+      "label": "Quality gate",
+      "description": "Checks and review rounds on the change: GO goes on to the PR, NO-GO to a person."
+    },
+    "learning_loop": {
+      "label": "Learning loop",
+      "description": "A retrospective that writes what the run learned to memory."
+    },
+    "self_improvement": {
+      "label": "Self-improvement",
+      "description": "The coach proposes a better skill version and benchmarks it."
+    },
+    "memory": {
+      "label": "Memory",
+      "description": "Read from or write to the repository's, a role's or a person's memory."
+    },
+    "stop_at_pr": {
+      "label": "Stop at PR",
+      "description": "The flow ends on a pull request for people to review: nothing is ever merged."
+    }
   },
   "plans": {
     "title": "Plans",
@@ -531,6 +660,613 @@
         "label": "Close the run",
         "help": "Nothing more runs. What the run produced stays in the project."
       }
+    }
+  },
+  "spend": {
+    "hint": "What the engineering agents spent, from the spend ledger: each session’s cost, tokens and MicroVM time, as the runtime measured them. The cost is MicroVM time so far: model tokens are counted, not yet priced. Months are in UTC.",
+    "month": "Month",
+    "groupBy": "Group by",
+    "by": {
+      "workflow": "Workflow",
+      "repo": "Repository",
+      "run": "Run",
+      "agent": "Agent",
+      "model": "Model",
+      "day": "Day"
+    },
+    "cost": "Cost",
+    "tokensIn": "Input tokens",
+    "tokensOut": "Output tokens",
+    "microvm": "MicroVM time",
+    "budget": "Monthly budget",
+    "budgetHint": "Each workflow’s monthly budget as it is now, and the share of it spent this month (MicroVM time only, for now).",
+    "budgetShare": "{{percent}}%",
+    "noBudget": "No budget",
+    "overBudget": "over budget",
+    "hardCap": "Hard cap at each workflow’s monthly budget",
+    "hardCapHint": "Off by default. On: a run started from a workflow with a budget gets a cost cap of what is left of the workflow’s month, and does not start when nothing is left. Each run’s cap is set when it starts, so runs of one workflow at the same time may together pass its budget (MicroVM time only, for now). Session time is priced at the deployment’s AgentCore rates; model tokens are counted, not yet priced.",
+    "hardCapFailed": "The hard cap could not be saved. Try again.",
+    "hardCapSaving": "Saving…",
+    "hardCapUnread": "The hard cap’s setting could not be loaded.",
+    "none": "Not recorded",
+    "otherModels": "Other models",
+    "workflowRuns": "{{name}}: show its runs",
+    "inRun": "in run {{run}}",
+    "onlyWorkflow": "Workflow: {{name}}",
+    "allWorkflows": "Show every workflow",
+    "tableCaption": "Spend in {{month}}, grouped by: {{by}}",
+    "loadFailed": "The spend could not be loaded.",
+    "truncated": "This month has more ledger rows than one read takes: the figures shown are a lower bound.",
+    "empty": "Nothing was spent in {{month}}."
+  },
+  "connections": {
+    "title": "Repository connections",
+    "intro": "The engineering agents reach a repository through a connection: the repository, its default branch and a credential stored for them. A stored credential is never shown again, to anyone.",
+    "add": "Add connection",
+    "limitReached": "This deployment holds at most {{limit, number}} connections. Remove one to add another.",
+    "loadFailed": "The repository connections could not be loaded.",
+    "emptyTitle": "No repository connections yet",
+    "emptyHint": "Add one so the engineering agents can work on a repository.",
+    "branch": "Default branch: {{branch}}",
+    "kind": "GitHub App",
+    "kindToken": "GitLab project access token",
+    "hostLabel": "Repository host",
+    "hosts": {
+      "github": "GitHub",
+      "gitlab": "GitLab"
+    },
+    "expiry": {
+      "on": "Token expires on {{date}}.",
+      "soonBadge": "Token expires soon",
+      "soon": "It expires on {{date}}, within {{days, number}} days: make a new token and save it on this connection.",
+      "expiredBadge": "Token expired",
+      "expired": "It expired on {{date}}: the agents cannot reach the project until you save a new token on this connection.",
+      "unknown": "The token’s expiry is not known: save the connection with its token again."
+    },
+    "gitlab": {
+      "keepHint": "The stored token is never shown. Leave the token empty to keep it; a new host or project needs a token again.",
+      "fields": {
+        "project": "Project path",
+        "token": "Project access token"
+      },
+      "hints": {
+        "project": "The project’s path as in its address: group/project, or group/subgroup/project.",
+        "token": "The project access token (glpat-…), shown once when it is made. It is checked with GitLab, sent once and never shown again."
+      },
+      "invalid": {
+        "repository": "Enter the project’s path as in its address: group/project or group/subgroup/project.",
+        "tokenEmpty": "Paste the project access token: a new connection needs its credential.",
+        "tokenNeeded": "Paste the project access token again: a new host or project is stored with it.",
+        "token": "Paste the whole project access token: it starts with glpat-."
+      },
+      "guidance": {
+        "title": "What the GitLab token needs",
+        "token": "Create a project access token in this project only (in the project's settings, under Access tokens): role Developer, scopes api, read_repository and write_repository. Never Maintainer or Owner, and never a group or personal token.",
+        "expiry": "GitLab tokens expire, at most a year after they are made. Make the next token before this one expires and save it on the connection: the page warns you 30 days ahead.",
+        "branch": "Protect the default branch (no force push, push and merge for Maintainers only), require pipelines to succeed before a merge, and leave voc-agent/* branches unprotected."
+      },
+      "ci": {
+        "points": {
+          "protected_secrets": "CI/CD variables that hold secrets are protected, so only pipelines on protected branches get them.",
+          "read_only_token": "The CI/CD job token has the least access: its allowlist holds only the projects the pipelines need, and no job pushes with it.",
+          "oidc_pinned": "Cloud access through OIDC (id_tokens) is pinned to protected branches (the token’s ref_protected claim).",
+          "no_self_hosted_runner": "No shared, group or instance runner with access to secrets or private networks runs jobs for unprotected branches: such runners are protected.",
+          "no_privileged_pull_request": "No pipeline runs merge request code with secrets: no merge request pipeline for forks in this project, and no protected variable reaches one.",
+          "branch_rules": "The default branch is protected (no force push, push and merge for Maintainers), pipelines must succeed before a merge (a skipped pipeline does not count as a success), the CI configuration uses only plain local includes and GitLab's own templates (shared CI from other projects, remote includes and components are not supported), and voc-agent/* branches stay unprotected."
+        },
+        "checked": "The broker also reads the protected branches at each push and merge request: the default branch protected with no force push and push and merge for Maintainers, pipelines required to succeed, and voc-agent/* branches not protected."
+      }
+    },
+    "appIds": "App {{appId}}, installation {{installationId}}",
+    "set": "Set",
+    "notSet": "Not set",
+    "notSetHint": "The stored credential is missing: edit the connection and save it with its credential again.",
+    "updated": "Updated {{when}} by {{who}}",
+    "unknownEditor": "unknown",
+    "edit": "Edit",
+    "editLabel": "Edit {{repository}}",
+    "remove": "Remove",
+    "removeLabel": "Remove {{repository}}",
+    "created": "{{repository}} is added.",
+    "saved": "{{repository}} is saved.",
+    "removed": "{{repository}} is removed.",
+    "guidance": {
+      "title": "What the credential needs",
+      "app": "Create a GitHub App and install it only on this repository. Repository permissions: Contents, Pull requests and Issues set to Read and write, Metadata to Read-only. Nothing else: no Administration, Workflows, Secrets, Actions or organization permission.",
+      "token": "The App is never handed to the agents: for each step the broker mints a token valid for one hour, for this one repository and only what the step needs of the App's permissions (Contents, Pull requests and Issues, read and write; Metadata, read-only; never admin).",
+      "branch": "Protect the default branch, and let the agents push only to branches named voc-agent/*."
+    },
+    "dialog": {
+      "addTitle": "Add a repository connection",
+      "editTitle": "Edit the connection to {{repository}}",
+      "description": "The engineering agents use this connection to read the repository and propose changes to it.",
+      "stored": "Stored credential:",
+      "keepHint": "The stored credential is never shown. Leave the private key empty to keep it; a new repository, App id or installation id needs the private key again.",
+      "save": "Save connection"
+    },
+    "fields": {
+      "connectionId": "Connection id",
+      "repository": "Repository",
+      "defaultBranch": "Default branch",
+      "appId": "App id",
+      "installationId": "Installation id",
+      "privateKey": "Private key"
+    },
+    "hints": {
+      "connectionId": "Lowercase letters, digits and hyphens, up to 63. It cannot change once the connection is added.",
+      "connectionIdFixed": "Chosen when the connection was added; it cannot change.",
+      "repository": "owner/name, as in the repository’s address.",
+      "defaultBranch": "The branch the agents start from and propose their changes to.",
+      "appId": "The App’s numeric id.",
+      "installationId": "The numeric id of the App’s installation on this repository.",
+      "privateKey": "The App’s private key: the whole .pem file GitHub generated, up to about 4 KB. It is sent once and never shown again."
+    },
+    "invalid": {
+      "connectionId": "Enter an id of 1 to 63 lowercase letters, digits or hyphens, starting with a letter or a digit.",
+      "repository": "Enter the repository as owner/name.",
+      "defaultBranch": "Enter a branch name: letters, digits, “.”, “_”, “-” and “/”, at most {{max, number}} characters, no “..”, not a voc-agent/ branch.",
+      "appId": "Enter the App id: digits only.",
+      "installationId": "Enter the installation id: digits only.",
+      "privateKeyEmpty": "Paste the App’s private key: a new connection needs its credential.",
+      "privateKeyNeeded": "Paste the App’s private key again: a new repository, App id or installation id is stored with it.",
+      "privateKey": "Paste the whole unencrypted RSA key in PEM, from its BEGIN line to its END line.",
+      "privateKeyLarge": "The key is larger than a credential holds (about 4 KB): use the App’s own private key."
+    },
+    "confirm": {
+      "title": "Remove {{repository}}?",
+      "message": "This removes the connection and its stored credential. Runs working on {{repository}} lose access within five minutes: their reads and writes fail until a connection is stored again.",
+      "confirm": "Remove connection"
+    },
+    "errors": {
+      "invalid": "A field was refused. Check the fields and save again.",
+      "forbidden": "Only an administrator can change the connections.",
+      "notFound": "The connection was not found, or the engineering agents are off.",
+      "conflict": "The connection cannot change now: stop its live runs first, or remove another connection.",
+      "unavailable": "The connections are unavailable right now. Try again in a moment.",
+      "generic": "The connection could not be changed. Try again."
+    },
+    "ci": {
+      "attested": "CI attested",
+      "notAttested": "CI not attested",
+      "attestedBy": "Attested by {{who}}, {{when}}: the agents may push to voc-agent/* branches and open draft pull requests.",
+      "none": "The agents push nothing to this repository until an administrator attests that its CI keeps agent branches harmless.",
+      "withdrawnBy": "Withdrawn by {{who}}, {{when}}: the agents push nothing until it is attested again.",
+      "voidedRepository": "Voided when the connection’s repository changed: attest this repository’s CI.",
+      "voidedRemoved": "Voided when the connection was removed: attest its CI again.",
+      "unknownPerson": "an administrator",
+      "attest": "Attest CI",
+      "attestLabel": "Attest the CI of {{repository}}",
+      "withdrawAction": "Withdraw CI",
+      "withdrawLabel": "Withdraw the CI attestation of {{repository}}",
+      "recorded": "The CI attestation of {{repository}} is recorded.",
+      "withdrawn": "The CI attestation of {{repository}} is withdrawn.",
+      "points": {
+        "protected_secrets": "CI secrets are scoped to protected branches (environments with branch rules): an agent branch gets none.",
+        "read_only_token": "The default workflow token is read-only, and no workflow asks for write permissions.",
+        "oidc_pinned": "Cloud access through OIDC (id-token: write) is pinned to protected branches or environments.",
+        "no_self_hosted_runner": "No self-hosted runner takes jobs from unprotected branches.",
+        "no_privileged_pull_request": "No workflow that runs in the default branch’s context on a pull request (pull_request_target, or workflow_run with the triggering run’s artifacts) checks out, runs or downloads the pull request’s code or artifacts.",
+        "branch_rules": "The default branch is protected with the repository’s required checks, and the App can push only to voc-agent/* branches."
+      },
+      "dialog": {
+        "title": "Attest the CI of {{repository}}",
+        "description": "A push to an agent branch can start the repository’s own pipelines, which run code an agent can change. Confirm each point for this repository: your name and the time are recorded with it.",
+        "legend": "On branches that are not protected, the repository’s CI gets nothing worth taking:",
+        "allPoints": "Confirm every point: the agents push only once all of them hold.",
+        "note": "Note (optional)",
+        "noteHint": "What you checked, or why: kept with the attestation. One line, at most {{max, number}} characters.",
+        "checked": "The broker also reads the branch rules at each push and pull request: the default branch protected with required checks, and voc-agent/* branches not protected.",
+        "save": "Record attestation"
+      },
+      "withdraw": {
+        "title": "Withdraw the CI attestation of {{repository}}?",
+        "message": "The agents’ next push or pull request on {{repository}} is refused until an administrator attests its CI again.",
+        "confirm": "Withdraw attestation"
+      }
+    }
+  },
+  "skills": {
+    "hint": "Each engineering agent works from a skill: its instructions, examples, tools, model and harness. Every change is a new version, kept with why it was made, who proposed and accepted it, and its benchmark. The shared skills apply to every connection that has no version of its own.",
+    "scope": "Skills of",
+    "shared": "Shared skills",
+    "connection": "Connection {{name}}",
+    "connectionsFailed": "The connections could not be loaded, so only the shared skills and the connection in the address are offered.",
+    "rolesCaption": "Agent roles with a skill version in this scope",
+    "columns": {
+      "role": "Role",
+      "current": "Current version",
+      "versions": "Versions",
+      "latest": "Latest change"
+    },
+    "openRole": "Open the history of {{role}}",
+    "role": {
+      "mapper": "Mapper",
+      "understander": "Issue understander",
+      "hunter": "Bug hunter",
+      "fixer": "Fixer",
+      "builder": "Feature builder",
+      "committer": "Committer",
+      "commit-reviewer": "Commit reviewer",
+      "gate-runner": "Gate runner",
+      "pr-author": "Pull request author",
+      "pr-reviewer": "Pull request reviewer",
+      "final-go": "Final go",
+      "coordinator": "Run coordinator",
+      "coach": "Coach"
+    },
+    "noneAccepted": "None accepted yet",
+    "version": "Version {{version}}",
+    "current": "Current",
+    "loading": "Loading the skills…",
+    "rolesFailed": "The skills could not be loaded. Try again in a moment.",
+    "emptyShared": "No shared skill has a version yet. The agents run the skills shipped with this release.",
+    "emptyConnection": "This connection has no skill versions of its own. Its agents use the shared skills.",
+    "backToRoles": "All roles",
+    "roleTitle": "{{role}} · {{scope}}",
+    "status": {
+      "accepted": "Accepted",
+      "proposed": "Proposed",
+      "rejected": "Rejected"
+    },
+    "byCoach": "the coach ({{who}})",
+    "proposedBy": "Proposed by {{who}}, {{at}}",
+    "notMeasured": "No benchmark recorded.",
+    "measured": "Administrator’s record",
+    "rates": "pass rate {{before}} → {{after}}",
+    "benchmarkPassed": "passed",
+    "benchmarkFailed": "failed",
+    "failureCase": "failure case {{name}}",
+    "measuredBy": "recorded by {{who}}, {{at}}",
+    "runRef": "run {{ref}}",
+    "claimed": "Claimed",
+    "claimedHint": "given by the proposer, not measured",
+    "event": {
+      "accepted": "Accepted by {{who}}, {{at}}",
+      "rejected": "Rejected by {{who}}, {{at}}",
+      "rolled_back": "Rolled back by {{who}}, {{at}}",
+      "benchmarked": "Benchmark recorded by {{who}}, {{at}}",
+      "other": "{{event}} by {{who}}, {{at}}"
+    },
+    "restores": "Restores version {{version}}.",
+    "fromRun": "From run {{run}} ({{failure}}).",
+    "openVersion": "Open version {{version}} and its changes",
+    "historyTitle": "History",
+    "historyFailed": "The history could not be loaded. Try again in a moment.",
+    "historyEmpty": "This role has no versions in this scope.",
+    "moreFailed": "The older versions could not be loaded. Select Load older versions to try again.",
+    "loadMore": "Load older versions",
+    "diff": {
+      "added": "Added:",
+      "removed": "Removed:",
+      "title": "Changes from its base",
+      "firstTitle": "Its first version: everything is new",
+      "none": "No change from its base.",
+      "instructions": "Instructions",
+      "examples": "Examples",
+      "example": "When: {{situation}} | Do: {{action}}",
+      "tools": "Tool policy",
+      "reordered": "The tool policy has the same tools, in another order.",
+      "model": "Model: {{from}} → {{to}}",
+      "harness": "Harness: {{from}} → {{to}}",
+      "nothing": "(none)"
+    },
+    "record": {
+      "title": "The whole skill",
+      "model": "Model",
+      "harness": "Harness",
+      "tools": "Tools",
+      "instructions": "Instructions",
+      "examples": "Examples ({{n, number}})"
+    },
+    "noBase": "Written on no earlier version.",
+    "baseShared": "Written on shared version {{version}}.",
+    "base": "Written on version {{version}}.",
+    "expectedCase": "expected to fix case {{name}}",
+    "madeWith": "made with {{model}} and prompt {{prompt}}",
+    "backToHistory": "Back to the history",
+    "versionMissing": "Version {{version}} is not in this scope. Go back to the history and pick another.",
+    "versionFailed": "The version could not be loaded. Try again in a moment.",
+    "actions": {
+      "label": "Actions on this version",
+      "reason": "Reason (optional)",
+      "noCurrent": "no current version",
+      "sharedVersion": "shared v{{version}}",
+      "connectionVersion": "this connection’s v{{version}}",
+      "writtenOn": "Written on {{version}}.",
+      "baseNotInUse": "Its base is not the version in use now ({{current}}): accepting it will be refused. Propose it again on the version in use.",
+      "changed": "It changed since you opened it. The screen has read it again: close this, check the version and try again.",
+      "refused": "The action was refused: {{message}}",
+      "held": {
+        "unmeasured": "Accept is off: the coach’s version is accepted only once an administrator’s record of a benchmark run (its rates, cases and verdict as they enter them) shows it passed and the pass rate rose, naming its expected case. Record the benchmark first.",
+        "failed": "Accept is off: the administrator’s record of its benchmark run says it failed, so the coach’s version is never accepted. A new proposal comes from a new failure, or write the fix as your own version.",
+        "noGain": "Accept is off: in the administrator’s record of its benchmark run, the pass rate did not rise, or its expected case is not named, so the coach’s version is never accepted."
+      },
+      "accept": {
+        "button": "Accept",
+        "title": "Accept version {{version}}?",
+        "message": "The current version of this scope moves from {{from}} to {{to}}.",
+        "confirm": "Accept version"
+      },
+      "reject": {
+        "button": "Reject",
+        "title": "Reject version {{version}}?",
+        "message": "Version {{version}} stays in the history, marked rejected. The current version does not change.",
+        "confirm": "Reject version"
+      },
+      "rollback": {
+        "button": "Roll back to this version",
+        "title": "Roll back to version {{version}}?",
+        "message": "A new version restoring version {{version}} becomes current in place of {{from}}. Every version stays in the history.",
+        "confirm": "Roll back"
+      },
+      "benchmark": {
+        "button": "Record benchmark",
+        "title": "Record the benchmark of version {{version}}",
+        "message": "This is an administrator’s record of a benchmark run: its rates, cases and verdict as you enter them; nothing here measures them. It is recorded once and never changed. For the coach’s version, the failure’s case must be its expected case, and Accept needs a pass rate that rose.",
+        "runRef": "Reference to the run (optional: an id or a link)",
+        "confirm": "Record benchmark",
+        "before": "Pass rate before (%)",
+        "after": "Pass rate after (%)",
+        "cases": "Cases (one per line or comma)",
+        "passed": "The gate passed",
+        "reasons": "Reasons (one per line)",
+        "failureCase": "Failure’s case",
+        "invalid": {
+          "rates": "Give both pass rates as numbers from 0 to 100.",
+          "cases": "List each case once, in lower-case letters, digits and hyphens.",
+          "reasons": "Give at least one reason, one per line.",
+          "failureCase": "The failure’s case must be one of the cases.",
+          "regressed": "A run that passed cannot have a lower pass rate after than before: record it as failed, or check the rates."
+        }
+      }
+    },
+    "scores": {
+      "title": "Scorecards",
+      "hint": "How each version did over its latest runs on this connection. The pass rate is tasks done over the tasks it ended.",
+      "pickConnection": "Scorecards belong to a connection. Pick a connection above to compare its versions.",
+      "compareLabel": "Versions to compare",
+      "compareHint": "Up to {{max, number}} version numbers, separated by commas. Leave empty for the latest ones.",
+      "compare": "Compare",
+      "invalid": {
+        "empty": "Type at least one version number, such as 3, 2.",
+        "notNumbers": "Use whole version numbers from 1, separated by commas.",
+        "tooMany": "Compare at most {{max, number}} versions at once.",
+        "repeated": "Name each version once."
+      },
+      "caption": "Scorecards of {{role}}",
+      "version": "Version",
+      "passRate": "Pass rate",
+      "runs": "Runs",
+      "done": "Done",
+      "failed": "Failed",
+      "needsHuman": "Needed a person",
+      "reviewRounds": "Review rounds",
+      "attempts": "Attempts",
+      "cost": "Cost",
+      "time": "Time",
+      "sourceColumn": "Number of",
+      "source": {
+        "shipped": "Shipped skill",
+        "not_shipped": "Never shipped: no session ran this number",
+        "shared": "Shared skill",
+        "connection": "This connection’s skill",
+        "unknown": "Not known"
+      },
+      "scopeUnknown": "These numbers are the shipped skills’ versions, not the history’s above: an agent’s session names its version by number only, without saying whose it is, and every session runs the shipped skill until the agents read their skills from this history.",
+      "latestOnly": "latest runs only",
+      "loadFailed": "The scorecards could not be loaded. Try again in a moment.",
+      "empty": "No scorecards for these versions on this connection yet."
+    }
+  },
+  "engineeringRun": {
+    "untitled": "Engineering run",
+    "statusUnknown": "status unknown",
+    "started": "Started {{when}}",
+    "ended": "Ended {{when}}",
+    "totals": "MicroVM time: {{seconds, number}} s · Messages: {{messages, number}}",
+    "byModel": "Tokens per model",
+    "budget": "Flow budget: {{amount}} a month",
+    "budgetPassed": "{{month}}: {{percent}}% of the budget spent",
+    "reactions": {
+      "title": "People's reactions on the host",
+      "none": "No reactions read yet. They are read when the run ends and again a few days later.",
+      "readAt": "Read {{when}}, {{by}}",
+      "by": { "run_end": "at the run's end", "schedule": "by the schedule", "person": "asked for by an administrator" },
+      "state": { "open": "Open", "closed": "Closed", "merged": "Merged" },
+      "merged": "Merged {{when}}",
+      "reverted": "Reverted after the merge, by commit {{commit}}",
+      "counts": "Reviews: {{approved}} approved, {{changes}} changes requested, {{commented}} commented. Review comments: {{reviewComments}}. Comments: {{comments}}.",
+      "edits_one": "Edits after the merge: {{count, number}} commit changed its files within 14 days: {{files}}",
+      "edits_other": "Edits after the merge: {{count, number}} commits changed its files within 14 days: {{files}}",
+      "noEdits": "No edits to its files after the merge.",
+      "dropped": "Left out: {{outsiders}} from people without write access, {{bots}} from bots.",
+      "more": "Older reactions or commits were not read.",
+      "reviewers": "Each reviewer's latest review",
+      "items": "Reactions, newest first",
+      "itemLine": "{{kind}} by {{author}}, {{when}}",
+      "kind": { "review": "Review", "review_comment": "Review comment", "comment": "Comment" },
+      "reviewState": { "approved": "Approved", "changes_requested": "Changes requested", "commented": "Commented" },
+      "ask": {
+        "button": "Read reactions now",
+        "notEnded": "Available once the run has ended.",
+        "confirmTitle": "Read the reactions now?",
+        "confirmMessage": "This reads the pull request's reviews and comments on the host again and records what people with write access said. A run's reactions can be read by hand at most once an hour.",
+        "confirm": "Read now",
+        "asked": "Asked for: the reactions show here once they are read.",
+        "tooSoon": "This run's reactions were already asked for in this hour. Ask again later.",
+        "failed": "The read could not be asked for: {{reason}}",
+        "retry": "try again in a moment."
+      }
+    },
+    "links": {
+      "issue": "Issue #{{number}}",
+      "pullRequest": "Pull request #{{number}}",
+      "mergeRequest": "Merge request !{{number}}",
+      "asGiven": "as given at the start, not checked on the host",
+      "opens": "{{label}} (opens in a new tab)"
+    },
+    "actionsUnavailable": "Signals and answers can't be sent from this deployment yet: it doesn't connect the run monitor to the engineering runtime and bus.",
+    "runSignals": "The whole run",
+    "agentSignals": "Agent {{agent}}",
+    "signals": {
+      "save": "Save",
+      "pause": "Pause",
+      "resume": "Resume",
+      "shutdown": "Shut down",
+      "stop_now": "Stop now"
+    },
+    "signalSent": "Sent.",
+    "signalFor": "{{signal}} — {{target}}",
+    "stopNowTitle": "Stop now, without saving?",
+    "stopNowMessage": "The work is stopped at once, with no checkpoint: anything not saved yet is lost. To keep it, use Shut down instead.",
+    "errors": {
+      "forbidden": "Only an admin can do this.",
+      "notFound": "This run or task is no longer there: reload the run.",
+      "movedOn": "This has moved on since you looked (another attempt, or the run ended): reload the run and try again.",
+      "unavailable": "The run could not be reached just now: try again in a moment.",
+      "generic": "That did not go through: try again."
+    },
+    "agent": {
+      "step": "Step",
+      "vm": "MicroVM",
+      "heartbeat": "Heartbeat",
+      "progress": "Last progress",
+      "metering": "Use",
+      "stuck": "Looks stuck: {{reason}}",
+      "inspect": "Recent tool calls ({{n, number}})",
+      "noTools": "No tool calls yet.",
+      "for": "for {{age}}",
+      "ago": "{{age}} ago",
+      "started": "Started",
+      "continuation": "continuation {{n, number}}",
+      "microvmTime": "{{seconds, number}} s of MicroVM time"
+    },
+    "noAgents": "No agent has started yet.",
+    "noTasks": "The board has no tasks yet.",
+    "task": {
+      "meta": "{{role}} · attempt {{attempt}}",
+      "heldBy": "held by {{agent}}",
+      "history": "History ({{n, number}})",
+      "move": "{{state}} by {{by}}, {{when}} (attempt {{attempt}})"
+    },
+    "states": {
+      "open": "Open",
+      "claimed": "Claimed",
+      "in_progress": "In progress",
+      "in_review": "In review",
+      "needs_human": "Needs a person",
+      "failed": "Failed",
+      "done": "Done"
+    },
+    "fromTo": "{{from}} → {{to}}",
+    "reply": "Reply",
+    "replyTo": "Reply to {{who}}",
+    "answerTo": "Answer",
+    "conductor": "The run’s conductor",
+    "replyingIn": "Replying in thread {{thread}}",
+    "newThread": "Start a new thread",
+    "answer": "Your message",
+    "bytes": "{{used, number}} / {{max, number}} bytes",
+    "send": "Send",
+    "noMessages": "No messages yet.",
+    "tabs": {
+      "agents": "Agents",
+      "board": "Board",
+      "conversation": "Conversation",
+      "reports": "Reports"
+    },
+    "board": {
+      "post": "Post a task",
+      "role": "Role",
+      "title": "Title",
+      "instructions": "What to do",
+      "postSubmit": "Post",
+      "posted": "Posted.",
+      "controls": "Task {{task}}",
+      "take": "Take",
+      "takeOver": "Take over",
+      "moveTo": "Move to {{state}}",
+      "block": "Block",
+      "priority": "Priority",
+      "setPriority": "Set priority",
+      "reason": "Why",
+      "blockSubmit": "Block the task",
+      "takeOverTitle": "Take over this task?",
+      "takeOverMessage": "Another person holds it ({{holder}}): it becomes yours, and their moves are refused.",
+      "duplicate": "An equal task is already on the board: nothing new was posted.",
+      "blockOverTitle": "Block this task?",
+      "blockOverMessage": "Another person holds it ({{holder}}): blocking it ends their hold.",
+      "release": "Give back to the agents"
+    },
+    "panels": "The run’s agents, board, conversation and reports",
+    "reports": {
+      "title": "Report: {{subject}}",
+      "version": "Version",
+      "latest": "Latest (v{{n, number}})",
+      "versionN": "v{{n, number}}",
+      "builtAt": "Built {{when}}",
+      "readFailed": "This report could not be read.",
+      "missing": "This version was never written (its build did not finish). Pick another version.",
+      "loadFailed": "The reports could not be loaded.",
+      "none": "No report has been written yet.",
+      "entry": "{{subject}} (v{{n, number}})",
+      "levels": {
+        "goal": "Goal",
+        "pr": "Pull requests",
+        "commit": "Commits"
+      }
+    },
+    "flow": "The run’s flow, with the steps its agents are on",
+    "noFlow": "The run’s flow could not be read: the rest of the run is shown.",
+    "notFound": "Engineering run not found",
+    "notFoundHint": "Check the run id. Engineering runs are shown only where the engineering agents are turned on, to people who can see every category.",
+    "modelTokens": "{{model}}: {{input, number}} in, {{output, number}} out",
+    "agentStatus": "{{agent}}: {{status}}",
+    "agentNotApplied": "{{agent}}: {{status}} (not applied)",
+    "status": {
+      "booting": "Booting",
+      "working": "Working",
+      "pause_requested": "Pause requested",
+      "waiting": "Waiting",
+      "paused": "Paused",
+      "done": "Done",
+      "failed": "Failed",
+      "stopped": "Stopped",
+      "reposted": "Posted again"
+    }
+  },
+  "templatePage": {
+    "title": "New engineering flow from a template",
+    "subtitle": "A copy of a default flow. Change what you need, then Save to add it to the workflow library.",
+    "notFound": "This template isn't available here: templates are offered only where the engineering agents module is deployed.",
+    "adminOnly": "Only administrators start engineering flows from a template. Ask an administrator, or go back to the workflow library.",
+    "loadFailed": "The template couldn't be loaded.",
+    "backToLibrary": "Back to the workflow library"
+  },
+  "templates": {
+    "understandRepository": {
+      "name": "Understand the repository",
+      "description": "Maps the repository package by package and drafts its knowledge pack, tenets and review guide for an administrator's approval."
+    },
+    "issueTriage": {
+      "name": "Issue triage",
+      "description": "Reads an issue, classifies it as a bug, a feature or an investigation, reproduces or locates it and proposes the next step on the issue."
+    },
+    "bugHunt": {
+      "name": "Bug hunt and fix",
+      "description": "Hunts bugs in the packages it is given, fixes and reviews each one, runs the quality gate and stops at a draft pull request."
+    },
+    "feature": {
+      "name": "Feature from an issue or a PRD",
+      "description": "Builds a feature from an issue or a PRD: understands it, plans, builds, commits and reviews, runs the quality gate and stops at a draft pull request."
+    },
+    "prReview": {
+      "name": "PR review",
+      "description": "Reviews a pull request in one pass, its pages in parallel, against the repository's tenets and review guide, and leaves review comments."
+    },
+    "selfImprovement": {
+      "name": "Self-improvement",
+      "description": "The coach reads past runs, proposes new skill versions and benchmarks them; an administrator accepts or declines each one."
     }
   }
 }

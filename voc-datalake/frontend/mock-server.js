@@ -2,6 +2,7 @@
 // Run with: node mock-server.js
 
 import http from 'http';
+import { readFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { handleConnectRoutes } from './mock-connect.js';
 import { handleOAuthRoutes } from './mock-oauth.js';
@@ -21,6 +22,8 @@ import { handleBriefingRoutes } from './mock-briefing.js';
 import { handleAlertRoutes } from './mock-alerts.js';
 import { handleEmailInboxRoutes } from './mock-email-inbox.js';
 import { handlePlanRoutes } from './mock-plans.js';
+import { SAMPLE_FLOW_ID, handleEngineeringRunRoutes, sampleEngineeringFlow } from './mock-engineering-runs.js';
+import { handleEngineeringSkillRoutes } from './mock-engineering-skills.js';
 import { handleDecisionRoutes } from './mock-decisions.js';
 import { handleRadarRoutes } from './mock-radar.js';
 import { handleParticipantsRoutes } from './mock-participants.js';
@@ -1395,6 +1398,8 @@ function handleDomainModules(req, res, url) {
     || handleAlertRoutes(req, res, url, send, shared)
     || handleEmailInboxRoutes(req, res, url, send, shared)
     || handlePlanRoutes(req, res, url, send, shared)
+    || handleEngineeringSkillRoutes(req, res, url, send, shared)
+    || handleEngineeringRunRoutes(req, res, url, send, shared)
     || handleDecisionRoutes(req, res, url, send, shared)
     || handleRadarRoutes(req, res, url, send, shared)
     || handleParticipantsRoutes(req, res, url, send, shared)
@@ -3266,6 +3271,10 @@ function handleMemoryContextRoutes(req, res, url, send) {
 // completes after its last step, so the run timeline can be watched live.
 const MOCK_AGENTS_ADMIN = process.env.MOCK_AGENTS_NON_ADMIN !== '1';
 const AGENTS_FORBIDDEN = [403, { success: false, error: 'Admin access required' }];
+// The default engineering flows: the file the agents API lists (lambda/shared/engineering_templates.py).
+const ENGINEERING_TEMPLATES = JSON.parse(
+  readFileSync(new URL('../lambda/shared/engineering_flow_templates.json', import.meta.url), 'utf8'),
+).templates;
 const AGENT_NOT_FOUND = [404, { success: false, error: 'Agent not found' }];
 const RUN_NOT_FOUND = [404, { success: false, error: 'Run not found' }];
 const WORKFLOW_NOT_FOUND = [404, { success: false, error: 'Workflow not found' }];
@@ -3275,6 +3284,11 @@ const WORKFLOW_NODE_TYPES = new Set([
   'deep_research', 'write_prfaq', 'write_prd', 'persona_review', 'revise_document', 'build_prototype',
   'collect_prototype_feedback', 'revise_prototype', 'final_review', 'duplicate_document', 'handoff', 'custom_llm', 'end',
 ]);
+// An engineering flow (voc-workflow/2): start, end and these steps (lambda/shared/workflow_engineering.py).
+const ENGINEERING_NODE_TYPES = new Set([
+  'start', 'agent', 'map', 'reduce', 'board', 'quality_gate', 'learning_loop', 'self_improvement', 'memory', 'stop_at_pr', 'end',
+]);
+const WORKFLOW_SCHEMAS = new Set(['voc-workflow/1', 'voc-workflow/2']);
 const WORKFLOW_ELEMENT_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const WORKFLOW_MAX_NODES = 60;
 const ACTIVE_RUN_STATUSES = new Set(['queued', 'running']);
@@ -3337,17 +3351,27 @@ function fastWorkflowDefinition(maxRounds) {
 }
 
 function checkWorkflowShape(def, add) {
-  if (def.schema !== 'voc-workflow/1') add("schema must be 'voc-workflow/1'");
+  if (!WORKFLOW_SCHEMAS.has(def.schema)) {
+    add("schema must be 'voc-workflow/1' (an agents workflow) or 'voc-workflow/2' (an engineering flow)");
+  }
+  const stepTypes = def.schema === 'voc-workflow/2' ? ENGINEERING_NODE_TYPES : WORKFLOW_NODE_TYPES;
   if (typeof def.name !== 'string' || !def.name.trim() || def.name.length > 120) add('name must be 1–120 characters');
   if (!Array.isArray(def.nodes) || def.nodes.length === 0) { add('nodes must be a non-empty list'); return null; }
   if (def.nodes.length > WORKFLOW_MAX_NODES) add(`a workflow can have at most ${WORKFLOW_MAX_NODES} steps`);
   if (!Array.isArray(def.edges)) add('edges must be a list');
   if (def.loops !== undefined && !Array.isArray(def.loops)) add('loops must be a list');
+  // An engineering flow's monthly budget (workflow_engineering.py budget_of): dollars and cents, 0.01 to 100,000.
+  if (def.budget !== undefined && def.budget !== null) {
+    const amount = isPlainObject(def.budget) && Object.keys(def.budget).length === 1 ? def.budget.monthly_usd : undefined;
+    const cents = typeof amount === 'number' && Number.isFinite(amount) && Math.round(amount * 100) / 100 === amount;
+    if (!cents || amount < 0.01 || amount > 100_000) add('budget is {monthly_usd}: what its runs may spend in a month, in dollars and cents from 0.01 to 100,000');
+    else if (def.schema !== 'voc-workflow/2') add('only an engineering flow has a budget');
+  }
   const types = new Map();
   for (const node of def.nodes) {
     if (!isPlainObject(node) || typeof node.id !== 'string' || !WORKFLOW_ELEMENT_ID.test(node.id)) { add('every step needs an id of 1-64 letters, digits, "_" or "-"'); continue; }
     if (types.has(node.id)) add('two steps share this id', node.id);
-    if (!WORKFLOW_NODE_TYPES.has(node.type)) add(`unknown step type '${String(node.type)}'`, node.id);
+    if (!stepTypes.has(node.type)) add(`unknown step type '${String(node.type)}'`, node.id);
     if (!isPlainObject(node.data) || typeof node.data.title !== 'string' || !node.data.title.trim()) add('every step needs a title', node.id);
     types.set(node.id, node.type);
   }
@@ -3367,6 +3391,7 @@ function checkWorkflowGraph(def, types, add) {
   for (const edge of def.edges) {
     if (!isPlainObject(edge) || !types.has(edge.source) || !types.has(edge.target)) { add('edge connects a step that does not exist', types.has(edge?.source) ? edge.source : undefined); continue; }
     if (types.get(edge.source) === 'end') add('an end step cannot have outgoing arrows', edge.source);
+    if (types.get(edge.source) === 'stop_at_pr') add('a stop at PR ends the flow: no arrow leaves it', edge.source);
     if (types.get(edge.target) === 'start') add('the start step cannot have incoming arrows', edge.target);
     if ((edge.label === 'pass' || edge.label === 'fail') && types.get(edge.source) === 'custom_llm') {
       add(`a custom step reports no pass/fail verdict, so its arrows cannot be '${edge.label}' — use a plain arrow`, edge.source);
@@ -3375,7 +3400,8 @@ function checkWorkflowGraph(def, types, add) {
     backward.get(edge.target).push(edge.source);
   }
   const starts = [...types].filter(([, type]) => type === 'start').map(([id]) => id);
-  const ends = [...types].filter(([, type]) => type === 'end').map(([id]) => id);
+  // A stop at PR ends an engineering flow too.
+  const ends = [...types].filter(([, type]) => type === 'end' || type === 'stop_at_pr').map(([id]) => id);
   if (starts.length !== 1) add('a workflow needs exactly one start step');
   if (ends.length === 0) add('a workflow needs at least one end step');
   if (starts.length !== 1 || ends.length === 0) return;
@@ -3430,11 +3456,15 @@ function workflowView(entry, { withDefinition = true } = {}) {
     derived_from: entry.derived_from, builtin: entry.builtin, created_at: entry.created_at,
     updated_at: current.saved_at, updated_by_username: current.saved_by_username,
     status: entry.archived ? 'archived' : 'active',
+    kind: current.definition.schema === 'voc-workflow/2' ? 'engineering' : 'agents',
+    monthly_budget_usd: current.definition.budget?.monthly_usd ?? null,
     ...(withDefinition ? { definition: structuredClone(current.definition) } : {}),
   };
 }
 
 storeMockWorkflow('wf_default', defaultWorkflowDefinition(), { builtin: true });
+// The sample engineering run's flow (mock-engineering-runs.js), so its run monitor draws its graph.
+storeMockWorkflow(SAMPLE_FLOW_ID, sampleEngineeringFlow(), { at: daysAgo(3) });
 {
   const fast = storeMockWorkflow('wf_3b9e1c0d7a42', fastWorkflowDefinition(2), { derivedFrom: 'wf_default', at: daysAgo(9) });
   fast.revisions.push({ revision: 2, saved_at: daysAgo(2), saved_by_username: 'admin-demo', definition: fastWorkflowDefinition(3) });
@@ -3485,6 +3515,10 @@ function agentFieldsError(body) {
   if (unknown.length) return `Unknown fields: ${unknown.join(', ')}`;
   if ('name' in body && (typeof body.name !== 'string' || !body.name.trim() || body.name.length > 80)) return 'name must be 1–80 characters';
   if ('workflow_id' in body && body.workflow_id !== null && !mockWorkflows.has(body.workflow_id)) return 'workflow_id does not name a workflow';
+  if ('workflow_id' in body && body.workflow_id !== null
+    && currentRevision(mockWorkflows.get(body.workflow_id)).definition.schema === 'voc-workflow/2') {
+    return 'an engineering flow is not run by an agent: pick an agents workflow';
+  }
   return null;
 }
 
@@ -3765,6 +3799,9 @@ function saveMockWorkflow(entry, body) {
   if (errors.length) return [400, { success: false, error: 'The workflow is not valid', valid: false, errors }];
   if (entry.builtin) return [409, { success: false, error: 'The built-in workflow is read-only; duplicate it to edit' }];
   if (expected !== currentRevision(entry).revision) return [409, { success: false, error: 'The workflow was changed by someone else; reload and retry' }];
+  if (body.definition.schema !== currentRevision(entry).definition.schema) {
+    return [400, { success: false, error: 'a workflow keeps its kind: save an engineering flow as a new workflow, not over an agents one (or the other way round)' }];
+  }
   entry.revisions.push({ revision: expected + 1, saved_at: new Date().toISOString(), saved_by_username: MOCK_CALLER.username, definition: structuredClone(body.definition) });
   entry.slug = slugifyWorkflow(body.definition.name);
   return [200, { workflow: workflowView(entry) }];
@@ -3843,6 +3880,11 @@ function routeWorkflows(req, url, body) {
     stored.sort((a, b) => currentRevision(a).definition.name.toLowerCase().localeCompare(currentRevision(b).definition.name.toLowerCase()));
     const items = [builtin, ...stored].map((entry) => workflowView(entry, { withDefinition: false }));
     return [200, { items, count: items.length }];
+  }
+  if (req.method === 'GET' && workflowId === 'templates' && !action) {
+    // GET /workflows/templates (agents_handler.list_workflow_templates): administrators only.
+    if (!MOCK_AGENTS_ADMIN) return AGENTS_FORBIDDEN;
+    return [200, { items: ENGINEERING_TEMPLATES, count: ENGINEERING_TEMPLATES.length }];
   }
   if (req.method === 'POST' && workflowId === 'validate' && !action) {
     const errors = validateWorkflowDefinition(body?.definition);

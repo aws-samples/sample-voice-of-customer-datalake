@@ -161,9 +161,16 @@ class TestReadOnlyPrefixes:
             h._reject_read_only_prefix('prototypes/p1/x.html')
         assert str(info.value) == 'Generated prototypes are read-only in Data Explorer'
 
-    @pytest.mark.parametrize('key', ['raw/prototypes/x', 'prototype/x', 'Prototypes/x', '', 'raw/silver/x', 'silverx/a'])
-    def test_only_the_prototypes_and_silver_prefixes_are_read_only(self, key):
+    @pytest.mark.parametrize('key', ['raw/prototypes/x', 'prototype/x', 'Prototypes/x', '', 'raw/silver/x', 'silverx/a',
+                                     'raw/engineering/x', 'engineeringx/a', 'engineering'])
+    def test_only_the_prototypes_silver_and_engineering_prefixes_are_read_only(self, key):
         assert h._reject_read_only_prefix(key) is None
+
+    @pytest.mark.parametrize('key', ['engineering/cache/c1/' + 'a' * 40 + '/g1/READY', 'engineering/x'])
+    def test_an_engineering_key_is_refused_with_its_own_wording(self, key):
+        with pytest.raises(h.ValidationError) as info:
+            h._reject_read_only_prefix(key)
+        assert str(info.value) == 'Engineering files (engineering/) are read-only in Data Explorer'
 
     def test_a_kept_feedback_version_is_refused_with_its_own_wording(self):
         with pytest.raises(h.ValidationError) as info:
@@ -510,6 +517,13 @@ class TestSavingAnObject:
         response, body = _put(api_gateway_event, lambda_context, '/data-explorer/s3', {'content': 'x'})
         assert response['statusCode'] == 400
         assert body == {'success': False, 'error': 'File key is required'}
+        s3.put_object.assert_not_called()
+
+    def test_a_planted_checkout_cache_marker_is_refused_and_never_written(self, s3, api_gateway_event, lambda_context):
+        response, body = _put(api_gateway_event, lambda_context, '/data-explorer/s3',
+                              {'key': 'engineering/cache/c1/' + 'a' * 40 + '/g1/READY', 'content': '{}'})
+        assert response['statusCode'] == 400
+        assert body == {'success': False, 'error': 'Engineering files (engineering/) are read-only in Data Explorer'}
         s3.put_object.assert_not_called()
 
     def test_an_existing_raw_object_is_a_409_with_the_exact_wording(self, s3, api_gateway_event, lambda_context):

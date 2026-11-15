@@ -5,6 +5,7 @@
 #   pip install -r lambda/layers/processing-deps/requirements.txt
 #   pip install -r lambda/layers/signing-deps/requirements.txt
 #   pip install -r lambda/layers/email-intake-deps/requirements.txt
+#   pip install -r lambda/layers/engineering-ci-deps/requirements.txt
 # (scripts/audit/py_layers.py resolves every layer against this venv: a missing or
 # differently-pinned one is a `version-mismatch` finding.)
 #
@@ -12,9 +13,11 @@ pytest>=9.2.0
 pytest-cov>=7.1.0
 pytest-mock>=3.17.0
 # Property-based tests (lambda/shared/test/test_*_properties.py): generated inputs checked against stated invariants.
-# Pinned exactly, like the other gate tools. Two settings profiles: shared/test/ws_properties.py (the workspace layer's;
-# no example database, a found case is kept as an @example of its property) and shared/test/property_settings.py (the
-# documents', prototypes' and project export's; Hypothesis's local example database, off under mutmut). .hypothesis/ is git-ignored.
+# Pinned exactly, like the other gate tools (a generator or shrinker change would move which cases a run tries). Three
+# settings profiles: shared/test/ws_properties.py (the workspace layer's; no example database, a found case is kept as
+# an @example of its property), shared/test/property_settings.py (the documents', prototypes' and project export's;
+# Hypothesis's local example database, off under mutmut) and shared/test/properties.py (the engineering agents'; its
+# failing-example database is shared/test/hypothesis-regressions/, ignored but for its README). .hypothesis/ is git-ignored.
 hypothesis==6.135.0
 # Parallel pytest: scripts/validate.sh runs `pytest -n <workers> --dist loadgroup` (pinned exactly, like
 # the other gate tools, so the gate's behaviour does not move with whatever pip resolves).

@@ -104,20 +104,26 @@ const errorBodySchema = z.object({
   message: reasonSchema.optional().catch(undefined),
   error: reasonSchema.optional().catch(undefined),
   code: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/).optional().catch(undefined),
+  // An engineering run's start that may have written its run names it (agents_handler.py start_engineering_run).
+  run_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/).optional().catch(undefined),
 })
 
-interface ServerAnswer { readonly message: string | undefined; readonly code: string | undefined }
+interface ServerAnswer {
+  readonly message: string | undefined
+  readonly code: string | undefined
+  readonly runId: string | undefined
+}
 
 async function serverAnswer(response: Response): Promise<ServerAnswer> {
   try {
     const parsed = errorBodySchema.safeParse(JSON.parse(await response.text()))
     return parsed.success
-      ? { message: parsed.data.message ?? parsed.data.error, code: parsed.data.code }
-      : { message: undefined, code: undefined }
+      ? { message: parsed.data.message ?? parsed.data.error, code: parsed.data.code, runId: parsed.data.run_id }
+      : { message: undefined, code: undefined, runId: undefined }
   } catch {
     // No body, a non-JSON body (an API Gateway error page), or a body that was
     // already consumed: the status alone is still a complete answer.
-    return { message: undefined, code: undefined }
+    return { message: undefined, code: undefined, runId: undefined }
   }
 }
 
@@ -129,9 +135,9 @@ async function serverAnswer(response: Response): Promise<ServerAnswer> {
  * `fetchApi` for a board session (its 401 path ends the APP session).
  */
 export async function apiErrorFor(response: Response): Promise<ApiError> {
-  const { message, code } = await serverAnswer(response)
+  const { message, code, runId } = await serverAnswer(response)
   // An absent message takes ApiError's default (`API Error: {status}`).
-  return new ApiError(response.status, message, code)
+  return new ApiError(response.status, message, code, runId)
 }
 
 async function handleUnauthorized<T>(

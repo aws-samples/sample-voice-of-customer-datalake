@@ -13,14 +13,19 @@ import type * as lambda from 'aws-cdk-lib/aws-lambda';
 import type * as logs from 'aws-cdk-lib/aws-logs';
 import type { VocApiStackProps } from './api-stack';
 
+export interface ApiCodeOptions {
+  /** Ship lambda/engineering/ in the bundle too (the agents API, with -c engineeringAgents=true). */
+  engineering?: boolean;
+}
+
 export interface ApiStackContext {
   stack: cdk.Stack;
   props: VocApiStackProps;
   /** CORS origin every API Lambda except the feedback-form widget's gets. */
   allowedOrigin: string;
   apiLayer: lambda.ILayerVersion;
-  /** api/<file> + shared/ bundle (VocApiStack.createApiLambdaCode). */
-  apiCode: (handlerFileName: string) => lambda.Code;
+  /** api/<file> + shared/ bundle (VocApiStack.createApiLambdaCode); `engineering` adds lambda/engineering/. */
+  apiCode: (handlerFileName: string, options?: ApiCodeOptions) => lambda.Code;
   /** A Lambda role with only the basic execution policy. */
   role: (id: string) => iam.Role;
   /** `/aws/lambda/<name>`, 30 days (`LOG_RETENTION`), destroyed with the stack. */

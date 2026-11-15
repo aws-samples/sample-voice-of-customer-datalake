@@ -1,0 +1,15 @@
+{
+  "schema": "voc-bench/1",
+  "id": "duration-hours-feature",
+  "kind": "feature",
+  "title": "Show hours in a duration label",
+  "task": "formatDuration in src/duration.js labels 3725 seconds as '62m 5s'. Add hours: from 3,600 seconds the label shows hours, minutes and seconds ('1h 2m 5s'; 7200 is '2h 0m 0s'), and below an hour it stays as it is. The acceptance tests are in test/duration.test.js (node --test); do not change them. The package has no dependencies: install nothing.",
+  "fixture": "repo",
+  "check": {
+    "argv": ["node", "--test"],
+    "cwd": "",
+    "timeout_seconds": 60,
+    "protected": ["test"],
+    "allows": ["src"]
+  }
+}

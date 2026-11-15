@@ -1,0 +1,2 @@
+# A case's known fix is a patch: an empty context line in it is a single space, which is not trailing whitespace.
+*.diff -whitespace

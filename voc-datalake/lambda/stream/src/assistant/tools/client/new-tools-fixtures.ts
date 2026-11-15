@@ -48,6 +48,7 @@ export const NEW_TOOL_VALID_ARGS: Record<string, Record<string, unknown>> = {
   create_workflow: { definition: SAMPLE_WORKFLOW },
   update_workflow: { workflow_id: 'wf_1', expected_revision: 2, definition: SAMPLE_WORKFLOW, change_summary: 'Added a loop' },
   duplicate_workflow: { workflow_id: 'wf_default' },
+  propose_knowledge_refresh: { connection: 'acme-shop', commit: '0123456789abcdef0123456789abcdef01234567' },
   update_company_context: { vision: '# Be the easiest checkout' },
   update_my_context: { objectives: [{ title: 'Cut churn', description: 'Q3', kpis: [{ name: 'Churn', target: 3, unit: '%' }] }] },
   update_design_system: { guidelines: 'Use the primary colour for one action per screen.' },

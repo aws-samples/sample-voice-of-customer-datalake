@@ -20,7 +20,7 @@ path's saved version, or clears that ("Revise from comments", shared/document_re
 The persona review and "Revise from comments" starts (``…/persona-review``,
 ``…/revise-from-comments``) live in the handler, beside the other assist jobs.
 
-Workspaces (docs/multi-workspace.md, the project plan, 3e; plumbing since 7.35.00): every helper passes its
+Workspaces (docs/multi-workspace.md, the project plan, 3e; plumbing since 7.37.00): every helper passes its
 ``workspace`` to every store it calls. The member routes take theirs from ``_project_scope``, the deployment until the
 switch (3h) resolves ``X-Workspace-Id`` there (the project gate refuses a workspace until then). A reviewer's link
 names its own workspace (``document_share.require_share_for``: the routing row's, nothing a request sent); a link kept

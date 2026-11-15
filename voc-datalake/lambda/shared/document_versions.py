@@ -1494,7 +1494,7 @@ def series_head_version(table, project_id: str, document_type: str, requested_ti
                         workspace: WorkspaceScope | None = None) -> int:
     """The series' head as ``persist_versioned_document`` judges ``expected_last_version`` against it: its
     counter, or every version in use past it (0 for a series with none), read in ``workspace`` when given (since
-    7.35.00) like the other readers here. Its callers (Revise from comments, a prototype's Back to vN and draft
+    7.37.00) like the other readers here. Its callers (Revise from comments, a prototype's Back to vN and draft
     Apply) refuse a workspace until the switch (3h), so none passes one yet."""
     requested_base, _ = split_versioned_title(requested_title)
     normalized = normalized_base_title(requested_base, document_type)

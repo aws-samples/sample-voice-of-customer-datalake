@@ -1,6 +1,22 @@
 {
   "entries": [
     {
+      "key": "DENIED_CODES|_ACCESS_DENIED::*",
+      "reason": "the engineering workspace store's S3 refusals it reads as missing (engineering/workspace/store.py) and the workspace layer's own (shared/ws_repo.py, private to the layer): the same two AWS codes by coincidence of the API, two modules whose rules move apart (7.35.00 merge of voc-autonomous)"
+    },
+    {
+      "key": "_NOT_WORD|_PUNCTUATION_RE::*",
+      "reason": "the broker's prose check (engineering/connectors/write_policy.py) and the prototype feedback's folding of pin texts (shared/prototype_feedback.py): the same character class, unrelated rules (7.35.00 merge)"
+    },
+    {
+      "key": "ACTIVE::lambda/engineering/connectors/hosts.py,lambda/shared/workspace_ids.py",
+      "reason": "a repository host's branch-protection state (engineering/connectors/hosts.py) and a workspace's status (shared/workspace_ids.py): equal words, separate lifecycles (7.35.00 merge)"
+    },
+    {
+      "key": "_CROCKFORD::lambda/engineering/bus/publish.py,lambda/shared/platform_workspaces.py",
+      "reason": "Crockford base32, the ULID alphabet, in the bus's message ids and the platform's workspace ids: a fixed standard each module spells privately; the bus ships in the engineering functions without the platform module (7.35.00 merge)"
+    },
+    {
       "key": "ACCESS_SK_PREFIX|SUBSCRIBER_SK_PREFIX|USER_PARTITION_PREFIX::*",
       "reason": "four unrelated keys that happen to start with the user namespace: a conversations partition, a briefing subscriber row, a category-access row and a member's voc-workspaces inverse row (the workspace layer builds it to delete it, shared/ws_repo.py WorkspaceControlRows)"
     },
@@ -17,8 +33,32 @@
       "reason": "assist jobs and workspace deletes are separate job kinds with their own lifecycles"
     },
     {
-      "key": "BEDROCK_MODEL_ID|_SONNET55::*",
-      "reason": "the platform's last-resort default model and the name of one allowlisted model; the default moves without the alias table moving"
+      "key": "STEP_PREFIX|STEP_SK_PREFIX::*",
+      "reason": "two tables' sort-key prefixes that read alike: an engineering run's flow step rows in voc-engineering (engineering/flow/record.py) and an agent plan's steps in voc-agents (shared/plans_store.py); different rows, different meanings, never one key space"
+    },
+    {
+      "key": "MEMORY_MODES|SCOPE_NAMES::*",
+      "reason": "an engineering flow's memory step modes (shared/workflow_engineering.py) and the MCP OAuth scopes: both read and write by coincidence, different meanings"
+    },
+    {
+      "key": "REVIEWER_KEYS|REVIEWER_SETTINGS::*",
+      "reason": "the quality gate's own reviewer settings (engineering/quality_gate/gate.py) and the workflow editor's copy (shared/workflow_engineering.py): shared/ ships in the agents API without the engineering package (only with -c engineeringAgents=true), so it cannot import the gate's; engineering/test/test_workflow_lockstep.py holds the two equal"
+    },
+    {
+      "key": "_NAME|_REVIEWER_NAME::*",
+      "reason": "the quality gate's reviewer name shape and the workflow editor's copy: shared/ cannot import the engineering package (see REVIEWER_KEYS|REVIEWER_SETTINGS); test_workflow_lockstep.py's pairwise test holds the editor to the gate"
+    },
+    {
+      "key": "BEDROCK_MODEL_ID|SONNET|_SONNET55::*",
+      "reason": "the platform's last-resort default model, the name of one allowlisted model, and the model the engineering role skills name (runtime/harness/skills.py SONNET): the default moves without the alias table moving, and the harness ships alone in the agents' images without shared/model_config.py, so its copy is held to the allowlist by test_engineering_role_skills.py"
+    },
+    {
+      "key": "HAIKU|_HAIKU55::*",
+      "reason": "the model the engineering role skills name (runtime/harness/skills.py) and its alias in the allowlist (shared/model_config.py): the harness ships alone in the agents' images without shared/, and test_engineering_role_skills.py holds its copy to ALLOWED_MODEL_IDS"
+    },
+    {
+      "key": "OPUS|_OPUS55::*",
+      "reason": "the model the engineering role skills name (runtime/harness/skills.py) and its alias in the allowlist (shared/model_config.py): the harness ships alone in the agents' images without shared/, and test_engineering_role_skills.py holds its copy to ALLOWED_MODEL_IDS"
     },
     {
       "key": "OPEN_ROW_SESSION_SK_PREFIX|ROW_SK_PREFIX::*",

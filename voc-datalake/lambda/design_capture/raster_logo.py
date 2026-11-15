@@ -1,9 +1,10 @@
 """A captured page's RASTER logo candidate, read inside the browser session, and drawn smaller when it is too
 large to be the company logo.
 
-``read_raster_logo`` runs in the session when no SVG logo was rendered (``page_logo``) and there is a bucket:
+``read_raster_logo`` runs in the session for a picked ``<img>`` whose element could not be photographed alone, or a
+picked ``<head>`` icon (``page_logo``), when there is a bucket:
 
-1. the page's raster candidate (``page_styles.logo_candidate``: https, URL policy) is downloaded ONCE through
+1. that raster file (https) is downloaded ONCE through
    the SSRF-guarded fetch (``shared.design_logo.fetch_logo``: every hop re-checked, sockets pinned, at most
    ``RASTER_SHRINK_MAX_BYTES``, 5 MB), and its type is decided by its bytes (PNG, JPEG or WebP; anything else
    is refused before the browser sees it);
@@ -26,8 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from logo_render import Cdp, render_svg_logo
-from page_logo import RenderedLogo
-from page_styles import PageStyles, logo_candidate
+from rendered_logo import RenderedLogo
 
 from shared import design_icons, design_logo
 from shared.logging import logger
@@ -48,12 +48,8 @@ def shrink_raster(cdp: Cdp, data: bytes, content_type: str, *, what: str) -> byt
     return render_svg_logo(cdp, design_logo.image_data_url(data, content_type), what=what)
 
 
-def read_raster_logo(cdp: Cdp, styles: PageStyles, fetch: design_icons.Fetch | None) -> RasterLogo:
-    """The page's raster logo candidate, downloaded, or drawn smaller when it is over 1 MB (see the module docstring)."""
-    candidate = logo_candidate(styles.logos)
-    if candidate is None:
-        return RasterLogo()
-    url = str(candidate['source_url'])
+def read_raster_logo(cdp: Cdp, url: str, fetch: design_icons.Fetch | None) -> RasterLogo:
+    """The raster logo at ``url``, downloaded, or drawn smaller when it is over 1 MB (see the module docstring)."""
     try:
         data, content_type = design_logo.fetch_logo(url, fetch, max_bytes=design_logo.RASTER_SHRINK_MAX_BYTES)
     except design_logo.LogoTooLargeError:

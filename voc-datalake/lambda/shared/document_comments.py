@@ -23,7 +23,7 @@ Text is type-checked and capped here; text that reads like an instruction to a m
 but ``flagged`` (shared.prompt_safety), as prototype pins are. An anchor's free-text ``heading`` is
 screened where it reaches a prompt (shared/document_revision.py). Nothing here logs content.
 
-Per workspace since 7.35.00 (docs/multi-workspace.md, the project plan, 3e; no route passes one yet): every read and
+Per workspace since 7.37.00 (docs/multi-workspace.md, the project plan, 3e; no route passes one yet): every read and
 write takes a keyword-only ``workspace``. Without one each request is the one sent before, on the table itself. In
 one, the thread is ``WS#{ws}#DCOMMENTS#{project}#{series}`` (shared/project_keys.py ``comments_pk``), every call goes
 through the workspace layer (shared/ingest_tables.py ``ScopedUpdates``, shared/scoped_query.py ``iter_partition``),

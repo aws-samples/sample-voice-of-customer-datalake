@@ -88,6 +88,8 @@ DEPLOYMENT_KINDS: dict[str, frozenset[str]] = {
     'model_quotas': frozenset({'lambda/shared/model_quota_store.py'}),
     'image_model_quota': frozenset({'lambda/shared/image_model_quota.py'}),
     'alerts': frozenset({'lambda/shared/ops_alerts.py'}),
+    # The engineering agents' hard cap (voc-agents; voc-autonomous, merged in 7.35.00): the deployment's administrators'.
+    'engineering': frozenset({'lambda/engineering/settings.py', 'lib/stacks/engineering-runtime-grants.ts'}),
 }
 
 SETTINGS_KINDS: dict[str, frozenset[str]] = {**WORKSPACE_KINDS, **DEPLOYMENT_KINDS}

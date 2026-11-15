@@ -2,9 +2,9 @@
  * @fileoverview Workflow approval previews.
  * - `update_workflow`: what the proposed COMPLETE definition adds, removes and
  *   changes relative to the stored current revision (nodes and arrows, loops,
- *   name / description); moves alone are collapsed. A stored revision newer
+ *   name / description, an engineering flow's monthly budget in dollars); moves alone are collapsed. A stored revision newer
  *   than `expected_revision` is called out — the save will be refused.
- * - `create_workflow`: the steps and arrows of the new workflow.
+ * - `create_workflow`: the steps and arrows of the new workflow, and the monthly budget it sets.
  *
  * @module assistant/approvals/previews/WorkflowDiffPreview
  */
@@ -12,7 +12,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { workflowsApi, workflowsKeys } from '../../../api/workflowsApi'
 import { diffDefinitions } from '../../../components/WorkflowEditor/diff'
-import { WorkflowDiffView } from '../../../components/WorkflowEditor/WorkflowDiffView'
+import { BudgetChange, WorkflowDiffView } from '../../../components/WorkflowEditor/WorkflowDiffView'
 import type { CreateWorkflowArgs, UpdateWorkflowArgs } from '../agentSchemas'
 
 export function WorkflowDiffPreview({ args }: Readonly<{ args: UpdateWorkflowArgs }>) {
@@ -51,6 +51,7 @@ export function WorkflowCreatePreview({ args }: Readonly<{ args: CreateWorkflowA
       <p className="text-[12px] text-muted">
         {t('preview.workflow.counts', { nodes: definition.nodes.length, edges: definition.edges.length, loops: definition.loops.length })}
       </p>
+      {definition.budget !== undefined && <BudgetChange before={null} after={definition} />}
       <ol className="list-decimal pl-5 text-sm text-text space-y-0.5">
         {definition.nodes.map((n) => <li key={n.id}>{n.data.title} <span className="text-[12px] text-muted font-mono">{n.type}</span></li>)}
       </ol>

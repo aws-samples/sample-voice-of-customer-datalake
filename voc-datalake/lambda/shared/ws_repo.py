@@ -35,7 +35,7 @@ only ever reads and writes its own rows and objects. This module is the one plac
   transaction (``WorkspaceTable.transact_write_items``'s ``outside``), its strongly consistent read, and its
   conditional delete. One of the two keys outside a workspace the layer writes for one; as a caller's own entry,
   ``ws_table`` refuses it.
-* ``route_share_id`` / ``read_share_route`` / ``release_share_route``: the other one (since 7.35.00, 3e), a review
+* ``route_share_id`` / ``read_share_route`` / ``release_share_route``: the other one (since 7.37.00, 3e), a review
   link's deployment-wide routing row ``DOCSHARE#{id}`` / ``META`` naming the workspace the link is kept in: an
   ``OutsideEntry`` of kind ``route`` (with the link's ``ttl``) put the same way, the one GetItem the reviewer routes
   send (a row naming no workspace is the deployment's link itself), and its conditional delete. The one ``outside``

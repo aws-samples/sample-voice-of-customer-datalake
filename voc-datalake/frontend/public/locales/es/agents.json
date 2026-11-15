@@ -19,7 +19,10 @@
   "views": {
     "label": "Secciones de la página de agentes",
     "agents": "Agentes",
-    "workflows": "Flujos de trabajo"
+    "workflows": "Flujos de trabajo",
+    "spend": "Gasto",
+    "connections": "Conexiones",
+    "skills": "Habilidades"
   },
   "list": {
     "title": "Agentes autónomos",
@@ -67,7 +70,14 @@
     "renameNamed": "Renombrar {{name}}",
     "renameTitle": "Renombrar este flujo",
     "renameConflict": "Alguien cambió este flujo mientras tanto, o es el integrado. Recarga e inténtalo de nuevo.",
-    "renameFailed": "No se pudo renombrar el flujo."
+    "renameFailed": "No se pudo renombrar el flujo.",
+    "newEngineeringFlow": "Nuevo flujo de ingeniería",
+    "createEngineeringTitle": "Nuevo flujo de ingeniería",
+    "createEngineeringHint": "Un flujo de ingeniería ejecuta agentes de ingeniería autónomos sobre un repositorio y termina en un pull request para que lo revisen personas. Empieza como Inicio → Fin: añade los pasos de Ingeniería desde la paleta.",
+    "engineeringKind": "Ingeniería",
+    "fromTemplate": "Empezar con una plantilla",
+    "templatesTitle": "Empezar con una plantilla",
+    "templatesHint": "Seis flujos de ingeniería predeterminados para empezar. Al elegir uno se abre una copia en el editor: no se guarda nada hasta que la guardes."
   },
   "fields": {
     "name": "Nombre",
@@ -341,6 +351,10 @@
       "until": "Hasta que",
       "maxRounds": "Rondas máximas",
       "description": "Descripción",
+      "monthlyBudget": "Presupuesto mensual (dólares estadounidenses)",
+      "monthlyBudgetHint": "Lo que pueden gastar las ejecuciones de este flujo en un mes natural (UTC). Se guarda con el flujo: aún no detiene nada ni genera alertas.",
+      "monthlyBudgetInvalid": "Introduce un importe en dólares y centavos de 0,01 US$ a {{largest}}, o déjalo vacío para no tener presupuesto.",
+      "monthlyBudgetNone": "Sin presupuesto",
       "arrowTarget": "Al paso",
       "arrowTargetNone": "Elige un paso…",
       "joinLoop": "Bucle"
@@ -403,7 +417,46 @@
     "switchMessage": "Se perderán tus cambios sin guardar en {{name}}.",
     "switchConfirm": "Cambiar de flujo de trabajo",
     "switched": "Este agente ahora ejecuta {{name}}.",
-    "switchFailed": "No se pudo cambiar el agente a ese flujo de trabajo."
+    "switchFailed": "No se pudo cambiar el agente a ese flujo de trabajo.",
+    "engineering": {
+      "role": "Rol",
+      "skillVersion": "Versión de la habilidad",
+      "skillVersionHint": "'latest' (la última aceptada) o una versión como v3.",
+      "model": "Modelo",
+      "modelHint": "Un id de modelo; déjalo vacío para el predeterminado.",
+      "budgetShare": "Parte del presupuesto de la ejecución",
+      "budgetShareHint": "Una fracción de 0,01 a 1; las partes de los agentes suman como mucho 1. Vacío: sin parte propia.",
+      "shardBy": "Dividir por",
+      "shardByOptions": {
+        "packages": "Paquetes",
+        "history": "Ventanas del historial",
+        "pr_pages": "Páginas de PR"
+      },
+      "shardCap": "Máximo de partes",
+      "posters": "Quién publica tareas",
+      "claimers": "Quién toma tareas",
+      "until": "Dura hasta que",
+      "untilOptions": {
+        "drained": "Todas las tareas están hechas",
+        "caps": "Se alcanza un límite"
+      },
+      "maxRounds": "Rondas de revisión (máximo)",
+      "packsAuto": "Detectar los paquetes de control en el repositorio",
+      "packs": "Paquetes de control",
+      "finalGoModel": "Modelo de la aprobación final",
+      "mode": "Modo",
+      "modeOptions": {
+        "read": "Leer",
+        "write": "Escribir"
+      },
+      "scope": "Memoria de quién",
+      "scopeOptions": {
+        "repo": "El repositorio",
+        "role": "El rol",
+        "person": "La persona"
+      },
+      "limit": "Máximo de recuerdos leídos"
+    }
   },
   "paletteGroups": {
     "flow": "Flujo",
@@ -411,7 +464,8 @@
     "documents": "Documentos",
     "review": "Revisión",
     "prototype": "Prototipo",
-    "delivery": "Entrega"
+    "delivery": "Entrega",
+    "engineering": "Ingeniería"
   },
   "edgeLabels": {
     "pass": "Aprobado",
@@ -504,6 +558,42 @@
     "end": {
       "label": "Fin",
       "description": "Donde termina la ejecución."
+    },
+    "agent": {
+      "label": "Agente",
+      "description": "Un agente con un rol (fixer, hunter, committer…), su versión de habilidad y su parte del presupuesto."
+    },
+    "map": {
+      "label": "Mapa",
+      "description": "Divide el trabajo en partes (paquetes, ventanas del historial, páginas de PR) que los agentes hacen en paralelo."
+    },
+    "reduce": {
+      "label": "Reducción",
+      "description": "Donde vuelven a unirse las partes de un mapa: un resultado de todas ellas."
+    },
+    "board": {
+      "label": "Tablero",
+      "description": "Un tablero de tareas: unos roles publican tareas y otros las toman y las hacen, hasta vaciarlo."
+    },
+    "quality_gate": {
+      "label": "Control de calidad",
+      "description": "Comprobaciones y rondas de revisión del cambio: GO sigue al PR, NO-GO va a una persona."
+    },
+    "learning_loop": {
+      "label": "Ciclo de aprendizaje",
+      "description": "Una retrospectiva que guarda en la memoria lo que aprendió la ejecución."
+    },
+    "self_improvement": {
+      "label": "Automejora",
+      "description": "El coach propone una versión mejor de una habilidad y la mide."
+    },
+    "memory": {
+      "label": "Memoria",
+      "description": "Lee o escribe en la memoria del repositorio, de un rol o de una persona."
+    },
+    "stop_at_pr": {
+      "label": "Parar en el PR",
+      "description": "El flujo termina en un pull request para que lo revisen personas: nunca se fusiona nada."
     }
   },
   "loopUntilHint": {
@@ -524,6 +614,45 @@
   "workflowPage": {
     "title": "Flujo de trabajo",
     "subtitle": "Un flujo de trabajo de la biblioteca. Los agentes que lo ejecutan usan su revisión guardada más reciente."
+  },
+  "startRun": {
+    "action": "Iniciar una ejecución",
+    "title": "Iniciar una ejecución de {{name}}",
+    "description": "La ejecución inicia este flujo tal como se guardó por última vez, sobre un commit de un repositorio conectado. Solo llega al repositorio cuando la credencial de la conexión está guardada.",
+    "fields": {
+      "connection": "Conexión al repositorio",
+      "commit": "Commit",
+      "language": "Lenguaje",
+      "goal": "Objetivo",
+      "issue": "Incidencia (opcional)"
+    },
+    "hints": {
+      "connection": "El id de la conexión: letras, dígitos y guiones, 63 como máximo.",
+      "commit": "El id completo del commit desde el que parte la ejecución: 40 caracteres hexadecimales.",
+      "language": "Las herramientas del repositorio: los agentes trabajan en la imagen aislada de ese lenguaje.",
+      "goal": "Para qué es la ejecución, en una línea de 500 caracteres como máximo.",
+      "issue": "El número de la incidencia del repositorio de la que parte la ejecución. Se guarda tal como se indica."
+    },
+    "invalid": {
+      "connection": "Escribe el id de la conexión: de 1 a 63 letras, dígitos o guiones.",
+      "commit": "Escribe el id completo del commit: 40 caracteres, de 0 a 9 y de a a f.",
+      "goalEmpty": "Di para qué es la ejecución.",
+      "goalLong": "El objetivo no puede pasar de {{max, number}} caracteres.",
+      "issue": "Escribe el número de la incidencia, un número entero desde 1, o déjalo vacío."
+    },
+    "languages": {
+      "java": "Java",
+      "node": "JavaScript y TypeScript",
+      "python": "Python",
+      "rust": "Rust"
+    },
+    "budget": "Su presupuesto mensual es el del flujo: {{amount}}.",
+    "noBudget": "El flujo no tiene presupuesto mensual.",
+    "submit": "Iniciar la ejecución",
+    "openRun": "Abrir la ejecución",
+    "mayHaveStarted": "Puede que la ejecución se haya iniciado: revisa la lista de ejecuciones antes de iniciar otra.",
+    "openRuns": "Ver las ejecuciones del flujo",
+    "saveFirst": "Guarda primero el flujo: una ejecución usa la versión guardada."
   },
   "validation": {
     "scope": "Elige al menos una categoría o subcategoría, o vigila todas las categorías.",
@@ -591,6 +720,614 @@
         "label": "Cerrar la ejecución",
         "help": "No se ejecuta nada más. Lo que produjo la ejecución queda en el proyecto."
       }
+    }
+  },
+  "spend": {
+    "hint": "Lo que gastaron los agentes de ingeniería, según el registro de gasto: el coste, los tokens y el tiempo de MicroVM de cada sesión, tal como los midió el entorno de ejecución. Por ahora el coste es el tiempo de MicroVM: los tokens del modelo se cuentan, pero aún no tienen precio. Los meses están en UTC.",
+    "month": "Mes",
+    "groupBy": "Agrupar por",
+    "by": {
+      "workflow": "Flujo de trabajo",
+      "repo": "Repositorio",
+      "run": "Ejecución",
+      "agent": "Agente",
+      "model": "Modelo",
+      "day": "Día"
+    },
+    "cost": "Coste",
+    "tokensIn": "Tokens de entrada",
+    "tokensOut": "Tokens de salida",
+    "microvm": "Tiempo de MicroVM",
+    "budget": "Presupuesto mensual",
+    "budgetHint": "El presupuesto mensual actual de cada flujo de trabajo y la parte gastada este mes (por ahora, solo el tiempo de MicroVM).",
+    "budgetShare": "{{percent}} %",
+    "noBudget": "Sin presupuesto",
+    "overBudget": "por encima del presupuesto",
+    "hardCap": "Límite estricto en el presupuesto mensual de cada flujo de trabajo",
+    "hardCapHint": "Desactivado por defecto. Activado: una ejecución iniciada desde un flujo con presupuesto recibe un límite de coste igual a lo que queda del mes del flujo, y no se inicia si no queda nada. El límite de cada ejecución se fija al iniciarse, así que varias ejecuciones simultáneas de un flujo pueden superar juntas su presupuesto (por ahora, solo el tiempo de MicroVM). El tiempo de sesión se valora con las tarifas de AgentCore de la implementación; los tokens del modelo se cuentan, pero aún no tienen precio.",
+    "hardCapFailed": "No se pudo guardar el límite estricto. Inténtalo de nuevo.",
+    "hardCapSaving": "Guardando…",
+    "hardCapUnread": "No se pudo cargar la configuración del límite estricto.",
+    "none": "Sin registrar",
+    "otherModels": "Otros modelos",
+    "workflowRuns": "{{name}}: ver sus ejecuciones",
+    "inRun": "en la ejecución {{run}}",
+    "onlyWorkflow": "Flujo de trabajo: {{name}}",
+    "allWorkflows": "Ver todos los flujos de trabajo",
+    "tableCaption": "Gasto en {{month}}, agrupado por: {{by}}",
+    "loadFailed": "No se pudo cargar el gasto.",
+    "truncated": "Este mes tiene más filas de las que caben en una lectura: las cifras son un mínimo.",
+    "empty": "No hubo gasto en {{month}}."
+  },
+  "connections": {
+    "title": "Conexiones de repositorio",
+    "intro": "Los agentes de ingeniería llegan a un repositorio a través de una conexión: el repositorio, su rama predeterminada y una credencial guardada para ellos. Una credencial guardada no se vuelve a mostrar nunca, a nadie.",
+    "add": "Añadir conexión",
+    "limitReached": "Esta implementación admite como máximo {{limit, number}} conexiones. Quite una para añadir otra.",
+    "loadFailed": "No se pudieron cargar las conexiones de repositorio.",
+    "emptyTitle": "Aún no hay conexiones de repositorio",
+    "emptyHint": "Añada una para que los agentes de ingeniería puedan trabajar en un repositorio.",
+    "branch": "Rama predeterminada: {{branch}}",
+    "kind": "GitHub App",
+    "kindToken": "Token de acceso de proyecto de GitLab",
+    "hostLabel": "Host del repositorio",
+    "hosts": {
+      "github": "GitHub",
+      "gitlab": "GitLab"
+    },
+    "expiry": {
+      "on": "El token caduca el {{date}}.",
+      "soonBadge": "El token caduca pronto",
+      "soon": "Caduca el {{date}}, en {{days, number}} días o menos: cree un token nuevo y guárdelo en esta conexión.",
+      "expiredBadge": "Token caducado",
+      "expired": "Caducó el {{date}}: los agentes no pueden acceder al proyecto hasta que guarde un token nuevo en esta conexión.",
+      "unknown": "No se conoce la caducidad del token: guarde la conexión de nuevo con su token."
+    },
+    "gitlab": {
+      "keepHint": "El token guardado nunca se muestra. Deje el token vacío para conservarlo; un host o un proyecto nuevos necesitan un token otra vez.",
+      "fields": {
+        "project": "Ruta del proyecto",
+        "token": "Token de acceso de proyecto"
+      },
+      "hints": {
+        "project": "La ruta del proyecto tal como aparece en su dirección: grupo/proyecto o grupo/subgrupo/proyecto.",
+        "token": "El token de acceso de proyecto (glpat-…), que se muestra una vez al crearlo. Se comprueba con GitLab, se envía una vez y nunca se vuelve a mostrar."
+      },
+      "invalid": {
+        "repository": "Introduzca la ruta del proyecto tal como aparece en su dirección: grupo/proyecto o grupo/subgrupo/proyecto.",
+        "tokenEmpty": "Pegue el token de acceso de proyecto: una conexión nueva necesita su credencial.",
+        "tokenNeeded": "Pegue de nuevo el token de acceso de proyecto: un host o un proyecto nuevos se guardan con él.",
+        "token": "Pegue el token de acceso de proyecto completo: empieza por glpat-."
+      },
+      "guidance": {
+        "title": "Lo que necesita el token de GitLab",
+        "token": "Cree un token de acceso de proyecto solo en este proyecto (en la configuración del proyecto, en Tokens de acceso): rol Developer, ámbitos api, read_repository y write_repository. Nunca Maintainer ni Owner, y nunca un token de grupo ni personal.",
+        "expiry": "Los tokens de GitLab caducan, como mucho un año después de crearse. Cree el siguiente token antes de que caduque este y guárdelo en la conexión: la página le avisa con 30 días de antelación.",
+        "branch": "Proteja la rama predeterminada (sin force push, push y merge solo para Maintainers), exija que las pipelines terminen bien antes de un merge y deje sin proteger las ramas voc-agent/*."
+      },
+      "ci": {
+        "points": {
+          "protected_secrets": "Las variables de CI/CD que guardan secretos están protegidas, así que solo las reciben las pipelines de ramas protegidas.",
+          "read_only_token": "El token de trabajo de CI/CD tiene el mínimo acceso: su lista de permitidos solo incluye los proyectos que necesitan las pipelines, y ningún trabajo hace push con él.",
+          "oidc_pinned": "El acceso a la nube mediante OIDC (id_tokens) está limitado a ramas protegidas (la reclamación ref_protected del token).",
+          "no_self_hosted_runner": "Ningún runner compartido, de grupo o de instancia con acceso a secretos o redes privadas ejecuta trabajos de ramas no protegidas: esos runners están protegidos.",
+          "no_privileged_pull_request": "Ninguna pipeline ejecuta código de merge requests con secretos: ninguna pipeline de merge request para forks en este proyecto, y ninguna variable protegida llega a una.",
+          "branch_rules": "La rama predeterminada está protegida (sin force push, push y merge para Maintainers), las pipelines deben terminar bien antes de un merge (una pipeline omitida no cuenta como éxito), la configuración de CI usa solo includes locales simples y las plantillas propias de GitLab (no se admiten CI compartida de otros proyectos, includes remotos ni componentes) y las ramas voc-agent/* siguen sin protección."
+        },
+        "checked": "El intermediario también lee las ramas protegidas en cada push y merge request: la rama predeterminada protegida sin force push y con push y merge para Maintainers, pipelines obligatorias y ramas voc-agent/* sin proteger."
+      }
+    },
+    "appIds": "App {{appId}}, instalación {{installationId}}",
+    "set": "Guardada",
+    "notSet": "Sin guardar",
+    "notSetHint": "Falta la credencial guardada: edite la conexión y vuelva a guardarla con su credencial.",
+    "updated": "Modificada {{when}} por {{who}}",
+    "unknownEditor": "desconocido",
+    "edit": "Editar",
+    "editLabel": "Editar {{repository}}",
+    "remove": "Quitar",
+    "removeLabel": "Quitar {{repository}}",
+    "created": "Se ha añadido {{repository}}.",
+    "saved": "Se ha guardado {{repository}}.",
+    "removed": "Se ha quitado {{repository}}.",
+    "guidance": {
+      "title": "Qué necesita la credencial",
+      "app": "Cree una GitHub App e instálela solo en este repositorio. Permisos del repositorio: Contents, Pull requests e Issues en Read and write, Metadata en Read-only. Nada más: ningún permiso de Administration, Workflows, Secrets, Actions ni de la organización.",
+      "token": "La App nunca se entrega a los agentes: para cada paso, el bróker emite un token válido una hora, solo para este repositorio y solo con lo que el paso necesita de los permisos de la App (Contents, Pull requests e Issues, lectura y escritura; Metadata, solo lectura; nunca administración).",
+      "branch": "Proteja la rama predeterminada y permita que los agentes hagan push solo a ramas llamadas voc-agent/*."
+    },
+    "dialog": {
+      "addTitle": "Añadir una conexión de repositorio",
+      "editTitle": "Editar la conexión a {{repository}}",
+      "description": "Los agentes de ingeniería usan esta conexión para leer el repositorio y proponerle cambios.",
+      "stored": "Credencial guardada:",
+      "keepHint": "La credencial guardada nunca se muestra. Deje la clave privada vacía para conservarla; un repositorio, un ID de App o un ID de instalación nuevos necesitan de nuevo la clave privada.",
+      "save": "Guardar conexión"
+    },
+    "fields": {
+      "connectionId": "Id. de la conexión",
+      "repository": "Repositorio",
+      "defaultBranch": "Rama predeterminada",
+      "appId": "Id. de la App",
+      "installationId": "Id. de la instalación",
+      "privateKey": "Clave privada"
+    },
+    "hints": {
+      "connectionId": "Letras minúsculas, dígitos y guiones, hasta 63. No puede cambiar una vez añadida la conexión.",
+      "connectionIdFixed": "Se eligió al añadir la conexión; no puede cambiar.",
+      "repository": "owner/name, como en la dirección del repositorio.",
+      "defaultBranch": "La rama de la que parten los agentes y a la que proponen sus cambios.",
+      "appId": "El id. numérico de la App.",
+      "installationId": "El id. numérico de la instalación de la App en este repositorio.",
+      "privateKey": "La clave privada de la App: el archivo .pem completo que generó GitHub, de unos 4 KB como máximo. Se envía una vez y nunca vuelve a mostrarse."
+    },
+    "invalid": {
+      "connectionId": "Introduzca un id. de 1 a 63 letras minúsculas, dígitos o guiones, que empiece por una letra o un dígito.",
+      "repository": "Introduzca el repositorio como owner/name.",
+      "defaultBranch": "Escriba un nombre de rama: letras, dígitos, «.», «_», «-» y «/», como máximo {{max, number}} caracteres, sin «..» y que no sea una rama voc-agent/.",
+      "appId": "Introduzca el id. de la App: solo dígitos.",
+      "installationId": "Introduzca el id. de la instalación: solo dígitos.",
+      "privateKeyEmpty": "Pegue la clave privada de la App: una conexión nueva necesita su credencial.",
+      "privateKeyNeeded": "Pegue de nuevo la clave privada de la App: un repositorio, un ID de App o un ID de instalación nuevos se guardan con ella.",
+      "privateKey": "Pegue la clave RSA completa sin cifrar en PEM, desde su línea BEGIN hasta su línea END.",
+      "privateKeyLarge": "La clave es más grande de lo que cabe en una credencial (unos 4 KB): use la clave privada propia de la App."
+    },
+    "confirm": {
+      "title": "¿Quitar {{repository}}?",
+      "message": "Se quitan la conexión y su credencial guardada. Las ejecuciones que trabajan en {{repository}} pierden el acceso en cinco minutos como máximo: sus lecturas y escrituras fallan hasta que se vuelva a guardar una conexión.",
+      "confirm": "Quitar conexión"
+    },
+    "errors": {
+      "invalid": "Se rechazó un campo. Revise los campos y vuelva a guardar.",
+      "forbidden": "Solo un administrador puede cambiar las conexiones.",
+      "notFound": "No se encontró la conexión, o los agentes de ingeniería están desactivados.",
+      "conflict": "La conexión no puede cambiar ahora: detenga antes sus ejecuciones en curso, o quite otra conexión.",
+      "unavailable": "Las conexiones no están disponibles ahora mismo. Vuelva a intentarlo en un momento.",
+      "generic": "No se pudo cambiar la conexión. Vuelva a intentarlo."
+    },
+    "ci": {
+      "attested": "CI certificada",
+      "notAttested": "CI sin certificar",
+      "attestedBy": "Certificada por {{who}}, {{when}}: los agentes pueden hacer push a ramas voc-agent/* y abrir borradores de pull request.",
+      "none": "Los agentes no hacen push a este repositorio hasta que un administrador certifique que su CI no da nada de valor a las ramas de los agentes.",
+      "withdrawnBy": "Retirada por {{who}}, {{when}}: los agentes no hacen push hasta que se certifique de nuevo.",
+      "voidedRepository": "Anulada al cambiar el repositorio de la conexión: certifique la CI de este repositorio.",
+      "voidedRemoved": "Anulada al quitar la conexión: certifique su CI de nuevo.",
+      "unknownPerson": "un administrador",
+      "attest": "Certificar CI",
+      "attestLabel": "Certificar la CI de {{repository}}",
+      "withdrawAction": "Retirar CI",
+      "withdrawLabel": "Retirar la certificación de CI de {{repository}}",
+      "recorded": "La certificación de CI de {{repository}} está registrada.",
+      "withdrawn": "La certificación de CI de {{repository}} está retirada.",
+      "points": {
+        "protected_secrets": "Los secretos de CI se limitan a ramas protegidas (entornos con reglas de rama): una rama de agente no recibe ninguno.",
+        "read_only_token": "El token predeterminado de los workflows es de solo lectura, y ningún workflow pide permisos de escritura.",
+        "oidc_pinned": "El acceso a la nube mediante OIDC (id-token: write) está limitado a ramas o entornos protegidos.",
+        "no_self_hosted_runner": "Ningún runner autoalojado acepta trabajos de ramas no protegidas.",
+        "no_privileged_pull_request": "Ningún workflow que se ejecute en el contexto de la rama predeterminada en un pull request (pull_request_target, o workflow_run con los artefactos de la ejecución que lo inició) extrae, ejecuta ni descarga el código o los artefactos del pull request.",
+        "branch_rules": "La rama predeterminada está protegida con las comprobaciones obligatorias del repositorio, y la App solo puede hacer push a ramas voc-agent/*."
+      },
+      "dialog": {
+        "title": "Certificar la CI de {{repository}}",
+        "description": "Un push a una rama de agente puede iniciar los pipelines del propio repositorio, que ejecutan código que un agente puede cambiar. Confirme cada punto para este repositorio: su nombre y la hora quedan registrados con él.",
+        "legend": "En las ramas no protegidas, la CI del repositorio no recibe nada de valor:",
+        "allPoints": "Confirme todos los puntos: los agentes solo hacen push cuando se cumplen todos.",
+        "note": "Nota (opcional)",
+        "noteHint": "Qué comprobó, o por qué: se guarda con la certificación. Una línea, como máximo {{max, number}} caracteres.",
+        "checked": "El broker además lee las reglas de rama en cada push y pull request: la rama predeterminada protegida con comprobaciones obligatorias, y las ramas voc-agent/* sin proteger.",
+        "save": "Registrar certificación"
+      },
+      "withdraw": {
+        "title": "¿Retirar la certificación de CI de {{repository}}?",
+        "message": "El próximo push o pull request de los agentes en {{repository}} se rechaza hasta que un administrador certifique su CI de nuevo.",
+        "confirm": "Retirar certificación"
+      }
+    }
+  },
+  "skills": {
+    "hint": "Cada agente de ingeniería trabaja con una habilidad: sus instrucciones, ejemplos, herramientas, modelo y arnés. Cada cambio es una versión nueva, guardada con su motivo, quién la propuso y la aceptó, y su benchmark. Las habilidades compartidas se aplican a toda conexión que no tenga versión propia.",
+    "scope": "Habilidades de",
+    "shared": "Habilidades compartidas",
+    "connection": "Conexión {{name}}",
+    "connectionsFailed": "No se pudieron cargar las conexiones, así que solo se ofrecen las habilidades compartidas y la conexión de la dirección.",
+    "rolesCaption": "Roles de agente con una versión de habilidad en este ámbito",
+    "columns": {
+      "role": "Rol",
+      "current": "Versión actual",
+      "versions": "Versiones",
+      "latest": "Último cambio"
+    },
+    "openRole": "Abrir el historial de {{role}}",
+    "role": {
+      "mapper": "Cartógrafo",
+      "understander": "Analista de incidencias",
+      "hunter": "Cazador de errores",
+      "fixer": "Corrector",
+      "builder": "Constructor de funciones",
+      "committer": "Autor de commits",
+      "commit-reviewer": "Revisor de commits",
+      "gate-runner": "Ejecutor de controles",
+      "pr-author": "Autor de solicitudes de cambios",
+      "pr-reviewer": "Revisor de solicitudes de cambios",
+      "final-go": "Visto bueno final",
+      "coordinator": "Coordinador de la ejecución",
+      "coach": "Coach"
+    },
+    "noneAccepted": "Ninguna aceptada aún",
+    "version": "Versión {{version}}",
+    "current": "Actual",
+    "loading": "Cargando las habilidades…",
+    "rolesFailed": "No se pudieron cargar las habilidades. Inténtalo de nuevo en un momento.",
+    "emptyShared": "Ninguna habilidad compartida tiene versión todavía. Los agentes usan las habilidades incluidas en esta versión del producto.",
+    "emptyConnection": "Esta conexión no tiene versiones de habilidad propias. Sus agentes usan las habilidades compartidas.",
+    "backToRoles": "Todos los roles",
+    "roleTitle": "{{role}} · {{scope}}",
+    "status": {
+      "accepted": "Aceptada",
+      "proposed": "Propuesta",
+      "rejected": "Rechazada"
+    },
+    "byCoach": "el coach ({{who}})",
+    "proposedBy": "Propuesta por {{who}}, {{at}}",
+    "notMeasured": "No hay benchmark registrado.",
+    "measured": "Registro de un administrador",
+    "rates": "tasa de aciertos {{before}} → {{after}}",
+    "benchmarkPassed": "superado",
+    "benchmarkFailed": "no superado",
+    "failureCase": "caso del fallo {{name}}",
+    "measuredBy": "registrado por {{who}}, {{at}}",
+    "runRef": "ejecución {{ref}}",
+    "claimed": "Declarado",
+    "claimedHint": "lo indicó quien la propuso, sin medir",
+    "event": {
+      "accepted": "Aceptada por {{who}}, {{at}}",
+      "rejected": "Rechazada por {{who}}, {{at}}",
+      "rolled_back": "Revertida por {{who}}, {{at}}",
+      "benchmarked": "Benchmark registrado por {{who}}, {{at}}",
+      "other": "{{event}} por {{who}}, {{at}}"
+    },
+    "restores": "Restaura la versión {{version}}.",
+    "fromRun": "De la ejecución {{run}} ({{failure}}).",
+    "openVersion": "Abrir la versión {{version}} y sus cambios",
+    "historyTitle": "Historial",
+    "historyFailed": "No se pudo cargar el historial. Inténtalo de nuevo en un momento.",
+    "historyEmpty": "Este rol no tiene versiones en este ámbito.",
+    "moreFailed": "No se pudieron cargar las versiones anteriores. Selecciona «Cargar versiones anteriores» para intentarlo de nuevo.",
+    "loadMore": "Cargar versiones anteriores",
+    "diff": {
+      "added": "Añadido:",
+      "removed": "Eliminado:",
+      "title": "Cambios respecto a su base",
+      "firstTitle": "Su primera versión: todo es nuevo",
+      "none": "Sin cambios respecto a su base.",
+      "instructions": "Instrucciones",
+      "examples": "Ejemplos",
+      "example": "Cuando: {{situation}} | Haz: {{action}}",
+      "tools": "Política de herramientas",
+      "reordered": "La política de herramientas tiene las mismas herramientas en otro orden.",
+      "model": "Modelo: {{from}} → {{to}}",
+      "harness": "Arnés: {{from}} → {{to}}",
+      "nothing": "(ninguno)"
+    },
+    "record": {
+      "title": "La habilidad completa",
+      "model": "Modelo",
+      "harness": "Arnés",
+      "tools": "Herramientas",
+      "instructions": "Instrucciones",
+      "examples": "Ejemplos ({{n, number}})"
+    },
+    "noBase": "Escrita sin versión anterior.",
+    "baseShared": "Escrita sobre la versión compartida {{version}}.",
+    "base": "Escrita sobre la versión {{version}}.",
+    "expectedCase": "debería corregir el caso {{name}}",
+    "madeWith": "hecha con {{model}} y el prompt {{prompt}}",
+    "backToHistory": "Volver al historial",
+    "versionMissing": "La versión {{version}} no está en este ámbito. Vuelve al historial y elige otra.",
+    "versionFailed": "No se pudo cargar la versión. Inténtalo de nuevo en un momento.",
+    "actions": {
+      "label": "Acciones sobre esta versión",
+      "reason": "Motivo (opcional)",
+      "noCurrent": "ninguna versión actual",
+      "sharedVersion": "la v{{version}} compartida",
+      "connectionVersion": "la v{{version}} de esta conexión",
+      "writtenOn": "Escrita sobre {{version}}.",
+      "baseNotInUse": "Su base no es la versión en uso ahora ({{current}}): aceptarla será rechazado. Proponla de nuevo sobre la versión en uso.",
+      "changed": "Ha cambiado desde que lo abriste. La pantalla se ha vuelto a cargar: cierra esto, revisa la versión e inténtalo de nuevo.",
+      "refused": "La acción fue rechazada: {{message}}",
+      "held": {
+        "unmeasured": "Aceptar está desactivado: la versión del coach solo se acepta cuando el registro de una ejecución de benchmark hecho por un administrador (sus tasas, casos y veredicto tal como los introduce) muestra que se superó y que la tasa de aciertos subió, nombrando su caso esperado. Registra primero el benchmark.",
+        "failed": "Aceptar está desactivado: el registro de su ejecución de benchmark dice que no se superó, así que la versión del coach nunca se acepta. Una propuesta nueva surge de un fallo nuevo, o escribe la corrección como versión propia.",
+        "noGain": "Aceptar está desactivado: en el registro de su ejecución de benchmark la tasa de aciertos no subió, o no se nombra su caso esperado, así que la versión del coach nunca se acepta."
+      },
+      "accept": {
+        "button": "Aceptar",
+        "title": "¿Aceptar la versión {{version}}?",
+        "message": "La versión actual de este ámbito pasa de {{from}} a {{to}}.",
+        "confirm": "Aceptar versión"
+      },
+      "reject": {
+        "button": "Rechazar",
+        "title": "¿Rechazar la versión {{version}}?",
+        "message": "La versión {{version}} queda en el historial, marcada como rechazada. La versión actual no cambia.",
+        "confirm": "Rechazar versión"
+      },
+      "rollback": {
+        "button": "Volver a esta versión",
+        "title": "¿Volver a la versión {{version}}?",
+        "message": "Una versión nueva que restaura la versión {{version}} pasa a ser la actual en lugar de {{from}}. Todas las versiones quedan en el historial.",
+        "confirm": "Volver"
+      },
+      "benchmark": {
+        "button": "Registrar benchmark",
+        "title": "Registrar el benchmark de la versión {{version}}",
+        "message": "Este es el registro de una ejecución de benchmark hecho por un administrador: sus tasas, casos y veredicto tal como los introduces; nada aquí los mide. Se registra una vez y nunca cambia. Para la versión del coach, el caso del fallo debe ser su caso esperado, y Aceptar necesita una tasa de aciertos que haya subido.",
+        "runRef": "Referencia a la ejecución (opcional: un id o un enlace)",
+        "confirm": "Registrar benchmark",
+        "before": "Tasa de aciertos antes (%)",
+        "after": "Tasa de aciertos después (%)",
+        "cases": "Casos (uno por línea o separados por comas)",
+        "passed": "El control se superó",
+        "reasons": "Motivos (uno por línea)",
+        "failureCase": "Caso del fallo",
+        "invalid": {
+          "rates": "Indica ambas tasas de aciertos como números de 0 a 100.",
+          "cases": "Indica cada caso una vez, en minúsculas, dígitos y guiones.",
+          "reasons": "Indica al menos un motivo, uno por línea.",
+          "failureCase": "El caso del fallo debe ser uno de los casos.",
+          "regressed": "Una ejecución superada no puede tener una tasa de aciertos menor después que antes: regístrala como no superada, o revisa las tasas."
+        }
+      }
+    },
+    "scores": {
+      "title": "Fichas de resultados",
+      "hint": "Cómo le fue a cada versión en sus últimas ejecuciones en esta conexión. La tasa de aciertos es el número de tareas hechas entre las que terminó.",
+      "pickConnection": "Las fichas de resultados pertenecen a una conexión. Elige una conexión arriba para comparar sus versiones.",
+      "compareLabel": "Versiones a comparar",
+      "compareHint": "Hasta {{max, number}} números de versión, separados por comas. Déjalo vacío para las más recientes.",
+      "compare": "Comparar",
+      "invalid": {
+        "empty": "Escribe al menos un número de versión, por ejemplo 3, 2.",
+        "notNumbers": "Usa números de versión enteros desde 1, separados por comas.",
+        "tooMany": "Compara como máximo {{max, number}} versiones a la vez.",
+        "repeated": "Indica cada versión una sola vez."
+      },
+      "caption": "Fichas de resultados de {{role}}",
+      "version": "Versión",
+      "passRate": "Tasa de aciertos",
+      "runs": "Ejecuciones",
+      "done": "Hechas",
+      "failed": "Fallidas",
+      "needsHuman": "Necesitaron a una persona",
+      "reviewRounds": "Rondas de revisión",
+      "attempts": "Intentos",
+      "cost": "Coste",
+      "time": "Tiempo",
+      "sourceColumn": "Número de",
+      "source": {
+        "shipped": "Habilidad incluida",
+        "not_shipped": "Nunca incluida: ninguna sesión usó este número",
+        "shared": "Habilidad compartida",
+        "connection": "Habilidad de esta conexión",
+        "unknown": "Desconocido"
+      },
+      "scopeUnknown": "Estos números son versiones de las habilidades incluidas, no las del historial de arriba: la sesión de un agente nombra su versión solo con el número, sin decir de quién es, y cada sesión usa la habilidad incluida hasta que los agentes lean sus habilidades de este historial.",
+      "latestOnly": "solo las últimas ejecuciones",
+      "loadFailed": "No se pudieron cargar las fichas de resultados. Inténtalo de nuevo en un momento.",
+      "empty": "Aún no hay fichas de resultados de estas versiones en esta conexión."
+    }
+  },
+  "engineeringRun": {
+    "untitled": "Ejecución de ingeniería",
+    "statusUnknown": "estado desconocido",
+    "started": "Empezó {{when}}",
+    "ended": "Terminó {{when}}",
+    "totals": "Tiempo de MicroVM: {{seconds, number}} s · Mensajes: {{messages, number}}",
+    "byModel": "Tokens por modelo",
+    "budget": "Presupuesto del flujo: {{amount}} al mes",
+    "budgetPassed": "{{month}}: gastado el {{percent}} % del presupuesto",
+    "reactions": {
+      "title": "Reacciones de las personas en el host",
+      "none": "Aún no se han leído reacciones. Se leen cuando termina la ejecución y de nuevo unos días después.",
+      "readAt": "Leídas {{when}}, {{by}}",
+      "by": { "run_end": "al terminar la ejecución", "schedule": "por la programación", "person": "a petición de un administrador" },
+      "state": { "open": "Abierta", "closed": "Cerrada", "merged": "Fusionada" },
+      "merged": "Fusionada {{when}}",
+      "reverted": "Revertida tras la fusión, con el commit {{commit}}",
+      "counts": "Revisiones: {{approved}} aprobadas, {{changes}} con cambios solicitados, {{commented}} con comentarios. Comentarios de revisión: {{reviewComments}}. Comentarios: {{comments}}.",
+      "edits_one": "Cambios tras la fusión: {{count, number}} commit modificó sus archivos en 14 días: {{files}}",
+      "edits_other": "Cambios tras la fusión: {{count, number}} commits modificaron sus archivos en 14 días: {{files}}",
+      "edits_many": "Cambios tras la fusión: {{count, number}} de commits modificaron sus archivos en 14 días: {{files}}",
+      "noEdits": "Sin cambios en sus archivos tras la fusión.",
+      "dropped": "Omitidas: {{outsiders}} de personas sin acceso de escritura, {{bots}} de bots.",
+      "more": "No se leyeron reacciones o commits más antiguos.",
+      "reviewers": "La última revisión de cada revisor",
+      "items": "Reacciones, de la más reciente a la más antigua",
+      "itemLine": "{{kind}} de {{author}}, {{when}}",
+      "kind": { "review": "Revisión", "review_comment": "Comentario de revisión", "comment": "Comentario" },
+      "reviewState": { "approved": "Aprobada", "changes_requested": "Cambios solicitados", "commented": "Comentada" },
+      "ask": {
+        "button": "Leer reacciones ahora",
+        "notEnded": "Disponible cuando termine la ejecución.",
+        "confirmTitle": "¿Leer las reacciones ahora?",
+        "confirmMessage": "Se vuelven a leer en el host las revisiones y los comentarios de la pull request y se registra lo que dijeron las personas con acceso de escritura. Las reacciones de una ejecución se pueden leer a mano como mucho una vez por hora.",
+        "confirm": "Leer ahora",
+        "asked": "Solicitado: las reacciones aparecerán aquí cuando se lean.",
+        "tooSoon": "Las reacciones de esta ejecución ya se solicitaron en esta hora. Vuelve a intentarlo más tarde.",
+        "failed": "No se pudo solicitar la lectura: {{reason}}",
+        "retry": "inténtalo de nuevo en un momento."
+      }
+    },
+    "links": {
+      "issue": "Incidencia #{{number}}",
+      "pullRequest": "Solicitud de incorporación #{{number}}",
+      "mergeRequest": "Solicitud de fusión !{{number}}",
+      "asGiven": "tal como se indicó al inicio, sin comprobar en el host",
+      "opens": "{{label}} (se abre en una pestaña nueva)"
+    },
+    "actionsUnavailable": "Esta implementación aún no puede enviar señales ni respuestas: no conecta el monitor de la ejecución con el entorno de ejecución y el bus de ingeniería.",
+    "runSignals": "Toda la ejecución",
+    "agentSignals": "Agente {{agent}}",
+    "signals": {
+      "save": "Guardar",
+      "pause": "Pausar",
+      "resume": "Reanudar",
+      "shutdown": "Apagar",
+      "stop_now": "Parar ya"
+    },
+    "signalSent": "Enviado.",
+    "signalFor": "{{signal}} — {{target}}",
+    "stopNowTitle": "¿Parar ya, sin guardar?",
+    "stopNowMessage": "El trabajo se para de inmediato, sin punto de control: se pierde lo que aún no esté guardado. Para conservarlo, usa Apagar.",
+    "errors": {
+      "forbidden": "Solo un administrador puede hacerlo.",
+      "notFound": "Esta ejecución o tarea ya no existe: vuelve a cargar la ejecución.",
+      "movedOn": "Ha cambiado desde que lo miraste (otro intento, o la ejecución terminó): vuelve a cargar la ejecución e inténtalo de nuevo.",
+      "unavailable": "No se pudo contactar con la ejecución ahora: inténtalo de nuevo en un momento.",
+      "generic": "No se pudo hacer: inténtalo de nuevo."
+    },
+    "agent": {
+      "step": "Paso",
+      "vm": "MicroVM",
+      "heartbeat": "Latido",
+      "progress": "Último avance",
+      "metering": "Uso",
+      "stuck": "Parece atascado: {{reason}}",
+      "inspect": "Llamadas a herramientas recientes ({{n, number}})",
+      "noTools": "Aún no hay llamadas a herramientas.",
+      "for": "desde hace {{age}}",
+      "ago": "hace {{age}}",
+      "started": "Empezó",
+      "continuation": "continuación {{n, number}}",
+      "microvmTime": "{{seconds, number}} s de MicroVM"
+    },
+    "noAgents": "Aún no ha empezado ningún agente.",
+    "noTasks": "El tablero aún no tiene tareas.",
+    "task": {
+      "meta": "{{role}} · intento {{attempt}}",
+      "heldBy": "la tiene {{agent}}",
+      "history": "Historial ({{n, number}})",
+      "move": "{{state}} por {{by}}, {{when}} (intento {{attempt}})"
+    },
+    "states": {
+      "open": "Abierta",
+      "claimed": "Tomada",
+      "in_progress": "En curso",
+      "in_review": "En revisión",
+      "needs_human": "Necesita a una persona",
+      "failed": "Fallida",
+      "done": "Hecha"
+    },
+    "fromTo": "{{from}} → {{to}}",
+    "reply": "Responder",
+    "replyTo": "Responder a {{who}}",
+    "answerTo": "Responder a",
+    "conductor": "El conductor de la ejecución",
+    "replyingIn": "Respondiendo en el hilo {{thread}}",
+    "newThread": "Empezar un hilo nuevo",
+    "answer": "Tu mensaje",
+    "bytes": "{{used, number}} / {{max, number}} bytes",
+    "send": "Enviar",
+    "noMessages": "Aún no hay mensajes.",
+    "tabs": {
+      "agents": "Agentes",
+      "board": "Tablero",
+      "conversation": "Conversación",
+      "reports": "Informes"
+    },
+    "board": {
+      "post": "Publicar una tarea",
+      "role": "Rol",
+      "title": "Título",
+      "instructions": "Qué hacer",
+      "postSubmit": "Publicar",
+      "posted": "Publicada.",
+      "controls": "Tarea {{task}}",
+      "take": "Tomar",
+      "takeOver": "Tomar el relevo",
+      "moveTo": "Mover a {{state}}",
+      "block": "Bloquear",
+      "priority": "Prioridad",
+      "setPriority": "Fijar prioridad",
+      "reason": "Por qué",
+      "blockSubmit": "Bloquear la tarea",
+      "takeOverTitle": "¿Tomar el relevo de esta tarea?",
+      "takeOverMessage": "Otra persona la tiene ({{holder}}): pasa a ser suya y sus movimientos se rechazan.",
+      "duplicate": "Ya hay una tarea igual en el tablero: no se publicó nada nuevo.",
+      "blockOverTitle": "¿Bloquear esta tarea?",
+      "blockOverMessage": "Otra persona la tiene ({{holder}}): bloquearla pone fin a su asignación.",
+      "release": "Devolver a los agentes"
+    },
+    "panels": "Los agentes, el tablero, la conversación y los informes de la ejecución",
+    "reports": {
+      "title": "Informe: {{subject}}",
+      "version": "Versión",
+      "latest": "La más reciente (v{{n, number}})",
+      "versionN": "v{{n, number}}",
+      "builtAt": "Generado {{when}}",
+      "readFailed": "No se pudo leer este informe.",
+      "missing": "Esta versión nunca se escribió (su generación no terminó). Elija otra versión.",
+      "loadFailed": "No se pudieron cargar los informes.",
+      "none": "Todavía no se ha escrito ningún informe.",
+      "entry": "{{subject}} (v{{n, number}})",
+      "levels": {
+        "goal": "Objetivo",
+        "pr": "Pull requests",
+        "commit": "Commits"
+      }
+    },
+    "flow": "El flujo de la ejecución, con los pasos en los que están sus agentes",
+    "noFlow": "No se pudo leer el flujo de la ejecución: se muestra el resto.",
+    "notFound": "No se encontró la ejecución de ingeniería",
+    "notFoundHint": "Comprueba el id de la ejecución. Las ejecuciones de ingeniería solo se muestran donde los agentes de ingeniería están activados, a quien puede ver todas las categorías.",
+    "modelTokens": "{{model}}: {{input, number}} de entrada, {{output, number}} de salida",
+    "agentStatus": "{{agent}}: {{status}}",
+    "agentNotApplied": "{{agent}}: {{status}} (no aplicada)",
+    "status": {
+      "booting": "Arrancando",
+      "working": "Trabajando",
+      "pause_requested": "Pausa pedida",
+      "waiting": "Esperando",
+      "paused": "En pausa",
+      "done": "Hecho",
+      "failed": "Fallido",
+      "stopped": "Detenido",
+      "reposted": "Publicado de nuevo"
+    }
+  },
+  "templatePage": {
+    "title": "Nuevo flujo de ingeniería a partir de una plantilla",
+    "subtitle": "Una copia de un flujo predeterminado. Cambia lo que necesites y pulsa Guardar para añadirlo a la biblioteca de flujos.",
+    "notFound": "Esta plantilla no está disponible aquí: las plantillas solo se ofrecen donde está desplegado el módulo de agentes de ingeniería.",
+    "adminOnly": "Solo los administradores crean flujos de ingeniería a partir de una plantilla. Pídeselo a un administrador o vuelve a la biblioteca de flujos.",
+    "loadFailed": "No se pudo cargar la plantilla.",
+    "backToLibrary": "Volver a la biblioteca de flujos"
+  },
+  "templates": {
+    "understandRepository": {
+      "name": "Comprender el repositorio",
+      "description": "Recorre el repositorio paquete a paquete y redacta su paquete de conocimiento, sus principios y su guía de revisión para que un administrador los apruebe."
+    },
+    "issueTriage": {
+      "name": "Clasificación de incidencias",
+      "description": "Lee una incidencia, la clasifica como error, funcionalidad o investigación, la reproduce o la localiza y propone el siguiente paso en la incidencia."
+    },
+    "bugHunt": {
+      "name": "Buscar y corregir errores",
+      "description": "Busca errores en los paquetes indicados, corrige y revisa cada uno, pasa la puerta de calidad y se detiene en una pull request en borrador."
+    },
+    "feature": {
+      "name": "Funcionalidad a partir de una incidencia o un PRD",
+      "description": "Crea una funcionalidad a partir de una incidencia o un PRD: la comprende, planifica, construye, confirma y revisa, pasa la puerta de calidad y se detiene en una pull request en borrador."
+    },
+    "prReview": {
+      "name": "Revisión de PR",
+      "description": "Revisa una pull request en una sola pasada, sus páginas en paralelo, según los principios y la guía de revisión del repositorio, y deja comentarios de revisión."
+    },
+    "selfImprovement": {
+      "name": "Automejora",
+      "description": "El coach lee ejecuciones anteriores, propone nuevas versiones de habilidades y las evalúa; un administrador acepta o rechaza cada una."
     }
   }
 }

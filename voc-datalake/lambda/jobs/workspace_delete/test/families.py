@@ -55,11 +55,11 @@ FAMILIES: Final = {
     # jobs' by-status), which go with the rows.
     'PROJECT_IDS': 'projects', 'project_pk': 'projects', 'version_partition_key': 'projects',
     'project_type_pk': 'projects', 'job_status_pk': 'projects',
-    # A project's series' comment partitions (7.35.00, shared/project_keys.py comments_pk: its threads and its review
+    # A project's series' comment partitions (7.37.00, shared/project_keys.py comments_pk: its threads and its review
     # link's pointer), each listed in the project's own partition (comment_series_key), which the projects entry's
     # comments child reads first.
     'comments_pk': 'projects',
-    # A workspace's review links (7.35.00): the registry WS#{ws}#DOCSHARE_IDS and each link's own row
+    # A workspace's review links (7.37.00): the registry WS#{ws}#DOCSHARE_IDS and each link's own row
     # (review_link_key); their deployment-wide routing rows are the layer's (shared/ws_repo.py route_share_id).
     'DOCSHARE_IDS': 'docshares', 'review_link_key': 'docshares',
     'reviewer_rate_pk': ("TTL: voc-projects WS#{ws}#DCRATE#{share}#{digest} counters hold a count only and expire two "

@@ -128,7 +128,7 @@ def transact_project_writes(
     ``ws_table``, every entry checked to name this table (``OutOfScopeError`` otherwise: the layer sends to its own)
     and to stay inside the workspace, before anything is sent. ``outside`` (a workspace's only): the one entry
     outside it the layer built (shared/ws_repo.py ``claim_project_id``, a project id's claim, or ``route_share_id``,
-    since 7.35.00 a review link's routing row), put first in the same transaction.
+    since 7.37.00 a review link's routing row), put first in the same transaction.
     """
     if workspace is None:
         if outside is not None:

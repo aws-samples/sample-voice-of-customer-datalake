@@ -21,7 +21,7 @@ export interface WorkflowDiff {
   nodes: ItemDiff<NodeField>
   edges: ItemDiff<EdgeField>
   loopsChanged: boolean
-  metaChanged: ('name' | 'description')[]
+  metaChanged: ('name' | 'description' | 'budget')[]
   unchanged: boolean
 }
 
@@ -79,7 +79,9 @@ export function diffDefinitions(before: WorkflowDefinition | null, after: Workfl
   const nodes = diffItems(before?.nodes ?? [], after.nodes, NODE_FIELDS)
   const edges = diffItems(before?.edges ?? [], after.edges, EDGE_FIELDS)
   const loopsChanged = !same(loopKeys(before), loopKeys(after))
-  const metaChanged = (['name', 'description'] as const).filter((k) => (before?.[k] ?? '') !== (after[k] ?? ''))
+  const meta = { name: (d: WorkflowDefinition | null) => d?.name ?? '', description: (d: WorkflowDefinition | null) => d?.description ?? '',
+    budget: (d: WorkflowDefinition | null) => d?.budget?.monthly_usd ?? null }
+  const metaChanged = (['name', 'description', 'budget'] as const).filter((k) => meta[k](before) !== meta[k](after))
   const any = (d: ItemDiff<string>) => d.added.length + d.removed.length + d.changed.length > 0
   return {
     nodes, edges, loopsChanged, metaChanged,

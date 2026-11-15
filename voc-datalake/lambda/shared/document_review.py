@@ -185,7 +185,7 @@ def run_review(table: Any, *, project_id: str, series_id: str, document: Mapping
                personas: Sequence[Mapping[str, Any]], invoke: Invoke = _default_invoke,
                workspace: WorkspaceScope | None = None) -> dict[str, Any]:
     """Consult ``personas`` on ``document`` and file their comments; the job's ``result``. The threads are read and
-    filed in ``workspace``'s series partition when given (shared/document_comments.py, since 7.35.00), the
+    filed in ``workspace``'s series partition when given (shared/document_comments.py, since 7.37.00), the
     deployment's otherwise; no assist runs its work in a workspace yet (shared/assist_jobs.py ``ASSIST_WORK_STORE``)."""
     text = plain_text(document.get('content'))[:MAX_DOCUMENT_CHARS]
     if not text:

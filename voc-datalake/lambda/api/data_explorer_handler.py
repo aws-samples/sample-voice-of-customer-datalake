@@ -22,7 +22,7 @@ Dedicated Lambda to avoid 20KB IAM policy limit.
 import json
 import os
 import sys
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -96,6 +96,9 @@ AVAILABLE_BUCKETS = {
 
 # Ingested raw data lives under this prefix and is immutable once written.
 
+# The engineering agents' objects in the raw bucket (lib/stacks/core-buckets.ts ENGINEERING_CACHE_PREFIX): read-only here.
+ENGINEERING_PREFIX: Final = 'engineering/'
+
 # Client-facing text for an unexpected failure (#263, after PR #403). Never
 # `str(e)`: `shared/api.py` returns a ServiceError's message verbatim, and boto
 # text carries the bucket/table names, key structure and request ids. Each site
@@ -122,6 +125,10 @@ def _reject_read_only_prefix(key: str) -> None:
     # written here by hand would read as a change that never happened (and the bucket policy refuses the put).
     if key.startswith(SILVER_PREFIX):
         raise ValidationError('Feedback history (silver/) is read-only in Data Explorer')
+    # The engineering agents' checkout cache (engineering/cache/, connectors/cache.py): only its writer writes it, and a
+    # file planted there would stand for a repository's code at a commit (the bucket policy refuses the put too).
+    if key.startswith(ENGINEERING_PREFIX):
+        raise ValidationError('Engineering files (engineering/) are read-only in Data Explorer')
 
 
 def _is_raw_key(key: str) -> bool:

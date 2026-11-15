@@ -1,14 +1,16 @@
 /**
  * @fileoverview The side panel when nothing is selected: the workflow's name
- * and description, and an outline of its steps and loops. Each outline entry
- * selects that step / loop (on the canvas too), so every setting is reachable
- * from the keyboard without pointing at the canvas.
+ * and description (and an engineering flow's monthly budget), and an outline
+ * of its steps and loops. Each outline entry selects that step / loop (on the
+ * canvas too), so every setting is reachable from the keyboard without
+ * pointing at the canvas.
  *
  * @module components/WorkflowEditor/WorkflowDetails
  */
 import { Repeat } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { API_WORKFLOW_LIMITS } from '../../api/workflowsApi'
+import { ENGINEERING_MAX_MONTHLY_BUDGET_USD, isMonthlyBudgetUsd } from '@stream/assistant/tools/agent-limits'
+import { API_WORKFLOW_LIMITS, isEngineeringFlow } from '../../api/workflowsApi'
 import { NodeTypeIcon } from './NodeTypeIcon'
 import { selectLoop, selectStep } from './selection'
 import { LabeledField } from '../LabeledField/LabeledField'
@@ -24,11 +26,54 @@ interface WorkflowDetailsProps {
 
 const OUTLINE_BUTTON = 'flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[13px] text-text hover:bg-bg-hover focus-ring'
 
-/** `description` set, or dropped when blank (a stored workflow without one stays unchanged). */
-function withDescription(definition: WorkflowDefinition, description: string): WorkflowDefinition {
-  if (description !== '') return { ...definition, description }
+/** The definition with its optional fields as given: each one left out when it is not set (a stored workflow without
+ * one stays unchanged). */
+function withOptional(definition: WorkflowDefinition, optional: Pick<WorkflowDefinition, 'description' | 'budget'>): WorkflowDefinition {
   const { schema, name, nodes, edges, loops } = definition
-  return { schema, name, nodes, edges, loops }
+  const { description, budget } = optional
+  return {
+    schema, name, nodes, edges, loops,
+    ...(description === undefined ? {} : { description }),
+    ...(budget === undefined ? {} : { budget }),
+  }
+}
+
+/** `description` set, or dropped when blank. */
+function withDescription(definition: WorkflowDefinition, description: string): WorkflowDefinition {
+  return withOptional(definition, { description: description === '' ? undefined : description, budget: definition.budget })
+}
+
+/**
+ * The monthly budget typed (dollars), or dropped when the field is empty: a flow with no budget is saved without one.
+ * Text the browser cannot read as a number ("$80", "80e") also reads as '' from a number field, but it is not empty
+ * (`badInput`): it is kept as an amount that is no amount (NaN), so the field says so and the save is held, never a
+ * budget dropped without a word.
+ */
+function withBudget(definition: WorkflowDefinition, input: HTMLInputElement): WorkflowDefinition {
+  const typed = input.value.trim()
+  const empty = typed === '' && !input.validity.badInput
+  const budget = empty ? undefined : { monthly_usd: typed === '' ? Number.NaN : Number(typed) }
+  return withOptional(definition, { description: definition.description, budget })
+}
+
+function BudgetField({ definition, readOnly, onChange }: Readonly<Pick<WorkflowDetailsProps, 'definition' | 'readOnly' | 'onChange'>>) {
+  const { t, i18n } = useTranslation('agents')
+  const amount = definition.budget?.monthly_usd
+  const invalid = amount !== undefined && !isMonthlyBudgetUsd(amount)
+  const largest = new Intl.NumberFormat(i18n.language, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
+    .format(ENGINEERING_MAX_MONTHLY_BUDGET_USD)
+  const hint = invalid ? t('editor.fields.monthlyBudgetInvalid', { largest }) : t('editor.fields.monthlyBudgetHint')
+  return (
+    <LabeledField label={t('editor.fields.monthlyBudget')} hint={hint} hintTone={invalid ? 'danger' : 'muted'}>
+      {(id) => (
+        <input id={id} type="number" inputMode="decimal" min={0.01} step={0.01} max={ENGINEERING_MAX_MONTHLY_BUDGET_USD}
+          className="input w-full" disabled={readOnly} placeholder={t('editor.fields.monthlyBudgetNone')}
+          aria-invalid={invalid || undefined} aria-describedby={`${id}-hint`}
+          value={amount === undefined || Number.isNaN(amount) ? '' : amount}
+          onChange={(e) => onChange(withBudget(definition, e.currentTarget))} />
+      )}
+    </LabeledField>
+  )
 }
 
 function Outline({ definition, onSelect }: Readonly<Pick<WorkflowDetailsProps, 'definition' | 'onSelect'>>) {
@@ -92,6 +137,7 @@ export function WorkflowDetails({ definition, readOnly, onChange, onSelect }: Re
             onChange={(e) => onChange(withDescription(definition, e.target.value))} />
         )}
       </LabeledField>
+      {isEngineeringFlow(definition) && <BudgetField definition={definition} readOnly={readOnly} onChange={onChange} />}
       <Outline definition={definition} onSelect={onSelect} />
     </div>
   )

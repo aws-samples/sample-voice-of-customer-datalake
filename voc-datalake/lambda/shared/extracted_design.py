@@ -128,7 +128,9 @@ def clean_logo(raw: object) -> dict | None:
 
     ``rendered: True`` (a bool only; anything else is dropped) marks the PNG the capture worker rendered
     from an SVG logo in the browser: ``source_url`` is then the SVG's address and ``content_type`` the
-    stored preview's (``image/png``). The SVG itself is never stored or served.
+    stored preview's (``image/png``). The SVG itself is never stored or served. The capture worker also keeps
+    ``backdrop``, ``picked_by`` and ``pick_model`` on the STORED row (provenance, written after this cleaning and
+    never re-cleaned); this function does not return them, so a model's proposal can never claim them.
     """
     if not isinstance(raw, dict):
         return None

@@ -18,8 +18,9 @@
  * could overwrite (no `If-None-Match`). Only voc-retention deletes there (lawful erasure / a declared retention period),
  * and, under one workspace's `ws/{ws}/` only, voc-workspace-delete (that workspace's hard delete, decision 17). The raw
  * bucket's workspace prefixes have no noncurrent rule either: a workspace delete removes every
- * version itself (RAW_BUCKET_WORKSPACE_PREFIXES); only `scratch/` expires, and a workspace export's objects
- * (`ws/{ws}/exports/`), by their `voc-export=true` tag, which the bucket policy refuses anywhere else.
+ * version itself (RAW_BUCKET_WORKSPACE_PREFIXES); only `scratch/` expires, a workspace export's objects
+ * (`ws/{ws}/exports/`), by their `voc-export=true` tag, which the bucket policy refuses anywhere else, and, with the
+ * engineering agents on, `engineering/cache/` (a rebuildable cache of repository code). The runs' objects are kept.
  *
  * Resources are created directly on the stack passed in (not inside a child
  * construct), so their logical ids are exactly those VocCoreStack always had.
@@ -36,11 +37,12 @@ import { dataProtection, type DataProtection } from '../utils/data-protection';
  * Every prefix of the raw data bucket other than `raw/`: the workspace prefixes. None has a noncurrent-version
  * rule since 6.00 (wave C owner decision: a workspace artifact is really deleted when its owner deletes it, and the
  * deleting code removes every version itself, lib/utils/workspace-object-deletes.ts), so nothing here expires a
- * version behind the owner's back either. `scratch/` alone expires (SCRATCH_EXPIRATION_DAYS). A new prefix must be
+ * version behind the owner's back either. `scratch/` expires (SCRATCH_EXPIRATION_DAYS), and with the engineering
+ * agents on, the caches under `engineering/cache/` (ENGINEERING_CACHE_EXPIRATION_DAYS). A new prefix must be
  * added here; `core-buckets.test.ts` checks every grant on the bucket in lib/stacks against this list.
  */
 export const RAW_BUCKET_WORKSPACE_PREFIXES = [
-  'avatars/', 'company-context/', 'memory-imports/', 'projects/', 'prototypes/', 'scratch/',
+  'avatars/', 'company-context/', 'engineering/', 'memory-imports/', 'projects/', 'prototypes/', 'scratch/',
 ] as const;
 /** The bronze layer: written once (If-None-Match), never overwritten or expired. */
 export const RAW_LAYER_PREFIX = 'raw/';
@@ -113,6 +115,56 @@ export const EXPORT_NONCURRENT_VERSION_DAYS = 1;
  */
 export const SCRATCH_EXPIRATION_DAYS = 2;
 /**
+ * Only with `-c engineeringAgents=true` (docs/autonomous-engineering.md): the connections' caches,
+ * `engineering/cache/`, a rebuildable copy of repository code, expire after ENGINEERING_CACHE_EXPIRATION_DAYS, their
+ * noncurrent versions ENGINEERING_NONCURRENT_DAYS later. The runs' objects are in voc-eng-workspace and kept: they are
+ * workspace artifacts, and an expiry of them waits for one that writes its `AUDIT#delete` row (TENETS.md D5; planned).
+ */
+export const ENGINEERING_CACHE_PREFIX = 'engineering/cache/';
+export const ENGINEERING_CACHE_EXPIRATION_DAYS = 30;
+/**
+ * The checkout cache writer's role name (engineering-cache.ts), before the stack's `uniqueName`: fixed, so the raw
+ * bucket's policy (in this stack) names the writer by ARN without a reference to VocProcessingStack.
+ */
+export const ENGINEERING_CACHE_WRITER_ROLE_BASE_NAME = 'voc-engineering-cache';
+
+/** The checkout cache writer's role name, by the owning stack's prefix-aware `uniqueName` (the one source of it). */
+export function engineeringCacheWriterRoleName(uniqueName: (baseName: string) => string): string {
+  return uniqueName(ENGINEERING_CACHE_WRITER_ROLE_BASE_NAME);
+}
+
+/** That role's ARN, in `scope`'s stack (VocCoreStack's bucket policy names it so, with no cross-stack reference). */
+export function engineeringCacheWriterRoleArn(scope: Construct, uniqueName: (baseName: string) => string): string {
+  return cdk.Arn.format({ service: 'iam', region: '', resource: 'role',
+    resourceName: engineeringCacheWriterRoleName(uniqueName) }, cdk.Stack.of(scope));
+}
+/** The object writes and deletes the raw bucket refuses under ENGINEERING_CACHE_PREFIX to all but the writer. */
+const ENGINEERING_CACHE_DENIED_ACTIONS =['s3:PutObject*', 's3:DeleteObject*'] as const;
+const ENGINEERING_NONCURRENT_DAYS = 1;
+/**
+ * The engineering workspace bucket (only with `-c engineeringAgents=true`; lambda/engineering/workspace/layout.py):
+ * `ws/<ws>/runs/<run>/<agent>/commits/…`, an agent's findings, gate records, logs and patches, and
+ * `ws/<ws>/reports/<run>/…`, the commit, PR and goal reports. Nothing in it expires until an expiry that writes its
+ * `AUDIT#delete` row exists (TENETS.md D5; planned). The one workspace (connectors/identity.py WORKSPACE, `default`,
+ * until multi-workspace lands) is spelled out in every grant: an IAM wildcard crosses `/`, so a wildcard in place of
+ * the workspace would let the reports' keys match a run object whose path holds `/reports/`.
+ */
+export const ENGINEERING_WORKSPACE = 'default';
+export const ENGINEERING_WORKSPACE_REPORTS_KEYS = `ws/${ENGINEERING_WORKSPACE}/reports/*`;
+export const ENGINEERING_WORKSPACE_RUNS_KEYS = `ws/${ENGINEERING_WORKSPACE}/runs/*`;
+/**
+ * The quality gate's records (`…/_gate/attempt-<n>/record.json` under a final-go agent's keys), which the GO ledger
+ * reads (lambda/engineering/flow/ledger.py): a retrospective, and the board for a flow's quality gate step.
+ */
+export const ENGINEERING_GATE_RECORD_KEYS = 'ws/*/runs/*/*/commits/*/_gate/attempt-*/record.json';
+/**
+ * The spend ledger's month partitions (`WS#<ws>#SPEND#<yyyy-mm>`, engineering/spend.py), as a `dynamodb:LeadingKeys`
+ * pattern: the metering writers ADD to them in the same transaction as each priced session write.
+ */
+export const ENGINEERING_SPEND_PARTITIONS = `WS#${ENGINEERING_WORKSPACE}#SPEND#20??-??`;
+/** The budget alerts' month partitions (lambda/engineering/spend.py alerts_pk): the supervisor's alone to write. */
+export const ENGINEERING_BUDGET_ALERT_PARTITIONS = `WS#${ENGINEERING_WORKSPACE}#BUDGET#20??-??`;
+/**
  * SPA bucket: each deploy's `s3 sync --delete` turns the previous build's assets
  * noncurrent. 30 days keeps a month of deploys restorable for a rollback; the
  * build itself is always reproducible from git, so longer buys nothing.
@@ -181,12 +233,17 @@ function rawBucketVersionRules(): s3.LifecycleRule[] {
  * copies into `raw/`.
  */
 function denyOverwritingRawWrites(bucket: s3.Bucket): void {
+  denyWritesWithoutIfNoneMatch(bucket, 'DenyRawWritesWithoutIfNoneMatch', APPEND_ONLY_PREFIXES.map((prefix) => `${prefix}*`));
+}
+
+/** The deny of denyOverwritingRawWrites, on `keys` of `bucket`, under `sid`. */
+function denyWritesWithoutIfNoneMatch(bucket: s3.Bucket, sid: string, keys: readonly string[]): void {
   bucket.addToResourcePolicy(new iam.PolicyStatement({
-    sid: 'DenyRawWritesWithoutIfNoneMatch',
+    sid,
     effect: iam.Effect.DENY,
     principals: [new iam.AnyPrincipal()],
     actions: ['s3:PutObject'],
-    resources: APPEND_ONLY_PREFIXES.map((prefix) => bucket.arnForObjects(`${prefix}*`)),
+    resources: keys.map((key) => bucket.arnForObjects(key)),
     conditions: {
       Null: { 's3:if-none-match': 'true' },
       Bool: { 's3:ObjectCreationOperation': 'true' },
@@ -286,13 +343,78 @@ export function createPrivateVersionedBucket(
   }));
 }
 
+/**
+ * Only the checkout cache's writer writes or deletes under `engineering/cache/` (docs/autonomous-engineering.md, "The
+ * checkout cache"): an entry stands for a repository's code at a commit, so a READY or a pack put there by anyone else
+ * (an admin's Data Explorer, which may put anywhere else in the bucket) would be cloned by the agents, or block the
+ * commit's fill for up to its 14-day generation. A Deny for every principal whose `aws:PrincipalArn` is not the
+ * writer's role (by its fixed name: no reference to VocProcessingStack) of ENGINEERING_CACHE_DENIED_ACTIONS on those
+ * keys. Exempt as well, only when this bucket auto-deletes (without protectData): the stack's auto-delete provider,
+ * which empties it with the stack. The lifecycle expiry is S3's own and no principal's, so the deny never touches it.
+ */
+function denyCacheWritesButTheWriters(bucket: s3.Bucket, writerRoleArn: string, autoDeletes: boolean): void {
+  const exempt = [writerRoleArn];
+  if (autoDeletes) {
+    const provider = cdk.Stack.of(bucket).node.tryFindChild(AUTO_DELETE_PROVIDER_ID);
+    if (!(provider instanceof cdk.CustomResourceProviderBase)) throw new Error('the raw bucket\'s auto-delete provider is missing');
+    exempt.push(provider.roleArn);
+  }
+  bucket.addToResourcePolicy(new iam.PolicyStatement({
+    sid: 'DenyEngineeringCacheWritesButTheWriters',
+    effect: iam.Effect.DENY,
+    principals: [new iam.AnyPrincipal()],
+    actions: [...ENGINEERING_CACHE_DENIED_ACTIONS],
+    resources: [bucket.arnForObjects(`${ENGINEERING_CACHE_PREFIX}*`)],
+    conditions: { ArnNotEquals: { 'aws:PrincipalArn': exempt } },
+  }));
+}
+
+/** The construct id CDK gives the stack's one S3 auto-delete provider (aws-s3 Bucket `autoDeleteObjects`). */
+const AUTO_DELETE_PROVIDER_ID = 'Custom::S3AutoDeleteObjectsCustomResourceProvider';
+
+/** The engineering caches' expiry rule (ENGINEERING_CACHE_EXPIRATION_DAYS); none without the engineering agents. */
+function engineeringExpiryRules(engineeringAgents: boolean): s3.LifecycleRule[] {
+  if (!engineeringAgents) return [];
+  return [{
+    id: 'engineering-cache-expiry', prefix: ENGINEERING_CACHE_PREFIX,
+    expiration: cdk.Duration.days(ENGINEERING_CACHE_EXPIRATION_DAYS),
+    noncurrentVersionExpiration: cdk.Duration.days(ENGINEERING_NONCURRENT_DAYS),
+  }];
+}
+
+/**
+ * The engineering agents' workspace (only with `-c engineeringAgents=true`): private, KMS-encrypted with the stack's
+ * key, versioned, TLS-only and access-logged like the raw bucket, kept under `-c protectData` like customer data. Its
+ * objects are written create-only (lambda/engineering/workspace/store.py, If-None-Match), and the bucket refuses
+ * any other write, from any principal, as the raw bucket does under `raw/` (denyOverwritingRawWrites). Nothing
+ * expires them (no current-version or noncurrent rule) until an expiry that writes its `AUDIT#delete` row exists;
+ * only abandoned multipart uploads and expired delete markers are cleaned up, which removes no data.
+ */
+export function createEngineeringWorkspaceBucket(
+  scope: Construct, bucketName: string, kmsKey: kms.IKey, accessLogsBucket: s3.IBucket, protection: DataProtection,
+): s3.Bucket {
+  const bucket = createPrivateVersionedBucket(scope, 'EngineeringWorkspaceBucket', {
+    bucketName,
+    kmsKey,
+    accessLogsBucket,
+    accessLogPrefix: 'engineering-workspace-bucket/',
+    protection,
+    lifecycleRules: rawBucketVersionRules(),
+  });
+  denyWritesWithoutIfNoneMatch(bucket, 'DenyWorkspaceWritesWithoutIfNoneMatch', ['*']);
+  return bucket;
+}
+
 export function createCoreBuckets(
   scope: Construct,
   names: CoreBucketNames,
   kmsKey: kms.Key,
   corsAllowedOriginsBase: string[],
   protection: DataProtection,
+  /** The checkout cache writer's role ARN; given only with `-c engineeringAgents=true`. */
+  engineeringCacheWriterRoleArn?: string,
 ): CoreBuckets {
+  const engineeringAgents = engineeringCacheWriterRoleArn !== undefined;
   const accessLogsBucket = new s3.Bucket(scope, 'AccessLogsBucket', {
     bucketName: names.accessLogs,
     encryption: s3.BucketEncryption.S3_MANAGED,
@@ -333,6 +455,9 @@ export function createCoreBuckets(
         noncurrentVersionExpiration: cdk.Duration.days(SCRATCH_EXPIRATION_DAYS),
       },
       exportExpiryRule(),
+      // The engineering agents' repository caches (only with -c engineeringAgents=true); their runs' objects are in
+      // voc-eng-workspace, where nothing expires.
+      ...engineeringExpiryRules(engineeringAgents),
     ],
     cors: [{
       // PUT is required for browser-side presigned uploads (project product docs).
@@ -349,6 +474,9 @@ export function createCoreBuckets(
 
   denyOverwritingRawWrites(rawDataBucket);
   denyExportTagOutsideExports(rawDataBucket);
+  if (engineeringCacheWriterRoleArn !== undefined) {
+    denyCacheWritesButTheWriters(rawDataBucket, engineeringCacheWriterRoleArn, protection.autoDeleteObjects);
+  }
 
   // Frontend hosting bucket
   const websiteBucket = new s3.Bucket(scope, 'WebsiteBucket', {

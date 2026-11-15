@@ -1,4 +1,4 @@
-"""voc-wiki's project paths per workspace, as the 7.35.00 merge left them (docs/multi-workspace.md, the project plan).
+"""voc-wiki's project paths per workspace, as the 7.37.00 merge left them (docs/multi-workspace.md, the project plan).
 
 The merge brought Revise from comments, the Prototype builder's drafts, feedback and incorporation, and the document
 canvas's series checks. What reads or writes a project through the version stores is threaded (a keyword-only

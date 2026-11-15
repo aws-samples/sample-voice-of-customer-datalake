@@ -17,13 +17,15 @@ the platform package version.
 
 ## [Unreleased]
 
-## [7.35.00] - 2026-11-15
+## [7.37.00] - 2026-11-15
 
 Multi-workspace, phase 3e: a project's document comments, persona review, review links and stored objects can be kept inside a workspace. Nothing changes for anyone yet: no route passes a workspace, every request the deployment sends is the one it sent before, and the board pool's sign-up trigger may read fewer rows ([docs/multi-workspace.md](docs/multi-workspace.md#the-project-plan-phase-3)).
 
 ### Changed
 
-- Includes the merge of 7.32.00 to 7.34.00. The merge threads a workspace through voc-wiki's addressed marks, series-head check, revised version, draft base and draft object key, and makes Revise from comments and the Prototype builder's stores refuse one until 3h ([docs/multi-workspace.md](docs/multi-workspace.md), the 7.35.00 row); voc-multiplayer-mut's claim property tests follow `OutsideEntry`.
+- Includes the merge of voc-wiki's 7.32.00 to 7.34.00. The merge threads a workspace through voc-wiki's addressed marks, series-head check, revised version, draft base and draft object key, and makes Revise from comments and the Prototype builder's stores refuse one until 3h ([docs/multi-workspace.md](docs/multi-workspace.md), the 7.37.00 row); voc-multiplayer-mut's claim property tests follow `OutsideEntry`.
+- Built on 7.35.00 and 7.36.00 (voc-autonomous and main's 7.01.00), which took those numbers first: this release was written as 7.35.00 and is renumbered, with every mention of it. Neither adds a read or a write of a project's rows, comments, versions, prototypes, objects, review links, jobs or participants (the engineering agents keep to their own tables and objects, which the raw-access guard already counts; the logo pick reads the design reference's page and the default-model setting), so nothing in them is threaded or refused for a workspace; their own data's move per workspace is planned as slice 3g3 ([docs/multi-workspace.md](docs/multi-workspace.md#the-project-plan-phase-3)).
+- Internal: what the merge itself changed beyond 3e: `voc-datalake/engineering-benchmark/.gitattributes` (`*.diff -whitespace`), so the benchmark cases' three known-fix diffs keep their single-space empty context lines through git's whitespace check; the trailing blank line at the end of six files is dropped (voc-autonomous's `engineering/knowledge/store.py`, `engineering/runtime/board_bus.py`, `delivery.py`, `ports.py` and `engineering/runtime/test/test_engineering_checkout_cache.py`, and main's `shared/test/test_company_logo_inline.py`); and one whitespace-only line in an earlier release's section is left empty.
 - Internal: the keys of a series' comment threads (`DCOMMENTS#{project}#{series}`), a review link (`DOCSHARE#{id}` / `META`) and a reviewer's daily counter (`DCRATE#…`) are built in one place, `voc-datalake/lambda/shared/project_keys.py`; inside a workspace each is `WS#{ws}#…`. Series ids stay the same in every scope. In a workspace a project also lists its commented series in its own partition (`COMMENT_SERIES#{series}`) and the workspace keeps a registry of its review links (`WS#{ws}#DOCSHARE_IDS`), so the hard delete finds both by a Query.
 - Internal: the comment threads (`lambda/shared/document_comments.py`), the persona review that files into them (`lambda/shared/document_review.py`), the review links (`lambda/shared/document_share.py`) and the review routes' helpers (`lambda/shared/document_review_routes.py`) take a workspace and keep every row in it, through the workspace layer; they no longer refuse one.
 - Internal: a review link made in a workspace keeps its deployment-wide `DOCSHARE#{id}` row as a routing row that names the workspace and its expiry and nothing else. Only the workspace layer writes it (`lambda/shared/ws_repo.py` `route_share_id`), in the same transaction as the link, its series' pointer and listing, and its registry row; the route expires with the link (leaving an expired link dark), and the registry row stays until the workspace's delete, so that delete always finds the link. A project id's claim and a link's route are now one sealed type (`OutsideEntry`; a claim never expires, a route's expiry is a positive epoch second), and a transaction takes at most one (`outside=`, at `OUTSIDE_ENTRY_INDEX`, formerly `PROJECT_CLAIM_INDEX`); the project create's requests are unchanged. The registry row names its link's project and series, for the per-project delete (3h). The reviewer routes resolve a link by its id alone: a routing row sends the read to the workspace it names and nowhere else; one naming anything but a workspace id, or a workspace holding no link of that id, admits nobody.
@@ -39,6 +41,34 @@ Multi-workspace, phase 3e: a project's document comments, persona review, review
 
 - Nothing to do: no table, index or API change, and one deployed IAM change, a narrower one (the hard delete's role is not built). VocApiStack and VocProcessingStack change only their functions' `APP_VERSION`; VocCoreStack changes the board pool's sign-up trigger: its read grant on `voc-projects`, now held to review links' rows (Changed, above), and the code of both trigger functions (`auth/board_triggers.py` and `shared/review_share_audience.py` change); VocWebSearchStack synthesizes the same template as the release before, and so does VocIngestionStack unless inbound email is configured (then only its intake function's `APP_VERSION`). Every function built from `lambda/` gets new code (the shared modules change). A normal deploy (`npm run deploy:all`) does it.
 - Rollback: no stored data changes (no workspace writes a comment, a link or an object yet), so an earlier release deploys over it as it is.
+
+## [7.36.00] - 2026-11-15
+
+Merge of main's 7.01.00 (8 commits): a website design reference picks the company's logo with a small vision call over numbered candidates and the browser draws that element alone; the page's share image is never the logo. Section 7.01.00 (from main) below is main's, under its own number.
+
+### Changed
+
+- The logo pick lands as main wrote it; the design capture's role keeps this branch's read of the default-model partition, which the pick's model choice reads here (`voc-datalake/lib/stacks/design-capture.ts`). The Radar trend chart test stays as this branch has it (main's fix of the same aged-out date was already in it).
+
+### Upgrade notes
+
+- Deploy as main's 7.01.00 says: each website capture makes one more Bedrock call on the enrichment surface (Claude Haiku 5.5 by default, or the deployment's pinned default model when one is set at deploy); references read before keep their logo until refreshed.
+- As on every release, the version moves the `APP_VERSION` of the Api and Processing Lambdas, so those template hashes in `voc-datalake/lib/test-support/baseline.json` change.
+
+## [7.35.00] - 2026-11-15
+
+Merge of voc-autonomous into voc-multiplayer: the autonomous engineering agents (the repository broker and its GitHub and GitLab connectors, the run's task board, bus and conversation, the MicroVM and AgentCore runtimes, the quality gate and gate packs, skills, the knowledge pack, the learning loop and scorecards, the spend ledger and budgets, the engineering flows and the run monitor), all off unless a deployment is built with `-c engineeringAgents=true`. Sections 7.10.00 to 7.01.00 and 6.29.00 to 6.04.09 marked (voc-autonomous) below are that branch's own releases, under their own numbers. What each part does is in those sections and in [docs/autonomous-engineering.md](docs/autonomous-engineering.md).
+
+### Changed
+
+- The review gate keeps one implementation, the one 7.33.00 kept (`scripts/ai-review/gate.mjs`, its tests and the fail-closed `scripts/git-hooks/pre-commit`); voc-autonomous's copy of the older gate and its duplicate CONTRIBUTING section go, as voc-multiplayer's did.
+- Where both branches changed the same lines, both stay: the assistant's card-only writes are the prototype draft and walkthrough and the knowledge refresh (`plan_contract.json`, `plan/schema.ts`, docs/assistant-plan-mode.md); the routes, the raw bucket's lifecycle rules and policies (workspace exports and the engineering cache), the processing stack's cost rollup and engineering stacks, the Agents API's workspace and engineering environment; `ApiError` carries both a body's `code` and its `run_id` (`new ApiError(status, message, code, runId)`, voc-autonomous's two tests pass the run as the fourth argument); the approval card holds Approve while a preview is loading, with this branch's execution context; the auth store's tests keep both hooks' suites; TENETS.md's gap rows keep this branch's text with voc-autonomous's engineering additions (tenets 3, 4, 6 and 7); every audit allowlist entry of both branches is kept.
+- The workspace guards classify the engineering agents with the other agents, as phase 3 (docs/multi-workspace.md "Phases"): their 28 `/agents/engineering/*` routes and `GET /workflows/templates` are listed as not per workspace yet (`lambda/api/test/cross_workspace_pending.py`), their modules' accesses to their own tables and objects (voc-engineering, voc-agents' engineering rows, voc-eng-workspace, the raw bucket's `engineering/`) are counted in the raw-access guard (`lambda/shared/test/test_ws_raw_access.py`), and their hard cap, `SETTINGS#engineering`, is a deployment setting (`test_settings_scopes.py`, docs/multi-workspace.md "Per-workspace configuration"). They run for the deployment's administrators only, and only with `-c engineeringAgents=true`.
+- Internal: the processing stack's engineering wiring moved, unchanged, into `lib/stacks/processing-engineering.ts`, so the stack keeps to its 400-line limit with both branches' additions. The CDK tests' `statementsByRole` (`lib/test-support/iam-statements.ts`, voc-autonomous's) folds a role's overflow policies and names a customer-managed policy without its hash, as this branch's copy in `audit-row-guard.test.ts` did, which now uses it.
+- Internal: audits that meet both branches' code together: `py_stored_attrs`' allowlist names two audit-trail fields of a removed repository connection and four payload fields that are not table attributes (a GitLab merge request's body, the personal brief's model facts); `py_shared_constants`' names four constants the engineering modules and this branch's spell alike by coincidence (AWS's access-denied codes, a punctuation class, `active`, the ULID alphabet).
+- `nag-suppressions.test.ts` counts both branches' acknowledgements: 88 + voc-autonomous's 21 = 109.
+- Hypothesis is pinned once (`requirements-dev.txt` names the three settings profiles: the workspace layer's, the documents' and the engineering agents', with its regressions folder, which `.gitignore` keeps but for its README); `.kiro/steering/testing.md` says which profile goes with which area.
+- As on every release, the version moves the `APP_VERSION` of the Api and Processing Lambdas, so those template hashes in `voc-datalake/lib/test-support/baseline.json` change.
 
 ## [7.34.00] - 2026-11-15
 
@@ -1422,6 +1452,25 @@ Projects > Documents opens each document as a page you edit in place, and every 
 - Frontend only: `npm run deploy:frontend`. No stack, route or stored data changes.
 - To use the review gate locally, from the repo's top level: `hooks=$(git config core.hooksPath || git rev-parse --git-path hooks)`, then `cp scripts/git-hooks/pre-commit "$hooks/pre-commit" && chmod +x "$hooks/pre-commit"` (CONTRIBUTING.md, "Review gate before commit"). The hooks directory is per clone, so it also checks the clone's other worktrees, and refuses a branch without `scripts/ai-review/gate.mjs`.
 
+## [7.01.00] - 2026-11-15 (from main)
+
+A website design reference finds the company's logo with a small vision call and the browser draws exactly that element, so the logo it offers is the real one instead of a photo, a flag or a share card.
+
+### Changed
+
+- Company → Design system → a **website** reference: the logo is picked from every element near the top of the page (images, inline SVGs, CSS backgrounds and text logos, inside web components too), by one small vision call that sees the header with each candidate numbered. The browser then draws that element alone, with a transparent background and trimmed to its pixels, so **Use this logo** gets what the page shows. A white logo made for a dark header is drawn on that header's colour, so it stays visible in a white prototype. When nothing on the page is the logo, the reference has no logo instead of a guess. Measured on 64 live websites with this release, a clean, correct logo was found on every one of the 61 the browser could read (3 blocked it); before, the right logo was found on 28 and a non-logo image was saved on 27. The pick's model call gives up after 25 s and is not started late in the browser session; the scoring rules decide then. See [docs/company-context.md](docs/company-context.md).
+- The page's share image (`og:image`) is no longer used as the logo or copied as an icon.
+
+### Fixed
+
+- A Radar trend chart TEST (not the chart) pinned a fixed date and failed once that date fell outside its 30-day window; the chart keeps drawing a returned point outside the window as an extra day, as designed.
+
+### Upgrade notes
+
+- Each website capture makes one more Bedrock call, on the **enrichment** surface (Settings → AI models; Claude Haiku 5.5 by default), of about 2,500 input tokens. No new permission: the capture role already invokes every allowlisted model. When the call fails, scoring rules pick the logo.
+- References read before this release keep their logo until they are fetched again (**Refresh**).
+- VocIngestionStack updates the `voc-design-capture` code. VocApiStack and VocProcessingStack change only by the app version their Lambdas record; no resource is replaced.
+
 ## [7.00.02] - 2026-11-14 (from main)
 
 Fixes from an independent review of 7.00.00 and 7.00.01: large reference logos work again, prototypes never get a broken or misrecorded logo, and the repository's Kiro agents are confined further.
@@ -1449,6 +1498,1730 @@ Fixes from an independent review of 7.00.00 and 7.00.01: large reference logos w
 - Deploy as usual (`npm run deploy:infra`, then the frontend). No new resource; the `CompanyLogoReadPolicy` managed policy changes in place.
 - A company logo over 1 MB saved before 7.00.00 still shows in the app but is left out of every prototype ("Company logo not used"): upload it again (the browser makes it smaller). A reference read before this release keeps its old preview: refresh it so a large logo is drawn smaller.
 - Used interactively (kiro-cli's V3 engine), the repository's Kiro agents can still read and write files outside the repository without asking; agent rules cannot prevent that today. Inside the repository secret-shaped paths are refused on both engines. The four agents pinned to `claude-opus-4.6` do not start on V3 in accounts where that model is unavailable. On V3, a shell redirection (`> file`) is checked as a write, so it can also write outside the repository (V2 refuses it). A test that `test-generator` writes can do anything when it runs: read its tests before running them.
+
+## [7.10.00] - 2026-11-15 (voc-autonomous)
+
+Autonomous engineering agents: people's reactions on the host to a run's pull request (reviews and comments by people
+with write access, a revert, people's commits after the merge) are read days after the run ends and by an
+administrator's hand, recorded, shown on the run monitor and summed into the scorecards' human edits. Off by default
+(`-c engineeringAgents=true`), and no fixed cost.
+
+### Added
+
+- **The broker's `reactions` read** (`lambda/engineering/connectors/broker.py` `Broker.reactions`, `reactions.py`,
+  `github_reactions.py`, `gitlab_reactions.py`; docs/autonomous-engineering.md, "People's reactions on the host"):
+  for an ended run whose connection still names its repository, of the pull request its record keeps
+  (`run_links.run_pull_request`; none: null, the host asked nothing), on its default branch, through each host's
+  existing client, reads only, bounded pages: the state (open, closed, merged and when); the reviews (approved,
+  changes requested, commented), their review comments and the comments, newest first, at most 50, each body at most
+  2,000 characters (GitHub answers reviews and issue comments oldest first and cannot sort them: their first and last
+  pages are read, and past 200 the ones between are not, which `more` says); a revert (a commit after the merge,
+  among at most 100, naming "Revert" and the merge's commit id); people's commits after the merge
+  (`edits_after_merge.people_commits`: within 14 days, touching its files, no bot's, the App's or the project
+  token's own included, and none naming an agent branch; a count and at most 20 files, never a diff); what was
+  dropped, and whether more was left unread.
+- **The trust filter**: only reactions by people with write access are kept. GitHub's `author_association` (OWNER,
+  MEMBER, COLLABORATOR) is the first cut; each such author's permission is then read ("Get repository permissions
+  for a user": kept for `permission` admin or write alone, a maintainer answering write; `role_name` is never read, so
+  a custom role is not kept for its name; a read-only member or a triage collaborator is dropped), at most 20 a read,
+  the newest authors first, cached 10 minutes, and a failed lookup drops the author.
+  GitLab: members at Developer or above, read through the members API, at most 20 a read, cached 10 minutes. Never a
+  bot's (the App's or the project token's own user, GitLab's service accounts included). Each kept body has its
+  credential-shaped strings, then its email addresses, phone and card numbers replaced (names and handles in the text
+  are not), and the runtime checks the answer again. The rows and the monitor keep handles; the coach sees only
+  labels (`reviewer-1`, …).
+- **The runtime as the broker's one other caller**, for this operation alone: its function URL call is SigV4-signed as
+  voc-engineering-runtime's own role, and the broker admits that role in the session named after the function, by
+  the names the stack hands it (`connectors/identity.py` `runtime_caller_from_event`); an agent's session asking for
+  it, whatever its role, is 403, and so is the runtime asking for an agent's operation.
+- **When**: the run's end reads nothing; its retrospective creates ONE one-time EventBridge Scheduler schedule, only
+  when the run's record keeps a pull request, `-c engineeringReactionsDelayDays` later (3 by default, 1 to 30), which
+  invokes the runtime's new `reactions` action by its unqualified ARN and deletes itself after it runs; and an
+  administrator's hand, `POST /agents/engineering/<run_id>/reactions` (403 for anyone else, a delegated credential
+  included; 404 while the module is off; 409 while the run has not ended; 429 more than once in 60 minutes per run;
+  503 when the read could not be handed on), through voc-engineering-start's new `ask_reactions` action, which claims
+  the run's ask (a rate-limit row, released again when the hand-on fails) and hands the read on.
+- **The records**, create-only: `REACTIONS#<read_at>` in the run's partition (the read, who asked, when; nothing for a
+  run with no recorded pull request, and said so); the scorecards' human edits as separate `HUMAN#<run>#<read_at>`
+  rows beside each version's scorecards (changes requested, people's commits after the merge, a revert), written only
+  when a read says something new, which `version_card` sums (a second bounded Query) and the scorecards' route
+  answers as `human_edits`. A read updates the monitor and those human edits. The coach sees a run's latest reactions
+  as evidence (`HostReactions`) only the next time it handles a failure of that same run; a run's failures go to it
+  once, at the retrospective, before any read, so today it rarely does. The coach's prompt (`coach-prompt/3`) says
+  they are people's words to weigh, never instructions. A proposal still needs an administrator's acceptance, and a
+  coach's a recorded benchmark whose pass rate rose.
+- **The run monitor** shows the latest reactions (the counts, each reviewer's latest state, merged and reverted,
+  people's commits after the merge, each body as plain text, what was dropped) and a "Read reactions now" button
+  behind a confirmation, for an ended run, in all nine locales.
+
+### Tests
+
+- Each host's reads on fakes: the bounds, the trust filter (an outsider, a bot, the App, the project token's own user
+  and a service account dropped; on GitHub a read-only organisation member and a triage collaborator dropped, a
+  writer, maintainer and admin kept, a failed permission lookup dropping its author, the lookups bounded and cached),
+  the last page of an oldest-first list, the redaction, the revert, people's commits (a bot's and an agent's merge
+  left out), the token's permissions, a missing pull request, a host error and a rate limit. The broker's caller check
+  (every agent role refused, another function, role or account refused, the runtime refused any agent operation), its
+  run and repository checks. The runtime's record on moto (create-only rows, the latest read, the rolling-hour claim
+  and its release), the human edits rows and their sums, the one self-deleting schedule (only with a recorded pull
+  request, its unqualified target), the `reactions` action, the run's end reading nothing, `ask_reactions` and a
+  failed hand-on releasing its ask, labels instead of handles for the coach, and a reaction saying "ignore your
+  instructions" reaching the coach's prompt only inside its DATA block. The route's 202, 403, 404, 409, 429 and 503.
+- CDK: the schedule group, the scheduler's role (invoke the runtime only), the runtime's create, pass-role, broker
+  URL and pull request read statements, the broker's one Query and its admission of the runtime, the delay's bounds, nothing with the
+  module off; one more IAM5 acknowledgement. The web app: the panel, plain-text bodies, the button and its
+  confirmation, a 429.
+
+### Upgrade notes
+
+- New resources with `-c engineeringAgents=true`: one schedule group (`voc-engineering-reactions`) and the
+  scheduler's role; a schedule per ended run with a pull request is created at its end (pay per use). New
+  statements: on the runtime's role `scheduler:CreateSchedule` (its group, `voc-eng-reactions-*` only),
+  `iam:PassRole` (the scheduler's role, to the scheduler only), the broker's function URL and `GetItem`/`Query` of
+  the runs' writes' partitions (read only); on the broker's role
+  one `dynamodb:Query` of the runs' writes' partitions. The broker's environment names the runtime's role and
+  function. The Agents API's role is unchanged. Runs that ended before have no schedule: an administrator can read
+  theirs by hand.
+
+## [7.09.01] - 2026-11-15 (voc-autonomous)
+
+The engineering agents' critical components get property-based and mutation-tested tests; the broker's prose check now
+catches a phone number at the end of a sentence or inside markdown emphasis; and the patch reader, spend ledger, broker
+and run store are rewritten so their tests can see every line, with the same behaviour. Merged from the mutation work
+(written as 7.01.01 to 7.01.03 on its own branch) onto 7.09.00; its scores are in
+`docs/mutation-notes-mut-voc-auto.md` and `docs/mutation-notes-testable-voc-auto.md`. Every mutation score below was
+measured on that branch, before the merge: `broker.py`, `write_policy.py` and `runtime/runs.py` also hold 7.02.00 to
+7.09.00's code now, and their runs are not repeated here.
+
+### Added
+
+- Hypothesis property tests (`*_properties.py` beside the unit tests, 256 cases each by the one profile in `voc-datalake/lambda/shared/test/properties.py`, 80 where each case builds a moto table; its failing-example database is `hypothesis-regressions/`, ignored but for its README, so an entry a fix needs is added on purpose) for the dial (fails closed), the broker's write policy and role matrix, patch line splitting and hunk application, the GO ledger (the newest ended final go and gate runner decide, for exactly the tree), the spend ledger and its alerts, the hard cap on a start, and the run-state machine (model-based). Each states its invariant in words. The components, why each is critical and their mutation scores are in `docs/mutation-notes-mut-voc-auto.md`.
+- Tests for every mutant `scripts/mutate-python.sh` left alive in those components' modules that a test can kill: `connectors/dial.py`, `connectors/write_policy.py`, `connectors/patches.py`, `connectors/broker.py`, `flow/ledger.py`, `spend.py`, `runtime/runs.py` (the refusals word for word, the bounds, the UTC month and day under a far time zone, the spend ledger's exact requests, a binary delta's copies and inserts past their data, the inflate bound). The mutants no test can kill (equivalent ones, and loops bounded only by their counter) are listed in the notes for a rewrite.
+- `hypothesis==6.135.0` in `voc-datalake/requirements-dev.txt` (pinned exactly: a generator change would move which cases a run tries).
+
+### Changed
+
+- `.gitignore`: `node_modules` without the trailing slash, so a worktree that links its dependencies to another clone's is ignored too; Hypothesis's per-run `.hypothesis/` state and the failing-example database's entries are ignored.
+- `connectors/patches.py`: every loop of the patch reader is bounded by its input, so no mutant of it can run forever. The quoted-path, file and patch loops take at most one step per byte or line, and the hunk reader is one forward pass. Three checks that could never decide are gone: the 512-character key bound (the longest key the layout accepts for a patch of the workspace is 497 characters), a mask on a three-digit octal escape, and a repeated key check. Pinned first on 15 real `git diff --cached --binary` patches and git's own result of each (`connectors/test/patch_corpus.py`, `test_patches_testable.py`). Mutation score: 938 killed, 10 survived, 10 timeouts before; 969 of 969 killed after.
+- `spend.py`: a month's read of the spend ledger keeps one bound, its own row count. The pages are read lazily, so the query's `max_items` never decided and is gone. The flow's month total is the sum of the write's usages, starting from an empty `Usage()` instead of an explicit `Decimal(0)`. Pinned first (`test/test_spend_testable.py`: the pages read for each row cap, the Decimal total), plus two tests a survivor asked for: the flow's month total is read strongly consistent, and a group sums its rows. Mutation score: 587 killed, 6 survived before; 587 of 587 killed after.
+- `connectors/broker.py`: a push checks its branch once, before anything is read (`_open_write`). After reading the bundle it checks only the changed paths against the CI definitions it knows by their place (GitLab's client still checks the CI files the host names), with the same refusal words; the second branch check could never decide. `write_policy.check_push` is gone: the broker calls `check_ci_definitions` (7.06.00's, which GitLab's client calls with the CI files the host names) with none named, and `check_push`'s tests move to it. Pinned first (`connectors/test/test_broker_testable.py`: a branch that is not the run's is refused before the ledger or the patch is read; a CI path is refused in its own words, each path once and in order; the default branch is never pushed to; an added line is read as code). Mutation score: 292 killed, 2 survived before; 286 killed, 1 survived after (287 mutants). The one left is `prose=False` given as `None`: the write rules read only whether the flag is set, so the two can't differ (a proof, sent for review).
+- `runtime/runs.py`, with `board/store.py` and `flow/ledger.py`: every time the run store writes or measures a month by is read through one aware-UTC `utc()`. `BoardStore.coordinate_items` is a staticmethod, because it read none of the store's arguments, so a run's start builds no store. A status change's tries are bounded by their count alone: the last lost race is raised once the tries are spent, with the same pauses between them. A Resume of a run that has no META is refused before any write, with the same words. Before, its transaction failed on META's condition; the one visible difference is that a throttle or a lost race on that doomed transaction no longer surfaces as a DynamoDB error. `_keep_verdicts` takes the deciding final go's task from `ledger.newest_ended` (split out of `newest_record`), not from a record key it never read. Pinned first (`runtime/test/test_runs_testable.py`): every DynamoDB expression exactly as sent, keyword case and all; the tries and their pauses; the coordinator's task is the board's own; times are aware UTC; `newest_ended`. Mutation score: 1256 killed, 32 survived before (1288 mutants); 1259 of 1259 killed after. `flow/ledger.py`: 181 of 182 killed. The one left is mut-voc-auto2's earlier codec-case escalation, not part of this rewrite.
+
+### Fixed
+
+- A comment, pull request text or commit message could carry a phone number past the broker's personal-data check (`connectors/write_policy.py` `_PHONE`) when a full stop followed it ("Call +1 555 010 0199."), when markdown underscores wrapped it (`_+1 555 010 0199_`, shown as italics on the host), when a stop or an ellipsis touched its first digit ("Number...555-010-0199"), or when a date came just before it ("Called 2026-11-14 555-010-0199": the date and the number's first digits made one match, which was then dropped as a date): the number's bounds refused any dot or underscore beside it, and a match that began with a date was dropped whole. Now only a letter or a digit beside the number, or a digit and a dot before it or a dot and a digit after it (a grouped decimal such as "1 234 567 890.50", a version), keep a run of digits from being a phone number, and the text is read three ways, a number found in any counting: as written, with the new bounds and with the old ones, and with its dates blanked out (so a number grouped like a date, "+46 8 1234-56-78", is still refused). The old rule is one of the readings, so the check only widens; a property drawing texts from number, date and punctuation pieces checks that every text the old rule refused is still refused. Dots are still not separators, so IP addresses and dotted versions pass as before. Found by the mutation work above; pinned by `test_write_policy_words.py` and by the phone property, which now draws what follows the number.
+
+### Upgrade notes
+
+- No data, API or IAM change. The broker's code ships with the engineering agents (`-c engineeringAgents=true`);
+  deployments without them are unaffected. The Api and Processing stacks' template hashes in
+  `voc-datalake/lib/test-support/baseline.json` move with the release number (`APP_VERSION`) only.
+
+## [7.09.00] - 2026-11-15 (voc-autonomous)
+
+Autonomous engineering agents: a run's record keeps the issue it was started from and the draft pull request (a
+GitLab merge request) it opened, and the run monitor and the reports show them. Off by default
+(`-c engineeringAgents=true`), and no fixed cost.
+
+### Added
+
+- **The run's pull request on its record** (`lambda/engineering/run_links.py`; docs/autonomous-engineering.md, "The
+  run's issue and pull request"): when the host answers an open or an update of the run's draft pull request with
+  it, the broker keeps its host kind, number (GitLab's IID), URL and head and base branches in
+  `WS#<ws>#WRITES#<run>` / `PULL_REQUEST`, beside the write claims (`records.py`
+  `WriteClaims.record_pull_request`). Keyed on the head branch, compared on the number and the head alone: the same
+  pull request again updates its base and address; a new number on the same head (a person closed the draft and
+  the next open made another) replaces it, the earlier numbers kept in `superseded` (at most 20, the oldest
+  dropped); one on another head is refused. Kept only when the URL is exactly that number's address in the run's
+  own repository on its host's own domain over https (GitHub's `owner/name`, GitLab's project path), and its head
+  the run's branch; the address kept is the one rebuilt from them; never a token, a title, a body or other host
+  text. A write whose outcome is unknown records nothing until a later open or update finds the pull request by
+  its branch on the host (the clients' existing lookup). A record that cannot be written is logged, counted
+  (`EngineeringPullRequestUnrecorded`) and never fails the write; the done write claim keeps the same answer, and
+  the readers take it from there while the row is missing or older. The GitHub and GitLab clients now answer a pull
+  request's head and base branches (`head.ref`/`base.ref`, `source_branch`/`target_branch`) and their host kind.
+- **The run's issue**: nothing carried one, so `POST /agents/engineering/runs` takes an optional `issue` (a whole
+  number from 1 to 2,147,483,647; 400 otherwise), and Start a run has an optional Issue field. The start writes it to
+  META's `issue` once, `{host, number, url, verified: false}`, its address built from the stored connection's host
+  and repository: recorded as given and labelled unverified (only the broker holds the connection's credential).
+- **Shown**: the run overview (`GET /agents/engineering/<run_id>`) answers `run.issue` and `run.pull_request` (null
+  for none), each read back only when its address passes the same check; the run monitor links them, opened in a new
+  tab with `rel="noopener noreferrer"`, only when the address is https on the record's host's domain under the run's
+  repository (otherwise shown unlinked), an unverified issue saying so; the goal and PR reports name them, in code
+  spans (a report references nothing on the host). In all nine locales.
+
+### Tests
+
+- The broker on fakes: the pull request kept on an open and on an update, on GitHub and on GitLab; an outcome
+  unknown recording nothing until the next attempt's answer; a draft closed and opened again replacing it; a foreign
+  domain, scheme, repository, host or branch not kept; a record that cannot be written never failing the write and
+  read back from its done claim. The row on moto: the same number updating its base, a new number on the branch
+  replacing it, another branch refused, the superseded numbers bounded, its first time kept, a write failing or
+  racing every try unavailable, only the attributes the broker's grant allows (read from the stack); the readers
+  taking a newer done claim, never an older, unknown or other branch's one.
+  The clients' answers with their branches. The issue on the start (API and runtime, both hosts, each refusal), the
+  overview's fields, the read-back checks, and the goal, PR and commit reports.
+- CDK: the broker's one DynamoDB write statement is still the claims'. The web app: the URL check, the links' target
+  and `rel`, the merge request's wording, an unlinked address, the start form's issue field.
+
+### Upgrade notes
+
+- No IAM change: the pull request's row is written under the broker's existing claims grant. Runs started before
+  have neither an issue nor a recorded pull request (null); nothing to migrate.
+
+## [7.08.00] - 2026-11-15 (voc-autonomous)
+
+Autonomous engineering agents: administrators accept, reject and roll back the agents' skill versions and record a
+proposal's benchmark, from Agents → Skills. Off by default (`-c engineeringAgents=true`), and no fixed cost.
+
+### Added
+
+- **The actions** (`lambda/engineering/skills/actions.py`; docs/autonomous-engineering.md, "The administrators'
+  actions"): `POST /agents/engineering/skills/<role>/versions/<n>/accept`, `…/reject`, `…/rollback` and `…/benchmark`
+  (`?connection=`, empty for the shared skill), for an administrator acting for themselves (a delegated MCP credential
+  gets 403; 404 while the module is off). Each runs the skills store's own function and transaction
+  (`accept_version`, `reject_version`, `roll_back_to`, `record_benchmark`), takes what the screen showed (the
+  version's status, the scope's current version) and answers 409 "it changed since you opened it" when it moved, 400
+  for a body off its shape, and 409 or 400 in the store's words for its refusals (a coach's version without a
+  record of a benchmark run in which the pass rate rose, naming its expected case, a second benchmark, a benchmark naming another
+  case, a rollback to a version never accepted, a base no longer current). A transaction that loses its race to
+  another administrator's change is said as "it changed since you opened it" too, so the screen reads it again. A
+  rollback's current version is checked by the store and held as its transaction's condition (`roll_back_to`'s new
+  `expected_current`). An optional reason, credential-shaped strings redacted, is kept on the action's log row
+  (`accept_version` and `record_benchmark` take one too). Each answers the version as it is now, its event and its
+  announcement; a failed write is 503 "could not be saved".
+- **The benchmark is an administrator's record of a benchmark run (its rates, cases and verdict as they enter
+  them)**, linked to no measurement, with an optional reference to the run (`run_ref`: an id or a link, at most 300
+  characters); it and each reason are redacted. `BenchmarkRun.gained` (what a coach's acceptance needs) holds only
+  when the record passed and the pass rate rose, naming its expected case: equal rates are no gain. A new record whose
+  verdict is passed but whose pass rate fell is refused where it is written (`check_recordable`, in
+  `record_benchmark`); a row written before still reads, shown as recorded, and never lets a version be accepted.
+- TENETS.md, tenet 6's row: the Agents API's writes on the skills' partitions, kept create-only by the code alone.
+- **The announcements** (`skill.accepted`, `skill.rolled_back`) are kept on the action's create-only log row (id,
+  type, line) and answered with `published: false`: the Agents API is not one of the engineering bus's publishers,
+  and that policy is not widened here. Publishing them is planned.
+- **IAM**: the Agents API's role gets `dynamodb:PutItem`, `dynamodb:UpdateItem` and `dynamodb:ConditionCheckItem` on
+  `voc-engineering`, keyed to the skills' `WS#*#SKILL#*` partitions (`dynamodb:LeadingKeys`, with `Null` `false`
+  beside it), what the store's transactions use; no delete; the key through DynamoDB as before. Nothing while the
+  module is off.
+- **Agents → Skills**: on a version's detail, Accept, Reject, Record benchmark and Roll back to this version, each
+  behind an approval card that says what changes (from which version to which, the shared skill's version for a
+  connection with none of its own, the change's summary, its base flagged when it is not the version in use, the
+  record of a coach's benchmark run) with an optional reason; Accept off (focusable, its reason read out) for a
+  coach's version without a record in which the pass rate rose, naming its expected case; the benchmark form, saying it records what the administrator
+  enters, prefilled with a coach's expected case, with an optional reference to the run; a 409 reads the screen
+  again and says so; in all nine locales. The dev mock answers the actions.
+
+### Fixed
+
+- A scorecard asked for by a number the role never shipped is labelled "never shipped" (`not_shipped`), not shipped.
+
+### Tests
+
+- The routes on moto: each action's happy path, 404 off, 403 for a plain user and an administrator's MCP credential,
+  400 for each body or path off its shape, 409 when the status or the current version moved (nothing written), a
+  moved base, a rejection losing its race to an acceptance (409, it changed), a coach's version refused without a
+  record in which the pass rate rose, after a failed one and with equal rates, a second benchmark and one naming another case
+  refused, a passed verdict whose rate fell refused, a rollback to a version never accepted refused, a connection's
+  scope touched alone, the reason, the benchmark's reasons and its run reference redacted, the announcement on its
+  log row.
+- CDK: the write statement exactly, and nothing with the module off. The web app: the approval cards, Accept held
+  back, the benchmark form, the 409 path and another refusal.
+
+### Upgrade notes
+
+- With the module on, the Agents API's role gains writes on the skills' partitions of `voc-engineering`. Nothing to
+  migrate.
+
+## [7.07.00] - 2026-11-15 (voc-autonomous)
+
+Autonomous engineering agents: administrators read the agents' skill versions and their scorecards, read only, through
+the Agents API and Agents → Skills. Off by default (`-c engineeringAgents=true`), and no fixed cost.
+
+### Added
+
+- **The skills' reads** (`lambda/engineering/skills/views.py`, `store.py`; docs/autonomous-engineering.md, "The
+  administrators' reads"): for an administrator acting for themselves (a delegated MCP credential gets 403; 404 while
+  the module is off), every input checked (400) and every read a GetItem or one bounded Query of one partition.
+  `GET /agents/engineering/skills?connection=` → each role with a version in the scope (the shared skills, or one
+  connection's own), its current version, the numbers handed out and its newest version's summary;
+  `GET …/skills/<role>/versions?connection=&page=` → the history 20 a page, newest first, each version with its status,
+  why, who proposed it and when, who accepted or rejected it and when, the version a rollback restores, its base, its
+  expected case, its events from the `LOG#` rows and its benchmark (the proposer's claimed rates apart from the measured
+  ones); the next page's token is the server's, checked against the scope it was made for. `GET
+  …/skills/<role>/versions/<n>` → one version's whole record, how the coach made it and its diff from its base.
+- **The scorecards' read**: `GET /agents/engineering/scorecards/<role>?connection=&versions=` → `version_card` per
+  version (at most 10, each once) on the connection's own scorecards, each card labelled with where its number comes
+  from (`source: shipped`: a session names its version `<role>@<n>` without its scope, and every session runs the
+  shipped skill until the harness reads the store, which the answer's `scope_known: false` and the screen say); by
+  default the shipped version and the shipped ones before it, at most 5, never mixed with the store's numbers. A
+  scorecard is a connection's: the shared scope is 400.
+- **A promoted version's source is never answered**: the events' Query filters on the readable events, so DynamoDB
+  drops the `promoted_from` log row before it answers, and the store drops any other event again in code; no answer
+  names another connection. A history page whose versions sit far apart reads its events in ranges of at most 100
+  numbers, one Query each.
+- **Agents → Skills** (administrators, with the module on): a scope picker, the scope's roles, a role's history a page
+  at a time (status badges, the benchmark marked measured or claimed, the events), a version's diff as plain lines added
+  and removed (never read as HTML) with its whole record, and a role's scorecards on a connection in a table (pass rate,
+  tasks done, failed and needing a person, review rounds, attempts, cost, time), with empty, loading and failed states
+  that say what to do, in all nine locales. No action is offered on a version. The dev mock serves fictional versions.
+
+### Changed
+
+- docs/autonomous-engineering.md and docs/deployment.md: the read side of the skills and scorecards moves from planned
+  to built; accepting, rejecting, rolling back, promoting and recording a benchmark through a route stay planned.
+- `lib/test-support/baseline.json` regenerated.
+
+### Tests
+
+- The routes on moto: each one's answer, the shared scope and a connection reading only its own partitions, the
+  measured benchmark apart from the claim, paging newest first and every tampered or foreign page token refused, the
+  scorecards asked for and by default, each input off its shape 400, a missing version 404, 403 for a plain user and
+  an administrator's MCP credential, 404 with the module off or its package absent, 503 on a failed read, and a
+  promoted version's source connection in no answer.
+- The store's new reads: their bounds, nothing below the first version, a page's events followed past a short answer.
+- CDK: the reads use the Agents API's one table read (GetItem and Query, no condition), with no new statement.
+- The web app: each screen's states (roles, history, detail and its diff, scorecards and the versions a person names),
+  the view's rules and the answers' parsing.
+
+### Upgrade notes
+
+- Nothing to migrate and no new permission: the Agents API's role already reads `voc-engineering` for the run views.
+
+## [7.06.01] - 2026-11-15 (voc-autonomous)
+
+The GitLab connector's time bounds after a push's first commit, counted by their real worst case. Off by default
+(`-c engineeringAgents=true`).
+
+### Fixed
+
+- **One time model for the work after the first commit** (`lambda/engineering/connectors/gitlab.py`): the reserves
+  assumed one 10 s request per step, but a read is sent up to twice (`gitlab_api.READ_TRIES`: 20 s), the final
+  read-back of the tree is one read per page, and the undo had no time check. Each step is now counted by its worst
+  case, the constants following from it (shown in a comment): a request 10 s, a read 20 s, a write 10 s; a stop keeps
+  35 s (the undo's read and delete, 30 s, and the answer, 5 s); a later commit starts only when it and a page of the
+  read-back (30 s) and that reserve fit; and the reserve the reads before the write leave (`hosts.WRITE_RESERVE_SECONDS`)
+  is 10 + 20 + 35 = 65 s (it was 30 s). On the broker's 120 s the reads before a write had about 90 s and now have
+  about 55 s, so a very large push is refused honestly, with nothing written, saying "push fewer changes at once"
+  (the broker's timeout is unchanged). Each of those reads starts only if it and its retry end by the line, and the
+  first commit only if it, a page of its read-back and the stop's reserve fit, so the 65 s hold as written. The
+  request's 10 s is one constant, the GitLab transport's own timeout (`gitlab_api.REQUEST_SECONDS`). The times are
+  assumptions (http.client's timeout is per socket operation, the name lookup is not covered, and closing the claim
+  is a DynamoDB write under boto3's defaults); past them Lambda's timeout ends the call, the claim stays open, a
+  repeat is answered unknown, and nothing is written twice.
+- **The final read-back is bounded by time**: no page starts that would end inside the stop's reserve; past it the
+  read-back is cut short and the outcome is unknown, saying so.
+- **The undo has its own time check**: no delete of the branch the push created starts unless its read and its delete
+  and the answer fit before the invocation's end; otherwise the branch is left, and the outcome says so.
+- docs/autonomous-engineering.md: a GitLab template's job is GitLab's own fixed content, which the walk does not read
+  (it said "pinned wherever that job is defined"); the time model above.
+
+### Clarifications of 7.06.00
+
+- A job that `extends` another may add to its `trigger` only `strategy` and `forward` (how its child pipeline runs):
+  GitLab merges them into the extended job's `trigger`, so this is allowed; with an `include` of its own beyond the
+  rules, or without `extends`, it refuses.
+- 7.06.00 kept a 25 s reserve for a stop's delete and answer; this release replaces it with the 35 s above.
+- `lib/test-support/baseline.json` regenerated: VocApiStack's and VocProcessingStack's template hashes moved with
+  `APP_VERSION` (7.6.1) and the Lambda asset hashes of the engineering code; no resource or name changed.
+
+## [7.06.00] - 2026-11-14 (voc-autonomous)
+
+Autonomous engineering agents: a GitLab repository connector beside GitHub's, on gitlab.com. A connection is GitHub's
+or GitLab's, and the broker and the checkout cache's writer serve each on its own host's client. Off by default
+(`-c engineeringAgents=true`), and no fixed cost.
+
+### Added
+
+- **A GitLab connection** (`lambda/engineering/connectors/connections.py`, `gitlab_api.py`; docs/autonomous-engineering.md,
+  "Repository connectors"): `PUT /agents/engineering/connections/<id>` takes `{host: "gitlab", repository:
+  "<namespace>/<project>", default_branch, credential?: {token}, reason?}`, the project's path as its address shows it
+  (nested groups too) and a project access token for exactly that project, role Developer, scopes `api`,
+  `read_repository` and `write_repository`, with an expiry. Before anything is stored the Agents API (its first call
+  outside AWS, on a save only) asks gitlab.com three times, each read sent once with 6 s at most, the token only in
+  the `Authorization` header (`GET /api/v4/personal_access_tokens/self`: active, the scopes, an expiry after today,
+  its user; `GET /api/v4/projects/<path>`: the project at that path, the token's user its direct member with the role
+  Developer; `GET /api/v4/user`: that user is this project's own bot, `bot: true` and named
+  `project_<project_id>_bot_<random>`, so a personal access token or another project's token is refused, "use a
+  project access token of this project"): 400 saying what to change, never the token, or 503 when GitLab cannot be
+  asked; nothing stored on either. The token goes to the connection's SSM SecureString like the App's key (the same path, the same put and delete
+  grant, KMS through SSM), with the project's id and path as GitLab spells them and the expiry; the row holds
+  `host: gitlab` and `token_expires_at`, never the token. A row with no `host` is GitHub's: no migration. A host change,
+  like a repository change, needs the credential again, is refused while a run of the connection is live, and voids the
+  CI attestation. The list answers each credential as `{kind, set, app_id, installation_id, expires_at}` (`kind`
+  `app` or `project_token`).
+- **The GitLab client** (`connectors/gitlab.py`, `GitLabHost`, the `RepositoryHost` contract): reads of a file and of
+  history on the run's branch, an issue or a merge request with a page of its notes (diff notes as review comments,
+  approvals as reviews), a patch's base file; pages by `X-Next-Page`, a read lost or answered 502/503/504 sent again
+  once, a write never; a rate limit answered 503 with `Retry-After`; the host's own words kept in an error only after
+  the token and anything credential-shaped are cut out. A push through the Commits API's actions, held to the broker's
+  checked tree before anything is written (GitLab answers no commit's tree id, so the client works it out as git does
+  from the tree listings: `gitlab_tree.py`, pinned against real git), its branch head checked as the lease, a new
+  branch created by its first commit (`start_sha`); since the Commits API has no lease on an existing branch, each new
+  commit's parent and the last tree are read back, and a mismatch, or any failure once the first commit is written,
+  is an unknown outcome (the broker's write claim closed unknown, never made again); a branch the push created is
+  then deleted when its head, checked just before (a read, then an unconditional delete: GitLab has no conditional
+  one), is one of the push's own commits, and the outcome says what landed and whether it was. A push writes at most
+  20 commits, and no later commit starts without the invocation's time for it and the final read-back. The first
+  commit's updates and deletions carry `last_commit_id` (a partial lease). The reads before the write are bounded (400
+  requests, and the invocation's remaining time less 30 s, `hosts.WRITE_READY_BY`): past either the push is refused
+  with nothing written. A draft merge request (`Draft: …`), opened or updated only when the branch has the checked tree
+  and checked again afterwards (closed, unknown, when the check fails); an open one is the run's only when it is from
+  this project (not a fork) into the run's default branch. Notes with their links.
+- **GitLab's CI definitions, pinned or refused** (`connectors/gitlab_ci.py`, `ci_yaml.py`): agents push only to
+  repositories whose CI configuration uses plain local includes and GitLab's own templates; shared CI from other
+  projects, remote includes and components are not supported for now (an owner decision: the token reads this project
+  alone). Before a push the broker reads the project's `ci_config_path` (missing: refused; empty: `.gitlab-ci.yml`;
+  another project's file, this project by `@`, a URL: refused), parses each CI file with PyYAML 6.0.3's composer held
+  strict (`ci_yaml.py`; a new layer of the broker's own, `engineering-ci-deps`, credited in THIRD-PARTY-LICENSES.md:
+  non-UTF-8 input, a BOM, a lone carriage return, U+0085/U+2028/U+2029/U+FFFD, a second document, anchors and
+  aliases, `<<`, tags but `!reference`, duplicate keys and escaped or non-ASCII keys refuse) and walks `include` as
+  structure: only `local` with a literal path (whose file is walked the same way, at most 10 deep and 50 files) and
+  `template`; `project`, `remote`, `component`, `rules` or any other key, and a `*`, `$`, `[[` or backslash anywhere
+  in an include, refuse. Every job's `trigger` is walked the same way: a child pipeline's local file is pinned and
+  walked, anything else in its `include` refuses, and a multi-project trigger (another project's CI) is allowed. GitLab's CI lint is a cross-check (not valid, an include of any kind but `local` or
+  `template`, or a local one the walk did not reach: refused). The CI file and every local file reached (paths normalised)
+  are never added, changed, deleted or renamed (`write_policy.check_ci_definitions`). A refusal names the include:
+  "The repository's CI configuration includes <it>, which the broker can't read and pin; agents can't push to it while
+  it does."
+- **The broker's check of GitLab's branch rules** (`gitlab.py` `ci_protection`): the protected branches (at most five
+  pages), "Pipelines must succeed" (the required check) and, where the API shows it, the push rule. The default branch
+  must be protected with no force push and push and merge for Maintainers only, a merge must need a passing pipeline
+  (and a skipped pipeline must not count as one: `allow_merge_on_skipped_pipeline` on, or not answered, refuses),
+  the agent's branch must be unprotected and the push rule's branch pattern must take it; each refusal a 409 in the
+  same shape as GitHub's (`CiProtection.problems`), and rules the token cannot read refused, failing closed.
+- **One client per connection** (`connectors/router.py` `HostRouter`, `credentials.py`): the stored credential says
+  the host, and every broker operation and the cache writer's fetch go to that host's client. The two clients share
+  one transport bound to its host (`transport.py`).
+- **The checkout cache fetches from GitLab** (`cache.py`): `https://gitlab.com/<namespace>/<project>.git`, the token in
+  the same `GIT_CONFIG_*` extra header as `Basic` of `oauth2:<token>`, never in an argument. A project token is the
+  connection's own long-lived credential, so no revocation call is made for it after the fetch. A missing project or
+  commit and git's access-denied answers (401, 403) are refusals saying what a person does; 429 and 5xx stay
+  transient.
+- **Agents → Connections**: the add and edit dialog chooses the host (GitHub or GitLab), with the project's path, a
+  write-only token field and GitLab's guidance (the role, the three scopes, the expiry of at most a year and its
+  replacement); a GitLab connection shows its host and its token's expiry (a warning within 30 days, and once it has
+  passed); the CI attestation's six points are worded for GitLab on a GitLab connection (protected variables, the job
+  token's least access, `id_tokens` pinned to protected branches, no shared or instance runner for unprotected
+  branches, no merge-request pipeline with secrets, the protected default branch with pipelines that must succeed, a
+  skipped one not counting, and plain local CI includes). In all nine locales. A shared radio
+  group (`components/RadioChoices`) serves the host choice and the decision form's verdict.
+
+### Changed
+
+- docs/autonomous-engineering.md and docs/deployment.md: GitLab moves from planned to built (the scopes, the save's
+  check, the client, the branch rules check, the attestation's wording, the cache's fetch, the egress, the expiry); a
+  self-managed GitLab instance stays planned for the owner to decide (its base URL is one constant,
+  `gitlab_api.py` `GITLAB_HOST`).
+- `lib/test-support/baseline.json` regenerated: the template hashes moved with `APP_VERSION` (7.6.0) and the Lambda
+  asset hashes of the engineering code; no resource or name changed.
+
+### Upgrade notes
+
+- With the module on, the broker gets one new resource: a second Python layer, `EngineeringBrokerCiDepsLayer`
+  (`lambda/layers/engineering-ci-deps`, PyYAML), so a deploy builds one more layer (Docker or Finch, as the others).
+  Developers' and CI's backend venvs install its requirements too (docs/deployment.md).
+- No new IAM statement or egress rule. The broker, the cache writer and the Agents API are Lambdas outside
+  any VPC, as before; each client is held to its one host by its transport (`api.github.com`, `gitlab.com`), and the
+  Agents API reaches gitlab.com only for a GitLab save's token check. Nothing changes with the module off.
+- A GitLab token expires (at most a year after it was made): replace it before then by editing the connection with
+  the new token. An expired one makes the connection's reads and writes fail until it is replaced.
+
+## [7.05.01] - 2026-11-14 (voc-autonomous)
+
+The checkout cache's writer tells failures that will repeat from ones that may pass, and says what to do about them.
+Off by default (`-c engineeringAgents=true`).
+
+### Fixed
+
+- **Failures every later try would meet are refusals** (`EntryRefused`, `lambda/engineering/connectors/cache.py`
+  `fetch_refusal`), each saying what a person does, and the claim is let go at once (no 120 s hold): a fetch the host
+  answers with no such commit ("not our ref", "couldn't find remote ref", an unadvertised object): "the run's commit
+  is not on the repository host (git: no such commit): push it to the connection's repository, or start the run on a
+  commit that is there"; no such repository (the host's "Repository not found", or git's `fatal: repository '<url>'
+  not found` in that form only; another quoted name followed by "not found" stays transient): an administrator checks the connection's
+  repository and the GitHub App's installation on it; an object that fails git's check (`fsck error`): someone
+  checks the repository with `git fsck` and starts the run on another commit; and a token request the host answers
+  with any 4xx but 408 or 429 (a 422, say; 401/403/404 already were): an administrator checks the GitHub App. A
+  busy host (429, 5xx), a timeout and a network error stay transient (`CacheFailed`).
+- **A refusal never says "A Resume of the run tries again"** (`runtime/handler.py` `_refusal_ending`): after the
+  refusal's own words the run's health says what helps, by its cause. A Resume keeps the run's commit, so after
+  the commit's own refusals it says "A Resume of the run keeps this commit: it fills the checkout once the commit is
+  pushed; otherwise start a new run on a commit that is there." (no such commit) and "A Resume of the run keeps this
+  commit and would meet it again: start a new run on another commit." (an object failing fsck); after any other
+  refusal (the repository, the App, a cap), "Once that is put right, a Resume of the run fills the checkout.". Only
+  a failure a later try may pass ends "A Resume of the run tries again.". A "not our ref" answer is refused at the
+  first: a host's brief lag after a push is not told apart (the streak's count is the runtime's, for a board's
+  fills only, and the writer cannot read it); a Resume once the commit is on the host fills it.
+- **A slow streak of transient failures still reaches a person**: a coordinator asking less often than hourly
+  restarted the count at 1 each time, so its agents' launches were told to try again in a few minutes for ever. The
+  run's META row now keeps when the streak began (`cache_failing_since`, set by the first failure, kept across the
+  count's 1-hour restart, removed with the count when a fill lands or a launch finds the entry ready), and once the
+  streak is an hour old (`CACHE_FAILING_LIMIT_SECONDS`) its next transient failure goes to a person whatever the
+  count. The runtime's grant on the run's rows has no attribute condition, so the new attribute needs none.
+- `lib/nag-suppressions.test.ts`: the count's comment names the delivery function's READY read too (one
+  acknowledgement with the supervisor's).
+- `lib/test-support/baseline.json` regenerated: VocApiStack's and VocProcessingStack's template hashes moved with
+  `APP_VERSION` (7.5.1) and the Lambda asset hashes of the engineering code; no resource or name changed.
+
+## [7.05.00] - 2026-11-14 (voc-autonomous)
+
+Autonomous engineering agents: the checkout cache gets its writer, so an agent's sparse checkout has something to clone.
+Off by default (`-c engineeringAgents=true`), and no fixed cost.
+
+### Added
+
+- **The checkout cache's writer, `voc-engineering-cache`** (`lambda/engineering/connectors/cache.py`, its layout and
+  pure rules in `cache_layout.py`; docs/autonomous-engineering.md, "The checkout cache"): `{connection, commit,
+  generation}` → `{status: ready | filled}`. One immutable entry per (connection, commit, 14-day generation) in the raw
+  bucket, `engineering/cache/<connection>/<commit>/g<N>/repo.git/…`: a bare repository holding exactly that commit at
+  depth 1 under `refs/heads/voc-base` (HEAD pointing to it), `uploadpack.allowFilter` on, its objects in one pack. It
+  is complete only once `…/g<N>/READY` exists: a JSON manifest (format, connection, repository, commit, generation, ref, each file
+  with its size and sha256, the total, when it was written), written last and create-only (an IAM deny refuses a READY
+  put without `If-None-Match` too), never rewritten; a fill that finds it does nothing, and one more than a
+  generation from the writer's own clock is refused. READY marks completion, not integrity against readers (the
+  writer is the cache's only writer: see the raw bucket's deny below); each file's sha256 is sent with its put and checked by S3, so the
+  manifest's hashes are what S3 stored. A fill redone after a failed one overwrites the files of the same names (their old
+  versions expire a day later) and may leave an unlisted pack of the same commit's objects, which is harmless. `repository` is where the commit was fetched from (a commit fetched by id may
+  be reachable only through a fork's pull-request ref), not proof of a branch.
+- **Only the writer writes the cache, at the bucket** (`lib/stacks/core-buckets.ts`, `denyCacheWritesButTheWriters`,
+  only with the flag): the raw bucket's policy gains `DenyEngineeringCacheWritesButTheWriters`, a Deny of
+  `s3:PutObject*` and `s3:DeleteObject*` on `engineering/cache/*` for every principal (`"AWS": "*"`) whose
+  `aws:PrincipalArn` is not (`ArnNotEquals`) the writer's role, `arn:<partition>:iam::<account>:role/voc-engineering-cache-<account>-<region>`
+  (its role now has that fixed name, so VocCoreStack names it without a reference to VocProcessingStack), nor, only
+  without `protectData`, the stack's S3 auto-delete provider's role (which empties the bucket with the stack). So no
+  role with a broader grant on the bucket (Data Explorer's put anywhere in it) can plant a READY or overwrite a pack.
+  The 30-day lifecycle expiry is S3's own, no principal's, and is not affected; reads are not denied.
+- **Generations close the expiry gap**: `N = floor(epoch seconds / 14 days)` (`cache_layout.py`, one constant). A launch
+  takes READY of `N`, or of `N - 1` while its manifest was written under 28 days ago; when neither is usable it fills
+  `N` beside the old one. Every object expires 30 days after it was written, so an entry in use is always at least two
+  days from its expiry and the old generation is never read near its deletion; nothing is renewed or rewritten.
+- **The writer** is trusted code that runs no repository code: `git init --bare`, `git fetch --depth=1 --no-tags` of the one commit over
+  https, the commit checked, `git repack -a -d`, with the system and global config, hooks, the file-system monitor,
+  credential helpers and prompts off, https the only protocol, no redirect, every fetched object checked.
+- **Its token**: an installation token for `contents: read` on the connection's one repository (`github.py`
+  `fetch_token`, the broker's own minting from the connection's SSM credential), handed to git only by the fetch's
+  environment (`GIT_CONFIG_COUNT`/`KEY_0`/`VALUE_0`: an `http.<repository URL>.extraHeader` of `Authorization: Basic`
+  of `x-access-token:<token>`); never in a URL, an argument, a file, a log or an error (a git failure is redacted).
+  Revoked once the fetch is over or has failed (`DELETE /installation/token`, `github.py` `revoke_fetch_token`: sent
+  once, never retried, a failure only logged) and forgotten by the container.
+- **Its claim**: a lease row per (connection, commit, generation) in `voc-engineering` (`WS#default#CACHE#<connection>`
+  / `COMMIT#<commit>#G#<N>`, attributes `holder` and `expires_at`), taken by a conditional put, a 300 s lease, ended
+  by its holder: at once after a fill that lands or is refused, 120 s later after one that failed (`CacheFailed`,
+  `FAILED_HOLD_SECONDS`), so during a host outage the launches meanwhile find the fill held (they wait, or hand
+  nothing on) instead of each minting a token and starting a fetch; a claim another fill holds refuses (`CacheBusy`),
+  an expired one is taken over.
+- **Its bounds, and the real ceiling**: 240 s (the fetch at most 150 s and never more than what is left of the 230 s
+  deadline less 80 s for the later steps, the repack 30 s, each other step 10 s, no upload started that would end past
+  230 s by an estimate from its size; the deadline is the earlier of 230 s after the fill began and Lambda's remaining
+  time less 10 s, when the invocation's context gives it), 2 GB of memory, 3 GB of ephemeral storage. A commit is refused when its entry
+  is over 1 GB or 1,000 files once fetched and repacked (`EntryRefused`); a depth-1 fetch that does not finish within
+  its budget fails as "the fetch did not finish within its budget: the repository is too large for the cache, or the
+  host was slow; a Resume tries again" (`CacheFailed`, a failure a later try may not meet); a fill that ran long ends
+  as one out of time, and a pack too large for the scratch space as a git failure (`CacheFailed`, redacted); nothing
+  is marked ready in any of them. Not Lambda's 900 s: the runtime waits for the fill inside its own
+  300 s, which is also how long a move holds a session's claim (`CLAIM_SECONDS`). A host busy or unreachable for the
+  token is `CacheFailed` with its retry time.
+- **Its image's pins**: Lambda's Python base by digest, `git-core-2.50.1-1.amzn2023.0.2` exactly, and every Python
+  package by version and sha256 (`engineering-cache/requirements.txt`, `pip --require-hashes --only-binary=:all:`).
+- **The runtime fills before it launches** (`runtime/checkout_cache.py`, `handler.py`): a run's coordinator is launched
+  only after its commit has a usable entry. `launch_coordinator` invokes the writer and waits (up to 270 s: the
+  writer's 240 s and a cold start), then hands the launch on to a fresh invocation of itself, so the fill and a
+  session's start never share one 5-minute limit; a whole-run Resume checks the cache whatever the coordinator's state
+  and hands a fill on when nothing is usable. A fill refused or failed is said as the run's health in the writer's own
+  (redacted) words, followed by "A Resume of the run tries again.", and the run goes to a person at `checkout_cache`.
+  One another fill holds (another run on the same commit) is waited for, up to 210 s, and its READY serves this run
+  too (a claim that lapses with no READY, a crashed fill, ends the wait and is taken over by the next ask, in a fresh
+  invocation, at most twice); READY's write meeting another in flight (S3's 409) is tried again, not taken as
+  existing; one that outlasts the wait under a live claim is logged as such and the launch asked exactly once more,
+  then a coordinator's launch sends the run to a person ("another fill of the commit held its claim past two waits",
+  or "fills of the commit kept ending with no READY"; both transient, so a fill a board launch handed on counts them
+  as below); a writer that cannot be
+  asked, or does not answer in time, is the cache's failure too (one idle for weeks, which Lambda wakes on that first
+  call, says so: a Resume a few minutes later fills it). A READY read answering 403 (S3's answer to a
+  missing key for a role that lists nothing) is logged apart, not counted as a denied read (every entry not filled
+  yet answers it); still 403 once a fill has written it, the
+  run is refused with "the role cannot read the checkout cache (403)". Every launch, the board's `launch` op
+  included, is refused (`RuntimeRefused`, a 409 the coordinator reads) while the run's commit has no usable
+  generation, or when generation `N`'s manifest names another repository than the run's and no usable `N - 1` of
+  the run's own serves (a connection repointed
+  since: that generation's entry cannot be replaced, so the refusal says the commit waits for the next generation,
+  within 14 days, and that pointing the connection back or a run on another commit helps meanwhile). A launch
+  records the generation it found on the agent's session
+  (`cache_generation`), and the agent's checkout clones that one. A coordinator's launch that finds only `N - 1`
+  usable fills `N` ahead (best effort), and the board's launch of another agent that finds only `N - 1`, or nothing,
+  hands that fill on, unless a fill of `N` holds a live claim (launches after the first fill has taken its claim hand none on; ones racing before it may, and the writer's claim
+  keeps them to one fetch); one handed on while
+  `N - 1` still serves is a background fill, whose failure is only logged and said as health, never a person's; its
+  refusal (`EntryRefused`, say the App uninstalled; a coordinator's fill ahead likewise, its launch then not made)
+  goes to a person at once in the writer's words, not at the 28-day edge. An agent's launch refused while a fill is on
+  its way says "a fill of it is under way; try the launch again in a few minutes". One
+  handed on while nothing serves (the coordinator still works) sends the run to a person only on a refusal
+  (`EntryRefused`: another repository's entry, a role that cannot read the cache, a host that refuses the fetch token
+  with 401/403/404) or on the third transient failure in a row (a slow or busy host, a fetch past its budget, an
+  invoke that failed, other fills of the commit that held their claim or kept ending with no READY), counted as `cache_failures` on the run's META row (failures within 300 s of the last counted
+  are one spell, counted once; one over an hour after the last starts again at 1) and cleared by a fill that lands or
+  a launch that finds the current entry ready. The supervisor waits 21 minutes for a coordinator only when a fill of
+  its checkout began (`cache_fill_at` on META), 6 otherwise. Before the third failure it is said as health only. The agent whose launch
+  found nothing usable is refused as before. A continuation (the supervisor's or a wake's) looks the cache up again and
+  clones the generation usable then; one the supervisor makes on `N - 1` hands `N`'s fill on in the background too,
+  unless a fill of it holds a live claim, so a long run that launches nothing new never meets the 28-day edge (a
+  wake's, in the delivery function, hands nothing on: its role neither invokes nor reads a claim); with none the agent is held (paused, not a crash), the run's health says why and
+  the run goes to a person (`checkout_cache`), whose Resume fills `N` and then resumes the run again, only off that
+  point (a run that reached another decision point meanwhile stays at it).
+- CDK (`lib/stacks/engineering-cache.ts`, `engineering-runtime.ts`): the function, its role and its image
+  (`voc-datalake/engineering-cache/Dockerfile`), only with the flag; the broker's credential grant is now one helper
+  both roles use (`grantConnectionCredentials`, the same two statements).
+
+### Changed
+
+- **An agent's checkout clones its commit's entry**: `checkout.py` clones `file:///mnt/voc-cache/<commit>/g<N>/repo.git`
+  (`cache_source`, the commit checked as a full object id and `N`, the session's `cache_generation`, as a whole number
+  up to 99,999; the mount stays the connection's prefix) with `--depth=1`
+  beside `--filter=blob:none`: git hangs on a blob-less clone of a shallow repository without it.
+- docs/autonomous-engineering.md and docs/deployment.md say the checkout cache's writer is built (its layout, READY,
+  the claim, the token's path through git, the bounds, the launch's refusal, the IAM) and that the dependency caches'
+  filler stays planned.
+- **Data Explorer refuses `engineering/`** (`lambda/api/data_explorer_handler.py`): a save under it answers 400,
+  "Engineering files (engineering/) are read-only in Data Explorer", as `prototypes/` and `silver/` are, in whichever
+  bucket it addresses; the bucket policy above refuses the put under `engineering/cache/` as well. Data Explorer can
+  still list and preview `engineering/cache/`: an administrator can read the cached repository code there.
+- `lib/test-support/baseline.json` regenerated: VocProcessingStack's and VocApiStack's template hashes moved (the
+  Lambda asset hashes of the engineering code their bundles carry, and `APP_VERSION`, 7.5.0, in their functions'
+  environment; the default synth has no cache writer and no cache deny); no resource or name changed.
+
+### Tests
+
+- The layout (the generation at and across its boundary, the 28-day edge of the previous one, keys, the shapes and
+  generations refused, a claim per generation, the caps, the manifest), the token's path (only the fetch's environment carries
+  it; never an argument, a log or an error), READY last and create-only, READY present meaning no work, a READY that
+  landed meanwhile kept, a claim held by another refusing, an expired claim taken over, a release ending only its own
+  holder's lease, the size cap, a bad commit or connection, a git failure redacted, a token that cannot be had, every
+  step bounded; the store and the claims on moto; the image's pins.
+- On real git: the entry is a bare repository of the one commit at depth 1 under its one ref, with `allowFilter`, no
+  hooks and no loose objects, and an agent's sparse blob-less clone of it checks out the commit; no file holds the token.
+- The runtime: the generations (N's READY used; N-1's under 28 days, not at or past it; N-2's never; across the
+  boundary the old generation used until the new one is filled; N filled when N-1 is too old; another repository's
+  N refused, its N-1 passed over), files without READY not ready, the launch refused without a usable entry and
+  starting no session, the generation found recorded on the session and cloned, a continuation cloning the generation
+  usable then and holding the agent (never a crash) when none is, the fill invoked and waited for before the coordinator's launch and the launch in an
+  invocation of its own, a refused fill sending the run to a person, a busy one waited for (and its bound), a Resume
+  refilling an entry gone under a live coordinator, the writer's refusals passed on in its words and nothing else.
+- The round-1 review: a fetch past its budget refused saying so, the token revoked after the fetch (and after a
+  failed one; a failed revocation only logged), each put sending its sha256, a 403 READY read logged apart and, after
+  a fill, refused saying so, a refused fill said as health at `checkout_cache`, a background fill sending nobody, a
+  live claim keeping a burst of launches to no new handoff, a fill outlasting the wait asked once more then refused.
+- CDK: the writer's function (image, arm64, bounds, no retry), its environment, its role's exact statements (the READY
+  create-only deny among them), the invoke and the claim read on the supervisor's role alone, the READY read on the
+  supervisor's and the delivery function's roles and no other, nothing without the flag, and its build context
+  staging only the Dockerfile, its requirements and the filler's code (no tests).
+
+### Upgrade notes
+
+- With the module on, the deploy builds one container image (`voc-engineering-cache`, arm64) as a CDK Docker image
+  asset: Docker or Finch is needed, as for the layers, and the image goes to the bootstrap's asset repository.
+- New: the function `voc-engineering-cache` and its role (writes under the raw bucket's `engineering/cache/` only, reads
+  the entries' READY markers and the connections' SSM parameters, its claim rows in `voc-engineering`); the supervisor's
+  role (`voc-engineering-runtime`) gains `lambda:InvokeFunction` on that one function, `s3:GetObject` on
+  `engineering/cache/*/*/*/READY` (the launch's check) and `dynamodb:GetItem` of a fill's claim (`WS#*#CACHE#*`, its
+  key and `expires_at` only), and the delivery function's role (`voc-engineering-delivery`)
+  the same READY read (a wake's continuation). The start function's role is unchanged: the API waits only 25 s
+  for a start, so the runtime fills before the coordinator's launch it already hands on.
+- A run started before this release has no entry: its next coordinator launch (a Resume) fills it. Nothing to
+  migrate.
+
+## [7.04.00] - 2026-11-14 (voc-autonomous)
+
+Autonomous engineering agents: the CI attestation is recorded, so the broker can serve a push and a draft pull request
+on an attested connection instead of refusing every one. Off by default (`-c engineeringAgents=true`), and no fixed
+cost.
+
+### Added
+
+- **A connection's CI attestation** (`lambda/engineering/connectors/attestations.py`, `connections.py`;
+  docs/autonomous-engineering.md, "Repository connectors"): an administrator acting for themselves (a delegated MCP
+  credential gets 403; 404 while the module is off) attests that the repository's CI meets the setup guide,
+  `POST /agents/engineering/connections/<id>/ci-attestation` `{points, repository, version, reason?}` →
+  `{attestation, created, connection_version}`, every one of its six points confirmed by id (CI secrets scoped to
+  protected branches, a read-only workflow token, OIDC trust pinned to protected branches, no self-hosted runner for
+  unprotected branches, no privileged workflow on a pull request's code, the branch rules), for the repository and the
+  connection version the page showed: 409 once the connection holds another repository or version, checked on the row
+  read and in the write's own transaction condition, so another administrator repointing the connection meanwhile
+  never gets an unreviewed repository attested (the list answers each connection's `version`). It is withdrawn with
+  `DELETE …/ci-attestation` `{reason?}` → `{withdrawn: true}`.
+  Each change is a create-only version row (`CONNECTIONS#default#CI#<id>` / `V#<version>`: the state, the repository
+  it stands for, the points, who and when, the reason) written in one transaction with the connection's audit row
+  (`ci_attested`, `ci_withdrawn`) and a bump of the connection row's version, so a change made meanwhile is 409. A
+  repository change and a removal void it (a `voided` version, its cause, and `ci_attestation: voided` on the save's or
+  the removal's audit row); changing the repository back does not restore it. The connections' list answers each one's
+  newest version.
+- **The broker reads it** (`records.py` `attested`, `broker.py`): at every push and pull request, after the dial, one
+  Query of the newest version in `voc-agents`, projected (`ENGINEERING_CONNECTIONS_TABLE` on the broker); it holds only while it is
+  `attested` for the repository the run started on. A withdrawal or a void holds from the next write. Every other gate
+  is unchanged: the dial, the final go's GO, the write claims.
+- **The broker's own check of the branch rules** (`github.py` `ci_protection`, `hosts.py` `CiProtection`): at each push
+  and pull request on an attested connection, with the connection's `contents: read` token (GitHub's branch read and
+  the ruleset rules of a branch, which any reader sees; at most four requests, no write), the run's default branch must
+  be protected and require at least one status check, and the agent's branch must not be protected by any rule;
+  otherwise 409 saying what to change. A pass is kept five minutes per warm container (at most 256 kept, the oldest
+  dropped first), so rules weakened after a pass can go unseen that long, while a withdrawal or a void takes effect at
+  the next write; a failure is read again next time. Each write's claim row records the attestation's version, when
+  the rules were read and the required checks' names. The check covers only default-branch protection with a required
+  check and an unprotected agent's branch; the App's pushes being limited to `voc-agent/*` stays the attestation's.
+- **Agents → Connections** shows each connection's CI attestation (attested, by whom and when; withdrawn; voided and
+  why; none), with **Attest CI** (the six points as checkboxes that must all be ticked, and an optional note; it sends
+  the repository and version shown) and **Withdraw CI** (after a confirmation, with an optional note sent as its
+  reason), in all nine locales.
+- CDK (`lib/stacks/engineering-broker.ts`): the broker's role gets `dynamodb:Query` on `voc-agents` in the
+  attestations' partitions alone (`CONNECTIONS#*#CI#*`) and of a row only its key, `state`, `repository` and `version`.
+  The partitions match `CONNECTIONS#*`, so every other role that writes `voc-agents` stays denied writes to them.
+
+### Fixed
+
+- **A file and history read use the run's own default branch** (`github.py`, `broker.py`): they read the repository's
+  own default branch, so a run whose connection names `develop` read files of `main`. The broker now hands the host the
+  branch it worked out (the stored one, once the host confirmed it), as `ref` and `sha`.
+
+### Changed
+
+- docs/autonomous-engineering.md, docs/deployment.md and TENETS.md (tenet 3's row) say what is built and what is
+  planned: GitLab (its client and its attestation), sparse clones, the checkout cache, the run's issue and pull request
+  on its record, and the first real run against a repository, which waits for the owner.
+- `lib/test-support/baseline.json` regenerated: VocProcessingStack's and VocApiStack's template hashes moved (the
+  Lambda asset hashes of the code their bundles carry; the default synth has no broker); no resource or name changed.
+
+### Tests
+
+- The broker on the fake host, end to end through the routes and the broker's Lambda on moto: a draft pull request is
+  refused with no attestation, opened once one is recorded (its claim keeping the attestation and the branch rules),
+  refused again once it is withdrawn; a repository change voids it and the broker refuses until the repository is
+  attested again; an attested connection whose default branch is unprotected is refused.
+- The record: each version's fields, create-only rows, the audit rows, the version bump and the 409 of a raced
+  repository change, an attestation answered as it stands, a withdrawal and a new attestation after it, the voids, the
+  404s and 503s, and every point required (a refusal naming what is missing, never echoing a value).
+- The routes: the admin gate (a plain user and an administrator's MCP credential get 403), 404 with the module off,
+  400 for a body off its rules, the audit rows and their reasons, and the repoint race: a connection repointed (or
+  changed) after the page showed it is 409 with nothing recorded, through the route and the store, and a repoint
+  between the store's read and its write is refused by the transaction's own condition (which names the reviewed
+  repository and version).
+- The broker's reader: the newest version decides, only for the run's repository, none without the agents table or the
+  run's `repo`, one projected Query of exactly the attributes its IAM grant allows, 503 on a failed read.
+- The branch rules: classic protection and rulesets, the required checks of both, each rule off the guide refusing the
+  push and the pull request, the names kept bounded, a pass kept five minutes and a failure read again, the cache's
+  bound; a file and history read on the run's branch.
+- CDK: the broker's new statement (the partitions, the attributes, a Query only, voc-agents alone) and its variable.
+- The web app: each state's text, the attestation sent only once every point is ticked (the first one left focused),
+  the note sent, a 409 in the server's words, the withdrawal after its confirmation, and the attest flow in each of the
+  nine locales through their own labels.
+
+### Upgrade notes
+
+- With the module on, every push and pull request is refused until an administrator attests the connection's CI
+  (Agents → Connections → Attest CI), and then while the repository's default branch is unprotected, requires no
+  status check, or a rule protects `voc-agent/*` branches. Nothing to migrate.
+
+## [7.03.01] - 2026-11-14 (voc-autonomous)
+
+Autonomous engineering agents: the follow-ups of 7.03.00's reviews. Off by default (`-c engineeringAgents=true`), and
+no fixed cost.
+
+### Fixed
+
+- **The connection's stored default branch is the broker's** (`connectors/records.py`, `github.py`). It was stored and
+  never read: the broker held every run to the repository's own default branch. A run's start now copies the stored
+  connection's default branch onto the run (META's `default_branch`, beside its `repo`: `POST
+  /agents/engineering/runs`, then `runs.py`), and the broker holds the run to it (never a push to it, a new branch
+  starts on it, a draft pull request opens against it) once the host confirms the repository has it (one branch lookup,
+  `contents: read`, kept five minutes, each of the two branch caches bounded to 256 entries), asked only after the
+  repository check, so a credential re-pointed at another repository is never used for it (`records.py` reads nothing
+  of the host). A branch the repository does not have refuses the run's every operation, 409
+  (`StoredBranchMissing`), until an administrator corrects the connection and starts the run again. A run started
+  before this release has none on its META and keeps the repository's own default branch.
+- **Two administrators adding the same connection id at once** (`connections.py`): the losing save's undo deleted the
+  parameter the winning save had just stored, leaving a row that says its credential is set with none behind it. The
+  undo now reads the row again: with none stored (or a removed one) the parameter is deleted, as before; once another
+  save stored a row, nothing is deleted, and that row is marked credential not set instead (the parameter may hold
+  either save's credential), with its audit row. A row that cannot be read again is taken as none: deleted, failing
+  closed. One ordering is not prevented and fails closed: the loser's row write fails for another reason (a
+  throttle), the winner's put lands, the loser's undo (no row yet) deletes it, and the winner's row is written after.
+  SSM has no conditional delete and the Agents API cannot read a parameter, so the delete cannot be held to the
+  loser's own version; the row then says set with no credential behind it, and the broker refuses every run on the
+  connection (503) until it is saved again with its credential, never serving one with another's.
+
+### Added
+
+- An optional `reason` on a connection change (`PUT …/connections/<id>` `{…, reason?}`, `DELETE …/connections/<id>`
+  `{reason?}`, the body optional): one line, at most 500 characters (longer is 400, never cut), credential-shaped text
+  redacted, kept on the change's audit row (D4's why). The web app does not send one yet.
+
+### Changed
+
+- **The Agents API's role uses the stack's key only through services** (`lib/stacks/api-assistant-lambdas.ts`). Audit
+  of its uses: DynamoDB (`voc-agents`, the aggregates table, `voc-engineering`), S3 (the workspace's reports) and SSM
+  (the connections' parameters); `voc-agent-run` has no customer-managed key, and the code calls KMS itself nowhere.
+  So the unconditioned `kmsKey.grantEncryptDecrypt` is replaced by `kms:ViaService` statements for exactly those:
+  through DynamoDB the actions a table key needs (what lib/utils/exact-grants.ts left of the old grant), through S3
+  `kms:Decrypt` (with the module on), and the SSM statement of 7.03.00, which now narrows what it states.
+- The 409 for a repository change while a run of the connection is live reads the runs, then writes: a run started
+  between the two is not seen. docs/autonomous-engineering.md and `connections.py` now say so, and that what
+  guarantees a run never reads or writes another repository is the broker's own check (it serves a run only while the
+  connection's credential names the run's repository), which fails closed.
+- Agents → Connections, "What the credential needs", all nine locales: what a token holds now names the App's own
+  permissions (Contents, Pull requests and Issues, read and write; Metadata, read-only), as the line above it asks the
+  App for, instead of contents and pull requests alone.
+- `lib/test-support/baseline.json` regenerated: VocApiStack's template hash moved (the Agents API role's key
+  statements, and its Lambda asset hashes) and VocProcessingStack's (the Lambda asset hashes of the code its bundles
+  carry); no resource or name changed.
+
+### Tests
+
+- The stored default branch: META keeps it from the start (`runs.py`, the runtime handler, the Agents API's start);
+  the broker's records hand it on without asking the host; the broker asks for it only after the repository check
+  (none asked for a run on another repository), refuses each operation while the host lacks it (its words never
+  naming the branch) and pushes on it; the GitHub client's branch lookup (`contents: read`, kept five minutes, a
+  refusal never kept, the caches bounded with the oldest dropped first), the handler's 409, and end to end through
+  the route and the broker's Lambda against a fake GitHub.
+- The race on moto (DynamoDB, SSM, KMS): another administrator's whole add between a save's read and its credential
+  put; the loser's undo keeps the parameter and marks the winner's row not set (its next save with the credential sets
+  it again); the same for a re-add of a removed connection; a row that cannot be read again deletes the parameter;
+  and the one ordering left (a throttled write, the winner's put deleted before its row) ends with the broker
+  reading no credential, until a save with the credential restores it.
+- The reason: kept one line and redacted on the audit rows of a save and a removal, absent when not given, refused
+  over 500 characters or when not text, and through the routes (the DELETE's body checked).
+- CDK: every statement of the Agents API's role on the key names its one service (DynamoDB, S3, SSM, with their
+  actions), with the module on and off.
+- The web app: each of the nine locales names the App's four permissions in what a token holds.
+
+### Upgrade notes
+
+- Nothing to do. With the module on, a connection whose default branch is not the repository's (or no longer exists)
+  now refuses its new runs' operations (409) until it is corrected under Agents → Connections.
+
+## [7.03.00] - 2026-11-14 (voc-autonomous)
+
+Autonomous engineering agents: repository connections can be stored, so the broker serves a run on a stored connection
+instead of answering 503 to every operation. Off by default (`-c engineeringAgents=true`), and no fixed cost.
+
+### Added
+
+- **Repository connections** (`lambda/engineering/connectors/connections.py`; docs/autonomous-engineering.md,
+  "Repository connectors": "The connections"), through the Agents API, for administrators acting for themselves (a
+  delegated MCP credential gets 403) and only where the module is deployed (404 otherwise):
+  `GET /agents/engineering/connections` lists them (of the credential only whether it is set, and the GitHub App's
+  ids); `PUT /agents/engineering/connections/<id>` stores one (host `github`, the repository `owner/name`, the default
+  branch, and the GitHub App's credential: its id, installation id and private key); `DELETE …/connections/<id>` removes
+  it. Every field is checked and a refusal names the field, never its value. The credential is written to the SSM
+  SecureString the broker's reader reads (`/[<prefix>-]voc/engineering/<id>`, standard tier, the stack's key) and is
+  never answered, logged or stored anywhere else; a save without it keeps the stored one, and adding a connection or
+  changing its repository needs it. A repository change while a run of the connection is live is 409, as are a 21st
+  connection and a change made meanwhile (version-conditioned). A removal deletes the parameter first, so the
+  connection's runs are refused within five minutes (a warm broker keeps a read credential that long). Every change writes a create-only audit row (who, when, what changed, never
+  the key; D4) in the same transaction as the connection's row (`voc-agents`, `CONNECTIONS#default`).
+- **Agents → Connections** in the web app, for administrators with `features.engineering`: the list (repository,
+  default branch, the App's ids, the credential set or not, who changed it last), adding and editing a connection
+  (the private key is write-only: never prefilled or shown back, kept only in the dialog's state and the one request;
+  left empty, it keeps the stored credential), removing one after a confirmation that says its live runs lose access within five minutes,
+  and what the App needs (Contents, Pull requests and Issues read and write, Metadata read, no admin, workflows or
+  secrets permission; the tokens it mints carry only what a step needs). All nine locales; the dev mock serves the
+  three routes with the server's rules.
+
+### Changed
+
+- A run starts only on a stored connection (`POST /agents/engineering/runs`: 400 otherwise), and its `repo` (the
+  reports' and the spend ledger's grouping) is the connection's repository instead of its id.
+- The broker serves a run only while its connection's credential names the repository the run started on (its
+  META's `repo`): any other, or none recorded, is refused, 409, for every operation (`RepositoryHost.repository`).
+  So a credential and its row that disagree after a failed save, or a repository changed under a run, never send
+  a run's reads or writes to another repository. When a credential changed and its row could not be written, a
+  stored connection's row is marked credential not set (with its audit row), and a new one's parameter deleted.
+- The Agents API's role, with the module on: `ssm:PutParameter` and `ssm:DeleteParameter` on exactly the connections'
+  parameters, and a statement of `kms:Encrypt` and `kms:GenerateDataKey` on the stack's key only through SSM and only
+  for those parameters (it narrows nothing yet: the role's older unconditioned encrypt/decrypt grant on the key, for
+  its DynamoDB items, still covers it); no `ssm:GetParameter`. Its env names the parameters' prefix and key (`ENGINEERING_PARAMETER_PREFIX`,
+  `ENGINEERING_PARAMETER_KEY`). The broker keeps its read, unchanged.
+- The explicit Deny every other `voc-agents` writer holds on the hard cap's partition (`DenyHardCapWrites`) now covers
+  the connections' partitions too (`CONNECTIONS#*`): the Agents API is their one writer.
+- The broker's credential reader takes the repository rule and the parameters' env name from `connections.py`, one
+  definition for the writer and the reader.
+- docs/autonomous-engineering.md and docs/deployment.md: the connections are built; GitLab, sparse clones, the checkout
+  cache and the CI attestation's record stay planned (so every push and pull request is still refused).
+- `lib/test-support/baseline.json` regenerated: VocApiStack's and VocProcessingStack's template hashes moved (the Deny on
+  the other `voc-agents` writers, and the Lambda asset hashes of the code their bundles carry); no resource or name
+  changed. The Agents API's new grants and env exist only with the module on, outside the default synth.
+
+### Tests
+
+- The store on moto (DynamoDB, SSM, KMS): what is stored is what the broker's own reader parses; the key is in no row,
+  answer or log line; each change's audit row; a save that keeps the credential; the repository change refused while
+  a run is live, and allowed after; the limit; a concurrent change; SSM failures; every field's rule, a key the broker
+  could not use (encrypted, not RSA, too large) refused without being quoted.
+- A failed row write after a replaced or deleted credential leaves the row "not set" with its audit row; the broker
+  refuses, for each operation, a run whose connection names another repository (or none recorded).
+- The routes: the whole flow as an administrator, 403 for a plain user and an administrator's MCP credential, 404 while
+  the module is off, 503 without the parameters' path or key, and, end to end, a run's read through the broker's Lambda
+  against a fake GitHub: 503 before the connection is stored, answered once it is stored through the route (its token
+  minted for the stored repository alone), 503 again once it is removed. A start on a connection that is not stored is
+  400.
+- CDK: the Agents API's SSM and KMS grants pinned (no read of a parameter in any form; nothing while the module is
+  off), the Deny's two partitions on every other `voc-agents` writer.
+- The web app: the list, adding, editing (the key kept or asked for again), removing with its confirmation and Escape,
+  the form's checks before anything is sent, and the key never in the page or the query cache after a save.
+
+### Upgrade notes
+
+- Nothing to do for a deployment with the module off. With it on, deploy as usual; then add each repository under
+  Agents → Connections with its GitHub App (install it on that one repository only). A run started before this
+  release recorded its connection's id as its repository, so the broker refuses it (409) even once the connection
+  is stored; start it again on the stored connection. TENETS.md's tenet 3 and 4 rows name the connections.
+
+## [7.02.01] - 2026-11-14 (voc-autonomous)
+
+Autonomous engineering agents: two fixes to 7.02.00's broker writes. Off by default, and no fixed cost.
+
+### Fixed
+
+- The broker took a write's `attempt` only up to 1000, while the runtime runs a task's attempts up to 9999 (`runtime/interface.py` `MAX_ATTEMPT`): an agent at attempt 1001 or later could never push, open its draft pull request or comment, and was told only that its request was malformed. The broker's handler now takes the runtime's own bound, one constant for both.
+- An outcome the model must read could still crash the session: after a write whose outcome is unknown, and after a write that was made, the tools reported it on the task through the board, and a board that refused that report or could not be reached ended the session, with a write already past. Those reports no longer raise (`AgentContext.written`): the session's own status always has them, and the board gets them when it answers; the model reads the write's outcome as before.
+
+### Changed
+
+- The broker's docstring says what a write's claim row records (its outcome, operation and time under the agent's key) and that the audit row of who asked (D4) is still planned; the claim row's attributes are listed on `WriteClaims` itself.
+- `lib/test-support/baseline.json` regenerated: VocApiStack's and VocProcessingStack's template hashes moved with their Lambda asset hashes alone (the engineering code their bundles carry changed); no resource, name or grant changed.
+
+### Tests
+
+- A write's `attempt` is taken at every attempt the runtime runs a task at (1, 1001, 9999) and refused past it, the bound read from the runtime's constant.
+- A board that fails every progress report never crashes a writer's session, for each of the three writes, whether the outcome is unknown or the write was made.
+
+### Upgrade notes
+
+- Lambda code (asset hashes) and the agents' images' harness files only: rebuild the images before the first run. No IAM, route, table or environment change.
+
+Built on the voc-autonomous branch. Off by default.
+
+## [7.02.00] - 2026-11-14 (voc-autonomous)
+
+Autonomous engineering agents: the harness reaches the connector broker. Before, its broker interface refused every call, so a run on AWS would have stopped at the fixer's `submit_work` and no writer could push, open a draft pull request or comment. Now each agent calls the broker's function URL as its own session, and the broker's own checks (the caller's role, the run, the dial, the CI attestation, the GO ledger, the write rules) decide, as before. In a deployment the broker still answers 503 to every operation: no connection's credential can be stored yet (the connection page is planned), and with one, every push and pull request would still be refused until the CI attestation is recorded. Nothing has run against AWS yet. Off by default, and no fixed cost.
+
+### Added
+
+- The harness's broker client (`lambda/engineering/runtime/harness/broker_client.py`), beside the board's and in its style: each call is a POST of `{"operation", "args"}` to the broker's function URL, signed SigV4 (service `lambda`) with the agent's own role session. The broker takes the caller from that session, never from the body.
+  - Reads (`read`: a page of a file, a history, an issue or a pull request) are retried on a 503 or a lost connection, twice, backing off.
+  - Writes (the committer's `push_bundle`, the PR author's `open_or_update_draft_pr`, the PR reviewer's `post_comment` on the run's pull request) are sent once and never retried, each with the agent's attempt (`VOC_ATTEMPT`).
+  - A write whose outcome the client cannot know is `ports.WriteOutcomeUnknown`, never a refusal and never a crash: a timeout or a lost connection, an `http.client.HTTPException` (a cut body's `IncompleteRead` included), a 5xx other than the broker's own 503 (the broker's own 502, a host error; the function URL's own 502 or 504), and a 200 whose body is unreadable or off its shape. The tools tell the model "outcome unknown: do not repeat it; it stays unknown until a person checks the host", and the task's progress says so. Nothing reads the host back yet: reading it back at a repeat, and showing the unknown claims on the run monitor, are planned.
+  - `submit` makes no call: the broker defines none. The submission is the patch `submit_work` wrote under the agent's own keys, which the broker reads at the committer's push. The client checks that the key is one the broker pushes (a fixer's or builder's submitted patch of the run, at its commit, the agent's own), and says what happens to it next.
+  - Every wait is bounded at 125 s (past the broker function's 120 s), and a redirect is never followed. A read's answer over 6 MB or off its shape is refused. Any other non-200 answer (a read's, a write's 4xx, the broker's own 503, which says nothing was written) is a plain refusal with its status and reason, at most 500 characters.
+- A broker's refusal is a tool result the model reads (`ports.BrokerRefused`), never a crash: the writers' skills already say a refusal is the answer, never something to work around.
+- Each broker write is made at most once per key: the caller's run, agent and attempt, the operation and a digest of what it writes (`connectors/broker.py` `write_key`, `_once`; the handler's optional `attempt`, 1 by default), so the same write asked again is one write and a different one (a second comment, a pull request's new text) is its own. Just before the host call the broker writes a create-only claim row in a partition of the run's writes alone (`WS#<ws>#WRITES#<run>` / `WRITE#<agent>#<attempt>#<operation>#<digest>`, `connectors/records.py` `WriteClaims`; never the run's own partition) and closes it with the outcome: `done` with the answer (a number, a URL, a branch and tree; never a body), `refused` (nothing written, a host's rate limit included, still answered 503 with its `Retry-After`: the key may be claimed again) or `unknown` (any other host error: answered 502). Once a write's request has gone out, any failure is `unknown`, never `refused`: the GitHub client raises a plain host error (`OutcomeUnknown`) when a pull request it opened or updated fails its check after the write (the branch moved, a rate limit, a host error; one it opened is closed first, and a failed close changes nothing), so the claim is closed unknown and never claimable again. A failure to mint the host token before the write is recorded unknown too, which blocks that write for the attempt (on the safe side); a credential the broker cannot read is "no connection" (503, nothing written). A repeat is answered from its first outcome before the run's, the dial's and the board's checks (as a repeated launch is), so a write made answers its answer even after the run moved on; a repeat of one whose outcome is unknown, or whose claim a crash left open, is never made again, and stays unknown until a person checks the host.
+
+### Changed
+
+- `main.py` builds the broker port from `VOC_BROKER_URL`, signed with the agent's session; with no URL the broker still refuses (`PendingHarnessPorts`). The board's ports are unchanged; either URL is wired without the other.
+- The runtime hands every agent the broker's function URL: `ENGINEERING_BROKER_URL` on the supervisor, the delivery and the start functions, `VOC_BROKER_URL` in each agent's environment (a launch's, a continuation's and the CLI's tool server's). Its host goes on the agent's own egress proxy by name (`egress.egress_allowlist`'s `service_urls`, checked by `FUNCTION_URL_RE`); the dependency step's proxy, which repository code uses, never gets a function URL (`egress.split`).
+- The agent roles' function URL grant is one statement per function: `BrokerUrl`, `lambda:InvokeFunctionUrl` on the broker's function alone, with `lambda:FunctionUrlAuthType` `AWS_IAM`, beside `BoardUrl` for the board's (before, one `BoardAndBrokerUrls` statement on both). The same permissions.
+- The gate's wording: a gate record's GO is refused when the checkout's tree differs from the judged one, and the docs and the 6.29.00 entry now say so, with the limit: no check is tied to the tree it ran on. Before, they said it refused "when a command wrote, changed or deleted a file". The refusal's text says the same.
+- docs/autonomous-engineering.md: what now reaches the broker (the client, the URL, the egress, the grant, the refusals, an outcome unknown, the write claims) and how far a run gets: on AWS, to the committer's push, which the broker answers 503 until a connection can be stored.
+- `lib/test-support/baseline.json` regenerated: VocApiStack's template hash moved only with its Lambda asset hashes (the Lambda bundles carry the engineering code that changed; no API resource changed), and VocProcessingStack's with its asset hashes, the broker's claim grant and the runtime's new environment variable.
+
+### Tests
+
+- The client against the broker's own handler behind a function URL stand-in that checks each request's SigV4 signature (the region, the service, the signed host, date, token and body, recomputed with botocore) and hands the verified assumed-role ARN to the handler (`runtime/test/broker_stub.py`). Each writer makes its one write; the broker refuses a fixer's push, a committer's comment, a push without a GO, another run's branch, personal data in a pull request's body, and a Human-driven run's push, and the client says why. An unsigned, tampered, other-region, other-URL or unknown session's request never reaches the broker. A read retries, a write never does; a read's answer off its shape is refused; a submission makes no call and takes only the agent's own submitted patch.
+- Every way a write's outcome can be unknown, for each of the three writes, is `WriteOutcomeUnknown` (sent once, never a refusal), and the broker's own refusals of a write stay refusals; the tools tell the model the outcome is unknown, never refused, and the session goes on. A repeated comment answers the first one and is posted once, while a different comment, or the same one at a new attempt, is its own; a write the host failed on is unknown and its repeat is never made; a claim a crash left open is never made again; a refused push and a rate-limited comment (503, `Retry-After`) wrote nothing and may be asked again; the claim rows land in the writes' partition and nowhere in the run's. A draft whose check fails after the create (a rate limit, the branch moved) is unknown, its repeat opens no second pull request, and an updated one whose check fails is unknown, never "refused, nothing written"; a repeat of a write made answers it after the run stopped or the dial turned Human-driven, while a new write is refused. The claim rows on moto (create-only, closed once, re-claimed only after a refusal, unreadable is 503) and the handler's `attempt` (a whole number from 1 to 1000).
+- The Bug hunt and fix run (`test_engineering_bug_hunt_flow.py`) now reaches its draft pull request through the real client and the broker's own checks: the run's record and the GO ledger over the run's rows, the submitted patch read from the workspace and rebuilt on the run's commit, and the dial (the starter AI-driven). The host, on the fixture repository, rebuilds the push with git and moves the branch only when the tree is the one the gate judged. The CI attestation, whose record is planned, is the one thing the test stands in for. A push asked for before the GO, and a fixer's push, are refused by the broker on the way.
+- The CDK pins: each agent role's two URL statements, on the board's and the broker's functions alone, IAM-authenticated, and the broker's URL in the runtime's three functions; the broker role's claim grant (GetItem, PutItem and UpdateItem on voc-engineering in the runs' writes' partitions only, of the claim's attributes only, and GenerateDataKey through DynamoDB only), its one write.
+
+### Upgrade notes
+
+- Lambda code (asset hashes), and the agents' images' harness files: rebuild them (the harness has a new module, `broker_client.py`). One IAM change on the 13 agent roles: the `BoardAndBrokerUrls` statement becomes `BoardUrl` and `BrokerUrl`, the same permissions on the same two functions. One IAM change on the broker's role, its first write: `WriteClaims` (`dynamodb:GetItem`, `dynamodb:PutItem`, `dynamodb:UpdateItem` on voc-engineering, only in the runs' writes' partitions, `WS#*#WRITES#*`, and of a claim row's attributes) and `WriteClaimsKey` (`kms:GenerateDataKey` on the stack's key through DynamoDB only, for voc-engineering's encryption context only). The broker's write operations take an optional `attempt` (1 by default); the harness sends its own. One environment change: `ENGINEERING_BROKER_URL` (the broker's function URL) on voc-engineering-runtime, voc-engineering-delivery and voc-engineering-start. A session launched before this release keeps the egress it was launched with, its continuations too, so it cannot reach the broker; nothing has run against AWS yet. No route or table changes (the claim rows live in voc-engineering, in partitions of their own, `WS#<ws>#WRITES#<run>`).
+
+Built on the voc-autonomous branch. Off by default.
+
+## [7.01.00] - 2026-11-14 (voc-autonomous)
+
+The project branch takes main's releases since they parted beside the autonomous engineering agents (6.04.09 and 6.05.00 to 6.29.00 here): main's 6.05.00 of 2026-11-11 (Node.js 24, the minimatch and fast-xml-parser fixes), 7.00.00 (the company logo in prototypes; **breaking:** the company logo is at most 1 MB) and 7.00.01 (the Kiro agents' secret paths and write checks). The merge itself changes no behaviour of either side; a deployment of this branch's line gets main's changes with it. Both lines numbered a release 6.05.00; each keeps its own section, as released.
+
+### Changed
+
+- One version for both lines: 7.01.00, above main's 7.00.01 and this branch's 6.29.00.
+
+### Upgrade notes
+
+- From 6.29.00, read main's 7.00.00 (breaking: `POST /settings/design-system/logo` and **Use this logo** answer 400 above 1 MB; deploy `VocCoreStack` before `VocApiStack`, for the new `CompanyLogoReadPolicy`) and main's 6.05.00 of 2026-11-11 (deploy from Node.js 24.15+, and run `npm ci` again in `voc-datalake/`, `voc-datalake/frontend/` and `voc-datalake/lambda/stream/`).
+- The Api, Core and Processing stacks' template hashes in `voc-datalake/lib/test-support/baseline.json` move: Api and Processing with the release number (`APP_VERSION`) and both sides' changes, Core with main's `CompanyLogoReadPolicy` and its export.
+
+## [6.29.00] - 2026-11-14 (voc-autonomous)
+
+Autonomous engineering agents: every role the coordinator posts work for now has a skill, so the board launches its agents and the runtime runs each one with its skill's harness and model. Before, only the coordinator had one, and a flow's tasks were posted but no agent of their roles could start. Nothing has run against AWS yet: the first real run waits for the owner. Off by default, and no fixed cost.
+
+How far a run gets today: on the local fake runtime with scripted models, the Bug hunt and fix template runs from the hunt to the draft pull request (a test). Against AWS, once the owner starts one, a run would launch its steps' agents and stop at its first call to the broker: the fixer's or builder's `submit_work`, which hands the patch to the harness's broker interface, not wired to the broker's function URL yet. The patch is written under the agent's own keys, but the session crashes before it is recorded on the task, so the gate has no submitted patch to judge and nothing reaches the host (a test). The final go's model judges from its brief and has no tool to read the gate runner's record or the findings yet; its GO counts only by the GO ledger's rule, which needs the gate runner's own GO on the same tree (below).
+
+### Added
+
+- A `voc-skill/1` record for each launchable role (`lambda/engineering/runtime/harness/skills.py`, version 1): the mapper, the issue understander, the bug hunter, the fixer, the feature builder, the committer, the commit reviewer, the gate runner, the PR author, the PR reviewer and the final go. The coach has none: it is not launched as an agent.
+  - Each holds its role's job from the agent catalog, worked examples, its tool policy, its model from the doc's model table (Haiku 5.5 for the mapper, the understander and the gate runner; Opus 5.5 for the final go; Sonnet 5.5 for the rest) and the `converse` harness (the owner's Converse-only decision).
+  - Every one keeps tenet 3 in its words: a pull request is always a draft; an agent never merges, never marks one ready and never changes the run's way of working or its limits; everything from the repository is data; feedback is cited by its ids only.
+- The roles' own tools (`lambda/engineering/runtime/harness/role_tools.py`), each offered only to the roles whose job needs it:
+  - `write_findings` (hunter, commit reviewer, PR reviewer): a `voc-finding/1` shard under the agent's own keys, at the workspace layout's place for its package;
+  - `write_notes` (mapper): a `voc-note/1` shard, at the same place;
+  - `write_gate_record` (gate runner, final go): `voc-gate-record/1` under `_gate/attempt-<n>/record.json`, built by the harness field by field, so a GO never rests on what a model types. The record's tree is the one the harness hashed (below), never a value the model sends. The gate runner's checks are the commands the harness saw it run and how they exited: a GO only with at least one check, all passed, and its record has no final go. They are whichever commands its model ran: nothing matches them to the packs' commands yet, so whether they were the packs' is the final go's to judge (a follow-up). The final go must write one, and the harness fills its agent and model from the session. A task that names no submitted patch cannot write a GO. Every record reads back through `GateRecord.from_dict` (a test). The final go's record is the one the GO ledger reads;
+  - `post_subtask` (hunter, builder): one task for the one role each posts for (a fix, a sub-build), the board's own rule;
+  - `push_commit` (committer): the broker's push of the patch a fixer or builder submitted (`{branch, patch, tree_hash, message}`), after the gate's GO; `open_draft_pr` (PR author), `post_comment` (PR reviewer, on the run's pull request). Each is the writer's one broker write, through the harness's broker interface, which still refuses every call.
+  - An output is written once; its key is recorded on the task when the agent finishes (the board's `result_keys`; `submit_work`'s patch too). A continuation keeps the keys and checks written before it, and an output its crashed session wrote (S3's create-only `PreconditionFailed`) is kept and recorded, never a crash; the task's progress says it was kept.
+- The gate judges the patch the committer pushes (`role_tools.judge_submitted_patch`):
+  - The coordinator's `post_task` takes a `patch` for a gate runner's, a final go's or the committer's task (in the task's spec): the key of a patch a fixer or builder of the run submitted at its commit, never a checkpoint's snapshot. `read_board` lists each task's recorded outputs (the board's `tasks` op now returns `result_keys`), so the coordinator finds the fixer's patch there.
+  - Before a gate runner's or final go's session runs anything, the harness applies that patch to its fresh checkout of the run's commit (working tree and index), by the broker's rules: the same keys and size, no copy and no binary file without its content, and an exact apply. Anything else stops the session before any check runs. The harness's own git then hashes the tree (`git add --all`, `git write-tree`), and that tree is the record's. At `write_gate_record` it hashes the checkout again the same way and refuses a GO, with a plain reason, when the tree differs from the judged one: the record can then only be a NO-GO (or STOPPED). The limit: no check is tied to the tree it ran on, so a command that changes the tree and another that changes it back leave the judged tree, and the checks between them ran on another one. The gate runner and the final go hash the same tree, each on its own checkout. A gate session's checkpoints save its working tree on that tree, and a continuation applies the patch again before it puts them back. The CLI's tool server takes the tree from its harness (`VOC_GATE_TREE`), never from the session's start.
+  - One GO ledger rule for the board, the flow and the broker (`flow/ledger.py` `go_tree`): the final go's GO counts only when the gate runner task that ended last ended done with a GO record (its checks run and passed, no stop) on the same tree. A final go's GO after a gate runner's NO-GO, STOPPED or failure, or for another tree, is no GO: the gate takes its `fail` arrow and the broker pushes nothing. The broker now reads the gate runners' gate records too, for this.
+  - In a run that follows a flow, the board takes a final go's task that names a patch at a quality gate only once the step's last gate runner task ended done with a GO record, and only for that task's patch (`board/flow_guard.py`). A final go naming no patch can still be posted, so the gate's `fail` arrow stays reachable, but it can only write a NO-GO.
+  - The broker then pushes the patch only for the tree the final go's GO names, and the host's client moves the branch only when the tree it rebuilt from the patch is that tree. So a push lands only the patch the gate judged.
+  - A gate judges one submitted patch, so a run pushes one: when a hunter posts several fixes, the coordinator names one of them, and the others are not pushed (combining them is a follow-up).
+- A role's skill as a benchmark candidate (`lambda/engineering/benchmark/candidate.py`, `SkillCandidate`): the skill on the harness's own Converse loop, its prompt and its tools, on the case's copy. It answers with the change its tools made, or the findings it wrote. It runs no repository command: the case's own check runs the code.
+- `SkillStore.seed_shared`: an administrator starts a role's shared skill from its shipped record, as the shared skill's first version, proposed and accepted, only while the shared skill has no version.
+
+### Changed
+
+- The Bug hunt and fix and Feature templates commit after the quality gate: a new `commit` agent step (the committer) on the gate's `pass` arrow, before the PR author, and the committer left their boards. Before, the committer was on the board, before the gate, where the broker (which pushes only a tree the board's GO names) could only refuse its push. The doc's flow table says so: hunt → understand → fix → commit review → quality gate → commit → PR.
+- The broker reads a committer's push of the patch a fixer or builder of its run submitted at the run's commit (the patch the gate judged), never a checkpoint's snapshot (`connectors/patches.py`); every other agent still pushes only its own.
+- The gate runner is one of the bus's task roles (`lambda/engineering/bus/schema.py` `ROLES`): its tasks are posted and claimed like any role's, at a step that takes it (the quality gate's, in the shipped templates, whose final go already waited for one done). It still speaks only its gate results (`bus/senders.py`, which now checks an agent's source against `ROLES` alone).
+- The outputs' shapes (the finding, note and gate record schemas, the severities, verdicts and note kinds, a gate record's plain names and stop reasons, a finding's file, the package encoding of a workspace key, the agents' branch prefix, a submitted patch's key and the broker's size bound) have one home, `lambda/engineering/runtime/outputs.py`, shipped in the four images beside the harness and read by the readers (`workspace/findings.py`, `workspace/layout.py`, `knowledge/notes.py`, `quality_gate/record.py` and `review.py`, `connectors/write_policy.py`, `connectors/patches.py`).
+- The Converse loop and the CLI take the system prompt from the skill the session runs (`ToolBox(context, skill)`), so a candidate version is measured as it would run.
+- docs/autonomous-engineering.md says which roles have skills, with their tools and models, that their agents can now be launched, and that the first real run waits for the owner.
+
+### Tests
+
+- Each role gets exactly its skill's tools, never a tool beyond its role's: the code tools only for the roles that run code, and each writer its one broker write and no code tool. Each output lands where its reader reads it, in a shape the reader keeps.
+- A run of the Bug hunt and fix template on the local fake runtime, with scripted Converse models. The board launches each step's agent through the runtime's own launch, with the skill's argv, and each agent runs the harness's entry with that argv: hunter, fixer, commit reviewer, gate runner, final go, then the committer (pushing the fixer's submitted patch, only after the GO) and the PR author, to the draft pull request. The fixer and the gate's two run on real git: the gate runner and the final go read the fixed file, and both records name the fixed tree as the test's own git hashes it, the tree the committer pushes. A hunter that stops without finishing takes the run to a person.
+- A gate on real git checks the submitted patch and records its tree across a continuation, after its checkout's file times changed (`git apply --index` takes a file whose times changed for one that changed, so the harness refreshes the index first); a patch that does not apply, one the broker would refuse (each also refused by the broker's own reader) or another agent's key stops the session before anything runs; the CLI's tool server takes only its harness's tree; the coordinator names a patch only on the gate's and the committer's tasks.
+- The fixer on `slug-cut-bug` and `monorepo-units-bug`, the builder on `duration-hours-feature` and the PR reviewer on `pagination-review` pass through `SkillCandidate`, each with a scripted model that answers with the known fix or the expected findings. A fixer version that gains on `slug-cut-bug` passes the benchmark gate.
+
+### Upgrade notes
+
+- Lambda code (asset hashes) only, and the agents' images' harness files (each image now also copies `runtime/outputs.py`: rebuild them before the first run). One grant change: the broker's role also reads the gate runners' gate records (`ws/default/runs/*/gate-runner-*/commits/*/_gate/*`, read only), for the GO ledger's rule. No route or table changes (the broker's role already reads every agent's `_patches/`, and an agent's role its run's keys, a fixer's submitted patch among them). The board's `tasks` op answers each task's `result_keys` too. The bus now accepts a task posted for the gate runner. A flow saved from the Bug hunt and fix or Feature template before this release keeps its committer on the board, where its push is refused: save it again from the template. The agents have not run against AWS: their first run waits for the owner, and their writes to the host wait for the harness's broker client.
+
+Built on the voc-autonomous branch. Off by default.
+
+## [6.28.01] - 2026-11-14 (voc-autonomous)
+
+Autonomous engineering agents: the board's flow guards now hold in the write itself. A board's close, and a launch, can no longer race a post or a close, and the run monitor shows a run at a quality gate's decision point as being there. Off by default, and no fixed cost.
+
+### Fixed
+
+- A board's close is held in its own write. Every post for a step adds one to the step's count (`POSTS#<step>`) in its transaction. The close (`STEP#<board>#done`) is written only while the count is the one its plan read, with every task it counted ended. A post landing between the close's plan read and its write refuses the close (409, "read the flow again").
+  - A board the close read empty closes only while it has no count. One with tasks closes only on `posts` equal to them.
+  - Each counted task is marked (`counted`). A board holding a task posted before the count existed never closes (409: a person decides), since its count cannot vouch for what was posted since.
+- A launch racing its step's close starts no agent. The launch's record is written only while its step is not closed (a check on `STEP#<step>#done` in the launch's own transaction), else 409. A launch that lost to another one before the close is answered with the agent that one recorded. A step closed already is refused before an agent is numbered.
+- The board's role is granted `dynamodb:ConditionCheckItem`, which its flow transactions' checks need (in 6.28.00 too: a post for a flow step would have been refused by IAM).
+- At a decision point, the supervisor keeps the gate verdict it read, as the board does (`STEP#<gate>#verdict#<task>`, create-only, by `supervisor`). The run monitor, which reads no gate record, then shows the run at the gate's decision point, not the gate still running. The row is written after the run is at its decision point, best effort: a failed write is logged and never delays or fails it.
+
+### Changed
+
+- docs/autonomous-engineering.md says:
+  - the broker's GO check reads all of the run's final-go tasks, while a flow's gate reads only its own step's (the same rule over a different set);
+  - a transient S3 error on a gate record waits and is read again, and never fails the run: the board answers 503 and its caller retries, the supervisor reads again at its next tick, and a report's build fails, to be built again;
+  - how the close and the launch are held in their writes.
+
+### Upgrade notes
+
+- Lambda code (asset hashes) and one grant: the board's role may now run `dynamodb:ConditionCheckItem` on the engineering table (its flow steps' checks inside its post, launch and close transactions; 6.28.00's post checks already needed it). No route changes. The new `POSTS#<step>` rows are in the run's own partition, which the board's role already writes. A board with a task posted before this release (uncounted) never closes; none exists, since the runtime has not run against AWS.
+
+Built on the voc-autonomous branch. Off by default.
+
+## [6.28.00] - 2026-11-14 (voc-autonomous)
+
+Autonomous engineering agents: a run started from a saved flow now follows that flow, step by step. The run keeps its own copy of the flow, a deterministic conductor says which steps are ready, and the board takes work only for those steps, so the model cannot skip a step or take them out of order. Steps the runtime cannot do yet are reported as not run, never faked. Off by default, and no fixed cost.
+
+### Added
+
+- The run's own copy of its flow. The Agents API's `POST /agents/engineering/runs` sends the stored flow's definition and revision with the start. The start function checks it again (the server's own rules, an engineering flow, no cycle) and writes it into the run's `FLOW` row in the start's own transaction, create-only (D1, D4: workflow id, revision, definition, when). A later edit of the flow never changes a run under way. A definition it cannot follow is refused before anything is written. A run started without one runs as before.
+- The conductor (`lambda/engineering/flow/conductor.py`, pure). From the copy's graph and the run's record (each task's step, the coordinator's step rows, a person's decisions), it gives every step a status: waiting, ready, running, collecting (a board taking its posters' posts while they still run), done, not yet run, passed, blocked, stopped, at a person, or skipped (a quality gate's other arrow). It also says where the run stands: under way, waiting at a person at a step, or finished at an end. The six default flows are tested from start to end, with every task done and with each task failing once, and so are the edge cases (joins, a gate's two ways, decisions, caps, maps).
+  - A map over `packages` takes its shards from the coordinator, which lists them from its checkout, at most the map's `shard_cap`. Each agent step after it takes one task per shard, and the reduce waits for all of them.
+  - A quality gate routes by the GO ledger's verdict (`lambda/engineering/flow/ledger.py`, the one rule the broker's `has_go` now uses too): the final-go task of the step that ended last decides, and it is a GO (`pass`) only when it ended done and its own gate record reads as a GO. A final go that ended done with a NO-GO record, a missing or unreadable record, or anything else takes `fail`, to a person. The board and the supervisor read the record; the board records each verdict it read (`STEP#<gate>#verdict#<task>`) for the run monitor, which shows one not recorded yet as still running, never as a GO.
+  - A gate's final go is taken only once a gate runner's task of the step is done.
+  - A stop at PR ends the flow at the draft pull request; the broker's dial still decides whether one is opened.
+- The coordinator's skill `coordinator@2`, with three new tools:
+  - `read_flow`: every step's status, and the ready steps with their roles, settings, instructions and what to do at them, fenced as data;
+  - `complete_step`: an agent step of the coordinator's own role (the Feature flow's plan), or a board it closes once nothing on it is under way;
+  - `fan_out`: a map's shards. They are held to the checkout's path rule, each once, and the map's `shard_cap`, and are not checked against the checkout or the knowledge pack's package list.
+  - `post_task` now names the step (and the shard). The tools go through the board's new `flow` and `step` ops, which only the run's current coordinator may use.
+- The board's check (`lambda/engineering/board/flow_guard.py`). In a run that follows a flow, the board takes a post only for a live step (`flow_step`, and a map's `shard`), for a role that step takes, and from a poster it allows:
+  - the coordinator, for any live step;
+  - another agent, only on a board step that names it a poster, within the board's own rule of who posts for whom;
+  - a person, for any live step, or for a task of their own with no step.
+  - An agent step takes one task at a time, held against a racing post by a `SLOT#` marker in the post's own transaction. Every post for a step holds, in the same transaction, that the step was not closed, so a post racing a board's close never lands on it. A retried post is answered with the equal task while it is under way and refused once that task has ended, never made a new task. A launch is taken only for a task of a live step, or a person's own task.
+  - An empty board closes only when an agent other than the coordinator was to post on it.
+  - What this holds: no post or launch for a step that is not live, a role it does not take or a poster it does not allow, and no pass arrow without a GO. What it does not: the coordinator may still record its own step done, or close a board, with little done.
+  - The caps, the coordinator's single lease, a replaced coordinator's refusal, the launch rules and the claim guard are unchanged.
+- A person at a step. When the flow waits at a person (a human decision point reached, a task that ended without being done, or a step the flow cannot go on without), the supervisor puts the run at `needs_human` with the step named (`flow:<step>`). It holds the run's agents, as for a spent budget. A person's Resume there is their decision on the step, recorded with who and when (a create-only `STEP#` row, D4): it passes a decision point or a stopped step, and gives a blocked one another try.
+- Steps not run yet. Memory steps and the learning loop are passed, and the flow goes on. Self-improvement, and a map over `history` or `pr_pages` (no shard source yet), stop at a person. The board records each step not run yet once, as a `STEP#<step>#not_yet_run` row, and the run monitor and the reports name them.
+- The run monitor draws the run's own copy of its flow (never the flow as saved since), each step lit as the conductor reads it. The API's overview (`GET /agents/engineering/<run_id>`) carries `flow_definition`, `flow_revision`, `flow_copied_at`, `flow_steps` and `flow_outcome`; the web app reads the copy and the steps' statuses, and does not show `flow_outcome`'s words yet (a planned line beside the flow). One decision on a step after a map retries every shard that failed once; a run already waiting at a step's decision point is not asked again. Every report has a `flow` section and a **Flow** table in its Markdown.
+
+### Changed
+
+- The run coordinator's skill is version 2 (`coordinator@2`). It follows the run's flow when there is one, and plans from the goal when there is none.
+- docs/autonomous-engineering.md has a new section, "The flow a run follows", with a table of what runs today and what does not. That doc and docs/autonomous-agents.md no longer say that nothing follows a flow's steps.
+
+### Upgrade notes
+
+- Lambda code (asset hashes), one grant and the web app: deploy both (`npm run deploy:frontend` too). The board's role may now read the quality gate's record objects (`ReadGateRecords`, `ws/*/runs/*/*/commits/*/_gate/attempt-*/record.json`, read only), as the runtime's already could. No route changes. A run's new rows (`FLOW`, `STEP#`, `SLOT#`) are in the run's own partition, which its writers' roles already reach. Runs started before this release have no copy of their flow and run as before.
+- Only the coordinator has a skill yet, so the board still refuses to launch any other role. A run follows its flow's plan and posts its tasks, and their work waits for those roles' skills. A run still reaches a repository only once a connection's credential can be stored.
+
+Built on the voc-autonomous branch. Off by default.
+
+## [6.27.00] - 2026-11-13 (voc-autonomous)
+
+Autonomous engineering agents: an administrator can ask the AI assistant to refresh a repository's knowledge pack. The assistant only proposes: its approval card names the repository, the commit and an estimate of the minutes and the cost, and only an administrator's Approve starts the Understand flow, as that administrator. Off by default, and no fixed cost.
+
+### Added
+
+- The AI assistant's `propose_knowledge_refresh {connection, commit?, language?}` (the `agents` pack). It is for administrators only: it is not offered to anyone else, and is refused if called. It has no MCP tool.
+  - The model's call only shows an approval card. The card names:
+    - the action;
+    - the repository connection;
+    - the commit, or "the default branch's head", whose full id the administrator enters on the card (no connection can be read yet);
+    - the language;
+    - the saved Understand flow, with its name, revision and monthly budget;
+    - an estimate of the minutes and the cost, called one. The flow's map step maps at most its `shard_cap` shards in a run (200 at most), each assumed to take about 20 seconds, plus about 10 minutes for the reduce and the drafting. The run's coordinator and one session per agent step of the flow are counted for the whole run, each a standard session (2 vCPU, 8 GB) at about $0.39 an hour at AgentCore's published rates. That makes about 77 minutes and $1.50 for the template (three sessions). Model tokens come on top, and the run's cost and token caps bound it either way.
+  - Only an administrator's **Approve** starts the refresh. The web app then calls `POST /agents/engineering/runs` with the saved Understand flow, in the approver's own session. There `require_admin_caller` checks that person at the click: anyone else gets 403, and so does a delegated credential such as an MCP token. The run records who started it (`started_by` and its `RUNLOG#` row: D4).
+  - Nothing else starts it. The model's call alone starts nothing, nothing approves the card automatically, and no plan step may name it: it is a card-only write (`CARD_ONLY_WRITE_TOOLS`, `plan_contract.json`).
+  - The Understand flow is the saved, active engineering flow with the "Understand the repository" template's steps (each step's id and kind, an agent step's role and the arrows). A saved flow records no template id; with several, the one saved last counts. Approve starts exactly the flow and revision the card showed. If the flow changed since, nothing is started.
+  - With no Understand flow saved, the card says so. Its Approve saves one from the template the server serves (`POST /workflows`) and starts nothing; the refresh is then a second card under the same rules.
+  - Approve waits until the card has what it needs: the saved flows read, and a full commit id. A card whose flows cannot be read, or where the engineering module is not deployed, cannot be approved.
+  - A start that may have written its run is never sent again. The card reports the run it names, or that nobody can tell.
+  - What goes back to the model names only ids (the run's, the flow's, the connection's and the commit's). The run's own words reach the model only through `get_engineering_run`, as data.
+  - The card is in all nine languages.
+- An approval card's preview can hold Approve until it has what it needs (`ApprovalHoldContext`), and says why.
+
+### Changed
+
+- docs/autonomous-engineering.md and docs/autonomous-agents.md say "refresh the knowledge pack" through the assistant is built, and how. docs/mcp.md says it has no MCP tool. TENETS.md's tenet 4 row names it among the admin-only engineering work with no MCP tool.
+
+### Upgrade notes
+
+- Lambda code only (asset hashes), plus the web app: deploy both (`npm run deploy:frontend` too), or the assistant offers a tool the app shows as unknown. No route or stored row changes, and the card uses the existing routes. As for every run started today, the run records the flow and its budget but nothing follows its steps yet, and it reaches a repository only once a connection's credential can be stored.
+
+Built on the voc-autonomous branch. Off by default.
+
+## [6.26.01] - 2026-11-13 (voc-autonomous)
+
+Autonomous engineering agents: the follow-ups to 6.26.00's AgentCore runtime. A session no row names is never lost, the egress proxies refuse IPv6 forms of link-local and loopback addresses, and a removed setting fails the synth. Off by default, and no fixed cost in the stacks.
+
+### Fixed
+
+- Each egress proxy now also refuses an IPv4-mapped IPv6 address (`::ffff:a.b.c.d`) and a NAT64 one (`64:ff9b::/96`) whose IPv4 address is link-local, loopback or unspecified, all of "this network" (0.0.0.0/8), and the EC2 metadata service's IPv6 addresses (`fd00:ec2::/32`), and an IPv4-compatible (`::/96`), 6to4 (`2002::/16`) or local-use NAT64 (`64:ff9b:1::/48`) IPv6 address carrying a refused IPv4 address. Before, `::ffff:169.254.169.254`, `::ffff:127.0.0.1` and `fd00:ec2::254` passed the check.
+- A session cost of exactly zero is written as 0, never `0E-12`, which DynamoDB's number format refuses.
+- A new session whose row write fails and whose stop fails too, at a launch or a continuation, is no longer lost:
+  - unless the write landed after all (its answer lost): the row is read back first, and a row that names the session means it is not lost, so it is neither stopped nor counted twice;
+  - its id is logged, and it is kept on a create-only row of its own (`LOST#<session id>` in its run's partition);
+  - every tick stops it again and counts it until the stop succeeds, in one transaction, as a session's priced write books its cost: its seconds and cost on that row, its cost on its agent's row (where the run's cost cap reads it; only onto a row that exists, never a cost-only one), the spend ledger and its flow's month total;
+  - one lost session's failure never keeps its run's others from being stopped;
+  - a lost row whose session its agent's row names after all (a read-back that failed, a late write that landed after it) is closed (`stopped_at`) without being counted or stopped: its agent's row counts and owns it;
+  - a launch hold that cannot be let go afterwards is logged, never raised in place of the write's own failure;
+  - a stopped one is marked `stopped_at`, never deleted, and the run stays watched meanwhile;
+  - if writing that row fails too, the session is only logged (its id), and its runtime's idle timeout ends it; so is one whose run was released before its row landed (nothing watches that run any more).
+  - A launch whose write and stop both fail now raises the write's failure, not the stop's.
+
+### Changed
+
+- `-c engineeringImageArns` and `-c engineeringMicrovmUsdPerSecond`, removed in 6.26.00, now fail the synth, naming their replacements (`engineeringImages` with `engineeringAgentNetwork`; `engineeringSessionRates`), with the agents on or off. Before, either one was ignored.
+- Correction to 6.26.00's upgrade notes, which named "a NAT gateway with an egress firewall, or interface endpoints" as the sessions' way out. A NAT gateway is required: the package registries and the board's function URL have no VPC endpoint. A Bedrock interface endpoint and an S3 gateway endpoint are additions to it, not a replacement (TENETS.md tenet 7; docs/deployment.md).
+- docs/autonomous-engineering.md's not-yet-checked list adds how AgentCore gets the right to make a session's network interfaces in the deployment's subnets (likely its service-linked role, made on first use).
+- Leftover MicroVM prose now says session or agent image: the Agents API's start rules, voc-engineering-start's comments, engineering-gates/README.md, and the tests' docstrings and fakes.
+
+### Upgrade notes
+
+- With `-c engineeringAgents=true` only: no resource or grant changes. The `LOST#` rows are written by the supervisor's and the delivery function's existing grants on the runs' partitions.
+- A deployment still passing `engineeringImageArns` or `engineeringMicrovmUsdPerSecond` now fails the synth: drop the key and set its replacement.
+- No stored row is changed.
+
+Built on the voc-autonomous branch. Off by default.
+
+## [6.26.00] - 2026-11-13 (voc-autonomous)
+
+Autonomous engineering agents: the agents run on Amazon Bedrock AgentCore Runtime (platform version V2), one session per agent, in place of Lambda MicroVMs, whose path is removed: one runtime, not two. Each session is its own microVM, billed per second for the CPU it uses and its memory, with no account memory quota to raise. The security design keeps its rules (no credential but the agent's own short role session, the work back as a git bundle that only the connector pushes, output scrubbed, the run's text read as data) and changes how egress is held: AgentCore has no per-session allowlist, so each session's runner holds it, through two proxies, the agent's and the dependency step's, behind the deployment's VPC. Off by default, and no fixed cost in the stacks: the sessions run in the deployment's own VPC, whose way out (a NAT gateway with an egress firewall, or interface endpoints) bills by the hour, a cost of that network's that only a deployment turning the agents on pays (TENETS.md tenet 7's gap). Not yet run against AWS: the request fields are written from the developer guide and botocore's model, and no real call has checked them.
+
+A redesign of the runtime and its deploy settings, which the versioning rule makes a major. It is numbered 6.26.00 because the voc-multiplayer branch already numbers its releases 7.x: a 7.00.00 here would collide with them when the branches meet.
+
+### Added
+
+- `lambda/engineering/runtime/agentcore.py`, the runtime on AgentCore (`AgentCoreRuntime`), behind the same interface as before (`AgentRuntime`, formerly `MicroVmRuntime`): the supervisor, the board, the bus, checkpoints and continuation are unchanged above it.
+  - One session per agent: `InvokeAgentRuntime` on the agent's language's runtime with a `runtimeSessionId` of its own (`voc-<run>-<agent>-<nonce>`, a new one for every continuation). Its first invocation is the runner's `start`: the agent's ids and its egress allowlist, once. The runner's other ops are invocations of the same session: the role session, the harness's status, hold and wake. `StopRuntimeSession` ends a session; one already gone is not an error. A session that does not start is stopped at once and its launch refused.
+  - Commands go through `InvokeAgentRuntimeCommand`, each call 60 seconds (under the API's 3,600). The call runs the runner's own client (`unit_runner.py client start|poll <base64>`), one shell string with nothing in it anyone wrote, which starts the command as a job of the runner or reads it back. A test run longer than an hour is so split into a start and reads, never cut; a command longer than its session's 8 hours is refused, saying to split it or continue in a new session.
+  - The supervisor's status reads map to the runner's report; continuation before the 8 hours stays the supervisor's.
+- The runner (`unit_runner.py`, every image's entry point) answers AgentCore on port 8080: `GET /ping` (`HealthyBusy` while a command of the agent runs and is not held, so an agent waiting on the model is never ended for idleness) and `POST /invocations` (`start`, `session`, `status`, `hold`, `wake`). A hold stops every command of the agent where it is, so an open wait uses no CPU.
+- Two egress proxies in the runner (`EgressProxy`), each letting an HTTPS `CONNECT` through only to a host of its own allowlist, on port 443 (`egress.split` parts an agent's allowlist): the agent's (port 3128: Bedrock, its two buckets, the board's function URL; never a registry) and the dependency step's (port 3129: its language's registries and the deployment's extra hosts; never Bedrock, a bucket or the board). The entry point's egress firewall sends `unit` to the runner and its proxy only and `code` to its proxy only, with no name lookup and no link-local address. Without every rule and both proxies the runner starts no agent. Once started, a session's egress cannot be changed, by its agent's own call on loopback either. Before, a MicroVM had one allowlist for both.
+- The runner has two faces: port 8080 for the AgentCore service only (`/ping`, `/invocations`) and loopback port 8081 for the agent's harness (`/exec`, `/status`), the one runner port `unit` may reach, so the agent can never hand itself a session, start itself again or wake itself. The old `/session` route is gone.
+- Each proxy refuses a link-local, loopback or unspecified destination after resolving its host, and an extra host shaped like one of the agent's own hosts (a Bedrock runtime or S3 bucket endpoint, or a function URL) is refused at the launch; other AWS hostnames are not judged (no deployment can set extra hosts yet: `ENGINEERING_EXTRA_EGRESS` is fixed at `[]`). Node's fetch is pointed at the proxy (`NODE_USE_ENV_PROXY`), and the Java image gives the dependency step Maven settings naming its proxy.
+- A start that fails in any way but the service's no-room answer stops the session at once.
+- The runner ends every command once the agent's role session lapses unrenewed (a minute past its expiry, or past its last wake: no lapse counts while held). Every command is dropped with `setpriv --no-new-privs --bounding-set=-all`, and the images strip every setuid and setgid bit.
+- A session whose stop fails is kept (`stop_pending` on its row): every tick stops it again and counts its time meanwhile, and a continuation never starts beside one still running.
+- No room for a new session (the service's `ServiceQuotaExceededException` or `ThrottlingException`) is `SessionsFull`: a launch is refused in those words, and a continuation is held (`waiting`, not a crash) and continued once there is room, for at most 30 ticks in a row before it is held for a person (`paused`). No session count is read per launch.
+- CDK, with `-c engineeringAgents=true` only (`lib/stacks/engineering-agentcore.ts`):
+  - one ECR repository per language image, `voc-eng-<language>`: scanned on push, tags immutable; only untagged images expire (past the newest 10), so a runtime pinned to a tag or a tagged image's digest never loses its image;
+  - per language with an image, an `AWS::BedrockAgentCore::Runtime` at every agent's default size (2 vCPU and 8 GB), and a build runtime for the roles that build and test, whose resource configuration (`MinimumMemoryInMiB` 8192) bursts to 8 vCPU and 32 GB. Both are platform version V2 over HTTP, with an idle timeout of an hour (above the supervisor's 45-minute hold of a waiting agent) and a lifetime of 8 hours;
+  - network mode VPC in the deployment's subnets, behind a security group that lets nothing in and only TCP 443 out;
+  - one execution role for every runtime, which pulls the images and writes the runtimes' logs, nothing else.
+- Deployment settings: `engineeringImages` (a tag or digest per language), `engineeringAgentNetwork` (the VPC and its subnets), `engineeringBuildMemoryMiB` (8192 or 0; 4096 is below the 2 vCPU and 8 GB floor), `engineeringBuildRoles` (`["gate-runner"]`), `engineeringSessionRates` (AgentCore's V2 rates by default) and `engineeringMaxSessions` (101 to 5,000, 5,000 by default: the account's quota; at least one run the Agents API starts, 100 tasks and its coordinator). Each is checked at synth.
+- A run that cannot fit is refused before anything is written: more agents at once (its coordinator and one per task) than the deployment's sessions, or clocks that would let an agent outlive its session.
+- The fixed-cost guard flags an AgentCore capacity provider, and a runtime on one (capacity reserved ahead of use); a runtime billed per session passes.
+
+### Changed
+
+- A run's cost cap counts each session's CPU and memory at the deployment's AgentCore rates, in place of a MicroVM second's price. It counts an upper bound of the bill: every vCPU of the session's size while its agent runs, none while it is held, its memory while it lives, and a build runtime's committed baseline for the session's whole life. A standard session counts as about $0.39 an hour running; the bill is lower, since AgentCore charges only the CPU actually used. Session rows gain `held_seconds`, `priced_held_seconds`, `vcpu_seconds` and `gb_seconds`; the ledger's rows keep their fields (`microvm_seconds` is the session's running seconds), under the model `microvm`.
+- Session time is priced by default, at AgentCore's published V2 rates ($0.1276 a vCPU-hour, $0.0169 a GB-hour; baseline $0.0997 and $0.0132). Before, MicroVM time was unpriced unless a price was set. Agents → Spend's hard-cap hint says so, in all nine languages.
+- Every image is built for linux/arm64 (AgentCore Runtime V2) and exposes port 8080.
+- The supervisor's grants are `bedrock-agentcore:InvokeAgentRuntime`, `InvokeAgentRuntimeCommand` and `StopRuntimeSession` on this deployment's runtimes and their default endpoint. The delivery function's are `InvokeAgentRuntime` and `StopRuntimeSession`: it wakes and continues sessions and runs no command. There is no grant at all until a runtime exists.
+- docs/autonomous-engineering.md (Runtime, now "one AgentCore session per agent", and Cost), docs/deployment.md, docs/autonomous-agents.md and TENETS.md's tenet 6 and 7 rows give AgentCore's facts in place of the MicroVM's, and why: no account memory quota, pay for use, the same isolation. Tenet 7's gap names the VPC's hourly way out.
+- The code says "session" where it said "MicroVM" (`MicroVm` is `RuntimeSession`, `WITH_MICROVM` is `WITH_SESSION`; the stored fields `vm_id`, `endpoint`, `microvm_seconds`, `microvm_state` and `microvm_age` keep their names), and so does the run's conversation: `Stopped: N session(s) ended.`, `… continued in a new session (N).`, and the pause ahead of the 8 hours.
+
+### Removed
+
+- The Lambda MicroVM path: `lambda/engineering/runtime/aws.py` (`AwsMicroVmRuntime`) and its tests, the MicroVM auth tokens (`AuthToken`, `TokenSource`: AgentCore calls are signed with the caller's role), the `lambda:*Microvm*` grants, the settings `engineeringImageArns` and `engineeringMicrovmUsdPerSecond`, and the environment variables `ENGINEERING_IMAGE_ARNS` and `ENGINEERING_MICROVM_USD_PER_SECOND`.
+
+### Upgrade notes
+
+- With `-c engineeringAgents=true` only:
+  - **Renamed or removed context keys.** `engineeringImageArns` is removed: push each image to its new ECR repository and name it with `engineeringImages` (a tag or `sha256:` digest per language), and give the sessions' VPC and subnets with `engineeringAgentNetwork`. `engineeringMicrovmUsdPerSecond` is removed: `engineeringSessionRates` replaces it, priced by default (set every rate to `0` to keep session time unpriced). A deployment still passing either old key is not refused, but the key does nothing.
+  - VocProcessingStack adds the four ECR repositories, kept when the stack is deleted (delete them by hand); with images and a network, the runtimes, their security group and their execution role. The supervisor's and the delivery's environments swap `ENGINEERING_IMAGE_ARNS` and `ENGINEERING_MICROVM_USD_PER_SECOND` for `ENGINEERING_AGENT_RUNTIMES`, `ENGINEERING_BUILD_ROLES`, `ENGINEERING_BUILD_MEMORY_MIB`, `ENGINEERING_SESSION_RATES` and (the supervisor's only, not the delivery's) `ENGINEERING_MAX_SESSIONS`; the start function gets the supervisor's set.
+  - Nothing deploys the subnets' way out. A NAT gateway with an egress firewall that admits only the agents' hosts, or interface endpoints, bills by the hour: it is the network's own fixed cost, outside this stack.
+  - No quota to raise first: the MicroVMs' memory quota no longer applies. AgentCore allows 5,000 active sessions per account in us-east-1 and us-west-2.
+  - Rows written before this release keep their MicroVM ids in `vm_id`. No run has started on a MicroVM (none was ever deployed against AWS), so nothing is migrated.
+- Without the flag nothing changes. No stored row is changed.
+
+Built on the voc-autonomous branch. Off by default.
+
+## [6.25.00] - 2026-11-13 (voc-autonomous)
+
+Autonomous engineering agents: an administrator starts a run of a saved engineering flow, from the REST API or the flow's page, and the run monitor opens on it. Every run is capped. The run records the flow's id and budget; nothing follows its steps yet. It reaches a repository only once a connection's credential can be stored, which is still planned. Off by default, and no fixed cost.
+
+### Added
+
+- `POST /agents/engineering/runs` `{workflow_id, connection, commit, language, goal}`, for a signed-in administrator acting for themselves (a delegated credential gets 403; 404 while the module is off; no MCP tool).
+  - Each field is checked: a saved `voc-workflow/2` flow (an agents workflow or an unknown id is 400), a connection's short id, a full commit id of 40 hexadecimal characters (sent in lower case), a language with a MicroVM image (java, node, python, rust), and a goal on one line of 1 to 500 characters, with credential-shaped text redacted. Any other field is 400, so the request cannot set the budget, the caps, the repository or the actor.
+  - The API mints the run's id (a ULID) and starts the run with the stored flow's monthly budget (`budget_usd`), a task cap of 100, the deployment's cost cap (`max_cost_usd`, `-c engineeringRunCapUsd`, default 50 USD) and token cap (`max_tokens`, `-c engineeringRunTokenCap`, default 10 million), and the signed-in person as its actor. With the hard cap on, the runtime keeps the smaller of the cost cap and what is left of the flow's month. A cap that is not a positive number fails the synth, so no run is uncapped.
+  - The run's `repo` is the connection's id for now: no connection record can be stored or read yet. The runtime records the actor as `started_by` and in the run's `RUNLOG#` row with the time (D4).
+  - It answers 202 `{run: {run_id, status, workflow_id, started_by}}` as soon as the run is written. The coordinator's launch is then under way, and the web app opens the run monitor on it.
+  - The runtime's refusals, all before anything is written, are 409 in its own words: no image for the language, or the hard cap with nothing left of the flow's month. Any failure once the run is written (the rule, the launch's hand-on, a launch under way) is 503 and names the run (`StartFailed`), so it is opened and resumed rather than started again. A failure before the write is 503 "start it again", and a start that does not answer within 25 seconds is 503 and names the run.
+- voc-engineering-start, the start function: the runtime's code with a role of its own, entered at `start_handler`. The role holds only what a start needs: GetItem, PutItem and UpdateItem on the runs' partitions and the registry, GetItem of a flow's month total and the hard cap's row, the stack's key through DynamoDB, `events:EnableRule` on the supervisor's rule, and an invoke of voc-engineering-runtime by name. It has no MicroVM call, no agent role, no bus, no delete and no Query. It takes `start_run` and refuses every other action, or an event with none, before anything is read. It writes the run, switches the supervisor's rule on, and hands the coordinator's launch on to voc-engineering-runtime's new `launch_coordinator` action, invoked asynchronously. That action has the runtime's 5 minutes for a MicroVM's start, which API Gateway's 29 seconds could not hold. It never raises: a launch that fails sends the run to a person, whose Resume launches it. The start function has a 30-second timeout and is never retried.
+- The supervisor's tick catches a handed-on launch that never came (its invocation crashed or timed out). An active run started with a coordinator to launch, with no coordinator session and no live launch hold, more than 6 minutes after its start or its last Resume, whichever is later (the runtime's 5-minute limit plus a minute), goes to a person (`needs_human` `coordinator`, actor `supervisor`), once. A person's Resume records when (`resumed_epoch` on the run's `META`), so its new coordinator gets a full window of its own and no tick undoes the Resume. The check reads the agent rows the tick already queries, launch holds included, and makes one GetItem of the run's `META` per tick for each such run (one with no coordinator session); never a scan.
+- A start that fails and cannot read back whether it wrote its run raises `StartUncertain`; a start whose write itself failed raises `StartNotWritten` ("start it again"). The Agents API answers 503 naming the run, with its `run_id` beside the message ("the run may have been started: open the run monitor"), for any start that wrote or may have written its run: `StartFailed`, `StartUncertain`, a failure of an unknown kind (a timeout, a crash), a read timeout, a dropped connection, an answer for another run. Only a start known to have written nothing (never connected, refused by the service, `StartReadFailed`, `StartNotWritten`) says "start it again". So does a start whose answer cannot be read off the connection or is not a JSON object. After such a 503 the dialog shows **Open the run**, a link to that run's monitor, and keeps Start off. The run is read from `run_id` in the error body (the web client keeps it on its `ApiError`), else from the 503's message. A 504, a 5xx with no reason of the server's own (a gateway page, not JSON), a network failure or an answer that cannot be read also keep Start off. They say "The run may have been started: check the runs list before you start another." and link to **See the flow's runs**: Agents → Spend grouped by run for that flow, the one place runs are listed, where a run shows once it has used something.
+- The web app's **Start a run** on a saved engineering flow's page (`/agents/workflows/<id>`), for administrators where `features.engineering` is on. Its dialog asks for the connection, the commit, the language and the goal, checks them as the server does (the first wrong field is focused, each message is tied to its field), shows the flow's monthly budget, and opens the run monitor on the new run. A run uses the flow as saved, so while the editor has unsaved changes the action is off, with "Save the flow first: a run uses the saved version." (the editor tells its page, `onDirtyChange`). A refusal is shown in the server's words. In all nine languages. The dev mock answers the route with its sample run.
+
+### Changed
+
+- A budgeted start whose hard cap setting or flow month total cannot be read now raises `StartReadFailed`, a `RuntimeRefused` of its own. The Agents API answers it 503 ("start the run again"), not 409. Nothing is written either way.
+- A start whose supervisor rule cannot be switched on now sends the written run to a person, as a coordinator that fails to launch does, so no run is left active with no coordinator.
+- docs/autonomous-engineering.md and docs/autonomous-agents.md say a run can now be started, and how. TENETS.md's tenet 4 row lists a run's start among the admin-only engineering work with no MCP tool, and its tenet 7 row says every run started this way has a cost cap.
+
+### Upgrade notes
+
+- With `-c engineeringAgents=true` only:
+  - VocProcessingStack adds the function voc-engineering-start, with its own log group, the `ENGINEERING_RUNTIME_FUNCTION` variable and a new role of its own (`EngineeringStartRole`, above). The supervisor's and the delivery function's roles are unchanged.
+  - The Agents API's role gains `lambda:InvokeFunction` on voc-engineering-start by name (statement `StartEngineeringRuns`). It has no grant on voc-engineering-runtime, so it cannot tick, launch, signal or end a run.
+  - The Agents API's function gets the `ENGINEERING_START_FUNCTION`, `ENGINEERING_RUN_CAP_USD` and `ENGINEERING_RUN_TOKEN_CAP` variables. Set `-c engineeringRunCapUsd=<dollars>` and `-c engineeringRunTokenCap=<tokens>` to change the defaults (50 and 10,000,000).
+  - Deploy VocProcessingStack before VocApiStack, as for the board's function, so the name the grant names exists.
+- Without the flag nothing changes. No stored row is changed.
+
+Built on the voc-autonomous branch. Off by default.
+
+## [6.24.00] - 2026-11-13 (voc-autonomous)
+
+Autonomous engineering agents: a flow's monthly budget is measured and alerted on, shown where a run is read, and, if an administrator turns on the hard cap, caps a run's first start. Off by default, and no fixed cost.
+
+### Added
+
+- An engineering flow's budget alerts. As the flow's month passes 80%, 100% and every further 50% of its budget, the supervisor posts each alert once per flow, budget, level and month, to the conversation of the live run that claims it (`run.budget_alert` from `voc.engineering/supervisor`), and flags the flow's other live runs (the highest level said that month, on each run's `META`). Each alert is a claim row (`WS#<ws>#BUDGET#<yyyy-mm>` / `ALERT#<flow>#<budget>#<percent>`) that is never deleted: it is claimed, then posted, then closed by `sent_at`, after which nothing changes it. Until then a failed post gives the claim back and an unsaid claim is taken over after 5 minutes, so a failed post is not lost; a post whose close failed may be posted twice. A changed budget has alerts of its own, so it is not silenced. A run's start copies the flow's budget onto its `META` (`budget_usd`). Each tick of a budgeted run reads the flow's month total, a `FLOW#<flow>` row ADDed in the same ledger transaction as each priced session write, with one consistent GetItem. Levels are also checked after the moves and on stopping runs. The alerts count MicroVM time only until tokens are priced, so a deployment with MicroVM time unpriced never alerts. Nothing starts a run with a budget yet.
+- The run monitor's header and the run's goal and commit reports show the run's flow budget and the highest alert level its month has passed. A PR's Markdown never does: it is the target repository's pull request description. Agents → Spend, by workflow, shows this month's share of each flow's budget.
+- The administrators' opt-in hard cap on engineering runs (Agents → Spend; `GET`/`PUT /agents/engineering/settings`, for a signed-in administrator acting for themselves, 404 while the module is off, no MCP tool). It is one row in voc-agents (`SETTINGS#engineering` / `HARD_CAP`), and each change also writes a create-only `LOG#<at>#<n>` history row (who, when, what) in the same transaction. With it on, a budgeted run's first start gets `max_cost_usd` = the smaller of the cap it was given and what is left of its flow's month, and is refused before anything is written when nothing is left. MicroVM time only until tokens are priced. The cap is set per run at its start, so concurrent runs of one flow may together pass its budget. A setting that cannot be read refuses a budgeted first start, even with the cap off.
+
+### Changed
+
+- A priced session write's transaction conflict is tried 4 times with jittered pauses. Each try names its own `ClientRequestToken`: the same token after a TransactionInProgress, so a try whose answer was lost while it was still running is answered as it ended, and a new token after a conflict.
+- A move whose write was refused gives its claim back for the next tick. A refused ledger row stops the move.
+- With the hard cap on, a failed read of the flow's month total refuses the start, and says so.
+- `GET /workflows` lists each flow's `monthly_budget_usd`.
+- Agents → Spend's hard cap switch says "Saving…" (a polite status line) while a change is saved. The switch stays enabled, and a click during the save is ignored.
+- docs/autonomous-engineering.md (the budget, its alerts and the hard cap), docs/autonomous-agents.md (the settings route) and docs/deployment.md cover these. TENETS.md's tenet 6 row now gives cost per engineering flow, run, agent and model, the new grants and Denies, and the hard cap.
+
+### Upgrade notes
+
+- With `-c engineeringAgents=true` only, the supervisor role gains:
+  - GetItem on `voc-engineering`'s `WS#default#SPEND#20??-??` (SpendTotals);
+  - GetItem and UpdateItem on `WS#default#BUDGET#20??-??` (BudgetAlerts);
+  - GetItem on voc-agents for `SETTINGS#engineering` only (HardCapSetting).
+
+  Its function also gets the `ENGINEERING_SETTINGS_TABLE` variable. The delivery role gets neither the new grants nor the variable.
+- The board, router and reports roles get an explicit Deny of writes on the spend and budget partitions, so no other writer can make, and so mute, an alert.
+- In every deployment, the agents' conductor, nodes, persona panel and heartbeat roles get an explicit Deny of writes on voc-agents' `SETTINGS#engineering` partition, so the Agents API is the hard cap's one writer. Its own grant still covers all of voc-agents, so only its code keeps the `LOG#` history rows create-only.
+- The hard cap is off by default. Until it is turned on, nothing about a run's start changes.
+- No stored row is changed. A `FLOW#` month total only starts counting from this release, so a month already under way counts only what was spent after the upgrade.
+
+Merged from the voc-autonomous-c branch. Off by default.
+
+## [6.23.00] - 2026-11-13 (voc-autonomous)
+
+Autonomous engineering agents: the connector's broker reads what a run recorded (its record, the board's final-go GO, the committer's submitted patch) and the dial before anything is pushed. Human-driven pushes nothing, AI-assisted waits for a person's go on the run, AI-driven goes on to a draft pull request. Reads only, no fixed cost, off by default (`-c engineeringAgents=true`).
+
+### Added
+
+- The broker's readers (`voc-datalake/lambda/engineering/connectors/`): `records.py`, the caller's run from its own `META` (status, connection, commit, the person who started it; only an active run is served, a META naming another run is none), the board's GO ledger (the latest ended final-go task's gate record, read alone, a GO only for exactly the tree asked about) and a person's go; `patches.py`, the committer's submitted patch (`git diff --binary`), read only from the caller's own `_patches/` keys on the run's commit, at most 6 MB (refused, never cut), applied exactly to the run's commit as the host has it (text hunks, binary literals and deltas, renames, deletions, mode changes; no copy, submodule, fuzz, text sent as a binary patch, or path with a control character; content bounded by a running total); `dial.py`, the run starter's stored way of working (its `mode` alone), failing closed: only an explicitly stored AI-assisted or AI-driven lets a run push. They replace `hosts.UNCONNECTED` where the stack names the engineering table, the workspace bucket and the aggregates table.
+- The dial before every push and pull request (TENETS.md tenet 3): Human-driven refuses both (reads and comments stay as the write rules allow); AI-assisted holds both for a person's go on the run; AI-driven goes on to the GO and the write rules. A pull request is a draft in every mode, and no operation marks one ready or merges. A test for each mode.
+- `POST /agents/engineering/<run_id>/go` (the Agents API, an administrator acting for themselves, 404 while the module is off, no MCP tool): a person's go on a live run, written by the board function as one create-only `GO#person` row `{by, at, reason?}` (`{reason?}`: at most 500 characters, credential-shaped text redacted); a go already given is answered as it stands. No event, no bus needed: the row is the record.
+- The GitHub client reads a file at a commit (`file_at`, raw, `contents: read`) and the repository's default branch (`metadata: read`, kept five minutes).
+- `RunStore.start` records the person who started the run on its `META` (`started_by`).
+
+### Changed
+
+- `push_bundle` takes `{branch, patch, tree_hash, message}`: the workspace key of the committer's submitted patch, the tree the board's GO names and the commit's message (it took a base64 bundle in the request, which nothing parsed). The host's client pushes one commit on the run's commit and moves the branch only when the tree it rebuilt is that tree.
+- Every push needs the board's final-go GO for exactly its tree (before, only a push to a branch with an open pull request did); the broker refuses a run waiting at a person's decision, or ended, as it refused a stopped one; a run's records, the workspace or the way of working that cannot be read answer 503.
+- docs/autonomous-engineering.md (Repository connectors: what the broker reads, its grants and what is still planned; the templates' dial; Trust and safety; the phase table's row 1), docs/autonomous-agents.md (the go route) and docs/deployment.md say so; TENETS.md's tenet 3 row says the broker reads the dial and AI-assisted waits for a person's go, one per run, and tenet 4's admin-only list names the go.
+
+### Upgrade notes
+
+- With `-c engineeringAgents=true` only, the broker's role gains reads, never a write: `dynamodb:GetItem` and `dynamodb:Query` on `voc-engineering` in the runs' partitions (`WS#*#RUN#*`), `dynamodb:GetItem` on the aggregates table in the people's flag partitions (`USERFLAGS#*`) and of a row only its key and `mode` (`dynamodb:Attributes`, `dynamodb:Select` `SPECIFIC_ATTRIBUTES`), `s3:GetObject` on `voc-eng-workspace`'s `ws/default/runs/*/commits/*/_patches/*` and `ws/default/runs/*/final-go-*/commits/*/_gate/*`, and `kms:Decrypt` on the stack's key through DynamoDB and S3. Its function gets `ENGINEERING_TABLE`, `ENGINEERING_WORKSPACE_BUCKET` and `AGGREGATES_TABLE`. VocProcessingStack now needs VocCoreStack's table and bucket before it creates the broker, as it did for the bus.
+- The dial's effect: a run's push and pull request now follow the way of working of the person who started it (Users → a person's way of working). A run started without a person (every run today: nothing starts one with its person yet) is Human-driven for the broker and pushes nothing. The broker fails closed, stricter than the documents' reading (where no row is AI-driven): a person with no saved way of working pushes nothing; they set AI-assisted or AI-driven to let a run push (so does a stored mode outside the three). Nothing pushes yet in any mode: no connection can be stored and no CI attestation is recorded, so every push and pull request is still refused, and every operation answers 503 without a connection.
+- No stored row is changed; a run started before this release has no `started_by` and works Human-driven for the broker.
+
+Merged from the voc-autonomous branch. Off by default.
+
+## [6.22.00] - 2026-11-13 (voc-autonomous)
+
+Autonomous engineering agents: the spend ledger and its Agents → Spend tab, a flow's monthly budget (recorded only), and a person's board actions made by the board's own function, so the Agents API writes no board row. No fixed cost.
+
+### Added
+
+- The spend ledger (`voc-datalake/lambda/engineering/spend.py`): one partition per workspace and month, `WS#<ws>#SPEND#<yyyy-mm>`, one row per day, workflow, run, agent and model, whose counters (`usd`, `tokens_in`, `tokens_out`, `microvm_seconds`) only grow by ADD, written in the same transaction as each priced session write (MicroVM seconds, priced at `engineeringMicrovmUsdPerSecond`, under the model `microvm`; each model's new tokens), so the ledger and the sessions never drift and a retried write adds once. Model tokens are counted, not yet priced. The rows are never deleted and carry no TTL.
+- `GET /agents/engineering/spend?month=YYYY-MM&by=workflow|repo|run|agent|model|day&workflow=` (the Agents API, administrators acting for themselves, 404 while the engineering agents are off, no MCP tool): a month's totals and its groups, biggest first, from one Query of the month's ledger partition (never a whole-table read), `truncated` past 20,000 rows; 400 for a bad month, grouping or workflow, 503 when the table refuses the read.
+- **Agents → Spend** (`?tab=spend&month=&by=&workflow=`), for administrators while the engineering agents are on: a month's cost, tokens and MicroVM time, by workflow, repository, run, agent, model or day; a workflow's row narrows the view to its runs, and a run's or an agent's opens its run monitor. In the nine locales and the dev mock.
+- An engineering flow's monthly budget (`budget: {monthly_usd}` in `voc-workflow/2`, 0.01 to 100,000 dollars, to the cent; refused on an agents workflow), checked by the server, the web app's and the stream's schemas; the editor's **Monthly budget** field under the flow's description (text the browser cannot read as a number is said to be wrong and holds the save, never dropping a stored budget); the assistant's create and update cards state it in dollars. Recorded only for now: nothing measures or enforces it yet.
+
+### Changed
+
+- A person's board actions are written by the board function's own role (`engineering/board/api.py` `person_request`, a direct invoke by name, `ENGINEERING_BOARD_FUNCTION`); the Agents API checks the person and the run, invokes it and publishes the person's event from its own source, and only an event that is this person's action (one `task.*` of this run, and of this task, from `human:<subject>`). This closes the Agents API write grant documented in 6.18.00 (its PutItem and UpdateItem on a run's whole partition).
+- A priced session write is one transaction with its ledger rows.
+- docs/autonomous-engineering.md (the board, Cost: the spend ledger and its load, the phase table's row 5), docs/autonomous-agents.md (the budget, the spend route, the board actions through the board function) and docs/deployment.md say so; TENETS.md's tenet 4 row names the spend read and the Spend tab, tenet 6's Agents API gap is gone and tenet 7 says the spend prices MicroVM time only.
+
+### Fixed
+
+- An event a person's board action could not be built into answered 400 "shorten the text" after the change was written (6.18.00): an error building it is now the board function's own error, answered 503 (retry), and an event it hands back that is not voc-msg/1, or an answer of ok with no answer, is the board's fault, answered 503 (retry), with nothing sent.
+
+### Upgrade notes
+
+- The Agents API role (with `-c engineeringAgents=true` only) loses `dynamodb:PutItem` and `dynamodb:UpdateItem` on voc-engineering (it keeps GetItem and Query) and gains `lambda:InvokeFunction` on the board function by name, and gets `ENGINEERING_BOARD_FUNCTION`. VocProcessingStack deploys the board function before VocApiStack, as before.
+- The supervisor's and the delivery's roles gain `dynamodb:UpdateItem` on the ledger's month partitions only (`WS#default#SPEND#20??-??`), never a read or a delete. A priced session write is now a transaction with its ledger rows: about twice its write cost.
+- The ledger starts when this release is deployed: sessions' earlier MicroVM time and tokens are not booked. No stored row is changed; a flow saved without a budget reads and saves as before.
+
+Merged from the voc-autonomous-c branch. Off by default.
+
+## [6.21.00] - 2026-11-13 (voc-autonomous)
+
+Autonomous engineering agents: the six default engineering flows as templates. Administrators start one from the workflow library where the engineering module is deployed; nothing runs a flow yet. Off by default (`-c engineeringAgents=true`), no fixed cost.
+
+### Added
+
+- The six default engineering flows (`voc-datalake/lambda/shared/engineering_flow_templates.json`, `voc-workflow-templates/1`): Understand the repository, Issue triage, Bug hunt and fix, Feature from an issue or a PRD, PR review and Self-improvement, each a `voc-workflow/2` definition with a stable template id, a name and a one-line description, following the steps and stops of docs/autonomous-engineering.md's "Default flows". None merges; the two that push code (Bug hunt and fix, Feature) end at a stop at PR after the quality gate, whose NO-GO goes to a person; the others end at the review comments, the proposal on the issue or an administrator's approval or acceptance. One file, read by the server (`shared/engineering_templates.py`) and imported by the web app (`frontend/src/api/engineeringTemplates.ts`); `shared/test/test_engineering_templates.py` validates every one with the server's validator (and that it is kept as written), and `engineeringTemplates.test.ts` with the editor's port of the rules.
+- `GET /workflows/templates` (the Agents API): the six, each with its definition, for an administrator acting for themselves (403 for anyone else, a delegated credential included) where the engineering module is deployed (404 elsewhere, as the engineering runs' routes). Read only: creating from a template is `POST /workflows` with its definition, so it gets that route's validation, its 409 where the module is off and, from the assistant, its approval card. No new write path.
+- The workflow library's **Start from a template** (beside New engineering flow, only with `features.engineering`): a dialog listing the six, each with its description; choosing one opens `/agents/workflows/templates/<template_id>`, the editor on an unsaved copy of the server's definition (`GET /workflows/templates`), named and described in the person's language. Nothing is stored until **Save**, which creates it and opens it on its own page; Save as, Reset to template and History are not offered on a copy that is not stored yet. A person who is not an administrator is told the templates are for administrators (the server's 403 says the same); an unknown template, or a deployment without the module, says the template is not available; both link back to the library; any other failed read says so, with Try again. The leave-page prompt's Save is the toolbar's own (its checks, its outcome on the status line). Its copy is in all nine languages; the step titles stay in English.
+
+### Changed
+
+- The workflow editor (`WorkflowEditor`, `useWorkflowEditor`) takes an `unsaved` definition: no read, the copy is the draft, the unsaved-changes guard's Save creates it.
+- The dev mock server answers `GET /workflows/templates` from the same file (`frontend/mock-server.js`, `mock-coverage.json`).
+- The Vite dev server's allow list (`frontend/streamSource.ts` `streamFsAllow`) takes that one Lambda file, so `npm run dev` serves it (`src/build/streamFsAllow.test.ts`).
+- The workflow editor offers Reset to template only on an agents workflow: the template is one, and an engineering flow keeps its kind.
+- docs/autonomous-engineering.md marks the six default flows as built, with their paths, and its phase table's rows 4 and 5 say so; docs/autonomous-agents.md describes the route and the library's Start from a template. Still planned there: the templates over MCP (tenet 4 gap) and where the dial stops each template (tenet 3). The assistant's `create_workflow` still takes a whole definition (a template id there is planned).
+
+### Upgrade notes
+
+- Lambda code only (asset hash): no grant or stored row changes. The Agents API answers one more read route under the existing `/workflows/{proxy+}`.
+
+## [6.20.00] - 2026-11-13 (voc-autonomous)
+
+Autonomous engineering agents: the learning loop. A run's end starts its retrospective, which reads what the run recorded, takes at most three of its failures to the coach, drafts a lesson in agent memory for each failure taken to the coach (at most three per run) for an administrator to approve, and writes a scorecard row per skill version. Off by default (`-c engineeringAgents=true`), no fixed cost.
+
+### Added
+
+- The run's record for its retrospective (`voc-datalake/lambda/engineering/learning/records.py`): the run's `META`, the board's tasks and their history, the agents' session rows (role, skill version, MicroVM seconds, cost, crashes, the supervisor's last word on a failure, redacted) and the quality gate's records the final-go tasks named as result keys (at most 20, the latest attempts first, each checked against `voc-gate-record/1`; one unread or off it is left out and logged). Never a listing.
+- The retrospective (`learning/retrospective.py`, pure): each task's attempts, who held each (its claim, else its launch; a person's attempt is left out, and an agent's attempt a person took over ends for the agent at the take, with no failure and no tally), how each ended (a supervisor's re-post as `crashed` is a crash, any other of the supervisor's a time-out; anyone else's re-post, such as a person's Resume replacing a coordinator, a crash when the agent's session failed, else no failure, as a person's release is; the task's state for its last attempt) and its review rounds (its `in_review` moves and the gate's rounds on the task the gate judged). The failures, one per attempt that ended failed, timed out, crashed or got a NO-GO, most severe first; the ones for the coach, the first per role and failure kind, at most 3, never the coach's own; each failure's evidence cut to fit and redacted. People's reactions on the host come in through `HostReactions`, a port that answers nothing yet (the broker reads no host data).
+- The loop (`learning/loop.py`): `LearningLoop.retrospective` writes the scorecards of an ended run with a connection and records the failures it takes to the coach once, in a create-only `RETRO#coach` row of the run's partition (read back by any later retrospective of the run, so at most three per run, for certain); `LearningLoop.learn_from` takes one of them (by its key, one that row names): first a create-only `LEARN#<key>` claim row, so a duplicate delivery or a second start writes and asks nothing; then one lesson draft with no model call, at the failed role's scope for the run's connection (`learn_agent_memory`, as the run's coach, with the run and the task as its provenance), a line made by rule for the way the attempt failed; then the coach. The coach's why is not drafted as a memory (the proposed version's reason holds it), so model-written drafts never fill a role's scope ahead of an administrator's own. What came of it is a create-only `LEARNED#<key>` row. A role with no skill yet, the coach's guard spent, a refused answer or a memory not kept is an outcome, logged; a coach's call that runs past its read timeout or fails is recorded on the `LEARNED#` row as `timed_out` or `failed` and never retried, and the rule's lesson stays. The lessons pass memory's hygiene with no cited reviews (an engineering run cites none).
+- Scorecards (`learning/scorecard.py`): one create-only `voc-scorecard/1` row per skill version per run, `WS#<ws>#SCORE#<connection>#<role>#<version>` / `RUN#<run>` (tasks done, failed and needing a person, re-posts, review rounds, attempts, cost, MicroVM seconds, the run's status and times, who wrote it and when); a retried retrospective leaves a written row as it is. `ScorecardStore.version_card` sums a version's latest runs (at most 200) with one bounded Query of its partition; `compare` reads up to 10 versions, one Query each. No route reads them yet.
+- voc-engineering-runtime's `retrospective` action: without `failure`, the retrospective, each failure to coach handed on to an asynchronous invocation of its own; with it, that failure. It never raises, and voc-engineering-runtime's asynchronous invocations are never retried by Lambda (`retryAttempts: 0`, now explicit and pinned in its test), so one cut off at the limit is not delivered again; a duplicate delivery finds its step's create-only claim and does nothing.
+
+### Changed
+
+- A run's retrospective is handed on to an asynchronous invocation of voc-engineering-runtime when the ended run has no live or moving agent left, as it stops being listed (at `end_run`, or at the tick that ends its last busy agent), so its record no longer moves and its sessions are priced. Best effort: a failure to start it is logged and never fails the end or the tick, and their answers are unchanged. It runs apart because a coach's call can take minutes.
+- voc-engineering-runtime gets `ENGINEERING_BENCHMARK_CASES`, the benchmark's shipped case ids (the directories of `voc-datalake/engineering-benchmark/cases`, read at synth) the coach names its expected case from; voc-engineering-delivery does not.
+- The coach's Bedrock adapter (`coach/model.py`, `BedrockCoachModel`) is bounded to end well inside voc-engineering-runtime's 5-minute limit: one Converse call on its own client (a 200-second read timeout, a 10-second connect timeout, one botocore attempt, the deployment's inference scope) made once through `bedrock_call_with_retry` with one attempt (nothing is tried again, a throttle or a dropped connection included: a second attempt would not fit the limit; it is recorded as `failed`), one model with no capacity fallback chain and no continuation, and an output cap of 8,000 tokens, thinking included (was 16,000 plus the thinking headroom, through `shared/converse.py`); a reply cut at the cap is refused. A skill whose whole rewrite needs more than that is not proposed by the coach.
+- The `engineering-denied-reads` alarm also sums `voc-engineering-runtime`'s denied workspace reads (a retrospective reading the gate records takes a denied one as missing), and docs/deployment.md says so.
+- An agent memory's provenance from a run may name the board task it was learned from (`Provenance.task_id`, kept on the version as `prov_task`); it never counts as another source.
+- docs/autonomous-engineering.md: the learning loop and its scorecards are described as built, with their code paths, the start from a run's end and the grants; the coach as invoked by it; still planned: people's reactions on the host, the scorecard screens and routes, "what the agents learned" in the goal report. The phase table's row 3 and the Cost section say so.
+
+### Upgrade notes
+
+- New grants on voc-engineering-runtime's role (with `-c engineeringAgents=true` only): `s3:GetObject` on the workspace bucket's gate records (`ws/*/runs/*/*/commits/*/_gate/attempt-*/record.json`); `dynamodb:GetItem`, `PutItem` and `UpdateItem` on the skills' partitions (`WS#*#SKILL#*`); `dynamodb:GetItem`, `Query`, `PutItem` and `UpdateItem` on the roles' lessons (`WS#*#AMEM#ROLE#*`); `dynamodb:PutItem` on the scorecards (`WS#*#SCORE#*`); `bedrock:InvokeModel` on the allowlisted Claude models (the stack's shared managed policies); `lambda:InvokeFunction` on voc-engineering-runtime itself, by name. No delete, no person's memories. The DynamoDB grants are bounded by partition (`dynamodb:LeadingKeys`), not by attribute: the role can put or update any item of a skills partition (a `HEAD` row's `current_version` included) and of a role's lessons partition, and only the code keeps it to the version counter's `ADD`, create-only version, guard and draft rows and a memory's `ADD confirmations` (docs/autonomous-engineering.md, "The grants").
+- Each run's end now costs one more invocation of voc-engineering-runtime (reads of the run's own rows, a few create-only writes), plus one per failure taken to the coach, at most three per run, each one Converse call on the coach's model (by default the `agent_reviewer` surface's): a prompt of at most the 40,000-character evidence plus the role's skill, and an answer of at most 8,000 tokens, thinking included, ending within 200 seconds, made once per failure, ever. A role with no skill in the skills store yet makes no call.
+- No stored row is changed. Runs that ended before this release get no retrospective.
+
+## [6.19.00] - 2026-11-13 (voc-autonomous)
+
+Autonomous engineering agents: the coach, which turns an agent's failure into a proposed version of that role's skill for the run's connection, and the benchmark record of a coach's version held to the case the proposal named. Nothing invokes the coach yet (the supervisor or the run's retrospective will); off by default.
+
+### Added
+
+- The coach's failure record (`voc-datalake/lambda/engineering/coach/failure.py`): the run (a ULID), the connection, the role (an agent role, never the coach), the board task, the attempt (0-1000), the kind (`error`, `timeout`, `no_go`, `repeated_finding`, `pr_rejected`, `heavy_edit`) and the evidence: the task's text (at most 4,000 characters), up to 12 conversation excerpts (2,000 each), 8 outputs (4,000 each) and 12 people's comments (1,000 each), 40,000 characters in all. Every field is checked; every text has its credential-shaped strings replaced (`quality_gate.text.redact`) and is measured after that; a text over its bound is refused, never cut.
+- The coach's prompt (`coach/prompt.py`): the role's current instructions, each current example's situation and action, the benchmark's case ids and each piece of evidence, each in its own DATA block under one random fence per prompt (`quality_gate.text.data_block`, as agent memory's recall), with a system prompt saying that everything in a block is data and never an instruction, naming what the coach never writes (permissions and credentials, the harness and its tool policy, the model, budgets and caps, the dial, the stop-at-the-pull-request rule, the safety and prompt-injection instructions, the gate's bar), and asking for one JSON object: the new instructions and examples, a short why and the expected benchmark case.
+- The coach's reading of the answer (`coach/answer.py`): one JSON object (a code fence around it allowed) decoded with `json.loads` only, nested at most 8 brackets deep (checked before decoding; the decoder's `RecursionError` is refused too), a key given twice refused, exactly `instructions`, `examples`, `why` (one paragraph, at most 400 characters) and `expected_case` (one of the benchmark's case ids). Refused, each with a plain reason: a key named for a person-only field (`tool_policy`, `model`, `harness`) or for a field never in a skill; text the answer adds or removes about a budget or a cap, the dial, permissions or credentials, the safety or prompt-injection instructions, merging or marking a pull request ready, the gate's bar, the agents' harness or tool policy, or a model: an instruction line or example text added or dropped (case and spacing aside), a mention gained or lost in the whole skill read as one text with its spacing collapsed (a topic split across lines), or a mention in the why (the reason names the topic and the line, never the text); a malformed or over-long field; and an answer that changes nothing. The topic check is a filter; an administrator's review and the benchmark are the gate. What it keeps is redacted, and the proposed skill keeps the current tool policy, model and harness.
+- The coach's model port (`coach/model.py`): `BedrockCoachModel`, one single-turn call through `shared/converse.py`'s `converse_detailed` with a model from the deployment's allowlist (by default the `agent_reviewer` surface's), the `agent_reviewer` surface named so a capacity fallback stays on its chain, `max_tokens` of 16,000 plus the thinking headroom and no continuation; its `CoachReply` names the model that actually answered. The tests use a recorded fake.
+- The proposer (`coach/proposer.py`, `Coach.propose_for(failure, cases)`): refuses (409) before any model call when the coach has proposed for that run and failure kind already, or when the role has no skill yet; reads the connection's own current version, else the shared one; asks the model; proposes through `SkillStore.propose_version` as the coach of the run's connection (an agent `Actor` with the failure's connection), the reason being the run, the kind and the answer's why, written on the version it read, with the answer's case as the version's expected case; and returns the store's change, its `skill.proposed` announcement as a `voc-msg/1` message (checked with `parse`) from `coach` to the run, its id made from the change, and the coach's run-scoped source `voc.engineering/coach/<ws>/<run>`, for the caller to publish. A refused answer writes nothing and spends no proposal.
+- `SkillStore.coach_proposed`: whether the coach's `RUN#<run>#<failure>` row exists, read before a model call; the proposal's transaction still holds the rule.
+
+### Changed
+
+- A version's `VER#` row records `expected_case`, `made_with_model` and `made_with_prompt` (written with the row, never updated; `''` when none), read back as `SkillVersion.expected_case` and `SkillVersion.made_with` (`MadeWith`: the model that answered and the prompt's version, `<name>/<number>`). `SkillStore.propose_version` takes `expected_case` (a benchmark case id) and `made_with`; the coach's proposal without either, or made with a model outside the deployment's allowlist, is refused (400) before a version number is spent. The coach records the model its reply names and `coach-prompt/2`. A stored model is read back as written.
+- `SkillStore.record_benchmark` refuses (400) a benchmark of a version the coach proposed whose failure's case is not the version's expected case, before the write and as the write's condition (`expected_case` equal to the one read, or absent for a row written before this release). A version a person wrote is recorded as before, whatever case it names.
+- docs/autonomous-engineering.md: the coach is described as built, with its paths; still planned: invoking it on a failure, a connection's own cases from its failures, the step that runs the benchmark for a proposal, the learning loop and scorecards; the phase table's row 3 says so.
+
+### Upgrade notes
+
+- No stored row is changed. A coach's version proposed before this release has no expected case, so only a benchmark naming no failure's case is recorded on it, and it is never accepted; nothing wrote coach versions before this release.
+
+## [6.18.00] - 2026-11-13 (voc-autonomous)
+
+Autonomous engineering agents: a person's actions on an engineering run's board, from the run monitor's Board tab or the Agents API; the AI assistant answers what an engineering run's agents are doing; an alarm on the workspace's denied reads; and two fixes to the board's claim and the supervisor's re-post. Merged from the voc-autonomous-c branch. Off by default.
+
+### Added
+
+- A person's board actions on an engineering run (`POST /agents/engineering/<run_id>/board/tasks`, `…/board/tasks/<task_id>/<action>` with `priority`, `block`, `take`, `move` and `release`): administrators acting for themselves, through the Agents API only (no MCP tool). Each is the board store's own conditional write with a history row naming `human:<subject>`, published as the board's `task.*` event from the API's source with `from.kind` human. Taking a task holds it with no expiry, so its agent can move it no more and the supervisor leaves it alone; the person moves it on like any holder, or gives it back (`release`): open again at its next attempt, as a re-post, for the run coordinator to launch a new agent on. Blocking ends it as needing a person, with their reason. Never the coordinate task.
+- The run monitor's Board tab gets an administrator's controls: post a task; take, take over, block, set priority, move and give back ("Give back to the agents") a task, in the nine locales and the dev mock.
+- The AI assistant's `get_engineering_run {run_id?, agent?}` answers "what is agent X doing" on an engineering run, for administrators and read only: the run and each agent's status, task, step, why it looks stuck and its recent tool calls, live agents first, the run on screen by default (page context `engineeringRunId`). It reads the run monitor's existing routes with the administrator's own sign-in, and the agents' words reach the model as data. No API change and no MCP tool.
+- The `engineering-denied-reads` alarm (alerting, only with `-c engineeringAgents=true`): the `EngineeringWorkspaceDeniedReads` of the workspace's three readers summed over 5 minutes, above 20 (docs/deployment.md).
+
+### Changed
+
+- The bus takes `task.*` from the API's own source only with `from.kind` human (a person's board actions), and the board's source proves `system` only (`FROM_KINDS`).
+- The Agents API's role gets `dynamodb:PutItem` and `dynamodb:UpdateItem` on the engineering table only for keys whose leading key is a run's partition (`WS#default#RUN#` and a 26-character run id), never `DeleteItem`. IAM bounds it by partition only: the role can write every item of a run (META's every attribute, the TASK#, SPEC#, TASKLOG# and RUNLOG# rows, the agents' AGENT# session rows, the MSG# and INBOX# rows), and only the code keeps it to the board store's conditional writes (the task row, its SPEC# marker, its TASKLOG# row and META's `task_count`); `dynamodb:Attributes` cannot narrow it per row. Routing a person's actions through the board function, and dropping this grant, is the follow-up (docs/autonomous-engineering.md, "The board").
+- Ending another person's hold, by a take or a block, needs `over: true` (the run monitor asks first), and the write holds the holder it read; an agent's signal to a task a person holds answers 409; a person's move to `needs_human` answers 400 (block it, with a reason).
+- A person's board action publishes its event only when it changed the task (`updated_op` on the task row); a no-op publishes nothing, and an equal post re-sends its event only while that post is still the task's last change. A bus that cannot be reached after a board write is a `PublishError` from `EventBridgePublisher`, answered 503 "the board changed but its event was not published: retry".
+- The supervisor reads a task ended with no holder (a person's block) as ended (`Lease(agent_id='', final_state=…)`), never as a lost lease it would continue in a new MicroVM.
+- A plan's think step in the agents pack (`plan_contract.json` `admin_read_packs` gains `agents`) runs with the approver's admin rights only after the conductor's Cognito re-check, as in scrapers and settings.
+- The assistant's create card for an engineering flow names the 409 a deployment without the engineering module answers.
+
+### Fixed
+
+- An agent's post equal to a task still under way publishes its event again only when the post is that task's last change and was this caller's own, so a person's post (or another agent's) is never re-published as the board's on another's behalf.
+- An agent still booting whose open task a person blocked is ended on the supervisor's next tick, its MicroVM with it, instead of being left to boot and then refused its claim.
+- The board's claim respects the launch recorded on a task: while a launch is recorded at the task's attempt, only that launch's agent claims it, and an agent launched for an older attempt (the task re-posted or given back since) is refused, in the write's own condition too (409). A task with no launch recorded at its attempt is still claimed by any agent of its role, the holder's repeated claim is still answered as it is, and the coordinate task keeps its own rule.
+- The supervisor never re-publishes another sender's change as its own: a re-post stamps `updated_op` `repost`, and the board's `repost_task` publishes `task.posted` when it wrote the re-post, or when the store answers it as already done and the task's last change is still the supervisor's own re-post at that attempt (a retry after a lost event: the same event id, a redelivery; `BoardStore.repost_change`). A task open at the next attempt by a person's release (published as that person) or by another actor's re-post publishes nothing, on the supervisor's end of a session whose task moved on too.
+
+### Upgrade notes
+
+- A task row written before this release has no `updated_op`, so a person's retry of a change made before the upgrade publishes nothing (the change and its history row stay).
+- A re-post written before this release has no `updated_op` `repost`, so the supervisor's retry of it after the upgrade publishes nothing (the task stays open at its next attempt).
+- An agents think step in a plan now fails when Cognito cannot be reached (the re-check before it reads the agents pack), as a scrapers or settings one does.
+- An agent launched for a task before this release and re-posted since can no longer claim that task at its new attempt; the coordinator's next launch numbers a new agent for it.
+
+## [6.17.00] - 2026-11-13 (voc-autonomous)
+
+Autonomous engineering agents: the benchmark harness, its first fixtures and the benchmark gate for skill versions. Nothing invokes them yet (the coach that proposes versions and runs the benchmark is planned); off by default.
+
+### Added
+
+- `voc-bench/1` benchmark cases (`voc-datalake/lambda/engineering/benchmark/cases.py`): a `case.json` per case directory (its id, which is the directory's name; its kind, `bug`, `review` or `feature`; a title; the task an agent is given; its fixture directory; its check). A bug's or a feature's check is an argv starting with `python3` or `node`, a directory of the repository to run it in, a timeout of 1-600 s, the paths a patch may not touch and, optionally, the only paths it may change (`allows`; every shipped case names them), both compared case aside; a review's is the findings it expects (a file, a line range, a short rule id) and how many others it may report. The loader checks every field and bounds the record (64 KB), every text, the fixture (400 files, 2 MB, 256 KB a file) and a suite (100 cases); it refuses a path with `..`, an absolute path, a `.git` path, any link in the case, and anything in a fixture but files and directories.
+- Four fixture cases, fictional and MIT licensed, in `voc-datalake/engineering-benchmark/`: a Python bug with a failing unittest (`slug-cut-bug`), a Node feature with acceptance tests run by `node --test` with no dependencies (`duration-hours-feature`), a review with three known findings (`pagination-review`), and a monorepo with a Python and a Node package whose bug is in the Node package and whose Python package is protected (`monorepo-units-bug`). Each bug and feature case ships its known fix, which only the tests read.
+- The benchmark runner (`benchmark/runner.py`): a candidate's `solve(case_view)` returns an `Attempt` (a unified diff, or a review's findings, with input and output tokens, cost and seconds) from its own copy of the fixture. A patch over 256 KB, or naming a path outside the repository, in `.git`, protected or outside the case's `allows`, or making a link, a submodule or a binary, is refused; the rest is checked with `git apply --check`, then applied to a fresh copy made a git repository (its git directory outside the working tree, hooks and the system and global git config off), and the tree is walked again. The check runs without a shell, its tool by absolute path (a Python check with `-I -P`, so the repository is not on `sys.path` at its start and a patch's `unittest.py` shadows nothing), with no credentials and no proxy in its environment (built from nothing: only its tools' directories on PATH, a temporary HOME and TMPDIR), and its process group killed at the timeout (a child that calls `setsid` escapes it); it passes on exit 0. It is not a sandbox: the check's network and file system are open, and the benchmark assumes an honest candidate (the code under test can still patch its test framework); a connection's cases will run in the runtime's MicroVMs. A failed check keeps the end of its scrubbed output, without NUL or other control characters (newlines and tabs kept); a patch header naming a quoted path (which git would unquote) is refused; a patch holding a line separator other than a newline (which Python would split on and git would not) is refused; and whatever a candidate's `solve` raises (a `sys.exit` included) or returns that is not an `Attempt`, a malformed attempt, or the machine's own failure while checking one, fails that case alone. A review passes when every expected finding is reported in its file, within its line range, with its rule, and the other findings stay within the case's bound. Each case gives a `CaseResult` (passed, why, tokens, cost, seconds); a candidate's run of a suite a `Scorecard` (pass rate, results, total cost and time).
+- The benchmark gate (`benchmark/gate.py`): `decide(baseline, candidate, failure_case=None)` refuses two scorecards that did not run the same case ids, and passes only when none that passed in the baseline fails in the candidate and, when a failure's case is named, the candidate passes it and the baseline did not. Each reason is a sentence naming its case; past 12 regressions the rest share one line naming them, so a verdict always fits its record, whatever its checks printed. The `Verdict` carries the failure's case it checked, and `benchmark_run(baseline, candidate, verdict)` takes it from there, so a record never claims a gain the gate did not check.
+- `SkillStore.record_benchmark`: an administrator records a proposed version's benchmark (`BenchmarkRun`: the pass rates before and after, the case ids, the verdict and its reasons, the failure's case; with when and who ran it) on its `VER#` row, once, with `benchmark_gate` (passed with a gain on a named failure's case) beside it: the write is conditioned on the row having none, in one transaction with a create-only `LOG#<version>#benchmarked` row, so a second record is refused (D1) and a failed or mis-recorded benchmark makes that version final (never accepted; the coach cannot propose again for the same run and failure kind, so a new proposal comes from a new failure in another run, or an administrator writes the fix as their own version, which needs no benchmark); the failure's case is the one the administrator who records it names, and nothing ties it to the version's own failure yet (that comes with the coach, whose proposal will store the expected case id for `record_benchmark` to check); the record is stored as UTF-8 JSON and its 40 KB bound measured the same way; it is refused when the row would pass its 256 KB; an agent or another person is refused (403). `SkillVersion.benchmark_run` reads it back, and is authoritative once present: `SkillVersion.trusted_rates` gives its pass rates, else the proposal's `benchmark_before`/`benchmark_after`, which are only the proposer's claim. Recording one announces nothing.
+
+### Changed
+
+- `SkillStore.accept_version` refuses a version an agent (the coach) proposed until its recorded benchmark passed with a gain on a named failure's case (409: it has no recorded benchmark, its benchmark passed without naming a failure's case, or it failed its benchmark), checked before the acceptance and again as its transaction's condition (`benchmark_gate`, the same test). A version a person wrote is accepted as before, measured or not.
+- docs/autonomous-engineering.md: Evaluation describes what is built and what is still planned (the coach that proposes, real agents as candidates, published results, a connection's fixtures from its failures); the skills section describes the benchmark gate on acceptance; the phase table's rows 0 and 3 say the harness, its fixtures and the gate are built.
+
+### Upgrade notes
+
+- No stored version is changed. A coach's version proposed before this release has no recorded benchmark, so it can no longer be accepted until one is recorded on it; nothing writes coach versions yet.
+
+## [6.16.01] - 2026-11-13 (voc-autonomous)
+
+The owner's decisions on autonomous engineering, written into the tenets and the design. Docs only; no code changes behaviour.
+
+### Changed
+
+- TENETS.md tenet 3: engineering flows follow the dial, which decides how far a flow goes (Human-driven: findings and proposals, no branch pushed; AI-assisted: the change on the agents' own branches and a draft pull request, each step past the plan waiting for a person's go; AI-driven: end to end to a draft pull request). In every mode a pull request stays a draft until a person marks it ready, only a person merges, and an agent never changes the dial. The tenet 3 row says the flows do not read the dial yet: the broker's push and draft pull request code is built but not wired, and must read the dial before it is, so a Human-driven run never pushes.
+- TENETS.md's tenet 4 row names an engineering run's reports and, once merged, a person's board actions among the admin-only work with no MCP tool; the tenet 7 row names the run monitor's polling (every 5 s, its reports every 15 s, only while open) and what a MicroVM costs while a run is under way (each agent's 4 vCPU / 8 GB ARM, about $0.50 an hour; docs/deployment.md says the default 2,048 MB memory quota must be raised before a first run).
+- docs/autonomous-engineering.md: the MicroVM facts checked read-only (the `aws lambda-microvms` service, the `al2023-1` base image and its regions, the 8-hour limit, sizes, tokens, idle policy, quotas, and the price: about $0.25 an hour for a 2 vCPU / 4 GB ARM MicroVM, $0.50 for the 4 vCPU / 8 GB the runtime starts each agent at) replace the hedges, and what is still unchecked until a first run in a test account is named; the dial's paragraph follows tenet 3; agents run on the Converse loop only for now, a CLI pinned and installed after the first MicroVM run; the page's status banner says it is partly built.
+- `start_run`'s docstring says a first start naming a language is checked whether or not it has its connection and commit.
+
+## [6.16.00] - 2026-11-13 (voc-autonomous)
+
+Autonomous engineering agents: the run's start launches its coordinator and a person's Resume replaces one that failed, a run's status changes record who made them, the run monitor gains its Reports panel, and the AI assistant drafts engineering flows. Merged from the voc-autonomous-b and voc-autonomous-c branches. Off by default.
+
+### Added
+
+- The run's start launches its coordinator: for a run started with its connection, commit and new `language` (the repository's toolchain, the MicroVM image the coordinator runs in), `start_run` launches `coordinator-1`, the run's first agent, on its `coordinate` task with the coordinator's skill's harness (META's `agent_count` starts at 1, so the board numbers the agents it launches from 2). The coordinate task records that coordinator, and only it claims the task. A retried start launches it only when it has no session yet; a run without its connection, commit or language starts without one. A start whose coordinator does not launch (refused, or its MicroVM did not start) sends the run to a person (the `coordinator` decision point) and raises the failure, never leaving the run active with no coordinator; the person's Resume launches it.
+- A whole-run Resume makes sure the run has a coordinator, as its start does: one whose session failed (it kept crashing, which sent the run to a person) is replaced, the coordinate task re-posted at its attempt (written, never published as `task.posted`) and a new `coordinator-<n>` recorded at the next by `BoardStore.launch_coordinator` (the runtime's only, never a board op) with the person as the actor of both history rows (`BoardStore.repost` takes an `actor`, `supervisor` by default; nobody named is `unattributed`, as on the run's own history). The supervisor ends a crashed coordinator's session as failed before it sends the run to a person, so a Resume in between still replaces it, and if sending it to a person fails, the next tick asks again for an active run whose newest coordinator failed and is still the coordinate task's. A coordinator that is live, held, or ended by a person's Shut down or Stop now is left alone (the run stays active until a person ends or resumes it); a board refusal (the agent cap, a racing Resume) is logged and the Resume still answered.
+- D4 for a run's status: its start, its end, a decision point and a person's Resume each write a `RUNLOG#<at>#<status>#<hex>` row (status, actor, reason, time; create-only, never written over) in the same transaction as META's change, retried when another write of META races it. `start_run`, `end_run` and `signal` take an optional `actor` (`unattributed` when missing; `supervisor` for its own decision points; a start's or a Resume's whose coordinator did not launch names that start's or Resume's actor), and the run monitor's signals now send the signed-in person.
+- The run monitor's **Reports** panel: a run's commit, PR and goal reports by level, goal first, each version's Markdown (rendered as Markdown only) with a version picker; it follows the latest version while the run is under way, and a version counted but never written says so.
+- The AI assistant drafts engineering flows (`voc-workflow/2`) with its workflow tools behind its approval card; the web app creates a new one only where the engineering module is deployed (`features.engineering`), and changes one already saved anywhere.
+- The `EngineeringWorkspaceDeniedReads` metric: each workspace read S3 denied and the reader took as missing (the report builder, the Agents API, the board's `knowledge`), flushed by the board and report handlers.
+
+### Changed
+
+- A replaced run coordinator is refused every board op (403 "the run has another coordinator now"): each coordinator op checks the caller is the coordinate task's recorded coordinator at its attempt, and the task's claim repeats the check in its own write.
+- The coordinator's launch from the runtime follows the board's launch rules: a first start whose coordinator cannot be launched (no skill for the role, no MicroVM image for the language in this deployment) is refused before anything is written, and a Resume checks the same before it re-posts or numbers one; a repeat is answered from its session, and one while another launch still starts refuses a start (`SessionBusy`: ask again, the run is written) and is logged on a Resume; a Resume whose new coordinator is refused or whose MicroVM fails to start logs it and sends the run back to a person, as a start does; a bad request or another task's session clears the coordinate task's record with a `launch_refused` history row, so the next start or Resume numbers a new coordinator.
+- A decision point the run already waits at, for the same reason, writes nothing (the supervisor asks on every tick while a budget stays spent), and none replaces the 30-day one.
+- The run monitor's signals re-read only what they change, not the reports.
+- The Agents API creates a new engineering flow (`voc-workflow/2`) only where the engineering agents module is deployed: `POST /workflows` (New, the editor's Save as, an imported draft saved as new, the assistant's create card) and `POST /workflows/{id}/duplicate` answer 409 for one elsewhere, whoever asks; an engineering flow already saved still opens and saves (PUT), and agents workflows are created as before. The web app offers Save as on an engineering flow only where `features.engineering` is true, and the assistant's duplicate card answers that 409 with a plain sentence.
+- An approved knowledge pack whose stored `pack.json` is not readable JSON is `PackUnavailable` (kind `unavailable`), which the board's `knowledge` answers 503 (try again) instead of 400.
+
+### Fixed
+
+- A running agent whose new MicroVM never starts counts each failed start as a crash, so it is escalated (its task re-posted, or a coordinator's run sent to a person) instead of retried forever.
+- Gradle runs without its daemon in the Java image (`GRADLE_OPTS=-Dorg.gradle.daemon=false`), whose loopback the dependency step's code firewall rejects; every variable a toolchain image sets now reaches repository code (the runner had dropped `GRADLE_OPTS` and the Rust image's `CARGO_INCREMENTAL`).
+- A session that stops without its finish says why in its task's last progress report before the task goes to a person. A run coordinator's stop without finish is a crash instead (the supervisor continues it, then sends the run to a person, whose Resume replaces it), never its coordinate task sent to a person, which left the run active with nobody planning it.
+- A launch whose MicroVM failed to start runs its hold out (0) instead of removing it, so no key-only `AGENT#` row is left for the report builder to read as an agent with no role, and a retry launches at once; the hold is let go even when ending the MicroVM fails.
+
+### Upgrade notes
+
+- With `-c engineeringAgents=true`: a run's META gains `language` and starts `agent_count` at 1, and its coordinate task records `coordinator-1`; a run started before this release has neither, so its coordinator is not launched by a Resume and its agents number from 1 as before. The board Lambda gets `ENGINEERING_IMAGE_LANGUAGES`, the languages of `-c engineeringImageArns` (empty by default), and the runtime reads the same images: until images are configured, every launch, the run coordinator's included, is refused before an agent is numbered (a run's first start with a `language` is refused before it is written). Without the flag nothing changes.
+- A run started on 6.15 has a coordinate task with no recorded coordinator: every coordinator op on it is refused (403), and a Resume launches none: start a new run in its place.
+- In a deployment without the engineering agents module, a client that created engineering flows through `POST /workflows` or `…/duplicate` now gets 409 there; flows already saved are unchanged and still open and save.
+
+## [6.15.01] - 2026-11-13 (voc-autonomous)
+
+Autonomous engineering agents: fixes from 6.15.00's review, to launches and PR reports. Off by default.
+
+### Fixed
+
+- A launch the runtime refuses as a bad request (no image for the language in this deployment, no skill for the role, another attempt) or because the agent's session is another task's no longer keeps the task's recorded launch: the board clears it with a `launch_refused` history row naming the coordinator and the refusal, so the coordinator's next launch numbers a new agent with the language and paths it gives then (a clear that fails is logged; the coordinator still reads the runtime's refusal). A launch still booting (`SessionBusy`) and a run not active or stopped keep the record.
+- The runtime answers a repeated launch (the same agent, task and attempt) with its session, and one while the first still starts as busy, before any other check: a launch that got through is never refused on a retry, even once the run has stopped, and any other refusal means no session and no launch of the agent exist.
+- A PR report whose winning gate record (the last final-go task to end, then its latest attempt) cannot be read or is off the schema is refused (logged as an error) instead of published without it or with an older attempt's: the report's Markdown is the pull request's description. A later attempt's good record wins over an unread older one. Commit and goal reports are unchanged.
+- The board refuses (409) a launch of a role that has no skill yet, or in a language this deployment has no MicroVM image for (`ENGINEERING_IMAGE_LANGUAGES`, from `-c engineeringImageArns`), before it numbers an agent, so a coordinator that keeps asking uses up none of the run's 999 agent numbers.
+- A MicroVM the service started but answered without a usable endpoint is terminated at once; if that terminate fails it is logged, and the MicroVM's idle policy ends it.
+
+## [6.15.00] - 2026-11-12 (voc-autonomous)
+
+Autonomous engineering agents: the supervisor and the harness run on the board and the bus, the board gains the coordinator's ops, and New engineering flow shows only where the module is deployed. Merged from the voc-autonomous-b and voc-autonomous-c branches. Off by default.
+
+### Added
+
+- The board for the coordinator and the harness: the run's `coordinate` task (written by the run's start with META's commit and connection, claimable only by the run's coordinator); the ops `launch` (coordinator only: it numbers the agent `<role>-<n>` and invokes only the runtime's `launch` action, once per task attempt: a repeat returns the session the first wrote, one still booting is busy; an image language and the checkout's path rule are checked before an agent is numbered; a refusal, or a run started without a connection or commit, answers 409), `tasks` and `knowledge` (`{task_id, package}`: a package of a task whose lease the caller holds, or the root, read through the pack's agent reader); the store's lease `refresh` for the supervisor, and `repost_task` at the attempt the supervisor judged.
+- The harness's board client (`runtime/harness/board_client.py`): a SigV4 POST to the board's function URL (`VOC_BOARD_URL`) as the agent's own session; the coordinator's planner and knowledge reader go through it.
+- The supervisor's board and bus (`runtime/board_bus.py`): leases, refresh and re-post through the board's store, and events as voc-msg/1 from the supervisor's own source.
+- Who speaks on the bus: the gate runner (its gate results only), a run's coach (from a run-scoped source), the supervisor (`signal.*`, `run.agent_*`, and `task.posted` for a re-post), and the API's skill announcements as the signed-in person.
+- `features.engineering` in the web app's `config.json`, from VocApiStack's `EngineeringAvailable` output: the workflow library offers New engineering flow only where the engineering module is deployed (engineering flows already saved still list, open and save).
+
+### Changed
+
+- A fresh agent's claim gets its time; a CLI message counts as done only once the model's notes are saved; a session that ends without its finish goes to a person (needs_human), never done.
+- The voc-skill/1 record keeps one home (`runtime/harness/skills.py`), and a launch takes its argv from the role's skill.
+- The bus policy admits the board's, the supervisor's and the delivery function's roles and the agent roles, each pinned to its own source.
+- The report builder reads a denied object as missing and logs it; the workspace store retries a `ConditionalRequestConflict` and logs a read cut at 4 MB.
+
+### Upgrade notes
+
+- With `-c engineeringAgents=true`: the board Lambda (timeout 120 s, above a launch's boot) may invoke `voc-engineering-runtime` (IAM grants the function; the board's code sends it only the `launch` action, through its op), reads the knowledge packs and gets `ENGINEERING_RUNTIME_FUNCTION`; the agents get `VOC_BOARD_URL`. `npm run deploy:frontend` reads `EngineeringAvailable` (a missing output means false). Without the flag nothing changes.
+
+## [6.14.00] - 2026-11-12 (voc-autonomous)
+
+Autonomous engineering agents, phase 3: the agents' memory, slice 1, scoped per repository, per role and per person, every learned memory a draft until it is approved, recalled for a task as fenced data. Nothing invokes it yet.
+
+### Added
+
+- Agent memory, slice 1 (`voc-datalake/lambda/engineering/agent_memory/`, docs/autonomous-engineering.md "Agent memory", docs/memory.md): the agents' part of the memory layer, kept in `voc-engineering` (`WS#<ws>#AMEM#REPO#<connection>`, `…#ROLE#<connection>#<role>`, `…#PERSON#<user>`) rather than `voc-memory`, whose company memories reach every shared generator and have no connection in their keys. Three scopes: a repository's, a role's within a connection (one connection's lessons never reach another's agents) and a person's, kept only for a signed-in user of this deployment. Each memory is a bounded statement (400 characters; credentials and personal data redacted, the layer's hygiene applied, a cited review's sentence refused: feedback ids only), with its provenance (a run, a review comment on the connection's own host, or a person), a confidence and a review date. A learned memory needs 0.8 confidence and stays a draft until an administrator (repository, role) or the person (their own) approves it; every edit is a new create-only version with its author (D1, D4), checked against the memory's revision; forget archives and restore brings it back, and nothing is deleted. An agent acts through a run context built from its run's record (its connection, run, role and the people on its task): it learns and confirms only within its run's connection, its own role's lessons and the people on its task, with its own run as the provenance; a person confirms only as themselves. Each source counts once, up to 20, and an approved repository or role memory confirmed three times is returned as a knowledge-pack proposal, never written to the pack. Every learn, write and edit must pass the reviews the run cited (`review_texts` is required). Recall for a task reads the run's connection's, its role's and its people's approved memories, keeps whole memories within a count and character limit, flags stale and conflicting ones (a conflict names the first five others and counts the rest, found in O(n log n)), and fences them in one DATA block. Reads stay bounded: a scope holds at most 200 live and 500 stored memories per connection (a person's per person and connection) and a memory at most 21 confirmation rows. An administrator erases a person's memories for a legal obligation (D5): a tombstone and an `AUDIT#delete` row (who, what, when, the legal basis) first, then their id de-identified wherever other scopes name it, then their partition deleted, and they are refused in every scope afterwards; nothing calls it yet (no path erases a signed-in user's data today; its caller will need its own grants and the `AUDIT#` row guard extended to `voc-engineering`). Nothing invokes it yet: the learning loop, the harness and the routes land with phases 4 and 5.
+
+### Changed
+
+- Shared write helpers (`create_only`, `transact_or_refuse`) move into `voc-datalake/lambda/engineering/rows.py`, which the skills store now uses; it also gains `whole_partition` (an erasure's unbounded read), and `partition_rows` takes `max_items`. The knowledge notes' subject pattern is public (`SUBJECT`).
+
+### Upgrade notes
+
+- Nothing changes in a deployment.
+
+## [6.13.00] - 2026-11-12 (voc-autonomous)
+
+Autonomous engineering agents: engineering flows in the workflow editor, the run monitor, push delivery per run with the board's inbox, the board's progress and repost, and the run coordinator on a versioned skill. Merged from the voc-autonomous-c and voc-autonomous-b branches. Off by default.
+
+### Added
+
+- The workflow editor builds engineering flows (voc-workflow/2): New engineering flow, an Engineering palette (agent, map, reduce, board, quality gate, learning loop, self-improvement, memory, stop at PR) and settings panels that offer only what the server accepts; `engineeringRules.ts` mirrors `shared/workflow_engineering.py`, checked against a shared 37-flow fixture. `GET /workflows` now lists both kinds (6.09.00 left engineering flows out until the editor could open them).
+- The run monitor at `/agents/engineering/:runId`: the run, its flow with each agent's step lit, the agents as the supervisor last saw them, Board and Conversation tabs, per-agent and run signals at the attempt the person saw (Stop now asks first), and answers to the run coordinator or an agent. Administrators only. Its actions answer 503 until the runtime and the bus are configured, and no stack configures them yet: the overview says so (`actions_available`), and the page then shows one line saying why instead of the signal and answer controls.
+- The board's `inbox` op (`INBOX#<addressee>#<inbox_seq>#<event_id>`, read in write order; every read, a full page's as well as the tail's, re-reads the 20 numbers below its cursor, as the conversation's pages now do, so a notice committed late is never skipped), the `progress` op (a waiting holder keeps its lease) and the supervisor's `repost` (a new attempt; nothing calls it yet).
+- The run coordinator on a versioned voc-skill/1 record (`coordinator@1`, Converse loop): it is to plan through the board and the knowledge pack, and its tools are exactly its skill's tool policy. Its planner and knowledge ports still refuse every call, as the harness's other ports do, until the board and pack adapters land, so it cannot plan a run yet.
+
+### Changed
+
+- Delivery is a push per run: the router invokes `voc-engineering-delivery` with `{message, seq}` (a redelivery carries its first seq); a posted task wakes nobody, and its row is there for the role's agents to read. The inbox is numbered in write order with a once-per-event marker, so a notice delivered late is still read.
+- A signal's request is recorded before it is applied and its outcome after (each agent applied, not applied, or stale: 409).
+- An ended task's spec marker is freed, so the same spec can be posted again.
+- The skills store and the harness share one voc-skill/1 home (`runtime/harness/skills.py`, the module the images ship); the store keeps its stricter checks.
+
+### Upgrade notes
+
+- With `-c engineeringAgents=true`: the ten role queues and `ENGINEERING_ROLE_QUEUE_URLS` are gone (agents never reach SQS); the router gains `lambda:InvokeFunction` on `voc-engineering-delivery` and the board role `dynamodb:Query`. Still no fixed cost. Without the flag nothing changes.
+
+## [6.12.00] - 2026-11-12 (voc-autonomous)
+
+Autonomous engineering agents, phase 3: the skills' record and their versioned store, every version used only once an administrator accepts it, with its diff, its reason and a rollback that keeps the history. Nothing invokes it yet.
+
+### Added
+
+- Skills, slice 1 (`voc-datalake/lambda/engineering/skills/`, docs/autonomous-engineering.md "Getting better"): the `voc-skill/1` record (the role, an allowed model, the `converse` or `cli` harness, the tool policy; bounded instructions of at most 500 lines and examples; a record naming a budget, cap, the dial, permissions or safety instructions is refused), a stable, readable diff of two versions with a one-line summary made from it by rule, and a versioned store in `voc-engineering` (`WS#<ws>#SKILL#<connection>#<role>`: a `HEAD` counter and current pointer, one `VER#` row per version with its diff, why, benchmark, who proposed it and who accepted it, capped at 256 KB, and create-only `LOG#` rows: accepted, rejected, rolled back, and a promoted version's source). A version is used only once an administrator accepts it, in a transaction that refuses a version written on a base that is no longer current; the history is read a page at a time. The coach writes only the version of the connection its run is for, from that run's failure, once per run and failure kind (a conditional `RUN#` row), and never one that changes the tool policy, model or harness. A connection falls back to the shared skill. An administrator can promote a connection's lesson to the shared skill: the store refuses a promoted version that adds an instruction line or example text of 20 characters or more (case and spacing aside) which the connection's version also adds, and the administrator carries the rest of keeping that connection's text out; the source connection is kept in a log row only an administrator reads, never on the shared version. An administrator can roll back to any accepted version as a new version, keeping the whole history (D1, D4). A proposal, an acceptance and a rollback each return their `skill.proposed`, `skill.accepted` or `skill.rolled_back` announcement for the bus (a rejection announces nothing). Nothing invokes it yet: the harness, the coach and the administrators' routes land with phases 4 and 5.
+
+### Changed
+
+- The shared row helpers move into `voc-datalake/lambda/engineering/rows.py`; the run-id pattern is public in `bus/schema.py` (`ULID`). An agent's `Actor` (`engineering/knowledge/store.py`) can carry the connection its run is for.
+- vulture's kept seams of the engineering agents (the knowledge pack's and the skills store's) move from `pyproject.toml`'s `ignore_names` to `voc-datalake/scripts/vulture_whitelist.py`, by class and attribute, checked by pyright.
+
+### Upgrade notes
+
+- Nothing changes in a deployment.
+
+## [6.11.00] - 2026-11-12 (voc-autonomous)
+
+Autonomous engineering agents, phase 4: the run's start and end, the agents' checkpoints and patches in the workspace layout, the delivery function, MicroVM time in a run's cost, and the run monitor's signal results. Merged from the voc-autonomous-b branch. Off by default.
+
+### Added
+
+- A run's start and end on `voc-engineering` (`runtime/runs.py`, `handler.py`). `start_run` writes the run's META row and lists the run for the supervisor in one transaction; META holds the task cap the board counts against, the hard caps on tokens and cost, and the goal, repository, flow, status and start (the list row is `WS#<ws>#RUNS`). `end_run` sets the status and end time and stops every MicroVM of the run. Both finish on a retry what a first call left. An ended run stays listed until none of its agents is live or being moved; then it is released, and with no run listed the supervisor's rule switches off. Session rows are the board's `AGENT#` rows, written by update only (the broker's `cost_usd` is never overwritten), created only while META is active, so an ending run gets no unsupervised agent. Caps refuse NaN and infinity.
+- `voc-engineering-delivery` (`runtime/delivery.py`), the function the inbox router names. It records each voc-msg/1 message once in its run's inbox (`WS#<ws>#RUN#<run>` / `INBOX#<addressee>#<seq:012d>#<event_id>`, a conditional put, so a redelivery writes nothing), then wakes the addressees: a working agent's MicroVM is resumed with a fresh session and kept awake for 10 minutes (later messages do not extend it); an agent held without a MicroVM is continued in a new one, once per wait; the 45-minute wait limit counts from the wait's start, so a stream of messages cannot keep a MicroVM running. Nobody is woken in a run that has ended, is past 30 days or has spent its budget. A busy addressee or a failed wake fails the call, so Lambda retries it (twice; failures go to `voc-engineering-dlq`). A posted task wakes nobody.
+- The agent roles reach the board's and the broker's function URLs (`lambda:InvokeFunctionUrl` with IAM authentication). Each role with a voice puts events on the engineering bus under its own source only; the bus policy denies each such role every other source. The coach has no voice yet. No agent role reads the shared role queues.
+
+### Changed
+
+- An agent's checkpoints and patches follow `voc-eng-workspace`'s layout (`ws/<ws>/runs/<run>/<agent>/commits/<sha>/_<checkpoints|patches>/attempt-<n>/`), written create-only. The launch takes the task's attempt (1 to 9999), and a continuation restores only from its own task's attempt. The commit pattern has one home (`runtime/checkpoints.SHA`), which `workspace/layout.py` imports. Egress allows both buckets' endpoints.
+- An agent's MicroVM time is priced into its `AGENT#` row's `cost_usd`, in the same write that moves the session, so a run's cost cap counts it and each second is priced once (forward only).
+- The run monitor's `signal` action answers each agent's status and whether the signal took effect (not when the agent is busy, its move failed, or there was nothing to do), and takes an optional `attempt`: an agent on another attempt of its task is answered stale and left alone (Stop now is never stale).
+- `engineeringAgentsEnabled` is the one strict parser of `-c engineeringAgents`.
+
+### Upgrade notes
+
+- Without `-c engineeringAgents=true` nothing changes. With it, VocProcessingStack gains `voc-engineering-delivery` with its own role (the run partitions' item reads and writes, never a delete or the run registry; the MicroVM resume, run, terminate and auth-token calls; the checkpoints' reads; the dead-letter queue; and, to renew an agent's session on a wake, the launcher's AssumeRole, so each agent role now trusts the supervisor and the delivery role, each only with all four session tags); the supervisor gains Get/Put/Update/ConditionCheck/Query on `WS#*#RUN#*` and `WS#*#RUNS`, Delete only on the registry, and `ENGINEERING_TABLE`; the agent roles gain function-URL invoke on the board and the broker and their own event source on the bus.
+- New `-c engineeringMicrovmUsdPerSecond` (0 to 0.01 USD, at most 12 decimal places, checked at synth and again at start); unset means 0, so MicroVM time is not priced. Set it to the region's MicroVM price.
+
+## [6.10.00] - 2026-11-12 (voc-autonomous)
+
+Autonomous engineering agents, phase 1: the knowledge pack's first slice, the code that turns a repository into cited, versioned "how this repository works" documents, each a draft until an administrator approves it. Nothing invokes it yet.
+
+### Added
+
+- The knowledge pack, slice 1 (`voc-datalake/lambda/engineering/knowledge/`, docs/autonomous-engineering.md "The knowledge pack"), as tested code that nothing invokes yet (the Understand flow and its mapper agent land in phase 4). It detects a repository's packages from its file listing and manifests (Cargo, npm / yarn / pnpm, uv, Go modules and `go.work`, Gradle, Maven, Python packages, with Bazel `BUILD` roots as the fallback) and their CODEOWNERS owners (handles only). Detection is deterministic and bounded (what it leaves out past its caps is counted), and a listing with an absolute path or an empty, `.` or `..` part is refused. It cuts each package into shards within a byte budget (files by directory, split again and windowed when too big; history in windows of 50 commits, oldest first; pull requests in pages of 20) with stable ids, so a run resumes at the first shard not mapped. Each shard is mapped by one fenced, redacted model call (a file's lines numbered as git numbers them) into `voc-note/1` notes, whose citations must name what that shard itself read (a `path:line` of one of its files and a line it showed, a full sha of its history window, a review-comment URL of the connection's own repository found in its pull request page); anything else is removed, and a note left without one is dropped and counted. The reduce reads a shard's notes only from this refresh's own workspace key (its workspace, run, agent, commit and package) and checks them again. Claims are redacted for credentials and personal data. The notes reduce into the seven documents per package plus an overview with the package table, as deterministic Markdown with citation footnotes; a refreshed claim that contradicts a person's edit is flagged, not applied. Versions are stored per refresh or edit (D1), with rows `WS#<ws>#REPO#<connection>` / `KPACK#<package>#<version:06d>` in `voc-engineering` and create-only objects under `ws/<ws>/knowledge/…` in the workspace bucket. Each version is a draft until an administrator approves it, recorded with who and when (D4), and agents read only the latest approved version, through one reader that hands them its documents inside fenced DATA blocks. A person's edit is held to the bar of a mapped claim (one redacted line, citations of the repository's paths, commits or review comments only), and approving a draft built on an older version than the approved one is refused. A mapped shard whose notes cannot be read, or whose key is not the refresh's own, stops the publish and is named, never read as empty.
+
+### Fixed
+
+- The engineering runtime's interface no longer imports the launcher (CodeQL `py/unsafe-cyclic-import`): `hand_session` takes a `HandedSession` protocol declared in `runtime/interface.py`. Behaviour is unchanged.
+
+### Upgrade notes
+
+- Nothing changes in a deployment: no route, Lambda or stack changes.
+
+## [6.09.00] - 2026-11-12 (voc-autonomous)
+
+Autonomous engineering agents: the run's S3 workspace, the commit, PR and goal reports, the board's history, admin-only reads of a run over REST, and engineering flows as a second kind of workflow. Merged from the voc-autonomous-c branch. Off by default.
+
+### Added
+
+- The run's workspace (`voc-datalake/lambda/engineering/workspace/`): the key layout `ws/<ws>/runs/<run>/<agent>/commits/<sha>/<package | _kind>/attempt-<n>/<name>` (the agent right after the run, so one IAM prefix scopes an agent's writes; reports under `ws/<ws>/reports/…`), voc-finding/1 shard lines with credential-shaped strings and personal data redacted, bounded reads and create-only writes (D1). With `-c engineeringAgents=true`, a `voc-eng-workspace` bucket in VocCoreStack (the stack's KMS key, versioned, TLS only, access-logged, kept unless `-c protectData=false`; its policy refuses any write without `If-None-Match`, so no object is overwritten; nothing in it expires until an expiry that writes its `AUDIT#delete` row exists, TENETS.md D5).
+- The commit, PR and goal reports (`lambda/engineering/reports/`): built from what the run recorded (its metering, the board's tasks and history, the objects their result keys name), every version new (D1); the PR report takes the quality gate's record only from an ended final-go task under the PR's head commit and checks it against the gate's own shapes before its Markdown goes into the PR description. The `voc-engineering-reports` Lambda builds them (nothing invokes it yet).
+- The board's history: each post, claim and move writes a TASKLOG row with its actor and operation in the same transaction (D1, D4: no past state is overwritten); the reports show each task's history.
+- Reads of a run (Agents API): `GET /agents/engineering/{run_id}/board`, `…/conversation`, `…/reports` and `…/reports/{level}/{subject}`, administrators only (403 for anyone else, an MCP credential included; 404 where the module is off), so no MCP tool (docs/mcp.md "Not tools, and why").
+- Engineering flows (`voc-workflow/2`, `lambda/shared/workflow_engineering.py`): the agent, map, reduce, board, quality gate, learning loop, self-improvement, memory and stop-at-PR steps with their settings and graph rules (every map meets one reduce, a gate's NO-GO goes to a human decision point, a committer or PR author ends only at a stop at PR or a human decision point, no merge step). The two kinds never mix: no agent runs an engineering flow, a saved workflow keeps its kind, and `GET /workflows` leaves engineering flows out until the editor opens them.
+
+### Changed
+
+- The audit synth (`scripts/audit/py_assembly.py`) takes a function's flag-on bundle when it ships more code than the default one.
+- The fixed-cost gate (`lib/fixed-cost-guard.test.ts`, TENETS.md tenet 7) now flags any CloudWatch alarm the app creates, and lists `-c engineeringSupervisorAlarm=true` among the opt-in fixed costs: it adds exactly one alarm, on the engineering supervisor's errors.
+- 6.08.00's expiry of the raw bucket's `engineering/runs/` (90 days) is removed: a run's objects are kept until an expiry that writes its `AUDIT#delete` row exists (TENETS.md D5; planned). The `engineering/cache/` expiry (30 days, a rebuildable cache of repository code) stays.
+### Upgrade notes
+
+- Nothing changes for a deployment without `-c engineeringAgents=true`. With it, VocCoreStack gains the `voc-eng-workspace` bucket and the raw bucket loses its `engineering-runs-expiry` rule. Turning the flag off after it was on: deploy VocProcessingStack and VocApiStack first (both import from VocCoreStack; `--exclusively -c engineeringAgents=false`), then the rest (docs/deployment.md).
+
+## [6.08.00] - 2026-11-12 (voc-autonomous)
+
+Autonomous engineering agents: the MicroVM runtime (one MicroVM per agent, the launcher, the runner's sandbox, sparse checkouts, checkpoints, the supervisor) and the harness each agent runs in. Merged from the voc-autonomous-b branch. Off by default, and not yet run against AWS.
+
+### Added
+
+- The runtime (`voc-datalake/lambda/engineering/runtime/`, docs/autonomous-engineering.md "Runtime: one MicroVM per agent"): the MicroVM interface, a local fake and a Lambda MicroVMs implementation whose API names follow the design and are verified before the flag is turned on; the launcher (one fixed execution role per agent role, `voc-eng-{role}`, assumed with 15-minute sessions named `<run ULID>.<agent index>` and tagged with workspace, run, agent and connection, refused for a stopped run); the runner, each image's entry point (repository code as its own user in PID and network namespaces of its own, the dependency step first behind a firewall, nothing the agent writes writable by repository code, output scrubbed); sparse, blob-less checkouts from the read-only cache mount with the git directory closed to repository code; checkpoints; and the supervisor (no fixed task cap: 10 minutes without progress leads to a question, then the task re-posted; open waits held without a MicroVM; pause and continue before the 8-hour limit and after a crash; Stop ending every MicroVM at once; the 30-day stop and spent budgets at a human decision point; the run monitor's signals, inspection data and live cost counters).
+- The harness (`runtime/harness/`): one interface, two adapters chosen per agent in its skill: a Bedrock Converse loop, and a coding-agent CLI headless at one pinned version with every built-in tool off and only the platform's tools, in a fresh home outside the checkout. The platform's tools: file tools confined to the checkout (no link, no `.git`, no file with two hard links), repository commands through the runner as the sandbox user, the dependency step, progress through the board, checkpoints carrying the working tree, and the work handed to the broker as a patch under the agent's own keys. Repository text reaches the model fenced as data. The board, inbox and broker ports refuse every call until the runtime is wired to them.
+- The images (`voc-datalake/engineering-images/`): python, node, rust and java on one base and entry point, Mountpoint pinned by version and checksum, ready and validate hooks; they ship the harness, a pinned boto3 and the broker's agent identities (`connectors/identity.py`).
+- CDK, only with `-c engineeringAgents=true` (`voc-datalake/lib/stacks/engineering-runtime.ts`): the agent roles with each role's bus source pinned to its own session by an explicit deny (the run coordinator's to `voc.engineering/conductor/<ws>/<run>`), the launcher and the supervisor (`voc-engineering-runtime`), ticked every minute by an EventBridge rule created disabled and switched on only while a run is active, its undelivered ticks going to the bus's KMS-encrypted `voc-engineering-dlq` (watched by alerting); `-c engineeringSupervisorAlarm=true` adds an alarm on its errors (docs/deployment.md). An agent role can be assumed only with all four session tags. `-c engineeringImageArns='{"python":"arn:…",…}'` names the MicroVM image per language (checked at synth; `{}` by default, so every launch is refused until it is set). The raw bucket expires `engineering/runs/` at 90 days and `engineering/cache/` at 30.
+
+### Changed
+
+- The agent roles' list lives once, in `connectors/identity.py` (`AGENT_ROLES`), with the default workspace id (`WORKSPACE`); the runtime, the board and the images take them from there.
+
+### Upgrade notes
+
+- Nothing changes for a deployment without `-c engineeringAgents=true`. The runtime has not run against AWS: keep the flag off until its MicroVM calls are verified.
+
+## [6.07.00] - 2026-11-12 (voc-autonomous)
+
+Autonomous engineering agents: the language gate packs and the quality gate step, the agents' event bus with its inbox router and the run's conversation, and the run's task board. Merged from the voc-autonomous-c branch and wired on this branch's infrastructure. Off by default.
+
+### Added
+
+- The language gate packs (`voc-datalake/engineering-gates/`: rust-ts, python-ts, java manifests with detection rules, ordered commands, timeouts and failure rules; a passing and a failing fictional fixture per language) and the quality gate step (`voc-datalake/lambda/engineering/quality_gate/`, a CLI the gate runner's MicroVM runs): the detected packs, the repository's own gate after the dependency steps, review rounds by reviewer agents with the knowledge pack's review guide, a final go, NO-GO as a human decision point, and the gate record (summaries, never raw tool output). The review and final-go models default to the agent worker and reviewer surfaces of `shared/model_config.py`.
+- The engineering bus (`lambda/engineering/bus/`): the voc-msg/1 envelope checked in code (claim-check refs, no credential-shaped summary, 16 KB at most), the sender allowlist (the event's source names the sender; the bus policy lets only the board API's role put events for now, and the per-publisher pins of each agent role to its own source come with the agent roles; task events only from the board, gate verdicts only from the run's final-go agent, run health only from the supervisor, a person only answering), the routing, and the inbox router Lambda, which journals a refused message with its reason and never its content.
+- The run's conversation (`lambda/engineering/conversation/store.py`): one append-only row per message with its actor and time, a per-run sequence and an event-id marker, so a redelivery is harmless (D1, D4).
+- The run's task board (`lambda/engineering/board/`): post (one transaction under the run's task cap, deduped, depth capped), claim with a lease whose epoch is the attempt, renew and move only by the holder before the lease runs out, bounded result keys under the agent's own prefix; the board API, a function URL with IAM authentication that takes the caller from its assumed-role identity and publishes each change as a task event. A task's row holds its current state; the per-change history rows (TASKLOG) come with a later merge (6.09.00).
+- CDK, only with `-c engineeringAgents=true` (`voc-datalake/lib/stacks/engineering-bus.ts`): the `voc-engineering` table in VocCoreStack (on demand, the stack's KMS key, point-in-time recovery, kept on stack deletion like voc-agents), the custom bus with a policy that denies `events:PutEvents` to every principal but the board API's role, one rule to the inbox router, one SQS queue per agent role and one dead-letter queue, `voc-engineering-dlq` (the stack's key, TLS only), which takes the role queues' redrives, the events the rule could not deliver and the router's invocations that failed every retry, and which alerting watches like the other failure queues (an alarm only once an administrator turns alerting on, so no fixed cost); the Core key admits EventBridge for that one queue. The board API's function URL has IAM authentication. Grants of exactly the item reads and writes, publishes and sends the code makes, and on the stack's key only `kms:Decrypt` and `kms:GenerateDataKey` through DynamoDB (and SQS for the router).
+
+### Changed
+
+- `lambda/shared/aws.py` gains `get_dynamodb_client` (a plain low-level client), which the inbox router and the board use.
+- The broker's GitHub client logs a failed close of a pull request it opened (a host refusal, a malformed answer, a lost connection) and still raises the refusal that made the close necessary.
+
+### Upgrade notes
+
+- Nothing changes for a deployment without `-c engineeringAgents=true`. With it, VocCoreStack gains the `voc-engineering` table (kept on stack deletion unless `-c protectData=false`).
+- Turning `engineeringAgents` off after it was on: VocProcessingStack imports the table from VocCoreStack, so deploy VocProcessingStack first (`npx cdk deploy VocProcessingStack --exclusively -c engineeringAgents=false`; `<prefix>-VocProcessingStack` on a prefixed deployment), then the rest; deploying VocCoreStack first fails with "Export ... cannot be deleted as it is in use".
+
+## [6.06.00] - 2026-11-12 (voc-autonomous)
+
+The connector broker gets its GitHub client: App tokens scoped to one repository and one operation, paged reads, a leased push and draft pull requests. Still off by default, and every permitted operation answers 503 until the run records and the board land.
+
+### Added
+
+- Autonomous engineering agents, phase 1, second slice: the broker's GitHub client and credential reader (`voc-datalake/lambda/engineering/connectors/github.py`, `credentials.py`; docs/autonomous-engineering.md "Repository connectors"). A connection's GitHub App credential (`app_id`, `installation_id`, `repository`, `private_key`) is read decrypted from the SSM SecureString `/[<prefix>-]voc/engineering/{connection_id}` and kept five minutes at most, never logged. Minting a token signs a nine-minute RS256 App JWT for an installation token for the connection's one repository and only the permissions that operation needs, kept until five minutes before it expires (within the hour GitHub gives it; none is revoked early: a stopped run's every further operation is refused before a token is used). Reads follow `Link` pagination by page number; a pull request read also returns its review comments and reviews; a file that is not UTF-8 text is refused. A rate limit (`Retry-After`, `X-RateLimit-Reset`, a secondary rate limit) is never waited out inside a call: it answers 503 with `Retry-After`. A push takes the parsed bundle (`BundleContents` now carries its base commit and each commit's file changes; its changed paths and added lines cover every commit), refuses a commit that changes a path the bundle does not list, refuses unless the branch's head is that base or, for a new branch, the base is the default branch's head or an ancestor of it (a base GitHub does not have is refused), rebuilds the commits with the Git Data API (text files inline in the tree, other files as blobs), refuses unless GitHub's resulting tree is the checked one, and moves the branch with `force: false` (or creates it). A draft pull request is opened or updated only when the branch's head has the checked tree, and its head is checked again afterwards: a pull request just opened on a branch that moved meanwhile is closed and the write refused (an update changes only the title and body; GitHub's REST API cannot turn a ready pull request back into a draft). Requests go only to `api.github.com`, follow no redirect and carry the token only in the `Authorization` header. A write whose answer was lost after it was sent answers 502 ("the write may have happened"), never a retryable 503, so a retry cannot make it twice (a lost answer to a token request stays retryable). An answer larger than the function URL can return is refused (502), never cut. New statuses: 404 (a read of what is not there), 409 for a host state other than the checked one (the branch moved, another tree), 502 a host error, 503 with `Retry-After` for a rate limit. Every write the broker completes gets an operational log line (a pull request it opened and closed again is logged as not closed only when the close fails) with what it wrote (operation, caller, connection, branch, tree hash, issue or pull request number), never its text; the durable audit row comes with the run records. The run records, the board's GO ledger and the bundle reader are not built yet, so every permitted operation still answers 503.
+- With `-c engineeringAgents=true`, the broker's role also gets `ssm:GetParameter` on `parameter/[<prefix>-]voc/engineering/*` only and `kms:Decrypt` on the stack's key only through SSM (`kms:ViaService`) and only for those parameters (`kms:EncryptionContext:PARAMETER_ARN`), the env var `ENGINEERING_PARAMETER_PREFIX`, and the signing layer (cryptography, for the JWT); its timeout goes from 30 to 120 seconds, for a push's chain of Git Data API requests. The default synth adds no resource.
+
+### Changed
+
+- The GitHub REST API version string lives once, in `voc-datalake/lambda/shared/github_rest.py`; the GitHub plugin's client imports it from there.
+
+### Upgrade notes
+
+- Nothing changes for a deployment without `-c engineeringAgents=true`.
+
+## [6.05.00] - 2026-11-12 (voc-autonomous)
+
+Autonomous engineering agents, phase 1 begins: the repository connector's broker, the one place a host write could go, with its caller identity, operations per role and write rules. Nothing is deployed by default.
+
+### Added
+
+- Autonomous engineering agents, phase 1, first slice: the connector broker (`voc-datalake/lambda/engineering/connectors/`, docs/autonomous-engineering.md "Repository connectors"). It takes the caller's agent role, run and agent from the function URL's assumed-role identity (never the request; an assumed role of the broker's own account only), allows each role only its operations (every agent reads; the issue understander and PR reviewer comment, on the run's own issue or pull request only; the committer pushes a bundle; the PR author opens or updates the draft pull request), and applies the write rules before any host call: only the run's own `voc-agent/{run_id}/` branches under names git accepts, never the default branch or the CI definitions, a bundle of exactly one head ref whose every commit is authored and committed by the connection's bot address, no review sentence anywhere (reviews split at full stops and line breaks; compatibility forms and invisible format characters aside) and no personal data in prose (only the bot's address in a `Co-authored-by: Name <address>` or `Signed-off-by: Name <address>` trailer aside; any other such trailer is refused), a GO for the tree before a push to a branch with an open pull request and before a pull request, and the CI attestation. The host client is handed the checked tree's hash for every push and pull request, to enforce (push with a lease, verify the head's tree before opening). No GitHub or GitLab client exists yet, so every permitted, well-formed operation answers 503 (an unknown caller or a role without the operation 403, a bad body 400). Deployed only with `-c engineeringAgents=true` (VocProcessingStack, `voc-engineering-broker`: arm64, 256 MB, a function URL with IAM authentication and no resource-based permission, a role that writes only its own logs); the default synth adds no resource.
+
+### Upgrade notes
+
+- Nothing changes for a deployment without `-c engineeringAgents=true`, except that the other Python bundles leave `lambda/engineering/` out (`lib/utils/lambda-asset-excludes.ts`), so their asset hashes change once and the next deploy updates their code without a behaviour change.
+
+## [6.04.09] - 2026-11-12 (voc-autonomous)
+
+The design of autonomous engineering agents: agents that learn how a connected GitHub or GitLab repository works and then hunt bugs, build features and review pull requests through a configurable quality gate, stopping at a pull request a person merges.
+
+### Added
+
+- [docs/autonomous-engineering.md](docs/autonomous-engineering.md): the design (nothing implemented yet; every design section is marked planned). Large repositories and monorepos (partial sparse clones, shards by workspace package, change impact, warm caches); repository connectors whose only writes are their own `voc-agent/` branches, pull requests and comments, with credentials in SSM SecureString parameters under the stack's KMS key; the knowledge pack (one overview and one pack per package, every claim cited, versioned, a draft until an administrator approves it); the agent catalog; the agents working together through one EventBridge bus (claim-check events), per-agent inboxes, a task board with leases, a live conversation and an S3 workspace per commit; the quality gate (language packs, up to N review rounds, a final go, the gate record); one Lambda MicroVM per agent, with no host token where repository code runs, activity-based stops, a supervisor on a schedule and continuation before the 8-hour limit; commit, PR and goal reports; versioned skills with a visible history and rollback, a coach gated by the benchmark, a learning loop and agent memory; six default flows, the new workflow-editor steps, flows drafted from the assistant, the run monitor with its signals and live cost, the harness interface inside each MicroVM, and tenets drafted for the target repository; models, trust and safety, evaluation, cost and phases.
+- The review gate: `scripts/ai-review/gate.mjs` records a change's review rounds (at most three) and its final GO for the staged tree (`git write-tree`), and `scripts/git-hooks/pre-commit` refuses a commit whose tree has no valid GO record; CONTRIBUTING.md ("The review gate") describes the loop and the install, and `scripts/ai-review/gate.test.mjs` runs both in scratch repositories.
+
+### Fixed
+
+- The frontend vitest suite caps its workers at 32 (`voc-datalake/frontend/vitest.config.ts`): on a 192-CPU machine the default started about 190 workers queued on one Vite transform server, and `beforeAll` hooks that import lazy chunks timed out.
+- Four self-clearing messages (the S3 import explorer's upload result, the users page's success message, the brand settings' and a source card's "Saved") kept a bare `setTimeout` that outlived the component and set state after unmount (an uncaught "window is not defined" in the frontend suite); `voc-datalake/frontend/src/hooks/useExpiringValue.ts` keeps the timer with the component, with its tests and a users-page test of the message clearing.
+- Three test-suite flakes under parallel workers: `voc-datalake/lambda/conftest.py` resets `shared.source_profiles`' warm-container cache around every test (two feedback-form submits answered 503 after an earlier test cached a failed read); `test_mcp_tokens_handler_mutation.py` patches `app.current_event` with `create=True` (it failed when first in a worker); the assistant runtime tests' sessions API double answers `null` from an unprogrammed `getSession`, as the real API does (an unhandled rejection from Stop's background settle).
+
+### Upgrade notes
+
+- No infrastructure, API or data change. In the web app, the four self-clearing messages keep their timer with their page: a second save within 3 seconds now shows its "Saved" for the full 3 seconds.
 
 ## [7.00.01] - 2026-11-13
 

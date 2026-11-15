@@ -644,7 +644,7 @@ def _body_text(body: dict | None, key: str) -> str:
 
 def product_doc_raw_key(project_id: str, doc_id: str, ext: str, *, workspace: WorkspaceScope | None = None) -> str:
     """Where a product document's upload goes: ``projects/{id}/product_docs/raw/{doc}.{ext}``, which the product-doc
-    extractor is triggered on (product_doc_extractor/handler.py ``RAW_KEY_PATTERN``). In a workspace (since 7.35.00; no route
+    extractor is triggered on (product_doc_extractor/handler.py ``RAW_KEY_PATTERN``). In a workspace (since 7.37.00; no route
     passes one yet) the same key under ``ws/{ws}/``, which the extractor is not triggered on until 3f."""
     return scoped_object_key(workspace, f'projects/{project_id}/product_docs/raw/{doc_id}.{ext}')
 

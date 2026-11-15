@@ -15,6 +15,10 @@ ignore_names = [
     # The Lambda runtime calls these by the handler string lib/stacks/* passes to CDK.
     "lambda_handler",
     "handler",
+    # voc-engineering-delivery's entry point (lib/stacks/engineering-runtime.ts, engineering/runtime/handler).
+    "delivery_handler",
+    # voc-engineering-start's entry point (lib/stacks/engineering-runtime.ts createStart, engineering/runtime/handler).
+    "start_handler",
     # Read by aws-lambda-powertools from the Lambda context; conftest fakes of that context set it.
     "memory_limit_in_mb",
     # pydantic: the model's config, read by pydantic itself (lambda/shared/ingest_schemas.py).
@@ -55,6 +59,10 @@ ignore_names = [
     "clear",
     # Called by Python itself when a class is subclassed: shared/ws_repo.py ProjectClaim refuses every subclass.
     "__init_subclass__",
+    # The engineering agents' seams that land before their callers (the knowledge pack, the skills store) are kept
+    # in scripts/vulture_whitelist.py, by their exact class and attribute, not here.
+    # http.server.BaseHTTPRequestHandler callbacks, called by the server itself (engineering/runtime/unit_runner.py).
+    "do_GET", "do_POST", "log_message",
     # html.parser.HTMLParser callbacks, called by the parser itself (agents/artifacts.py).
     "handle_starttag",
     "handle_endtag",

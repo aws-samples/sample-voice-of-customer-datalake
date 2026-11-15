@@ -17,7 +17,7 @@ import { Plus, Repeat } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { workflowIssueText } from './workflowIssueText'
 import { WORKFLOW_LOOP_UNTIL } from '@stream/assistant/tools/agent-limits'
-import { API_WORKFLOW_LIMITS } from '../../api/workflowsApi'
+import { API_WORKFLOW_LIMITS, isEngineeringFlow } from '../../api/workflowsApi'
 import { addToLoop, loopIndexOf, removeFromLoop, removeLoop, updateLoop } from './model'
 import { clampRounds, loopIssues } from './loopFields'
 import { LabeledField } from '../LabeledField/LabeledField'
@@ -133,7 +133,8 @@ export function StepLoop({ definition, node, readOnly, onChange, issues }: Reado
       </div>
     )
   }
-  if (readOnly) return null
+  // An engineering flow repeats through its board: a step joins no loop (one already in one, imported, can leave).
+  if (readOnly || isEngineeringFlow(definition)) return null
   const join = () => onChange(addToLoop(definition, node.id, choice === NEW_LOOP ? 'new' : Number(choice)))
   return (
     <div className="space-y-2 border-t border-border pt-3">

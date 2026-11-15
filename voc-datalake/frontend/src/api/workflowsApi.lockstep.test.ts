@@ -8,12 +8,14 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { ENGINEERING_MAX_MONTHLY_BUDGET_USD } from '@stream/assistant/tools/agent-limits'
 import { API_WORKFLOW_LIMITS, type WorkflowLimits } from './workflowsApi'
 
 const SCHEMA = readFileSync(join(__dirname, '../../../lambda/shared/workflow_schema.py'), 'utf8')
+const ENGINEERING = readFileSync(join(__dirname, '../../../lambda/shared/workflow_engineering.py'), 'utf8')
 
-const constant = (name: string) => {
-  const text = new RegExp(`^${name}: Final = ([\\d_]+)$`, 'm').exec(SCHEMA)?.[1]
+const constant = (name: string, source = SCHEMA) => {
+  const text = new RegExp(`^${name}: Final = ([\\d_]+)$`, 'm').exec(source)?.[1]
   return text === undefined ? Number.NaN : Number(text.replace(/_/g, ''))
 }
 
@@ -35,5 +37,11 @@ describe('API_WORKFLOW_LIMITS', () => {
   it('equals the bounds lambda/shared/workflow_schema.py enforces', () => {
     for (const value of Object.values(FROM_BACKEND)) expect(value).not.toBeNaN()
     expect({ ...API_WORKFLOW_LIMITS }).toStrictEqual(FROM_BACKEND)
+  })
+})
+
+describe('an engineering flow\'s monthly budget', () => {
+  it('has the largest amount workflow_engineering.py takes', () => {
+    expect(ENGINEERING_MAX_MONTHLY_BUDGET_USD).toBe(constant('MAX_MONTHLY_BUDGET_USD', ENGINEERING))
   })
 })

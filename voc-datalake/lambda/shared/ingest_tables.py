@@ -106,7 +106,7 @@ class ScopedUpdates:
 def scoped_calls(table: Any, workspace: WorkspaceScope | None) -> Any:
     """The table itself without a workspace (every request the one sent before), else its boto3-shaped single-item
     calls through the workspace's view (``ScopedUpdates``), which refuses a key outside it: the participants stores
-    (since 7.31.00), the comment threads and the review links (since 7.35.00)."""
+    (since 7.31.00), the comment threads and the review links (since 7.37.00)."""
     return table if workspace is None else ScopedUpdates(workspace, table)
 
 

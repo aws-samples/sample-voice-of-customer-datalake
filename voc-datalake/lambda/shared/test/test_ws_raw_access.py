@@ -126,10 +126,10 @@ PARTICIPANT_ACCESSORS: Final = frozenset({
     'delete_list', 'link', 'unlink', 'project_links', 'collect_people', 'erase_person', 'asks_of_person', 'create_ask',
     'scoped_calls', 'scoped_rows', 'rows_by_id_in', 'copy_personas', 'read_source_personas', 'promote',
     'require_project_access', 'can_view_project', 'brand_name'})
-#: The comment threads, persona review and review links and a project's object keys (since 7.35.00, slice 3e:
+#: The comment threads, persona review and review links and a project's object keys (since 7.37.00, slice 3e:
 #: shared/document_comments.py, shared/document_review.py, shared/document_share.py and the review routes' helpers,
 #: shared/avatar.py, shared/prototypes.py, api/projects.py's object prefixes, api/product_context.py's upload key),
-#: counted the same way. With them, what the 7.35.00 merge threaded of voc-wiki's paths: a thread's addressed marks,
+#: counted the same way. With them, what the 7.37.00 merge threaded of voc-wiki's paths: a thread's addressed marks,
 #: the series head and the revised version (shared/document_versions.py, shared/document_history.py), a draft's base
 #: (shared/prototype_drafts.py) and a draft's object key and URL (shared/prototypes.py).
 COMMENT_AND_OBJECT_ACCESSORS: Final = frozenset({
@@ -163,7 +163,7 @@ LAYER_MODULE: Final = 'shared.ws_repo'
 #: (since 7.29.00): only shared/project_keys.py spells it (``job_status_pk``). ``LIST#``, ``PERSON#``, ``EMAIL#``,
 #: ``LISTS`` and ``PEOPLE`` are voc-participants' lists, people, address guards and their ``gsi1`` partitions (since
 #: 7.31.00): only shared/participants_keys.py spells them. ``DCOMMENTS#`` and ``DCRATE#`` are a series' comment
-#: partition and a reviewer's daily counter (since 7.35.00): only shared/project_keys.py spells them; ``DOCSHARE#`` is
+#: partition and a reviewer's daily counter (since 7.37.00): only shared/project_keys.py spells them; ``DOCSHARE#`` is
 #: a review link's row (a workspace's link's routing row): only shared/review_share_audience.py (the trigger bundle's
 #: stdlib copy) spells it.
 UNSCOPED_KEY_PREFIXES: Final = ('SOURCE#', 'METRIC#', 'DATE#', 'CATEGORY#', 'URGENCY#', 'CHANNEL#', 'SOURCE_RUN#',
@@ -172,7 +172,7 @@ UNSCOPED_KEY_PREFIXES: Final = ('SOURCE#', 'METRIC#', 'DATE#', 'CATEGORY#', 'URG
                                 'DOCSHARE#')
 #: The layer's claim writer (``claim_project_id``) and the one module that may call it: the project create.
 CLAIM_WRITER: Final = ('claim_project_id', frozenset({'lambda/shared/project_writes.py'}))
-#: The layer's review link route writer (``route_share_id``, since 7.35.00) and the one module that may call it: the
+#: The layer's review link route writer (``route_share_id``, since 7.37.00) and the one module that may call it: the
 #: review link create.
 ROUTE_WRITER: Final = ('route_share_id', frozenset({'lambda/shared/document_share.py'}))
 #: Modules that answer requests a client sent (the API, the public webhooks): their workspace is never read from
@@ -203,7 +203,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # Table: 3 since 4d-1, the third voc-workspaces, read only for a workspace's META status
     # (shared/ws_repo.py `workspace_is_active`, the control plane, not a data-path table).
     'lambda/aggregator/handler.py': (2, {'METRIC#': 1, 'Table': 3, 'meta.client': 2, 'transact': 2}),
-    'lambda/api/agents_handler.py': (3, {'get_aggregates_table': 1}),
+    # Its three Table calls since 7.35.00: the engineering views' handles (voc-engineering, the engineering rows of
+    # voc-agents), only with -c engineeringAgents=true; see the engineering modules' entries below.
+    'lambda/api/agents_handler.py': (3, {'Table': 3, 'get_aggregates_table': 1}),
     'lambda/api/ballots_handler.py': (2, {'get_aggregates_table': 1, 'get_projects_table': 2, 'meta.client': 1, 'transact': 1}),
     'lambda/api/chat_handler.py': (3, {'Table': 1}),
     'lambda/api/data_explorer_handler.py': (
@@ -390,16 +392,39 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/shared/prototype_versions.py': (3, {'put_object': 1}),
     # Its DOCUMENT_VERSIONS# is the version partition's one spelling, moved from shared/document_versions.py in 7.27.00;
     # its STATUS# the jobs' status index partition's, shared/assist_jobs.py's own two spellings moved here in 7.29.00.
-    # Its DCOMMENTS# and DCRATE#: a series' comment partition and a reviewer's counter, moved here in 7.35.00 from
+    # Its DCOMMENTS# and DCRATE#: a series' comment partition and a reviewer's counter, moved here in 7.37.00 from
     # shared/document_comments.py and shared/document_share.py (each a workspace's too, through scoped_pk).
     'lambda/shared/project_keys.py': (3, {'DCOMMENTS#': 1, 'DCRATE#': 1, 'DOCUMENT_VERSIONS#': 1, 'PROJECT#': 1,
                                           'STATUS#': 1, 'TYPE#PROJECT': 1}),
-    # A review link's DOCSHARE# (7.35.00): the one spelling, which the board pool's stdlib-only trigger bundle ships
+    # A review link's DOCSHARE# (7.37.00): the one spelling, which the board pool's stdlib-only trigger bundle ships
     # and shared/project_keys.py review_link_key scopes for a workspace.
     'lambda/shared/review_share_audience.py': (3, {'DOCSHARE#': 1}),
     # voc-participants' keys, moved here in 7.31.00 from shared/participants_store.py, participants_lists.py,
     # participants_asks.py and participants_erasure.py (each a workspace's too, through scoped_pk).
     'lambda/shared/participants_keys.py': (3, {'EMAIL#': 1, 'LIST#': 1, 'LISTS': 1, 'PEOPLE': 1, 'PERSON#': 1}),
+    # The autonomous engineering agents (voc-autonomous, merged in 7.35.00; built only with -c engineeringAgents=true,
+    # administrators only): their own tables and objects (voc-engineering, voc-agents' engineering rows, the
+    # voc-eng-workspace bucket, the raw bucket's engineering/ prefix), the deployment's, as every agents module's until
+    # agents move per workspace (phase 3). The Agents API's three Table calls are the engineering views' handles.
+    'lambda/engineering/agent_memory/store.py': (3, {'transact': 1}),
+    'lambda/engineering/board/store.py': (3, {'transact': 2}),
+    'lambda/engineering/connectors/cache.py': (3, {'put_object': 2}),
+    'lambda/engineering/connectors/connections.py': (3, {'meta.client': 3, 'transact': 3}),
+    # The broker's one Table call is voc-aggregates: the starter's way of working (USERFLAGS#{sub}, shared/ai_mode.py),
+    # a person's flag, the deployment's on this branch; when the dial moves per workspace, the push gate moves with it.
+    'lambda/engineering/connectors/handler.py': (3, {'Table': 1}),
+    'lambda/engineering/conversation/store.py': (3, {'transact': 1}),
+    'lambda/engineering/flow/record.py': (3, {'transact': 1}),
+    'lambda/engineering/knowledge/store.py': (3, {'transact': 1}),
+    'lambda/engineering/rows.py': (3, {'transact': 1}),
+    'lambda/engineering/runtime/delivery.py': (3, {'meta.client': 1, 'transact': 1}),
+    'lambda/engineering/runtime/handler.py': (3, {'Table': 4}),
+    'lambda/engineering/runtime/harness/main.py': (3, {'put_object': 1}),
+    'lambda/engineering/runtime/runs.py': (3, {'meta.client': 2, 'transact': 2}),
+    'lambda/engineering/runtime/sessions.py': (3, {'meta.client': 2, 'transact': 2}),
+    'lambda/engineering/settings.py': (3, {'meta.client': 1, 'transact': 1}),
+    'lambda/engineering/skills/store.py': (3, {'transact': 1}),
+    'lambda/engineering/workspace/store.py': (3, {'put_object': 1}),
 }
 
 
@@ -956,7 +981,7 @@ def test_the_scan_sees_each_kind_of_raw_access(tmp_path):
         "qe = persona_copy.copy_personas(table, s3, 'b', workspace=None)\n"
         "qf = engagement_config.brand_name(workspace=None)\n"
         "qg = f'PERSON#{person_id}'\n"
-        # The comment, review link and object stores (7.35.00): by name, and scoped_object_key by position too.
+        # The comment, review link and object stores (7.37.00): by name, and scoped_object_key by position too.
         "qh = comments.put_thread(table, item, workspace=None)\n"
         "qi = document_share.create_share(table, project_id='p', series={}, document_id='d', creator={}, values={},"
         " workspace=None)\n"

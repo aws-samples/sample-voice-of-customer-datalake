@@ -1,4 +1,4 @@
-"""A project's objects per workspace (docs/multi-workspace.md, the project plan, 3e; 7.35.00).
+"""A project's objects per workspace (docs/multi-workspace.md, the project plan, 3e; 7.37.00).
 
 Every key builder of a project's objects takes a keyword-only ``workspace``: the avatars (shared/avatar.py), the
 prototypes (shared/prototypes.py, api/projects.py ``prototype_project_prefix``) and the product documents
@@ -31,6 +31,7 @@ PROJECT = 'proj_shared_id'
 
 @pytest.fixture
 def s3() -> Iterator[Any]:
+    """The raw data bucket (moto), which holds every scope's avatars here."""
     with mock_aws():
         client = boto3.client('s3', region_name='us-east-1')
         client.create_bucket(Bucket=BUCKET)

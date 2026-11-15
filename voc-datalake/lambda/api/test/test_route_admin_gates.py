@@ -74,6 +74,28 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         'POST /agents/<agent_id>/run', 'POST /agents/<agent_id>/runs/<run_id>/cancel',
         # A human's decision on a needs_human run: admins only, never a delegated credential.
         'POST /agents/<agent_id>/runs/<run_id>/decision',
+        # An engineering run's signals and a person's answers in it: the same, an admin acting for themselves.
+        'POST /agents/engineering/<run_id>/signals', 'POST /agents/engineering/<run_id>/messages',
+        # A person's board actions on an engineering run: the same gate (engineering/board/api.py PersonBoard).
+        'POST /agents/engineering/<run_id>/board/tasks', 'POST /agents/engineering/<run_id>/board/tasks/<task_id>/<action>',
+        # A person's go on an engineering run (what an AI-assisted run's push waits for): the same gate.
+        'POST /agents/engineering/<run_id>/go',
+        # An administrator's hand trigger of an ended run's reactions read (7.10.00): the same gate.
+        'POST /agents/engineering/<run_id>/reactions',
+        # The administrators' hard cap on engineering runs (engineering/settings.py): an admin acting for themselves.
+        'PUT /agents/engineering/settings',
+        # The repository connections and their credentials (engineering/connectors/connections.py): the same gate.
+        'PUT /agents/engineering/connections/<connection_id>', 'DELETE /agents/engineering/connections/<connection_id>',
+        # A connection's CI attestation (engineering/connectors/attestations.py): the same gate.
+        'POST /agents/engineering/connections/<connection_id>/ci-attestation',
+        'DELETE /agents/engineering/connections/<connection_id>/ci-attestation',
+        # A run's start from a saved engineering flow (the start function): an admin acting for themselves.
+        'POST /agents/engineering/runs',
+        # A skill version's acceptance, rejection, rollback and benchmark (engineering/skills/actions.py): the same gate.
+        'POST /agents/engineering/skills/<role>/versions/<version>/accept',
+        'POST /agents/engineering/skills/<role>/versions/<version>/reject',
+        'POST /agents/engineering/skills/<role>/versions/<version>/rollback',
+        'POST /agents/engineering/skills/<role>/versions/<version>/benchmark',
         'POST /workflows', 'PUT /workflows/<workflow_id>',
         'POST /workflows/<workflow_id>/duplicate', 'POST /workflows/<workflow_id>/rename',
         'DELETE /workflows/<workflow_id>',

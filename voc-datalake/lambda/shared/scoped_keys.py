@@ -2,7 +2,7 @@
 
 Radar's and memory's rows (shared/radar_reads.py, shared/memory_store.py), like the metrics the data path keeps
 (shared/ws_repo.py ``metric_pk``), are the deployment's keys with the workspace's prefix. A project's objects
-(prototypes, product documents; since 7.35.00) are the deployment's object keys under the workspace's ``ws/{ws}/``
+(prototypes, product documents; since 7.37.00) are the deployment's object keys under the workspace's ``ws/{ws}/``
 (``scoped_object_key``).
 """
 from __future__ import annotations

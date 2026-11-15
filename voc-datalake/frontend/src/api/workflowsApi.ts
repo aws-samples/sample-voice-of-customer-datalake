@@ -1,7 +1,7 @@
 /**
- * @fileoverview Autonomous-agent workflow library: the `voc-workflow/1`
- * definition model (Zod), the lenient read normalizers and the REST calls
- * (`/workflows/*`, `agents_handler.py`).
+ * @fileoverview The workflow library: the definition model (Zod) of both kinds,
+ * an agents workflow (`voc-workflow/1`) and an engineering flow (`voc-workflow/2`),
+ * the lenient read normalizers and the REST calls (`/workflows/*`, `agents_handler.py`).
  *
  * The definition schema is BUILT from a limits object so the two boundaries
  * that judge a definition share one shape:
@@ -22,7 +22,8 @@
 import { del, post, put } from './requestKit'
 import { z } from 'zod'
 import {
-  WORKFLOW_EDGE_LABELS, WORKFLOW_LOOP_UNTIL, WORKFLOW_NODE_ROLES, WORKFLOW_NODE_TYPES, WORKFLOW_SCHEMA_VERSION,
+  MONTHLY_BUDGET_RULE, WORKFLOW_ALL_NODE_TYPES, WORKFLOW_EDGE_LABELS, WORKFLOW_LOOP_UNTIL, WORKFLOW_NODE_ROLES,
+  WORKFLOW_SCHEMA_V2, WORKFLOW_SCHEMA_VERSION, isMonthlyBudgetUsd,
 } from '@stream/assistant/tools/agent-limits'
 import { isRecord } from '../lib/typeGuards'
 import { fetchApi } from './client'
@@ -31,7 +32,12 @@ import type { QueryClient } from '@tanstack/react-query'
 
 export const DEFAULT_WORKFLOW_ID = 'wf_default'
 
-export type WorkflowNodeType = (typeof WORKFLOW_NODE_TYPES)[number]
+const WORKFLOW_SCHEMAS = [WORKFLOW_SCHEMA_VERSION, WORKFLOW_SCHEMA_V2] as const
+
+/** A step of either kind of workflow (an agents workflow's, or an engineering flow's). */
+export type WorkflowNodeType = (typeof WORKFLOW_ALL_NODE_TYPES)[number]
+/** `voc-workflow/1` (an agents workflow) or `voc-workflow/2` (an engineering flow). */
+export type WorkflowSchema = (typeof WORKFLOW_SCHEMAS)[number]
 export type WorkflowNodeRole = (typeof WORKFLOW_NODE_ROLES)[number]
 export type WorkflowEdgeLabel = (typeof WORKFLOW_EDGE_LABELS)[number]
 
@@ -74,11 +80,17 @@ const WORKFLOW_ELEMENT_ID = /^[A-Za-z0-9_-]{1,64}$/
 
 const jsonLength = (value: unknown) => JSON.stringify(value).length
 
-/** A strict definition schema for the given limits and element-id rule. */
-export function buildWorkflowDefinitionSchema(limits: WorkflowLimits, elementId: z.ZodType<string>) {
+/**
+ * A strict definition schema for the given limits and element-id rule, of the given kinds (both by default: the
+ * editor's and the assistant's approval boundary's, whose create card adds the engineering module's check).
+ */
+export function buildWorkflowDefinitionSchema(
+  limits: WorkflowLimits, elementId: z.ZodType<string>,
+  schemas: readonly [WorkflowSchema, ...WorkflowSchema[]] = WORKFLOW_SCHEMAS,
+) {
   const node = z.strictObject({
     id: elementId,
-    type: z.enum(WORKFLOW_NODE_TYPES),
+    type: z.enum(WORKFLOW_ALL_NODE_TYPES),
     position: z.strictObject({ x: z.number(), y: z.number() }),
     data: z.strictObject({
       title: z.string().trim().min(1).max(limits.maxTitleChars),
@@ -101,13 +113,17 @@ export function buildWorkflowDefinitionSchema(limits: WorkflowLimits, elementId:
     max_rounds: z.number().int().min(limits.minRounds).max(limits.maxRounds),
   })
   return z.strictObject({
-    schema: z.literal(WORKFLOW_SCHEMA_VERSION),
+    schema: z.enum(schemas),
     name: z.string().trim().min(1).max(limits.maxNameChars),
     description: z.string().max(limits.maxDescriptionChars).optional(),
     nodes: z.array(node).min(1).max(limits.maxNodes),
     edges: z.array(edge).max(limits.maxEdges),
     loops: z.array(loop).max(limits.maxLoops),
+    // An engineering flow's monthly budget (workflow_engineering.py budget_of): kept only when set.
+    budget: z.strictObject({ monthly_usd: z.number().refine(isMonthlyBudgetUsd, MONTHLY_BUDGET_RULE) }).optional(),
   }).refine((definition) => jsonLength(definition) <= limits.maxDefinitionJsonChars, 'the definition is too large')
+    .refine((definition) => definition.budget === undefined || definition.schema === WORKFLOW_SCHEMA_V2,
+      { message: 'only an engineering flow has a budget', path: ['budget'] })
 }
 
 /** The editor's mirror of the server's definition shape. */
@@ -119,6 +135,9 @@ export const workflowDefinitionSchema = buildWorkflowDefinitionSchema(
 export type WorkflowDefinition = z.output<typeof workflowDefinitionSchema>
 export type WorkflowNode = WorkflowDefinition['nodes'][number]
 export type WorkflowEdge = WorkflowDefinition['edges'][number]
+/** An engineering flow: it repeats through its board, so it has no loops, and its steps take no `data.role`. */
+export const isEngineeringFlow = (definition: Pick<WorkflowDefinition, 'schema'>): boolean =>
+  definition.schema === WORKFLOW_SCHEMA_V2
 export type WorkflowLoop = WorkflowDefinition['loops'][number]
 
 // ── Lenient reads ────────────────────────────────────────────────────────────
@@ -128,7 +147,7 @@ const nullableString = z.string().nullable().catch(null)
 
 const LenientNodeSchema = z.object({
   id: z.string().min(1),
-  type: z.enum(WORKFLOW_NODE_TYPES),
+  type: z.enum(WORKFLOW_ALL_NODE_TYPES),
   position: z.object({ x: z.number().catch(0), y: z.number().catch(0) }).catch({ x: 0, y: 0 }),
   data: z.object({
     title: z.string().catch(''),
@@ -155,12 +174,15 @@ const guard = schemaGuard
 
 /** One bad node / edge / loop costs itself, never the whole definition. */
 const LenientDefinitionSchema = z.object({
-  schema: z.literal(WORKFLOW_SCHEMA_VERSION).catch(WORKFLOW_SCHEMA_VERSION),
+  schema: z.enum(WORKFLOW_SCHEMAS).catch(WORKFLOW_SCHEMA_VERSION),
   name: z.string().catch(''),
   description: optionalString,
   nodes: lenientList(guard(LenientNodeSchema)),
   edges: lenientList(guard(LenientEdgeSchema)),
   loops: lenientList(guard(LenientLoopSchema)),
+  // An engineering flow's monthly budget: kept, so a save from the editor never drops it (an unreadable one reads as
+  // none, and the server refuses a save of one that breaks its rule).
+  budget: z.object({ monthly_usd: z.number() }).optional().catch(undefined),
 })
 
 /** A stored/exported definition as the editor's model (unknown keys dropped), or null. */
@@ -169,7 +191,7 @@ export function normalizeDefinition(raw: unknown): WorkflowDefinition | null {
   if (!parsed.success) return null
   const d = parsed.data
   return {
-    schema: WORKFLOW_SCHEMA_VERSION,
+    schema: d.schema,
     name: d.name,
     ...(d.description === undefined ? {} : { description: d.description }),
     nodes: d.nodes.map((n) => ({
@@ -187,6 +209,8 @@ export function normalizeDefinition(raw: unknown): WorkflowDefinition | null {
       id: e.id, source: e.source, target: e.target, ...(e.label === undefined ? {} : { label: e.label }),
     })),
     loops: d.loops.map((l) => ({ node_ids: l.node_ids, until: l.until, max_rounds: l.max_rounds })),
+    // (an agents workflow has none: one on an imported file would be an error the editor has no field to clear)
+    ...(d.budget === undefined || d.schema !== WORKFLOW_SCHEMA_V2 ? {} : { budget: { monthly_usd: d.budget.monthly_usd } }),
   }
 }
 
@@ -201,6 +225,10 @@ const WorkflowSummarySchema = z.object({
   updated_at: nullableString,
   updated_by_username: nullableString,
   status: z.enum(['active', 'archived']).catch('active'),
+  /** An agents workflow (the agents run it) or an engineering flow (`voc-workflow/2`, never an agent's). */
+  kind: z.enum(['agents', 'engineering']).catch('agents'),
+  /** An engineering flow's monthly budget in dollars (its definition's `budget.monthly_usd`); null for none. */
+  monthly_budget_usd: z.number().positive().nullable().catch(null),
 })
 export type WorkflowSummary = z.output<typeof WorkflowSummarySchema>
 

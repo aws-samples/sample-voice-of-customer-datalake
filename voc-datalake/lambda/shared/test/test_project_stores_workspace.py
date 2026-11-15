@@ -6,7 +6,7 @@ shared/ingest_tables.py ``table_view``, shared/workspace_config.py ``get_scoped_
 ``transact_project_writes``), and never sees the deployment's rows or another workspace's; without one it reads and
 writes the deployment's ``PROJECT#…`` rows exactly as before, and never sees a workspace's. The access gate refuses
 one; the document versions and their series are per workspace since 7.27.00 (test_document_versions_workspace.py),
-the comment threads, persona review and review links since 7.35.00 (test_document_comments_workspace.py). No route
+the comment threads, persona review and review links since 7.37.00 (test_document_comments_workspace.py). No route
 passes a workspace yet.
 """
 from __future__ import annotations

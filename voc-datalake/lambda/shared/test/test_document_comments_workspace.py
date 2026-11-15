@@ -1,5 +1,5 @@
 """A series' comment threads and its persona review per workspace (docs/multi-workspace.md, the project plan, 3e;
-7.35.00).
+7.37.00).
 
 shared/document_comments.py and shared/document_review.py take a keyword-only ``workspace``: in one, a thread is
 ``WS#{ws}#DCOMMENTS#{project}#{series}`` / ``C#{id}``, every call goes through shared/ws_repo.py ``ws_table``, and a
@@ -104,7 +104,7 @@ def _addressed(version: int, *, addressed: bool = True) -> dict[str, Any]:
 
 
 def test_an_addressed_mark_stays_in_its_scope(table):
-    """Revise from comments' mark (voc-wiki's ``record_addressed``, merged in 7.35.00) is kept in the thread's own
+    """Revise from comments' mark (voc-wiki's ``record_addressed``, merged in 7.37.00) is kept in the thread's own
     workspace: the deployment's and the other workspace's threads of the same ids keep no mark."""
     made = {_name(scope): _thread(table, scope) for scope in SCOPES}
     marked = dc.record_threads_addressed(table, [made[A.ws]], _addressed(2), workspace=A)

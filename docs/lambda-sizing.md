@@ -259,6 +259,7 @@ What ships (`lib/utils/dependency-layers.ts`, Docker builds, arm64):
 | `ApiDepsLayer`, `ProcessingDepsLayer` (`processing-deps`) | Api, Processing | 29 + 14 | 20.5 / 7.3 MB |
 | `IngestionDepsLayer` (`ingestion-deps`) | Ingestion | 9 | 22.2 / 7.9 MB |
 | `SigningDepsLayer` (`signing-deps`) | Api | 5: projects API + its assist worker, the persona generator and importer, the document generator | 16.8 / 5.6 MB |
+| `EngineeringBrokerCiDepsLayer` (`engineering-ci-deps`) | Processing, only with `-c engineeringAgents=true` | 1: the engineering broker (PyYAML, its reader of GitLab CI files) | one distribution, not yet measured |
 | `EmailIntakeDepsLayer` (`email-intake-deps`) | Ingestion, only with `-c inboundEmailDomain` | 1: the email intake | 12.4 / 5.2 MB |
 
 Earlier releases shipped one 39 MB layer to every API and processing function; cryptography (17 MB with its

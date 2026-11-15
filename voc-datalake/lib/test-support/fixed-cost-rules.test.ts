@@ -48,6 +48,10 @@ const FIXED_COST: readonly (readonly [string, string, Record<string, unknown>])[
   ['a Neptune cluster', 'AWS::Neptune::DBCluster', {}],
   ['a Global Accelerator', 'AWS::GlobalAccelerator::Accelerator', {}],
   ['a DAX cluster', 'AWS::DAX::Cluster', {}],
+  ['an AgentCore capacity provider', 'AWS::BedrockAgentCore::CapacityProvider', {}],
+  ['an AgentCore runtime on a capacity provider', 'AWS::BedrockAgentCore::Runtime', {
+    CapacityProviderConfiguration: { CapacityProviderArn: 'arn:aws:bedrock-agentcore:us-east-1:111111111111:capacity-provider/x' },
+  }],
 ];
 
 const FREE: readonly (readonly [string, string, Record<string, unknown>])[] = [
@@ -63,6 +67,11 @@ const FREE: readonly (readonly [string, string, Record<string, unknown>])[] = [
   ['a gateway VPC endpoint (the default type)', 'AWS::EC2::VPCEndpoint', {}],
   ['an explicit gateway VPC endpoint', 'AWS::EC2::VPCEndpoint', { VpcEndpointType: 'Gateway' }],
   ['a record set in an existing zone', 'AWS::Route53::RecordSet', { HostedZoneId: 'Z0123456789EXAMPLE' }],
+  ['an AgentCore runtime billed per session, its baseline committed only while a session lives', 'AWS::BedrockAgentCore::Runtime', {
+    PlatformVersion: 'V2', ResourceConfigurations: [{ MinimumMemoryInMiB: 8192 }],
+    LifecycleConfiguration: { IdleRuntimeSessionTimeout: 3600, MaxLifetime: 28800 },
+  }],
+  ['an image repository (billed for what it stores)', 'AWS::ECR::Repository', {}],
 ];
 
 describe.each(FIXED_COST)('%s', (_label, type, properties) => {

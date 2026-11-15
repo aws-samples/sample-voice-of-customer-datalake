@@ -1,5 +1,5 @@
 """Properties of a project id's deployment-wide claim (shared/ws_repo.py ``claim_project_id``, ``project_claim``,
-``release_project_claim`` and ``WorkspaceTable.transact_write_items``'s ``outside``; since 7.35.00 a claim is an
+``release_project_claim`` and ``WorkspaceTable.transact_write_items``'s ``outside``; since 7.37.00 a claim is an
 ``OutsideEntry`` of kind ``claim``, beside a review link's route).
 
 The claim is the one row a workspace writes outside its own partitions: it names the workspace a project id belongs

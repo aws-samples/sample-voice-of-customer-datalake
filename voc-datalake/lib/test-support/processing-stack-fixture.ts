@@ -23,7 +23,7 @@ import { fixtureBucket, fixtureQueue, fixtureRealtime } from './fixture-resource
 import { itemAt, valueAt } from './guards';
 
 export function synthProcessingTemplate(
-  options: { withIndexes?: boolean; context?: Record<string, unknown> } = {},
+  options: { withIndexes?: boolean; context?: Record<string, unknown>; deploymentPrefix?: string } = {},
 ): Template {
   // Skip asset bundling (Docker) — template assertions only need structure.
   const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [], ...options.context } });
@@ -54,15 +54,18 @@ export function synthProcessingTemplate(
     workspacesTable: makeTable('Workspaces'),
     watermarksTable: makeTable('Watermarks'),
     participantsTable: makeTable('Participants'),
+    engineeringTable: makeTable('Engineering'),
   };
   const stack = new VocProcessingStack(app, 'TestProcessing', {
     env,
+    deploymentPrefix: options.deploymentPrefix,
     ...tables,
     userPool: new cognito.UserPool(deps, 'UserPool'),
     realtime: fixtureRealtime(deps),
     processingQueue: fixtureQueue(deps, 'Queue'),
     kmsKey: new kms.Key(deps, 'Key'),
     rawDataBucket: fixtureBucket(deps, 'RawData'),
+    engineeringWorkspaceBucket: fixtureBucket(deps, 'EngineeringWorkspace'),
     config: {
       brandName: 'TestBrand',
       primaryLanguage: 'en',

@@ -25,12 +25,15 @@ export class ApiError extends Error {
   /** The machine-readable `code` the body carried beside its `error` (lambda/shared/exceptions.py
    *  `ApiError.code`, e.g. `addressed_some_full`), when it sent one: read it, never the sentence. */
   readonly code: string | undefined
+  /** The run an error body names (`run_id`: an engineering run's start that may have written it), if any. */
+  readonly runId: string | undefined
 
-  constructor(status: number, message = `API Error: ${String(status)}`, code?: string) {
+  constructor(status: number, message = `API Error: ${String(status)}`, code?: string, runId?: string) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
+    this.runId = runId
   }
 }
 

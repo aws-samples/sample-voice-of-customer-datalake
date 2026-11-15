@@ -12,7 +12,7 @@ One ACTIVE link per series. Rows in the projects table:
 Anyone who can EDIT the project creates or revokes the link (the route's gate); a reviewer signs
 in with the board pool's emailed code and may read the newest version and comment, nothing else.
 
-In a workspace (since 7.35.00, docs/multi-workspace.md, the project plan, 3e; no route passes one yet) each row is the
+In a workspace (since 7.37.00, docs/multi-workspace.md, the project plan, 3e; no route passes one yet) each row is the
 workspace's (``WS#{ws}#DOCSHARE#{id}``, ``WS#{ws}#DCOMMENTS#…``, ``WS#{ws}#DCRATE#…``: shared/project_keys.py), every
 call through the workspace layer, and a new link is ONE scoped transaction: the link's deployment-wide routing row
 ``DOCSHARE#{id}`` naming the workspace (shared/ws_repo.py ``route_share_id``, the layer's own entry), the link, the
