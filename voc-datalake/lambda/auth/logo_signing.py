@@ -27,10 +27,20 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 from botocore.signers import CloudFrontSigner
 
 logger = logging.getLogger(__name__)
+
+#: Every AWS call of the message trigger (this module and auth/user_messages.py): short enough that the two
+#: settings reads and the secret read stay well inside Cognito's 5 s CustomMessage budget, so a slow dependency
+#: costs the brand, colour or logo, never the invitation.
+AWS_CONNECT_TIMEOUT_SECONDS = 0.5
+AWS_READ_TIMEOUT_SECONDS = 1
+AWS_MAX_RETRIES = 1
+AWS_CALL_CONFIG = Config(connect_timeout=AWS_CONNECT_TIMEOUT_SECONDS, read_timeout=AWS_READ_TIMEOUT_SECONDS,
+                         retries={'max_attempts': AWS_MAX_RETRIES, 'mode': 'standard'})
 
 #: An uploaded logo's object key, exactly (shared/company_logo.py _UPLOADED_LOGO_KEY_RE, the CDN path pattern).
 UPLOADED_LOGO_KEY = re.compile(r'company-context/design/logo_[0-9a-f]{12}\.(?:png|jpg|webp)')
@@ -48,7 +58,7 @@ def _secrets_client():
     """One Secrets Manager client per container, built on first use (like user_messages._aggregates_table)."""
     global _secrets
     if _secrets is None:
-        _secrets = boto3.client('secretsmanager')
+        _secrets = boto3.client('secretsmanager', config=AWS_CALL_CONFIG)
     return _secrets
 
 
@@ -98,5 +108,9 @@ def signed_logo_url(key: Any, site_url: str, valid_days: int, *, now: datetime |
         return None
     expires = (now or datetime.now(UTC)) + timedelta(days=valid_days)
     url = f'{site_url.rstrip("/")}/{key}'
-    return CloudFrontSigner(os.environ['CDN_SIGNING_KEY_PAIR_ID'], signer).generate_presigned_url(
-        url, date_less_than=expires)
+    try:
+        return CloudFrontSigner(os.environ['CDN_SIGNING_KEY_PAIR_ID'], signer).generate_presigned_url(
+            url, date_less_than=expires)
+    except (KeyError, ValueError, TypeError) as error:  # never fail the invitation over its logo
+        logger.warning('Logo signing failed: %s', type(error).__name__)
+        return None
