@@ -167,11 +167,34 @@ def _set_colors(table, colors):
 
 
 def test_uses_the_design_system_primary_colour_like_prototypes_do(aggregates):
-    _set_colors(aggregates, [{'name': 'surface', 'value': '#FAFAFA'}, {'name': 'primary', 'value': '#E11D48'}])
+    _set_colors(aggregates, [{'name': 'surface', 'value': '#FAFAFA'}, {'name': 'primary', 'value': '#BE123C'}])
     _, message = _send(_invitation())
-    assert 'background: #e11d48;' in message
-    assert 'style="color: #e11d48;"' in message
+    assert 'background: #be123c;' in message
+    assert 'style="color: #be123c;"' in message
     assert '#4c51bf' not in message
+
+
+@pytest.mark.parametrize(('accent', 'ink'), [
+    pytest.param('#be123c', '#be123c', id='dark-rose-readable'),
+    pytest.param('#4c51bf', '#4c51bf', id='default-indigo-readable'),
+    pytest.param('#e11d48', '#111111', id='rose-just-under-aa'),
+    pytest.param('#fde047', '#111111', id='yellow'),
+    pytest.param('#0ea5e9', '#111111', id='sky'),
+])
+def test_link_and_password_use_the_accent_only_when_readable_on_the_body(accent, ink):
+    assert user_messages.ink(accent) == ink
+
+
+def test_a_light_accent_keeps_the_link_and_password_dark(aggregates):
+    _set_colors(aggregates, [{'name': 'primary', 'value': '#fde047'}])
+    _, message = _send(_invitation())
+    assert 'style="color: #111111;"' in message
+    assert 'color: #fde047' not in message
+
+
+def test_contrast_follows_wcag():
+    assert round(user_messages.contrast('#ffffff', '#000000'), 1) == 21.0
+    assert user_messages.contrast('#4c51bf', '#4c51bf') == 1.0
 
 
 @pytest.mark.usefixtures('aggregates')

@@ -147,9 +147,11 @@ def accent_color() -> str:
     return pick_accent(tokens.get('colors') if isinstance(tokens, dict) else None)
 
 
-def text_on(background: str) -> str:
-    """White or near-black, whichever reads better on a hex ``background`` (WCAG relative luminance)."""
-    hex_digits = background.lstrip('#')
+def _luminance(color: str) -> float:
+    """WCAG relative luminance of a ``#rgb`` / ``#rrggbb`` colour; anything else counts as DEFAULT_ACCENT."""
+    if not _HEX_COLOR.fullmatch(color):
+        color = DEFAULT_ACCENT
+    hex_digits = color.lstrip('#')
     if len(hex_digits) == 3:
         hex_digits = ''.join(ch * 2 for ch in hex_digits)
 
@@ -158,9 +160,31 @@ def text_on(background: str) -> str:
         return value / 12.92 if value <= 0.03928 else ((value + 0.055) / 1.055) ** 2.4
 
     red, green, blue = (channel(hex_digits[i:i + 2]) for i in (0, 2, 4))
-    luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
-    # Contrast against white is (1.05)/(L+0.05), against #111 about (L+0.05)/0.056: pick the larger.
-    return '#ffffff' if 1.05 / (luminance + 0.05) >= (luminance + 0.05) / 0.056 else '#111111'
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+
+
+def contrast(first: str, second: str) -> float:
+    """WCAG contrast ratio of two hex colours (1 to 21)."""
+    lighter, darker = sorted((_luminance(first), _luminance(second)), reverse=True)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+#: The email body's background (``_page``): the colour the link and the password are read against.
+BODY_BACKGROUND = '#f9f9f9'
+#: Dark text, used where the accent would be too light to read.
+DARK_TEXT = '#111111'
+#: WCAG AA for normal text.
+MIN_TEXT_CONTRAST = 4.5
+
+
+def text_on(background: str) -> str:
+    """White or near-black, whichever reads better on a hex ``background``."""
+    return '#ffffff' if contrast('#ffffff', background) >= contrast(DARK_TEXT, background) else DARK_TEXT
+
+
+def ink(accent: str) -> str:
+    """The colour for the link and the password: the accent when it is readable on the body, else dark text."""
+    return accent if contrast(accent, BODY_BACKGROUND) >= MIN_TEXT_CONTRAST else DARK_TEXT
 
 
 def _workshop() -> bool:
@@ -179,7 +203,7 @@ def _page(title: str, body: str, accent: str = DEFAULT_ACCENT) -> str:
   <div style="background: {accent}; padding: 24px 30px;">
     <h1 style="color: {text_on(accent)}; margin: 0; font-size: 22px;">{title}</h1>
   </div>
-  <div style="padding: 30px; background: #f9f9f9;">
+  <div style="padding: 30px; background: {BODY_BACKGROUND};">
 {body}
   </div>
 </body>
@@ -189,7 +213,8 @@ def _page(title: str, body: str, accent: str = DEFAULT_ACCENT) -> str:
 def invitation_message(*, audience: Audience, inviter: str, given_name: str, sign_in_url: str,
                        username_parameter: str, code_parameter: str, valid_days: int,
                        accent: str = DEFAULT_ACCENT) -> tuple[str, str]:
-    """(subject, html) for an invitation. ``audience``, ``inviter`` and ``given_name`` are unescaped;
+    """(subject, html) for an invitation. ``inviter``, ``given_name`` and ``audience.brand`` are caller data,
+    passed unescaped (escaped here); the rest of ``audience`` is fixed wording;
     ``accent`` must already be a validated hex colour (``pick_accent``)."""
     workspace = html.escape(audience.workspace)
     who = f'{html.escape(inviter)} invited you to {workspace}' if inviter else f'You have been invited to {workspace}'
@@ -200,14 +225,15 @@ def invitation_message(*, audience: Audience, inviter: str, given_name: str, sig
         if audience.workshop and not audience.brand else ''
     )
     url = html.escape(sign_in_url)
+    text_color = ink(accent)  # the accent on the light body only when readable (WCAG AA)
     body = f"""    <p>{greeting}</p>
     <p>{who}.</p>
     <p>{html.escape(PRODUCT_SUMMARY)}</p>{workshop_note}
     <p><strong>To sign in:</strong></p>
     <ol>
-      <li>Open <a href="{url}" style="color: {accent};">{url}</a></li>
+      <li>Open <a href="{url}" style="color: {text_color};">{url}</a></li>
       <li>Sign in with this email address and the temporary password below:
-        <div style="font-family: monospace; font-size: 18px; font-weight: bold; color: {accent}; margin: 8px 0;">{code_parameter}</div>
+        <div style="font-family: monospace; font-size: 18px; font-weight: bold; color: {text_color}; margin: 8px 0;">{code_parameter}</div>
       </li>
       <li>Choose your own password when asked. The temporary one works for {valid_days} days.</li>
     </ol>

@@ -1,0 +1,27 @@
+"""The invitation trigger (auth/user_messages.py) reads the rows the settings API writes.
+
+The trigger cannot import the writers (its bundle is self-contained), so it repeats their keys and field
+names. This pins each copy to its writer: a renamed key or field fails here instead of silently turning the
+invitation neutral.
+"""
+from unittest.mock import patch
+
+from handler_events_fixtures import call_route
+
+from auth import user_messages
+from settings_handler import lambda_handler
+from shared import company_context
+
+
+def test_reads_the_brand_row_and_field_the_brand_route_writes(api_gateway_event, lambda_context):
+    with patch('settings_handler.aggregates_table') as table:
+        response, _ = call_route(lambda_handler, api_gateway_event, lambda_context, method='PUT',
+                                 path='/settings/brand', body={'brand_name': 'Acme'})
+    assert response['statusCode'] == 200
+    written = table.put_item.call_args.kwargs['Item']
+    assert {'pk': written['pk'], 'sk': written['sk']} == user_messages.BRAND_KEY
+    assert written['brand_name'] == 'Acme'
+
+
+def test_reads_the_design_system_row_the_design_system_writes():
+    assert user_messages.DESIGN_SYSTEM_KEY == {'pk': company_context.DESIGN_SYSTEM_PK, 'sk': company_context.CONFIG_SK}
