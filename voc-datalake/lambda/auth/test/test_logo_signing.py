@@ -136,3 +136,17 @@ def test_reads_the_secret_once_per_container(monkeypatch):
     logo_signing.signed_logo_url(KEY, SITE, 7, now=NOW)
     monkeypatch.setenv('CDN_SIGNING_SECRET_ARN', 'arn:aws:secretsmanager:us-east-1:123456789012:secret:gone')
     assert logo_signing.signed_logo_url(KEY, SITE, 7, now=NOW) is not None
+
+
+def test_the_trigger_calls_aws_with_timeouts_inside_cognitos_5_s_budget():
+    # Worst case of one call: (retries + 1) attempts x (connect + read) timeout, at most 3 s of the 5 s budget.
+    per_attempt = logo_signing.AWS_CONNECT_TIMEOUT_SECONDS + logo_signing.AWS_READ_TIMEOUT_SECONDS
+    assert (logo_signing.AWS_MAX_RETRIES + 1) * per_attempt <= 3
+
+
+@pytest.mark.usefixtures('signing')
+def test_a_signing_error_costs_the_logo_not_the_invitation(monkeypatch):
+    def broken(*_args, **_kwargs):
+        raise ValueError('bad key')
+    monkeypatch.setattr(logo_signing.CloudFrontSigner, 'generate_presigned_url', broken)
+    assert logo_signing.signed_logo_url(KEY, SITE, 7, now=NOW) is None
