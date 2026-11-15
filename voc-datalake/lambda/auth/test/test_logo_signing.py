@@ -34,6 +34,7 @@ def rsa_key():
 def signing(monkeypatch, rsa_key):
     """A signing secret in (moto) Secrets Manager and the two env vars the trigger gets."""
     monkeypatch.setattr(logo_signing, '_signer_cache', [])
+    monkeypatch.setattr(logo_signing, '_secrets', None)
     with mock_aws():
         arn = boto3.client('secretsmanager', region_name='us-east-1').create_secret(
             Name='cdn-signing', SecretString=json.dumps({'privateKeyPem': _pem(rsa_key)}))['ARN']
@@ -41,6 +42,7 @@ def signing(monkeypatch, rsa_key):
         monkeypatch.setenv('CDN_SIGNING_KEY_PAIR_ID', 'K2EXAMPLE')
         yield rsa_key
     monkeypatch.setattr(logo_signing, '_signer_cache', [])
+    monkeypatch.setattr(logo_signing, '_secrets', None)
 
 
 def _cloudfront_b64decode(value: str) -> bytes:
@@ -101,6 +103,7 @@ def test_signs_only_https_and_a_positive_lifetime(site, days):
 
 def test_fails_closed_without_signing_configuration(monkeypatch):
     monkeypatch.setattr(logo_signing, '_signer_cache', [])
+    monkeypatch.setattr(logo_signing, '_secrets', None)
     monkeypatch.delenv('CDN_SIGNING_SECRET_ARN', raising=False)
     monkeypatch.delenv('CDN_SIGNING_KEY_PAIR_ID', raising=False)
     assert logo_signing.signed_logo_url(KEY, SITE, 7, now=NOW) is None
@@ -108,6 +111,7 @@ def test_fails_closed_without_signing_configuration(monkeypatch):
 
 def test_fails_closed_when_the_secret_cannot_be_read(monkeypatch):
     monkeypatch.setattr(logo_signing, '_signer_cache', [])
+    monkeypatch.setattr(logo_signing, '_secrets', None)
     with mock_aws():
         monkeypatch.setenv('CDN_SIGNING_SECRET_ARN', 'arn:aws:secretsmanager:us-east-1:123456789012:secret:missing')
         monkeypatch.setenv('CDN_SIGNING_KEY_PAIR_ID', 'K2EXAMPLE')
@@ -117,6 +121,7 @@ def test_fails_closed_when_the_secret_cannot_be_read(monkeypatch):
 
 def test_fails_closed_for_a_key_that_is_not_rsa(monkeypatch):
     monkeypatch.setattr(logo_signing, '_signer_cache', [])
+    monkeypatch.setattr(logo_signing, '_secrets', None)
     with mock_aws():
         arn = boto3.client('secretsmanager', region_name='us-east-1').create_secret(
             Name='cdn-signing', SecretString=json.dumps({'privateKeyPem': _pem(ec.generate_private_key(ec.SECP256R1()))})
