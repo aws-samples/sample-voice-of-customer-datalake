@@ -174,6 +174,7 @@ def render_svg_logo(cdp: Cdp, url: str, *, what: str = 'SVG logo') -> bytes | No
     512 px (a fresh tab each time, at most three draws) before it is given up.
     Never raises: the logo must never fail the capture.
     """
+    reason = 'over_company_logo_cap'
     for max_side in RENDER_SIDES_PX:
         png = _render_once(cdp, url, what, max_side)
         if png is None:
@@ -185,7 +186,7 @@ def render_svg_logo(cdp: Cdp, url: str, *, what: str = 'SVG logo') -> bytes | No
         else:
             reason = 'png_check_too_large'     # the PNG check refused it (over 2 MB or 1024 px)
         logger.info(f'{what} too large; drawn smaller', extra={'max_side': max_side, 'reason': reason})
-    logger.info(f'{what} not rendered', extra={'reason': 'over_company_logo_cap'})
+    logger.info(f'{what} not rendered', extra={'reason': reason})   # the last size's real reason
     return None
 
 

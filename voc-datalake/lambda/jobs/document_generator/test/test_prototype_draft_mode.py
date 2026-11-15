@@ -34,7 +34,7 @@ from shared.prototype_drafts import (
 )
 from shared.prototype_incorporation import MAX_NOTE_CHARS, parse_pin_outcomes
 from shared.prototype_pins import WIDGET_START, inject_pin_widget, pin_form_id
-from shared.prototype_walkthrough import inject_walkthrough, walkthrough_block
+from shared.prototype_walkthrough import WALKTHROUGH_END, WALKTHROUGH_START, inject_walkthrough, walkthrough_block
 from shared.prototypes import prototype_draft_s3_key, prototype_s3_key
 
 PROJECT = 'proj_1'
@@ -329,7 +329,35 @@ class TestTheCompanyLogoInADraft:
         assert LOGO_REMOVED_INSTRUCTION in world.prompt()
         body = world.draft_object()['Body'].read().decode()
         assert LOGO_PLACEHOLDER not in body
-        assert '<span class="company-wordmark" style="font-weight:700">Shop</span>' in body
+        # main's 7.00.02: the wordmark is plain bold text with no attributes (safe inside a quoted script string).
+        assert '<b>Shop</b>' in body
+
+    def _draft_with_uploaded_logo(self, world: World, body: str) -> str:
+        """Drafts on a base with a logo, the model answering ``body``, a logo uploaded: the draft object's HTML."""
+        base = self._base_with_logo(world)
+        page = f'<!DOCTYPE html><html><body>{body}</body></html>'
+        world.converse.return_value = ConverseResult(text=f'<change_summary>Home: x</change_summary>{page}',
+                                                     model_id='m')
+        with patch('jobs.document_generator.handler._company_logo', return_value=BuildLogo(LOGO_URL, True)):
+            world.run(world.job(base))
+        return world.draft_object()['Body'].read().decode()
+
+    def test_a_logo_uploaded_but_not_placed_is_recorded_not_included(self, world):
+        """As a build does (main's 7.00.02, company_logo.logo_record): an uploaded logo the draft placed nowhere is
+        `included: False` on the draft, so the applied version's footer says "Company logo not used"."""
+        self._draft_with_uploaded_logo(world, '<header>Shop</header>')
+
+        assert world.row()['draft']['company_logo'] == {'included': False}
+
+    def test_a_placeholder_only_inside_a_fake_walkthrough_block_takes_no_logo_place(self, world):
+        """The model's walkthrough block is stripped BEFORE the logo is inlined: a placeholder only inside it uses
+        no logo place, so the draft records the logo as not used and its object carries no image."""
+        fake = f'{WALKTHROUGH_START}<img src="{LOGO_PLACEHOLDER}" alt="Acme">{WALKTHROUGH_END}'
+
+        body = self._draft_with_uploaded_logo(world, f'<header>Shop</header>{fake}')
+
+        assert world.row()['draft']['company_logo'] == {'included': False}
+        assert LOGO_URL not in body
 
 
 PIN_A = 'pin_20260502000000000001aaaaaa'

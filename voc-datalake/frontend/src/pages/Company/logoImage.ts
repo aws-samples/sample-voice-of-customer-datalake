@@ -6,7 +6,8 @@
  * ladder product-doc images use (`pages/ProjectDetail/resizeImage.ts`), so the API stores a small logo and the
  * prototype build can inline it (`lambda/shared/company_logo.py` leaves out a logo over 1 MB).
  *
- * The ladder keeps transparency on every rung: PNG first, then WebP (lossy, with alpha). Never JPEG, whose
+ * The ladder keeps transparency on every rung: PNG first, then WebP (lossy, with alpha), then smaller PNGs for a
+ * browser that cannot encode WebP. Never JPEG, whose
  * missing alpha channel would put a white box behind a transparent logo. An SVG is drawn to a PNG first
  * (`utils/svgToPng`) and that PNG goes through the same policy.
  *
@@ -31,6 +32,9 @@ export const LOGO_IMAGE_POLICY: ImagePolicy = {
     { type: 'image/webp', quality: 0.8, maxEdge: LOGO_MAX_EDGE_PX },
     { type: 'image/webp', quality: 0.8, maxEdge: 768 },
     { type: 'image/webp', quality: 0.7, maxEdge: 512 },
+    // Where the browser cannot encode WebP (every WebP rung comes back as PNG and is skipped), smaller PNGs.
+    { type: 'image/png', maxEdge: 768 },
+    { type: 'image/png', maxEdge: 512 },
   ],
 }
 

@@ -5,8 +5,6 @@
   "prompt": "file://./prompts/first-principles-reviewer.md",
   "tools": [
     "read",
-    "grep",
-    "glob",
     "thinking"
   ],
   "allowedTools": [
@@ -29,16 +27,24 @@
         "**/.env.*",
         "**/*.env",
         "**/*.env.*",
+        "**/*.envrc",
         "**/*.pem",
         "**/*.key",
         "**/*.p12",
         "**/*.pfx",
+        "**/*.ppk",
+        "**/*.jks",
         "**/*id_rsa*",
         "**/*id_ed25519*",
+        "**/*id_ecdsa*",
+        "**/*id_dsa*",
         "**/*credentials*",
         "**/*.secret*",
         "**/*.npmrc",
-        "**/*.netrc"
+        "**/*.netrc",
+        "**/*.pypirc",
+        "**/*.pgpass",
+        "**/*.tfvars"
       ]
     }
   },
@@ -62,6 +68,8 @@
           "**/*.env/**",
           "**/*.env.*",
           "**/*.env.*/**",
+          "**/*.envrc",
+          "**/*.envrc/**",
           "**/*.pem",
           "**/*.pem/**",
           "**/*.key",
@@ -70,10 +78,18 @@
           "**/*.p12/**",
           "**/*.pfx",
           "**/*.pfx/**",
+          "**/*.ppk",
+          "**/*.ppk/**",
+          "**/*.jks",
+          "**/*.jks/**",
           "**/*id_rsa*",
           "**/*id_rsa*/**",
           "**/*id_ed25519*",
           "**/*id_ed25519*/**",
+          "**/*id_ecdsa*",
+          "**/*id_ecdsa*/**",
+          "**/*id_dsa*",
+          "**/*id_dsa*/**",
           "**/*credentials*",
           "**/*credentials*/**",
           "**/*.secret*",
@@ -81,7 +97,13 @@
           "**/*.npmrc",
           "**/*.npmrc/**",
           "**/*.netrc",
-          "**/*.netrc/**"
+          "**/*.netrc/**",
+          "**/*.pypirc",
+          "**/*.pypirc/**",
+          "**/*.pgpass",
+          "**/*.pgpass/**",
+          "**/*.tfvars",
+          "**/*.tfvars/**"
         ],
         "effect": "deny"
       }

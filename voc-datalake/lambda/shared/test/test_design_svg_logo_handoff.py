@@ -110,13 +110,13 @@ class TestTheHandOff:
 
 class TestTheNote:
     def test_the_note_is_appended_within_the_guidelines_limit(self):
-        note = design_logo_render.render_failed_note(SVG_PATH)
+        note = design_logo_render.render_failed_note(design_logo_render.SvgLogo(SVG_PATH, 'https://raw.githubusercontent.com/acme/ui/HEAD/brand/logo.svg', '<svg/>'))
         text = design_logo_render.with_note('x' * 30_000, note)
         assert len(text) <= MAX_GUIDELINES_CHARS
         assert text.endswith(note)
 
     def test_an_empty_guideline_is_just_the_note(self):
-        note = design_logo_render.render_failed_note(SVG_PATH)
+        note = design_logo_render.render_failed_note(design_logo_render.SvgLogo(SVG_PATH, 'https://raw.githubusercontent.com/acme/ui/HEAD/brand/logo.svg', '<svg/>'))
         assert design_logo_render.with_note(None, note) == note
         assert f'`{SVG_PATH}`' in note
 

@@ -58,6 +58,7 @@ from shared.company_logo import (
     has_company_logo,
     has_logo_placeholder,
     inline_logo,
+    logo_record,
     with_logo_placeholder,
 )
 from shared.converse import converse_chain
@@ -519,8 +520,9 @@ class BuildLogo(NamedTuple):
     """The company logo for one prototype build."""
     #: The logo as a ``data:`` URL, or None (opted out, none uploaded, too large, unreadable).
     data_url: str | None = None
-    #: The derivation's ``company_logo_included``: True inlined, False uploaded but left out, None not recorded.
-    included: bool | None = None
+    #: Whether a logo is uploaded and the design system was read (``company_logo.logo_record`` then records
+    #: whether any use was inlined).
+    uploaded: bool = False
 
 
 def _company_logo(with_design_system: bool) -> BuildLogo:
@@ -540,7 +542,7 @@ def _company_logo(with_design_system: bool) -> BuildLogo:
     if not has_company_logo(row):
         return BuildLogo()
     data_url = company_logo_data_url(row, _s3(), SCRATCH_BUCKET)
-    return BuildLogo(data_url, data_url is not None)
+    return BuildLogo(data_url, True)
 
 
 def _design_system_record(requested: bool, section: str) -> bool | None:
@@ -1389,6 +1391,18 @@ def default_prototype_title(prd: Mapping | None, prfaq: Mapping | None, fallback
     return fallback
 
 
+def _finished_build_html(project_id: str, doc_id: str, title: str, html: str, base_steps: list,
+                         logo_url: str | None, wordmark: str) -> tuple[str, int]:
+    """A built or revised prototype's HTML as it is stored, and how many logo uses it holds.
+
+    A model-written walkthrough block (a fake one, or the base's echoed) never reaches a stored object: it is
+    stripped, the logo is inlined (main's rules, shared/company_logo.py), then the revision's base steps (a fresh
+    build has none: docs/prototype-builder.md, Part 1) and the pin widget go back in.
+    """
+    inlined, logo_uses = inline_logo(strip_walkthrough(html), logo_url, wordmark)
+    return _with_pin_widget(project_id, doc_id, title, inject_walkthrough(inlined, base_steps)), logo_uses
+
+
 def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_config: dict) -> dict:
     """
     Build a self-contained, offline-first HTML prototype from the latest PRD and
@@ -1492,6 +1506,8 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     design_system_section, company_context_section = _prototype_org_sections(
         grounding, with_design_system=with_design_system)
     # The model writes a placeholder for the uploaded logo; the image is inlined after generation.
+    # Recorded from the design system itself, before the logo instruction (a logo alone is not a design system).
+    design_system_included = _design_system_record(with_design_system, design_system_section)
     logo = _company_logo(with_design_system)
     logo_url = logo.data_url
     if logo_url:
@@ -1529,11 +1545,9 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     html = _extract_html(raw)
     if not html:
         raise RuntimeError('Prototype model did not return an HTML document.')
-    # A model-written walkthrough block (a fake one, or the base's echoed) never reaches a stored object; a
-    # revision keeps its base version's steps (docs/prototype-builder.md, Part 1), a fresh build has none.
     base_steps = extract_steps(prior) if prior is not None else _base_steps(project_id, base)
-    html = inline_logo(strip_walkthrough(html), logo_url, brand or project_name)
-    html = _with_pin_widget(project_id, doc_id, title, inject_walkthrough(html, base_steps))
+    html, logo_uses = _finished_build_html(project_id, doc_id, title, html, base_steps,
+                                           logo_url, brand or project_name)
 
     ctx.update_progress(80, 'saving_prototype')
 
@@ -1605,8 +1619,8 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
             # True when the design system reached the prompt, False when the build
             # was told not to read it (a revision inherits that choice), omitted
             # when it was asked for but none is configured.
-            design_system_included=_design_system_record(with_design_system, design_system_section),
-            company_logo_included=logo.included,
+            design_system_included=design_system_included,
+            company_logo_included=logo_record(logo.uploaded, logo_uses),
             **derivation_knowledge(grounding),
         ),
         'created_at': now,
@@ -1787,18 +1801,19 @@ def _draft_prototype(ctx, projects_table, project_id: str, job_id: str, doc_conf
         raise RuntimeError('Prototype model did not return an HTML document.')
 
     ctx.update_progress(80, 'saving_draft')
+    # Neither the widget nor a walkthrough block (the model may echo or fake one): Apply adds the base's steps.
+    # The logo is inlined here, so Apply stores it as it is. A leftover placeholder becomes the project's name: a
+    # draft carries no brand (only a build's dialog sends one), where a build's wordmark uses the brand first.
+    draft, logo_uses = inline_logo(strip_walkthrough(strip_pin_widget(html)), logo_url, project_name)
     record_draft(get_jobs_table(), project_id, job_id, {
         'summary': summary, 'base_document_id': base_id, 'base_version': int(doc_config['base_version']),
         'instruction': instruction,
         'llm_metadata': pass_llm_metadata(answering_model(reply, 'prototype'), DRAFT_PROMPT_VERSION),
-        # Apply records it as the version's ``company_logo_included`` (shared/prototype_drafts.py).
-        DRAFT_LOGO_KEY: {'included': logo.included},
+        # Apply records it as the version's ``company_logo_included`` (shared/prototype_drafts.py): as a build
+        # does, True only when the logo was actually inlined (company_logo.logo_record).
+        DRAFT_LOGO_KEY: {'included': logo_record(logo.uploaded, logo_uses)},
         **detail,
     })
-    # Neither the widget nor a walkthrough block (the model may echo or fake one): Apply adds the base's steps.
-    # The logo is inlined here, so Apply stores it as it is. A leftover placeholder becomes the project's name: a
-    # draft carries no brand (only a build's dialog sends one), where a build's wordmark uses the brand first.
-    draft = inline_logo(strip_walkthrough(strip_pin_widget(html)), logo_url, project_name)
     put_draft_html(_s3(), SCRATCH_BUCKET, project_id, job_id, draft)
     ctx.update_progress(100, 'saved')
     return {'draft_id': job_id}

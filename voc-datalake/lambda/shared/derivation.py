@@ -142,9 +142,11 @@ def build_derivation(
             system reached the prompt, False when the build was told not to read
             it. Written only when not None (None: not a prototype, or no design
             system configured).
-        company_logo_included: prototypes only — True when the uploaded company logo was inlined, False when
-            one is uploaded but was left out (over the inline cap or unreadable). Written only when not None
-            (None: no logo uploaded, or the design system was not read).
+        company_logo_included: prototypes only — True when the uploaded company logo was inlined into at least
+            one placeholder ``<img>`` of the stored HTML, False when one is uploaded but no use was inlined (left
+            out: over the inline cap or unreadable, or the model placed none). Written only when not None (None:
+            no logo uploaded, or the design system was not read). ``design_system_included`` is decided from the
+            design system alone, so a logo with no tokens or guidelines does not make it True.
 
     The three knowledge keys are omitted when empty so a document built without
     them stores exactly the shape it stored before they existed.
