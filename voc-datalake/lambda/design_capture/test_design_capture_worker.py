@@ -39,7 +39,8 @@ TOUCH_URL = 'https://kirocrew.dev/apple-touch-icon.png'
 HEAD_ONLY: dict = {'url': PAGE_URL, 'candidates': [], 'head': [{'kind': 'touch-icon', 'url': TOUCH_URL,
                                                                  'sizes': '180x180'}]}
 #: ISOLATE_JS's answer for a header logo box on the first screen.
-ISOLATED_BOX = {'x': 24, 'y': 16, 'width': 166, 'height': 52, 'vw': 1366, 'vh': 900, 'backdrop': None}
+ISOLATED_BOX = {'x': 24, 'y': 16, 'width': 166, 'height': 52, 'vw': 1366, 'vh': 900, 'origin': 'https://kirocrew.dev',
+                'backdrop': None}
 
 
 def candidate(n: int = 1, kind: str = 'img', url: str | None = 'https://kirocrew.dev/brand/logo.png', **overrides) -> dict:
@@ -222,8 +223,7 @@ def _run(table, cdp: FakeCdp, answer: str = ANSWER, public: bool = True, *,
     deps = cw.CaptureDeps(table=table, kit=_kit(cdp, sessions), summarise_images=vision, sleep=lambda _s: None,
                           clock=iter(range(1000)).__next__, now=now, s3=s3, bucket='raw' if s3 else '',
                           logo_fetch=fetch, pick_logo=pick_logo)
-    with patch.object(cw, 'validate_url', return_value=(True, '') if public else (False, 'private address')), \
-            patch.object(page_logo, 'validate_url', return_value=(True, '')):
+    with patch.object(cw, 'validate_url', return_value=(True, '') if public else (False, 'private address')):
         result = cw.run_capture({'action': 'design_capture', 'ref_id': REF_ID}, deps)
     stored = get_reference(table, REF_ID)
     assert stored is not None

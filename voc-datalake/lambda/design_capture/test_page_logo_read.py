@@ -2,6 +2,7 @@
 SVG copy beside it, the marked header photo for the pick, and the stored logo. The browser-side steps
 (``isolate_logo``, ``render_svg_logo``, ``read_raster_logo``) are patched; the page tab is a fake.
 """
+import base64
 import json
 from unittest.mock import MagicMock, patch
 
@@ -18,7 +19,8 @@ from rendered_logo import RenderedLogo
 from test_design_capture_worker import png_bytes
 from test_page_logo_candidates import logo_candidate
 
-from shared import design_logo
+from shared import design_logo, design_svg
+from shared.http_utils import UnsafeURLError
 
 PAGE = 'https://kirocrew.dev/'
 PNG = png_bytes(166, 52)
@@ -27,6 +29,7 @@ SVG_URL = 'https://kirocrew.dev/brand/logo.svg'
 TOUCH = HeadIcon('touch-icon', 'https://kirocrew.dev/apple-touch-icon.png', '180x180')
 INLINE = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 166 52"><path d="M0 0h166v52H0z" fill="#7c3aed"/></svg>'
 SITE_SVG = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 32"><path d="M0 0h120v32H0z"/></svg>'
+DATA_PREFIX = 'data:image/svg+xml;base64,'
 
 
 def _found(*candidates, head=()) -> LogoCandidates:
@@ -40,35 +43,71 @@ def _tab(inline: object = None) -> MagicMock:
 
 
 def _read(found: LogoCandidates, pick: LogoPick, *, isolated: IsolatedLogo | None = None, can_isolate: bool = True,
-          tab: MagicMock | None = None, fetch=None, allowed: bool = True, svg_png: bytes | None = PNG,
-          raster: RasterLogo | None = None):
+          tab: MagicMock | None = None, fetch=None, svg_png: bytes | None = PNG, raster: RasterLogo | None = None):
     """``read_page_logo`` with the browser steps patched → ``(logo, mocks)``."""
     tab = tab or _tab()
     with patch.object(pl, 'isolate_logo', return_value=isolated) as isolate, \
             patch.object(pl, 'render_svg_logo', return_value=svg_png) as render, \
-            patch.object(pl, 'read_raster_logo', return_value=raster or RasterLogo()) as read_raster, \
-            patch.object(pl, 'validate_url', return_value=(allowed, 'private address')) as policy:
+            patch.object(pl, 'read_raster_logo', return_value=raster or RasterLogo()) as read_raster:
         logo = pl.read_page_logo(tab, MagicMock(), found, pick, fetch, can_isolate=can_isolate)
-    return logo, {'isolate': isolate, 'render': render, 'raster': read_raster, 'policy': policy, 'tab': tab}
+    return logo, {'isolate': isolate, 'render': render, 'raster': read_raster, 'tab': tab}
 
 
-def _fetch(body: bytes) -> MagicMock:
-    return MagicMock(return_value=MagicMock(status_code=200, content=body))
+def _fetch(body: bytes, status: int = 200) -> MagicMock:
+    return MagicMock(return_value=MagicMock(status_code=status, content=body))
+
+
+def _drawn_svg(render: MagicMock) -> str:
+    """The markup the render tab was handed, decoded from the ``data:`` URL (asserting it is one)."""
+    url = render.call_args.args[1]
+    assert url.startswith(DATA_PREFIX)
+    return base64.b64decode(url.removeprefix(DATA_PREFIX)).decode('utf-8')
+
+
+def _relisting(url: str, moved_n: int = 5) -> MagicMock:
+    """A page tab whose candidates, listed again, answer ``url`` and the picked logo moved to ``moved_n`` (decoys
+    elsewhere before it: candidates are numbered 1, 2, 3… as the page stashed them)."""
+    moved = {'n': moved_n, 'kind': 'img', 'url': IMG_URL, 'box': {'x': 26, 'y': 15, 'w': 166, 'h': 52}}
+    decoys = [{**moved, 'n': n, 'box': {'x': 900, 'y': 10, 'w': 20, 'h': 20}} for n in range(1, moved_n)]
+    listing = {'url': url, 'candidates': [*decoys, moved], 'head': []}
+    tab = MagicMock()
+    tab.evaluate.side_effect = lambda expression: json.dumps(listing) if 'getBoundingClientRect' in expression else True
+    return tab
 
 
 class TestIsolated:
     def test_isolates_the_element_now_at_the_picked_place_when_the_page_re_rendered(self):
-        moved = {'n': 5, 'kind': 'img', 'url': IMG_URL, 'box': {'x': 26, 'y': 15, 'w': 166, 'h': 52}}
-        listing = {'url': PAGE, 'candidates': [{**moved, 'n': n, 'box': {'x': 900, 'y': 10, 'w': 20, 'h': 20}}
-                                               for n in range(1, 5)] + [moved], 'head': []}
-        tab = MagicMock()
-        tab.evaluate.side_effect = lambda expression: json.dumps(listing) if 'getBoundingClientRect' in expression else True
-        _, mocks = _read(_found(logo_candidate(1, url=IMG_URL)), LogoPick(number=1), isolated=IsolatedLogo(PNG), tab=tab)
+        _, mocks = _read(_found(logo_candidate(1, url=IMG_URL)), LogoPick(number=1), isolated=IsolatedLogo(PNG),
+                         tab=_relisting(PAGE))
         assert mocks['isolate'].call_args.args[2] == 5
 
     def test_keeps_the_stashed_number_when_nothing_matches_the_picked_place(self):
         _, mocks = _read(_found(logo_candidate(3, url=IMG_URL)), LogoPick(number=3), isolated=IsolatedLogo(PNG))
         assert mocks['isolate'].call_args.args[2] == 3
+
+    def test_isolates_on_the_page_url_it_listed_the_candidates_on(self):
+        _, mocks = _read(_found(logo_candidate(3, url=IMG_URL)), LogoPick(number=3), isolated=IsolatedLogo(PNG))
+        assert mocks['isolate'].call_args.args[3] == PAGE
+
+    def test_takes_a_re_listing_of_the_same_origin_on_another_path(self):
+        tab = _relisting('https://KiroCrew.dev/after-redirect?x=1')
+        _, mocks = _read(_found(logo_candidate(1, url=IMG_URL)), LogoPick(number=1), isolated=IsolatedLogo(PNG), tab=tab)
+        assert mocks['isolate'].call_args.args[2] == 5
+
+    @pytest.mark.parametrize('url', ['https://evil.example/', 'http://kirocrew.dev/', 'https://kirocrew.dev:8443/', '',
+                                     None])
+    def test_keeps_the_stashed_candidate_when_the_re_listing_reports_another_origin(self, url):
+        tab = _relisting(url)
+        _, mocks = _read(_found(logo_candidate(1, url=IMG_URL)), LogoPick(number=1), isolated=IsolatedLogo(PNG), tab=tab)
+        assert mocks['isolate'].call_args.args[2] == 1
+        assert mocks['isolate'].call_args.args[3] == PAGE
+
+    @pytest.mark.parametrize('answer', ['not json', json.dumps([1]), None])
+    def test_keeps_the_stashed_candidate_when_the_re_listing_is_unreadable(self, answer):
+        tab = MagicMock()
+        tab.evaluate.side_effect = lambda expression: answer if 'getBoundingClientRect' in expression else True
+        _, mocks = _read(_found(logo_candidate(2, url=IMG_URL)), LogoPick(number=2), isolated=IsolatedLogo(PNG), tab=tab)
+        assert mocks['isolate'].call_args.args[2] == 2
 
     def test_draws_the_inline_svg_copy_when_the_element_paints_nothing_alone(self):
         tab = _tab({'svg': INLINE, 'width': 166, 'height': 52})
@@ -118,22 +157,54 @@ class TestIsolated:
 
 
 class TestTheElementsOwnFile:
-    def test_draws_an_svg_img_when_it_cannot_be_isolated(self):
-        logo, mocks = _read(_found(logo_candidate(1, url=SVG_URL)), LogoPick(number=1), fetch=_fetch(SITE_SVG))
+    def test_draws_an_svg_img_from_its_sanitised_download_when_it_cannot_be_isolated(self):
+        fetch = _fetch(SITE_SVG)
+        logo, mocks = _read(_found(logo_candidate(1, url=SVG_URL)), LogoPick(number=1), fetch=fetch)
         assert logo.rendered is not None
         assert (logo.rendered.source_url, logo.rendered.png) == (SVG_URL, PNG)
         assert logo.rendered.svg is not None
-        assert mocks['render'].call_args.args[1] == SVG_URL
+        drawn = _drawn_svg(mocks['render'])
+        assert drawn == logo.rendered.svg
+        assert '<path' in drawn
+        assert fetch.call_count == 1                  # the copy read for the isolation is reused, never fetched twice
+        assert fetch.call_args.args[0] == SVG_URL
 
-    def test_never_draws_an_svg_the_url_policy_refuses(self):
-        logo, mocks = _read(_found(logo_candidate(1, url=SVG_URL)), LogoPick(number=1), allowed=False,
-                            fetch=_fetch(b''))
+    def test_builds_the_data_url_from_the_guarded_download_without_a_copy(self):
+        fetch = _fetch(SITE_SVG)
+        with patch.object(pl, 'render_svg_logo', return_value=PNG) as render:
+            logo = pl._file_logo(MagicMock(), SVG_URL, fetch, None)
+        assert logo.rendered is not None
+        expected = pl.downloaded_svg(SVG_URL, _fetch(SITE_SVG))
+        assert expected is not None
+        assert render.call_args.args[1] == design_svg.svg_data_url(expected)
+        assert logo.rendered == RenderedLogo(SVG_URL, PNG, expected)
+        assert fetch.call_args.args[0] == SVG_URL
+
+    def test_draws_the_svg_copy_already_read_without_downloading_again(self):
+        fetch = MagicMock()
+        with patch.object(pl, 'render_svg_logo', return_value=PNG) as render:
+            logo = pl._file_logo(MagicMock(), SVG_URL, fetch, INLINE)
+        assert render.call_args.args[1] == design_svg.svg_data_url(INLINE)
+        assert logo.rendered == RenderedLogo(SVG_URL, PNG, INLINE)
+        fetch.assert_not_called()
+
+    @pytest.mark.parametrize('fetch', [
+        pytest.param(_fetch(PNG), id='not-an-svg'),
+        pytest.param(_fetch(b''), id='empty'),
+        pytest.param(_fetch(SITE_SVG, status=404), id='http-error'),
+        pytest.param(_fetch(b'<svg xmlns="http://www.w3.org/2000/svg"><script>x()</script>', 200), id='unsanitisable'),
+        pytest.param(MagicMock(side_effect=UnsafeURLError(SVG_URL, 'private address')), id='refused-address'),
+    ])
+    def test_never_draws_an_svg_file_that_was_not_downloaded_and_sanitised(self, fetch):
+        logo, mocks = _read(_found(logo_candidate(1, url=SVG_URL)), LogoPick(number=1), fetch=fetch)
         assert logo == pl.PageLogo()
         mocks['render'].assert_not_called()
 
     def test_returns_no_logo_when_the_svg_cannot_be_drawn(self):
-        logo, _ = _read(_found(logo_candidate(1, url=SVG_URL)), LogoPick(number=1), svg_png=None, fetch=_fetch(b''))
+        logo, mocks = _read(_found(logo_candidate(1, url=SVG_URL)), LogoPick(number=1), svg_png=None,
+                            fetch=_fetch(SITE_SVG))
         assert logo == pl.PageLogo()
+        assert _drawn_svg(mocks['render'])
 
     def test_reads_a_raster_img_through_the_raster_path(self):
         downloaded = design_logo.DownloadedLogo(IMG_URL, PNG, 'image/png')
@@ -164,14 +235,21 @@ class TestTheElementsOwnFile:
 
     def test_never_isolates_or_serialises_when_the_page_moved(self):
         tab = _tab({'svg': INLINE, 'width': 166, 'height': 52})
-        fetch = MagicMock()
+        fetch = _fetch(SITE_SVG)
         logo, mocks = _read(_found(logo_candidate(1, url=SVG_URL)), LogoPick(number=1), can_isolate=False, tab=tab,
                             fetch=fetch)
         mocks['isolate'].assert_not_called()
         tab.evaluate.assert_not_called()
-        fetch.assert_not_called()                     # no SVG copy either
+        fetch.assert_called_once()                    # the file itself, through the guarded fetch; no separate copy
+        assert fetch.call_args.args[0] == SVG_URL
         assert logo.rendered is not None
-        assert logo.rendered.svg is None
+        assert logo.rendered.svg == _drawn_svg(mocks['render'])
+
+    def test_draws_nothing_when_the_page_moved_and_the_file_is_not_an_svg(self):
+        fetch = _fetch(PNG)
+        logo, mocks = _read(_found(logo_candidate(1, url=SVG_URL)), LogoPick(number=1), can_isolate=False, fetch=fetch)
+        assert logo == pl.PageLogo()
+        mocks['render'].assert_not_called()
 
 
 class TestHeadIconFallback:
