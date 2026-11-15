@@ -186,13 +186,15 @@ def gate_record(context: Built, arguments: Mapping[str, Any]) -> bytes:
         raise ValueError('a pack is a gate pack\'s name (letters, digits, ".", "_", "-")')
     verdict, stop, rounds, final_go = _verdict(context, arguments)
     if verdict == 'GO':
-        # The checkout's tree now, every change in it taken (a check that wrote, formatted or deleted a file): a GO
-        # only when it is still the tree judged, so a check never passes on a tree the record does not name.
+        # The checkout's tree now, every change in it taken: a GO only when it is still the tree judged. The limit:
+        # this compares the tree at the record's write only, and no check is tied to the tree it ran on, so a command
+        # that changes the tree and another that changes it back leave the judged tree, and the checks between them
+        # ran on another one.
         now = checkout_tree(context)
         if now != context.gate_tree:
-            raise ValueError(f'the checkout changed after the submitted patch was applied (its tree is now {now}, '
-                             f'not the judged {context.gate_tree}: a command wrote, changed or deleted a file), so '
-                             'its checks are not for the judged tree: write NO-GO, and say which command changed it')
+            raise ValueError(f'the checkout\'s tree is now {now}, which differs from the judged {context.gate_tree} '
+                             '(the submitted patch applied to the run\'s commit), so its checks are not for the judged '
+                             'tree: write NO-GO, and say which command changed it')
     record = {'schema': GATE_SCHEMA, 'verdict': verdict, 'stop_reason': stop, 'tree_hash': context.gate_tree,
               'packs': list(dict.fromkeys(packs)), 'own_gate': False, 'tool_versions': {}, 'max_rounds': 1,
               'reviewers': [], 'model_calls': 0, 'accepted_by': '', 'rounds': rounds, 'findings': [],
@@ -430,20 +432,20 @@ def _writer_handlers(context: Built, result: Callable[..., Built]) -> dict[str, 
         message = bounded(arguments, 'message', MAX_TEXT)
         answer = context.broker.push(context.run_id, context.agent_id, branch=branch, patch_key=key, tree_hash=tree,
                                      message=message)
-        context.progress(f'pushed {branch}')
+        context.written(f'pushed {branch}')   # (made: a board that fails now never crashes the session)
         return result(json.dumps({'patch': key, 'broker': answer}))
 
     def open_draft_pr(arguments: Mapping[str, Any]) -> Built:
         answer = context.broker.open_draft_pr(context.run_id, context.agent_id, branch=_branch(context, arguments),
                                               title=bounded(arguments, 'title', MAX_NAME),
                                               body=bounded(arguments, 'body', MAX_TEXT))
-        context.progress('opened the draft pull request')
+        context.written('opened the draft pull request')
         return result(json.dumps({'broker': answer}))
 
     def post_comment(arguments: Mapping[str, Any]) -> Built:
         answer = context.broker.comment(context.run_id, context.agent_id, number=_number(arguments),
                                         body=bounded(arguments, 'body', MAX_TEXT))
-        context.progress('posted a review comment')
+        context.written('posted a review comment')
         return result(json.dumps({'broker': answer}))
 
     return {'push_commit': push_commit, 'open_draft_pr': open_draft_pr, 'post_comment': post_comment}

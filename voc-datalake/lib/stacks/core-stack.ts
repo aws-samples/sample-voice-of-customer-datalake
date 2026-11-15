@@ -22,7 +22,7 @@ import { createBoardAuth } from './core-board-auth';
 import { createCoreRealtime, type CoreRealtime } from './core-realtime';
 import { emailSenderOf } from '../utils/email-sender';
 import { createCoreCdn, type CoreBuildContext } from './core-cdn';
-import { createCoreBuckets, createEngineeringWorkspaceBucket } from './core-buckets';
+import { createCoreBuckets, engineeringCacheWriterRoleArn, createEngineeringWorkspaceBucket } from './core-buckets';
 import { retainOnReplace } from '../utils/retain-on-replace';
 import { dataProtectionOf, type DataProtection } from '../utils/data-protection';
 import { grantReadAndWrites } from '../utils/table-write-grants';
@@ -203,7 +203,10 @@ export class VocCoreStack extends VocStack {
       accessLogs: this.uniqueDnsName('voc-access-logs'),
       rawData: this.uniqueDnsName('voc-raw-data'),
       website: this.uniqueDnsName('voc-frontend'),
-    }, this.kmsKey, corsAllowedOriginsBase, data, engineeringAgentsEnabled(this));
+    }, this.kmsKey, corsAllowedOriginsBase, data, engineeringAgentsEnabled(this)
+      // The checkout cache's writer (VocProcessingStack), by its fixed role name: no cross-stack reference.
+      ? engineeringCacheWriterRoleArn(this, (baseName) => this.uniqueName(baseName))
+      : undefined);
     this.accessLogsBucket = buckets.accessLogsBucket;
     this.rawDataBucket = buckets.rawDataBucket;
     this.websiteBucket = buckets.websiteBucket;

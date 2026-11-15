@@ -78,12 +78,29 @@ def _finding_lines(report: Mapping[str, Any]) -> list[str]:
     return lines
 
 
+def _link_lines(run: Mapping[str, Any]) -> list[str]:
+    """The issue the run was started from and its pull request (GitLab's merge request), each by its number and its
+    address in code spans (as every other value: a report links, mentions and references nothing, so the PR
+    report's description never cross-references the issue on the host), when the record has one."""
+    lines: list[str] = []
+    issue, pull = run.get('issue'), run.get('pull_request')
+    if issue:
+        given = '' if issue.get('verified') else ' (as given at the start, not checked on the host)'
+        lines.append(f'- Issue: {cell(f"#{issue["number"]}", 20)} {cell(issue["url"], 300)}{given}')
+    if pull:
+        noun, mark = ('Merge request', '!') if pull['host'] == 'gitlab' else ('Pull request', '#')
+        lines.append(f'- {noun}: {cell(f"{mark}{pull["number"]}", 20)} {cell(pull["url"], 300)}, '
+                     f'{cell(pull["head"], 255)} into {cell(pull["base"], 255)}')
+    return lines
+
+
 def render_markdown(report: Mapping[str, Any], gate: GateRecord | None = None) -> str:
     run = report['run']
     states = ', '.join(f'{state} {count}' for state, count in sorted(report['tasks']['by_state'].items())) or 'none'
     lines = [
         f'## {TITLES[report["level"]]}: {cell(report["subject"], 80)} (v{report["version"]})', '',
         f'- Goal: {cell(run["goal"], 300) or "-"}', f'- Repository: {cell(run["repo"], 120) or "-"}',
+        *_link_lines(run),
         f'- Flow: {cell(run["flow"], 80) or "-"}; run {cell(report["run_id"], 40)} ({cell(run["status"], 40) or "-"})',
         f'- Tasks: {states}', '',
         *_cost_lines(report), *_agent_lines(report), *_flow_lines(report), *_finding_lines(report),

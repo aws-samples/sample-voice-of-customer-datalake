@@ -7,6 +7,7 @@
  *   the inbox router (async) ──────────────────────────────▶ voc-engineering-delivery {message, seq}
  *   the Agents API (POST /agents/engineering/runs) ────────▶ voc-engineering-start {action: start_run} (only that)
  *   a run's start / its end ──────────────▶ voc-engineering-runtime {action: start_run / end_run} (and the rule)
+ *   a coordinator's launch (waited for) ──▶ voc-engineering-cache {connection, commit, generation} (the cache's writer)
  *
  * One AgentCore Runtime session (its own microVM) per agent, on its language's runtime (engineering-agentcore.ts: the
  * images' repositories, the runtimes, their network and their execution role). Its agent user gets a 15-minute session
@@ -19,7 +20,9 @@
  * No session holds a host token (the connector's broker does). The supervisor's role: the run and session rows and
  * the registry, the spend ledger's ADDs and a flow's month total (GetItem), the budget alerts' own partition, the
  * checkpoints it reads, its own rule, the sessions' calls on this deployment's runtimes (invoke, command, stop) and
- * the launcher's AssumeRole. The delivery's role: the runs' rows only (no registry, no delete), the spend ledger's
+ * the launcher's AssumeRole, and the checkout cache: its writer's invoke (voc-engineering-cache, engineering-cache.ts:
+ * a coordinator's launch waits for its run's commit to be filled) and the entries' READY markers read (a launch is
+ * refused without one). The delivery's role: the runs' rows only (no registry, no delete), the spend ledger's
  * ADDs, the checkpoints, waking, continuing and ending a session (invoke, stop: no command), the launcher's AssumeRole
  * and its failure records; no rule. No IAM write: a stop cuts a run's sessions by
  * not renewing them.
@@ -54,7 +57,8 @@ import {
 import { grantBudgetWork, grantSpendLedger, viaServices } from './engineering-runtime-grants';
 import { grantClaudeModels } from '../utils/claude-model-grant';
 import { booleanContextFlag } from '../utils/context-flag';
-import { engineeringAgentsEnabled } from './engineering-broker';
+import { type ConnectionParameters, engineeringAgentsEnabled } from './engineering-broker';
+import { CACHE_READY_KEYS, createEngineeringCache } from './engineering-cache';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 import { createEngineeringStart } from './engineering-start';
 import { createWorkerFunction, grantInvokeByName, workerRole } from '../utils/worker-lambda';
@@ -85,7 +89,7 @@ const RUN_REGISTRY = 'WS#*#RUNS';
  * drafts one (agent_memory/model.py: `WS#<ws>#AMEM#ROLE#<connection>#<role>`), and the scorecards, one create-only
  * row per version per run (learning/scorecard.py: `WS#<ws>#SCORE#<connection>#<role>#<version>`).
  */
-const SKILL_PARTITIONS = 'WS#*#SKILL#*';
+export const SKILL_PARTITIONS = 'WS#*#SKILL#*';
 const ROLE_MEMORY_PARTITIONS = 'WS#*#AMEM#ROLE#*';
 const SCORECARD_PARTITIONS = 'WS#*#SCORE#*';
 /**
@@ -136,6 +140,10 @@ export interface EngineeringPeers {
   /** The board's function URL: handed to every agent's harness, its host on the agent's egress. */
   boardUrl: string;
   broker: lambda.IFunction;
+  /** The broker's function URL: handed to every agent's harness (`VOC_BROKER_URL`), its host on the agent's egress. */
+  brokerUrl: string;
+  /** The connections' credentials the broker reads: the checkout cache's writer reads them the same way. */
+  connectionParameters: ConnectionParameters;
 }
 
 
@@ -191,11 +199,43 @@ class EngineeringRuntime extends Construct {
     grantSessions(supervisorRole, sessions.runtimeArns, true);
     grantSessions(deliveryRole, sessions.runtimeArns, false);
     const environment = this.environment(props, agentRoles, ruleName, sessions);
-    const fn = this.createSupervisor(props, supervisorRole, agentRoles, ruleName, environment);
+    // The checkout cache's writer: the supervisor fills a run's commit before its coordinator's launch (only it: the
+    // start and the delivery never launch an agent).
+    const cacheWriter = this.grantCheckoutCache(props, supervisorRole);
+    const fn = this.createSupervisor(props, supervisorRole, agentRoles, ruleName,
+      { ...environment, ENGINEERING_CACHE_FUNCTION: cacheWriter.functionName });
     createEngineeringStart(this, { ...props, ruleName, environment, runtime: fn });
     this.createRule(props.peers.deadLetterQueue, fn, ruleName);
+    // A wake's continuation looks the cache up again (the generation it clones), as the supervisor's does.
+    grantCacheReadyReads(deliveryRole, props.rawDataBucket);
     this.createDelivery(props, deliveryRole, agentRoles, environment);
     if (flag(this, SUPERVISOR_ALARM_FLAG)) this.createAlarms(fn);
+  }
+
+  /**
+   * voc-engineering-cache (engineering-cache.ts), and the supervisor's two grants on it: the invoke of that one
+   * function (a coordinator's launch waits for the fill), and `s3:GetObject` on the entries' READY markers only (their
+   * manifests: a launch is refused while the run's commit has none for the run's repository; lambda/engineering/runtime/checkout_cache.py).
+   */
+  private grantCheckoutCache(props: WiredProps, role: iam.Role): lambda.IFunction {
+    const writer = createEngineeringCache(this, {
+      uniqueName: props.uniqueName, kmsKey: props.kmsKey, engineeringTable: props.engineeringTable,
+      rawDataBucket: props.rawDataBucket, connectionParameters: props.peers.connectionParameters,
+    });
+    role.addToPrincipalPolicy(new iam.PolicyStatement({
+      sid: 'FillTheCheckoutCache', actions: ['lambda:InvokeFunction'], resources: [writer.functionArn],
+    }));
+    // A fill's claim read (its lease's end only), so a burst of board launches hands one fill on, not many.
+    role.addToPrincipalPolicy(new iam.PolicyStatement({
+      sid: 'CheckoutCacheClaims', actions: ['dynamodb:GetItem'], resources: [props.engineeringTable.tableArn],
+      conditions: {
+        'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#CACHE#*'] },
+        'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'expires_at'] },
+        StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+      },
+    }));
+    grantCacheReadyReads(role, props.rawDataBucket);
+    return writer;
   }
 
   /** Read only, the agents' checkpoints in the workspace bucket: a continuation restores from the latest one. */
@@ -240,6 +280,7 @@ class EngineeringRuntime extends Construct {
       ENGINEERING_SETTINGS_TABLE: props.agentsTable.tableName,
       ENGINEERING_BUS_NAME: props.peers.bus.eventBusName,
       ENGINEERING_BOARD_URL: props.peers.boardUrl,
+      ENGINEERING_BROKER_URL: props.peers.brokerUrl,
       RAW_DATA_BUCKET: props.rawDataBucket.bucketName,
       ENGINEERING_WORKSPACE_BUCKET: props.workspaceBucket.bucketName,
       SUPERVISOR_RULE_NAME: ruleName,
@@ -376,11 +417,15 @@ class EngineeringRuntime extends Construct {
     // through the board's inbox op (its run's only).
     // The board's and the broker's function URLs (IAM-authenticated, no resource policy): the URL call, and the
     // invoke behind it only through a function URL.
+    // One statement each, on its one function: the harness calls the broker's URL as the agent's own session
+    // (harness/broker_client.py), and the broker refuses any operation the caller's role may not make.
     const urls = [peers.board.functionArn, peers.broker.functionArn];
-    role.addToPolicy(new iam.PolicyStatement({
-      sid: 'BoardAndBrokerUrls', actions: ['lambda:InvokeFunctionUrl'], resources: urls,
-      conditions: { StringEquals: { 'lambda:FunctionUrlAuthType': 'AWS_IAM' } },
-    }));
+    for (const [sid, fn] of [['BoardUrl', peers.board], ['BrokerUrl', peers.broker]] as const) {
+      role.addToPolicy(new iam.PolicyStatement({
+        sid, actions: ['lambda:InvokeFunctionUrl'], resources: [fn.functionArn],
+        conditions: { StringEquals: { 'lambda:FunctionUrlAuthType': 'AWS_IAM' } },
+      }));
+    }
     role.addToPolicy(new iam.PolicyStatement({
       sid: 'BoardAndBrokerThroughUrls', actions: ['lambda:InvokeFunction'], resources: urls,
       conditions: { Bool: { 'lambda:InvokedViaFunctionUrl': 'true' } },
@@ -540,6 +585,22 @@ class EngineeringRuntime extends Construct {
       alarmDescription: 'The engineering supervisor failed 3 times in 5 minutes: agents may not be watched.',
     });
   }
+}
+
+/**
+ * `s3:GetObject` on the checkout cache's READY markers only (`engineering/cache/*\/*\/*\/READY`, their manifests): a launch
+ * and a continuation take the generation they find (lambda/engineering/runtime/checkout_cache.py). No entry's files,
+ * no list (a missing marker answers 403, read as missing).
+ */
+function grantCacheReadyReads(role: iam.Role, rawDataBucket: s3.IBucket): void {
+  const ready = rawDataBucket.arnForObjects(CACHE_READY_KEYS);
+  role.addToPrincipalPolicy(new iam.PolicyStatement({ sid: 'CheckoutCacheReady', actions: ['s3:GetObject'], resources: [ready] }));
+  acknowledgeNag(role, [{
+    id: 'AwsSolutions-IAM5',
+    reason: 'Read-only on the checkout cache\'s READY markers (one per connection, commit and generation, known only at '
+      + 'run time): a launch or a continuation takes the generation it finds; no entry\'s files, no list',
+    findings: [resourceFinding(ready)],
+  }]);
 }
 
 /**

@@ -8,11 +8,12 @@ moved, another tree); 422 a refusal by the write rules or of the submitted patch
 repository connection, the run's records or the way of working unreadable for now, or the host rate limiting (with
 ``Retry-After``). Every refusal carries ``{"error": <plain reason>}``.
 
-The broker's connector: the GitHub client (``github.GitHubHost``) over the connections' SSM credentials, once the
-stack names their prefix; with the engineering table, the workspace bucket and the aggregates table named too, the
+The broker's connector: the GitHub and GitLab clients (``github.GitHubHost``, ``gitlab.GitLabHost``, each connection on
+its own host's: ``router.HostRouter``) over the connections' SSM credentials, once the stack names their prefix; with the engineering table, the workspace bucket and the aggregates table named too, the
 run's record and the board's GO ledger (``records.RunRecords``), the submitted patch's reader
-(``patches.WorkspacePatches``) and the dial (``dial.WaysOfWorking``). Without them, ``hosts.UNCONNECTED`` stands in
-and every permitted operation answers 503.
+(``patches.WorkspacePatches``) and the dial (``dial.WaysOfWorking``), and, with voc-agents named
+(``ENGINEERING_CONNECTIONS_TABLE``), the connections' CI attestations (``records.RunRecords.attested``; without it no
+run is attested, so every push and pull request is refused). Without them, ``hosts.UNCONNECTED`` stands in and every permitted operation answers 503.
 
 Nothing from the body is logged or echoed (it may hold a bundle, a comment, or a token pasted by mistake): the log
 line has the operation, the caller's role, run and agent index, and the status.
@@ -23,26 +24,23 @@ import base64
 import binascii
 import json
 import os
+import time
 from collections.abc import Callable, Mapping
 from functools import lru_cache
 from typing import Any, Final
 
-from engineering.connectors.broker import (
-    OPEN_OR_UPDATE_DRAFT_PR,
-    POST_COMMENT,
-    PUSH_BUNDLE,
-    READ,
-    Broker,
-    NotNow,
-    NotPermitted,
-)
-from engineering.connectors.credentials import PARAMETER_PREFIX_ENV, ParameterStoreCredentials
+from engineering.connectors.broker import Broker, NotNow, NotPermitted
+from engineering.connectors.connections import PARAMETER_PREFIX_ENV
+from engineering.connectors.credentials import ParameterStoreCredentials
 from engineering.connectors.dial import WaysOfWorking
 from engineering.connectors.github import GitHubHost
+from engineering.connectors.gitlab import GitLabHost
 from engineering.connectors.hosts import (
     NO_CONNECTION,
     OBJECT_ID,
     UNCONNECTED,
+    WRITE_READY_BY,
+    WRITE_RESERVE_SECONDS,
     CommentTarget,
     Conflict,
     Connector,
@@ -53,11 +51,23 @@ from engineering.connectors.hosts import (
     NotFound,
     ReadKind,
     Unavailable,
+    remaining_until,
 )
-from engineering.connectors.identity import Caller, UnknownCaller, caller_from_event, own_account
+from engineering.connectors.identity import (
+    OPEN_OR_UPDATE_DRAFT_PR,
+    POST_COMMENT,
+    PUSH_BUNDLE,
+    READ,
+    Caller,
+    UnknownCaller,
+    caller_from_event,
+    own_account,
+)
 from engineering.connectors.patches import WorkspacePatches
-from engineering.connectors.records import RunRecords
+from engineering.connectors.records import RunRecords, WriteClaims
+from engineering.connectors.router import HostRouter
 from engineering.connectors.write_policy import WriteRefused
+from engineering.runtime.interface import MAX_ATTEMPT
 from engineering.workspace.store import WorkspaceStore
 from shared.invocation_cost import instrumented_handler
 from shared.logging import logger
@@ -75,6 +85,10 @@ _COMMENT_TARGETS: Final[Mapping[str, CommentTarget]] = {'issue': 'issue', 'pull_
 TABLE_ENV: Final = 'ENGINEERING_TABLE'
 BUCKET_ENV: Final = 'ENGINEERING_WORKSPACE_BUCKET'
 AGGREGATES_ENV: Final = 'AGGREGATES_TABLE'
+#: voc-agents, where the connections' CI attestations are (records.py ``attested``; unnamed: never attested). The
+#: broker's own name for it: the Agents API's ``AGENTS_TABLE`` (shared/agents_store.py) is the table the broker reads of
+#: only the attestations' partitions.
+CONNECTIONS_TABLE_ENV: Final = 'ENGINEERING_CONNECTIONS_TABLE'
 
 
 class BadRequest(Exception):
@@ -138,6 +152,19 @@ def _choice[T](args: Mapping[str, object], key: str, choices: Mapping[str, T]) -
     return choices[value]
 
 
+#: A write's optional ``attempt`` (the caller's task attempt, 1 by default): with the caller's run and agent and the
+#: operation, the key a write is made once for (broker.py ``_once``). Its bound is the runtime's own (a task's attempts,
+#: ``runtime/interface.py`` ``MAX_ATTEMPT``), so every attempt an agent can work at can write.
+_ATTEMPT: Final = frozenset({'attempt'})
+
+
+def _attempt(args: Mapping[str, object]) -> int:
+    attempt = args.get('attempt', 1)
+    if isinstance(attempt, bool) or not isinstance(attempt, int) or not 0 < attempt <= MAX_ATTEMPT:
+        raise BadRequest(f'attempt is a whole number from 1 to {MAX_ATTEMPT}.')
+    return attempt
+
+
 def _read(broker: Broker, caller: Caller, args: Mapping[str, object]) -> dict[str, object]:
     _keys(args, {'kind', 'target'}, frozenset({'cursor'}))
     cursor = _text(args, 'cursor', MAX_NAME) if 'cursor' in args else None
@@ -146,30 +173,32 @@ def _read(broker: Broker, caller: Caller, args: Mapping[str, object]) -> dict[st
 
 
 def _post_comment(broker: Broker, caller: Caller, args: Mapping[str, object]) -> dict[str, object]:
-    _keys(args, {'on', 'number', 'body'})
+    _keys(args, {'on', 'number', 'body'}, _ATTEMPT)
     number = args['number']
     if isinstance(number, bool) or not isinstance(number, int) or number < 1:
         raise BadRequest('number is a positive integer.')
-    url = broker.post_comment(caller, _choice(args, 'on', _COMMENT_TARGETS), number, _text(args, 'body', MAX_TEXT))
+    url = broker.post_comment(caller, _choice(args, 'on', _COMMENT_TARGETS), number, _text(args, 'body', MAX_TEXT),
+                              _attempt(args))
     return {'url': url}
 
 
 def _push_bundle(broker: Broker, caller: Caller, args: Mapping[str, object]) -> dict[str, object]:
-    """``{branch, patch, tree_hash, message}``: the caller's submitted patch (its workspace key) as one commit."""
-    _keys(args, {'branch', 'patch', 'tree_hash', 'message'})
+    """``{branch, patch, tree_hash, message, attempt?}``: the caller's submitted patch (its workspace key) as one
+    commit."""
+    _keys(args, {'branch', 'patch', 'tree_hash', 'message'}, _ATTEMPT)
     tree_hash = _text(args, 'tree_hash', MAX_NAME)
     if not OBJECT_ID.fullmatch(tree_hash):
         raise BadRequest('tree_hash is a full git tree id (the one the board\'s GO names).')
     branch = _text(args, 'branch', MAX_NAME)
     pushed = broker.push_bundle(caller, branch, _text(args, 'patch', MAX_NAME), tree_hash,
-                                _text(args, 'message', MAX_TEXT))
+                                _text(args, 'message', MAX_TEXT), _attempt(args))
     return {'branch': branch, 'tree_hash': pushed}
 
 
 def _open_or_update_draft_pr(broker: Broker, caller: Caller, args: Mapping[str, object]) -> dict[str, object]:
-    _keys(args, {'branch', 'title', 'body'})
+    _keys(args, {'branch', 'title', 'body'}, _ATTEMPT)
     ref = broker.open_or_update_draft_pr(caller, _text(args, 'branch', MAX_NAME), _text(args, 'title', MAX_NAME),
-                                         _text(args, 'body', MAX_TEXT))
+                                         _text(args, 'body', MAX_TEXT), _attempt(args))
     return {'number': ref.number, 'url': ref.url}
 
 
@@ -219,30 +248,46 @@ def handle(event: Mapping[str, object], role_name_pattern: str, account: str, br
     return response
 
 
+def host_router(parameter_prefix: str) -> HostRouter:
+    """Both host clients over the connections' SSM credentials under ``parameter_prefix``, each connection served by
+    its own host's (the broker's, and the checkout cache's writer's)."""
+    store = ParameterStoreCredentials(parameter_prefix)
+    return HostRouter(store.stored, GitHubHost(store.get), GitLabHost(store.gitlab))
+
+
 @lru_cache(maxsize=1)
-def broker_for(parameter_prefix: str, table: str = '', bucket: str = '', aggregates: str = '') -> Broker:
+def broker_for(parameter_prefix: str, table: str = '', bucket: str = '', aggregates: str = '',
+               agents: str = '') -> Broker:
     """The container's broker (one, so its credentials and tokens stay warm): the GitHub client over the
     connections under ``parameter_prefix``, and the run's records, the patches and the dial in ``table``, ``bucket``
-    and ``aggregates`` (``UNCONNECTED`` while any is unnamed); no connector without a prefix."""
+    and ``aggregates`` (``UNCONNECTED`` while any is unnamed), the CI attestations in ``agents`` (none attested while
+    it is unnamed); no connector without a prefix."""
     if not parameter_prefix:
         return Broker(None)
-    host = GitHubHost(ParameterStoreCredentials(parameter_prefix).get)
+    host = host_router(parameter_prefix)
     if not (table and bucket and aggregates):
         return Broker(Connector(host=host, bundles=UNCONNECTED, runs=UNCONNECTED, ledger=UNCONNECTED,
-                                dial=UNCONNECTED))
+                                dial=UNCONNECTED, writes=UNCONNECTED))
     from shared.aws import get_dynamodb_client, get_dynamodb_resource, get_s3_client
 
     # No ListBucket on the broker's role: an object never written answers 403, read as missing (and counted).
     workspace = WorkspaceStore(get_s3_client(), bucket, denied_is_missing=True)
-    records = RunRecords(get_dynamodb_client(), table, workspace, host.default_branch)
+    records = RunRecords(get_dynamodb_client(), table, workspace, agents)
     return Broker(Connector(host=host, bundles=WorkspacePatches(workspace, host.file_at), runs=records,
-                            ledger=records, dial=WaysOfWorking(get_dynamodb_resource().Table(aggregates))))
+                            ledger=records, dial=WaysOfWorking(get_dynamodb_resource().Table(aggregates)),
+                            writes=WriteClaims(get_dynamodb_client(), table)))
 
 
 @instrumented_handler   # (its metrics flush: the workspace store's count of denied reads taken as missing)
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     account = own_account(getattr(context, 'invoked_function_arn', None))
     environ = os.environ
-    return handle(event, environ.get(ROLE_NAME_PATTERN_ENV, ''), account,
-                  broker_for(environ.get(PARAMETER_PREFIX_ENV, ''), environ.get(TABLE_ENV, ''),
-                             environ.get(BUCKET_ENV, ''), environ.get(AGGREGATES_ENV, '')))
+    # (the reads before a write end by Lambda's remaining time less what the write and its read-back need)
+    ready = WRITE_READY_BY.set(remaining_until(context, time.time(), WRITE_RESERVE_SECONDS))
+    try:
+        return handle(event, environ.get(ROLE_NAME_PATTERN_ENV, ''), account,
+                      broker_for(environ.get(PARAMETER_PREFIX_ENV, ''), environ.get(TABLE_ENV, ''),
+                                 environ.get(BUCKET_ENV, ''), environ.get(AGGREGATES_ENV, ''),
+                                 environ.get(CONNECTIONS_TABLE_ENV, '')))
+    finally:
+        WRITE_READY_BY.reset(ready)

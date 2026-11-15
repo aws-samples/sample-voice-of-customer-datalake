@@ -52,7 +52,10 @@ skill every connection's agents fall back to) and the agent role::
   version the store holds, so a role's first is a person's: this seed, or one they write.
 - **Read**: ``current`` is the connection's own current version, else the shared skill's, else None (the role runs
   on its shipped skill, which the harness still reads from the image, not from this store); ``versions`` pages through a scope's history. A connection's versions are
-  read only as the connection is (the routes check that access; this store does not).
+  read only as the connection is (the routes check that access; this store does not). The administrators' reads
+  (7.07.00, engineering/skills/views.py): ``head`` (the scope's counter and current version), ``lines`` (the history
+  newest first, each row read without its record and diff), ``detail`` (one row: the version and its line) and
+  ``events`` (a page's log rows, the ``READABLE_EVENTS`` only: never a promoted version's source).
 
 Each change returns an ``Announcement``: the bus event (``skill.proposed``, ``skill.accepted``,
 ``skill.rolled_back``) the caller publishes, with the summary line made from the diff.
@@ -89,6 +92,7 @@ from engineering.skills.model import (
     normalised,
 )
 from engineering.workspace.layout import CONNECTION
+from shared.dynamo_paging import query_all
 from shared.ids import is_key_collision
 from shared.model_config import ALLOWED_MODEL_IDS
 
@@ -97,6 +101,8 @@ PROPOSED, ACCEPTED, REJECTED = 'proposed', 'accepted', 'rejected'
 ROLLED_BACK, PROMOTED_FROM, BENCHMARKED = 'rolled_back', 'promoted_from', 'benchmarked'
 SHARED: Final = ''
 HEAD: Final = 'HEAD'
+#: How a refusal starts when what the person saw moved before the write (a screen reads it again on this alone).
+CHANGED: Final = 'it changed since you opened it'
 #: The bus types a change is announced as, by what happened.
 ANNOUNCED: Final[Mapping[Event, str]] = {'proposed': 'skill.proposed', 'accepted': 'skill.accepted',
                                          'rolled_back': 'skill.rolled_back'}
@@ -107,6 +113,8 @@ MIN_COPIED_TEXT: Final = 20
 MAX_ITEM_BYTES: Final = 256 * 1024
 #: Versions a page of ``versions`` holds at most.
 MAX_PAGE: Final = 100
+#: The highest version number a key holds (``VER#<version:06d>``, sorted as text).
+MAX_VERSION: Final = 999_999
 
 
 class SkillNotFound(SkillError):
@@ -265,6 +273,91 @@ class SkillVersion:
                    made_with=_made_with(item.get('made_with_model'), item.get('made_with_prompt')))
 
 
+#: What a history line reads of a version row: everything but its record and its diff (most of a row's up to
+#: ``MAX_ITEM_BYTES``), so a page of lines stays small.
+LINE_ATTRIBUTES: Final = (
+    'version', 'status', 'summary', 'reason_run', 'reason_failure', 'reason_comment', 'proposed_by',
+    'proposed_by_kind', 'created_at', 'accepted_by', 'accepted_at', 'rejected_by', 'rejected_at', 'restores',
+    'base_connection', 'base_version', 'benchmark_before', 'benchmark_after', 'benchmark_run', 'expected_case')
+#: The log events a reader is answered. ``promoted_from`` is never one: it names another connection, and only
+#: ``promotion_source`` reads it.
+READABLE_EVENTS: Final = (ACCEPTED, REJECTED, ROLLED_BACK, BENCHMARKED)
+
+
+@dataclass(frozen=True)
+class VersionLine:
+    """A version as its scope's history shows it, read without its record and its diff: its status, the summary
+    line, why (the run, the failure, a comment), who proposed it and when, who accepted or rejected it and when, the
+    version a rollback restored, its base, the proposer's claimed pass rates and the recorded (measured) benchmark."""
+
+    version: int
+    status: str
+    summary: str
+    reason_run: str
+    reason_failure: str
+    reason_comment: str
+    proposed_by: str
+    proposed_by_kind: str
+    created_at: str
+    accepted_by: str
+    accepted_at: str
+    rejected_by: str
+    rejected_at: str
+    restores: int
+    base: SkillRef | None
+    #: The proposer's pass rates: only their claim.
+    claimed: Benchmark
+    #: The benchmark an administrator recorded on it: the rates readers trust.
+    measured: RecordedBenchmark | None
+    expected_case: str
+
+    @classmethod
+    def from_item(cls, item: Mapping[str, Any]) -> VersionLine:
+        try:
+            measured = _recorded(item.get('benchmark_run'))
+        except ValueError as exc:   # json.JSONDecodeError and SkillError are ValueErrors
+            raise SkillError(f'a stored version is not readable: {exc}') from exc
+        return cls(version=_number(item.get('version')), status=_text(item.get('status')),
+                   summary=_text(item.get('summary')), reason_run=_text(item.get('reason_run')),
+                   reason_failure=_text(item.get('reason_failure')), reason_comment=_text(item.get('reason_comment')),
+                   proposed_by=_text(item.get('proposed_by')), proposed_by_kind=_text(item.get('proposed_by_kind')),
+                   created_at=_text(item.get('created_at')), accepted_by=_text(item.get('accepted_by')),
+                   accepted_at=_text(item.get('accepted_at')), rejected_by=_text(item.get('rejected_by')),
+                   rejected_at=_text(item.get('rejected_at')), restores=_number(item.get('restores')),
+                   base=_ref(item.get('base_connection'), item.get('base_version')),
+                   claimed=Benchmark(_rate(item.get('benchmark_before')), _rate(item.get('benchmark_after'))),
+                   measured=measured, expected_case=_text(item.get('expected_case')))
+
+
+@dataclass(frozen=True)
+class LinePage:
+    """A page of a scope's history, newest first; ``next_before`` is the ``before`` of the next page (None: the last
+    page)."""
+
+    lines: Sequence[VersionLine]
+    next_before: int | None
+
+
+@dataclass(frozen=True)
+class LogEvent:
+    """A version's log row as a reader sees it: what happened, who, when, and the comment given with it."""
+
+    version: int
+    event: str
+    by: str
+    at: str
+    comment: str
+
+
+@dataclass(frozen=True)
+class ScopeHead:
+    """A scope's ``HEAD`` row: its current version (0: none accepted yet) and how many version numbers it has handed
+    out (a proposal refused after its number was taken leaves a gap)."""
+
+    current_version: int
+    versions: int
+
+
 @dataclass(frozen=True)
 class VersionPage:
     """A page of a scope's versions, oldest first; ``next_after`` is the ``after`` of the next page (None: the
@@ -329,7 +422,10 @@ def _unmeasured(found: SkillVersion) -> str:
     """Why a coach's version is not acceptable yet, from its recorded benchmark."""
     if found.benchmark_run is None:
         return 'has no recorded benchmark'
-    return 'names no failure case' if found.benchmark_run.run.passed else 'failed its benchmark'
+    run = found.benchmark_run.run
+    if not run.passed:
+        return 'failed its benchmark'
+    return 'gained nothing: its pass rate did not rise' if run.failure_case else 'names no failure case'
 
 
 def _expected_case(case: str) -> str:
@@ -414,6 +510,58 @@ class SkillStore:
         page = [SkillVersion.from_item(item) for item in answer.get('Items', [])]
         more = bool(page) and 'LastEvaluatedKey' in answer
         return VersionPage(page, page[-1].version if more else None)
+
+    def detail(self, ws: str, connection: str, role: str, version: int) -> tuple[SkillVersion, VersionLine]:
+        """One version row, read once: the whole version, and its line as the history shows it."""
+        item = _found(get_row(self.client, self.table, self._key(ws, connection, role, f'VER#{version:06d}')))
+        return SkillVersion.from_item(item), VersionLine.from_item(item)
+
+    def head(self, ws: str, connection: str, role: str) -> ScopeHead | None:
+        """The scope's ``HEAD`` row, one GetItem (None: nobody has proposed a version in this scope)."""
+        found = get_row(self.client, self.table, self._key(ws, connection, role, HEAD))
+        if found is None:
+            return None
+        return ScopeHead(_number(found.get('current_version')), _number(found.get('versions')))
+
+    def lines(self, ws: str, connection: str, role: str, *, before: int = 0, limit: int = 20) -> LinePage:
+        """The scope's versions below version ``before`` (0: from the newest), newest first, at most ``limit`` (1 to
+        ``MAX_PAGE``): one Query of the scope's partition, each row read without its record and its diff."""
+        if isinstance(limit, bool) or not 0 < limit <= MAX_PAGE or not 0 <= before <= MAX_VERSION:
+            raise SkillError(f'a page holds 1-{MAX_PAGE} versions, below a version number')
+        if before == 1:
+            return LinePage((), None)
+        names = {f'#a{index}': name for index, name in enumerate(LINE_ATTRIBUTES)}
+        answer = self.client.query(
+            TableName=self.table, ConsistentRead=True, Limit=limit, ScanIndexForward=False,
+            KeyConditionExpression='pk = :pk AND sk BETWEEN :first AND :last',
+            ProjectionExpression=', '.join(names), ExpressionAttributeNames=names,
+            ExpressionAttributeValues={':pk': {'S': _pk(ws, connection, role)}, ':first': {'S': 'VER#000001'},
+                                       ':last': {'S': f'VER#{before - 1:06d}' if before else f'VER#{MAX_VERSION}'}})
+        page = [VersionLine.from_item(item) for item in answer.get('Items', [])]
+        more = bool(page) and 'LastEvaluatedKey' in answer and page[-1].version > 1
+        return LinePage(page, page[-1].version if more else None)
+
+    def events(self, ws: str, connection: str, role: str, low: int, high: int) -> list[LogEvent]:
+        """The log rows of versions ``low`` to ``high`` (at most ``MAX_PAGE`` versions), oldest first: the
+        ``READABLE_EVENTS`` only: filtered by DynamoDB before it answers, so a promoted version's source does not
+        reach this code, and dropped here again should any other row come back. One Query of the scope's partition (a page of versions' log rows fits one DynamoDB page;
+        a short one is followed), at most ``len(READABLE_EVENTS)`` rows a version."""
+        if not 0 < low <= high <= MAX_VERSION or high - low >= MAX_PAGE:
+            raise SkillError(f'the events of 1-{MAX_PAGE} versions are read at once')
+        request: dict[str, Any] = {
+            'TableName': self.table, 'ConsistentRead': True,
+            'KeyConditionExpression': 'pk = :pk AND sk BETWEEN :first AND :last',
+            'FilterExpression': '#e IN (' + ', '.join(f':e{index}' for index in range(len(READABLE_EVENTS))) + ')',
+            'ProjectionExpression': '#v, #e, #b, #t, #c',
+            'ExpressionAttributeNames': {'#v': 'version', '#e': 'event', '#b': 'by', '#t': 'at', '#c': 'comment'},
+            'ExpressionAttributeValues': {
+                ':pk': {'S': _pk(ws, connection, role)}, ':first': {'S': f'LOG#{low:06d}#'},
+                ':last': {'S': f'LOG#{high:06d}#~'},
+                **{f':e{index}': {'S': event} for index, event in enumerate(READABLE_EVENTS)}}}
+        rows = query_all(self.client, request, max_items=len(READABLE_EVENTS) * (high - low + 1))
+        return [LogEvent(_number(item.get('version')), _text(item.get('event')), _text(item.get('by')),
+                         _text(item.get('at')), _text(item.get('comment')))
+                for item in rows if _text(item.get('event')) in READABLE_EVENTS]
 
     def current(self, ws: str, connection: str, role: str) -> SkillVersion | None:
         """The skill the role's agents run for ``connection`` (``''``: the shared one), None when there is none."""
@@ -608,20 +756,29 @@ class SkillStore:
         transact_or_refuse(self.client, items, SkillConflict(conflict))
 
     def _log(self, ws: str, connection: str, role: str, version: int, event: str, by: Actor, at: str,
-             comment: str = '') -> dict[str, Any]:
+             comment: str = '', announcement: Announcement | None = None) -> dict[str, Any]:
+        """The create-only log row of ``event``; ``announcement``, the change's bus event, is kept on it (its id, type
+        and line: the record of the announcement until the Agents API publishes on the bus, which is planned)."""
         item = {**self._key(ws, connection, role, f'LOG#{version:06d}#{event}'), 'by': {'S': by.id},
                 'at': {'S': at}, 'version': {'N': str(version)}, 'event': {'S': event}}
         if comment:
             item['comment'] = {'S': comment}
+        if announcement is not None:
+            item.update({'announcement_id': {'S': announcement.id}, 'announcement_type': {'S': announcement.type},
+                         'announcement_summary': {'S': announcement.summary}})
         return _put(item, self.table)
 
     def record_benchmark(self, ws: str, connection: str, role: str, version: int, run: BenchmarkRun,
-                         by: Actor) -> SkillVersion:
+                         by: Actor, comment: str = '') -> SkillVersion:
         """Record ``run``, a proposed version's benchmark gate, on its row: once (create-only), with the
-        administrator who ran it and when. ``benchmark_gate`` beside it is what acceptance's condition reads: the
-        gate passed with a gain on a named failure's case (``BenchmarkRun.gained``). For the coach's version, the
-        failure's case ``run`` names must be the version's ``expected_case``."""
+        administrator who ran it and when (and ``comment``, their reason, on its log row). ``benchmark_gate`` beside
+        it is what acceptance's condition reads: the gate passed with a gain on a named failure's case
+        (``BenchmarkRun.gained``). For the coach's version, the failure's case ``run`` names must be the version's
+        ``expected_case``."""
         _admin(by, 'records the benchmark of')
+        run.check_recordable()   # (a new record's own rule; a stored one is read as it was written)
+        if comment:
+            Reason(comment=comment)
         key = self._key(ws, connection, role, f'VER#{version:06d}')
         item = _found(get_row(self.client, self.table, key))
         found = SkillVersion.from_item(item)
@@ -652,14 +809,18 @@ class SkillStore:
                 update['ExpressionAttributeValues'][':case'] = {'S': found.expected_case}
         self._transact([
             {'Update': update},
-            self._log(ws, connection, role, version, BENCHMARKED, by, at),
-        ], f"version {version}'s benchmark was recorded, or the version changed, meanwhile: read it again")
+            self._log(ws, connection, role, version, BENCHMARKED, by, at, comment),
+        ], f"{CHANGED}: version {version}'s benchmark was recorded, or the version changed, meanwhile; read it again")
         return self.version(ws, connection, role, version)
 
-    def accept_version(self, ws: str, connection: str, role: str, version: int, by: Actor) -> Change:
-        """An administrator accepts a proposed version: it becomes the scope's current one. A coach's version is
-        accepted only once its recorded benchmark passed with a gain on the failure's case."""
+    def accept_version(self, ws: str, connection: str, role: str, version: int, by: Actor,
+                       comment: str = '') -> Change:
+        """An administrator accepts a proposed version: it becomes the scope's current one (``comment``, their
+        reason, on its log row with the ``skill.accepted`` announcement). A coach's version is accepted only once its
+        recorded benchmark passed with a gain on the failure's case."""
         _admin(by, 'accepts')
+        if comment:
+            Reason(comment=comment)
         found = self.version(ws, connection, role, version)
         if found.status == ACCEPTED:
             return Change(found, None)
@@ -695,10 +856,12 @@ class SkillStore:
         if coach:
             accept['ConditionExpression'] += ' AND benchmark_gate = :gained'
             accept['ExpressionAttributeValues'][':gained'] = {'BOOL': True}
+        # (the announcement is the same before the write as after: its id and line come from the version alone)
+        announcement = self._announce(ws, 'accepted', found, base)
         items: list[dict[str, Any]] = [
             {'Update': accept},
             {'Update': head},
-            self._log(ws, connection, role, version, ACCEPTED, by, at),
+            self._log(ws, connection, role, version, ACCEPTED, by, at, comment, announcement),
         ]
         if connection and not own:
             # Written on the shared skill (or on nothing): the shared skill must not have moved either.
@@ -709,9 +872,8 @@ class SkillStore:
             else:
                 check['ConditionExpression'] = 'attribute_not_exists(current_version)'
             items.append({'ConditionCheck': check})
-        self._transact(items, 'the version or the current one changed meanwhile: read them again')
-        row = self.version(ws, connection, role, version)
-        return Change(row, self._announce(ws, 'accepted', row, base))
+        self._transact(items, f'{CHANGED}: the version or the current one changed meanwhile; read them again')
+        return Change(self.version(ws, connection, role, version), announcement)
 
     def reject_version(self, ws: str, connection: str, role: str, version: int, by: Actor,
                        comment: str = '') -> SkillVersion:
@@ -732,18 +894,23 @@ class SkillStore:
                         'ExpressionAttributeValues': {':rejected': {'S': REJECTED}, ':proposed': {'S': PROPOSED},
                                                       ':by': {'S': by.id}, ':at': {'S': at}}}},
             self._log(ws, connection, role, version, REJECTED, by, at, comment),
-        ], 'the version changed meanwhile: read it again')
+        ], f'{CHANGED}: the version changed meanwhile; read it again')
         return self.version(ws, connection, role, version)
 
     def roll_back_to(self, ws: str, connection: str, role: str, to_version: int, by: Actor,
-                     comment: str = '') -> Change:
+                     comment: str = '', expected_current: int | None = None) -> Change:
         """An administrator's one click: a new version of the same scope restoring ``to_version`` (an earlier
-        accepted one), current at once and logged as ``rolled_back``; every version before it stays."""
+        accepted one), current at once and logged as ``rolled_back``; every version before it stays.
+        ``expected_current``: the scope's current version the person saw (refused, ``CHANGED``, when it is not the
+        one read here; the transaction's condition then holds that same one)."""
         _admin(by, 'rolls back')
         target = self.version(ws, connection, role, to_version)
         if target.status != ACCEPTED:
             raise SkillConflict(f'version {to_version} was never accepted: only an accepted version is restored')
         current = self._current(ws, connection, role)
+        if expected_current is not None and current != expected_current:
+            shown, now = (f'v{n}' if n else 'none' for n in (expected_current, current))
+            raise SkillConflict(f'{CHANGED}: the current version was {shown} and is {now} now; read it again')
         if current == to_version:
             raise SkillConflict(f'version {to_version} is current already')
         if not current:
@@ -759,12 +926,13 @@ class SkillStore:
         item = self._item(ws, connection, skill, status=ACCEPTED, base=base, reason=reason,
                           benchmark=Benchmark(), change=change, line=line, by=by, restores=to_version)
         item.update({'accepted_by': {'S': by.id}, 'accepted_at': {'S': at}})
+        row = SkillVersion.from_item(item)
+        announcement = self._announce(ws, 'rolled_back', row, base)
         self._transact([
             _put(item, self.table),
             {'Update': {'TableName': self.table, 'Key': self._key(ws, connection, role, HEAD),
                         'UpdateExpression': 'SET current_version = :v', 'ConditionExpression': 'current_version = :cur',
                         'ExpressionAttributeValues': {':v': {'N': str(version)}, ':cur': {'N': str(current)}}}},
-            self._log(ws, connection, role, version, ROLLED_BACK, by, at, reason.comment),
-        ], 'the current version changed meanwhile: read it again')
-        row = SkillVersion.from_item(item)
-        return Change(row, self._announce(ws, 'rolled_back', row, base))
+            self._log(ws, connection, role, version, ROLLED_BACK, by, at, reason.comment, announcement),
+        ], f'{CHANGED}: the current version changed meanwhile; read it again')
+        return Change(row, announcement)

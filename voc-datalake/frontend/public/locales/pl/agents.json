@@ -21,7 +21,9 @@
     "label": "Sekcje strony agentów",
     "agents": "Agenci",
     "workflows": "Przepływy pracy",
-    "spend": "Wydatki"
+    "spend": "Wydatki",
+    "connections": "Połączenia",
+    "skills": "Umiejętności"
   },
   "list": {
     "title": "Agenci autonomiczni",
@@ -494,19 +496,22 @@
       "connection": "Połączenie z repozytorium",
       "commit": "Commit",
       "language": "Język",
-      "goal": "Cel"
+      "goal": "Cel",
+      "issue": "Zgłoszenie (opcjonalnie)"
     },
     "hints": {
       "connection": "Identyfikator połączenia: litery, cyfry i łączniki, najwyżej 63.",
       "commit": "Pełny identyfikator commita, od którego zaczyna się przebieg: 40 znaków szesnastkowych.",
       "language": "Narzędzia repozytorium: agenci pracują w odizolowanym obrazie tego języka.",
-      "goal": "Do czego służy przebieg, w jednym wierszu, najwyżej 500 znaków."
+      "goal": "Do czego służy przebieg, w jednym wierszu, najwyżej 500 znaków.",
+      "issue": "Numer zgłoszenia w repozytorium, od którego wychodzi przebieg. Zapisywany tak, jak go podano."
     },
     "invalid": {
       "connection": "Wpisz identyfikator połączenia: od 1 do 63 liter, cyfr lub łączników.",
       "commit": "Wpisz pełny identyfikator commita: 40 znaków, od 0 do 9 i od a do f.",
       "goalEmpty": "Napisz, do czego służy przebieg.",
-      "goalLong": "Cel może mieć najwyżej {{max, number}} znaków."
+      "goalLong": "Cel może mieć najwyżej {{max, number}} znaków.",
+      "issue": "Wpisz numer zgłoszenia, liczbę całkowitą od 1, albo zostaw pole puste."
     },
     "languages": {
       "java": "Java",
@@ -781,6 +786,365 @@
     "truncated": "Ten miesiąc ma więcej wierszy, niż obejmuje jeden odczyt: pokazane liczby to dolna granica.",
     "empty": "Brak wydatków – {{month}}."
   },
+  "connections": {
+    "title": "Połączenia z repozytoriami",
+    "intro": "Agenci inżynieryjni docierają do repozytorium przez połączenie: repozytorium, jego domyślną gałąź i zapisane dla nich poświadczenie. Zapisane poświadczenie nie jest już nigdy nikomu pokazywane.",
+    "add": "Dodaj połączenie",
+    "limitReached": "To wdrożenie mieści najwyżej {{limit, number}} połączeń. Usuń jedno, aby dodać kolejne.",
+    "loadFailed": "Nie udało się wczytać połączeń z repozytoriami.",
+    "emptyTitle": "Nie ma jeszcze połączeń z repozytoriami",
+    "emptyHint": "Dodaj połączenie, aby agenci inżynieryjni mogli pracować w repozytorium.",
+    "branch": "Domyślna gałąź: {{branch}}",
+    "kind": "GitHub App",
+    "kindToken": "Token dostępu do projektu GitLab",
+    "hostLabel": "Host repozytorium",
+    "hosts": {
+      "github": "GitHub",
+      "gitlab": "GitLab"
+    },
+    "expiry": {
+      "on": "Token wygasa {{date}}.",
+      "soonBadge": "Token wkrótce wygaśnie",
+      "soon": "Wygasa {{date}}, w ciągu najwyżej {{days, number}} dni: utwórz nowy token i zapisz go w tym połączeniu.",
+      "expiredBadge": "Token wygasł",
+      "expired": "Wygasł {{date}}: agenci nie mają dostępu do projektu, dopóki nie zapiszesz nowego tokenu w tym połączeniu.",
+      "unknown": "Data wygaśnięcia tokenu jest nieznana: zapisz połączenie ponownie z jego tokenem."
+    },
+    "gitlab": {
+      "keepHint": "Zapisany token nigdy nie jest pokazywany. Zostaw pole tokenu puste, aby go zachować; nowy host lub projekt wymaga ponownie tokenu.",
+      "fields": {
+        "project": "Ścieżka projektu",
+        "token": "Token dostępu do projektu"
+      },
+      "hints": {
+        "project": "Ścieżka projektu taka jak w jego adresie: grupa/projekt lub grupa/podgrupa/projekt.",
+        "token": "Token dostępu do projektu (glpat-…), pokazywany raz przy tworzeniu. Jest sprawdzany w GitLab, wysyłany raz i nigdy więcej nie jest pokazywany."
+      },
+      "invalid": {
+        "repository": "Wpisz ścieżkę projektu taką jak w jego adresie: grupa/projekt lub grupa/podgrupa/projekt.",
+        "tokenEmpty": "Wklej token dostępu do projektu: nowe połączenie potrzebuje swoich poświadczeń.",
+        "tokenNeeded": "Wklej token dostępu do projektu ponownie: nowy host lub projekt jest z nim zapisywany.",
+        "token": "Wklej cały token dostępu do projektu: zaczyna się od glpat-."
+      },
+      "guidance": {
+        "title": "Czego potrzebuje token GitLab",
+        "token": "Utwórz token dostępu do projektu tylko w tym projekcie (w ustawieniach projektu, w sekcji Tokeny dostępu): rola Developer, zakresy api, read_repository i write_repository. Nigdy Maintainer ani Owner i nigdy token grupy ani osobisty.",
+        "expiry": "Tokeny GitLab wygasają najpóźniej rok po utworzeniu. Utwórz kolejny token, zanim ten wygaśnie, i zapisz go w połączeniu: strona ostrzega 30 dni wcześniej.",
+        "branch": "Chroń gałąź domyślną (bez force push, push i merge tylko dla Maintainerów), wymagaj powodzenia potoków przed scaleniem i zostaw gałęzie voc-agent/* niechronione."
+      },
+      "ci": {
+        "points": {
+          "protected_secrets": "Zmienne CI/CD z sekretami są chronione, więc dostają je tylko potoki na chronionych gałęziach.",
+          "read_only_token": "Token zadania CI/CD ma najmniejszy dostęp: jego lista dozwolonych zawiera tylko projekty potrzebne potokom, a żadne zadanie nie wykonuje nim push.",
+          "oidc_pinned": "Dostęp do chmury przez OIDC (id_tokens) jest ograniczony do chronionych gałęzi (oświadczenie ref_protected tokenu).",
+          "no_self_hosted_runner": "Żaden współdzielony, grupowy ani instancyjny runner z dostępem do sekretów lub sieci prywatnych nie uruchamia zadań dla niechronionych gałęzi: takie runnery są chronione.",
+          "no_privileged_pull_request": "Żaden potok nie uruchamia kodu merge requestu z sekretami: brak potoków merge requestów dla forków w tym projekcie i żadna chroniona zmienna do nich nie trafia.",
+          "branch_rules": "Gałąź domyślna jest chroniona (bez force push, push i merge dla Maintainerów), potoki muszą się powieść przed scaleniem (pominięty potok nie liczy się jako sukces), konfiguracja CI używa tylko prostych lokalnych include i własnych szablonów GitLaba (współdzielone CI z innych projektów, zdalne include i komponenty nie są obsługiwane), a gałęzie voc-agent/* pozostają niechronione."
+        },
+        "checked": "Pośrednik przy każdym push i merge requeście odczytuje też chronione gałęzie: gałąź domyślna chroniona bez force push, z push i merge dla Maintainerów, wymagane powodzenie potoków i niechronione gałęzie voc-agent/*."
+      }
+    },
+    "appIds": "Aplikacja {{appId}}, instalacja {{installationId}}",
+    "set": "Zapisane",
+    "notSet": "Niezapisane",
+    "notSetHint": "Brak zapisanego poświadczenia: edytuj połączenie i zapisz je ponownie wraz z poświadczeniem.",
+    "updated": "Zmienione {{when}} przez {{who}}",
+    "unknownEditor": "nieznana osoba",
+    "edit": "Edytuj",
+    "editLabel": "Edytuj {{repository}}",
+    "remove": "Usuń",
+    "removeLabel": "Usuń {{repository}}",
+    "created": "Dodano {{repository}}.",
+    "saved": "Zapisano {{repository}}.",
+    "removed": "Usunięto {{repository}}.",
+    "guidance": {
+      "title": "Czego potrzebuje poświadczenie",
+      "app": "Utwórz aplikację GitHub App i zainstaluj ją tylko w tym repozytorium. Uprawnienia repozytorium: Contents, Pull requests i Issues ustawione na Read and write, Metadata na Read-only. Nic więcej: żadnych uprawnień Administration, Workflows, Secrets, Actions ani organizacji.",
+      "token": "Aplikacja nigdy nie trafia do agentów: na każdy krok broker wydaje token ważny godzinę, tylko dla tego repozytorium i tylko z tym, czego krok potrzebuje z uprawnień aplikacji (Contents, Pull requests i Issues, odczyt i zapis; Metadata, tylko odczyt; nigdy administracja).",
+      "branch": "Chroń domyślną gałąź i pozwól agentom wypychać zmiany tylko do gałęzi o nazwach voc-agent/*."
+    },
+    "dialog": {
+      "addTitle": "Dodaj połączenie z repozytorium",
+      "editTitle": "Edytuj połączenie z {{repository}}",
+      "description": "Agenci inżynieryjni używają tego połączenia, aby czytać repozytorium i proponować w nim zmiany.",
+      "stored": "Zapisane poświadczenie:",
+      "keepHint": "Zapisane poświadczenie nigdy nie jest pokazywane. Zostaw klucz prywatny pusty, aby je zachować; nowe repozytorium, identyfikator aplikacji lub instalacji wymaga ponownie klucza prywatnego.",
+      "save": "Zapisz połączenie"
+    },
+    "fields": {
+      "connectionId": "Identyfikator połączenia",
+      "repository": "Repozytorium",
+      "defaultBranch": "Domyślna gałąź",
+      "appId": "Identyfikator App",
+      "installationId": "Identyfikator instalacji",
+      "privateKey": "Klucz prywatny"
+    },
+    "hints": {
+      "connectionId": "Małe litery, cyfry i łączniki, do 63 znaków. Po dodaniu połączenia nie można go zmienić.",
+      "connectionIdFixed": "Wybrany przy dodawaniu połączenia; nie można go zmienić.",
+      "repository": "owner/name, tak jak w adresie repozytorium.",
+      "defaultBranch": "Gałąź, od której agenci zaczynają i do której proponują swoje zmiany.",
+      "appId": "Liczbowy identyfikator App.",
+      "installationId": "Liczbowy identyfikator instalacji App w tym repozytorium.",
+      "privateKey": "Klucz prywatny aplikacji: cały plik .pem wygenerowany przez GitHub, najwyżej około 4 KB. Jest wysyłany raz i nigdy więcej nie jest pokazywany."
+    },
+    "invalid": {
+      "connectionId": "Wpisz identyfikator złożony z 1–63 małych liter, cyfr lub łączników, zaczynający się literą lub cyfrą.",
+      "repository": "Wpisz repozytorium w postaci owner/name.",
+      "defaultBranch": "Wpisz nazwę gałęzi: litery, cyfry, „.”, „_”, „-” i „/”, najwyżej {{max, number}} znaków, bez „..”, nie gałąź voc-agent/.",
+      "appId": "Wpisz identyfikator App: same cyfry.",
+      "installationId": "Wpisz identyfikator instalacji: same cyfry.",
+      "privateKeyEmpty": "Wklej klucz prywatny aplikacji: nowe połączenie potrzebuje poświadczenia.",
+      "privateKeyNeeded": "Wklej ponownie klucz prywatny aplikacji: nowe repozytorium, identyfikator aplikacji lub instalacji jest zapisywany razem z nim.",
+      "privateKey": "Wklej cały niezaszyfrowany klucz RSA w formacie PEM, od wiersza BEGIN do wiersza END.",
+      "privateKeyLarge": "Klucz jest większy, niż mieści poświadczenie (około 4 KB): użyj własnego klucza prywatnego aplikacji."
+    },
+    "confirm": {
+      "title": "Usunąć {{repository}}?",
+      "message": "Zostaną usunięte połączenie i jego zapisane poświadczenie. Uruchomienia pracujące w {{repository}} w ciągu pięciu minut tracą dostęp: ich odczyty i zapisy kończą się błędem, dopóki połączenie nie zostanie zapisane ponownie.",
+      "confirm": "Usuń połączenie"
+    },
+    "errors": {
+      "invalid": "Jedno z pól zostało odrzucone. Sprawdź pola i zapisz ponownie.",
+      "forbidden": "Tylko administrator może zmieniać połączenia.",
+      "notFound": "Nie znaleziono połączenia albo agenci inżynieryjni są wyłączeni.",
+      "conflict": "Tego połączenia nie można teraz zmienić: najpierw zatrzymaj jego trwające uruchomienia albo usuń inne połączenie.",
+      "unavailable": "Połączenia są teraz niedostępne. Spróbuj ponownie za chwilę.",
+      "generic": "Nie udało się zmienić połączenia. Spróbuj ponownie."
+    },
+    "ci": {
+      "attested": "CI potwierdzone",
+      "notAttested": "CI niepotwierdzone",
+      "attestedBy": "Potwierdzone przez: {{who}}, {{when}}. Agenci mogą wypychać zmiany do gałęzi voc-agent/* i otwierać wersje robocze pull requestów.",
+      "none": "Agenci niczego nie wypychają do tego repozytorium, dopóki administrator nie potwierdzi, że jego CI nie daje gałęziom agentów niczego cennego.",
+      "withdrawnBy": "Wycofane przez: {{who}}, {{when}}. Agenci niczego nie wypychają, dopóki CI nie zostanie potwierdzone ponownie.",
+      "voidedRepository": "Unieważnione po zmianie repozytorium połączenia: potwierdź CI tego repozytorium.",
+      "voidedRemoved": "Unieważnione po usunięciu połączenia: potwierdź jego CI ponownie.",
+      "unknownPerson": "administrator",
+      "attest": "Potwierdź CI",
+      "attestLabel": "Potwierdź CI repozytorium {{repository}}",
+      "withdrawAction": "Wycofaj CI",
+      "withdrawLabel": "Wycofaj potwierdzenie CI repozytorium {{repository}}",
+      "recorded": "Potwierdzenie CI repozytorium {{repository}} jest zapisane.",
+      "withdrawn": "Potwierdzenie CI repozytorium {{repository}} jest wycofane.",
+      "points": {
+        "protected_secrets": "Sekrety CI są ograniczone do chronionych gałęzi (środowiska z regułami gałęzi): gałąź agenta nie dostaje żadnych.",
+        "read_only_token": "Domyślny token workflowów jest tylko do odczytu i żaden workflow nie prosi o uprawnienia do zapisu.",
+        "oidc_pinned": "Dostęp do chmury przez OIDC (id-token: write) jest ograniczony do chronionych gałęzi lub środowisk.",
+        "no_self_hosted_runner": "Żaden samodzielnie hostowany runner nie przyjmuje zadań z niechronionych gałęzi.",
+        "no_privileged_pull_request": "Żaden workflow uruchamiany przy pull requeście w kontekście gałęzi domyślnej (pull_request_target albo workflow_run z artefaktami uruchomienia, które go wywołało) nie pobiera, nie uruchamia ani nie ściąga kodu lub artefaktów pull requesta.",
+        "branch_rules": "Gałąź domyślna jest chroniona wymaganymi kontrolami repozytorium, a aplikacja może wypychać zmiany tylko do gałęzi voc-agent/*."
+      },
+      "dialog": {
+        "title": "Potwierdź CI repozytorium {{repository}}",
+        "description": "Wypchnięcie do gałęzi agenta może uruchomić własne potoki repozytorium, które wykonują kod, jaki agent może zmienić. Potwierdź każdy punkt dla tego repozytorium: zapisujemy przy tym Twoje imię i nazwisko oraz czas.",
+        "legend": "W niechronionych gałęziach CI repozytorium nie dostaje niczego cennego:",
+        "allPoints": "Potwierdź każdy punkt: agenci wypychają zmiany dopiero, gdy wszystkie są spełnione.",
+        "note": "Notatka (opcjonalnie)",
+        "noteHint": "Co sprawdzono lub dlaczego: zapisywane z potwierdzeniem. Jedna linia, najwyżej {{max, number}} znaków.",
+        "checked": "Broker przy każdym wypchnięciu i pull requeście odczytuje też reguły gałęzi: gałąź domyślna chroniona wymaganymi kontrolami, a gałęzie voc-agent/* niechronione.",
+        "save": "Zapisz potwierdzenie"
+      },
+      "withdraw": {
+        "title": "Wycofać potwierdzenie CI repozytorium {{repository}}?",
+        "message": "Następne wypchnięcie lub pull request agentów w {{repository}} zostanie odrzucone, dopóki administrator ponownie nie potwierdzi CI.",
+        "confirm": "Wycofaj potwierdzenie"
+      }
+    }
+  },
+  "skills": {
+    "hint": "Każdy agent inżynieryjny pracuje według umiejętności: swoich instrukcji, przykładów, narzędzi, modelu i uprzęży. Każda zmiana to nowa wersja, zapisana z powodem, osobą, która ją zaproponowała i zaakceptowała, oraz jej benchmarkiem. Wspólne umiejętności obowiązują każde połączenie bez własnej wersji.",
+    "scope": "Umiejętności dla",
+    "shared": "Wspólne umiejętności",
+    "connection": "Połączenie {{name}}",
+    "connectionsFailed": "Nie udało się wczytać połączeń, więc dostępne są tylko wspólne umiejętności i połączenie z adresu.",
+    "rolesCaption": "Role agentów z wersją umiejętności w tym zakresie",
+    "columns": {
+      "role": "Rola",
+      "current": "Bieżąca wersja",
+      "versions": "Wersje",
+      "latest": "Ostatnia zmiana"
+    },
+    "openRole": "Otwórz historię roli {{role}}",
+    "role": {
+      "mapper": "Kartograf",
+      "understander": "Analityk zgłoszeń",
+      "hunter": "Łowca błędów",
+      "fixer": "Naprawiający",
+      "builder": "Twórca funkcji",
+      "committer": "Autor commitów",
+      "commit-reviewer": "Recenzent commitów",
+      "gate-runner": "Wykonawca kontroli",
+      "pr-author": "Autor próśb o scalenie",
+      "pr-reviewer": "Recenzent próśb o scalenie",
+      "final-go": "Ostateczna zgoda",
+      "coordinator": "Koordynator przebiegu",
+      "coach": "Coach"
+    },
+    "noneAccepted": "Jeszcze żadna nie została zaakceptowana",
+    "version": "Wersja {{version}}",
+    "current": "Bieżąca",
+    "loading": "Wczytywanie umiejętności…",
+    "rolesFailed": "Nie udało się wczytać umiejętności. Spróbuj ponownie za chwilę.",
+    "emptyShared": "Żadna wspólna umiejętność nie ma jeszcze wersji. Agenci korzystają z umiejętności dostarczonych z tym wydaniem.",
+    "emptyConnection": "To połączenie nie ma własnych wersji umiejętności. Jego agenci korzystają ze wspólnych umiejętności.",
+    "backToRoles": "Wszystkie role",
+    "roleTitle": "{{role}} · {{scope}}",
+    "status": {
+      "accepted": "Zaakceptowana",
+      "proposed": "Zaproponowana",
+      "rejected": "Odrzucona"
+    },
+    "byCoach": "coacha ({{who}})",
+    "proposedBy": "Zaproponowana przez: {{who}}, {{at}}",
+    "notMeasured": "Brak zapisanego benchmarku.",
+    "measured": "Zapis administratora",
+    "rates": "odsetek zaliczeń {{before}} → {{after}}",
+    "benchmarkPassed": "zaliczony",
+    "benchmarkFailed": "niezaliczony",
+    "failureCase": "przypadek błędu {{name}}",
+    "measuredBy": "zapisał(a): {{who}}, {{at}}",
+    "runRef": "przebieg {{ref}}",
+    "claimed": "Deklarowane",
+    "claimedHint": "podane przez proponującego, niezmierzone",
+    "event": {
+      "accepted": "Zaakceptowana przez: {{who}}, {{at}}",
+      "rejected": "Odrzucona przez: {{who}}, {{at}}",
+      "rolled_back": "Wycofana przez: {{who}}, {{at}}",
+      "benchmarked": "Benchmark zapisany przez: {{who}}, {{at}}",
+      "other": "{{event}}: {{who}}, {{at}}"
+    },
+    "restores": "Przywraca wersję {{version}}.",
+    "fromRun": "Z przebiegu {{run}} ({{failure}}).",
+    "openVersion": "Otwórz wersję {{version}} i jej zmiany",
+    "historyTitle": "Historia",
+    "historyFailed": "Nie udało się wczytać historii. Spróbuj ponownie za chwilę.",
+    "historyEmpty": "Ta rola nie ma wersji w tym zakresie.",
+    "moreFailed": "Nie udało się wczytać starszych wersji. Wybierz „Wczytaj starsze wersje”, aby spróbować ponownie.",
+    "loadMore": "Wczytaj starsze wersje",
+    "diff": {
+      "added": "Dodano:",
+      "removed": "Usunięto:",
+      "title": "Zmiany względem wersji bazowej",
+      "firstTitle": "Pierwsza wersja: wszystko jest nowe",
+      "none": "Brak zmian względem wersji bazowej.",
+      "instructions": "Instrukcje",
+      "examples": "Przykłady",
+      "example": "Gdy: {{situation}} | Zrób: {{action}}",
+      "tools": "Zasady narzędzi",
+      "reordered": "Zasady narzędzi mają te same narzędzia w innej kolejności.",
+      "model": "Model: {{from}} → {{to}}",
+      "harness": "Uprząż: {{from}} → {{to}}",
+      "nothing": "(brak)"
+    },
+    "record": {
+      "title": "Cała umiejętność",
+      "model": "Model",
+      "harness": "Uprząż",
+      "tools": "Narzędzia",
+      "instructions": "Instrukcje",
+      "examples": "Przykłady ({{n, number}})"
+    },
+    "noBase": "Napisana bez wcześniejszej wersji.",
+    "baseShared": "Napisana na wspólnej wersji {{version}}.",
+    "base": "Napisana na wersji {{version}}.",
+    "expectedCase": "ma naprawić przypadek {{name}}",
+    "madeWith": "utworzona przez {{model}} z promptem {{prompt}}",
+    "backToHistory": "Wróć do historii",
+    "versionMissing": "Wersji {{version}} nie ma w tym zakresie. Wróć do historii i wybierz inną.",
+    "versionFailed": "Nie udało się wczytać wersji. Spróbuj ponownie za chwilę.",
+    "actions": {
+      "label": "Działania na tej wersji",
+      "reason": "Powód (opcjonalnie)",
+      "noCurrent": "braku bieżącej wersji",
+      "sharedVersion": "wspólnej v{{version}}",
+      "connectionVersion": "v{{version}} tego połączenia",
+      "writtenOn": "Napisana na {{version}}.",
+      "baseNotInUse": "Jej podstawa nie jest wersją używaną teraz ({{current}}): akceptacja zostanie odrzucona. Zaproponuj ją ponownie na używanej wersji.",
+      "changed": "To się zmieniło, odkąd to otworzono. Widok został wczytany ponownie: zamknij to, sprawdź wersję i spróbuj ponownie.",
+      "refused": "Działanie zostało odrzucone: {{message}}",
+      "held": {
+        "unmeasured": "Akceptacja jest wyłączona: wersja coacha jest akceptowana dopiero, gdy zapis przebiegu benchmarku dokonany przez administratora (odsetki, przypadki i werdykt w takiej postaci, w jakiej je wpisał) pokazuje zaliczenie i wzrost odsetka zaliczeń, ze wskazaniem oczekiwanego przypadku. Najpierw zapisz benchmark.",
+        "failed": "Akceptacja jest wyłączona: według zapisu przebiegu benchmarku wersja coacha go nie zaliczyła, więc nigdy nie zostanie zaakceptowana. Nowa propozycja powstaje z nowego błędu albo napisz poprawkę jako własną wersję.",
+        "noGain": "Akceptacja jest wyłączona: w zapisie przebiegu benchmarku odsetek zaliczeń nie wzrósł albo nie wskazano oczekiwanego przypadku, więc wersja coacha nigdy nie zostanie zaakceptowana."
+      },
+      "accept": {
+        "button": "Zaakceptuj",
+        "title": "Zaakceptować wersję {{version}}?",
+        "message": "Bieżąca wersja tego zakresu zmienia się z {{from}} na {{to}}.",
+        "confirm": "Zaakceptuj wersję"
+      },
+      "reject": {
+        "button": "Odrzuć",
+        "title": "Odrzucić wersję {{version}}?",
+        "message": "Wersja {{version}} zostaje w historii, oznaczona jako odrzucona. Bieżąca wersja się nie zmienia.",
+        "confirm": "Odrzuć wersję"
+      },
+      "rollback": {
+        "button": "Przywróć tę wersję",
+        "title": "Przywrócić wersję {{version}}?",
+        "message": "Nowa wersja przywracająca wersję {{version}} staje się bieżąca zamiast {{from}}. Każda wersja zostaje w historii.",
+        "confirm": "Przywróć"
+      },
+      "benchmark": {
+        "button": "Zapisz benchmark",
+        "title": "Zapisz benchmark wersji {{version}}",
+        "message": "To zapis przebiegu benchmarku dokonany przez administratora: odsetki, przypadki i werdykt w takiej postaci, w jakiej je wpiszesz; nic tutaj ich nie mierzy. Zapisuje się go raz i nigdy nie zmienia. Dla wersji coacha przypadek błędu musi być jej oczekiwanym przypadkiem, a akceptacja wymaga odsetka zaliczeń, który wzrósł.",
+        "runRef": "Odwołanie do przebiegu (opcjonalnie: identyfikator lub link)",
+        "confirm": "Zapisz benchmark",
+        "before": "Odsetek zaliczeń przed (%)",
+        "after": "Odsetek zaliczeń po (%)",
+        "cases": "Przypadki (jeden w wierszu lub rozdzielone przecinkami)",
+        "passed": "Kontrola zaliczona",
+        "reasons": "Powody (jeden w wierszu)",
+        "failureCase": "Przypadek błędu",
+        "invalid": {
+          "rates": "Podaj oba odsetki zaliczeń jako liczby od 0 do 100.",
+          "cases": "Podaj każdy przypadek raz, małymi literami, cyframi i łącznikami.",
+          "reasons": "Podaj co najmniej jeden powód, jeden w wierszu.",
+          "failureCase": "Przypadek błędu musi być jednym z przypadków.",
+          "regressed": "Zaliczony przebieg nie może mieć niższego odsetka zaliczeń po niż przed: zapisz go jako niezaliczony albo sprawdź odsetki."
+        }
+      }
+    },
+    "scores": {
+      "title": "Karty wyników",
+      "hint": "Jak każda wersja poradziła sobie w ostatnich przebiegach na tym połączeniu. Odsetek zaliczeń to liczba wykonanych zadań do liczby zakończonych.",
+      "pickConnection": "Karty wyników należą do połączenia. Wybierz połączenie powyżej, aby porównać jego wersje.",
+      "compareLabel": "Wersje do porównania",
+      "compareHint": "Do {{max, number}} numerów wersji, rozdzielonych przecinkami. Zostaw puste, aby zobaczyć najnowsze.",
+      "compare": "Porównaj",
+      "invalid": {
+        "empty": "Wpisz co najmniej jeden numer wersji, na przykład 3, 2.",
+        "notNumbers": "Użyj całkowitych numerów wersji od 1, rozdzielonych przecinkami.",
+        "tooMany": "Porównaj naraz najwyżej {{max, number}} wersji.",
+        "repeated": "Podaj każdą wersję tylko raz."
+      },
+      "caption": "Karty wyników roli {{role}}",
+      "version": "Wersja",
+      "passRate": "Odsetek zaliczeń",
+      "runs": "Przebiegi",
+      "done": "Wykonane",
+      "failed": "Nieudane",
+      "needsHuman": "Wymagały człowieka",
+      "reviewRounds": "Rundy przeglądu",
+      "attempts": "Próby",
+      "cost": "Koszt",
+      "time": "Czas",
+      "sourceColumn": "Numer z",
+      "source": {
+        "shipped": "Dostarczona umiejętność",
+        "not_shipped": "Nigdy niedostarczona: żadna sesja nie użyła tego numeru",
+        "shared": "Wspólna umiejętność",
+        "connection": "Umiejętność tego połączenia",
+        "unknown": "Nieznane"
+      },
+      "scopeUnknown": "Te numery to wersje dostarczonych umiejętności, a nie wersje z historii powyżej: sesja agenta podaje swoją wersję tylko numerem, bez wskazania, czyja jest, a każda sesja korzysta z dostarczonej umiejętności, dopóki agenci nie zaczną czytać umiejętności z tej historii.",
+      "latestOnly": "tylko ostatnie przebiegi",
+      "loadFailed": "Nie udało się wczytać kart wyników. Spróbuj ponownie za chwilę.",
+      "empty": "Na tym połączeniu nie ma jeszcze kart wyników dla tych wersji."
+    }
+  },
   "engineeringRun": {
     "untitled": "Przebieg inżynieryjny",
     "statusUnknown": "stan nieznany",
@@ -790,6 +1154,13 @@
     "byModel": "Tokeny według modelu",
     "budget": "Budżet przepływu: {{amount}} miesięcznie",
     "budgetPassed": "{{month}}: wydano {{percent}}% budżetu",
+    "links": {
+      "issue": "Zgłoszenie #{{number}}",
+      "pullRequest": "Pull request #{{number}}",
+      "mergeRequest": "Merge request !{{number}}",
+      "asGiven": "tak, jak podano przy starcie, niesprawdzone na hoście",
+      "opens": "{{label}} (otwiera się w nowej karcie)"
+    },
     "actionsUnavailable": "To wdrożenie nie może jeszcze wysyłać sygnałów ani odpowiedzi: nie łączy monitora przebiegu ze środowiskiem uruchomieniowym i magistralą inżynierii.",
     "runSignals": "Cały przebieg",
     "agentSignals": "Agent {{agent}}",

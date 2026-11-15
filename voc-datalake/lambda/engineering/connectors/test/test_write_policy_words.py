@@ -40,7 +40,7 @@ def test_only_leading_slashes_are_dropped_before_a_path_is_matched() -> None:
 
 def test_a_push_of_two_ci_definitions_says_both_one_after_the_other() -> None:
     with pytest.raises(WriteRefused) as refused:
-        write_policy.check_paths(['.github/workflows/b.yml', 'src/app.py', '.github/workflows/a.yml'])
+        write_policy.check_ci_definitions(['.github/workflows/b.yml', 'src/app.py', '.github/workflows/a.yml'], ())
     assert refused.value.reason == ('An agent never changes the CI definitions (.github/workflows/a.yml). '
                                     'An agent never changes the CI definitions (.github/workflows/b.yml).')
 

@@ -126,14 +126,14 @@ TOOLCHAIN_ENV: Final = ('CARGO_HOME', 'RUSTUP_HOME', 'CARGO_INCREMENTAL', 'GRADL
 #: The agent's ids (``interface.AgentSpec.environment``, handed with the session's ``start``) and its region: the
 #: agent's own commands' only (the harness reads them); repository code never needs them.
 AGENT_ENV: Final = ('VOC_RUN_ID', 'VOC_AGENT_ID', 'VOC_TASK_ID', 'VOC_ROLE', 'VOC_RESTORE_KEY', 'VOC_COMMIT',
-                    'VOC_ATTEMPT', 'VOC_WORKSPACE_BUCKET', 'VOC_BOARD_URL', 'AWS_REGION')
+                    'VOC_ATTEMPT', 'VOC_WORKSPACE_BUCKET', 'VOC_BOARD_URL', 'VOC_BROKER_URL', 'AWS_REGION')
 #: Credential shapes masked in tool output: AWS access keys and secrets, host tokens (GitHub, GitLab),
 #: bearer headers, private keys, and `name=value` pairs whose name says secret.
 _CREDENTIAL_RES: Final = (
     re.compile(r'\b(?:AKIA|ASIA)[0-9A-Z]{16}\b'),
     re.compile(r'\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{30,}\b'),
     re.compile(r'\bgithub_pat_[A-Za-z0-9_]{40,}\b'),
-    re.compile(r'\bglpat-[A-Za-z0-9_-]{20,}\b'),
+    re.compile(r'\bglpat-[A-Za-z0-9_.-]{20,}'),
     re.compile(r'(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{16,}'),
     re.compile(r'-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)'),
     # `name=value`, `name: value` and JSON's `"name": "value"` (the closing quote of the name may come first).

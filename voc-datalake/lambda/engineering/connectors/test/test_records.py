@@ -12,12 +12,14 @@ from moto import mock_aws
 
 from engineering.board.store import BoardStore
 from engineering.board.test.table import TABLE, create_table
-from engineering.connectors.hosts import NoConnection, Unavailable
+from engineering.connectors import attestations
+from engineering.connectors.hosts import NoConnection, RunRecord, Unavailable
 from engineering.connectors.patches import AUTHOR
 from engineering.connectors.records import RunRecords
-from engineering.connectors.test.fakes import BASE, RUN, TREE, FakeHost
+from engineering.connectors.test.fakes import BASE, REPOSITORY, RUN, TREE, record
 from engineering.flow import ledger as go_ledger
 from engineering.workspace.store import WorkspaceStore
+from shared.test.moto_tables import create_pk_sk_table
 
 BUCKET = 'voc-eng-workspace'
 PK = f'WS#default#RUN#{RUN}'
@@ -79,32 +81,40 @@ def checked_record(verdict: str = 'GO', tree: str = TREE, *, stop: str = '', sta
                         'complete': True, 'finding_ids': []}]}
 
 
-def ledger(client: Any, s3: Any, host: FakeHost | None = None) -> RunRecords:
-    return RunRecords(client, TABLE, WorkspaceStore(s3, BUCKET, denied_is_missing=True),
-                      (host or FakeHost()).default_branch)
+def ledger(client: Any, s3: Any) -> RunRecords:
+    return RunRecords(client, TABLE, WorkspaceStore(s3, BUCKET, denied_is_missing=True))
 
 
-def test_the_run_is_its_meta_with_the_hosts_default_branch(stores: tuple[Any, Any]) -> None:
+def test_the_run_is_its_meta_and_its_stored_default_branch_with_nothing_of_the_host(
+        stores: tuple[Any, Any]) -> None:
     client, s3 = stores
-    meta(client)
-    host = FakeHost()
-    run = ledger(client, s3, host).run(RUN)
+    meta(client, default_branch='develop')
+    run = ledger(client, s3).run(RUN)
     assert run is not None
-    assert (run.connection_id, run.default_branch, run.status, run.commit, run.started_by) == (
-        'conn-1', 'main', 'active', BASE, 'person-sub-1')
-    # Nothing records an attestation, the run's issue or pull request, or its reviews yet: none is made up.
+    # The branch is the broker's to work out, after its repository check (broker.py): '' here, the stored one beside.
+    assert (run.connection_id, run.default_branch, run.stored_default_branch, run.status, run.commit,
+            run.started_by) == ('conn-1', '', 'develop', 'active', BASE, 'person-sub-1')
+    # The CI attestation is read at a push or a pull request (``attested``), never with the run; nothing records the
+    # run's issue or pull request, or its reviews yet: none is made up.
     assert (run.ci_attested, run.issue_number, run.pull_request_number, run.cited_reviews) == (False, None, None, ())
     assert run.bot_addresses == (AUTHOR,)
-    assert host.calls == [('default_branch', 'conn-1')]
+
+
+def test_a_run_started_before_7_03_01_has_no_stored_default_branch(stores: tuple[Any, Any]) -> None:
+    client, s3 = stores
+    meta(client)
+    run = ledger(client, s3).run(RUN)
+    assert run is not None
+    assert run.stored_default_branch == ''
 
 
 @pytest.mark.parametrize('status', ['stopped', 'needs_human', 'done'])
 def test_a_run_that_is_not_active_is_read_without_the_host(stores: tuple[Any, Any], status: str) -> None:
     client, s3 = stores
     meta(client, status=status, connection='')
-    host = FakeHost()
-    run = ledger(client, s3, host).run(RUN)
-    assert (run is not None and run.status, host.calls) == (status, [])
+    run = ledger(client, s3).run(RUN)
+    assert run is not None
+    assert run.status == status
 
 
 def test_an_unknown_run_or_a_meta_of_another_run_is_no_run(stores: tuple[Any, Any]) -> None:
@@ -218,7 +228,7 @@ def test_the_latest_attempt_of_a_task_wins_and_only_its_record_is_read(stores: t
     store = WorkspaceStore(s3, BUCKET)
     original = store.read_bytes
     monkeypatch.setattr(store, 'read_bytes', lambda k, limit: read.append(k) or original(k, limit))
-    assert RunRecords(client, TABLE, store, FakeHost().default_branch).has_go(RUN, TREE)
+    assert RunRecords(client, TABLE, store).has_go(RUN, TREE)
     # The deciding final go's record, then the newest gate runner's: no other.
     assert read == [key, gate]
 
@@ -257,11 +267,69 @@ class Down:
 @pytest.mark.parametrize('read', [lambda r: r.run(RUN), lambda r: r.person_go(RUN), lambda r: r.has_go(RUN, TREE)])
 def test_a_table_that_cannot_be_read_is_unavailable(read: Any) -> None:
     with pytest.raises(Unavailable):
-        read(RunRecords(Down(), TABLE, WorkspaceStore(Down(), BUCKET), FakeHost().default_branch))
+        read(RunRecords(Down(), TABLE, WorkspaceStore(Down(), BUCKET)))
 
 
 def test_a_workspace_that_cannot_be_read_is_unavailable(stores: tuple[Any, Any]) -> None:
     client, s3 = stores
     final_go(client, s3, 't1', gate_record('GO'))
     with pytest.raises(Unavailable):
-        RunRecords(client, TABLE, WorkspaceStore(Down(), BUCKET), FakeHost().default_branch).has_go(RUN, TREE)
+        RunRecords(client, TABLE, WorkspaceStore(Down(), BUCKET)).has_go(RUN, TREE)
+
+
+# --- the CI attestation (attestations.py), in voc-agents ------------------------------------------------------------
+
+
+AGENTS = 'voc-agents-test'
+
+
+def attestation(agents: Any, version: int, state: str, repository: str = REPOSITORY) -> None:
+    """A version of conn-1's attestation as the Agents API writes it."""
+    agents.put_item(Item=attestations.version_row('conn-1', version, state, repository, by='admin-sub',
+                                                  by_name='alice', at='2026-11-14T09:00:00+00:00',
+                                                  points=attestations.POINTS if state == attestations.ATTESTED else ()))
+
+
+def attested(client: Any, s3: Any, run: RunRecord | None = None, agents_table: str = AGENTS) -> RunRecord:
+    records_ = RunRecords(client, TABLE, WorkspaceStore(s3, BUCKET, denied_is_missing=True), agents_table)
+    return records_.attested(run or record(ci_attested=False))
+
+
+def test_a_run_is_attested_only_by_the_newest_version_that_stands_for_its_repository(
+        stores: tuple[Any, Any]) -> None:
+    client, s3 = stores
+    agents = create_pk_sk_table(AGENTS)
+    assert (attested(client, s3).ci_attested, attested(client, s3).ci_attestation) == (False, 0)
+    attestation(agents, 1, attestations.ATTESTED)
+    assert (attested(client, s3).ci_attested, attested(client, s3).ci_attestation) == (True, 1)
+    # For another repository than the run started on: not this run's.
+    assert attested(client, s3, record(ci_attested=True, repository='example-org/other')).ci_attested is False
+    for version, state in ((2, attestations.WITHDRAWN), (3, attestations.ATTESTED), (4, attestations.VOIDED)):
+        attestation(agents, version, state)
+        assert attested(client, s3).ci_attestation == (3 if state == attestations.ATTESTED else 0)
+
+
+def test_with_no_agents_table_or_no_repository_on_the_run_nothing_is_attested(stores: tuple[Any, Any]) -> None:
+    client, s3 = stores
+    attestation(create_pk_sk_table(AGENTS), 1, attestations.ATTESTED)
+    assert attested(client, s3, agents_table='').ci_attested is False
+    assert attested(client, s3, record(ci_attested=True, repository='')).ci_attested is False
+    assert attested(client, s3, record(ci_attested=True, connection_id='')).ci_attested is False
+
+
+def test_the_attestation_read_is_one_projected_query_and_a_failure_is_unavailable() -> None:
+    queries: list[dict[str, Any]] = []
+
+    class Recording:
+        def query(self, **request: Any) -> Any:
+            queries.append(request)
+            return {'Items': []}
+
+    assert RunRecords(Recording(), TABLE, WorkspaceStore(Down(), BUCKET), AGENTS).attested(record()).ci_attested is False
+    (query,) = queries
+    # Of the newest row only the attributes the broker's IAM grant allows (engineering-broker.ts).
+    assert (query['TableName'], query['Limit'], query['ScanIndexForward'], sorted(
+        query['ExpressionAttributeNames'].values())) == (AGENTS, 1, False, sorted(attestations.BROKER_ATTRIBUTES))
+    assert query['ExpressionAttributeValues'][':pk'] == {'S': 'CONNECTIONS#default#CI#conn-1'}
+    with pytest.raises(Unavailable, match='CI attestation'):
+        RunRecords(Down(), TABLE, WorkspaceStore(Down(), BUCKET), AGENTS).attested(record())

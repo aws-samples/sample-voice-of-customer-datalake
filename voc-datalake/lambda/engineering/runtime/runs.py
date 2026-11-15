@@ -3,7 +3,7 @@
 ``WS#<ws>#RUN#<run>`` / ``META`` is the run's own row: the board counts its tasks on it (``task_count``, under
 the run's ``max_tasks``), the inbox router numbers its conversation on it (``msg_seq``), the delivery function
 numbers its inbox on it (``inbox_seq``, ``delivery.py``), the reports read its
-goal, repository, flow, status and times, the supervisor its caps and its start, and the connector's broker its
+goal, repository, flow, status, times and the issue it was started from (``issue``, 7.09.00), the supervisor its caps and its start, and the connector's broker its
 status, connection, commit and ``started_by`` (the person who started it, whose way of working its dial reads:
 ``connectors/records.py``). The run's start writes it,
 once; its end sets its status and end time. Nothing else here ever writes over the board's, the router's or the
@@ -56,6 +56,7 @@ from engineering.flow.record import (
     recorded_verdicts,
     verdict_item,
 )
+from engineering.run_links import issue_link
 from engineering.runtime.checkout import COMMIT_RE
 from engineering.runtime.egress import REGISTRY_HOSTS
 from engineering.runtime.interface import RuntimeRefused, check_id, check_run_id
@@ -145,6 +146,8 @@ class Run:
     resumed_at: int = 0
     #: The decision point the run waits at ('' when it waits at none): ``budget``, ``coordinator``, ``flow:<step>``…
     waiting_at: str = ''
+    #: When a fill of the run's checkout last began before a coordinator's launch (epoch seconds; 0 for never).
+    cache_fill_at: int = 0
 
 
 class StartReadFailed(RuntimeRefused):
@@ -248,6 +251,22 @@ def _typed(item: Mapping[str, Any]) -> dict[str, Any]:
     return {name: _SERIALIZER.serialize(value) for name, value in item.items()}
 
 
+def _failure_count(item: Mapping[str, Any], now: int) -> tuple[int, int]:
+    """``(cache_failures, cache_failing_since)`` of a META row's attributes (a row without them: the first, now)."""
+    return int(item.get('cache_failures', 1)), int(item.get('cache_failing_since', now))
+
+
+def _issue_item(issue: int, host: str, repo: str) -> dict[str, Any] | None:
+    """META's ``issue`` for the issue a run starts from (``run_links.py``), None for none (0); ``RuntimeRefused``,
+    before anything is written, for a number off the rule or a repository or host it cannot be addressed on."""
+    if not issue:
+        return None
+    link = issue_link(host, repo, issue)
+    if link is None:
+        raise RuntimeRefused('an issue is a number from 1, of the repository of a connection on a known host')
+    return link.item()
+
+
 def flow_step(reason: str) -> str:
     """The flow's step a decision point names (``flow:<step>``), '' for any other decision point."""
     return reason.removeprefix(DECISION_PREFIX) if reason.startswith(DECISION_PREFIX) else ''
@@ -266,7 +285,8 @@ class RunStore:
 
     def start(self, run_id: str, *, caps: RunCaps, now: int, goal: str = '', repo: str = '', flow: str = '',
               connection: str = '', commit: str = '', language: str = '', actor: str = '',
-              budget_usd: float | None = None, flow_definition: str = '', flow_revision: int = 0) -> None:
+              budget_usd: float | None = None, flow_definition: str = '', flow_revision: int = 0,
+              default_branch: str = '', issue: int = 0, host: str = '') -> None:
         """Write the run's ``META`` and list it for the supervisor; ``RunExists`` when it was started already.
 
         ``connection`` and ``commit`` (a full object id), when given, are what the board's ``launch`` op starts the
@@ -276,9 +296,12 @@ class RunStore:
         stored flow's definition as its JSON text (at ``flow_revision``), is copied into the run's own ``FLOW`` row in
         the same transaction, create-only (``engineering/flow/record.py``): the run follows that copy, whatever the
         flow becomes; refused before anything is written when it is not an engineering flow the conductor can
-        follow."""
+        follow. ``issue``, the issue the run was started from (0 for none), on ``repo`` at ``host`` (the stored
+        connection's kind), goes into META's ``issue`` with its address, once, as given: not read from the host
+        (``engineering/run_links.py``)."""
         if connection:
             check_id('connection', connection)
+        issue_item = _issue_item(issue, host, repo)
         if commit and not COMMIT_RE.match(commit):
             raise RuntimeRefused('a commit is a full hexadecimal object id')
         if language and language not in REGISTRY_HOSTS:
@@ -292,7 +315,9 @@ class RunStore:
         name = self._table.name
         meta: dict[str, Any] = {**meta_key(run_id), 'run_id': run_id, 'status': 'active', 'started_at': _iso(now),
                                 'started_epoch': now, 'max_tasks': caps.max_tasks, 'goal': _text(goal),
-                                'repo': _text(repo), 'flow': _text(flow), 'connection': connection, 'commit': commit,
+                                # The connection's stored default branch at the start: the broker's, once the host
+                                # confirms it has it (connectors/records.py); '' for the host's own.
+                                'repo': _text(repo), 'default_branch': _text(default_branch), 'flow': _text(flow), 'connection': connection, 'commit': commit,
                                 'language': language, 'agent_count': 1,
                                 # Whose way of working the broker's dial reads (connectors/dial.py): the person
                                 # who started the run, '' for none (then nothing is pushed: Human-driven).
@@ -303,6 +328,8 @@ class RunStore:
             meta['max_cost_usd'] = str(caps.max_cost_usd)
         if budget_usd is not None:
             meta['budget_usd'] = str(budget_usd)
+        if issue_item is not None:
+            meta['issue'] = issue_item
         # The run coordinator's task, open for it alone (the board's: it claims it like any agent, so the supervisor
         # watches it by its lease).
         coordinate = BoardStore.coordinate_items(WORKSPACE, run_id, at=_iso(now))
@@ -375,12 +402,14 @@ class RunStore:
                 return   # at a decision point already: this one's reason, or the 30-day one, which only a stop ends
             raise
 
-    def resume(self, run_id: str, *, now: int, actor: str = '') -> None:
+    def resume(self, run_id: str, *, now: int, actor: str = '', only_from: str = '') -> None:
         """A person resumed the run from its decision point: active again; ``RunNotActive`` when it was not waiting.
         ``resumed_epoch`` records when (the supervisor gives a Resume's new coordinator its own launch window). At a
         flow step's decision point (``flow:<step>``) it is also that person's decision on the step, a create-only
         ``STEP#<step>#decision#…`` row in the same transaction, held to the decision point read (D4: who and when;
-        the conductor passes the step, or gives a blocked one another try)."""
+        the conductor passes the step, or gives a blocked one another try). ``only_from``: only off that decision
+        point (``RunNotActive`` at any other: a Resume a fill carries on never passes a point the person did not
+        see)."""
         waiting = self.get(run_id)
         if waiting is None:   # (never started: refused before any write, as META's condition would refuse it)
             raise RunNotActive(f'run {run_id} is not active')
@@ -388,6 +417,10 @@ class RunStore:
         condition, values = '#status = :human AND needs_human <> :thirty', {':active': 'active',
                                                                              ':thirty': 'thirty_days', ':now': now}
         also: tuple[dict[str, Any], ...] = ()
+        if only_from:
+            condition += ' AND needs_human = :only'
+            values[':only'] = only_from
+            step = ''
         if step:
             condition += ' AND needs_human = :point'
             values[':point'] = f'{DECISION_PREFIX}{step}'
@@ -417,6 +450,7 @@ class RunStore:
                    budget_alert=int(item.get('budget_alert', 0)),
                    budget_alert_month=str(item.get('budget_alert_month', '')),
                    resumed_at=int(item.get('resumed_epoch', 0)),
+                   cache_fill_at=int(item.get('cache_fill_at', 0)),
                    waiting_at=str(item.get('needs_human', '')) if item.get('status') == 'needs_human' else '')
 
     def flag_budget(self, run_id: str, month: str, level: int) -> None:
@@ -430,6 +464,63 @@ class RunStore:
                                      'OR budget_alert_month < :month '
                                      'OR (budget_alert_month = :month AND budget_alert < :level))'),
                 ExpressionAttributeValues={':level': level, ':month': month})
+        except ClientError as error:
+            if not is_conditional_check_failure(error):
+                raise
+
+    def mark_cache_fill(self, run_id: str, *, now: int) -> None:
+        """A fill of the run's checkout began before its coordinator's launch (``cache_fill_at``): the supervisor
+        gives that launch the fill's longer window (``supervisor.COORDINATOR_FILL_LAUNCH_SECONDS``)."""
+        try:
+            self._table.update_item(Key=meta_key(run_id), UpdateExpression='SET cache_fill_at = :now',
+                                    ConditionExpression='attribute_exists(pk)', ExpressionAttributeValues={':now': now})
+        except ClientError as error:
+            if not is_conditional_check_failure(error):
+                raise
+
+    def count_cache_failure(self, run_id: str, *, now: int, window: int, reset_after: int) -> tuple[int, int]:
+        """One more transient checkout-cache failure on the run's META (``cache_failures``, a fill a board launch
+        handed on while the coordinator works): how many there have been in a row, and when the streak began
+        (``cache_failing_since``: its first failure, kept until a fill lands or a launch finds the entry ready, so a
+        streak of failures far apart is still seen as long). Failures within ``window`` seconds of the last one
+        counted are one spell (one host outage, met by several racing fills): they are not counted again
+        (``cache_failed_at``); one more than ``reset_after`` seconds after the last starts the count again at 1."""
+        values = {':one': 1, ':now': now}
+        try:   # (a first failure, or one long after the last: the count starts again; the streak's start stays)
+            answer = self._table.update_item(
+                Key=meta_key(run_id),
+                UpdateExpression='SET cache_failures = :one, cache_failed_at = :now, '
+                                 'cache_failing_since = if_not_exists(cache_failing_since, :now)',
+                ConditionExpression='attribute_exists(pk) AND (attribute_not_exists(cache_failed_at) '
+                                    'OR cache_failed_at <= :stale)',
+                ExpressionAttributeValues={**values, ':stale': now - reset_after}, ReturnValues='ALL_NEW')
+        except ClientError as error:
+            if not is_conditional_check_failure(error):
+                raise
+        else:
+            return _failure_count(answer.get('Attributes', {}), now)
+        try:
+            answer = self._table.update_item(
+                Key=meta_key(run_id),
+                UpdateExpression='ADD cache_failures :one SET cache_failed_at = :now, '
+                                 'cache_failing_since = if_not_exists(cache_failing_since, :now)',
+                ConditionExpression='attribute_exists(pk) AND (attribute_not_exists(cache_failed_at) '
+                                    'OR cache_failed_at <= :before)',
+                ExpressionAttributeValues={**values, ':before': now - window}, ReturnValues='ALL_NEW')
+        except ClientError as error:
+            if not is_conditional_check_failure(error):
+                raise
+            item = self._table.get_item(Key=meta_key(run_id), ConsistentRead=True,
+                                        ProjectionExpression='cache_failures, cache_failing_since').get('Item') or {}
+            return _failure_count(item, now)
+        return _failure_count(answer.get('Attributes', {}), now)
+
+    def clear_cache_failures(self, run_id: str) -> None:
+        """The run's count of transient checkout-cache failures back to none (a fill landed)."""
+        try:
+            self._table.update_item(Key=meta_key(run_id),
+                                    UpdateExpression='REMOVE cache_failures, cache_failed_at, cache_failing_since',
+                                    ConditionExpression='attribute_exists(cache_failures)')
         except ClientError as error:
             if not is_conditional_check_failure(error):
                 raise
@@ -571,11 +662,12 @@ class TableRunControl:
         plan = self._runs.flow_plan(run_id, keep_verdicts=True)
         return FlowStop(plan.decision_point) if plan is not None and plan.decision_point else None
 
-    def coordinator_awaited(self, run_id: str) -> int | None:
+    def coordinator_awaited(self, run_id: str) -> tuple[int, bool] | None:
         run = self._runs.get(run_id)
         if run is None or run.status != 'active' or not (run.connection and run.commit and run.language):
             return None
-        return max(run.started_at, run.resumed_at)   # (a Resume's new coordinator gets its own window)
+        since = max(run.started_at, run.resumed_at)   # (a Resume's new coordinator gets its own window)
+        return since, run.cache_fill_at >= since
 
     def budget_alert(self, run_id: str, now: int) -> BudgetAlert | None:
         """One GetItem of the flow's month total; each level passed above the run's flag is claimed for this run

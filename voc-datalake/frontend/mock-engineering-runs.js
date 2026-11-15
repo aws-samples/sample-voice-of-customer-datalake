@@ -18,6 +18,11 @@
 //   POST /agents/engineering/runs   {workflow_id, connection, commit, language, goal}: admin; a run's start, answered
 //                     202 with the sample run (written, its coordinator's launch under way) (400 for a field off the server's rules)
 //   GET|PUT /agents/engineering/settings   the administrators' hard cap {hard_cap, updated_at, updated_by}
+//   GET  /agents/engineering/connections   the repository connections {connections, limit} (admin; never a secret)
+//   PUT|DELETE /agents/engineering/connections/<id>   store one with its GitHub App credential, or keep the stored one
+//   POST|DELETE /agents/engineering/connections/<id>/ci-attestation   attest its CI (every point), or withdraw it
+//                     (the server's field checks; 409 past the limit or for a repository change with live runs) | remove
+//                     one (404 for an unknown id)
 //   GET  /agents/engineering/spend?month=&by=&workflow=   the spend ledger's month, grouped (admin; 400 for a bad
 //                     month, grouping or workflow id), from a few sample rows over this month and last
 // Every GET of the overview moves the run a little (the agents' ages), so polling shows it live.
@@ -486,6 +491,214 @@ function settingsRoute(req, res, send, shared) {
   });
 }
 
+// ── The repository connections (GET /agents/engineering/connections, PUT|DELETE …/connections/<id>) ──
+// The engineering connectors' `connections` module's rules. The GitHub App's private key and the GitLab project access
+// token are taken and never answered: a connection says only whether its credential is set, and the App's ids or the
+// token's expiry. A save without a credential keeps the stored one (a new connection, or a new host or repository,
+// needs it); a live run on 'storefront' refuses its repository change (409). The demo's GitLab token (the mock checks
+// no host) expires 60 days after its save; 'docs-site's stored one within the warning's 30 days.
+const CONNECTION_PATH = /^\/agents\/engineering\/connections(?:\/([^/]*)(\/ci-attestation)?)?$/;
+const CONNECTION_LIMIT = 20;
+const CONNECTION_FIELDS = ['host', 'repository', 'default_branch', 'credential'];
+const CREDENTIAL_FIELDS = ['app_id', 'installation_id', 'private_key'];
+const LIVE_RUN_CONNECTIONS = new Set(['storefront']);
+/** A calendar day `days` from today (UTC), `YYYY-MM-DD`: a GitLab token's expiry. */
+const dayAhead = (days) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+const connections = new Map([['storefront', {
+  connection_id: 'storefront', host: 'github', repository: 'example-org/storefront', default_branch: 'main',
+  credential: { kind: 'app', set: true, app_id: '104729', installation_id: '7919001', expires_at: null },
+  created_at: minutesAgo(60 * 24 * 9), created_by: 'admin-demo', updated_at: minutesAgo(60 * 24 * 2), updated_by: 'admin-demo',
+  version: 3,
+}], ['docs-site', {
+  connection_id: 'docs-site', host: 'gitlab', repository: 'example-group/web/docs-site', default_branch: 'main',
+  credential: { kind: 'project_token', set: true, app_id: null, installation_id: null, expires_at: dayAhead(12) },
+  created_at: minutesAgo(60 * 24 * 340), created_by: 'admin-demo', updated_at: minutesAgo(60 * 24 * 340), updated_by: 'admin-demo',
+  version: 1,
+}]]);
+const DIGITS = /^[1-9]\d{0,19}$/;
+const GITLAB_TOKEN = /^glpat-[A-Za-z0-9_.-]{20,300}$/;
+const PROJECT_SEGMENT = /^\w[\w.-]*$/;
+const PEM = /^-----BEGIN (RSA |)PRIVATE KEY-----\n(?:[A-Za-z0-9+/=]{1,76}\n)+-----END \1PRIVATE KEY-----$/;
+const BRANCH = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$/;
+
+/** A GitLab save's credential state (never the token), or the 400 message of a bad one. */
+function tokenState(credential) {
+  if (typeof credential !== 'object' || credential === null || Object.keys(credential).join() !== 'token'
+    || typeof credential.token !== 'string' || !GITLAB_TOKEN.test(credential.token)) {
+    return 'credential is {token}: the GitLab project access token (glpat-…)';
+  }
+  return { kind: 'project_token', set: true, app_id: null, installation_id: null, expires_at: dayAhead(60) };
+}
+
+/** The stored credential's state for a save's credential (never the key), or the 400 message of a bad one. */
+function credentialState(credential, host) {
+  if (host === 'gitlab') return tokenState(credential);
+  if (typeof credential !== 'object' || credential === null
+    || Object.keys(credential).sort().join() !== CREDENTIAL_FIELDS.join()) {
+    return 'credential is {app_id, installation_id, private_key}: the GitHub App\'s';
+  }
+  const { app_id: appId, installation_id: installationId, private_key: key } = credential;
+  if (!DIGITS.test(String(appId))) return 'app_id is the GitHub App\'s number';
+  if (!DIGITS.test(String(installationId))) return 'installation_id is the GitHub App\'s number';
+  if (typeof key !== 'string' || !PEM.test(key.replaceAll('\r\n', '\n').trim())) {
+    return 'private_key is an unencrypted RSA private key in PEM';
+  }
+  return { kind: 'app', set: true, app_id: String(appId), installation_id: String(installationId), expires_at: null };
+}
+
+/** A GitLab project's path: `group/project`, nested groups allowed (at most 21 segments, 255 characters). */
+function isProjectPath(path) {
+  if (typeof path !== 'string') return false;
+  const segments = path.split('/');
+  return path.length <= 255 && segments.length >= 2 && segments.length <= 21
+    && segments.every((part) => PROJECT_SEGMENT.test(part) && part !== '.' && part !== '..'
+      && !part.endsWith('.git') && !part.endsWith('.atom'));
+}
+
+function isGitHubRepository(repository) {
+  const [owner = '', name = '', ...rest] = typeof repository === 'string' ? repository.split('/') : [];
+  return rest.length === 0 && /^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/.test(owner) && /^[A-Za-z0-9._-]{1,100}$/.test(name)
+    && name !== '.' && name !== '..';
+}
+
+function isBranch(branch) {
+  return typeof branch === 'string' && BRANCH.test(branch) && !branch.includes('..') && !branch.includes('@{')
+    && !/[/.]$/.test(branch) && !branch.startsWith('voc-agent/')
+    && branch.split('/').every((part) => part !== '' && !part.startsWith('.') && !part.endsWith('.lock'));
+}
+
+/** The 400 message of a body off the rules, else null. */
+function connectionBodyIssue(id, body) {
+  if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(id)) return 'the connection id is 1 to 63 lower-case letters, digits or "-"';
+  if (!body || Object.keys(body).some((key) => !CONNECTION_FIELDS.includes(key))) return 'the body is {host, repository, default_branch, credential?}';
+  if (body.host !== 'github' && body.host !== 'gitlab') return 'host is github or gitlab';
+  if (body.host === 'gitlab' && !isProjectPath(body.repository)) {
+    return 'repository is the GitLab project\'s path (group/project, nested groups allowed)';
+  }
+  if (body.host === 'github' && !isGitHubRepository(body.repository)) return 'repository is the GitHub repository as owner/name';
+  if (!isBranch(body.default_branch)) return 'default_branch is a branch name git accepts, not an agent\'s voc-agent/ branch';
+  return null;
+}
+
+/** The credential a save leaves stored, or the 400 message: a save without one keeps the stored one. */
+function savedCredential(before, body) {
+  if (body.credential !== undefined && body.credential !== null) return credentialState(body.credential, body.host);
+  if (before === undefined) return 'credential is needed to add a connection';
+  if (before.repository !== body.repository || before.host !== body.host || !before.credential.set) {
+    return 'credential is needed again: the stored one holds the repository it was saved with';
+  }
+  return before.credential;
+}
+
+function saveConnection(id, body) {
+  const issue = connectionBodyIssue(id, body);
+  if (issue !== null) return [400, { message: issue }];
+  const before = connections.get(id);
+  const credential = savedCredential(before, body);
+  if (typeof credential === 'string') return [400, { message: credential }];
+  if (before === undefined && connections.size >= CONNECTION_LIMIT) {
+    return [409, { message: `at most ${CONNECTION_LIMIT} connections: remove one to add another` }];
+  }
+  // (a host change is a move too, as the server's connections.py `_moved` has it)
+  const moved = before !== undefined && (before.repository !== body.repository || (before.host ?? 'github') !== body.host);
+  if (moved && LIVE_RUN_CONNECTIONS.has(id)) {
+    return [409, { message: '1 run(s) of this connection are live: the repository changes once they end (or stop them first)' }];
+  }
+  const now = new Date().toISOString();
+  const connection = {
+    connection_id: id, host: body.host, repository: body.repository, default_branch: body.default_branch, credential,
+    created_at: before?.created_at ?? now, created_by: before?.created_by ?? 'admin-demo', updated_at: now, updated_by: 'admin-demo',
+    version: (before?.version ?? 0) + 1,
+  };
+  connections.set(id, connection);
+  if (moved) voidAttestation(id, 'repository_changed');
+  return [200, { connection: withAttestation(connection), created: before === undefined }];
+}
+
+// ── A connection's CI attestation (POST|DELETE …/connections/<id>/ci-attestation; connectors/attestations.py) ──
+// Every point of the setup guide confirmed, or 400; the newest version answered with the connection; a repository
+// change or a removal voids it.
+const CI_POINTS = ['protected_secrets', 'read_only_token', 'oidc_pinned', 'no_self_hosted_runner',
+  'no_privileged_pull_request', 'branch_rules'];
+const attestations = new Map([['storefront', {
+  version: 1, state: 'attested', repository: 'example-org/storefront', points: CI_POINTS, by: 'admin-demo',
+  at: minutesAgo(60 * 24), reason: null, cause: null,
+}]]);
+
+const withAttestation = (connection) => ({ ...connection, ci_attestation: attestations.get(connection.connection_id) ?? null });
+
+/** The connection's next version: `state`, for its repository now, by the demo administrator. */
+function nextVersion(id, state, extra) {
+  const newest = attestations.get(id);
+  const version = {
+    version: (newest?.version ?? 0) + 1, state, repository: connections.get(id)?.repository ?? newest?.repository ?? '',
+    points: [], by: 'admin-demo', at: new Date().toISOString(), reason: null, cause: null, ...extra,
+  };
+  attestations.set(id, version);
+  return version;
+}
+
+function voidAttestation(id, cause) {
+  if (attestations.get(id)?.state === 'attested') nextVersion(id, 'voided', { cause });
+}
+
+function attest(id, body) {
+  if (!connections.has(id)) return [404, { message: 'Connection not found' }];
+  const points = body?.points;
+  const fields = ['points', 'repository', 'version', 'reason'];
+  if (!Array.isArray(points) || Object.keys(body).some((key) => !fields.includes(key))
+    || typeof body.repository !== 'string' || !Number.isInteger(body.version)) {
+    return [400, { message: 'the body is {points, repository, version, reason?}: the setup guide\'s points confirmed' }];
+  }
+  const missing = CI_POINTS.filter((point) => !points.includes(point));
+  if (missing.length > 0 || points.some((point) => !CI_POINTS.includes(point))) {
+    return [400, { message: `every point of the setup guide is confirmed: not yet ${missing.join(', ')}` }];
+  }
+  // (the repository and version the page reviewed: another administrator's change meanwhile refuses it)
+  const connection = connections.get(id);
+  if (connection.repository !== body.repository || connection.version !== body.version) {
+    return [409, { message: 'the connection changed meanwhile: reload it, review its repository again and try again' }];
+  }
+  const newest = attestations.get(id);
+  if (newest?.state === 'attested' && newest.repository === connection.repository) {
+    return [200, { attestation: newest, created: false, connection_version: connection.version }];
+  }
+  const reason = typeof body.reason === 'string' && body.reason.trim() !== '' ? body.reason.trim() : null;
+  connection.version += 1;
+  return [200, { attestation: nextVersion(id, 'attested', { points: CI_POINTS, reason }), created: true,
+    connection_version: connection.version }];
+}
+
+function attestationRoute(req, res, send, shared, id) {
+  if (req.method === 'POST') return shared.collectJson(req, res, (body) => send(...attest(id, body)));
+  if (req.method !== 'DELETE') return send(405, { message: 'Method not allowed' });
+  if (!connections.has(id) || attestations.get(id)?.state !== 'attested') {
+    return send(404, { message: 'no CI attestation holds for this connection' });
+  }
+  return shared.collectJson(req, res, (body) => {
+    const reason = typeof body?.reason === 'string' && body.reason.trim() !== '' ? body.reason.trim() : null;
+    connections.get(id).version += 1;
+    nextVersion(id, 'withdrawn', { reason });
+    send(200, { withdrawn: true });
+  });
+}
+
+function connectionsRoute(req, res, send, shared, id, ciAttestation) {
+  if (!isAdmin()) return send(403, { message: 'Admin access required' });
+  if (id === undefined) {
+    if (req.method !== 'GET') return send(405, { message: 'Method not allowed' });
+    return send(200, { connections: [...connections.values()].map(withAttestation), limit: CONNECTION_LIMIT });
+  }
+  if (ciAttestation) return attestationRoute(req, res, send, shared, id);
+  if (req.method === 'DELETE') {
+    voidAttestation(id, 'connection_removed');
+    if (!connections.delete(id)) return send(404, { message: 'Connection not found' });
+    return send(200, { removed: true });
+  }
+  if (req.method !== 'PUT') return send(405, { message: 'Method not allowed' });
+  return shared.collectJson(req, res, (body) => send(...saveConnection(id, body)));
+}
+
 // ── A run's start (POST /agents/engineering/runs; agents_handler.py start_engineering_run) ──
 // The server's checks (a connection's short id, a 40-character commit, an image language, a goal of 1-500 characters
 // on one line, nothing else in the body); a start answers the sample run, so the monitor it opens has something to show.
@@ -531,6 +744,12 @@ const EXACT_ROUTES = { runs: startRoute, settings: settingsRoute, spend: spendRo
 
 export function handleEngineeringRunRoutes(req, res, url, send, shared) {
   if (!url.pathname.startsWith(PREFIX)) return false;
+  const connection = CONNECTION_PATH.exec(url.pathname);
+  if (connection) {
+    connectionsRoute(req, res, send, shared, connection[1] === undefined ? undefined : decodeURIComponent(connection[1]),
+      connection[2] !== undefined);
+    return true;
+  }
   const exact = url.pathname.slice(PREFIX.length);
   if (Object.hasOwn(EXACT_ROUTES, exact)) {
     EXACT_ROUTES[exact](req, res, send, shared, url);

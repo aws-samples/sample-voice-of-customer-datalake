@@ -69,10 +69,13 @@ describe('the engineering broker', () => {
     const on = template('on');
     const statements = brokerStatements(on);
     const actions = statements.flatMap((statement) => [statement.Action].flat()).sort(byCodeUnit);
-    // Reads only: no PutItem, UpdateItem, DeleteItem, PutObject or GenerateDataKey anywhere on its role.
+    // Reads, and the one write of its claim rows (PutItem, UpdateItem, their GenerateDataKey): no DeleteItem,
+    // PutObject or other write anywhere on its role.
     expect(actions).toStrictEqual([
-      'dynamodb:GetItem', 'dynamodb:GetItem', 'dynamodb:Query', 'kms:Decrypt', 'kms:Decrypt', 'logs:CreateLogStream',
-      'logs:PutLogEvents', 's3:GetObject', 'ssm:GetParameter',
+      'dynamodb:GetItem', 'dynamodb:GetItem', 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:Query',
+      'dynamodb:Query', 'dynamodb:UpdateItem',
+      'kms:Decrypt', 'kms:Decrypt', 'kms:GenerateDataKey', 'logs:CreateLogStream', 'logs:PutLogEvents',
+      's3:GetObject', 'ssm:GetParameter',
     ]);
     const parameters = {
       'Fn::Join': ['', ['arn:', { Ref: 'AWS::Partition' }, ':ssm:us-east-1:111111111111:parameter/voc/engineering/*']],
@@ -103,6 +106,39 @@ describe('the engineering broker', () => {
     expect(JSON.stringify(records?.Resource)).not.toContain('index');
   });
 
+  it('writes only a write\'s claim row, in its own partition, of its own attributes, encrypted through DynamoDB', () => {
+    const statements = brokerStatements(template('on'));
+    const claims = statements.find((statement) => statement.Sid === 'WriteClaims');
+    // In the runs' writes' partitions alone: never a run's own (its META, tasks, a person's go, its log).
+    expect(claims).toMatchObject({
+      Effect: 'Allow', Action: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem'],
+      Condition: {
+        'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#WRITES#*'] },
+        'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'state', 'op', 'at', 'result', 'closed_at'] },
+        StringEqualsIfExists: { 'dynamodb:ReturnValues': 'NONE' },
+      },
+    });
+    // voc-engineering alone (an import from VocCoreStack), never an index, another table or "*".
+    expect(JSON.stringify(claims?.Resource)).toMatch(/^\{"Fn::ImportValue":"[^"]*GetAttEngineering[^"]*Arn[^"]*"\}$/);
+    const key = statements.find((statement) => statement.Sid === 'WriteClaimsKey');
+    expect(key).toMatchObject({
+      Action: 'kms:GenerateDataKey',
+      Condition: { StringEquals: { 'kms:ViaService': 'dynamodb.us-east-1.amazonaws.com' } },
+    });
+    // For voc-engineering's rows alone: the table's name in DynamoDB's encryption context.
+    expect(JSON.stringify(key?.Condition)).toMatch(
+      /"kms:EncryptionContext:aws:dynamodb:tableName":\{"Fn::ImportValue":"[^"]*RefEngineering[^"]*"\}/);
+  });
+
+  it('keeps the run\'s pull request under the claims\' grant: no other write on any table (7.09.00)', () => {
+    // The pull request's row (records.py WriteClaims.record_pull_request) is in the writes' partition with a claim
+    // row's attributes only, so the broker gains no write: WriteClaims stays its one DynamoDB write statement.
+    const writes = /^dynamodb:(?:Put|Update|Delete|BatchWrite|TransactWrite|PartiQL)/;
+    const writers = brokerStatements(template('on'))
+      .filter((statement) => [statement.Action].flat().some((action) => writes.test(action)));
+    expect(writers.map((statement) => statement.Sid)).toStrictEqual(['WriteClaims']);
+  });
+
   it('reads a person\'s way of working from the aggregates table\'s flag partitions only', () => {
     const modes = brokerStatements(template('on')).find((statement) => statement.Sid === 'WaysOfWorking');
     // Of that row, only its mode (and its key), by a projection: never the whole item or another attribute.
@@ -115,6 +151,23 @@ describe('the engineering broker', () => {
       },
     });
     expect(JSON.stringify(modes?.Resource)).toContain('Aggregates');
+  });
+
+  it('reads of voc-agents only the connections\' CI attestations, by a projected Query', () => {
+    const attestations = brokerStatements(template('on')).find((statement) => statement.Sid === 'ConnectionAttestations');
+    // In the attestations' partitions alone (never a connection's own row or its audit rows), of a row only what the
+    // broker reads (attestations.py BROKER_ATTRIBUTES), and never a GetItem or a write.
+    expect(attestations).toMatchObject({
+      Effect: 'Allow', Action: 'dynamodb:Query',
+      Condition: {
+        'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['CONNECTIONS#*#CI#*'] },
+        'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'state', 'repository', 'version'] },
+        StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+      },
+    });
+    // One table: voc-agents' ARN (an import from VocCoreStack), never an index or "*".
+    expect(JSON.stringify(attestations?.Resource)).toMatch(/^\{"Fn::ImportValue":"[^"]*Agents[^"]*Arn[^"]*"\}$/);
+    expect(JSON.stringify(attestations?.Resource)).not.toContain('index');
   });
 
   it('reads only the agents\' patches and the gate records of the workspace', () => {
@@ -138,7 +191,7 @@ describe('the engineering broker', () => {
   it('names the stores it reads', () => {
     const on = template('on');
     const variables = on.findResources('AWS::Lambda::Function')[brokerId(on)]?.Properties?.Environment?.Variables;
-    expect(['ENGINEERING_TABLE', 'ENGINEERING_WORKSPACE_BUCKET', 'AGGREGATES_TABLE']
+    expect(['ENGINEERING_TABLE', 'ENGINEERING_WORKSPACE_BUCKET', 'AGGREGATES_TABLE', 'ENGINEERING_CONNECTIONS_TABLE']
       .filter((name) => !(name in (variables ?? {})))).toStrictEqual([]);
   });
 
@@ -153,6 +206,12 @@ describe('the engineering broker', () => {
     expect(properties?.Environment?.Variables?.ENGINEERING_PARAMETER_PREFIX).toBe('/voc/engineering/');
     const layers = JSON.stringify(properties?.Layers);
     expect(layers).toContain('EngineeringBrokerSigningDepsLayer');
+  });
+
+  it('carries the YAML reader of GitLab CI files in a layer of its own', () => {
+    const on = template('on');
+    const layers = JSON.stringify(on.findResources('AWS::Lambda::Function')[brokerId(on)]?.Properties?.Layers);
+    expect(layers).toContain('EngineeringBrokerCiDepsLayer');
   });
 
   it('puts a deployment prefix on the voc segment of the parameters\' path', () => {

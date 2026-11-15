@@ -146,7 +146,7 @@ def _vm_directory(root: Path, cache: Path, commit: str) -> RunnerClient:
     server = serve('127.0.0.1', 0, runner, 'agent')
     threading.Thread(target=server.serve_forever, daemon=True).start()
     client = RunnerClient(f'http://127.0.0.1:{server.server_address[1]}', sleep=lambda _s: time.sleep(0.02))
-    for command in checkout_commands(commit, [], source=f'file://{cache}'):
+    for command in checkout_commands(commit, [], 0, source=f'file://{cache}'):
         assert client.run(command.argv, timeout_seconds=60, repository_code=False, in_checkout=False)['exit_code'] == 0
     return client
 
@@ -249,7 +249,7 @@ def test_a_gate_checks_the_submitted_patch_and_records_the_tree_git_hashed_acros
     # The check's build.log changed the checkout: hashed again by real git, its tree is not the judged one, so no GO.
     drifted = again.tools.call('write_gate_record', {'verdict': 'GO', 'tree_hash': fixed})
     assert drifted.error
-    assert f'not the judged {fixed}' in drifted.text
+    assert f'which differs from the judged {fixed}' in drifted.text
     # Once the check's output is gone the tree is the judged one again, and its GO names it.
     (work / 'build.log').unlink()
     record = json.loads(again.tools.call('write_gate_record', {'verdict': 'GO', 'tree_hash': 'f' * 40}).text)['key']
@@ -446,7 +446,7 @@ def test_a_continuation_renews_its_lease_at_once_before_the_restore(aws, tmp_pat
 
 def test_until_the_board_lands_the_harness_refuses_rather_than_guess(aws, tmp_path):
     s3, _ = aws
-    with pytest.raises(HarnessPortNotWired, match='not wired yet'):
+    with pytest.raises(HarnessPortNotWired, match=r'is not wired \(the session was handed no'):
         main(['run', '--adapter', 'converse', '--model', 'model-a'], _env(tmp_path), s3=s3, runner=FakeRunner())
 
 

@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass, replace
 
 import pytest
 
 from engineering.connectors.broker import (
     OPEN_OR_UPDATE_DRAFT_PR,
+    OTHER_REPOSITORY,
     POST_COMMENT,
     PUSH_BUNDLE,
     READ,
@@ -16,11 +18,17 @@ from engineering.connectors.broker import (
     permitted,
 )
 from engineering.connectors.hosts import (
+    CI_AGENT_BRANCH_PROTECTED,
+    CI_DEFAULT_UNPROTECTED,
+    CI_NO_REQUIRED_CHECKS,
+    STORED_BRANCH_MISSING,
     BundleContents,
+    CiProtection,
     CommentTarget,
     NoConnection,
     PullRequestRef,
     RunRecord,
+    StoredBranchMissing,
     Submission,
 )
 from engineering.connectors.identity import AGENT_ROLES, Caller
@@ -38,6 +46,7 @@ from engineering.connectors.test.fakes import (
     FakeHost,
     FakeLedger,
     FakeRuns,
+    FakeWrites,
     bundle_contents,
     connector,
     record,
@@ -135,6 +144,40 @@ def test_refuses_an_unknown_or_inactive_run(runs: FakeRuns, reason: str) -> None
     assert host.calls == []
 
 
+@pytest.mark.parametrize('operation', OPERATIONS)
+@pytest.mark.parametrize('started_on', ['example-org/other', ''], ids=['another repository', 'none recorded'])
+def test_a_run_is_refused_when_its_connection_names_another_repository_than_it_started_on(
+        operation: str, started_on: str) -> None:
+    role = next(r for r, op in WRITERS.items() if op == operation) if operation != READ else 'mapper'
+    host = FakeHost()
+    runs = FakeRuns({RUN: record(repository=started_on)})
+    with pytest.raises(NotNow) as caught:
+        call(Broker(connector(host=host, runs=runs, ledger=FakeLedger({(RUN, TREE)}))), caller(role), operation)
+    assert caught.value.reason == OTHER_REPOSITORY
+    # (the branch is worked out only after the repository check: a re-pointed credential is never used for it)
+    assert (host.calls, host.branch_lookups) == ([], [])
+
+
+@pytest.mark.parametrize('operation', OPERATIONS)
+def test_a_run_is_held_to_its_stored_default_branch_and_refused_while_the_host_lacks_it(operation: str) -> None:
+    role = next(r for r, op in WRITERS.items() if op == operation) if operation != READ else 'mapper'
+    host = FakeHost(branches=('main',))
+    runs = FakeRuns({RUN: record(stored_default_branch='release/gone')})
+    with pytest.raises(StoredBranchMissing) as caught:
+        call(Broker(connector(host=host, runs=runs, ledger=FakeLedger({(RUN, TREE)}))), caller(role), operation)
+    # 409 at the handler, nothing read or written; the words never name the branch.
+    assert caught.value.reason == STORED_BRANCH_MISSING
+    assert (host.calls, host.branch_lookups) == ([], [('conn-1', 'release/gone')])
+
+
+def test_a_push_names_the_stored_default_branch_to_the_host() -> None:
+    host = FakeHost()
+    runs = FakeRuns({RUN: record(stored_default_branch='develop')})
+    push(Broker(connector(host=host, runs=runs, ledger=FakeLedger({(RUN, TREE)}))), caller('committer'))
+    assert [c[-1] for c in host.calls if c[0] == 'push_bundle'] == ['develop']
+    assert host.branch_lookups == [('conn-1', 'develop')]
+
+
 def test_a_comment_quoting_a_review_is_refused() -> None:
     broker, host = go_broker()
     with pytest.raises(WriteRefused) as caught:
@@ -189,8 +232,9 @@ def test_the_committer_pushes_to_its_runs_branch() -> None:
     broker = Broker(connector(host=host, bundles=bundles, ledger=FakeLedger({(RUN, TREE)})))
     assert push(broker, caller('committer')) == TREE
     # The rules ran on what the caller's own patch holds: its run, its agent id, its record, the GO'd tree.
-    assert bundles.read == [Submission(run_id=RUN, agent_id='committer-1', run=record(), key=PATCH, branch=BRANCH,
-                                       tree_hash=TREE, message=MESSAGE)]
+    # (the record as the push read it: with the CI attestation that holds for it)
+    assert bundles.read == [Submission(run_id=RUN, agent_id='committer-1', run=replace(record(), ci_attestation=1),
+                                       key=PATCH, branch=BRANCH, tree_hash=TREE, message=MESSAGE)]
     # The host gets the tree the rules checked, and must push only that (with a lease).
     # The run's default branch, from its record: a new branch must start on it.
     assert host.calls[-1] == ('push_bundle', 'conn-1', BRANCH, bundles.contents_, TREE, 'main')
@@ -356,6 +400,72 @@ def test_no_push_and_no_pull_request_before_the_ci_attestation(operation: str) -
         call(broker, caller('committer' if operation == PUSH_BUNDLE else 'pr-author'), operation)
     assert 'CI settings' in caught.value.reason
     assert host.writes() == []
+    assert host.ci_checks == []   # (refused before the host is asked about its branch rules)
+
+
+@dataclass
+class CountedRuns(FakeRuns):
+    """``FakeRuns`` that counts the attestation reads, and answers the attestation of ``attested_now``."""
+
+    attested_now: bool = True
+    reads: int = 0
+
+    def attested(self, run: RunRecord) -> RunRecord:
+        self.reads += 1
+        return replace(run, ci_attested=self.attested_now, ci_attestation=3 if self.attested_now else 0)
+
+
+def test_the_attestation_is_read_at_each_write_never_for_a_read_and_a_withdrawal_holds_from_the_next() -> None:
+    runs = CountedRuns()
+    broker = Broker(connector(runs=runs))
+    broker.read(caller('mapper'), 'file', 'src/refund.py', None)
+    assert runs.reads == 0
+    push(broker, caller('committer'))
+    assert runs.reads == 1
+    # Withdrawn (or voided) meanwhile: the next write is refused, whatever the run's record said when it was read.
+    runs.attested_now = False
+    with pytest.raises(NotNow, match='CI settings'):
+        broker.open_or_update_draft_pr(caller('pr-author'), BRANCH, 'Fix the refund total', 'fb_0123abcd')
+    assert runs.reads == 2
+
+
+@pytest.mark.parametrize('operation', [PUSH_BUNDLE, OPEN_OR_UPDATE_DRAFT_PR])
+@pytest.mark.parametrize(('protection', 'expected'), [
+    (CiProtection(default_branch_protected=False, required_checks=('ci',), agent_branch_protected=False),
+     CI_DEFAULT_UNPROTECTED),
+    (CiProtection(default_branch_protected=True, required_checks=(), agent_branch_protected=False),
+     CI_NO_REQUIRED_CHECKS),
+    (CiProtection(default_branch_protected=True, required_checks=('ci',), agent_branch_protected=True),
+     CI_AGENT_BRANCH_PROTECTED),
+], ids=['default branch unprotected', 'no required check', 'agent branch protected'])
+def test_an_attested_run_is_still_refused_while_the_hosts_branch_rules_are_off_the_guide(
+        operation: str, protection: CiProtection, expected: str) -> None:
+    host = FakeHost(protection=protection)
+    broker = Broker(connector(host=host))
+    with pytest.raises(NotNow) as caught:
+        call(broker, caller('committer' if operation == PUSH_BUNDLE else 'pr-author'), operation)
+    assert caught.value.reason == expected
+    assert host.writes() == []
+    # Asked about the run's own default branch and the agent's branch, with the run's connection.
+    assert host.ci_checks == [('conn-1', 'main', f'voc-agent/{RUN}/fix')]
+
+
+def test_a_writes_claim_keeps_the_attestation_and_the_branch_rules_it_was_made_on() -> None:
+    claims = FakeWrites()
+    broker = Broker(connector(writes=claims, runs=CountedRuns()))
+    push(broker, caller('committer'))
+    broker.open_or_update_draft_pr(caller('pr-author'), BRANCH, 'Fix the refund total', 'fb_0123abcd')
+    ci = {'attestation': 3, 'checked_at': 1_700_000_000, 'required_checks': ['ci / test']}
+    assert [claim.result['ci'] if claim.result else None for claim in claims.claims.values()] == [ci, ci]
+
+
+def test_a_file_and_history_are_read_on_the_runs_stored_default_branch() -> None:
+    host = FakeHost()
+    broker = Broker(connector(host=host, runs=FakeRuns({RUN: record(default_branch='', stored_default_branch='develop')})))
+    broker.read(caller('mapper'), 'file', 'src/refund.py', None)
+    broker.read(caller('mapper'), 'history', '.', None)
+    assert host.read_branches == ['develop', 'develop']
+    assert ('conn-1', 'develop') in host.branch_lookups   # (confirmed on the host first)
 
 
 def test_the_pr_author_opens_a_draft_against_the_default_branch_with_a_go() -> None:

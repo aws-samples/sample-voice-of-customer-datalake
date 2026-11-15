@@ -39,9 +39,10 @@ budgets, the run journal) and on [memory](memory.md).
 
 *Partly built*: package detection with code owners (`voc-datalake/lambda/engineering/knowledge/workspaces.py`) and
 the shard cutter with its size budget (`knowledge/shards.py`), as tested code nothing invokes yet (the Understand flow
-that calls them lands with the agents, phase 4). Planned: partial clones and sparse checkouts, change impact (the
-dependency graph between packages), shards' time budgets and the caches' writers (the cache's expiry rule is in the
-stack). Designed for them from day one.
+that calls them lands with the agents, phase 4), and, since 7.05.00, the checkout cache's writer
+(`voc-engineering-cache`, [below](#runtime-one-agentcore-session-per-agent), "The checkout cache"), from which every
+agent's blob-less sparse checkout clones. Planned: change impact (the dependency graph between packages), shards' time
+budgets and the dependency caches' filler (the caches' expiry rule is in the stack). Designed for them from day one.
 
 - **Partial clones.** A checkout is `git clone --filter=blob:none` plus a sparse checkout of only the paths a task
   needs. History and pull requests are read through the host's API, in pages, never by cloning everything.
@@ -64,9 +65,10 @@ stack). Designed for them from day one.
   in S3, under the connection's own prefix, so a new agent starts warm; an agent reads only its own connection's
   prefix. Entries expire 30 days after they were written (the raw bucket's `engineering-cache-expiry` rule on
   `engineering/cache/<connection>/…`, with `-c engineeringAgents=true`) and are rebuilt when needed. Every shard has a size and
-  time budget, and a shard too big is split again (built for the size: `knowledge/shards.py`). Only trusted code writes the cache: the connector's broker writes
-  the checkouts, and the cache filler (a step that runs no repository code: fetch only, from the lockfile, install
-  scripts off) writes the dependency caches. A toolchain whose dependency resolution runs build files (Gradle, Maven)
+  time budget, and a shard too big is split again (built for the size: `knowledge/shards.py`). Only trusted code writes the cache: the checkout cache's writer
+  (`voc-engineering-cache`, built in 7.05.00: fetch only, it runs no repository code) writes the checkouts, one
+  immutable entry per (connection, commit), and the dependency caches' filler (planned: a step that runs no
+  repository code, fetch only, from the lockfile, install scripts off) will write the dependency caches. A toolchain whose dependency resolution runs build files (Gradle, Maven)
   gets no shared dependency cache: its resolution counts as repository code with network (the registry list only,
   nothing customer-derived, no credential), in the sandbox, for that run only. Gradle runs without its daemon
   (`GRADLE_OPTS=-Dorg.gradle.daemon=false` in the Java image), whose client talks to it over loopback, which the
@@ -84,21 +86,209 @@ stack). Designed for them from day one.
 *Partly built*: the broker's caller identity, operations per role and write rules, the GitHub client and the
 credential reader, and, since 6.23.00, its readers of what a run recorded: the run's own record, the board's GO
 ledger, the committer's submitted patch and the dial (`voc-datalake/lambda/engineering/connectors/`: `records.py`,
-`patches.py`, `dial.py`), deployed only with `-c engineeringAgents=true`. Planned: the connection page that stores a
-credential (so no deployment has a connection yet, and every operation still answers 503), the CI attestation's
-record, the run's issue and pull request and its cited reviews on the run's record, the checkout cache by commit
-sha, sparse clones, and the GitLab client.
+`patches.py`, `dial.py`), deployed only with `-c engineeringAgents=true`, and, since 7.02.00, the harness's client of
+it, so the agents' reads and writes reach it ([The agent catalog](#the-agent-catalog), "The harness's broker
+client"), and, since 7.03.00, the connections themselves: an administrator stores one (Agents → Connections, or
+the API below) with its GitHub App credential, which goes to the SSM parameter the broker reads, so a run on a stored
+connection is served instead of answered 503, and, since 7.04.00, the CI attestation's record: an administrator
+attests that the repository's CI meets the setup guide ("The target's CI", below), and the broker
+serves a push or a pull request only while that attestation holds and the host's branch rules pass its own read-only
+check; a file or history read is of the run's own default branch, and, since 7.06.00, the GitLab client
+(`connectors/gitlab.py`, gitlab.com): a connection is GitHub's or GitLab's, its credential a GitHub App's or a GitLab
+project access token, and the broker and the checkout cache's writer serve each connection on its own host's client
+(`connectors/router.py`), below, and, since 7.09.00, the run's issue and pull request on its record ("The run's
+issue and pull request", below). Planned: its cited reviews on the run's record, sparse clones, a self-managed GitLab instance (its base URL is one constant today, `gitlab_api.py` `GITLAB_HOST`; the
+owner decides whether a connection names its own), and the first real run against a repository (it waits for the
+owner).
+
+**The connections (7.03.00).** Administrators acting for themselves (a delegated MCP credential gets 403), only where
+the module is deployed (404 otherwise), through the Agents API (`voc-datalake/lambda/engineering/connectors/connections.py`):
+
+- `GET /agents/engineering/connections` → `{connections, limit}`: each connection's id, host (`github` or `gitlab`; a
+  row stored before 7.06.00 is `github`), repository, default branch, who created and last changed it, of its
+  credential only `{kind, set, app_id, installation_id, expires_at}` (`kind` `app` with the App's two ids, not secret,
+  or, for GitLab, `project_token` with the day the token expires as GitLab reported it at the save; the page shows it,
+  warns within 30 days and says so once it has passed), its `version` (any change of the connection moves it), and
+  its CI attestation's newest version
+  (`ci_attestation`, null for none, below). One Query of the
+  connections' partition, and one Query of one row per connection for its attestation (at most 20).
+- `PUT /agents/engineering/connections/<id>` `{host: "github", repository: "owner/name", default_branch,
+  credential?: {app_id, installation_id, private_key}, reason?}` → `{connection, created}`. The id is 1 to 63 lower-case
+  letters, digits or `-` (what a run's `connection` names); the repository is GitHub's `owner/name`; the default
+  branch a name git takes, ASCII, at most 255 characters, never an agent's `voc-agent/` branch; the credential the
+  App's id and installation id (digits) and its private key, an unencrypted RSA key in PEM (PKCS#1 as GitHub hands
+  it out, or PKCS#8), with the rest at most 4 KB (a standard parameter: no monthly charge). Every refusal names the
+  field, never its value. The credential is needed to add a connection and to change its host or repository (it is
+  stored with them); a save without it keeps the stored one (the branch alone changes). A GitLab connection (7.06.00)
+  is `{host: "gitlab", repository: "<namespace>/<project>", default_branch, credential?: {token}, reason?}`: the
+  project's path as its address shows it (a group and up to 19 subgroups, then the project: 2 to 21 parts of letters,
+  digits, `_`, `.` and `-`, at most 255 characters, no `..`, no part ending `.git` or `.atom`), and a project access
+  token (`glpat-` and its body), checked once against gitlab.com before anything is stored (below). A host change
+  while a run of the connection has not ended is refused like a repository change. A repository change while a run of
+  the connection has not ended (the runs' registry, then each run's META) is refused, 409; so is a 21st connection,
+  and a change made meanwhile (each change is conditioned on the version read). That 409 reads the runs, then writes,
+  so a run started between the two is not seen: it is a courtesy, not the guarantee. What guarantees that a run never
+  reads or writes another repository than the one it started on is the broker's own check: it serves a run only while
+  the connection's credential names the run's repository, and refuses it otherwise (409), failing closed.
+- `DELETE /agents/engineering/connections/<id>` `{reason?}` (the body optional) → `{removed: true}`: its parameter is
+  deleted first, so every run on it is refused within five minutes (a warm broker keeps a credential it read that
+  long), then its row is marked removed (kept, and listed no more). Not refused while runs are live: it is the way to
+  cut a connection's access.
+- `POST /agents/engineering/connections/<id>/ci-attestation` `{points, repository, version, reason?}` →
+  `{attestation, created, connection_version}` (7.04.00): the administrator attests that the repository's CI meets the
+  setup guide, confirming every one of its points by id (`protected_secrets`, `read_only_token`, `oidc_pinned`,
+  `no_self_hosted_runner`, `no_privileged_pull_request`, `branch_rules`: the six of "The target's CI", below; 400
+  naming the points not confirmed, never echoing a value), for the `repository` and the connection `version` they
+  reviewed (what the page showed). The attestation is `{version, state, repository, points, by, at, reason, cause}`:
+  it stands for that repository, and `by` is the administrator's name (their subject is kept on the row, never
+  answered). It is recorded only while the connection still holds that repository at that version: 409 otherwise,
+  checked on the row read and again in the write's own transaction condition, so another administrator repointing
+  the connection between the page and the confirmation (or between the read and the write) never gets a repository
+  nobody reviewed attested. One that already holds is answered as it stands (`created: false`, nothing written); 404
+  for a connection that is not stored. `connection_version` is the connection's version after it (an attestation
+  moves it).
+- `DELETE /agents/engineering/connections/<id>/ci-attestation` `{reason?}` → `{withdrawn: true}`: withdraws it (404
+  when none holds), so the broker refuses the next push or pull request on the connection.
+
+The default branch (7.03.01) is the broker's: a run's start copies the stored connection's default branch onto the
+run (META's `default_branch`, beside its `repo`), and the broker holds the run to it (never a push to it, a new branch
+starts on it, a draft pull request is opened against it) once the host confirms the repository has it (one branch
+lookup with `contents: read`, kept five minutes, made only after the repository check below, so a credential
+re-pointed at another repository is never used for it); a branch the repository does not have refuses the run's every
+operation, 409, until an administrator corrects the connection and starts the run again. A change of the branch
+reaches the runs started after it. A run started before 7.03.01 has none on its META and is held to the repository's
+own default branch, as before. A change's optional `reason` (one line, at most 500 characters, credential-shaped text
+redacted: D4's why) is kept on its audit row.
+
+A connection is a row in `voc-agents` (`CONNECTIONS#default` / `CONNECTION#<id>`) and its credential the parameter
+below, written before the row. When the row then cannot be written (a change made meanwhile, a failed write), a new
+connection's parameter is deleted again, and a stored connection's row is marked credential not set (with its audit
+row), so the page says so and the next save needs the credential. Before a new connection's parameter is deleted
+the row is read again (7.03.01): when two administrators add the same id at once, the losing save finds the
+winner's row and deletes nothing (the parameter may be the winner's), and marks that row credential not set instead,
+since the parameter may hold the loser's credential; a row that cannot be read is taken as none, and the parameter is
+deleted, failing closed. One ordering is not prevented, and fails closed: the losing save's row write fails for
+another reason than a conflict (a throttle), the winner's put lands, the loser's undo (finding no row yet) deletes it,
+and the winner's row is written after; SSM has no conditional delete and the Agents API cannot read a parameter, so
+the delete cannot be held to the loser's own version. The row then says its credential is set with none behind it:
+the broker reads no credential and refuses every run on the connection (503) until it is saved again with its
+credential, and never serves a run with another save's credential. Whatever the row says, the broker serves a run
+only while its connection's credential names the repository the run started on (META's `repo`, which a start takes
+from the stored connection): any other is refused, 409, before the host is read for the run (the default branch's
+lookup included). Every
+change writes a create-only audit row in the same transaction (`LOG#<at>#<hex>`: who, their subject and name, when,
+created, updated or removed, each changed field's old and new value, for the credential only `replaced`, `kept`
+or `removed`, and the administrator's reason when one was given; D4). The Agents API is the rows' one writer: every other role that writes `voc-agents` (the agents'
+conductor, nodes, persona panel and heartbeat) has an explicit Deny of writes on the connections' partitions, as on
+the hard cap's (`denyHardCapWrites`, pinned by `lib/stacks/hard-cap-guard.test.ts`). The private key is never answered, logged, put in an error or stored outside SSM, and the Agents
+API cannot read it back: its role holds `ssm:PutParameter` and `ssm:DeleteParameter` on exactly the connections'
+parameters, and `kms:Encrypt` and `kms:GenerateDataKey` on the stack's key only through SSM and only for those
+parameters, never `ssm:GetParameter` (`voc-datalake/lib/stacks/api-assistant-lambdas.ts`, pinned by
+`api-engineering-reads.test.ts`). Since 7.03.01 the role holds the stack's key only through the services that use it
+for the role: DynamoDB (`voc-agents`, the aggregates table, `voc-engineering`), S3 (`kms:Decrypt`, for the workspace's
+reports) and SSM (the statement above), each a `kms:ViaService` condition, and no unconditioned grant: it can call
+KMS itself for nothing, so it can encrypt or decrypt nothing outside those services (pinned by the same test). A run
+starts only on a stored connection (400 otherwise), and its `repo` and `default_branch` are the connection's.
+
+**A GitLab connection (7.06.00, `connectors/gitlab_api.py` `check_token`).** gitlab.com only. Its credential is a
+project access token for exactly the connection's project, role Developer, scopes `api`, `read_repository` and
+`write_repository`, with an expiry (GitLab's tokens expire, at most a year after they are made). A save that carries
+one asks gitlab.com three times before anything is stored (each read sent once, 6 s at most, so the save ends inside
+the API's 29 s), with the token in the `Authorization` header alone:
+`GET /api/v4/personal_access_tokens/self` (what a token reads of itself: active, not revoked, those three scopes, an
+expiry after today, and its user's id), `GET /api/v4/projects/<the path, encoded>` (the project at that path must be
+the one GitLab answers, case aside, with the token's user a direct member with the role Developer, 30; a Guest,
+Reporter, Maintainer or Owner token is refused) and `GET /api/v4/user` (the token's user must be this project's own
+bot: `bot: true`, the same id, and named as GitLab names a project access token's bot,
+`project_<project_id>_bot_<random>`, or `project_<project_id>_bot<n>` for older tokens). So a personal access token
+(its user a person, who reaches every project they can, even as a direct Developer member) or another project's token
+is refused: "use a project access token of this project". A
+refusal is 400 saying what to change (the scope missing, the role found, the day it expired), never the token; a
+GitLab that cannot be asked (a rate limit, an outage, no answer) is 503, and nothing is stored. The parameter then
+holds `{"host": "gitlab", "project_id", "repository", "token", "expires_at"}`, the project's id and path as GitLab
+spells them; the row holds `host: gitlab` and `token_expires_at` (the day, not secret), never the token; a row with no
+`host` (stored before 7.06.00) is GitHub's, with no migration. The token is never answered, logged or put in an error,
+and the Agents API reads it back no more than it does a private key. This check is the Agents API's one reach outside
+AWS: its Lambda is not in a VPC, as before, so it needs nothing new for it. Replacing a token before it expires is an
+edit of the connection with the new one (the same check); an expired token makes every read and write of the
+connection fail at GitLab (401: the broker's 502, the cache writer's refusal) until it is replaced.
+
+**The CI attestation's record (7.04.00, `connectors/attestations.py`).** Each change of a connection's attestation is a
+create-only version row in a partition of that connection's attestations alone, `CONNECTIONS#default#CI#<id>` /
+`V#<version>` (D1): its state (`attested`, `withdrawn`, or `voided`), the repository it stands for, the points
+confirmed, who (subject and name) and when, and the administrator's reason or the void's cause. The newest version is
+the one that holds. An attestation or a withdrawal is written in one transaction with the connection's own audit row
+(`ci_attested`, `ci_withdrawn`, with the from and to states, the version and the repository; D4) and a bump of the
+connection row's version conditioned on the version read, so a repository change made meanwhile refuses it (409). A
+repository change and a removal void it in their own transaction: the void is the next version (cause
+`repository_changed` or `connection_removed`), and the save's or the removal's audit row says `ci_attestation:
+voided`. A voided attestation stays void: changing the repository back does not restore it, the new repository's CI
+is attested again. The partitions match `CONNECTIONS#*`, so every other role that writes `voc-agents` is denied writes
+to them too (`denyHardCapWrites`). On Agents → Connections each connection shows whether its CI is attested, by whom
+and when (or that it was withdrawn or voided, and why), with **Attest CI** (a dialog listing the six points, each a
+checkbox that must be ticked, and an optional note) or **Withdraw CI** (after a confirmation). For a GitLab connection
+(7.06.00) the six points keep their ids and are worded for GitLab: CI/CD variables that hold secrets are protected,
+so only pipelines on protected branches get them (`protected_secrets`); the CI/CD job token has the least access (no
+project on its allowlist beyond what the pipelines need, no job pushes with it: `read_only_token`); cloud trust
+through OIDC (`id_tokens`) is pinned to protected branches (`oidc_pinned`); no shared, group or instance runner with
+access to secrets or networks runs jobs for unprotected branches (`no_self_hosted_runner`); no pipeline runs
+merge-request code with secrets (`no_privileged_pull_request`); and the default branch is protected (no force push,
+push and merge for Maintainers), pipelines must succeed before a merge (a skipped one not counting as a success), the
+CI configuration uses only plain local includes and GitLab's own templates (shared CI from other projects, remote
+includes and components are not supported for now), and `voc-agent/*` stays unprotected
+(`branch_rules`).
 
 **What the broker reads (6.23.00).** Reads only, of rows and objects other code writes:
 
 - **The run** (`records.py`): the caller's run's `META` (its session names the run, never the request), read
   strongly consistent: its status, connection, commit and `started_by`, the person who started it (the run's start
-  records it since 6.23.00; a run started with no person has none). A META that names another run is no run; the
+  records it since 6.23.00; a run started with no person has none), and, since 7.03.00, its `repo`, the stored
+  connection's repository at the start, which the connection's credential must still name. A META that names another run is no run; the
   broker serves only an `active` run (stopped, ended or waiting at a person's decision: 409, with the reason). The
-  default branch comes from the host (kept five minutes). Not on the record yet, so read as absent: the CI
-  attestation (so every push and pull request is still refused, after the dial), the run's issue and pull request
-  (so no comment is accepted), and the reviews behind its feedback ids (so the verbatim-quote rule has nothing to
-  compare; the personal-data rules still run).
+  default branch is META's `default_branch` (7.03.01: the stored connection's at the start), once the host confirms
+  the repository has it (kept five minutes; 409 when it does not); for a META without one, the repository's own
+  default branch (kept five minutes). The broker asks the host either only after the repository check (`broker.py`);
+  `records.py` reads nothing of the host. A file or history read is of that branch (7.04.00: `ref` and `sha` on the
+  host's API), so a run whose connection names `develop` reads `develop`, never the repository's own default branch.
+  Not read by the broker: the run's issue and pull request (on the record since 7.09.00, below, for the run monitor,
+  the reports and the learning loop; not yet taken as the issue and pull request an agent may comment on, so no
+  comment is accepted), and the reviews behind its feedback ids (not on the record yet, so the verbatim-quote rule
+  has nothing to compare; the personal-data rules still run).
+- **The CI attestation** (7.04.00, `records.py` `attested`): read at every push and pull request, after the dial,
+  never for a read or a comment: in `voc-agents`, the newest version of the run's connection's attestation (one Query
+  of one row, strongly consistent, of its key, `state`, `repository` and `version` alone). It holds only while it is
+  `attested` for the repository the run started on (META's `repo`); none, a withdrawn or voided one, one for another
+  repository, a run without a `repo`, or a deployment that names no agents table, and the push or pull request is
+  refused (409, saying an administrator has not confirmed the repository's CI settings); a read that fails is 503.
+  A withdrawal or a void holds from the next write. Then the broker checks the host's branch rules itself, read only,
+  with the connection's `contents: read` token (`github.py` `ci_protection`: GitHub's branch read and the ruleset rules
+  for a branch's name, which any reader of the repository sees; at most four requests): the run's default branch must
+  be protected (classic branch protection or any ruleset rule) and require at least one status check, and the
+  agent's branch must not be protected by any rule (a protected branch gets what protected branches get: the CI
+  secrets and the cloud trust kept for them); otherwise 409 with what to change. A pass is kept five minutes per
+  connection, repository and branch pair, in each warm broker container (at most 256 kept, the oldest dropped first):
+  so rules weakened on the host after a pass (the default branch's protection or its required check removed, a rule
+  added for `voc-agent/*`) can go unseen for up to five minutes, while a withdrawal or a void of the attestation, read
+  at every write, takes effect at the next one. A failure is never kept: it is read again at the next write, so a
+  fixed rule counts at once. Each write's claim row records what it was made on: the attestation's version, when the
+  branch rules were read, and the required checks' names (at most 20). The check covers only those two things: the
+  App's token cannot read the CI settings themselves (secrets, environments, runners, the workflow token's default),
+  nor whether the App's own pushes are limited to `voc-agent/*` (the `branch_rules` point), so those stay the
+  administrator's attestation. On a GitLab connection (7.06.00, `gitlab.py` `ci_protection`, with the connection's
+  Developer token; at most seven requests, none a write) the broker reads the project's protected branches (at most
+  five pages of 100; more is refused, failing closed), its "Pipelines must succeed" setting
+  (`only_allow_merge_if_pipeline_succeeds`, which stands as the required check, recorded as `pipelines must succeed`)
+  and, where the API shows it to the token, its push rule. The default branch must be covered by a protected branch
+  rule (its name or a wildcard), and every rule that covers it (GitLab applies the most permissive) must allow no
+  force push and push and merge for Maintainers only (or no one: access levels 0, 40 or 60, no user, group or deploy
+  key let in by name); a merge without a passing pipeline must be off, and so must "Skipped pipelines are considered
+  successful" (`allow_merge_on_skipped_pipeline`: on, or not answered, refuses); the agent's branch must be covered by
+  no rule;
+  and a push rule's branch name pattern, when it is shown, must take the agent's branch (a pattern the broker's
+  regular expressions cannot read refuses, failing closed). Each refusal is a 409 in the same shape, saying what to
+  change. A token that may not read the protected branches (403) is refused too, failing closed: on gitlab.com a
+  Developer is expected to read them (to be confirmed on the first real connection, below). Code owner approval is
+  read by no point of the attestation, so the check does not require it.
 - **The GO ledger**: the run's `TASK#` rows (one Query of its partition). The final-go task that ended last
   (done, failed or needing a person, a person's block included) is the run's verdict whatever its state, with the
   gate record its own holder, a final-go agent, recorded last (`_gate/attempt-<n>/record.json`); an older task's
@@ -139,8 +329,58 @@ on the aggregates table in the people's flag partitions (`USERFLAGS#*`) and of a
 (`dynamodb:Attributes`, `dynamodb:Select` `SPECIFIC_ATTRIBUTES`), `s3:GetObject` on the workspace's patches and the
 final-go and gate-runner agents' gate records (`ws/default/runs/*/commits/*/_patches/*`,
 `ws/default/runs/*/final-go-*/commits/*/_gate/*`, `ws/default/runs/*/gate-runner-*/commits/*/_gate/*`: the GO
-ledger's rule reads both), and `kms:Decrypt` through DynamoDB and S3;
-no write to any table or bucket.
+ledger's rule reads both), `dynamodb:Query` on voc-agents in the CI attestations' partitions alone
+(`CONNECTIONS#*#CI#*`, never a connection's own row or its audit rows) and of a row only its key, `state`,
+`repository` and `version` (7.04.00), and `kms:Decrypt` through DynamoDB and S3. Its one write (7.02.00): `dynamodb:GetItem`,
+`dynamodb:PutItem` and `dynamodb:UpdateItem` on voc-engineering in the runs' writes' partitions alone
+(`WS#*#WRITES#*`: never a run's own, so it cannot overwrite a run's META, tasks, a person's go or its log), of a row
+only a write claim's attributes (`pk`, `sk`, `state`, `op`, `at`, `result`, `closed_at`), with `kms:GenerateDataKey`
+through DynamoDB; no other write to any table or bucket. The run's pull request's row (7.09.00, below) is written
+under that same grant: no new action, partition or attribute.
+
+**The run's issue and pull request (7.09.00).** The run's record keeps which issue it was started from and which
+draft pull request (a GitLab merge request) it opened, for the run monitor, the goal and PR reports and the learning
+loop's next slice (people's reactions on that pull request: "Getting better", below). `engineering/run_links.py`:
+
+- **The pull request**: `WS#<ws>#WRITES#<run>` / `PULL_REQUEST`, beside the write claims, written by the broker alone
+  (`broker.py` `_keep_pull_request`, `records.py` `WriteClaims.record_pull_request`) when the host answers an open or
+  an update of the run's draft with it: the host kind (`github` or `gitlab`), the number (GitLab's IID), the URL and
+  the head and base branches as the host's answer names them (GitHub's `head.ref` and `base.ref`, GitLab's
+  `source_branch` and `target_branch`), never a token, a title, a body or any other host text. Only a claim row's
+  attributes (`op` `pull_request`, `at` when it was first recorded, `closed_at` when last written, `result` the link
+  as JSON), so the broker's grant is unchanged. It is kept only when the URL is exactly that number's address in the
+  run's own repository (META's `repo`: GitHub's `owner/name`, GitLab's project path with its subgroups) on its host's
+  own domain over https (`https://github.com/<owner>/<name>/pull/<n>`, `https://gitlab.com/<path>/-/merge_requests/<iid>`)
+  and the head is the branch the agent asked for; anything else is logged by its number and not kept. What is kept is
+  the address rebuilt from the host, repository and number, never the host's own spelling of it. Keyed on the head
+  branch: the same number again updates its base (a person may change it on the host) and its address; a new number
+  on the same head (a person closed the draft and the next open made another) replaces it, the earlier numbers kept in
+  `superseded` (at most 20, the oldest dropped); a pull request on another head is refused, so the record never moves
+  to another branch's. The broker reads the row and writes it on the condition that it is still what it read (none,
+  or its exact `result`), up to three tries. A write whose outcome is unknown (the host did not answer, or the check
+  after the write failed) records nothing; the next open or update (another attempt) finds the pull request by its
+  branch on the host (the clients' existing lookup) and records what that answers. A record that cannot be written is
+  logged and counted (`EngineeringPullRequestUnrecorded`, namespace `VoC`, the broker's service; no alarm watches it
+  yet) and never fails the write, which was made; the write's done claim keeps the same answer (number, URL, host and
+  branches), so the readers take the newest done claim of the pull request author's when it is newer than the row and
+  names another number, or there is no row: one Query of at most 10 of its claims (`WRITE#pr-author-…`, the role's
+  only write, so the prefix holds its claims alone; it cannot be narrowed to the operation, which follows the agent
+  and attempt in the key), last in key order first, the latest closed of them on the run's own branch, checked by the
+  same rules; logged as a warning once per run, row and claim in each container, at debug after. The key orders
+  agents and attempts as text (`pr-author-10` before `pr-author-2`), so past nine of either a newer claim can fall
+  outside the read; the row then stands until the next open or update rewrites it. Planned: an alarm on
+  `EngineeringPullRequestUnrecorded` (with the other engineering alarms, `lambda/shared/ops_alerts.py`).
+- **The issue**: nothing carried one before (no start field, task input or flow step names it), so a run's start takes
+  an optional `issue`, a whole number from 1 to 2,147,483,647 (`POST /agents/engineering/runs`, the flow page's Start
+  a run): the start writes it to META's `issue` once, with the run, as `{host, number, url, verified: false}`, its
+  address built from the stored connection's host and repository. It is recorded as given, labelled unverified: only
+  the broker holds the connection's credential, and the start reads nothing of the host.
+- **Shown**: the run overview (`GET /agents/engineering/<run_id>`) answers `run.issue` and `run.pull_request` (null for
+  none), each read back only when its address passes the same check; the run monitor links them, opened in a new tab
+  with `rel="noopener noreferrer"`, only when the address is https on the record's host's own domain under the run's
+  repository (else shown unlinked), an unverified issue saying so; the goal and PR reports name them, each in a code
+  span (a report links, mentions and references nothing on the host). The broker does not take them as the issue and
+  pull request an agent may comment on yet: comments stay refused.
 
 **What is built.** The GitHub client (`connectors/github.py`) reuses a cached installation token or, to mint one, signs
 a nine-minute App JWT (RS256, the App's private key from the connection's parameter, below) for an installation token for the connection's one repository and
@@ -163,18 +403,130 @@ branch with `force: false` (or creates it): a push made meanwhile that the new c
 the update fail (a fast-forward of the same lineage still passes, so the head check before it is the lease). Objects of a refused push
 stay unreferenced. A draft pull request is opened, or its title and body updated, only when the branch's head has the
 checked tree, and the pull request's head is checked again afterwards: if the branch moved meanwhile, a pull request
-the client just opened is closed and the write refused. An update changes only the title and body: GitHub's REST API
+the client just opened is closed, and the write's outcome is unknown (7.02.00: it went out, so it is never answered as
+refused, and never made again for that attempt). An update changes only the title and body: GitHub's REST API
 cannot turn a pull request someone marked ready back into a draft. Every request goes to `api.github.com` through one
 transport, with no redirect followed; a token is sent only in the `Authorization` header, never in a URL or a log
-line. The client has no method for a merge, an approval, settings, branch protection, members, webhooks or secrets.
+line. The client has no method for a merge, an approval, settings, a change of branch protection, members, webhooks or
+secrets; of the branch rules it only reads what any reader of the repository sees (the CI check, above).
 Each write the host accepts gets an operational log line with the operation, the caller, the connection and what was
 written (issue or pull request number, branch, tree hash, commit count), never a body, a patch or a token; the
-durable audit row of each write (D4) is still planned (the broker writes no table).
+durable audit row of each write (D4) is still planned (the broker's one write, since 7.02.00, is each write's claim
+row, which records its outcome but not who asked for it in D4's form).
+
+The GitLab client (7.06.00, `connectors/gitlab.py`, over `gitlab_api.py`) holds the same contract with the
+connection's project access token, which it uses as it is (nothing is minted, nothing revoked): every request goes
+to `gitlab.com` under `/api/v4/projects/<id>` through one transport, no redirect followed, the token only in the
+`Authorization` header. Reads: a file raw on the run's branch (`ref`), history (`ref_name`, `path`), an issue or a
+merge request with a page of its notes (system notes left out; a merge request's diff notes as its review comments
+with their path and line, its approvals as its reviews, on the first page), a patch's base file at the run's commit.
+Pages follow `X-Next-Page` (the cursor is that page number, nothing else); a read lost on the way or answered 502,
+503 or 504 is sent again once (two tries in all), a write never; a rate limit (429 with `Retry-After` or
+`RateLimit-Reset`) is never waited out, it is answered 503 with `Retry-After`. What GitLab says of a refusal (its
+`message`) is kept in the error only after the token and anything credential-shaped are cut out, on one line, at
+most 200 characters. GitLab's API answers no commit's tree id, so the client works it out as git does
+(`gitlab_tree.py`, pinned against real git by its tests): a branch's tree from its head's root listing, and a push's
+from the base commit's listings of the directories it changes (at most 200 directories of at most 2,000 entries
+each: more is refused, nothing written). A push is refused before anything is written when a commit changes a path
+the bundle does not list, writes a symbolic link (the Commits API's actions cannot), or changes a CI definition the
+project names (below); when the branch's head is not the bundle's base, or, for a new branch, the base is not an
+ancestor of the default branch's head (`merge_base`); and when the tree its changes give on the base is not the
+checked tree. The reads before the write are bounded: at most 400 requests, and none that could, with its retry,
+end past the invocation's remaining time less 65 s (`hosts.WRITE_READY_BY` and `WRITE_RESERVE_SECONDS`, set by the
+broker's handler from Lambda's context); and the first commit starts only if it, a page of its read-back and a
+stop's reserve fit. Past any of them the push is refused with nothing written (its claim closed refused, never left
+open; "push fewer changes at once"). Then each commit is one Commits API
+call (`POST …/repository/commits`, its actions create, update, delete and, where the mode is not the one GitLab would
+leave, `chmod`; content in base64; author and committer the token's bot); the first commit's updates and deletions
+carry each file's last commit at the base (`last_commit_id`, read with one `HEAD` of the file: a partial lease, so a
+file changed meanwhile refuses the commit, 400, nothing written). A new branch is created by its first commit
+(`start_sha`: GitLab refuses it, 400, when the branch was created meanwhile, a conflict with nothing written). The
+Commits API has no lease on an existing branch's head, so after the write each new commit's parent and the last one's
+tree are read back: a commit that landed on another head or with another tree, or any failure once the first commit
+is written (a rate limit or a lost read-back included), is an unknown outcome (never answered as refused, never made
+again for that attempt). A push writes at most 20 commits (more is refused before anything is written). The time
+after the first commit follows one model (`gitlab.py`), each step by its worst case: a request waits at most 10 s, a
+read is sent at most twice (20 s), a write once (10 s). A stop keeps 35 s: the undo's read and delete (30 s) and the
+answer (5 s). So no later commit starts unless it and a page of the read-back (30 s) and that reserve fit; no page of
+the final read-back starts that would end inside the reserve (the read-back is cut short, and the outcome says so);
+and the reserve the reads before the write leave is 10 + 20 + 35 = 65 s. A branch this push created is then deleted
+when its head, checked just before, is one of the push's own commits: a read, then an unconditional delete (GitLab
+has no conditional one, so a push landing between the two is not protected), and only when both still fit before the
+invocation's end; otherwise it is left. The outcome's words say what landed and whether the branch was deleted or
+left. These times are assumptions, not guarantees: http.client's timeout is per socket operation (a slow trickle of
+bytes can outlast it) and the name lookup is not covered, and closing the write's claim is a DynamoDB write under
+boto3's default timeouts and retries. Past them, Lambda's own timeout ends the call: the claim is left open, a repeat
+of the write is answered unknown, and the write is never made twice. A draft merge request is opened (title
+`Draft: …`, against the run's default branch, the source branch kept; an open one is the run's only when it is from
+this project, not a fork, and into that branch) or its title and description updated only when the branch's head has
+the checked tree, and checked again afterwards, as on GitHub: a merge request the client just opened is closed when the
+check fails, and the outcome is unknown. An update keeps the `Draft:` title, so it stays (or becomes again) a draft.
+A note's link is `https://gitlab.com/<project>/-/issues/<n>#note_<id>` (or `/-/merge_requests/`). The client has no
+method for a merge, an approval, settings, protected branches, members, webhooks or variables.
+
+**CI definitions on GitLab (`connectors/gitlab_ci.py`).** An agent never changes a CI definition, so before a GitLab
+push the broker pins the project's CI definitions at the bundle's base, and refuses every push it cannot pin, failing
+closed. **Agents push only to GitLab repositories whose CI configuration uses plain local includes and GitLab's own
+templates.** Shared CI from other projects, remote includes and components are not supported for now (an owner
+decision): the connection's token reads this project alone, so the broker cannot see what they hold or include.
+
+- The CI file, `ci_config_path` from the project: an answer without the key is unresolved; an empty value is
+  `.gitlab-ci.yml`; a file of another project (`<file>@<namespace>/<project>`), this project by `@`, a URL, or a path
+  that climbs out is refused.
+- Each CI file is parsed, not scanned (`connectors/ci_yaml.py`: PyYAML 6.0.3's pure-Python composer, from the
+  broker's own `engineering-ci-deps` layer, held strict; JSON is YAML too). Before it is read, input that is not
+  UTF-8, a byte-order mark, a carriage return without its line feed, U+0085, U+2028, U+2029 or U+FFFD refuses; in it,
+  a second document, an anchor or an alias, a merge key (`<<`), a tag other than the standard ones and `!reference`
+  (kept opaque), a duplicate key at any level, or a key that is not printable ASCII or is written with an escape
+  refuses. Its top level must be a mapping, and its `include` is walked as structure: a string (a local path, or a
+  remote one when it is a URL), a mapping, or a list of those. A mapping may hold only `local`, `template` (with
+  `inputs`), `project`, `file`, `ref` and `remote`; `rules`, `component` or any other key refuses, and so does a `*`,
+  a `$`, a `[[` or a backslash (an escaped double-quoted value included) in any value of it at any depth.
+- `local` with a literal path is allowed, and the file it names is read at the base and walked by the same rules
+  (at most 10 deep and 50 files); `template` (GitLab's own) is allowed; `project` (this project, whatever its ref, or
+  another), `remote` and `component` are refused.
+- Every job's `trigger`, in every file the walk reaches, is walked too: a child pipeline's `include` (a string, a
+  list or a mapping) names CI definitions GitLab's lint does not list, so a literal `local` file is pinned and walked
+  and a `template` allowed, and `project`, `artifact`, `remote`, `component`, a `$`, a glob or anything else refuses,
+  naming it. A multi-project trigger (`trigger: <project>`, `trigger: {project: ...}`) is allowed: it runs another
+  project's CI and puts nothing of this repository in CI. A job (any top-level key but the global keywords) whose
+  value is not a mapping is unreadable, and refuses.
+
+Known refusals and limits of the walk:
+
+- A job that `extends` another may add only how its child pipeline runs (`trigger: {strategy: depend}`, `forward`):
+  GitLab merges that into the extended job's `trigger`. When that job is in one of this repository's CI files (a
+  hidden job included), the walk has already read its `trigger` and pinned what it includes; when it comes from a
+  GitLab template, it is GitLab's own fixed content, which the walk does not read. The same
+  `trigger: {strategy: depend}` without `extends`, or with an `include` of its own beyond the rules, refuses; so does
+  `trigger: !reference [...]` (the walk cannot follow it).
+- An empty top-level value (`variables:` with nothing under it, a job with no body) is not a mapping, so it refuses.
+- The lint cross-check covers the parent pipeline's includes only: GitLab's lint does not list child pipelines,
+  whose files the walk pins itself.
+- A multi-project trigger (`trigger: {project: ...}`, a `$X` in it included) runs another project's CI with the
+  variables the job forwards; protecting that project's pipelines is that project's own.
+- GitLab's CI lint at the base (`GET …/ci/lint?content_ref=<base>`) is a cross-check: an answer that is not `valid`,
+  an include it resolved of any kind but `local` or `template`, or a local one the walk did not reach, refuses, so
+  GitLab's own reading of the files catches any reading the broker's missed.
+
+Paths are normalised (`./`, a leading `/`) before they are compared. The CI definitions are the CI file and every
+local file the walk reached, beside the paths the write rules know (`.gitlab-ci.yml` and the `.gitlab` CI folder): a
+push that adds, changes, deletes or renames any of them is refused (`write_policy.check_ci_definitions`). A refusal
+names the include: "The repository's CI configuration includes <it>, which the broker can't read and pin; agents can't
+push to it while it does." The attestation stays the boundary for what the token cannot read (variables, runners).
 
 | Host | Credential | Permissions it holds | Never |
 |---|---|---|---|
 | GitHub | a GitHub App installed on the chosen repositories; each token is minted for one repository and the permissions the step needs, refreshed before it expires | `metadata: read`, `contents: write`, `pull_requests: write`, `issues: write` | `administration`, `workflows`, `secrets`, `actions`, `members`, any organization permission |
-| GitLab | a project access token, role Developer, scope `api` (no narrower scope covers merge requests and comments; it includes the repository read and write scopes), with an expiry; the connection page shows when it expires and takes its replacement | the same, through the API | Maintainer or Owner role; group tokens |
+| GitLab (gitlab.com) | a project access token for exactly the connection's project, role Developer, scopes `api`, `read_repository` and `write_repository` (`api` alone covers merge requests and notes; the repository scopes are what git's fetch and the Commits API name), with an expiry of at most a year; checked against the project at each save; the connection page shows when it expires, warns within 30 days, and takes its replacement | the Developer role's, through the API and git over https | Maintainer or Owner role; group or personal tokens; a self-managed instance (planned) |
+
+**Egress.** The broker and the checkout cache's writer are Lambdas outside any VPC, so their way out is Lambda's own,
+as for `api.github.com` before: what holds each to its host is the code. Each client's transport is bound to one host
+when it is made (`transport.py` `HttpsTransport`: `api.github.com` for the GitHub client, `gitlab.com` for the GitLab
+client; a path, never a URL, no redirect), and the cache writer's remote is one of two fixed prefixes
+(`https://github.com/`, `https://gitlab.com/`) with git's redirects off. The Agents API reaches `gitlab.com` only for
+a save's token check, through the same bound transport. The agents' own sessions reach no host of either: nothing new
+is on their allowlists.
 
 **The broker.** One Lambda, the connector's broker, is the only code that holds a host credential: no agent's
 session ever holds one. Agents ask it for typed operations, and each role may invoke only the operations it needs;
@@ -187,7 +539,7 @@ branch, being refused:
 
 | Role | Operations |
 |---|---|
-| every agent | read files, history, issues and pull requests through the broker; checkouts come from the cache it fills |
+| every agent | read files, history, issues and pull requests through the broker; checkouts come from the checkout cache, which its writer fills with the connection's read-only token |
 | issue understander, PR reviewer | post a comment on the run's own issue or pull request (from the run's record) |
 | committer | push its submitted patch, as one commit, to the agent's branch (`push_bundle`: `{branch, patch, tree_hash, message}`) |
 | PR author | open or update the agent's draft pull request |
@@ -198,8 +550,9 @@ push or pull request the dial holds (above); any push or pull request without th
 its tree (since 6.23.00 every push, not only one to a branch with an open pull request); a push with other than
 exactly one head ref; a merge, an approval; any call to
 settings, branch protection, members, webhooks or secrets; a change to the CI definition paths it knows (the GitHub
-workflows and actions folders, the GitLab CI files: best effort, since a pipeline can include other files; the CI
-attestation below is the real boundary, and the GitHub App holds no `workflows` permission); a write that carries
+workflows and actions folders, the GitLab CI files, and on GitLab, since 7.06.00, the project's own CI file and what it
+includes from the project, "CI definitions on GitLab" above: best effort, since a pipeline can include other files; the
+CI attestation below is the real boundary, and the GitHub App holds no `workflows` permission); a write that carries
 customer text (below): a verbatim sentence of a cited review anywhere the agents wrote (comments, the pull request's
 body, commit messages, the lines a diff adds; split at full stops and line breaks, compared after Unicode
 compatibility normalisation, invisible format characters dropped), and personal data in their prose (comments, the
@@ -223,20 +576,33 @@ downloading the triggering run's artifacts) checks out, runs or downloads the pu
 GitLab, no job-token push. The App holds no permission that could read these settings, so this is an
 **attestation**, not a check: an administrator confirms each point on the connection page, the confirmation is
 recorded with who and when (D4), and every push to an agent branch and every pull request it would open are refused
-until it is there. GitLab is the same (a Developer token cannot
-read the CI/CD variables).
+until it is there (built in 7.04.00, above: the six points are those five and the branch rules of the setup guide,
+the default branch protected with the repository's required checks and the App's pushes limited to `voc-agent/*`).
+Of all that, the broker checks only two things for itself, with the App's read-only token, at each push and pull
+request (above): that the default branch is protected with at least one required check, and that the agent's
+branch is not protected. Everything else, the `branch_rules` point's limit of the App's pushes to `voc-agent/*`
+included, is the administrator's attestation alone. GitLab is the same (a Developer token cannot
+read the CI/CD variables, the job token's settings or the runners), so its attestation (7.06.00) is the same six
+points in GitLab's words ("The CI attestation's record", above), and the broker checks for itself what its token reads
+of the branch rules ("What the broker reads", above).
 
 **Credentials** are SSM Parameter Store SecureString parameters under the stack's customer-managed KMS key (the
 standard tier has no monthly charge), one per connection, `/voc/engineering/{connection_id}` (`{workspace_id}/` is
 prefixed once multi-workspace lands; a prefixed deployment puts its prefix on the `voc` segment,
 `/<prefix>-voc/engineering/…`). A GitHub connection's value is JSON: `app_id`, `installation_id`, `repository`
-(`owner/name`) and `private_key` (the App's PEM key). Only the broker reads them (`connectors/credentials.py`:
+(`owner/name`) and `private_key` (the App's PEM key); a GitLab connection's (7.06.00) `host: gitlab`, `project_id`,
+`repository` (the project's path), `token` and `expires_at`. The Agents API writes and deletes them (an administrator's
+save or removal, above), and never reads one. Only the broker and the checkout cache's writer read them
+(`connectors/credentials.py`:
 `ssm:GetParameter` on that path only, `kms:Decrypt` on the stack's key only through SSM and only for those
 parameters), decrypted, kept in memory five minutes at most; a missing or malformed one answers 503 and is logged by
 connection id and error code only. They are never put in a model's context, an event, a log line, a checkpoint or a
 session. Stopping a run turns the broker off for that run at once: every further operation is refused before any
 token is used. Tokens are not revoked early: each is minted for one repository and one operation's permissions, held
-only by the broker, and expires within the hour.
+only by the broker, and expires within the hour. A GitLab project access token is the connection's own, long-lived
+credential (it lapses on its expiry, at most a year out), so it is never minted and no revocation call is made for
+it: revoking it would cut the connection itself. Removing the connection deletes its parameter; revoking the token is
+done in the project's settings.
 
 **Who can read and use.** Connections, the code read from them, the knowledge packs, the conversations and the
 workspace are readable by administrators only by default; a non-admin sees an engineering run only when an
@@ -418,8 +784,10 @@ The gate judges the patch the committer pushes, end to end:
    apply exactly. Anything else stops the session before any check runs (a crash, which the supervisor continues and
    then sends to a person). Its own git then hashes that tree (`git add --all`, `git write-tree`): the checks run on
    the change, and the tree is the record's. The model never types it, and a task that names no patch cannot write a
-   GO. When the record is written the harness hashes the checkout again the same way, and refuses a GO when a
-   command wrote, changed or deleted a file since (the record can then only be a NO-GO or STOPPED).
+   GO. When the record is written the harness hashes the checkout again the same way, and refuses a GO when the
+   tree differs from the judged one (the record can then only be a NO-GO or STOPPED). That compares the tree at the
+   record's write only: no check is tied to the tree it ran on, so a command that changes the tree and another that
+   changes it back leave the judged tree, and the checks between them ran on another one.
 3. The tree is a function of the run's commit and the patch, so the gate runner and the final go, each hashing its
    own checkout, write the same tree. One GO ledger rule holds for the board, the flow and the broker
    (`flow/ledger.py` `go_tree`): the final go's GO counts only when the gate runner task that ended last ended done
@@ -435,23 +803,83 @@ The gate judges the patch the committer pushes, end to end:
    branch only when the rebuilt tree is that tree (the host's client checks it). So a push lands only the patch the
    gate judged; the broker takes a fixer's or builder's patch of the run only from a committer.
 
-Two limits hold today. The gate runner's checks are whichever commands its model ran (the harness records each one
+Three limits hold today. The gate runner's checks are whichever commands its model ran (the harness records each one
 and how it exited, but nothing yet matches them to the packs' commands), so whether they were the packs' is the final
-go's to judge. And a gate judges one submitted patch, so a run pushes one: when a hunter posts several fixes, the
-coordinator names one, and the others are not pushed. Matching the checks to the packs and combining several fixes
-are follow-ups.
+go's to judge. No check is tied to the tree it ran on (above): the tree is compared when the record is written, not
+before and after each command. And a gate judges one submitted patch, so a run pushes one: when a hunter posts
+several fixes, the coordinator names one, and the others are not pushed. Matching the checks to the packs, hashing
+the tree around each check, and combining several fixes are follow-ups.
+
+**The harness's broker client (7.02.00).** The harness reaches the broker the way it reaches the board
+(`runtime/harness/broker_client.py`, beside `board_client.py`): every call is a POST of `{"operation", "args"}` to the
+broker's function URL, signed SigV4 (service `lambda`) with the agent's own role session, so the broker takes the
+caller's role, run and agent from the session as it always has, and alone decides what each role may do. The runtime
+hands every agent the URL (`VOC_BROKER_URL`, from the supervisor's `ENGINEERING_BROKER_URL`; a continuation and the
+CLI's tool server get it too) and puts its host, by name, on the agent's own egress proxy only (`egress.split`: the
+dependency step's proxy, which repository code uses, never gets a function URL). Each agent role may call the
+broker's function URL and no other but the board's (`lambda:InvokeFunctionUrl` on the broker's function alone, with
+`lambda:FunctionUrlAuthType` `AWS_IAM`, its own statement, pinned by `lib/stacks/engineering-runtime.test.ts`). What
+it covers:
+
+- **Reads** (every role): a page of a file, a history, an issue or a pull request; retried on a 503 or a lost
+  connection, twice, backing off.
+- **Writes**: the committer's `push_commit` (`push_bundle`), the PR author's `open_draft_pr`
+  (`open_or_update_draft_pr`), the PR reviewer's `post_comment` (`post_comment` on the run's pull request). Each is
+  sent once, never retried, with the agent's attempt (`VOC_ATTEMPT`), and the broker makes it at most once per key:
+  the caller's run, agent and attempt, the operation and a digest of what it writes (`broker.py` `write_key`,
+  `_once`), so the same write asked again is one write and a different one (a second comment, a pull request's new
+  text) is its own. Just before the host call it writes a create-only claim row in a partition of the run's writes
+  alone (`WS#<ws>#WRITES#<run>` / `WRITE#<agent>#<attempt>#<operation>#<digest>`, `records.py` `WriteClaims`; never
+  in the run's own partition, which its grant cannot reach) and closes it with the outcome: `done` with the answer (a
+  number, a URL, a branch and tree, never a body), `refused` when nothing was written (a write rule, the host's lease,
+  a target not found, a rate limit, answered 503 with its `Retry-After`: the key may be claimed again), or `unknown`
+  (any other host error). A failure after the host may have written is `unknown`, never `refused`: a pull
+  request opened or updated whose check after the write fails (the branch moved, a rate limit, a host error; a pull
+  request the call opened is closed first, and a failed close changes nothing) is unknown, and so is a push whose
+  trees or commits were made before a failure other than the branch's own refusal. A branch move the host refuses (a
+  422, or a Conflict on the lease) is `refused`: its trees and commits stay unreferenced and the branch did not move. So is a failure to mint the host token (an answer other than a token,
+  before the write): it errs on the safe side, and blocks that write for the attempt. A credential the broker cannot
+  read is "no connection" (503, nothing written). A repeat is answered from its first outcome before the run's, the
+  dial's and the board's checks (as the runtime answers a repeated launch), so a write made answers its answer even
+  after the run moved on; a repeat of one whose outcome is unknown, or whose claim a crash left open, is not made
+  again and answers 502. So a continuation that asks again, within the same task attempt, never posts a comment
+  twice, pushes twice or opens a second pull request; a new attempt of the task is a new key, and after an unknown
+  outcome it may post again (a person checks the host first).
+- **Outcome unknown** (writes only): an answer that never came whole (a timeout, a lost connection, a cut body), a
+  5xx other than the broker's own 503 (which says nothing was written: no connection, its records unreadable), so
+  the broker's own 502 and the function URL's 502 or 504, and a 200 the client cannot read or that is off its shape.
+  The model is told "outcome unknown: do not repeat it; it stays unknown until a person checks the host", and the
+  task's progress says so; it is never told the write was refused, and the session never crashes for it. Nothing
+  reads the host back yet: the claim row keeps the outcome (`unknown`) in the run's writes' partition, any repeat is
+  answered from it and never made twice, and the PR author's draft still needs the pushed branch's tree on the host
+  (a push that never landed is refused there: "push it first"). A person checks the host; reading the host back at a
+  repeat (the branch's tree, the pull request by its head, the comment) and showing the unknown claims on the run
+  monitor are planned.
+- **Submit**: the broker defines no call for it. The fixer's or builder's `submit_work` writes the patch under its own
+  keys, and the client checks that the key is one the broker pushes (a fixer's or builder's submitted patch of the
+  run at its commit, the agent's own) and answers that the committer pushes it after the gate's GO; the broker reads it
+  at that push (`patches.py`).
+
+Every wait is bounded at 125 s, past the broker function's own 120 s, and a redirect is never followed. Any other
+answer but a 200 (a read's every non-200, a write's 4xx and the broker's own 503) is a plain refusal with the
+status and reason (at most 500 characters), which the tools hand the model as a result it reads (the writers'
+skills: a refusal is the answer, never something to work around), never a crash.
+The client logs no body, answer or credential.
 
 **How far a run gets today.** On the local fake runtime with scripted models, the Bug hunt and fix template runs
-from the hunt to the draft pull request (a test). Against AWS nothing has run yet; once the owner starts one, a run
-gets as far as this: the board, the inbox and the flow work through the board's API; every agent is launched with
-its skill; the agents read the checkout, run its commands, write their outputs and post their tasks; and the run
-stops at its first call to the broker, the fixer's or builder's `submit_work`, since the harness's broker interface
-is not wired to the broker's function URL yet (it refuses, and the session crashes rather than guess): the patch is
-written under the agent's own keys but never recorded on its task, so the gate has no submitted patch to judge yet
-and nothing reaches the host. The final go's model judges from its brief (it has no tool to read the gate runner's
-record or the findings yet); its GO counts only by the GO ledger's rule above, which needs the gate runner's own GO
-on the same tree. Not done yet:
-the harness's broker client (the broker's function URL in the agent's environment and egress), the final go's read
+from the hunt to the draft pull request (a test), and since 7.02.00 its writers go through the harness's own broker
+client, each signed as its own session, to the broker's own handler behind a stand-in for the function URL's IAM
+check that verifies each SigV4 signature: the broker's readers of the run's record, the GO ledger, the submitted
+patch and the dial (the starter's way of working AI-driven) read the run's real rows and objects, and a host on the
+fixture repository rebuilds the push with git and moves the branch only when its tree is the one the gate judged.
+Against AWS nothing has run yet; once the owner starts one, a run gets as far as this: the board, the inbox and the
+flow work through the board's API; every agent is launched with its skill; the agents read the checkout, run its
+commands, write their outputs and post their tasks; the fixer's or builder's `submit_work` is recorded on its task,
+so the gate judges it; and the committer's push reaches the broker, which, on a stored connection (7.03.00), refuses
+it until an administrator attests the repository's CI (7.04.00) and the host's branch rules pass its check, and the
+committer reads a refusal as its answer. The final go's model
+judges from its brief (it has no tool to read the gate runner's record or the findings yet); its GO counts only by
+the GO ledger's rule above, which needs the gate runner's own GO on the same tree. Not done yet: the final go's read
 of the gate runner's record and the findings, and the first run, which waits for the owner.
 
 ## How the agents work together
@@ -576,8 +1004,9 @@ What exists:
   denies each of them every source but its own (the board `voc.engineering/board`, the runtime's two
   `voc.engineering/supervisor`, an agent its own, a run's coach `voc.engineering/coach/<ws>/<run>`).
 
-Not built yet: the rest of the harness's side (its broker interface still refuses every call:
-[Runtime](#runtime-one-agentcore-session-per-agent), "Not aligned yet"). Since 6.29.00 every launchable role has a
+Since 7.02.00 the harness's broker interface reaches the broker's function URL as the agent's own session ([the agent
+catalog](#the-agent-catalog), "The harness's broker client"); since 7.03.00 a connection's credential is stored
+(Agents → Connections), and the broker answers 503 only for a run whose connection has none. Since 6.29.00 every launchable role has a
 skill ([the agent catalog](#the-agent-catalog)), so the board launches any of them (the coach is the one role with
 none, and a launch of a role with no skill is still refused, 409), and the agents write their findings, notes and gate
 records in the workspace beside their checkpoints and patches, each recorded on its task. The rest of this section is the
@@ -808,7 +1237,7 @@ the template the server serves (`POST /workflows`) and starts nothing; the refre
 rules. What goes back to the model names only ids: the run's own words reach it only through `get_engineering_run`,
 as data. Like every run started from a flow, it follows its copy of the flow as far as the runtime can do its steps
 ([The flow a run follows](#the-flow-a-run-follows): the Understand flow's memory write is not run yet), and it
-reaches a repository only once a connection's credential can be stored. *Planned*: "pull the latest from the
+reaches a repository through its stored connection (and starts only on one). *Planned*: "pull the latest from the
 repository" from the assistant (the same card rules). An engineering run's reads and its start are
 administrators-only, so no MCP tool while an MCP token never acts as an administrator (TENETS.md's tenet 4 gap).
 
@@ -845,11 +1274,12 @@ Feature flow, and the commit reviewer flags one that does.
 
 **How a flow starts.** *Built* (6.25.00): an administrator acting for themselves starts a run of a saved engineering
 flow, from the flow's page in the web app (**Start a run**, where `features.engineering` is on) or with
-`POST /agents/engineering/runs` `{workflow_id, connection, commit, language, goal}` (no MCP tool: admin work,
+`POST /agents/engineering/runs` `{workflow_id, connection, commit, language, goal, issue?}` (no MCP tool: admin work,
 TENETS.md's tenet 4 row). The Agents API checks each field (a saved `voc-workflow/2` flow; a connection's short id; a
 full commit id of 40 hexadecimal characters; a language with a session image; a goal on one line of at most 500
-characters, credential-shaped text redacted; nothing else, so the request sets neither the budget, the caps, the
-repository nor the actor), mints the run's ULID, and invokes the start function, voc-engineering-start (the runtime's
+characters, credential-shaped text redacted; since 7.09.00 an optional `issue`, the number of the issue the run
+starts from, a whole number from 1, recorded as given: "The run's issue and pull request", above; nothing else, so
+the request sets neither the budget, the caps, the repository nor the actor), mints the run's ULID, and invokes the start function, voc-engineering-start (the runtime's
 code with a role of its own, holding only what a start needs: the run's rows and the registry, a flow's month
 total and the hard cap's row, its rule switched on, and the runtime invoked for the launch; no session, agent role,
 bus or delete. It is entered at `start_handler`, which takes `start_run` and refuses every other action
@@ -869,7 +1299,9 @@ sends the run to a person (the coordinator's decision point), whose Resume launc
 crashes or times out before it can, the supervisor's tick catches it: an active run started with a coordinator to
 launch (its connection, commit and language) that has no coordinator session and no live launch hold of one, more than
 6 minutes after its start or its last Resume, whichever is later (the runtime's 5-minute limit and a minute's margin,
-`supervisor.COORDINATOR_LAUNCH_SECONDS`; a Resume records `resumed_epoch` on `META`, so its new coordinator gets a full
+`supervisor.COORDINATOR_LAUNCH_SECONDS`), or 21 minutes when a fill of its checkout began since (its META's
+`cache_fill_at`: four 5-minute invocations, the fill and its two further asks among them, and a minute,
+`COORDINATOR_FILL_LAUNCH_SECONDS`; a Resume records `resumed_epoch` on `META`, so its new coordinator gets a full
 window of its own and no tick undoes the Resume), goes to a person (`needs_human` `coordinator`, actor `supervisor`).
 The check uses the agent rows the tick already queries (sessions and launch holds, one query per listed run) and makes
 one GetItem of the run's `META` per tick for each run with no coordinator session; it asks once, as the decision point
@@ -884,9 +1316,8 @@ dropped connection. The dialog then shows **Open the run**, a link to that run's
 the body, else from the message), and keeps Start off, so nobody starts a second run. An answer that names no run
 after the request was sent (a 504, a 5xx with no reason of the server's own, a network failure, an answer that cannot
 be read) keeps Start off too, says the run may have been started, and links to the flow's runs (Agents → Spend grouped
-by run for the flow, the one place runs are listed, where a run shows once it has used something). Such a run launches its coordinator, but it reaches the repository only once a connection's credential can be
-stored (the connection page, *planned*: [Repository connectors](#repository-connectors)), so until then every broker
-operation of it answers 503. *Planned*: the rest of this paragraph. A bug hunt is started by an administrator (Run now, or the agent's schedule, which only an
+by run for the flow, the one place runs are listed, where a run shows once it has used something). Such a run launches its coordinator and reaches the repository through its stored connection (a start on a connection
+that is not stored is refused, 400: [Repository connectors](#repository-connectors), "The connections"). *Planned*: the rest of this paragraph. A bug hunt is started by an administrator (Run now, or the agent's schedule, which only an
 administrator sets or changes, checked when the agent is saved and again when the run starts), scoped to packages; in a hunt the understander writes its problem statement on the board's task, not on the host. On a public
 repository, a flow that starts from someone's text starts only from an issue or pull request a maintainer labelled
 for it. A pull request from a fork is only ever reviewed (comments), never fixed or pushed to.
@@ -1131,8 +1562,9 @@ to it from its tags; `from.kind` `coach`) among them. Not aligned yet (the runti
   and commit, never an invoke grant of the coordinator's on the runtime, which would also reach its tick, its end
   of a run and its signals), and `knowledge` (a package of the caller's own task, or the root: the coordinator's
   `coordinate` task, which the run's start posts, has no paths, so it reads the root's pack); a refusal of the
-  board's (a 4xx) is a result the coordinator's model reads, never a crash. Its broker interface
-  still refuses every call.
+  board's (a 4xx) is a result the coordinator's model reads, never a crash. Its broker interface (7.02.00,
+  `harness/broker_client.py`) is the broker's function URL (`VOC_BROKER_URL`, its host on the agent's own proxy),
+  signed the same way; a broker's refusal is a result the model reads too, and a write is never retried.
 
 Each agent of a run runs in its own AgentCore Runtime session (its own microVM; below, an agent's session or its
 microVM), from its language's image, with its own sparse checkout from the cache (`runtime/agentcore.py`):
@@ -1207,9 +1639,9 @@ wait closes.
   runner (root's, on loopback; an HTTPS `CONNECT` only, to a host of its own list, on port 443; it never reads what
   goes through):
   - the agent's own (user `unit`, port 3128): Bedrock in its region, its two buckets' own S3 endpoints and the board's
-    function URL. Never a registry.
+    and the broker's function URLs. Never a registry.
   - the dependency step's (user `code`, port 3129, the one repository-code command with network): its language's
-    package registries and the deployment's extra hosts. Never Bedrock, a bucket or the board.
+    package registries and the deployment's extra hosts. Never Bedrock, a bucket, the board or the broker.
 
   The entry point's egress firewall sends each user to its own proxy only: `unit` reaches the runner and port 3128,
   `code` port 3129, and neither reaches any other address or port, a link-local address or a name server. Each
@@ -1227,8 +1659,8 @@ wait closes.
   (`com.amazonaws.<region>.bedrock-runtime`, private DNS on) whose endpoint policy allows `bedrock:InvokeModel*` and
   `bedrock:Converse*` only for principals of this account (`aws:PrincipalAccount`), so the agent's Bedrock traffic
   never leaves the VPC and cannot be spent on another account; and a NAT gateway, which the package registries and the
-  board's function URL need (a function URL has no VPC endpoint), ideally behind an egress firewall that admits only
-  the registries, the extra hosts and the board's host. The stack makes none of it (TENETS.md tenet 7).
+  board's and the broker's function URLs need (a function URL has no VPC endpoint), ideally behind an egress firewall
+  that admits only the registries, the extra hosts and the board's and the broker's hosts. The stack makes none of it (TENETS.md tenet 7).
 - **The sessions' execution role.** One for every runtime: it pulls the images from the stack's repositories and
   writes the runtimes' logs, nothing else. Everything else a session does is done with the agent role's 15-minute
   session the launcher hands its agent user (below), whose grants are, all scoped by its session tags: read its
@@ -1240,10 +1672,11 @@ wait closes.
   a standard runtime and, unless `-c engineeringBuildMemoryMiB=0`, a build runtime for the roles that build and test.
 
 - **No host token in any session.** Nothing in a session reaches the repository host: the
-  [broker](#repository-connectors) holds the credential, fills the cache and makes every host write. An agent's egress
+  [broker](#repository-connectors) holds the credential and makes every host write, and the checkout cache's writer
+  (below) mints a read-only token only for its own fetch. An agent's egress
   allowlist is, in its region, Bedrock and its two buckets' own S3 endpoints (the raw bucket's for the cache, the
-  workspace bucket's for its keys; never the regional one, which reaches every bucket), the board's function URL by its own host (`<id>.lambda-url.<region>.on.aws`, never a generic Lambda endpoint; the
-  broker's too once the harness calls it), and, for the agents that run
+  workspace bucket's for its keys; never the regional one, which reaches every bucket), the board's and the broker's function URLs by their own hosts (`<id>.lambda-url.<region>.on.aws`, never a generic
+  Lambda endpoint; the broker's since 7.02.00, when the harness's client of it landed), and, for the agents that run
   repository code, its language's package registries (plus at most 10 configured hosts, a registry mirror for example),
   which only its dependency step reaches (the second proxy, above).
 - **Credentials from a launcher, never in the image.** A session starts with no AWS credential of the run's (its runtime's execution role pulls its image and writes its
@@ -1283,10 +1716,13 @@ wait closes.
   (a tmpfs at `/run/voc`) and the kernel's protected hard links are turned on, so repository code cannot hard-link
   the session into the checkout; unless one of the two holds, the runner runs no repository code at all. A killed or timed-out command is ended with its whole process group, and a boxed command's
   namespace dies with it.
-- **Sparse partial clones.** The broker keeps a partial clone per connection in the cache, under
-  `engineering/cache/<connection>/`. With its first session the runner mounts that prefix read-only at `/mnt/voc-cache`
-  (Mountpoint for Amazon S3; nothing is written through it), and the agent clones from it with `--filter=blob:none`
-  and a sparse checkout of only its task's paths (at most 200), then checks out the task's commit. The agent user runs
+- **Sparse partial clones.** The checkout cache (below) holds each run's commit under its connection's prefix,
+  `engineering/cache/<connection>/<commit>/g<N>/repo.git`. With its first session the runner mounts the connection's
+  prefix read-only at `/mnt/voc-cache` (Mountpoint for Amazon S3; nothing is written through it), and the agent clones
+  `/mnt/voc-cache/<commit>/g<N>/repo.git` (the commit checked as a full object id, `N` the generation its launch found
+  and recorded on its session, checked as a whole number) with `--depth=1 --filter=blob:none` (git
+  hangs on a blob-less clone of a shallow repository without the depth) and a sparse checkout of only its task's paths
+  (at most 200), then checks out the task's commit. The agent user runs
   every git command with the system config, terminal prompts, hooks, the file-system monitor, the pager, external diff
   tools and credential helpers off, and with git's own file modes (`core.sharedRepository=0644`, whatever the
   umask). The git directory lives beside the working tree (`/work/repo.git`, which repository code cannot write)
@@ -1295,6 +1731,188 @@ wait closes.
   included, lands inside the working tree), so repository code can change the working tree but neither the git
   directory nor which one the agent's git reads: a `.git` or a repository it plants in the working tree, with
   its config and filters, is never the agent's.
+- **The checkout cache (7.05.00).** Its writer is `voc-engineering-cache`
+  (`voc-datalake/lambda/engineering/connectors/cache.py`, the layout in `cache_layout.py`; CDK in
+  `lib/stacks/engineering-cache.ts`), trusted code that runs no repository code, a container-image Lambda
+  (`voc-datalake/engineering-cache/Dockerfile`: Lambda's Python base image pinned by digest, one exact build of the
+  distro's `git-core`, every Python package pinned by version and sha256 in `engineering-cache/requirements.txt` and
+  installed with `--require-hashes`, built by CDK as a Docker image asset for arm64).
+  - *Layout.* One immutable entry per (connection, commit, generation) in the raw bucket:
+    `engineering/cache/<connection>/<commit>/g<N>/repo.git/…`, a bare repository holding exactly that commit at depth
+    1 under one ref (`refs/heads/voc-base`, HEAD pointing to it), `uploadpack.allowFilter` set, its objects repacked
+    into one pack (`git repack -a -d`; the ref stays one loose file, since S3 keeps no empty directory and git opens a
+    repository only with its `refs/`). The entry is complete only once `…/<commit>/g<N>/READY` exists: a JSON manifest
+    (format 2, the connection, the repository it was fetched from, the commit, its generation and its ref, every file
+    with its size and sha256, the total, when it was written), written last and create-only (`If-None-Match: *`, in
+    the writer's IAM too), never rewritten. A fill that finds READY does nothing; files under `repo.git/` may be
+    overwritten by a retry, since nobody reads an entry without READY. READY marks completion; it is not an integrity
+    check against its readers: the writer is the only principal that may write under the cache's prefix (the raw
+    bucket's deny, under *IAM* below), and
+    each file's sha256 is sent with its put, which S3 checks against the bytes it stores (a mismatch is refused), so
+    the manifest's hashes are what S3 stored. A fill redone after a failed one overwrites the files of the same names (the
+    bucket is versioned: the old ones become noncurrent versions, which the cache's rule expires a day later) and may
+    leave a pack the manifest does not list (its name is its content's hash, and a new repack may name another); it
+    holds the same commit's objects and is harmless. The manifest's `repository` is where the commit was fetched from: a commit fetched by its id may be
+    one only a fork's pull-request ref reaches, so it says nothing of the branch the commit is on.
+  - *Generations.* `N = floor(epoch seconds / 14 days)`, from the caller's clock (`cache_layout.py`
+    `GENERATION_SECONDS`, the one constant). A launch takes READY of generation `N`, or of `N - 1` while its
+    manifest was written under 28 days ago; when neither is usable, generation `N` is filled beside the old one. Every
+    entry expires with the cache's 30-day rule (S3, after it was written), so an entry in use is always at least two
+    days from its expiry, and the old generation is never read near its deletion; nothing is renewed or rewritten.
+    The writer refuses a generation more than one away from its own clock's.
+  - *The fill.* `git init --bare` (no template, so no sample hooks), then `git fetch --depth=1 --no-tags
+    https://github.com/<owner>/<repo>.git <commit>:refs/heads/voc-base` (a GitLab connection's, since 7.06.00:
+    `https://gitlab.com/<namespace>/<project>.git`), HEAD set, the commit checked, the repack, in
+    a fresh directory under `/tmp` removed afterwards. Every git command runs with the system and global config,
+    hooks, the file-system monitor, credential helpers and terminal prompts off, https the only protocol, no
+    redirect, no submodule and every fetched object checked, from an environment it is given whole (nothing inherited).
+  - *The token.* An installation token for `contents: read` on the connection's one repository, minted as the broker
+    mints its tokens (`github.py` `fetch_token`, the connection's GitHub App credential read from its SSM parameter as
+    the broker reads it). It reaches git only through the fetch's environment: `GIT_CONFIG_COUNT=1`,
+    `GIT_CONFIG_KEY_0=http.https://github.com/<owner>/<repo>.git.extraHeader`, `GIT_CONFIG_VALUE_0=Authorization: Basic
+    <base64 of x-access-token:<token>>`. It is never in a URL, an argument, a file, a log line or an error: a git
+    failure's words are redacted (the token, its header form, anything credential-shaped) and cut before they are
+    raised. Once the fetch is over (or has failed) the token is revoked (`DELETE /installation/token`, best effort:
+    sent once, never retried, a failure only logged; the token lapses within the hour anyway) and forgotten by the
+    container. A GitLab connection (7.06.00) fetches with its own project access token, read from its SSM parameter
+    (`router.py` `fetch_access`), the same way: `GIT_CONFIG_KEY_0=http.https://gitlab.com/<namespace>/<project>.git
+    .extraHeader`, `GIT_CONFIG_VALUE_0=Authorization: Basic <base64 of oauth2:<token>>`, never in a URL, an argument
+    or an error (both hosts' header forms are redacted). A project access token is long-lived (it expires on its own
+    date, at most a year out) and is the connection's own, not one minted for the fetch, so no revocation call is
+    made after it: revoking it would cut the connection, which stands until an administrator replaces or removes it. The same classification holds: git's "Authentication failed",
+    "HTTP Basic: Access denied" or an answer of 401 or 403 is a refusal (an administrator replaces the token, which
+    may have expired or lost its access), a missing project or commit is a refusal as above, and a 429 or a 5xx is a
+    failure a later try may not meet.
+  - *The claim.* Two fills of one commit's generation are kept apart by a claim row in `voc-engineering`: `pk`
+    `WS#default#CACHE#<connection>`, `sk` `COMMIT#<commit>#G#<N>`, attributes `holder` and `expires_at` only. A fill
+    takes it
+    with a conditional put (`attribute_not_exists(pk) OR expires_at <= now`), a lease of 300 seconds (longer than the
+    function may run), and ends its own lease when done (an update conditioned on its holder): at once when it landed
+    or was refused, but 120 s later when it failed (`CacheFailed`, `FAILED_HOLD_SECONDS`), so during a host outage the
+    launches meanwhile find the fill held (a launch waits; the board's and the continuations' hand nothing on, and an
+    agent's launch is told "a fill of it is under way; try the launch again in a few minutes") instead of each minting
+    a token and starting a fetch, about one fill per 2 minutes in all, not one per launch; a claim another fill
+    holds refuses (`CacheBusy`, saying when to try again), and a crashed fill's claim is taken over once its lease ends.
+  - *Bounds.* The function runs at most 240 s (2 GB of memory, 3 GB of ephemeral storage); the fetch gets at most
+    150 s, and never more than what is left of the 230 s deadline once 80 s are kept for the steps after it (a slow
+    mint shortens it; under 10 s left, the fill stops as "ran out of its time before its fetch"), the repack 30 s, each
+    other git step 10 s, and no upload starts that would end, by an estimate from its size (50 MB/s), past 230 s into
+    the fill. The deadline is the earlier of those 230 s and Lambda's remaining time less 10 s, when the invocation's
+    context gives it (`cache.invocation_ends_by`: a cold start or a slow claim shortens it). Past it the fill ends
+    in its own words (`CacheFailed`; an upload far slower than the estimate can still meet Lambda's limit). The real ceiling is so whichever comes first: 1 GB and 1,000 files once fetched and repacked (refused with
+    the size and the cap, `EntryRefused`), or a depth-1 pack the fetch cannot bring within its budget ("the fetch did
+    not finish within its budget: the repository is too large for the cache, or the host was slow; a Resume tries
+    again", `CacheFailed`: a failure a later try may not meet, since a slow host looks the same); a pack too large for
+    the 3 GB of scratch space fails as a git failure (`CacheFailed`, redacted). Nothing is uploaded and no READY written
+    in any of them. Why not Lambda's 900 s: the runtime waits for the fill synchronously, inside its own function
+    whose limit is 300 s, and that limit is also how long a move holds an agent session's claim (`CLAIM_SECONDS` in
+    `runtime/supervisor.py`), so it is not raised for the cache; the wait (270 s: the writer's 240 s and a cold start)
+    fits inside it. A host that is busy or unreachable for the token is `CacheFailed` with its retry time (never the
+    claim's `CacheBusy`); a host that refuses it (401, 403 or 404: the App's installation or its contents permission
+    removed) is `EntryRefused`, a person's at once, in those words, and so is any other 4xx but 408 and 429 (a 422,
+    say: the request refused the same way every time; an administrator checks the GitHub App). Every failure a later
+    try would meet again is a refusal (`EntryRefused`, `cache.fetch_refusal`, read from git's last words), its claim
+    let go at once, each saying what a person does: a fetch the host answers with no such commit ("not our ref",
+    "couldn't find remote ref", an unadvertised object: "push it to the connection's repository, or start the run on
+    a commit that is there"; refused at the first such answer, a host's brief lag after a push included: a Resume
+    once the commit is there fills it), with no such repository (the host's "Repository not found", or git's
+    `fatal: repository '<url>' not found` in that form only: an administrator checks the
+    connection's repository and the App's installation on it), or with an object that fails git's check (`fsck
+    error`: someone checks the repository with `git fsck` and starts the run on another commit). A busy host (429,
+    5xx), a timeout and a network error stay `CacheFailed`. Each file is one PutObject (no multipart upload).
+  - *When it runs.* The runtime fills the run's commit (generation `N`) before it launches the run's coordinator,
+    after a read of READY found no usable generation: `launch_coordinator` (the start's hand-on) invokes the writer
+    and waits (up to 270 s), then hands the launch on to a fresh invocation of itself, so a fill's wait and a
+    session's start never share the runtime's 5 minutes (a fresh invocation that still finds no READY is refused,
+    never filled again). The start function cannot wait for a fill: the Agents API waits 25 s for it, behind API
+    Gateway's 29 s, which is why the start already hands the coordinator's launch on to the runtime. A whole-run
+    Resume checks READY first, whatever the coordinator's state, and hands a fill on when it is missing, so an entry
+    gone under a live run is filled again. A fill refused or failed is said as the run's health in the writer's own,
+    already redacted words, followed by "A Resume of the run tries again." for a failure a later try may pass, or, for
+    a refusal, by what helps given its cause (`handler._refusal_ending`; never "tries again", which it would not
+    pass): a Resume keeps the run's commit, so after no such commit "A Resume of the run keeps this commit: it fills
+    the checkout once the commit is pushed; otherwise start a new run on a commit that is there.", after an object
+    failing fsck "A Resume of the run keeps this commit and would meet it again: start a new run on another commit.",
+    and after any other (the repository, the App, a cap) "Once that is put right, a Resume of the run fills the
+    checkout."; and the run goes to a person at the
+    `checkout_cache` decision point. One another fill holds (another run on the same commit) is waited for, reading
+    READY and the claim every 10 s for up to 210 s, and that READY serves this run too; a claim that lapses with no
+    READY (that fill crashed) ends the wait, and the launch's next ask, in a fresh invocation, takes it over (at most
+    twice; then "fills of the commit kept ending with no READY"). A fill that outlasts the wait under a live claim is
+    logged as that and the launch asked exactly once more; still none, a coordinator's launch sends the run to a
+    person ("another fill of the commit held its claim past two waits"). Both of these endings are transient
+    (contention a later try may not meet): a fill a board launch handed on counts them as below. A writer that cannot be asked, or does not answer within the wait, is
+    the cache's failure too ("the cache writer could not be asked, or did not answer in time"; a container-image
+    function idle for weeks goes Inactive and Lambda wakes it on that first call, which is said as such: a Resume a
+    few minutes later fills it). A READY read
+    that answers 403 cannot be told from a missing one (the roles list nothing, below): it is logged apart (not
+    counted as a denied read, which every entry not filled yet would trip), and once a fill has written READY and the read still answers 403, the run is refused saying "the role
+    cannot read the checkout cache (403)" and goes to a person, never held in silence. Every launch (the
+    board's `launch` op included) is refused (`RuntimeRefused`, a 409 the coordinator reads) while the run's commit has
+    no usable generation, or when generation `N`'s manifest names another repository than the run's and `N - 1` of
+    the run's repository does not serve (its connection
+    repointed since the fill: that generation's entry cannot be replaced, so the commit launches nothing through that
+    connection until the next generation, within 14 days; the refusal says so, and that pointing the connection
+    back, or a run on another commit, helps meanwhile; `N - 1` of another
+    repository is simply passed over). A launch that finds one records its generation on the agent's session, and the
+    agent's checkout clones that generation. A coordinator's launch (a start, a Resume) that finds only `N - 1` usable
+    fills `N` ahead first, best effort (a failure leaves `N - 1` in use), so a run's later launches and continuations
+    do not meet `N - 1`'s 28-day edge; the board's launch of any other agent that finds only `N - 1`, or nothing,
+    hands the same fill on in an invocation of its own (the launch is answered as it is), unless a fill of `N`
+    already holds a live claim, so launches after the first fill has taken its claim hand none on (launches racing before that fill takes
+    its claim may both hand one on; the writer's claim keeps them to one fetch). A fill handed on while `N - 1` still
+    serves is a background one: its failure is logged and said as the run's health, and sends nobody to a person; its
+    refusal (`EntryRefused`, say the App uninstalled; likewise for a coordinator's fill ahead, whose launch is then not
+    made) sends the run to a person at once, in the writer's words, never only at `N - 1`'s 28-day edge. An agent's
+    launch refused while a fill is on its way (handed on by that launch, or holding its claim) is told so ("a fill of
+    it is under way; try the launch again in a few minutes"), not that a person's Resume fills it. One
+    handed on while nothing serves, the coordinator still working, sends the run to a person only on a refusal
+    (`EntryRefused`, another repository's entry, `DENIED`) or on the third transient failure in a row (the writer's
+    `CacheFailed`, a fetch past its budget, an invoke that failed or timed out, other fills that held the claim past
+    two waits or kept ending with no READY), counted on the run's META row
+    (`cache_failures`, `RunStore.count_cache_failure`; failures within 300 s of the last one counted are one spell,
+    counted once, so racing fills that meet one outage count once; one more than an hour after the last counted starts
+    the count again at 1) and cleared by a fill that lands or a launch that finds the current entry ready, or on the
+    first transient failure once the streak is an hour old (`cache_failing_since`, its first failure's time, set beside
+    the count and kept across its restart until the same clearing; `CACHE_FAILING_LIMIT_SECONDS`), so a coordinator
+    asking less often than hourly still reaches a person rather than its agents being told to try again for ever;
+    before that its failure is
+    said as health only ("The run goes on; the next launch tries again (1 of 3 failures in a row)"), and the agent
+    whose launch found nothing usable still gets its refusal. A continuation (the supervisor's, or a wake's in the delivery function) looks
+    the cache up again and clones the generation usable then. A supervisor's continuation that finds only `N - 1`
+    usable hands `N`'s fill on in the background as a board launch does (unless a fill of it holds a live claim), so
+    a long run that launches nothing new never meets `N - 1`'s 28-day edge; a wake's, in the delivery function, hands
+    nothing on (that role neither invokes nor reads a claim: the supervisor's next continuation or launch does). With
+    none usable the agent is held (paused, never
+    counted as a crash), the run's health says why and the run goes to a person (`checkout_cache`). Their Resume, when
+    nothing is usable, leaves the run waiting at `checkout_cache` and hands the fill on; once it has landed, the run
+    is resumed again, continuing the held agents, but only off that point (`RunStore.resume`'s `only_from`): a run
+    that reached another decision point meanwhile (a flow step, the coordinator's) stays there for a person. A
+    Resume whose run the previous generation still serves only fills ahead, and resumes nothing after it.
+  - *IAM.* The writer's role: `s3:PutObject` on the raw bucket's `engineering/cache/*`, with an explicit deny of a
+    READY put that sends no `If-None-Match` (the `s3:if-none-match` condition key, as the raw bucket's own policy
+    uses for `raw/`), and `kms:GenerateDataKey` on the
+    stack's key only through S3 and only for those keys (`kms:EncryptionContext:aws:s3:arn`); `s3:GetObject` on
+    `engineering/cache/*/*/*/READY`; `ssm:GetParameter` on the connections' parameters and `kms:Decrypt` through SSM for
+    them only, as the broker; `dynamodb:GetItem`, `PutItem` and `UpdateItem` on `voc-engineering` in the claims'
+    partitions only (`WS#*#CACHE#*`), of a row only the claim's attributes, no ReturnValues, with the key through
+    DynamoDB for that table; its own log group. No ListBucket, no delete, no other prefix. The supervisor's role gains
+    `lambda:InvokeFunction` on that one function, `s3:GetObject` on the READY markers only (a missing one answers
+    403: it lists nothing, and a ListBucket narrowed to the cache's prefix would not change that, while one on the
+    whole raw bucket would list customer data), and `dynamodb:GetItem` of a fill's claim (`WS#*#CACHE#*`, its key and
+    `expires_at` only, projected); the delivery function's role gains the same READY read, for a wake's continuation.
+    The writer is the only writer at the bucket too: with the flag, the raw bucket's policy holds
+    `DenyEngineeringCacheWritesButTheWriters`, a Deny of `s3:PutObject*` and `s3:DeleteObject*` on
+    `engineering/cache/*` for every principal (`"AWS": "*"`) whose `aws:PrincipalArn` is not (`ArnNotEquals`) the
+    writer's role, `arn:<partition>:iam::<account>:role/voc-engineering-cache-<account>-<region>` (a fixed name, so
+    VocCoreStack names it without a reference to VocProcessingStack), nor, only without `protectData`, the stack's S3
+    auto-delete provider's role (which empties the bucket with the stack). A role with a broader grant on the bucket
+    (Data Explorer may put anywhere else in it) cannot plant a READY or overwrite a pack. The cache's lifecycle
+    expiry is S3's own, no principal's, and reads are not denied. Data Explorer, besides, refuses a save of any key
+    under `engineering/` (400, "Engineering files (engineering/) are read-only in Data Explorer") in whichever bucket
+    it addresses; it can still list and preview the keys under `engineering/cache/*`, so an administrator can read the cached
+    repository code there (the files of a bare repository: its packed objects and its refs).
+  - *Planned.* The dependency caches' filler (per connection and lockfile hash) is not built.
 - **Scoped roles.** Each agent role reads only its connection's cache prefix (in the raw bucket) and its run's keys
   in the workspace bucket, `voc-eng-workspace` (`ws/<ws>/runs/<run>/`), writes only its own keys there
   (`ws/<ws>/runs/<run>/<agent>/`: the agent comes right after the run, so no other agent's key matches; create-only,
@@ -1514,8 +2132,8 @@ wait closes.
   role's (6.29.00, [the agent catalog](#the-agent-catalog)): its outputs (`write_findings`, `write_notes`,
   `write_gate_record`, each written once under its own keys and recorded on its task when it finishes),
   `post_subtask` (the hunter's fixes and the builder's sub-builds, the board's own rule of who posts for whom) and
-  the writers' one broker write each (`push_commit`, `open_draft_pr`, `post_comment`, through the broker interface,
-  which still refuses). It renews its task's lease once a minute. Everything from the
+  the writers' one broker write each (`push_commit`, `open_draft_pr`, `post_comment`, through the harness's broker
+  client since 7.02.00, signed as the agent's own session). It renews its task's lease once a minute. Everything from the
   repository, the knowledge pack, the memory or a checkpoint reaches the model fenced as data, which its
   instructions say is never an instruction. Between turns it reads its inbox: `save` checkpoints at once, `pause`
   checkpoints and exits 75; the Converse loop also checkpoints and pauses after 150 turns in one session or once a
@@ -1593,9 +2211,12 @@ benchmark gate on a coach's version ([Evaluation](#evaluation)), the coach that 
 (`voc-datalake/lambda/engineering/coach/`), the agents' memory store with its recall for a task
 (`voc-datalake/lambda/engineering/agent_memory/`), and the learning loop with its scorecards
 (`voc-datalake/lambda/engineering/learning/`), which a run's end starts: it takes the run's failures to the coach,
-drafts lessons in memory and writes a scorecard row per skill version. Still to come: the harness reading the
-skills store and the recall, people's reactions on the host as an input, and the administrators' and people's
-routes and screens (phases 4 and 5).
+drafts lessons in memory and writes a scorecard row per skill version, and since 7.07.00 the administrators' read
+side of the skills and the scorecards (the routes and Agents → Skills, [below](#the-administrators-reads)), and
+since 7.08.00 the administrators' actions on a version: accept, reject, roll back and record a benchmark
+([below](#the-administrators-actions)). Still to come: the harness reading the skills store and the recall, people's
+reactions on the host as an input, proposing, promoting and seeding from a route, publishing the announcements, and
+the people's routes and screens (phases 4 and 5).
 
 **Skills, visibly and reversibly.** An agent's skill (instructions, examples, tool policy, model, harness) is
 versioned. Each version keeps its diff, why it changed (the run, the failure, the person's comment), the benchmark
@@ -1654,7 +2275,128 @@ a seed never writes over a history, and a seed racing another is refused by the 
 store numbers it (`<role>@1`, whatever the shipped number: the coordinator ships as version 2). The coach proposes
 only on a version the store holds, so this is how a role's first version, a person's, comes from what ships.
 Not yet: the harness reading the store (its agents still run the shipped record), the route that calls the seed, a
-run recording the versions it used, the other routes, the step that runs the benchmark for a proposal.
+run recording the versions it used, the routes that propose and promote (accepting, rejecting, rolling back and
+recording a benchmark have routes since 7.08.00, [below](#the-administrators-actions)), the step that runs the
+benchmark for a proposal.
+
+<a id="the-administrators-reads"></a>**The administrators' reads** (7.07.00, `voc-datalake/lambda/engineering/skills/views.py`,
+the Agents API's routes, the web app's Agents → Skills): read only, for an administrator acting for themselves (403
+for anyone else, a delegated MCP credential included; no MCP tool), 404 while the module is off, every input checked
+(400) and every read bounded: a GetItem, or one Query of one partition with a page cap, never a whole-table read.
+
+- `GET /agents/engineering/skills?connection=<id>` (empty or left out: the shared skills) → `{connection, roles}`:
+  each role with a version in the scope, in the catalog's order, with its current version, the version numbers its
+  counter has handed out (`versions`; a proposal refused after its number was taken leaves a gap) and its newest
+  version's status and summary line. A `HEAD` GetItem per role (13) and, for a role that has one, one Query of its
+  newest version.
+- `GET /agents/engineering/skills/<role>/versions?connection=&page=<token>` → `{connection, role, current_version,
+  versions, next_page}`: the history 20 versions a page, newest first (`SkillStore.lines`, one Query reading each row
+  without its record and its diff). Each version: its number, status, summary, why (`{run_id, failure, comment}`), who
+  proposed it (`proposed_by`, `proposed_by_kind`: `agent` for the coach) and when, who accepted or rejected it and
+  when, the version a rollback restores, its base (`{shared, version}`: the scope's own or the shared skill's, never
+  another connection's), `expected_case`, its benchmark (`{claimed, measured}`: the rates the proposer gave, a claim
+  only, apart from an administrator's record of a benchmark run, its rates, cases and verdict as they entered them
+  (with their optional `run_ref`), the rates acceptance goes by; the model's
+  `SkillVersion.trusted_rates` property picks the same, and is not a field of the answer) and its events from the
+  `LOG#` rows (accepted, rejected with its comment, rolled back, benchmarked: who and when; `SkillStore.events`, one
+  Query per range of at most 100 version numbers, so a page whose versions sit far apart is read in a few ranges,
+  at most one a version). `next_page` is an opaque token the server makes and checks: it names the scope it was
+  made for and an unkeyed checksum (it catches a corrupted token, not a forged one), the scope is checked again, and
+  only its version number is used, formatted into this scope's key, so a token from another scope, or changed, is
+  refused (400) and a forged one reads nothing more.
+- `GET /agents/engineering/skills/<role>/versions/<n>?connection=` → `{connection, role, version}`: one version (1
+  to 999999; 404 when the scope has none), its line as above, its whole record (instructions, examples, tool policy,
+  model, harness), how the coach made it (`made_with`) and its diff from its base (`skills/diff.py`'s stored diff:
+  instruction lines and examples added and removed, the tools added and dropped, the model and harness moves).
+- `GET /agents/engineering/scorecards/<role>?connection=<id>&versions=<n,n,…>` → `{connection, role, versions,
+  cards, source, scope_known}`: `version_card` per version (`compare`: at most 10, each once), on the connection's
+  own scorecards (400 without a connection: a scorecard row is a connection's). **The sessions cannot tell a
+  version's scope**: a session names its skill `<role>@<n>`, with no scope, so a shared store version and a shipped
+  one of the same number would read the same; the harness runs only the shipped skills today, so every scorecard
+  number is a shipped skill's, and each card says so (`source: shipped`; the answer's `scope_known: false`, and the
+  screen says it in words). A scorecard number is never one of the history's. By default the role's shipped version
+  and the shipped ones before it (at most 5; none for a role that ships no skill), never mixed with the store's
+  numbers. Once the harness reads the store, its labels must carry the scope for a card to name another source.
+  A number asked for that the role never shipped (above its shipped version, or a role that ships none) is labelled
+  `not_shipped` (7.08.00), never shipped. Each card: its source, the runs read, the
+  pass rate, tasks done, failed and needing a person, re-posts, review rounds, attempts, cost, session seconds,
+  whether older runs were left out (`more`) and the time they span.
+
+**A promoted version's source is never answered**: the reads leave `promoted_from` out entirely. The events' Query
+filters on the readable events (`READABLE_EVENTS`), so DynamoDB drops the `LOG#<n>#promoted_from` row before it
+answers, and the store drops any event not among them again in code before it answers; only `SkillStore.promotion_source` reads it,
+and no route calls it yet. **The grant** of the reads: none new (the actions' write grant is below). The Agents API's role already has `dynamodb:GetItem` and
+`dynamodb:Query` on the whole `voc-engineering` table for the run views (with the stack's key through DynamoDB,
+`AgentsTablesKey`), which covers the skills' (`WS#*#SKILL#*`) and the scorecards' (`WS#*#SCORE#*`) partitions; a
+narrower `dynamodb:LeadingKeys` statement beside it would add nothing, so none is added (pinned in
+`lib/stacks/api-engineering-reads.test.ts`); narrowing the one table read to the partitions the API reads is a
+follow-up. Nothing appears while the module is off. **The screens** (Agents → Skills, administrators, only while the
+module is on): a scope picker (the shared skills, or a stored connection), the scope's roles in a table, a role's
+history a page at a time (each version's status badge, summary, why, who and when, the benchmark marked measured or
+claimed, its events), a version's detail with its diff as plain lines added and removed (the record's text is shown
+as text, never read as HTML) and its whole record, and a role's scorecards on a connection in a table (up to 10
+versions named by number). The scope, the role and the version are view options in the address (`?tab=skills&
+connection=&role=&version=`). The actions on a version are [below](#the-administrators-actions) (7.08.00).
+
+<a id="the-administrators-actions"></a>**The administrators' actions** (7.08.00,
+`voc-datalake/lambda/engineering/skills/actions.py`, the Agents API's routes, the version's detail in Agents → Skills):
+for an administrator acting for themselves (403 for anyone else, a delegated MCP credential included), 404 while the
+module is off. Each is the skills store's own function and transaction (its checks are never re-implemented): the
+route checks the body (400), then what the screen showed against what is stored (409, "it changed since you opened
+it"), takes an optional `reason` (at most 2,000 characters, its credential-shaped strings redacted, kept on the
+action's `LOG#` row), and answers `{connection, role, version, event, announcement}`: the version as it is now, the
+action's log event and the announcement. The connection is the query's `?connection=` (empty: the shared skill), and
+every key is that scope's, so an administrator acts on one scope's partition at a time.
+
+- `POST /agents/engineering/skills/<role>/versions/<n>/accept` `{expected_status, expected_current, reason?}`:
+  `SkillStore.accept_version` (its base still current, checked before and in its transaction; a coach's version only
+  once an administrator's record of a benchmark run on it says it passed and the pass rate rose, naming its
+  `expected_case`, else 409 saying what
+  is missing). `expected_status` is `proposed` (anything else is 400).
+- `…/reject` `{expected_status, reason?}`: `reject_version`; the version stays, marked rejected.
+- `…/rollback` `{expected_current, reason?}`: `roll_back_to` version `<n>`, an earlier accepted version of the same
+  scope (else 409), as a new version current at once; answered as that new version.
+- `…/benchmark` `{expected_status, before, after, cases, passed, reasons, failure_case, run_ref?, reason?}`:
+  `record_benchmark`, once (a second is 409): **an administrator's record of a benchmark run (its rates, cases and
+  verdict as they enter them)**, linked to no measurement here; `run_ref`, optional, is their reference to the run (an
+  id or a link, at most 300 characters), and it and each of the reasons are redacted as a reason is. The failure's
+  case rules above hold (a coach's version takes only its `expected_case`, else 400). The model's own rules
+  (`BenchmarkRun`): a new record whose verdict is passed but whose pass rate fell (`after` below `before`) is refused
+  where it is written (400; `check_recordable`, called by `record_benchmark`, so every writer inherits it), while a
+  row written before reads as recorded; and what a coach's acceptance needs (`gained`) is a passed verdict in which
+  the pass rate rose (`after` above `before`), naming its expected case: equal rates, or a fallen rate in an old row,
+  never let a version be accepted.
+
+A 409 that starts "it changed since you opened it" means what the screen showed moved, whether the action's own
+read saw it or its transaction's condition did (another administrator's change landing between the two): the screen
+reads it again. Any other 409 is the store's own refusal, said in its words. A rollback hands the current version the person saw to
+`roll_back_to` (`expected_current`), which compares it with the one it reads and holds that one as its transaction's
+condition, so a version accepted meanwhile is never replaced silently.
+
+**The announcements** (`skill.accepted`, `skill.rolled_back`; a rejection and a benchmark announce nothing, as the
+store has it): the Agents API's role is not one of the engineering bus's publishers (the bus policy denies
+`events:PutEvents` to every principal but the board, the supervisor and the agent roles, each with its own source),
+and the bus lives in another stack than the API, so publishing would mean widening that policy across stacks. It is
+not widened: the store keeps each announcement (its id, type and line) on the action's create-only `LOG#` row, the
+answer returns it with `published: false`, and publishing it from the API's own source (`voc.engineering/api`, which
+`bus/senders.py` already allows for these types) is planned. **The grant**: one statement on the Agents API's role
+(`SkillDecisions`): `dynamodb:PutItem`, `dynamodb:UpdateItem` and `dynamodb:ConditionCheckItem` on `voc-engineering`
+with `dynamodb:LeadingKeys` `WS#*#SKILL#*` (`ForAllValues:StringLike`, beside `Null` `false` so a request naming
+no key never matches it vacuously), exactly what the store's writes use (a
+transaction is authorised by its items' actions); no delete; the key through DynamoDB is `AgentsTablesKey`'s;
+nothing while the module is off (pinned in `lib/stacks/api-engineering-reads.test.ts`). **The screens**: on a
+version's detail, Accept and Reject (a proposed version), Record benchmark (a proposed version with none) and Roll
+back to this version (an earlier accepted one, while the scope has a current version), each behind an approval card
+that says what changes (from which version to which, naming the shared skill's version a connection with none of its
+own runs, the change's summary, its base, flagged when it is not the version in use, and for a coach's version the
+record of its benchmark run), with an optional reason. Accept stays off (focusable, its reason read out) for a
+coach's version without an administrator's record of a benchmark run in which the pass rate rose, naming its expected
+case. The
+benchmark form, which says it records what the administrator enters, takes the pass rates in percent, the cases, the
+verdict, its reasons, the failure's case, prefilled with a coach's `expected_case`, and an optional reference to the
+run. A 409 reads the screen again
+and says it changed since it was opened. Still planned: proposing, promoting and seeding from a route, and publishing
+the announcements.
 
 **The coach.** When an agent fails (an error, a timeout, a NO-GO, a review finding it keeps repeating, a person
 rejecting its pull request or editing it heavily), the coach reads the conversation, the task, the outputs and the
@@ -1746,7 +2488,9 @@ What exists (`voc-datalake/lambda/engineering/learning/`, behind `-c engineering
   checked against `voc-gate-record/1`; one unread or off it is left out and logged; a key naming another run or
   workspace is never read). People's reactions on the host
   are not readable yet (the broker reads no host data): they come in through a port, `HostReactions`, which answers
-  nothing today and whose reactions become the comments of a failure's evidence once it does.
+  nothing today and whose reactions become the comments of a failure's evidence once it does. Since 7.09.00 the run's
+  record names the pull request to read them on (and the issue it was started from: "The run's issue and pull
+  request", above); the read itself is the next slice.
 - **The retrospective** (`learning/retrospective.py`, pure): each task's attempts, who held each (its claim, else
   its launch; a person's own attempt is nobody's skill and is left out, and an agent's attempt a person took over
   ends, for the agent, at the take: handed over, no failure and no tally), how each ended (a supervisor's re-post as
@@ -1802,9 +2546,10 @@ What exists (`voc-datalake/lambda/engineering/learning/`, behind `-c engineering
   the code's `attribute_not_exists` keeps each one create-only.
 
 Still planned: people's reactions on the host as the port's real source (review comments, edits after merge,
-reverts: with the broker's host reads), and with them the scorecards' human edits; the scorecard screens and the
-administrators' routes that read `version_card`; "what the agents learned" and "what improved since the last run" in
-the goal report; the conversation's excerpts in a failure's evidence.
+reverts: with the broker's host reads), and with them the scorecards' human edits; "what the agents learned" and
+"what improved since the last run" in the goal report; the conversation's excerpts in a failure's evidence. (The
+scorecard screen and the administrators' route that reads `version_card` are built since 7.07.00:
+[the administrators' reads](#the-administrators-reads).)
 
 **Agent memory.** The [memory](memory.md) layer gains an agents part, with three scopes: per repository (confirmed
 conventions, reviewer preferences, recurring bugs and their fixes, flaky tests, what the gates usually catch), per
@@ -2158,7 +2903,7 @@ and the phase that ships them names them in that row.
 | Phase | Scope | Status |
 |---|---|---|
 | 0 | this design, the benchmark harness and its fixtures | design written; the benchmark harness (the `voc-bench/1` cases, the runner, scorecards) and its four fixtures built, nothing invoking them yet ([Evaluation](#evaluation)) |
-| 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader; the broker's readers of the run's record, the board's GO ledger, the submitted patch and the dial, and a person's go on an AI-assisted run (6.23.00, [above](#repository-connectors); no connection can be stored yet, so every operation still answers 503, and with one every push and pull request would still be refused until the CI attestation is recorded); planned: the connection page, the attestation's record, GitLab, sparse clones and the checkout cache; the knowledge pack's package detection, shards, map step, reduce and versioned store with approval ([above](#the-knowledge-pack)), nothing invoking them yet |
+| 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader; the broker's readers of the run's record, the board's GO ledger, the submitted patch and the dial, and a person's go on an AI-assisted run (6.23.00, [above](#repository-connectors)); the harness's client of the broker, the agents' reads and writes signed as their own sessions (7.02.00); the connections, stored by administrators with their GitHub App credential in the SSM parameter the broker reads, with an audit row per change (7.03.00); the CI attestation's record, attested and withdrawn by administrators with an audit row each and voided by a repository change, which every push and pull request waits for, beside the broker's own read-only check of the branch rules, and file and history reads on the run's stored default branch (7.04.00); the checkout cache's writer, one immutable entry per connection and commit filled before a run's coordinator is launched (7.05.00); the GitLab client on gitlab.com, a GitLab connection's project access token checked against its project at each save, its expiry on the connection page, its CI attestation in GitLab's words and the broker's own check of its protected branches, and the cache's GitLab fetch (7.06.00); the run's issue (as given at its start) and its draft pull request (as the host answered) on its record, shown on the run monitor and in the reports (7.09.00); planned: a self-managed GitLab instance, sparse clones, the dependency caches' filler and the first real run; the knowledge pack's package detection, shards, map step, reduce and versioned store with approval ([above](#the-knowledge-pack)), nothing invoking them yet |
 | 2 | the runtime (one AgentCore Runtime session per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API with each task's history, its agents' `inbox`, `progress`, `tasks` and `knowledge` ops, the coordinator's `coordinate` task and `launch`, the lease's refresh and the supervisor's re-post, the push to the delivery function, the workspace's layout, findings and store in its own bucket, and the administrators' run monitor (its reads, signals and answers) and the read routes for a run's board and conversation ([above](#how-the-agents-work-together)); the runtime (one session per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images, the run's start and end, the agent roles' access to the board, the broker and the bus, the delivery function: built, not yet run against AWS, [above](#runtime-one-agentcore-session-per-agent)) |
 | 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); the skills' record, diff and versioned store with an administrator's acceptance and rollback, proposed to by the coach from a run's retrospective ([above](#getting-better-skills-the-coach-the-learning-loop-memory)); the agents' memory store and its recall for a task, its role lessons drafted by a run's retrospective (recall not yet invoked by the harness; same place); the benchmark gate for skill versions (no regression, a gain on the failure's case) and its record on a version, which a coach's version needs to be accepted, nothing invoking it yet ([Evaluation](#evaluation)); the coach (a failure in, a proposed version naming its expected benchmark case out, through the skills store, with its `skill.proposed` message for the caller to publish), invoked by the learning loop (same place as the skills); the learning loop and its scorecards, built: a run's end starts its retrospective (an asynchronous invocation of the runtime), which takes at most three failures to the coach (one Converse call each, once), drafts a lesson in agent memory for each failure taken to the coach (at most three per run) for an administrator to approve, and writes one create-only scorecard row per skill version per run, read by one bounded Query per version (same place); a connection's own cases from its failures, people's reactions on the host as the loop's input, and the scorecard screens planned |
 | 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | in progress: the new editor steps' server side (engineering flows as `voc-workflow/2`, [above](#how-the-agents-work-together)), the six default flows as validated templates in one file the server lists (`GET /workflows/templates`) and the web app reads (same place), and the report builder with its administrators' REST reads ([Reports](#reports)), nothing invoking it yet; a run's start from a saved flow (6.25.00: `POST /agents/engineering/runs` and the flow page's Start a run, [How a flow starts](#how-the-agents-work-together)), which follows its own copy of the flow step by step since 6.28.00 (the conductor, the coordinator's `read_flow`, the board's check of every post and launch against the plan, a person at a step: [The flow a run follows](#the-flow-a-run-follows); memory, the learning loop, self-improvement and the history and pull-request shard sources not run yet); the agents' skills, one per launchable role with its tools, model and the Converse harness (6.29.00, [the agent catalog](#the-agent-catalog)), launched by the board with their skills' argv and driven through the Bug hunt and fix template on the local fake runtime with scripted models; their first run on AWS waits for the owner, and their broker writes for the harness's broker client |

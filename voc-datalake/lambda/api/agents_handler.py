@@ -26,18 +26,30 @@ Permissions:
   waits for), and the runs' spend by month (``GET /agents/engineering/spend``,
   engineering/spend.py), and the hard cap's setting, read and written (``GET``/``PUT
   /agents/engineering/settings``, engineering/settings.py: one row in the agents table, written with
-  its history row; the runtime reads it at a budgeted run's first start), and a run's start
-  (``POST /agents/engineering/runs``, a saved engineering flow on a repository's commit: the start
-  function, below); while the engineering agents are off every caller gets 404.
+  its history row; the runtime reads it at a budgeted run's first start), and the repository connections
+  (``GET /agents/engineering/connections``, ``PUT``/``DELETE …/connections/<id>``,
+  engineering/connectors/connections.py: a row in the agents table with its audit rows, and the GitHub App
+  credential in SSM, written and deleted here, never read), and each connection's CI attestation
+  (``POST``/``DELETE …/connections/<id>/ci-attestation``, engineering/connectors/attestations.py: create-only
+  version rows beside the connection's, each with its audit row), and a run's start
+  (``POST /agents/engineering/runs``, a saved engineering flow on a stored connection's commit: the start
+  function, below), and the agents' skills and scorecards, read only (``GET /agents/engineering/skills``,
+  ``…/skills/<role>/versions[/<version>]``, ``GET /agents/engineering/scorecards/<role>``: engineering/skills/views.py)
+  and an administrator's actions on a version (``POST …/skills/<role>/versions/<version>/accept``, ``…/reject``,
+  ``…/rollback``, ``…/benchmark``: engineering/skills/actions.py, the store's own transactions);
+  while the engineering agents are off every caller gets 404.
 
 Own role (20 KB policy limit): the agents table (read/write), the aggregates table
 (read: category access rows + categories config), ``states:StartExecution`` and
 ``states:StopExecution`` on ``voc-agent-run`` only; with the engineering agents on, their stack adds reads of
-their table and workspace bucket (never a write: GetItem and Query) and ``lambda:InvokeFunction`` on the board's
+their table and workspace bucket (GetItem and Query), the skills' writes (PutItem, UpdateItem and
+ConditionCheckItem on the ``WS#*#SKILL#*`` partitions only, what the skills store's transactions use; no delete) and ``lambda:InvokeFunction`` on the board's
 function (``ENGINEERING_BOARD_FUNCTION``), which makes a person's board actions with its own role and hands the
 events back for this role to publish as the person (engineering/board/api.py person_request), and
 ``lambda:InvokeFunction`` on the start function (``ENGINEERING_START_FUNCTION``, voc-engineering-start: the runtime's
-code and role, which runs ``start_run`` and refuses every other action; never the runtime's own function); it is to add
+code and role, which runs ``start_run`` and refuses every other action; never the runtime's own function), and
+``ssm:PutParameter`` and ``ssm:DeleteParameter`` on the connections' parameters only, with ``kms:Encrypt`` and
+``kms:GenerateDataKey`` on the stack's key through SSM for them (no ``ssm:GetParameter``); it is to add
 ``lambda:InvokeFunction`` on ``voc-engineering-runtime`` (the run
 monitor's signals) and ``events:PutEvents`` on the engineering bus with the source ``voc.engineering/api``, with
 their names, and the bus's resource policy is to let this role put that source (until then the monitor's actions
@@ -890,6 +902,134 @@ ENGINEERING_RUN_NOT_FOUND = 'Engineering run not found'
 _VERSION = re.compile(r'[0-9]{1,4}\Z')
 
 
+# The agents' skills and their scorecards (engineering/skills/views.py; docs/autonomous-engineering.md, "Getting
+# better"): read only, by administrators acting for themselves (a delegated credential gets 403), 404 while the module
+# is off. Registered before the run's routes, whose ``<run_id>`` would read ``skills`` and ``scorecards`` as a run id.
+_SKILL_ERRORS = {'invalid': ValidationError, 'not_found': NotFoundError, 'forbidden': AuthorizationError,
+                 'conflict': ConflictError}
+
+
+def _skill_views() -> Any:
+    """The skills' reads: 404 while the module is off, then 403 for anyone but an administrator."""
+    _engineering_on()
+    require_admin_caller(_caller())
+    from engineering.skills.views import SkillViews
+    from shared.aws import get_dynamodb_client
+
+    return SkillViews(get_dynamodb_client(), os.environ['ENGINEERING_TABLE'])
+
+
+def _skill_read(read: Any, failed: str = 'the skills could not be read: retry') -> Any:
+    """``read()``, its refusals answered with their status and a failed call with 503 (``failed``: what it says)."""
+    from engineering.learning.scorecard import ScorecardError
+    from engineering.skills.model import SkillError
+
+    try:
+        return read()
+    except SkillError as refused:
+        raise _SKILL_ERRORS[refused.kind](str(refused)) from None
+    except ScorecardError as refused:
+        raise ValidationError(str(refused)) from None
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception('engineering: a skills call failed')
+        raise ServiceUnavailableError(failed) from exc
+
+
+@app.get('/agents/engineering/skills')
+@tracer.capture_method(capture_response=False)
+def list_engineering_skills():
+    """``?connection=<id>`` (empty or left out: the shared skills) → ``{connection, roles: [{role, current_version,
+    versions, latest}]}``: each role with a version in the scope, its newest version's summary line."""
+    views = _skill_views()
+    return _skill_read(lambda: views.roles(_query('connection') or ''))
+
+
+@app.get('/agents/engineering/skills/<role>/versions')
+@tracer.capture_method(capture_response=False)
+def list_engineering_skill_versions(role: str):
+    """``?connection=&page=<token>`` → ``{connection, role, current_version, versions: [...], next_page}``: a page of
+    the role's history, newest first, each version with its events and its benchmark (claimed and measured)."""
+    views = _skill_views()
+    return _skill_read(lambda: views.history(_query('connection') or '', role, _query('page') or ''))
+
+
+@app.get('/agents/engineering/skills/<role>/versions/<version>')
+@tracer.capture_method(capture_response=False)
+def get_engineering_skill_version(role: str, version: str):
+    """``?connection=`` → ``{connection, role, version: {..., record, diff, made_with}}``: one version, its whole
+    record and its diff from its base; 404 when the scope has no such version."""
+    views = _skill_views()
+    return _skill_read(lambda: views.version(_query('connection') or '', role, version))
+
+
+def _skill_actions() -> Any:
+    """The skills' actions for the administrator calling: 404 while the module is off, then 403 for anyone but an
+    administrator acting for themselves (a delegated credential included)."""
+    _engineering_on()
+    caller = _caller()
+    require_admin_caller(caller)
+    from engineering.knowledge.store import Actor
+    from engineering.skills.actions import SkillActions
+    from engineering.skills.store import SkillStore
+    from shared.aws import get_dynamodb_client
+
+    return SkillActions(SkillStore(get_dynamodb_client(), os.environ['ENGINEERING_TABLE']),
+                        Actor(caller.subject, 'person', admin=True))
+
+
+_SKILL_NOT_SAVED = 'the skill version could not be saved: read it again and retry'
+
+
+@app.post('/agents/engineering/skills/<role>/versions/<version>/accept')
+@tracer.capture_method(capture_response=False)
+def accept_engineering_skill_version(role: str, version: str):
+    """``?connection=`` ``{expected_status, expected_current, reason?}`` → ``{connection, role, version, event,
+    announcement}``: the proposed version becomes the scope's current one (the store's transaction: its base still
+    current, and a coach's version only once its recorded benchmark passed with a gain on its expected case); 409
+    when the version or the current one changed since the screen read them."""
+    actions = _skill_actions()
+    return _skill_read(lambda: actions.accept(_query('connection') or '', role, version, json_object_body(app)),
+                       _SKILL_NOT_SAVED)
+
+
+@app.post('/agents/engineering/skills/<role>/versions/<version>/reject')
+@tracer.capture_method(capture_response=False)
+def reject_engineering_skill_version(role: str, version: str):
+    """``?connection=`` ``{expected_status, reason?}`` → the version, marked rejected (it stays), and its event."""
+    actions = _skill_actions()
+    return _skill_read(lambda: actions.reject(_query('connection') or '', role, version, json_object_body(app)),
+                       _SKILL_NOT_SAVED)
+
+
+@app.post('/agents/engineering/skills/<role>/versions/<version>/rollback')
+@tracer.capture_method(capture_response=False)
+def roll_back_engineering_skill(role: str, version: str):
+    """``?connection=`` ``{expected_current, reason?}`` → the new version restoring ``version`` (an earlier accepted
+    one of the same scope), current at once, its event and its announcement."""
+    actions = _skill_actions()
+    return _skill_read(lambda: actions.roll_back(_query('connection') or '', role, version, json_object_body(app)),
+                       _SKILL_NOT_SAVED)
+
+
+@app.post('/agents/engineering/skills/<role>/versions/<version>/benchmark')
+@tracer.capture_method(capture_response=False)
+def record_engineering_skill_benchmark(role: str, version: str):
+    """``?connection=`` ``{expected_status, before, after, cases, passed, reasons, failure_case, reason?}`` → the
+    version with its benchmark recorded, once (a coach's version names the case it expected to gain on)."""
+    actions = _skill_actions()
+    return _skill_read(lambda: actions.benchmark(_query('connection') or '', role, version, json_object_body(app)),
+                       _SKILL_NOT_SAVED)
+
+
+@app.get('/agents/engineering/scorecards/<role>')
+@tracer.capture_method(capture_response=False)
+def get_engineering_scorecards(role: str):
+    """``?connection=<id>&versions=<n,n,…>`` → ``{connection, role, versions, cards}``: each version's scorecard over
+    its latest runs on the connection (at most 10 versions; by default the shipped one and the newest few)."""
+    views = _skill_views()
+    return _skill_read(lambda: views.scorecards(_query('connection') or '', role, _query('versions')))
+
+
 def _engineering_tables(run_id: str) -> tuple[str, str]:
     """The engineering table and bucket, for an administrator (403 for anyone else; 404 for a bad run id and while
     the module is off)."""
@@ -1071,6 +1211,149 @@ def put_engineering_settings():
     return saved.view()
 
 
+# The repository connections (engineering/connectors/connections.py; docs/autonomous-engineering.md, "Repository
+# connectors"): administrators acting for themselves (a delegated credential gets 403), 404 while the module is off.
+# A connection is a row in voc-agents and its GitHub App credential an SSM SecureString under the name the broker
+# reads; this role writes and deletes that parameter and never reads it, and no answer or log line carries the secret.
+_CONNECTION_ERRORS = {'invalid': ValidationError, 'not_found': NotFoundError, 'conflict': ConflictError,
+                      'unavailable': ServiceUnavailableError}
+
+
+def _connection_store() -> tuple[Any, Caller]:
+    """The connections' store and its caller: 404 while the module is off, then 403 for anyone but an administrator."""
+    _engineering_on()
+    caller = _caller()
+    require_admin_caller(caller)
+    from engineering.connectors.connections import (
+        PARAMETER_KEY_ENV,
+        PARAMETER_PREFIX_ENV,
+        ConnectionStore,
+        live_runs_of,
+    )
+    from engineering.runtime.runs import RunStore
+
+    runs = RunStore(get_dynamodb_resource().Table(os.environ['ENGINEERING_TABLE']))
+    return ConnectionStore(_agents_table(), _ssm_client, os.environ.get(PARAMETER_PREFIX_ENV, ''),
+                           os.environ.get(PARAMETER_KEY_ENV, ''), live_runs_of(runs)), caller
+
+
+@cache
+def _ssm_client() -> Any:
+    import boto3
+
+    return boto3.client('ssm')
+
+
+def _connection_actor(caller: Caller) -> Any:
+    from engineering.connectors.connections import Actor
+
+    return Actor(subject=caller.subject, name=caller.username or caller.subject)
+
+
+def _connection_call(act: Any) -> Any:
+    from engineering.connectors.connections import ConnectionRefused
+
+    try:
+        return act()
+    except ConnectionRefused as refused:
+        raise _CONNECTION_ERRORS[refused.kind](str(refused)) from None
+
+
+@app.get('/agents/engineering/connections')
+@tracer.capture_method(capture_response=False)
+def list_engineering_connections():
+    """``{connections: [...], limit}``: the stored connections, each with whether its credential is set (never the
+    credential), one Query of their partition."""
+    connections, _ = _connection_store()
+    from engineering.connectors.connections import MAX_CONNECTIONS
+
+    return {'connections': _connection_call(connections.list), 'limit': MAX_CONNECTIONS}
+
+
+@app.put('/agents/engineering/connections/<connection_id>')
+@tracer.capture_method(capture_response=False)
+def put_engineering_connection(connection_id: str):
+    """``{host: github, repository: owner/name, default_branch, credential?: {app_id, installation_id, private_key},
+    reason?}`` → ``{connection, created}``: stores the connection (its credential in SSM first, the row with its
+    create-only audit row after, the reason on it). The credential is needed to add one and to change its repository; 409 for a repository change
+    while a run of the connection is live, past the connection limit, or a change made meanwhile."""
+    connections, caller = _connection_store()
+    from engineering.connectors.connections import check_connection_id, parse_request
+
+    def save() -> tuple[dict, bool]:
+        check_connection_id(connection_id)
+        return connections.save(connection_id, parse_request(json_object_body(app)), _connection_actor(caller))
+
+    connection, created = _connection_call(save)
+    return {'connection': connection, 'created': created}
+
+
+@app.delete('/agents/engineering/connections/<connection_id>')
+@tracer.capture_method(capture_response=False)
+def delete_engineering_connection(connection_id: str):
+    """``{reason?}`` (the body optional) → ``{removed: true}``: removes the connection's credential (its runs' broker
+    calls are refused once a warm broker's five-minute copy goes) and marks its row removed, with its audit row (the
+    reason on it). 404 for a connection that is not stored."""
+    connections, caller = _connection_store()
+    from engineering.connectors.connections import parse_reason
+
+    def remove() -> None:
+        body = json_object_body(app)
+        if not set(body) <= {'reason'}:
+            raise ValidationError('the body is {reason?}, or none')
+        connections.remove(connection_id, _connection_actor(caller), parse_reason(body.get('reason')))
+
+    _connection_call(remove)
+    return {'removed': True}
+
+
+# A connection's CI attestation (engineering/connectors/attestations.py; docs/autonomous-engineering.md, "The target's
+# CI"): an administrator acting for themselves confirms every point of the setup guide for the connection's repository,
+# or withdraws the confirmation. Each is a create-only version row with the connection's own audit row; the broker
+# refuses every push and pull request on the connection while none holds.
+@app.post('/agents/engineering/connections/<connection_id>/ci-attestation')
+@tracer.capture_method(capture_response=False)
+def attest_engineering_connection_ci(connection_id: str):
+    """``{points: [...every point of the setup guide], repository, version, reason?}`` → ``{attestation, created,
+    connection_version}``: records the administrator's attestation that the repository's CI meets the guide, for the
+    repository and the connection version they reviewed (an attestation that already holds is answered as it stands,
+    ``created: false``). 404 for a connection that is not stored; 409 when the connection no longer holds that
+    repository at that version (another administrator changed it meanwhile: the check is in the write's own
+    condition too)."""
+    connections, caller = _connection_store()
+    from engineering.connectors.connections import check_connection_id, parse_attestation
+
+    def attest() -> tuple[dict, bool, int]:
+        check_connection_id(connection_id)
+        request = parse_attestation(json_object_body(app))
+        attestation, created = connections.attest(connection_id, request, _connection_actor(caller))
+        # (a recorded attestation bumps the connection's version once, in its transaction)
+        return attestation, created, request.version + 1 if created else request.version
+
+    attestation, created, version = _connection_call(attest)
+    return {'attestation': attestation, 'created': created, 'connection_version': version}
+
+
+@app.delete('/agents/engineering/connections/<connection_id>/ci-attestation')
+@tracer.capture_method(capture_response=False)
+def withdraw_engineering_connection_ci(connection_id: str):
+    """``{reason?}`` (the body optional) → ``{withdrawn: true}``: withdraws the connection's CI attestation (a new
+    version, with its audit row), so the broker refuses every push and pull request on it from the next one. 404 when
+    none holds."""
+    connections, caller = _connection_store()
+    from engineering.connectors.connections import check_connection_id, parse_reason
+
+    def withdraw() -> None:
+        check_connection_id(connection_id)
+        body = json_object_body(app)
+        if not set(body) <= {'reason'}:
+            raise ValidationError('the body is {reason?}, or none')
+        connections.withdraw(connection_id, _connection_actor(caller), parse_reason(body.get('reason')))
+
+    _connection_call(withdraw)
+    return {'withdrawn': True}
+
+
 # A run's start (``POST /agents/engineering/runs``): an administrator acting for themselves starts a saved engineering
 # flow on a repository's commit. The API mints the run's id and invokes the start function (voc-engineering-start, the
 # runtime's code: it runs ``start_run`` and refuses every other action; this role may invoke it and never the runtime
@@ -1087,6 +1370,8 @@ MAX_RUN_GOAL = 500
 #: How long the API waits for the start (under API Gateway's 29 s); a start is never retried by the client.
 START_READ_TIMEOUT_SECONDS = 25
 _START_FIELDS = frozenset({'workflow_id', 'connection', 'commit', 'language', 'goal'})
+#: The start's optional fields: the issue the run starts from (a number, ``_start_issue``).
+_START_OPTIONAL = frozenset({'issue'})
 _RUN_COMMIT = re.compile(r'[0-9a-f]{40}\Z')
 #: The runtime's refusals a person can act on, all before anything is written (its error types): 409 with its own
 #: words (no image for the language, the hard cap with nothing left of the flow's month).
@@ -1113,22 +1398,47 @@ def _run_cap(name: str, default: float, kind: type) -> Any:
     return value
 
 
-def _run_repo(connection: str) -> str:
-    """The run's ``repo``, as its reports and the spend ledger group it: the connection's repository once connections
-    are stored (the connection page is planned, so there is no record to read yet); until then the connection's id."""
-    return connection
+def _run_connection(connection: str, issue: int | None = None) -> dict[str, Any]:
+    """The run's ``repo`` (as its reports and the spend ledger group it) and ``default_branch``: the stored
+    connection's repository (``owner/name``) and default branch, copied onto the run (the broker serves the run on
+    that branch once the host confirms it has it: connectors/records.py); with the ``issue`` the run starts from, it
+    and the connection's ``host``, which the start addresses it on. 400 for a connection that is not stored: its
+    broker would refuse every operation."""
+    from engineering.connectors.connections import stored_connection
+
+    stored = _connection_call(lambda: stored_connection(_agents_table(), connection))
+    if stored is None:
+        raise ValidationError('connection names no stored repository connection: add it under Agents → Connections')
+    run: dict[str, Any] = {'repo': str(stored['repository']), 'default_branch': str(stored['default_branch'])}
+    if issue is not None:
+        run.update(issue=issue, host=str(stored.get('host') or 'github'))
+    return run
+
+
+def _start_issue(body: Mapping[str, Any]) -> int | None:
+    """The optional ``issue`` the run starts from: a whole number from 1 to ``run_links.MAX_NUMBER`` (400 otherwise),
+    None when left out. Recorded as given (the API holds no credential to read the host with: run_links.py)."""
+    from engineering.run_links import MAX_NUMBER, valid_number
+
+    issue = body.get('issue')
+    if issue is not None and not valid_number(issue):
+        raise ValidationError('issue is the number of an issue of the repository: a whole number from 1 to '
+                              f'{MAX_NUMBER}')
+    return issue if isinstance(issue, int) else None
 
 
 def _start_body(body: Mapping[str, Any]) -> dict[str, str]:
     """The request's fields, each checked (400 for anything off): a workflow id, a connection's short id, a commit of
     40 hexadecimal characters (lower-cased), a language with an agent image, and a goal on one line, at most
-    ``MAX_RUN_GOAL`` characters, credential-shaped text redacted."""
+    ``MAX_RUN_GOAL`` characters, credential-shaped text redacted (the optional ``issue``: ``_start_issue``)."""
     from engineering.quality_gate.text import redact
     from engineering.runtime.egress import REGISTRY_HOSTS
     from engineering.runtime.interface import RuntimeRefused, check_id
 
-    if not set(body) <= _START_FIELDS or not all(isinstance(body.get(name), str) for name in _START_FIELDS):
-        raise ValidationError('the body is {workflow_id, connection, commit, language, goal}, each a string')
+    strings = all(isinstance(body.get(name), str) for name in _START_FIELDS)
+    if not set(body) <= _START_FIELDS | _START_OPTIONAL or not strings:
+        raise ValidationError('the body is {workflow_id, connection, commit, language, goal}, each a string, and '
+                              'an optional issue number')
     fields = {name: str(body[name]).strip() for name in _START_FIELDS}
     try:
         check_id('connection', fields['connection'])
@@ -1232,7 +1542,8 @@ def _invoke_start(function: str, request: dict[str, Any]) -> dict[str, Any]:
 @app.post('/agents/engineering/runs')
 @tracer.capture_method
 def start_engineering_run():
-    """``{workflow_id, connection, commit, language, goal}`` → 202 ``{run: {run_id, status, workflow_id, started_by}}``:
+    """``{workflow_id, connection, commit, language, goal, issue?}`` → 202 ``{run: {run_id, status, workflow_id,
+    started_by}}`` (``issue``, 7.09.00: the number of the issue the run starts from, recorded as given):
     an administrator acting for themselves (a delegated credential gets 403) starts a saved engineering flow (404 while
     the module is off). The run's id is minted here; its flow's budget is the stored workflow's, its caps the
     deployment's; the runtime records who started it and when (META's ``started_by``, its ``RUNLOG#`` row: D4). 202:
@@ -1243,7 +1554,8 @@ def start_engineering_run():
     function = os.environ.get('ENGINEERING_START_FUNCTION', '')
     if not function:
         raise ServiceUnavailableError('runs cannot be started from here: the deployment names no start function')
-    fields = _start_body(json_object_body(app))
+    raw = json_object_body(app)
+    fields, issue = _start_body(raw), _start_issue(raw)
     budget_usd, definition, revision = _stored_flow(fields['workflow_id'])
     from engineering.bus.publish import new_event_id
 
@@ -1252,7 +1564,8 @@ def start_engineering_run():
         # The flow as stored now: the run copies it and follows its copy (a later edit is the next run's).
         'flow_definition': definition, 'flow_revision': revision,
         'connection': fields['connection'], 'commit': fields['commit'], 'language': fields['language'],
-        'goal': fields['goal'], 'actor': caller.subject, 'repo': _run_repo(fields['connection']),
+        # (with an issue, it and the stored connection's host: the start records it with its address)
+        'goal': fields['goal'], 'actor': caller.subject, **_run_connection(fields['connection'], issue),
         'max_cost_usd': _run_cap('ENGINEERING_RUN_CAP_USD', DEFAULT_RUN_CAP_USD, float),
         'max_tokens': _run_cap('ENGINEERING_RUN_TOKEN_CAP', DEFAULT_RUN_TOKEN_CAP, int),
     }

@@ -254,11 +254,20 @@ MAX_REASON: Final = 400
 MAX_BENCHMARK_BYTES: Final = 40 * 1024
 
 
+#: A recorded benchmark's optional reference to the run it reports (an id or a link, as text): at most this long.
+MAX_RUN_REF: Final = 300
+#: A recorded benchmark's own fields (``run_ref`` beside them, optional).
+BENCHMARK_FIELDS: Final = frozenset({'before', 'after', 'cases', 'passed', 'reasons', 'failure_case'})
+
+
 @dataclass(frozen=True)
 class BenchmarkRun:
     """A version's benchmark gate, as recorded on it: the pass rates of its base (``before``) and of the version
     (``after``) on the same cases, the gate's verdict and its reasons, and the failure's case it had to gain on
-    (``''``: none was named)."""
+    (``''``: none was named). From a person, it is an administrator's record of a benchmark run: its rates, cases and
+    verdict as they enter them, linked to no measurement here (``run_ref``, optional, is their reference to the run:
+    an id or a link, as text). A new record's verdict of passed whose rate fell is refused when it is written
+    (``check_recordable``): the gate passes only with no regression."""
 
     before: float
     after: float
@@ -266,6 +275,7 @@ class BenchmarkRun:
     passed: bool
     reasons: tuple[str, ...]
     failure_case: str = ''
+    run_ref: str = ''
 
     def __post_init__(self) -> None:
         before, after = _rate(self.before), _rate(self.after)
@@ -284,13 +294,24 @@ class BenchmarkRun:
             raise SkillError(f'a recorded benchmark says why in 1-{MAX_BENCHMARK_REASONS} reasons')
         for reason in self.reasons:
             _bounded(reason, "a benchmark's reason", MAX_REASON)
+        if self.run_ref:
+            _bounded(self.run_ref, "the benchmark run's reference", MAX_RUN_REF)
         if len(self.stored_json().encode('utf-8')) > MAX_BENCHMARK_BYTES:
             raise SkillError(f'a recorded benchmark is at most {MAX_BENCHMARK_BYTES} bytes')
 
+    def check_recordable(self) -> None:
+        """What a new record must also hold, checked where one is written (``SkillStore.record_benchmark``), never
+        where one is read: a verdict of passed whose pass rate fell is refused (a row written before this rule reads
+        as recorded, and ``gained`` is False for it, so it never lets a version be accepted)."""
+        if self.passed and self.after < self.before:
+            raise SkillError('a benchmark that passed has no lower pass rate after than before: record it as failed, '
+                             'or check the rates')
+
     @property
     def gained(self) -> bool:
-        """The gate passed with a gain on a named failure's case: what accepting a coach's version needs."""
-        return self.passed and bool(self.failure_case)
+        """The gate passed with a gain on a named failure's case, its pass rate higher after than before: what
+        accepting a coach's version needs (equal rates are no gain)."""
+        return self.passed and bool(self.failure_case) and self.after > self.before
 
     def stored_json(self, **extra: str) -> str:
         """The record as the store writes it, with ``extra`` fields (when and who): sorted keys, non-ASCII text as
@@ -298,16 +319,19 @@ class BenchmarkRun:
         return json.dumps({**self.to_json(), **extra}, sort_keys=True, ensure_ascii=False)
 
     def to_json(self) -> dict[str, Any]:
+        """Its fields, ``run_ref`` only when there is one (a record written before it had none)."""
+        reference = {'run_ref': self.run_ref} if self.run_ref else {}
         return {'before': self.before, 'after': self.after, 'cases': list(self.cases), 'passed': self.passed,
-                'reasons': list(self.reasons), 'failure_case': self.failure_case}
+                'reasons': list(self.reasons), 'failure_case': self.failure_case, **reference}
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> BenchmarkRun:
-        if set(data) != {'before', 'after', 'cases', 'passed', 'reasons', 'failure_case'}:
-            raise SkillError('a recorded benchmark has exactly its fields')
+        if not BENCHMARK_FIELDS <= set(data) <= BENCHMARK_FIELDS | {'run_ref'}:
+            raise SkillError('a recorded benchmark has exactly its fields (and run_ref, optional)')
         cases, reasons, passed = data['cases'], data['reasons'], data['passed']
         texts = [*cases, *reasons, data['failure_case']] if isinstance(cases, list) and isinstance(reasons, list) else [0]
-        if not all(isinstance(text, str) for text in texts) or not isinstance(passed, bool):
+        run_ref = data.get('run_ref', '')
+        if not all(isinstance(text, str) for text in [*texts, run_ref]) or not isinstance(passed, bool):
             raise SkillError("a recorded benchmark's cases and reasons are lists of text, its verdict true or false")
         return cls(before=data['before'], after=data['after'], cases=tuple(cases), passed=passed,
-                   reasons=tuple(reasons), failure_case=data['failure_case'])
+                   reasons=tuple(reasons), failure_case=data['failure_case'], run_ref=run_ref)

@@ -29,6 +29,10 @@ function fakePeers(stack: cdk.Stack, kmsKey: kms.IKey, pins: Map<string, string>
     board: lambda.Function.fromFunctionArn(stack, 'Board', `${ACCOUNT}:function:voc-engineering-board`),
     boardUrl: 'https://abc123.lambda-url.us-east-1.on.aws/',
     broker: lambda.Function.fromFunctionArn(stack, 'Broker', `${ACCOUNT}:function:voc-engineering-broker`),
+    brokerUrl: 'https://def456.lambda-url.us-east-1.on.aws/',
+    connectionParameters: {
+      prefix: '/voc/engineering/', arns: 'arn:aws:ssm:us-east-1:111111111111:parameter/voc/engineering/*',
+    },
   };
 }
 

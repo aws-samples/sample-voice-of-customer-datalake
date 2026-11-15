@@ -49,11 +49,14 @@ def test_every_ci_definition_a_push_changes_is_named_once_in_order() -> None:
 
 
 def test_a_run_whose_default_branch_is_its_own_branch_is_still_never_pushed_to() -> None:
-    runs = FakeRuns({RUN: record(default_branch=f'voc-agent/{RUN}/fix')})
-    host = FakeHost()
+    # (the default branch judged is the one the host confirms for the run's stored branch, as _open reads it)
+    own = f'voc-agent/{RUN}/fix'
+    runs = FakeRuns({RUN: record(default_branch='', stored_default_branch=own)})
+    host = FakeHost(branches=('main', own))
     with pytest.raises(WriteRefused) as caught:
         push(Broker(connector(host=host, runs=runs)), caller('committer'), f'voc-agent/{RUN}/fix')
-    assert (str(caught.value), host.calls) == ('An agent never pushes to the default branch.', [])
+    assert (str(caught.value), host.calls, host.branch_lookups) == (
+        'An agent never pushes to the default branch.', [], [('conn-1', own)])
 
 
 def test_an_added_line_with_an_address_or_a_phone_number_is_code_and_pushed() -> None:

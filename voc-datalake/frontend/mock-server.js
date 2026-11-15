@@ -23,6 +23,7 @@ import { handleAlertRoutes } from './mock-alerts.js';
 import { handleEmailInboxRoutes } from './mock-email-inbox.js';
 import { handlePlanRoutes } from './mock-plans.js';
 import { SAMPLE_FLOW_ID, handleEngineeringRunRoutes, sampleEngineeringFlow } from './mock-engineering-runs.js';
+import { handleEngineeringSkillRoutes } from './mock-engineering-skills.js';
 import { handleDecisionRoutes } from './mock-decisions.js';
 import { handleRadarRoutes } from './mock-radar.js';
 import { handleParticipantsRoutes } from './mock-participants.js';
@@ -1357,6 +1358,7 @@ function handleDomainModules(req, res, url) {
     || handleAlertRoutes(req, res, url, send, shared)
     || handleEmailInboxRoutes(req, res, url, send, shared)
     || handlePlanRoutes(req, res, url, send, shared)
+    || handleEngineeringSkillRoutes(req, res, url, send, shared)
     || handleEngineeringRunRoutes(req, res, url, send, shared)
     || handleDecisionRoutes(req, res, url, send, shared)
     || handleRadarRoutes(req, res, url, send, shared)

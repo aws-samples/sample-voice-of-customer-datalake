@@ -72,8 +72,18 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         'POST /agents/engineering/<run_id>/go',
         # The administrators' hard cap on engineering runs (engineering/settings.py): an admin acting for themselves.
         'PUT /agents/engineering/settings',
+        # The repository connections and their credentials (engineering/connectors/connections.py): the same gate.
+        'PUT /agents/engineering/connections/<connection_id>', 'DELETE /agents/engineering/connections/<connection_id>',
+        # A connection's CI attestation (engineering/connectors/attestations.py): the same gate.
+        'POST /agents/engineering/connections/<connection_id>/ci-attestation',
+        'DELETE /agents/engineering/connections/<connection_id>/ci-attestation',
         # A run's start from a saved engineering flow (the start function): an admin acting for themselves.
         'POST /agents/engineering/runs',
+        # A skill version's acceptance, rejection, rollback and benchmark (engineering/skills/actions.py): the same gate.
+        'POST /agents/engineering/skills/<role>/versions/<version>/accept',
+        'POST /agents/engineering/skills/<role>/versions/<version>/reject',
+        'POST /agents/engineering/skills/<role>/versions/<version>/rollback',
+        'POST /agents/engineering/skills/<role>/versions/<version>/benchmark',
         'POST /workflows', 'PUT /workflows/<workflow_id>',
         'POST /workflows/<workflow_id>/duplicate', 'POST /workflows/<workflow_id>/rename',
         'DELETE /workflows/<workflow_id>',

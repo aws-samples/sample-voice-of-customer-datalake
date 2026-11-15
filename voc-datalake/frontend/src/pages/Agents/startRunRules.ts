@@ -1,8 +1,8 @@
 /**
  * @fileoverview The rules of a run's start, as the server checks them (`lambda/api/agents_handler.py`
  * `_start_body`; held to it by this module's lockstep test): a connection's short id, a full commit id of 40
- * hexadecimal characters, a language with an agent image, and a goal on one line of at most {@link MAX_RUN_GOAL}
- * characters. The form says what is wrong before anything is sent; the server checks again.
+ * hexadecimal characters, a language with an agent image, a goal on one line of at most {@link MAX_RUN_GOAL}
+ * characters, and, optionally, the number of the issue the run starts from. The form says what is wrong before anything is sent; the server checks again.
  *
  * @module pages/Agents/startRunRules
  */
@@ -18,17 +18,28 @@ export const MAX_RUN_GOAL = 500
 export const MAX_CONNECTION_ID = 63
 const CONNECTION = new RegExp(`^[A-Za-z0-9-]{1,${String(MAX_CONNECTION_ID)}}$`)
 const COMMIT = /^[0-9a-f]{40}$/
+/** The largest issue number the server takes (`lambda/engineering/run_links.py` MAX_NUMBER). */
+export const MAX_ISSUE_NUMBER = 2_147_483_647
+const WHOLE = /^[1-9]\d{0,9}$/
 
 export interface StartRunForm {
   connection: string
   commit: string
   language: RunLanguage
   goal: string
+  /** The issue the run starts from, as typed ('' or left out for none). */
+  issue?: string
 }
 
 /** What is wrong with a field, as its message key under `startRun.invalid`. */
-type StartRunIssue = 'connection' | 'commit' | 'goalEmpty' | 'goalLong'
-export type StartRunIssues = Partial<Record<'connection' | 'commit' | 'goal', StartRunIssue>>
+type StartRunIssue = 'connection' | 'commit' | 'goalEmpty' | 'goalLong' | 'issue'
+export type StartRunIssues = Partial<Record<'connection' | 'commit' | 'goal' | 'issue', StartRunIssue>>
+
+/** The issue's number as typed (trimmed), null when it is not a whole number from 1 to {@link MAX_ISSUE_NUMBER}. */
+function issueNumber(text = ''): number | null {
+  const trimmed = text.trim()
+  return WHOLE.test(trimmed) && Number(trimmed) <= MAX_ISSUE_NUMBER ? Number(trimmed) : null
+}
 
 /** The goal as it is sent: on one line, its spaces collapsed. */
 const oneLine = (text: string): string => text.split(/\s+/).filter(Boolean).join(' ')
@@ -44,6 +55,7 @@ export function startRunIssues(form: StartRunForm): StartRunIssues {
   const goal = oneLine(form.goal)
   if (goal === '') issues.goal = 'goalEmpty'
   else if (codePoints(goal) > MAX_RUN_GOAL) issues.goal = 'goalLong'
+  if ((form.issue ?? '').trim() !== '' && issueNumber(form.issue) === null) issues.issue = 'issue'
   return issues
 }
 
@@ -71,10 +83,12 @@ export function startOutcomeOf(error: unknown): StartOutcome | null {
   return null
 }
 
-/** The request for a form with no issues: trimmed, the commit in lower case, the goal on one line. */
+/** The request for a form with no issues: trimmed, the commit in lower case, the goal on one line, the issue's
+ * number only when one was given. */
 export function startRunRequest(workflowId: string, form: StartRunForm): StartRunRequest {
+  const issue = issueNumber(form.issue)
   return {
     workflow_id: workflowId, connection: form.connection.trim(), commit: form.commit.trim().toLowerCase(),
-    language: form.language, goal: oneLine(form.goal),
+    language: form.language, goal: oneLine(form.goal), ...(issue === null ? {} : { issue }),
   }
 }

@@ -33,6 +33,14 @@ def parameter_value(**overrides: object) -> str:
     return json.dumps(value)
 
 
+def connection_body(**change: object) -> dict[str, object]:
+    """A connection save (``PUT /agents/engineering/connections/<id>``) of ``OWNER/REPOSITORY`` with the App's
+    credential, its key generated at test time, with ``change``."""
+    return {'host': 'github', 'repository': f'{OWNER}/{REPOSITORY}', 'default_branch': 'main',
+            'credential': {'app_id': APP_ID, 'installation_id': str(INSTALLATION_ID), 'private_key': pem()},
+            **change}
+
+
 def credential() -> GitHubAppCredential:
     return GitHubAppCredential(app_id=APP_ID, installation_id=INSTALLATION_ID, owner=OWNER, repository=REPOSITORY,
                                private_key=private_key())

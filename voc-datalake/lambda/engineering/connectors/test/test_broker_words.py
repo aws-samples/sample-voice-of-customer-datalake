@@ -46,7 +46,7 @@ def test_no_attestation_says_an_administrator_has_not_confirmed_the_ci_settings(
     with pytest.raises(NotNow) as caught:
         call(broker, caller(role), operation)
     assert caught.value.reason == ("An administrator has not yet confirmed the repository's CI settings for agent "
-                                   'branches.')
+                                   'branches (Agents → Connections, the CI attestation).')
     assert host.calls == []
 
 
@@ -126,8 +126,9 @@ def test_a_comment_is_prose() -> None:
 
 
 def test_a_comment_and_a_push_go_to_the_runs_own_connection() -> None:
-    host = FakeHost()
-    broker = Broker(connector(host=host, runs=FakeRuns({RUN: record(connection_id='conn-9', default_branch='trunk')})))
+    host = FakeHost(branches=('main', 'trunk'))   # (the run's stored default branch, which the host confirms)
+    broker = Broker(connector(host=host, runs=FakeRuns({RUN: record(connection_id='conn-9', default_branch='',
+                                                                    stored_default_branch='trunk')})))
     broker.post_comment(caller('understander'), 'issue', 42, 'Likely in src/refund.py:42.')
     push(broker, caller('committer'))
     assert [c[:2] for c in host.calls] == [(POST_COMMENT, 'conn-9'), (PUSH_BUNDLE, 'conn-9')]

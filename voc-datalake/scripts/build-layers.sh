@@ -135,7 +135,7 @@ layer_is_current() {
 }
 
 # Every layer dir with a requirements.txt (processing-deps, ingestion-deps,
-# signing-deps, email-intake-deps: lib/utils/dependency-layers.ts).
+# signing-deps, email-intake-deps, engineering-ci-deps: lib/utils/dependency-layers.ts).
 for layer_dir in "$LAYERS_DIR"/*/; do
   layer_dir="${layer_dir%/}"
   [ -f "$layer_dir/requirements.txt" ] || continue

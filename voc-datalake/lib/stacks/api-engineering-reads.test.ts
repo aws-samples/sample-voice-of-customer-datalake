@@ -17,8 +17,9 @@ import type { VocApiStack } from './api-stack';
 import { ENGINEERING_WORKSPACE_READER_SERVICES } from './dlq-alarms';
 import { engineeringRunCaps } from './engineering-start';
 
-const ENGINEERING_ENV = ['ENGINEERING_AGENTS', 'ENGINEERING_BOARD_FUNCTION', 'ENGINEERING_RUN_CAP_USD',
-  'ENGINEERING_RUN_TOKEN_CAP', 'ENGINEERING_START_FUNCTION', 'ENGINEERING_TABLE', 'ENGINEERING_WORKSPACE_BUCKET'];
+const ENGINEERING_ENV = ['ENGINEERING_AGENTS', 'ENGINEERING_BOARD_FUNCTION', 'ENGINEERING_PARAMETER_KEY',
+  'ENGINEERING_PARAMETER_PREFIX', 'ENGINEERING_RUN_CAP_USD', 'ENGINEERING_RUN_TOKEN_CAP', 'ENGINEERING_START_FUNCTION',
+  'ENGINEERING_TABLE', 'ENGINEERING_WORKSPACE_BUCKET'];
 let cachedOn: VocApiStack | undefined;
 const onStack = (): VocApiStack => {
   cachedOn ??= buildApiStack({ engineeringAgents: true });
@@ -50,12 +51,40 @@ describe('the engineering run reads', () => {
     expect(JSON.stringify(env.ENGINEERING_WORKSPACE_BUCKET)).toMatch(/Fn::ImportValue.*EngineeringWorkspace/);
   });
 
-  it('grant the agents API only reads of the table and the reports: no write of any kind', () => {
+  it('grant the agents API reads of the table and the reports, and writes of the skills\' partitions alone', () => {
     const statements = engineeringStatements(on());
-    expect(actionsWithPrefix(statements, '')).toStrictEqual(['dynamodb:GetItem', 'dynamodb:Query', 's3:GetObject']);
-    expect(JSON.stringify(statements)).not.toMatch(/Delete|Put|Update|BatchWrite/);
+    const unconditioned = statements.filter((statement) => statement.condition === undefined);
+    expect(actionsWithPrefix(unconditioned, '')).toStrictEqual(['dynamodb:GetItem', 'dynamodb:Query', 's3:GetObject']);
+    expect(JSON.stringify(statements)).not.toMatch(/Delete|BatchWrite/);
     const objects = statements.filter((statement) => statement.actions.includes('s3:GetObject'));
     expect(objects.map((statement) => statement.resource)).toStrictEqual([expect.stringMatching(/"\/ws\/default\/reports\/\*"/)]);
+  });
+
+  it('read the skills\' history and the scorecards (WS#*#SKILL#*, WS#*#SCORE#*) with the one table read', () => {
+    // (7.07.00: GET /agents/engineering/skills…, …/scorecards/<role> read with the GetItem and Query the run views
+    // already have on the whole table, which covers those partitions; a narrower statement beside it would add nothing)
+    const reads = engineeringStatements(on()).filter((statement) => statement.actions.includes('dynamodb:Query'));
+    expect(reads.map((statement) => [...statement.actions].sort(byCodeUnit))).toStrictEqual([['dynamodb:GetItem', 'dynamodb:Query']]);
+    expect(reads[0]?.condition).toBeUndefined();
+    expect(JSON.stringify(reads)).not.toMatch(/BatchGet|Scan/);
+  });
+
+  it('write the skills\' partitions with exactly the store\'s actions, keyed by dynamodb:LeadingKeys', () => {
+    // (7.08.00: an administrator's accept, reject, rollback and benchmark, the skills store's transactions)
+    const writes = policyStatementsOf(on(), 'AgentsLambdaRole').filter((statement) => /Engineering/.test(statement.resource)
+      && statement.actions.some((action) => /Put|Update|ConditionCheck/.test(action)));
+    expect(writes.map((statement) => [...statement.actions].sort(byCodeUnit))).toStrictEqual(
+      [['dynamodb:ConditionCheckItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem']]);
+    expect(writes[0]?.condition).toStrictEqual({
+      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#SKILL#*'] },
+      Null: { 'dynamodb:LeadingKeys': 'false' },
+    });
+    expect(writes[0]?.resource).toMatch(/^\{"Fn::ImportValue":"[^"]*Engineering/);
+  });
+
+  it('give the agents API no write of the engineering table while the module is off', () => {
+    const statements = policyStatementsOf(apiTemplate(), 'AgentsLambdaRole');
+    expect(JSON.stringify(statements)).not.toMatch(/SKILL|ConditionCheckItem/);
   });
 
   it('send a person\'s board actions to the board\'s function, by its name, which its own role writes', () => {
@@ -97,6 +126,65 @@ describe('the engineering run reads', () => {
     [{ engineeringRunCapUsd: 'lots' }], [{ engineeringRunTokenCap: '1.5' }], [{ engineeringRunTokenCap: '0' }],
   ])('refuse a run cap that is not a positive number, so no run is uncapped (%j)', (context) => {
     expect(() => engineeringRunCaps(new cdk.App({ context }))).toThrow(/is a positive/);
+  });
+
+  it('write and delete the connections\' credentials where the broker reads them, and never read one back', () => {
+    const statements = policyStatementsOf(on(), 'AgentsLambdaRole');
+    const parameters = '{"Fn::Join":["",["arn:",{"Ref":"AWS::Partition"},":ssm:us-east-1:111111111111:parameter/voc/engineering/*"]]}';
+    const ssm = statements.filter((statement) => statement.actions.some((action) => action.startsWith('ssm:')));
+    expect(ssm.map((statement) => [[...statement.actions].sort(byCodeUnit), statement.resource]))
+      .toStrictEqual([[['ssm:DeleteParameter', 'ssm:PutParameter'], parameters]]);
+    expect(ssm[0]?.condition).toBeUndefined();
+    // No read of a parameter in any form, so the Agents API never holds a stored credential in clear.
+    expect(JSON.stringify(statements)).not.toMatch(/ssm:Get|ssm:\*|ssm:Describe/);
+  });
+
+  it('name the connections\' parameter path and key to the agents API', () => {
+    const env = serviceEnvironment(on(), 'voc-agents-api');
+    expect(env.ENGINEERING_PARAMETER_PREFIX).toBe('/voc/engineering/');
+    expect(JSON.stringify(env.ENGINEERING_PARAMETER_KEY)).toContain('Fn::ImportValue');
+  });
+
+  it('encrypt a credential with the stack\'s key only through SSM and only for the connections\' parameters', () => {
+    const statements = policyStatementsOf(on(), 'AgentsLambdaRole')
+      .filter((statement) => statement.actions.includes('kms:Encrypt') && /ssm\./.test(JSON.stringify(statement.condition)));
+    expect(statements.map((statement) => [...statement.actions].sort(byCodeUnit)))
+      .toStrictEqual([['kms:Encrypt', 'kms:GenerateDataKey']]);
+    expect(statements[0]?.condition).toStrictEqual({
+      StringEquals: { 'kms:ViaService': 'ssm.us-east-1.amazonaws.com' },
+      StringLike: {
+        'kms:EncryptionContext:PARAMETER_ARN': {
+          'Fn::Join': ['', ['arn:', { Ref: 'AWS::Partition' }, ':ssm:us-east-1:111111111111:parameter/voc/engineering/*']],
+        },
+      },
+    });
+    expect(statements[0]?.resource).toContain('Fn::ImportValue');
+  });
+
+  it('use the stack\'s key only through DynamoDB, S3 and SSM, each for what the role does there', () => {
+    const keys = policyStatementsOf(on(), 'AgentsLambdaRole')
+      .filter((statement) => statement.actions.some((action) => action.startsWith('kms:')));
+    // Every statement on the key names the one service that calls KMS for it: none the role could use itself.
+    const via = (service: string) => ({ 'kms:ViaService': `${service}.us-east-1.amazonaws.com` });
+    expect(keys.map((statement) => [statement.condition, [...statement.actions].sort(byCodeUnit)])).toStrictEqual([
+      [{ StringEquals: via('dynamodb') }, ['kms:Decrypt', 'kms:Encrypt', 'kms:GenerateDataKey',
+        'kms:GenerateDataKeyWithoutPlaintext', 'kms:ReEncryptFrom', 'kms:ReEncryptTo']],
+      [{ StringEquals: via('s3') }, ['kms:Decrypt']],
+      [expect.objectContaining({ StringEquals: via('ssm') }), ['kms:Encrypt', 'kms:GenerateDataKey']],
+    ]);
+    expect(new Set(keys.map((statement) => statement.resource)).size).toBe(1);
+  });
+
+  it('use the stack\'s key only through DynamoDB while the module is off', () => {
+    const keys = policyStatementsOf(apiTemplate(), 'AgentsLambdaRole')
+      .filter((statement) => statement.actions.some((action) => action.startsWith('kms:')));
+    expect(keys.map((statement) => statement.condition)).toStrictEqual([
+      { StringEquals: { 'kms:ViaService': 'dynamodb.us-east-1.amazonaws.com' } }]);
+  });
+
+  it('give the agents API no SSM grant while the module is off', () => {
+    const statements = policyStatementsOf(apiTemplate(), 'AgentsLambdaRole');
+    expect(JSON.stringify(statements)).not.toMatch(/ssm:|PARAMETER_ARN/);
   });
 
   it('give the MCP endpoint nothing: the reads are admin-only and an MCP token is never an admin, so no tool', () => {

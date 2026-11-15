@@ -573,6 +573,73 @@
     ]
   },
   {
+    "file": "api/engineeringConnectionsApi.ts",
+    "method": "GET",
+    "call": "'/agents/engineering/connections'",
+    "probes": [
+      {
+        "path": "/agents/engineering/connections"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringConnectionsApi.ts",
+    "method": "PUT",
+    "call": "connectionPath(connectionId)",
+    "probes": [
+      {
+        "path": "/agents/engineering/connections/storefront",
+        "body": {
+          "host": "github",
+          "repository": "example-org/storefront",
+          "default_branch": "trunk"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringConnectionsApi.ts",
+    "method": "DELETE",
+    "call": "connectionPath(connectionId)",
+    "probes": [
+      {
+        "path": "/agents/engineering/connections/retired"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringConnectionsApi.ts",
+    "method": "POST",
+    "call": "attestationPath(connection.connection_id)",
+    "probes": [
+      {
+        "path": "/agents/engineering/connections/storefront/ci-attestation",
+        "body": {
+          "points": [
+            "protected_secrets",
+            "read_only_token",
+            "oidc_pinned",
+            "no_self_hosted_runner",
+            "no_privileged_pull_request",
+            "branch_rules"
+          ],
+          "repository": "example-org/storefront",
+          "version": 3
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringConnectionsApi.ts",
+    "method": "DELETE",
+    "call": "attestationPath(connectionId)",
+    "probes": [
+      {
+        "path": "/agents/engineering/connections/storefront/ci-attestation"
+      }
+    ]
+  },
+  {
     "file": "api/engineeringRunsApi.ts",
     "method": "POST",
     "call": "'/agents/engineering/runs'",
@@ -693,6 +760,86 @@
           "to": "conductor",
           "text": "Skip the docs task"
         }
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringSkillActionsApi.ts",
+    "method": "POST",
+    "call": "actionPath(connection, role, version, action)",
+    "probes": [
+      {
+        "path": "/agents/engineering/skills/fixer/versions/2/benchmark?connection=storefront",
+        "body": {
+          "expected_status": "proposed",
+          "before": 1,
+          "after": 1,
+          "cases": ["pagination-review"],
+          "passed": true,
+          "reasons": ["no regression"],
+          "failure_case": "pagination-review"
+        }
+      },
+      {
+        "path": "/agents/engineering/skills/fixer/versions/2/reject?connection=storefront",
+        "body": { "expected_status": "proposed", "reason": "Too slow for small fixes." }
+      },
+      {
+        "path": "/agents/engineering/skills/fixer/versions/1/rollback?connection=",
+        "body": { "expected_current": 3 }
+      },
+      {
+        "path": "/agents/engineering/skills/coordinator/versions/1/accept?connection=",
+        "body": { "expected_status": "accepted", "expected_current": 1 }
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringSkillsApi.ts",
+    "method": "GET",
+    "call": "historyPath(connection, role, page)",
+    "probes": [
+      {
+        "path": "/agents/engineering/skills/fixer/versions?connection="
+      },
+      {
+        "path": "/agents/engineering/skills/fixer/versions?connection=storefront"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringSkillsApi.ts",
+    "method": "GET",
+    "call": "scorecardsPath(connection, role, versions)",
+    "probes": [
+      {
+        "path": "/agents/engineering/scorecards/fixer?connection=storefront"
+      },
+      {
+        "path": "/agents/engineering/scorecards/fixer?connection=storefront&versions=2%2C1"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringSkillsApi.ts",
+    "method": "GET",
+    "call": "skillsPath(connection)",
+    "probes": [
+      {
+        "path": "/agents/engineering/skills?connection="
+      },
+      {
+        "path": "/agents/engineering/skills?connection=storefront"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringSkillsApi.ts",
+    "method": "GET",
+    "call": "versionPath(connection, role, version)",
+    "probes": [
+      {
+        "path": "/agents/engineering/skills/fixer/versions/2?connection="
       }
     ]
   },

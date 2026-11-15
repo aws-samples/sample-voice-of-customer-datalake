@@ -22,8 +22,9 @@ import type { ApiStackContext } from './api-context';
 import { createS3ImportLambda } from './api-s3-import-lambda';
 import { ENGINEERING_WORKSPACE_REPORTS_KEYS } from './core-buckets';
 import { grantInvokeByName } from '../utils/worker-lambda';
-import { engineeringAgentsEnabled } from './engineering-broker';
+import { engineeringAgentsEnabled, engineeringParameterArns, engineeringParameterPrefix } from './engineering-broker';
 import { engineeringRunCaps } from './engineering-start';
+import { SKILL_PARTITIONS } from './engineering-runtime';
 
 /**
  * The assistant's run ceiling: the Lambda timeout AND the /chat/stream
@@ -32,6 +33,16 @@ import { engineeringRunCaps } from './engineering-start';
  * STALE_RUN_SECONDS and the Bedrock requestTimeout are sized against it.
  */
 export const CHAT_STREAM_TIMEOUT = cdk.Duration.minutes(15);
+
+/**
+ * What the Agents API's role may do with the stack's key through DynamoDB alone: what a customer-managed table key
+ * needs from its caller (the same set lib/utils/exact-grants.ts leaves of CDK's encrypt-and-decrypt grant on a role
+ * that uses DynamoDB), never a call of its own.
+ */
+const AGENTS_TABLES_KEY_ACTIONS = [
+  'kms:Decrypt', 'kms:Encrypt', 'kms:GenerateDataKey', 'kms:GenerateDataKeyWithoutPlaintext', 'kms:ReEncryptFrom',
+  'kms:ReEncryptTo',
+] as const;
 
 /** The domain Lambdas the assistant delegates its read tools to. */
 export interface AssistantDelegates {
@@ -61,10 +72,12 @@ export interface AssistantLambdas {
 /**
  * With `-c engineeringAgents=true`, the agents API's reads of an engineering run (`/agents/engineering/<run_id>/…`,
  * lambda/engineering/views.py): GetItem and Query on voc-engineering (a run's rows, and the spend ledger's month
- * partitions for `GET /agents/engineering/spend`), never a write; `lambda:InvokeFunction` on the board's function
+ * partitions for `GET /agents/engineering/spend`), and its one write, the skills' partitions (`SkillDecisions`: an
+ * administrator's actions on a skill version); `lambda:InvokeFunction` on the board's function
  * for a person's board actions (its own role writes them) and on the start function for a run's start (never the
  * runtime's own function), and GetObject on the workspace
- * bucket's reports only; its key comes with the role's grant on the stack's key. No ListBucket (it would list every
+ * bucket's reports only, with `kms:Decrypt` on the stack's key through S3 alone (the table's key comes with the role's
+ * DynamoDB-only grant, `AgentsTablesKey`). No ListBucket (it would list every
  * run object's key): S3 answers a report version that was counted but never written with 403, which views.py reads as
  * missing (404), since the role may read every report key. Returns the env that turns the routes on (shared/engineering_agents.py),
  * or undefined: off, the role gets nothing and the routes answer 404.
@@ -76,6 +89,21 @@ function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, 
     throw new Error('engineeringAgents needs VocCoreStack\'s voc-engineering table and voc-eng-workspace bucket');
   }
   engineeringTable.grant(role, 'dynamodb:GetItem', 'dynamodb:Query');
+  // An administrator's actions on a skill version (7.08.00, lambda/engineering/skills/actions.py through the skills
+  // store): accept, reject, roll back, record a benchmark. Exactly what the store's writes use, on the skills'
+  // partitions only: UpdateItem (a version's status, the HEAD's current version and its counter's ADD), PutItem (a
+  // create-only version or log row) and ConditionCheckItem (the shared HEAD an acceptance checks); a transaction is
+  // authorised by its items' own actions. No delete. The key through DynamoDB is AgentsTablesKey's.
+  role.addToPolicy(new iam.PolicyStatement({
+    sid: 'SkillDecisions',
+    actions: ['dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:ConditionCheckItem'],
+    resources: [engineeringTable.tableArn],
+    // (Null false: a request that names no partition key never matches ForAllValues vacuously)
+    conditions: {
+      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [SKILL_PARTITIONS] },
+      Null: { 'dynamodb:LeadingKeys': 'false' },
+    },
+  }));
   // A person's board actions go through the board's function (engineering/board/api.py person_request), invoked
   // directly: its own role writes the change, and hands the events back for this role to publish as the person. This
   // role writes no row of the table. The agent roles may invoke the board only through its function URL
@@ -88,19 +116,59 @@ function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, 
   grantInvokeByName(cdk.Stack.of(role), role, [ctx.uniqueName(ENGINEERING_START_FUNCTION_BASE_NAME)], 'StartEngineeringRuns');
   const reports = engineeringWorkspaceBucket.arnForObjects(ENGINEERING_WORKSPACE_REPORTS_KEYS);
   role.addToPolicy(new iam.PolicyStatement({ actions: ['s3:GetObject'], resources: [reports] }));
+  // The reports' key: decrypt through S3 alone (the role writes nothing to the bucket).
+  role.addToPolicy(new iam.PolicyStatement({
+    sid: 'EngineeringReportsKey', actions: ['kms:Decrypt'], resources: [ctx.props.kmsKey.keyArn],
+    conditions: { StringEquals: { 'kms:ViaService': `s3.${ctx.stack.region}.amazonaws.com` } },
+  }));
   acknowledgeNag(role, [{
     id: 'AwsSolutions-IAM5',
     reason: 'Read-only on the engineering workspace\'s report objects (one per run, level, subject and version, known only at run time); never the runs\' own objects',
     findings: [resourceFinding(reports)],
   }]);
+  const parameterPrefix = grantConnectionCredentialWrites(ctx, role);
   return {
     ENGINEERING_AGENTS: 'on',
+    ENGINEERING_PARAMETER_PREFIX: parameterPrefix,
+    ENGINEERING_PARAMETER_KEY: ctx.props.kmsKey.keyArn,
     ENGINEERING_TABLE: engineeringTable.tableName,
     ENGINEERING_WORKSPACE_BUCKET: engineeringWorkspaceBucket.bucketName,
     ENGINEERING_BOARD_FUNCTION: ctx.uniqueName(ENGINEERING_BOARD_FUNCTION_BASE_NAME),
     ENGINEERING_START_FUNCTION: ctx.uniqueName(ENGINEERING_START_FUNCTION_BASE_NAME),
     ...engineeringRunCaps(ctx.stack),
   };
+}
+
+/**
+ * The repository connections' credentials (`PUT`/`DELETE /agents/engineering/connections/<id>`,
+ * lambda/engineering/connectors/connections.py): `ssm:PutParameter` and `ssm:DeleteParameter` on exactly the connections'
+ * parameters (`/[<prefix>-]voc/engineering/*`, the path the broker reads: engineering-broker.ts), and `kms:Encrypt` and
+ * `kms:GenerateDataKey` on the stack's key only through SSM and only for those parameters (SSM names the parameter in
+ * the encryption context). Never `ssm:GetParameter`: the Agents API writes a credential and cannot read it back. The
+ * prefix, for the role's env.
+ */
+function grantConnectionCredentialWrites(ctx: ApiStackContext, role: iam.Role): string {
+  const stack = cdk.Stack.of(role);
+  const parameters = engineeringParameterArns(stack, ctx.deploymentPrefix);
+  role.addToPolicy(new iam.PolicyStatement({
+    sid: 'ConnectionCredentialWrites', actions: ['ssm:PutParameter', 'ssm:DeleteParameter'], resources: [parameters],
+  }));
+  role.addToPolicy(new iam.PolicyStatement({
+    sid: 'ConnectionCredentialKey',
+    actions: ['kms:Encrypt', 'kms:GenerateDataKey'],
+    resources: [ctx.props.kmsKey.keyArn],
+    conditions: {
+      StringEquals: { 'kms:ViaService': `ssm.${stack.region}.amazonaws.com` },
+      StringLike: { 'kms:EncryptionContext:PARAMETER_ARN': parameters },
+    },
+  }));
+  acknowledgeNag(role, [{
+    id: 'AwsSolutions-IAM5',
+    reason: 'One SecureString per repository connection, named by an administrator at run time, so the writes are '
+      + 'scoped to the connections\' path (/[<prefix>-]voc/engineering/*): put and delete only, never a read',
+    findings: [resourceFinding(parameters)],
+  }]);
+  return engineeringParameterPrefix(ctx.deploymentPrefix);
 }
 
 export function createAssistantLambdas(
@@ -167,7 +235,14 @@ export function createAssistantLambdas(
   agentsTable.grant(agentsRole, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:Query');
   // Category access (which agents a user may see), category config, model picker — all GetItem.
   aggregatesTable.grant(agentsRole, 'dynamodb:GetItem');
-  kmsKey.grantEncryptDecrypt(agentsRole);
+  // The stack's key only through the services that encrypt what this role reads and writes with it (7.03.01 audit):
+  // DynamoDB here, for voc-agents, the aggregates table and, with the engineering module, voc-engineering; S3 for the
+  // workspace's reports and SSM for the connections' parameters, in engineeringReads. The role calls KMS itself for
+  // nothing, and voc-agent-run has no customer-managed key (its executions are encrypted by Step Functions' own).
+  agentsRole.addToPolicy(new iam.PolicyStatement({
+    sid: 'AgentsTablesKey', actions: [...AGENTS_TABLES_KEY_ACTIONS], resources: [kmsKey.keyArn],
+    conditions: { StringEquals: { 'kms:ViaService': `dynamodb.${stack.region}.amazonaws.com` } },
+  }));
   agentRunStateMachine.grantStartExecution(agentsRole);
   const agentExecutionsArn = stack.formatArn({
     service: 'states',

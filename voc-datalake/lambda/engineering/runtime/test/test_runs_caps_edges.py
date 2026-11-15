@@ -96,11 +96,18 @@ def test_a_coordinator_is_awaited_from_the_start_then_from_the_last_resume(aws: 
     control = TableRunControl(runs)
     assert control.coordinator_awaited(RUN) is None   # (never started)
     runs.start(RUN, caps=RunCaps(max_tasks=5), now=500, connection='conn-1', commit=COMMIT, language='python')
-    assert control.coordinator_awaited(RUN) == 500
+    # (since when, and whether a fill of the checkout cache began at or after it)
+    assert control.coordinator_awaited(RUN) == (500, False)
+    runs.mark_cache_fill(RUN, now=500)   # (at the start's own second: counts)
+    assert control.coordinator_awaited(RUN) == (500, True)
     runs.needs_human(RUN, 'coordinator', now=600)
     assert control.coordinator_awaited(RUN) is None   # (at a decision point)
     runs.resume(RUN, now=900)
-    assert control.coordinator_awaited(RUN) == 900
+    assert control.coordinator_awaited(RUN) == (900, False)   # (the fill before the Resume is not this window's)
+    runs.mark_cache_fill(RUN, now=899)
+    assert control.coordinator_awaited(RUN) == (900, False)   # (a second before it: still not)
+    runs.mark_cache_fill(RUN, now=900)
+    assert control.coordinator_awaited(RUN) == (900, True)
     runs.end(RUN, 'stopped', now=1000)
     assert control.coordinator_awaited(RUN) is None
 

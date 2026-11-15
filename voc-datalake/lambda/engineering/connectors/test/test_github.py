@@ -4,7 +4,7 @@ from __future__ import annotations
 import base64
 import http.client
 import json
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
@@ -14,19 +14,18 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 
 from engineering.connectors import github
+from engineering.connectors.broker import Broker
 from engineering.connectors.github import (
     API_HOST,
     JWT_SECONDS,
-    MAX_RESPONSE_BYTES,
     TOKEN_MARGIN_SECONDS,
     GitHubHost,
-    HttpsTransport,
-    Response,
     app_jwt,
     next_page,
     rate_limit_retry,
 )
 from engineering.connectors.hosts import (
+    WRITE_UNKNOWN,
     BundleContents,
     Commit,
     Conflict,
@@ -35,10 +34,14 @@ from engineering.connectors.hosts import (
     HostError,
     InvalidTarget,
     NotFound,
+    OutcomeUnknown,
     PullRequestRef,
+    StoredBranchMissing,
 )
+from engineering.connectors.identity import Caller
 from engineering.connectors.test.app_keys import APP_ID, INSTALLATION_ID, credential, private_key
-from engineering.connectors.test.fakes import BASE, BOT, BRANCH, TREE, bundle_contents
+from engineering.connectors.test.fakes import BASE, BOT, BRANCH, RUN, TREE, FakeWrites, bundle_contents, connector
+from engineering.connectors.transport import MAX_RESPONSE_BYTES, HttpsTransport, Response
 from engineering.connectors.write_policy import WriteRefused
 
 NOW = 1_800_000_000.0
@@ -414,6 +417,27 @@ def draftable(api: FakeGitHub, open_prs: list[object], tree: str = TREE, head: i
             .on('PATCH', f'{REPO}/pulls/7', answer(200, {'number': 7})))
 
 
+RULES_QUERY = f'?per_page={github.RULES_PAGE}'
+
+
+def protected_branch(*checks: str, protected: bool = True) -> Response:
+    """A branch as GitHub answers it, with its classic protection's required checks (both of GitHub's spellings)."""
+    status = {'enforcement_level': 'non_admins', 'contexts': list(checks),
+              'checks': [{'context': name, 'app_id': 15368} for name in checks]}
+    return answer(200, {'name': 'main', 'protected': protected,
+                        'protection': {'enabled': protected, 'required_status_checks': status}})
+
+
+def ruled(api: FakeGitHub, default: Response | None = None, default_rules: Sequence[object] = (),
+          agent: Response | None = None, agent_rules: Sequence[object] = (), branch: str = BRANCH) -> FakeGitHub:
+    """The branch rules the setup guide asks for, unless given: the default branch protected with one required check,
+    the agent's branch not on GitHub yet and no rule for its name."""
+    return (api.on('GET', f'{REPO}/branches/main', default or protected_branch('ci / test'))
+            .on('GET', f'{REPO}/rules/branches/main{RULES_QUERY}', answer(200, list(default_rules)))
+            .on('GET', f'{REPO}/branches/{branch}', agent or answer(404, {}))
+            .on('GET', f'{REPO}/rules/branches/{branch}{RULES_QUERY}', answer(200, list(agent_rules))))
+
+
 def writes(api: FakeGitHub) -> list[tuple[str, str, Any]]:
     return [(s.method, s.path, s.body) for s in api.sent if s.method != 'GET' and s.path != TOKENS]
 
@@ -421,7 +445,7 @@ def writes(api: FakeGitHub) -> list[tuple[str, str, Any]]:
 def test_a_draft_pull_request_is_opened_when_the_branch_has_the_tree_and_checked_after() -> None:
     api = draftable(FakeGitHub(), open_prs=[])
     ref = client(api).open_or_update_draft_pr('c', BRANCH, 'main', 'Fix', 'From fb_01.', TREE)
-    assert ref == PullRequestRef(number=8, url='https://h/pull/8')
+    assert ref == PullRequestRef(number=8, url='https://h/pull/8', host='github')
     assert writes(api) == [('POST', f'{REPO}/pulls',
                             {'title': 'Fix', 'body': 'From fb_01.', 'head': BRANCH, 'base': 'main', 'draft': True})]
     assert api.calls()[-2:] == [('GET', f'{REPO}/pulls/8'), ('GET', f'{REPO}/git/commits/{PR_HEAD}')]
@@ -430,7 +454,7 @@ def test_a_draft_pull_request_is_opened_when_the_branch_has_the_tree_and_checked
 def test_an_open_pull_request_gets_its_text_updated_only() -> None:
     api = draftable(FakeGitHub(), open_prs=[{'number': 7, 'html_url': 'https://h/pull/7'}])
     ref = client(api).open_or_update_draft_pr('c', BRANCH, 'main', 'Fix', 'Body', TREE)
-    assert ref == PullRequestRef(number=7, url='https://h/pull/7')
+    assert ref == PullRequestRef(number=7, url='https://h/pull/7', host='github')
     assert writes(api) == [('PATCH', f'{REPO}/pulls/7', {'title': 'Fix', 'body': 'Body'})]
 
 
@@ -442,40 +466,44 @@ def test_no_pull_request_unless_the_branch_head_has_the_tree(tree: str, head: in
     assert writes(api) == []
 
 
-def test_a_pull_request_opened_while_the_branch_moved_is_closed_and_refused() -> None:
+def test_a_pull_request_opened_while_the_branch_moved_is_closed_and_its_outcome_unknown() -> None:
     api = draftable(FakeGitHub(), open_prs=[], pr_tree='e' * 40)
-    with pytest.raises(Conflict) as caught:
+    with pytest.raises(OutcomeUnknown) as caught:
         client(api).open_or_update_draft_pr('c', BRANCH, 'main', 'Fix', 'Body', TREE)
+    # The write went out: never a refusal (a Conflict says nothing was written), whatever the close did.
+    assert not isinstance(caught.value, WriteRefused | HostBusy)
     assert 'moved' in caught.value.reason
+    assert isinstance(caught.value.__cause__, Conflict)
     assert [w[:2] for w in writes(api)] == [('POST', f'{REPO}/pulls'), ('PATCH', f'{REPO}/pulls/8')]
     assert writes(api)[-1][2] == {'state': 'closed'}
 
 
-@pytest.mark.parametrize(('check', 'error'), [
-    (answer(429, {}, {'retry-after': '7'}), HostBusy),
+@pytest.mark.parametrize(('check', 'cause'), [
+    (answer(429, {}, {'retry-after': '7'}), HostBusy),   # a rate limit after the create: no longer "nothing written"
     (answer(500, {}), HostError),
     (answer(200, {'number': 8}), HostError),   # an answer without the head's sha
 ])
-def test_a_pull_request_opened_whose_check_fails_is_closed_and_the_failure_raised(check: Response,
-                                                                                 error: type[Exception]) -> None:
+def test_a_pull_request_opened_whose_check_fails_is_closed_and_its_outcome_unknown(check: Response,
+                                                                                  cause: type[Exception]) -> None:
     api = draftable(FakeGitHub(), open_prs=[]).on('GET', f'{REPO}/pulls/8', check)
-    with pytest.raises(error):
+    with pytest.raises(OutcomeUnknown) as caught:
         client(api).open_or_update_draft_pr('c', BRANCH, 'main', 'Fix', 'Body', TREE)
+    assert (type(caught.value), isinstance(caught.value.__cause__, cause)) == (OutcomeUnknown, True)
     assert writes(api)[-1] == ('PATCH', f'{REPO}/pulls/8', {'state': 'closed'})
 
 
-def test_a_close_that_fails_is_logged_by_number_and_the_refusal_still_raised(
+def test_a_close_that_fails_is_logged_by_number_and_the_outcome_still_unknown(
         caplog: pytest.LogCaptureFixture) -> None:
     api = draftable(FakeGitHub(), open_prs=[], pr_tree='e' * 40).on('PATCH', f'{REPO}/pulls/8', answer(500, {}))
-    with pytest.raises(Conflict):
+    with pytest.raises(OutcomeUnknown):
         client(api).open_or_update_draft_pr('c', BRANCH, 'main', 'Secret title', 'Secret body', TREE)
     closes = [r for r in caplog.records if r.getMessage() == 'engineering pull request not closed']
     assert [vars(r)['pull_request'] for r in closes] == [8]
     assert 'Secret' not in repr([vars(r) for r in caplog.records])
 
 
-def test_any_failure_of_the_close_still_raises_the_original_refusal(caplog: pytest.LogCaptureFixture,
-                                                                     monkeypatch: pytest.MonkeyPatch) -> None:
+def test_any_failure_of_the_close_still_raises_the_outcome_unknown(caplog: pytest.LogCaptureFixture,
+                                                                    monkeypatch: pytest.MonkeyPatch) -> None:
     host = client(draftable(FakeGitHub(), open_prs=[], pr_tree='e' * 40))
     real_api = host._api
 
@@ -485,17 +513,39 @@ def test_any_failure_of_the_close_still_raises_the_original_refusal(caplog: pyte
             raise ValueError('a malformed answer')
         return real_api(connection_id, permissions, method, path, what, **kwargs)
     monkeypatch.setattr(host, '_api', api)
-    with pytest.raises(Conflict):
+    with pytest.raises(OutcomeUnknown):
         host.open_or_update_draft_pr('c', BRANCH, 'main', 'Fix', 'Body', TREE)
     assert [vars(r)['pull_request'] for r in caplog.records
             if r.getMessage() == 'engineering pull request not closed'] == [8]
 
 
-def test_an_updated_pull_request_whose_branch_moved_is_refused_but_left_open() -> None:
+@pytest.mark.parametrize('check', [answer(200, {'number': 7, 'head': {'sha': PR_HEAD}}),   # (its tree moved)
+                                   answer(429, {}, {'retry-after': '7'})], ids=['moved', 'rate-limited'])
+def test_an_updated_pull_request_whose_check_fails_wrote_so_its_outcome_is_unknown_and_left_open(
+        check: Response) -> None:
     api = draftable(FakeGitHub(), open_prs=[{'number': 7, 'html_url': 'https://h/pull/7'}], pr_tree='e' * 40)
-    with pytest.raises(Conflict):
+    api.on('GET', f'{REPO}/pulls/7', check)
+    with pytest.raises(OutcomeUnknown) as caught:
         client(api).open_or_update_draft_pr('c', BRANCH, 'main', 'Fix', 'Body', TREE)
+    # The text was updated: never recorded as "refused, nothing written".
+    assert 'updated' in caught.value.reason
     assert writes(api) == [('PATCH', f'{REPO}/pulls/7', {'title': 'Fix', 'body': 'Body'})]
+
+
+@pytest.mark.parametrize('check', [answer(429, {}, {'retry-after': '7'}),
+                                   answer(200, {'number': 8, 'head': {'sha': PR_HEAD}})], ids=['rate-limited', 'moved'])
+def test_a_draft_whose_check_fails_after_the_create_is_unknown_and_its_repeat_opens_no_second_pull_request(
+        check: Response) -> None:
+    api = ruled(draftable(FakeGitHub(), open_prs=[], pr_tree='e' * 40).on('GET', f'{REPO}/pulls/8', check)
+                .on('GET', REPO, answer(200, {'default_branch': 'main'})))   # (the broker's branch, after its repository check)
+    claims = FakeWrites()
+    broker = Broker(connector(host=client(api), writes=claims))
+    author = Caller('pr-author', RUN, 4)
+    for _ in range(2):
+        with pytest.raises(OutcomeUnknown):
+            broker.open_or_update_draft_pr(author, BRANCH, 'Fix the refund total', 'Rounds to cents (fb_01).')
+    assert [w[:2] for w in writes(api)].count(('POST', f'{REPO}/pulls')) == 1
+    assert [claim.state for claim in claims.claims.values()] == [WRITE_UNKNOWN]
 
 
 def test_a_pull_request_lookup_answer_without_a_number_is_a_host_error() -> None:
@@ -679,9 +729,36 @@ def test_no_token_or_jwt_is_ever_in_a_url_or_a_log_line(caplog: pytest.LogCaptur
 
 def test_the_client_has_no_merge_approve_settings_or_revoke_method() -> None:
     public = {name for name in dir(GitHubHost) if not name.startswith('_')}
-    # Reads (a patch's base file, the default branch) and the three writes: nothing else.
-    assert public == {'read', 'file_at', 'default_branch', 'post_comment', 'branch_tree_hash', 'push_bundle',
-                      'open_or_update_draft_pr'}
+    # Reads (a patch's base file, the default branch, the credential's repository, the branch rules) and the three
+    # writes, and the checkout cache's read-only fetch token: nothing else (no method changes a branch rule).
+    assert public == {'read', 'file_at', 'default_branch', 'repository', 'ci_protection', 'post_comment',
+                      'branch_tree_hash', 'push_bundle', 'open_or_update_draft_pr', 'fetch_token',
+                      'revoke_fetch_token'}
+
+
+def test_a_revoked_fetch_token_is_deleted_once_and_never_reused() -> None:
+    api = FakeGitHub().on('DELETE', '/installation/token', Response(204, {}, b''))
+    host = client(api)
+    _repository, token = host.fetch_token('conn-1')
+    host.revoke_fetch_token(token)
+    assert [(s.method, s.path, s.headers['Authorization']) for s in api.sent if s.method == 'DELETE'] == [
+        ('DELETE', '/installation/token', f'Bearer {token}')]
+    assert host.fetch_token('conn-1')[1] == 'ghs_test_token_2'   # (a fresh one: the revoked one is forgotten)
+
+
+def test_the_checkout_caches_fetch_token_reads_contents_of_the_one_repository_and_is_reused() -> None:
+    api = FakeGitHub()
+    host = client(api)
+    assert host.fetch_token('conn-1') == ('example-org/refund-service', 'ghs_test_token_1')
+    assert host.fetch_token('conn-1') == ('example-org/refund-service', 'ghs_test_token_1')
+    assert api.scopes() == [{'repositories': ['refund-service'], 'permissions': {'contents': 'read'}}]
+    assert api.calls() == []   # (the token only: git fetches, the client asks the API nothing else)
+
+
+def test_the_connections_repository_is_its_credentials_and_asks_the_host_nothing() -> None:
+    api = FakeGitHub()
+    assert client(api).repository('conn-1') == 'example-org/refund-service'
+    assert api.sent == []
 
 
 def test_a_base_file_is_read_raw_at_its_commit_and_a_missing_one_is_none() -> None:
@@ -715,6 +792,139 @@ def test_the_default_branch_is_read_with_metadata_only_and_kept_five_minutes() -
     assert api.scopes()[0]['permissions'] == {'metadata': 'read'}
     clock.now += github.DEFAULT_BRANCH_SECONDS
     assert host.default_branch('c') == 'main'
+
+
+def test_a_stored_default_branch_is_served_once_the_host_has_it_and_kept_five_minutes() -> None:
+    api = FakeGitHub().on('GET', f'{REPO}/git/ref/heads/develop', answer(200, {'object': {'sha': 'a' * 40}}),
+                          answer(404, {}))
+    clock = Clock()
+    host = client(api, clock)
+    assert (host.default_branch('c', 'develop'), host.default_branch('c', 'develop')) == ('develop', 'develop')
+    # One branch lookup with contents: read, never the repository's own default branch.
+    assert api.calls() == [('GET', f'{REPO}/git/ref/heads/develop')]
+    assert api.scopes()[0]['permissions'] == {'contents': 'read'}
+    clock.now += github.DEFAULT_BRANCH_SECONDS
+    with pytest.raises(StoredBranchMissing):
+        host.default_branch('c', 'develop')
+
+
+def test_the_branch_caches_keep_at_most_their_bound_the_oldest_going_first(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(github, 'MAX_CACHED_BRANCHES', 2)
+    api = FakeGitHub()
+    for branch in ('one', 'two', 'three'):
+        api.on('GET', f'{REPO}/git/ref/heads/{branch}', answer(200, {'object': {'sha': 'a' * 40}}))
+    host = client(api)
+    for branch in ('one', 'two', 'three', 'three'):
+        host.default_branch('c', branch)
+    assert [key[2] for key in host._cached.confirmed_branches] == ['two', 'three']
+    host.default_branch('c', 'one')   # (dropped: looked up again)
+    assert api.calls().count(('GET', f'{REPO}/git/ref/heads/one')) == 2
+    assert len(host._cached.confirmed_branches) == 2
+
+
+def test_a_stored_default_branch_the_host_does_not_have_is_refused_and_not_kept() -> None:
+    api = FakeGitHub().on('GET', f'{REPO}/git/ref/heads/release/1.x', answer(404, {}),
+                          answer(200, {'object': {'sha': 'b' * 40}}))
+    host = client(api)
+    with pytest.raises(StoredBranchMissing):
+        host.default_branch('c', 'release/1.x')
+    # (once created on the host, the next call is served: a refusal is never kept)
+    assert host.default_branch('c', 'release/1.x') == 'release/1.x'
+
+
+# --- a file and history on the run's default branch -----------------------------------------------------------------
+
+
+def test_a_file_and_history_are_read_on_the_branch_the_broker_hands_on() -> None:
+    api = (FakeGitHub().on('GET', f'{REPO}/contents/a.py?ref=release%2F2026', Response(200, {}, b'on release\n'))
+           .on('GET', f'{REPO}/commits?per_page=30&page=1&sha=release%2F2026&path=a.py', answer(200, [])))
+    host = client(api)
+    assert host.read('c', 'file', 'a.py', None, 'release/2026').content == 'on release\n'
+    assert host.read('c', 'history', 'a.py', None, 'release/2026').content == '{"commits": []}'
+    # (with no branch, the repository's own default branch: no ref at all)
+    api.on('GET', f'{REPO}/contents/a.py', Response(200, {}, b'on its own\n'))
+    assert host.read('c', 'file', 'a.py', None).content == 'on its own\n'
+
+
+def test_a_file_the_runs_branch_does_not_have_is_not_found_on_that_branch() -> None:
+    api = FakeGitHub().on('GET', f'{REPO}/contents/a.py?ref=develop', answer(404, {}))
+    with pytest.raises(NotFound, match="run's default branch"):
+        client(api).read('c', 'file', 'a.py', None, 'develop')
+
+
+# --- the branch rules (the CI attestation's check) ------------------------------------------------------------------
+
+
+def test_the_branch_rules_are_read_with_contents_read_and_name_the_required_checks() -> None:
+    api = ruled(FakeGitHub(), default=protected_branch('ci / test', 'lint'), default_rules=[
+        {'type': 'pull_request'},
+        {'type': 'required_status_checks', 'parameters': {'required_status_checks': [{'context': 'build'},
+                                                                                     {'context': 'lint'}]}}])
+    found = client(api).ci_protection('c', 'main', BRANCH)
+    assert (found.default_branch_protected, found.required_checks, found.agent_branch_protected, found.passes) == (
+        True, ('ci / test', 'lint', 'build'), False, True)
+    assert found.checked_at == NOW
+    # Reads alone, each with a read-only token: never a write, never a settings or protection endpoint.
+    assert writes(api) == []
+    assert {json.dumps(scope['permissions']) for scope in api.scopes()} == {'{"contents": "read"}'}
+    assert all('/protection' not in path for _, path in api.calls())
+
+
+def test_a_ruleset_alone_protects_the_default_branch() -> None:
+    rules = [{'type': 'required_status_checks', 'parameters': {'required_status_checks': [{'context': 'ci'}]}}]
+    api = ruled(FakeGitHub(), default=protected_branch(protected=False), default_rules=rules)
+    found = client(api).ci_protection('c', 'main', BRANCH)
+    assert (found.default_branch_protected, found.required_checks, found.passes) == (True, ('ci',), True)
+
+
+@pytest.mark.parametrize(('rules', 'expected'), [
+    ({'default': protected_branch(protected=False)}, (False, (), False)),
+    ({'default': answer(404, {})}, (False, (), False)),
+    ({'default': protected_branch()}, (True, (), False)),
+    ({'agent': protected_branch('ci / test')}, (True, ('ci / test',), True)),
+    ({'agent_rules': [{'type': 'deletion'}]}, (True, ('ci / test',), True)),
+], ids=['unprotected', 'no default branch', 'no required check', 'agent branch protected', 'agent branch ruled'])
+def test_rules_off_the_setup_guide_fail_the_check(rules: dict[str, Any], expected: tuple[bool, tuple[str, ...], bool]
+                                                  ) -> None:
+    found = client(ruled(FakeGitHub(), **rules)).ci_protection('c', 'main', BRANCH)
+    assert (found.default_branch_protected, found.required_checks, found.agent_branch_protected) == expected
+    assert found.passes is False
+
+
+def test_check_names_are_kept_only_as_one_printable_line_each_and_at_most_their_bound() -> None:
+    names = ['ok', '', '  ', 'two\nlines', 'x' * (github.MAX_CHECK_NAME + 1), *(f'c{n}' for n in range(30))]
+    found = client(ruled(FakeGitHub(), default=protected_branch(*names))).ci_protection('c', 'main', BRANCH)
+    assert found.required_checks == ('ok', *(f'c{n}' for n in range(github.MAX_REQUIRED_CHECKS - 1)))
+
+
+def test_a_passing_check_is_kept_five_minutes_and_a_failing_one_read_again() -> None:
+    api = ruled(FakeGitHub(), default=protected_branch(protected=False))
+    clock = Clock()
+    host = client(api, clock)
+    assert host.ci_protection('c', 'main', BRANCH).passes is False
+    # Fixed on the host: the next call reads it again at once (a failure is never kept).
+    api.on('GET', f'{REPO}/branches/main', protected_branch('ci / test'))
+    assert host.ci_protection('c', 'main', BRANCH).passes is True
+    reads = len(api.calls())
+    clock.now += github.CI_CHECK_SECONDS - 1
+    assert host.ci_protection('c', 'main', BRANCH).passes is True
+    assert len(api.calls()) == reads   # (kept)
+    # Unprotected again on the host: seen once the kept pass expires.
+    api.on('GET', f'{REPO}/branches/main', protected_branch(protected=False))
+    clock.now += 1
+    assert host.ci_protection('c', 'main', BRANCH).passes is False
+
+
+def test_the_kept_checks_hold_at_most_their_bound(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(github, 'MAX_CACHED_BRANCHES', 2)
+    branches = [f'voc-agent/{RUN}/fix-{n}' for n in range(3)]
+    api = FakeGitHub()
+    for branch in branches:
+        ruled(api, branch=branch)
+    host = client(api)
+    for branch in branches:
+        host.ci_protection('c', 'main', branch)
+    assert [key[3] for key in host._cached.ci_checks] == branches[1:]
 
 
 # --- the HTTPS transport --------------------------------------------------------------------------------------------
@@ -762,7 +972,7 @@ def transport(reply: FakeAnswer | Exception, *, send_fails: bool = False) -> tup
     def connect(host: str, timeout: float, context: object) -> FakeConnection:
         made.append(FakeConnection(host, timeout, context, reply, send_fails))
         return made[-1]
-    return HttpsTransport(connect=connect), made
+    return HttpsTransport(connect=connect, host=API_HOST, repeatable=github._TOKEN_PATH), made
 
 
 def test_the_transport_talks_only_to_the_api_host_and_lower_cases_headers() -> None:
@@ -810,5 +1020,7 @@ def test_a_write_that_never_left_is_retryable() -> None:
 
 
 def test_the_default_transport_is_https() -> None:
-    assert isinstance(GitHubHost(lambda _: credential())._transport, HttpsTransport)
-    assert github.HttpsTransport()._connect is http.client.HTTPSConnection
+    default = GitHubHost(lambda _: credential())._transport
+    assert isinstance(default, HttpsTransport)
+    assert (default._host, default._repeatable) == (API_HOST, github._TOKEN_PATH)
+    assert HttpsTransport()._connect is http.client.HTTPSConnection

@@ -92,6 +92,20 @@ const FlowStepsSchema = z.record(z.string(), z.string()).nullable().catch(null)
 /** The revision of the flow the run's start copied; null for none. */
 const FlowRevisionSchema = z.number().int().positive().nullable().catch(null)
 
+/** The host kinds a connection is on (`lambda/engineering/run_links.py` HOSTS). */
+const RunHostSchema = z.enum(['github', 'gitlab'])
+const LinkNumberSchema = z.number().int().positive()
+/** The issue the run was started from, as its start recorded it (`verified` false: as given); null for none. */
+const IssueLinkSchema = z.object({
+  host: RunHostSchema, number: LinkNumberSchema, url: z.string(), verified: z.boolean().catch(false),
+}).nullable().catch(null)
+/** The run's draft pull request (a GitLab merge request) as the broker recorded the host's answer; null for none. */
+const PullRequestLinkSchema = z.object({
+  host: RunHostSchema, number: LinkNumberSchema, url: z.string(), head: text, base: text,
+}).nullable().catch(null)
+export type RunIssueLink = NonNullable<z.output<typeof IssueLinkSchema>>
+export type RunPullRequestLink = NonNullable<z.output<typeof PullRequestLinkSchema>>
+
 const OverviewSchema = z.object({
   run: z.object({
     run_id: text, goal: text, repo: text, flow: text, status: text, started_at: maybeText, ended_at: maybeText,
@@ -100,6 +114,8 @@ const OverviewSchema = z.object({
     flow_revision: FlowRevisionSchema.optional().transform((revision) => revision ?? null),
     /** The run's own copy of its flow, as its start wrote it (what the monitor draws); null for none. */
     flow_definition: z.unknown().optional().transform((definition) => normalizeDefinition(definition ?? null)),
+    issue: IssueLinkSchema.optional().transform((issue) => issue ?? null),
+    pull_request: PullRequestLinkSchema.optional().transform((pull) => pull ?? null),
   }),
   agents: eachOf(AgentSchema),
   /** The signals and answers can reach the run (the stack names the runtime and the bus); false when unsaid. */
@@ -207,6 +223,8 @@ export interface StartRunRequest {
   commit: string
   language: string
   goal: string
+  /** The number of the issue the run starts from (left out for none). */
+  issue?: number
 }
 
 /** The run the server started: the monitor opens it. */

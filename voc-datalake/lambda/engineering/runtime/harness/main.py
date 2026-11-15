@@ -6,10 +6,11 @@
 - ``tool-server``: the platform's tools for a CLI (``tool_server``), started by that CLI.
 
 Everything else comes from the agent's own environment (``unit_runner.AGENT_ENV``: its ids, its region, the
-bucket its session was handed with, the board's function URL) and its role session (``AWS_CONFIG_FILE``). The
-board, the inbox, the run coordinator's planner and the knowledge reader are reached through the board API, signed
-with that session (``board_client.py``); the broker still refuses (``ports.PendingHarnessPorts``), so a session
-stops at its first call to it rather than guess.
+bucket its session was handed with, the board's and the broker's function URLs) and its role session
+(``AWS_CONFIG_FILE``). The board, the inbox, the run coordinator's planner and the knowledge reader are reached
+through the board API (``board_client.py``), the repository host's reads and writes through the broker
+(``broker_client.py``), each signed with that session; a port whose URL the session was not handed refuses
+(``ports.PendingHarnessPorts``), so a session stops at its first call to it rather than guess.
 """
 from __future__ import annotations
 
@@ -32,6 +33,7 @@ from engineering.runtime.harness.board_client import (
     SignedTransport,
     board_url,
 )
+from engineering.runtime.harness.broker_client import BrokerHttp, SignedBroker
 from engineering.runtime.harness.cli import CLAUDE, ClaudeCli, choose_cli
 from engineering.runtime.harness.converse_loop import ConverseAdapter
 from engineering.runtime.harness.interface import DONE_EXIT_CODE, PAUSED_EXIT_CODE, Adapter, AgentSession
@@ -214,22 +216,29 @@ def _heartbeat(board: Board, ids: Mapping[str, str], stop: threading.Event) -> N
 
 
 def default_ports(env: Mapping[str, str], credentials: Any = None) -> Ports:
-    """The board, the inbox, the planner and the knowledge reader on the board's function URL (``VOC_BOARD_URL``,
-    signed with the agent's own session; the board refuses the planner's ops to anyone but the run's coordinator);
-    the broker still refuses (``PendingHarnessPorts``)."""
+    """The board, the inbox, the planner and the knowledge reader on the board's function URL (``VOC_BOARD_URL``), the
+    broker on the broker's (``VOC_BROKER_URL``), each signed with the agent's own session (the board refuses the
+    planner's ops to anyone but the run's coordinator, the broker every operation the caller's role may not make). A
+    port whose URL the session was not handed refuses (``PendingHarnessPorts``)."""
     pending = PendingHarnessPorts()
-    url = env.get('VOC_BOARD_URL')
-    if not url:
+    board, broker = env.get('VOC_BOARD_URL'), env.get('VOC_BROKER_URL')
+    if not (board or broker):
         return Ports(board=pending, inbox=pending, broker=pending)
     if credentials is None:
         import boto3
         credentials = boto3.Session(region_name=env['AWS_REGION']).get_credentials()
-    transport = SignedTransport(board_url(url), env['AWS_REGION'], credentials)
+    run_id, task_id, agent_id = env['VOC_RUN_ID'], env['VOC_TASK_ID'], env['VOC_AGENT_ID']
+    writes: Broker = pending
+    if broker:
+        writes = BrokerHttp(SignedBroker(board_url(broker), env['AWS_REGION'], credentials), run_id, agent_id,
+                            env.get('VOC_COMMIT', ''), attempt=int(env.get('VOC_ATTEMPT', '1')))
+    if not board:
+        return Ports(board=pending, inbox=pending, broker=writes)
+    transport = SignedTransport(board_url(board), env['AWS_REGION'], credentials)
     # The lease's epoch is the task's attempt (the board's claim sets it so): the harness, a continuation and the CLI's
     # tool server renew, report and move on it without claiming.
-    run_id, task_id = env['VOC_RUN_ID'], env['VOC_TASK_ID']
     return Ports(board=BoardHttp(transport, run_id, task_id, epoch=int(env.get('VOC_ATTEMPT', '1'))),
-                 inbox=InboxHttp(transport, run_id, env['VOC_AGENT_ID']), broker=pending,
+                 inbox=InboxHttp(transport, run_id, agent_id), broker=writes,
                  planner=BoardPlanner(transport, run_id), knowledge=BoardKnowledge(transport, run_id, task_id))
 
 
@@ -239,7 +248,7 @@ def adapter_for(args: argparse.Namespace, env: Mapping[str, str], bedrock: Calla
     choose_cli(args.cli)
     tool_env = {name: env[name] for name in ('VOC_RUN_ID', 'VOC_AGENT_ID', 'VOC_TASK_ID', 'VOC_ROLE',
                                               'VOC_WORKSPACE_BUCKET', 'VOC_COMMIT', 'VOC_ATTEMPT', 'VOC_BOARD_URL',
-                                              'VOC_MODEL', GATE_TREE_ENV, 'AWS_REGION', 'AWS_CONFIG_FILE', 'HOME')
+                                              'VOC_BROKER_URL', 'VOC_MODEL', GATE_TREE_ENV, 'AWS_REGION', 'AWS_CONFIG_FILE', 'HOME')
                 if name in env}
     return ClaudeCli(binary=args.cli_binary, version=args.cli_version, model_id=args.model,
                      home_root=os.path.join(env['HOME'], '.voc', 'cli'), region=env['AWS_REGION'],

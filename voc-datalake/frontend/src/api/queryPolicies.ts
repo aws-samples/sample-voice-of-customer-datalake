@@ -90,7 +90,10 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'dimension-metrics': 'feedbackData',
   'dimensions-config': 'config',
   'document-comments': 'live', // margin comment threads of a PR/FAQ / PRD series (reviewers comment meanwhile)
+  'engineering-connections': 'config', // Agents → Connections: the repository connections (change only when an administrator changes them)
   'engineering-runs': 'live', // an engineering run's monitor: overview, board, conversation (polled while it runs)
+  'engineering-scorecards': 'live', // Agents → Skills: a role's scorecards, which each ended run adds a row to
+  'engineering-skills': 'live', // Agents → Skills: the skills' versions, which the coach proposes after a run
   'engineering-settings': 'config', // Agents → Spend: the administrators' hard cap (changes only when they change it)
   'engineering-spend': 'live', // Agents → Spend: a month of the spend ledger, which grows while runs work
   'entities': 'feedbackData',

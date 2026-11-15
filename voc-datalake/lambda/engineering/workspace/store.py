@@ -25,9 +25,10 @@ _IN_FLIGHT = frozenset({'ConditionalRequestConflict', '409'})
 WRITE_TRIES = 3
 #: The wait before a write's next try, times the tries made (seconds).
 WRITE_BACKOFF_S = 0.2
-_MISSING = frozenset({'NoSuchKey', '404'})
+#: What S3 answers a missing key (the codes the engineering readers share: the checkout cache's too).
+MISSING_CODES = frozenset({'NoSuchKey', '404'})
 #: What S3 answers a missing key to a role without ListBucket on it.
-_DENIED = frozenset({'AccessDenied', '403'})
+DENIED_CODES = frozenset({'AccessDenied', '403'})
 
 
 class ObjectTooLarge(ValueError):
@@ -49,7 +50,7 @@ class WorkspaceStore:
         self.s3 = s3
         self.sleep = sleep
         self.bucket = bucket
-        self.missing = _MISSING | _DENIED if denied_is_missing else _MISSING
+        self.missing = MISSING_CODES | DENIED_CODES if denied_is_missing else MISSING_CODES
 
     def _get(self, key: str, limit: int) -> tuple[bytes, int] | None:
         """The object's first ``limit`` bytes and its whole size, or None when it does not exist."""
@@ -58,7 +59,7 @@ class WorkspaceStore:
         except ClientError as exc:
             code = _code(exc)
             if code in self.missing:
-                if code in _DENIED:
+                if code in DENIED_CODES:
                     # Most likely a missing key, but a KMS or policy denial reads the same: logged and counted, so
                     # a broken policy shows as a rising count rather than as reports quietly missing their parts.
                     logger.warning('workspace: a denied read taken as missing', extra={'key': key, 'code': code})

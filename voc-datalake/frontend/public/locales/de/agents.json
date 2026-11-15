@@ -19,7 +19,9 @@
     "label": "Bereiche der Agentenseite",
     "agents": "Agenten",
     "workflows": "Workflows",
-    "spend": "Ausgaben"
+    "spend": "Ausgaben",
+    "connections": "Verbindungen",
+    "skills": "Skills"
   },
   "list": {
     "title": "Autonome Agenten",
@@ -616,19 +618,22 @@
       "connection": "Repository-Verbindung",
       "commit": "Commit",
       "language": "Sprache",
-      "goal": "Ziel"
+      "goal": "Ziel",
+      "issue": "Issue (optional)"
     },
     "hints": {
       "connection": "Die ID der Verbindung: Buchstaben, Ziffern und Bindestriche, höchstens 63.",
       "commit": "Die vollständige Commit-ID, von der der Lauf startet: 40 Hexadezimalzeichen.",
       "language": "Die Toolchain des Repositorys: Die Agenten arbeiten im Sandbox-Image dieser Sprache.",
-      "goal": "Wofür der Lauf ist, in einer Zeile mit höchstens 500 Zeichen."
+      "goal": "Wofür der Lauf ist, in einer Zeile mit höchstens 500 Zeichen.",
+      "issue": "Die Nummer des Issues im Repository, von dem der Lauf ausgeht. Sie wird so gespeichert, wie sie angegeben wird."
     },
     "invalid": {
       "connection": "Geben Sie die ID der Verbindung ein: 1 bis 63 Buchstaben, Ziffern oder Bindestriche.",
       "commit": "Geben Sie die vollständige Commit-ID ein: 40 Zeichen, 0 bis 9 und a bis f.",
       "goalEmpty": "Geben Sie an, wofür der Lauf ist.",
-      "goalLong": "Das Ziel darf höchstens {{max, number}} Zeichen lang sein."
+      "goalLong": "Das Ziel darf höchstens {{max, number}} Zeichen lang sein.",
+      "issue": "Geben Sie die Nummer des Issues ein, eine ganze Zahl ab 1, oder lassen Sie das Feld leer."
     },
     "languages": {
       "java": "Java",
@@ -748,6 +753,365 @@
     "truncated": "Dieser Monat hat mehr Zeilen, als ein Lesevorgang abruft: Die Zahlen sind eine Untergrenze.",
     "empty": "Im {{month}} wurde nichts ausgegeben."
   },
+  "connections": {
+    "title": "Repository-Verbindungen",
+    "intro": "Die Engineering-Agenten erreichen ein Repository über eine Verbindung: das Repository, seinen Standard-Branch und eine für sie gespeicherte Zugangsberechtigung. Eine gespeicherte Zugangsberechtigung wird nie wieder angezeigt, niemandem.",
+    "add": "Verbindung hinzufügen",
+    "limitReached": "Diese Bereitstellung fasst höchstens {{limit, number}} Verbindungen. Entfernen Sie eine, um eine weitere hinzuzufügen.",
+    "loadFailed": "Die Repository-Verbindungen konnten nicht geladen werden.",
+    "emptyTitle": "Noch keine Repository-Verbindungen",
+    "emptyHint": "Fügen Sie eine hinzu, damit die Engineering-Agenten an einem Repository arbeiten können.",
+    "branch": "Standard-Branch: {{branch}}",
+    "kind": "GitHub App",
+    "kindToken": "GitLab-Projektzugriffstoken",
+    "hostLabel": "Repository-Host",
+    "hosts": {
+      "github": "GitHub",
+      "gitlab": "GitLab"
+    },
+    "expiry": {
+      "on": "Das Token läuft am {{date}} ab.",
+      "soonBadge": "Token läuft bald ab",
+      "soon": "Es läuft am {{date}} ab, in höchstens {{days, number}} Tagen: Erstellen Sie ein neues Token und speichern Sie es in dieser Verbindung.",
+      "expiredBadge": "Token abgelaufen",
+      "expired": "Es ist am {{date}} abgelaufen: Die Agenten erreichen das Projekt erst wieder, wenn Sie ein neues Token in dieser Verbindung speichern.",
+      "unknown": "Das Ablaufdatum des Tokens ist nicht bekannt: Speichern Sie die Verbindung erneut mit ihrem Token."
+    },
+    "gitlab": {
+      "keepHint": "Das gespeicherte Token wird nie angezeigt. Lassen Sie das Token leer, um es zu behalten; ein neuer Host oder ein neues Projekt braucht wieder ein Token.",
+      "fields": {
+        "project": "Projektpfad",
+        "token": "Projektzugriffstoken"
+      },
+      "hints": {
+        "project": "Der Pfad des Projekts wie in seiner Adresse: gruppe/projekt oder gruppe/untergruppe/projekt.",
+        "token": "Das Projektzugriffstoken (glpat-…), das beim Erstellen einmal angezeigt wird. Es wird bei GitLab geprüft, einmal gesendet und nie wieder angezeigt."
+      },
+      "invalid": {
+        "repository": "Geben Sie den Pfad des Projekts wie in seiner Adresse ein: gruppe/projekt oder gruppe/untergruppe/projekt.",
+        "tokenEmpty": "Fügen Sie das Projektzugriffstoken ein: Eine neue Verbindung braucht ihre Anmeldedaten.",
+        "tokenNeeded": "Fügen Sie das Projektzugriffstoken erneut ein: Ein neuer Host oder ein neues Projekt wird damit gespeichert.",
+        "token": "Fügen Sie das ganze Projektzugriffstoken ein: Es beginnt mit glpat-."
+      },
+      "guidance": {
+        "title": "Was das GitLab-Token braucht",
+        "token": "Erstellen Sie ein Projektzugriffstoken nur in diesem Projekt (in den Einstellungen des Projekts, unter Zugriffstoken): Rolle Developer, Bereiche api, read_repository und write_repository. Nie Maintainer oder Owner und nie ein Gruppen- oder persönliches Token.",
+        "expiry": "GitLab-Tokens laufen ab, höchstens ein Jahr nach ihrer Erstellung. Erstellen Sie das nächste Token, bevor dieses abläuft, und speichern Sie es in der Verbindung: Die Seite warnt Sie 30 Tage vorher.",
+        "branch": "Schützen Sie den Standard-Branch (kein Force-Push, Push und Merge nur für Maintainer), verlangen Sie erfolgreiche Pipelines vor einem Merge und lassen Sie voc-agent/*-Branches ungeschützt."
+      },
+      "ci": {
+        "points": {
+          "protected_secrets": "CI/CD-Variablen mit Geheimnissen sind geschützt, sodass nur Pipelines auf geschützten Branches sie erhalten.",
+          "read_only_token": "Das CI/CD-Job-Token hat die geringsten Rechte: Seine Zulassungsliste enthält nur die Projekte, die die Pipelines brauchen, und kein Job pusht damit.",
+          "oidc_pinned": "Cloud-Zugriff über OIDC (id_tokens) ist an geschützte Branches gebunden (der Claim ref_protected des Tokens).",
+          "no_self_hosted_runner": "Kein gemeinsamer, Gruppen- oder Instanz-Runner mit Zugriff auf Geheimnisse oder private Netzwerke führt Jobs für ungeschützte Branches aus: Solche Runner sind geschützt.",
+          "no_privileged_pull_request": "Keine Pipeline führt Merge-Request-Code mit Geheimnissen aus: keine Merge-Request-Pipeline für Forks in diesem Projekt, und keine geschützte Variable erreicht eine.",
+          "branch_rules": "Der Standard-Branch ist geschützt (kein Force-Push, Push und Merge für Maintainer), Pipelines müssen vor einem Merge erfolgreich sein (eine übersprungene Pipeline zählt nicht als Erfolg), die CI-Konfiguration nutzt nur einfache lokale Includes und GitLabs eigene Vorlagen (geteilte CI aus anderen Projekten, Remote-Includes und Komponenten werden nicht unterstützt), und voc-agent/*-Branches bleiben ungeschützt."
+        },
+        "checked": "Der Broker liest bei jedem Push und Merge Request auch die geschützten Branches: der Standard-Branch geschützt ohne Force-Push, mit Push und Merge für Maintainer, erfolgreiche Pipelines verlangt und voc-agent/*-Branches nicht geschützt."
+      }
+    },
+    "appIds": "App {{appId}}, Installation {{installationId}}",
+    "set": "Gesetzt",
+    "notSet": "Nicht gesetzt",
+    "notSetHint": "Die gespeicherte Zugangsberechtigung fehlt: Bearbeiten Sie die Verbindung und speichern Sie sie erneut mit ihrer Zugangsberechtigung.",
+    "updated": "Geändert {{when}} von {{who}}",
+    "unknownEditor": "unbekannt",
+    "edit": "Bearbeiten",
+    "editLabel": "{{repository}} bearbeiten",
+    "remove": "Entfernen",
+    "removeLabel": "{{repository}} entfernen",
+    "created": "{{repository}} wurde hinzugefügt.",
+    "saved": "{{repository}} wurde gespeichert.",
+    "removed": "{{repository}} wurde entfernt.",
+    "guidance": {
+      "title": "Was die Zugangsberechtigung braucht",
+      "app": "Erstellen Sie eine GitHub App und installieren Sie sie nur in diesem Repository. Repository-Berechtigungen: Contents, Pull requests und Issues auf Read and write, Metadata auf Read-only. Sonst nichts: keine Berechtigung für Administration, Workflows, Secrets, Actions oder die Organisation.",
+      "token": "Die App wird den Agenten nie übergeben: Für jeden Schritt erstellt der Broker ein Token, das eine Stunde gilt, nur für dieses Repository und nur mit dem, was der Schritt von den Berechtigungen der App braucht (Contents, Pull requests und Issues, Lesen und Schreiben; Metadata, nur Lesen; nie Administration).",
+      "branch": "Schützen Sie den Standard-Branch und lassen Sie die Agenten nur in Branches namens voc-agent/* pushen."
+    },
+    "dialog": {
+      "addTitle": "Repository-Verbindung hinzufügen",
+      "editTitle": "Verbindung zu {{repository}} bearbeiten",
+      "description": "Die Engineering-Agenten lesen über diese Verbindung das Repository und schlagen Änderungen daran vor.",
+      "stored": "Gespeicherte Zugangsberechtigung:",
+      "keepHint": "Die gespeicherte Zugangsberechtigung wird nie angezeigt. Lassen Sie den privaten Schlüssel leer, um sie zu behalten; ein neues Repository, eine neue App-ID oder Installations-ID braucht den privaten Schlüssel erneut.",
+      "save": "Verbindung speichern"
+    },
+    "fields": {
+      "connectionId": "Verbindungs-ID",
+      "repository": "Repository",
+      "defaultBranch": "Standard-Branch",
+      "appId": "App-ID",
+      "installationId": "Installations-ID",
+      "privateKey": "Privater Schlüssel"
+    },
+    "hints": {
+      "connectionId": "Kleinbuchstaben, Ziffern und Bindestriche, bis zu 63. Sie kann sich nach dem Hinzufügen nicht mehr ändern.",
+      "connectionIdFixed": "Beim Hinzufügen der Verbindung gewählt; sie kann sich nicht ändern.",
+      "repository": "owner/name, wie in der Adresse des Repositorys.",
+      "defaultBranch": "Der Branch, von dem die Agenten ausgehen und für den sie ihre Änderungen vorschlagen.",
+      "appId": "Die numerische ID der App.",
+      "installationId": "Die numerische ID der Installation der App in diesem Repository.",
+      "privateKey": "Der private Schlüssel der App: die ganze .pem-Datei, die GitHub erzeugt hat, höchstens etwa 4 KB. Er wird einmal gesendet und nie wieder angezeigt."
+    },
+    "invalid": {
+      "connectionId": "Geben Sie eine ID aus 1 bis 63 Kleinbuchstaben, Ziffern oder Bindestrichen ein, die mit einem Buchstaben oder einer Ziffer beginnt.",
+      "repository": "Geben Sie das Repository als owner/name ein.",
+      "defaultBranch": "Geben Sie einen Branch-Namen ein: Buchstaben, Ziffern, „.“, „_“, „-“ und „/“, höchstens {{max, number}} Zeichen, kein „..“, kein voc-agent/-Branch.",
+      "appId": "Geben Sie die App-ID ein: nur Ziffern.",
+      "installationId": "Geben Sie die Installations-ID ein: nur Ziffern.",
+      "privateKeyEmpty": "Fügen Sie den privaten Schlüssel der App ein: Eine neue Verbindung braucht ihre Zugangsberechtigung.",
+      "privateKeyNeeded": "Fügen Sie den privaten Schlüssel der App erneut ein: Ein neues Repository, eine neue App-ID oder Installations-ID wird mit ihm gespeichert.",
+      "privateKey": "Fügen Sie den ganzen unverschlüsselten RSA-Schlüssel im PEM-Format ein, von der BEGIN- bis zur END-Zeile.",
+      "privateKeyLarge": "Der Schlüssel ist größer, als eine Zugangsberechtigung fasst (etwa 4 KB): Verwenden Sie den eigenen privaten Schlüssel der App."
+    },
+    "confirm": {
+      "title": "{{repository}} entfernen?",
+      "message": "Dadurch werden die Verbindung und ihre gespeicherte Zugangsberechtigung entfernt. Läufe, die an {{repository}} arbeiten, verlieren innerhalb von fünf Minuten den Zugriff: Ihre Lese- und Schreibvorgänge schlagen fehl, bis wieder eine Verbindung gespeichert ist.",
+      "confirm": "Verbindung entfernen"
+    },
+    "errors": {
+      "invalid": "Ein Feld wurde abgelehnt. Prüfen Sie die Felder und speichern Sie erneut.",
+      "forbidden": "Nur Administratorinnen und Administratoren können die Verbindungen ändern.",
+      "notFound": "Die Verbindung wurde nicht gefunden, oder die Engineering-Agenten sind ausgeschaltet.",
+      "conflict": "Die Verbindung kann sich gerade nicht ändern: Stoppen Sie zuerst ihre laufenden Läufe, oder entfernen Sie eine andere Verbindung.",
+      "unavailable": "Die Verbindungen sind gerade nicht verfügbar. Versuchen Sie es gleich noch einmal.",
+      "generic": "Die Verbindung konnte nicht geändert werden. Versuchen Sie es erneut."
+    },
+    "ci": {
+      "attested": "CI bestätigt",
+      "notAttested": "CI nicht bestätigt",
+      "attestedBy": "Bestätigt von {{who}}, {{when}}: Die Agenten dürfen auf voc-agent/*-Branches pushen und Pull-Request-Entwürfe öffnen.",
+      "none": "Die Agenten pushen nichts in dieses Repository, bis eine Administratorin oder ein Administrator bestätigt, dass seine CI Agenten-Branches nichts Wertvolles gibt.",
+      "withdrawnBy": "Zurückgezogen von {{who}}, {{when}}: Die Agenten pushen nichts, bis die CI erneut bestätigt ist.",
+      "voidedRepository": "Ungültig geworden, als sich das Repository der Verbindung geändert hat: Bestätigen Sie die CI dieses Repositorys.",
+      "voidedRemoved": "Ungültig geworden, als die Verbindung entfernt wurde: Bestätigen Sie ihre CI erneut.",
+      "unknownPerson": "eine Administratorin oder ein Administrator",
+      "attest": "CI bestätigen",
+      "attestLabel": "CI von {{repository}} bestätigen",
+      "withdrawAction": "CI zurückziehen",
+      "withdrawLabel": "CI-Bestätigung von {{repository}} zurückziehen",
+      "recorded": "Die CI-Bestätigung von {{repository}} ist gespeichert.",
+      "withdrawn": "Die CI-Bestätigung von {{repository}} ist zurückgezogen.",
+      "points": {
+        "protected_secrets": "CI-Secrets gelten nur für geschützte Branches (Umgebungen mit Branch-Regeln): Ein Agenten-Branch erhält keine.",
+        "read_only_token": "Das Standard-Token der Workflows ist schreibgeschützt, und kein Workflow fordert Schreibrechte an.",
+        "oidc_pinned": "Cloud-Zugriff über OIDC (id-token: write) ist an geschützte Branches oder Umgebungen gebunden.",
+        "no_self_hosted_runner": "Kein selbst gehosteter Runner übernimmt Jobs von ungeschützten Branches.",
+        "no_privileged_pull_request": "Kein Workflow, der bei einem Pull Request im Kontext des Standard-Branches läuft (pull_request_target oder workflow_run mit den Artefakten des auslösenden Laufs), checkt Code oder Artefakte des Pull Requests aus, führt sie aus oder lädt sie herunter.",
+        "branch_rules": "Der Standard-Branch ist mit den erforderlichen Prüfungen des Repositorys geschützt, und die App kann nur auf voc-agent/*-Branches pushen."
+      },
+      "dialog": {
+        "title": "CI von {{repository}} bestätigen",
+        "description": "Ein Push auf einen Agenten-Branch kann die Pipelines des Repositorys starten, und diese führen Code aus, den ein Agent ändern kann. Bestätigen Sie jeden Punkt für dieses Repository: Ihr Name und die Uhrzeit werden dazu gespeichert.",
+        "legend": "Auf ungeschützten Branches erhält die CI des Repositorys nichts Wertvolles:",
+        "allPoints": "Bestätigen Sie jeden Punkt: Die Agenten pushen erst, wenn alle zutreffen.",
+        "note": "Notiz (optional)",
+        "noteHint": "Was Sie geprüft haben oder warum: wird mit der Bestätigung gespeichert. Eine Zeile, höchstens {{max, number}} Zeichen.",
+        "checked": "Der Broker liest bei jedem Push und Pull Request zusätzlich die Branch-Regeln: Der Standard-Branch ist mit erforderlichen Prüfungen geschützt, voc-agent/*-Branches sind nicht geschützt.",
+        "save": "Bestätigung speichern"
+      },
+      "withdraw": {
+        "title": "CI-Bestätigung von {{repository}} zurückziehen?",
+        "message": "Der nächste Push oder Pull Request der Agenten auf {{repository}} wird abgelehnt, bis eine Administratorin oder ein Administrator die CI erneut bestätigt.",
+        "confirm": "Bestätigung zurückziehen"
+      }
+    }
+  },
+  "skills": {
+    "hint": "Jeder Engineering-Agent arbeitet nach einem Skill: seinen Anweisungen, Beispielen, Werkzeugen, seinem Modell und Harness. Jede Änderung ist eine neue Version, gespeichert mit ihrem Grund, wer sie vorgeschlagen und angenommen hat, und ihrem Benchmark. Die gemeinsamen Skills gelten für jede Verbindung ohne eigene Version.",
+    "scope": "Skills von",
+    "shared": "Gemeinsame Skills",
+    "connection": "Verbindung {{name}}",
+    "connectionsFailed": "Die Verbindungen konnten nicht geladen werden, daher stehen nur die gemeinsamen Skills und die Verbindung aus der Adresse zur Auswahl.",
+    "rolesCaption": "Agentenrollen mit einer Skill-Version in diesem Bereich",
+    "columns": {
+      "role": "Rolle",
+      "current": "Aktuelle Version",
+      "versions": "Versionen",
+      "latest": "Letzte Änderung"
+    },
+    "openRole": "Verlauf von {{role}} öffnen",
+    "role": {
+      "mapper": "Kartierer",
+      "understander": "Issue-Versteher",
+      "hunter": "Fehlersucher",
+      "fixer": "Fehlerbeheber",
+      "builder": "Feature-Entwickler",
+      "committer": "Committer",
+      "commit-reviewer": "Commit-Prüfer",
+      "gate-runner": "Gate-Ausführer",
+      "pr-author": "Pull-Request-Autor",
+      "pr-reviewer": "Pull-Request-Prüfer",
+      "final-go": "Finale Freigabe",
+      "coordinator": "Lauf-Koordinator",
+      "coach": "Coach"
+    },
+    "noneAccepted": "Noch keine angenommen",
+    "version": "Version {{version}}",
+    "current": "Aktuell",
+    "loading": "Skills werden geladen…",
+    "rolesFailed": "Die Skills konnten nicht geladen werden. Versuchen Sie es gleich noch einmal.",
+    "emptyShared": "Noch kein gemeinsamer Skill hat eine Version. Die Agenten nutzen die mit diesem Release ausgelieferten Skills.",
+    "emptyConnection": "Diese Verbindung hat keine eigenen Skill-Versionen. Ihre Agenten nutzen die gemeinsamen Skills.",
+    "backToRoles": "Alle Rollen",
+    "roleTitle": "{{role}} · {{scope}}",
+    "status": {
+      "accepted": "Angenommen",
+      "proposed": "Vorgeschlagen",
+      "rejected": "Abgelehnt"
+    },
+    "byCoach": "dem Coach ({{who}})",
+    "proposedBy": "Vorgeschlagen von {{who}}, {{at}}",
+    "notMeasured": "Kein Benchmark erfasst.",
+    "measured": "Erfassung einer Administratorin oder eines Administrators",
+    "rates": "Erfolgsquote {{before}} → {{after}}",
+    "benchmarkPassed": "bestanden",
+    "benchmarkFailed": "nicht bestanden",
+    "failureCase": "Fehlerfall {{name}}",
+    "measuredBy": "erfasst von {{who}}, {{at}}",
+    "runRef": "Lauf {{ref}}",
+    "claimed": "Angegeben",
+    "claimedHint": "vom Vorschlagenden angegeben, nicht gemessen",
+    "event": {
+      "accepted": "Angenommen von {{who}}, {{at}}",
+      "rejected": "Abgelehnt von {{who}}, {{at}}",
+      "rolled_back": "Zurückgesetzt von {{who}}, {{at}}",
+      "benchmarked": "Benchmark erfasst von {{who}}, {{at}}",
+      "other": "{{event}} von {{who}}, {{at}}"
+    },
+    "restores": "Stellt Version {{version}} wieder her.",
+    "fromRun": "Aus Lauf {{run}} ({{failure}}).",
+    "openVersion": "Version {{version}} und ihre Änderungen öffnen",
+    "historyTitle": "Verlauf",
+    "historyFailed": "Der Verlauf konnte nicht geladen werden. Versuchen Sie es gleich noch einmal.",
+    "historyEmpty": "Diese Rolle hat in diesem Bereich keine Versionen.",
+    "moreFailed": "Die älteren Versionen konnten nicht geladen werden. Wählen Sie „Ältere Versionen laden“, um es erneut zu versuchen.",
+    "loadMore": "Ältere Versionen laden",
+    "diff": {
+      "added": "Hinzugefügt:",
+      "removed": "Entfernt:",
+      "title": "Änderungen gegenüber der Basis",
+      "firstTitle": "Erste Version: alles ist neu",
+      "none": "Keine Änderung gegenüber der Basis.",
+      "instructions": "Anweisungen",
+      "examples": "Beispiele",
+      "example": "Wenn: {{situation}} | Dann: {{action}}",
+      "tools": "Werkzeugrichtlinie",
+      "reordered": "Die Werkzeugrichtlinie hat dieselben Werkzeuge in anderer Reihenfolge.",
+      "model": "Modell: {{from}} → {{to}}",
+      "harness": "Harness: {{from}} → {{to}}",
+      "nothing": "(keines)"
+    },
+    "record": {
+      "title": "Der ganze Skill",
+      "model": "Modell",
+      "harness": "Harness",
+      "tools": "Werkzeuge",
+      "instructions": "Anweisungen",
+      "examples": "Beispiele ({{n, number}})"
+    },
+    "noBase": "Auf keiner früheren Version geschrieben.",
+    "baseShared": "Auf der gemeinsamen Version {{version}} geschrieben.",
+    "base": "Auf Version {{version}} geschrieben.",
+    "expectedCase": "soll Fall {{name}} beheben",
+    "madeWith": "erstellt mit {{model}} und Prompt {{prompt}}",
+    "backToHistory": "Zurück zum Verlauf",
+    "versionMissing": "Version {{version}} gibt es in diesem Bereich nicht. Gehen Sie zurück zum Verlauf und wählen Sie eine andere.",
+    "versionFailed": "Die Version konnte nicht geladen werden. Versuchen Sie es gleich noch einmal.",
+    "actions": {
+      "label": "Aktionen für diese Version",
+      "reason": "Grund (optional)",
+      "noCurrent": "keiner aktuellen Version",
+      "sharedVersion": "der gemeinsamen v{{version}}",
+      "connectionVersion": "v{{version}} dieser Verbindung",
+      "writtenOn": "Geschrieben auf {{version}}.",
+      "baseNotInUse": "Ihre Basis ist nicht die jetzt genutzte Version ({{current}}): Das Annehmen wird abgelehnt. Schlagen Sie sie auf der genutzten Version erneut vor.",
+      "changed": "Das hat sich geändert, seit Sie es geöffnet haben. Die Ansicht wurde neu geladen: Schließen Sie dies, prüfen Sie die Version und versuchen Sie es erneut.",
+      "refused": "Die Aktion wurde abgelehnt: {{message}}",
+      "held": {
+        "unmeasured": "Annehmen ist gesperrt: Die Version des Coachs wird erst angenommen, wenn die Erfassung eines Benchmark-Laufs durch eine Administratorin oder einen Administrator (Quoten, Fälle und Urteil, wie sie eingegeben wurden) zeigt, dass er bestanden hat und die Erfolgsquote gestiegen ist, mit Nennung des erwarteten Falls. Erfassen Sie zuerst den Benchmark.",
+        "failed": "Annehmen ist gesperrt: Laut der Erfassung ihres Benchmark-Laufs hat die Version des Coachs nicht bestanden und wird nie angenommen. Ein neuer Vorschlag entsteht aus einem neuen Fehler, oder schreiben Sie die Korrektur als eigene Version.",
+        "noGain": "Annehmen ist gesperrt: In der Erfassung ihres Benchmark-Laufs stieg die Erfolgsquote nicht, oder der erwartete Fall ist nicht genannt, daher wird die Version des Coachs nie angenommen."
+      },
+      "accept": {
+        "button": "Annehmen",
+        "title": "Version {{version}} annehmen?",
+        "message": "Die aktuelle Version dieses Bereichs wechselt von {{from}} zu {{to}}.",
+        "confirm": "Version annehmen"
+      },
+      "reject": {
+        "button": "Ablehnen",
+        "title": "Version {{version}} ablehnen?",
+        "message": "Version {{version}} bleibt im Verlauf, als abgelehnt markiert. Die aktuelle Version ändert sich nicht.",
+        "confirm": "Version ablehnen"
+      },
+      "rollback": {
+        "button": "Auf diese Version zurücksetzen",
+        "title": "Auf Version {{version}} zurücksetzen?",
+        "message": "Eine neue Version, die Version {{version}} wiederherstellt, wird anstelle von {{from}} aktuell. Jede Version bleibt im Verlauf.",
+        "confirm": "Zurücksetzen"
+      },
+      "benchmark": {
+        "button": "Benchmark erfassen",
+        "title": "Benchmark von Version {{version}} erfassen",
+        "message": "Dies ist die Erfassung eines Benchmark-Laufs durch eine Administratorin oder einen Administrator: Quoten, Fälle und Urteil, wie Sie sie eingeben; hier misst nichts sie. Sie wird einmal erfasst und nie geändert. Bei der Version des Coachs muss der Fehlerfall ihr erwarteter Fall sein, und Annehmen braucht eine gestiegene Erfolgsquote.",
+        "runRef": "Verweis auf den Lauf (optional: eine Kennung oder ein Link)",
+        "confirm": "Benchmark erfassen",
+        "before": "Erfolgsquote vorher (%)",
+        "after": "Erfolgsquote nachher (%)",
+        "cases": "Fälle (einer pro Zeile oder durch Kommas getrennt)",
+        "passed": "Das Gate wurde bestanden",
+        "reasons": "Gründe (einer pro Zeile)",
+        "failureCase": "Fehlerfall",
+        "invalid": {
+          "rates": "Geben Sie beide Erfolgsquoten als Zahlen von 0 bis 100 an.",
+          "cases": "Nennen Sie jeden Fall einmal, in Kleinbuchstaben, Ziffern und Bindestrichen.",
+          "reasons": "Geben Sie mindestens einen Grund an, einen pro Zeile.",
+          "failureCase": "Der Fehlerfall muss einer der Fälle sein.",
+          "regressed": "Ein bestandener Lauf hat nachher keine niedrigere Erfolgsquote als vorher: Erfassen Sie ihn als nicht bestanden, oder prüfen Sie die Quoten."
+        }
+      }
+    },
+    "scores": {
+      "title": "Scorecards",
+      "hint": "Wie jede Version in ihren letzten Läufen auf dieser Verbindung abgeschnitten hat. Die Erfolgsquote ist die Zahl der erledigten Aufgaben geteilt durch die abgeschlossenen.",
+      "pickConnection": "Scorecards gehören zu einer Verbindung. Wählen Sie oben eine Verbindung, um ihre Versionen zu vergleichen.",
+      "compareLabel": "Zu vergleichende Versionen",
+      "compareHint": "Bis zu {{max, number}} Versionsnummern, durch Kommas getrennt. Leer lassen für die neuesten.",
+      "compare": "Vergleichen",
+      "invalid": {
+        "empty": "Geben Sie mindestens eine Versionsnummer ein, z. B. 3, 2.",
+        "notNumbers": "Verwenden Sie ganze Versionsnummern ab 1, durch Kommas getrennt.",
+        "tooMany": "Vergleichen Sie höchstens {{max, number}} Versionen auf einmal.",
+        "repeated": "Nennen Sie jede Version nur einmal."
+      },
+      "caption": "Scorecards von {{role}}",
+      "version": "Version",
+      "passRate": "Erfolgsquote",
+      "runs": "Läufe",
+      "done": "Erledigt",
+      "failed": "Fehlgeschlagen",
+      "needsHuman": "Brauchte eine Person",
+      "reviewRounds": "Review-Runden",
+      "attempts": "Versuche",
+      "cost": "Kosten",
+      "time": "Zeit",
+      "sourceColumn": "Nummer von",
+      "source": {
+        "shipped": "Ausgelieferter Skill",
+        "not_shipped": "Nie ausgeliefert: keine Sitzung lief mit dieser Nummer",
+        "shared": "Gemeinsamer Skill",
+        "connection": "Skill dieser Verbindung",
+        "unknown": "Unbekannt"
+      },
+      "scopeUnknown": "Diese Nummern sind Versionen der ausgelieferten Skills, nicht die des Verlaufs oben: Die Sitzung eines Agenten nennt ihre Version nur mit der Nummer, ohne zu sagen, wessen sie ist, und jede Sitzung nutzt den ausgelieferten Skill, bis die Agenten ihre Skills aus diesem Verlauf lesen.",
+      "latestOnly": "nur die letzten Läufe",
+      "loadFailed": "Die Scorecards konnten nicht geladen werden. Versuchen Sie es gleich noch einmal.",
+      "empty": "Für diese Versionen gibt es auf dieser Verbindung noch keine Scorecards."
+    }
+  },
   "engineeringRun": {
     "untitled": "Engineering-Lauf",
     "statusUnknown": "Status unbekannt",
@@ -757,6 +1121,13 @@
     "byModel": "Tokens pro Modell",
     "budget": "Budget des Ablaufs: {{amount}} im Monat",
     "budgetPassed": "{{month}}: {{percent}} % des Budgets ausgegeben",
+    "links": {
+      "issue": "Issue #{{number}}",
+      "pullRequest": "Pull-Request #{{number}}",
+      "mergeRequest": "Merge-Request !{{number}}",
+      "asGiven": "wie beim Start angegeben, nicht beim Host geprüft",
+      "opens": "{{label}} (öffnet sich in einem neuen Tab)"
+    },
     "actionsUnavailable": "Signale und Antworten lassen sich von dieser Bereitstellung noch nicht senden: Sie verbindet die Laufüberwachung nicht mit der Engineering-Laufzeit und dem Bus.",
     "runSignals": "Der ganze Lauf",
     "agentSignals": "Agent {{agent}}",

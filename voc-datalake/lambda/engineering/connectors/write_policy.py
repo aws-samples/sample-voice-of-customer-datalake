@@ -109,10 +109,21 @@ def branch_refusal(branch: str, default_branch: str, run_id: str) -> Refusal | N
     return None
 
 
-def path_refusals(paths: Iterable[str]) -> list[Refusal]:
-    """A refusal for each changed path an agent may not touch (the CI definitions it knows)."""
+def path_refusals(paths: Iterable[str], ci_definitions: Collection[str] = ()) -> list[Refusal]:
+    """A refusal for each changed path an agent may not touch: the CI definitions it knows by their place, and
+    ``ci_definitions``, the ones the host names for this repository (GitLab: the project's own CI file when it is not
+    ``.gitlab-ci.yml``, and every file that file ``include``s from the repository itself)."""
+    named = {path.strip('/') for path in ci_definitions}
     return [Refusal('ci_definition', f'An agent never changes the CI definitions ({path}).')
-            for path in sorted(set(paths)) if _CI_PATHS.match(path.lstrip('/'))]
+            for path in sorted(set(paths)) if _CI_PATHS.match(path.lstrip('/')) or path.strip('/') in named]
+
+
+def check_ci_definitions(changed_paths: Iterable[str], ci_definitions: Collection[str]) -> None:
+    """Raise ``WriteRefused`` when a push changes a CI definition: one it knows by its place, or one the host named
+    (``ci_definitions``)."""
+    refusals = path_refusals(changed_paths, ci_definitions)
+    if refusals:
+        raise WriteRefused(' '.join(r.message for r in refusals))
 
 
 def _normalise(text: str) -> str:
@@ -156,14 +167,6 @@ def text_refusals(text: str, review_texts: Iterable[str], *, prose: bool) -> lis
     if any(sentence in haystack for review in review_texts for sentence in _sentences(review)):
         found.append(Refusal('customer_text', 'The text quotes a customer review; cite its feedback id instead.'))
     return found
-
-
-def check_paths(changed_paths: Iterable[str]) -> None:
-    """Raise ``WriteRefused`` when a push changes a path an agent may not touch (its branch is ``branch_refusal``'s,
-    judged before anything is read)."""
-    refusals = path_refusals(changed_paths)
-    if refusals:
-        raise WriteRefused(' '.join(r.message for r in refusals))
 
 
 def check_text(text: str, review_texts: Iterable[str], *, prose: bool) -> None:

@@ -20,7 +20,9 @@
     "label": "Sections de la page des agents",
     "agents": "Agents",
     "workflows": "Workflows",
-    "spend": "Dépenses"
+    "spend": "Dépenses",
+    "connections": "Connexions",
+    "skills": "Compétences"
   },
   "list": {
     "title": "Agents autonomes",
@@ -621,19 +623,22 @@
       "connection": "Connexion au dépôt",
       "commit": "Commit",
       "language": "Langage",
-      "goal": "Objectif"
+      "goal": "Objectif",
+      "issue": "Ticket (facultatif)"
     },
     "hints": {
       "connection": "L’identifiant de la connexion : lettres, chiffres et tirets, 63 au plus.",
       "commit": "L’identifiant complet du commit de départ : 40 caractères hexadécimaux.",
       "language": "La chaîne d’outils du dépôt : les agents travaillent dans l’image isolée de ce langage.",
-      "goal": "À quoi sert l’exécution, sur une ligne de 500 caractères au plus."
+      "goal": "À quoi sert l’exécution, sur une ligne de 500 caractères au plus.",
+      "issue": "Le numéro du ticket du dépôt dont part l’exécution. Il est enregistré tel quel."
     },
     "invalid": {
       "connection": "Saisissez l’identifiant de la connexion : 1 à 63 lettres, chiffres ou tirets.",
       "commit": "Saisissez l’identifiant complet du commit : 40 caractères, de 0 à 9 et de a à f.",
       "goalEmpty": "Indiquez à quoi sert l’exécution.",
-      "goalLong": "L’objectif ne doit pas dépasser {{max, number}} caractères."
+      "goalLong": "L’objectif ne doit pas dépasser {{max, number}} caractères.",
+      "issue": "Saisissez le numéro du ticket, un nombre entier à partir de 1, ou laissez le champ vide."
     },
     "languages": {
       "java": "Java",
@@ -754,6 +759,365 @@
     "truncated": "Ce mois compte plus de lignes qu’une lecture n’en prend : les chiffres affichés sont un minimum.",
     "empty": "Aucune dépense en {{month}}."
   },
+  "connections": {
+    "title": "Connexions aux dépôts",
+    "intro": "Les agents d’ingénierie accèdent à un dépôt par une connexion : le dépôt, sa branche par défaut et un identifiant d’accès enregistré pour eux. Un identifiant enregistré n’est plus jamais affiché, à personne.",
+    "add": "Ajouter une connexion",
+    "limitReached": "Ce déploiement accepte au plus {{limit, number}} connexions. Supprimez-en une pour en ajouter une autre.",
+    "loadFailed": "Les connexions aux dépôts n’ont pas pu être chargées.",
+    "emptyTitle": "Aucune connexion à un dépôt pour l’instant",
+    "emptyHint": "Ajoutez-en une pour que les agents d’ingénierie puissent travailler sur un dépôt.",
+    "branch": "Branche par défaut : {{branch}}",
+    "kind": "GitHub App",
+    "kindToken": "Jeton d’accès au projet GitLab",
+    "hostLabel": "Hébergeur du dépôt",
+    "hosts": {
+      "github": "GitHub",
+      "gitlab": "GitLab"
+    },
+    "expiry": {
+      "on": "Le jeton expire le {{date}}.",
+      "soonBadge": "Le jeton expire bientôt",
+      "soon": "Il expire le {{date}}, dans {{days, number}} jours au plus : créez un nouveau jeton et enregistrez-le sur cette connexion.",
+      "expiredBadge": "Jeton expiré",
+      "expired": "Il a expiré le {{date}} : les agents ne peuvent plus atteindre le projet tant que vous n’avez pas enregistré un nouveau jeton sur cette connexion.",
+      "unknown": "L’expiration du jeton n’est pas connue : enregistrez à nouveau la connexion avec son jeton."
+    },
+    "gitlab": {
+      "keepHint": "Le jeton enregistré n’est jamais affiché. Laissez le jeton vide pour le garder ; un nouvel hébergeur ou un nouveau projet demande à nouveau un jeton.",
+      "fields": {
+        "project": "Chemin du projet",
+        "token": "Jeton d’accès au projet"
+      },
+      "hints": {
+        "project": "Le chemin du projet tel qu’il figure dans son adresse : groupe/projet ou groupe/sous-groupe/projet.",
+        "token": "Le jeton d’accès au projet (glpat-…), affiché une seule fois à sa création. Il est vérifié auprès de GitLab, envoyé une fois et jamais réaffiché."
+      },
+      "invalid": {
+        "repository": "Saisissez le chemin du projet tel qu’il figure dans son adresse : groupe/projet ou groupe/sous-groupe/projet.",
+        "tokenEmpty": "Collez le jeton d’accès au projet : une nouvelle connexion a besoin de son identifiant.",
+        "tokenNeeded": "Collez à nouveau le jeton d’accès au projet : un nouvel hébergeur ou un nouveau projet est enregistré avec lui.",
+        "token": "Collez le jeton d’accès au projet en entier : il commence par glpat-."
+      },
+      "guidance": {
+        "title": "Ce dont le jeton GitLab a besoin",
+        "token": "Créez un jeton d’accès au projet dans ce seul projet (dans les paramètres du projet, sous Jetons d’accès) : rôle Developer, portées api, read_repository et write_repository. Jamais Maintainer ni Owner, et jamais un jeton de groupe ou personnel.",
+        "expiry": "Les jetons GitLab expirent, au plus un an après leur création. Créez le jeton suivant avant que celui-ci n’expire et enregistrez-le sur la connexion : la page vous prévient 30 jours à l’avance.",
+        "branch": "Protégez la branche par défaut (pas de force push, push et merge réservés aux Maintainers), exigez la réussite des pipelines avant un merge et laissez les branches voc-agent/* non protégées."
+      },
+      "ci": {
+        "points": {
+          "protected_secrets": "Les variables CI/CD qui contiennent des secrets sont protégées : seules les pipelines des branches protégées les reçoivent.",
+          "read_only_token": "Le jeton de job CI/CD a le moins d’accès possible : sa liste d’autorisation ne contient que les projets dont les pipelines ont besoin, et aucun job ne pousse avec lui.",
+          "oidc_pinned": "L’accès au cloud par OIDC (id_tokens) est limité aux branches protégées (la revendication ref_protected du jeton).",
+          "no_self_hosted_runner": "Aucun runner partagé, de groupe ou d’instance ayant accès à des secrets ou à des réseaux privés n’exécute de jobs pour des branches non protégées : ces runners sont protégés.",
+          "no_privileged_pull_request": "Aucune pipeline n’exécute le code d’une merge request avec des secrets : pas de pipeline de merge request pour les forks dans ce projet, et aucune variable protégée ne l’atteint.",
+          "branch_rules": "La branche par défaut est protégée (pas de force push, push et merge pour les Maintainers), les pipelines doivent réussir avant un merge (un pipeline ignoré ne compte pas comme une réussite), la configuration CI n’utilise que des includes locaux simples et les modèles de GitLab (la CI partagée d’autres projets, les includes distants et les composants ne sont pas pris en charge) et les branches voc-agent/* restent non protégées."
+        },
+        "checked": "L’intermédiaire lit aussi les branches protégées à chaque push et merge request : la branche par défaut protégée sans force push, avec push et merge pour les Maintainers, la réussite des pipelines exigée et les branches voc-agent/* non protégées."
+      }
+    },
+    "appIds": "App {{appId}}, installation {{installationId}}",
+    "set": "Enregistré",
+    "notSet": "Non enregistré",
+    "notSetHint": "L’identifiant enregistré est absent : modifiez la connexion et enregistrez-la de nouveau avec son identifiant.",
+    "updated": "Modifiée {{when}} par {{who}}",
+    "unknownEditor": "inconnu",
+    "edit": "Modifier",
+    "editLabel": "Modifier {{repository}}",
+    "remove": "Supprimer",
+    "removeLabel": "Supprimer {{repository}}",
+    "created": "{{repository}} est ajouté.",
+    "saved": "{{repository}} est enregistré.",
+    "removed": "{{repository}} est supprimé.",
+    "guidance": {
+      "title": "Ce dont l’identifiant a besoin",
+      "app": "Créez une GitHub App et installez-la uniquement sur ce dépôt. Autorisations du dépôt : Contents, Pull requests et Issues en Read and write, Metadata en Read-only. Rien d’autre : aucune autorisation Administration, Workflows, Secrets, Actions ni d’organisation.",
+      "token": "L’App n’est jamais confiée aux agents : pour chaque étape, le broker émet un jeton valable une heure, pour ce seul dépôt et seulement avec ce dont l’étape a besoin parmi les permissions de l’App (Contents, Pull requests et Issues, lecture et écriture ; Metadata, lecture seule ; jamais d’administration).",
+      "branch": "Protégez la branche par défaut, et ne laissez les agents pousser que sur des branches nommées voc-agent/*."
+    },
+    "dialog": {
+      "addTitle": "Ajouter une connexion à un dépôt",
+      "editTitle": "Modifier la connexion à {{repository}}",
+      "description": "Les agents d’ingénierie utilisent cette connexion pour lire le dépôt et y proposer des modifications.",
+      "stored": "Identifiant d’accès enregistré :",
+      "keepHint": "L’identifiant d’accès enregistré n’est jamais affiché. Laissez la clé privée vide pour le conserver ; un nouveau dépôt, un nouvel identifiant d’App ou d’installation demande à nouveau la clé privée.",
+      "save": "Enregistrer la connexion"
+    },
+    "fields": {
+      "connectionId": "Identifiant de la connexion",
+      "repository": "Dépôt",
+      "defaultBranch": "Branche par défaut",
+      "appId": "ID de l’App",
+      "installationId": "ID de l’installation",
+      "privateKey": "Clé privée"
+    },
+    "hints": {
+      "connectionId": "Lettres minuscules, chiffres et tirets, jusqu’à 63. Il ne peut plus changer une fois la connexion ajoutée.",
+      "connectionIdFixed": "Choisi à l’ajout de la connexion ; il ne peut pas changer.",
+      "repository": "owner/name, comme dans l’adresse du dépôt.",
+      "defaultBranch": "La branche dont partent les agents et sur laquelle ils proposent leurs modifications.",
+      "appId": "L’ID numérique de l’App.",
+      "installationId": "L’ID numérique de l’installation de l’App sur ce dépôt.",
+      "privateKey": "La clé privée de l’App : le fichier .pem entier généré par GitHub, environ 4 Ko au plus. Elle est envoyée une fois et n’est plus jamais affichée."
+    },
+    "invalid": {
+      "connectionId": "Saisissez un identifiant de 1 à 63 lettres minuscules, chiffres ou tirets, commençant par une lettre ou un chiffre.",
+      "repository": "Saisissez le dépôt sous la forme owner/name.",
+      "defaultBranch": "Saisissez un nom de branche : lettres, chiffres, « . », « _ », « - » et « / », {{max, number}} caractères au plus, sans « .. », pas une branche voc-agent/.",
+      "appId": "Saisissez l’ID de l’App : des chiffres uniquement.",
+      "installationId": "Saisissez l’ID de l’installation : des chiffres uniquement.",
+      "privateKeyEmpty": "Collez la clé privée de l’App : une nouvelle connexion a besoin de son identifiant d’accès.",
+      "privateKeyNeeded": "Collez à nouveau la clé privée de l’App : un nouveau dépôt, un nouvel identifiant d’App ou d’installation est enregistré avec elle.",
+      "privateKey": "Collez la clé RSA entière, non chiffrée, au format PEM, de sa ligne BEGIN à sa ligne END.",
+      "privateKeyLarge": "La clé dépasse ce qu’un identifiant d’accès peut contenir (environ 4 Ko) : utilisez la clé privée de l’App elle-même."
+    },
+    "confirm": {
+      "title": "Supprimer {{repository}} ?",
+      "message": "La connexion et son identifiant enregistré sont supprimés. Les exécutions qui travaillent sur {{repository}} perdent l’accès en cinq minutes au plus : leurs lectures et écritures échouent jusqu’à ce qu’une connexion soit de nouveau enregistrée.",
+      "confirm": "Supprimer la connexion"
+    },
+    "errors": {
+      "invalid": "Un champ a été refusé. Vérifiez les champs et enregistrez de nouveau.",
+      "forbidden": "Seul un administrateur peut modifier les connexions.",
+      "notFound": "La connexion est introuvable, ou les agents d’ingénierie sont désactivés.",
+      "conflict": "La connexion ne peut pas changer maintenant : arrêtez d’abord ses exécutions en cours, ou supprimez une autre connexion.",
+      "unavailable": "Les connexions sont indisponibles pour le moment. Réessayez dans un instant.",
+      "generic": "La connexion n’a pas pu être modifiée. Réessayez."
+    },
+    "ci": {
+      "attested": "CI attestée",
+      "notAttested": "CI non attestée",
+      "attestedBy": "Attestée par {{who}}, {{when}} : les agents peuvent pousser sur les branches voc-agent/* et ouvrir des brouillons de pull request.",
+      "none": "Les agents ne poussent rien sur ce dépôt tant qu’un administrateur n’a pas attesté que sa CI ne donne rien de précieux aux branches des agents.",
+      "withdrawnBy": "Retirée par {{who}}, {{when}} : les agents ne poussent rien tant qu’elle n’est pas attestée à nouveau.",
+      "voidedRepository": "Annulée quand le dépôt de la connexion a changé : attestez la CI de ce dépôt.",
+      "voidedRemoved": "Annulée quand la connexion a été supprimée : attestez à nouveau sa CI.",
+      "unknownPerson": "un administrateur",
+      "attest": "Attester la CI",
+      "attestLabel": "Attester la CI de {{repository}}",
+      "withdrawAction": "Retirer la CI",
+      "withdrawLabel": "Retirer l’attestation de CI de {{repository}}",
+      "recorded": "L’attestation de CI de {{repository}} est enregistrée.",
+      "withdrawn": "L’attestation de CI de {{repository}} est retirée.",
+      "points": {
+        "protected_secrets": "Les secrets de CI sont limités aux branches protégées (environnements avec règles de branche) : une branche d’agent n’en reçoit aucun.",
+        "read_only_token": "Le jeton par défaut des workflows est en lecture seule, et aucun workflow ne demande de droits d’écriture.",
+        "oidc_pinned": "L’accès au cloud par OIDC (id-token: write) est limité aux branches ou environnements protégés.",
+        "no_self_hosted_runner": "Aucun runner auto-hébergé ne prend de tâches venant de branches non protégées.",
+        "no_privileged_pull_request": "Aucun workflow qui s’exécute dans le contexte de la branche par défaut sur une pull request (pull_request_target, ou workflow_run avec les artefacts de l’exécution déclencheuse) ne récupère, n’exécute ni ne télécharge le code ou les artefacts de la pull request.",
+        "branch_rules": "La branche par défaut est protégée avec les vérifications obligatoires du dépôt, et l’App ne peut pousser que sur les branches voc-agent/*."
+      },
+      "dialog": {
+        "title": "Attester la CI de {{repository}}",
+        "description": "Un push sur une branche d’agent peut lancer les pipelines du dépôt, qui exécutent du code qu’un agent peut modifier. Confirmez chaque point pour ce dépôt : votre nom et l’heure sont enregistrés avec.",
+        "legend": "Sur les branches non protégées, la CI du dépôt ne reçoit rien de précieux :",
+        "allPoints": "Confirmez chaque point : les agents ne poussent qu’une fois tous respectés.",
+        "note": "Note (facultatif)",
+        "noteHint": "Ce que vous avez vérifié, ou pourquoi : conservé avec l’attestation. Une ligne, au plus {{max, number}} caractères.",
+        "checked": "Le broker lit aussi les règles de branche à chaque push et pull request : la branche par défaut protégée avec des vérifications obligatoires, et les branches voc-agent/* non protégées.",
+        "save": "Enregistrer l’attestation"
+      },
+      "withdraw": {
+        "title": "Retirer l’attestation de CI de {{repository}} ?",
+        "message": "Le prochain push ou la prochaine pull request des agents sur {{repository}} est refusé tant qu’un administrateur n’a pas attesté à nouveau sa CI.",
+        "confirm": "Retirer l’attestation"
+      }
+    }
+  },
+  "skills": {
+    "hint": "Chaque agent d’ingénierie travaille selon une compétence : ses instructions, exemples, outils, son modèle et son harnais. Chaque changement est une nouvelle version, conservée avec sa raison, qui l’a proposée et acceptée, et son benchmark. Les compétences partagées s’appliquent à toute connexion qui n’a pas de version propre.",
+    "scope": "Compétences de",
+    "shared": "Compétences partagées",
+    "connection": "Connexion {{name}}",
+    "connectionsFailed": "Les connexions n’ont pas pu être chargées : seules les compétences partagées et la connexion de l’adresse sont proposées.",
+    "rolesCaption": "Rôles d’agent ayant une version de compétence dans cette portée",
+    "columns": {
+      "role": "Rôle",
+      "current": "Version actuelle",
+      "versions": "Versions",
+      "latest": "Dernier changement"
+    },
+    "openRole": "Ouvrir l’historique de {{role}}",
+    "role": {
+      "mapper": "Cartographe",
+      "understander": "Analyste de tickets",
+      "hunter": "Chasseur de bugs",
+      "fixer": "Correcteur",
+      "builder": "Développeur de fonctionnalités",
+      "committer": "Auteur de commits",
+      "commit-reviewer": "Relecteur de commits",
+      "gate-runner": "Exécuteur de contrôles",
+      "pr-author": "Auteur de demandes de fusion",
+      "pr-reviewer": "Relecteur de demandes de fusion",
+      "final-go": "Feu vert final",
+      "coordinator": "Coordinateur d’exécution",
+      "coach": "Coach"
+    },
+    "noneAccepted": "Aucune acceptée pour l’instant",
+    "version": "Version {{version}}",
+    "current": "Actuelle",
+    "loading": "Chargement des compétences…",
+    "rolesFailed": "Les compétences n’ont pas pu être chargées. Réessayez dans un instant.",
+    "emptyShared": "Aucune compétence partagée n’a encore de version. Les agents utilisent les compétences livrées avec cette version du produit.",
+    "emptyConnection": "Cette connexion n’a pas de versions de compétence propres. Ses agents utilisent les compétences partagées.",
+    "backToRoles": "Tous les rôles",
+    "roleTitle": "{{role}} · {{scope}}",
+    "status": {
+      "accepted": "Acceptée",
+      "proposed": "Proposée",
+      "rejected": "Refusée"
+    },
+    "byCoach": "le coach ({{who}})",
+    "proposedBy": "Proposée par {{who}}, {{at}}",
+    "notMeasured": "Aucun benchmark enregistré.",
+    "measured": "Relevé d’un administrateur",
+    "rates": "taux de réussite {{before}} → {{after}}",
+    "benchmarkPassed": "réussi",
+    "benchmarkFailed": "échoué",
+    "failureCase": "cas de l’échec {{name}}",
+    "measuredBy": "enregistré par {{who}}, {{at}}",
+    "runRef": "exécution {{ref}}",
+    "claimed": "Déclaré",
+    "claimedHint": "indiqué par l’auteur de la proposition, non mesuré",
+    "event": {
+      "accepted": "Acceptée par {{who}}, {{at}}",
+      "rejected": "Refusée par {{who}}, {{at}}",
+      "rolled_back": "Annulée par {{who}}, {{at}}",
+      "benchmarked": "Benchmark enregistré par {{who}}, {{at}}",
+      "other": "{{event}} par {{who}}, {{at}}"
+    },
+    "restores": "Rétablit la version {{version}}.",
+    "fromRun": "Issue de l’exécution {{run}} ({{failure}}).",
+    "openVersion": "Ouvrir la version {{version}} et ses changements",
+    "historyTitle": "Historique",
+    "historyFailed": "L’historique n’a pas pu être chargé. Réessayez dans un instant.",
+    "historyEmpty": "Ce rôle n’a pas de versions dans cette portée.",
+    "moreFailed": "Les versions plus anciennes n’ont pas pu être chargées. Sélectionnez « Charger les versions plus anciennes » pour réessayer.",
+    "loadMore": "Charger les versions plus anciennes",
+    "diff": {
+      "added": "Ajouté :",
+      "removed": "Supprimé :",
+      "title": "Changements par rapport à sa base",
+      "firstTitle": "Sa première version : tout est nouveau",
+      "none": "Aucun changement par rapport à sa base.",
+      "instructions": "Instructions",
+      "examples": "Exemples",
+      "example": "Quand : {{situation}} | Faire : {{action}}",
+      "tools": "Politique d’outils",
+      "reordered": "La politique d’outils a les mêmes outils, dans un autre ordre.",
+      "model": "Modèle : {{from}} → {{to}}",
+      "harness": "Harnais : {{from}} → {{to}}",
+      "nothing": "(aucun)"
+    },
+    "record": {
+      "title": "La compétence entière",
+      "model": "Modèle",
+      "harness": "Harnais",
+      "tools": "Outils",
+      "instructions": "Instructions",
+      "examples": "Exemples ({{n, number}})"
+    },
+    "noBase": "Écrite sans version antérieure.",
+    "baseShared": "Écrite sur la version partagée {{version}}.",
+    "base": "Écrite sur la version {{version}}.",
+    "expectedCase": "doit corriger le cas {{name}}",
+    "madeWith": "faite avec {{model}} et le prompt {{prompt}}",
+    "backToHistory": "Retour à l’historique",
+    "versionMissing": "La version {{version}} n’existe pas dans cette portée. Revenez à l’historique et choisissez-en une autre.",
+    "versionFailed": "La version n’a pas pu être chargée. Réessayez dans un instant.",
+    "actions": {
+      "label": "Actions sur cette version",
+      "reason": "Raison (facultative)",
+      "noCurrent": "aucune version actuelle",
+      "sharedVersion": "la v{{version}} partagée",
+      "connectionVersion": "la v{{version}} de cette connexion",
+      "writtenOn": "Écrite sur {{version}}.",
+      "baseNotInUse": "Sa base n’est pas la version utilisée maintenant ({{current}}) : l’accepter sera refusé. Proposez-la de nouveau sur la version utilisée.",
+      "changed": "Cela a changé depuis que vous l’avez ouvert. L’écran a été rechargé : fermez ceci, vérifiez la version et réessayez.",
+      "refused": "L’action a été refusée : {{message}}",
+      "held": {
+        "unmeasured": "Accepter est désactivé : la version du coach n’est acceptée qu’une fois que le relevé d’une exécution de benchmark par un administrateur (ses taux, cas et verdict tels qu’il les saisit) montre une réussite et un taux de réussite en hausse, en nommant son cas attendu. Enregistrez d’abord le benchmark.",
+        "failed": "Accepter est désactivé : le relevé de son exécution de benchmark indique un échec, la version du coach ne sera donc jamais acceptée. Une nouvelle proposition vient d’un nouvel échec, ou écrivez la correction comme votre propre version.",
+        "noGain": "Accepter est désactivé : dans le relevé de son exécution de benchmark, le taux de réussite n’a pas augmenté, ou son cas attendu n’est pas nommé, la version du coach ne sera donc jamais acceptée."
+      },
+      "accept": {
+        "button": "Accepter",
+        "title": "Accepter la version {{version}} ?",
+        "message": "La version actuelle de cette portée passe de {{from}} à {{to}}.",
+        "confirm": "Accepter la version"
+      },
+      "reject": {
+        "button": "Refuser",
+        "title": "Refuser la version {{version}} ?",
+        "message": "La version {{version}} reste dans l’historique, marquée comme refusée. La version actuelle ne change pas.",
+        "confirm": "Refuser la version"
+      },
+      "rollback": {
+        "button": "Revenir à cette version",
+        "title": "Revenir à la version {{version}} ?",
+        "message": "Une nouvelle version qui rétablit la version {{version}} devient actuelle à la place de {{from}}. Toutes les versions restent dans l’historique.",
+        "confirm": "Revenir"
+      },
+      "benchmark": {
+        "button": "Enregistrer le benchmark",
+        "title": "Enregistrer le benchmark de la version {{version}}",
+        "message": "Ceci est le relevé d’une exécution de benchmark par un administrateur : ses taux, cas et verdict tels que vous les saisissez ; rien ici ne les mesure. Il est enregistré une fois et ne change jamais. Pour la version du coach, le cas de l’échec doit être son cas attendu, et Accepter exige un taux de réussite en hausse.",
+        "runRef": "Référence de l’exécution (facultative : un identifiant ou un lien)",
+        "confirm": "Enregistrer le benchmark",
+        "before": "Taux de réussite avant (%)",
+        "after": "Taux de réussite après (%)",
+        "cases": "Cas (un par ligne ou séparés par des virgules)",
+        "passed": "Le contrôle a réussi",
+        "reasons": "Raisons (une par ligne)",
+        "failureCase": "Cas de l’échec",
+        "invalid": {
+          "rates": "Indiquez les deux taux de réussite par des nombres de 0 à 100.",
+          "cases": "Indiquez chaque cas une fois, en minuscules, chiffres et tirets.",
+          "reasons": "Indiquez au moins une raison, une par ligne.",
+          "failureCase": "Le cas de l’échec doit faire partie des cas.",
+          "regressed": "Une exécution réussie ne peut pas avoir un taux de réussite plus bas après qu’avant : enregistrez-la comme échouée, ou vérifiez les taux."
+        }
+      }
+    },
+    "scores": {
+      "title": "Fiches de résultats",
+      "hint": "Comment chaque version s’est comportée lors de ses dernières exécutions sur cette connexion. Le taux de réussite est le nombre de tâches faites rapporté aux tâches terminées.",
+      "pickConnection": "Les fiches de résultats appartiennent à une connexion. Choisissez une connexion ci-dessus pour comparer ses versions.",
+      "compareLabel": "Versions à comparer",
+      "compareHint": "Jusqu’à {{max, number}} numéros de version, séparés par des virgules. Laissez vide pour les plus récentes.",
+      "compare": "Comparer",
+      "invalid": {
+        "empty": "Saisissez au moins un numéro de version, par exemple 3, 2.",
+        "notNumbers": "Utilisez des numéros de version entiers à partir de 1, séparés par des virgules.",
+        "tooMany": "Comparez au plus {{max, number}} versions à la fois.",
+        "repeated": "Indiquez chaque version une seule fois."
+      },
+      "caption": "Fiches de résultats de {{role}}",
+      "version": "Version",
+      "passRate": "Taux de réussite",
+      "runs": "Exécutions",
+      "done": "Faites",
+      "failed": "Échouées",
+      "needsHuman": "Ont eu besoin d’une personne",
+      "reviewRounds": "Tours de relecture",
+      "attempts": "Tentatives",
+      "cost": "Coût",
+      "time": "Durée",
+      "sourceColumn": "Numéro de",
+      "source": {
+        "shipped": "Compétence livrée",
+        "not_shipped": "Jamais livrée : aucune session n’a utilisé ce numéro",
+        "shared": "Compétence partagée",
+        "connection": "Compétence de cette connexion",
+        "unknown": "Inconnu"
+      },
+      "scopeUnknown": "Ces numéros sont des versions des compétences livrées, pas celles de l’historique ci-dessus : la session d’un agent nomme sa version par son numéro seulement, sans dire à qui elle appartient, et chaque session utilise la compétence livrée jusqu’à ce que les agents lisent leurs compétences dans cet historique.",
+      "latestOnly": "dernières exécutions seulement",
+      "loadFailed": "Les fiches de résultats n’ont pas pu être chargées. Réessayez dans un instant.",
+      "empty": "Pas encore de fiches de résultats pour ces versions sur cette connexion."
+    }
+  },
   "engineeringRun": {
     "untitled": "Exécution d’ingénierie",
     "statusUnknown": "statut inconnu",
@@ -763,6 +1127,13 @@
     "byModel": "Jetons par modèle",
     "budget": "Budget du flux : {{amount}} par mois",
     "budgetPassed": "{{month}} : {{percent}} % du budget dépensé",
+    "links": {
+      "issue": "Ticket #{{number}}",
+      "pullRequest": "Demande de tirage #{{number}}",
+      "mergeRequest": "Demande de fusion !{{number}}",
+      "asGiven": "tel que donné au départ, non vérifié sur l’hébergeur",
+      "opens": "{{label}} (s’ouvre dans un nouvel onglet)"
+    },
     "actionsUnavailable": "Ce déploiement ne peut pas encore envoyer de signaux ni de réponses : il ne relie pas le moniteur de l'exécution au runtime et au bus d'ingénierie.",
     "runSignals": "Toute l’exécution",
     "agentSignals": "Agent {{agent}}",

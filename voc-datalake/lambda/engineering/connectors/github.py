@@ -4,7 +4,8 @@ Credentials: the connection's GitHub App (``credentials``). A call reuses a cach
 short App JWT (RS256, nine minutes) and mints one: an installation token for exactly the connection's one repository and the permissions the
 operation needs (``contents``, ``issues``, ``pull_requests``: read or write; ``metadata: read`` comes with every
 token). A token is kept in memory until ``TOKEN_MARGIN_SECONDS`` before it expires (GitHub's tokens live an hour);
-none is revoked early: once a run is stopped the broker refuses its every operation before any token is used.
+the broker's are never revoked early (once a run is stopped the broker refuses its every operation before any token
+is used); the checkout cache's fetch token is, right after its fetch (``revoke_fetch_token``).
 
 Writes, and how each holds the broker's ``tree_hash``:
 
@@ -19,10 +20,17 @@ Writes, and how each holds the broker's ``tree_hash``:
   push stay unreferenced, and GitHub collects them;
 * a draft pull request, opened, or its title and body updated, only when the branch's head has ``tree_hash``, and
   checked again afterwards: when the pull request's head does not have it (the branch moved meanwhile), or the
-  check itself fails, one the client just opened is closed and the write is refused. An update changes only the title and body: GitHub's REST
+  check itself fails, one the client just opened is closed and the write's outcome is unknown (OutcomeUnknown), never
+  refused, since the host already wrote. An update changes only the title and body: GitHub's REST
   API cannot turn a pull request a person marked ready back into a draft.
 
-The client has no method for a merge, an approval, settings, branch protection, members, webhooks or secrets.
+Reads: a file and history on the run's default branch (the broker hands it on: ``ref`` and ``sha``), an issue or a
+pull request with its thread, a patch's base file at the run's commit, and, for the CI attestation's check
+(7.04.00, ``ci_protection``), what any reader of the repository sees of its branch rules: a branch's ``protected``
+and classic required checks, and the ruleset rules that apply to a branch's name.
+
+The client has no method for a merge, an approval, settings, a change of branch protection, members, webhooks or
+secrets.
 Every request goes to ``api.github.com`` through one ``Transport`` (tests inject a fake): the token travels only in
 the ``Authorization`` header, never in a URL; no redirect is followed; reads follow ``Link`` pagination by page
 number (the cursor). A rate limit (``Retry-After``, ``X-RateLimit-Reset``, a secondary rate limit) is never waited
@@ -31,16 +39,12 @@ out inside a call: it is ``HostBusy`` with the seconds to wait. Nothing a reques
 from __future__ import annotations
 
 import base64
-import http.client
 import json
-import math
 import re
-import ssl
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Final, Protocol
+from typing import Final
 from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 from cryptography.hazmat.primitives import hashes
@@ -50,7 +54,11 @@ from engineering.connectors.credentials import GitHubAppCredential
 from engineering.connectors.hosts import (
     FILE_MODES,
     OBJECT_ID,
+    PAGE_NUMBER,
+    STORED_BRANCH_MISSING,
+    BranchCaches,
     BundleContents,
+    CiProtection,
     CommentTarget,
     Conflict,
     FileChange,
@@ -62,8 +70,32 @@ from engineering.connectors.hosts import (
     PullRequestRef,
     ReadKind,
     ReadPage,
+    StoredBranchMissing,
+    checked_after_write,
+    file_page,
+    fresh,
+    keep,
+    read_page,
+    repository_path,
+    require_base,
+    require_pushable,
+    stray_changes,
 )
-from engineering.connectors.write_policy import BrokerError, WriteRefused
+from engineering.connectors.transport import (
+    DEFAULT_RETRY_SECONDS,
+    HttpsTransport,
+    Response,
+    Transport,
+    asked_wait,
+    text_or_empty,
+    text_unless_missing,
+)
+from engineering.connectors.transport import dig as _dig
+from engineering.connectors.transport import int_of as _int
+from engineering.connectors.transport import items_of as _items
+from engineering.connectors.transport import json_of as _json
+from engineering.connectors.transport import text_of as _text
+from engineering.connectors.write_policy import BrokerError
 from shared.github_rest import GITHUB_API, GITHUB_API_VERSION
 from shared.logging import logger
 
@@ -72,22 +104,15 @@ API_HOST: Final = GITHUB_API.removeprefix('https://')
 JWT_SECONDS: Final = 540
 #: A token is minted again this long before it expires, so no call starts with one about to lapse.
 TOKEN_MARGIN_SECONDS: Final = 300
-#: A rate limit with no header to say how long (a secondary limit, a bare 429): GitHub asks for at least a minute.
-DEFAULT_RETRY_SECONDS: Final = 60
-#: The most of one response the client reads (a Lambda function URL answers at most 6 MB).
-MAX_RESPONSE_BYTES: Final = 5 * 1024 * 1024
 PAGE_SIZE: Final = 30
 #: A comparison of a new branch's base with the default branch that puts the base on it (``base...head``: the head
 #: is behind the base, or the same commit).
 _ON_DEFAULT_BRANCH: Final = frozenset({'behind', 'identical'})
-#: Requests that change nothing on the host, so a lost answer can be retried: reads, and minting an installation
-#: token (a second token is harmless; it expires within the hour).
-_SAFE_METHODS: Final = frozenset({'GET', 'HEAD'})
+#: Minting an installation token: a write whose lost answer may be repeated (a second token is harmless; it expires
+#: within the hour), so the transport answers it as retryable, like a read.
 _TOKEN_PATH: Final = re.compile(r'/app/installations/[0-9]+/access_tokens\Z')
 _JSON: Final = 'application/vnd.github+json'
 _RAW: Final = 'application/vnd.github.raw+json'
-_PAGE: Final = re.compile(r'[1-9][0-9]{0,4}')
-_NUMBER: Final = re.compile(r'[1-9][0-9]{0,9}')
 _NEXT: Final = re.compile(r'<([^>]+)>;\s*rel="next"')
 
 Permissions = Mapping[str, str]
@@ -99,70 +124,23 @@ _COMMENTS: Final[Mapping[CommentTarget, Permissions]] = {
     'issue': {'issues': 'write'}, 'pull_request': {'pull_requests': 'write'}}
 _PUSH: Final[Permissions] = {'contents': 'write'}
 _BRANCH: Final[Permissions] = {'contents': 'read'}
+#: The checkout cache's fetch of one commit (``fetch_token``): read, nothing else.
+_FETCH: Final[Permissions] = {'contents': 'read'}
 #: The repository's own facts (its default branch): what every token holds anyway.
 _METADATA: Final[Permissions] = {'metadata': 'read'}
-#: How long a connection's default branch is kept before it is read again.
+#: How long a connection's default branch (the host's, or the stored one the host confirmed) is kept before it is
+#: read again.
 DEFAULT_BRANCH_SECONDS: Final = 300
+#: The most entries each branch cache keeps (connections times branches stay small; the oldest goes first).
+MAX_CACHED_BRANCHES: Final = 256
 _DRAFT: Final[Permissions] = {'contents': 'read', 'pull_requests': 'write'}
-
-
-@dataclass(frozen=True)
-class Response:
-    status: int
-    #: Header names in lower case.
-    headers: Mapping[str, str]
-    body: bytes
-
-
-class Transport(Protocol):
-    def request(self, method: str, path: str, headers: Mapping[str, str], body: bytes | None) -> Response: ...
-
-
-class _Answer(Protocol):
-    status: int
-
-    def read(self, limit: int, /) -> bytes: ...
-
-    def getheaders(self) -> list[tuple[str, str]]: ...
-
-
-class _Connection(Protocol):
-    def request(self, method: str, url: str, body: bytes | None, headers: Mapping[str, str]) -> None: ...
-
-    def getresponse(self) -> _Answer: ...
-
-    def close(self) -> None: ...
-
-
-class HttpsTransport:
-    """``api.github.com`` over HTTPS with the default certificate checks; a path, never a URL, so no other host."""
-
-    def __init__(self, timeout: float = 10.0,
-                 connect: Callable[..., _Connection] = http.client.HTTPSConnection) -> None:
-        self._timeout = timeout
-        self._connect = connect
-
-    def request(self, method: str, path: str, headers: Mapping[str, str], body: bytes | None) -> Response:
-        connection = self._connect(API_HOST, timeout=self._timeout, context=ssl.create_default_context())
-        sent = False
-        try:
-            connection.request(method, path, body=body, headers=dict(headers))
-            sent = True
-            answer = connection.getresponse()
-            data = answer.read(MAX_RESPONSE_BYTES + 1)
-            status, received = answer.status, {name.lower(): value for name, value in answer.getheaders()}
-        except (OSError, http.client.HTTPException):
-            # A write whose answer was lost may have happened: "retry later" could make it twice (a second comment,
-            # a second pull request), so only a read, or a request that never left, is answered as retryable.
-            if sent and method not in _SAFE_METHODS and not _TOKEN_PATH.match(path):
-                raise HostError('The repository host\'s answer to a write was lost: the write may have happened, '
-                                'so check before trying it again.') from None
-            raise HostBusy('The repository host could not be reached.', retry_after=DEFAULT_RETRY_SECONDS) from None
-        finally:
-            connection.close()
-        if len(data) > MAX_RESPONSE_BYTES:
-            raise HostError('The repository host answered with more than the broker reads.')
-        return Response(status=status, headers=received, body=data)
+#: How long branch rules that passed the CI check are kept before they are read again.
+CI_CHECK_SECONDS: Final = 300
+#: The ruleset rules of one branch the check reads (one page): a branch with any is protected.
+RULES_PAGE: Final = 100
+#: The required checks a check keeps (their names), and the longest name it keeps.
+MAX_REQUIRED_CHECKS: Final = 20
+MAX_CHECK_NAME: Final = 200
 
 
 def _b64url(data: bytes) -> str:
@@ -184,12 +162,9 @@ def rate_limit_retry(response: Response, now: float) -> int | None:
     ``None`` when it is not rate limited (a plain 403 is a refusal, not a limit)."""
     if response.status not in (403, 429):
         return None
-    retry_after = response.headers.get('retry-after', '')
-    if retry_after.isdigit():
-        return max(1, int(retry_after))
-    reset = response.headers.get('x-ratelimit-reset', '')
-    if response.headers.get('x-ratelimit-remaining') == '0' and reset.isdigit():
-        return max(1, math.ceil(float(reset) - now))
+    asked = asked_wait(response, 'x-ratelimit-reset', now, reset_needs_empty='x-ratelimit-remaining')
+    if asked is not None:
+        return asked
     if response.status == 429 or b'secondary rate limit' in response.body.lower():
         return DEFAULT_RETRY_SECONDS
     return None
@@ -199,62 +174,12 @@ def next_page(headers: Mapping[str, str]) -> str | None:
     """The page number of the ``Link`` header's ``rel="next"`` (the next read's cursor), or ``None``."""
     found = _NEXT.search(headers.get('link', ''))
     page = parse_qs(urlsplit(found.group(1)).query).get('page', [''])[0] if found else ''
-    return page if _PAGE.fullmatch(page) else None
-
-
-def _page(cursor: str | None) -> str:
-    if cursor is None:
-        return '1'
-    if not _PAGE.fullmatch(cursor):
-        raise InvalidTarget('The cursor is not one the broker handed out.')
-    return cursor
+    return page if PAGE_NUMBER.fullmatch(page) else None
 
 
 def _repository_path(target: str) -> str:
     """``target`` as a path inside the repository, URL-quoted; never one that climbs out of it."""
-    parts = target.split('/')
-    if any(part in {'', '.', '..'} for part in parts) or any(ord(c) < 32 or c == '\\' for c in target):
-        raise InvalidTarget('The target is a path inside the repository: no empty, "." or ".." part.')
-    return quote(target, safe='/')
-
-
-def _number(target: str) -> str:
-    if not _NUMBER.fullmatch(target):
-        raise InvalidTarget('The target is the number of an issue or a pull request.')
-    return target
-
-
-def _json(response: Response) -> Any:
-    try:
-        return json.loads(response.body)
-    except ValueError:
-        raise HostError(f'The repository host answered {response.status} with a body that is not JSON.') from None
-
-
-def _text(value: object, key: str) -> str:
-    found = value.get(key) if isinstance(value, dict) else None
-    if not isinstance(found, str):
-        raise HostError(f'The repository host answered without "{key}".')
-    return found
-
-
-def _int(value: object, key: str) -> int:
-    found = value.get(key) if isinstance(value, dict) else None
-    if not isinstance(found, int) or isinstance(found, bool):
-        raise HostError(f'The repository host answered without "{key}".')
-    return found
-
-
-def _dig(value: object, *keys: str) -> object:
-    for key in keys:
-        value = value.get(key) if isinstance(value, dict) else None
-    return value
-
-
-def _items(data: object, fields: Mapping[str, tuple[str, ...]]) -> list[dict[str, object]]:
-    """Each item of a list answer, as ``fields`` (name -> the keys to it) pick it."""
-    return [{name: _dig(item, *keys) for name, keys in fields.items()}
-            for item in (data if isinstance(data, list) else [])]
+    return quote(repository_path(target), safe='/')
 
 
 _COMMENT_FIELDS: Final[Mapping[str, tuple[str, ...]]] = {
@@ -269,13 +194,31 @@ _REVIEW_FIELDS: Final[Mapping[str, tuple[str, ...]]] = {
 def _stray_changes(contents: BundleContents) -> list[str]:
     """Why a bundle's commits are not the ones the write rules checked: a change outside ``changed_paths``, or a
     file mode the client does not write."""
-    listed = set(contents.changed_paths)
-    changes = [change for commit in contents.commits for change in commit.changes]
-    found = [f'A pushed commit changes a path the bundle does not list ({path}).'
-             for path in sorted({c.path for c in changes} - listed)]
-    found += [f'A pushed file must be a regular file, an executable or a symbolic link ({path}).'
-              for path in sorted({c.path for c in changes if c.mode not in FILE_MODES})]
-    return found
+    return stray_changes(contents, lambda change: change.mode in FILE_MODES,
+                         'A pushed file must be a regular file, an executable or a symbolic link')
+
+
+def _check_names(names: list[object]) -> tuple[str, ...]:
+    """The status checks' names a branch rule lists: text, one line, at most ``MAX_CHECK_NAME`` characters each."""
+    return tuple(name for name in names if isinstance(name, str) and name.strip() and len(name) <= MAX_CHECK_NAME
+                 and name.isprintable())
+
+
+def _ruleset_checks(rules: list[object]) -> tuple[str, ...]:
+    """The status checks the ``required_status_checks`` rules of a branch's rulesets require."""
+    names: list[object] = []
+    for rule in rules:
+        if _dig(rule, 'type') == 'required_status_checks':
+            listed = _dig(rule, 'parameters', 'required_status_checks')
+            names += [_dig(check, 'context') for check in (listed if isinstance(listed, list) else [])]
+    return _check_names(names)
+
+
+def _pull_request_ref(found: object) -> PullRequestRef:
+    """A pull request as GitHub answers it (its create, its lookup): the number, the URL, its head and base branches."""
+    return PullRequestRef(number=_int(found, 'number'), url=_text(found, 'html_url'),
+                          head=text_or_empty(found, 'head', 'ref'), base=text_or_empty(found, 'base', 'ref'),
+                          host='github')
 
 
 class GitHubHost:
@@ -284,12 +227,12 @@ class GitHubHost:
     def __init__(self, credentials: Callable[[str], GitHubAppCredential], transport: Transport | None = None,
                  clock: Callable[[], float] = time.time) -> None:
         self._credentials = credentials
-        self._transport = transport or HttpsTransport()
+        self._transport = transport or HttpsTransport(host=API_HOST, repeatable=_TOKEN_PATH)
         self._clock = clock
         #: (connection, installation, owner/repository, permissions) -> (token, when it stops being used).
         self._tokens: dict[tuple[str, int, str, tuple[tuple[str, str], ...]], tuple[str, float]] = {}
-        #: (connection, owner/repository) -> (its default branch, when it is read again).
-        self._default_branches: dict[tuple[str, str], tuple[str, float]] = {}
+        #: By (connection, owner/repository, ...): the default branches, the stored ones confirmed, the rules passed.
+        self._cached = BranchCaches()
 
     # --- HTTP -------------------------------------------------------------------------------------------------
 
@@ -305,7 +248,9 @@ class GitHubHost:
         if retry is not None:
             raise HostBusy(f'The repository host is rate limiting {what}; retry later.', retry_after=retry)
         if response.status not in ok:
-            raise HostError(f'The repository host answered {response.status} to {what}.')
+            unexpected = HostError(f'The repository host answered {response.status} to {what}.')
+            unexpected.status = response.status
+            raise unexpected
         return response
 
     def _token(self, connection_id: str, permissions: Permissions) -> tuple[GitHubAppCredential, str]:
@@ -339,25 +284,18 @@ class GitHubHost:
 
     # --- reads ------------------------------------------------------------------------------------------------
 
-    def read(self, connection_id: str, kind: ReadKind, target: str, cursor: str | None) -> ReadPage:
-        if kind == 'file':
-            return self._read_file(connection_id, target, cursor)
-        page = _page(cursor)
-        if kind == 'history':
-            return self._read_history(connection_id, target, page)
-        return self._read_thread(connection_id, kind, _number(target), page)
+    def read(self, connection_id: str, kind: ReadKind, target: str, cursor: str | None, branch: str = '') -> ReadPage:
+        """A file or history on ``branch`` (the run's default branch, as the broker worked it out: the stored one once
+        the host confirmed it; '' for the repository's own), an issue or a pull request with its thread."""
+        return read_page(kind, target, cursor, lambda: self._read_file(connection_id, target, branch),
+                         lambda page: self._read_history(connection_id, target, page, branch),
+                         lambda number, page: self._read_thread(connection_id, kind, number, page))
 
-    def _read_file(self, connection_id: str, target: str, cursor: str | None) -> ReadPage:
-        if cursor is not None:
-            raise InvalidTarget('A file is read whole; it has no pages.')
-        response = self._api(connection_id, _READS['file'], 'GET', f'/contents/{_repository_path(target)}',
+    def _read_file(self, connection_id: str, target: str, branch: str) -> ReadPage:
+        on = f'?{urlencode({"ref": branch})}' if branch else ''
+        response = self._api(connection_id, _READS['file'], 'GET', f'/contents/{_repository_path(target)}{on}',
                              'the file read', accept=_RAW, ok=(200, 404))
-        if response.status == 404:
-            raise NotFound('The repository has no such file on its default branch.')
-        try:
-            return ReadPage(content=response.body.decode('utf-8'), next_cursor=None)
-        except UnicodeDecodeError:
-            raise InvalidTarget('The file is not UTF-8 text; the broker reads text files only.') from None
+        return file_page(None if response.status == 404 else response.body)
 
     def file_at(self, connection_id: str, commit: str, path: str) -> bytes | None:
         """The bytes of ``path`` at ``commit`` (a full object id), ``None`` when the commit has no such file: a
@@ -369,21 +307,108 @@ class GitHubHost:
                              accept=_RAW, ok=(200, 404))
         return None if response.status == 404 else response.body
 
-    def default_branch(self, connection_id: str) -> str:
-        """The repository's default branch, kept ``DEFAULT_BRANCH_SECONDS`` per connection and repository."""
+    def repository(self, connection_id: str) -> str:
+        """``owner/name`` of the repository the connection's credential is for (no request to the host)."""
         credential = self._credentials(connection_id)
+        return f'{credential.owner}/{credential.repository}'
+
+    def fetch_token(self, connection_id: str) -> tuple[str, str]:
+        """``owner/name`` and an installation token for ``contents: read`` on that one repository: the checkout
+        cache's fetch (``cache.py``), which hands it to git only through its environment."""
+        credential, token = self._token(connection_id, _FETCH)
+        return f'{credential.owner}/{credential.repository}', token
+
+    def revoke_fetch_token(self, token: str) -> None:
+        """Revoke a token ``fetch_token`` minted (``DELETE /installation/token``, sent once, never retried) and forget
+        it, so this container mints a fresh one next time. Raises ``HostError`` when the host does not answer 204."""
+        for key, (held, _until) in list(self._tokens.items()):
+            if held == token:
+                del self._tokens[key]
+        self._send('DELETE', '/installation/token', f'Bearer {token}', 'the token revocation', ok=(204,))
+
+    def default_branch(self, connection_id: str, stored: str = '') -> str:
+        """``stored``, the connection's default branch as the run recorded it, once the repository has it (one branch
+        lookup, ``contents: read``, kept ``DEFAULT_BRANCH_SECONDS``; ``StoredBranchMissing`` when it has none, never
+        kept); for ``stored=''`` (a run started before connections recorded one) the repository's own default
+        branch, kept as long per connection and repository."""
+        credential = self._credentials(connection_id)
+        if stored:
+            return self._confirmed(connection_id, f'{credential.owner}/{credential.repository}', stored)
         key = (connection_id, f'{credential.owner}/{credential.repository}')
-        held = self._default_branches.get(key)
         now = self._clock()
-        if held is not None and now < held[1]:
-            return held[0]
+        held = fresh(self._cached.default_branches, key, now)
+        if held is not None:
+            return held
         branch = _text(_json(self._api(connection_id, _METADATA, 'GET', '', 'the repository read')), 'default_branch')
-        self._default_branches[key] = (branch, now + DEFAULT_BRANCH_SECONDS)
+        keep(self._cached.default_branches, key, (branch, now + DEFAULT_BRANCH_SECONDS), MAX_CACHED_BRANCHES)
         return branch
 
-    def _read_history(self, connection_id: str, target: str, page: str) -> ReadPage:
-        # "." is the whole repository's history; any other target, the history of that path.
+    def _confirmed(self, connection_id: str, repository: str, branch: str) -> str:
+        key = (connection_id, repository, branch)
+        now = self._clock()
+        if now < self._cached.confirmed_branches.get(key, 0.0):
+            return branch
+        if self._head(connection_id, _BRANCH, branch) is None:
+            raise StoredBranchMissing(STORED_BRANCH_MISSING)
+        keep(self._cached.confirmed_branches, key, now + DEFAULT_BRANCH_SECONDS, MAX_CACHED_BRANCHES)
+        return branch
+
+    # --- the branch rules (the CI attestation's check) ------------------------------------------------------------
+
+    def ci_protection(self, connection_id: str, default_branch: str, branch: str) -> CiProtection:
+        """What the repository's branch rules say of ``default_branch`` and the agent's ``branch``, read with a
+        ``contents: read`` token (rules and branches are what any reader of the repository sees): the default
+        branch's protection (classic branch protection or any ruleset rule) and the status checks it requires (both
+        kinds), and whether ``branch`` is protected (any rule for its name, or, once it exists, GitHub's own
+        ``protected``). At most four requests (two per branch), none of them a write; a result that passes is kept
+        ``CI_CHECK_SECONDS`` per connection, repository and both branches, one that does not is read again next time,
+        so a fixed rule counts at once."""
+        credential = self._credentials(connection_id)
+        key = (connection_id, f'{credential.owner}/{credential.repository}', default_branch, branch)
+        now = self._clock()
+        held = fresh(self._cached.ci_checks, key, now)
+        if held is not None:
+            return held
+        protected, classic_checks = self._branch_protection(connection_id, default_branch)
+        rules = self._rules(connection_id, default_branch)
+        agent_protected, _ = self._branch_protection(connection_id, branch)
+        checks = (*classic_checks, *_ruleset_checks(rules))
+        found = CiProtection(default_branch_protected=protected or bool(rules),
+                             required_checks=tuple(dict.fromkeys(checks))[:MAX_REQUIRED_CHECKS],
+                             agent_branch_protected=agent_protected or bool(self._rules(connection_id, branch)),
+                             checked_at=now)
+        if found.passes:
+            keep(self._cached.ci_checks, key, (found, now + CI_CHECK_SECONDS), MAX_CACHED_BRANCHES)
+        return found
+
+    def _branch_protection(self, connection_id: str, branch: str) -> tuple[bool, tuple[str, ...]]:
+        """GitHub's own ``protected`` of ``branch`` and the status checks its classic protection requires; (False,
+        ()) for a branch the repository does not have (yet)."""
+        response = self._api(connection_id, _BRANCH, 'GET', f'/branches/{quote(branch, safe="/")}',
+                             'the branch rules read', ok=(200, 404))
+        if response.status == 404:
+            return False, ()
+        data = _json(response)
+        status = _dig(data, 'protection', 'required_status_checks')
+        contexts = _dig(status, 'contexts')
+        checks = _dig(status, 'checks')
+        names = [*(contexts if isinstance(contexts, list) else []),
+                 *(_dig(check, 'context') for check in (checks if isinstance(checks, list) else []))]
+        return _dig(data, 'protected') is True, _check_names(names)
+
+    def _rules(self, connection_id: str, branch: str) -> list[object]:
+        """The ruleset rules that apply to ``branch`` (one page of ``RULES_PAGE``: a branch with more has rules)."""
+        response = self._api(connection_id, _BRANCH, 'GET',
+                             f'/rules/branches/{quote(branch, safe="/")}?{urlencode({"per_page": RULES_PAGE})}',
+                             'the branch rules read', ok=(200, 404))
+        data = [] if response.status == 404 else _json(response)
+        return data if isinstance(data, list) else []
+
+    def _read_history(self, connection_id: str, target: str, page: str, branch: str) -> ReadPage:
+        # "." is the whole repository's history; any other target, the history of that path; on ``branch``.
         fields: dict[str, object] = {'per_page': PAGE_SIZE, 'page': page}
+        if branch:
+            fields['sha'] = branch
         if target != '.':
             _repository_path(target)
             fields['path'] = target
@@ -424,7 +449,7 @@ class GitHubHost:
         query = urlencode({'state': 'open', 'head': f'{credential.owner}:{branch}', 'per_page': 1})
         found = _json(self._api(connection_id, permissions, 'GET', f'/pulls?{query}', 'the pull request lookup'))
         first = found[0] if isinstance(found, list) and found else None
-        return None if first is None else PullRequestRef(number=_int(first, 'number'), url=_text(first, 'html_url'))
+        return None if first is None else _pull_request_ref(first)
 
     def branch_tree_hash(self, connection_id: str, branch: str) -> str | None:
         return self._branch_tree(connection_id, _BRANCH, branch)
@@ -432,13 +457,13 @@ class GitHubHost:
     def _head(self, connection_id: str, permissions: Permissions, branch: str) -> str | None:
         response = self._api(connection_id, permissions, 'GET', f'/git/ref/heads/{quote(branch, safe="/")}',
                              'the branch lookup', ok=(200, 404))
-        return None if response.status == 404 else _text(_dig(_json(response), 'object'), 'sha')
+        return text_unless_missing(response, 'object', 'sha')
 
     def _tree_of(self, connection_id: str, permissions: Permissions, commit: str) -> str | None:
         """The tree of ``commit``, or ``None`` when the repository has no such commit."""
-        response = self._api(connection_id, permissions, 'GET', f'/git/commits/{quote(commit, safe="")}',
-                             'the commit lookup', ok=(200, 404))
-        return None if response.status == 404 else _text(_dig(_json(response), 'tree'), 'sha')
+        path = f'/git/commits/{quote(commit, safe="")}'
+        return text_unless_missing(self._api(connection_id, permissions, 'GET', path, 'the commit lookup',
+                                             ok=(200, 404)), 'tree', 'sha')
 
     def _branch_tree(self, connection_id: str, permissions: Permissions, branch: str) -> str | None:
         head = self._head(connection_id, permissions, branch)
@@ -473,17 +498,9 @@ class GitHubHost:
 
     def push_bundle(self, connection_id: str, branch: str, contents: BundleContents, tree_hash: str,
                     default_branch: str) -> None:
-        if not contents.commits:
-            raise WriteRefused('A pushed bundle carries at least one commit.')
-        stray = _stray_changes(contents)
-        if stray:
-            raise WriteRefused(' '.join(stray))
-        if contents.tree_hash != tree_hash:
-            raise Conflict("The bundle's head does not have the tree the broker checked.")
+        require_pushable(contents, tree_hash, _stray_changes(contents))
         head = self._head(connection_id, _PUSH, branch)
-        if head is not None and head != contents.base:
-            raise Conflict('The branch has moved since the bundle was made (its head is not the bundle\'s base); '
-                           'fetch it and make the bundle again.')
+        require_base(head, contents)
         if head is None:
             self._require_on_default_branch(connection_id, default_branch, contents.base)
         tree = self._tree_of(connection_id, _PUSH, contents.base)
@@ -532,16 +549,12 @@ class GitHubHost:
             created = _json(self._api(connection_id, _DRAFT, 'POST', '/pulls', 'the draft pull request', ok=(201,),
                                       body={'title': title, 'body': body, 'head': branch, 'base': base,
                                             'draft': True}))
-            ref = PullRequestRef(number=_int(created, 'number'), url=_text(created, 'html_url'))
-        try:
-            self._require_pull_request_tree(connection_id, ref.number, tree_hash)
-        except Exception:
-            # Whatever stops the check (the branch moved, a rate limit, a host error), a pull request this call
-            # opened is not left open unchecked; the original failure is what the caller gets.
-            if opened:
-                self._close(connection_id, ref.number)
-            raise
-        return ref
+            ref = _pull_request_ref(created)
+        number = ref.number
+        # (a pull request this call opened is never left open unchecked)
+        return checked_after_write(
+            ref, opened, lambda: self._require_pull_request_tree(connection_id, number, tree_hash),
+            lambda: self._close(connection_id, number))
 
     def _close(self, connection_id: str, number: int) -> None:
         """Close the pull request ``number`` this call opened; a close that fails is logged by its number only."""

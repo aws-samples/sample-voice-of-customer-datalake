@@ -368,6 +368,7 @@ export class VocProcessingStack extends VocStack {
       const broker = new EngineeringBroker(this, 'EngineeringBroker', {
         uniqueName, layer: processingLayer, roleNamePattern, kmsKey, deploymentPrefix: this.deploymentPrefix,
         engineeringTable: props.engineeringTable, workspaceBucket: props.engineeringWorkspaceBucket, aggregatesTable,
+        agentsTable: props.agentsTable,
       });
       const bus = new EngineeringBus(this, 'EngineeringBus', {
         uniqueName, layer: processingLayer, roleNamePattern, kmsKey, engineeringTable: props.engineeringTable,
@@ -375,6 +376,7 @@ export class VocProcessingStack extends VocStack {
       });
       peers = {
         deadLetterQueue: bus.dlq, bus: bus.bus, board: bus.board, boardUrl: bus.boardUrl, broker: broker.function,
+        brokerUrl: broker.url, connectionParameters: broker.connectionParameters,
         addPublisher: (statementId, role, source) => bus.addPublisher(statementId, role, source),
       };
     }

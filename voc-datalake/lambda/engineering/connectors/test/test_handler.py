@@ -13,11 +13,13 @@ from moto import mock_aws
 from engineering.board.test.table import create_table
 from engineering.connectors import handler
 from engineering.connectors.broker import Broker
-from engineering.connectors.credentials import PARAMETER_PREFIX_ENV
+from engineering.connectors.connections import PARAMETER_PREFIX_ENV
 from engineering.connectors.dial import WaysOfWorking
 from engineering.connectors.github import GitHubHost
+from engineering.connectors.gitlab import GitLabHost
 from engineering.connectors.hosts import (
     NO_CONNECTION,
+    STORED_BRANCH_MISSING,
     UNCONNECTED,
     Conflict,
     HostBusy,
@@ -33,6 +35,7 @@ from engineering.connectors.hosts import (
 )
 from engineering.connectors.patches import WorkspacePatches
 from engineering.connectors.records import RunRecords
+from engineering.connectors.router import HostRouter
 from engineering.connectors.test.fakes import (
     ACCOUNT,
     BASE,
@@ -194,6 +197,14 @@ def test_409_for_a_stopped_run() -> None:
     assert (status, body) == (409, {'error': 'The run is stopped; the broker refuses its operations.'})
 
 
+def test_409_while_the_connections_stored_default_branch_is_not_on_the_repository() -> None:
+    host = FakeHost(branches=('main',))
+    broker = Broker(connector(host=host, runs=FakeRuns({RUN: record(stored_default_branch='gone')})))
+    status, body = ask('mapper', 'read', {'kind': 'file', 'target': 'a'}, broker)
+    assert (status, body) == (409, {'error': STORED_BRANCH_MISSING})
+    assert host.calls == []
+
+
 def test_409_for_a_push_without_a_go() -> None:
     broker = Broker(connector(ledger=FakeLedger()))
     status, body = ask('committer', 'push_bundle', PUSH, broker)
@@ -294,7 +305,9 @@ def test_with_the_parameter_prefix_the_broker_holds_the_github_client_and_still_
     # Without the engineering table and the workspace bucket named, no run is read and nothing reaches GitHub (or SSM).
     assert (response['statusCode'], json.loads(response['body'])) == (503, {'error': NO_CONNECTION})
     assert connected is not None
-    assert isinstance(connected.host, GitHubHost)
+    assert isinstance(connected.host, HostRouter)
+    assert (isinstance(connected.host._github, GitHubHost), isinstance(connected.host._gitlab, GitLabHost)) == (
+        True, True)
     assert (connected.runs, connected.ledger, connected.bundles, connected.dial) == (UNCONNECTED,) * 4
     assert handler.broker_for('')._connector is None
 
@@ -341,7 +354,7 @@ class FailingHost(FakeHost):
         self.error = error
 
     def read(self, connection_id: str, kind: ReadKind, target: str,  # noqa: ARG002 - FakeHost's signature
-             cursor: str | None) -> ReadPage:  # noqa: ARG002
+             cursor: str | None, branch: str = '') -> ReadPage:  # noqa: ARG002
         raise self.error
 
 

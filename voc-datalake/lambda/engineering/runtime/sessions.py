@@ -103,6 +103,8 @@ class AgentSession:
     endpoint: str
     started_at: int
     status: Status = 'booting'
+    #: The checkout cache's generation its launch found (``checkout_cache.py``): its checkout clones that entry.
+    cache_generation: int = 0
     continuation: int = 0
     crashes: int = 0
     boot_index: int = 0
@@ -184,11 +186,12 @@ class AgentSession:
                 total[kind] = max(total.get(kind, 0), int(counts.get(kind, 0)))
         return totals
 
-    def spec(self, restore_key: str | None = None, workspace_bucket: str = '', board_url: str = '') -> AgentSpec:
+    def spec(self, restore_key: str | None = None, workspace_bucket: str = '', board_url: str = '',
+             broker_url: str = '') -> AgentSpec:
         return AgentSpec(run_id=self.run_id, agent_id=self.agent_id, role=self.role, task_id=self.task_id,
                          language=self.language, egress=self.egress, connection=self.connection,
                          restore_key=restore_key, commit=self.commit, attempt=self.task_attempt,
-                         workspace_bucket=workspace_bucket, board_url=board_url)
+                         workspace_bucket=workspace_bucket, board_url=board_url, broker_url=broker_url)
 
     @property
     def vm(self) -> RuntimeSession:
@@ -231,6 +234,7 @@ def _from_item(item: dict[str, Any]) -> AgentSession:
         connection=str(item['connection']), commit=str(item['commit']), paths=tuple(item.get('paths') or ()),
         harness=tuple(item['harness']), vm_id=str(item['vm_id']), endpoint=str(item['endpoint']),
         started_at=int(item['started_at']), status=item['status'], continuation=int(item.get('continuation', 0)),
+        cache_generation=int(item.get('cache_generation', 0)),
         crashes=int(item.get('crashes', 0)), boot_index=int(item.get('boot_index', 0)),
         after_pause=item.get('after_pause', 'continue'), suspended=bool(item.get('suspended', False)),
         stop_pending=bool(item.get('stop_pending', False)), no_room=int(item.get('no_room', 0)),

@@ -242,7 +242,13 @@ describe('cdk-nag acknowledgements', () => {
       // 89 -> 90: the engineering broker's read of the gate runners' gate records (one prefix: the GO ledger needs
       // the gate runner's GO on the final go's tree), its IAM5.
       // 90 -> 91: 7.00.00's CompanyLogoReadPolicy IAM5 (VocCoreStack; 74 -> 75 on main), merged in 7.01.00.
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 91, used: 91 });
+      // 91 -> 92: the agents API's put and delete of the repository connections' parameters (one path), its IAM5.
+      // 92 -> 95: the checkout cache's writer (7.05.00): its writes under engineering/cache/ and its read of the
+      // entries' READY markers (two prefixes), and the read of those markers by the supervisor and by the delivery
+      // function (a wake's continuation), one acknowledgement for both (engineering-runtime.ts grantCacheReadyReads:
+      // the same finding and reason), their IAM5. Its read of the connections' parameters is the broker's own
+      // acknowledgement (one helper, the same finding and reason).
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 95, used: 95 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

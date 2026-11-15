@@ -43,10 +43,18 @@
     },
     {
       "files": [
+        "voc-datalake/lambda/engineering/connectors/cache.py",
         "voc-datalake/lambda/engineering/connectors/hosts.py",
         "voc-datalake/lambda/engineering/runtime/ports.py"
       ],
-      "reason": "typing.Protocol method stubs (a signature and `...`, no body): the engineering broker's host, run-record and GO-ledger ports and the runtime's board, bus and run-control ports declare different operations that only share the empty shape"
+      "reason": "typing.Protocol method stubs (a signature and `...`, no body): the engineering broker's host, run-record and GO-ledger ports, the checkout cache writer's store, and the runtime's board, bus and run-control ports declare different operations that only share the empty shape"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/engineering/connectors/cache.py",
+        "voc-datalake/lambda/engineering/runtime/harness/ports.py"
+      ],
+      "reason": "typing.Protocol method stubs with a docstring and `...`: the checkout cache writer's create-only store and the harness's workspace port declare different operations that only share the documented empty shape"
     }
   ]
 }

@@ -19,8 +19,8 @@ from engineering.connectors.write_policy import (
     MIN_REVIEW_MATCH,
     WriteRefused,
     branch_refusal,
+    check_ci_definitions,
     check_commit_identities,
-    check_paths,
     check_text,
     path_refusals,
     text_refusals,
@@ -93,9 +93,9 @@ def test_a_ci_definition_is_refused_and_nothing_else_is(paths: list[str]) -> Non
 @given(path=CI_PATHS)
 def test_a_push_is_refused_if_any_of_its_paths_is_refused(path: str) -> None:
     """A push's paths are allowed only when every one is: one CI definition among them is enough."""
-    check_paths(['src/app.py'])
+    check_ci_definitions(['src/app.py'], ())
     with pytest.raises(WriteRefused) as refused:
-        check_paths(['src/app.py', path])
+        check_ci_definitions(['src/app.py', path], ())
     assert refused.value.reason == f'An agent never changes the CI definitions ({path}).'
 
 
@@ -171,7 +171,7 @@ def test_a_text_with_no_review_quoted_is_refused_for_nothing_but_personal_data(t
     check_text(text, [], prose=False)
 
 
-# The phone rule as it was before 7.01.02, written out here: the fix may only add refusals, never drop one.
+# The phone rule as it was before 7.09.01, written out here: the fix may only add refusals, never drop one.
 _PHONE_BEFORE = re.compile(r'(?<![\w.])\+?\(?\d(?:[\s()-]{0,2}\d){8,14}(?![\w.])')
 _DATE_START_BEFORE = re.compile(r'^\d{4}-\d{2}-\d{2}')
 
@@ -195,6 +195,6 @@ def test_the_tight_reading_is_the_old_rule_exactly() -> None:
 @PROPERTY
 @given(text=NUMBERISH)
 def test_every_phone_number_refused_before_is_still_refused(text: str) -> None:
-    """The 7.01.02 fix only widens the phone rule: whatever the old rule refused as a phone number, the new one does."""
+    """The 7.09.01 fix only widens the phone rule: whatever the old rule refused as a phone number, the new one does."""
     if _refused_before(text):
         assert [r.code for r in text_refusals(text, [], prose=True)] == ['personal_data']
