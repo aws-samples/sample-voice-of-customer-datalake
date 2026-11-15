@@ -150,7 +150,9 @@ describe('admin gating', () => {
 
   it('keeps analyze_scraper_url out of a non-admin toolset even when the thread tail names it', () => {
     const toolset = selectToolset(buildCatalogue(fakeDeps()), { page: user.page, isAdmin: false, webSearch: false, alsoInclude: ['analyze_scraper_url'] });
-    expect(ADMIN_ONLY_SERVER_TOOLS).toStrictEqual(['analyze_scraper_url', 'list_users', 'get_user_access', 'get_source_run']);
+    expect(ADMIN_ONLY_SERVER_TOOLS).toStrictEqual([
+      'analyze_scraper_url', 'list_users', 'get_user_access', 'get_source_run', 'get_engineering_run',
+    ]);
     expect(toolset.byName.has('analyze_scraper_url')).toBe(false);
   });
 });

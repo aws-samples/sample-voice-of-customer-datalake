@@ -1,0 +1,5 @@
+# PyYAML (MIT; THIRD-PARTY-LICENSES.md): the engineering broker's strict reader of a GitLab project's CI files
+# (lambda/engineering/connectors/ci_yaml.py composes node trees with its pure-Python SafeLoader; the libyaml binding
+# the wheel carries is never used). Only the broker gets this layer (lib/stacks/engineering-broker.ts), and only with
+# -c engineeringAgents=true. Pinned exactly: what the CI check reads must not move under it.
+PyYAML==6.0.3

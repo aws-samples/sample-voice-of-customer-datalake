@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next'
 import { movedOnly } from './diff'
 import type { WorkflowDiff } from './diff'
 import type { WorkflowDefinition } from '../../api/workflowsApi'
+import type { TFunction } from 'i18next'
 
 type Lookup = (id: string) => string
 
@@ -45,6 +46,27 @@ function Group({ label, tone, items }: Readonly<{ label: string; tone: 'ok' | 'd
   )
 }
 
+/** The change in words; null when neither side has a budget (never drawn then: a change has one on a side). */
+function budgetText(t: TFunction, usd: (amount: number) => string, was: number | undefined, now: number | undefined): string | null {
+  if (now !== undefined) {
+    return was === undefined ? t('preview.workflow.budgetSet', { now: usd(now) })
+      : t('preview.workflow.budgetChanged', { was: usd(was), now: usd(now) })
+  }
+  return was === undefined ? null : t('preview.workflow.budgetRemoved', { was: usd(was) })
+}
+
+/** An engineering flow's monthly budget, set, changed or removed: what its runs may spend is said in full, never as
+ * a field name, so the person approving the change sees the amounts. */
+export function BudgetChange({ before, after }: Readonly<{ before: WorkflowDefinition | null; after: WorkflowDefinition }>) {
+  const { t, i18n } = useTranslation('assistantTools')
+  const usd = (amount: number) => new Intl.NumberFormat(i18n.language, { style: 'currency', currency: 'USD' }).format(amount)
+  const was = before?.budget?.monthly_usd
+  const now = after.budget?.monthly_usd
+  const text = budgetText(t, usd, was, now)
+  if (text === null) return null
+  return <p className="rounded-sm bg-warn-subtle px-1.5 py-0.5 text-sm font-medium text-text-strong">{text}</p>
+}
+
 export function WorkflowDiffView({ diff, before, after }: Readonly<{ diff: WorkflowDiff; before: WorkflowDefinition | null; after: WorkflowDefinition }>) {
   const { t } = useTranslation('assistantTools')
   const [showMoves, setShowMoves] = useState(false)
@@ -52,11 +74,13 @@ export function WorkflowDiffView({ diff, before, after }: Readonly<{ diff: Workf
   const moved = new Set(movedOnly(diff))
   const changedNodes = diff.nodes.changed.filter((c) => showMoves || !moved.has(c.id))
   if (diff.unchanged) return <p className="text-[12px] text-muted">{t('preview.workflow.unchanged')}</p>
+  const named = diff.metaChanged.filter((field) => field !== 'budget')
   return (
     <div className="space-y-2">
-      {diff.metaChanged.length > 0 && (
-        <p className="text-sm text-text">{t('preview.workflow.meta', { fields: diff.metaChanged.join(', ') })}: <span className="text-text-strong">{after.name}</span></p>
+      {named.length > 0 && (
+        <p className="text-sm text-text">{t('preview.workflow.meta', { fields: named.join(', ') })}: <span className="text-text-strong">{after.name}</span></p>
       )}
+      {diff.metaChanged.includes('budget') && <BudgetChange before={before} after={after} />}
       <Group label={t('preview.workflow.addedSteps')} tone="ok" items={diff.nodes.added.map(name.node)} />
       <Group label={t('preview.workflow.removedSteps')} tone="danger" items={diff.nodes.removed.map(name.node)} />
       <Group label={t('preview.workflow.changedSteps')} tone="warn"

@@ -23,8 +23,12 @@ __pycache__/
 *.so
 .Python
 .venv/
-# Hypothesis's local files (a failing property writes its patch here); the committed regressions are @example cases.
+# Hypothesis's per-run state. Its failing-example database, voc-datalake/lambda/shared/test/hypothesis-regressions/,
+# catches every local failure: ignored but for its README, so the one entry a fix needs is added on purpose
+# (git add -f) and a red run while a test is written leaves nothing to commit.
 .hypothesis/
+voc-datalake/lambda/shared/test/hypothesis-regressions/*
+!voc-datalake/lambda/shared/test/hypothesis-regressions/README.md
 
 # Lambda layers (built artifacts)
 voc-datalake/lambda/layers/*/python/
@@ -69,6 +73,8 @@ mutants/
 *.py.bak
 .stryker-tmp/
 reports/
+# ...but not the engineering agents' report builders (source code that happens to be called reports).
+!voc-datalake/lambda/engineering/reports/
 
 # JUnit report written by the MCP CI gate (see scripts/mcp_gate.py). Produced on
 # any local run of that gate's pytest command too, so it is ignored rather than

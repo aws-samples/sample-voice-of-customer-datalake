@@ -1,0 +1,404 @@
+"""The board API: the caller from its IAM identity, each operation's answer, and the event it publishes."""
+from __future__ import annotations
+
+import base64
+import json
+from collections.abc import Iterator
+from typing import Any
+from unittest.mock import MagicMock, patch
+
+import pytest
+from botocore.exceptions import ClientError
+
+from engineering.board import api as api_module
+from engineering.board.api import BoardApi, handler
+from engineering.board.inbox import Inbox
+from engineering.board.store import BoardError, BoardStore
+from engineering.board.test.table import RUN, TABLE, board, engineering_table, set_status
+from engineering.board.test.test_inbox import notice
+from engineering.bus.publish import EventBridgePublisher, PublishError
+from engineering.bus.schema import MessageError, parse
+from engineering.connectors.identity import WORKSPACE, Caller
+
+ACCOUNT = '123456789012'
+PATTERN = 'voc-eng-{role}-123456789012-us-east-1'
+FIXER = Caller('fixer', RUN, 1)
+COORDINATOR = Caller('coordinator', RUN, 0)
+KEY = f'ws/default/runs/{RUN}/fixer-1/commits/a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4/core/attempt-1/findings-0.jsonl'
+SPEC = {'issue': 7}
+
+
+class Bus:
+    """EventBridge's put_events, recorded; ``refuse`` makes it fail the entry."""
+
+    def __init__(self) -> None:
+        self.entries: list[dict[str, Any]] = []
+        self.refuse = False
+
+    def put_events(self, Entries: list[dict[str, Any]]) -> dict[str, Any]:
+        if self.refuse:
+            return {'FailedEntryCount': 1, 'Entries': [{'ErrorCode': 'InternalFailure'}]}
+        self.entries.extend(Entries)
+        return {'FailedEntryCount': 0, 'Entries': [{'EventId': 'e'}]}
+
+    def types(self) -> list[str]:
+        return [entry['DetailType'] for entry in self.entries]
+
+
+@pytest.fixture
+def bus() -> Bus:
+    return Bus()
+
+
+def _api(client: Any, bus: Bus) -> BoardApi:
+    return BoardApi(board(client), EventBridgePublisher(bus, 'voc-engineering', 'voc.engineering/board'),
+                    Inbox(client, TABLE))
+
+
+@pytest.fixture
+def api(bus: Bus) -> Iterator[BoardApi]:
+    with engineering_table() as client:
+        yield _api(client, bus)
+
+
+def call(api: BoardApi, caller: Caller, **body: Any) -> tuple[int, dict[str, Any]]:
+    answer = api.handle_request(caller, json.dumps(body))
+    return answer['statusCode'], json.loads(answer['body'])
+
+
+def test_a_task_goes_from_posted_to_done_and_each_step_is_on_the_bus(api: BoardApi, bus: Bus) -> None:
+    status, body = call(api, COORDINATOR, op='post', role='fixer', title='Fix the page size', spec={'issue': 7})
+    assert status == 200
+    task_id = body['task']['task_id']
+    assert body['task']['posted_by'] == 'coordinator-0'
+    assert call(api, FIXER, op='claim', task_id=task_id)[1]['task']['lease']['agent'] == 'fixer-1'
+    assert call(api, FIXER, op='renew', task_id=task_id, epoch=1)[0] == 200
+    assert call(api, FIXER, op='move', task_id=task_id, epoch=1, to='in_progress')[0] == 200
+    status, body = call(api, FIXER, op='move', task_id=task_id, epoch=1, to='done', result_keys=[KEY])
+    assert (status, body['task']['result_keys']) == (200, [KEY])
+    assert bus.types() == ['task.posted', 'task.claimed', 'task.progress', 'task.done']
+    posted, *_, done = (parse(json.loads(entry['Detail'])) for entry in bus.entries)
+    assert (posted.to.kind, posted.to.id, posted.sender.id) == ('role', 'fixer', 'board')
+    assert (done.to.kind, done.to.id, done.thread_id, done.refs.s3) == ('run', RUN, task_id, (KEY,))
+    assert {entry['Source'] for entry in bus.entries} == {'voc.engineering/board'}
+
+
+def event_ids(bus: Bus) -> list[str]:
+    return [json.loads(entry['Detail'])['event_id'] for entry in bus.entries]
+
+
+def test_a_duplicate_post_redelivers_the_same_event_while_the_task_is_open(api: BoardApi, bus: Bus) -> None:
+    first = call(api, COORDINATOR, op='post', role='fixer', title='Fix it', spec={'issue': 7})[1]
+    again = call(api, COORDINATOR, op='post', role='fixer', title='Fix it again', spec={'issue': 7})[1]
+    assert again['task']['task_id'] == first['task']['task_id']
+    assert (first['duplicate'], again['duplicate']) == (False, True)
+    assert bus.types() == ['task.posted', 'task.posted']
+    assert len(set(event_ids(bus))) == 1
+    call(api, FIXER, op='claim', task_id=first['task']['task_id'])
+    call(api, COORDINATOR, op='post', role='fixer', title='Fix it', spec={'issue': 7})
+    assert bus.types() == ['task.posted', 'task.posted', 'task.claimed']
+    child = call(api, COORDINATOR, op='post', role='fixer', title='Fix it', spec={'issue': 7},
+                 parent_task=first['task']['task_id'])[1]
+    assert (child['duplicate'], child['task']['depth']) == (False, 1)
+
+
+def test_an_equal_post_after_a_persons_change_is_answered_and_publishes_nothing(api: BoardApi, bus: Bus) -> None:
+    # Its post is no longer its last change: a new task.posted would be a new event (from the change's time), not a
+    # retry of the post's.
+    task_id = call(api, COORDINATOR, op='post', role='fixer', title='Fix it', spec={'issue': 7})[1]['task']['task_id']
+    api.store.reprioritise(WORKSPACE, RUN, task_id, priority=4, actor='human:admin-1')
+    status, body = call(api, COORDINATOR, op='post', role='fixer', title='Fix it', spec={'issue': 7})
+    assert (status, body['duplicate'], bus.types()) == (200, True, ['task.posted'])
+
+
+@pytest.mark.parametrize('poster', ['human:admin-1', 'hunter-3'])
+def test_an_agents_equal_post_never_publishes_anothers_post_as_its_own(api: BoardApi, bus: Bus, poster: str) -> None:
+    # A person's post (or another agent's), still its task's last change: the coordinator's equal post is answered
+    # with it, and nothing goes out as the board's on the coordinator's behalf.
+    posted = api.store.post(WORKSPACE, RUN, role='fixer', title='Fix it', spec={'issue': 7}, parent_task='',
+                            priority=0, actor=poster)
+    status, body = call(api, COORDINATOR, op='post', role='fixer', title='Fix it', spec={'issue': 7})
+    assert (status, body['duplicate'], body['task']['task_id'], bus.entries) == (200, True, posted.task.task_id, [])
+
+
+def test_a_retried_claim_or_move_redelivers_its_event(api: BoardApi, bus: Bus) -> None:
+    task_id = call(api, COORDINATOR, op='post', role='fixer', title='Fix it', spec=SPEC)[1]['task']['task_id']
+    for body in ({'op': 'claim'}, {'op': 'move', 'epoch': 1, 'to': 'in_progress'}):
+        for _ in range(2):
+            assert call(api, FIXER, task_id=task_id, **body)[0] == 200
+    claimed, claimed_again, moved, moved_again = event_ids(bus)[1:]
+    assert (claimed, moved) == (claimed_again, moved_again)
+    assert claimed != moved
+
+
+@pytest.mark.parametrize(('poster', 'role', 'status'), [
+    (FIXER, 'final-go', 403), (FIXER, 'fixer', 403), (Caller('hunter', RUN, 2), 'fixer', 200),
+    (Caller('hunter', RUN, 2), 'pr-reviewer', 403), (Caller('builder', RUN, 5), 'builder', 200),
+    (COORDINATOR, 'final-go', 200),
+])
+def test_only_the_planners_post_and_only_for_their_roles(api: BoardApi, poster: Caller, role: str,
+                                                         status: int) -> None:
+    assert call(api, poster, op='post', role=role, title='A task', spec=SPEC)[0] == status
+
+
+@pytest.mark.parametrize(('body', 'status'), [
+    ({'op': 'post', 'role': 'stranger', 'title': 't', 'spec': SPEC}, 400),
+    ({'op': 'post', 'role': 'fixer', 'title': '  ', 'spec': SPEC}, 400),
+    ({'op': 'post', 'role': 'fixer', 'title': 'x' * 201, 'spec': SPEC}, 400),
+    ({'op': 'post', 'role': 'fixer', 'title': 'key ghp_' + 'z' * 36, 'spec': SPEC}, 400),
+    ({'op': 'post', 'role': 'fixer', 'title': 't', 'spec': []}, 400),
+    ({'op': 'post', 'role': 'fixer', 'title': 't'}, 400),
+    ({'op': 'post', 'role': 'fixer', 'title': 't', 'spec': SPEC, 'priority': True}, 400),
+    ({'op': 'post', 'role': 'fixer', 'title': 't', 'spec': SPEC, 'priority': 10 ** 40}, 400),
+    ({'op': 'post', 'role': 'fixer', 'title': 't', 'spec': SPEC, 'parent_task': 'none'}, 404),
+    ({'op': 'claim', 'task_id': 'none'}, 404),
+    ({'op': 'move', 'task_id': 'none', 'result_keys': 'k'}, 400),
+    ({'op': 'drop', 'task_id': 'none'}, 400),
+    ({'task_id': 'none'}, 400),
+])
+def test_bad_requests_answer_what_is_wrong(api: BoardApi, bus: Bus, body: dict[str, Any], status: int) -> None:
+    assert call(api, COORDINATOR, **body)[0] == status
+    assert bus.entries == []
+
+
+def test_a_body_that_is_not_an_object_is_refused(api: BoardApi) -> None:
+    assert api.handle_request(FIXER, '[1]')['statusCode'] == 400
+    assert api.handle_request(FIXER, None)['statusCode'] == 400
+    assert api.handle_request(FIXER, '{not json')['statusCode'] == 400
+
+
+def test_another_roles_task_and_another_agents_lease_are_refused(api: BoardApi) -> None:
+    task_id = call(api, COORDINATOR, op='post', role='hunter', title='Hunt', spec=SPEC)[1]['task']['task_id']
+    assert call(api, FIXER, op='claim', task_id=task_id)[0] == 403
+    hunter = Caller('hunter', RUN, 3)
+    assert call(api, hunter, op='claim', task_id=task_id)[0] == 200
+    assert call(api, Caller('hunter', RUN, 4), op='renew', task_id=task_id, epoch=1)[0] == 409
+
+
+def test_a_refused_event_answers_503_after_the_write(api: BoardApi, bus: Bus) -> None:
+    bus.refuse = True
+    status, body = call(api, COORDINATOR, op='post', role='fixer', title='Fix it', spec=SPEC)
+    assert status == 503
+    assert 'retry' in body['error']
+    bus.refuse = False
+    assert call(api, COORDINATOR, op='post', role='fixer', title='Fix it', spec=SPEC)[0] == 200
+    assert bus.types() == ['task.posted']
+
+
+def test_an_aws_error_on_the_bus_answers_503_too(api: BoardApi, bus: Bus, monkeypatch: pytest.MonkeyPatch) -> None:
+    throttled = ClientError({'Error': {'Code': 'ThrottlingException', 'Message': 'slow down'}}, 'PutEvents')
+    monkeypatch.setattr(bus, 'put_events', MagicMock(side_effect=throttled))
+    assert call(api, COORDINATOR, op='post', role='fixer', title='Fix it', spec=SPEC)[0] == 503
+
+
+def test_an_aws_error_on_the_table_answers_503(api: BoardApi, monkeypatch: pytest.MonkeyPatch) -> None:
+    throttled = ClientError({'Error': {'Code': 'ThrottlingException', 'Message': 'slow down'}}, 'GetItem')
+    monkeypatch.setattr(api.store, 'claim', MagicMock(side_effect=throttled))
+    status, body = call(api, FIXER, op='claim', task_id='task-1')
+    assert (status, 'retry' in body['error']) == (503, True)
+
+
+def test_the_cap_answers_429(bus: Bus) -> None:
+    with engineering_table(max_tasks=1) as client:
+        api = _api(client, bus)
+        assert call(api, COORDINATOR, op='post', role='fixer', title='One', spec={'n': 1})[0] == 200
+        assert call(api, COORDINATOR, op='post', role='fixer', title='Two', spec={'n': 2})[0] == 429
+
+
+def test_the_publisher_checks_before_sending_and_raises_on_a_failed_entry() -> None:
+    client = MagicMock()
+    publisher = EventBridgePublisher(client, 'voc-engineering', 'voc.engineering/board')
+    task = MagicMock(task_id='t', role='fixer', state='open', title='t', updated_by='a', attempt=1, result_keys=(),
+                     updated_at='2026-11-12T09:00:00.250000+00:00')
+    off_schema = api_module._event(task, 'not a run id!')
+    with pytest.raises(MessageError, match='run_id'):
+        publisher.publish(off_schema)
+    client.put_events.assert_not_called()
+    refusing = Bus()
+    refusing.refuse = True
+    with pytest.raises(PublishError, match='InternalFailure'):
+        EventBridgePublisher(refusing, 'voc-engineering', 'voc.engineering/board').publish(
+            api_module._event(task, RUN))
+    # The call itself failing is a failed publish too: the caller's record is written, the message is not.
+    client.put_events.side_effect = ClientError({'Error': {'Code': 'ServiceUnavailable', 'Message': 'x'}},
+                                                'PutEvents')
+    with pytest.raises(PublishError, match='could not be reached'):
+        publisher.publish(api_module._event(task, RUN))
+
+
+def lambda_event(arn: str, body: dict[str, Any]) -> dict[str, Any]:
+    return {'requestContext': {'authorizer': {'iam': {'userArn': arn}}}, 'body': json.dumps(body)}
+
+
+def test_the_handler_takes_the_caller_from_iam_only(bus: Bus, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv('AGENT_ROLE_NAME_PATTERN', PATTERN)
+    monkeypatch.setenv('ENGINEERING_TABLE', TABLE)
+    monkeypatch.setenv('ENGINEERING_BUS_NAME', 'voc-engineering')
+    monkeypatch.setenv('ENGINEERING_IMAGE_LANGUAGES', 'node,python')
+    context = MagicMock(invoked_function_arn=f'arn:aws:lambda:us-east-1:{ACCOUNT}:function:voc-board')
+    arn = f'arn:aws:sts::{ACCOUNT}:assumed-role/voc-eng-coordinator-123456789012-us-east-1/{RUN}.0'
+    with engineering_table() as client, \
+            patch('shared.aws.get_dynamodb_client', return_value=client), \
+            patch('shared.aws.get_eventbridge_client', return_value=bus), \
+            patch.object(api_module, '_api', None):
+        answer = handler(lambda_event(arn, {'op': 'post', 'role': 'fixer', 'title': 'Fix', 'spec': SPEC}), context)
+        assert answer['statusCode'] == 200
+        assert json.loads(answer['body'])['agent'] == 'coordinator-0'
+        forged = handler({'body': json.dumps({'op': 'post', 'role': 'fixer', 'title': 'x'})}, context)
+        assert forged['statusCode'] == 403
+        encoded = lambda_event(arn, {'op': 'post', 'role': 'hunter', 'title': 'Hunt', 'spec': SPEC})
+        encoded.update(body=base64.b64encode(encoded['body'].encode()).decode(), isBase64Encoded=True)
+        assert handler(encoded, context)['statusCode'] == 200
+        assert handler({**encoded, 'body': 'not base64!'}, context)['statusCode'] == 400
+        built = api_module._api
+        assert built is not None
+        assert built.images == frozenset({'node', 'python'})   # (the deployment's image languages)
+    assert bus.types() == ['task.posted', 'task.posted']
+
+
+def test_a_direct_invoke_is_a_persons_action_and_hands_its_events_back(bus: Bus,
+                                                                         monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv('AGENT_ROLE_NAME_PATTERN', PATTERN)
+    monkeypatch.setenv('ENGINEERING_TABLE', TABLE)
+    monkeypatch.setenv('ENGINEERING_BUS_NAME', 'voc-engineering')
+    context = MagicMock(invoked_function_arn=f'arn:aws:lambda:us-east-1:{ACCOUNT}:function:voc-board')
+    person = {'op': 'post', 'run_id': RUN, 'subject': 'admin-sub',
+              'body': {'role': 'hunter', 'title': 'Look at the export', 'spec': {'area': 'export'}}}
+    with engineering_table() as client, \
+            patch('shared.aws.get_dynamodb_client', return_value=client), \
+            patch('shared.aws.get_eventbridge_client', return_value=bus), \
+            patch.object(api_module, '_api', None):
+        answer = handler({'person': person}, context)
+        assert (answer['status'], answer['answer']['task']['posted_by'], answer['answer']['duplicate']) == (
+            'ok', 'human:admin-sub', False)
+        # The board publishes nothing itself: the event is handed back for the API to publish as the person.
+        (event,) = answer['events']
+        assert (bus.types(), parse(event).sender.kind, parse(event).type) == ([], 'human', 'task.posted')
+        # A function URL's event is an agent's, whatever it carries: even with `person` beside its request context, an
+        # agent's call goes down the agent path (its own op), never the person path.
+        arn = f'arn:aws:sts::{ACCOUNT}:assumed-role/voc-eng-coordinator-123456789012-us-east-1/{RUN}.0'
+        urled = handler({**lambda_event(arn, {'op': 'post', 'role': 'fixer', 'title': 'Fix', 'spec': SPEC}),
+                         'person': person}, context)
+        assert (urled['statusCode'], json.loads(urled['body'])['agent']) == (200, 'coordinator-0')
+
+
+@pytest.mark.parametrize(('person', 'kind'), [
+    ({'op': 'post', 'run_id': 'not-a-run', 'subject': 'admin-sub', 'body': {}}, 'invalid'),
+    ({'op': 'post', 'run_id': RUN, 'subject': 'a#b', 'body': {}}, 'invalid'),
+    ({'op': 'drop', 'run_id': RUN, 'subject': 'admin-sub', 'body': {}}, 'invalid'),
+    ({'op': 'act', 'run_id': RUN, 'subject': 'admin-sub', 'body': {}}, 'invalid'),
+    ({'op': 'act', 'run_id': RUN, 'subject': 'admin-sub', 'task_id': 'task-9', 'action': 'take', 'body': {}},
+     'not_found'),
+])
+def test_a_persons_request_that_is_not_one_is_refused_and_writes_nothing(person: dict[str, Any], kind: str) -> None:
+    with engineering_table() as client:
+        answer = api_module.person_request(BoardStore(client, TABLE, new_id=lambda: 'task-1'), person)
+    assert (answer['status'], answer['kind']) == ('refused', kind)
+
+
+def _status(client: Any, status: str) -> None:
+    set_status(client, status)
+
+
+def test_a_persons_go_is_written_once_and_hands_back_no_event() -> None:
+    go = {'op': 'go', 'run_id': RUN, 'subject': 'admin-sub', 'body': {}}
+    with engineering_table() as client:
+        _status(client, 'active')
+        store = BoardStore(client, TABLE, new_id=lambda: 'task-1')
+        first = api_module.person_request(store, go)
+        again = api_module.person_request(store, {**go, 'subject': 'other-admin'})
+        row = client.get_item(TableName=TABLE, Key={'pk': {'S': f'WS#default#RUN#{RUN}'}, 'sk': {'S': 'GO#person'}})
+    assert (first['status'], first['events'], first['answer']['go']['by'], first['answer']['go']['created']) == (
+        'ok', [], 'human:admin-sub', True)
+    # A second go is answered as the first one stands: never replaced (create-only, D1), whoever asks.
+    assert (again['answer']['go']['by'], again['answer']['go']['created'], again['answer']['go']['at']) == (
+        'human:admin-sub', False, first['answer']['go']['at'])
+    assert (row['Item']['by'], row['Item']['kind']) == ({'S': 'human:admin-sub'}, {'S': 'person_go'})
+
+
+def test_a_go_keeps_its_reason_bounded_and_redacted() -> None:
+    secret = 'AKIA' + 'ABCDEFGHIJKLMNOP'
+    with engineering_table() as client:
+        _status(client, 'active')
+        store = BoardStore(client, TABLE, new_id=lambda: 'task-1')
+        long = api_module.person_request(store, {'op': 'go', 'run_id': RUN, 'subject': 'admin-sub',
+                                                 'body': {'reason': 'x' * 501}})
+        bad = api_module.person_request(store, {'op': 'go', 'run_id': RUN, 'subject': 'admin-sub',
+                                                'body': {'reason': 7}})
+        given = api_module.person_request(store, {'op': 'go', 'run_id': RUN, 'subject': 'admin-sub',
+                                                  'body': {'reason': f' Plan reviewed, key {secret} '}})
+        row = client.get_item(TableName=TABLE, Key={'pk': {'S': f'WS#default#RUN#{RUN}'}, 'sk': {'S': 'GO#person'}})
+    assert ((long['status'], long['kind']), (bad['status'], bad['kind'])) == (('refused', 'invalid'),) * 2
+    assert secret not in given['answer']['go']['reason']
+    assert given['answer']['go']['reason'].startswith('Plan reviewed, key ')
+    assert row['Item']['reason']['S'] == given['answer']['go']['reason']
+
+
+@pytest.mark.parametrize('status', ['done', 'stopped', 'failed'])
+def test_an_ended_run_takes_no_go(status: str) -> None:
+    with engineering_table() as client:
+        _status(client, status)
+        answer = api_module.person_request(BoardStore(client, TABLE, new_id=lambda: 'task-1'),
+                                           {'op': 'go', 'run_id': RUN, 'subject': 'admin-sub', 'body': {}})
+        row = client.get_item(TableName=TABLE, Key={'pk': {'S': f'WS#default#RUN#{RUN}'}, 'sk': {'S': 'GO#person'}})
+    assert (answer['status'], answer['kind'], 'Item' in row) == ('refused', 'conflict', False)
+
+
+def test_a_go_is_a_persons_only() -> None:
+    with engineering_table() as client:
+        _status(client, 'needs_human')
+        store = BoardStore(client, TABLE, new_id=lambda: 'task-1')
+        with pytest.raises(BoardError):
+            store.person_go(WORKSPACE, RUN, actor='fixer-1')
+        assert store.person_go(WORKSPACE, RUN, actor='human:admin-sub').created
+
+
+def test_a_table_that_refuses_a_go_is_unavailable() -> None:
+    failing = MagicMock()
+    failing.get_item.return_value = {'Item': {'status': {'S': 'active'}}}
+    failing.put_item.side_effect = ClientError({'Error': {'Code': 'InternalServerError', 'Message': 'x'}}, 'PutItem')
+    answer = api_module.person_request(BoardStore(failing, TABLE, new_id=lambda: 'task-1'),
+                                       {'op': 'go', 'run_id': RUN, 'subject': 'admin-sub', 'body': {}})
+    assert (answer['status'], answer['kind']) == ('refused', 'unavailable')
+
+
+def test_a_table_that_refuses_a_persons_action_is_unavailable() -> None:
+    failing = MagicMock()
+    failing.get_item.side_effect = ClientError({'Error': {'Code': 'InternalServerError', 'Message': 'x'}}, 'GetItem')
+    answer = api_module.person_request(BoardStore(failing, TABLE, new_id=lambda: 'task-1'), {
+        'op': 'act', 'run_id': RUN, 'subject': 'admin-sub', 'task_id': 'task-1', 'action': 'take', 'body': {}})
+    assert (answer['status'], answer['kind']) == ('refused', 'unavailable')
+
+
+def test_the_handler_flushes_its_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
+    """(the workspace store's count of denied reads taken as missing, from the knowledge op)"""
+    monkeypatch.setenv('AGENT_ROLE_NAME_PATTERN', PATTERN)
+    flushed: list[bool] = []
+    monkeypatch.setattr(api_module.metrics.provider, 'flush_metrics', lambda *_a, **_k: flushed.append(True))
+    assert handler({'body': '{}'}, MagicMock(invoked_function_arn=''))['statusCode'] == 403
+    assert flushed == [True]
+
+
+def test_a_plain_body_is_taken_as_it_is() -> None:
+    assert api_module._raw_body({'body': '{}'}) == '{}'
+    assert api_module._raw_body({'body': '//4=', 'isBase64Encoded': True}) is None   # not UTF-8
+
+
+def test_an_agent_reads_its_inbox_and_the_coordinator_the_conductors_too(bus: Bus) -> None:
+    with engineering_table() as client:
+        api = _api(client, bus)
+        notice(client, 'agent:fixer-1', 3)
+        notice(client, 'role:fixer', 1, task_id='task-1', type_='task.posted')
+        notice(client, 'conductor', 2)
+        notice(client, 'agent:fixer-2', 4)   # another agent's: never read
+        status, body = call(api, FIXER, op='inbox')
+        assert (status, [m['seq'] for m in body['messages']], body['next']) == (200, [1, 3], 3)
+        assert body['messages'][0]['task_id'] == 'task-1'
+        assert [m['seq'] for m in call(api, COORDINATOR, op='inbox')[1]['messages']] == [2]
+        assert bus.entries == []   # (reading publishes nothing)
+
+
+@pytest.mark.parametrize('body', [{'after': -1}, {'after': 'x'}, {'limit': 0}, {'limit': 51}, {'limit': True}])
+def test_a_bad_cursor_or_limit_is_400(api: BoardApi, body: dict[str, Any]) -> None:
+    status, answer = call(api, FIXER, op='inbox', **body)
+    assert (status, '"after"' in answer['error'] or 'whole number' in answer['error']) == (400, True)

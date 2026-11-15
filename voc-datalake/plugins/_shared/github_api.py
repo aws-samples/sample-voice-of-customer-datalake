@@ -19,11 +19,10 @@ from urllib.parse import urlsplit
 
 import requests
 
-from shared.github_rest import GITHUB_API
+from shared.github_rest import GITHUB_API, GITHUB_API_VERSION
 
 __all__ = ["GITHUB_API", "GitHubClient", "GitHubNotFound", "StopRun"]
 
-API_VERSION = "2022-11-28"
 REQUEST_TIMEOUT_SECONDS = 15
 #: Stop while a few requests of quota remain, so an operator's own use of the
 #: token (or the webhook-triggered UI) is not starved to zero by the poller.
@@ -102,7 +101,7 @@ class GitHubClient:
         headers = {
             "Accept": "application/vnd.github+json",
             "Authorization": f"Bearer {self._token}",
-            "X-GitHub-Api-Version": API_VERSION,
+            "X-GitHub-Api-Version": GITHUB_API_VERSION,
             "User-Agent": "voc-datalake-github-issues",
         }
         if etag:

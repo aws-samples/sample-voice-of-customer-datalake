@@ -73,6 +73,8 @@ const RuntimeConfigSchema = z.object({
     email: z.boolean().optional(),
     /** The app user pool allows passkey sign-in (5.65); older deployments omit it and the UI offers none. */
     passkey: z.boolean().optional(),
+    /** The engineering agents module is deployed (-c engineeringAgents=true); otherwise no "New engineering flow". */
+    engineering: z.boolean().optional(),
   }).optional(),
   /**
    * The feature-request board's own Cognito user pool (docs/feature-requests.md), present only when
@@ -138,6 +140,15 @@ export function isConfigLoaded(): boolean {
  */
 export function isWebSearchAvailable(): boolean {
   return configState.config?.features?.webSearch === true
+}
+
+/**
+ * Whether this deployment has the engineering agents module (`features.engineering`), so the workflow library
+ * offers a new engineering flow. Engineering flows already saved are still listed and opened either way.
+ * Safe to call before config load (returns false).
+ */
+export function isEngineeringAvailable(): boolean {
+  return configState.config?.features?.engineering === true
 }
 
 /**
@@ -224,6 +235,8 @@ function getEnvConfig(): RuntimeConfig {
     // Local development: VITE_ENABLE_WEB_SEARCH=true surfaces the web search
     // toggles without a deployed config.json.
     webSearch: getEnvString('VITE_ENABLE_WEB_SEARCH') === 'true',
+    // VITE_ENABLE_ENGINEERING=true offers "New engineering flow" against the dev mock.
+    engineering: getEnvString('VITE_ENABLE_ENGINEERING') === 'true',
   }
   const envConfig = {
     apiEndpoint: getEnvString('VITE_API_ENDPOINT'),

@@ -8,9 +8,14 @@
  * Non-admins (and the built-in template) get the same view read-only; the
  * built-in template can only be copied ("Save as").
  *
+ * With `unsaved` (a default engineering flow's copy) nothing is stored yet: the
+ * copy is the draft, Save creates it as a new workflow (then the host opens it,
+ * as after Save as), and Save as, Reset and History, which need a stored
+ * workflow, are not offered.
+ *
  * @module components/WorkflowEditor/WorkflowEditor
  */
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Copy, Download, Eraser, Loader2, RotateCcw, Save, Upload } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { workflowIssueText } from './workflowIssueText'
@@ -25,7 +30,8 @@ import { WorkflowHistory } from './WorkflowHistory'
 import { addNode, clearDefinition, STEP_HEIGHT } from './model'
 import { EMPTY_SELECTION, sameSelection, selectStep } from './selection'
 import { groupIssues, useWorkflowEditor } from './useWorkflowEditor'
-import { API_WORKFLOW_LIMITS } from '../../api/workflowsApi'
+import { API_WORKFLOW_LIMITS, isEngineeringFlow } from '../../api/workflowsApi'
+import { isEngineeringAvailable } from '../../runtimeConfig'
 import type { CanvasSelection } from './selection'
 import type { SaveOutcome } from './useWorkflowEditor'
 import type { RestoredRevision } from './WorkflowHistory'
@@ -51,6 +57,10 @@ interface WorkflowEditorProps {
    * before replacing the draft.
    */
   renderTitle?: (state: Readonly<{ dirty: boolean; name: string }>) => ReactNode
+  /** A definition to edit that is not stored yet (`workflowId` is then ''): unsaved until Save creates it. */
+  unsaved?: WorkflowDefinition
+  /** Told whenever the draft gains or loses unsaved changes (the flow page's Start a run runs the saved version). */
+  onDirtyChange?: (dirty: boolean) => void
 }
 
 type EditorOutcome = SaveOutcome | 'import_failed' | null
@@ -94,16 +104,26 @@ function StatusLine({ outcome, dirty, issueCount, notice }: Readonly<{
 
 type Editor = ReturnType<typeof useWorkflowEditor>
 
-export function WorkflowEditor({ workflowId, canEdit, onSavedAs, notice, renderTitle }: Readonly<WorkflowEditorProps>) {
+export function WorkflowEditor({
+  workflowId, canEdit, onSavedAs, notice, renderTitle, unsaved, onDirtyChange,
+}: Readonly<WorkflowEditorProps>) {
   const { t } = useTranslation('agents')
-  const editor = useWorkflowEditor(workflowId, canEdit)
+  const editor = useWorkflowEditor(workflowId, canEdit, unsaved)
+  useEffect(() => { onDirtyChange?.(editor.dirty) }, [editor.dirty, onDirtyChange])
+  // The status line's outcome, here so the leave-page prompt's Save shows it like the toolbar's.
+  const [outcome, setOutcome] = useState<EditorOutcome>(null)
   // After Save as the draft lives in the copy: moving to it is not leaving unsaved work.
   const handedOff = useRef(false)
   // Shared unsaved-changes guard (E2E F6). The built-in template has no Save, only Save as.
   const guard = useUnsavedChangesGuard({
     dirty: canEdit && editor.dirty,
     canSave: !editor.builtin,
-    onSave: async () => (await editor.save()) === 'saved',
+    // The toolbar's own Save (its checks, its outcome on the status line); the person then leaves as they asked.
+    onSave: async () => {
+      const { outcome: saved } = await editor.saveOrCreate()
+      setOutcome(saved)
+      return saved === 'saved'
+    },
     shouldBlock: (current, next) => !handedOff.current && pathOrQueryChanged(current, next),
   })
   const savedAs = (workflow: WorkflowView) => {
@@ -117,6 +137,7 @@ export function WorkflowEditor({ workflowId, canEdit, onSavedAs, notice, renderT
   return (
     <>
       <EditorBody editor={editor} draft={editor.draft} workflow={editor.workflow} canEdit={canEdit} onSavedAs={savedAs} notice={notice}
+        outcome={outcome} setOutcome={setOutcome}
         title={renderTitle?.({ dirty: canEdit && editor.dirty, name: editor.draft.name })} />
       {guard.dialog}
     </>
@@ -139,13 +160,75 @@ function EditorTitle({ title, name, builtin, dirty }: Readonly<{ title?: ReactNo
   )
 }
 
-function EditorBody({ editor, draft, workflow, canEdit, onSavedAs, notice, title }: Readonly<{
+/**
+ * Whether Save as (a NEW workflow) is offered: an engineering flow only where the deployment has the engineering
+ * module (the API answers 409 elsewhere); one already saved is still saved in place. The toolbar's and the stale-save
+ * banner's Save as both ask.
+ */
+const savesAsNew = (draft: WorkflowDefinition): boolean => !isEngineeringFlow(draft) || isEngineeringAvailable()
+
+/**
+ * The editing half of the toolbar: Save, Save as, Import, Reset, Clear (an unsaved copy: Save, Import, Clear; an
+ * engineering flow: no Reset).
+ */
+function EditActions({ draft, unsaved, canSave, saving, onSave, onSaveAs, onImport, onReset, onClear }: Readonly<{
+  draft: WorkflowDefinition; unsaved: boolean; canSave: boolean; saving: boolean
+  onSave: () => void; onSaveAs: () => void; onImport: () => void; onReset: () => void; onClear: () => void
+}>) {
+  const { t } = useTranslation('agents')
+  const canSaveAs = !unsaved && savesAsNew(draft)
+  // Reset loads the built-in template, an agents workflow: never offered on an engineering flow (it keeps its kind),
+  // nor on an unsaved copy.
+  const canReset = !unsaved && !isEngineeringFlow(draft)
+  return (
+    <>
+      <button type="button" className="btn btn-primary btn-sm" disabled={!canSave} onClick={onSave}>
+        {saving ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Save size={14} aria-hidden="true" />}
+        {t('editor.save')}
+      </button>
+      {canSaveAs && (
+        <button type="button" className="btn btn-secondary btn-sm" onClick={onSaveAs}>
+          <Copy size={14} aria-hidden="true" /> {t('editor.saveAs')}
+        </button>
+      )}
+      <button type="button" className="btn btn-ghost btn-sm" onClick={onImport}>
+        <Upload size={14} aria-hidden="true" /> {t('editor.import')}
+      </button>
+      {canReset && (
+        <button type="button" className="btn btn-ghost btn-sm" onClick={onReset}>
+          <RotateCcw size={14} aria-hidden="true" /> {t('editor.reset')}
+        </button>
+      )}
+      <button type="button" className="btn btn-ghost btn-sm" disabled={draft.nodes.length === 0} onClick={onClear}>
+        <Eraser size={14} aria-hidden="true" /> {t('editor.clear')}
+      </button>
+    </>
+  )
+}
+
+/** Whether Save is offered now (an unsaved copy only where it can be created), and whether a save is under way. */
+function saveState(editor: Editor, canEdit: boolean, draft: WorkflowDefinition): { canSave: boolean; saving: boolean } {
+  const saving = editor.saving || editor.savingAs
+  return { saving, canSave: canEdit && !editor.builtin && editor.dirty && !saving && (!editor.unsaved || savesAsNew(draft)) }
+}
+
+/** The saved revisions, for a stored workflow (an unsaved copy has none). */
+function StoredHistory({ editor, workflow, onRestore }: Readonly<{
+  editor: Editor; workflow: WorkflowView; onRestore?: (restored: RestoredRevision) => void
+}>) {
+  if (editor.unsaved) return null
+  return (
+    <WorkflowHistory workflowId={workflow.workflow_id} revisions={editor.revisions} currentRevision={workflow.revision}
+      currentDefinition={workflow.definition} onRestore={onRestore} />
+  )
+}
+
+function EditorBody({ editor, draft, workflow, canEdit, onSavedAs, notice, title, outcome, setOutcome }: Readonly<{
   editor: Editor; draft: WorkflowDefinition; workflow: WorkflowView; canEdit: boolean; onSavedAs: (workflow: WorkflowView) => void
-  notice?: string; title?: ReactNode
+  notice?: string; title?: ReactNode; outcome: EditorOutcome; setOutcome: (outcome: EditorOutcome) => void
 }>) {
   const { t } = useTranslation('agents')
   const [selection, setSelectionState] = useState<CanvasSelection>(EMPTY_SELECTION)
-  const [outcome, setOutcome] = useState<EditorOutcome>(null)
   const [saveAsOpen, setSaveAsOpen] = useState(false)
   const [confirmReset, setConfirmReset] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
@@ -184,7 +267,12 @@ function EditorBody({ editor, draft, workflow, canEdit, onSavedAs, notice, title
     if (editor.dirty) setPendingRestore(restored)
     else applyRestore(restored)
   }
-  const onSave = async () => setOutcome(await editor.save())
+  // An unsaved copy's Save creates it (the library's own create), then the host opens the new workflow.
+  const onSave = async () => {
+    const { outcome: saved, created } = await editor.saveOrCreate()
+    if (created === undefined) setOutcome(saved)
+    else onSavedAs(created)
+  }
   const onSaveAs = async (name: string) => {
     try {
       const created = await editor.saveAs(name)
@@ -201,43 +289,29 @@ function EditorBody({ editor, draft, workflow, canEdit, onSavedAs, notice, title
   }
   const onExport = async () => {
     try {
-      downloadJson(`${workflow.slug || workflow.workflow_id}.workflow.json`, await editor.exportJson())
+      // An unsaved copy has neither a slug nor an id yet.
+      downloadJson(`${workflow.slug || workflow.workflow_id || 'workflow'}.workflow.json`, await editor.exportJson())
     } catch {
       setOutcome('failed')
     }
   }
 
-  const canSave = canEdit && !editor.builtin && editor.dirty && !editor.saving
+  const { canSave, saving } = saveState(editor, canEdit, draft)
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <EditorTitle title={title} name={draft.name} builtin={editor.builtin} dirty={editor.dirty} />
         <StatusLine outcome={outcome} dirty={editor.dirty} issueCount={editor.issues.length} notice={notice} />
         {canEdit && (
-          <>
-            <button type="button" className="btn btn-primary btn-sm" disabled={!canSave} onClick={() => void onSave()}>
-              {editor.saving ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Save size={14} aria-hidden="true" />}
-              {t('editor.save')}
-            </button>
-            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setSaveAsOpen(true)}>
-              <Copy size={14} aria-hidden="true" /> {t('editor.saveAs')}
-            </button>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => fileInput.current?.click()}>
-              <Upload size={14} aria-hidden="true" /> {t('editor.import')}
-            </button>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setConfirmReset(true)}>
-              <RotateCcw size={14} aria-hidden="true" /> {t('editor.reset')}
-            </button>
-            <button type="button" className="btn btn-ghost btn-sm" disabled={draft.nodes.length === 0} onClick={() => setConfirmClear(true)}>
-              <Eraser size={14} aria-hidden="true" /> {t('editor.clear')}
-            </button>
-          </>
+          <EditActions draft={draft} unsaved={editor.unsaved} canSave={canSave} saving={saving}
+            onSave={() => void onSave()}
+            onSaveAs={() => setSaveAsOpen(true)} onImport={() => fileInput.current?.click()}
+            onReset={() => setConfirmReset(true)} onClear={() => setConfirmClear(true)} />
         )}
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => void onExport()}>
           <Download size={14} aria-hidden="true" /> {t('editor.export')}
         </button>
-        <WorkflowHistory workflowId={workflow.workflow_id} revisions={editor.revisions} currentRevision={workflow.revision}
-          currentDefinition={workflow.definition} onRestore={canEdit ? requestRestore : undefined} />
+        <StoredHistory editor={editor} workflow={workflow} onRestore={canEdit ? requestRestore : undefined} />
         <input ref={fileInput} type="file" accept="application/json,.json" className="sr-only" tabIndex={-1} aria-hidden="true"
           onChange={(e) => { void onImportFile(e.target.files?.[0]); e.target.value = '' }} />
       </div>
@@ -246,7 +320,9 @@ function EditorBody({ editor, draft, workflow, canEdit, onSavedAs, notice, title
         <div role="alert" className="flex flex-wrap items-center gap-2 rounded-md border border-warn/30 bg-warn-subtle px-3 py-2 text-sm text-text">
           <AlertTriangle size={14} className="text-warn" aria-hidden="true" />
           <span className="mr-auto">{t('editor.conflict')}</span>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={() => setSaveAsOpen(true)}>{t('editor.conflictSaveAs')}</button>
+          {savesAsNew(draft) && (
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setSaveAsOpen(true)}>{t('editor.conflictSaveAs')}</button>
+          )}
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => void editor.reloadLatest()}>{t('editor.conflictReload')}</button>
         </div>
       )}
@@ -264,7 +340,7 @@ function EditorBody({ editor, draft, workflow, canEdit, onSavedAs, notice, title
             has nothing focusable inside them: E2E F8), and both are named — two
             unnamed asides next to the app sidebar fail axe landmark-unique (F9). */}
         <aside tabIndex={0} className="card p-3 max-h-[640px] overflow-y-auto focus-ring" aria-label={t('editor.palette')}>
-          <NodePalette onAdd={addFromPalette} disabled={readOnly} />
+          <NodePalette onAdd={addFromPalette} disabled={readOnly} schema={draft.schema} />
         </aside>
         <div className="card p-0 h-[640px] overflow-hidden">
           <WorkflowCanvas definition={draft} readOnly={readOnly} issuesByNode={grouped.byNode}

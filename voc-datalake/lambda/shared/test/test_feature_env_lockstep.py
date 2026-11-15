@@ -25,11 +25,14 @@ _MODULES = (
     'shared/embeddings.py', 'shared/company_context.py', 'shared/design_references.py',
     'shared/user_flags.py', 'shared/mcp_delegate.py', 'shared/assist_jobs.py',
     'shared/briefing_subscription.py', 'shared/briefing_requests.py',
-    'api/radar_handler.py', 'jobs/radar_scan/handler.py',
+    'api/radar_handler.py', 'jobs/radar_scan/handler.py', 'shared/engineering_agents.py',
 )
 # Names that are legitimately absent from the stack, each with its reason.
 _NOT_SET_BY_CDK = {
     'AWS_LAMBDA_FUNCTION_NAME': 'provided by the Lambda runtime',
+    # The run monitor's signals (api/agents_handler.py): voc-engineering-runtime's name on the Agents API, which
+    # the opt-in stack is to set beside the reads' table and bucket. Drop this when it does.
+    'ENGINEERING_RUNTIME_FUNCTION': 'set only by the opt-in engineering stack (not yet on the Agents API)',
 }
 
 _ENV_READ = re.compile(r"environ(?:\.get)?[(\[]\s*'([A-Z0-9_]+)'")

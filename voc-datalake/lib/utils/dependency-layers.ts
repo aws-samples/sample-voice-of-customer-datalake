@@ -23,7 +23,11 @@ export function dependencyLayer(scope: Construct, id: string, layerDir: string, 
   });
 }
 
-/** cryptography (+ cffi, pycparser): the RSA-SHA1 primitive of `shared/cloudfront_signing.py`. */
+/**
+ * cryptography (+ cffi, pycparser): the RSA-SHA1 primitive of `shared/cloudfront_signing.py`, and the RS256
+ * signature of the engineering broker's GitHub App JWT (`engineering/connectors/github.py`; its own copy of the
+ * layer, lib/stacks/engineering-broker.ts).
+ */
 export const SIGNING_LAYER_DIR = 'lambda/layers/signing-deps';
 
 /**
@@ -41,6 +45,12 @@ export const SIGNING_LAYER_FUNCTION_IDS: readonly string[] = [
  * MCP OAuth access tokens): api-mcp-oauth.ts attaches the layer that attachSigningLayer returns to that one
  * function (pinned in dependency-layers.test.ts).
  */
+
+/**
+ * PyYAML: the engineering broker's strict reader of a GitLab project's CI files
+ * (`engineering/connectors/ci_yaml.py`); attached to the broker alone (lib/stacks/engineering-broker.ts).
+ */
+export const ENGINEERING_CI_LAYER_DIR = 'lambda/layers/engineering-ci-deps';
 
 /** lxml: the HTML parser the inbound-email intake hands to BeautifulSoup (`email_intake/mime.py`). */
 export const EMAIL_INTAKE_LAYER_DIR = 'lambda/layers/email-intake-deps';

@@ -3,7 +3,12 @@
  * editor, agent and approval specs: a graph node, an edge, and the
  * `GET /workflows/{id}` view that wraps a definition.
  */
-import type { WorkflowDefinition } from '../api/workflowsApi'
+import type { WorkflowDefinition, WorkflowNode } from '../api/workflowsApi'
+
+/** One step of the given type with these settings, as a settings panel receives it. */
+export function settingsStep(type: WorkflowNode['type'], params: Record<string, unknown>): WorkflowNode {
+  return { id: 's1', type, position: { x: 0, y: 0 }, data: { title: 'Step', params } }
+}
 
 /** A workflow node at `(0, y)`; `params` is set only when given. */
 export function wfNode(id: string, type: string, title: string, y = 0, params?: Record<string, unknown>) {

@@ -14,6 +14,7 @@
  */
 import { z } from 'zod';
 
+import { SUPERVISOR_ALARM_FLAG } from '../stacks/engineering-runtime';
 import { PERFORMANCE_TIER_CONTEXT_KEY } from '../utils/performance-tier';
 import { SNAPSTART_CONTEXT_KEY, SNAPSTART_FUNCTION_IDS } from '../utils/snapstart';
 import { WAF_CONTEXT_KEY } from '../utils/waf';
@@ -52,7 +53,13 @@ const FIXED_COST_TYPES: readonly (readonly [string, string])[] = [
   ['AWS::Neptune::', 'a Neptune cluster resource (hourly)'],
   ['AWS::GlobalAccelerator::', 'a Global Accelerator (hourly)'],
   ['AWS::DAX::', 'a DynamoDB Accelerator (DAX) cluster (hourly)'],
+  // AgentCore Runtime is pay per session (each session's CPU and memory while it lives): only capacity reserved
+  // ahead of use is a fixed cost.
+  ['AWS::BedrockAgentCore::CapacityProvider', 'an AgentCore capacity provider (capacity reserved ahead of use)'],
   ['AWS::Route53::HostedZone', 'a hosted zone created by the app (monthly; import an existing zone by id instead)'],
+  // Alerting's own alarms are made at run time, once an administrator turns it on (docs/deployment.md), never by the app.
+  ['AWS::CloudWatch::Alarm', 'a CloudWatch alarm (monthly per alarm)'],
+  ['AWS::CloudWatch::CompositeAlarm', 'a CloudWatch composite alarm (monthly per alarm)'],
 ];
 
 const matchesType = (type: string, pattern: string): boolean => (
@@ -74,6 +81,12 @@ const BILLED_ENDPOINTS: ReadonlyMap<unknown, string> = new Map([
 ]);
 const interfaceEndpoint: Rule = (type, properties) => (
   type === 'AWS::EC2::VPCEndpoint' ? BILLED_ENDPOINTS.get(properties.VpcEndpointType) : undefined
+);
+
+// A runtime on a capacity provider runs on reserved capacity; one without (the engineering agents') bills per session.
+const agentCoreCapacity: Rule = (type, properties) => (
+  type === 'AWS::BedrockAgentCore::Runtime' && properties.CapacityProviderConfiguration !== undefined
+    ? 'an AgentCore runtime on a capacity provider (capacity reserved ahead of use)' : undefined
 );
 
 const snapStart: Rule = (type, properties) => (
@@ -127,7 +140,7 @@ const cloudFrontDedicatedIp: Rule = (type, properties) => (
 );
 
 const RULES: readonly Rule[] = [
-  byType, interfaceEndpoint, snapStart, provisionedConcurrency, dynamoProvisioned, kinesisProvisioned, apiGatewayCache, cloudFrontDedicatedIp,
+  byType, interfaceEndpoint, agentCoreCapacity, snapStart, provisionedConcurrency, dynamoProvisioned, kinesisProvisioned, apiGatewayCache, cloudFrontDedicatedIp,
 ];
 
 /** One fixed-cost finding: where, and the message the gate prints. */
@@ -182,7 +195,7 @@ export interface CountedFixedCost {
  *   ({@link runtimeFixedCostFindings}): since decision 19 a workspace's credentials are SSM Parameter Store
  *   SecureStrings (standard tier, no monthly fee), not one secret per workspace.
  *
- * The single-flag opt-in shapes (`snapStart`, `enableWaf`, `performanceTier`) are not counted: their registries above list
+ * The opt-in shapes (`snapStart`, `enableWaf`, `performanceTier`, `engineeringSupervisorAlarm`) are not counted: their registries above list
  * hourly-priced resources only. Every free context-gated feature is in the all-features synth, so a key or secret
  * one of those adds still fails here.
  */
@@ -303,4 +316,10 @@ export const OPT_IN_FIXED_COSTS: Readonly<Record<string, OptInFixedCost>> = {
   // `-c performanceTier=true` (lib/utils/performance-tier.ts): every fixed-cost opt-in at once, SnapStart and WAF.
   // (It also turns on Cognito Plus, which is billed per active user, not a fixed cost, so the gate has nothing to find.)
   performanceTier: { context: { [PERFORMANCE_TIER_CONTEXT_KEY]: 'true' }, expected: [...SNAPSTART_FINDINGS, ...WAF_FINDINGS] },
+  // `-c engineeringSupervisorAlarm=true`, with `-c engineeringAgents=true` (lib/stacks/engineering-runtime.ts): one
+  // CloudWatch alarm on the engineering supervisor's errors.
+  [SUPERVISOR_ALARM_FLAG]: {
+    context: { engineeringAgents: 'true', [SUPERVISOR_ALARM_FLAG]: 'true' },
+    expected: [/^AWS::CloudWatch::Alarm EngineeringRuntimeSupervisorErrorsAlarm[0-9A-F]{8}$/],
+  },
 };

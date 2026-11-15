@@ -179,7 +179,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # Table: 3 since 4d-1, the third voc-workspaces, read only for a workspace's META status
     # (shared/ws_repo.py `workspace_is_active`, the control plane, not a data-path table).
     'lambda/aggregator/handler.py': (2, {'METRIC#': 1, 'Table': 3, 'meta.client': 2, 'transact': 2}),
-    'lambda/api/agents_handler.py': (3, {'get_aggregates_table': 1}),
+    # Its three Table calls since 7.35.00: the engineering views' handles (voc-engineering, the engineering rows of
+    # voc-agents), only with -c engineeringAgents=true; see the engineering modules' entries below.
+    'lambda/api/agents_handler.py': (3, {'Table': 3, 'get_aggregates_table': 1}),
     'lambda/api/ballots_handler.py': (2, {'get_aggregates_table': 1, 'get_projects_table': 2, 'meta.client': 1, 'transact': 1}),
     'lambda/api/chat_handler.py': (3, {'Table': 1}),
     'lambda/api/data_explorer_handler.py': (
@@ -371,6 +373,29 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # voc-participants' keys, moved here in 7.31.00 from shared/participants_store.py, participants_lists.py,
     # participants_asks.py and participants_erasure.py (each a workspace's too, through scoped_pk).
     'lambda/shared/participants_keys.py': (3, {'EMAIL#': 1, 'LIST#': 1, 'LISTS': 1, 'PEOPLE': 1, 'PERSON#': 1}),
+    # The autonomous engineering agents (voc-autonomous, merged in 7.35.00; built only with -c engineeringAgents=true,
+    # administrators only): their own tables and objects (voc-engineering, voc-agents' engineering rows, the
+    # voc-eng-workspace bucket, the raw bucket's engineering/ prefix), the deployment's, as every agents module's until
+    # agents move per workspace (phase 3). The Agents API's three Table calls are the engineering views' handles.
+    'lambda/engineering/agent_memory/store.py': (3, {'transact': 1}),
+    'lambda/engineering/board/store.py': (3, {'transact': 2}),
+    'lambda/engineering/connectors/cache.py': (3, {'put_object': 2}),
+    'lambda/engineering/connectors/connections.py': (3, {'meta.client': 3, 'transact': 3}),
+    # The broker's one Table call is voc-aggregates: the starter's way of working (USERFLAGS#{sub}, shared/ai_mode.py),
+    # a person's flag, the deployment's on this branch; when the dial moves per workspace, the push gate moves with it.
+    'lambda/engineering/connectors/handler.py': (3, {'Table': 1}),
+    'lambda/engineering/conversation/store.py': (3, {'transact': 1}),
+    'lambda/engineering/flow/record.py': (3, {'transact': 1}),
+    'lambda/engineering/knowledge/store.py': (3, {'transact': 1}),
+    'lambda/engineering/rows.py': (3, {'transact': 1}),
+    'lambda/engineering/runtime/delivery.py': (3, {'meta.client': 1, 'transact': 1}),
+    'lambda/engineering/runtime/handler.py': (3, {'Table': 4}),
+    'lambda/engineering/runtime/harness/main.py': (3, {'put_object': 1}),
+    'lambda/engineering/runtime/runs.py': (3, {'meta.client': 2, 'transact': 2}),
+    'lambda/engineering/runtime/sessions.py': (3, {'meta.client': 2, 'transact': 2}),
+    'lambda/engineering/settings.py': (3, {'meta.client': 1, 'transact': 1}),
+    'lambda/engineering/skills/store.py': (3, {'transact': 1}),
+    'lambda/engineering/workspace/store.py': (3, {'put_object': 1}),
 }
 
 

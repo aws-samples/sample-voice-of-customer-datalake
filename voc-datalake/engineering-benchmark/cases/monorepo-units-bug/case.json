@@ -1,0 +1,15 @@
+{
+  "schema": "voc-bench/1",
+  "id": "monorepo-units-bug",
+  "kind": "bug",
+  "title": "Celsius to Fahrenheit is 64 degrees off",
+  "task": "In this monorepo, packages/units converts 0 C to -32 F instead of 32 F. Fix packages/units/src/convert.js so its tests pass (node --test, run in packages/units). Change nothing outside packages/units, and do not change its tests.",
+  "fixture": "repo",
+  "check": {
+    "argv": ["node", "--test"],
+    "cwd": "packages/units",
+    "timeout_seconds": 60,
+    "protected": ["packages/stock", "packages/units/test"],
+    "allows": ["packages/units/src"]
+  }
+}

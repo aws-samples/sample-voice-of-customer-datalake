@@ -42,10 +42,13 @@ its results stay in your projects. To run a plan again, ask again and approve th
   but they always show an approval card when they run. The plan card marks them "will ask again".
 - **Some writes are never part of a plan** (`CARD_ONLY_WRITE_TOOLS`): `save_brand_settings`, `create_user`,
   `create_users`, `update_user`, `set_user_access`, `import_reviews`, `save_radar_brands`, `run_radar_scan`,
-  `create_participant_list`, `add_participants` and `draft_prototype_revision`. They stay ordinary chat writes with
-  their own card, because their cards re-check what you saw, send several requests, carry rows from the
-  conversation, or call an API the plan runner cannot reach; a prototype draft is for the person on the
-  prototype's page, who applies it there ([prototype-builder.md](prototype-builder.md), part 2).
+  `create_participant_list`, `add_participants`, `draft_prototype_revision`, `set_prototype_walkthrough` and
+  `propose_knowledge_refresh`. They stay ordinary chat writes with their own card, because their cards re-check what
+  you saw, send several requests, carry rows from the conversation, or call an API the plan runner cannot reach; a
+  prototype draft is for the person on the prototype's page, who applies it there
+  ([prototype-builder.md](prototype-builder.md), part 2), a walkthrough's steps are written against the version the
+  card previews (part 1), and a knowledge refresh starts an engineering run, which only an administrator's Approve on
+  its own card may do.
 - **PR/FAQ and PRD writing follows your way of working with AI.** A plan step that writes a PR/FAQ or PRD is
   autonomous AI writing: the Projects API refuses it unless you (and the project owner) work AI-driven, and the
   assistant does not propose such a step for anyone else ([ways-of-working.md](ways-of-working.md)).
@@ -197,8 +200,10 @@ runtime and MCP tokens use.
 - Project writes go through the Projects API, which applies per-project access (`shared/project_access.py`).
 - Every read uses the approver's category and source scope (`shared/category_access.py`).
 - Think steps get the read-only server tools of their pack plus `core`. They never get web search, the plan tools
-  or the user directory (`list_users`, `get_user_access`), so `voc-plan-step` has no Users API grant. In `scrapers`
-  and `settings` a think step reads as an admin only while the approver still is one.
+  or the user directory (`list_users`, `get_user_access`), so `voc-plan-step` has no Users API grant. In `scrapers`,
+  `settings` and `agents` (its admin-only read, `get_engineering_run`) a think step reads as an admin only while the
+  approver still is one: the conductor re-checks `admins` in Cognito before the step (a directory it cannot reach
+  stops the step), and the step's other reads of that pack then see what an administrator's chat on the page would.
 - `run_agent` and `cancel_agent_run` are admin-only tools, matching their routes.
 - The workspace (docs/multi-workspace.md, "Request flow"): the approval's own `X-Workspace-Id` is kept on the plan
   (`workspace_id` on its META row; none when the request names no workspace, and a header that is not a workspace id

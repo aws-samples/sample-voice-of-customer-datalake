@@ -9,7 +9,7 @@ import { applyAppAspects } from '../utils/app-aspects';
 import { SYNTH_ACCOUNT, SYNTH_REGION, committedFeatureFlags } from './synth-app';
 
 /** VocCoreStack alone, constructed but not synthesized (for suites that read the construct tree). */
-export function buildCoreStack(context: Record<string, unknown> = {}): VocCoreStack {
+export function buildCoreStack(context: Record<string, unknown> = {}, deploymentPrefix?: string): VocCoreStack {
   // Skip asset bundling (Docker) — template assertions only need structure.
   const app = new cdk.App({
     context: {
@@ -21,12 +21,13 @@ export function buildCoreStack(context: Record<string, unknown> = {}): VocCoreSt
   });
   const stack = new VocCoreStack(app, 'TestCoreStack', {
     env: { account: SYNTH_ACCOUNT, region: SYNTH_REGION },
+    deploymentPrefix,
   });
   // The rewrites bin/voc-datalake.ts applies, so these suites assert the template that deploys.
   applyAppAspects(app, { auditRowTables: stack });
   return stack;
 }
 
-export function synthCoreTemplate(context: Record<string, unknown> = {}): Template {
-  return Template.fromStack(buildCoreStack(context));
+export function synthCoreTemplate(context: Record<string, unknown> = {}, deploymentPrefix?: string): Template {
+  return Template.fromStack(buildCoreStack(context, deploymentPrefix));
 }

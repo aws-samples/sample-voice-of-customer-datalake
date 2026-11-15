@@ -111,6 +111,113 @@ Building a workflow by hand (the built-in can be rebuilt from an empty canvas, p
 - With nothing selected the panel shows the workflow's name, description and an outline that selects any step or
   loop, so every setting is reachable from the keyboard.
 
+### Engineering flows (`voc-workflow/2`)
+
+The opt-in engineering agents' flows are workflows too, with `schema: 'voc-workflow/2'` (`shared/workflow_engineering.py`
+holds their steps and rules; `shared/workflow_schema.py` validates both kinds). An engineering flow has `start`, `end`
+(an end with `status: needs_human` is the human decision point) and the engineering steps: `agent` (`role`,
+`skill_version`, `model`, `budget_share`), `map` (`shard_by`, `shard_cap`) and `reduce`, `board` (`posters`,
+`claimers`, `until`), `quality_gate` (the gate's own settings: `max_rounds`, `packs`, `final_go_model`, `reviewers`),
+`learning_loop`, `self_improvement`, `memory` (`mode`, `scope`, `limit`) and `stop_at_pr`. A save or
+`POST /workflows/validate` refuses, pinned to the step: a setting off its range; a map that does not meet exactly one
+reduce on every way out (a way to an end without one would leave its shards unreduced), or a reduce with no map; a quality gate without its `pass` (GO) and `fail` (NO-GO) arrows, or whose `fail`
+arrow does not go to a human decision point; a label on any other arrow; a learning loop that is neither last nor
+right after a board; self-improvement that is neither alone in its flow nor last; an arrow out of a stop at PR; agents'
+budget shares above 1 in all; and a committer or PR author (an agent, or a board's claimers) whose work can end
+anywhere but a stop at PR or a human decision point. There is no merge step. An engineering flow declares no loops (its
+board does the repeating) and holds no agents step; an agents workflow holds no engineering step.
+
+An engineering flow may carry `budget: {monthly_usd}`: what its runs may spend in a calendar month (UTC),
+in dollars and cents from 0.01 to 100,000 (more decimals are refused, not rounded, so the amount approved is the
+amount kept; else 400, and 400 on an agents workflow; the editor's Monthly budget field
+under the flow's description, empty for none; leave `budget` out for none, never `null` in the assistant's draft). It
+is recorded with the flow. A run started with it (`POST /agents/engineering/runs`, below, which reads it from the
+stored flow, never from the request) says so in
+its conversation as its flow's month passes 80%, 100% and every further 50% up to 1,000%
+(docs/autonomous-engineering.md, Cost),
+session time only until tokens are priced (a deployment that sets every AgentCore rate to 0 never alerts); it
+stops nothing unless an administrator turns the hard cap on (`PUT /agents/engineering/settings`): then a run's first
+start is capped at what is left of the month, or refused when nothing is. A flow saved without one reads and saves as before. Only a signed-in administrator saves a workflow
+(a delegated credential, an MCP token or an agent, gets 403), so the assistant changes a budget only through its
+`create_workflow` and `update_workflow` cards, which say it in dollars ("Monthly budget set to $80.00", "Monthly
+budget: $50.00 → $80.00", or removed) for the person approving it; a duplicate keeps its source's budget.
+
+The two kinds never mix: no agent runs an engineering flow (`POST`/`PUT /agents` refuse one), a saved workflow keeps
+its kind (a save of the other kind over it is refused: save it as a new workflow), and the agents' runtime refuses a
+`voc-workflow/2` definition. `GET /workflows` lists both kinds, each with its `kind` (`agents` | `engineering`): the
+editor opens either, and an agent's workflow picker offers only `agents` ones. An engineering flow is a
+definition, like any workflow: one already saved opens and saves in every deployment, a new one (`POST /workflows`: New, the
+editor's Save as, an imported draft saved as new; and the assistant's `…/duplicate`) is created only where the opt-in engineering module is on (409 elsewhere,
+on the server, whoever asks), and it runs only there. The library has **New workflow** (an agents workflow) and, only where the module is
+on (`config.json` `features.engineering`), **New engineering flow**; an engineering flow's palette shows **Engineering** (with Start and
+End), its settings panels set each step's settings (no step role and no loops: its board does the repeating), and its
+graph rules are mirrored as you edit (`WorkflowEditor/engineeringRules.ts`, held to the
+server by the shared fixture `frontend/src/test/engineeringFlows.json`). The AI assistant drafts one too, with its
+workflow tools (`validate_workflow`, then `create_workflow` or `update_workflow` behind an approval card), and the
+web app's card for a new one checks the module too, before the server does (one already saved is changed anywhere,
+as in the editor).
+
+**The default engineering flows.** Six templates ship in one file that the server and the web app both read,
+`voc-datalake/lambda/shared/engineering_flow_templates.json` (`shared/engineering_templates.py`; every one validated by
+the server's own rules in `shared/test/test_engineering_templates.py`): Understand the repository, Issue triage, Bug
+hunt and fix, Feature from an issue or a PRD, PR review and Self-improvement ([docs/autonomous-engineering.md](autonomous-engineering.md#how-the-agents-work-together)).
+`GET /workflows/templates` lists them, each with its `template_id`, `name`, `description` and `definition`, for an
+administrator (403 for anyone else, a delegated credential included) where the module is on (404 elsewhere). A
+template is never stored and there is no "create from template" route: a copy is created by `POST /workflows` with
+its definition, so it gets that route's validation and its 409 where the module is off. In the library, beside
+**New engineering flow**, **Start from a template** lists the six with their descriptions; choosing one opens the
+editor on an unsaved copy of the server's definition (`/agents/workflows/templates/<template_id>`, read with
+`GET /workflows/templates`, named and described in the person's language), with no Save as, Reset or History until **Save** creates it and opens it on its own page.
+
+### An engineering run: monitor, board, conversation, reports
+
+Where the engineering agents are on (`ENGINEERING_AGENTS=on`, with their table and workspace bucket), the Agents API
+lets an administrator acting for themselves read a run and act on it (403 for anyone else, a delegated MCP or agent
+credential included, like a run's decision; 404 for an unknown run, and for everyone while the module is off). There is
+no MCP tool for engineering runs yet (docs/mcp.md). The web app's AI assistant answers "what is agent X doing" for an
+administrator with `get_engineering_run {run_id?, agent?}` (read only, the run on screen by default: the run and each
+agent's status, task, step, why it looks stuck and recent tool calls, live agents first, the agents' words passed to
+the model as data), through these same routes and gate (in a plan, only a think step whose approver the conductor
+re-checks as an administrator before the step, as with the assistant's other admin-only reads). "Refresh the knowledge pack" through the assistant is built (6.27.00):
+`propose_knowledge_refresh {connection, commit?, language?}` (administrators) only proposes, as a card naming the action,
+the repository connection, the commit (or the default branch's head, whose full id the administrator enters on the card),
+the saved Understand flow and an estimate of the minutes and cost; only an administrator's Approve starts the flow, with
+`POST /agents/engineering/runs` in that administrator's own session (the same gate: anyone else and a delegated credential
+get 403; the run records who started it), never the model and never a plan step; with no Understand flow saved, the card's
+Approve saves one from its template and starts nothing ([autonomous-engineering.md](autonomous-engineering.md#how-the-agents-work-together)). An administrator starts a run from a saved engineering flow's page (**Start a run**:
+the repository connection, the commit, the language and the goal, checked as the server checks them) or with
+`POST /agents/engineering/runs` (below); the run monitor then opens on it. The web app's page for a run is `/agents/engineering/<run_id>`:
+its flow (the run's own copy, as its start wrote it, each step lit as the conductor reads it: done, under way, waiting at a
+person, not run yet; for a run without a copy, the steps its agents are on: [autonomous-engineering.md](autonomous-engineering.md#the-flow-a-run-follows)),
+and the Agents, Board, Conversation and Reports panels (the reports by
+level, goal first; the one chosen shows its latest version's Markdown, rendered as Markdown only, with a picker for
+the earlier versions). On a run under way, an administrator acts from the page: signals and answers, and on the Board
+tab posts a task for a role, and on a task that has not ended (never the coordinator's) takes it, blocks it with a reason
+(ending another person's hold, either way, asks first), sets its priority, and moves a task they hold (to needs a
+person only by Block, which says why) or gives it back to the agents.
+The reads work wherever the module is on. The actions (signals, answers, board actions) need the bus named on the Agents API,
+signals the runtime too and board actions the board's function (which the stack names and grants), with their grants and the bus's resource policy, which the opt-in stack does not set yet:
+until it does, they answer 503 (the page offers them only where the bus and the runtime are named,
+`actions_available`, which does not check the board's function: the stack always names it with the module).
+
+| Method | Path | Answers |
+|---|---|---|
+| POST | `/agents/engineering/runs` `{workflow_id, connection, commit, language, goal, issue?}` | an administrator acting for themselves starts a run of a saved engineering flow: each field checked (a saved `voc-workflow/2` flow, else 400; a connection's short id, 1 to 63 letters, digits or `-`; a full commit id of 40 hexadecimal characters, kept in lower case; a language with an agent runtime, `java`, `node`, `python` or `rust`; a goal on one line of 1 to 500 characters, credential-shaped text redacted; since 7.09.00 an optional `issue`, the number of the issue the run starts from, a whole number from 1 to 2,147,483,647, recorded on the run's META as given with its address on the stored connection's host, labelled unverified ([docs/autonomous-engineering.md](autonomous-engineering.md), "The run's issue and pull request"); any other field 400, so the request sets neither the budget, the caps, the repository nor the actor). The API mints the run's id (a ULID) and invokes the start function (`ENGINEERING_START_FUNCTION`, voc-engineering-start: the runtime's code, which takes `start_run` and refuses every other action; the API's role may invoke it and never the runtime itself) with the stored flow's monthly budget, a task cap of 100, the deployment's cost cap (`-c engineeringRunCapUsd`, 50 USD by default; with the hard cap on, the runtime keeps the smaller of it and what is left of the flow's month) and token cap (`-c engineeringRunTokenCap`, 10 million by default), the stored connection's repository (`owner/name`, or GitLab's project path) as the run's `repo` and its default branch as the run's `default_branch` (400 for a connection that is not stored), with an `issue` the connection's host too, and the person as the actor (`started_by` on the run and its `RUNLOG#` row: who and when, D4). The start function writes the run, switches the supervisor's rule on and hands the coordinator's launch on to voc-engineering-runtime (`launch_coordinator`, asynchronous; a launch that fails sends the run to a person), so the API answers 202 `{run: {run_id, status, workflow_id, started_by}}` as soon as the run is written. The runtime's refusals, all before anything is written, are 409 in its words (no image for the language in this deployment, the hard cap with nothing left of the flow's month); a read the start needed that failed (the hard cap's setting, the flow's month total) is 503 "start the run again" (nothing written); any start that wrote or may have written its run is 503 naming it, with `run_id` beside the message (a failure once the run is written: the rule, the hand-on, a launch under way; a failure whose read back of the run failed too; a failure of an unknown kind; no answer within 25 s; a dropped connection): open its monitor, never start another, and the dialog offers **Open the run** with Start kept off; only a start known to have written nothing (its write failed, the function never reached or refused by the service) is 503 "start it again". The web app's flow page has **Start a run** (administrators, with `features.engineering`), which opens the new run's monitor. No MCP tool |
+| GET | `/agents/engineering/{run_id}` | the run monitor (`lambda/engineering/monitor.py`): the run (goal, repository, flow, status, times, messages numbered), and each agent as the supervisor last saw it (its session row in the run's partition of the engineering table, `WS#<ws>#RUN#<run>` / `AGENT#<agent>`: role, task, status, continuation, step, session state and age, heartbeat age, last progress, why it looks stuck, its recent tool calls, session-seconds, tokens in and out per model), with the totals per model and for the run, and the run's flow budget (`run.budget`: `{monthly_usd, alert_percent, alert_month}`: the highest level this run saw its flow's month pass, until it ended; null for no budget), and the flow it follows (`run.flow_definition`, the run's own copy, which the page draws; `run.flow_revision`, `run.flow_copied_at`, `run.flow_steps` `{<step>: <status>}` and `run.flow_outcome` `{outcome, at, reason}`, from the run's own copy and the conductor; all null for a run started without a flow), and, since 7.09.00, the issue it was started from (`run.issue` `{host, number, url, verified}`) and its draft pull request (`run.pull_request` `{host, number, url, head, base, superseded}`, `superseded` the earlier numbers on the same branch; GitLab's merge request), each null for none and read back only when its address is the run's repository's own on its host's own domain; the page links them in a new tab; and, since 7.10.00, `reactions`: the latest read of people's reactions on the host to that pull request (null for none; its state, the reviews and comments kept by the trust filter, each body plain text, the counts, each reviewer's latest state, a revert, people's commits after the merge (`edits_after_merge.people_commits`: no bot's, no agent's), what was dropped, when and who asked (`schedule` or `human:<subject>`): docs/autonomous-engineering.md, "People's reactions on the host"). Cost comes when the run control is wired |
+| POST | `…/reactions` `{}` | since 7.10.00: an administrator acting for themselves asks for an ended run's reactions to be read now (the run monitor's "Read reactions now", behind a confirmation): 202 `{reactions: {status: 'asked'}}`, the read handed on and shown once recorded; 409 while the run has not ended; 429 `{error, retry_after}` when this run's read was asked for in the last 60 minutes (a hand-on that failed releases its ask); 503 when the read could not be handed on; 403 for anyone else, a delegated credential included; 404 while the module is off or for an unknown run |
+| GET | `…/board`, `…/conversation?after=&limit=`, `…/reports`, `…/reports/{level}/{subject}?version=` | the task board with each task's history (and, in a run that follows its flow, the step it was posted for, `flow_step`, and the map's shard it works on, `shard`; null for none), a page of the conversation, the report index, one report (each conversation page reads the 20 below `after` again, then at most `limit` above it, and moves on to its last seq: keep each message once by `seq`) |
+| POST | `…/signals` `{signal, task_id?, attempt?, note?, confirm?}` | `save`, `pause`, `resume`, `shutdown` or `stop_now` (no checkpoint: needs `confirm: true`), to the agent on a task at the attempt you saw, or (no `task_id`) to the whole run: 409 when the task has moved on since (another attempt, no holder, back to open, or ended), the run has ended, or the supervisor refuses it (its reason: a stopped run, a spent budget). The conversation records the request first, as `signal.<name>` addressed to the run (who asked what of whom, the note: a signal is never applied unrecorded); then the supervisor applies it (`voc-engineering-runtime`, `{action: signal}` with the attempt for one agent; idempotent per agent), and a second record says what came of it. An agent on another attempt by then answers 409 (stale: nothing done). An unreachable supervisor, or an agent another move holds (busy), answers 503 "send the signal again" (a new request, applied once). Answers `{signal: {…, agents: {agent: status}, applied: {agent: bool}}}`: `applied` is false for an agent the signal did nothing to (busy, its move failed, nothing to do) |
+| POST | `…/board/tasks` `{role, title, spec, priority?, parent_task?, flow_step?, shard?}` | a person posts a task for a role that claims tasks, within the run's caps (an equal task still under way is answered, `duplicate`); never the coordinate task. In a run that follows its flow, `flow_step` names a live step (for a role it takes; `shard`, one of a map's shards left for a step after the map), else it is their own task, off the flow, which the coordinator may still launch; 409 for a step that is not live |
+| POST | `…/go` `{}` | a person's go on the run, which an AI-assisted run's push and pull request wait for (TENETS.md tenet 3; the broker reads it, docs/autonomous-engineering.md "Repository connectors"): the board's function writes one create-only `GO#person` row `{by: human:<subject>, at}` while the run is live, answered `{go: {by, at, created}}`; a go already there is answered as it stands (`created: false`), whoever asks, never replaced; 409 for an ended run. No event and no bus needed: the row is the record. REST only (no MCP tool, no button yet) |
+| POST | `…/board/tasks/{task_id}/{action}`: `priority {priority}`, `block {reason, over?}`, `take {over?}`, `move {to}`, `release {}` | a person re-prioritises a task that has not ended, blocks it (it needs a person, with their reason; its holder's lease cleared, so the agent on it can move it no more; the supervisor reads the ended task as ended and ends that agent's session, never continuing it), takes it (they hold it with no expiry, so its agent can move it no more, the supervisor leaves it alone, and a signal to it answers 409), or moves a task they took on (the board's moves, but never to `needs_human`: that is a block's, which says why; 400), or releases a task they took (open again at its next attempt, their hold cleared, published to its role as `task.posted` like a re-post; it stays open until the run coordinator, listing the board, launches an agent of its role for it, which starts from the task's spec with no checkpoint of the earlier attempt; 403 for a task they do not hold). A take or block ends another person's hold only with `over: true` (else 409), and holds the holder it read; a priority needs no `over`, even on a task another person holds, since it ends no hold. 409 for a task that has ended or moved on, 403 for the coordinate task. Each change is the board store's write with a history row naming `human:<subject>`, made by the board's own function (the API invokes it directly, `ENGINEERING_BOARD_FUNCTION`, and its role writes none of the table; without it, 503), then published as the board's `task.*` from the API's own source with `from.kind` human; a retry of it publishes the same event again while it is still the task's last change, and a no-op (a priority the task already has when its last change was something else) is answered and publishes nothing. A publish that fails after the write answers 503 "the board changed but its event was not published: retry", and a board function that fails after its write answers 503 "the board could not be reached: retry": either way, retry the same action before any other, or its event is not sent (the change and its history row stay). The API publishes only an event that is this person's action (one `task.*` of this run, and of this task, from `human:<subject>`); anything else the board hands back, an event that is not voc-msg/1 too (the board's fault, never the person's words: it refuses a title shaped like a credential before writing and cuts and redacts each summary), is a 503 and nothing is sent |
+| POST | `…/messages` `{to: 'conductor' \| 'agent', agent?, text, thread_id?}` | a person's answer (`msg.answer`, at most 1 KB, refused if it holds something shaped like a credential) to the run's conductor or one of its agents, on the thread it answers (a new one if left out); the conversation records it |
+| GET | `/agents/engineering/settings` | the administrators' hard cap on engineering runs (`engineering/settings.py`, its row in voc-agents): `{hard_cap, updated_at, updated_by}`, off by default (docs/autonomous-engineering.md, Cost). Administrators only (a delegated credential gets 403); 404 while the module is off; 503 when the read fails (retry) |
+| PUT | `/agents/engineering/settings` | `{hard_cap: true \| false}`: an administrator turns the hard cap on or off, saved with its history row; the runtime reads it at a budgeted start. 400 for any other body, 403 for anyone but a signed-in administrator, 404 while the module is off, 503 when the write fails |
+| GET | `/agents/engineering/spend?month=YYYY-MM&by=&workflow=` | what the runs spent in a month (default this one, UTC), from the spend ledger (docs/autonomous-engineering.md, Cost): its totals (dollars priced, tokens in and out, session seconds as `microvm_seconds`) and the same per group, `by` workflow (default), repo, run, agent (as `<run>/<agent>`: each run numbers its own), model or day, biggest first, only one workflow's with `workflow`; one Query of the month, `truncated` past 20,000 rows. 400 for a bad month, grouping or workflow, 503 when the table refuses the read (retry) |
+
+A failed call to the supervisor or the bus answers 503 (retry: the signal is idempotent), and so does a deployment
+without the runtime (`ENGINEERING_RUNTIME_FUNCTION`, for signals) or the bus (`ENGINEERING_BUS_NAME`).
+
 ### Methodology warnings
 
 A valid workflow can still skip the methodology (TENETS.md tenet 2): `start → write_prd → end` writes a PRD with no

@@ -90,6 +90,20 @@ describe('AgentDetail — tabs', () => {
     expect(screen.getByLabelText('Name')).toHaveValue('Scout')
   })
 
+  it("the settings' workflow picker never offers an engineering flow", async () => {
+    route(baseRoutes({
+      'GET /workflows': () => ({ items: [
+        { workflow_id: 'wf_1', name: 'Flow', revision: 7, kind: 'agents' },
+        { workflow_id: 'wf_eng', name: 'Bug hunt', revision: 1, kind: 'engineering' },
+      ] }),
+    }))
+    renderDetail()
+    await findHeading()
+    const picker = screen.getByLabelText('Workflow')
+    expect(await within(picker).findByRole('option', { name: 'Flow · r7' })).toBeInTheDocument()
+    expect(within(picker).queryByRole('option', { name: /Bug hunt/ })).toBeNull()
+  })
+
   it('deep-links a tab with ?tab=', async () => {
     route(baseRoutes())
     renderDetail('/agents/ag_1?tab=instructions')

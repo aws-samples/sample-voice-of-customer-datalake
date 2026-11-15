@@ -1,6 +1,6 @@
 /**
  * Pins what the npm `overrides` for minimatch (GHSA-g3hv-75wg-m249) and quick-temp's rimraf
- * promise, read from the committed lockfiles (CHANGELOG 6.05.00):
+ * promise, read from the committed lockfiles (CHANGELOG 6.05.00 of 2026-11-11):
  *
  * - no installed minimatch in any committed lockfile is in the vulnerable range (>= 7.0.0, < 11.0.1),
  *   except the one copy bundled inside aws-cdk-lib, which npm cannot override;

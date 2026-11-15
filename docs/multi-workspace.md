@@ -513,6 +513,7 @@ platform admin (Control plane); on an older deployment, add the people who manag
 | `model_default` | deployment | the model pinned at deploy (`-c defaultModelId`, `lambda/custom_resources/model_pin.py`), below every pick: split from `model` (7.01.00) so the picks can move into each workspace; a deployment from before the split keeps its pin in `model`'s `model_id`, which still outranks it |
 | `model_quotas`, `image_model_quota` | deployment | the AWS account's Bedrock quotas, cached; every workspace shares them (decision 10) |
 | `alerts` | deployment | alarms on the deployment's own Lambdas and their recipients: the deployment's operations |
+| `engineering` (voc-agents, `SETTINGS#engineering`) | deployment | the engineering agents' hard cap at each flow's monthly budget (`lambda/engineering/settings.py`, only with `-c engineeringAgents=true`): the agents and their flows are the deployment's administrators' until agents move per workspace (phase 3) |
 
 ### The configuration cut-over (7.08.00)
 

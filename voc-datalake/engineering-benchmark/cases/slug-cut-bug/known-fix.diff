@@ -1,0 +1,12 @@
+diff --git a/slugs.py b/slugs.py
+--- a/slugs.py
++++ b/slugs.py
+@@ -11,7 +11,7 @@
+     slug = ''
+     for word in words:
+         candidate = f'{slug}-{word}' if slug else word
+-        if len(candidate) >= max_length:
++        if len(candidate) > max_length:
+             break
+         slug = candidate
+     return slug

@@ -8,6 +8,7 @@ import { useId, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { apiErrorStatus, HTTP_CONFLICT } from '../../../api/apiErrorStatus'
+import RadioChoices from '../../../components/RadioChoices/RadioChoices'
 import StickyActionBar from '../../../components/StickyActionBar/StickyActionBar'
 import { VERDICTS } from '../../../api/decisionSchema'
 import type { ProjectDocument } from '../../../api/types'
@@ -33,23 +34,6 @@ function Field({ label, children }: Readonly<{ label: string; children: (id: str
       <label htmlFor={id} className="text-sm font-medium text-text">{label}</label>
       {children(id)}
     </div>
-  )
-}
-
-function VerdictPicker({ value, onChange }: Readonly<{ value: DecisionDraft['verdict']; onChange: (v: DecisionDraft['verdict']) => void }>) {
-  const { t } = useTranslation('decisions')
-  return (
-    <fieldset className="space-y-1">
-      <legend className="text-sm font-medium text-text">{t('verdict.label')}</legend>
-      <div className="flex flex-wrap gap-3">
-        {VERDICTS.map((verdict) => (
-          <label key={verdict} className="inline-flex items-center gap-2 text-sm">
-            <input type="radio" name="verdict" value={verdict} checked={value === verdict} onChange={() => onChange(verdict)} />
-            {t(`verdict.${verdict}`)}
-          </label>
-        ))}
-      </div>
-    </fieldset>
   )
 }
 
@@ -96,7 +80,9 @@ export default function DecisionForm({ initial, documents, isSaving, error, onSa
       <Field label={t('fields.title')}>
         {(id) => <input id={id} className="input" value={draft.title} maxLength={200} required onChange={(e) => set('title', e.target.value)} />}
       </Field>
-      <VerdictPicker value={draft.verdict} onChange={(v) => set('verdict', v)} />
+      <RadioChoices legend={t('verdict.label')} choices={VERDICTS} value={draft.verdict} onChange={(v) => set('verdict', v)}
+        display={(verdict) => t(`verdict.${verdict}`)} legendClassName="text-sm font-medium text-text"
+        rowClassName="flex flex-wrap gap-3" labelClassName="inline-flex items-center gap-2 text-sm" />
       <Field label={t('fields.rationale')}>
         {(id) => <textarea id={id} className="input min-h-24" value={draft.rationale} maxLength={4000} required onChange={(e) => set('rationale', e.target.value)} />}
       </Field>

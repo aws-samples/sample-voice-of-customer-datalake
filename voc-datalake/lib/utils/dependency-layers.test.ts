@@ -17,7 +17,7 @@ import { synthIngestionStacks } from '../test-support/ingestion-stack-fixture';
 import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import {
-  EMAIL_INTAKE_LAYER_DIR, SIGNING_LAYER_DIR, SIGNING_LAYER_FUNCTION_IDS, attachSigningLayer,
+  EMAIL_INTAKE_LAYER_DIR, ENGINEERING_CI_LAYER_DIR, SIGNING_LAYER_DIR, SIGNING_LAYER_FUNCTION_IDS, attachSigningLayer,
 } from './dependency-layers';
 
 const LayersSchema = z.looseObject({
@@ -82,6 +82,10 @@ describe('the signing layer (cryptography)', () => {
     expect(requirements(EMAIL_INTAKE_LAYER_DIR)).toStrictEqual(['lxml>=6.1.3']);
     expect(requirements('lambda/layers/processing-deps').join(' ')).not.toContain('cryptography');
     expect(requirements('lambda/layers/ingestion-deps').join(' ')).not.toContain('lxml');
+  });
+
+  it('pins the engineering broker\'s YAML reader exactly, in a layer of its own', () => {
+    expect(requirements(ENGINEERING_CI_LAYER_DIR)).toStrictEqual(['PyYAML==6.0.3']);
   });
 });
 

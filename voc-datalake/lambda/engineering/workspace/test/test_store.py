@@ -1,0 +1,106 @@
+"""The workspace bucket on moto: writes are create-only, reads are bounded and a missing key reads as None."""
+from __future__ import annotations
+
+from collections.abc import Iterator
+from typing import Any
+from unittest.mock import MagicMock
+
+import boto3
+import pytest
+from botocore.exceptions import ClientError
+from moto import mock_aws
+
+from engineering.workspace import store as store_module
+from engineering.workspace.store import WorkspaceStore
+
+BUCKET = 'voc-engineering-workspace'
+
+
+@pytest.fixture
+def workspace() -> Iterator[WorkspaceStore]:
+    with mock_aws():
+        s3 = boto3.client('s3', region_name='us-east-1')
+        s3.create_bucket(Bucket=BUCKET)
+        yield WorkspaceStore(s3, BUCKET)
+
+
+def test_an_object_is_written_once(workspace: WorkspaceStore) -> None:
+    assert workspace.put_once('ws/default/reports/r/goal/r/v0001.json', '{"a": 1}', 'application/json')
+    assert not workspace.put_once('ws/default/reports/r/goal/r/v0001.json', '{"a": 2}', 'application/json')
+    assert workspace.read_text('ws/default/reports/r/goal/r/v0001.json') == '{"a": 1}'
+    assert workspace.read_text('ws/default/nothing') is None
+
+
+def test_a_read_is_bounded(workspace: WorkspaceStore, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(store_module, 'MAX_READ_BYTES', 4)
+    workspace.put_once('k', 'abcdefgh', 'text/plain')
+    assert workspace.read_text('k') == 'abcd'
+
+
+def test_an_empty_object_reads_as_empty_text(workspace: WorkspaceStore) -> None:
+    workspace.put_once('empty.jsonl', '', 'application/x-ndjson')
+    assert workspace.read_text('empty.jsonl') == ''
+    s3: Any = MagicMock()
+    s3.get_object.side_effect = ClientError({'Error': {'Code': 'InvalidRange', 'Message': 'no byte 0'}}, 'GetObject')
+    assert WorkspaceStore(s3, BUCKET).read_text('empty.jsonl') == ''
+
+
+def test_other_s3_errors_are_raised() -> None:
+    s3: Any = MagicMock()
+    denied = ClientError({'Error': {'Code': 'AccessDenied', 'Message': 'no'}}, 'GetObject')
+    s3.get_object.side_effect = denied
+    s3.put_object.side_effect = denied
+    workspace = WorkspaceStore(s3, BUCKET)
+    with pytest.raises(ClientError):
+        workspace.read_text('k')
+    with pytest.raises(ClientError):
+        workspace.put_once('k', 'x', 'text/plain')
+
+
+def test_a_reader_without_listbucket_reads_a_denied_object_as_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without s3:ListBucket, S3 answers a missing key 403: only an opted-in reader takes that as missing, and it logs
+    each one (a KMS or policy denial looks the same)."""
+    warnings: list[Any] = []
+    counted: list[str] = []
+    monkeypatch.setattr(store_module.logger, 'warning', lambda _message, **kwargs: warnings.append(kwargs['extra']))
+    monkeypatch.setattr(store_module.metrics, 'add_metric', lambda **kwargs: counted.append(kwargs['name']))
+    s3: Any = MagicMock()
+    s3.get_object.side_effect = ClientError({'Error': {'Code': 'AccessDenied', 'Message': 'no'}}, 'GetObject')
+    s3.put_object.side_effect = ClientError({'Error': {'Code': 'AccessDenied', 'Message': 'no'}}, 'PutObject')
+    workspace = WorkspaceStore(s3, BUCKET, denied_is_missing=True)
+    assert workspace.read_text('k') is None
+    assert (warnings, counted) == ([{'key': 'k', 'code': 'AccessDenied'}], [store_module.ENGINEERING_DENIED_READS_METRIC])
+    s3.get_object.side_effect = ClientError({'Error': {'Code': 'NoSuchKey', 'Message': 'gone'}}, 'GetObject')
+    assert workspace.read_text('gone') is None
+    assert (len(warnings), len(counted)) == (1, 1)   # a plain missing key is neither logged nor counted
+    with pytest.raises(ClientError):   # a write is never excused
+        workspace.put_once('k', 'x', 'text/plain')
+    s3.get_object.side_effect = ClientError({'Error': {'Code': 'SlowDown', 'Message': 'slow'}}, 'GetObject')
+    with pytest.raises(ClientError):
+        workspace.read_text('k')
+
+
+def test_a_cut_read_is_logged_with_the_objects_size(workspace: WorkspaceStore, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(store_module, 'MAX_READ_BYTES', 4)
+    warnings: list[Any] = []
+    monkeypatch.setattr(store_module.logger, 'warning', lambda _message, **kwargs: warnings.append(kwargs['extra']))
+    workspace.put_once('k', 'abcdefgh', 'text/plain')
+    workspace.put_once('short', 'ab', 'text/plain')
+    assert (workspace.read_text('k'), workspace.read_text('short')) == ('abcd', 'ab')
+    assert warnings == [{'key': 'k', 'size': 8, 'read': 4}]
+
+
+def test_a_write_meeting_another_in_flight_backs_off_then_raises_the_conflict() -> None:
+    s3: Any = MagicMock()
+    waits: list[float] = []
+    in_flight = ClientError({'Error': {'Code': 'ConditionalRequestConflict', 'Message': 'in flight'}}, 'PutObject')
+    s3.put_object.side_effect = [in_flight, None]
+    assert WorkspaceStore(s3, BUCKET, sleep=waits.append).put_once('k', 'x', 'text/plain')   # (the second try lands)
+    assert waits == [store_module.WRITE_BACKOFF_S]
+    s3.put_object.side_effect = in_flight
+    waits.clear()
+    with pytest.raises(ClientError) as raised:   # (never "already exists")
+        WorkspaceStore(s3, BUCKET, sleep=waits.append).put_once('k', 'x', 'text/plain')
+    assert raised.value is in_flight
+    assert s3.put_object.call_count == 2 + store_module.WRITE_TRIES
+    assert waits == [store_module.WRITE_BACKOFF_S * tries for tries in range(1, store_module.WRITE_TRIES)]

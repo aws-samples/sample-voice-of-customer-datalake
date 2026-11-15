@@ -34,7 +34,9 @@ interface SwitcherProps {
 
 function WorkflowSwitcher({ currentId, isAdmin, dirty, name, onSwitch }: Readonly<SwitcherProps>) {
   const { t } = useTranslation('agents')
-  const { data: workflows = [] } = useQuery({ queryKey: workflowsKeys.list(), queryFn: workflowsApi.list, enabled: isAdmin })
+  const { data: library = [] } = useQuery({ queryKey: workflowsKeys.list(), queryFn: workflowsApi.list, enabled: isAdmin })
+  // An agent runs an agents workflow only (an engineering flow is never an agent's).
+  const workflows = library.filter((w) => w.kind !== 'engineering')
   const [pending, setPending] = useState<WorkflowSummary | null>(null)
   const pick = (workflowId: string) => {
     const chosen = workflows.find((w) => w.workflow_id === workflowId)

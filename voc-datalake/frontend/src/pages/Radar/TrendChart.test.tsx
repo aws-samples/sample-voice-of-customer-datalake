@@ -3,7 +3,7 @@
  * (verify4 V4: German ticks "10.000" / "7500" were cut at the left edge); labelled axes, a legend,
  * straight lines and the whole window on the x axis; below 10 reviews a sentence instead of a chart.
  */
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
@@ -46,6 +46,16 @@ const draw = (trend = TREND, days = 30, onReadAll = vi.fn()) =>
   render(<TrendChart trend={trend} days={days} onDay={() => {}} onReadAll={onReadAll} />)
 
 describe('Radar TrendChart', () => {
+  // The fixtures' days sit inside the window only for a fixed today: without it, every test here fails once the
+  // calendar passes them (2026-11-15: a 30-day window no longer held 2026-10-16, so 31 days were drawn).
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-30T12:00:00Z'))
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('formats the review counts compactly and lets the axis measure its ticks', () => {
     draw()
     const axis = screen.getByTestId('y-axis-count')
