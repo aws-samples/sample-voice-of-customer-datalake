@@ -115,6 +115,7 @@ describe('app pool custom-message trigger', () => {
       Action: 'kms:Decrypt',
       Condition: { StringEquals: { 'kms:ViaService': [
         { 'Fn::Join': ['', expect.arrayContaining([expect.stringMatching(/^dynamodb\./)])] },
+        { 'Fn::Join': ['', expect.arrayContaining([expect.stringMatching(/^secretsmanager\./)])] },
       ] } },
     });
   });
