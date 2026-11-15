@@ -126,10 +126,12 @@ class TestAskLogoModel:
     def test_uses_its_own_client_with_a_short_read_timeout_and_one_attempt(self):
         logo_pick._pick_client = None
         try:
-            with patch('boto3.client', return_value='client') as make:
-                assert logo_pick._bedrock_client() == 'client'
-                assert logo_pick._bedrock_client() == 'client'   # cached
+            with patch('boto3.client', return_value='client') as make, \
+                    patch('shared.model_config.scope_bedrock_client', side_effect=lambda c: f'scoped {c}') as scope:
+                assert logo_pick._bedrock_client() == 'scoped client'   # the deployment's inference scope applies
+                assert logo_pick._bedrock_client() == 'scoped client'   # cached
             make.assert_called_once()
+            scope.assert_called_once_with('client')
             config = make.call_args.kwargs['config']
             assert (config.read_timeout, config.connect_timeout) == (logo_pick.PICK_READ_TIMEOUT_SECONDS,
                                                                      logo_pick.PICK_CONNECT_TIMEOUT_SECONDS)

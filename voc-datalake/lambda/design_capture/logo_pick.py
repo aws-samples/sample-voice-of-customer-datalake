@@ -155,9 +155,12 @@ def _bedrock_client() -> Any:
         import boto3
         from botocore.config import Config
 
-        _pick_client = boto3.client('bedrock-runtime', config=Config(
+        from shared.model_config import scope_bedrock_client
+
+        # Wrapped like the shared client: the deployment's inference scope (`eu.`) applies to the pick too.
+        _pick_client = scope_bedrock_client(boto3.client('bedrock-runtime', config=Config(
             read_timeout=PICK_READ_TIMEOUT_SECONDS, connect_timeout=PICK_CONNECT_TIMEOUT_SECONDS,
-            retries={'max_attempts': 1, 'mode': 'standard'}))
+            retries={'max_attempts': 1, 'mode': 'standard'})))
     return _pick_client
 
 
