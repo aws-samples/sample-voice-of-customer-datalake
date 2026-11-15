@@ -239,8 +239,9 @@ def _resend_code_message(code_parameter: str, sign_in_url: str) -> tuple[str, st
 
 
 def _valid_days() -> int:
-    # Always set by the stack (core-auth.ts TEMPORARY_PASSWORD_DAYS); an unparsable value keeps Cognito's 7.
-    raw = os.environ['TEMP_PASSWORD_DAYS'].strip()
+    # The stack always sets it (core-auth.ts TEMPORARY_PASSWORD_DAYS). Missing or unparsable keeps Cognito's 7:
+    # raising here would fail the whole invitation, not just its wording.
+    raw = os.environ.get('TEMP_PASSWORD_DAYS', '').strip()
     return int(raw) if raw.isdigit() and int(raw) > 0 else COGNITO_DEFAULT_TEMP_PASSWORD_DAYS
 
 

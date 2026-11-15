@@ -130,7 +130,9 @@ def test_uses_neutral_wording_when_the_brand_cannot_be_read(monkeypatch):
 @pytest.mark.parametrize(('days', 'stated'), [(None, 'works for 7 days'), ('3', 'works for 3 days'),
                                               ('0', 'works for 7 days'), ('soon', 'works for 7 days')])
 def test_states_how_long_the_temporary_password_works(monkeypatch, days, stated):
-    if days is not None:
+    if days is None:
+        monkeypatch.delenv('TEMP_PASSWORD_DAYS')  # unset must still send the invitation, with Cognito's 7
+    else:
         monkeypatch.setenv('TEMP_PASSWORD_DAYS', days)
     _, message = _send(_invitation())
     assert stated in message
