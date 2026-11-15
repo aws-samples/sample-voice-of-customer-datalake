@@ -1,8 +1,9 @@
 """The user-messages trigger bundle is self-contained (lib/stacks/core-auth.ts USER_MESSAGES_FILES).
 
-The CDK asset ships ONLY ``auth/user_messages.py`` and ``auth/logo_signing.py``; the runtime adds boto3 and the
-signing-deps layer cryptography. With an import path holding just a copy of those files (plus the interpreter's stdlib and site-packages, which stand in for the
-runtime's boto3), the handler must import without loading any other app module.
+The CDK asset ships ONLY ``auth/user_messages.py`` and ``auth/logo_signing.py``; the runtime adds boto3 and
+the signing-deps layer adds cryptography. With an import path holding just a copy of those files (plus the
+interpreter's stdlib and site-packages, which stand in for the runtime's boto3 and the layer), the handler
+must import without loading any other app module.
 """
 from __future__ import annotations
 

@@ -29,10 +29,11 @@ import { realtimeConnectSrc } from '../utils/realtime';
 import type { DataProtection } from '../utils/data-protection';
 
 /**
- * The CDN path of an uploaded company logo, signed-only like `/avatars/*`: the shape of an upload's
- * key, `company-context/design/logo_<12 characters>.<any extension>` (shared/company_logo.py `_UPLOADED_LOGO_KEY_RE`), so a
- * design reference's `logo_preview_*` image is never served. The exact check (12 hex, png/jpg/webp) is the
- * signer's (lambda/auth/logo_signing.py UPLOADED_LOGO_KEY): only such a key gets a signature.
+ * The CDN path of an uploaded company logo, signed-only like `/avatars/*`. It matches the shape of an upload's
+ * key, `company-context/design/logo_<12 characters>.<any extension>` (shared/company_logo.py
+ * `_UPLOADED_LOGO_KEY_RE`), so a design reference's `logo_preview_*` image is never served. The exact rule
+ * (12 hex, png/jpg/webp) is the signer's (lambda/auth/logo_signing.py UPLOADED_LOGO_KEY): only such a key is
+ * ever signed.
  */
 export const COMPANY_LOGO_PATH_PATTERN = '/company-context/design/logo_????????????.*';
 
@@ -386,9 +387,9 @@ export function createCoreCdn(ctx: CoreBuildContext, inputs: CdnInputs): CoreCdn
 
   // The uploaded company logo (Company → Design system), signed like avatars, so the invitation email
   // (lambda/auth/user_messages.py) can show it: Cognito's 20,000-character message cap rules out an inline
-  // image, and a presigned S3 URL dies with the trigger's session credentials. The pattern matches the shape of an
-  // upload's key (`logo_<12>.<ext>`; the signer checks 12 hex and png/jpg/webp), never a reference's `logo_preview_*`; each upload
-  // has a new key, so the shared cache policy (no in-place overwrite) holds.
+  // image, and a presigned S3 URL dies with the trigger's session credentials. The pattern matches the shape
+  // of an upload's key (`logo_<12>.<ext>`; the signer checks 12 hex and png/jpg/webp), never a reference's
+  // `logo_preview_*`; each upload has a new key, so the shared cache policy (no in-place overwrite) holds.
   frontendDistribution.addBehavior(
     COMPANY_LOGO_PATH_PATTERN,
     origins.S3BucketOrigin.withOriginAccessControl(rawDataBucket),

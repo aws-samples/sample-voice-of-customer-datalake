@@ -39,7 +39,6 @@ import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
 from auth import logo_signing
-from auth.logo_signing import AWS_CALL_CONFIG
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -123,7 +122,7 @@ def clean_name(value: Any) -> str:
 def _aggregates_table():
     global _table
     if _table is None:
-        _table = boto3.resource('dynamodb', config=AWS_CALL_CONFIG).Table(os.environ['AGGREGATES_TABLE'])
+        _table = boto3.resource('dynamodb', config=logo_signing.AWS_CALL_CONFIG).Table(os.environ['AGGREGATES_TABLE'])
     return _table
 
 

@@ -156,3 +156,17 @@ def test_a_signing_error_costs_the_logo_not_the_invitation(monkeypatch):
 def test_signs_on_the_site_origin_only_whatever_the_setting_carries():
     url, _ = _signed(site=SITE + '/login?next=/x#frag')
     assert url.startswith(f'{SITE}/{KEY}?')
+
+
+def test_the_secret_client_is_built_with_the_short_timeouts(monkeypatch):
+    built = []
+    monkeypatch.setattr(logo_signing, '_secrets', None)
+    monkeypatch.setattr(logo_signing.boto3, 'client', lambda service, **kwargs: built.append((service, kwargs)))
+    logo_signing._secrets_client()
+    assert built == [('secretsmanager', {'config': logo_signing.AWS_CALL_CONFIG})]
+
+
+@pytest.mark.usefixtures('signing')
+@pytest.mark.parametrize('site', ['https:///x', 'https://user:pw@d111.cloudfront.net', 'https://d111.cloudfront.net:8443'])
+def test_refuses_a_site_setting_that_is_not_a_plain_origin(site):
+    assert logo_signing.signed_logo_url(KEY, site, 7, now=NOW) is None

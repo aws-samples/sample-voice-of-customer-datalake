@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 #: costs the brand, colour or logo, never the invitation.
 AWS_CONNECT_TIMEOUT_SECONDS = 0.5
 AWS_READ_TIMEOUT_SECONDS = 1
-AWS_MAX_RETRIES = 1
+AWS_MAX_RETRIES = 1  # botocore `max_attempts`: retries, so 2 attempts in all (its `total_max_attempts`)
 AWS_CALL_CONFIG = Config(connect_timeout=AWS_CONNECT_TIMEOUT_SECONDS, read_timeout=AWS_READ_TIMEOUT_SECONDS,
                          retries={'max_attempts': AWS_MAX_RETRIES, 'mode': 'standard'})
 
@@ -102,17 +102,20 @@ def _build_rsa_signer():
 
 def signed_logo_url(key: Any, site_url: str, valid_days: int, *, now: datetime | None = None) -> str | None:
     """The logo at ``site_url`` + ``/`` + ``key``, signed until ``valid_days`` from ``now``; None when it cannot be."""
-    if not is_uploaded_logo_key(key) or urlsplit(site_url).scheme != 'https' or valid_days <= 0:
+    site = urlsplit(site_url)
+    # The distribution's own origin only: https, a host, no credentials or port the setting might carry.
+    if (not is_uploaded_logo_key(key) or site.scheme != 'https' or not site.hostname or site.username
+            or site.port is not None or valid_days <= 0):
         return None
     signer = _rsa_signer()
     if signer is None:
         return None
     expires = (now or datetime.now(UTC)) + timedelta(days=valid_days)
-    site = urlsplit(site_url)  # the distribution's origin only: never a path, query or fragment of the setting
-    url = f'https://{site.netloc}/{key}'
+    url = f'https://{site.hostname}/{key}'  # never a path, query or fragment of the setting
     try:
         return CloudFrontSigner(os.environ['CDN_SIGNING_KEY_PAIR_ID'], signer).generate_presigned_url(
             url, date_less_than=expires)
-    except (KeyError, ValueError, TypeError) as error:  # never fail the invitation over its logo
+    # Any signing failure, cryptography's included, costs the logo, never the invitation.
+    except Exception as error:  # noqa: BLE001
         logger.warning('Logo signing failed: %s', type(error).__name__)
         return None
