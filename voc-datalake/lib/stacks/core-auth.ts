@@ -126,7 +126,14 @@ export function createCoreAuth(
     resources: [aggregatesTable.tableArn],
     conditions: { 'ForAllValues:StringEquals': { 'dynamodb:LeadingKeys': [BRAND_SETTINGS_PK, DESIGN_SYSTEM_SETTINGS_PK] } },
   }));
-  kmsKey.grantDecrypt(customMessageLambda);
+  // The table's key, only as DynamoDB uses it on this function's behalf (not a key-wide decrypt).
+  customMessageLambda.addToRolePolicy(new iam.PolicyStatement({
+    actions: ['kms:Decrypt'],
+    resources: [kmsKey.keyArn],
+    conditions: { StringEquals: {
+      'kms:ViaService': [`dynamodb.${stack.region}.${stack.urlSuffix}`], 'kms:CallerAccount': stack.account,
+    } },
+  }));
 
   // Cognito User Pool
   //

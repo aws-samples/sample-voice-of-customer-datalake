@@ -6,7 +6,8 @@ and what to do if they did not expect it. It names:
 
 - the company (Administration → Brand, ``SETTINGS#brand`` / ``config`` → ``brand_name`` in the aggregates
   table), when an admin has set one, and the colour prototypes use (Company → Design system, the
-  ``primary``/``brand``/``accent`` hex colour token) for the header, the link and the password;
+  ``primary``/``brand``/``accent`` hex colour token) for the header, and for the link and the password when it
+  is readable on the light body (WCAG AA; otherwise they are near-black);
 - otherwise, on a workshop deployment (``-c workshop=true``, set by ``npm run generate:workshop-artifacts``),
   the AWS workshop and its organizer;
 - the inviter, passed by ``api/users_handler.py`` as ``ClientMetadata.invited_by`` (absent when a user is
@@ -18,7 +19,9 @@ silently, unless the message contains BOTH ``request.usernameParameter`` and ``r
 reference). Every value that does not come from the deployment itself is HTML-escaped.
 
 Reads only, and never raises for the brand lookup: an unreadable brand means the neutral wording.
-Stdlib + the runtime's boto3 only (no layer); lib/stacks/core-auth.ts ships this one file.
+Stdlib + the runtime's boto3 only (no layer); lib/stacks/core-auth.ts ships this one file. It logs with the
+stdlib ``logging`` module rather than Powertools on purpose: Powertools is a layer this bundle does not carry
+(the board triggers, auth/board_triggers.py, do the same).
 """
 from __future__ import annotations
 
@@ -195,8 +198,14 @@ def _sign_in_url() -> str:
     return os.environ.get('SIGN_IN_URL', '').rstrip('/')
 
 
+def safe_accent(color: str) -> str:
+    """``color`` when it is a plain hex colour, else DEFAULT_ACCENT: nothing else ever reaches an inline style."""
+    return color if _HEX_COLOR.fullmatch(color) else DEFAULT_ACCENT
+
+
 def _page(title: str, body: str, accent: str = DEFAULT_ACCENT) -> str:
     """The shared frame: a solid header in ``accent`` with readable text (no gradient: some clients drop it)."""
+    accent = safe_accent(accent)
     return f"""<!DOCTYPE html>
 <html>
 <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto;">
@@ -215,7 +224,8 @@ def invitation_message(*, audience: Audience, inviter: str, given_name: str, sig
                        accent: str = DEFAULT_ACCENT) -> tuple[str, str]:
     """(subject, html) for an invitation. ``inviter``, ``given_name`` and ``audience.brand`` are caller data,
     passed unescaped (escaped here); the rest of ``audience`` is fixed wording;
-    ``accent`` must already be a validated hex colour (``pick_accent``)."""
+    ``accent`` is re-checked (``safe_accent``): only a plain hex colour reaches the styles."""
+    accent = safe_accent(accent)
     workspace = html.escape(audience.workspace)
     who = f'{html.escape(inviter)} invited you to {workspace}' if inviter else f'You have been invited to {workspace}'
     greeting = f'Hello {html.escape(given_name)},' if given_name else 'Hello,'

@@ -178,7 +178,7 @@
       }
     },
     "VocCoreStack": {
-      "templateSha256": "9de78bbb399270f8f7bd39bdbf907d86c6310e0268ec2888da8f4ed429146516",
+      "templateSha256": "53efc2e2f927e03ae2824fd97f1131de42cb2c98cac0a02d03ff3541d8ab4ee5",
       "names": {
         "physicalNames": [
           "AWS::AppSync::Api Name = voc-events-<AWS::AccountId>-<AWS::Region>",

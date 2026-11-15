@@ -192,7 +192,8 @@ def _invitation_metadata(event: dict) -> dict:
     full = ' '.join(p.strip() for p in parts if isinstance(p, str) and p.strip())
     raw_name = claims.get('name')
     name = raw_name.strip() if isinstance(raw_name, str) else ''
-    inviter = (name or full)[:_MAX_INVITER_CHARS]
+    # The first candidate that is not an address: an invitation never carries the admin's email.
+    inviter = next((c for c in (name, full) if c and '@' not in c), '')[:_MAX_INVITER_CHARS]
     return {'ClientMetadata': {'invited_by': inviter}} if inviter else {}
 
 
