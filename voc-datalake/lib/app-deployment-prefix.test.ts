@@ -120,6 +120,9 @@ describe('a prefixed deployment', () => {
     // `voc` SEGMENT rather than in front of `/aws`, and a secret name whose own
     // base contains a slash (`voc-datalake/api-credentials`).
     expect(nameInventory(prefixed.template(`${PREFIX}-VocIngestionStack`)).physicalNames).toStrictEqual([
+      // An AgentCore name takes letters, digits and `_` only (lib/utils/naming.ts agentCoreName), no account or region.
+      'AWS::BedrockAgentCore::BrowserCustom Name = b_voc_web_reviews',
+      'AWS::BedrockAgentCore::BrowserProfile Name = b_voc_web_reviews',
       'AWS::Events::Rule Name = b-voc-ingest-app_reviews_android-schedule-<AWS::AccountId>-<AWS::Region>',
       'AWS::Events::Rule Name = b-voc-ingest-app_reviews_ios-schedule-<AWS::AccountId>-<AWS::Region>',
       'AWS::Events::Rule Name = b-voc-ingest-github_issues-schedule-<AWS::AccountId>-<AWS::Region>',
@@ -366,6 +369,10 @@ function isApiScopedName(inventoryEntry: string): boolean {
  * cosmetic — `/aws/...` is a namespace CloudWatch understands, and the api-stack
  * log groups are `/aws/lambda/${uniqueName(base)}`, so front-prefixing would
  * give two shapes for the same kind of resource in one deployment.
+ *
+ * An AgentCore browser's or profile's name (`voc_web_reviews`) allows no `-`: it
+ * takes `<PREFIX>_` instead (lib/utils/naming.ts agentCoreName). A gateway's name
+ * does take `-`, so it is prefixed like the rest.
  */
 // jscpd:ignore-start — restates DeploymentNaming.prefixed() on purpose: the test must not import the rule it pins
 function insertPrefix(inventoryEntry: string): string {
@@ -373,6 +380,7 @@ function insertPrefix(inventoryEntry: string): string {
   const at = inventoryEntry.indexOf(marker);
   const head = inventoryEntry.slice(0, at + marker.length);
   const name = inventoryEntry.slice(at + marker.length);
+  if (/^[A-Za-z]\w*$/.test(name)) return `${head}${PREFIX}_${name}`; // an agentCoreName: no `-`, no account or region
   const segments = name.split('/');
   const found = segments.findIndex((segment) => segment.startsWith('voc'));
   // No `voc` segment: the last one takes the prefix, so a path stays a path.

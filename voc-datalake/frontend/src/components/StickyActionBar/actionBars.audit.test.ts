@@ -113,6 +113,7 @@ const EXEMPT: Readonly<Record<string, string>> = {
   Unsubscribe: 'public page outside the layout: its one button is the whole page',
   FeatureBoard: 'New request is a page-header action (it opens a dialog)',
   AddSupportForm: 'rendered only inside the feature-request detail dialog (RequestDetailModal)',
+  AppEditorForm: 'rendered only inside the data source dialog (PluginConfigModal): one app or review page form',
   SupportRow: 'per-support Save, rendered only inside the feature-request detail dialog',
   PromotePanel: 'admin Promote, rendered only inside the feature-request detail dialog',
   BoardLogin: '/board/login is outside the layout: no launcher',

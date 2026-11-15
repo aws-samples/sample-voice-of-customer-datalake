@@ -35,7 +35,7 @@
 | Web Scraper | HTTP | None | Configurable |
 | Feedback Forms | API | None (public) | Real-time |
 | GitHub Issues (plugin, enabled; idle until configured) | GitHub REST + webhook | Read-only token + webhook secret in the plugin's Secrets Manager secret | 30 min (+ real-time webhook) |
-| Web Reviews (plugin `web_reviews`, enabled; idle until a page is added) | AgentCore Browser `aws.browser.v1` over CDP (`websocket-client`), JSON-LD or `enrichment`-model extraction; one source per connector `web_<site>_<app_name>` (stored on the target as `source_id`); blocked sites reported (docs/web-reviews.md) | IAM only (Start/StopBrowserSession on aws.browser.v1, ConnectBrowserAutomationStream on `*`) | Manual / per-target frequency (15 min tick, rule disabled) |
+| Web Reviews (plugin `web_reviews`, enabled; idle until a page is added) | The deployment's AgentCore custom browser with Web Bot Auth signing and a browser profile (`aws.browser.v1` with `-c webReviewsBotAuth=false`) over CDP (`websocket-client`), JSON-LD or `enrichment`-model extraction; per target `method: bedrock_web_search` reads the page from the Amazon Bedrock web search cache through an OpenAI GPT model (Responses API on bedrock-mantle); one source per connector `web_<site>_<app_name>` (stored on the target as `source_id`); blocked sites reported (docs/web-reviews.md) | IAM only (Start/Stop/SaveBrowserSessionProfile on the deployment's browser and profile, ConnectBrowserAutomationStream on `*`; bedrock-mantle:CreateInference on project/default, bedrock-websearch:InvokeSearch/InvokeFetch in the region) | Manual / per-target frequency (15 min tick, rule disabled) |
 
 ## Backend (Lambda - Python)
 

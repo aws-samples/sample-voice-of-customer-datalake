@@ -38,6 +38,10 @@ class CdpError(RuntimeError):
     """The browser answered a command with an error, or did not answer in time."""
 
 
+class BrowserConnectionClosed(CdpError):
+    """The websocket to the browser closed: no command can be sent on it any more (the run starts a new session)."""
+
+
 class _LibrarySocket:
     """websocket-client's connection, its exceptions mapped onto the builtin ones this module handles.
 
@@ -110,7 +114,10 @@ class CdpConnection:
         message: dict[str, Any] = {'id': request_id, 'method': method, 'params': dict(params or {})}
         if session_id is not None:
             message['sessionId'] = session_id
-        self._socket.send(json.dumps(message))
+        try:
+            self._socket.send(json.dumps(message))
+        except ConnectionError as error:
+            raise BrowserConnectionClosed(f'{method}: the browser connection closed') from error
         return self._await_reply(request_id, method, self._clock() + timeout)
 
     def _await_reply(self, request_id: int, method: str, deadline: float) -> dict[str, Any]:
@@ -124,7 +131,7 @@ class CdpConnection:
             except TimeoutError as error:
                 raise CdpError(f'{method} timed out') from error
             except ConnectionError as error:
-                raise CdpError(f'{method}: the browser connection closed') from error
+                raise BrowserConnectionClosed(f'{method}: the browser connection closed') from error
             if len(raw) > MAX_MESSAGE_CHARS:
                 raise CdpError(f'{method}: the browser reply was too large ({len(raw) // 1_000_000} MB)')
             reply = _decoded(raw)

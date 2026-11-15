@@ -12,14 +12,17 @@ import { pkSkTable } from './api-stack-fixture';
 import { fixtureBucket, fixtureRealtime } from './fixture-resources';
 import { SYNTH_ACCOUNT, SYNTH_REGION, committedFeatureFlags } from './synth-app';
 
-/** The stack with `enabledSources` switched on (none by default: no scheduled plugin). */
-export function synthIngestionTemplate(enabledSources: string[] = [], context: Record<string, unknown> = {}): Template {
-  return synthIngestionStacks(enabledSources, context).ingestion;
+/** The stack with `enabledSources` switched on (none by default: no scheduled plugin), optionally prefixed. */
+export function synthIngestionTemplate(
+  enabledSources: string[] = [], context: Record<string, unknown> = {}, deploymentPrefix?: string,
+): Template {
+  return synthIngestionStacks(enabledSources, context, undefined, deploymentPrefix).ingestion;
 }
 
 /** The ingestion template and the dependency stack's (whose key policy the inbox extends). */
 export function synthIngestionStacks(
   enabledSources: string[] = [], context: Record<string, unknown> = {}, frontendDomain = 'app.example.invalid',
+  deploymentPrefix?: string,
 ): { ingestion: Template; deps: Template } {
   const env = { account: SYNTH_ACCOUNT, region: SYNTH_REGION };
   const app = new cdk.App({
@@ -29,6 +32,7 @@ export function synthIngestionStacks(
   const aggregatesTable = pkSkTable(deps, 'Aggregates');
   const stack = new VocIngestionStack(app, 'Ingestion', {
     env,
+    deploymentPrefix,
     watermarksTable: pkSkTable(deps, 'Watermarks'),
     aggregatesTable,
     workspacesTable: pkSkTable(deps, 'Workspaces'),

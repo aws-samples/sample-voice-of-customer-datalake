@@ -310,15 +310,20 @@ export const api = {
     ...(appId != null && appId !== '' ? { body: JSON.stringify({ app_id: appId }) } : {}),
   }, runScope(source)),
 
-  getSourceRunStatus: (source: string) => fetchApi<{
-    source: string;
-    status: string;
-    execution_id?: string;
-    started_at?: string;
-    completed_at?: string;
-    items_found?: number;
-    errors?: string[]
-  }>(`/sources/status?run_status=${source}`),
+  /** A source's latest manual run; with `appId`, that app's newest run (the `app_id` its Run now sent), with
+   *  `executionId` that run (and with both, only when it is that app's). `never_run` when there is none. */
+  getSourceRunStatus: (source: string, run?: { readonly appId?: string; readonly executionId?: string }) => {
+    const query = buildSearchParams({ run_status: source, app_id: run?.appId, execution_id: run?.executionId })
+    return fetchApi<{
+      source: string;
+      status: string;
+      execution_id?: string;
+      started_at?: string;
+      completed_at?: string;
+      items_found?: number;
+      errors?: string[]
+    }>(`/sources/status?${query}`)
+  },
 
   // App Config CRUD (multi-instance plugins like iOS/Android app reviews)
   getAppConfigs: (source: string) =>

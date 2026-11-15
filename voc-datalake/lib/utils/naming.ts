@@ -297,6 +297,23 @@ export class DeploymentNaming {
   }
 }
 
+/** Longest name an AgentCore runtime, browser or browser profile may carry (`[a-zA-Z][a-zA-Z0-9_]{0,47}`). */
+export const AGENTCORE_NAME_LENGTH_LIMIT = 48;
+
+/**
+ * An Amazon Bedrock AgentCore resource's name (a runtime, a custom browser, a browser profile: letters, digits and
+ * `_`, starting with a letter, at most {@link AGENTCORE_NAME_LENGTH_LIMIT}) from a `uniqueName()`: its literal part
+ * with every other character as `_`, without the account and region. Those are tokens, and they need not be there:
+ * these resources are regional and named once per account, so the prefix alone keeps two deployments apart
+ * (`voc_web_reviews`, `b_voc_web_reviews` under `-c deploymentPrefix=b`, `team_a_voc_…` under `team-a`; a prefix
+ * holds no `_`, so two prefixes never map to one name).
+ */
+export function agentCoreName(uniqueName: string): string {
+  const [literal = ''] = uniqueName.split('${Token[');
+  const word = literal.replace(/\W/g, '_').replace(/^[^A-Za-z]+/, '');
+  return (word.endsWith('_') ? word.slice(0, -1) : word).slice(0, AGENTCORE_NAME_LENGTH_LIMIT);
+}
+
 // A bare, prefix-blind `uniqueName(base)` used to be exported here. It is gone
 // deliberately: nothing needs it, and its only remaining effect would be to sit
 // one autocomplete away from `this.uniqueName()` and hand a future resource a

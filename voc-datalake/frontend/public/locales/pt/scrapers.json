@@ -314,7 +314,9 @@
     "moreErrors_other": "...e {{count, number}} erros a mais",
     "pagesScraped": "Páginas coletadas:",
     "reviewsFound": "Avaliações encontradas:",
-    "running": "Executando..."
+    "running": "Executando...",
+    "blockedHint": "O site recusa navegadores automatizados, por isso não foi possível ler as avaliações. Consulte \"Blocked sites\" na documentação de fontes de dados (docs/web-reviews.md).",
+    "notFinished": "Não terminou"
   },
   "subtitle": "Tudo de onde vem o seu feedback: páginas de avaliações, apps, arquivos e ferramentas",
   "syntheticCard": {
@@ -354,7 +356,9 @@
       "addFirstPage": "Adicione sua primeira página de avaliações",
       "unnamed": "Página sem nome",
       "deleteConfirmTitle": "Remover página de avaliações",
-      "deleteConfirmMessage": "Tem certeza de que deseja remover esta página de avaliações?"
+      "deleteConfirmMessage": "Tem certeza de que deseja remover esta página de avaliações?",
+      "addBedrockPage": "Adicionar uma página do índice de pesquisa na web do Bedrock",
+      "bedrockNote": "As avaliações são lidas da cópia desta página indexada pelo Amazon Bedrock (o cache da Amazon), não do próprio site. Cada avaliação mantém a URL e o site de origem, então sempre aponta para onde foi publicada."
     },
     "kindLabel": "Tipo",
     "kind": {
@@ -362,6 +366,10 @@
       "ios": "App de iPhone",
       "android": "App de Android",
       "app": "App"
+    },
+    "method": {
+      "browser": "Navegador",
+      "bedrock": "Índice da web do Bedrock"
     }
   },
   "sourceMenu": {
@@ -419,6 +427,10 @@
       "synthetic": {
         "title": "Avaliações de exemplo para demos",
         "description": "Avaliações escritas por IA, marcadas como dados de exemplo, para testar a plataforma."
+      },
+      "webReviewsBedrock": {
+        "title": "Índice de pesquisa na web do Amazon Bedrock",
+        "description": "Avaliações de uma página indexada pelo Amazon Bedrock, para sites que bloqueiam navegadores automatizados (G2, Gartner, Capterra, TrustRadius). Lidas do cache da Amazon e armazenadas com o link de origem."
       }
     }
   },

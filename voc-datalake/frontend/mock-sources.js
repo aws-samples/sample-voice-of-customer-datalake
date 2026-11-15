@@ -474,10 +474,15 @@ function sourceEntry(shared, source) {
 
 const CLOSED_CIRCUIT = Object.freeze({ tripped: false, tripped_at: null, failure_count: 0, last_error: null });
 
+// The plugins whose manifests declare no schedule (no rule exists): integrations_handler NO_SCHEDULE.
+const UNSCHEDULED_SOURCES = new Set(['s3_import', 'synthetic_reviews']);
+const NO_SCHEDULE = 'This plugin has no schedule: it runs when started (Run now, or an upload for the S3 import).';
+
 // Enable also closes the breaker (the real route deletes the TRIPPED row first).
 function toggleSource({ shared }, source, action) {
   const error = sourceError(source);
   if (error) return fail(400, error);
+  if (UNSCHEDULED_SOURCES.has(source)) return fail(400, NO_SCHEDULE);
   const enabled = action === 'enable';
   const entry = sourceEntry(shared, source);
   entry.enabled = enabled;
@@ -499,17 +504,38 @@ function resetSource({ shared }, source) {
 // ("<target>: blocked by <vendor>" on a completed run), so the card's error line shows.
 const RUN_ERRORS = { web_reviews: ['Yelp - Acme: blocked by DataDome'] };
 
-function runSource({ shared }, source) {
+// run_rows.run_app_id_error: 1-2048 characters, no control characters.
+const RUN_APP_ID_RE = /^[^\u0000-\u001f\u007f]{1,2048}$/;
+const RUN_APP_ID_ERROR = 'app_id must be 1-2048 characters without control characters: the app, package or review page the run is for';
+
+/** A run's errors: a review page whose site blocks browsers reports it, the way the real ingestor does. */
+function runErrors(source, appId) {
+  if (appId === null) return RUN_ERRORS[source] ?? [];
+  return /yelp\./.test(appId) ? [`${appId}: blocked by DataDome`] : [];
+}
+
+// With `app_id` (one card's Run now) the run is that app's: kept with it so the card reads its own run.
+function runSource({ shared }, source, body = {}) {
   const error = sourceError(source);
   if (error) return fail(400, error);
+  const appId = body.app_id ? body.app_id : null;
+  if (appId !== null && (typeof appId !== 'string' || !RUN_APP_ID_RE.test(appId))) return fail(400, RUN_APP_ID_ERROR);
   const startedAt = new Date();
-  const executionId = `run_${source}_${stamp(startedAt)}`;
-  const record = { source, execution_id: executionId, status: 'running', started_at: startedAt.toISOString(), items_found: 0, errors: [] };
+  const executionId = `run_${source}_${stamp(startedAt)}_${randomBytes(4).toString('hex')}`;
+  const record = {
+    source, execution_id: executionId, status: 'running', started_at: startedAt.toISOString(), items_found: 0, errors: [],
+    ...(appId === null ? {} : { app_id: appId }),
+  };
   shared.mockSourceRunStatuses[source] = record;
+  if (appId !== null) shared.mockSourceRuns.unshift(record);
   later(() => {
+    const errors = runErrors(source, appId);
+    // A blocked page reads nothing; any other run finds a few reviews (synthetic: its five).
+    const blocked = errors.length > 0 && appId !== null;
+    const found = blocked ? 0 : 12;
     Object.assign(record, {
       status: 'completed', completed_at: new Date().toISOString(),
-      items_found: source === 'synthetic_reviews' ? 5 : 12, errors: RUN_ERRORS[source] ?? [],
+      items_found: source === 'synthetic_reviews' ? 5 : found, errors,
     });
   });
   return [200, { success: true, message: `Triggered ${source} ingestor`, source, execution_id: executionId }];
@@ -1327,7 +1353,7 @@ const ROUTES = [
   ['GET', /^\/feedback\/search$/, 'none', searchFeedback],
   ['PUT', /^\/sources\/([^/]+)\/(enable|disable)$/, 'none', toggleSource],
   ['POST', /^\/sources\/([^/]+)\/reset$/, 'none', resetSource],
-  ['POST', /^\/sources\/([^/]+)\/run$/, 'lenient', (c, source) => runSource(c, source)],
+  ['POST', /^\/sources\/([^/]+)\/run$/, 'lenient', (c, source, body) => runSource(c, source, body)],
   ['POST', /^\/settings\/categories\/generate$/, 'json', (c, body) => c.shared.startOwnerAssistJob('settings', 'assist_categories', generateCategories(c, body))],
   ['GET', /^\/integrations\/status$/, 'none', integrationStatus],
   ['GET', /^\/integrations\/([^/]+)\/credentials$/, 'none', getCredentials],

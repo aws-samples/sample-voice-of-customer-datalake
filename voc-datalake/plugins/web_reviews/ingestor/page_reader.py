@@ -10,6 +10,12 @@ snapshot. Pages 2..N are then fetched with
 navigations take minutes. A page that cannot be fetched that way (another
 origin, a fetch error) is navigated to instead.
 
+A navigation that fails on the network (a reset or timed-out connection, an empty
+answer: ``TRANSIENT_NAVIGATION_ERRORS``) or that the browser does not answer in time is
+tried once more after ``RETRY_PAUSE_SECONDS``, in the same tab and session. A closed
+connection to the browser is never turned into a page error: it reaches the handler,
+which starts a new session (``BrowserConnectionClosed``).
+
 Everything a page yields comes back from ONE ``Runtime.evaluate`` of
 ``SNAPSHOT_JS``: its HTTP status, title, visible text, the start of its HTML (for
 block detection), its JSON-LD blocks and the URL of its next page — found
@@ -25,7 +31,7 @@ from typing import Any, Final
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from block_detection import HTML_SAMPLE_CHARS, PageSignals
-from cdp_client import CdpConnection, CdpError
+from cdp_client import BrowserConnectionClosed, CdpConnection, CdpError
 
 from shared.cdp_page import HTTP_ERROR_RESPONSE, PROGRESS_JS, SettleTimings, wait_until_settled
 
@@ -47,6 +53,13 @@ SCROLL_PAUSE_SECONDS: Final = 0.6
 #: A settled page shows at least this much text (a challenge page shows almost none).
 SETTLED_TEXT_CHARS: Final = 500
 EVALUATE_TIMEOUT_SECONDS: Final = 60.0
+#: Navigation errors of the network rather than of the site's answer, worth one more try (Chrome's net error names).
+TRANSIENT_NAVIGATION_ERRORS: Final = frozenset({
+    'net::ERR_CONNECTION_RESET', 'net::ERR_CONNECTION_CLOSED', 'net::ERR_CONNECTION_TIMED_OUT', 'net::ERR_TIMED_OUT',
+    'net::ERR_EMPTY_RESPONSE', 'net::ERR_NETWORK_CHANGED', 'net::ERR_HTTP2_PROTOCOL_ERROR',
+})
+#: Seconds before a failed navigation is tried again (once).
+RETRY_PAUSE_SECONDS: Final = 2.0
 PAGE_PARAMETERS: Final = ('page', 'p', 'pg')
 
 NEXT_WORDS: Final = (
@@ -224,6 +237,8 @@ class BrowserTab:
             result = self._page_call('Runtime.evaluate', {
                 'expression': expression, 'awaitPromise': True, 'returnByValue': True,
             }, timeout=EVALUATE_TIMEOUT_SECONDS)
+        except BrowserConnectionClosed:
+            raise
         except CdpError as error:
             raise PageLoadError('the page did not answer') from error
         value = result.get('result')
@@ -272,17 +287,34 @@ class BrowserTab:
                 return
             previous = height
 
+    def _navigate(self, url: str) -> dict[str, Any] | None:
+        """``Page.navigate``'s answer, or ``None`` when the browser did not give one in time."""
+        try:
+            return self._page_call('Page.navigate', {'url': url})
+        except BrowserConnectionClosed:
+            raise
+        except CdpError:
+            return None
+
+    def _navigated(self, url: str) -> dict[str, Any]:
+        """The navigation's answer, tried once more after a transient failure (``TRANSIENT_NAVIGATION_ERRORS``)."""
+        navigated = self._navigate(url)
+        if navigated is None or navigated.get('errorText') in TRANSIENT_NAVIGATION_ERRORS:
+            self._sleep(RETRY_PAUSE_SECONDS)
+            navigated = self._navigate(url)
+        if navigated is None:
+            raise PageLoadError('the page did not load')
+        return navigated
+
     def load(self, url: str) -> PageSnapshot:
         """Navigate to *url* and read it once it has settled.
 
         An HTTP error answer (Chrome's ``net::ERR_HTTP_RESPONSE_CODE_FAILURE``) is still READ: its
         status and markers are what block detection reports ("blocked by HTTP 403", a bot wall's
-        vendor). Any other navigation error (no such host, a reset connection) raises.
+        vendor). A transient failure is tried once more; any other navigation error (no such host),
+        or a second failure, raises.
         """
-        try:
-            navigated = self._page_call('Page.navigate', {'url': url})
-        except CdpError as error:
-            raise PageLoadError('the page did not load') from error
+        navigated = self._navigated(url)
         error_text = navigated.get('errorText')
         if error_text and error_text != HTTP_ERROR_RESPONSE:
             raise PageLoadError(f'the page did not load ({str(error_text)[:60]})')

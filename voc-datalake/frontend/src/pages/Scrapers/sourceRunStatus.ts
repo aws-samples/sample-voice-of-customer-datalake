@@ -11,6 +11,7 @@ import { z } from 'zod'
 
 const sourceRunStatusSchema = z.object({
   status: z.string().min(1),
+  execution_id: z.string().optional().catch(undefined),
   started_at: z.string().optional().catch(undefined),
   completed_at: z.string().optional().catch(undefined),
   items_found: z.number().optional().catch(undefined),
@@ -27,4 +28,12 @@ export function parseRunRecord(raw: unknown): SourceRunStatus | null {
   const parsed = sourceRunStatusSchema.safeParse(raw)
   if (!parsed.success || parsed.data.status === 'never_run') return null
   return parsed.data
+}
+
+const runStartedSchema = z.object({ execution_id: z.string().min(1) })
+
+/** The run id `POST /sources/{source}/run` answered, or undefined when the answer carries none. */
+export function parseRunStarted(raw: unknown): string | undefined {
+  const parsed = runStartedSchema.safeParse(raw)
+  return parsed.success ? parsed.data.execution_id : undefined
 }

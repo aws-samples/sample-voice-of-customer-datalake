@@ -1756,10 +1756,16 @@
   {
     "file": "api/client.ts",
     "method": "GET",
-    "call": "`/sources/status?run_status=${source}`",
+    "call": "`/sources/status?${query}`",
     "probes": [
       {
-        "path": "/sources/status"
+        "path": "/sources/status?run_status=synthetic_reviews"
+      },
+      {
+        "path": "/sources/status?run_status=web_reviews&app_id=https%3A%2F%2Fwww.yelp.com%2Fbiz%2Facme-example"
+      },
+      {
+        "path": "/sources/status?run_status=web_reviews&app_id=a1&execution_id=run_web_reviews_20261014090000_0a0b0c0d"
       }
     ]
   },

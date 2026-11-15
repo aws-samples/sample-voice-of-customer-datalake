@@ -314,7 +314,9 @@
     "moreErrors_other": "...et {{count, number}} erreurs supplémentaires",
     "pagesScraped": "Pages scrapées :",
     "reviewsFound": "Avis trouvés :",
-    "running": "En cours..."
+    "running": "En cours...",
+    "blockedHint": "Le site refuse les navigateurs automatisés : ses avis n’ont pas pu être lus. Voir « Blocked sites » dans la documentation des sources de données (docs/web-reviews.md).",
+    "notFinished": "Non terminé"
   },
   "subtitle": "Toutes les provenances de vos retours : pages d’avis, applications, fichiers et outils",
   "syntheticCard": {
@@ -354,7 +356,9 @@
       "addFirstPage": "Ajoutez votre première page d'avis",
       "unnamed": "Page sans nom",
       "deleteConfirmTitle": "Retirer la page d'avis",
-      "deleteConfirmMessage": "Voulez-vous vraiment retirer cette page d'avis ?"
+      "deleteConfirmMessage": "Voulez-vous vraiment retirer cette page d'avis ?",
+      "addBedrockPage": "Ajouter une page de l’index de recherche web Bedrock",
+      "bedrockNote": "Les avis sont lus dans la copie de cette page indexée par Amazon Bedrock (le cache d’Amazon), et non sur le site lui-même. Chaque avis garde son URL source et son site : il renvoie toujours là où il a été publié."
     },
     "kindLabel": "Type",
     "kind": {
@@ -362,6 +366,10 @@
       "ios": "Application iPhone",
       "android": "Application Android",
       "app": "Application"
+    },
+    "method": {
+      "browser": "Navigateur",
+      "bedrock": "Index web Bedrock"
     }
   },
   "sourceMenu": {
@@ -419,6 +427,10 @@
       "synthetic": {
         "title": "Avis d’exemple pour les démos",
         "description": "Des avis rédigés par l’IA, marqués comme données d’exemple, pour essayer la plateforme."
+      },
+      "webReviewsBedrock": {
+        "title": "Index de recherche web Amazon Bedrock",
+        "description": "Des avis d’une page indexée par Amazon Bedrock, pour les sites qui bloquent les navigateurs automatisés (G2, Gartner, Capterra, TrustRadius). Lus dans le cache d’Amazon, enregistrés avec le lien source."
       }
     }
   },

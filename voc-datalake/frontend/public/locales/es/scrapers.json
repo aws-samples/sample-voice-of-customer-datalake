@@ -314,7 +314,9 @@
     "moreErrors_other": "...y {{count, number}} errores más",
     "pagesScraped": "Páginas scrapeadas:",
     "reviewsFound": "Reseñas encontradas:",
-    "running": "Ejecutando..."
+    "running": "Ejecutando...",
+    "blockedHint": "El sitio rechaza los navegadores automatizados, así que no se pudieron leer sus reseñas. Consulta «Blocked sites» en la documentación de fuentes de datos (docs/web-reviews.md).",
+    "notFinished": "No terminó"
   },
   "subtitle": "Todo lugar del que llega tu feedback: páginas de reseñas, apps, archivos y herramientas",
   "syntheticCard": {
@@ -354,7 +356,9 @@
       "addFirstPage": "Añade tu primera página de reseñas",
       "unnamed": "Página sin nombre",
       "deleteConfirmTitle": "Quitar página de reseñas",
-      "deleteConfirmMessage": "¿Seguro que quieres quitar esta página de reseñas?"
+      "deleteConfirmMessage": "¿Seguro que quieres quitar esta página de reseñas?",
+      "addBedrockPage": "Añadir una página del índice de búsqueda web de Bedrock",
+      "bedrockNote": "Las reseñas se leen de la copia de esta página que Amazon Bedrock ha indexado (la caché de Amazon), no del propio sitio. Cada reseña conserva su URL de origen y su sitio, así que siempre remite a donde se publicó."
     },
     "kindLabel": "Tipo",
     "kind": {
@@ -362,6 +366,10 @@
       "ios": "App de iPhone",
       "android": "App de Android",
       "app": "App"
+    },
+    "method": {
+      "browser": "Navegador",
+      "bedrock": "Índice web de Bedrock"
     }
   },
   "sourceMenu": {
@@ -419,6 +427,10 @@
       "synthetic": {
         "title": "Reseñas de ejemplo para demos",
         "description": "Reseñas escritas por IA, marcadas como datos de ejemplo, para probar la plataforma."
+      },
+      "webReviewsBedrock": {
+        "title": "Índice de búsqueda web de Amazon Bedrock",
+        "description": "Reseñas de una página que Amazon Bedrock ha indexado, para sitios que bloquean los navegadores automatizados (G2, Gartner, Capterra, TrustRadius). Leídas de la caché de Amazon y guardadas con el enlace de origen."
       }
     }
   },

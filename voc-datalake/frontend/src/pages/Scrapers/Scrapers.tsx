@@ -33,6 +33,7 @@ import PluginConfigModal from './PluginConfigModal'
 import ScraperCard from './ScraperCard'
 import ScraperEditor from './ScraperEditor'
 import { supportsAppConfigs } from './scraper-helpers'
+import type { AppConfig } from './scraper-helpers'
 import SyntheticSourceCard from './SyntheticSourceCard'
 import TemplateSelector from './TemplateSelector'
 import { useScrollToHash } from './scraperAnchor'
@@ -221,6 +222,8 @@ export default function Scrapers() {
   const [selectedPlugin, setSelectedPlugin] = useState<PluginManifest | null>(null)
   // Set when a card's Edit opened the dialog: it shows just that app / page.
   const [focusAppId, setFocusAppId] = useState<string | undefined>(undefined)
+  // Set when a source tile presets the new app (the Bedrock web search page): the dialog opens on its add form.
+  const [addPreset, setAddPreset] = useState<AppConfig | undefined>(undefined)
   const [selectedGenerator, setSelectedGenerator] = useState<PluginManifest | null>(null)
   const [showJsonUpload, setShowJsonUpload] = useState(false)
   const [showCsvUpload, setShowCsvUpload] = useState(false)
@@ -273,9 +276,10 @@ export default function Scrapers() {
     setIsCreating(true)
   }
 
-  const handleSelectPlugin = (plugin: PluginManifest) => {
+  const handleSelectPlugin = (plugin: PluginManifest, preset?: Readonly<AppConfig>) => {
     setShowTemplates(false)
     setFocusAppId(undefined)
+    setAddPreset(preset === undefined ? undefined : { ...preset })
     setSelectedPlugin(plugin)
   }
 
@@ -327,7 +331,7 @@ export default function Scrapers() {
         onRun={(id) => runMutation.mutate(id)}
         refusedRun={refusedRun}
         onEditPlugin={(plugin, appId) => {
-          setFocusAppId(appId); setSelectedPlugin(plugin)
+          setFocusAppId(appId); setAddPreset(undefined); setSelectedPlugin(plugin)
         }}
         onDeleteApp={(pluginId, appId) => setDeleteAppInfo({
           pluginId,
@@ -359,6 +363,7 @@ export default function Scrapers() {
         plugin={selectedPlugin}
         isAdmin={isAdmin}
         focusAppId={focusAppId}
+        addPreset={addPreset}
         onClose={() => setSelectedPlugin(null)}
       />}
 

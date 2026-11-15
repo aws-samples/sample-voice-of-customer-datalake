@@ -48,9 +48,12 @@ class _Vendor(NamedTuple):
 _VENDORS: Final = (
     _Vendor('DataDome', ('captcha-delivery.com', 'dd_referrer', 'datadome'), ()),
     _Vendor('HUMAN (PerimeterX)', ('px-captcha', 'perimeterx', '_pxappid'), ('press & hold', 'press and hold')),
-    _Vendor('Cloudflare', ('cf-chl', '__cf_chl', 'challenge-platform'), ('just a moment...', 'attention required! | cloudflare')),
-    _Vendor('AWS WAF', ('gokuprops', 'awswafcookiedomainlist'), ()),
-    _Vendor('Reddit network security', (), ('blocked by network security',)),
+    _Vendor('Cloudflare', ('cf-chl', '__cf_chl', 'challenge-platform'),
+            ('just a moment...', 'attention required! | cloudflare', 'sorry, you have been blocked')),
+    # `awswaf.com`: the challenge script's host (`<id>.edge.sdk.awswaf.com/.../challenge.js`, Trustpilot 2026-11-15).
+    _Vendor('AWS WAF', ('gokuprops', 'awswafcookiedomainlist', 'awswaf.com'), ()),
+    _Vendor('Reddit network security', (),
+            ('blocked by network security', 'blocked due to a network policy', 'whoa there, pardner')),
     _Vendor('a CAPTCHA', ('g-recaptcha', 'hcaptcha.com'), ('verify you are human', 'are you a robot', 'prove your humanity')),
 )
 _GENERIC_TEXT: Final = ('access denied', 'request blocked', 'unusual traffic')

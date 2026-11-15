@@ -8,11 +8,14 @@ import {
   Globe, Smartphone, Loader2, CheckCircle2, AlertCircle,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { formatDateTime } from '../../utils/dateUtils'
 import {
   WEB_REVIEWS_PLUGIN_ID, appField, getAppIdentifier, getFrequencyLabel,
 } from './scraper-helpers'
 import { CardActions, CardStat, RadarBadge, RunStartedNotice } from './SourceCardParts'
 import { ToneTile } from './SourceDialogHeader'
+import { isLiveRun } from './useAppRun'
+import { BEDROCK_WEB_SEARCH, reviewMethod, showsReviewMethod } from './webReviewMethod'
 import type { AppConfig } from './scraper-helpers'
 import type { PluginManifest } from '../../plugins/types'
 
@@ -20,6 +23,8 @@ export interface RunStatusInfo {
   status: string
   items_found: number
   errors: string[]
+  started_at?: string
+  completed_at?: string
 }
 
 /** What kind of source a card is, in words (a web-review target is a "Review page", not "Platform: Web"). */
@@ -72,6 +77,9 @@ function RunBoundStat({ app, pluginId }: Readonly<{ app: AppConfig; pluginId: st
 /** Up to two run errors (a web target reports "<name>: blocked by <vendor>"), then how many more. */
 const SHOWN_ERRORS = 2
 
+/** The web_reviews ingestor's error for a site that refused the browser: `"<target>: blocked by <vendor>"`. */
+const BLOCKED_ERROR = /: blocked by /
+
 function RunErrors({ errors }: Readonly<{ errors: string[] }>) {
   const { t } = useTranslation('scrapers')
   if (errors.length === 0) return null
@@ -79,50 +87,76 @@ function RunErrors({ errors }: Readonly<{ errors: string[] }>) {
     <div className="mt-1 text-xs text-danger space-y-0.5">
       {errors.slice(0, SHOWN_ERRORS).map((error) => <div key={error} className="break-words [overflow-wrap:anywhere]">{error}</div>)}
       {errors.length > SHOWN_ERRORS ? <div>{t('status.moreErrors', { count: errors.length - SHOWN_ERRORS })}</div> : null}
+      {/* What "blocked" means and where to read more (docs/web-reviews.md, "Blocked sites"). */}
+      {errors.some((error) => BLOCKED_ERROR.test(error)) ? <p className="text-text">{t('status.blockedHint')}</p> : null}
     </div>
   )
 }
 
-function getStatusColor(status: string, hasErrors: boolean): string {
-  if (status === 'running') return 'bg-info-subtle border-info/30'
-  if (status === 'error') return 'bg-danger-subtle border-danger/30'
-  if (hasErrors) return 'bg-warn-subtle border-warn/30'
-  return 'bg-ok-subtle border-ok/30'
+/** What a run row says, for the card: `stale` is a `running` row that never finished (useAppRun STALE_RUN_MS). */
+type ShownStatus = 'running' | 'stale' | 'error' | 'partial' | 'completed'
+
+function shownStatus(status: RunStatusInfo): ShownStatus {
+  if (status.status === 'running') return isLiveRun(status) ? 'running' : 'stale'
+  if (status.status === 'error') return 'error'
+  return status.errors.length > 0 ? 'partial' : 'completed'
 }
 
-function StatusIcon({
-  status, hasErrors,
-}: Readonly<{
-  status: string
-  hasErrors: boolean
-}>) {
+const STATUS_COLOR: Readonly<Record<ShownStatus, string>> = {
+  running: 'bg-info-subtle border-info/30',
+  stale: 'bg-warn-subtle border-warn/30',
+  error: 'bg-danger-subtle border-danger/30',
+  partial: 'bg-warn-subtle border-warn/30',
+  completed: 'bg-ok-subtle border-ok/30',
+}
+
+function StatusIcon({ shown }: Readonly<{ shown: ShownStatus }>) {
   const { t } = useTranslation('scrapers')
-  if (status === 'running') {
-    return <><Loader2 size={14} className="animate-spin text-info" /><span className="font-medium text-info">{t('status.running')}</span></>
+  switch (shown) {
+    case 'running':
+      return <><Loader2 size={14} className="animate-spin text-info" /><span className="font-medium text-info">{t('status.running')}</span></>
+    case 'stale':
+      return <><AlertCircle size={14} className="text-warn" /><span className="font-medium text-warn">{t('status.notFinished')}</span></>
+    case 'error':
+      return <><AlertCircle size={14} className="text-danger" /><span className="font-medium text-danger">{t('status.failed')}</span></>
+    case 'partial':
+      return <><AlertCircle size={14} className="text-warn" /><span className="font-medium text-warn">{t('status.completedWithErrors')}</span></>
+    case 'completed':
+      return <><CheckCircle2 size={14} className="text-ok" /><span className="font-medium text-ok">{t('status.completed')}</span></>
   }
-  if (status === 'error') {
-    return <><AlertCircle size={14} className="text-danger" /><span className="font-medium text-danger">{t('status.failed')}</span></>
-  }
-  if (hasErrors) {
-    return <><AlertCircle size={14} className="text-warn" /><span className="font-medium text-warn">{t('status.completedWithErrors')}</span></>
-  }
-  return <><CheckCircle2 size={14} className="text-ok" /><span className="font-medium text-ok">{t('status.completed')}</span></>
+}
+
+/** When the shown run ran ("Last Run: 14 Oct 2026, 09:01"); nothing while it runs or when the row has no time. */
+function RunWhen({ status, shown }: Readonly<{ status: RunStatusInfo; shown: ShownStatus }>) {
+  const { t, i18n } = useTranslation('scrapers')
+  const when = formatDateTime(status.completed_at ?? status.started_at, i18n.language)
+  if (shown === 'running' || when === '') return null
+  return <div className="text-xs text-muted">{t('card.lastRun')}: {when}</div>
 }
 
 function AppRunStatusBar({ status }: Readonly<{ status: RunStatusInfo }>) {
   const { t } = useTranslation('scrapers')
+  const shown = shownStatus(status)
   return (
-    <div className={clsx('mt-3 p-3 rounded-lg text-sm border', getStatusColor(status.status, status.errors.length > 0))}>
+    <div className={clsx('mt-3 p-3 rounded-lg text-sm border', STATUS_COLOR[shown])}>
       <div className="flex items-center gap-2 mb-1">
-        <StatusIcon status={status.status} hasErrors={status.errors.length > 0} />
+        <StatusIcon shown={shown} />
       </div>
       <div className="text-xs text-text">
         {t('status.reviewsFound')} <span className="font-mono font-semibold text-text-strong">{status.items_found}</span>
       </div>
-      {status.status === 'running' ? <RunStartedNotice /> : null}
+      <RunWhen status={status} shown={shown} />
+      {shown === 'running' ? <RunStartedNotice /> : null}
       <RunErrors errors={status.errors} />
     </div>
   )
+}
+
+/** "Browser" or "Bedrock web index": how a review page is read (webReviewMethod.ts). */
+function ReviewMethodBadge({ app }: Readonly<{ app: AppConfig }>) {
+  const { t } = useTranslation('scrapers')
+  const label = reviewMethod(app) === BEDROCK_WEB_SEARCH ? t('appCard.method.bedrock') : t('appCard.method.browser')
+  return <span className="badge badge-muted">{label}</span>
 }
 
 export function AppConfigCard({
@@ -161,6 +195,7 @@ export function AppConfigCard({
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
             <h2 className="text-sm font-semibold tracking-tight text-text-strong break-words [overflow-wrap:anywhere] min-w-0">{name}</h2>
             <RadarBadge brandLabel={radarBrandLabel} />
+            {showsReviewMethod(app, plugin) ? <ReviewMethodBadge app={app} /> : null}
           </div>
           <p className="text-sm text-muted font-mono break-all">{identifier}</p>
         </div>

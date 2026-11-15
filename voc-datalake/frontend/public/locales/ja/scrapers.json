@@ -292,7 +292,9 @@
     "moreErrors_other": "...他{{count, number}}個のエラー",
     "pagesScraped": "スクレイプしたページ:",
     "reviewsFound": "見つかったレビュー:",
-    "running": "実行中..."
+    "running": "実行中...",
+    "blockedHint": "このサイトは自動ブラウザーを拒否するため、レビューを読み取れませんでした。データソースのドキュメント（docs/web-reviews.md）の「Blocked sites」を参照してください。",
+    "notFinished": "完了しませんでした"
   },
   "subtitle": "フィードバックの取得元すべて：レビューページ、アプリ、ファイル、ツール",
   "syntheticCard": {
@@ -332,7 +334,9 @@
       "addFirstPage": "最初のレビューページを追加",
       "unnamed": "名前のないページ",
       "deleteConfirmTitle": "レビューページを削除",
-      "deleteConfirmMessage": "このレビューページを削除してもよろしいですか？"
+      "deleteConfirmMessage": "このレビューページを削除してもよろしいですか？",
+      "addBedrockPage": "Bedrock ウェブ検索インデックスからページを追加",
+      "bedrockNote": "レビューはサイトそのものではなく、Amazon Bedrock がインデックスしたこのページのコピー（Amazon のキャッシュ）から読み取られます。各レビューには取得元の URL とサイトが保持されるため、常に公開元をたどれます。"
     },
     "kindLabel": "種類",
     "kind": {
@@ -340,6 +344,10 @@
       "ios": "iPhoneアプリ",
       "android": "Androidアプリ",
       "app": "アプリ"
+    },
+    "method": {
+      "browser": "ブラウザー",
+      "bedrock": "Bedrock ウェブインデックス"
     }
   },
   "sourceMenu": {
@@ -397,6 +405,10 @@
       "synthetic": {
         "title": "デモ用のサンプルレビュー",
         "description": "AIが書いたレビュー（サンプルデータとして表示）でプラットフォームを試せます。"
+      },
+      "webReviewsBedrock": {
+        "title": "Amazon Bedrock ウェブ検索インデックス",
+        "description": "自動ブラウザーをブロックするサイト（G2、Gartner、Capterra、TrustRadius）向けに、Amazon Bedrock がインデックスしたページのレビューを取り込みます。Amazon のキャッシュから読み取り、取得元のリンクとともに保存します。"
       }
     }
   },

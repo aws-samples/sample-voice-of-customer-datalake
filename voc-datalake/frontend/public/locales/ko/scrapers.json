@@ -292,7 +292,9 @@
     "moreErrors_other": "...그 외 {{count, number}}개 오류",
     "pagesScraped": "스크랩한 페이지:",
     "reviewsFound": "발견된 리뷰:",
-    "running": "실행 중..."
+    "running": "실행 중...",
+    "blockedHint": "이 사이트는 자동화된 브라우저를 거부하므로 리뷰를 읽을 수 없었습니다. 데이터 소스 문서(docs/web-reviews.md)의 \"Blocked sites\"를 참조하세요.",
+    "notFinished": "완료되지 않음"
   },
   "subtitle": "피드백이 들어오는 모든 곳: 리뷰 페이지, 앱, 파일, 도구",
   "syntheticCard": {
@@ -332,7 +334,9 @@
       "addFirstPage": "첫 리뷰 페이지 추가",
       "unnamed": "이름 없는 페이지",
       "deleteConfirmTitle": "리뷰 페이지 제거",
-      "deleteConfirmMessage": "이 리뷰 페이지를 제거하시겠습니까?"
+      "deleteConfirmMessage": "이 리뷰 페이지를 제거하시겠습니까?",
+      "addBedrockPage": "Bedrock 웹 검색 인덱스에서 페이지 추가",
+      "bedrockNote": "리뷰는 사이트 자체가 아니라 Amazon Bedrock이 인덱싱한 이 페이지의 사본(Amazon 캐시)에서 읽습니다. 각 리뷰는 원본 URL과 사이트를 유지하므로 항상 게시된 곳을 가리킵니다."
     },
     "kindLabel": "유형",
     "kind": {
@@ -340,6 +344,10 @@
       "ios": "iPhone 앱",
       "android": "Android 앱",
       "app": "앱"
+    },
+    "method": {
+      "browser": "브라우저",
+      "bedrock": "Bedrock 웹 인덱스"
     }
   },
   "sourceMenu": {
@@ -397,6 +405,10 @@
       "synthetic": {
         "title": "데모용 샘플 리뷰",
         "description": "샘플 데이터로 표시된 AI 작성 리뷰로 플랫폼을 체험합니다."
+      },
+      "webReviewsBedrock": {
+        "title": "Amazon Bedrock 웹 검색 인덱스",
+        "description": "자동화된 브라우저를 차단하는 사이트(G2, Gartner, Capterra, TrustRadius)를 위해 Amazon Bedrock이 인덱싱한 페이지의 리뷰를 가져옵니다. Amazon 캐시에서 읽고 원본 링크와 함께 저장합니다."
       }
     }
   },

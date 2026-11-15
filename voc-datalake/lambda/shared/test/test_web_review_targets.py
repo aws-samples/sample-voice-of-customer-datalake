@@ -18,7 +18,7 @@ def public_dns():
 def test_a_valid_target_is_stored_as_strings(public_dns):
     assert validated_target({'id': 'abc', 'app_name': 'Trustpilot', 'url': URL, 'max_pages': 7, 'extra': 'x'}) == {
         'id': 'abc', 'app_name': 'Trustpilot', 'url': URL, 'max_pages': '7', 'max_reviews': '0', 'frequency_minutes': '0',
-        'enabled': 'true',
+        'enabled': 'true', 'method': 'browser',
     }
     public_dns.assert_called_once_with(URL)
 
@@ -100,3 +100,46 @@ def test_a_source_id_that_is_not_a_web_review_one_is_refused(source_id: object):
 ])
 def test_target_source_id_is_the_stored_one_or_minted(target, expected):
     assert target_source_id(target) == expected
+
+
+class TestTheReadingMethod:
+    """``method`` (7.41.00): ``browser`` unless a target says ``bedrock_web_search``; ``model`` only for that one."""
+
+    @pytest.mark.usefixtures('public_dns')
+    @pytest.mark.parametrize('given', [{}, {'method': ''}, {'method': None}, {'method': '  browser '}])
+    def test_absent_or_blank_is_the_browser(self, given):
+        assert validated_target({'app_name': 'T', 'url': URL, **given})['method'] == 'browser'
+
+    @pytest.mark.usefixtures('public_dns')
+    def test_bedrock_web_search_is_kept_with_no_model_by_default(self):
+        stored = validated_target({'app_name': 'T', 'url': URL, 'method': 'bedrock_web_search'})
+        assert stored['method'] == 'bedrock_web_search'
+        assert 'model' not in stored
+
+    @pytest.mark.usefixtures('public_dns')
+    @pytest.mark.parametrize('model', ['openai.gpt-5.6-luna', 'openai.gpt-5.6-terra', 'openai.gpt-5.6-sol',
+                                       'openai.gpt-5.5', 'openai.gpt-5.4'])
+    def test_an_offered_model_is_kept(self, model):
+        stored = validated_target({'app_name': 'T', 'url': URL, 'method': 'bedrock_web_search', 'model': model})
+        assert stored['model'] == model
+
+    @pytest.mark.usefixtures('public_dns')
+    def test_a_browser_target_drops_a_model(self):
+        assert 'model' not in validated_target({'app_name': 'T', 'url': URL, 'model': 'openai.gpt-5.6-luna'})
+
+    @pytest.mark.usefixtures('public_dns')
+    @pytest.mark.parametrize('method', ['http', 'Browser', 'bedrock-web-search', 'agentcore_web_search'])
+    def test_any_other_method_is_refused_naming_the_allowed_ones(self, method):
+        with pytest.raises(TargetError, match=r'^method must be one of browser, bedrock_web_search$'):
+            validated_target({'app_name': 'T', 'url': URL, 'method': method})
+
+    @pytest.mark.usefixtures('public_dns')
+    @pytest.mark.parametrize('model', ['anthropic.claude-haiku-5-5', 'openai.gpt-4o', 'openai.gpt-5.6-luna '.upper()])
+    def test_a_model_not_offered_is_refused(self, model):
+        with pytest.raises(TargetError, match=r'^model must be one of openai\.gpt-5\.6-luna, '):
+            validated_target({'app_name': 'T', 'url': URL, 'method': 'bedrock_web_search', 'model': model})
+
+    @pytest.mark.usefixtures('public_dns')
+    def test_the_stored_form_validates_to_itself(self):
+        stored = validated_target({'app_name': 'T', 'url': URL, 'method': 'bedrock_web_search', 'model': 'openai.gpt-5.5'})
+        assert validated_target(stored) == stored

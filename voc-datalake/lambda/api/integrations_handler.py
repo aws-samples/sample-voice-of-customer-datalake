@@ -19,7 +19,8 @@ live-checked and audited; a write resolves the role from the table, never the 30
 * Run now invokes the plugin's ingestor with the RESOLVED workspace's id in ``workspace_id``
   (shared/workspace_routing.py ``workspace_payload``: never a body field), so the run reads that workspace's
   credentials and writes its own rows; its ``running`` row and ``GET /sources/status?run_status=`` are the
-  workspace's ``WS#{ws}#SOURCE_RUN#{source}`` (shared/run_rows.py); ``s3_import`` is refused there (400);
+  workspace's ``WS#{ws}#SOURCE_RUN#{source}`` (shared/run_rows.py; ``&app_id=`` / ``&execution_id=`` filter that
+  partition, so another workspace's id answers ``never_run``); ``s3_import`` is refused there (400);
 * ``GET /sources/status`` reports the shared schedule rule and the workspace's own breaker, and
   ``POST /sources/{source}/reset`` clears the workspace's ``WS#{ws}#CIRCUIT#{source}`` row only (shared/plugin_circuit.py);
 * ``PUT /sources/{source}/enable`` and ``/disable`` are refused (400): they turn the plugin's one EventBridge rule
@@ -58,7 +59,7 @@ from shared.plugin_circuit import clear_circuit, closed_circuit, read_circuits
 from shared.plugin_identity import PLUGIN_IDENTIFIER_RULES, S3_IMPORT_SOURCE, is_valid_plugin_identifier
 from shared.radar_brands import radar_brand_setting
 from shared.request_body import json_body_value, json_object_body
-from shared.run_rows import run_status, source_run_partition
+from shared.run_rows import run_app_id_error, run_execution_id_error, run_status, source_run_partition
 from shared.scraper_limits import INVALID_CONFIGS, scraper_list_error
 from shared.snapstart import api_route_warmer, botocore_model_warmer, register_snapshot_hooks
 from shared.timestamps import now_iso
@@ -908,13 +909,36 @@ def delete_app_config(source: str, app_id: str):
         return {'success': True}
 
 
+def _run_app_id() -> str | None:
+    """The one app a Run now names (the body's ``app_id``), or None to run every app config.
+
+    The body is optional: a missing or malformed one (not JSON, or not an object) runs every app config —
+    deliberately not a 400. An ``app_id`` that is not an app's name (``run_app_id_error``) is a 400: a run the
+    ingestor could not match would run nothing, or every page."""
+    try:
+        body = json_object_body(app)
+    except ValidationError:
+        return None
+    app_id = body.get("app_id")
+    if not app_id:
+        return None
+    error = run_app_id_error(app_id)
+    if error:
+        raise ValidationError(error)
+    return app_id
+
+
 @app.post("/sources/<source>/run")
 @tracer.capture_method
 def run_source(source: str):
     """Manually trigger a data source ingestor Lambda.
 
     Optionally accepts a JSON body with `app_id` to run a single app
-    config instead of all configs for the source.
+    config instead of all configs for the source: the app, package or review
+    page the ingestor runs (`shared.run_rows.run_app_id_error`; malformed is a
+    400, before anything is written or invoked). The run row keeps it, so
+    `GET /sources/status?run_status=<source>&app_id=<app_id>` answers that
+    app's run, never another page's of the same plugin.
 
     Admin-gated: this invokes a Lambda that fetches from a third-party API and
     writes to the data lake, so every call costs money and consumes whatever rate
@@ -959,17 +983,12 @@ def run_source(source: str):
 
     execution_id = timestamped_id(f'run_{source}', datetime.now(UTC))
     fields: dict = {"execution_id": execution_id}
-    # The body is optional: a missing or malformed one (not JSON, or not an
-    # object) runs every app config — deliberately not a 400.
-    try:
-        body = json_object_body(app)
-    except ValidationError:
-        body = {}
-    if body.get("app_id"):
-        fields["app_id"] = body["app_id"]
+    app_id = _run_app_id()
+    if app_id:
+        fields["app_id"] = app_id
     payload = workspace_payload(fields, context)
 
-    # Create initial run status record
+    # Create initial run status record (with the app it runs, which the status route filters on)
     try:
         table = get_aggregates_table()
         if table:
@@ -977,6 +996,7 @@ def run_source(source: str):
                 'pk': source_run_partition(scope, source), 'sk': execution_id,
                 'status': 'running', 'items_found': 0,
                 'started_at': now_iso(),
+                **({'app_id': app_id} if app_id else {}),
             })
     except (ClientError, BotoCoreError) as e:
         logger.warning(f"Failed to create run status: {e}")
@@ -1013,17 +1033,36 @@ def run_source(source: str):
     return {"success": True, "message": f"Triggered {source} ingestor", "source": source, "execution_id": execution_id}
 
 
-def _get_source_run_status(source: str):
-    """Get the latest run status for a data source plugin (in a workspace: its ``WS#{ws}#SOURCE_RUN#`` rows)."""
+def _get_source_run_status(source: str, app_id: str | None = None, execution_id: str | None = None):
+    """Get the latest run status for a data source plugin (in a workspace: its ``WS#{ws}#SOURCE_RUN#`` rows), or
+    of one app's runs (``app_id``, as ``run_source`` stored it) or one run (``execution_id``): the same answer shape,
+    ``never_run`` when the request's partition holds no such run (another workspace's id included)."""
     from shared.tables import get_aggregates_table
 
     scope = _request.scope()
     try:
         return run_status(get_aggregates_table(), source_run_partition(scope, source), {'source': source},
-                          lambda run: {'errors': run.get('errors', [])}, scope)
+                          lambda run: {'errors': run.get('errors', [])}, scope,
+                          app_id=app_id, execution_id=execution_id)
     except (ClientError, BotoCoreError) as e:
         logger.warning(f"Failed to get source run status: {e}")
         return {'source': source, 'status': 'unknown'}
+
+
+#: The run filters of ``GET /sources/status?run_status=<source>`` (one app's runs, one run).
+RUN_FILTER_PARAMS: Final = ('app_id', 'execution_id')
+RUN_FILTERS_NEED_A_SOURCE: Final = "app_id and execution_id filter one source's runs: name it with run_status."
+
+
+def _run_filters(source: str, params: Mapping[str, str]) -> tuple[str | None, str | None]:
+    """The request's ``app_id`` and ``execution_id`` (an empty value is none), each validated (400 otherwise)."""
+    app_id = params.get('app_id') or None
+    execution_id = params.get('execution_id') or None
+    if app_id is not None and (error := run_app_id_error(app_id)):
+        raise ValidationError(error)
+    if execution_id is not None and (error := run_execution_id_error(source, execution_id)):
+        raise ValidationError(error)
+    return app_id, execution_id
 
 
 # Concurrent DescribeRule calls one GET /sources/status makes. Each worker opens its own TLS connection,
@@ -1078,6 +1117,12 @@ def get_sources_status():
     — so "is this a real plugin?" is as much the question here as on
     `enable`/`disable`, of which this is the read-side mirror.
 
+    `?run_status=<source>` also takes `app_id` (that app's newest run, as `run_source`
+    stored it) and `execution_id` (that run; with `app_id` too, only when it is that
+    app's), each validated (400): the same answer, `never_run` when the request's run
+    partition holds no such run, another workspace's id included. Either filter
+    without `run_status` is a 400.
+
     The two branches answer it differently because only one of them can raise; see
     `_is_addressable_source`. Open to any authenticated user, deliberately and as
     before: `SourceCard.tsx` and `PluginConfigModal.tsx` both read it for ordinary
@@ -1099,7 +1144,9 @@ def get_sources_status():
         # there (and the two states this stops short of): see `_is_addressable_source`.
         # Pinned in both directions by TestTheQueryStringSourceRouteIsValidated.
         _validate_source_parameter(run_status_source)
-        return _get_source_run_status(run_status_source)
+        return _get_source_run_status(run_status_source, *_run_filters(run_status_source, params))
+    if any(params.get(name) for name in RUN_FILTER_PARAMS):
+        raise ValidationError(RUN_FILTERS_NEED_A_SOURCE)
 
     sources_param = params.get('sources', '')
 
@@ -1167,6 +1214,23 @@ def refuse_in_workspace() -> None:
         raise ValidationError(SCHEDULE_IS_THE_DEPLOYMENTS)
 
 
+#: The answer of enable and disable for a plugin with no schedule rule (``s3_import``, ``synthetic_reviews``: their
+#: manifests declare no ``schedule``, so the ingestion stack creates none).
+NO_SCHEDULE: Final = 'This plugin has no schedule: it runs when started (Run now, or an upload for the S3 import).'
+
+
+def require_schedule(source: str) -> None:
+    """400 ``NO_SCHEDULE`` when ``source`` has no schedule rule, before EnableRule or DisableRule is called (which
+    answered AccessDenied, a 500, for a rule that does not exist).
+
+    The handler is not told which manifests declare a schedule, so it asks the one place that knows what exists,
+    exactly as ``GET /sources/status`` does (``_schedule_status``): the role may describe only the rules the
+    ingestion stack created, so a plugin without one is ``exists: False``. A describe that fails otherwise (a
+    throttle) is no answer: the toggle goes ahead and reports its own failure, as before."""
+    if _schedule_status(source).get('exists') is False:
+        raise ValidationError(NO_SCHEDULE)
+
+
 CIRCUIT_STATE_UNAVAILABLE = 'Failed to retrieve circuit state'
 
 
@@ -1205,10 +1269,13 @@ def enable_source(source: str):
     Admin-gated and validated — see `run_source`. `source` reaches
     `_build_rule_name`, so an arbitrary value named an EventBridge rule to
     enable. Refused in a workspace (400, `refuse_in_workspace`): use reset there.
+    A plugin without a schedule is a 400 (`require_schedule`), before anything is
+    cleared or toggled.
     """
     _request.require_request_admin()
     refuse_in_workspace()
     _validate_source_parameter(source)
+    require_schedule(source)
 
     # The TRIPPED row first: re-enabling only the schedule left every run skipped
     # at `is_open` until someone deleted the row by hand (pending §8). Both steps
@@ -1252,11 +1319,13 @@ def disable_source(source: str):
     Admin-gated and validated — see `run_source`. This is the direction that
     silently stops ingestion, so leaving it open was a denial-of-data any
     authenticated user could cause. Refused in a workspace (400, `refuse_in_workspace`):
-    the rule serves every workspace.
+    the rule serves every workspace. A plugin without a schedule is a 400
+    (`require_schedule`).
     """
     _request.require_request_admin()
     refuse_in_workspace()
     _validate_source_parameter(source)
+    require_schedule(source)
 
     rule_name = _build_rule_name(source)
     try:

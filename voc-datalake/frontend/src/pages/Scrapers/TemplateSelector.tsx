@@ -7,7 +7,7 @@
  */
 
 import { useQuery } from '@tanstack/react-query'
-import { FileJson, ClipboardPaste, Upload, FlaskConical, FileText, Code2, Plus, type LucideIcon } from 'lucide-react'
+import { FileJson, ClipboardPaste, Upload, FlaskConical, FileText, Code2, Plus, Search, type LucideIcon } from 'lucide-react'
 import { manifestIcon } from '../../components/SourceIcon/sourceIcons'
 import { useId, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -30,7 +30,8 @@ interface TemplateSelectorProps {
    *  disabled the same way. App sources and synthetic data are unaffected. */
   readonly isAdmin: boolean
   readonly onSelect: (template: ScraperTemplate) => void
-  readonly onSelectPlugin: (plugin: PluginManifest) => void
+  /** `preset`: the values the plugin's new app starts with (the Bedrock web search tile's `method`). */
+  readonly onSelectPlugin: (plugin: PluginManifest, preset?: Readonly<Record<string, string>>) => void
   readonly onSelectGenerator: (plugin: PluginManifest) => void
   readonly onManualImport: () => void
   readonly onJsonUpload: () => void
@@ -172,7 +173,7 @@ function mergeTemplates(apiTemplates: ScraperTemplate[]): ScraperTemplate[] {
 /** The icon an entry shows: its plugin's own, or the kind of thing it reads. */
 function entryIcon(entry: SourceEntry): LucideIcon {
   const { action } = entry
-  if (action.kind === 'plugin') return manifestIcon(action.plugin.icon, action.plugin.category)
+  if (action.kind === 'plugin') return action.preset === undefined ? manifestIcon(action.plugin.icon, action.plugin.category) : Search
   if (action.kind === 'template') return templateIcon(action.template)
   if (action.kind === 'generator') return FlaskConical
   return IMPORT_ICONS[action.kind]
@@ -239,7 +240,7 @@ export default function TemplateSelector({
   const importHandlers = { manual: onManualImport, json: onJsonUpload, csv: onCsvUpload }
   const choose = (entry: SourceEntry) => {
     const { action } = entry
-    if (action.kind === 'plugin') onSelectPlugin(action.plugin)
+    if (action.kind === 'plugin') onSelectPlugin(action.plugin, action.preset)
     else if (action.kind === 'template') onSelect(action.template)
     else if (action.kind === 'generator') onSelectGenerator(action.plugin)
     else importHandlers[action.kind]()

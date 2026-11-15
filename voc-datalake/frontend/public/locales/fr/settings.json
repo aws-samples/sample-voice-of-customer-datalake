@@ -383,7 +383,9 @@
       "resetFailed": "Impossible de réinitialiser cette source. Réessayez."
     },
     "advanced": "Avancé",
-    "advancedRawHint": "La configuration brute des collecteurs de la page Sources de données. Ajoutez et modifiez les collecteurs là-bas."
+    "advancedRawHint": "La configuration brute des collecteurs de la page Sources de données. Ajoutez et modifiez les collecteurs là-bas.",
+    "runsOnUpload": "S’exécute au dépôt d’un fichier",
+    "runsOnDemand": "S’exécute à la demande — sans planification"
   },
   "subtitle": "Configurez votre plateforme VoC",
   "tabs": {

@@ -57,6 +57,11 @@ const FIXED_COST: readonly (readonly [string, string, Record<string, unknown>])[
 const FREE: readonly (readonly [string, string, Record<string, unknown>])[] = [
   ['reserved concurrency', 'AWS::Lambda::Function', { ReservedConcurrentExecutions: 20 }],
   ['a plain function', 'AWS::Lambda::Function', {}],
+  // The Web Reviews browser (lib/stacks/ingestion-browser.ts): sessions bill per second; the profile is S3 storage.
+  ['an AgentCore custom browser with Web Bot Auth', 'AWS::BedrockAgentCore::BrowserCustom', {
+    Name: 'voc_web_reviews', NetworkConfiguration: { NetworkMode: 'PUBLIC' }, BrowserSigning: { Enabled: true },
+  }],
+  ['an AgentCore browser profile', 'AWS::BedrockAgentCore::BrowserProfile', { Name: 'voc_web_reviews' }],
   ['an alias without provisioned concurrency', 'AWS::Lambda::Alias', { Name: 'live' }],
   ['an on-demand DynamoDB table', 'AWS::DynamoDB::Table', { BillingMode: 'PAY_PER_REQUEST' }],
   ['an on-demand Kinesis stream', 'AWS::Kinesis::Stream', { StreamModeDetails: { StreamMode: 'ON_DEMAND' } }],

@@ -2,7 +2,7 @@
   "description": "Fingerprint of the no-prefix synth. Regenerate with npx ts-node scripts/generate-baseline.ts ONLY for a change intended to alter the default templates — see the script header.",
   "stacks": {
     "VocApiStack": {
-      "templateSha256": "a09067691972e36e77985153758bc0cd886feb3fbbabe2ad026c322fd5cfae09",
+      "templateSha256": "551b538c32f2a7161581e46647c18f5635628fc94197ef109fe2f914cec74dcc",
       "names": {
         "physicalNames": [
           "AWS::ApiGateway::Authorizer Name = voc-board-authorizer",
@@ -285,9 +285,11 @@
       }
     },
     "VocIngestionStack": {
-      "templateSha256": "9ca61c5d08d4579bef925160a12d94fcb335e369b931083629371af7ad855d10",
+      "templateSha256": "e0ce13b7415733a77c850eb62368a9a61b307b527814a22b3b2f3feeba24d34a",
       "names": {
         "physicalNames": [
+          "AWS::BedrockAgentCore::BrowserCustom Name = voc_web_reviews",
+          "AWS::BedrockAgentCore::BrowserProfile Name = voc_web_reviews",
           "AWS::Events::Rule Name = voc-ingest-app_reviews_android-schedule-<AWS::AccountId>-<AWS::Region>",
           "AWS::Events::Rule Name = voc-ingest-app_reviews_ios-schedule-<AWS::AccountId>-<AWS::Region>",
           "AWS::Events::Rule Name = voc-ingest-github_issues-schedule-<AWS::AccountId>-<AWS::Region>",
@@ -354,7 +356,7 @@
       }
     },
     "VocProcessingStack": {
-      "templateSha256": "9e0343777aeb89297de468a9357a40d185c54a1d4eefbc2cf693c6414cf24652",
+      "templateSha256": "5eee72a88ad17b057a6acff5dfccf9c68437c451732600f9335ef5c7ad835fab",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-agent-heartbeat-schedule-<AWS::AccountId>-<AWS::Region>",

@@ -17,6 +17,9 @@ const SOURCES_STATUS_KEY = sourcesStatusKey()
 
 interface ScheduleState {
   readonly enabled: boolean
+  /** False when the source has no schedule rule (`s3_import`, `synthetic_reviews`: their manifests declare none),
+   *  so there is nothing to switch; undefined while unknown (loading, or the rule could not be described). */
+  readonly exists?: boolean
   readonly loading?: boolean
   readonly circuit: SourceCircuit
   readonly resetting: boolean
@@ -90,7 +93,9 @@ export function useSourceSchedule(sourceId: string, apiEndpoint: string): {
   }
 
   return {
-    serverStatus: { enabled: own?.enabled ?? false, loading, circuit: own?.circuit ?? CLOSED, resetting, resetFailed },
+    serverStatus: {
+      enabled: own?.enabled ?? false, exists: own?.exists, loading, circuit: own?.circuit ?? CLOSED, resetting, resetFailed,
+    },
     toggleEnabled,
     resetCircuit,
   }

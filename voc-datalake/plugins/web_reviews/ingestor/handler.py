@@ -7,32 +7,46 @@ browser session per run (``agentcore_browser``), page by page (``target_reader``
 its reviews are taken from the page's JSON-LD or, failing that, from its text by the
 ``enrichment`` model (``extract``). A page unchanged since the last read is skipped
 (``page_cache``), and a read cut short by time or the run's review cap continues in
-the next run from a cursor (``resume``). Every target is its own source, stored on it
+the next run from a cursor (``resume``). One browser session serves every target of a run;
+when its connection closes mid-run, ONE new session continues with the target that was being
+read and those after it (``MAX_RECONNECTS``). Every target is its own source, stored on it
 as ``source_id`` (``web_trustpilot_example_air``), so source profiles apply per connector. A blocked site
 is reported in the run's errors (``<target>: blocked by <vendor>``), never read as
-"no reviews". See docs/web-reviews.md.
+"no reviews". A target whose ``method`` is ``bedrock_web_search`` is not read in the browser:
+its page is read once per run from the Amazon Bedrock web search cache by an OpenAI GPT
+model (``web_search_reader``), and every review it yields carries its attribution. See
+docs/web-reviews.md.
 """
 
+import os
 import time
+from collections import deque
 from collections.abc import Callable, Generator
 from datetime import date, timedelta
 from typing import Any, Final
 
+import boto3
 from agentcore_browser import BrowserUnavailableError, browser_session, session_seconds
-from cdp_client import CdpError
+from cdp_client import BrowserConnectionClosed, CdpError
 from extract import LLM_MAX_TOKENS, LLM_SURFACE, Completion, ExtractedReview, extract_reviews
 from page_cache import PageCache
 from page_reader import BrowserTab, PageLoadError, PageSnapshot
 from resume import ResumeCursor, ResumeStore, next_cursor
-from target_reader import ReadLimits, TargetResult, read_target
-from web_items import WebTarget, queue_item, stored_configs, target_from_config
+from target_reader import ReadLimits, ReadReview, TargetResult, read_target
+from web_items import METADATA_VALUE_MAX_CHARS, WebTarget, queue_item, stored_configs, target_from_config, url_list
+from web_search_reader import MAX_WEB_SEARCH_REVIEWS, WebSearchError, WebSearchRead, read_web_search_target
 
 from _shared.app_reviews_utils import is_due_for_run
 from _shared.base_ingestor import BaseIngestor, logger, metrics, run_in_workspace, tracer
 from shared.converse import converse
 from shared.invocation_cost import measure_invocation_cost
 from shared.timestamps import now_iso
-from shared.web_review_targets import MAX_REVIEWS, TargetError
+from shared.web_review_targets import (
+    DEFAULT_WEB_SEARCH_MODEL,
+    MAX_REVIEWS,
+    METHOD_BEDROCK_WEB_SEARCH,
+    TargetError,
+)
 from shared.ws_repo import WorkspaceScope
 
 #: Reviews one run sends at most, across every target (a target's own limit at most).
@@ -47,6 +61,8 @@ RESERVE_SECONDS: Final = 30
 #: A review older than the target's newest date minus this is not sent again.
 WATERMARK_SLACK: Final = timedelta(days=1)
 DEFAULT_TIMEOUT_SECONDS: Final = 900
+#: New browser sessions a run may start after its connection closed (the target being read is read again).
+MAX_RECONNECTS: Final = 1
 
 
 def _model_completion(prompt: str, system_prompt: str) -> str:
@@ -154,10 +170,11 @@ class WebReviewsIngestor(BaseIngestor):
         url = cursor.url if cursor else target.url
         return read_target(tab, url, self._extractor(cache, cursor is not None), limits), target_left
 
-    def _items_of(self, target: WebTarget, result: TargetResult,
-                  resume_at: ResumeCursor | None) -> Generator[dict, None, None]:
+    def _items_of(self, target: WebTarget, result: TargetResult, resume_at: ResumeCursor | None,
+                  attribution: dict[str, str] | None = None) -> Generator[dict, None, None]:
         for read in result.reviews:
-            yield queue_item(target, read.review, page=read.page, page_url=read.page_url, brand_name=self.brand_name)
+            yield queue_item(target, read.review, page=read.page, page_url=read.page_url, brand_name=self.brand_name,
+                             attribution=attribution)
             self._sent += 1
         newest = max((read.review.date for read in result.reviews if read.review.date), default=None)
         previous = self._watermark(target)
@@ -179,6 +196,8 @@ class WebReviewsIngestor(BaseIngestor):
         cursor = self._resume.load(target)
         try:
             result, target_left = self._read(tab, target, cursor)
+        except BrowserConnectionClosed:
+            raise  # not this target's failure: the run reads it again in a new session
         except (PageLoadError, CdpError) as error:
             self._report(f'{target.name}: {error}')
             self._resume.save(target, None)
@@ -195,27 +214,102 @@ class WebReviewsIngestor(BaseIngestor):
             metrics.add_metric(name='WebReviewsBlocked', unit='Count', value=1)
         return result, next_cursor(cursor, result, target_limit_left=target_left)
 
+    # ── bedrock_web_search ───────────────────────────────────────────────────
+
+    def _web_search(self, target: WebTarget, max_reviews: int) -> WebSearchRead:
+        region = os.environ.get('AWS_REGION') or os.environ.get('AWS_DEFAULT_REGION') or 'us-east-1'
+        return read_web_search_target(target.url, target.model or DEFAULT_WEB_SEARCH_MODEL, max_reviews,
+                                      region=region, credentials=boto3.Session().get_credentials())
+
+    def _read_by_web_search(self, target: WebTarget) -> Generator[dict, None, None]:
+        """*target*'s page, read once from the Bedrock web search cache; its new reviews with their attribution."""
+        if self._sent >= MAX_REVIEWS_PER_RUN:
+            self._report(f'{target.name}: skipped, the run reached {MAX_REVIEWS_PER_RUN} reviews')
+            return
+        if not self._has_time():
+            self._report(f'{target.name}: skipped, the run ran out of time')
+            return
+        cap = min(self._review_caps(target, None)[0], MAX_WEB_SEARCH_REVIEWS)
+        fetched_at = now_iso()
+        try:
+            read = self._web_search(target, cap)
+        except WebSearchError as error:
+            self._report(f'{target.name}: Amazon Bedrock web search failed ({error})')
+            return
+        if not read.fetched:
+            self._report(f'{target.name}: Amazon Bedrock web search could not open the page ({read.reason or "no reason"})')
+        watermark = self._watermark(target)
+        cutoff = watermark - WATERMARK_SLACK if watermark else None
+        new = [review for review in read.reviews
+               if cutoff is None or review.date is None or date.fromisoformat(review.date) >= cutoff]
+        logger.info(f'web_reviews {target.host}: {len(new)} new of {len(read.reviews)} reviews from the Bedrock web '
+                    f'search cache ({read.model}; {read.dropped} dropped as summaries or invalid)')
+        result = TargetResult(reviews=[ReadReview(review, 1, target.url) for review in new], pages_read=1, stop='pages')
+        yield from self._items_of(target, result, None, attribution=self._attribution(target, read, fetched_at))
+
+    @staticmethod
+    def _attribution(target: WebTarget, read: WebSearchRead, fetched_at: str) -> dict[str, str]:
+        """What every review of a web-search read carries (the Web Search terms: keep the citations and links)."""
+        attribution = {'method': METHOD_BEDROCK_WEB_SEARCH, 'model': read.model, 'site': target.host,
+                       'fetched_at': fetched_at, 'opened_urls': url_list(read.opened_urls),
+                       'cited_urls': url_list(read.cited_urls)}
+        if len(target.url) <= METADATA_VALUE_MAX_CHARS:
+            attribution['source_url'] = target.url
+        return attribution
+
+    # ── the browser ──────────────────────────────────────────────────────────
+
+    def _read_in_one_session(self, pending: deque[WebTarget]) -> Generator[dict, None, None]:
+        """Read *pending* in one browser session, each target leaving it once read; a closed connection leaves
+        the target being read (and those after it) pending."""
+        with browser_session(session_seconds(self._remaining() + RESERVE_SECONDS)) as cdp:
+            tab = BrowserTab(cdp)
+            tab.open()
+            while pending:
+                target = pending[0]
+                if self._sent >= MAX_REVIEWS_PER_RUN:
+                    self._report(f'{target.name}: skipped, the run reached {MAX_REVIEWS_PER_RUN} reviews')
+                    pending.popleft()
+                    continue
+                read = self._read_target(tab, target)
+                pending.popleft()
+                if read is not None:
+                    yield from self._items_of(target, *read)
+
     @tracer.capture_method
     def fetch_new_items(self) -> Generator[dict, None, None]:
         targets = self._targets()
         if not targets:
             logger.info('web_reviews: no target is due')
             return
-        try:
-            with browser_session(session_seconds(self._remaining() + RESERVE_SECONDS)) as cdp:
-                tab = BrowserTab(cdp)
-                tab.open()
-                for target in targets:
-                    if self._sent >= MAX_REVIEWS_PER_RUN:
-                        self._report(f'{target.name}: skipped, the run reached {MAX_REVIEWS_PER_RUN} reviews')
-                        continue
-                    read = self._read_target(tab, target)
-                    if read is not None:
-                        yield from self._items_of(target, *read)
-        except BrowserUnavailableError as error:
-            self._report(str(error))
-        except (PageLoadError, CdpError) as error:
-            self._report(f'The browser session failed: {error}')
+        searched = [target for target in targets if target.method == METHOD_BEDROCK_WEB_SEARCH]
+        browsed = [target for target in targets if target.method != METHOD_BEDROCK_WEB_SEARCH]
+        if browsed:  # no browser session (none billed) for a run of web-search targets only
+            yield from self._read_in_the_browser(browsed)
+        for target in searched:
+            yield from self._read_by_web_search(target)
+
+    def _read_in_the_browser(self, targets: list[WebTarget]) -> Generator[dict, None, None]:
+        """The browser targets in one session, and ONE more when its connection closes mid-run."""
+        pending = deque(targets)
+        reconnects = 0
+        while True:
+            try:
+                yield from self._read_in_one_session(pending)
+            except BrowserConnectionClosed as error:
+                if reconnects >= MAX_RECONNECTS or not self._has_time():
+                    self._report(f'The browser session failed: {error}')
+                    return
+                reconnects += 1
+                logger.warning(f'web_reviews: {error}; a new browser session reads the {len(pending)} targets left')
+            except BrowserUnavailableError as error:
+                self._report(str(error))
+                return
+            except (PageLoadError, CdpError) as error:
+                self._report(f'The browser session failed: {error}')
+                return
+            else:
+                return
 
     @classmethod
     def run_for_event(cls, event: object, context: Any = None) -> dict:

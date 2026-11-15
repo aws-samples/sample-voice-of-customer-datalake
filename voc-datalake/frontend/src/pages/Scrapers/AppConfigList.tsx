@@ -1,28 +1,53 @@
 /**
- * @fileoverview App-review configs of every multi-instance plugin, as run-able cards
- * that poll their run status while a run is in flight.
+ * @fileoverview App-review configs of every multi-instance plugin, as run-able cards. Each card reads its own last
+ * run on mount (so a reload still shows the result), and polls its own run while it is in flight (useAppRun.ts).
  * @module pages/Scrapers/AppConfigList
  */
 
 import { useQuery } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
-import {
-  useState, useEffect,
-} from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
-import { ignoreRejection } from '../../lib/rejections'
 import { useConfigStore } from '../../store/configStore'
 import { AppConfigCard } from './AppConfigComponents'
 import { useRadarBrandLabeler } from './useRadarBrands'
-import {
-  appField, getAppIdentifier, ownValue,
-} from './scraper-helpers'
+import { appField, getAppIdentifier } from './scraper-helpers'
+import { useAppRun } from './useAppRun'
 import type { RunStatusInfo } from './AppConfigComponents'
 import type { AppConfig } from './scraper-helpers'
+import type { SourceRunStatus } from './sourceRunStatus'
 import type { PluginManifest } from '../../plugins/types'
 import { allAppConfigsKey } from '../../api/queryKeys'
-import { noCleanup } from '../../hooks/noCleanup'
+
+type RunApp = (pluginId: string, appIdentifier: string) => Promise<unknown>
+
+function runStatusInfo(run: SourceRunStatus): RunStatusInfo {
+  return {
+    status: run.status, items_found: run.items_found ?? 0, errors: run.errors ?? [],
+    started_at: run.started_at, completed_at: run.completed_at,
+  }
+}
+
+/** One card and its own run: `identifier` is what Run now sends as `app_id` and what its status is read by. */
+function AppRunCard({
+  app, plugin, isAdmin, radarBrandLabel, onEdit, onDelete, onRunApp,
+}: Readonly<{
+  app: AppConfig
+  plugin: PluginManifest
+  isAdmin: boolean
+  radarBrandLabel: string | undefined
+  onEdit: () => void
+  onDelete: () => void
+  onRunApp: RunApp
+}>) {
+  const { lastRun, isRunning, start } = useAppRun(plugin.id, getAppIdentifier(app, plugin.id), onRunApp)
+  return (
+    <AppConfigCard app={app} plugin={plugin} radarBrandLabel={radarBrandLabel} isAdmin={isAdmin}
+      onEdit={onEdit} onDelete={onDelete} onRun={() => void start()}
+      isRunning={isRunning}
+      runStatus={lastRun === null ? undefined : runStatusInfo(lastRun)} />
+  )
+}
 
 export default function AppConfigList({
   plugins, isAdmin, onEditPlugin, onDeleteApp, onRunApp,
@@ -36,95 +61,10 @@ export default function AppConfigList({
   /** Edit one card: opens that app / review page's own form, not the plugin's whole list. */
   readonly onEditPlugin: (p: PluginManifest, appId: string) => void
   readonly onDeleteApp: (pluginId: string, appId: string) => void;
-  readonly onRunApp: (pluginId: string, appIdentifier: string) => Promise<unknown>
+  /** Starts one app's run (`POST /sources/{source}/run` with its `app_id`); its answer's `execution_id` is polled. */
+  readonly onRunApp: RunApp
 }) {
   const { config } = useConfigStore()
-  const [runningApps, setRunningApps] = useState<Set<string>>(new Set())
-  const [runStatuses, setRunStatuses] = useState<Record<string, RunStatusInfo>>({})
-
-  // Poll run status for running apps
-  useEffect(() => {
-    if (runningApps.size === 0) return noCleanup
-    // Extract unique plugin IDs from running app keys
-    const runningPluginIds = new Set([...runningApps].map((key) => {
-      const [pluginId = ''] = key.split('-')
-      return pluginId
-    }))
-    const updateStatus = (pluginId: string, result: {
-      status: string
-      items_found?: number
-      errors?: string[]
-    }) => {
-      const statusInfo: RunStatusInfo = {
-        status: result.status,
-        items_found: result.items_found ?? 0,
-        errors: result.errors ?? [],
-      }
-      // Update all running apps for this plugin with the same status
-      setRunStatuses((prev) => {
-        const next = { ...prev }
-        for (const key of runningApps) {
-          if (key.startsWith(`${pluginId}-`)) {
-            next[key] = statusInfo
-          }
-        }
-        return next
-      })
-      if (result.status === 'completed' || result.status === 'error') {
-        setRunningApps((prev) => {
-          const next = new Set(prev)
-          for (const key of prev) {
-            if (key.startsWith(`${pluginId}-`)) next.delete(key)
-          }
-          return next
-        })
-      }
-    }
-    const pollStatus = () => {
-      for (const pluginId of runningPluginIds) {
-        void api.getSourceRunStatus(pluginId)
-          .then((result) => {
-            updateStatus(pluginId, result)
-            return null
-          })
-          // A failed poll changes nothing on screen; the next tick (2 s) asks again.
-          .catch(ignoreRejection)
-      }
-    }
-    const interval = setInterval(pollStatus, 2000)
-    return () => clearInterval(interval)
-  }, [runningApps])
-
-  const handleRun = (pluginId: string, appIdentifier: string) => {
-    const appKey = `${pluginId}-${appIdentifier}`
-    setRunningApps((prev) => new Set(prev).add(appKey))
-    setRunStatuses((prev) => ({
-      ...prev,
-      [appKey]: {
-        status: 'running',
-        items_found: 0,
-        errors: [],
-      },
-    }))
-    // A failed trigger (403, 404, network) used to be an unhandled rejection
-    // and left the card spinning; it now ends the run with an error status.
-    onRunApp(pluginId, appIdentifier).catch((err: unknown) => {
-      setRunningApps((prev) => {
-        const next = new Set(prev)
-        next.delete(appKey)
-        return next
-      })
-      setRunStatuses((prev) => ({
-        ...prev,
-        [appKey]: {
-          status: 'error',
-          items_found: 0,
-          errors: [err instanceof Error ? err.message : String(err)],
-        },
-      }))
-    })
-  }
-
   const {
     data: allAppConfigs, isLoading: isLoadingApps,
   } = useQuery({
@@ -184,14 +124,10 @@ export default function AppConfigList({
         app, plugin,
       }) => {
         const appId = appField(app, 'id')
-        const identifier = getAppIdentifier(app, plugin.id)
-        const runKey = `${plugin.id}-${identifier}`
         return (
-          <AppConfigCard key={`${plugin.id}-${appId}`} app={app} plugin={plugin} radarBrandLabel={radarLabel(appField(app, 'radar_brand'))} isAdmin={isAdmin}
-            onEdit={() => onEditPlugin(plugin, appId)} onDelete={() => onDeleteApp(plugin.id, appId)}
-            onRun={() => handleRun(plugin.id, identifier)}
-            isRunning={runningApps.has(runKey)}
-            runStatus={ownValue(runStatuses, runKey)} />
+          <AppRunCard key={`${plugin.id}-${appId}`} app={app} plugin={plugin} radarBrandLabel={radarLabel(appField(app, 'radar_brand'))}
+            isAdmin={isAdmin} onEdit={() => onEditPlugin(plugin, appId)} onDelete={() => onDeleteApp(plugin.id, appId)}
+            onRunApp={onRunApp} />
         )
       })}
     </>

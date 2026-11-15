@@ -34,6 +34,7 @@ const NO_RESOURCE_TYPE = 'has no resource type in the Service Authorization Refe
 const COMPREHEND_DETECT = `Comprehend real-time detection without a custom endpoint ${NO_RESOURCE_TYPE}; stateless text analysis (processor, category reprocess, source PII policy)`;
 const SFN_LOG_DELIVERY = 'CloudWatch Logs vended log delivery: the Step Functions logging role CDK generates for a state machine with `logs` set; the Step Functions developer guide (cw-logs.html) documents these actions on "*" because log delivery APIs have no resource type';
 const SFN_TRACING = `X-Ray tracing for a state machine with \`tracingEnabled\` (CDK-generated); the action ${NO_RESOURCE_TYPE}`;
+const WEB_SEARCH = 'Amazon Bedrock web search for a Web Reviews target read with method bedrock_web_search: the web search IAM guide (security-web-search.html) grants search and cached fetch on "*" and documents aws:RequestedRegion as their condition key, which holds them to the deployment\'s region; ExternalWebAccess is never granted';
 const MODEL_AGREEMENT = `Bedrock model access provider (account-level agreement API); the action ${NO_RESOURCE_TYPE}`;
 /**
  * The API Gateway account role (api-gateway-logging-role.ts): API Gateway refuses it unless these are on "*". The
@@ -83,8 +84,10 @@ export const RESOURCE_STAR_ACTIONS: Readonly<Record<string, ResourceStarGrant>> 
     reason: 'CDK-managed: the aws-s3-deployment BucketDeployment singleton handler polls the invalidation it created; same grant as CreateInvalidation',
   },
   'bedrock-agentcore:ConnectBrowserAutomationStream': {
-    reason: `AgentCore managed browser (web reviews, design capture); the action ${NO_RESOURCE_TYPE}. Start/StopBrowserSession are scoped to aws.browser.v1`,
+    reason: `AgentCore browser sessions (web reviews, design capture); the action ${NO_RESOURCE_TYPE}. Start/StopBrowserSession are scoped to the one browser each role drives (the deployment's Web Bot Auth browser, or aws.browser.v1)`,
   },
+  'bedrock-websearch:InvokeSearch': { reason: WEB_SEARCH, requiredConditionKeys: ['aws:RequestedRegion'] },
+  'bedrock-websearch:InvokeFetch': { reason: WEB_SEARCH, requiredConditionKeys: ['aws:RequestedRegion'] },
   'servicequotas:ListServiceQuotas': { reason: `Read-only Bedrock quota listing for the Settings model test and capacity views; the action ${NO_RESOURCE_TYPE}` },
   'aws-marketplace:ViewSubscriptions': { reason: `Bedrock model EULA check; the action ${NO_RESOURCE_TYPE}` },
   'aws-marketplace:Subscribe': {

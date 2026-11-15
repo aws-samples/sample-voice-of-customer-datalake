@@ -367,7 +367,9 @@
       "resetFailed": "Could not reset this source. Try again."
     },
     "advanced": "Advanced",
-    "advancedRawHint": "The raw configuration behind the scrapers on the Data sources page. Add and edit scrapers there instead."
+    "advancedRawHint": "The raw configuration behind the scrapers on the Data sources page. Add and edit scrapers there instead.",
+    "runsOnUpload": "Runs on upload",
+    "runsOnDemand": "Runs on demand — no schedule"
   },
   "subtitle": "Configure the platform for everyone (administrators only).",
   "tabs": {

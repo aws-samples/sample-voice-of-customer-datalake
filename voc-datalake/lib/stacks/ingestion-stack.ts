@@ -38,12 +38,14 @@ import {
 } from './dlq-alarms';
 import { createScheduleDeadLetterQueue } from './ingestion-schedule-dlq';
 import { IngestorRoles } from './ingestion-roles';
+import { LazyIngestorBrowser, WEB_REVIEWS_BROWSER_BASE_NAME } from './ingestion-browser';
 import { createEmailIntake } from './email-intake';
 import { createDesignCapture } from './design-capture';
 import { PROCESSING_QUEUE_VISIBILITY_TIMEOUT } from './processor-timing';
 import { DESIGN_CAPTURE_FUNCTION_BASE_NAME } from '../utils/function-names';
 import { INBOUND_EMAIL_RULE_BASE_NAME, inboundEmailConfig } from '../utils/inbound-email';
 import { WORKSPACE_PARAMETER_BASE_PATH, workspaceParameterEnv } from '../utils/workspace-secrets';
+import { agentCoreName } from '../utils/naming';
 
 /**
  * S3-import staging bucket retention. Noncurrent versions are recoverable for a
@@ -125,6 +127,8 @@ export class VocIngestionStack extends VocStack {
   private readonly scheduleDlqKey: kms.IKey;
   /** VocCoreStack's Event API: where an ingestor with `jobNotices` publishes (docs/realtime.md). */
   private readonly realtime: RealtimePublishing;
+  /** The browser plugins' browser (ingestion-browser.ts), made on first use: none without such a plugin. */
+  private readonly browser: LazyIngestorBrowser;
 
   constructor(scope: Construct, id: string, props: VocIngestionStackProps) {
     super(scope, id, props);
@@ -134,6 +138,7 @@ export class VocIngestionStack extends VocStack {
     } = props;
     this.scheduleDlqKey = kmsKey;
     this.realtime = props.realtime;
+    this.browser = new LazyIngestorBrowser(this, () => agentCoreName(this.uniqueName(WEB_REVIEWS_BROWSER_BASE_NAME)));
 
 
 
@@ -437,6 +442,8 @@ export class VocIngestionStack extends VocStack {
       PLUGIN_VERSION: pluginVersion(plugin),
       // The tick's fan-out: its claim (voc-idempotency); voc-workspaces is in the common environment.
       ...(scheduleRuleName ? { INGEST_SCHEDULE_RULE_NAME: scheduleRuleName, ...this.scheduledTickEnv } : {}),
+      // A browser plugin's browser and profile (ingestion-browser.ts); unset: aws.browser.v1, no profile.
+      ...(infra.browser ? this.browser.get().environment : {}),
     };
 
     // All plugins need aggregates table for run status tracking
@@ -451,7 +458,8 @@ export class VocIngestionStack extends VocStack {
     // GetAtts the function would be a cycle (the function depends on this role's policy).
     const functionName = this.uniqueName(ingestorFunctionBaseName(plugin.id));
     const role = this.ingestorRoles.roleFor(plugin.id, {
-      bedrock: infra.bedrock, browser: infra.browser, scheduleRuleName, functionName, jobNotices: infra.jobNotices,
+      bedrock: infra.bedrock, browser: infra.browser ? this.browser.get() : undefined, webSearch: infra.webSearch,
+      scheduleRuleName, functionName, jobNotices: infra.jobNotices,
     });
 
     const fn = new lambda.Function(this, `Ingestor${capitalize(plugin.id)}`, {

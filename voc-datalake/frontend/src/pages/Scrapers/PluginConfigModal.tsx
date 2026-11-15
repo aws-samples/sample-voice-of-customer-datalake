@@ -12,7 +12,7 @@ import {
   useMutation, useQuery, useQueryClient,
 } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { Save, Loader2, Play, Plus, Trash2, Pencil } from 'lucide-react'
+import { Loader2, Play, Plus, Trash2, Pencil } from 'lucide-react'
 import { manifestIcon } from '../../components/SourceIcon/sourceIcons'
 import {
   useId, useState, useEffect,
@@ -23,17 +23,16 @@ import { Link } from 'react-router-dom'
 import { api } from '../../api/client'
 import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
 import { ADMIN_ONLY_TITLE } from '../../constants/admin'
-import {
-  SetupInstructions, PluginFieldGrid, ResultMessage,
-} from './PluginConfigParts'
+import { SetupInstructions, ResultMessage } from './PluginConfigParts'
+import AppEditorForm from './AppEditorForm'
 import { appField, getAppIdentifier, ownValue, supportsAppConfigs } from './scraper-helpers'
 import type { AppConfig } from './scraper-helpers'
 import type { PluginManifest } from '../../plugins/types'
 import ModalShell from '../../components/ModalShell/ModalShell'
 import SourceDialogHeader from './SourceDialogHeader'
 import { appCopy } from './appCopy'
-import RadarSourcePicker from './RadarSourcePicker'
 import { RadarBadge } from './SourceCardParts'
+import { BEDROCK_WEB_SEARCH, reviewMethod } from './webReviewMethod'
 import { useRadarBrandLabel } from './useRadarBrands'
 import { allAppConfigsKey, appConfigsKey } from '../../api/queryKeys'
 import { isPluginNotEnabled } from '../../workspace/workspaceRefusals'
@@ -52,6 +51,9 @@ interface PluginConfigModalProps {
   readonly isAdmin: boolean
   /** Opened from one card's Edit: show just that app / review page's form, and close when it is saved or cancelled. */
   readonly focusAppId?: string
+  /** Opened from a source tile that presets the new app (the Bedrock web search page's `method`): just the add form,
+   *  starting with these values, closed when it is saved or cancelled. */
+  readonly addPreset?: AppConfig
 }
 
 
@@ -78,6 +80,48 @@ function ScheduleToggle({
       )}
     </div>
   )
+}
+
+/**
+ * The plugin's schedule switch, read from `GET /sources/status`. A plugin without a schedule rule (`exists: false`:
+ * its manifest declares no `schedule`, like `s3_import`) shows none: enabling it would only be refused (400).
+ */
+function ScheduleSection({ pluginId, isAdmin }: Readonly<{ pluginId: string; isAdmin: boolean }>) {
+  const [scheduleEnabled, setScheduleEnabled] = useState(false)
+  const [scheduleExists, setScheduleExists] = useState(true)
+  const [scheduleLoading, setScheduleLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchStatus = async () => {
+      try {
+        const response = await api.getSourcesStatus([pluginId])
+        const status = ownValue(response.sources, pluginId)
+        if (status != null) {
+          setScheduleEnabled(status.enabled)
+          setScheduleExists(status.exists !== false)
+        }
+      } catch {
+        // ignored — schedule status is non-critical
+      } finally {
+        setScheduleLoading(false)
+      }
+    }
+    void fetchStatus()
+  }, [pluginId])
+
+  const handleToggleSchedule = async (enabled: boolean) => {
+    setScheduleLoading(true)
+    try {
+      const response = enabled ? await api.enableSource(pluginId) : await api.disableSource(pluginId)
+      setScheduleEnabled(response.enabled)
+    } catch {
+      // ignored — toggle failure is non-critical
+    }
+    setScheduleLoading(false)
+  }
+
+  if (!scheduleExists) return null
+  return <ScheduleToggle scheduleLoading={scheduleLoading} scheduleEnabled={scheduleEnabled} isAdmin={isAdmin} onToggle={(e) => void handleToggleSchedule(e)} />
 }
 
 function AppCard({
@@ -111,47 +155,6 @@ function AppCard({
             an app's settings without being handed a button that 403s. */}
         <button type="button" onClick={onEdit} className="icon-btn p-2" aria-label={t('card.edit')} title={t('card.edit')}><Pencil size={16} /></button>
         <button type="button" onClick={onDelete} disabled={!isAdmin} aria-label={t('card.delete')} title={isAdmin ? t('card.delete') : ADMIN_ONLY_TITLE} className="icon-btn p-2 hover:text-danger hover:bg-danger-subtle disabled:opacity-40 disabled:cursor-not-allowed"><Trash2 size={16} /></button>
-      </div>
-    </div>
-  )
-}
-
-function AppEditorForm({
-  plugin, initialValues, isAdmin, onSave, onCancel, isPending,
-}: {
-  readonly plugin: PluginManifest;
-  readonly initialValues: AppConfig;
-  readonly isAdmin: boolean;
-  readonly onSave: (v: AppConfig) => void;
-  readonly onCancel: () => void;
-  readonly isPending: boolean
-}) {
-  const { t } = useTranslation('scrapers')
-  const [values, setValues] = useState<AppConfig>(initialValues)
-  const isEditing = appField(initialValues, 'id') !== ''
-  const copy = appCopy(plugin.id)
-  const hasRequired = plugin.config.filter((f) => f.required === true).every((f) => appField(values, f.key).trim() !== '')
-
-  return (
-    <div className="space-y-4 p-4 border border-accent/30 bg-accent-subtle rounded-lg">
-      <h3 className="text-sm font-semibold text-text-strong">{isEditing ? t(copy.edit) : t(copy.addNew)}</h3>
-      <PluginFieldGrid
-        fields={plugin.config}
-        values={values}
-        onChange={(key, v) => setValues((prev) => ({
-          ...prev,
-          [key]: v,
-        }))}
-      />
-      {/* `radar_brand` (docs/radar.md): this page or app is another brand's, its reviews go to Radar. */}
-      <RadarSourcePicker value={appField(values, 'radar_brand')} disabled={!isAdmin}
-        onChange={(radarBrand) => setValues((prev) => ({ ...prev, radar_brand: radarBrand }))} />
-      <div className="flex items-center gap-2">
-        <button onClick={() => onSave({ ...values })} disabled={isPending || !hasRequired || !isAdmin} title={isAdmin ? undefined : ADMIN_ONLY_TITLE} className="btn btn-primary">
-          {isPending ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-          {isEditing ? t('pluginConfig.save') : t(copy.add)}
-        </button>
-        <button type="button" onClick={onCancel} className="btn btn-secondary">{t('editor.cancel')}</button>
       </div>
     </div>
   )
@@ -260,7 +263,20 @@ function focusState(apps: readonly AppConfig[], appsLoading: boolean, focusAppId
   const focusedApp = focusAppId === undefined ? undefined : apps.find((app) => appField(app, 'id') === focusAppId)
   const focused = focusAppId !== undefined && (appsLoading || focusedApp !== undefined)
   const focusedName = focusedApp === undefined ? '' : appField(focusedApp, 'app_name')
-  return { focused, focusedApp, title: focusedName === '' ? pluginName : focusedName }
+  return { focused, focusedApp, loading: appsLoading, title: focusedName === '' ? pluginName : focusedName }
+}
+
+/**
+ * What the dialog focuses on: a card's app (`focusState`), or, opened from a tile that presets the new app (the
+ * Bedrock web search page), that new app's form, titled after the tile.
+ */
+function useDialogFocus(apps: readonly AppConfig[], appsLoading: boolean, focusAppId: string | undefined,
+  addPreset: AppConfig | undefined, pluginName: string) {
+  const { t } = useTranslation('scrapers')
+  const focus = focusState(apps, appsLoading, focusAppId, pluginName)
+  if (addPreset === undefined || focusAppId !== undefined) return focus
+  const title = reviewMethod(addPreset) === BEDROCK_WEB_SEARCH ? t('sourceMenu.items.webReviewsBedrock.title') : pluginName
+  return { focused: true, focusedApp: addPreset, loading: false, title }
 }
 
 /** The manifest's setup steps; only app-config plugins show them here (the others are set up in Administration). */
@@ -295,14 +311,12 @@ function FocusedAppEditor({ plugin, app, loading, isAdmin, isPending, onSave, on
 }
 
 export default function PluginConfigModal({
-  plugin, onClose, isAdmin, focusAppId,
+  plugin, onClose, isAdmin, focusAppId, addPreset,
 }: PluginConfigModalProps) {
   const { t } = useTranslation('scrapers')
   const pluginCopy = usePluginCopy()(plugin)
   const titleId = useId()
   const queryClient = useQueryClient()
-  const [scheduleEnabled, setScheduleEnabled] = useState(false)
-  const [scheduleLoading, setScheduleLoading] = useState(true)
   const [editingApp, setEditingApp] = useState<AppConfig | null>(null)
   const [isAdding, setIsAdding] = useState(false)
   const [deleteAppId, setDeleteAppId] = useState<string | null>(null)
@@ -317,21 +331,6 @@ export default function PluginConfigModal({
     enabled: hasApps,
   })
   const apps = appConfigsData?.apps ?? []
-
-  useEffect(() => {
-    const fetchStatus = async () => {
-      try {
-        const response = await api.getSourcesStatus([plugin.id])
-        const status = ownValue(response.sources, plugin.id)
-        if (status != null) setScheduleEnabled(status.enabled)
-      } catch {
-        // ignored — schedule status is non-critical
-      } finally {
-        setScheduleLoading(false)
-      }
-    }
-    void fetchStatus()
-  }, [plugin.id])
 
   const saveMutation = useMutation({
     mutationFn: (app: AppConfig) => api.saveAppConfig(plugin.id, app),
@@ -352,19 +351,9 @@ export default function PluginConfigModal({
   })
   const runMutation = useMutation({ mutationFn: () => api.runSource(plugin.id) })
 
-  const handleToggleSchedule = async (enabled: boolean) => {
-    setScheduleLoading(true)
-    try {
-      const response = enabled ? await api.enableSource(plugin.id) : await api.disableSource(plugin.id)
-      setScheduleEnabled(response.enabled)
-    } catch {
-      // ignored — toggle failure is non-critical
-    }
-    setScheduleLoading(false)
-  }
-
   const showEditor = isAdding || editingApp !== null
-  const { focused, focusedApp, title } = focusState(apps, appsLoading, focusAppId, pluginCopy.name)
+  // A preset add is a focused form too: the one new app, closed when saved or cancelled.
+  const { focused, focusedApp, loading: focusLoading, title } = useDialogFocus(apps, appsLoading, focusAppId, addPreset, pluginCopy.name)
 
   return (
     // Escape / backdrop close only when no app form is open — a half-filled
@@ -373,12 +362,12 @@ export default function PluginConfigModal({
         <SourceDialogHeader titleId={titleId} title={title} description={focused ? undefined : pluginCopy.description} icon={manifestIcon(plugin.icon, plugin.category)} onClose={onClose} />
         {focused ? (
           <div className="dialog-body">
-            <FocusedAppEditor plugin={plugin} app={focusedApp} loading={appsLoading} isAdmin={isAdmin} isPending={saveMutation.isPending}
-              onSave={(v) => saveMutation.mutate(v, { onSuccess: onClose })} onCancel={onClose} />
+            <FocusedAppEditor plugin={plugin} app={focusedApp} loading={focusLoading} isAdmin={isAdmin}
+              isPending={saveMutation.isPending} onSave={(v) => saveMutation.mutate(v, { onSuccess: onClose })} onCancel={onClose} />
           </div>
         ) : (
         <div className="dialog-body space-y-5">
-          <ScheduleToggle scheduleLoading={scheduleLoading} scheduleEnabled={scheduleEnabled} isAdmin={isAdmin} onToggle={(e) => void handleToggleSchedule(e)} />
+          <ScheduleSection pluginId={plugin.id} isAdmin={isAdmin} />
           {hasApps ? (
             <AppListSection plugin={plugin} apps={apps} appsLoading={appsLoading} showEditor={showEditor} editorInitialValues={editingApp ?? {}} savePending={saveMutation.isPending} isAdmin={isAdmin}
               onStartAdd={() => {

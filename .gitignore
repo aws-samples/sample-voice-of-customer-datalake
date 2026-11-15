@@ -16,6 +16,9 @@ dist/
 cdk.out/
 !eslint.config.js
 
+# The Web Reviews site eval's reports (voc-datalake/scripts/evals/web_reviews_sites.py, its default --out)
+web-reviews-eval/
+
 # Python
 __pycache__/
 *.py[cod]

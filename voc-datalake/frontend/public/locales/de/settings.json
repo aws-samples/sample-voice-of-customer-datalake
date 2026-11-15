@@ -367,7 +367,9 @@
       "resetFailed": "Die Quelle konnte nicht zurückgesetzt werden. Bitte erneut versuchen."
     },
     "advanced": "Erweitert",
-    "advancedRawHint": "Die Rohkonfiguration der Scraper auf der Seite Datenquellen. Fügen Sie Scraper dort hinzu und bearbeiten Sie sie dort."
+    "advancedRawHint": "Die Rohkonfiguration der Scraper auf der Seite Datenquellen. Fügen Sie Scraper dort hinzu und bearbeiten Sie sie dort.",
+    "runsOnUpload": "Läuft beim Hochladen",
+    "runsOnDemand": "Läuft bei Bedarf – kein Zeitplan"
   },
   "subtitle": "Konfigurieren Sie Ihre VoC-Plattform",
   "tabs": {

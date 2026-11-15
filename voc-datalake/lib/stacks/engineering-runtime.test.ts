@@ -45,7 +45,7 @@ describe('the engineering runtime is off by default', () => {
     });
 });
 
-describe('with -c engineeringAgents=true', () => {
+describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => {
   let template: Template;
   beforeAll(() => {
     template = runtimeStack({ engineeringAgents: 'true' }).template;

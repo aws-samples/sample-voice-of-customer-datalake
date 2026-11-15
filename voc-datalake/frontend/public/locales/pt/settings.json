@@ -383,7 +383,9 @@
       "resetFailed": "Não foi possível redefinir esta fonte. Tente novamente."
     },
     "advanced": "Avançado",
-    "advancedRawHint": "A configuração bruta dos coletores da página Fontes de dados. Adicione e edite os coletores lá."
+    "advancedRawHint": "A configuração bruta dos coletores da página Fontes de dados. Adicione e edite os coletores lá.",
+    "runsOnUpload": "Executa ao enviar arquivos",
+    "runsOnDemand": "Executa sob demanda — sem agendamento"
   },
   "subtitle": "Configure sua plataforma VoC",
   "tabs": {

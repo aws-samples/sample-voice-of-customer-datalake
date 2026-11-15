@@ -193,6 +193,15 @@ describe('PluginConfigModal', () => {
       expect(screen.queryByText('Configured Apps')).not.toBeInTheDocument()
     })
 
+    // Its manifest declares no schedule, so no rule exists: no switch (enabling it is a 400).
+    it('shows no schedule switch when the source has no schedule rule', async () => {
+      mockGetSourcesStatus.mockResolvedValue({ sources: { s3_import: { enabled: false, exists: false } } })
+      render(<PluginConfigModal plugin={s3Plugin} onClose={onClose} isAdmin />, { wrapper: createQueryWrapper(['/scrapers']) })
+
+      await waitFor(() => { expect(screen.queryByText('Automatic Schedule')).not.toBeInTheDocument() })
+      expect(screen.getByRole('link', { name: 'Open source settings' })).toBeInTheDocument()
+    })
+
     it('points to the source settings instead', async () => {
       render(<PluginConfigModal plugin={s3Plugin} onClose={onClose} isAdmin />, { wrapper: createQueryWrapper(['/scrapers']) })
       await waitFor(() => { expect(mockGetSourcesStatus).toHaveBeenCalledWith(['s3_import']) })

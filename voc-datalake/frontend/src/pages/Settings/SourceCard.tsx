@@ -178,7 +178,7 @@ export default function SourceCard({ manifest, apiEndpoint, isAdmin }: SourceCar
 interface SourceCardHeaderProps {
   readonly manifest: PluginManifest
   readonly sourceStatus: { configured?: boolean } | undefined
-  readonly serverStatus: { enabled: boolean; loading?: boolean }
+  readonly serverStatus: { enabled: boolean; exists?: boolean; loading?: boolean }
   readonly apiEndpoint: string
   /** `PUT /sources/{source}/enable|disable` is admin-gated server-side, so the
    *  toggle below is disabled for a non-admin rather than issuing a request whose
@@ -205,6 +205,17 @@ function ManifestIconTile({ icon, category }: Readonly<{ icon: string; category?
       <IconGlyph icon={manifestIcon(icon, category)} size={16} />
     </span>
   )
+}
+
+/**
+ * A source with no schedule rule (`GET /sources/status` answers `exists: false`: its manifest declares no
+ * `schedule`) has nothing to switch on or off, and `PUT /sources/{source}/enable` answers 400 for it. It says how it
+ * runs instead: the S3 import on an upload to its bucket, the others when someone starts them.
+ */
+function NoScheduleLabel({ manifest }: Readonly<{ manifest: PluginManifest }>) {
+  const { t } = useTranslation('settings')
+  const label = manifest.hasS3Trigger ? t('sourceCard.runsOnUpload') : t('sourceCard.runsOnDemand')
+  return <span className="text-xs sm:text-sm text-muted min-h-9 inline-flex items-center">{label}</span>
 }
 
 function SourceCardHeader({ manifest, sourceStatus, serverStatus, apiEndpoint, isAdmin, isExpanded, onToggleExpand, onToggleEnabled }: SourceCardHeaderProps) {
@@ -236,7 +247,7 @@ function SourceCardHeader({ manifest, sourceStatus, serverStatus, apiEndpoint, i
             <CheckCircle2 size={12} /> {t('sourceCard.connected')}
           </span>
         )}
-        <label
+        {serverStatus.exists === false ? <NoScheduleLabel manifest={manifest} /> : <label
           className="flex items-center gap-2 min-h-9"
           title={isAdmin ? undefined : ADMIN_ONLY_TITLE}
         >
@@ -265,7 +276,7 @@ function SourceCardHeader({ manifest, sourceStatus, serverStatus, apiEndpoint, i
             </span>
           )}
           <span id={statusId} className="text-xs sm:text-sm text-text w-16">{serverStatus.enabled ? t('sourceCard.enabled') : t('sourceCard.disabled')}</span>
-        </label>
+        </label>}
       </div>
     </div>
   )

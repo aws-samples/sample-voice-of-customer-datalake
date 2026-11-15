@@ -9,9 +9,19 @@
  *   allowlist. It covers every model the per-surface picker can resolve to
  *   (issue #96), since these plugins invoke via shared/converse.py — kept in
  *   lockstep with lambda/shared/model_config.py through lib/utils/model-allowlist.ts.
- * - `infrastructure.ingestor.browser`: sessions of the AWS-managed AgentCore
- *   browser `aws.browser.v1` (Start/Stop on that ARN only; the automation-stream
- *   connect, which has no resource type, on `*`) — the web_reviews plugin.
+ * - `infrastructure.ingestor.browser`: sessions of the deployment's AgentCore
+ *   browser (lib/stacks/ingestion-browser.ts: its own Web Bot Auth browser, or the
+ *   AWS-managed `aws.browser.v1` with `-c webReviewsBotAuth=false`): Start/Stop on that
+ *   browser's ARN only, Start and SaveBrowserSessionProfile on its profile's ARN when it
+ *   has one; the automation-stream connect, which has no resource type, on `*` — the
+ *   web_reviews plugin.
+ * - `infrastructure.ingestor.webSearch`: a target read through Amazon Bedrock web
+ *   search (`method: bedrock_web_search`): `bedrock-mantle:CreateInference` on the
+ *   account's default mantle project (the Responses API; the GPT allowlist,
+ *   lib/utils/web-search-models.ts, is enforced in code) and
+ *   `bedrock-websearch:InvokeSearch` / `InvokeFetch` on `*` held to the deployment's
+ *   region (`aws:RequestedRegion`), as the Bedrock web search IAM guide grants them;
+ *   never `bedrock-websearch:ExternalWebAccess`, so Fetch reads Amazon's cache only.
  * - a schedule: events:DisableRule on the plugin's OWN schedule rule, which its
  *   circuit breaker (plugins/_shared/circuit_breaker.py) calls after repeated
  *   failures of a deployment-wide run. On any other rule ARN a misbehaving plugin
@@ -87,8 +97,10 @@ export interface BaseIngestionGrants {
 /** What decides whether a plugin's ingestor needs a role of its own. */
 export interface IngestorRoleNeeds {
   bedrock: boolean;
-  /** Sessions of the AWS-managed AgentCore browser (`infrastructure.ingestor.browser`). */
-  browser?: boolean;
+  /** The browser its sessions run on (`infrastructure.ingestor.browser`); undefined for a plugin without one. */
+  browser?: BrowserGrant;
+  /** Amazon Bedrock web search through the Responses API (`infrastructure.ingestor.webSearch`). */
+  webSearch?: boolean;
   /** The plugin's schedule rule name; undefined for an unscheduled plugin. */
   scheduleRuleName: string | undefined;
   /** The plugin's function name: a scheduled role may invoke this function, and only it (the tick's fan-out). */
@@ -98,9 +110,11 @@ export interface IngestorRoleNeeds {
 }
 
 /** The AWS-managed AgentCore browser: an `aws`-owned resource, one per region. */
-const MANAGED_BROWSER_ID = 'aws.browser.v1';
+export const MANAGED_BROWSER_ID = 'aws.browser.v1';
 /** Resource-scoped AgentCore browser actions (the service authorization reference lists `browser*`). */
 export const BROWSER_SESSION_ACTIONS = ['bedrock-agentcore:StartBrowserSession', 'bedrock-agentcore:StopBrowserSession'];
+/** Saving a session's cookies and local storage to a profile: on the browser AND the profile (both resource types). */
+export const BROWSER_PROFILE_SAVE_ACTION = 'bedrock-agentcore:SaveBrowserSessionProfile';
 /**
  * The automation-stream websocket. The service authorization reference lists NO
  * resource type for it, so IAM evaluates it only against `*` (the policy
@@ -114,21 +128,74 @@ export const BROWSER_STREAM_SUPPRESSION: NagAck = {
   id: 'AwsSolutions-IAM5',
   reason: 'bedrock-agentcore:ConnectBrowserAutomationStream has no resource type in the service '
     + 'authorization reference, so it can only be granted on "*"; Start/StopBrowserSession are scoped '
-    + 'to the AWS-managed aws.browser.v1',
+    + 'to the one browser the role drives (the AWS-managed aws.browser.v1, or the deployment\'s own Web Bot Auth browser)',
   findings: ['Resource::*'],
 };
 
-/** The statements a browser-capable role is given (web_reviews ingestor, voc-design-capture). */
-export function managedBrowserStatements(stack: cdk.Stack): iam.PolicyStatement[] {
+/** The Responses API on bedrock-mantle (a request names no project: the account's default one). */
+export const MANTLE_INFERENCE_ACTION = 'bedrock-mantle:CreateInference';
+/** Amazon Bedrock web search and its cached fetch; `bedrock-websearch:ExternalWebAccess` is never granted. */
+export const WEB_SEARCH_ACTIONS = ['bedrock-websearch:InvokeSearch', 'bedrock-websearch:InvokeFetch'];
+
+/** The cdk-nag reason for web search on `*` (held to the region), on a web-search-capable role. */
+const WEB_SEARCH_STAR_REASON = 'bedrock-websearch:InvokeSearch/InvokeFetch are granted on "*" as the Amazon Bedrock '
+  + 'web search IAM guide grants them, held to the deployment\'s region by aws:RequestedRegion; ExternalWebAccess is not '
+  + 'granted, so Fetch reads the Bedrock cache only';
+
+/** The `Resource::*` acknowledgement of a role with a browser and/or web search: one entry naming every reason. */
+function starAcknowledgement(browser: boolean, webSearch: boolean): NagAck {
+  const reasons = [...(browser ? [BROWSER_STREAM_SUPPRESSION.reason] : []), ...(webSearch ? [WEB_SEARCH_STAR_REASON] : [])];
+  return { ...BROWSER_STREAM_SUPPRESSION, reason: reasons.join('; ') };
+}
+
+/** A web-search-capable role's statements: the Responses API on the default project, search and cached fetch. */
+export function webSearchStatements(stack: cdk.Stack): iam.PolicyStatement[] {
   return [
     new iam.PolicyStatement({
-      actions: BROWSER_SESSION_ACTIONS,
-      resources: [stack.formatArn({
-        service: 'bedrock-agentcore', account: 'aws', resource: 'browser', resourceName: MANAGED_BROWSER_ID,
-      })],
+      actions: [MANTLE_INFERENCE_ACTION],
+      resources: [stack.formatArn({ service: 'bedrock-mantle', resource: 'project', resourceName: 'default' })],
     }),
-    new iam.PolicyStatement({ actions: [BROWSER_STREAM_ACTION], resources: ['*'] }),
+    new iam.PolicyStatement({
+      actions: WEB_SEARCH_ACTIONS, resources: ['*'], conditions: { StringEquals: { 'aws:RequestedRegion': stack.region } },
+    }),
   ];
+}
+
+/** The browser a role may start sessions on, and the profile those sessions load and save (when there is one). */
+export interface BrowserGrant {
+  /** `arn:…:aws:browser/aws.browser.v1`, or the deployment's `arn:…:<account>:browser-custom/<id>`. */
+  readonly arn: string;
+  /** `arn:…:<account>:browser-profile/<id>`; undefined: sessions start without a profile. */
+  readonly profileArn?: string;
+}
+
+/** The AWS-managed browser of the stack's region. */
+export function managedBrowserArn(stack: cdk.Stack): string {
+  return stack.formatArn({ service: 'bedrock-agentcore', account: 'aws', resource: 'browser', resourceName: MANAGED_BROWSER_ID });
+}
+
+/**
+ * A browser-capable role's statements: Start/Stop on the browser; with a profile, Start (a session that loads it) and
+ * SaveBrowserSessionProfile on the profile, and the save on the browser too (the action names both); the stream
+ * connect on `*`.
+ */
+export function browserSessionStatements({ arn, profileArn }: BrowserGrant): iam.PolicyStatement[] {
+  const statements = [new iam.PolicyStatement({
+    actions: profileArn ? [...BROWSER_SESSION_ACTIONS, BROWSER_PROFILE_SAVE_ACTION] : BROWSER_SESSION_ACTIONS,
+    resources: [arn],
+  })];
+  if (profileArn) {
+    statements.push(new iam.PolicyStatement({
+      actions: ['bedrock-agentcore:StartBrowserSession', BROWSER_PROFILE_SAVE_ACTION], resources: [profileArn],
+    }));
+  }
+  statements.push(new iam.PolicyStatement({ actions: [BROWSER_STREAM_ACTION], resources: ['*'] }));
+  return statements;
+}
+
+/** The statements of a role on the AWS-managed browser, without a profile (voc-design-capture). */
+export function managedBrowserStatements(stack: cdk.Stack): iam.PolicyStatement[] {
+  return browserSessionStatements({ arn: managedBrowserArn(stack) });
 }
 
 export class IngestorRoles {
@@ -140,9 +207,10 @@ export class IngestorRoles {
 
   /** The role a plugin's ingestor runs as. */
   roleFor(
-    pluginId: string, { bedrock, browser = false, scheduleRuleName, functionName, jobNotices = false }: IngestorRoleNeeds,
+    pluginId: string,
+    { bedrock, browser, webSearch = false, scheduleRuleName, functionName, jobNotices = false }: IngestorRoleNeeds,
   ): iam.Role {
-    if (!bedrock && !browser && !scheduleRuleName && !jobNotices) {
+    if (!bedrock && !browser && !webSearch && !scheduleRuleName && !jobNotices) {
       this.shared ??= this.newRole('IngestionLambdaRole');
       this.grantOwnParameters(this.shared, pluginId);
       return this.shared;
@@ -154,11 +222,7 @@ export class IngestorRoles {
     if (bedrock) {
       grantClaudeModels(role, 'invoke');
     }
-
-    if (browser) {
-      for (const statement of managedBrowserStatements(this.stack)) role.addToPolicy(statement);
-      acknowledgeNag(role, [BROWSER_STREAM_SUPPRESSION]);
-    }
+    this.grantReading(role, browser, webSearch);
 
     if (scheduleRuleName) {
       role.addToPolicy(new iam.PolicyStatement({
@@ -172,6 +236,15 @@ export class IngestorRoles {
     }
 
     return role;
+  }
+
+  /** A browser plugin's sessions and a web-search plugin's Responses API and cached search, each `*` acknowledged. */
+  private grantReading(role: iam.Role, browser: BrowserGrant | undefined, webSearch: boolean): void {
+    const statements = [
+      ...(browser ? browserSessionStatements(browser) : []), ...(webSearch ? webSearchStatements(this.stack) : []),
+    ];
+    for (const statement of statements) role.addToPolicy(statement);
+    if (statements.length > 0) acknowledgeNag(role, [starAcknowledgement(browser !== undefined, webSearch)]);
   }
 
   /** A run in a workspace reads `pluginId`'s one credentials parameter there (decision 19); on the shared role the

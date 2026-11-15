@@ -11,12 +11,14 @@
  */
 import type { ScraperTemplate } from '../../api/types'
 import type { PluginManifest } from '../../plugins/types'
+import { BEDROCK_PRESET, offersReviewMethods } from './webReviewMethod'
 
 export type SourceGroupId = 'website' | 'app' | 'file' | 'paste' | 'tool' | 'advanced'
 
 /** What choosing an entry does. */
 type SourceAction =
-  | { readonly kind: 'plugin'; readonly plugin: PluginManifest }
+  /** `preset`: the values a new app of the plugin starts with (the Bedrock web search page's `method`). */
+  | { readonly kind: 'plugin'; readonly plugin: PluginManifest; readonly preset?: Readonly<Record<string, string>> }
   | { readonly kind: 'template'; readonly template: ScraperTemplate }
   | { readonly kind: 'generator'; readonly plugin: PluginManifest }
   | { readonly kind: 'manual' | 'json' | 'csv' }
@@ -57,9 +59,13 @@ const PLUGIN_GROUPS: Readonly<Record<string, SourceGroupId>> = {
 /** Plugins whose configuration is a data import (the S3 import bucket): admin-only like every import. */
 const ADMIN_ONLY_PLUGIN_IDS: ReadonlySet<string> = new Set(['s3_import'])
 
+/** A review page read from Amazon Bedrock's web search index: the web_reviews plugin with its `method` preset. */
+export const BEDROCK_ENTRY_ID = 'web_reviews_bedrock'
+
 /** Entry ids with their own title + description (literal keys, so the i18n audit sees them). */
 const ENTRY_KEYS: Readonly<Record<string, EntryKeys>> = {
   web_reviews: { title: 'sourceMenu.items.webReviews.title', description: 'sourceMenu.items.webReviews.description' },
+  [BEDROCK_ENTRY_ID]: { title: 'sourceMenu.items.webReviewsBedrock.title', description: 'sourceMenu.items.webReviewsBedrock.description' },
   template_review_jsonld: { title: 'sourceMenu.items.customScraper.title', description: 'sourceMenu.items.customScraper.description' },
   template_custom_css: { title: 'sourceMenu.items.cssScraper.title', description: 'sourceMenu.items.cssScraper.description' },
   app_reviews_ios: { title: 'sourceMenu.items.ios.title', description: 'sourceMenu.items.ios.description' },
@@ -81,6 +87,15 @@ function pluginEntry(plugin: PluginManifest): SourceEntry {
     id: plugin.id, fallbackTitle: plugin.name, fallbackDescription: plugin.description ?? '', keys: keysOf(plugin.id),
     action: { kind: 'plugin', plugin }, adminOnly: ADMIN_ONLY_PLUGIN_IDS.has(plugin.id),
   }
+}
+
+/** The Bedrock web search tile, beside "Review page": only when the deployed plugin reads a page's `method`. */
+function bedrockEntries(plugin: PluginManifest): SourceEntry[] {
+  if (!offersReviewMethods(plugin)) return []
+  return [{
+    id: BEDROCK_ENTRY_ID, fallbackTitle: plugin.name, fallbackDescription: plugin.description ?? '',
+    keys: keysOf(BEDROCK_ENTRY_ID), action: { kind: 'plugin', plugin, preset: BEDROCK_PRESET }, adminOnly: false,
+  }]
 }
 
 function templateEntry(template: ScraperTemplate): SourceEntry {
@@ -117,7 +132,8 @@ function groupOf(entry: SourceEntry): SourceGroupId {
 
 /** Within a group, the entries in this order (unlisted ids keep their input order, after these). */
 const ENTRY_ORDER: readonly string[] = [
-  'web_reviews', 'template_review_jsonld', 'app_reviews_ios', 'app_reviews_android', 'csv', 'json', 's3_import',
+  'web_reviews', BEDROCK_ENTRY_ID, 'template_review_jsonld', 'app_reviews_ios', 'app_reviews_android', 'csv', 'json',
+  's3_import',
 ]
 
 /** `list` with the ENTRY_ORDER ids first, in that order, then the rest as given. */
@@ -132,7 +148,7 @@ export function buildSourceMenu(
   generators: readonly PluginManifest[],
 ): SourceGroup[] {
   const entries = [
-    ...plugins.map(pluginEntry),
+    ...plugins.flatMap((plugin) => [pluginEntry(plugin), ...bedrockEntries(plugin)]),
     ...templates.map(templateEntry),
     importEntry('csv'), importEntry('json'), importEntry('manual'),
     ...generators.map(generatorEntry),

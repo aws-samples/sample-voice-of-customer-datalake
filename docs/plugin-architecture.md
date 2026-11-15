@@ -147,7 +147,8 @@ same rule.
 | `timeout` | 120 | 1-900 seconds | Lambda timeout |
 | `memory` | 256 | 128-1024 MB | Lambda memory |
 | `bedrock` | false | boolean | Dedicated role with `bedrock:InvokeModel` on the curated model allowlist |
-| `browser` | false | boolean | Dedicated role with sessions of the AgentCore managed browser `aws.browser.v1` |
+| `browser` | false | boolean | Dedicated role with sessions of the deployment's AgentCore browser (its Web Bot Auth browser and profile, or `aws.browser.v1` with `-c webReviewsBotAuth=false`; docs/web-reviews.md) |
+| `webSearch` | false | boolean | Dedicated role that may read a page through Amazon Bedrock web search: `bedrock-mantle:CreateInference` on the default project and `bedrock-websearch:InvokeSearch`/`InvokeFetch` in the region, never `ExternalWebAccess` (web_reviews' `bedrock_web_search` method) |
 | `jobNotices` | false | boolean | A run the API started tells its starter when it ends (docs/realtime.md): a dedicated role carrying VocCoreStack's `jobs` publish policy (`appsync:EventPublish` on `jobs`) and the Event API's host |
 
 The `cron(...)` pattern admits only digits, spaces and `, - * /`. EventBridge cron expressions need
@@ -283,8 +284,12 @@ plugin gets its own role when it has:
   continuation parts);
 - `bedrock: true`: `bedrock:InvokeModel` on the allowlisted models (call them through
   `shared/converse.py`, which resolves the model per surface);
-- `browser: true`: `bedrock-agentcore:StartBrowserSession` / `StopBrowserSession` on
-  `aws.browser.v1`, and `ConnectBrowserAutomationStream` on `*` (that action has no resource type).
+- `browser: true`: `bedrock-agentcore:StartBrowserSession` / `StopBrowserSession` /
+  `SaveBrowserSessionProfile` on the deployment's browser (`browser-custom/<id>`, or `aws.browser.v1`
+  with `-c webReviewsBotAuth=false`), Start and the save on its browser profile, and
+  `ConnectBrowserAutomationStream` on `*` (that action has no resource type);
+- `webSearch: true`: `bedrock-mantle:CreateInference` on `project/default` and
+  `bedrock-websearch:InvokeSearch` / `InvokeFetch` on `*` held to the region by `aws:RequestedRegion`.
 
 An app-review run (`app_reviews_ios`, `app_reviews_android`) continues a long run in a new invocation
 of its own function, with the grant its schedule brings; each part of a run in a workspace carries its
@@ -579,15 +584,20 @@ admin-only because they change a shared secret, spend a third-party API's quota 
 | `GET /integrations/<source>/apps` | No | List app/page configs of a multi-target source (public ids and display names only) |
 | `POST /integrations/<source>/apps`, `DELETE /integrations/<source>/apps/<app_id>` | Yes | Add or remove one target |
 | `POST /sources/<source>/run` | Yes | **Run now**: async invoke with `{execution_id}` (and `app_id` when given) |
-| `GET /sources/status` | No | Schedule state, latest run and `circuit` per source (`last_error` for admins only) |
-| `PUT /sources/<source>/enable` | Yes | Close a tripped breaker, then enable the schedule |
-| `PUT /sources/<source>/disable` | Yes | Disable the schedule |
+| `GET /sources/status` | No | Schedule state and `circuit` per source (`last_error` for admins only); `?run_status=<source>` its latest run, with `&app_id=` one app's newest run, with `&execution_id=` one run |
+| `PUT /sources/<source>/enable` | Yes | Close a tripped breaker, then enable the schedule (400 for a plugin without a schedule) |
+| `PUT /sources/<source>/disable` | Yes | Disable the schedule (400 for a plugin without a schedule) |
 | `POST /sources/<source>/reset` | Yes | Close a tripped breaker without enabling the schedule |
 
-`POST /sources/<source>/run` writes the `SOURCE_RUN#<source>` row (`status: running`) before it
-invokes the ingestor; the settings card polls it until `completed` or `error`. Scraper writes
-(`POST`/`DELETE /scrapers`, `POST /scrapers/{id}/run`, `POST /scrapers/analyze-url`) are admin-only
-for the same reasons ([scrapers.md](scrapers.md)).
+`POST /sources/<source>/run` writes the `SOURCE_RUN#<source>` row (`status: running`, and the
+body's `app_id` when it names one) before it invokes the ingestor; the settings card polls it until
+`completed` or `error`. Each app or review page card on the **Data sources** page reads its own
+app's newest run (`?run_status=<source>&app_id=<app>`) when it loads, so a reload still shows the last
+result, and polls its own run every 2 s while it runs; several pages run at once each show their own.
+A plugin whose manifest declares no `schedule` (`s3_import`, `synthetic_reviews`) has no rule: its
+card in Administration shows how it runs ("Runs on upload", "Runs on demand") instead of a switch.
+Scraper writes (`POST`/`DELETE /scrapers`, `POST /scrapers/{id}/run`, `POST /scrapers/analyze-url`)
+are admin-only for the same reasons ([scrapers.md](scrapers.md)).
 
 **In a workspace** (multi-workspace, since 7.04.00; [multi-workspace.md](multi-workspace.md)): a
 request that sends `X-Workspace-Id` acts in that workspace (a non-member gets the one 404). "Admin" is

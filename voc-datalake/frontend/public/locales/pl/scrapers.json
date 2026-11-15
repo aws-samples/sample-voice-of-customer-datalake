@@ -330,7 +330,9 @@
     "reviewsFound": "Znalezione recenzje:",
     "running": "Trwa...",
     "moreErrors_few": "...i {{count, number}} kolejne błędy",
-    "moreErrors_many": "...i {{count, number}} kolejnych błędów"
+    "moreErrors_many": "...i {{count, number}} kolejnych błędów",
+    "blockedHint": "Witryna odrzuca zautomatyzowane przeglądarki, więc nie udało się odczytać jej recenzji. Zobacz „Blocked sites” w dokumentacji źródeł danych (docs/web-reviews.md).",
+    "notFinished": "Nie zakończono"
   },
   "syntheticCard": {
     "generate": "Generuj",
@@ -354,7 +356,9 @@
       "addFirstPage": "Dodaj pierwszą stronę z recenzjami",
       "unnamed": "Strona bez nazwy",
       "deleteConfirmTitle": "Usuń stronę z recenzjami",
-      "deleteConfirmMessage": "Czy na pewno chcesz usunąć tę stronę z recenzjami?"
+      "deleteConfirmMessage": "Czy na pewno chcesz usunąć tę stronę z recenzjami?",
+      "addBedrockPage": "Dodaj stronę z indeksu wyszukiwania internetowego Bedrock",
+      "bedrockNote": "Recenzje są odczytywane z kopii tej strony zaindeksowanej przez Amazon Bedrock (pamięć podręczna Amazon), a nie z samej witryny. Każda recenzja zachowuje swój źródłowy adres URL i witrynę, więc zawsze wskazuje miejsce publikacji."
     },
     "kind": {
       "reviewPage": "Strona z recenzjami",
@@ -375,7 +379,11 @@
     "configuredApps": "Skonfigurowane aplikacje",
     "noApps": "Nie skonfigurowano jeszcze żadnych aplikacji",
     "addFirstApp": "Dodaj pierwszą aplikację",
-    "kindLabel": "Typ"
+    "kindLabel": "Typ",
+    "method": {
+      "browser": "Przeglądarka",
+      "bedrock": "Indeks internetowy Bedrock"
+    }
   },
   "sourceMenu": {
     "groups": {
@@ -430,6 +438,10 @@
       "synthetic": {
         "title": "Przykładowe opinie do demo",
         "description": "Opinie wygenerowane przez AI, oznaczone jako dane przykładowe, aby wypróbować platformę."
+      },
+      "webReviewsBedrock": {
+        "title": "Indeks wyszukiwania internetowego Amazon Bedrock",
+        "description": "Recenzje ze strony zaindeksowanej przez Amazon Bedrock, dla witryn blokujących zautomatyzowane przeglądarki (G2, Gartner, Capterra, TrustRadius). Odczytywane z pamięci podręcznej Amazon i zapisywane z linkiem źródłowym."
       }
     },
     "prompt": "Co masz?",

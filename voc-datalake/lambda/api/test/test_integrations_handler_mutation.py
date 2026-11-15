@@ -36,10 +36,11 @@ from typing import Any
 from unittest.mock import MagicMock, call, patch
 
 import pytest
-from boto3.dynamodb.conditions import Key
+from boto3.dynamodb.conditions import Attr, Key
 from handler_events_fixtures import aws_error, call_route
 from integrations_fixtures import CLOSED_CIRCUIT, ingestor_behind, secret_string
 from module_reload_fixtures import reload_cycle
+from plugin_manifests import MANIFESTS
 
 import integrations_handler as h
 from shared.plugin_identity import PLUGIN_IDENTIFIER_RULES
@@ -516,10 +517,34 @@ class TestRunningASource:
         (item,) = [kwargs['Item'] for _args, kwargs in table.put_item.call_args_list]
         started_at = item.pop('started_at')
         assert datetime.fromisoformat(started_at).utcoffset() is not None
+        # The app the run is for stays on its row: GET /sources/status?run_status=…&app_id=… filters on it.
         assert item == {
             'pk': 'SOURCE_RUN#webscraper', 'sk': execution_id, 'status': 'running', 'items_found': 0,
+            'app_id': 'app-7',
         }
         logger.warning.assert_not_called()
+
+    def test_a_run_of_every_app_names_none_on_its_row(self, route, invoke, table):
+        assert route('POST', '/sources/webscraper/run')[0] == 200
+        (item,) = [kwargs['Item'] for _args, kwargs in table.put_item.call_args_list]
+        assert 'app_id' not in item
+        assert 'app_id' not in json.loads(invoke.client.invoke.call_args.kwargs['Payload'])
+
+    @pytest.mark.parametrize('app_id', [7, ['a'], {'id': 'a'}, 'tab\there', 'x' * 2049])
+    def test_an_app_id_that_names_no_app_is_a_400_and_nothing_runs(self, route, invoke, table, app_id):
+        status, body = route('POST', '/sources/webscraper/run', body={'app_id': app_id})
+        assert (status, body) == (400, {'success': False, 'error': (
+            'app_id must be 1-2048 characters without control characters: the app, package or review page the '
+            'run is for')})
+        table.put_item.assert_not_called()
+        invoke.client.invoke.assert_not_called()
+
+    def test_a_review_pages_url_is_an_app_id(self, route, invoke, table):
+        url = 'https://www.g2.com/products/example-connect/reviews?page=2'
+        assert route('POST', '/sources/web_reviews/run', body={'app_id': url})[0] == 200
+        (item,) = [kwargs['Item'] for _args, kwargs in table.put_item.call_args_list]
+        assert item['app_id'] == url
+        assert json.loads(invoke.client.invoke.call_args.kwargs['Payload'])['app_id'] == url
 
     @pytest.mark.usefixtures('table')
     def test_a_body_that_is_not_an_object_runs_every_app(self, invoke, api_gateway_event, lambda_context):
@@ -622,6 +647,109 @@ class TestTheRunStatus:
         logger.warning.assert_called_once_with(f'Failed to get source run status: {error}')
 
 
+RUN_ID = 'run_web_reviews_20261115093000_0a1b2c3d'
+G2 = 'https://www.g2.com/products/example-connect/reviews'
+
+
+class TestOneAppsRunStatus:
+    """`?run_status=<source>&app_id=…` / `&execution_id=…`: one app's newest run, one run."""
+
+    def test_an_app_id_filters_the_partition_newest_first_and_reads_consistently(self, route, table):
+        table.query.return_value = {'Items': [{'sk': RUN_ID, 'app_id': G2, 'status': 'completed', 'items_found': 0,
+                                               'errors': ['G2 - Example: blocked by DataDome']}]}
+        assert route('GET', '/sources/status', query_params={'run_status': 'web_reviews', 'app_id': G2}) == (200, {
+            'source': 'web_reviews', 'execution_id': RUN_ID, 'status': 'completed', 'started_at': None,
+            'completed_at': None, 'items_found': 0, 'errors': ['G2 - Example: blocked by DataDome'],
+        })
+        table.query.assert_called_once_with(
+            KeyConditionExpression=Key('pk').eq('SOURCE_RUN#web_reviews'), ScanIndexForward=False, Limit=50,
+            ConsistentRead=True, FilterExpression=Attr('app_id').eq(G2),
+        )
+
+    def test_a_row_of_another_app_the_filter_let_through_is_not_answered(self, route, table):
+        table.query.return_value = {'Items': [{'sk': RUN_ID, 'app_id': 'https://other.example/reviews'}]}
+        assert route('GET', '/sources/status', query_params={'run_status': 'web_reviews', 'app_id': G2}) == (
+            200, {'source': 'web_reviews', 'status': 'never_run'},
+        )
+
+    def test_an_execution_id_is_read_by_its_key_consistently(self, route, table):
+        table.get_item.return_value = {'Item': {'sk': RUN_ID, 'status': 'running', 'items_found': 3}}
+        status, body = route('GET', '/sources/status',
+                             query_params={'run_status': 'web_reviews', 'execution_id': RUN_ID})
+        assert (status, body['execution_id'], body['status'], body['items_found']) == (200, RUN_ID, 'running', 3)
+        table.get_item.assert_called_once_with(Key={'pk': 'SOURCE_RUN#web_reviews', 'sk': RUN_ID},
+                                               ConsistentRead=True)
+        table.query.assert_not_called()
+
+    @pytest.mark.parametrize(('row_app', 'answered'), [(G2, True), ('https://other.example/reviews', False),
+                                                         (None, False)])
+    def test_with_both_the_execution_must_be_that_apps(self, route, table, row_app, answered):
+        table.get_item.return_value = {'Item': {'sk': RUN_ID, 'status': 'completed',
+                                                **({} if row_app is None else {'app_id': row_app})}}
+        _status, body = route('GET', '/sources/status',
+                              query_params={'run_status': 'web_reviews', 'app_id': G2, 'execution_id': RUN_ID})
+        assert body['status'] == ('completed' if answered else 'never_run')
+
+    def test_an_unknown_execution_is_never_run(self, route, table):
+        table.get_item.return_value = {}
+        assert route('GET', '/sources/status',
+                     query_params={'run_status': 'web_reviews', 'execution_id': RUN_ID}) == (
+            200, {'source': 'web_reviews', 'status': 'never_run'},
+        )
+
+    def test_empty_filters_are_none(self, route, table):
+        table.query.return_value = {}
+        route('GET', '/sources/status', query_params={'run_status': 'web_reviews', 'app_id': '', 'execution_id': ''})
+        table.query.assert_called_once_with(
+            KeyConditionExpression=Key('pk').eq('SOURCE_RUN#web_reviews'), ScanIndexForward=False, Limit=1,
+        )
+
+    @pytest.mark.parametrize('app_id', ['x' * 2049, 'new\nline', '\x7f'])
+    def test_a_malformed_app_id_is_a_400_and_nothing_is_read(self, route, table, app_id):
+        assert route('GET', '/sources/status', query_params={'run_status': 'web_reviews', 'app_id': app_id}) == (
+            400, {'success': False, 'error': (
+                'app_id must be 1-2048 characters without control characters: the app, package or review page '
+                'the run is for')},
+        )
+        table.query.assert_not_called()
+
+    def test_the_longest_app_id_is_a_review_pages_longest_url(self, route, table):
+        from shared.run_rows import MAX_RUN_APP_ID_CHARS
+        from shared.web_review_targets import MAX_URL_CHARS
+
+        assert MAX_RUN_APP_ID_CHARS == MAX_URL_CHARS
+        table.query.return_value = {}
+        assert route('GET', '/sources/status',
+                     query_params={'run_status': 'web_reviews', 'app_id': 'x' * MAX_URL_CHARS})[0] == 200
+
+    @pytest.mark.parametrize('execution_id', [
+        'run_webscraper_20261115093000_0a1b2c3d',   # another source's run
+        'run_web_reviews_2026111509300_0a1b2c3d',   # 13 digits
+        'run_web_reviews_20261115093000_0A1B2C3D',  # not lowercase hex
+        'SOURCE_RUN#web_reviews', 'run_web_reviews_20261115093000_0a1b2c3d#x', 'x' * 300,
+    ])
+    def test_an_execution_id_that_is_not_a_run_of_the_source_is_a_400(self, route, table, execution_id):
+        assert route('GET', '/sources/status',
+                     query_params={'run_status': 'web_reviews', 'execution_id': execution_id}) == (
+            400, {'success': False,
+                  'error': "execution_id must be the id of a run of 'web_reviews', as Run now answers it"},
+        )
+        table.get_item.assert_not_called()
+
+    def test_a_run_id_minted_before_the_suffix_is_still_one(self, route, table):
+        table.get_item.return_value = {}
+        assert route('GET', '/sources/status', query_params={
+            'run_status': 'web_reviews', 'execution_id': 'run_web_reviews_20260101120000'})[0] == 200
+
+    @pytest.mark.parametrize('name', ['app_id', 'execution_id'])
+    def test_a_filter_without_run_status_is_a_400(self, route, events, name):
+        assert route('GET', '/sources/status', query_params={'sources': 'web_reviews', name: RUN_ID}) == (
+            400, {'success': False,
+                  'error': "app_id and execution_id filter one source's runs: name it with run_status."},
+        )
+        events.describe_rule.assert_not_called()
+
+
 # ============================================
 # The schedule half of GET /sources/status
 # ============================================
@@ -667,13 +795,47 @@ class TestTheScheduleStatus:
 # PUT /sources/<source>/enable|disable
 # ============================================
 
+#: The plugins whose manifests declare no schedule (no rule exists for them): s3_import and synthetic_reviews today.
+UNSCHEDULED_PLUGINS = [m['id'] for m in MANIFESTS if not (m.get('infrastructure', {}).get('ingestor') or {}).get('schedule')]
+
+
 class TestTogglingASchedule:
+    def test_the_unscheduled_plugins_are_the_ones_the_user_hit(self):
+        assert {'s3_import', 'synthetic_reviews'} <= set(UNSCHEDULED_PLUGINS)
+
     @pytest.mark.parametrize(('action', 'extra'), [('enable', {'enabled': True, 'circuit': CLOSED_CIRCUIT}),
                                                    ('disable', {'enabled': False})])
     def test_the_rule_is_toggled_and_the_answer_names_the_source(self, route, events, action, extra):
         assert route('PUT', f'/sources/webscraper/{action}') == (
             200, {'success': True, 'source': 'webscraper', **extra},
         )
+        getattr(events, f'{action}_rule').assert_called_once_with(Name=h._build_rule_name('webscraper'))
+
+    @pytest.mark.parametrize('action', ['enable', 'disable'])
+    @pytest.mark.parametrize('code', ['AccessDeniedException', 'ResourceNotFoundException'])
+    @pytest.mark.parametrize('source', UNSCHEDULED_PLUGINS)
+    def test_a_plugin_without_a_schedule_rule_is_a_400_and_nothing_is_toggled_or_cleared(
+            self, route, events, action, code, source):
+        # The role may describe only the rules the ingestion stack created (one per manifest `schedule`), so a
+        # plugin without one is AccessDenied in a deployment; ResourceNotFound where the role could describe it.
+        error = (aws_error('denied', 'DescribeRule', code) if code == 'AccessDeniedException'
+                 else events.exceptions.ResourceNotFoundException())
+        events.describe_rule.side_effect = error
+        with patch.object(h, 'clear_circuit') as clear:
+            assert route('PUT', f'/sources/{source}/{action}') == (400, {
+                'success': False,
+                'error': 'This plugin has no schedule: it runs when started (Run now, or an upload for the S3 import).',
+            })
+        events.describe_rule.assert_called_once_with(Name=h._build_rule_name(source))
+        events.enable_rule.assert_not_called()
+        events.disable_rule.assert_not_called()
+        clear.assert_not_called()
+
+    @pytest.mark.parametrize('action', ['enable', 'disable'])
+    def test_a_rule_that_cannot_be_described_is_still_toggled(self, route, events, action):
+        """A throttled describe is no answer about the schedule: the toggle goes ahead, as before."""
+        events.describe_rule.side_effect = aws_error('slow down', 'DescribeRule', 'ThrottlingException')
+        assert route('PUT', f'/sources/webscraper/{action}')[0] == 200
         getattr(events, f'{action}_rule').assert_called_once_with(Name=h._build_rule_name('webscraper'))
 
     @pytest.mark.parametrize('action', ['enable', 'disable'])

@@ -367,7 +367,9 @@
       "resetFailed": "无法重置此数据源，请重试。"
     },
     "advanced": "高级",
-    "advancedRawHint": "数据源页面中抓取器的原始配置。请在该页面添加和编辑抓取器。"
+    "advancedRawHint": "数据源页面中抓取器的原始配置。请在该页面添加和编辑抓取器。",
+    "runsOnUpload": "上传时运行",
+    "runsOnDemand": "按需运行 — 无计划"
   },
   "subtitle": "配置您的VoC平台",
   "tabs": {

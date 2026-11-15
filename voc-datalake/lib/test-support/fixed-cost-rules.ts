@@ -54,7 +54,7 @@ const FIXED_COST_TYPES: readonly (readonly [string, string])[] = [
   ['AWS::GlobalAccelerator::', 'a Global Accelerator (hourly)'],
   ['AWS::DAX::', 'a DynamoDB Accelerator (DAX) cluster (hourly)'],
   // AgentCore Runtime is pay per session (each session's CPU and memory while it lives): only capacity reserved
-  // ahead of use is a fixed cost.
+  // ahead of use is a fixed cost. A custom browser bills per session too, and a browser profile is S3 storage.
   ['AWS::BedrockAgentCore::CapacityProvider', 'an AgentCore capacity provider (capacity reserved ahead of use)'],
   ['AWS::Route53::HostedZone', 'a hosted zone created by the app (monthly; import an existing zone by id instead)'],
   // Alerting's own alarms are made at run time, once an administrator turns it on (docs/deployment.md), never by the app.

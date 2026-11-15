@@ -292,7 +292,9 @@
     "moreErrors_other": "...及 {{count, number}} 个更多错误",
     "pagesScraped": "已抓取页面：",
     "reviewsFound": "发现评论：",
-    "running": "运行中..."
+    "running": "运行中...",
+    "blockedHint": "该网站拒绝自动化浏览器，因此无法读取其评价。请参阅数据源文档（docs/web-reviews.md）中的“Blocked sites”。",
+    "notFinished": "未完成"
   },
   "subtitle": "反馈的所有来源：评价页面、应用、文件和工具",
   "syntheticCard": {
@@ -332,7 +334,9 @@
       "addFirstPage": "添加第一个评论页面",
       "unnamed": "未命名页面",
       "deleteConfirmTitle": "移除评论页面",
-      "deleteConfirmMessage": "确定要移除此评论页面吗？"
+      "deleteConfirmMessage": "确定要移除此评论页面吗？",
+      "addBedrockPage": "从 Bedrock 网页搜索索引添加页面",
+      "bedrockNote": "评价读取自 Amazon Bedrock 已编入索引的此页面副本（Amazon 缓存），而非网站本身。每条评价都保留其来源 URL 和站点，因此始终可以追溯到发布位置。"
     },
     "kindLabel": "类型",
     "kind": {
@@ -340,6 +344,10 @@
       "ios": "iPhone 应用",
       "android": "Android 应用",
       "app": "应用"
+    },
+    "method": {
+      "browser": "浏览器",
+      "bedrock": "Bedrock 网页索引"
     }
   },
   "sourceMenu": {
@@ -397,6 +405,10 @@
       "synthetic": {
         "title": "用于演示的示例评价",
         "description": "由 AI 撰写并标记为示例数据的评价，用于试用平台。"
+      },
+      "webReviewsBedrock": {
+        "title": "Amazon Bedrock 网页搜索索引",
+        "description": "针对拦截自动化浏览器的网站（G2、Gartner、Capterra、TrustRadius），获取 Amazon Bedrock 已编入索引的页面中的评价。从 Amazon 缓存读取，并与来源链接一起存储。"
       }
     }
   },

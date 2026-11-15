@@ -41,6 +41,7 @@ import { Construct } from 'constructs';
 
 import { capitalize } from '../plugin-loader';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
+import { agentCoreName } from '../utils/naming';
 
 /** The languages with an image (engineering-images/; runtime/egress.py REGISTRY_HOSTS: a Python test keeps them equal). */
 const IMAGE_LANGUAGES = ['java', 'node', 'python', 'rust'];
@@ -211,17 +212,6 @@ interface AgentCoreProps {
   uniqueName: (baseName: string) => string;
 }
 
-/**
- * An AgentCore runtime's name (letters, digits and `_`, starting with a letter, at most 48): the deployment's name for
- * it without the account and region, which the names of global resources carry (a runtime is regional, and those
- * would not fit).
- */
-function runtimeName(name: string): string {
-  const [literal = ''] = name.split('${Token[');
-  const word = literal.replace(/\W/g, '_').replace(/^[^A-Za-z]+/, '');
-  return (word.endsWith('_') ? word.slice(0, -1) : word).slice(0, 48);
-}
-
 export class EngineeringAgentCore extends Construct {
   /** `{language: {standard: arn, build?: arn}}`, for the runtime's environment (ENGINEERING_AGENT_RUNTIMES). */
   readonly runtimes: RuntimeArns = {};
@@ -309,7 +299,7 @@ export class EngineeringAgentCore extends Construct {
     const image = ref.startsWith('sha256:') ? `${repository.repositoryUri}@${ref}` : `${repository.repositoryUri}:${ref}`;
     const suffix = size === 'standard' ? '' : `_${size}`;
     const runtime = new agentcore.CfnRuntime(this, `${capitalize(language)}${capitalize(size)}Runtime`, {
-      agentRuntimeName: runtimeName(props.uniqueName(`voc_eng_${language}${suffix}`)),
+      agentRuntimeName: agentCoreName(props.uniqueName(`voc_eng_${language}${suffix}`)),
       description: `Engineering agents (${language}, ${size} size): one session per agent`,
       agentRuntimeArtifact: { containerConfiguration: { containerUri: image } },
       roleArn: role.roleArn,

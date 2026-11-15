@@ -399,7 +399,9 @@
       "resetFailed": "Nie udało się zresetować tego źródła. Spróbuj ponownie."
     },
     "advanced": "Zaawansowane",
-    "advancedRawHint": "Surowa konfiguracja scraperów ze strony Źródła danych. Dodawaj i edytuj scrapery właśnie tam."
+    "advancedRawHint": "Surowa konfiguracja scraperów ze strony Źródła danych. Dodawaj i edytuj scrapery właśnie tam.",
+    "runsOnUpload": "Uruchamia się po przesłaniu pliku",
+    "runsOnDemand": "Uruchamiane na żądanie — bez harmonogramu"
   },
   "subtitle": "Konfiguruj platformę dla wszystkich (tylko administratorzy).",
   "tabs": {

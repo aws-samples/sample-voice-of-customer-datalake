@@ -215,8 +215,14 @@ const mockSourcesStatus = {
         last_error: 'HTTPError: 429 Too Many Requests from the Play Store reviews endpoint',
       },
     },
+    // web_reviews' rule is created disabled (docs/web-reviews.md); github_issues polls on its schedule too.
+    web_reviews: { enabled: false, schedule: 'rate(15 minutes)', rule_name: 'voc-ingest-web_reviews-schedule', exists: true },
+    github_issues: { enabled: true, schedule: 'rate(30 minutes)', rule_name: 'voc-ingest-github_issues-schedule', exists: true },
     manual_import: { enabled: false, exists: false },
+    // No schedule in their manifests, so no rule: Administration shows "Runs on upload" / "Runs on demand" and
+    // enable/disable answer 400 (integrations_handler require_schedule).
     s3_import: { enabled: false, exists: false },
+    synthetic_reviews: { enabled: false, exists: false },
   },
 };
 // The backend's default list: the deployment's enabled plugins plus manual_import (#256).
@@ -247,6 +253,34 @@ const mockSourceRunStatuses = {
     errors: ['Yelp - Acme: blocked by DataDome'],
   },
 };
+
+// Every run of ONE app (Run now on a card: its `app_id`), newest first: what
+// `?run_status=<source>&app_id=<app>` and `&execution_id=<run>` answer. Seeded so the
+// review page cards show their last result on load (a blocked site among them).
+const mockSourceRuns = [
+  {
+    source: 'web_reviews', app_id: 'https://www.yelp.com/biz/acme-example', execution_id: 'run_web_reviews_20261014090000_0a0b0c0d',
+    status: 'completed', started_at: '2026-10-14T09:00:00Z', completed_at: '2026-10-14T09:01:10Z', items_found: 0,
+    errors: ['Yelp - Acme: blocked by DataDome'],
+  },
+  {
+    source: 'web_reviews', app_id: 'https://www.trustpilot.com/review/acme.example', execution_id: 'run_web_reviews_20261014085500_0d0c0b0a',
+    status: 'completed', started_at: '2026-10-14T08:55:00Z', completed_at: '2026-10-14T08:57:40Z', items_found: 40, errors: [],
+  },
+];
+
+/** The run `?run_status=` names: one by its id (with `app_id`, only that app's), an app's newest, or the source's latest. */
+function mockSourceRunStatus(source, query) {
+  const appId = query.get('app_id') || null;
+  const executionId = query.get('execution_id') || null;
+  const neverRun = { source, status: 'never_run' };
+  if (executionId !== null) {
+    const run = mockSourceRuns.find((r) => r.source === source && r.execution_id === executionId);
+    return run && (appId === null || run.app_id === appId) ? run : neverRun;
+  }
+  if (appId !== null) return mockSourceRuns.find((r) => r.source === source && r.app_id === appId) ?? neverRun;
+  return mockSourceRunStatuses[source] ?? neverRun;
+}
 
 // Mock categories config
 // Problem resolution state (issue #66) — mutable so the toggle round-trips.
@@ -550,11 +584,13 @@ const handlers = {
 
   // Sources status. With ?run_status=<source> returns the persisted last-run
   // record for that source (backend _get_source_run_status shape) — used by
-  // GeneratorConfigModal polling and SyntheticSourceCard (#146).
+  // GeneratorConfigModal polling and SyntheticSourceCard (#146) — or, with
+  // &app_id= / &execution_id=, one app's newest run / one run (the app cards).
   'GET /sources/status': (body, query) => {
     const source = query instanceof URLSearchParams ? query.get('run_status') : null;
-    if (typeof source === 'string' && source !== '') {
-      return mockSourceRunStatuses[source] ?? { source, status: 'never_run' };
+    if (typeof source === 'string' && source !== '') return mockSourceRunStatus(source, query);
+    if (query instanceof URLSearchParams && (query.get('app_id') || query.get('execution_id'))) {
+      return { __status: 400, body: { success: false, error: "app_id and execution_id filter one source's runs: name it with run_status." } };
     }
     // ?sources=a,b (de-duplicated, order kept) or the backend's three defaults.
     const requested = query instanceof URLSearchParams ? query.get('sources') : null;
@@ -960,6 +996,8 @@ const mockAppConfigs = {
     { id: 'web02def', app_name: 'Yelp - Acme', url: 'https://www.yelp.com/biz/acme-example', max_pages: '0', max_reviews: '200', frequency_minutes: '1440', enabled: 'true', source_id: 'web_yelp_yelp_acme' },
     // A Radar source (docs/radar.md): `radar_brand` names a brand of the Radar brand list (mock-radar-brands.js).
     { id: 'web03ghi', app_name: 'Trustpilot - Globex', url: 'https://www.trustpilot.com/review/globex.example', max_pages: '5', max_reviews: '0', frequency_minutes: '0', enabled: 'true', source_id: 'web_trustpilot_trustpilot_globex', radar_brand: 'globex' },
+    // A page read from Amazon Bedrock's web search index instead of the browser (`method`; absent = browser).
+    { id: 'web04jkl', app_name: 'G2 - Acme', url: 'https://www.g2.com/products/acme-example/reviews', max_reviews: '50', frequency_minutes: '0', enabled: 'true', source_id: 'web_g2_g2_acme', method: 'bedrock_web_search' },
   ],
 };
 
@@ -981,13 +1019,17 @@ function mockWebSourceId(url, appName) {
 const storedNumber = (value, fallback) => (value === undefined || value === '' ? fallback : Number(value));
 const inRange = (n, min, max) => Number.isInteger(n) && n >= min && n <= max;
 
-/** web_review_targets.validated_target, the checks the SPA can trip: https only, 0-100 pages, 0-5000 reviews. */
+/** How a review page is read: the managed browser (the default) or Amazon Bedrock's web search index. */
+const WEB_REVIEW_METHODS = new Set(['browser', 'bedrock_web_search']);
+
+/** web_review_targets.validated_target, the checks the SPA can trip: https only, 0-100 pages, 0-5000 reviews, the method. */
 function webTargetError(app) {
   if (typeof app.url !== 'string' || !app.url.startsWith('https://')) return 'Only https URLs are allowed';
   if (!inRange(storedNumber(app.max_pages, 10), 0, 100)) return 'max_pages must be between 0 and 100';
   const reviews = storedNumber(app.max_reviews, 0);
   if (!Number.isInteger(reviews)) return 'max_reviews must be a whole number';
   if (!inRange(reviews, 0, 5000)) return 'max_reviews must be between 0 and 5000';
+  if (app.method !== undefined && !WEB_REVIEW_METHODS.has(app.method)) return 'method must be browser or bedrock_web_search';
   return null;
 }
 
@@ -1374,7 +1416,7 @@ function submitAnonymousBallot(session, body) {
 function handleDomainModules(req, res, url) {
   const send = (status, payload) => sendJson(res, status, payload);
   const shared = {
-    collectJson, nextMockId, mockFeedback, mockSourcesStatus, mockSourceRunStatuses,
+    collectJson, nextMockId, mockFeedback, mockSourcesStatus, mockSourceRunStatuses, mockSourceRuns,
     mockScrapers, mockScraperRuns, mockCategoriesConfig,
     mockFeedbackForms, mockFormStats, mockProjectDetails, mockProductJobs,
     attributeFilterOf, sourceProfiles, dimensionsConfig, startOwnerAssistJob, startProjectAssistJob,

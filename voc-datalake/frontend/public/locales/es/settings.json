@@ -383,7 +383,9 @@
       "resetFailed": "No se pudo restablecer esta fuente. Inténtalo de nuevo."
     },
     "advanced": "Avanzado",
-    "advancedRawHint": "La configuración en bruto de los recolectores de la página Fuentes de datos. Añade y edita los recolectores allí."
+    "advancedRawHint": "La configuración en bruto de los recolectores de la página Fuentes de datos. Añade y edita los recolectores allí.",
+    "runsOnUpload": "Se ejecuta al subir archivos",
+    "runsOnDemand": "Se ejecuta bajo demanda: sin programación"
   },
   "subtitle": "Configure su plataforma VoC",
   "tabs": {

@@ -11,9 +11,11 @@ from review_text import plain_review_text
 
 from shared.radar_brands import radar_stamp
 from shared.timestamps import now_iso
-from shared.web_review_targets import MAX_PAGES, validated_target, web_review_source_id
+from shared.web_review_targets import MAX_PAGES, METHOD_BROWSER, validated_target, web_review_source_id
 
 CHANNEL_MAX_CHARS: Final = 100
+#: A metadata value's ceiling (shared/ingest_schemas.py MAX_METADATA_VALUE_LENGTH: flat primitives, 1,000 characters).
+METADATA_VALUE_MAX_CHARS: Final = 1000
 
 
 @dataclass(frozen=True)
@@ -29,6 +31,10 @@ class WebTarget:
     source_id: str = ''
     #: The Radar brand key its reviews go to (docs/radar.md); empty for one of our own sources.
     radar_brand: str = ''
+    #: How it is read: ``browser`` (the default) or ``bedrock_web_search`` (shared/web_review_targets.py METHODS).
+    method: str = METHOD_BROWSER
+    #: A ``bedrock_web_search`` target's model; empty: the default.
+    model: str = ''
 
     @property
     def page_limit(self) -> int:
@@ -72,6 +78,8 @@ def target_from_config(config: object) -> WebTarget:
         enabled=cleaned['enabled'] == 'true',
         source_id=cleaned.get('source_id', ''),
         radar_brand=cleaned.get('radar_brand', ''),
+        method=cleaned['method'],
+        model=cleaned.get('model', ''),
     )
 
 
@@ -98,8 +106,23 @@ def created_at(review: ExtractedReview) -> str:
     return now_iso()
 
 
-def queue_item(target: WebTarget, review: ExtractedReview, *, page: int, page_url: str, brand_name: str) -> dict:
-    """The item ``BaseIngestor.normalize_item`` turns into a processing-queue message."""
+def url_list(urls: list[str]) -> str:
+    """*urls* space-separated for a metadata value: as many whole URLs as fit its ceiling."""
+    kept: list[str] = []
+    for url in urls:
+        if len(' '.join([*kept, url])) > METADATA_VALUE_MAX_CHARS:
+            break
+        kept.append(url)
+    return ' '.join(kept)
+
+
+def queue_item(target: WebTarget, review: ExtractedReview, *, page: int, page_url: str, brand_name: str,
+               attribution: dict[str, str] | None = None) -> dict:
+    """The item ``BaseIngestor.normalize_item`` turns into a processing-queue message.
+
+    *attribution*: flat string metadata a method stores on every review it read (bedrock_web_search: the method,
+    model, site, source URL, when it was read, the URLs opened and cited), beside the target and the page.
+    """
     return {
         'id': review_id(target.host, review),
         'channel': target.name[:CHANNEL_MAX_CHARS],
@@ -113,6 +136,6 @@ def queue_item(target: WebTarget, review: ExtractedReview, *, page: int, page_ur
         'author': review.author,
         'brand_handles_matched': [brand_name] if brand_name else [],
         'source_platform_override': target.source_platform,
-        'metadata': {'target': target.name, 'page': page},
+        'metadata': {'target': target.name, 'page': page, **(attribution or {})},
         **radar_stamp(target.radar_brand),
     }

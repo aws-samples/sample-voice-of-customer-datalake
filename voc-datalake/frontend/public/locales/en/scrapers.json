@@ -292,7 +292,9 @@
     "moreErrors_other": "...and {{count, number}} more errors",
     "pagesScraped": "Pages scraped:",
     "reviewsFound": "Reviews found:",
-    "running": "Running..."
+    "running": "Running...",
+    "blockedHint": "The site refuses automated browsers, so its reviews could not be read. See \"Blocked sites\" in the Data sources docs (docs/web-reviews.md).",
+    "notFinished": "Did not finish"
   },
   "subtitle": "Everywhere your feedback comes from: review pages, apps, files and tools",
   "syntheticCard": {
@@ -332,7 +334,9 @@
       "addFirstPage": "Add your first review page",
       "unnamed": "Unnamed page",
       "deleteConfirmTitle": "Remove review page",
-      "deleteConfirmMessage": "Are you sure you want to remove this review page?"
+      "deleteConfirmMessage": "Are you sure you want to remove this review page?",
+      "addBedrockPage": "Add a page from the Bedrock web search index",
+      "bedrockNote": "Reviews are read from the copy of this page that Amazon Bedrock has indexed (Amazon's cache), not from the site itself. Each review keeps its source URL and site, so it always points back to where it was published."
     },
     "kindLabel": "Type",
     "kind": {
@@ -340,6 +344,10 @@
       "ios": "iPhone app",
       "android": "Android app",
       "app": "App"
+    },
+    "method": {
+      "browser": "Browser",
+      "bedrock": "Bedrock web index"
     }
   },
   "sourceMenu": {
@@ -397,6 +405,10 @@
       "synthetic": {
         "title": "Sample reviews for demos",
         "description": "AI-written reviews, marked as sample data, to try the platform."
+      },
+      "webReviewsBedrock": {
+        "title": "Amazon Bedrock web search index",
+        "description": "Reviews from a page Amazon Bedrock has indexed, for sites that block automated browsers (G2, Gartner, Capterra, TrustRadius). Read from Amazon's cache, stored with the source link."
       }
     }
   },

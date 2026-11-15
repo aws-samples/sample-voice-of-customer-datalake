@@ -275,6 +275,46 @@ class TestRunNowInAWorkspace:
         assert (body['execution_id'], body['status'], body['items_found']) == ('run_2', 'completed', 7)
         assert (deployment['execution_id'], deployment['status']) == ('run_9', 'error')
 
+    def test_an_apps_run_status_is_the_workspaces_and_another_workspaces_ids_answer_never_run(self, world,
+                                                                                            lambda_context):
+        a_run, b_run = 'run_webscraper_20261115090000_0000000a', 'run_webscraper_20261115090000_0000000b'
+        a_page, b_page = 'https://alder.example/reviews', 'https://bramble.example/reviews'
+        world.aggregates.put_item(Item={'pk': f'WS#{WS_A}#SOURCE_RUN#webscraper', 'sk': a_run, 'status': 'completed',
+                                        'app_id': a_page, 'items_found': 3})
+        world.aggregates.put_item(Item={'pk': f'WS#{WS_B}#SOURCE_RUN#webscraper', 'sk': b_run, 'status': 'completed',
+                                        'app_id': b_page, 'items_found': 9, 'errors': ['bramble: blocked by HUMAN']})
+        # The same page in both: A reads its own run of it, never B's.
+        world.aggregates.put_item(Item={'pk': f'WS#{WS_B}#SOURCE_RUN#webscraper',
+                                        'sk': 'run_webscraper_20261115100000_0000000c', 'status': 'error',
+                                        'app_id': a_page})
+
+        def status_in_a(**query: str) -> dict:
+            status, body = _integrations(lambda_context, 'GET', '/sources/status', claims=VIEWER_A, ws=WS_A,
+                                         query={'run_status': 'webscraper', **query})
+            assert status == 200, body
+            return body
+
+        never_run = {'source': 'webscraper', 'status': 'never_run'}
+        assert status_in_a(app_id=b_page) == never_run
+        assert status_in_a(execution_id=b_run) == never_run
+        assert status_in_a(execution_id=b_run, app_id=b_page) == never_run
+        own = status_in_a(app_id=a_page)
+        assert (own['execution_id'], own['status'], own['items_found']) == (a_run, 'completed', 3)
+        assert status_in_a(execution_id=a_run)['execution_id'] == a_run
+        # B's ids name B's real runs, inside B.
+        _status, b_body = _integrations(lambda_context, 'GET', '/sources/status', claims=ADMIN_B, ws=WS_B,
+                                        query={'run_status': 'webscraper', 'app_id': b_page})
+        assert (b_body['execution_id'], b_body['items_found']) == (b_run, 9)
+
+    def test_a_run_now_of_one_app_keeps_the_app_on_the_workspaces_row(self, world, lambda_context):
+        status, body = _integrations(lambda_context, 'POST', '/sources/webscraper/run', claims=ADMIN_A, ws=WS_A,
+                                     body={'app_id': 'https://alder.example/reviews'})
+
+        assert status == 200, body
+        row = world.row(f'WS#{WS_A}#SOURCE_RUN#webscraper', body['execution_id'])
+        assert (row['status'], row['app_id']) == ('running', 'https://alder.example/reviews')
+        assert world.partitions() == {f'WS#{WS_A}#SOURCE_RUN#webscraper'}
+
     def test_a_workspace_that_never_ran_says_so(self, world, lambda_context):
         world.aggregates.put_item(Item={'pk': 'SOURCE_RUN#webscraper', 'sk': 'run_9', 'status': 'completed'})
 

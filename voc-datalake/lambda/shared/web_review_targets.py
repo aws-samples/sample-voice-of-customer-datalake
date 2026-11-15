@@ -10,6 +10,12 @@ string, and are written by ``POST /integrations/web_reviews/apps``.
 review limit: "the latest 10 pages" is 10 / 0, "the latest 200 reviews" 0 / 200,
 "everything" 0 / 0.
 
+``method`` says how the page is read: ``browser`` (the default, and what a target saved
+before ``method`` existed is), the deployment's AgentCore browser page by page; or
+``bedrock_web_search``, an explicit choice: the page as Amazon Bedrock web search's
+cache holds it, opened by an OpenAI GPT model on the Responses API (``model``, one of
+``WEB_SEARCH_MODELS``, ``DEFAULT_WEB_SEARCH_MODEL`` when absent), one page per run.
+
 Shared by both sides of that boundary: ``api/integrations_handler.py`` validates a
 target here before it is saved, and the plugin re-validates every stored target
 here before it is read (a hand-edited secret must not reach the browser).
@@ -48,6 +54,17 @@ DEFAULT_REVIEWS: Final = 0
 #: The manifest's ``frequency_minutes`` options (0 = manual runs only).
 FREQUENCY_MINUTES: Final = (0, 15, 30, 60, 180, 360, 720, 1440)
 DEFAULT_FREQUENCY_MINUTES: Final = 0
+
+#: How a target is read (docs/web-reviews.md → Methods); a target without one is read with the browser.
+METHOD_BROWSER: Final = 'browser'
+METHOD_BEDROCK_WEB_SEARCH: Final = 'bedrock_web_search'
+METHODS: Final = (METHOD_BROWSER, METHOD_BEDROCK_WEB_SEARCH)
+#: The OpenAI GPT models a ``bedrock_web_search`` target may name (Responses API on bedrock-mantle, offered in
+#: us-west-2 on 2026-11-15). In lockstep with lib/utils/web-search-models.ts, which the ingestor's IAM grant names.
+WEB_SEARCH_MODELS: Final = (
+    'openai.gpt-5.6-luna', 'openai.gpt-5.6-terra', 'openai.gpt-5.6-sol', 'openai.gpt-5.5', 'openai.gpt-5.4',
+)
+DEFAULT_WEB_SEARCH_MODEL: Final = 'openai.gpt-5.6-luna'
 
 NAME_RE: Final = re.compile(r'^[A-Za-z0-9][\w .-]*\Z')
 _SOURCE_PREFIX: Final = 'web_'
@@ -173,6 +190,23 @@ def _enabled(target: Mapping[str, object]) -> str:
     raise TargetError('enabled must be true or false')
 
 
+def _method(target: Mapping[str, object]) -> str:
+    method = _text(target, 'method') or METHOD_BROWSER
+    if method not in METHODS:
+        raise TargetError(f'method must be one of {", ".join(METHODS)}')
+    return method
+
+
+def _model(target: Mapping[str, object], method: str) -> str:
+    """A ``bedrock_web_search`` target's model (``''``: the default); dropped for a browser target, which has none."""
+    model = _text(target, 'model')
+    if not model or method != METHOD_BEDROCK_WEB_SEARCH:
+        return ''
+    if model not in WEB_SEARCH_MODELS:
+        raise TargetError(f'model must be one of {", ".join(WEB_SEARCH_MODELS)}')
+    return model
+
+
 def validated_target(target: object) -> dict[str, str]:
     """The stored form of *target* (string values only, unknown keys dropped), or ``TargetError``.
 
@@ -188,7 +222,11 @@ def validated_target(target: object) -> dict[str, str]:
         'max_reviews': str(_bounded_int(target, 'max_reviews', DEFAULT_REVIEWS, MIN_REVIEWS, MAX_REVIEWS)),
         'frequency_minutes': str(_frequency(target)),
         'enabled': _enabled(target),
+        'method': _method(target),
     }
+    model = _model(target, cleaned['method'])
+    if model:
+        cleaned['model'] = model
     target_id = _text(target, 'id')
     if target_id:
         if not OPAQUE_ID_RE.match(target_id):

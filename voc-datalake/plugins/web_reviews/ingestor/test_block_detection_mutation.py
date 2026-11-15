@@ -121,3 +121,23 @@ class TestPrecedence:
 
     def test_a_short_readable_page_is_not_blocked(self):
         assert blocked_by(PageSignals(200, 'Reviews', 'Five stars, would buy again.', '<p>ok</p>')) is None
+
+
+class TestTheWallsSeenOn20261115:
+    """Walls a laptop saw on 2026-11-15 that the markers above missed (the eval's site list, docs/web-reviews.md)."""
+
+    def test_trustpilots_aws_waf_challenge_names_aws_waf(self):
+        html = '<script src="https://abc123.edge.sdk.awswaf.com/abc123/def/challenge.js"></script>'
+        assert blocked_by(PageSignals(status=403, title='', text='Verifying your connection...', html=html)) == 'AWS WAF'
+
+    def test_the_aws_waf_script_on_a_long_readable_page_is_not_a_wall(self):
+        html = '<script src="https://abc123.edge.sdk.awswaf.com/abc123/def/challenge.js"></script>'
+        assert blocked_by(PageSignals(status=200, title='Reviews', text='r' * 3001, html=html)) is None
+
+    def test_cloudflares_hard_block_names_cloudflare(self):
+        text = 'Sorry, you have been blocked\nYou are unable to access capterra.com'
+        assert blocked_by(PageSignals(status=403, title='Attention Required!', text=text, html='')) == 'Cloudflare'
+
+    @pytest.mark.parametrize('text', ['whoa there, pardner!', 'Your request has been blocked due to a network policy.'])
+    def test_reddits_network_policy_page_names_reddit(self, text: str):
+        assert blocked_by(PageSignals(status=403, title='Blocked', text=text, html='')) == 'Reddit network security'

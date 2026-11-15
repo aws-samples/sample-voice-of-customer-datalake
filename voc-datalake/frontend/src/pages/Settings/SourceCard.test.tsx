@@ -281,6 +281,36 @@ describe('SourceCard', () => {
     })
   })
 
+  // A plugin whose manifest declares no schedule has no rule: GET /sources/status says `exists: false`, and the
+  // switch it used to show answered 500 (now 400, integrations_handler require_schedule) when flipped.
+  describe('a source without a schedule', () => {
+    it('says an S3 import runs on upload, with no switch to flip', async () => {
+      mockGetSourcesStatus.mockResolvedValue({ sources: { s3_import: { enabled: false, exists: false } } })
+      renderCard({ manifest: { ...mockManifest, id: 's3_import', name: 'S3 Bulk Import', hasS3Trigger: true } })
+
+      expect(await screen.findByText('Runs on upload')).toBeInTheDocument()
+      expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+      expect(screen.queryByText('Disabled')).not.toBeInTheDocument()
+    })
+
+    it('says any other one runs on demand, and never asks to enable it', async () => {
+      mockGetSourcesStatus.mockResolvedValue({ sources: { test_source: { enabled: false, exists: false } } })
+      renderCard()
+
+      expect(await screen.findByText('Runs on demand — no schedule')).toBeInTheDocument()
+      expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+      expect(mockEnableSource).not.toHaveBeenCalled()
+    })
+
+    it('the control: a source with a rule keeps its switch', async () => {
+      mockGetSourcesStatus.mockResolvedValue({ sources: { test_source: { enabled: true, exists: true } } })
+      renderCard()
+
+      await waitFor(() => { expect(screen.getByRole('checkbox')).toBeChecked() })
+      expect(screen.queryByText(/Runs on/)).not.toBeInTheDocument()
+    })
+  })
+
   describe('Credentials Section', () => {
     it('renders credential fields', async () => {
       await renderExpanded()

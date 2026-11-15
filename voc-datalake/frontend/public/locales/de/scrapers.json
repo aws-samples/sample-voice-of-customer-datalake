@@ -292,7 +292,9 @@
     "moreErrors_other": "...und {{count, number}} weitere Fehler",
     "pagesScraped": "Seiten gescrapt:",
     "reviewsFound": "Bewertungen gefunden:",
-    "running": "Läuft..."
+    "running": "Läuft...",
+    "blockedHint": "Die Website lehnt automatisierte Browser ab, daher konnten ihre Bewertungen nicht gelesen werden. Siehe „Blocked sites“ in der Dokumentation zu Datenquellen (docs/web-reviews.md).",
+    "notFinished": "Nicht abgeschlossen"
   },
   "subtitle": "Alle Herkünfte Ihres Feedbacks: Bewertungsseiten, Apps, Dateien und Tools",
   "syntheticCard": {
@@ -332,7 +334,9 @@
       "addFirstPage": "Erste Bewertungsseite hinzufügen",
       "unnamed": "Unbenannte Seite",
       "deleteConfirmTitle": "Bewertungsseite entfernen",
-      "deleteConfirmMessage": "Möchten Sie diese Bewertungsseite wirklich entfernen?"
+      "deleteConfirmMessage": "Möchten Sie diese Bewertungsseite wirklich entfernen?",
+      "addBedrockPage": "Seite aus dem Bedrock-Websuchindex hinzufügen",
+      "bedrockNote": "Die Bewertungen werden aus der Kopie dieser Seite gelesen, die Amazon Bedrock indexiert hat (Amazons Cache), nicht von der Website selbst. Jede Bewertung behält ihre Quell-URL und Website und verweist so immer auf den Ort ihrer Veröffentlichung."
     },
     "kindLabel": "Art",
     "kind": {
@@ -340,6 +344,10 @@
       "ios": "iPhone-App",
       "android": "Android-App",
       "app": "App"
+    },
+    "method": {
+      "browser": "Browser",
+      "bedrock": "Bedrock-Webindex"
     }
   },
   "sourceMenu": {
@@ -397,6 +405,10 @@
       "synthetic": {
         "title": "Beispielbewertungen für Demos",
         "description": "Von der KI geschriebene Bewertungen, als Beispieldaten markiert, zum Ausprobieren."
+      },
+      "webReviewsBedrock": {
+        "title": "Amazon Bedrock-Websuchindex",
+        "description": "Bewertungen von einer Seite, die Amazon Bedrock indexiert hat, für Websites, die automatisierte Browser blockieren (G2, Gartner, Capterra, TrustRadius). Aus Amazons Cache gelesen, mit dem Quelllink gespeichert."
       }
     }
   },

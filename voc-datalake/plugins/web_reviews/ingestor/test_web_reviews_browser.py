@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from agentcore_browser import (
-    BROWSER_IDENTIFIER,
+    MANAGED_BROWSER,
     MAX_SESSION_SECONDS,
     MIN_SESSION_SECONDS,
     BrowserUnavailableError,
@@ -94,12 +94,13 @@ def agentcore_client() -> MagicMock:
 
 
 class TestBrowserSession:
-    def test_yields_a_connection_and_stops_the_session(self):
+    def test_yields_a_connection_and_stops_the_session(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.delenv('BROWSER_IDENTIFIER', raising=False)
         client = agentcore_client()
         socket = FakeSocket(lambda m: [reply(m, {})])
         with browser_session(300, client=client, opener=lambda *_a: socket, credentials=CREDENTIALS) as cdp:
             cdp.call('Page.enable')
-        client.stop_browser_session.assert_called_once_with(browserIdentifier=BROWSER_IDENTIFIER, sessionId='s-1')
+        client.stop_browser_session.assert_called_once_with(browserIdentifier=MANAGED_BROWSER, sessionId='s-1')
         assert socket.closed
 
     def test_the_connection_names_its_browser_session_for_the_logs(self):

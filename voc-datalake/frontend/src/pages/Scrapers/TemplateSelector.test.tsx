@@ -145,7 +145,8 @@ describe('TemplateSelector imports are admin-only', () => {
       await user.click(tile)
     }
     expect(callCounts(calls)).toStrictEqual({ manual: 1, json: 1, csv: 1, plugin: 1 })
-    expect(calls.onSelectPlugin).toHaveBeenCalledWith(expect.objectContaining({ id: 's3_import' }))
+    // No preset: only the Bedrock web search tile starts its new app with values (sourceMenu.test.ts).
+    expect(calls.onSelectPlugin).toHaveBeenCalledWith(expect.objectContaining({ id: 's3_import' }), undefined)
     expect(screen.queryByText(IMPORTS_NOTE)).not.toBeInTheDocument()
   })
 })

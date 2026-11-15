@@ -43,6 +43,11 @@ export const sourcesStatusKey = () => ['sources-status'] as const
 /** A plugin's latest manual run: the root alone matches every plugin's. */
 export const sourceRunStatusKey = (...pluginIds: readonly string[]) => ['source-run-status', ...pluginIds] as const
 
+/** One app's (review page's, app connector's) newest run of a plugin: under {@link sourceRunStatusKey}, so the root
+ *  and the plugin's key also match it. */
+export const appRunStatusKey = (pluginId: string, appId: string) =>
+  [...sourceRunStatusKey(pluginId), 'app', appId] as const
+
 /**
  * The metrics and feedback reads several pages share. Each takes the read's own
  * parameters after the root (a date window, a source, …); the root alone is the
