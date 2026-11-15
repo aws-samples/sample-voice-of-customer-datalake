@@ -8,9 +8,9 @@ from unittest.mock import patch
 
 from handler_events_fixtures import call_route
 
-from auth import user_messages
+from auth import logo_signing, user_messages
 from settings_handler import lambda_handler
-from shared import company_context
+from shared import company_context, company_logo
 
 
 def test_reads_the_brand_row_and_field_the_brand_route_writes(api_gateway_event, lambda_context):
@@ -27,10 +27,16 @@ def test_reads_the_design_system_row_the_design_system_writes():
     assert user_messages.DESIGN_SYSTEM_KEY == {'pk': company_context.DESIGN_SYSTEM_PK, 'sk': company_context.CONFIG_SK}
 
 
-def test_finds_the_accent_in_the_colour_tokens_the_design_system_writer_stores(monkeypatch):
+def test_finds_the_accent_in_the_colour_tokens_the_design_system_writer_stores():
     # The route stores validate_design_system's output as the row (settings_handler.put_design_system_route).
     stored = company_context.validate_design_system(
         {'tokens': {'colors': [{'name': 'surface', 'value': '#fafafa'}, {'name': 'primary', 'value': '#be123c'}],
                     'typography': []}})
-    monkeypatch.setattr(user_messages, '_read_settings', lambda key, _what: stored if key == user_messages.DESIGN_SYSTEM_KEY else {})
-    assert user_messages.accent_color() == '#be123c'
+    assert user_messages.accent_color(stored) == '#be123c'
+
+
+def test_reads_the_logo_attribute_and_key_shape_the_logo_upload_writes():
+    assert user_messages.LOGO_KEY_ATTR == company_logo.LOGO_KEY_ATTR
+    uploaded = company_logo.LOGO_KEY_PREFIX + '0123456789ab.png'
+    assert logo_signing.is_uploaded_logo_key(uploaded)
+    assert not logo_signing.is_uploaded_logo_key(company_logo.LOGO_KEY_PREFIX + 'preview_0123456789ab.png')
