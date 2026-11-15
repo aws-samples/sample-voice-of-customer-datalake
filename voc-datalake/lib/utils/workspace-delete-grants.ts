@@ -32,6 +32,10 @@
  *     name no workspace in their key, so IAM cannot tie a claim to the workspace being deleted: the code does
  *     (shared/ws_repo.py release_project_claim's condition that the claim names this workspace, and the ids come only
  *     from that workspace's own registry);
+ *   - `participants`: in voc-participants, Query and BatchWriteItem of the workspace's index `WS#{id}#PARTICIPANTS`
+ *     and of the partitions it names, `WS#{id}#LIST#*`, `WS#{id}#PERSON#*` and `WS#{id}#EMAIL#*` only, never the
+ *     deployment's; every Query for the keys alone (`dynamodb:Attributes` `pk` and `sk`, named, and
+ *     `dynamodb:Select` `SPECIFIC_ATTRIBUTES`: no address or name is read; sweeps.py `KEYS_ONLY`);
  *   - `conversations`: in voc-conversations, Query and BatchWriteItem of the owner list `WS#{id}#CONVERSANTS` and of
  *     each owner's `WS#{id}#USER#*` only, never the deployment's `USER#{sub}`; every Query for the keys alone
  *     (`dynamodb:Attributes` `pk` and `sk`, named, and `dynamodb:Select` `SPECIFIC_ATTRIBUTES`: no message, title or
@@ -40,7 +44,8 @@
  */
 export type DeleteGrant =
   | 'aggregates' | 'metricTypeIndex' | 'tombstones' | 'exportJobs' | 'feedback'
-  | 'watermarks' | 'memory' | 'objects' | 'credentials' | 'controlRows' | 'radar' | 'projects' | 'conversations';
+  | 'watermarks' | 'memory' | 'objects' | 'credentials' | 'controlRows' | 'radar' | 'projects' | 'participants'
+  | 'conversations';
 
 /** Each sweep (SWEEPS' names, in order) and the grants it needs. */
 export const WORKSPACE_DELETE_GRANTS: Readonly<Record<string, readonly DeleteGrant[]>> = {
@@ -65,6 +70,7 @@ export const WORKSPACE_DELETE_GRANTS: Readonly<Record<string, readonly DeleteGra
   settings: ['aggregates'],
   user_contexts: ['aggregates'],
   projects: ['projects'],
+  participants: ['participants'],
   conversations: ['conversations'],
   control_rows: ['controlRows', 'aggregates'],
 };
@@ -78,7 +84,8 @@ export const WORKSPACE_DELETE_GRANTS: Readonly<Record<string, readonly DeleteGra
 export const REQUIRED_DELETE_SWEEPS: readonly string[] = [
   'credentials', 'feedback', 'counters', 'source_runs', 'failures', 'circuits', 'logs', 'scraper_runs',
   'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'reprocess_jobs', 'watermarks', 'memory',
-  'exports', 'objects', 'radar', 'settings', 'user_contexts', 'projects', 'conversations', 'control_rows',
+  'exports', 'objects', 'radar', 'settings', 'user_contexts', 'projects', 'participants', 'conversations',
+  'control_rows',
 ];
 
 /** Throws, naming them, when `registry` lacks any of `REQUIRED_DELETE_SWEEPS`. */

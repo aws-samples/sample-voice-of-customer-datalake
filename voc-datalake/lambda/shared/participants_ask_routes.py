@@ -41,6 +41,7 @@ from shared.participants_asks import (
     resolve_token,
     sent_today,
     sent_today_by,
+    token_workspace,
 )
 from shared.participants_intake import collect_people
 from shared.participants_lists import (
@@ -311,12 +312,18 @@ def _unsubscribe_token() -> object:
 @app.post('/unsubscribe')
 @tracer.capture_method
 def unsubscribe():
-    """Always 200 ``{success: true}``: the answer never says whether the token was known."""
+    """Always 200 ``{success: true}``: the answer never says whether the token was known.
+
+    The person is the one of the workspace the stored token row names (``token_workspace``: the deployment's when
+    it names none, every token today), never one the caller names; a row naming no workspace it may be used in
+    unsubscribes nobody."""
     try:
         table = _table()
         row = resolve_token(table, _unsubscribe_token(), UNSUBSCRIBE_SK)
-        if row is not None and mark_unsubscribed(table, row['person_id']):
+        if row is not None and mark_unsubscribed(table, row['person_id'], workspace=token_workspace(row)):
             logger.info('Participant unsubscribed', extra={'person_id': row['person_id']})
     except (ClientError, BotoCoreError):
         logger.exception('Unsubscribe could not be recorded')
+    except ValueError:
+        logger.warning('Unsubscribe token names no workspace it may be used in')
     return {'success': True}

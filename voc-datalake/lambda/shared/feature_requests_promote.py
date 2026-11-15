@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
+from shared.exceptions import NotFoundError
 from shared.feature_board_fields import status_keys
 from shared.feature_requests_store import supports_of, update_request
 from shared.logging import logger
@@ -64,7 +65,11 @@ def promote(requests_table: Any, participants: Any, request: Mapping[str, Any], 
         except ValueError as exc:
             skipped.append({'email': email, 'reason': str(exc) or REASON_INVALID_EMAIL})
             continue
-        added += int(add_member(participants, list_id, person_id, created_by))
+        try:
+            added += int(add_member(participants, list_id, person_id, created_by))
+        except NotFoundError:
+            # Erased between the upsert and the add (the add checks the person's row): not added, the rest go on.
+            logger.info('A supporter erased meanwhile was not added', extra={'request_id': request_id})
     link(participants, project_id, 'LIST', list_id, created_by)
     changes: dict[str, Any] = {'project_id': project_id, 'list_id': list_id}
     if _moves_to_planned(board, request.get('status')):

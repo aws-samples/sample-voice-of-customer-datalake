@@ -24,7 +24,7 @@ import {
 import { PROCESSOR_DROP_COUNT_ATTRIBUTES } from './processing-roles';
 import {
   CONTROL_ROW_DELETES, CONVERSATION_PARTITIONS, DELETE_AUDIT_PARTITION, DELETE_JOB_PARTITION, MEMORY_PARTITIONS, PROJECT_CLAIM_PARTITIONS,
-  PROJECTS_TABLE_PARTITIONS, TOMBSTONE_PARTITIONS,
+  PARTICIPANT_PARTITIONS, PROJECTS_TABLE_PARTITIONS, TOMBSTONE_PARTITIONS,
   WORKSPACE_DELETE_MAX_EVENT_AGE_MINUTES, WORKSPACE_DELETE_RESERVED_CONCURRENCY,
 } from './workspace-delete-worker';
 
@@ -165,6 +165,10 @@ describe('the feedback processor with the hard delete built', () => {
 /** One workspace id in an IAM pattern: `ws_` and 26 `?` (lib/stacks/core-buckets.ts WORKSPACE_ID_PATTERN). */
 const ONE = `ws_${'?'.repeat(26)}`;
 const keys = (partitions: string[]) => ({ 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': partitions } });
+/** A keys-only Query's condition (sweeps.py KEYS_ONLY): the key attributes alone, named. */
+const keysOnly = (partitions: string[]) => ({ ...keys(partitions),
+  'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk'] },
+  StringEquals: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' }, Null: { 'dynamodb:Attributes': 'false' } });
 
 const worker = () => findWorkerFunction(template, 'voc-workspace-delete-');
 const statements = () => roleStatements(template, worker().Role['Fn::GetAtt'][0]);
@@ -210,10 +214,10 @@ describe('the voc-workspace-delete job', () => {
     expect(Object.keys(WORKSPACE_DELETE_GRANTS)).toStrictEqual([
       'credentials', 'feedback', 'counters', 'source_runs', 'failures', 'circuits', 'logs', 'scraper_runs',
       'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'reprocess_jobs', 'watermarks', 'memory', 'exports',
-      'objects', 'radar', 'settings', 'user_contexts', 'projects', 'conversations', 'control_rows']);
+      'objects', 'radar', 'settings', 'user_contexts', 'projects', 'participants', 'conversations', 'control_rows']);
     expect([...deleteGrants()].sort(byCodeUnit)).toStrictEqual(['aggregates', 'controlRows', 'conversations',
-      'credentials', 'exportJobs', 'feedback', 'memory', 'metricTypeIndex', 'objects', 'projects', 'radar',
-      'tombstones', 'watermarks']);
+      'credentials', 'exportJobs', 'feedback', 'memory', 'metricTypeIndex', 'objects', 'participants', 'projects',
+      'radar', 'tombstones', 'watermarks']);
   });
 
   it('refuses to be built while the registry lacks a sweep the docs require (the conversations, say)', () => {
@@ -227,11 +231,7 @@ describe('the voc-workspace-delete job', () => {
     expect(CONVERSATION_PARTITIONS).toStrictEqual([`WS#${ONE}#CONVERSANTS`, `WS#${ONE}#USER#*`]);
     expect(on('Conversations')).toStrictEqual(sorted([
       { actions: ['dynamodb:BatchWriteItem'], index: null, condition: keys(CONVERSATION_PARTITIONS) },
-      { actions: ['dynamodb:Query'], index: null, condition: {
-        ...keys(CONVERSATION_PARTITIONS),
-        'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk'] },
-        StringEquals: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
-        Null: { 'dynamodb:Attributes': 'false' } } },
+      { actions: ['dynamodb:Query'], index: null, condition: keysOnly(CONVERSATION_PARTITIONS) },
     ]));
     expect(worker().Environment.Variables).toHaveProperty('CONVERSATIONS_TABLE');
   });
@@ -246,12 +246,20 @@ describe('the voc-workspace-delete job', () => {
     ]));
   });
 
-  it('voc-jobs and voc-participants: Query and BatchWriteItem of one workspace\'s project partitions only', () => {
-    for (const table of ['Jobs', 'Participants']) {
-      expect(on(table)).toStrictEqual([
-        { actions: ['dynamodb:BatchWriteItem', 'dynamodb:Query'], index: null, condition: keys([`WS#${ONE}#PROJECT#*`]) },
-      ]);
-    }
+  it('voc-jobs: Query and BatchWriteItem of one workspace\'s project partitions only', () => {
+    expect(on('Jobs')).toStrictEqual([
+      { actions: ['dynamodb:BatchWriteItem', 'dynamodb:Query'], index: null, condition: keys([`WS#${ONE}#PROJECT#*`]) },
+    ]);
+  });
+
+  it('voc-participants: its project partitions, and a keys-only sweep of one workspace\'s index, people and lists', () => {
+    expect(PARTICIPANT_PARTITIONS).toStrictEqual([`WS#${ONE}#PARTICIPANTS`, `WS#${ONE}#LIST#*`, `WS#${ONE}#PERSON#*`,
+      `WS#${ONE}#EMAIL#*`]);
+    expect(on('Participants')).toStrictEqual(sorted([
+      { actions: ['dynamodb:BatchWriteItem', 'dynamodb:Query'], index: null, condition: keys([`WS#${ONE}#PROJECT#*`]) },
+      { actions: ['dynamodb:BatchWriteItem'], index: null, condition: keys(PARTICIPANT_PARTITIONS) },
+      { actions: ['dynamodb:Query'], index: null, condition: keysOnly(PARTICIPANT_PARTITIONS) },
+    ]));
   });
 
   // CDK keeps a role's inline policy under IAM's limit by its own estimate (150 characters an unresolved ARN) and moves

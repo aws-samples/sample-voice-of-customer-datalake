@@ -137,6 +137,7 @@ from shared.prioritization_keys import (
     ROW_FROZEN_AT_FIELD,
     ROW_SK_PREFIX,
 )
+from shared.project_keys import require_deployment
 from shared.project_writes import is_project_tombstone
 from shared.request_body import json_object_body, validated_text
 from shared.row_ids import is_clampable_number, validated_row_id
@@ -152,6 +153,14 @@ from shared.warm_init import warm_at_init
 
 if TYPE_CHECKING:
     from mypy_boto3_dynamodb.type_defs import TransactWriteItemTypeDef
+
+    from shared.ws_repo import WorkspaceScope
+
+#: The ballots' own rows in voc-aggregates (`PRIORITIZATION`, `VOTING_SESSION`): the
+#: deployment's, so every helper that would reach them for a workspace refuses it
+#: (`NotPerWorkspaceError`), whatever the project gate decides (docs/multi-workspace.md,
+#: the project plan, 3d).
+BALLOT_ROWS_STORE = 'Ballot rows'
 
 _MISSING_ROW_MESSAGE = (
     'that prioritization row does not exist; reload the page and reopen the vote'
@@ -477,7 +486,7 @@ def _validated_session_id(raw: Any) -> str | None:
     return session_id if _SESSION_ID_PATTERN.fullmatch(session_id) else None
 
 
-def _existing_row(row_id: str) -> dict | None:
+def _existing_row(row_id: str, *, workspace: 'WorkspaceScope | None' = None) -> dict | None:
     """Does a row record exist for this id — the check a session must pass to open.
 
     One `get_item`, the read this role already grants. A FAILED read raises
@@ -485,7 +494,10 @@ def _existing_row(row_id: str) -> dict | None:
     in front of a room over a transient throttle, and "present" opens a window
     that collects unrepeatable votes the page will discard (#342). The same
     direction the signed-in save path fails in, for the same reason.
+
+    The row is the deployment's (`BALLOT_ROWS_STORE`): a workspace is refused first.
     """
+    require_deployment(workspace, BALLOT_ROWS_STORE)
     table = _table()  # its ConfigurationError is not this read's failure
     try:
         # Strongly consistent, because this read GATES the write that opens a
@@ -503,14 +515,21 @@ def _existing_row(row_id: str) -> dict | None:
     return item if isinstance(item, dict) else None
 
 
-def _require_project_level(project_id: Any, level: str, missing_message: str) -> None:
+def _require_project_level(project_id: Any, level: str, missing_message: str, *,
+                           workspace: 'WorkspaceScope | None' = None) -> None:
     """The caller's access to ``project_id`` at ``level``, or the contract's refusal.
 
     A caller who cannot even VIEW the project gets ``missing_message`` as a 404 —
     the same answer as for a missing row or session, so the refusal confirms the
     existence of nothing. A missing or unreadable project id means the record
     predates project scoping and has nothing to guard.
+
+    ``workspace``: refused first (`NotPerWorkspaceError`, `BALLOT_ROWS_STORE`): the
+    ballots' own rows (`PRIORITIZATION`, `VOTING_SESSION`) are the deployment's, so
+    lifting the project gate's own refusal (the project plan's 3h) can never land a
+    workspace's votes in them. No route passes one.
     """
+    require_deployment(workspace, BALLOT_ROWS_STORE)
     if not isinstance(project_id, str) or not project_id:
         return
     caller = project_gate.caller_from_event(app.current_event.raw_event)
@@ -519,23 +538,26 @@ def _require_project_level(project_id: Any, level: str, missing_message: str) ->
         projects = get_projects_table()
         if not projects:
             raise ConfigurationError('Projects table not configured')
-        return project_gate.read_gate_meta(projects, project_id)
+        return project_gate.read_gate_meta(projects, project_id, workspace=workspace)
 
-    project_gate.require_project_level(read_meta, caller, level, missing_message=missing_message)
+    project_gate.require_project_level(read_meta, caller, level, missing_message=missing_message,
+                                       workspace=workspace)
 
 
-def _require_row_project_edit(row: dict) -> None:
+def _require_row_project_edit(row: dict, *, workspace: 'WorkspaceScope | None' = None) -> None:
     """Only someone who may EDIT the row's project may open a public vote on it.
 
     A session is a public write window onto a project's row, so it is gated like
     any other project write (`shared.project_access`). A caller who cannot even
     VIEW the project gets the same 404 as a missing row — no existence leak.
     Rows without a project id predate project scoping and have nothing to guard.
+    A workspace is refused (`_require_project_level`).
     """
-    _require_project_level(row.get('project_id'), project_access.LEVEL_EDIT, _MISSING_ROW_MESSAGE)
+    _require_project_level(row.get('project_id'), project_access.LEVEL_EDIT, _MISSING_ROW_MESSAGE,
+                           workspace=workspace)
 
 
-def _session_project_id(item: dict) -> str | None:
+def _session_project_id(item: dict, *, workspace: 'WorkspaceScope | None' = None) -> str | None:
     """The project a session's row belongs to, for the facilitator routes' gate.
 
     Read off the SESSION first: `create_voting_session` copies the row's
@@ -550,12 +572,12 @@ def _session_project_id(item: dict) -> str | None:
     if isinstance(project_id, str) and project_id:
         return project_id
     row_id = _session_row_id(item)
-    row = _existing_row(row_id) if row_id else None
+    row = _existing_row(row_id, workspace=workspace) if row_id else None
     row_project_id = row.get('project_id') if row else None
     return row_project_id if isinstance(row_project_id, str) and row_project_id else None
 
 
-def _require_session_project_level(item: dict, level: str) -> None:
+def _require_session_project_level(item: dict, level: str, *, workspace: 'WorkspaceScope | None' = None) -> None:
     """Gate a facilitator route on the session's project: VIEW to read status, EDIT to close.
 
     A session id is 128 bits of entropy, but it is also printed on a screen in
@@ -563,23 +585,30 @@ def _require_session_project_level(item: dict, level: str) -> None:
     Without this, any signed-in user who saw the QR could read the session's
     ballot count or close the vote; with it, the facilitator routes follow the
     row's project exactly as opening the session does. A caller without view
-    gets the same 404 as a missing session.
+    gets the same 404 as a missing session. A workspace is refused before any read
+    (`BALLOT_ROWS_STORE`).
     """
-    _require_project_level(_session_project_id(item), level, 'Voting session not found')
+    require_deployment(workspace, BALLOT_ROWS_STORE)
+    _require_project_level(_session_project_id(item, workspace=workspace), level, 'Voting session not found',
+                           workspace=workspace)
 
 
-def _project_gone(project_id: Any) -> bool:
+def _project_gone(project_id: Any, *, workspace: 'WorkspaceScope | None' = None) -> bool:
     """Whether the project a session belongs to was deleted (META gone or tombstoned).
 
     A missing project id is a session or row from before project scoping: nothing to
-    check. A failed read raises (500) rather than answering either way.
+    check. A failed read raises (500) rather than answering either way. A workspace
+    is refused first (`BALLOT_ROWS_STORE`, before any table is opened), and the
+    gate's read (`project_gate.read_gate_meta`) refuses one too: never read as the
+    deployment's project.
     """
+    require_deployment(workspace, BALLOT_ROWS_STORE)
     if not isinstance(project_id, str) or not project_id:
         return False
     projects = get_projects_table()
     if not projects:
         raise ConfigurationError('Projects table not configured')
-    meta = project_gate.read_gate_meta(projects, project_id)
+    meta = project_gate.read_gate_meta(projects, project_id, workspace=workspace)
     return meta is None or is_project_tombstone(meta)
 
 

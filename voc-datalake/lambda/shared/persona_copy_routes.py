@@ -43,9 +43,11 @@ from shared.logging import tracer
 from shared.persona_save import count_personas
 from shared.project_access import Caller, project_members
 from shared.project_gate import PROJECT_NOT_FOUND, require_admin_caller
-from shared.project_keys import project_type_pk
+from shared.project_keys import PROJECT_GATE_STORE, project_type_pk, require_deployment
 from shared.project_writes import is_project_tombstone, is_verification_fixture, project_meta_key
 from shared.request_body import json_object_body
+from shared.workspace_config import get_scoped_item
+from shared.ws_repo import WorkspaceScope
 
 app = Router()
 
@@ -75,10 +77,10 @@ def _signed(personas: list[dict]) -> list[dict]:
     return company_personas_routes.ops().sign_avatars(personas)
 
 
-def _live_meta(project_id: str) -> dict:
-    """The project's META, or a 404 when it is missing or being deleted."""
-    item = _table().get_item(Key=project_meta_key(project_id), ConsistentRead=True).get('Item')
-    if not isinstance(item, dict) or is_project_tombstone(item):
+def _live_meta(project_id: str, *, workspace: WorkspaceScope | None = None) -> dict:
+    """The project's META (the workspace's project when given), or a 404 when it is missing or being deleted."""
+    item = get_scoped_item(_table(), project_meta_key(project_id, workspace=workspace), workspace, ConsistentRead=True)
+    if not item or is_project_tombstone(item):
         raise NotFoundError(PROJECT_NOT_FOUND)
     return item
 
@@ -88,23 +90,39 @@ def _is_owner_or_member(meta: dict, caller: Caller) -> bool:
     return bool(subject) and (meta.get('owner_sub') == subject or subject in project_members(meta))
 
 
-def _copy(*, source: str, scope: persona_copy.SourceScope, name: str, ids: list[str], target: str) -> list[dict]:
+def _copy(*, source: str, scope: persona_copy.SourceScope, name: str, ids: list[str], target: str,
+          workspace: WorkspaceScope | None = None) -> list[dict]:
+    """The copy within one scope: the source and the target both in ``workspace`` (the deployment's when None)."""
     return persona_copy.copy_personas(
         _table(), get_s3_client(), os.environ.get('RAW_DATA_BUCKET', ''),
         source_container=source, source_scope=scope, source_project_name=name,
         persona_ids=ids, target_container=target, copied_by=_caller().subject,
+        workspace=workspace, source_workspace=workspace,
     )
+
+
+def promote(project_id: str, persona_id: str, *, workspace: WorkspaceScope | None = None) -> list[dict]:
+    """An admin's copy of one project persona into its own scope's company library (the workspace's when given: its
+    rows and its avatar under ``ws/{ws}/``, docs/multi-workspace.md, the project plan, 3d); the new rows. 403 before
+    anything is read unless the caller is an admin acting for themselves.
+
+    The admin is the deployment's (``admins``); a workspace's library needs that workspace's admin role, which no
+    helper decides yet, so a ``workspace`` is refused first (``NotPerWorkspaceError``, the project gate's) until the
+    switch (the project plan's 3h)."""
+    require_deployment(workspace, PROJECT_GATE_STORE)
+    _require_admin()
+    meta = _live_meta(project_id, workspace=workspace)
+    ensure_company_personas_meta(_table(), workspace=workspace)
+    return _copy(source=project_id, scope='project', name=str(meta.get('name') or ''),
+                 ids=[persona_id], target=COMPANY_PERSONAS_CONTAINER, workspace=workspace)
 
 
 @app.post("/projects/<project_id>/personas/<persona_id>/promote")
 @tracer.capture_method
 def promote_persona(project_id: str, persona_id: str):
-    """An admin copies one project persona into the company library (notes stay behind)."""
-    _require_admin()
-    meta = _live_meta(project_id)
-    ensure_company_personas_meta(_table())
-    copies = _copy(source=project_id, scope='project', name=str(meta.get('name') or ''),
-                   ids=[persona_id], target=COMPANY_PERSONAS_CONTAINER)
+    """An admin copies one project persona into the company library (notes stay behind; ``promote`` checks the
+    admin)."""
+    copies = promote(project_id, persona_id)
     return _created({'success': True, 'persona': _signed(copies)[0]})
 
 

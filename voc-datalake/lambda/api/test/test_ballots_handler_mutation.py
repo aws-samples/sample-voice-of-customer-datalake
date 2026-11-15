@@ -799,9 +799,9 @@ class TestTheProjectGateIsConsultedExactlyWhenThereIsAProject:
         _, caller, level = gate.require_project_level.call_args.args
         assert (caller, level) == (gate.caller_from_event.return_value, 'view')
         assert gate.require_project_level.call_args.kwargs == {
-            'missing_message': 'Voting session not found',
+            'missing_message': 'Voting session not found', 'workspace': None,
         }
-        gate.read_gate_meta.assert_called_once_with('projects', gated_on)
+        gate.read_gate_meta.assert_called_once_with('projects', gated_on, workspace=None)
 
     @pytest.mark.parametrize('project_id', ['', None, 7])
     def test_a_row_without_a_usable_project_gates_nothing(
@@ -826,8 +826,9 @@ class TestTheProjectGateIsConsultedExactlyWhenThereIsAProject:
         assert gate.require_project_level.call_args.kwargs == {
             'missing_message': 'that prioritization row does not exist; reload the page and '
                                'reopen the vote',
+            'workspace': None,
         }
-        gate.read_gate_meta.assert_called_once_with('projects', 'p1')
+        gate.read_gate_meta.assert_called_once_with('projects', 'p1', workspace=None)
 
     def test_opening_a_session_on_a_row_with_an_empty_project_gates_nothing(
             self, api_gateway_event, lambda_context):

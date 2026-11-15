@@ -77,20 +77,35 @@ def ingest_table(scope: WorkspaceScope | None, resource: Any, name: str,
 def update_with_key(view: WorkspaceTable | DeploymentTable, request: Mapping[str, Any]) -> dict:
     """An ``update_item`` request built the boto3 way (``Key=`` among its arguments: shared/source_updates.py,
     shared/feedback_category.py, the aggregator's counters) sent through ``view``, whose key is positional."""
-    return view.update_item(request['Key'], **{name: value for name, value in request.items() if name != 'Key'})
+    return _with_key(view.update_item, request, 'Key')
 
 
 class ScopedUpdates:
-    """``table`` in ``scope`` (``table_view``) with boto3's ``update_item(Key=…, …)`` call shape, for a writer built
-    the boto3 way (shared/feedback_category.py ``apply_conditional_update``, the category reprocess's per-review
-    updates): the table itself deployment-wide, ``ws_table`` in a workspace, which refuses a key or an index
-    partition outside it before DynamoDB."""
+    """``table`` in ``scope`` (``table_view``) with boto3's single-item call shape (``get_item(Key=…)``,
+    ``put_item(Item=…)``, ``update_item(Key=…)``, ``delete_item(Key=…)``), for a writer built the boto3 way
+    (shared/feedback_category.py ``apply_conditional_update``, the category reprocess's per-review updates, the
+    participants stores since 7.31.00): the table itself deployment-wide, ``ws_table`` in a workspace, which refuses a
+    key or an index partition outside it before DynamoDB."""
 
     def __init__(self, scope: WorkspaceScope | None, table: Any) -> None:
         self._view = table_view(scope, table)
 
+    def get_item(self, **request: Any) -> dict:
+        return _with_key(self._view.get_item, request, 'Key')
+
+    def put_item(self, **request: Any) -> dict:
+        return _with_key(self._view.put_item, request, 'Item')
+
     def update_item(self, **request: Any) -> dict:
         return update_with_key(self._view, request)
+
+    def delete_item(self, **request: Any) -> dict:
+        return _with_key(self._view.delete_item, request, 'Key')
+
+
+def _with_key(call: Any, request: Mapping[str, Any], field: str) -> dict:
+    """``call`` with the request's ``field`` (``Key`` or ``Item``) positional and the rest as keywords."""
+    return call(request[field], **{name: value for name, value in request.items() if name != field})
 
 
 def table_view(scope: WorkspaceScope | None, table: Any, key: str = 'pk') -> WorkspaceTable | DeploymentTable:

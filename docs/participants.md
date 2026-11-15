@@ -126,6 +126,13 @@ Table `voc-participants-<suffix>` (pk/sk, index `gsi1`, TTL `ttl`, the Core KMS 
 | `SETTINGS` | `engagement` | the settings above |
 | `SENDCOUNT#{day}` | `COUNT` | emails sent that UTC day (expires after 3 days) |
 | `AUDIT#delete` | `{iso time}#{uuid}` | one row per deleted list (`participant_list`, `{list_id}`) and per removed member (`participant_list_member`, `{list_id, person_id}`): ids and the actor's `{sub, kind}` only, no `ttl` ([project-workspace.md](project-workspace.md#deleting)) |
+| `AUDIT#delete` | `participant#{sha256(person id)}` | one row per erased person (`participant`, `{person_id}`, the legal basis as `reason`), put only if absent, so a retried erasure keeps exactly one (since 7.31.00) |
+
+Every key above is built in `voc-datalake/lambda/shared/participants_keys.py` (the asks' and tokens' in
+`participants_asks.py`). The people and lists stores can also keep their rows inside a workspace (`WS#{ws}#PERSON#…`,
+`WS#{ws}#EMAIL#…`, `WS#{ws}#LIST#…`, `WS#{ws}#LISTS`, `WS#{ws}#PEOPLE`, `WS#{ws}#PROJECT#…`), listed in the
+workspace's index `WS#{ws}#PARTICIPANTS`; no route passes a workspace yet, and the asks, tokens, counters and settings
+stay the deployment's ([multi-workspace.md](multi-workspace.md#the-project-plan-phase-3), 3d).
 
 ## Privacy
 

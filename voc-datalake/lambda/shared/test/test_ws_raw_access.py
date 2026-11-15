@@ -11,8 +11,8 @@ parsed, and each raw access is counted by its kind:
   resource collection's batch delete (``bucket.objects.filter(…).delete()``, ``object_versions``,
   ``multipart_uploads``), ``put`` / ``delete`` on an ``….Object(…)`` or ``….Bucket(…)`` made in the same
   expression, or the ingestors' deployment-wide table (``DeploymentTable(…)``, and ``ingest_table(None, …)`` or
-  ``table_view(None, …)`` with the literal None, and the project and job accessors (``PROJECT_ACCESSORS``,
-  ``QUALIFIED_ACCESSORS``) with a literal ``workspace=None`` or, for ``get_scoped_item``, a literal None scope; a call passing a scope variable that may be
+  ``table_view(None, …)`` with the literal None, and the project, job and participants accessors
+  (``PROJECT_ACCESSORS``, ``QUALIFIED_ACCESSORS``, ``PARTICIPANT_ACCESSORS``) with a literal ``workspace=None`` or, for ``get_scoped_item``, a literal None scope; a call passing a scope variable that may be
   None at run time, or leaving the default, is not counted);
 * a reference to a data-path table getter of shared/tables.py (``get_feedback_table``, ``get_aggregates_table``,
   ``cached_table``): called, bound to a name or passed on, by its name, an ``import … as`` alias or as an
@@ -112,8 +112,21 @@ PROJECT_ACCESSORS: Final = frozenset({'iter_project_rows', 'transact_project_wri
 #: shared/assist_jobs.py's request side and agents/plan_waits.py's poll (since 7.29.00).
 QUALIFIED_ACCESSORS: Final = frozenset({('assist_jobs', 'start'), ('assist_jobs', 'start_owned'),
                                         ('assist_jobs', 'get'), ('assist_jobs', 'owner_pk'), ('plan_waits', 'poll')})
+#: The participants stores and what they reach (since 7.31.00, slice 3d: shared/participants_store.py,
+#: shared/participants_lists.py, shared/participants_intake.py, shared/participants_erasure.py, the asks' refusals in
+#: shared/participants_asks.py, shared/participants_tables.py ``scoped_calls`` / ``scoped_rows`` / ``rows_by_id_in``
+#: (their scope by position too), shared/persona_copy.py, the persona
+#: promote, shared/engagement_identity.py's gate and shared/engagement_config.py ``brand_name``), counted the same way.
+PARTICIPANT_ACCESSORS: Final = frozenset({
+    'find_person_id', 'get_person', 'require_person', 'get_people', 'create_person', 'upsert_person', 'update_person',
+    'list_people', 'mark_unsubscribed', 'remember_token', 'create_list', 'get_list', 'require_list',
+    'get_lists', 'all_lists', 'update_list', 'member_ids', 'list_ids_of_person', 'add_member', 'remove_member',
+    'delete_list', 'link', 'unlink', 'project_links', 'collect_people', 'erase_person', 'asks_of_person', 'create_ask',
+    'scoped_calls', 'scoped_rows', 'rows_by_id_in', 'copy_personas', 'read_source_personas', 'promote',
+    'require_project_access', 'can_view_project', 'brand_name'})
 #: The accessors whose scope may also be passed by position, and where.
-PROJECT_ACCESSOR_SCOPE_POSITION: Final = {'get_scoped_item': 2}
+PROJECT_ACCESSOR_SCOPE_POSITION: Final = {'get_scoped_item': 2, 'scoped_calls': 1, 'scoped_rows': 1,
+                                          'rows_by_id_in': 1}
 UNSCOPED_PROJECT_ACCESS: Final = 'project accessor(workspace=None)'
 #: DynamoDB's multi-item calls and the kind each is counted in. ``WorkspaceTable`` has the same methods, so a call
 #: on one of its views (``VIEW_BUILDERS``, ``VIEW_TYPE``) is scoped, not raw.
@@ -130,10 +143,12 @@ LAYER_MODULE: Final = 'shared.ws_repo'
 #: is a project id's deployment-wide claim (since 7.26.00): only the layer spells it (``claim_project_id``,
 #: ``project_claim``). ``DOCUMENT_VERSIONS#`` is a project's document-version partition (since 7.27.00): only
 #: shared/project_keys.py spells it (``version_partition_key``). ``STATUS#`` is voc-jobs' status index partition
-#: (since 7.29.00): only shared/project_keys.py spells it (``job_status_pk``).
+#: (since 7.29.00): only shared/project_keys.py spells it (``job_status_pk``). ``LIST#``, ``PERSON#``, ``EMAIL#``,
+#: ``LISTS`` and ``PEOPLE`` are voc-participants' lists, people, address guards and their ``gsi1`` partitions (since
+#: 7.31.00): only shared/participants_keys.py spells them.
 UNSCOPED_KEY_PREFIXES: Final = ('SOURCE#', 'METRIC#', 'DATE#', 'CATEGORY#', 'URGENCY#', 'CHANNEL#', 'SOURCE_RUN#',
                                 'raw/', 'silver/', 'PROJECT#', 'TYPE#PROJECT', 'PROJECT_ID#', 'DOCUMENT_VERSIONS#',
-                                'STATUS#')
+                                'STATUS#', 'LIST#', 'PERSON#', 'EMAIL#', 'LISTS', 'PEOPLE')
 #: The layer's claim writer (``claim_project_id``) and the one module that may call it: the project create.
 CLAIM_WRITER: Final = ('claim_project_id', frozenset({'lambda/shared/project_writes.py'}))
 #: Modules that answer requests a client sent (the API, the public webhooks): their workspace is never read from
@@ -277,7 +292,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/shared/participants_asks.py': (3, {'batch': 1}),
     'lambda/shared/participants_erasure.py': (3, {'batch': 1}),
     'lambda/shared/participants_lists.py': (3, {'batch': 1}),
-    'lambda/shared/participants_store.py': (3, {'meta.client': 1, 'transact': 1}),
+    # The deployment's one transaction call of the participants stores (a person's create, a list membership's add
+    # since 7.31.00), moved here from participants_store.py; in a workspace they go through `ws_table`.
+    'lambda/shared/participants_tables.py': (3, {'meta.client': 1, 'transact': 1}),
     'lambda/shared/persona_copy.py': (3, {'copy_object': 1}),
     'lambda/shared/plans_store.py': (3, {'meta.client': 2, 'transact': 2}),
     'lambda/shared/platform_workspaces.py': (0, {'meta.client': 1, 'transact': 1}),
@@ -344,6 +361,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # Its DOCUMENT_VERSIONS# is the version partition's one spelling, moved from shared/document_versions.py in 7.27.00;
     # its STATUS# the jobs' status index partition's, shared/assist_jobs.py's own two spellings moved here in 7.29.00.
     'lambda/shared/project_keys.py': (3, {'DOCUMENT_VERSIONS#': 1, 'PROJECT#': 1, 'STATUS#': 1, 'TYPE#PROJECT': 1}),
+    # voc-participants' keys, moved here in 7.31.00 from shared/participants_store.py, participants_lists.py,
+    # participants_asks.py and participants_erasure.py (each a workspace's too, through scoped_pk).
+    'lambda/shared/participants_keys.py': (3, {'EMAIL#': 1, 'LIST#': 1, 'LISTS': 1, 'PEOPLE': 1, 'PERSON#': 1}),
 }
 
 
@@ -418,7 +438,8 @@ def _call_kind(node: ast.Call) -> str | None:
     if (name in ('ingest_table', 'table_view') and node.args and isinstance(node.args[0], ast.Constant)
             and node.args[0].value is None):
         return UNSCOPED_INGEST_TABLE
-    if name in PROJECT_ACCESSORS and _spells_no_workspace(node, PROJECT_ACCESSOR_SCOPE_POSITION.get(name)):
+    if (name in PROJECT_ACCESSORS | PARTICIPANT_ACCESSORS
+            and _spells_no_workspace(node, PROJECT_ACCESSOR_SCOPE_POSITION.get(name))):
         return UNSCOPED_PROJECT_ACCESS
     if _qualified(node) in QUALIFIED_ACCESSORS and _spells_no_workspace(node, None):
         return UNSCOPED_PROJECT_ACCESS
@@ -884,6 +905,14 @@ def test_the_scan_sees_each_kind_of_raw_access(tmp_path):
         "jg = assist_jobs.get(pk, 'job_1', workspace=None)\n"
         "jp = plan_waits.poll(wait, {}, workspace=None)\n"
         "jd = config.get('key', workspace=None)\n"
+        # The participants stores and what they reach (7.31.00): by name, and scoped_calls by position too.
+        "qa = create_list(table, {}, 'sub', workspace=None)\n"
+        "qb = erase_person(table, 'per_1', legal_basis='b', actor={}, workspace=None)\n"
+        "qc = scoped_calls(table, None)\n"
+        "qd = scoped_calls(table, scope)\n"
+        "qe = persona_copy.copy_personas(table, s3, 'b', workspace=None)\n"
+        "qf = engagement_config.brand_name(workspace=None)\n"
+        "qg = f'PERSON#{person_id}'\n"
         # A project id's claim, and a document-version partition, spelled outside the layer and the key builders.
         "claim = f'PROJECT_ID#{project_id}'\n"
         "versions = f'DOCUMENT_VERSIONS#PROJECT#{project_id}'\n"
@@ -913,7 +942,8 @@ def test_the_scan_sees_each_kind_of_raw_access(tmp_path):
         'Table': 1, 'put_object': 1, 'copy_object': 1, 'get_feedback_table': 1, 'get_aggregates_table': 1,
         'SOURCE#': 1, 'METRIC#': 1, 'raw/': 1, 'silver/': 1, 'upload_file': 1, 'upload_fileobj': 1,
         'cached_table': 1, 'generate_presigned_url': 1, 'delete_object': 1, 'DeploymentTable': 2,
-        'ingest_table(None)': 2, 'project accessor(workspace=None)': 17, 'PROJECT_ID#': 1, 'DOCUMENT_VERSIONS#': 1,
+        'ingest_table(None)': 2, 'project accessor(workspace=None)': 22, 'PROJECT_ID#': 1, 'DOCUMENT_VERSIONS#': 1,
+        'PERSON#': 1,
         'transact': 4, 'batch': 5,
         # The low-level client itself (7.00.00's rule), beside the multi-item calls made on it.
         'meta.client': 3})

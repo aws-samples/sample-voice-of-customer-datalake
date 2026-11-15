@@ -195,13 +195,14 @@ def test_the_gaps_only_shrink():
 
 
 def test_the_reserved_entry_is_held():
-    """The MCP tokens are reserved (named in sweeps.py, not run); the projects and conversations entries run."""
+    """The MCP tokens are reserved (named in sweeps.py, not run); the projects, participants and conversations entries
+    run."""
     source = (ROOT / 'lambda/jobs/workspace_delete/sweeps.py').read_text(encoding='utf-8')
     assert "Sweep('mcp_tokens'" in source
     assert 'WS#{ws}#MCPTOKENS' in source
     names = [sweep.name for sweep in SWEEPS]
     assert 'mcp_tokens' not in names
-    assert {'projects', 'conversations'} <= set(names)
+    assert {'projects', 'participants', 'conversations'} <= set(names)
     assert not [entry for entry in FAMILIES.values() if entry.startswith('RESERVED: ')]
 
 
@@ -233,7 +234,8 @@ def test_the_conversations_entry_reads_keys_alone_and_never_the_deployments_part
 #: voc-aggregates).
 TABLE_GRANTS: Final = {'ssm': 'credentials', 'feedback': 'feedback', 'aggregates': 'aggregates',
                        'watermarks': 'watermarks', 'memory': 'memory', 'bucket': 'objects', 'workspaces': 'controlRows',
-                       'radar': 'radar', 'projects': 'projects', 'conversations': 'conversations'}
+                       'radar': 'radar', 'projects': 'projects', 'participants': 'participants',
+                       'conversations': 'conversations'}
 
 
 def _cdk_grants() -> dict[str, list[str]]:
@@ -258,6 +260,39 @@ def test_each_entry_holds_the_grants_its_table_and_its_hooks_need():
         extra = set(sweep.grants) - needed
         assert extra <= {'metricTypeIndex', 'exportJobs', 'objects', 'aggregates'}, (
             sweep.name, extra)
+
+
+#: The project key builders (shared/project_keys.py, shared/project_writes.py, shared/project_tables.py) a fixed
+#: container's id could be handed to instead of a project's registered id.
+PROJECT_KEY_BUILDERS: Final = frozenset({'project_pk', 'project_meta_key', 'project_partitions', 'personas_index_pk',
+                                         'version_partition_key', 'document_listing', 'document_keys',
+                                         'iter_project_rows', 'iter_version_rows', 'project_link_key'})
+#: Every fixed container id (a module constant, not a registered project id) the code passes to a project key
+#: builder, with the sweep step that deletes a workspace's copy of it (no registry lists a fixed container).
+FIXED_CONTAINERS: Final = {'COMPANY_PERSONAS_CONTAINER': '_library_page'}
+
+
+def _fixed_container_arguments() -> set[str]:
+    """The constant (UPPER_CASE name, or string literal) first arguments of every call to a project key builder."""
+    found: set[str] = set()
+    for tree in _WALK.trees.values():
+        for call in ast.walk(tree):
+            if not isinstance(call, ast.Call) or _called(call) not in PROJECT_KEY_BUILDERS or not call.args:
+                continue
+            first = call.args[0]
+            if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                found.add(repr(first.value))
+            elif isinstance(first, ast.Name) and first.id.isupper():
+                found.add(first.id)
+    return found
+
+
+def test_every_fixed_container_a_project_key_names_has_a_sweep():
+    """A new fixed container (a constant id handed to a project key builder, as the company persona library is)
+    fails here until the hard delete sweeps a workspace's copy of it: no registry lists it."""
+    assert _fixed_container_arguments() == set(FIXED_CONTAINERS)
+    source = (ROOT / 'lambda/jobs/workspace_delete/sweeps.py').read_text(encoding='utf-8')
+    assert all(f'def {step}(' in source and name in source for name, step in FIXED_CONTAINERS.items())
 
 
 def test_the_memory_enumeration_is_the_exports_too():

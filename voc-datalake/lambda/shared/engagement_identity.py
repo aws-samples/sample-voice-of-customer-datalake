@@ -25,6 +25,7 @@ from shared.project_gate import PROJECT_NOT_FOUND, caller_from_event, read_gate_
 from shared.project_writes import is_project_tombstone
 from shared.row_ids import OPAQUE_ID_RE
 from shared.tables import get_projects_table
+from shared.ws_repo import WorkspaceScope
 
 POOL_APP: Final = 'app'
 POOL_BOARD: Final = 'board'
@@ -106,24 +107,30 @@ def verified_email(event: Mapping[str, Any]) -> str:
 
 
 
-def require_project_access(event: Mapping[str, Any], project_id: object, level: str) -> str:
-    """The project id when the app caller has ``level`` on it (404 without view, 403 without the level)."""
+def require_project_access(event: Mapping[str, Any], project_id: object, level: str, *,
+                           workspace: WorkspaceScope | None = None) -> str:
+    """The project id when the app caller has ``level`` on it (404 without view, 403 without the level).
+
+    The access gate is not per workspace yet (shared/project_gate.py ``read_gate_meta``): a ``workspace`` is refused
+    (``NotPerWorkspaceError``, a 500), never decided from the deployment's project instead."""
     if not isinstance(project_id, str) or not OPAQUE_ID_RE.match(project_id):
         raise NotFoundError(PROJECT_NOT_FOUND)
     table = get_projects_table()
     if table is None:
         raise ConfigurationError('PROJECTS_TABLE not configured')
     # Read even for an admin (the gate skips the read for them): a missing project is never linked.
-    meta = read_gate_meta(table, project_id)
+    meta = read_gate_meta(table, project_id, workspace=workspace)
     if meta is None or is_project_tombstone(meta):
         raise NotFoundError(PROJECT_NOT_FOUND)
-    require_project_level(lambda: meta, caller_from_event(event), level)
+    require_project_level(lambda: meta, caller_from_event(event), level, workspace=workspace)
     return project_id
 
 
-def can_view_project(event: Mapping[str, Any], project_id: str) -> bool:
+def can_view_project(event: Mapping[str, Any], project_id: str, *, workspace: WorkspaceScope | None = None) -> bool:
+    """Whether the app caller may view the project (a workspace is refused, as ``require_project_access`` refuses
+    it: never answered False)."""
     try:
-        require_project_access(event, project_id, LEVEL_VIEW)
+        require_project_access(event, project_id, LEVEL_VIEW, workspace=workspace)
     except (NotFoundError, AuthorizationError):
         return False
     return True

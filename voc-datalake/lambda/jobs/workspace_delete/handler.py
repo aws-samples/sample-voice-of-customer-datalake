@@ -73,12 +73,13 @@ from jobs.workspace_delete.sweeps import (
 from jobs.workspace_export.pages import items
 from shared import workspace_deletes
 from shared.aws import get_dynamodb_resource, get_s3_client, get_ssm_run_client, invoke_lambda_async
+from shared.company_personas import COMPANY_PERSONAS_CONTAINER
 from shared.export_jobs import export_lock_key
 from shared.ingest_tables import ingest_table
 from shared.invocation_cost import instrumented_handler
 from shared.jobs import has_time_left
 from shared.logging import logger
-from shared.project_keys import project_registry_pk
+from shared.project_keys import project_partitions, project_registry_pk
 from shared.tables import get_workspaces_table
 from shared.timestamps import now_iso, parse_iso
 from shared.warm_init import warm_at_init
@@ -495,6 +496,13 @@ def _projects_left(run: DeleteRun, _start: object) -> tuple[int, Any]:
     return int(partition_has_rows(run.ctx.projects, project_registry_pk(run.scope))), None
 
 
+def _library_left(run: DeleteRun, _start: object) -> tuple[int, Any]:
+    """The workspace's company persona library: no registry lists it, so each of its partitions is checked
+    (``project_partitions`` of the container, in its table: voc-projects, voc-jobs, voc-participants)."""
+    return sum(partition_has_rows(run.ctx.project_table(part.table_env), part.partition)
+               for part in project_partitions(COMPANY_PERSONAS_CONTAINER, workspace=run.scope)), None
+
+
 def _control_left(run: DeleteRun, _start: object) -> tuple[int, Any]:
     return len(items(control_query(run.scope, run.workspaces, 'meta', Limit=1, ConsistentRead=True))), None
 
@@ -511,6 +519,7 @@ VERIFY_CHECKS: Final[tuple[tuple[str, Check], ...]] = (
     ('exports', _exports_left),
     ('objects', _objects_left),
     ('projects', _projects_left),
+    ('persona_library', _library_left),
     ('control_rows', _control_left),
 )
 

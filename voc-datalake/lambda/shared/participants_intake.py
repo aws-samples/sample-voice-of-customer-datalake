@@ -19,6 +19,7 @@ from typing import Any, Final
 from shared.engagement_common import id_list
 from shared.exceptions import NotFoundError, ValidationError
 from shared.participants_store import PERSON_NOT_FOUND, PERSON_PREFIX, REASON_INVALID_EMAIL, get_people, upsert_person
+from shared.ws_repo import WorkspaceScope
 
 MAX_PEOPLE_PER_REQUEST: Final = 200
 MAX_REJECTED_EMAIL_CHARS: Final = 254
@@ -55,20 +56,22 @@ def client_origin(body: Mapping[str, Any]) -> str:
     return origin
 
 
-def collect_people(table: Any, settings: Mapping[str, Any], body: Mapping[str, Any], *, created_by: str) -> Intake:
+def collect_people(table: Any, settings: Mapping[str, Any], body: Mapping[str, Any], *, created_by: str,
+                   workspace: WorkspaceScope | None = None) -> Intake:
     """Resolve ``person_ids`` (404 for an unknown one) and ``people`` (created as needed, with the body's
-    ``origin``), de-duplicated."""
+    ``origin``), de-duplicated; in ``workspace`` when given (the people of that workspace only)."""
     origin = client_origin(body)
     person_ids = id_list(body.get('person_ids'), 'person_ids', PERSON_PREFIX, MAX_PEOPLE_PER_REQUEST)
     new_people = _new_people(body)
     if len(person_ids) + len(new_people) > MAX_PEOPLE_PER_REQUEST:
         raise ValidationError(f'at most {MAX_PEOPLE_PER_REQUEST} people per request')
-    if person_ids and len(get_people(table, person_ids)) != len(person_ids):
+    if person_ids and len(get_people(table, person_ids, workspace=workspace)) != len(person_ids):
         raise NotFoundError(PERSON_NOT_FOUND)
     intake = Intake(person_ids=list(person_ids))
     for entry in new_people:
         try:
-            person_id, created = upsert_person(table, settings, entry, origin=origin, created_by=created_by)
+            person_id, created = upsert_person(table, settings, entry, origin=origin, created_by=created_by,
+                                               workspace=workspace)
         except ValueError as exc:
             intake.rejected.append(_rejected(entry, str(exc) or REASON_INVALID_EMAIL))
             continue

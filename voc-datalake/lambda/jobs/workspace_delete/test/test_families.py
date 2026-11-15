@@ -26,6 +26,8 @@ from shared.conversations import conversant_key, conversation_partition
 from shared.import_runs import LIST_PK
 from shared.memory_store import append_event, company_pk, cursor_key, import_key, scope_pk, status_partition
 from shared.onboarding import FEEDBACK_FORM_PK
+from shared.participants_keys import list_partition, participants_index_key, person_key
+from shared.participants_store import create_person
 from shared.platform_costs import cost_partition
 from shared.project_keys import (
     job_status_pk,
@@ -153,6 +155,13 @@ def _event(world: World) -> Probe:
     return Probe('memory', {'pk': newest['pk'], 'sk': newest['sk']})
 
 
+def _participant(world: World) -> Probe:
+    """A person of the workspace, as the store writes it (its partition and guard listed in the index first)."""
+    person = create_person(world.participants, email='fam@example.com', email_lc='fam@example.com', fields={},
+                           origin='manual', created_by='sub-fam', workspace=SCOPE)
+    return Probe('participants', person_key(str(person['person_id']), workspace=SCOPE))
+
+
 def _conversation(world: World) -> Probe:
     """A conversation of a listed owner (and its Stop marker), in ``WS#{ws}#USER#{sub}``."""
     _put(world, 'conversations', {**conversant_key(SCOPE, 'sub-fam2'), 'first_at': 'x'})
@@ -242,6 +251,10 @@ SEEDS: dict[str, Callable[[World], Probe] | None] = {
         w, 'projects', version_partition_key(_FAM_PROJECT, workspace=SCOPE), 'REVISION#doc_fam#000001'),
     'job_status_pk': lambda w: _project_row(w, 'jobs', project_pk(_FAM_PROJECT, workspace=SCOPE), 'JOB#fam',
                                             gsi1pk=job_status_pk('completed', workspace=SCOPE), gsi1sk='2026-11-02'),
+    # A workspace's person (its META, guard and index rows), and an index row naming a list with no rows left.
+    'participants_partition': _participant,
+    'PARTICIPANTS': lambda w: _put(w, 'participants', participants_index_key(
+        list_partition('lst_0123456789abcdef', workspace=SCOPE), workspace=SCOPE)),
     # A member's assist outside a project (7.29.00): its row expires a day after it starts (TTL).
     'owner_pk': None,
     # A conversation owner's row, and a conversation and its Stop marker in that owner's partition, as the writers

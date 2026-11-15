@@ -15,14 +15,18 @@ scope, so the two paths read the same index and differ only in the key's prefix.
 """
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
+from functools import partial
+from types import SimpleNamespace
 from typing import Any, Literal
 
 from boto3.dynamodb.conditions import ConditionBase, Key
 
+from shared.dynamo_paging import iter_query
 from shared.ws_repo import OutOfScopeError, WorkspaceScope, ws_table
 
-__all__ = ['SortRange', 'query_partition']
+__all__ = ['SortRange', 'iter_partition', 'query_partition']
 
 #: The placeholders of a sort-key range on the workspace path (boto3 generates ``#n…`` / ``:v…``; the layer's own
 #: are ``#p`` / ``:p``; a projection's ``#pf…``).
@@ -86,3 +90,14 @@ def query_partition(scope: WorkspaceScope | None, table: Any, partition_attribut
         request['ExpressionAttributeNames'] = {**(request.get('ExpressionAttributeNames') or {}), **names}
         request['ExpressionAttributeValues'] = {**(request.get('ExpressionAttributeValues') or {}), **values}
     return ws_table(scope, table).query(partition_attribute, partition, sort_condition=sort_condition, **request)
+
+
+def iter_partition(scope: WorkspaceScope | None, table: Any, partition_attribute: str, partition: str, *,
+                   sort_prefix: str | None = None, max_items: int | None = None, **kwargs: Any) -> Iterator[dict]:
+    """Every item of ``partition`` (only those whose ``sk`` begins with ``sort_prefix`` when given), page by page as
+    they are read, at most ``max_items``: ``query_partition`` bound to the partition for shared/dynamo_paging.py's
+    pager (its one ``query(**kwargs)`` call). The project partitions (shared/project_tables.py) and, in a workspace,
+    the participants' (shared/participants_tables.py) are read through it."""
+    sort = SortRange('sk', 'begins_with', sort_prefix) if sort_prefix is not None else None
+    pages = SimpleNamespace(query=partial(query_partition, scope, table, partition_attribute, partition, sort=sort))
+    return iter_query(pages, kwargs, max_items=max_items)

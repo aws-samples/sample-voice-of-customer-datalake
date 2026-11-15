@@ -20,6 +20,9 @@ from shared.aws import get_dynamodb_resource
 from shared.exceptions import ConfigurationError
 from shared.tables import cached_table as _table
 from shared.tables import get_aggregates_table
+from shared.workspace_config import get_scoped_item
+from shared.workspace_settings import settings_key
+from shared.ws_repo import WorkspaceScope
 
 PARTICIPANTS_TABLE_ENV: Final = 'PARTICIPANTS_TABLE'
 FEATURE_REQUESTS_TABLE_ENV: Final = 'FEATURE_REQUESTS_TABLE'
@@ -63,11 +66,17 @@ def engagement_function() -> str:
     return os.environ.get('ENGAGEMENT_FUNCTION', '')
 
 
-def brand_name() -> str:
-    """The deployment's brand name (Administration -> General), '' when unset or unreadable."""
+def brand_name(*, workspace: WorkspaceScope | None = None) -> str:
+    """The brand name (Administration -> General), '' when unset or the table is not configured (a read error
+    propagates): the deployment's, or a workspace's
+    own (``WS#{ws}#SETTINGS#brand``, read through the workspace's view; since 7.31.00, no route passes one yet)."""
     table = get_aggregates_table()
     if table is None:
         return ''
-    item = table.get_item(Key=BRAND_KEY).get('Item') or {}
+    if workspace is None:
+        item = table.get_item(Key=BRAND_KEY).get('Item') or {}
+    else:
+        # The kind settings_handler.py writes a workspace's brand under (its BRAND_KIND).
+        item = get_scoped_item(table, settings_key(workspace.ws, 'brand'), workspace)
     name = item.get('brand_name')
     return name.strip() if isinstance(name, str) else ''

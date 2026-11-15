@@ -18,7 +18,7 @@ retried on a throttle (``unthrottled``) rather than failing the job.
 The entry kinds: a fixed set of partitions listed once into the inventory, then each deleted in full
 (``_partitions_sweep``); an owner list (``owner_list_sweep``: a partition of rows naming further partitions of the same
 table, each deleted in full, then the list itself LAST, so a sweep stopped anywhere resumes from the list: the import
-runs, the members' objectives, the conversations); and entries with their own pages (the feedback, the counters, the
+runs, the members' objectives, the people and lists, the conversations); and entries with their own pages (the feedback, the counters, the
 memory, the objects, the projects, the control rows). ``Sweep.partitions`` is an entry's enumeration of what it reads, where it has
 a fixed one; the memory's is shared/memory_partitions.py, the export's too.
 
@@ -46,6 +46,7 @@ from botocore.exceptions import ClientError
 from jobs.workspace_export.pages import TABLE_KEY, items, key, last_key, start
 from shared.categorization import allowed_category_names, load_categories_config
 from shared.company_context import my_context_key
+from shared.company_personas import COMPANY_PERSONAS_CONTAINER
 from shared.conversations import conversation_partition
 from shared.dimension_config import allowed_values, load_dimensions_config
 from shared.earliest_date import EARLIEST_DATE_ATTRIBUTE, earliest_date_key, meta_partition, parse_iso_date
@@ -72,9 +73,10 @@ from shared.metric_keys import (
     metric_type_partition,
 )
 from shared.onboarding import FEEDBACK_FORM_PK
+from shared.participants_keys import indexed_partitions, participants_index_pk
 from shared.platform_costs import cost_partition
 from shared.plugin_identity import is_valid_plugin_identifier
-from shared.project_keys import project_partitions, project_registry_key
+from shared.project_keys import ProjectPartition, project_partitions, project_registry_key
 from shared.project_tables import iter_registered_project_ids
 from shared.radar_keys import radar_settings_key
 from shared.radar_store import SENTIMENT_LABELS
@@ -203,7 +205,7 @@ class Context:
     settings: Any
     #: voc-projects, voc-jobs and voc-participants: a project's partitions (shared/project_keys.py
     #: ``project_partitions``), each through the workspace's own view; the registry (``WS#{ws}#PROJECT_IDS``) is in
-    #: voc-projects.
+    #: voc-projects. voc-participants also holds the workspace's people and lists (the ``participants`` entry).
     projects: WorkspaceTable
     jobs: WorkspaceTable
     participants: WorkspaceTable
@@ -404,7 +406,8 @@ def owner_list_sweep(name: str, owners: OwnerList) -> Sweep:
     in full, a page at a time (``{list_start, list_done, todo, start}``); stage ``drop``: the list itself, LAST, so a
     sweep stopped anywhere (a hand-over, a failure and its resume, a verify pass sending the job back) still finds
     every partition from it. The import runs use it (``IMPORT_RUN`` lists each run's ``IMPORT_RUN#{run}``), the
-    members' objectives (``USERCTX_SUBS``) and the conversations (``CONVERSANTS`` lists each owner's
+    members' objectives (``USERCTX_SUBS``), the people and lists (``PARTICIPANTS`` lists each ``LIST#``,
+    ``PERSON#`` and ``EMAIL#`` partition) and the conversations (``CONVERSANTS`` lists each owner's
     ``WS#{ws}#USER#{sub}``, never the deployment's ``USER#{sub}``).
     The verify pass checks the list is gone (``OWNER_LISTS``)."""
     def pages(ctx: Context, cursor: dict[str, Any] | None) -> Batch:
@@ -706,6 +709,12 @@ OWNER_LISTS: Final = {
     # keys alone, which the delete role's grant on voc-conversations also holds it to.
     'conversations': OwnerList('conversations', lambda ctx: ctx.conversations, conversants_pk,
                                _per_sub(conversation_partition), KEYS_ONLY),
+    # voc-participants' index of the workspace's people and lists (7.31.00, shared/participants_keys.py
+    # participants_index_pk; a list is listed before it is written, a person and its guard in their own transaction),
+    # each row naming one LIST#, PERSON#
+    # or EMAIL# partition of the workspace, never the deployment's. Read for keys alone: no address or name is read.
+    'participants': OwnerList('participants', lambda ctx: ctx.participants, participants_index_pk,
+                              indexed_partitions, KEYS_ONLY),
 }
 
 
@@ -839,6 +848,8 @@ def _delete_objects(ctx: Context, batch: Batch) -> int:
 
 #: Which table a project page's row came from (its ``ProjectPartition.table_env``), kept beside its key.
 _TABLE: Final = 'table'
+#: The projects cursor's mark of its last stage: the workspace's company persona library (``_library_page``).
+_LIBRARY: Final = 'library'
 
 
 def _project_pages(ctx: Context, cursor: dict[str, Any] | None) -> Batch:
@@ -854,11 +865,19 @@ def _project_pages(ctx: Context, cursor: dict[str, Any] | None) -> Batch:
     (``project_ids_malformed``) and its row deleted, nothing else touched, so it cannot stop every resume."""
     here = cursor or {'todo': [], 'part': 0, 'start': None}
     todo = [str(project_id) for project_id in here.get('todo') or []]
+    library = bool(here.get(_LIBRARY))
     if not todo:
+        if library:
+            return Batch([], None)
         # No cursor into the registry: an id's row is deleted when it is done, so each page reads what is left.
         ids = list(islice(iter_registered_project_ids(ctx.project_claims, workspace=ctx.scope), PAGE))
-        return Batch([], {'todo': ids, 'part': 0, 'start': None} if ids else None)
+        if ids:
+            return Batch([], {'todo': ids, 'part': 0, 'start': None})
+        # The registry done: the workspace's company persona library last, a fixed container no registry lists.
+        return Batch([], {'todo': [COMPANY_PERSONAS_CONTAINER], 'part': 0, 'start': None, _LIBRARY: True})
     project_id, index = todo[0], int(here.get('part') or 0)
+    if library:
+        return _library_page(ctx, here, index)
     if not LONG_OPAQUE_ID_RE.fullmatch(project_id):
         # The workspace only in the log, never the id (a malformed value could be anything a writer put there).
         logger.warning('Workspace delete skipped a registry row not shaped like a project id',
@@ -868,16 +887,30 @@ def _project_pages(ctx: Context, cursor: dict[str, Any] | None) -> Batch:
         return Batch([], {'todo': todo[1:], 'part': 0, 'start': None})
     partitions = project_partitions(project_id, workspace=ctx.scope)
     if index < len(partitions):
-        part = partitions[index]
-        page = _page(ctx.project_table(part.table_env), 'pk', part.partition, here.get('start'), Limit=PAGE,
-                     ConsistentRead=True, **KEYS_ONLY)
-        following = last_key(page)
-        rows = [{**key(row, TABLE_KEY), _TABLE: part.table_env} for row in items(page)]
-        return Batch(rows, {**here, 'start': following} if following else {**here, 'part': index + 1, 'start': None})
+        return _partition_page(ctx, here, partitions[index], index)
     _release_claim(ctx, project_id)
     _remove(ctx.projects, [project_registry_key(project_id, workspace=ctx.scope)])
     ctx.count('project_ids')
     return Batch([], {'todo': todo[1:], 'part': 0, 'start': None})
+
+
+def _partition_page(ctx: Context, here: Mapping[str, Any], part: ProjectPartition, index: int) -> Batch:
+    """One page of a project partition's rows, each with the table it is in; the cursor after it."""
+    page = _page(ctx.project_table(part.table_env), 'pk', part.partition, here.get('start'), Limit=PAGE,
+                 ConsistentRead=True, **KEYS_ONLY)
+    following = last_key(page)
+    rows = [{**key(row, TABLE_KEY), _TABLE: part.table_env} for row in items(page)]
+    return Batch(rows, {**here, 'start': following} if following else {**here, 'part': index + 1, 'start': None})
+
+
+def _library_page(ctx: Context, here: Mapping[str, Any], index: int) -> Batch:
+    """The workspace's company persona library (shared/company_personas.py ``COMPANY_PERSONAS_CONTAINER``: its META
+    and its personas, written by a promote or a library job in the workspace, 7.31.00): every partition
+    ``project_partitions`` names for it, page by page, like a project's; it has no id claim and no registry row."""
+    partitions = project_partitions(COMPANY_PERSONAS_CONTAINER, workspace=ctx.scope)
+    if index < len(partitions):
+        return _partition_page(ctx, here, partitions[index], index)
+    return Batch([], {'todo': [], 'part': 0, 'start': None, _LIBRARY: True})
 
 
 def _release_claim(ctx: Context, project_id: str) -> None:
@@ -1055,6 +1088,10 @@ SWEEPS: Final = (
     # (shared/project_keys.py project_partitions), found without a Scan; each id's claim is released, then its
     # registry row goes last (_project_pages).
     Sweep('projects', 'projects', _project_pages, _delete_project_rows, grants=('projects',)),
+    # The workspace's people and lists in voc-participants: the index WS#{ws}#PARTICIPANTS names each list's, person's
+    # and address guard's partition, each deleted in full (its META, its members or list mirrors), then the index
+    # LAST, so a stopped sweep resumes from it (a project's links to them went with its partition, above). Keys only.
+    owner_list_sweep('participants', OWNER_LISTS['participants']),
     # The members' conversations: the owner list in voc-conversations (conversants_pk, one row per sub) names each
     # owner's partition in the workspace, with their conversations and Stop markers. Each listed partition goes in
     # full, then the list LAST, so a stopped sweep resumes from it; every read is of keys alone (KEYS_ONLY, which the

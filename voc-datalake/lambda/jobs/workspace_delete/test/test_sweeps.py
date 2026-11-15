@@ -67,11 +67,27 @@ def _partition(table: Any, pk: str) -> list[dict]:
     return table.query(KeyConditionExpression='pk = :pk', ExpressionAttributeValues={':pk': pk})['Items']
 
 
+def _stopped_partway(world: World, name: str) -> None:
+    """Run the sweep ``name`` with its second batch delete failing: it raises, its rows partly deleted."""
+    real, calls = sweeps._remove, []
+
+    def fail_on_the_second(view, keys):
+        listed = list(keys)
+        calls.append(listed)
+        if len(calls) == 2:
+            raise RuntimeError('stopped partway')
+        return real(view, listed)
+
+    with patch.object(sweeps, '_remove', fail_on_the_second), pytest.raises(RuntimeError, match='partway'):
+        run(world, name)
+
+
 def test_the_entries_run_in_the_designs_order():
     assert [sweep.name for sweep in SWEEPS] == [
         'credentials', 'feedback', 'counters', 'source_runs', 'failures', 'circuits', 'logs', 'scraper_runs',
         'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'reprocess_jobs', 'watermarks', 'memory',
-        'exports', 'objects', 'radar', 'settings', 'user_contexts', 'projects', 'conversations', 'control_rows']
+        'exports', 'objects', 'radar', 'settings', 'user_contexts', 'projects', 'participants', 'conversations',
+        'control_rows']
 
 
 def test_only_the_feedback_and_the_memory_are_tombstoned():
@@ -402,9 +418,11 @@ class TestProjects:
 
     @staticmethod
     def _of(world: World, ws: str) -> dict[str, list]:
-        """Every project row of ``ws`` left, per table (its claims by the workspace they name)."""
+        """Every project row of ``ws`` left, per table (its claims by the workspace they name; in voc-participants a
+        project's partitions only: the people and lists are the participants entry's)."""
         rows = snapshot(world)
-        return {table: [row for row in rows[table] if str(row['pk']).startswith(f'WS#{ws}#')
+        prefix = {'participants': f'WS#{ws}#PROJECT#'}
+        return {table: [row for row in rows[table] if str(row['pk']).startswith(prefix.get(table, f'WS#{ws}#'))
                         or row.get('workspace_id') == ws] for table in ('projects', 'jobs', 'participants')}
 
     def test_every_partition_its_claim_and_its_registry_row_go_and_the_others_stay(self, seeded):
@@ -420,6 +438,41 @@ class TestProjects:
         assert all(before_deployment.values())
         # META, the document and the revision in voc-projects, the job, the list link.
         assert (counts['projects'], counts['project_ids'], counts['project_claims_released']) == (5, 1, 1)
+
+    def test_the_workspaces_company_persona_library_is_swept_and_no_other(self, seeded):
+        """The library is a fixed container no registry lists: swept after the registry, its META and personas in
+        the workspace only; the other workspace's and the deployment's stay."""
+        libraries = [f'WS#{WS}#PROJECT#company_personas', f'WS#{OTHER}#PROJECT#company_personas',
+                     'PROJECT#company_personas']
+        for partition in libraries:
+            for sort_key in ('META', 'PERSONA#persona_1'):
+                seeded.projects.put_item(Item={'pk': partition, 'sk': sort_key, 'name': 'Budget Traveller'})
+        run(seeded, 'projects')
+        assert [len(_partition(seeded.projects, partition)) for partition in libraries] == [0, 2, 2]
+
+    def test_a_library_sweep_stopped_partway_resumes_and_the_verify_pass_sees_what_is_left(self, seeded):
+        library = f'WS#{WS}#PROJECT#company_personas'
+        for n in range(3):
+            seeded.projects.put_item(Item={'pk': library, 'sk': f'PERSONA#persona_{n}', 'name': 'Budget Traveller'})
+        seeded.jobs.put_item(Item={'pk': library, 'sk': 'JOB#job_l', 'status': 'completed'})
+        check = dict(handler.VERIFY_CHECKS)['persona_library']
+        assert check(_delete(seeded), None) == (2, None)
+        real, calls = sweeps._remove, []
+
+        def stop_in_the_library(view, keys):
+            listed = list(keys)
+            if any(str(row['pk']) == library for row in listed):
+                calls.append(listed)
+                if len(calls) == 1:
+                    raise RuntimeError('stopped in the library')
+            return real(view, listed)
+
+        with patch.object(sweeps, '_remove', stop_in_the_library), pytest.raises(RuntimeError, match='library'):
+            run(seeded, 'projects')
+        assert check(_delete(seeded), None) == (2, None)
+        run(seeded, 'projects')
+        assert (check(_delete(seeded), None), _partition(seeded.projects, library), _partition(seeded.jobs, library)) \
+            == ((0, None), [], [])
 
     def test_the_versions_partition_is_swept(self, seeded):
         versions = f'WS#{WS}#DOCUMENT_VERSIONS#PROJECT#{self.PROJECT}'
@@ -581,17 +634,7 @@ class TestConversations:
     def test_a_failure_partway_resumes_from_the_list(self, seeded):
         """The sweep fails after deleting one owner's partition: the list is intact, and a rerun from the start of the
         entry (a resume whose checkpoint is the entry's first page) deletes the rest and the list."""
-        real, calls = sweeps._remove, []
-
-        def fail_on_the_second(view, keys):
-            listed = list(keys)
-            calls.append(listed)
-            if len(calls) == 2:
-                raise RuntimeError('stopped partway')
-            return real(view, listed)
-
-        with patch.object(sweeps, '_remove', fail_on_the_second), pytest.raises(RuntimeError, match='partway'):
-            run(seeded, 'conversations')
+        _stopped_partway(seeded, 'conversations')
         assert _partition(seeded.conversations, f'WS#{WS}#CONVERSANTS') != []
         assert self._of(seeded, WS) != []
 
@@ -604,6 +647,87 @@ class TestConversations:
         run(seeded, 'conversations')
         assert check(_delete(seeded), None) == (0, None)
 
+
+
+class TestParticipants:
+    """The participants entry (7.31.00): every partition the index ``WS#{ws}#PARTICIPANTS`` names (each list's, each
+    person's and each address guard's) in full, then the index last; never the deployment's people and lists, never
+    another workspace's, and never a project's links (the projects entry's)."""
+
+    @staticmethod
+    def _of(world: World, ws: str) -> list[dict]:
+        return [row for row in snapshot(world)['participants'] if str(row['pk']).startswith(f'WS#{ws}#')
+                and not str(row['pk']).startswith(f'WS#{ws}#PROJECT#')]
+
+    @staticmethod
+    def _index(world: World) -> list[dict]:
+        return _partition(world.participants, f'WS#{WS}#PARTICIPANTS')
+
+    def test_every_list_person_and_guard_of_the_workspace_goes_then_the_index(self, seeded):
+        before = self._of(seeded, WS)
+        counts = run(seeded, 'participants')
+        assert self._of(seeded, WS) == []
+        assert counts['participants'] == len(before)
+        # The list (META, one member), two people (META, a list mirror for the member), two guards, five index rows.
+        assert len(before) == 12
+
+    def test_the_deployments_people_the_other_workspace_and_the_project_links_are_never_touched(self, seeded):
+        rows = snapshot(seeded)['participants']
+        kept = [row for row in rows if not str(row['pk']).startswith(f'WS#{WS}#')
+                or str(row['pk']).startswith(f'WS#{WS}#PROJECT#')]
+        run(seeded, 'participants')
+        assert snapshot(seeded)['participants'] == kept
+        assert {str(row['pk']).split('#', 1)[0] for row in kept} >= {'LIST', 'PERSON', 'EMAIL', 'PROJECT', 'WS'}
+
+    def test_reads_keys_alone(self, seeded):
+        real, asked = WorkspaceTable.query, []
+
+        def spy(view, attribute, partition, **kwargs):
+            asked.append((kwargs.get('Select'), kwargs.get('ProjectionExpression')))
+            return real(view, attribute, partition, **kwargs)
+
+        with patch.object(WorkspaceTable, 'query', spy):
+            run(seeded, 'participants')
+        assert set(asked) == {('SPECIFIC_ATTRIBUTES', '#pk, #sk')}
+
+    def test_an_index_row_naming_nothing_of_the_workspace_reaches_nothing_else(self, seeded):
+        """A row whose ``sk`` names no list, person or guard names no partition; one holding ``#`` still names one
+        inside the workspace: neither reaches the deployment's or the other workspace's rows."""
+        bystanders = [{'pk': 'LIST#x', 'sk': 'META'}, {'pk': f'WS#{OTHER}#LIST#x', 'sk': 'META'}]
+        for row in bystanders:
+            seeded.participants.put_item(Item=row)
+        for sort_key in ('META', 'LIST#', 'LIST#x#y'):
+            seeded.participants.put_item(Item={'pk': f'WS#{WS}#PARTICIPANTS', 'sk': sort_key})
+        seeded.participants.put_item(Item={'pk': f'WS#{WS}#LIST#x#y', 'sk': 'META'})
+        run(seeded, 'participants')
+        assert self._of(seeded, WS) == []
+        assert all('Item' in seeded.participants.get_item(Key=row) for row in bystanders)
+
+    def test_the_index_is_deleted_last_and_a_stop_anywhere_resumes(self, seeded):
+        sweep, seen, cursor = BY_NAME['participants'], [], None
+        while True:
+            batch = sweep.pages(_delete(seeded).ctx, cursor)
+            if batch.rows:
+                sweep.delete(_delete(seeded).ctx, batch)
+            left = [row for row in self._of(seeded, WS) if not str(row['pk']).endswith('#PARTICIPANTS')]
+            seen.append((bool(left), bool(self._index(seeded))))
+            cursor = batch.following
+            if cursor is None:
+                break
+        assert all(listed for rows_left, listed in seen if rows_left)
+        assert seen[-1] == (False, False)
+
+    def test_a_failure_partway_resumes_from_the_index(self, seeded):
+        _stopped_partway(seeded, 'participants')
+        assert self._index(seeded) != []
+        run(seeded, 'participants')
+        assert self._of(seeded, WS) == []
+
+    def test_the_verify_pass_sees_an_index_left(self, seeded):
+        check = dict(handler.VERIFY_CHECKS)['participants']
+        assert check(_delete(seeded), None) == (1, None)
+        run(seeded, 'participants')
+        assert check(_delete(seeded), None) == (0, None)
 
 
 class TestControlRows:

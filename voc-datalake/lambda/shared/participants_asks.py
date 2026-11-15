@@ -7,6 +7,13 @@ Tokens are minted at SEND time, one per email: ``TOKEN#{sha256}`` / ``RESPONSE``
 (unsubscribes the person). Only the hash is stored; the plaintext is in the email.
 ``SENDCOUNT#{day}`` / ``COUNT`` counts the emails sent per UTC day and ``SENDCOUNT#{day}`` /
 ``SENDER#{sub}`` those of one sender's asks (TTL +3 days).
+
+Not per workspace yet (docs/multi-workspace.md, the project plan, 3d): the asks, their recipients, the tokens and
+the counters are the deployment's, so a store that would reach them for a workspace refuses it
+(``PARTICIPANT_ASKS_STORE``, shared/project_keys.py ``NotPerWorkspaceError``), never falling back to the
+deployment's keys. A token row is deployment-wide by design (its key is an unguessable hash, like a review link's):
+``token_workspace`` reads the workspace a token names, so the public unsubscribe finds its person there; no token
+names one yet, since none is minted in a workspace.
 """
 from __future__ import annotations
 
@@ -29,7 +36,10 @@ from shared.engagement_common import (
 from shared.exceptions import ServiceError
 from shared.indexes import PARTICIPANTS_LISTING_INDEX
 from shared.logging import logger
+from shared.participants_keys import PARTICIPANT_ASKS_STORE, person_partition
 from shared.participants_store import remember_token
+from shared.project_keys import require_deployment
+from shared.ws_repo import WORKSPACE_FIELD, WorkspaceScope, scope_from_message
 
 ASK_PREFIX: Final = 'ask'
 ASKS_PARTITION: Final = 'ASKS'
@@ -87,8 +97,11 @@ def ask_view(item: Mapping[str, Any]) -> dict[str, Any]:
     return view
 
 
-def create_ask(table: Any, fields: Mapping[str, Any], recipient_ids: list[str], created_by: str) -> dict[str, Any]:
-    """Write the ask (status ``queued``), one ``queued`` recipient row per person and their mirrors."""
+def create_ask(table: Any, fields: Mapping[str, Any], recipient_ids: list[str], created_by: str, *,
+               workspace: WorkspaceScope | None = None) -> dict[str, Any]:
+    """Write the ask (status ``queued``), one ``queued`` recipient row per person and their mirrors. The deployment's
+    only: a workspace is refused before anything is written."""
+    require_deployment(workspace, PARTICIPANT_ASKS_STORE)
     ask_id = new_id(ASK_PREFIX)
     now = now_iso()
     item = {**ask_key(ask_id), 'ask_id': ask_id, **fields, 'status': ASK_QUEUED,
@@ -98,7 +111,7 @@ def create_ask(table: Any, fields: Mapping[str, Any], recipient_ids: list[str], 
     with table.batch_writer() as batch:
         for person_id in recipient_ids:
             batch.put_item(Item={**recipient_key(ask_id, person_id), 'person_id': person_id, 'status': RCPT_QUEUED})
-            batch.put_item(Item={'pk': f'PERSON#{person_id}', 'sk': f'ASK#{ask_id}', 'ask_id': ask_id,
+            batch.put_item(Item={'pk': person_partition(person_id), 'sk': f'ASK#{ask_id}', 'ask_id': ask_id,
                                  'added_at': now})
     # META last: a half-written ask (a failed batch) is never listed.
     table.put_item(Item=item)
@@ -131,11 +144,13 @@ def recipient_rows(table: Any, ask_id: str, after: str | None = None,
     return query_all(table, request, max_items=limit)
 
 
-def asks_of_person(table: Any, person_id: str) -> list[dict[str, Any]]:
-    """``[{ask_id, subject, status, sent_at, responded_at}]`` for every ask the person received."""
+def asks_of_person(table: Any, person_id: str, *, workspace: WorkspaceScope | None = None) -> list[dict[str, Any]]:
+    """``[{ask_id, subject, status, sent_at, responded_at}]`` for every ask the person received. The deployment's
+    only: a workspace is refused before any read."""
+    require_deployment(workspace, PARTICIPANT_ASKS_STORE)
     ask_ids = [str(row['ask_id']) for row in iter_query(table, {
         'KeyConditionExpression': 'pk = :pk AND begins_with(sk, :a)',
-        'ExpressionAttributeValues': {':pk': f'PERSON#{person_id}', ':a': 'ASK#'},
+        'ExpressionAttributeValues': {':pk': person_partition(person_id), ':a': 'ASK#'},
     }, max_items=MAX_ASKS_LISTED) if row.get('ask_id')]
     failure = ServiceError('Could not read the asks. Please retry.')
     metas = {row['ask_id']: row for row in batch_get_all(table, [ask_key(a) for a in ask_ids], failure=failure)}
@@ -200,6 +215,13 @@ def resolve_token(table: Any, token: object, kind: str) -> dict[str, Any] | None
         return None
     item = table.get_item(Key=token_key(token, kind)).get('Item')
     return item if isinstance(item, dict) and isinstance(item.get('person_id'), str) else None
+
+
+def token_workspace(row: Mapping[str, Any]) -> WorkspaceScope | None:
+    """The workspace a stored token row names in ``workspace_id`` (our own code writes it, from a scope), or None for
+    the deployment's (no such field: every token today). ValueError for a field that names no workspace: such a token
+    is never used, and never under the deployment instead."""
+    return scope_from_message(row) if WORKSPACE_FIELD in row else None
 
 
 def mark_responded(table: Any, ask_id: str, person_id: str) -> bool:

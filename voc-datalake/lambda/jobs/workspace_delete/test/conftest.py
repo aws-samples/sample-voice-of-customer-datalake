@@ -22,6 +22,8 @@ from moto import mock_aws
 from jobs.test.lambda_budget import LambdaBudget
 from jobs.workspace_delete import handler
 from shared.indexes import FEEDBACK_BY_DATE_INDEX, MEMORY_BY_STATUS_INDEX
+from shared.participants_lists import add_member, create_list
+from shared.participants_store import create_person
 from shared.project_keys import (
     job_status_pk,
     project_pk,
@@ -250,6 +252,22 @@ def seed_project(world: World, ws: str, project_id: str, *, claimed_by: str | No
     world.participants.put_item(Item={'pk': own, 'sk': 'LIST#list_1', 'name': 'Beta testers'})
 
 
+def seed_participants(world: World, ws: str | None) -> dict[str, str]:
+    """A list with a member and a person on no list, as the participants stores write them (7.31.00): in ``ws``
+    (each partition listed first in ``WS#{ws}#PARTICIPANTS``), or the deployment's when None. The ids made."""
+    scope = WorkspaceScope(ws) if ws else None
+    table = world.participants
+    beta = create_list(table, {'name': 'Beta testers', 'gsi1sk': 'beta testers', 'description': '', 'kind': 'beta'},
+                       'sub-ada', workspace=scope)
+    made = {'list': str(beta['list_id'])}
+    for name in ('member', 'loner'):
+        person = create_person(table, email=f'{name}@example.com', email_lc=f'{name}@example.com',
+                               fields={'name': name.title()}, origin='manual', created_by='sub-ada', workspace=scope)
+        made[name] = str(person['person_id'])
+    add_member(table, made['list'], made['member'], 'sub-ada', workspace=scope)
+    return made
+
+
 def seed_conversations(world: World, ws: str, subs: tuple[str, ...] = CONVERSANTS) -> None:
     """``subs``' conversations in ``ws`` as the writers keep them (shared/conversations.py): each owner listed in
     ``WS#{ws}#CONVERSANTS`` first, then their ``CONV#`` and ``RUNCANCEL#`` rows in ``WS#{ws}#USER#{sub}``."""
@@ -300,6 +318,7 @@ def seed_workspace(world: World, ws: str, *, status: str) -> None:
     _seed_memory(world, ws)
     _seed_objects_and_credentials(world, ws)
     seed_project(world, ws, project_id_of(ws))
+    seed_participants(world, ws)
     for row in (
         {'pk': f'WS#{ws}', 'sk': 'META', 'name': name, 'slug': slug, 'status': status,
          **({'deleting_at': now().isoformat()} if status == 'deleting' else {})},
@@ -338,6 +357,8 @@ def seed_deployment(world: World) -> None:
     world.projects.put_item(Item={'pk': 'DOCUMENT_VERSIONS#PROJECT#proj_d', 'sk': 'REVISION#doc_d#000001'})
     world.jobs.put_item(Item={'pk': 'PROJECT#proj_d', 'sk': 'JOB#job_d', 'status': 'completed'})
     world.participants.put_item(Item={'pk': 'PROJECT#proj_d', 'sk': 'LIST#list_d'})
+    # The deployment's own people and lists (LIST#, PERSON#, EMAIL#, listed on LISTS / PEOPLE), as the stores write them.
+    seed_participants(world, None)
     # A member's own conversations outside any workspace (USER#{sub}, the deployment's).
     for sort_key in CONVERSATION_ROWS:
         world.conversations.put_item(Item={'pk': 'USER#sub-ada', 'sk': sort_key, 'kind': 'assistant'})

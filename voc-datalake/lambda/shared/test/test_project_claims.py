@@ -17,7 +17,7 @@ import pytest
 from botocore.exceptions import ClientError
 from moto import mock_aws
 
-from shared import project_tables
+from shared import scoped_query
 from shared.ids import is_key_collision
 from shared.project_keys import project_pk, project_registry_key, project_registry_pk, project_type_pk
 from shared.project_tables import iter_registered_project_ids
@@ -265,14 +265,14 @@ def test_the_registry_pages_and_stays_in_its_workspace(table, monkeypatch):
     table.put_item(Item=project_registry_key('proj_b_00', workspace=B))
     table.put_item(Item={'pk': project_pk('proj_a_00', workspace=A), 'sk': 'META'})
     pages: list[dict[str, Any]] = []
-    real_query = project_tables.query_partition
+    real_query = scoped_query.query_partition
 
     def two_a_page(*args: Any, **kwargs: Any) -> dict:
         response = real_query(*args, Limit=2, **kwargs)
         pages.append(kwargs)
         return response
 
-    monkeypatch.setattr(project_tables, 'query_partition', two_a_page)
+    monkeypatch.setattr(scoped_query, 'query_partition', two_a_page)
 
     assert list(iter_registered_project_ids(table, workspace=A)) == ids_a
     assert len(pages) >= 3

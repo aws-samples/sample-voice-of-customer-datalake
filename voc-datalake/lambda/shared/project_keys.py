@@ -216,8 +216,8 @@ def project_partitions(project_id: str, *, workspace: WorkspaceScope | None = No
     export, the hard delete's projects entry and the per-project delete (slices 3g, 3h; none calls it yet): in
     voc-projects its own partition (``project_pk``) and its document versions (``version_partition_key``: the saved
     revisions hold customer text); in voc-jobs and voc-participants the same ``project_pk``. Each in the workspace when
-    given. The job stores write there since 7.29.00 (3c; no route passes a workspace yet), and the participant lists
-    (3d) still write the deployment's keys only, so in a workspace their entry names where those rows will be.
+    given. The job stores write there since 7.29.00 (3c), and a project's links to its participant lists and people
+    since 7.31.00 (3d: shared/participants_lists.py ``link``); no route passes a workspace yet.
 
     Left out, each reached another way:
 
@@ -226,8 +226,9 @@ def project_partitions(project_id: str, *, workspace: WorkspaceScope | None = No
     * the review links' ``DOCSHARE#{id}`` rows (deployment-wide);
     * the S3 objects (avatars, product documents, prototypes; ``ws/{ws}/`` prefixes in a workspace);
     * the id's claim and the workspace's registry row (kept on a project delete: shared/ws_repo.py);
-    * the workspace's own ``LIST#`` / ``PERSON#`` rows in voc-participants, and the ``project_ids`` attributes on
-      them, which a delete must clean."""
+    * the workspace's own ``LIST#`` / ``PERSON#`` / ``EMAIL#`` rows in voc-participants (and the ``project_ids``
+      attributes on them): listed in the workspace's ``WS#{ws}#PARTICIPANTS`` index (shared/participants_keys.py),
+      which the hard delete's ``participants`` entry sweeps."""
     # Imported here, not at the top: these modules import boto3, and this one stays standard library only for its
     # other callers (scripts/project_bundle/remap.py).
     from shared.engagement_config import PARTICIPANTS_TABLE_ENV

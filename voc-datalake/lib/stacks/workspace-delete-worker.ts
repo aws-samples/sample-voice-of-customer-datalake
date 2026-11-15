@@ -82,8 +82,12 @@ export const PROJECT_CLAIM_PARTITIONS = ['PROJECT_ID#*'];
 /** voc-conversations: a workspace's list of conversation owners and each owner's partition there
  * (lambda/shared/conversations.py), never the deployment's `USER#{sub}`. */
 export const CONVERSATION_PARTITIONS = [`WS#${ONE}#CONVERSANTS`, `WS#${ONE}#USER#*`];
-/** What a conversations Query may read of a row: its key alone (lambda/jobs/workspace_delete/sweeps.py `KEYS_ONLY`). */
-const CONVERSATION_KEY_ATTRIBUTES = ['pk', 'sk'];
+/** voc-participants: a workspace's index of its people's and lists' partitions and the partitions it names
+ * (lambda/shared/participants_keys.py), never the deployment's `LIST#`, `PERSON#` or `EMAIL#` rows. */
+export const PARTICIPANT_PARTITIONS = [`WS#${ONE}#PARTICIPANTS`, `WS#${ONE}#LIST#*`, `WS#${ONE}#PERSON#*`,
+  `WS#${ONE}#EMAIL#*`];
+/** What a keys-only Query may read of a row: its key alone (lambda/jobs/workspace_delete/sweeps.py `KEYS_ONLY`). */
+const KEY_ATTRIBUTES = ['pk', 'sk'];
 
 export interface WorkspaceDeleteWorkerProps {
   uniqueName: (baseName: string) => string;
@@ -98,7 +102,8 @@ export interface WorkspaceDeleteWorkerProps {
   watermarksTable: dynamodb.ITable;
   /** voc-radar: a workspace's Radar settings (`WS#{id}#SETTINGS#radar`). */
   radarTable: dynamodb.ITable;
-  /** voc-projects, voc-jobs, voc-participants: a workspace's projects, their registry and claims (the `projects` grant). */
+  /** voc-projects, voc-jobs, voc-participants: a workspace's projects, their registry and claims (the `projects` grant);
+   * voc-participants also its people and lists (the `participants` grant). */
   projectsTable: dynamodb.ITable;
   jobsTable: dynamodb.ITable;
   participantsTable: dynamodb.ITable;
@@ -209,6 +214,19 @@ function grantOnAggregates(role: iam.Role, which: DeleteGrant, aggregatesTable: 
   }
 }
 
+/** Batch deletes of `partitions` of `table`, and a Query of them for the keys alone (`dynamodb:Attributes` pk and sk,
+ * which must be named, and SPECIFIC_ATTRIBUTES: nothing else of a row is ever read; sweeps.py KEYS_ONLY). */
+function sweepKeysOnly(role: iam.Role, table: dynamodb.ITable, partitions: readonly string[]): void {
+  sweep(role, [table], partitions, []);
+  role.addToPolicy(new iam.PolicyStatement({ actions: ['dynamodb:Query'], resources: [table.tableArn],
+    conditions: {
+      ...keys(partitions),
+      'ForAllValues:StringEquals': { 'dynamodb:Attributes': KEY_ATTRIBUTES },
+      StringEquals: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+      Null: { 'dynamodb:Attributes': 'false' },
+    } }));
+}
+
 /** The `projects` grant (lib/utils/workspace-delete-grants.ts): the registry and each project's partitions read and
  * batch-deleted, one workspace's only; the ids' claims read and deleted (DeleteItem, conditioned in the code). */
 function grantProjects(role: iam.Role, { projectsTable, jobsTable, participantsTable }: WorkspaceDeleteWorkerProps): void {
@@ -218,10 +236,27 @@ function grantProjects(role: iam.Role, { projectsTable, jobsTable, participantsT
     resources: [projectsTable.tableArn], conditions: keys(PROJECT_CLAIM_PARTITIONS) }));
 }
 
+/** The grants whose sweep reads for the keys alone (`sweepKeysOnly`): the table and its partitions. */
+const KEYS_ONLY_SWEEPS: Partial<Record<DeleteGrant,
+  (props: WorkspaceDeleteWorkerProps) => readonly [dynamodb.ITable, readonly string[]]>> = {
+  // One workspace's index and the list, person and address-guard partitions it names, never the deployment's: no
+  // address or name is ever read.
+  participants: (props) => [props.participantsTable, PARTICIPANT_PARTITIONS],
+  // One workspace's owner list and its owners' partitions, never the deployment's USER#{sub}: no message, title or
+  // first_at is ever read.
+  conversations: (props) => [props.conversationsTable, CONVERSATION_PARTITIONS],
+};
+
 /** Each grant's statements (lib/utils/workspace-delete-grants.ts). */
 function grant(scope: Construct, role: iam.Role, which: DeleteGrant, props: WorkspaceDeleteWorkerProps): void {
   const { feedbackTable, aggregatesTable, workspacesTable, memoryTable, watermarksTable, radarTable, rawDataBucket } = props;
   if (grantOnAggregates(role, which, aggregatesTable)) return;
+  const keysOnly = KEYS_ONLY_SWEEPS[which];
+  if (keysOnly !== undefined) {
+    const [table, partitions] = keysOnly(props);
+    sweepKeysOnly(role, table, partitions);
+    return;
+  }
   switch (which) {
     case 'feedback':
       query(role, `${feedbackTable.tableArn}/index/${FEEDBACK_BY_DATE_INDEX}`, [`WS#${ONE}#DATE#*`]);
@@ -262,19 +297,6 @@ function grant(scope: Construct, role: iam.Role, which: DeleteGrant, props: Work
       return;
     case 'projects':
       grantProjects(role, props);
-      return;
-    case 'conversations':
-      // One workspace's owner list and its owners' partitions, never the deployment's USER#{sub}: batch-deleted, and
-      // read for their keys alone (`dynamodb:Attributes` pk and sk, which must be named, and SPECIFIC_ATTRIBUTES: no
-      // message, title or first_at is ever read; sweeps.py KEYS_ONLY).
-      sweep(role, [props.conversationsTable], CONVERSATION_PARTITIONS, []);
-      role.addToPolicy(new iam.PolicyStatement({ actions: ['dynamodb:Query'], resources: [props.conversationsTable.tableArn],
-        conditions: {
-          ...keys(CONVERSATION_PARTITIONS),
-          'ForAllValues:StringEquals': { 'dynamodb:Attributes': CONVERSATION_KEY_ATTRIBUTES },
-          StringEquals: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
-          Null: { 'dynamodb:Attributes': 'false' },
-        } }));
       return;
     case 'controlRows':
       query(role, workspacesTable.tableArn, [WORKSPACE_CONTROL_PARTITION]);

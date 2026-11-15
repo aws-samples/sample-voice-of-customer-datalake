@@ -92,7 +92,13 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
   },
   ParticipantsTable: {
     [ENGAGEMENT_API]: { scope: WHOLE_TABLE, why: 'list / person / project-link deletes and participant erasure' },
-    [DELETE_ROLE]: { scope: [`WS#${ONE_WORKSPACE}#PROJECT#*`], why: 'a workspace\'s hard delete: its projects\' list links' },
+    // A workspace's hard delete: its projects' list links, and (7.31.00) its index of its people and lists and each
+    // list, person and address guard it names (lambda/jobs/workspace_delete/sweeps.py `participants`).
+    [DELETE_ROLE]: {
+      scope: [`WS#${ONE_WORKSPACE}#EMAIL#*`, `WS#${ONE_WORKSPACE}#LIST#*`, `WS#${ONE_WORKSPACE}#PARTICIPANTS`,
+        `WS#${ONE_WORKSPACE}#PERSON#*`, `WS#${ONE_WORKSPACE}#PROJECT#*`],
+      why: 'a workspace\'s hard delete: its projects\' list links, and its people and lists',
+    },
   },
   FeatureRequestsTable: {
     [ENGAGEMENT_API]: { scope: WHOLE_TABLE, why: 'board, request and +1 deletes' },

@@ -6,6 +6,12 @@ avatar object and ``copied_from`` provenance. Research notes are never copied in
 The avatar is COPIED to the new persona's own key and stamped with the target container as its
 owner. The copy never points at the source object: a project delete sweeps the avatar objects it
 owns, so a shared object would vanish from the library when its source project went.
+
+In a workspace (plumbing since 7.31.00, docs/multi-workspace.md, the project plan, 3d; no route passes one yet) a copy
+stays inside it: the source and the target are both the workspace's (a copy naming two scopes is refused before
+anything is read), every row is its keys (shared/project_keys.py), and every avatar key is under its object prefix,
+``ws/{ws}/avatars/…`` (shared/ws_repo.py ``s3_prefix``): a source avatar elsewhere is not copied. Without one every
+key and request is the deployment's, as before.
 """
 from __future__ import annotations
 
@@ -22,6 +28,8 @@ from shared.persona_save import ProjectNotWritableError, save_persona_items, sto
 from shared.project_gate import PROJECT_NOT_FOUND
 from shared.project_keys import personas_index_pk, project_pk
 from shared.s3_versions import delete_every_version
+from shared.workspace_config import get_scoped_item
+from shared.ws_repo import OutOfScopeError, WorkspaceScope, s3_prefix
 
 SourceScope = Literal['project', 'company']
 
@@ -33,16 +41,18 @@ NOT_COPIED: Final = frozenset({
 })
 #: The content type a copied avatar gets when the source HEAD reports none.
 DEFAULT_AVATAR_CONTENT_TYPE: Final = 'image/jpeg'
+#: The refusal of a copy that names two scopes.
+ONE_WORKSPACE: Final = 'a persona copy stays within one workspace'
 
 
-def read_source_personas(table: Any, container: str, persona_ids: Sequence[str]) -> list[dict]:
+def read_source_personas(table: Any, container: str, persona_ids: Sequence[str], *,
+                         workspace: WorkspaceScope | None = None) -> list[dict]:
     """Each source persona row, in request order; 404 when one is not in ``container``."""
     personas = []
     for persona_id in persona_ids:
-        item = table.get_item(
-            Key={'pk': project_pk(container), 'sk': f'PERSONA#{persona_id}'}, ConsistentRead=True,
-        ).get('Item')
-        if not isinstance(item, dict):
+        item = get_scoped_item(table, {'pk': project_pk(container, workspace=workspace), 'sk': f'PERSONA#{persona_id}'},
+                               workspace, ConsistentRead=True)
+        if not item:
             raise NotFoundError(PERSONA_NOT_FOUND)
         personas.append(item)
     return personas
@@ -59,12 +69,28 @@ def copied_from(
     return provenance
 
 
-def _copy_avatar(s3: Any, bucket: str, source_uri: object, new_id: str, target: str) -> str | None:
+def _avatar_prefix(workspace: WorkspaceScope | None) -> str:
+    """Where the scope's avatars are: ``avatars/``, or ``ws/{ws}/avatars/`` in a workspace."""
+    return AVATAR_KEY_PREFIX if workspace is None else f'{s3_prefix(workspace)}{AVATAR_KEY_PREFIX}'
+
+
+def _avatar_key(uri: object, bucket: str, workspace: WorkspaceScope | None) -> str | None:
+    """The key an ``s3://{bucket}/…`` avatar URI names under the scope's avatar prefix, or None for anything else."""
+    if workspace is None:
+        return avatar_key_from_uri(uri, bucket)
+    prefix = f's3://{bucket}/'
+    if not isinstance(uri, str) or not uri.startswith(f'{prefix}{_avatar_prefix(workspace)}'):
+        return None
+    return uri.removeprefix(prefix)
+
+
+def _copy_avatar(s3: Any, bucket: str, source_uri: object, new_id: str, target: str,
+                 workspace: WorkspaceScope | None) -> str | None:
     """``s3://`` URI of the new persona's own copy of the source avatar, or None (logged)."""
-    source_key = avatar_key_from_uri(source_uri, bucket) if bucket else None
+    source_key = _avatar_key(source_uri, bucket, workspace) if bucket else None
     if source_key is None:
         return None
-    target_key = f'{AVATAR_KEY_PREFIX}{new_id}/{source_key.rsplit("/", 1)[-1]}'
+    target_key = f'{_avatar_prefix(workspace)}{new_id}/{source_key.rsplit("/", 1)[-1]}'
     try:
         head = s3.head_object(Bucket=bucket, Key=source_key)
         s3.copy_object(
@@ -80,10 +106,10 @@ def _copy_avatar(s3: Any, bucket: str, source_uri: object, new_id: str, target: 
     return f's3://{bucket}/{target_key}'
 
 
-def _sweep_copied_avatars(s3: Any, bucket: str, items: list[dict]) -> None:
+def _sweep_copied_avatars(s3: Any, bucket: str, items: list[dict], workspace: WorkspaceScope | None) -> None:
     """Best effort: remove the avatar objects this copy made for rows that were never saved (every version)."""
     for item in items:
-        key = avatar_key_from_uri(item.get('avatar_url'), bucket)
+        key = _avatar_key(item.get('avatar_url'), bucket, workspace)
         if key is None:
             continue
         try:
@@ -92,11 +118,12 @@ def _sweep_copied_avatars(s3: Any, bucket: str, items: list[dict]) -> None:
             logger.warning('[PERSONA_COPY] Could not remove a copied avatar', extra={'key': key})
 
 
-def _new_item(source: dict, target: str, new_id: str, now: str, provenance: dict) -> dict:
+def _new_item(source: dict, target: str, new_id: str, now: str, provenance: dict,
+              workspace: WorkspaceScope | None) -> dict:
     return {
         **{field: value for field, value in source.items() if field not in NOT_COPIED},
-        'pk': project_pk(target), 'sk': f'PERSONA#{new_id}',
-        'gsi1pk': personas_index_pk(target), 'gsi1sk': now,
+        'pk': project_pk(target, workspace=workspace), 'sk': f'PERSONA#{new_id}',
+        'gsi1pk': personas_index_pk(target, workspace=workspace), 'gsi1sk': now,
         'persona_id': new_id, 'created_at': now, 'updated_at': now,
         'research_notes': [], 'copied_from': provenance, 'avatar_url': None,
         # The source's reviews when it had any, else a no-evidence marker; never invented.
@@ -107,48 +134,53 @@ def _new_item(source: dict, target: str, new_id: str, now: str, provenance: dict
 def copy_personas(
     table: Any, s3: Any, bucket: str, *, source_container: str, source_scope: SourceScope,
     source_project_name: str, persona_ids: Sequence[str], target_container: str, copied_by: str,
-    now: datetime | None = None,
+    now: datetime | None = None, workspace: WorkspaceScope | None = None,
+    source_workspace: WorkspaceScope | None = None,
 ) -> list[dict]:
-    """Copy ``persona_ids`` from ``source_container`` into ``target_container``; the new rows.
+    """Copy ``persona_ids`` from ``source_container`` (in ``source_workspace``) into ``target_container`` (in
+    ``workspace``); the new rows.
 
-    Every source is read before anything is written (one missing id is a 404 with no side
-    effect). A target that is gone or being deleted is a 404, and the avatars copied for it
-    are removed again.
+    Both scopes must be the same: a copy across workspaces, or between a workspace and the deployment, is refused
+    (``OutOfScopeError``) before anything is read. Every source is read before anything is written (one missing id is
+    a 404 with no side effect). A target that is gone or being deleted is a 404, and the avatars copied for it are
+    removed again.
     """
+    if source_workspace != workspace:
+        raise OutOfScopeError(ONE_WORKSPACE)
     moment = (now or datetime.now(UTC)).astimezone(UTC)
     stamp = moment.isoformat()
     items: list[dict] = []
-    for source in read_source_personas(table, source_container, persona_ids):
+    for source in read_source_personas(table, source_container, persona_ids, workspace=workspace):
         new_id = timestamped_id('persona', moment)
         provenance = copied_from(source, scope=source_scope, project_id=source_container,
                                  project_name=source_project_name, copied_by=copied_by, now=stamp)
-        item = _new_item(source, target_container, new_id, stamp, provenance)
-        item['avatar_url'] = _copy_avatar(s3, bucket, source.get('avatar_url'), new_id, target_container)
+        item = _new_item(source, target_container, new_id, stamp, provenance, workspace)
+        item['avatar_url'] = _copy_avatar(s3, bucket, source.get('avatar_url'), new_id, target_container, workspace)
         items.append(item)
     try:
-        saved = save_persona_items(table, target_container, items)
-        store_persona_count(table, target_container, stamp)
+        saved = save_persona_items(table, target_container, items, workspace=workspace)
+        store_persona_count(table, target_container, stamp, workspace=workspace)
     except ProjectNotWritableError as error:
-        _sweep_copied_avatars(s3, bucket, items)
+        _sweep_copied_avatars(s3, bucket, items, workspace)
         raise NotFoundError(PROJECT_NOT_FOUND) from error
     except Exception:
         # Any other failure (throttling, a non-condition ClientError) may leave rows unsaved: remove
         # the avatar copies no saved row points at, then let the error through.
-        _sweep_copied_avatars(s3, bucket, _unsaved(table, items))
+        _sweep_copied_avatars(s3, bucket, _unsaved(table, items, workspace), workspace)
         raise
     return saved
 
 
-def _unsaved(table: Any, items: list[dict]) -> list[dict]:
+def _unsaved(table: Any, items: list[dict], workspace: WorkspaceScope | None) -> list[dict]:
     """The copies whose row is not stored (an unreadable row counts as stored: never sweep a live avatar)."""
     unsaved = []
     for item in items:
         try:
-            stored = table.get_item(Key={'pk': item['pk'], 'sk': item['sk']}, ConsistentRead=True).get('Item')
+            stored = get_scoped_item(table, {'pk': item['pk'], 'sk': item['sk']}, workspace, ConsistentRead=True)
         except Exception:  # noqa: BLE001 - unknown means keep the avatar
             logger.warning('[PERSONA_COPY] Could not read back a copy; its avatar is kept',
                            extra={'persona_id': item.get('persona_id')})
             continue
-        if not isinstance(stored, dict):
+        if not stored:
             unsaved.append(item)
     return unsaved
