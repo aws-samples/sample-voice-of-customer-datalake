@@ -216,9 +216,9 @@ def _sign_in_url() -> str:
     return os.environ.get('SIGN_IN_URL', '').rstrip('/')
 
 
-def safe_accent(color: str) -> str:
+def safe_accent(color: object) -> str:
     """``color`` when it is a plain hex colour, else DEFAULT_ACCENT: nothing else ever reaches an inline style."""
-    return color if _HEX_COLOR.fullmatch(color) else DEFAULT_ACCENT
+    return color if isinstance(color, str) and _HEX_COLOR.fullmatch(color) else DEFAULT_ACCENT
 
 
 def _page(title: str, body: str, accent: str = DEFAULT_ACCENT, logo: str = '') -> str:
