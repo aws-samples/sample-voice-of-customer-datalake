@@ -9,7 +9,8 @@ Its answer can only NAME one of the numbers the page was given (checked here), s
 When the call fails or the answer is unusable, the scoring rules decide (``page_logo_candidates.rules_pick``) and
 then the page's touch icon. ``og:image`` is never the logo: it is a share card. Never raises.
 
-Measured on 64 live sites (2026-11): the call picked right on all of them (~2.5k input tokens, ~3 s); the
+Measured on 64 live sites (2026-11): the call picked right on all of them (~2.5k input tokens, typically 3 to 6 s, not
+a bound); the
 rules alone on 56; the earlier fixed ranking (header image, touch icon, og:image) on 28, saving a photo, a
 flag or a share card on 27.
 """
