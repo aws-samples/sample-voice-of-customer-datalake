@@ -506,7 +506,8 @@ class TestThePageLogoInTheCapture:
     def test_stores_the_isolated_logo_the_model_picked_with_its_backdrop(self, table, s3):
         dark = {**ISOLATED_BOX, 'backdrop': {'r': 16, 'g': 16, 'b': 32}}
         cdp = FakeCdp(_styles(), logo=LogoAnswers(
-            candidates=page_candidates(candidate(1, classes='nav'), candidate(2, url='https://kirocrew.dev/w.png')),
+            candidates=page_candidates(candidate(1, classes='nav', box={'x': 400, 'y': 16, 'w': 60, 'h': 20}),
+                                       candidate(2, url='https://kirocrew.dev/w.png')),
             isolate=dark, trim=trim_answer(TRIMMED_PNG, backdrop={'r': 16, 'g': 16, 'b': 32})))
         pick = MagicMock(return_value=ModelAnswer('{"logo": 2, "fallback": null}', PICK_MODEL))
         _, stored, vision, _ = _run(table, cdp, s3=s3, pick_logo=pick, fetch=MagicMock(

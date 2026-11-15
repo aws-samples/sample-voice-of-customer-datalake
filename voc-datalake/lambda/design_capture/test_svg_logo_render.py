@@ -88,8 +88,11 @@ def _capture(table, s3, cdp: FakeCdp, *, svg_allowed: bool = True, answer: str =
 
 
 def _page_with(*urls: str, **kw) -> FakeCdp:
-    """A page whose numbered ``<img>`` candidates are ``urls`` (the first one links home in the header)."""
-    found = page_candidates(*(candidate(n, url=url, home_link=n == 1) for n, url in enumerate(urls, 1)))
+    """A page whose numbered ``<img>`` candidates are ``urls`` (the first one links home in the header), each at its
+    own place in the header (the re-listing finds a candidate by its kind and place)."""
+    found = page_candidates(*(candidate(n, url=url, home_link=n == 1, box={'x': 24 + 200 * (n - 1), 'y': 16, 'w': 166,
+                                                                             'h': 52})
+                              for n, url in enumerate(urls, 1)))
     return FakeCdp(_styles(), logo=LogoAnswers(candidates=found), **kw)
 
 
