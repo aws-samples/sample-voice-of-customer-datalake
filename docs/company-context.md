@@ -211,7 +211,9 @@ image, touch icon, `og:image` — was right on 28 and saved a photo, a flag or a
    modes neutralised, a transparent default background — shot at 1x to 4x (its longest side towards 640 device px,
    the page's `devicePixelRatio` counted), then trimmed to its painted pixels in a fresh `about:blank` tab
    (`logo_render.trim_png`), checked by its bytes and kept within 1 MB (shot again smaller). Every change is undone
-   afterwards. The element is listed again first, so a header that re-rendered is still found. A **light** logo made
+   afterwards. The element is listed again first, so a header that re-rendered is still found (same kind, same place
+   ±4 px; the same number, then the same file, wins a tie); when it is not there any more, nothing is photographed
+   (an `<img>` falls back to its file below). A **light** logo made
    for a dark header (painted pixels averaging a luminance over 0.8) is drawn on the colour behind it (at least 0.3
    darker) or on a neutral `#1f1f1f`, with a margin, so it stays visible on a white prototype; that colour is kept on
    the stored reference as `logo.backdrop`. The tab must still show the read page's origin (a page may navigate

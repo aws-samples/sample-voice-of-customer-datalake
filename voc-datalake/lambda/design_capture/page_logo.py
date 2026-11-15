@@ -137,11 +137,14 @@ def _file_logo(cdp: Cdp, url: str, fetch: design_icons.Fetch | None, svg: str | 
     return PageLogo(rendered=raster.rendered, downloaded=raster.downloaded, refused_url=raster.refused_url)
 
 
-def _restashed(tab: PageTab, found: LogoCandidates, candidate: LogoCandidate) -> LogoCandidate:
+def _restashed(tab: PageTab, found: LogoCandidates, candidate: LogoCandidate) -> LogoCandidate | None:
     """``candidate`` as the page shows it NOW: the candidates are listed again (a page that re-rendered its
-    header replaced the stashed elements) and the one of the same kind at the same place (±4 px) is taken;
-    ``candidate`` itself when none matches, the list cannot be read, or the tab shows another origin now (the
-    isolation refuses that page too)."""
+    header replaced the stashed elements) and the one of the same kind at the same place (±4 px) is taken.
+
+    Listing again REPLACES the stash, so the old number then names whatever element holds it now: when nothing
+    matches, the answer is unreadable or the tab shows another origin, the answer is None (no photo; the element's
+    own file is the fallback). Only a CDP error before the page ran the script leaves the stash, and ``candidate``,
+    as they were."""
     try:
         raw = tab.evaluate(candidates_expression())
     except Exception as exc:  # noqa: BLE001 - a CDP error: the first stash is used as it is
@@ -149,22 +152,26 @@ def _restashed(tab: PageTab, found: LogoCandidates, candidate: LogoCandidate) ->
         return candidate
     listed_at = json_object_or_none(raw) or {}
     if origin_of(str(listed_at.get('url') or '')) != origin_of(found.page_url):
-        return candidate
+        return None
     again = parse_candidates(raw, found.page_url)
-    same = (c for c in again.candidates if c.kind == candidate.kind
+    same = [c for c in again.candidates if c.kind == candidate.kind
             and all(abs(a - b) <= RESTASH_SLACK_PX for a, b in ((c.x, candidate.x), (c.y, candidate.y),
-                                                                  (c.width, candidate.width), (c.height, candidate.height))))
-    return next(same, candidate)
+                                                                  (c.width, candidate.width), (c.height, candidate.height)))]
+    # Two elements in one place (a light and a dark logo): the same number, then the same file, wins.
+    current = min(same, key=lambda c: (c.n != candidate.n, c.url != candidate.url), default=None)
+    if current is None:
+        logger.info('Picked logo not found again', extra={'kind': candidate.kind})
+    return current
 
 
-def _isolated(tab: PageTab, cdp: Cdp, found: LogoCandidates, candidate: LogoCandidate, svg: str | None) -> PageLogo | None:
-    """The element photographed alone; for an inline ``<svg>`` that paints nothing alone (it borrows paint from
-    elsewhere in the page), its sanitised copy drawn as an image instead."""
-    isolated = isolate_logo(tab, cdp, _restashed(tab, found, candidate).n, found.page_url)
-    source = candidate.url if candidate.url and candidate.url.startswith('https://') else found.page_url
+def _isolated(tab: PageTab, cdp: Cdp, found: LogoCandidates, current: LogoCandidate, svg: str | None) -> PageLogo | None:
+    """``current`` (the picked element as the page lists it now) photographed alone; for an inline ``<svg>`` that
+    paints nothing alone (it borrows paint from elsewhere in the page), its sanitised copy drawn as an image instead."""
+    isolated = isolate_logo(tab, cdp, current.n, found.page_url)
+    source = current.url if current.url and current.url.startswith('https://') else found.page_url
     if isolated is not None:
         return PageLogo(rendered=RenderedLogo(source, isolated.png, svg, isolated.backdrop))
-    png = render_svg_logo(cdp, design_svg.svg_data_url(svg)) if svg and candidate.kind == 'inline-svg' else None
+    png = render_svg_logo(cdp, design_svg.svg_data_url(svg)) if svg and current.kind == 'inline-svg' else None
     return PageLogo(rendered=RenderedLogo(source, png, svg)) if png else None
 
 
@@ -174,8 +181,10 @@ def read_page_logo(tab: PageTab, cdp: Cdp, found: LogoCandidates, pick: LogoPick
     tab no longer shows a public https page (it navigated): then only the element's own file is read."""
     candidate = found.by_number(pick.number)
     if candidate is not None:
-        svg = _svg_copy(tab, candidate, fetch) if can_isolate else None
-        isolated = _isolated(tab, cdp, found, candidate, svg) if can_isolate else None
+        current = _restashed(tab, found, candidate) if can_isolate else None
+        # The copy and the photo come from the SAME element: the one found again (never a stale stash number).
+        svg = _svg_copy(tab, current, fetch) if current is not None else None
+        isolated = _isolated(tab, cdp, found, current, svg) if current is not None else None
         if isolated is not None:
             return isolated
         if candidate.kind == 'img' and candidate.url and candidate.url.startswith('https://'):
