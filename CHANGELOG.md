@@ -17,6 +17,18 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.32.00] - 2026-11-15
+
+Merge of voc-multiplayer-mut: property tests of the workspace isolation layer and its jobs, and the retention worker's paged walk made testable and bounded. What a deployment can see: a retention or erasure phase of more than a million rows now hands over once per million rows even with time left, and a run stops (fails, audited) past about 500 million rows scanned; a store that answers a page with the cursor it was read from stops the run too, a safety stop DynamoDB never triggers ([docs/mutation-notes-mut-voc-mp.md](docs/mutation-notes-mut-voc-mp.md), [docs/mutation-notes-testable-voc-mp.md](docs/mutation-notes-testable-voc-mp.md)).
+
+### Changed
+
+- The retention worker (`voc-datalake/lambda/jobs/retention/handler.py`) reads at most `MAX_PAGES` (10,000) pages per phase in one invocation, and each raw-data prefix the same, then hands over at the next page's cursor exactly as when its time runs low. For a store that pages, what is read and deleted, and in which order, is unchanged; a phase of more than a million rows hands over once per million rows even with time left. With the existing hand-over limit a run now stops (fails, audited) past about 500 million rows scanned.
+- A page whose `LastEvaluatedKey` is the cursor it was read from stops the run before it is handled (`CursorStuck`): the run fails and is audited ("Run failed (CursorStuck)"), an erasure job's row reads failed and its erasure locks are released (a workspace's export lock goes stale after an hour, as on any failed run), and only the phase is logged (a cursor is a row key and may name a person). DynamoDB always moves past its start key, so a deployment never meets it.
+- Internal: the walk's clock is injected (`Walk.time_left`, the Lambda's own `_lambda_clock` in production); two statements with no effect are removed (`_finish`'s pop of `_progress`, a redundant check before `job_scope` in `handle_event`).
+- Internal: property tests (Hypothesis, `hypothesis==6.135.0` pinned in `voc-datalake/requirements-dev.txt`, `.hypothesis/` git-ignored) of the workspace key builders and scope, the table guard, request resolution, membership rules, workspace ids and credential names, message routing, the erasure and export job rows and export objects, the project-id claim and the erasure worker, each checked against a model of its documented rules; the mutation runs in the two notes above.
+- Internal: two properties follow voc-multiplayer's newer code: the batch writer's refusal names `WorkspaceTable.batch_delete` (7.28.00), and an erasure's hold on the export lock leaves a workspace delete's lock alone and, in a workspace that is not active, takes only a lock row that exists (both branches generated); a new property pins that only its own condition's refusal is kept quiet (a throttle or an internal error is raised).
+
 ## [7.31.00] - 2026-11-15
 
 Multi-workspace, phase 3d: a team's participant lists and people can be kept inside a workspace, and persona copies stay inside one. Two fixes to participants (an erasure that failed partway can be run again; an add racing an erasure fails); everything else is internal ([docs/multi-workspace.md](docs/multi-workspace.md#the-project-plan-phase-3)).

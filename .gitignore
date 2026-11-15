@@ -23,6 +23,8 @@ __pycache__/
 *.so
 .Python
 .venv/
+# Hypothesis's local files (a failing property writes its patch here); the committed regressions are @example cases.
+.hypothesis/
 
 # Lambda layers (built artifacts)
 voc-datalake/lambda/layers/*/python/
