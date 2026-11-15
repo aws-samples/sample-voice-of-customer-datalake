@@ -44,6 +44,7 @@ way when the row waits for the generation it names (no claim can be made from it
 lock released, the starter notified. One for another generation, or with no readable generation, changes nothing.
 
 Env: ``FEEDBACK_TABLE``, ``AGGREGATES_TABLE``, ``MEMORY_TABLE``, ``CONVERSATIONS_TABLE``, ``WORKSPACES_TABLE``,
+``PROJECTS_TABLE``, ``JOBS_TABLE``, ``PARTICIPANTS_TABLE`` (7.39.00: the project entities, projects.py),
 ``RAW_DATA_BUCKET``.
 """
 from __future__ import annotations
@@ -81,10 +82,13 @@ from jobs.workspace_export.objects import (
     stored,
 )
 from jobs.workspace_export.objects import ENTITY as OBJECTS
+from jobs.workspace_export.projects import ENTITIES as PROJECT_ENTITIES
+from jobs.workspace_export.projects import ProjectSource, add_tally, check_cursor
 from jobs.workspace_export.zip_stream import PartSink, ZipEntry, ZipState, ZipWriter
 from shared import export_jobs
 from shared.aws import get_dynamodb_resource, get_s3_client, invoke_lambda_async
 from shared.carried_values import count_of, flag_or, is_count, mapping_or_empty
+from shared.engagement_config import PARTICIPANTS_TABLE_ENV
 from shared.erasure_jobs import refresh_lock, release_lock, release_quietly
 from shared.export_jobs import EXPORT_JOB_TYPE, WORKSPACE_DELETING
 from shared.ingest_tables import ingest_table
@@ -92,11 +96,12 @@ from shared.invocation_cost import instrumented_handler
 from shared.job_notices import notify
 from shared.jobs import has_time_left
 from shared.logging import logger
-from shared.tables import get_workspaces_table
+from shared.tables import JOBS_TABLE_ENV, get_workspaces_table
 from shared.timestamps import now_iso, parse_iso
 from shared.warm_init import warm_at_init
 from shared.workspace import ACTIVE
 from shared.ws_repo import (
+    PROJECTS_TABLE_ENV,
     WORKSPACE_FIELD,
     ExportObjects,
     ListedObject,
@@ -113,6 +118,9 @@ from shared.ws_repo import (
 FEEDBACK_TABLE, AGGREGATES_TABLE, MEMORY_TABLE, CONVERSATIONS_TABLE, RAW_DATA_BUCKET = (
     os.environ.get(name, '') for name in ('FEEDBACK_TABLE', 'AGGREGATES_TABLE', 'MEMORY_TABLE', 'CONVERSATIONS_TABLE',
                                           'RAW_DATA_BUCKET'))
+#: The project tables (7.39.00), by the names shared/project_keys.py ``project_partitions`` gives their partitions.
+PROJECTS_TABLE, JOBS_TABLE, PARTICIPANTS_TABLE = (
+    os.environ.get(name, '') for name in (PROJECTS_TABLE_ENV, JOBS_TABLE_ENV, PARTICIPANTS_TABLE_ENV))
 
 #: Hand over to a fresh invocation when less than this remains (the 15-minute timeout's reserve: a part of up to
 #: 64 MB, the work objects, the progress write and the invoke all fit in it).
@@ -216,6 +224,9 @@ class RunState:
     #: Whether this run counts the conversations: False for one resumed from a checkpoint of an earlier release
     #: already at the completion, past the count (its manifest then says they were not counted).
     conversations_counted: bool = True
+    #: Whether this run writes the project entities (7.39.00): False for one resumed from a checkpoint of an earlier
+    #: release already past them (its manifest then says the projects are not in it).
+    projects_exported: bool = True
 
     @classmethod
     def from_event(cls, event: Mapping[str, Any], scope: WorkspaceScope) -> RunState:
@@ -226,7 +237,9 @@ class RunState:
         none), the counts, the files, the central-directory generations and the tail's, the top level of the zip,
         objects and memory-count states (a mapping or none; inside them ``ZipState`` checks its offset and entries,
         ``ObjectsState`` its counts and measured rates, and a memory count's own fields are read as before), and the
-        conversations' count whole (conversations.py ``carried_state``)."""
+        conversations' count whole (conversations.py ``carried_state``). A project entity's cursor has its
+        ids checked (projects.py ``check_cursor``), and every key it names is checked by the workspace layer before a
+        Query is sent."""
         carried = event.get('run')
         if not isinstance(carried, Mapping):
             return cls()
@@ -239,6 +252,8 @@ class RunState:
                            default=not (isinstance(raw_phase, int) and phase in (OBJECTS, COMPLETING)))
         # A checkpoint from before 7.24.00 carries no such flag: one already at the completion is past the count.
         counted = flag_or(carried.get('conversations_counted'), 'conversations_counted', default=phase != COMPLETING)
+        # A checkpoint from before 7.39.00 carries no such flag: one already past the entities is past the projects.
+        projects = flag_or(carried.get('projects_exported'), 'projects_exported', default=phase in ENTITIES)
         upload_id = carried.get('upload_id', '')
         if not isinstance(upload_id, str):
             raise ValueError('upload_id is not an upload id')
@@ -247,8 +262,10 @@ class RunState:
             raise ValueError('part is not a part number')
         tail = carried.get('tail_generation')
         cursor = carried.get('cursor')
+        if phase in PROJECT_ENTITIES and isinstance(cursor, Mapping):
+            check_cursor(cursor)  # the ids a project entity's cursor carries (projects.py)
         return cls(
-            memory_exported=exported, conversations_counted=counted,
+            memory_exported=exported, conversations_counted=counted, projects_exported=projects,
             conversation_count=carried_state(carried.get('conversation_count'), scope),
             generation=count_of(carried['generation'], 'generation'), upload_id=upload_id, part=part,
             zip_state=ZipState.from_json(dict(mapping_or_empty(carried.get('zip'), 'zip')) or None),
@@ -273,7 +290,8 @@ class RunState:
                 'memory_counts': {what: dict(state) for what, state in self.memory_counts.items()},
                 'memory_exported': self.memory_exported,
                 'conversation_count': dict(self.conversation_count),
-                'conversations_counted': self.conversations_counted}
+                'conversations_counted': self.conversations_counted,
+                'projects_exported': self.projects_exported}
 
 
 class _HandOver(Exception):
@@ -302,8 +320,10 @@ class ExportRun:
         resource = get_dynamodb_resource()
         self.jobs: WorkspaceTable = ingest_table(scope, resource, AGGREGATES_TABLE)
         self.workspaces = get_workspaces_table()
+        projects = ProjectSource(scope, *(ingest_table(scope, resource, name)
+                                          for name in (PROJECTS_TABLE, JOBS_TABLE, PARTICIPANTS_TABLE)))
         self.source = Source(scope, ingest_table(scope, resource, FEEDBACK_TABLE), self.jobs, self.workspaces,
-                             ingest_table(scope, resource, MEMORY_TABLE))
+                             ingest_table(scope, resource, MEMORY_TABLE), projects)
         # voc-conversations through the workspace's view (shared/ingest_tables.py: ``ws_table`` in a workspace).
         self.conversations = ConversationCount(scope, ingest_table(scope, resource, CONVERSATIONS_TABLE))
         s3 = get_s3_client()
@@ -494,9 +514,17 @@ class ExportRun:
                 progress.entry = progress.entry or self._open(writer, entity)
                 progress.entry.write(line)
                 self.run.counts[entity] = self.run.counts.get(entity, 0) + 1
+                self._add(row.tally)
                 progress.resume = row.after
+            # A page's own counts (the project registry's, projects.py) only once every row of it is written: a
+            # page cut by a hand-over is read again from its last row, and counts then. A row's own counts go with
+            # the row.
+            self._add(page.tally)
             progress.resume = page.following
         return False
+
+    def _add(self, tally: Mapping[str, int]) -> None:
+        add_tally(self.run.counts, tally)  # projects.py: at most 50 unclassified names in the carried counts
 
     def _open(self, writer: ZipWriter, entity: str) -> ZipEntry:
         files = self.run.files.setdefault(entity, [])
@@ -559,7 +587,7 @@ class ExportRun:
             counts=self.run.counts, daily_total=daily_total,
             objects=manifest_section(self.run.counts.get(OBJECTS, 0), self.run.objects),
             memory_left_out=self._memory_left_out(), memory_exported=self.run.memory_exported,
-            conversations=self._conversations_left_out()))
+            conversations=self._conversations_left_out(), projects_exported=self.run.projects_exported))
         self._close(entry)
         exported = self.run.counts.get('feedback', 0)
         if exported != daily_total:

@@ -50,6 +50,10 @@ READER_GLOBS = ('lambda/**/*.py', 'plugins/**/*.py', 'lambda/stream/src/**/*.ts'
                 'lambda/api/static/**/*.html', 'lambda/**/*.json', 'schemas/*.json')
 NON_PRODUCT = re.compile(r'(\.test\.|\.spec\.|/test/|/tests/|/__tests__/|/test_|conftest|/e2e/|/mocks?/|'
                          r'/layers/|node_modules|__pycache__|\.d\.ts$|/locales/)')
+# Product files that name attributes without reading them: the workspace export's classification of a project's
+# attributes (lambda/jobs/workspace_export/project_fields.py) names every one it exports or excludes, so naming one
+# there must not count as reading it (an attribute only it names stays a finding).
+NOT_READERS = frozenset({'lambda/jobs/workspace_export/project_fields.py'})
 # Item key attributes every table reads through its key schema, never by name in code.
 KEY_NAMES = frozenset({'pk', 'sk', 'ttl'})
 
@@ -294,7 +298,7 @@ def reader_tokens(cdk_dir: Path) -> dict[str, set[str]]:
     for pattern in READER_GLOBS:
         for path in cdk_dir.glob(pattern):
             rel = path.relative_to(cdk_dir).as_posix()
-            if not path.is_file() or NON_PRODUCT.search('/' + rel):
+            if not path.is_file() or NON_PRODUCT.search('/' + rel) or rel in NOT_READERS:
                 continue
             for token in set(_TOKEN.findall(path.read_text(encoding='utf-8', errors='ignore'))):
                 index.setdefault(token, set()).add(rel)

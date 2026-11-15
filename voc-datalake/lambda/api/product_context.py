@@ -41,6 +41,8 @@ from shared.exceptions import (
 )
 from shared.image_limits import IMAGE_CONTENT_TYPE_EXTENSIONS, MAX_IMAGE_BYTES
 from shared.logging import logger, tracer
+from shared.project_keys import PRODUCT_CONTEXT_SK as CONTEXT_SK
+from shared.project_keys import PRODUCT_DOC_SK_PREFIX as DOC_SK_PREFIX
 from shared.project_keys import document_keys, project_pk
 from shared.project_writes import (
     create_counted_project_child,
@@ -83,7 +85,8 @@ def _s3():
 
 # ── Schema ────────────────────────────────────────────────────────────────────
 
-CONTEXT_SK = 'PRODUCT_CONTEXT'
+# The product context's row, ``CONTEXT_SK``, and the product documents' records, ``DOC_SK_PREFIX``, are spelled in
+# shared/project_keys.py (imported above), which the workspace export reads them by too.
 
 # Free-text fields, each with a character cap. There are no list fields: lists
 # read as a file-list / upload control in the UI; comment-style textareas are
@@ -373,8 +376,6 @@ def update_context(project_id: str, body: object) -> dict:
 
 
 # ── ProductDoc — uploads, listing, deletion ──────────────────────────────────
-
-DOC_SK_PREFIX = 'PRODUCT_DOC#'
 
 
 def _new_doc_id() -> str:

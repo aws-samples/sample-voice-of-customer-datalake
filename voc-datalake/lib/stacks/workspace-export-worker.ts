@@ -22,6 +22,13 @@
  *     the role cannot read match a guess (an oracle that could probe a person's `CONV#` ids one prefix at a time), as
  *     the memory counts could. Only the code holds it: one fixed request, `begins_with(sk, 'CONV#')`, `Limit` 1, no
  *     filter, no start key (lambda/jobs/workspace_export/conversations.py, pinned by its tests);
+ *   - voc-projects (7.39.00): Query only, of the `PROJECT_IDS`, `PROJECT#*`, `DOCUMENT_VERSIONS#PROJECT#*`,
+ *     `DCOMMENTS#*`, `DOCSHARE_IDS` and `DOCSHARE#*` partitions of any one workspace id, on the table; voc-jobs and
+ *     voc-participants: Query only, of any one workspace id's `PROJECT#*` partitions; no write, no index. The
+ *     patterns hold the role to that key shape, not to the export's own workspace (only the workspace layer's checks
+ *     do); nor can IAM pin the sort key or the attributes, or tell a deleted project's partitions from a live one's:
+ *     only the code reads the listed row kinds, exports the allowlisted or classified fields and exports none of the
+ *     rows of a project its registry marks deleted (lambda/jobs/workspace_export/projects.py, test_projects.py);
  *   - the raw data bucket, under `ws/{one id}/exports/*` only: PutObject, PutObjectTagging, GetObject,
  *     AbortMultipartUpload and ListMultipartUploadParts, and DeleteObject on `…/exports/*\/work/*` only (the work
  *     objects of an export that may not go on);
@@ -108,6 +115,18 @@ export const CONVERSATION_OWNER_PARTITIONS = `WS#${WORKSPACE_ID_PATTERN}#USER#*`
  * can learn, since it is the partition `dynamodb:LeadingKeys` already names.
  */
 export const CONVERSANTS_ATTRIBUTES = ['pk', 'sk'];
+/**
+ * One workspace's project partitions in voc-projects the job reads (7.39.00, lambda/jobs/workspace_export/projects.py):
+ * its registry of project ids, each project's own partition (its company persona library's too), its document
+ * versions, its series' comment partitions, its registry of review links and each link's own row. Never the
+ * deployment's `PROJECT#`, `DOCSHARE#` or `PROJECT_ID#` rows, a reviewer's `DCRATE#` counters or an index.
+ */
+export const PROJECT_TABLE_PARTITIONS = [`WS#${WORKSPACE_ID_PATTERN}#PROJECT_IDS`,
+  `WS#${WORKSPACE_ID_PATTERN}#PROJECT#*`, `WS#${WORKSPACE_ID_PATTERN}#DOCUMENT_VERSIONS#PROJECT#*`,
+  `WS#${WORKSPACE_ID_PATTERN}#DCOMMENTS#*`, `WS#${WORKSPACE_ID_PATTERN}#DOCSHARE_IDS`,
+  `WS#${WORKSPACE_ID_PATTERN}#DOCSHARE#*`];
+/** A workspace's project partitions in voc-jobs (its jobs) and voc-participants (its links to lists and people). */
+export const PROJECT_PARTITIONS = [`WS#${WORKSPACE_ID_PATTERN}#PROJECT#*`];
 /** A workspace's two control-plane partitions in voc-workspaces (lambda/shared/ws_repo.py `control_query`). */
 export const CONTROL_PARTITIONS = [`WS#${WORKSPACE_ID_PATTERN}`, `AUDIT#WS#${WORKSPACE_ID_PATTERN}`];
 /** What the job does to the objects under a workspace's exports. */
@@ -123,6 +142,9 @@ export interface WorkspaceExportWorkerProps {
   workspacesTable: dynamodb.ITable;
   memoryTable: dynamodb.ITable;
   conversationsTable: dynamodb.ITable;
+  projectsTable: dynamodb.ITable;
+  jobsTable: dynamodb.ITable;
+  participantsTable: dynamodb.ITable;
   rawDataBucket: s3.IBucket;
 }
 
@@ -151,7 +173,8 @@ export function createWorkspaceExportWorker(scope: Construct, id: string,
   props: WorkspaceExportWorkerProps): lambda.Function {
   const worker = new Construct(scope, id);
   const {
-    uniqueName, kmsKey, feedbackTable, aggregatesTable, workspacesTable, memoryTable, conversationsTable, rawDataBucket,
+    uniqueName, kmsKey, feedbackTable, aggregatesTable, workspacesTable, memoryTable, conversationsTable, projectsTable,
+    jobsTable, participantsTable, rawDataBucket,
   } = props;
   const functionName = uniqueName(WORKSPACE_EXPORT_FUNCTION_BASE_NAME);
   const role = workerRole(worker, 'ExportRole');
@@ -218,6 +241,23 @@ export function createWorkspaceExportWorker(scope: Construct, id: string,
     resources: [conversationsTable.tableArn],
     conditions: countOnly(CONVERSATION_OWNER_PARTITIONS),
   }));
+  // 7.39.00: the workspace's projects (lambda/jobs/workspace_export/projects.py), Query only, of exactly their
+  // partitions, on the tables (no index). IAM cannot pin the sort key or the attributes: the role may read every row
+  // of those partitions (a series' SHARE pointer, a link's id in its key, a version counter's lease, an assist job)
+  // and a deleted project's partitions; only the code reads the listed row kinds, writes the allowlisted
+  // fields and skips a project its registry marks deleted.
+  role.addToPolicy(new iam.PolicyStatement({
+    sid: 'QueryWorkspaceProjects',
+    actions: ['dynamodb:Query'],
+    resources: [projectsTable.tableArn],
+    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': PROJECT_TABLE_PARTITIONS } },
+  }));
+  role.addToPolicy(new iam.PolicyStatement({
+    sid: 'QueryWorkspaceProjectJobsAndLists',
+    actions: ['dynamodb:Query'],
+    resources: [jobsTable.tableArn, participantsTable.tableArn],
+    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': PROJECT_PARTITIONS } },
+  }));
   role.addToPolicy(new iam.PolicyStatement({
     sid: 'WriteWorkspaceExports',
     actions: EXPORT_OBJECT_ACTIONS,
@@ -269,6 +309,9 @@ export function createWorkspaceExportWorker(scope: Construct, id: string,
       WORKSPACES_TABLE: workspacesTable.tableName,
       MEMORY_TABLE: memoryTable.tableName,
       CONVERSATIONS_TABLE: conversationsTable.tableName,
+      PROJECTS_TABLE: projectsTable.tableName,
+      JOBS_TABLE: jobsTable.tableName,
+      PARTICIPANTS_TABLE: participantsTable.tableName,
       RAW_DATA_BUCKET: rawDataBucket.bucketName,
       POWERTOOLS_SERVICE_NAME: WORKSPACE_EXPORT_FUNCTION_BASE_NAME,
       LOG_LEVEL: 'INFO',

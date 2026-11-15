@@ -3,15 +3,52 @@ with a checkpointed cursor, so a hand-over between any two rows resumes from the
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:
     from shared.ws_repo import WorkspaceTable
 
-__all__ = ['TABLE_KEY', 'count_page', 'items', 'key', 'last_key', 'start']
+__all__ = ['TABLE_KEY', 'Page', 'Row', 'count_page', 'items', 'key', 'last_key', 'only', 'sort_key', 'start']
 
 #: A table's key: the cursor that resumes after a row.
 TABLE_KEY: Final = ('pk', 'sk')
+
+
+@dataclass(frozen=True)
+class Row:
+    """One row to export, the cursor that resumes right after it, and the counts the row adds once it is written
+    (``tally``: handler.py ``_write_pages``, so a row a hand-over leaves unwritten counts when it is)."""
+
+    item: dict[str, Any]
+    after: dict[str, Any]
+    tally: Mapping[str, int] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class Page:
+    """One page of an entity: its rows, the cursor of the next page (None: the entity is done), and the counts the
+    page adds once every row of it is written (``tally``: handler.py ``_write_pages``; a page a hand-over cuts is read
+    again from its last row, so it counts once)."""
+
+    rows: list[Row]
+    following: dict[str, Any] | None
+    tally: Mapping[str, int] = field(default_factory=dict)
+
+
+def only(item: Mapping[str, Any], names: tuple[str, ...] | frozenset[str]) -> dict[str, Any]:
+    """``item``'s fields that ``names`` lists, and no other (every allowlisted entity's rows)."""
+    kept = set(names) & set(item)
+    return {name: item[name] for name in sorted(kept)}
+
+
+def sort_key(condition: str | None, values: Mapping[str, Any]) -> dict[str, Any]:
+    """A Query's key condition on ``sk`` (written ``#sk``, its values named in ``values``), for the workspace layer's
+    ``sort_condition``; nothing for a whole partition (``condition`` None)."""
+    if condition is None:
+        return {}
+    return {'sort_condition': condition, 'ExpressionAttributeNames': {'#sk': 'sk'},
+            'ExpressionAttributeValues': dict(values)}
 
 
 def key(item: Mapping[str, Any], attributes: tuple[str, ...]) -> dict[str, Any]:

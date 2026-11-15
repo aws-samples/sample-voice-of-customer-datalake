@@ -20,7 +20,7 @@ from moto import mock_aws
 from shared import scoped_query
 from shared.ids import is_key_collision
 from shared.project_keys import project_pk, project_registry_key, project_registry_pk, project_type_pk
-from shared.project_tables import iter_registered_project_ids
+from shared.project_tables import REGISTRY_PROJECTION, iter_registered_project_ids, registered_project
 from shared.project_writes import NEW_ROW_CONDITION, create_workspace_project, transact_project_writes
 from shared.test.moto_tables import create_pk_sk_table
 from shared.ws_repo import (
@@ -279,6 +279,25 @@ def test_the_registry_pages_and_stays_in_its_workspace(table, monkeypatch):
     assert all(page['ProjectionExpression'] == 'sk' for page in pages)
     assert all(page['ConsistentRead'] for page in pages)
     assert list(iter_registered_project_ids(table, workspace=B)) == ['proj_b_00']
+
+
+def test_a_registry_row_read_with_its_projection_says_whether_its_project_is_deleted(table):
+    """7.39.00: a registry read projected to ``REGISTRY_PROJECTION`` carries each row's ``deleted_at`` (a project
+    delete in a workspace sets it, 3h), which ``registered_project`` reads failing closed: any mark but null reads
+    deleted, a time or not (an empty string, a number, a map); ``iter_registered_project_ids`` is unchanged and still
+    names every id, deleted or not."""
+    marks: list[tuple[str, object]] = [('proj_a_00', None), ('proj_a_01', STAMP), ('proj_a_02', ''),
+                                       ('proj_a_03', 5), ('proj_a_04', {'at': STAMP})]
+    for project_id, deleted in marks:
+        table.put_item(Item={**project_registry_key(project_id, workspace=A), 'created_at': STAMP,
+                             **({} if deleted is None else {'deleted_at': deleted})})
+    page = ws_table(A, table).query('pk', project_registry_pk(A), ProjectionExpression=REGISTRY_PROJECTION,
+                                    ConsistentRead=True)
+    assert [registered_project(row) for row in page['Items']] == [
+        ('proj_a_00', False, None), ('proj_a_01', True, STAMP), ('proj_a_02', True, None),
+        ('proj_a_03', True, None), ('proj_a_04', True, None)]
+    assert registered_project({'sk': 'proj_a_05', 'deleted_at': None}) == ('proj_a_05', False, None)
+    assert list(iter_registered_project_ids(table, workspace=A)) == [project_id for project_id, _ in marks]
 
 
 def test_the_registry_is_a_workspaces_only(table):

@@ -61,7 +61,7 @@ from shared.exceptions import ApiError, NotFoundError, ServiceError
 from shared.ingest_tables import table_view
 from shared.logging import logger
 from shared.model_profile import payload_fields
-from shared.project_keys import job_status_pk, require_deployment
+from shared.project_keys import ASSIST_JOB_PREFIX, job_status_pk, require_deployment
 from shared.scoped_keys import scoped_pk
 from shared.tables import get_jobs_table
 from shared.workspace_config import get_scoped_item
@@ -72,7 +72,6 @@ if TYPE_CHECKING:
     from shared.workspace import WorkspaceContext
 
 ASSIST_ACTION: Final = 'assist_job'
-ASSIST_JOB_PREFIX: Final = 'assist_'
 JOB_ID_PREFIX: Final = 'job_'
 # Long enough for a client to read the outcome after a slow answer; the row is
 # plumbing, so a day is plenty.

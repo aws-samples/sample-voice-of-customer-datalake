@@ -92,6 +92,15 @@ def test_a_write_through_a_helper_follows_its_variables_and_builders(make_tree: 
         'appended_only', 'bound_only', 'snapshot_only')]   # never the handler's response (response_only)
 
 
+def test_naming_an_attribute_in_the_export_classification_is_not_reading_it(make_tree: TreeMaker) -> None:
+    """lambda/jobs/workspace_export/project_fields.py names every attribute it exports or excludes: not a read."""
+    store = "def save(t):\n    t.put_item(Item={'pk': 'R', 'only_named': 1})\n"
+    root = make_tree({'lambda/shared/runs_store.py': store,
+                      'lambda/jobs/workspace_export/project_fields.py': "EXPORTED = frozenset({'only_named'})\n"})
+    found, _, _ = findings(root)
+    assert [f.key for f in found] == ['lambda/shared/runs_store.py::only_named']
+
+
 def test_expression_reads_skip_the_attribute_being_set() -> None:
     assert expression_reads('SET a = if_not_exists(a, :z) + :one, b = c') == {'c'}
     assert expression_reads('attribute_exists(pk) AND #s = :s') == {'pk', 's'}

@@ -16,7 +16,11 @@ workspace layer (shared/ws_repo.py):
   rows) and ``audit`` (``AUDIT#WS#{ws}``);
 * from voc-memory (slice 4c, jobs/workspace_export/memory.py): the company memory only, ``memory_company``,
   ``memory_imports`` and ``memory_events``; personal memories and the extraction cursors are their owners' and are
-  only counted.
+  only counted;
+* from voc-projects, voc-jobs and voc-participants (7.39.00, projects 3g-a, jobs/workspace_export/projects.py): the
+  workspace's projects, found through its registry (a deleted project skipped and counted), each project's rows,
+  personas, document versions, comment threads, jobs and list links, and the workspace's review links, found through
+  its link registry; each entity only the fields or row kinds it lists.
 
 The members' conversations in voc-conversations are their own: not included; only how many people have any is
 counted (7.24.00, jobs/workspace_export/conversations.py).
@@ -29,13 +33,15 @@ from __future__ import annotations
 import base64
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any, Final
 
 from jobs.workspace_export.memory import ENTITIES as MEMORY_ENTITIES
 from jobs.workspace_export.memory import MemorySource
-from jobs.workspace_export.pages import TABLE_KEY, items, key, last_key, start
+from jobs.workspace_export.pages import TABLE_KEY, Page, Row, items, key, last_key, sort_key, start
+from jobs.workspace_export.project_fields import REFUSED
+from jobs.workspace_export.projects import DELETED_DURING, UNCLASSIFIED, ProjectSource
+from jobs.workspace_export.projects import ENTITIES as PROJECT_ENTITIES
 from shared.dynamo_values import as_count, plain
 from shared.earliest_date import EARLIEST_DATE_ATTRIBUTE, earliest_date_key, parse_iso_date
 from shared.import_runs import DETAIL_SK, LIST_PK
@@ -59,8 +65,9 @@ __all__ = ['ENTITIES', 'FILE_CAP', 'ExportRefused', 'Source', 'encode_row', 'man
 #: objects, the memory counts, the conversations' count and the completion). A checkpoint names its phase, so an entity added in any position
 #: never shifts a running export onto another: one that was past it across a deploy finishes without it (its count
 #: reads 0), one that was before it writes it. A checkpoint from before phases were named is read by the 4b order.
+#: The project entities (7.39.00) come last, after the memory's.
 ENTITIES: Final = ('feedback', 'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'workspace',
-                   'members', 'audit', 'plugin_config_history', *MEMORY_ENTITIES)
+                   'members', 'audit', 'plugin_config_history', *MEMORY_ENTITIES, *PROJECT_ENTITIES)
 #: The most one JSONL file holds (before compression): a longer entity continues in its next file.
 FILE_CAP: Final = 256 * 1024 * 1024
 #: The index key of a feedback row: its table key and gsi1's, the cursor that resumes after it.
@@ -72,7 +79,9 @@ _DROPPED: Final = {'erasure_jobs': ('value_hash',), 'audit': ('email_sha256',)}
 PAGE_LIMIT: Final = 500
 
 #: What a later phase keys by workspace (docs/multi-workspace.md, Phases): nothing of it is the workspace's yet.
-NOT_PER_WORKSPACE: Final = ('projects_documents', 'personas', 'agents_workflows', 'settings')
+#: The projects, documents and personas are exported since 7.39.00 (projects.py); the agents and workflows are slice
+#: 3g3.
+NOT_PER_WORKSPACE: Final = ('agents_workflows', 'settings')
 #: Rows of the workspace an export leaves out, and why.
 NOT_EXPORTED: Final = {
     # The company memory is exported since 7.22.00 (memory.py); personal memories (since 7.22.00) and the members'
@@ -85,6 +94,15 @@ NOT_EXPORTED: Final = {
     'idempotency': 'Operational: the processing claims (voc-idempotency).',
     'form_lookups': "Routing: each form's FORM# lookup row (the forms themselves are in feedback_forms).",
     'user_rows': "Routing: each member's USER# row behind their workspace list (the members are in members).",
+    'participants': ("The workspace's participant lists, people and address guards (voc-participants' LIST#, "
+                     'PERSON# and EMAIL# rows) are not in this release\'s export; a project\'s links to them are '
+                     '(project_lists).'),
+    'project_assists': ("Operational: a project's assist job rows (assist_*, request plumbing the Background jobs "
+                        'panel does not show either); its other jobs are in project_jobs.'),
+    'project_bookkeeping': ("Routing: the project and review link registries (PROJECT_IDS, DOCSHARE_IDS), each "
+                            "project's list of its commented series (COMMENT_SERIES#), a series' pointer to its "
+                            "current review link (SHARE) and each link's routing row; the projects and links they "
+                            'list are exported.'),
 }
 #: What an export never holds, by design.
 EXCLUDED: Final = {
@@ -109,6 +127,24 @@ EXCLUDED: Final = {
                         'events are neither exported nor counted.'),
     'conversations': ("The members' assistant conversations in the workspace are not included, and a member gets no "
                       'copy of their own from this export; only how many people have any is given (conversations).'),
+    'project_secrets': ("A review link's id (the secret its URL carries) and its key are left out of review_links, "
+                        "and a comment's link id of document_comments (from_review_link says whether it came from "
+                        "a link); a reviewer's email digest, the reviewers' daily write counters (DCRATE#), a "
+                        "version counter's migration lease, a job's ttl and status index keys, who marked a comment "
+                        'addressed (by_sub), a credential-shaped attribute (token_hash, secret_hash), a stored '
+                        'prototype URL (prototype_url), an unused stored prompt (kiro_export_prompt), index keys '
+                        "(gsi1pk, gsi1sk), a legacy migration's lease, a delete's fence and a job config's category "
+                        'scope are never exported.'),
+    'project_fields': ('document_versions, document_comments, review_links, project_jobs and project_lists export only '
+                       'the fields each lists (any field added later stays out). projects_documents and personas '
+                       'read only the row kinds they list (META, PRODUCT_CONTEXT, PRD#, PRFAQ#, RESEARCH#, DOC#, '
+                       'PRODUCT_REPORT#, PROTOTYPE#, PRODUCT_DOC#; PERSONA#), each the stored row through its '
+                       'classification: top-level attributes classified, exported or excluded (one in neither is '
+                       "left out and named in projects.unclassified_fields), and a META's members entries narrowed "
+                       'to role, username, name, email, added_by and added_at. In every project entity, nested maps '
+                       'are exported after a secret-name check: a key at any depth whose name looks like a secret '
+                       "(a token, secret, hash, digest, signature, password, credential and the like) is left out "
+                       'and counted in projects.secret_named_fields_refused.'),
 }
 #: Why the conversations are not in the export, in every conversations note.
 _CONVERSATIONS_OWN: Final = ("The members' assistant conversations in the workspace are their own and are not "
@@ -135,6 +171,30 @@ MEMORY_NOTE: Final = ("The workspace's company memory: every company memory (mem
 MEMORY_NOT_RUN: Final = ('Not in this export: it was started by an earlier release and had already passed the point '
                          'where the memory entities are written when it resumed, so memory_company, memory_events '
                          'and memory_imports are empty here. Export again to include the company memory.')
+#: What a reader of the project entities should know (7.39.00).
+PROJECTS_NOTE: Final = (
+    "The workspace's projects, found through its registry of project ids: each live project's rows "
+    '(projects_documents), personas, document versions and saved revisions (document_versions), comment threads '
+    '(document_comments), jobs (project_jobs) and links to participant lists and people (project_lists), and the '
+    "workspace's company persona library (its META in projects_documents, its personas in personas); then its review "
+    'links (review_links), each exported only when its project is live. A project deleted in the workspace is skipped '
+    'and counted (deleted_skipped): none of its rows is exported (its links\' rows are read to find their project), '
+    "but any object left under its projects/<project id>/ prefix is still in objects until the project's own delete "
+    'removes it (a later release); one deleted while the export ran is skipped by each entity that reaches it after '
+    '(deleted_during_export). A registry row not shaped like a project id is skipped and counted (malformed_skipped). '
+    "Email addresses are exported as the workspace's own collaboration data: a project META's owner_email and its "
+    "members map (each member's id, role, name and email), a review link's audience and a reviewer's comments and replies; so are members' "
+    "ids (an author, a link's creator, a job's starter), as the members entity carries the members. Each entity "
+    'reads the registry again, so a project deleted while the export ran can be in some entities and not in others. '
+    'What every project row leaves out is in excluded.')
+#: Where a project's product documents are (their records are in projects_documents).
+PRODUCT_DOCUMENTS_NOTE: Final = (
+    "A product document's record (PRODUCT_DOC#) is in projects_documents; its upload and its extracted text are "
+    'objects under projects/<project id>/product_docs/ (raw/ and extracted/), in objects.')
+#: The manifest's projects note for an export started before 7.39.00 and resumed past the project entities.
+PROJECTS_NOT_RUN: Final = ('Not in this export: it was started by an earlier release and had already passed the point '
+                           'where the project entities are written when it resumed, so they are empty here. Export '
+                           'again to include the projects.')
 
 
 def _shown(entity: str, item: Mapping[str, Any]) -> dict[str, Any]:
@@ -151,33 +211,18 @@ FEEDBACK_START_UNKNOWN: Final = ('The workspace counts feedback but records no f
                                  'and no daily counter): rebuild its counters, then export again.')
 
 
-@dataclass(frozen=True)
-class Row:
-    """One row to export, and the cursor that resumes right after it."""
-
-    item: dict[str, Any]
-    after: dict[str, Any]
-
-
-@dataclass(frozen=True)
-class Page:
-    """One page of an entity: its rows, and the cursor of the next page (None: the entity is done)."""
-
-    rows: list[Row]
-    following: dict[str, Any] | None
-
-
 class Source:
     """One workspace's entities, through its views of voc-feedback and voc-aggregates (``ws_table``) and voc-workspaces
-    (read by ``control_query`` only)."""
+    (read by ``control_query`` only), voc-memory (``memory``) and the project tables (``projects``)."""
 
     def __init__(self, scope: WorkspaceScope, feedback: WorkspaceTable, aggregates: WorkspaceTable,
-                 workspaces: Any, memory: WorkspaceTable) -> None:
+                 workspaces: Any, memory: WorkspaceTable, projects: ProjectSource) -> None:
         self.scope = scope
         self._feedback = feedback
         self._aggregates = aggregates
         self._workspaces = workspaces
         self.memory = MemorySource(scope, memory)
+        self.projects = projects
 
     # ── Where each entity starts ────────────────────────────────────────────────────────────────────────────
 
@@ -212,17 +257,18 @@ class Source:
         if entity == 'import_runs':
             return self._import_runs_page(cursor)
         if entity in MEMORY_ENTITIES:
-            rows, following = self.memory.page(entity, cursor)
             # Already only the fields each memory entity lists (memory.py ``FIELDS``).
-            return Page([Row(item, after) for item, after in rows], following)
+            return self.memory.page(entity, cursor)
+        if entity in PROJECT_ENTITIES:
+            # Already only the fields each project entity exports (projects.py ``_SHOWN``).
+            return self.projects.page(entity, cursor)
         if entity in _AGGREGATE_PARTITIONS:
             partition, condition, values = _AGGREGATE_PARTITIONS[entity](self.scope)
-            page = self._aggregates.query('pk', partition, sort_condition=condition, **_condition_values(values),
-                                          **start(cursor.get('start')))
+            page = self._aggregates.query('pk', partition, **sort_key(condition, values), **start(cursor.get('start')))
             return self._rows(entity, page)
         which, condition, values = _CONTROL_PARTITIONS[entity]
-        page = control_query(self.scope, self._workspaces, which, sort_condition=condition,
-                             **_condition_values(values), **start(cursor.get('start')))
+        page = control_query(self.scope, self._workspaces, which, **sort_key(condition, values),
+                             **start(cursor.get('start')))
         return self._rows(entity, page)
 
     def _rows(self, entity: str, page: Mapping[str, Any]) -> Page:
@@ -267,12 +313,6 @@ class Source:
         return sum(as_count(row.get('count')) for row in rows)
 
 
-def _condition_values(values: Mapping[str, Any]) -> dict[str, Any]:
-    if not values:
-        return {}
-    return {'ExpressionAttributeNames': {'#sk': 'sk'}, 'ExpressionAttributeValues': dict(values)}
-
-
 def _erasure_jobs(scope: WorkspaceScope) -> tuple[str, str | None, dict[str, str]]:
     return erasure_job_pk(scope), 'begins_with(#sk, :prefix)', {':prefix': ERASURE_JOB_PREFIX}
 
@@ -314,10 +354,33 @@ def _conversations_section(people: int | None) -> dict[str, Any]:
     return {'counted': True, 'people': people, 'note': CONVERSATIONS_NOTE}
 
 
+def _named(counts: Mapping[str, int], prefix: str) -> dict[str, int]:
+    """The counts named ``{prefix}{name}``, by name."""
+    return {name.removeprefix(prefix): int(count) for name, count in sorted(counts.items()) if name.startswith(prefix)}
+
+
+def _projects_section(counts: Mapping[str, int], *, exported: bool) -> dict[str, Any]:
+    """The manifest's ``projects``: the registry's live projects, the deleted and malformed ids skipped, the review
+    links skipped because their project is not a live one or their row is gone (removed by its ``ttl``; a link past
+    its expiry whose row is still there is exported, its ``expires_at`` saying so), each attribute left out because
+    project_fields.py classifies it neither way (``unclassified_fields``: how many rows held it), and where the
+    product documents are; or, for a run resumed past the project entities, that they are not in this export."""
+    return {'exported': exported, 'note': PROJECTS_NOTE if exported else PROJECTS_NOT_RUN,
+            'live': int(counts.get('projects_live', 0)),
+            'deleted_skipped': int(counts.get('projects_deleted', 0)),
+            'malformed_skipped': int(counts.get('projects_malformed', 0)),
+            'review_links_skipped': int(counts.get('review_links_skipped', 0)),
+            'review_links_expired': int(counts.get('review_links_expired', 0)),
+            'unclassified_fields': _named(counts, UNCLASSIFIED),
+            'deleted_during_export': _named(counts, DELETED_DURING),
+            'secret_named_fields_refused': int(counts.get(REFUSED, 0)),
+            'product_documents': PRODUCT_DOCUMENTS_NOTE}
+
+
 def manifest(*, export_id: str, scope: WorkspaceScope, workspace: Mapping[str, Any], created_at: str,
              completed_at: str, files: Mapping[str, list[str]], counts: Mapping[str, int],
              daily_total: int, objects: Mapping[str, Any], memory_left_out: Mapping[str, tuple[int, bool]],
-             conversations: int | None, memory_exported: bool = True) -> bytes:
+             conversations: int | None, memory_exported: bool = True, projects_exported: bool = True) -> bytes:
     """``manifest.json``: every entity with its files and count, the counts check against the workspace's
     ``daily_total`` counters, what is not per workspace yet, not exported or excluded, the workspace's objects
     (``objects``: jobs/workspace_export/objects.py ``manifest_section``), and the memory left out (``memory_left_out``:
@@ -325,9 +388,15 @@ def manifest(*, export_id: str, scope: WorkspaceScope, workspace: Mapping[str, A
     counted, since the phase ends only when its counts are done). ``memory_exported`` False (a run
     resumed from an earlier release's checkpoint past the memory entities) lists ``memory`` as not exported.
     ``conversations``: how many people have any (jobs/workspace_export/conversations.py), None for a run resumed
-    from an earlier release's checkpoint past their count (the section then says they were not counted)."""
+    from an earlier release's checkpoint past their count (the section then says they were not counted).
+    ``projects_exported`` False (a run resumed from a checkpoint of an earlier release past the project entities)
+    lists ``projects`` as not exported; the ``projects`` section counts the projects (``_projects_section``)."""
     feedback = int(counts.get('feedback', 0))
-    not_exported = dict(NOT_EXPORTED) if memory_exported else {**NOT_EXPORTED, 'memory': MEMORY_NOT_RUN}
+    not_exported = dict(NOT_EXPORTED)
+    if not memory_exported:
+        not_exported['memory'] = MEMORY_NOT_RUN
+    if not projects_exported:
+        not_exported['projects'] = PROJECTS_NOT_RUN
     document = {
         'format': 'voc-workspace-export',
         'version': 1,
@@ -348,6 +417,7 @@ def manifest(*, export_id: str, scope: WorkspaceScope, workspace: Mapping[str, A
                              for what, (count, complete) in memory_left_out.items()},
         },
         'conversations': _conversations_section(conversations),
+        'projects': _projects_section(counts, exported=projects_exported),
         'not_per_workspace': {name: {'status': 'not_per_workspace', 'phase': 3, 'count': 0}
                               for name in NOT_PER_WORKSPACE},
         'not_exported': not_exported,

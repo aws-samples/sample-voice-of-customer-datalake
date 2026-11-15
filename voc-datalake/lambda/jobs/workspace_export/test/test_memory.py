@@ -283,7 +283,8 @@ def test_a_workspace_without_memory_exports_empty_memory_entities(world):
 
 def test_the_memory_entities_follow_the_config_history():
     assert entities.ENTITIES[8] == 'plugin_config_history'
-    assert entities.ENTITIES[9:] == memory.ENTITIES
+    # Then the project entities (7.39.00), last.
+    assert entities.ENTITIES[9:12] == memory.ENTITIES
 
 
 @pytest.mark.parametrize(('build', 'expected'), [

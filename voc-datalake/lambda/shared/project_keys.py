@@ -33,6 +33,7 @@ the modules that read project tables or spell these keys.
 """
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Final, NamedTuple
 
 from shared.digests import sha256_hex
@@ -42,9 +43,10 @@ from shared.scoped_keys import scoped_pk
 if TYPE_CHECKING:
     from shared.ws_repo import WorkspaceScope
 
-__all__ = ['AGENT_RUNS_STORE', 'COMMENT_SERIES_PREFIX', 'PROJECT_GATE_STORE', 'PROJECT_JOB_WORK_STORE',
+__all__ = ['AGENT_RUNS_STORE', 'ASSIST_JOB_PREFIX', 'COMMENT_SERIES_PREFIX', 'PRODUCT_CONTEXT_SK',
+           'PRODUCT_DOC_SK_PREFIX', 'PROJECT_GATE_STORE', 'PROJECT_JOB_WORK_STORE',
            'PROJECT_PREFIX', 'PROJECT_TYPE_PK', 'PROTOTYPE_BUILDER_STORE', 'REVIEWER_ROUTES_STORE',
-           'REVISE_FROM_COMMENTS_STORE', 'NotPerWorkspaceError', 'ProjectPartition',
+           'REVISE_FROM_COMMENTS_STORE', 'SERIES_ID_RE', 'NotPerWorkspaceError', 'ProjectPartition',
            'comment_series_item', 'comments_pk', 'document_keys', 'document_listing', 'document_revision_key',
            'document_revisions_prefix', 'job_status_pk',
            'legacy_assignment_key', 'legacy_assignment_prefix', 'personas_index_pk', 'project_id_of',
@@ -102,6 +104,16 @@ REVISE_FROM_COMMENTS_STORE: Final = 'Revise from comments'
 PROTOTYPE_BUILDER_STORE: Final = 'Prototype builder'
 #: A workspace's registry of its project ids, one row per project, ``WS#{ws}#PROJECT_IDS`` / ``{id}``.
 _PROJECT_REGISTRY: Final = 'PROJECT_IDS'
+#: A project's product context row and its product documents' records, in the project's partition
+#: (api/product_context.py, which names them ``CONTEXT_SK`` and ``DOC_SK_PREFIX``; the workspace export reads them).
+PRODUCT_CONTEXT_SK: Final = 'PRODUCT_CONTEXT'
+PRODUCT_DOC_SK_PREFIX: Final = 'PRODUCT_DOC#'
+#: A series id's shape (shared/document_series.py ``series_id``: ``ser_`` + 24 hex), which a reader of a project's
+#: ``COMMENT_SERIES#`` rows checks before it names a comment partition (the hard delete, the workspace export).
+SERIES_ID_RE: Final = re.compile(r'ser_[0-9a-f]{24}')
+#: The start of an assist's ``job_type`` (shared/assist_jobs.py): request plumbing kept in a project's job partition,
+#: which the Background jobs panel and the workspace export leave out.
+ASSIST_JOB_PREFIX: Final = 'assist_'
 
 
 class NotPerWorkspaceError(RuntimeError):

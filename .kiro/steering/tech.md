@@ -201,7 +201,12 @@ exported, events per company memory id, no person's hash or chat session id in a
 cursors are their owners' and only counted); voc-conversations (7.24.00) Query only, of `WS#{one id}#CONVERSANTS`
 projected to its key alone (`dynamodb:Attributes` `pk` and `sk`, `dynamodb:Select` `SPECIFIC_ATTRIBUTES`; the code asks for `sk`) and, only with
 `dynamodb:Select` `COUNT`, of `WS#{one id}#USER#*` (`conversations.py`: the members' conversations are theirs, never
-exported; one `Limit` 1 count per owner, so the manifest gives only how many people have any); workspaces Query on `WS#{one id}` and
+exported; one `Limit` 1 count per owner, so the manifest gives only how many people have any); voc-projects (7.39.00)
+Query only, of `WS#{one id}#PROJECT_IDS`, `#PROJECT#*`, `#DOCUMENT_VERSIONS#PROJECT#*`, `#DCOMMENTS#*`,
+`#DOCSHARE_IDS` and `#DOCSHARE#*`, and voc-jobs and voc-participants Query only, of `WS#{one id}#PROJECT#*`
+(`{one id}` any one workspace id: only the workspace layer holds an export to its own; `projects.py`: the projects
+through the registry, no row of a deleted one exported, each entity's listed or classified fields only, never a
+review link's id or a reviewer's email digest); workspaces Query on `WS#{one id}` and
 `AUDIT#WS#{one id}` only; raw bucket `s3:PutObject`, `PutObjectTagging`, `GetObject`, `AbortMultipartUpload`,
 `ListMultipartUploadParts` under `ws/{one id}/exports/*` only, and `s3:DeleteObject` on its own work objects
 (`ws/{one id}/exports/*/work/*`) only; read-only on the workspace's own objects: `s3:ListBucket` with `s3:prefix`

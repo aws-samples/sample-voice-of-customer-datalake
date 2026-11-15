@@ -10,7 +10,7 @@ import { synthProcessingTemplate } from '../test-support/processing-stack-fixtur
 import { expectSelfInvokeOnly, findWorkerFunction, workerSettings } from '../test-support/worker-function';
 import { byCodeUnit } from '../utils/compare';
 import {
-  CONTROL_PARTITIONS, CONVERSANTS_ATTRIBUTES, CONVERSANTS_PARTITION, CONVERSATION_OWNER_PARTITIONS, EXPORT_JOB_PARTITION, MEMORY_TABLE_PARTITIONS, WORKSPACE_DATE_PARTITIONS,
+  CONTROL_PARTITIONS, CONVERSANTS_ATTRIBUTES, CONVERSANTS_PARTITION, CONVERSATION_OWNER_PARTITIONS, EXPORT_JOB_PARTITION, MEMORY_TABLE_PARTITIONS, PROJECT_PARTITIONS, PROJECT_TABLE_PARTITIONS, WORKSPACE_DATE_PARTITIONS,
   WORKSPACE_EXPORT_MAX_EVENT_AGE_MINUTES,
   WORKSPACE_EXPORT_RESERVED_CONCURRENCY,
 } from './workspace-export-worker';
@@ -112,6 +112,25 @@ describe('the voc-workspace-export job', () => {
         ...keys([`WS#${ONE_WORKSPACE}#USER#*`]), StringEquals: { 'dynamodb:Select': 'COUNT' } } },
     ]);
     expect(worker().Environment.Variables).toHaveProperty('CONVERSATIONS_TABLE');
+  });
+
+  it('only Queries one workspace\'s project partitions of voc-projects, voc-jobs and voc-participants (7.39.00)', () => {
+    expect([PROJECT_TABLE_PARTITIONS, PROJECT_PARTITIONS]).toStrictEqual([[`WS#${ONE_WORKSPACE}#PROJECT_IDS`,
+      `WS#${ONE_WORKSPACE}#PROJECT#*`, `WS#${ONE_WORKSPACE}#DOCUMENT_VERSIONS#PROJECT#*`,
+      `WS#${ONE_WORKSPACE}#DCOMMENTS#*`, `WS#${ONE_WORKSPACE}#DOCSHARE_IDS`, `WS#${ONE_WORKSPACE}#DOCSHARE#*`],
+    [`WS#${ONE_WORKSPACE}#PROJECT#*`]]);
+    // Never a deployment-wide row (a project's, a link's routing row, a claim) nor a reviewer's DCRATE# counters.
+    expect(on('Projects')).toStrictEqual([{ actions: ['dynamodb:Query'], condition: keys(PROJECT_TABLE_PARTITIONS) }]);
+    // The jobs and the list links: one statement for both tables, a workspace's project partitions only.
+    expect([on('Jobs'), on('Participants')]).toStrictEqual([0, 1].map(() => [
+      { actions: ['dynamodb:Query'], condition: keys([`WS#${ONE_WORKSPACE}#PROJECT#*`]) }]));
+    expect(allowed().filter((s) => /Projects|Jobs|Participants/.test(s.resource)).map((s) => s.resource))
+      .not.toContainEqual(expect.stringContaining('/index/'));
+  });
+
+  it('is told the project tables', () => {
+    expect(Object.keys(worker().Environment.Variables)).toStrictEqual(expect.arrayContaining([
+      'PROJECTS_TABLE', 'JOBS_TABLE', 'PARTICIPANTS_TABLE']));
   });
 
   it('holds no Scan, BatchWrite or table delete, and deletes only its own work objects', () => {

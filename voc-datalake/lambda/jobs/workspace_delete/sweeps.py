@@ -34,7 +34,6 @@ partitions (its sweep's name). It is deleted last, after the verify pass reads i
 from __future__ import annotations
 
 import json
-import re
 import time
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
@@ -79,6 +78,7 @@ from shared.platform_costs import cost_partition
 from shared.plugin_identity import is_valid_plugin_identifier
 from shared.project_keys import (
     COMMENT_SERIES_PREFIX,
+    SERIES_ID_RE,
     ProjectPartition,
     comments_pk,
     project_partitions,
@@ -884,8 +884,6 @@ _LIBRARY: Final = 'library'
 #: The projects cursor's per-project comments child (``_comment_page``): where it is, and whether it is done.
 _COMMENTS: Final = 'comments'
 _COMMENTS_DONE: Final = 'comments_done'
-#: A series id's shape (shared/document_series.py ``series_id``: ``ser_`` + 24 hex).
-_SERIES_ID: Final = re.compile(r'ser_[0-9a-f]{24}')
 
 
 def _project_pages(ctx: Context, cursor: dict[str, Any] | None) -> Batch:
@@ -943,7 +941,7 @@ def _comment_page(ctx: Context, here: Mapping[str, Any], project_id: str) -> Bat
     (``comment_series_malformed``), nothing reached."""
     def named(rows: list[dict[str, Any]]) -> list[str]:
         listed = [str(row['sk']).removeprefix(COMMENT_SERIES_PREFIX) for row in rows]
-        series = [each for each in listed if _SERIES_ID.fullmatch(each)]
+        series = [each for each in listed if SERIES_ID_RE.fullmatch(each)]
         ctx.count('comment_series_malformed', len(listed) - len(series))
         ctx.count('comment_series', len(series))
         return [comments_pk(project_id, each, workspace=ctx.scope) for each in series]

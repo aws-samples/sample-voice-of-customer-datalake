@@ -1,6 +1,6 @@
 """Fixtures for the workspace export job: moto voc-feedback (with ``gsi1-by-date``), voc-aggregates, voc-workspaces,
-voc-memory (with ``gsi1-by-memory-status``) and voc-conversations, an in-memory S3 for the export objects, and one workspace seeded with
-a little of everything."""
+voc-memory (with ``gsi1-by-memory-status``), voc-conversations, voc-projects, voc-jobs and voc-participants, an
+in-memory S3 for the export objects, and one workspace seeded with a little of everything."""
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -31,6 +31,7 @@ BUCKET = 'test-raw-data-bucket'
 WORKSPACES_TABLE = 'test-workspaces'
 MEMORY_TABLE = 'test-memory'
 CONVERSATIONS_TABLE = 'test-conversations'
+PROJECTS_TABLE, JOBS_TABLE, PARTICIPANTS_TABLE = 'test-projects', 'test-jobs', 'test-participants'
 #: The suite clock's noon (conftest.py at the root): this conftest may load before the clock travels (a run naming
 #: this folder loads it first), and the claim's freshness compares the row's created_at with the handler's clock.
 CREATED = suite_midday()
@@ -61,6 +62,9 @@ class World:
     notify: MagicMock
     memory: Any
     conversations: Any
+    projects: Any
+    jobs: Any
+    participants: Any
 
 
 def memory_item(ws: str, owner: str | None, memory_id: str, status: str = 'active') -> dict[str, Any]:
@@ -167,18 +171,24 @@ def world() -> Iterator[World]:
         workspaces = create_pk_sk_table(WORKSPACES_TABLE, resource)
         memory = create_table_with_gsi1(resource, MEMORY_TABLE, MEMORY_BY_STATUS_INDEX)
         conversations = create_pk_sk_table(CONVERSATIONS_TABLE, resource)
+        projects, jobs, participants = (create_pk_sk_table(name, resource)
+                                        for name in (PROJECTS_TABLE, JOBS_TABLE, PARTICIPANTS_TABLE))
         s3 = ExportS3(BUCKET, min_part=SMALL_MIN)
         invoke, notify = MagicMock(), MagicMock(return_value=True)
         with patch.object(handler, 'get_dynamodb_resource', return_value=resource), \
                 patch.object(handler, 'MEMORY_TABLE', MEMORY_TABLE), \
                 patch.object(handler, 'CONVERSATIONS_TABLE', CONVERSATIONS_TABLE), \
+                patch.object(handler, 'PROJECTS_TABLE', PROJECTS_TABLE), \
+                patch.object(handler, 'JOBS_TABLE', JOBS_TABLE), \
+                patch.object(handler, 'PARTICIPANTS_TABLE', PARTICIPANTS_TABLE), \
                 patch.object(handler, 'get_s3_client', return_value=s3), \
                 patch.object(handler, 'get_workspaces_table', return_value=workspaces), \
                 patch.object(handler, 'RAW_DATA_BUCKET', BUCKET), \
                 patch.object(handler, 'invoke_lambda_async', invoke), \
                 patch.object(handler, 'notify', notify), \
                 patch.object(handler, 'PartSink', partial(PartSink, part_size=SMALL_PART, min_part=SMALL_MIN)):
-            yield World(feedback, aggregates, workspaces, s3, invoke, notify, memory, conversations)
+            yield World(feedback, aggregates, workspaces, s3, invoke, notify, memory, conversations, projects, jobs,
+                        participants)
 
 
 class Budget(LambdaBudget):

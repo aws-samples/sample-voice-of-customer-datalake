@@ -34,7 +34,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any, Final
 
-from jobs.workspace_export.pages import TABLE_KEY, count_page, items, key, last_key, start
+from jobs.workspace_export.pages import TABLE_KEY, Page, Row, count_page, items, key, last_key, only, sort_key, start
 from shared.memory_partitions import CURSORS, memory_partitions
 from shared.ws_repo import (
     WorkspaceScope,
@@ -71,11 +71,8 @@ IMPORT_FIELDS: Final = (
 FIELDS: Final = {'memory_company': COMPANY_FIELDS, 'memory_events': EVENT_FIELDS, 'memory_imports': IMPORT_FIELDS}
 #: The memory ids one item page of the events' re-read yields, at most (the cursor carries them).
 ID_PAGE: Final = 100
-#: A page's rows (each ``(item, the cursor right after it)``) and the cursor of the next page (None: done).
-_Page = tuple[list[tuple[dict[str, Any], dict[str, Any]]], dict[str, Any] | None]
 #: The company partition's memory rows (``sk`` ``MEM#{memory id}``, shared/memory_store.py ``memory_key``).
-_MEMORY_ROWS: Final = {'sort_condition': 'begins_with(#sk, :memory)', 'ExpressionAttributeNames': {'#sk': 'sk'},
-                       'ExpressionAttributeValues': {':memory': 'MEM#'}}
+_MEMORY_ROWS: Final = sort_key('begins_with(#sk, :memory)', {':memory': 'MEM#'})
 
 
 #: The source types whose ``ref`` is shared (an import's id, an agent run's). A memory mined from a chat has
@@ -106,11 +103,6 @@ def _with_shared_sources(item: dict[str, Any]) -> dict[str, Any]:
     return {**item, 'sources': shown}
 
 
-def _listed(entity: str, item: Mapping[str, Any]) -> dict[str, Any]:
-    """``item`` with only the fields ``entity`` exports (``FIELDS``)."""
-    return {name: item[name] for name in FIELDS[entity] if name in item}
-
-
 class MemorySource:
     """One workspace's company memory entities (``page``) and the counts of what is left out, through its view of
     voc-memory."""
@@ -126,7 +118,8 @@ class MemorySource:
         """One page of the company memories: the company partition's ``MEM#`` rows, by ``sk``."""
         return self._query(memory_company_pk(self.scope), cursor_start, **_MEMORY_ROWS, **kwargs)
 
-    def page(self, entity: str, cursor: Mapping[str, Any]) -> _Page:
+    def page(self, entity: str, cursor: Mapping[str, Any]) -> Page:
+        """One page of ``entity``, each row with only the fields it exports (``FIELDS``)."""
         if entity == 'memory_events':
             return self._events_page(cursor)
         if entity == 'memory_company':
@@ -135,30 +128,30 @@ class MemorySource:
         else:
             page = self._query(memory_import_pk(self.scope), cursor.get('start'))
             found = items(page)
-        rows = [(_listed(entity, item), {'start': key(item, TABLE_KEY)}) for item in found]
+        rows = [Row(only(item, FIELDS[entity]), {'start': key(item, TABLE_KEY)}) for item in found]
         last = last_key(page)
-        return rows, ({'start': last} if last else None)
+        return Page(rows, {'start': last} if last else None)
 
-    def _events_page(self, cursor: Mapping[str, Any]) -> _Page:
+    def _events_page(self, cursor: Mapping[str, Any]) -> Page:
         """One page of events of the first id still to do; or, with no id left, the next company page's ids (no
         rows)."""
         items_start, ids = cursor.get('items'), cursor.get('ids')
         if not ids:
             if cursor.get('done'):
-                return [], None
+                return Page([], None)
             page = self._company(items_start, Limit=ID_PAGE, ProjectionExpression='memory_id')
             found = [str(item['memory_id']) for item in items(page)
                      if isinstance(item.get('memory_id'), str) and item['memory_id']]
             last = last_key(page)
-            return [], {'items': last, 'done': last is None, 'ids': found, 'start': None}
+            return Page([], {'items': last, 'done': last is None, 'ids': found, 'start': None})
         here = {'items': items_start, 'done': bool(cursor.get('done'))}
         page = self._query(memory_event_pk(self.scope, str(ids[0])), cursor.get('start'))
-        rows = [(_listed('memory_events', item), {**here, 'ids': list(ids), 'start': key(item, TABLE_KEY)})
+        rows = [Row(only(item, EVENT_FIELDS), {**here, 'ids': list(ids), 'start': key(item, TABLE_KEY)})
                 for item in items(page)]
         last = last_key(page)
         if last is not None:
-            return rows, {**here, 'ids': list(ids), 'start': last}
-        return rows, {**here, 'ids': list(ids[1:]), 'start': None}
+            return Page(rows, {**here, 'ids': list(ids), 'start': last})
+        return Page(rows, {**here, 'ids': list(ids[1:]), 'start': None})
 
     def _counted_partitions(self, what: str) -> list[tuple[str, str, dict[str, Any]]]:
         """Where ``what`` (``COUNTED``) is counted: (partition attribute, partition, index), in order: the personal
