@@ -84,11 +84,24 @@ describe('useAssistantUiStore persistence', () => {
     expect(useAssistantUiStore.getState().notify).toBe(false)
   })
 
-  it('resets web search to off', () => {
-    useAssistantUiStore.getState().setUseWebSearch(true)
-    expect(useAssistantUiStore.getState().useWebSearch).toBe(true)
+  it('starts with web search on and resets it to on (7.41.00)', () => {
     useAssistantUiStore.getState().reset()
+    expect(useAssistantUiStore.getState().useWebSearch).toBe(true)
+    useAssistantUiStore.getState().setUseWebSearch(false)
     expect(useAssistantUiStore.getState().useWebSearch).toBe(false)
+    useAssistantUiStore.getState().reset()
+    expect(useAssistantUiStore.getState().useWebSearch).toBe(true)
+  })
+
+  it('keeps a stored choice of web search, on or off', () => {
+    expect([mergeUi({ useWebSearch: false }), mergeUi({ useWebSearch: true })].map((state) => state.useWebSearch))
+      .toStrictEqual([false, true])
+  })
+
+  it('turns web search on once in a record from before version 1, which stored the old default', () => {
+    const migrate = useAssistantUiStore.persist.getOptions().migrate
+    expect([migrate?.({ useWebSearch: false, mode: 'panel' }, 0), migrate?.({ useWebSearch: false }, 1)])
+      .toStrictEqual([{ useWebSearch: true, mode: 'panel' }, { useWebSearch: false }])
   })
 
   it('keeps the current state when the stored record is null', () => {
@@ -112,8 +125,9 @@ describe('useAssistantUiStore persistence', () => {
   })
 
   it('drops a tampered record back to safe values', () => {
+    useAssistantUiStore.getState().reset()
     expect(mergeUi({ open: 1, mode: 'giant', useWebSearch: 'yes', activeThreadId: 42 })).toMatchObject({
-      open: false, mode: 'bubble', useWebSearch: false, activeThreadId: null,
+      open: false, mode: 'bubble', useWebSearch: true, activeThreadId: null,
     })
   })
 })

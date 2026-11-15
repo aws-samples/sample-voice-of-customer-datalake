@@ -78,7 +78,9 @@ type PersistedUi = Pick<AssistantUiState, 'open' | 'mode' | 'useWebSearch' | 'no
 const UI_DEFAULTS: PersistedUi = {
   open: false,
   mode: 'bubble',
-  useWebSearch: false,
+  // On by default (7.41.00): the assistant may search the web when the deployment has web search; the composer's
+  // globe turns it off, and that choice is kept.
+  useWebSearch: true,
   notify: false,
   activeThreadId: null,
   sessionsCollapsed: false,
@@ -118,6 +120,11 @@ export const useAssistantUiStore = create<AssistantUiState>()(
       name: workspaceStorageName('voc-assistant-ui'),
       // `open` is per tab (sessionStorage); the preferences stay shared (localStorage).
       storage: createJSONStorage(() => tabScopedStorage(['open'])),
+      // 1 (7.41.00): web search on by default. A record from before stored the old default (off) for everyone who
+      // never touched the globe, so it is turned on once; a later choice is kept.
+      version: 1,
+      migrate: (persisted, version) =>
+        version < 1 && typeof persisted === 'object' && persisted !== null ? { ...persisted, useWebSearch: true } : persisted,
       partialize: (s): PersistedUi => ({
         open: s.open, mode: s.mode, useWebSearch: s.useWebSearch, notify: s.notify, activeThreadId: s.activeThreadId,
         sessionsCollapsed: s.sessionsCollapsed,
@@ -130,7 +137,7 @@ export const useAssistantUiStore = create<AssistantUiState>()(
           ...current,
           open: record.open === true,
           mode: isPanelMode(record.mode) ? record.mode : current.mode,
-          useWebSearch: record.useWebSearch === true,
+          useWebSearch: typeof record.useWebSearch === 'boolean' ? record.useWebSearch : current.useWebSearch,
           notify: record.notify === true,
           activeThreadId: rememberedSessionId(record.activeThreadId),
           sessionsCollapsed: record.sessionsCollapsed === true,

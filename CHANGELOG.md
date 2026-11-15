@@ -24,6 +24,7 @@ the platform package version.
 
 ### Changed
 
+- The assistant's web search is on by default (the composer's globe; only where the deployment has web search): `voc-assistant-ui`'s persisted record moves to version 1, which turns it on once in a record from before (every such record stored the old default, off); a later choice of either is kept (`frontend/src/assistant/store/assistantStore.ts`).
 - `POST /projects/{id}/documents` (`lambda/api/projects.py` `create_document`): a custom document may be created with empty or missing `content` (the blank canvas; before, 400 "Content is required"); a `content` that is not a string is refused (400); custom documents record `created_by_sub`. The frontend's `DocumentUpdate.content` is optional (a title-only rename).
 
 ## [7.40.01] - 2026-11-15
