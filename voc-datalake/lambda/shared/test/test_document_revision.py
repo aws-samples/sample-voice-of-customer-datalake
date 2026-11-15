@@ -15,6 +15,7 @@ import pytest
 from botocore.exceptions import ClientError
 from moto import mock_aws
 
+from api.test.moto_helpers import feedback_by_id_table
 from shared import ai_mode
 from shared import document_comments as dc
 from shared import document_revision as rev
@@ -152,9 +153,22 @@ def test_the_synchronous_refusals(content, threads, message):
 # ── evidence ────────────────────────────────────────────────────────────────
 
 def _feedback_table(rows):
+    """``rows`` by feedback id, answered for the by-id index's partition (``gsi4pk`` = ``FEEDBACK#{id}``)."""
     feedback = MagicMock()
-    feedback.query.side_effect = lambda **kw: {'Items': rows.get(kw['KeyConditionExpression']._values[1], [])}
+    feedback.query.side_effect = lambda **kw: {
+        'Items': rows.get(kw['KeyConditionExpression']._values[1].removeprefix('FEEDBACK#'), [])}
     return feedback
+
+
+def test_evidence_is_read_from_the_real_by_id_index():
+    """On a table with gsi4-by-feedback-id as the stack builds it (keyed on ``gsi4pk``, since 7.00.00): the query
+    must name that key, or DynamoDB refuses it and the pass fails (a merge once kept the old ``feedback_id`` key)."""
+    with mock_aws():
+        feedback = feedback_by_id_table()
+        feedback.put_item(Item={'pk': 'SOURCE#web', 'sk': 'FEEDBACK#fb1', 'feedback_id': 'fb1',
+                                'gsi4pk': 'FEEDBACK#fb1', 'category': 'billing', 'original_text': 'Too pricey'})
+        found = rev.read_evidence(feedback, {'input_feedback_ids': ['fb1', 'fb2']}, None)
+    assert [(row['feedback_id'], row['original_text']) for row in found] == [('fb1', 'Too pricey')]
 
 
 def test_evidence_reads_each_input_review_once_under_the_starter_scope():

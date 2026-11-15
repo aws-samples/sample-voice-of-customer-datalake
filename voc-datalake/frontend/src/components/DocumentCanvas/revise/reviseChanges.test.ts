@@ -40,6 +40,12 @@ describe('applyChange', () => {
       .toStrictEqual([true, true, false])
   })
 
+  it('counts two overlapping places as two (the server rule): `aa` in `aaa` is ambiguous, so out of date', () => {
+    expect([isOutOfDate('Go aaa now', change('aa', 'b')), isOutOfDate('-----', change('---', 'x')), isOutOfDate('Go aa now', change('aa', 'b'))])
+      .toStrictEqual([true, true, false])
+    expect(applyChange('the the the end', change('the the', 'one'))).toBeNull()
+  })
+
   it('treats `$` patterns in `after` as text (no replacement-pattern expansion)', () => {
     expect(applyChange('Price: X', change('X', '$& $1 $$'))).toBe('Price: $& $1 $$')
   })

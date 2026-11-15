@@ -389,6 +389,20 @@ route through `lambda_handler`, and assert on the response shape plus the prompt
 - [ ] Error handling: Service failures handled gracefully
 - [ ] Integration: End-to-end handler tests with mocked AWS
 
+### Property Tests (Hypothesis)
+
+A rule that must hold for every input (who may do what, which version a document gets, where a change applies)
+gets a property test beside its example tests: `lambda/shared/test/test_<module>_properties.py`.
+
+- State the invariant in words a person would say, in the class docstring.
+- Use realistic generators: titles, ids and documents shaped like real ones, plus the odd cases (blank, repeated,
+  overlapping, Unicode). Random text alone is not enough.
+- Decorate every property with the `@PROPERTY` of its area (each docstring says what it sets): `shared.test.property_settings` for the documents, prototypes and project export, `shared.test.ws_properties` for the workspace layer (no example database).
+- A case worth keeping goes in as `@example(...)`.
+- After the properties are in, run `scripts/mutate-python.sh` on the module and read every survivor. Either kill
+  it with a test, or write down why no input can tell it apart from the code (an equivalent mutant needs that
+  proof). `docs/mutation-notes-mut-voc-wiki.md` shows the record.
+
 ---
 
 ## Frontend Testing (TypeScript/React)

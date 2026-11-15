@@ -17,6 +17,24 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.34.00] - 2026-11-15
+
+Merge of voc-wiki-mut, the mutation and property-test hardening of voc-wiki's documents, prototypes and project export, which was never merged into voc-wiki itself: sections 7.01.04 to 7.01.01 marked (voc-wiki-mut) below are that branch's own releases, under their own numbers. What a deployment sees is under Fixed.
+
+### Fixed
+
+- **Revise from comments** failed on any PR/FAQ or PRD generated from feedback since 7.33.00: voc-wiki's evidence read queried `gsi4-by-feedback-id` on `feedback_id`, but this branch keys that index on `gsi4pk` (`FEEDBACK#{id}`, 7.00.00), so DynamoDB refused the query and the pass ended with no recommendation. `read_evidence` (`lambda/shared/document_revision.py`) now builds the key with `shared/feedback_partitions.py` (the deployment's partition: projects are not per workspace yet), and a test runs it against the index as the stack builds it (moto); voc-wiki-mut's survivor test, which had pinned the old key, pins the new one.
+- From voc-wiki-mut: a stored document version written as a superscript or circled digit no longer breaks the project's reads (7.01.03), and Revise from comments drops a quote that occurs at two overlapping places (7.01.02).
+
+### Changed
+
+- voc-wiki-mut's fixes land on this branch's workspace-aware `shared/document_versions.py` (7.27.00): the bounded free-version fill (`_lowest_free_versions`) and `_positive_int`'s `isdecimal` sit in the same functions, which still read and write through the project's workspace.
+- voc-wiki-mut's tests follow this branch's code: the series and allocation keys come from `shared/project_keys.py` (`version_counter_key`, `version_allocation_key`, which replaced `document_versions`' private builders), and its tests of the private helpers pass the deployment's scope (`workspace=None`) that those helpers now require. No other assertion changed (the one that pinned the evidence query's old key is under Fixed).
+- Two Hypothesis settings profiles stand side by side: this branch's (`shared/test/ws_properties.py`, no example database) for the workspace layer's properties, voc-wiki-mut's (`shared/test/property_settings.py`) for the documents', prototypes' and export's; `requirements-dev.txt` says which is which.
+- The mutation scores in 7.01.01 to 7.01.03 and `docs/mutation-notes-mut-voc-wiki.md` were measured on voc-wiki's code. Three of those modules differ here: `document_versions.py` (this branch's, workspace-aware since 7.27.00), `project_access.py` (its workspace refusal) and `prototype_versions.py` (its listing keys through `document_listing`, 7.33.00), so their scores on the merged code are still to be measured (`scripts/mutate-python.sh`); the notes say so.
+- `.kiro/steering/testing.md` names both settings profiles: `shared.test.property_settings` for the documents, prototypes and export, `shared.test.ws_properties` for the workspace layer.
+- As on every release, the version moves the `APP_VERSION` of the Api and Processing Lambdas, so those template hashes in `voc-datalake/lib/test-support/baseline.json` change.
+
 ## [7.33.00] - 2026-11-15
 
 Merge of voc-wiki into voc-multiplayer: the document canvas and "Revise from comments", a project's documents in sections, the Prototype builder (Back to vN, drafts from an instruction or from tester pins, the Feedback view, the guided walkthrough), the MCP tools named by area, and main's 7.00.02 (company logo and Kiro agent fixes), which voc-wiki had taken in. Sections 7.02.00, 7.01.00 and 6.17.00 to 6.05.00 marked (voc-wiki) below are that branch's own releases, under their own numbers, and 7.00.02 (from main) is main's; this branch's own sections keep theirs. What each feature does is in those sections and in [docs/document-canvas.md](docs/document-canvas.md), [docs/document-review.md](docs/document-review.md) and [docs/prototype-builder.md](docs/prototype-builder.md).
@@ -1042,6 +1060,56 @@ The project branch takes in main's 7.00.02 (fixes to the company logo and furthe
 ### Upgrade notes
 
 - Deploy as main's 7.00.02 says (`npm run deploy:infra`, then the frontend).
+- As on every release, the version moves the `APP_VERSION` of the Api and Processing Lambdas, so those two template hashes in `voc-datalake/lib/test-support/baseline.json` change.
+
+## [7.01.04] - 2026-11-14 (voc-wiki-mut)
+
+The testing guide covers property tests, and the mutation stage names the path it refuses.
+
+### Changed
+
+- `.kiro/steering/testing.md` gains a "Property Tests (Hypothesis)" section. It says when a rule gets a property test, how to write one (the invariant in words, realistic generators, the shared `@PROPERTY` settings, `@example` for a case worth keeping), and that every surviving mutant is killed or proved equivalent.
+- mutate-python.sh: a stage with no directory for the module's mutants is refused with its own message, naming the path.
+- As on every release, the version moves the `APP_VERSION` of the Api and Processing Lambdas, so those two template hashes in `voc-datalake/lib/test-support/baseline.json` change.
+
+## [7.01.03] - 2026-11-14 (voc-wiki-mut)
+
+A stored document version written as an odd digit no longer breaks the project's reads; mutation testing reaches the project export without touching the tree, the version fill is bounded, and the rest of the wiki side is mutation-tested.
+
+### Fixed
+
+- A document row whose stored `version` is a text of a superscript or circled digit (`'²'`, `'①'`) made every read of its project fail: `str.isdigit()` accepted it and `int()` then raised. It now counts as no stored version, like any other unreadable one (`_positive_int` in `lambda/shared/document_versions.py` asks `str.isdecimal()`).
+
+### Changed
+
+- Mutation testing reaches the project export and no longer loops on the version fill. `scripts/mutate-python.sh` copies the module's own top directory into the stage, and refuses (exit 3, before mutmut starts) when the mutants would land in the repository. `scripts/mutmut_run.py baseline` also counts a module a fixture loads and drops again (through a pytest hook, which vulture now counts as used: `@pytest.hookimpl` joins the decorators in `pyproject.toml` that register a function with its framework). `normalize_document_versions` and the legacy fill pick free versions through one bounded `_lowest_free_versions`, which looks at no more numbers than documents plus claims and fails at once past that. Behaviour is unchanged, pinned by tests written first. Scores: exporter.py 426/426, document_versions.py 2555/14/0 (was 2528/14/4).
+- Tests only: property and example tests for document versions and series (`test_document_versions_series_properties.py`, `test_document_versions_survivors.py`), the global MCP tools (`test_mcp_global_tools_survivors.py`, held by the MCP gate to a floor of 16), prototype versions (`test_prototype_versions_survivors.py`), feedback incorporation and the feedback list (`test_prototype_incorporation_properties.py`, `test_prototype_feedback_properties.py`), document sections (`test_document_sections_properties.py`) and the project export (`test_project_bundle_exporter_properties.py`, `test_project_bundle_exporter_survivors.py`). Mutants killed: `mcp_global_tools.py` 1023 -> 1047 of 1050, `prototype_versions.py` 339 -> 378 of 381, `prototype_incorporation.py` 326 -> 358 of 359, `prototype_feedback.py` 493 -> 527 of 528, `document_versions.py` 2463 of 2546 (in two slices) -> 2555 of 2569 with no timeout (with the bounded fill above), `exporter.py` 426 of 426; every survivor left is equivalent, with its proof in `docs/mutation-notes-mut-voc-wiki.md`. One known bug is pinned by a strict xfail and written down there (a title ending in two "(vN)" suffixes changes series between write and read).
+- As on every release, the version moves the `APP_VERSION` of the Api and Processing Lambdas, so those two template hashes in `voc-datalake/lib/test-support/baseline.json` change.
+
+## [7.01.02] - 2026-11-14 (voc-wiki-mut)
+
+Revise from comments drops a quote that occurs at two overlapping places; the rest of the revise module is mutation-tested.
+
+### Fixed
+
+- **Revise from comments** kept a change whose quote occurs at two places that overlap (`aa` in `aaa`, `a a` in `a a a`, a rule of dashes, a repeated phrase) and applied it at the first of them: the "occurs exactly once" check used a count that does not see overlapping places. Such a quote is ambiguous, so the change is now dropped and counted with the other dropped changes (`_only_place` in `lambda/shared/document_revision.py`). The draft's own check (`isOutOfDate` in `frontend/src/components/DocumentCanvas/revise/reviseChanges.ts`) counts places the same way, so a change whose quote became ambiguous in the draft is out of date there too. Found by a mutant that no test could kill.
+
+### Changed
+
+- Tests only: `lambda/shared/test/test_document_revision_survivors.py` pins what the revise module's surviving mutants changed (the refusals word for word, the evidence query, how a thread and a review reach the prompt, the recommendation and grounding caps, the default model call, every outcome's result, the warning for a thread that could not be marked, what a save holds, a saved proposal's checks). `apply_changes` now owns its precondition: two changes whose passages overlap or start at the same place are refused with a `ValueError` (it was a silent garbled splice; `ground_changes` never keeps two such changes, so no caller sees it). `document_revision.py` goes from 863 of 953 to 961 of 968 mutants killed; the 7 left are equivalent, each with its proof in `docs/mutation-notes-mut-voc-wiki.md`. The grounding property's oracle counts overlapping places.
+- As on every release, the version moves the `APP_VERSION` of the Api and Processing Lambdas, so those two template hashes in `voc-datalake/lib/test-support/baseline.json` change.
+
+### Upgrade notes
+
+- Deploy the backend stacks and the frontend together. No stored data changes. A proposal saved before this release that holds such a change shows it as out of date in the draft, so it cannot be accepted.
+
+## [7.01.01] - 2026-11-14 (voc-wiki-mut)
+
+Property tests for the document, prototype and project rules (the mutation hardening of the wiki side, part 1).
+
+### Changed
+
+- Tests only, no behaviour change: Hypothesis property tests (256 examples each) for the document version and title rules, Revise from comments' thread selection, grounding and applying changes, the revise provenance (`llm_metadata`), prototype versions, project access (a token's or an agent's caller is never an admin; the member list's order) and the MCP tool names and routing. They share one settings object (`lambda/shared/test/property_settings.py`: no per-example deadline; derandomized, with no example database, under mutmut, so a mutation score is repeatable). `project_access.py`'s mutation score goes from 396 to 398 of 401 killed; the other 3 are equivalent, listed with their proof. The MCP gate (`scripts/mcp_gate.py`) holds the new MCP property module to a floor of 5 tests. `hypothesis` is pinned in `voc-datalake/requirements-dev.txt`; `.hypothesis/` is git-ignored, and `node_modules` is ignored also when it is a link to a shared install. The mutation notes are in `docs/mutation-notes-mut-voc-wiki.md`.
 - As on every release, the version moves the `APP_VERSION` of the Api and Processing Lambdas, so those two template hashes in `voc-datalake/lib/test-support/baseline.json` change.
 
 ## [7.01.00] - 2026-11-14 (voc-wiki)

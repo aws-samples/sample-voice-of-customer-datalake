@@ -45,6 +45,7 @@ person's save of a proposal (``verify_saved_proposal``: read from the pass's job
 """
 from __future__ import annotations
 
+import itertools
 import secrets
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -63,6 +64,7 @@ from shared.document_history import require_series_head, revise_document
 from shared.document_review import SURFACE, TYPE_LABELS
 from shared.document_series import collapse, plain_text, series_of
 from shared.exceptions import ConflictError, ValidationError
+from shared.feedback_partitions import FEEDBACK_ID_INDEX_PARTITION, feedback_id_partition
 from shared.feedback_sampling import received_input_feedback_ids
 from shared.indexes import FEEDBACK_BY_ID_INDEX
 from shared.logging import logger
@@ -196,8 +198,11 @@ def read_evidence(feedback_table: Any, document: Mapping[str, Any], scope_config
     scope = category_access.scope_from_config(scope_config)
     found = []
     for feedback_id in ids:
-        rows = feedback_table.query(IndexName=FEEDBACK_BY_ID_INDEX, Limit=1,
-                                    KeyConditionExpression=Key('feedback_id').eq(feedback_id)).get('Items') or []
+        # gsi4's partition (gsi4pk, since 7.00.00), the deployment's: projects are not per workspace yet.
+        rows = feedback_table.query(
+            IndexName=FEEDBACK_BY_ID_INDEX, Limit=1,
+            KeyConditionExpression=Key(FEEDBACK_ID_INDEX_PARTITION).eq(feedback_id_partition(None, feedback_id)),
+        ).get('Items') or []
         if rows and (scope is None or category_access.admits_item(scope, rows[0])):
             found.append(rows[0])
     return found
@@ -306,6 +311,16 @@ def ground_changes(answer: Mapping[str, Any], markdown: str,
     return kept, len(raw_changes) - len(kept)
 
 
+def _only_place(text: str, passage: str) -> int | None:
+    """Where ``passage`` starts in ``text`` when it occurs at exactly one place, else None.
+
+    Overlapping places count: 'aa' occurs at two places in 'aaa' (``str.count`` sees one), so a quote like that is
+    ambiguous and no place is picked for it.
+    """
+    first = text.find(passage)
+    return first if first >= 0 and passage not in text[first + 1:] else None
+
+
 def _grounded(entry: object, markdown: str, refs: Mapping[str, str],
               spans: list[tuple[int, int]]) -> dict[str, Any] | None:
     if not isinstance(entry, Mapping):
@@ -313,9 +328,9 @@ def _grounded(entry: object, markdown: str, refs: Mapping[str, str],
     before, after = entry.get('before'), entry.get('after')
     if not isinstance(before, str) or not isinstance(after, str) or not before.strip() or before == after:
         return None
-    if len(before) > MAX_BEFORE_CHARS or len(after) > MAX_AFTER_CHARS or markdown.count(before) != 1:
+    start = _only_place(markdown, before)
+    if len(before) > MAX_BEFORE_CHARS or len(after) > MAX_AFTER_CHARS or start is None:
         return None
-    start = markdown.index(before)
     end = start + len(before)
     thread_ids = _thread_ids(entry.get('threads'), refs)
     if not thread_ids or any(start < other_end and other_start < end for other_start, other_end in spans):
@@ -326,10 +341,17 @@ def _grounded(entry: object, markdown: str, refs: Mapping[str, str],
 
 
 def apply_changes(markdown: str, changes: Sequence[Mapping[str, Any]]) -> str:
-    """``markdown`` with every (grounded, non-overlapping) change applied, last first so offsets hold."""
-    placed_changes = sorted(((markdown.index(c['before']), c) for c in changes), key=lambda pair: pair[0], reverse=True)
+    """``markdown`` with every change applied where its ``before`` first starts, last first so offsets hold.
+
+    Two changes whose passages overlap (or start at the same place) are refused with a ValueError: applying one
+    would move or eat the other's text. ``ground_changes`` never keeps two such changes.
+    """
+    placed_changes = sorted(((markdown.index(c['before']), c) for c in changes), key=lambda pair: pair[0])
+    for (start, change), (next_start, _) in itertools.pairwise(placed_changes):
+        if start + len(change['before']) > next_start:
+            raise ValueError('apply_changes: two changes overlap; ground the changes first (ground_changes)')
     revised = markdown
-    for start, change in placed_changes:
+    for start, change in reversed(placed_changes):
         revised = revised[:start] + change['after'] + revised[start + len(change['before']):]
     return revised
 
