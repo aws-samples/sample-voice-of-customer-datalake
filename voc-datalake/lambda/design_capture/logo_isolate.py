@@ -65,6 +65,12 @@ ISOLATE_JS: Final = r"""
       saved.push([node, prop, node.style.getPropertyValue(prop), node.style.getPropertyPriority(prop)]);
       node.style.setProperty(prop, value, 'important');
     };
+    // The undo exists before the first change, so a throw half-way still leaves a way back.
+    window[stash + 'Undo'] = () => {
+      for (const [node, prop, value, priority] of saved.reverse()) {
+        if (value) node.style.setProperty(prop, value, priority); else node.style.removeProperty(prop);
+      }
+    };
     const inside = (node) => { for (let m = node; m; m = parentOf(m)) if (m === el) return true; return false; };
     set(document.documentElement, 'visibility', 'hidden');
     set(document.documentElement, 'background', 'transparent');
@@ -85,11 +91,6 @@ ISOLATE_JS: Final = r"""
       if (s.opacity !== '1') set(node, 'opacity', '1');
       if (s.mixBlendMode !== 'normal') set(node, 'mix-blend-mode', 'normal');
     }
-    window[stash + 'Undo'] = () => {
-      for (const [node, prop, value, priority] of saved.reverse()) {
-        if (value) node.style.setProperty(prop, value, priority); else node.style.removeProperty(prop);
-      }
-    };
     const r = el.getBoundingClientRect();
     return JSON.stringify({ x: r.left + scrollX, y: r.top + scrollY, width: r.width, height: r.height,
                             vw: innerWidth, vh: innerHeight, dpr: devicePixelRatio || 1, origin: location.origin, backdrop });

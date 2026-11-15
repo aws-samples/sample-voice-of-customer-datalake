@@ -88,6 +88,9 @@ ICONS_BUDGET_SECONDS: Final = 20.0
 VIEWPORT: Final = (1366.0, 900.0)
 #: How long a sticky header gets to slide back in after the page is scrolled to the top, before the logo photo.
 HEADER_SETTLE_SECONDS: Final = 1.0
+#: The logo pick's model call starts no later than this into the browser session (``SESSION_SECONDS``): its own
+#: client gives up after 25 s, leaving the shots, the photo and the icon budget the rest.
+PICK_LATEST_START_SECONDS: Final = 50.0
 PROCESSABLE_STATUSES: Final = ('pending', 'ready', 'error')
 
 
@@ -191,6 +194,7 @@ def parse_progress(raw: object) -> tuple[str, int]:
 
 def capture_page(cdp: Cdp, url: str, deps: CaptureDeps) -> CapturedPage:
     """Navigate, re-check the final URL, read the styles (ONE evaluate) and take the three screenshots."""
+    started = deps.clock()
     tab = _Tab(cdp, deps)
     tab.navigate(url)
     final_url = tab.evaluate('location.href')
@@ -206,7 +210,7 @@ def capture_page(cdp: Cdp, url: str, deps: CaptureDeps) -> CapturedPage:
     if problem is not None:
         raise problem
     found, marked = _logo_candidates(tab, styles.url) if deps.bucket else (None, None)
-    pick = _pick(found, marked, styles, deps) if found is not None else LogoPick()
+    pick = _pick(found, marked, styles, deps, started) if found is not None else LogoPick()
     shots = take_shots(tab, deps.sleep, VIEWPORT)
     # The picked logo is photographed LAST: isolating it restyles the page, so nothing may read the page after it.
     logo = _read_logo(tab, cdp, found, pick, deps) if found is not None and pick.found else PageLogo()
@@ -225,10 +229,16 @@ def _logo_candidates(tab: _Tab, page_url: str) -> tuple[LogoCandidates | None, d
 
 
 def _pick(found: LogoCandidates, marked: design_vision.PageShot | None, styles: PageStyles,
-          deps: CaptureDeps) -> LogoPick:
-    """The pick (``logo_pick``: never raises by itself; no pick on anything unexpected)."""
+          deps: CaptureDeps, started: float) -> LogoPick:
+    """The pick (``logo_pick``: never raises by itself; no pick on anything unexpected). Past
+    ``PICK_LATEST_START_SECONDS`` into the session the model is not asked (the rules decide), so its call (at most
+    ``logo_pick.PICK_READ_TIMEOUT_SECONDS``) always leaves the shots, the photo and the icons their time."""
+    ask = deps.pick_logo
+    if ask is not None and deps.clock() - started > PICK_LATEST_START_SECONDS:
+        logger.warning('Logo pick skipped: little browser session time left')
+        ask = None
     try:
-        return choose_logo(found, marked, styles.title, deps.pick_logo)
+        return choose_logo(found, marked, styles.title, ask)
     except Exception as exc:  # noqa: BLE001 - no logo, never no capture
         logger.info('Logo not picked', extra={'reason': type(exc).__name__})
         return LogoPick()

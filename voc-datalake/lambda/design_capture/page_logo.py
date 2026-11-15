@@ -4,7 +4,7 @@
 
 - a picked CANDIDATE (``page_logo_candidates``) is photographed alone in the page tab (``logo_isolate``): the PNG is
   exactly what the page draws, whatever the element is. Beside it, an SVG copy is kept when there is one: an inline
-  ``<svg>`` serialised in the page (``page_inline_logo``), or an ``<img>`` / CSS background whose file is an ``.svg``,
+  ``<svg>`` serialised in the page (``page_inline_logo``), or an ``<img>`` whose file is an ``.svg``,
   downloaded once through the SSRF-guarded fetch (≤ 1 MB, an SVG by its bytes); either is rebuilt deny-by-default
   (``shared.design_svg``) before it is kept, download-only;
 - when the element cannot be photographed alone (it left the page, or the page navigated away from a public

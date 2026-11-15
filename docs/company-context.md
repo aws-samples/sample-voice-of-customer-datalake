@@ -189,7 +189,8 @@ paths, masks, text, `use` / `symbol`) and presentation / geometry attributes; `s
 `image`, `a`, `animate` / `set` go with their content, every `on*` handler goes, `href` survives only as `#id`,
 `url()` only as `url(#id)`, and the root gets a width / height (its own, the measured box, else its `viewBox`);
 at most 100,000 characters out. **A live website's logo is picked by a model and photographed by the browser**
-(`lambda/design_capture/`; measured on 64 live sites: right on all of them, where the earlier fixed ranking — header
+(`lambda/design_capture/`; measured on 64 live sites with the release code: a clean, correct logo on every one of the
+61 the browser could read (3 blocked it), where the earlier fixed ranking — header
 image, touch icon, `og:image` — was right on 28 and saved a photo, a flag or a share card on 27):
 
 1. **Candidates** (`page_logo_candidates.py`, one evaluate before the design screenshots): every visible element
@@ -236,7 +237,7 @@ hid on scroll). The PNG is stored as the preview `company-context/design/logo_pr
 the element's https file, else the page); a downloaded raster file goes the same way through `store_preview`
 (≤ 2 MB, type decided by its bytes). The stored row also keeps, as provenance, `backdrop?`, `picked_by`
 (`model` / `rules` / `head_icon`) and `pick_model` (the model id that answered), so a model-made choice stays
-traceable; the API does not return them. A logo the design vision call proposes is dropped: the logo is only ever the one
+traceable; GET returns them inside the logo (the web app ignores them). A logo the design vision call proposes is dropped: the logo is only ever the one
 the session read. Any failure means no logo, never a failed capture; each step logs one short reason, never a URL.
 GET returns `logo.preview_url`, a short-lived signed URL like `logo_url` (the key itself never leaves the API).
 A reference's `fetched_at` is the time its read FINISHED, ready or failed.
