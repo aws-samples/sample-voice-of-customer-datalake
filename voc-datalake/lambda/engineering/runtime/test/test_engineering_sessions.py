@@ -11,6 +11,7 @@ from botocore.exceptions import ClientError
 from engineering.runtime.caps import (
     BUILD_SIZES,
     DEFAULT_RATES,
+    NO_TOKEN_PRICES,
     UNPRICED,
     SessionPricing,
     SessionRates,
@@ -18,7 +19,7 @@ from engineering.runtime.caps import (
     session_rates,
 )
 from engineering.runtime.interface import RuntimeRefused, RuntimeSession
-from engineering.runtime.runs import RunCaps, RunNotActive, RunStore
+from engineering.runtime.runs import RunCaps, RunNotActive, RunStore, TableRunControl
 from engineering.runtime.sessions import AgentSession, LostSession, SessionStore, StaleSession
 from engineering.runtime.test.conftest import RUN
 
@@ -31,7 +32,7 @@ KEY = {'pk': f'WS#default#RUN#{RUN}', 'sk': 'AGENT#fixer-1'}
 
 def _per_second(usd: Decimal) -> SessionPricing:
     """Rates that make a running standard session (2 vCPU, 8 GB) cost ``usd`` a second: its vCPUs only."""
-    return SessionPricing(rates=SessionRates(usd * 1800, Decimal(0), Decimal(0), Decimal(0)))
+    return SessionPricing(rates=SessionRates(usd * 1800, Decimal(0), Decimal(0), Decimal(0)), tokens=NO_TOKEN_PRICES)
 
 
 PER_SECOND = _per_second(Decimal('0.0001'))
@@ -152,6 +153,62 @@ def _ledgering(aws: Any, price: Decimal = Decimal(0)) -> tuple[SessionStore, Age
     runs.start(RUN, caps=RunCaps(max_tasks=10), now=0, flow='wf_hunt', repo='example/app')
     store = SessionStore(aws[1], runs, _per_second(price), clock=lambda: datetime(2026, 11, 13, tzinfo=UTC))
     return store, store.create(SESSION)
+
+
+SONNET = 'global.anthropic.claude-sonnet-5-5'
+
+
+def test_each_models_tokens_are_priced_on_its_ledger_row_the_session_row_and_the_flows_month(aws):
+    """7.50.00: a write's new tokens cost their model's price (``caps.token_usd``), on the model's ledger row, ADDed to
+    the session row's ``cost_usd`` (what the run's cost cap reads) and to the flow's month total, in the same
+    transaction; the same tokens again add nothing."""
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=10), now=0, flow='wf_hunt', repo='example/app')
+    pricing = SessionPricing(rates=UNPRICED)   # (session time unpriced: only the tokens cost)
+    store = SessionStore(aws[1], runs, pricing, clock=lambda: datetime(2026, 11, 13, tzinfo=UTC))
+    created = store.create(SESSION)
+    moved = store.save(replace(created, tokens={SONNET: {'in': 100_000, 'out': 10_000}}))
+    moved = store.save(moved)
+    store.save(replace(moved, tokens={SONNET: {'in': 150_000, 'out': 10_000}, 'unlisted-model': {'in': 1000, 'out': 0}}))
+    ledger = _ledger(aws[1])
+    prefix = f'DAY#13#WF#wf_hunt#RUN#{RUN}#AGENT#fixer-1#MODEL#'
+    # Sonnet: 150,000 in at $2 and 10,000 out at $10 a million; the unlisted model at the dearest listed (Opus's $4).
+    assert ledger[f'{prefix}{SONNET}']['usd'] == Decimal('0.4')
+    assert ledger[f'{prefix}unlisted-model']['usd'] == Decimal('0.004')
+    assert aws[1].get_item(Key=KEY)['Item']['cost_usd'] == Decimal('0.404')
+    assert _ledger(aws[1], 'FLOW#')['FLOW#wf_hunt']['usd'] == Decimal('0.404')
+    assert runs.spend(RUN) == (161_000, 0.404)
+
+
+def test_a_models_tokens_past_the_sessions_cap_cost_their_own_price_on_the_shared_row(aws):
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=10), now=0, flow='wf_hunt', repo='example/app')
+    store = SessionStore(aws[1], runs, SessionPricing(rates=UNPRICED), clock=lambda: datetime(2026, 11, 13, tzinfo=UTC))
+    created = store.create(SESSION)
+    tokens = {f'm{n}': {'in': 0, 'out': 0} for n in range(8)} | {'z-haiku': {'in': 0, 'out': 0},
+                                                                  'global.anthropic.claude-haiku-5-5': {'in': 0, 'out': 0}}
+    moved = store.save(replace(created, tokens=tokens))
+    store.save(replace(moved, tokens={**tokens, 'z-haiku': {'in': 1_000_000, 'out': 0}}))
+    # (z-haiku sorts past the first eight models: its tokens go on '-', at its own price, the dearest listed)
+    row = _ledger(aws[1])[f'DAY#13#WF#wf_hunt#RUN#{RUN}#AGENT#fixer-1#MODEL#-']
+    assert (row['tokens_in'], row['usd']) == (1_000_000, Decimal('4'))
+
+
+def test_a_runs_cost_cap_is_spent_by_model_tokens_alone(aws):
+    """The supervisor's budget path (``TableRunControl.budget``): a run whose sessions cost nothing but tokens passes
+    its ``max_cost_usd`` once their price does, and its agents are held for a person."""
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=10, max_cost_usd=0.05), now=0, flow='wf_hunt')
+    store = SessionStore(aws[1], runs, SessionPricing(rates=UNPRICED), clock=lambda: datetime(2026, 11, 13, tzinfo=UTC))
+    control = TableRunControl(runs)
+    created = store.create(SESSION)
+    moved = store.save(replace(created, tokens={SONNET: {'in': 10_000, 'out': 1_000}}))   # $0.03
+    assert not control.budget(RUN).exceeded
+    store.save(replace(moved, tokens={SONNET: {'in': 20_000, 'out': 2_000}}))   # $0.06 in all
+    budget = control.budget(RUN)
+    assert (budget.exceeded, round(budget.cost_usd, 6)) == (True, 0.06)
+    # Unpriced (the store's default), the same tokens never reach the cap: what 7.49 did.
+    assert SessionStore(aws[1], runs).pricing.tokens == NO_TOKEN_PRICES
 
 
 def test_unpriced_microvm_time_is_still_ledgered_with_no_dollars(aws):

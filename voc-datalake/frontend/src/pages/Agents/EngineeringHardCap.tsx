@@ -2,7 +2,7 @@
  * @fileoverview Agents → Spend: the administrators' opt-in hard cap (engineering/settings.py), off by default. On, a
  * run's first start with its flow's monthly budget gets a cost cap of what is left of the flow's month, and does not
  * start when nothing is left. The cap is set per run at its start (runs of one flow at once may together pass its
- * budget), and counts MicroVM time only until tokens are priced.
+ * budget), and counts session time and, since 7.50.00, model tokens at their prices.
  *
  * @module pages/Agents/EngineeringHardCap
  */

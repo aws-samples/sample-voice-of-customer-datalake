@@ -18,11 +18,13 @@ An agent runs as long as its task needs and it makes progress. These are the onl
 
 Model tokens and cost stay hard caps set by a person, per run; they are read from the run, never here. What a
 session costs is counted here (``SessionPricing``): each session's vCPU and memory at the deployment's AgentCore
-rates.
+rates, and (7.50.00) its model tokens at the deployment's price per model (``TokenPrices``, ``token_usd``), so the
+run's cost cap and its flow's budget bound model spend, not session time alone.
 """
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from decimal import ROUND_CEILING, Decimal, InvalidOperation
@@ -143,14 +145,130 @@ class SessionCost:
     gb_seconds: int = 0
 
 
+#: Model tokens are priced per million (7.50.00, so a run's cost cap and its flow's budget bound model spend too).
+TOKENS_PER_MILLION: Final = Decimal(1_000_000)
+#: The highest price a deployment may set, in USD per million tokens (a typo of a few orders of magnitude fails).
+MAX_USD_PER_MILLION_TOKENS: Final = Decimal('1000')
+#: A price's parts, as ``-c engineeringModelPrices`` names them; a part left out is 0.
+TOKEN_PRICE_PARTS: Final = ('input', 'output', 'cacheRead', 'cacheWrite')
+#: A model id as ``ENGINEERING_MODEL_PRICES`` names one (Bedrock's ids and inference profiles).
+MODEL_ID: Final = re.compile(r'[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}\Z')
+#: Where ``DEFAULT_TOKEN_PRICES`` come from, and when they were read: never a figure from memory.
+MODEL_PRICES_SOURCE: Final = ('AWS Price List API (pricing:GetProducts, read only), service code '
+                              'AmazonBedrockFoundationModels, regionCode us-west-2, the *_global_standard usage types '
+                              '(input, output, cache read and cache write tokens), USD per million tokens')
+MODEL_PRICES_PUBLISHED: Final = '2026-11-09T22:43:12Z'
+MODEL_PRICES_READ: Final = '2026-11-16'
+
+
+@dataclass(frozen=True)
+class TokenPrice:
+    """One model's prices in USD per million tokens: input, output, and the prompt cache's reads and writes."""
+
+    input: Decimal = Decimal(0)
+    output: Decimal = Decimal(0)
+    cache_read: Decimal = Decimal(0)
+    cache_write: Decimal = Decimal(0)
+
+
+#: The allowlisted Claude models' global (cross-region) inference profiles, standard tier, as read on
+#: ``MODEL_PRICES_READ`` from ``MODEL_PRICES_SOURCE`` (published ``MODEL_PRICES_PUBLISHED``). The defaults of
+#: ``-c engineeringModelPrices``, which a deployment in another region or tier overrides per model.
+DEFAULT_TOKEN_PRICES: Final[Mapping[str, TokenPrice]] = {
+    'global.anthropic.claude-haiku-5-5': TokenPrice(Decimal('0.10'), Decimal('0.50'), Decimal('0.01'),
+                                                    Decimal('0.125')),
+    'global.anthropic.claude-sonnet-5-5': TokenPrice(Decimal('2.00'), Decimal('10.00'), Decimal('0.10'),
+                                                     Decimal('2.50')),
+    'global.anthropic.claude-opus-5-5': TokenPrice(Decimal('4.00'), Decimal('20.00'), Decimal('0.20'),
+                                                   Decimal('5.00')),
+}
+
+
+@dataclass(frozen=True)
+class TokenPrices:
+    """The deployment's price per model (``ENGINEERING_MODEL_PRICES`` over ``DEFAULT_TOKEN_PRICES``). A model it has no
+    price for (one a harness reports by another name, a new id) is priced at the dearest price listed, part by part:
+    an upper bound, so a run's cost cap and its flow's budget still bound what it spends. With no price at all
+    (``NO_TOKEN_PRICES``), tokens are counted and never priced."""
+
+    prices: Mapping[str, TokenPrice] = field(default_factory=lambda: dict(DEFAULT_TOKEN_PRICES))
+
+    def of(self, model: str) -> TokenPrice:
+        """``model``'s price, else the dearest listed (``dearest``)."""
+        return self.prices.get(model) or self.dearest()
+
+    def dearest(self) -> TokenPrice:
+        """Each part's highest price among the listed models (nothing listed: nothing priced)."""
+        listed = list(self.prices.values())
+        return TokenPrice(*(max((getattr(price, part) for price in listed), default=Decimal(0))
+                            for part in ('input', 'output', 'cache_read', 'cache_write')))
+
+
+#: Tokens counted and never priced (the session store's default, the tests').
+NO_TOKEN_PRICES: Final = TokenPrices(prices={})
+
+
+def token_usd(prices: TokenPrices, model: str, tokens_in: int, tokens_out: int) -> Decimal:
+    """What ``tokens_in`` input and ``tokens_out`` output tokens of ``model`` cost at ``prices`` (``TokenPrices.of``),
+    in USD, rounded up to the 12th digit (a sum DynamoDB stores exactly, never below what was used; a plain 0, never
+    0E-12). Pure: the session store prices each write's tokens with it, and the learning step its own model call."""
+    if min(tokens_in, tokens_out) < 0:
+        raise ValueError('a token count is never below zero')
+    price = prices.of(model)
+    usd = (Decimal(tokens_in) * price.input + Decimal(tokens_out) * price.output) / TOKENS_PER_MILLION
+    return usd.quantize(USD_STEP, rounding=ROUND_CEILING) or Decimal(0)
+
+
+def _price_part(model: str, part: str, raw: object) -> Decimal:
+    where = f'ENGINEERING_MODEL_PRICES[{model!r}].{part}'
+    if isinstance(raw, bool) or not isinstance(raw, str | int | float):
+        raise RuntimeRefused(f'{where} is a decimal amount of USD per million tokens')
+    try:
+        price = Decimal(str(raw).strip())
+    except InvalidOperation as error:
+        raise RuntimeRefused(f'{where} is a decimal amount of USD per million tokens') from error
+    exponent = price.as_tuple().exponent
+    if (not price.is_finite() or not isinstance(exponent, int) or exponent < -PRICE_DIGITS
+            or not Decimal(0) <= price <= MAX_USD_PER_MILLION_TOKENS):
+        raise RuntimeRefused(f'{where} is 0-{MAX_USD_PER_MILLION_TOKENS} USD per million tokens, at most '
+                             f'{PRICE_DIGITS} digits after the point')
+    return price
+
+
+def model_prices(raw: str | None) -> TokenPrices:
+    """``ENGINEERING_MODEL_PRICES``: a JSON object of model id to its prices (``TOKEN_PRICE_PARTS``, USD per million
+    tokens; ``input`` and ``output`` required, a cache part left out is 0), each replacing that model's default; unset
+    or ``{}``: ``DEFAULT_TOKEN_PRICES``. Anything else is refused, never half read."""
+    prices = dict(DEFAULT_TOKEN_PRICES)
+    if raw is None or raw.strip() == '':
+        return TokenPrices(prices)
+    try:
+        given = json.loads(raw)
+    except ValueError as error:
+        raise RuntimeRefused('ENGINEERING_MODEL_PRICES is a JSON object of model prices') from error
+    if not isinstance(given, dict):
+        raise RuntimeRefused('ENGINEERING_MODEL_PRICES is a JSON object of model prices')
+    for model, parts in given.items():
+        if not MODEL_ID.fullmatch(model) or not isinstance(parts, dict):
+            raise RuntimeRefused('ENGINEERING_MODEL_PRICES maps a model id to an object of its prices')
+        if not {'input', 'output'} <= set(parts) <= set(TOKEN_PRICE_PARTS):
+            raise RuntimeRefused(f'ENGINEERING_MODEL_PRICES[{model!r}] names input and output, and optionally '
+                                 'cacheRead and cacheWrite')
+        prices[model] = TokenPrice(*(_price_part(model, part, parts[part]) if part in parts else Decimal(0)
+                                     for part in TOKEN_PRICE_PARTS))
+    return TokenPrices(prices)
+
+
 @dataclass(frozen=True)
 class SessionPricing:
     """Each session's vCPU and memory at the deployment's rates: the size of its role (``build_roles`` get the
-    ``build_size`` when the deployment gives them one, every other role ``STANDARD_SIZE``)."""
+    ``build_size`` when the deployment gives them one, every other role ``STANDARD_SIZE``); and its model tokens at
+    the deployment's price per model (``tokens``, 7.50.00)."""
 
     rates: SessionRates = field(default_factory=SessionRates)
     build_roles: frozenset[str] = frozenset()
     build_size: SessionSize | None = None
+    tokens: TokenPrices = field(default_factory=TokenPrices)
 
     def size(self, role: str) -> SessionSize:
         return self.build_size if self.build_size is not None and role in self.build_roles else STANDARD_SIZE

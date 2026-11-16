@@ -783,7 +783,7 @@
     "verdicts_many": "{{count, number}} opinii person"
   },
   "spend": {
-    "hint": "Ile wydały agenty inżynieryjne, według rejestru wydatków: koszt, tokeny i czas MicroVM każdej sesji, tak jak zmierzyło je środowisko uruchomieniowe. Na razie koszt to czas MicroVM: tokeny modelu są liczone, ale jeszcze nie wyceniane. Miesiące w UTC.",
+    "hint": "Ile wydały agenty inżynieryjne, według rejestru wydatków: koszt, tokeny i czas MicroVM każdej sesji, tak jak zmierzyło je środowisko uruchomieniowe. Koszt to czas sesji i tokeny modelu, każde według cen wdrożenia. Miesiące w UTC.",
     "month": "Miesiąc",
     "groupBy": "Grupuj według",
     "by": {
@@ -799,12 +799,12 @@
     "tokensOut": "Tokeny wyjściowe",
     "microvm": "Czas MicroVM",
     "budget": "Miesięczny budżet",
-    "budgetHint": "Obecny miesięczny budżet każdego przepływu pracy i część wydana w tym miesiącu (na razie tylko czas MicroVM).",
+    "budgetHint": "Obecny miesięczny budżet każdego przepływu pracy i część wydana w tym miesiącu (czas sesji i tokeny modelu).",
     "budgetShare": "{{percent}}%",
     "noBudget": "Brak budżetu",
     "overBudget": "ponad budżet",
     "hardCap": "Twardy limit na miesięcznym budżecie każdego przepływu pracy",
-    "hardCapHint": "Domyślnie wyłączony. Włączony: uruchomienie przepływu z budżetem dostaje limit kosztu równy temu, co zostało z miesiąca przepływu, i nie startuje, gdy nic nie zostało. Limit każdego uruchomienia jest ustalany przy jego starcie, więc równoczesne uruchomienia jednego przepływu mogą razem przekroczyć jego budżet (na razie tylko czas MicroVM). Czas sesji jest wyceniany według stawek AgentCore wdrożenia; tokeny modelu są liczone, ale jeszcze nie wyceniane.",
+    "hardCapHint": "Domyślnie wyłączony. Włączony: uruchomienie przepływu z budżetem dostaje limit kosztu równy temu, co zostało z miesiąca przepływu, i nie startuje, gdy nic nie zostało. Limit każdego uruchomienia jest ustalany przy jego starcie, więc równoczesne uruchomienia jednego przepływu mogą razem przekroczyć jego budżet (czas sesji i tokeny modelu). Czas sesji jest wyceniany według stawek AgentCore wdrożenia; tokeny modelu według ceny każdego modelu.",
     "hardCapFailed": "Nie udało się zapisać twardego limitu. Spróbuj ponownie.",
     "hardCapSaving": "Zapisywanie…",
     "hardCapUnread": "Nie udało się wczytać ustawienia twardego limitu.",

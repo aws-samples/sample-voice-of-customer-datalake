@@ -57,6 +57,12 @@ const BUILD_ROLES_CONTEXT = 'engineeringBuildRoles';
 const RATES_CONTEXT = 'engineeringSessionRates';
 /** `-c engineeringMaxSessions=<101-5000>`: the agent sessions this deployment runs at once. */
 const MAX_SESSIONS_CONTEXT = 'engineeringMaxSessions';
+/** `-c engineeringModelPrices`: the model tokens' prices (modelPrices). */
+const MODEL_PRICES_CONTEXT = 'engineeringModelPrices';
+/** runtime/caps.py MAX_USD_PER_MILLION_TOKENS, TOKEN_PRICE_PARTS and its model id's shape. */
+const MAX_USD_PER_MILLION_TOKENS = 1000;
+const PRICE_PARTS = ['input', 'output', 'cacheRead', 'cacheWrite'];
+const MODEL_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/;
 
 /** AgentCore Runtime V2's rates, checked 2026-11-13 (runtime/caps.py DEFAULT_RATES: a test keeps them equal). */
 export const DEFAULT_RATES: Readonly<Record<string, string>> = {
@@ -168,6 +174,43 @@ export function sessionRates(scope: Construct): Record<string, string> {
     }
     return [name, text];
   }));
+}
+
+/**
+ * `-c engineeringModelPrices='{"<model id>":{"input":…,"output":…,"cacheRead"?:…,"cacheWrite"?:…},…}'` (USD per million
+ * tokens, 7.50.00): each model's price over runtime/caps.py DEFAULT_TOKEN_PRICES (the Price List API's, read
+ * 2026-11-16), so a run's cost cap and its flow's budget bound model spend. `{}` by default: the defaults. A model
+ * with no price is priced at the dearest listed (caps.py TokenPrices), never left out.
+ */
+export function modelPrices(scope: Construct): Record<string, Record<string, string>> {
+  const usage = `Use -c ${MODEL_PRICES_CONTEXT}='{"global.anthropic.claude-sonnet-5-5":{"input":"2","output":"10"}}' (USD per million tokens, 0 to ${MAX_USD_PER_MILLION_TOKENS}, at most 12 digits after the point; input and output, optionally cacheRead and cacheWrite).`;
+  const value = jsonContext(scope, MODEL_PRICES_CONTEXT, {}, usage);
+  if (!isRecord(value)) throw new Error(`${MODEL_PRICES_CONTEXT} must be a JSON object. ${usage}`);
+  return Object.fromEntries(Object.entries(value).map(([model, parts]) => {
+    if (!MODEL_ID_RE.test(model) || !isRecord(parts) || !('input' in parts) || !('output' in parts)
+      || !Object.keys(parts).every((part) => PRICE_PARTS.includes(part))) {
+      throw new Error(`${MODEL_PRICES_CONTEXT} maps a model id to its input and output prices. ${usage}`);
+    }
+    return [model, Object.fromEntries(Object.entries(parts).map(([part, price]) => {
+      const text = String(price).trim();
+      if (typeof price === 'boolean' || !RATE_RE.test(text) || Number(text) > MAX_USD_PER_MILLION_TOKENS) {
+        throw new Error(`${MODEL_PRICES_CONTEXT}.${model}.${part} is not a price. ${usage}`);
+      }
+      return [part, text];
+    }))];
+  }));
+}
+
+/**
+ * The runtime's pricing settings, as its environment names them: AgentCore's rates for each session's CPU and memory
+ * (`-c engineeringSessionRates`) and each model's token price over the runtime's defaults (`-c engineeringModelPrices`,
+ * 7.50.00; `{}` keeps them), so a run's cost cap and its flow's budget bound both.
+ */
+export function pricingEnvironment(scope: Construct): Record<string, string> {
+  return {
+    ENGINEERING_SESSION_RATES: JSON.stringify(sessionRates(scope)),
+    ENGINEERING_MODEL_PRICES: JSON.stringify(modelPrices(scope)),
+  };
 }
 
 /** `-c engineeringMaxSessions`: 101 to 5,000 (the account's quota), 5,000 by default. */

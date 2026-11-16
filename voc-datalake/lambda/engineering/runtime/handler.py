@@ -196,10 +196,12 @@ def _runtime() -> AgentRuntime:
 
 def _pricing() -> caps.SessionPricing:
     """Each session's vCPU and memory at the deployment's AgentCore rates (``ENGINEERING_SESSION_RATES``), at its
-    role's size (``ENGINEERING_BUILD_ROLES``, ``ENGINEERING_BUILD_MEMORY_MIB``)."""
+    role's size (``ENGINEERING_BUILD_ROLES``, ``ENGINEERING_BUILD_MEMORY_MIB``), and its model tokens at the
+    deployment's price per model (``ENGINEERING_MODEL_PRICES`` over ``caps.DEFAULT_TOKEN_PRICES``, 7.50.00)."""
     return caps.SessionPricing(rates=caps.session_rates(os.environ.get('ENGINEERING_SESSION_RATES')),
                                build_roles=_build_roles(),
-                               build_size=caps.build_size(os.environ.get('ENGINEERING_BUILD_MEMORY_MIB')))
+                               build_size=caps.build_size(os.environ.get('ENGINEERING_BUILD_MEMORY_MIB')),
+                               tokens=caps.model_prices(os.environ.get('ENGINEERING_MODEL_PRICES')))
 
 
 def _supervisor() -> Supervisor:

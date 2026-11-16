@@ -2,7 +2,8 @@
 
 One partition per workspace and month, ``WS#<ws>#SPEND#<yyyy-mm>``; one row per day, workflow, run, agent and model,
 ``DAY#<dd>#WF#<flow>#RUN#<run>#AGENT#<agent>#MODEL#<model>``, whose numbers only grow by ADD: ``usd`` (what was
-priced: today the session's seconds, under the model ``microvm``), ``tokens_in``/``tokens_out`` per model and
+priced: the session's seconds under the model ``microvm``, and since 7.50.00 each model's tokens at its price,
+runtime/caps.py ``token_usd``), ``tokens_in``/``tokens_out`` per model and
 ``microvm_seconds``. Its ``repo`` names the run's repository, for grouping by it.
 
 Every row is written in the SAME transaction as the metering it mirrors (``ledger_updates``: the session store's priced
@@ -165,7 +166,7 @@ def ledger_updates(table: str, at: datetime, where: Where, usage: Mapping[str, U
                 ':model': model, ':at': at.astimezone(UTC).isoformat(), ':by': WRITER, ':seq': where.seq},
         }})
     dollars = sum(by_model.values(), Usage()).usd
-    # (only a write that adds dollars: a tokens-only one, or unpriced session time, leaves the hot item alone)
+    # (only a write that adds dollars: unpriced tokens or session time leave the hot item alone)
     if updates and dollars > 0 and keyable(where.flow):
         # (dollars only: what the alerts and the hard cap read; the month's tokens and time are the DAY# rows')
         updates.append({'Update': {
@@ -303,7 +304,7 @@ class MonthSpend:
     truncated: bool = False
 
     def view(self) -> dict[str, Any]:
-        # Biggest first: dollars, then tokens, then session time (tokens are not priced yet), then the key.
+        # Biggest first: dollars, then tokens, then session time, then the key.
         ordered = sorted(self.groups.items(), key=lambda pair: (
             -pair[1].usd, -pair[1].tokens, -pair[1].microvm_seconds, pair[0]))
         return {'month': self.month, 'by': self.by, 'total': self.total.view(), 'truncated': self.truncated,

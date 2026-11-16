@@ -26,7 +26,7 @@ from typing import Any, Final, Literal
 from botocore.exceptions import ClientError
 
 from engineering.rows import LAUNCH_HOLD
-from engineering.runtime.caps import UNPRICED, SessionPricing
+from engineering.runtime.caps import NO_TOKEN_PRICES, UNPRICED, SessionPricing, token_usd
 from engineering.runtime.interface import AgentSpec, RuntimeSession
 from engineering.runtime.runs import RunNotActive, RunStore, meta_key, run_pk, transaction_conflict
 from engineering.spend import (
@@ -271,15 +271,16 @@ class SessionStore:
     """``pricing``: the deployment's AgentCore rates and each role's session size (``caps.SessionPricing``; the
     default prices nothing). Each write that moves the session adds the seconds it has not priced yet (running and
     held) to the row's ``cost_usd`` (an ADD, as the brokers add theirs, so neither writes over the other), with the
-    vCPU- and GB-seconds they count as, in the same conditional write, so a move counted once is priced once. Pricing
-    goes forward only: time used while the rates are 0 is never priced later."""
+    vCPU- and GB-seconds they count as, in the same conditional write, so a move counted once is priced once; and the
+    model tokens it has not ledgered yet at their price per model (``SessionPricing.tokens``, 7.50.00; the default
+    prices none). Pricing goes forward only: time or tokens used while unpriced are never priced later."""
 
     def __init__(self, table: Any, runs: RunStore, pricing: SessionPricing | None = None,
                  clock: Callable[[], datetime] = lambda: datetime.now(UTC)) -> None:
         self._table = table
         self._pause: Callable[[float], None] = time.sleep   # (a test sets its own)
         self._runs = runs
-        self.pricing = pricing or SessionPricing(rates=UNPRICED)
+        self.pricing = pricing or SessionPricing(rates=UNPRICED, tokens=NO_TOKEN_PRICES)
         self._clock = clock
         self._runs_seen: dict[str, tuple[str, str]] = {}
 
@@ -362,9 +363,12 @@ class SessionStore:
 
     def _metered(self, session: AgentSession) -> tuple[AgentSession, Decimal | None, dict[str, Usage]]:
         """``_priced``, and what the write adds to the spend ledger: the session seconds not counted before (with
-        their price, if any) and, per model, the tokens not ledgered before. The session then records both as
-        counted, in the same write. Past the session's first ``MAX_SESSION_MODELS`` models by name, its others' tokens are
-        ledgered under ``-``: the names come from inside the session, and no session may open rows without end."""
+        their price, if any) and, per model, the tokens not ledgered before, each model's at its price
+        (``caps.token_usd``: a model with no price of its own at the dearest listed, an upper bound). The session then
+        records both as counted, in the same write, and the row's ``cost_usd`` gets the tokens' dollars too (the
+        returned cost), so the run's cost cap and its flow's budget bound model spend. Past the session's first
+        ``MAX_SESSION_MODELS`` models by name, its others' tokens are ledgered under ``-`` (each priced as its own
+        model first): the names come from inside the session, and no session may open rows without end."""
         priced, cost = self._priced(session)
         unpriced = priced.priced_seconds - session.priced_seconds   # (the seconds _priced just counted, once)
         held = priced.priced_held_seconds - session.priced_held_seconds
@@ -372,15 +376,19 @@ class SessionStore:
         # The first models by name (a map read back from DynamoDB keeps no order): deterministic on every write.
         own = {REPORTED_MICROVM if model == MICROVM else model for model in sorted(priced.tokens)[:MAX_SESSION_MODELS]}
         usage: dict[str, Usage] = {}
+        tokens_usd = Decimal(0)
         for model, used in token_deltas(priced.tokens, priced.ledgered_tokens).items():
             name = model if model in own else OTHER_MODELS
-            usage[name] = usage.get(name, Usage()) + used
+            usd = token_usd(self.pricing.tokens, model, used.tokens_in, used.tokens_out)
+            tokens_usd += usd
+            usage[name] = usage.get(name, Usage()) + replace(used, usd=usd)
         if unpriced > 0 or held > 0:
             # (a harness's model of that name is ledgered as spend.REPORTED_MICROVM: this row is the runtime's own)
             usage[MICROVM] = Usage(usd=cost or Decimal(0), microvm_seconds=unpriced)
         if usage:
             priced = replace(priced, ledgered_tokens={model: dict(counts) for model, counts in priced.tokens.items()})
-        return priced, cost, usage
+        total = (cost or Decimal(0)) + tokens_usd
+        return priced, (total if total > 0 else None), usage
 
     def _where(self, run_id: str) -> Where:
         """The run's workflow and repository for its ledger rows (read once per run and store)."""

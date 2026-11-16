@@ -221,6 +221,14 @@ def test_the_stack_and_the_runtime_agree_on_the_rates_the_idle_timeout_and_the_s
     assert f'BUILD_MEMORY_MIB = {sorted(caps.BUILD_SIZES)[0]}' in stack
     assert f'SESSION_QUOTA = {caps.DEFAULT_MAX_SESSIONS}' in stack
     assert f'MIN_MAX_SESSIONS = {caps.MIN_MAX_SESSIONS}' in stack
+    # -c engineeringModelPrices (7.50.00): the synth refuses what the runtime would.
+    assert f'MAX_USD_PER_MILLION_TOKENS = {caps.MAX_USD_PER_MILLION_TOKENS}' in stack
+    parts = re.search(r'const PRICE_PARTS = \[(.*?)\];', stack)
+    assert parts is not None
+    assert tuple(re.findall(r"'(\w+)'", parts.group(1))) == caps.TOKEN_PRICE_PARTS
+    model_id = re.search(r'const MODEL_ID_RE = /\^(.*?)\$/;', stack)
+    assert model_id is not None
+    assert f'{model_id.group(1)}\\Z' == caps.MODEL_ID.pattern
 
 
 def test_the_fewest_sessions_a_deployment_may_set_fit_one_run_the_agents_api_starts():

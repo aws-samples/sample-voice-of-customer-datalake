@@ -164,6 +164,29 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
     expect(count(template, 'AWS::BedrockAgentCore::Runtime')).toBe(0);
   });
 
+  it('prices model tokens at the runtime\'s defaults unless -c engineeringModelPrices names a model\'s own (7.50.00)', () => {
+    // {} keeps runtime/caps.py DEFAULT_TOKEN_PRICES; the delivery prices a continuation's writes the same way.
+    expect(supervisorEnv(template).ENGINEERING_MODEL_PRICES).toBe('{}');
+    expect(functionEnv(template, 'voc-engineering-delivery').ENGINEERING_MODEL_PRICES).toBe('{}');
+    const prices = { 'global.anthropic.claude-sonnet-5-5': { input: '3', output: '15', cacheRead: '0.3' } };
+    const priced = runtimeStack({ engineeringAgents: 'true', engineeringModelPrices: JSON.stringify(prices) }).template;
+    expect(JSON.parse(String(supervisorEnv(priced).ENGINEERING_MODEL_PRICES))).toStrictEqual(prices);
+  }, SYNTH_TIMEOUT_MS);
+
+  it.each([
+    ['not JSON', '{sonnet:'],
+    ['a list', '[]'],
+    ['a model without its output price', { 'global.anthropic.claude-sonnet-5-5': { input: '3' } }],
+    ['an unknown part', { m: { input: '1', output: '1', batch: '1' } }],
+    ['a price a few orders of magnitude off', { m: { input: '1', output: '10000' } }],
+    ['a price that is not a decimal', { m: { input: '1e-3', output: '1' } }],
+    ['a model id with a space', { 'my model': { input: '1', output: '1' } }],
+  ])('refuses -c engineeringModelPrices with %s at synth', (_case, value) => {
+    const context = typeof value === 'string' ? value : JSON.stringify(value);
+    expect(() => runtimeStack({ engineeringAgents: 'true', engineeringModelPrices: context }))
+      .toThrow(/engineeringModelPrices/);
+  });
+
   it('adds no alarm unless asked (an alarm is a fixed cost)', () => {
     expect(count(template, 'AWS::CloudWatch::Alarm')).toBe(0);
     const withAlarm = runtimeStack({ engineeringAgents: 'true', engineeringSupervisorAlarm: 'true' }).template;
@@ -446,7 +469,8 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
     expect(env).toStrictEqual(expect.arrayContaining(['ENGINEERING_AGENT_ROLE_ARNS', 'ENGINEERING_BOARD_URL',
       'ENGINEERING_BUS_NAME',
       'ENGINEERING_AGENT_RUNTIMES',
-      'ENGINEERING_SESSION_RATES', 'ENGINEERING_TABLE', 'ENGINEERING_TIMINGS', 'ENGINEERING_WORKSPACE_BUCKET',
+      'ENGINEERING_MODEL_PRICES', 'ENGINEERING_SESSION_RATES', 'ENGINEERING_TABLE', 'ENGINEERING_TIMINGS',
+      'ENGINEERING_WORKSPACE_BUCKET',
       'RAW_DATA_BUCKET']));
     // Nor the benchmark's cases, nor the hard cap's table (only a start reads it).
     expect(env.filter((name) => ['SUPERVISOR_RULE_NAME', 'ENGINEERING_EXTRA_EGRESS', 'ENGINEERING_BENCHMARK_CASES',

@@ -694,7 +694,7 @@
     }
   },
   "spend": {
-    "hint": "What the engineering agents spent, from the spend ledger: each session’s cost, tokens and MicroVM time, as the runtime measured them. The cost is MicroVM time so far: model tokens are counted, not yet priced. Months are in UTC.",
+    "hint": "What the engineering agents spent, from the spend ledger: each session’s cost, tokens and MicroVM time, as the runtime measured them. The cost is session time and model tokens, each at the deployment’s prices. Months are in UTC.",
     "month": "Month",
     "groupBy": "Group by",
     "by": {
@@ -710,12 +710,12 @@
     "tokensOut": "Output tokens",
     "microvm": "MicroVM time",
     "budget": "Monthly budget",
-    "budgetHint": "Each workflow’s monthly budget as it is now, and the share of it spent this month (MicroVM time only, for now).",
+    "budgetHint": "Each workflow’s monthly budget as it is now, and the share of it spent this month (session time and model tokens).",
     "budgetShare": "{{percent}}%",
     "noBudget": "No budget",
     "overBudget": "over budget",
     "hardCap": "Hard cap at each workflow’s monthly budget",
-    "hardCapHint": "Off by default. On: a run started from a workflow with a budget gets a cost cap of what is left of the workflow’s month, and does not start when nothing is left. Each run’s cap is set when it starts, so runs of one workflow at the same time may together pass its budget (MicroVM time only, for now). Session time is priced at the deployment’s AgentCore rates; model tokens are counted, not yet priced.",
+    "hardCapHint": "Off by default. On: a run started from a workflow with a budget gets a cost cap of what is left of the workflow’s month, and does not start when nothing is left. Each run’s cap is set when it starts, so runs of one workflow at the same time may together pass its budget (session time and model tokens). Session time is priced at the deployment’s AgentCore rates, model tokens at each model’s price.",
     "hardCapFailed": "The hard cap could not be saved. Try again.",
     "hardCapSaving": "Saving…",
     "hardCapUnread": "The hard cap’s setting could not be loaded.",

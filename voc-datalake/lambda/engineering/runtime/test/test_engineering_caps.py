@@ -1,5 +1,6 @@
 """No fixed task cap: the supervisor's clocks, and the liveness verdicts they give."""
 from dataclasses import replace
+from decimal import Decimal
 
 import pytest
 
@@ -8,6 +9,7 @@ from engineering.runtime.interface import RuntimeRefused
 from engineering.runtime.liveness import PAUSED_EXIT_CODE, ended, judge
 from engineering.runtime.ports import Lease
 from engineering.runtime.sessions import AgentSession
+from shared.model_config import ALLOWED_MODEL_IDS
 
 T = caps.Timings()
 SESSION = AgentSession(run_id='01JD3R4NZXQ7Y2W8K4M6P9T0AB', agent_id='fixer-1', role='fixer', task_id='task-1', language='python',
@@ -69,3 +71,64 @@ def test_how_a_harness_ended_comes_from_its_exit_code(exit_code, timed_out, outc
         'open-wait-at-the-hard-stop'])
 def test_judge(session, lease, now, verdict):
     assert judge(session, lease, now, T) == verdict
+
+
+# ── model tokens, priced per model (7.50.00) ─────────────────────────────────────────────────────────────────────
+SONNET, HAIKU, OPUS = ('global.anthropic.claude-sonnet-5-5', 'global.anthropic.claude-haiku-5-5',
+                       'global.anthropic.claude-opus-5-5')
+
+
+def test_each_allowlisted_model_has_its_list_price_and_the_source_is_recorded():
+    prices = caps.model_prices(None)
+    assert {SONNET, HAIKU, OPUS} <= set(ALLOWED_MODEL_IDS)
+    assert prices.of(SONNET) == caps.TokenPrice(Decimal('2.00'), Decimal('10.00'), Decimal('0.10'), Decimal('2.50'))
+    assert prices.of(HAIKU).output == Decimal('0.50')
+    assert prices.of(OPUS).input == Decimal('4.00')
+    assert 'Price List API' in caps.MODEL_PRICES_SOURCE
+    assert 'us-west-2' in caps.MODEL_PRICES_SOURCE
+    assert (caps.MODEL_PRICES_PUBLISHED, caps.MODEL_PRICES_READ) == ('2026-11-09T22:43:12Z', '2026-11-16')
+    assert caps.model_prices('') == caps.model_prices('{}') == prices == caps.TokenPrices()
+
+
+def test_tokens_cost_their_models_price_per_million_rounded_up_never_below_what_was_used():
+    prices = caps.TokenPrices()
+    assert caps.token_usd(prices, SONNET, 1_000_000, 100_000) == Decimal('3.000000000000')
+    assert caps.token_usd(prices, HAIKU, 1, 0) == Decimal('0.000000100000')
+    # One token of a model priced at a fraction of a cent rounds up at the 12th digit, never to 0.
+    tiny = caps.TokenPrices({'m': caps.TokenPrice(Decimal('0.000001'), Decimal(0))})
+    assert caps.token_usd(tiny, 'm', 1, 0) == Decimal('1E-12')
+    assert str(caps.token_usd(prices, SONNET, 0, 0)) == '0'
+    with pytest.raises(ValueError, match='below zero'):
+        caps.token_usd(prices, SONNET, -1, 0)
+
+
+def test_a_model_without_a_price_is_priced_at_the_dearest_listed_an_upper_bound():
+    prices = caps.TokenPrices()
+    # (a harness's model by another name, a new id): Opus's input and output, the dearest parts listed.
+    assert prices.of('anthropic.claude-new') == prices.of(OPUS) == prices.dearest()
+    assert caps.token_usd(prices, 'microvm-reported', 1_000_000, 1_000_000) == Decimal('24.000000000000')
+    mixed = caps.TokenPrices({'a': caps.TokenPrice(Decimal(5), Decimal(1)),
+                              'b': caps.TokenPrice(Decimal(1), Decimal(9))})
+    assert mixed.dearest() == caps.TokenPrice(Decimal(5), Decimal(9))
+    # With no price at all, tokens are counted and never priced.
+    assert caps.token_usd(caps.NO_TOKEN_PRICES, SONNET, 10**9, 10**9) == 0
+
+
+def test_a_deployment_overrides_a_models_price_and_adds_one():
+    prices = caps.model_prices('{"global.anthropic.claude-sonnet-5-5": {"input": "3", "output": 15}, '
+                               '"us.example.model-1": {"input": "0.5", "output": "1.25", "cacheRead": "0.05"}}')
+    assert prices.of(SONNET) == caps.TokenPrice(Decimal(3), Decimal(15))
+    assert prices.of('us.example.model-1') == caps.TokenPrice(Decimal('0.5'), Decimal('1.25'), Decimal('0.05'))
+    assert prices.of(HAIKU) == caps.DEFAULT_TOKEN_PRICES[HAIKU]   # (the others keep their defaults)
+
+
+@pytest.mark.parametrize('raw', [
+    'not json', '[]', '{"": {"input": 1, "output": 1}}', '{"m": 1}', '{"m": {"input": 1}}',
+    '{"m": {"input": 1, "output": 1, "batch": 1}}', '{"m": {"input": -1, "output": 1}}',
+    '{"m": {"input": "NaN", "output": 1}}', '{"m": {"input": 1001, "output": 1}}',
+    '{"m": {"input": true, "output": 1}}', '{"m": {"input": "0.0000000000001", "output": 1}}',
+    '{"m b": {"input": 1, "output": 1}}',
+])
+def test_a_price_list_off_its_shape_is_refused_never_half_read(raw):
+    with pytest.raises(RuntimeRefused, match='ENGINEERING_MODEL_PRICES'):
+        caps.model_prices(raw)

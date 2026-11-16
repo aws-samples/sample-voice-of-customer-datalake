@@ -100,8 +100,8 @@ class BudgetAlert:
         # (the share is the spend's own, not the level's: a tick that jumps levels says how far it is)
         share = int(self.spent_usd * 100 / self.budget_usd) if self.budget_usd else 0
         return (f'Workflow {self.flow} has spent ${self.spent_usd:,.2f} of its ${self.budget_usd:,.2f} monthly budget '
-                f'for {self.month} ({share}%, past {self.levels[-1]}%). Session time only: model tokens are not '
-                f'priced yet.')
+                f'for {self.month} ({share}%, past {self.levels[-1]}%): session time and model tokens, '
+                f'at this deployment\'s prices.')
 
 
 class RunControl(Protocol):

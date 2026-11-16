@@ -754,7 +754,7 @@
     }
   },
   "spend": {
-    "hint": "Lo que gastaron los agentes de ingeniería, según el registro de gasto: el coste, los tokens y el tiempo de MicroVM de cada sesión, tal como los midió el entorno de ejecución. Por ahora el coste es el tiempo de MicroVM: los tokens del modelo se cuentan, pero aún no tienen precio. Los meses están en UTC.",
+    "hint": "Lo que gastaron los agentes de ingeniería, según el registro de gasto: el coste, los tokens y el tiempo de MicroVM de cada sesión, tal como los midió el entorno de ejecución. El coste es el tiempo de sesión y los tokens del modelo, cada uno a los precios de la implementación. Los meses están en UTC.",
     "month": "Mes",
     "groupBy": "Agrupar por",
     "by": {
@@ -770,12 +770,12 @@
     "tokensOut": "Tokens de salida",
     "microvm": "Tiempo de MicroVM",
     "budget": "Presupuesto mensual",
-    "budgetHint": "El presupuesto mensual actual de cada flujo de trabajo y la parte gastada este mes (por ahora, solo el tiempo de MicroVM).",
+    "budgetHint": "El presupuesto mensual actual de cada flujo de trabajo y la parte gastada este mes (el tiempo de sesión y los tokens del modelo).",
     "budgetShare": "{{percent}} %",
     "noBudget": "Sin presupuesto",
     "overBudget": "por encima del presupuesto",
     "hardCap": "Límite estricto en el presupuesto mensual de cada flujo de trabajo",
-    "hardCapHint": "Desactivado por defecto. Activado: una ejecución iniciada desde un flujo con presupuesto recibe un límite de coste igual a lo que queda del mes del flujo, y no se inicia si no queda nada. El límite de cada ejecución se fija al iniciarse, así que varias ejecuciones simultáneas de un flujo pueden superar juntas su presupuesto (por ahora, solo el tiempo de MicroVM). El tiempo de sesión se valora con las tarifas de AgentCore de la implementación; los tokens del modelo se cuentan, pero aún no tienen precio.",
+    "hardCapHint": "Desactivado por defecto. Activado: una ejecución iniciada desde un flujo con presupuesto recibe un límite de coste igual a lo que queda del mes del flujo, y no se inicia si no queda nada. El límite de cada ejecución se fija al iniciarse, así que varias ejecuciones simultáneas de un flujo pueden superar juntas su presupuesto (el tiempo de sesión y los tokens del modelo). El tiempo de sesión se valora con las tarifas de AgentCore de la implementación; los tokens del modelo, al precio de cada modelo.",
     "hardCapFailed": "No se pudo guardar el límite estricto. Inténtalo de nuevo.",
     "hardCapSaving": "Guardando…",
     "hardCapUnread": "No se pudo cargar la configuración del límite estricto.",

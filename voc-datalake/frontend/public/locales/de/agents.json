@@ -748,7 +748,7 @@
     }
   },
   "spend": {
-    "hint": "Was die Engineering-Agenten ausgegeben haben, laut Ausgabenbuch: Kosten, Tokens und MicroVM-Zeit jeder Sitzung, wie die Laufzeitumgebung sie gemessen hat. Die Kosten sind bisher nur die MicroVM-Zeit: Modell-Tokens werden gezählt, aber noch nicht bepreist. Monate in UTC.",
+    "hint": "Was die Engineering-Agenten ausgegeben haben, laut Ausgabenbuch: Kosten, Tokens und MicroVM-Zeit jeder Sitzung, wie die Laufzeitumgebung sie gemessen hat. Die Kosten sind Sitzungszeit und Modell-Tokens, jeweils zu den Preisen der Bereitstellung. Monate in UTC.",
     "month": "Monat",
     "groupBy": "Gruppieren nach",
     "by": {
@@ -764,12 +764,12 @@
     "tokensOut": "Ausgabe-Tokens",
     "microvm": "MicroVM-Zeit",
     "budget": "Monatsbudget",
-    "budgetHint": "Das aktuelle Monatsbudget jedes Workflows und der Anteil, der in diesem Monat ausgegeben wurde (vorerst nur MicroVM-Zeit).",
+    "budgetHint": "Das aktuelle Monatsbudget jedes Workflows und der Anteil, der in diesem Monat ausgegeben wurde (Sitzungszeit und Modell-Tokens).",
     "budgetShare": "{{percent}} %",
     "noBudget": "Kein Budget",
     "overBudget": "über dem Budget",
     "hardCap": "Harte Obergrenze beim Monatsbudget jedes Workflows",
-    "hardCapHint": "Standardmäßig aus. Ein: Ein Lauf eines Workflows mit Budget erhält eine Kostenobergrenze in Höhe dessen, was vom Monat des Workflows übrig ist, und startet nicht, wenn nichts übrig ist. Die Obergrenze jedes Laufs wird bei seinem Start festgelegt; gleichzeitige Läufe eines Workflows können sein Budget daher gemeinsam überschreiten (vorerst nur MicroVM-Zeit). Die Sitzungszeit wird zu den AgentCore-Preisen der Bereitstellung berechnet; Modell-Tokens werden gezählt, aber noch nicht berechnet.",
+    "hardCapHint": "Standardmäßig aus. Ein: Ein Lauf eines Workflows mit Budget erhält eine Kostenobergrenze in Höhe dessen, was vom Monat des Workflows übrig ist, und startet nicht, wenn nichts übrig ist. Die Obergrenze jedes Laufs wird bei seinem Start festgelegt; gleichzeitige Läufe eines Workflows können sein Budget daher gemeinsam überschreiten (Sitzungszeit und Modell-Tokens). Die Sitzungszeit wird zu den AgentCore-Preisen der Bereitstellung berechnet; Modell-Tokens zum Preis des jeweiligen Modells.",
     "hardCapFailed": "Die harte Obergrenze konnte nicht gespeichert werden. Versuchen Sie es erneut.",
     "hardCapSaving": "Wird gespeichert…",
     "hardCapUnread": "Die Einstellung der harten Obergrenze konnte nicht geladen werden.",

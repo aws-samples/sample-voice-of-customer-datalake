@@ -13,8 +13,8 @@
  * and the drafting (assumed {@link DRAFT_MINUTES} minutes); the run's coordinator and each agent step's session, all
  * of the standard size, each cost what AgentCore's published rates make it for the whole run (runtime/caps.py
  * DEFAULT_RATES and STANDARD_SIZE, held to them by a test).
- * Model tokens are not in it, as the spend ledger leaves them out until they are priced; the run's cost and token
- * caps (the deployment's) bound the run whatever the estimate says.
+ * Model tokens are not in it (the spend ledger prices them per model since 7.50.00, but a run's token count is not
+ * known before it runs); the run's cost and token caps (the deployment's) bound the run whatever the estimate says.
  */
 import { z } from 'zod';
 

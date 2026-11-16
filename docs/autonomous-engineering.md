@@ -3028,8 +3028,8 @@ no other fixed cost by default: no session runs between runs, and a build runtim
 while its session lives. The sessions' network is the deployment's own (`-c engineeringAgentNetwork`): its way out (a
 NAT gateway and an egress firewall, or interface endpoints) is a fixed cost of that network's, outside this stack
 ([deployment.md](deployment.md)). Each run's session seconds and model tokens are measured on its agents' session
-rows (session time priced, tokens counted) and kept by month in the spend ledger below, which Agents → Spend shows;
-*planned*: the run monitor's cost line, and the model broker's pricing of tokens. A run's end adds its retrospective:
+rows (session time and, since 7.50.00, model tokens priced) and kept by month in the spend ledger below, which Agents
+→ Spend shows; *planned*: the run monitor's cost line. A run's end adds its retrospective:
 one more invocation of voc-engineering-runtime (DynamoDB reads of the run's own rows, a few create-only writes), plus
 one per failure it takes to the coach (at most three), each one Converse call (the prompt is at most the
 40,000-character evidence plus the role's skill; the answer at most 8,000 tokens, thinking included; at most 200
@@ -3047,6 +3047,21 @@ hour running ($3.12 for 8 hours) and $0.14 an hour held; a build session as abou
 lower: AgentCore charges only the CPU actually used, nothing while the agent waits on the model. Reading the
 service's own usage per session in place of the bound is *planned*.
 
+**What a model's tokens count as** (7.50.00, `caps.py` TokenPrices and `token_usd`, built). Each model's new tokens on
+a session's priced write cost its price per million tokens (input and output; the cache prices are kept beside them
+for a harness that reports cache tokens, which none does yet), ADDed to the session row's `cost_usd`, which the run's
+cost cap reads, and to the model's ledger row and the flow's month total, in the same transaction: so a run's cost
+cap (`-c engineeringRunCapUsd`), its token cap (`-c engineeringRunTokenCap`) and its flow's monthly budget all bound
+model spend. The defaults are the AWS Price List API's figures for the global (cross-region) inference profiles,
+standard tier, in us-west-2 (service code `AmazonBedrockFoundationModels`, the `*_global_standard` usage types,
+published 2026-11-09, read 2026-11-16), in USD per million tokens (input / output / cache read / cache write): Claude
+Haiku 5.5 $0.10 / $0.50 / $0.01 / $0.125, Sonnet 5.5 $2.00 / $10.00 / $0.10 / $2.50, Opus 5.5 $4.00 / $20.00 /
+$0.20 / $5.00. A deployment in another region or tier sets its own per model with `-c engineeringModelPrices`
+(`{"<model id>": {"input": …, "output": …, "cacheRead"?: …, "cacheWrite"?: …}}`, 0 to 1,000 USD per million, at most
+12 digits after the point; checked at synth and again by the runtime), each replacing that model's default. A model
+with no price (a new id, or a harness's model under another name) is priced at the dearest price listed, part by part:
+an upper bound, so the caps still hold. Tokens used before 7.50.00 stay unpriced (pricing goes forward only).
+
 **The spend ledger** (`voc-datalake/lambda/engineering/spend.py`, built). What the runs use is kept by day, workflow, run, agent and
 model: one partition per workspace and month, `WS#<ws>#SPEND#<yyyy-mm>`, one row per
 `DAY#<dd>#WF#<flow>#RUN#<run>#AGENT#<agent>#MODEL#<model>`, whose numbers only grow by ADD (`usd`, `tokens_in`,
@@ -3055,8 +3070,8 @@ transaction as the session write whose metering it mirrors (the session store's 
 at the deployment's AgentCore rates, under the model `microvm`; each model's new tokens), so the ledger and the
 sessions never drift and a retried write adds once. A row is booked to the day (UTC) of the write that measured it
 (when the supervisor counted the session time, or the harness's report reached it), and the ledger starts when it is
-deployed: a session's earlier tokens are not booked. Model tokens are counted, not yet priced: their dollars join the
-same rows when the model broker meters them. The model names come from the harness's report, inside the session: names
+deployed: a session's earlier tokens are not booked. Since 7.50.00 each model's tokens carry their dollars on their
+row (above). The model names come from the harness's report, inside the session: names
 that clean to the same key part (ASCII, at most 128 bytes, so a sort key always fits) are summed into one row, a
 session ledgers only 8 models by name, the first in name order (any others on its `-` row, so no session opens rows
 without end; a model that sorts earlier and is first reported later moves a later one onto `-` from then on, the
@@ -3096,9 +3111,8 @@ in a month's last minutes is said in the next month's first; a new budget has al
 supervisor ticks) is flagged with
 the highest level said that month (`budget_alert`, `budget_alert_month` on META, only ever upward: never past a level
 another run holds unsaid, which its later ticks try again); a tick that
-jumps several levels claims each and says how far the month is. It is session time only until the model broker
-prices tokens, so a deployment that sets every AgentCore rate to 0 (`-c engineeringSessionRates`) spends no dollars
-and never alerts; and the alerts stop nothing.
+jumps several levels claims each and says how far the month is. It counts session time and, since 7.50.00, model
+tokens at their prices; the alerts stop nothing.
 
 **The hard cap** (`voc-datalake/lambda/engineering/settings.py`, built; off by default). An administrator may turn
 it on (Agents → Spend; `PUT /agents/engineering/settings {hard_cap}`): then a run's first start with its flow's
@@ -3108,7 +3122,8 @@ nothing left is refused before anything is written, saying the flow, the month a
 cap then holds it (the supervisor sends it to a person once it is spent). The cap is set once, per run, at its start:
 runs of one flow at once may together pass its budget, each capped at what was left when it started. A retry of a
 live run is not capped again; a setting that cannot be read refuses a budgeted first start, saying so (retry),
-even when the cap is off, since the start cannot tell; off, nothing else changes. It counts session time only until the model broker prices tokens. The start route reads the flow's
+even when the cap is off, since the start cannot tell; off, nothing else changes. It counts session time and, since
+7.50.00, model tokens at their prices. The start route reads the flow's
 budget from the stored workflow and names it to the runtime (`budget_usd`, `flow`), so a run started there is capped
 whenever its flow has a budget; a start of the runtime's own that leaves it out is not capped. The start route also
 sends the deployment's run cap (`-c engineeringRunCapUsd`, 50 USD by default) as the run's `max_cost_usd`, so the hard

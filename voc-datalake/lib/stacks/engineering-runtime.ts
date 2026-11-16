@@ -53,7 +53,7 @@ import { Construct } from 'constructs';
 import { capitalize } from '../plugin-loader';
 import { ENGINEERING_CACHE_PREFIX, ENGINEERING_GATE_RECORD_KEYS } from './core-buckets';
 import {
-  EngineeringAgentCore, buildMemoryMiB, buildRoles, grantSessions, maxSessions, refuseRemovedSettings, sessionRates,
+  EngineeringAgentCore, buildMemoryMiB, buildRoles, grantSessions, maxSessions, pricingEnvironment, refuseRemovedSettings,
 } from './engineering-agentcore';
 import { grantBudgetWork, grantSpendLedger, viaServices } from './engineering-runtime-grants';
 import { grantClaudeModels } from '../utils/claude-model-grant';
@@ -313,8 +313,9 @@ class EngineeringRuntime extends Construct {
       ENGINEERING_EXTRA_EGRESS: '[]',
       // The supervisor's settable clocks (lambda/engineering/runtime/caps.py SETTABLE); {} keeps the defaults.
       ENGINEERING_TIMINGS: '{}',
-      // AgentCore's rates, each session's vCPU and memory priced into its cost (`-c engineeringSessionRates`).
-      ENGINEERING_SESSION_RATES: JSON.stringify(sessionRates(this)),
+      // AgentCore's rates, each session's vCPU and memory priced into its cost (`-c engineeringSessionRates`), and
+      // each model's token price (`-c engineeringModelPrices`, 7.50.00): ENGINEERING_SESSION_RATES and _MODEL_PRICES.
+      ...pricingEnvironment(this),
       // The benchmark's case ids, for the coach the run's retrospective asks (learning/loop.py).
       ENGINEERING_BENCHMARK_CASES: JSON.stringify(benchmarkCaseIds()),
     };

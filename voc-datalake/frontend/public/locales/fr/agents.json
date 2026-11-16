@@ -754,7 +754,7 @@
     }
   },
   "spend": {
-    "hint": "Ce qu’ont dépensé les agents d’ingénierie, d’après le registre des dépenses : le coût, les jetons et le temps MicroVM de chaque session, tels que l’environnement d’exécution les a mesurés. Pour l’instant, le coût est celui du temps MicroVM : les jetons du modèle sont comptés, pas encore facturés. Les mois sont en UTC.",
+    "hint": "Ce qu’ont dépensé les agents d’ingénierie, d’après le registre des dépenses : le coût, les jetons et le temps MicroVM de chaque session, tels que l’environnement d’exécution les a mesurés. Le coût est celui du temps de session et des jetons du modèle, chacun aux prix du déploiement. Les mois sont en UTC.",
     "month": "Mois",
     "groupBy": "Regrouper par",
     "by": {
@@ -770,12 +770,12 @@
     "tokensOut": "Jetons en sortie",
     "microvm": "Temps MicroVM",
     "budget": "Budget mensuel",
-    "budgetHint": "Le budget mensuel actuel de chaque workflow, et la part dépensée ce mois-ci (pour l’instant, temps MicroVM seulement).",
+    "budgetHint": "Le budget mensuel actuel de chaque workflow, et la part dépensée ce mois-ci (temps de session et jetons du modèle).",
     "budgetShare": "{{percent}} %",
     "noBudget": "Aucun budget",
     "overBudget": "budget dépassé",
     "hardCap": "Plafond strict au budget mensuel de chaque workflow",
-    "hardCapHint": "Désactivé par défaut. Activé : une exécution lancée depuis un workflow doté d’un budget reçoit un plafond de coût égal à ce qui reste du mois du workflow, et ne démarre pas s’il ne reste rien. Le plafond de chaque exécution est fixé à son démarrage : plusieurs exécutions simultanées d’un workflow peuvent ensemble dépasser son budget (pour l’instant, temps MicroVM seulement). Le temps de session est valorisé aux tarifs AgentCore du déploiement ; les jetons du modèle sont comptés, pas encore valorisés.",
+    "hardCapHint": "Désactivé par défaut. Activé : une exécution lancée depuis un workflow doté d’un budget reçoit un plafond de coût égal à ce qui reste du mois du workflow, et ne démarre pas s’il ne reste rien. Le plafond de chaque exécution est fixé à son démarrage : plusieurs exécutions simultanées d’un workflow peuvent ensemble dépasser son budget (temps de session et jetons du modèle). Le temps de session est valorisé aux tarifs AgentCore du déploiement ; les jetons du modèle au prix de chaque modèle.",
     "hardCapFailed": "Impossible d’enregistrer le plafond strict. Réessayez.",
     "hardCapSaving": "Enregistrement…",
     "hardCapUnread": "Impossible de charger le réglage du plafond strict.",
