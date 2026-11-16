@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:voc-orchestration:flow",
+  "title": "voc-flow-template/1: one flow template (flows/<id>.yaml)",
+  "description": "Compiled into a voc-workflow/2 definition: a start step, then the steps in order (each chains to the next unless it ends the flow or says `on`), laid out at 120 px. The flow's memory, learn and pr settings go on the start step's params, each step's assertions on its params.assert, so a stored flow keeps them and an older flow without them stays valid (D1).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "id", "version", "name", "description", "budget", "memory", "learn", "requires", "steps"],
+  "properties": {
+    "schema": {"const": "voc-flow-template/1"},
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,63}$"},
+    "version": {"type": "integer", "minimum": 1, "maximum": 99999},
+    "name": {"type": "string", "minLength": 1, "maxLength": 120},
+    "description": {"type": "string", "minLength": 1, "maxLength": 2000, "pattern": "^[^\\n]*$"},
+    "inputs": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object", "additionalProperties": false, "required": ["type"],
+        "properties": {
+          "type": {"enum": ["issue_ref", "pull_request_ref", "voc-triage/1", "feedback_ids", "packages", "prd_ref"]},
+          "max": {"type": "integer", "minimum": 1, "maximum": 1000},
+          "required": {"type": "boolean"}
+        }
+      }
+    },
+    "budget": {
+      "type": "object", "additionalProperties": false, "required": ["monthly_usd"],
+      "properties": {
+        "monthly_usd": {"type": "number", "minimum": 0.01, "maximum": 100000},
+        "run_token_cap": {"type": "integer", "minimum": 1},
+        "max_tasks": {"type": "integer", "minimum": 1, "maximum": 100}
+      }
+    },
+    "memory": {
+      "description": "Built in, never a step: what the run's agents recall (approved lessons only).",
+      "type": "object", "additionalProperties": false, "required": ["recall"],
+      "properties": {
+        "recall": {"type": "boolean"},
+        "scopes": {"type": "array", "uniqueItems": true, "minItems": 1, "items": {"enum": ["repo", "role", "person"]}},
+        "limit": {"type": "integer", "minimum": 1, "maximum": 50}
+      }
+    },
+    "learn": {
+      "description": "The built-in Learn step: the run's retrospective, lessons and coach proposals, at its end.",
+      "type": "object", "additionalProperties": false, "required": ["enabled"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "model": {"type": "string", "minLength": 1, "maxLength": 128},
+        "budget_share": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
+        "roles": {"type": "array", "uniqueItems": true, "minItems": 1, "items": {"$ref": "#/$defs/role"}},
+        "after_needs_human_hours": {"type": "integer", "minimum": 1, "maximum": 720},
+        "assert": {"type": "array", "maxItems": 10, "items": {"$ref": "urn:voc-orchestration:assertion"}}
+      }
+    },
+    "pr": {"description": "How the run's pull request opens: ready for review (the default) or as a draft. Merging is a person's, always.",
+           "enum": ["ready", "draft"]},
+    "requires": {
+      "description": "What a run of the flow needs before it starts (the readiness checks read it).",
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "dial": {"type": "array", "uniqueItems": true, "minItems": 1,
+                 "items": {"enum": ["human_driven", "ai_assisted", "ai_driven"]}},
+        "ci_attestation": {"type": "boolean"},
+        "image": {"type": "boolean"},
+        "issues_source": {"type": "boolean"},
+        "knowledge_pack": {"type": "boolean"}
+      }
+    },
+    "steps": {"type": "array", "minItems": 1, "maxItems": 58, "items": {"$ref": "#/$defs/step"}}
+  },
+  "$defs": {
+    "role": {"enum": ["mapper", "understander", "hunter", "fixer", "builder", "committer", "commit-reviewer",
+                      "gate-runner", "pr-author", "pr-reviewer", "final-go", "coordinator"]},
+    "skill_ref": {"type": "string",
+                  "pattern": "^(mapper|understander|hunter|fixer|builder|committer|commit-reviewer|gate-runner|pr-author|pr-reviewer|final-go|coordinator)@(latest|v[1-9][0-9]{0,4})$"},
+    "step_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$", "not": {"const": "start"}},
+    "step": {
+      "type": "object", "additionalProperties": false, "required": ["id", "title"],
+      "properties": {
+        "id": {"$ref": "#/$defs/step_id"},
+        "title": {"type": "string", "minLength": 1, "maxLength": 120},
+        "instructions": {"type": "string", "minLength": 1, "maxLength": 4000},
+        "agent": {"$ref": "#/$defs/skill_ref"},
+        "model": {"type": "string", "minLength": 1, "maxLength": 128},
+        "budget_share": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
+        "board": {
+          "type": "object", "additionalProperties": false, "required": ["posters", "claimers"],
+          "properties": {
+            "posters": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/role"}},
+            "claimers": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/role"}},
+            "until": {"enum": ["drained", "caps"]}
+          }
+        },
+        "quality_gate": {
+          "type": "object", "additionalProperties": false, "required": ["packs", "runner", "final_go"],
+          "properties": {
+            "packs": {"oneOf": [{"const": "auto"},
+                                {"type": "array", "minItems": 1, "uniqueItems": true,
+                                 "items": {"enum": ["python", "typescript", "rust", "java"]}}]},
+            "max_rounds": {"type": "integer", "minimum": 1, "maximum": 5},
+            "final_go_model": {"type": "string", "minLength": 1, "maxLength": 128},
+            "runner": {"const": "gate-runner@latest"},
+            "final_go": {"const": "final-go@latest"}
+          }
+        },
+        "map": {
+          "type": "object", "additionalProperties": false, "required": ["shard_by", "shard_cap"],
+          "properties": {
+            "shard_by": {"enum": ["packages", "history", "pr_pages"]},
+            "shard_cap": {"type": "integer", "minimum": 1, "maximum": 200}
+          }
+        },
+        "reduce": {"type": "object", "additionalProperties": false},
+        "stop_at_pr": {"type": "object", "additionalProperties": false},
+        "end": {
+          "type": "object", "additionalProperties": false, "required": ["status"],
+          "properties": {"status": {"enum": ["completed", "needs_human"]}}
+        },
+        "on": {
+          "type": "object", "additionalProperties": false, "required": ["pass", "fail"],
+          "properties": {"pass": {"$ref": "#/$defs/step_id"}, "fail": {"$ref": "#/$defs/step_id"}}
+        },
+        "assert": {"type": "array", "maxItems": 10, "items": {"$ref": "urn:voc-orchestration:assertion"}}
+      },
+      "oneOf": [
+        {"required": ["agent"]}, {"required": ["board"]}, {"required": ["quality_gate"]}, {"required": ["map"]},
+        {"required": ["reduce"]}, {"required": ["stop_at_pr"]}, {"required": ["end"]}
+      ]
+    }
+  }
+}

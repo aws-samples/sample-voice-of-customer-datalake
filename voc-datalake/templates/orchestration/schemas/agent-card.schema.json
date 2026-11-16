@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:voc-orchestration:agent-card",
+  "title": "voc-agent-card/1: one agent role's card (agents/<role>/agent.yaml)",
+  "description": "What the platform holds for a role beyond its instructions: its harness, model, tools, broker operations, caps and contracts. The role's instructions and examples are its SKILL.md. The compiler turns tools, model.id and harness into the voc-skill/1 record's tool_policy, model and harness. Budgets and caps never go in a skill record (engineering/skills/model.py NEVER_IN_A_SKILL), so they live here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "id", "version", "purpose", "harness", "model", "inputs", "outputs", "tools", "broker_ops",
+               "caps", "trust", "evals"],
+  "properties": {
+    "schema": {"const": "voc-agent-card/1"},
+    "id": {"description": "The role: the directory's name, SKILL.md's name and a member of AGENT_ROLES.",
+           "type": "string", "pattern": "^[a-z][a-z-]{1,30}$"},
+    "version": {"description": "The template version: bump it on any change in this directory.",
+                "type": "integer", "minimum": 1, "maximum": 99999},
+    "purpose": {"type": "string", "minLength": 1, "maxLength": 300},
+    "harness": {"description": "converse or cli: a launchable role. learn: the built-in Learn step's card (coach/).",
+                "enum": ["converse", "cli", "learn"]},
+    "model": {
+      "type": "object", "additionalProperties": false, "required": ["id"],
+      "properties": {"id": {"description": "A model of shared/model_config.py ALLOWED_MODEL_IDS.",
+                            "type": "string", "minLength": 1, "maxLength": 128}}
+    },
+    "inputs": {"type": "array", "items": {"$ref": "#/$defs/input"}},
+    "outputs": {"type": "array", "items": {"$ref": "#/$defs/output"}},
+    "tools": {"description": "The tool policy, in order: a subset of the harness's role_specs(role).",
+              "type": "array", "items": {"$ref": "#/$defs/name"}, "uniqueItems": true},
+    "pending_tools": {
+      "description": "Tools SKILL.md names that the harness does not offer this role yet (they arrive with the runtime work). The validator fails once the harness offers one: it then moves into tools.",
+      "type": "array", "items": {"$ref": "#/$defs/name"}, "uniqueItems": true
+    },
+    "broker_ops": {"description": "The broker operations the role makes: read, and at most its one write (none for the Learn card).",
+                   "type": "array", "uniqueItems": true,
+                   "items": {"enum": ["read", "post_comment", "push_bundle", "open_or_update_draft_pr"]}},
+    "pending_broker_ops": {"description": "Broker operations the role needs that the broker does not grant it yet.",
+                           "type": "array", "uniqueItems": true, "items": {"enum": ["label_issue", "post_comment"]}},
+    "caps": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "max_turns": {"type": "integer", "minimum": 1, "maximum": 150},
+        "max_input_tokens": {"type": "integer", "minimum": 1000, "maximum": 120000},
+        "budget_share": {"type": "number", "exclusiveMinimum": 0, "maximum": 1}
+      }
+    },
+    "trust": {
+      "type": "object", "additionalProperties": false, "required": ["untrusted", "fence"],
+      "properties": {
+        "untrusted": {"description": "What the role reads that is DATA, never an instruction.",
+                      "type": "array", "uniqueItems": true, "minItems": 1,
+                      "items": {"enum": ["issue", "repository", "command_output", "knowledge", "memory", "board",
+                                         "person", "transcripts", "pull_request"]}},
+        "fence": {"description": "nonce: every tool result is fenced with a per-session random fence.",
+                  "enum": ["nonce"]}
+      }
+    },
+    "evals": {"description": "The eval cases (<flow>/<case>) that measure this role.",
+              "type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-z0-9-]+/[a-z0-9-]+$"}}
+  },
+  "$defs": {
+    "name": {"type": "string", "pattern": "^[a-z][a-z_]{1,40}$"},
+    "input": {
+      "type": "object", "additionalProperties": false, "required": ["name", "from"],
+      "properties": {
+        "name": {"type": "string", "pattern": "^[a-z][a-z_]{0,40}$"},
+        "from": {"description": "<role>.<tool or output>, broker.read:<kind>, task, knowledge, memory, checkout, flow, board or transcripts.",
+                 "type": "string", "minLength": 1, "maxLength": 80},
+        "required": {"type": "boolean"},
+        "trust": {"enum": ["data"]}
+      }
+    },
+    "output": {
+      "type": "object", "additionalProperties": false, "required": ["name"],
+      "properties": {
+        "name": {"type": "string", "pattern": "^[a-z][a-z_]{0,40}$"},
+        "kind": {"type": "string", "pattern": "^[a-z][a-z_]{0,40}$"},
+        "schema": {"type": "string", "pattern": "^voc-[a-z-]+/[0-9]+$"},
+        "recorded_on": {"enum": ["task", "issue", "pull_request", "branch", "skills"]}
+      }
+    }
+  }
+}

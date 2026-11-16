@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:voc-orchestration:skill-frontmatter",
+  "title": "A role's SKILL.md front matter (the Agent Skills format)",
+  "description": "name is the role (its directory's name); metadata ties the skill to its card's role and template version. The body holds the sections Role, Reads, Writes, Steps, Rules, When to stop and Examples, in that order; everything above Examples is the voc-skill/1 record's instructions, each example one {situation, action}.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "description", "metadata"],
+  "properties": {
+    "name": {"type": "string", "pattern": "^[a-z][a-z-]{1,30}$"},
+    "description": {"type": "string", "minLength": 1, "maxLength": 1024},
+    "metadata": {
+      "type": "object", "additionalProperties": false, "required": ["voc-role", "voc-template-version"],
+      "properties": {
+        "voc-role": {"type": "string", "pattern": "^[a-z][a-z-]{1,30}$"},
+        "voc-template-version": {"type": "integer", "minimum": 1, "maximum": 99999}
+      }
+    }
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:voc-orchestration:assertion",
+  "title": "One step assertion: a check from the closed vocabulary, evaluated by platform code on recorded outputs",
+  "description": "The vocabulary is lambda/engineering/orchestration/assertions.py VOCABULARY; the validator holds this enum to it. An assertion reads what the step recorded (tasks, findings, patches, gate records, host writes), never a model's prose.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["check"],
+  "properties": {
+    "check": {
+      "enum": [
+        "findings.cite_evidence",
+        "gate.pack_checks_ran",
+        "gate.passed",
+        "learn.proposals_name_case",
+        "notes.cite_sources",
+        "patch.max_lines",
+        "patch.no_ci_changes",
+        "patch.submitted",
+        "patch.touches_tests",
+        "pr.links_issue",
+        "pr.opened",
+        "pr.state_as_flow",
+        "push.tree_is_judged_tree",
+        "review.commented",
+        "review.no_blocking",
+        "tasks.posted",
+        "triage.commented",
+        "triage.labelled",
+        "triage.recorded"
+      ]
+    },
+    "args": {"type": "object"},
+    "on_fail": {
+      "description": "block: the step does not pass (the run goes to a person); fail_arrow: a quality gate takes its fail arrow; warn: recorded only.",
+      "enum": ["block", "fail_arrow", "warn"]
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"check": {"const": "tasks.posted"}}},
+      "then": {
+        "required": ["args"],
+        "properties": {"args": {
+          "type": "object", "additionalProperties": false, "required": ["role", "min"],
+          "properties": {"role": {"type": "string", "minLength": 1}, "min": {"type": "integer", "minimum": 1, "maximum": 100}}
+        }}
+      }
+    },
+    {
+      "if": {"properties": {"check": {"const": "review.no_blocking"}}},
+      "then": {
+        "required": ["args"],
+        "properties": {"args": {
+          "type": "object", "additionalProperties": false, "required": ["by"],
+          "properties": {"by": {"type": "string", "minLength": 1}}
+        }}
+      }
+    },
+    {
+      "if": {"properties": {"check": {"const": "patch.max_lines"}}},
+      "then": {
+        "required": ["args"],
+        "properties": {"args": {
+          "type": "object", "additionalProperties": false, "required": ["max"],
+          "properties": {"max": {"type": "integer", "minimum": 1, "maximum": 100000}}
+        }}
+      }
+    },
+    {
+      "if": {"properties": {"check": {"not": {"enum": ["tasks.posted", "review.no_blocking", "patch.max_lines"]}}}},
+      "then": {"not": {"required": ["args"]}}
+    }
+  ]
+}

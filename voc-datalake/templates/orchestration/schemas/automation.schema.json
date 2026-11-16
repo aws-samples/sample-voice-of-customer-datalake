@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:voc-orchestration:automation",
+  "title": "voc-automation/1: one seeded automation (automations/<id>.yaml)",
+  "description": "An agent every deployment starts with, disabled (shared/agent_seed.py): its seed marker, its agent body (what store.normalize_agent takes) and the flow its own editable copy is made from: an engineering flow of flows/, or wf_default, the agents' built-in Reviews to Prototype workflow.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "id", "version", "seed_marker", "name", "description", "flow", "enabled", "scope",
+               "instructions", "triggers", "models", "output", "budget", "readiness"],
+  "properties": {
+    "schema": {"const": "voc-automation/1"},
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,63}$"},
+    "version": {"type": "integer", "minimum": 1, "maximum": 99999},
+    "seed_marker": {
+      "type": "object", "additionalProperties": false, "required": ["pk", "sk"],
+      "properties": {"pk": {"type": "string", "pattern": "^AGENTSEED(#[a-z0-9-]{1,63})?$"}, "sk": {"const": "META"}}
+    },
+    "name": {"type": "string", "minLength": 1, "maxLength": 120},
+    "description": {"type": "string", "maxLength": 500},
+    "flow": {"type": "string", "pattern": "^([a-z][a-z0-9-]{1,63}|wf_default)$"},
+    "enabled": {"description": "Seeded disabled: nothing runs or spends until an administrator turns it on.",
+                "const": false},
+    "scope": {"type": "object"},
+    "instructions": {"type": "string", "maxLength": 4000},
+    "personas": {"type": "object"},
+    "triggers": {"type": "array", "maxItems": 5, "items": {
+      "type": "object", "required": ["kind"],
+      "properties": {"kind": {"enum": ["github_issue", "new_reviews", "schedule", "threshold"]}}
+    }},
+    "models": {"type": "object"},
+    "output": {"type": "object", "additionalProperties": false, "required": ["visibility"],
+               "properties": {"visibility": {"enum": ["private", "workspace"]}}},
+    "budget": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "monthly_usd": {"description": "The seeded flow's monthly budget (its definition's budget).",
+                        "type": "number", "exclusiveMinimum": 0, "maximum": 100000},
+        "max_scheduled_runs_per_day": {"type": "integer", "minimum": 0, "maximum": 5}
+      }
+    },
+    "engineering": {
+      "type": "object", "additionalProperties": false, "required": ["connection", "language", "feedback_type"],
+      "properties": {
+        "connection": {"type": "null"},
+        "language": {"type": "null"},
+        "feedback_type": {"enum": ["bug", "feature_request"]}
+      }
+    },
+    "requires_triage": {"description": "The triage kind an issue must have (ISSUE_TRIAGE#) before this automation takes it.",
+                        "enum": ["bug", "feature"]},
+    "learn": {"type": "object", "additionalProperties": false, "required": ["cross_run"],
+              "properties": {"cross_run": {"enum": ["off", "weekly"]}}},
+    "pr": {"enum": ["ready", "draft"]},
+    "readiness": {
+      "description": "The readiness checks Enable waits on (GET /agents/engineering/readiness).",
+      "type": "array", "uniqueItems": true,
+      "items": {"enum": ["connection", "app_installation", "ci_attestation", "branch_rules", "image", "bedrock_models",
+                         "agentcore_quota", "network", "session_storage", "dial", "budget", "hard_cap",
+                         "issues_source", "issue_label", "triage_enabled"]}
+    }
+  }
+}
