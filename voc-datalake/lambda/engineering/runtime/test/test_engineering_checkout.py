@@ -9,6 +9,7 @@ import pytest
 from engineering.connectors.cache_layout import REPOSITORY_DIR, entry_prefix
 from engineering.runtime.checkout import (
     CHECKOUT_DIR,
+    CHMOD,
     GIT_DIR,
     cache_source,
     check_sparse_path,
@@ -114,7 +115,7 @@ def test_every_git_command_runs_as_the_agent_with_hooks_pagers_helpers_and_syste
         # From the working tree's root, naming the git directory beside it: nothing discovered, nothing outside.
         assert command.argv[:3] == ('/usr/bin/env', '-C', CHECKOUT_DIR)
         assert {f'--git-dir=../{GIT_DIR}', '--work-tree=.'} <= set(command.argv)
-    assert lock.argv == ('/usr/bin/chmod', '-R', 'g-w', GIT_DIR)
+    assert lock.argv == (CHMOD, '-R', 'g-w', GIT_DIR)
 
 
 def test_the_default_source_is_the_commits_entry_of_its_generation_in_the_mount_and_no_paths_means_the_whole_tree():
@@ -164,3 +165,8 @@ def test_a_checkout_needs_a_full_commit_id_and_comes_from_the_cache_only(commit,
 def test_too_many_sparse_paths_are_refused():
     with pytest.raises(RuntimeRefused, match='at most'):
         checkout_commands(COMMIT, [f'p{i}' for i in range(201)], 1)
+
+
+def test_chmod_comes_from_the_systems_own_directories_only():
+    # (never the agent's PATH, which may hold a directory repository code can write)
+    assert CHMOD in ('/usr/bin/chmod', '/bin/chmod')

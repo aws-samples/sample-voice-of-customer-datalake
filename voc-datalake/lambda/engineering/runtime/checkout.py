@@ -18,6 +18,7 @@ working tree but neither the git directory nor which one the agent's git reads.
 from __future__ import annotations
 
 import re
+import shutil
 from collections.abc import Sequence
 from typing import Final
 
@@ -48,6 +49,9 @@ GIT: Final = ('/usr/bin/env', 'GIT_CONFIG_NOSYSTEM=1', 'GIT_TERMINAL_PROMPT=0', 
               '-c', 'core.sharedRepository=0644',
               # A bare repository is used only when named: never one repository code planted where git looks.
               '-c', 'safe.bareRepository=explicit')
+#: ``chmod`` from the system's own directories only (never the agent's PATH, which may hold a directory the `code` user
+#: can write): ``/usr/bin/chmod`` in the images (Debian), ``/bin/chmod`` on macOS, where the tests run the commands too.
+CHMOD: Final = shutil.which('chmod', path='/usr/bin:/bin') or '/usr/bin/chmod'
 #: The checkout's git directory: beside the working tree in /work (the agent's, not writable by the group), never
 #: inside it, where repository code could rename it and plant a repository (and its config) of its own.
 GIT_DIR: Final = 'repo.git'
@@ -64,7 +68,7 @@ def repo_git(*args: str) -> tuple[str, ...]:
 def share_working_tree() -> tuple[str, ...]:
     """The agent's command that opens the working tree (never its links) to the group, for repository code; run
     after the checkout and after a continuation puts its working tree back."""
-    return ('/usr/bin/find', CHECKOUT_DIR, '!', '-type', 'l', '-exec', '/usr/bin/chmod', 'g+w', '{}', '+')
+    return ('/usr/bin/find', CHECKOUT_DIR, '!', '-type', 'l', '-exec', CHMOD, 'g+w', '{}', '+')
 
 
 def check_sparse_path(path: str) -> str:
@@ -117,6 +121,6 @@ def checkout_commands(commit: str, paths: Sequence[str], generation: int, source
     # the git directory, beside it, is closed to it. Links are skipped: chmod follows a link it is named, and the
     # repository's links may point anywhere (or nowhere).
     steps.append((share_working_tree(), 300))
-    steps.append((('/usr/bin/chmod', '-R', 'g-w', GIT_DIR), 300))
+    steps.append(((CHMOD, '-R', 'g-w', GIT_DIR), 300))
     # The agent's own commands (as `unit`): never repository code, and the cache is a local mount.
     return [Command(argv=argv, timeout_seconds=timeout, repository_code=False) for argv, timeout in steps]
