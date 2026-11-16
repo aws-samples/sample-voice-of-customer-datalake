@@ -161,6 +161,7 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'validation-logs': 'live',
   'voting-session': 'live',
   'voting-session-open': 'live',
+  'web-review-methods': 'live', // what each review site's runs learned (pages/Scrapers, api/webReviewMethodsApi.ts)
   'workflows': 'standard',
 }
 

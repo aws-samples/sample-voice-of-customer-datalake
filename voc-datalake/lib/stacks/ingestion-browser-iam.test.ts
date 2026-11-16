@@ -5,7 +5,8 @@
  * and Start and the save to its browser profile (lib/stacks/ingestion-browser.ts), never to aws.browser.v1; with
  * `-c webReviewsBotAuth=false` Start/Stop are on the AWS-managed aws.browser.v1 of the deployment's region, as before
  * 7.41.00. ConnectBrowserAutomationStream has no resource type in the service authorization reference, so it is the
- * only action granted on `*`. No other ingestor role carries any bedrock-agentcore action.
+ * only action granted on `*`. No other ingestor role carries any bedrock-agentcore action. (AgentCore Web Search's
+ * `InvokeWebSearch`, the `auto` method's last step, is the web search capability's: ingestion-web-search.test.ts.)
  */
 import type { Template } from 'aws-cdk-lib/assertions';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -17,7 +18,8 @@ import { SYNTH_REGION } from '../test-support/synth-app';
 import { claudeRoleGrantOf, missingModelGrants } from '../test-support/bedrock-grants';
 import { ALLOWED_MODEL_IDS } from '../utils/model-allowlist';
 import {
-  BROWSER_PROFILE_SAVE_ACTION, BROWSER_SESSION_ACTIONS, BROWSER_STREAM_ACTION, MANAGED_BROWSER_ID,
+  AGENTCORE_WEB_SEARCH_ACTION, BROWSER_PROFILE_SAVE_ACTION, BROWSER_SESSION_ACTIONS, BROWSER_STREAM_ACTION,
+  MANAGED_BROWSER_ID,
 } from './ingestion-roles';
 
 const AGENTCORE = 'bedrock-agentcore:';
@@ -25,8 +27,10 @@ const MANAGED_BROWSER_ARN = JSON.stringify(`arn:aws:bedrock-agentcore:${SYNTH_RE
 const CUSTOM_BROWSER_ARN = JSON.stringify({ 'Fn::GetAtt': ['WebReviewsBrowser', 'BrowserArn'] });
 const PROFILE_ARN = JSON.stringify({ 'Fn::GetAtt': ['WebReviewsBrowserProfile', 'ProfileArn'] });
 
+/** The browser's AgentCore statements (AgentCore Web Search's is the web search capability's, pinned apart). */
 function agentcoreStatements(statements: NormalizedStatement[]): NormalizedStatement[] {
-  return statements.filter((s) => s.actions.some((action) => action.startsWith(AGENTCORE)));
+  return statements.filter((s) => s.actions.some((action) => action.startsWith(AGENTCORE))
+    && !s.actions.includes(AGENTCORE_WEB_SEARCH_ACTION));
 }
 
 /** `[actions, resource]` of every scoped (not `*`) AgentCore statement, actions sorted. */

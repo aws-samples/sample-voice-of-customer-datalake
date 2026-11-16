@@ -10,11 +10,15 @@ string, and are written by ``POST /integrations/web_reviews/apps``.
 review limit: "the latest 10 pages" is 10 / 0, "the latest 200 reviews" 0 / 200,
 "everything" 0 / 0.
 
-``method`` says how the page is read: ``browser`` (the default, and what a target saved
-before ``method`` existed is), the deployment's AgentCore browser page by page; or
-``bedrock_web_search``, an explicit choice: the page as Amazon Bedrock web search's
-cache holds it, opened by an OpenAI GPT model on the Responses API, one page per run. The
-model is the ``web_reviews_search`` surface's (Administration -> AI models,
+``method`` says how the page is read (docs/web-reviews.md → Methods): ``auto`` (the default since
+7.44.00, and what a target saved without a ``method`` is), the signed browser first, then Amazon
+Bedrock web search, then AgentCore Web Search's snippets, each later step only when the one before
+was blocked or read nothing, learning per workspace which one works for each site
+(shared/web_review_methods.py); ``browser``, the deployment's AgentCore browser page by page and
+nothing else; or ``bedrock_web_search``, the page as Amazon Bedrock web search's cache holds it,
+opened by an OpenAI GPT model on the Responses API, one page per run. A stored ``browser`` or
+``bedrock_web_search`` is kept as it is (7.41.00 and 7.42.00 stored ``browser`` for every page they
+saved). The model is the ``web_reviews_search`` surface's (Administration -> AI models,
 shared/model_config.py), never the target's: a target's ``model`` (7.41.00) is accepted
 and dropped like any unknown key, so a client of that release still saves.
 
@@ -57,10 +61,11 @@ DEFAULT_REVIEWS: Final = 0
 FREQUENCY_MINUTES: Final = (0, 15, 30, 60, 180, 360, 720, 1440)
 DEFAULT_FREQUENCY_MINUTES: Final = 0
 
-#: How a target is read (docs/web-reviews.md → Methods); a target without one is read with the browser.
+#: How a target is read (docs/web-reviews.md → Methods); a target without one is read automatically.
+METHOD_AUTO: Final = 'auto'
 METHOD_BROWSER: Final = 'browser'
 METHOD_BEDROCK_WEB_SEARCH: Final = 'bedrock_web_search'
-METHODS: Final = (METHOD_BROWSER, METHOD_BEDROCK_WEB_SEARCH)
+METHODS: Final = (METHOD_AUTO, METHOD_BROWSER, METHOD_BEDROCK_WEB_SEARCH)
 
 NAME_RE: Final = re.compile(r'^[A-Za-z0-9][\w .-]*\Z')
 _SOURCE_PREFIX: Final = 'web_'
@@ -187,7 +192,7 @@ def _enabled(target: Mapping[str, object]) -> str:
 
 
 def _method(target: Mapping[str, object]) -> str:
-    method = _text(target, 'method') or METHOD_BROWSER
+    method = _text(target, 'method') or METHOD_AUTO
     if method not in METHODS:
         raise TargetError(f'method must be one of {", ".join(METHODS)}')
     return method

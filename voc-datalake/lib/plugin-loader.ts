@@ -93,8 +93,8 @@ const IngestorInfraSchema = z.object({
   browser: z.boolean().optional().default(false),
   // Opt-in capability: when true, the dedicated role may call the Responses API on bedrock-mantle with the
   // allowlisted OpenAI GPT models (lib/utils/web-search-models.ts) and Amazon Bedrock web search's search and
-  // cached fetch (never ExternalWebAccess), in the deployment's region — a web_reviews target whose method is
-  // `bedrock_web_search`. See ingestion-roles.ts.
+  // cached fetch (never ExternalWebAccess), in the deployment's region, and AgentCore Web Search on the region's
+  // AWS-managed tool — a web_reviews target whose method is `bedrock_web_search` or `auto`. See ingestion-roles.ts.
   webSearch: z.boolean().optional().default(false),
   // Opt-in capability: when true, a run the API started tells its starter when it ends (shared/job_notices.py,
   // docs/realtime.md), so the plugin gets a DEDICATED role carrying VocCoreStack's `jobs` publish policy and

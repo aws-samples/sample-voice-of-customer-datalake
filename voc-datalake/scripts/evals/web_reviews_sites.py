@@ -5,14 +5,16 @@
         [--browser-id <id>] [--no-model] [--model-id <id>] [--model-calls 1]
         [--web-search-models openai.gpt-5.6-luna,openai.gpt-5.6-terra] [--out <dir>] [--dry-run]
 
-Run from voc-datalake/. Every site of the fixture (plugins/web_reviews/evals/sites.json) is read once per method,
-page 1 only, and each read is classified the way the plugin sees a page (``classify``): off-host, blocked by a bot
-wall (block_detection.py), a sign-in page, or reviews from its JSON-LD or from its text by the ``enrichment`` model
-(extract.py), counted up to the site's ``max_reviews``. Methods (``METHODS``):
+Run from voc-datalake/. Every site of the fixture (plugins/web_reviews/evals/sites.json, inputs only: the page, its
+subject, what is documented of it) is read once per method, page 1 only, and each read is classified the way the plugin
+sees a page (``classify``): off-host, blocked by a bot wall (block_detection.py, which names the vendor this run met),
+a sign-in page, or reviews from its JSON-LD or from its text by the ``enrichment`` model (extract.py), counted up to
+the site's ``max_reviews``. A site marked ``official_api_only`` (its reviews are for its official API only: Yelp,
+Reddit) is read by no method: each method's row says ``official_api_only``. Methods (``METHODS``):
 
 - ``signed``: the deployment's Web Bot Auth browser (``--browser-id``, else the ``BROWSER_IDENTIFIER`` of the
   Lambda ``[<prefix>-]voc-ingestor-web_reviews-<account>-<region>``; none: its rows are ``not_run``).
-- ``unsigned``: the AWS-managed ``aws.browser.v1``, the baseline the fixture records.
+- ``unsigned``: the AWS-managed ``aws.browser.v1``.
 - ``http``: one GET with this eval's own User-Agent (``VoC-Analytics-ReviewReader/<version>``), after robots.txt
   (RFC 9309) allows it.
 - ``feed``: the site's ``structured`` entries (an RSS / Atom feed, a JSON API), fetched the same way and counted;
@@ -20,22 +22,28 @@ wall (block_detection.py), a sign-in page, or reviews from its JSON-LD or from i
 - ``bedrock_web_search``: the ingestor's own reader (web_search_reader.py): an OpenAI GPT model on the
   ``bedrock-mantle`` Responses API opens the page from the Bedrock web search cache; one request per site per
   model (``--web-search-models``), one row each (``bedrock_web_search:<model>``).
-- ``agentcore_web_search`` (not in the default ``--methods``): AgentCore Web Search (``InvokeWebSearch``, no
-  model in the retrieval), ``"<subject> reviews"`` held to the site's domain; the model then reads the SNIPPETS
-  only, and a review is kept only when its body is in one of them.
+- ``agentcore_web_search``: the ingestor's snippet step (snippet_reader.py): AgentCore Web Search
+  (``InvokeWebSearch``, no model in the retrieval), ``"<subject> reviews"`` held to the site's domain, only the results
+  on the page itself read; the model then reads those SNIPPETS only, and a review is kept only when its body is in one.
+- ``auto``: what the ingestor's ``auto`` method picks on a first run (no learned record): the signed browser, then
+  Bedrock web search (the first ``--web-search-models`` model), then the snippets, each next step only when the one
+  before got nothing (blocked, a Chrome error page, an error, no reviews, a sign-in page). It reuses this run's rows of
+  those methods when they ran (``auto`` always runs last) and runs a missing step itself; its row names the step that
+  read the site (``picked``) and the chain.
 
 A web-search row's reviews are checked against the page text this run's browser or http rows read of the same
 site (``verbatim``): every body found, some, none (``paraphrase_risk``), or no page text to check against.
 
-What it never does: write anything into a deployment (no queue, watermark or secret; ``BROWSER_PROFILE_IDENTIFIER``
-is removed before every session, so no browser profile is loaded or saved), or hide what it is (no stealth, no
-browser-like User-Agent, no CAPTCHA solving, no proxy). Its AWS calls are reads (sts GetCallerIdentity, lambda
+What it never does: write anything into a deployment (no queue, watermark, learned method record or secret;
+``BROWSER_PROFILE_IDENTIFIER`` is removed before every session, so no browser profile is loaded or saved), write
+anywhere but under the git-ignored ``web-reviews-eval/`` (its reports are never committed), or hide what it is (no
+stealth, no browser-like User-Agent, no CAPTCHA solving, no proxy). Its AWS calls are reads (sts GetCallerIdentity, lambda
 GetFunctionConfiguration, bedrock-agentcore-control GetBrowser) plus the browser sessions it starts and always stops
 (one per site per browser method, 300 s at most), at most ``--model-calls`` Converse calls per page read, and the
 web search requests above.
 
-Output: ``--out`` (default ``web-reviews-eval/<UTC yyyymmddThhmmssZ>`` under the current directory) gets
-``report.json`` and ``report.md``; report.md is printed too. ``--dry-run`` prints the plan without any AWS call or
+Output: ``--out`` (default ``web-reviews-eval/<UTC yyyymmddThhmmssZ>`` under voc-datalake/; it must be inside
+``web-reviews-eval/``) gets ``report.json`` and ``report.md``; report.md is printed too. ``--dry-run`` prints the plan without any AWS call or
 network request. Exit 0 when the eval ran, 2 on a setup error (a bad fixture or argument, the ingestor Lambda not
 found when ``signed`` needs it and no ``--browser-id`` is given).
 """
@@ -52,7 +60,7 @@ import time
 import xml.etree.ElementTree as ET
 from collections.abc import Callable, Generator, Iterable, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
@@ -67,8 +75,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'plugins' / 'web_re
 
 import requests
 import urllib3
-from botocore.auth import SigV4Auth
-from botocore.awsrequest import AWSRequest
 from botocore.exceptions import BotoCoreError, ClientError, NoCredentialsError
 from bs4 import BeautifulSoup
 
@@ -99,16 +105,20 @@ NO_SIGNED_BROWSER: Final = 'the deployment has no Web Bot Auth browser (opted ou
 BEDROCK_WEB_SEARCH: Final = 'bedrock_web_search'
 DEFAULT_WEB_SEARCH_MODELS: Final = ('openai.gpt-5.6-luna', 'openai.gpt-5.6-terra')
 _MODEL_ID_RE: Final = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}\Z')
-#: AgentCore Web Search: the AWS-managed tool, its REST path (botocore's bedrock-agentcore model, InvokeWebSearch),
-#: the SigV4 service, the regions that offer it (devguide, web-search-api.html → Regions).
+#: AgentCore Web Search: the ingestor's snippet step (snippet_reader.py ``invoke_web_search``, ``on_page``,
+#: ``snippet_reviews``).
 AGENTCORE_WEB_SEARCH: Final = 'agentcore_web_search'
-WEB_SEARCH_TOOL: Final = 'web-search.v1'
-AGENTCORE_SIGNING_SERVICE: Final = 'bedrock-agentcore'
-AGENTCORE_SEARCH_REGIONS: Final = frozenset({'us-east-1', 'us-east-2', 'us-west-2', 'ap-southeast-2', 'ap-northeast-1',
-                                             'eu-west-1'})
-AGENTCORE_SEARCH_RESULTS: Final = 10
-AGENTCORE_SEARCH_TIMEOUT_SECONDS: Final = 60
-MAX_QUERY_CHARS: Final = 200
+SNIPPET_MODULE: Final = 'snippet_reader'
+#: ``auto``: the ingestor's cascade on a site it knows nothing of, and the outcomes that hand a site to its next step.
+AUTO: Final = 'auto'
+AUTO_STEPS: Final = ('signed', BEDROCK_WEB_SEARCH, AGENTCORE_WEB_SEARCH)
+#: A site whose reviews are for its official API only: every method's row.
+OFFICIAL_API_ONLY: Final = 'official_api_only'
+#: Where the reports go, and the only place they may go (git-ignored: a run's results are never committed).
+REPORTS_DIR: Final = 'web-reviews-eval'
+REPORTS_ROOT: Final = ROOT / REPORTS_DIR
+#: Chrome's own error page (a navigation that failed), which ``auto`` reads as a block.
+CHROME_ERROR_HOST: Final = 'chromewebdata'
 #: Characters of a review body (whitespace collapsed, lower-cased) looked for in another method's page text.
 VERBATIM_KEY_CHARS: Final = 80
 #: Rows whose page text was the page itself (not a wall, a sign-in page or another host): what ``verbatim`` reads.
@@ -117,7 +127,8 @@ PAGE_TEXT_OUTCOMES: Final = frozenset({'readable', 'no_reviews', 'unextracted'})
 PAGE_TEXT_KEY: Final = '_page_text'
 BODIES_KEY: Final = '_bodies'
 #: Every row's method-specific fields (None where they do not apply).
-ROW_EXTRAS: Final = ('excerpt_only', 'verbatim', 'model', 'opened_urls', 'cited_urls', 'dropped', 'sources')
+ROW_EXTRAS: Final = ('excerpt_only', 'verbatim', 'model', 'opened_urls', 'cited_urls', 'dropped', 'sources', 'picked',
+                     'chain')
 
 #: How the http and feed methods identify themselves, and the robots.txt product token they obey.
 ROBOTS_PRODUCT: Final = 'VoC-Analytics-ReviewReader'
@@ -144,13 +155,13 @@ NO_COMPARISON: Final = '—'
 UNCOMPARED_OUTCOMES: Final = frozenset({'not_run', 'error'})
 
 #: The fixture's vocabulary.
-EXPECTATIONS: Final = ('readable', 'blocked', 'login', 'unknown')
+EXPECTATIONS: Final = ('readable', 'blocked', 'login', OFFICIAL_API_ONLY, 'unknown')
 FEED_KINDS: Final = ('rss', 'atom', 'json', 'official_api')
 MAX_REVIEW_CAP: Final = 100
 _TOP_KEYS: Final = frozenset({'description', 'defaults', 'sites'})
 _DEFAULT_KEYS: Final = frozenset({'max_pages', 'max_reviews'})
-_SITE_REQUIRED: Final = frozenset({'id', 'site', 'url', 'subject', 'expect', 'baseline', 'evidence'})
-_SITE_OPTIONAL: Final = frozenset({'vendor', 'vendor_evidence', 'notes', 'structured', 'max_reviews'})
+_SITE_REQUIRED: Final = frozenset({'id', 'site', 'url', 'subject', 'expect'})
+_SITE_OPTIONAL: Final = frozenset({'notes', 'structured', 'max_reviews', OFFICIAL_API_ONLY})
 _ENTRY_REQUIRED: Final = frozenset({'kind', 'url'})
 _ENTRY_OPTIONAL: Final = frozenset({'needs_secret', 'count_path', 'docs', 'notes'})
 _SITE_ID_RE: Final = re.compile(r'^[a-z0-9][a-z0-9_-]{0,47}\Z')
@@ -165,9 +176,6 @@ _UNSAFE_XML: Final = re.compile(rb'<!\s*(DOCTYPE|ENTITY)', re.IGNORECASE)
 _UNRESERVED: Final = frozenset(string.ascii_letters + string.digits + '-._~')
 _PERCENT_RE: Final = re.compile(r'%([0-9A-Fa-f]{2})')
 _RESERVED_KEPT: Final = ":/?#[]@!$&'()*+,;=%"
-_MONTHS: Final = ('January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October',
-                  'November', 'December')
-_ELLIPSES: Final = ('...', '\u2026')
 
 
 class SetupError(Exception):
@@ -176,10 +184,6 @@ class SetupError(Exception):
 
 class FeedParseError(ValueError):
     """A structured entry's answer is not what its kind says."""
-
-
-class AgentCoreSearchError(RuntimeError):
-    """InvokeWebSearch refused the request or gave no readable answer; the message is client-safe."""
 
 
 def plugin(name: str) -> ModuleType:
@@ -208,11 +212,11 @@ class Site:
     site: str
     url: str
     subject: str
-    vendor: str
     expect: str
-    baseline: str
     max_reviews: int
     structured: tuple[Structured, ...]
+    official_api_only: bool = False
+    notes: str = ''
 
 
 def _text(value: object, where: str, *, empty: bool = False) -> str:
@@ -275,19 +279,22 @@ def _site(value: object, where: str, default_cap: int) -> Site:
     if not isinstance(site_id, str) or not _SITE_ID_RE.match(site_id):
         raise SetupError(f'{where}.id must be lower-case letters, digits, "_" or "-" (at most 48), not {site_id!r}')
     where = f'{where} ({site_id})'
-    _text(raw['evidence'], f'{where}.evidence')
-    _text(raw.get('vendor_evidence', ''), f'{where}.vendor_evidence', empty=True)
-    _text(raw.get('notes', ''), f'{where}.notes', empty=True)
+    notes = _text(raw.get('notes', ''), f'{where}.notes', empty=True)
     entries = raw.get('structured', [])
     if not isinstance(entries, list):
         raise SetupError(f'{where}.structured must be a list')
+    official = raw.get(OFFICIAL_API_ONLY, False)
+    if not isinstance(official, bool):
+        raise SetupError(f'{where}.{OFFICIAL_API_ONLY} must be true or false')
+    expect = _choice(raw['expect'], f'{where}.expect', EXPECTATIONS)
+    if official != (expect == OFFICIAL_API_ONLY):
+        raise SetupError(f'{where}: {OFFICIAL_API_ONLY}: true goes with expect "{OFFICIAL_API_ONLY}", and only with it')
     return Site(
         id=site_id, site=_text(raw['site'], f'{where}.site'), url=_https(raw['url'], f'{where}.url'),
-        subject=_text(raw['subject'], f'{where}.subject'), vendor=_text(raw.get('vendor', 'unknown'), f'{where}.vendor'),
-        expect=_choice(raw['expect'], f'{where}.expect', EXPECTATIONS),
-        baseline=_choice(raw['baseline'], f'{where}.baseline', EXPECTATIONS),
+        subject=_text(raw['subject'], f'{where}.subject'), expect=expect,
         max_reviews=_cap(raw.get('max_reviews', default_cap), f'{where}.max_reviews'),
         structured=tuple(_structured(entry, f'{where}.structured[{i}]') for i, entry in enumerate(entries)),
+        official_api_only=official, notes=notes,
     )
 
 
@@ -593,7 +600,11 @@ class Run:
     #: The web search requests' POST, ``(url, body, headers, timeout) -> (status, body)``; None: ``post_json``.
     post: Post | None = None
     robots: dict[str, str | list[RobotsGroup]] = field(default_factory=dict)
+    #: The methods a dry run plans (None for a real run).
+    planned: tuple[str, ...] | None = None
     signing_credentials: Any = None
+    #: The current site's rows so far (``run_eval``), which ``auto`` reuses.
+    site_rows: list[dict[str, Any]] = field(default_factory=list)
 
     def budget(self) -> ModelBudget | None:
         return ModelBudget(self.model_calls, self.complete) if self.complete is not None else None
@@ -711,7 +722,8 @@ def feed_verdict(entry: Structured, fetched: Fetched, cap: int) -> Verdict:
 def row_errors() -> tuple[type[BaseException], ...]:
     """What one row may fail with; it is then an ``error`` row, the eval goes on."""
     return (plugin(BROWSER_MODULE).BrowserUnavailableError, plugin(PAGE_MODULE).PageLoadError,
-            plugin(CDP_MODULE).CdpError, plugin(WEB_SEARCH_MODULE).WebSearchError, AgentCoreSearchError, TargetError,
+            plugin(CDP_MODULE).CdpError, plugin(WEB_SEARCH_MODULE).WebSearchError,
+            plugin(SNIPPET_MODULE).SnippetSearchError, TargetError,
             UnsafeURLError, requests.RequestException, ClientError, BotoCoreError, BedrockThrottlingError, OSError)
 
 
@@ -739,8 +751,7 @@ def result(site: Site, method: str, url: str, started: float, verdict: Verdict, 
         'reviews': verdict.count, 'pages_read': 0 if read.final_url is None else 1,
         'seconds': round(time.monotonic() - started, 1), 'extraction': verdict.extraction,
         'model_calls': budget.used if budget is not None else 0, 'http_status': read.status,
-        'final_url': read.final_url, 'expect': site.expect, 'baseline': site.baseline,
-        'vs_expect': compare(site.expect, verdict.outcome), 'vs_baseline': compare(site.baseline, verdict.outcome),
+        'final_url': read.final_url, 'expect': site.expect, 'vs_expect': compare(site.expect, verdict.outcome),
         'detail': verdict.detail, 'sample': list(verdict.sample),
         **dict.fromkeys(ROW_EXTRAS), **(extra or {}),
     }
@@ -899,104 +910,104 @@ def web_search_rows(site: Site, run: Run) -> list[dict[str, Any]]:
     return [web_search_row(site, run, model) for model in run.web_search_models]
 
 
-def agentcore_search_url(region: str) -> str:
-    """InvokeWebSearch's REST endpoint (botocore's bedrock-agentcore model: ``POST /web-search/{webSearchId}/invoke``)."""
-    return f'https://bedrock-agentcore.{region}.amazonaws.com/web-search/{WEB_SEARCH_TOOL}/invoke'
-
-
-def search_request(site: Site) -> dict[str, Any]:
-    """``"<subject> reviews"``, ``AGENTCORE_SEARCH_RESULTS`` results at most, held to the site's domain."""
-    domain = plugin(WEB_SEARCH_MODULE).site_domain(site.url)
-    return {'searchQuery': f'{site.subject} reviews'[:MAX_QUERY_CHARS], 'maxResults': AGENTCORE_SEARCH_RESULTS,
-            'filters': {'domainFilter': {'include': [domain]}}}
-
-
-def invoke_web_search(site: Site, run: Run) -> list[dict[str, Any]]:
-    """One SigV4-signed InvokeWebSearch (service ``bedrock-agentcore``): its results that carry text."""
-    url = agentcore_search_url(run.region)
-    data = json.dumps(search_request(site)).encode()
-    request = AWSRequest(method='POST', url=url, data=data, headers={'Content-Type': 'application/json'})
-    SigV4Auth(run.credentials(), AGENTCORE_SIGNING_SERVICE, run.region).add_auth(request)
-    status, raw = (run.post or post_json)(url, data, dict(request.headers.items()), AGENTCORE_SEARCH_TIMEOUT_SECONDS)
-    if status >= 400:
-        raise AgentCoreSearchError(f'HTTP {status}: {_collapsed(raw.decode("utf-8", "replace"))[:160]}')
-    try:
-        answer = json.loads(raw)
-    except ValueError:
-        raise AgentCoreSearchError('an unreadable answer') from None
-    results = answer.get('results') if isinstance(answer, dict) else None
-    if not isinstance(results, list):
-        raise AgentCoreSearchError('an answer without results')
-    return [item for item in results if isinstance(item, dict) and isinstance(item.get('text'), str)]
-
-
-def _shows_rating(snippet: str, rating: float) -> bool:
-    """Whether *snippet* shows *rating* as a rating out of 5 ("4/5", "4.0 out of 5", "4 stars")."""
-    values = '|'.join(re.escape(value) for value in {f'{rating:g}', f'{rating:.1f}'})
-    pattern = rf'(?<![\d.])(?:{values})\s*(?:/\s*5\b|out of 5\b|-?stars?\b|\u2605)'
-    return re.search(pattern, snippet, re.IGNORECASE) is not None
-
-
-def _shows_date(snippet: str, iso: str) -> bool:
-    """Whether *snippet* shows the date *iso* (as written, or as "October 1, 2026" / "Oct 1, 2026" / "1 October 2026")."""
-    day = datetime.fromisoformat(iso)
-    month = _MONTHS[day.month - 1]
-    spellings = {iso, f'{month} {day.day}, {day.year}', f'{month[:3]} {day.day}, {day.year}',
-                 f'{day.day} {month} {day.year}', f'{day.day} {month[:3]} {day.year}'}
-    lowered = snippet.lower()
-    return any(spelling.lower() in lowered for spelling in spellings)
-
-
-def _from_snippet(review: Any, snippet: str) -> Any:
-    """*review* with only what *snippet* shows: its rating and date when written there, never an author."""
-    rating = review.rating if review.rating is not None and _shows_rating(snippet, review.rating) else None
-    published = review.date if review.date is not None and _shows_date(snippet, review.date) else None
-    return replace(review, rating=rating, date=published, author=None)
-
-
-def snippet_verdict(results: Sequence[dict[str, Any]], cap: int,
+def snippet_verdict(results: Sequence[Any], page_url: str, cap: int,
                     budget: ModelBudget | None) -> tuple[Verdict, dict[str, Any]]:
-    """The reviews the model finds in the search results' SNIPPETS, each kept only when its body (whitespace
-    collapsed) is in one snippet; ``excerpt_only`` when that snippet is a cut passage (an ellipsis at its start or
-    end), so the review may go on beyond what the search returned. Each kept review records its result's url, title
-    and publication time."""
+    """The ingestor's snippet step over *results* (snippet_reader.py): only the results on the page itself, then the
+    reviews the model finds in their SNIPPETS, each kept only when its body is in one snippet (``excerpt_only`` when
+    that snippet is a cut passage, so the review may go on beyond what the search returned). Each kept review records
+    its result's url, title and publication time."""
+    snippets = plugin(SNIPPET_MODULE)
     extra: dict[str, Any] = {'sources': [], 'dropped': 0}
     if not results:
         return Verdict('no_reviews', extraction='snippets', detail='the search returned no result'), extra
+    page = snippets.on_page(results, page_url)
+    if not page:
+        return Verdict('no_reviews', extraction='snippets',
+                       detail=f'{len(results)} results, none on the page itself'), extra
     if budget is None:
-        detail = f'{len(results)} results; --no-model left the snippets unread'
+        detail = f'{len(page)} results on the page; --no-model left the snippets unread'
         return Verdict('unextracted', extraction='snippets', detail=detail), extra
-    snippets = [_collapsed(item['text']) for item in results]
-    kept: list[Any] = []
-    for review in plugin(EXTRACT_MODULE).llm_reviews('\n\n---\n\n'.join(snippets), budget):
-        body = _collapsed(review.text)
-        index = next((i for i, snippet in enumerate(snippets) if body and body in snippet), None)
-        if index is None:
-            extra['dropped'] += 1
-            continue
-        if len(kept) >= cap:
-            break
-        snippet, source = snippets[index], results[index]
-        kept.append(_from_snippet(review, snippet))
-        extra['sources'].append({
-            'url': source.get('url'), 'title': source.get('title'), 'published_date': source.get('publishedAt'),
-            'excerpt_only': snippet.startswith(_ELLIPSES) or snippet.endswith(_ELLIPSES),
-        })
-    extra['excerpt_only'] = any(source['excerpt_only'] for source in extra['sources']) if kept else None
-    extra[BODIES_KEY] = [review.text for review in kept]
-    return _with_reviews('snippets', kept, cap), extra
+    kept, extra['dropped'] = snippets.snippet_reviews(page, budget, cap)
+    extra['sources'] = [{'url': item.source.url, 'title': item.source.title, 'published_date': item.source.published_at,
+                         'excerpt_only': item.cut} for item in kept]
+    extra['excerpt_only'] = any(item.cut for item in kept) if kept else None
+    extra[BODIES_KEY] = [item.review.text for item in kept]
+    return _with_reviews('snippets', [item.review for item in kept], cap), extra
 
 
 def agentcore_search_rows(site: Site, run: Run) -> list[dict[str, Any]]:
-    if run.region not in AGENTCORE_SEARCH_REGIONS:
-        regions = ', '.join(sorted(AGENTCORE_SEARCH_REGIONS))
+    snippets = plugin(SNIPPET_MODULE)
+    if run.region not in snippets.SEARCH_REGIONS:
+        regions = ', '.join(sorted(snippets.SEARCH_REGIONS))
         return [not_run(site, AGENTCORE_WEB_SEARCH, f'AgentCore Web Search is not offered in {run.region} ({regions})')]
     started, budget = time.monotonic(), run.budget()
     try:
-        verdict, extra = snippet_verdict(invoke_web_search(site, run), site.max_reviews, budget)
+        results = snippets.invoke_web_search(snippets.query_for(site.subject),
+                                             plugin(WEB_SEARCH_MODULE).site_domain(site.url), region=run.region,
+                                             credentials=run.credentials(), post=run.post or post_json)
+        verdict, extra = snippet_verdict(results, site.url, site.max_reviews, budget)
     except row_errors() as error:
         verdict, extra = Verdict('error', detail=_short(error)), {}
     return [result(site, AGENTCORE_WEB_SEARCH, site.url, started, verdict, budget=budget, extra=extra)]
+
+
+# ── auto: the ingestor's cascade on a first run ─────────────────────────────────────────────────────────────────
+
+
+def hands_on(row: Mapping[str, Any]) -> bool:
+    """Whether a step's row hands the site to the next step: anything but reviews read, except a redirect to another
+    site's page (the ingestor stops there) and a site no method may read."""
+    outcome = row['outcome']
+    if outcome == 'readable':
+        return False
+    if outcome == 'off_host':
+        final = urlsplit(row.get('final_url') or '')
+        return final.scheme == 'chrome-error' or final.hostname == CHROME_ERROR_HOST
+    return outcome != OFFICIAL_API_ONLY
+
+
+def _step_row(site: Site, run: Run, step: str) -> dict[str, Any]:
+    """*step*'s row of this site: the one this run made already, else one made now."""
+    name = f'{BEDROCK_WEB_SEARCH}:{run.web_search_models[0]}' if step == BEDROCK_WEB_SEARCH else step
+    made = next((row for row in run.site_rows if row['method'] == name), None)
+    if made is not None:
+        return made
+    if step == 'signed':
+        [row] = signed_rows(site, run)
+    elif step == BEDROCK_WEB_SEARCH:
+        row = web_search_row(site, run, run.web_search_models[0])
+    else:
+        [row] = agentcore_search_rows(site, run)
+    run.site_rows.append(row)
+    return row
+
+
+def auto_rows(site: Site, run: Run) -> list[dict[str, Any]]:
+    """What ``auto`` picks: the first step of ``AUTO_STEPS`` that reads the site, each next one only when the one
+    before handed it on (``hands_on``); the row is the picked step's (its outcome, reviews, bodies), or the last
+    step's when none read it, with the chain."""
+    started, steps = time.monotonic(), []
+    for step in AUTO_STEPS:
+        steps.append(_step_row(site, run, step))
+        if not hands_on(steps[-1]):
+            break
+    last = steps[-1]
+    picked = AUTO_STEPS[len(steps) - 1] if last['outcome'] == 'readable' else None
+    chain = [{'method': step, 'outcome': row['outcome'], 'reviews': row['reviews']}
+             for step, row in zip(AUTO_STEPS, steps, strict=False)]
+    verdict = Verdict(last['outcome'], extraction=picked, count=last['reviews'] if picked else 0,
+                      sample=tuple(last['sample']) if picked else (), detail='' if picked else last['detail'])
+    extra: dict[str, Any] = {'picked': picked, 'chain': chain}
+    if picked and BODIES_KEY in last:
+        extra[BODIES_KEY] = list(last[BODIES_KEY])
+    return [result(site, AUTO, site.url, started, verdict, extra=extra)]
+
+
+def official_api_row(site: Site, method: str) -> dict[str, Any]:
+    """A site whose reviews are for its official API only: no method reads it; its docs instead."""
+    docs = '; '.join(entry.url for entry in site.structured if entry.kind == 'official_api')
+    detail = '; '.join(part for part in (site.notes, docs) if part) or 'its official API only'
+    return result(site, method, site.url, time.monotonic(), Verdict(OFFICIAL_API_ONLY, detail=detail))
 
 
 # ── the method registry ─────────────────────────────────────────────────────────────────────────────────────────
@@ -1029,9 +1040,17 @@ def _feed_cost(site: Site, _run: Run) -> Cost:
 
 
 def _agentcore_cost(_site: Site, run: Run) -> Cost:
-    if run.region not in AGENTCORE_SEARCH_REGIONS:
+    if run.region not in plugin(SNIPPET_MODULE).SEARCH_REGIONS:
         return Cost(note=f'not run ({run.region})')
     return Cost(searches=1, pages=1)
+
+
+def _auto_cost(site: Site, run: Run) -> Cost:
+    """At most its three steps; nothing when the run's own rows of them are reused (the dry run plans ``--methods``)."""
+    if run.planned is not None and set(AUTO_STEPS) <= set(run.planned):
+        return Cost(note='reuses this run\'s rows')
+    agentcore = _agentcore_cost(site, run)
+    return Cost(sessions=1, responses=1, searches=agentcore.searches, pages=1 + agentcore.pages, note='at most')
 
 
 METHODS: Final = {method.name: method for method in (
@@ -1041,17 +1060,20 @@ METHODS: Final = {method.name: method for method in (
     Method('feed', feed_rows, _feed_cost),
     Method(BEDROCK_WEB_SEARCH, web_search_rows, lambda _site, run: Cost(responses=len(run.web_search_models))),
     Method(AGENTCORE_WEB_SEARCH, agentcore_search_rows, _agentcore_cost),
+    Method(AUTO, auto_rows, _auto_cost),
 )}
-DEFAULT_METHODS: Final = ('signed', 'unsigned', 'http', 'feed', BEDROCK_WEB_SEARCH, AGENTCORE_WEB_SEARCH)
+DEFAULT_METHODS: Final = ('signed', 'unsigned', 'http', 'feed', BEDROCK_WEB_SEARCH, AGENTCORE_WEB_SEARCH, AUTO)
 
 
 def parse_methods(value: str) -> list[Method]:
-    """``--methods``: comma-separated names of ``METHODS``, each once, in the order given."""
+    """``--methods``: comma-separated names of ``METHODS``, each once, in the order given, ``auto`` last (it reuses
+    the rows of the methods before it)."""
     names = list(dict.fromkeys(part.strip() for part in value.split(',') if part.strip()))
     unknown = [name for name in names if name not in METHODS]
     if unknown or not names:
         raise SetupError(f'--methods: unknown method {", ".join(unknown) or "(none given)"}; '
                          f'choose from {", ".join(METHODS)}')
+    names = [name for name in names if name != AUTO] + ([AUTO] if AUTO in names else [])
     return [METHODS[name] for name in names]
 
 
@@ -1135,16 +1157,23 @@ def columns(rows: Sequence[dict[str, Any]], methods: Sequence[str]) -> list[str]
 
 
 def _pivot_cell(row: Mapping[str, Any]) -> str:
-    return f'{row["outcome"]} ({row["verbatim"]})' if row.get('verbatim') else row['outcome']
+    cell = f'{row["outcome"]} via {row["picked"]}' if row.get('picked') else row['outcome']
+    return f'{cell} ({row["verbatim"]})' if row.get('verbatim') else cell
+
+
+def vendors(rows: Iterable[Mapping[str, Any]]) -> str:
+    """The bot management this run met on a site: every ``blocked:<vendor>`` of its rows, each once."""
+    seen = dict.fromkeys(row['outcome'].removeprefix('blocked:') for row in rows if row['outcome'].startswith('blocked:'))
+    return ', '.join(seen) or NO_COMPARISON
 
 
 def _pivot(rows: Sequence[dict[str, Any]], names: Sequence[str]) -> list[list[str]]:
-    """One line per site, one cell per column: its outcome(s) (a site with several feed entries has several), a
-    web-search row's ``verbatim`` check after it."""
+    """One line per site: the vendors this run met, then one cell per column: its outcome(s) (a site with several
+    feed entries has several), ``auto``'s picked step, a web-search row's ``verbatim`` check after it."""
     sites = list(dict.fromkeys((row['site_id'], row['site']) for row in rows))
-    return [[f'{name} ({site_id})', *(' / '.join(_pivot_cell(row) for row in rows
-                                                 if row['site_id'] == site_id and row['method'] == column)
-                                      for column in names)]
+    return [[f'{name} ({site_id})', vendors(row for row in rows if row['site_id'] == site_id),
+             *(' / '.join(_pivot_cell(row) for row in rows if row['site_id'] == site_id and row['method'] == column)
+               for column in names)]
             for site_id, name in sites]
 
 
@@ -1165,7 +1194,7 @@ def report_markdown(report: Mapping[str, Any]) -> str:
                 ((row['site'], row['method'], row['outcome'], row['reviews'], row['extraction'],
                   f'{row["seconds"]:.1f}', row['expect'], row['vs_expect']) for row in rows)),
         '', '## By site', '',
-        *_table(('Site', *names), _pivot(rows, names)),
+        *_table(('Site', 'Vendor (this run)', *names), _pivot(rows, names)),
     ]
     details = [f'- {row["site"]} / {row["method"]}: {_cell(row["detail"])}' for row in rows if row['detail']]
     if details:
@@ -1199,7 +1228,8 @@ def _plan_cell(cost: Cost) -> str:
 
 def dry_run_plan(sites: Sequence[Site], methods: Sequence[Method], args: argparse.Namespace, run: Run) -> str:
     """What a real run would do and spend at most; nothing is called."""
-    costs = [method.cost(site, run) for site in sites for method in methods]
+    run.planned = tuple(method.name for method in methods)
+    costs = [method.cost(site, run) for site in sites if not site.official_api_only for method in methods]
     fetches = [url for cost in costs for url in cost.fetches]
     origins = {f'{urlsplit(url).scheme}://{urlsplit(url).netloc}' for url in fetches}
     model_calls = 0 if args.no_model else sum(cost.pages for cost in costs) * args.model_calls
@@ -1219,9 +1249,10 @@ def dry_run_plan(sites: Sequence[Site], methods: Sequence[Method], args: argpars
         f'- Model extraction: {model}',
         f'- Web search models ({BEDROCK_WEB_SEARCH}): {", ".join(run.web_search_models)}',
         '',
-        *_table(('Site', 'Subject', 'Vendor', 'Expect', 'Baseline', *(method.name for method in methods)),
-                ([f'{site.site} ({site.id})', site.subject, site.vendor, site.expect, site.baseline,
-                  *(_plan_cell(method.cost(site, run)) for method in methods)] for site in sites)),
+        *_table(('Site', 'Subject', 'Expect', *(method.name for method in methods)),
+                ([f'{site.site} ({site.id})', site.subject, site.expect,
+                  *(_plan_cell(method.cost(site, run)) if not site.official_api_only else OFFICIAL_API_ONLY
+                    for method in methods)] for site in sites)),
         '',
         (f'At most: {sum(cost.sessions for cost in costs)} browser sessions ({BROWSER_SESSION_SECONDS} s each), '
          f'{model_calls} model calls, {len(fetches) + len(origins)} HTTP GETs ({len(origins)} robots.txt; the shared '
@@ -1247,7 +1278,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument('--model-calls', type=int, default=1, help='Converse calls per page at most (default: 1)')
     parser.add_argument('--web-search-models', default=','.join(DEFAULT_WEB_SEARCH_MODELS),
                         help=f'the models of {BEDROCK_WEB_SEARCH}, comma-separated (default: %(default)s)')
-    parser.add_argument('--out', help='the report directory (default: web-reviews-eval/<UTC time>)')
+    parser.add_argument('--out', help=f'the report directory, inside {REPORTS_DIR}/ (default: {REPORTS_DIR}/<UTC time>)')
     parser.add_argument('--dry-run', action='store_true', help='print the plan; no AWS call, no network request')
     return parser
 
@@ -1263,10 +1294,14 @@ def run_eval(sites: Sequence[Site], methods: Sequence[Method], run: Run) -> list
     rows: list[dict[str, Any]] = []
     for site in sites:
         site_rows: list[dict[str, Any]] = []
+        run.site_rows = site_rows
         for method in methods:
-            for row in method.rows(site, run):
+            made = [official_api_row(site, method.name)] if site.official_api_only else method.rows(site, run)
+            for row in made:
+                # A step auto ran itself is in site_rows already (``_step_row``): before auto's row, in the report.
+                if not any(row is kept for kept in site_rows):
+                    site_rows.append(row)
                 _progress(row)
-                site_rows.append(row)
         texts = [text for row in site_rows if (text := row.pop(PAGE_TEXT_KEY, None)) is not None]
         for row in site_rows:
             bodies = row.pop(BODIES_KEY, None)
@@ -1284,7 +1319,20 @@ def web_search_models(value: str) -> tuple[str, ...]:
     return models
 
 
+def report_dir(out: str | None, started: datetime) -> Path:
+    """Where the report goes: *out*, which must be inside voc-datalake's git-ignored ``web-reviews-eval/`` (a run's
+    results are never committed), else ``web-reviews-eval/<UTC yyyymmddThhmmssZ>``."""
+    reports = REPORTS_ROOT.resolve()
+    if out is None:
+        return reports / started.strftime('%Y%m%dT%H%M%SZ')
+    chosen = Path(out).resolve()
+    if chosen == reports or reports not in chosen.parents:
+        raise SetupError(f'--out must be a directory inside {reports} (git-ignored), not {chosen}')
+    return chosen
+
+
 def _setup(args: argparse.Namespace) -> tuple[list[Site], list[Method], Run]:
+    report_dir(args.out, datetime.now(UTC))  # a bad --out stops the run before anything is read
     methods = parse_methods(args.methods)
     if args.model_calls < 1:
         raise SetupError('--model-calls must be at least 1 (use --no-model for none)')
@@ -1326,7 +1374,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         },
         'results': rows,
     }
-    out = Path(args.out) if args.out else Path.cwd() / 'web-reviews-eval' / started.strftime('%Y%m%dT%H%M%SZ')
+    out = report_dir(args.out, started)
     print(write_report(out, report))
     print(f'report: {out / "report.json"}, {out / "report.md"}', file=sys.stderr)
     return 0

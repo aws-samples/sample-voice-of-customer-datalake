@@ -11,10 +11,13 @@ import { api } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import { AppConfigCard } from './AppConfigComponents'
 import { useRadarBrandLabeler } from './useRadarBrands'
-import { appField, getAppIdentifier } from './scraper-helpers'
+import { WEB_REVIEWS_PLUGIN_ID, appField, getAppIdentifier } from './scraper-helpers'
 import { useAppRun } from './useAppRun'
+import { useLearnedMethods } from './useLearnedMethods'
+import { reviewPageDomain } from './webReviewMethod'
 import type { RunStatusInfo } from './AppConfigComponents'
 import type { AppConfig } from './scraper-helpers'
+import type { LearnedMethod } from './useLearnedMethods'
 import type { SourceRunStatus } from './sourceRunStatus'
 import type { PluginManifest } from '../../plugins/types'
 import { allAppConfigsKey } from '../../api/queryKeys'
@@ -24,18 +27,19 @@ type RunApp = (pluginId: string, appIdentifier: string) => Promise<unknown>
 function runStatusInfo(run: SourceRunStatus): RunStatusInfo {
   return {
     status: run.status, items_found: run.items_found ?? 0, errors: run.errors ?? [],
-    started_at: run.started_at, completed_at: run.completed_at,
+    started_at: run.started_at, completed_at: run.completed_at, reads: run.reads,
   }
 }
 
 /** One card and its own run: `identifier` is what Run now sends as `app_id` and what its status is read by. */
 function AppRunCard({
-  app, plugin, isAdmin, radarBrandLabel, onEdit, onDelete, onRunApp,
+  app, plugin, isAdmin, radarBrandLabel, learned, onEdit, onDelete, onRunApp,
 }: Readonly<{
   app: AppConfig
   plugin: PluginManifest
   isAdmin: boolean
   radarBrandLabel: string | undefined
+  learned: LearnedMethod | undefined
   onEdit: () => void
   onDelete: () => void
   onRunApp: RunApp
@@ -44,7 +48,7 @@ function AppRunCard({
   return (
     <AppConfigCard app={app} plugin={plugin} radarBrandLabel={radarBrandLabel} isAdmin={isAdmin}
       onEdit={onEdit} onDelete={onDelete} onRun={() => void start()}
-      isRunning={isRunning}
+      isRunning={isRunning} learned={learned}
       runStatus={lastRun === null ? undefined : runStatusInfo(lastRun)} />
   )
 }
@@ -108,6 +112,12 @@ export default function AppConfigList({
       plugin,
     })
   }
+  const learnedOf = useLearnedMethods(allApps.some(({ plugin }) => plugin.id === WEB_REVIEWS_PLUGIN_ID))
+  /** A review page's site state (what was learned, Re-check); none for an app connector or a URL that does not parse. */
+  const learnedFor = (app: AppConfig, plugin: PluginManifest): LearnedMethod | undefined => {
+    const domain = plugin.id === WEB_REVIEWS_PLUGIN_ID ? reviewPageDomain(appField(app, 'url')) : undefined
+    return domain === undefined ? undefined : learnedOf(domain)
+  }
 
   if (isLoadingApps) return (
     <div className="card flex items-center justify-center gap-2 py-8" role="status">
@@ -126,8 +136,8 @@ export default function AppConfigList({
         const appId = appField(app, 'id')
         return (
           <AppRunCard key={`${plugin.id}-${appId}`} app={app} plugin={plugin} radarBrandLabel={radarLabel(appField(app, 'radar_brand'))}
-            isAdmin={isAdmin} onEdit={() => onEditPlugin(plugin, appId)} onDelete={() => onDeleteApp(plugin.id, appId)}
-            onRunApp={onRunApp} />
+            isAdmin={isAdmin} learned={learnedFor(app, plugin)} onEdit={() => onEditPlugin(plugin, appId)}
+            onDelete={() => onDeleteApp(plugin.id, appId)} onRunApp={onRunApp} />
         )
       })}
     </>

@@ -382,7 +382,60 @@
     "kindLabel": "Typ",
     "method": {
       "browser": "Przeglądarka",
-      "bedrock": "Indeks internetowy Bedrock"
+      "bedrock": "Indeks internetowy Bedrock",
+      "automatic": "Automatycznie",
+      "label": "Odczyt przez",
+      "option": {
+        "auto": "Automatycznie (zalecane)",
+        "browser": "Tylko przeglądarka",
+        "bedrock": "Tylko indeks internetowy Bedrock"
+      },
+      "help": {
+        "auto": "Najpierw próbuje podpisanej przeglądarki, potem kopii strony w indeksie internetowym Amazon Bedrock, a następnie fragmentów z wyszukiwania AgentCore, i zapamiętuje, co działa dla tej witryny.",
+        "browser": "Stronę czyta tylko zarządzana przeglądarka, strona po stronie. Witryna, która ją blokuje, jest zgłaszana jako zablokowana.",
+        "bedrock": "Czytana jest tylko kopia strony w indeksie internetowym Amazon Bedrock, jedna strona na uruchomienie."
+      }
+    },
+    "read": {
+      "step": {
+        "browser": "Przeglądarka",
+        "bedrock_web_search": "Indeks internetowy Bedrock",
+        "agentcore_web_search": "Wyszukiwanie internetowe AgentCore"
+      },
+      "failed": {
+        "blocked": "{{method}} zablokowano przez {{vendor}}",
+        "blockedUnknown": "{{method}} zablokowano",
+        "no_reviews": "{{method}} nie znalazł recenzji",
+        "error": "{{method}} nie mógł otworzyć strony",
+        "skipped_time": "{{method}} pominięto: brak czasu",
+        "not_offered": "{{method}} niedostępne w tym regionie"
+      },
+      "readWithBrowser": "Odczytano przeglądarką ({{amount}})",
+      "readVia": "Odczytano przez {{method}} ({{amount}})",
+      "thenRead": "odczytano przez {{method}} ({{amount}})",
+      "known": "Znane: {{method}} (ustalone {{date}})",
+      "knownUndated": "Znane: {{method}}",
+      "reprobeReads": "Ponownie sprawdzono przeglądarkę: znów odczytuje ({{amount}})",
+      "reprobeStill": "Ponownie sprawdzono przeglądarkę: nadal blokuje {{vendor}}",
+      "reprobeUnreadable": "Ponownie sprawdzono przeglądarkę: nadal nie da się odczytać",
+      "nothing": "Żadna metoda jej nie odczytała: {{chain}}",
+      "notRead": "Nie odczytano: {{chain}}",
+      "excerpts": "Fragmenty",
+      "excerptsTitle": "Te recenzje to fragmenty wyników wyszukiwania AgentCore: każda może być ucięta i zachowuje link źródłowy.",
+      "reviews_one": "{{count, number}} recenzja",
+      "reviews_few": "{{count, number}} recenzje",
+      "reviews_many": "{{count, number}} recenzji",
+      "reviews_other": "{{count, number}} recenzji"
+    },
+    "learned": {
+      "best": "Najlepsza znana metoda: {{method}} (ustalona {{date}})",
+      "bestUndated": "Najlepsza znana metoda: {{method}}",
+      "none": "Żadna metoda nie odczytała jeszcze tej witryny",
+      "recheck": "Sprawdź metody ponownie",
+      "recheckTitle": "Zapomnij, czego ten obszar roboczy nauczył się o tej witrynie, aby następne uruchomienie znów spróbowało wszystkich metod",
+      "recheckFailed": "Nie udało się wyczyścić tego, czego się nauczono. Spróbuj ponownie.",
+      "cleared": "Następne uruchomienie znów spróbuje wszystkich metod.",
+      "browserRecheck": "Przeglądarka zostanie wypróbowana ponownie po {{date}}"
     }
   },
   "sourceMenu": {
@@ -441,7 +494,7 @@
       },
       "webReviewsBedrock": {
         "title": "Indeks wyszukiwania internetowego Amazon Bedrock",
-        "description": "Recenzje ze strony zaindeksowanej przez Amazon Bedrock, dla witryn blokujących zautomatyzowane przeglądarki (G2, Gartner, Capterra, TrustRadius). Odczytywane z pamięci podręcznej Amazon i zapisywane z linkiem źródłowym."
+        "description": "Recenzje ze strony zaindeksowanej przez Amazon Bedrock, dla witryn blokujących zautomatyzowane przeglądarki. Odczytywane z pamięci podręcznej Amazon i zapisywane z linkiem źródłowym."
       }
     },
     "prompt": "Co masz?",

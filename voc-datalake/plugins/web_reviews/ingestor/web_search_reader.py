@@ -36,7 +36,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Final
-from urllib.parse import urlparse
 
 from extract import ExtractedReview, validated_review
 
@@ -51,6 +50,7 @@ from shared.mantle_responses import (
 )
 from shared.model_config import WEB_SEARCH_SURFACE
 from shared.model_fallback import run_with_fallback
+from shared.web_review_methods import site_domain  # the domain the tool is held to (its subdomains match too)
 
 #: Reviews asked for per target per run, at most.
 MAX_WEB_SEARCH_REVIEWS: Final = 20
@@ -104,12 +104,6 @@ class WebSearchRead:
     cited_urls: list[str] = field(default_factory=list)
     #: Reviews the checks dropped: marked or reading like a summary, or invalid.
     dropped: int = 0
-
-
-def site_domain(url: str) -> str:
-    """The domain the tool is held to: the page's host without ``www.`` (its subdomains match too)."""
-    host = (urlparse(url).hostname or '').lower()
-    return host.removeprefix('www.')
 
 
 def prompt_for(url: str, max_reviews: int) -> str:

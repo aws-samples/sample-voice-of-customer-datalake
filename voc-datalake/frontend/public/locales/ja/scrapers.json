@@ -347,7 +347,58 @@
     },
     "method": {
       "browser": "ブラウザー",
-      "bedrock": "Bedrock ウェブインデックス"
+      "bedrock": "Bedrock ウェブインデックス",
+      "automatic": "自動",
+      "label": "読み取り方法",
+      "option": {
+        "auto": "自動（推奨）",
+        "browser": "ブラウザーのみ",
+        "bedrock": "Bedrock ウェブインデックスのみ"
+      },
+      "help": {
+        "auto": "まず署名付きブラウザーを試し、次に Amazon Bedrock ウェブインデックス内のページのコピー、その次に AgentCore ウェブ検索の抜粋を試して、このサイトで機能する方法を学習します。",
+        "browser": "マネージドブラウザーだけがページを1ページずつ読み取ります。ブラウザーをブロックするサイトはブロック済みとして報告されます。",
+        "bedrock": "Amazon Bedrock ウェブインデックス内のページのコピーだけを、実行ごとに1ページ読み取ります。"
+      }
+    },
+    "read": {
+      "step": {
+        "browser": "ブラウザー",
+        "bedrock_web_search": "Bedrock ウェブインデックス",
+        "agentcore_web_search": "AgentCore ウェブ検索"
+      },
+      "failed": {
+        "blocked": "{{method}}: {{vendor}} によりブロック",
+        "blockedUnknown": "{{method}}: ブロック",
+        "no_reviews": "{{method}}: レビューなし",
+        "error": "{{method}}: ページを開けませんでした",
+        "skipped_time": "{{method}}: 時間切れでスキップ",
+        "not_offered": "{{method}}: このリージョンでは提供されていません"
+      },
+      "readWithBrowser": "ブラウザーで読み取り（{{amount}}）",
+      "readVia": "{{method}} で読み取り（{{amount}}）",
+      "thenRead": "{{method}} で読み取り（{{amount}}）",
+      "known": "既知: {{method}}（{{date}} に学習）",
+      "knownUndated": "既知: {{method}}",
+      "reprobeReads": "ブラウザーを再確認: 再び読み取れます（{{amount}}）",
+      "reprobeStill": "ブラウザーを再確認: まだ {{vendor}} によりブロック",
+      "reprobeUnreadable": "ブラウザーを再確認: まだ読み取れません",
+      "nothing": "どの方法でも読み取れませんでした: {{chain}}",
+      "notRead": "読み取れませんでした: {{chain}}",
+      "excerpts": "抜粋",
+      "excerptsTitle": "これらのレビューは AgentCore ウェブ検索結果の抜粋です。途中で切れている場合があり、それぞれ取得元のリンクを保持します。",
+      "reviews_one": "{{count, number}} 件のレビュー",
+      "reviews_other": "{{count, number}} 件のレビュー"
+    },
+    "learned": {
+      "best": "既知の最適な方法: {{method}}（{{date}} に学習）",
+      "bestUndated": "既知の最適な方法: {{method}}",
+      "none": "このサイトを読み取れた方法はまだありません",
+      "recheck": "方法を再確認",
+      "recheckTitle": "このワークスペースがこのサイトについて学習した内容を消去し、次回の実行ですべての方法をもう一度試します",
+      "recheckFailed": "学習内容を消去できませんでした。もう一度お試しください。",
+      "cleared": "次回の実行ですべての方法をもう一度試します。",
+      "browserRecheck": "{{date}} 以降にブラウザーをもう一度試します"
     }
   },
   "sourceMenu": {
@@ -408,7 +459,7 @@
       },
       "webReviewsBedrock": {
         "title": "Amazon Bedrock ウェブ検索インデックス",
-        "description": "自動ブラウザーをブロックするサイト（G2、Gartner、Capterra、TrustRadius）向けに、Amazon Bedrock がインデックスしたページのレビューを取り込みます。Amazon のキャッシュから読み取り、取得元のリンクとともに保存します。"
+        "description": "自動ブラウザーをブロックするサイト向けに、Amazon Bedrock がインデックスしたページのレビューを取り込みます。Amazon のキャッシュから読み取り、取得元のリンクとともに保存します。"
       }
     }
   },

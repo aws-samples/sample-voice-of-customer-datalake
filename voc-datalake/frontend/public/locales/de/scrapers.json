@@ -347,7 +347,58 @@
     },
     "method": {
       "browser": "Browser",
-      "bedrock": "Bedrock-Webindex"
+      "bedrock": "Bedrock-Webindex",
+      "automatic": "Automatisch",
+      "label": "Lesen mit",
+      "option": {
+        "auto": "Automatisch (empfohlen)",
+        "browser": "Nur Browser",
+        "bedrock": "Nur Bedrock-Webindex"
+      },
+      "help": {
+        "auto": "Versucht zuerst den signierten Browser, dann die Kopie der Seite im Amazon Bedrock-Webindex, dann Auszüge aus der AgentCore-Websuche, und merkt sich, was für diese Website funktioniert.",
+        "browser": "Nur der verwaltete Browser liest die Seite, Seite für Seite. Eine Website, die ihn blockiert, wird als blockiert gemeldet.",
+        "bedrock": "Nur die Kopie der Seite im Amazon Bedrock-Webindex wird gelesen, eine Seite pro Lauf."
+      }
+    },
+    "read": {
+      "step": {
+        "browser": "Browser",
+        "bedrock_web_search": "Bedrock-Webindex",
+        "agentcore_web_search": "AgentCore-Websuche"
+      },
+      "failed": {
+        "blocked": "{{method}} blockiert von {{vendor}}",
+        "blockedUnknown": "{{method}} blockiert",
+        "no_reviews": "{{method}} fand keine Bewertung",
+        "error": "{{method}} konnte die Seite nicht öffnen",
+        "skipped_time": "{{method}} übersprungen: keine Zeit mehr",
+        "not_offered": "{{method}} in dieser Region nicht verfügbar"
+      },
+      "readWithBrowser": "Mit dem Browser gelesen ({{amount}})",
+      "readVia": "Gelesen über {{method}} ({{amount}})",
+      "thenRead": "gelesen über {{method}} ({{amount}})",
+      "known": "Bekannt: {{method}} (gelernt am {{date}})",
+      "knownUndated": "Bekannt: {{method}}",
+      "reprobeReads": "Browser erneut geprüft: Er liest wieder ({{amount}})",
+      "reprobeStill": "Browser erneut geprüft: weiterhin blockiert von {{vendor}}",
+      "reprobeUnreadable": "Browser erneut geprüft: weiterhin nicht lesbar",
+      "nothing": "Keine Methode konnte sie lesen: {{chain}}",
+      "notRead": "Nicht gelesen: {{chain}}",
+      "excerpts": "Auszüge",
+      "excerptsTitle": "Diese Bewertungen sind Auszüge aus Ergebnissen der AgentCore-Websuche: Jede kann gekürzt sein und behält ihren Quelllink.",
+      "reviews_one": "{{count, number}} Bewertung",
+      "reviews_other": "{{count, number}} Bewertungen"
+    },
+    "learned": {
+      "best": "Bewährt: {{method}} (gelernt am {{date}})",
+      "bestUndated": "Bewährt: {{method}}",
+      "none": "Noch keine Methode hat diese Website gelesen",
+      "recheck": "Methoden neu prüfen",
+      "recheckTitle": "Vergessen, was dieser Workspace über diese Website gelernt hat, damit der nächste Lauf wieder alle Methoden versucht",
+      "recheckFailed": "Das Gelernte konnte nicht gelöscht werden. Bitte erneut versuchen.",
+      "cleared": "Der nächste Lauf versucht wieder alle Methoden.",
+      "browserRecheck": "Der Browser wird nach dem {{date}} erneut versucht"
     }
   },
   "sourceMenu": {
@@ -408,7 +459,7 @@
       },
       "webReviewsBedrock": {
         "title": "Amazon Bedrock-Websuchindex",
-        "description": "Bewertungen von einer Seite, die Amazon Bedrock indexiert hat, für Websites, die automatisierte Browser blockieren (G2, Gartner, Capterra, TrustRadius). Aus Amazons Cache gelesen, mit dem Quelllink gespeichert."
+        "description": "Bewertungen von einer Seite, die Amazon Bedrock indexiert hat, für Websites, die automatisierte Browser blockieren. Aus Amazons Cache gelesen, mit dem Quelllink gespeichert."
       }
     }
   },

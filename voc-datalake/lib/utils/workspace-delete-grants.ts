@@ -67,6 +67,7 @@ export const WORKSPACE_DELETE_GRANTS: Readonly<Record<string, readonly DeleteGra
   import_runs: ['aggregates'],
   erasure_jobs: ['aggregates'],
   reprocess_jobs: ['aggregates'],
+  web_review_methods: ['aggregates'],
   watermarks: ['aggregates', 'watermarks'],
   memory: ['memory', 'tombstones'],
   exports: ['aggregates', 'exportJobs', 'objects'],
@@ -89,9 +90,9 @@ export const WORKSPACE_DELETE_GRANTS: Readonly<Record<string, readonly DeleteGra
  */
 export const REQUIRED_DELETE_SWEEPS: readonly string[] = [
   'credentials', 'feedback', 'counters', 'source_runs', 'failures', 'circuits', 'logs', 'scraper_runs',
-  'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'reprocess_jobs', 'watermarks', 'memory',
-  'exports', 'objects', 'radar', 'settings', 'user_contexts', 'docshares', 'projects', 'participants',
-  'conversations', 'control_rows',
+  'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'reprocess_jobs', 'web_review_methods',
+  'watermarks', 'memory', 'exports', 'objects', 'radar', 'settings', 'user_contexts', 'docshares', 'projects',
+  'participants', 'conversations', 'control_rows',
 ];
 
 /** Throws, naming them, when `registry` lacks any of `REQUIRED_DELETE_SWEEPS`. */

@@ -1011,6 +1011,8 @@ SOURCE_WRITE_ROUTES = {
     'enable_source',
     'disable_source',
     'reset_source',
+    # "Re-check methods" (7.44.00): deletes one review site's learned-methods record.
+    'clear_review_method',
 }
 
 # `get_credentials` is admin-gated too, but as a READ: it returns stored
@@ -1040,6 +1042,8 @@ class TestSourceRouteCoverageIsComplete:
             'enable_source',
             'disable_source',
             'reset_source',
+            'list_review_methods',
+            'clear_review_method',
         }, (
             'the route inventory changed; a NEW <source> route must be added to '
             'SOURCE_WRITE_ROUTES (if it mutates) and will otherwise be asserted '
@@ -1060,7 +1064,9 @@ class TestSourceRouteCoverageIsComplete:
         If a future route is added and left out of SOURCE_WRITE_ROUTES, this fails
         rather than quietly accepting it as a read that needs no admin.
         """
-        assert set(_source_routes()) - SOURCE_ADMIN_ROUTES == {'list_app_configs'}
+        # `list_review_methods` (7.44.00): which method reads each review site, read by every member like the run
+        # status; it names sites and methods, never a credential or a review.
+        assert set(_source_routes()) - SOURCE_ADMIN_ROUTES == {'list_app_configs', 'list_review_methods'}
 
 
 class TestEverySourceRouteIsValidated:

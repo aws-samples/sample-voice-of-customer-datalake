@@ -59,7 +59,11 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
     [DELETE_ROLE]: { scope: [`WS#${ONE_WORKSPACE}#SOURCE#*`], why: WORKSPACE_DELETE.why },
   },
   AggregatesTable: {
-    'VocApiStack/IntegrationsLambdaRole': WORKSPACE_CIRCUIT_ROW,
+    'VocApiStack/IntegrationsLambdaRole': {
+      scope: [...WORKSPACE_CIRCUIT_ROW.scope, 'WEB_REVIEWS#METHODS', `WS#${ONE_WORKSPACE}#WEB_REVIEWS#METHODS`],
+      why: `${WORKSPACE_CIRCUIT_ROW.why}; and "Re-check methods" clears one review site's learned-methods row (no `
+        + 'review, no content; the deployment\'s or the request\'s workspace\'s, DELETE /integrations/web_reviews/methods/{domain})',
+    },
     ...Object.fromEntries(INGESTOR_ROLES.map((role) => [role, WORKSPACE_CIRCUIT_ROW])),
     'VocApiStack/LogsLambdaRole': { scope: ['LOGS#validation#*'], why: 'DELETE /logs/validation/{source}' },
     'VocApiStack/FeedbackFormLambdaRole': {

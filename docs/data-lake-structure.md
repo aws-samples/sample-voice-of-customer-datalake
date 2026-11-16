@@ -214,6 +214,7 @@ such as every source or persona counter. Common key families include:
 | `FEEDBACK_FORM` | Feedback-form configuration and statistics |
 | `SOURCE_RUN#<source>` / `<execution id>` | Manual and reprocess runs of a plugin ingestor (`WS#<ws>#SOURCE_RUN#<source>` for a run in a workspace) |
 | `SCRAPER_RUN#<scraper id>` | Scraper run state (`WS#<ws>#SCRAPER_RUN#<scraper id>` in a workspace) |
+| `WEB_REVIEWS#METHODS` / `<domain>` | Which method reads each review site, learned by the web_reviews plugin's `auto` runs (no review content; [web-reviews.md](web-reviews.md#learning-which-method-works)); a workspace's own `WS#<ws>#WEB_REVIEWS#METHODS`, swept by its hard delete, not exported |
 | `CIRCUIT#<plugin>` / `TRIPPED`, `FAILURES#<plugin>` | Plugin circuit breaker ([plugin-architecture.md](plugin-architecture.md#circuit-breaker)); a run in a workspace keeps `WS#<ws>#CIRCUIT#<plugin>` and `WS#<ws>#FAILURES#<plugin>` |
 | `IMPORT_RUN`, `IMPORT_RUN#<run id>` | Import history (kept, no TTL; rows from earlier releases keep their 90-day TTL, [import-history.md](import-history.md)); an S3 import run in a workspace writes `WS#<ws>#IMPORT_RUN` and `WS#<ws>#IMPORT_RUN#<run id>` |
 | `PRIORITIZATION` / `ROW#<id>` | Prioritization rows ([prioritization.md](prioritization.md)) |

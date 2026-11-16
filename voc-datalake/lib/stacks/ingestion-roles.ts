@@ -16,12 +16,16 @@
  *   has one; the automation-stream connect, which has no resource type, on `*` — the
  *   web_reviews plugin.
  * - `infrastructure.ingestor.webSearch`: a target read through Amazon Bedrock web
- *   search (`method: bedrock_web_search`): `bedrock-mantle:CreateInference` on the
+ *   search (`method: bedrock_web_search`, and `auto`'s second step): `bedrock-mantle:CreateInference` on the
  *   account's default mantle project (the Responses API; the GPT allowlist,
  *   lib/utils/web-search-models.ts, is enforced in code) and
  *   `bedrock-websearch:InvokeSearch` / `InvokeFetch` on `*` held to the deployment's
  *   region (`aws:RequestedRegion`), as the Bedrock web search IAM guide grants them;
- *   never `bedrock-websearch:ExternalWebAccess`, so Fetch reads Amazon's cache only.
+ *   never `bedrock-websearch:ExternalWebAccess`, so Fetch reads Amazon's cache only. And
+ *   `auto`'s last step, AgentCore Web Search's snippets (plugins/web_reviews/ingestor/snippet_reader.py):
+ *   `bedrock-agentcore:InvokeWebSearch` on the AWS-managed tool of the deployment's region only,
+ *   `arn:<partition>:bedrock-agentcore:<region>:aws:tool/web-search.v1` (the AgentCore developer guide's grant:
+ *   the account field is the literal `aws`, the tool's owner).
  * - a schedule: events:DisableRule on the plugin's OWN schedule rule, which its
  *   circuit breaker (plugins/_shared/circuit_breaker.py) calls after repeated
  *   failures of a deployment-wide run. On any other rule ARN a misbehaving plugin
@@ -74,6 +78,14 @@ import { RAW_LAYER_PREFIX, WORKSPACE_ID_PATTERN, WORKSPACE_RAW_LAYER_PREFIX } fr
  * partition is the breaker's alone. The integrations API clears the same rows (lib/stacks/api-data-lambdas.ts).
  */
 export const CIRCUIT_ROW_PARTITIONS =['CIRCUIT#*', `WS#${WORKSPACE_ID_PATTERN}#CIRCUIT#*`];
+
+/**
+ * The web_reviews plugin's learned methods (lambda/shared/web_review_methods.py): the deployment-wide
+ * `WEB_REVIEWS#METHODS` partition and one per workspace, `WS#{ws}#WEB_REVIEWS#METHODS` (one id, no wildcard after it).
+ * The ingestor writes them with every ingestor role's voc-aggregates Put (its view refuses another workspace's key);
+ * the integrations API's "Re-check methods" deletes one site's row there (lib/stacks/api-data-lambdas.ts).
+ */
+export const WEB_REVIEW_METHOD_PARTITIONS = ['WEB_REVIEWS#METHODS', `WS#${WORKSPACE_ID_PATTERN}#WEB_REVIEWS#METHODS`];
 /** The scheduled tick's claim keys in voc-idempotency: `ingestor#fanout#{plugin}#{event id}` (base_ingestor.py). */
 const FAN_OUT_CLAIM_PREFIX = 'ingestor#fanout#';
 
@@ -136,6 +148,16 @@ export const BROWSER_STREAM_SUPPRESSION: NagAck = {
 /** Amazon Bedrock web search and its cached fetch; `bedrock-websearch:ExternalWebAccess` is never granted. */
 export const WEB_SEARCH_ACTIONS = ['bedrock-websearch:InvokeSearch', 'bedrock-websearch:InvokeFetch'];
 
+/** AgentCore Web Search (`InvokeWebSearch`), on the AWS-managed tool only (the web_reviews `auto` cascade's last step). */
+export const AGENTCORE_WEB_SEARCH_ACTION = 'bedrock-agentcore:InvokeWebSearch';
+/** The AWS-managed AgentCore Web Search tool's id (its ARN's resource name). */
+export const AGENTCORE_WEB_SEARCH_TOOL = 'web-search.v1';
+
+/** The AWS-managed AgentCore Web Search tool of the stack's region: an `aws`-owned resource, like aws.browser.v1. */
+export function agentCoreWebSearchToolArn(stack: cdk.Stack): string {
+  return stack.formatArn({ service: 'bedrock-agentcore', account: 'aws', resource: 'tool', resourceName: AGENTCORE_WEB_SEARCH_TOOL });
+}
+
 /** The cdk-nag reason for web search on `*` (held to the region), on a web-search-capable role. */
 const WEB_SEARCH_STAR_REASON = 'bedrock-websearch:InvokeSearch/InvokeFetch are granted on "*" as the Amazon Bedrock '
   + 'web search IAM guide grants them, held to the deployment\'s region by aws:RequestedRegion; ExternalWebAccess is not '
@@ -147,13 +169,15 @@ function starAcknowledgement(browser: boolean, webSearch: boolean): NagAck {
   return { ...BROWSER_STREAM_SUPPRESSION, reason: reasons.join('; ') };
 }
 
-/** A web-search-capable role's statements: the Responses API on the default project, search and cached fetch. */
+/** A web-search-capable role's statements: the Responses API on the default project, search and cached fetch, and
+ *  AgentCore Web Search on the region's managed tool. */
 export function webSearchStatements(stack: cdk.Stack): iam.PolicyStatement[] {
   return [
     mantleInferenceStatement(stack),
     new iam.PolicyStatement({
       actions: WEB_SEARCH_ACTIONS, resources: ['*'], conditions: { StringEquals: { 'aws:RequestedRegion': stack.region } },
     }),
+    new iam.PolicyStatement({ actions: [AGENTCORE_WEB_SEARCH_ACTION], resources: [agentCoreWebSearchToolArn(stack)] }),
   ];
 }
 

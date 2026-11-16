@@ -347,7 +347,58 @@
     },
     "method": {
       "browser": "Browser",
-      "bedrock": "Bedrock web index"
+      "bedrock": "Bedrock web index",
+      "automatic": "Automatic",
+      "label": "Read with",
+      "option": {
+        "auto": "Automatic (recommended)",
+        "browser": "Browser only",
+        "bedrock": "Bedrock web index only"
+      },
+      "help": {
+        "auto": "Tries the signed browser first, then the page's copy in the Amazon Bedrock web index, then AgentCore web search excerpts, and learns which one works for this site.",
+        "browser": "Only the managed browser reads the page, page by page. A site that blocks it is reported as blocked.",
+        "bedrock": "Only the page's copy in the Amazon Bedrock web index is read, one page per run."
+      }
+    },
+    "read": {
+      "step": {
+        "browser": "Browser",
+        "bedrock_web_search": "Bedrock web index",
+        "agentcore_web_search": "AgentCore web search"
+      },
+      "failed": {
+        "blocked": "{{method}} blocked by {{vendor}}",
+        "blockedUnknown": "{{method}} blocked",
+        "no_reviews": "{{method}} found no review",
+        "error": "{{method}} could not open the page",
+        "skipped_time": "{{method}} skipped: out of time",
+        "not_offered": "{{method}} not offered in this region"
+      },
+      "readWithBrowser": "Read with the browser ({{amount}})",
+      "readVia": "Read via {{method}} ({{amount}})",
+      "thenRead": "read via {{method}} ({{amount}})",
+      "known": "Known: {{method}} (learned {{date}})",
+      "knownUndated": "Known: {{method}}",
+      "reprobeReads": "Re-checked the browser: it reads again ({{amount}})",
+      "reprobeStill": "Re-checked the browser: still blocked by {{vendor}}",
+      "reprobeUnreadable": "Re-checked the browser: still not readable",
+      "nothing": "No method read it: {{chain}}",
+      "notRead": "Not read: {{chain}}",
+      "excerpts": "Excerpts",
+      "excerptsTitle": "These reviews are AgentCore web search result excerpts: each may be cut, and keeps its source link.",
+      "reviews_one": "{{count, number}} review",
+      "reviews_other": "{{count, number}} reviews"
+    },
+    "learned": {
+      "best": "Known best: {{method}} (learned {{date}})",
+      "bestUndated": "Known best: {{method}}",
+      "none": "No method has read this site yet",
+      "recheck": "Re-check methods",
+      "recheckTitle": "Forget what this workspace learned about this site, so the next run tries every method again",
+      "recheckFailed": "Could not clear what was learned. Please retry.",
+      "cleared": "The next run tries every method again.",
+      "browserRecheck": "The browser is tried again after {{date}}"
     }
   },
   "sourceMenu": {
@@ -408,7 +459,7 @@
       },
       "webReviewsBedrock": {
         "title": "Amazon Bedrock web search index",
-        "description": "Reviews from a page Amazon Bedrock has indexed, for sites that block automated browsers (G2, Gartner, Capterra, TrustRadius). Read from Amazon's cache, stored with the source link."
+        "description": "Reviews from a page Amazon Bedrock has indexed, for sites that block automated browsers. Read from Amazon's cache, stored with the source link."
       }
     }
   },

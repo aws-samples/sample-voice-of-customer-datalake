@@ -51,6 +51,7 @@ describe('the workspace tool set', () => {
       ['server', 'analyze_scraper_url', 'scrapers', 'analyze_scraper_url', {
         type: 'object', properties: { url: { type: 'string', maxLength: 2048, description: 'Public https URL of a page with reviews.' } }, required: ['url'], additionalProperties: false,
       }],
+      ['server', 'list_review_site_methods', 'scrapers', 'list_review_site_methods', NO_ARGUMENTS],
       ['server', 'get_categories_config', 'settings', 'get_categories_config', NO_ARGUMENTS],
       ['server', 'get_brand_settings', 'settings', 'get_brand_settings', NO_ARGUMENTS],
     ]);
@@ -73,6 +74,12 @@ describe('the workspace tool set', () => {
         + 'own feedback). Read it before proposing create_scraper, update_scraper or create_app_connector, and to see '
         + 'which sources feed a Radar brand.',
       get_scraper_status: 'Status of a scraper\u2019s latest run (status, pages scraped, items found, errors).',
+      list_review_site_methods: 'What THIS workspace has learned from its own review-page runs about each review site '
+        + '(domain = the page host without www.): best_method (browser = the signed browser, bedrock_web_search = the '
+        + 'Amazon Bedrock web index, agentcore_web_search = AgentCore web search excerpts, none = nothing read it), '
+        + 'learned_at, browser_recheck_due_at (when a run tries the browser again), and each method\u2019s last outcome '
+        + '(readable | blocked:<vendor> | no_reviews | error) and when. Call it before proposing a web_reviews '
+        + 'create_app_connector. Empty until the workspace\u2019s own runs learn something: nothing is shared or seeded.',
       analyze_scraper_url: 'Administrators: fetch a public https page and suggest CSS selectors for its reviews (container, text, rating, '
         + 'author, date) with a confidence. Saves nothing — use the suggestion in a create_scraper / update_scraper '
         + 'proposal the user approves. Can take a minute or more.',

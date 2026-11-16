@@ -100,6 +100,21 @@ class TestFourPagesRunAtOnce:
         # The plugin's latest run (no app_id) is still answered as before: whichever row sorts newest.
         assert _status(route)['execution_id'] == max(started.values())
 
+    @pytest.mark.usefixtures('ingestor')
+    def test_a_finished_run_answers_how_each_page_was_read(self, route, aggregates):
+        """The web_reviews run row's ``reads`` (plugins/web_reviews/ingestor/cascade.py ``read_row``), as the card shows
+        them: the step that read the page and every step tried; a run without them answers none."""
+        execution_id = route('POST', '/sources/web_reviews/run', body={'app_id': PAGES['capterra']})[1]['execution_id']
+        assert 'reads' not in _status(route, app_id=PAGES['capterra'])
+        read = {'target': 'Capterra', 'target_id': 'c1', 'method': 'auto', 'method_used': 'bedrock_web_search',
+                'reviews': 11, 'plan': 'cascade', 'known_method': None, 'learned_at': None, 'excerpt': False,
+                'steps': [{'method': 'browser', 'outcome': 'blocked', 'vendor': 'Cloudflare', 'reviews': 0},
+                          {'method': 'bedrock_web_search', 'outcome': 'readable', 'reviews': 11}]}
+        aggregates.update_item(Key={'pk': PARTITION, 'sk': execution_id}, UpdateExpression='SET #s = :s, #r = :r',
+                               ExpressionAttributeNames={'#s': 'status', '#r': 'reads'},
+                               ExpressionAttributeValues={':s': 'completed', ':r': [read]})
+        assert _status(route, app_id=PAGES['capterra'])['reads'] == [read]
+
     @pytest.mark.usefixtures('aggregates', 'ingestor')
     def test_an_execution_id_answers_that_run_and_with_an_app_only_when_it_is_that_apps(self, route):
         execution_id = route('POST', '/sources/web_reviews/run', body={'app_id': PAGES['g2']})[1]['execution_id']

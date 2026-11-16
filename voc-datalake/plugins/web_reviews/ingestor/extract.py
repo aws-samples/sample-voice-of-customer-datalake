@@ -201,6 +201,30 @@ def jsonld_reviews(blocks: tuple[str, ...] | list[str]) -> list[ExtractedReview]
     return reviews
 
 
+def _count_of(value: object) -> int:
+    """A count as JSON-LD gives it: a number, or text with thousands separators (``"1,204"``); 0 otherwise."""
+    if isinstance(value, str):
+        digits = re.sub(r'[\s,.\u00a0\u202f]', '', value)
+        return int(digits) if digits.isdigit() else 0
+    number = None if isinstance(value, bool) else _number(value)
+    return int(number) if number is not None and number > 0 else 0
+
+
+def declared_review_count(blocks: tuple[str, ...] | list[str]) -> int:
+    """The review count a page's JSON-LD declares of itself: the largest ``reviewCount`` / ``ratingCount`` of an
+    ``AggregateRating`` (also nested under ``aggregateRating``), 0 when it declares none."""
+    count = 0
+    for block in blocks:
+        try:
+            document = json.loads(block)
+        except ValueError:
+            continue
+        for node in _walk(document):
+            if 'aggregaterating' in _types(node):
+                count = max(count, _count_of(node.get('reviewCount')), _count_of(node.get('ratingCount')))
+    return count
+
+
 # ── LLM over the visible text ─────────────────────────────────────────────────
 
 

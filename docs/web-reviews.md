@@ -1,10 +1,12 @@
 # Web reviews (generic review-page plugin)
 
 The `web_reviews` plugin reads customer reviews from **public review pages**, such as a company page on a review
-site, a travel listing or a forum, with a managed browser (or, for a page you choose, from the Amazon Bedrock web
-search index: [Methods](#methods)). It imports them through the normal pipeline (source
-policy, raw archive, processing queue). It is site-agnostic: nothing in it knows a particular site. Administrators
-add pages; every page becomes its own source.
+site, a travel listing or a forum. By default (`auto`, [Methods](#methods)) it reads a page with the deployment's
+signed managed browser, and when the site blocks it or it reads no review, from the Amazon Bedrock web search
+index, then from AgentCore Web Search's snippets (as excerpts); each workspace learns which method reads each site
+([Learning which method works](#learning-which-method-works)). It imports the reviews through the normal pipeline
+(source policy, raw archive, processing queue). It is site-agnostic: nothing in it knows a particular site.
+Administrators add pages; every page becomes its own source.
 
 It is **on by default** (`pluginStatus.web_reviews: true` in `voc-datalake/cdk.context.json`) and does nothing
 until an administrator adds a page.
@@ -12,12 +14,20 @@ until an administrator adds a page.
 ## Adding pages
 
 - **Data sources** (`/scrapers`) → **New source** → **A website link** → **Review page**: add a page with a name,
-  its `https` URL, how to read it (`method`, the browser by default; [Methods](#methods)), how much to read (pages
+  its `https` URL, how to read it (**Read with**: Automatic (recommended), the default; Browser only; Bedrock web
+  index only; [Methods](#methods)), how much to read (pages
   per run, 0-100, default 10; reviews per run, 0-5,000, default 0; see [Reading modes](#reading-modes)) and a run
-  frequency (manual only by default). Each page is listed under
-  **Review pages** with Run now, Edit, Delete and the last run's status.
+  frequency (manual only by default). The **Amazon Bedrock web search index** source presets Bedrock web index
+  only. Each page is listed under **Review pages** with Run now, Edit, Delete and the last run's status, which says
+  how the page was read ("Browser blocked by Cloudflare → read via Bedrock web index (11 reviews)", an
+  **excerpts** badge when AgentCore Web Search's snippets read it), and, for an Automatic page, the method this
+  workspace learned for its site with **Re-check methods** (administrators).
 - **AI assistant** (administrators): `create_app_connector` with `source: "web_reviews"`, `url` and optionally
-  `max_pages` / `max_reviews`, approved on a card. In plan mode the assistant can find review pages with web search
+  `max_pages` / `max_reviews`, approved on a card; the page is saved with the default method, `auto`. Before it
+  proposes one it reads `list_review_site_methods` (what this workspace learned of each site, through `GET
+  /scrapers/review-methods`) and says what is known of the page's site, or that its first run will learn it; it never
+  claims a site's method the workspace has not recorded, and it does not propose Yelp or Reddit pages (their official
+  APIs only). In plan mode the assistant can find review pages with web search
   (`plan_lookup`), list each chosen URL as its own write on the plan card, then `run_source web_reviews` and wait
   for the run ([assistant-plan-mode.md](assistant-plan-mode.md)). It proposes only a URL copied from a web search
   result that names the company (one search per site), never a URL built from a name, and says when a site has no
@@ -27,8 +37,10 @@ until an administrator adds a page.
   (`lambda/shared/web_review_targets.py`): https only, the host must resolve to public addresses only (the shared
   outbound URL policy / SSRF guard), `max_pages` 0-100, `max_reviews` 0-5000 (both stored as strings),
   `frequency_minutes` one of 0, 15, 30, 60, 180, 360, 720,
-  1440; `method` `browser` (the default; absent means `browser`) or `bedrock_web_search` (anything else is a 400
-  naming the two); unknown fields are dropped. `model` (7.41.00) is accepted and dropped like them: since 7.42.00
+  1440; `method` `auto` (the default since 7.44.00; absent means `auto`), `browser` or `bedrock_web_search`
+  (anything else is a 400 naming the three); a stored `browser` or `bedrock_web_search` is kept as it is (7.41.00 and
+  7.42.00 stored `browser` on every page they saved, so those pages stay Browser only until edited); unknown fields
+  are dropped. `model` (7.41.00) is accepted and dropped like them: since 7.42.00
   the model that reads a `bedrock_web_search` page is no page's but the web search surface's, chosen in
   Administration → AI models ([Methods](#methods)), so neither form asks for one. Targets are stored like the app connectors, as `web_reviews_configs` in the
   shared API-credentials secret, and re-validated on every run.
@@ -57,7 +69,9 @@ run (see [Backfill across runs](#backfill-across-runs)).
    session is saved into the profile and then **always** stopped (`StopBrowserSession`) in a `finally`. The
    browser announces itself honestly: its User-Agent contains `Amazon-Bedrock-AgentCore-Browser`; nothing is
    spoofed ([Honesty rules](#honesty-rules)). Targets whose method is `bedrock_web_search` are not read in the
-   browser, and a run of those only starts no session.
+   browser, and a run of those only starts no session. An `auto` target is read in three phases: the steps its
+   learned plan puts before the browser (a site the workspace reads through web search), then the one session for
+   every target that needs the browser, then the steps after it ([Methods](#methods)).
 2. **Pages.** Page 1 is a real navigation (any JavaScript challenge the site runs is passed once). The next
    page is the page's `<link rel=next>`, an `<a rel=next>`, a link whose text or aria-label is "next" (in a few
    languages, or `›` / `»`), else the URL's `page`/`p`/`pg` parameter plus one. It must keep the target's origin
@@ -84,8 +98,8 @@ run (see [Backfill across runs](#backfill-across-runs)).
    not rewritten).
 4. **Items.** `id` = `web_` + sha256(host, text, date): the same review read again gets the same id, so the
    processor deduplicates it. `created_at` is the review's date (else the import time), `url` the page it was
-   read on, `channel` the target's name, `author` / `title` when the page has them, `metadata` = the target name
-   and page number.
+   read on, `channel` the target's name, `author` / `title` when the page has them, `metadata` = the target name,
+   page number and `method_used` (the step that read it: `browser`, `bedrock_web_search` or `agentcore_web_search`).
 5. **Watermark.** Per target, the newest review date seen; a review older than that date minus one day is not
    sent again (undated reviews always are; their id deduplicates them). It only ever moves forward.
 6. **Page cache.** Per page, the sha256 of its JSON-LD and visible text is kept as a watermark
@@ -127,12 +141,58 @@ earlier stay under their old `web_<host>` source (e.g. `web_www_…_com`).
 
 ## Methods
 
-A target's `method` says how its page is read. Existing targets, and a new one that names none, use the browser.
+A target's `method` says how its page is read: `auto` (the default for a new page and for one saved without a
+method), `browser` or `bedrock_web_search`. A stored `browser` or `bedrock_web_search` is kept as chosen.
 
 | Method | What reads the page | Pages per run | What it is for |
 |---|---|---|---|
-| `browser` (default) | The deployment's AgentCore browser, page by page ([How a run works](#how-a-run-works)) | up to `max_pages` | Every site the browser may read; the only method that follows the next pages and backfills |
-| `bedrock_web_search` (an explicit choice) | An OpenAI GPT model on the Amazon Bedrock Responses API, opening the page from the Amazon Bedrock web search cache | 1 (the target's own URL) | A site that blocks the browser but whose page is in the Bedrock web index (measured 2026-11-15 on gartner.com, trustradius.com, capterra.com and g2.com) |
+| `auto` (default, **Automatic (recommended)**) | The signed browser; when it is blocked or reads no review, Amazon Bedrock web search; when that gets nothing, AgentCore Web Search's snippets | up to `max_pages` in the browser; 1 otherwise | Every page: it picks the step that reads the site, and learns it ([Learning which method works](#learning-which-method-works)) |
+| `browser` (**Browser only**) | The deployment's AgentCore browser, page by page ([How a run works](#how-a-run-works)) | up to `max_pages` | A site the browser reads; the only method that follows the next pages and backfills |
+| `bedrock_web_search` (**Bedrock web index only**) | An OpenAI GPT model on the Amazon Bedrock Responses API, opening the page from the Amazon Bedrock web search cache | 1 (the target's own URL) | A site that blocks the browser but whose page is in the Bedrock web index |
+
+**`auto`** (`plugins/web_reviews/ingestor/handler.py`, `cascade.py`), per target per run, in the order the
+workspace's learned record gives (with none: the steps below in this order):
+
+1. **The signed browser** ([How a run works](#how-a-run-works)), its reviews' `method_used` `browser`. It hands the
+   page to the next step when it is **blocked** (any vendor [Blocked sites](#blocked-sites) detects, an HTTP 4xx/5xx
+   main document, or a redirect to an error page such as Chrome's `chrome-error://chromewebdata/`), when the page
+   **did not load**, or when it reads **no review on a page that has some**: a fresh read of page 1 (not one skipped
+   as unchanged, nor a backfill) extracted none while the page's JSON-LD declares a review count above 0, the target
+   read reviews before, the site's record has a success, or the target was never read. A page that held reviews,
+   none of them new, is read (nothing to fall back for). A redirect to another site's page ends the read, as for a
+   `browser` target, with no later step.
+2. **Amazon Bedrock web search**, exactly as `bedrock_web_search` below (the web search surface's model with its
+   fallback, one request, at most 20 reviews, the same checks and attribution), its reviews' `method_used`
+   `bedrock_web_search`. It hands on when the request fails, the model could not open the page, or it gives no review.
+3. **AgentCore Web Search's snippets** (`snippet_reader.py`): one `InvokeWebSearch` of the AWS-managed tool
+   `web-search.v1` (no model in the retrieval; SigV4 for `bedrock-agentcore` to
+   `https://bedrock-agentcore.<region>.amazonaws.com/web-search/web-search.v1/invoke`), the query the page's title as
+   the browser read it (else the target's name) plus "reviews", held to the page's domain (`domainFilter.include`),
+   10 results. Only the results on the page itself are read: the same path on the site (any subdomain, a trailing
+   slash ignored) with the same query once the page-number parameters (`page`, `p`, `pg`) are left out. A result on
+   another page of the site (a comparison, an "alternatives" list, another business's listing) is someone else's
+   reviews, so with none on the page the step reads nothing. The `enrichment` model (the browser path's extraction
+   call) reads those snippets as data, and a review is kept only when its body is in one snippet, whitespace
+   collapsed: nothing the snippets do not hold is stored. Its title is kept only when the snippet holds it, its
+   rating and date only when the snippet shows them, never an author. Every such review is an **excerpt**: its
+   `metadata` has `method_used` `agentcore_web_search`, `excerpt: true`, `snippet_cut` (the snippet starts or ends
+   with an ellipsis, so the review may go on), `snippet` (the snippet's text, at most 1,000 characters),
+   `snippet_url`, `snippet_title`, `snippet_published_date` (the result's url, title and `publishedAt`), `query`,
+   `site`, `source_url` and `fetched_at`; its `url` is the result's URL. At most 20 per run. Offered in us-east-1,
+   us-east-2, us-west-2, ap-southeast-2, ap-northeast-1 and eu-west-1; elsewhere the step is `not_offered`.
+
+**The time budget.** A later step starts only with time left for it (120 s before the run's own reserve, as a page):
+otherwise it is `skipped_time`, reported in the target's error, and learns nothing.
+
+**What the run says.** The run row (`GET /sources/status?run_status=web_reviews&app_id=…`) carries `reads`, one entry
+per target read: `target`, `target_id`, `method`, `method_used` (the step that read it, or none), `reviews` (sent),
+`plan` (`known`, `reprobe` or `cascade`, for `auto`), `known_method` and `learned_at` (what the record knew),
+`excerpt`, and `steps`: each step tried, `{method, outcome, reviews, vendor?, detail?}` with `outcome` `readable`,
+`blocked` (with its `vendor`), `no_reviews`, `error` (with its `detail`), `skipped_time` or `not_offered`. The card
+turns it into "Browser blocked by Cloudflare → read via Bedrock web index (11 reviews)" or "Known: Bedrock web index
+(learned 15 Nov 2026) — 11 reviews". A step that hands on is no error: an `auto` target is reported in the run's
+errors only when no step read it, as one line naming every step (`"<target>: no method read it (the browser: blocked
+by Cloudflare; Amazon Bedrock web search: could not open the page (…); AgentCore web search: no reviews)"`).
 
 **`bedrock_web_search`** (`plugins/web_reviews/ingestor/web_search_reader.py`): one request per target per run to
 `https://bedrock-mantle.<region>.api.aws/openai/v1/responses`, SigV4-signed for `bedrock-mantle` with the Lambda's
@@ -164,23 +224,24 @@ reported. Any other refusal (the role denied, the request's own shape) is report
 Before anything is queued:
 
 - a review marked `summary`, or whose body reads like a summary of many reviews ("users find", "receives positive
-  feedback", "reviewers say", …), is dropped (Capterra's page-level AI summary is one);
-- the body is bounded like every path (1-5,000 characters), a rating brought to 1-5 by its own scale (a TrustRadius
-  8/10 is 4.0) and kept only within 1-5, a date kept only as `YYYY-MM-DD`; the review is kept without a field
+  feedback", "reviewers say", …), is dropped (a page-level AI summary is one);
+- the body is bounded like every path (1-5,000 characters), a rating brought to 1-5 by its own scale (an 8/10 is
+  4.0) and kept only within 1-5, a date kept only as `YYYY-MM-DD`; the review is kept without a field
   that fails; a review read twice is kept once; the watermark applies as on the browser path;
-- **attribution**: every review's `metadata` carries `method` (`bedrock_web_search`), `model`, `site` (the host),
+- **attribution**: every review's `metadata` carries `method` (`bedrock_web_search`), `method_used` (the same),
+  `model`, `site` (the host),
   `source_url` (the page asked for), `fetched_at` (when it was read), `opened_urls` (the URLs the model's
   `web_search` calls opened) and `cited_urls` (its `url_citation` annotations), beside `target` and `page`; the
-  review's `url` is the page asked for. On the 2026-11-15 runs no `url_citation` came back, so `source_url` and
-  `opened_urls` are what attributes the review.
+  review's `url` is the page asked for. When no `url_citation` comes back, `source_url` and `opened_urls` are what
+  attributes the review.
 
 A refusal is reported on the target like a blocked page: `"<target>: Amazon Bedrock web search failed (HTTP 403:
 …)"`, or `"… could not open the page (<reason>)"` when the model says it could not.
 
 Limits: it is Amazon's cached copy of the page, which may be older than the live one, and no cache age is
 returned; the model decides whether it opens the page (a denial or a cache miss may still answer HTTP 200 with
-nothing), and what a page's cache holds differs per site (G2's had no author, rating or date; TrustRadius's had
-ratings out of 10); the model reads the page, so a page's own text could steer it, and the checks above are what
+nothing), and what a page's cache holds differs per site (a cached page may show no author, rating or date, or
+ratings on another scale); the model reads the page, so a page's own text could steer it, and the checks above are what
 holds it to review-shaped data under the target's source; only the target's page is read, never the next ones;
 Web Search is offered in us-east-1, us-east-2 and us-west-2 only.
 
@@ -189,6 +250,10 @@ links provided in model outputs in any output you surface to your end users. You
 extract, store, or reproduce content from Search Results in bulk, or (b) build or populate a competing index or
 database." So the method reads only the review pages an administrator configured, one page per target per run, at
 most 20 reviews each, and every stored review keeps its source URL, method and the URLs the model opened and cited.
+AgentCore Web Search has the same acceptable use ([Search the web using Amazon Bedrock AgentCore Web
+Search](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/web-search-api.html)): `auto` runs it only
+for a configured page the other steps could not read, once per run, at most 20 excerpts, each with its result's URL
+and title.
 Whether storing those reviews fits your use is your decision; OpenAI's models are also under the OpenAI Services
 Agreement for Amazon Bedrock. See [Amazon Bedrock Web Search](https://docs.aws.amazon.com/bedrock/latest/userguide/web-search.html).
 
@@ -197,10 +262,47 @@ Prerequisites: the OpenAI models are sold through AWS Marketplace, so the accoun
 surface in the app's region, best effort like the Claude models' ([deployment.md → Model
 agreements](deployment.md#model-agreements-every-deploy-in-the-app-region-best-effort)): `VocCoreStack`'s
 `WebSearchModelAgreement0`-`4`. A refused one does not fail the deploy; the surface's **Test** button answers
-**No access** for it, and `-c modelAgreementRetry=<new value>` tries again. On 2026-11-15 `aws bedrock
-list-foundation-model-agreement-offers` listed an offer for each of the five in us-west-2, and the test account had
-the agreements of Luna and Terra only (`get-foundation-model-availability`: `NOT_AVAILABLE` for Sol, GPT-5.5 and
-GPT-5.4 until a deploy accepts them).
+**No access** for it, and `-c modelAgreementRetry=<new value>` tries again. An account may hold the agreements of
+only some of the five (`aws bedrock get-foundation-model-availability` answers `NOT_AVAILABLE` for a model until a
+deploy accepts its offer).
+
+## Learning which method works
+
+Each workspace learns, from its own runs only, which method reads each review site, so an `auto` page goes straight
+to what works (`lambda/shared/web_review_methods.py`). A workspace starts with nothing: no record is shared between
+workspaces, and nothing is seeded (no eval result, no static hint); a deployment-wide run (no workspace) keeps its
+own records the same way.
+
+- **The record**, one per site, in voc-aggregates: `WS#{ws}#WEB_REVIEWS#METHODS` / `{domain}` (a run in a
+  workspace, through its `ws_table` view), or `WEB_REVIEWS#METHODS` / `{domain}` deployment-wide. `domain` is the
+  page's host, lower-cased, without `www.`, so two pages of one site share it. It holds no review and no page
+  content: `best_method` (`browser`, `bedrock_web_search`, `agentcore_web_search`, or `none`), `learned_at`, and
+  per step tried `last_outcome` (`readable`, `blocked:<vendor>`, `no_reviews`, `error`), `last_at`, `successes`,
+  `failures` and `last_reviews`. Only `auto` targets read and write it.
+- **The plan** of a run, in this order of precedence (a step blocked within **7 days** is always left out):
+  - a record whose best step read the site within **30 days**: that step first (`known`), and when it fails now the
+    cascade continues from the top;
+  - the same, when the best step is not the browser and the browser was last tried more than **14 days** ago (or
+    never): the browser first, once (`reprobe`, "Re-checked the browser: still blocked by Cloudflare → Bedrock web
+    index"), so a site that lets the browser in again is not read the worse way forever;
+  - no record, or a best step that is stale or `none`: the whole cascade (`cascade`).
+  Each plan is logged with its order, the known best, when it was learned and what it left out.
+- **What a run teaches**: each step that ran adds its outcome; the first that read reviews is the new best (its time
+  `learned_at`); when the known best fails now and nothing else reads the site, the best is `none`, so the next run
+  tries the whole cascade; a step skipped for time changes nothing. The ingestor puts the whole record after each
+  target (of two runs at once, the last write wins); a record that cannot be read or written is logged and the run
+  goes on. IAM: the ingestor's existing voc-aggregates grant (every ingestor role's Put / Update and reads), its
+  workspace view refusing any key outside the run's workspace.
+- **Seeing and clearing it**: `GET /integrations/web_reviews/methods` (any member; the Data sources card's "Known
+  best" line) and `GET /scrapers/review-methods` (the same answer, for the AI assistant's `list_review_site_methods`:
+  the stream invokes the scrapers API) list the request's workspace's records, each with `browser_recheck_due_at`.
+  **Re-check methods** on a card, `DELETE /integrations/web_reviews/methods/{domain}`, clears that workspace's record
+  of the site only (its admins; without `X-Workspace-Id` the deployment's admins and the deployment's record), so the
+  next run tries the whole cascade; in a workspace it is audited first in `AUDIT#WS#{ws}` (kind
+  `web_review_methods_cleared`, the actor's sub, the site). Its IAM: `dynamodb:DeleteItem` on those two partitions
+  only (`dynamodb:LeadingKeys`), while the plugin is enabled.
+- **Export and delete**: a workspace's hard delete sweeps its records (`web_review_methods`); its export leaves them
+  out (operational: its runs learn them again).
 
 ## Blocked sites
 
@@ -210,10 +312,12 @@ DataDome, HUMAN (PerimeterX, "press & hold"), Cloudflare challenges and hard blo
 blocked"), AWS WAF challenges (its `awswaf.com` challenge script on a short page), Reddit's network-security and
 network-policy pages, CAPTCHAs, an HTTP 4xx/5xx main document, and a short "access denied" page.
 
-In testing from AWS on the unsigned `aws.browser.v1`, review sites that publish JSON-LD review markup were readable
-(about 20 reviews per page), while sites behind DataDome or HUMAN bot protection, or that require a login, were
-blocked; on 2026-11-15 g2.com was blocked by DataDome and gartner.com, trustradius.com and capterra.com by
-Cloudflare. Respect each site's terms of use when you add it.
+From AWS addresses an unsigned browser is often refused by bot management (DataDome, HUMAN, Cloudflare) and by
+sites that require a login; Web Bot Auth (below) lets a site that supports it recognise the signed browser, and a
+site may still refuse signed agents. `auto` then reads such a page from the Bedrock web index or AgentCore Web
+Search. Some sites allow their reviews through their official APIs only (Yelp: the Yelp Fusion API; Reddit: the
+Reddit Data API); add those sources with their APIs, not as review pages. Respect each site's terms of use when you
+add it.
 
 **Web Bot Auth** (since 7.41.00, on by default). The ingestor's browser is the deployment's own custom AgentCore
 browser (`voc_web_reviews`, `<prefix>_voc_web_reviews` under a deployment prefix) created with browser signing on:
@@ -261,48 +365,48 @@ blocked.
 
 `voc-datalake/scripts/evals/web_reviews_sites.py` reads page 1 of each site in a curated list
 (`voc-datalake/plugins/web_reviews/evals/sites.json`: about 27 public review pages across bot-protection vendors,
-each with the vendor seen in its response headers, the expectation and the outcome measured earlier on the unsigned
-browser, and the evidence for each) by every method and writes a comparison. It reuses the ingestor's own code and
-writes nothing to the deployment: no queue, no watermark, no secret, no profile save.
+inputs only: each page's URL, its subject, what is documented of it (`expect`: `unknown`, or `login` for a site that
+asks signed-out visitors to sign in, or `official_api_only`), and its documented feeds or official APIs) by every
+method and writes a comparison. It reuses the ingestor's own code and writes nothing to the deployment: no queue, no
+watermark, no learned method record, no secret, no profile save.
 
 | Method | What it does |
 |---|---|
 | `signed` | The deployment's Web Bot Auth browser (its id read from the deployed ingestor's `BROWSER_IDENTIFIER`) |
-| `unsigned` | The AWS-managed `aws.browser.v1` (the baseline) |
+| `unsigned` | The AWS-managed `aws.browser.v1` |
 | `http` | A direct fetch with an honest User-Agent (`VoC-Analytics-ReviewReader/<version> (+<this page>)`), robots.txt honoured (`robots_disallowed`) |
 | `feed` | A site's documented structured source, where it has one that needs no secret (RSS/Atom, a public JSON endpoint); an official API that needs a key is listed, not run |
 | `bedrock_web_search:<model>` | The ingestor's `bedrock_web_search` reader, with `openai.gpt-5.6-luna` and `openai.gpt-5.6-terra`; its reviews' bodies are checked against the page text another method read (`verbatim`, `partial`, `paraphrase_risk`, `unverifiable`) |
-| `agentcore_web_search` | The AgentCore Web Search API (`InvokeWebSearch`, SigV4 for `bedrock-agentcore`, `"<subject> reviews"` held to the site's domain, 10 results); the extraction model reads the snippets only, and a review is kept only when its body is in one snippet (`excerpt_only` when that snippet is a cut passage); `not_run` in a region the API is not listed for |
+| `agentcore_web_search` | The ingestor's snippet step (`InvokeWebSearch`, `"<subject> reviews"` held to the site's domain, 10 results, only the results on the page itself read; a review kept only when its body is in one snippet, `excerpt_only` when that snippet is a cut passage); `not_run` in a region the API is not offered in |
+| `auto` | What `auto` picks on a first run (no learned record): `signed`, then `bedrock_web_search` with the first model, then `agentcore_web_search`, each next step only when the one before got nothing; it reuses this run's rows of those methods (it always runs last) and runs a missing step itself; its row names the step that read the site (`picked`) and the chain |
+
+A site marked `official_api_only` (Yelp, Reddit: the site allows its reviews through its official API only) is read
+by no method: each method's row says `official_api_only`, with the API's documentation.
 
 Per site and method it reports the outcome (`readable`, `blocked:<vendor>`, `login`, `robots_disallowed`,
-`off_host`, `no_reviews`, `unextracted`, `error`, `not_run`), the reviews on page 1, pages read, seconds, the
-extraction (`json-ld`, `model`, `text`, `feed`, `json`, `web_search`) and how it compares with the expectation and
-with the unsigned baseline, as a JSON and a Markdown report in the `--out` directory (a table and a site × method grid). Run it from
-`voc-datalake/` with the deployment's credentials (`--dry-run` first: it prints what it would do and calls
-nothing):
+`off_host`, `no_reviews`, `unextracted`, `error`, `not_run`, `official_api_only`), the reviews on page 1, pages
+read, seconds, the extraction (`json-ld`, `model`, `text`, `feed`, `json`, `web_search`, `snippets`, or `auto`'s
+picked step) and how it compares with the expectation, as a JSON and a Markdown report: a table, and a site × method
+grid with the bot-management vendors this run met on each site. Run it from `voc-datalake/` with the deployment's
+credentials (`--dry-run` first: it prints what it would do and calls nothing):
 
 ```bash
 AWS_PROFILE=<profile> .venv/bin/python scripts/evals/web_reviews_sites.py --region us-west-2 --prefix <prefix> --dry-run
 AWS_PROFILE=<profile> .venv/bin/python scripts/evals/web_reviews_sites.py --region us-west-2 --prefix <prefix>
 ```
 
-The report goes to `web-reviews-eval/<UTC time>/` (ignored by git; `--out` to change it). `--only g2,capterra` reads
-some sites, `--methods signed,unsigned` some methods, `--no-model` skips every model call (JSON-LD only),
-`--model-calls N` (1 by default) caps the extraction calls per page, `--web-search-models` changes the two web
-search models and `--browser-id` names the signed browser instead of reading it from the deployed ingestor. It runs
-with the operator's credentials: the browser sessions run in AgentCore exactly as the ingestor's do (from AWS
-addresses, signed or not), while the HTTP and feed requests reach the sites from the operator's machine (so their
-outcome is that address's, not a Lambda's). Its cost, at
-most: two browser sessions per site (300 s timeout each, a few seconds used), one extraction model call per page
-without JSON-LD, two Responses requests per site and one web search (plus one model call over its snippets).
-
-### Latest results
-
-Not run yet against a deployment with Web Bot Auth: the table is filled from the eval's Markdown report after the first run.
-
-| Site | Vendor | signed | unsigned | http | bedrock_web_search (luna / terra) |
-|---|---|---|---|---|---|
-| … | … | … | … | … | … |
+The reports are written locally only, under `voc-datalake/web-reviews-eval/<UTC time>/` (git-ignored; `--out` may
+name another directory inside `web-reviews-eval/` and nowhere else), and are never committed: no run's results are
+kept in the repository, its docs or its test fixtures. `--only g2,capterra` reads some sites, `--methods
+signed,unsigned` some methods, `--no-model` skips every model call (JSON-LD only), `--model-calls N` (1 by default)
+caps the extraction calls per page, `--web-search-models` changes the two web search models and `--browser-id` names
+the signed browser instead of reading it from the deployed ingestor. It runs with the operator's credentials: the
+browser sessions run in AgentCore exactly as the ingestor's do (from AWS addresses, signed or not), while the HTTP
+and feed requests reach the sites from the operator's machine (so their outcome is that address's, not a Lambda's;
+and the URL policy resolves each host with the operator's DNS, so a resolver that cannot answer for a host makes
+that site's rows `error`). Its cost, at most: two browser sessions per site (300 s timeout each, a few seconds used),
+one extraction model call per page without JSON-LD, two Responses requests per site and one web search (plus one
+model call over its snippets); `auto` adds nothing when the other methods ran.
 
 ## Cost
 
@@ -311,9 +415,12 @@ call per 40,000 characters of page text (at most four per page); a page unchange
 Nothing costs anything while idle: the custom browser and its role are free, sessions bill per second of CPU and
 memory as on `aws.browser.v1`, and the browser profile is stored at Amazon S3 Standard rates (kilobytes). A
 `bedrock_web_search` target costs one Responses request per run: the model's tokens (the opened page counts as
-input) plus Web Search's tool calls ($12 per 1,000 calls in the US regions on 2026-11-15). See
+input) plus Web Search's tool calls. An `auto` target costs only the steps it runs: the browser's, and a Bedrock web
+search request and an AgentCore Web Search request (plus one `enrichment` model call over its snippets) only when the
+steps before them got nothing; a site the workspace learned is read by its best step alone. See
 [Amazon Bedrock AgentCore pricing](https://aws.amazon.com/bedrock/agentcore/pricing/) for browser session time
-and [Amazon Bedrock pricing](https://aws.amazon.com/bedrock/pricing/) for the model calls and Web Search.
+and [Amazon Bedrock pricing](https://aws.amazon.com/bedrock/pricing/) for the model calls and Web Search
+(AgentCore Web Search is on the AgentCore pricing page).
 
 ## Infrastructure and regions
 
@@ -341,7 +448,9 @@ and [Amazon Bedrock pricing](https://aws.amazon.com/bedrock/pricing/) for the mo
   on `arn:aws:bedrock-mantle:<region>:<account>:project/default` (the GPT allowlist is enforced in code: the value
   format of the `bedrock-mantle:Model` condition key is not documented) and `bedrock-websearch:InvokeSearch` /
   `InvokeFetch` on `*` held to the region (`aws:RequestedRegion`), as the Web Search IAM guide grants them; never
-  `bedrock-websearch:ExternalWebAccess`. Plus the Bedrock model grant of `bedrock: true`. The settings Lambda's
+  `bedrock-websearch:ExternalWebAccess`; and, for `auto`'s last step, `bedrock-agentcore:InvokeWebSearch` on the
+  region's AWS-managed tool only, `arn:aws:bedrock-agentcore:<region>:aws:tool/web-search.v1` (the AgentCore
+  developer guide's grant: the account field is the literal `aws`). Plus the Bedrock model grant of `bedrock: true`. The settings Lambda's
   Test of the surface (`lambda/shared/web_search_model_probe.py`: one request, no tool) holds only
   `bedrock-mantle:CreateInference` on the same project, and only while the plugin is enabled. voc-design-capture
   reuses the browser module without either variable: it stays on `aws.browser.v1`, without a profile.

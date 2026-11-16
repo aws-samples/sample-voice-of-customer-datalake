@@ -11,7 +11,7 @@ from review_text import plain_review_text
 
 from shared.radar_brands import radar_stamp
 from shared.timestamps import now_iso
-from shared.web_review_targets import MAX_PAGES, METHOD_BROWSER, validated_target, web_review_source_id
+from shared.web_review_targets import MAX_PAGES, METHOD_AUTO, validated_target, web_review_source_id
 
 CHANNEL_MAX_CHARS: Final = 100
 #: A metadata value's ceiling (shared/ingest_schemas.py MAX_METADATA_VALUE_LENGTH: flat primitives, 1,000 characters).
@@ -31,8 +31,8 @@ class WebTarget:
     source_id: str = ''
     #: The Radar brand key its reviews go to (docs/radar.md); empty for one of our own sources.
     radar_brand: str = ''
-    #: How it is read: ``browser`` (the default) or ``bedrock_web_search`` (shared/web_review_targets.py METHODS).
-    method: str = METHOD_BROWSER
+    #: How it is read: ``auto`` (the default), ``browser`` or ``bedrock_web_search`` (shared/web_review_targets.py METHODS).
+    method: str = METHOD_AUTO
 
     @property
     def page_limit(self) -> int:
@@ -114,11 +114,13 @@ def url_list(urls: list[str]) -> str:
 
 
 def queue_item(target: WebTarget, review: ExtractedReview, *, page: int, page_url: str, brand_name: str,
-               attribution: dict[str, str] | None = None) -> dict:
+               attribution: dict[str, object] | None = None) -> dict:
     """The item ``BaseIngestor.normalize_item`` turns into a processing-queue message.
 
-    *attribution*: flat string metadata a method stores on every review it read (bedrock_web_search: the method,
-    model, site, source URL, when it was read, the URLs opened and cited), beside the target and the page.
+    *attribution*: flat metadata (strings, and the ``excerpt`` flag) a method stores on every review it read: the step
+    that read it (``method_used``: ``browser``, ``bedrock_web_search`` or ``agentcore_web_search``); for
+    bedrock_web_search the method, model, site, source URL, when it was read, the URLs opened and cited; for an
+    AgentCore Web Search excerpt the snippet, its URL, title and publication time; beside the target and the page.
     """
     return {
         'id': review_id(target.host, review),

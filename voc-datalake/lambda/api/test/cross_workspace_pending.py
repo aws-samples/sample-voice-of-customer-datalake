@@ -46,8 +46,10 @@ PHASE_2: dict[str, frozenset[str]] = {
     # Credentials move to the workspace secret.
     'integrations_handler.py': frozenset({
         'DELETE /integrations/<source>/apps/<app_id>',
+        'DELETE /integrations/<source>/methods/<domain>',
         'GET /integrations/<source>/apps',
         'GET /integrations/<source>/credentials',
+        'GET /integrations/<source>/methods',
         'GET /integrations/status',
         'GET /sources/status',
         'POST /integrations/<source>/apps',
@@ -101,6 +103,7 @@ PHASE_2: dict[str, frozenset[str]] = {
         'GET /scrapers/<scraper_id>/status',
         'GET /scrapers/connectors',
         'GET /scrapers/jobs/<job_id>',
+        'GET /scrapers/review-methods',
         'GET /scrapers/templates',
         'POST /scrapers',
         'POST /scrapers/<scraper_id>/run',

@@ -28,7 +28,12 @@ live-checked and audited; a write resolves the role from the table, never the 30
   in voc-workspaces, since 7.14.00), and Run now there answers 409 ``PLUGIN_NOT_ENABLED`` for a plugin it has not
   enabled (shared/workspace_plugin_settings.py).
 
-A request without the header acts deployment-wide, exactly as before.
+* ``GET /integrations/web_reviews/methods`` (any member) lists the workspace's learned review-site methods and
+  ``DELETE /integrations/web_reviews/methods/{domain}`` (its admins: "Re-check methods") clears one site's, both in its
+  own ``WS#{ws}#WEB_REVIEWS#METHODS`` partition only (shared/web_review_methods.py), the clear audited in
+  ``AUDIT#WS#{ws}`` (kind ``web_review_methods_cleared``) before it.
+
+A request without the header acts deployment-wide, exactly as before (the methods in ``WEB_REVIEWS#METHODS``).
 """
 
 import json
@@ -43,7 +48,8 @@ import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import config_write_guard
-from shared.api import api_handler, create_api_resolver, is_admin
+from shared.api import api_handler, create_api_resolver, get_caller_subject, is_admin
+from shared.audit_rows import put_new_audit_row
 from shared.aws import get_dynamodb_resource, get_secrets_client, get_ssm_client, put_secret_json
 from shared.enabled_sources import default_source_ids
 from shared.exceptions import (
@@ -65,8 +71,10 @@ from shared.snapstart import api_route_warmer, botocore_model_warmer, register_s
 from shared.timestamps import now_iso
 from shared.url_policy import scraper_url_error, validate_url
 from shared.warm_init import warm_at_init
+from shared.web_review_methods import clear_record, is_site_domain, methods_answer
 from shared.web_review_targets import PLUGIN_ID as WEB_REVIEWS_PLUGIN
 from shared.web_review_targets import TargetError, target_source_id, validated_target
+from shared.workspace import audit_key, audit_sort_key
 from shared.workspace_plugin_store import CredentialsStore, StoreClients
 from shared.workspace_request import DEPLOYMENT_ONLY, ResolvedRoutes
 from shared.workspace_routing import workspace_payload
@@ -968,8 +976,6 @@ def run_source(source: str):
     """
     from datetime import datetime
 
-    from shared.tables import get_aggregates_table
-
     _request.require_request_admin()
     context, scope = _request.context(), _request.scope()
     _validate_source_parameter(source)
@@ -990,7 +996,7 @@ def run_source(source: str):
 
     # Create initial run status record (with the app it runs, which the status route filters on)
     try:
-        table = get_aggregates_table()
+        table = _aggregates()
         if table:
             table_view(scope, table).put_item({
                 'pk': source_run_partition(scope, source), 'sk': execution_id,
@@ -1037,16 +1043,27 @@ def _get_source_run_status(source: str, app_id: str | None = None, execution_id:
     """Get the latest run status for a data source plugin (in a workspace: its ``WS#{ws}#SOURCE_RUN#`` rows), or
     of one app's runs (``app_id``, as ``run_source`` stored it) or one run (``execution_id``): the same answer shape,
     ``never_run`` when the request's partition holds no such run (another workspace's id included)."""
-    from shared.tables import get_aggregates_table
-
     scope = _request.scope()
     try:
-        return run_status(get_aggregates_table(), source_run_partition(scope, source), {'source': source},
-                          lambda run: {'errors': run.get('errors', [])}, scope,
+        return run_status(_aggregates(), source_run_partition(scope, source), {'source': source}, _run_extra, scope,
                           app_id=app_id, execution_id=execution_id)
     except (ClientError, BotoCoreError) as e:
         logger.warning(f"Failed to get source run status: {e}")
         return {'source': source, 'status': 'unknown'}
+
+
+def _aggregates() -> Any:
+    """voc-aggregates (None when the Lambda has none): Run now's run row, the run status, the learned methods; each
+    caller sees it through the request's scope (``table_view``)."""
+    from shared.tables import get_aggregates_table
+
+    return get_aggregates_table()
+
+
+def _run_extra(run: Mapping[str, Any]) -> dict[str, Any]:
+    """What a run's status adds to its fields: its errors, and a web_reviews run's ``reads`` (how each page was read:
+    plugins/web_reviews/ingestor/cascade.py ``read_row``) when it has them."""
+    return {'errors': run.get('errors', []), **({'reads': run['reads']} if isinstance(run.get('reads'), list) else {})}
 
 
 #: The run filters of ``GET /sources/status?run_status=<source>`` (one app's runs, one run).
@@ -1199,6 +1216,79 @@ def get_sources_status():
     }
 
     return {'sources': status}
+
+
+# ---------------------------------------------------------------------------
+# The web_reviews plugin's learned methods (docs/web-reviews.md, "Learning which method works")
+# ---------------------------------------------------------------------------
+
+#: The audit kind of a cleared site record (``AUDIT#WS#{ws}``).
+WEB_REVIEW_METHODS_CLEARED: Final = 'web_review_methods_cleared'
+
+
+def _web_reviews_only(source: str) -> None:
+    """A validated ``<source>`` (``_validate_source_parameter``) that is not web_reviews has no learned methods (400)."""
+    if source != WEB_REVIEWS_PLUGIN:
+        raise ValidationError(f'Source {source} has no learned reading methods')
+
+
+def _methods_view() -> tuple[Any, Any]:
+    """The request's scope and voc-aggregates seen through it (a ``ServiceError`` when the Lambda has no table)."""
+    table = _aggregates()
+    if table is None:
+        raise ConfigurationError('The learned methods are not configured')
+    scope = _request.scope()
+    return scope, table_view(scope, table)
+
+
+@app.get("/integrations/<source>/methods")
+@tracer.capture_method
+def list_review_methods(source: str):
+    """The learned reading method of each review site, in the request's workspace (deployment-wide without
+    X-Workspace-Id): any member, like the run status. A record names a site and how it was read, no review."""
+    _validate_source_parameter(source)
+    _web_reviews_only(source)
+    scope, view = _methods_view()
+    try:
+        return methods_answer(view, scope)
+    except (ClientError, BotoCoreError) as e:
+        logger.warning('Could not read the learned methods', extra={'error_type': type(e).__name__})
+        raise ServiceError('Failed to read the learned methods') from e
+
+
+def _record_methods_cleared(scope: Any, domain: str) -> None:
+    """The ``AUDIT#WS#{ws}`` row of a cleared site record, written before the clear (a new row, never an overwrite)."""
+    from shared.tables import configured_table, get_workspaces_table
+
+    at = now_iso()
+    put_new_audit_row(configured_table(get_workspaces_table(), 'Workspaces'), {
+        'pk': audit_key(scope.ws), 'sk': audit_sort_key(at), 'kind': WEB_REVIEW_METHODS_CLEARED,
+        'actor': get_caller_subject(app.current_event.raw_event), 'domain': domain, 'at': at})
+
+
+@app.delete("/integrations/<source>/methods/<domain>")
+@tracer.capture_method
+def clear_review_method(source: str, domain: str):
+    """"Re-check methods": forget what the request's workspace learned of one review site, so its next run tries the
+    whole cascade again. Its admins in a workspace (the deployment's admins without X-Workspace-Id); only the
+    workspace's own record is reached. In a workspace the clear is audited first (kind ``web_review_methods_cleared``,
+    the actor's sub, the site): a row that cannot be written clears nothing."""
+    _request.require_request_admin()
+    _validate_source_parameter(source)
+    _web_reviews_only(source)
+    site = domain.strip().lower()
+    if not is_site_domain(site):
+        raise ValidationError('domain must be a site\'s host name, such as g2.com')
+    scope, view = _methods_view()
+    try:
+        if scope is not None:
+            _record_methods_cleared(scope, site)
+        cleared = clear_record(view, scope, site)
+    except (ClientError, BotoCoreError) as e:
+        logger.warning('Could not clear the learned methods', extra={'error_type': type(e).__name__})
+        raise ServiceError('Failed to clear the learned methods') from e
+    logger.info('Cleared the learned methods of a review site', extra={'cleared': cleared})
+    return {'success': True, 'domain': site, 'cleared': cleared}
 
 
 def _caller_is_admin() -> bool:

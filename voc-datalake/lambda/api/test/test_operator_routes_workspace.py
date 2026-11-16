@@ -433,6 +433,109 @@ class TestTheBreakerInAWorkspace:
         assert _integrations(lambda_context, 'PUT', f'/sources/webscraper/{action}', claims=ADMIN_B, ws=WS_A)[0] == 404
 
 
+# ── The web_reviews plugin's learned methods ────────────────────────────────────────────────────────────────────
+
+def _methods_record(pk: str, domain: str = 'g2.com', best: str = 'bedrock_web_search') -> dict:
+    return {'pk': pk, 'sk': domain, 'best_method': best, 'learned_at': '2026-11-15T10:00:00+00:00', 'methods': {
+        best: {'last_outcome': 'readable', 'last_at': '2026-11-15T10:00:00+00:00', 'successes': 1, 'failures': 0,
+               'last_reviews': 11}}}
+
+
+@pytest.fixture
+def learned(world) -> Iterator[World]:
+    """A record of g2.com deployment-wide, in A and in B."""
+    for pk in ('WEB_REVIEWS#METHODS', f'WS#{WS_A}#WEB_REVIEWS#METHODS', f'WS#{WS_B}#WEB_REVIEWS#METHODS'):
+        world.aggregates.put_item(Item=_methods_record(pk, best='browser' if WS_B in pk else 'bedrock_web_search'))
+    with patch('shared.tables.get_workspaces_table', return_value=world.workspaces):
+        yield world
+
+
+def _methods(lambda_context, method, domain=None, *, source='web_reviews', **kwargs):
+    path = f'/integrations/{source}/methods' + (f'/{domain}' if domain is not None else '')
+    params = {'source': source, **({'domain': domain} if domain is not None else {})}
+    return _call(integrations_handler, lambda_context, method, path, path_params=params, **kwargs)
+
+
+@pytest.mark.usefixtures('learned')
+class TestTheLearnedMethodsInAWorkspace:
+    @pytest.mark.parametrize('claims', [ADMIN_A, EDITOR_A, VIEWER_A])
+    def test_any_member_lists_the_workspaces_own_records(self, lambda_context, claims):
+        status, body = _methods(lambda_context, 'GET', claims=claims, ws=WS_A)
+
+        assert status == 200, body
+        assert body == {'methods': [{'domain': 'g2.com', 'best_method': 'bedrock_web_search',
+                                     'learned_at': '2026-11-15T10:00:00+00:00',
+                                     'browser_recheck_due_at': '2026-11-15T10:00:00+00:00',
+                                     'methods': {'bedrock_web_search': {
+                                         'last_outcome': 'readable', 'last_at': '2026-11-15T10:00:00+00:00',
+                                         'successes': 1, 'failures': 0, 'last_reviews': 11}}}]}
+
+    def test_without_the_header_the_deployments_records(self, lambda_context):
+        _, deployment = _methods(lambda_context, 'GET', claims=DEPLOYMENT_ADMIN, ws=None)
+        _, other = _methods(lambda_context, 'GET', claims=ADMIN_B, ws=WS_B)
+        _, new = _methods(lambda_context, 'GET', claims=ADMIN_NEW, ws=WS_NEW)
+
+        assert [r['best_method'] for r in deployment['methods']] == ['bedrock_web_search']
+        assert [r['best_method'] for r in other['methods']] == ['browser']
+        assert new == {'methods': []}  # each workspace starts empty: nothing shared, nothing seeded
+
+    def test_re_check_clears_that_workspaces_record_only_and_is_audited_first(self, learned, lambda_context):
+        status, body = _methods(lambda_context, 'DELETE', 'G2.com', claims=ADMIN_A, ws=WS_A)
+
+        assert (status, body) == (200, {'success': True, 'domain': 'g2.com', 'cleared': True})
+        assert learned.row(f'WS#{WS_A}#WEB_REVIEWS#METHODS', 'g2.com') is None
+        assert learned.row(f'WS#{WS_B}#WEB_REVIEWS#METHODS', 'g2.com') is not None  # A's clear never reaches B
+        assert learned.row('WEB_REVIEWS#METHODS', 'g2.com') is not None
+        [audit] = learned.workspaces.query(KeyConditionExpression='pk = :p',
+                                           ExpressionAttributeValues={':p': f'AUDIT#WS#{WS_A}'})['Items']
+        assert {key: audit[key] for key in ('kind', 'actor', 'domain')} == {
+            'kind': 'web_review_methods_cleared', 'actor': ADMIN_A['sub'], 'domain': 'g2.com'}
+
+    def test_a_site_with_no_record_clears_nothing(self, lambda_context):
+        assert _methods(lambda_context, 'DELETE', 'capterra.com', claims=ADMIN_A, ws=WS_A)[1]['cleared'] is False
+
+    def test_without_the_header_the_deployments_admins_clear_the_deployments_record(self, learned, lambda_context):
+        assert _methods(lambda_context, 'DELETE', 'g2.com', claims=DEPLOYMENT_ADMIN, ws=None)[0] == 200
+        assert learned.row('WEB_REVIEWS#METHODS', 'g2.com') is None
+        assert learned.row(f'WS#{WS_A}#WEB_REVIEWS#METHODS', 'g2.com') is not None
+
+    @pytest.mark.parametrize(('claims', 'expected'), [(EDITOR_A, 403), (VIEWER_A, 403), (ADMIN_B, 404),
+                                                      (DEPLOYMENT_ADMIN, 404)])
+    def test_re_check_is_for_the_workspaces_admins(self, learned, lambda_context, claims, expected):
+        assert _methods(lambda_context, 'DELETE', 'g2.com', claims=claims, ws=WS_A)[0] == expected
+        assert learned.row(f'WS#{WS_A}#WEB_REVIEWS#METHODS', 'g2.com') is not None
+
+    def test_a_user_who_is_no_deployment_admin_cannot_clear_the_deployments_record(self, learned, lambda_context):
+        assert _methods(lambda_context, 'DELETE', 'g2.com', claims=VIEWER_A, ws=None)[0] == 403
+        assert learned.row('WEB_REVIEWS#METHODS', 'g2.com') is not None
+
+    @pytest.mark.parametrize('domain', ['g2_com', 'g2..com', 'g2.com%2Fx', '-g2.com', 'a' * 254])
+    def test_a_domain_that_is_no_site_is_refused(self, learned, lambda_context, domain):
+        assert _methods(lambda_context, 'DELETE', domain, claims=ADMIN_A, ws=WS_A)[0] == 400
+        assert learned.row(f'WS#{WS_A}#WEB_REVIEWS#METHODS', 'g2.com') is not None
+
+    def test_the_assistants_read_through_the_scrapers_api_is_the_workspaces_own(self, lambda_context):
+        _, a = _call(scrapers_handler, lambda_context, 'GET', '/scrapers/review-methods', claims=VIEWER_A, ws=WS_A)
+        _, b = _call(scrapers_handler, lambda_context, 'GET', '/scrapers/review-methods', claims=ADMIN_B, ws=WS_B)
+        _, new = _call(scrapers_handler, lambda_context, 'GET', '/scrapers/review-methods', claims=ADMIN_NEW, ws=WS_NEW)
+        _, listed = _methods(lambda_context, 'GET', claims=VIEWER_A, ws=WS_A)
+
+        assert a == listed  # the app's route and the assistant's answer the same
+        assert [r['best_method'] for r in a['methods']] == ['bedrock_web_search']
+        assert [r['best_method'] for r in b['methods']] == ['browser']  # A never sees B's record, nor B A's
+        assert new == {'methods': []}
+
+    def test_the_scrapers_api_route_needs_a_membership(self, lambda_context):
+        status, body = _call(scrapers_handler, lambda_context, 'GET', '/scrapers/review-methods', claims=ADMIN_B, ws=WS_A)
+        assert (status, body['error']) == (404, 'Workspace not found')
+
+    @pytest.mark.parametrize('method', ['GET', 'DELETE'])
+    def test_another_source_has_none(self, lambda_context, method):
+        status, _ = _methods(lambda_context, method, 'g2.com' if method == 'DELETE' else None, source='webscraper',
+                             claims=ADMIN_A, ws=WS_A)
+        assert status == 400
+
+
 # ── Credentials ──────────────────────────────────────────────────────────────────────────────────────────────────
 
 class TestCredentialsInAWorkspace:

@@ -487,6 +487,9 @@ class TestScraperRouteCoverageIsComplete:
             'get_scrapers_assist_job',
             # 5.47: a read (the app connectors with their Radar brand), open like GET /integrations/<source>/apps.
             'list_app_connectors',
+            # 7.44.00: a read (the workspace's learned review-site methods, for the AI assistant), open to every
+            # member like GET /integrations/web_reviews/methods.
+            'list_review_site_methods',
         }, (
             'the route inventory changed; a NEW route must be added to '
             'SCRAPER_ADMIN_ROUTES if it mutates or spends, and will otherwise be '

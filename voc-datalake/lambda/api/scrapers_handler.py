@@ -105,6 +105,7 @@ from shared.url_policy import (
     scraper_url_error,
     validate_url,
 )
+from shared.web_review_methods import methods_answer
 from shared.workspace_plugin_store import CredentialsStore, StoreClients
 from shared.workspace_request import ResolvedRoutes
 from shared.workspace_routing import workspace_payload
@@ -393,7 +394,7 @@ def _validated_scraper(body: object, scope: WorkspaceScope | None = None) -> dic
         raise ValidationError(error)
     # Dimension defaults and tags the ingestor stamps on every message it sends, checked against the dimensions of
     # the request's workspace (the deployment's without one), the ones its messages are processed with.
-    normalise_label_fields(get_aggregates_table(), scraper, scope)
+    normalise_label_fields(_aggregates(), scraper, scope)
     _normalise_radar_brand(scraper)
     return scraper
 
@@ -539,6 +540,30 @@ def list_app_connectors():
     return {'connectors': connectors_in_secret(secrets)}
 
 
+def _aggregates() -> Any:
+    """voc-aggregates (None when the Lambda has none), the one handle of this module: a scraper's labels, its run rows,
+    the web_reviews learned methods; each caller sees it through the request's scope (``table_view``)."""
+    return get_aggregates_table()
+
+
+@app.get("/scrapers/review-methods")
+@tracer.capture_method
+def list_review_site_methods():
+    """What the request's workspace learned of each review site (shared/web_review_methods.py): the method that reads
+    it, and each method's last outcome. Read-only, any member, like GET /scrapers/connectors: the AI assistant reads it
+    here (the stream invokes the scrapers API, not the integrations API, whose GET /integrations/web_reviews/methods
+    answers the same for the app). A record names a site and how it was read, never a review."""
+    table = _aggregates()
+    if table is None:
+        return {'methods': []}
+    scope = _request.scope()
+    try:
+        return methods_answer(table_view(scope, table), scope)
+    except (ClientError, BotoCoreError) as e:
+        logger.warning('Could not read the learned review-site methods', extra={'error_type': type(e).__name__})
+        raise ServiceError('Failed to read the learned review-site methods') from e
+
+
 @app.get("/scrapers/templates")
 @tracer.capture_method
 def get_templates():
@@ -609,7 +634,7 @@ def run_scraper(scraper_id: str):
     # `manual_run: true` this payload once carried was read by nothing, so it is no longer sent.
     payload = workspace_payload({'scraper_id': scraper_id, 'execution_id': execution_id}, context)
     try:
-        table = get_aggregates_table()
+        table = _aggregates()
         if table:
             table_view(scope, table).put_item({
                 'pk': scraper_run_partition(scope, scraper_id), 'sk': execution_id, 'status': 'running',
@@ -629,7 +654,7 @@ def get_scraper_status(scraper_id: str):
     """Get the latest run status for a scraper (in a workspace: its ``WS#{ws}#SCRAPER_RUN#`` rows)."""
     scope = _request.scope()
     try:
-        return run_status(get_aggregates_table(), scraper_run_partition(scope, scraper_id), {'scraper_id': scraper_id},
+        return run_status(_aggregates(), scraper_run_partition(scope, scraper_id), {'scraper_id': scraper_id},
                           _scraper_run_fields, scope)
     except (ClientError, BotoCoreError) as e:
         logger.warning(f"Failed to get scraper status: {e}")

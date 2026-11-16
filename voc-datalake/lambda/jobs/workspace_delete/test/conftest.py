@@ -305,6 +305,7 @@ def seed_workspace(world: World, ws: str, *, status: str) -> None:
         {'pk': f'{p}IMPORT_RUN#run1', 'sk': 'RUN', 'run_id': 'run1', 'errors': ['row 3: empty']},
         {'pk': f'{p}JOB#erasure', 'sk': 'er_0123456789ab', 'status': 'completed', 'value_hash': 'f' * 64},
         {'pk': f'{p}JOB#erasure', 'sk': 'LOCK', 'job_id': f'delete-{ws}', 'locked_at': now().isoformat()},
+        {'pk': f'{p}WEB_REVIEWS#METHODS', 'sk': 'g2.com', 'best_method': 'bedrock_web_search'},
         {'pk': f'{p}JOB#export', 'sk': 'ex_01JC3Q8ZK6V7W9X2Y4A5B6C7D8', 'export_id': 'ex_01JC3Q8ZK6V7W9X2Y4A5B6C7D8',
          'status': 'completed'},
         {'pk': f'{p}JOB#export', 'sk': 'LOCK', 'job_id': f'delete-{ws}', 'locked_at': now().isoformat()},

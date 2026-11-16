@@ -95,6 +95,7 @@ from shared.retention import STORE_FEEDBACK, UNKNOWN_SOURCE, item_feedback_id, i
 from shared.review_share_audience import is_share_id
 from shared.row_ids import LONG_OPAQUE_ID_RE
 from shared.tables import JOBS_TABLE_ENV
+from shared.web_review_methods import methods_partition
 from shared.workspace_credentials import delete_parameters, list_parameter_names
 from shared.workspace_deletes import DROPPED_FIELD, DROPS_SORT_KEY
 from shared.workspace_members import MEMBER_PREFIX
@@ -1153,6 +1154,8 @@ PARTITION_FAMILIES: Final[dict[str, Callable[[Context], Iterable[str]]]] = {
     'erasure_jobs': lambda ctx: [erasure_job_pk(ctx.scope)],
     # A workspace's category reprocess jobs and their LOCK (7.13.00, shared/reprocess_jobs.py).
     'reprocess_jobs': lambda ctx: [reprocess_job_pk(ctx.scope)],
+    # What the workspace's web_reviews runs learned of each review site (7.44.00, shared/web_review_methods.py).
+    'web_review_methods': lambda ctx: [methods_partition(ctx.scope)],
     # voc-radar: the workspace's Radar settings, config and brands (shared/radar_keys.py, decision 13).
     'radar': lambda ctx: [radar_settings_key('config', ctx.scope)['pk']],
     # The workspace's own settings: after every reader of them (the counters).
@@ -1180,6 +1183,7 @@ SWEEPS: Final = (
     owner_list_sweep('import_runs', OWNER_LISTS['import_runs']),
     _family('erasure_jobs'),
     _family('reprocess_jobs'),
+    _family('web_review_methods'),
     Sweep('watermarks', 'watermarks', _watermark_pages, _delete_watermarks, grants=('aggregates', 'watermarks')),
     Sweep('memory', 'memory', memory_pages, _delete_memories, tombstone=_tombstone_memories,
           grants=('memory', 'tombstones')),

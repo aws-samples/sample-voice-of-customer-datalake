@@ -12,11 +12,17 @@ import { formatDateTime } from '../../utils/dateUtils'
 import {
   WEB_REVIEWS_PLUGIN_ID, appField, getAppIdentifier, getFrequencyLabel,
 } from './scraper-helpers'
+import LearnedMethodLine from './LearnedMethodLine'
+import ReviewReadLine from './ReviewReadLine'
+import { readOfPage } from './reviewReads'
 import { CardActions, CardStat, RadarBadge, RunStartedNotice } from './SourceCardParts'
 import { ToneTile } from './SourceDialogHeader'
 import { isLiveRun } from './useAppRun'
-import { BEDROCK_WEB_SEARCH, reviewMethod, showsReviewMethod } from './webReviewMethod'
+import { AUTO_METHOD, reviewMethod, reviewPageDomain, showsReviewMethod } from './webReviewMethod'
+import type { TargetRead } from './reviewReads'
 import type { AppConfig } from './scraper-helpers'
+import type { LearnedMethod } from './useLearnedMethods'
+import type { ReviewMethod } from './webReviewMethod'
 import type { PluginManifest } from '../../plugins/types'
 
 export interface RunStatusInfo {
@@ -25,6 +31,8 @@ export interface RunStatusInfo {
   errors: string[]
   started_at?: string
   completed_at?: string
+  /** A web_reviews run: how it read each page (reviewReads.ts). */
+  reads?: TargetRead[]
 }
 
 /** What kind of source a card is, in words (a web-review target is a "Review page", not "Platform: Web"). */
@@ -35,22 +43,13 @@ function kindLabelKey(pluginId: string): string {
   return 'appCard.kind.app'
 }
 
-/** A web-review page's host without `www.` ("trustpilot.com"); undefined when the URL does not parse. */
-function reviewPageHost(url: string): string | undefined {
-  try {
-    return new URL(url).hostname.replace(/^www\./, '')
-  } catch {
-    return undefined
-  }
-}
-
 /** Who a run of this card contacts, in words: the review page's site, or the app store. */
 function useRunSite(app: AppConfig, pluginId: string): string {
   const { t } = useTranslation('scrapers')
   if (pluginId === 'app_reviews_ios') return t('card.siteAppStore')
   if (pluginId === 'app_reviews_android') return t('card.siteGooglePlay')
   const url = getAppIdentifier(app, pluginId)
-  return reviewPageHost(url) ?? (url === '' ? t('card.siteUnknown') : url)
+  return reviewPageDomain(url) ?? (url === '' ? t('card.siteUnknown') : url)
 }
 
 /** A web_reviews target without `max_pages` reads this many (lambda/shared/web_review_targets.py DEFAULT_PAGES). */
@@ -134,9 +133,10 @@ function RunWhen({ status, shown }: Readonly<{ status: RunStatusInfo; shown: Sho
   return <div className="text-xs text-muted">{t('card.lastRun')}: {when}</div>
 }
 
-function AppRunStatusBar({ status }: Readonly<{ status: RunStatusInfo }>) {
+function AppRunStatusBar({ status, appId }: Readonly<{ status: RunStatusInfo; appId: string }>) {
   const { t } = useTranslation('scrapers')
   const shown = shownStatus(status)
+  const read = shown === 'running' ? undefined : readOfPage(status.reads, appId)
   return (
     <div className={clsx('mt-3 p-3 rounded-lg text-sm border', STATUS_COLOR[shown])}>
       <div className="flex items-center gap-2 mb-1">
@@ -145,6 +145,7 @@ function AppRunStatusBar({ status }: Readonly<{ status: RunStatusInfo }>) {
       <div className="text-xs text-text">
         {t('status.reviewsFound')} <span className="font-mono font-semibold text-text-strong">{status.items_found}</span>
       </div>
+      {read === undefined ? null : <ReviewReadLine read={read} />}
       <RunWhen status={status} shown={shown} />
       {shown === 'running' ? <RunStartedNotice /> : null}
       <RunErrors errors={status.errors} />
@@ -152,15 +153,21 @@ function AppRunStatusBar({ status }: Readonly<{ status: RunStatusInfo }>) {
   )
 }
 
-/** "Browser" or "Bedrock web index": how a review page is read (webReviewMethod.ts). */
+/** Each method's badge on a review page's card. */
+const METHOD_BADGE_KEYS: Readonly<Record<ReviewMethod, string>> = {
+  auto: 'appCard.method.automatic',
+  browser: 'appCard.method.browser',
+  bedrock_web_search: 'appCard.method.bedrock',
+}
+
+/** "Automatic", "Browser" or "Bedrock web index": how a review page is read (webReviewMethod.ts). */
 function ReviewMethodBadge({ app }: Readonly<{ app: AppConfig }>) {
   const { t } = useTranslation('scrapers')
-  const label = reviewMethod(app) === BEDROCK_WEB_SEARCH ? t('appCard.method.bedrock') : t('appCard.method.browser')
-  return <span className="badge badge-muted">{label}</span>
+  return <span className="badge badge-muted">{t(METHOD_BADGE_KEYS[reviewMethod(app)])}</span>
 }
 
 export function AppConfigCard({
-  app, plugin, radarBrandLabel, isAdmin, onEdit, onDelete, onRun, isRunning, runStatus,
+  app, plugin, radarBrandLabel, isAdmin, onEdit, onDelete, onRun, isRunning, runStatus, learned,
 }: Readonly<{
   app: AppConfig
   plugin: PluginManifest
@@ -178,6 +185,8 @@ export function AppConfigCard({
   onRun: () => void
   isRunning: boolean
   runStatus?: RunStatusInfo
+  /** An Automatic review page's site: what this workspace learned for it, and Re-check (useLearnedMethods.ts). */
+  learned?: LearnedMethod
 }>) {
   const { t } = useTranslation('scrapers')
   const frequency = appField(app, 'frequency_minutes')
@@ -205,7 +214,9 @@ export function AppConfigCard({
         <CardStat label={t('appCard.kindLabel')} value={t(kindLabelKey(plugin.id))} />
         <RunBoundStat app={app} pluginId={plugin.id} />
       </dl>
-      {runStatus == null ? null : <AppRunStatusBar status={runStatus} />}
+      {learned !== undefined && showsReviewMethod(app, plugin) && reviewMethod(app) === AUTO_METHOD
+        ? <LearnedMethodLine learned={learned} isAdmin={isAdmin} /> : null}
+      {runStatus == null ? null : <AppRunStatusBar status={runStatus} appId={appField(app, 'id')} />}
       <CardActions
         isAdmin={isAdmin}
         isRunning={isRunning}

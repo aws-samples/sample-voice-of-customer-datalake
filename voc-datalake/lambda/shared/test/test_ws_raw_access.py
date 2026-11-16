@@ -216,8 +216,10 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # module-level voc-aggregates and voc-feedback the views are taken of.
     'lambda/api/feedback_form_handler.py': (2, {'Table': 2}),
     # Both paths since the operator routes' slice: run rows through shared/run_rows.py (its SOURCE_RUN# moved there),
-    # the breaker through shared/plugin_circuit.py. Left: the voc-aggregates handle of Run now and the run status.
-    'lambda/api/integrations_handler.py': (2, {'get_aggregates_table': 2}),
+    # the breaker through shared/plugin_circuit.py. Left: the voc-aggregates handle (`_aggregates`, 7.44.00: one
+    # getter for Run now's row, the run status and the web_reviews learned methods, each seen through the request's
+    # scope by `table_view`).
+    'lambda/api/integrations_handler.py': (2, {'get_aggregates_table': 1}),
     'lambda/api/logs_handler.py': (3, {'batch': 1, 'get_aggregates_table': 1}),
     'lambda/api/manual_import_handler.py': (2, {'Table': 2, 'raw/': 3}),
     'lambda/api/manual_import_processor.py': (2, {'Table': 1}),
@@ -237,7 +239,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/api/radar_handler.py': (3, {'cached_table': 1, 'get_aggregates_table': 1}),
     'lambda/api/s3_import_handler.py': (
         2, {'delete_object': 1, 'generate_presigned_url': 1, 'get_aggregates_table': 2, 'put_object': 1}),
-    'lambda/api/scrapers_handler.py': (2, {'get_aggregates_table': 3}),
+    # One voc-aggregates handle (`_aggregates`, 7.44.00): a scraper's labels, its run rows and the web_reviews learned
+    # methods, each seen through the request's scope by `table_view` (the labels through shared/producer_labels.py).
+    'lambda/api/scrapers_handler.py': (2, {'get_aggregates_table': 1}),
     'lambda/api/settings_handler.py': (3, {'Table': 1, 'generate_presigned_url': 3, 'put_object': 1}),
     'lambda/api/users_handler.py': (3, {'Table': 2}),
     'lambda/api/verification_fixture_provider.py': (3, {'get_aggregates_table': 1, 'get_projects_table': 1, 'meta.client': 2, 'transact': 1}),

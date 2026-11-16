@@ -8,6 +8,7 @@
  */
 
 import { z } from 'zod'
+import { ReadsSchema } from './reviewReads'
 
 const sourceRunStatusSchema = z.object({
   status: z.string().min(1),
@@ -16,6 +17,8 @@ const sourceRunStatusSchema = z.object({
   completed_at: z.string().optional().catch(undefined),
   items_found: z.number().optional().catch(undefined),
   errors: z.array(z.string()).optional().catch(undefined),
+  // A web_reviews run: how it read each page (reviewReads.ts), each entry read leniently.
+  reads: ReadsSchema,
 })
 
 export type SourceRunStatus = z.infer<typeof sourceRunStatusSchema>

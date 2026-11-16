@@ -41,6 +41,7 @@ from shared.project_keys import (
     version_partition_key,
 )
 from shared.radar_keys import radar_settings_key
+from shared.web_review_methods import methods_partition
 from shared.workspace_settings import settings_key
 from shared.ws_repo import (
     WATERMARK_DIRECTORY,
@@ -227,6 +228,7 @@ SEEDS: dict[str, Callable[[World], Probe] | None] = {
     'LOGS': lambda w: _aggregate(w, SCOPE.key('LOGS', 'validation', 'webscraper')),
     'erasure_job_pk': lambda w: _aggregate(w, erasure_job_pk(SCOPE), 'er_fam', status='completed'),
     'reprocess_job_pk': lambda w: _aggregate(w, reprocess_job_pk(SCOPE), 'rp_fam', status='completed'),
+    'WEB_REVIEWS': lambda w: _aggregate(w, methods_partition(SCOPE), 'g2.com', best_method='browser'),
     **{f'SETTINGS#{kind}': (lambda w, kind=kind: _aggregate(w, settings_key(WS, kind)['pk'], 'config', kind=kind))
        for kind in WORKSPACE_SETTINGS_KINDS},
     'COST': lambda w: _aggregate(w, cost_partition(SCOPE), '2026-11-01', schema=1, totals={'calls': 1}),

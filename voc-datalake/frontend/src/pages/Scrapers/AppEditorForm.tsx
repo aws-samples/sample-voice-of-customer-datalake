@@ -1,8 +1,9 @@
 /**
  * @fileoverview The form of one app connector or review page (`POST /integrations/{source}/apps`): the manifest's
- * fields, the Radar picker and Save. A review page read from Amazon Bedrock's web search index (`method`,
- * webReviewMethod.ts) shows only its own fields and says where its reviews come from; the method itself is kept
- * from the values it opened with, never a field.
+ * fields, the Radar picker and Save. A review page shows "Read with" (ReviewMethodSelect.tsx: Automatic, Browser only
+ * or Bedrock web index only, webReviewMethod.ts) once the deployed plugin offers it; a page read from Amazon
+ * Bedrock's web index shows only its own fields and says where its reviews come from, and switching it back to
+ * another method shows the browser's fields again.
  * @module pages/Scrapers/AppEditorForm
  */
 import { Loader2, Save } from 'lucide-react'
@@ -12,8 +13,9 @@ import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import { appCopy } from './appCopy'
 import { PluginFieldGrid } from './PluginConfigParts'
 import RadarSourcePicker from './RadarSourcePicker'
+import ReviewMethodSelect from './ReviewMethodSelect'
 import { appField } from './scraper-helpers'
-import { BEDROCK_WEB_SEARCH, appFormFields, reviewMethod } from './webReviewMethod'
+import { BEDROCK_WEB_SEARCH, METHOD_FIELD, appFormFields, offersReviewMethods, reviewMethod } from './webReviewMethod'
 import type { AppConfig } from './scraper-helpers'
 import type { PluginManifest } from '../../plugins/types'
 
@@ -40,11 +42,16 @@ export default function AppEditorForm({
   const fields = appFormFields(plugin, values)
   const hasRequired = fields.filter((f) => f.required === true).every((f) => appField(values, f.key).trim() !== '')
   const isBedrock = reviewMethod(values) === BEDROCK_WEB_SEARCH
-  const addTitle = isBedrock ? t('appCard.web.addBedrockPage') : t(copy.addNew)
+  // Titled after where the form was opened from (the Bedrock tile), not after the method chosen since.
+  const addTitle = reviewMethod(initialValues) === BEDROCK_WEB_SEARCH ? t('appCard.web.addBedrockPage') : t(copy.addNew)
 
   return (
     <div className="space-y-4 p-4 border border-accent/30 bg-accent-subtle rounded-lg">
       <h3 className="text-sm font-semibold text-text-strong">{isEditing ? t(copy.edit) : addTitle}</h3>
+      {offersReviewMethods(plugin) ? (
+        <ReviewMethodSelect plugin={plugin} value={reviewMethod(values)}
+          onChange={(method) => setValues((prev) => ({ ...prev, [METHOD_FIELD]: method }))} />
+      ) : null}
       {isBedrock ? <BedrockNote /> : null}
       <PluginFieldGrid
         fields={fields}

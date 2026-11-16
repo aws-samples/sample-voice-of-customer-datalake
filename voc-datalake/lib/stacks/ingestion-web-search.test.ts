@@ -5,6 +5,8 @@
  * - `bedrock-mantle:CreateInference` on the account's default mantle project only (the Responses API);
  * - `bedrock-websearch:InvokeSearch` / `InvokeFetch` on `*`, held to the deployment's region by `aws:RequestedRegion`
  *   (the Bedrock web search IAM guide's grant); never `bedrock-websearch:ExternalWebAccess`, so Fetch reads the cache;
+ * - `bedrock-agentcore:InvokeWebSearch` (`auto`'s last step, 7.44.00) on the region's AWS-managed tool only,
+ *   `arn:aws:bedrock-agentcore:<region>:aws:tool/web-search.v1`;
  * - no other ingestor role holds any of them;
  * - lib/utils/web-search-models.ts and lambda/shared/model_config.py `WEB_SEARCH_MODELS` (the web search surface's
  *   allowlist, 7.42.00) name the same models, in the same order (the first is the surface's default), and the
@@ -26,7 +28,7 @@ import { SYNTH_ACCOUNT, SYNTH_REGION } from '../test-support/synth-app';
 import { ALLOWED_FOUNDATION_MODEL_IDS, ALLOWED_MODEL_IDS } from '../utils/model-allowlist';
 import { MANTLE_INFERENCE_ACTION, WEB_SEARCH_MODELS, webSearchModelsInUse } from '../utils/web-search-models';
 import { loadPlugins } from '../plugin-loader';
-import { WEB_SEARCH_ACTIONS } from './ingestion-roles';
+import { AGENTCORE_WEB_SEARCH_ACTION, WEB_SEARCH_ACTIONS } from './ingestion-roles';
 
 const ROOT = join(__dirname, '..', '..');
 const TARGETS_PY = ['lambda', 'shared', 'web_review_targets.py'];
@@ -60,7 +62,8 @@ const PolicySchema = z.object({
 });
 const PROJECT = JSON.stringify(`arn:aws:bedrock-mantle:${SYNTH_REGION}:${SYNTH_ACCOUNT}:project/default`);
 const isWebSearch = (s: NormalizedStatement): boolean => s.actions.some((action) =>
-  action.startsWith('bedrock-mantle:') || action.startsWith('bedrock-websearch:'));
+  action.startsWith('bedrock-mantle:') || action.startsWith('bedrock-websearch:') || action === AGENTCORE_WEB_SEARCH_ACTION);
+const AGENTCORE_TOOL = JSON.stringify(`arn:aws:bedrock-agentcore:${SYNTH_REGION}:aws:tool/web-search.v1`);
 
 describe('the web_reviews ingestor\'s Amazon Bedrock web search grants', () => {
   let template: Template;
@@ -84,6 +87,11 @@ describe('the web_reviews ingestor\'s Amazon Bedrock web search grants', () => {
       Condition: { StringEquals: { 'aws:RequestedRegion': SYNTH_REGION } },
     }]);
     expect(JSON.stringify(template.toJSON())).not.toContain('ExternalWebAccess');
+  });
+
+  it('may invoke AgentCore Web Search on the region\'s AWS-managed tool only', () => {
+    expect(webReviews().filter((s) => s.actions.includes(AGENTCORE_WEB_SEARCH_ACTION)))
+      .toStrictEqual([{ effect: 'Allow', actions: [AGENTCORE_WEB_SEARCH_ACTION], resource: AGENTCORE_TOOL }]);
   });
 
   it('gives no other ingestor role any of them', () => {
@@ -114,10 +122,10 @@ describe('the web search models and methods, in lockstep', () => {
     expect(manifestFields().map((field) => field.key)).not.toContain('model');
   });
 
-  it('offer in the manifest exactly the methods the API accepts, the browser first (the default)', () => {
-    const methods = [sourceStringConstant('METHOD_BROWSER', ...TARGETS_PY),
+  it('offer in the manifest exactly the methods the API accepts, automatic first (the default)', () => {
+    const methods = [sourceStringConstant('METHOD_AUTO', ...TARGETS_PY), sourceStringConstant('METHOD_BROWSER', ...TARGETS_PY),
       sourceStringConstant('METHOD_BEDROCK_WEB_SEARCH', ...TARGETS_PY)];
     expect(manifestOptions('method')).toStrictEqual(methods);
-    expect(methods).toStrictEqual(['browser', 'bedrock_web_search']);
+    expect(methods).toStrictEqual(['auto', 'browser', 'bedrock_web_search']);
   });
 });

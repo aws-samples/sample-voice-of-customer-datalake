@@ -15,6 +15,7 @@ import {
 } from './mock-prioritization-axes.js';
 import { handleSourceRoutes } from './mock-sources.js';
 import { handleImportHistoryRoutes } from './mock-import-history.js';
+import { handleWebReviewMethodRoutes } from './mock-web-review-methods.js';
 import { handleFormRoutes } from './mock-forms.js';
 import { handleOnboardingRoutes } from './mock-onboarding.js';
 import { handleAppearanceRoutes } from './mock-appearance.js';
@@ -256,16 +257,40 @@ const mockSourceRunStatuses = {
 
 // Every run of ONE app (Run now on a card: its `app_id`), newest first: what
 // `?run_status=<source>&app_id=<app>` and `&execution_id=<run>` answer. Seeded so the
-// review page cards show their last result on load (a blocked site among them).
+// review page cards show their last result on load (a blocked site among them), and how each
+// was read (`reads`, plugins/web_reviews/ingestor: an Automatic page's steps, the learned method).
 const mockSourceRuns = [
   {
     source: 'web_reviews', app_id: 'https://www.yelp.com/biz/acme-example', execution_id: 'run_web_reviews_20261014090000_0a0b0c0d',
     status: 'completed', started_at: '2026-10-14T09:00:00Z', completed_at: '2026-10-14T09:01:10Z', items_found: 0,
-    errors: ['Yelp - Acme: blocked by DataDome'],
+    errors: ['Yelp - Acme: no method read it (browser: blocked by DataDome; Bedrock web index: could not open the page; AgentCore web search: no review in the snippets)'],
+    reads: [{
+      target: 'Yelp - Acme', target_id: 'web02def', method: 'auto', method_used: null, reviews: 0, plan: 'cascade',
+      known_method: null, learned_at: null, excerpt: false,
+      steps: [
+        { method: 'browser', outcome: 'blocked', vendor: 'DataDome', reviews: 0 },
+        { method: 'bedrock_web_search', outcome: 'error', reviews: 0, detail: 'could not open the page' },
+        { method: 'agentcore_web_search', outcome: 'no_reviews', reviews: 0 },
+      ],
+    }],
+  },
+  {
+    source: 'web_reviews', app_id: 'https://www.g2.com/products/acme-example/reviews', execution_id: 'run_web_reviews_20261014085800_0e0f0a0b',
+    status: 'completed', started_at: '2026-10-14T08:58:00Z', completed_at: '2026-10-14T08:59:10Z', items_found: 11, errors: [],
+    reads: [{
+      target: 'G2 - Acme', target_id: 'web04jkl', method: 'bedrock_web_search', method_used: 'bedrock_web_search', reviews: 11,
+      plan: null, known_method: null, learned_at: null, excerpt: false,
+      steps: [{ method: 'bedrock_web_search', outcome: 'readable', reviews: 11 }],
+    }],
   },
   {
     source: 'web_reviews', app_id: 'https://www.trustpilot.com/review/acme.example', execution_id: 'run_web_reviews_20261014085500_0d0c0b0a',
     status: 'completed', started_at: '2026-10-14T08:55:00Z', completed_at: '2026-10-14T08:57:40Z', items_found: 40, errors: [],
+    reads: [{
+      target: 'Trustpilot - Acme', target_id: 'web01abc', method: 'auto', method_used: 'browser', reviews: 40, plan: 'known',
+      known_method: 'browser', learned_at: '2026-10-01T09:00:00Z', excerpt: false,
+      steps: [{ method: 'browser', outcome: 'readable', reviews: 40 }],
+    }],
   },
 ];
 
@@ -1029,7 +1054,7 @@ const mockAppConfigs = {
     { id: 'web02def', app_name: 'Yelp - Acme', url: 'https://www.yelp.com/biz/acme-example', max_pages: '0', max_reviews: '200', frequency_minutes: '1440', enabled: 'true', source_id: 'web_yelp_yelp_acme' },
     // A Radar source (docs/radar.md): `radar_brand` names a brand of the Radar brand list (mock-radar-brands.js).
     { id: 'web03ghi', app_name: 'Trustpilot - Globex', url: 'https://www.trustpilot.com/review/globex.example', max_pages: '5', max_reviews: '0', frequency_minutes: '0', enabled: 'true', source_id: 'web_trustpilot_trustpilot_globex', radar_brand: 'globex' },
-    // A page read from Amazon Bedrock's web search index instead of the browser (`method`; absent = browser).
+    // A page read from Amazon Bedrock's web search index alone (`method`; absent = auto, Automatic).
     { id: 'web04jkl', app_name: 'G2 - Acme', url: 'https://www.g2.com/products/acme-example/reviews', max_reviews: '50', frequency_minutes: '0', enabled: 'true', source_id: 'web_g2_g2_acme', method: 'bedrock_web_search' },
   ],
 };
@@ -1052,8 +1077,8 @@ function mockWebSourceId(url, appName) {
 const storedNumber = (value, fallback) => (value === undefined || value === '' ? fallback : Number(value));
 const inRange = (n, min, max) => Number.isInteger(n) && n >= min && n <= max;
 
-/** How a review page is read: the managed browser (the default) or Amazon Bedrock's web search index. */
-const WEB_REVIEW_METHODS = new Set(['browser', 'bedrock_web_search']);
+/** How a review page is read: Automatic (the default), the managed browser only, or Amazon Bedrock's web index only. */
+const WEB_REVIEW_METHODS = new Set(['auto', 'browser', 'bedrock_web_search']);
 
 /** web_review_targets.validated_target, the checks the SPA can trip: https only, 0-100 pages, 0-5000 reviews, the method. */
 function webTargetError(app) {
@@ -1062,7 +1087,7 @@ function webTargetError(app) {
   const reviews = storedNumber(app.max_reviews, 0);
   if (!Number.isInteger(reviews)) return 'max_reviews must be a whole number';
   if (!inRange(reviews, 0, 5000)) return 'max_reviews must be between 0 and 5000';
-  if (app.method !== undefined && !WEB_REVIEW_METHODS.has(app.method)) return 'method must be browser or bedrock_web_search';
+  if (app.method !== undefined && !WEB_REVIEW_METHODS.has(app.method)) return 'method must be one of auto, browser, bedrock_web_search';
   return null;
 }
 
@@ -1462,6 +1487,7 @@ function handleDomainModules(req, res, url) {
     || handleScopeRoutes(req, res, url, send, shared)
     || handleAssistJobRoutes(req, res, url, send)
     || handleImportHistoryRoutes(req, res, url, send)
+    || handleWebReviewMethodRoutes(req, res, url, send)
     || handleSourceRoutes(req, res, url, send, shared)
     || handleFormRoutes(req, res, url, send, shared)
     || handleDocumentReviewRoutes(req, res, url, send, shared)
