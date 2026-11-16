@@ -77,8 +77,9 @@ from shared.project_keys import (
     review_link_registry_pk,
 )
 from shared.project_tables import REGISTRY_PROJECTION, registered_project
+from shared.project_walk import ID_PAGE, checked_ids, checked_key, is_project_id, query_page, registry_page
 from shared.review_share_audience import is_share_id
-from shared.row_ids import LONG_OPAQUE_ID_RE
+from shared.scoped_query import SK_BEGINS, SK_EQUALS
 from shared.tables import JOBS_TABLE_ENV
 from shared.ws_repo import PROJECTS_TABLE_ENV, WorkspaceScope, WorkspaceTable
 
@@ -99,7 +100,7 @@ ENTITIES: Final = ('projects_documents', 'personas', 'document_versions', 'docum
 _COUNTING: Final = ENTITIES[0]
 #: The count of an attribute neither exported nor excluded (project_fields.py), by name: ``unclassified:{name}``.
 UNCLASSIFIED: Final = 'unclassified:'
-#: The most unclassified names the run's counts keep (``add_tally``); any other counts under ``UNCLASSIFIED_MORE``.
+#: The most unclassified entries the run's counts keep, the ``UNCLASSIFIED_MORE`` bucket among them (``add_tally``).
 MAX_UNCLASSIFIED_NAMES: Final = 50
 UNCLASSIFIED_MORE: Final = '(more)'
 #: The count of the projects an entity found deleted as it reached them, by entity: ``deleted_during:{entity}``.
@@ -107,11 +108,9 @@ DELETED_DURING: Final = 'deleted_during:'
 #: The job configs that carry the starter's category scope (shared/category_access.py ``SCOPE_CONFIG_KEY``, an access
 #: decision of the request, not the work): left out of each.
 _CONFIGS: Final = ('filters', 'import_config', 'research_config', 'doc_config', 'merge_config')
-#: The registry rows (project or link ids) one page yields, at most (the cursor carries them).
-ID_PAGE: Final = 100
-#: A key condition on ``sk``: equal to the value, or beginning with it.
-_EQUALS: Final = '#sk = :sk'
-_BEGINS: Final = 'begins_with(#sk, :sk)'
+#: A key condition on ``sk``: equal to the value, or beginning with it (shared/scoped_query.py's).
+_EQUALS: Final = SK_EQUALS
+_BEGINS: Final = SK_BEGINS
 #: The row kinds of the project's own partition that ``projects_documents`` reads, each by its own key condition (an
 #: allowlist: a kind a later release adds is never read until it is listed here).
 DOCUMENT_KINDS: Final = ((_EQUALS, 'META'), (_EQUALS, PRODUCT_CONTEXT_SK),
@@ -245,15 +244,17 @@ def _on_sk(condition: tuple[str, str] | None) -> dict[str, Any]:
 
 
 def add_tally(counts: dict[str, int], tally: Mapping[str, int]) -> None:
-    """Add ``tally`` to the run's ``counts`` (which every hand-over carries), naming at most
-    ``MAX_UNCLASSIFIED_NAMES`` unclassified attributes: a row's names can be anything a writer (or a model's answer)
-    stored, so any name past them counts under ``UNCLASSIFIED_MORE`` instead."""
-    named = sum(1 for name in counts if name.startswith(UNCLASSIFIED))
+    """Add ``tally`` to the run's ``counts`` (which every hand-over carries), keeping at most
+    ``MAX_UNCLASSIFIED_NAMES`` unclassified entries, the ``UNCLASSIFIED_MORE`` bucket among them: a row's names can be
+    anything a writer (or a model's answer) stored, so the first ``MAX_UNCLASSIFIED_NAMES - 1`` names are kept and
+    any other counts under the bucket (7.43.00: before, 50 names and the bucket made 51 entries)."""
+    more = f'{UNCLASSIFIED}{UNCLASSIFIED_MORE}'
+    named = sum(1 for name in counts if name.startswith(UNCLASSIFIED) and name != more)
     for name, count in tally.items():
         kept = name
         if name.startswith(UNCLASSIFIED) and name not in counts:
-            if named >= MAX_UNCLASSIFIED_NAMES:
-                kept = f'{UNCLASSIFIED}{UNCLASSIFIED_MORE}'
+            if name == more or named >= MAX_UNCLASSIFIED_NAMES - 1:
+                kept = more
             else:
                 named += 1
         counts[kept] = counts.get(kept, 0) + count
@@ -262,15 +263,12 @@ def add_tally(counts: dict[str, int], tally: Mapping[str, int]) -> None:
 def check_cursor(cursor: Mapping[str, Any]) -> None:
     """A carried project entity's cursor, checked before the run goes on (handler.py ``RunState.from_event``): its
     ids each a project id, a series id or a review link id, as the walk would name them; ValueError for any other
-    (the job then fails as a malformed run state)."""
-    for name, valid in (('ids', LONG_OPAQUE_ID_RE.fullmatch), ('series', SERIES_ID_RE.fullmatch),
-                        ('links', is_share_id)):
-        carried = cursor.get(name)
-        if carried is None:
-            continue
-        if not isinstance(carried, list) or len(carried) > ID_PAGE or not all(
-                isinstance(each, str) and valid(each) for each in carried):
-            raise ValueError(f'{name} is not a page of ids')
+    (the job then fails as a malformed run state), and each key it carries a map (shared/project_walk.py
+    ``checked_key``)."""
+    for name, valid in (('ids', is_project_id), ('series', SERIES_ID_RE.fullmatch), ('links', is_share_id)):
+        checked_ids(cursor.get(name), valid, name)
+    for name in ('registry', 'series_from', 'start'):
+        checked_key(cursor.get(name))
 
 
 class ProjectSource:
@@ -304,7 +302,7 @@ class ProjectSource:
             if here.get('registry_done'):
                 return Page([], {**here, **_PROJECT_START, 'ids': [COMPANY_PERSONAS_CONTAINER], 'library': True})
             return self._registry_page(entity, here)
-        if not LONG_OPAQUE_ID_RE.fullmatch(ids[0]):
+        if not is_project_id(ids[0]):
             # Only a carried cursor can hold one (the registry's are checked): the run state is malformed.
             raise ValueError('a carried project id is not a project id')
         if not here.get('library') and not here.get('checked'):
@@ -319,19 +317,15 @@ class ProjectSource:
         return found
 
     def _registry_page(self, entity: str, here: dict[str, Any]) -> Page:
-        """A page of the registry, read with each row's ``deleted_at``: its live ids to do; its deleted and malformed
-        ones skipped (counted by ``_COUNTING`` only), and the library's reserved id skipped (walked last anyway)."""
-        page = self._projects.query('pk', project_registry_pk(self.scope), Limit=ID_PAGE, ConsistentRead=True,
-                                    ProjectionExpression=REGISTRY_PROJECTION, **start(here.get('registry')))
-        registered = [registered_project(item) for item in items(page)
-                      if item.get('sk') != COMPANY_PERSONAS_CONTAINER]
-        shaped = [project for project in registered if LONG_OPAQUE_ID_RE.fullmatch(project.project_id)]
-        live = [project.project_id for project in shaped if not project.deleted]
-        tally = {'projects_live': len(live), 'projects_deleted': len(shaped) - len(live),
-                 'projects_malformed': len(registered) - len(shaped)} if entity == _COUNTING else {}
-        last = last_key(page)
-        return Page([], {**here, **_PROJECT_START, 'registry': last, 'registry_done': last is None, 'ids': live},
-                    tally)
+        """A page of the registry, read with each row's ``deleted_at`` (shared/project_walk.py ``registry_page``): its
+        live ids to do; its deleted and malformed ones skipped (counted by ``_COUNTING`` only), and the library's
+        reserved id skipped (walked last anyway)."""
+        page = registry_page(self._projects, self.scope, here.get('registry'))
+        tally = {'projects_live': len(page.live), 'projects_deleted': len(page.ids) - len(page.live),
+                 'projects_malformed': page.malformed} if entity == _COUNTING else {}
+        last = page.following
+        return Page([], {**here, **_PROJECT_START, 'registry': last, 'registry_done': last is None,
+                         'ids': page.live}, tally)
 
     def _rows(self, entity: str, page: Mapping[str, Any], here: dict[str, Any]) -> list[Row]:
         """A page's rows as ``entity`` writes them, each with the cursor right after it (a row left out moves no
@@ -372,11 +366,10 @@ class ProjectSource:
             return Page(rows, {**here, 'start': last} if last else {**here, 'series': series[1:], 'start': None})
         if here.get('series_listed'):
             return Page([], None)
-        page = self._projects.query('pk', project_pk(project_id, workspace=self.scope), Limit=ID_PAGE,
-                                    ProjectionExpression='sk', **_on_sk((_BEGINS, COMMENT_SERIES_PREFIX)),
-                                    **start(here.get('series_from')))
-        listed = [str(item.get('sk', '')).removeprefix(COMMENT_SERIES_PREFIX) for item in items(page)]
-        last = last_key(page)
+        found, last = query_page(self._projects, project_pk(project_id, workspace=self.scope),
+                                 checked_key(here.get('series_from')), Limit=ID_PAGE, ProjectionExpression='sk',
+                                 **_on_sk((_BEGINS, COMMENT_SERIES_PREFIX)))
+        listed = [str(item.get('sk', '')).removeprefix(COMMENT_SERIES_PREFIX) for item in found]
         return Page([], {**here, 'series': [each for each in listed if SERIES_ID_RE.fullmatch(each)],
                          'series_from': last, 'series_listed': last is None, 'start': None})
 
@@ -391,10 +384,10 @@ class ProjectSource:
         if not links:
             if cursor.get('done'):
                 return Page([], None)
-            page = self._projects.query('pk', review_link_registry_pk(self.scope), Limit=ID_PAGE, ConsistentRead=True,
-                                        ProjectionExpression='sk', **start(cursor.get('registry')))
-            last = last_key(page)
-            ids = [str(item.get('sk', '')) for item in items(page)]
+            listed, last = query_page(self._projects, review_link_registry_pk(self.scope),
+                                      checked_key(cursor.get('registry')), Limit=ID_PAGE, ConsistentRead=True,
+                                      ProjectionExpression='sk')
+            ids = [str(item.get('sk', '')) for item in listed]
             return Page([], {'registry': last, 'done': last is None,
                              'links': [share_id for share_id in ids if is_share_id(share_id)]})
         following = {**cursor, 'links': links[1:]}
@@ -411,7 +404,7 @@ class ProjectSource:
 
     def _is_live(self, project_id: object) -> bool:
         """Whether ``project_id`` is a live project of the workspace's registry (one Query of its one row)."""
-        if not isinstance(project_id, str) or not LONG_OPAQUE_ID_RE.fullmatch(project_id):
+        if not isinstance(project_id, str) or not is_project_id(project_id):
             return False
         page = self._projects.query('pk', project_registry_pk(self.scope), ConsistentRead=True,
                                     ProjectionExpression=REGISTRY_PROJECTION, **_on_sk((_EQUALS, project_id)))

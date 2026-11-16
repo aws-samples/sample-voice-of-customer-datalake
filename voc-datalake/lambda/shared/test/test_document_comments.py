@@ -133,8 +133,9 @@ def test_authors_fall_back_to_a_name_and_cap_it():
     assert dc.persona_author('per1', '')['name'] == 'Persona'
     assert len(dc.user_author('s', 'n' * 500)['name']) == dc.MAX_NAME_CHARS
     reviewer = dc.reviewer_author('rev@x.example')
+    # 7.43.00: a reviewer without a name keeps none (the app shows "Reviewer"): the address is never a name.
     assert reviewer == {'kind': 'reviewer', 'email': 'rev@x.example', 'email_digest': dc.email_digest('rev@x.example'),
-                        'name': 'rev@x.example'}
+                        'name': ''}
 
 
 def test_a_new_thread_is_open_on_its_version_with_no_replies():

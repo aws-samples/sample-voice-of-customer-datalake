@@ -524,7 +524,7 @@ class ExportRun:
         return False
 
     def _add(self, tally: Mapping[str, int]) -> None:
-        add_tally(self.run.counts, tally)  # projects.py: at most 50 unclassified names in the carried counts
+        add_tally(self.run.counts, tally)  # projects.py: at most 50 unclassified entries carried, (more) included
 
     def _open(self, writer: ZipWriter, entity: str) -> ZipEntry:
         files = self.run.files.setdefault(entity, [])

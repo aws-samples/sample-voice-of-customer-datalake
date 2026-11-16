@@ -84,7 +84,9 @@ def _can_edit() -> bool:
 def _member_author() -> dict[str, str]:
     caller = _caller()
     claims = claims_from_event(app.current_event.raw_event)
-    name = claim_text(claims, 'name') or caller.email or caller.username
+    # Never the address (7.43.00): a name is shown to reviewers and copied into status_by and a link's creator and
+    # revoker, where an erasure by email would have to find it; user_author falls back to 'Team member'.
+    name = claim_text(claims, 'name') or caller.username
     return comments.user_author(caller.subject, name[:MAX_NAME_CHARS])
 
 

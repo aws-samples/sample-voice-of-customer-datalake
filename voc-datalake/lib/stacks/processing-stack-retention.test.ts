@@ -68,8 +68,18 @@ describe('voc-retention worker', () => {
     expect(JSON.stringify(template.toJSON())).toContain('"dynamodb:LeadingKeys":["SETTINGS#radar"]');
   });
 
-  it('holds exactly Scan/UpdateItem on projects — it marks artifacts, never deletes or puts', () => {
-    expect(allowedActions(statements(), 'dynamodb:', 'Projects')).toStrictEqual(['dynamodb:Scan', 'dynamodb:UpdateItem']);
+  it('holds exactly Scan/UpdateItem on projects, and Query of one workspace\'s project partitions — never deletes or puts', () => {
+    expect(allowedActions(statements(), 'dynamodb:', 'Projects'))
+      .toStrictEqual(['dynamodb:Query', 'dynamodb:Scan', 'dynamodb:UpdateItem']);
+    const queries = statements().filter((s) => s.effect === 'Allow' && s.resource.includes('Projects')
+      && s.actions.includes('dynamodb:Query'));
+    // 7.43.00: Query alone, on the table (no index), of exactly these partitions of any one workspace id.
+    expect(queries.map((s) => [s.actions, s.resource.includes('/index/')])).toStrictEqual([[['dynamodb:Query'], false]]);
+    const ws = `WS#ws_${'?'.repeat(26)}`;
+    expect(JSON.stringify(template.toJSON())).toContain(JSON.stringify({ 'ForAllValues:StringLike': {
+      'dynamodb:LeadingKeys': [`${ws}#PROJECT_IDS`, `${ws}#PROJECT#*`, `${ws}#DCOMMENTS#*`, `${ws}#DOCSHARE_IDS`,
+        `${ws}#DOCSHARE#*`],
+    } }));
   });
 
   it('reads and updates feature requests, and puts / deletes only under FR#* (it re-keys an erased +1)', () => {
@@ -87,8 +97,9 @@ describe('voc-retention worker', () => {
 
   it('scans workspaces and updates only email and name under WS#* (it de-identifies membership rows)', () => {
     // GetItem: a META's status only, before an erasure takes a workspace's export lock (jobs/retention/exports.py).
+    // Query: the platform's `WORKSPACES` listing only (7.43.00: an erasure by email walks every listed workspace).
     expect(allowedActions(statements(), 'dynamodb:', 'Workspaces'))
-      .toStrictEqual(['dynamodb:GetItem', 'dynamodb:Scan', 'dynamodb:UpdateItem']);
+      .toStrictEqual(['dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:Scan', 'dynamodb:UpdateItem']);
     const update = statements().filter((s) => s.effect === 'Allow' && s.resource.includes('Workspaces')
       && s.actions.includes('dynamodb:UpdateItem'));
     expect(update.map((s) => s.actions)).toStrictEqual([['dynamodb:UpdateItem']]);
@@ -98,10 +109,19 @@ describe('voc-retention worker', () => {
     expect(worker().Environment.Variables).toHaveProperty('WORKSPACES_TABLE');
   });
 
+  it('queries workspaces only in the platform\'s WORKSPACES listing (an erasure by email walks every listed workspace)', () => {
+    const query = statements().filter((s) => s.effect === 'Allow' && s.resource.includes('Workspaces')
+      && s.actions.includes('dynamodb:Query'));
+    expect(query.map((s) => s.actions)).toStrictEqual([['dynamodb:Query']]);
+    expect(JSON.stringify(template.toJSON())).toContain(
+      '{"ForAllValues:StringEquals":{"dynamodb:LeadingKeys":["WORKSPACES"]}}');
+  });
+
   it('deletes objects and versions under raw/*, silver/* and each workspace\'s raw, silver and exports only, and lists versions of those prefixes only', () => {
     const s3 = statements().filter((s) => s.effect === 'Allow' && s.actions.some((a) => a.startsWith('s3:')));
     expect(s3.map((s) => [...s.actions].sort(byCodeUnit).join(','))).toStrictEqual([
       's3:DeleteObject,s3:DeleteObjectVersion',
+      's3:GetObject',
       's3:ListBucketVersions',
       's3:AbortMultipartUpload',
       's3:ListBucketMultipartUploads',
@@ -112,6 +132,32 @@ describe('voc-retention worker', () => {
     expect(objectPaths).toStrictEqual(['raw/*', 'silver/*', `${ws}/raw/*`, `${ws}/silver/*`, `${ws}/exports/*`]);
     expect(JSON.stringify(template.toJSON())).toContain(
       `"s3:prefix":["raw/*","silver/*","${ws}/raw/*","${ws}/silver/*","${ws}/exports/*"]`);
+  });
+
+  it('reads objects only under a workspace\'s product documents (an erasure by email looks for the address there)', () => {
+    const reads = statements().filter((s) => s.effect === 'Allow' && s.actions.includes('s3:GetObject'));
+    expect(reads.map((s) => [s.actions, [...s.resource.matchAll(/"\/([^"]*)"/g)].flatMap((match) => match[1] ?? [])]))
+      .toStrictEqual([[['s3:GetObject'], [`ws/ws_${'?'.repeat(26)}/projects/*/product_docs/raw/*.md`,
+        `ws/ws_${'?'.repeat(26)}/projects/*/product_docs/raw/*.txt`,
+        `ws/ws_${'?'.repeat(26)}/projects/*/product_docs/extracted/*`]]]);
+  });
+
+  it('updates projects in two statements: the lineage marks anywhere, the de-identification in a workspace only', () => {
+    const updates = statements().filter((s) => s.effect === 'Allow' && s.resource.includes('Projects')
+      && s.actions.includes('dynamodb:UpdateItem'));
+    expect(updates.map((s) => s.actions)).toStrictEqual([['dynamodb:UpdateItem'], ['dynamodb:UpdateItem']]);
+    const ws = `WS#ws_${'?'.repeat(26)}`;
+    const json = JSON.stringify(template.toJSON());
+    expect(json).toContain(JSON.stringify({
+      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['*'] },
+      'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'input_feedback_ids',
+        'evidence_feedback_ids', 'input_feature_request_ids', 'erased_evidence'] },
+    }));
+    expect(json).toContain(JSON.stringify({
+      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [`${ws}#PROJECT#*`, `${ws}#DCOMMENTS#*`, `${ws}#DOCSHARE#*`] },
+      'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'author', 'replies', 'status_by', 'audience',
+        'created_by_name', 'revoked_by', 'revoked', 'owner_email', 'members', 'research_notes'] },
+    }));
   });
 
   it('aborts open multipart uploads under each workspace\'s exports only, and lists the bucket\'s upload keys (no data)', () => {

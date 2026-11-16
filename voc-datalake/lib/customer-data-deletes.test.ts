@@ -398,8 +398,9 @@ describe('customer-data, workspace and audit deletes across every stack', () => 
   it('voc-retention reaches voc-workspaces to de-identify only (Scan, UpdateItem of email and name under WS#*)', () => {
     const onWorkspaces = grants.filter((g) => g.role === RETENTION_ROLE).filter(onTable('WorkspacesTable'));
     // GetItem: a META's status only (grantWorkspaceStatusRead), before an erasure takes a workspace's export lock.
+    // Query: the WORKSPACES listing only (7.43.00: an erasure by email walks every listed workspace's projects).
     expect([...new Set(onWorkspaces.flatMap((g) => g.actions))].sort(byCodeUnit))
-      .toStrictEqual(['dynamodb:GetItem', 'dynamodb:Scan', 'dynamodb:UpdateItem']);
+      .toStrictEqual(['dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:Scan', 'dynamodb:UpdateItem']);
     const update = onWorkspaces.find((g) => g.actions.includes('dynamodb:UpdateItem'));
     expect(update?.condition).toStrictEqual({
       'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] },

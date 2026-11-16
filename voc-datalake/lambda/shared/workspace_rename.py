@@ -14,7 +14,9 @@ The name lives on three kinds of row in voc-workspaces:
    row records the slug only.
 2. ONE transaction: META's ``name`` updated while it is still the name the request read (409 otherwise: renamed
    meanwhile); the listing row moved to its new sort key (the old one deleted while the workspace is still ``active``,
-   the new one put whole), or put over itself when only the case changed (the same key); and, for a member admin, a
+   the new one put whole), or put over itself when only the case changed (the same key), stamped ``renamed_at`` (the
+   audit row's time, 7.43.00: a retention walk of the listing that began before it reads the row again,
+   jobs/retention/workspaces.py); and, for a member admin, a
    check that they are still admin (403 when they were demoted meanwhile). A delete that marked the workspace
    ``deleting`` first fails the listing row's condition (409); the rename never revives it.
 3. Then every member's ``USER#`` row, one conditional UpdateItem each (a paged, strongly consistent Query of the
@@ -36,7 +38,7 @@ from shared.dynamo_paging import iter_query
 from shared.exceptions import AuthorizationError, ConflictError, NotFoundError
 from shared.logging import logger
 from shared.persona_save import cancellation_codes
-from shared.platform_workspaces import LISTING_PK, listing_sort_key, validated_workspace_name
+from shared.platform_workspaces import LISTING_PK, RENAMED_AT, listing_sort_key, validated_workspace_name
 from shared.request_body import reject_unknown_fields
 from shared.timestamps import now_iso
 from shared.workspace import ACTIVE, NOT_FOUND, WorkspaceContext, audit_key, audit_sort_key, ws_key
@@ -64,13 +66,15 @@ def _listing_row(table: Any, context: WorkspaceContext) -> dict[str, Any]:
     return row
 
 
-def _listing_moves(table_name: str, row: Mapping[str, Any], context: WorkspaceContext, name: str) -> list[dict]:
+def _listing_moves(table_name: str, row: Mapping[str, Any], context: WorkspaceContext, name: str,
+                   at: str) -> list[dict]:
     """The listing row's move to the new name's sort key: a delete of the old key (while ``active``) and a put of the
-    new one, or one put over the same key when only the case changed (a transaction names an item once)."""
+    new one, or one put over the same key when only the case changed (a transaction names an item once); the new row
+    stamped ``renamed_at`` ``at`` (the audit row's time)."""
     still_active = {'ConditionExpression': '#status = :active AND workspace_id = :ws',
                     'ExpressionAttributeNames': {'#status': 'status'},
                     'ExpressionAttributeValues': {':active': ACTIVE, ':ws': context.ws}}
-    moved = {**row, 'sk': listing_sort_key(name, context.ws), 'name': name}
+    moved = {**row, 'sk': listing_sort_key(name, context.ws), 'name': name, RENAMED_AT: at}
     if moved['sk'] == row['sk']:
         return [{'Put': {'TableName': table_name, 'Item': moved, **still_active}}]
     return [
@@ -80,7 +84,7 @@ def _listing_moves(table_name: str, row: Mapping[str, Any], context: WorkspaceCo
 
 
 def _rename_items(table_name: str, row: Mapping[str, Any], context: WorkspaceContext, name: str,
-                  actor: str) -> tuple[list[dict], int | None]:
+                  actor: str, at: str) -> tuple[list[dict], int | None]:
     """The transaction (META first, then the listing row's move, then the acting admin's check if any) and the check's
     index."""
     items: list[dict] = [{'Update': {
@@ -88,7 +92,7 @@ def _rename_items(table_name: str, row: Mapping[str, Any], context: WorkspaceCon
         'UpdateExpression': 'SET #name = :name', 'ConditionExpression': '#name = :before',
         'ExpressionAttributeNames': {'#name': 'name'},
         'ExpressionAttributeValues': {':name': name, ':before': context.name},
-    }}, *_listing_moves(table_name, row, context, name)]
+    }}, *_listing_moves(table_name, row, context, name, at)]
     if context.platform_admin:
         # A platform admin acts by the group (live-checked when they entered), not by a MEMBER# row.
         return items, None
@@ -105,7 +109,7 @@ def _commit(table: Any, context: WorkspaceContext, name: str, actor: str) -> Non
     at = now_iso()
     put_new_audit_row(table, {'pk': audit_key(context.ws), 'sk': audit_sort_key(at), 'kind': WORKSPACE_RENAMED,
                               'actor': actor, 'at': at, 'platform_admin': context.platform_admin})
-    items, actor_index = _rename_items(table.name, row, context, name, actor)
+    items, actor_index = _rename_items(table.name, row, context, name, actor, at)
     try:
         # A token per request: botocore's own retry of a transaction whose answer was lost succeeds instead of
         # failing its own conditions (DynamoDB keeps it idempotent for 10 minutes).

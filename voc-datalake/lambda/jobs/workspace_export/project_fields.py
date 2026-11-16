@@ -5,6 +5,8 @@ are exported after a secret-name check (``scrubbed``: any key at any depth whose
 secret, hash, digest, signature, password, credential and the like, is left out and counted in the manifest's
 ``projects.secret_named_fields_refused``), and a ``META``'s ``members`` entries are narrowed to ``MEMBER_FIELDS``.
 The same check runs over every project entity's rows (projects.py), the jobs' results, errors and configs among them.
+It reads key names only, never values: a secret stored under an ordinary name (a token pasted into a document's text,
+a credential in a persona's quote) is exported as it was stored; the manifest's ``project_fields`` note says so.
 
 The lists hold every attribute the project-row writers store, as scripts/audit/py_stored_attrs.py reads them
 (``test/test_project_fields.py`` fails on one in neither list, and on one in both; a dict key that audit's allowlist

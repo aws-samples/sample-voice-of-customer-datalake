@@ -21,7 +21,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
 from jobs.retention import exports
-from jobs.retention.runs import MODE_ERASE, note_erased_source, note_review_file
+from jobs.retention.runs import MODE_ERASE, note_erased_source, note_lineage_workspace, note_review_file
 from shared import retention
 from shared.legal_basis import legal_basis_or_legacy
 from shared.retention import SOURCE_FIELD, STORE_FEEDBACK, STORE_RADAR, WORKSPACE_ITEM_COUNTER, item_source
@@ -32,8 +32,6 @@ from shared.ws_repo import TOMBSTONE_PARTITION_PREFIX, WorkspaceScope
 #: The layer's spelling (shared/ws_repo.py, whose ``workspace_tombstone_key`` the hard delete writes with: the same
 #: key for the same item, so one of the two tombstones is kept, never both).
 TOMBSTONE_PK_PREFIX: Final = TOMBSTONE_PARTITION_PREFIX
-
-
 
 
 def tombstone_key(source: str, feedback_id: str, scope: WorkspaceScope | None = None) -> dict[str, str]:
@@ -118,9 +116,11 @@ class ItemDeleter:
             run['deleted_items'] += 1
             if scope is not None:
                 run[WORKSPACE_ITEM_COUNTER] = int(run.get(WORKSPACE_ITEM_COUNTER) or 0) + 1
+                # Its workspace's projects may cite it: the `workspace_lineage` phase looks its tombstone up there.
+                note_lineage_workspace(run, scope.ws)
         run['deleted_objects'] += objects
-        # A workspace item's source too: the lineage pass looks up `{feedback_id}` tombstone keys, which a
-        # workspace tombstone (`{ws}#{feedback_id}`) never is.
+        # A workspace item's source too: the deployment's lineage pass looks up `{feedback_id}` tombstone keys, which
+        # a workspace tombstone (`{ws}#{feedback_id}`) never is; the workspace's pass looks up its own.
         note_erased_source(run, item_source(item))
 
     def _import_originals(self, item: Mapping[str, Any]) -> None:

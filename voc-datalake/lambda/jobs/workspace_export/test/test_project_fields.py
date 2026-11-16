@@ -42,6 +42,12 @@ NOT_PROJECT_ROW_WRITERS: Final = {
     'lambda/jobs/workspace_export/projects.py': 'the export itself: reads only (its cursor keys look like writes)',
     'lambda/shared/assist_jobs.py': 'assist job rows in voc-jobs (left out of project_jobs)',
     'lambda/shared/ws_repo.py': "the workspace layer: a project id's claim and a link's routing row",
+    'lambda/jobs/retention/lineage.py': ("an erasure's marks: rewrites a row's id lists and its erased_evidence, both "
+                                         'classified, adds none (its cursor keys look like writes)'),
+    'lambda/jobs/retention/project_people.py': ("an erasure's de-identification: removes an address from a META's "
+                                                "owner_email and members and a persona's research_notes "
+                                                '(classified), a thread or a link (their own allowlists), adds none '
+                                                '(its cursor keys look like writes)'),
 }
 #: How a module shows it reaches a project's partition (a key builder or a project store's writer).
 _NAMES_A_PROJECT: Final = re.compile(r'project_pk\(|project_meta_key\(|document_keys\(|put_project_item|'

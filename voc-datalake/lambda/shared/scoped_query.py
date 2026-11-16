@@ -19,14 +19,19 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from functools import partial
 from types import SimpleNamespace
-from typing import Any, Literal
+from typing import Any, Final, Literal
 
 from boto3.dynamodb.conditions import ConditionBase, Key
 
 from shared.dynamo_paging import iter_query
 from shared.ws_repo import OutOfScopeError, WorkspaceScope, ws_table
 
-__all__ = ['SortRange', 'iter_partition', 'query_partition']
+__all__ = ['SK_BEGINS', 'SK_EQUALS', 'SortRange', 'iter_partition', 'query_partition']
+
+#: A key condition on ``sk`` for ``WorkspaceTable.query``'s ``sort_condition``, its value named ``:sk``: equal to the
+#: value, or beginning with it (the workspace export's and the retention worker's page-by-hand reads).
+SK_EQUALS: Final = '#sk = :sk'
+SK_BEGINS: Final = 'begins_with(#sk, :sk)'
 
 #: The placeholders of a sort-key range on the workspace path (boto3 generates ``#n…`` / ``:v…``; the layer's own
 #: are ``#p`` / ``:p``; a projection's ``#pf…``).

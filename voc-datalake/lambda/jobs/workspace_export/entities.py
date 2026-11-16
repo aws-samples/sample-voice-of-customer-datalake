@@ -144,7 +144,9 @@ EXCLUDED: Final = {
                        'to role, username, name, email, added_by and added_at. In every project entity, nested maps '
                        'are exported after a secret-name check: a key at any depth whose name looks like a secret '
                        "(a token, secret, hash, digest, signature, password, credential and the like) is left out "
-                       'and counted in projects.secret_named_fields_refused.'),
+                       'and counted in projects.secret_named_fields_refused. The check reads key names only, never '
+                       'values: a secret written under an ordinary name (pasted into a document\'s text, say) is '
+                       'exported as it was stored.'),
 }
 #: Why the conversations are not in the export, in every conversations note.
 _CONVERSATIONS_OWN: Final = ("The members' assistant conversations in the workspace are their own and are not "

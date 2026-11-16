@@ -90,6 +90,21 @@ def _share(call, claims=OWNER, **values):
 
 # ── project members: comments ───────────────────────────────────────────────
 
+def test_a_member_without_a_name_is_never_named_by_their_address(call, table):
+    """7.43.00: a member's address is never stored as a name (a thread's author, its status_by, a link's creator):
+    without a name claim the username stands in, else 'Team member'."""
+    nameless = {'sub': 'owner-sub', 'email': 'owner@corp.example'}
+    thread = _comment(call, nameless)
+    assert thread['author'] == {'kind': 'user', 'name': 'Team member', 'sub': 'owner-sub'}
+    response, body = call('POST', f"{COMMENTS}/{thread['comment_id']}/resolve", nameless)
+    assert response['statusCode'] == 200, body
+    assert body['thread']['status_by'] == 'Team member'
+    assert _share(call, nameless)['created_by_name'] == 'Team member'
+    named = _comment(call, {**nameless, 'cognito:username': 'olive'})
+    assert named['author']['name'] == 'olive'
+    assert 'owner@corp.example' not in json.dumps(table.scan()['Items'], default=str)
+
+
 def test_a_viewer_may_comment_and_every_version_lists_the_series_threads(call):
     thread = _comment(call, VIEWER, anchor={'exact': 'launch', 'prefix': 'the '})
     assert thread['author'] == {'kind': 'user', 'name': 'Vi Viewer', 'sub': 'viewer-sub'}

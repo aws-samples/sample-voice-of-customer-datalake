@@ -6,6 +6,8 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Final
 
+from shared.project_walk import sort_key
+
 if TYPE_CHECKING:
     from shared.ws_repo import WorkspaceTable
 
@@ -40,15 +42,6 @@ def only(item: Mapping[str, Any], names: tuple[str, ...] | frozenset[str]) -> di
     """``item``'s fields that ``names`` lists, and no other (every allowlisted entity's rows)."""
     kept = set(names) & set(item)
     return {name: item[name] for name in sorted(kept)}
-
-
-def sort_key(condition: str | None, values: Mapping[str, Any]) -> dict[str, Any]:
-    """A Query's key condition on ``sk`` (written ``#sk``, its values named in ``values``), for the workspace layer's
-    ``sort_condition``; nothing for a whole partition (``condition`` None)."""
-    if condition is None:
-        return {}
-    return {'sort_condition': condition, 'ExpressionAttributeNames': {'#sk': 'sk'},
-            'ExpressionAttributeValues': dict(values)}
 
 
 def key(item: Mapping[str, Any], attributes: tuple[str, ...]) -> dict[str, Any]:

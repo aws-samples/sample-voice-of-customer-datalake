@@ -143,10 +143,11 @@ def test_retention_skips_and_counts_rows_that_name_no_workspace(data, pair, befo
     assert run[UNSCOPED_ROW_COUNTER] == before + skipped
 
 
-# A run walks the documented phases in order: a job that names a workspace walks its items and (an erasure) that
-# workspace's exports only; otherwise items, Radar when its table is there, the boards and memberships for an
-# erasure by email (the boards also for their own source), the raw sweep for a whole-source erasure, the exports
-# (an erasure), then lineage when the projects table is there.
+# A run walks the documented phases in order: a job that names a workspace walks its items, (by email) its projects,
+# (an erasure) its exports and its projects' lineage marks only; otherwise items, Radar when its table is there, the
+# boards and memberships for an erasure by email (the boards also for their own source), the workspaces' projects for
+# an erasure by email without a source, the raw sweep for a whole-source erasure, the exports (an erasure), then the
+# deployment's and the workspaces' lineage when the projects table is there.
 @PROPERTY
 @given(st.sampled_from([MODE_ERASE, MODE_RETENTION]), FIELDS, st.one_of(st.none(), SOURCES),
        st.one_of(st.none(), st.just('ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8')),
@@ -158,15 +159,22 @@ def test_a_run_walks_the_documented_phases(mode, field, source, workspace, store
                         time_left=MagicMock())
     erase = mode == MODE_ERASE
     by_email = erase and field == 'email'
+    projects = 'projects' in stores
+    # 7.43.00: an erasure by email without a source walks the workspaces' projects (one workspace's when the job
+    # names it; every listed workspace's, read from voc-workspaces, when it does not), and every run with the
+    # projects table may mark a workspace's artifacts (decided when reached).
+    walks_projects = by_email and not source and projects
     if workspace:
-        expected = ['items', *(['exports'] if erase else [])]
+        expected = ['items', *(['workspace_projects'] if walks_projects else []), *(['exports'] if erase else []),
+                    *(['workspace_lineage'] if projects else [])]
     else:
         expected = ['items', *(['radar'] if STORE_RADAR in stores else []),
                     *(['boards'] if STORE_BOARDS in stores and by_email and source in (None, BOARDS_SOURCE)
                       else []),
                     *(['members'] if STORE_MEMBERS in stores and by_email and not source else []),
+                    *(['workspace_projects'] if walks_projects and STORE_MEMBERS in stores else []),
                     *(['raw'] if field == 'source' else []), *(['exports'] if erase else []),
-                    *(['lineage'] if 'projects' in stores else [])]
+                    *(['lineage', 'workspace_lineage'] if projects else [])]
     assert handler._phases(walk) == expected
 
 

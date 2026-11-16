@@ -20,7 +20,7 @@ No row carries ``ttl``: only ``INVITE#`` rows expire (lib/customer-data-deletes.
 The listing partition ``WORKSPACES`` is sorted by the name (case-folded) and then the id, so the list is one paged
 Query, never a Scan. It is a single partition read only by platform admins and written once per created
 workspace, far under a partition's limits. A rename (shared/workspace_rename.py) moves the listing row to its new
-sort key; a status change (the hard delete) updates it.
+sort key, stamped ``renamed_at``; a status change (the hard delete) updates it.
 
 Nothing else is made for a new workspace (decision 19): its plugin credentials are SSM Parameter Store
 SecureStrings, one per plugin, created by the first save in the workspace (shared/workspace_credentials.py),
@@ -56,6 +56,9 @@ _SLUG: Final = re.compile(r'[a-z0-9][a-z0-9-]{1,38}[a-z0-9]')
 #: Slugs that would read as a part of the platform in a ``/w/{slug}`` address or a mail address.
 RESERVED_SLUGS: Final = frozenset({'admin', 'api', 'app', 'platform', 'www'})
 LISTING_PK: Final = 'WORKSPACES'
+#: A listing row's stamp of its last rename (shared/workspace_rename.py, 7.43.00): a retention walk of the listing that
+#: began before it reads the row again (jobs/retention/workspaces.py), as it does one whose ``created_at`` is later.
+RENAMED_AT: Final = 'renamed_at'
 WORKSPACE_CREATED: Final = 'workspace_created'
 #: META's ``secret_status``, always ``ready`` since decision 19 (the module docstring): kept for the platform API.
 CREDENTIALS_READY: Final = 'ready'
@@ -151,6 +154,24 @@ def create_workspace(table: Any, new: NewWorkspace, creator: str, plugins: Seque
         raise
     logger.info('Workspace created', extra={'workspace_id': ws})
     return ws
+
+
+def listing_ids_page(table: Any, *, limit: int,
+                     start: Mapping[str, Any] | None) -> tuple[list[str], int, dict[str, Any] | None]:
+    """One strongly consistent page of the listing for a job that walks every workspace (voc-retention): the ids of
+    its rows that name a workspace id, how many rows named none, and the key the next page starts from (None at the
+    end). The job carries the key itself (no client ever sends it), so it is the table's own, never encoded."""
+    request: dict[str, Any] = {
+        'KeyConditionExpression': 'pk = :pk', 'ExpressionAttributeValues': {':pk': LISTING_PK}, 'Limit': limit,
+        'ConsistentRead': True, 'ProjectionExpression': 'pk, sk, workspace_id',
+    }
+    if start:
+        request['ExclusiveStartKey'] = dict(start)
+    response = table.query(**request)
+    rows = response.get('Items', [])
+    ids = [str(row['workspace_id']) for row in rows if is_workspace_id(row.get('workspace_id'))]
+    last = response.get('LastEvaluatedKey')
+    return ids, len(rows) - len(ids), dict(last) if isinstance(last, Mapping) and last else None
 
 
 def list_workspaces(table: Any, *, limit: int, cursor: str | None) -> tuple[list[dict[str, str]], str | None]:

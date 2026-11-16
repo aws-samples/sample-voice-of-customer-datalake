@@ -279,7 +279,10 @@ describe('cdk-nag acknowledgements', () => {
       // one schedule group, names voc-eng-reactions-<run>, create only), its IAM5.
       // 109 -> 111: the product-doc extractor's read and put of one workspace's product documents (7.38.00, 3f:
       // `ws/{one id}/projects/*/product_docs/raw/*` and `…/extracted/*`), two findings of its one acknowledgement.
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 111, used: 111 });
+      // 111 -> 114: voc-retention's read of one workspace's text product documents (7.43.00, 3g-b:
+      // `ws/{one id}/projects/*/product_docs/raw/*.md`, `…/raw/*.txt` and `…/extracted/*`), three findings of its one
+      // acknowledgement.
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 114, used: 114 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

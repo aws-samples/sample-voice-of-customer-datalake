@@ -17,8 +17,8 @@ what and how), and only for a legal obligation (TENETS.md D5). Two modes:
   workspace (``workspace_id``, written only by the server from the request's
   resolved membership, shared/erasure_scope.py) and the row naming the same
   one: the run then reaches that workspace's feedback items and their copies
-  only (``_named_workspace``), by author, source id, CSV row or email, walks no
-  other phase, and frees the workspace's one-erasure lock when it ends.
+  only (``_named_workspace``), by author, source id, CSV row or email (by email also
+  the addresses in its projects), and frees the workspace's one-erasure lock when it ends.
 
 A run walks its PHASES in order, each paged and time-budgeted:
 
@@ -26,7 +26,8 @@ A run walks its PHASES in order, each paged and time-budgeted:
    (``WS#{ws}#SOURCE#…``, with their objects under ``ws/{ws}/``; counted in ``deleted_workspace_items`` as
    well); an erasure by author (a display name), source id or CSV row (ids unique only within one account or
    upload) and a whole-source erasure leave them (``shared/retention.reaches_workspaces``); a job that names a
-   workspace reaches that workspace's items only, and this is its one phase but the next;
+   workspace reaches that workspace's items only, and walks no other phase but its projects (by email), its exports
+   and its projects' lineage marks;
    then (after the boards and memberships below, before the raw sweep's successor, lineage) ``exports`` — an erasure
    only, once it deleted any workspace's item or de-identified one of its memberships: that workspace's exports, a
    derived copy (``exports.py``): its export jobs marked ``erased``, its open export upload aborted, every version
@@ -36,11 +37,17 @@ A run walks its PHASES in order, each paged and time-budgeted:
    the person's board requests and +1s are de-identified and their raw copies deleted
    (``boards.py``); then ``members`` — an erasure by email without a source, when
    ``WORKSPACES_TABLE`` is set: the email and name on the person's workspace membership
-   rows are removed (``members.py``);
+   rows are removed (``members.py``); then ``workspace_projects`` — an erasure by email without a source, when
+   ``PROJECTS_TABLE`` is set (and ``WORKSPACES_TABLE``, for the deployment's, which walks every listed workspace;
+   a job that names a workspace walks its own): the address is removed from each walked workspace's reviewer comment
+   threads, review link audiences and project ``META`` rows, and each project's product documents folder is listed
+   for review (``project_people.py``, since 7.43.00);
 3. ``raw`` — whole-source erasure only: every object version left under
    ``raw/{source}/`` and ``silver/{source}/`` (``shared/retention.delete_raw_prefix_page``);
-4. ``lineage`` — when the run deleted anything and ``PROJECTS_TABLE`` is set:
-   artifacts that cited a deleted item are marked (``lineage.py``).
+4. ``lineage`` — when the run deleted anything of the deployment's and ``PROJECTS_TABLE`` is set:
+   the deployment's artifacts that cited a deleted item are marked (``lineage.py``); then ``workspace_lineage`` —
+   when the run deleted a workspace's item: that workspace's artifacts that cite it, found through its project
+   registry, never a Scan (``lineage.py``, since 7.43.00).
 
 Each deleted item first gets a tombstone (``copies.py``); its kept Silver versions
 (``silver/{source}/{feedback_id}/``) are deleted with it (``shared/retention.delete_item``). Before the Lambda's
@@ -66,7 +73,7 @@ from typing import Any, Final, NoReturn
 from boto3.dynamodb.conditions import ConditionBase
 from botocore.exceptions import BotoCoreError, ClientError
 
-from jobs.retention import boards, exports, lineage, members
+from jobs.retention import boards, exports, lineage, members, project_people, workspaces
 from jobs.retention.copies import ItemDeleter, write_tombstones
 from jobs.retention.runs import (
     MODE_ERASE,
@@ -120,6 +127,8 @@ PHASE_BOARDS: Final = 'boards'
 PHASE_MEMBERS: Final = 'members'
 PHASE_RAW: Final = 'raw'
 PHASE_LINEAGE: Final = 'lineage'
+PHASE_WORKSPACE_PROJECTS: Final = project_people.STORE_PROJECTS
+PHASE_WORKSPACE_LINEAGE: Final = 'workspace_lineage'
 _PHASE_STORES: Final = {PHASE_ITEMS: STORE_FEEDBACK, PHASE_RADAR: STORE_RADAR}
 
 PAGE_SIZE: Final = 100
@@ -146,8 +155,9 @@ TimeLeft = Callable[[], bool]
 class Walk:
     """One invocation's tables, clients, state and clock, handed to every phase.
 
-    ``time_left`` is the one clock every phase reads (``_lambda_clock`` in the Lambda); ``context`` names the
-    function a hand-over re-invokes.
+    ``time_left`` is the one budget clock every phase reads (``_lambda_clock`` in the Lambda); ``clock`` the wall
+    clock a walk of the workspace listing stamps its start and its re-walk passes with (workspaces.py); ``context``
+    names the function a hand-over re-invokes.
     """
 
     tables: dict[str, Any]
@@ -157,6 +167,7 @@ class Walk:
     filters: Filters
     s3: Any
     time_left: TimeLeft
+    clock: Callable[[], datetime] = workspaces.utc_now
 
     @property
     def aggregates(self) -> Any:
@@ -525,47 +536,82 @@ def _erase_exports(walk: Walk, _cursor: dict | None) -> dict | None:
 
 
 def _mark_lineage(walk: Walk, cursor: dict | None) -> dict | None:
-    """Mark the workspace artifacts that cited a deleted item (``lineage.py``), page by page."""
+    """Mark the deployment's artifacts that cited a deleted item (``lineage.py``), page by page; a workspace's rows
+    are the ``workspace_lineage`` phase's."""
     projects = walk.tables['projects']
 
     def handle(page: dict, _start: dict | None) -> _Resume | None:
-        lineage.mark_rows(projects, walk.aggregates, walk.run, page.get('Items', []))
+        lineage.mark_rows(projects, walk.aggregates, walk.run, lineage.deployment_rows(page.get('Items', [])))
         return None
 
     return _walk(walk, PHASE_LINEAGE, cursor, lambda at: lineage.scan_page(projects, at), handle)
 
 
-def _phases(walk: Walk) -> list[str]:
-    """The phases this run walks, in order (the lineage one is decided when it is reached).
+def _step_walk(walk: Walk, phase: str, cursor: dict | None, step: Callable[[dict | None], dict | None]) -> dict | None:
+    """The time-budgeted loop of a phase made of steps (shared/project_walk.py: one Query page each, with its writes):
+    ``step(cursor)`` gives the next step's cursor, None when the phase is done. A hand-over between two steps carries
+    the cursor; at most ``MAX_PAGES`` steps an invocation, then a hand-over, as ``_walk``."""
+    for _page in range(MAX_PAGES):
+        cursor = step(cursor)
+        record_progress(walk.aggregates, walk.run, phase)
+        if cursor is None:
+            return None
+        if not walk.time_left():
+            return _hand_over(walk, phase, cursor)
+    return _page_cap(walk, phase, cursor)
 
-    A job that names a workspace walks the item scan and that workspace's exports only: Radar, the feedback boards
-    and the workspace memberships
-    are the deployment's (not keyed by workspace), there is no whole-source sweep, and no artifact cites a workspace
-    item until projects move (phase 3)."""
+
+def _mark_workspace_lineage(walk: Walk, cursor: dict | None) -> dict | None:
+    """Mark the workspaces' artifacts that cite an erased item or board request (``lineage.workspace_step``)."""
+    projects = walk.tables['projects']
+    listing = walk.tables.get(members.STORE_MEMBERS)
+    return _step_walk(walk, PHASE_WORKSPACE_LINEAGE, cursor,
+                      lambda at: lineage.workspace_step(projects, walk.aggregates, walk.run, at, listing, walk.clock))
+
+
+def _erase_from_projects(walk: Walk, cursor: dict | None) -> dict | None:
+    """De-identify the erased email in the workspaces' projects (``project_people.py``), step by step."""
+    eraser = project_people.ProjectPeopleEraser(walk.run, walk.tables, str(walk.event.get('value') or ''), walk.s3,
+                                                RAW_DATA_BUCKET, walk.time_left, walk.clock)
+    return _step_walk(walk, PHASE_WORKSPACE_PROJECTS, cursor, eraser.step)
+
+
+def _phases(walk: Walk) -> list[str]:
+    """The phases this run walks, in order (the lineage ones are decided when they are reached).
+
+    A job that names a workspace walks the item scan, (an erasure by email) that workspace's projects, its exports
+    and its projects' lineage marks only: Radar, the feedback boards and the workspace memberships are the
+    deployment's (not keyed by workspace), and there is no whole-source sweep."""
     phases = [PHASE_ITEMS]
-    # The exports of every workspace the item scan or the memberships reached, after both (decided when it is
-    # reached: exports.py), so an export started between them is swept too; before the lineage pass. Each such
-    # workspace's exports were already closed (locked, marked erased) when the run first met it: no link meanwhile.
+    # The exports of every workspace the item scan, the memberships or the projects reached, after them (decided when
+    # it is reached: exports.py), so an export started between them is swept too; before the lineage passes. Each
+    # such workspace's exports were already closed (locked, marked erased) when the run first met it: no link
+    # meanwhile.
     exports_phase = [PHASE_EXPORTS] if walk.run['mode'] == MODE_ERASE else []
+    projects_phase = [PHASE_WORKSPACE_PROJECTS] if project_people.applies(walk.run, walk.tables) else []
+    # The workspaces' lineage marks (decided when reached: only once the run deleted a workspace's item).
+    workspace_lineage = [PHASE_WORKSPACE_LINEAGE] if 'projects' in walk.tables else []
     if walk.run.get('workspace_id'):
-        return [*phases, *exports_phase]
+        return [*phases, *projects_phase, *exports_phase, *workspace_lineage]
     if STORE_RADAR in walk.tables:
         phases.append(PHASE_RADAR)
     if boards.STORE_BOARDS in walk.tables and boards.applies(walk.run):
         phases.append(PHASE_BOARDS)
     if members.STORE_MEMBERS in walk.tables and members.applies(walk.run):
         phases.append(PHASE_MEMBERS)
+    phases.extend(projects_phase)
     if walk.run.get('field') == SOURCE_FIELD:
         phases.append(PHASE_RAW)
     phases.extend(exports_phase)
     if 'projects' in walk.tables:
         phases.append(PHASE_LINEAGE)
+    phases.extend(workspace_lineage)
     return phases
 
 
 def _deleted_anything(run: dict[str, Any]) -> bool:
     """Whether the run deleted or de-identified anything the deployment's artifacts may cite (a workspace's item
-    is cited by none of them: projects are not keyed by workspace until phase 3)."""
+    is cited by its own workspace's artifacts only: the ``workspace_lineage`` phase's)."""
     deployment_items = run['deleted_items'] - int(run.get(WORKSPACE_ITEM_COUNTER) or 0)
     return deployment_items + run['deleted_radar_items'] + int(run.get(BOARD_COUNTER) or 0) > 0
 
@@ -582,7 +628,9 @@ def _walk_phases(walk: Walk) -> dict | None:
     cursor = (walk.event.get('cursor') or None) if resumed in phases else None
     for phase in remaining:
         if (phase == PHASE_LINEAGE and not _deleted_anything(walk.run)) or (
-                phase == PHASE_EXPORTS and not exports.pending(walk.run)):
+                phase == PHASE_EXPORTS and not exports.pending(walk.run)) or (
+                phase == PHASE_WORKSPACE_LINEAGE
+                and not lineage.has_work(walk.run, walk.tables.get(members.STORE_MEMBERS))):
             continue
         handed_over = _PHASE_RUNNERS[phase](walk, cursor)
         if handed_over is not None:
@@ -599,6 +647,8 @@ _PHASE_RUNNERS: Final[dict[str, Callable[[Walk, dict | None], dict | None]]] = {
     PHASE_MEMBERS: _erase_from_members,
     PHASE_RAW: _sweep_raw,
     PHASE_LINEAGE: _mark_lineage,
+    PHASE_WORKSPACE_PROJECTS: _erase_from_projects,
+    PHASE_WORKSPACE_LINEAGE: _mark_workspace_lineage,
 }
 
 

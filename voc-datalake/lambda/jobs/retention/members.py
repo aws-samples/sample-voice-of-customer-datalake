@@ -47,7 +47,7 @@ STORE_MEMBERS: Final = 'workspace_members'
 PAGE_SIZE: Final = 100
 _WORKSPACE_PK_PREFIX: Final = 'WS#'
 #: What a membership row stores about the person (REMOVEd).
-_PERSON_FIELDS: Final = ('email', 'name')
+MEMBER_PERSON_FIELDS: Final = ('email', 'name')
 _PROJECTION: Final = ('pk', 'sk', 'email')
 
 
@@ -99,7 +99,7 @@ def tombstone(run: Mapping[str, Any], row: Mapping[str, Any], now: str) -> dict[
 
 def deidentify(table: Any, row: Mapping[str, Any]) -> bool:
     """REMOVE the email and name of a membership row; False when the row is gone meanwhile."""
-    return remove_fields(table, row, _PERSON_FIELDS)
+    return remove_fields(table, row, MEMBER_PERSON_FIELDS)
 
 
 class MemberEraser:

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 from typing import Any, Final
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -200,7 +201,8 @@ def test_the_live_project_is_exported_with_only_its_allowlisted_fields(world, mo
                                                      'by_kind': 'user', 'addressed': True}]
     # A reviewer's address is the workspace's own collaboration data; its digest and the link id are not exported.
     assert by_kind['reviewer']['author'] == {'kind': 'reviewer', 'email': REVIEWER, 'name': 'Rae Reviewer'}
-    assert by_kind['reviewer']['replies'][0]['author'] == {'kind': 'reviewer', 'email': REVIEWER, 'name': REVIEWER}
+    # A reviewer who gave no name keeps none (7.43.00: the address is never copied into a name).
+    assert by_kind['reviewer']['replies'][0]['author'] == {'kind': 'reviewer', 'email': REVIEWER, 'name': ''}
     assert (by_kind['reviewer']['from_review_link'], by_kind['user']['from_review_link']) == (True, False)
 
     [link] = _jsonl(files, 'review_links')
@@ -351,12 +353,28 @@ def test_a_project_deleted_after_its_registry_page_was_read_is_skipped_by_the_ne
     assert json.loads(files['manifest.json'])['projects']['deleted_during_export'] == {'personas': 1}
 
 
-def test_the_carried_counts_name_at_most_fifty_unclassified_attributes():
+MORE: Final = f'{projects.UNCLASSIFIED}{projects.UNCLASSIFIED_MORE}'
+
+
+def test_the_carried_counts_keep_at_most_fifty_unclassified_entries_the_bucket_among_them():
+    """7.43.00: the bucket is one of the fifty (before, fifty names and the bucket made 51)."""
     counts: dict[str, int] = {'feedback': 3}
     for n in range(60):
         projects.add_tally(counts, {f'{projects.UNCLASSIFIED}field_{n}': 1, 'probe': 1})
     named = [name for name in counts if name.startswith(projects.UNCLASSIFIED)]
-    assert (len(named), counts[f'{projects.UNCLASSIFIED}{projects.UNCLASSIFIED_MORE}'], counts['probe']) == (51, 10, 60)
+    assert (len(named), counts[MORE], counts['probe']) == (50, 11, 60)
+    assert f'{projects.UNCLASSIFIED}field_48' in counts
+    assert f'{projects.UNCLASSIFIED}field_49' not in counts
+
+
+def test_forty_nine_names_need_no_bucket_and_a_carried_bucket_keeps_counting():
+    counts: dict[str, int] = {}
+    projects.add_tally(counts, {f'{projects.UNCLASSIFIED}field_{n}': 1 for n in range(49)})
+    assert (len(counts), MORE in counts) == (49, False)
+    # A hand-over carries the counts: the bucket, once there, takes every new name, and a kept name still counts.
+    projects.add_tally(counts, {f'{projects.UNCLASSIFIED}field_50': 2, f'{projects.UNCLASSIFIED}field_0': 1})
+    projects.add_tally(counts, {f'{projects.UNCLASSIFIED}field_51': 1})
+    assert (len(counts), counts[MORE], counts[f'{projects.UNCLASSIFIED}field_0']) == (50, 3, 2)
 
 
 @pytest.mark.parametrize('checks', [None, 3, 5])
@@ -377,3 +395,29 @@ def test_a_page_with_rows_and_counts_adds_its_counts_once(world, monkeypatch, ch
     _run_export(world, checks)
     row = world.aggregates.get_item(Key={'pk': f'WS#{WS}#JOB#export', 'sk': EXPORT_ID})['Item']
     assert (row['counts']['project_lists'], row['counts']['probe']) == (2, 1)
+
+
+def test_the_registry_is_read_a_page_of_a_hundred_strongly_consistent_with_its_deleted_marks():
+    """7.43.00: the registry read is shared/project_walk.py's ``registry_page``; its request is pinned here."""
+    view = MagicMock()
+    view.query.return_value = {'Items': []}
+    projects.ProjectSource(A, view, MagicMock(), MagicMock()).page('personas', {})
+    [(args, kwargs)] = [(call.args, call.kwargs) for call in view.query.call_args_list]
+    assert (args, kwargs) == (('pk', f'WS#{WS}#PROJECT_IDS'), {'Limit': 100, 'ConsistentRead': True,
+                                                             'ProjectionExpression': 'sk, deleted_at'})
+
+
+@pytest.mark.parametrize('name', ['registry', 'series_from', 'start'])
+def test_a_carried_key_that_is_not_a_map_is_a_malformed_run_state(name):
+    with pytest.raises(ValueError, match='not a map'):
+        projects.check_cursor({name: 'not a key'})
+    projects.check_cursor({name: {'pk': f'WS#{WS}#PROJECT_IDS', 'sk': 'p'}})
+
+
+def test_a_series_list_page_answering_with_its_own_start_fails_the_export():
+    view = MagicMock()
+    start_key = {'pk': f'WS#{WS}#PROJECT#{LIVE}', 'sk': 'COMMENT_SERIES#x'}
+    view.query.return_value = {'Items': [], 'LastEvaluatedKey': start_key}
+    source = projects.ProjectSource(A, view, MagicMock(), MagicMock())
+    with pytest.raises(RuntimeError, match='started from'):
+        source.page('document_comments', {'ids': [LIVE], 'checked': True, 'series_from': start_key})

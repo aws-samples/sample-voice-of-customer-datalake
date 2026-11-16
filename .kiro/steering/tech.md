@@ -224,23 +224,47 @@ with a legal basis (`shared/legal_basis.py`; `legal_basis` required on the
 route, `retention_legal_basis` on a profile with a period). Every deleted item
 first gets a tombstone (`AUDIT#tombstone#{source}` / `{feedback_id}`, no ttl).
 Phases, in order (`handler.py` `_phases`): `voc-feedback` items, `voc-radar` reviews (+ markers), the feedback
-boards, the workspace memberships, the whole-source raw sweep, then (an erasure only) the exports of every
-workspace whose item it deleted or membership it de-identified, a derived copy (`lambda/jobs/retention/exports.py`:
+boards, the workspace memberships, (since 7.43.00, an erasure by email without a source) the addresses in every
+listed workspace's projects (`lambda/jobs/retention/project_people.py`: link audiences first, then a reviewer's
+threads, name fields that are the address, a `META`'s owner and member addresses, persona research notes'
+authors de-identified, each change recorded before and after in `AUDIT#tombstone#workspace_projects`; product
+documents whose filename or text holds the address listed for review, those it cannot judge listed apart; load: about
+4 Queries per project plus 1 per series and 1 per link, at most one GetObject per product document (none for an
+image), and per changed row one UpdateItem and two PutItems, across every workspace, once per erasure by email; the
+listing one Query per 100 workspaces, and at its end one filtered, strongly consistent Query of it per re-walk pass,
+one when nothing moved, plus the walk again of each workspace renamed or created meanwhile:
+`lambda/jobs/retention/workspaces.py`), the
+whole-source raw sweep, then (an erasure only) the
+exports of every workspace whose item it deleted, membership it de-identified or project row it changed, a derived
+copy (`lambda/jobs/retention/exports.py`:
 the export lock taken, its export jobs marked `erased`, its open uploads aborted, every version under
-`ws/{ws}/exports/` deleted, swept twice, the lock freed), then lineage (artifacts in `voc-projects` citing an
-erased id lose it and get `erased_evidence`). A workspace's exports are already closed (the lock taken, every
-export marked `erased`, so no link is signed) when the run first meets the workspace, before its item goes or its
-membership changes, and closed again at each hand-over (the lock renewed, any export that slipped in marked); a
-job that names one workspace closes them at its start (so it deletes them even when it matches nothing) and walks
-the items and the exports only. Whole-file uploads (`raw/csv_upload/*`,
+`ws/{ws}/exports/` deleted, swept twice, the lock freed), then lineage (the deployment's artifacts in `voc-projects`
+citing an erased id lose it and get `erased_evidence`; a paged Scan that leaves a workspace's rows), then (since
+7.43.00) `workspace_lineage` (each workspace whose item it deleted, up to 500, or every listed workspace once it
+de-identified a board request or passed 500, the listing walked as for the addresses: its projects through its
+registry and its persona library, by Query, a
+review's tombstones its own, a board request's the deployment's, writes through `ws_table`; the exports' workspace
+list it carries is not capped, about 8,000 workspaces against the 256 KB hand-over payload limit the code assumes). A workspace's exports are already closed
+(the lock taken, every export marked `erased`, so no link is signed) when the run first meets the workspace, before
+its item goes, its membership or a project row changes, and closed again at each hand-over (the lock renewed, any
+export that slipped in marked); a job that names one workspace closes them at its start (so it deletes them even
+when it matches nothing) and walks the items, (by email) its projects' addresses, the exports and its projects'
+lineage only. Whole-file uploads (`raw/csv_upload/*`,
 `raw/json_upload/*`) are deleted only by a whole-source erasure of their source,
 else listed as `files_needing_review`. A whole-source erasure (`field: 'source'`) scans by
 `source_platform`, then sweeps `raw/{source}/` (every version), writing progress
 to the job row. Permissions: feedback Get/Query/Scan/DeleteItem,
 aggregates Get/Put/Update/Query + BatchGet (jobs, `AUDIT#retention`, tombstones one PutItem each; no BatchWrite, which would allow deletes),
-radar Scan/DeleteItem + the `SETTINGS#radar` version bump, projects Scan/UpdateItem, workspaces Scan + UpdateItem
+radar Scan/DeleteItem + the `SETTINGS#radar` version bump, projects Scan and UpdateItem in two statements since 7.43.00
+(`dynamodb:Attributes`): the lineage marks' id lists and `erased_evidence` on any partition (the deployment's lineage
+Scan), and the de-identification's attributes on one workspace id's `PROJECT#*`, `DCOMMENTS#*` and `DOCSHARE#*` only;
+and (since 7.43.00)
+Query of one workspace id's `PROJECT_IDS`, `PROJECT#*`, `DCOMMENTS#*`, `DOCSHARE_IDS` and `DOCSHARE#*` partitions,
+GetObject of `ws/{one id}/projects/*/product_docs/raw/*.md`, `ws/{one id}/projects/*/product_docs/raw/*.txt` and
+`ws/{one id}/projects/*/product_docs/extracted/*` only, workspaces Scan + UpdateItem
 pinned to `WS#*` and the attributes `email` and `name` (since 6.11.00 an erasure by email without a source
-de-identifies the person's `MEMBER#` rows, `lambda/jobs/retention/members.py`), raw bucket
+de-identifies the person's `MEMBER#` rows, `lambda/jobs/retention/members.py`), GetItem of a `META`'s status and
+(since 7.43.00) Query of the `WORKSPACES` listing only, raw bucket
 `s3:DeleteObject`/`DeleteObjectVersion` on `raw/*`, `silver/*` and (since 7.03.00: an erasure by email and a
 retention window reach a workspace's items, tombstoned `AUDIT#tombstone#{source}` / `{ws}#{feedback_id}`) each
 workspace's `ws/{ws}/raw/*` and `ws/{ws}/silver/*` and (since 7.17.00) `ws/{ws}/exports/*` (one workspace id per

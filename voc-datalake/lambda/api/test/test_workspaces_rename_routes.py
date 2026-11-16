@@ -96,6 +96,31 @@ def test_the_audit_row_records_no_name(world, lambda_context):
     assert 'Matisa' not in str(row)
 
 
+def _audit_at(world) -> str:
+    rows = world.table.query(KeyConditionExpression='pk = :pk',
+                             ExpressionAttributeValues={':pk': f'AUDIT#WS#{WS}'})['Items']
+    return rows[0]['at']
+
+
+@pytest.mark.parametrize('name', ['Matias', 'MATISA'])
+def test_the_new_listing_row_is_stamped_renamed_at_the_renames_time(world, lambda_context, name):
+    """7.43.00: a walk of the listing (jobs/retention/workspaces.py) finds a row moved behind its page by this stamp
+    (``renamed_at >= the walk's start``); a change of case only, put over the same key, is stamped too."""
+    status, _ = _call(world, lambda_context, {'name': name})
+    assert status == 200
+    ours = next(row for row in _listing_rows(world) if row['workspace_id'] == WS)
+    assert ours['renamed_at'] == _audit_at(world)
+    # created_at stays the workspace's own.
+    assert ours['created_at'] == '2026-11-15T10:00:00+00:00'
+    other = next(row for row in _listing_rows(world) if row['workspace_id'] == OTHER)
+    assert 'renamed_at' not in other
+
+
+def test_the_same_name_stamps_nothing(world, lambda_context):
+    _call(world, lambda_context, {'name': 'Matisa'})
+    assert all('renamed_at' not in row for row in _listing_rows(world))
+
+
 def test_a_change_of_case_only_keeps_one_listing_row(world, lambda_context):
     status, _ = _call(world, lambda_context, {'name': 'MATISA'})
     assert status == 200

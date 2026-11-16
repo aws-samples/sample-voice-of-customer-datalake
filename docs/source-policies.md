@@ -188,15 +188,20 @@ How it works:
   from its lists and gains `erased_evidence: {count, job_id, mode, at}` (`count` adds up across
   runs; `artifacts_marked` on the job). Its text is never rewritten (it belongs to its owner); the
   update is conditional, so an artifact regenerated meanwhile is left for the next run.
-- The worker walks its phases in order (`items`, `radar`, `boards` for an email erasure, `members` for
-  an email erasure without a source, `raw` for a whole source, `lineage`) and
+- The worker walks its phases in order (`items`, `radar`, `boards` for an email erasure, `members` and
+  `workspace_projects` for an email erasure without a source, `raw` for a whole source, `exports` for an erasure
+  that reached a workspace, `lineage`, `workspace_lineage` for a run that deleted a workspace's item) and
   hands over to a fresh invocation of itself, with its phase and cursor, before its 15-minute timeout.
 - `POST /settings/erasure` answers 202 `{job}`. `GET /settings/erasure` lists the newest 20
   jobs, and the sources a whole-source erasure may name. A job shows `legal_basis`,
   `deleted_items`, `deleted_objects`, `deleted_radar_items`, `artifacts_marked`, once above 0
-  `deleted_workspace_items` (Workspace items, below) and, when it kept whole-file uploads or an S3
-  import's originals folder, `files_needing_review: {count, keys}` (a folder's key ends in `/`;
-  Administration lists files and folders apart).
+  `deleted_workspace_items` (Workspace items, below) and, when it kept whole-file uploads, an S3
+  import's originals folder or (since 7.43.00) a workspace's product documents that hold the address,
+  `files_needing_review: {count, keys}` (a folder's key ends in `/`; Administration lists files and folders apart,
+  under the import files' label, and leaves out the job row's `more`, which says the 200 keys kept are not all:
+  slice 3g-ui). The job and audit rows also keep `files_not_checked: {count, keys, more}`, the product documents an
+  erasure could not judge (Workspace projects, below): on the job row only until 3g-ui, the follow-up that has the
+  erasure API's job view and Administration's erasure panel show it.
 - The job row (`pk=JOB#erasure`) stores `value_hash`, the SHA-256 of the value. **The value
   itself is never stored or logged.** Each run also writes an audit row (`pk=AUDIT#retention`, no `ttl`).
 - Whole-file upload archives (`raw/csv_upload/…`, `raw/json_upload/…`): deleted by a whole-source
@@ -311,11 +316,37 @@ How it works:
   `unscoped_rows_skipped`, means such a row exists: find it (a Scan of `voc-feedback` for a `pk` that
   starts `WS#` but has no `ws_` + 26-character id after it) and remove it by hand; until then every erasure
   that matches that row (an erasure by email whose value it holds) stops at the same point. The job and audit rows count workspace items in `deleted_workspace_items` (part of
-  `deleted_items`, shown once above 0, also in Administration). The lineage pass finds no workspace item:
-  its lookup is by `{feedback_id}` tombstone keys, a workspace tombstone's is `<ws>#<feedback_id>`, and the
-  deployment's artifacts cite deployment items only (projects are keyed by workspace in phase 3); a run that
-  deleted only workspace items does not scan `voc-projects`. **A whole-source erasure does not reach
+  `deleted_items`, shown once above 0, also in Administration). The deployment's lineage pass finds no workspace
+  item: its lookup is by `{feedback_id}` tombstone keys, a workspace tombstone's is `<ws>#<feedback_id>`, it
+  leaves any workspace row its Scan meets, and a run that deleted only workspace items does not scan
+  `voc-projects`. Since 7.43.00 such a run marks the workspace's own artifacts instead (`workspace_lineage`): for
+  each workspace whose item it deleted (every listed workspace once it de-identified a board request, or reached more
+  than 500 workspaces), every project its registry lists (a deleted one too: its rows stay until its delete sweeps
+  them) and its persona library, each project's rows by Query, a review looked up by that workspace's tombstones and
+  a board request by the deployment's, never a Scan (`lambda/jobs/retention/lineage.py`). **A whole-source erasure
+  does not reach
   workspace items**: it is a request about the deployment's own source.
+- **Workspace projects** (since 7.43.00; [multi-workspace.md](multi-workspace.md#the-project-plan-phase-3), 3g-b). An
+  `email` erasure without a source (the deployment's, over every workspace the platform lists, or one workspace's
+  own, over that workspace) also reaches the addresses in the workspaces' projects: a review link's audience loses
+  the address (its domains stay, and a domain may still admit the person; a link left admitting nobody is revoked);
+  a review-link reviewer's comment threads and replies lose the author's email, email digest and name (a reviewer's
+  name is removed, not relabelled; the text stays, and is not searched); any other name field that is the address
+  (a member's or persona's author name, a resolver's, a link's creator or revoker, a persona research note's author)
+  becomes "Team member"; a project's `owner_email` and the `members` entries whose email or name is the address lose
+  them (the address and name are removed; the sub stays: an access entry, or a thread author's id). Each change is
+  recorded before and after (`AUDIT#tombstone#workspace_projects`), any change closes the workspace's exports, which
+  the `exports` phase deletes, and the job counts `project_rows_deidentified` (and `project_ids_malformed`, ids it
+  skipped). A row that keeps changing fails the job: run it again (every step is idempotent). Its product documents
+  (`ws/<ws>/projects/<id>/product_docs/`): one whose filename, text upload or extracted text holds the address is
+  listed in `files_needing_review` (and closes the workspace's exports); one it cannot judge (an image, never
+  extracted, its folder listed once; another kind of upload; text not readable or too large; a record pointing outside
+  its folder, its folder listed) is listed apart in `files_not_checked`, counted in `product_docs_not_checked`. Each
+  list keeps at most 200 keys and says `more` when there were others. Nothing there is changed. A document not
+  checked does not close the workspace's exports: its copy in an export's zip stays until the zip expires (10 days).
+  The rows are found by Query of each workspace's project and link registries, never a Scan
+  (`lambda/jobs/retention/project_people.py`). The deployment's own projects are not reached (slice 3g-d, planned
+  in multi-workspace.md).
 - **S3 import originals.** The `s3_import` plugin keeps each imported file as uploaded under
   `raw/s3_import/…` (`ws/{ws}/raw/s3_import/…` for a run in a workspace) when its profile keeps whole files,
   and no row links an item to the file it came from. An erasure (by email, author, …) that deletes an S3 import's
@@ -443,6 +474,8 @@ workspace artifacts. Copies derived from a review before it was erased stay wher
 | Idempotency rows of the processor | `voc-idempotency` | Keyed by a hash of the message, they may cache the processor's response for up to an hour, then expire through the table's TTL (`expiration`); wait an hour, or delete the row by hand |
 | Whole-file CSV / JSON uploads that also hold rows that were not erased | `raw/csv_upload/…`, `raw/json_upload/…` in the raw bucket | Listed on the job as `files_needing_review` (Administration shows the keys). Remove the person's rows by hand (download, edit, delete every version with an admin role, re-upload if needed), or avoid it by giving the source a retention period or a non-`allow` policy |
 | An S3 import's original file | `raw/s3_import/…`, a workspace's `ws/<ws>/raw/s3_import/…` | No row links an item to its file: the job lists the folder as `files_needing_review` when it deleted an import's item and the folder holds a file. Find the file by its `original-key` S3 metadata, remove the person's rows by hand (every version, admin role) |
+| A project's product documents (uploads and their extracted text) | a workspace's `ws/<ws>/projects/<id>/product_docs/`; the deployment's `projects/<id>/product_docs/` | An erasure by email without a source lists, in each workspace, the documents whose filename or text holds the address as `files_needing_review`, and those it cannot judge (images, other kinds, unreadable text) as `files_not_checked` (since 7.43.00; on the job row only until 3g-ui shows it in the job view and the erasure panel). Look through each and delete a document that names the person from its project. A document not checked does not close the workspace's exports: its copy in an export's zip stays until the zip expires (10 days). The deployment's projects' documents are not listed |
+| A reviewer's comments, a review link's audience, a project's owner and member addresses in the deployment's own projects | `voc-projects` (`DCOMMENTS#…`, `DOCSHARE#…`, a project's `META`) | Not reached by an erasure (a workspace's are, since 7.43.00): delete the person's comments and remove the address from the link in the project, by hand |
 | Archives named before 3.06.00 for ids that were not filename-safe | `raw/<source>/…` | See the archive naming note above |
 | A workspace export holding items a daily retention window deleted (an erasure deletes the workspace's exports at once) | `ws/<ws>/exports/…` | It expires by its tag 10 days after it was written; to remove it sooner, delete every version under that export's folder with an admin role |
 | The person's account in the user pool (email, name) | Cognito, the deployment's directory (not the lake) | Delete the user (`DELETE /users/{username}`, Administration → Users), which also removes their workspace memberships; while the account exists, a workspace's members list shows its email from Cognito |
@@ -464,10 +497,10 @@ Least-privilege grants (`lib/stacks/retention-worker.ts`):
 |---|---|
 | Feedback table | `GetItem`, `Query`, `Scan`, `DeleteItem` |
 | Radar table | `Scan`, `DeleteItem`; `UpdateItem` on the `SETTINGS#radar` partition only (the Radar cache version) |
-| Projects table | `Scan`, `UpdateItem` (no delete, no put) |
+| Projects table | `Scan`, `UpdateItem` (since 7.43.00 only of the lineage lists, `erased_evidence` and the address and name fields an erasure rewrites; no delete, no put); since 7.43.00 `Query` of one workspace id's `PROJECT_IDS`, `PROJECT#*`, `DCOMMENTS#*`, `DOCSHARE_IDS` and `DOCSHARE#*` partitions (a workspace's lineage marks and addresses), on the table only |
 | Feature requests table | `Scan`, `GetItem`, `Query`, `UpdateItem` (de-identifies board rows, recounts totals); `PutItem` / `DeleteItem` under `FR#*` only (re-keys an erased +1) |
-| Workspaces table | `Scan` (finds the membership rows that hold an erased email); `UpdateItem` pinned to `WS#*` and the attributes `email` and `name` (de-identifies a `MEMBER#` row). No put, no delete; the audit-row guard denies it any `AUDIT#` row |
-| Raw bucket | `DeleteObject` and `DeleteObjectVersion` on `raw/*`, `silver/*` and each workspace's `ws/ws_<26 ?>/raw/*` and `ws/ws_<26 ?>/silver/*` (one workspace id per pattern: IAM's `*` also matches `/`), plus `ListBucketVersions` with those prefixes. The whole-file uploads are under `raw/`: the code deletes one only for a whole-source erasure of its own source. The workspace prefixes are reached by an erasure by email and a retention window (D5, legal obligations), never by any other erasure (in code). An explicit Deny refuses deletes under `ws/ws_<26 ?>/raw/s3_import/*`: a workspace's S3 import originals are listed for review, never deleted |
+| Workspaces table | `Scan` (finds the membership rows that hold an erased email); `Query` of the `WORKSPACES` listing only (since 7.43.00: the workspaces an erasure by email walks); `GetItem` of a `META`'s status; `UpdateItem` pinned to `WS#*` and the attributes `email` and `name` (de-identifies a `MEMBER#` row). No put, no delete; the audit-row guard denies it any `AUDIT#` row |
+| Raw bucket | `GetObject` of a workspace's `ws/ws_<26 ?>/projects/*/product_docs/raw/*.md`, `…/raw/*.txt` and `…/extracted/*` only (since 7.43.00: an erasure by email reads its text documents for the address); `DeleteObject` and `DeleteObjectVersion` on `raw/*`, `silver/*` and each workspace's `ws/ws_<26 ?>/raw/*` and `ws/ws_<26 ?>/silver/*` (one workspace id per pattern: IAM's `*` also matches `/`), plus `ListBucketVersions` with those prefixes. The whole-file uploads are under `raw/`: the code deletes one only for a whole-source erasure of its own source. The workspace prefixes are reached by an erasure by email and a retention window (D5, legal obligations), never by any other erasure (in code). An explicit Deny refuses deletes under `ws/ws_<26 ?>/raw/s3_import/*`: a workspace's S3 import originals are listed for review, never deleted |
 | Aggregates table | `GetItem`, `PutItem` (also each tombstone), `UpdateItem`, `Query`, `BatchGetItem` (the lineage pass's tombstone lookups); no delete |
 | KMS | Encrypt/decrypt |
 | Lambda | Invoke itself |

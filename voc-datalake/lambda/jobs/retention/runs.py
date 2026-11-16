@@ -46,8 +46,22 @@ COUNTERS: Final = ('scanned', *ERASURE_JOB_COUNTERS)
 # like the others, and written on the job and audit rows only once above 0 (a run without boards, members or
 # workspace items reads as before).
 _CARRIED_LISTS: Final = ('erased_sources', 'review_files')
-# ``ERASED_WORKSPACES`` (jobs/retention/exports.py), the workspaces whose exports an erasure still has to clear, is
-# carried only while it holds one (a run that reached no workspace reads as before).
+# ``ERASED_WORKSPACES`` (jobs/retention/exports.py), the workspaces whose exports an erasure still has to clear, and
+# ``LINEAGE_WORKSPACES``, the workspaces whose items the run deleted and whose projects the ``workspace_lineage``
+# phase still has to mark (jobs/retention/lineage.py), are each carried only while they hold one (a run that reached
+# no workspace reads as before).
+#: The workspaces whose deleted items the run's ``workspace_lineage`` phase still has to look up in their projects.
+LINEAGE_WORKSPACES: Final = 'lineage_workspaces'
+#: The most workspaces ``LINEAGE_WORKSPACES`` holds: past it the run sets ``LINEAGE_ALL`` instead, and the phase walks
+#: every listed workspace (the list travels in every hand-over's payload).
+MAX_LINEAGE_WORKSPACES: Final = 500
+LINEAGE_ALL: Final = 'lineage_all_workspaces'
+#: The product documents an erasure could not judge (project_people.py), kept apart from ``review_files`` so they
+#: never crowd out a document that holds the address, each list capped at ``MAX_REVIEW_FILES`` with its own ``more``;
+#: carried only while it holds one.
+UNCHECKED_FILES: Final = 'unchecked_files'
+_UNCHECKED_MORE: Final = 'unchecked_files_more'
+_CARRIED_WORKSPACE_LISTS: Final = (ERASED_WORKSPACES, LINEAGE_WORKSPACES, UNCHECKED_FILES)
 # ``workspace_id``: the one workspace a job named (its row's, checked by the handler's ``_named_workspace``).
 _AUDIT_OPTIONAL: Final = ('job_id', 'field', 'source', 'value_hash', 'cutoffs', 'legal_basis', 'legal_bases',
                           'erased_sources', 'workspace_id')
@@ -68,9 +82,13 @@ def new_run(event: Mapping[str, Any], mode: str) -> dict[str, Any]:
         values = carried.get(name)
         run[name] = [str(value) for value in values] if isinstance(values, list) else []
     run['review_files_more'] = carried.get('review_files_more') is True
-    erased = carried.get(ERASED_WORKSPACES)
-    if isinstance(erased, list) and erased:
-        run[ERASED_WORKSPACES] = [str(ws) for ws in erased]
+    for name in _CARRIED_WORKSPACE_LISTS:
+        listed = carried.get(name)
+        if isinstance(listed, list) and listed:
+            run[name] = [str(ws) for ws in listed]
+    for flag in (LINEAGE_ALL, _UNCHECKED_MORE):
+        if carried.get(flag) is True:
+            run[flag] = True
     return run
 
 
@@ -81,7 +99,8 @@ def carried_state(run: Mapping[str, Any]) -> dict[str, Any]:
         **{counter: run[counter] for counter in COUNTERS}, **optional_counts(run),
         **{name: list(run[name]) for name in _CARRIED_LISTS},
         'review_files_more': run['review_files_more'],
-        **({ERASED_WORKSPACES: list(run[ERASED_WORKSPACES])} if run.get(ERASED_WORKSPACES) else {}),
+        **{name: list(run[name]) for name in _CARRIED_WORKSPACE_LISTS if run.get(name)},
+        **{flag: True for flag in (LINEAGE_ALL, _UNCHECKED_MORE) if run.get(flag) is True},
     }
 
 
@@ -95,6 +114,40 @@ def note_erased_source(run: dict[str, Any], source: str) -> None:
     """Remember a source this run deleted from (the lineage pass looks up its tombstones)."""
     if source not in run['erased_sources']:
         run['erased_sources'].append(source)
+
+
+def note_lineage_workspace(run: dict[str, Any], ws: str) -> None:
+    """Remember a workspace whose item this run deleted: its projects' artifacts may cite it (``workspace_lineage``)."""
+    if run.get(LINEAGE_ALL):
+        return
+    listed = run.setdefault(LINEAGE_WORKSPACES, [])
+    if ws in listed:
+        return
+    if len(listed) >= MAX_LINEAGE_WORKSPACES:
+        # Past the cap the phase walks every listed workspace (lineage.py), so the list is no longer needed.
+        run[LINEAGE_ALL] = True
+        del run[LINEAGE_WORKSPACES]
+        return
+    listed.append(ws)
+
+
+def note_unchecked_file(run: dict[str, Any], key: str) -> None:
+    """List a product document (or a folder of them) the erasure could not judge (``UNCHECKED_FILES``)."""
+    listed = run.setdefault(UNCHECKED_FILES, [])
+    if key in listed:
+        return
+    if len(listed) >= MAX_REVIEW_FILES:
+        run[_UNCHECKED_MORE] = True
+        return
+    listed.append(key)
+
+
+def files_not_checked(run: Mapping[str, Any]) -> dict[str, Any] | None:
+    """``{count, keys, more}`` of the product documents the erasure could not judge, or None when there are none."""
+    keys = list(run.get(UNCHECKED_FILES) or [])
+    if not keys:
+        return None
+    return {'count': len(keys), 'keys': keys, 'more': run.get(_UNCHECKED_MORE) is True}
 
 
 def note_review_file(run: dict[str, Any], key: str) -> None:
@@ -118,13 +171,14 @@ def files_needing_review(run: Mapping[str, Any]) -> dict[str, Any] | None:
 def write_audit(aggregates_table: Any, run: Mapping[str, Any], status: str, error: str | None = None) -> None:
     """One audit row for a finished (or failed) run: mode, counts, legal basis, never the erased value."""
     now = now_iso()
-    review = files_needing_review(run)
+    review, unchecked = files_needing_review(run), files_not_checked(run)
     item = {
         'pk': AUDIT_PK, 'sk': f"{now}#{run['run_id']}", 'run_id': run['run_id'], 'mode': run['mode'],
         'status': status, **{counter: run[counter] for counter in COUNTERS}, **optional_counts(run),
         'started_at': run['started_at'], 'finished_at': now,
         **{key: run[key] for key in _AUDIT_OPTIONAL if run.get(key)},
         **({'files_needing_review': review} if review else {}),
+        **({'files_not_checked': unchecked} if unchecked else {}),
         **({'error': error} if error else {}),
     }
     aggregates_table.put_item(Item=item)
@@ -190,6 +244,10 @@ def finish_erasure_job(aggregates_table: Any, run: Mapping[str, Any], status: st
     if review:
         expression += ', files_needing_review = :review'
         values[':review'] = review
+    unchecked = files_not_checked(run)
+    if unchecked:
+        expression += ', files_not_checked = :unchecked'
+        values[':unchecked'] = unchecked
     if error:
         expression += ', #error = :error'
         names['#error'] = 'error'

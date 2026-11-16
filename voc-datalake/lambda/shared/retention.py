@@ -142,9 +142,19 @@ UNSCOPED_ROW_COUNTER: Final = 'unscoped_rows_skipped'
 # The export objects (zips and work objects, every version) an erasure deleted under the workspaces it reached:
 # an export is a derived copy (jobs/retention/exports.py).
 EXPORT_OBJECT_COUNTER: Final = 'deleted_export_objects'
+# The rows of a workspace's projects an erasure by email de-identified (7.43.00: a reviewer's comment threads, a
+# review link's audience, a project META's owner and member addresses; jobs/retention/project_people.py).
+PROJECT_COUNTER: Final = 'project_rows_deidentified'
+# The registry, link and series ids the workspace walks skipped because they are not shaped like one (counted, never
+# a partition: jobs/retention/lineage.py, project_people.py), as the hard delete counts its own.
+MALFORMED_ID_COUNTER: Final = 'project_ids_malformed'
+# The product documents an erasure by email could not judge (an image, a kind it does not read, text it could not
+# read or not extracted yet), each listed under ``files_not_checked`` (jobs/retention/project_people.py).
+DOCS_NOT_CHECKED_COUNTER: Final = 'product_docs_not_checked'
 # The counters on the job and audit rows only once above 0 (a run that touched none reads as before).
 ERASURE_OPTIONAL_COUNTERS: Final = (BOARD_COUNTER, MEMBER_COUNTER, WORKSPACE_ITEM_COUNTER, UNSCOPED_ROW_COUNTER,
-                                    EXPORT_OBJECT_COUNTER)
+                                    EXPORT_OBJECT_COUNTER, PROJECT_COUNTER, MALFORMED_ID_COUNTER,
+                                    DOCS_NOT_CHECKED_COUNTER)
 # Where a matched item lives: voc-feedback, or voc-radar (another brand's review, docs/radar.md).
 STORE_FEEDBACK: Final = 'feedback'
 STORE_RADAR: Final = 'radar'

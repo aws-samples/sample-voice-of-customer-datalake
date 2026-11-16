@@ -98,12 +98,14 @@ describe('exact grants over the app', () => {
     expect(s3.map(actionsOf)).toStrictEqual([['s3:GetObject', 's3:ListBucket']]);
   });
 
-  it('the retention Lambda: explicit version deletes and listing only (and a Deny on workspace import originals)', () => {
+  it('the retention Lambda: explicit version deletes and listing, a read of workspace product documents, and a Deny on workspace import originals', () => {
     const s3 = policy('VocProcessingStack', 'RetentionWorkerRetentionRoleDefaultPolicy')
       .filter((statement) => actionsOf(statement).some((action) => action.startsWith('s3:')))
       .map((statement) => [statement.Effect, [...actionsOf(statement)].sort(byCodeUnit)]);
     expect(s3).toStrictEqual([
       ['Allow', ['s3:DeleteObject', 's3:DeleteObjectVersion']],
+      // 7.43.00: a workspace's text product documents, read for an erased address (never written).
+      ['Allow', ['s3:GetObject']],
       ['Deny', ['s3:DeleteObject', 's3:DeleteObjectVersion']],
       ['Allow', ['s3:ListBucketVersions']],
       // A workspace's open export upload, which an erasure that reaches the workspace aborts (a derived copy, D5).

@@ -17,6 +17,7 @@ import {
   WORKSPACE_EXPORTS_PREFIX, WORKSPACE_MEMORY_IMPORTS_PREFIX, WORKSPACE_OBJECTS_PREFIX, WORKSPACE_RAW_LAYER_PREFIX,
   WORKSPACE_SILVER_HISTORY_PREFIX,
 } from '../stacks/core-buckets';
+import { WORKSPACE_PRODUCT_DOC_READS } from '../stacks/retention-worker';
 import { acknowledgeNag } from './nag-ack';
 import {
   rawDataPrefixSuppressions, s3ObjectSuppressions,
@@ -58,6 +59,9 @@ export function acknowledgeStackFindings({ core, ingestion, processing, api }: C
       // ws/{one id}/*: every object of one workspace, read (GetObject only) into its export by voc-workspace-export
       // (slice 4b; lambda/shared/ws_repo.py WorkspaceObjects reads the event's workspace only, never its exports).
       raw.arnForObjects(WORKSPACE_OBJECTS_PREFIX),
+      // ws/{one id}/projects/*/product_docs/raw/* and …/extracted/*: voc-retention reads a workspace's text product
+      // documents for an erased address (GetObject only; lambda/jobs/retention/project_people.py, 7.43.00).
+      ...WORKSPACE_PRODUCT_DOC_READS.map((key) => raw.arnForObjects(key)),
     ]),
     ...rawDataPrefixSuppressions(raw, ['memory-imports/*', 'prototypes/*', 'scratch/research_jobs/*']),
   ]);

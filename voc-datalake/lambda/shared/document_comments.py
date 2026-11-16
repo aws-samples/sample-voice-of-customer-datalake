@@ -159,8 +159,12 @@ def validate_reply(body: Mapping[str, Any]) -> str:
 
 # ── Authors ─────────────────────────────────────────────────────────────────
 
+#: A member's name when they have none (and what an erasure writes over a name that was an erased address).
+TEAM_MEMBER_NAME: Final = 'Team member'
+
+
 def user_author(subject: str, name: str) -> dict[str, str]:
-    return {'kind': AUTHOR_USER, 'sub': subject, 'name': (name or 'Team member')[:MAX_NAME_CHARS]}
+    return {'kind': AUTHOR_USER, 'sub': subject, 'name': (name or TEAM_MEMBER_NAME)[:MAX_NAME_CHARS]}
 
 
 def persona_author(persona_id: str, name: str) -> dict[str, str]:
@@ -168,8 +172,10 @@ def persona_author(persona_id: str, name: str) -> dict[str, str]:
 
 
 def reviewer_author(email_lc: str, name: str = '') -> dict[str, str]:
+    # A reviewer without a name keeps none (7.43.00): the address is never copied into a name, and the app shows the
+    # author's kind ("Reviewer") for an empty one.
     return {'kind': AUTHOR_REVIEWER, 'email': email_lc, 'email_digest': email_digest(email_lc),
-            'name': (name or email_lc)[:MAX_NAME_CHARS]}
+            'name': name[:MAX_NAME_CHARS]}
 
 
 # ── Rows ────────────────────────────────────────────────────────────────────

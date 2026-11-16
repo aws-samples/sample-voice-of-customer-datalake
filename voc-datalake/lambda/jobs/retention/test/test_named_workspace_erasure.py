@@ -141,12 +141,14 @@ class TestAnErasureInOneWorkspace:
         assert 'member_rows_deidentified' not in result
 
     @pytest.mark.usefixtures('aws')
-    def test_a_named_workspace_walks_the_item_scan_and_its_exports_only(self, worker_context):
+    def test_a_named_workspace_walks_the_item_scan_its_projects_and_its_exports_only(self, worker_context):
         run = {'mode': 'erase', 'field': 'email', 'workspace_id': WS}
         walk = handler.Walk(handler._tables(), worker_context, {}, run,
                             lambda store: retention.erase_filter('email', 'x', None, store), None,
                             handler._lambda_clock(worker_context))
-        assert handler._phases(walk) == [handler.PHASE_ITEMS, handler.PHASE_EXPORTS]
+        # 7.43.00: by email, the addresses in its own projects too, and its projects' lineage marks.
+        assert handler._phases(walk) == [handler.PHASE_ITEMS, handler.PHASE_WORKSPACE_PROJECTS, handler.PHASE_EXPORTS,
+                                         handler.PHASE_WORKSPACE_LINEAGE]
 
     def test_its_workspaces_exports_close_at_the_start_before_any_item_is_read(self, aws, worker_context):
         """A job of one workspace marks its exports erased (and holds the export lock) before the item scan: no

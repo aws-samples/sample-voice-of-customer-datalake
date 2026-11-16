@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING, Final, NamedTuple
 
 from shared.digests import sha256_hex
 from shared.review_share_audience import REVIEWER_ROUTES_STORE, SHARE_PK_PREFIX, SHARE_SK
-from shared.scoped_keys import scoped_pk
+from shared.scoped_keys import scoped_object_key, scoped_pk
 
 if TYPE_CHECKING:
     from shared.ws_repo import WorkspaceScope
@@ -49,7 +49,8 @@ __all__ = ['AGENT_RUNS_STORE', 'ASSIST_JOB_PREFIX', 'COMMENT_SERIES_PREFIX', 'PR
            'REVISE_FROM_COMMENTS_STORE', 'SERIES_ID_RE', 'NotPerWorkspaceError', 'ProjectPartition',
            'comment_series_item', 'comments_pk', 'document_keys', 'document_listing', 'document_revision_key',
            'document_revisions_prefix', 'job_status_pk',
-           'legacy_assignment_key', 'legacy_assignment_prefix', 'personas_index_pk', 'project_id_of',
+           'legacy_assignment_key', 'legacy_assignment_prefix', 'personas_index_pk', 'product_docs_prefix',
+           'project_id_of',
            'project_partitions', 'project_pk', 'project_registry_key', 'project_registry_pk', 'project_type_pk',
            'require_deployment', 'review_link_key', 'review_link_registry_key', 'review_link_registry_pk',
            'reviewer_rate_pk',
@@ -292,6 +293,16 @@ def reviewer_rate_pk(share_id: str, email_digest: str, *, workspace: WorkspaceSc
     """The partition of a reviewer's daily write counters on one link (``sk`` the UTC day, a ``ttl`` two days on):
     ``DCRATE#{share}#{email digest}``, ``WS#{ws}#DCRATE#…`` in a workspace."""
     return scoped_pk(workspace, f'{_REVIEWER_RATE_PREFIX}{share_id}#{email_digest}')
+
+
+def product_docs_prefix(project_id: str, *, workspace: WorkspaceScope | None = None) -> str:
+    """The object prefix of a project's product documents, their uploads (``raw/``) and extracted text
+    (``extracted/``): ``projects/{id}/product_docs/``, ``ws/{ws}/projects/{id}/product_docs/`` in a workspace
+    (api/product_context.py builds both keys from it; an erasure lists it for review, jobs/retention/project_people.py).
+    """
+    if not project_id:
+        raise ValueError('a product documents prefix names a project id')
+    return scoped_object_key(workspace, f'projects/{project_id}/product_docs/')
 
 
 def job_status_pk(status: str, *, workspace: WorkspaceScope | None = None) -> str:

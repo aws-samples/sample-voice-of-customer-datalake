@@ -1044,3 +1044,27 @@ class TestVisualBrief:
             result = pc.build_visual_brief_block('p1', ['v1'])
         assert result == (BRIEF_HEAD + _fence('v1.png', '\ufffdok'), ['v1'])
         s3.get_object.assert_called_once_with(Bucket='test-raw-data-bucket', Key=_key('v1'))
+
+
+class TestProductDocsPrefix:
+    """An erasure lists a project's product documents for review by their prefix (shared/project_keys.py
+    ``product_docs_prefix``, 7.43.00): every upload and extracted-text key the API builds is under it, in either
+    scope, so the folder it lists holds them all."""
+
+    @pytest.mark.parametrize('ws', [None, 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'])
+    def test_the_upload_and_the_extracted_text_are_under_the_listed_prefix(self, ws):
+        from shared.project_keys import product_docs_prefix
+        from shared.ws_repo import WorkspaceScope
+
+        scope = WorkspaceScope(ws) if ws else None
+        prefix = product_docs_prefix('p1', workspace=scope)
+        assert prefix == (f'ws/{ws}/' if ws else '') + 'projects/p1/product_docs/'
+        assert pc.product_doc_raw_key('p1', 'd1', 'pdf', workspace=scope) == f'{prefix}raw/d1.pdf'
+        assert pc.product_doc_extracted_key('p1', 'd1', workspace=scope) == f'{prefix}extracted/d1.txt'
+
+    def test_a_prefix_without_a_project_is_refused(self):
+        from shared.project_keys import product_docs_prefix
+
+        # An empty id would name every project's folder (``projects/product_docs/`` is no project's).
+        with pytest.raises(ValueError, match='names a project id'):
+            product_docs_prefix('')
