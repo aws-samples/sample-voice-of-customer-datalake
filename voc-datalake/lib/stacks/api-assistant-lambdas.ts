@@ -28,6 +28,7 @@ import { ENGINEERING_WORKSPACE_REPORTS_KEYS } from './core-buckets';
 import { grantInvokeByName } from '../utils/worker-lambda';
 import { engineeringAgentsEnabled, engineeringParameterArns, engineeringParameterPrefix } from './engineering-broker';
 import { appTokensFunctionName, grantAppTokensInvoke } from './engineering-app-tokens';
+import { grantEngineeringReadiness } from './api-engineering-readiness';
 import { engineeringRunCaps } from './engineering-start';
 import { SKILL_PARTITIONS } from './engineering-runtime';
 import { denyIssueTriageWrites } from './engineering-runtime-grants';
@@ -151,7 +152,10 @@ function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, 
     findings: [resourceFinding(reports)],
   }]);
   const parameterPrefix = grantConnectionCredentialWrites(ctx, role);
+  // The readiness checks' own reads and the workspace bucket's probe (7.50.00, api-engineering-readiness.ts).
+  const readiness = grantEngineeringReadiness(ctx, role);
   return {
+    ...readiness,
     ENGINEERING_AGENTS: 'on',
     ENGINEERING_PARAMETER_PREFIX: parameterPrefix,
     ENGINEERING_PARAMETER_KEY: ctx.props.kmsKey.keyArn,

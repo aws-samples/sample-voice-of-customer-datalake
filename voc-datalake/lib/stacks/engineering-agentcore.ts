@@ -248,6 +248,11 @@ export function runtimeLanguages(scope: Construct): string[] {
   return named.sort((a, b) => a.localeCompare(b, 'en'));
 }
 
+/** Whether the sessions have a network (`-c engineeringAgentNetwork`): the readiness check's (7.50.00). */
+export function agentNetworkConfigured(scope: Construct): boolean {
+  return agentNetwork(scope) !== undefined;
+}
+
 /** The sizes of a language's runtimes, and their ARNs. */
 type RuntimeArns = Record<string, Record<string, string>>;
 

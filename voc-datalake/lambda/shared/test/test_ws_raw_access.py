@@ -207,8 +207,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # (shared/ws_repo.py `workspace_is_active`, the control plane, not a data-path table).
     'lambda/aggregator/handler.py': (2, {'METRIC#': 1, 'Table': 3, 'meta.client': 2, 'transact': 2}),
     # Its three Table calls since 7.35.00: the engineering views' handles (voc-engineering, the engineering rows of
-    # voc-agents), only with -c engineeringAgents=true; see the engineering modules' entries below.
-    'lambda/api/agents_handler.py': (3, {'Table': 3, 'get_aggregates_table': 1}),
+    # voc-agents), only with -c engineeringAgents=true; see the engineering modules' entries below. Two more since
+    # 7.50.00: the readiness checks' voc-engineering and voc-watermarks (the Issues source's watermarks, read only).
+    'lambda/api/agents_handler.py': (3, {'Table': 5, 'get_aggregates_table': 1}),
     'lambda/api/ballots_handler.py': (2, {'get_aggregates_table': 1, 'get_projects_table': 2, 'meta.client': 1, 'transact': 1}),
     'lambda/api/chat_handler.py': (3, {'Table': 1}),
     'lambda/api/data_explorer_handler.py': (
@@ -438,6 +439,8 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/engineering/knowledge/store.py': (3, {'transact': 1}),
     'lambda/engineering/rows.py': (3, {'transact': 1}),
     'lambda/engineering/runtime/delivery.py': (3, {'meta.client': 1, 'transact': 1}),
+    # The readiness probe's create-only put of its one object (7.50.00, ws/default/_readiness/probe.json).
+    'lambda/engineering/readiness_aws.py': (3, {'put_object': 2}),
     'lambda/engineering/runtime/handler.py': (3, {'Table': 4}),
     'lambda/engineering/runtime/harness/main.py': (3, {'put_object': 1}),
     'lambda/engineering/runtime/runs.py': (3, {'meta.client': 2, 'transact': 2}),

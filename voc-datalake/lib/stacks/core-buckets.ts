@@ -153,6 +153,11 @@ export const ENGINEERING_WORKSPACE = 'default';
 export const ENGINEERING_WORKSPACE_REPORTS_KEYS = `ws/${ENGINEERING_WORKSPACE}/reports/*`;
 export const ENGINEERING_WORKSPACE_RUNS_KEYS = `ws/${ENGINEERING_WORKSPACE}/runs/*`;
 /**
+ * The readiness probe's key (7.50.00, lambda/engineering/readiness_aws.py PROBE_KEY): the Agents API's one create-only
+ * object in the workspace bucket, beside (never inside) the runs' keys.
+ */
+export const ENGINEERING_WORKSPACE_READINESS_KEYS = `ws/${ENGINEERING_WORKSPACE}/_readiness/*`;
+/**
  * The quality gate's records (`…/_gate/attempt-<n>/record.json` under a final-go agent's keys), which the GO ledger
  * reads (lambda/engineering/flow/ledger.py): a retrospective, and the board for a flow's quality gate step.
  */

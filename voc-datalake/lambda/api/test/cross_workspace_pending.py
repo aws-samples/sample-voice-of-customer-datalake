@@ -140,6 +140,8 @@ PHASE_3: dict[str, frozenset[str]] = {
         'GET /agents/engineering/<run_id>/reports',
         'GET /agents/engineering/<run_id>/reports/<level>/<subject>',
         'GET /agents/engineering/connections',
+        # Readiness (7.50.00, engineering/readiness.py): the deployment's connections, images, quotas and agents.
+        'GET /agents/engineering/readiness',
         'GET /agents/engineering/scorecards/<role>',
         'GET /agents/engineering/settings',
         'GET /agents/engineering/skills',

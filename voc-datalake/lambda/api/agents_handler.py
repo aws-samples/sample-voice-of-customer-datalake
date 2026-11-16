@@ -385,6 +385,9 @@ def create_agent():
     if engineering and fields['owner_sub'] is not None:
         raise ValidationError(RUNS_AS_ENABLER)
     if engineering and fields['enabled']:
+        refused = _not_ready({**fields, 'enabled': False}, caller)
+        if refused is not None:
+            return refused
         fields.update(_run_as(caller))
     agent = store.create_agent(_agents_table(), fields, created_by=caller.subject, now=store.utc_now())
     logger.info('Agent created', extra={'agent_id': agent['agent_id']})
@@ -417,6 +420,9 @@ def update_agent(agent_id: str):
     if fields['owner_sub'] is None:
         fields['owner_sub'] = existing.get('owner_sub')
     if engineering and fields['enabled'] and existing.get('enabled') is not True:
+        refused = _not_ready({**existing, **fields, 'enabled': False}, caller)
+        if refused is not None:
+            return refused
         fields.update(_run_as(caller))
     updated = store.update_agent(_agents_table(), agent_id, fields, updated_by=caller.subject, now=store.utc_now())
     return {'agent': store.agent_view(updated)}
@@ -437,9 +443,10 @@ def archive_agent(agent_id: str):
     return {'agent': store.agent_view(updated)}
 
 
-def _set_enabled(agent_id: str, enabled: bool) -> dict:
-    """Enable or disable (admin). An engineering agent is enabled only once it is set up (400 otherwise), and from
-    then runs as the administrator who enabled it (``owner_sub``, ``owner_username``)."""
+def _set_enabled(agent_id: str, enabled: bool) -> dict | Response:
+    """Enable or disable (admin). An engineering agent is enabled only once it is set up (400 otherwise) and its
+    required readiness checks pass (409 with the failing ones, 7.50.00: ``_not_ready``), and from then runs as the
+    administrator who enabled it (``owner_sub``, ``owner_username``)."""
     caller = _caller()
     require_admin_caller(caller)
     agent = _stored_agent(agent_id)
@@ -448,6 +455,9 @@ def _set_enabled(agent_id: str, enabled: bool) -> dict:
         fields = store.normalize_agent({}, read_categories_config(_aggregates_table()), base=agent)
         _check_engineering(fields, enabling=True)
         if agent.get('enabled') is not True:
+            refused = _not_ready({**agent, **fields}, caller)
+            if refused is not None:
+                return refused
             change.update(_run_as(caller))
     updated = store.update_agent(_agents_table(), agent_id, change, updated_by=caller.subject, now=store.utc_now())
     return {'agent': store.agent_view(updated)}
@@ -1434,6 +1444,110 @@ def put_engineering_settings():
         logger.exception('engineering: the hard cap could not be saved')
         raise ServiceUnavailableError('the hard cap could not be saved: retry') from exc
     return saved.view()
+
+
+# Readiness (7.50.00, engineering/readiness.py; docs/autonomous-engineering.md, "Readiness"): whether an engineering
+# agent or a flow template can run here, check by check, for an administrator acting for themselves (404 while the
+# module is off). REST only, like every engineering route (an MCP credential never acts as an administrator). Enable
+# runs the required checks too, and answers 409 with the failing ones.
+NOT_READY = 'the agent is not ready to run: fix the failing checks first (GET /agents/engineering/readiness)'
+
+
+@cache
+def _service_quotas_client() -> Any:
+    import boto3
+    from botocore.config import Config
+
+    return boto3.client('service-quotas', config=Config(connect_timeout=3, read_timeout=5,
+                                                        retries={'total_max_attempts': 2}))
+
+
+@cache
+def _bedrock_control_client() -> Any:
+    """Bedrock's control plane for the models' access (short waits: the reads share a 10-second budget)."""
+    import boto3
+    from botocore.config import Config
+
+    return boto3.client('bedrock', config=Config(connect_timeout=2, read_timeout=3, retries={'total_max_attempts': 1}))
+
+
+def _readiness_ports() -> Any:
+    """The checks' ports on this role's clients (engineering/readiness_aws.py)."""
+    from engineering.readiness_aws import WATERMARKS_TABLE_ENV, AwsReadinessPorts
+    from shared.aws import get_dynamodb_client, get_s3_client
+
+    resource, table = get_dynamodb_resource(), os.environ['ENGINEERING_TABLE']
+    watermarks = os.environ.get(WATERMARKS_TABLE_ENV, '')
+    return AwsReadinessPorts(
+        agents=_agents_table(), aggregates=_aggregates_table(), engineering=resource.Table(table),
+        engineering_client=get_dynamodb_client(), engineering_table=table, s3=get_s3_client(),
+        workspace_bucket=os.environ.get('ENGINEERING_WORKSPACE_BUCKET', ''), quotas=_service_quotas_client,
+        bedrock=_bedrock_control_client, inspect=_invoke_app_tokens,
+        watermarks=resource.Table(watermarks) if watermarks else None)
+
+
+def _readiness_settings() -> Any:
+    """The deployment's settings the checks read: its environment, and each role's card model (the templates)."""
+    from engineering.readiness_aws import settings_from_environment
+    from engineering.skills.templates import bundled
+
+    return settings_from_environment(bundled().card_models(), os.environ.get('AWS_REGION', ''))
+
+
+def _readiness(subject: Any, *, required_only: bool = False) -> Any:
+    from engineering.readiness import REQUIRED, evaluate
+
+    return evaluate(subject, _readiness_ports(), _readiness_settings(), REQUIRED if required_only else None)
+
+
+def _readiness_subject(caller: Caller) -> Any:
+    """``?automation=<agent id>`` (an engineering agent) or ``?flow=<template id>`` (with ``connection`` and
+    ``language`` to ask about, optionally): exactly one of them."""
+    from engineering.readiness_aws import agent_subject, template_subject
+
+    automation, flow = _query('automation'), _query('flow')
+    if (automation is None) == (flow is None):
+        raise ValidationError('name exactly one of automation=<agent id> or flow=<template id>')
+    if automation is not None:
+        agent = _stored_agent(automation)
+        if not store.is_engineering_agent(agent):
+            raise ValidationError('automation names an engineering agent')
+        return agent_subject(agent, _find_workflow(agent.get('workflow_id')), caller.subject)
+    template = next((item for item in engineering_templates.list_templates() if item.get('template_id') == flow), None)
+    if template is None:
+        raise NotFoundError('no such flow template')
+    connection, language = _query('connection') or '', _query('language') or ''
+    from engineering.runtime.egress import REGISTRY_HOSTS
+    from engineering.workspace.layout import CONNECTION
+
+    if connection and not CONNECTION.fullmatch(connection):
+        raise ValidationError('connection is a connection id')
+    if language and language not in REGISTRY_HOSTS:
+        raise ValidationError(f'language is one of {", ".join(sorted(REGISTRY_HOSTS))}')
+    return template_subject(template, caller.subject, connection=connection, language=language)
+
+
+@app.get('/agents/engineering/readiness')
+@tracer.capture_method(capture_response=False)
+def get_engineering_readiness():
+    """``?automation=<agent id>|flow=<template id>[&connection=&language=]`` → ``{subject, ready, checks: [{id,
+    status, detail, fix, docs, required}]}``: every check of engineering/readiness.py; ``ready`` when no required
+    check fails. Administrators acting for themselves only (403 otherwise), 404 while the module is off."""
+    _engineering_on()
+    caller = _caller()
+    require_admin_caller(caller)
+    return _readiness(_readiness_subject(caller)).view()
+
+
+def _not_ready(agent: Mapping[str, Any], caller: Caller) -> Response | None:
+    """Enable's gate (owner decision): 409 ``{error, checks}`` naming the required checks that fail, else None."""
+    from engineering.readiness_aws import agent_subject
+
+    report = _readiness(agent_subject(agent, _find_workflow(agent.get('workflow_id')), caller.subject),
+                        required_only=True)
+    if report.ready:
+        return None
+    return _json(409, {'error': NOT_READY, 'checks': [check.view() for check in report.failing]})
 
 
 # The repository connections (engineering/connectors/connections.py; docs/autonomous-engineering.md, "Repository

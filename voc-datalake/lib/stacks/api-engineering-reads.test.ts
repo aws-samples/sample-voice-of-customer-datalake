@@ -18,9 +18,11 @@ import { ENGINEERING_WORKSPACE_READER_SERVICES } from './dlq-alarms';
 import { engineeringRunCaps } from './engineering-start';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 
-const ENGINEERING_ENV = ['ENGINEERING_AGENTS', 'ENGINEERING_APP_TOKENS_FUNCTION', 'ENGINEERING_BOARD_FUNCTION',
+// (7.50.00: and the readiness checks' settings, api-engineering-readiness.ts)
+const ENGINEERING_ENV = ['ENGINEERING_AGENTS', 'ENGINEERING_AGENT_NETWORK', 'ENGINEERING_APP_TOKENS_FUNCTION',
+  'ENGINEERING_BOARD_FUNCTION', 'ENGINEERING_BUILD_MEMORY_MIB', 'ENGINEERING_IMAGE_LANGUAGES', 'ENGINEERING_MAX_SESSIONS',
   'ENGINEERING_PARAMETER_KEY', 'ENGINEERING_PARAMETER_PREFIX', 'ENGINEERING_RUN_CAP_USD', 'ENGINEERING_RUN_TOKEN_CAP',
-  'ENGINEERING_START_FUNCTION', 'ENGINEERING_TABLE', 'ENGINEERING_WORKSPACE_BUCKET'];
+  'ENGINEERING_START_FUNCTION', 'ENGINEERING_TABLE', 'ENGINEERING_WATERMARKS_TABLE', 'ENGINEERING_WORKSPACE_BUCKET'];
 let cachedOn: VocApiStack | undefined;
 const onStack = (): VocApiStack => {
   cachedOn ??= buildApiStack({ engineeringAgents: true });
@@ -55,10 +57,15 @@ describe('the engineering run reads', { timeout: SYNTH_TIMEOUT_MS }, () => {
   it('grant the agents API reads of the table and the reports, and writes of the skills\' partitions alone', () => {
     const statements = engineeringStatements(on());
     const unconditioned = statements.filter((statement) => statement.condition === undefined);
-    expect(actionsWithPrefix(unconditioned, '')).toStrictEqual(['dynamodb:GetItem', 'dynamodb:Query', 's3:GetObject']);
+    // (7.50.00: and the readiness probe's one create-only put, api-engineering-readiness.test.ts)
+    expect(actionsWithPrefix(unconditioned, '')).toStrictEqual(
+      ['dynamodb:GetItem', 'dynamodb:Query', 's3:GetObject', 's3:PutObject']);
     expect(JSON.stringify(statements)).not.toMatch(/Delete|BatchWrite/);
     const objects = statements.filter((statement) => statement.actions.includes('s3:GetObject'));
     expect(objects.map((statement) => statement.resource)).toStrictEqual([expect.stringMatching(/"\/ws\/default\/reports\/\*"/)]);
+    const puts = statements.filter((statement) => statement.actions.includes('s3:PutObject'));
+    expect(puts.map((statement) => [statement.actions, statement.resource])).toStrictEqual(
+      [[['s3:PutObject'], expect.stringMatching(/"\/ws\/default\/_readiness\/\*"/)]]);
   });
 
   it('read the skills\' history and the scorecards (WS#*#SKILL#*, WS#*#SCORE#*) with the one table read', () => {
@@ -73,7 +80,7 @@ describe('the engineering run reads', { timeout: SYNTH_TIMEOUT_MS }, () => {
   it('write the skills\' partitions with exactly the store\'s actions, keyed by dynamodb:LeadingKeys', () => {
     // (7.08.00: an administrator's accept, reject, rollback and benchmark, the skills store's transactions)
     const writes = policyStatementsOf(on(), 'AgentsLambdaRole').filter((statement) => /Engineering/.test(statement.resource)
-      && statement.actions.some((action) => /Put|Update|ConditionCheck/.test(action)));
+      && statement.actions.some((action) => /^dynamodb:(Put|Update|ConditionCheck)/.test(action)));
     expect(writes.map((statement) => [...statement.actions].sort(byCodeUnit))).toStrictEqual(
       [['dynamodb:ConditionCheckItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem']]);
     expect(writes[0]?.condition).toStrictEqual({
@@ -174,6 +181,8 @@ describe('the engineering run reads', { timeout: SYNTH_TIMEOUT_MS }, () => {
         'kms:GenerateDataKeyWithoutPlaintext', 'kms:ReEncryptFrom', 'kms:ReEncryptTo']],
       [{ StringEquals: via('s3') }, ['kms:Decrypt']],
       [expect.objectContaining({ StringEquals: via('ssm') }), ['kms:Encrypt', 'kms:GenerateDataKey']],
+      // (7.50.00: the readiness probe's create-only put, through S3)
+      [{ StringEquals: via('s3') }, ['kms:GenerateDataKey']],
     ]);
     expect(new Set(keys.map((statement) => statement.resource)).size).toBe(1);
   });

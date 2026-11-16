@@ -29,11 +29,12 @@ budgets, the run journal) and on [memory](memory.md).
 7. [Runtime: one AgentCore session per agent](#runtime-one-agentcore-session-per-agent)
 8. [Reports](#reports)
 9. [Getting better: skills, the coach, the learning loop, memory](#getting-better-skills-the-coach-the-learning-loop-memory)
-10. [Models](#models)
-11. [Trust and safety](#trust-and-safety)
-12. [Evaluation](#evaluation)
-13. [Cost](#cost)
-14. [Phases and status](#phases-and-status)
+10. [Readiness (7.50.00)](#readiness-75000)
+11. [Models](#models)
+12. [Trust and safety](#trust-and-safety)
+13. [Evaluation](#evaluation)
+14. [Cost](#cost)
+15. [Phases and status](#phases-and-status)
 
 ## Large repositories and monorepos
 
@@ -2905,6 +2906,47 @@ so that no role changes or removes the erasure's tombstone and delete record). A
 every scope, not only their own: whatever would name them again (a write, an edit, a confirmation, an approval,
 a forget or a restore, by them as a person or an administrator) is refused before anything is written, so no
 `REF#` row comes back into their deleted partition.
+
+## Readiness (7.50.00)
+
+*Built* (`voc-datalake/lambda/engineering/readiness.py`, pure, its reads behind ports; the Agents API's wiring in
+`readiness_aws.py`). `GET /agents/engineering/readiness?automation=<agent id>` (an engineering agent: its connection,
+language, flow and `github_issue` trigger) or `?flow=<template id>[&connection=<id>&language=<language>]` (a default
+flow, on the connection and language asked about) answers `{subject, ready, checks}`, each check `{id, status,
+detail, fix, docs, required}` with `status` `pass`, `fail`, `warn` or `unknown` (a read that failed, or one this API
+cannot make: never taken for a pass). Administrators acting for themselves only (403 otherwise, an MCP credential
+included: REST only), 404 while the module is off. `ready` is true when no **required** check fails; Engineering
+Enable (`POST /agents/<id>/enable`, and a create or update that turns an engineering agent on) runs the required
+checks and answers 409 `{error, checks}` with the failing ones. A check the subject does not need (the Issues source
+for a flow no issue starts) passes and says so. What a flow needs is its template's `requires` (`dial`, the ways of
+working it runs in; `ci_attestation`; `image`; `issues_source`; `knowledge_pack`); a stored flow without one needs
+what its roles do: a flow with a committer or a PR author a pushing way of working and the CI attestation.
+
+| Check | Required | Reads | Fix |
+|---|---|---|---|
+| `connection` | yes | the agent's stored connection | Agents → Connections, then the agent's Set up |
+| `app_installation` | | the GitHub App installation, through `voc-engineering-app-tokens`' `inspect_installation`, for a connection made through one of the deployment's Apps (`unknown` for a connection with its own App key, which only the broker reads; GitLab: not needed) | add the repository to the installation on GitHub |
+| `ci_attestation` | yes, where the flow pushes | the connection's CI attestation | the CI attestation under Agents → Connections |
+| `ci_protection` | | `unknown`: the broker reads the host's branch rules with the connection's own token at each push; this API holds no host token | protect the default branch with its required checks, and leave `voc-agent/*` unprotected |
+| `image` | yes | the languages with an agent runtime (`-c engineeringImages` with a network) | build and push the image, deploy with its digest ([deployment](deployment.md)) |
+| `pack` | | the connection's approved knowledge pack, where the flow requires one | the Understand flow, then approve its pack |
+| `tenets` | | where the flow requires them: `warn`, the tenets store arrives in a later release | write the repository's TENETS.md by hand meanwhile |
+| `issues_source` | | the deployment-wide GitHub Issues source's watermark of the repository (`voc-watermarks`, `github_issues#repo#<owner/name>`) | add the repository to Settings → Data sources (deployment) → GitHub Issues |
+| `issue_label` | | the trigger's label (a public repository needs one); whether it exists on the repository is `unknown` here | create the label, and let only maintainers put it on an issue |
+| `dial` | yes | the STORED way of working of the person the runs follow (the enabling administrator; no row is Human-driven, which pushes nothing), against the flow's `requires.dial` | Administration → Users |
+| `budget` | yes | the flow's monthly budget | the flow's Workflow tab |
+| `hard_cap` | | the hard cap's setting and this month's spend of the flow (`warn` while it is off) | Agents → Spend |
+| `bedrock_models` | yes | Bedrock access (`GetFoundationModelAvailability`) of every model the flow's roles run on (their cards' models, a step's own `model`, Learn's) | Model access in the Bedrock console |
+| `agentcore_quota` | | AgentCore's "Active Session Workloads per Account" (`L-3E5722B2`) against `-c engineeringMaxSessions` | a quota increase, or a lower setting |
+| `memory_setting` | | `-c engineeringBuildMemoryMiB`: 8192 fails in a region whose CloudFormation does not take a runtime's resource configuration | deploy with `0` |
+| `network` | | `-c engineeringAgentNetwork` | name the sessions' private subnets |
+| `session_storage` | | a probe of the workspace bucket: one create-only put of its one object under `ws/default/_readiness/*` (`readiness_aws.py` `PROBE_KEY`; answered, or refused as already there), then the same put without `If-None-Match`, which the bucket's policy must refuse | redeploy VocCoreStack |
+
+The probe's one object is the deployment's, not a run's (no run key, nothing reads it); it is kept like every object
+of the bucket. The Agents API's role gains, with the module on, `bedrock:GetFoundationModelAvailability` and
+`servicequotas:GetServiceQuota` (both account-level: they take no resource ARN), `dynamodb:GetItem` of
+`voc-watermarks`' `github_issues#repo#*` keys only, and `s3:PutObject` on `ws/default/_readiness/*` only with the key
+through S3; nothing else.
 
 ## Models
 

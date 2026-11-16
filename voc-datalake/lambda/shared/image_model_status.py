@@ -33,6 +33,7 @@ from shared import avatar_failure as af
 from shared.avatar import avatars_enabled, get_image_model_config
 from shared.image_model_quota import ImageQuota, QuotaState, image_quota
 from shared.logging import logger
+from shared.model_access import AccessStatus, access_status, availability_fields
 from shared.model_capacity import STATUS_MESSAGES, ProbeResult
 from shared.timestamps import now_iso
 
@@ -43,7 +44,6 @@ IMAGE_MODEL_LABELS: Final = {
     'stability.sd3-5-large-v1:0': 'Stable Diffusion 3.5 Large',
 }
 
-AccessStatus = Literal['available', 'no_access', 'not_subscribed', 'not_in_region', 'unknown']
 
 ACCESS_CACHE_SECONDS: Final = 300
 # A fixed, harmless prompt: the test is about the model answering, not about a persona.
@@ -102,38 +102,8 @@ def image_model_info() -> ImageModelInfo:
     }
 
 
-# Our field name -> the GetFoundationModelAvailability field it is read from (a plain string there).
-_AVAILABILITY_FIELDS: Final = {
-    'authorization': 'authorizationStatus',
-    'entitlement': 'entitlementAvailability',
-    'region_availability': 'regionAvailability',
-}
-
-
-def _availability_fields(availability: dict) -> dict[str, str]:
-    """The four GetFoundationModelAvailability fields as plain strings ('' when absent)."""
-    agreement = availability.get('agreementAvailability')
-    fields = {'agreement': str(agreement.get('status', '')) if isinstance(agreement, dict) else ''}
-    fields.update((ours, str(availability.get(theirs, ''))) for ours, theirs in _AVAILABILITY_FIELDS.items())
-    return fields
-
-
-def access_status(availability: dict) -> AccessStatus:
-    """Map a GetFoundationModelAvailability answer to the access vocabulary (region first, then IAM, then EULA)."""
-    fields = _availability_fields(availability)
-    if fields['region_availability'] == 'NOT_AVAILABLE':
-        return 'not_in_region'
-    if fields['authorization'] == 'NOT_AUTHORIZED':
-        return 'no_access'
-    if fields['agreement'] not in ('', 'AVAILABLE') or fields['entitlement'] == 'NOT_AVAILABLE':
-        return 'not_subscribed'
-    if fields['region_availability'] == 'AVAILABLE' and fields['authorization'] == 'AUTHORIZED':
-        return 'available'
-    return 'unknown'
-
-
 def _access_record(status: AccessStatus, availability: dict) -> ImageAccess:
-    fields = _availability_fields(availability)
+    fields = availability_fields(availability)
     entitlement, region_availability = fields['entitlement'], fields['region_availability']
     return {
         'status': status,

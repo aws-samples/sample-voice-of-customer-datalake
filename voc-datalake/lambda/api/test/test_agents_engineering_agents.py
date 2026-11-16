@@ -7,6 +7,7 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
+import readiness_fakes
 from agents_handler_fixtures import ADMIN, USER
 from agents_handler_fixtures import api as _api
 from agents_handler_fixtures import call as _call
@@ -38,6 +39,8 @@ def env(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Any, Start]]:
     client = Start({})
     monkeypatch.setattr(agents_handler, '_start_client', lambda: client)
     with _api() as agents_env:
+        # Every readiness check ready (7.50.00: Enable runs the required ones; test_agents_engineering_readiness.py)
+        readiness_fakes.use(monkeypatch, readiness_fakes.ReadyPorts(agents=agents_env.agents))
         for connection, repository, host, private in (('shop', 'example-org/shop', 'github', False),
                                                       ('inside', 'example-org/inside', 'github', True),
                                                       ('lab', 'example-org/payments/shop', 'gitlab', False)):

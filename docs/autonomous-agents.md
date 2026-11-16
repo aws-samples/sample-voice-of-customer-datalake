@@ -83,7 +83,11 @@ language before they can be enabled (their card says so, on the Agents list for 
    token (each run then reads with installation tokens of `{issues: read, metadata: read}` alone). A pasted token
    still works.
 4. **Set up** on Bug fixer's card (on the Agents list or its page): the connection, the language and the monthly budget ($50 prefilled), then
-   **Enable**. It runs as you from then.
+   **Enable**. It runs as you from then. Enable checks first what a run needs (7.50.00, the connection, the CI
+   attestation, an image for the language, Bedrock access to every model its flow runs on, the budget and your stored
+   way of working: AI-assisted or AI-driven for a flow that pushes), and answers 409 naming each that fails;
+   `GET /agents/engineering/readiness?automation=<agent id>` lists every check, the advisory ones too
+   ([autonomous-engineering.md](autonomous-engineering.md#readiness-75000)).
 5. **Label an issue** `voc-agent`. Once the source has ingested it, the next heartbeat (every 15 minutes) starts one
    run on it. On a public repository the label is the only way in; on a private one (`repository_private`) the
    trigger may also take a trusted author's issue (`trusted_authors`, off as seeded) or, with its label cleared, any
@@ -323,6 +327,7 @@ until it does, they answer 503 (the page offers them only where the bus and the 
 | POST | `…/messages` `{to: 'conductor' \| 'agent', agent?, text, thread_id?}` | a person's answer (`msg.answer`, at most 1 KB, refused if it holds something shaped like a credential) to the run's conductor or one of its agents, on the thread it answers (a new one if left out); the conversation records it |
 | GET | `/agents/engineering/settings` | the administrators' hard cap on engineering runs (`engineering/settings.py`, its row in voc-agents): `{hard_cap, updated_at, updated_by}`, off by default (docs/autonomous-engineering.md, Cost). Administrators only (a delegated credential gets 403); 404 while the module is off; 503 when the read fails (retry) |
 | PUT | `/agents/engineering/settings` | `{hard_cap: true \| false}`: an administrator turns the hard cap on or off, saved with its history row; the runtime reads it at a budgeted start. 400 for any other body, 403 for anyone but a signed-in administrator, 404 while the module is off, 503 when the write fails |
+| GET | `/agents/engineering/readiness?automation=<agent id>` or `?flow=<template id>[&connection=&language=]` | whether an engineering agent, or a default flow on a connection and language, can run here (7.50.00, [autonomous-engineering.md](autonomous-engineering.md#readiness-75000)): `{subject, ready, checks: [{id, status, detail, fix, docs, required}]}`, `ready` when no required check fails; Enable runs the required ones and answers 409 `{error, checks}` with those that fail. 400 for neither or both of `automation` and `flow`, an agent without engineering settings, a bad connection id or language; 404 for an unknown agent or template and while the module is off; 403 for anyone but an administrator acting for themselves |
 | GET | `/agents/engineering/spend?month=YYYY-MM&by=&workflow=` | what the runs spent in a month (default this one, UTC), from the spend ledger (docs/autonomous-engineering.md, Cost): its totals (dollars priced, tokens in and out, session seconds as `microvm_seconds`) and the same per group, `by` workflow (default), repo, run, agent (as `<run>/<agent>`: each run numbers its own), model or day, biggest first, only one workflow's with `workflow`; one Query of the month, `truncated` past 20,000 rows. 400 for a bad month, grouping or workflow, 503 when the table refuses the read (retry) |
 
 A failed call to the supervisor or the bus answers 503 (retry: the signal is idempotent), and so does a deployment
