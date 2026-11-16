@@ -1,8 +1,8 @@
-"""voc-retention reaches the deployment's own projects (7.44.00, projects 3g-d; TENETS.md D5; docs/multi-workspace.md,
+"""voc-retention reaches the deployment's own projects (7.47.00, projects 3g-d; TENETS.md D5; docs/multi-workspace.md,
 the project plan's 3g-d).
 
 End to end in moto. The deployment's rows are written by their own stores (``create_share``, ``revoke_share``,
-``put_thread``, and a project's create, without a workspace), which since 7.44.00 also list the deployment's links
+``put_thread``, and a project's create, without a workspace), which since 7.47.00 also list the deployment's links
 (``DOCSHARE_IDS``), commented series (``COMMENT_SERIES_IDS``) and projects (``PROJECT_IDS``); older rows (no registry
 row) are listed by the backfill (scripts/projects/backfill_review_registries.py). An erasure by email de-identifies the
 address in a deployment link's audience (a revoked one too), the threads and replies (a deleted project's too), a
@@ -74,7 +74,7 @@ from shared.ws_repo import OutOfScopeError
 
 #: A complete marker, as the backfill writes it (an incomplete one reads as absent).
 MARKER: Final = {'pk': 'DOCSHARE_IDS', 'sk': 'MIGRATION#review-registries', 'completed_at': STAMP, 'links_found': 0,
-                 'series_found': 0, 'projects_found': 0, 'release': '7.44.0'}
+                 'series_found': 0, 'projects_found': 0, 'release': '7.47.0'}
 #: The rows the seeded erasure of REVIEWER changes: two links, four threads, the deleted project's META, a persona.
 CHANGED: Final = 8
 
@@ -95,8 +95,8 @@ def backfill():
 
 
 def ready_writers(updated: datetime) -> list[dict[str, Any]]:
-    """The two writers of links and threads as the backfill reads them, both on 7.44.0, last updated ``updated``."""
-    return [{'name': f'{base}-1-r', 'base': base, 'version': '7.44.0', 'last_modified': updated,
+    """The two writers of links and threads as the backfill reads them, both on 7.47.0, last updated ``updated``."""
+    return [{'name': f'{base}-1-r', 'base': base, 'version': '7.47.0', 'last_modified': updated,
              'status': 'Successful', 'timeout': 900}
             for base in ('voc-projects-api', 'voc-projects-assist')]
 
@@ -245,7 +245,7 @@ class TestAnErasureByEmailReachesTheDeploymentsProjects:
 class TestTheRowsMadeBeforeTheRegistries:
     @staticmethod
     def _legacy(aws) -> dict[str, str]:
-        """Rows as the stores wrote them before 7.44.00, with no registry row: a revoked link whose series' pointer
+        """Rows as the stores wrote them before 7.47.00, with no registry row: a revoked link whose series' pointer
         is gone, a deleted project's reviewer thread, and that project's tombstoned META (off the index, as the
         delete's fence leaves it, naming the reviewer as its owner)."""
         revoked = 'shr_' + '7' * 32
@@ -437,7 +437,7 @@ class TestTheDeploymentsWalkHandsOver:
 
 
 class TestTheStoresWriteTheRegistries:
-    """Since 7.44.00 a deployment's link create and a series' first thread list them; a workspace's never do."""
+    """Since 7.47.00 a deployment's link create and a series' first thread list them; a workspace's never do."""
 
     def test_a_link_and_its_series_are_listed_with_the_link_and_the_revoke_keeps_them(self, aws):
         share, _ = ds.create_share(aws['projects'], project_id='p1', series=SERIES, document_id='d',

@@ -211,6 +211,20 @@ class TestTheHandler:
         assert metadata['fetched_at'].startswith('20')
         assert (item['text'], item['url'], metadata['page']) == ('Low latency.', target_config()['url'], 1)
 
+    def test_a_review_relayed_twice_in_one_run_is_queued_once(self):
+        body = 'Routing is flexible and the agents liked the softphone from the first day.'
+        reviews = [review(body, date='2026-11-02', title='Flexible routing'),
+                   review(f'{body} Reporting took a while to learn.', date='2026-11-02', title='Flexible routing!'),
+                   review('Reporting is clunky.', date='2026-11-02', title='Clunky reporting')]
+        found = WebSearchRead(reviews=page_reviews(json.dumps({'reviews': reviews}), 9)[2], model='m', fetched=True)
+        assert len(found.reviews) == 3  # the reader keeps both copies: their texts differ
+        with web_search_run([SEARCH_TARGET], found) as (run, _start, _call):
+            items = list(run.fetch_new_items())
+        assert [(item['title'], item['text']) for item in items] == [
+            ('Flexible routing', body), ('Clunky reporting', 'Reporting is clunky.')]
+        assert len({item['id'] for item in items}) == 2
+        assert run.reads[0]['reviews'] == 2
+
     def test_a_refusal_is_reported_on_the_target(self):
         with web_search_run([SEARCH_TARGET], WebSearchError('HTTP 403: denied')) as (run, _start, _call):
             assert list(run.fetch_new_items()) == []

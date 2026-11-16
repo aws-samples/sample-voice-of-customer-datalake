@@ -170,7 +170,7 @@ class TestErasureReachesWorkspaces:
     @staticmethod
     def _erase_jane_citing(aws, context: Any, cited: list[str]) -> tuple[dict, Any]:
         """A deployment project's persona citing ``cited``; erase Jane's reviews, watching the deployment's lineage
-        pass (its steps, by Query since 7.44.00)."""
+        pass (its steps, by Query since 7.47.00)."""
         aws['projects'].put_item(Item={'pk': 'PROJECT#p1', 'sk': 'META', 'gsi1pk': 'TYPE#PROJECT', 'gsi1sk': 'x'})
         aws['projects'].put_item(Item={'pk': 'PROJECT#p1', 'sk': 'PERSONA#a', 'input_feedback_ids': cited})
         with patch.object(lineage, 'deployment_step', wraps=lineage.deployment_step) as scan:

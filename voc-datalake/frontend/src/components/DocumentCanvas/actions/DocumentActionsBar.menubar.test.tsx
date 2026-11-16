@@ -2,7 +2,7 @@
  * The document page's menu bar (menuBar.ts, canvasMenus.ts): Document · Edit · Format · Insert · View on an editable
  * canvas, Document and View for a viewer; each entry dispatches the canvas's own action (the editor's commands
  * through its handle, the View switches, Rename); the menus are WAI-ARIA menu buttons and the bar's arrow keys walk
- * them; the comments button toggles the panel and counts the open threads.
+ * them; the toolbar's Comments button toggles the panel and counts the open threads.
  */
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -49,7 +49,7 @@ function renderBar({ editable = true, canEdit = true, view = viewControls(), ope
     <QueryClientProvider client={createTestQueryClient()}>
       <DocumentActionsBar project={project} document={custom} canEdit={canEdit} state={state} share={null} threads={null}
         onDeleteDoc={vi.fn()} isDeleting={false} focus={focus} focusButtonRef={createRef()} view={view}
-        openThreads={openThreads} onRename={onRename} />
+        openThreads={openThreads} onRename={onRename} viewing={null} onChooseVersion={vi.fn()} review={null} />
     </QueryClientProvider>,
   )
   return { focus, onRename, view, user: userEvent.setup() }
@@ -140,7 +140,7 @@ describe('DocumentActionsBar: the menu bar', () => {
 
   it('offers no Comments in View for a document without a comments panel, and no comments button', async () => {
     const { user } = renderBar({ view: viewControls({ comments: undefined }) })
-    expect(screen.queryByTestId('canvas-comments-button')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Comments/ })).not.toBeInTheDocument()
     await user.click(menuButton(bar.view))
     expect(screen.queryByRole('menuitemcheckbox', { name: bar.comments })).not.toBeInTheDocument()
   })
@@ -181,18 +181,18 @@ describe('DocumentActionsBar: the menu bar', () => {
   })
 })
 
-describe('DocumentActionsBar: the comments button', () => {
-  it('counts the open threads and toggles the panel, pressed while it shows', async () => {
+describe('DocumentActionsBar: the toolbar\'s Comments button', () => {
+  it('counts the open threads (in its name and its badge) and toggles the panel, pressed while it shows', async () => {
     const toggle = vi.fn()
     const { user } = renderBar({ openThreads: 3, view: viewControls({ comments: { on: true, toggle } }) })
     const button = screen.getByRole('button', { name: 'Comments, 3 open' })
-    expect([button.getAttribute('aria-pressed'), button.textContent]).toStrictEqual(['true', '3'])
+    expect([button.getAttribute('aria-pressed'), within(button).getByTestId('toolbar-badge').textContent]).toStrictEqual(['true', '3'])
     await user.click(button)
     expect(toggle).toHaveBeenCalledTimes(1)
   })
 
   it('is not pressed while the panel is hidden', () => {
     renderBar({ view: viewControls({ comments: { on: false, toggle: vi.fn() } }) })
-    expect(screen.getByTestId('canvas-comments-button')).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: 'Comments, 2 open' })).toHaveAttribute('aria-pressed', 'false')
   })
 })

@@ -1,6 +1,6 @@
 /**
  * The review registries' backfill marker is deleted when the release gains or loses the resource that holds it
- * (review-registries-marker.ts, in VocCoreStack, 7.44.00, projects 3g-d), by a policy that may delete in
+ * (review-registries-marker.ts, in VocCoreStack, 7.47.00, projects 3g-d), by a policy that may delete in
  * `DOCSHARE_IDS` only; and the functions that run the projects handler, the one entry that writes review links,
  * comment threads and projects (every API bundle ships `shared/`, so the entry, not the files, tells a writer), are
  * exactly the two the backfill waits for (scripts/projects/backfill_review_registries.py `WRITER_NAMES`).

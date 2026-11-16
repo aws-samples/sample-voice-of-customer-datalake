@@ -91,6 +91,8 @@ NOT_EXPORTED: Final = {
     'circuit_breaker': "Operational: the plugins' failure counts and breaker rows (FAILURES#, CIRCUIT#).",
     'logs': 'Operational: the validation and processing logs (LOGS#).',
     'watermarks': "Operational: each plugin's ingestion watermarks (voc-watermarks).",
+    'web_review_methods': ('Operational: which method read each review site in this workspace (WEB_REVIEWS#METHODS, '
+                           'no review content); its runs learn them again.'),
     'idempotency': 'Operational: the processing claims (voc-idempotency).',
     'form_lookups': "Routing: each form's FORM# lookup row (the forms themselves are in feedback_forms).",
     'user_rows': "Routing: each member's USER# row behind their workspace list (the members are in members).",

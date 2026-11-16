@@ -482,7 +482,7 @@ class TestCreateProject:
             'owner_sub': 'owner-sub', 'owner_username': 'owner',
             'owner_email': 'owner@example.com', 'members': {}, 'visibility': 'private',
         }
-        # The deployment's project registry row first (7.44.00), then the META.
+        # The deployment's project registry row first (7.47.00), then the META.
         assert table.put_item.call_args_list == [
             call(Item={'pk': 'PROJECT_IDS', 'sk': project_id, 'created_at': FIXED_ISO},
                  ConditionExpression='attribute_not_exists(pk)'),

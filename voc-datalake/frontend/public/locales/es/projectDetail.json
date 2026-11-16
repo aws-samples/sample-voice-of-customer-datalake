@@ -13,6 +13,13 @@
   },
   "documents": {
     "deleteDocument": "Eliminar documento",
+    "card": {
+      "more": "Más acciones",
+      "menu": "Acciones para «{{title}}»",
+      "open": "Abrir",
+      "renameFailed": "No se pudo guardar el nuevo nombre. Inténtelo de nuevo.",
+      "renameConflict": "El documento cambió mientras tanto, así que el nuevo nombre no se guardó. Inténtelo de nuevo."
+    },
     "derivation": {
       "builtFrom": "Creado a partir de",
       "feedbackUsed_one": "{{count, number}} comentario utilizado",
@@ -904,7 +911,6 @@
         "undoing": "Restaurando la versión anterior…",
         "undone": "Deshecho: la versión anterior se ha restaurado como una versión nueva."
       },
-      "button": "Revisar a partir de los comentarios",
       "close": "Cerrar",
       "failed": "La revisión a partir de los comentarios ha fallado. Inténtalo de nuevo.",
       "filterAddressed": "Atendidos",
@@ -1003,6 +1009,29 @@
       "minutes_one": "{{count, number}} min de lectura",
       "minutes_other": "{{count, number}} min de lectura",
       "wordsAndMinutes": "{{words}} · {{minutes}}"
+    },
+    "toolbar": {
+      "label": "Herramientas del documento",
+      "more": "Más herramientas",
+      "share": "Compartir",
+      "aiReview": "Revisión con IA",
+      "aiReviewNoPersonas": "Añade personas a este proyecto para pedirles una revisión.",
+      "aiRewrite": "Reescritura con IA",
+      "historyHint": "Todas las versiones de este documento: abre, compara o restaura una",
+      "contentsHint": "Mostrar u ocultar el índice",
+      "fullWidthHint": "Que el texto ocupe todo el ancho",
+      "version": "Versión {{version}}",
+      "versionHint": "Leer una versión anterior",
+      "versionsLoading": "Cargando las versiones…",
+      "latest": "Última"
+    },
+    "versions": {
+      "bannerLabel": "Versión anterior",
+      "viewing": "Viendo {{version}} de {{latest}}",
+      "viewingOne": "Viendo {{version}}",
+      "readOnly": "solo lectura",
+      "backToLatest": "Volver a la última",
+      "announce": "Se muestra {{version}}, una versión anterior, en solo lectura."
     }
   }
 }

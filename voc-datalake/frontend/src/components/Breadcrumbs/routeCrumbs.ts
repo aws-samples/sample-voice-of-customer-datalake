@@ -65,6 +65,12 @@ export const SEGMENT_CRUMBS: Readonly<Partial<Record<string, RouteCrumb>>> = {
   'templates': { labelKey: 'common:breadcrumbs.templates', path: '/agents?tab=workflows' },
   // `/agents/engineering/:runId` — no list of engineering runs yet, so the crumb goes back to the agents.
   'engineering': { labelKey: 'common:breadcrumbs.engineering', path: '/agents' },
+  // `/agents/connections/github/created` and `…/installed`, where GitHub sends an administrator back from the
+  // deployment's GitHub App: both crumbs above the page go to the Connections tab, where the App is managed.
+  'connections': { labelKey: 'common:breadcrumbs.connections', path: '/agents?tab=connections' },
+  'github': { labelKey: 'common:breadcrumbs.github', path: '/agents?tab=connections' },
+  'created': { labelKey: 'common:breadcrumbs.githubAppCreated' },
+  'installed': { labelKey: 'common:breadcrumbs.githubAppInstalled' },
   'connect': { labelKey: 'common:breadcrumbs.connect' },
   // `/oauth/authorize`, the MCP sign-in consent: its parent is Connect, where the sign-in is managed.
   'oauth': { labelKey: 'common:breadcrumbs.connect', path: '/connect' },
@@ -108,6 +114,16 @@ export interface Crumb {
   label: string
   path: string
   isHome: boolean
+}
+
+/**
+ * The segments of `pathname` the trail shows. A project page's tab, document, older version and full screen
+ * (`/projects/<id>/documents/<docId>/v/<n>/focus`, pages/ProjectDetail/projectPaths.ts) are places inside the page,
+ * which its tabs and toolbar show: the trail ends at the project.
+ */
+export function trailSegments(pathname: string): string[] {
+  const segments = pathname.split('/').filter(Boolean)
+  return segments[0] === 'projects' && segments.length > 2 ? segments.slice(0, 2) : segments
 }
 
 /**

@@ -10,6 +10,7 @@
  * @module components/DocumentCanvas/revise/reviseChanges
  */
 import { commonPrefixLength } from '../../../utils/commonPrefix'
+import type { TFunction } from 'i18next'
 import type { CommentThread, ReviseChange } from '../../../api/documentReviewSchema'
 
 /**
@@ -129,3 +130,13 @@ export function keptChanges(accepted: readonly ReviseChange[], placed: Placed, s
 /** The threads some changes answer, each once. */
 export const threadIdsOf = (changes: readonly ReviseChange[]): readonly string[] =>
   [...new Set(changes.flatMap((change) => change.thread_ids))]
+
+/**
+ * Why a pass cannot start (the first that applies), or null: no thread to take (`available`: threadsToConsider), or
+ * accepted changes of an earlier pass waiting for their save (`unsaved`: useRevisePass's `holdsAccepted`; a new pass
+ * would lose their marking). The toolbar's AI rewrite says it in its tooltip.
+ */
+export function reviseBlockedReason(available: number, unsaved: boolean, t: TFunction<'projectDetail'>): string | null {
+  if (available === 0) return t('canvas.revise.noThreads')
+  return unsaved ? t('canvas.revise.saveFirst') : null
+}

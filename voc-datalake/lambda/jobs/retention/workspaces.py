@@ -119,7 +119,7 @@ def projects_keys(scope: WorkspaceScope | None) -> tuple[str, str]:
 
 
 def deployment_found(projects_table: Any) -> str:
-    """How a walk of the deployment finds its links, series and projects (since 7.44.00, 3g-d; a deployment cursor's
+    """How a walk of the deployment finds its links, series and projects (since 7.47.00, 3g-d; a deployment cursor's
     ``found``): ``FOUND_REGISTRY`` once the backfill's marker is there and complete (one strongly consistent Query,
     projected to what ``review_registries.marker_complete`` judges), else ``FOUND_SCAN``, the backfill's own Scans."""
     rows, _ = query_page(table_view(None, projects_table), DEPLOYMENT_LINK_REGISTRY_PK, None, ConsistentRead=True,
@@ -151,7 +151,7 @@ def scan(run: dict[str, Any], projects_table: Any, kind: str, start: object,
 def registry_step(projects_table: Any, run: dict[str, Any], scope: WorkspaceScope | None, at: Mapping[str, Any],
                   **starting: Any) -> dict[str, Any]:
     """The scope's next page of projects, as every walk reads it: a workspace's registry, or (``scope`` None, since
-    7.44.00) the deployment's, ``PROJECT_IDS`` (shared/project_walk.py ``registry_page``), or until the backfill ran
+    7.47.00) the deployment's, ``PROJECT_IDS`` (shared/project_walk.py ``registry_page``), or until the backfill ran
     (the cursor's ``found``) a page of its ``PROJECTS`` Scan; every project shaped like one, a deleted or half-deleted
     one too (its rows, or its kept ``META``, stay; its delete leaves its registry row), a malformed row counted
     (``project_ids_malformed``); ``starting``: the per-project part of the cursor as the page's first project starts."""

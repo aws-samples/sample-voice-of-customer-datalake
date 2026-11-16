@@ -1,35 +1,41 @@
 /**
  * @fileoverview The document page's top bar, an editing canvas's: its menu bar (Document · Edit · Format · Insert ·
- * View; menuBar.ts), the save status, then the comments button (a PR/FAQ or PRD: the panel's toggle with its open
- * threads), Discard and Save, and "Full screen" (the focus view); the stale-save conflict under it.
+ * View; menuBar.ts), the save status, Discard and Save, then the icon toolbar (DocumentToolbar: the version picker,
+ * History, AI review, AI rewrite, Comments, Contents, Full width, Full screen, Share); the stale-save conflict under it.
  *
  * Document is DocumentMenu (Save, Rename, Share, every export, History, Delete); Edit, Format and Insert are the
- * editor's own actions (canvasMenus.ts), offered on an editable canvas only; View switches the comments panel, the
- * outline, the width and full screen. A viewer sees Document (the exports and History only: every other control
- * would 403), View, the status and Full screen. Export always exports the SAVED version (what the link, the review
- * page and the assistant read); while the canvas holds unsaved changes the menu says so. On a phone the bar wraps,
- * and while there is something to save, Discard and Save sit in a bar fixed to the bottom of the screen, registered
- * as the bottom safe area (components/StickyActionBar/actionBarRegistry) so the assistant launcher lifts above it.
+ * editor's own actions (canvasMenus.ts), offered on an editable canvas only (not while an older version is on screen);
+ * View switches the comments panel, the outline, the width and full screen, which the toolbar switches too (one state,
+ * two doors). Share and History are one dialog each, whichever door opens it (`DocumentDialogs`). A viewer sees
+ * Document (the exports and History only: every other control would 403), View, the status and the toolbar without
+ * Share and the AI flows. Export always exports the SAVED version (what the link, the review page and the assistant
+ * read); while the canvas holds unsaved changes the menu says so. On a phone the bar wraps, and while there is
+ * something to save, Discard and Save sit in a bar fixed to the bottom of the screen, registered as the bottom safe
+ * area (components/StickyActionBar/actionBarRegistry) so the assistant launcher lifts above it.
  *
  * @module components/DocumentCanvas/actions/DocumentActionsBar
  */
 import clsx from 'clsx'
-import { Loader2, Maximize2, MessageSquare, Minimize2, Save, Undo2 } from 'lucide-react'
-import { useRef } from 'react'
+import { Loader2, Save, Undo2 } from 'lucide-react'
+import { useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNow } from '../../../hooks/useNow'
 import { useRegisterActionBar } from '../../StickyActionBar/actionBarRegistry'
 import { isVersionManagedDocument } from '../../../api/documentLineage'
 import { ConflictBanner, ReviseRefusedBanner } from './ConflictBanner'
-import DocumentMenu from './DocumentMenu'
+import DocumentMenu, { DocumentDialogs } from './DocumentMenu'
+import { historyOffered, shareOffered } from './documentOffers'
+import DocumentToolbar from './DocumentToolbar'
 import CanvasMenu from './CanvasMenu'
 import { editEntries, formatEntries, insertEntries, viewEntries, type CanvasViewControls } from './canvasMenus'
 import { onMenuBarKeyDown } from './menuBar'
 import { saveIgnoringFailure } from '../../UnsavedChangesGuard/useSnapshotGuard'
 import { formatRelativeDate } from '../../../utils/dateUtils'
-import type { DocumentMenuProps } from './DocumentMenu'
+import type { DocumentDialog, DocumentMenuProps } from './DocumentMenu'
 import type { CanvasDocument } from './useCanvasDocument'
+import type { ReviewActions } from './toolbarItems'
+import type { VersionChoice } from './versionChoices'
 import type { FocusViewControls } from '../page/useFocusView'
 import type { ProjectDocument } from '../../../api/types'
 
@@ -40,8 +46,14 @@ interface DocumentActionsBarProps extends DocumentMenuProps {
   readonly focusButtonRef: RefObject<HTMLButtonElement | null>
   /** What View switches (absent: no View menu, as in a spec of the bar alone). */
   readonly view?: CanvasViewControls
-  /** The open comment threads, for the comments button (absent: the document has no comments panel). */
+  /** The open comment threads, for the Comments button (absent: the document has no comments panel). */
   readonly openThreads?: number
+  /** The number of the older version on screen (`/v/<n>`), null: the document's own. */
+  readonly viewing: number | null
+  /** A version chosen in the toolbar's picker. */
+  readonly onChooseVersion: (choice: VersionChoice) => void
+  /** The AI flows of a PR/FAQ or PRD, for whoever may run them (else null). */
+  readonly review: ReviewActions | null
 }
 
 /** The stored version's number: a PRD / PR/FAQ series version, or a research / custom edit count. */
@@ -92,37 +104,10 @@ function SaveButtons({ state }: Readonly<{ state: CanvasDocument }>) {
   )
 }
 
-/** "Full screen": a toggle button (its name stays, `aria-pressed` says whether the focus view is on). */
-function FocusButton({ active, onToggle, buttonRef }: Readonly<{
-  active: boolean; onToggle: () => void; buttonRef: RefObject<HTMLButtonElement | null>
-}>) {
-  const { t } = useTranslation('projectDetail')
-  const Icon = active ? Minimize2 : Maximize2
-  return (
-    <button ref={buttonRef} type="button" className="icon-btn p-2 rounded-lg" aria-pressed={active}
-      aria-label={t('canvas.focus.button')} title={t('canvas.focus.hint')} aria-keyshortcuts="Control+Shift+F Meta+Shift+F"
-      onClick={onToggle} data-testid="canvas-focus-button">
-      <Icon size={16} aria-hidden="true" />
-    </button>
-  )
-}
-
-/** The comments panel's toggle: its icon and the open threads; pressed while the panel shows. */
-function CommentsButton({ open, count, onToggle }: Readonly<{ open: boolean; count: number; onToggle: () => void }>) {
-  const { t } = useTranslation('projectDetail')
-  return (
-    <button type="button" className="btn btn-ghost btn-sm" aria-pressed={open} onClick={onToggle}
-      aria-label={t('canvas.menubar.commentsButton', { count })} title={t('canvas.menubar.commentsHint')}
-      data-testid="canvas-comments-button">
-      <MessageSquare size={14} aria-hidden="true" />
-      <span aria-hidden="true" className="font-mono">{count}</span>
-    </button>
-  )
-}
-
 /** Document, then (an editable canvas) Edit, Format and Insert, then View: one row of menus the arrow keys walk. */
-function MenuBar({ menu, focus, view }: Readonly<{
-  menu: DocumentMenuProps; focus: FocusViewControls; view?: CanvasViewControls
+function MenuBar({ menu, focus, view, editing, onOpenDialog }: Readonly<{
+  menu: DocumentMenuProps; focus: FocusViewControls; view?: CanvasViewControls; editing: boolean
+  onOpenDialog: (dialog: DocumentDialog) => void
 }>) {
   const { t } = useTranslation('projectDetail')
   const { state } = menu
@@ -131,8 +116,8 @@ function MenuBar({ menu, focus, view }: Readonly<{
   return (
     <div role="group" aria-label={t('canvas.menubar.label')} data-testid="document-menubar" onKeyDown={onMenuBarKeyDown}
       className="flex flex-wrap items-center gap-0.5">
-      <DocumentMenu {...menu} />
-      {state.editable ? (
+      <DocumentMenu {...menu} onOpenDialog={onOpenDialog} />
+      {editing ? (
         <>
           <CanvasMenu label={t('canvas.menubar.edit')} entries={() => editEntries(handle, t)} />
           <CanvasMenu label={t('canvas.menubar.format')} entries={() => formatEntries(handle, t)} />
@@ -144,29 +129,36 @@ function MenuBar({ menu, focus, view }: Readonly<{
   )
 }
 
-export default function DocumentActionsBar({ focus, focusButtonRef, view, openThreads, ...menu }: DocumentActionsBarProps) {
+export default function DocumentActionsBar({
+  focus, focusButtonRef, view, openThreads, viewing, onChooseVersion, review, ...menu
+}: DocumentActionsBarProps) {
   const { t } = useTranslation('projectDetail')
-  const { document, state } = menu
-  const comments = view?.comments
+  const { project, document, canEdit, state, share } = menu
+  const [dialog, setDialog] = useState<DocumentDialog | null>(null)
+  const offeredShare = shareOffered(canEdit, share)
+  // The editor's own menus write the text: not while an older version is on screen (the text is not in view).
+  const editing = state.editable && viewing === null
   return (
     <div className="space-y-2">
       <div role="group" aria-label={t('canvas.actions.toolbarLabel')} data-testid="document-actions-bar"
         className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <MenuBar menu={menu} focus={focus} view={view} />
+        <MenuBar menu={menu} focus={focus} view={view} editing={editing} onOpenDialog={setDialog} />
         <SaveStatus document={document} state={state} />
         {/* One group at the row's end: on a phone it wraps under the status as a whole. */}
         <div data-testid="document-actions-controls" className="ml-auto flex flex-wrap items-center justify-end gap-2">
-          {comments === undefined || openThreads === undefined ? null : (
-            <CommentsButton open={comments.on} count={openThreads} onToggle={comments.toggle} />
-          )}
           {/* The canvas's own rule: an editor of the project, a document edited on its canvas. */}
           {state.editable ? <SaveButtons state={state} /> : null}
-          <FocusButton active={focus.active} onToggle={focus.toggle} buttonRef={focusButtonRef} />
+          <DocumentToolbar view={view} openThreads={openThreads} focus={{ on: focus.active, toggle: focus.toggle }}
+            focusButtonRef={focusButtonRef} onHistory={() => setDialog('history')} review={review}
+            versions={historyOffered(document) ? { projectId: project.project_id, document, viewing, onChoose: onChooseVersion } : null}
+            share={offeredShare === null ? null : { active: offeredShare.share !== null, onOpen: () => setDialog('share') }} />
         </div>
       </div>
       {state.conflict === null ? null : <ConflictBanner conflict={state.conflict} />}
       {state.reviseRefused === null ? null : <ReviseRefusedBanner refused={state.reviseRefused} />}
       {state.guardDialog}
+      <DocumentDialogs dialog={dialog} project={project} document={document} canEdit={canEdit} state={state}
+        share={offeredShare} onClose={() => setDialog(null)} />
     </div>
   )
 }

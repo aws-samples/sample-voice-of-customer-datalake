@@ -37,7 +37,11 @@
     "radar": "Radar",
     "featureRequests": "Feedback-Boards",
     "participants": "Teilnehmende",
-    "oauthConsent": "Assistent freigeben"
+    "oauthConsent": "Assistent freigeben",
+    "connections": "Verbindungen",
+    "github": "GitHub",
+    "githubAppCreated": "App erstellt",
+    "githubAppInstalled": "App installiert"
   },
   "cancel": "Abbrechen",
   "configureBrand": "Marke konfigurieren",

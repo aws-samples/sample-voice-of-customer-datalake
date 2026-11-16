@@ -1,38 +1,33 @@
 /**
- * The focus view's address option (`?view=focus`) and the flag the shell reads.
+ * The flag the shell reads while a document page is in focus view, and which moves the unsaved-changes guard lets
+ * through (only full screen or the older version on screen changes: the page and its draft stay).
  */
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { isFocusView, onlyFocusViewChanged, setFocusViewActive, useFocusViewActive, withFocusView } from './focusView'
+import { onlyDocumentViewChanged } from '../../../pages/ProjectDetail/useProjectPlace'
+import { setFocusViewActive, useFocusViewActive } from './focusView'
 
-const at = (pathname: string, search: string) => ({ pathname, search })
+const at = (pathname: string, search = '') => ({ pathname, search })
 
 afterEach(() => { setFocusViewActive(false) })
 
-describe('the view option', () => {
-  it('reads `view=focus` only', () => {
-    expect(isFocusView(new URLSearchParams('tab=documents&view=focus'))).toBe(true)
-    expect(isFocusView(new URLSearchParams('view=list'))).toBe(false)
-    expect(isFocusView(new URLSearchParams(''))).toBe(false)
+describe('onlyDocumentViewChanged (the unsaved-changes guard lets these through)', () => {
+  it('is true for entering or leaving the focus view, or an older version, of the same document', () => {
+    expect(onlyDocumentViewChanged(at('/projects/p/documents/d'), at('/projects/p/documents/d/focus'))).toBe(true)
+    expect(onlyDocumentViewChanged(at('/projects/p/documents/d/focus'), at('/projects/p/documents/d'))).toBe(true)
+    expect(onlyDocumentViewChanged(at('/projects/p/documents/d'), at('/projects/p/documents/d/v/2'))).toBe(true)
+    expect(onlyDocumentViewChanged(at('/projects/p/documents/d/v/2/focus'), at('/projects/p/documents/d'))).toBe(true)
   })
 
-  it('sets and drops it, keeping every other parameter', () => {
-    const on = withFocusView(new URLSearchParams('tab=documents&doc=d1'), true)
-    expect(on.toString()).toBe('tab=documents&doc=d1&view=focus')
-    expect(withFocusView(on, false).toString()).toBe('tab=documents&doc=d1')
-  })
-})
-
-describe('onlyFocusViewChanged (the unsaved-changes guard lets these through)', () => {
-  it('is true for entering or leaving the focus view on the same page', () => {
-    expect(onlyFocusViewChanged(at('/projects/p', '?tab=documents&doc=d'), at('/projects/p', '?tab=documents&doc=d&view=focus'))).toBe(true)
-    expect(onlyFocusViewChanged(at('/projects/p', '?doc=d&view=focus'), at('/projects/p', '?doc=d'))).toBe(true)
-  })
-
-  it('is false for another document, another path, or no change at all', () => {
-    expect(onlyFocusViewChanged(at('/projects/p', '?doc=d'), at('/projects/p', '?doc=e&view=focus'))).toBe(false)
-    expect(onlyFocusViewChanged(at('/projects/p', '?doc=d'), at('/projects/q', '?doc=d&view=focus'))).toBe(false)
-    expect(onlyFocusViewChanged(at('/projects/p', '?doc=d'), at('/projects/p', '?doc=d'))).toBe(false)
+  it.each([
+    ['another document', at('/projects/p/documents/d'), at('/projects/p/documents/e/focus')],
+    ['another project', at('/projects/p/documents/d'), at('/projects/q/documents/d/focus')],
+    ['another tab', at('/projects/p/documents/d'), at('/projects/p/personas')],
+    ['another query', at('/projects/p/documents/d', '?a=1'), at('/projects/p/documents/d/focus')],
+    ['no change at all', at('/projects/p/documents/d'), at('/projects/p/documents/d')],
+    ['another page', at('/dashboard'), at('/dashboard/x')],
+  ])('is false for %s', (_case, from, to) => {
+    expect(onlyDocumentViewChanged(from, to)).toBe(false)
   })
 })
 

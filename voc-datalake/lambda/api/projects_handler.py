@@ -4873,7 +4873,7 @@ def _pins_table():
 
 def _pin_actor() -> tuple[str, str]:
     """(stable actor id, display name) for the calling user or agent. The name is the username, else "Team member",
-    never the address (7.44.00: the rule a member's thread author follows since 7.43.00, so a pin reply holds no
+    never the address (7.47.00: the rule a member's thread author follows since 7.43.00, so a pin reply holds no
     address an erasure would have to reach; replies written before keep theirs, docs/multi-workspace.md 3g-pin)."""
     caller = _request_caller()
     if caller.agent_id:

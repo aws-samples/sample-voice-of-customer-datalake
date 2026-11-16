@@ -397,12 +397,15 @@ export interface DocumentUpdate {
 
 interface UseDocumentMutationsProps {
   id: string | undefined
+  /** Deleting the selected document clears the selection; a card's Delete of another one keeps it. */
+  selectedDoc: ProjectDocument | null
   setSelectedDoc: (d: ProjectDocument | null) => void
 }
 
 /** Delete. A blank document is created by useBlankDocument; edits are the canvas's: {@link useUpdateDocument}. */
 export function useDocumentMutations({
   id,
+  selectedDoc,
   setSelectedDoc,
 }: UseDocumentMutationsProps) {
   const queryClient = useQueryClient()
@@ -410,9 +413,9 @@ export function useDocumentMutations({
 
   const deleteDocMut = useMutation({
     mutationFn: (docId: string) => projectsApi.deleteDocument(projectId, docId),
-    onSuccess: () => {
+    onSuccess: (_result, docId) => {
       void queryClient.invalidateQueries({ queryKey: projectKey(id) })
-      setSelectedDoc(null)
+      if (docId === selectedDoc?.document_id) setSelectedDoc(null)
     },
   })
 

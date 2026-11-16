@@ -13,6 +13,13 @@
   },
   "documents": {
     "deleteDocument": "删除文档",
+    "card": {
+      "more": "更多操作",
+      "menu": "“{{title}}”的操作",
+      "open": "打开",
+      "renameFailed": "无法保存新名称。请重试。",
+      "renameConflict": "文档在此期间已被更改，因此新名称未保存。请重试。"
+    },
     "derivation": {
       "builtFrom": "构建来源",
       "feedbackUsed_one": "已使用 {{count, number}} 条反馈",
@@ -874,7 +881,6 @@
         "undoing": "正在恢复上一个版本…",
         "undone": "已撤销：上一个版本已恢复为新版本。"
       },
-      "button": "根据评论修订",
       "close": "关闭",
       "failed": "根据评论修订失败。请重试。",
       "filterAddressed": "已处理",
@@ -969,6 +975,29 @@
       "minutes_one": "阅读约 {{count, number}} 分钟",
       "minutes_other": "阅读约 {{count, number}} 分钟",
       "wordsAndMinutes": "{{words}} · {{minutes}}"
+    },
+    "toolbar": {
+      "label": "文档工具",
+      "more": "更多工具",
+      "share": "共享",
+      "aiReview": "AI 评审",
+      "aiReviewNoPersonas": "请先为此项目添加用户画像，再请它们评审。",
+      "aiRewrite": "AI 改写",
+      "historyHint": "此文档的所有版本：打开、比较或恢复",
+      "contentsHint": "显示或隐藏目录",
+      "fullWidthHint": "让文本占满整个宽度",
+      "version": "版本 {{version}}",
+      "versionHint": "阅读较早的版本",
+      "versionsLoading": "正在加载版本…",
+      "latest": "最新"
+    },
+    "versions": {
+      "bannerLabel": "较早的版本",
+      "viewing": "正在查看 {{version}}（共 {{latest}}）",
+      "viewingOne": "正在查看 {{version}}",
+      "readOnly": "只读",
+      "backToLatest": "回到最新版本",
+      "announce": "正在以只读方式显示较早的版本 {{version}}。"
     }
   }
 }

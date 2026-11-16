@@ -4,6 +4,8 @@ Stops at the first of (``TargetResult.stop``):
 
 - ``off_host``: the browser ended up reading a page on another host (a redirect: its
   reviews would be imported under the target's source id); nothing from it is kept.
+  ``error_page`` when that page is an error page (Chrome's ``chrome-error://chromewebdata/``,
+  an HTTP 4xx/5xx answer or a bot wall), which ``auto`` reads as a block.
 - ``blocked``: the site blocked the page (``blocked by <vendor>``); what was read is kept.
 - ``no_new``: a page that yields no new review (an incremental read only; a backfill
   reading older pages after a resume never stops on it).
@@ -14,6 +16,9 @@ Stops at the first of (``TargetResult.stop``):
 
 ``resume_url`` / ``resume_page`` say where a read stopped by ``reviews`` or ``time``
 would continue; the handler decides whether to store them (docs/web-reviews.md).
+``extracted`` counts every review the pages held (new or not), ``title`` is the first page's
+title and ``declares_reviews`` whether its JSON-LD gives a review count above 0: what ``auto``
+needs to tell "this page has no reviews" from "the browser could not read them".
 The next page is the page's own next link, else its page-number parameter plus one;
 it must keep the target's origin (scheme, host and port) and pass the outbound URL
 policy.
@@ -24,8 +29,8 @@ from dataclasses import dataclass, field
 from typing import Literal, Protocol
 from urllib.parse import urlparse
 
-from block_detection import blocked_by
-from extract import ExtractedReview
+from block_detection import BLOCKED_STATUS_FROM, blocked_by
+from extract import ExtractedReview, declared_review_count
 from page_reader import PageSnapshot, page_parameter_successor, same_origin
 
 from shared.http_statuses import NOT_FOUND_STATUSES
@@ -44,11 +49,18 @@ class Tab(Protocol):
     def fetch(self, url: str) -> PageSnapshot: ...
 
 
+#: Where Chrome shows its own error page (a navigation that failed: ``chrome-error://chromewebdata/``).
+CHROME_ERROR_SCHEME = 'chrome-error'
+CHROME_ERROR_HOST = 'chromewebdata'
+
+
 @dataclass(frozen=True)
 class ReadReview:
     review: ExtractedReview
     page: int
     page_url: str
+    #: Metadata of this review alone, beside its read's (an AgentCore Web Search snippet's URL, title, text).
+    attribution: dict[str, object] | None = None
 
 
 @dataclass
@@ -59,6 +71,12 @@ class TargetResult:
     blocked: str | None = None
     #: The browser was redirected to another host; nothing from that page is kept.
     off_host: bool = False
+    #: That other host's page was an error page (``is_error_page``).
+    error_page: bool = False
+    #: Reviews the pages held, new or not, and what page 1 said of itself.
+    extracted: int = 0
+    title: str = ''
+    declares_reviews: bool = False
     stop: Stop = 'no_next'
     #: Where a read stopped by ``reviews`` or ``time`` continues, and the pages read before it.
     resume_url: str | None = None
@@ -83,6 +101,13 @@ class ReadLimits:
     stop_when_nothing_new: bool = True
     #: Called with every page whose reviews were all taken (the page cache records it).
     after_page: Callable[[PageSnapshot], None] = field(default_factory=lambda: _no_op)
+
+
+def is_error_page(snapshot: PageSnapshot) -> bool:
+    """Whether *snapshot* is an error page: Chrome's own, an HTTP 4xx/5xx answer, or a bot wall."""
+    parts = urlparse(snapshot.url)
+    return (parts.scheme == CHROME_ERROR_SCHEME or parts.hostname == CHROME_ERROR_HOST
+            or snapshot.status >= BLOCKED_STATUS_FROM or blocked_by(snapshot.signals()) is not None)
 
 
 def _review_key(review: ExtractedReview) -> tuple[str, str | None]:
@@ -152,6 +177,7 @@ def read_target(tab: Tab, url: str, extract: Callable[[PageSnapshot], list[Extra
     while True:
         if urlparse(snapshot.url).hostname != host:
             result.off_host = True
+            result.error_page = is_error_page(snapshot)
             return _stopped(result, 'off_host')
         if result.pages_read > limits.start_page and snapshot.status in NOT_FOUND_STATUSES:
             # A guessed next page (`?page=N+1`) that does not exist: the list ended. Not a block.
@@ -160,8 +186,13 @@ def read_target(tab: Tab, url: str, extract: Callable[[PageSnapshot], list[Extra
         if vendor is not None:
             result.blocked = vendor
             return _stopped(result, 'blocked')
+        if result.pages_read == limits.start_page:
+            result.title = snapshot.title
+            result.declares_reviews = declared_review_count(snapshot.jsonld) > 0
         result.pages_read += 1
-        any_new, complete = _take(result, snapshot, extract(snapshot), limits, seen_reviews)
+        reviews = extract(snapshot)
+        result.extracted += len(reviews)
+        any_new, complete = _take(result, snapshot, reviews, limits, seen_reviews)
         if complete:
             limits.after_page(snapshot)
         following = next_page_url(snapshot, url, seen_pages)

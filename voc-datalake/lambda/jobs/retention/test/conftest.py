@@ -58,7 +58,7 @@ def aws():
         feedback = create_pk_sk_table(handler.FEEDBACK_TABLE, resource)
         aggregates = create_pk_sk_table(handler.AGGREGATES_TABLE, resource)
         radar = create_pk_sk_table(RADAR_TABLE, resource)
-        # With gsi1-by-type, as core-stack.ts (the stores write it; the deployment's walks read PROJECT_IDS, 7.44.00).
+        # With gsi1-by-type, as core-stack.ts (the stores write it; the deployment's walks read PROJECT_IDS, 7.47.00).
         projects = create_projects_table_with_type_index(PROJECTS_TABLE, resource)
         feature_requests = create_pk_sk_table(FEATURE_REQUESTS_TABLE, resource)
         workspaces = create_pk_sk_table(WORKSPACES_TABLE, resource)

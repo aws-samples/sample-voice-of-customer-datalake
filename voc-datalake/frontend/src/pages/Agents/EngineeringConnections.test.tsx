@@ -36,9 +36,11 @@ const connection = (id: string, repository: string, credential: Record<string, u
 const WEB = connection('web-app', 'example-org/web-app', { kind: 'app', set: true, app_id: '123', installation_id: '456' })
 const API = connection('api', 'example-org/api', { kind: 'app', set: false, app_id: '321', installation_id: '654' })
 const LIST = 'GET /agents/engineering/connections'
+/** The deployment's GitHub Apps (the "Connect GitHub" panel's list): none, unless a test says otherwise. */
+const NO_APPS = { 'GET /agents/engineering/github-apps': () => ({ apps: [], limit: 5 }) }
 
 function renderConnections(routes: Record<string, RouteHandler>) {
-  routeFetchApi(routes, { missStatus: 500 })
+  routeFetchApi({ ...NO_APPS, ...routes }, { missStatus: 500 })
   const client = createTestQueryClient()
   renderWithQueryClient(<EngineeringConnections />, client)
   return client
@@ -91,7 +93,7 @@ describe('the connections list', () => {
     const user = userEvent.setup()
     renderConnections({ [LIST]: () => { throw new ApiError(503, 'unavailable') } })
     expect(await screen.findByText('The repository connections could not be loaded.')).toBeInTheDocument()
-    routeFetchApi({ [LIST]: () => ({ connections: [WEB], limit: 20 }) }, { missStatus: 500 })
+    routeFetchApi({ ...NO_APPS, [LIST]: () => ({ connections: [WEB], limit: 20 }) }, { missStatus: 500 })
     await user.click(screen.getByRole('button', { name: /try again/i }))
     expect(await screen.findByText('example-org/web-app')).toBeInTheDocument()
   })

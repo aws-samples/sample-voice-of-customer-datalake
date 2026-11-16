@@ -77,6 +77,13 @@
       "heading": "Wersja poprawiona z"
     },
     "deleteDocument": "Usuń dokument",
+    "card": {
+      "more": "Więcej działań",
+      "menu": "Działania dla „{{title}}”",
+      "open": "Otwórz",
+      "renameFailed": "Nie udało się zapisać nowej nazwy. Spróbuj ponownie.",
+      "renameConflict": "W międzyczasie dokument został zmieniony, więc nowa nazwa nie została zapisana. Spróbuj ponownie."
+    },
     "newDocument": "Nowy dokument",
     "sections": {
       "label": "Sekcje dokumentów",
@@ -938,7 +945,6 @@
         "undoing": "Przywracanie poprzedniej wersji…",
         "undone": "Cofnięto: poprzednia wersja została przywrócona jako nowa wersja."
       },
-      "button": "Popraw na podstawie komentarzy",
       "close": "Zamknij",
       "failed": "Poprawianie na podstawie komentarzy nie powiodło się. Spróbuj ponownie.",
       "filterAddressed": "Uwzględnione",
@@ -1047,6 +1053,29 @@
       "minutes_many": "{{count, number}} min czytania",
       "minutes_other": "{{count, number}} min czytania",
       "wordsAndMinutes": "{{words}} · {{minutes}}"
+    },
+    "toolbar": {
+      "label": "Narzędzia dokumentu",
+      "more": "Więcej narzędzi",
+      "share": "Udostępnij",
+      "aiReview": "Recenzja AI",
+      "aiReviewNoPersonas": "Dodaj persony do tego projektu, aby poprosić je o recenzję.",
+      "aiRewrite": "Przeredagowanie AI",
+      "historyHint": "Każda wersja tego dokumentu: otwórz, porównaj lub przywróć",
+      "contentsHint": "Pokaż lub ukryj spis treści",
+      "fullWidthHint": "Tekst na całą szerokość",
+      "version": "Wersja {{version}}",
+      "versionHint": "Przeczytaj wcześniejszą wersję",
+      "versionsLoading": "Wczytywanie wersji…",
+      "latest": "Najnowsza"
+    },
+    "versions": {
+      "bannerLabel": "Starsza wersja",
+      "viewing": "Wyświetlasz {{version}} z {{latest}}",
+      "viewingOne": "Wyświetlasz {{version}}",
+      "readOnly": "tylko do odczytu",
+      "backToLatest": "Wróć do najnowszej",
+      "announce": "Wyświetlana jest {{version}}, starsza wersja, tylko do odczytu."
     }
   }
 }

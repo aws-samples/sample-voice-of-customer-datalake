@@ -37,7 +37,11 @@
     "radar": "Radar",
     "featureRequests": "Feedback boards",
     "participants": "Participants",
-    "oauthConsent": "Approve an assistant"
+    "oauthConsent": "Approve an assistant",
+    "connections": "Connections",
+    "github": "GitHub",
+    "githubAppCreated": "App created",
+    "githubAppInstalled": "App installed"
   },
   "cancel": "Cancel",
   "configureBrand": "Configure brand",

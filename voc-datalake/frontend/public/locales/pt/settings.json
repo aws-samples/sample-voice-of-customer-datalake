@@ -389,7 +389,15 @@
     "advanced": "Avançado",
     "advancedRawHint": "A configuração bruta dos coletores da página Fontes de dados. Adicione e edite os coletores lá.",
     "runsOnUpload": "Executa ao enviar arquivos",
-    "runsOnDemand": "Executa sob demanda — sem agendamento"
+    "runsOnDemand": "Executa sob demanda — sem agendamento",
+    "githubSignIn": {
+      "label": "Entrar com",
+      "token": "Um token de acesso refinado",
+      "app": "Uma das GitHub Apps desta implantação",
+      "appLabel": "GitHub App",
+      "appHint": "Cada execução recebe da App um token de curta duração só para estes repositórios (Issues e Metadata, somente leitura) e o devolve no fim. Instale antes a App nos repositórios (Agentes → Conexões).",
+      "tokenHint": "Um token de acesso pessoal refinado com Issues e Metadata somente leitura nestes repositórios."
+    }
   },
   "subtitle": "Configure sua plataforma VoC",
   "tabs": {

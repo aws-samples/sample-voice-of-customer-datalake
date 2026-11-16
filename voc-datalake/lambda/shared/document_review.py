@@ -176,7 +176,7 @@ def _file(table: Any, *, project_id: str, series_id: str, document: Mapping[str,
             continue
         seen.add(key)
         # The series is listed by the review's first thread (``listed``, shared across the run's personas): a review
-        # that files many threads of one series reads, and at most writes, its registry row once (7.44.00).
+        # that files many threads of one series reads, and at most writes, its registry row once (7.47.00).
         comments.put_thread(table, comments.thread_item(
             project_id=project_id, series_id=series_id, document=document, author=author,
             text=text, anchor=anchor, extra=extra, workspace=workspace), workspace=workspace,

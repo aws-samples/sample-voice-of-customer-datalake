@@ -405,7 +405,15 @@
     "advanced": "Zaawansowane",
     "advancedRawHint": "Surowa konfiguracja scraperów ze strony Źródła danych. Dodawaj i edytuj scrapery właśnie tam.",
     "runsOnUpload": "Uruchamia się po przesłaniu pliku",
-    "runsOnDemand": "Uruchamiane na żądanie — bez harmonogramu"
+    "runsOnDemand": "Uruchamiane na żądanie — bez harmonogramu",
+    "githubSignIn": {
+      "label": "Logowanie przez",
+      "token": "Szczegółowy token",
+      "app": "Jedną z GitHub Apps tego wdrożenia",
+      "appLabel": "GitHub App",
+      "appHint": "Każde uruchomienie dostaje od App krótkotrwały token tylko dla tych repozytoriów (Issues i Metadata, tylko odczyt) i oddaje go na końcu. Najpierw zainstaluj App w tych repozytoriach (Agenci → Połączenia).",
+      "tokenHint": "Szczegółowy osobisty token dostępu z Issues i Metadata tylko do odczytu w tych repozytoriach."
+    }
   },
   "subtitle": "Konfiguruj platformę dla wszystkich (tylko administratorzy).",
   "tabs": {

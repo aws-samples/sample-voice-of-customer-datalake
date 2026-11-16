@@ -52,6 +52,14 @@ export const ENGINEERING_BOARD_FUNCTION_BASE_NAME = 'voc-engineering-board';
  * (ENGINEERING_START_FUNCTION); its role may invoke this function and never voc-engineering-runtime.
  */
 export const ENGINEERING_START_FUNCTION_BASE_NAME = 'voc-engineering-start';
+/**
+ * The GitHub Apps' token function (VocProcessingStack, lib/stacks/engineering-app-tokens.ts; with
+ * `-c engineeringAgents=true`; 7.45.00): the broker's code with a role of its own that reads the Apps' keys alone,
+ * entered where it takes `inspect_installation` and `issues_token` and refuses every other request. The Agents API in
+ * VocApiStack invokes it to read an installation (ENGINEERING_APP_TOKENS_FUNCTION), and the github_issues ingestor in
+ * VocIngestionStack, which deploys first, for a deployment-wide run's read-only Issues tokens.
+ */
+export const ENGINEERING_APP_TOKENS_FUNCTION_BASE_NAME = 'voc-engineering-app-tokens';
 /** The Radar API (VocApiStack): /radar, /radar/{proxy+}; the assistant's `get_radar` reads it. */
 export const RADAR_API_FUNCTION_BASE_NAME = 'voc-radar-api';
 /**

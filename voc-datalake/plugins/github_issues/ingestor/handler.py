@@ -24,6 +24,18 @@ re-fetches (and the processor de-duplicates by id) rather than skips.
 Rate limits never sleep: a 403/429 with ``Retry-After`` or an exhausted quota,
 a quota near its floor, or too little Lambda time left raise ``StopRun`` in the
 client, which ends the run successfully with its progress kept.
+
+Sign-in: the source's fine-grained ``token``, or (7.45.00) one of the deployment's
+GitHub Apps (``github_app_id``), for a deployment-wide run only, where the
+engineering agents are deployed: the run asks the token function
+(voc-engineering-app-tokens, ``ENGINEERING_APP_TOKENS_FUNCTION``) for
+``issues_token`` with its repositories, gets one installation token per
+installation, each exactly ``{issues: read, metadata: read}`` and narrowed to the
+run's repositories it covers, reads each repository with its installation's
+token, skips the ones no installation covers (``uncovered``, logged), and revokes
+every token when the run ends. A run in a workspace ignores ``github_app_id``: it
+signs in with its own token (the Apps are the deployment's, D8). No token is
+logged or answered.
 """
 
 import json
@@ -31,14 +43,16 @@ import os
 import sys
 import time
 from collections.abc import Generator
+from functools import lru_cache
 from typing import SupportsFloat
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from _shared.base_ingestor import BaseIngestor, logger, metrics, run_in_workspace, tracer
-from _shared.github_api import GITHUB_API, GitHubClient, GitHubNotFound, StopRun
+from _shared.github_api import GITHUB_API, GitHubClient, GitHubNotFound, StopRun, revoke_token
 from _shared.github_config import GitHubSourceConfig
 from _shared.github_mapping import comment_item, is_bot, is_pull_request, issue_item
+from shared.engineering_agents import APP_TOKENS_FUNCTION_ENV
 from shared.invocation_cost import measure_invocation_cost
 from shared.ws_repo import WorkspaceScope
 
@@ -49,6 +63,37 @@ MAX_ITEMS_PER_RUN = 1500
 #: and the watermark commits.
 SAFETY_MARGIN_SECONDS = 60
 PER_PAGE = 100
+#: How long the run waits for the token function (one attempt: a second ask would mint a second set of tokens).
+APP_TOKENS_READ_TIMEOUT_SECONDS = 25
+
+
+@lru_cache(maxsize=1)
+def _lambda_client():
+    """The container's Lambda client for the token function (built on the first App sign-in, kept warm after)."""
+    import boto3
+    from botocore.config import Config
+
+    return boto3.client("lambda", config=Config(read_timeout=APP_TOKENS_READ_TIMEOUT_SECONDS, connect_timeout=5,
+                                                retries={"total_max_attempts": 1}))
+
+
+def _app_tokens(function: str, app_id: str, repos: tuple[str, ...]) -> dict | None:
+    """The token function's ``issues_token`` answer, or None when it refused or could not be reached (logged by kind,
+    never with a token)."""
+    from botocore.exceptions import BotoCoreError, ClientError
+
+    try:
+        response = _lambda_client().invoke(FunctionName=function, InvocationType="RequestResponse", Payload=json.dumps(
+            {"action": "issues_token", "app_id": app_id, "repositories": list(repos)}).encode())
+        payload = json.loads(response["Payload"].read() or b"{}")
+    except (BotoCoreError, ClientError, ValueError, KeyError, OSError) as error:
+        logger.warning(f"github_issues: the GitHub App's tokens could not be asked for ({type(error).__name__})")
+        return None
+    if not isinstance(payload, dict) or response.get("FunctionError"):
+        error_type = payload.get("errorType") if isinstance(payload, dict) else None
+        logger.warning(f"github_issues: the GitHub App's tokens were refused ({str(error_type)[:60]})")
+        return None
+    return payload
 
 
 def _repo_url(repo: str, suffix: str) -> str:
@@ -110,31 +155,81 @@ class GitHubIssuesIngestor(BaseIngestor):
         self._staged: dict[str, str] = {}
         self._items = 0
         self.stop_reason = None
+        #: The GitHub App's installation tokens this run was handed (revoked when it ends; never logged).
+        self._app_tokens: list[str] = []
 
     # -- BaseIngestor hooks ---------------------------------------------------
 
     def fetch_new_items(self) -> Generator[dict, None, None]:
-        if not self._token or not self.config.repos:
+        if not self.config.repos:
             logger.warning("github_issues: token or repos not configured; nothing to fetch")
             return
         for rejected in self.config.rejected_repos:
             logger.warning(f"github_issues: {rejected!r} names no GitHub repository (expected owner/name); ignored")
-        client = GitHubClient(self._token, deadline=self._deadline)
+        clients = self._sign_in()
         try:
-            for repo in self.config.repos:
-                try:
-                    yield from self._fetch_repo(client, repo)
-                except GitHubNotFound:
-                    # One mistyped or inaccessible repo must not starve the others.
-                    logger.warning(f"github_issues: {repo} not found or not visible to the token; skipped")
+            for client, repos in clients:
+                for repo in repos:
+                    try:
+                        yield from self._fetch_repo(client, repo)
+                    except GitHubNotFound:
+                        # One mistyped or inaccessible repo must not starve the others.
+                        logger.warning(f"github_issues: {repo} not found or not visible to the token; skipped")
         except StopRun as stop:
             self.stop_reason = stop.reason
             logger.info(f"github_issues: stopping early ({stop}); resuming next run")
             metrics.add_metric(name="GitHubRunStoppedEarly", unit="Count", value=1)
-        logger.info(f"github_issues: {client.requests_made} GitHub requests, {self._items} items")
+        if clients:
+            logger.info(f"github_issues: {sum(c.requests_made for c, _ in clients)} GitHub requests, {self._items} items")
+
+    def _sign_in(self) -> list[tuple[GitHubClient, tuple[str, ...]]]:
+        """Each client the run reads with and the repositories it reads: the GitHub App's tokens (a deployment-wide run
+        naming one), else the source's token; none when neither is configured."""
+        app_id = self.config.github_app_id
+        if app_id and self.scope is None:
+            return self._app_sign_in(app_id)
+        if app_id:
+            logger.info("github_issues: a workspace's run signs in with its own token; github_app_id is ignored")
+        if not self._token:
+            logger.warning("github_issues: token or repos not configured; nothing to fetch")
+            return []
+        return [(GitHubClient(self._token, deadline=self._deadline), self.config.repos)]
+
+    def _app_sign_in(self, app_id: str) -> list[tuple[GitHubClient, tuple[str, ...]]]:
+        function = os.environ.get(APP_TOKENS_FUNCTION_ENV, "")
+        if not function:
+            logger.warning("github_issues: signing in with a GitHub App needs the engineering agents; nothing fetched")
+            return []
+        answer = _app_tokens(function, app_id, self.config.repos)
+        if answer is None:
+            metrics.add_metric(name="GitHubAppSignInFailed", unit="Count", value=1)
+            return []
+        clients = []
+        listed = answer.get("tokens")
+        for entry in listed if isinstance(listed, list) else []:
+            token, names = (entry.get("token"), entry.get("repositories")) if isinstance(entry, dict) else (None, None)
+            if not isinstance(token, str) or not token or not isinstance(names, list):
+                continue
+            self._app_tokens.append(token)
+            covered = {name.lower() for name in names if isinstance(name, str)}
+            repos = tuple(repo for repo in self.config.repos if repo.lower() in covered)
+            clients.append((GitHubClient(token, deadline=self._deadline), repos))
+        uncovered = answer.get("uncovered")
+        for repo in uncovered if isinstance(uncovered, list) else []:
+            logger.warning(f"github_issues: {str(repo)[:200]} is not covered by the GitHub App's installation; skipped")
+        return clients
+
+    def _revoke_app_tokens(self) -> None:
+        for token in self._app_tokens:
+            if not revoke_token(token):
+                logger.warning("github_issues: a GitHub App token could not be revoked (it expires within the hour)")
+        self._app_tokens = []
 
     def run(self) -> dict:
-        result = super().run()
+        try:
+            result = super().run()
+        finally:
+            self._revoke_app_tokens()
         # Reached only when the base run enqueued everything (it re-raises otherwise).
         for repo, state in self._staged.items():
             self.set_watermark(f"repo#{repo}", state)

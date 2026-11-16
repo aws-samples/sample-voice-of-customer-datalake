@@ -42,7 +42,6 @@
     "notFound": "このバージョンには見つかりません",
     "saveFailed": "コメントを保存できませんでした。もう一度お試しください。",
     "loadFailed": "コメントを読み込めませんでした。ドキュメントはコメントなしで表示されています。",
-    "personaReview": "ペルソナにレビューを依頼",
     "personaReviewRunning": "ペルソナが読んでいます…",
     "personaReviewHint": "このプロジェクトのペルソナ最大 6 人がこのバージョンを読み、本文を引用してコメントします。ドキュメントは変更しません。ペルソナ 1 人につきモデル呼び出し 1 回の費用がかかります。",
     "personaReviewDone_one": "{{count, number}} 件のコメントを追加しました (依頼したペルソナ: {{personas, number}})",

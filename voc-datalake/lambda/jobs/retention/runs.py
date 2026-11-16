@@ -63,7 +63,7 @@ UNCHECKED_FILES: Final = 'unchecked_files'
 _UNCHECKED_MORE: Final = 'unchecked_files_more'
 _CARRIED_WORKSPACE_LISTS: Final = (ERASED_WORKSPACES, LINEAGE_WORKSPACES, UNCHECKED_FILES)
 #: How an erasure by email found the deployment's links, series and projects (``registry`` or ``scan``,
-#: project_people.py), and whether it walked the deployment's own projects at all (7.44.00): both on the job and audit
+#: project_people.py), and whether it walked the deployment's own projects at all (7.47.00): both on the job and audit
 #: rows of the deployment's erasure by email without a source (``deployment_fields``), so an admin can tell from the
 #: data which jobs to submit again (one that did not walk them never reached them).
 DEPLOYMENT_FOUND: Final = 'deployment_rows_found'

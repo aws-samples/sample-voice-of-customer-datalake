@@ -6,13 +6,18 @@
  * `execution_id` once Run now answered it), keyed per plugin and app ({@link appRunStatusKey}). The page used to
  * keep run statuses in component state only (gone on reload) and applied the plugin's latest run to every card of
  * that plugin, so four review pages run at once could show one another's result.
+ *
+ * A review page's run that finishes (seen running, then not) may have taught this workspace its site's method: the
+ * learned methods are read again then (useLearnedMethods.ts), so "Known best …" shows without a reload.
  * @module pages/Scrapers/useAppRun
  */
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../../api/client'
 import { appRunStatusKey } from '../../api/queryKeys'
+import { webReviewMethodsKey } from '../../api/webReviewMethodsApi'
 import { useConfigStore } from '../../store/configStore'
+import { WEB_REVIEWS_PLUGIN_ID } from './scraper-helpers'
 import { parseRunRecord, parseRunStarted, type SourceRunStatus } from './sourceRunStatus'
 
 /** How often a running card asks for its run. */
@@ -48,6 +53,18 @@ async function readRun(pluginId: string, appId: string, executionId: string | un
 /** What the card shows the moment Run now is pressed, before the server's row is read. */
 function startedRun(): SourceRunStatus {
   return { status: 'running', started_at: new Date().toISOString(), items_found: 0, errors: [] }
+}
+
+/** A review page's run went from running to finished: what its site's run learned is read again. */
+function useLearnedRefreshWhenFinished(pluginId: string, live: boolean): void {
+  const queryClient = useQueryClient()
+  const wasLive = useRef(live)
+  useEffect(() => {
+    if (wasLive.current && !live && pluginId === WEB_REVIEWS_PLUGIN_ID) {
+      void queryClient.invalidateQueries({ queryKey: webReviewMethodsKey() })
+    }
+    wasLive.current = live
+  }, [live, pluginId, queryClient])
 }
 
 interface AppRun {
@@ -98,6 +115,8 @@ export function useAppRun(pluginId: string, appId: string,
       setStarting(false)
     }
   }
+
+  useLearnedRefreshWhenFinished(pluginId, isLiveRun(data))
 
   const lastRun = refused ?? data ?? null
   return { lastRun, isRunning: starting || (refused === null && isLiveRun(data)), start }

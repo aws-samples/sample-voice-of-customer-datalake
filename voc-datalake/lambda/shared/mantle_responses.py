@@ -6,7 +6,9 @@ One SigV4-signed POST (service ``bedrock-mantle``, the caller's own role, no API
 * the web_reviews ingestor's Bedrock web search reader (plugins/web_reviews/ingestor/web_search_reader.py),
   which reads a review page from the web search cache;
 * the Test button of Administration -> AI models for that surface (shared/web_search_model_probe.py),
-  one tiny request with no tool.
+  one tiny request with no tool;
+* and, signed for ``bedrock-agentcore`` instead (``signed_post``'s ``service``), the web_reviews ingestor's AgentCore
+  Web Search request (plugins/web_reviews/ingestor/snippet_reader.py), which is no Responses request.
 
 IAM: ``bedrock-mantle:CreateInference`` on the account's default project (a request names no project).
 A refusal or no answer is a ``ResponsesError`` whose message is client-safe (the status and at most
@@ -63,11 +65,12 @@ def urlopen_post(url: str, body: bytes, headers: dict[str, str], timeout: float)
 
 
 def signed_post(url: str, payload: dict[str, Any], region: str, credentials: Any, post: Post,
-                timeout: float) -> dict[str, Any]:
-    """POST *payload* SigV4-signed for ``bedrock-mantle``; the JSON answer, or ``ResponsesError``."""
+                timeout: float, *, service: str = SIGNING_SERVICE) -> dict[str, Any]:
+    """POST *payload* SigV4-signed for *service* (``bedrock-mantle``; the web_reviews ingestor's AgentCore Web Search
+    request signs for ``bedrock-agentcore``); the JSON answer, or ``ResponsesError``."""
     data = json.dumps(payload).encode()
     request = AWSRequest(method='POST', url=url, data=data, headers={'Content-Type': 'application/json'})
-    SigV4Auth(credentials, SIGNING_SERVICE, region).add_auth(request)
+    SigV4Auth(credentials, service, region).add_auth(request)
     try:
         status, raw = post(url, data, dict(request.headers.items()), timeout)
     except (OSError, ValueError) as error:  # URLError and timeouts are OSErrors

@@ -89,6 +89,11 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         # A connection's CI attestation (engineering/connectors/attestations.py): the same gate.
         'POST /agents/engineering/connections/<connection_id>/ci-attestation',
         'DELETE /agents/engineering/connections/<connection_id>/ci-attestation',
+        # The deployment's GitHub Apps made in two clicks (7.45.00, engineering/connectors/github_apps.py): the same
+        # gate (the connections' store, ``_github_apps``), every step of the flow and the App's removal.
+        'POST /agents/engineering/github-apps/manifest', 'POST /agents/engineering/github-apps/conversions',
+        'POST /agents/engineering/github-apps/installations', 'POST /agents/engineering/github-apps/<app_id>/install',
+        'POST /agents/engineering/github-apps/<app_id>/check', 'DELETE /agents/engineering/github-apps/<app_id>',
         # A run's start from a saved engineering flow (the start function): an admin acting for themselves.
         'POST /agents/engineering/runs',
         # A skill version's acceptance, rejection, rollback and benchmark (engineering/skills/actions.py): the same gate.
@@ -125,6 +130,9 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
     'integrations_handler.py': frozenset({
         'PUT /integrations/<source>/credentials', 'POST /integrations/<source>/apps',
         'DELETE /integrations/<source>/apps/<app_id>', 'POST /sources/<source>/run',
+        # "Re-check methods" (7.44.00): clears one review site's learned-methods record of the request's workspace
+        # only (its admins; the deployment's admins without the header), audited in AUDIT#WS#{ws} first.
+        'DELETE /integrations/<source>/methods/<domain>',
         'PUT /sources/<source>/enable', 'PUT /sources/<source>/disable', 'POST /sources/<source>/reset',
     }),
     'logs_handler.py': frozenset({
@@ -696,6 +704,9 @@ WORKSPACE_SCOPED: dict[str, frozenset[str]] = {
         'GET /integrations/<source>/apps', 'POST /integrations/<source>/apps',
         'DELETE /integrations/<source>/apps/<app_id>', 'POST /sources/<source>/run', 'GET /sources/status',
         'POST /sources/<source>/reset',
+        # The web_reviews plugin's learned methods (7.44.00): its own WS#{ws}#WEB_REVIEWS#METHODS records, listed for
+        # any member and one site's cleared by its admins.
+        'GET /integrations/<source>/methods', 'DELETE /integrations/<source>/methods/<domain>',
         # Refused in a workspace (WORKSPACE_REFUSED): the schedule rule serves every workspace.
         'PUT /sources/<source>/enable', 'PUT /sources/<source>/disable',
     }),
@@ -703,6 +714,8 @@ WORKSPACE_SCOPED: dict[str, frozenset[str]] = {
         'GET /scrapers', 'POST /scrapers', 'DELETE /scrapers/<scraper_id>', 'GET /scrapers/connectors',
         'GET /scrapers/templates', 'POST /scrapers/<scraper_id>/run', 'GET /scrapers/<scraper_id>/status',
         'POST /scrapers/analyze-url', 'GET /scrapers/jobs/<job_id>',
+        # The workspace's learned review-site methods (7.44.00), any member: the AI assistant's read of them.
+        'GET /scrapers/review-methods',
     }),
     # The signed-in form routes: any member reads; create, update and delete are for the workspace's editors and
     # admins (`_request_scope(write=True)`, a viewer 403). The module's public routes are in PUBLIC_BY_LOOKUP.

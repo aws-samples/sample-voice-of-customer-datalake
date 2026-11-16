@@ -3,8 +3,10 @@
  * margin beside their quote, on the whole document, or "Not found in this version" (also live, when
  * an edit removes a quote); the author and resolved filters; comment (from the canvas' floating bar,
  * from ⌘/Ctrl+Alt+M, on the whole document), reply, resolve and delete through the team routes; the
- * persona review for editors only, in the rail; the "Comments | Evidence" tabs; and the canvas shown,
- * never remounted, when comments cannot load.
+ * persona review (AI review) and Revise from comments (AI rewrite) for editors only, run from the
+ * page's toolbar (the real one, fed the flows this view reports), their outcome in the rail and above
+ * the canvas; the "Comments | Evidence" tabs; and the canvas shown, never remounted, when comments
+ * cannot load.
  *
  * The canvas editor is a stand-in with the real one's props and handle (src/components/DocumentCanvas/editor/CanvasEditor.tsx): it renders
  * the Markdown's blocks as plain elements, an editor control marked data-anchor-skip, and a bar
@@ -12,6 +14,7 @@
  */
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { createRef, useState } from 'react'
 import userEvent from '@testing-library/user-event'
 import { renderWithQueryClient } from '@test/query-client'
 import { stubRangeLayout } from '@test/stubRangeLayout'
@@ -25,6 +28,8 @@ import { asRecord } from '../../api/wireRecord'
 import type { ProjectDocument } from '../../api/types'
 import type { CanvasEditorHandle, CanvasEditorProps } from '../../components/DocumentCanvas/editor/CanvasEditor'
 import type { ReviseCanvas } from '../../components/DocumentCanvas/revise/useRevisePass'
+import type { ReviewActions } from '../../components/DocumentCanvas/actions/toolbarItems'
+import type { ReactNode } from 'react'
 
 const fetchApi = vi.fn<(endpoint: string, options?: RequestInit) => Promise<unknown>>()
 const runAssistJob = vi.fn<() => Promise<unknown>>()
@@ -67,6 +72,22 @@ vi.mock('../../components/DocumentCanvas/editor/CanvasEditor', async () => {
 })
 
 const { default: DocumentReviewView } = await import('./DocumentReviewView')
+const { default: DocumentToolbar } = await import('../../components/DocumentCanvas/actions/DocumentToolbar')
+
+/** The page's toolbar as the page feeds it: the flows the view reports (`onActions`), beside the view. */
+function WithToolbar({ children }: Readonly<{ children: (onActions: (actions: ReviewActions | null) => void) => ReactNode }>) {
+  const [actions, setActions] = useState<ReviewActions | null>(null)
+  return (
+    <>
+      <DocumentToolbar focus={{ on: false, toggle: vi.fn() }} focusButtonRef={createRef()} versions={null}
+        onHistory={vi.fn()} review={actions} share={null} />
+      {children(setActions)}
+    </>
+  )
+}
+
+/** A toolbar button by name. */
+const tool = (name: string) => within(screen.getByRole('toolbar')).findByRole('button', { name })
 const { useCanvasDocument } = await import('../../components/DocumentCanvas/actions/useCanvasDocument')
 
 const BASE = '/projects/proj_1/documents/doc_2'
@@ -117,9 +138,13 @@ function renderView({ hasPersonas = true, evidence, editable = true }: { hasPers
   const onChange = vi.fn<(markdown: string) => void>()
   const canvas: ReviseCanvas = { lastSaved: null, generation: 0, reloadLatest: vi.fn(), selectDoc: vi.fn(), markRevised: vi.fn() }
   const view = (lastSaved: ReviseCanvas['lastSaved'], generation = 0) => (
-    <DocumentReviewView projectId="proj_1" document={DOCUMENT} markdown={MARKDOWN} hasPersonas={hasPersonas}
-      editable={editable} onChange={onChange} handleRef={handleRef} evidence={evidence === undefined ? undefined : <p>{evidence}</p>}
-      canvas={{ ...canvas, lastSaved, generation }} />
+    <WithToolbar>
+      {(onActions) => (
+        <DocumentReviewView projectId="proj_1" document={DOCUMENT} markdown={MARKDOWN} hasPersonas={hasPersonas}
+          editable={editable} onChange={onChange} handleRef={handleRef} evidence={evidence === undefined ? undefined : <p>{evidence}</p>}
+          canvas={{ ...canvas, lastSaved, generation }} onActions={onActions} />
+      )}
+    </WithToolbar>
   )
   const { rerender } = renderWithQueryClient(view(null))
   /** The page's canvas saved `content` as `version` (its lastSaved). */
@@ -309,26 +334,27 @@ describe('commenting', () => {
   })
 })
 
-describe('the persona review, in the rail', () => {
-  it('asks personas to review and says how many comments they filed', async () => {
+describe('the persona review (the toolbar\'s AI review)', () => {
+  it('asks personas to review from the toolbar and says in the rail how many comments they filed', async () => {
     runAssistJob.mockResolvedValue({ filed: 3, personas: [{ persona_id: 'p1' }, { persona_id: 'p2' }] })
     const user = userEvent.setup()
     renderView()
 
-    const rail = await screen.findByRole('complementary', { name: 'Comments' })
-    await user.click(await within(rail).findByRole('button', { name: 'Ask personas to review' }))
+    await user.click(await tool('AI review'))
 
+    const rail = await screen.findByRole('complementary', { name: 'Comments' })
     expect(await within(rail).findByText('3 comments filed (2 personas asked)')).toHaveAttribute('role', 'status')
   })
 
-  it('shows the review running, with the button disabled', async () => {
+  it('shows the review running: the button inert, and said', async () => {
     runAssistJob.mockReturnValue(new Promise<never>(() => { /* the review never ends here */ }))
     const user = userEvent.setup()
     renderView()
 
-    await user.click(await screen.findByRole('button', { name: 'Ask personas to review' }))
+    await user.click(await tool('AI review'))
 
-    expect(screen.getByRole('button', { name: 'Personas are reading…' })).toBeDisabled()
+    expect(await tool('AI review')).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getAllByRole('status').some((status) => status.textContent === 'Personas are reading…')).toBe(true)
   })
 
   it('says when the review failed', async () => {
@@ -336,23 +362,25 @@ describe('the persona review, in the rail', () => {
     const user = userEvent.setup()
     renderView()
 
-    await user.click(await screen.findByRole('button', { name: 'Ask personas to review' }))
+    await user.click(await tool('AI review'))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('The persona review failed. Please try again.')
   })
 
-  it('cannot ask personas when the project has none', async () => {
+  it('cannot ask personas when the project has none, and says why', async () => {
     renderView({ hasPersonas: false })
 
-    expect(await screen.findByRole('button', { name: 'Ask personas to review' })).toBeDisabled()
+    const button = await tool('AI review')
+    expect(button).toHaveAttribute('aria-disabled', 'true')
+    expect(button).toHaveAccessibleDescription('Add personas to this project to ask them for a review.')
   })
 
-  it('is not offered to a viewer, and sharing is never here (the page\'s action bar has it)', async () => {
+  it('is not offered to a viewer, and sharing is never here (the page\'s toolbar has it)', async () => {
     serve({ canEdit: false })
     renderView()
     await screen.findByText('Who is the customer?')
 
-    expect(screen.queryByRole('button', { name: 'Ask personas to review' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'AI review' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Share for review|Review link/ })).not.toBeInTheDocument()
   })
 })
@@ -370,29 +398,37 @@ describe('Revise from comments', () => {
 
   beforeAll(() => { stubElementScrollIntoView() })
 
-  it('sits beside "Ask personas to review", disabled with the reason until a thread is answered', async () => {
+  it('sits beside AI review in the toolbar, inert with the reason until a thread is answered', async () => {
     serve({ threads: [thread('c_whole', { text: 'Who is the customer?' })] })
     renderView()
 
-    const button = await within(await rail()).findByRole('button', { name: 'Revise from comments' })
-    await waitFor(() => expect(button).toBeDisabled())
+    const button = await tool('AI rewrite')
+    await waitFor(() => expect(button).toHaveAttribute('aria-disabled', 'true'))
     expect(button).toHaveAccessibleDescription('Reply to a comment or resolve it first.')
-    expect(within(await rail()).getByRole('button', { name: 'Ask personas to review' })).toBeInTheDocument()
+    expect(await tool('AI review')).toBeInTheDocument()
   })
 
   it('is not offered to a viewer, nor on a read-only canvas', async () => {
     serve({ canEdit: false })
     renderView()
     await screen.findByText('Who is the customer?')
-    expect(screen.queryByRole('button', { name: 'Revise from comments' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'AI rewrite' })).not.toBeInTheDocument()
   })
 
-  /** Renders (`mount`), waits for "Revise from comments" to be enabled, and starts a pass. */
+  it('says a failed pass\'s reason above the canvas', async () => {
+    serve({ threads: [...THREADS.slice(0, 1), thread('c_quote', { text: 'Name the refund method.', anchor: anchored('two weeks'), ...REPLIED })] })
+    runAssistJob.mockRejectedValue(new Error('boom'))
+    await startRevising(renderView)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Revise from comments failed. Please try again.')
+  })
+
+  /** Renders (`mount`), waits for "AI rewrite" to be offered, and starts a pass. */
   async function startRevising<T extends object>(mount: () => T) {
     const user = userEvent.setup()
     const view = mount()
-    const button = await within(await rail()).findByRole('button', { name: 'Revise from comments' })
-    await waitFor(() => expect(button).toBeEnabled())
+    const button = await tool('AI rewrite')
+    await waitFor(() => expect(button).not.toHaveAttribute('aria-disabled'))
     await user.click(button)
     return { ...view, user, button }
   }
@@ -451,7 +487,7 @@ describe('Revise from comments', () => {
 
     await expectAddressed('doc_3', true)
     expect(await within(review).findByRole('status')).toHaveTextContent('Saved: 1 comment is marked as addressed in v3.')
-    expect(within(await rail()).getByRole('button', { name: 'Ask personas to review again' })).toBeInTheDocument()
+    expect(await tool('AI review')).toHaveAccessibleDescription('Ask personas to review again')
   })
 
   it('recommendations: nothing written; a recommendation\'s link shows its thread, focused, even a resolved one hidden by the filter', async () => {
@@ -516,12 +552,16 @@ describe('Revise from comments', () => {
     function CanvasPage() {
       const state = useCanvasDocument({ project: makeProject({ project_id: 'proj_1' }), document: DOCUMENT, onSelectDoc: vi.fn() })
       return (
-        <>
-          <DocumentReviewView projectId="proj_1" document={DOCUMENT} markdown={state.content} hasPersonas editable={state.editable}
-            onChange={state.onChange} handleRef={state.handleRef} canvas={state} />
-          <button type="button" onClick={() => { state.save().catch(ignoreRejection) }}>Save the page</button>
-          <button type="button" onClick={state.discard}>Discard the page</button>
-        </>
+        <WithToolbar>
+          {(onActions) => (
+            <>
+              <DocumentReviewView projectId="proj_1" document={DOCUMENT} markdown={state.content} hasPersonas editable={state.editable}
+                onChange={state.onChange} handleRef={state.handleRef} canvas={state} onActions={onActions} />
+              <button type="button" onClick={() => { state.save().catch(ignoreRejection) }}>Save the page</button>
+              <button type="button" onClick={state.discard}>Discard the page</button>
+            </>
+          )}
+        </WithToolbar>
       )
     }
     const mountPage = () => renderWithQueryClient(<CanvasPage />)
@@ -574,15 +614,16 @@ describe('Revise from comments', () => {
     })
 
     it('Close keeps the accepted change: a new pass waits (with the reason), and Save still revises and marks', async () => {
-      const { user, review, button } = await acceptTheProposal(mountPage)
+      const { user, review } = await acceptTheProposal(mountPage)
 
       await user.click(within(review).getByRole('button', { name: 'Close' }))
 
       expect(screen.queryByRole('region', { name: 'Suggested changes' })).not.toBeInTheDocument()
-      expect([button.matches(':disabled'), button.getAttribute('aria-describedby') === null]).toStrictEqual([true, false])
-      expect(button).toHaveAccessibleDescription('Save or discard the accepted changes first.')
+      const rewrite = await tool('AI rewrite')
+      expect(rewrite).toHaveAttribute('aria-disabled', 'true')
+      expect(rewrite).toHaveAccessibleDescription('Save or discard the accepted changes first.')
       await user.click(screen.getByRole('button', { name: 'Save the page' }))
-      await waitFor(() => expect([reviseJobIds(), button.matches(':disabled')]).toStrictEqual([['job_rev_1'], false]))
+      await waitFor(() => expect([reviseJobIds(), rewrite.getAttribute('aria-disabled')]).toStrictEqual([['job_rev_1'], null]))
       await expectAddressed('doc_3', true)
     })
   })

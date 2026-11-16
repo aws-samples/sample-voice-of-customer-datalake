@@ -145,7 +145,7 @@ class TestSaveWebReviewsTarget:
         saved = _saved_configs(mock_secrets, 'web_reviews')[0]
         assert {k: v for k, v in saved.items() if k != 'id'} == {
             **WEB_TARGET, 'max_pages': '3', 'max_reviews': '0', 'frequency_minutes': '0', 'enabled': 'true',
-            'method': 'browser', 'source_id': 'web_trustpilot_trustpilot'}
+            'method': 'auto', 'source_id': 'web_trustpilot_trustpilot'}
         assert saved['id'] == body['app']['id']
         assert body['app']['source_id'] == 'web_trustpilot_trustpilot'
         mock_validate_url.assert_called_once_with(WEB_TARGET['url'])
@@ -175,7 +175,7 @@ class TestSaveWebReviewsTarget:
             api_gateway_event, lambda_context, 'POST', 'web_reviews', body={'app': {**WEB_TARGET, 'method': 'http'}},
         )
         assert response['statusCode'] == 400
-        assert 'method must be one of browser, bedrock_web_search' in json.dumps(body)
+        assert 'method must be one of auto, browser, bedrock_web_search' in json.dumps(body)
         mock_secrets.put_secret_value.assert_not_called()
 
     @patch('integrations_handler.secretsmanager')

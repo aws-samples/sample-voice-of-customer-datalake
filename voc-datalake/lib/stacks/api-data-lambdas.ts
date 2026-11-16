@@ -28,7 +28,7 @@ import {
   AGGREGATES_VERSION_PARTITION, grantCacheVersionBump, grantWorkspaceCacheVersionBump,
 } from '../utils/cache-version-grants';
 import { WORKSPACE_PARAMETER_BASE_PATH, grantWorkspaceParametersReadWrite } from '../utils/workspace-secrets';
-import { CIRCUIT_ROW_PARTITIONS } from './ingestion-roles';
+import { CIRCUIT_ROW_PARTITIONS, WEB_REVIEW_METHOD_PARTITIONS } from './ingestion-roles';
 import { grantKeyScopedWrites, grantReadAndWrites } from '../utils/table-write-grants';
 import { grantWorkspaceVersionDeletes } from '../utils/workspace-object-deletes';
 import {
@@ -250,6 +250,12 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   // ingestors' breaker rows, one list (lib/stacks/ingestion-roles.ts CIRCUIT_ROW_PARTITIONS).
   grantReadAndWrites(aggregatesTable, integrationsRole, ['PutItem']);
   grantKeyScopedWrites(aggregatesTable, integrationsRole, ['DeleteItem'], CIRCUIT_ROW_PARTITIONS);
+  // "Re-check methods" (DELETE /integrations/web_reviews/methods/{domain}): one site's learned-methods row, in the
+  // deployment's WEB_REVIEWS#METHODS or the request's workspace's WS#{ws}#WEB_REVIEWS#METHODS only; while the plugin is
+  // enabled. Its listing reads with the table's read grant above.
+  if (enabledPlugins.some((plugin) => plugin.id === 'web_reviews')) {
+    grantKeyScopedWrites(aggregatesTable, integrationsRole, ['DeleteItem'], WEB_REVIEW_METHOD_PARTITIONS);
+  }
 
   // Scrapers API
   const scrapersRole = ctx.role('ScrapersLambdaRole');

@@ -7,8 +7,12 @@ auth; this is the one spelling of its address and of the REST API version they a
 """
 from __future__ import annotations
 
+import re
 from typing import Final
 
 GITHUB_API: Final = 'https://api.github.com'
 #: The ``X-GitHub-Api-Version`` header's value.
 GITHUB_API_VERSION: Final = '2022-11-28'
+#: A GitHub App's id or an installation's: digits, no leading zero (the engineering connections' ``APP_NUMBER`` and the
+#: github_issues source's ``github_app_id``).
+GITHUB_NUMBER: Final = re.compile(r'[1-9][0-9]{0,19}')

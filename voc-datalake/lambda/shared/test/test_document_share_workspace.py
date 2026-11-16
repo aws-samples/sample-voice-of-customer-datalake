@@ -92,7 +92,7 @@ def test_a_deployment_link_is_its_one_row_and_its_pointer_as_before(table):
     share = _create(table, None)
     assert (share['pk'], share['sk']) == (f"DOCSHARE#{share['share_id']}", 'META')
     assert 'workspace_id' not in _partition(table, share['pk'])[0]
-    # The link, its pointer, and since 7.44.00 (3g-d) its rows in the deployment's link and series registries.
+    # The link, its pointer, and since 7.47.00 (3g-d) its rows in the deployment's link and series registries.
     assert sorted(row['pk'] for row in table.scan()['Items']) == sorted([
         share['pk'], comments_pk(PROJECT, SERIES['series_id']), 'DOCSHARE_IDS', 'COMMENT_SERIES_IDS'])
 
@@ -169,7 +169,7 @@ class RecordingClient:
 
 
 def test_the_deployments_create_is_the_transaction_sent_before_and_its_registry_rows(table, monkeypatch):
-    """The two entries it always sent, then (since 7.44.00, 3g-d) the series in the deployment's series registry
+    """The two entries it always sent, then (since 7.47.00, 3g-d) the series in the deployment's series registry
     (unconditioned) and the link in its link registry (only if new), naming its project and series."""
     recording = RecordingClient(table.meta.client)
     monkeypatch.setattr(table.meta, 'client', recording)

@@ -16,7 +16,8 @@ import { IconGlyph } from '../../components/SourceIcon/SourceIcon'
 import { manifestIcon } from '../../components/SourceIcon/sourceIcons'
 import { api } from '../../api/client'
 import { ADMIN_ONLY_TITLE } from '../../constants/admin'
-import { CredentialsSection, SetupInstructionsSection, WebhooksSection } from './SourceCardSections'
+import { SetupInstructionsSection, WebhooksSection } from './SourceCardSections'
+import SourceCredentials from './SourceCredentials'
 import SourceCircuitNotice from './SourceCircuitNotice'
 import { useSourceSchedule } from './useSourceSchedule'
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
@@ -136,8 +137,9 @@ export default function SourceCard({ manifest, apiEndpoint, isAdmin }: SourceCar
 
           {manifest.config.length > 0 && (
             <AdvancedWhenRaw sourceId={manifest.id}>
-              <CredentialsSection
-                fields={manifest.config}
+              <SourceCredentials
+                manifest={manifest}
+                apiEndpoint={apiEndpoint}
                 credentials={credentials}
                 showSecrets={showSecrets}
                 saveSuccess={saveSuccess}

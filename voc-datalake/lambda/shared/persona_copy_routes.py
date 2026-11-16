@@ -68,7 +68,7 @@ def _require_admin() -> None:
     require_admin_caller(_caller())
 
 
-def _created(body: dict) -> Response:
+def _created_response(body: dict) -> Response:
     return Response(status_code=201, content_type=content_types.APPLICATION_JSON,
                     body=json.dumps(body, default=decimal_default))
 
@@ -123,7 +123,7 @@ def promote_persona(project_id: str, persona_id: str):
     """An admin copies one project persona into the company library (notes stay behind; ``promote`` checks the
     admin)."""
     copies = promote(project_id, persona_id)
-    return _created({'success': True, 'persona': _signed(copies)[0]})
+    return _created_response({'success': True, 'persona': _signed(copies)[0]})
 
 
 def _member_projects(caller: Caller, exclude: str) -> Iterator[dict]:
@@ -213,4 +213,4 @@ def copy_personas_in(project_id: str):
     else:
         name = _source_project_name(source_id)
         copies = _copy(source=source_id, scope='project', name=name, ids=ids, target=project_id)
-    return _created({'success': True, 'personas': _signed(copies)})
+    return _created_response({'success': True, 'personas': _signed(copies)})

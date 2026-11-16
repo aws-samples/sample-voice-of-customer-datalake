@@ -281,7 +281,8 @@
     "select": "선택...",
     "configuredInSettings": "{{name}}은(는) {{where}}에서 연결합니다. 그곳에 토큰과 설정을 붙여넣은 뒤 여기로 돌아오세요.",
     "configuredInSettingsNoToken": "{{name}}은(는) {{where}}에서 설정합니다. 그곳에서 설정을 입력한 뒤 여기로 돌아오세요.",
-    "openDataSourceSettings": "소스 설정 열기"
+    "openDataSourceSettings": "소스 설정 열기",
+    "saveFailed": "저장하지 못했습니다. 다시 시도하세요."
   },
   "refresh": "새로고침",
   "status": {
@@ -325,6 +326,7 @@
     "configuredApps": "구성된 앱",
     "noApps": "아직 구성된 앱이 없습니다",
     "addFirstApp": "첫 번째 앱 추가",
+    "alreadySource": "이 앱은 이미 소스입니다: {{name}}",
     "web": {
       "configuredPages": "리뷰 페이지",
       "addPage": "페이지 추가",
@@ -336,7 +338,10 @@
       "deleteConfirmTitle": "리뷰 페이지 제거",
       "deleteConfirmMessage": "이 리뷰 페이지를 제거하시겠습니까?",
       "addBedrockPage": "Bedrock 웹 검색 인덱스에서 페이지 추가",
-      "bedrockNote": "리뷰는 사이트 자체가 아니라 Amazon Bedrock이 인덱싱한 이 페이지의 사본(Amazon 캐시)에서 읽습니다. 각 리뷰는 원본 URL과 사이트를 유지하므로 항상 게시된 곳을 가리킵니다. 페이지를 읽는 모델은 관리 → AI 모델에서 선택합니다."
+      "bedrockNote": "리뷰는 사이트 자체가 아니라 Amazon Bedrock이 인덱싱한 이 페이지의 사본(Amazon 캐시)에서 읽습니다. 각 리뷰는 원본 URL과 사이트를 유지하므로 항상 게시된 곳을 가리킵니다. 페이지를 읽는 모델은 관리 → AI 모델에서 선택합니다.",
+      "nameHint": "최대 100자의 문자, 숫자, 공백, “.”, “_” 또는 “-”이며 A–Z 문자나 숫자로 시작합니다.",
+      "nameInvalid": "이 이름은 저장할 수 없습니다. 문자, 숫자, 공백, “.”, “_”, “-”만 사용하고(최대 100자) A–Z 문자나 숫자로 시작하세요.",
+      "alreadySource": "이 페이지는 이미 소스입니다: {{name}}"
     },
     "kindLabel": "유형",
     "kind": {
@@ -347,7 +352,58 @@
     },
     "method": {
       "browser": "브라우저",
-      "bedrock": "Bedrock 웹 인덱스"
+      "bedrock": "Bedrock 웹 인덱스",
+      "automatic": "자동",
+      "label": "읽기 방법",
+      "option": {
+        "auto": "자동(권장)",
+        "browser": "브라우저만",
+        "bedrock": "Bedrock 웹 인덱스만"
+      },
+      "help": {
+        "auto": "먼저 서명된 브라우저를 시도하고, 다음으로 Amazon Bedrock 웹 인덱스에 있는 페이지 사본, 그다음 AgentCore 웹 검색 발췌를 시도하며, 이 사이트에서 어떤 방법이 통하는지 학습합니다.",
+        "browser": "관리형 브라우저만 페이지를 한 페이지씩 읽습니다. 브라우저를 차단하는 사이트는 차단됨으로 보고됩니다.",
+        "bedrock": "Amazon Bedrock 웹 인덱스에 있는 페이지 사본만 실행당 한 페이지씩 읽습니다."
+      }
+    },
+    "read": {
+      "step": {
+        "browser": "브라우저",
+        "bedrock_web_search": "Bedrock 웹 인덱스",
+        "agentcore_web_search": "AgentCore 웹 검색"
+      },
+      "failed": {
+        "blocked": "{{method}}: {{vendor}}에 의해 차단됨",
+        "blockedUnknown": "{{method}}: 차단됨",
+        "no_reviews": "{{method}}: 리뷰를 찾지 못함",
+        "error": "{{method}}: 페이지를 열 수 없음",
+        "skipped_time": "{{method}}: 시간이 부족해 건너뜀",
+        "not_offered": "{{method}}: 이 리전에서 제공되지 않음"
+      },
+      "readWithBrowser": "브라우저로 읽음({{amount}})",
+      "readVia": "{{method}}(으)로 읽음({{amount}})",
+      "thenRead": "{{method}}(으)로 읽음({{amount}})",
+      "known": "알려짐: {{method}}({{date}}에 학습)",
+      "knownUndated": "알려짐: {{method}}",
+      "reprobeReads": "브라우저를 다시 확인함: 다시 읽을 수 있음({{amount}})",
+      "reprobeStill": "브라우저를 다시 확인함: 여전히 {{vendor}}에 의해 차단됨",
+      "reprobeUnreadable": "브라우저를 다시 확인함: 여전히 읽을 수 없음",
+      "nothing": "어떤 방법으로도 읽지 못함: {{chain}}",
+      "notRead": "읽지 못함: {{chain}}",
+      "excerpts": "발췌",
+      "excerptsTitle": "이 리뷰는 AgentCore 웹 검색 결과의 발췌입니다. 일부가 잘렸을 수 있으며 각각 원본 링크를 유지합니다.",
+      "reviews_one": "리뷰 {{count, number}}개",
+      "reviews_other": "리뷰 {{count, number}}개"
+    },
+    "learned": {
+      "best": "알려진 최적 방법: {{method}}({{date}}에 학습)",
+      "bestUndated": "알려진 최적 방법: {{method}}",
+      "none": "아직 이 사이트를 읽은 방법이 없습니다",
+      "recheck": "방법 다시 확인",
+      "recheckTitle": "이 워크스페이스가 이 사이트에 대해 학습한 내용을 지워 다음 실행에서 모든 방법을 다시 시도합니다",
+      "recheckFailed": "학습한 내용을 지우지 못했습니다. 다시 시도하세요.",
+      "cleared": "다음 실행에서 모든 방법을 다시 시도합니다.",
+      "browserRecheck": "{{date}} 이후 브라우저를 다시 시도합니다"
     }
   },
   "sourceMenu": {
@@ -408,7 +464,7 @@
       },
       "webReviewsBedrock": {
         "title": "Amazon Bedrock 웹 검색 인덱스",
-        "description": "자동화된 브라우저를 차단하는 사이트(G2, Gartner, Capterra, TrustRadius)를 위해 Amazon Bedrock이 인덱싱한 페이지의 리뷰를 가져옵니다. Amazon 캐시에서 읽고 원본 링크와 함께 저장합니다."
+        "description": "자동화된 브라우저를 차단하는 사이트를 위해 Amazon Bedrock이 인덱싱한 페이지의 리뷰를 가져옵니다. Amazon 캐시에서 읽고 원본 링크와 함께 저장합니다."
       }
     }
   },

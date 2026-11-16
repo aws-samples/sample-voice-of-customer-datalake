@@ -25,6 +25,7 @@ import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
 import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import { SetupInstructions, ResultMessage } from './PluginConfigParts'
 import AppEditorForm from './AppEditorForm'
+import { appSaveMessage, saveAppFromForm } from './appSave'
 import { appField, getAppIdentifier, ownValue, supportsAppConfigs } from './scraper-helpers'
 import type { AppConfig } from './scraper-helpers'
 import type { PluginManifest } from '../../plugins/types'
@@ -161,7 +162,7 @@ function AppCard({
 }
 
 function AppListSection({
-  plugin, apps, appsLoading, showEditor, editorInitialValues, savePending, isAdmin, onStartAdd, onStartEdit, onDelete, onSaveApp, onCancelEditor,
+  plugin, apps, appsLoading, showEditor, editorInitialValues, savePending, saveError, isAdmin, onStartAdd, onStartEdit, onDelete, onSaveApp, onCancelEditor,
 }: {
   readonly plugin: PluginManifest;
   readonly apps: AppConfig[];
@@ -169,6 +170,7 @@ function AppListSection({
   readonly showEditor: boolean
   readonly editorInitialValues: AppConfig;
   readonly savePending: boolean
+  readonly saveError: string | null
   readonly isAdmin: boolean
   readonly onStartAdd: () => void;
   readonly onStartEdit: (app: AppConfig) => void;
@@ -201,7 +203,7 @@ function AppListSection({
           {apps.map((app) => <AppCard key={appField(app, 'id')} app={app} pluginId={plugin.id} isAdmin={isAdmin} onEdit={() => onStartEdit(app)} onDelete={() => onDelete(appField(app, 'id'))} />)}
         </div>
       )}
-      {showEditor ? <AppEditorForm plugin={plugin} initialValues={editorInitialValues} isAdmin={isAdmin} onSave={onSaveApp} onCancel={onCancelEditor} isPending={savePending} /> : null}
+      {showEditor ? <AppEditorForm plugin={plugin} initialValues={editorInitialValues} isAdmin={isAdmin} onSave={onSaveApp} onCancel={onCancelEditor} isPending={savePending} saveError={saveError} /> : null}
     </div>
   )
 }
@@ -297,17 +299,18 @@ function DeleteAppConfirm({ appId, pluginId, onConfirm, onCancel }: Readonly<{
 }
 
 /** The one-app form a card's Edit opens; a spinner while the configs load. */
-function FocusedAppEditor({ plugin, app, loading, isAdmin, isPending, onSave, onCancel }: Readonly<{
+function FocusedAppEditor({ plugin, app, loading, isAdmin, isPending, saveError, onSave, onCancel }: Readonly<{
   plugin: PluginManifest
   app: AppConfig | undefined
   loading: boolean
   isAdmin: boolean
   isPending: boolean
+  saveError: string | null
   onSave: (v: AppConfig) => void
   onCancel: () => void
 }>) {
   if (loading || app === undefined) return <div className="flex items-center justify-center py-6"><Loader2 className="animate-spin h-6 w-6 text-accent" aria-hidden="true" /></div>
-  return <AppEditorForm plugin={plugin} initialValues={app} isAdmin={isAdmin} onSave={onSave} onCancel={onCancel} isPending={isPending} />
+  return <AppEditorForm plugin={plugin} initialValues={app} isAdmin={isAdmin} onSave={onSave} onCancel={onCancel} isPending={isPending} saveError={saveError} />
 }
 
 export default function PluginConfigModal({
@@ -333,7 +336,8 @@ export default function PluginConfigModal({
   const apps = appConfigsData?.apps ?? []
 
   const saveMutation = useMutation({
-    mutationFn: (app: AppConfig) => api.saveAppConfig(plugin.id, app),
+    // A new app or page is a create: one the workspace already has is a 409, said in the form (appSave.ts).
+    mutationFn: (app: AppConfig) => saveAppFromForm(plugin.id, app),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: appConfigsKey(plugin.id) })
       void queryClient.invalidateQueries({ queryKey: allAppConfigsKey() })
@@ -352,6 +356,7 @@ export default function PluginConfigModal({
   const runMutation = useMutation({ mutationFn: () => api.runSource(plugin.id) })
 
   const showEditor = isAdding || editingApp !== null
+  const saveError = appSaveMessage(t, { error: saveMutation.error, sent: saveMutation.variables, apps, pluginId: plugin.id })
   // A preset add is a focused form too: the one new app, closed when saved or cancelled.
   const { focused, focusedApp, loading: focusLoading, title } = useDialogFocus(apps, appsLoading, focusAppId, addPreset, pluginCopy.name)
 
@@ -363,20 +368,20 @@ export default function PluginConfigModal({
         {focused ? (
           <div className="dialog-body">
             <FocusedAppEditor plugin={plugin} app={focusedApp} loading={focusLoading} isAdmin={isAdmin}
-              isPending={saveMutation.isPending} onSave={(v) => saveMutation.mutate(v, { onSuccess: onClose })} onCancel={onClose} />
+              isPending={saveMutation.isPending} saveError={saveError} onSave={(v) => saveMutation.mutate(v, { onSuccess: onClose })} onCancel={onClose} />
           </div>
         ) : (
         <div className="dialog-body space-y-5">
           <ScheduleSection pluginId={plugin.id} isAdmin={isAdmin} />
           {hasApps ? (
-            <AppListSection plugin={plugin} apps={apps} appsLoading={appsLoading} showEditor={showEditor} editorInitialValues={editingApp ?? {}} savePending={saveMutation.isPending} isAdmin={isAdmin}
+            <AppListSection plugin={plugin} apps={apps} appsLoading={appsLoading} showEditor={showEditor} editorInitialValues={editingApp ?? {}} savePending={saveMutation.isPending} saveError={saveError} isAdmin={isAdmin}
               onStartAdd={() => {
-                setEditingApp(null); setIsAdding(true)
+                saveMutation.reset(); setEditingApp(null); setIsAdding(true)
               }} onStartEdit={(app) => {
-                setIsAdding(false); setEditingApp(app)
+                saveMutation.reset(); setIsAdding(false); setEditingApp(app)
               }}
               onDelete={(id) => setDeleteAppId(id)} onSaveApp={(v) => saveMutation.mutate(v)} onCancelEditor={() => {
-                setEditingApp(null); setIsAdding(false)
+                saveMutation.reset(); setEditingApp(null); setIsAdding(false)
               }} />
           ) : <SettingsPointer plugin={plugin} />}
           {apps.length > 0 && <RunNowRow isAdmin={isAdmin} isPending={runMutation.isPending} result={runMutation.data} error={runMutation.error} onRun={() => runMutation.mutate()} />}

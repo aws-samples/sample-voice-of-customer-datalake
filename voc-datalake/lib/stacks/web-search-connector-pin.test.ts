@@ -3,6 +3,7 @@
  * Radar's release scan sends request filters only that version accepts.
  */
 import { describe, expect, it } from 'vitest';
+import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import * as cdk from 'aws-cdk-lib';
 import { Template } from 'aws-cdk-lib/assertions';
 import { z } from 'zod';
@@ -29,7 +30,7 @@ function pinsOf(deployWebSearch: boolean): z.infer<typeof PinSchema>[] {
   return Object.values(Template.fromStack(stack).findResources(WEB_SEARCH_CONNECTOR_PIN_TYPE)).map((r) => PinSchema.parse(r));
 }
 
-describe('the web-search connector version pin', () => {
+describe('the web-search connector version pin', { timeout: SYNTH_TIMEOUT_MS }, () => {
   it('updates the target in place to 1.2.0 on create and on update', () => {
     const pins = pinsOf(true);
     expect(pins).toHaveLength(1);

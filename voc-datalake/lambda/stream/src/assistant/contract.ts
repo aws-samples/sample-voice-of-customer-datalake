@@ -116,7 +116,10 @@ export const SERVER_TOOLS = {
   ],
   forms: ['list_feedback_forms', 'get_feedback_form_stats', 'get_feedback_form_submissions'],
   prioritization: ['get_prioritization'],
-  scrapers: ['list_scrapers', 'get_scraper_status', 'analyze_scraper_url', 'get_source_run', 'find_app_store_app'],
+  scrapers: [
+    'list_scrapers', 'get_scraper_status', 'analyze_scraper_url', 'get_source_run', 'find_app_store_app',
+    'list_review_site_methods',
+  ],
   settings: ['get_categories_config', 'get_brand_settings', 'list_users', 'get_user_access'],
   memory: ['get_memory_review'],
   agents: ['list_agents', 'get_agent', 'get_workflow', 'list_agent_runs', 'get_agent_run', 'validate_workflow', 'get_engineering_run'],

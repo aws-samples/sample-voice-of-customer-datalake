@@ -85,9 +85,9 @@ def _stopped_partway(world: World, name: str) -> None:
 def test_the_entries_run_in_the_designs_order():
     assert [sweep.name for sweep in SWEEPS] == [
         'credentials', 'feedback', 'counters', 'source_runs', 'failures', 'circuits', 'logs', 'scraper_runs',
-        'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'reprocess_jobs', 'watermarks', 'memory',
-        'exports', 'objects', 'radar', 'settings', 'user_contexts', 'docshares', 'projects', 'participants',
-        'conversations', 'control_rows']
+        'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'reprocess_jobs', 'web_review_methods',
+        'watermarks', 'memory', 'exports', 'objects', 'radar', 'settings', 'user_contexts', 'docshares', 'projects',
+        'participants', 'conversations', 'control_rows']
 
 
 def test_only_the_feedback_and_the_memory_are_tombstoned():
@@ -272,6 +272,7 @@ class TestCounters:
     ('feedback_forms', ['FEEDBACK_FORM']),
     ('import_runs', ['IMPORT_RUN', 'IMPORT_RUN#run1']),
     ('erasure_jobs', ['JOB#erasure']),
+    ('web_review_methods', ['WEB_REVIEWS#METHODS']),
 ])
 def test_each_aggregates_family_goes_for_the_workspace_only(seeded, name, partitions):
     # The sources these families are keyed by are the ones the feedback sweep met.

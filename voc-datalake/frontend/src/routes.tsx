@@ -32,7 +32,7 @@ import {
   Home, Dashboard, FeedbackDetail, Categories, ProblemAnalysis, Settings,
   Scrapers, Chat, Projects, ProjectDetail, Prioritization, FeedbackForms,
   DataExplorer, Vote, Memory, Company, Agents, AgentDetail,
-  WorkflowPage, WorkflowTemplatePage, EngineeringRun, Account, Members, WorkspaceSettings, Connect, OAuthConsent,
+  WorkflowPage, WorkflowTemplatePage, EngineeringRun, GitHubAppCreated, GitHubAppInstalled, Account, Members, WorkspaceSettings, Connect, OAuthConsent,
   Radar, Participants,
   FeatureRequests, FeatureBoardPage, Board, Unsubscribe, Review,
 } from './lazyPages'
@@ -128,7 +128,9 @@ export const routes: RouteObject[] = [
       { path: 'radar', ...page(<Radar />) },
       { path: 'chat', ...page(<Chat />) },
       { path: 'projects', ...page(<Projects />) },
-      { path: 'projects/:id', ...page(<ProjectDetail />) },
+      // A project: its tabs, a document, an older version and full screen are paths the page reads itself
+      // (pages/ProjectDetail/projectPaths.ts: /projects/:id/documents/:docId/v/:n/focus); an old ?tab= link is replaced.
+      { path: 'projects/:id/*', ...page(<ProjectDetail />) },
       { path: 'prioritization', ...page(<Prioritization />) },
       { path: 'data-explorer', ...page(<AdminRoute><DataExplorer /></AdminRoute>) },
       { path: 'scrapers', ...page(<Scrapers />) },
@@ -150,6 +152,11 @@ export const routes: RouteObject[] = [
       { path: 'agents/workflows/templates/:templateId', ...page(<WorkflowTemplatePage />) },
       // An engineering run's monitor (reached by its run id: no list of runs yet).
       { path: 'agents/engineering/:runId', ...page(<EngineeringRun />) },
+      // Where GitHub sends an administrator back from the deployment's GitHub App (Agents → Connections → Connect
+      // GitHub): its creation (the manifest's redirect_url, with the code and the state) and its installation (the
+      // App's setup_url). Both addresses are fixed in the manifest the server writes, so they must not move.
+      { path: 'agents/connections/github/created', ...page(<GitHubAppCreated />) },
+      { path: 'agents/connections/github/installed', ...page(<GitHubAppInstalled />) },
       { path: 'connect', ...page(<Connect />) },
       { path: 'oauth/authorize', ...page(<OAuthConsent />) },
       { path: 'account', ...page(<Account />) },

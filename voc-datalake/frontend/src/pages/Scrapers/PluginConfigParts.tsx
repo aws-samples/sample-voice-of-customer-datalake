@@ -33,18 +33,36 @@ export function ConfigFieldOptions({ placeholder, options }: Readonly<{
   </>
 }
 
+/** A text field's line under it: what it may hold (its description), and why what was typed cannot be saved. */
+export interface FieldNote {
+  readonly hint: string
+  /** Set: the field is invalid (`aria-invalid`), and this says why, as an alert. */
+  readonly error?: string
+}
+
+function FieldNoteLines({ id, note }: Readonly<{ id: string; note: FieldNote }>) {
+  return (
+    <>
+      <p id={`${id}-hint`} className="mt-1 text-xs text-muted">{note.hint}</p>
+      {note.error === undefined ? null : <p id={`${id}-error`} role="alert" className="mt-1 text-xs text-danger">{note.error}</p>}
+    </>
+  )
+}
+
 function PluginField({
-  field, value, showSecrets, onChange,
+  field, value, showSecrets, note, onChange,
 }: {
   readonly field: ConfigField
   readonly value: string
   readonly showSecrets: boolean
+  readonly note?: FieldNote
   readonly onChange: (value: string) => void
 }) {
   const { t } = useTranslation('scrapers')
   // Labels are tied to their control so the field has an accessible name
   // (axe select-name / label) and clicking the label focuses it.
   const id = useId()
+  const describedBy = note === undefined ? undefined : clsx(`${id}-hint`, note.error !== undefined && `${id}-error`)
   const placeholder = field.placeholder ?? `Enter ${field.label.toLowerCase()}`
   const required = field.required === true
   const label = <FieldLabel htmlFor={id} label={field.label} required={required} />
@@ -88,21 +106,27 @@ function PluginField({
         required={required}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        aria-describedby={describedBy}
+        aria-invalid={note?.error === undefined ? undefined : true}
         className="input text-sm"
       />
+      {note === undefined ? null : <FieldNoteLines id={id} note={note} />}
     </div>
   )
 }
 
 /**
  * One `PluginField` per manifest config entry, laid out in the modals' field grid.
- * Secrets stay masked; `onChange` reports the edited field's key with its new value.
+ * Secrets stay masked; `onChange` reports the edited field's key with its new value; a text field may carry a
+ * note (`notes`: its hint, and why what was typed cannot be saved).
  */
 export function PluginFieldGrid({
-  fields, values, onChange,
+  fields, values, notes, onChange,
 }: {
   readonly fields: readonly ConfigField[]
   readonly values: Readonly<Record<string, string>>
+  /** A text field's hint and error, by its key (a review page's name). */
+  readonly notes?: Readonly<Partial<Record<string, FieldNote>>>
   readonly onChange: (key: string, value: string) => void
 }) {
   return (
@@ -113,6 +137,7 @@ export function PluginFieldGrid({
           field={field}
           value={values[field.key] ?? ''}
           showSecrets={false}
+          note={notes?.[field.key]}
           onChange={(v) => onChange(field.key, v)}
         />
       ))}

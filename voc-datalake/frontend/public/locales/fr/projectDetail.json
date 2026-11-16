@@ -13,6 +13,13 @@
   },
   "documents": {
     "deleteDocument": "Supprimer le document",
+    "card": {
+      "more": "Plus d’actions",
+      "menu": "Actions pour « {{title}} »",
+      "open": "Ouvrir",
+      "renameFailed": "Le nouveau nom n’a pas pu être enregistré. Réessayez.",
+      "renameConflict": "Le document a changé entre-temps : le nouveau nom n’a pas été enregistré. Réessayez."
+    },
     "derivation": {
       "builtFrom": "Créé à partir de",
       "feedbackUsed_one": "{{count, number}} retour client utilisé",
@@ -904,7 +911,6 @@
         "undoing": "Rétablissement de la version précédente…",
         "undone": "Annulé : la version précédente est rétablie comme nouvelle version."
       },
-      "button": "Réviser à partir des commentaires",
       "close": "Fermer",
       "failed": "La révision à partir des commentaires a échoué. Veuillez réessayer.",
       "filterAddressed": "Traités",
@@ -1003,6 +1009,29 @@
       "minutes_one": "{{count, number}} min de lecture",
       "minutes_other": "{{count, number}} min de lecture",
       "wordsAndMinutes": "{{words}} · {{minutes}}"
+    },
+    "toolbar": {
+      "label": "Outils du document",
+      "more": "Plus d'outils",
+      "share": "Partager",
+      "aiReview": "Relecture IA",
+      "aiReviewNoPersonas": "Ajoutez des personas à ce projet pour leur demander une relecture.",
+      "aiRewrite": "Réécriture IA",
+      "historyHint": "Toutes les versions de ce document : en ouvrir, en comparer ou en restaurer une",
+      "contentsHint": "Afficher ou masquer le sommaire",
+      "fullWidthHint": "Laisser le texte occuper toute la largeur",
+      "version": "Version {{version}}",
+      "versionHint": "Lire une version antérieure",
+      "versionsLoading": "Chargement des versions…",
+      "latest": "Dernière"
+    },
+    "versions": {
+      "bannerLabel": "Version antérieure",
+      "viewing": "Vous lisez {{version}} sur {{latest}}",
+      "viewingOne": "Vous lisez {{version}}",
+      "readOnly": "lecture seule",
+      "backToLatest": "Revenir à la dernière",
+      "announce": "{{version}} est affichée : une version antérieure, en lecture seule."
     }
   }
 }

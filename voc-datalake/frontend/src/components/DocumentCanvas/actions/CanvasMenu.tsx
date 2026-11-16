@@ -1,10 +1,12 @@
 /**
  * @fileoverview One menu of the document page's menu bar (Edit, Format, Insert, View; menuBar.ts): a WAI-ARIA menu
  * button over a list of entries — actions (`menuitem`, with their keyboard shortcut shown and in
- * `aria-keyshortcuts`), toggles (`menuitemcheckbox`) and separators. The entries are read when the menu renders open,
- * so what can run (Undo with nothing to undo) is the text's state at that moment. A disabled entry stays in the
- * menu's roving focus (APG) and does nothing. Choosing an entry closes the menu and puts focus back on its button,
- * then runs it (an editor command takes the focus back to the text; a toggle leaves it on the button).
+ * `aria-keyshortcuts`), toggles (`menuitemcheckbox`), choices of one (`menuitemradio`: the toolbar's versions) and
+ * separators. The entries are read when the menu renders open, so what can run (Undo with nothing to undo) is the
+ * text's state at that moment. A disabled entry stays in the menu's roving focus (APG) and does nothing. Choosing an
+ * entry closes the menu and puts focus back on its button, then runs it (an editor command takes the focus back to the
+ * text; a toggle leaves it on the button). The page's toolbar (DocumentToolbar) draws its menus with the same entries
+ * (`CanvasMenuEntries`).
  *
  * @module components/DocumentCanvas/actions/CanvasMenu
  */
@@ -27,6 +29,8 @@ interface MenuAction extends EntryBase {
   readonly icon: LucideIcon
   readonly onSelect: () => void
   readonly disabled?: boolean
+  /** A destructive action (Delete): drawn in the danger colour. */
+  readonly danger?: boolean
 }
 
 interface MenuToggle extends EntryBase {
@@ -35,7 +39,16 @@ interface MenuToggle extends EntryBase {
   readonly onToggle: () => void
 }
 
-export type CanvasMenuEntry = MenuAction | MenuToggle | { readonly kind: 'separator'; readonly id: string }
+/** One of a set, the checked one the set's current choice: `detail` (its date) and `badge` ("Latest") beside it. */
+interface MenuRadio extends EntryBase {
+  readonly kind: 'radio'
+  readonly checked: boolean
+  readonly detail: string
+  readonly badge: string | null
+  readonly onSelect: () => void
+}
+
+export type CanvasMenuEntry = MenuAction | MenuToggle | MenuRadio | { readonly kind: 'separator'; readonly id: string }
 
 interface CanvasMenuProps {
   readonly label: string
@@ -50,18 +63,40 @@ function ShortcutHint({ shortcut }: Readonly<{ shortcut?: Shortcut }>) {
   return <kbd aria-hidden="true" className="ml-auto pl-3 font-sans text-xs text-muted whitespace-nowrap">{shortcutText(shortcut)}</kbd>
 }
 
-function Entry({ entry, choose }: Readonly<{ entry: CanvasMenuEntry; choose: (run: () => void) => void }>) {
+/** A toggle's or a choice's mark: a check while on, the room for one otherwise. */
+function CheckMark({ checked }: Readonly<{ checked: boolean }>) {
+  return (
+    <span aria-hidden="true" className="inline-flex size-4 flex-shrink-0 items-center justify-center">
+      {checked ? <Check size={14} /> : null}
+    </span>
+  )
+}
+
+/**
+ * One entry of a menu (`role="menu"`): CanvasMenu's, the toolbar's (CanvasMenuEntries) and the documents list's card
+ * menu (DocumentCardMenu). `choose` closes the menu, then runs the entry.
+ */
+export function CanvasMenuItem({ entry, choose }: Readonly<{ entry: CanvasMenuEntry; choose: (run: () => void) => void }>) {
   if (entry.kind === 'separator') return <hr className="menu-separator border-0" />
   const keys = entry.shortcut === undefined ? undefined : shortcutKeys(entry.shortcut)
   if (entry.kind === 'toggle') {
     return (
       <button type="button" role="menuitemcheckbox" aria-checked={entry.checked} aria-keyshortcuts={keys}
         className={ITEM_CLASS} onClick={() => choose(entry.onToggle)}>
-        <span aria-hidden="true" className="inline-flex size-4 flex-shrink-0 items-center justify-center">
-          {entry.checked ? <Check size={14} /> : null}
-        </span>
+        <CheckMark checked={entry.checked} />
         <span className="truncate">{entry.label}</span>
         <ShortcutHint shortcut={entry.shortcut} />
+      </button>
+    )
+  }
+  if (entry.kind === 'radio') {
+    return (
+      <button type="button" role="menuitemradio" aria-checked={entry.checked} className={ITEM_CLASS}
+        onClick={() => choose(entry.onSelect)}>
+        <CheckMark checked={entry.checked} />
+        <span className="font-mono text-text-strong">{entry.label}</span>
+        {entry.badge === null ? null : <span className="badge badge-ok">{entry.badge}</span>}
+        <span className="ml-auto pl-3 text-xs text-muted whitespace-nowrap">{entry.detail}</span>
       </button>
     )
   }
@@ -70,13 +105,20 @@ function Entry({ entry, choose }: Readonly<{ entry: CanvasMenuEntry; choose: (ru
   return (
     // Not `disabled`: a disabled item could not take the menu's roving focus (APG: disabled items stay focusable).
     <button type="button" role="menuitem" aria-disabled={disabled ? true : undefined} aria-keyshortcuts={keys}
-      className={clsx(ITEM_CLASS, disabled && 'text-muted cursor-default hover:bg-transparent')}
+      className={clsx(ITEM_CLASS, disabled && 'text-muted cursor-default hover:bg-transparent', entry.danger === true && !disabled && 'text-danger')}
       onClick={disabled ? undefined : () => choose(entry.onSelect)}>
       <Icon size={16} className="flex-shrink-0" aria-hidden="true" />
       <span className="truncate">{entry.label}</span>
       <ShortcutHint shortcut={entry.shortcut} />
     </button>
   )
+}
+
+/** A menu's entries; `choose` closes the menu, then runs what was chosen. */
+export function CanvasMenuEntries({ entries, choose }: Readonly<{
+  entries: readonly CanvasMenuEntry[]; choose: (run: () => void) => void
+}>) {
+  return <>{entries.map((entry) => <CanvasMenuItem key={entry.id} entry={entry} choose={choose} />)}</>
 }
 
 export default function CanvasMenu({ label, entries }: CanvasMenuProps) {
@@ -97,7 +139,7 @@ export default function CanvasMenu({ label, entries }: CanvasMenuProps) {
       {open ? (
         <div ref={menuRef} id={menuId} role="menu" aria-labelledby={triggerId} aria-orientation="vertical"
           onKeyDown={onMenuKeyDown} className={MENUBAR_POPUP_CLASS}>
-          {entries().map((entry) => <Entry key={entry.id} entry={entry} choose={choose} />)}
+          <CanvasMenuEntries entries={entries()} choose={choose} />
         </div>
       ) : null}
     </div>

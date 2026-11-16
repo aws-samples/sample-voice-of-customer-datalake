@@ -24,6 +24,8 @@ FAMILIES: Final = {
     'source_run_pk': 'source_runs', 'scraper_run_pk': 'scraper_runs',
     'FAILURES': 'failures', 'CIRCUIT': 'circuits', 'LOGS': 'logs',
     'erasure_job_pk': 'erasure_jobs', 'reprocess_job_pk': 'reprocess_jobs', 'export_job_pk': 'exports',
+    # What the workspace's web_reviews runs learned of each site (WS#{ws}#WEB_REVIEWS#METHODS, 7.44.00).
+    'WEB_REVIEWS': 'web_review_methods',
     'memory_company_pk': 'memory', 'memory_status_pk': 'memory', 'memory_cursor_pk': 'memory',
     'memory_import_pk': 'memory', 'memory_event_pk': 'memory',
     # shared/memory_store.py's own spellings of the same partitions (through scoped_pk).

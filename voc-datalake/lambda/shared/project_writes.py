@@ -149,7 +149,7 @@ def transact_project_writes(
 
 
 def register_deployment_project(table, project_id: str, created_at: str) -> None:
-    """List a deployment project in the deployment's registry (``PROJECT_IDS`` / ``{id}``, since 7.44.00, 3g-d), put
+    """List a deployment project in the deployment's registry (``PROJECT_IDS`` / ``{id}``, since 7.47.00, 3g-d), put
     only if absent, before its ``META`` is put: a ``META`` never exists unlisted, and a create refused after this
     leaves a row naming an empty partition, which a walk reads as nothing. The project delete never removes it (it
     takes the tombstoned ``META`` off ``gsi1-by-type``), so an erasure by email still finds a deleted project's rows."""

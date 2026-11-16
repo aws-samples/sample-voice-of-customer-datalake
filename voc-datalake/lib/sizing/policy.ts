@@ -358,7 +358,7 @@ export const UNCHANGED: Readonly<Record<string, number | null>> = {
   'VocCoreStack/BucketNotificationsHandler050a0587b7544547bf325f094a3db8347ECC3691': null,
   'VocCoreStack/CustomMessageLambda448F9FBF': null,
   'VocCoreStack/AdminBootstrapProviderframeworkonEventF4719509': null,
-  // The stack's AwsCustomResource provider (7.44.00): one DeleteItem per deploy, the review registries' marker reset
+  // The stack's AwsCustomResource provider (7.47.00): one DeleteItem per deploy, the review registries' marker reset
   // (review-registries-marker.ts), at the CDK default.
   'VocCoreStack/AWS679f53fac002430cb0da5b7982bd22872D164C4C': null,
   // The model agreements (BedrockModelAgreements under the id ImageModelAccess, bedrock-access-stack.ts):
@@ -421,6 +421,9 @@ export const OPTIONAL_FUNCTION_SIZES: Readonly<Record<string, number>> = {
   'voc-email-intake': 1024,
   // `-c engineeringAgents=true` (docs/autonomous-engineering.md): the connector broker, not measured yet.
   'voc-engineering-broker': 256,
+  // The GitHub Apps' token function (7.45.00, lib/stacks/engineering-app-tokens.ts): one RS256 signature and a few
+  // GitHub requests per call, I/O-bound, not measured yet.
+  'voc-engineering-app-tokens': 256,
   // The engineering bus (lib/stacks/engineering-bus.ts): the inbox router and the board API, not measured yet.
   'voc-engineering-router': 256,
   'voc-engineering-board': 256,

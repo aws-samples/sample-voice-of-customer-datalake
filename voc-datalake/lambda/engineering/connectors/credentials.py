@@ -8,12 +8,21 @@ the Agents API's ``PUT /agents/engineering/connections/<id>``), ``{prefix}{conne
 
     {"app_id": "123456", "installation_id": 7890123, "repository": "owner/name", "private_key": "-----BEGIN ..."}
 
+or, since 7.45.00, a connection made through one of the deployment's GitHub Apps (``github_apps.py``), whose key is
+the App's, stored once, named in place of the key::
+
+    {"app_id": "123456", "installation_id": 7890123, "repository": "owner/name", "key": "app"}
+
+which this reader resolves with a second read, of ``{prefix}_github-app/<app_id>/key``
+(``{"app_id", "slug", "private_key"}``, its App id checked against the connection's), the key kept like a credential
+(``CACHE_SECONDS``: a removed App's key reaches a warm container's runs within that);
+
 or, since 7.06.00, a GitLab project's (its id and path as GitLab answered the save's check, the token's expiry)::
 
     {"host": "gitlab", "project_id": 4242, "repository": "group/project", "token": "glpat-...", "expires_at": "2027-11-01"}
 
 Only the broker and the checkout cache's writer read it, decrypted, and keep it in memory for ``CACHE_SECONDS`` at
-most. The value is never
+most (the token function, ``app_tokens.py``, reads an App's key alone, by the same ``parse_app_key``). The value is never
 logged, echoed or put in an error message: a parameter that is missing, unreadable or not this shape is
 ``NoConnection`` (503), and the log line names only the connection and the AWS error code.
 """
@@ -32,7 +41,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from engineering.connectors.connections import APP_NUMBER, REPOSITORY
+from engineering.connectors.connections import APP_NUMBER, APP_REFERENCE, REPOSITORY, app_key_parameter
 from engineering.connectors.gitlab_api import TOKEN, is_project_path
 from engineering.connectors.hosts import NO_CONNECTION, NoConnection
 from shared.logging import logger
@@ -71,6 +80,8 @@ class GitLabTokenCredential:
 
 
 Credential = GitHubAppCredential | GitLabTokenCredential
+#: An App's key by the App's id (``ParameterStoreCredentials``' cached read), for a reference's resolution.
+AppKeyReader = Callable[[str], rsa.RSAPrivateKey]
 
 
 def _field(value: dict[str, Any], key: str) -> str:
@@ -88,12 +99,12 @@ def _json_object(text: str) -> dict[str, Any]:
     return value
 
 
-def parse_stored(text: str) -> Credential:
-    """The credential a parameter's JSON value holds, either host's (``host`` absent: a GitHub App's), or
-    ``CredentialUnusable``."""
+def parse_stored(text: str, app_keys: AppKeyReader | None = None) -> Credential:
+    """The credential a parameter's JSON value holds, either host's (``host`` absent: a GitHub App's, its key resolved
+    by ``app_keys`` when the value names its App's), or ``CredentialUnusable``."""
     value = _json_object(text)
     if value.get('host', 'github') == 'github':
-        return parse_credential(text)
+        return parse_credential(text, app_keys)
     if value.get('host') != 'gitlab':
         raise CredentialUnusable(NO_CONNECTION)
     project_id, repository, token = _field(value, 'project_id'), _field(value, 'repository'), _field(value, 'token')
@@ -103,8 +114,28 @@ def parse_stored(text: str) -> Credential:
                                  expires_at=_field(value, 'expires_at'))
 
 
-def parse_credential(text: str) -> GitHubAppCredential:
-    """The GitHub App credential a parameter's JSON value holds, or ``CredentialUnusable`` (a GitLab one included)."""
+def _rsa_key(pem: str) -> rsa.RSAPrivateKey:
+    try:
+        key = serialization.load_pem_private_key(pem.encode(), password=None)
+    except (ValueError, TypeError):
+        raise CredentialUnusable(NO_CONNECTION) from None
+    if not isinstance(key, rsa.RSAPrivateKey):
+        raise CredentialUnusable(NO_CONNECTION)
+    return key
+
+
+def parse_app_key(text: str, app_id: str) -> rsa.RSAPrivateKey:
+    """The RSA key of App ``app_id`` from its key parameter's JSON (``{"app_id", "slug", "private_key"}``), or
+    ``CredentialUnusable``: one that names another App's id is unusable (a parameter is never taken for another's)."""
+    value = _json_object(text)
+    if not APP_NUMBER.fullmatch(app_id) or _field(value, 'app_id') != app_id:
+        raise CredentialUnusable(NO_CONNECTION)
+    return _rsa_key(_field(value, 'private_key'))
+
+
+def parse_credential(text: str, app_keys: AppKeyReader | None = None) -> GitHubAppCredential:
+    """The GitHub App credential a parameter's JSON value holds, or ``CredentialUnusable`` (a GitLab one included). A
+    value naming its App's key (``"key": "app"``, no ``private_key``) is resolved by ``app_keys`` (unusable without)."""
     value = _json_object(text)
     if value.get('host', 'github') != 'github':
         raise CredentialUnusable(NO_CONNECTION)
@@ -113,12 +144,12 @@ def parse_credential(text: str) -> GitHubAppCredential:
     if not (APP_NUMBER.fullmatch(app_id) and APP_NUMBER.fullmatch(installation_id)) or repository is None \
             or repository.group('name') in {'.', '..'}:
         raise CredentialUnusable(NO_CONNECTION)
-    try:
-        key = serialization.load_pem_private_key(_field(value, 'private_key').encode(), password=None)
-    except (ValueError, TypeError):
-        raise CredentialUnusable(NO_CONNECTION) from None
-    if not isinstance(key, rsa.RSAPrivateKey):
-        raise CredentialUnusable(NO_CONNECTION)
+    if value.get('key') == APP_REFERENCE:
+        if app_keys is None or 'private_key' in value:
+            raise CredentialUnusable(NO_CONNECTION)
+        key = app_keys(app_id)
+    else:
+        key = _rsa_key(_field(value, 'private_key'))
     return GitHubAppCredential(app_id=app_id, installation_id=int(installation_id), owner=repository.group('owner'),
                                repository=repository.group('name'), private_key=key)
 
@@ -126,6 +157,38 @@ def parse_credential(text: str) -> GitHubAppCredential:
 @lru_cache(maxsize=1)
 def _ssm() -> Any:
     return boto3.client('ssm')
+
+
+class AppKeys:
+    """The deployment's GitHub Apps' keys from SSM (``{prefix}_github-app/<app_id>/key``), each kept ``CACHE_SECONDS``
+    in this container: the reader of a connection that references its App's key, and the token function's
+    (``app_tokens.py``)."""
+
+    def __init__(self, prefix: str, client: Callable[[], Any] = _ssm,
+                 clock: Callable[[], float] = time.monotonic) -> None:
+        self._prefix = prefix
+        self._client = client
+        self._clock = clock
+        self._keys: dict[str, tuple[float, rsa.RSAPrivateKey]] = {}
+
+    def get(self, app_id: str) -> rsa.RSAPrivateKey:
+        """App ``app_id``'s key; ``NoConnection`` when it cannot be read, ``CredentialUnusable`` when it is not that
+        App's (each logged by the App's id and the AWS error code only)."""
+        cached = self._keys.get(app_id)
+        if cached is not None and self._clock() < cached[0]:
+            return cached[1]
+        try:
+            parameter = self._client().get_parameter(Name=app_key_parameter(self._prefix, app_id), WithDecryption=True)
+        except (ClientError, BotoCoreError) as error:
+            logger.warning('engineering GitHub App key not read', extra={'app_id': app_id, 'error_code': error_code(error)})
+            raise NoConnection(NO_CONNECTION) from None
+        try:
+            key = parse_app_key(str(parameter.get('Parameter', {}).get('Value', '')), app_id)
+        except CredentialUnusable:
+            logger.warning('engineering GitHub App key unusable', extra={'app_id': app_id})
+            raise
+        self._keys[app_id] = (self._clock() + CACHE_SECONDS, key)
+        return key
 
 
 class ParameterStoreCredentials:
@@ -137,6 +200,8 @@ class ParameterStoreCredentials:
         self._client = client
         self._clock = clock
         self._cache: dict[str, tuple[float, Credential]] = {}
+        #: The deployment's GitHub Apps' keys a reference names, kept as long.
+        self._app_keys = AppKeys(prefix, client, clock)
 
     def get(self, connection_id: str) -> GitHubAppCredential:
         """``connection_id``'s GitHub App credential, or ``NoConnection`` when it has none (a GitLab connection's is
@@ -168,7 +233,7 @@ class ParameterStoreCredentials:
                            extra={'connection_id': connection_id, 'error_code': error_code(error)})
             raise NoConnection(NO_CONNECTION) from None
         try:
-            credential = parse_stored(str(parameter.get('Parameter', {}).get('Value', '')))
+            credential = parse_stored(str(parameter.get('Parameter', {}).get('Value', '')), self._app_keys.get)
         except CredentialUnusable:
             logger.warning('engineering connection credential unusable', extra={'connection_id': connection_id})
             raise

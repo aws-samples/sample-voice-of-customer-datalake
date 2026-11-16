@@ -302,7 +302,8 @@
     "select": "Sélectionner...",
     "configuredInSettings": "{{name}} se connecte dans {{where}} : collez-y le jeton et ses réglages, puis revenez ici.",
     "configuredInSettingsNoToken": "{{name}} se configure dans {{where}} : saisissez-y ses paramètres, puis revenez ici.",
-    "openDataSourceSettings": "Ouvrir les réglages des sources"
+    "openDataSourceSettings": "Ouvrir les réglages des sources",
+    "saveFailed": "Impossible d’enregistrer. Veuillez réessayer."
   },
   "refresh": "Actualiser",
   "status": {
@@ -347,6 +348,7 @@
     "configuredApps": "Apps configurées",
     "noApps": "Aucune app configurée pour l'instant",
     "addFirstApp": "Ajoutez votre première app",
+    "alreadySource": "Cette application est déjà une source : {{name}}",
     "web": {
       "configuredPages": "Pages d'avis",
       "addPage": "Ajouter une page",
@@ -358,7 +360,10 @@
       "deleteConfirmTitle": "Retirer la page d'avis",
       "deleteConfirmMessage": "Voulez-vous vraiment retirer cette page d'avis ?",
       "addBedrockPage": "Ajouter une page de l’index de recherche web Bedrock",
-      "bedrockNote": "Les avis sont lus dans la copie de cette page indexée par Amazon Bedrock (le cache d’Amazon), et non sur le site lui-même. Chaque avis garde son URL source et son site : il renvoie toujours là où il a été publié. Le modèle qui la lit se choisit dans Administration → Modèles d'IA."
+      "bedrockNote": "Les avis sont lus dans la copie de cette page indexée par Amazon Bedrock (le cache d’Amazon), et non sur le site lui-même. Chaque avis garde son URL source et son site : il renvoie toujours là où il a été publié. Le modèle qui la lit se choisit dans Administration → Modèles d'IA.",
+      "nameHint": "Jusqu’à 100 lettres, chiffres, espaces, « . », « _ » ou « - », commençant par une lettre A–Z ou un chiffre.",
+      "nameInvalid": "Ce nom ne peut pas être enregistré : utilisez uniquement des lettres, chiffres, espaces, « . », « _ » ou « - » (jusqu’à 100), en commençant par une lettre A–Z ou un chiffre.",
+      "alreadySource": "Cette page est déjà une source : {{name}}"
     },
     "kindLabel": "Type",
     "kind": {
@@ -369,7 +374,59 @@
     },
     "method": {
       "browser": "Navigateur",
-      "bedrock": "Index web Bedrock"
+      "bedrock": "Index web Bedrock",
+      "automatic": "Automatique",
+      "label": "Lire avec",
+      "option": {
+        "auto": "Automatique (recommandé)",
+        "browser": "Navigateur uniquement",
+        "bedrock": "Index web Bedrock uniquement"
+      },
+      "help": {
+        "auto": "Essaie d’abord le navigateur signé, puis la copie de la page dans l’index web Amazon Bedrock, puis des extraits de la recherche web AgentCore, et retient ce qui fonctionne pour ce site.",
+        "browser": "Seul le navigateur géré lit la page, page par page. Un site qui le bloque est signalé comme bloqué.",
+        "bedrock": "Seule la copie de la page dans l’index web Amazon Bedrock est lue, une page par exécution."
+      }
+    },
+    "read": {
+      "step": {
+        "browser": "Navigateur",
+        "bedrock_web_search": "Index web Bedrock",
+        "agentcore_web_search": "Recherche web AgentCore"
+      },
+      "failed": {
+        "blocked": "{{method}} bloqué par {{vendor}}",
+        "blockedUnknown": "{{method}} bloqué",
+        "no_reviews": "{{method}} n’a trouvé aucun avis",
+        "error": "{{method}} n’a pas pu ouvrir la page",
+        "skipped_time": "{{method}} ignoré : plus de temps",
+        "not_offered": "{{method}} non proposé dans cette région"
+      },
+      "readWithBrowser": "Lu avec le navigateur ({{amount}})",
+      "readVia": "Lu via {{method}} ({{amount}})",
+      "thenRead": "lu via {{method}} ({{amount}})",
+      "known": "Connu : {{method}} (appris le {{date}})",
+      "knownUndated": "Connu : {{method}}",
+      "reprobeReads": "Navigateur revérifié : il lit de nouveau ({{amount}})",
+      "reprobeStill": "Navigateur revérifié : toujours bloqué par {{vendor}}",
+      "reprobeUnreadable": "Navigateur revérifié : toujours illisible",
+      "nothing": "Aucune méthode n’a pu la lire : {{chain}}",
+      "notRead": "Non lue : {{chain}}",
+      "excerpts": "Extraits",
+      "excerptsTitle": "Ces avis sont des extraits de résultats de la recherche web AgentCore : chacun peut être coupé et garde son lien source.",
+      "reviews_one": "{{count, number}} avis",
+      "reviews_many": "{{count, number}} avis",
+      "reviews_other": "{{count, number}} avis"
+    },
+    "learned": {
+      "best": "Meilleure méthode connue : {{method}} (apprise le {{date}})",
+      "bestUndated": "Meilleure méthode connue : {{method}}",
+      "none": "Aucune méthode n’a encore lu ce site",
+      "recheck": "Revérifier les méthodes",
+      "recheckTitle": "Oublier ce que cet espace de travail a appris sur ce site, pour que la prochaine exécution essaie de nouveau toutes les méthodes",
+      "recheckFailed": "Impossible d’effacer ce qui a été appris. Veuillez réessayer.",
+      "cleared": "La prochaine exécution essaiera de nouveau toutes les méthodes.",
+      "browserRecheck": "Le navigateur sera réessayé après le {{date}}"
     }
   },
   "sourceMenu": {
@@ -430,7 +487,7 @@
       },
       "webReviewsBedrock": {
         "title": "Index de recherche web Amazon Bedrock",
-        "description": "Des avis d’une page indexée par Amazon Bedrock, pour les sites qui bloquent les navigateurs automatisés (G2, Gartner, Capterra, TrustRadius). Lus dans le cache d’Amazon, enregistrés avec le lien source."
+        "description": "Des avis d’une page indexée par Amazon Bedrock, pour les sites qui bloquent les navigateurs automatisés. Lus dans le cache d’Amazon, enregistrés avec le lien source."
       }
     }
   },

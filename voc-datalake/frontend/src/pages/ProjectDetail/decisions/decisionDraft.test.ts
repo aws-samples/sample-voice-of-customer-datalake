@@ -34,9 +34,9 @@ describe('decisionDeepLink', () => {
   it('opens the Decisions tab with a prefilled draft that reads back', () => {
     const link = decisionDeepLink('proj 1', { title: 'Fix login', verdict: 'reject', feedbackIds: ['fb_1', 'fb_2'] })
     const [path, query] = link.split('?')
-    expect(path).toBe('/projects/proj%201')
+    expect(path).toBe('/projects/proj%201/decisions')
     const params = new URLSearchParams(query)
-    expect(params.get('tab')).toBe('decisions')
+    expect(params.has('tab')).toBe(false)
     expect(draftFromParams(params)).toMatchObject({ title: 'Fix login', verdict: 'reject', feedbackIds: 'fb_1 fb_2' })
   })
 

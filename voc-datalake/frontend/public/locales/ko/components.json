@@ -42,7 +42,6 @@
     "notFound": "이 버전에서 찾을 수 없음",
     "saveFailed": "댓글을 저장하지 못했습니다. 다시 시도하세요.",
     "loadFailed": "댓글을 불러오지 못했습니다. 문서는 댓글 없이 표시됩니다.",
-    "personaReview": "페르소나에게 검토 요청",
     "personaReviewRunning": "페르소나가 읽는 중…",
     "personaReviewHint": "이 프로젝트의 페르소나 최대 6명이 이 버전을 읽고 본문을 인용해 댓글을 남깁니다. 문서는 절대 변경하지 않습니다. 페르소나당 모델 호출 1회 비용이 듭니다.",
     "personaReviewDone_one": "댓글 {{count, number}}개를 추가했습니다(요청한 페르소나: {{personas, number}})",

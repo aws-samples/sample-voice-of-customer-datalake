@@ -44,7 +44,7 @@ describe('Decision → PR/FAQ status', () => {
   it('links that PR/FAQ itself, and drops the "requested" note, once the job made it', async () => {
     renderWithJobs([job('completed', { document_id: 'prfaq_1' })], [DECISION, PRFAQ])
     const link = await screen.findByRole('link', { name: 'PR/FAQ ready: Offline mode PR/FAQ' })
-    expect(link).toHaveAttribute('href', '/projects/p1?tab=documents&doc=prfaq_1')
+    expect(link).toHaveAttribute('href', '/projects/p1/documents/prfaq_1')
     expect(screen.queryByText(REQUESTED)).not.toBeInTheDocument()
   })
 

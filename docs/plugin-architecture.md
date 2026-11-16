@@ -583,6 +583,8 @@ admin-only because they change a shared secret, spend a third-party API's quota 
 | `GET`/`PUT /integrations/<source>/credentials` | Yes | Read (secret fields omitted) and save config values |
 | `GET /integrations/<source>/apps` | No | List app/page configs of a multi-target source (public ids and display names only) |
 | `POST /integrations/<source>/apps`, `DELETE /integrations/<source>/apps/<app_id>` | Yes | Add or remove one target |
+| `GET /integrations/web_reviews/methods` | No | The web_reviews plugin's learned method per review site, the request's workspace's ([web-reviews.md](web-reviews.md#learning-which-method-works)) |
+| `DELETE /integrations/web_reviews/methods/<domain>` | Yes | "Re-check methods": clear one site's learned record (audited in a workspace) |
 | `POST /sources/<source>/run` | Yes | **Run now**: async invoke with `{execution_id}` (and `app_id` when given) |
 | `GET /sources/status` | No | Schedule state and `circuit` per source (`last_error` for admins only); `?run_status=<source>` its latest run, with `&app_id=` one app's newest run, with `&execution_id=` one run |
 | `PUT /sources/<source>/enable` | Yes | Close a tripped breaker, then enable the schedule (400 for a plugin without a schedule) |

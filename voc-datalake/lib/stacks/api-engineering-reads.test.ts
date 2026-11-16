@@ -16,10 +16,11 @@ import {
 import type { VocApiStack } from './api-stack';
 import { ENGINEERING_WORKSPACE_READER_SERVICES } from './dlq-alarms';
 import { engineeringRunCaps } from './engineering-start';
+import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 
-const ENGINEERING_ENV = ['ENGINEERING_AGENTS', 'ENGINEERING_BOARD_FUNCTION', 'ENGINEERING_PARAMETER_KEY',
-  'ENGINEERING_PARAMETER_PREFIX', 'ENGINEERING_RUN_CAP_USD', 'ENGINEERING_RUN_TOKEN_CAP', 'ENGINEERING_START_FUNCTION',
-  'ENGINEERING_TABLE', 'ENGINEERING_WORKSPACE_BUCKET'];
+const ENGINEERING_ENV = ['ENGINEERING_AGENTS', 'ENGINEERING_APP_TOKENS_FUNCTION', 'ENGINEERING_BOARD_FUNCTION',
+  'ENGINEERING_PARAMETER_KEY', 'ENGINEERING_PARAMETER_PREFIX', 'ENGINEERING_RUN_CAP_USD', 'ENGINEERING_RUN_TOKEN_CAP',
+  'ENGINEERING_START_FUNCTION', 'ENGINEERING_TABLE', 'ENGINEERING_WORKSPACE_BUCKET'];
 let cachedOn: VocApiStack | undefined;
 const onStack = (): VocApiStack => {
   cachedOn ??= buildApiStack({ engineeringAgents: true });
@@ -33,7 +34,7 @@ const on = (): Template => {
 const engineeringStatements = (template: Template) => policyStatementsOf(template, 'AgentsLambdaRole')
   .filter((statement) => /Engineering/.test(statement.resource));
 
-describe('the engineering run reads', () => {
+describe('the engineering run reads', { timeout: SYNTH_TIMEOUT_MS }, () => {
   it('are off by default: no switch, no table or bucket, no grant on either', () => {
     const template = apiTemplate();
     const agentsEnv = Object.keys(serviceEnvironment(template, 'voc-agents-api'));
@@ -103,10 +104,12 @@ describe('the engineering run reads', () => {
       .filter((statement) => statement.actions.includes('lambda:InvokeFunction'));
     const engineering = invokes.filter((statement) => /voc-engineering-/.test(statement.resource));
     expect(engineering.map((statement) => statement.actions)).toStrictEqual([['lambda:InvokeFunction'],
-      ['lambda:InvokeFunction']]);
+      ['lambda:InvokeFunction'], ['lambda:InvokeFunction']]);
+    // (7.45.00: and the GitHub Apps' token function, for an installation's read: engineering-app-tokens.test.ts)
     expect(engineering.map((statement) => statement.resource)).toStrictEqual([
       expect.stringMatching(/:lambda:[^"]*:function:voc-engineering-board-",/),
-      expect.stringMatching(/:lambda:[^"]*:function:voc-engineering-start-",/)]);
+      expect.stringMatching(/:lambda:[^"]*:function:voc-engineering-start-",/),
+      expect.stringMatching(/:lambda:[^"]*:function:voc-engineering-app-tokens-",/)]);
     // The runtime itself (tick, launch, signal, end_run) is not this role's to invoke, in any form.
     expect(JSON.stringify(invokes)).not.toMatch(/voc-engineering-(runtime|delivery)/);
     expect(JSON.stringify(serviceEnvironment(on(), 'voc-agents-api').ENGINEERING_START_FUNCTION))
@@ -202,7 +205,9 @@ describe('the alarm on denied workspace reads (alerting, created at runtime only
   });
 });
 
-describe('the web app\'s engineering flag (owner decision 28: New engineering flow only with the module)', () => {
+describe('the web app\'s engineering flag (owner decision 28: New engineering flow only with the module)', {
+  timeout: SYNTH_TIMEOUT_MS,
+}, () => {
   const engineeringFeature = (stack: VocApiStack): unknown => {
     const features: unknown = stack.runtimeConfig['features'];
     return typeof features === 'object' && features !== null ? Object.entries(features)

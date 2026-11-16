@@ -389,7 +389,15 @@
     "advanced": "Avancé",
     "advancedRawHint": "La configuration brute des collecteurs de la page Sources de données. Ajoutez et modifiez les collecteurs là-bas.",
     "runsOnUpload": "S’exécute au dépôt d’un fichier",
-    "runsOnDemand": "S’exécute à la demande — sans planification"
+    "runsOnDemand": "S’exécute à la demande — sans planification",
+    "githubSignIn": {
+      "label": "Se connecter avec",
+      "token": "Un jeton à granularité fine",
+      "app": "L’une des GitHub Apps de ce déploiement",
+      "appLabel": "GitHub App",
+      "appHint": "Chaque exécution obtient de l’App un jeton de courte durée pour ces seuls dépôts (Issues et Metadata, lecture seule) et le rend à la fin. Installez d’abord l’App sur les dépôts (Agents → Connexions).",
+      "tokenHint": "Un jeton d’accès personnel à granularité fine avec Issues et Metadata en lecture seule sur ces dépôts."
+    }
   },
   "subtitle": "Configurez votre plateforme VoC",
   "tabs": {

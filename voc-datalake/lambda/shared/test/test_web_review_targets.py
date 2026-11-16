@@ -18,7 +18,7 @@ def public_dns():
 def test_a_valid_target_is_stored_as_strings(public_dns):
     assert validated_target({'id': 'abc', 'app_name': 'Trustpilot', 'url': URL, 'max_pages': 7, 'extra': 'x'}) == {
         'id': 'abc', 'app_name': 'Trustpilot', 'url': URL, 'max_pages': '7', 'max_reviews': '0', 'frequency_minutes': '0',
-        'enabled': 'true', 'method': 'browser',
+        'enabled': 'true', 'method': 'auto',
     }
     public_dns.assert_called_once_with(URL)
 
@@ -103,20 +103,21 @@ def test_target_source_id_is_the_stored_one_or_minted(target, expected):
 
 
 class TestTheReadingMethod:
-    """``method`` (7.41.00): ``browser`` unless a target says ``bedrock_web_search``; a ``model`` is no target's (7.42.00)."""
+    """``method``: ``auto`` (7.44.00) unless a target says ``browser`` or ``bedrock_web_search`` (7.41.00), each kept as
+    stored; a ``model`` is no target's (7.42.00)."""
 
     @pytest.mark.usefixtures('public_dns')
-    @pytest.mark.parametrize('given', [{}, {'method': ''}, {'method': None}, {'method': '  browser '}])
-    def test_absent_or_blank_is_the_browser(self, given):
-        assert validated_target({'app_name': 'T', 'url': URL, **given})['method'] == 'browser'
+    @pytest.mark.parametrize('given', [{}, {'method': ''}, {'method': None}, {'method': '  auto '}])
+    def test_absent_or_blank_is_automatic(self, given):
+        assert validated_target({'app_name': 'T', 'url': URL, **given})['method'] == 'auto'
 
     @pytest.mark.usefixtures('public_dns')
-    def test_bedrock_web_search_is_kept(self):
-        stored = validated_target({'app_name': 'T', 'url': URL, 'method': 'bedrock_web_search'})
-        assert stored['method'] == 'bedrock_web_search'
+    @pytest.mark.parametrize('method', ['browser', 'bedrock_web_search'])
+    def test_an_explicit_method_is_kept(self, method):
+        assert validated_target({'app_name': 'T', 'url': URL, 'method': f' {method} '})['method'] == method
 
     @pytest.mark.usefixtures('public_dns')
-    @pytest.mark.parametrize('method', ['bedrock_web_search', 'browser'])
+    @pytest.mark.parametrize('method', ['auto', 'bedrock_web_search', 'browser'])
     @pytest.mark.parametrize('model', ['openai.gpt-5.6-terra', 'anthropic.claude-haiku-5-5', 'anything'])
     def test_a_model_from_7_41_00_is_accepted_and_dropped(self, method, model):
         """The model is the web_reviews_search surface's (Administration -> AI models), never the target's: a
@@ -128,7 +129,7 @@ class TestTheReadingMethod:
     @pytest.mark.usefixtures('public_dns')
     @pytest.mark.parametrize('method', ['http', 'Browser', 'bedrock-web-search', 'agentcore_web_search'])
     def test_any_other_method_is_refused_naming_the_allowed_ones(self, method):
-        with pytest.raises(TargetError, match=r'^method must be one of browser, bedrock_web_search$'):
+        with pytest.raises(TargetError, match=r'^method must be one of auto, browser, bedrock_web_search$'):
             validated_target({'app_name': 'T', 'url': URL, 'method': method})
 
     @pytest.mark.usefixtures('public_dns')

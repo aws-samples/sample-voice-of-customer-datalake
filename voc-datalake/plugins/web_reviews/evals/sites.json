@@ -1,5 +1,5 @@
 {
-  "description": "Review sites the Web Reviews site eval reads (scripts/evals/web_reviews_sites.py), page 1 only, once per method. `vendor` / `vendor_evidence`: the bot management seen in response headers from a laptop in Zurich (not from AWS). `expect`: what the plugin should get, `unknown` unless stated. `baseline`: measured on the unsigned AWS-managed browser (aws.browser.v1), `unknown` where never measured. `evidence`: where the URL, the baseline and the expectation come from.",
+  "description": "Review pages the Web Reviews site eval reads (scripts/evals/web_reviews_sites.py), page 1 only, once per method: inputs only. `expect`: what the plugin should get, `unknown` unless it is a documented property (`login`: the site asks signed-out visitors to sign in; `official_api_only`: the site's terms allow reading its reviews through its official API only, so the eval runs no reading method on it). `structured`: a documented feed or official API of the site. The eval measures the rest (the bot management, each method's outcome) in its own run and writes it under the git-ignored web-reviews-eval/ only.",
   "defaults": {
     "max_pages": 1,
     "max_reviews": 20
@@ -10,12 +10,7 @@
       "site": "Trustpilot",
       "url": "https://www.trustpilot.com/review/www.amazon.com",
       "subject": "Amazon (amazon.com)",
-      "vendor": "AWS WAF",
-      "vendor_evidence": "server: CloudFront; body loads edge.sdk.awswaf.com challenge.js, 'Verifying your connection...'",
       "expect": "unknown",
-      "baseline": "readable",
-      "evidence": "URL: Yahoo result 'Read Customer Service Reviews of www.amazon.com - Trustpilot' (2026-11-15); baseline readable: CHANGELOG 3.x Web Reviews entry (measured from AWS on aws.browser.v1)",
-      "notes": "vendor from response headers seen from a laptop in Zurich, not from AWS",
       "structured": [
         {
           "kind": "official_api",
@@ -30,12 +25,7 @@
       "site": "Trustpilot UK",
       "url": "https://uk.trustpilot.com/review/www.amazon.co.uk",
       "subject": "Amazon UK",
-      "vendor": "AWS WAF",
-      "vendor_evidence": "server: CloudFront; body loads edge.sdk.awswaf.com challenge.js, 'Verifying your connection...'",
       "expect": "unknown",
-      "baseline": "unknown",
-      "evidence": "URL: Yahoo result 'Amazon.co.uk Reviews | Read Customer Service ... - Trustpilot' (2026-11-15); baseline not measured on aws.browser.v1",
-      "notes": "vendor from response headers seen from a laptop in Zurich, not from AWS",
       "structured": []
     },
     {
@@ -43,18 +33,15 @@
       "site": "Yelp",
       "url": "https://www.yelp.com/biz/pike-place-market-seattle",
       "subject": "Pike Place Market Seattle",
-      "vendor": "DataDome",
-      "vendor_evidence": "server: DataDome; x-datadome: protected; datadome= cookie",
-      "expect": "unknown",
-      "baseline": "blocked",
-      "evidence": "URL: Yahoo result 'Pike Place Market - Seattle, WA - Yelp' (2026-11-15); baseline blocked: CHANGELOG 3.x Web Reviews entry (measured from AWS on aws.browser.v1)",
-      "notes": "vendor from response headers seen from a laptop in Zurich, not from AWS",
+      "expect": "official_api_only",
+      "official_api_only": true,
+      "notes": "Official API only: the Yelp Fusion API (an API key).",
       "structured": [
         {
           "kind": "official_api",
           "url": "https://docs.developer.yelp.com/",
           "needs_secret": true,
-          "notes": "Fusion API key; returns at most 3 review excerpts"
+          "notes": "Yelp Fusion API: an API key"
         }
       ]
     },
@@ -63,12 +50,7 @@
       "site": "Yellow Pages",
       "url": "https://www.yellowpages.com/seattle-wa/mip/pike-place-market-503607249",
       "subject": "Pike Place Market Seattle",
-      "vendor": "Cloudflare",
-      "vendor_evidence": "server: cloudflare; 'Sorry, you have been blocked' (hard block)",
       "expect": "unknown",
-      "baseline": "unknown",
-      "evidence": "URL: Yahoo result 'Pike Place Market - Seattle, WA 98101 - The Real Yellow Pages' (2026-11-15); baseline not measured on aws.browser.v1",
-      "notes": "vendor from response headers seen from a laptop in Zurich, not from AWS",
       "structured": []
     },
     {
@@ -76,12 +58,7 @@
       "site": "G2",
       "url": "https://www.g2.com/products/amazon-connect/reviews",
       "subject": "Amazon Connect",
-      "vendor": "DataDome",
-      "vendor_evidence": "x-datadome: protected; datadome= cookie; behind Cloudflare CDN",
       "expect": "unknown",
-      "baseline": "blocked",
-      "evidence": "URL: Brave result 'Amazon Connect Reviews 2025: Details, Pricing, & Features | G2'; Yahoo result 'Amazon Connect Reviews 2026: Details, Pricing, & Features | G2' (2026-11-15); baseline blocked: live run 2026-11-15 on aws.browser.v1: blocked by DataDome",
-      "notes": "vendor from response headers seen from a laptop in Zurich, not from AWS",
       "structured": []
     },
     {
@@ -89,12 +66,7 @@
       "site": "Capterra",
       "url": "https://www.capterra.com/p/234575/Amazon-Connect/reviews/",
       "subject": "Amazon Connect",
-      "vendor": "Cloudflare",
-      "vendor_evidence": "server: cloudflare; 'Sorry, you have been blocked' (hard block)",
       "expect": "unknown",
-      "baseline": "blocked",
-      "evidence": "URL: Brave result 'Amazon Connect Reviews 2026. Verified Reviews, Pros & Cons | Capterra' (2026-11-15); baseline blocked: live run 2026-11-15 on aws.browser.v1: blocked by Cloudflare",
-      "notes": "vendor from response headers seen from a laptop in Zurich, not from AWS",
       "structured": []
     },
     {
@@ -102,12 +74,7 @@
       "site": "TrustRadius",
       "url": "https://www.trustradius.com/products/amazon-connect/reviews",
       "subject": "Amazon Connect",
-      "vendor": "Cloudflare",
-      "vendor_evidence": "server: cloudflare; cf-mitigated: challenge",
       "expect": "unknown",
-      "baseline": "blocked",
-      "evidence": "URL: Brave result 'Amazon Connect Reviews from Real Users | TrustRadius' (2026-11-15); baseline blocked: live run 2026-11-15 on aws.browser.v1: blocked by Cloudflare",
-      "notes": "vendor from response headers seen from a laptop in Zurich, not from AWS",
       "structured": []
     },
     {
@@ -115,12 +82,7 @@
       "site": "Gartner Peer Insights",
       "url": "https://www.gartner.com/reviews/product/amazon-connect",
       "subject": "Amazon Connect",
-      "vendor": "Cloudflare",
-      "vendor_evidence": "server: cloudflare; cf-mitigated: challenge",
       "expect": "unknown",
-      "baseline": "blocked",
-      "evidence": "URL: Brave result 'Amazon Connect Reviews & Ratings 2026 | Gartner Peer Insights' (2026-11-15); baseline blocked: live run 2026-11-15 on aws.browser.v1: blocked by Cloudflare",
-      "notes": "vendor from response headers seen from a laptop in Zurich, not from AWS",
       "structured": []
     },
     {
@@ -128,12 +90,7 @@
       "site": "Software Advice",
       "url": "https://www.softwareadvice.com/call-center/amazon-connect-profile/reviews/",
       "subject": "Amazon Connect",
-      "vendor": "Cloudflare",
-      "vendor_evidence": "hard block",
       "expect": "unknown",
-      "baseline": "unknown",
-      "evidence": "URL: Brave result 'Amazon Connect Reviews, Pros and Cons - 2026 Software Advice' (2026-11-15); baseline not measured on aws.browser.v1",
-      "notes": "vendor from response headers seen from a laptop in Zurich, not from AWS",
       "structured": []
     },
     {
@@ -141,12 +98,7 @@
       "site": "GetApp",
       "url": "https://www.getapp.com/it-communications-software/a/amazon-connect/reviews/",
       "subject": "Amazon Connect",
-      "vendor": "Cloudflare",
-      "vendor_evidence": "hard block",
       "expect": "unknown",
-      "baseline": "unknown",
-      "evidence": "URL: Brave result 'Amazon Connect 2026 Pricing, Features, Reviews & Alternatives | GetApp' (2026-11-15); baseline not measured on aws.browser.v1",
-      "notes": "vendor from response headers seen from a laptop in Zurich, not from AWS",
       "structured": []
     },
     {
@@ -154,12 +106,7 @@
       "site": "SourceForge",
       "url": "https://sourceforge.net/software/product/Amazon-Connect/",
       "subject": "Amazon Connect",
-      "vendor": "Cloudflare",
-      "vendor_evidence": "WAF rule block, body 'No'",
       "expect": "unknown",
-      "baseline": "unknown",
-      "evidence": "URL: Brave result 'Amazon Connect Reviews in 2026' (2026-11-15); baseline not measured on aws.browser.v1",
-      "notes": "vendor from response headers seen from a laptop in Zurich, not from AWS",
       "structured": []
     },
     {
@@ -167,12 +114,7 @@
       "site": "PeerSpot",
       "url": "https://www.peerspot.com/products/amazon-connect-reviews",
       "subject": "Amazon Connect",
-      "vendor": "unknown",
-      "vendor_evidence": "CloudFront CDN only; HTTP 200 from a laptop",
       "expect": "unknown",
-      "baseline": "unknown",
-      "evidence": "URL: HTTP 200, title 'Amazon Connect reviews 2026'; Yahoo result 'Amazon Connect reviews 2026 - PeerSpot' (2026-11-15); baseline not measured on aws.browser.v1",
-      "notes": "vendor from response headers seen from a laptop in Zurich, not from AWS",
       "structured": []
     },
     {
@@ -180,12 +122,7 @@
       "site": "AWS Marketplace",
       "url": "https://aws.amazon.com/marketplace/reviews/reviews-list/prodview-swmfldimompjy",
       "subject": "Amazon Connect Customer",
-      "vendor": "unknown",
-      "vendor_evidence": "CloudFront CDN only; HTTP 200",
       "expect": "unknown",
-      "baseline": "unknown",
-      "evidence": "URL: HTTP 200, title 'Amazon Connect Customer Reviews | AWS Marketplace' (2026-11-15); baseline not measured on aws.browser.v1",
-      "notes": "vendor from response headers seen from a laptop in Zurich, not from AWS",
       "structured": []
     },
     {
@@ -193,12 +130,7 @@
       "site": "Glassdoor",
       "url": "https://www.glassdoor.com/Reviews/Amazon-Reviews-E6036.htm",
       "subject": "Amazon (employer)",
-      "vendor": "Cloudflare",
-      "vendor_evidence": "cf-mitigated: challenge",
       "expect": "login",
-      "baseline": "unknown",
-      "evidence": "URL: Yahoo result 'Amazon Reviews (212,888): Pros & Cons of Working At Amazon' (2026-11-15); baseline not measured on aws.browser.v1; expect login: Glassdoor asks for sign-in after a few reviews (the user's expectation)",
-      "notes": "vendor from response headers seen from a laptop in Zurich, not from AWS",
       "structured": []
     },
     {
@@ -206,12 +138,7 @@
       "site": "Indeed",
       "url": "https://www.indeed.com/cmp/Amazon.com/reviews",
       "subject": "Amazon.com (employer)",
-      "vendor": "Cloudflare",
-      "vendor_evidence": "cf-mitigated: challenge",
       "expect": "unknown",
-      "baseline": "unknown",
-      "evidence": "URL: Yahoo result 'Working at Amazon.com: 37,622 Reviews | Indeed.com' (2026-11-15); baseline not measured on aws.browser.v1",
-      "notes": "vendor from response headers seen from a laptop in Zurich, not from AWS",
       "structured": []
     },
     {
@@ -219,12 +146,7 @@
       "site": "Tripadvisor",
       "url": "https://www.tripadvisor.com/Attraction_Review-g60878-d123109-Reviews-Space_Needle-Seattle_Washington.html",
       "subject": "Space Needle Seattle",
-      "vendor": "DataDome",
-      "vendor_evidence": "server: DataDome; x-datadome: protected",
       "expect": "unknown",
-      "baseline": "readable",
-      "evidence": "URL: Yahoo result 'Space Needle - Tripadvisor'; the same d123109 id in Wayback records (2026-11-15); baseline readable: CHANGELOG 3.x Web Reviews entry (measured from AWS on aws.browser.v1), before DataDome headers were seen",
-      "notes": "vendor from response headers seen from a laptop in Zurich, not from AWS",
       "structured": []
     },
     {
@@ -232,12 +154,7 @@
       "site": "Booking.com",
       "url": "https://www.booking.com/hotel/us/fairmont-olympic.html",
       "subject": "Fairmont Olympic Hotel Seattle",
-      "vendor": "AWS WAF",
-      "vendor_evidence": "HTTP 202 with awsWafCookieDomainList",
       "expect": "unknown",
-      "baseline": "unknown",
-      "evidence": "URL: Yahoo result 'Fairmont Olympic Hotel, Seattle (updated prices 2027)' (2026-11-15); baseline not measured on aws.browser.v1",
-      "notes": "vendor from response headers seen from a laptop in Zurich, not from AWS",
       "structured": []
     },
     {
@@ -245,12 +162,7 @@
       "site": "Expedia",
       "url": "https://www.expedia.com/Seattle-Hotels-Fairmont-Olympic-Hotel.h20230.Hotel-Information",
       "subject": "Fairmont Olympic Hotel Seattle",
-      "vendor": "Akamai",
-      "vendor_evidence": "_abck / bm_sz cookies (Akamai Bot Manager); HTTP 429",
       "expect": "unknown",
-      "baseline": "unknown",
-      "evidence": "URL: Yahoo result 'Fairmont Olympic Hotel in Seattle: Photos & Reviews 2026 ...' (2026-11-15); baseline not measured on aws.browser.v1",
-      "notes": "vendor from response headers seen from a laptop in Zurich, not from AWS",
       "structured": []
     },
     {
@@ -258,12 +170,7 @@
       "site": "Amazon.com product reviews",
       "url": "https://www.amazon.com/Echo-Dot-3rd-Gen-Charcoal/product-reviews/B0939T344Z",
       "subject": "Echo Dot (3rd Gen)",
-      "vendor": "unknown",
-      "vendor_evidence": "Amazon's own; a 404 page whose comment points to automated-access support on a repeat GET",
       "expect": "login",
-      "baseline": "unknown",
-      "evidence": "URL: Yahoo result 'Amazon.com: Customer reviews: Echo Dot (3rd Gen) - Smart ...' (2026-11-15); baseline not measured on aws.browser.v1; expect login: Amazon asks signed-out visitors to sign in for /product-reviews/ (the user's expectation)",
-      "notes": "vendor from response headers seen from a laptop in Zurich, not from AWS",
       "structured": []
     },
     {
@@ -271,19 +178,15 @@
       "site": "Reddit",
       "url": "https://www.reddit.com/r/aws/comments/g562r9/recent_review_or_experiences_with_amazon_connect/",
       "subject": "Amazon Connect",
-      "vendor": "unknown",
-      "vendor_evidence": "Reddit's own network-policy block ('whoa there, pardner!')",
-      "expect": "unknown",
-      "baseline": "blocked",
-      "evidence": "URL: Yahoo result 'Recent review or experiences with Amazon Connect : r/aws - Reddit' (2026-11-15); baseline blocked: CHANGELOG 3.x Web Reviews entry (measured from AWS on aws.browser.v1)",
-      "notes": "vendor from response headers seen from a laptop in Zurich, not from AWS",
+      "expect": "official_api_only",
+      "official_api_only": true,
+      "notes": "Official API only: the Reddit Data API (an OAuth app).",
       "structured": [
         {
-          "kind": "json",
-          "url": "https://www.reddit.com/r/aws/comments/g562r9/recent_review_or_experiences_with_amazon_connect/.json",
-          "count_path": "1.data.children",
-          "needs_secret": false,
-          "notes": "public .json; measured 403 earlier from AWS"
+          "kind": "official_api",
+          "url": "https://support.reddithelp.com/hc/en-us/articles/16160319875092-Reddit-Data-API-Wiki",
+          "needs_secret": true,
+          "notes": "Reddit Data API: an OAuth app"
         }
       ]
     },
@@ -292,12 +195,7 @@
       "site": "Hacker News",
       "url": "https://news.ycombinator.com/item?id=13976567",
       "subject": "Amazon Connect launch thread",
-      "vendor": "unknown",
-      "vendor_evidence": "server: nginx; HTTP 200",
       "expect": "unknown",
-      "baseline": "unknown",
-      "evidence": "URL: Algolia objectID 13976567 'Amazon Connect – Simple to use, cloud-based contact center'; HTTP 200 (2026-11-15); baseline not measured on aws.browser.v1",
-      "notes": "vendor from response headers seen from a laptop in Zurich, not from AWS",
       "structured": [
         {
           "kind": "json",
@@ -313,12 +211,7 @@
       "site": "Product Hunt",
       "url": "https://www.producthunt.com/products/aws/reviews",
       "subject": "AWS",
-      "vendor": "Cloudflare",
-      "vendor_evidence": "cf-mitigated: challenge",
       "expect": "unknown",
-      "baseline": "unknown",
-      "evidence": "URL: Yahoo result 'AWS Reviews (2026) | Product Hunt' (no Amazon Connect page found) (2026-11-15); baseline not measured on aws.browser.v1",
-      "notes": "vendor from response headers seen from a laptop in Zurich, not from AWS",
       "structured": []
     },
     {
@@ -326,12 +219,7 @@
       "site": "Sitejabber",
       "url": "https://www.smartcustomer.com/reviews/amazon.com",
       "subject": "Amazon (amazon.com)",
-      "vendor": "unknown",
-      "vendor_evidence": "Cloudflare CDN, no challenge; sitejabber.com/reviews/amazon.com 301-redirects here; HTTP 200",
       "expect": "unknown",
-      "baseline": "unknown",
-      "evidence": "URL: HTTP 200, title 'Amazon: Rated 2.5/5 based on 11,116 Customer Reviews'; sitejabber.com/reviews/amazon.com 301-redirects here (2026-11-15); baseline not measured on aws.browser.v1",
-      "notes": "vendor from response headers seen from a laptop in Zurich, not from AWS",
       "structured": []
     },
     {
@@ -339,12 +227,7 @@
       "site": "ConsumerAffairs",
       "url": "https://www.consumeraffairs.com/online/amazon.html",
       "subject": "Amazon (amazon.com)",
-      "vendor": "HUMAN (PerimeterX)",
-      "vendor_evidence": "_pxhd cookie; px-captcha 'Press & Hold'",
       "expect": "unknown",
-      "baseline": "blocked",
-      "evidence": "URL: Yahoo result 'Amazon.com Reviews (From First-hand Experiences)' (2026-11-15); baseline blocked: CHANGELOG 3.x Web Reviews entry (measured from AWS on aws.browser.v1)",
-      "notes": "vendor from response headers seen from a laptop in Zurich, not from AWS",
       "structured": []
     },
     {
@@ -352,12 +235,7 @@
       "site": "BBB",
       "url": "https://www.bbb.org/us/wa/seattle/profile/ecommerce/amazoncom-1296-7039385/customer-reviews",
       "subject": "Amazon.com",
-      "vendor": "Cloudflare",
-      "vendor_evidence": "cf-mitigated: challenge",
       "expect": "unknown",
-      "baseline": "unknown",
-      "evidence": "URL: Yahoo result 'Amazon.com | BBB Reviews | Better Business Bureau' (2026-11-15); baseline not measured on aws.browser.v1",
-      "notes": "vendor from response headers seen from a laptop in Zurich, not from AWS",
       "structured": []
     },
     {
@@ -365,12 +243,7 @@
       "site": "Info-Tech SoftwareReviews",
       "url": "https://www.infotech.com/software-reviews/products/amazon-amazon-connect?c_id=355",
       "subject": "Amazon Connect",
-      "vendor": "unknown",
-      "vendor_evidence": "server: nginx; HTTP 200",
       "expect": "unknown",
-      "baseline": "unknown",
-      "evidence": "URL: HTTP 200, title 'Amazon Connect Customer Reviews 2026 | Contact Center as a Service' (2026-11-15); baseline not measured on aws.browser.v1",
-      "notes": "vendor from response headers seen from a laptop in Zurich, not from AWS",
       "structured": []
     },
     {
@@ -378,12 +251,7 @@
       "site": "Clutch",
       "url": "https://clutch.co/profile/mission-cloud",
       "subject": "Mission Cloud (AWS partner)",
-      "vendor": "Cloudflare",
-      "vendor_evidence": "cf-mitigated: challenge",
       "expect": "unknown",
-      "baseline": "unknown",
-      "evidence": "URL: Yahoo result 'Mission Cloud Reviews (5), Pricing, Services ... - Clutch' (2026-11-15); baseline not measured on aws.browser.v1",
-      "notes": "vendor from response headers seen from a laptop in Zurich, not from AWS",
       "structured": []
     }
   ]

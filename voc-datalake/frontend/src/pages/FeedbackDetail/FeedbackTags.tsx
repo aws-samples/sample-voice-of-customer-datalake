@@ -61,7 +61,7 @@ export default function TagsSection({ feedback, onOpen }: TagsSectionProps) {
         {feedback.subcategory && (
           <FilterChip onClick={() => onOpen(subcategoryLinkFor(feedback.category, feedback.subcategory ?? ''))}>{labels.subcategory(feedback.subcategory, feedback.category)}</FilterChip>
         )}
-        <FilterChip onClick={() => onOpen(categoriesLinkFor({ source: feedback.source_platform }))}>{labels.source(feedback.source_platform)}</FilterChip>
+        <FilterChip onClick={() => onOpen(categoriesLinkFor({ source: feedback.source_platform }))}>{labels.reviewSource(feedback.source_platform, feedback.source_channel)}</FilterChip>
         {feedback.persona_name && (
           <span className={LABEL_CHIP}>
             <Users size={12} aria-hidden="true" />

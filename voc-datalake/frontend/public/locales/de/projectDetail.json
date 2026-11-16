@@ -13,6 +13,13 @@
   },
   "documents": {
     "deleteDocument": "Dokument löschen",
+    "card": {
+      "more": "Weitere Aktionen",
+      "menu": "Aktionen für „{{title}}“",
+      "open": "Öffnen",
+      "renameFailed": "Der neue Name konnte nicht gespeichert werden. Versuchen Sie es erneut.",
+      "renameConflict": "Das Dokument wurde inzwischen geändert, daher wurde der neue Name nicht gespeichert. Versuchen Sie es erneut."
+    },
     "derivation": {
       "builtFrom": "Erstellt aus",
       "feedbackUsed_one": "{{count, number}} Feedback-Eintrag verwendet",
@@ -874,7 +881,6 @@
         "undoing": "Die vorherige Version wird wiederhergestellt…",
         "undone": "Rückgängig gemacht: Die vorherige Version ist als neue Version wiederhergestellt."
       },
-      "button": "Anhand der Kommentare überarbeiten",
       "close": "Schließen",
       "failed": "Die Überarbeitung anhand der Kommentare ist fehlgeschlagen. Bitte versuchen Sie es erneut.",
       "filterAddressed": "Umgesetzt",
@@ -969,6 +975,29 @@
       "minutes_one": "{{count, number}} Min. Lesezeit",
       "minutes_other": "{{count, number}} Min. Lesezeit",
       "wordsAndMinutes": "{{words}} · {{minutes}}"
+    },
+    "toolbar": {
+      "label": "Dokumentwerkzeuge",
+      "more": "Weitere Werkzeuge",
+      "share": "Teilen",
+      "aiReview": "KI-Review",
+      "aiReviewNoPersonas": "Fügen Sie diesem Projekt Personas hinzu, um sie um ein Review zu bitten.",
+      "aiRewrite": "KI-Überarbeitung",
+      "historyHint": "Jede Version dieses Dokuments: öffnen, vergleichen oder wiederherstellen",
+      "contentsHint": "Inhalt ein- oder ausblenden",
+      "fullWidthHint": "Den Text die volle Breite nutzen lassen",
+      "version": "Version {{version}}",
+      "versionHint": "Eine frühere Version lesen",
+      "versionsLoading": "Versionen werden geladen…",
+      "latest": "Neueste"
+    },
+    "versions": {
+      "bannerLabel": "Ältere Version",
+      "viewing": "Sie sehen {{version}} von {{latest}}",
+      "viewingOne": "Sie sehen {{version}}",
+      "readOnly": "schreibgeschützt",
+      "backToLatest": "Zur neuesten",
+      "announce": "{{version}} wird angezeigt, eine ältere Version, schreibgeschützt."
     }
   }
 }

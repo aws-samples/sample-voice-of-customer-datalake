@@ -1972,7 +1972,7 @@ ERASURE_VIEW_FIELDS = (
     'started_by', 'created_at', 'finished_at', 'error', 'phase', 'progress_at',
     # The one workspace a job erases in (shared/erasure_scope.py), on its row only when it names one.
     'workspace_id',
-    # 7.44.00 (3g-d): whether the deployment's erasure by email without a source walked the deployment's own projects,
+    # 7.47.00 (3g-d): whether the deployment's erasure by email without a source walked the deployment's own projects,
     # and how it found their rows (`registry` or `scan`; jobs/retention/runs.py `deployment_fields`), on its row only.
     'deployment_projects_walked', 'deployment_rows_found',
 )

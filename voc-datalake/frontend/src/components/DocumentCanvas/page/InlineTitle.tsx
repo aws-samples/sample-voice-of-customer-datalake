@@ -13,6 +13,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ignoreRejection } from '../../../lib/rejections'
 import { TITLE_INPUT_CLASS, TITLE_TEXT_CLASS } from './pageStyles'
+import { titleEditOf } from './titleEdit'
 import type { KeyboardEvent, RefObject } from 'react'
 
 interface InlineTitleProps {
@@ -51,8 +52,8 @@ export default function InlineTitle({ title, editable, onRename, onDone, inputRe
 
   /** Save what was typed; `leaving`: the field lost focus (an empty name then goes back to the saved one). */
   const commit = (leaving: boolean): boolean => {
-    const next = (typedRef.current ?? title).trim()
-    if (next === '') {
+    const edit = titleEditOf(typedRef.current ?? title, title)
+    if (edit.kind === 'empty') {
       // Enter keeps the field and says why; leaving it puts the saved name back.
       setRefused(!leaving)
       if (leaving) setTyped(null)
@@ -60,7 +61,7 @@ export default function InlineTitle({ title, editable, onRename, onDone, inputRe
     }
     setTyped(null)
     setRefused(false)
-    if (next !== title) onRename(next).catch(ignoreRejection)
+    if (edit.kind === 'renamed') onRename(edit.title).catch(ignoreRejection)
     return true
   }
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {

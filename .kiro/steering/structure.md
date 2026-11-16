@@ -114,7 +114,7 @@ voice-of-customer-datalake/       # Root repository
     │   ├── _shared/                  # Shared plugin utilities
     │   ├── _template/                # Template for new plugins
     │   ├── github_issues/            # GitHub Issues: ingestor (30 min) + signed webhook, version/label enrichment (docs/github-issues.md; enabled, idle until a token + repos are saved)
-    │   ├── web_reviews/              # Generic review pages read with the AgentCore managed browser (CDP), JSON-LD / LLM extraction, source web_<site>_<app_name> (stored source_id), blocked sites reported (docs/web-reviews.md; enabled, idle until a page is added)
+    │   ├── web_reviews/              # Generic review pages read automatically (the AgentCore managed browser over CDP, then Bedrock web search, then AgentCore Web Search excerpts, learned per workspace), JSON-LD / LLM extraction, source web_<site>_<app_name> (stored source_id), blocked sites reported (docs/web-reviews.md; enabled, idle until a page is added)
     │   └── webscraper/               # Configurable web scraper
     ├── frontend/                     # React dashboard (Vite + Tailwind)
     │   ├── src/

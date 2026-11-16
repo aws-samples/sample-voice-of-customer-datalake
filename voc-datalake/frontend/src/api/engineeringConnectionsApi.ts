@@ -23,22 +23,29 @@ import { isRecord } from '../lib/typeGuards'
 /** The most connections the server stores (its answer's `limit` wins when it gives one). */
 const DEFAULT_CONNECTION_LIMIT = 20
 
-/** A text the server may leave out: null then, never made up. */
-const optionalText = () => z.string().nullable().catch(null)
+/** A text the server may leave out: null then, never made up (githubAppsApi.ts's App rows too). */
+export const optionalServerText = () => z.string().nullable().catch(null)
 
 /** The repository hosts a connection reaches. */
 export const CONNECTION_HOSTS = ['github', 'gitlab'] as const
 
 export type ConnectionHost = (typeof CONNECTION_HOSTS)[number]
 
+/**
+ * A connection's credential kinds: a GitHub App's pasted key (`app`), a reference to one of the deployment's GitHub
+ * Apps whose key is stored once for all its connections (`app_reference`, 7.45.00: a connection the in-app connect flow
+ * saved), or a GitLab project access token (`project_token`).
+ */
+const CREDENTIAL_KINDS = ['app', 'app_reference', 'project_token'] as const
+
 const CredentialStateSchema = z.object({
-  /** A GitHub App (`app`) or a GitLab project access token (`project_token`). */
-  kind: z.enum(['app', 'project_token']).catch('app'),
+  /** A kind the page does not know reads as `app` (a GitHub App's, its ids shown as they are). */
+  kind: z.enum(CREDENTIAL_KINDS).catch('app'),
   set: z.boolean().catch(false),
-  app_id: optionalText(),
-  installation_id: optionalText(),
+  app_id: optionalServerText(),
+  installation_id: optionalServerText(),
   /** A GitLab token's expiry (`YYYY-MM-DD`), as GitLab reported it at the save; null for none known. */
-  expires_at: optionalText(),
+  expires_at: optionalServerText(),
 })
 
 /**
@@ -64,10 +71,10 @@ const CiAttestationSchema = z.object({
   state: z.enum(CI_STATES).catch('voided'),
   repository: z.string().catch(''),
   points: z.array(z.string()).catch([]),
-  by: optionalText(),
-  at: optionalText(),
-  reason: optionalText(),
-  cause: optionalText(),
+  by: optionalServerText(),
+  at: optionalServerText(),
+  reason: optionalServerText(),
+  cause: optionalServerText(),
 })
 
 export type CiAttestation = z.output<typeof CiAttestationSchema>
@@ -78,17 +85,25 @@ const ConnectionSchema = z.object({
   repository: z.string().min(1),
   default_branch: z.string().catch('main'),
   credential: CredentialStateSchema,
-  created_at: optionalText(),
-  created_by: optionalText(),
-  updated_at: optionalText(),
-  updated_by: optionalText(),
+  created_at: optionalServerText(),
+  created_by: optionalServerText(),
+  updated_at: optionalServerText(),
+  updated_by: optionalServerText(),
   /** The connection's version: what an attestation names as the one reviewed (any change of the connection moves it). */
   version: z.number().int().catch(0),
   /** None yet (null), or its newest version; an answer the page cannot read is none, so it never shows a made-up one. */
   ci_attestation: CiAttestationSchema.nullable().catch(null),
+  /** Whether GitHub said the repository is private when an App's installation saved it; null when not known. */
+  repository_private: z.boolean().nullable().catch(null),
 })
 
 export type EngineeringConnection = z.output<typeof ConnectionSchema>
+
+/** A connection as the server answered it, or null when it cannot be read (never shown with made-up fields). */
+export function parseConnection(raw: unknown): EngineeringConnection | null {
+  const parsed = ConnectionSchema.safeParse(raw)
+  return parsed.success ? parsed.data : null
+}
 
 /** Whether the connection's newest version is an attestation that holds (the only state the broker serves). */
 export const isCiAttested = (connection: EngineeringConnection): boolean => connection.ci_attestation?.state === 'attested'
@@ -124,11 +139,25 @@ export interface SavedConnection {
   created: boolean
 }
 
+/**
+ * A list answer's `key` items, each read by `schema` (one it cannot read is left out), and its `limit` (`fallback` when
+ * it gives none): the connections' and the GitHub Apps' (githubAppsApi.ts). An answer with no list is an error
+ * (`message`), never an empty list.
+ */
+export function parseLimitedList<T>(
+  raw: unknown, key: string, schema: z.ZodType<T>, fallback: number, message: string,
+): { items: T[]; limit: number } {
+  const list = isRecord(raw) ? raw[key] : undefined
+  if (!isRecord(raw) || !Array.isArray(list)) throw new Error(message)
+  const limit = typeof raw.limit === 'number' && raw.limit > 0 ? raw.limit : fallback
+  return { items: parseEach(schema, list), limit }
+}
+
 /** The list as the server answered it; an answer with no list is an error. */
 function parseConnectionList(raw: unknown): ConnectionList {
-  if (!isRecord(raw) || !Array.isArray(raw.connections)) throw new Error('The connections answer was unreadable')
-  const limit = typeof raw.limit === 'number' && raw.limit > 0 ? raw.limit : DEFAULT_CONNECTION_LIMIT
-  return { connections: parseEach(ConnectionSchema, raw.connections), limit }
+  const { items, limit } = parseLimitedList(raw, 'connections', ConnectionSchema, DEFAULT_CONNECTION_LIMIT,
+    'The connections answer was unreadable')
+  return { connections: items, limit }
 }
 
 /** A save's answer: the connection as stored (its credential's state only). */

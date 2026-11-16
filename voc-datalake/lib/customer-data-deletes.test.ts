@@ -59,7 +59,11 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
     [DELETE_ROLE]: { scope: [`WS#${ONE_WORKSPACE}#SOURCE#*`], why: WORKSPACE_DELETE.why },
   },
   AggregatesTable: {
-    'VocApiStack/IntegrationsLambdaRole': WORKSPACE_CIRCUIT_ROW,
+    'VocApiStack/IntegrationsLambdaRole': {
+      scope: [...WORKSPACE_CIRCUIT_ROW.scope, 'WEB_REVIEWS#METHODS', `WS#${ONE_WORKSPACE}#WEB_REVIEWS#METHODS`],
+      why: `${WORKSPACE_CIRCUIT_ROW.why}; and "Re-check methods" clears one review site's learned-methods row (no `
+        + 'review, no content; the deployment\'s or the request\'s workspace\'s, DELETE /integrations/web_reviews/methods/{domain})',
+    },
     ...Object.fromEntries(INGESTOR_ROLES.map((role) => [role, WORKSPACE_CIRCUIT_ROW])),
     'VocApiStack/LogsLambdaRole': { scope: ['LOGS#validation#*'], why: 'DELETE /logs/validation/{source}' },
     'VocApiStack/FeedbackFormLambdaRole': {
@@ -89,7 +93,7 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
       why: 'a workspace\'s hard delete (decision 17): its projects, comments and review links, their registries, their '
         + 'id claims and link routes',
     },
-    // 7.44.00 (3g-d): the review registries' backfill marker reset (lib/stacks/review-registries-marker.ts), on its
+    // 7.47.00 (3g-d): the review registries' backfill marker reset (lib/stacks/review-registries-marker.ts), on its
     // create and its delete. DOCSHARE_IDS also holds the deployment's link registry; IAM cannot pin the sort key, so
     // the call names the marker's (no customer data: the marker is a row of the backfill's own).
     'VocCoreStack/ReviewRegistriesMarkerResetCustomResourcePolicy': {
@@ -412,7 +416,7 @@ describe('customer-data, workspace and audit deletes across every stack', () => 
     expect(update?.condition).toStrictEqual({
       'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] },
       'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['email', 'name', 'pk', 'sk'] },
-      // 7.44.00: it asks for no returned values, so it cannot read a membership row back.
+      // 7.47.00: it asks for no returned values, so it cannot read a membership row back.
       StringEqualsIfExists: { 'dynamodb:ReturnValues': ['NONE'] },
     });
   });

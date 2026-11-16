@@ -4,12 +4,13 @@
  * `PUT /projects/{id}/documents/{document_id}` takes the revision the editor
  * loaded as `expected_revision` and answers 409 when someone saved in between
  * (shared/document_history.py). These pure helpers say which number that is,
- * which document "Load the latest" should reopen, and which version a prototype's
- * Back to vN restores.
+ * which document "Load the latest" should reopen, which version a prototype's
+ * Back to vN restores, and how the Documents list shows a PRD / PR/FAQ series (once).
  *
  * @module pages/ProjectDetail/documentEdit
  */
 import { isVersionManagedDocument } from '../../api/documentLineage'
+import { lastEdit } from '../../api/documentSections'
 import { looksLikeHtmlDocument } from '../../components/prototypeSpec'
 import { projectKey } from '../../api/projectQueryKeys'
 import type { ProjectDocument } from '../../api/types'
@@ -41,6 +42,51 @@ export function seriesKeyOf(document: ProjectDocument): string {
   return documentSeriesKey(document.base_title ?? document.title, document.document_type)
 }
 
+/** The series the Documents list shows once: a PRD's or a PR/FAQ's (their page has the versions: its picker). */
+const LISTED_ONCE_TYPES: ReadonlySet<string> = new Set(['prd', 'prfaq'])
+
+/** The list entry a PRD / PR/FAQ version is shown under (its type and series), or null: an entry of its own. */
+function listedSeriesOf(document: ProjectDocument): string | null {
+  if (!LISTED_ONCE_TYPES.has(document.document_type)) return null
+  const series = seriesKeyOf(document)
+  return series === '' ? null : `${document.document_type}:${series}`
+}
+
+/** `a` is a later version of its series than `b`: its number, then (a row with none yet) its last edit, its id. */
+function isLaterVersion(a: ProjectDocument, b: ProjectDocument): boolean {
+  const byVersion = (a.version ?? 0) - (b.version ?? 0)
+  if (byVersion !== 0) return byVersion > 0
+  return lastEdit(a).localeCompare(lastEdit(b)) > 0
+    || (lastEdit(a) === lastEdit(b) && a.document_id > b.document_id)
+}
+
+/**
+ * The documents as the Documents list shows them, in their order: a PRD / PR/FAQ series once, as its newest version
+ * (the page opens on it, its older versions a choice of its toolbar's version picker), every other document as it is
+ * (a prototype keeps one entry per version: its pane's Back to vN works on them). Nothing stored is merged: each
+ * version stays its own row.
+ */
+export function seriesHeads(documents: readonly ProjectDocument[]): ProjectDocument[] {
+  const heads = new Map<string, ProjectDocument>()
+  for (const document of documents) {
+    const series = listedSeriesOf(document)
+    if (series === null) continue
+    const head = heads.get(series)
+    if (head === undefined || isLaterVersion(document, head)) heads.set(series, document)
+  }
+  return documents.filter((document) => {
+    const series = listedSeriesOf(document)
+    return series === null || heads.get(series) === document
+  })
+}
+
+/** The id of the entry of `listed` (seriesHeads) that `selected` is shown under: its series' for a PRD / PR/FAQ. */
+export function listedIdOf(selected: ProjectDocument, listed: readonly ProjectDocument[]): string {
+  const series = listedSeriesOf(selected)
+  if (series === null) return selected.document_id
+  return listed.find((document) => listedSeriesOf(document) === series)?.document_id ?? selected.document_id
+}
+
 /**
  * The numbered versions of `document`'s series among `documents` (its type and series key), newest first.
  * `document` itself counts even before the list has it (a version just written and selected).
@@ -51,6 +97,22 @@ export function numberedSeries(document: ProjectDocument, documents: readonly Pr
   return [...documents, ...(listed ? [] : [document])]
     .filter((d) => d.document_type === document.document_type && seriesKeyOf(d) === key && d.version !== undefined)
     .sort((a, b) => (b.version ?? 0) - (a.version ?? 0))
+}
+
+/** The latest version of a PRD / PR/FAQ's series (the row the Documents list shows); null for any other document. */
+export function listedHeadOf(document: ProjectDocument, documents: readonly ProjectDocument[]): ProjectDocument | null {
+  return listedSeriesOf(document) === null ? null : (numberedSeries(document, documents)[0] ?? null)
+}
+
+/**
+ * Which page a document opens on. Each save of a PRD / PR/FAQ is a new version with a new id, and it must not
+ * remount the page (a half-written comment, the undo history, the rail's tab): its series names the page. Any
+ * other document (or a series with no title to name it) is its own.
+ */
+export function documentPageKey(document: ProjectDocument): string {
+  if (!isVersionManagedDocument(document)) return `doc:${document.document_id}`
+  const series = seriesKeyOf(document)
+  return series === '' ? `doc:${document.document_id}` : `series:${document.document_type}:${series}`
 }
 
 /**

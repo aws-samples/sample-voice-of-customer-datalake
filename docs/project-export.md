@@ -79,14 +79,18 @@ written, when:
 
 Writes go in this order: the project's row in the deployment's project registry (`PROJECT_IDS`)
 and a row for each copied comment series (`COMMENT_SERIES_IDS`), each put only if absent (since
-7.44.00, so that an erasure by email finds them), then S3 objects, pin forms and pins, the
+7.47.00, so that an erasure by email finds them), then S3 objects, pin forms and pins, the
 project's other rows, and finally META with a condition. A failed import therefore never shows
 as a project in the target's list. It can leave those registry rows behind, which is harmless:
 a walk reads an empty partition as nothing, and a retry puts them only if absent. To retry,
 delete the partial rows or run again with `--new-ids`.
 
-Import only from a checkout of 7.44.00 or later: an older checkout writes comment threads that
-no registry lists, so an erasure by email would not reach them. A bundle holds the reviewers'
+Import only from a checkout of 7.47.00 or later: an older checkout lists neither the project nor
+its comment series, so once the review registries' marker is there an erasure by email misses
+the imported project whole (its META, personas and product documents, live or deleted) and its
+series' threads. If you must import from an older checkout, run
+`.venv/bin/python scripts/projects/backfill_review_registries.py --unmark` from `voc-datalake/`
+first, then the backfill again (a dry run, then `--apply`) after the import. A bundle holds the reviewers'
 and members' addresses and no erasure reaches it, so delete a bundle once it is imported.
 
 ## What is carried

@@ -168,12 +168,12 @@ def test_the_document_is_never_edited(table):
     _run(table, _always(_reply(('keeps every file in step', 'Rewrite this as: free!'))))
     assert table.get_item(Key={'pk': 'PROJECT#p1', 'sk': 'PRFAQ#d1'})['Item'] == before
     written = {row['pk'] for row in table.scan()['Items']}
-    # The threads, and (since 7.44.00) their series in the deployment's series registry.
+    # The threads, and (since 7.47.00) their series in the deployment's series registry.
     assert written == {'PROJECT#p1', dc.comments_pk('p1', SERIES_ID), 'COMMENT_SERIES_IDS'}
 
 
 def test_a_review_lists_its_series_once_however_many_threads_it_files(table):
-    """7.44.00 (3g-d): the series registry is one partition; a review that files many threads writes it once at most,
+    """7.47.00 (3g-d): the series registry is one partition; a review that files many threads writes it once at most,
     and reads it once (a series already listed is never written again)."""
     calls: list[str] = []
 

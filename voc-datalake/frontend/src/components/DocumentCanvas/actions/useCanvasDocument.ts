@@ -25,7 +25,6 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode, RefObject } from 'react'
-import { isVersionManagedDocument } from '../../../api/documentLineage'
 import { useDocumentSave } from '../../../pages/ProjectDetail/useDocumentSave'
 import { documentRevision } from '../../../pages/ProjectDetail/documentEdit'
 import { canEditProject } from '../../../pages/ProjectDetail/projectAccess'
@@ -34,8 +33,8 @@ import { pathOrQueryChanged } from '../../UnsavedChangesGuard/pathOrQueryChanged
 import { useUnsavedChangesGuard } from '../../UnsavedChangesGuard/useUnsavedChangesGuard'
 import { ignoreRejection } from '../../../lib/rejections'
 import { noCleanup } from '../../../hooks/noCleanup'
-import { isEditedElsewhere } from './documentKinds'
-import { onlyFocusViewChanged } from '../page/focusView'
+import { isEditedElsewhere, isRenamedInPlace } from './documentKinds'
+import { onlyDocumentViewChanged } from '../../../pages/ProjectDetail/useProjectPlace'
 import type { CanvasEditorHandle } from '../editor/CanvasEditor'
 import type { DocumentConflict } from './ConflictBanner'
 import type { DocumentEdits } from '../../../pages/ProjectDetail/useDocumentSave'
@@ -225,7 +224,7 @@ function useCanvasDraft(document: ProjectDocument, editable: boolean, titleEdita
 export function useCanvasDocument({ project, document, onSelectDoc }: CanvasDocumentArgs): CanvasDocument {
   const handleRef = useRef<CanvasEditorHandle | null>(null)
   const editable = canEditProject(project) && !isEditedElsewhere(document.document_type)
-  const titleEditable = editable && !isVersionManagedDocument(document)
+  const titleEditable = editable && isRenamedInPlace(document)
   const { baseline, setBaseline, draft, setDraft, title, setTitle, dirty, selectedKey } =
     useCanvasDraft(document, editable, titleEditable)
 
@@ -382,10 +381,10 @@ export function useCanvasDocument({ project, document, onSelectDoc }: CanvasDocu
     handleRef.current?.setMarkdown(next.content)
   }, [clearConflict, document, setBaseline, setDraft, setTitle])
 
-  // Entering or leaving the focus view keeps this page and its draft: never a leave.
+  // Entering or leaving the focus view, or reading an older version, keeps this page and its draft: never a leave.
   const shouldBlock = useCallback(
     (current: Location, next: Location) =>
-      dirtyRef.current && pathOrQueryChanged(current, next) && !onlyFocusViewChanged(current, next),
+      dirtyRef.current && pathOrQueryChanged(current, next) && !onlyDocumentViewChanged(current, next),
     [],
   )
   const guard = useUnsavedChangesGuard({

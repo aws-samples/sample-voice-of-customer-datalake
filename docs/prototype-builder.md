@@ -643,6 +643,9 @@ The project's documents list groups its documents in four sections, always in th
 - **New** per section, for editors: PRD and PR/FAQ open their writing wizards (the person's way of working
   applies, unchanged), Prototypes opens the build dialog (disabled with its reason when the project has no PRD or
   PR/FAQ, the existing 409 rule), Documents opens the existing **New document**. Viewers see no New.
+- Each row is a card with a menu (right-click, the ContextMenu key or Shift+F10, or its **⋯**): **Open**, and for
+  editors **Rename** (research, custom and product-report documents; managed titles stay canonical) and **Delete**,
+  the page's own actions ([document canvas](document-canvas.md#the-document-menu)). Viewers get Open only.
 - Keyboard: the section headers and rows are in reading order; a section header's button toggles with Enter or
   Space. Screen readers hear "PR/FAQ, 2 documents, expanded". Below 1280 px, where the list is a strip above the
   page, the sections become a row of section buttons above the strip (the selected document's section open), so

@@ -281,7 +281,8 @@
     "select": "选择...",
     "configuredInSettings": "{{name}} 在 {{where}} 中连接：在那里粘贴令牌和设置，然后回到这里。",
     "configuredInSettingsNoToken": "{{name}} 在 {{where}} 中设置：请在那里填写设置，然后返回此处。",
-    "openDataSourceSettings": "打开来源设置"
+    "openDataSourceSettings": "打开来源设置",
+    "saveFailed": "无法保存。请重试。"
   },
   "refresh": "刷新",
   "status": {
@@ -325,6 +326,7 @@
     "configuredApps": "已配置的应用",
     "noApps": "尚未配置任何应用",
     "addFirstApp": "添加第一个应用",
+    "alreadySource": "此应用已是一个来源：{{name}}",
     "web": {
       "configuredPages": "评论页面",
       "addPage": "添加页面",
@@ -336,7 +338,10 @@
       "deleteConfirmTitle": "移除评论页面",
       "deleteConfirmMessage": "确定要移除此评论页面吗？",
       "addBedrockPage": "从 Bedrock 网页搜索索引添加页面",
-      "bedrockNote": "评价读取自 Amazon Bedrock 已编入索引的此页面副本（Amazon 缓存），而非网站本身。每条评价都保留其来源 URL 和站点，因此始终可以追溯到发布位置。读取它的模型在“管理 → AI 模型”中选择。"
+      "bedrockNote": "评价读取自 Amazon Bedrock 已编入索引的此页面副本（Amazon 缓存），而非网站本身。每条评价都保留其来源 URL 和站点，因此始终可以追溯到发布位置。读取它的模型在“管理 → AI 模型”中选择。",
+      "nameHint": "最多 100 个字母、数字、空格、“.”、“_”或“-”，以字母 A–Z 或数字开头。",
+      "nameInvalid": "无法保存此名称：只能使用字母、数字、空格、“.”、“_”或“-”（最多 100 个），并以字母 A–Z 或数字开头。",
+      "alreadySource": "此页面已是一个来源：{{name}}"
     },
     "kindLabel": "类型",
     "kind": {
@@ -347,7 +352,58 @@
     },
     "method": {
       "browser": "浏览器",
-      "bedrock": "Bedrock 网页索引"
+      "bedrock": "Bedrock 网页索引",
+      "automatic": "自动",
+      "label": "读取方式",
+      "option": {
+        "auto": "自动（推荐）",
+        "browser": "仅浏览器",
+        "bedrock": "仅 Bedrock 网页索引"
+      },
+      "help": {
+        "auto": "先尝试已签名的浏览器，再尝试 Amazon Bedrock 网页索引中的页面副本，然后尝试 AgentCore 网页搜索摘录，并记住哪种方式适用于此网站。",
+        "browser": "仅由托管浏览器逐页读取页面。拦截浏览器的网站会被报告为已拦截。",
+        "bedrock": "仅读取 Amazon Bedrock 网页索引中的页面副本，每次运行一页。"
+      }
+    },
+    "read": {
+      "step": {
+        "browser": "浏览器",
+        "bedrock_web_search": "Bedrock 网页索引",
+        "agentcore_web_search": "AgentCore 网页搜索"
+      },
+      "failed": {
+        "blocked": "{{method}} 被 {{vendor}} 拦截",
+        "blockedUnknown": "{{method}} 被拦截",
+        "no_reviews": "{{method}} 未找到评价",
+        "error": "{{method}} 无法打开页面",
+        "skipped_time": "{{method}} 已跳过：时间不足",
+        "not_offered": "{{method}} 在此区域不可用"
+      },
+      "readWithBrowser": "已用浏览器读取（{{amount}}）",
+      "readVia": "已通过{{method}}读取（{{amount}}）",
+      "thenRead": "已通过{{method}}读取（{{amount}}）",
+      "known": "已知：{{method}}（{{date}} 学到）",
+      "knownUndated": "已知：{{method}}",
+      "reprobeReads": "已重新检查浏览器：可以再次读取（{{amount}}）",
+      "reprobeStill": "已重新检查浏览器：仍被 {{vendor}} 拦截",
+      "reprobeUnreadable": "已重新检查浏览器：仍无法读取",
+      "nothing": "所有方式均未能读取：{{chain}}",
+      "notRead": "未读取：{{chain}}",
+      "excerpts": "摘录",
+      "excerptsTitle": "这些评价是 AgentCore 网页搜索结果的摘录：每条都可能被截断，并保留其来源链接。",
+      "reviews_one": "{{count, number}} 条评价",
+      "reviews_other": "{{count, number}} 条评价"
+    },
+    "learned": {
+      "best": "已知最佳方式：{{method}}（{{date}} 学到）",
+      "bestUndated": "已知最佳方式：{{method}}",
+      "none": "尚无任何方式读取过此网站",
+      "recheck": "重新检查方式",
+      "recheckTitle": "清除此工作区对该网站学到的内容，下次运行时将重新尝试所有方式",
+      "recheckFailed": "无法清除已学到的内容。请重试。",
+      "cleared": "下次运行时将重新尝试所有方式。",
+      "browserRecheck": "将在 {{date}} 之后再次尝试浏览器"
     }
   },
   "sourceMenu": {
@@ -408,7 +464,7 @@
       },
       "webReviewsBedrock": {
         "title": "Amazon Bedrock 网页搜索索引",
-        "description": "针对拦截自动化浏览器的网站（G2、Gartner、Capterra、TrustRadius），获取 Amazon Bedrock 已编入索引的页面中的评价。从 Amazon 缓存读取，并与来源链接一起存储。"
+        "description": "针对拦截自动化浏览器的网站，获取 Amazon Bedrock 已编入索引的页面中的评价。从 Amazon 缓存读取，并与来源链接一起存储。"
       }
     }
   },

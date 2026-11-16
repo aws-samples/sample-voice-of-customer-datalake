@@ -1,7 +1,7 @@
 """``scripts/projects/backfill_review_registries.py``: list the deployment's review links, commented series and
-projects made before 7.44.00 (projects 3g-d).
+projects made before 7.47.00 (projects 3g-d).
 
-Against moto, with rows as the stores wrote them before 7.44.00 (no registry row): a dry run writes nothing; ``--apply``
+Against moto, with rows as the stores wrote them before 7.47.00 (no registry row): a dry run writes nothing; ``--apply``
 lists every deployment link once (a revoked one too, naming its project and series), never a workspace link's routing
 row, every comment partition once (a deleted project's too, a series that runs over a page's end once) and every
 project's ``META`` once (a deleted one too, never the persona library's), then the marker, which names the release it
@@ -9,7 +9,7 @@ was taken under; a second run lists nothing (idempotent) and keeps a row the sto
 in a row of its own (``MIGRATION#review-registries#progress``), so a run stopped after any page and resumed
 (``--resume``, from that row only, under a new run id) ends as one that never stopped, with the summed counts; a run
 that another run took over stops, and its marker and its void are refused. The walk is refused unless there is
-exactly one function of each writer, on 7.44.0, its last update Successful and older than the longest Timeout plus 5
+exactly one function of each writer, on 7.47.0, its last update Successful and older than the longest Timeout plus 5
 minutes; ``--unmark`` deletes the marker. Lives under ``lambda/`` so the default ``testpaths`` runs it; the script is
 loaded by path.
 """
@@ -52,13 +52,13 @@ def table():
         yield create_projects_table_with_type_index('projects')
 
 
-def _writer(base: str, version: str | None = '7.44.0', minutes: int = 30, status: str = 'Successful',
+def _writer(base: str, version: str | None = '7.47.0', minutes: int = 30, status: str = 'Successful',
             timeout: int = 900) -> dict[str, Any]:
     return {'name': f'{base}-1-r', 'base': base, 'version': version, 'status': status, 'timeout': timeout,
             'last_modified': CLOCK - timedelta(minutes=minutes)}
 
 
-def _deployed(version: str = '7.44.0', minutes: int = 30) -> Any:
+def _deployed(version: str = '7.47.0', minutes: int = 30) -> Any:
     """The functions that write links or threads, as the operator's read of them answers (the longest Timeout 15
     minutes, so a drain of 20)."""
     return lambda: [_writer(base, version, minutes) for base in ('voc-projects-api', 'voc-projects-assist')]
@@ -70,7 +70,7 @@ def _run(backfill, table, **options: Any) -> Any:
 
 
 def _seed(table) -> None:
-    """Pre-7.44.00 rows: two deployment links (one revoked: its series' pointer gone), a workspace link's routing row
+    """Pre-7.47.00 rows: two deployment links (one revoked: its series' pointer gone), a workspace link's routing row
     and the workspace's own link, the threads of three series (one of a deleted project), a malformed link row and a
     malformed comment partition."""
     rows: list[dict[str, Any]] = [
@@ -139,7 +139,7 @@ def test_apply_lists_every_deployment_link_and_series_once_then_the_marker(backf
         'p1': {'pk': 'PROJECT_IDS', 'sk': 'p1', 'created_at': '2026-09-01'},
         'gone': {'pk': 'PROJECT_IDS', 'sk': 'gone', 'created_at': '2026-08-01'}}
     assert written['marker'] == {'pk': 'DOCSHARE_IDS', 'sk': REVIEW_REGISTRIES_MARKER_SK, 'completed_at': NOW,
-                                 'links_found': 2, 'series_found': 3, 'projects_found': 2, 'release': '7.44.0'}
+                                 'links_found': 2, 'series_found': 3, 'projects_found': 2, 'release': '7.47.0'}
     assert written['progress'] is None
     # A malformed link row and one malformed comment partition (three rows, counted once); the routing row is the
     # workspace's, left uncounted.
@@ -274,10 +274,10 @@ def test_max_pages_takes_a_whole_number_of_one_or_more(backfill, pages, capsys):
 
 
 @pytest.mark.parametrize(('deployed', 'reason'), [
-    (_deployed(version='7.43.0'), 'older than 7.44.0'),
+    (_deployed(version='7.43.0'), 'older than 7.47.0'),
     (_deployed(minutes=17), 'drained'),  # 15 min of Timeout plus 5: 20
     (list, 'exactly one'),
-    (lambda: [_writer('voc-projects-api', version=None), _writer('voc-projects-assist')], 'older than 7.44.0'),
+    (lambda: [_writer('voc-projects-api', version=None), _writer('voc-projects-assist')], 'older than 7.47.0'),
     (lambda: [_writer('voc-projects-api')], 'exactly one'),
     (lambda: [_writer('voc-projects-api'), _writer('voc-projects-api'), _writer('voc-projects-assist')],
      'exactly one'),
@@ -285,7 +285,7 @@ def test_max_pages_takes_a_whole_number_of_one_or_more(backfill, pages, capsys):
     (lambda: [_writer('voc-projects-api', minutes=25, timeout=1800), _writer('voc-projects-assist')], 'drained'),
 ])
 def test_an_applied_walk_starts_only_once_every_writer_runs_the_new_release(backfill, table, deployed, reason):
-    """Measured when the walk begins: exactly one function per writer, each on 7.44.0, its last update applied
+    """Measured when the walk begins: exactly one function per writer, each on 7.47.0, its last update applied
     (``LastUpdateStatus`` Successful) and older than the longest writer's Timeout plus 5 minutes (any invocation of an
     older container has ended), else a link could land behind the Scans: no walk that could earn the marker starts."""
     _seed(table)
@@ -344,16 +344,16 @@ def test_the_writers_are_read_from_the_stack_and_their_configuration(backfill):
 
     class _Lambda:
         def get_function_configuration(self, FunctionName: str) -> dict[str, Any]:
-            return {'Environment': {'Variables': {'APP_VERSION': '7.44.0'}}, 'Timeout': 30,
+            return {'Environment': {'Variables': {'APP_VERSION': '7.47.0'}}, 'Timeout': 30,
                     'LastUpdateStatus': 'Successful', 'LastModified': '2026-11-16T11:00:00.000+0000',
                     'FunctionName': FunctionName}
 
     found = backfill.link_writers(_Stacks(), _Lambda(), 'VocApiStack')
     at = datetime(2026, 11, 16, 11, 0, tzinfo=UTC)
     assert found == [
-        {'name': 'voc-projects-api-1-r', 'base': 'voc-projects-api', 'version': '7.44.0', 'last_modified': at,
+        {'name': 'voc-projects-api-1-r', 'base': 'voc-projects-api', 'version': '7.47.0', 'last_modified': at,
          'status': 'Successful', 'timeout': 30},
-        {'name': 'voc-projects-assist-1-r', 'base': 'voc-projects-assist', 'version': '7.44.0', 'last_modified': at,
+        {'name': 'voc-projects-assist-1-r', 'base': 'voc-projects-assist', 'version': '7.47.0', 'last_modified': at,
          'status': 'Successful', 'timeout': 30}]
 
 

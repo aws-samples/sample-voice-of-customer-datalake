@@ -4,6 +4,7 @@
  */
 
 import type React from 'react'
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   Save, Check, Loader2, Copy, ExternalLink, Eye, EyeOff, Webhook, Key,
@@ -118,11 +119,13 @@ interface CredentialsSectionProps {
   readonly updateCredentialsMutation: { isPending: boolean; mutate: (creds: Record<string, string>) => void }
   readonly onCredentialsChange: (creds: Record<string, string>) => void
   readonly onToggleSecrets: () => void
+  /** What comes before the fields (the GitHub Issues card's "Sign in with", which decides the fields shown). */
+  readonly lead?: ReactNode
 }
 
 export function CredentialsSection({
   fields, credentials, showSecrets, saveSuccess, isAdmin, updateCredentialsMutation,
-  onCredentialsChange, onToggleSecrets
+  onCredentialsChange, onToggleSecrets, lead,
 }: CredentialsSectionProps) {
   const { t } = useTranslation('settings')
   const saveIcon = getSaveButtonIcon(updateCredentialsMutation.isPending, saveSuccess)
@@ -139,6 +142,7 @@ export function CredentialsSection({
       </h4>
       <div className="space-y-3 sm:space-y-4">
         <div className="grid gap-3 sm:gap-4">
+          {lead}
           {fields.map((field) => (
             <CredentialField
               key={field.key}

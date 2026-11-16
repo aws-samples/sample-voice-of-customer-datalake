@@ -224,10 +224,18 @@
       },
       {
         "key": "token",
-        "label": "Fine-grained token (read-only Issues + Metadata)",
+        "label": "Fine-grained token (read-only Issues + Metadata; not needed when signing in with a GitHub App)",
         "type": "password",
-        "required": true,
+        "required": false,
         "secret": true
+      },
+      {
+        "key": "github_app_id",
+        "label": "GitHub App id (optional: sign in with one of this deployment's GitHub Apps instead of a token)",
+        "type": "text",
+        "required": false,
+        "placeholder": "123456",
+        "secret": false
       },
       {
         "key": "labels",
@@ -285,6 +293,7 @@
       "steps": [
         "Create a fine-grained personal access token limited to the repositories you list",
         "Grant it read-only Issues and Metadata permissions and nothing else",
+        "Or, where the engineering agents are on, sign in with a GitHub App made under Agents → Connections: name its id instead of a token (deployment-wide runs only; each run gets a read-only Issues token for its repositories, revoked when it ends)",
         "Paste the token and the repositories above (one owner/name or GitHub URL per line)",
         "Optionally restrict to labels, and name the product so 'Kiro 0.4.2' is read as a version",
         "For a large repository, set a start date and skip maintainer roles: every ingested item costs a model call",
@@ -474,7 +483,7 @@
     "id": "web_reviews",
     "name": "Web Reviews",
     "icon": "Web",
-    "description": "Read customer reviews from public review pages (Trustpilot, TripAdvisor, forums) with a managed browser. Each page you add is its own source.",
+    "description": "Read customer reviews from public review pages (Trustpilot, TripAdvisor, forums): with a managed browser, or for a site that blocks it from the Amazon Bedrock web index. Each page you add is its own source.",
     "category": "reviews",
     "config": [
       {
@@ -501,12 +510,16 @@
         "secret": false,
         "options": [
           {
+            "value": "auto",
+            "label": "Automatic (recommended)"
+          },
+          {
             "value": "browser",
-            "label": "The managed browser (default)"
+            "label": "Browser only"
           },
           {
             "value": "bedrock_web_search",
-            "label": "Amazon Bedrock web search index"
+            "label": "Bedrock web index only"
           }
         ]
       },
@@ -575,8 +588,9 @@
         "Open the public review page you want to follow and copy its https URL",
         "Add it above with a name and how many pages to read per run",
         "Use Run now, or choose a frequency and enable the schedule",
-        "A site that blocks automated browsers is reported as blocked in the run status",
-        "For a site that blocks the browser you may choose \"Amazon Bedrock web search index\": its cached copy of the page, read by an OpenAI GPT model chosen in Administration → AI models (one page per run, every review attributed)"
+        "Read with Automatic (the default) tries the signed browser first; when the site blocks it or shows no reviews, the page's copy in the Amazon Bedrock web index (read by the model chosen in Administration → AI models, every review attributed)",
+        "If that finds nothing too, Automatic reads AgentCore web search snippets of the page, stored as excerpts. Each workspace learns which method works for each site and goes straight to it on later runs",
+        "Browser only or Bedrock web index only keeps a page on that one method; a site that no method can read is reported in the run status"
       ]
     },
     "hasIngestor": true,

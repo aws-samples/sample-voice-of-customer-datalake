@@ -132,7 +132,9 @@ const createAppConnector = (deps: ToolDeps) => defineClientTool({
   pack: 'scrapers',
   description: 'Add a review connector (admin): app_reviews_ios takes app_id (the numeric App Store id), '
     + 'app_reviews_android takes package_name (e.g. com.example.app), web_reviews takes url (a public https review '
-    + 'page, e.g. a Trustpilot or TripAdvisor page, read with a managed browser), max_pages and max_reviews. Defaults: newest reviews first, '
+    + 'page, e.g. a Trustpilot or TripAdvisor page, saved with method auto: the signed browser, then the Amazon Bedrock '
+    + 'web index, then AgentCore web search excerpts; call list_review_site_methods first for what this workspace '
+    + 'learned of the site), max_pages and max_reviews. Defaults: newest reviews first, '
     + `${APP_CONNECTOR_DEFAULTS.maxReviewsPerRun} reviews per run (apps) or the latest ${WEB_REVIEW_PAGES.default} pages per run with no review limit (web), `
     + 'manual runs only (frequency_minutes 0) unless the user asked for a schedule. A web_reviews connector\u2019s reviews '
     + 'import as their own source "web_<site>_<app_name>" (app_name "Example Air" on a www.trustpilot.com page is '

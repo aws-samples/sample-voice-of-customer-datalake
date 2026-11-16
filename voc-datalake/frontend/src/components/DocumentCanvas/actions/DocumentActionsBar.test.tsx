@@ -86,13 +86,14 @@ function renderBar({
   render(
     <QueryClientProvider client={createTestQueryClient()}>
       <DocumentActionsBar project={project} document={document} canEdit={canEdit} state={state} share={shareControls}
-        threads={threads} onDeleteDoc={onDeleteDoc} isDeleting={isDeleting} focus={focus} focusButtonRef={focusButtonRef} />
+        threads={threads} onDeleteDoc={onDeleteDoc} isDeleting={isDeleting} focus={focus} focusButtonRef={focusButtonRef}
+        viewing={null} onChooseVersion={vi.fn()} review={null} />
     </QueryClientProvider>,
   )
   return { onDeleteDoc, state, focus, focusButtonRef, user: userEvent.setup() }
 }
 
-const status = () => screen.getByRole('status')
+const status = () => screen.getByTestId('canvas-save-status')
 const fileButton = () => screen.getByRole('button', { name: menuText.trigger })
 const item = (name: string | RegExp) => screen.getByRole('menuitem', { name })
 

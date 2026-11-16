@@ -129,6 +129,29 @@ describe('sourceLabel', () => {
   })
 })
 
+// Live finding (7.44.00): a review page with a long name has a cut, hashed source id; the review's page read as that id.
+describe('a web-review page named by its own name', () => {
+  const CUT_ID = 'web_trustradius_trustradius_amazon_conn_01ef15ac'
+  const PAGE = 'TrustRadius Amazon Connect Automatic'
+
+  it("reads as the page's name a review carries (its channel), then its site", () => {
+    expect(sourceLabel(CUT_ID, [], undefined, PAGE)).toBe('TrustRadius Amazon Connect Automatic (TrustRadius)')
+    expect(sourceLabel('web_www_trustpilot_com_acme', [], undefined, ' Acme Air ')).toBe('Acme Air (Trustpilot)')
+  })
+
+  it('the control: with no name known (no channel, a blank one, the id again) it reads from the id', () => {
+    const fromId = 'TrustRadius amazon conn 01ef15ac (TrustRadius)'
+    expect([sourceLabel(CUT_ID), sourceLabel(CUT_ID, [], undefined, '  '), sourceLabel(CUT_ID, [], undefined, CUT_ID)])
+      .toStrictEqual([fromId, fromId, fromId])
+  })
+
+  it("keeps an admin's label, and a channel changes no other kind of source", () => {
+    expect(sourceLabel(CUT_ID, [{ id: CUT_ID, label: 'Our TrustRadius page' }], undefined, PAGE)).toBe('Our TrustRadius page')
+    expect(sourceLabel('Example Air_ios', [], undefined, 'Example Air')).toBe('Example Air (iOS)')
+    expect(sourceLabel('manual_import', [], undefined, 'Interviews')).toBe('Manual import')
+  })
+})
+
 describe('the "Other" category', () => {
   it('reads as the translated label when one is given, and a configured name still wins', () => {
     expect(categoryLabel('other', [], 'Sonstiges')).toBe('Sonstiges')

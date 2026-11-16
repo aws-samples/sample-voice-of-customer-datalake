@@ -28,7 +28,7 @@ write takes a keyword-only ``workspace``. Without one each request is the one se
 one, the thread is ``WS#{ws}#DCOMMENTS#{project}#{series}`` (shared/project_keys.py ``comments_pk``), every call goes
 through the workspace layer (shared/ingest_tables.py ``ScopedUpdates``, shared/scoped_query.py ``iter_partition``),
 and a new thread first lists its series in the project's own partition (``comment_series_key``, put if absent), so
-the hard delete finds the comment partition from the project. Since 7.44.00 (3g-d) a deployment's new thread first
+the hard delete finds the comment partition from the project. Since 7.47.00 (3g-d) a deployment's new thread first
 lists its series in the deployment's series registry (``COMMENT_SERIES_IDS``: an eventually consistent read of its
 row, then a put if absent only when it is not there), so an erasure by email finds every comment partition by a
 Query; that read, and the put for a series' first thread, are what a deployment's thread adds.
@@ -208,7 +208,7 @@ def reply_item(author: Mapping[str, Any], text: str) -> dict[str, Any]:
 
 def list_deployment_series(table: Any, project_id: str, series_id: str) -> None:
     """List a deployment's series in the deployment's series registry (shared/project_keys.py
-    ``deployment_series_item``), before its comment partition gets a row (since 7.44.00, projects 3g-d: an erasure by
+    ``deployment_series_item``), before its comment partition gets a row (since 7.47.00, projects 3g-d: an erasure by
     email finds every comment partition by a Query, an orphan of a deleted project's too). The registry is one
     partition every deployment thread would reach, so the row is read first (an eventually consistent GetItem of its
     key) and put, if absent, only when it is not there: a series already listed costs one read, no write."""
@@ -227,7 +227,7 @@ def put_thread(table: Any, item: Mapping[str, Any], *, workspace: WorkspaceScope
                series_listed: bool = False) -> None:
     """Write a new thread (``thread_item``, of the same scope). Its series is listed first, in a workspace in the
     project's partition (``list_series``), the deployment's in its series registry (``list_deployment_series``, since
-    7.44.00), unless the caller listed it in this same request already (``series_listed``: a persona review files many
+    7.47.00), unless the caller listed it in this same request already (``series_listed``: a persona review files many
     threads of one series), and a thread whose partition is not its series' is refused (``OutOfScopeError``) before
     anything is written, so the list names every partition a thread is in."""
     project_id, series_id = str(item.get('project_id') or ''), str(item.get('series_id') or '')

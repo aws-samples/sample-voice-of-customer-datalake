@@ -43,7 +43,6 @@
     "notFound": "Introuvable dans cette version",
     "saveFailed": "Impossible d'enregistrer le commentaire. Veuillez réessayer.",
     "loadFailed": "Les commentaires n'ont pas pu être chargés. Le document s'affiche sans eux.",
-    "personaReview": "Demander une relecture aux personas",
     "personaReviewRunning": "Les personas lisent…",
     "personaReviewHint": "Jusqu'à 6 personas de ce projet lisent cette version et laissent des commentaires citant le texte. Ils ne modifient jamais le document. Coûte un appel au modèle par persona.",
     "personaReviewDone_one": "{{count, number}} commentaire ajouté ({{personas, number}} personas consultés)",

@@ -58,7 +58,7 @@ ALLOWED_UNUSED_EXPORTS: dict[str, frozenset[str]] = {
     # Phase 3's registry of a workspace's project ids (7.26.00, docs/multi-workspace.md, the project plan 3a), landed
     # before its readers, the workspace export, delete and erasure (3g), which remove it here.
     'lambda/shared/project_tables': frozenset({'iter_registered_project_ids'}),
-    # The release rule the backfill's marker is read by (7.44.00, 3g-d): the operator's backfill
+    # The release rule the backfill's marker is read by (7.47.00, 3g-d): the operator's backfill
     # (scripts/projects/backfill_review_registries.py, outside the scanned folders) judges its writers by the same one.
     'lambda/shared/review_registries': frozenset({'FIRST_RELEASE', 'release_of'}),
 }

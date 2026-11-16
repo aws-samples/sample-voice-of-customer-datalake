@@ -399,7 +399,7 @@ def test_a_page_with_rows_and_counts_adds_its_counts_once(world, monkeypatch, ch
 
 def test_the_registry_is_read_a_page_of_a_hundred_strongly_consistent_with_its_deleted_marks():
     """7.43.00: the registry read is shared/project_walk.py's ``registry_page``; its request is pinned here (since
-    7.44.00 a projected Query also says ``Select`` ``SPECIFIC_ATTRIBUTES``)."""
+    7.47.00 a projected Query also says ``Select`` ``SPECIFIC_ATTRIBUTES``)."""
     view = MagicMock()
     view.query.return_value = {'Items': []}
     projects.ProjectSource(A, view, MagicMock(), MagicMock()).page('personas', {})

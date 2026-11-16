@@ -43,6 +43,7 @@ import { s3ImportIngestorDeployed } from './api-s3-import-lambda';
 import { createDataLambdas } from './api-data-lambdas';
 import { createEngagementLambdas } from './api-engagement-lambdas';
 import { engineeringAgentsEnabled } from './engineering-broker';
+import { wireGitHubAppWebhook } from './engineering-app-tokens';
 import { workspaceHardDeleteEnabled } from '../utils/workspace-hard-delete';
 import { createVerificationFixtureProvider } from './api-fixture-provider';
 import { createApiGateway, restApiBaseUrl } from './api-gateway';
@@ -362,6 +363,10 @@ export class VocApiStack extends VocStack {
     // shared/prototype_versions.py), so it gets the same value, as does its assist
     // twin (the same function, environment included).
     const pinSubmitApiBase = restApiBaseUrl(this, gateway.api);
+    // The github_issues webhook takes the deployment's GitHub Apps' deliveries too (7.45.00, with the engineering agents
+    // on): their webhook secrets for the shared webhook role, the hook's address for the Agents API's manifests.
+    wireGitHubAppWebhook({ role: webhookRole, webhooks: webhookLambdas, agentsApi: assistant.agentsLambda,
+      apiBaseUrl: pinSubmitApiBase, deploymentPrefix: this.deploymentPrefix });
     for (const fn of [jobs.documentGeneratorLambda, projects.projectsLambda, projects.projectsAssistWorker]) {
       fn.addEnvironment('PIN_SUBMIT_API_BASE', pinSubmitApiBase);
     }

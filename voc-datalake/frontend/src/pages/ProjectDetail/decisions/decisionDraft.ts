@@ -4,6 +4,7 @@
  * @module pages/ProjectDetail/decisions/decisionDraft
  */
 import { isVerdict } from '../../../api/decisionSchema'
+import { projectPlacePath, tabPlace } from '../projectPaths'
 import type { Decision, Verdict } from '../../../api/decisionSchema'
 import type { DecisionInput } from '../../../api/decisionsApi'
 
@@ -96,7 +97,7 @@ interface DecisionPrefill {
  * saved until the user presses Save.
  */
 export function decisionDeepLink(projectId: string, prefill: DecisionPrefill = {}): string {
-  const params = new URLSearchParams({ tab: 'decisions', [NEW_DECISION_PARAM]: '1' })
+  const params = new URLSearchParams({ [NEW_DECISION_PARAM]: '1' })
   const entries: [string, string | undefined][] = [
     ['title', prefill.title], ['verdict', prefill.verdict], ['rationale', prefill.rationale],
     ['feedback', prefill.feedbackIds?.slice(0, MAX_FEEDBACK_IDS).join(',')],
@@ -104,5 +105,5 @@ export function decisionDeepLink(projectId: string, prefill: DecisionPrefill = {
   entries.forEach(([key, value]) => {
     if (value !== undefined && value !== '') params.set(key, value)
   })
-  return `/projects/${encodeURIComponent(projectId)}?${params.toString()}`
+  return `${projectPlacePath(projectId, tabPlace('decisions'))}?${params.toString()}`
 }

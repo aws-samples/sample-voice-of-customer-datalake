@@ -236,6 +236,19 @@ describe('FeedbackDetail', () => {
       expect(screen.getByText('Advocate')).toBeInTheDocument()
     })
 
+    it("names a web-review page's review by the page's name and its site, never its cut source id", async () => {
+      mockGetFeedbackById.mockResolvedValue({
+        ...mockFeedback, source_platform: 'web_trustradius_trustradius_amazon_conn_01ef15ac',
+        source_channel: 'TrustRadius Amazon Connect Automatic',
+      })
+      renderDetail()
+
+      expect(await screen.findByRole('heading', { level: 1, name: 'TrustRadius Amazon Connect Automatic (TrustRadius)' }))
+        .toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'TrustRadius Amazon Connect Automatic (TrustRadius)' })).toBeInTheDocument()
+      expect(screen.queryByText(/01ef15ac/)).not.toBeInTheDocument()
+    })
+
     it('shows journey stage and impact area as labels, not stored ids', async () => {
       renderDetail()
 

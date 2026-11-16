@@ -17,6 +17,8 @@ export interface DisplayLabels {
   readonly subcategory: (id: string, parent?: string) => string
   readonly theme: (category: string, subcategory?: string | null) => string
   readonly source: (id: string) => string
+  /** One review's source: its own channel names a web-review page's source by the page (utils/displayLabels). */
+  readonly reviewSource: (id: string, channel: string | undefined) => string
   /** A trending keyword: a category id reads as its category, any other keyword as written. */
   readonly keyword: (keyword: string) => string
   /** Persona types and any other id without configured names. */
@@ -37,6 +39,7 @@ export function useDisplayLabels(): DisplayLabels {
       subcategory: (id, parent) => subcategoryLabel(id, parent, categories),
       theme: (category, subcategory) => themeLabel(category, subcategory, categories),
       source: (id) => sourceLabel(id, sources, builtIn),
+      reviewSource: (id, channel) => sourceLabel(id, sources, builtIn, channel),
       keyword: (keyword) => keywordLabel(keyword, categories),
       plain: humanizeId,
     }

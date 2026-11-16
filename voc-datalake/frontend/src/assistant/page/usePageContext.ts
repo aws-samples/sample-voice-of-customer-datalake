@@ -59,7 +59,7 @@ export function usePageContext(): PageContext {
   const agentTitle = useCachedTitle(agentsKeys.detail(base.agentId ?? ''), base.agentId !== undefined, agentTitleFrom)
   const title = projectTitle ?? agentTitle
   const projectData = useCachedQueryData(projectKey(base.projectId), base.projectId !== undefined)
-  const prototype = prototypeFrom(projectData, selectedDocumentId(base, location.search))
+  const prototype = prototypeFrom(projectData, selectedDocumentId(base, location))
   // Primitives as dependencies: a re-read of the cache must not hand the assistant a new context object.
   const [prototypeId, prototypeTitle] = [prototype?.documentId, prototype?.title]
   return useMemo(() => {

@@ -5,11 +5,11 @@
  */
 import { Loader2 } from 'lucide-react'
 import {
-  useState, useCallback, useEffect,
+  useState, useCallback, useEffect, useRef,
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  useParams, useNavigate, useSearchParams,
+  useParams, useNavigate,
 } from 'react-router-dom'
 import { useFocusViewActive } from '../../components/DocumentCanvas/page/focusView'
 import ProjectSharingModal from '../../components/ProjectSharingModal/ProjectSharingModal'
@@ -34,11 +34,12 @@ import { usePersonaMutations } from './usePersonaMutations'
 import PersonaModals from './PersonaModals'
 import { projectPersonaScope } from './personaScope'
 import { projectJobsKey } from '../../api/projectQueryKeys'
-import { projectDocumentPath, useDocumentSelection } from './useDocumentSelection'
+import { useDocumentSelection } from './useDocumentSelection'
+import { documentPlace, projectDocumentPath, tabPlace } from './projectPaths'
+import { useCanonicalProjectPath, useProjectPlace } from './useProjectPlace'
 import { useBlankDocument } from './useBlankDocument'
 import { useProjectWizardState } from './useProjectWizardState'
 import WizardSection from './WizardSection'
-import { parseTab } from './types'
 import type { Tab } from './types'
 import type { ProjectDocument } from '../../api/types'
 import type { Project } from '../../api/projectTypes'
@@ -72,23 +73,23 @@ export default function ProjectDetail() {
   const navigate = useNavigate()
   const { config } = useConfigStore()
 
-  // The active tab lives in `?tab=` so the assistant's page context can name it.
-  const [searchParams, setSearchParams] = useSearchParams()
-  const activeTab = parseTab(searchParams.get('tab'))
-  const setActiveTab = useCallback((tab: Tab) => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev)
-      if (tab === 'overview') next.delete('tab')
-      else next.set('tab', tab)
-      return next
-    }, { replace: true })
-  }, [setSearchParams])
-  // An unknown `?tab=` (an old `mcp` or `chat` bookmark) renders Overview, so drop it
-  // from the URL too: the address bar and the assistant's page context then agree.
-  const rawTab = searchParams.get('tab')
+  // The tab, and on Documents the open document, are the path (`/projects/<id>/documents/<docId>`, projectPaths.ts):
+  // the assistant's page context names them, and Back and Forward walk them. An old `?tab=` / `?doc=` link is
+  // replaced by its path.
+  useCanonicalProjectPath()
+  const projectPlace = useProjectPlace()
+  const { place, go } = projectPlace
+  const activeTab = place.tab
+  // The document last open on Documents: the tab opens on it again.
+  const lastDocument = useRef<string | null>(null)
   useEffect(() => {
-    if (rawTab !== null && rawTab !== activeTab) setActiveTab(activeTab)
-  }, [rawTab, activeTab, setActiveTab])
+    if (place.documentId !== null) lastDocument.current = place.documentId
+  }, [place.documentId])
+  const setActiveTab = useCallback((tab: Tab) => {
+    if (tab === activeTab) return
+    const reopen = tab === 'documents' ? lastDocument.current : null
+    go(reopen === null ? tabPlace(tab) : documentPlace(reopen))
+  }, [activeTab, go])
   // When a long-running action last reported that it started a job. Keeps the
   // jobs poll alive while the new row becomes readable — see
   // JOB_START_POLL_WINDOW_MS in useProjectData.
@@ -112,9 +113,9 @@ export default function ProjectDetail() {
     jobStartedAt,
   })
 
-  // The Documents tab's selection, deep-linkable as `?doc=<id>`.
+  // The Documents tab's selection, deep-linkable as `/projects/<id>/documents/<docId>`.
   const loadedDocuments = data?.documents
-  const docSelection = useDocumentSelection(loadedDocuments)
+  const docSelection = useDocumentSelection(loadedDocuments, projectPlace)
   // Selecting another document, or another tab, while the open one has unsaved changes asks
   // first (its canvas registers the guard: DocumentCanvas/actions/useCanvasDocument). A route
   // change and closing the window are caught by that guard itself.
@@ -159,6 +160,7 @@ export default function ProjectDetail() {
     deleteDocMut,
   } = useDocumentMutations({
     id,
+    selectedDoc: docSelection.selectedDoc,
     setSelectedDoc,
   })
 
@@ -314,6 +316,7 @@ export default function ProjectDetail() {
         onCopyPersonas={() => setShowCopyPersonas(true)}
         onSelectDoc={selectDoc}
         onDeleteDoc={() => docSelection.selectedDoc && confirm.openDocumentConfirm(docSelection.selectedDoc.document_id)}
+        onDeleteDocument={(doc) => confirm.openDocumentConfirm(doc.document_id)}
         blank={blank}
         onWriteDocument={wizard.openDocWizard}
         onJobStarted={handleJobStarted}

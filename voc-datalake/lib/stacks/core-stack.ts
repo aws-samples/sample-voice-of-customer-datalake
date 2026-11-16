@@ -359,7 +359,10 @@ export class VocCoreStack extends VocStack {
     //   AGENT#{id} / RUN#{run_id}         run          (gsi1pk RUNS_ACTIVE while running)
     //   RUN#{run_id} / EVT#{seq:08d}      run event
     //   RUN#{run_id} / MATE#{role}#{seq:06d}  crewmate transcript
-    this.agentsTable = this.createEncryptedTable('AgentsTable', 'voc-agents');
+    // TTL (`ttl`, 7.45.00): only the GitHub App flow's single-use setup states set it
+    // (CONNECTIONS#default#SETUP / STATE#…, lambda/engineering/connectors/github_apps.py: a day after they are
+    // minted); no other row of the table carries the attribute, so nothing else ever expires.
+    this.agentsTable = this.createEncryptedTable('AgentsTable', 'voc-agents', { timeToLiveAttribute: 'ttl' });
     this.addKeyPairIndex(this.agentsTable, { indexName: 'gsi1-by-agents-listing', keyPrefix: 'gsi1' });
 
     // Engineering Table — docs/autonomous-engineering.md, only with -c engineeringAgents=true. A run's board and its
@@ -579,7 +582,7 @@ export class VocCoreStack extends VocStack {
     new cdk.CfnOutput(this, 'BoardUserPoolClientId', { value: board.userPoolClient.userPoolClientId, description: 'Board and review-link client ID' });
     new cdk.CfnOutput(this, 'BoardSignInMode', { value: board.signIn, description: 'Board sign-in: email_otp (SES, -c emailFrom) or code (Cognito default email)' });
 
-    // The review registries' backfill marker goes when a release that keeps the registries arrives or leaves (7.44.00:
+    // The review registries' backfill marker goes when a release that keeps the registries arrives or leaves (7.47.00:
     // review-registries-marker.ts), through this stack's one AwsCustomResource provider.
     resetReviewRegistriesMarker(this, this.projectsTable, this.kmsKey);
 

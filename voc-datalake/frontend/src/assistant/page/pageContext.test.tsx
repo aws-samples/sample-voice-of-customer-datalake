@@ -37,12 +37,25 @@ describe('pageContextFromLocation', () => {
     expect(pageContextFromLocation({ pathname, search })).toStrictEqual(expected)
   })
 
-  it('reads the open document only on a project\'s Documents tab, within MAX_ID_LENGTH', () => {
-    const project = { kind: 'project', tab: 'documents' } as const
-    expect(selectedDocumentId(project, '?tab=documents&doc=proto_3')).toBe('proto_3')
-    expect(selectedDocumentId(project, `?doc=${'x'.repeat(MAX_ID_LENGTH)}`)).toBe('x'.repeat(MAX_ID_LENGTH))
-    expect(selectedDocumentId(project, `?doc=${'x'.repeat(MAX_ID_LENGTH + 1)}`)).toBeUndefined()
-    expect(selectedDocumentId({ kind: 'project', tab: 'personas' }, '?doc=proto_3')).toBeUndefined()
+  it('reads the open document from a project\'s path (an old link\'s query too), within MAX_ID_LENGTH', () => {
+    const project = { kind: 'project' } as const
+    const at = (pathname: string, search = '') => ({ pathname, search })
+    const longest = 'x'.repeat(MAX_ID_LENGTH)
+    expect([
+      at('/projects/p1/documents/proto_3'), at('/projects/p1/documents/proto_3/v/2/focus'),
+      at('/projects/p1', '?tab=documents&doc=proto_3'), at(`/projects/p1/documents/${longest}`),
+      at(`/projects/p1/documents/${longest}x`), at('/projects/p1/personas'),
+    ].map((location) => selectedDocumentId(project, location))).toStrictEqual(['proto_3', 'proto_3', 'proto_3', longest, undefined, undefined])
+    expect(selectedDocumentId({ kind: 'feedback' }, at('/projects/p1/documents/proto_3'))).toBeUndefined()
+  })
+
+  it.each([
+    ['/projects/p1/documents', 'documents'],
+    ['/projects/p1/documents/prd_1/v/2/focus', 'documents'],
+    ['/projects/p1/decisions', 'decisions'],
+    ['/projects/p1', 'overview'],
+  ])('names the tab of %s from its path', (pathname, tab) => {
+    expect(pageContextFromLocation({ pathname, search: '' })).toMatchObject({ kind: 'project', projectId: 'p1', tab })
   })
 
   it('drops over-long ids', () => {
@@ -129,7 +142,7 @@ describe('usePageContext', () => {
 
   it('has no title when the project is not cached', () => {
     const result = renderAt('/projects/p2')
-    expect(result.current).toStrictEqual({ kind: 'project', path: '/projects/p2', projectId: 'p2' })
+    expect(result.current).toStrictEqual({ kind: 'project', path: '/projects/p2', projectId: 'p2', tab: 'overview' })
   })
 
   // docs/prototype-builder.md, part 2: the open prototype is the panel's subject ("Editing: …").
@@ -147,9 +160,10 @@ describe('usePageContext', () => {
   }
 
   it('names the prototype open on the Documents tab as documentId, titled by it', () => {
-    const result = renderAt('/projects/p1?tab=documents&doc=proto_3', cached())
+    const result = renderAt('/projects/p1/documents/proto_3', cached())
     expect(result.current).toStrictEqual({
-      kind: 'project', path: '/projects/p1', projectId: 'p1', tab: 'documents', documentId: 'proto_3', title: 'Checkout flow (v3)',
+      kind: 'project', path: '/projects/p1/documents/proto_3', projectId: 'p1', tab: 'documents', documentId: 'proto_3',
+      title: 'Checkout flow (v3)',
     })
   })
 

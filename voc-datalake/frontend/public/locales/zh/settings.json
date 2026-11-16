@@ -373,7 +373,15 @@
     "advanced": "高级",
     "advancedRawHint": "数据源页面中抓取器的原始配置。请在该页面添加和编辑抓取器。",
     "runsOnUpload": "上传时运行",
-    "runsOnDemand": "按需运行 — 无计划"
+    "runsOnDemand": "按需运行 — 无计划",
+    "githubSignIn": {
+      "label": "登录方式",
+      "token": "细粒度令牌",
+      "app": "本部署的某个 GitHub App",
+      "appLabel": "GitHub App",
+      "appHint": "每次运行都会从 App 获取一个仅用于这些仓库的短期令牌（Issues 和 Metadata，只读），并在结束时交还。请先将 App 安装到这些仓库（智能体 → 连接）。",
+      "tokenHint": "一个对这些仓库的 Issues 和 Metadata 只有只读权限的细粒度个人访问令牌。"
+    }
   },
   "subtitle": "配置您的VoC平台",
   "tabs": {

@@ -87,9 +87,12 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'data-quality': 'feedbackData', // Data Explorer usefulness distribution (/metrics/data-quality)
   'decision-review-search': 'feedbackData', // ProjectDetail decision evidence picker (/feedback/search)
   'design-system': 'config',
+  // The GitHub Issues card's stored App id (Administration → Sources: changes only when an administrator saves it).
+  'integration-credentials': 'config',
   'dimension-metrics': 'feedbackData',
   'dimensions-config': 'config',
   'document-comments': 'live', // margin comment threads of a PR/FAQ / PRD series (reviewers comment meanwhile)
+  'engineering-github-apps': 'config', // Agents → Connections → Connect GitHub: the deployment's GitHub Apps (change only when an administrator changes them)
   'engineering-connections': 'config', // Agents → Connections: the repository connections (change only when an administrator changes them)
   'engineering-runs': 'live', // an engineering run's monitor: overview, board, conversation (polled while it runs)
   'engineering-scorecards': 'live', // Agents → Skills: a role's scorecards, which each ended run adds a row to
@@ -161,6 +164,7 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'validation-logs': 'live',
   'voting-session': 'live',
   'voting-session-open': 'live',
+  'web-review-methods': 'live', // what each review site's runs learned (pages/Scrapers, api/webReviewMethodsApi.ts)
   'workflows': 'standard',
 }
 

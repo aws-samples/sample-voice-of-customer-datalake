@@ -1,5 +1,5 @@
 """voc-retention: an erasure by email reaches the addresses in a workspace's projects (7.43.00, projects 3g-b) and in
-the deployment's own (7.44.00, 3g-d; TENETS.md D5; docs/multi-workspace.md, the project plan's 3g).
+the deployment's own (7.47.00, 3g-d; TENETS.md D5; docs/multi-workspace.md, the project plan's 3g).
 
 Where a workspace's projects hold an address or a name that can be one (written since 7.37.00; no route writes them
 in a workspace until the switch, 3h), ``ERASED_FIELDS`` lists each, and a test holds it to every such field the
@@ -90,7 +90,7 @@ shared/project_walk.py), projected to the attributes it judges. An id not shaped
 row, a link, a series, a document) is skipped and counted (``project_ids_malformed``). The match is
 case-insensitive (``casefold``), as members.py's.
 
-The deployment's own projects (since 7.44.00, projects 3g-d), where every real reviewer address is today: the
+The deployment's own projects (since 7.47.00, projects 3g-d), where every real reviewer address is today: the
 deployment's erasure by email walks them first (the cursor's ``DEPLOYMENT`` part, ``deployment_state``), by the same
 steps and the same writes, a step's scope None (voc-projects seen as itself, shared/ingest_tables.py ``table_view``),
 each change recorded under ``AUDIT#tombstone#deployment_projects`` / ``{kind}#{ref}#{job}`` and closing no export (the
@@ -174,9 +174,9 @@ from shared.ws_repo import (
 )
 
 #: The tombstones' source and partition of a workspace's rows (``AUDIT#tombstone#workspace_projects``), and the
-#: phase's name (handler.py), which walks the deployment's own projects too since 7.44.00.
+#: phase's name (handler.py), which walks the deployment's own projects too since 7.47.00.
 STORE_PROJECTS: Final = 'workspace_projects'
-#: The tombstones' source and partition of the deployment's rows (``AUDIT#tombstone#deployment_projects``, 7.44.00).
+#: The tombstones' source and partition of the deployment's rows (``AUDIT#tombstone#deployment_projects``, 7.47.00).
 STORE_DEPLOYMENT_PROJECTS: Final = 'deployment_projects'
 #: The part of the phase's cursor that walks the deployment's own projects (first, before the listed workspaces), and
 #: the flag the cursor carries once they are done (a cursor with neither walks them first).
@@ -230,7 +230,7 @@ class RowKeptChanging(RuntimeError):
 
 def applies(run: Mapping[str, Any], tables: Mapping[str, Any]) -> bool:
     """An erasure by email that is not limited to a source, with voc-projects configured: a workspace's own erasure
-    walks that workspace; the deployment's walks its own projects (since 7.44.00) and then, with voc-workspaces
+    walks that workspace; the deployment's walks its own projects (since 7.47.00) and then, with voc-workspaces
     configured, every listed workspace's."""
     return (run.get('mode') == MODE_ERASE and run.get('field') == ERASE_FIELD and not run.get('source')
             and 'projects' in tables)
@@ -405,10 +405,10 @@ class ProjectPeopleEraser:
         """voc-projects in the scope: a workspace's through the layer, the deployment's (None) as the table itself."""
         return table_view(scope, self._projects)
 
-    # ── The deployment's own projects (since 7.44.00) ─────────────────────────────────────────────────────────────
+    # ── The deployment's own projects (since 7.47.00) ─────────────────────────────────────────────────────────────
 
     def _found_step(self, _scope: None, at: dict[str, Any]) -> dict[str, Any]:
-        """Whether the backfill listed what was made before 7.44.00 (workspaces.py ``deployment_found``: its marker,
+        """Whether the backfill listed what was made before 7.47.00 (workspaces.py ``deployment_found``: its marker,
         complete): then the registries are walked by Query, else the same links, series and projects are found by
         Scan. The run keeps which (``DEPLOYMENT_FOUND``, on the job row)."""
         found = workspaces.deployment_found(self._projects)
@@ -591,7 +591,7 @@ class ProjectPeopleEraser:
     def _text_key(self, scope: WorkspaceScope | None, folder: str, raw: str, row: Mapping[str, Any]) -> str | None:
         """The object whose text says whether a document holds the address, or None once it is listed as not checked:
 
-        * the deployment's (7.44.00, 3g-d): the extractor writes text for every kind there (a PDF's text, an image's
+        * the deployment's (7.47.00, 3g-d): the extractor writes text for every kind there (a PDF's text, an image's
           description by the model), so only the extracted text is read, every kind alike (``status`` ``ready``,
           ``s3_extracted_key`` under its folder), and a document with none (pending, failed, never uploaded) is not
           checked, by its upload's key;
@@ -846,6 +846,6 @@ def _project_start(scope: WorkspaceScope | None) -> dict[str, Any]:
 
 #: The attributes this module's UpdateItems name on voc-projects, with the key: lib/stacks/retention-worker.ts grants
 #: them in a statement of their own (``PEOPLE_UPDATE_ATTRIBUTES``), on the deployment's and one workspace id's
-#: ``PROJECT#``, ``DCOMMENTS#`` and ``DOCSHARE#`` partitions only (the deployment's since 7.44.00); lineage.py's marks
+#: ``PROJECT#``, ``DCOMMENTS#`` and ``DOCSHARE#`` partitions only (the deployment's since 7.47.00); lineage.py's marks
 #: are the other statement (``LINEAGE_UPDATE_ATTRIBUTES``). A test holds each list to its statement.
 PEOPLE_UPDATE_ATTRIBUTES: Final = ('pk', 'sk', *(name for kind in ROW_ATTRIBUTES.values() for name in kind))

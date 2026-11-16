@@ -1,7 +1,7 @@
-"""List the deployment's review links, commented series and projects made before 7.44.00 (docs/multi-workspace.md,
-the project plan's 3g-d; CHANGELOG 7.44.00, "Upgrade notes").
+"""List the deployment's review links, commented series and projects made before 7.47.00 (docs/multi-workspace.md,
+the project plan's 3g-d; CHANGELOG 7.47.00, "Upgrade notes").
 
-Since 7.44.00 a deployment's review link create puts the link in the deployment's link registry (``DOCSHARE_IDS`` /
+Since 7.47.00 a deployment's review link create puts the link in the deployment's link registry (``DOCSHARE_IDS`` /
 ``{share id}``) and its series in the series registry (``COMMENT_SERIES_IDS`` / ``{project}#{series}``), a series'
 first thread (and the project bundle's import) puts its series there too, and a project's create (and the import)
 puts the project in the project registry (``PROJECT_IDS`` / ``{id}``, which its delete keeps), so an erasure by email
@@ -18,7 +18,7 @@ finds every link (a revoked one too), every comment partition and every project 
 4. with ``--apply``, once one applied walk reached the end of the table, puts the marker (``DOCSHARE_IDS`` /
    ``MIGRATION#review-registries``: when, what each pass found, and the release it was taken under), but only once
    there is exactly one of each function that writes links, threads or projects (the projects API and its assist
-   twin, found in the API stack), each reports ``APP_VERSION`` 7.44.0 or later, its last update applied
+   twin, found in the API stack), each reports ``APP_VERSION`` 7.47.0 or later, its last update applied
    (``LastUpdateStatus`` ``Successful``), and was last updated at least the drain before the walk began: the longest
    of their ``Timeout`` plus 5 minutes, so no invocation of an older container can still write a link, a thread or
    a project behind the Scans (``link_writers``, read with the operator's own credentials, read-only:
@@ -39,7 +39,7 @@ run fails past ``MAX_PAGES``); ``--resume`` goes on from that row only (nothing 
 new run id put on the condition of the old one (the run it resumes, if still alive, stops), and the marker's put and
 the progress row's delete are one transaction on the condition of the run id, so the marker is written only at the
 end of one applied walk nobody took over. ``--unmark`` deletes the marker and any progress row: do it before rolling
-back to a release older than 7.44.00 (which writes no registry row), so the next upgrade's erasures fall back to their
+back to a release older than 7.47.00 (which writes no registry row), so the next upgrade's erasures fall back to their
 own Scans until this runs again.
 
 Usage (from voc-datalake/):
@@ -164,7 +164,7 @@ def writers_ready(writers: list[dict[str, Any]], began: datetime) -> str | None:
     for writer in writers:
         version = release_of(writer.get('version'))
         if version is None or version < FIRST_RELEASE:
-            return f"{writer.get('name')} runs a release older than 7.44.0 (or names none)"
+            return f"{writer.get('name')} runs a release older than 7.47.0 (or names none)"
         if writer.get('status') != 'Successful':
             return f"{writer.get('name')}'s last update is not Successful (LastUpdateStatus {writer.get('status')})"
     for writer in writers:
@@ -338,7 +338,7 @@ def _mark(table: Any, state: dict[str, Any], report: Report, at: str, deployed: 
 
 
 def unmark(table: Any) -> None:
-    """Delete the marker and any progress row (before a rollback below 7.44.00: the erasures then Scan again)."""
+    """Delete the marker and any progress row (before a rollback below 7.47.00: the erasures then Scan again)."""
     for key in (MARKER_KEY, PROGRESS_KEY):
         table.delete_item(Key=dict(key))
 
@@ -361,7 +361,7 @@ def _positive(value: str) -> int:
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
     """The command line: a dry run unless ``--apply``."""
     parser = argparse.ArgumentParser(description="List the deployment's review links, commented series and projects "
-                                                 'made before 7.44.00.')
+                                                 'made before 7.47.00.')
     parser.add_argument('--apply', action='store_true', help='write the missing registry rows (default: dry run)')
     parser.add_argument('--projects-table', default=os.environ.get('PROJECTS_TABLE'),
                         help=f'table name (default: PROJECTS_TABLE, else the stack output {TABLE_OUTPUT})')

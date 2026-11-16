@@ -274,7 +274,7 @@ describe('RunsTab — the plain-language summary comes first', () => {
     const summary = await screen.findByRole('region', { name: 'What happened' })
     expect(summary).toHaveTextContent('Started by hand on Oct 4, 2026')
     expect(await within(summary).findByRole('link', { name: 'PRD about Technical support delays' }))
-      .toHaveAttribute('href', '/projects/proj_7?tab=documents&doc=doc_3')
+      .toHaveAttribute('href', '/projects/proj_7/documents/doc_3')
     await waitFor(() => expect(summary).toHaveTextContent('in Checkout revamp'))
   })
 

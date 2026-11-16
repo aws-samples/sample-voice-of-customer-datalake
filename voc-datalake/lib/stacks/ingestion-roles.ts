@@ -16,12 +16,16 @@
  *   has one; the automation-stream connect, which has no resource type, on `*` — the
  *   web_reviews plugin.
  * - `infrastructure.ingestor.webSearch`: a target read through Amazon Bedrock web
- *   search (`method: bedrock_web_search`): `bedrock-mantle:CreateInference` on the
+ *   search (`method: bedrock_web_search`, and `auto`'s second step): `bedrock-mantle:CreateInference` on the
  *   account's default mantle project (the Responses API; the GPT allowlist,
  *   lib/utils/web-search-models.ts, is enforced in code) and
  *   `bedrock-websearch:InvokeSearch` / `InvokeFetch` on `*` held to the deployment's
  *   region (`aws:RequestedRegion`), as the Bedrock web search IAM guide grants them;
- *   never `bedrock-websearch:ExternalWebAccess`, so Fetch reads Amazon's cache only.
+ *   never `bedrock-websearch:ExternalWebAccess`, so Fetch reads Amazon's cache only. And
+ *   `auto`'s last step, AgentCore Web Search's snippets (plugins/web_reviews/ingestor/snippet_reader.py):
+ *   `bedrock-agentcore:InvokeWebSearch` on the AWS-managed tool of the deployment's region only,
+ *   `arn:<partition>:bedrock-agentcore:<region>:aws:tool/web-search.v1` (the AgentCore developer guide's grant:
+ *   the account field is the literal `aws`, the tool's owner).
  * - a schedule: events:DisableRule on the plugin's OWN schedule rule, which its
  *   circuit breaker (plugins/_shared/circuit_breaker.py) calls after repeated
  *   failures of a deployment-wide run. On any other rule ARN a misbehaving plugin
@@ -32,6 +36,11 @@
  *   on voc-idempotency for its own `ingestor#fanout#<id>#*` tick claims only, and
  *   lambda:InvokeFunction on the plugin's OWN function (one async invoke per
  *   workspace; the app-review continuation parts use it too).
+ * - a GitHub App sign-in (7.45.00, the github_issues plugin alone, only with the
+ *   engineering agents on): lambda:InvokeFunction on the GitHub Apps' token function by
+ *   name (voc-engineering-app-tokens, VocProcessingStack, which deploys later), for a
+ *   deployment-wide run's read-only Issues tokens (`environmentFor` names it to the
+ *   function). It reads the App's key with its own role; this one never does.
  *
  * Every role has both runs' grants (docs/multi-workspace.md): a deployment-wide run
  * (an event that names no workspace) reads the shared API-credentials secret and
@@ -65,6 +74,7 @@ import { grantInvokeByName } from '../utils/worker-lambda';
 import { grantWorkspaceStatusRead } from '../utils/workspace-resolution-grants';
 import { grantWorkspaceParameterRead } from '../utils/workspace-secrets';
 import { mantleInferenceStatement } from '../utils/web-search-models';
+import { APP_TOKENS_FUNCTION_ENV, GITHUB_APP_SIGN_IN_PLUGIN, engineeringAppTokens } from './engineering-app-tokens';
 import { RAW_LAYER_PREFIX, WORKSPACE_ID_PATTERN, WORKSPACE_RAW_LAYER_PREFIX } from './core-buckets';
 
 /**
@@ -74,6 +84,14 @@ import { RAW_LAYER_PREFIX, WORKSPACE_ID_PATTERN, WORKSPACE_RAW_LAYER_PREFIX } fr
  * partition is the breaker's alone. The integrations API clears the same rows (lib/stacks/api-data-lambdas.ts).
  */
 export const CIRCUIT_ROW_PARTITIONS =['CIRCUIT#*', `WS#${WORKSPACE_ID_PATTERN}#CIRCUIT#*`];
+
+/**
+ * The web_reviews plugin's learned methods (lambda/shared/web_review_methods.py): the deployment-wide
+ * `WEB_REVIEWS#METHODS` partition and one per workspace, `WS#{ws}#WEB_REVIEWS#METHODS` (one id, no wildcard after it).
+ * The ingestor writes them with every ingestor role's voc-aggregates Put (its view refuses another workspace's key);
+ * the integrations API's "Re-check methods" deletes one site's row there (lib/stacks/api-data-lambdas.ts).
+ */
+export const WEB_REVIEW_METHOD_PARTITIONS = ['WEB_REVIEWS#METHODS', `WS#${WORKSPACE_ID_PATTERN}#WEB_REVIEWS#METHODS`];
 /** The scheduled tick's claim keys in voc-idempotency: `ingestor#fanout#{plugin}#{event id}` (base_ingestor.py). */
 const FAN_OUT_CLAIM_PREFIX = 'ingestor#fanout#';
 
@@ -93,6 +111,8 @@ export interface BaseIngestionGrants {
   apiSecrets: secretsmanager.ISecret;
   /** The workspaces' parameters' prefixed base path (`voc/ws`, `<prefix>-voc/ws`; lib/utils/workspace-secrets.ts). */
   workspaceParameterBasePath: string;
+  /** The stack's prefix-aware names: the GitHub Apps' token function's (engineering-app-tokens.ts engineeringAppTokens). */
+  uniqueName: (baseName: string) => string;
 }
 
 /** What decides whether a plugin's ingestor needs a role of its own. */
@@ -108,6 +128,11 @@ export interface IngestorRoleNeeds {
   functionName: string;
   /** Job-end notices (`infrastructure.ingestor.jobNotices`): a dedicated role, so no other plugin may publish. */
   jobNotices?: boolean;
+}
+
+/** Whether a plugin's needs call for a role of its own (else the shared one). */
+function needsOwnRole({ bedrock, browser, webSearch = false, scheduleRuleName, jobNotices = false }: IngestorRoleNeeds): boolean {
+  return bedrock || browser !== undefined || webSearch || scheduleRuleName !== undefined || jobNotices;
 }
 
 /** The AWS-managed AgentCore browser: an `aws`-owned resource, one per region. */
@@ -136,6 +161,16 @@ export const BROWSER_STREAM_SUPPRESSION: NagAck = {
 /** Amazon Bedrock web search and its cached fetch; `bedrock-websearch:ExternalWebAccess` is never granted. */
 export const WEB_SEARCH_ACTIONS = ['bedrock-websearch:InvokeSearch', 'bedrock-websearch:InvokeFetch'];
 
+/** AgentCore Web Search (`InvokeWebSearch`), on the AWS-managed tool only (the web_reviews `auto` cascade's last step). */
+export const AGENTCORE_WEB_SEARCH_ACTION = 'bedrock-agentcore:InvokeWebSearch';
+/** The AWS-managed AgentCore Web Search tool's id (its ARN's resource name). */
+export const AGENTCORE_WEB_SEARCH_TOOL = 'web-search.v1';
+
+/** The AWS-managed AgentCore Web Search tool of the stack's region: an `aws`-owned resource, like aws.browser.v1. */
+export function agentCoreWebSearchToolArn(stack: cdk.Stack): string {
+  return stack.formatArn({ service: 'bedrock-agentcore', account: 'aws', resource: 'tool', resourceName: AGENTCORE_WEB_SEARCH_TOOL });
+}
+
 /** The cdk-nag reason for web search on `*` (held to the region), on a web-search-capable role. */
 const WEB_SEARCH_STAR_REASON = 'bedrock-websearch:InvokeSearch/InvokeFetch are granted on "*" as the Amazon Bedrock '
   + 'web search IAM guide grants them, held to the deployment\'s region by aws:RequestedRegion; ExternalWebAccess is not '
@@ -147,13 +182,15 @@ function starAcknowledgement(browser: boolean, webSearch: boolean): NagAck {
   return { ...BROWSER_STREAM_SUPPRESSION, reason: reasons.join('; ') };
 }
 
-/** A web-search-capable role's statements: the Responses API on the default project, search and cached fetch. */
+/** A web-search-capable role's statements: the Responses API on the default project, search and cached fetch, and
+ *  AgentCore Web Search on the region's managed tool. */
 export function webSearchStatements(stack: cdk.Stack): iam.PolicyStatement[] {
   return [
     mantleInferenceStatement(stack),
     new iam.PolicyStatement({
       actions: WEB_SEARCH_ACTIONS, resources: ['*'], conditions: { StringEquals: { 'aws:RequestedRegion': stack.region } },
     }),
+    new iam.PolicyStatement({ actions: [AGENTCORE_WEB_SEARCH_ACTION], resources: [agentCoreWebSearchToolArn(stack)] }),
   ];
 }
 
@@ -204,9 +241,11 @@ export class IngestorRoles {
   /** The role a plugin's ingestor runs as. */
   roleFor(
     pluginId: string,
-    { bedrock, browser, webSearch = false, scheduleRuleName, functionName, jobNotices = false }: IngestorRoleNeeds,
+    needs: IngestorRoleNeeds,
   ): iam.Role {
-    if (!bedrock && !browser && !webSearch && !scheduleRuleName && !jobNotices) {
+    const { bedrock, browser, webSearch = false, scheduleRuleName, functionName } = needs;
+    const appTokens = this.appTokensFor(pluginId);
+    if (!needsOwnRole(needs) && appTokens === undefined) {
       this.shared ??= this.newRole('IngestionLambdaRole');
       this.grantOwnParameters(this.shared, pluginId);
       return this.shared;
@@ -230,8 +269,21 @@ export class IngestorRoles {
       }));
       this.grantFanOut(role, pluginId, functionName);
     }
+    // Built from the NAME: the token function is VocProcessingStack's, which deploys after this stack.
+    if (appTokens !== undefined) grantInvokeByName(this.stack, role, [appTokens], 'GitHubAppTokens');
 
     return role;
+  }
+
+  /** The token function a plugin's ingestor signs in with a GitHub App through (github_issues, engineering on). */
+  private appTokensFor(pluginId: string): string | undefined {
+    return pluginId === GITHUB_APP_SIGN_IN_PLUGIN ? engineeringAppTokens(this.stack, this.grants.uniqueName) : undefined;
+  }
+
+  /** The environment a plugin's function needs for its role's grants: the token function's name, for the App sign-in. */
+  environmentFor(pluginId: string): Record<string, string> {
+    const appTokens = this.appTokensFor(pluginId);
+    return appTokens === undefined ? {} : { [APP_TOKENS_FUNCTION_ENV]: appTokens };
   }
 
   /** A browser plugin's sessions and a web-search plugin's Responses API and cached search, each `*` acknowledged. */

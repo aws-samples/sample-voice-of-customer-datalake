@@ -107,6 +107,7 @@ refused before any card appears.
 | Tool | Kind | What it does |
 |---|---|---|
 | `list_scrapers` | read | The configured scrapers (administrators also see selectors, pagination and labels). The assistant reads it first, so a new id is unused. |
+| `list_review_site_methods` | read | What this workspace learned of each review site (the method that reads it, each method's last outcome, when the browser is re-checked; [web-reviews.md](web-reviews.md#learning-which-method-works)). The assistant reads it before proposing a review page and claims nothing the workspace has not recorded. |
 | `analyze_scraper_url` | read | Calls `POST /scrapers/analyze-url` to suggest CSS selectors for a public https page, then polls `GET /scrapers/jobs/{job_id}` until the suggestion is ready. Only the model sees the suggestion. Nothing is saved. |
 | `create_scraper` | write | A new web scraper, saved with `POST /scrapers`. It is saved disabled with no schedule unless you asked for one. A create never overwrites: an existing id is refused before the card, and again right before saving. |
 | `update_scraper` | write | Changes fields of an existing scraper. The card reads the stored scraper and shows a before → after diff, with unchanged fields collapsed. Approving saves that merge. If the scraper changed since the card was shown, the save is refused. |
@@ -154,7 +155,7 @@ the card (`lambda/shared/config_write_guard.py`, TENETS.md tenet 4). `POST /scra
 
 | Field | Values | Effect |
 |---|---|---|
-| `mode` | `create` \| `update` | `create`: **409** `A scraper with id "<id>" already exists; nothing was saved. A create never overwrites.` (an app connector: also when the same `app_name` or identifier, `app_id` / `package_name` / `url`, is configured under another id: `An app connector for "<name>" already exists; …`). `update`: **404** `… does not exist; nothing was saved.` Any other value: 400 |
+| `mode` | `create` \| `update` | `create`: **409** `A scraper with id "<id>" already exists; nothing was saved. A create never overwrites.` (an app connector: also when the same `app_name` or identifier, `app_id` / `package_name` / `url`, is configured under another id; the answer names the record already stored, `The review page "<its name>" (<its url>) already exists; …` or `The app connector "<its name>" (<its app id>) already exists; …`). `update`: **404** `… does not exist; nothing was saved.` Any other value: 400 |
 | `base_etag` | the record's `etag` as read (≤ 64 characters) | **409** `… changed since it was read; nothing was saved. Read it again.` when the stored record's `etag` differs |
 
 Both absent = the upsert older clients rely on. The checks read the stored configuration before the save, and the
@@ -163,7 +164,8 @@ both pass (the later one wins). `GET /scrapers` and `GET /integrations/{source}/
 `etag` to each record (the first 16 hex characters of a SHA-256 of its canonical JSON); it is never stored, and a
 record sent back with its `etag` is saved without it. The assistant's `create_scraper` / `create_app_connector`
 executors send `mode: create`; `update_scraper` sends `mode: update` and the `etag` the card read; a plan step does
-the same.
+the same. The Sources page's app and review page form sends `mode: create` for a new one (since 7.44.01) and says the
+409 in the form ("This page is already a source: <its name>"); an edit stays the upsert.
 
 ## Pagination
 
@@ -219,6 +221,7 @@ All routes require a signed-in (Cognito) user. "Admin" means the `admins` group.
 | DELETE | `/scrapers/{id}` | Admin | Delete scraper |
 | GET | `/scrapers/templates` | Any user | Get available templates |
 | GET | `/scrapers/connectors` | Any user | App connectors and Web Reviews pages with their `radar_brand`, selected fields only (the AI assistant's `list_scrapers` reads it; [radar.md](radar.md)) |
+| GET | `/scrapers/review-methods` | Any member | The workspace's learned review-site methods, as `GET /integrations/web_reviews/methods` answers them (the AI assistant's `list_review_site_methods` reads it; [web-reviews.md](web-reviews.md#learning-which-method-works)) |
 | POST | `/scrapers/{id}/run` | Admin | Trigger manual run |
 | GET | `/scrapers/{id}/status` | Any user | Get latest run status |
 | POST | `/scrapers/analyze-url` | Admin | AI-assisted selector detection. Answers `202 {success, job_id, status: 'pending'}`; the work runs on `voc-scrapers-assist` |

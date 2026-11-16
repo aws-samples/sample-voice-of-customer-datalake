@@ -1,11 +1,13 @@
 /**
- * "Amazon Bedrock web search index" in Add a data source: a review page (web_reviews) read from Bedrock's index
- * instead of the browser, for sites that block automated browsers. Its tile opens the review page form with
- * `method: "bedrock_web_search"` preset (never a field), and the saved card says how it is read. The form asks for
- * no model (7.42.00): the web search surface's, chosen in Administration → AI models, reads every such page.
+ * How a review page (web_reviews) is read, on the form and the card. The review page form shows "Read with":
+ * Automatic (recommended, the default, also for a page saved without a method), Browser only or Bedrock web index
+ * only. "Amazon Bedrock web search index" in Add a data source opens the same form with Bedrock web index only
+ * preset and its own fields (name, URL, reviews per run); choosing another method shows the browser's fields again.
+ * The form asks for no model (7.42.00): the web search surface's, chosen in Administration → AI models, reads every
+ * Bedrock page. The saved card says how its page is read.
  *
  * Offered only once the deployed web_reviews manifest declares the `method` field: until then the API keeps no
- * such key on a target (lambda/shared/web_review_targets.py), so a page added from it would be read by the browser.
+ * such key on a target (lambda/shared/web_review_targets.py), so a choice would be dropped.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
@@ -13,6 +15,7 @@ import userEvent from '@testing-library/user-event'
 import { at } from '@test/defined'
 import { createQueryWrapper } from '../Categories/categories-fixtures'
 import { AppConfigCard } from './AppConfigComponents'
+import AppEditorForm from './AppEditorForm'
 import PluginConfigModal from './PluginConfigModal'
 import TemplateSelector from './TemplateSelector'
 import { BEDROCK_ENTRY_ID, buildSourceMenu } from './sourceMenu'
@@ -40,8 +43,9 @@ const BROWSER_FIELDS = [
   text('max_pages', 'Pages per run'), text('max_reviews', 'Max reviews per run'),
 ]
 const METHOD_FIELD = {
-  key: 'method', label: 'Method', type: 'select' as const, required: false, secret: false,
-  options: [{ value: 'browser', label: 'Browser' }, { value: 'bedrock_web_search', label: 'Bedrock web search' }],
+  key: 'method', label: 'Read with', type: 'select' as const, required: false, secret: false,
+  options: [{ value: 'auto', label: 'Automatic (recommended)' }, { value: 'browser', label: 'Browser only' },
+    { value: 'bedrock_web_search', label: 'Bedrock web index only' }],
 }
 const webReviews = (withMethod: boolean): PluginManifest => ({
   id: 'web_reviews', name: 'Web Reviews', icon: 'Web', category: 'reviews', enabled: true,
@@ -54,6 +58,14 @@ beforeEach(() => {
   manifests.length = 0
   mockSaveAppConfig.mockResolvedValue({ success: true, app: {} })
 })
+
+/** The review page form as the Bedrock tile opens it; its dialog's onClose. */
+function renderForm() {
+  const onClose = vi.fn()
+  render(<PluginConfigModal plugin={webReviews(true)} isAdmin onClose={onClose} addPreset={{ method: 'bedrock_web_search' }} />,
+    { wrapper: createQueryWrapper() })
+  return onClose
+}
 
 describe('the source menu', () => {
   it('offers the Bedrock tile beside "Review page" once the plugin reads a method, with the method preset', () => {
@@ -77,39 +89,24 @@ describe('the source menu', () => {
 
     await userEvent.setup().click(screen.getByRole('button', { name: /Amazon Bedrock web search index/ }))
     expect(onSelectPlugin).toHaveBeenCalledWith(webReviews(true), { method: 'bedrock_web_search' })
-    expect(screen.getByText(/for sites that block automated browsers \(G2, Gartner, Capterra, TrustRadius\)/)).toBeInTheDocument()
+    expect(screen.getByText(/for sites that block automated browsers\. Read from Amazon's cache/)).toBeInTheDocument()
   })
 })
 
 describe('the form it opens', () => {
-  function renderForm() {
-    const onClose = vi.fn()
-    render(<PluginConfigModal plugin={webReviews(true)} isAdmin onClose={onClose} addPreset={{ method: 'bedrock_web_search' }} />,
-      { wrapper: createQueryWrapper() })
-    return onClose
-  }
-
-  it('is the add form at once: name, URL and max reviews, with the attribution note, never the method', () => {
+  it('is the add form at once: name, URL and max reviews, with the attribution note, read with the Bedrock web index only', () => {
     renderForm()
 
     expect(screen.getByRole('heading', { name: 'Add a page from the Bedrock web search index' })).toBeInTheDocument()
     expect(screen.getAllByRole('textbox')).toHaveLength(3)
-    expect(screen.queryByText('Method')).not.toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Read with' })).toHaveValue('bedrock_web_search')
     expect(screen.getByText(/Each review keeps its source URL and site/)).toBeInTheDocument()
   })
 
   it('never asks for a model: the one that reads the page is chosen in Administration → AI models', () => {
     renderForm()
-    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    expect(screen.getAllByRole('combobox').map((box) => box.getAttribute('aria-describedby') !== null)).toStrictEqual([true])
     expect(screen.getByText(/The model that reads it is chosen in Administration → AI models/)).toBeInTheDocument()
-  })
-
-  it('the control: the browser page form shows no method and no model either', async () => {
-    render(<PluginConfigModal plugin={webReviews(true)} isAdmin onClose={vi.fn()} focusAppId="p1" />, { wrapper: createQueryWrapper() })
-    // No such page is listed, so the dialog falls back to the list; adding one opens the browser form.
-    await userEvent.setup().click(await screen.findByRole('button', { name: 'Add your first review page' }))
-    expect(screen.getAllByRole('textbox')).toHaveLength(4)
-    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
   })
 
   it('saves the page with the preset method and closes', async () => {
@@ -128,6 +125,59 @@ describe('the form it opens', () => {
   })
 })
 
+describe('Read with, on the review page form', () => {
+  async function openBrowserForm(plugin: PluginManifest) {
+    render(<PluginConfigModal plugin={plugin} isAdmin onClose={vi.fn()} focusAppId="p1" />, { wrapper: createQueryWrapper() })
+    // No such page is listed, so the dialog falls back to the list; adding one opens the review page form.
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'Add your first review page' }))
+  }
+
+  it('offers the three methods, Automatic first and chosen, with what it does', async () => {
+    await openBrowserForm(webReviews(true))
+    const select = screen.getByRole('combobox', { name: 'Read with' })
+
+    expect(within(select).getAllByRole('option').map((option) => option.textContent))
+      .toStrictEqual(['Automatic (recommended)', 'Browser only', 'Bedrock web index only'])
+    expect(select).toHaveValue('auto')
+    expect(screen.getByText(/Tries the signed browser first/)).toBeInTheDocument()
+  })
+
+  it('shows the browser fields for Automatic: name, URL, pages and reviews per run', async () => {
+    await openBrowserForm(webReviews(true))
+    expect(screen.getAllByRole('textbox')).toHaveLength(4)
+  })
+
+  it('the control: no Read with while the deployed plugin offers no method', async () => {
+    await openBrowserForm(webReviews(false))
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+  })
+
+  it('shows the browser fields again when a Bedrock page switches to Automatic, and saves that method', async () => {
+    const onClose = renderForm()
+    const user = userEvent.setup()
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Read with' }), 'auto')
+    expect(screen.getAllByRole('textbox')).toHaveLength(4)
+    await user.type(at(screen.getAllByRole('textbox'), 0), 'Reviews - Example')
+    await user.type(at(screen.getAllByRole('textbox'), 1), 'https://www.reviews.example/example')
+    await user.click(screen.getByRole('button', { name: 'Add page' }))
+
+    await waitFor(() => { expect(onClose).toHaveBeenCalledTimes(1) })
+    expect(mockSaveAppConfig).toHaveBeenCalledWith('web_reviews', {
+      method: 'auto', app_name: 'Reviews - Example', url: 'https://www.reviews.example/example',
+    })
+  })
+
+  it('keeps an existing page on the method it was saved with, and one saved without a method on Automatic', () => {
+    render(<AppEditorForm plugin={webReviews(true)} initialValues={{ id: 'p1', app_name: 'A', url: 'https://a.example', method: 'browser' }}
+      isAdmin onSave={vi.fn()} onCancel={vi.fn()} isPending={false} />)
+    render(<AppEditorForm plugin={webReviews(true)} initialValues={{ id: 'p2', app_name: 'B', url: 'https://b.example' }}
+      isAdmin onSave={vi.fn()} onCancel={vi.fn()} isPending={false} />)
+    const [stored, unnamed] = screen.getAllByRole('combobox', { name: 'Read with' })
+    expect(stored).toHaveValue('browser')
+    expect(unnamed).toHaveValue('auto')
+  })
+})
+
 describe('the saved card', () => {
   const page = { id: 'p1', app_name: 'G2 - Example', url: 'https://www.g2.com/products/example/reviews' }
   function renderCard(app: Record<string, string>, plugin: PluginManifest) {
@@ -139,14 +189,18 @@ describe('the saved card', () => {
     expect(renderCard({ ...page, method: 'bedrock_web_search' }, webReviews(true)).getByText('Bedrock web index')).toBeInTheDocument()
   })
 
-  it('says any other page is read by the browser, once there is a choice', () => {
-    expect(renderCard(page, webReviews(true)).getByText('Browser')).toBeInTheDocument()
+  it('says a page on the browser alone is read by the browser', () => {
+    expect(renderCard({ ...page, method: 'browser' }, webReviews(true)).getByText('Browser')).toBeInTheDocument()
+  })
+
+  it('says a page that names no method, or Automatic, is read automatically, once there is a choice', () => {
+    expect(renderCard(page, webReviews(true)).getByText('Automatic')).toBeInTheDocument()
   })
 
   it('the control: no badge while the plugin offers no method and the page names none', () => {
     const header = renderCard(page, webReviews(false))
 
-    expect(header.queryByText('Browser')).not.toBeInTheDocument()
+    expect(header.queryByText('Automatic')).not.toBeInTheDocument()
     expect(header.queryByText('Bedrock web index')).not.toBeInTheDocument()
   })
 })

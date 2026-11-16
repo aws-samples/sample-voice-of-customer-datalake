@@ -74,7 +74,7 @@ describe('voc-retention worker', () => {
     const queries = statements().filter((s) => s.effect === 'Allow' && s.resource.includes('Projects')
       && s.actions.includes('dynamodb:Query'));
     // Query alone, on the table only: of any one workspace id's partitions (7.43.00) and of the deployment's
-    // (7.44.00). No index: a deleted project's META is off gsi1-by-type, so the deployment's registry lists them.
+    // (7.47.00). No index: a deleted project's META is off gsi1-by-type, so the deployment's registry lists them.
     expect(queries.map((s) => [s.actions, s.resource.includes('/index/')]))
       .toStrictEqual([[['dynamodb:Query'], false], [['dynamodb:Query'], false]]);
   });
@@ -87,7 +87,7 @@ describe('voc-retention worker', () => {
         `${ws}#DOCSHARE#*`],
     } }));
     // The deployment's: its own partitions and its registries, each read only for the attributes the erasure and
-    // the lineage marks read (7.44.00).
+    // the lineage marks read (7.47.00).
     expect(json).toContain(JSON.stringify({
       'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['PROJECT#*', 'DCOMMENTS#*', 'DOCSHARE#*', 'PROJECT_IDS',
         'DOCSHARE_IDS', 'COMMENT_SERIES_IDS'] },
@@ -111,7 +111,7 @@ describe('voc-retention worker', () => {
     expect(limited).toHaveLength(3);
   });
 
-  it('scans projects on the table only, for the attributes the backfill\'s Scan projects (7.44.00)', () => {
+  it('scans projects on the table only, for the attributes the backfill\'s Scan projects (7.47.00)', () => {
     const scans = statements().filter((s) => s.effect === 'Allow' && s.resource.includes('Projects')
       && s.actions.includes('dynamodb:Scan'));
     expect(scans.map((s) => [s.actions, s.resource.includes('/index/')])).toStrictEqual([[['dynamodb:Scan'], false]]);
@@ -177,7 +177,7 @@ describe('voc-retention worker', () => {
 
   it('reads objects only under the product documents (an erasure by email looks for the address there)', () => {
     const reads = statements().filter((s) => s.effect === 'Allow' && s.actions.includes('s3:GetObject'));
-    // A workspace's text uploads and extracted text (7.43.00); the deployment's extracted text only (7.44.00).
+    // A workspace's text uploads and extracted text (7.43.00); the deployment's extracted text only (7.47.00).
     expect(reads.map((s) => [s.actions, [...s.resource.matchAll(/"\/([^"]*)"/g)].flatMap((match) => match[1] ?? [])]))
       .toStrictEqual([[['s3:GetObject'], [`ws/ws_${'?'.repeat(26)}/projects/*/product_docs/raw/*.md`,
         `ws/ws_${'?'.repeat(26)}/projects/*/product_docs/raw/*.txt`,
@@ -190,7 +190,7 @@ describe('voc-retention worker', () => {
     expect(updates.map((s) => s.actions)).toStrictEqual([['dynamodb:UpdateItem'], ['dynamodb:UpdateItem']]);
     const ws = `WS#ws_${'?'.repeat(26)}`;
     const json = JSON.stringify(template.toJSON());
-    // 7.44.00: no lineage pass Scans, so the marks are pinned to the project partitions (no longer any partition).
+    // 7.47.00: no lineage pass Scans, so the marks are pinned to the project partitions (no longer any partition).
     expect(json).toContain(JSON.stringify({
       'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['PROJECT#*', `${ws}#PROJECT#*`] },
       'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'input_feedback_ids',

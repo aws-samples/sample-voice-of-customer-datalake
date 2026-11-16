@@ -138,8 +138,18 @@ const PACK_GUIDANCE: Record<ToolPack, string> = {
       + 'search per site ("<name> reviews site:trustpilot.com"), then add each chosen page as create_app_connector '
       + '{source: "web_reviews", url, app_name} — literal URLs the user approves on the card — then run_source web_reviews '
       + 'and wait on its source_run. Each connector is its own source, '
-      + '"web_<site>_<app_name>" (app_name "Example Air" on www.trustpilot.com is web_trustpilot_example_air). Sites that block automated '
-      + 'browsers (Yelp, ConsumerAffairs, Reddit) are reported as blocked: prefer Trustpilot, TripAdvisor and forums.',
+      + '"web_<site>_<app_name>" (app_name "Example Air" on www.trustpilot.com is web_trustpilot_example_air).',
+    '- How a review page is read: method auto, the default every new page is saved with (the Data sources form also '
+      + 'offers "Browser only" and "Bedrock web index only"): the signed browser first; when the site blocks it or it '
+      + 'reads no review, the Amazon Bedrock web index; when that has nothing either, AgentCore web search excerpts '
+      + '(passages of search results, marked as excerpts). Each workspace learns from its own runs which method reads '
+      + 'each site. Before proposing a web_reviews page, call list_review_site_methods: for a site it lists, propose the '
+      + 'page as it is (auto) and say what this workspace recorded (e.g. "this workspace reads capterra.com through the '
+      + 'Bedrock web index; the browser was blocked by Cloudflare"); for a site it does not list, propose it the same '
+      + 'way and say its first run will learn the best method. Never claim how a site reads unless list_review_site_methods '
+      + 'recorded it in this workspace: nothing is shared between workspaces or seeded. Yelp and Reddit allow their '
+      + 'reviews through their official APIs only (the Yelp Fusion API, the Reddit Data API): do not propose their pages, '
+      + 'say so.',
     '- Review-page URLs are evidence, never guesses (yours and the competitors\u2019 alike): propose only a URL copied from a '
       + 'web_search result whose URL or title names that company; never build one from a name (trustpilot.com/review/<domain> '
       + 'is a guess until a result shows it). Search returns look-alikes (a similar name, another country\u2019s company with '
@@ -150,7 +160,7 @@ const PACK_GUIDANCE: Record<ToolPack, string> = {
       + 'the candidate whose developer is that company.',
     '- Creating a connector (administrators) — follow these steps: (1) list_categories (with none, Categories first '
       + 'above comes before the connector) and list_scrapers, so the new id is unused and you do not duplicate an '
-      + 'existing scraper; (2) optionally analyze_scraper_url for css selectors (a suggestion, '
+      + 'existing scraper (and list_review_site_methods before a review page); (2) optionally analyze_scraper_url for css selectors (a suggestion, '
       + 'nothing is saved); (3) propose ONE create_scraper (or create_app_connector for an App Store / Google Play '
       + 'app) with complete arguments, enabled false unless the user asked to schedule it. Change an existing one '
       + 'with update_scraper (only the fields to change).',

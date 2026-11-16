@@ -373,7 +373,15 @@
     "advanced": "Erweitert",
     "advancedRawHint": "Die Rohkonfiguration der Scraper auf der Seite Datenquellen. Fügen Sie Scraper dort hinzu und bearbeiten Sie sie dort.",
     "runsOnUpload": "Läuft beim Hochladen",
-    "runsOnDemand": "Läuft bei Bedarf – kein Zeitplan"
+    "runsOnDemand": "Läuft bei Bedarf – kein Zeitplan",
+    "githubSignIn": {
+      "label": "Anmelden mit",
+      "token": "Einem feingranularen Token",
+      "app": "Einer der GitHub Apps dieses Deployments",
+      "appLabel": "GitHub App",
+      "appHint": "Jeder Lauf erhält von der App ein kurzlebiges Token nur für diese Repositorys (Issues und Metadata, nur Lesen) und gibt es am Ende zurück. Installieren Sie die App zuerst auf den Repositorys (Agenten → Verbindungen).",
+      "tokenHint": "Ein feingranulares persönliches Zugriffstoken mit Issues und Metadata nur zum Lesen auf diesen Repositorys."
+    }
   },
   "subtitle": "Konfigurieren Sie Ihre VoC-Plattform",
   "tabs": {

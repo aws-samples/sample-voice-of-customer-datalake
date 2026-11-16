@@ -389,7 +389,15 @@
     "advanced": "Avanzado",
     "advancedRawHint": "La configuración en bruto de los recolectores de la página Fuentes de datos. Añade y edita los recolectores allí.",
     "runsOnUpload": "Se ejecuta al subir archivos",
-    "runsOnDemand": "Se ejecuta bajo demanda: sin programación"
+    "runsOnDemand": "Se ejecuta bajo demanda: sin programación",
+    "githubSignIn": {
+      "label": "Iniciar sesión con",
+      "token": "Un token de acceso detallado",
+      "app": "Una de las GitHub Apps de este despliegue",
+      "appLabel": "GitHub App",
+      "appHint": "Cada ejecución obtiene de la App un token de corta duración solo para estos repositorios (Issues y Metadata, solo lectura) y lo devuelve al terminar. Instala antes la App en los repositorios (Agentes → Conexiones).",
+      "tokenHint": "Un token de acceso personal detallado con Issues y Metadata de solo lectura en estos repositorios."
+    }
   },
   "subtitle": "Configure su plataforma VoC",
   "tabs": {

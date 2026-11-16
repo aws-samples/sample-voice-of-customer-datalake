@@ -17,7 +17,10 @@
  *   (`Example Air - iOS_ios` → `Example Air (iOS)`, beside `Example Air_android` → `Example Air (Android)`).
  * - web-review connectors store `web_<site>_<app name>`; they read as
  *   `Acme (Trustpilot)`, and a site that is a hostname as its domain
- *   (`web_www_trustpilot_com` → `trustpilot.com`).
+ *   (`web_www_trustpilot_com` → `trustpilot.com`). Given a review's own channel (a
+ *   review page's name, as its admin wrote it), the page reads by that name instead:
+ *   a long name's id is cut and hashed (`web_trustradius_amazon_conn_01ef15ac`), so
+ *   `TrustRadius Amazon Connect Automatic (TrustRadius)`, never the id's cut form.
  *
  * Pure functions only; `hooks/useDisplayLabels` binds them to the configured
  * categories and source profiles.
@@ -32,6 +35,8 @@ const SPELLINGS: Readonly<Record<string, string>> = {
   llm: 'LLM', macos: 'macOS', mcp: 'MCP', nps: 'NPS', os: 'OS', pdf: 'PDF', pii: 'PII', prd: 'PRD',
   qa: 'QA', sdk: 'SDK', seo: 'SEO', sla: 'SLA', sms: 'SMS', sso: 'SSO', tv: 'TV', ui: 'UI', url: 'URL',
   ux: 'UX', cx: 'CX', vpn: 'VPN', android: 'Android', github: 'GitHub', trustpilot: 'Trustpilot',
+  // Review sites a web-review page is read from, spelled their own way.
+  trustradius: 'TrustRadius', g2: 'G2', getapp: 'GetApp', peerspot: 'PeerSpot', consumeraffairs: 'ConsumerAffairs',
 }
 
 /** The platforms an app-review connector appends to its app name. */
@@ -224,19 +229,30 @@ function leadingDomain(parts: readonly string[]): { domain: string; rest: readon
 }
 
 /**
- * `web_<site>_<app name>` → `App name (Site)`; undefined when not a web-review
- * connector. A site part that is a hostname reads as the site's NAME, like every other
- * source label (`web_www_trustpilot_com` → `Trustpilot`, `web_www_trustpilot_com_acme` →
- * `Acme (Trustpilot)`, the same as `web_trustpilot_acme`), never a bare `trustpilot.com`.
+ * A web-review connector's site and app name, read from its id (`web_<site>_<app name>`); undefined when not one.
+ * A site part that is a hostname reads as the site's NAME, like every other source label
+ * (`web_www_trustpilot_com_acme` → `Trustpilot`, `Acme`), never a bare `trustpilot.com`.
  */
-function webConnectorLabel(id: string): string | undefined {
+function webConnectorParts(id: string): { readonly site: string; readonly app: string | undefined } | undefined {
   const match = /^web_([a-z0-9-]+)_(.+)$/.exec(id)
   if (match === null) return undefined
   const [, site = '', app = ''] = match
   const host = leadingDomain([site, ...app.split('_').filter(Boolean)])
-  if (host === undefined) return `${humanizeId(app)} (${humanizeId(site)})`
+  if (host === undefined) return { site: humanizeId(site), app: humanizeId(app) }
   const siteName = humanizeId(host.domain.split('.')[0] ?? host.domain)
-  return host.rest.length === 0 ? siteName : `${humanizeId(host.rest.join('_'))} (${siteName})`
+  return { site: siteName, app: host.rest.length === 0 ? undefined : humanizeId(host.rest.join('_')) }
+}
+
+/**
+ * `web_<site>_<app name>` → `App name (Site)`, or `<page name> (Site)` when the review page's own name is known (a
+ * review's channel); undefined when not a web-review connector. `web_www_trustpilot_com` → `Trustpilot`,
+ * `web_www_trustpilot_com_acme` → `Acme (Trustpilot)`, the same as `web_trustpilot_acme`.
+ */
+function webConnectorLabel(id: string, pageName: string | undefined): string | undefined {
+  const parts = webConnectorParts(id)
+  if (parts === undefined) return undefined
+  const app = pageName ?? parts.app
+  return app === undefined ? parts.site : `${app} (${parts.site})`
 }
 
 /**
@@ -265,15 +281,17 @@ export type BuiltInSourceName = (id: string) => string | undefined
 /**
  * A source id's label: its source profile's label (when an admin set one — a
  * profile without one carries its id, a built-in one its English default), then a
- * built-in source's translated name, else the connector-aware humanised id.
+ * built-in source's translated name, else the connector-aware humanised id. `channel`: one
+ * review's own channel, which names a web-review page's source by the page's name.
  */
-export function sourceLabel(id: string, profiles: readonly LabelledSource[] = [], builtIn?: BuiltInSourceName): string {
+export function sourceLabel(id: string, profiles: readonly LabelledSource[] = [], builtIn?: BuiltInSourceName,
+  channel?: string): string {
   const profile = profiles.find((p) => p.id === id)
   const englishDefault = Object.hasOwn(BUILT_IN_SOURCES, id) ? BUILT_IN_SOURCES[id] : undefined
   const label = adminLabel(profile, englishDefault)
   if (label !== undefined) return label
   const builtInName = englishDefault === undefined ? undefined : builtIn?.(id) ?? englishDefault
-  return builtInName ?? connectorLabel(id, profile)
+  return builtInName ?? connectorLabel(id, profile, ownChannel(channel, id))
 }
 
 /** The label an admin set on a profile: not blank, not its id, not the built-in English default. */
@@ -283,8 +301,8 @@ function adminLabel(profile: LabelledSource | undefined, englishDefault: string 
 }
 
 /** The connector-aware humanised id (Radar, app and web-review connectors, else the id). */
-function connectorLabel(id: string, profile: LabelledSource | undefined): string {
-  return radarSourceLabel(id, profile) ?? appConnectorLabel(id) ?? webConnectorLabel(id) ?? humanizeId(id)
+function connectorLabel(id: string, profile: LabelledSource | undefined, channel: string | undefined): string {
+  return radarSourceLabel(id, profile) ?? appConnectorLabel(id) ?? webConnectorLabel(id, channel) ?? humanizeId(id)
 }
 
 /** Channels that only name the connector kind — the source label already says it. */
@@ -296,7 +314,12 @@ const CONNECTOR_CHANNEL_RE = /^(app_review_[a-z]+|web_scrape(_[a-z]+)?|unknown)$
  * `web_scrape_jsonld`).
  */
 export function channelLabel(channel: string | undefined, sourceId: string): string | undefined {
+  const own = ownChannel(channel, sourceId)
+  return own === undefined ? undefined : humanizeId(own)
+}
+
+/** A channel of its own, as written (trimmed): not blank, not the source again, not only the connector kind. */
+function ownChannel(channel: string | undefined, sourceId: string): string | undefined {
   const trimmed = channel?.trim() ?? ''
-  if (trimmed === '' || trimmed === sourceId || CONNECTOR_CHANNEL_RE.test(trimmed)) return undefined
-  return humanizeId(trimmed)
+  return trimmed === '' || trimmed === sourceId || CONNECTOR_CHANNEL_RE.test(trimmed) ? undefined : trimmed
 }

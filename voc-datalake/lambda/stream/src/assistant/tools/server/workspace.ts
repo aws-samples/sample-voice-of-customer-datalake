@@ -49,6 +49,17 @@ const ADMIN_SCRAPER_FIELDS = [
 const CONNECTOR_FIELDS = [
   'source', 'id', 'app_name', 'app_id', 'package_name', 'url', 'enabled', 'frequency_minutes', 'source_id', 'radar_brand',
 ] as const;
+/**
+ * What the workspace learned of each review site (GET /scrapers/review-methods; lambda/shared/web_review_methods.py):
+ * the method that reads it (`best_method`: browser | bedrock_web_search | agentcore_web_search | none), when it was
+ * learned, when a run next tries the browser again, and each method's last outcome. Nothing of a review.
+ */
+const REVIEW_METHOD_FIELDS = ['domain', 'best_method', 'learned_at', 'browser_recheck_due_at'] as const;
+const REVIEW_METHOD_STEP_FIELDS = ['last_outcome', 'last_at', 'successes', 'failures', 'last_reviews'] as const;
+/** What the tool says when the workspace has learned nothing: it never claims a site's method it has not recorded. */
+export const NOTHING_LEARNED_NOTE = 'This workspace has not learned how any review site reads yet. A review page '
+  + 'saved with the default method (auto) learns its best method on its first run: the signed browser first, then '
+  + 'the Amazon Bedrock web index, then AgentCore web search excerpts.';
 /** The selector suggestion keys analyze-url answers with (its prompt's JSON). */
 const SUGGESTION_FIELDS = [
   ...SCRAPER_SELECTOR_FIELDS, 'confidence', 'detected_reviews_count', 'notes', 'warnings',
@@ -218,6 +229,39 @@ async function readConnectors(get: Invoke, ctx: AssistantRunContext): Promise<Re
   }
 }
 
+/** One learned record as the model sees it: its fields and each method's outcome (other keys dropped). */
+function reviewSiteMethod(record: Record<string, unknown>): Record<string, unknown> {
+  const steps = isRecord(record.methods) ? record.methods : {};
+  const methods: Record<string, unknown> = {};
+  for (const [step, stats] of Object.entries(steps)) {
+    if (isRecord(stats)) methods[step] = pick(stats, REVIEW_METHOD_STEP_FIELDS, 120);
+  }
+  return { ...pick(record, REVIEW_METHOD_FIELDS, 300), methods };
+}
+
+function reviewMethodsTool(get: Invoke): ServerToolDefinition {
+  return serverTool('list_review_site_methods', 'scrapers', toolSpec(
+    'list_review_site_methods',
+    'What THIS workspace has learned from its own review-page runs about each review site (domain = the page host '
+      + 'without www.): best_method (browser = the signed browser, bedrock_web_search = the Amazon Bedrock web index, '
+      + 'agentcore_web_search = AgentCore web search excerpts, none = nothing read it), learned_at, '
+      + 'browser_recheck_due_at (when a run tries the browser again), and each method’s last outcome '
+      + '(readable | blocked:<vendor> | no_reviews | error) and when. Call it before proposing a web_reviews '
+      + 'create_app_connector. Empty until the workspace’s own runs learn something: nothing is shared or seeded.',
+    {},
+  ), async (input, ctx) => {
+    parseToolInput(noInput, input);
+    const body = await get({
+      fn: 'scrapers', path: '/scrapers/review-methods', resource: '/scrapers/{proxy+}',
+      pathParameters: { proxy: 'review-methods' },
+    }, ctx);
+    const records = recordsAt(body, 'methods');
+    return { content: jsonResult({
+      count: records.length, sites: records.map(reviewSiteMethod), ...(records.length === 0 ? { note: NOTHING_LEARNED_NOTE } : {}),
+    }) };
+  });
+}
+
 function scrapersTools(get: Invoke, deps: ToolDeps): ServerToolDefinition[] {
   const list = serverTool('list_scrapers', 'scrapers', toolSpec(
     'list_scrapers',
@@ -256,7 +300,7 @@ function scrapersTools(get: Invoke, deps: ToolDeps): ServerToolDefinition[] {
     }, ctx);
     return { content: jsonResult(body) };
   });
-  return [list, status, analyzeTool(deps)];
+  return [list, status, analyzeTool(deps), reviewMethodsTool(get)];
 }
 
 function settingsTools(deps: ToolDeps): ServerToolDefinition[] {

@@ -70,7 +70,9 @@ def page(url: str = URL, **fields: Any) -> PageSnapshot:
 
 
 def target_config(**fields: str) -> dict[str, str]:
-    return {'id': 't1', 'app_name': 'Trustpilot', 'url': URL, 'max_pages': '1', 'frequency_minutes': '0', **fields}
+    """A stored target, read with the browser only (``auto``'s cascade: test_web_reviews_auto.py)."""
+    return {'id': 't1', 'app_name': 'Trustpilot', 'url': URL, 'max_pages': '1', 'frequency_minutes': '0',
+            'method': 'browser', **fields}
 
 
 @contextmanager
@@ -175,7 +177,7 @@ class TestRun:
     def test_metadata_reaches_the_queue_message(self):
         with ingestor([target_config()]) as run, patch.object(run, 'store_raw_to_s3', return_value=None):
             item = next(iter(run.fetch_new_items()))
-            assert run.normalize_item(item)['metadata'] == {'target': 'Trustpilot', 'page': 1}
+            assert run.normalize_item(item)['metadata'] == {'target': 'Trustpilot', 'page': 1, 'method_used': 'browser'}
 
 
 @pytest.mark.parametrize('app_id', ['t2', 'https://www.yelp.com/biz/x'])

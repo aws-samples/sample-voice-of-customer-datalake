@@ -31,23 +31,23 @@
  *     would also allow deletes) and BatchGetItem (the lineage pass's tombstone lookups) — no delete;
  *   - radar: Scan / DeleteItem (a review and its dedupe marker) and the cache-version
  *     bump (UpdateItem on `SETTINGS#radar` only) — no Put, no Query;
- *   - projects: Scan (since 7.44.00 only the deployment walks' way of finding its review links, comment partitions and
+ *   - projects: Scan (since 7.47.00 only the deployment walks' way of finding its review links, comment partitions and
  *     projects until the backfill of their registries has run; on the table only, of `SCAN_ATTRIBUTES` only),
  *     and UpdateItem in two statements (since
  *     7.43.00): of `LINEAGE_UPDATE_ATTRIBUTES` only (the lineage marks' id lists and `erased_evidence`) on the
  *     deployment's and one workspace id's `PROJECT#*` partitions, and of `PEOPLE_UPDATE_ATTRIBUTES` only (the
  *     addresses and names an erasure by email rewrites) on the deployment's and one workspace id's `PROJECT#*`,
- *     `DCOMMENTS#*` and `DOCSHARE#*` partitions (the deployment's since 7.44.00) — no delete, no put; and Query of one
+ *     `DCOMMENTS#*` and `DOCSHARE#*` partitions (the deployment's since 7.47.00) — no delete, no put; and Query of one
  *     workspace id's `PROJECT_IDS`, `PROJECT#*`, `DCOMMENTS#*`, `DOCSHARE_IDS` and `DOCSHARE#*` partitions
  *     (`RETENTION_PROJECT_PARTITIONS`, 7.43.00) and of the deployment's `PROJECT#*`, `DCOMMENTS#*`, `DOCSHARE#*`,
- *     `PROJECT_IDS`, `DOCSHARE_IDS` and `COMMENT_SERIES_IDS` (`RETENTION_DEPLOYMENT_PARTITIONS`, 7.44.00, of
+ *     `PROJECT_IDS`, `DOCSHARE_IDS` and `COMMENT_SERIES_IDS` (`RETENTION_DEPLOYMENT_PARTITIONS`, 7.47.00, of
  *     `DEPLOYMENT_QUERY_ATTRIBUTES` only), no index: the lineage marks and an erasure by email's addresses
  *     (lambda/jobs/retention/lineage.py, project_people.py). IAM holds neither the Query nor the update to one
  *     workspace (the pattern is any one workspace id), only the workspace layer does;
  *   - raw bucket, read: GetObject of a workspace's text product documents only (`WORKSPACE_PRODUCT_DOC_READS`:
  *     `ws/{one id}/projects/*\/product_docs/raw/*.md`, `…/raw/*.txt` and `…/extracted/*`, 7.43.00: an erasure by
  *     email reads a text upload or its extracted text for the address) and of the deployment's extracted text only
- *     (`DEPLOYMENT_PRODUCT_DOC_READS`, `projects/*\/product_docs/extracted/*`, 7.44.00). With no ListBucket a missing
+ *     (`DEPLOYMENT_PRODUCT_DOC_READS`, `projects/*\/product_docs/extracted/*`, 7.47.00). With no ListBucket a missing
  *     key answers 403, which the code takes for "cannot be judged", never a failure;
  *   - feature requests: Scan / GetItem / Query / UpdateItem (an erasure by email de-identifies the person's board
  *     requests: REMOVE their email and name) and PutItem / DeleteItem pinned to `FR#*` (a +1's id derives from the
@@ -101,7 +101,7 @@ const RETENTION_PROJECT_PARTITIONS = [`WS#${WORKSPACE_ID_PATTERN}#PROJECT_IDS`,
   `WS#${WORKSPACE_ID_PATTERN}#PROJECT#*`, `WS#${WORKSPACE_ID_PATTERN}#DCOMMENTS#*`,
   `WS#${WORKSPACE_ID_PATTERN}#DOCSHARE_IDS`, `WS#${WORKSPACE_ID_PATTERN}#DOCSHARE#*`];
 /**
- * The deployment's own project partitions in voc-projects the worker Queries (7.44.00, projects 3g-d:
+ * The deployment's own project partitions in voc-projects the worker Queries (7.47.00, projects 3g-d:
  * lambda/jobs/retention/project_people.py and lineage.py): each project's own partition (its persona library's too),
  * each series' comment partition, each link's own row, and the deployment's registries of its projects, of its links
  * and of its commented series (`PROJECT_IDS`, `DOCSHARE_IDS`, which also holds the backfill's marker, and
@@ -111,7 +111,7 @@ const RETENTION_PROJECT_PARTITIONS = [`WS#${WORKSPACE_ID_PATTERN}#PROJECT_IDS`,
 const RETENTION_DEPLOYMENT_PARTITIONS = ['PROJECT#*', 'DCOMMENTS#*', 'DOCSHARE#*', 'PROJECT_IDS', 'DOCSHARE_IDS',
   'COMMENT_SERIES_IDS'];
 /**
- * What the worker's Queries of those partitions may read (`dynamodb:Attributes`, 7.44.00): the keys, what the erasure
+ * What the worker's Queries of those partitions may read (`dynamodb:Attributes`, 7.47.00): the keys, what the erasure
  * by email judges of each kind of row (a thread's authors, replies and resolver; a link's audience, names, revocation
  * and project; a META's owner, members and delete state; a persona's research notes; a product document's upload, type, status,
  * extracted text and filename), a registry row's `deleted_at`, the backfill marker's time, release and counts, and the
@@ -127,7 +127,7 @@ const DEPLOYMENT_QUERY_ATTRIBUTES = ['pk', 'sk', 'author', 'replies', 'status_by
   'links_found', 'series_found', 'projects_found', 'input_feedback_ids', 'evidence_feedback_ids',
   'input_feature_request_ids', 'erased_evidence'];
 /**
- * What the worker's Scan of voc-projects may read (7.44.00; lambda/shared/review_registries.py `SCAN_ATTRIBUTES`, which
+ * What the worker's Scan of voc-projects may read (7.47.00; lambda/shared/review_registries.py `SCAN_ATTRIBUTES`, which
  * a test holds to this list): a row's key, a routing row's workspace, a link's project and series, and a link's or a
  * project's creation time. The Scan finds the deployment's links, comment partitions and projects until the backfill
  * of their registries has run; it reads every row of the table, but answers only these attributes of each.
@@ -136,11 +136,11 @@ const SCAN_ATTRIBUTES = ['pk', 'sk', 'workspace_id', 'project_id', 'series_id', 
 /**
  * The attributes the worker's UpdateItems name on voc-projects, the key included (`dynamodb:Attributes`), as two
  * statements: the lineage marks' three id lists and `erased_evidence`, on the deployment's and one workspace id's
- * project partitions only (`LINEAGE_UPDATE_PARTITIONS`; since 7.44.00 neither lineage pass Scans, so no other row is
+ * project partitions only (`LINEAGE_UPDATE_PARTITIONS`; since 7.47.00 neither lineage pass Scans, so no other row is
  * marked); and what an erasure by email rewrites (a META's owner and member addresses; a thread's authors, replies and
  * resolver; a link's audience, creator and revoker names and its revocation; a persona's research notes), on the
  * deployment's and one workspace id's `PROJECT#*`, `DCOMMENTS#*` and `DOCSHARE#*` partitions only (the deployment's
- * since 7.44.00). lambda/jobs/retention/test/test_project_erasure.py holds each list to project_people.py's
+ * since 7.47.00). lambda/jobs/retention/test/test_project_erasure.py holds each list to project_people.py's
  * `LINEAGE_UPDATE_ATTRIBUTES` and `PEOPLE_UPDATE_ATTRIBUTES` and to every update the job sends.
  */
 const LINEAGE_UPDATE_ATTRIBUTES = ['pk', 'sk', 'input_feedback_ids', 'evidence_feedback_ids',
@@ -154,7 +154,7 @@ const LINEAGE_UPDATE_PARTITIONS = ['PROJECT#*', `WS#${WORKSPACE_ID_PATTERN}#PROJ
 const PEOPLE_UPDATE_PARTITIONS = ['PROJECT#*', 'DCOMMENTS#*', 'DOCSHARE#*', `WS#${WORKSPACE_ID_PATTERN}#PROJECT#*`,
   `WS#${WORKSPACE_ID_PATTERN}#DCOMMENTS#*`, `WS#${WORKSPACE_ID_PATTERN}#DOCSHARE#*`];
 /**
- * The deployment's product documents' extracted text the worker reads (7.44.00): the extractor writes text for every
+ * The deployment's product documents' extracted text the worker reads (7.47.00): the extractor writes text for every
  * kind there (a PDF's, an image's description), so only that text is read, never an upload.
  */
 export const DEPLOYMENT_PRODUCT_DOC_READS = ['projects/*/product_docs/extracted/*'];
@@ -223,7 +223,7 @@ function retentionCode(): lambda.Code {
  * workspace's and the deployment's project partitions (each pinned by processing-stack-retention.test.ts).
  */
 function grantProjectsAccess(role: iam.Role, projectsTable: dynamodb.ITable): void {
-  // Scan (7.44.00): only the deployment's walks' way of finding its review links, comment partitions and projects
+  // Scan (7.47.00): only the deployment's walks' way of finding its review links, comment partitions and projects
   // until the backfill's marker is there (lambda/shared/review_registries.py; voc-datalake/scripts/projects/
   // backfill_review_registries.py). A later release (3g-d2) drops it once every deployment ran the backfill. On the table only (no index), and only for SCAN_ATTRIBUTES (dynamodb:Select and
   // dynamodb:Attributes): a Scan that reads any other attribute, or the whole item, is refused.
@@ -238,7 +238,7 @@ function grantProjectsAccess(role: iam.Role, projectsTable: dynamodb.ITable): vo
   }));
   // UpdateItem in two statements (7.43.00; jobs/retention/project_people.py, which a test holds to both): the
   // lineage marks and the de-identification, each on the deployment's and one workspace id's partitions of its rows
-  // only (7.44.00); no other attribute of a project row can be rewritten.
+  // only (7.47.00); no other attribute of a project row can be rewritten.
   // Neither asks for returned values (`dynamodb:ReturnValues` `NONE`), so neither reads a row back beyond its attributes.
   grantKeyScopedWrites(projectsTable, role, ['UpdateItem'], LINEAGE_UPDATE_PARTITIONS, LINEAGE_UPDATE_ATTRIBUTES,
     { noReturnValues: true });
@@ -253,7 +253,7 @@ function grantProjectsAccess(role: iam.Role, projectsTable: dynamodb.ITable): vo
     resources: [projectsTable.tableArn],
     conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': RETENTION_PROJECT_PARTITIONS } },
   }));
-  // 7.44.00 (projects 3g-d): the deployment's own projects by Query too, on the table only (no index: a deleted
+  // 7.47.00 (projects 3g-d): the deployment's own projects by Query too, on the table only (no index: a deleted
   // project's META is off gsi1-by-type, so its registry, PROJECT_IDS, lists the projects), each project's, series' and
   // link's own partition and the deployment's project, link and series registries, of DEPLOYMENT_QUERY_ATTRIBUTES only.
   role.addToPrincipalPolicy(new iam.PolicyStatement({
@@ -315,7 +315,7 @@ export function createRetentionWorker(scope: Construct, id: string, props: Reten
   }));
   // 7.43.00: an erasure by email reads a workspace's product documents (a text upload, its extracted text) to list
   // for review those that hold the address (lambda/jobs/retention/project_people.py); read only, nothing written.
-  // 7.44.00: and the deployment's product documents' extracted text (every kind has one there), never an upload.
+  // 7.47.00: and the deployment's product documents' extracted text (every kind has one there), never an upload.
   role.addToPrincipalPolicy(new iam.PolicyStatement({
     sid: 'ReadWorkspaceProductDocuments',
     actions: ['s3:GetObject'],

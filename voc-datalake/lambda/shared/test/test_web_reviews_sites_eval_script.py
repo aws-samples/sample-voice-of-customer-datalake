@@ -26,7 +26,8 @@ from shared.test.repo_paths import load_module_from_path, repo_root
 _SCRIPT = repo_root() / 'scripts' / 'evals' / 'web_reviews_sites.py'
 _SEED = repo_root() / 'plugins' / 'web_reviews' / 'evals' / 'sites.json'
 #: The plugin's flat modules the script imports by name; dropped again after this module if it imported them.
-_FLAT_MODULES = ('agentcore_browser', 'page_reader', 'block_detection', 'extract', 'cdp_client', 'web_search_reader')
+_FLAT_MODULES = ('agentcore_browser', 'page_reader', 'block_detection', 'extract', 'cdp_client', 'web_search_reader',
+                 'snippet_reader')
 _AGENT = 'VoC-Analytics-ReviewReader/9.9.9 (+https://example.test/docs)'
 _LONG_TEXT = 'A review page with plenty of visible text and nothing that looks like a wall.\n' * 80
 
@@ -146,7 +147,7 @@ def browser(evals, monkeypatch):
 
 def _site(evals, **overrides):
     values = {'id': 'g2', 'site': 'G2', 'url': 'https://www.g2.com/products/x/reviews', 'subject': 'X',
-              'vendor': 'unknown', 'expect': 'readable', 'baseline': 'blocked', 'max_reviews': 20, 'structured': ()}
+              'expect': 'readable', 'max_reviews': 20, 'structured': ()}
     return evals.Site(**{**values, **overrides})
 
 
@@ -177,12 +178,9 @@ def _fixture_document():
         'description': 'test sites', 'defaults': {'max_pages': 1, 'max_reviews': 20},
         'sites': [
             {'id': 'g2', 'site': 'G2', 'url': 'https://www.g2.com/products/amazon-connect/reviews',
-             'subject': 'Amazon Connect', 'vendor': 'DataDome', 'vendor_evidence': 'x-datadome: protected',
-             'expect': 'unknown', 'baseline': 'blocked', 'evidence': 'live run', 'notes': 'from a laptop',
-             'structured': []},
+             'subject': 'Amazon Connect', 'expect': 'unknown', 'notes': 'a software review site', 'structured': []},
             {'id': 'hackernews', 'site': 'Hacker News', 'url': 'https://news.ycombinator.com/item?id=13976567',
-             'subject': 'Amazon Connect launch thread', 'expect': 'unknown', 'baseline': 'unknown',
-             'evidence': 'HTTP 200', 'structured': [
+             'subject': 'Amazon Connect launch thread', 'expect': 'unknown', 'structured': [
                  {'kind': 'json', 'url': 'https://hacker-news.firebaseio.com/v0/item/13976567.json',
                   'count_path': 'kids', 'needs_secret': False, 'docs': 'https://github.com/HackerNews/API'}]},
         ],
@@ -199,32 +197,50 @@ def _main(evals, *args):
     return evals.main(['--region', 'us-west-2', *args])
 
 
+@pytest.fixture
+def reports(evals, tmp_path, monkeypatch):
+    """The git-ignored reports directory of the eval, made a temporary one: ``--out`` must name a directory in it."""
+    root = tmp_path / 'web-reviews-eval'
+    monkeypatch.setattr(evals, 'REPORTS_ROOT', root)
+    return root
+
+
 # ── the fixture ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class TestTheFixture:
-    def test_the_fixture_loads_its_27_sites(self, evals):
+    def test_the_fixture_loads_its_27_sites_inputs_only(self, evals):
         sites = {site.id: site for site in evals.load_fixture(_SEED)}
         assert len(sites) == 27
-        assert (sites['g2'].vendor, sites['g2'].baseline, sites['g2'].max_reviews) == ('DataDome', 'blocked', 20)
-        assert {site_id for site_id, site in sites.items() if site.expect != 'unknown'} == {'glassdoor', 'amazon_reviews'}
-        assert {site.expect for site_id, site in sites.items() if site_id in ('glassdoor', 'amazon_reviews')} == {'login'}
-        assert {site_id: site.baseline for site_id, site in sites.items() if site.baseline != 'unknown'} == {
-            'trustpilot': 'readable', 'tripadvisor': 'readable', 'yelp': 'blocked', 'consumeraffairs': 'blocked',
-            'reddit': 'blocked', 'g2': 'blocked', 'capterra': 'blocked', 'gartner': 'blocked', 'trustradius': 'blocked'}
+        assert sites['g2'].max_reviews == 20
+        assert {site_id: site.expect for site_id, site in sites.items() if site.expect != 'unknown'} == {
+            'glassdoor': 'login', 'amazon_reviews': 'login', 'yelp': 'official_api_only', 'reddit': 'official_api_only'}
+        assert {site_id for site_id, site in sites.items() if site.official_api_only} == {'yelp', 'reddit'}
+        assert 'Yelp Fusion API' in sites['yelp'].notes
+        assert 'Reddit Data API' in sites['reddit'].notes
         (thread,) = sites['hackernews'].structured
         assert (thread.kind, thread.count_path, thread.url) == (
             'json', 'kids', 'https://hacker-news.firebaseio.com/v0/item/13976567.json')
-        assert sites['reddit'].structured[0].count_path == '1.data.children'
-        assert {entry.kind for site_id in ('trustpilot', 'yelp') for entry in sites[site_id].structured} == {
+        assert {entry.kind for site_id in ('trustpilot', 'yelp', 'reddit') for entry in sites[site_id].structured} == {
             'official_api'}
+        assert sites['softwareadvice'].url == 'https://www.softwareadvice.com/call-center/amazon-connect-profile/reviews/'
+
+    def test_the_fixture_holds_no_observation_of_a_run(self):
+        """Inputs only: no vendor, baseline or evidence of where or how something was seen (a run's results stay in
+        the git-ignored web-reviews-eval/)."""
+        document = json.loads(_SEED.read_text(encoding='utf-8'))
+        keys = {key for site in document['sites'] for key in site}
+        assert keys <= {'id', 'site', 'url', 'subject', 'expect', 'notes', 'structured', 'max_reviews',
+                        'official_api_only'}
+        text = _SEED.read_text(encoding='utf-8').lower()
+        assert not any(word in text for word in ('laptop', 'zurich', 'measured', 'live run', 'baseline', 'evidence'))
 
     def test_a_site_may_lower_the_review_cap_and_optional_keys_default(self, evals, tmp_path):
         document = _fixture_document()
         document['sites'][0]['max_reviews'] = 5
         sites = evals.load_fixture(_write(tmp_path, document))
         assert sites[0].max_reviews == 5
-        assert (sites[1].vendor, sites[1].max_reviews) == ('unknown', 20)
+        assert (sites[1].notes, sites[1].max_reviews, sites[1].official_api_only) == ('', 20, False)
 
     @pytest.mark.parametrize(('change', 'message'), [
         (lambda d: d.update(extra=1), "unknown key 'extra'"),
@@ -234,14 +250,18 @@ class TestTheFixture:
         (lambda d: d['defaults'].update(max_reviews=1000), 'defaults.max_reviews must be a whole number'),
         (lambda d: d.update(sites=[]), 'sites must be a non-empty list'),
         (lambda d: d['sites'][0].update(colour='red'), "unknown key 'colour'"),
-        (lambda d: d['sites'][0].pop('evidence'), "missing key 'evidence'"),
+        (lambda d: d['sites'][0].pop('subject'), "missing key 'subject'"),
+        (lambda d: d['sites'][0].update(baseline='blocked'), "unknown key 'baseline'"),
+        (lambda d: d['sites'][0].update(vendor='DataDome'), "unknown key 'vendor'"),
+        (lambda d: d['sites'][0].update(official_api_only=True), 'official_api_only: true goes with expect'),
+        (lambda d: d['sites'][0].update(expect='official_api_only'), 'official_api_only: true goes with expect'),
+        (lambda d: d['sites'][0].update(official_api_only='yes'), 'official_api_only must be true or false'),
         (lambda d: d['sites'][0].update(id='G 2'), '.id must be lower-case'),
         (lambda d: d['sites'][0].update(url='http://www.g2.com/products/x'), 'must be an https URL'),
         (lambda d: d['sites'][1].update(id='g2'), "duplicate site id 'g2'"),
-        (lambda d: d['sites'][0].update(expect='maybe'), 'expect must be one of readable, blocked, login, unknown'),
-        (lambda d: d['sites'][0].update(baseline='blocked:DataDome'), 'baseline must be one of'),
+        (lambda d: d['sites'][0].update(expect='maybe'),
+         'expect must be one of readable, blocked, login, official_api_only, unknown'),
         (lambda d: d['sites'][0].update(max_reviews=500), 'max_reviews must be a whole number from 1 to 100'),
-        (lambda d: d['sites'][0].update(evidence=''), 'evidence must be a non-empty string'),
         (lambda d: d['sites'][0].update(notes=3), 'notes must be a string'),
         (lambda d: d['sites'][1]['structured'][0].update(kind='xml'), 'kind must be one of rss, atom, json'),
         (lambda d: d['sites'][1]['structured'][0].pop('count_path'), 'count_path (a json entry needs one)'),
@@ -485,7 +505,8 @@ class TestTheHttpMethod:
         web.answer(self.ROBOTS, status=404)
         web.answer(self.URL, status=403, body=_html(title='Just a moment...', body='Checking your browser'))
         row = self._row(evals)
-        assert (row['outcome'], row['http_status'], row['vs_baseline']) == ('blocked:Cloudflare', 403, 'as expected')
+        assert (row['outcome'], row['http_status'], row['vs_expect']) == ('blocked:Cloudflare', 403, 'differs')
+        assert 'vs_baseline' not in row
 
     def test_a_wall_answered_with_503_is_read_from_the_error_and_named(self, evals, web):
         web.answer(self.ROBOTS, status=404)
@@ -638,8 +659,7 @@ class TestTheBrowserMethods:
         browser.snapshot = self._snapshot(evals, status=403, text='', html='<script src="//captcha-delivery.com/c.js">')
         (row,) = evals.signed_rows(_site(evals), _run(evals, signed_id='br-signed-1'))
         assert browser.sessions[0]['browser'] == 'br-signed-1'
-        assert (row['method'], row['outcome'], row['vs_expect'], row['vs_baseline']) == (
-            'signed', 'blocked:DataDome', 'differs', 'as expected')
+        assert (row['method'], row['outcome'], row['vs_expect']) == ('signed', 'blocked:DataDome', 'differs')
 
     @pytest.mark.usefixtures('web')
     def test_signed_without_a_browser_is_not_run(self, evals, browser):
@@ -719,11 +739,12 @@ class TestTheSignedBrowser:
         assert calls == [('bedrock-agentcore-control', 'us-west-2')]
 
     def test_a_deployment_without_one_reports_every_signed_row_not_run(self, evals, monkeypatch, browser, tmp_path,
-                                                                     capsys):
+                                                                     capsys, reports):
         _aws(evals, monkeypatch)
         sites = _write(tmp_path, _fixture_document())
-        assert _main(evals, '--sites', str(sites), '--methods', 'signed', '--no-model', '--out', str(tmp_path)) == 0
-        report = json.loads((tmp_path / 'report.json').read_text(encoding='utf-8'))
+        out = reports / 'r'
+        assert _main(evals, '--sites', str(sites), '--methods', 'signed', '--no-model', '--out', str(out)) == 0
+        report = json.loads((out / 'report.json').read_text(encoding='utf-8'))
         assert {row['outcome'] for row in report['results']} == {'not_run'}
         assert len(report['results']) == 2
         assert report['run']['browser'] == {'signed_id': None, 'signing_enabled': None}
@@ -731,12 +752,13 @@ class TestTheSignedBrowser:
         capsys.readouterr()
 
     @pytest.mark.usefixtures('browser')
-    def test_no_ingestor_function_is_a_setup_error(self, evals, monkeypatch, tmp_path, capsys):
+    def test_no_ingestor_function_is_a_setup_error(self, evals, monkeypatch, tmp_path, capsys, reports):
         _aws(evals, monkeypatch, missing=True)
         sites = _write(tmp_path, _fixture_document())
-        assert _main(evals, '--sites', str(sites), '--methods', 'signed', '--prefix', 'b', '--out', str(tmp_path)) == 2
+        out = reports / 'r'
+        assert _main(evals, '--sites', str(sites), '--methods', 'signed', '--prefix', 'b', '--out', str(out)) == 2
         assert 'b-voc-ingestor-web_reviews-123456789012-us-west-2 is not in us-west-2' in capsys.readouterr().err
-        assert not (tmp_path / 'report.json').exists()
+        assert not (out / 'report.json').exists()
 
 
 # ── web search: Amazon Bedrock (e) and AgentCore (f) ────────────────────────────────────────────────────────────
@@ -848,6 +870,9 @@ def _model_lines(*reviews):
     return complete, calls
 
 
+_G2_PAGE = 'https://www.g2.com/products/amazon-connect/reviews'
+
+
 class TestTheAgentCoreWebSearchMethod:
     def _row(self, evals, post, complete=None, region='us-west-2'):
         run = _run(evals, region=region, post=post, complete=complete)
@@ -889,7 +914,7 @@ class TestTheAgentCoreWebSearchMethod:
         assert row['_bodies'] == ['Routing works well and setup was quick.', 'Support answered within minutes']
 
     def test_a_review_that_is_its_whole_snippet_is_not_an_excerpt(self, evals, post):
-        post.answer(_SEARCH, {'results': [{'text': 'Exactly one review, all of it.', 'url': 'https://www.g2.com/r'}]})
+        post.answer(_SEARCH, {'results': [{'text': 'Exactly one review, all of it.', 'url': _G2_PAGE}]})
         complete, _calls = _model_lines({'rating': None, 'date': None, 'title': None,
                                          'text': 'Exactly one review, all of it.'})
         row = self._row(evals, post, complete)
@@ -899,14 +924,20 @@ class TestTheAgentCoreWebSearchMethod:
         post.answer(_SEARCH, _search_results())
         row = self._row(evals, post)
         assert (row['outcome'], row['extraction'], row['detail']) == (
-            'unextracted', 'snippets', '2 results; --no-model left the snippets unread')
+            'unextracted', 'snippets', '2 results on the page; --no-model left the snippets unread')
+
+    def test_results_on_other_pages_of_the_site_are_not_read(self, evals, post):
+        post.answer(_SEARCH, {'results': [{'text': 'Routing works well.', 'url': 'https://www.g2.com/compare/x-vs-y'}]})
+        complete, calls = _model_lines({'text': 'Routing works well.'})
+        row = self._row(evals, post, complete)
+        assert (row['outcome'], row['detail'], calls) == ('no_reviews', '1 results, none on the page itself', [])
 
     def test_a_refusal_is_an_error_row(self, evals, post):
         post.answer(_SEARCH, b'{"message": "User is not authorized to perform: bedrock-agentcore:InvokeWebSearch"}',
                     status=403)
         row = self._row(evals, post)
         assert row['outcome'] == 'error'
-        assert row['detail'].startswith('AgentCoreSearchError: HTTP 403: {"message": "User is not authorized')
+        assert row['detail'].startswith('SnippetSearchError: HTTP 403: {"message": "User is not authorized')
 
     def test_a_region_without_the_api_is_not_run(self, evals, post):
         row = self._row(evals, post, region='eu-central-1')
@@ -959,8 +990,9 @@ class TestVerbatim:
 
 
 _ROW_KEYS = {'site_id', 'site', 'url', 'method', 'outcome', 'reviews', 'pages_read', 'seconds', 'extraction',
-             'model_calls', 'http_status', 'final_url', 'expect', 'baseline', 'vs_expect', 'vs_baseline', 'detail',
-             'sample', 'excerpt_only', 'verbatim', 'model', 'opened_urls', 'cited_urls', 'dropped', 'sources'}
+             'model_calls', 'http_status', 'final_url', 'expect', 'vs_expect', 'detail',
+             'sample', 'excerpt_only', 'verbatim', 'model', 'opened_urls', 'cited_urls', 'dropped', 'sources', 'picked',
+             'chain'}
 
 
 class TestTheReport:
@@ -976,11 +1008,11 @@ class TestTheReport:
         web.answer('https://hacker-news.firebaseio.com/v0/item/13976567.json', body=json.dumps({'kids': [1, 2, 3]}))
 
     def test_report_json_and_report_md_are_written_and_md_printed(self, evals, web, post, tmp_path, capsys,
-                                                                  monkeypatch):
+                                                                  monkeypatch, reports):
         self._web(web)
         post.answer(_MANTLE, _responses_answer([_web_review('Routing works well.')]))
         monkeypatch.setattr(evals, 'post_json', post)
-        out = tmp_path / 'out'
+        out = reports / 'out'
         code = _main(evals, '--sites', str(self._fixture(tmp_path)), '--methods', 'http,feed,bedrock_web_search',
                      '--web-search-models', 'openai.m-1', '--no-model', '--out', str(out))
         assert code == 0
@@ -1000,29 +1032,40 @@ class TestTheReport:
             ('hackernews', 'bedrock_web_search:openai.m-1', 'readable', 'unverifiable')]
         markdown = (out / 'report.md').read_text(encoding='utf-8')
         assert '| Site | Method | Outcome | Reviews | Extraction | Seconds | Expect | vs expect |' in markdown
-        assert '| Site | http | feed | bedrock_web_search:openai.m-1 |' in markdown
-        assert '| G2 (g2) | blocked:DataDome | — | readable (unverifiable) |' in markdown
-        assert '| Hacker News (hackernews) | robots_disallowed | readable | readable (unverifiable) |' in markdown
+        assert '| Site | Vendor (this run) | http | feed | bedrock_web_search:openai.m-1 |' in markdown
+        assert '| G2 (g2) | DataDome | blocked:DataDome | — | readable (unverifiable) |' in markdown
+        assert '| Hacker News (hackernews) | — | robots_disallowed | readable | readable (unverifiable) |' in markdown
+        assert 'baseline' not in markdown
         assert markdown in capsys.readouterr().out
 
-    def test_the_default_out_is_a_utc_stamped_directory_under_the_cwd(self, evals, web, tmp_path, monkeypatch,
-                                                                      capsys):
+    def test_the_default_out_is_a_utc_stamped_directory_in_the_reports_directory(self, evals, web, tmp_path, capsys,
+                                                                                 reports):
         self._web(web)
         sites = self._fixture(tmp_path)
-        monkeypatch.chdir(tmp_path)
         assert _main(evals, '--sites', str(sites), '--methods', 'feed', '--no-model') == 0
-        (stamp,) = (tmp_path / 'web-reviews-eval').iterdir()
+        (stamp,) = reports.iterdir()
         assert len(stamp.name) == len('20261115T120000Z')
         assert stamp.name.endswith('Z')
         assert {path.name for path in stamp.iterdir()} == {'report.json', 'report.md'}
         capsys.readouterr()
 
-    def test_the_run_restores_the_environment_it_changed(self, evals, web, tmp_path, monkeypatch, capsys):
+    @pytest.mark.parametrize('out', ['elsewhere', 'web-reviews-eval', '../web-reviews-eval/x/../../y'])
+    def test_out_must_be_inside_the_reports_directory(self, evals, tmp_path, capsys, reports, out):
+        assert _main(evals, '--sites', str(self._fixture(tmp_path)), '--dry-run', '--out', str(tmp_path / out)) == 2
+        assert '--out must be a directory inside' in capsys.readouterr().err
+        assert not reports.exists()
+
+    def test_the_reports_directory_is_git_ignored(self, evals):
+        ignored = (repo_root().parent / '.gitignore').read_text(encoding='utf-8').splitlines()
+        assert f'{evals.REPORTS_DIR}/' in ignored
+        assert repo_root() / evals.REPORTS_DIR == evals.REPORTS_ROOT
+
+    def test_the_run_restores_the_environment_it_changed(self, evals, web, tmp_path, monkeypatch, capsys, reports):
         self._web(web)
         monkeypatch.setenv('BROWSER_PROFILE_IDENTIFIER', 'p-1')
         monkeypatch.delenv('AWS_REGION', raising=False)
         _main(evals, '--sites', str(self._fixture(tmp_path)), '--methods', 'feed', '--no-model',
-              '--out', str(tmp_path / 'o'))
+              '--out', str(reports / 'o'))
         assert os.environ['BROWSER_PROFILE_IDENTIFIER'] == 'p-1'
         assert 'AWS_REGION' not in os.environ
         capsys.readouterr()
@@ -1037,7 +1080,8 @@ class TestTheMethods:
     def test_methods_are_parsed_in_order_once_each(self, evals):
         assert [m.name for m in evals.parse_methods('http, feed,http')] == ['http', 'feed']
         assert list(evals.METHODS) == ['signed', 'unsigned', 'http', 'feed', 'bedrock_web_search',
-                                       'agentcore_web_search']
+                                       'agentcore_web_search', 'auto']
+        assert [m.name for m in evals.parse_methods('auto,http')] == ['http', 'auto']  # auto reuses what ran before
         assert tuple(evals.METHODS) == evals.DEFAULT_METHODS  # every method by default
 
     @pytest.mark.parametrize('methods', ['http,scrape', ',', 'Signed'])
@@ -1072,7 +1116,7 @@ class TestTheDryRun:
                      '--methods', 'signed,unsigned,http,feed,bedrock_web_search,agentcore_web_search') == 0
         plan = capsys.readouterr().out
         assert 'BROWSER_IDENTIFIER of the Lambda b-voc-ingestor-web_reviews-<account>-us-west-2' in plan
-        assert ('| G2 (g2) | Amazon Connect | DataDome | unknown | blocked | 1 session | 1 session | robots.txt + 1 GET '
+        assert ('| G2 (g2) | Amazon Connect | unknown | 1 session | 1 session | robots.txt + 1 GET '
                 '| — | 2 Responses requests | 1 InvokeWebSearch |') in plan
         assert ('At most: 4 browser sessions (300 s each), 8 model calls, 6 HTTP GETs (3 robots.txt; the shared '
                 'fetcher retries a 429 / 5xx up to 3 times), 4 Responses requests, 2 InvokeWebSearch requests.') in plan
@@ -1093,8 +1137,10 @@ class TestTheDryRun:
         assert _main(evals, '--dry-run') == 0
         plan = capsys.readouterr().out
         assert 'Sites: 27 from' in plan
-        assert 'At most: 54 browser sessions' in plan
-        assert '54 Responses requests' in plan
+        # Yelp and Reddit are for their official APIs only: nothing is planned for them.
+        assert 'At most: 50 browser sessions' in plan
+        assert '50 Responses requests' in plan
+        assert '| Yelp (yelp) | Pike Place Market Seattle | official_api_only | official_api_only |' in plan
 
     @pytest.mark.usefixtures('nothing_reachable')
     def test_agentcore_in_a_region_without_it_is_planned_as_not_run(self, evals, capsys):
@@ -1105,7 +1151,100 @@ class TestTheDryRun:
 
 def test_a_snippet_cut_at_its_start_is_an_excerpt_too(evals, post):
     """``excerpt_only``: the search returned a cut passage (an ellipsis at either end)."""
-    post.answer(_SEARCH, {'results': [{'text': '... and the IVR builder is easy.', 'url': 'https://www.g2.com/r'}]})
+    post.answer(_SEARCH, {'results': [{'text': '... and the IVR builder is easy.', 'url': _G2_PAGE}]})
     complete, _calls = _model_lines({'rating': None, 'date': None, 'title': None, 'text': 'and the IVR builder is easy.'})
     row = TestTheAgentCoreWebSearchMethod()._row(evals, post, complete)
     assert (row['sources'][0]['excerpt_only'], row['excerpt_only']) == (True, True)
+
+
+# ── auto and the official-API-only sites ────────────────────────────────────────────────────────────────────────
+
+
+def _made(evals, method, outcome, reviews=0, final_url=None, **extra):
+    """A row a method already made of the site this run (``Run.site_rows``)."""
+    row = evals.result(_site(evals), method, 'https://www.g2.com/products/x/reviews', 0.0,
+                       evals.Verdict(outcome, extraction='x', count=reviews), read=evals.Read(final_url, 200))
+    return {**row, **extra}
+
+
+class TestAuto:
+    def _auto(self, evals, *rows, **run):
+        state = _run(evals, region='us-west-2', web_search_models=('openai.m-1',), **run)
+        state.site_rows = list(rows)
+        (row,) = evals.auto_rows(_site(evals), state)
+        return row, state
+
+    def test_a_readable_signed_browser_is_picked_and_nothing_else_runs(self, evals):
+        row, _ = self._auto(evals, _made(evals, 'signed', 'readable', 10, _bodies=['b']))
+        assert (row['method'], row['outcome'], row['picked'], row['reviews']) == ('auto', 'readable', 'signed', 10)
+        assert row['chain'] == [{'method': 'signed', 'outcome': 'readable', 'reviews': 10}]
+        assert row['_bodies'] == ['b']
+
+    def test_a_block_hands_the_site_to_bedrock_web_search_its_first_model(self, evals):
+        row, _ = self._auto(evals, _made(evals, 'signed', 'blocked:Cloudflare'),
+                            _made(evals, 'bedrock_web_search:openai.m-1', 'readable', 11),
+                            _made(evals, 'bedrock_web_search:openai.m-2', 'readable', 3))
+        assert (row['picked'], row['reviews']) == ('bedrock_web_search', 11)
+        assert [step['method'] for step in row['chain']] == ['signed', 'bedrock_web_search']
+
+    @pytest.mark.parametrize('first', ['error', 'no_reviews', 'login', 'not_run'])
+    def test_what_else_hands_the_site_on(self, evals, first):
+        row, _ = self._auto(evals, _made(evals, 'signed', first),
+                            _made(evals, 'bedrock_web_search:openai.m-1', 'error'),
+                            _made(evals, 'agentcore_web_search', 'readable', 5))
+        assert (row['picked'], [s['outcome'] for s in row['chain']]) == ('agentcore_web_search',
+                                                                          [first, 'error', 'readable'])
+
+    def test_a_redirect_to_chromes_error_page_is_a_block_and_to_another_site_ends_the_read(self, evals):
+        error, _ = self._auto(evals, _made(evals, 'signed', 'off_host', final_url='chrome-error://chromewebdata/'),
+                              _made(evals, 'bedrock_web_search:openai.m-1', 'readable', 2))
+        moved, _ = self._auto(evals, _made(evals, 'signed', 'off_host', final_url='https://other.example/'))
+        assert error['picked'] == 'bedrock_web_search'
+        assert (moved['picked'], moved['outcome'], len(moved['chain'])) == (None, 'off_host', 1)
+
+    def test_nothing_reads_it(self, evals):
+        row, _ = self._auto(evals, _made(evals, 'signed', 'blocked:DataDome'),
+                            _made(evals, 'bedrock_web_search:openai.m-1', 'error'),
+                            _made(evals, 'agentcore_web_search', 'no_reviews'))
+        assert (row['picked'], row['outcome'], row['reviews']) == (None, 'no_reviews', 0)
+
+    def test_a_step_that_did_not_run_is_run_now(self, evals, post):
+        post.answer(_MANTLE, _responses_answer([_web_review('Routing works well.')]))
+        row, state = self._auto(evals, _made(evals, 'signed', 'blocked:Cloudflare'), post=post)
+        assert (row['picked'], row['reviews']) == ('bedrock_web_search', 1)
+        assert [r['method'] for r in state.site_rows] == ['signed', 'bedrock_web_search:openai.m-1']
+
+    def test_it_runs_last_and_its_own_steps_stay_in_the_report(self, evals, browser, post):
+        browser.snapshot = evals.plugin('page_reader').PageSnapshot(
+            url='https://www.g2.com/products/x/reviews', status=403, title='Just a moment...', text='', html='',
+            jsonld=(), next_url=None)
+        post.answer(_MANTLE, _responses_answer([_web_review('Routing works well.')]))
+        run = _run(evals, region='us-west-2', post=post, web_search_models=('openai.m-1',), signed_id='br-1')
+        rows = evals.run_eval([_site(evals)], evals.parse_methods('auto,unsigned'), run)
+        assert [(r['method'], r['outcome']) for r in rows] == [
+            ('unsigned', 'blocked:Cloudflare'), ('signed', 'blocked:Cloudflare'),
+            ('bedrock_web_search:openai.m-1', 'readable'), ('auto', 'readable')]
+        assert rows[-1]['verbatim'] == 'unverifiable'
+
+    def test_the_pivot_names_the_picked_step(self, evals):
+        assert evals._pivot_cell({'outcome': 'readable', 'picked': 'bedrock_web_search', 'verbatim': None}) == (
+            'readable via bedrock_web_search')
+
+
+class TestOfficialApiOnly:
+    def test_no_method_reads_the_site_each_row_says_why(self, evals):
+        site = _site(evals, expect='official_api_only', official_api_only=True, notes='Official API only: Yelp Fusion.',
+                     structured=(_entry(evals, kind='official_api', url='https://docs.developer.yelp.com/',
+                                        needs_secret=True),))
+        rows = evals.run_eval([site], evals.parse_methods('signed,http,feed,bedrock_web_search,auto'),
+                              _run(evals, region='us-west-2'))
+        assert [(r['method'], r['outcome'], r['vs_expect']) for r in rows] == [
+            (method, 'official_api_only', 'as expected')
+            for method in ('signed', 'http', 'feed', 'bedrock_web_search', 'auto')]
+        assert rows[0]['detail'] == 'Official API only: Yelp Fusion.; https://docs.developer.yelp.com/'
+
+    def test_the_vendor_column_is_what_this_run_met(self, evals):
+        rows = [{'outcome': 'blocked:Cloudflare'}, {'outcome': 'readable'}, {'outcome': 'blocked:Cloudflare'},
+                {'outcome': 'blocked:HTTP 403'}]
+        assert evals.vendors(rows) == 'Cloudflare, HTTP 403'
+        assert evals.vendors([{'outcome': 'readable'}]) == '—'

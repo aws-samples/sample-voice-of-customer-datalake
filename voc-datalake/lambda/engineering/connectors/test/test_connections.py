@@ -118,7 +118,7 @@ def test_a_new_connection_stores_its_credential_where_the_broker_reads_it(env: E
         'credential': {'kind': 'app', 'set': True, 'app_id': APP_ID, 'installation_id': str(INSTALLATION_ID),
                        'expires_at': None},
         'created_at': WHEN.isoformat(), 'created_by': 'alice', 'updated_at': WHEN.isoformat(), 'updated_by': 'alice',
-        'version': 1, 'ci_attestation': None}   # (none until an administrator confirms the setup guide's points)
+        'repository_private': None, 'version': 1, 'ci_attestation': None}   # (none until an administrator confirms the setup guide's points)
     assert env.store().list() == [connection]
 
 

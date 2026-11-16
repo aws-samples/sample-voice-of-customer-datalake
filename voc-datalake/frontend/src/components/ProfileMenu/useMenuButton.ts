@@ -59,7 +59,7 @@ export function menuButtonParts(menu: MenuButton, menuId: string, label: string)
 
 function menuItems(menu: HTMLElement | null): HTMLElement[] {
   if (menu === null) return []
-  return [...menu.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemcheckbox"]')]
+  return [...menu.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"]')]
 }
 
 export function useMenuButton(): MenuButton {

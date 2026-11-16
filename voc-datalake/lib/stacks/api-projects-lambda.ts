@@ -123,8 +123,8 @@ export function createProjectsLambda(ctx: ApiStackContext): ProjectsLambda {
       POWERTOOLS_SERVICE_NAME: 'voc-projects-api',
       LOG_LEVEL: 'INFO',
       [ASSIST_WORKER_ENV]: projectsWorkerName,
-      // The release this function runs (7.44.00): the review registries' backfill reads it (with the operator's own
-      // credentials) and writes its marker only once every writer of links, threads and projects runs 7.44.0 or later.
+      // The release this function runs (7.47.00): the review registries' backfill reads it (with the operator's own
+      // credentials) and writes its marker only once every writer of links, threads and projects runs 7.47.0 or later.
       APP_VERSION: appVersion(),
     },
     layers: [apiLayer],
