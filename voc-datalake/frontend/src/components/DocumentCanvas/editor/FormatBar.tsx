@@ -14,6 +14,7 @@ import { rovingIndex, TAB_KEYS } from '../../../utils/rovingIndex'
 import { TURN_INTO_BLOCKS, turnInto } from './blocks'
 import type { CanvasController } from './controller'
 import MenuList from './MenuList'
+import { toggleMark } from './commands'
 
 interface FormatBarProps {
   readonly editor: Editor
@@ -29,16 +30,6 @@ const MARKS: readonly MarkButton[] = [
   { mark: 'strike', icon: Strikethrough },
   { mark: 'code', icon: Code },
 ]
-
-function toggleMark(editor: Editor, mark: MarkButton['mark']) {
-  const chain = editor.chain().focus()
-  switch (mark) {
-    case 'bold': return chain.toggleBold().run()
-    case 'italic': return chain.toggleItalic().run()
-    case 'strike': return chain.toggleStrike().run()
-    case 'code': return chain.toggleCode().run()
-  }
-}
 
 function rove(event: KeyboardEvent<HTMLDivElement>, bar: HTMLDivElement | null) {
   const buttons = [...(bar?.querySelectorAll<HTMLButtonElement>(':scope > button') ?? [])]

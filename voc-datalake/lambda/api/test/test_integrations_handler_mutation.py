@@ -36,7 +36,7 @@ from typing import Any
 from unittest.mock import MagicMock, call, patch
 
 import pytest
-from boto3.dynamodb.conditions import Attr, Key
+from boto3.dynamodb.conditions import Key
 from handler_events_fixtures import aws_error, call_route
 from integrations_fixtures import CLOSED_CIRCUIT, ingestor_behind, secret_string
 from module_reload_fixtures import reload_cycle
@@ -654,7 +654,7 @@ G2 = 'https://www.g2.com/products/example-connect/reviews'
 class TestOneAppsRunStatus:
     """`?run_status=<source>&app_id=…` / `&execution_id=…`: one app's newest run, one run."""
 
-    def test_an_app_id_filters_the_partition_newest_first_and_reads_consistently(self, route, table):
+    def test_an_app_id_reads_the_partition_newest_first_and_consistently(self, route, table):
         table.query.return_value = {'Items': [{'sk': RUN_ID, 'app_id': G2, 'status': 'completed', 'items_found': 0,
                                                'errors': ['G2 - Example: blocked by DataDome']}]}
         assert route('GET', '/sources/status', query_params={'run_status': 'web_reviews', 'app_id': G2}) == (200, {
@@ -663,10 +663,10 @@ class TestOneAppsRunStatus:
         })
         table.query.assert_called_once_with(
             KeyConditionExpression=Key('pk').eq('SOURCE_RUN#web_reviews'), ScanIndexForward=False, Limit=50,
-            ConsistentRead=True, FilterExpression=Attr('app_id').eq(G2),
+            ConsistentRead=True,
         )
 
-    def test_a_row_of_another_app_the_filter_let_through_is_not_answered(self, route, table):
+    def test_a_row_of_another_app_is_not_answered(self, route, table):
         table.query.return_value = {'Items': [{'sk': RUN_ID, 'app_id': 'https://other.example/reviews'}]}
         assert route('GET', '/sources/status', query_params={'run_status': 'web_reviews', 'app_id': G2}) == (
             200, {'source': 'web_reviews', 'status': 'never_run'},

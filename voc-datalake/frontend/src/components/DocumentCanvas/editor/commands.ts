@@ -19,7 +19,7 @@ const TURNED_INTO: ReadonlySet<BlockId> = new Set(['paragraph', 'heading1', 'hea
 
 const usable = (editor: Editor | null): editor is Editor => editor !== null && !editor.isDestroyed && editor.isEditable
 
-function toggleMark(editor: Editor, mark: MarkCommand): boolean {
+export function toggleMark(editor: Editor, mark: MarkCommand): boolean {
   const chain = editor.chain().focus()
   switch (mark) {
     case 'bold': return chain.toggleBold().run()

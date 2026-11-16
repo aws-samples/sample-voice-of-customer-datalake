@@ -23,13 +23,11 @@ import re
 from collections.abc import Callable, Mapping
 from typing import Any, Final
 
-from boto3.dynamodb.conditions import Attr
-
 from shared.ingest_tables import table_view
-from shared.scoped_query import query_partition
+from shared.scoped_query import iter_partition, query_partition
 from shared.ws_repo import WorkspaceScope, scraper_run_pk, source_run_pk
 
-__all__ = ['APP_RUN_LOOKBACK', 'MAX_RUN_APP_ID_CHARS', 'run_app_id_error', 'run_execution_id_error', 'run_status',
+__all__ = ['run_app_id_error', 'run_execution_id_error', 'run_status',
            'scraper_run_partition', 'source_run_partition']
 
 #: The longest app a run names: a review page's URL (shared/web_review_targets.py ``MAX_URL_CHARS``; the web_reviews
@@ -83,19 +81,10 @@ def latest_run(table: Any, pk: str, scope: WorkspaceScope | None = None) -> dict
 def latest_app_run(table: Any, pk: str, app_id: str, scope: WorkspaceScope | None = None) -> dict | None:
     """The newest row of run partition ``pk`` (in ``scope``) whose ``app_id`` is ``app_id``, among its
     ``APP_RUN_LOOKBACK`` newest rows, or None. Read consistently: the poll right after Run now finds its row."""
-    request: dict[str, Any] = {'ScanIndexForward': False, 'Limit': _APP_RUN_PAGE, 'ConsistentRead': True,
-                               'FilterExpression': Attr('app_id').eq(app_id)}
-    for _page in range(APP_RUN_LOOKBACK // _APP_RUN_PAGE):
-        response = query_partition(scope, table, 'pk', pk, **request)
-        # The filter's answer re-checked, so what is answered is exact without DynamoDB.
-        run = next((item for item in response.get('Items', []) if item.get('app_id') == app_id), None)
-        if run is not None:
-            return run
-        last = response.get('LastEvaluatedKey')
-        if not last:
-            return None
-        request['ExclusiveStartKey'] = last
-    return None
+    rows = iter_partition(scope, table, 'pk', pk, max_items=APP_RUN_LOOKBACK, ScanIndexForward=False,
+                          Limit=_APP_RUN_PAGE, ConsistentRead=True)
+    # The newest first, at most APP_RUN_LOOKBACK rows read (the pager stops there), the first match answered.
+    return next((row for row in rows if row.get('app_id') == app_id), None)
 
 
 def run_by_id(table: Any, pk: str, execution_id: str, scope: WorkspaceScope | None = None) -> dict | None:
