@@ -12,4 +12,4 @@ google-play-scraper>=1.2.7
 websocket-client==1.9.2
 # Ingest message schemas (shared/ingest_schemas.py, reached from _shared/base_ingestor via the
 # source policy). Same version the processing-deps layer resolves. Exact pin.
-pydantic==2.14.2
+pydantic==2.14.3
