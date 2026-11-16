@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from engineering.connectors.broker import (
+    MERGE_IS_HUMAN,
     OPEN_OR_UPDATE_DRAFT_PR,
     POST_COMMENT,
     PUSH_BUNDLE,
@@ -103,7 +104,7 @@ def test_a_pull_request_asks_the_host_for_the_branchs_tree_on_the_runs_connectio
     # (the run's issue, #42, named so the merge closes it: 7.47.00)
     assert host.calls == [('branch_tree_hash', 'conn-9', BRANCH),
                           ('open_or_update_draft_pr', 'conn-9', BRANCH, 'main', 'Fix the refund total',
-                           'From fb_0123abcd.\n\nFixes #42', TREE)]
+                           f'From fb_0123abcd.\n\nFixes #42\n\n---\n{MERGE_IS_HUMAN}', TREE)]
 
 
 @pytest.mark.parametrize(('title', 'body', 'reason'), [

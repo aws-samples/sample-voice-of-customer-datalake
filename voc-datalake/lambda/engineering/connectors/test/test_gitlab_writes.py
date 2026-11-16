@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
@@ -574,11 +575,49 @@ def test_a_draft_merge_request_is_opened_with_a_draft_title_when_the_branch_has_
         'remove_source_branch': False}]
 
 
+@pytest.mark.parametrize('title', ['Fix the total', 'Draft: Fix the total', '[Draft] (draft) Fix the total'])
+def test_a_merge_request_ready_for_review_is_opened_without_any_draft_marker(title: str) -> None:
+    api = draftable(FakeGitLab(), open_mrs=[])
+    client(api).open_or_update_draft_pr('conn-1', BRANCH, 'main', title, 'Body', TREE, draft=False)
+    assert [body['title'] for body in api.bodies('POST', f'{P}/merge_requests')] == ['Fix the total']
+
+
 def test_an_open_merge_request_gets_its_text_updated_and_stays_a_draft() -> None:
-    api = draftable(FakeGitLab(), open_mrs=[OURS_OPEN])
-    client(api).open_or_update_draft_pr('conn-1', BRANCH, 'main', 'Fix', 'Body', TREE)
+    api = draftable(FakeGitLab(), open_mrs=[{**OURS_OPEN, 'draft': True}])
+    client(api).open_or_update_draft_pr('conn-1', BRANCH, 'main', 'Fix', 'Body', TREE, draft=False)
     assert writes(api) == [('PUT', f'{P}/merge_requests/8')]
     assert api.bodies('PUT', f'{P}/merge_requests/8') == [{'title': 'Draft: Fix', 'description': 'Body'}]
+
+
+@pytest.mark.parametrize('title', ['Fix', 'Draft: Fix'])
+def test_an_open_merge_request_ready_for_review_stays_ready_whatever_the_agents_title(title: str) -> None:
+    api = draftable(FakeGitLab(), open_mrs=[{**OURS_OPEN, 'draft': False}])
+    client(api).open_or_update_draft_pr('conn-1', BRANCH, 'main', title, 'Body', TREE, draft=True)
+    assert api.bodies('PUT', f'{P}/merge_requests/8') == [{'title': 'Fix', 'description': 'Body'}]
+
+
+def test_an_open_merge_request_whose_draft_state_gitlab_does_not_say_keeps_its_title() -> None:
+    api = draftable(FakeGitLab(), open_mrs=[OURS_OPEN])
+    client(api).open_or_update_draft_pr('conn-1', BRANCH, 'main', 'Fix', 'Body', TREE)
+    # (neither marked ready nor made a draft: only the description is written)
+    assert api.bodies('PUT', f'{P}/merge_requests/8') == [{'description': 'Body'}]
+
+
+def test_an_issue_gets_its_triage_labels_added() -> None:
+    api = FakeGitLab().on('PUT', f'{P}/issues/42', answer(200, {}))
+    assert client(api).label_issue('conn-1', 42, ('voc-triage/bug', 'voc-severity/s2')) == (
+        'voc-triage/bug', 'voc-severity/s2')
+    assert api.bodies('PUT', f'{P}/issues/42') == [{'add_labels': 'voc-triage/bug,voc-severity/s2'}]
+
+
+def test_the_gitlab_client_has_no_merge_approve_or_ready_method() -> None:
+    public = {name for name in dir(GitLabHost) if not name.startswith('_')}
+    assert not {name for name in public if any(word in name for word in ('merge', 'approve', 'ready'))}
+    # Nor any request path that would (the source's paths): a merge, an approval, a merge when the pipeline passes.
+    source = Path(gitlab.__file__).read_text()
+    for forbidden in ("/merge'", '/merge"', '/merge?', '/approve', '/unapprove', 'merge_when_pipeline_succeeds',
+                      'auto_merge'):
+        assert forbidden not in source, forbidden
 
 
 def test_a_branch_without_the_checked_tree_gets_no_merge_request() -> None:
@@ -623,6 +662,14 @@ def test_the_router_sends_each_connection_to_its_hosts_client() -> None:
     router = HostRouter(stored.__getitem__, github, gitlab)
     assert (router.repository('gl'), router.repository('gh')) == (PROJECT, 'example-org/refund-service')
     assert router.fetch_access('gl') == FetchAccess(PROJECT, TOKEN, host='gitlab', revocable=False)
+
+
+def test_the_router_hands_an_issues_labels_and_a_pull_requests_draft_flag_to_the_hosts_client() -> None:
+    api = draftable(FakeGitLab(), open_mrs=[]).on('PUT', f'{P}/issues/42', answer(200, {}))
+    router = HostRouter(lambda _c: credential(), GitHubHost(lambda _c: app_credential()), client(api))
+    assert router.label_issue('gl', 42, ('voc-triage/bug',)) == ('voc-triage/bug',)
+    router.open_or_update_draft_pr('gl', BRANCH, 'main', 'Fix', 'Body', TREE, draft=False)
+    assert [body['title'] for body in api.bodies('POST', f'{P}/merge_requests')] == ['Fix']
 
 
 def test_the_router_delegates_every_operation_to_the_hosts_client() -> None:

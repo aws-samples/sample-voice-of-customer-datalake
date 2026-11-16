@@ -7,6 +7,7 @@ import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -156,7 +157,8 @@ def every_route(api: FakeGitHub) -> FakeGitHub:
             .on('GET', f'{REPO}/pulls/7/comments?per_page=30&page=1', answer(200, []))
             .on('GET', f'{REPO}/pulls/7/reviews?per_page=30&page=1', answer(200, []))
             .on('POST', f'{REPO}/issues/42/comments', answer(201, {'html_url': 'https://h/c/1'}))
-            .on('POST', f'{REPO}/issues/7/comments', answer(201, {'html_url': 'https://h/c/2'})))
+            .on('POST', f'{REPO}/issues/7/comments', answer(201, {'html_url': 'https://h/c/2'}))
+            .on('POST', f'{REPO}/issues/42/labels', answer(200, [{'name': 'voc-triage/bug'}])))
 
 
 @pytest.mark.parametrize(('operation', 'permissions'), [
@@ -166,6 +168,7 @@ def every_route(api: FakeGitHub) -> FakeGitHub:
     (lambda host: host.read('c', 'pull_request', '7', None), {'pull_requests': 'read'}),
     (lambda host: host.post_comment('c', 'issue', 42, 'Noted.'), {'issues': 'write'}),
     (lambda host: host.post_comment('c', 'pull_request', 7, 'Noted.'), {'pull_requests': 'write'}),
+    (lambda host: host.label_issue('c', 42, ('voc-triage/bug',)), {'issues': 'write'}),
 ])
 def test_each_operation_asks_only_for_the_permissions_it_needs(operation: Callable[[GitHubHost], object],
                                                                permissions: dict[str, str]) -> None:
@@ -451,6 +454,36 @@ def test_a_draft_pull_request_is_opened_when_the_branch_has_the_tree_and_checked
     assert api.calls()[-2:] == [('GET', f'{REPO}/pulls/8'), ('GET', f'{REPO}/git/commits/{PR_HEAD}')]
 
 
+def test_a_pull_request_ready_for_review_is_opened_when_the_flow_says_nothing_else() -> None:
+    api = draftable(FakeGitHub(), open_prs=[])
+    client(api).open_or_update_draft_pr('c', BRANCH, 'main', 'Fix', 'From fb_01.', TREE, draft=False)
+    assert writes(api) == [('POST', f'{REPO}/pulls',
+                            {'title': 'Fix', 'body': 'From fb_01.', 'head': BRANCH, 'base': 'main', 'draft': False})]
+
+
+@pytest.mark.parametrize('draft', [True, False])
+def test_an_update_never_changes_whether_the_pull_request_is_a_draft(draft: bool) -> None:
+    api = draftable(FakeGitHub(), open_prs=[{'number': 7, 'html_url': 'https://h/pull/7'}])
+    client(api).open_or_update_draft_pr('c', BRANCH, 'main', 'Fix', 'Body', TREE, draft=draft)
+    assert writes(api) == [('PATCH', f'{REPO}/pulls/7', {'title': 'Fix', 'body': 'Body'})]
+
+
+def test_an_issue_gets_its_triage_labels_added_and_nothing_removed() -> None:
+    api = FakeGitHub().on('POST', f'{REPO}/issues/42/labels', answer(200, [{'name': 'voc-triage/bug'}]))
+    assert client(api).label_issue('c', 42, ('voc-triage/bug', 'voc-severity/s2')) == (
+        'voc-triage/bug', 'voc-severity/s2')
+    assert writes(api) == [('POST', f'{REPO}/issues/42/labels', {'labels': ['voc-triage/bug', 'voc-severity/s2']})]
+
+
+def test_no_request_of_the_client_merges_approves_or_marks_a_pull_request_ready() -> None:
+    # Every write path this client can send (the source's request paths): none is a merge, a review approval or
+    # GitHub's ready-for-review mutation.
+    source = Path(github.__file__).read_text()
+    for forbidden in ('/merge', 'merges', 'APPROVE', 'ready_for_review', 'markPullRequestReadyForReview',
+                      'markReadyForReview', 'graphql'):
+        assert forbidden not in source, forbidden
+
+
 def test_an_open_pull_request_gets_its_text_updated_only() -> None:
     api = draftable(FakeGitHub(), open_prs=[{'number': 7, 'html_url': 'https://h/pull/7'}])
     ref = client(api).open_or_update_draft_pr('c', BRANCH, 'main', 'Fix', 'Body', TREE)
@@ -730,11 +763,12 @@ def test_no_token_or_jwt_is_ever_in_a_url_or_a_log_line(caplog: pytest.LogCaptur
 def test_the_client_has_no_merge_approve_settings_or_revoke_method() -> None:
     public = {name for name in dir(GitHubHost) if not name.startswith('_')}
     # Reads (a patch's base file, the default branch, the credential's repository, the branch rules, the reactions to
-    # a pull request, and since 7.47.00 a branch's head and an issue's state) and the three writes, and the checkout
-    # cache's read-only fetch token: nothing else (no method changes a branch rule).
+    # a pull request, and since 7.47.00 a branch's head and an issue's state) and the four writes (7.50.00: an issue's
+    # triage labels), and the checkout cache's read-only fetch token: nothing else (no method changes a branch rule,
+    # merges, approves or marks a pull request ready).
     assert public == {'read', 'file_at', 'default_branch', 'repository', 'ci_protection', 'post_comment',
                       'branch_tree_hash', 'push_bundle', 'open_or_update_draft_pr', 'fetch_token',
-                      'revoke_fetch_token', 'reactions', 'head_commit', 'issue_state'}
+                      'revoke_fetch_token', 'reactions', 'head_commit', 'issue_state', 'label_issue'}
 
 
 def test_a_revoked_fetch_token_is_deleted_once_and_never_reused() -> None:

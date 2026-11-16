@@ -18,11 +18,14 @@ Writes, and how each holds the broker's ``tree_hash``:
   is ``tree_hash``, and only then moves the branch, with ``force: false`` (a push made meanwhile is not a
   fast-forward of it and is refused), or creates it (refused when it was created meanwhile). Objects of a refused
   push stay unreferenced, and GitHub collects them;
-* a draft pull request, opened, or its title and body updated, only when the branch's head has ``tree_hash``, and
-  checked again afterwards: when the pull request's head does not have it (the branch moved meanwhile), or the
-  check itself fails, one the client just opened is closed and the write's outcome is unknown (OutcomeUnknown), never
-  refused, since the host already wrote. An update changes only the title and body: GitHub's REST
-  API cannot turn a pull request a person marked ready back into a draft.
+* labels added to an issue (7.50.00, ``issues: write``: the understander's triage labels, which the broker checks
+  against its allowlist first); nothing is removed;
+* a pull request, opened ready for review (or as a draft, when the run's flow says ``pr: draft``), or its title and
+  body updated, only when the branch's head has ``tree_hash``, and checked again afterwards: when the pull request's
+  head does not have it (the branch moved meanwhile), or the check itself fails, one the client just opened is closed
+  and the write's outcome is unknown (OutcomeUnknown), never refused, since the host already wrote. An update changes
+  only the title and body, never whether it is a draft (GitHub's REST API cannot turn a ready one back into a draft,
+  and this client never marks a draft ready).
 
 Reads: a file and history on the run's default branch (the broker hands it on: ``ref`` and ``sha``), an issue or a
 pull request with its thread, a patch's base file at the run's commit, and, for the CI attestation's check
@@ -129,6 +132,8 @@ _READS: Final[Mapping[ReadKind, Permissions]] = {
 }
 _COMMENTS: Final[Mapping[CommentTarget, Permissions]] = {
     'issue': {'issues': 'write'}, 'pull_request': {'pull_requests': 'write'}}
+#: An issue's labels (7.50.00): issues write, nothing else.
+_LABELS: Final[Permissions] = {'issues': 'write'}
 _PUSH: Final[Permissions] = {'contents': 'write'}
 _BRANCH: Final[Permissions] = {'contents': 'read'}
 #: The checkout cache's fetch of one commit (``fetch_token``): read, nothing else.
@@ -546,6 +551,12 @@ class GitHubHost:
                              body={'body': body}, ok=(201,))
         return _text(_json(response), 'html_url')
 
+    def label_issue(self, connection_id: str, number: int, labels: tuple[str, ...]) -> tuple[str, ...]:
+        """Add ``labels`` to issue ``number`` (GitHub creates a label the repository does not have yet)."""
+        self._api(connection_id, _LABELS, 'POST', f'/issues/{int(number)}/labels', 'the labels',
+                  body={'labels': list(labels)}, ok=(200,))
+        return labels
+
     def _entry(self, connection_id: str, change: FileChange) -> dict[str, object]:
         """A tree entry for ``change``: a deletion, a text file inline, any other file as a blob."""
         entry: dict[str, object] = {'path': change.path, 'mode': change.mode, 'type': 'blob'}
@@ -607,7 +618,7 @@ class GitHubHost:
                            "the board's GO is for.")
 
     def open_or_update_draft_pr(self, connection_id: str, branch: str, base: str, title: str, body: str,
-                                tree_hash: str) -> PullRequestRef:
+                                tree_hash: str, *, draft: bool = True) -> PullRequestRef:
         if self._branch_tree(connection_id, _DRAFT, branch) != tree_hash:
             raise Conflict("The branch's head does not have the tree the board's GO is for.")
         ref = self._open_pull_request(connection_id, _DRAFT, branch)
@@ -616,9 +627,9 @@ class GitHubHost:
             self._api(connection_id, _DRAFT, 'PATCH', f'/pulls/{ref.number}', 'the pull request update',
                       body={'title': title, 'body': body})
         else:
-            created = _json(self._api(connection_id, _DRAFT, 'POST', '/pulls', 'the draft pull request', ok=(201,),
+            created = _json(self._api(connection_id, _DRAFT, 'POST', '/pulls', 'the pull request', ok=(201,),
                                       body={'title': title, 'body': body, 'head': branch, 'base': base,
-                                            'draft': True}))
+                                            'draft': draft}))
             ref = _pull_request_ref(created)
         number = ref.number
         # (a pull request this call opened is never left open unchecked)

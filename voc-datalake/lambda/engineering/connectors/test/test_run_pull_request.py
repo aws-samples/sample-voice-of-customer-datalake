@@ -40,8 +40,8 @@ class AnsweringHost(FakeHost):
     answers: list[PullRequestRef | Exception] = field(default_factory=list)
 
     def open_or_update_draft_pr(self, connection_id: str, branch: str, base: str, title: str, body: str,
-                                tree_hash: str) -> PullRequestRef:
-        super().open_or_update_draft_pr(connection_id, branch, base, title, body, tree_hash)
+                                tree_hash: str, *, draft: bool = True) -> PullRequestRef:
+        super().open_or_update_draft_pr(connection_id, branch, base, title, body, tree_hash, draft=draft)
         answer = self.answers.pop(0)
         if isinstance(answer, Exception):
             raise answer

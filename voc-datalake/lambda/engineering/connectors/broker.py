@@ -20,8 +20,13 @@ Each write is made once per key, the caller's run, agent and attempt, the operat
 its caller never heard back from answers the first outcome and is never made twice; a host error leaves the outcome
 unknown (``OutcomeUnknown``, 502), and the write is not made again for that attempt.
 
-A pull request is always a draft: the host opens one as a draft, an update changes only its title and body, and
-there is no operation that marks one ready or merges it, in any mode. Since 7.47.00 a run started from an issue (META's
+A pull request opens ready for review (7.50.00, the owner's decision: a person approves it without a "Ready for
+review" click), or as a draft when the run's flow says ``pr: draft`` (META's ``pull_request``, ``RunRecord.draft_pr``);
+an update changes only its title and body, never whether it is a draft, and there is no operation that marks one
+ready, approves it or merges it, in any mode: a person approves and merges on the host, and the body the broker sends
+says so (``MERGE_IS_HUMAN``). Since 7.50.00 the understander also labels its run's issue (``label_issue``: the triage
+labels of ``outputs.TRIAGE_LABELS`` only, at most one kind and one severity, once per attempt; no dial, since a label
+changes no code). Since 7.47.00 a run started from an issue (META's
 ``issue``) comments on that issue alone, and its pull request's body names it, ``Fixes #N`` (GitLab: ``Closes #N``)
 added when the agent's body does not reference it (``closing_body``); and voc-engineering-start reads a connection's
 default branch's head and an issue's state (``head``, its operation alone) for a start that resolves its commit. Since 7.09.00, a pull request the host answered
@@ -74,6 +79,7 @@ from engineering.connectors.hosts import (
 )
 from engineering.connectors.identity import (
     AGENT_ROLES,
+    LABEL_ISSUE,
     OPEN_OR_UPDATE_DRAFT_PR,
     POST_COMMENT,
     PUSH_BUNDLE,
@@ -94,16 +100,18 @@ from engineering.connectors.write_policy import (
     check_text,
 )
 from engineering.run_links import pull_request_link
+from engineering.runtime.outputs import TRIAGE_LABELS
 from engineering.runtime.runs import ENDED
 from shared.ai_mode import MODE_AI_ASSISTED, MODE_AI_DRIVEN
 from shared.logging import logger, metrics
 
-#: Beyond reading, which every agent may do: the one write each writing role needs, and no other.
-_WRITES: Final[Mapping[str, str]] = {
-    'understander': POST_COMMENT,
-    'pr-reviewer': POST_COMMENT,
-    'committer': PUSH_BUNDLE,
-    'pr-author': OPEN_OR_UPDATE_DRAFT_PR,
+#: Beyond reading, which every agent may do: the writes each writing role needs, and no other (the understander's
+#: comment and its triage labels on the run's issue, 7.50.00; every other writer's one write).
+_WRITES: Final[Mapping[str, frozenset[str]]] = {
+    'understander': frozenset({POST_COMMENT, LABEL_ISSUE}),
+    'pr-reviewer': frozenset({POST_COMMENT}),
+    'committer': frozenset({PUSH_BUNDLE}),
+    'pr-author': frozenset({OPEN_OR_UPDATE_DRAFT_PR}),
 }
 HUMAN_DRIVEN_REFUSAL: Final = ('This run works Human-driven: its agents find and propose, and push no branch and '
                                'open no pull request. A person makes the change, or an administrator changes the '
@@ -131,7 +139,7 @@ class NotNow(WriteRefused):
 
 def permitted(role: str, operation: str) -> bool:
     """Whether an agent of ``role`` may make ``operation``."""
-    return role in AGENT_ROLES and (operation == READ or _WRITES.get(role) == operation)
+    return role in AGENT_ROLES and (operation == READ or operation in _WRITES.get(role, frozenset()))
 
 
 NOT_ATTESTED: Final = ("An administrator has not yet confirmed the repository's CI settings for agent branches "
@@ -265,6 +273,29 @@ class Broker:
 
         return str(_once(connector, caller, POST_COMMENT, attempt, comment, on, number, body)['url'])
 
+    def label_issue(self, caller: Caller, number: int, labels: tuple[str, ...], attempt: int = 1) -> tuple[str, ...]:
+        """Put the triage ``labels`` on the run's own issue ``number`` (the understander's, 7.50.00): the labels
+        added. Only ``TRIAGE_LABELS``, one or two, at most one kind (``voc-triage/*``) and one severity
+        (``voc-severity/*``); the run active, as every operation; no dial (a label changes no code) and no CI check.
+        Once per ``attempt`` (``_once``)."""
+        if not permitted(caller.role, LABEL_ISSUE):   # (the role first, before what it asks is judged)
+            raise NotPermitted(f'The {caller.role} role may not {LABEL_ISSUE.replace("_", " ")}.')
+        asked = _triage_labels(labels)
+        first = self._first_outcome(caller, LABEL_ISSUE, attempt, number, list(asked))
+        if first is not None:
+            return tuple(str(label) for label in _listed(first.get('labels')))
+        connector, run = self._open(caller, LABEL_ISSUE)
+        if run.issue_number is None or number != run.issue_number:
+            raise NotPermitted("An agent labels only its own run's issue.")
+
+        def label() -> dict[str, object]:
+            added = connector.host.label_issue(run.connection_id, number, asked)
+            _wrote(caller, LABEL_ISSUE, run, on='issue', number=number, labels=list(added))
+            return {'number': number, 'labels': list(added)}
+
+        done = _once(connector, caller, LABEL_ISSUE, attempt, label, number, list(asked))
+        return tuple(str(label) for label in _listed(done.get('labels')))
+
     def push_bundle(self, caller: Caller, branch: str, patch: str, tree_hash: str, message: str,
                     attempt: int = 1) -> str:
         """Push the caller's submitted ``patch`` (its key in the workspace) as one commit with ``message`` to one of
@@ -312,7 +343,8 @@ class Broker:
 
         def open_draft() -> dict[str, object]:
             ref = connector.host.open_or_update_draft_pr(run.connection_id, branch, run.default_branch, title,
-                                                         closing_body(body, run), tree_hash)
+                                                         merge_is_human(closing_body(body, run)), tree_hash,
+                                                         draft=run.draft_pr)
             _wrote(caller, OPEN_OR_UPDATE_DRAFT_PR, run, branch=branch, tree_hash=tree_hash, number=ref.number)
             # (the host answered with it, so it stands: kept on the run's record; an answer that never came, an
             # outcome unknown, records nothing, and the next open or update finds it by its branch)
@@ -396,6 +428,40 @@ def closing_body(body: str, run: RunRecord) -> str:
     if number is None or re.search(rf'(?<![\w/#])#{number}(?!\d)', body):
         return body
     return f'{body.rstrip()}\n\n{CLOSING_KEYWORDS.get(run.issue_host, "Fixes")} #{number}'
+
+
+#: The trusted line every pull request body the broker sends ends with (7.50.00): the merge is a person's.
+MERGE_IS_HUMAN: Final = ('Opened by an autonomous engineering run of the Voice of the Customer data lake. Only a '
+                         'person approves and merges it: the agents have no merge, approval or ready operation.')
+
+
+def merge_is_human(body: str) -> str:
+    """``body`` ending with ``MERGE_IS_HUMAN`` on its own line, once (a body that already ends with it, an update's
+    say, is kept as it is): trusted text the broker adds after the write rules read what the agent wrote."""
+    kept = body.rstrip()
+    if kept.endswith(MERGE_IS_HUMAN):
+        return kept
+    return f'{kept}\n\n---\n{MERGE_IS_HUMAN}'
+
+
+#: The two kinds of triage label (``outputs.TRIAGE_LABELS``): at most one of each on a call.
+_LABEL_KINDS: Final = ('voc-triage/', 'voc-severity/')
+
+
+def _triage_labels(labels: tuple[str, ...]) -> tuple[str, ...]:
+    """``labels`` when they are one or two of ``TRIAGE_LABELS``, at most one of each kind (``WriteRefused``
+    otherwise), in the order asked, each once."""
+    asked = tuple(dict.fromkeys(labels))
+    if not asked or len(asked) > len(_LABEL_KINDS) or any(label not in TRIAGE_LABELS for label in asked):
+        raise WriteRefused('An agent puts only the triage labels on its issue: one voc-triage/<kind> and one '
+                           'voc-severity/s<n> at most (' + ', '.join(sorted(TRIAGE_LABELS)) + ').')
+    if any(sum(label.startswith(kind) for label in asked) > 1 for kind in _LABEL_KINDS):
+        raise WriteRefused('An issue gets one triage kind and one severity: not two of either.')
+    return asked
+
+
+def _listed(value: object) -> list[object]:
+    return value if isinstance(value, list) else []
 
 
 #: Why a pull request the host answered with is not kept on the run's record (logged, never said to the agent: the

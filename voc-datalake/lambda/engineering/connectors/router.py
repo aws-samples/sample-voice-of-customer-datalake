@@ -68,9 +68,13 @@ class HostRouter:
                     default_branch: str) -> None:
         self._host(connection_id).push_bundle(connection_id, branch, contents, tree_hash, default_branch)
 
+    def label_issue(self, connection_id: str, number: int, labels: tuple[str, ...]) -> tuple[str, ...]:
+        return self._host(connection_id).label_issue(connection_id, number, labels)
+
     def open_or_update_draft_pr(self, connection_id: str, branch: str, base: str, title: str, body: str,
-                                tree_hash: str) -> PullRequestRef:
-        return self._host(connection_id).open_or_update_draft_pr(connection_id, branch, base, title, body, tree_hash)
+                                tree_hash: str, *, draft: bool = True) -> PullRequestRef:
+        return self._host(connection_id).open_or_update_draft_pr(connection_id, branch, base, title, body, tree_hash,
+                                                                 draft=draft)
 
     def reactions(self, connection_id: str, number: int, url: str, branch: str) -> PullRequestReactions:
         return self._host(connection_id).reactions(connection_id, number, url, branch)

@@ -290,6 +290,10 @@ class RunRecord:
     #: The host kind of the run's issue (META's ``issue``: ``github`` or ``gitlab``; '' for none), which says how its
     #: pull request names it (``Fixes #N`` / ``Closes #N``: broker.py ``closing_body``).
     issue_host: str = ''
+    #: Whether the run's pull request opens as a draft (7.50.00: META's ``pull_request``, the flow's ``pr``: ``ready``
+    #: by default, so a person can approve it without a "Ready for review" click; ``draft`` only when the flow says
+    #: so). Read at the open only: an update never changes it either way.
+    draft_pr: bool = False
 
 
 @dataclass(frozen=True)
@@ -458,13 +462,21 @@ class RepositoryHost(Protocol):
 
     def post_comment(self, connection_id: str, on: CommentTarget, number: int, body: str) -> str: ...
 
+    def label_issue(self, connection_id: str, number: int, labels: tuple[str, ...]) -> tuple[str, ...]:
+        """Add ``labels`` to issue ``number`` (7.50.00, the understander's triage labels; the broker checks the
+        allowlist first): the labels added, as asked. Adds only: nothing is removed or renamed."""
+        ...
+
     def branch_tree_hash(self, connection_id: str, branch: str) -> str | None: ...
 
     def push_bundle(self, connection_id: str, branch: str, contents: BundleContents, tree_hash: str,
                     default_branch: str) -> None: ...
 
     def open_or_update_draft_pr(self, connection_id: str, branch: str, base: str, title: str, body: str,
-                                tree_hash: str) -> PullRequestRef: ...
+                                tree_hash: str, *, draft: bool = True) -> PullRequestRef:
+        """Open the run's pull request from ``branch`` (``draft``: as a draft, else ready for review), or update an
+        open one's title and body only: an update never marks one ready nor turns one back into a draft."""
+        ...
 
     def reactions(self, connection_id: str, number: int, url: str, branch: str) -> PullRequestReactions:
         """People's reactions to the pull request ``number`` (its record's address ``url``), the revert and the edits

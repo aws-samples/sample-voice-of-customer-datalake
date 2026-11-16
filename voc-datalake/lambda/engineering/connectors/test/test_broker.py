@@ -7,6 +7,7 @@ from dataclasses import dataclass, replace
 import pytest
 
 from engineering.connectors.broker import (
+    MERGE_IS_HUMAN,
     OPEN_OR_UPDATE_DRAFT_PR,
     OTHER_REPOSITORY,
     POST_COMMENT,
@@ -15,6 +16,7 @@ from engineering.connectors.broker import (
     Broker,
     NotNow,
     NotPermitted,
+    merge_is_human,
     permitted,
 )
 from engineering.connectors.hosts import (
@@ -468,14 +470,39 @@ def test_a_file_and_history_are_read_on_the_runs_stored_default_branch() -> None
     assert ('conn-1', 'develop') in host.branch_lookups   # (confirmed on the host first)
 
 
-def test_the_pr_author_opens_a_draft_against_the_default_branch_with_a_go() -> None:
+def test_the_pr_author_opens_a_pull_request_ready_for_review_against_the_default_branch_with_a_go() -> None:
     broker, host = go_broker()
     ref = broker.open_or_update_draft_pr(caller('pr-author'), BRANCH, 'Fix the refund total', 'fb_0123abcd')
     assert ref == OPEN_PR
     # The host gets the GO'd tree, and must verify the branch's head has it before opening or updating; the run's issue
-    # (#42) is named on its own line, so the merge closes it (7.47.00).
+    # (#42) is named on its own line, so the merge closes it (7.47.00); the body ends saying the merge is a person's,
+    # and a run whose flow says nothing opens it ready for review (7.50.00).
     assert host.calls[-1] == ('open_or_update_draft_pr', 'conn-1', BRANCH, 'main', 'Fix the refund total',
-                              'fb_0123abcd\n\nFixes #42', TREE)
+                              f'fb_0123abcd\n\nFixes #42\n\n---\n{MERGE_IS_HUMAN}', TREE)
+    assert host.drafts == [False]
+
+
+def test_a_run_whose_flow_says_pr_draft_opens_a_draft() -> None:
+    host = FakeHost()
+    broker = Broker(connector(host=host, runs=FakeRuns({RUN: record(draft_pr=True)})))
+    broker.open_or_update_draft_pr(caller('pr-author'), BRANCH, 'Fix the refund total', 'fb_0123abcd')
+    assert host.drafts == [True]
+
+
+@pytest.mark.parametrize('body', [f'Body\n\n---\n{MERGE_IS_HUMAN}', f'Body\n\n---\n{MERGE_IS_HUMAN}\n\n'])
+def test_the_merge_line_is_said_once_whatever_the_agents_body_already_holds(body: str) -> None:
+    assert merge_is_human(body) == f'Body\n\n---\n{MERGE_IS_HUMAN}'
+    assert merge_is_human(merge_is_human('Body')).count(MERGE_IS_HUMAN) == 1
+
+
+def test_the_broker_has_no_merge_approve_or_ready_operation_of_any_kind() -> None:
+    # Its operations are the reads and the writes the roles make, and the runtime's and the start's reads: nothing
+    # merges, approves or marks a pull request ready, whatever the mode (TENETS.md tenet 3: only a person does).
+    public = {name for name in dir(Broker) if not name.startswith('_')}
+    assert public == {'read', 'post_comment', 'label_issue', 'push_bundle', 'open_or_update_draft_pr', 'reactions',
+                      'head'}
+    for name in public:
+        assert not any(word in name for word in ('merge', 'approve', 'ready'))
 
 
 def test_no_pull_request_without_a_go_for_the_branchs_tree() -> None:

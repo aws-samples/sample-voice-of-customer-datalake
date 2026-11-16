@@ -147,8 +147,9 @@ class GitHost:
         self.writes.append(('push_bundle', branch, rebuilt))
 
     def open_or_update_draft_pr(self, connection_id: str, branch: str, base: str, title: str, body: str,
-                                tree_hash: str) -> PullRequestRef:
-        assert (connection_id, base, bool(title and body)) == ('conn-1', 'main', True)
+                                tree_hash: str, *, draft: bool = True) -> PullRequestRef:
+        # (a flow without ``pr: draft``: ready for review, 7.50.00)
+        assert (connection_id, base, bool(title and body), draft) == ('conn-1', 'main', True, False)
         if self.branches.get(branch) != tree_hash:
             raise Conflict("The branch's head is not the checked tree.")
         self.writes.append(('open_or_update_draft_pr', branch, tree_hash))

@@ -151,10 +151,18 @@ class FakeHost:
                     default_branch: str) -> None:
         self.calls.append(('push_bundle', connection_id, branch, contents, tree_hash, default_branch))
 
+    #: Whether each open asked for a draft (apart from ``calls``).
+    drafts: list[bool] = field(default_factory=list)
+
     def open_or_update_draft_pr(self, connection_id: str, branch: str, base: str, title: str, body: str,
-                                tree_hash: str) -> PullRequestRef:
+                                tree_hash: str, *, draft: bool = True) -> PullRequestRef:
         self.calls.append(('open_or_update_draft_pr', connection_id, branch, base, title, body, tree_hash))
+        self.drafts.append(draft)
         return PullRequestRef(number=7, url='https://code.example.com/pull/7')
+
+    def label_issue(self, connection_id: str, number: int, labels: tuple[str, ...]) -> tuple[str, ...]:
+        self.calls.append(('label_issue', connection_id, number, labels))
+        return labels
 
     #: What a reactions read answers (by default an open pull request with nothing on it, on GitHub).
     reactions_found: PullRequestReactions = field(default_factory=lambda: PullRequestReactions(
@@ -166,7 +174,8 @@ class FakeHost:
 
     def writes(self) -> list[str]:
         """The names of the write calls the host saw."""
-        return [str(c[0]) for c in self.calls if c[0] in {'post_comment', 'push_bundle', 'open_or_update_draft_pr'}]
+        return [str(c[0]) for c in self.calls
+                if c[0] in {'post_comment', 'push_bundle', 'open_or_update_draft_pr', 'label_issue'}]
 
 
 @dataclass

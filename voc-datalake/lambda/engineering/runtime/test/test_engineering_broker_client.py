@@ -196,6 +196,24 @@ def test_each_writer_makes_its_one_write_as_its_own_session_through_the_brokers_
     assert {wait for *_, wait in url.calls} == {TIMEOUT_SECONDS}
 
 
+def test_the_understander_comments_on_and_labels_its_runs_issue_through_the_broker():
+    host = FakeHost()
+    url = _broker(host=host)
+    understander = _client(url, 'understander-2')
+    commented = understander.comment(RUN, 'understander-2', number=42, body='Triage: a bug, severity S2.',
+                                     on='issue')
+    labelled = understander.label_issue(RUN, 'understander-2', number=42,
+                                        labels=('voc-triage/bug', 'voc-severity/s2'))
+    assert commented == {'url': 'https://code.example.com/issue/42#comment-1'}
+    assert labelled == {'number': 42, 'labels': ['voc-triage/bug', 'voc-severity/s2']}
+    assert host.writes() == ['post_comment', 'label_issue']
+    with pytest.raises(ValueError, match="pull request or its issue"):
+        understander.comment(RUN, 'understander-2', number=42, body='b', on='commit')
+    # Another role's label is the broker's refusal, said plainly.
+    with pytest.raises(BrokerRefused, match='The pr-reviewer role may not label issue'):
+        _client(url, 'pr-reviewer-5').label_issue(RUN, 'pr-reviewer-5', number=42, labels=('voc-triage/bug',))
+
+
 @pytest.mark.parametrize(('agent_id', 'call', 'status', 'reason'), [
     # The write rules by role: a fixer pushes nothing; the committer comments on nothing.
     ('fixer-2', lambda c: c.push(RUN, 'fixer-2', branch=BRANCH, patch_key=PATCH, tree_hash=TREE, message='m'), 403,
@@ -321,6 +339,7 @@ WRITES: Final = {
     'push': lambda c: c.push(RUN, 'committer-3', branch=BRANCH, patch_key=PATCH, tree_hash=TREE, message='m'),
     'open_draft_pr': lambda c: c.open_draft_pr(RUN, 'committer-3', branch=BRANCH, title='t', body='b'),
     'comment': lambda c: c.comment(RUN, 'committer-3', number=7, body='b'),
+    'label_issue': lambda c: c.label_issue(RUN, 'committer-3', number=42, labels=('voc-triage/bug',)),
 }
 #: What may hide a write the broker made: no whole answer, a 5xx other than the broker's own 503, a 200 the client
 #: cannot read.
@@ -381,13 +400,13 @@ def test_each_write_carries_the_agents_attempt():
     class Recording:
         def call(self, operation: str, args: Any) -> dict[str, Any]:
             sent.append({'operation': operation, **args})
-            return {'branch': BRANCH, 'tree_hash': TREE, 'number': 7, 'url': 'u'}
+            return {'branch': BRANCH, 'tree_hash': TREE, 'number': 7, 'url': 'u', 'labels': ['voc-triage/bug']}
 
     client = BrokerHttp(Recording(), RUN, 'committer-3', COMMIT, attempt=4)
     for write in WRITES.values():
         write(client)
     assert [(body['operation'], body['attempt']) for body in sent] == [
-        ('push_bundle', 4), ('open_or_update_draft_pr', 4), ('post_comment', 4)]
+        ('push_bundle', 4), ('open_or_update_draft_pr', 4), ('post_comment', 4), ('label_issue', 4)]
 
 
 def test_a_page_off_its_shape_and_a_read_of_an_unknown_kind_are_refused():

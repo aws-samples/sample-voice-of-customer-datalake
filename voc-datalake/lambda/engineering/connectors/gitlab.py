@@ -29,9 +29,14 @@ Writes, and how each holds the broker's ``tree_hash``:
   meanwhile). GitLab's Commits API has no lease on an existing branch's head, so after the write each new commit's
   parent and the last one's tree are read back: a commit that landed on another head, or with another tree, is an
   unknown outcome (``OutcomeUnknown``), and a branch this push created is deleted again;
-* a draft merge request (its title ``Draft: …``), opened, or its title and description updated, only when the
-  branch's head has ``tree_hash``, and checked again afterwards: when its head does not have it, or the check fails,
-  one the client just opened is closed and the outcome is unknown, never refused, since the host already wrote.
+* labels added to an issue (7.50.00: the understander's triage labels, ``add_labels``, which the broker checks
+  against its allowlist first); nothing is removed;
+* a merge request, opened ready for review (or as a draft, its title ``Draft: …``, when the run's flow says
+  ``pr: draft``), or its title and description updated, only when the branch's head has ``tree_hash``, and checked
+  again afterwards: when its head does not have it, or the check fails, one the client just opened is closed and the
+  outcome is unknown, never refused, since the host already wrote. An update keeps whether it is a draft: its title
+  keeps or drops the draft marker as the merge request has it now (GitLab's ``draft``), and when GitLab does not say,
+  only its description is written.
 
 Since 7.10.00 it also reads people's reactions to the run's merge request (``reactions``, ``gitlab_reactions.py``):
 its notes, the commits on the default branch after its merge and its files' names, and a note author's access level
@@ -204,6 +209,29 @@ def _push_rule_refuses(rule: object, branch: str) -> bool:
 def draft_title(title: str) -> str:
     """``title`` as a draft merge request's: ``Draft: `` in front, once."""
     return title if title.startswith(DRAFT_PREFIX) else f'{DRAFT_PREFIX}{title}'
+
+
+#: The title markers GitLab reads as a draft (``Draft:``, ``[Draft]``, ``(Draft)``, any case), at the start.
+_DRAFT_MARKER: Final = re.compile(r'\A\s*(?:draft:|\[draft\]|\(draft\))\s*', re.IGNORECASE)
+
+
+def ready_title(title: str) -> str:
+    """``title`` as a merge request's ready for review: every draft marker GitLab reads taken off its start, so the
+    agent's text never makes it a draft."""
+    while (marker := _DRAFT_MARKER.match(title)) is not None and marker.end() > 0:
+        title = title[marker.end():]
+    return title or 'Merge request'
+
+
+def _kept_title(title: str, found: object) -> str | None:
+    """An update's title, keeping whether the open merge request is a draft (GitLab's ``draft``); None when GitLab
+    does not say (the update then writes the description only, so it never marks one ready or makes one a draft)."""
+    draft = dig(found, 'draft')
+    if draft is True:
+        return draft_title(ready_title(title))
+    if draft is False:
+        return ready_title(title)
+    return None
 
 
 def _stray_changes(contents: BundleContents) -> list[str]:
@@ -546,6 +574,12 @@ class GitLabHost:
         kind = 'issues' if on == 'issue' else 'merge_requests'
         return f'{GITLAB_URL}{self.repository(connection_id)}/-/{kind}/{number}#note_{note}'
 
+    def label_issue(self, connection_id: str, number: int, labels: tuple[str, ...]) -> tuple[str, ...]:
+        """Add ``labels`` to issue ``number`` (``add_labels``: GitLab creates a label the project does not have yet)."""
+        self._api(connection_id, 'PUT', f'/{_THREADS["issue"]}/{int(number)}', 'the labels',
+                  body={'add_labels': ','.join(labels)})
+        return labels
+
     def ci_definitions(self, connection_id: str, commit: str) -> tuple[str, ...]:
         """The project's CI definitions at ``commit``, pinned or refused (``gitlab_ci.pinned``): its CI file and every
         local file its includes reach, each file parsed and walked; GitLab's CI lint there a cross-check. A lint the
@@ -704,7 +738,7 @@ class GitLabHost:
             raise Conflict("The branch moved while the merge request was written: its head does not have the tree "
                            "the board's GO is for.")
 
-    def _open_merge_request(self, connection_id: str, branch: str, base: str) -> PullRequestRef | None:
+    def _open_merge_request(self, connection_id: str, branch: str, base: str) -> tuple[PullRequestRef, object] | None:
         """The open merge request from this project's ``branch`` into ``base`` (a fork's of the same branch name, or
         one into another branch, is not the run's), paging up to ``MAX_MERGE_REQUEST_PAGES``: past them it is
         refused, nothing written, rather than open a second one."""
@@ -718,7 +752,7 @@ class GitLabHost:
             ours = [item for item in (found if isinstance(found, list) else [])
                     if dig(item, 'source_project_id') == project_id and dig(item, 'target_branch') == base]
             if ours:
-                return _merge_request_ref(ours[0])
+                return _merge_request_ref(ours[0]), ours[0]
             page = next_page(response.headers)
             if page is None:
                 return None
@@ -726,16 +760,19 @@ class GitLabHost:
                            'was opened.')
 
     def open_or_update_draft_pr(self, connection_id: str, branch: str, base: str, title: str, body: str,
-                                tree_hash: str) -> PullRequestRef:
+                                tree_hash: str, *, draft: bool = True) -> PullRequestRef:
         if self.branch_tree_hash(connection_id, branch) != tree_hash:
             raise Conflict("The branch's head does not have the tree the board's GO is for.")
-        ref = self._open_merge_request(connection_id, branch, base)
-        opened = ref is None
-        text = {'title': draft_title(title), 'description': body}
-        if ref is not None:
+        found = self._open_merge_request(connection_id, branch, base)
+        opened = found is None
+        if found is not None:
+            ref, item = found
+            kept = _kept_title(title, item)
+            text = {'description': body} if kept is None else {'title': kept, 'description': body}
             self._api(connection_id, 'PUT', f'/merge_requests/{ref.number}', 'the merge request update', body=text)
         else:
-            created = json_of(self._api(connection_id, 'POST', '/merge_requests', 'the draft merge request',
+            text = {'title': draft_title(ready_title(title)) if draft else ready_title(title), 'description': body}
+            created = json_of(self._api(connection_id, 'POST', '/merge_requests', 'the merge request',
                                         ok=(201,), body={**text, 'source_branch': branch, 'target_branch': base,
                                                          'remove_source_branch': False}))
             ref = _merge_request_ref(created)

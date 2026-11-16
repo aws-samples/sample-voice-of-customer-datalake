@@ -11,8 +11,10 @@ the body, so nothing a session sends can speak for another, and it alone decides
 
 - ``read``: a page of a file, a history, an issue or a pull request (every role's). Retried on a 503 or a lost
   connection, twice, backing off: reading twice reads once.
-- ``push`` (the committer's ``push_bundle``), ``open_draft_pr`` (the PR author's ``open_or_update_draft_pr``) and
-  ``comment`` (the PR reviewer's ``post_comment``): sent once and never retried, each with the agent's attempt, so
+- ``push`` (the committer's ``push_bundle``), ``open_draft_pr`` (the PR author's ``open_or_update_draft_pr``: the
+  run's pull request, ready for review unless the run's flow says ``pr: draft``), ``comment`` (the PR reviewer's
+  ``post_comment``, and the understander's on the run's issue) and ``label_issue`` (7.50.00, the understander's triage
+  labels on the run's issue): sent once and never retried, each with the agent's attempt, so
   the broker makes it at most once for the agent's attempt and answers a repeat with the first outcome
   (connectors/broker.py ``_once``). A write whose outcome the client cannot know (its answer lost, cut or
   unreadable, a timeout, or a 5xx other than the broker's own 503, which says nothing was written) is
@@ -36,7 +38,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Final, Protocol
 
-from engineering.connectors.identity import OPEN_OR_UPDATE_DRAFT_PR, POST_COMMENT, PUSH_BUNDLE, READ
+from engineering.connectors.identity import LABEL_ISSUE, OPEN_OR_UPDATE_DRAFT_PR, POST_COMMENT, PUSH_BUNDLE, READ
 from engineering.runtime.checkpoints import agent_prefix
 from engineering.runtime.harness.board_client import RETRY_WAITS, json_object, signed_post
 from engineering.runtime.harness.ports import BrokerRefused, WriteOutcomeUnknown
@@ -222,3 +224,11 @@ class BrokerHttp:
         result = self.transport.call(POST_COMMENT, {'on': on, 'number': number, 'body': body,
                                                     'attempt': self.attempt})
         return _shaped(result, {'url': str})
+
+    def label_issue(self, run_id: str, agent_id: str, *, number: int, labels: tuple[str, ...]) -> dict[str, Any]:
+        """The triage ``labels`` on the run's own issue ``number`` (the understander's; the broker checks the role,
+        the issue and the allowlist)."""
+        self._own(run_id, agent_id)
+        result = self.transport.call(LABEL_ISSUE, {'number': number, 'labels': list(labels),
+                                                   'attempt': self.attempt})
+        return _shaped(result, {'number': int, 'labels': list})
