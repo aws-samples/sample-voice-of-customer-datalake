@@ -973,7 +973,7 @@ def transport(reply: FakeAnswer | Exception, *, send_fails: bool = False) -> tup
     def connect(host: str, timeout: float, context: object) -> FakeConnection:
         made.append(FakeConnection(host, timeout, context, reply, send_fails))
         return made[-1]
-    return HttpsTransport(connect=connect, host=API_HOST, repeatable=github._TOKEN_PATH), made
+    return HttpsTransport(connect=connect, host=API_HOST, repeatable=github.TOKEN_PATH), made
 
 
 def test_the_transport_talks_only_to_the_api_host_and_lower_cases_headers() -> None:
@@ -1023,5 +1023,5 @@ def test_a_write_that_never_left_is_retryable() -> None:
 def test_the_default_transport_is_https() -> None:
     default = GitHubHost(lambda _: credential())._transport
     assert isinstance(default, HttpsTransport)
-    assert (default._host, default._repeatable) == (API_HOST, github._TOKEN_PATH)
+    assert (default._host, default._repeatable) == (API_HOST, github.TOKEN_PATH)
     assert HttpsTransport()._connect is http.client.HTTPSConnection

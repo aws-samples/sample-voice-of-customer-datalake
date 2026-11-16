@@ -418,6 +418,9 @@ export const OPTIONAL_FUNCTION_SIZES: Readonly<Record<string, number>> = {
   'voc-email-intake': 1024,
   // `-c engineeringAgents=true` (docs/autonomous-engineering.md): the connector broker, not measured yet.
   'voc-engineering-broker': 256,
+  // The GitHub Apps' token function (7.45.00, lib/stacks/engineering-app-tokens.ts): one RS256 signature and a few
+  // GitHub requests per call, I/O-bound, not measured yet.
+  'voc-engineering-app-tokens': 256,
   // The engineering bus (lib/stacks/engineering-bus.ts): the inbox router and the board API, not measured yet.
   'voc-engineering-router': 256,
   'voc-engineering-board': 256,

@@ -422,6 +422,8 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/engineering/board/store.py': (3, {'transact': 2}),
     'lambda/engineering/connectors/cache.py': (3, {'put_object': 2}),
     'lambda/engineering/connectors/connections.py': (3, {'meta.client': 3, 'transact': 3}),
+    # The deployment's GitHub Apps (7.45.00): an App's row with its audit row, in the connections' partition.
+    'lambda/engineering/connectors/github_apps.py': (3, {'meta.client': 1, 'transact': 1}),
     # The broker's one Table call is voc-aggregates: the starter's way of working (USERFLAGS#{sub}, shared/ai_mode.py),
     # a person's flag, the deployment's on this branch; when the dial moves per workspace, the push gate moves with it.
     'lambda/engineering/connectors/handler.py': (3, {'Table': 1}),

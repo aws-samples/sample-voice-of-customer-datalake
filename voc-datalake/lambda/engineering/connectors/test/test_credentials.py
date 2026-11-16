@@ -19,7 +19,15 @@ from engineering.connectors.credentials import (
     parse_stored,
 )
 from engineering.connectors.hosts import NoConnection
-from engineering.connectors.test.app_keys import APP_ID, INSTALLATION_ID, OWNER, REPOSITORY, parameter_value, pem
+from engineering.connectors.test.app_keys import (
+    APP_ID,
+    INSTALLATION_ID,
+    OWNER,
+    REPOSITORY,
+    parameter_value,
+    pem,
+    private_key,
+)
 
 PREFIX = '/voc/engineering/'
 
@@ -159,3 +167,66 @@ def test_a_gitlab_value_off_its_shape_is_unusable_and_never_quoted(text: str) ->
     with pytest.raises(CredentialUnusable) as caught:
         parse_stored(text)
     assert GITLAB_TOKEN not in str(caught.value)
+
+
+# --- a connection made through one of the deployment's GitHub Apps (7.45.00) -----------------------------------------
+
+
+def reference(**change: Any) -> str:
+    value: dict[str, Any] = {'app_id': APP_ID, 'installation_id': INSTALLATION_ID, 'repository': f'{OWNER}/{REPOSITORY}',
+                             'key': 'app', **change}
+    return json.dumps(value)
+
+
+def store_app_key(ssm: Any, **change: Any) -> None:
+    ssm.put_parameter(Name=f'{PREFIX}_github-app/{APP_ID}/key', Type='SecureString', Overwrite=True,
+                      Value=json.dumps({'app_id': APP_ID, 'slug': 'voc-agents-x', 'private_key': pem(), **change}))
+
+
+def test_a_reference_is_resolved_to_its_apps_key_by_a_second_read(ssm: Any) -> None:
+    store(ssm, 'conn-app', reference())
+    store_app_key(ssm)
+    found = ParameterStoreCredentials(PREFIX, client=lambda: ssm).get('conn-app')
+    assert (found.app_id, found.installation_id, found.owner, found.repository) == (
+        APP_ID, INSTALLATION_ID, OWNER, REPOSITORY)
+    assert found.private_key.private_numbers() == private_key().private_numbers()
+
+
+def test_the_apps_key_is_kept_for_the_cache_window_across_its_connections(ssm: Any) -> None:
+    store(ssm, 'conn-a', reference())
+    store(ssm, 'conn-b', reference(repository=f'{OWNER}/other'))
+    store_app_key(ssm)
+    clock = Clock()
+    source = ParameterStoreCredentials(PREFIX, client=lambda: ssm, clock=clock)
+    source.get('conn-a')
+    ssm.delete_parameter(Name=f'{PREFIX}_github-app/{APP_ID}/key')   # (a removed App: its key goes)
+    assert source.get('conn-b').repository == 'other'   # (the key read for conn-a, kept)
+    clock.now += CACHE_SECONDS + 1
+    with pytest.raises(NoConnection):
+        source.get('conn-a')
+
+
+@pytest.mark.parametrize(('connection', 'app_key'), [
+    (reference(), {'app_id': '999999'}),                    # (a key parameter naming another App)
+    (reference(), {'private_key': 'not a key'}),
+    (reference(private_key=pem()), {}),                       # (a reference never carries a key of its own)
+    (reference(key='other'), {}),                             # (no key, and not a reference)
+])
+def test_a_reference_off_its_shape_or_another_apps_key_is_unusable(ssm: Any, connection: str,
+                                                                   app_key: dict[str, Any]) -> None:
+    store(ssm, 'conn-app', connection)
+    store_app_key(ssm, **app_key)
+    with pytest.raises(CredentialUnusable) as caught:
+        ParameterStoreCredentials(PREFIX, client=lambda: ssm).get('conn-app')
+    assert 'PRIVATE KEY' not in str(caught.value)
+
+
+def test_a_reference_without_its_apps_key_has_no_connection_and_logs_only_the_app(
+        ssm: Any, caplog: pytest.LogCaptureFixture) -> None:
+    store(ssm, 'conn-app', reference())
+    with pytest.raises(NoConnection):
+        ParameterStoreCredentials(PREFIX, client=lambda: ssm).get('conn-app')
+    assert [(r.getMessage(), vars(r)['app_id']) for r in caplog.records] == [
+        ('engineering GitHub App key not read', APP_ID)]
+    with pytest.raises(CredentialUnusable):
+        parse_credential(reference())   # (a reference parsed with no reader of App keys)

@@ -37,7 +37,11 @@
     "radar": "レーダー",
     "featureRequests": "フィードバックボード",
     "participants": "参加者",
-    "oauthConsent": "アシスタントを承認"
+    "oauthConsent": "アシスタントを承認",
+    "connections": "接続",
+    "github": "GitHub",
+    "githubAppCreated": "App 作成済み",
+    "githubAppInstalled": "App インストール済み"
   },
   "cancel": "キャンセル",
   "configureBrand": "ブランドを設定",

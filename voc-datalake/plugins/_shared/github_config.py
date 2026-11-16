@@ -12,12 +12,19 @@ writes every manifest field there):
   before that day are not ingested;
 * ``exclude_associations`` (optional): comma-separated GitHub author
   associations (``OWNER, MEMBER, COLLABORATOR``) whose issues and comments are
-  not customer voice.
+  not customer voice;
+* ``github_app_id`` (optional, 7.45.00): one of the deployment's GitHub Apps
+  (Agents → Connections), which a deployment-wide run signs in with instead of
+  ``token``, and whose webhook secret checks the App's deliveries. Anything
+  but an App's id (digits, as ``none`` the Settings page saves to clear it) is no
+  App: the token, and the repository webhook's secret, as before.
 """
 
 import re
 from dataclasses import dataclass
 from datetime import date
+
+from shared.github_rest import GITHUB_NUMBER
 
 __all__ = ["GitHubSourceConfig"]
 
@@ -59,6 +66,12 @@ def parse_repo(candidate: str) -> str | None:
     return repo if _REPO.fullmatch(repo) else None
 
 
+def _app_id(value: object) -> str | None:
+    """A GitHub App's id, or None for anything else (unset, ``none``, a typo)."""
+    text = value.strip() if isinstance(value, str) else ""
+    return text if GITHUB_NUMBER.fullmatch(text) else None
+
+
 def _created_after(value: object) -> str | None:
     """``YYYY-MM-DD`` → GitHub's timestamp form at midnight UTC, or None when unset or invalid."""
     if not isinstance(value, str) or not value.strip():
@@ -80,6 +93,8 @@ class GitHubSourceConfig:
     #: GitHub-format timestamp (``2026-01-01T00:00:00Z``), or None for no lower bound.
     created_after: str | None = None
     excluded_associations: frozenset[str] = frozenset()
+    #: The deployment's GitHub App a deployment-wide run signs in with, or None (the token).
+    github_app_id: str | None = None
 
     @classmethod
     def from_secrets(cls, secrets: dict) -> "GitHubSourceConfig":
@@ -104,6 +119,7 @@ class GitHubSourceConfig:
             rejected_repos=tuple(rejected),
             created_after=_created_after(secrets.get("created_after")),
             excluded_associations=frozenset(associations & AUTHOR_ASSOCIATIONS),
+            github_app_id=_app_id(secrets.get("github_app_id")),
         )
 
     def admits_labels(self, labels: list[str]) -> bool:

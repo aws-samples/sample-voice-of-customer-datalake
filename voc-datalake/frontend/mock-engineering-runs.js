@@ -22,6 +22,8 @@
 //   GET  /agents/engineering/connections   the repository connections {connections, limit} (admin; never a secret)
 //   PUT|DELETE /agents/engineering/connections/<id>   store one with its GitHub App credential, or keep the stored one
 //   POST|DELETE /agents/engineering/connections/<id>/ci-attestation   attest its CI (every point), or withdraw it
+//   …/agents/engineering/github-apps…   the deployment's GitHub Apps (7.45.00): mock-github-apps.js, over the
+//                     connections here ('billing-api' goes through the sample App, a reference to its key)
 //                     (the server's field checks; 409 past the limit or for a repository change with live runs) | remove
 //                     one (404 for an unknown id)
 //   GET  /agents/engineering/spend?month=&by=&workflow=   the spend ledger's month, grouped (admin; 400 for a bad
@@ -30,6 +32,8 @@
 // MOCK_AGENTS_NON_ADMIN=1 makes the caller a non-admin: 403 on every route, as the server answers (admins only).
 // Wired into mock-server.js by handleDomainModules (before the agents routes, which would read `engineering` as an
 // agent id).
+
+import { handleGitHubAppRoutes } from './mock-github-apps.js';
 
 const SAMPLE_RUN_ID = '01JDA7K3M9Q2R5T8V0W4X6Y1Z3';
 export const SAMPLE_FLOW_ID = 'wf_7c2d9e41a0b3';
@@ -545,12 +549,18 @@ const connections = new Map([['storefront', {
   connection_id: 'storefront', host: 'github', repository: 'example-org/storefront', default_branch: 'main',
   credential: { kind: 'app', set: true, app_id: '104729', installation_id: '7919001', expires_at: null },
   created_at: minutesAgo(60 * 24 * 9), created_by: 'admin-demo', updated_at: minutesAgo(60 * 24 * 2), updated_by: 'admin-demo',
-  version: 3,
+  version: 3, repository_private: null,
+}], ['billing-api', {
+  // (saved by the sample GitHub App's installation, mock-github-apps.js: a reference to the App's key, stored once)
+  connection_id: 'billing-api', host: 'github', repository: 'example-org/billing-api', default_branch: 'main',
+  credential: { kind: 'app_reference', set: true, app_id: '271828', installation_id: '31415926', expires_at: null },
+  created_at: minutesAgo(60 * 24 * 5), created_by: 'admin-demo', updated_at: minutesAgo(60 * 24 * 5), updated_by: 'admin-demo',
+  version: 1, repository_private: true,
 }], ['docs-site', {
   connection_id: 'docs-site', host: 'gitlab', repository: 'example-group/web/docs-site', default_branch: 'main',
   credential: { kind: 'project_token', set: true, app_id: null, installation_id: null, expires_at: dayAhead(12) },
   created_at: minutesAgo(60 * 24 * 340), created_by: 'admin-demo', updated_at: minutesAgo(60 * 24 * 340), updated_by: 'admin-demo',
-  version: 1,
+  version: 1, repository_private: null,
 }]]);
 const DIGITS = /^[1-9]\d{0,19}$/;
 const GITLAB_TOKEN = /^glpat-[A-Za-z0-9_.-]{20,300}$/;
@@ -644,6 +654,7 @@ function saveConnection(id, body) {
   const now = new Date().toISOString();
   const connection = {
     connection_id: id, host: body.host, repository: body.repository, default_branch: body.default_branch, credential,
+    repository_private: moved || before === undefined ? null : before.repository_private,
     created_at: before?.created_at ?? now, created_by: before?.created_by ?? 'admin-demo', updated_at: now, updated_by: 'admin-demo',
     version: (before?.version ?? 0) + 1,
   };
@@ -784,6 +795,7 @@ const EXACT_ROUTES = { runs: startRoute, settings: settingsRoute, spend: spendRo
 
 export function handleEngineeringRunRoutes(req, res, url, send, shared) {
   if (!url.pathname.startsWith(PREFIX)) return false;
+  if (handleGitHubAppRoutes(req, res, url, send, shared, { connections, connectionLimit: CONNECTION_LIMIT, isAdmin })) return true;
   const connection = CONNECTION_PATH.exec(url.pathname);
   if (connection) {
     connectionsRoute(req, res, send, shared, connection[1] === undefined ? undefined : decodeURIComponent(connection[1]),

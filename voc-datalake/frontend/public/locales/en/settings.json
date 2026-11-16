@@ -373,7 +373,15 @@
     "advanced": "Advanced",
     "advancedRawHint": "The raw configuration behind the scrapers on the Data sources page. Add and edit scrapers there instead.",
     "runsOnUpload": "Runs on upload",
-    "runsOnDemand": "Runs on demand — no schedule"
+    "runsOnDemand": "Runs on demand — no schedule",
+    "githubSignIn": {
+      "label": "Sign in with",
+      "token": "A fine-grained token",
+      "app": "One of this deployment's GitHub Apps",
+      "appLabel": "GitHub App",
+      "appHint": "Each run gets a short-lived token from the App for these repositories only (Issues and Metadata, read-only) and gives it back at its end. Install the App on the repositories first (Agents → Connections).",
+      "tokenHint": "A fine-grained personal access token with read-only Issues and Metadata on these repositories."
+    }
   },
   "subtitle": "Configure the platform for everyone (administrators only).",
   "tabs": {

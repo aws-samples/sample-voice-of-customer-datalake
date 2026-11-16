@@ -27,6 +27,17 @@ import {
 import { PROTOTYPE_BASE_CSP, PROTOTYPE_DRAFT_CSP, prototypeCspFunctionCode } from '../utils/prototype-csp';
 import { realtimeConnectSrc } from '../utils/realtime';
 import type { DataProtection } from '../utils/data-protection';
+import type { Construct } from 'constructs';
+import { engineeringAgentsEnabled } from './engineering-broker';
+
+/**
+ * Where the SPA's forms may post (`form-action`): the app itself and, with the engineering agents on (7.45.00), the one
+ * origin `https://github.com`, the target of the GitHub App manifest form (Agents → Connections: the browser posts the
+ * server's manifest to github.com's "new App" page; no other form leaves the app). Without them, the app alone.
+ */
+function spaFormActions(scope: Construct): string {
+  return engineeringAgentsEnabled(scope) ? "'self' https://github.com" : "'self'";
+}
 
 /** What a VocCoreStack builder needs from the stack: itself and its prefix-aware names. */
 export interface CoreBuildContext {
@@ -79,7 +90,7 @@ export function createCoreCdn(ctx: CoreBuildContext, inputs: CdnInputs): CoreCdn
         // the /prototypes/* behavior's own PrototypeHeadersPolicy (script-src 'unsafe-inline')
         // still governs script execution inside that framed document; this only permits the
         // cross-document load itself.
-        contentSecurityPolicy: `default-src 'none'; font-src 'self' data:; img-src 'self' data:; script-src 'self';manifest-src 'self'; style-src 'unsafe-inline' 'self'; style-src-elem 'unsafe-inline' 'self'; object-src 'none'; frame-src 'self'; connect-src 'self' https://*.amazoncognito.com https://*.amazonaws.com ${realtimeConnectSrc(stack.region)}; form-action 'self'; upgrade-insecure-requests; frame-ancestors 'none'; base-uri 'none';`,
+        contentSecurityPolicy: `default-src 'none'; font-src 'self' data:; img-src 'self' data:; script-src 'self';manifest-src 'self'; style-src 'unsafe-inline' 'self'; style-src-elem 'unsafe-inline' 'self'; object-src 'none'; frame-src 'self'; connect-src 'self' https://*.amazoncognito.com https://*.amazonaws.com ${realtimeConnectSrc(stack.region)}; form-action ${spaFormActions(stack)}; upgrade-insecure-requests; frame-ancestors 'none'; base-uri 'none';`,
         override: true,
       },
       contentTypeOptions: { override: true },

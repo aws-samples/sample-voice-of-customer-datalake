@@ -48,7 +48,7 @@ function authorizationOf(route: string): { authorizationType: string; hasAuthori
 /** A Cognito-protected method: the user-pool authorization type AND an authorizer. */
 const COGNITO = { authorizationType: 'COGNITO_USER_POOLS', hasAuthorizerId: true };
 
-describe('VocApiStack authorization invariant', () => {
+describe('VocApiStack authorization invariant', { timeout: SYNTH_TIMEOUT_MS }, () => {
   it('leaves only the allowlisted widget and ballot routes unauthenticated', () => {
     // The COUNT as well as the contents, and here rather than in one of the
     // per-feature describes below: six is the number a change to either public
@@ -464,7 +464,7 @@ describe('stack and callers stay in step', () => {
   });
 });
 
-describe('skipFeedbackFormItemRoutes (transitional upgrade flag)', () => {
+describe('skipFeedbackFormItemRoutes (transitional upgrade flag)', { timeout: SYNTH_TIMEOUT_MS }, () => {
   const flagged = apiTemplateFlagged;
 
   it('omits the item routes so the old {proxy+} can be retired first', () => {

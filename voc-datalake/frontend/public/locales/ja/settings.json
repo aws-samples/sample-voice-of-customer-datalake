@@ -373,7 +373,15 @@
     "advanced": "詳細設定",
     "advancedRawHint": "データソースページのスクレイパーの元の設定です。スクレイパーの追加と編集はそちらで行ってください。",
     "runsOnUpload": "アップロード時に実行",
-    "runsOnDemand": "必要時に実行 — スケジュールなし"
+    "runsOnDemand": "必要時に実行 — スケジュールなし",
+    "githubSignIn": {
+      "label": "サインイン方法",
+      "token": "Fine-grained トークン",
+      "app": "このデプロイの GitHub App",
+      "appLabel": "GitHub App",
+      "appHint": "各実行は、これらのリポジトリだけを対象にした短期間のトークン（Issues と Metadata、読み取りのみ）を App から受け取り、終了時に返します。先に App をリポジトリにインストールしてください（エージェント → 接続）。",
+      "tokenHint": "これらのリポジトリの Issues と Metadata を読み取りのみで許可した Fine-grained 個人アクセストークン。"
+    }
   },
   "subtitle": "VoCプラットフォームを設定",
   "tabs": {

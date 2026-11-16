@@ -8,7 +8,16 @@ authenticated here, BEFORE anything is parsed or enqueued:
 * ``X-Hub-Signature-256`` must be present and equal, under a constant-time
   compare, to ``sha256=`` + HMAC-SHA256(body, ``webhook_secret``) (401 otherwise);
 * no configured ``webhook_secret`` means every delivery is refused (503) —
-  fail closed, never "accept unsigned".
+  fail closed, never "accept unsigned";
+* a delivery of the source's GitHub App (7.45.00, deployment-wide only: its
+  ``X-GitHub-Hook-Installation-Target-Type`` is ``integration`` and its
+  ``X-GitHub-Hook-Installation-Target-ID`` is the source's ``github_app_id``) is
+  checked against that App's own webhook secret instead, read from its SSM
+  parameter (``{GITHUB_APP_PARAMETER_PREFIX}<app_id>/webhook``, kept five
+  minutes; the variable is set only where the engineering agents are deployed
+  too). The headers only choose the secret: the signature must still match it,
+  and a secret that cannot be read refuses the delivery (401). A delivery whose
+  headers name no App, or another one, is checked against ``webhook_secret``.
 
 ``POST /webhooks/github_issues/{ws}`` is a workspace's own endpoint
 (``_shared/base_webhook.py``): the secret, the repos and the labels come from
@@ -30,6 +39,7 @@ import hmac
 import json
 import os
 import sys
+import time
 from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -46,6 +56,7 @@ from _shared.github_mapping import (
     issue_item,
     issue_labels,
 )
+from shared.aws import get_ssm_client
 from shared.invocation_cost import measure_invocation_cost
 from shared.workspace_routing import RoutedWorkspace
 
@@ -54,6 +65,36 @@ from shared.workspace_routing import RoutedWorkspace
 MAX_BODY_BYTES = 1_000_000
 SIGNATURE_PREFIX = "sha256="
 _IGNORED_ACTIONS = frozenset({"deleted", "transferred", "pinned", "unpinned", "locked", "unlocked"})
+#: The deployment's GitHub Apps' parameters (``/[<prefix>-]voc/engineering/_github-app/``), set only with the engineering
+#: agents on; this role may read each App's ``…/webhook`` parameter and nothing else of them.
+APP_PARAMETER_PREFIX_ENV = "GITHUB_APP_PARAMETER_PREFIX"
+#: How long a read App secret is kept in this container (a replaced App reaches it within this).
+APP_SECRET_SECONDS = 300
+_TARGET_TYPE = "x-github-hook-installation-target-type"
+_TARGET_ID = "x-github-hook-installation-target-id"
+#: App id -> (until when, its webhook secret).
+_APP_SECRETS: dict[str, tuple[float, str]] = {}
+
+
+def app_webhook_secret(app_id: str) -> str:
+    """The webhook secret of the deployment's GitHub App ``app_id``, or "" when none can be read (no prefix, no
+    parameter, a value off its shape): the delivery is then refused. Never logged."""
+    prefix = os.environ.get(APP_PARAMETER_PREFIX_ENV, "")
+    held = _APP_SECRETS.get(app_id)
+    if held is not None and time.monotonic() < held[0]:
+        return held[1]
+    if not prefix:
+        return ""
+    try:
+        value = get_ssm_client().get_parameter(Name=f"{prefix}{app_id}/webhook", WithDecryption=True)
+        secret = json.loads(value["Parameter"]["Value"]).get("webhook_secret")
+    except (ClientError, BotoCoreError, KeyError, ValueError, TypeError, AttributeError) as error:
+        logger.warning(f"github_issues webhook: the GitHub App's webhook secret could not be read ({type(error).__name__})")
+        return ""
+    if not isinstance(secret, str) or not secret:
+        return ""
+    _APP_SECRETS[app_id] = (time.monotonic() + APP_SECRET_SECONDS, secret)
+    return secret
 
 
 def _response(status: int, body: dict) -> dict:
@@ -90,16 +131,31 @@ class GitHubIssuesWebhook(BaseWebhook):
         self._webhook_secret = str(self.secrets.get("webhook_secret", "")).strip()
         self.config = GitHubSourceConfig.from_secrets(self.secrets)
 
+    def _app_delivery(self, event: dict) -> str | None:
+        """The source's GitHub App id when the delivery's headers say it is that App's (deployment-wide only), else
+        None. Only which secret checks it: the signature must still match that App's secret."""
+        app_id = self.config.github_app_id
+        if self.on_workspace_route or not app_id:
+            return None
+        headers = event.get("headers")
+        if (_header(headers, _TARGET_TYPE) or "").strip().lower() != "integration":
+            return None
+        return app_id if (_header(headers, _TARGET_ID) or "").strip() == app_id else None
+
     def rejection(self, event: dict) -> dict | None:
         """The refusal for an unauthenticated or oversized request, else None.
 
         Deployment-wide (``/webhooks/github_issues``) as before: no secret 503 first. On a workspace's route
         (``/webhooks/github_issues/{ws}``) the body is checked first, so its 400 and 413 depend on the body alone,
         then a workspace that routes nowhere, one with no webhook secret and a bad signature all get the same 401:
-        no answer says whether the workspace exists or has the plugin.
+        no answer says whether the workspace exists or has the plugin. A delivery of the source's GitHub App
+        (``_app_delivery``) is checked against the App's own secret: one that cannot be read is the bad signature's
+        401.
         """
         client_ip = self._extract_client_ip(event)
-        if not self._webhook_secret and not self.on_workspace_route:
+        app_id = self._app_delivery(event)
+        secret = app_webhook_secret(app_id) if app_id is not None else self._webhook_secret
+        if not secret and app_id is None and not self.on_workspace_route:
             reason, response = "not_configured", _response(503, {"error": "Webhook not configured"})
         else:
             try:
@@ -110,7 +166,7 @@ class GitHubIssuesWebhook(BaseWebhook):
                 reason, response = "bad_encoding", _response(400, {"error": "Invalid body"})
             elif len(body) > MAX_BODY_BYTES:
                 reason, response = "too_large", _response(413, {"error": "Payload too large"})
-            elif not signature_matches(self._webhook_secret, body, _header(event.get("headers"), "x-hub-signature-256")):
+            elif not signature_matches(secret, body, _header(event.get("headers"), "x-hub-signature-256")):
                 # A refused delivery holds no secret, so it fails here too.
                 reason, response = "bad_signature", _response(401, {"error": "Invalid signature"})
             else:

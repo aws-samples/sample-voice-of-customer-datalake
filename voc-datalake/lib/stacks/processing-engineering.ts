@@ -10,6 +10,7 @@ import type * as kms from 'aws-cdk-lib/aws-kms';
 import type * as lambda from 'aws-cdk-lib/aws-lambda';
 import type * as s3 from 'aws-cdk-lib/aws-s3';
 import type { Construct } from 'constructs';
+import { createEngineeringAppTokens } from './engineering-app-tokens';
 import { EngineeringBroker, engineeringAgentsEnabled } from './engineering-broker';
 import { EngineeringBus } from './engineering-bus';
 import { type EngineeringPeers, addEngineeringRuntime } from './engineering-runtime';
@@ -29,7 +30,10 @@ export interface ProcessingEngineeringProps {
   engineeringWorkspaceBucket: s3.IBucket | undefined;
 }
 
-/** The broker and the bus (with the flag only), then the runtime, which the peers wire to them. */
+/**
+ * The broker, the GitHub Apps' token function (7.45.00, engineering-app-tokens.ts: it shares the broker's signing layer)
+ * and the bus (with the flag only), then the runtime, which the peers wire to them.
+ */
 export function addProcessingEngineering(scope: Construct, props: ProcessingEngineeringProps): void {
   const { uniqueName, layer, kmsKey, roleNamePattern } = props;
   let peers: EngineeringPeers | undefined;
@@ -42,6 +46,9 @@ export function addProcessingEngineering(scope: Construct, props: ProcessingEngi
       uniqueName, layer, roleNamePattern, kmsKey, deploymentPrefix: props.deploymentPrefix,
       engineeringTable: props.engineeringTable, workspaceBucket: props.engineeringWorkspaceBucket,
       aggregatesTable: props.aggregatesTable, agentsTable: props.agentsTable,
+    });
+    createEngineeringAppTokens(scope, {
+      uniqueName, layer, signingLayer: broker.signingLayer, kmsKey, deploymentPrefix: props.deploymentPrefix,
     });
     const bus = new EngineeringBus(scope, 'EngineeringBus', {
       uniqueName, layer, roleNamePattern, kmsKey, engineeringTable: props.engineeringTable,

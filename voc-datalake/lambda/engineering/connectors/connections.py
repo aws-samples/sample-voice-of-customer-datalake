@@ -11,9 +11,12 @@ A connection is a row in voc-agents and, while it holds a credential, one SSM Pa
   history stays readable), and is listed no more;
 * the credential, ``{prefix}<id>`` (``/[<prefix>-]voc/engineering/<id>``, the name the broker's reader reads:
   ``credentials.py``), standard tier, encrypted with the stack's customer-managed key, holding the JSON the reader
-  parses: ``app_id``, ``installation_id``, ``repository`` and ``private_key``; or a GitLab project's id and path, its
-  project access token and its expiry, once the token passed its check against gitlab.com (``gitlab_api.check_token``:
-  the project's own, role Developer, the scopes, an expiry). It is written here and read only by the broker and the
+  parses: ``app_id``, ``installation_id``, ``repository`` and ``private_key``; or, for a connection made through one of
+  the deployment's GitHub Apps (7.45.00, ``github_apps.py``), the same ids and repository with ``"key": "app"`` in place
+  of the key, which the reader resolves to the App's own key, stored once at ``{prefix}_github-app/<app_id>/key``
+  (``AppReference``); or a GitLab project's id and path, its project access token and its expiry, once the token
+  passed its check against gitlab.com (``gitlab_api.check_token``: the project's own, role Developer, the scopes, an
+  expiry). It is written here and read only by the broker and the
   checkout cache's writer: this code never reads it back (its role has no ``ssm:GetParameter``), and the private key
   or the token is never answered, logged, put in an error, or stored anywhere but the parameter;
 * every change, a create-only audit row in the same partition, ``LOG#<at>#<hex>`` (D4: who, when, what changed:
@@ -60,6 +63,7 @@ from engineering.connectors.identity import WORKSPACE
 from engineering.runtime.outputs import AGENT_BRANCH_PREFIX
 from engineering.settings import UNNAMED
 from shared.dynamo_paging import query_all
+from shared.github_rest import GITHUB_NUMBER
 from shared.logging import logger
 from shared.model_fallback import error_code
 
@@ -67,6 +71,12 @@ from shared.model_fallback import error_code
 PARAMETER_PREFIX_ENV: Final = 'ENGINEERING_PARAMETER_PREFIX'
 #: The env var with the stack's customer-managed key (its ARN), which encrypts every connection's parameter.
 PARAMETER_KEY_ENV: Final = 'ENGINEERING_PARAMETER_KEY'
+#: The deployment's GitHub Apps' parameters (7.45.00, ``github_apps.py``), under the connections' prefix: an App's key,
+#: stored once, and its webhook secret. A leading ``_`` is never a connection id (``CONNECTION_ID``; the reader's own
+#: pattern neither), so these names never collide with a connection's.
+APP_PARAMETERS: Final = '_github-app/'
+#: What a connection's parameter holds in place of a private key when its key is its App's (``AppReference``).
+APP_REFERENCE: Final = 'app'
 #: The connections' partition in voc-agents, and the prefixes of its rows.
 PARTITION: Final = f'CONNECTIONS#{WORKSPACE}'
 ROW_PREFIX: Final = 'CONNECTION#'
@@ -81,7 +91,7 @@ CONNECTION_ID: Final = re.compile(r'[a-z0-9][a-z0-9-]{0,62}')
 #: ``owner/name`` as GitHub spells them (the broker's reader holds a stored value to the same rule).
 REPOSITORY: Final = re.compile(r'(?P<owner>[A-Za-z0-9][A-Za-z0-9-]{0,38})/(?P<name>[A-Za-z0-9._-]{1,100})')
 #: A GitHub App's id or installation id: digits, no leading zero (the broker's reader holds them to the same rule).
-APP_NUMBER: Final = re.compile(r'[1-9][0-9]{0,19}')
+APP_NUMBER: Final = GITHUB_NUMBER
 _BRANCH: Final = re.compile(r'[A-Za-z0-9][A-Za-z0-9._/-]{0,254}')
 #: An unencrypted RSA private key in PEM, PKCS#1 (as GitHub hands an App's key out) or PKCS#8.
 _PEM: Final = re.compile(r'-----BEGIN (RSA |)PRIVATE KEY-----\n(?:[A-Za-z0-9+/=]{1,76}\n)+-----END \1PRIVATE KEY-----')
@@ -90,7 +100,8 @@ _RSA_ENCRYPTION: Final = bytes.fromhex('06092a864886f70d010101')
 _FIELDS: Final = frozenset({'host', 'repository', 'default_branch', 'credential', 'reason'})
 _CREDENTIAL_FIELDS: Final = frozenset({'app_id', 'installation_id', 'private_key'})
 #: The row's fields an audit row records the change of (never the private key or the token).
-_AUDITED: Final = ('host', 'repository', 'default_branch', 'app_id', 'installation_id', 'token_expires_at')
+_AUDITED: Final = ('host', 'repository', 'default_branch', 'app_id', 'installation_id', 'token_expires_at',
+                   'credential_kind', 'repository_private')
 _MAX_NAME: Final = 128
 #: The longest reason a change takes (one line; longer is refused, never cut).
 MAX_REASON: Final = 500
@@ -101,6 +112,16 @@ _OPTIONAL_TEXT: Final = ('app_id', 'installation_id', 'token_expires_at', 'creat
                          'updated_by')
 
 Kind = Literal['invalid', 'not_found', 'conflict', 'unavailable']
+
+
+def app_key_parameter(prefix: str, app_id: str) -> str:
+    """The parameter of a deployment's GitHub App's key: ``{"app_id", "slug", "private_key"}``."""
+    return f'{prefix}{APP_PARAMETERS}{app_id}/key'
+
+
+def app_webhook_parameter(prefix: str, app_id: str) -> str:
+    """The parameter of a deployment's GitHub App's webhook secret, ``{"webhook_secret"}`` (only when it has a hook)."""
+    return f'{prefix}{APP_PARAMETERS}{app_id}/webhook'
 
 
 class ConnectionRefused(Exception):
@@ -129,6 +150,15 @@ class AppCredential:
 
 
 @dataclass(frozen=True)
+class AppReference:
+    """A connection made through one of the deployment's GitHub Apps (7.45.00, ``github_apps.py``): the App's id and
+    the installation on the repository. No key: the reader resolves it to the App's own (``app_key_parameter``)."""
+
+    app_id: str
+    installation_id: int
+
+
+@dataclass(frozen=True)
 class ProjectToken:
     """A GitLab project access token as a save sends it (``repr`` leaves it out)."""
 
@@ -141,13 +171,15 @@ class ProjectToken:
 @dataclass(frozen=True)
 class ConnectionRequest:
     """A checked save: the host, the repository, the default branch, when the save replaces it the credential (the
-    host's own kind), and the administrator's reason ('' for none)."""
+    host's own kind), and the administrator's reason ('' for none); for a save through a GitHub App, whether GitHub
+    says the repository is private (``repository_private``; None: not known, the stored value kept)."""
 
     host: str
     repository: str
     default_branch: str
-    credential: AppCredential | ProjectToken | None
+    credential: AppCredential | AppReference | ProjectToken | None
     reason: str = ''
+    repository_private: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -198,9 +230,15 @@ def _project_token(value: object) -> ProjectToken:
     return ProjectToken(token=token.strip())
 
 
-def _digits(value: object, name: str) -> str:
+def github_number(value: object) -> str | None:
+    """A GitHub App's or installation's id as text (a whole number, or its digits, no leading zero), or None."""
     text = str(value) if isinstance(value, int) and not isinstance(value, bool) else value
-    if not isinstance(text, str) or not APP_NUMBER.fullmatch(text):
+    return text if isinstance(text, str) and APP_NUMBER.fullmatch(text) else None
+
+
+def _digits(value: object, name: str) -> str:
+    text = github_number(value)
+    if text is None:
         raise _invalid(f'{name} is the GitHub App\'s number (digits only, as its settings page shows it)')
     return text
 
@@ -215,6 +253,13 @@ def _private_key(value: object) -> str:
         raise _invalid('private_key is an unencrypted RSA private key in PEM (the .pem file GitHub generates for '
                        'the App, pasted whole)')
     return key
+
+
+def checked_private_key(value: object) -> str:
+    """A GitHub App's private key as a connection's credential takes it (``_private_key``: an unencrypted RSA key in
+    PEM, its line ends made ``\\n``), or a refusal that never quotes it: also an App's key from GitHub's manifest
+    conversion (``github_apps.py``)."""
+    return _private_key(value)
 
 
 def _rsa_der(pem: str, *, pkcs1: bool) -> bool:
@@ -310,6 +355,12 @@ def gitlab_parameter_value(facts: TokenFacts, token: ProjectToken) -> str:
                        'token': token.token, 'expires_at': facts.expires_at})
 
 
+def reference_value(repository: str, reference: AppReference) -> str:
+    """A connection's parameter JSON when its key is its App's (``credentials.py`` resolves ``"key": "app"``)."""
+    return json.dumps({'app_id': reference.app_id, 'installation_id': reference.installation_id,
+                       'repository': repository, 'key': APP_REFERENCE})
+
+
 def parameter_value(repository: str, credential: AppCredential) -> str:
     """The parameter's JSON, as the broker's reader parses it (credentials.py ``parse_credential``)."""
     value = json.dumps({'app_id': credential.app_id, 'installation_id': credential.installation_id,
@@ -333,14 +384,24 @@ def view(item: Mapping[str, Any], attestation: Mapping[str, Any] | None = None) 
         'connection_id': str(item.get('connection_id', '')), 'host': host,
         'repository': str(item.get('repository', '')), 'default_branch': str(item.get('default_branch', '')),
         # (a GitLab connection's token expires on its own date, at most a year out: the page warns before it does)
-        'credential': {'kind': 'project_token' if host == 'gitlab' else 'app', 'set': item.get('credential_set') is True,
+        'credential': {'kind': _credential_kind(item), 'set': item.get('credential_set') is True,
                        'app_id': texts['app_id'], 'installation_id': texts['installation_id'],
                        'expires_at': texts['token_expires_at']},
         **{field: texts[field] for field in ('created_at', 'created_by', 'updated_at', 'updated_by')},
+        # (a connection made through a GitHub App: whether GitHub said the repository is private; null: not known)
+        'repository_private': item['repository_private'] if isinstance(item.get('repository_private'), bool) else None,
         # (what an attestation names as the version it reviewed: any change of the connection moves it)
         'version': int(item.get('version', 0)),
         'ci_attestation': attestations.view(attestation),
     }
+
+
+def _credential_kind(item: Mapping[str, Any]) -> str:
+    """``project_token`` (GitLab), ``app_reference`` (a GitHub App of the deployment's: its key stored once) or ``app``
+    (a GitHub App's key pasted for this connection)."""
+    if str(item.get('host', 'github')) == 'gitlab':
+        return 'project_token'
+    return 'app_reference' if item.get('credential_kind') == 'app_reference' else 'app'
 
 
 def _moved(earlier: Mapping[str, Any], request: ConnectionRequest) -> bool:
@@ -348,15 +409,19 @@ def _moved(earlier: Mapping[str, Any], request: ConnectionRequest) -> bool:
     return earlier.get('repository') != request.repository or earlier.get('host', 'github') != request.host
 
 
-def _credential_fields(credential: AppCredential | ProjectToken | None, facts: TokenFacts | None,
+def _credential_fields(credential: AppCredential | AppReference | ProjectToken | None, facts: TokenFacts | None,
                        earlier: Mapping[str, Any]) -> dict[str, Any]:
-    """The row's facts of its credential (never the secret): a GitHub App's ids, or when a GitLab token expires; a save
-    without a credential keeps the stored ones (its host unchanged: ``_check_save``)."""
+    """The row's facts of its credential (never the secret): a GitHub App's ids (and, for one of the deployment's
+    Apps, ``credential_kind: app_reference``), or when a GitLab token expires; a save without a credential keeps the
+    stored ones (its host unchanged: ``_check_save``)."""
     if isinstance(credential, AppCredential):
         return {'app_id': credential.app_id, 'installation_id': str(credential.installation_id)}
+    if isinstance(credential, AppReference):
+        return {'app_id': credential.app_id, 'installation_id': str(credential.installation_id),
+                'credential_kind': 'app_reference'}
     if credential is not None:
         return {'token_expires_at': facts.expires_at if facts is not None else None}
-    return {field: earlier.get(field) for field in ('app_id', 'installation_id', 'token_expires_at')}
+    return {field: earlier.get(field) for field in ('app_id', 'installation_id', 'token_expires_at', 'credential_kind')}
 
 
 def _key(connection_id: str) -> dict[str, str]:
@@ -452,15 +517,9 @@ class ConnectionStore:
             raise ConnectionRefused('unavailable', 'the credential could not be stored: save again') from None
 
     def _delete_credential(self, name: str, connection_id: str) -> None:
-        ssm = self._ssm()
-        try:
-            ssm.delete_parameter(Name=name)
-        except ssm.exceptions.ParameterNotFound:
-            return   # (already gone)
-        except (ClientError, BotoCoreError) as error:
-            logger.warning('engineering connection credential not removed',
-                           extra={'connection_id': connection_id, 'error_code': error_code(error)})
-            raise ConnectionRefused('unavailable', 'the credential could not be removed: remove it again') from None
+        delete_parameter(self._ssm(), name, logged='engineering connection credential not removed',
+                         about={'connection_id': connection_id},
+                         refusal='the credential could not be removed: remove it again')
 
     def _check_save(self, connection_id: str, request: ConnectionRequest, before: Mapping[str, Any] | None) -> None:
         earlier: Mapping[str, Any] = before or {}
@@ -496,6 +555,8 @@ class ConnectionStore:
         credential = request.credential
         if isinstance(credential, AppCredential):
             self._put_credential(name, parameter_value(request.repository, credential), connection_id)
+        elif isinstance(credential, AppReference):
+            self._put_credential(name, reference_value(request.repository, credential), connection_id)
         elif isinstance(credential, ProjectToken) and facts is not None:
             self._put_credential(name, gitlab_parameter_value(facts, credential), connection_id)
         at, who = self._clock().astimezone(UTC).isoformat(), _name(actor.name)
@@ -504,6 +565,9 @@ class ConnectionStore:
             **_key(connection_id), 'connection_id': connection_id, 'host': request.host,
             'repository': request.repository, 'default_branch': request.default_branch, 'credential_set': True,
             **_credential_fields(credential, facts, earlier),
+            # (GitHub's word at an App's save; another save keeps it while the repository stays)
+            'repository_private': (request.repository_private if request.repository_private is not None
+                                   else None if moved else earlier.get('repository_private')),
             'created_at': earlier.get('created_at') if live else at,
             'created_by': earlier.get('created_by') if live else who,
             'updated_at': at, 'updated_by': who, 'version': int(earlier.get('version', 0)) + 1,
@@ -633,10 +697,7 @@ class ConnectionStore:
     def _audit(self, connection_id: str, action: str, changes: Mapping[str, Any], actor: Actor, at: str,
                version: int, reason: str = '') -> dict[str, Any]:
         """The change's create-only audit row (D4): who, when, what and, when given, why; never the private key."""
-        row = {'pk': PARTITION, 'sk': f'{LOG_PREFIX}{at}#{secrets.token_hex(4)}', 'connection_id': connection_id,
-               'action': action, 'changes': dict(changes), 'by': _name(actor.subject), 'by_name': _name(actor.name),
-               'at': at, 'version': version}
-        return {**row, 'reason': reason} if reason else row
+        return audit_row({'connection_id': connection_id}, action, changes, actor, at, version, reason)
 
     def _credential_undo(self, connection_id: str, name: str, live: bool, actor: Actor) -> Callable[[], None]:
         """What a changed credential needs when its row is not written: a new connection's parameter is deleted
@@ -723,6 +784,33 @@ class ConnectionStore:
                 raise ConnectionRefused('conflict', 'the connection changed meanwhile: reload it and save again') \
                     from None
             raise ConnectionRefused('unavailable', 'the connection could not be saved: save again') from None
+
+
+def delete_parameter(ssm: Any, name: str, *, logged: str, about: Mapping[str, str], refusal: str) -> None:
+    """Delete one SSM parameter (one already gone is fine); a failure is logged as ``logged`` with ``about`` and the
+    AWS error code, and refused as ``ConnectionRefused('unavailable', refusal)``."""
+    try:
+        ssm.delete_parameter(Name=name)
+    except ssm.exceptions.ParameterNotFound:
+        return   # (already gone)
+    except (ClientError, BotoCoreError) as error:
+        logger.warning(logged, extra={**about, 'error_code': error_code(error)})
+        raise ConnectionRefused('unavailable', refusal) from None
+
+
+def audit_row(about: Mapping[str, str], action: str, changes: Mapping[str, Any], actor: Actor, at: str, version: int,
+              reason: str = '') -> dict[str, Any]:
+    """A create-only audit row of the connections' partition (D4): what it is about (``{connection_id}``, or a GitHub
+    App's ``{app_id}``: ``github_apps.py``), the action, the changes, who, when and, when given, why; never a secret."""
+    row = {'pk': PARTITION, 'sk': f'{LOG_PREFIX}{at}#{secrets.token_hex(4)}', **about, 'action': action,
+           'changes': dict(changes), 'by': _name(actor.subject), 'by_name': _name(actor.name), 'at': at,
+           'version': version}
+    return {**row, 'reason': reason} if reason else row
+
+
+def display_name(text: str) -> str:
+    """A person's name as a row keeps it (printable, at most 128 characters; ``UNNAMED`` for none)."""
+    return _name(text)
 
 
 def live_runs_of(runs: Any) -> Callable[[str], list[str]]:

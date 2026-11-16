@@ -122,6 +122,15 @@ PHASE_3: dict[str, frozenset[str]] = {
         # engineering runs, flows' runs, connections, skills and spend; with the other agents routes, phase 3.
         'DELETE /agents/engineering/connections/<connection_id>',
         'DELETE /agents/engineering/connections/<connection_id>/ci-attestation',
+        # The deployment's GitHub Apps (7.45.00, engineering/connectors/github_apps.py): its connections' Apps, their
+        # setup states and their parameters, the deployment's until 3g3 (docs/multi-workspace.md).
+        'DELETE /agents/engineering/github-apps/<app_id>',
+        'GET /agents/engineering/github-apps',
+        'POST /agents/engineering/github-apps/<app_id>/check',
+        'POST /agents/engineering/github-apps/<app_id>/install',
+        'POST /agents/engineering/github-apps/conversions',
+        'POST /agents/engineering/github-apps/installations',
+        'POST /agents/engineering/github-apps/manifest',
         'GET /agents/engineering/<run_id>',
         'GET /agents/engineering/<run_id>/board',
         'GET /agents/engineering/<run_id>/conversation',

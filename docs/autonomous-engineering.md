@@ -97,7 +97,9 @@ check; a file or history read is of the run's own default branch, and, since 7.0
 (`connectors/gitlab.py`, gitlab.com): a connection is GitHub's or GitLab's, its credential a GitHub App's or a GitLab
 project access token, and the broker and the checkout cache's writer serve each connection on its own host's client
 (`connectors/router.py`), below, and, since 7.09.00, the run's issue and pull request on its record ("The run's
-issue and pull request", below). Planned: its cited reviews on the run's record, sparse clones, a self-managed GitLab instance (its base URL is one constant today, `gitlab_api.py` `GITLAB_HOST`; the
+issue and pull request", below), and, since 7.45.00, the in-app GitHub connect flow: an administrator makes a private
+GitHub App in two clicks, its key goes straight to SSM, and every repository it is installed on becomes a connection
+([A GitHub App in two clicks](#a-github-app-in-two-clicks-74500), below). Planned: its cited reviews on the run's record, sparse clones, a self-managed GitLab instance (its base URL is one constant today, `gitlab_api.py` `GITLAB_HOST`; the
 owner decides whether a connection names its own), and the first real run against a repository (it waits for the
 owner).
 
@@ -208,8 +210,9 @@ GitLab that cannot be asked (a rate limit, an outage, no answer) is 503, and not
 holds `{"host": "gitlab", "project_id", "repository", "token", "expires_at"}`, the project's id and path as GitLab
 spells them; the row holds `host: gitlab` and `token_expires_at` (the day, not secret), never the token; a row with no
 `host` (stored before 7.06.00) is GitHub's, with no migration. The token is never answered, logged or put in an error,
-and the Agents API reads it back no more than it does a private key. This check is the Agents API's one reach outside
-AWS: its Lambda is not in a VPC, as before, so it needs nothing new for it. Replacing a token before it expires is an
+and the Agents API reads it back no more than it does a private key. This check is one of the Agents API's two reaches
+outside AWS (the other, since 7.45.00, is GitHub's App manifest conversion: [A GitHub App in two
+clicks](#a-github-app-in-two-clicks-74500)): its Lambda is not in a VPC, as before, so it needs nothing new for either. Replacing a token before it expires is an
 edit of the connection with the new one (the same check); an expired token makes every read and write of the
 connection fail at GitLab (401: the broker's 502, the cache writer's refusal) until it is replaced.
 
@@ -525,11 +528,14 @@ as for `api.github.com` before: what holds each to its host is the code. Each cl
 when it is made (`transport.py` `HttpsTransport`: `api.github.com` for the GitHub client, `gitlab.com` for the GitLab
 client; a path, never a URL, no redirect), and the cache writer's remote is one of two fixed prefixes
 (`https://github.com/`, `https://gitlab.com/`) with git's redirects off. The Agents API reaches `gitlab.com` only for
-a save's token check, through the same bound transport. The agents' own sessions reach no host of either: nothing new
-is on their allowlists.
+a save's token check, and (7.45.00) `api.github.com` only for an App manifest's code exchange, each through the same
+bound transport; the GitHub Apps' token function (`voc-engineering-app-tokens`) reaches `api.github.com` only, the
+same way. The agents' own sessions reach no host of either: nothing new is on their allowlists.
 
-**The broker.** One Lambda, the connector's broker, is the only code that holds a host credential: no agent's
-session ever holds one. Agents ask it for typed operations, and each role may invoke only the operations it needs;
+**The broker.** One Lambda, the connector's broker, is the only code that holds a host credential for a run (since
+7.45.00 one more function signs with a deployment's GitHub App key, the token function, for an installation's read and
+the github_issues source's read-only tokens, never for a run: [A GitHub App in two
+clicks](#a-github-app-in-two-clicks-74500)): no agent's session ever holds one. Agents ask it for typed operations, and each role may invoke only the operations it needs;
 the broker is reached only through a Lambda function URL with IAM authentication (as is the board's API, below), whose
 request carries the caller's assumed-role ARN, and it takes the caller's role,
 run and agent from the caller's assumed-role identity (the role is the agent role; the session name, which the
@@ -590,7 +596,11 @@ of the branch rules ("What the broker reads", above).
 standard tier has no monthly charge), one per connection, `/voc/engineering/{connection_id}` (`{workspace_id}/` is
 prefixed once multi-workspace lands; a prefixed deployment puts its prefix on the `voc` segment,
 `/<prefix>-voc/engineering/…`). A GitHub connection's value is JSON: `app_id`, `installation_id`, `repository`
-(`owner/name`) and `private_key` (the App's PEM key); a GitLab connection's (7.06.00) `host: gitlab`, `project_id`,
+(`owner/name`) and `private_key` (the App's PEM key), or, for a connection made through one of the deployment's GitHub
+Apps (7.45.00), the same ids and repository with `"key": "app"` in place of the key, which the reader resolves with a
+second read of the App's own key, `/voc/engineering/_github-app/<app_id>/key` (`{app_id, slug, private_key}`, its App
+id checked against the connection's, kept five minutes like a credential; the readers' grant on the path covers it, and
+a leading `_` is never a connection id); a GitLab connection's (7.06.00) `host: gitlab`, `project_id`,
 `repository` (the project's path), `token` and `expires_at`. The Agents API writes and deletes them (an administrator's
 save or removal, above), and never reads one. Only the broker and the checkout cache's writer read them
 (`connectors/credentials.py`:
@@ -611,6 +621,96 @@ categories, problem labels, in findings, reports, the conversation and memories)
 category and source access, not the run owner's; what the viewer may not see is left out (built: an engineering run's
 reads are admin-only, 403 for anyone else; sharing and the per-viewer filter are *planned*). A flow can use a connection only when it is shared with the agent's
 owner, checked when the workflow is saved and again when the run starts.
+
+### A GitHub App in two clicks (7.45.00)
+
+An administrator makes the deployment's own private GitHub App from Agents → Connections, without copying a key
+(`voc-datalake/lambda/engineering/connectors/github_apps.py`, the Agents API's side; `connectors/app_tokens.py`, the
+token function's). Only with `-c engineeringAgents=true` (404 otherwise); every route is an administrator's acting for
+themselves (a delegated MCP credential gets 403), served through `/agents/{proxy+}` with Cognito: no new
+unauthenticated endpoint. Pasting an App's key into a connection (above) stays.
+
+1. **Create.** `POST /agents/engineering/github-apps/manifest` `{account: "user" | "organization", org?}` →
+   `{action_url, manifest, expires_at}`: the form's target, `https://github.com/settings/apps/new?state=…` or, for an
+   organization (its login as GitHub spells one: letters, digits and single hyphens, at most 39),
+   `https://github.com/organizations/<org>/settings/apps/new?state=…`, and the manifest: `VoC agents <hex6>`, private,
+   no OAuth on install, its setup asked again on an update, Contents, Pull requests and Issues read and write and
+   Metadata read; where the github_issues webhook is deployed, its hook on `<API>/webhooks/github_issues` with the
+   issues and issue_comment events; `redirect_url` `/agents/connections/github/created` and `setup_url`
+   `/agents/connections/github/installed` on the deployment's own CloudFront domain (a prefixed deployment's too). The
+   browser posts it to GitHub (the SPA's `form-action` admits `https://github.com` alone, only with the module:
+   [deployment.md](deployment.md#the-web-apps-form-action-74500)). At most 5 Apps (409 past them).
+2. **The code.** GitHub creates the App and sends the browser back with a `code` (a bearer credential for an hour, used
+   once) and the state; the page takes both out of its address at once (a replace) and posts them once:
+   `POST …/github-apps/conversions` `{code, state}` → 201 `{app, install_url, expires_at}`. The Agents API exchanges
+   the code (`POST https://api.github.com/app-manifests/<code>/conversions`, no authentication, over the broker's
+   crypto-free transport) and stores, before the App's row, its key once, `/voc/engineering/_github-app/<id>/key`
+   (`{app_id, slug, private_key}`), and, when a hook was asked for, its webhook secret,
+   `/voc/engineering/_github-app/<id>/webhook` (`{webhook_secret}`): SecureString, standard tier, the stack's key,
+   never overwritten. The client id and secret are discarded; the key sits in memory once, in a value whose `repr`
+   leaves it out. The answer's install link carries a new state, so the second click is a navigation. A code GitHub no
+   longer takes (404 or 422: expired or used) is 409: the App may then exist on GitHub without its key here, and is
+   deleted in GitHub's settings and made again. The referrer policy is `same-origin`, so the return page's address is
+   never sent to another origin.
+3. **Install.** GitHub sends the browser back to `/agents/connections/github/installed` with the installation's id,
+   `setup_action` and the state: `POST …/github-apps/installations` `{installation_id, setup_action, state}` →
+   `{app, account, connections: [{connection, created}], skipped: [{repository, reason}]}`. The token function reads
+   the installation with the App's JWT (`GET /app/installations/<id>`: another App's installation answers 404 there,
+   409 "belongs to another App"; one whose `app_id` differs or that is suspended is refused alike) and lists its
+   repositories with an installation token of `{metadata: read}` alone, which it revokes before it answers (no token
+   is ever answered to the Agents API). Every installed repository is saved as a connection (`ConnectionStore.save`,
+   with its audit row): its id the repository's name (lower case, other characters `-`, then `-2`, `-3`… on a
+   collision), its default branch GitHub's, its row `repository_private` and `credential_kind: app_reference`, its
+   parameter a reference to the App's key (above, "Credentials"). An archived repository (`archived`), one already
+   connected (`already_connected`), those past the 20 connections (`limit`) and one whose save fails or whose default
+   branch the connections refuse (`not_saved`) are skipped and reported. `setup_action: request` (an owner must
+   approve the installation) is refused without touching the state, which stays good until it expires; a return
+   without a state calls nothing (the page points to **Check installation**). Before the agents push, each
+   repository's CI is attested as for any connection.
+4. **Afterwards.** `GET /agents/engineering/github-apps` → `{apps: [{app_id, slug, owner, owner_type, html_url, webhook,
+   connections, created_at, created_by, version}], limit}`; `POST …/github-apps/<app_id>/install` `{}` → a new install
+   link (to install it on more repositories); `POST …/github-apps/<app_id>/check` `{}` → `{repositories, missing}`: what
+   the installations the App's connections name cover now, and the connections whose repository they no longer do
+   (the broker refuses those, failing closed: GitHub mints no token for a repository outside the installation);
+   `DELETE …/github-apps/<app_id>` `{reason?}` → `{removed: true}`, its parameters deleted first, then its row marked
+   removed with its audit row; 409 while a connection uses it. Deleting the App on GitHub stays the administrator's
+   (its settings page).
+
+**State.** Each step's state is `secrets.token_urlsafe(32)`, handed to the browser and never stored: its row,
+`CONNECTIONS#default#SETUP` / `STATE#<sha256 of it>`, names its purpose (`create` or `install`), the administrator's
+subject, the account, the App, `expires_at` (30 minutes) and `ttl` (a day; voc-agents' TTL attribute, which no other
+row carries, removes it). One conditional UpdateItem claims it (the same administrator and purpose, unexpired,
+unclaimed). A failure before the App's key is stored (GitHub unreachable, rate limited or failing, its answer lost or
+off its shape) gives the claim back, so the page may post the code again (a code GitHub already spent then answers
+the 409 above); a failure once the key is stored does not; the step's outcome is kept on the row, so the same administrator posting it again (a
+refresh, React's double effect) gets the same answer (a code GitHub refused, the same 409); anything else is one
+uniform 400 that says nothing of which check failed. The rows are in the connections' partition, so every other writer
+of voc-agents is denied them (`denyHardCapWrites`).
+
+**Rows and audit.** An App is `CONNECTIONS#default` / `GITHUB_APP#<id>` (its id, slug, owner and its kind, page, whether
+it has a hook, who made it and when, a version); its creation and removal are create-only audit rows of the
+connections' `LOG#` shape (`github_app_created`, `github_app_removed`: who, when, the slug, owner and hook, `key:
+stored` or `removed`, never the key).
+
+**The token function** (`voc-engineering-app-tokens`, VocProcessingStack, `lib/stacks/engineering-app-tokens.ts`): the
+broker's code under a role of its own, with the broker's signing layer, entered at `connectors/app_tokens.lambda_handler`,
+which takes `inspect_installation` (above) and `issues_token` and refuses every other action, and any request off its
+shape or naming a workspace, before anything is read. Its role holds `ssm:GetParameter` on `…/_github-app/*/key` only
+and `kms:Decrypt` through SSM for those parameters alone (`PARAMETER_ARN`): no table, no bucket, no function URL, no
+resource policy. The Agents API's role and the github_issues ingestor's may invoke it by name (IAM cannot tell which
+action an invoker asks for: the Agents API's code asks `inspect_installation` only). `issues_token` `{app_id,
+repositories}` (the github_issues source's sign-in, [github-issues.md](github-issues.md#signing-in-with-a-github-app-74500)):
+for each repository the installation covering it (`GET /repos/<o>/<r>/installation` with the JWT; a 404 is
+`uncovered`), then one token per installation, exactly `{issues: read, metadata: read}`, `repositories` narrowed to
+the run's ones it covers; the ingestor revokes each when its run ends.
+
+**IAM, per role.** The Agents API: `lambda:InvokeFunction` on the token function by name, no new SSM grant (the Apps'
+parameters are under the connections' path its put and delete already cover), still no `ssm:GetParameter`. The token
+function: above. The github_issues ingestor (its own role): `lambda:InvokeFunction` on the token function, only with the
+module on. The shared webhook role: `ssm:GetParameter` on `…/_github-app/*/webhook` only, only where the github_issues
+webhook and the module are both deployed (its `kms:Decrypt` is the role's grant of the stack's key). The broker and the
+checkout cache's writer: nothing new. All pinned by `lib/stacks/engineering-app-tokens.test.ts` and
+`api-engineering-reads.test.ts`.
 
 ## The knowledge pack
 

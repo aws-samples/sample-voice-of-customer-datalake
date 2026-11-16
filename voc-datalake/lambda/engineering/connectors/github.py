@@ -53,7 +53,7 @@ from typing import Final
 from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 from engineering.connectors import github_reactions
 from engineering.connectors.credentials import GitHubAppCredential
@@ -117,8 +117,8 @@ PAGE_SIZE: Final = 30
 _ON_DEFAULT_BRANCH: Final = frozenset({'behind', 'identical'})
 #: Minting an installation token: a write whose lost answer may be repeated (a second token is harmless; it expires
 #: within the hour), so the transport answers it as retryable, like a read.
-_TOKEN_PATH: Final = re.compile(r'/app/installations/[0-9]+/access_tokens\Z')
-_JSON: Final = 'application/vnd.github+json'
+TOKEN_PATH: Final = re.compile(r'/app/installations/[0-9]+/access_tokens\Z')
+JSON_ACCEPT: Final = 'application/vnd.github+json'
 _RAW: Final = 'application/vnd.github.raw+json'
 _NEXT: Final = re.compile(r'<([^>]+)>;\s*rel="next"')
 
@@ -134,7 +134,7 @@ _BRANCH: Final[Permissions] = {'contents': 'read'}
 #: The checkout cache's fetch of one commit (``fetch_token``): read, nothing else.
 _FETCH: Final[Permissions] = {'contents': 'read'}
 #: The repository's own facts (its default branch): what every token holds anyway.
-_METADATA: Final[Permissions] = {'metadata': 'read'}
+METADATA_READ: Final[Permissions] = {'metadata': 'read'}
 #: How long a connection's default branch (the host's, or the stored one the host confirmed) is kept before it is
 #: read again.
 DEFAULT_BRANCH_SECONDS: Final = 300
@@ -160,11 +160,17 @@ def _b64url(data: bytes) -> str:
 
 def app_jwt(credential: GitHubAppCredential, now: float) -> str:
     """The App's JWT (RS256): issued a minute back, expiring ``JWT_SECONDS`` from ``now``, issuer the App id."""
+    return sign_app_jwt(credential.app_id, credential.private_key, now)
+
+
+def sign_app_jwt(app_id: str, key: rsa.RSAPrivateKey, now: float) -> str:
+    """App ``app_id``'s JWT signed with ``key`` (``app_jwt``'s; the token function's too, ``app_tokens.py``, which
+    holds an App's key and no connection)."""
     header = _b64url(json.dumps({'alg': 'RS256', 'typ': 'JWT'}, separators=(',', ':')).encode())
-    claims = _b64url(json.dumps({'iat': int(now) - 60, 'exp': int(now) + JWT_SECONDS, 'iss': credential.app_id},
+    claims = _b64url(json.dumps({'iat': int(now) - 60, 'exp': int(now) + JWT_SECONDS, 'iss': app_id},
                                 separators=(',', ':')).encode())
     signing_input = f'{header}.{claims}'.encode('ascii')
-    signature = credential.private_key.sign(signing_input, padding.PKCS1v15(), hashes.SHA256())
+    signature = key.sign(signing_input, padding.PKCS1v15(), hashes.SHA256())
     return f'{header}.{claims}.{_b64url(signature)}'
 
 
@@ -179,6 +185,28 @@ def rate_limit_retry(response: Response, now: float) -> int | None:
     if response.status == 429 or b'secondary rate limit' in response.body.lower():
         return DEFAULT_RETRY_SECONDS
     return None
+
+
+def send_request(transport: Transport, clock: Callable[[], float], method: str, path: str, authorization: str, what: str,
+                 *, body: object = None, accept: str = JSON_ACCEPT, ok: tuple[int, ...] = (200,),
+                 user_agent: str = 'voc-engineering-broker') -> Response:
+    """One request to api.github.com through ``transport`` (the broker's client's, and the token function's): a rate
+    limit is ``HostBusy`` with the seconds to wait, any status outside ``ok`` a ``HostError`` naming it and ``what``,
+    never the token or what was sent."""
+    headers = {'Accept': accept, 'Authorization': authorization, 'User-Agent': user_agent,
+               'X-GitHub-Api-Version': GITHUB_API_VERSION}
+    data = None if body is None else json.dumps(body).encode()
+    if data is not None:
+        headers['Content-Type'] = 'application/json'
+    response = transport.request(method, path, headers, data)
+    retry = rate_limit_retry(response, clock())
+    if retry is not None:
+        raise HostBusy(f'The repository host is rate limiting {what}; retry later.', retry_after=retry)
+    if response.status not in ok:
+        unexpected = HostError(f'The repository host answered {response.status} to {what}.')
+        unexpected.status = response.status
+        raise unexpected
+    return response
 
 
 def next_page(headers: Mapping[str, str]) -> str | None:
@@ -238,7 +266,7 @@ class GitHubHost:
     def __init__(self, credentials: Callable[[str], GitHubAppCredential], transport: Transport | None = None,
                  clock: Callable[[], float] = time.time) -> None:
         self._credentials = credentials
-        self._transport = transport or HttpsTransport(host=API_HOST, repeatable=_TOKEN_PATH)
+        self._transport = transport or HttpsTransport(host=API_HOST, repeatable=TOKEN_PATH)
         self._clock = clock
         #: (connection, installation, owner/repository, permissions) -> (token, when it stops being used).
         self._tokens: dict[tuple[str, int, str, tuple[tuple[str, str], ...]], tuple[str, float]] = {}
@@ -250,21 +278,9 @@ class GitHubHost:
     # --- HTTP -------------------------------------------------------------------------------------------------
 
     def _send(self, method: str, path: str, authorization: str, what: str, body: object = None,
-              accept: str = _JSON, ok: tuple[int, ...] = (200,)) -> Response:
-        headers = {'Accept': accept, 'Authorization': authorization, 'User-Agent': 'voc-engineering-broker',
-                   'X-GitHub-Api-Version': GITHUB_API_VERSION}
-        data = None if body is None else json.dumps(body).encode()
-        if data is not None:
-            headers['Content-Type'] = 'application/json'
-        response = self._transport.request(method, path, headers, data)
-        retry = rate_limit_retry(response, self._clock())
-        if retry is not None:
-            raise HostBusy(f'The repository host is rate limiting {what}; retry later.', retry_after=retry)
-        if response.status not in ok:
-            unexpected = HostError(f'The repository host answered {response.status} to {what}.')
-            unexpected.status = response.status
-            raise unexpected
-        return response
+              accept: str = JSON_ACCEPT, ok: tuple[int, ...] = (200,)) -> Response:
+        return send_request(self._transport, self._clock, method, path, authorization, what, body=body, accept=accept,
+                            ok=ok)
 
     def _token(self, connection_id: str, permissions: Permissions) -> tuple[GitHubAppCredential, str]:
         credential = self._credentials(connection_id)
@@ -289,7 +305,7 @@ class GitHubHost:
         return credential, token
 
     def _api(self, connection_id: str, permissions: Permissions, method: str, path: str, what: str,
-             body: object = None, accept: str = _JSON, ok: tuple[int, ...] = (200,)) -> Response:
+             body: object = None, accept: str = JSON_ACCEPT, ok: tuple[int, ...] = (200,)) -> Response:
         """``path`` (after ``/repos/{owner}/{repo}``) with a token for ``permissions`` on the connection's repo."""
         credential, token = self._token(connection_id, permissions)
         return self._send(method, f'/repos/{credential.owner}/{credential.repository}{path}', f'Bearer {token}',
@@ -352,7 +368,7 @@ class GitHubHost:
         held = fresh(self._cached.default_branches, key, now)
         if held is not None:
             return held
-        branch = _text(_json(self._api(connection_id, _METADATA, 'GET', '', 'the repository read')), 'default_branch')
+        branch = _text(_json(self._api(connection_id, METADATA_READ, 'GET', '', 'the repository read')), 'default_branch')
         keep(self._cached.default_branches, key, (branch, now + DEFAULT_BRANCH_SECONDS), MAX_CACHED_BRANCHES)
         return branch
 

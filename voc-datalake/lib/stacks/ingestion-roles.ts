@@ -36,6 +36,11 @@
  *   on voc-idempotency for its own `ingestor#fanout#<id>#*` tick claims only, and
  *   lambda:InvokeFunction on the plugin's OWN function (one async invoke per
  *   workspace; the app-review continuation parts use it too).
+ * - a GitHub App sign-in (7.45.00, the github_issues plugin alone, only with the
+ *   engineering agents on): lambda:InvokeFunction on the GitHub Apps' token function by
+ *   name (voc-engineering-app-tokens, VocProcessingStack, which deploys later), for a
+ *   deployment-wide run's read-only Issues tokens (`environmentFor` names it to the
+ *   function). It reads the App's key with its own role; this one never does.
  *
  * Every role has both runs' grants (docs/multi-workspace.md): a deployment-wide run
  * (an event that names no workspace) reads the shared API-credentials secret and
@@ -69,6 +74,7 @@ import { grantInvokeByName } from '../utils/worker-lambda';
 import { grantWorkspaceStatusRead } from '../utils/workspace-resolution-grants';
 import { grantWorkspaceParameterRead } from '../utils/workspace-secrets';
 import { mantleInferenceStatement } from '../utils/web-search-models';
+import { APP_TOKENS_FUNCTION_ENV, GITHUB_APP_SIGN_IN_PLUGIN, engineeringAppTokens } from './engineering-app-tokens';
 import { RAW_LAYER_PREFIX, WORKSPACE_ID_PATTERN, WORKSPACE_RAW_LAYER_PREFIX } from './core-buckets';
 
 /**
@@ -105,6 +111,8 @@ export interface BaseIngestionGrants {
   apiSecrets: secretsmanager.ISecret;
   /** The workspaces' parameters' prefixed base path (`voc/ws`, `<prefix>-voc/ws`; lib/utils/workspace-secrets.ts). */
   workspaceParameterBasePath: string;
+  /** The stack's prefix-aware names: the GitHub Apps' token function's (engineering-app-tokens.ts engineeringAppTokens). */
+  uniqueName: (baseName: string) => string;
 }
 
 /** What decides whether a plugin's ingestor needs a role of its own. */
@@ -120,6 +128,11 @@ export interface IngestorRoleNeeds {
   functionName: string;
   /** Job-end notices (`infrastructure.ingestor.jobNotices`): a dedicated role, so no other plugin may publish. */
   jobNotices?: boolean;
+}
+
+/** Whether a plugin's needs call for a role of its own (else the shared one). */
+function needsOwnRole({ bedrock, browser, webSearch = false, scheduleRuleName, jobNotices = false }: IngestorRoleNeeds): boolean {
+  return bedrock || browser !== undefined || webSearch || scheduleRuleName !== undefined || jobNotices;
 }
 
 /** The AWS-managed AgentCore browser: an `aws`-owned resource, one per region. */
@@ -228,9 +241,11 @@ export class IngestorRoles {
   /** The role a plugin's ingestor runs as. */
   roleFor(
     pluginId: string,
-    { bedrock, browser, webSearch = false, scheduleRuleName, functionName, jobNotices = false }: IngestorRoleNeeds,
+    needs: IngestorRoleNeeds,
   ): iam.Role {
-    if (!bedrock && !browser && !webSearch && !scheduleRuleName && !jobNotices) {
+    const { bedrock, browser, webSearch = false, scheduleRuleName, functionName } = needs;
+    const appTokens = this.appTokensFor(pluginId);
+    if (!needsOwnRole(needs) && appTokens === undefined) {
       this.shared ??= this.newRole('IngestionLambdaRole');
       this.grantOwnParameters(this.shared, pluginId);
       return this.shared;
@@ -254,8 +269,21 @@ export class IngestorRoles {
       }));
       this.grantFanOut(role, pluginId, functionName);
     }
+    // Built from the NAME: the token function is VocProcessingStack's, which deploys after this stack.
+    if (appTokens !== undefined) grantInvokeByName(this.stack, role, [appTokens], 'GitHubAppTokens');
 
     return role;
+  }
+
+  /** The token function a plugin's ingestor signs in with a GitHub App through (github_issues, engineering on). */
+  private appTokensFor(pluginId: string): string | undefined {
+    return pluginId === GITHUB_APP_SIGN_IN_PLUGIN ? engineeringAppTokens(this.stack, this.grants.uniqueName) : undefined;
+  }
+
+  /** The environment a plugin's function needs for its role's grants: the token function's name, for the App sign-in. */
+  environmentFor(pluginId: string): Record<string, string> {
+    const appTokens = this.appTokensFor(pluginId);
+    return appTokens === undefined ? {} : { [APP_TOKENS_FUNCTION_ENV]: appTokens };
   }
 
   /** A browser plugin's sessions and a web-search plugin's Responses API and cached search, each `*` acknowledged. */

@@ -10,6 +10,8 @@ fetched, and the next scheduled run resumes from the watermark.
 
 The token travels only in the ``Authorization`` header. It is never logged and
 never part of an exception message (``GitHubError`` names the status and path).
+A GitHub App's installation token (7.45.00: a deployment-wide run signing in with
+one of the deployment's Apps) is revoked when the run ends (``revoke_token``).
 """
 
 import time
@@ -21,7 +23,7 @@ import requests
 
 from shared.github_rest import GITHUB_API, GITHUB_API_VERSION
 
-__all__ = ["GITHUB_API", "GitHubClient", "GitHubNotFound", "StopRun"]
+__all__ = ["GITHUB_API", "GitHubClient", "GitHubNotFound", "StopRun", "revoke_token"]
 
 REQUEST_TIMEOUT_SECONDS = 15
 #: Stop while a few requests of quota remain, so an operator's own use of the
@@ -58,8 +60,28 @@ class GitHubPage:
 
 
 def _http_get(url: str, headers: dict, params: dict | None, timeout: int) -> requests.Response:
-    """The network seam. Tests patch this; nothing else in the plugin opens a socket."""
+    """The network seam. Tests patch this; nothing else in the plugin opens a socket but ``_http_delete``."""
     return requests.get(url, headers=headers, params=params, timeout=timeout)
+
+
+def _http_delete(url: str, headers: dict, timeout: int) -> requests.Response:
+    """The revocation's network seam (``revoke_token``). Tests patch it."""
+    return requests.delete(url, headers=headers, timeout=timeout)
+
+
+def revoke_token(token: str) -> bool:
+    """Revoke an installation token (``DELETE /installation/token``, sent once): True when GitHub answers 204. A
+    failure is False and never raised (nor logged with the token): the token expires within the hour anyway."""
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {token}",
+        "X-GitHub-Api-Version": GITHUB_API_VERSION,
+        "User-Agent": "voc-datalake-github-issues",
+    }
+    try:
+        return _http_delete(f"{GITHUB_API}/installation/token", headers, REQUEST_TIMEOUT_SECONDS).status_code == 204
+    except requests.RequestException:
+        return False
 
 
 def _next_link(link_header: str | None) -> str | None:

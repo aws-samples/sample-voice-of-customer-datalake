@@ -159,6 +159,8 @@ export class EngineeringBroker extends Construct {
   public readonly url: string;
   /** The connections' credentials it reads, which the checkout cache's writer reads the same way. */
   public readonly connectionParameters: ConnectionParameters;
+  /** cryptography for the App JWT: the GitHub Apps' token function shares it (engineering-app-tokens.ts). */
+  public readonly signingLayer: lambda.ILayerVersion;
   /** The function itself, whose environment admits the runtime (`admitRuntime`). */
   private readonly brokerFunction: lambda.Function;
 
@@ -188,9 +190,11 @@ export class EngineeringBroker extends Construct {
       },
       serviceName: 'voc-engineering-broker',
     });
-    // cryptography signs the GitHub App's JWT (RS256): the signing layer, for this one function of the stack.
-    broker.addLayers(dependencyLayer(this, 'SigningDepsLayer', SIGNING_LAYER_DIR,
-      'RS256 signing for the engineering broker (GitHub App JWT; ARM64/Graviton)'));
+    // cryptography signs the GitHub App's JWT (RS256): the signing layer, for this function and the GitHub Apps' token
+    // function (7.45.00, engineering-app-tokens.ts), the stack's only two that sign.
+    this.signingLayer = dependencyLayer(this, 'SigningDepsLayer', SIGNING_LAYER_DIR,
+      'RS256 signing for the engineering broker (GitHub App JWT; ARM64/Graviton)');
+    broker.addLayers(this.signingLayer);
     // PyYAML reads a GitLab project's CI files before a push (connectors/ci_yaml.py): its own small layer.
     broker.addLayers(dependencyLayer(this, 'CiDepsLayer', ENGINEERING_CI_LAYER_DIR,
       'YAML reader for the engineering broker (GitLab CI files; ARM64/Graviton)'));

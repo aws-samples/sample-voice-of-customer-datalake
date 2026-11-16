@@ -68,6 +68,8 @@ const EXEMPT: Readonly<Record<string, string>> = {
   UserAdmin: 'Create user is a page-header action',
   RunsTab: 'Run now heads the runs list',
   Agents: 'New agent is a page-header action',
+  GitHubAppPanel: 'Create the App on GitHub ends a two-field choice inside the Connect GitHub card (it posts to github.com at once, nothing left unsaved); the App rows\' actions act at once',
+  GitHubAppCreated: 'Install on GitHub is a link to github.com in the page\'s one card, under what was created; nothing to save',
   EngineeringConnections: 'Add connection is a section-header action beside the title (it opens a dialog, whose footer holds Save)',
   SkillActions: 'Accept is one of a version\'s actions beside its status; it opens an approval card, whose footer holds the confirmation',
   WorkflowPage: 'Start a run is a page-header action beside the title (it opens a dialog)',

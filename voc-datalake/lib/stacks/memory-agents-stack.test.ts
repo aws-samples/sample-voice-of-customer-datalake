@@ -34,6 +34,7 @@ import { itemAt } from '../test-support/guards';
 import { sourceStringConstant } from '../test-support/cross-language-invariants';
 import { CONVERSATIONS_BY_KIND_INDEX } from './memory-workers';
 import { WORKSPACE_MEMORY_IMPORTS_PREFIX } from './core-buckets';
+import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 
 const ENV = { account: '111111111111', region: 'us-east-1' };
 
@@ -113,7 +114,7 @@ function processing(): Template {
 
 describe('memory workers (VocProcessingStack)', () => {
   let template: Template;
-  beforeAll(() => { template = processing(); });
+  beforeAll(() => { template = processing(); }, SYNTH_TIMEOUT_MS);
 
   it('runs each worker from the memory tree with a path-style handler', () => {
     expect(functionProps(template, 'MemoryWorkersMemoryExtractor').Handler).toBe('memory/extractor/handler.lambda_handler');
@@ -377,7 +378,7 @@ function routeAuthorization(template: Template): Map<string, string> {
 
 describe('memory + agents APIs (VocApiStack)', () => {
   let template: Template;
-  beforeAll(() => { template = api(); });
+  beforeAll(() => { template = api(); }, SYNTH_TIMEOUT_MS);
 
   it('serves /memory, /agents and /workflows — collection and proxy — all behind Cognito', () => {
     const routes = routeAuthorization(template);

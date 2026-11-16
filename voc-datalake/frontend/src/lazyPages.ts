@@ -31,6 +31,9 @@ export const WorkflowPage = lazy(() => import('./pages/Agents/WorkflowPage'))
 export const WorkflowTemplatePage = lazy(() => import('./pages/Agents/WorkflowTemplatePage'))
 // An engineering run's monitor, by its run id (docs/autonomous-agents.md "An engineering run").
 export const EngineeringRun = lazy(() => import('./pages/Agents/EngineeringRun'))
+// Where GitHub sends an administrator back from creating and from installing the deployment's GitHub App (7.45.00).
+export const GitHubAppCreated = lazy(() => import('./pages/Agents/GitHubAppCreated'))
+export const GitHubAppInstalled = lazy(() => import('./pages/Agents/GitHubAppInstalled'))
 export const Account = lazy(() => import('./pages/Account/Account'))
 // The current workspace's members (docs/multi-workspace.md): a page only inside a workspace.
 export const Members = lazy(() => import('./pages/Members/Members'))

@@ -790,8 +790,14 @@ The rest, in order, each slice plumbing with no change in behaviour until the sw
   voc-engineering's rows (runs, spend and budget alerts, conversations, the board, skills and scorecards, the agents'
   memory); the voc-eng-workspace bucket's objects; in voc-agents, the hard cap `SETTINGS#engineering` (a deployment
   setting, "Per-workspace configuration" above) and the repository connections with their audit and CI attestation
-  rows; each connection's SSM credential, `/voc/engineering/{connection_id}`, gaining the `{workspace_id}/` prefix
-  docs/autonomous-engineering.md promises; and the checkout cache under the raw bucket's `engineering/cache` prefix. With
+  rows, and, since 7.45.00, the deployment's GitHub Apps (`CONNECTIONS#default` / `GITHUB_APP#<app_id>`, with their
+  `github_app_created` and `github_app_removed` audit rows) and the connect flow's single-use setup states
+  (`CONNECTIONS#default#SETUP` / `STATE#<hash>`, which voc-agents' TTL removes a day after they are minted); each
+  connection's SSM credential, `/voc/engineering/{connection_id}`, gaining the `{workspace_id}/` prefix
+  docs/autonomous-engineering.md promises, and the Apps' parameters too (`/voc/engineering/_github-app/<app_id>/key`
+  and `…/webhook`); the github_issues source's `github_app_id` (a deployment-wide run's sign-in with one of those Apps:
+  a workspace's run ignores it, and the token function refuses a request naming a workspace, until the Apps are a
+  workspace's); and the checkout cache under the raw bucket's `engineering/cache` prefix. With
   them: the workspace export's `agents_workflows` entity (reported `not_per_workspace` today,
   `lambda/jobs/workspace_export/entities.py`), a hard-delete sweep for every family above (and its grants), and an
   erasure that reaches the agents' memory (`erase_person_memories`, today only an administrator's call on the store,

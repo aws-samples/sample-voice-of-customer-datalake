@@ -6,7 +6,9 @@
  * and who changed it last; an administrator adds one, edits one (an empty private key keeps the stored credential),
  * or removes one after a confirmation that says live runs on it lose access within five minutes. Each shows its CI
  * attestation too (CiAttestation.tsx): an administrator attests that the repository's CI meets the setup guide, which
- * the agents' pushes and pull requests wait for, or withdraws it.
+ * the agents' pushes and pull requests wait for, or withdraws it. Since 7.45.00 the "Connect GitHub" panel
+ * (GitHubAppPanel.tsx) makes a GitHub App from a manifest and saves a connection for each repository it is installed
+ * on; such a connection says which App it goes through ("via <slug>").
  *
  * @module pages/Agents/EngineeringConnections
  */
@@ -16,6 +18,7 @@ import { useTranslation } from 'react-i18next'
 import { GitBranch, KeyRound, Plus } from 'lucide-react'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import { engineeringConnectionsApi, engineeringConnectionsKeys, isCiAttested } from '../../api/engineeringConnectionsApi'
+import { githubAppsApi, githubAppsKeys } from '../../api/githubAppsApi'
 import { useConfigStore } from '../../store/configStore'
 import { formatCalendarDay, formatDateTime } from '../../utils/dateUtils'
 import { EXPIRY_WARNING_DAYS, todayUtc, tokenExpiry } from './connectionRules'
@@ -23,6 +26,7 @@ import { AttestDialog, CiAttestationLine, WithdrawConfirm } from './CiAttestatio
 import { ConnectionDialog } from './ConnectionDialog'
 import { CredentialGuidance } from './ConnectionFields'
 import { ConnectionChangeConfirm } from './ConnectionModals'
+import { GitHubAppPanel } from './GitHubAppPanel'
 import type { ConnectionList, EngineeringConnection, SavedConnection } from '../../api/engineeringConnectionsApi'
 
 /** The dialog open: adding (null) or editing a connection, removing it, or attesting or withdrawing its CI. */
@@ -59,7 +63,37 @@ function TokenExpiryLine({ expiresAt }: Readonly<{ expiresAt: string | null }>) 
   )
 }
 
-function ConnectionRow({ connection, actions }: Readonly<{ connection: EngineeringConnection; actions: RowActions }>) {
+/** The App a connection goes through, by its id: the slug of each of the deployment's GitHub Apps. */
+type AppSlugs = ReadonlyMap<string, string>
+
+/** A connection's credential: its host and kind, its App (the one it goes through, or its ids), whether it is set. */
+function CredentialLine({ connection, appSlugs }: Readonly<{ connection: EngineeringConnection; appSlugs: AppSlugs }>) {
+  const { t } = useTranslation('agents')
+  const { credential } = connection
+  const viaApp = credential.kind === 'app_reference' && credential.app_id !== null ? appSlugs.get(credential.app_id) : undefined
+  return (
+    <p className="flex flex-wrap items-center gap-2 text-[12px]">
+      <span className="badge badge-muted">{t(`connections.hosts.${connection.host}`)}</span>
+      <span className="badge badge-muted inline-flex items-center gap-1">
+        <KeyRound size={12} aria-hidden="true" /> {connection.host === 'gitlab' ? t('connections.kindToken') : t('connections.kind')}
+      </span>
+      {viaApp !== undefined && <span className="text-muted">{t('connections.githubApp.via', { slug: viaApp })}</span>}
+      {credential.app_id !== null && credential.installation_id !== null && (
+        <span className="font-mono text-muted">
+          {t('connections.appIds', { appId: credential.app_id, installationId: credential.installation_id })}
+        </span>
+      )}
+      <span className={credential.set ? 'badge badge-ok' : 'badge badge-warn'}>
+        {credential.set ? t('connections.set') : t('connections.notSet')}
+      </span>
+      {!credential.set && <span className="text-warn">{t('connections.notSetHint')}</span>}
+    </p>
+  )
+}
+
+function ConnectionRow({ connection, actions, appSlugs }: Readonly<{
+  connection: EngineeringConnection; actions: RowActions; appSlugs: AppSlugs
+}>) {
   const { t, i18n } = useTranslation('agents')
   const { repository, credential } = connection
   const when = formatDateTime(connection.updated_at, i18n.language, '')
@@ -74,21 +108,7 @@ function ConnectionRow({ connection, actions }: Readonly<{ connection: Engineeri
             {t('connections.branch', { branch: connection.default_branch })}
           </span>
         </p>
-        <p className="flex flex-wrap items-center gap-2 text-[12px]">
-          <span className="badge badge-muted">{t(`connections.hosts.${connection.host}`)}</span>
-          <span className="badge badge-muted inline-flex items-center gap-1">
-            <KeyRound size={12} aria-hidden="true" /> {connection.host === 'gitlab' ? t('connections.kindToken') : t('connections.kind')}
-          </span>
-          {credential.app_id !== null && credential.installation_id !== null && (
-            <span className="font-mono text-muted">
-              {t('connections.appIds', { appId: credential.app_id, installationId: credential.installation_id })}
-            </span>
-          )}
-          <span className={credential.set ? 'badge badge-ok' : 'badge badge-warn'}>
-            {credential.set ? t('connections.set') : t('connections.notSet')}
-          </span>
-          {!credential.set && <span className="text-warn">{t('connections.notSetHint')}</span>}
-        </p>
+        <CredentialLine connection={connection} appSlugs={appSlugs} />
         {connection.host === 'gitlab' && credential.set && <TokenExpiryLine expiresAt={credential.expires_at} />}
         <CiAttestationLine connection={connection} />
         {when !== '' && (
@@ -131,7 +151,7 @@ function RemoveConfirm({ connection, onDone, onCancel }: Readonly<{
   )
 }
 
-function ConnectionsBody({ list, actions }: Readonly<{ list: ConnectionList; actions: RowActions }>) {
+function ConnectionsBody({ list, actions, appSlugs }: Readonly<{ list: ConnectionList; actions: RowActions; appSlugs: AppSlugs }>) {
   const { t } = useTranslation('agents')
   if (list.connections.length === 0) {
     return (
@@ -145,7 +165,7 @@ function ConnectionsBody({ list, actions }: Readonly<{ list: ConnectionList; act
   return (
     <ul className="space-y-2" aria-label={t('connections.title')}>
       {list.connections.map((connection) => (
-        <ConnectionRow key={connection.connection_id} connection={connection} actions={actions} />
+        <ConnectionRow key={connection.connection_id} connection={connection} actions={actions} appSlugs={appSlugs} />
       ))}
     </ul>
   )
@@ -181,6 +201,8 @@ export function EngineeringConnections() {
   const { t } = useTranslation('agents')
   const configured = useConfigStore((s) => s.config.apiEndpoint) !== ''
   const read = useQuery({ queryKey: engineeringConnectionsKeys.list(), queryFn: engineeringConnectionsApi.list, enabled: configured })
+  const apps = useQuery({ queryKey: githubAppsKeys.list(), queryFn: githubAppsApi.list, enabled: configured })
+  const appSlugs: AppSlugs = new Map((apps.data?.apps ?? []).map((app) => [app.app_id, app.slug]))
   const [open, setOpen] = useState<Open>(null)
   const [notice, setNotice] = useState('')
   const list = read.data
@@ -212,8 +234,9 @@ export function EngineeringConnections() {
         <LoadFailed message={t('connections.loadFailed')} onRetry={() => { void read.refetch() }} retrying={read.isFetching} />
       )}
       {list !== undefined && (
-        <ConnectionsBody list={list} actions={actions} />
+        <ConnectionsBody list={list} actions={actions} appSlugs={appSlugs} />
       )}
+      <GitHubAppPanel read={apps} onNotice={setNotice} />
       <CredentialGuidance />
       {open !== null && <OpenDialog open={open} onClose={() => setOpen(null)} onNotice={setNotice} />}
     </div>

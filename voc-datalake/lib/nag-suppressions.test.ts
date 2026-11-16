@@ -282,7 +282,10 @@ describe('cdk-nag acknowledgements', () => {
       // 111 -> 114: voc-retention's read of one workspace's text product documents (7.43.00, 3g-b:
       // `ws/{one id}/projects/*/product_docs/raw/*.md`, `…/raw/*.txt` and `…/extracted/*`), three findings of its one
       // acknowledgement.
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 114, used: 114 });
+      // 114 -> 116: the GitHub Apps' token function's read of the Apps' keys (7.45.00, engineering-app-tokens.ts:
+      // `…/_github-app/*/key`) and the webhook role's read of their webhook secrets (`…/_github-app/*/webhook`), one
+      // finding each, their IAM5.
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 116, used: 116 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

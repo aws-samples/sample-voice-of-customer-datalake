@@ -27,6 +27,7 @@ import { createS3ImportLambda } from './api-s3-import-lambda';
 import { ENGINEERING_WORKSPACE_REPORTS_KEYS } from './core-buckets';
 import { grantInvokeByName } from '../utils/worker-lambda';
 import { engineeringAgentsEnabled, engineeringParameterArns, engineeringParameterPrefix } from './engineering-broker';
+import { appTokensFunctionName, grantAppTokensInvoke } from './engineering-app-tokens';
 import { engineeringRunCaps } from './engineering-start';
 import { SKILL_PARTITIONS } from './engineering-runtime';
 
@@ -91,8 +92,9 @@ export interface AssistantLambdas {
  * lambda/engineering/views.py): GetItem and Query on voc-engineering (a run's rows, and the spend ledger's month
  * partitions for `GET /agents/engineering/spend`), and its one write, the skills' partitions (`SkillDecisions`: an
  * administrator's actions on a skill version); `lambda:InvokeFunction` on the board's function
- * for a person's board actions (its own role writes them) and on the start function for a run's start (never the
- * runtime's own function), and GetObject on the workspace
+ * for a person's board actions (its own role writes them), on the start function for a run's start (never the
+ * runtime's own function) and, since 7.45.00, on the GitHub Apps' token function for an installation's read
+ * (engineering-app-tokens.ts: it reads an App's key with its own role; this one never does), and GetObject on the workspace
  * bucket's reports only, with `kms:Decrypt` on the stack's key through S3 alone (the table's key comes with the role's
  * DynamoDB-only grant, `AgentsTablesKey`). No ListBucket (it would list every
  * run object's key): S3 answers a report version that was counted but never written with 403, which views.py reads as
@@ -131,6 +133,10 @@ function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, 
   // its own (engineering-start.ts), entered where it takes `start_run` and refuses every other action. Never voc-engineering-runtime itself, so this
   // role can start a run and never tick, launch, signal or end one.
   grantInvokeByName(cdk.Stack.of(role), role, [ctx.uniqueName(ENGINEERING_START_FUNCTION_BASE_NAME)], 'StartEngineeringRuns');
+  // A GitHub App's installation, read for the in-app connect flow (7.45.00, lambda/engineering/connectors/github_apps.py)
+  // through the token function, by name: its own role reads the App's key, and this role asks it for
+  // `inspect_installation` alone. No new SSM grant: the Apps' parameters are under the connections' path, written below.
+  grantAppTokensInvoke(role, ctx.uniqueName);
   const reports = engineeringWorkspaceBucket.arnForObjects(ENGINEERING_WORKSPACE_REPORTS_KEYS);
   role.addToPolicy(new iam.PolicyStatement({ actions: ['s3:GetObject'], resources: [reports] }));
   // The reports' key: decrypt through S3 alone (the role writes nothing to the bucket).
@@ -152,6 +158,10 @@ function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, 
     ENGINEERING_WORKSPACE_BUCKET: engineeringWorkspaceBucket.bucketName,
     ENGINEERING_BOARD_FUNCTION: ctx.uniqueName(ENGINEERING_BOARD_FUNCTION_BASE_NAME),
     ENGINEERING_START_FUNCTION: ctx.uniqueName(ENGINEERING_START_FUNCTION_BASE_NAME),
+    ENGINEERING_APP_TOKENS_FUNCTION: appTokensFunctionName(ctx.uniqueName),
+    // Where GitHub sends the browser back after an App is made or installed (github_apps.py CREATED_PATH, INSTALLED_PATH):
+    // this deployment's own CloudFront domain (a prefixed one's too), as the MCP OAuth endpoints name it.
+    FRONTEND_URL: `https://${ctx.props.frontendDomainName}`,
     ...engineeringRunCaps(ctx.stack),
   };
 }

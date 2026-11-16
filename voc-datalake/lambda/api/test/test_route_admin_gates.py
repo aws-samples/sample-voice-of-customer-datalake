@@ -89,6 +89,11 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         # A connection's CI attestation (engineering/connectors/attestations.py): the same gate.
         'POST /agents/engineering/connections/<connection_id>/ci-attestation',
         'DELETE /agents/engineering/connections/<connection_id>/ci-attestation',
+        # The deployment's GitHub Apps made in two clicks (7.45.00, engineering/connectors/github_apps.py): the same
+        # gate (the connections' store, ``_github_apps``), every step of the flow and the App's removal.
+        'POST /agents/engineering/github-apps/manifest', 'POST /agents/engineering/github-apps/conversions',
+        'POST /agents/engineering/github-apps/installations', 'POST /agents/engineering/github-apps/<app_id>/install',
+        'POST /agents/engineering/github-apps/<app_id>/check', 'DELETE /agents/engineering/github-apps/<app_id>',
         # A run's start from a saved engineering flow (the start function): an admin acting for themselves.
         'POST /agents/engineering/runs',
         # A skill version's acceptance, rejection, rollback and benchmark (engineering/skills/actions.py): the same gate.

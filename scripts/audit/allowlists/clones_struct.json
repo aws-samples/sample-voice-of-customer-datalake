@@ -3,14 +3,6 @@
   "entries": [
     {
       "files": [
-        "voc-datalake/lambda/engineering/connectors/credentials.py",
-        "voc-datalake/lambda/shared/radar_routing.py"
-      ],
-      "name": "__init__",
-      "reason": "two unrelated per-container caches that each take an injected clock and start an empty dict: the repository connections' credentials (keyed by connection, an SSM client injected) and Radar's brand lists (keyed by workspace, a TTL); the engineering broker ships without radar_routing, and one base class for two field assignments would couple them (7.35.00 merge of voc-autonomous)"
-    },
-    {
-      "files": [
         "voc-datalake/lambda/engineering/connectors/github.py",
         "voc-datalake/lambda/engineering/connectors/gitlab.py"
       ],

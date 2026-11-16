@@ -31,7 +31,11 @@ Permissions:
   engineering/connectors/connections.py: a row in the agents table with its audit rows, and the GitHub App
   credential in SSM, written and deleted here, never read), and each connection's CI attestation
   (``POST``/``DELETE …/connections/<id>/ci-attestation``, engineering/connectors/attestations.py: create-only
-  version rows beside the connection's, each with its audit row), and a run's start
+  version rows beside the connection's, each with its audit row), and the deployment's GitHub Apps made in two
+  clicks (7.45.00: ``GET /agents/engineering/github-apps``, ``POST …/github-apps/manifest``, ``…/conversions``,
+  ``…/installations``, ``…/github-apps/<app_id>/install``, ``…/<app_id>/check``, ``DELETE …/github-apps/<app_id>``;
+  engineering/connectors/github_apps.py: an App's key and webhook secret in SSM, written here and never read, its row
+  and single-use setup states in the agents table), and a run's start
   (``POST /agents/engineering/runs``, a saved engineering flow on a stored connection's commit: the start
   function, below), and the agents' skills and scorecards, read only (``GET /agents/engineering/skills``,
   ``…/skills/<role>/versions[/<version>]``, ``GET /agents/engineering/scorecards/<role>``: engineering/skills/views.py)
@@ -49,7 +53,9 @@ function (``ENGINEERING_BOARD_FUNCTION``), which makes a person's board actions 
 events back for this role to publish as the person (engineering/board/api.py person_request), and
 ``lambda:InvokeFunction`` on the start function (``ENGINEERING_START_FUNCTION``, voc-engineering-start: the runtime's
 code and role, which runs ``start_run`` and, since 7.10.00, ``ask_reactions``, and refuses every other action; never
-the runtime's own function), and
+the runtime's own function), and, since 7.45.00, on the token function (``ENGINEERING_APP_TOKENS_FUNCTION``,
+voc-engineering-app-tokens: the broker's code under its own role, which reads an App's key; this API asks it only
+``inspect_installation``, which answers no token), and
 ``ssm:PutParameter`` and ``ssm:DeleteParameter`` on the connections' parameters only, with ``kms:Encrypt`` and
 ``kms:GenerateDataKey`` on the stack's key through SSM for them (no ``ssm:GetParameter``); it is to add
 ``lambda:InvokeFunction`` on ``voc-engineering-runtime`` (the run
@@ -1371,6 +1377,149 @@ def withdraw_engineering_connection_ci(connection_id: str):
 
     _connection_call(withdraw)
     return {'withdrawn': True}
+
+
+# The deployment's GitHub Apps (7.45.00, engineering/connectors/github_apps.py; docs/autonomous-engineering.md, "A GitHub
+# App in two clicks"): the same gate as the connections (404 while the module is off, then administrators acting for
+# themselves), every route behind Cognito (/agents/{proxy+}). The App's key and webhook secret go from GitHub's answer
+# straight to SSM; this role never reads them back, and no answer, log line or error carries them, nor a token: the
+# token function (voc-engineering-app-tokens, invoked by name) reads an installation for it and answers no token here.
+#: The token function's errors (its exception types) and the answer each is: its words for a refusal a person can act
+#: on, a plain "try again" for the rest.
+_APP_TOKENS_REFUSALS = {'InstallationRefused': 'conflict', 'AppKeyUnavailable': 'conflict', 'HostBusy': 'unavailable',
+                        'HostError': 'unavailable'}
+
+
+def _github_apps() -> tuple[Any, Caller]:
+    """The Apps' store and its caller (``_connection_store``'s gate)."""
+    connections, caller = _connection_store()
+    from engineering.connectors.connections import PARAMETER_KEY_ENV, PARAMETER_PREFIX_ENV
+    from engineering.connectors.github_apps import FRONTEND_URL_ENV, WEBHOOK_URL_ENV, GitHubApps
+
+    return GitHubApps(_agents_table(), _ssm_client, os.environ.get(PARAMETER_PREFIX_ENV, ''),
+                      os.environ.get(PARAMETER_KEY_ENV, ''), connections, _invoke_app_tokens,
+                      frontend_url=os.environ.get(FRONTEND_URL_ENV, ''),
+                      webhook_url=os.environ.get(WEBHOOK_URL_ENV, '')), caller
+
+
+def _invoke_app_tokens(request: dict[str, Any]) -> dict[str, Any]:
+    """The token function's answer to ``request`` (``inspect_installation`` only, from here), or a
+    ``ConnectionRefused``: its refusals in its words (409), anything else "try again" (503). Read-only on GitHub, so a
+    lost answer is safe to ask again."""
+    from engineering.connectors.connections import ConnectionRefused
+    from shared.engineering_agents import APP_TOKENS_FUNCTION_ENV
+
+    function = os.environ.get(APP_TOKENS_FUNCTION_ENV, '')
+    unreadable = ConnectionRefused('unavailable', 'GitHub could not be read for the App: try again')
+    if not function:
+        raise ConnectionRefused('unavailable', 'GitHub Apps cannot be read here: the deployment names no token function')
+    try:
+        response = _start_client().invoke(FunctionName=function, InvocationType='RequestResponse',
+                                          Payload=json.dumps(request).encode())
+        payload = json.loads(response['Payload'].read() or b'{}')
+    except (BotoCoreError, ClientError, ValueError, KeyError, OSError) as exc:
+        logger.warning('engineering: the app tokens function did not answer', extra={'error_type': type(exc).__name__})
+        raise unreadable from None
+    if not isinstance(payload, dict):
+        raise unreadable
+    if response.get('FunctionError'):
+        error_type = payload.get('errorType')
+        logger.warning('engineering: the app tokens function refused', extra={'error_type': str(error_type)[:60]})
+        kind = _APP_TOKENS_REFUSALS.get(str(error_type))
+        if kind is None:
+            raise unreadable
+        raise ConnectionRefused(kind, str(payload.get('errorMessage') or 'GitHub refused the App: try again')[:300])
+    return payload
+
+
+def _empty_body() -> None:
+    if json_object_body(app):
+        raise ValidationError('the body is {}, or none')
+
+
+@app.get('/agents/engineering/github-apps')
+@tracer.capture_method(capture_response=False)
+def list_engineering_github_apps():
+    """``{apps: [{app_id, slug, owner, owner_type, html_url, webhook, connections, created_at, created_by, version}],
+    limit}``: the deployment's GitHub Apps, each with the connections that use it (never a key or a secret)."""
+    apps, _ = _github_apps()
+    from engineering.connectors.github_apps import MAX_APPS
+
+    return {'apps': _connection_call(apps.list), 'limit': MAX_APPS}
+
+
+@app.post('/agents/engineering/github-apps/manifest')
+@tracer.capture_method(capture_response=False)
+def engineering_github_app_manifest():
+    """``{account: user | organization, org?}`` → ``{action_url, manifest, expires_at}``: the form's target on
+    github.com (with a single-use state, 30 minutes) and the App's manifest, which the browser posts there. 409 at the
+    Apps' limit."""
+    apps, caller = _github_apps()
+    return _connection_call(lambda: apps.manifest(json_object_body(app), _connection_actor(caller)))
+
+
+@app.post('/agents/engineering/github-apps/conversions')
+@tracer.capture_method(capture_response=False)
+def convert_engineering_github_app():
+    """``{code, state}`` (as GitHub handed them back) → 201 ``{app, install_url, expires_at}``: the code exchanged at
+    once, the App's key and webhook secret stored in SSM, the App recorded, and its install link (a new state). 400 for
+    a state not this step's; 409 when GitHub no longer takes the code (the App may exist there without its key)."""
+    apps, caller = _github_apps()
+    return _json(201, _connection_call(lambda: apps.convert(json_object_body(app), _connection_actor(caller))))
+
+
+@app.post('/agents/engineering/github-apps/installations')
+@tracer.capture_method(capture_response=False)
+def engineering_github_app_installed():
+    """``{installation_id, setup_action, state}`` → ``{app, account, connections: [{connection, created}], skipped:
+    [{repository, reason}]}``: a connection saved for every repository the installation lists, up to the connections'
+    limit. 409 for an installation of another App, or a suspended one."""
+    apps, caller = _github_apps()
+    return _connection_call(lambda: apps.installed(json_object_body(app), _connection_actor(caller)))
+
+
+@app.post('/agents/engineering/github-apps/<app_id>/install')
+@tracer.capture_method(capture_response=False)
+def engineering_github_app_install(app_id: str):
+    """``{}`` → ``{install_url, expires_at}``: the App's install link again (a new state)."""
+    apps, caller = _github_apps()
+
+    def install() -> dict:
+        _empty_body()
+        return apps.install(app_id, _connection_actor(caller))
+
+    return _connection_call(install)
+
+
+@app.post('/agents/engineering/github-apps/<app_id>/check')
+@tracer.capture_method(capture_response=False)
+def check_engineering_github_app(app_id: str):
+    """``{}`` → ``{repositories, missing}``: what the App's installations cover now, and its connections whose
+    repository they no longer do."""
+    apps, _ = _github_apps()
+
+    def check() -> dict:
+        _empty_body()
+        return apps.check(app_id)
+
+    return _connection_call(check)
+
+
+@app.delete('/agents/engineering/github-apps/<app_id>')
+@tracer.capture_method(capture_response=False)
+def delete_engineering_github_app(app_id: str):
+    """``{reason?}`` (the body optional) → ``{removed: true}``: its key and webhook secret removed, its row marked
+    removed with its audit row. 409 while a connection uses it. Deleting it on GitHub stays the administrator's."""
+    apps, caller = _github_apps()
+
+    def remove() -> None:
+        body = json_object_body(app)
+        if not set(body) <= {'reason'}:
+            raise ValidationError('the body is {reason?}, or none')
+        apps.remove(app_id, _connection_actor(caller), body.get('reason'))
+
+    _connection_call(remove)
+    return {'removed': True}
 
 
 # A run's start (``POST /agents/engineering/runs``): an administrator acting for themselves starts a saved engineering

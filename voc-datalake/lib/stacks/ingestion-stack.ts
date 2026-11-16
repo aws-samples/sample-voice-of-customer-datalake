@@ -169,7 +169,7 @@ export class VocIngestionStack extends VocStack {
     this.ingestorRoles = new IngestorRoles(this, {
       watermarksTable, aggregatesTable, workspacesTable, idempotencyTable, processingQueue: this.processingQueue,
       rawDataBucket, kmsKey,
-      apiSecrets, workspaceParameterBasePath,
+      apiSecrets, workspaceParameterBasePath, uniqueName: (baseName) => this.uniqueName(baseName),
     });
 
     // Common environment variables
@@ -444,6 +444,8 @@ export class VocIngestionStack extends VocStack {
       ...(scheduleRuleName ? { INGEST_SCHEDULE_RULE_NAME: scheduleRuleName, ...this.scheduledTickEnv } : {}),
       // A browser plugin's browser and profile (ingestion-browser.ts); unset: aws.browser.v1, no profile.
       ...(infra.browser ? this.browser.get().environment : {}),
+      // The GitHub App sign-in's token function (7.45.00, github_issues with the engineering agents; ingestion-roles.ts).
+      ...this.ingestorRoles.environmentFor(plugin.id),
     };
 
     // All plugins need aggregates table for run status tracking

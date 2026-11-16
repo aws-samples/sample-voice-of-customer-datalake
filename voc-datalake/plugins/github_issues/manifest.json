@@ -37,10 +37,18 @@
     },
     {
       "key": "token",
-      "label": "Fine-grained token (read-only Issues + Metadata)",
+      "label": "Fine-grained token (read-only Issues + Metadata; not needed when signing in with a GitHub App)",
       "type": "password",
-      "required": true,
+      "required": false,
       "secret": true
+    },
+    {
+      "key": "github_app_id",
+      "label": "GitHub App id (optional: sign in with one of this deployment's GitHub Apps instead of a token)",
+      "type": "text",
+      "placeholder": "123456",
+      "required": false,
+      "secret": false
     },
     {
       "key": "labels",
@@ -97,6 +105,7 @@
     "steps": [
       "Create a fine-grained personal access token limited to the repositories you list",
       "Grant it read-only Issues and Metadata permissions and nothing else",
+      "Or, where the engineering agents are on, sign in with a GitHub App made under Agents → Connections: name its id instead of a token (deployment-wide runs only; each run gets a read-only Issues token for its repositories, revoked when it ends)",
       "Paste the token and the repositories above (one owner/name or GitHub URL per line)",
       "Optionally restrict to labels, and name the product so 'Kiro 0.4.2' is read as a version",
       "For a large repository, set a start date and skip maintainer roles: every ingested item costs a model call",
@@ -108,6 +117,7 @@
   "secrets": {
     "repos": "",
     "token": "",
+    "github_app_id": "",
     "labels": "",
     "product_names": "",
     "created_after": "",

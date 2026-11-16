@@ -933,6 +933,90 @@
     ]
   },
   {
+    "file": "api/githubAppsApi.ts",
+    "method": "GET",
+    "call": "APPS_PATH",
+    "probes": [
+      {
+        "path": "/agents/engineering/github-apps"
+      }
+    ]
+  },
+  {
+    "file": "api/githubAppsApi.ts",
+    "method": "POST",
+    "call": "`${APPS_PATH}/manifest`",
+    "probes": [
+      {
+        "path": "/agents/engineering/github-apps/manifest",
+        "body": {
+          "account": "user"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/githubAppsApi.ts",
+    "method": "POST",
+    "call": "`${APPS_PATH}/conversions`",
+    "probes": [
+      {
+        "path": "/agents/engineering/github-apps/conversions",
+        "body": {
+          "code": "demo-code",
+          "state": "demo-create-state"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/githubAppsApi.ts",
+    "method": "POST",
+    "call": "`${appPath(appId)}/install`",
+    "probes": [
+      {
+        "path": "/agents/engineering/github-apps/271828/install",
+        "body": {}
+      }
+    ]
+  },
+  {
+    "file": "api/githubAppsApi.ts",
+    "method": "POST",
+    "call": "`${APPS_PATH}/installations`",
+    "probes": [
+      {
+        "path": "/agents/engineering/github-apps/installations",
+        "body": {
+          "installation_id": 31415926,
+          "setup_action": "install",
+          "state": "demo-install-state"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/githubAppsApi.ts",
+    "method": "POST",
+    "call": "`${appPath(appId)}/check`",
+    "probes": [
+      {
+        "path": "/agents/engineering/github-apps/271828/check",
+        "body": {}
+      }
+    ]
+  },
+  {
+    "file": "api/githubAppsApi.ts",
+    "method": "DELETE",
+    "call": "appPath(appId)",
+    "probes": [
+      {
+        "path": "/agents/engineering/github-apps/271828"
+      }
+    ]
+  },
+  {
     "file": "api/participantsApi.ts",
     "method": "GET",
     "call": "'/participants/settings'",

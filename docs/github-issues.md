@@ -84,6 +84,23 @@ The design-system GitHub token (`voc/design-integrations`, [company-context.md](
 lives in a different secret with different readers, and a separate, issues-only token keeps both
 blast radiuses small.
 
+### Signing in with a GitHub App (7.45.00)
+
+Where the engineering agents are deployed (`-c engineeringAgents=true`), a deployment-wide source can sign in with one
+of the deployment's GitHub Apps instead of a token: the Apps an administrator makes under Agents → Connections
+([autonomous-engineering.md](autonomous-engineering.md#a-github-app-in-two-clicks-74500)). On the source's card,
+**Sign in with** → GitHub App, then the App (its id is saved as `github_app_id`; choosing the token again saves
+`none`, which is no App). Each run then asks the GitHub Apps' token function (`voc-engineering-app-tokens`) for
+`issues_token` with its repositories: for each one the installation that covers it, and one installation token per
+installation, exactly `{issues: read, metadata: read}`, narrowed to the run's repositories it covers, so no token the
+source holds can read code or write anything (the App itself may: its key never leaves the token function and the
+broker). The run reads each repository with its installation's token, skips one no installation covers (logged: "not
+covered by the GitHub App's installation"), and revokes every token when it ends (`DELETE /installation/token`). A
+token function that refuses or cannot be reached fetches nothing (`GitHubAppSignInFailed`); without the engineering
+agents a source naming an App fetches nothing either. A run in a workspace ignores `github_app_id` and signs in with
+the workspace's own token: the Apps are the deployment's (the token function refuses a request naming a workspace).
+The pasted token stays available.
+
 ## Real-time delivery (optional webhook)
 
 The poller alone is complete; the webhook only removes the up-to-30-minute delay.
@@ -105,6 +122,16 @@ reading it:
 | A webhook secret is configured | 503: fail closed, never "accept unsigned" |
 | Body at most 1 MB | 413 |
 | `X-Hub-Signature-256` present and equal to `sha256=` + HMAC-SHA256(raw body, secret), constant-time compare | 401 |
+
+**A GitHub App's deliveries (7.45.00).** An App made under Agents → Connections where this webhook is deployed has its
+hook on `<API endpoint>/webhooks/github_issues` already, with a secret of its own that GitHub generated and the
+deployment stored (`/[<prefix>-]voc/engineering/_github-app/<app_id>/webhook`). A deployment-wide source whose
+`github_app_id` names that App takes its deliveries: a delivery whose `X-GitHub-Hook-Installation-Target-Type` is
+`integration` and whose `X-GitHub-Hook-Installation-Target-ID` is that id is checked against the App's own secret (read
+from SSM, kept five minutes), and against nothing else. The headers only choose the secret: the signature must still
+match it, so a forged header is the bad signature's 401, and a secret that cannot be read refuses the delivery (401). A
+delivery naming no App, or another one, is checked against the **Webhook secret** as above. The webhook role may read
+the Apps' `…/webhook` parameters and nothing else of them, only where the engineering agents are deployed too.
 
 In a workspace (multi-workspace, since 7.06.00; its deliveries are ingested into it since 7.14.00) the payload URL is
 `<API endpoint>/webhooks/github_issues/{workspace id}`, and the secret, repositories and labels

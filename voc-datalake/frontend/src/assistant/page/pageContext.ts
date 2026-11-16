@@ -57,6 +57,10 @@ export const PAGE_PATTERNS: readonly PagePattern[] = [
   // An engineering run's monitor: the agents pack, the run on screen (get_engineering_run's default), no agent.
   { route: 'agents/engineering/:runId', kind: 'agents',
     param: { name: 'runId', field: 'engineeringRunId', shape: ENGINEERING_RUN_ID } },
+  // Where GitHub sends an administrator back from the deployment's GitHub App (7.45.00): the agents pack, nothing in
+  // context (the query is the page's alone, taken and removed from the address at once).
+  { route: 'agents/connections/github/created', kind: 'agents' },
+  { route: 'agents/connections/github/installed', kind: 'agents' },
   // Knowledge → Company: the company tool pack (context, my objectives, design system).
   { route: 'company', kind: 'company' },
   // `other` (core pack): the stream contract has no `connect` or `account` page kind.
