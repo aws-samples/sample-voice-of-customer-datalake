@@ -152,16 +152,20 @@ class TestSaveWebReviewsTarget:
 
     @patch('shared.web_review_targets.validate_url', return_value=(True, ''))
     @patch('integrations_handler.secretsmanager')
-    def test_a_bedrock_web_search_target_round_trips_its_method_and_model(
+    def test_a_bedrock_web_search_target_round_trips_its_method_and_drops_a_model(
         self, mock_secrets, mock_validate_url, api_gateway_event, lambda_context,
     ):
+        """A 7.41.00 client may still send the page's ``model``: it saves, and the model stays the web search
+        surface's (Administration -> AI models)."""
         _stored_configs(mock_secrets)
         app = {**WEB_TARGET, 'method': 'bedrock_web_search', 'model': 'openai.gpt-5.6-terra', 'max_reviews': '10'}
         response, body = _apps_route(api_gateway_event, lambda_context, 'POST', 'web_reviews', body={'app': app})
         assert response['statusCode'] == 200
         saved = _saved_configs(mock_secrets, 'web_reviews')[0]
-        assert (saved['method'], saved['model'], saved['max_reviews']) == ('bedrock_web_search', 'openai.gpt-5.6-terra', '10')
-        assert (body['app']['method'], body['app']['model']) == ('bedrock_web_search', 'openai.gpt-5.6-terra')
+        assert (saved['method'], saved['max_reviews']) == ('bedrock_web_search', '10')
+        assert 'model' not in saved
+        assert body['app']['method'] == 'bedrock_web_search'
+        assert 'model' not in body['app']
         mock_validate_url.assert_called_once_with(WEB_TARGET['url'])
 
     @patch('integrations_handler.secretsmanager')

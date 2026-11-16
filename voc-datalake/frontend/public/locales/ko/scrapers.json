@@ -336,7 +336,7 @@
       "deleteConfirmTitle": "리뷰 페이지 제거",
       "deleteConfirmMessage": "이 리뷰 페이지를 제거하시겠습니까?",
       "addBedrockPage": "Bedrock 웹 검색 인덱스에서 페이지 추가",
-      "bedrockNote": "리뷰는 사이트 자체가 아니라 Amazon Bedrock이 인덱싱한 이 페이지의 사본(Amazon 캐시)에서 읽습니다. 각 리뷰는 원본 URL과 사이트를 유지하므로 항상 게시된 곳을 가리킵니다."
+      "bedrockNote": "리뷰는 사이트 자체가 아니라 Amazon Bedrock이 인덱싱한 이 페이지의 사본(Amazon 캐시)에서 읽습니다. 각 리뷰는 원본 URL과 사이트를 유지하므로 항상 게시된 곳을 가리킵니다. 페이지를 읽는 모델은 관리 → AI 모델에서 선택합니다."
     },
     "kindLabel": "유형",
     "kind": {

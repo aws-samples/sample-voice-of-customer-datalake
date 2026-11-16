@@ -37,7 +37,7 @@
     "automaticOption": "自动 — {{model}}",
     "groupOther": "其他模型",
     "groupRecommended": "推荐",
-    "intro": "选择为每项 AI 功能提供支持的 Claude 模型，或保持“自动”以使用每项功能的调优默认值。正在运行的函数会在一分钟内应用更改。",
+    "intro": "选择为每项 AI 功能提供支持的模型（Claude，或为从 Bedrock 网页搜索索引读取的评论页面选择 OpenAI GPT），或保持“自动”以使用每项功能的调优默认值。正在运行的函数会在一分钟内应用更改。",
     "loadFailed": "无法加载模型设置。",
     "loading": "正在加载模型...",
     "saveFailed": "保存模型选择失败。请重试。",
@@ -82,6 +82,10 @@
       "agent_persona": {
         "label": "用户画像评审团",
         "description": "在运行中为文档和原型打分并提出异议的用户画像"
+      },
+      "web_reviews_search": {
+        "label": "评论页面：Bedrock 网页搜索",
+        "description": "使用 OpenAI GPT 模型从 Amazon Bedrock 网页搜索索引读取评论页面；某个模型没有容量时，由下一个模型接手该页面"
       }
     },
     "title": "AI 模型",

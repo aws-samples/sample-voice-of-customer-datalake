@@ -64,6 +64,7 @@ import { grantKeyScopedWrites, grantReadAndWrites } from '../utils/table-write-g
 import { grantInvokeByName } from '../utils/worker-lambda';
 import { grantWorkspaceStatusRead } from '../utils/workspace-resolution-grants';
 import { grantWorkspaceParameterRead } from '../utils/workspace-secrets';
+import { mantleInferenceStatement } from '../utils/web-search-models';
 import { RAW_LAYER_PREFIX, WORKSPACE_ID_PATTERN, WORKSPACE_RAW_LAYER_PREFIX } from './core-buckets';
 
 /**
@@ -132,8 +133,6 @@ export const BROWSER_STREAM_SUPPRESSION: NagAck = {
   findings: ['Resource::*'],
 };
 
-/** The Responses API on bedrock-mantle (a request names no project: the account's default one). */
-export const MANTLE_INFERENCE_ACTION = 'bedrock-mantle:CreateInference';
 /** Amazon Bedrock web search and its cached fetch; `bedrock-websearch:ExternalWebAccess` is never granted. */
 export const WEB_SEARCH_ACTIONS = ['bedrock-websearch:InvokeSearch', 'bedrock-websearch:InvokeFetch'];
 
@@ -151,10 +150,7 @@ function starAcknowledgement(browser: boolean, webSearch: boolean): NagAck {
 /** A web-search-capable role's statements: the Responses API on the default project, search and cached fetch. */
 export function webSearchStatements(stack: cdk.Stack): iam.PolicyStatement[] {
   return [
-    new iam.PolicyStatement({
-      actions: [MANTLE_INFERENCE_ACTION],
-      resources: [stack.formatArn({ service: 'bedrock-mantle', resource: 'project', resourceName: 'default' })],
-    }),
+    mantleInferenceStatement(stack),
     new iam.PolicyStatement({
       actions: WEB_SEARCH_ACTIONS, resources: ['*'], conditions: { StringEquals: { 'aws:RequestedRegion': stack.region } },
     }),

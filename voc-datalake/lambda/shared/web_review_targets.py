@@ -13,8 +13,10 @@ review limit: "the latest 10 pages" is 10 / 0, "the latest 200 reviews" 0 / 200,
 ``method`` says how the page is read: ``browser`` (the default, and what a target saved
 before ``method`` existed is), the deployment's AgentCore browser page by page; or
 ``bedrock_web_search``, an explicit choice: the page as Amazon Bedrock web search's
-cache holds it, opened by an OpenAI GPT model on the Responses API (``model``, one of
-``WEB_SEARCH_MODELS``, ``DEFAULT_WEB_SEARCH_MODEL`` when absent), one page per run.
+cache holds it, opened by an OpenAI GPT model on the Responses API, one page per run. The
+model is the ``web_reviews_search`` surface's (Administration -> AI models,
+shared/model_config.py), never the target's: a target's ``model`` (7.41.00) is accepted
+and dropped like any unknown key, so a client of that release still saves.
 
 Shared by both sides of that boundary: ``api/integrations_handler.py`` validates a
 target here before it is saved, and the plugin re-validates every stored target
@@ -59,12 +61,6 @@ DEFAULT_FREQUENCY_MINUTES: Final = 0
 METHOD_BROWSER: Final = 'browser'
 METHOD_BEDROCK_WEB_SEARCH: Final = 'bedrock_web_search'
 METHODS: Final = (METHOD_BROWSER, METHOD_BEDROCK_WEB_SEARCH)
-#: The OpenAI GPT models a ``bedrock_web_search`` target may name (Responses API on bedrock-mantle, offered in
-#: us-west-2 on 2026-11-15). In lockstep with lib/utils/web-search-models.ts, which the ingestor's IAM grant names.
-WEB_SEARCH_MODELS: Final = (
-    'openai.gpt-5.6-luna', 'openai.gpt-5.6-terra', 'openai.gpt-5.6-sol', 'openai.gpt-5.5', 'openai.gpt-5.4',
-)
-DEFAULT_WEB_SEARCH_MODEL: Final = 'openai.gpt-5.6-luna'
 
 NAME_RE: Final = re.compile(r'^[A-Za-z0-9][\w .-]*\Z')
 _SOURCE_PREFIX: Final = 'web_'
@@ -197,16 +193,6 @@ def _method(target: Mapping[str, object]) -> str:
     return method
 
 
-def _model(target: Mapping[str, object], method: str) -> str:
-    """A ``bedrock_web_search`` target's model (``''``: the default); dropped for a browser target, which has none."""
-    model = _text(target, 'model')
-    if not model or method != METHOD_BEDROCK_WEB_SEARCH:
-        return ''
-    if model not in WEB_SEARCH_MODELS:
-        raise TargetError(f'model must be one of {", ".join(WEB_SEARCH_MODELS)}')
-    return model
-
-
 def validated_target(target: object) -> dict[str, str]:
     """The stored form of *target* (string values only, unknown keys dropped), or ``TargetError``.
 
@@ -224,9 +210,6 @@ def validated_target(target: object) -> dict[str, str]:
         'enabled': _enabled(target),
         'method': _method(target),
     }
-    model = _model(target, cleaned['method'])
-    if model:
-        cleaned['model'] = model
     target_id = _text(target, 'id')
     if target_id:
         if not OPAQUE_ID_RE.match(target_id):

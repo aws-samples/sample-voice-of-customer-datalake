@@ -358,7 +358,7 @@
       "deleteConfirmTitle": "Usuń stronę z recenzjami",
       "deleteConfirmMessage": "Czy na pewno chcesz usunąć tę stronę z recenzjami?",
       "addBedrockPage": "Dodaj stronę z indeksu wyszukiwania internetowego Bedrock",
-      "bedrockNote": "Recenzje są odczytywane z kopii tej strony zaindeksowanej przez Amazon Bedrock (pamięć podręczna Amazon), a nie z samej witryny. Każda recenzja zachowuje swój źródłowy adres URL i witrynę, więc zawsze wskazuje miejsce publikacji."
+      "bedrockNote": "Recenzje są odczytywane z kopii tej strony zaindeksowanej przez Amazon Bedrock (pamięć podręczna Amazon), a nie z samej witryny. Każda recenzja zachowuje swój źródłowy adres URL i witrynę, więc zawsze wskazuje miejsce publikacji. Model, który ją odczytuje, wybiera się w Administracja → Modele AI."
     },
     "kind": {
       "reviewPage": "Strona z recenzjami",

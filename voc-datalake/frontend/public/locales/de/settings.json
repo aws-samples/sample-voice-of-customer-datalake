@@ -37,7 +37,7 @@
     "automaticOption": "Automatisch — {{model}}",
     "groupOther": "Weitere Modelle",
     "groupRecommended": "Empfohlen",
-    "intro": "Wählen Sie, welches Claude-Modell die einzelnen KI-Funktionen antreibt, oder behalten Sie „Automatisch“ bei, um die abgestimmte Voreinstellung jeder Funktion zu nutzen. Laufende Funktionen übernehmen Änderungen innerhalb einer Minute.",
+    "intro": "Wählen Sie, welches Modell die einzelnen KI-Funktionen antreibt (Claude, oder OpenAI GPT für Bewertungsseiten aus dem Bedrock-Websuchindex), oder behalten Sie „Automatisch“ bei, um die abgestimmte Voreinstellung jeder Funktion zu nutzen. Laufende Funktionen übernehmen Änderungen innerhalb einer Minute.",
     "loadFailed": "Modelleinstellungen konnten nicht geladen werden.",
     "loading": "Modelle werden geladen...",
     "saveFailed": "Modellauswahl konnte nicht gespeichert werden. Bitte erneut versuchen.",
@@ -82,6 +82,10 @@
       "agent_persona": {
         "label": "Persona-Gremium",
         "description": "Personas, die Dokumente und Prototypen während eines Laufs bewerten und beanstanden"
+      },
+      "web_reviews_search": {
+        "label": "Bewertungsseiten: Bedrock-Websuche",
+        "description": "Liest Bewertungsseiten aus dem Amazon Bedrock-Websuchindex mit einem OpenAI-GPT-Modell; hat ein Modell keine Kapazität, übernimmt das nächste die Seite"
       }
     },
     "title": "KI-Modelle",

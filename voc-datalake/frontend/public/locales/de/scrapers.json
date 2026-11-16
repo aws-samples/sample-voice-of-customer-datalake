@@ -336,7 +336,7 @@
       "deleteConfirmTitle": "Bewertungsseite entfernen",
       "deleteConfirmMessage": "Möchten Sie diese Bewertungsseite wirklich entfernen?",
       "addBedrockPage": "Seite aus dem Bedrock-Websuchindex hinzufügen",
-      "bedrockNote": "Die Bewertungen werden aus der Kopie dieser Seite gelesen, die Amazon Bedrock indexiert hat (Amazons Cache), nicht von der Website selbst. Jede Bewertung behält ihre Quell-URL und Website und verweist so immer auf den Ort ihrer Veröffentlichung."
+      "bedrockNote": "Die Bewertungen werden aus der Kopie dieser Seite gelesen, die Amazon Bedrock indexiert hat (Amazons Cache), nicht von der Website selbst. Jede Bewertung behält ihre Quell-URL und Website und verweist so immer auf den Ort ihrer Veröffentlichung. Das Modell, das sie liest, wird unter Administration → KI-Modelle gewählt."
     },
     "kindLabel": "Art",
     "kind": {

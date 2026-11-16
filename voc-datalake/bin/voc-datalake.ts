@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import 'source-map-support/register';
+import * as path from 'path';
 import * as cdk from 'aws-cdk-lib';
 import { Tags, Validations } from 'aws-cdk-lib';
 import { z } from 'zod';
@@ -21,6 +22,8 @@ import { shouldDeployAiEnablement } from '../lib/utils/ai-enablement-default';
 import { validateDeploymentPrefix } from '../lib/utils/naming';
 import { recordOrEmpty, stringOr } from '../lib/utils/context';
 import { wafEnabled } from '../lib/utils/waf';
+import { getEnabledPlugins, loadPlugins } from '../lib/plugin-loader';
+import { webSearchModelsInUse } from '../lib/utils/web-search-models';
 
 const app = new cdk.App();
 
@@ -198,8 +201,11 @@ if (!modelAgreementRetry.success) {
   cdk.Annotations.of(coreStack).addWarningV2('voc:modelAgreementRetry',
     'modelAgreementRetry must be 1-64 letters, digits, dots, dashes or underscores; ignored');
 }
+// The web search surface's OpenAI GPT models (lib/utils/web-search-models.ts) join them while an enabled plugin
+// reads review pages with them (`infrastructure.ingestor.webSearch`: web_reviews), best effort like the others.
+const webSearchModels = webSearchModelsInUse(getEnabledPlugins(loadPlugins(path.join(__dirname, '../plugins')), enabledSources));
 BedrockModelAgreements.addTo(coreStack, 'ImageModelAccess',
-  { retry: modelAgreementRetry.success ? modelAgreementRetry.data : undefined });
+  { retry: modelAgreementRetry.success ? modelAgreementRetry.data : undefined, webSearchModels });
 // The form goes in before Core's agreements are attempted, as it did when both
 // lived in one construct. Only when there IS a form: otherwise Core must not wait
 // on (or, with `cdk deploy VocCoreStack`, drag in) a us-east-1 stack.

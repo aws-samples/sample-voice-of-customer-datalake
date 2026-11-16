@@ -2,13 +2,16 @@
  * AWS Marketplace subscription access for VocApiStack principals that invoke a
  * Marketplace-listed Bedrock model (issue #274). Shared by the api-*.ts
  * builders that own those principals — exactly the ones that reach the image model:
- * the Projects API and the persona generator / importer jobs.
+ * the Projects API and the persona generator / importer jobs. Also the settings
+ * role's model Tests (the image model's, and the web search surface's GPT models).
  */
+import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { acknowledgeNag } from '../utils/nag-ack';
 import type { IConstruct } from 'constructs';
 import { IMAGE_MODEL_MARKETPLACE_PRODUCT_ID, imageModelArn } from '../utils/model-allowlist';
 import { bedrockAgreementSuppressions, marketplaceSuppressions } from '../utils/nag-suppressions';
+import { mantleInferenceStatement } from '../utils/web-search-models';
 
 /**
  * The first InvokeModel of a Marketplace-listed model in an account
@@ -53,4 +56,16 @@ export function grantImageModelProbe(role: iam.Role): void {
   role.addToPolicy(new iam.PolicyStatement({ actions: ['bedrock:GetFoundationModelAvailability'], resources: ['*'] }));
   grantMarketplaceSubscription(role);
   acknowledgeNag(role, bedrockAgreementSuppressions);
+}
+
+/**
+ * What the Settings API (and its assist twin, same role) needs for the Test button of the web search surface
+ * (Administration → AI models, `web_reviews_search`; lambda/shared/web_search_model_probe.py): exactly
+ * `bedrock-mantle:CreateInference` on the account's default mantle project, for ONE tiny Responses request with
+ * no tool, so nothing of Amazon Bedrock web search (`bedrock-websearch:*`) is granted. Built only while an enabled
+ * plugin reads with those models (lib/utils/web-search-models.ts `webSearchModelsInUse`). Their agreements are the
+ * deploy's (BedrockModelAgreements), so no Marketplace action is added for them.
+ */
+export function grantWebSearchModelProbe(role: iam.Role): void {
+  role.addToPolicy(mantleInferenceStatement(cdk.Stack.of(role)));
 }

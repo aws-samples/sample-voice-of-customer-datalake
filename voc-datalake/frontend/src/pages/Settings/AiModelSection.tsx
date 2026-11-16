@@ -6,7 +6,12 @@
  * on Automatic to use its tuned default. This is the per-surface alternative
  * to a single global model toggle: enrichment can stay on cheap Haiku while
  * the AI assistant (surface key `chat`: the floating page-aware assistant and
- * the chat page) runs on Sonnet 5.5 and prototypes on Opus 5.5.
+ * the chat page) runs on Sonnet 5.5 and prototypes on Opus 5.5. One surface,
+ * `web_reviews_search` (review pages read from the Amazon Bedrock web search
+ * index), picks from its own list of OpenAI GPT models (`web_search_models`,
+ * its `allowlist` says so), which no other surface offers; it is listed only
+ * while a deployed plugin reads with it. "Test all models" stays on the Claude
+ * list (its table is about their token quotas); a GPT model is tested from its row.
  *
  * Draft, test, then save: changing a select only changes the row's DRAFT. The
  * row's Test button sends one request to exactly the model the draft resolves
@@ -141,8 +146,8 @@ function AiModelEditor({ data }: { readonly data: ModelSettings }) {
     },
   })
 
-  // Model id → display label (product name, served by the backend).
-  const labelForId = new Map(data.available_models.map((model) => [model.id, model.label]))
+  // Model id → display label (product name, served by the backend), across both lists.
+  const labelForId = new Map([...data.available_models, ...data.web_search_models].map((model) => [model.id, model.label]))
   const labelOf = (id: string) => labelForId.get(id) ?? id
 
   // 🔑 The global pick (`settings.model_id`; on a deployment pinned before the
@@ -175,8 +180,11 @@ function AiModelEditor({ data }: { readonly data: ModelSettings }) {
         <legend className="sr-only">{t('aiModel.title')}</legend>
         {data.surfaces.map((surface) => {
           // What Automatic actually resolves to for this surface. The pin does not
-          // touch `selected`: a stored per-surface choice still outranks it.
-          const automaticId = pinnedId ?? surface.default_id
+          // touch `selected`: a stored per-surface choice still outranks it. The web
+          // search surface picks its own GPT models, and a pin (a Claude model) never
+          // reaches it (shared/model_config.py).
+          const ownFamily = surface.allowlist === 'web_search'
+          const automaticId = ownFamily ? surface.default_id : pinnedId ?? surface.default_id
           const stored = surface.selected ?? ''
           const draft = drafts[surface.key] ?? stored
           const resolvedId = draft === '' ? automaticId : draft
@@ -188,7 +196,7 @@ function AiModelEditor({ data }: { readonly data: ModelSettings }) {
               dirty={draft !== stored}
               automaticLabel={labelOf(automaticId)}
               resolvedLabel={labelOf(resolvedId)}
-              models={data.available_models}
+              models={ownFamily ? data.web_search_models : data.available_models}
               recommendedId={surface.default_id}
               result={tests.results[resolvedId]}
               testing={tests.testing.has(resolvedId)}

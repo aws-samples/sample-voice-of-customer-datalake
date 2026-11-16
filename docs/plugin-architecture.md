@@ -148,7 +148,7 @@ same rule.
 | `memory` | 256 | 128-1024 MB | Lambda memory |
 | `bedrock` | false | boolean | Dedicated role with `bedrock:InvokeModel` on the curated model allowlist |
 | `browser` | false | boolean | Dedicated role with sessions of the deployment's AgentCore browser (its Web Bot Auth browser and profile, or `aws.browser.v1` with `-c webReviewsBotAuth=false`; docs/web-reviews.md) |
-| `webSearch` | false | boolean | Dedicated role that may read a page through Amazon Bedrock web search: `bedrock-mantle:CreateInference` on the default project and `bedrock-websearch:InvokeSearch`/`InvokeFetch` in the region, never `ExternalWebAccess` (web_reviews' `bedrock_web_search` method) |
+| `webSearch` | false | boolean | Dedicated role that may read a page through Amazon Bedrock web search: `bedrock-mantle:CreateInference` on the default project and `bedrock-websearch:InvokeSearch`/`InvokeFetch` in the region, never `ExternalWebAccess` (web_reviews' `bedrock_web_search` method; the model is the `web_reviews_search` surface's, Administration → AI models, and while such a plugin is enabled the deploy accepts its GPT models' agreements) |
 | `jobNotices` | false | boolean | A run the API started tells its starter when it ends (docs/realtime.md): a dedicated role carrying VocCoreStack's `jobs` publish policy (`appsync:EventPublish` on `jobs`) and the Event API's host |
 
 The `cron(...)` pattern admits only digits, spaces and `, - * /`. EventBridge cron expressions need

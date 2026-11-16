@@ -103,7 +103,7 @@ def test_target_source_id_is_the_stored_one_or_minted(target, expected):
 
 
 class TestTheReadingMethod:
-    """``method`` (7.41.00): ``browser`` unless a target says ``bedrock_web_search``; ``model`` only for that one."""
+    """``method`` (7.41.00): ``browser`` unless a target says ``bedrock_web_search``; a ``model`` is no target's (7.42.00)."""
 
     @pytest.mark.usefixtures('public_dns')
     @pytest.mark.parametrize('given', [{}, {'method': ''}, {'method': None}, {'method': '  browser '}])
@@ -111,21 +111,19 @@ class TestTheReadingMethod:
         assert validated_target({'app_name': 'T', 'url': URL, **given})['method'] == 'browser'
 
     @pytest.mark.usefixtures('public_dns')
-    def test_bedrock_web_search_is_kept_with_no_model_by_default(self):
+    def test_bedrock_web_search_is_kept(self):
         stored = validated_target({'app_name': 'T', 'url': URL, 'method': 'bedrock_web_search'})
         assert stored['method'] == 'bedrock_web_search'
+
+    @pytest.mark.usefixtures('public_dns')
+    @pytest.mark.parametrize('method', ['bedrock_web_search', 'browser'])
+    @pytest.mark.parametrize('model', ['openai.gpt-5.6-terra', 'anthropic.claude-haiku-5-5', 'anything'])
+    def test_a_model_from_7_41_00_is_accepted_and_dropped(self, method, model):
+        """The model is the web_reviews_search surface's (Administration -> AI models), never the target's: a
+        client of 7.41.00 that still sends one saves, and nothing of it is kept."""
+        stored = validated_target({'app_name': 'T', 'url': URL, 'method': method, 'model': model})
         assert 'model' not in stored
-
-    @pytest.mark.usefixtures('public_dns')
-    @pytest.mark.parametrize('model', ['openai.gpt-5.6-luna', 'openai.gpt-5.6-terra', 'openai.gpt-5.6-sol',
-                                       'openai.gpt-5.5', 'openai.gpt-5.4'])
-    def test_an_offered_model_is_kept(self, model):
-        stored = validated_target({'app_name': 'T', 'url': URL, 'method': 'bedrock_web_search', 'model': model})
-        assert stored['model'] == model
-
-    @pytest.mark.usefixtures('public_dns')
-    def test_a_browser_target_drops_a_model(self):
-        assert 'model' not in validated_target({'app_name': 'T', 'url': URL, 'model': 'openai.gpt-5.6-luna'})
+        assert stored['method'] == method
 
     @pytest.mark.usefixtures('public_dns')
     @pytest.mark.parametrize('method', ['http', 'Browser', 'bedrock-web-search', 'agentcore_web_search'])
@@ -134,12 +132,6 @@ class TestTheReadingMethod:
             validated_target({'app_name': 'T', 'url': URL, 'method': method})
 
     @pytest.mark.usefixtures('public_dns')
-    @pytest.mark.parametrize('model', ['anthropic.claude-haiku-5-5', 'openai.gpt-4o', 'openai.gpt-5.6-luna '.upper()])
-    def test_a_model_not_offered_is_refused(self, model):
-        with pytest.raises(TargetError, match=r'^model must be one of openai\.gpt-5\.6-luna, '):
-            validated_target({'app_name': 'T', 'url': URL, 'method': 'bedrock_web_search', 'model': model})
-
-    @pytest.mark.usefixtures('public_dns')
     def test_the_stored_form_validates_to_itself(self):
-        stored = validated_target({'app_name': 'T', 'url': URL, 'method': 'bedrock_web_search', 'model': 'openai.gpt-5.5'})
+        stored = validated_target({'app_name': 'T', 'url': URL, 'method': 'bedrock_web_search', 'max_reviews': '9'})
         assert validated_target(stored) == stored

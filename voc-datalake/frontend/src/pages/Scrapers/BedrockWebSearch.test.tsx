@@ -1,7 +1,8 @@
 /**
  * "Amazon Bedrock web search index" in Add a data source: a review page (web_reviews) read from Bedrock's index
  * instead of the browser, for sites that block automated browsers. Its tile opens the review page form with
- * `method: "bedrock_web_search"` preset (never a field), and the saved card says how it is read.
+ * `method: "bedrock_web_search"` preset (never a field), and the saved card says how it is read. The form asks for
+ * no model (7.42.00): the web search surface's, chosen in Administration → AI models, reads every such page.
  *
  * Offered only once the deployed web_reviews manifest declares the `method` field: until then the API keeps no
  * such key on a target (lambda/shared/web_review_targets.py), so a page added from it would be read by the browser.
@@ -42,15 +43,10 @@ const METHOD_FIELD = {
   key: 'method', label: 'Method', type: 'select' as const, required: false, secret: false,
   options: [{ value: 'browser', label: 'Browser' }, { value: 'bedrock_web_search', label: 'Bedrock web search' }],
 }
-/** The model that reads the indexed page: a Bedrock web search page's own setting. */
-const MODEL_FIELD = {
-  key: 'model', label: 'Web search model', type: 'select' as const, required: false, secret: false,
-  options: [{ value: 'openai.gpt-5.6-luna', label: 'Luna (default)' }],
-}
 const webReviews = (withMethod: boolean): PluginManifest => ({
   id: 'web_reviews', name: 'Web Reviews', icon: 'Web', category: 'reviews', enabled: true,
   hasIngestor: true, hasWebhook: false, hasS3Trigger: false,
-  config: withMethod ? [...BROWSER_FIELDS, METHOD_FIELD, MODEL_FIELD] : BROWSER_FIELDS,
+  config: withMethod ? [...BROWSER_FIELDS, METHOD_FIELD] : BROWSER_FIELDS,
 })
 
 beforeEach(() => {
@@ -102,13 +98,13 @@ describe('the form it opens', () => {
     expect(screen.getByText(/Each review keeps its source URL and site/)).toBeInTheDocument()
   })
 
-  it("offers the Bedrock page's model, which a browser page never shows", () => {
+  it('never asks for a model: the one that reads the page is chosen in Administration → AI models', () => {
     renderForm()
-    expect(screen.getByRole('combobox')).toBeInTheDocument()
-    expect(screen.getByText('Web search model')).toBeInTheDocument()
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    expect(screen.getByText(/The model that reads it is chosen in Administration → AI models/)).toBeInTheDocument()
   })
 
-  it('the control: the browser page form shows neither the method nor the model', async () => {
+  it('the control: the browser page form shows no method and no model either', async () => {
     render(<PluginConfigModal plugin={webReviews(true)} isAdmin onClose={vi.fn()} focusAppId="p1" />, { wrapper: createQueryWrapper() })
     // No such page is listed, so the dialog falls back to the list; adding one opens the browser form.
     await userEvent.setup().click(await screen.findByRole('button', { name: 'Add your first review page' }))

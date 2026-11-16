@@ -336,7 +336,7 @@
       "deleteConfirmTitle": "レビューページを削除",
       "deleteConfirmMessage": "このレビューページを削除してもよろしいですか？",
       "addBedrockPage": "Bedrock ウェブ検索インデックスからページを追加",
-      "bedrockNote": "レビューはサイトそのものではなく、Amazon Bedrock がインデックスしたこのページのコピー（Amazon のキャッシュ）から読み取られます。各レビューには取得元の URL とサイトが保持されるため、常に公開元をたどれます。"
+      "bedrockNote": "レビューはサイトそのものではなく、Amazon Bedrock がインデックスしたこのページのコピー（Amazon のキャッシュ）から読み取られます。各レビューには取得元の URL とサイトが保持されるため、常に公開元をたどれます。読み取るモデルは「管理 → AIモデル」で選択します。"
     },
     "kindLabel": "種類",
     "kind": {

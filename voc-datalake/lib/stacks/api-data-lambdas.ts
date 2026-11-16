@@ -35,7 +35,8 @@ import {
   grantRequestWorkspace, grantWorkspaceAttributeRead, grantWorkspaceResolution, PLUGIN_ROW_KEY, PLUGIN_ROW_PARTITIONS,
 } from '../utils/workspace-resolution-grants';
 import { briefingApiWiring } from './briefing-worker';
-import { grantImageModelProbe } from './api-marketplace';
+import { grantImageModelProbe, grantWebSearchModelProbe } from './api-marketplace';
+import { WEB_SEARCH_OFFERED_ENV, webSearchModelsInUse } from '../utils/web-search-models';
 import { DESIGN_ICONS_PREFIX, LOGO_PREVIEW_PREFIX } from './design-capture';
 import { appVersion } from '../utils/connector-version';
 import { grantSilverHistoryPut, grantWorkspaceSilverHistoryPut } from '../utils/silver-history-grants';
@@ -420,6 +421,10 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   acknowledgeNag(settingsRole, serviceQuotasReadSuppressions);
   // Administration → AI models → Image generation: test call, access status, Marketplace (api-marketplace.ts).
   grantImageModelProbe(settingsRole);
+  // Administration → AI models → Review pages: Bedrock web search (the GPT models' surface): its Test, only while
+  // an enabled plugin reads with those models; the same fact offers the surface (WEB_SEARCH_MODELS_OFFERED below).
+  const webSearchModels = webSearchModelsInUse(enabledPlugins);
+  if (webSearchModels) grantWebSearchModelProbe(settingsRole);
   // Design system (docs/company-context.md): the Figma/GitHub tokens are
   // written by PUT /settings/design-system/integrations and read only by the
   // reference refresh — never returned to a caller. Explicit statement, not
@@ -478,6 +483,7 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
       LOG_LEVEL: 'INFO',
       JOBS_TABLE: jobsTable.tableName,
       [ASSIST_WORKER_ENV]: settingsWorkerName,
+      [WEB_SEARCH_OFFERED_ENV]: webSearchModels ? 'true' : 'false',
       ...briefing.environment,
       // Settings → Email inbox (docs/email-intake.md); nothing when the inbox is off.
       ...inboundEmailSettingsEnv(stack.node, () => ctx.uniqueName(INBOUND_EMAIL_RULE_BASE_NAME)),

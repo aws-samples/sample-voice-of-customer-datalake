@@ -33,8 +33,6 @@ class WebTarget:
     radar_brand: str = ''
     #: How it is read: ``browser`` (the default) or ``bedrock_web_search`` (shared/web_review_targets.py METHODS).
     method: str = METHOD_BROWSER
-    #: A ``bedrock_web_search`` target's model; empty: the default.
-    model: str = ''
 
     @property
     def page_limit(self) -> int:
@@ -79,7 +77,6 @@ def target_from_config(config: object) -> WebTarget:
         source_id=cleaned.get('source_id', ''),
         radar_brand=cleaned.get('radar_brand', ''),
         method=cleaned['method'],
-        model=cleaned.get('model', ''),
     )
 
 

@@ -6,7 +6,9 @@
 * the answer: the model's reviews, checked (a ``summary`` or a body that reads like one is dropped, ratings to
   1-5 by their scale, ISO dates only, each review once, the cap), the URLs it opened and cited;
 * the handler: a web-search target is never read in the browser (no session for a run of them only), its reviews
-  are queued with their attribution, a refusal or an unopened page is reported.
+  are queued with their attribution, a refusal or an unopened page is reported;
+* the model (7.42.00): the web_reviews_search surface's (its pick in Administration -> AI models, else Luna), never
+  the target's; a model that is throttled or has no capacity hands the page to the next one of the surface's chain.
 """
 import json
 from contextlib import contextmanager
@@ -22,10 +24,14 @@ from web_search_reader import (
     WebSearchRead,
     page_reviews,
     read_web_search_target,
+    read_with_fallback,
     request_body,
-    responses_url,
     site_domain,
 )
+
+from shared import model_fallback
+from shared.mantle_responses import responses_url
+from shared.model_config import WEB_SEARCH_FALLBACK_ORDER
 
 URL = 'https://www.g2.com/products/amazon-connect/reviews'
 CREDENTIALS = Credentials('AKIDEXAMPLE', 'secret')
@@ -185,7 +191,7 @@ def web_search_run(configs: list[dict[str, str]], result: WebSearchRead | Except
             yield run, start, call
 
 
-SEARCH_TARGET = target_config(method='bedrock_web_search', model='openai.gpt-5.6-terra', max_reviews='5')
+SEARCH_TARGET = target_config(method='bedrock_web_search', max_reviews='5')
 
 
 class TestTheHandler:
@@ -216,12 +222,72 @@ class TestTheHandler:
             assert list(run.fetch_new_items()) == []
         assert run.run_errors == ['Trustpilot: Amazon Bedrock web search could not open the page (not in the cache)']
 
-    def test_the_default_model_reads_a_target_without_one(self):
+    @pytest.mark.parametrize(('pick', 'chain'), [
+        ('openai.gpt-5.6-luna',
+         ('openai.gpt-5.6-luna', 'openai.gpt-5.6-terra', 'openai.gpt-5.6-sol', 'openai.gpt-5.5', 'openai.gpt-5.4')),
+        ('openai.gpt-5.6-sol',
+         ('openai.gpt-5.6-sol', 'openai.gpt-5.6-luna', 'openai.gpt-5.6-terra', 'openai.gpt-5.5', 'openai.gpt-5.4')),
+    ])
+    def test_the_surfaces_model_and_its_chain_read_the_page_never_the_targets(self, pick, chain):
         from web_reviews.ingestor import handler
 
-        with ingestor([target_config(method='bedrock_web_search')]) as run, \
-                patch.object(handler, 'read_web_search_target',
+        stored = target_config(method='bedrock_web_search', model='openai.gpt-5.4')  # a 7.41.00 page model: ignored
+        with ingestor([stored]) as run, \
+                patch.object(handler, 'get_active_model_id', return_value=pick) as resolve, \
+                patch.object(handler, 'read_with_fallback',
                              return_value=WebSearchRead(reviews=[], model='x', fetched=True)) as reader:
             list(run.fetch_new_items())
-        assert reader.call_args.args[1] == 'openai.gpt-5.6-luna'
+        resolve.assert_called_once_with('web_reviews_search')
+        assert reader.call_args.args[1] == chain
         assert reader.call_args.kwargs['region']
+
+
+@pytest.fixture
+def no_cooldowns():
+    """shared.model_fallback remembers a model that could not serve for five minutes; each test starts clean."""
+    model_fallback.cooldown_until.clear()
+    yield
+    model_fallback.cooldown_until.clear()
+
+
+@pytest.mark.usefixtures('no_cooldowns')
+class TestTheCapacityFallback:
+    @staticmethod
+    def read(*answers: tuple[int, object]) -> tuple[WebSearchRead, Recorder, MagicMock]:
+        post = Recorder(*answers)
+        with patch.object(model_fallback, 'record_fallback') as recorded:
+            result = read_with_fallback(URL, WEB_SEARCH_FALLBACK_ORDER, 20, region='us-west-2',
+                                        credentials=CREDENTIALS, post=post)
+        return result, post, recorded
+
+    def test_a_throttled_model_hands_the_page_to_the_next(self):
+        result, post, recorded = self.read((429, {'error': {'message': 'Too many requests'}}),
+                                           (200, answer([review()])))
+        assert [body['model'] for _url, body, _h, _t in post.sent] == ['openai.gpt-5.6-luna', 'openai.gpt-5.6-terra']
+        assert (result.model, len(result.reviews)) == ('openai.gpt-5.6-terra', 1)
+        recorded.assert_called_once_with('web_reviews_search', 'openai.gpt-5.6-luna', 'openai.gpt-5.6-terra',
+                                         'HTTP 429')
+        assert model_fallback.is_cooling_down('openai.gpt-5.6-luna')
+
+    def test_no_capacity_steps_down_the_whole_family(self):
+        busy = (503, {'error': {'message': 'Service Unavailable'}})
+        result, post, recorded = self.read(busy, busy, busy, busy, (200, answer([review()])))
+        assert [body['model'] for _url, body, _h, _t in post.sent] == list(WEB_SEARCH_FALLBACK_ORDER)
+        assert result.model == 'openai.gpt-5.4'
+        assert recorded.call_count == 4
+
+    def test_any_other_refusal_is_raised_at_once(self):
+        post = Recorder((403, {'message': 'not authorized to perform: bedrock-mantle:CreateInference'}))
+        with patch.object(model_fallback, 'record_fallback') as recorded, \
+                pytest.raises(WebSearchError, match=r'^HTTP 403: '):
+            read_with_fallback(URL, WEB_SEARCH_FALLBACK_ORDER, 20, region='us-west-2', credentials=CREDENTIALS,
+                               post=post)
+        recorded.assert_not_called()
+        assert len(post.sent) == 1
+
+    def test_when_every_model_fails_the_first_ones_error(self):
+        post = Recorder(*[(429, {'error': {'message': f'busy {n}'}}) for n in range(5)])
+        with patch.object(model_fallback, 'record_fallback'), pytest.raises(WebSearchError, match=r'busy 0'):
+            read_with_fallback(URL, WEB_SEARCH_FALLBACK_ORDER, 20, region='us-west-2', credentials=CREDENTIALS,
+                               post=post)
+        assert len(post.sent) == 5

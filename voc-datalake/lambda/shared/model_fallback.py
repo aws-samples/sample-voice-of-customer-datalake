@@ -91,8 +91,12 @@ def is_model_unavailable(error: BaseException) -> bool:
         return True
     if code not in MESSAGE_GATED_CODES:
         return False
-    message = str(client_error.response.get('Error', {}).get('Message')).lower()
-    return _UNAVAILABLE_RE.search(message) is not None
+    return names_model_unavailable(str(client_error.response.get('Error', {}).get('Message')))
+
+
+def names_model_unavailable(message: str) -> bool:
+    """True when an error *message* names the model's availability (MODEL_UNAVAILABLE_PATTERNS), not the input."""
+    return _UNAVAILABLE_RE.search(message.lower()) is not None
 
 
 def mark_unavailable(model_id: str, now: float | None = None) -> None:
@@ -153,13 +157,18 @@ def run_with_fallback[Result](
     chain: Sequence[str],
     surface: str,
     attempt: Callable[[str], Result],
+    *,
+    unavailable: Callable[[BaseException], bool] = is_model_unavailable,
+    reason: Callable[[BaseException], str] = error_code,
 ) -> tuple[str, Result]:
     """Run ``attempt(model)`` down *chain* until one model serves.
 
     Cooling-down models go last (``order_for_attempt``). A model-unavailable
-    failure puts that model in cooldown and moves on; any other failure is the
-    request's own and propagates at once. When every model fails, the FIRST
-    model's error is raised — it names the model the caller expected.
+    failure (``unavailable``: a Bedrock ClientError by default; the web search
+    surface passes its own for the Responses API) puts that model in cooldown and
+    moves on; any other failure is the request's own and propagates at once. When
+    every model fails, the FIRST model's error is raised — it names the model the
+    caller expected. ``reason`` names a failure in the fallback record.
 
     Returns (the model that served, its result).
     """
@@ -171,12 +180,12 @@ def run_with_fallback[Result](
         try:
             return model, attempt(model)
         except Exception as error:
-            if not is_model_unavailable(error):
+            if not unavailable(error):
                 raise
             mark_unavailable(model)
             first_error = first_error or error
             if index + 1 < len(ordered):
-                record_fallback(surface, model, ordered[index + 1], error_code(error))
+                record_fallback(surface, model, ordered[index + 1], reason(error))
     if first_error is None:
         raise ValueError('run_with_fallback needs at least one model')
     raise first_error

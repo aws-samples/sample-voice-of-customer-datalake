@@ -37,7 +37,7 @@
     "automaticOption": "Automatic — {{model}}",
     "groupOther": "Other models",
     "groupRecommended": "Recommended",
-    "intro": "Choose which Claude model powers each AI feature, or keep Automatic to use each feature’s tuned default. Running functions pick up changes within a minute.",
+    "intro": "Choose which model powers each AI feature (Claude, or OpenAI GPT for review pages read from the Bedrock web search index), or keep Automatic to use each feature’s tuned default. Running functions pick up changes within a minute.",
     "loadFailed": "Could not load model settings.",
     "loading": "Loading models...",
     "saveFailed": "Failed to save model selection. Try again.",
@@ -82,6 +82,10 @@
       "agent_persona": {
         "label": "Persona panel",
         "description": "Personas that score and object to documents and prototypes during a run"
+      },
+      "web_reviews_search": {
+        "label": "Review pages: Bedrock web search",
+        "description": "Reads review pages from the Amazon Bedrock web search index with an OpenAI GPT model; a model without capacity hands the page to the next one"
       }
     },
     "title": "AI Models",

@@ -358,7 +358,7 @@
       "deleteConfirmTitle": "Retirer la page d'avis",
       "deleteConfirmMessage": "Voulez-vous vraiment retirer cette page d'avis ?",
       "addBedrockPage": "Ajouter une page de l’index de recherche web Bedrock",
-      "bedrockNote": "Les avis sont lus dans la copie de cette page indexée par Amazon Bedrock (le cache d’Amazon), et non sur le site lui-même. Chaque avis garde son URL source et son site : il renvoie toujours là où il a été publié."
+      "bedrockNote": "Les avis sont lus dans la copie de cette page indexée par Amazon Bedrock (le cache d’Amazon), et non sur le site lui-même. Chaque avis garde son URL source et son site : il renvoie toujours là où il a été publié. Le modèle qui la lit se choisit dans Administration → Modèles d'IA."
     },
     "kindLabel": "Type",
     "kind": {

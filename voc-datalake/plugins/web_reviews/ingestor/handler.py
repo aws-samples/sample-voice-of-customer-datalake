@@ -14,7 +14,8 @@ as ``source_id`` (``web_trustpilot_example_air``), so source profiles apply per 
 is reported in the run's errors (``<target>: blocked by <vendor>``), never read as
 "no reviews". A target whose ``method`` is ``bedrock_web_search`` is not read in the browser:
 its page is read once per run from the Amazon Bedrock web search cache by an OpenAI GPT
-model (``web_search_reader``), and every review it yields carries its attribution. See
+model (``web_search_reader``: the ``web_reviews_search`` surface's, Administration -> AI models, with its
+capacity fallback), and every review it yields carries its attribution. See
 docs/web-reviews.md.
 """
 
@@ -34,15 +35,15 @@ from page_reader import BrowserTab, PageLoadError, PageSnapshot
 from resume import ResumeCursor, ResumeStore, next_cursor
 from target_reader import ReadLimits, ReadReview, TargetResult, read_target
 from web_items import METADATA_VALUE_MAX_CHARS, WebTarget, queue_item, stored_configs, target_from_config, url_list
-from web_search_reader import MAX_WEB_SEARCH_REVIEWS, WebSearchError, WebSearchRead, read_web_search_target
+from web_search_reader import MAX_WEB_SEARCH_REVIEWS, WebSearchError, WebSearchRead, read_with_fallback
 
 from _shared.app_reviews_utils import is_due_for_run
 from _shared.base_ingestor import BaseIngestor, logger, metrics, run_in_workspace, tracer
 from shared.converse import converse
 from shared.invocation_cost import measure_invocation_cost
+from shared.model_config import WEB_SEARCH_SURFACE, fallback_chain, get_active_model_id
 from shared.timestamps import now_iso
 from shared.web_review_targets import (
-    DEFAULT_WEB_SEARCH_MODEL,
     MAX_REVIEWS,
     METHOD_BEDROCK_WEB_SEARCH,
     TargetError,
@@ -217,9 +218,12 @@ class WebReviewsIngestor(BaseIngestor):
     # ── bedrock_web_search ───────────────────────────────────────────────────
 
     def _web_search(self, target: WebTarget, max_reviews: int) -> WebSearchRead:
+        """*target* read by the web search surface's model (Administration -> AI models; its own pick, else
+        Luna), stepping down the surface's chain when a model cannot serve (shared/model_config.py)."""
         region = os.environ.get('AWS_REGION') or os.environ.get('AWS_DEFAULT_REGION') or 'us-east-1'
-        return read_web_search_target(target.url, target.model or DEFAULT_WEB_SEARCH_MODEL, max_reviews,
-                                      region=region, credentials=boto3.Session().get_credentials())
+        chain = fallback_chain(get_active_model_id(WEB_SEARCH_SURFACE), WEB_SEARCH_SURFACE)
+        return read_with_fallback(target.url, chain, max_reviews, region=region,
+                                  credentials=boto3.Session().get_credentials())
 
     def _read_by_web_search(self, target: WebTarget) -> Generator[dict, None, None]:
         """*target*'s page, read once from the Bedrock web search cache; its new reviews with their attribution."""
@@ -245,10 +249,10 @@ class WebReviewsIngestor(BaseIngestor):
         logger.info(f'web_reviews {target.host}: {len(new)} new of {len(read.reviews)} reviews from the Bedrock web '
                     f'search cache ({read.model}; {read.dropped} dropped as summaries or invalid)')
         result = TargetResult(reviews=[ReadReview(review, 1, target.url) for review in new], pages_read=1, stop='pages')
-        yield from self._items_of(target, result, None, attribution=self._attribution(target, read, fetched_at))
+        yield from self._items_of(target, result, None, attribution=self._citation(target, read, fetched_at))
 
     @staticmethod
-    def _attribution(target: WebTarget, read: WebSearchRead, fetched_at: str) -> dict[str, str]:
+    def _citation(target: WebTarget, read: WebSearchRead, fetched_at: str) -> dict[str, str]:
         """What every review of a web-search read carries (the Web Search terms: keep the citations and links)."""
         attribution = {'method': METHOD_BEDROCK_WEB_SEARCH, 'model': read.model, 'site': target.host,
                        'fetched_at': fetched_at, 'opened_urls': url_list(read.opened_urls),

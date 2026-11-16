@@ -73,6 +73,7 @@ import { normalizeGithubMetrics } from './githubMetricsSchema'
 import { normalizeFormStatsMap, parseFormStatsResponse, parseFormSubmissionsResponse } from './feedbackFormStatsSchema'
 import { normalizeModelCapacity, normalizeModelTestResult } from './modelTestSchema'
 import { normalizeImageModelCapacity, normalizeImageModelInfo } from './imageModelSchema'
+import { normalizeWebSearchModels, readSurfaceAllowlist } from './modelSettingsSchema'
 import { normalizeResetSource, normalizeSourcesStatus } from './sourcesStatusSchema'
 
 // API response parser using Zod for runtime validation
@@ -359,16 +360,24 @@ export const api = {
   // admin-selected override (null = Automatic). `model_id` is a legacy global
   // override kept for backward compatibility.
   // `image_model` is the fixed persona-avatar image model (null on an older API).
+  // Each surface picks from its `allowlist`: `claude` (`available_models`) or, for the web search surface,
+  // `web_search` (`web_search_models`, OpenAI GPT models; api/modelSettingsSchema.ts).
   getModelSettings: async () => {
     const raw = await fetchApi<{
       available_models: Array<{ key: string; id: string; label: string; description: string }>
-      surfaces: Array<{ key: string; default_id: string; selected: string | null }>
+      surfaces: Array<{ key: string; default_id: string; selected: string | null; allowlist?: unknown }>
+      web_search_models?: unknown
       model_id: string | null
       // The deployment's default (`-c defaultModelId`, SETTINGS#model_default), below every pick; absent on an older API.
       deployment_default?: string | null
       image_model?: unknown
     }>('/settings/model')
-    return { ...raw, image_model: normalizeImageModelInfo(raw.image_model) }
+    return {
+      ...raw,
+      surfaces: raw.surfaces.map((surface) => ({ ...surface, allowlist: readSurfaceAllowlist(surface.allowlist) })),
+      web_search_models: normalizeWebSearchModels(raw.web_search_models),
+      image_model: normalizeImageModelInfo(raw.image_model),
+    }
   },
 
   // Set (modelId = allowlisted id) or clear (modelId = null) the model for one

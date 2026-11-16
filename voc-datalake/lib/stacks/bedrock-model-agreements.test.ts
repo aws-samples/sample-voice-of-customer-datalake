@@ -10,6 +10,8 @@
  * - every agreement is marked best effort, so a refused or failed agreement never fails the deploy
  *   (the handler's behaviour is tested in lambda/shared/test/test_model_agreement_handler.py);
  * - one shared provider: a single agreement Lambda for all of them;
+ * - with `webSearchModels` (an enabled plugin reads with them, 7.42.00), one agreement per OpenAI GPT model of the
+ *   web search surface in the host region too, best effort like every other; without it, none;
  * - the image agreement and the provider keep the logical ids deployed since 5.45.00, so the image
  *   agreement keeps its ServiceToken (CloudFormation refuses to change one).
  *
@@ -24,6 +26,7 @@ import { z } from 'zod';
 import { BedrockModelAgreements } from './bedrock-access-stack';
 import { byCodeUnit } from '../utils/compare';
 import { ALLOWED_FOUNDATION_MODEL_IDS, IMAGE_MODEL_ID, IMAGE_MODEL_REGION } from '../utils/model-allowlist';
+import { WEB_SEARCH_MODELS } from '../utils/web-search-models';
 
 /** `cdk.CustomResource` renders as this type. */
 const AGREEMENT = 'AWS::CloudFormation::CustomResource';
@@ -42,12 +45,14 @@ function agreementsOf(template: Template): z.infer<typeof AgreementSchema>['Prop
 }
 
 /** The agreements alone in a stack of another region than the image model's, under the app's id. */
-function agreementsTemplate(retry?: string): Template {
+function agreementsTemplate(retry?: string, webSearchModels?: boolean): Template {
   const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [] } });
   const stack = new cdk.Stack(app, 'Host', { env: { account: '111111111111', region: HOST_REGION } });
-  BedrockModelAgreements.addTo(stack, 'ImageModelAccess', { retry });
+  BedrockModelAgreements.addTo(stack, 'ImageModelAccess', { retry, webSearchModels });
   return Template.fromStack(stack);
 }
+
+const isWebSearchModel = (modelId: string): boolean => WEB_SEARCH_MODELS.some((model) => model === modelId);
 
 describe('BedrockModelAgreements construct', () => {
   const template = agreementsTemplate();
@@ -101,5 +106,25 @@ describe('retrying the agreements (-c modelAgreementRetry)', () => {
   it('stamps the token on every agreement, so a new value makes CloudFormation send an Update', () => {
     expect(agreementsOf(agreementsTemplate('2026-11-01')).map((agreement) => agreement.retry))
       .toStrictEqual(Array(ALLOWED_FOUNDATION_MODEL_IDS.length + 1).fill('2026-11-01'));
+  });
+});
+
+describe('the web search surface\'s OpenAI GPT models (webSearchModels)', () => {
+  it('requests each one in the host region, best effort, beside every Claude model and the image model', () => {
+    const agreements = agreementsOf(agreementsTemplate(undefined, true));
+    const gpt = agreements.filter((a) => isWebSearchModel(a.modelId));
+    expect(gpt.map((a) => a.modelId)).toStrictEqual([...WEB_SEARCH_MODELS]);
+    expect(gpt.map((a) => [a.region, a.bestEffort])).toStrictEqual(WEB_SEARCH_MODELS.map(() => [HOST_REGION, 'true']));
+    expect(agreements).toHaveLength(ALLOWED_FOUNDATION_MODEL_IDS.length + 1 + WEB_SEARCH_MODELS.length);
+  });
+
+  it('retries them with the others', () => {
+    const gpt = agreementsOf(agreementsTemplate('2026-11-15', true)).filter((a) => isWebSearchModel(a.modelId));
+    expect(gpt.map((a) => a.retry)).toStrictEqual(WEB_SEARCH_MODELS.map(() => '2026-11-15'));
+  });
+
+  it('the control: none without an enabled plugin that reads with them', () => {
+    expect(agreementsOf(agreementsTemplate()).filter((a) => isWebSearchModel(a.modelId))).toStrictEqual([]);
+    expect(agreementsOf(agreementsTemplate(undefined, false)).filter((a) => isWebSearchModel(a.modelId))).toStrictEqual([]);
   });
 });

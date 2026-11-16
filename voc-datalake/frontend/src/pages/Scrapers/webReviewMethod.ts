@@ -22,10 +22,11 @@ type ReviewMethod = 'browser' | typeof BEDROCK_WEB_SEARCH
 /** What a page added from the Bedrock tile starts with. */
 export const BEDROCK_PRESET: Readonly<AppConfig> = Object.freeze({ [METHOD_FIELD]: BEDROCK_WEB_SEARCH })
 
-/** The settings of a Bedrock web search page only (the model that reads the indexed page): never on a browser page. */
-const BEDROCK_ONLY_FIELD_KEYS: ReadonlySet<string> = new Set(['model'])
-/** The fields a Bedrock web search page is set up with: its name, its URL, how many reviews a run reads, and its own. */
-const BEDROCK_FIELD_KEYS: ReadonlySet<string> = new Set(['app_name', 'url', 'max_reviews', ...BEDROCK_ONLY_FIELD_KEYS])
+/**
+ * The fields a Bedrock web search page is set up with: its name, its URL and how many reviews a run reads. The
+ * model that reads it is no page's: it is chosen in Administration → AI models ("Review pages: Bedrock web search").
+ */
+const BEDROCK_FIELD_KEYS: ReadonlySet<string> = new Set(['app_name', 'url', 'max_reviews'])
 
 /** Whether the deployed plugin reads a target's `method` (its manifest declares the field). */
 export function offersReviewMethods(plugin: PluginManifest): boolean {
@@ -44,11 +45,11 @@ export function showsReviewMethod(app: Readonly<AppConfig>, plugin: PluginManife
 
 /**
  * The manifest fields the app form shows for `values`: never the method itself (the tile chose it); for a Bedrock
- * page only its own fields, for a browser page none of the Bedrock-only ones.
+ * page only its own fields.
  */
 export function appFormFields(plugin: PluginManifest, values: Readonly<AppConfig>): ConfigField[] {
   if (plugin.id !== WEB_REVIEWS_PLUGIN_ID) return plugin.config
   const fields = plugin.config.filter((field) => field.key !== METHOD_FIELD)
   if (reviewMethod(values) === BEDROCK_WEB_SEARCH) return fields.filter((field) => BEDROCK_FIELD_KEYS.has(field.key))
-  return fields.filter((field) => !BEDROCK_ONLY_FIELD_KEYS.has(field.key))
+  return fields
 }

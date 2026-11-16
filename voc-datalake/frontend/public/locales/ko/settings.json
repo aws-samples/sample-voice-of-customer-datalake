@@ -37,7 +37,7 @@
     "automaticOption": "자동 — {{model}}",
     "groupOther": "기타 모델",
     "groupRecommended": "권장",
-    "intro": "각 AI 기능을 구동할 Claude 모델을 선택하거나, 자동으로 두어 각 기능에 맞게 조정된 기본값을 사용하세요. 실행 중인 함수는 1분 이내에 변경 사항을 반영합니다.",
+    "intro": "각 AI 기능을 구동할 모델(Claude, 또는 Bedrock 웹 검색 인덱스에서 읽는 리뷰 페이지에는 OpenAI GPT)을 선택하거나, 자동으로 두어 각 기능에 맞게 조정된 기본값을 사용하세요. 실행 중인 함수는 1분 이내에 변경 사항을 반영합니다.",
     "loadFailed": "모델 설정을 불러오지 못했습니다.",
     "loading": "모델을 불러오는 중...",
     "saveFailed": "모델 선택을 저장하지 못했습니다. 다시 시도하세요.",
@@ -82,6 +82,10 @@
       "agent_persona": {
         "label": "페르소나 패널",
         "description": "실행 중 문서와 프로토타입을 평가하고 이의를 제기하는 페르소나"
+      },
+      "web_reviews_search": {
+        "label": "리뷰 페이지: Bedrock 웹 검색",
+        "description": "Amazon Bedrock 웹 검색 인덱스에서 OpenAI GPT 모델로 리뷰 페이지를 읽습니다. 용량이 없는 모델은 다음 모델에 페이지를 넘깁니다"
       }
     },
     "title": "AI 모델",

@@ -16,6 +16,7 @@ import { z } from 'zod';
 
 import { byCodeUnit } from './utils/compare';
 import { ALLOWED_FOUNDATION_MODEL_IDS, IMAGE_MODEL_ID } from './utils/model-allowlist';
+import { WEB_SEARCH_MODELS } from './utils/web-search-models';
 import { cleanupAssemblyDirs, synthApp, SYNTH_ACCOUNT, SYNTH_TIMEOUT_MS, type SynthResult } from './test-support/synth-app';
 
 const APP_REGION = 'us-west-2';
@@ -53,11 +54,18 @@ function stackArtifacts(result: SynthResult): Record<string, { environment?: str
 }
 
 /** The Claude agreements (not the image model's) of one stack. */
-function claudeAgreements(result: SynthResult, stack: string): z.infer<typeof AgreementPropsSchema>[] {
+function modelAgreements(result: SynthResult, stack: string): z.infer<typeof AgreementPropsSchema>[] {
   return Object.values(ResourcesSchema.parse(result.template(stack).Resources ?? {}))
     .filter((resource) => resource.Type === AGREEMENT)
-    .map((resource) => AgreementPropsSchema.parse(resource.Properties))
-    .filter((agreement) => agreement.modelId !== IMAGE_MODEL_ID);
+    .map((resource) => AgreementPropsSchema.parse(resource.Properties));
+}
+
+const isWebSearchModel = (modelId: string): boolean => WEB_SEARCH_MODELS.some((model) => model === modelId);
+
+/** The Claude models' agreements: neither the image model's nor the web search surface's GPT models'. */
+function claudeAgreements(result: SynthResult, stack: string): z.infer<typeof AgreementPropsSchema>[] {
+  return modelAgreements(result, stack)
+    .filter((agreement) => agreement.modelId !== IMAGE_MODEL_ID && !isWebSearchModel(agreement.modelId));
 }
 
 const appEnv = `aws://${SYNTH_ACCOUNT}/${APP_REGION}`;
@@ -92,6 +100,12 @@ describe('web search off and no use case form (the opt-out path)', () => {
   it('still creates every Claude agreement, in Core, in the app region, best effort', () => {
     const agreements = claudeAgreements(result, 'VocCoreStack');
     expect(agreements.map((a) => a.modelId).sort(byCodeUnit)).toStrictEqual([...ALLOWED_FOUNDATION_MODEL_IDS].sort(byCodeUnit));
+    expect(new Set(agreements.map((a) => `${a.region}/${a.bestEffort}`))).toStrictEqual(new Set([`${APP_REGION}/true`]));
+  });
+
+  it('creates the web search surface\'s GPT agreements too, the web_reviews plugin being enabled (7.42.00)', () => {
+    const agreements = modelAgreements(result, 'VocCoreStack').filter((a) => isWebSearchModel(a.modelId));
+    expect(agreements.map((a) => a.modelId)).toStrictEqual([...WEB_SEARCH_MODELS]);
     expect(new Set(agreements.map((a) => `${a.region}/${a.bestEffort}`))).toStrictEqual(new Set([`${APP_REGION}/true`]));
   });
 }, SYNTH_TIMEOUT_MS);

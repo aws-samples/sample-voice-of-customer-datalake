@@ -358,7 +358,7 @@
       "deleteConfirmTitle": "Quitar página de reseñas",
       "deleteConfirmMessage": "¿Seguro que quieres quitar esta página de reseñas?",
       "addBedrockPage": "Añadir una página del índice de búsqueda web de Bedrock",
-      "bedrockNote": "Las reseñas se leen de la copia de esta página que Amazon Bedrock ha indexado (la caché de Amazon), no del propio sitio. Cada reseña conserva su URL de origen y su sitio, así que siempre remite a donde se publicó."
+      "bedrockNote": "Las reseñas se leen de la copia de esta página que Amazon Bedrock ha indexado (la caché de Amazon), no del propio sitio. Cada reseña conserva su URL de origen y su sitio, así que siempre remite a donde se publicó. El modelo que la lee se elige en Administración → Modelos de IA."
     },
     "kindLabel": "Tipo",
     "kind": {

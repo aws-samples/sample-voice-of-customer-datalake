@@ -5,13 +5,16 @@ endpoint opens it from the Amazon Bedrock web index and cache with the ``web_sea
 returns the reviews it shows, as JSON:
 
 * the request is SigV4-signed for the ``bedrock-mantle`` service with the Lambda's own role (no
-  API key); IAM: lib/stacks/ingestion-roles.ts (``bedrock-mantle:CreateInference`` on the default
-  project, ``bedrock-websearch:InvokeSearch`` / ``InvokeFetch`` in the region, never
-  ``ExternalWebAccess``);
+  API key; shared/mantle_responses.py); IAM: lib/stacks/ingestion-roles.ts
+  (``bedrock-mantle:CreateInference`` on the default project, ``bedrock-websearch:InvokeSearch`` /
+  ``InvokeFetch`` in the region, never ``ExternalWebAccess``);
 * cache only (``external_web_access: false``): Amazon's copy of the page, which may be older than
   the live page; ``search_context_size: low``; held to the target's site (``allowed_domains``);
 * ONE request per target per run, for the target's own page (never the next pages), asking for at
-  most ``MAX_WEB_SEARCH_REVIEWS`` reviews (fewer when the target or the run allows fewer).
+  most ``MAX_WEB_SEARCH_REVIEWS`` reviews (fewer when the target or the run allows fewer);
+* the model is the web search surface's (Administration -> AI models, shared/model_config.py
+  ``web_reviews_search``); when it cannot serve (throttled, no capacity: ``mantle_responses.cannot_serve``)
+  the read moves down the surface's chain (``read_with_fallback``: Luna, Terra, Sol, GPT-5.5, GPT-5.4).
 
 What comes back is the model's reading, so it is checked before anything is queued: a review must
 be marked ``review`` (the model marks a page's own summary, an AI digest or a rating overview
@@ -29,36 +32,37 @@ reviews at a time, and every stored review carries its source URL and the method
 
 import json
 import re
-import urllib.error
-import urllib.request
-from collections.abc import Callable
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Final
 from urllib.parse import urlparse
 
-from botocore.auth import SigV4Auth
-from botocore.awsrequest import AWSRequest
 from extract import ExtractedReview, validated_review
 
-#: The service the Responses API requests are signed for, and its OpenAI-compatible path.
-SIGNING_SERVICE: Final = 'bedrock-mantle'
-RESPONSES_PATH: Final = '/openai/v1/responses'
+from shared.mantle_responses import (
+    Post,
+    ResponsesError,
+    cannot_serve,
+    failure_reason,
+    responses_url,
+    signed_post,
+    urlopen_post,
+)
+from shared.model_config import WEB_SEARCH_SURFACE
+from shared.model_fallback import run_with_fallback
+
 #: Reviews asked for per target per run, at most.
 MAX_WEB_SEARCH_REVIEWS: Final = 20
 #: Seconds one request may take (a page is typically read in 13-21 s).
 REQUEST_TIMEOUT_SECONDS: Final = 180
-#: First HTTP status that is the API's refusal.
-HTTP_ERROR_FROM: Final = 400
-#: Characters of an error answer kept in the client-safe message.
-ERROR_DETAIL_CHARS: Final = 160
 #: Phrases of a summary of many reviews, not one customer's review (lower-cased).
 SUMMARY_PHRASES: Final = (
     'users find', 'users say', 'users mention', 'users report', 'reviewers say', 'reviewers mention',
     'reviewers find', 'receives positive feedback', 'receives mixed feedback', 'receives negative feedback',
     'overall, users', 'many users', 'most users', 'customers generally', 'according to reviews',
 )
-_FENCE_RE: Final = re.compile(r'^\s*```(?:json)?\s*|\s*```\s*$')
+_FENCE_RE: Final = re.compile(r'^\s*```(?:json)?\s*|\s*```\s*\Z')
 
 #: The answer's shape: the model must fill every field (null when the page does not show it).
 REVIEWS_SCHEMA: Final = {
@@ -82,11 +86,7 @@ REVIEWS_SCHEMA: Final = {
     },
 }
 
-#: ``(url, body, headers, timeout) -> (status, response body)``; the handler passes ``_urlopen``.
-Post = Callable[[str, bytes, dict[str, str], float], tuple[int, bytes]]  # pragma: no mutate  an alias read only as an annotation
-
-
-class WebSearchError(RuntimeError):
+class WebSearchError(ResponsesError):
     """The Responses API refused the request or did not answer; the message is client-safe."""
 
 
@@ -104,10 +104,6 @@ class WebSearchRead:
     cited_urls: list[str] = field(default_factory=list)
     #: Reviews the checks dropped: marked or reading like a summary, or invalid.
     dropped: int = 0
-
-
-def responses_url(region: str) -> str:
-    return f'https://bedrock-mantle.{region}.api.aws{RESPONSES_PATH}'
 
 
 def site_domain(url: str) -> str:
@@ -145,34 +141,12 @@ def request_body(url: str, model: str, max_reviews: int, *, structured: bool = T
     return body
 
 
-def _urlopen(url: str, body: bytes, headers: dict[str, str], timeout: float) -> tuple[int, bytes]:
-    request = urllib.request.Request(url, data=body, headers=headers, method='POST')  # noqa: S310  an https URL built here
+def _ask(endpoint: str, payload: dict[str, Any], region: str, credentials: Any, post: Post) -> dict[str, Any]:
+    """One signed Responses request (shared/mantle_responses.py); a refusal or no answer is a ``WebSearchError``."""
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310  same
-            return response.status, response.read()
-    except urllib.error.HTTPError as error:
-        return error.code, error.read()
-
-
-def signed_post(url: str, payload: dict[str, Any], region: str, credentials: Any, post: Post) -> dict[str, Any]:
-    """POST *payload* SigV4-signed for ``bedrock-mantle``; the JSON answer, or ``WebSearchError``."""
-    data = json.dumps(payload).encode()
-    request = AWSRequest(method='POST', url=url, data=data, headers={'Content-Type': 'application/json'})
-    SigV4Auth(credentials, SIGNING_SERVICE, region).add_auth(request)
-    try:
-        status, raw = post(url, data, dict(request.headers.items()), REQUEST_TIMEOUT_SECONDS)
-    except (OSError, ValueError) as error:  # URLError and timeouts are OSErrors
-        raise WebSearchError(f'no answer ({type(error).__name__})') from error
-    if status >= HTTP_ERROR_FROM:
-        detail = raw.decode('utf-8', 'replace')[:ERROR_DETAIL_CHARS]
-        raise WebSearchError(f'HTTP {status}: {detail}')
-    try:
-        answer = json.loads(raw)
-    except ValueError as error:
-        raise WebSearchError('an unreadable answer') from error
-    if not isinstance(answer, dict):
-        raise WebSearchError('an unreadable answer')
-    return answer
+        return signed_post(endpoint, payload, region, credentials, post, REQUEST_TIMEOUT_SECONDS)
+    except ResponsesError as error:
+        raise WebSearchError(str(error), error.status) from error
 
 
 def _refuses_the_schema(error: WebSearchError) -> bool:
@@ -289,17 +263,33 @@ def _review(item: object) -> ExtractedReview | None:
 
 
 def read_web_search_target(
-    url: str, model: str, max_reviews: int, *, region: str, credentials: Any, post: Post = _urlopen,
+    url: str, model: str, max_reviews: int, *, region: str, credentials: Any, post: Post = urlopen_post,
 ) -> WebSearchRead:
     """*url*'s reviews as *model* reads them from the web search cache (one request, two when the model refuses
     the JSON schema)."""
     endpoint = responses_url(region)
     try:
-        answer = signed_post(endpoint, request_body(url, model, max_reviews), region, credentials, post)
+        answer = _ask(endpoint, request_body(url, model, max_reviews), region, credentials, post)
     except WebSearchError as error:
         if not _refuses_the_schema(error):
             raise
-        answer = signed_post(endpoint, request_body(url, model, max_reviews, structured=False), region, credentials, post)
+        answer = _ask(endpoint, request_body(url, model, max_reviews, structured=False), region, credentials, post)
     fetched, reason, reviews, dropped = page_reviews(answer_text(answer), max_reviews)
     return WebSearchRead(reviews=reviews, model=model, fetched=fetched, reason=reason,
                          opened_urls=opened_urls(answer), cited_urls=cited_urls(answer), dropped=dropped)
+
+
+def read_with_fallback(
+    url: str, models: Sequence[str], max_reviews: int, *, region: str, credentials: Any, post: Post = urlopen_post,
+) -> WebSearchRead:
+    """*url* read by the first of *models* (the surface's chain, shared/model_config.py ``fallback_chain``) that
+    can serve: a model that is throttled or has no capacity (``cannot_serve``) is cooled down and the next one
+    reads the page, like every other surface's fallback (shared/model_fallback.py, metric ``ModelFallback``).
+    Any other refusal is raised at once; when every model fails, the first one's error."""
+    _model, read = run_with_fallback(
+        models, WEB_SEARCH_SURFACE,
+        lambda model: read_web_search_target(url, model, max_reviews, region=region, credentials=credentials,
+                                             post=post),
+        unavailable=cannot_serve, reason=failure_reason,
+    )
+    return read

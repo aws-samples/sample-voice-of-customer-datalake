@@ -6,9 +6,10 @@
  * - `bedrock-websearch:InvokeSearch` / `InvokeFetch` on `*`, held to the deployment's region by `aws:RequestedRegion`
  *   (the Bedrock web search IAM guide's grant); never `bedrock-websearch:ExternalWebAccess`, so Fetch reads the cache;
  * - no other ingestor role holds any of them;
- * - lib/utils/web-search-models.ts, lambda/shared/web_review_targets.py `WEB_SEARCH_MODELS` and the manifest's
- *   `model` options name the same models, in the same order (the first is the default), and the manifest's `method`
- *   options are the Python `METHODS`.
+ * - lib/utils/web-search-models.ts and lambda/shared/model_config.py `WEB_SEARCH_MODELS` (the web search surface's
+ *   allowlist, 7.42.00) name the same models, in the same order (the first is the surface's default), and the
+ *   manifest asks for no model (Administration → AI models chooses it); the manifest's `method` options are the
+ *   Python `METHODS`.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -22,27 +23,37 @@ import { byCodeUnit } from '../utils/compare';
 import { type NormalizedStatement, roleStatements } from '../test-support/iam-statements';
 import { sourceStringConstant } from '../test-support/cross-language-invariants';
 import { SYNTH_ACCOUNT, SYNTH_REGION } from '../test-support/synth-app';
-import { WEB_SEARCH_MODELS } from '../utils/web-search-models';
-import { MANTLE_INFERENCE_ACTION, WEB_SEARCH_ACTIONS } from './ingestion-roles';
+import { ALLOWED_FOUNDATION_MODEL_IDS, ALLOWED_MODEL_IDS } from '../utils/model-allowlist';
+import { MANTLE_INFERENCE_ACTION, WEB_SEARCH_MODELS, webSearchModelsInUse } from '../utils/web-search-models';
+import { loadPlugins } from '../plugin-loader';
+import { WEB_SEARCH_ACTIONS } from './ingestion-roles';
 
 const ROOT = join(__dirname, '..', '..');
 const TARGETS_PY = ['lambda', 'shared', 'web_review_targets.py'];
+const MODEL_CONFIG_PY = ['lambda', 'shared', 'model_config.py'];
 
-/** The quoted strings of a Python tuple constant `NAME: Final = ( '…', … )`. */
-function pythonTuple(name: string): string[] {
-  const source = readFileSync(join(ROOT, ...TARGETS_PY), 'utf8');
-  const body = new RegExp(`^${name}(?::\\s*Final)?\\s*=\\s*\\(([^)]*)\\)`, 'm').exec(source)?.[1];
-  if (body === undefined) throw new Error(`could not read ${name} from ${TARGETS_PY.join('/')}`);
-  return [...body.matchAll(/'([^']+)'/g)].map((match) => match[1] ?? '');
+/** The `"id"` of every row of model_config.py's `WEB_SEARCH_MODELS = [ {…}, … ]`, in order. */
+function pythonWebSearchModelIds(): string[] {
+  const source = readFileSync(join(ROOT, ...MODEL_CONFIG_PY), 'utf8');
+  const body = /^WEB_SEARCH_MODELS = \[([\s\S]*?)^\]/m.exec(source)?.[1];
+  if (body === undefined) throw new Error(`could not read WEB_SEARCH_MODELS from ${MODEL_CONFIG_PY.join('/')}`);
+  return [...body.matchAll(/"id": "([^"]+)"/g)].map((match) => match[1] ?? '');
+}
+
+/** The default of model_config.py's `SURFACE_DEFAULTS` for the web search surface (an alias of a string literal). */
+function pythonWebSearchDefault(): string | undefined {
+  const source = readFileSync(join(ROOT, ...MODEL_CONFIG_PY), 'utf8');
+  const alias = /^ {4}"web_reviews_search": (_\w+),$/m.exec(source)?.[1];
+  return alias === undefined ? undefined : new RegExp(`^${alias} = "([^"]+)"$`, 'm').exec(source)?.[1];
 }
 
 const ManifestSchema = z.object({
   config: z.array(z.object({ key: z.string(), options: z.array(z.object({ value: z.string() })).optional() })),
 });
-const manifestOptions = (key: string): string[] => {
-  const manifest = ManifestSchema.parse(JSON.parse(readFileSync(join(ROOT, 'plugins', 'web_reviews', 'manifest.json'), 'utf8')));
-  return (manifest.config.find((field) => field.key === key)?.options ?? []).map((option) => option.value);
-};
+const manifestFields = () =>
+  ManifestSchema.parse(JSON.parse(readFileSync(join(ROOT, 'plugins', 'web_reviews', 'manifest.json'), 'utf8'))).config;
+const manifestOptions = (key: string): string[] =>
+  (manifestFields().find((field) => field.key === key)?.options ?? []).map((option) => option.value);
 
 const PolicySchema = z.object({
   Properties: z.object({ PolicyDocument: z.object({ Statement: z.array(z.record(z.string(), z.unknown())) }) }),
@@ -83,10 +94,24 @@ describe('the web_reviews ingestor\'s Amazon Bedrock web search grants', () => {
 });
 
 describe('the web search models and methods, in lockstep', () => {
-  it('are the same models in the CDK, the Python validation and the manifest, the default first', () => {
-    expect(pythonTuple('WEB_SEARCH_MODELS')).toStrictEqual([...WEB_SEARCH_MODELS]);
-    expect(manifestOptions('model')).toStrictEqual([...WEB_SEARCH_MODELS]);
-    expect(sourceStringConstant('DEFAULT_WEB_SEARCH_MODEL', ...TARGETS_PY)).toBe(WEB_SEARCH_MODELS[0]);
+  it('are the same models in the CDK and the surface\'s allowlist, the default first', () => {
+    expect(pythonWebSearchModelIds()).toStrictEqual([...WEB_SEARCH_MODELS]);
+    expect(pythonWebSearchDefault()).toBe(WEB_SEARCH_MODELS[0]);
+  });
+
+  it('are none of the Claude picker\'s models, which hold no GPT model (two separate allowlists)', () => {
+    expect(ALLOWED_MODEL_IDS.filter((id) => id.includes('openai.'))).toStrictEqual([]);
+    expect(ALLOWED_FOUNDATION_MODEL_IDS.filter((id) => WEB_SEARCH_MODELS.some((model) => model === id))).toStrictEqual([]);
+  });
+
+  it('are in use exactly while a plugin that reads with them is enabled: the web_reviews plugin', () => {
+    const plugins = loadPlugins(join(ROOT, 'plugins'));
+    expect(plugins.filter((plugin) => webSearchModelsInUse([plugin])).map((plugin) => plugin.id)).toStrictEqual(['web_reviews']);
+    expect(webSearchModelsInUse([])).toBe(false);
+  });
+
+  it('are asked for on no page: the manifest has no model field (Administration → AI models chooses it)', () => {
+    expect(manifestFields().map((field) => field.key)).not.toContain('model');
   });
 
   it('offer in the manifest exactly the methods the API accepts, the browser first (the default)', () => {

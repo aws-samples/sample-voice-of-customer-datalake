@@ -42,6 +42,7 @@ from shared import (
     reference_urls,
     reprocess_jobs,
     reprocess_slices,
+    web_search_model_probe,
 )
 from shared import email_intake_settings as inbox
 from shared.api import (
@@ -105,9 +106,14 @@ from shared.model_config import (
     MODEL_DEFAULT_KEY,
     MODEL_SETTINGS_PK,
     MODEL_SETTINGS_SK,
-    PICKER_SURFACES,
     SURFACE_DEFAULTS,
+    WEB_SEARCH_MODEL_IDS,
+    WEB_SEARCH_MODELS,
+    WEB_SEARCH_SURFACE,
     clear_model_cache,
+    offered_picker_surfaces,
+    surface_allowlist,
+    web_search_offered,
 )
 from shared.model_profile import payload_fields
 from shared.project_gate import caller_from_event
@@ -234,6 +240,11 @@ def get_model_settings():
     surface is on Automatic). ``model_id`` is a legacy global override kept
     for backward compatibility with the earlier single-model picker; when
     set it applies to any surface left on Automatic.
+
+    Each surface names the list it picks from (``allowlist``): ``claude``
+    (``available_models``) or, for the web search surface, ``web_search``
+    (``web_search_models``, the OpenAI GPT models; empty, and the surface
+    absent, unless a deployed plugin reads with it: shared/model_config.py).
     """
     if not aggregates_table:
         raise ConfigurationError('Aggregates table not configured')
@@ -249,13 +260,15 @@ def get_model_settings():
             {
                 'key': key,
                 'default_id': SURFACE_DEFAULTS[key],
-                # Ignore any stored value that has since left the allowlist.
-                'selected': stored.get(key) if stored.get(key) in ALLOWED_MODEL_IDS else None,
+                # Ignore any stored value that has since left the surface's allowlist.
+                'selected': stored.get(key) if stored.get(key) in surface_allowlist(key) else None,
+                'allowlist': 'web_search' if key == WEB_SEARCH_SURFACE else 'claude',
             }
-            for key in PICKER_SURFACES
+            for key in offered_picker_surfaces()
         ]
         result = {
             'available_models': ALLOWED_MODELS,
+            'web_search_models': WEB_SEARCH_MODELS if web_search_offered() else [],
             'surfaces': surfaces,
             'model_id': legacy_global if legacy_global in ALLOWED_MODEL_IDS else None,
             # The deployment's default, pinned at deploy (SETTINGS#model_default): what a surface on Automatic uses
@@ -286,6 +299,10 @@ def save_model_settings():
       - ``{'model_id': <allowlisted id>|null}`` (no ``surface``) — set/clear
         the legacy global override that applies to every un-pinned surface.
 
+    The model must be in the surface's own allowlist: a Claude model for every
+    surface and for the legacy global, a GPT model of ``WEB_SEARCH_MODELS`` for
+    the web search surface (shared/model_config.py ``surface_allowlist``).
+
     Admin-only: this changes inference cost/quality for the whole org, so it
     is gated on the ``admins`` Cognito group server-side (not just in the UI).
     """
@@ -296,14 +313,16 @@ def save_model_settings():
     if 'model_id' not in body:
         raise ValidationError('model_id is required (an allowlisted id, or null to clear)')
     model_id = body.get('model_id')
-    if model_id is not None and model_id not in ALLOWED_MODEL_IDS:
-        raise ValidationError(
-            f"model_id must be null or one of: {', '.join(sorted(ALLOWED_MODEL_IDS))}"
-        )
     surface = body.get('surface')
-    if surface is not None and surface not in PICKER_SURFACES:
+    surfaces = offered_picker_surfaces()
+    if surface is not None and surface not in surfaces:
         raise ValidationError(
-            f"surface must be null or one of: {', '.join(PICKER_SURFACES)}"
+            f"surface must be null or one of: {', '.join(surfaces)}"
+        )
+    allowed = ALLOWED_MODEL_IDS if surface is None else surface_allowlist(surface)
+    if model_id is not None and model_id not in allowed:
+        raise ValidationError(
+            f"model_id must be null or one of: {', '.join(sorted(allowed))}"
         )
     try:
         if surface is None:
@@ -328,7 +347,9 @@ def run_model_test():
     Admin-only (it spends a model call). No fallback and no retry: the answer is
     about the model named in the body, never a stand-in (shared/model_capacity.py).
     The persona-avatar image model is accepted too: ONE minimal image call, nothing
-    stored (shared/image_model_status.py).
+    stored (shared/image_model_status.py). So is a GPT model of the web search
+    surface while it is offered: ONE tiny Responses request on bedrock-mantle, no
+    tool (shared/web_search_model_probe.py).
     """
     require_admin(app.current_event.raw_event)
     body = json_object_body(app)
@@ -336,8 +357,11 @@ def run_model_test():
     image_model_id = image_model_status.image_model_info()['id']
     if model_id == image_model_id:
         return image_model_status.probe_image_model()
+    web_search_ids = WEB_SEARCH_MODEL_IDS if web_search_offered() else frozenset()
+    if isinstance(model_id, str) and model_id in web_search_ids:
+        return web_search_model_probe.probe_web_search_model(model_id)
     if not isinstance(model_id, str) or model_id not in ALLOWED_MODEL_IDS:
-        allowed = ', '.join([*sorted(ALLOWED_MODEL_IDS), image_model_id])
+        allowed = ', '.join([*sorted(ALLOWED_MODEL_IDS), *sorted(web_search_ids), image_model_id])
         raise ValidationError(f"model_id must be one of: {allowed}")
     return model_capacity.probe_model(model_id)
 

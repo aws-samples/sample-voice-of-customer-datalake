@@ -74,6 +74,10 @@
       "prototype": {
         "description": "Interaktywne prototypy HTML",
         "label": "Kreator prototypów"
+      },
+      "web_reviews_search": {
+        "label": "Strony z recenzjami: wyszukiwanie internetowe Bedrock",
+        "description": "Odczytuje strony z recenzjami z indeksu wyszukiwania internetowego Amazon Bedrock modelem OpenAI GPT; model bez przepustowości przekazuje stronę następnemu"
       }
     },
     "test": {
@@ -128,7 +132,7 @@
     "automaticOption": "Automatycznie — {{model}}",
     "groupOther": "Pozostałe modele",
     "groupRecommended": "Zalecane",
-    "intro": "Wybierz, który model Claude obsługuje każdą funkcję AI, lub pozostaw opcję Automatycznie, aby używać dostrojonego domyślnego ustawienia danej funkcji. Działające funkcje zastosują zmiany w ciągu minuty.",
+    "intro": "Wybierz, który model obsługuje każdą funkcję AI (Claude albo OpenAI GPT dla stron z recenzjami odczytywanych z indeksu wyszukiwania internetowego Bedrock), lub pozostaw opcję Automatycznie, aby używać dostrojonego domyślnego ustawienia danej funkcji. Działające funkcje zastosują zmiany w ciągu minuty.",
     "loadFailed": "Nie udało się wczytać ustawień modeli.",
     "loading": "Wczytywanie modeli...",
     "saveFailed": "Nie udało się zapisać wyboru modelu. Spróbuj ponownie.",

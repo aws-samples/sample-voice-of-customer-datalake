@@ -339,7 +339,24 @@ const mockSurfaceDefaults = {
   agent_worker: 'global.anthropic.claude-sonnet-5-5',
   agent_reviewer: 'global.anthropic.claude-opus-5-5',
   agent_persona: 'global.anthropic.claude-sonnet-5-5',
+  web_reviews_search: 'openai.gpt-5.6-luna',
 };
+// The web search surface's own allowlist (shared/model_config.py WEB_SEARCH_MODELS, lockstep-tested there): OpenAI
+// GPT models on bedrock-mantle, picked by web_reviews_search alone. The mock deploys web_reviews, so it is offered.
+const WEB_SEARCH_SURFACE = 'web_reviews_search';
+const mockWebSearchModels = [
+  { key: 'gpt56luna', id: 'openai.gpt-5.6-luna', label: 'OpenAI GPT-5.6 Luna', description: 'Lowest price per token of the family — the default for review pages read from the Bedrock web search index' },
+  { key: 'gpt56terra', id: 'openai.gpt-5.6-terra', label: 'OpenAI GPT-5.6 Terra', description: "GPT-5.6 at about ten times Luna's price per token" },
+  { key: 'gpt56sol', id: 'openai.gpt-5.6-sol', label: 'OpenAI GPT-5.6 Sol', description: 'The highest-priced GPT-5.6' },
+  { key: 'gpt55', id: 'openai.gpt-5.5', label: 'OpenAI GPT-5.5', description: 'Previous-generation GPT' },
+  { key: 'gpt54', id: 'openai.gpt-5.4', label: 'OpenAI GPT-5.4', description: 'Older-generation GPT' },
+];
+// The GPT model the mock account "has no capacity for" (its test answers no_capacity, HTTP 429).
+const MOCK_NO_CAPACITY_WEB_SEARCH_MODEL = 'openai.gpt-5.4';
+/** The models `surface` may pick (shared/model_config.py surface_allowlist). */
+function mockSurfaceModels(surface) {
+  return surface === WEB_SEARCH_SURFACE ? mockWebSearchModels : mockAvailableModels;
+}
 
 // Categories config — real contract shape (id + subcategories, issue #181).
 // The last entry is a deliberately sparse legacy row ({name, display_name,
@@ -637,10 +654,12 @@ const handlers = {
   // Settings - Per-surface AI model picker (issue #96)
   'GET /settings/model': () => ({
     available_models: mockAvailableModels,
+    web_search_models: mockWebSearchModels,
     surfaces: Object.entries(mockSurfaceDefaults).map(([key, defaultId]) => ({
       key,
       default_id: defaultId,
       selected: mockModelSurfaces[key] ?? null,
+      allowlist: key === WEB_SEARCH_SURFACE ? 'web_search' : 'claude',
     })),
     model_id: null,
     // The model pinned at deploy (SETTINGS#model_default, 7.01.00): none, as a deployment without -c defaultModelId.
@@ -653,8 +672,8 @@ const handlers = {
     if (!surface || !(surface in mockSurfaceDefaults)) {
       return { __status: 400, body: { success: false, error: 'surface must be a known picker surface' } };
     }
-    if (modelId !== null && !mockAvailableModels.some((m) => m.id === modelId)) {
-      return { __status: 400, body: { success: false, error: 'model_id must be null or allowlisted' } };
+    if (modelId !== null && !mockSurfaceModels(surface).some((m) => m.id === modelId)) {
+      return { __status: 400, body: { success: false, error: "model_id must be null or one of the surface's models" } };
     }
     if (modelId === null) {
       delete mockModelSurfaces[surface];
@@ -673,6 +692,20 @@ const handlers = {
         model_id: mockImageModel.id, invoked_id: mockImageModel.id, status: 'available', ok: true,
         latency_ms: 2400 + (mockModelTestRuns % 5) * 200, message: 'The model answered.', quota: null,
         checked_at: new Date().toISOString(),
+      };
+    }
+    const webSearchModel = mockWebSearchModels.find((m) => m.id === body?.model_id);
+    if (webSearchModel) {
+      // shared/web_search_model_probe.py: one tiny Responses request on bedrock-mantle, no tool, no quota.
+      mockModelTestRuns += 1;
+      const noCapacity = webSearchModel.id === MOCK_NO_CAPACITY_WEB_SEARCH_MODEL;
+      return {
+        model_id: webSearchModel.id, invoked_id: webSearchModel.id, status: noCapacity ? 'no_capacity' : 'available',
+        ok: !noCapacity, latency_ms: noCapacity ? null : 900 + (mockModelTestRuns % 5) * 120,
+        message: noCapacity
+          ? 'The token quota for this model is 0 in this account; nothing to do but wait. (HTTP 429)'
+          : 'The model answered.',
+        quota: null, checked_at: new Date().toISOString(),
       };
     }
     const model = mockAvailableModels.find((m) => m.id === body?.model_id);

@@ -160,7 +160,9 @@ website | app | billing | returns | communication | other
 
 Model selection is configuration-driven; do not set `BEDROCK_MODEL_ID` on a Lambda. In
 **Administration → AI models** (`/admin?tab=ai`), an administrator chooses a curated Claude model
-per surface. `lambda/shared/model_config.py` applies those choices to every caller.
+per surface (and an OpenAI GPT model for review pages read from the Bedrock web search index, a surface with
+its own list: [deployment.md](deployment.md#review-pages-bedrock-web-search-openai-gpt-in-administration--ai-models)).
+`lambda/shared/model_config.py` applies those choices to every caller.
 
 For accounts that can invoke only one model, pin the deployment-wide default at deploy time:
 

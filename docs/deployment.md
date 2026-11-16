@@ -215,9 +215,16 @@ and look at `authorizationStatus` / `agreementAvailability.status`.
 `lib/stacks/bedrock-access-stack.ts`, construct id `ImageModelAccess`): one custom
 resource per allowlisted Claude model (`lib/utils/model-allowlist.ts`), created in
 the app's region, plus one for the persona-avatar image model
-(`stability.stable-image-core-v1:1`, in us-west-2 whatever the app region). Each runs
-`GetFoundationModelAvailability`, then `ListFoundationModelAgreementOffers` +
-`CreateFoundationModelAgreement`; a model already `AVAILABLE` is skipped.
+(`stability.stable-image-core-v1:1`, in us-west-2 whatever the app region), and, while the
+`web_reviews` plugin is enabled (any plugin whose manifest declares
+`infrastructure.ingestor.webSearch`), one per OpenAI GPT model of the web search surface
+(`lib/utils/web-search-models.ts`: `openai.gpt-5.6-luna`, `-terra`, `-sol`, `openai.gpt-5.5`,
+`openai.gpt-5.4`, `WebSearchModelAgreement0`-`4`, in the app's region), so nobody accepts their
+Marketplace offers by hand. Each runs `GetFoundationModelAvailability`, then
+`ListFoundationModelAgreementOffers` + `CreateFoundationModelAgreement`; a model already
+`AVAILABLE` is skipped. The GPT models' offers are listed in us-west-2, us-east-1 and us-east-2
+(`aws bedrock list-foundation-model-agreement-offers --model-id openai.gpt-5.6-luna`, 2026-11-15);
+in a region without one the resource reports `NO_OFFERS`, best effort like the rest.
 
 Why the deploy does this: Bedrock enables a serverless third-party model the first
 time it is invoked, but only when the caller holds `aws-marketplace:Subscribe` /
@@ -235,7 +242,8 @@ does not repeat it on its own. Administration → AI models shows which models a
 (each row's **Test** button, below).
 
 **See a missing agreement.** Administration → AI models lists every Claude model the account
-cannot call yet under **Model agreements**, with what is missing (no agreement, no access, not
+cannot call yet under **Model agreements** (a GPT model of the web search surface is checked with
+its row's **Test**, which answers **No access** without its agreement), with what is missing (no agreement, no access, not
 offered in the region), what to do, and a **Test** button. `GET /settings/model/capacity` reads
 each model's live state with `GetFoundationModelAvailability` in the app region
 (`lambda/shared/model_agreements.py`, cached 5 minutes, the same read as the image model's row),
@@ -1562,6 +1570,35 @@ Marketplace subscription grant of `lib/stacks/api-marketplace.ts` (the first cal
 Marketplace model subscribes as the caller). Under `-c inferenceScope=eu` avatars are off;
 the row says so and the model is not used.
 
+### Review Pages: Bedrock Web Search (OpenAI GPT) in Administration → AI models
+
+The last row, **Review pages: Bedrock web search** (surface `web_reviews_search`), chooses the model that reads a
+Web Reviews page whose method is `bedrock_web_search` ([web-reviews.md → Methods](web-reviews.md#methods)). It is
+listed only while the `web_reviews` plugin is enabled (the settings Lambda's `WEB_SEARCH_MODELS_OFFERED`, set from
+the manifests' `infrastructure.ingestor.webSearch`).
+
+- **Its own allowlist.** It picks from `web_search_models` (`GET /settings/model`; each surface names its list in
+  `allowlist`: `claude` or `web_search`), the OpenAI GPT models on the `bedrock-mantle` Responses API:
+  `openai.gpt-5.6-luna` (Automatic), `openai.gpt-5.6-terra`, `openai.gpt-5.6-sol`, `openai.gpt-5.5`,
+  `openai.gpt-5.4` (`lambda/shared/model_config.py` `WEB_SEARCH_MODELS`, in lockstep with
+  `lib/utils/web-search-models.ts`). `PUT /settings/model` refuses a Claude model for it, and a GPT model for any
+  other surface or for all surfaces (400 naming the surface's models). The pick for all surfaces and the
+  deployment's default (`-c defaultModelId`) are Claude models and never reach it, so its Automatic is always Luna.
+- **Test** sends ONE Responses request to exactly the model the draft resolves to
+  (`lambda/shared/web_search_model_probe.py`): `"Reply with OK"`, `max_output_tokens` 16, no tool (no web search
+  is billed), SigV4 for `bedrock-mantle` in the app region, 20 s at most, no fallback and no retry. The status is
+  read from the HTTP answer: 200 **Available**; 401 / 403 **No access** (the role, an SCP, or the model's
+  agreement); 429 **No capacity** when the answer names capacity or a quota, else **Throttled**; 404 or an unknown
+  model **Not in this region**; 503 naming capacity **No capacity**, another 5xx or no answer **Unavailable**;
+  another 4xx naming model access, a use case, an agreement or a subscription **No access**; any other refusal
+  **Error**. No tokens-per-minute quota is read for these models, so **Test all models** (the Claude
+  table) does not include them.
+- **Fallback.** A read whose model cannot serve moves down the surface's own chain
+  ([Model Capacity Fallback](#model-capacity-fallback)).
+- **IAM.** The settings role holds `bedrock-mantle:CreateInference` on
+  `arn:aws:bedrock-mantle:<region>:<account>:project/default` only, and only while the plugin is enabled
+  (`lib/stacks/api-marketplace.ts` `grantWebSearchModelProbe`); nothing of `bedrock-websearch:*`.
+
 ### Model Capacity Fallback
 
 Access is not capacity. Bedrock can grant an account a model and still give it
@@ -1575,6 +1612,12 @@ now, the request is re-run on the next model of one ordered chain:
    built-in default, or an explicit `model_id=`),
 2. the surface's built-in default, when different,
 3. then `MODEL_FALLBACK_ORDER`: **Sonnet 5.5 → Sonnet 5 → Sonnet 4.6 → Haiku 5.5 → Haiku 4.5**.
+
+The web search surface (`web_reviews_search`, OpenAI GPT models) has a chain of its own, never mixed with
+this one: its resolved model, then its default, then `WEB_SEARCH_FALLBACK_ORDER`: **GPT-5.6 Luna → GPT-5.6
+Terra → GPT-5.6 Sol → GPT-5.5 → GPT-5.4**. It steps on HTTP 429 or 503 from the Responses API, or a 400 / 403 /
+404 whose answer names the model's availability (`lambda/shared/mantle_responses.py` `cannot_serve`), with the same
+cooldown, record and metric (`run_with_fallback`, `Surface` `web_reviews_search`).
 
 Opus is only ever reached as the configured or default model of a surface
 (prototype, agent conductor/reviewer), never as a stand-in. This is separate

@@ -81,7 +81,7 @@ _THROTTLE_CODES: Final = frozenset({
 })
 _UNAVAILABLE_CODES: Final = frozenset({"ServiceUnavailableException", "ModelTimeoutException"})
 # A ValidationException naming model access / use case / agreement means no access.
-_NO_ACCESS_RE: Final = re.compile(
+NO_ACCESS_RE: Final = re.compile(
     r"access to (?:the )?model|use case|agreement|not (?:enabled|authorized|subscribed)|subscription",
 )
 # A ValidationException naming an unknown model id or inference profile means not offered here.
@@ -342,15 +342,16 @@ def classify_client_error(code: str, message: str, quota: Quota | None) -> str:
         return "not_ready"
     if code in _UNAVAILABLE_CODES:
         return "unavailable"
-    if code == "ValidationException" and _NO_ACCESS_RE.search(lowered):
+    if code == "ValidationException" and NO_ACCESS_RE.search(lowered):
         return "no_access"
     if code == "ValidationException" and _UNKNOWN_MODEL_RE.search(lowered):
         return "not_in_region"
     return "error"
 
 
-def _result(model_id: str, invoked_id: str, status: str, *, latency_ms: int | None,
-            code: str | None, quota: Quota | None) -> ProbeResult:
+def probe_result(model_id: str, invoked_id: str, status: str, *, latency_ms: int | None,
+                 code: str | None, quota: Quota | None) -> ProbeResult:
+    """The test's answer (also the web search surface's: shared/web_search_model_probe.py)."""
     message = STATUS_MESSAGES[status]
     return {
         "model_id": model_id,
@@ -411,7 +412,7 @@ def probe_model(model_id: str) -> ProbeResult:
         extra={"model_id": model_id, "invoked_id": invoked_id, "status": status,
                "error_code": code, "latency_ms": latency_ms},
     )
-    return _result(
+    return probe_result(
         model_id, invoked_id, status,
         latency_ms=latency_ms if status == "available" else None,
         code=code, quota=quota,

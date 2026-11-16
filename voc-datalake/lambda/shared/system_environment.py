@@ -23,12 +23,12 @@ from shared.avatar import avatars_enabled
 from shared.enabled_sources import default_source_ids
 from shared.logging import logger
 from shared.model_config import (
-    ALLOWED_MODEL_IDS,
     MODEL_SETTINGS_PK,
     MODEL_SETTINGS_SK,
     PICKER_SURFACES,
     get_active_model_id,
     inference_scope,
+    surface_allowlist,
 )
 from shared.ops_alerts import ALERTS_SETTINGS_KEY, load_targets, owned_alarms
 from shared.pii_redaction import redact_text
@@ -64,7 +64,7 @@ def _models(table: Any) -> dict[str, Any]:
     item = table.get_item(Key={'pk': MODEL_SETTINGS_PK, 'sk': MODEL_SETTINGS_SK}).get('Item') if table else None
     surfaces = item.get('surfaces') if isinstance(item, dict) else None
     overrides = {str(surface): str(model) for surface, model in (surfaces or {}).items()
-                 if isinstance(model, str) and model in ALLOWED_MODEL_IDS}
+                 if isinstance(model, str) and model in surface_allowlist(str(surface))}
     return {'effective': {surface: get_active_model_id(surface) for surface in PICKER_SURFACES},
             'overrides': overrides}
 

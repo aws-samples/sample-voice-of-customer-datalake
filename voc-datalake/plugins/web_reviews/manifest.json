@@ -47,20 +47,6 @@
       ]
     },
     {
-      "key": "model",
-      "label": "Web search model (Amazon Bedrock web search index only)",
-      "type": "select",
-      "required": false,
-      "secret": false,
-      "options": [
-        { "value": "openai.gpt-5.6-luna", "label": "OpenAI GPT-5.6 Luna (default)" },
-        { "value": "openai.gpt-5.6-terra", "label": "OpenAI GPT-5.6 Terra" },
-        { "value": "openai.gpt-5.6-sol", "label": "OpenAI GPT-5.6 Sol" },
-        { "value": "openai.gpt-5.5", "label": "OpenAI GPT-5.5" },
-        { "value": "openai.gpt-5.4", "label": "OpenAI GPT-5.4" }
-      ]
-    },
-    {
       "key": "max_pages",
       "label": "Pages per run (0 = all, up to 100)",
       "type": "text",
@@ -103,7 +89,7 @@
       "Add it above with a name and how many pages to read per run",
       "Use Run now, or choose a frequency and enable the schedule",
       "A site that blocks automated browsers is reported as blocked in the run status",
-      "For a site that blocks the browser you may choose \"Amazon Bedrock web search index\": its cached copy of the page, read by an OpenAI GPT model (one page per run, every review attributed)"
+      "For a site that blocks the browser you may choose \"Amazon Bedrock web search index\": its cached copy of the page, read by an OpenAI GPT model chosen in Administration → AI models (one page per run, every review attributed)"
     ]
   },
 

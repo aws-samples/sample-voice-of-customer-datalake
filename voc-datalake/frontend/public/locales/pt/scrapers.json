@@ -358,7 +358,7 @@
       "deleteConfirmTitle": "Remover página de avaliações",
       "deleteConfirmMessage": "Tem certeza de que deseja remover esta página de avaliações?",
       "addBedrockPage": "Adicionar uma página do índice de pesquisa na web do Bedrock",
-      "bedrockNote": "As avaliações são lidas da cópia desta página indexada pelo Amazon Bedrock (o cache da Amazon), não do próprio site. Cada avaliação mantém a URL e o site de origem, então sempre aponta para onde foi publicada."
+      "bedrockNote": "As avaliações são lidas da cópia desta página indexada pelo Amazon Bedrock (o cache da Amazon), não do próprio site. Cada avaliação mantém a URL e o site de origem, então sempre aponta para onde foi publicada. O modelo que a lê é escolhido em Administração → Modelos de IA."
     },
     "kindLabel": "Tipo",
     "kind": {

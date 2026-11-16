@@ -1418,6 +1418,18 @@
         "body": {
           "model_id": "stability.stable-image-core-v1:1"
         }
+      },
+      {
+        "path": "/settings/model/test",
+        "body": {
+          "model_id": "openai.gpt-5.6-luna"
+        }
+      },
+      {
+        "path": "/settings/model/test",
+        "body": {
+          "model_id": "openai.gpt-5.4"
+        }
       }
     ]
   },

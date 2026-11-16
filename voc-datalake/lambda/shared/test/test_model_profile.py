@@ -12,6 +12,7 @@ from shared.model_config import (
     ALLOWED_MODEL_IDS,
     PICKER_SURFACES,
     PROFILE_MODELS,
+    WEB_SEARCH_SURFACE,
     apply_model_profile,
     fallback_chain,
     get_active_model_id,
@@ -30,12 +31,15 @@ from shared.model_profile import (
 HAIKU55 = 'global.anthropic.claude-haiku-5-5'
 SONNET55 = 'global.anthropic.claude-sonnet-5-5'
 OPUS55 = 'global.anthropic.claude-opus-5-5'
+SOL = 'openai.gpt-5.6-sol'
+CLAUDE_SURFACES = tuple(s for s in PICKER_SURFACES if s != WEB_SEARCH_SURFACE)
 
 
 @pytest.fixture
 def pinned_settings():
-    """An admin pinned Opus on every picker surface (the profile must win over it)."""
-    settings = {'surfaces': dict.fromkeys(PICKER_SURFACES, OPUS55), 'model_id': OPUS55}
+    """An admin pinned Opus on every Claude picker surface (the profile must win over it) and Sol on the web search
+    surface's GPT models (which no profile reaches)."""
+    settings = {'surfaces': {**dict.fromkeys(CLAUDE_SURFACES, OPUS55), WEB_SEARCH_SURFACE: SOL}, 'model_id': OPUS55}
     with patch('shared.model_config._load_settings', return_value=settings):
         yield settings
 
@@ -75,12 +79,15 @@ class TestResolution:
 
     @pytest.mark.usefixtures('pinned_settings')
     def test_without_a_profile_the_admin_choice_applies(self):
-        assert {get_active_model_id(s) for s in PICKER_SURFACES} == {OPUS55}
+        assert {get_active_model_id(s) for s in CLAUDE_SURFACES} == {OPUS55}
+        assert get_active_model_id(WEB_SEARCH_SURFACE) == SOL
 
     @pytest.mark.usefixtures('pinned_settings')
     def test_under_the_e2e_profile_every_surface_resolves_to_haiku(self):
         with model_profile_scope(E2E_PROFILE):
-            assert {get_active_model_id(s) for s in (*PICKER_SURFACES, 'default', 'unknown_surface')} == {HAIKU55}
+            assert {get_active_model_id(s) for s in (*CLAUDE_SURFACES, 'default', 'unknown_surface')} == {HAIKU55}
+            # The profile's Claude model cannot read a page through the Responses API: the GPT surface keeps its pick.
+            assert get_active_model_id(WEB_SEARCH_SURFACE) == SOL
         assert get_active_model_id('chat') == OPUS55
 
     def test_an_explicit_model_id_follows_the_profile_too(self):

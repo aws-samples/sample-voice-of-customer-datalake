@@ -336,7 +336,7 @@
       "deleteConfirmTitle": "移除评论页面",
       "deleteConfirmMessage": "确定要移除此评论页面吗？",
       "addBedrockPage": "从 Bedrock 网页搜索索引添加页面",
-      "bedrockNote": "评价读取自 Amazon Bedrock 已编入索引的此页面副本（Amazon 缓存），而非网站本身。每条评价都保留其来源 URL 和站点，因此始终可以追溯到发布位置。"
+      "bedrockNote": "评价读取自 Amazon Bedrock 已编入索引的此页面副本（Amazon 缓存），而非网站本身。每条评价都保留其来源 URL 和站点，因此始终可以追溯到发布位置。读取它的模型在“管理 → AI 模型”中选择。"
     },
     "kindLabel": "类型",
     "kind": {

@@ -7,8 +7,9 @@
  *   - AnthropicUseCaseSubmission: Anthropic's first-time use case form. Opt-in
  *     (`anthropicUseCase` in context), hosted by the us-east-1 VocWebSearchStack.
  *   - BedrockModelAgreements: a Marketplace agreement per allowlisted Claude model
- *     (in the app region) plus the persona-avatar image model's. Every deploy,
- *     best effort, hosted by VocCoreStack.
+ *     (in the app region) plus the persona-avatar image model's, and, while an
+ *     enabled plugin reads with them, the web search surface's OpenAI GPT models'
+ *     (in the app region). Every deploy, best effort, hosted by VocCoreStack.
  *
  * So with no form and `-c enableWebSearch=false`, a deployment touches no region
  * but its own.
@@ -27,6 +28,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { Construct } from 'constructs';
 import { z } from 'zod';
 import { ALLOWED_FOUNDATION_MODEL_IDS, IMAGE_MODEL_ID, IMAGE_MODEL_REGION } from '../utils/model-allowlist';
+import { WEB_SEARCH_MODELS } from '../utils/web-search-models';
 import { acknowledgeNag } from '../utils/nag-ack';
 import { cdkCustomResourceSuppressions, bedrockAgreementSuppressions, marketplaceSuppressions, suppressAwsCustomResourceProvider } from '../utils/nag-suppressions';
 
@@ -201,7 +203,11 @@ export class AnthropicUseCaseSubmission extends Construct {
  * The Bedrock model agreements (EULA + Marketplace subscription), on EVERY
  * deployment, best effort: one per allowlisted Claude model (REQUIRED_MODELS) in
  * the hosting stack's region, and the persona-avatar image model's (IMAGE_MODEL_ID
- * in IMAGE_MODEL_REGION, us-west-2 whatever the app region).
+ * in IMAGE_MODEL_REGION, us-west-2 whatever the app region). With `webSearchModels`
+ * (an enabled plugin reads review pages through Amazon Bedrock web search,
+ * lib/utils/web-search-models.ts `webSearchModelsInUse`), one per OpenAI GPT model of
+ * the web search surface (WEB_SEARCH_MODELS) in the hosting stack's region too: their
+ * Marketplace offers are accepted the same way, so nobody accepts them by hand.
  *
  * Bedrock also subscribes a model on its first invocation, but only when the
  * caller holds `aws-marketplace:Subscribe`, and most of this app's Lambda roles do
@@ -230,6 +236,11 @@ export interface ModelAgreementOptions {
    * after fixing what refused an agreement. Absent = nothing re-runs.
    */
   readonly retry?: string;
+  /**
+   * Whether an enabled plugin reads pages with the web search surface's OpenAI GPT models: then their agreements
+   * are requested too, best effort like every other. Absent = none of them.
+   */
+  readonly webSearchModels?: boolean;
 }
 
 export class BedrockModelAgreements extends Construct {
@@ -254,13 +265,18 @@ export class BedrockModelAgreements extends Construct {
     REQUIRED_MODELS.forEach((modelId, index) => {
       agreements.agree(this, `ClaudeModelAgreement${index}`, modelId, appRegion);
     });
+    if (options.webSearchModels === true) {
+      WEB_SEARCH_MODELS.forEach((modelId, index) => {
+        agreements.agree(this, `WebSearchModelAgreement${index}`, modelId, appRegion);
+      });
+    }
   }
 }
 
 /**
  * The custom-resource provider that accepts one Bedrock model's agreement (EULA +
  * Marketplace subscription) per custom resource, used by BedrockModelAgreements for
- * the image model and every Claude model alike. Deliberately not a Construct: its
+ * the image model, every Claude model and the web search surface's GPT models alike. Deliberately not a Construct: its
  * resources are created directly in the host construct, so the image agreement's
  * provider kept its logical ids when the Claude agreements joined it.
  */

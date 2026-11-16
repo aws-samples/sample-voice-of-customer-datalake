@@ -37,7 +37,7 @@
     "automaticOption": "Automatique — {{model}}",
     "groupOther": "Autres modèles",
     "groupRecommended": "Recommandé",
-    "intro": "Choisissez le modèle Claude qui alimente chaque fonctionnalité d’IA, ou conservez Automatique pour utiliser le réglage par défaut de chaque fonctionnalité. Les fonctions en cours prennent en compte les changements en moins d’une minute.",
+    "intro": "Choisissez le modèle qui alimente chaque fonctionnalité d’IA (Claude, ou OpenAI GPT pour les pages d’avis lues dans l’index de recherche web Bedrock), ou conservez Automatique pour utiliser le réglage par défaut de chaque fonctionnalité. Les fonctions en cours prennent en compte les changements en moins d’une minute.",
     "loadFailed": "Impossible de charger les paramètres de modèle.",
     "loading": "Chargement des modèles...",
     "saveFailed": "Échec de l’enregistrement de la sélection du modèle. Réessayez.",
@@ -82,6 +82,10 @@
       "agent_persona": {
         "label": "Jury de personas",
         "description": "Personas qui notent et critiquent documents et prototypes pendant une exécution"
+      },
+      "web_reviews_search": {
+        "label": "Pages d’avis : recherche web Bedrock",
+        "description": "Lit les pages d’avis dans l’index de recherche web Amazon Bedrock avec un modèle OpenAI GPT ; un modèle sans capacité passe la page au suivant"
       }
     },
     "title": "Modèles d’IA",

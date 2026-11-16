@@ -43,7 +43,7 @@ import settings_handler
 from settings_handler import lambda_handler
 from shared.category_access import CategoryScope
 from shared.exceptions import AuthorizationError, ServiceError, ValidationError
-from shared.model_config import ALLOWED_MODEL_IDS, PICKER_SURFACES
+from shared.model_config import ALLOWED_MODEL_IDS, offered_picker_surfaces
 from shared.reprocess_slices import ReprocessSlice
 from shared.test.clock import frozen_clock
 from shared.test.instrumentation_fixtures import assert_tracer_wrapped
@@ -325,9 +325,9 @@ class TestEveryRefusalNamesItsCause:
         ('/settings/model', {'model_id': 'anthropic.evil'},
          f"model_id must be null or one of: {', '.join(sorted(ALLOWED_MODEL_IDS))}"),
         ('/settings/model', {'surface': 'bogus', 'model_id': None},
-         f"surface must be null or one of: {', '.join(PICKER_SURFACES)}"),
+         f"surface must be null or one of: {', '.join(offered_picker_surfaces())}"),
         ('/settings/model', {'surface': 'default', 'model_id': None},
-         f"surface must be null or one of: {', '.join(PICKER_SURFACES)}"),
+         f"surface must be null or one of: {', '.join(offered_picker_surfaces())}"),
         ('/settings/model', {'surface': 'chat', 'model_id': 'global.anthropic.claude-sonnet-4-5-20250929-v1:0'},
          f"model_id must be null or one of: {', '.join(sorted(ALLOWED_MODEL_IDS))}"),
         ('/settings/resolved-problems', {'resolved': True}, 'key must be a non-empty string'),
@@ -807,7 +807,7 @@ class TestTheModelSettingsRow:
         _, payload = route('GET', '/settings/model')
         assert all(s['selected'] is None for s in payload['surfaces'])
         assert payload['model_id'] == OPUS
-        assert [s['key'] for s in payload['surfaces']] == list(PICKER_SURFACES)
+        assert [s['key'] for s in payload['surfaces']] == list(offered_picker_surfaces())
 
     @pytest.mark.usefixtures('fixed_now')
     def test_pinning_a_surface_writes_the_whole_tidy_row(self, route, table):

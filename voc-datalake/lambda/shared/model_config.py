@@ -28,12 +28,19 @@ The allowlist is deliberately narrow: prompt templates in this project are
 tuned for Claude, and every entry is covered by the model agreements the
 BedrockAccessStack creates. Free-form model IDs are rejected server-side.
 
+One surface picks from another family: ``web_reviews_search`` (a review page read from the Amazon Bedrock web
+search index, plugins/web_reviews/ingestor/web_search_reader.py) runs an OpenAI GPT model on the ``bedrock-mantle``
+Responses API, so its allowlist is ``WEB_SEARCH_MODELS`` alone (``surface_allowlist``): no other surface may pick a
+GPT model, and it may pick no Claude one. It resolves to its own pick, else its built-in default; the pick for all
+surfaces, the deployment's default and a model profile are Claude models and do not apply to it.
+
 Lambdas without the AGGREGATES_TABLE environment variable, or without read
 access to the table, silently use the surface default — the lookup must
 never break an inference path.
 """
 import os
 import time
+from collections.abc import Set as AbstractSet
 
 from shared.aws import BEDROCK_MODEL_ID, get_dynamodb_resource
 from shared.logging import logger
@@ -214,6 +221,7 @@ _SONNET5 = "global.anthropic.claude-sonnet-5"
 _SONNET46 = "global.anthropic.claude-sonnet-4-6"
 _HAIKU55 = "global.anthropic.claude-haiku-5-5"
 _HAIKU45 = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
+_GPT56LUNA = "openai.gpt-5.6-luna"
 
 # --- Capacity fallback -------------------------------------------------------
 # Bedrock can grant access to a model and still give the account ZERO capacity
@@ -275,15 +283,71 @@ SURFACE_DEFAULTS = {
     "agent_worker": _SONNET55,
     "agent_reviewer": _OPUS55,
     "agent_persona": _SONNET55,
+    # A review page read from the Amazon Bedrock web search index: an OpenAI GPT model (WEB_SEARCH_MODELS below).
+    "web_reviews_search": _GPT56LUNA,
 }
 DEFAULT_SURFACE = "default"
 
 # Surfaces exposed in the Settings picker, in display order. Each carries a
 # short description key the frontend translates under `aiModel.surfaces.<key>`.
+# The last is offered only while a deployed plugin reads with it (web_search_offered()).
 PICKER_SURFACES = (
     "chat", "documents", "prototype", "enrichment", "utility",
     "memory", "agent_orchestrator", "agent_worker", "agent_reviewer", "agent_persona",
+    "web_reviews_search",
 )
+
+# --- The web search surface: OpenAI GPT models on bedrock-mantle --------------
+# A web_reviews target whose method is `bedrock_web_search` is read by one of these on the Responses API of the
+# `bedrock-mantle` endpoint (offered in us-west-2 on 2026-11-15; the names are GetFoundationModel's). Nothing else
+# may pick them: they are not Claude, take no Converse request and are granted only as
+# `bedrock-mantle:CreateInference` on the account's default project. MUST stay in lockstep with
+# lib/utils/web-search-models.ts (the agreements the deploy accepts for them), which
+# lib/stacks/ingestion-web-search.test.ts compares with the ids below. In the order of the capacity fallback.
+WEB_SEARCH_SURFACE = "web_reviews_search"
+# The descriptions follow the Marketplace offers' rate cards (ListFoundationModelAgreementOffers, us-west-2, 2026-11-15).
+WEB_SEARCH_MODELS = [
+    {"key": "gpt56luna", "id": "openai.gpt-5.6-luna", "label": "OpenAI GPT-5.6 Luna",
+     "description": "Lowest price per token of the family — the default for review pages read from the Bedrock web "
+                    "search index"},
+    {"key": "gpt56terra", "id": "openai.gpt-5.6-terra", "label": "OpenAI GPT-5.6 Terra",
+     "description": "GPT-5.6 at about ten times Luna's price per token"},
+    {"key": "gpt56sol", "id": "openai.gpt-5.6-sol", "label": "OpenAI GPT-5.6 Sol",
+     "description": "The highest-priced GPT-5.6"},
+    {"key": "gpt55", "id": "openai.gpt-5.5", "label": "OpenAI GPT-5.5",
+     "description": "Previous-generation GPT"},
+    {"key": "gpt54", "id": "openai.gpt-5.4", "label": "OpenAI GPT-5.4",
+     "description": "Older-generation GPT"},
+]
+WEB_SEARCH_MODEL_IDS = frozenset(m["id"] for m in WEB_SEARCH_MODELS)
+#: When the web search surface's model cannot serve (throttled, no capacity), the read steps down this order.
+WEB_SEARCH_FALLBACK_ORDER = tuple(m["id"] for m in WEB_SEARCH_MODELS)
+#: Set ('true') on the settings Lambda when an enabled plugin reads with the web search surface
+#: (`infrastructure.ingestor.webSearch`, lib/stacks/api-data-lambdas.ts): only then is it offered in the picker.
+WEB_SEARCH_OFFERED_ENV = "WEB_SEARCH_MODELS_OFFERED"
+# A surface with its own model family: its allowlist and its capacity fallback order. Every other surface picks a
+# Claude model (ALLOWED_MODEL_IDS) and falls back along MODEL_FALLBACK_ORDER.
+_OWN_FAMILY_SURFACES: dict[str, tuple[frozenset[str], tuple[str, ...]]] = {
+    WEB_SEARCH_SURFACE: (WEB_SEARCH_MODEL_IDS, WEB_SEARCH_FALLBACK_ORDER),
+}
+
+
+def surface_allowlist(surface: str) -> AbstractSet[str]:
+    """The model ids ``surface`` may pick: the web search surface's GPT models, else the Claude allowlist."""
+    family = _OWN_FAMILY_SURFACES.get(surface)
+    return family[0] if family is not None else ALLOWED_MODEL_IDS
+
+
+def web_search_offered() -> bool:
+    """Whether the picker offers the web search surface (WEB_SEARCH_OFFERED_ENV is 'true')."""
+    return os.environ.get(WEB_SEARCH_OFFERED_ENV, "") == "true"
+
+
+def offered_picker_surfaces() -> tuple[str, ...]:
+    """PICKER_SURFACES as this deployment offers them: without the web search surface unless it is offered."""
+    if web_search_offered():
+        return PICKER_SURFACES
+    return tuple(surface for surface in PICKER_SURFACES if surface != WEB_SEARCH_SURFACE)
 
 # Bedrock service tiers converse() may request (Converse `serviceTier.type`).
 # 'priority' and 'reserved' exist in the API but need capacity this platform
@@ -377,16 +441,23 @@ def fallback_chain(primary: str, surface: str = DEFAULT_SURFACE) -> tuple[str, .
     surface's built-in default when it is allowlisted, then MODEL_FALLBACK_ORDER
     — de-duplicated, order kept. Only ``primary`` may be outside the allowlist (a
     legacy BEDROCK_MODEL_ID): every fallback is a model the stacks grant.
+
+    A surface with its own family (the web search surface) walks its own order
+    instead (WEB_SEARCH_FALLBACK_ORDER), and a model profile does not apply to it.
     """
+    family = _OWN_FAMILY_SURFACES.get(surface)
     profile = active_profile()
-    profile_chain = PROFILE_FALLBACKS.get(profile) if profile else None
-    if profile_chain is not None:
+    profile_chain = PROFILE_FALLBACKS.get(profile) if profile and family is None else None
+    allowlist = surface_allowlist(surface)
+    if family is not None:
+        candidates = [primary, surface_default(surface), *family[1]]
+    elif profile_chain is not None:
         candidates = [apply_model_profile(primary), *profile_chain]
     else:
         candidates = [primary, surface_default(surface), *MODEL_FALLBACK_ORDER]
     chain: list[str] = []
     for index, model in enumerate(candidates):
-        allowed = index == 0 or model in ALLOWED_MODEL_IDS
+        allowed = index == 0 or model in allowlist
         if allowed and model and model not in chain:
             chain.append(model)
     return tuple(chain)
@@ -491,17 +562,24 @@ def _load_settings() -> dict:
     return value
 
 
-def _allowlisted(model_id) -> str | None:
-    """Return model_id when it is a valid allowlisted string, else None.
+def _allowlisted(model_id, allowlist: AbstractSet[str] = ALLOWED_MODEL_IDS) -> str | None:
+    """Return model_id when it is a valid string of ``allowlist`` (the Claude allowlist by default), else None.
 
     A configured value outside the allowlist (tampered/stale DB row) is
     logged and ignored so it can never reach Bedrock.
     """
-    if isinstance(model_id, str) and model_id in ALLOWED_MODEL_IDS:
+    if isinstance(model_id, str) and model_id in allowlist:
         return model_id
     if model_id:
         logger.warning(f"Configured model '{str(model_id)[:80]}' not in allowlist; ignoring")
     return None
+
+
+def _own_family_model(surface: str, allowlist: AbstractSet[str]) -> str:
+    """A surface with its own family: its own pick when it is in ``allowlist``, else its built-in default."""
+    surfaces = _load_settings().get("surfaces")
+    picked = _allowlisted(surfaces.get(surface), allowlist) if isinstance(surfaces, dict) else None
+    return picked or surface_default(surface)
 
 
 def get_active_model_id(surface: str = DEFAULT_SURFACE) -> str:
@@ -509,8 +587,12 @@ def get_active_model_id(surface: str = DEFAULT_SURFACE) -> str:
 
     Never raises. Precedence: active model profile (every surface) >
     per-surface override > legacy global override > the deployment's default >
-    built-in surface default > BEDROCK_MODEL_ID.
+    built-in surface default > BEDROCK_MODEL_ID. The web search surface reads
+    only its own pick, then its default (the rest are Claude models).
     """
+    family = _OWN_FAMILY_SURFACES.get(surface)
+    if family is not None:
+        return _own_family_model(surface, family[0])
     forced = profile_model_id()
     if forced:
         return forced

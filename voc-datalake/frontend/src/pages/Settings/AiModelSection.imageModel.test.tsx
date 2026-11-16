@@ -36,6 +36,7 @@ function settingsWith(imageModel: ImageModelInfo | null) {
   return {
     available_models: [{ key: 'sonnet55', id: SONNET55, label: 'Claude Sonnet 5.5', description: 'Flagship' }],
     surfaces: [{ key: 'chat', default_id: SONNET55, selected: null }],
+    web_search_models: [],
     model_id: null,
     image_model: imageModel,
   }
@@ -156,6 +157,7 @@ const agreementSettings = {
     { key: 'haiku45', id: HAIKU45, label: 'Claude Haiku 4.5', description: 'Fast' },
   ],
   surfaces: [{ key: 'chat', default_id: OPUS55, selected: null }],
+  web_search_models: [],
   model_id: null,
 }
 

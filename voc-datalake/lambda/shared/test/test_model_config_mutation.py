@@ -170,6 +170,7 @@ class TestAllowlistRowsAreTheSettingsApiPayload:
             'agent_worker': SONNET55,
             'agent_reviewer': OPUS55,
             'agent_persona': SONNET55,
+            'web_reviews_search': 'openai.gpt-5.6-luna',
         }
 
     def test_default_surface_is_the_default_bucket(self):

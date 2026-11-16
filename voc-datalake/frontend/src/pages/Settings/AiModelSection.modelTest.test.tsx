@@ -45,6 +45,7 @@ const settings = {
     { key: 'chat', default_id: SONNET55, selected: null },
     { key: 'prototype', default_id: OPUS55, selected: OPUS55 },
   ],
+  web_search_models: [],
   model_id: null,
 }
 

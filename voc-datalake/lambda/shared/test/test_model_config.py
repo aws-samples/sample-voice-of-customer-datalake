@@ -17,6 +17,7 @@ from shared.model_config import (
     get_active_model_id,
     omits_temperature,
     supports_flex,
+    surface_allowlist,
     surface_default,
     uses_adaptive_thinking,
 )
@@ -43,11 +44,14 @@ class TestAllowlist:
     def test_default_model_is_allowlisted(self):
         assert BEDROCK_MODEL_ID in ALLOWED_MODEL_IDS
 
-    def test_every_surface_default_is_allowlisted(self):
+    def test_every_surface_default_is_in_its_surfaces_allowlist(self):
         """A surface whose Automatic default isn't invocable would break that
-        surface out of the box."""
+        surface out of the box. Every one is a Claude model but the web search
+        surface's, which is a GPT model of its own allowlist."""
         for surface, model_id in SURFACE_DEFAULTS.items():
-            assert model_id in ALLOWED_MODEL_IDS, surface
+            assert model_id in surface_allowlist(surface), surface
+        claude = {surface for surface, model_id in SURFACE_DEFAULTS.items() if model_id in ALLOWED_MODEL_IDS}
+        assert set(SURFACE_DEFAULTS) - claude == {'web_reviews_search'}
 
 
 class TestCapabilityFlags:
@@ -120,10 +124,11 @@ class TestSurfaceDefaults:
         assert surface_default('agent_worker') == SONNET55
         assert surface_default('agent_persona') == SONNET55
 
-    def test_picker_lists_the_five_new_surfaces_in_order(self):
+    def test_picker_lists_the_surfaces_in_order_the_web_search_one_last(self):
         assert PICKER_SURFACES == (
             'chat', 'documents', 'prototype', 'enrichment', 'utility',
             'memory', 'agent_orchestrator', 'agent_worker', 'agent_reviewer', 'agent_persona',
+            'web_reviews_search',
         )
 
     def test_unknown_surface_falls_back_to_global_default(self):

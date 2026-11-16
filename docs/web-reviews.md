@@ -28,9 +28,9 @@ until an administrator adds a page.
   outbound URL policy / SSRF guard), `max_pages` 0-100, `max_reviews` 0-5000 (both stored as strings),
   `frequency_minutes` one of 0, 15, 30, 60, 180, 360, 720,
   1440; `method` `browser` (the default; absent means `browser`) or `bedrock_web_search` (anything else is a 400
-  naming the two); `model` only for `bedrock_web_search`, one of `openai.gpt-5.6-luna` (the default),
-  `openai.gpt-5.6-terra`, `openai.gpt-5.6-sol`, `openai.gpt-5.5`, `openai.gpt-5.4` (dropped for a browser
-  target); unknown fields are dropped. Targets are stored like the app connectors, as `web_reviews_configs` in the
+  naming the two); unknown fields are dropped. `model` (7.41.00) is accepted and dropped like them: since 7.42.00
+  the model that reads a `bedrock_web_search` page is no page's but the web search surface's, chosen in
+  Administration → AI models ([Methods](#methods)), so neither form asks for one. Targets are stored like the app connectors, as `web_reviews_configs` in the
   shared API-credentials secret, and re-validated on every run.
 
 ## Reading modes
@@ -136,12 +136,32 @@ A target's `method` says how its page is read. Existing targets, and a new one t
 
 **`bedrock_web_search`** (`plugins/web_reviews/ingestor/web_search_reader.py`): one request per target per run to
 `https://bedrock-mantle.<region>.api.aws/openai/v1/responses`, SigV4-signed for `bedrock-mantle` with the Lambda's
-role (no API key), with the target's `model` (`openai.gpt-5.6-luna` by default) and the `web_search` tool set to
+role (no API key, `lambda/shared/mantle_responses.py`), with the web search surface's model and the `web_search` tool
+set to
 the cache only (`external_web_access: false`, `search_context_size: low`) and held to the target's site
 (`filters.allowed_domains`, the host without `www.`). The model is asked for the page's reviews only, verbatim, as
 JSON (author, rating, rating scale, date, title, body, and `review_kind`: `review` or `summary`), at most 20 (fewer
 when `max_reviews` or the run's cap leaves fewer); a model that refuses the JSON schema is asked once more without
-it. Before anything is queued:
+it.
+
+**The model** is the `web_reviews_search` surface's, **Review pages: Bedrock web search** in Administration → AI
+models (`lambda/shared/model_config.py`): its own pick there, else `openai.gpt-5.6-luna`. Its allowlist is the
+OpenAI GPT family alone (`WEB_SEARCH_MODELS`: `openai.gpt-5.6-luna`, `openai.gpt-5.6-terra`, `openai.gpt-5.6-sol`,
+`openai.gpt-5.5`, `openai.gpt-5.4`), which no other surface may pick; it may pick no Claude model, and the pick for
+all surfaces, the deployment's default (`-c defaultModelId`) and the `e2e` profile (Claude models) do not apply to
+it. The picks are the deployment's (`SETTINGS#model`), not each workspace's yet, so a run in a workspace reads the
+same model. When the model cannot serve (HTTP 429 or 503, or a 400 / 403 / 404 whose answer names the model's
+availability; `mantle_responses.cannot_serve`), the read is sent again to the next model of the surface's chain, like
+every other surface's fallback ([deployment.md → Model Capacity
+Fallback](deployment.md#model-capacity-fallback)): the resolved model, then the surface's default, then
+`WEB_SEARCH_FALLBACK_ORDER` (Luna → Terra → Sol → GPT-5.5 → GPT-5.4), each model once (from Luna: Terra, Sol,
+GPT-5.5, GPT-5.4; from Sol: Luna, Terra, GPT-5.5, GPT-5.4); a model that failed is tried last for 5 minutes in that
+Lambda, each step is logged
+and counted (`ModelFallback`, `Surface` `web_reviews_search`), and when every model fails the first one's error is
+reported. Any other refusal (the role denied, the request's own shape) is reported at once. Every stored review's
+`model` is the model that read it.
+
+Before anything is queued:
 
 - a review marked `summary`, or whose body reads like a summary of many reviews ("users find", "receives positive
   feedback", "reviewers say", …), is dropped (Capterra's page-level AI summary is one);
@@ -172,9 +192,15 @@ most 20 reviews each, and every stored review keeps its source URL, method and t
 Whether storing those reviews fits your use is your decision; OpenAI's models are also under the OpenAI Services
 Agreement for Amazon Bedrock. See [Amazon Bedrock Web Search](https://docs.aws.amazon.com/bedrock/latest/userguide/web-search.html).
 
-Prerequisites: the OpenAI models are sold through AWS Marketplace, so the account needs the model's subscription
-before a target may use it (an administrator accepts the offer once, for example in the Amazon Bedrock console; the
-deployment never accepts one). On 2026-11-15 the test account had `openai.gpt-5.6-terra`'s agreement in place.
+Prerequisites: the OpenAI models are sold through AWS Marketplace, so the account needs each model's agreement
+(EULA + Marketplace subscription). While the plugin is enabled, the deploy accepts the offer of every model of the
+surface in the app's region, best effort like the Claude models' ([deployment.md → Model
+agreements](deployment.md#model-agreements-every-deploy-in-the-app-region-best-effort)): `VocCoreStack`'s
+`WebSearchModelAgreement0`-`4`. A refused one does not fail the deploy; the surface's **Test** button answers
+**No access** for it, and `-c modelAgreementRetry=<new value>` tries again. On 2026-11-15 `aws bedrock
+list-foundation-model-agreement-offers` listed an offer for each of the five in us-west-2, and the test account had
+the agreements of Luna and Terra only (`get-foundation-model-availability`: `NOT_AVAILABLE` for Sol, GPT-5.5 and
+GPT-5.4 until a deploy accepts them).
 
 ## Blocked sites
 
@@ -315,7 +341,9 @@ and [Amazon Bedrock pricing](https://aws.amazon.com/bedrock/pricing/) for the mo
   on `arn:aws:bedrock-mantle:<region>:<account>:project/default` (the GPT allowlist is enforced in code: the value
   format of the `bedrock-mantle:Model` condition key is not documented) and `bedrock-websearch:InvokeSearch` /
   `InvokeFetch` on `*` held to the region (`aws:RequestedRegion`), as the Web Search IAM guide grants them; never
-  `bedrock-websearch:ExternalWebAccess`. Plus the Bedrock model grant of `bedrock: true`. voc-design-capture
+  `bedrock-websearch:ExternalWebAccess`. Plus the Bedrock model grant of `bedrock: true`. The settings Lambda's
+  Test of the surface (`lambda/shared/web_search_model_probe.py`: one request, no tool) holds only
+  `bedrock-mantle:CreateInference` on the same project, and only while the plugin is enabled. voc-design-capture
   reuses the browser module without either variable: it stays on `aws.browser.v1`, without a profile.
 - Dependency: `websocket-client==1.9.2` (Apache-2.0) in the `ingestion-deps` layer.
 - AgentCore Browser is part of AgentCore Built-in Tools, available in the US, EU (including Frankfurt,

@@ -336,7 +336,7 @@
       "deleteConfirmTitle": "Remove review page",
       "deleteConfirmMessage": "Are you sure you want to remove this review page?",
       "addBedrockPage": "Add a page from the Bedrock web search index",
-      "bedrockNote": "Reviews are read from the copy of this page that Amazon Bedrock has indexed (Amazon's cache), not from the site itself. Each review keeps its source URL and site, so it always points back to where it was published."
+      "bedrockNote": "Reviews are read from the copy of this page that Amazon Bedrock has indexed (Amazon's cache), not from the site itself. Each review keeps its source URL and site, so it always points back to where it was published. The model that reads it is chosen in Administration → AI models."
     },
     "kindLabel": "Type",
     "kind": {

@@ -17,6 +17,28 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.42.00] - 2026-11-15
+
+The model that reads a Web Reviews page from the Amazon Bedrock web search index is chosen in Administration → AI models like every other AI model, with its Test button and its capacity fallback, from a list of OpenAI GPT models of its own; the deploy accepts those models' Marketplace agreements.
+
+### Added
+
+- Administration → AI models: a **Review pages: Bedrock web search** row (surface `web_reviews_search`, `lambda/shared/model_config.py`), listed while the `web_reviews` plugin is enabled. It picks from its own allowlist, the OpenAI GPT models of the `bedrock-mantle` Responses API: `openai.gpt-5.6-luna` (Automatic), `openai.gpt-5.6-terra`, `openai.gpt-5.6-sol`, `openai.gpt-5.5`, `openai.gpt-5.4` (`WEB_SEARCH_MODELS`, in lockstep with `lib/utils/web-search-models.ts`). The GPT family is not in the Claude allowlist: `PUT /settings/model` refuses a GPT model for any other surface and for all surfaces, and a Claude model for this one (400 naming the surface's models); the pick for all surfaces, the deployment's default and the `e2e` profile never reach it. `GET /settings/model` names each surface's list (`allowlist`: `claude` or `web_search`) and carries `web_search_models` (empty while the surface is not offered).
+- Its **Test**: `POST /settings/model/test` with a GPT model sends ONE Responses request to exactly that model (`"Reply with OK"`, 16 output tokens, no tool, no fallback, `lambda/shared/web_search_model_probe.py`) and answers in the Claude test's shape: Available, No access, No capacity, Throttled, Not in this region, Unavailable or Error, read from the HTTP answer.
+- The web search read's capacity fallback: when the model is throttled or has no capacity (HTTP 429 / 503, or a refusal naming the model's availability), the page is read by the next model of the surface's chain, Luna → Terra → Sol → GPT-5.5 → GPT-5.4 after the resolved model, with the shared cooldown and `ModelFallback` metric (`shared/model_fallback.py` `run_with_fallback`, now with a pluggable failure test). The SigV4 Responses call is shared by the reader and the Test (`lambda/shared/mantle_responses.py`).
+- The deploy accepts the GPT models' agreements while the `web_reviews` plugin is enabled: five more best-effort `BedrockModelAgreements` resources in VocCoreStack (`WebSearchModelAgreement0`-`4`, the app's region; their Marketplace offers are listed in us-west-2, us-east-1 and us-east-2), retried with `-c modelAgreementRetry` like the others.
+
+### Changed
+
+- A Web Reviews page read from the Bedrock web search index uses the surface's model (its pick, else Luna), never its own: the review page and Bedrock web search index forms no longer ask for a model (the manifest's `model` field is gone), and a `model` sent to `POST /integrations/web_reviews/apps` (7.41.00 clients) is accepted and dropped like any unknown field. Every stored review's `model` is the model that read it.
+- The settings role gains `bedrock-mantle:CreateInference` on the account's default mantle project, only while the plugin is enabled, and nothing of `bedrock-websearch:*`; the settings Lambda gets `WEB_SEARCH_MODELS_OFFERED`. The web_reviews ingestor role keeps its 7.41.00 grants.
+- Docs: docs/web-reviews.md (Methods: the model, the fallback, the agreements), docs/deployment.md (Model agreements, the new AI models section, Model Capacity Fallback), docs/processing-pipeline.md, docs/plugin-architecture.md, `.kiro/steering/tech.md`.
+- Internal: the Web Reviews handler's attribution helper is `_citation`, so the usage meter's pin (`lambda/shared/test/test_usage_meter.py`: no `_attribution` outside `shared/usage_meter.py`) holds again; it had tripped on 7.41.00's `_attribution`. A comment of `TemplateSelector.test.tsx` names the test that exists (`BedrockWebSearch.test.tsx`, the `ts_stale_refs` detector), and the reader's code-fence pattern ends on `\Z`, not `$` (`test_regex_end_anchor.py`).
+
+### Upgrade notes
+
+- The next deploy of VocCoreStack attempts the five GPT agreements (best effort); a refused one leaves that model's Test at No access until it is accepted (`-c modelAgreementRetry=<new value>`, or the Bedrock console). A page saved in 7.41.00 with a `model` now reads with the surface's model; pick one in Administration → AI models to keep another.
+
 ## [7.41.00] - 2026-11-15
 
 Web Reviews reads more sites while identifying itself honestly: its browser signs every request with Web Bot Auth (Preview), keeps a browser profile between runs and recovers from a dropped connection, and a page that blocks the browser can be read from the Amazon Bedrock web search cache instead; a repeatable site eval measures which method reads which site. Data sources show each page's own last run; a project's documents open as a blank canvas in a wiki-style editor; the assistant searches the web by default.
