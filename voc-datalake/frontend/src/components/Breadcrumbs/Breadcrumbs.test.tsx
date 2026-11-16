@@ -376,6 +376,18 @@ describe('Breadcrumbs', () => {
  * without a breadcrumb label, or a second `/thing/:id` route, would reintroduce
  * that silently — this fails instead.
  */
+describe('a project page\'s places (its tab, a document, an older version, full screen)', () => {
+  it.each([
+    '/projects/proj_1/documents', '/projects/proj_1/documents/prfaq_3', '/projects/proj_1/documents/prfaq_3/v/1/focus',
+  ])('trails Home › Projects › the project at %s', (path) => {
+    renderWithRouter([path])
+    const nav = screen.getByRole('navigation', { name: /breadcrumb/i })
+    expect(within(nav).getByRole('link', { name: 'Projects' })).toHaveAttribute('href', '/projects')
+    expect(nav.querySelector('[aria-current="page"]')).toHaveTextContent('Project')
+    expect(nav.textContent).not.toMatch(/documents|prfaq_3|focus/)
+  })
+})
+
 describe('route coverage', () => {
   const layoutRoutes = routes.find((route) => route.path === '/')?.children ?? []
   // Only routes under the layout matter: /login renders no breadcrumbs.
@@ -388,10 +400,11 @@ describe('route coverage', () => {
     expect(paths.length).toBeGreaterThan(10)
   })
 
+  // A trailing `*` is a page's own places (a project's tabs and documents): the trail ends before them.
   it('has a label for every static route segment', () => {
     const unlabelled = paths
       .flatMap((path) => path.split('/'))
-      .filter((segment) => !segment.startsWith(':') && SEGMENT_CRUMBS[segment] === undefined)
+      .filter((segment) => !segment.startsWith(':') && segment !== '*' && SEGMENT_CRUMBS[segment] === undefined)
     expect(unlabelled).toStrictEqual([])
   })
 

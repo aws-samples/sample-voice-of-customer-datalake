@@ -22,7 +22,7 @@ import { workflowsKeys } from '../../api/workflowsApi'
 import { projectKey } from '../../api/projectQueryKeys'
 import { featureRequestKeys } from '../../api/featureRequestsApi'
 import { useCachedQueryData } from '../../hooks/useCachedQueryData'
-import { buildCrumbs } from './routeCrumbs'
+import { buildCrumbs, trailSegments } from './routeCrumbs'
 
 /**
  * The one field a crumb needs off the project cache entry. Lenient by
@@ -86,7 +86,7 @@ function useRecordName(pathSegments: readonly string[]): string | undefined {
 export default function Breadcrumbs() {
   const location = useLocation()
   const { t } = useTranslation()
-  const pathSegments = location.pathname.split('/').filter(Boolean)
+  const pathSegments = trailSegments(location.pathname)
   const recordName = useRecordName(pathSegments)
 
   // Don't show breadcrumbs on home page

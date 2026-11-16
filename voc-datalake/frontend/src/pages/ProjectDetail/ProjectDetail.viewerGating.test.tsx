@@ -45,7 +45,7 @@ const failedJob: ProjectJob = {
 
 const page = (
   <MemoryRouter initialEntries={['/projects/proj-1']}>
-    <Routes><Route path="/projects/:id" element={<ProjectDetail />} /></Routes>
+    <Routes><Route path="/projects/:id/*" element={<ProjectDetail />} /></Routes>
   </MemoryRouter>
 )
 

@@ -43,7 +43,6 @@
     "notFound": "No encontrado en esta versión",
     "saveFailed": "No se pudo guardar el comentario. Inténtalo de nuevo.",
     "loadFailed": "No se pudieron cargar los comentarios. El documento se muestra sin ellos.",
-    "personaReview": "Pedir revisión a las personas",
     "personaReviewRunning": "Las personas están leyendo…",
     "personaReviewHint": "Hasta 6 personas de este proyecto leen esta versión y dejan comentarios citando el texto. Nunca cambian el documento. Cuesta una llamada al modelo por persona.",
     "personaReviewDone_one": "{{count, number}} comentario registrado ({{personas, number}} personas consultadas)",

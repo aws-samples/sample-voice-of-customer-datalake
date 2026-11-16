@@ -6,9 +6,21 @@
     "filterAll": "Everyone",
     "filterPersona": "Persona",
     "everyPersona": "Every persona",
-    "authorKind": { "user": "Team", "persona": "Persona", "reviewer": "Reviewer" },
-    "authorKinds": { "user": "Team members", "persona": "Personas", "reviewer": "Outside reviewers" },
-    "stance": { "positive": "Positive", "mixed": "Mixed", "negative": "Negative" },
+    "authorKind": {
+      "user": "Team",
+      "persona": "Persona",
+      "reviewer": "Reviewer"
+    },
+    "authorKinds": {
+      "user": "Team members",
+      "persona": "Personas",
+      "reviewer": "Outside reviewers"
+    },
+    "stance": {
+      "positive": "Positive",
+      "mixed": "Mixed",
+      "negative": "Negative"
+    },
     "showResolved": "Show resolved",
     "commentWhole": "Comment on the whole document",
     "onWholeDocument": "On the whole document",
@@ -30,7 +42,6 @@
     "notFound": "Not found in this version",
     "saveFailed": "Could not save the comment. Please try again.",
     "loadFailed": "Comments could not be loaded. The document is shown without them.",
-    "personaReview": "Ask personas to review",
     "personaReviewRunning": "Personas are reading…",
     "personaReviewHint": "Up to 6 of this project's personas read this version and leave comments quoting the text. They never change the document. Costs one model call per persona.",
     "personaReviewDone_one": "{{count, number}} comment filed ({{personas, number}} personas asked)",
@@ -43,7 +54,10 @@
     "title": "Share for review",
     "intro": "People with the link sign in with a code sent to their email, read the newest version and leave comments. They see only their own comments and cannot edit the document.",
     "whoMayOpen": "Who may open it",
-    "mode": { "anyone": "Anyone with the link", "list": "Only these domains or addresses" },
+    "mode": {
+      "anyone": "Anyone with the link",
+      "list": "Only these domains or addresses"
+    },
     "modeHint": {
       "anyone": "Anyone who confirms their email address with the emailed code.",
       "list": "For example example.com or name@example.com."

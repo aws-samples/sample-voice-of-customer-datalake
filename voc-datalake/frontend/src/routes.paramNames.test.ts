@@ -23,7 +23,7 @@ const PARAM_PAGES: Record<string, string> = {
   '/vote/:sessionId': 'pages/Vote/Vote.tsx',
   '/review/:shareId': 'pages/Review/Review.tsx',
   'feedback/:id': 'pages/FeedbackDetail/FeedbackDetail.tsx',
-  'projects/:id': 'pages/ProjectDetail/ProjectDetail.tsx',
+  'projects/:id/*': 'pages/ProjectDetail/ProjectDetail.tsx',
   'agents/:id': 'pages/Agents/AgentDetail.tsx',
   'agents/workflows/:workflowId': 'pages/Agents/WorkflowPage.tsx',
   'agents/workflows/templates/:templateId': 'pages/Agents/WorkflowTemplatePage.tsx',

@@ -19,12 +19,11 @@ import { useTranslation } from 'react-i18next'
 import DocumentList, { type SectionNewAction } from './DocumentList'
 import BlankDocumentDraft from './BlankDocumentDraft'
 import { canEditProject } from './projectAccess'
-import { seriesKeyOf } from './documentEdit'
+import { documentPageKey, seriesKeyOf } from './documentEdit'
 import { deriveOverviewState } from './overviewState'
 import { PrototypeBuildWizard } from './PrototypeBuildWizard'
 import { useProjectPrototypeBuild } from './useProjectPrototypeBuild'
 import { useDocumentCardActions, type PageRename } from './useDocumentCardActions'
-import { isVersionManagedDocument } from '../../api/documentLineage'
 import type { TFunction } from 'i18next'
 import type { PrototypeBuildControl } from './usePrototypeBuild'
 import type { DocumentSectionId } from '../../api/documentSections'
@@ -214,17 +213,6 @@ function PrototypeBuildStatus({ build }: Readonly<{ build: PrototypeBuildControl
   )
 }
 
-/**
- * Which page a document opens on. Each save of a PRD / PR/FAQ is a new version with a new id, and it must not
- * remount the page (a half-written comment, the undo history, the rail's tab): its series names the page. Any
- * other document (or a series with no title to name it) is its own.
- */
-function pageKey(document: ProjectDocument): string {
-  if (!isVersionManagedDocument(document)) return `doc:${document.document_id}`
-  const series = seriesKeyOf(document)
-  return series === '' ? `doc:${document.document_id}` : `series:${document.document_type}:${series}`
-}
-
 /** A prototype in its preview pane; every other document on its page (a fresh one opening on `openOn`). */
 function SelectedDocument(props: PrototypePaneProps & {
   readonly openOn: FreshDocument['focus'] | undefined
@@ -236,7 +224,7 @@ function SelectedDocument(props: PrototypePaneProps & {
   return (
     <Suspense fallback={<PageLoading />}>
       {/* Keyed: a page's draft, outline and comments belong to one document (a PRD / PR/FAQ: its series). */}
-      <DocumentPage key={pageKey(document)} project={props.project} document={document} documents={props.documents}
+      <DocumentPage key={documentPageKey(document)} project={props.project} document={document} documents={props.documents}
         canEdit={props.canEdit} onSelectDoc={props.onSelectDoc} onDeleteDoc={props.onDeleteDoc} isDeleting={props.isDeleting}
         openOn={props.openOn} onOpened={props.onOpened} onPageRename={props.onPageRename} />
     </Suspense>

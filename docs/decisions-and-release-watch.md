@@ -48,7 +48,7 @@ It is a user action and never automatic. The decision records the job as `seeded
 
 ### UI
 
-Project → **Decisions** tab (`?tab=decisions`): the list (verdict badge in a status tone,
+Project → **Decisions** tab (`/projects/{id}/decisions`): the list (verdict badge in a status tone,
 measures, dates, evidence links), New decision, Edit, Draft PR/FAQ, Revisit (a new decision
 prefilled from this one's title and evidence), Delete (after a confirm dialog; the generic document
 delete above, so a PR/FAQ it seeded is kept) and, for a launched decision, its release watch. A save
@@ -61,7 +61,7 @@ the background, so the card never waits on (or loses to) a slower whole-project 
 `frontend/src/pages/ProjectDetail/decisions/decisionDraft.ts` builds:
 
 ```
-/projects/{id}?tab=decisions&newDecision=1&title=...&verdict=pursue|park|reject&rationale=...&feedback=fb_1,fb_2
+/projects/{id}/decisions?newDecision=1&title=...&verdict=pursue|park|reject&rationale=...&feedback=fb_1,fb_2
 ```
 
 The tab opens the editor prefilled (for an editor of the project) and drops the parameters from

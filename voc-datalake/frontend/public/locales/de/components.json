@@ -42,7 +42,6 @@
     "notFound": "In dieser Version nicht gefunden",
     "saveFailed": "Der Kommentar konnte nicht gespeichert werden. Bitte versuchen Sie es erneut.",
     "loadFailed": "Die Kommentare konnten nicht geladen werden. Das Dokument wird ohne sie angezeigt.",
-    "personaReview": "Personas um Prüfung bitten",
     "personaReviewRunning": "Die Personas lesen…",
     "personaReviewHint": "Bis zu 6 Personas dieses Projekts lesen diese Version und hinterlassen Kommentare mit Zitaten aus dem Text. Sie ändern das Dokument nie. Kostet einen Modellaufruf pro Persona.",
     "personaReviewDone_one": "{{count, number}} Kommentar abgelegt ({{personas, number}} Personas gefragt)",

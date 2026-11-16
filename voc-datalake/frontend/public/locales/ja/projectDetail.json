@@ -881,7 +881,6 @@
         "undoing": "前のバージョンを復元しています…",
         "undone": "元に戻しました。前のバージョンを新しいバージョンとして復元しました。"
       },
-      "button": "コメントをもとに改訂",
       "close": "閉じる",
       "failed": "コメントをもとにした改訂に失敗しました。もう一度お試しください。",
       "filterAddressed": "対応済み",
@@ -976,6 +975,29 @@
       "minutes_one": "{{count, number}}分で読めます",
       "minutes_other": "{{count, number}}分で読めます",
       "wordsAndMinutes": "{{words}} · {{minutes}}"
+    },
+    "toolbar": {
+      "label": "ドキュメントツール",
+      "more": "その他のツール",
+      "share": "共有",
+      "aiReview": "AI レビュー",
+      "aiReviewNoPersonas": "レビューを依頼するには、このプロジェクトにペルソナを追加してください。",
+      "aiRewrite": "AI リライト",
+      "historyHint": "このドキュメントのすべてのバージョン: 開く、比較する、復元する",
+      "contentsHint": "目次の表示/非表示",
+      "fullWidthHint": "テキストを全幅で表示",
+      "version": "バージョン {{version}}",
+      "versionHint": "以前のバージョンを読む",
+      "versionsLoading": "バージョンを読み込んでいます…",
+      "latest": "最新"
+    },
+    "versions": {
+      "bannerLabel": "以前のバージョン",
+      "viewing": "{{latest}} 中の {{version}} を表示中",
+      "viewingOne": "{{version}} を表示中",
+      "readOnly": "読み取り専用",
+      "backToLatest": "最新に戻る",
+      "announce": "以前のバージョン {{version}} を読み取り専用で表示しています。"
     }
   }
 }

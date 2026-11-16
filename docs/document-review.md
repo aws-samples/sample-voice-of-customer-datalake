@@ -29,7 +29,7 @@ edited on the [document canvas](document-canvas.md); the threads sit in its side
 
 ## Ask personas to review
 
-**Ask personas to review** (anyone who can edit the project) sends this version to up to six of
+**Ask personas to review** (anyone who can edit the project; the document page's toolbar calls it **AI review**) sends this version to up to six of
 the project's personas, three at a time. It is one model call per persona on the `documents`
 surface (the model is set in Administration → AI models). Each persona answers with:
 
@@ -44,7 +44,7 @@ quote). It is an assist job: `POST …/persona-review` answers 202 and the page 
 
 ## Revise from comments
 
-Once threads are answered (resolved, or open with a reply), **Revise from comments** (anyone who can
+Once threads are answered (resolved, or open with a reply), **Revise from comments** (the toolbar's **AI rewrite**; anyone who can
 edit the project) reads them and the document's evidence and suggests changes to the parts the threads
 are about. By default it takes every thread of the series that is resolved or replied to, not yet
 **addressed**, and either on the whole document or whose quote is found in this version; the canvas, an

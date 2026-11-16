@@ -2,14 +2,16 @@
  * What a pass shows above the canvas, by outcome, keyboard and screen-reader complete: recommendations (each linked to
  * its thread; why nothing was written); the proposal as a list of labelled groups (before struck as "Removed", after
  * as "Added", the threads it answers, Accept / Reject named by the change; an out-of-date change cannot be accepted;
- * Accept all / Reject all; the status line is polite live text); the applied banner (Undo, Review again); the button
- * in the rail (the hint when no thread is answered yet, running, the failure).
+ * Accept all / Reject all; the status line is polite live text); the applied banner (Undo, Review again); why a pass
+ * cannot start (the toolbar's AI rewrite says it) and a failed pass's reason above the canvas.
  */
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import ReviseButton from './ReviseButton'
+import i18n from 'i18next'
 import RevisePanel from './RevisePanel'
+import { reviseBlockedReason } from './reviseChanges'
+import { ReviseFailure } from './ReviseStatus'
 import type { RevisePass, RevisePassControls } from './useRevisePass'
 import type { CommentThread, ReviseChange, ReviseFromCommentsResult } from '../../../api/documentReviewSchema'
 
@@ -252,35 +254,24 @@ describe('the applied banner', () => {
   })
 })
 
-describe('the button', () => {
-  it('starts a pass when a thread is answered', async () => {
-    const onStart = vi.fn()
-    render(<ReviseButton pass={{ kind: 'idle' }} available={2} onStart={onStart} />)
-
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Revise from comments' }))
-
-    expect(onStart).toHaveBeenCalledTimes(1)
-  })
+describe('why a pass cannot start, and a failed one', () => {
+  const t = i18n.getFixedT('en', 'projectDetail')
 
   it.each([
     { when: 'no thread is answered yet', available: 0, unsaved: false, reason: 'Reply to a comment or resolve it first.' },
     { when: 'accepted changes wait for their save', available: 2, unsaved: true, reason: 'Save or discard the accepted changes first.' },
-  ])('is disabled with the reason, when $when', ({ available, unsaved, reason }) => {
-    render(<ReviseButton pass={{ kind: 'idle' }} available={available} unsaved={unsaved} onStart={vi.fn()} />)
-
-    const button = screen.getByRole('button', { name: 'Revise from comments' })
-    expect(button).toBeDisabled()
-    expect(button).toHaveAccessibleDescription(reason)
+    { when: 'a thread is answered and nothing waits', available: 2, unsaved: false, reason: null },
+  ])('says so when $when', ({ available, unsaved, reason }) => {
+    expect(reviseBlockedReason(available, unsaved, t)).toBe(reason)
   })
 
-  it('says it is running, and a failure (the server\'s reason, else a generic one)', () => {
-    const { rerender } = render(<ReviseButton pass={{ kind: 'running' }} available={1} onStart={vi.fn()} />)
-    expect(screen.getByRole('button', { name: 'Revising from comments…' })).toBeDisabled()
-    expect(screen.getByRole('status')).toHaveTextContent('Revising from comments…')
+  it('says a failure (the server\'s reason, else a generic one), and nothing otherwise', () => {
+    const { rerender } = render(<ReviseFailure pass={{ kind: 'running' }} />)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
 
-    rerender(<ReviseButton pass={{ kind: 'failed', message: 'This version is stale' }} available={1} onStart={vi.fn()} />)
+    rerender(<ReviseFailure pass={{ kind: 'failed', message: 'This version is stale' }} />)
     expect(screen.getByRole('alert')).toHaveTextContent('This version is stale')
-    rerender(<ReviseButton pass={{ kind: 'failed', message: null }} available={1} onStart={vi.fn()} />)
+    rerender(<ReviseFailure pass={{ kind: 'failed', message: null }} />)
     expect(screen.getByRole('alert')).toHaveTextContent('Revise from comments failed. Please try again.')
   })
 })

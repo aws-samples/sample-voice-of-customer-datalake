@@ -2,10 +2,11 @@
  * @fileoverview The document page's focus view ("Full screen"): on, the page has the whole window (the canvas and its
  * comments rail; the app's sidebar, header, the project's tabs and the documents list step aside, see focusView).
  *
- * - The address keeps it as `?view=focus`, written through the router in place (a reload keeps it): entering and
- *   leaving replace the page's entry, as the document's own `?doc=` does, so Back goes to the page before, never to
- *   an older version of a document saved in focus view.
- * - The bar's "Full screen" button toggles it, and so does Ctrl/⌘+Shift+F anywhere on the page; Escape leaves it when
+ * - The address keeps it as the document path's `/focus` (`…/documents/<docId>/focus`, `…/v/<n>/focus`: a reload keeps
+ *   it): entering and leaving are history entries, so Back leaves full screen and Forward comes back to it. A save in
+ *   full screen replaces the entry (useDocumentSelection), and an entry left on a version the page has moved past opens
+ *   on the latest, with that version read-only.
+ * - The toolbar's "Full screen" button toggles it, and so does Ctrl/⌘+Shift+F anywhere on the page; Escape leaves it when
  *   nothing else wants that Escape (a dialog, a menu, a list of options open, or a popover that took the key).
  * - Focus goes to the canvas on enter and back to the button on leave (not on load: a reload keeps focus where the
  *   browser puts it).
@@ -13,8 +14,7 @@
  * @module components/DocumentCanvas/page/useFocusView
  */
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
-import { useSearchParams } from 'react-router-dom'
-import { isFocusView, setFocusViewActive, withFocusView } from './focusView'
+import { setFocusViewActive } from './focusView'
 import type { RefObject } from 'react'
 
 export interface FocusViewControls {
@@ -22,8 +22,12 @@ export interface FocusViewControls {
   readonly toggle: () => void
 }
 
-/** Anything open that owns an Escape of its own (the canvas's format bar too): the focus view leaves it alone. */
-const ESCAPE_OWNERS = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [role="toolbar"]'
+/**
+ * Anything open that owns an Escape of its own (the canvas's format bar too): the focus view leaves it alone. The
+ * page's own toolbar (DocumentToolbar, `data-document-toolbar`) is always there and owns no Escape.
+ */
+const ESCAPE_OWNERS = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], '
+  + '[role="toolbar"]:not([data-document-toolbar])'
 
 /** Is `target` inside the canvas's editable text (ProseMirror)? */
 function inEditor(target: EventTarget | null): boolean {
@@ -36,13 +40,14 @@ export function isFocusViewShortcut(event: Pick<KeyboardEvent, 'key' | 'ctrlKey'
 }
 
 /**
+ * @param active - the address asks for the focus view (`/focus`)
+ * @param setActive - goes to the page's address with or without it (a history entry)
  * @param focusCanvas - puts focus in the canvas (on enter)
- * @param buttonRef - the bar's "Full screen" button: focus comes back to it when the view closes
+ * @param buttonRef - the toolbar's "Full screen" button: focus comes back to it when the view closes
  */
-export function useFocusView(focusCanvas: () => void, buttonRef: RefObject<HTMLButtonElement | null>): FocusViewControls {
-  const [params, setParams] = useSearchParams()
-  const active = isFocusView(params)
-
+export function useFocusView(
+  active: boolean, setActive: (on: boolean) => void, focusCanvas: () => void, buttonRef: RefObject<HTMLButtonElement | null>,
+): FocusViewControls {
   // Before paint: the shell's chrome is never drawn around a page that is in focus view.
   useLayoutEffect(() => { setFocusViewActive(active) }, [active])
   useLayoutEffect(() => () => { setFocusViewActive(false) }, [])
@@ -55,14 +60,8 @@ export function useFocusView(focusCanvas: () => void, buttonRef: RefObject<HTMLB
     else buttonRef.current?.focus()
   }, [active, focusCanvas, buttonRef])
 
-  // In place, both ways: the page's entry is the document's (a save rewrites its `?doc=` in place too), so Back
-  // never lands on a version older than the one on screen.
-  const enter = useCallback(() => {
-    setParams((prev) => withFocusView(prev, true), { replace: true })
-  }, [setParams])
-  const leave = useCallback(() => {
-    setParams((prev) => withFocusView(prev, false), { replace: true })
-  }, [setParams])
+  const enter = useCallback(() => { setActive(true) }, [setActive])
+  const leave = useCallback(() => { setActive(false) }, [setActive])
   const toggle = active ? leave : enter
 
   useEffect(() => {

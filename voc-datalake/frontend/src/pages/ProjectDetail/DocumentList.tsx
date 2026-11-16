@@ -1,7 +1,8 @@
 /**
  * DocumentList - the selectable document rail of the Documents tab, in the project's four sections
  * (docs/prototype-builder.md "Part 4"): PRD, PR/FAQ, Prototypes and Documents, always in that order
- * (api/documentSections.ts), each newest first by last edit.
+ * (api/documentSections.ts), each newest first by last edit. A PRD / PR/FAQ series is one row, its newest version
+ * (seriesHeads; the page has the older ones), selected while any version of it is.
  *
  * From `xl` (1280 px) the list is a narrow column beside the page: each section is a disclosure (a heading whose
  * button names the section and its count, `aria-expanded`), every one open on each page view (folding is not
@@ -10,7 +11,10 @@
  * first with documents), so it never scrolls sideways through all four. Rows are cards (DocumentCard), buttons with
  * `aria-current` on the selected one; titles are plain text rather than headings, because a heading inside a button
  * is flattened into the button's name anyway and a list of them broke the page outline (h1 → h4). Each card has its
- * menu (a right-click, the ContextMenu key or Shift+F10, its "⋯"): Open, and for an editor Rename and Delete.
+ * menu (a right-click, the ContextMenu key or Shift+F10, its "⋯"): Open, and for an editor Rename and Delete. A series
+ * card acts on the version it shows, the latest: Open opens it, Delete deletes that one version (as the page's own
+ * Delete does; the next one down is the series' card then), and there is no Rename (a PRD / PR/FAQ title is its
+ * series').
  */
 import clsx from 'clsx'
 import { ChevronRight, Loader2, Plus } from 'lucide-react'
@@ -19,6 +23,7 @@ import { useTranslation } from 'react-i18next'
 import { isVersionManagedDocument, ordinalByType, type DocumentOrdinal } from '../../api/documentLineage'
 import { byNewestEdit, groupBySection, sectionOf, type DocumentSectionGroup, type DocumentSectionId } from '../../api/documentSections'
 import DocumentCard, { type DocumentCardActions } from './DocumentCard'
+import { listedIdOf, seriesHeads } from './documentEdit'
 import SectionNewMenu, { type SectionNewChoice } from './SectionNewMenu'
 import type { ReactNode } from 'react'
 import type { TFunction } from 'i18next'
@@ -83,10 +88,12 @@ export default function DocumentList({
   // One pass for the whole list rather than one per row, and memoised because the
   // list re-renders on every selection change while the documents themselves do not.
   const ordinals = useMemo(() => ordinalByType(documents), [documents])
+  const listed = useMemo(() => seriesHeads(documents), [documents])
   const groups = useMemo(
-    () => groupBySection(documents).map((group) => ({ ...group, documents: [...group.documents].sort(byNewestEdit) })),
-    [documents],
+    () => groupBySection(listed).map((group) => ({ ...group, documents: [...group.documents].sort(byNewestEdit) })),
+    [listed],
   )
+  const selectedId = selectedDoc === null ? undefined : listedIdOf(selectedDoc, listed)
   // Every section starts open on each page view; folding lives only as long as the list.
   const [folded, setFolded] = useState<ReadonlySet<DocumentSectionId>>(() => new Set())
   const [pick, setPick] = useState<NarrowPick | null>(null)
@@ -113,7 +120,7 @@ export default function DocumentList({
       {groups.map((group) => (
         <DocumentSection key={group.section} group={group} listId={listIdOf(group.section)} texts={texts[group.section]}
           expanded={!folded.has(group.section)} narrowOpen={open === group.section} onToggle={() => toggle(group.section)}
-          newAction={newActions?.[group.section]} selectedId={selectedDoc?.document_id} ordinals={ordinals}
+          newAction={newActions?.[group.section]} selectedId={selectedId} ordinals={ordinals}
           onSelectDoc={onSelectDoc} cardActions={cardActions} />
       ))}
     </div>

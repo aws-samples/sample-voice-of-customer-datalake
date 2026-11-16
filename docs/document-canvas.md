@@ -2,9 +2,11 @@
 
 In a project, **Documents** opens each document as a page: a clean reading column with the title, an outline
 of its headings on one side, and the reviews it was written from (or, for a PR/FAQ or PRD, its comment
-threads) on the other. Anyone who can edit the project edits the text in place; there is no separate edit
-mode. A prototype keeps its own preview; a decision record opens here read-only and is edited in the
-Decisions tab.
+threads) on the other. At the top sit its menus (Document · Edit · Format · Insert · View), the save status and
+an icon toolbar ([below](#the-toolbar)). Anyone who can edit the project edits the text in place; there is no
+separate edit mode. A prototype keeps its own preview; a decision record opens here read-only and is edited in the
+Decisions tab. A PR/FAQ or PRD is one document across its versions: the list shows it once, it opens on its latest
+version, and the toolbar reads any earlier one ([Versions](#versions)).
 
 Nothing about storage changes: a document is still Markdown in its `content` field, saved through the same
 `PUT /projects/{id}/documents/{document_id}` as before, so exports, the review page, the assistant, MCP tools
@@ -15,9 +17,20 @@ the save as a revision only after checking that pass: [document-review.md](docum
 
 ## Reading
 
-- **Outline**: the document's headings (levels 1 to 3) as links. The heading in view is marked as you scroll;
-  choosing one moves the caret (or, read-only, the focus) to it. Below 1024 px wide the outline is a
-  **Contents** disclosure above the text.
+- **Outline** (**Contents**, shown unless you turn it off): the document's headings (levels 1 to 3) as links. The
+  heading in view is marked as you scroll; choosing one moves the caret (or, read-only, the focus) to it. Below
+  1024 px wide the outline is a **Contents** disclosure above the text.
+- **Full width** (on unless you turn it off): the text takes the sheet's width; off, it keeps a comfortable line
+  length (about 70 characters).
+- **Comments** (a PR/FAQ or PRD): the comment panel is closed unless you open it; its toolbar button counts the open
+  threads. Whatever needs the panel opens it for that visit only: commenting on a selection (the format bar's
+  **Comment**, Ctrl/⌘+Alt+M), a click in a commented passage (its thread becomes the active one), a link to a thread (a
+  recommendation's or a proposed change's), a persona review that filed comments. Your stored choice stays as it was:
+  another document or a reload shows it again.
+- These three are your preferences, not the page's: kept in this browser (`voc-document-view` in localStorage) and
+  the same on every document. Only an explicit switch stores a choice: the toolbar's button, the View menu's entry or
+  its shortcut. They are not in the address. Before 7.46.00 they lived only as long as the page, so there was no
+  stored choice to migrate: everyone starts with Contents shown, the full width on and the panel closed.
 - **Evidence**: the reviews and board requests the document was written from, as cards (source, sentiment,
   rating, a short excerpt, date), with **Show all** opening the full list. For a PR/FAQ or PRD the side rail
   has two tabs, **Comments** and **Evidence**.
@@ -40,7 +53,7 @@ path in the app; other schemes, and addresses starting with `//` or holding a ba
 | Add or change a link | Ctrl/⌘+K |
 | Move a block | Drag the handle beside it, or Alt+Shift+Up / Down; the handle's menu also moves, turns into, duplicates and deletes |
 | Open the block menu from the keyboard | Alt+Shift+M |
-| Save | **Save** in the page header, or Ctrl/⌘+S |
+| Save | **Save** in the page's top bar, or Ctrl/⌘+S |
 | Send a comment or reply | Ctrl/⌘+Enter in its box (Escape closes an empty box and keeps one with text) |
 
 **Saving** writes one new version (D1: nothing is overwritten): a PR/FAQ or PRD gets its next series version,
@@ -50,8 +63,8 @@ choosing another document or tab, or closing the window with unsaved changes ask
 
 If someone saved the document after you opened it (another tab, a teammate, the assistant), the save is
 refused and the page offers **Load the latest** or **Save mine anyway**; either way the other save stays in the
-history. **History** lists the versions and restores one (a restore is a new version too). **Export** exports
-the saved version.
+history. **History** (the toolbar, or the Document menu) lists the versions and restores one (a restore is a new
+version too). **Export** exports the saved version.
 
 Untouched blocks are written back byte for byte, so a small edit is a small change in the version history,
 and anything the canvas has no block for (raw HTML, footnotes, reference definitions) is kept as written and
@@ -60,25 +73,88 @@ shown as a source block.
 ## Comments, personas and sharing
 
 On a PR/FAQ or PRD, select text and choose **Comment** in the floating bar (or Ctrl/⌘+Alt+M) to start a thread
-anchored to that quote. Threads, replies, resolve, filters, **Ask personas to review** and **Share** (the review
-link, in the page header) work as described in [document-review.md](document-review.md). While you edit, a
-thread whose quote you change is listed under **Not found in this version** at once.
+anchored to that quote (the comment panel opens for it). Threads, replies, resolve, filters, **AI review** (Ask
+personas to review, in the toolbar: what the personas filed is said at the top of the comment panel, which opens
+for it) and **Share** (the review link, the toolbar's last button) work as described in
+[document-review.md](document-review.md). While you edit, a thread whose quote you change is listed under **Not
+found in this version** at once.
+
+## The toolbar
+
+At the end of the top bar, a row of icon buttons (a WAI-ARIA toolbar: one Tab stop, the arrow keys move between
+them, Home and End go to the ends; every icon has a name and a tooltip, on hover and on keyboard focus; a switch
+says whether it is on):
+
+| Button | Does | Offered to |
+|---|---|---|
+| **v4 ▾** | The version picker: every version, newest first, the latest marked **Latest** ([Versions](#versions)) | everyone (not on a decision) |
+| **History** | The versions list: open, compare, restore | everyone (not on a decision) |
+| **AI review** | Ask personas to review (the comments' editors; disabled, with the reason, in a project without personas) | editors, PR/FAQ and PRD |
+| **AI rewrite** | Revise from comments ([below](#revise-from-comments); disabled, with the reason, until a thread is answered, or while accepted changes wait for their save) | editors, PR/FAQ and PRD |
+| **Comments** (with the open count) | The comment panel, on or off | PR/FAQ and PRD |
+| **Contents** | The outline, on or off | everyone |
+| **Full width** | The text's width | everyone |
+| **Full screen** | The focus view ([below](#full-screen)) | everyone |
+| **Share** | The review link ([document-review.md](document-review.md)) | editors, PR/FAQ and PRD |
+
+The toolbar and the View menu are two doors to the same switches: a change in one shows in the other. Below 768 px
+wide History, the AI flows, Contents and Full width move into a **⋯** menu (the switches as checkbox items). While an
+older version is on screen the AI flows and the Edit, Format and Insert menus step aside. The running AI flow is said
+to a screen reader; a failed revision's reason shows above the text.
+
+## Versions
+
+Every save is a version (D1, above). A PR/FAQ or PRD keeps each version as a row of its own (its next series version);
+any other document keeps its id and stores what a save replaced as a revision. The page shows both the same way:
+
+- **One entry in the list.** The Documents list shows a PR/FAQ or PRD series once, as its latest version, counted
+  once, and selected while any of its versions is open. Choosing it opens the latest. (A prototype keeps one entry per
+  version: its pane has Back to vN.) Nothing stored changes: this is how the list reads the rows the project already
+  has.
+- **The version picker** (the toolbar's first button, "v4") lists the versions, newest first (the History list's 25),
+  the latest marked. Choosing an older one shows it read-only under a banner, **Viewing v2 of 4 · read only**, with
+  **Back to latest** and, for an editor, **Restore** (asked first): a new version with that version's content, as
+  History's restore. Your canvas, with any unsaved changes and the comment you were writing, stays as it was behind it.
+- A link to an older version's own row (a link made before it was superseded, or Back after a save) opens the series'
+  latest with that older version under the banner, so you always land on the latest. The page checks this once per
+  address: a version a teammate saves while you edit never moves your canvas (your save meets it as a conflict).
+- The versions come from `GET /projects/{id}/documents/{document_id}/versions` (any member may read; History's list),
+  read when the picker opens or an older version is asked for. No route was added.
+
+## Addresses
+
+A project page's tab and the document on it are paths (inside a workspace, after its `/w/<slug>`):
+
+| Address | Shows |
+|---|---|
+| `/projects/<id>` or `/projects/<id>/overview` | the Overview |
+| `/projects/<id>/personas`, `/product`, `/documents`, `/decisions`, `/participants` | that tab |
+| `/projects/<id>/documents/<docId>` | a document |
+| `/projects/<id>/documents/<docId>/v/<n>` | its version n, read-only (the version on the page has no `/v/`) |
+| `/projects/<id>/documents/<docId>/focus`, `…/v/<n>/focus` | full screen |
+
+Choosing a tab, a document, a version or full screen is a history entry, so the browser's Back and Forward walk
+them; a save, a restore or the latest loaded moves to the new version in place (Back never lands on a version the
+page has moved past). Old links (`?tab=documents&doc=<docId>&view=focus`, `?tab=decisions`) are replaced by their
+path, in place, keeping every other parameter (a prefilled decision's, an open review's). In-app links (a run's
+document, the Decisions card's "PR/FAQ ready") use the paths; the server builds none of these links. The
+breadcrumb trail ends at the project.
 
 ## Full screen
 
-**Full screen** in the page header (or Ctrl/⌘+Shift+F) gives the page the whole window for reading and answering
+**Full screen** in the toolbar (or Ctrl/⌘+Shift+F) gives the page the whole window for reading and answering
 comments: the canvas and the comment rail side by side from 1280 px wide (one column below), the app's sidebar,
 header, project tabs and document list hidden. It opens with the page's header (the title, the save status and the
 way out) at the top of the window, however far down the page you were, and puts the cursor in the text without
-scrolling it. Esc (when no menu, dialog, format bar or comment box has it), the same button or
-the shortcut leaves. The address keeps it as `?view=focus`, so a reload stays in it; entering and leaving add no
-history entry, so the browser's Back goes to the page you came from (never to an older version of a document you
-saved in full screen). Unsaved
-changes stay as they are; entering or leaving never asks.
+scrolling it. Esc (when no menu, dialog, format bar or comment box has it; the page's own toolbar owns none), the same
+button or the shortcut leaves. The address keeps it as `…/focus`, so a reload stays in it; entering and leaving are
+history entries, so Back leaves full screen and Forward comes back (after a save in full screen, the entry before it
+opens on the latest version, with the one you started from under the banner). Unsaved changes stay as they are;
+entering or leaving never asks.
 
-## The File menu
+## The Document menu
 
-**File** in the page header holds the document's actions: **Save** (with its state: Saved, Saving…, Unsaved changes;
+**Document** in the top bar holds the document's actions: **Save** (with its state: Saved, Saving…, Unsaved changes;
 the Save button stays beside it), **Share for review** (PR/FAQ, PRD), the export formats (Copy, **Download as
 Markdown**: the saved version's stored text; **Print or save as PDF**, with **Include open comments** to append each
 open thread whose quote is in the printed version (or on the whole document) with its quote and replies; Download as TXT; Copy to Kiro for a PR/FAQ or PRD), **History** and
@@ -94,12 +170,14 @@ a decision is edited in its tab) and **Delete**. A viewer gets Open only. Rename
 the page title's rules (Enter saves, Escape cancels, an empty or unchanged name saves nothing) and the same save, one
 new version carrying the title alone; the document open on its page is renamed through the page, so its unsaved text
 stays the draft. Delete asks first with the page's confirmation; deleting the open document closes it, deleting
-another leaves it open. The menu follows the WAI-ARIA menu pattern: arrows, Home / End, Escape back to the card (or
+another leaves it open. A PR/FAQ or PRD series has one card ([Versions](#versions)), which acts on the version it
+shows, the latest: **Open** opens it, and **Delete** deletes that one version, as the page's own Delete does on the
+latest (the version before it is the series' card then; the others stay in History). The menu follows the WAI-ARIA menu pattern: arrows, Home / End, Escape back to the card (or
 the ⋯), Tab out; a press outside it or a scroll closes it.
 
 ## Revise from comments
 
-On a PR/FAQ or PRD, once threads are answered or resolved, **Revise from comments** in the comment rail asks the AI
+On a PR/FAQ or PRD, once threads are answered or resolved, **AI rewrite** (Revise from comments) in the toolbar asks the AI
 to work through them, grounded in the threads and the document's evidence
 ([document-review.md](document-review.md#revise-from-comments)). What comes back depends on your way of working
 ([ways-of-working.md](ways-of-working.md#revise-from-comments)):
@@ -116,8 +194,8 @@ to work through them, grounded in the threads and the document's evidence
   **Review again** (Ask personas to review). If someone saved a version after the revision, Undo says so first and
   offers **Undo anyway** (their change is reverted too) or **Keep it**.
 
-Addressed threads carry their badge and an **Addressed** filter; after any pass the rail offers **Ask personas to
-review again**, so a new round of comments can start.
+Addressed threads carry their badge and an **Addressed** filter; after any pass **AI review**'s tooltip says it asks
+the personas to review again, so a new round of comments can start.
 
 ## The assistant's changes
 
@@ -132,6 +210,7 @@ path. A proposal is refused before it is shown when your way of working does not
 The canvas is in `voc-datalake/frontend/src/components/DocumentCanvas/`: `markdown/` (the Markdown ↔ editor
 mapping, on TipTap and ProseMirror, MIT), `editor/` (the editor; its menus, format bar and popovers load as a chunk of their own right after the text,
 `editor/CanvasChrome.tsx`), `page/` (the page,
-outline, evidence and the full-screen view), `comments/`, `actions/` (save, the header and File menu, the
-assistant's diff) and `revise/` (Revise from comments). It is loaded only
+outline, evidence, the view preferences, an older version and the full-screen view), `comments/`, `actions/` (save,
+the menus, the toolbar and its version picker, the assistant's diff) and `revise/` (Revise from comments). The
+addresses are `pages/ProjectDetail/projectPaths.ts` and `useProjectPlace.ts`. It is loaded only
 when the Documents tab opens a document.

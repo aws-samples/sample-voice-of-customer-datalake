@@ -11,9 +11,9 @@
  * thread whose quote is gone from the text is listed under "Not found in this version", next to
  * the comments on the whole document. The host decides who may do what (`CommentActions`).
  *
- * The page may hide the rail (View → Comments, its comments button: `railHidden`): the text then takes the width, the
- * rail stays mounted (a draft keeps its text), and starting a comment or showing a thread asks for it back
- * (`onRevealRail`).
+ * The page may hide the rail (View → Comments, its toolbar's Comments: `railHidden`): the text then takes the width,
+ * the rail stays mounted (a draft keeps its text), and starting a comment, showing a thread or a click in a commented
+ * passage (which makes its thread the active one) asks for it back (`onRevealRail`).
  *
  * A comment on a passage starts from the current selection (`commentOnSelection`, through
  * `commentRef`: the canvas' floating bar, the Markdown view's floating button) or from the
@@ -142,6 +142,18 @@ const isCommentShortcut = (event: KeyboardEvent) =>
 
 const identity = (rail: ReactNode) => rail
 
+/**
+ * The located thread whose quote holds the caret a click put in the text (a click, not a selection made by dragging),
+ * else null.
+ */
+function threadAtCaret(placed: readonly { readonly thread: CommentThread; readonly range: Range | null }[]): string | null {
+  const selection = globalThis.getSelection()
+  const node = selection?.anchorNode ?? null
+  if (selection === null || node === null || !selection.isCollapsed) return null
+  const offset = selection.anchorOffset
+  return placed.find(({ range }) => range?.isPointInRange(node, offset) === true)?.thread.comment_id ?? null
+}
+
 export default function CommentedDocument({
   children, contentRoot, revision, threads, viewed, actions, canComment, toolbar, notice, renderRail = identity, commentRef,
   railHidden = false, onRevealRail,
@@ -261,6 +273,12 @@ export default function CommentedDocument({
           if (!isCommentShortcut(event)) return
           event.preventDefault()
           commentOnSelection()
+        }}
+        onClick={() => {
+          const clicked = threadAtCaret(layout.placed)
+          if (clicked === null) return
+          setActiveId(clicked)
+          onRevealRail?.()
         }}>
         {children}
       </div>

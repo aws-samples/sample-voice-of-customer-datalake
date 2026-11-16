@@ -299,4 +299,29 @@ describe('a rail the page hid (View → Comments)', () => {
     act(() => { handle.current?.showThread('c1') })
     expect(onReveal).toHaveBeenCalledTimes(2)
   })
+
+  it('asks for it back on a click in a commented passage, its thread then the active one; a click elsewhere asks nothing', async () => {
+    const onReveal = vi.fn()
+    render(<HiddenRailHarness onReveal={onReveal} />)
+    await waitFor(() => expect(registry.get('voc-comment')?.ranges.map(String)).toStrictEqual(['two weeks']))
+    const content = screen.getByTestId('content')
+
+    selectRange(2, 2)
+    act(() => { content.click() })
+    expect(onReveal).not.toHaveBeenCalled()
+
+    selectRange(18, 18)
+    act(() => { content.click() })
+    expect(onReveal).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(registry.get('voc-comment-active')?.ranges.map(String)).toStrictEqual(['two weeks']))
+  })
+
+  it('asks nothing for a click that ends a selection made by dragging (a comment is about to start)', async () => {
+    const onReveal = vi.fn()
+    render(<HiddenRailHarness onReveal={onReveal} />)
+    await waitFor(() => expect(registry.get('voc-comment')?.ranges.map(String)).toStrictEqual(['two weeks']))
+    selectQuote()
+    act(() => { screen.getByTestId('content').click() })
+    expect(onReveal).not.toHaveBeenCalled()
+  })
 })

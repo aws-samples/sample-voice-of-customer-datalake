@@ -881,7 +881,6 @@
         "undoing": "Restoring the previous version…",
         "undone": "Undone: the previous version is restored as a new version."
       },
-      "button": "Revise from comments",
       "close": "Close",
       "failed": "Revise from comments failed. Please try again.",
       "filterAddressed": "Addressed",
@@ -976,6 +975,29 @@
       "minutes_one": "{{count, number}} min read",
       "minutes_other": "{{count, number}} min read",
       "wordsAndMinutes": "{{words}} · {{minutes}}"
+    },
+    "toolbar": {
+      "label": "Document tools",
+      "more": "More tools",
+      "share": "Share",
+      "aiReview": "AI review",
+      "aiReviewNoPersonas": "Add personas to this project to ask them for a review.",
+      "aiRewrite": "AI rewrite",
+      "historyHint": "Every version of this document: open, compare or restore one",
+      "contentsHint": "Show or hide the contents",
+      "fullWidthHint": "Let the text take the full width",
+      "version": "Version {{version}}",
+      "versionHint": "Read an earlier version",
+      "versionsLoading": "Loading the versions…",
+      "latest": "Latest"
+    },
+    "versions": {
+      "bannerLabel": "Older version",
+      "viewing": "Viewing {{version}} of {{latest}}",
+      "viewingOne": "Viewing {{version}}",
+      "readOnly": "read only",
+      "backToLatest": "Back to latest",
+      "announce": "Showing {{version}}, an older version, read only."
     }
   }
 }

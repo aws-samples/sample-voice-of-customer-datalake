@@ -34,7 +34,7 @@ function renderWithLocation(url: string) {
   return render(
     <QueryClientProvider client={createQueryClient()}>
       <MemoryRouter initialEntries={[url]}>
-        <Routes><Route path="/projects/:id" element={<ProjectDetail />} /></Routes>
+        <Routes><Route path="/projects/:id/*" element={<ProjectDetail />} /></Routes>
         <LocationProbe />
       </MemoryRouter>
     </QueryClientProvider>,

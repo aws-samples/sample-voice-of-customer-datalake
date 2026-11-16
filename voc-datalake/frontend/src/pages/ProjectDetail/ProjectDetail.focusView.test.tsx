@@ -32,7 +32,7 @@ function renderAt(entry: string) {
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[entry]}>
-        <Routes><Route path="/projects/:id" element={<ProjectDetail />} /></Routes>
+        <Routes><Route path="/projects/:id/*" element={<ProjectDetail />} /></Routes>
       </MemoryRouter>
     </QueryClientProvider>,
   )

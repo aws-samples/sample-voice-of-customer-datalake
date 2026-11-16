@@ -14,7 +14,7 @@ copy from. Everyone can read them; administrators edit the company-wide parts.
 | My objectives and KPIs | **Account → Objectives** (`/account?tab=objectives`) | each user, for themselves |
 | Figma and GitHub tokens for design references | Administration → Sources → Integrations ([below](#getting-the-figma-and-github-tokens)) | admins |
 
-A project's **Product** tab (`/projects/{id}?tab=product`) describes that one product. It shows the company context
+A project's **Product** tab (`/projects/{id}/product`) describes that one product. It shows the company context
 and design system it inherits, read-only, with a link to the Company page.
 
 ## How the AI uses them

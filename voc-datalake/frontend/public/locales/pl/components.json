@@ -44,7 +44,6 @@
     "notFound": "Nie znaleziono w tej wersji",
     "saveFailed": "Nie udało się zapisać komentarza. Spróbuj ponownie.",
     "loadFailed": "Nie udało się wczytać komentarzy. Dokument jest wyświetlany bez nich.",
-    "personaReview": "Poproś persony o recenzję",
     "personaReviewRunning": "Persony czytają…",
     "personaReviewHint": "Do 6 person z tego projektu czyta tę wersję i zostawia komentarze z cytatami z tekstu. Nigdy nie zmieniają dokumentu. Kosztuje jedno wywołanie modelu na personę.",
     "personaReviewDone_one": "Dodano {{count, number}} komentarz (zapytane persony: {{personas, number}})",

@@ -15,8 +15,8 @@ import { formatDate } from '../../utils/dateUtils'
 
 const DOCUMENTS: ProjectDocument[] = [
   makeDocument({ document_id: 'notes', document_type: 'research', title: 'Interview notes', created_at: '2026-05-01T00:00:00Z' }),
-  makeDocument({ document_id: 'prd-1', document_type: 'prd', title: 'Launch (v1)', version: 1, created_at: '2026-01-01T00:00:00Z' }),
-  makeDocument({ document_id: 'faq-1', document_type: 'prfaq', title: 'Launch FAQ (v1)', version: 1, created_at: '2026-02-01T00:00:00Z' }),
+  makeDocument({ document_id: 'prd-1', document_type: 'prd', title: 'Beta (v1)', version: 1, created_at: '2026-01-01T00:00:00Z' }),
+  makeDocument({ document_id: 'faq-1', document_type: 'prfaq', title: 'Beta FAQ (v1)', version: 1, created_at: '2026-02-01T00:00:00Z' }),
   // Edited after v2 was written: the last edit, not the creation, puts it first.
   makeDocument({
     document_id: 'prd-old', document_type: 'prd', title: 'Pricing (v1)', version: 1, created_at: '2025-06-01T00:00:00Z',
@@ -69,8 +69,8 @@ describe('DocumentList sections', () => {
   it('lists each section newest first by last edit (updated_at, else created_at)', () => {
     renderList()
     expect(disclosures().map(titlesUnder)).toStrictEqual([
-      ['Pricing (v1)', 'Launch (v2)', 'Launch (v1)'],
-      ['Launch FAQ (v2)', 'Launch FAQ (v1)', 'Filed FAQ'],
+      ['Pricing (v1)', 'Launch (v2)', 'Beta (v1)'],
+      ['Launch FAQ (v2)', 'Beta FAQ (v1)', 'Filed FAQ'],
       [],
       ['Interview notes', 'Roadmap'],
     ])
@@ -102,7 +102,7 @@ describe('DocumentList sections', () => {
     await user.keyboard('{Enter}')
     expect([faq.getAttribute('aria-expanded'), titlesUnder(faq)]).toStrictEqual(['false', []])
     await user.keyboard(' ')
-    expect([faq.getAttribute('aria-expanded'), titlesUnder(faq)]).toStrictEqual(['true', ['Launch FAQ (v2)', 'Launch FAQ (v1)', 'Filed FAQ']])
+    expect([faq.getAttribute('aria-expanded'), titlesUnder(faq)]).toStrictEqual(['true', ['Launch FAQ (v2)', 'Beta FAQ (v1)', 'Filed FAQ']])
     await user.click(faq)
     unmount()
 
@@ -114,7 +114,7 @@ describe('DocumentList sections', () => {
     const user = userEvent.setup()
     const selected = DOCUMENTS[1] ?? null
     const { onSelectDoc } = renderList({ selectedDoc: selected })
-    expect(screen.getByRole('button', { name: /Launch \(v1\)$/ })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('button', { name: /Beta \(v1\)$/ })).toHaveAttribute('aria-current', 'true')
     await user.click(screen.getByRole('button', { name: /Interview notes$/ }))
     expect(onSelectDoc).toHaveBeenCalledWith(DOCUMENTS[0])
   })
@@ -159,8 +159,8 @@ describe('DocumentList keyboard', () => {
     )
     const readingOrder = [
       'PRD, 1 document', 'PR/FAQ, 1 document', 'Prototypes, 0 documents', 'Documents, 1 document',
-      'PRD, 1 document', 'New PRD', 'Launch (v1)',
-      'PR/FAQ, 1 document', 'New PR/FAQ', 'Launch FAQ (v1)',
+      'PRD, 1 document', 'New PRD', 'Beta (v1)',
+      'PR/FAQ, 1 document', 'New PR/FAQ', 'Beta FAQ (v1)',
       'Prototypes, 0 documents', 'New prototype',
       'Documents, 1 document', 'New Document',
     ]
@@ -214,6 +214,43 @@ describe('DocumentList below 1280 px', () => {
     expect([faqButton.getAttribute('aria-expanded'), faqButton.className.includes('tab-active')]).toStrictEqual(['true', true])
     expect(hiddenWhenNarrow()).toStrictEqual([true, false, true, true])
     const list = document.getElementById(faqButton.getAttribute('aria-controls') ?? '')
-    expect([list?.className.includes('xl:hidden'), titlesUnder(faqButton)]).toStrictEqual([true, ['Launch FAQ (v2)', 'Launch FAQ (v1)', 'Filed FAQ']])
+    expect([list?.className.includes('xl:hidden'), titlesUnder(faqButton)]).toStrictEqual([true, ['Launch FAQ (v2)', 'Beta FAQ (v1)', 'Filed FAQ']])
+  })
+})
+
+describe('DocumentList: a PRD / PR/FAQ series is one row', () => {
+  const series = (version: number, extra: Partial<ProjectDocument> = {}) => makeDocument({
+    document_id: `faq-${String(version)}`, document_type: 'prfaq', title: `Refunds (v${String(version)})`, base_title: 'Refunds',
+    version, created_at: `2026-0${String(version)}-01T00:00:00Z`, ...extra,
+  })
+  const SERIES = [series(1), series(3), series(2)]
+  const faqRows = () => titlesUnder(at(disclosures(), 1, 'sections'))
+
+  it('lists the series once, as its latest version, and counts it once', () => {
+    render(<DocumentList documents={SERIES} selectedDoc={null} onSelectDoc={vi.fn()} />)
+    expect(faqRows()).toStrictEqual(['Refunds (v3)'])
+    expect(spoken(at(disclosures(), 1, 'sections'))).toBe('PR/FAQ, 1 document')
+  })
+
+  it('opens the series on its latest version', async () => {
+    const onSelectDoc = vi.fn()
+    render(<DocumentList documents={SERIES} selectedDoc={null} onSelectDoc={onSelectDoc} />)
+    await userEvent.setup().click(screen.getByRole('button', { name: /Refunds \(v3\)/ }))
+    expect(onSelectDoc).toHaveBeenCalledExactlyOnceWith(SERIES[1])
+  })
+
+  it('marks the series current while any of its versions is selected, a version just saved too', () => {
+    const { rerender } = render(<DocumentList documents={SERIES} selectedDoc={SERIES[0] ?? null} onSelectDoc={vi.fn()} />)
+    expect(screen.getByRole('button', { name: /Refunds \(v3\)/ })).toHaveAttribute('aria-current', 'true')
+    rerender(<DocumentList documents={SERIES} selectedDoc={series(4)} onSelectDoc={vi.fn()} />)
+    expect(screen.getByRole('button', { name: /Refunds \(v3\)/ })).toHaveAttribute('aria-current', 'true')
+  })
+
+  it('keeps a prototype\'s versions and other documents as rows of their own', () => {
+    const prototypes = [1, 2].map((version) => makeDocument({
+      document_id: `proto-${String(version)}`, document_type: 'prototype', title: `Checkout (v${String(version)})`, version,
+    }))
+    render(<DocumentList documents={[...SERIES, ...prototypes]} selectedDoc={null} onSelectDoc={vi.fn()} />)
+    expect([...titlesUnder(at(disclosures(), 2, 'sections'))].sort((a, b) => a.localeCompare(b))).toStrictEqual(['Checkout (v1)', 'Checkout (v2)'])
   })
 })

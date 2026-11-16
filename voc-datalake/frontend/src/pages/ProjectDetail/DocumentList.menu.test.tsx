@@ -2,7 +2,8 @@
  * A document card's menu in the documents list (DocumentCard, DocumentCardMenu): it opens on a right-click (at the
  * pointer, kept inside the viewport), on the ContextMenu key or Shift+F10 and on the card's "⋯"; it is a WAI-ARIA
  * menu (arrows, Home / End, Escape back to what opened it, Tab out, a press outside or a scroll closes it); an editor
- * gets Open, Rename (by kind) and Delete, a viewer Open only; Rename edits the card's title in place.
+ * gets Open, Rename (by kind) and Delete, a viewer Open only; Rename edits the card's title in place; a PRD / PR/FAQ
+ * series' one card acts on its latest version.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -280,5 +281,29 @@ describe('DocumentCard Rename', () => {
     await user.keyboard('Roadmap{Enter}')
     expect(await screen.findByRole('alert')).toHaveTextContent(said)
     await waitFor(() => expect(cardOf('Plan')).toBeInTheDocument())
+  })
+})
+
+describe('DocumentCard menu: a PRD / PR/FAQ series, one card', () => {
+  const version = (n: number) => makeDocument({
+    document_id: `faq-${String(n)}`, document_type: 'prfaq', title: `Refunds (v${String(n)})`, base_title: 'Refunds',
+    version: n, created_at: `2026-0${String(n)}-01T00:00:00Z`,
+  })
+  const SERIES = [version(1), version(3), version(2)]
+
+  it('acts on the version the card shows, the latest: Open opens it, Delete deletes that one version, no Rename', async () => {
+    const remove = vi.fn<DocumentCardActions['remove']>()
+    const onSelectDoc = vi.fn<(doc: ProjectDocument) => void>()
+    const user = userEvent.setup()
+    render(<DocumentList documents={SERIES} selectedDoc={null} onSelectDoc={onSelectDoc} cardActions={editorActions({ remove })} />)
+    expect(screen.queryByRole('button', { name: /Refunds \(v[12]\)$/ })).not.toBeInTheDocument()
+
+    fireEvent.contextMenu(cardOf('Refunds \\(v3\\)'))
+    expect(itemNames(menuOf('Refunds (v3)'))).toStrictEqual([card.open, en.documents.deleteDocument])
+    await user.click(within(menuOf('Refunds (v3)')).getByRole('menuitem', { name: card.open }))
+    fireEvent.contextMenu(cardOf('Refunds \\(v3\\)'))
+    await user.click(within(menuOf('Refunds (v3)')).getByRole('menuitem', { name: en.documents.deleteDocument }))
+
+    expect([onSelectDoc.mock.calls, remove.mock.calls]).toStrictEqual([[[SERIES[1]]], [[SERIES[1]]]])
   })
 })

@@ -11,6 +11,8 @@
  */
 import { matchPath } from 'react-router-dom'
 import { reviewFromSearch } from '../../hooks/useReviewModal'
+import { legacyPlace, parseProjectRest } from '../../pages/ProjectDetail/projectPaths'
+import { projectPathParts } from '../../pages/ProjectDetail/useProjectPlace'
 import { ENGINEERING_RUN_ID, MAX_ID_LENGTH, boundedFilterValue } from '@stream/assistant/contract'
 import type { PAGE_FILTER_KEYS, PageContext, PageKind } from '@stream/assistant/contract'
 
@@ -36,7 +38,8 @@ export const PAGE_PATTERNS: readonly PagePattern[] = [
   { route: 'problems', kind: 'problems' },
   { route: 'chat', kind: 'chat' },
   { route: 'projects', kind: 'projects' },
-  { route: 'projects/:id', kind: 'project', param: { name: 'id', field: 'projectId' } },
+  // Its tabs, a document, an older version and full screen are the page's own paths (projectPaths.ts).
+  { route: 'projects/:id/*', kind: 'project', param: { name: 'id', field: 'projectId' } },
   { route: 'prioritization', kind: 'prioritization' },
   { route: 'data-explorer', kind: 'data-explorer' },
   { route: 'scrapers', kind: 'scrapers' },
@@ -120,8 +123,16 @@ function entityId(params: Record<string, string | undefined>, param: NonNullable
   return value !== undefined && (param.shape?.test(value) ?? true) ? value : undefined
 }
 
-function tabFrom(search: string): string | undefined {
-  const tab = new URLSearchParams(search).get('tab')
+/** A project page's place (its path, an old link's query as the page reads it: projectPaths.ts), or null elsewhere. */
+function projectPlaceOf({ pathname, search }: LocationLike) {
+  const parts = projectPathParts(pathname)
+  if (parts === null) return null
+  return legacyPlace(parts.rest, search)?.place ?? parseProjectRest(parts.rest).place
+}
+
+/** The page's tab: a project's is its path (`/projects/<id>/documents`), another page's its `?tab=`. */
+function tabFrom(location: LocationLike): string | undefined {
+  const tab = projectPlaceOf(location)?.tab ?? new URLSearchParams(location.search).get('tab')
   return tab !== null && tab.length <= MAX_TAB && TAB_PATTERN.test(tab) ? tab : undefined
 }
 
@@ -155,19 +166,19 @@ export function pageContextFromLocation(location: LocationLike): PageContext {
 }
 
 /**
- * The document the Documents tab of a project page has open (`?tab=documents&doc=<id>`,
- * pages/ProjectDetail/useDocumentSelection.ts), or undefined: elsewhere, or an id over MAX_ID_LENGTH.
+ * The document the Documents tab of a project page has open (`/projects/<id>/documents/<docId>`,
+ * pages/ProjectDetail/projectPaths.ts), or undefined: elsewhere, or an id over MAX_ID_LENGTH.
  * Only a candidate: whether it is a prototype is known from the project record (usePageContext).
  */
-export function selectedDocumentId(page: Pick<PageContext, 'kind' | 'tab'>, search: string): string | undefined {
-  if (page.kind !== 'project' || page.tab !== 'documents') return undefined
-  const id = new URLSearchParams(search).get('doc')
-  return id !== null && id !== '' && id.length <= MAX_ID_LENGTH ? id : undefined
+export function selectedDocumentId(page: Pick<PageContext, 'kind'>, location: LocationLike): string | undefined {
+  if (page.kind !== 'project') return undefined
+  const id = projectPlaceOf(location)?.documentId ?? null
+  return id !== null && id.length <= MAX_ID_LENGTH ? id : undefined
 }
 
 function routeContext(location: LocationLike): PageContext {
   const path = location.pathname.slice(0, MAX_PATH)
-  const tab = tabFrom(location.search)
+  const tab = tabFrom(location)
   const base = { path, ...(tab !== undefined ? { tab } : {}) }
   for (const pattern of PAGE_PATTERNS) {
     const match = matchPattern(pattern, location.pathname)

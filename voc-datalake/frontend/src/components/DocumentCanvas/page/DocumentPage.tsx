@@ -1,14 +1,20 @@
 /**
  * @fileoverview The page view of one prose document on the Documents tab (every type but a prototype), laid out as
  * an editing canvas's wiki page: at the top its menu bar (Document · Edit · Format · Insert · View), the save status,
- * the comments button, Save and Full screen (DocumentActionsBar; sticky from `lg`); then on a wide centred sheet the
+ * Save, and the icon toolbar (versions, History, the AI flows, Comments, Contents, Full width, Full screen, Share;
+ * DocumentActionsBar; sticky from `lg`); then on a wide centred sheet the
  * large title (renamed in place for a research / custom document: InlineTitle) with its details as chips (who wrote
  * it, when it was edited, how long it reads, its type: DocumentMeta), the assistant's pending edit of it
  * (AssistantDiffOnCanvas), the coaching notice, then three zones: the outline ("Contents"), the reading column (the
  * canvas, edited in place by an editor; a PR/FAQ or PRD inside its review view, which owns the comments panel) and
  * the evidence rail (the reviews it was written from; for a commented document the comments panel's second tab).
- * Under the text: what it was made from. View hides the comments panel or the outline, or lets the text take the
- * full width (usePageView).
+ * Under the text: what it was made from. View (and the toolbar) hides the comments panel or the outline, or lets the
+ * text take the full width (usePageView: the person's stored preferences; the panel closed, Contents shown and the
+ * full width on, without one).
+ *
+ * An older version (`…/v/<n>`, the toolbar's version picker; useOlderVersion) shows read-only under its banner
+ * (OlderVersion: Back to latest, Restore); the page's own canvas, its draft and its comments stay mounted, out of
+ * sight, and the editor's menus and the AI flows step aside meanwhile. A polite live note says which version shows.
  *
  * A document just created blank opens once on its title, selected (a custom one: the name is typed over) or with the
  * caret in its text (a PRD / PR/FAQ, named before it was filed): `openOn`.
@@ -20,7 +26,7 @@
  * Widths: from `xl` the evidence rail sits right of the text, below it otherwise; from `lg` the outline is a sticky
  * column left of it, a "Contents" disclosure above it otherwise. The page scrolls as one with the app.
  *
- * Focus view ("Full screen", `?view=focus`, useFocusView): the page takes the whole window, the canvas and its rail
+ * Focus view ("Full screen", the path's `/focus`, useFocusView): the page takes the whole window, the canvas and its rail
  * side by side (one column on a phone, the rail under the text); the app's chrome steps aside (focusView). A polite
  * live note says how to leave it. Entering it brings the page's header to the top of the window, then focuses the
  * canvas without scrolling.
@@ -35,6 +41,7 @@ import { useLabelKnownIds } from '../../../hooks/useLabelKnownIds'
 import DocumentReviewView from '../../../pages/ProjectDetail/DocumentReviewView'
 import { featureRequestIdsOf, linkFeatureRequestCitations } from '../../../pages/ProjectDetail/featureRequestCitations'
 import { useDocumentComments } from '../../../pages/ProjectDetail/useDocumentComments'
+import { useProjectPlace } from '../../../pages/ProjectDetail/useProjectPlace'
 import AssistantDiffOnCanvas from '../actions/AssistantDiffOnCanvas'
 import { READING_COLUMN_CLASS, READING_TEXT_CLASS } from '../comments/readingColumn'
 import DocumentActionsBar from '../actions/DocumentActionsBar'
@@ -44,18 +51,25 @@ import DocumentMeta from './DocumentMeta'
 import DocumentProvenance from './DocumentProvenance'
 import EvidenceCards from './EvidenceCards'
 import InlineTitle from './InlineTitle'
+import OlderVersion from './OlderVersion'
 import Outline from './Outline'
 import { PAGE_SHEET_CLASS, PAGE_SHEET_WIDE_CLASS } from './pageStyles'
 import { useFocusView } from './useFocusView'
+import { useOlderVersion } from './useOlderVersion'
 import { usePageView, type PageView } from './usePageView'
 import { noCleanup } from '../../../hooks/noCleanup'
 import type { FocusViewControls } from './useFocusView'
+import type { ViewedVersion } from './OlderVersion'
 import type { RefObject } from 'react'
+import type { TFunction } from 'i18next'
+import type { ProjectPlace } from '../../../pages/ProjectDetail/projectPaths'
+import type { ReviewActions } from '../actions/toolbarItems'
+import type { VersionChoice } from '../actions/versionChoices'
 import type { Project } from '../../../api/projectTypes'
 import type { ProjectDocument } from '../../../api/types'
 import type { CanvasDocument as CanvasDocumentState } from '../actions/useCanvasDocument'
 import type { PageRename } from '../../../pages/ProjectDetail/useDocumentCardActions'
-import type { OutlineItem } from '../editor/CanvasEditor'
+import type { CanvasEditorHandle, OutlineItem } from '../editor/CanvasEditor'
 
 /** Document types shown with margin comments, persona review and a review link (docs/document-review.md). */
 const COMMENTABLE_TYPES: ReadonlySet<string> = new Set(['prfaq', 'prd'])
@@ -84,6 +98,7 @@ type BarProps = Readonly<{
   project: Project; document: ProjectDocument; canEdit: boolean; state: CanvasDocumentState
   onDeleteDoc: () => void; isDeleting: boolean; focus: FocusViewControls
   focusButtonRef: RefObject<HTMLButtonElement | null>; view: PageView; onRename: () => void
+  viewing: number | null; onChooseVersion: (choice: VersionChoice) => void; review: ReviewActions | null
 }>
 
 /**
@@ -123,9 +138,10 @@ function useOpening(openOn: DocumentPageProps['openOn'], onOpened: (() => void) 
 
 /** The page's three zones under its header: the outline, the reading column (with the comments panel or the
  * evidence beside it) and, under the text, what it was made from. */
-function PageText({ project, document, documents, state, markdown, view, autoFocus, onSelectDoc }: Readonly<{
+function PageText({ project, document, documents, state, markdown, view, autoFocus, onSelectDoc, onActions }: Readonly<{
   project: Project; document: ProjectDocument; documents: ProjectDocument[]; state: CanvasDocumentState
   markdown: string; view: PageView; autoFocus: boolean; onSelectDoc: (doc: ProjectDocument) => void
+  onActions: (actions: ReviewActions | null) => void
 }>) {
   const [outline, setOutline] = useState<readonly OutlineItem[]>([])
   const commentable = view.comments !== undefined
@@ -144,7 +160,7 @@ function PageText({ project, document, documents, state, markdown, view, autoFoc
           <DocumentReviewView projectId={project.project_id} document={document} markdown={markdown}
             hasPersonas={project.persona_count > 0} editable={editable} onChange={state.onChange}
             handleRef={state.handleRef} onOutlineChange={setOutline} evidence={evidence(false)} canvas={state}
-            railHidden={!view.comments.on} onRevealRail={view.revealComments} autoFocus={autoFocus} />
+            railHidden={!view.comments.on} onRevealRail={view.revealComments} autoFocus={autoFocus} onActions={onActions} />
         ) : (
           <div className="xl:grid xl:grid-cols-[minmax(0,1fr)_16rem] xl:gap-8">
             <article className={READING_COLUMN_CLASS} data-reading-column="">
@@ -164,6 +180,71 @@ function PageText({ project, document, documents, state, markdown, view, autoFoc
   )
 }
 
+/**
+ * The page's place in the address, as this document's: full screen and the older version on screen move through it
+ * (history entries), an older version the page cannot show is dropped in place, and Back to latest gives the text
+ * the focus again once it shows.
+ */
+function usePagePlace(project: Project, document: ProjectDocument, handleRef: RefObject<CanvasEditorHandle | null>,
+  focusCanvas: () => void, focusButtonRef: RefObject<HTMLButtonElement | null>) {
+  const { place, go } = useProjectPlace()
+  const here = useCallback((overrides: Partial<ProjectPlace>, replace = false) => {
+    go({ tab: 'documents', documentId: document.document_id, version: place.version, focus: place.focus, ...overrides }, { replace })
+  }, [document.document_id, go, place.focus, place.version])
+  const setFocus = useCallback((on: boolean) => { here({ focus: on }) }, [here])
+  const focus = useFocusView(place.focus, setFocus, focusCanvas, focusButtonRef)
+  const { viewed, dropVersion } = useOlderVersion(project.project_id, document, place.version)
+  useEffect(() => {
+    if (dropVersion) here({ version: null }, true)
+  }, [dropVersion, here])
+  const backing = useRef(false)
+  useEffect(() => {
+    if (viewed !== null || !backing.current) return
+    backing.current = false
+    handleRef.current?.focus({ scroll: false })
+  }, [handleRef, viewed])
+  const backToLatest = () => {
+    backing.current = true
+    here({ version: null })
+  }
+  const chooseVersion = (choice: VersionChoice) => {
+    if (choice.kind === 'own') here({ version: null })
+    else if (choice.kind === 'older') here({ version: choice.number })
+    else here({ documentId: choice.documentId, version: null })
+  }
+  return { focus, viewed, backToLatest, chooseVersion }
+}
+
+/**
+ * The focus view drops the chrome above the page, and the app's scroll area, shorter by it, loses some of its
+ * scroll: a page read from further down would open with its header (the title, Save, the way out) above the
+ * window. Once the chrome is gone (the next frame), the header is brought to the top of the window; then the canvas
+ * takes focus without scrolling, a phone's browser too (a tall editable box, scrolled to, put a phone past the
+ * header), so the caret does not drag the page away from it.
+ */
+function useFocusCanvas(handleRef: RefObject<CanvasEditorHandle | null>) {
+  const headerRef = useRef<HTMLElement>(null)
+  const enterFrame = useRef(0)
+  useEffect(() => () => { cancelAnimationFrame(enterFrame.current) }, [])
+  const focusCanvas = useCallback(() => {
+    cancelAnimationFrame(enterFrame.current)
+    enterFrame.current = requestAnimationFrame(() => {
+      headerRef.current?.scrollIntoView({ block: 'start', behavior: 'auto' })
+      handleRef.current?.focus({ scroll: false })
+    })
+  }, [handleRef])
+  return { headerRef, focusCanvas }
+}
+
+/** What the live note says: full screen, an older version on screen, or nothing. */
+function pageNote(focusActive: boolean, viewed: ViewedVersion | null, t: TFunction<'projectDetail'>): string {
+  const parts = [
+    focusActive ? t('canvas.focus.announce') : '',
+    viewed === null ? '' : t('canvas.versions.announce', { version: t('documents.versions.label', { n: viewed.number }) }),
+  ]
+  return parts.filter((part) => part !== '').join(' ')
+}
+
 /** The large title (renamed in place where it may be) and its details. */
 function PageHeading({ project, document, state, markdown, titleRef, selectOnOpen }: Readonly<{
   project: Project; document: ProjectDocument; state: CanvasDocumentState; markdown: string
@@ -177,6 +258,42 @@ function PageHeading({ project, document, state, markdown, titleRef, selectOnOpe
       <DocumentMeta project={project} document={document} text={state.editable ? state.draft : markdown} />
     </>
   )
+}
+
+/** The page's own version under its header: the title, the assistant's pending edit, the coaching, the text. */
+function OwnVersion({
+  hidden, project, document, documents, canEdit, state, markdown, view, opening, titleRef, onSelectDoc, onActions,
+}: Readonly<{
+  hidden: boolean; project: Project; document: ProjectDocument; documents: ProjectDocument[]; canEdit: boolean
+  state: CanvasDocumentState; markdown: string; view: PageView; opening: DocumentPageProps['openOn']
+  titleRef: RefObject<HTMLInputElement | null>; onSelectDoc: (doc: ProjectDocument) => void
+  onActions: (actions: ReviewActions | null) => void
+}>) {
+  return (
+    <div hidden={hidden}>
+      <div className="mb-6">
+        <PageHeading project={project} document={document} state={state} markdown={markdown} titleRef={titleRef}
+          selectOnOpen={opening === 'title'} />
+      </div>
+      <AssistantDiffOnCanvas projectId={project.project_id} document={document} state={state} />
+      {canEdit ? (
+        <DocumentCoachingNotice documentType={document.document_type} title={document.title}
+          hasContent={document.content.trim() !== ''} />
+      ) : null}
+      <PageText project={project} document={document} documents={documents} state={state} markdown={markdown}
+        view={view} autoFocus={opening === 'text'} onSelectDoc={onSelectDoc} onActions={onActions} />
+    </div>
+  )
+}
+
+/** The pane: a card on the page, or (focus view) the window; unsaved, room under the text for a phone's Save bar. */
+function paneClass(focusActive: boolean, dirty: boolean): string {
+  return clsx('bg-card min-w-0', focusActive ? 'min-h-screen' : 'rounded-xl border lg:min-h-[500px]', dirty && 'max-sm:pb-20')
+}
+
+/** The sheet the text sits on: centred and capped, or the full width (the reading column uncapped too). */
+function sheetClass(fullWidth: boolean): string {
+  return clsx(fullWidth ? PAGE_SHEET_WIDE_CLASS : PAGE_SHEET_CLASS, fullWidth && '[&_[data-reading-column]]:max-w-none')
 }
 
 export default function DocumentPage({
@@ -196,38 +313,26 @@ export default function DocumentPage({
   // holds changes, must not reach the editor: its save meets it as a conflict).
   const markdown = editable ? state.content : linkFeatureRequestCitations(labelIds(document.content))
   const { handleRef } = state
-  const headerRef = useRef<HTMLElement>(null)
-  const enterFrame = useRef(0)
-  useEffect(() => () => { cancelAnimationFrame(enterFrame.current) }, [])
-  // The focus view drops the chrome above the page, and the app's scroll area, shorter by it, loses some of its
-  // scroll: a page read from further down would open with its header (the title, Save, the way out) above the
-  // window. Once the chrome is gone (the next frame), the header is brought to the top of the window; then the canvas
-  // takes focus without scrolling, a phone's browser too (a tall editable box, scrolled to, put a phone past the
-  // header), so the caret does not drag the page away from it.
-  const focusCanvas = useCallback(() => {
-    cancelAnimationFrame(enterFrame.current)
-    enterFrame.current = requestAnimationFrame(() => {
-      headerRef.current?.scrollIntoView({ block: 'start', behavior: 'auto' })
-      handleRef.current?.focus({ scroll: false })
-    })
-  }, [handleRef])
+  const { headerRef, focusCanvas } = useFocusCanvas(handleRef)
   const focusButtonRef = useRef<HTMLButtonElement>(null)
-  const focus = useFocusView(focusCanvas, focusButtonRef)
+  const { focus, viewed, backToLatest, chooseVersion } = usePagePlace(project, document, handleRef, focusCanvas, focusButtonRef)
   const { t } = useTranslation('projectDetail')
+  // The AI flows of a PR/FAQ or PRD, as its review view reports them (none while an older version is on screen).
+  const [reviewActions, setReviewActions] = useState<ReviewActions | null>(null)
   const renameTitle = () => {
     titleRef.current?.focus()
     titleRef.current?.select()
   }
   const barProps: BarProps = {
     project, document, canEdit, state, onDeleteDoc, isDeleting, focus, focusButtonRef, view, onRename: renameTitle,
+    viewing: viewed?.number ?? null, onChooseVersion: chooseVersion, review: viewed === null ? reviewActions : null,
   }
   return (
     // Unsaved, a phone pins the Save bar over the page's foot: the padding keeps it off the last lines. In focus view
     // the page is the window (the shell has stepped aside): no card edge, its full height.
     <div data-testid="document-detail-pane" data-focus-view={focus.active ? '' : undefined}
-      className={clsx('bg-card min-w-0',
-        focus.active ? 'min-h-screen' : 'rounded-xl border lg:min-h-[500px]', state.dirty && 'max-sm:pb-20')}>
-      <p aria-live="polite" className="sr-only" data-testid="canvas-focus-note">{focus.active ? t('canvas.focus.announce') : ''}</p>
+      className={paneClass(focus.active, state.dirty)}>
+      <p aria-live="polite" className="sr-only" data-testid="canvas-focus-note">{pageNote(focus.active, viewed, t)}</p>
       {/* The canvas's menu bar and actions: one row (wrapping on a phone), kept in reach while the text scrolls (from
           lg). The focus view brings it to the top of the window and keeps it there at every width: its way out is in
           it, and the page reflowing as the app's chrome steps aside must not scroll it away. */}
@@ -235,19 +340,15 @@ export default function DocumentPage({
         focus.active ? 'sticky top-0 z-20' : 'rounded-t-xl lg:sticky lg:top-0 lg:z-20')}>
         {commentable ? <CommentableActionsBar {...barProps} /> : <DocumentActionsBar {...barProps} share={null} threads={null} />}
       </header>
-      <div className={clsx(view.fullWidth.on ? PAGE_SHEET_WIDE_CLASS : PAGE_SHEET_CLASS,
-        view.fullWidth.on && '[&_[data-reading-column]]:max-w-none')}>
-        <div className="mb-6">
-          <PageHeading project={project} document={document} state={state} markdown={markdown} titleRef={titleRef}
-            selectOnOpen={opening === 'title'} />
-        </div>
-        <AssistantDiffOnCanvas projectId={project.project_id} document={document} state={state} />
-        {canEdit ? (
-          <DocumentCoachingNotice documentType={document.document_type} title={document.title}
-            hasContent={document.content.trim() !== ''} />
-        ) : null}
-        <PageText project={project} document={document} documents={documents} state={state} markdown={markdown}
-          view={view} autoFocus={opening === 'text'} onSelectDoc={onSelectDoc} />
+      <div className={sheetClass(view.fullWidth.on)}>
+        {viewed === null ? null : (
+          <OlderVersion projectId={project.project_id} document={document} viewed={viewed} canRestore={state.editable}
+            showOutline={view.outline.on} onRestored={state.selectDoc} onBack={backToLatest} />
+        )}
+        {/* The page's own version: out of sight while an older one shows, never unmounted (its draft, its comments). */}
+        <OwnVersion hidden={viewed !== null} project={project} document={document} documents={documents} canEdit={canEdit}
+          state={state} markdown={markdown} view={view} opening={opening} titleRef={titleRef} onSelectDoc={onSelectDoc}
+          onActions={setReviewActions} />
       </div>
     </div>
   )

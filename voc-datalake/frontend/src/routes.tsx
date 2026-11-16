@@ -128,7 +128,9 @@ export const routes: RouteObject[] = [
       { path: 'radar', ...page(<Radar />) },
       { path: 'chat', ...page(<Chat />) },
       { path: 'projects', ...page(<Projects />) },
-      { path: 'projects/:id', ...page(<ProjectDetail />) },
+      // A project: its tabs, a document, an older version and full screen are paths the page reads itself
+      // (pages/ProjectDetail/projectPaths.ts: /projects/:id/documents/:docId/v/:n/focus); an old ?tab= link is replaced.
+      { path: 'projects/:id/*', ...page(<ProjectDetail />) },
       { path: 'prioritization', ...page(<Prioritization />) },
       { path: 'data-explorer', ...page(<AdminRoute><DataExplorer /></AdminRoute>) },
       { path: 'scrapers', ...page(<Scrapers />) },

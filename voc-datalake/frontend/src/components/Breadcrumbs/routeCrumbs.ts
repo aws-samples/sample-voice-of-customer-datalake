@@ -117,6 +117,16 @@ export interface Crumb {
 }
 
 /**
+ * The segments of `pathname` the trail shows. A project page's tab, document, older version and full screen
+ * (`/projects/<id>/documents/<docId>/v/<n>/focus`, pages/ProjectDetail/projectPaths.ts) are places inside the page,
+ * which its tabs and toolbar show: the trail ends at the project.
+ */
+export function trailSegments(pathname: string): string[] {
+  const segments = pathname.split('/').filter(Boolean)
+  return segments[0] === 'projects' && segments.length > 2 ? segments.slice(0, 2) : segments
+}
+
+/**
  * The trail for one pathname, Home first.
  *
  * @param pathSegments non-empty path segments of the current location

@@ -54,6 +54,7 @@ const REGISTERED: Readonly<Record<string, string>> = {
 const EXEMPT: Readonly<Record<string, string>> = {
   CategoryGeneratePanel: 'Generate categories sits at the top of the Categories tab, above the list (saves are automatic)',
   PrototypeRenderer: 'the submit lives inside the sandboxed prototype preview, not the app page',
+  DocumentToolbar: 'Share is the document page\'s toolbar action (it opens the review link dialog), not a form\'s save row',
   GoHomeLink: 'error-state navigation link, centred in the page',
   AddMemberForm: 'Members → Add a member: a one-line add form (email, role, Add) above the list, nothing left unsaved',
   CreateWorkspaceForm: 'Administration → Workspaces: a two-field create form above the list, nothing left unsaved',

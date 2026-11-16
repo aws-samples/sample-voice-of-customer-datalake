@@ -20,7 +20,7 @@ export function renderProjectDetailPage(url = '/projects/proj-1') {
     <QueryClientProvider client={createQueryClient()}>
       <MemoryRouter initialEntries={[url]}>
         <Routes>
-          <Route path="/projects/:id" element={<ProjectDetail />} />
+          <Route path="/projects/:id/*" element={<ProjectDetail />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,

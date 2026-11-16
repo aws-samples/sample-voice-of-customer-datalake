@@ -34,7 +34,7 @@ import { useUnsavedChangesGuard } from '../../UnsavedChangesGuard/useUnsavedChan
 import { ignoreRejection } from '../../../lib/rejections'
 import { noCleanup } from '../../../hooks/noCleanup'
 import { isEditedElsewhere, isRenamedInPlace } from './documentKinds'
-import { onlyFocusViewChanged } from '../page/focusView'
+import { onlyDocumentViewChanged } from '../../../pages/ProjectDetail/useProjectPlace'
 import type { CanvasEditorHandle } from '../editor/CanvasEditor'
 import type { DocumentConflict } from './ConflictBanner'
 import type { DocumentEdits } from '../../../pages/ProjectDetail/useDocumentSave'
@@ -381,10 +381,10 @@ export function useCanvasDocument({ project, document, onSelectDoc }: CanvasDocu
     handleRef.current?.setMarkdown(next.content)
   }, [clearConflict, document, setBaseline, setDraft, setTitle])
 
-  // Entering or leaving the focus view keeps this page and its draft: never a leave.
+  // Entering or leaving the focus view, or reading an older version, keeps this page and its draft: never a leave.
   const shouldBlock = useCallback(
     (current: Location, next: Location) =>
-      dirtyRef.current && pathOrQueryChanged(current, next) && !onlyFocusViewChanged(current, next),
+      dirtyRef.current && pathOrQueryChanged(current, next) && !onlyDocumentViewChanged(current, next),
     [],
   )
   const guard = useUnsavedChangesGuard({
