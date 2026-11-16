@@ -26,6 +26,7 @@ from botocore.exceptions import (
 
 import agents_handler
 from engineering.test.run_fixture import LambdaClient
+from shared import engineering_agent_runs as eng_runs
 from shared.test.test_workflow_engineering import bug_fix
 
 PATH = '/agents/engineering/runs'
@@ -94,7 +95,7 @@ def test_an_admin_starts_a_saved_flow_with_its_stored_budget_as_themselves(lambd
     stored = json.loads(sent.pop('flow_definition'))
     assert (stored['schema'], [node['id'] for node in stored['nodes']], stored['budget']) == (
         'voc-workflow/2', [node['id'] for node in bug_fix()['nodes']], {'monthly_usd': 49.99})
-    assert sent == {'action': 'start_run', 'run_id': sent['run_id'], 'max_tasks': agents_handler.RUN_TASK_CAP,
+    assert sent == {'action': 'start_run', 'run_id': sent['run_id'], 'max_tasks': eng_runs.RUN_TASK_CAP,
                     'flow': workflow_id, 'flow_revision': 1, 'budget_usd': 49.99, 'connection': 'conn-1',
                     'commit': COMMIT, 'language': 'python', 'goal': 'Fix the paging bugs', 'actor': 'admin-sub',
                     'repo': 'example-org/shop', 'default_branch': 'main', 'max_cost_usd': 50.0, 'max_tokens': 10_000_000}
@@ -419,5 +420,5 @@ def test_an_answer_for_another_run_is_503_naming_the_run(lambda_context: Any, st
 def test_the_start_client_waits_under_api_gateways_limit_and_never_retries() -> None:
     config = agents_handler._start_client().meta.config
     assert (config.read_timeout, config.retries['total_max_attempts']) == (
-        agents_handler.START_READ_TIMEOUT_SECONDS, 1)
-    assert agents_handler.START_READ_TIMEOUT_SECONDS < 29
+        eng_runs.START_READ_TIMEOUT_SECONDS, 1)
+    assert eng_runs.START_READ_TIMEOUT_SECONDS < 29

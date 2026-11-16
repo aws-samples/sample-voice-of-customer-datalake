@@ -52,6 +52,12 @@ class HostRouter:
     def repository(self, connection_id: str) -> str:
         return self._host(connection_id).repository(connection_id)
 
+    def head_commit(self, connection_id: str, branch: str) -> str | None:
+        return self._host(connection_id).head_commit(connection_id, branch)
+
+    def issue_state(self, connection_id: str, number: int) -> str | None:
+        return self._host(connection_id).issue_state(connection_id, number)
+
     def post_comment(self, connection_id: str, on: CommentTarget, number: int, body: str) -> str:
         return self._host(connection_id).post_comment(connection_id, on, number, body)
 

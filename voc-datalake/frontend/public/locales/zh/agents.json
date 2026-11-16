@@ -13,7 +13,9 @@
   },
   "scope": {
     "all": "所有分类",
-    "some": "关注：{{list}}"
+    "some": "关注：{{list}}",
+    "sources": "仅限这些来源",
+    "sourcesHint": "不勾选则关注所有来源。阈值触发器会统计所有来源，因此指定来源时不提供该触发器。"
   },
   "views": {
     "label": "智能体页面分区",
@@ -88,7 +90,8 @@
     "visibilityHint": "私有项目仅对其所有者、成员和管理员可见。",
     "workflow": "工作流",
     "workflowDefault": "评论 → 原型（内置）",
-    "workflowHint": "在“工作流”选项卡中编辑步骤。"
+    "workflowHint": "在“工作流”选项卡中编辑步骤。",
+    "engineeringInstructionsHint": "它们是每次运行目标的开头（最多 {{n, number}} 个字符）。切勿在此粘贴评价或 Issue 的正文。"
   },
   "visibility": {
     "private": "私有",
@@ -135,12 +138,14 @@
     "kinds": {
       "new_reviews": "新评论",
       "schedule": "定时",
-      "threshold": "阈值"
+      "threshold": "阈值",
+      "github_issue": "GitHub Issue"
     },
     "kindHints": {
       "new_reviews": "自上次运行以来，范围内新增反馈足够多时运行。",
       "schedule": "按固定计划运行。",
-      "threshold": "当某分类或子分类在时间范围内的评论数达到阈值时运行。"
+      "threshold": "当某分类或子分类在时间范围内的评论数达到阈值时运行。",
+      "github_issue": "针对其代码仓库中、由数据湖采集并归类为其类型的未关闭 Issue 运行。"
     },
     "everyOptions": {
       "12h": "12 小时",
@@ -150,7 +155,15 @@
     "perOptions": {
       "category": "分类",
       "subcategory": "子分类"
-    }
+    },
+    "engineeringHint": "唤醒工程智能体的条件。一次只运行一个，同一个 Issue 绝不会运行两次。",
+    "thresholdWithSources": "阈值会统计所有来源：请删除它，或在“设置”选项卡中清空来源。",
+    "label": "标签",
+    "labelHint": "在公开代码仓库中，只有带有此标签（由维护者添加）的 Issue 才会启动运行。",
+    "lookbackDays": "回溯天数",
+    "lookbackHint": "最近这些天内采集的 Issue。在此之后添加的标签会被错过。",
+    "trustedAuthors": "也包括代码仓库所有者、成员和协作者创建的 Issue",
+    "trustedAuthorsHint": "仅适用于私有代码仓库：公开代码仓库始终需要标签。"
   },
   "personas": {
     "fixed": "固定用户画像（{{n, number}}/{{max, number}}）",
@@ -185,7 +198,9 @@
     "callsPerRun": "每次运行的模型调用次数",
     "monthlyCap": "每月模型调用上限",
     "monthlyCapHint": "当月调用次数达到此上限后，智能体将不再启动运行。",
-    "uncapped": "无每月上限"
+    "uncapped": "无每月上限",
+    "engineeringRunsPerDayHint": "由触发器启动的运行每天最多 {{n, number}} 次。“立即运行”不计入。",
+    "engineeringSpend": "其运行的花费受工作流的月度预算（在设置中设定）和部署的运行上限约束；该智能体的运行始终启用硬性上限。"
   },
   "run": {
     "hint": "每次运行都遵循工作流。图中会高亮正在运行的步骤；它仅用于查看，不可控制。",
@@ -210,8 +225,8 @@
     "hideTechnical": "隐藏技术日志",
     "summary": {
       "title": "发生了什么",
-      "started": { "manual": "手动启动。", "schedule": "按计划启动。", "new_reviews": "因收到新评论而启动。", "threshold": "因超过阈值而启动。" },
-      "startedAt": { "manual": "于 {{when}} 手动启动。", "schedule": "于 {{when}} 按计划启动。", "new_reviews": "因收到新评论于 {{when}} 启动。", "threshold": "因超过阈值于 {{when}} 启动。" },
+      "started": { "manual": "手动启动。", "schedule": "按计划启动。", "new_reviews": "因收到新评论而启动。", "threshold": "因超过阈值而启动。", "github_issue": "由 GitHub Issue 启动。" },
+      "startedAt": { "manual": "于 {{when}} 手动启动。", "schedule": "于 {{when}} 按计划启动。", "new_reviews": "因收到新评论于 {{when}} 启动。", "threshold": "因超过阈值于 {{when}} 启动。", "github_issue": "于 {{when}} 由 GitHub Issue 启动。" },
       "outcome": { "queued": "等待启动。", "running": "正在处理。", "runningStep": "正在处理“{{step}}”。", "completed": "已完成。", "completedAt": "于 {{when}} 完成。", "cancelled": "已取消。", "cancelledAt": "于 {{when}} 取消。", "failed": "未完成即停止。", "failedBecause": "未完成即停止：{{reason}}", "needs_human": "已暂停：需要您做决定。" },
       "produced": "产出内容",
       "producedNothing": "暂无。",
@@ -241,7 +256,8 @@
       "manual": "手动",
       "schedule": "定时",
       "new_reviews": "新评论",
-      "threshold": "阈值"
+      "threshold": "阈值",
+      "github_issue": "GitHub Issue"
     },
     "stepStatus": {
       "idle": "未开始",
@@ -257,6 +273,21 @@
       "verdict": "结论",
       "decision": "决策",
       "artifact": "产出物"
+    },
+    "engineeringConfirmBug": "智能体会在其代码仓库中启动一次工程运行：在自己的分支上工作，并停在一个草稿拉取请求。填写 Issue 编号以修复该 Issue（即使之前运行过），留空则查找缺陷。",
+    "engineeringConfirmFeature": "智能体会根据一个 Issue 在其代码仓库中启动一次工程运行：在自己的分支上构建该功能，并停在一个草稿拉取请求。要基于 PRD 构建，请打开该 PRD 并选择“基于此 PRD 构建”。",
+    "issueOptional": "Issue 编号（可选）",
+    "issueRequired": "Issue 编号",
+    "issueInvalid": "Issue 的编号：从 1 开始的整数。",
+    "issueHint": "智能体代码仓库中的一个 Issue。",
+    "engineering": {
+      "title": "工程运行",
+      "fromIssue": "由 {{repository}} 的 Issue #{{number}} 启动。",
+      "fromPrd": "由项目 {{project}} 的 PRD {{document}} 启动。",
+      "fromReviews": "由其范围内的 {{n, number}} 条报告启动。",
+      "fromNothing": "为在其代码仓库中查找缺陷而启动。",
+      "followHint": "请在运行监视器中跟踪并停止它：工程运行结束时，此运行也随之结束。",
+      "openMonitor": "打开运行监视器"
     }
   },
   "editor": {
@@ -1383,5 +1414,36 @@
       "name": "自我改进",
       "description": "教练阅读过往运行，提出新的技能版本并进行基准测试；由管理员逐一接受或拒绝。"
     }
+  },
+  "engineeringAgent": {
+    "deploymentFeedback": "基于部署的反馈运行。",
+    "setupTitle": "设置 {{name}}",
+    "setupDescription": "选择它工作的代码仓库连接、代码仓库的语言，以及其运行每月可花费的金额。之后它将被启用，并以你的身份运行。",
+    "connection": "代码仓库连接",
+    "connectionHint": "有 GitHub Issue 触发器时，只列出 GitHub 连接。",
+    "language": "语言",
+    "budget": "月度预算（美元）",
+    "budgetHint": "保存在其工作流中：其所有运行在一个自然月内可花费的金额。",
+    "budgetInvalid": "以美元和美分表示，从 0.01 到 100,000。",
+    "setupFailed": "无法设置该智能体。",
+    "saveAndEnable": "保存并启用",
+    "save": "保存",
+    "loadFailed": "无法读取该智能体的设置。",
+    "loading": "正在读取智能体的设置",
+    "runsAs": "以 {{name}} 的身份运行。",
+    "changeSetup": "更改设置",
+    "connectFirst": "请先连接一个代码仓库",
+    "setUp": "设置",
+    "whyNoConnection": "已停用：需要一个可工作的代码仓库连接。",
+    "whySetUp": "设置完成前处于停用状态：需要连接、语言和月度预算。"
+  },
+  "prdBuild": {
+    "button": "基于此 PRD 构建",
+    "started": "打开运行监视器",
+    "title": "基于此 PRD 构建？",
+    "message": "{{name}} 将启动一次工程运行，在自己的分支上构建此 PRD 描述的功能，并停在一个草稿拉取请求。",
+    "confirm": "开始构建",
+    "agent": "智能体",
+    "inputHint": "运行会以 ID 的形式获得此 PRD 作为输入。"
   }
 }

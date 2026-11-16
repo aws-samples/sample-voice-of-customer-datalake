@@ -377,7 +377,12 @@ loop (since 7.10.00, people's reactions on that pull request: [below](#peoples-r
   an optional `issue`, a whole number from 1 to 2,147,483,647 (`POST /agents/engineering/runs`, the flow page's Start
   a run): the start writes it to META's `issue` once, with the run, as `{host, number, url, verified: false}`, its
   address built from the stored connection's host and repository. It is recorded as given, labelled unverified: only
-  the broker holds the connection's credential, and the start reads nothing of the host.
+  the broker holds the connection's credential, and the start reads nothing of the host. Since 7.47.00 an engineering
+  agent's start reads it through the broker's `head` (voc-engineering-start's one broker operation, read only): an
+  open issue of the repository is recorded `verified: true`; a closed one, or a number the repository has no issue for
+  (a pull request's included), refuses the start before anything is written. The broker serves that issue to the run
+  (`records.py` `issue_number`): its understander comments on it alone, and its pull request's body names it, `Fixes
+  #N` (GitLab: `Closes #N`) added when the body does not reference `#N` (`broker.py` `closing_body`).
 - **Shown**: the run overview (`GET /agents/engineering/<run_id>`) answers `run.issue` and `run.pull_request` (null for
   none), each read back only when its address passes the same check; the run monitor links them, opened in a new tab
   with `rel="noopener noreferrer"`, only when the address is https on the record's host's own domain under the run's
@@ -1417,10 +1422,33 @@ the body, else from the message), and keeps Start off, so nobody starts a second
 after the request was sent (a 504, a 5xx with no reason of the server's own, a network failure, an answer that cannot
 be read) keeps Start off too, says the run may have been started, and links to the flow's runs (Agents → Spend grouped
 by run for the flow, the one place runs are listed, where a run shows once it has used something). Such a run launches its coordinator and reaches the repository through its stored connection (a start on a connection
-that is not stored is refused, 400: [Repository connectors](#repository-connectors), "The connections"). *Planned*: the rest of this paragraph. A bug hunt is started by an administrator (Run now, or the agent's schedule, which only an
-administrator sets or changes, checked when the agent is saved and again when the run starts), scoped to packages; in a hunt the understander writes its problem statement on the board's task, not on the host. On a public
-repository, a flow that starts from someone's text starts only from an issue or pull request a maintainer labelled
-for it. A pull request from a fork is only ever reviewed (comments), never fixed or pushed to.
+that is not stored is refused, 400: [Repository connectors](#repository-connectors), "The connections").
+
+*Built* (7.47.00, [engineering agents](autonomous-agents.md#engineering-agents)): a run is also started by an
+engineering agent (an agent with `engineering` settings: the seeded **Bug fixer** and **Feature builder**), from its
+trigger (the agents' heartbeat) or an administrator's Run now, through the same start function and the shared request
+builder (`lambda/shared/engineering_agent_runs.py`): the agent's flow as stored now, its stored connection's repository
+and default branch, the deployment's caps, the flow's budget (required) with the hard cap forced on (`hard_cap`: capped
+at what is left of the flow's month even with the administrators' hard cap off), and, as its actor, the administrator
+who enabled the agent (a Run now: the one who pressed it), re-checked in Cognito before each start. Its commit is
+resolved by the start (`resolve_commit`, `commit` empty): the head of the connection's stored default branch, read
+through the broker's `head` (its function URL, as the start function's own role, admitted for that operation alone:
+`connectors/identity.py`), which also confirms the issue the run starts from (`issue.verified` true on META; an issue
+the repository does not have, or has closed, refuses the start before anything is written). Where it came from is
+recorded (D4): `via {agent_id, agent_run_id, trigger}` on its first `RUNLOG#` row, and on META the reviews it starts from
+as ids only (`feedback {ids (at most 50), count, category}`) or the PRD (`prd {project_id, document_id}`); each is
+checked before anything is written. Its goal is trusted text only: the agent's instructions (at most 300 characters)
+and one sentence of numbers and names ("Fix the bug reported in issue #7 of owner/name."), credential-shaped text
+redacted, never the issue's or a review's text; its agents read the issue's thread through the broker, and its pull
+request's body names the issue so the merge closes it (`Fixes #N`, GitLab `Closes #N`, added when the body does not
+reference it: `connectors/broker.py` `closing_body`), and its understander comments on that issue alone. A PRD's own
+text does not reach the run yet (only its ids, in the goal and on META); *Planned*: the trusted code that hands the
+builder the PRD with its customer quotes replaced by their feedback ids. On a public repository (a connection that
+does not say `repository_private`, 7.45.00), a flow that starts from someone's text starts only from an issue a
+maintainer labelled for it: an engineering agent's `github_issue` trigger needs its label there, and starts one run
+per issue, ever (`ISSUE_RUN#` claims, docs/autonomous-agents.md). *Planned*: a bug hunt scoped to packages; in a hunt
+the understander writes its problem statement on the board's task, not on the host. A pull request from a fork is only
+ever reviewed (comments), never fixed or pushed to.
 
 ### The flow a run follows
 

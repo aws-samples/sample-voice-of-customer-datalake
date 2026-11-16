@@ -101,7 +101,9 @@ The API Lambda answers a model-backed route 202 + `job_id` and async-invokes its
 Not behind API Gateway (Processing stack), memory + agents: `voc-memory-scanner`
 (15 min) → SQS `voc-memory-extract` (+DLQ) → `voc-memory-extractor` (a workspace's sessions and imports
 extracted in that workspace while it is active and the session's owner still writes there: docs/memory.md); `voc-memory-retention`
-(daily); `voc-agent-heartbeat` (15 min) → Step Functions `voc-agent-run` (24 h max). The state
+(daily); `voc-agent-heartbeat` (15 min) → Step Functions `voc-agent-run` (24 h max), or, for an engineering agent
+(7.47.00, with `-c engineeringAgents=true`), `voc-engineering-start` by name (its `github_issue`, `new_reviews`,
+`threshold` and `schedule` triggers; one run per GitHub issue, `ISSUE_RUN#` in voc-agents). The state
 machine is the runtime's own rendered definition (`lambda/agents/state_machine.asl.json`). It runs a
 conductor loop, `voc-agent-conductor` (init / advance / fail), dispatching each workflow node to
 `voc-agent-nodes`, or to `voc-agent-persona-panel` for `persona_review`. Handlers

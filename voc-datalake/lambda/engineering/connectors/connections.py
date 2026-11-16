@@ -434,12 +434,8 @@ def _row(table: Any, connection_id: str) -> dict[str, Any] | None:
     except (ClientError, BotoCoreError) as exc:
         raise ConnectionRefused('unavailable', 'the connection could not be read: retry') from exc
 
-
-def stored_connection(table: Any, connection_id: str) -> dict[str, Any] | None:
-    """A stored connection as the API answers it (None for none, or a removed one): a run's start reads its
-    repository."""
-    item = _row(table, check_connection_id(connection_id))
-    return None if item is None or item.get('removed') is True else view(item)
+# (a run's start reads a stored connection's row through shared/engineering_agent_runs.py connection_row since
+# 7.47.00, so the agents' heartbeat, which ships without this package, reads it the same way)
 
 
 def _canceled(error: ClientError) -> bool:

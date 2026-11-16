@@ -100,6 +100,25 @@ def test_the_run_is_its_meta_and_its_stored_default_branch_with_nothing_of_the_h
     assert run.bot_addresses == (AUTHOR,)
 
 
+def test_the_issue_a_run_starts_from_is_the_one_its_agents_comment_on(stores: tuple[Any, Any]) -> None:
+    # (7.47.00: META's issue, its own repository's only, as run_links.issue_of reads it)
+    client, s3 = stores
+    item = {'pk': {'S': PK}, 'sk': {'S': 'META'}, 'run_id': {'S': RUN}, 'status': {'S': 'active'},
+            'connection': {'S': 'conn-1'}, 'repo': {'S': 'example-org/refund-service'},
+            'issue': {'M': {'host': {'S': 'gitlab'}, 'number': {'N': '9'}, 'verified': {'BOOL': True},
+                            'url': {'S': 'https://gitlab.com/example-org/refund-service/-/issues/9'}}}}
+    client.put_item(TableName=TABLE, Item=item)
+    run = ledger(client, s3).run(RUN)
+    assert run is not None
+    assert (run.issue_number, run.issue_host) == (9, 'gitlab')
+    # An issue of another repository is none: never one its agents may comment on.
+    item['repo'] = {'S': 'example-org/other'}
+    client.put_item(TableName=TABLE, Item=item)
+    other = ledger(client, s3).run(RUN)
+    assert other is not None
+    assert (other.issue_number, other.issue_host) == (None, '')
+
+
 def test_a_run_started_before_7_03_01_has_no_stored_default_branch(stores: tuple[Any, Any]) -> None:
     client, s3 = stores
     meta(client)

@@ -287,6 +287,9 @@ class RunRecord:
     #: META's ``default_branch``: the stored connection's at the start ('' for a run started before 7.03.01).
     stored_default_branch: str = ''
     ci_attestation: int = 0
+    #: The host kind of the run's issue (META's ``issue``: ``github`` or ``gitlab``; '' for none), which says how its
+    #: pull request names it (``Fixes #N`` / ``Closes #N``: broker.py ``closing_body``).
+    issue_host: str = ''
 
 
 @dataclass(frozen=True)
@@ -442,6 +445,15 @@ class RepositoryHost(Protocol):
 
     def repository(self, connection_id: str) -> str:
         """The repository (``owner/name``) the connection's stored credential is for."""
+        ...
+
+    def head_commit(self, connection_id: str, branch: str) -> str | None:
+        """The head commit of ``branch`` (7.47.00, the start's ``head``), None when the repository has no such branch."""
+        ...
+
+    def issue_state(self, connection_id: str, number: int) -> str | None:
+        """Issue ``number``'s state (``open`` or ``closed``; 7.47.00), None when the repository has no such issue (a
+        pull or merge request's number included)."""
         ...
 
     def post_comment(self, connection_id: str, on: CommentTarget, number: int, body: str) -> str: ...

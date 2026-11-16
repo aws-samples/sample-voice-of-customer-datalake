@@ -21,7 +21,10 @@ its caller never heard back from answers the first outcome and is never made twi
 unknown (``OutcomeUnknown``, 502), and the write is not made again for that attempt.
 
 A pull request is always a draft: the host opens one as a draft, an update changes only its title and body, and
-there is no operation that marks one ready or merges it, in any mode. Since 7.09.00, a pull request the host answered
+there is no operation that marks one ready or merges it, in any mode. Since 7.47.00 a run started from an issue (META's
+``issue``) comments on that issue alone, and its pull request's body names it, ``Fixes #N`` (GitLab: ``Closes #N``)
+added when the agent's body does not reference it (``closing_body``); and voc-engineering-start reads a connection's
+default branch's head and an issue's state (``head``, its operation alone) for a start that resolves its commit. Since 7.09.00, a pull request the host answered
 an open or an update with is kept on the run's record (``_keep_pull_request``, ``engineering/run_links.py``): its host,
 number, URL and branches, only when it is the run's own repository's from the run's branch, keyed on that branch (a
 new number on it, after a person closed the draft, replaces the old one, which is kept as superseded; another branch
@@ -41,6 +44,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import replace
 from typing import Final
@@ -75,6 +79,7 @@ from engineering.connectors.identity import (
     PUSH_BUNDLE,
     READ,
     RUNTIME_ROLE,
+    START_ROLE,
     Caller,
     agent_id,
 )
@@ -306,8 +311,8 @@ class Broker:
             raise NotNow("The board holds no GO for the branch's tree.")
 
         def open_draft() -> dict[str, object]:
-            ref = connector.host.open_or_update_draft_pr(run.connection_id, branch, run.default_branch, title, body,
-                                                         tree_hash)
+            ref = connector.host.open_or_update_draft_pr(run.connection_id, branch, run.default_branch, title,
+                                                         closing_body(body, run), tree_hash)
             _wrote(caller, OPEN_OR_UPDATE_DRAFT_PR, run, branch=branch, tree_hash=tree_hash, number=ref.number)
             # (the host answered with it, so it stands: kept on the run's record; an answer that never came, an
             # outcome unknown, records nothing, and the next open or update finds it by its branch)
@@ -352,8 +357,45 @@ class Broker:
             'kept': len(found.items), 'outsiders': found.dropped.outsiders, 'bots': found.dropped.bots})
         return found
 
+    def head(self, caller: Caller, connection_id: str, repository: str, branch: str,
+             issue: int | None = None) -> dict[str, object]:
+        """The head commit of a connection's stored default ``branch`` and, with an ``issue``, its state on the host
+        (7.47.00): voc-engineering-start's operation alone (an agent's or the runtime's session is ``NotPermitted``),
+        for a start that resolves its commit before its run is written. The connection's credential must name
+        ``repository`` (its stored row's, which the start copies onto the run) and the repository must have the branch
+        (``StoredBranchMissing`` otherwise). Reads only."""
+        if caller.role != START_ROLE:
+            raise NotPermitted(f'The {caller.role} role may not read a branch head.')
+        if self._connector is None:
+            raise NoConnection(NO_CONNECTION)
+        host = self._connector.host
+        if host.repository(connection_id) != repository:
+            raise NotNow(START_OTHER_REPOSITORY)
+        commit = host.head_commit(connection_id, host.default_branch(connection_id, branch))
+        if commit is None:
+            raise NotNow(NO_BRANCH)
+        found = None if issue is None else {'number': issue, 'state': host.issue_state(connection_id, issue)}
+        logger.info('broker read a head', extra={'connection_id': connection_id, 'issue': issue,
+                                                 'issue_state': None if found is None else found['state']})
+        return {'commit': commit, 'issue': found}
+
 
 NOT_ENDED: Final = "The run has not ended; its pull request's reactions are read once it has."
+#: How each host's pull (merge) request closes the issue it fixes once merged (7.47.00).
+CLOSING_KEYWORDS: Final[Mapping[str, str]] = {'github': 'Fixes', 'gitlab': 'Closes'}
+START_OTHER_REPOSITORY: Final = ("The connection's credential names another repository than its stored row; an "
+                                 'administrator saves the connection again.')
+NO_BRANCH: Final = "The connection's default branch has no head on the repository."
+
+
+def closing_body(body: str, run: RunRecord) -> str:
+    """A run's pull request body, naming the issue it starts from (7.47.00): ``Fixes #N`` (GitLab: ``Closes #N``)
+    added on its own line when the body does not already reference ``#N``; the body as given for a run with no
+    issue. Trusted text (a number), added after the write rules read what the agent wrote."""
+    number = run.issue_number
+    if number is None or re.search(rf'(?<![\w/#])#{number}(?!\d)', body):
+        return body
+    return f'{body.rstrip()}\n\n{CLOSING_KEYWORDS.get(run.issue_host, "Fixes")} #{number}'
 
 
 #: Why a pull request the host answered with is not kept on the run's record (logged, never said to the agent: the

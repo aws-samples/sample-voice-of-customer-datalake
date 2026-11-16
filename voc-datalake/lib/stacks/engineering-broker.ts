@@ -217,6 +217,17 @@ export class EngineeringBroker extends Construct {
     this.brokerFunction.addEnvironment('ENGINEERING_RUNTIME_ROLE_NAME', role.roleName);
     this.brokerFunction.addEnvironment('ENGINEERING_RUNTIME_FUNCTION_NAME', functionName);
   }
+
+  /**
+   * Admit voc-engineering-start's role, in the session Lambda names after its function, for the `head` operation
+   * alone (7.47.00; lambda/engineering/connectors/identity.py runtime_caller_from_event with START_ROLE): a start
+   * that resolves its commit reads its connection's default branch's head and its issue's state, read only. The
+   * caller still needs its own IAM grant on the function URL (engineering-start.ts).
+   */
+  public admitStart(role: iam.IRole, functionName: string): void {
+    this.brokerFunction.addEnvironment('ENGINEERING_START_ROLE_NAME', role.roleName);
+    this.brokerFunction.addEnvironment('ENGINEERING_START_FUNCTION_NAME', functionName);
+  }
 }
 
 /** The connections' credentials as their readers name them: the parameters' path and every parameter's ARN. */

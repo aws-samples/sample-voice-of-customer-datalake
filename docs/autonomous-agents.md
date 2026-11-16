@@ -37,7 +37,7 @@ An agent's page has an **Enabled** switch and these tabs:
 A new agent is created **disabled** with its own editable copy of the "Reviews → Prototype" workflow. It never runs,
 and costs nothing, until an administrator enables it. **Run now** starts a run at once.
 
-## Default agent
+## Default agents
 
 Every deployment starts with one agent, **Autonomous Product** ("Turns recurring review problems into a PR/FAQ,
 PRD and prototype"). It is created the first time an admin opens the agents list (`GET /agents`; a non-admin
@@ -53,17 +53,108 @@ included, is `skipped` and gets nothing. Archiving the default agent never bring
 `state: failed`, so the next admin listing tries again; the listing itself still answers. A `seeding` claim
 older than 15 minutes counts as abandoned and is taken over. Code: `lambda/shared/agent_seed.py`.
 
+With the engineering agents module on (`-c engineeringAgents=true`; since 7.47.00) the same listing also seeds two
+[engineering agents](#engineering-agents), each under a marker of its own (`AGENTSEED#bug-fixer`,
+`AGENTSEED#feature-builder` / `META`, the same claim, states and stale-claim rule), so a deployment that has run for a
+while gets them once on upgrade. A marker is `skipped` when an active agent of that name already exists (one an admin
+made is never doubled); archiving or deleting a seeded one never brings it back. Without the module they are not
+seeded and the page does not mention them. Both are created **disabled**, with their own editable copy of their
+engineering flow (visible and editable in the Workflows tab like any workflow) carrying a starting monthly budget of
+$50 (the owner's; `SEEDED_MONTHLY_BUDGET_USD`, changed in Set up or in the flow):
+
+| Agent | Works on | Workflow | Triggers |
+|---|---|---|---|
+| **Bug fixer** | `feedback_type` `bug` | *Issue triage* (memory, classify, reproduce or locate) then *Bug hunt and fix*, to a draft pull request that says `Fixes #N` | `github_issue` (label `voc-agent`, issues classified as a bug), `new_reviews` (5 bug reports, 24 h cooldown); no schedule |
+| **Feature builder** | `feedback_type` `feature_request` | *Feature from an issue or a PRD*, to a draft pull request | `github_issue` (label `voc-agent`, issues classified as a feature request), `new_reviews` (10 feature requests, 24 h cooldown); and **Build from this PRD** on a project's PRD (a Run now with the PRD's ids) |
+
+Both run at most once a day by default, scope all reviews, no instructions, and need a repository connection and a
+language before they can be enabled (their card says so: **Set up**, or **Connect a repository first**).
+
+**To enable Bug fixer** (Feature builder alike, with feature requests):
+
+1. **Connect the repository** with the deployment's GitHub App: Agents → Connections, make the App and install it on
+   the repository ([A GitHub App in two clicks](autonomous-engineering.md#a-github-app-in-two-clicks-74500)). Each
+   installed repository becomes a connection whose row carries `repository_private` as GitHub says, which decides the
+   `github_issue` label rule below. A connection saved with a pasted token says nothing of it and is taken as public.
+2. **Attest its CI** on the connection (the broker serves no push or pull request until then).
+3. **Ingest its issues**: the [GitHub Issues source](github-issues.md#signing-in-with-a-github-app-74500),
+   deployment-wide, with the repository listed and **Sign in with** → GitHub App, that App, in place of a fine-grained
+   token (each run then reads with installation tokens of `{issues: read, metadata: read}` alone). A pasted token
+   still works.
+4. **Set up** on Bug fixer's card: the connection, the language and the monthly budget ($50 prefilled), then
+   **Enable**. It runs as you from then.
+5. **Label an issue** `voc-agent`. Once the source has ingested it, the next heartbeat (every 15 minutes) starts one
+   run on it. On a public repository the label is the only way in; on a private one (`repository_private`) the
+   trigger may also take a trusted author's issue (`trusted_authors`, off as seeded) or, with its label cleared, any
+   issue.
+
+## Engineering agents
+
+*Built* (7.47.00). An agent with `engineering` settings runs an engineering flow (`voc-workflow/2`) on a repository,
+through voc-engineering-start (docs/autonomous-engineering.md, "How a flow starts"), instead of the agents' runtime.
+Only where the module is on, and for administrators only: any other caller, a delegated credential included, never
+lists or reads one (404).
+
+- **Settings** (`engineering`, an editable field): `{connection, language, feedback_type}`. `connection` names a
+  stored, not removed repository connection (Agents → Connections), `language` one of the runtime's toolchains
+  (`python`, `node`, `rust`, `java`), `feedback_type` what the agent works on, `bug` (the default) or
+  `feature_request`. The connection and language may be empty while the agent is disabled; refused with 400 when the
+  module is off, the connection is not stored, or the language has no image. An engineering agent's workflow must be
+  an engineering flow, and an agents workflow's agent has no `engineering` settings (400 either way): the two kinds
+  of agent never mix their workflows.
+- **Enabling** needs the connection, the language and the flow's monthly budget (`budget.monthly_usd`, 400 "set the
+  agent up first" otherwise). The administrator who enables it is who it runs as from then (`owner_sub`,
+  `owner_username`; `owner_sub` is never set by hand on an engineering agent): their way of working is the dial its
+  pushes follow, and the heartbeat re-checks in Cognito before each start that they are still an enabled admin of the
+  same account (else the agent skips with `owner_not_admin`).
+- **Instructions** at most 300 characters: they become the trusted start of the run's goal, followed by one sentence
+  the server writes from numbers and names only ("Fix the bug reported in issue #7 of owner/name.", "Hunt the defects
+  behind 12 bug reports in all reviews.", "Build the feature the PRD … of project … describes."); never an issue's or a
+  review's text (the run's agents read the issue's thread through the broker). A goal over 500 characters is refused,
+  never cut.
+- **Budget**: runs per day 0-5 (default 1); what a run may spend is its flow's monthly budget, the hard cap forced on
+  every run of it (capped at what is left of the flow's month even with the administrators' hard cap off), and the
+  per-run caps ($50, 10 million tokens, 100 tasks by default).
+- **Runs**: one active run per agent, the lock held while the engineering run is live (active, or waiting for a person);
+  the heartbeat reads the engineering run's `META` and ends the agent's run when it ends (done → completed, failed,
+  stopped → cancelled), for a disabled agent too. The agent's run row has `kind: engineering`, its
+  `engineering_run_id` (the run monitor's), and what it started from (`issue`, `prd`, `feedback_count`). Cancelling it
+  from the agent's page answers 409: stop it from its run monitor. **Run now** (`POST /agents/{id}/run`, an
+  administrator acting for themselves) takes `{issue}` (rerun an issue, the only way to), `{prd: {project_id,
+  document_id}}` (a feature agent) or nothing (a bug agent's hunt); a feature agent needs one of the two. Its run's
+  actor is the administrator who pressed it.
+- **Only the deployment's feedback** starts a run (D8): the agents and their runs are the deployment's until agents move
+  per workspace ([3g3](multi-workspace.md#the-project-plan-phase-3)); the page lists them inside a workspace too and
+  says "Runs on the deployment's feedback".
+- The assistant's agent tools have no engineering field, and every agent write is an administrator's acting for
+  themselves, so no delegated credential sets or changes one.
+
 ## Triggers and budgets
 
 | Trigger | Fires when |
 |---|---|
-| `new_reviews` | ≥ `min_new` in-scope reviews since the agent's cursor, and `cooldown_hours` have passed |
+| `new_reviews` | ≥ `min_new` in-scope reviews since the agent's cursor, and `cooldown_hours` have passed; an engineering agent counts only those of its kind (`dimensions.feedback_type`) |
 | `schedule` | every 12 h / 24 h / cron, in the agent's timezone |
-| `threshold` | `count` reviews per category or subcategory within `window_days` (`METRIC#daily_subcategory#{cat}#{sub}` rows written by the aggregator) |
+| `threshold` | `count` reviews per category or subcategory within `window_days` (`METRIC#daily_subcategory#{cat}#{sub}` rows written by the aggregator); refused with `scope.sources` (its counters have no source); an engineering agent with none of its kind in the window skips (`no_bug_reports`, `no_feature_requests`) and its baseline moves on |
+| `github_issue` (7.47.00, engineering agents with a GitHub connection) | an open issue of the connection's repository, ingested by the [GitHub Issues connector](github-issues.md) within `lookback_days` (1-30, default 7), classified as the agent's kind and in scope, that may start a run (below); at most one such trigger per agent |
+
+`scope.sources` (7.47.00, any agent): the `source_platform` ids its reviews must come from, at most 20 (none: every
+source).
+
+**`github_issue`** (`agents/heartbeat/issues.py`): `{label, trusted_authors, lookback_days}`, label `voc-agent` by
+default. The heartbeat reads the deployment's `CHANNEL#issue` partition of the feedback table's channel index, items
+first ingested within the look-back, newest first, at most 500 a tick. On a **public** repository (a connection that
+does not say `repository_private`, 7.45.00) only an issue carrying the label starts a run: anyone may open an issue,
+only a maintainer labels one; the label is then mandatory (400 when empty). On a private repository the label, else,
+with `trusted_authors`, an issue by the repository's `OWNER`, a `MEMBER` or a `COLLABORATOR`, else (no label set) any
+issue. **One run per issue, ever**: the run takes the issue's claim (`ISSUE_RUN#default` / `<owner/name>#<n>`, for every
+agent) in its start's own transaction, so two ticks or two agents never start the same issue; a start refused later
+keeps the claim (it is never retried), and only an administrator's Run now `{issue}` reruns one. The oldest unclaimed
+issue starts first. A label added after the look-back has passed is missed: the item's time is its first ingest.
 
 The heartbeat (EventBridge every 15 minutes) evaluates triggers. Limits: one active run per agent, at most 2
-**scheduled** runs per agent per day, a per-run model-call cap (150 by default) and a monthly cap. **Run now** is
-unlimited and does not count against the daily limit.
+**scheduled** runs per agent per day (an engineering agent: 0-5, default 1), a per-run model-call cap (150 by default)
+and a monthly cap. **Run now** is unlimited and does not count against the daily limit.
 
 ## Workflows
 
@@ -142,10 +233,12 @@ start is capped at what is left of the month, or refused when nothing is. A flow
 `create_workflow` and `update_workflow` cards, which say it in dollars ("Monthly budget set to $80.00", "Monthly
 budget: $50.00 → $80.00", or removed) for the person approving it; a duplicate keeps its source's budget.
 
-The two kinds never mix: no agent runs an engineering flow (`POST`/`PUT /agents` refuse one), a saved workflow keeps
+The two kinds never mix in one run: an agents workflow's agent runs no engineering flow (`POST`/`PUT /agents` refuse
+one), and since 7.47.00 an [engineering agent](#engineering-agents) (one with `engineering` settings) runs only an
+engineering flow, through the engineering runtime, never the agents' one; a saved workflow keeps
 its kind (a save of the other kind over it is refused: save it as a new workflow), and the agents' runtime refuses a
 `voc-workflow/2` definition. `GET /workflows` lists both kinds, each with its `kind` (`agents` | `engineering`): the
-editor opens either, and an agent's workflow picker offers only `agents` ones. An engineering flow is a
+editor opens either, and an agent's workflow picker offers the agent's own kind only. An engineering flow is a
 definition, like any workflow: one already saved opens and saves in every deployment, a new one (`POST /workflows`: New, the
 editor's Save as, an imported draft saved as new; and the assistant's `…/duplicate`) is created only where the opt-in engineering module is on (409 elsewhere,
 on the server, whoever asks), and it runs only there. The library has **New workflow** (an agents workflow) and, only where the module is
@@ -416,7 +509,9 @@ decided) or the agent already has another active run. The run view carries `need
 | `RUN#{run_id}` | `MATE#{role}#{seq:06d}` | crewmate transcript |
 | `PLAN#{plan_id}` | `META` / `STEP#{step_id}` / `EVT#{seq:08d}` | approved assistant plan, its steps, its journal (`gsi1pk=PLANS#{approver_sub}`) — see "Plans" |
 | `PLANCAP#{approver_sub}` | `META` | `active`: the approver's plans holding one of the 3 active-plan slots — see "Plans" |
-| `AGENTSEED` | `META` | the default-agent marker (`state`, `agent_id`) — see "Default agent" |
+| `AGENTSEED` | `META` | the default-agent marker (`state`, `agent_id`) — see "Default agents" |
+| `AGENTSEED#bug-fixer`, `AGENTSEED#feature-builder` | `META` | the engineering agents' markers (7.47.00, the same shape) |
+| `ISSUE_RUN#default` | `<owner/name>#<n>` (lower case) | one GitHub issue's run, ever (7.47.00): `agent_id`, `agent_run_id`, `engineering_run_id`, `feedback_id`, `claimed_at`; create-only, written in the run's start transaction — see "Triggers and budgets" |
 
 Index: `gsi1-by-agents-listing`. Agents are archived, never deleted. The table (`createEncryptedTable` in
 `core-stack.ts`) is encrypted with the stack's customer-managed KMS key, has point-in-time recovery and is
@@ -513,7 +608,7 @@ approval). An approved plan that has not started within 24 h is `expired` — wr
 | Lambda | Stack | Trigger | Grants (exact) |
 |---|---|---|---|
 | `voc-agents-api` (`agents_handler.py`) | Api | `/agents`, `/agents/{proxy+}`, `/workflows`, `/workflows/{proxy+}` (Cognito) | agents Get/Put/Update/Query; aggregates Get/Query; StartExecution on voc-agent-run (agent runs and plans); Stop/DescribeExecution on its executions only |
-| `voc-agent-heartbeat` | Processing | EventBridge `rate(15 minutes)` | agents Get/Put/Update/Query; feedback Query; aggregates Get/Query; StartExecution |
+| `voc-agent-heartbeat` | Processing | EventBridge `rate(15 minutes)` | agents Get/Put/Update/Query (the hard cap's and the connections' partitions write-denied); feedback Query; aggregates Get/Query; StartExecution; with `-c engineeringAgents=true` (7.47.00, `lib/stacks/agent-heartbeat-engineering.ts`): invoke `voc-engineering-start` by unqualified name, voc-engineering GetItem on `WS#*#RUN#*` only, Cognito AdminGetUser + AdminListGroupsForUser on the user pool (the owner's re-check) |
 | `voc-agent-conductor` | Processing | voc-agent-run tasks | agents Get/Put/Update/Query; feedback Get/BatchGet/Query; aggregates Get/Query; jobs GetItem (plan waits); Cognito AdminGetUser + AdminListGroupsForUser on the user pool (plan approver re-check); raw `prototypes/*` read; SendMessage memory-extract; invoke `voc-projects-api` + `voc-memory-api` by unqualified name; Bedrock allowlist |
 | `voc-agent-persona-panel` | Processing | voc-agent-run Map | agents Get/Put/Update/Query; aggregates Get; raw `prototypes/*` read; invoke `voc-projects-api`; Bedrock allowlist |
 | `voc-plan-step` (Node.js, `lambda/stream/src/plan-step/handler.ts`) | Processing | voc-agent-run plan Map (invoked by the state machine, never by the conductor) | aggregates GetItem + Query; feedback read (think steps' `search_feedback`); KMS decrypt; Bedrock allowlist (InvokeModel + stream); invoke by unqualified name exactly the projects, metrics, feedback-form, settings, scrapers, memory, agents, integrations and feedback-edit API Lambdas (`PLAN_STEP_DELEGATES`; never the users API — user writes are card-only and think steps never get the directory); no table writes |

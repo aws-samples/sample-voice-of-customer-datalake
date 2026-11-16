@@ -13,8 +13,20 @@
       "reason": "a repository host's branch-protection state (engineering/connectors/hosts.py) and a workspace's status (shared/workspace_ids.py): equal words, separate lifecycles (7.35.00 merge)"
     },
     {
-      "key": "_CROCKFORD::lambda/engineering/bus/publish.py,lambda/shared/platform_workspaces.py",
-      "reason": "Crockford base32, the ULID alphabet, in the bus's message ids and the platform's workspace ids: a fixed standard each module spells privately; the bus ships in the engineering functions without the platform module (7.35.00 merge)"
+      "key": "CONNECTION_ID|CONNECTION_ID_RE::lambda/engineering/connectors/connections.py,lambda/shared/agents_store.py",
+      "reason": "a repository connection's id, the connections store's rule and an engineering agent's setting checked by shared/agents_store.py (7.47.00), which the agents' heartbeat imports and which cannot import engineering/ (its bundle is agents/ and shared/); held equal by shared/test/test_engineering_agent_runs.py"
+    },
+    {
+      "key": "CONNECTION_ROW_PREFIX|ROW_PREFIX::lambda/engineering/connectors/connections.py,lambda/shared/engineering_agent_runs.py",
+      "reason": "a connection row's sort key prefix: the connections store writes it, the shared run-start builder reads it for the agents' heartbeat, which ships without engineering/ (7.47.00); the plan's lockstep pin, shared/test/test_engineering_agent_runs.py"
+    },
+    {
+      "key": "GITHUB_WRITERS|TRUSTED_ASSOCIATIONS::lambda/agents/heartbeat/issues.py,lambda/engineering/connectors/reactions.py",
+      "reason": "GitHub's author associations of a repository's maintainers: the reactions read's trust filter (engineering/) and the github_issue trigger's trusted authors (the heartbeat, which ships without engineering/, 7.47.00); GitHub's own fixed list"
+    },
+    {
+      "key": "_CROCKFORD::lambda/engineering/bus/publish.py,lambda/shared/engineering_agent_runs.py,lambda/shared/platform_workspaces.py",
+      "reason": "Crockford base32, the ULID alphabet, in the bus's message ids, the platform's workspace ids and an engineering run's id the agents' heartbeat mints (7.47.00): a fixed standard each module spells privately; the bus ships in the engineering functions without the platform module (7.35.00 merge), and the heartbeat ships without engineering/ (its bundle is agents/ and shared/)"
     },
     {
       "key": "ACCESS_SK_PREFIX|SUBSCRIBER_SK_PREFIX|USER_PARTITION_PREFIX::*",

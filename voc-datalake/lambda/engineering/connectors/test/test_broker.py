@@ -472,9 +472,10 @@ def test_the_pr_author_opens_a_draft_against_the_default_branch_with_a_go() -> N
     broker, host = go_broker()
     ref = broker.open_or_update_draft_pr(caller('pr-author'), BRANCH, 'Fix the refund total', 'fb_0123abcd')
     assert ref == OPEN_PR
-    # The host gets the GO'd tree, and must verify the branch's head has it before opening or updating.
+    # The host gets the GO'd tree, and must verify the branch's head has it before opening or updating; the run's issue
+    # (#42) is named on its own line, so the merge closes it (7.47.00).
     assert host.calls[-1] == ('open_or_update_draft_pr', 'conn-1', BRANCH, 'main', 'Fix the refund total',
-                              'fb_0123abcd', TREE)
+                              'fb_0123abcd\n\nFixes #42', TREE)
 
 
 def test_no_pull_request_without_a_go_for_the_branchs_tree() -> None:

@@ -103,6 +103,18 @@ def _groups(username: str) -> set[str]:
     return {g['GroupName'] for g in page.get('Groups', []) if isinstance(g, dict) and isinstance(g.get('GroupName'), str)}
 
 
+def is_current_admin(sub: str, username: str) -> bool:
+    """Whether ``username`` is, in Cognito now, an enabled account of ``sub`` in ``admins``: the same re-check a plan's
+    approver gets, for an engineering agent's owner before each start (agents/heartbeat/engineering.py, 7.47.00).
+    False for an account that is gone, disabled or another person's; :class:`DirectoryUnavailable` when Cognito
+    cannot answer (closed)."""
+    try:
+        _require_current(username, sub)
+        return ADMIN_GROUP in _groups(username)
+    except ApproverRefused:
+        return False
+
+
 def _step_groups(username: str, *, needs_admin: bool, admin_if_current: bool) -> set[str]:
     """The approver's groups now. An ordinary step (no admin question) still runs when Cognito cannot
     list them, as before the e2e profile read them; it then simply runs without that profile."""

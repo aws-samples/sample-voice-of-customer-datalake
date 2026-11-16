@@ -31,10 +31,12 @@ code writes; the broker writes none of them:
 * the run's pull request (7.10.00, ``WriteClaims.pull_request``): for the runtime's reactions read only (its row and
   its author's done claims, ``run_links.run_pull_request``: a GetItem and one bounded Query of the run's writes).
 
-Not read: the run's issue (META's ``issue``), its pull request as the one an agent may comment on (7.09.00: recorded
-for the run monitor, the reports and the learning loop, not yet taken as that, so no comment is accepted), and the
-reviews behind its feedback ids (not recorded yet, so the write rules have no review text to
-compare: their personal-data checks still run).
+* the run's issue (META's ``issue``, since 7.47.00: ``run_links.issue_of``, its own repository's only): the one issue
+  its agents comment on (``issue_number``), and its host, which says how its pull request names it.
+
+Not read: its pull request as the one an agent may comment on (7.09.00: recorded for the run monitor, the reports and
+the learning loop, not yet taken as that, so no comment on it is accepted), and the reviews behind its feedback ids
+(not recorded yet, so the write rules have no review text to compare: their personal-data checks still run).
 """
 from __future__ import annotations
 
@@ -68,6 +70,7 @@ from engineering.run_links import (
     PULL_REQUEST_OP,
     PULL_REQUEST_SK,
     PullRequestLink,
+    issue_of,
     merged,
     run_pull_request,
     stored_link,
@@ -101,11 +104,14 @@ class RunRecords:
         status, connection = string_attr(item, 'status'), string_attr(item, 'connection')
         if status == ACTIVE and not connection:
             raise NoConnection(NO_CONNECTION)
+        # (7.47.00: the issue the run starts from, its own repository's only: the one issue its agents comment on)
+        issue = issue_of(item)
         return RunRecord(
             connection_id=connection, default_branch='', stored_default_branch=string_attr(item, 'default_branch'),
             status=status, ci_attested=False, cited_reviews=(), bot_addresses=(AUTHOR,),
             commit=string_attr(item, 'commit'), started_by=string_attr(item, 'started_by'),
-            repository=string_attr(item, 'repo'))
+            repository=string_attr(item, 'repo'), issue_number=None if issue is None else issue.number,
+            issue_host='' if issue is None else issue.host)
 
     def attested(self, run: RunRecord) -> RunRecord:
         if not (self._agents_table and run.connection_id and run.repository):

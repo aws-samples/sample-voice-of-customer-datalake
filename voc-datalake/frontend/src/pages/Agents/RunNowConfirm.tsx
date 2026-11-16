@@ -1,17 +1,23 @@
 /**
  * @fileoverview "Run now" asks first: a run calls the AI models and can take
  * many minutes, so the confirmation says what will run — the agent, its
- * workflow, the feedback in its scope and the run's model-call ceiling.
+ * workflow, the feedback in its scope and the run's model-call ceiling. An
+ * engineering agent's (7.47.00) starts an engineering run on its repository,
+ * optionally from an issue (a feature agent needs one: a PRD starts it from
+ * the PRD's page), which reruns that issue even when it has started a run.
  *
  * @module pages/Agents/RunNowConfirm
  */
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
+import { LabeledField } from '../../components/LabeledField/LabeledField'
 import { DEFAULT_WORKFLOW_ID, workflowsApi, workflowsKeys } from '../../api/workflowsApi'
 import { ScopeSummary } from './AgentBadges'
+import { typedIssue } from './startRunRules'
 import type { ReactNode } from 'react'
-import type { Agent } from '../../api/agentsApi'
+import type { Agent, RunNowBody } from '../../api/agentsApi'
 
 function Fact({ label, children }: Readonly<{ label: string; children: ReactNode }>) {
   return (
@@ -22,23 +28,54 @@ function Fact({ label, children }: Readonly<{ label: string; children: ReactNode
   )
 }
 
+/** The issue an engineering agent's run starts from (required for a feature agent). */
+function IssueField({ required, value, onChange }: Readonly<{ required: boolean; value: string; onChange: (value: string) => void }>) {
+  const { t } = useTranslation('agents')
+  const invalid = typedIssue(value) === undefined
+  return (
+    <div className="mt-3">
+      <LabeledField label={required ? t('run.issueRequired') : t('run.issueOptional')}
+        hint={invalid ? t('run.issueInvalid') : t('run.issueHint')} hintTone={invalid ? 'danger' : 'muted'}>
+        {(id) => (
+          <input id={id} className="input w-full" inputMode="numeric" autoComplete="off" value={value}
+            aria-invalid={invalid || undefined} aria-describedby={`${id}-hint`} onChange={(e) => onChange(e.target.value)} />
+        )}
+      </LabeledField>
+    </div>
+  )
+}
+
+/** The confirmation's question: an engineering agent's (bug or feature), else the model-call ceiling. */
+function useMessage(agent: Agent): string {
+  const { t } = useTranslation('agents')
+  if (agent.engineering === null) return t('run.confirmMessage', { calls: agent.budget.max_model_calls_per_run })
+  return agent.engineering.feedback_type === 'feature_request' ? t('run.engineeringConfirmFeature') : t('run.engineeringConfirmBug')
+}
+
 export function RunNowConfirm({ agent, starting, onConfirm, onCancel }: Readonly<{
-  agent: Agent; starting: boolean; onConfirm: () => void; onCancel: () => void
+  agent: Agent; starting: boolean; onConfirm: (body?: RunNowBody) => void; onCancel: () => void
 }>) {
   const { t } = useTranslation('agents')
   const workflowId = agent.workflow_id ?? DEFAULT_WORKFLOW_ID
+  const [issueText, setIssueText] = useState('')
   // The same cache entry the run detail and the Workflow tab read.
   const { data: workflow, isError } = useQuery({ queryKey: workflowsKeys.detail(workflowId), queryFn: () => workflowsApi.get(workflowId) })
+  const message = useMessage(agent)
+  const engineering = agent.engineering !== null
+  const feature = agent.engineering?.feedback_type === 'feature_request'
+  const issue = typedIssue(issueText)
+  const blocked = engineering && (issue === undefined || (feature && issue === null))
   return (
     <ConfirmModal
       isOpen
       title={t('run.confirmTitle')}
-      message={t('run.confirmMessage', { calls: agent.budget.max_model_calls_per_run })}
+      message={message}
       confirmLabel={t('run.confirmStart')}
       cancelLabel={t('common.cancel')}
       variant="info"
       isLoading={starting}
-      onConfirm={onConfirm}
+      confirmDisabled={blocked}
+      onConfirm={() => onConfirm(typeof issue === 'number' && engineering ? { issue } : undefined)}
       onCancel={onCancel}
     >
       <dl className="mt-3 space-y-1 text-sm">
@@ -46,6 +83,7 @@ export function RunNowConfirm({ agent, starting, onConfirm, onCancel }: Readonly
         <Fact label={t('run.confirmWorkflow')}>{workflow?.workflow.name ?? (isError ? workflowId : '…')}</Fact>
         <Fact label={t('run.confirmScope')}><ScopeSummary scope={agent.scope} /></Fact>
       </dl>
+      {engineering && <IssueField required={feature} value={issueText} onChange={setIssueText} />}
     </ConfirmModal>
   )
 }

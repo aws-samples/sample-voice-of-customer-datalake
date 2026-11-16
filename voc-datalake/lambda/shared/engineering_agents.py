@@ -14,6 +14,8 @@ ENGINEERING_AGENTS_ENV: Final = 'ENGINEERING_AGENTS'
 #: The GitHub Apps' token function's name (7.45.00, voc-engineering-app-tokens): the Agents API's, for an installation's
 #: read, and the github_issues ingestor's, for a deployment-wide run's sign-in with an App.
 APP_TOKENS_FUNCTION_ENV: Final = 'ENGINEERING_APP_TOKENS_FUNCTION'
+#: voc-engineering's name, where the module is on (the Agents API, the broker, the agents' heartbeat: 7.47.00).
+ENGINEERING_TABLE_ENV: Final = 'ENGINEERING_TABLE'
 
 
 def engineering_agents_on() -> bool:

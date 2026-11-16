@@ -68,9 +68,12 @@ NON_RESOLVER_HANDLERS = {
 
 ADMIN_ONLY: dict[str, frozenset[str]] = {
     'agents_handler.py': frozenset({
+        # An engineering agent's settings and its enable (7.47.00) ride on these: admins acting for themselves.
         'POST /agents', 'PUT /agents/<agent_id>', 'DELETE /agents/<agent_id>',
         'POST /agents/<agent_id>/enable', 'POST /agents/<agent_id>/disable',
-        # Run and cancel also admit a global-MCP write token whose admin minter still backs it.
+        # Run and cancel also admit a global-MCP write token whose admin minter still backs it; an engineering agent's
+        # Run now does not (7.47.00: require_admin_caller again, test_agents_engineering_agents.py), and its cancel is
+        # refused (stopped from its run monitor).
         'POST /agents/<agent_id>/run', 'POST /agents/<agent_id>/runs/<run_id>/cancel',
         # A human's decision on a needs_human run: admins only, never a delegated credential.
         'POST /agents/<agent_id>/runs/<run_id>/decision',

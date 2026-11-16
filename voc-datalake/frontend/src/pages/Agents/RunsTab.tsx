@@ -4,6 +4,9 @@
  * (with links into the project), Cancel, plus "Run now" for admins (it asks
  * first, RunNowConfirm). The graph
  * is deliberately not a control surface — only the explicit buttons act.
+ * An engineering agent's run (7.47.00) is followed on its run monitor: its
+ * row says what it started from and links there, and it is stopped there
+ * (the agent's run ends when its engineering run does), never cancelled here.
  *
  * @module pages/Agents/RunsTab
  */
@@ -27,7 +30,10 @@ import { RunNowConfirm } from './RunNowConfirm'
 import { RunSummaryCard } from './RunSummaryCard'
 import { useAgentMutations, useAgentRun, useAgentRuns, useRunEvents } from './useAgents'
 import { RunProjectsContext, useRunProjectName, useRunProjects } from './useRunProjects'
-import type { Agent, AgentRun, RunEvent } from '../../api/agentsApi'
+import { engineeringRunPagePath } from './workflowPaths'
+import { EngineeringStartError } from './EngineeringStartError'
+import { isEngineeringAgent } from '../../api/agentsApi'
+import type { Agent, AgentRun, RunEvent, RunNowBody } from '../../api/agentsApi'
 import type { WorkflowDefinition } from '../../api/workflowsApi'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import MethodologyGaps from '../../components/MethodologyGaps/MethodologyGaps'
@@ -35,6 +41,9 @@ import { failedReads, type FailedReads } from '../../utils/failedReads'
 
 /** When a run started, in the reader's language; "—" when unknown. */
 const when = (iso: string | null, language: string) => formatDateTime(iso, language, '—')
+
+/** A live run an admin cancels here: never an engineering agent's (its run monitor stops it). */
+const isCancellable = (run: AgentRun): boolean => isActiveRun(run) && run.kind !== 'engineering'
 
 /**
  * Why a failed run failed, when its summary does not already say: the last
@@ -122,6 +131,15 @@ function RunDetail({ agent, runId, canControl, technical, onToggleTechnical }: R
   const definition = workflow?.workflow.definition ?? null
   const runProjects = useRunProjects(run, events)
   if (run === undefined) return <div className="skeleton h-64" />
+  if (run.kind === 'engineering') {
+    return (
+      <div className="space-y-3">
+        <RunHeader agentId={agent.agent_id} run={run} currentRevision={workflow?.workflow.revision} canControl={canControl}
+          failureReason={null} />
+        <EngineeringRunFacts run={run} events={events} />
+      </div>
+    )
+  }
   return (
     <RunProjectsContext.Provider value={runProjects}>
       <div className="space-y-3">
@@ -131,6 +149,45 @@ function RunDetail({ agent, runId, canControl, technical, onToggleTechnical }: R
         <TechnicalLog run={run} events={events} definition={definition} open={technical} onToggle={onToggleTechnical} />
       </div>
     </RunProjectsContext.Provider>
+  )
+}
+
+/** What an engineering agent's run started from: an issue, a PRD, reports in its scope, or a bug hunt. */
+function useStartedFrom(run: AgentRun): string {
+  const { t } = useTranslation('agents')
+  if (run.issue !== null) return t('run.engineering.fromIssue', { number: run.issue.number, repository: run.issue.repository })
+  if (run.prd !== null) return t('run.engineering.fromPrd', { document: run.prd.document_id, project: run.prd.project_id })
+  if (run.feedback_count !== null && run.feedback_count > 0) return t('run.engineering.fromReviews', { n: run.feedback_count })
+  return t('run.engineering.fromNothing')
+}
+
+/** An engineering agent's run is followed, and stopped, on its run monitor. */
+function EngineeringMonitorLink({ run }: Readonly<{ run: AgentRun }>) {
+  const { t } = useTranslation('agents')
+  if (run.engineering_run_id === null) return null
+  return (
+    <Link className="btn btn-secondary btn-sm" to={engineeringRunPagePath(run.engineering_run_id)}>
+      {t('run.engineering.openMonitor')}
+    </Link>
+  )
+}
+
+/** What an engineering agent's run started from, where it is followed, and its own short journal. */
+function EngineeringRunFacts({ run, events }: Readonly<{ run: AgentRun; events: readonly RunEvent[] }>) {
+  const { t, i18n } = useTranslation('agents')
+  const from = useStartedFrom(run)
+  return (
+    <section className="card p-3 space-y-2" aria-label={t('run.engineering.title')}>
+      <p className="text-sm text-text">{from}</p>
+      <p className="text-[12px] text-muted">{t('run.engineering.followHint')}</p>
+      {events.length > 0 && (
+        <ol className="space-y-1 text-[12px] text-muted">
+          {events.map((event) => (
+            <li key={event.seq}><span className="font-mono">{formatTime(event.at, i18n.language)}</span> · {event.summary}</li>
+          ))}
+        </ol>
+      )}
+    </section>
   )
 }
 
@@ -181,7 +238,8 @@ function RunHeader({ agentId, run, currentRevision, canControl, failureReason }:
           <Link className="text-[12px] link" to={`/projects/${encodeURIComponent(run.project_id)}`}>{t('run.openNamedProject', { name: projectName(run.project_id) })}</Link>
         )}
         <span className="mr-auto" />
-        {canControl && isActiveRun(run) && (
+        <EngineeringMonitorLink run={run} />
+        {canControl && isCancellable(run) && (
           <button type="button" className="btn btn-danger btn-sm" disabled={cancelRun.isPending} onClick={() => cancelRun.mutate(run.run_id)}>
             <Square size={14} aria-hidden="true" /> {t('run.cancel')}
           </button>
@@ -233,7 +291,7 @@ function RunNowBar({ agent, isAdmin, hasActive, onStarted }: Readonly<{
   const { t } = useTranslation('agents')
   const { runNow } = useAgentMutations(agent.agent_id)
   const [confirming, setConfirming] = useState(false)
-  const startRun = () => runNow.mutate(undefined, {
+  const startRun = (body?: RunNowBody) => runNow.mutate(body, {
     onSuccess: (run) => onStarted(run.run_id),
     onSettled: () => setConfirming(false),
   })
@@ -249,11 +307,13 @@ function RunNowBar({ agent, isAdmin, hasActive, onStarted }: Readonly<{
           </button>
         )}
       </div>
-      {runNow.isError && (
-        <p role="alert" className="text-[12px] text-danger">
-          {apiErrorStatus(runNow.error) === 409 ? t('run.alreadyRunning') : t('run.startFailed')}
-        </p>
-      )}
+      {runNow.isError && (isEngineeringAgent(agent)
+        ? <EngineeringStartError error={runNow.error} />
+        : (
+          <p role="alert" className="text-[12px] text-danger">
+            {apiErrorStatus(runNow.error) === 409 ? t('run.alreadyRunning') : t('run.startFailed')}
+          </p>
+        ))}
       {confirming && (
         <RunNowConfirm agent={agent} starting={runNow.isPending} onConfirm={startRun} onCancel={() => setConfirming(false)} />
       )}

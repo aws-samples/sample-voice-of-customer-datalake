@@ -23,6 +23,7 @@ const LAMBDA = join(dirname(fileURLToPath(import.meta.url)), '../../../../..');
 const MCP_TOOLS = join(LAMBDA, 'shared/mcp_global_tools.py');
 const MCP_STEP_TOOLS = join(LAMBDA, 'shared/mcp_global_tools_steps.py');
 const AGENTS_HANDLER = join(LAMBDA, 'api/agents_handler.py');
+const ENGINEERING_AGENT_RUNS = join(LAMBDA, 'shared/engineering_agent_runs.py');
 const CAPS = join(LAMBDA, 'engineering/runtime/caps.py');
 const INTERFACE = join(LAMBDA, 'engineering/runtime/interface.py');
 const WORKFLOW_ENGINEERING = join(LAMBDA, 'shared/workflow_engineering.py');
@@ -32,6 +33,7 @@ const TEXT = {
   'shared/mcp_global_tools.py': readFileSync(MCP_TOOLS, 'utf8'),
   'shared/mcp_global_tools_steps.py': readFileSync(MCP_STEP_TOOLS, 'utf8'),
   'api/agents_handler.py': readFileSync(AGENTS_HANDLER, 'utf8'),
+  'shared/engineering_agent_runs.py': readFileSync(ENGINEERING_AGENT_RUNS, 'utf8'),
   'engineering/runtime/caps.py': readFileSync(CAPS, 'utf8'),
   'engineering/runtime/interface.py': readFileSync(INTERFACE, 'utf8'),
   'shared/workflow_engineering.py': readFileSync(WORKFLOW_ENGINEERING, 'utf8'),
@@ -112,7 +114,8 @@ describe('its arguments', () => {
   });
 
   it('keeps the goal within the server’s limit', () => {
-    const max = Number(/^MAX_RUN_GOAL = (\d+)$/m.exec(read('api/agents_handler.py'))?.[1]);
+    // (the Agents API's goal limit, its shared request builder's since 7.47.00)
+    const max = Number(/^MAX_RUN_GOAL: Final = (\d+)$/m.exec(read('shared/engineering_agent_runs.py'))?.[1]);
     expect(refreshGoal('a'.repeat(63)).length).toBeLessThanOrEqual(max);
   });
 });

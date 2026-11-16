@@ -27,6 +27,7 @@ switches the supervisor's schedule.
 from __future__ import annotations
 
 import math
+import re
 import secrets
 import time
 from collections.abc import Callable, Mapping
@@ -71,7 +72,7 @@ from engineering.spend import (
     month_of,
     release_alert,
 )
-from shared import workflow_schema
+from shared import agents_store, workflow_schema
 from shared.aws import consistent_item, is_conditional_check_failure
 from shared.dynamo_paging import iter_query
 from shared.ids import is_key_collision
@@ -213,14 +214,17 @@ def transaction_conflict(error: ClientError) -> bool:
     return any(reason.get('Code') == 'TransactionConflict' for reason in reasons)
 
 
-def _history(run_id: str, *, status: str, actor: str, now: int, reason: str = '') -> dict[str, Any]:
+def _history(run_id: str, *, status: str, actor: str, now: int, reason: str = '',
+             via: Mapping[str, str] | None = None) -> dict[str, Any]:
     """The change's own row (D4): a random suffix keeps two changes in one second apart, so a history write never
-    fails the change it records."""
+    fails the change it records. ``via``: an engineering agent's start, the agent, its run and its trigger."""
     at = _iso(now)
-    item = {'pk': run_pk(run_id), 'sk': f'RUNLOG#{at}#{status}#{secrets.token_hex(4)}', 'kind': 'run_status',
-            'status': status, 'actor': _actor(actor), 'at': at}
+    item: dict[str, Any] = {'pk': run_pk(run_id), 'sk': f'RUNLOG#{at}#{status}#{secrets.token_hex(4)}',
+                            'kind': 'run_status', 'status': status, 'actor': _actor(actor), 'at': at}
     if reason:
         item['reason'] = reason
+    if via:
+        item['via'] = dict(via)
     return item
 
 
@@ -256,15 +260,77 @@ def _failure_count(item: Mapping[str, Any], now: int) -> tuple[int, int]:
     return int(item.get('cache_failures', 1)), int(item.get('cache_failing_since', now))
 
 
-def _issue_item(issue: int, host: str, repo: str) -> dict[str, Any] | None:
-    """META's ``issue`` for the issue a run starts from (``run_links.py``), None for none (0); ``RuntimeRefused``,
-    before anything is written, for a number off the rule or a repository or host it cannot be addressed on."""
+def _issue_item(issue: int, host: str, repo: str, verified: bool = False) -> dict[str, Any] | None:
+    """META's ``issue`` for the issue a run starts from (``run_links.py``), None for none (0); ``verified`` once the
+    host confirmed it (an engineering agent's start, 7.47.00); ``RuntimeRefused``, before anything is written, for a
+    number off the rule or a repository or host it cannot be addressed on."""
     if not issue:
         return None
     link = issue_link(host, repo, issue)
     if link is None:
         raise RuntimeRefused('an issue is a number from 1, of the repository of a connection on a known host')
-    return link.item()
+    return replace(link, verified=verified).item()
+
+
+#: An engineering agent's run (7.47.00): the agent, its run and the trigger that started it, and what it carries of the
+#: reviews it starts from (ids, their top category and count; never text) or the PRD it builds from (its ids).
+_VIA_TRIGGERS: Final = frozenset({'manual', 'schedule', 'new_reviews', 'threshold', 'github_issue'})
+_ROW_ID: Final = re.compile(r'[A-Za-z0-9_.:-]{1,128}')
+_FEEDBACK_ID: Final = re.compile(r'[\x21-\x7e]{1,256}')
+MAX_FEEDBACK_IDS: Final = 50
+_MAX_CATEGORY: Final = 200
+
+
+def _via(raw: object) -> dict[str, str] | None:
+    if raw is None:
+        return None
+    if not (isinstance(raw, Mapping) and set(raw) == {'agent_id', 'agent_run_id', 'trigger'}
+            and agents_store.is_agent_id(raw['agent_id']) and agents_store.is_run_id(raw['agent_run_id'])
+            and raw['trigger'] in _VIA_TRIGGERS):
+        raise RuntimeRefused('via is {agent_id, agent_run_id, trigger}: the agent, its run and its trigger')
+    return {key: str(raw[key]) for key in ('agent_id', 'agent_run_id', 'trigger')}
+
+
+def _feedback_ok(raw: Mapping[str, Any]) -> bool:
+    ids, count, category = raw.get('ids'), raw.get('count'), raw.get('category')
+    if not set(raw) <= {'ids', 'count', 'category'} or not isinstance(ids, list) or len(ids) > MAX_FEEDBACK_IDS:
+        return False
+    if not all(isinstance(each, str) and _FEEDBACK_ID.fullmatch(each) for each in ids):
+        return False
+    if type(count) is not int or not len(ids) <= count <= 10_000_000:
+        return False
+    return category is None or (isinstance(category, str) and 0 < len(category) <= _MAX_CATEGORY)
+
+
+def _feedback(raw: object) -> dict[str, Any] | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, Mapping) or not _feedback_ok(raw):
+        raise RuntimeRefused(f'feedback is {{ids (at most {MAX_FEEDBACK_IDS} feedback ids), count, category}}')
+    return {'ids': list(raw['ids']), 'count': raw['count'], 'category': raw.get('category')}
+
+
+def _prd(raw: object) -> dict[str, str] | None:
+    if raw is None:
+        return None
+    if not (isinstance(raw, Mapping) and set(raw) == {'project_id', 'document_id'}
+            and all(isinstance(raw[k], str) and _ROW_ID.fullmatch(raw[k]) for k in raw)):
+        raise RuntimeRefused('prd is {project_id, document_id}')
+    return {'project_id': str(raw['project_id']), 'document_id': str(raw['document_id'])}
+
+
+@dataclass(frozen=True)
+class RunOrigin:
+    """Where an engineering agent's run came from (7.47.00), each checked before anything is written: ``via`` (on its
+    first ``RUNLOG#`` row, D4), ``feedback`` and ``prd`` (on META)."""
+
+    via: dict[str, str] | None = None
+    feedback: dict[str, Any] | None = None
+    prd: dict[str, str] | None = None
+
+    @classmethod
+    def of(cls, event: Mapping[str, Any]) -> RunOrigin:
+        return cls(via=_via(event.get('via')), feedback=_feedback(event.get('feedback')), prd=_prd(event.get('prd')))
 
 
 def flow_step(reason: str) -> str:
@@ -286,7 +352,8 @@ class RunStore:
     def start(self, run_id: str, *, caps: RunCaps, now: int, goal: str = '', repo: str = '', flow: str = '',
               connection: str = '', commit: str = '', language: str = '', actor: str = '',
               budget_usd: float | None = None, flow_definition: str = '', flow_revision: int = 0,
-              default_branch: str = '', issue: int = 0, host: str = '') -> None:
+              default_branch: str = '', issue: int = 0, host: str = '', issue_verified: bool = False,
+              origin: RunOrigin | None = None) -> None:
         """Write the run's ``META`` and list it for the supervisor; ``RunExists`` when it was started already.
 
         ``connection`` and ``commit`` (a full object id), when given, are what the board's ``launch`` op starts the
@@ -298,10 +365,13 @@ class RunStore:
         flow becomes; refused before anything is written when it is not an engineering flow the conductor can
         follow. ``issue``, the issue the run was started from (0 for none), on ``repo`` at ``host`` (the stored
         connection's kind), goes into META's ``issue`` with its address, once, as given: not read from the host
-        (``engineering/run_links.py``)."""
+        (``engineering/run_links.py``), unless the start read it through the broker (``issue_verified``: an
+        engineering agent's run, 7.47.00). ``origin``: an engineering agent's run, its ``via`` on the first
+        ``RUNLOG#`` row (D4) and its ``feedback`` and ``prd`` on META."""
         if connection:
             check_id('connection', connection)
-        issue_item = _issue_item(issue, host, repo)
+        issue_item = _issue_item(issue, host, repo, issue_verified)
+        origin = origin or RunOrigin()
         if commit and not COMMIT_RE.match(commit):
             raise RuntimeRefused('a commit is a full hexadecimal object id')
         if language and language not in REGISTRY_HOSTS:
@@ -322,14 +392,11 @@ class RunStore:
                                 # Whose way of working the broker's dial reads (connectors/dial.py): the person
                                 # who started the run, '' for none (then nothing is pushed: Human-driven).
                                 'started_by': _actor(actor) if actor else ''}
-        if caps.max_tokens is not None:
-            meta['max_tokens'] = caps.max_tokens
-        if caps.max_cost_usd is not None:
-            meta['max_cost_usd'] = str(caps.max_cost_usd)
-        if budget_usd is not None:
-            meta['budget_usd'] = str(budget_usd)
-        if issue_item is not None:
-            meta['issue'] = issue_item
+        optional = {'max_tokens': caps.max_tokens,
+                    'max_cost_usd': None if caps.max_cost_usd is None else str(caps.max_cost_usd),
+                    'budget_usd': None if budget_usd is None else str(budget_usd), 'issue': issue_item,
+                    'feedback': origin.feedback, 'prd': origin.prd}
+        meta.update({key: value for key, value in optional.items() if value is not None})
         # The run coordinator's task, open for it alone (the board's: it claims it like any agent, so the supervisor
         # watches it by its lease).
         coordinate = BoardStore.coordinate_items(WORKSPACE, run_id, at=_iso(now))
@@ -339,7 +406,8 @@ class RunStore:
                 {'Put': {'TableName': name, 'Item': {**_registry_key(run_id), 'run_id': run_id}}},
                 *({'Put': {'TableName': name, 'Item': item, 'ConditionExpression': 'attribute_not_exists(sk)'}}
                   for item in (*coordinate, *copy)),
-                {'Put': {'TableName': name, 'Item': _history(run_id, status='active', actor=actor, now=now),
+                {'Put': {'TableName': name, 'Item': _history(run_id, status='active', actor=actor, now=now,
+                                                             via=origin.via),
                          'ConditionExpression': 'attribute_not_exists(sk)'}},   # (D1: create-only)
             ])
         except ClientError as error:

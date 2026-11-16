@@ -151,6 +151,8 @@ export interface EngineeringPeers {
    * `reactions` operation alone (7.10.00, engineering-reactions.ts; EngineeringBroker.admitRuntime).
    */
   admitRuntime: (role: iam.IRole, functionName: string) => void;
+  /** The same for voc-engineering-start's role, its `head` alone (7.47.00; EngineeringBroker.admitStart). */
+  admitStart: (role: iam.IRole, functionName: string) => void;
 }
 
 
@@ -218,7 +220,7 @@ class EngineeringRuntime extends Construct {
     });
     const fn = this.createSupervisor(props, supervisorRole, agentRoles, ruleName,
       { ...environment, ENGINEERING_CACHE_FUNCTION: cacheWriter.functionName, ...reactions });
-    createEngineeringStart(this, { ...props, ruleName, environment, runtime: fn });
+    createEngineeringStart(this, { ...props, ...props.peers, ruleName, environment, runtime: fn });
     this.createRule(props.peers.deadLetterQueue, fn, ruleName);
     // A wake's continuation looks the cache up again (the generation it clones), as the supervisor's does.
     grantCacheReadyReads(deliveryRole, props.rawDataBucket);

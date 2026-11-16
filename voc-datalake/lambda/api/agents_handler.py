@@ -14,6 +14,10 @@ Permissions:
   only its approver resolves a paused step;
 - any signed-in user reads the agents whose WHOLE scope their category access
   covers (``shared.category_gate``); any other agent, and its runs, answers 404;
+- an engineering agent (7.47.00: its ``engineering`` settings; the seeded Bug fixer and Feature builder) is listed and
+  read by administrators acting for themselves only, where the engineering agents are on (404 for anyone else); its
+  Run now is theirs alone too (never a delegated credential), through voc-engineering-start, and its runs take only the
+  deployment's feedback (D8, until agents move per workspace);
 - workflows hold no customer data, so every signed-in user may read and
   validate them; the default engineering flows (``GET /workflows/templates``) are listed for
   administrators only, where the engineering agents are on (404 elsewhere), as the library offers them;
@@ -69,7 +73,6 @@ partitions (``WS#<ws>#SPEND#<yyyy-mm>``).
 from __future__ import annotations
 
 import json
-import math
 import os
 import re
 from collections.abc import Mapping
@@ -91,6 +94,7 @@ from shared import (
     workflow_schema,
 )
 from shared import agents_store as store
+from shared import engineering_agent_runs as eng_runs
 from shared.api import api_handler, create_api_resolver, validate_int
 from shared.aws import get_dynamodb_resource
 from shared.category_access import CategoryScope
@@ -198,10 +202,15 @@ def _stored_agent(agent_id: str, *, include_archived: bool = False) -> dict:
     return agent
 
 
+def _lists_engineering(agent: Mapping[str, Any], caller: Caller) -> bool:
+    """An engineering agent is an administrator's alone (acting for themselves), and only where the module is on."""
+    return not store.is_engineering_agent(agent) or (acts_as_admin(caller) and engineering_agents_on())
+
+
 def _visible_agent(agent_id: str, caller: Caller) -> dict:
     """The agent if ``caller`` may read it; 404 otherwise (no existence leak)."""
     agent = _stored_agent(agent_id, include_archived=caller.is_admin and not caller.delegated)
-    if not store.agent_visible(_viewer_scope(caller), agent):
+    if not store.agent_visible(_viewer_scope(caller), agent) or not _lists_engineering(agent, caller):
         raise NotFoundError(AGENT_NOT_FOUND)
     return agent
 
@@ -228,13 +237,84 @@ def _engineering_flow(workflow: Mapping[str, Any]) -> bool:
     return definition.get('schema') == workflow_schema.SCHEMA_V2
 
 
-def _require_workflow(workflow_id: str) -> None:
-    """A workflow an agent body names must exist and be an agents workflow (400, it is a field of the request)."""
+def _require_workflow(workflow_id: str, *, engineering: bool = False) -> None:
+    """A workflow an agent body names must exist and be of the agent's kind (400, it is a field of the request): an
+    engineering flow for an engineering agent (its ``engineering`` settings, 7.47.00), an agents workflow otherwise."""
     workflow = _find_workflow(workflow_id)
     if workflow is None:
         raise ValidationError('workflow_id does not name a workflow')
-    if _engineering_flow(workflow):
-        raise ValidationError('an engineering flow is not run by an agent: pick an agents workflow')
+    if _engineering_flow(workflow) and not engineering:
+        raise ValidationError('an engineering flow is not run by an agent without engineering settings: pick an '
+                              'agents workflow, or give the agent its engineering settings')
+    if engineering and not _engineering_flow(workflow):
+        raise ValidationError('an engineering agent runs an engineering flow: pick one')
+
+
+# --------------------------------------------------------------------------
+# Engineering agents (7.47.00, docs/autonomous-agents.md "Engineering agents"): an agent with ``engineering``
+# settings runs an engineering flow on a stored repository connection, as the administrator who enabled it. Its runs
+# only take the deployment's own feedback (D8: the agents and their runs are the deployment's until 3g3).
+# --------------------------------------------------------------------------
+
+NOT_SET_UP = ('set the agent up first: its repository connection, its language and its flow\'s monthly budget '
+              '(Agents → Connections adds a connection)')
+RUNS_AS_ENABLER = 'an engineering agent runs as the administrator who enabled it: owner_sub is not set by hand'
+STOP_FROM_MONITOR = "This is an engineering run: stop it from its run monitor"
+
+
+def _engineering_connection(connection_id: str | None) -> dict[str, Any] | None:
+    """The stored connection an engineering agent names (None for none named); 400 for one not stored."""
+    if connection_id is None:
+        return None
+    row = eng_runs.connection_row(_agents_table(), connection_id)
+    if row is None:
+        raise ValidationError('engineering.connection names no stored repository connection: add it under Agents → '
+                              'Connections')
+    return row
+
+
+def _check_issue_trigger(fields: Mapping[str, Any], row: Mapping[str, Any] | None) -> None:
+    """A ``github_issue`` trigger needs a GitHub connection, and its label on a public repository (a repository whose
+    connection does not say it is private is public: the label is then what a maintainer puts on an issue to let it
+    start a run, docs/autonomous-engineering.md "How a flow starts")."""
+    trigger = next((t for t in fields['triggers'] if t['kind'] == store.TRIGGER_GITHUB_ISSUE), None)
+    if trigger is None:
+        return
+    if row is not None and eng_runs.connection_host(row) != 'github':
+        raise ValidationError('a github_issue trigger needs a GitHub connection')
+    if not trigger['label'] and (row is None or not eng_runs.repository_private(row)):
+        raise ValidationError('a github_issue trigger needs its label on a public repository: a maintainer puts it on '
+                              'an issue to let it start a run')
+
+
+def _check_engineering(fields: dict[str, Any], *, enabling: bool) -> None:
+    """An engineering agent's settings (400 for anything off): the module on, a stored connection (and, for a
+    ``github_issue`` trigger, a GitHub one), a language with an agent image; enabled (or ``enabling``), all of them and
+    its flow's monthly budget too."""
+    settings = fields.get('engineering')
+    if settings is None:
+        return
+    if not engineering_agents_on():
+        raise ValidationError('an engineering agent needs the engineering agents module (-c engineeringAgents=true)')
+    from engineering.runtime.egress import REGISTRY_HOSTS
+
+    row = _engineering_connection(settings['connection'])
+    _check_issue_trigger(fields, row)
+    if settings['language'] is not None and settings['language'] not in REGISTRY_HOSTS:
+        raise ValidationError(f'engineering.language is one of {", ".join(sorted(REGISTRY_HOSTS))}')
+    if not (enabling or fields.get('enabled')):
+        return
+    if row is None or settings['language'] is None:
+        raise ValidationError(NOT_SET_UP)
+    workflow = _find_workflow(fields.get('workflow_id'))
+    if workflow is None or eng_runs.stored_flow(workflow).budget_usd is None:
+        raise ValidationError(NOT_SET_UP)
+
+
+def _run_as(caller: Caller) -> dict[str, Any]:
+    """Who an engineering agent runs as from now: the administrator enabling it (D4: the owner's way of working is
+    the dial its runs' pushes follow, and the heartbeat re-checks in Cognito that they are still an admin)."""
+    return {'owner_sub': caller.subject, 'owner_username': caller.username or caller.subject}
 
 
 def _default_workflow_for(name: str, caller: Caller) -> str:
@@ -253,13 +333,19 @@ def list_agents():
     scope = _viewer_scope(caller)
     table = _agents_table()
     if caller.is_admin and not caller.delegated:
-        # Once per deployment: the default agent (shared/agent_seed.py; never fails the listing).
-        agent_seed.ensure_default_agent(table, caller, lambda: read_categories_config(_aggregates_table()))
+        # Once per deployment: the default agents (shared/agent_seed.py; never fails the listing), the engineering
+        # ones only where the engineering module is on.
+        def categories() -> list[dict]:   # (read only when an agent is created)
+            return read_categories_config(_aggregates_table())
+
+        agent_seed.ensure_default_agent(table, caller, categories)
+        if engineering_agents_on():
+            agent_seed.ensure_engineering_agents(table, caller, categories)
     now = store.utc_now()
     agents = [
         store.agent_view(agent, now) for agent in store.list_agents(table)
         if (include_archived or agent.get('status') != store.AGENT_STATUS_ARCHIVED)
-        and store.agent_visible(scope, agent)
+        and store.agent_visible(scope, agent) and _lists_engineering(agent, caller)
     ]
     agents.sort(key=lambda agent: (str(agent.get('name') or '').lower(), str(agent.get('agent_id'))))
     return {'items': agents, 'count': len(agents)}
@@ -272,10 +358,18 @@ def create_agent():
     caller = _caller()
     require_admin_caller(caller)
     fields = store.normalize_agent(json_object_body(app), read_categories_config(_aggregates_table()))
+    engineering = fields['engineering'] is not None
     if fields['workflow_id'] is None:
+        if engineering:
+            raise ValidationError('an engineering agent names its engineering flow: workflow_id')
         fields['workflow_id'] = _default_workflow_for(fields['name'], caller)
     else:
-        _require_workflow(fields['workflow_id'])
+        _require_workflow(fields['workflow_id'], engineering=engineering)
+    _check_engineering(fields, enabling=False)
+    if engineering and fields['owner_sub'] is not None:
+        raise ValidationError(RUNS_AS_ENABLER)
+    if engineering and fields['enabled']:
+        fields.update(_run_as(caller))
     agent = store.create_agent(_agents_table(), fields, created_by=caller.subject, now=store.utc_now())
     logger.info('Agent created', extra={'agent_id': agent['agent_id']})
     return _json(201, {'agent': store.agent_view(agent)})
@@ -294,13 +388,20 @@ def update_agent(agent_id: str):
     caller = _caller()
     require_admin_caller(caller)
     existing = _stored_agent(agent_id)
-    fields = store.normalize_agent(json_object_body(app), read_categories_config(_aggregates_table()), base=existing)
+    body = json_object_body(app)
+    fields = store.normalize_agent(body, read_categories_config(_aggregates_table()), base=existing)
+    engineering = fields['engineering'] is not None
     if fields['workflow_id'] is None:
         fields['workflow_id'] = existing.get('workflow_id') or workflow_schema.DEFAULT_WORKFLOW_ID
-    if fields['workflow_id'] != existing.get('workflow_id'):
-        _require_workflow(fields['workflow_id'])
+    if fields['workflow_id'] != existing.get('workflow_id') or engineering != store.is_engineering_agent(existing):
+        _require_workflow(fields['workflow_id'], engineering=engineering)
+    _check_engineering(fields, enabling=False)
+    if engineering and 'owner_sub' in body:
+        raise ValidationError(RUNS_AS_ENABLER)
     if fields['owner_sub'] is None:
         fields['owner_sub'] = existing.get('owner_sub')
+    if engineering and fields['enabled'] and existing.get('enabled') is not True:
+        fields.update(_run_as(caller))
     updated = store.update_agent(_agents_table(), agent_id, fields, updated_by=caller.subject, now=store.utc_now())
     return {'agent': store.agent_view(updated)}
 
@@ -321,11 +422,18 @@ def archive_agent(agent_id: str):
 
 
 def _set_enabled(agent_id: str, enabled: bool) -> dict:
+    """Enable or disable (admin). An engineering agent is enabled only once it is set up (400 otherwise), and from
+    then runs as the administrator who enabled it (``owner_sub``, ``owner_username``)."""
     caller = _caller()
     require_admin_caller(caller)
-    _stored_agent(agent_id)
-    updated = store.update_agent(_agents_table(), agent_id, {'enabled': enabled},
-                                 updated_by=caller.subject, now=store.utc_now())
+    agent = _stored_agent(agent_id)
+    change: dict[str, Any] = {'enabled': enabled}
+    if enabled and store.is_engineering_agent(agent):
+        fields = store.normalize_agent({}, read_categories_config(_aggregates_table()), base=agent)
+        _check_engineering(fields, enabling=True)
+        if agent.get('enabled') is not True:
+            change.update(_run_as(caller))
+    updated = store.update_agent(_agents_table(), agent_id, change, updated_by=caller.subject, now=store.utc_now())
     return {'agent': store.agent_view(updated)}
 
 
@@ -359,6 +467,8 @@ def run_agent(agent_id: str):
         raise ConfigurationError('Agent runtime not configured')
     table = _agents_table()
     agent = _stored_agent(agent_id)
+    if store.is_engineering_agent(agent):
+        return _run_engineering_agent(table, agent, caller)
     workflow = _find_workflow(agent.get('workflow_id') or workflow_schema.DEFAULT_WORKFLOW_ID)
     if workflow is None:
         raise ConflictError("The agent's workflow no longer exists; choose another workflow")
@@ -372,6 +482,75 @@ def run_agent(agent_id: str):
     run = store.launch_run(table, run, now=now)
     logger.info('Agent run started', extra={'agent_id': agent_id, 'run_id': run['run_id'], 'trigger': 'manual'})
     return _json(202, {'run': store.run_view(run)})
+
+
+def _run_prd(body: Mapping[str, Any]) -> dict[str, str] | None:
+    """The optional ``prd`` a feature agent's run builds from: ``{project_id, document_id}`` (400 otherwise). Only its
+    ids go to the run (its goal names them); the PRD's text is not handed to the run's agents."""
+    raw = body.get('prd')
+    if raw is None:
+        return None
+    if not isinstance(raw, Mapping) or set(raw) != {'project_id', 'document_id'}:
+        raise ValidationError('prd is {project_id, document_id}')
+    from shared.row_ids import validated_row_id
+
+    return {'project_id': validated_row_id(raw['project_id'], field='project_id'),
+            'document_id': validated_row_id(raw['document_id'], field='document_id')}
+
+
+def _engineering_sentence(settings: Mapping[str, Any], repository: str, issue: int | None,
+                          prd: Mapping[str, str] | None) -> str:
+    """What a Run now asks of an engineering agent: the issue, the PRD (a feature agent's), or a bug hunt."""
+    feedback_type = str(settings.get('feedback_type'))
+    if issue is not None:
+        return eng_runs.issue_sentence(feedback_type, repository, issue)
+    if prd is not None:
+        if feedback_type != 'feature_request':
+            raise ValidationError('a PRD is built by a feature agent (engineering.feedback_type feature_request)')
+        return eng_runs.prd_sentence(prd['project_id'], prd['document_id'])
+    if feedback_type != 'bug':
+        raise ValidationError('a feature agent runs on an issue or a PRD: give its issue number or the PRD')
+    return eng_runs.hunt_sentence(repository)
+
+
+def _run_engineering_agent(table: Any, agent: dict, caller: Caller) -> Response:
+    """Run now of an engineering agent (7.47.00): ``{issue?} | {prd?}`` → 202 ``{run}``. An administrator acting for
+    themselves only (a delegated credential gets 403), as the person the run's pushes follow; 404 while the module is
+    off; 409 until the agent is set up, or while it has a run in progress. A run of an issue reruns it (the one way to:
+    a trigger starts an issue once, ever). The start's refusal is 409 in its words, a start known not written 503; one
+    that may have been written is 503 naming its engineering run (open it, never start another)."""
+    require_admin_caller(caller)
+    _engineering_on()
+    function = os.environ.get(eng_runs.START_FUNCTION_ENV, '')
+    if not function:
+        raise ServiceUnavailableError('runs cannot be started from here: the deployment names no start function')
+    body = json_object_body(app)
+    if not set(body) <= {'issue', 'prd'} or {'issue', 'prd'} <= set(body):
+        raise ValidationError('the body is {issue?: number} or {prd?: {project_id, document_id}}, or none')
+    settings = agent['engineering']
+    row = eng_runs.connection_row(table, settings['connection']) if settings.get('connection') else None
+    if row is None or not settings.get('language'):
+        raise ConflictError(NOT_SET_UP)
+    issue, prd = _start_issue(body), _run_prd(body)
+    repository = str(row.get('repository', ''))
+    started = eng_runs.start_agent_run(
+        table, agent, _find_workflow(agent.get('workflow_id')), row,
+        eng_runs.AgentStart(trigger=store.TRIGGER_MANUAL, requested_by=caller.subject, actor=caller.subject,
+                            sentence=_engineering_sentence(settings, repository, issue, prd), prd=prd, claim=False,
+                            issue=None if issue is None else eng_runs.IssueRef(repository, issue)),
+        client=_start_client(), function=function, now=store.utc_now())
+    if started.run is None or started.answer is None:
+        raise ConflictError('This agent already has a run in progress')
+    answer, run = started.answer, started.run
+    logger.info('Engineering agent run', extra={'agent_id': agent['agent_id'], 'run_id': run['run_id'],
+                                                'outcome': answer.outcome})
+    if answer.outcome == 'uncertain':
+        return _json(503, {'error': answer.message or f"run {run['engineering_run_id']} may have been started: open "
+                           'the run monitor before you start another', 'run_id': run['engineering_run_id']})
+    if answer.outcome != 'started':
+        raise _start_failure(answer)
+    current = store.get_run(table, agent['agent_id'], run['run_id']) or run
+    return _json(202, {'run': store.run_view(current)})
 
 
 def _visible_run(agent_id: str, run_id: str, caller: Caller) -> dict:
@@ -416,6 +595,9 @@ def cancel_run(agent_id: str, run_id: str):
     caller = _caller()
     require_admin_caller(caller)
     run = _visible_run(agent_id, run_id, caller)
+    if run.get('kind') == store.RUN_KIND_ENGINEERING:
+        # (its run monitor's Stop ends the engineering run; the heartbeat then ends this one)
+        raise ConflictError(STOP_FROM_MONITOR)
     table, now = _agents_table(), store.utc_now()
     cancelled = store.finish_run(table, agent_id, run_id, store.RUN_CANCELLED, now=now)
     if cancelled is None:
@@ -1526,61 +1708,20 @@ def delete_engineering_github_app(app_id: str):
 # flow on a repository's commit. The API mints the run's id and invokes the start function (voc-engineering-start, the
 # runtime's code: it runs ``start_run`` and refuses every other action; this role may invoke it and never the runtime
 # itself), with the flow's budget from the stored workflow, never from the request, and the person as its actor.
-#: The task cap of a run started here (the board counts its tasks against it: runs.py RunCaps), the server's own.
-RUN_TASK_CAP = 100
-#: A run's cost and token caps when the deployment sets none (`-c engineeringRunCapUsd`, `-c engineeringRunTokenCap`:
-#: ENGINEERING_RUN_CAP_USD, ENGINEERING_RUN_TOKEN_CAP): every run started here has both, so its cost cap bounds it
-#: (TENETS.md tenet 7); with the hard cap on, the runtime lowers the cost cap to what is left of the flow's month.
-DEFAULT_RUN_CAP_USD = 50.0
-DEFAULT_RUN_TOKEN_CAP = 10_000_000
-#: The longest goal a run takes (runs.py MAX_TEXT): longer is refused, never cut.
-MAX_RUN_GOAL = 500
-#: How long the API waits for the start (under API Gateway's 29 s); a start is never retried by the client.
-START_READ_TIMEOUT_SECONDS = 25
+#: The run's longest goal: the shared request builder's (shared/engineering_agent_runs.py, with the run's caps and the
+#: start's wait, which an engineering agent's runs use too).
+MAX_RUN_GOAL = eng_runs.MAX_RUN_GOAL
 _START_FIELDS = frozenset({'workflow_id', 'connection', 'commit', 'language', 'goal'})
 #: The start's optional fields: the issue the run starts from (a number, ``_start_issue``).
 _START_OPTIONAL = frozenset({'issue'})
 _RUN_COMMIT = re.compile(r'[0-9a-f]{40}\Z')
-#: The runtime's refusals a person can act on, all before anything is written (its error types): 409 with its own
-#: words (no image for the language, the hard cap with nothing left of the flow's month).
-_START_REFUSALS = frozenset({'RuntimeRefused', 'RunExists', 'RunNotActive'})
-#: The start function's faults known to have written nothing, said in its words as 503 (start it again): a read the
-#: start needed failed, or the write itself failed.
-_START_NOT_WRITTEN = frozenset({'StartReadFailed', 'StartNotWritten'})
-#: Its faults once the run was written, or when it could not tell, said in its words as 503 naming the run (open it,
-#: never start another).
-_START_WRITTEN = frozenset({'StartFailed', 'StartUncertain'})
-
-
-def _run_cap(name: str, default: float, kind: type) -> Any:
-    """A run cap from the deployment (``name``, set by the stack from its context), ``default`` when it sets none; one
-    that is not a positive number is a deployment fault, logged, and the default holds (a run is never uncapped)."""
-    raw = os.environ.get(name, '')
-    try:
-        value = kind(raw) if raw else default
-    except ValueError:
-        value = 0
-    if not (value > 0 and math.isfinite(value)):
-        logger.error('engineering: a run cap of the deployment is not a positive number', extra={'variable': name})
-        return kind(default)
-    return value
 
 
 def _run_connection(connection: str, issue: int | None = None) -> dict[str, Any]:
-    """The run's ``repo`` (as its reports and the spend ledger group it) and ``default_branch``: the stored
-    connection's repository (``owner/name``) and default branch, copied onto the run (the broker serves the run on
-    that branch once the host confirms it has it: connectors/records.py); with the ``issue`` the run starts from, it
-    and the connection's ``host``, which the start addresses it on. 400 for a connection that is not stored: its
-    broker would refuse every operation."""
-    from engineering.connectors.connections import stored_connection
-
-    stored = _connection_call(lambda: stored_connection(_agents_table(), connection))
-    if stored is None:
-        raise ValidationError('connection names no stored repository connection: add it under Agents → Connections')
-    run: dict[str, Any] = {'repo': str(stored['repository']), 'default_branch': str(stored['default_branch'])}
-    if issue is not None:
-        run.update(issue=issue, host=str(stored.get('host') or 'github'))
-    return run
+    """The run's ``repo`` and ``default_branch`` (and, with an ``issue``, it and the connection's ``host``): the stored
+    connection's (``eng_runs.run_connection``); 400 for a connection that is not stored: its broker would refuse every
+    operation."""
+    return eng_runs.run_connection(eng_runs.connection_row(_agents_table(), connection), issue)
 
 
 def _start_issue(body: Mapping[str, Any]) -> int | None:
@@ -1623,24 +1764,10 @@ def _start_body(body: Mapping[str, Any]) -> dict[str, str]:
     return {**fields, 'commit': commit, 'goal': redact(goal)}
 
 
-def _stored_flow(workflow_id: str) -> tuple[float | None, str, int]:
-    """The stored engineering flow's monthly budget (None for none), its stored definition (the JSON text the run
-    copies and follows) and its revision: 400 for an id that names no saved workflow or an agents workflow, 409 for a
-    stored budget off its rule."""
-    from shared.workflow_engineering import budget_of
-
-    workflow = _find_workflow(workflow_id)
-    if workflow is None:
-        raise ValidationError('workflow_id does not name a saved workflow')
-    definition = workflow_schema.decode_definition(workflow.get('definition')) or {}
-    if definition.get('schema') != workflow_schema.SCHEMA_V2:
-        raise ValidationError('workflow_id names an agents workflow: a run starts from an engineering flow')
-    budget, broken = budget_of(definition.get('budget'))
-    if broken:
-        raise ConflictError(f'the flow\'s stored budget is off its rule ({broken}): save the flow again')
-    revision = store.plain(workflow.get('revision')) or 1
-    return (None if budget is None else float(budget['monthly_usd']), workflow_schema.encode_definition(definition),
-            int(revision))
+def _stored_flow(workflow_id: str) -> eng_runs.StoredFlow:
+    """The stored engineering flow (its budget, definition and revision: ``eng_runs.stored_flow``): 400 for an id that
+    names no saved workflow or an agents workflow, 409 for a stored budget off its rule."""
+    return eng_runs.stored_flow(_find_workflow(workflow_id))
 
 
 @cache
@@ -1650,7 +1777,7 @@ def _start_client() -> Any:
     import boto3
     from botocore.config import Config
 
-    return boto3.client('lambda', config=Config(read_timeout=START_READ_TIMEOUT_SECONDS, connect_timeout=5,
+    return boto3.client('lambda', config=Config(read_timeout=eng_runs.START_READ_TIMEOUT_SECONDS, connect_timeout=5,
                                                 retries={'total_max_attempts': 1}))
 
 
@@ -1664,47 +1791,26 @@ class _MayHaveStarted(ServiceUnavailableError):
         self.run_id = run_id
 
 
-def _invoke_start(function: str, request: dict[str, Any]) -> dict[str, Any]:
-    """The start function's answer (``{run_id, status}``). Its refusals (all before the write) are 409 in its words; a
-    failure known to have written nothing is 503 "start it again"; anything else (written, or not known not to be: a
-    dropped connection, a timeout, a failure of an unknown kind) is a 503 naming the run, ``_MayHaveStarted``."""
-    from botocore.exceptions import ConnectTimeoutError, EndpointConnectionError
+def _start_failure(answer: eng_runs.StartAnswer) -> Exception:
+    """A start that wrote nothing, as its answer: the runtime's refusal (all before the write) 409 in its words, the
+    runtime out of reach or a start known not written 503 "start it again"."""
+    if answer.outcome == 'refused':
+        return ConflictError(answer.message or 'the runtime refused the start')
+    if answer.outcome == 'not_written':
+        return ServiceUnavailableError(answer.message or 'the run could not be started: start it again')
+    return ServiceUnavailableError('the engineering runtime could not be reached: start the run again')
 
-    run_id = request['run_id']
-    try:
-        response = _start_client().invoke(FunctionName=function, InvocationType='RequestResponse',
-                                          Payload=json.dumps(request).encode())
-    except (EndpointConnectionError, ConnectTimeoutError, ClientError) as exc:
-        # (never connected, or the service refused the call: the start function did not run)
-        logger.exception('engineering: the start function could not be reached')
-        raise ServiceUnavailableError('the engineering runtime could not be reached: start the run again') from exc
-    except BotoCoreError as exc:
-        # (a read timeout, a connection dropped mid-call: the start may have written the run)
-        logger.warning('engineering: the run\'s start did not answer', extra={'run_id': run_id})
-        raise _MayHaveStarted(run_id) from exc
-    try:
-        # (the answer is read off the connection here: a read that fails, or a payload that is not a JSON object, says
-        # nothing of the write, so the run may have been started)
-        payload = json.loads(response['Payload'].read() or b'{}')
-    except (ValueError, KeyError, OSError, BotoCoreError) as exc:
-        logger.warning('engineering: the start\'s answer could not be read', extra={'run_id': run_id})
-        raise _MayHaveStarted(run_id) from exc
-    if not isinstance(payload, dict):
-        raise _MayHaveStarted(run_id)
-    answer: dict[str, Any] = payload
-    if response.get('FunctionError'):
-        error_type, said = answer.get('errorType'), str(answer.get('errorMessage') or '')[:500]
-        logger.warning('engineering: a start failed', extra={'run_id': run_id, 'error_type': error_type})
-        if error_type in _START_REFUSALS:
-            raise ConflictError(said or 'the runtime refused the start')
-        if error_type in _START_NOT_WRITTEN:
-            raise ServiceUnavailableError(said or 'the run could not be started: start it again')
-        if error_type in _START_WRITTEN:
-            raise _MayHaveStarted(run_id, said)
-        raise _MayHaveStarted(run_id)   # (a timeout, a crash: the function's own kind, which says nothing of the write)
-    if answer.get('run_id') != run_id:
-        raise _MayHaveStarted(run_id)
-    return answer
+
+def _invoke_start(function: str, request: dict[str, Any]) -> dict[str, Any]:
+    """The start function's answer (``{run_id, status}``, ``eng_runs.invoke_start``). A start that wrote nothing is
+    ``_start_failure``; anything else (written, or not known not to be: a dropped connection, a timeout, a failure of
+    an unknown kind) is a 503 naming the run, ``_MayHaveStarted``."""
+    answer = eng_runs.invoke_start(_start_client(), function, request)
+    if answer.outcome == 'started' and answer.payload is not None:
+        return dict(answer.payload)
+    if answer.outcome == 'uncertain':
+        raise _MayHaveStarted(request['run_id'], answer.message)
+    raise _start_failure(answer)
 
 
 @app.post('/agents/engineering/runs')
@@ -1719,26 +1825,23 @@ def start_engineering_run():
     _engineering_on()
     caller = _caller()
     require_admin_caller(caller)
-    function = os.environ.get('ENGINEERING_START_FUNCTION', '')
+    function = os.environ.get(eng_runs.START_FUNCTION_ENV, '')
     if not function:
         raise ServiceUnavailableError('runs cannot be started from here: the deployment names no start function')
     raw = json_object_body(app)
     fields, issue = _start_body(raw), _start_issue(raw)
-    budget_usd, definition, revision = _stored_flow(fields['workflow_id'])
-    from engineering.bus.publish import new_event_id
-
+    flow = _stored_flow(fields['workflow_id'])
     request: dict[str, Any] = {
-        'action': 'start_run', 'run_id': new_event_id(), 'max_tasks': RUN_TASK_CAP, 'flow': fields['workflow_id'],
+        'action': 'start_run', 'run_id': eng_runs.new_run_id(), 'flow': fields['workflow_id'],
         # The flow as stored now: the run copies it and follows its copy (a later edit is the next run's).
-        'flow_definition': definition, 'flow_revision': revision,
+        'flow_definition': flow.definition, 'flow_revision': flow.revision,
         'connection': fields['connection'], 'commit': fields['commit'], 'language': fields['language'],
         # (with an issue, it and the stored connection's host: the start records it with its address)
         'goal': fields['goal'], 'actor': caller.subject, **_run_connection(fields['connection'], issue),
-        'max_cost_usd': _run_cap('ENGINEERING_RUN_CAP_USD', DEFAULT_RUN_CAP_USD, float),
-        'max_tokens': _run_cap('ENGINEERING_RUN_TOKEN_CAP', DEFAULT_RUN_TOKEN_CAP, int),
+        **eng_runs.run_caps(),
     }
-    if budget_usd is not None:
-        request['budget_usd'] = budget_usd
+    if flow.budget_usd is not None:
+        request['budget_usd'] = flow.budget_usd
     try:
         answer = _invoke_start(function, request)
     except _MayHaveStarted as unsure:

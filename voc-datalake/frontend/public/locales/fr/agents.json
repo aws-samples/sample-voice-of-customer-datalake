@@ -14,7 +14,9 @@
   },
   "scope": {
     "all": "Toutes les catégories",
-    "some": "Surveille : {{list}}"
+    "some": "Surveille : {{list}}",
+    "sources": "Uniquement ces sources",
+    "sourcesHint": "N'en cochez aucune pour surveiller toutes les sources. Un déclencheur de seuil compte toutes les sources : il n'est donc pas proposé avec des sources."
   },
   "views": {
     "label": "Sections de la page des agents",
@@ -89,7 +91,8 @@
     "visibilityHint": "Les projets privés ne sont visibles que par leur propriétaire, leurs membres et les administrateurs.",
     "workflow": "Workflow",
     "workflowDefault": "Avis → Prototype (intégré)",
-    "workflowHint": "Modifiez les étapes dans l'onglet Workflow."
+    "workflowHint": "Modifiez les étapes dans l'onglet Workflow.",
+    "engineeringInstructionsHint": "Elles ouvrent l'objectif de chaque exécution (jusqu'à {{n, number}} caractères). Ne collez jamais ici le texte d'un avis ou d'un ticket."
   },
   "visibility": {
     "private": "Privé",
@@ -136,12 +139,14 @@
     "kinds": {
       "new_reviews": "Nouveaux avis",
       "schedule": "Planification",
-      "threshold": "Seuil"
+      "threshold": "Seuil",
+      "github_issue": "Ticket GitHub"
     },
     "kindHints": {
       "new_reviews": "S'exécute lorsque suffisamment de nouveau feedback est arrivé dans son périmètre depuis la dernière exécution.",
       "schedule": "S'exécute selon une planification fixe.",
-      "threshold": "S'exécute lorsqu'une catégorie ou sous-catégorie atteint un nombre d'avis sur une période donnée."
+      "threshold": "S'exécute lorsqu'une catégorie ou sous-catégorie atteint un nombre d'avis sur une période donnée.",
+      "github_issue": "S'exécute sur un ticket ouvert de son dépôt que le data lake a ingéré et classé dans son type."
     },
     "everyOptions": {
       "12h": "12 heures",
@@ -151,7 +156,15 @@
     "perOptions": {
       "category": "Catégorie",
       "subcategory": "Sous-catégorie"
-    }
+    },
+    "engineeringHint": "Ce qui réveille l'agent d'ingénierie. Une exécution à la fois, et jamais deux exécutions pour le même ticket.",
+    "thresholdWithSources": "Un seuil compte toutes les sources : supprimez-le, ou videz les sources dans l'onglet Paramètres.",
+    "label": "Étiquette",
+    "labelHint": "Sur un dépôt public, un ticket ne lance une exécution qu'avec cette étiquette, qu'ajoute un mainteneur.",
+    "lookbackDays": "Période (jours)",
+    "lookbackHint": "Tickets ingérés durant ces derniers jours. Une étiquette ajoutée après est manquée.",
+    "trustedAuthors": "Aussi les tickets ouverts par les propriétaires, membres et collaborateurs du dépôt",
+    "trustedAuthorsHint": "Uniquement sur un dépôt privé : sur un dépôt public, l'étiquette est toujours requise."
   },
   "personas": {
     "fixed": "Personas fixes ({{n, number}} sur {{max, number}})",
@@ -186,7 +199,9 @@
     "callsPerRun": "Appels de modèle par exécution",
     "monthlyCap": "Plafond mensuel d'appels de modèle",
     "monthlyCapHint": "L'agent cesse de lancer des exécutions une fois ce plafond mensuel atteint.",
-    "uncapped": "Aucun plafond mensuel"
+    "uncapped": "Aucun plafond mensuel",
+    "engineeringRunsPerDayHint": "Au plus {{n, number}} exécutions par jour depuis ses déclencheurs. « Exécuter maintenant » n'est pas compté.",
+    "engineeringSpend": "Ce que dépensent ses exécutions est limité par le budget mensuel de son workflow (dans sa configuration) et par les plafonds d'exécution du déploiement ; le plafond strict est toujours actif pour ses exécutions."
   },
   "run": {
     "hint": "Chaque exécution suit le workflow. Le graphe met en évidence les étapes en cours ; c'est une vue, pas une commande.",
@@ -211,8 +226,8 @@
     "hideTechnical": "Masquer le journal technique",
     "summary": {
       "title": "Ce qui s'est passé",
-      "started": { "manual": "Lancée à la main.", "schedule": "Lancée selon sa planification.", "new_reviews": "Lancée parce que de nouveaux avis sont arrivés.", "threshold": "Lancée parce qu'un seuil a été franchi." },
-      "startedAt": { "manual": "Lancée à la main le {{when}}.", "schedule": "Lancée selon sa planification le {{when}}.", "new_reviews": "Lancée le {{when}} parce que de nouveaux avis sont arrivés.", "threshold": "Lancée le {{when}} parce qu'un seuil a été franchi." },
+      "started": { "manual": "Lancée à la main.", "schedule": "Lancée selon sa planification.", "new_reviews": "Lancée parce que de nouveaux avis sont arrivés.", "threshold": "Lancée parce qu'un seuil a été franchi.", "github_issue": "Lancée depuis un ticket GitHub." },
+      "startedAt": { "manual": "Lancée à la main le {{when}}.", "schedule": "Lancée selon sa planification le {{when}}.", "new_reviews": "Lancée le {{when}} parce que de nouveaux avis sont arrivés.", "threshold": "Lancée le {{when}} parce qu'un seuil a été franchi.", "github_issue": "Lancée le {{when}} depuis un ticket GitHub." },
       "outcome": { "queued": "En attente de démarrage.", "running": "En cours.", "runningStep": "En cours : « {{step}} ».", "completed": "Terminée.", "completedAt": "Terminée le {{when}}.", "cancelled": "Annulée.", "cancelledAt": "Annulée le {{when}}.", "failed": "Arrêtée avant la fin.", "failedBecause": "Arrêtée avant la fin : {{reason}}", "needs_human": "En pause : elle attend votre décision." },
       "produced": "Ce qu'elle a produit",
       "producedNothing": "Rien pour l'instant.",
@@ -242,7 +257,8 @@
       "manual": "Manuel",
       "schedule": "Planification",
       "new_reviews": "Nouveaux avis",
-      "threshold": "Seuil"
+      "threshold": "Seuil",
+      "github_issue": "Ticket GitHub"
     },
     "stepStatus": {
       "idle": "Non démarrée",
@@ -258,6 +274,21 @@
       "verdict": "Verdict",
       "decision": "Décision",
       "artifact": "Artefact"
+    },
+    "engineeringConfirmBug": "L'agent lance une exécution d'ingénierie sur son dépôt : il travaille sur sa propre branche et s'arrête à une pull request en brouillon. Indiquez un numéro de ticket pour corriger ce ticket (même s'il a déjà été traité), ou laissez vide pour chercher des bugs.",
+    "engineeringConfirmFeature": "L'agent lance une exécution d'ingénierie sur son dépôt à partir d'un ticket : il construit la fonctionnalité sur sa propre branche et s'arrête à une pull request en brouillon. Pour construire depuis un PRD, ouvrez le PRD et choisissez « Construire depuis ce PRD ».",
+    "issueOptional": "Numéro du ticket (facultatif)",
+    "issueRequired": "Numéro du ticket",
+    "issueInvalid": "Le numéro du ticket : un nombre entier à partir de 1.",
+    "issueHint": "Un ticket du dépôt de l'agent.",
+    "engineering": {
+      "title": "Exécution d'ingénierie",
+      "fromIssue": "Lancée depuis le ticket #{{number}} de {{repository}}.",
+      "fromPrd": "Lancée depuis le PRD {{document}} du projet {{project}}.",
+      "fromReviews": "Lancée depuis {{n, number}} signalements de son périmètre.",
+      "fromNothing": "Lancée pour chercher des bugs dans son dépôt.",
+      "followHint": "Suivez-la et arrêtez-la depuis son moniteur d'exécution : cette exécution se termine avec l'exécution d'ingénierie.",
+      "openMonitor": "Ouvrir le moniteur d'exécution"
     }
   },
   "editor": {
@@ -1390,5 +1421,36 @@
       "name": "Auto-amélioration",
       "description": "Le coach lit les exécutions passées, propose de nouvelles versions de compétences et les évalue ; un administrateur accepte ou refuse chacune."
     }
+  },
+  "engineeringAgent": {
+    "deploymentFeedback": "Travaille sur les retours du déploiement.",
+    "setupTitle": "Configurer {{name}}",
+    "setupDescription": "Choisissez la connexion de dépôt sur laquelle il travaille, le langage du dépôt et ce que ses exécutions peuvent dépenser par mois. Il est ensuite activé et s'exécute en votre nom.",
+    "connection": "Connexion de dépôt",
+    "connectionHint": "Avec un déclencheur de tickets GitHub, seules les connexions GitHub sont proposées.",
+    "language": "Langage",
+    "budget": "Budget mensuel (USD)",
+    "budgetHint": "Enregistré sur son workflow : ce que toutes ses exécutions peuvent dépenser sur un mois calendaire.",
+    "budgetInvalid": "Dollars et cents, de 0,01 à 100 000.",
+    "setupFailed": "L'agent n'a pas pu être configuré.",
+    "saveAndEnable": "Enregistrer et activer",
+    "save": "Enregistrer",
+    "loadFailed": "La configuration de l'agent n'a pas pu être lue.",
+    "loading": "Lecture de la configuration de l'agent",
+    "runsAs": "S'exécute en tant que {{name}}.",
+    "changeSetup": "Modifier la configuration",
+    "connectFirst": "Connectez d'abord un dépôt",
+    "setUp": "Configurer",
+    "whyNoConnection": "Désactivé : il lui faut une connexion de dépôt sur laquelle travailler.",
+    "whySetUp": "Désactivé tant qu'il n'est pas configuré : une connexion, un langage et un budget mensuel."
+  },
+  "prdBuild": {
+    "button": "Construire depuis ce PRD",
+    "started": "Ouvrir le moniteur d'exécution",
+    "title": "Construire depuis ce PRD ?",
+    "message": "{{name}} lance une exécution d'ingénierie qui construit la fonctionnalité décrite par ce PRD, sur sa propre branche, et s'arrête à une pull request en brouillon.",
+    "confirm": "Lancer la construction",
+    "agent": "Agent",
+    "inputHint": "L'exécution reçoit ce PRD en entrée, par son identifiant."
   }
 }

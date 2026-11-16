@@ -14,7 +14,9 @@
   },
   "scope": {
     "all": "Todas las categorías",
-    "some": "Vigila: {{list}}"
+    "some": "Vigila: {{list}}",
+    "sources": "Solo estas fuentes",
+    "sourcesHint": "No marques ninguna para vigilar todas las fuentes. Un disparador de umbral cuenta todas las fuentes, por lo que no se ofrece con fuentes."
   },
   "views": {
     "label": "Secciones de la página de agentes",
@@ -89,7 +91,8 @@
     "visibilityHint": "Los proyectos privados solo los ven su propietario, sus miembros y los administradores.",
     "workflow": "Flujo de trabajo",
     "workflowDefault": "Reseñas → Prototipo (integrado)",
-    "workflowHint": "Edita los pasos en la pestaña Flujo de trabajo."
+    "workflowHint": "Edita los pasos en la pestaña Flujo de trabajo.",
+    "engineeringInstructionsHint": "Encabezan el objetivo de cada ejecución (hasta {{n, number}} caracteres). Nunca pegues aquí el texto de una reseña o de una incidencia."
   },
   "visibility": {
     "private": "Privado",
@@ -136,12 +139,14 @@
     "kinds": {
       "new_reviews": "Reseñas nuevas",
       "schedule": "Programación",
-      "threshold": "Umbral"
+      "threshold": "Umbral",
+      "github_issue": "Incidencia de GitHub"
     },
     "kindHints": {
       "new_reviews": "Se ejecuta cuando ha llegado suficiente feedback nuevo a su ámbito desde la última ejecución.",
       "schedule": "Se ejecuta según una programación fija.",
-      "threshold": "Se ejecuta cuando una categoría o subcategoría alcanza un número de reseñas en un periodo."
+      "threshold": "Se ejecuta cuando una categoría o subcategoría alcanza un número de reseñas en un periodo.",
+      "github_issue": "Se ejecuta con una incidencia abierta de su repositorio que el data lake ingirió y clasificó como de su tipo."
     },
     "everyOptions": {
       "12h": "12 horas",
@@ -151,7 +156,15 @@
     "perOptions": {
       "category": "Categoría",
       "subcategory": "Subcategoría"
-    }
+    },
+    "engineeringHint": "Lo que activa al agente de ingeniería. Una ejecución a la vez y nunca dos ejecuciones para la misma incidencia.",
+    "thresholdWithSources": "Un umbral cuenta todas las fuentes: quítalo o borra las fuentes en la pestaña Configuración.",
+    "label": "Etiqueta",
+    "labelHint": "En un repositorio público, una incidencia solo inicia una ejecución con esta etiqueta, que añade un responsable del repositorio.",
+    "lookbackDays": "Periodo (días)",
+    "lookbackHint": "Incidencias ingeridas en estos últimos días. Una etiqueta añadida después se pierde.",
+    "trustedAuthors": "También las incidencias abiertas por propietarios, miembros y colaboradores del repositorio",
+    "trustedAuthorsHint": "Solo en un repositorio privado: en uno público siempre hace falta la etiqueta."
   },
   "personas": {
     "fixed": "Personas fijas ({{n, number}} de {{max, number}})",
@@ -186,7 +199,9 @@
     "callsPerRun": "Llamadas al modelo por ejecución",
     "monthlyCap": "Límite mensual de llamadas al modelo",
     "monthlyCapHint": "El agente deja de iniciar ejecuciones cuando las llamadas del mes alcanzan este límite.",
-    "uncapped": "Sin límite mensual"
+    "uncapped": "Sin límite mensual",
+    "engineeringRunsPerDayHint": "Como máximo {{n, number}} ejecuciones al día por sus disparadores. «Ejecutar ahora» no cuenta.",
+    "engineeringSpend": "Lo que gastan sus ejecuciones lo limitan el presupuesto mensual de su flujo de trabajo (en su configuración) y los topes de ejecución del despliegue; el tope estricto siempre está activo para sus ejecuciones."
   },
   "run": {
     "hint": "Cada ejecución sigue el flujo de trabajo. El gráfico ilumina los pasos a medida que se ejecutan; es una vista, no un control.",
@@ -211,8 +226,8 @@
     "hideTechnical": "Ocultar registro técnico",
     "summary": {
       "title": "Qué pasó",
-      "started": { "manual": "Iniciada a mano.", "schedule": "Iniciada según su programación.", "new_reviews": "Iniciada porque llegaron reseñas nuevas.", "threshold": "Iniciada porque se superó un umbral." },
-      "startedAt": { "manual": "Iniciada a mano el {{when}}.", "schedule": "Iniciada según su programación el {{when}}.", "new_reviews": "Iniciada el {{when}} porque llegaron reseñas nuevas.", "threshold": "Iniciada el {{when}} porque se superó un umbral." },
+      "started": { "manual": "Iniciada a mano.", "schedule": "Iniciada según su programación.", "new_reviews": "Iniciada porque llegaron reseñas nuevas.", "threshold": "Iniciada porque se superó un umbral.", "github_issue": "Iniciada desde una incidencia de GitHub." },
+      "startedAt": { "manual": "Iniciada a mano el {{when}}.", "schedule": "Iniciada según su programación el {{when}}.", "new_reviews": "Iniciada el {{when}} porque llegaron reseñas nuevas.", "threshold": "Iniciada el {{when}} porque se superó un umbral.", "github_issue": "Iniciada el {{when}} desde una incidencia de GitHub." },
       "outcome": { "queued": "Esperando para empezar.", "running": "Trabajando en ello.", "runningStep": "Trabajando ahora en «{{step}}».", "completed": "Terminada.", "completedAt": "Terminada el {{when}}.", "cancelled": "Cancelada.", "cancelledAt": "Cancelada el {{when}}.", "failed": "Se detuvo antes de terminar.", "failedBecause": "Se detuvo antes de terminar: {{reason}}", "needs_human": "En pausa: necesita tu decisión." },
       "produced": "Qué produjo",
       "producedNothing": "Nada todavía.",
@@ -242,7 +257,8 @@
       "manual": "Manual",
       "schedule": "Programación",
       "new_reviews": "Reseñas nuevas",
-      "threshold": "Umbral"
+      "threshold": "Umbral",
+      "github_issue": "Incidencia de GitHub"
     },
     "stepStatus": {
       "idle": "Sin iniciar",
@@ -258,6 +274,21 @@
       "verdict": "Veredicto",
       "decision": "Decisión",
       "artifact": "Artefacto"
+    },
+    "engineeringConfirmBug": "El agente inicia una ejecución de ingeniería en su repositorio: trabaja en una rama propia y se detiene en un borrador de pull request. Indica un número de incidencia para corregirla (aunque ya se ejecutara antes) o déjalo vacío para buscar errores.",
+    "engineeringConfirmFeature": "El agente inicia una ejecución de ingeniería en su repositorio a partir de una incidencia: construye la funcionalidad en una rama propia y se detiene en un borrador de pull request. Para construir desde un PRD, abre el PRD y elige «Construir desde este PRD».",
+    "issueOptional": "Número de incidencia (opcional)",
+    "issueRequired": "Número de incidencia",
+    "issueInvalid": "El número de la incidencia: un número entero desde 1.",
+    "issueHint": "Una incidencia del repositorio del agente.",
+    "engineering": {
+      "title": "Ejecución de ingeniería",
+      "fromIssue": "Iniciada desde la incidencia #{{number}} de {{repository}}.",
+      "fromPrd": "Iniciada desde el PRD {{document}} del proyecto {{project}}.",
+      "fromReviews": "Iniciada desde {{n, number}} informes de su alcance.",
+      "fromNothing": "Iniciada para buscar errores en su repositorio.",
+      "followHint": "Síguela y detenla en su monitor de ejecución: esta ejecución termina cuando termina la de ingeniería.",
+      "openMonitor": "Abrir el monitor de ejecución"
     }
   },
   "editor": {
@@ -1390,5 +1421,36 @@
       "name": "Automejora",
       "description": "El coach lee ejecuciones anteriores, propone nuevas versiones de habilidades y las evalúa; un administrador acepta o rechaza cada una."
     }
+  },
+  "engineeringAgent": {
+    "deploymentFeedback": "Trabaja con el feedback del despliegue.",
+    "setupTitle": "Configurar {{name}}",
+    "setupDescription": "Elige la conexión de repositorio con la que trabaja, el lenguaje del repositorio y lo que sus ejecuciones pueden gastar al mes. Después queda activado y se ejecuta en tu nombre.",
+    "connection": "Conexión de repositorio",
+    "connectionHint": "Con un disparador de incidencias de GitHub solo se muestran conexiones de GitHub.",
+    "language": "Lenguaje",
+    "budget": "Presupuesto mensual (USD)",
+    "budgetHint": "Se guarda en su flujo de trabajo: lo que todas sus ejecuciones pueden gastar en un mes natural.",
+    "budgetInvalid": "Dólares y centavos, de 0,01 a 100.000.",
+    "setupFailed": "No se pudo configurar el agente.",
+    "saveAndEnable": "Guardar y activar",
+    "save": "Guardar",
+    "loadFailed": "No se pudo leer la configuración del agente.",
+    "loading": "Leyendo la configuración del agente",
+    "runsAs": "Se ejecuta como {{name}}.",
+    "changeSetup": "Cambiar la configuración",
+    "connectFirst": "Conecta antes un repositorio",
+    "setUp": "Configurar",
+    "whyNoConnection": "Desactivado: necesita una conexión de repositorio con la que trabajar.",
+    "whySetUp": "Desactivado hasta que se configure: una conexión, un lenguaje y un presupuesto mensual."
+  },
+  "prdBuild": {
+    "button": "Construir desde este PRD",
+    "started": "Abrir el monitor de ejecución",
+    "title": "¿Construir desde este PRD?",
+    "message": "{{name}} inicia una ejecución de ingeniería que construye la funcionalidad que describe este PRD, en una rama propia, y se detiene en un borrador de pull request.",
+    "confirm": "Iniciar la construcción",
+    "agent": "Agente",
+    "inputHint": "La ejecución recibe este PRD como entrada, por su id."
   }
 }

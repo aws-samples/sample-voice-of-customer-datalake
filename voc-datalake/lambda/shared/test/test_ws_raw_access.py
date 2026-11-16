@@ -190,6 +190,9 @@ ASYNC_API_WORKERS: Final = frozenset({'lambda/api/manual_import_processor.py'})
 # shared/platform_workspaces.py and shared/workspace_members.py, are phase 3 like the workspaces API).
 ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/agents/context_blocks.py': (3, {'Table': 1}),
+    # 7.47.00: an engineering agent's run status, one GetItem of voc-engineering's run META (the engineering agents'
+    # own table, the deployment's like every agents module's until agents move per workspace: 3g3).
+    'lambda/agents/heartbeat/engineering.py': (3, {'Table': 1}),
     'lambda/agents/heartbeat/handler.py': (3, {'DATE#': 1, 'Table': 2}),
     'lambda/agents/nodes/aggregate_reviews.py': (3, {'get_aggregates_table': 1}),
     'lambda/agents/nodes/select_or_create_project.py': (3, {'get_aggregates_table': 2}),

@@ -13,7 +13,9 @@
   },
   "scope": {
     "all": "모든 카테고리",
-    "some": "감시 대상: {{list}}"
+    "some": "감시 대상: {{list}}",
+    "sources": "이 소스만",
+    "sourcesHint": "아무것도 선택하지 않으면 모든 소스를 살펴봅니다. 임계값 트리거는 모든 소스를 세므로 소스를 지정하면 사용할 수 없습니다."
   },
   "views": {
     "label": "에이전트 페이지 섹션",
@@ -88,7 +90,8 @@
     "visibilityHint": "비공개 프로젝트는 소유자, 멤버, 관리자만 볼 수 있습니다.",
     "workflow": "워크플로",
     "workflowDefault": "리뷰 → 프로토타입(기본 제공)",
-    "workflowHint": "워크플로 탭에서 단계를 편집하세요."
+    "workflowHint": "워크플로 탭에서 단계를 편집하세요.",
+    "engineeringInstructionsHint": "모든 실행 목표의 앞부분이 됩니다(최대 {{n, number}}자). 리뷰나 이슈의 본문을 여기에 붙여 넣지 마세요."
   },
   "visibility": {
     "private": "비공개",
@@ -135,12 +138,14 @@
     "kinds": {
       "new_reviews": "새 리뷰",
       "schedule": "일정",
-      "threshold": "임계값"
+      "threshold": "임계값",
+      "github_issue": "GitHub 이슈"
     },
     "kindHints": {
       "new_reviews": "마지막 실행 이후 범위 내 새 피드백이 충분히 들어오면 실행됩니다.",
       "schedule": "정해진 일정에 따라 실행됩니다.",
-      "threshold": "카테고리 또는 하위 카테고리의 리뷰 수가 기간 내 기준에 도달하면 실행됩니다."
+      "threshold": "카테고리 또는 하위 카테고리의 리뷰 수가 기간 내 기준에 도달하면 실행됩니다.",
+      "github_issue": "데이터 레이크가 수집해 이 에이전트의 유형으로 분류한, 저장소의 열린 이슈로 실행합니다."
     },
     "everyOptions": {
       "12h": "12시간",
@@ -150,7 +155,15 @@
     "perOptions": {
       "category": "카테고리",
       "subcategory": "하위 카테고리"
-    }
+    },
+    "engineeringHint": "엔지니어링 에이전트를 깨우는 조건입니다. 한 번에 하나씩 실행하며, 같은 이슈로 두 번 실행하지 않습니다.",
+    "thresholdWithSources": "임계값은 모든 소스를 셉니다. 임계값을 제거하거나 설정 탭에서 소스를 비우세요.",
+    "label": "레이블",
+    "labelHint": "공개 저장소에서는 메인테이너가 붙인 이 레이블이 있는 이슈만 실행을 시작합니다.",
+    "lookbackDays": "조회 기간(일)",
+    "lookbackHint": "최근 이 기간 안에 수집된 이슈. 기간이 지난 뒤 붙인 레이블은 놓칩니다.",
+    "trustedAuthors": "저장소 소유자, 멤버, 협업자가 연 이슈도 포함",
+    "trustedAuthorsHint": "비공개 저장소에서만 적용됩니다. 공개 저장소에서는 항상 레이블이 필요합니다."
   },
   "personas": {
     "fixed": "고정 페르소나({{n, number}}/{{max, number}})",
@@ -185,7 +198,9 @@
     "callsPerRun": "실행당 모델 호출 수",
     "monthlyCap": "월간 모델 호출 한도",
     "monthlyCapHint": "이번 달 호출 수가 한도에 도달하면 에이전트가 새 실행을 시작하지 않습니다.",
-    "uncapped": "월간 한도 없음"
+    "uncapped": "월간 한도 없음",
+    "engineeringRunsPerDayHint": "트리거로 하루 최대 {{n, number}}회 실행합니다. '지금 실행'은 세지 않습니다.",
+    "engineeringSpend": "실행 비용은 워크플로의 월 예산(설정에서 지정)과 배포의 실행 한도로 제한되며, 이 에이전트의 실행에는 하드 캡이 항상 적용됩니다."
   },
   "run": {
     "hint": "각 실행은 워크플로를 따릅니다. 그래프는 실행 중인 단계를 표시하며, 보기 전용이고 제어 기능은 없습니다.",
@@ -210,8 +225,8 @@
     "hideTechnical": "기술 로그 숨기기",
     "summary": {
       "title": "무슨 일이 있었나요",
-      "started": { "manual": "수동으로 시작했습니다.", "schedule": "일정에 따라 시작했습니다.", "new_reviews": "새 리뷰가 도착해 시작했습니다.", "threshold": "임계값을 넘어 시작했습니다." },
-      "startedAt": { "manual": "{{when}}에 수동으로 시작했습니다.", "schedule": "{{when}}에 일정에 따라 시작했습니다.", "new_reviews": "새 리뷰가 도착해 {{when}}에 시작했습니다.", "threshold": "임계값을 넘어 {{when}}에 시작했습니다." },
+      "started": { "manual": "수동으로 시작했습니다.", "schedule": "일정에 따라 시작했습니다.", "new_reviews": "새 리뷰가 도착해 시작했습니다.", "threshold": "임계값을 넘어 시작했습니다.", "github_issue": "GitHub 이슈에서 시작되었습니다." },
+      "startedAt": { "manual": "{{when}}에 수동으로 시작했습니다.", "schedule": "{{when}}에 일정에 따라 시작했습니다.", "new_reviews": "새 리뷰가 도착해 {{when}}에 시작했습니다.", "threshold": "임계값을 넘어 {{when}}에 시작했습니다.", "github_issue": "{{when}}에 GitHub 이슈에서 시작되었습니다." },
       "outcome": { "queued": "시작을 기다리는 중입니다.", "running": "지금 작업 중입니다.", "runningStep": "지금 \"{{step}}\" 작업 중입니다.", "completed": "완료했습니다.", "completedAt": "{{when}}에 완료했습니다.", "cancelled": "취소되었습니다.", "cancelledAt": "{{when}}에 취소되었습니다.", "failed": "끝나기 전에 멈췄습니다.", "failedBecause": "끝나기 전에 멈췄습니다: {{reason}}", "needs_human": "일시 중지됨 — 결정이 필요합니다." },
       "produced": "만든 결과",
       "producedNothing": "아직 없습니다.",
@@ -241,7 +256,8 @@
       "manual": "수동",
       "schedule": "일정",
       "new_reviews": "새 리뷰",
-      "threshold": "임계값"
+      "threshold": "임계값",
+      "github_issue": "GitHub 이슈"
     },
     "stepStatus": {
       "idle": "시작 전",
@@ -257,6 +273,21 @@
       "verdict": "판정",
       "decision": "결정",
       "artifact": "산출물"
+    },
+    "engineeringConfirmBug": "에이전트가 저장소에서 엔지니어링 실행을 시작합니다. 자체 브랜치에서 작업하고 초안 풀 리퀘스트에서 멈춥니다. 이슈 번호를 입력하면 그 이슈를 수정하고(이전에 실행한 이슈도 다시 실행), 비워 두면 버그를 찾습니다.",
+    "engineeringConfirmFeature": "에이전트가 이슈를 바탕으로 저장소에서 엔지니어링 실행을 시작합니다. 자체 브랜치에서 기능을 만들고 초안 풀 리퀘스트에서 멈춥니다. PRD로 만들려면 PRD를 열고 '이 PRD로 빌드'를 선택하세요.",
+    "issueOptional": "이슈 번호(선택)",
+    "issueRequired": "이슈 번호",
+    "issueInvalid": "이슈 번호: 1 이상의 정수.",
+    "issueHint": "에이전트 저장소의 이슈.",
+    "engineering": {
+      "title": "엔지니어링 실행",
+      "fromIssue": "{{repository}}의 이슈 #{{number}}에서 시작되었습니다.",
+      "fromPrd": "프로젝트 {{project}}의 PRD {{document}}에서 시작되었습니다.",
+      "fromReviews": "범위 안의 보고 {{n, number}}건에서 시작되었습니다.",
+      "fromNothing": "저장소의 버그를 찾기 위해 시작되었습니다.",
+      "followHint": "실행 모니터에서 진행을 확인하고 중지하세요. 엔지니어링 실행이 끝나면 이 실행도 끝납니다.",
+      "openMonitor": "실행 모니터 열기"
     }
   },
   "editor": {
@@ -1383,5 +1414,36 @@
       "name": "자기 개선",
       "description": "코치가 지난 실행을 읽고 새 스킬 버전을 제안해 벤치마크합니다. 관리자가 각각을 수락하거나 거절합니다."
     }
+  },
+  "engineeringAgent": {
+    "deploymentFeedback": "배포의 피드백으로 동작합니다.",
+    "setupTitle": "{{name}} 설정",
+    "setupDescription": "작업할 저장소 연결, 저장소의 언어, 실행이 한 달에 쓸 수 있는 금액을 고르세요. 그러면 에이전트가 활성화되고 사용자 본인으로 실행됩니다.",
+    "connection": "저장소 연결",
+    "connectionHint": "GitHub 이슈 트리거가 있으면 GitHub 연결만 표시됩니다.",
+    "language": "언어",
+    "budget": "월 예산(USD)",
+    "budgetHint": "워크플로에 저장됩니다. 한 달(달력 기준) 동안 모든 실행이 쓸 수 있는 금액입니다.",
+    "budgetInvalid": "달러와 센트로, 0.01부터 100,000까지.",
+    "setupFailed": "에이전트를 설정하지 못했습니다.",
+    "saveAndEnable": "저장하고 활성화",
+    "save": "저장",
+    "loadFailed": "에이전트 설정을 읽지 못했습니다.",
+    "loading": "에이전트 설정을 읽는 중",
+    "runsAs": "{{name}}(으)로 실행합니다.",
+    "changeSetup": "설정 변경",
+    "connectFirst": "먼저 저장소를 연결하세요",
+    "setUp": "설정",
+    "whyNoConnection": "사용 안 함: 작업할 저장소 연결이 필요합니다.",
+    "whySetUp": "설정할 때까지 사용 안 함: 연결, 언어, 월 예산."
+  },
+  "prdBuild": {
+    "button": "이 PRD로 빌드",
+    "started": "실행 모니터 열기",
+    "title": "이 PRD로 빌드할까요?",
+    "message": "{{name}}이(가) 엔지니어링 실행을 시작해 이 PRD에 설명된 기능을 자체 브랜치에서 만들고 초안 풀 리퀘스트에서 멈춥니다.",
+    "confirm": "빌드 시작",
+    "agent": "에이전트",
+    "inputHint": "실행은 이 PRD를 ID로 입력받습니다."
   }
 }

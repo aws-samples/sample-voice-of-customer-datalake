@@ -1,6 +1,6 @@
 /**
  * @fileoverview A run's start rules: what each field takes and the request it builds, and the
- * LOCKSTEP with the server, read as text (`lambda/api/agents_handler.py` MAX_RUN_GOAL, `runtime/interface.py`
+ * LOCKSTEP with the server, read as text (`lambda/shared/engineering_agent_runs.py` MAX_RUN_GOAL, `runtime/interface.py`
  * MAX_ID_LENGTH, the stack's IMAGE_LANGUAGES, which a Python test holds to the runtime's REGISTRY_HOSTS): a field the
  * form lets through and the server refuses would be a start that fails after Start.
  */
@@ -27,7 +27,8 @@ function pythonNumber(source: string, name: string): number {
 
 describe('the start rules: form ⇄ server', () => {
   it('bound the goal and the connection id as the server does', () => {
-    expect(pythonNumber(read('lambda/api/agents_handler.py'), 'MAX_RUN_GOAL')).toBe(MAX_RUN_GOAL)
+    // (the start request's own module since 7.47.00, which the Agents API and the agents' heartbeat share)
+    expect(pythonNumber(read('lambda/shared/engineering_agent_runs.py'), 'MAX_RUN_GOAL')).toBe(MAX_RUN_GOAL)
     expect(pythonNumber(read('lambda/engineering/runtime/interface.py'), 'MAX_ID_LENGTH')).toBe(MAX_CONNECTION_ID)
     expect(pythonNumber(read('lambda/engineering/run_links.py'), 'MAX_NUMBER')).toBe(MAX_ISSUE_NUMBER)
   })

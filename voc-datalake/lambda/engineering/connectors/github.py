@@ -509,6 +509,21 @@ class GitHubHost:
     def branch_tree_hash(self, connection_id: str, branch: str) -> str | None:
         return self._branch_tree(connection_id, _BRANCH, branch)
 
+    def head_commit(self, connection_id: str, branch: str) -> str | None:
+        """The head commit of ``branch`` (``contents: read``), None for none."""
+        return self._head(connection_id, _BRANCH, branch)
+
+    def issue_state(self, connection_id: str, number: int) -> str | None:
+        """Issue ``number``'s state (``issues: read``): None for no such issue, and for a pull request, which GitHub's
+        issues API answers too (with its ``pull_request`` field)."""
+        response = self._api(connection_id, _READS['issue'], 'GET', f'/issues/{int(number)}', 'the issue read',
+                             ok=(200, 404, 410))
+        data = None if response.status != 200 else _json(response)
+        if not isinstance(data, dict) or 'pull_request' in data:
+            return None
+        state = data.get('state')
+        return state if state in ('open', 'closed') else None
+
     def _head(self, connection_id: str, permissions: Permissions, branch: str) -> str | None:
         response = self._api(connection_id, permissions, 'GET', f'/git/ref/heads/{quote(branch, safe="/")}',
                              'the branch lookup', ok=(200, 404))

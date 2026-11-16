@@ -35,7 +35,7 @@
 
 import { handleGitHubAppRoutes } from './mock-github-apps.js';
 
-const SAMPLE_RUN_ID = '01JDA7K3M9Q2R5T8V0W4X6Y1Z3';
+export const SAMPLE_RUN_ID = '01JDA7K3M9Q2R5T8V0W4X6Y1Z3';
 export const SAMPLE_FLOW_ID = 'wf_7c2d9e41a0b3';
 const PREFIX = '/agents/engineering/';
 const SIGNALS = ['save', 'pause', 'resume', 'shutdown', 'stop_now'];

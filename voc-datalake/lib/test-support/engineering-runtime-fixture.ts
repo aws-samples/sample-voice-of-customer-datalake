@@ -36,11 +36,15 @@ function fakePeers(stack: cdk.Stack, kmsKey: kms.IKey, pins: Map<string, string>
     admitRuntime: (role: iam.IRole, functionName: string) => {
       admitted.push({ role: stack.resolve(role.roleName), functionName });
     },
+    admitStart: (role: iam.IRole, functionName: string) => {
+      admitted.push({ role: stack.resolve(role.roleName), functionName, start: true });
+    },
   };
 }
 
-/** A runtime the broker was asked to admit: its role's name (resolved) and its function's. */
-export interface Admitted { role: unknown; functionName: string }
+/** A runtime (or, `start`, the start function: 7.47.00) the broker was asked to admit: its role's name (resolved) and
+ *  its function's. */
+export interface Admitted { role: unknown; functionName: string; start?: boolean }
 
 export interface RuntimeStack {
   template: Template; added: boolean; pins: Map<string, string>;

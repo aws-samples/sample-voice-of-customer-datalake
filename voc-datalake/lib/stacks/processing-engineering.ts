@@ -59,6 +59,7 @@ export function addProcessingEngineering(scope: Construct, props: ProcessingEngi
       brokerUrl: broker.url, connectionParameters: broker.connectionParameters,
       addPublisher: (statementId, role, source) => bus.addPublisher(statementId, role, source),
       admitRuntime: (role, functionName) => broker.admitRuntime(role, functionName),
+      admitStart: (role, functionName) => broker.admitStart(role, functionName),
     };
   }
   // The runtime (one AgentCore session per agent; engineering-runtime.ts, engineering-agentcore.ts): its agent roles

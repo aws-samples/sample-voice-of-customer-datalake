@@ -24,6 +24,8 @@ import { BackToAgents } from './BackToAgents'
 import { PersonasSection } from './AgentPersonas'
 import { BudgetSection, InstructionsSection, ModelsSection, SettingsSection } from './AgentSections'
 import { TriggersSection } from './AgentTriggers'
+import { EngineeringEnableControl } from './AgentEngineering'
+import { isEngineeringAgent } from '../../api/agentsApi'
 import { RunsTab } from './RunsTab'
 import { changedFields, checkUpdate, draftOf, DRAFT_KEYS } from './agentDraft'
 import { rebaseDraft } from '../../components/UnsavedChangesGuard/rebaseDraft'
@@ -102,13 +104,14 @@ function ConfigEditor({ agent, tab, isAdmin }: Readonly<{ agent: Agent; tab: Age
   }
   const changes = changedFields(agent, draft)
   const dirty = Object.keys(changes).length > 0
-  const checked = checkUpdate(changes)
+  const engineering = isEngineeringAgent(agent)
+  const checked = checkUpdate(changes, engineering)
   const Section = SECTIONS[tab]
   const guard = useConfigGuard({ isAdmin, dirty, checked, save: update.mutateAsync, discard: () => setDraft(draftOf(agent)) })
   return (
     <div className="space-y-4">
       <div className="card">
-        {Section !== undefined && <Section draft={draft} readOnly={!isAdmin} onChange={setDraft} />}
+        {Section !== undefined && <Section draft={draft} readOnly={!isAdmin} onChange={setDraft} engineering={engineering} />}
       </div>
       {isAdmin && (
         <StickyActionBar>
@@ -152,14 +155,16 @@ function Header({ agent, isAdmin }: Readonly<{ agent: Agent; isAdmin: boolean }>
           })}
         </p>
       </div>
-      <label className="flex items-center gap-2 text-sm text-text">
-        <button type="button" role="switch" aria-checked={agent.enabled} disabled={!isAdmin || setEnabled.isPending}
-          className={clsx('switch', agent.enabled && 'switch-on')} onClick={() => setEnabled.mutate(!agent.enabled)}
-          aria-label={t('detail.enabledLabel')}>
-          <span className="switch-knob" />
-        </button>
-        {agent.enabled ? t('status.enabled') : t('status.disabled')}
-      </label>
+      {isEngineeringAgent(agent) ? <EngineeringEnableControl agent={agent} isAdmin={isAdmin} /> : (
+        <label className="flex items-center gap-2 text-sm text-text">
+          <button type="button" role="switch" aria-checked={agent.enabled} disabled={!isAdmin || setEnabled.isPending}
+            className={clsx('switch', agent.enabled && 'switch-on')} onClick={() => setEnabled.mutate(!agent.enabled)}
+            aria-label={t('detail.enabledLabel')}>
+            <span className="switch-knob" />
+          </button>
+          {agent.enabled ? t('status.enabled') : t('status.disabled')}
+        </label>
+      )}
       {isAdmin && (
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => setConfirmArchive(true)}>
           <Archive size={14} aria-hidden="true" /> {t('detail.archive')}

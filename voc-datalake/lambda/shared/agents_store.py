@@ -59,6 +59,7 @@ from shared.model_config import ALLOWED_MODEL_IDS
 from shared.model_profile import payload_fields
 from shared.request_body import validated_text as _text
 from shared.row_ids import validated_row_id
+from shared.source_profiles import SOURCE_ID_RE
 from shared.update_expressions import set_clause
 
 AGENTS_TABLE_ENV: Final = 'AGENTS_TABLE'
@@ -91,6 +92,8 @@ TRIGGER_MANUAL: Final = 'manual'
 TRIGGER_SCHEDULE: Final = 'schedule'
 TRIGGER_NEW_REVIEWS: Final = 'new_reviews'
 TRIGGER_THRESHOLD: Final = 'threshold'
+#: An engineering agent's trigger (7.47.00): a labelled GitHub issue of its connection's repository, from the data lake.
+TRIGGER_GITHUB_ISSUE: Final = 'github_issue'
 
 EVENT_KINDS: Final = ('node_started', 'node_finished', 'node_failed', 'message', 'verdict', 'decision', 'artifact')
 EVENT_REF_KEYS: Final = ('project_id', 'document_id', 'persona_id', 'job_id')
@@ -110,6 +113,21 @@ SCHEDULE_EVERY: Final = ('12h', '24h', 'cron')
 THRESHOLD_PER: Final = ('category', 'subcategory')
 
 MAX_SCHEDULED_RUNS_PER_DAY: Final = 2
+# An engineering agent (7.47.00, docs/autonomous-agents.md "Engineering agents"): its own daily cap and instructions.
+MAX_ENGINEERING_RUNS_PER_DAY: Final = 5
+DEFAULT_ENGINEERING_RUNS_PER_DAY: Final = 1
+#: An engineering agent's instructions become the trusted start of its run's goal (500 characters at most, refused).
+MAX_ENGINEERING_INSTRUCTIONS_CHARS: Final = 300
+#: What an engineering agent works on: the ``feedback_type`` of the reviews and issues it takes (shared/feedback_types).
+ENGINEERING_FEEDBACK_TYPES: Final = ('bug', 'feature_request')
+ENGINEERING_FIELDS: Final = frozenset({'connection', 'language', 'feedback_type'})
+#: A ``github_issue`` trigger's label (GitHub's own limit is 50 characters) and its look-back.
+DEFAULT_ISSUE_LABEL: Final = 'voc-agent'
+MAX_ISSUE_LABEL_CHARS: Final = 50
+DEFAULT_ISSUE_LOOKBACK_DAYS: Final = 7
+MAX_ISSUE_LOOKBACK_DAYS: Final = 30
+#: ``scope.sources``: the ``source_platform`` ids an agent's reviews come from (none: every source).
+MAX_SCOPE_SOURCES: Final = 20
 DEFAULT_MODEL_CALLS_PER_RUN: Final = 150
 MIN_MODEL_CALLS_PER_RUN: Final = 10
 MAX_MODEL_CALLS_PER_RUN: Final = 500
@@ -119,11 +137,16 @@ MAX_MONTHLY_CALL_CAP: Final = 1_000_000
 _AGENT_ID_RE: Final = re.compile(r'ag_[0-9a-f]{12}')
 _WORKFLOW_ID_RE: Final = re.compile(r'wf_[0-9a-f]{12}')
 _RUN_ID_RE: Final = re.compile(r'ar_[0-9a-f]{12,20}')
+#: A repository connection's id (engineering/connectors/connections.py CONNECTION_ID; a lockstep test holds them equal).
+CONNECTION_ID_RE: Final = re.compile(r'[a-z0-9][a-z0-9-]{0,62}')
+#: A toolchain's name as the engineering runtime lists them (engineering/runtime/egress.py REGISTRY_HOSTS); the agents
+#: API checks the name against that list, this only its shape.
+_LANGUAGE_RE: Final = re.compile(r'[a-z][a-z0-9+-]{0,31}')
 
 # Fields a create/update body may set; everything else is server-maintained.
 EDITABLE_FIELDS: Final = (
     'name', 'description', 'enabled', 'owner_sub', 'scope', 'instructions', 'personas',
-    'triggers', 'models', 'output', 'workflow_id', 'budget',
+    'triggers', 'models', 'output', 'workflow_id', 'budget', 'engineering',
 )
 
 
@@ -370,11 +393,27 @@ def subcategory_names(category: Mapping[str, Any]) -> list[str]:
         if isinstance(subs, list) else []
 
 
+def _sources(value: object) -> list[str]:
+    """``scope.sources``: the ``source_platform`` ids the agent's reviews must come from (empty: every source)."""
+    sources = [] if value is None else value
+    named = isinstance(sources, list) and all(isinstance(each, str) and SOURCE_ID_RE.match(each) for each in sources)
+    if not named or len(sources) > MAX_SCOPE_SOURCES:
+        raise ValidationError(f'scope.sources must name at most {MAX_SCOPE_SOURCES} sources by their id (lower case, '
+                              'digits, "_" or "-")')
+    return list(dict.fromkeys(sources))
+
+
+def _with_sources(scope: dict[str, Any], sources: list[str]) -> dict[str, Any]:
+    """The scope as stored: ``sources`` only when it names any (a scope from before 7.47.00 reads the same)."""
+    return {**scope, 'sources': sources} if sources else scope
+
+
 def normalize_scope(value: object, categories_config: list[dict]) -> dict[str, Any]:
-    """``{all, categories, subcategories}`` checked against the categories config."""
+    """``{all, categories, subcategories, sources?}`` checked against the categories config."""
     raw = _object(value, 'scope')
-    if _flag(raw.get('all'), 'scope.all', not raw):
-        return {'all': True, 'categories': [], 'subcategories': []}
+    sources = _sources(raw.get('sources'))
+    if _flag(raw.get('all'), 'scope.all', not {key for key in raw if key != 'sources'}):
+        return _with_sources({'all': True, 'categories': [], 'subcategories': []}, sources)
     configured = {c['name']: c for c in categories_config if isinstance(c.get('name'), str)}
     categories = raw.get('categories') or []
     subcategories = raw.get('subcategories') or []
@@ -398,12 +437,26 @@ def normalize_scope(value: object, categories_config: list[dict]) -> dict[str, A
             subs.append({'category': category, 'name': name})
     if not names and not subs:
         raise ValidationError('scope needs all: true, or at least one category or subcategory')
-    return {'all': False, 'categories': names, 'subcategories': subs}
+    return _with_sources({'all': False, 'categories': names, 'subcategories': subs}, sources)
+
+
+def _issue_trigger(raw: Mapping[str, Any]) -> dict[str, Any]:
+    """``github_issue``: ``{label, trusted_authors, lookback_days}`` (the label ``voc-agent`` when left out; an empty
+    label only on a private repository, which the agents API checks against the agent's connection)."""
+    label = raw.get('label', DEFAULT_ISSUE_LABEL)
+    return {'kind': TRIGGER_GITHUB_ISSUE,
+            'label': _text(DEFAULT_ISSUE_LABEL if label is None else label, 'label', MAX_ISSUE_LABEL_CHARS),
+            'trusted_authors': _flag(raw.get('trusted_authors'), 'trusted_authors', False),
+            'lookback_days': _whole(raw.get('lookback_days'), 'lookback_days', 1, MAX_ISSUE_LOOKBACK_DAYS,
+                                    DEFAULT_ISSUE_LOOKBACK_DAYS)}
 
 
 def _trigger(value: object) -> dict[str, Any]:
     raw = _object(value, 'trigger')
-    kind = _choice(raw.get('kind'), 'trigger kind', (TRIGGER_NEW_REVIEWS, TRIGGER_SCHEDULE, TRIGGER_THRESHOLD))
+    kind = _choice(raw.get('kind'), 'trigger kind',
+                   (TRIGGER_NEW_REVIEWS, TRIGGER_SCHEDULE, TRIGGER_THRESHOLD, TRIGGER_GITHUB_ISSUE))
+    if kind == TRIGGER_GITHUB_ISSUE:
+        return _issue_trigger(raw)
     if kind == TRIGGER_NEW_REVIEWS:
         return {'kind': kind,
                 'min_new': _whole(raw.get('min_new'), 'min_new', 1, 10_000, 1),
@@ -430,12 +483,22 @@ def _trigger(value: object) -> dict[str, Any]:
             'window_days': _whole(raw.get('window_days'), 'window_days', 1, 90, 7)}
 
 
-def _triggers(value: object) -> list[dict[str, Any]]:
+def _triggers(value: object, *, engineering: bool, sources: bool) -> list[dict[str, Any]]:
+    """The triggers; ``github_issue`` (at most one) only for an engineering agent, and ``threshold`` never with
+    ``scope.sources`` (its counters have no source dimension, so it would count every source's reviews)."""
     if value is None:
         return []
     if not isinstance(value, list) or len(value) > MAX_TRIGGERS:
         raise ValidationError(f'triggers must be a list of at most {MAX_TRIGGERS}')
-    return [_trigger(entry) for entry in value]
+    triggers = [_trigger(entry) for entry in value]
+    kinds = [trigger['kind'] for trigger in triggers]
+    if TRIGGER_GITHUB_ISSUE in kinds and not engineering:
+        raise ValidationError("a github_issue trigger is an engineering agent's: give the agent its engineering settings")
+    if kinds.count(TRIGGER_GITHUB_ISSUE) > 1:
+        raise ValidationError('an agent has at most one github_issue trigger')
+    if TRIGGER_THRESHOLD in kinds and sources:
+        raise ValidationError('a threshold trigger counts every source: remove scope.sources, or use new_reviews')
+    return triggers
 
 
 def _personas(value: object) -> dict[str, Any]:
@@ -465,12 +528,16 @@ def _models(value: object) -> dict[str, str | None]:
     return {role: raw.get(role) for role in MODEL_ROLES}
 
 
-def _budget(value: object) -> dict[str, Any]:
+def _budget(value: object, *, engineering: bool) -> dict[str, Any]:
+    """The budget; an engineering agent's runs per day are 0-5 (default 1): what each of its runs may spend is its
+    flow's monthly budget and the run caps, not model calls."""
     raw = _object(value, 'budget')
     cap = raw.get('monthly_call_cap', DEFAULT_MONTHLY_CALL_CAP)
+    most, default = ((MAX_ENGINEERING_RUNS_PER_DAY, DEFAULT_ENGINEERING_RUNS_PER_DAY) if engineering
+                     else (MAX_SCHEDULED_RUNS_PER_DAY, MAX_SCHEDULED_RUNS_PER_DAY))
     return {
         'max_scheduled_runs_per_day': _whole(raw.get('max_scheduled_runs_per_day'), 'max_scheduled_runs_per_day',
-                                             0, MAX_SCHEDULED_RUNS_PER_DAY, MAX_SCHEDULED_RUNS_PER_DAY),
+                                             0, most, default),
         'max_model_calls_per_run': _whole(raw.get('max_model_calls_per_run'), 'max_model_calls_per_run',
                                           MIN_MODEL_CALLS_PER_RUN, MAX_MODEL_CALLS_PER_RUN,
                                           DEFAULT_MODEL_CALLS_PER_RUN),
@@ -480,11 +547,45 @@ def _budget(value: object) -> dict[str, Any]:
     }
 
 
+def _optional_id(value: object, label: str, pattern: re.Pattern[str]) -> str | None:
+    """An optional setting of an engineering agent: None for none (or ''), else a name ``pattern`` takes."""
+    if value is None or value == '':
+        return None
+    if not isinstance(value, str) or not pattern.fullmatch(value):
+        raise ValidationError(f'{label} is not a valid name')
+    return value
+
+
+def normalize_engineering(value: object) -> dict[str, Any] | None:
+    """``engineering``: ``{connection, language, feedback_type}``; None for an agent that runs an agents workflow.
+
+    ``connection`` and ``language`` may be None while the agent is disabled ("Set up" in the web app): enabling it
+    needs both (the agents API, which also checks that the connection is stored and that the language has an image).
+    ``feedback_type``: what the agent works on, ``bug`` (the default) or ``feature_request``.
+    """
+    if value is None:
+        return None
+    raw = _object(value, 'engineering')
+    if set(raw) - ENGINEERING_FIELDS:
+        raise ValidationError('engineering takes connection, language and feedback_type only')
+    return {'connection': _optional_id(raw.get('connection'), 'engineering.connection', CONNECTION_ID_RE),
+            'language': _optional_id(raw.get('language'), 'engineering.language', _LANGUAGE_RE),
+            'feedback_type': _choice(raw.get('feedback_type'), 'engineering.feedback_type', ENGINEERING_FEEDBACK_TYPES,
+                                     ENGINEERING_FEEDBACK_TYPES[0])}
+
+
+def is_engineering_agent(agent: Mapping[str, Any]) -> bool:
+    """An agent that runs an engineering flow (it has ``engineering`` settings, 7.47.00)."""
+    return isinstance(agent.get('engineering'), Mapping)
+
+
 def normalize_agent(body: Mapping[str, Any], categories_config: list[dict],
                     base: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """The editable agent fields, validated; ``base`` (an existing agent) fills omissions.
 
-    ``workflow_id`` is only shape-checked here (existence is the caller's read).
+    ``workflow_id`` is only shape-checked here (existence is the caller's read). An engineering agent (``engineering``
+    set) keeps its instructions to ``MAX_ENGINEERING_INSTRUCTIONS_CHARS`` and its runs per day to 0-5; only it may
+    have a ``github_issue`` trigger.
     """
     unknown = set(body) - set(EDITABLE_FIELDS)
     if unknown:
@@ -497,19 +598,24 @@ def normalize_agent(body: Mapping[str, Any], categories_config: list[dict],
     if owner_sub is not None:
         owner_sub = _text(owner_sub, 'owner_sub', MAX_SUB_CHARS, required=True)
     output = _object(merged.get('output'), 'output')
+    engineering = normalize_engineering(merged.get('engineering'))
+    scope = normalize_scope(merged.get('scope'), categories_config)
+    instructions_limit = MAX_INSTRUCTIONS_CHARS if engineering is None else MAX_ENGINEERING_INSTRUCTIONS_CHARS
     return {
         'name': _text(merged.get('name'), 'name', MAX_NAME_CHARS, required=True),
         'description': _text(merged.get('description'), 'description', MAX_DESCRIPTION_CHARS),
         'enabled': _flag(merged.get('enabled'), 'enabled', False),
         'owner_sub': owner_sub,
-        'scope': normalize_scope(merged.get('scope'), categories_config),
-        'instructions': _text(merged.get('instructions'), 'instructions', MAX_INSTRUCTIONS_CHARS),
+        'scope': scope,
+        'instructions': _text(merged.get('instructions'), 'instructions', instructions_limit),
         'personas': _personas(merged.get('personas')),
-        'triggers': _triggers(merged.get('triggers')),
+        'triggers': _triggers(merged.get('triggers'), engineering=engineering is not None,
+                              sources=bool(scope.get('sources'))),
         'models': _models(merged.get('models')),
         'output': {'visibility': _choice(output.get('visibility'), 'output.visibility', VISIBILITIES, 'private')},
         'workflow_id': workflow_id,
-        'budget': _budget(merged.get('budget')),
+        'budget': _budget(merged.get('budget'), engineering=engineering is not None),
+        'engineering': engineering,
     }
 
 
@@ -530,7 +636,10 @@ def agent_visible(viewer: CategoryScope, agent: Mapping[str, Any]) -> bool:
 
 
 def item_in_scope(scope: Mapping[str, Any], item: Mapping[str, Any]) -> bool:
-    """True when a feedback item falls inside an agent's scope."""
+    """True when a feedback item falls inside an agent's scope (its ``sources`` first, when it names any)."""
+    sources = scope.get('sources')
+    if isinstance(sources, list) and sources and item.get('source_platform') not in sources:
+        return False
     if scope.get('all') is True:
         return True
     category = item_category(item)
@@ -647,6 +756,8 @@ def agent_view(item: Mapping[str, Any], now: datetime | None = None) -> dict[str
         'agent_id': data.get('agent_id'),
         **{name: data.get(name) for name in EDITABLE_FIELDS},
         'status': data.get('status', AGENT_STATUS_ACTIVE),
+        # An engineering agent runs as the administrator who enabled it (7.47.00): their name, beside owner_sub.
+        'owner_username': data.get('owner_username'),
         'created_by': data.get('created_by'),
         'created_at': data.get('created_at'),
         'updated_at': data.get('updated_at'),
@@ -867,7 +978,13 @@ def workflow_view(item: Mapping[str, Any], *, include_definition: bool = True) -
 
 @dataclass(frozen=True)
 class RunStart:
-    """What a starter asks for. ``extra_agent_sets`` lets the heartbeat record trigger state."""
+    """What a starter asks for. ``extra_agent_sets`` lets the heartbeat record trigger state.
+
+    An engineering agent's run (7.47.00) also gives ``run_fields`` (``kind: engineering``, its ``engineering_run_id``,
+    the ``issue`` or ``prd`` it starts from, its ``feedback_count``: written on the run row) and, from a GitHub issue,
+    ``issue_claim``: the issue's ``ISSUE_RUN#`` row (:func:`issue_claim_item`), put create-only in the same transaction,
+    so one issue starts one run, ever, whichever agent or tick asks (:class:`IssueClaimed`).
+    """
 
     trigger: str
     requested_by: str
@@ -876,6 +993,57 @@ class RunStart:
     counts_against_daily_cap: bool = False
     daily_cap: int = MAX_SCHEDULED_RUNS_PER_DAY
     extra_agent_sets: Mapping[str, Any] | None = None
+    run_fields: Mapping[str, Any] | None = None
+    issue_claim: Mapping[str, Any] | None = None
+    #: The run's id when the starter minted it (the issue claim names it); else one is minted here.
+    run_id: str | None = None
+
+
+class IssueClaimed(Exception):
+    """The issue a run would start from has started one already (its ``ISSUE_RUN#`` row): nothing was written."""
+
+
+#: The run of a GitHub issue (7.47.00): one row per issue for every agent, ``ISSUE_RUN#<ws>`` / ``<owner/name>#<n>``,
+#: the engineering agents' fixed scope (engineering/connectors/identity.py WORKSPACE: ``default`` until agents move per
+#: workspace, docs/multi-workspace.md 3g3).
+ISSUE_RUN_PK: Final = 'ISSUE_RUN#default'
+RUN_KIND_ENGINEERING: Final = 'engineering'
+
+
+def issue_claim_key(repository: str, number: int) -> dict[str, str]:
+    """The issue's claim row: its repository lower-cased (GitHub's names are case-insensitive) and its number."""
+    return {'pk': ISSUE_RUN_PK, 'sk': f'{repository.lower()}#{number}'}
+
+
+def issue_claim_item(repository: str, number: int, *, agent_id: str, run_id: str, engineering_run_id: str,
+                     feedback_id: str, now: datetime) -> dict[str, Any]:
+    """The claim a run of issue ``number`` of ``repository`` writes with its run: which agent, run and engineering run
+    took it, from which feedback item, when. Create-only, never updated or deleted."""
+    return {**issue_claim_key(repository, number), 'repository': repository, 'number': number, 'agent_id': agent_id,
+            'agent_run_id': run_id, 'engineering_run_id': engineering_run_id, 'feedback_id': feedback_id,
+            'claimed_at': iso(now)}
+
+
+def issue_claimed(table: Any, repository: str, number: int) -> bool:
+    """Whether issue ``number`` of ``repository`` has started a run already (a consistent read of its claim)."""
+    try:
+        return consistent_item(table, issue_claim_key(repository, number)) is not None
+    except (ClientError, BotoCoreError) as exc:
+        raise _service_error('read the issue claim', exc) from exc
+
+
+def claim_issue_if_free(table: Any, item: Mapping[str, Any]) -> bool:
+    """An admin's Run now of an issue (it reruns one already claimed): its claim written when the issue has none yet,
+    so a tick never starts it too; True when written, False when it had one (that one is kept)."""
+    try:
+        table.put_item(Item=dict(item), ConditionExpression='attribute_not_exists(pk)')
+    except ClientError as exc:
+        if is_conditional_check_failure(exc):
+            return False
+        raise _service_error('claim the issue', exc) from exc
+    except BotoCoreError as exc:
+        raise _service_error('claim the issue', exc) from exc
+    return True
 
 
 def _daily_cap_clause(agent: Mapping[str, Any], today: str, cap: int) -> tuple[str, str, dict[str, Any]]:
@@ -896,7 +1064,7 @@ def start_run(table: Any, agent: Mapping[str, Any], request: RunStart, *, now: d
     """
     if request.counts_against_daily_cap and request.daily_cap <= 0:
         return None
-    agent_id, run_id, stamp = agent['agent_id'], new_run_id(now), iso(now)
+    agent_id, run_id, stamp = agent['agent_id'], request.run_id or new_run_id(now), iso(now)
     sets = {'active_run_id': run_id, 'last_run_at': stamp, 'last_run_id': run_id,
             'last_run_status': RUN_QUEUED, 'last_run_cursor': stamp, **(request.extra_agent_sets or {})}
     clause, names, values = set_clause(sets)
@@ -918,17 +1086,25 @@ def start_run(table: Any, agent: Mapping[str, Any], request: RunStart, *, now: d
         # The starter's model profile (shared/model_profile.py; an e2e user's POST /agents/{id}/run), read
         # back by the conductor and the node steps. A scheduled run has no request, so none.
         **payload_fields(),
+        **(request.run_fields or {}),
     }
+    items: list[dict[str, Any]] = [
+        {'Update': {'TableName': table.name, 'Key': agent_key(agent_id), 'UpdateExpression': update,
+                    'ConditionExpression': condition, 'ExpressionAttributeNames': names,
+                    'ExpressionAttributeValues': values}},
+        {'Put': {'TableName': table.name, 'Item': run, 'ConditionExpression': 'attribute_not_exists(pk)'}},
+    ]
+    if request.issue_claim is not None:
+        items.append({'Put': {'TableName': table.name, 'Item': dict(request.issue_claim),
+                              'ConditionExpression': 'attribute_not_exists(pk)'}})
     try:
-        table.meta.client.transact_write_items(TransactItems=[
-            {'Update': {'TableName': table.name, 'Key': agent_key(agent_id), 'UpdateExpression': update,
-                        'ConditionExpression': condition, 'ExpressionAttributeNames': names,
-                        'ExpressionAttributeValues': values}},
-            {'Put': {'TableName': table.name, 'Item': run, 'ConditionExpression': 'attribute_not_exists(pk)'}},
-        ])
+        table.meta.client.transact_write_items(TransactItems=items)
     except ClientError as exc:
         if _is_cancelled_transaction(exc):
-            logger.info('Agent run not started', extra={'agent_id': agent_id, 'reasons': _cancellation_codes(exc)})
+            codes = _cancellation_codes(exc)
+            logger.info('Agent run not started', extra={'agent_id': agent_id, 'reasons': codes})
+            if request.issue_claim is not None and codes[2:3] == ['ConditionalCheckFailed']:
+                raise IssueClaimed('this issue has started a run already') from exc
             return None
         raise _service_error('start the agent run', exc) from exc
     except BotoCoreError as exc:
@@ -967,7 +1143,9 @@ def run_view(item: Mapping[str, Any]) -> dict[str, Any]:
     """
     data = plain(dict(item))
     keys = ('run_id', 'agent_id', 'status', 'trigger', 'trigger_detail', 'started_at', 'finished_at',
-            'project_id', 'current_node_id', 'model_calls', 'error', 'workflow_id', 'workflow_revision')
+            'project_id', 'current_node_id', 'model_calls', 'error', 'workflow_id', 'workflow_revision',
+            # An engineering agent's run (7.47.00): its engineering run (the run monitor's), what it started from.
+            'kind', 'engineering_run_id', 'issue', 'prd', 'feedback_count')
     view = {key: data.get(key) for key in keys}
     if view['status'] == RUN_COMPLETED:
         view['error'] = None
@@ -1004,6 +1182,13 @@ def _run_update(table: Any, agent_id: str, run_id: str, update: str, names: dict
 def attach_execution(table: Any, agent_id: str, run_id: str, execution_arn: str) -> None:
     _run_update(table, agent_id, run_id, 'SET execution_arn = :arn', {}, {':arn': execution_arn},
                 'attribute_exists(pk)')
+
+
+def mark_engineering_running(table: Any, agent_id: str, run_id: str) -> dict | None:
+    """An engineering agent's queued run once its start wrote (or may have written) its engineering run: ``running``
+    until the heartbeat reads that run ended (agents/heartbeat/engineering.py). None when it is no longer queued."""
+    return _run_update(table, agent_id, run_id, 'SET #st = :running', {'#st': 'status'},
+                       {':running': RUN_RUNNING, ':queued': RUN_QUEUED}, 'attribute_exists(pk) AND #st = :queued')
 
 
 def finish_run(table: Any, agent_id: str, run_id: str, status: str, *, now: datetime,

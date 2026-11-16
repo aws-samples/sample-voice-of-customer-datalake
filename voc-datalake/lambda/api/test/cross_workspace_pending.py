@@ -114,6 +114,9 @@ PHASE_2: dict[str, frozenset[str]] = {
 PHASE_3: dict[str, frozenset[str]] = {
     # Also POST /mcp/global (mcp_global_handler.py, not a route resolver: test_route_admin_gates.py
     # NON_RESOLVER_HANDLERS), which the inventory cannot list: its token row pins the workspace it was minted in.
+    # Since 7.47.00 the agents routes also carry the engineering agents (Bug fixer, Feature builder: the deployment's
+    # agents with engineering settings, their ISSUE_RUN# claims in voc-agents): they move with the other agents in 3g3,
+    # and until then their runs take only the deployment's feedback (D8).
     'agents_handler.py': frozenset({
         'DELETE /agents/<agent_id>',
         'DELETE /agents/plans/<plan_id>',

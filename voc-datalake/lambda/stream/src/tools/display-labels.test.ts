@@ -15,7 +15,8 @@ function spaHumanizeExamples(): [string, string][] {
 }
 
 function spaSpellings(): Record<string, string> {
-  const block = spaSource.split('const SPELLINGS')[1]?.split('}')[0] ?? '';
+  // (a line comment in the table, which may hold a comma, is not a pair)
+  const block = (spaSource.split('const SPELLINGS')[1]?.split('}')[0] ?? '').replaceAll(/\/\/[^\n]*/g, '');
   const pairs = block.split('{')[1]?.split(',') ?? [];
   return Object.fromEntries(pairs.map((pair) => pair.split(':').map((part) => part.trim().replaceAll("'", '')))
     .filter((pair) => pair.length === 2 && pair[0] !== ''));

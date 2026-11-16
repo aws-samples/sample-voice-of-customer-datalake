@@ -100,9 +100,10 @@ def test_a_pull_request_asks_the_host_for_the_branchs_tree_on_the_runs_connectio
     host = FakeHost()
     broker = Broker(connector(host=host, runs=FakeRuns({RUN: record(connection_id='conn-9')})))
     broker.open_or_update_draft_pr(caller('pr-author'), BRANCH, 'Fix the refund total', 'From fb_0123abcd.')
+    # (the run's issue, #42, named so the merge closes it: 7.47.00)
     assert host.calls == [('branch_tree_hash', 'conn-9', BRANCH),
                           ('open_or_update_draft_pr', 'conn-9', BRANCH, 'main', 'Fix the refund total',
-                           'From fb_0123abcd.', TREE)]
+                           'From fb_0123abcd.\n\nFixes #42', TREE)]
 
 
 @pytest.mark.parametrize(('title', 'body', 'reason'), [

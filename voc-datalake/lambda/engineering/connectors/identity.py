@@ -16,6 +16,11 @@ names the session after the function, and no agent can assume that role), checke
 account, the role name and the function name the stack hands the broker (``runtime_caller_from_event``). It speaks for
 no run of its own (``RUNTIME_ROLE``, ``run_id`` ''): the run it asks about is the request's, and the broker reads
 everything else from that run's record.
+
+And one more (7.47.00): voc-engineering-start, for the ``head`` read alone (``HEAD``, ``START_ROLE``): its own execution
+role, in the session Lambda names after its function, checked the same way (``runtime_caller_from_event`` with the
+start's names). It too speaks for no run: a start that resolves its commit asks for the head of a connection's stored
+default branch, before its run is written.
 """
 from __future__ import annotations
 
@@ -36,8 +41,13 @@ PUSH_BUNDLE: Final = 'push_bundle'
 OPEN_OR_UPDATE_DRAFT_PR: Final = 'open_or_update_draft_pr'
 #: The runtime's one operation (7.10.00): people's reactions to an ended run's pull request, read only.
 REACTIONS: Final = 'reactions'
+#: voc-engineering-start's one operation (7.47.00): a connection's default branch's head commit, and an issue's state,
+#: read only, for a start that resolves its commit (an engineering agent's run).
+HEAD: Final = 'head'
 #: The role a runtime caller has (never an agent role, so no agent operation is ``permitted`` for it).
 RUNTIME_ROLE: Final = 'runtime'
+#: The role voc-engineering-start has as a caller (7.47.00): its ``head`` operation alone.
+START_ROLE: Final = 'start'
 #: The agent catalog's roles, as their IAM role names spell them.
 AGENT_ROLES: Final = frozenset({
     'mapper', 'understander', 'hunter', 'fixer', 'builder', 'committer', 'commit-reviewer', 'gate-runner',
@@ -111,11 +121,13 @@ def caller_from_event(event: Mapping[str, object], role_name_pattern: str, accou
                   agent_index=int(session.group('agent')))
 
 
-def runtime_caller_from_event(event: Mapping[str, object], role_name: str, function_name: str, account: str) -> Caller:
+def runtime_caller_from_event(event: Mapping[str, object], role_name: str, function_name: str, account: str,
+                              role: str = RUNTIME_ROLE) -> Caller:
     """voc-engineering-runtime of ``account`` (the broker's own), its execution role ``role_name`` in the session
-    Lambda names ``function_name``; ``UnknownCaller`` for anything else, and when either name is unset."""
+    Lambda names ``function_name``; ``UnknownCaller`` for anything else, and when either name is unset. The same check
+    admits voc-engineering-start (7.47.00) with ``role`` ``START_ROLE``: its own role and function names."""
     arn = _ASSUMED_ROLE.fullmatch(_user_arn(event))
     if (arn is None or not (account and role_name and function_name) or arn.group('account') != account
             or arn.group('role') != role_name or arn.group('session') != function_name):
         raise UnknownCaller
-    return Caller(role=RUNTIME_ROLE, run_id='', agent_index=0)
+    return Caller(role=role, run_id='', agent_index=0)
