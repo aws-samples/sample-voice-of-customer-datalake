@@ -522,7 +522,7 @@ platform admin (Control plane); on an older deployment, add the people who manag
 | `model_default` | deployment | the model pinned at deploy (`-c defaultModelId`, `lambda/custom_resources/model_pin.py`), below every pick: split from `model` (7.01.00) so the picks can move into each workspace; a deployment from before the split keeps its pin in `model`'s `model_id`, which still outranks it |
 | `model_quotas`, `image_model_quota` | deployment | the AWS account's Bedrock quotas, cached; every workspace shares them (decision 10) |
 | `alerts` | deployment | alarms on the deployment's own Lambdas and their recipients: the deployment's operations |
-| `engineering` (voc-agents, `SETTINGS#engineering`) | deployment | the engineering agents' hard cap at each flow's monthly budget (`lambda/engineering/settings.py`, only with `-c engineeringAgents=true`): the agents and their flows are the deployment's administrators' until agents move per workspace ([3g3](#the-project-plan-phase-3)) |
+| `engineering` (voc-agents, `SETTINGS#engineering`) | deployment | the engineering agents' hard cap at each flow's monthly budget (`lambda/engineering/settings.py`, only with `-c engineeringAgents=true`): the agents and their flows are the deployment's administrators' until agents move per workspace ([3g3](#the-project-plan-phase-3)); so are, since 7.50.00, their runs' transcripts, run manifests and the transcripts' index in voc-eng-workspace (`ws/default/runs/<run>/<agent>/commits/<sha>/_transcripts/`, `ws/default/runs/<run>/_manifest/`, `ws/default/transcripts-index/<flow>/<day>/<run>.json`), kept forever and in no workspace's export or delete until 3g3 |
 
 ### The configuration cut-over (7.08.00)
 
@@ -877,14 +877,21 @@ The rest, in order, each slice plumbing with no change in behaviour until the sw
   for a workspace's keys or sweep them as one. This slice moves each into the
   workspace it belongs to, through the workspace layer:
   voc-engineering's rows (runs, spend and budget alerts, conversations, the board, skills and scorecards, the agents'
-  memory); the voc-eng-workspace bucket's objects; in voc-agents, the hard cap `SETTINGS#engineering` (a deployment
+  memory); the voc-eng-workspace bucket's objects (since 7.50.00 also every agent session's transcript,
+  `ws/default/runs/<run>/<agent>/commits/<sha>/_transcripts/attempt-<n>/<chunk>.jsonl`, each run's manifests
+  `ws/default/runs/<run>/_manifest/v<nnnn>.json` and the transcripts' index `ws/default/transcripts-index/<flow>/<day>/<run>.json`:
+  kept forever by the owner's decision, no expiry, so the only removals are this slice's hard-delete sweep and an
+  erasure of a person's data where it requires one, D5; a transcript holds repository, issue and model text, redacted
+  when written, and may hold a handle a person wrote on an issue); in voc-agents, the hard cap `SETTINGS#engineering` (a deployment
   setting, "Per-workspace configuration" above) and the repository connections with their audit and CI attestation
   rows, and, since 7.45.00, the deployment's GitHub Apps (`CONNECTIONS#default` / `GITHUB_APP#<app_id>`, with their
   `github_app_created` and `github_app_removed` audit rows) and the connect flow's single-use setup states
   (`CONNECTIONS#default#SETUP` / `STATE#<hash>`, which voc-agents' TTL removes a day after they are minted), and,
   since 7.47.00, the engineering agents (agents with `engineering` settings: the seeded Bug fixer and Feature builder,
   their seed markers `AGENTSEED#bug-fixer` and `AGENTSEED#feature-builder`) and the GitHub issues' run claims
-  (`ISSUE_RUN#default` / `<owner/name>#<n>`, one per issue, ever: the claim of a workspace's issue must be that
+  (`ISSUE_RUN#default` / `<owner/name>#<n>`, one per issue, ever, and since 7.50.00 its triage stage's
+  `<owner/name>#<n>#triage` beside it and the issue's trusted triage `ISSUE_TRIAGE#default` / `<owner/name>#<n>`: the
+  claim of a workspace's issue must be that
   workspace's, never shared across workspaces; until this slice ships, an engineering agent's runs take only the
   deployment's own feedback, D8: `DATE#` and `CHANNEL#issue`, never a workspace's `WS#{ws}#…` partitions, and the
   Agents page lists the deployment's agents inside a workspace too; the review ids an engineering run keeps, the run

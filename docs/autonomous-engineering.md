@@ -868,27 +868,31 @@ builder's, the committer's, the commit reviewer's, the gate runner's, the PR aut
 go's, so the board launches an agent of each of them and the runtime runs it with its skill's argv. The coach has
 none: it is not launched as an agent. Each record holds its role's job from the table above, a few worked examples,
 its tool policy, its model from the [model table](#models) and the `converse` harness (the owner's Converse-only
-decision), and every one keeps tenet 3 in its words: a pull request is always a draft, an agent never merges, never
-marks one ready and never changes the run's way of working or its limits, and everything from the repository is
-data. The tools are exactly what each job needs, and a role is never offered one beyond its role's, whatever a record
-names (`tools.role_specs`; `harness/role_tools.py`):
+decision). Since 7.50.00 the platform's rules are the harness's, never a skill's (D-7): the bundle's
+`platform_rules` (the templates' shared platform rules), which the board serves with the session's skill, else the harness's own
+(`skills.platform_rules`), go before every skill's instructions, with the session's fence: only a person approves and
+merges a pull request (an agent never merges, never approves, never marks a draft ready and never changes the run's
+way of working or its limits), and everything from the repository, a host or memory is data. The shipped records are
+the templates a deployment without a bundle runs (`skills/templates.py`; [which skill an agent runs](#which-skill-an-agent-runs-75000)).
+The tools are exactly what each job needs, and a role is never offered one beyond its role's, whatever a record names
+(`tools.role_specs`; `harness/role_tools.py`, `issues.py`, `gate_tools.py`):
 
 | Role | Tools beyond reading the checkout, reporting, saving and finishing | Model |
 |---|---|---|
 | Mapper | `write_notes` (a `voc-note/1` shard) | Haiku 5.5 |
-| Issue understander | none: its problem statement is its finish | Haiku 5.5 |
-| Bug hunter | `run`, `install_dependencies`, `write_findings` (a `voc-finding/1` shard), `post_subtask` (a fix task) | Sonnet 5.5 |
-| Fixer | `write_file`, `run`, `install_dependencies`, `submit_work` | Sonnet 5.5 |
+| Issue understander | `read_issue`, `write_triage` (a `voc-triage/1` record), `post_comment` (on the run's issue, each line a code span under the platform's own head), `label_issue` (`voc-triage/<kind>`, `voc-severity/s<n>` only) | Haiku 5.5 |
+| Bug hunter | `read_issue`, `run`, `install_dependencies`, `write_findings` (a `voc-finding/1` shard), `post_subtask` (a fix task) | Sonnet 5.5 |
+| Fixer | `read_issue`, `write_file`, `run`, `install_dependencies`, `submit_work` | Sonnet 5.5 |
 | Feature builder | `write_file`, `run`, `install_dependencies`, `submit_work`, `post_subtask` (a sub-build) | Sonnet 5.5 |
-| Committer | `push_commit` (the broker's push of the patch a fixer or builder submitted, after the gate's GO) | Sonnet 5.5 |
+| Committer | `read_issue`, `push_commit` (the broker's push of the patch a fixer or builder submitted, after the gate's GO) | Sonnet 5.5 |
 | Commit reviewer | `write_findings` | Sonnet 5.5 |
-| Gate runner | `run`, `install_dependencies`, `write_gate_record` (on the submitted patch the harness applied: the tree it hashed, the checks it saw run, never a final go) | Haiku 5.5 |
-| PR author | `open_draft_pr` (the broker's draft) | Sonnet 5.5 |
+| Gate runner | `run_gate` (7.50.00: the packs detect the checkout's languages, plan their checks and run each one in the sandbox), `write_gate_record` (on the submitted patch the harness applied: the tree it hashed, the checks `run_gate` saw end, its plan's packs; a GO only after `run_gate`, never a final go) | Haiku 5.5 |
+| PR author | `read_issue`, `open_draft_pr` (the broker's pull request: ready for review, or a draft when the run's flow says `pr: draft`) | Sonnet 5.5 |
 | PR reviewer | `write_findings`, `post_comment` (on the run's pull request) | Sonnet 5.5 |
-| Final go | `write_gate_record` (its verdict; the harness writes the tree it hashed from the same patch and its final go section, the record the GO ledger reads) | Opus 5.5 |
+| Final go | `read_gate_record` (the gate runners' records of the tree it judges), `read_findings` (the run's findings at its commit), `write_gate_record` (its verdict; the harness writes the tree it hashed from the same patch and its final go section, the record the GO ledger reads) | Opus 5.5 |
 
-The writers (committer, PR author, PR reviewer) run no repository code: each gets its one broker write and no code
-tool. An output is written once under the agent's own keys, in the workspace's layout (its shapes, from the schema
+The writers (committer, PR author, PR reviewer, and the understander on its issue) run no repository code: each gets
+its broker writes and no code tool. The coordinator reads the run's issue too (`read_issue`). An output is written once under the agent's own keys, in the workspace's layout (its shapes, from the schema
 names to the package encoding of a key, in `runtime/outputs.py`, which the images ship beside the harness and the
 readers import), and its key is recorded on the task when the agent finishes (a continuation keeps it, and an
 output its crashed session wrote is kept and recorded, S3's create-only refusal read as "written already"), so the
@@ -2329,6 +2333,105 @@ wait closes.
   and the board, the bus and the run's controls through small interfaces with fakes; the deployed runtime wires
   them to the board's store, the bus and its own rows.
 
+### Which skill an agent runs (7.50.00)
+
+A launch resolves the agent's skill once (`lambda/engineering/skills/resolve.py`, from `runtime/handler.py`'s launch),
+in this order, and records the label on the agent's session row (`skill_version`); the argv takes that skill's model
+and harness:
+
+1. the flow step's pin (an agent step's `params.skill_version` `v<n>`): version `n` of the run's connection's own
+   skill, else of the shared skill, accepted only (a pin to no version, or to one nobody accepted, refuses the launch);
+2. the skills store's current version for the run's connection (`SkillStore.current`: its own, else the shared one);
+3. the role's bundled template, `<role>@template-<version>` (`skills/templates.py`: the templates' `bundle.json`,
+   which every Lambda ships byte for byte as `orchestration_bundle.json` in its `shared` package; without one, the
+   harness's shipped records).
+
+A store that cannot be read refuses the launch (the board answers 503 and the coordinator asks again): a template never
+stands in for a version a person accepted. The runtime's role reads the skill rows it already reads for the coach
+(`LearningCoachSkills`, pinned). The session then fetches its record through the board's `skill` op, by the label its
+session row records, never one it names (`board/api.py`); the board answers the record and the platform's rules (the
+bundle's `platform_rules`). A label the board cannot serve (no row, a template version this deployment no
+longer ships, a version not accepted, another connection's) is refused, and the harness takes any failure of the fetch
+as a crash, never a fallback (`harness/main.py` `session_skill`). `ToolBox` still offers only the tools the skill names
+within its role's (`tools.role_specs`). The board's role reads the skills', the agent memory's and the scorecards'
+rows on its table-wide grant and is denied every write of them (`DenyLearningWrites`, engineering-bus.ts, pinned).
+
+A fresh start's brief also takes its task's approved lessons (the board's `memory` op, `{task_id}`, the caller holding
+the task's lease): `AgentMemoryStore.recall_for_task` over the run's connection's repository memories and its role's
+lessons there, never a person's, as the run's flow sets the recall (its start step's `memory: {recall, scopes,
+limit}`; no recall without one), fenced as data. A recall the board refuses is no recall, said on the session's
+status: it is advisory, and a session never stops for it.
+
+### Fences and the 7.50.00 tools
+
+Every tool result that carries outside text (a file, a command's output, an issue, the board, the knowledge pack,
+memory, an inbox message, the session's own earlier notes) is a DATA block (`quality_gate/text.data_block`, which the
+images ship): redacted, from a line `<<<DATA <name> <fence>>>>` to `<<<END DATA <name> <fence>>>>`, the fence a random
+nonce per session (the CLI's tool server takes the harness's, `VOC_FENCE`) that the text cannot hold (it is replaced in
+it), and the platform's rules name it. Redaction applies to a file read too, so a credential-shaped string in a file
+reaches the model as `<redacted>`.
+
+- `read_issue` (understander, hunter, fixer, committer, PR author, coordinator): a page of an issue of the run's
+  repository and its comments, through the broker's `read`.
+- `write_triage` (understander): the issue's `voc-triage/1` record (`runtime/outputs.py`: kind bug, feature or
+  investigation; severity S1-S4; priority P1-P4; summary; paths; acceptance criteria; tenets, or none), once, under
+  its own keys (`…/_triage/attempt-<n>/triage.json`), recorded on its task; a triage run's end copies it to the issue's
+  trusted row (`ISSUE_TRIAGE#default`, `runtime/triage_end.py`), which a Bug fixer's `requires_triage` reads.
+- `post_comment` (understander, on the run's issue): each line a code span under the platform's own head, so no link,
+  mention, image or HTML survives in it; `label_issue` (understander): `voc-triage/<kind>` and `voc-severity/s<n>`
+  only, through the broker's `label_issue` ([Repository connectors](#repository-connectors)).
+- `run_gate` (gate runner): the packs (`/opt/voc/gates` in the images) detect the checkout's languages and plan their
+  checks (`quality_gate/packs.plan`), and `quality_gate/checks.run_plan` runs each one through the sandbox's runner:
+  repository code as `code`, from its root, the dependency step alone with its registries (`runtime/egress.py`: since
+  7.50.00 the Python and Rust images reach npm's registry for a mixed repository's TypeScript half, and Rust also
+  `static.rust-lang.org`). The harness records each check as it ended and the plan's packs, which the gate record
+  takes; a gate runner's GO needs `run_gate` (a free-form command's exit is no gate), across a continuation too.
+- `read_gate_record` and `read_findings` (final go): the gate runners' records of the tree it judges, and the run's
+  findings at its commit, read through its role's own run prefix (`ReadCacheAndRun`, `ListRun`), as data.
+
+### Transcripts and the run's manifest (7.50.00)
+
+Each session writes its whole transcript under its own create-only keys, which its role alone may write (the agent
+role's `WriteOwnKeys`, unchanged; pinned: no agent role writes another prefix, a manifest or the index):
+
+    ws/default/runs/<run>/<agent>/commits/<sha>/_transcripts/attempt-<n>/<chunk:04d>.jsonl
+
+One `voc-transcript/1` event a line (`runtime/harness/transcript.py`): the session's start (role, skill label, model,
+harness, task, attempt, tools), every message to and from the model, every model call (model, tokens in and out, stop
+reason, time), every tool call and its result (a gate's outputs among them) with its time, every checkpoint, a crash,
+and the end (how it ended, the tokens per model, the outputs). Every text is redacted (`quality_gate/text.redact`) and
+cut before its put; the session's credentials never pass through its tools. A chunk is flushed at each checkpoint, past
+512 KB held, and at the end, a continuation going on with the next free number. The dollars are the run manifest's
+(each session row's `cost_usd` at the deployment's prices), not each transcript's.
+
+When the run's record stops moving (its end, every agent ended; a run left at a person past its flow's hours), the
+runtime writes, create-only (`runtime/manifest.py`): `ws/default/runs/<run>/_manifest/v<nnnn>.json`
+(`voc-run-manifest/1`: the flow and its revision, the day, the status, each agent's role, skill, model, tokens, cost,
+session time and transcript prefix, the models' tokens, the run's tokens and cost with Learn's, the outputs' keys) and
+`ws/default/transcripts-index/<flow>/<yyyy-mm-dd>/<run>.json` (the run by its flow and day, and its first manifest's
+key). The runtime's role reads the transcripts (`LearnReadsTranscripts`, `LearnListsTranscripts` under their prefix
+only) and writes only the manifests and the index (`WriteRunManifests`); all pinned in engineering-runtime.test.ts.
+
+**Kept forever** (owner decision, 2026-11-16): voc-eng-workspace has no expiry and no lifecycle rule on current
+versions. The only removals are the multi-workspace erasure of a person's data where it requires one and a workspace's
+hard delete ([3g3](multi-workspace.md#the-project-plan-phase-3)); until 3g3 they are deployment-wide and in no
+workspace's export.
+
+### Learn, every flow's last step (7.50.00)
+
+Learn is the retrospective, the coach and the learning loop ([below](#getting-better-skills-the-coach-the-learning-loop-memory))
+made a configured, final step no flow removes (`learning/loop.py`, the runtime's `retrospective` action): on a run's
+end (done, failed, stopped), and by the supervisor's sweep on a run left at a person past its flow's
+`learn.after_needs_human_hours` (72 by default; once per run, `RunStore.mark_learn_swept`, from `needs_human_at`).
+Its settings are the flow's start step's `learn: {enabled, model, budget_share, roles, after_needs_human_hours}`
+(`flow/settings.py`); `enabled: false` turns it off (no scorecard, no lesson, no coach); `roles` names the roles whose
+failures it takes to the coach. The coach reads the failed attempt's transcript as short excerpts
+(`learning/transcripts.py`: the last chunks, bounded, redacted again, fenced as data in its prompt), on Learn's model
+when the flow names an allowed one. Its calls count in the run's spend (`LEARN#spend` in the run's partition and the
+spend ledger, in one transaction: `learning/budget.py`; `RunStore.spend` adds it), and a call whose worst case would
+pass Learn's `budget_share` of the run's cost cap is not made (an outcome, recorded). A proposal still needs the
+benchmark gate and an administrator's accept (`skills/store.py`), never automatic.
+
 ## Reports
 
 *Partly built*: the builder (`voc-datalake/lambda/engineering/reports/`, the `voc-engineering-reports` Lambda,
@@ -3235,6 +3338,6 @@ and the phase that ships them names them in that row.
 | 0 | this design, the benchmark harness and its fixtures | design written; the benchmark harness (the `voc-bench/1` cases, the runner, scorecards) and its four fixtures built, nothing invoking them yet ([Evaluation](#evaluation)) |
 | 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader; the broker's readers of the run's record, the board's GO ledger, the submitted patch and the dial, and a person's go on an AI-assisted run (6.23.00, [above](#repository-connectors)); the harness's client of the broker, the agents' reads and writes signed as their own sessions (7.02.00); the connections, stored by administrators with their GitHub App credential in the SSM parameter the broker reads, with an audit row per change (7.03.00); the CI attestation's record, attested and withdrawn by administrators with an audit row each and voided by a repository change, which every push and pull request waits for, beside the broker's own read-only check of the branch rules, and file and history reads on the run's stored default branch (7.04.00); the checkout cache's writer, one immutable entry per connection and commit filled before a run's coordinator is launched (7.05.00); the GitLab client on gitlab.com, a GitLab connection's project access token checked against its project at each save, its expiry on the connection page, its CI attestation in GitLab's words and the broker's own check of its protected branches, and the cache's GitLab fetch (7.06.00); the run's issue (as given at its start) and its draft pull request (as the host answered) on its record, shown on the run monitor and in the reports (7.09.00); planned: a self-managed GitLab instance, sparse clones, the dependency caches' filler and the first real run; the knowledge pack's package detection, shards, map step, reduce and versioned store with approval ([above](#the-knowledge-pack)), nothing invoking them yet |
 | 2 | the runtime (one AgentCore Runtime session per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API with each task's history, its agents' `inbox`, `progress`, `tasks` and `knowledge` ops, the coordinator's `coordinate` task and `launch`, the lease's refresh and the supervisor's re-post, the push to the delivery function, the workspace's layout, findings and store in its own bucket, and the administrators' run monitor (its reads, signals and answers) and the read routes for a run's board and conversation ([above](#how-the-agents-work-together)); the runtime (one session per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images, the run's start and end, the agent roles' access to the board, the broker and the bus, the delivery function: built, not yet run against AWS, [above](#runtime-one-agentcore-session-per-agent)) |
-| 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); the skills' record, diff and versioned store with an administrator's acceptance and rollback, proposed to by the coach from a run's retrospective ([above](#getting-better-skills-the-coach-the-learning-loop-memory)); the agents' memory store and its recall for a task, its role lessons drafted by a run's retrospective (recall not yet invoked by the harness; same place); the benchmark gate for skill versions (no regression, a gain on the failure's case) and its record on a version, which a coach's version needs to be accepted, nothing invoking it yet ([Evaluation](#evaluation)); the coach (a failure in, a proposed version naming its expected benchmark case out, through the skills store, with its `skill.proposed` message for the caller to publish), invoked by the learning loop (same place as the skills); the learning loop and its scorecards, built: a run's end starts its retrospective (an asynchronous invocation of the runtime), which takes at most three failures to the coach (one Converse call each, once), drafts a lesson in agent memory for each failure taken to the coach (at most three per run) for an administrator to approve, and writes one create-only scorecard row per skill version per run, read by one bounded Query per version (same place); people's reactions on the host to a run's pull request as the loop's input (7.10.00: read through the broker by the runtime alone, trust-filtered and redacted, by one self-deleting schedule days after the run's end and by an administrator's hand, kept create-only, summed into the scorecards' human edits, and fed to the coach as quoted data only for a failure of the same run coached after a read, which today is rare: [People's reactions on the host](#peoples-reactions-on-the-host)); a connection's own cases from its failures, and the human edits on the scorecard screen planned |
+| 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); the skills' record, diff and versioned store with an administrator's acceptance and rollback, proposed to by the coach from a run's retrospective ([above](#getting-better-skills-the-coach-the-learning-loop-memory)); the agents' memory store and its recall for a task, its role lessons drafted by a run's retrospective (the recall in each fresh session's brief through the board's `memory` op since 7.50.00; same place); the benchmark gate for skill versions (no regression, a gain on the failure's case) and its record on a version, which a coach's version needs to be accepted, nothing invoking it yet ([Evaluation](#evaluation)); the coach (a failure in, a proposed version naming its expected benchmark case out, through the skills store, with its `skill.proposed` message for the caller to publish), invoked by the learning loop (same place as the skills); the learning loop and its scorecards, built: a run's end starts its retrospective (an asynchronous invocation of the runtime), which takes at most three failures to the coach (one Converse call each, once), drafts a lesson in agent memory for each failure taken to the coach (at most three per run) for an administrator to approve, and writes one create-only scorecard row per skill version per run, read by one bounded Query per version (same place); people's reactions on the host to a run's pull request as the loop's input (7.10.00: read through the broker by the runtime alone, trust-filtered and redacted, by one self-deleting schedule days after the run's end and by an administrator's hand, kept create-only, summed into the scorecards' human edits, and fed to the coach as quoted data only for a failure of the same run coached after a read, which today is rare: [People's reactions on the host](#peoples-reactions-on-the-host)); a connection's own cases from its failures, and the human edits on the scorecard screen planned |
 | 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | in progress: the new editor steps' server side (engineering flows as `voc-workflow/2`, [above](#how-the-agents-work-together)), the six default flows as validated templates in one file the server lists (`GET /workflows/templates`) and the web app reads (same place), and the report builder with its administrators' REST reads ([Reports](#reports)), nothing invoking it yet; a run's start from a saved flow (6.25.00: `POST /agents/engineering/runs` and the flow page's Start a run, [How a flow starts](#how-the-agents-work-together)), which follows its own copy of the flow step by step since 6.28.00 (the conductor, the coordinator's `read_flow`, the board's check of every post and launch against the plan, a person at a step: [The flow a run follows](#the-flow-a-run-follows); memory, the learning loop, self-improvement and the history and pull-request shard sources not run yet); the agents' skills, one per launchable role with its tools, model and the Converse harness (6.29.00, [the agent catalog](#the-agent-catalog)), launched by the board with their skills' argv and driven through the Bug hunt and fix template on the local fake runtime with scripted models; their first run on AWS waits for the owner, and their broker writes for the harness's broker client |
 | 5 | the UI: the templates and new steps in the editor, the run monitor (graph, board, conversation, live cost), skill histories and scorecards, the reports, the assistant drafting flows | in progress: the new steps in the editor (with a flow's monthly budget), Agents → Spend (the spend ledger by workflow, repository, run, agent, model or day, this month's share of each flow's budget, and the administrators' hard cap switch, [above](#cost)), and the run monitor (the flow with its steps lit: the revision the run copied, each step as the conductor reads it since 6.28.00, else its agents' steps; the run's flow budget and its alert flag, the board, the conversation, each agent as the supervisor saw it, an administrator's signals and answers, the reports with their versions; polling, no cost yet: [docs/autonomous-agents.md](autonomous-agents.md)), the assistant drafting flows behind its approval card ([above](#how-the-agents-work-together)), the assistant's "refresh the knowledge pack" (`propose_knowledge_refresh`: an approval card that only an administrator's Approve turns into the Understand flow's start, as that administrator, 6.27.00; same place), and the six templates in the library (Start from a template: an unsaved copy in the editor, saved through the library's own create; same place); live cost, skill histories, a template id in the assistant's `create_workflow` and the assistant's other run tools ("pull the latest from the repository") planned |
