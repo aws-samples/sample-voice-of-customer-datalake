@@ -30,6 +30,9 @@ SPELLINGS: Final[Mapping[str, str]] = {
     'llm': 'LLM', 'macos': 'macOS', 'mcp': 'MCP', 'nps': 'NPS', 'os': 'OS', 'pdf': 'PDF', 'pii': 'PII', 'prd': 'PRD',
     'qa': 'QA', 'sdk': 'SDK', 'seo': 'SEO', 'sla': 'SLA', 'sms': 'SMS', 'sso': 'SSO', 'tv': 'TV', 'ui': 'UI',
     'url': 'URL', 'ux': 'UX', 'cx': 'CX', 'vpn': 'VPN', 'android': 'Android', 'github': 'GitHub', 'trustpilot': 'Trustpilot',
+    # Review sites a web-review page is read from, spelled their own way (frontend/src/utils/displayLabels.ts).
+    'trustradius': 'TrustRadius', 'g2': 'G2', 'getapp': 'GetApp', 'peerspot': 'PeerSpot',
+    'consumeraffairs': 'ConsumerAffairs',
 }
 
 #: A configured name longer than this is an explanation, not a label.

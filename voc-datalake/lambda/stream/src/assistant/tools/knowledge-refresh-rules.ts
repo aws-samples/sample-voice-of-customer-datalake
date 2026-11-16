@@ -32,7 +32,7 @@ export const knowledgeRefreshArgsSchema = z.object({
 }).strict();
 export type KnowledgeRefreshArgs = z.infer<typeof knowledgeRefreshArgsSchema>;
 
-/** The run's goal, the server's words (on one line, under agents_handler.py MAX_RUN_GOAL). */
+/** The run's goal, the server's words (on one line, under shared/engineering_agent_runs.py MAX_RUN_GOAL). */
 export const refreshGoal = (connection: string): string =>
   `Refresh the knowledge pack of repository connection ${connection}`;
 

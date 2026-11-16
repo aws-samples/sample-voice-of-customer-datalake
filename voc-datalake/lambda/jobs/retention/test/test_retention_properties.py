@@ -162,7 +162,7 @@ def test_a_run_walks_the_documented_phases(mode, field, source, workspace, store
     projects = 'projects' in stores
     # 7.43.00: an erasure by email without a source walks the workspaces' projects (one workspace's when the job
     # names it; every listed workspace's, read from voc-workspaces, when it does not), and every run with the
-    # projects table may mark a workspace's artifacts (decided when reached). 7.47.00: the deployment's job walks the
+    # projects table may mark a workspace's artifacts (decided when reached). 7.48.00: the deployment's job walks the
     # deployment's own projects first, so the phase runs without voc-workspaces too.
     walks_projects = by_email and not source and projects
     if workspace:

@@ -1,29 +1,37 @@
-"""The default autonomous agent every deployment starts with (docs/autonomous-agents.md → "Default agent").
+"""The agents every deployment starts with (docs/autonomous-agents.md → "Default agents").
 
-``GET /agents`` called by an admin runs :func:`ensure_default_agent` before it lists.
-A marker row (``AGENTSEED`` / ``META``) in ``voc-agents`` decides it ONCE per deployment:
+``GET /agents`` called by an admin runs :func:`ensure_default_agent` (and, with the engineering module on,
+:func:`ensure_engineering_agents`) before it lists. Each seeded agent has its own marker row in ``voc-agents``
+(``AGENTSEED`` / ``META`` for "Autonomous Product"; ``AGENTSEED#<slug>`` / ``META`` for each engineering agent, 7.47.00),
+which decides it ONCE per deployment:
 
 - the marker is claimed with a conditional put (``state: seeding``); a lost race does nothing;
-- a deployment that already has any agent (archived included) is marked ``skipped``;
-- otherwise the agent below is created, with its own editable copy of the built-in workflow
-  (exactly what ``POST /agents`` does without a ``workflow_id``), and the marker becomes ``done``.
+- "Autonomous Product": a deployment that already has any agent (archived included) is marked ``skipped``; an
+  engineering agent: a deployment that already has an active agent of its name is marked ``skipped``, and any other,
+  a deployment that has run for a while included, gets it once (its marker is its own, so an upgrade seeds it);
+- otherwise the agent is created with its own editable copy of its workflow (the built-in template for "Autonomous
+  Product", exactly what ``POST /agents`` does without a ``workflow_id``; for an engineering agent, the engineering
+  flow templates of ``engineering_flow_templates.json``, joined), and the marker becomes ``done``.
 
-The agent is created DISABLED: nothing runs, nothing is spent, until an admin turns it on.
-A failure after the claim releases the marker (``state: failed``, which a later admin GET
-claims again) and never fails the listing. Deleting or archiving the seeded agent later never
-brings it back: the marker stays.
-Once the marker is known to be settled, this warm container never reads it again.
+Every seeded agent is created DISABLED: nothing runs, nothing is spent, until an admin turns it on (an engineering agent
+needs its repository connection and its language first, "Set up" in the web app; its flow is seeded with a monthly
+budget of ``SEEDED_MONTHLY_BUDGET_USD`` dollars, which an admin may change there or in the flow).
+A failure after the claim releases the marker (``state: failed``, which a later admin GET claims again) and never
+fails the listing. Deleting or archiving a seeded agent later never brings it back: the marker stays.
+Once a marker is known to be settled, this warm container never reads it again.
 """
 from __future__ import annotations
 
+import copy
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any, Final
 
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import agents_store as store
-from shared import workflow_schema
+from shared import engineering_templates, workflow_schema
 from shared.aws import is_conditional_check_failure
 from shared.logging import logger
 from shared.project_access import Caller
@@ -52,8 +60,51 @@ DEFAULT_AGENT_BODY: Final[Mapping[str, Any]] = {
     'output': {'visibility': 'private'},
 }
 
-# Table names whose marker is known to exist in this warm container.
-_settled: set[str] = set()
+#: The engineering agents' bodies (7.47.00), seeded only with the engineering module on. No connection or language yet:
+#: an administrator sets them up (and the flow's monthly budget) before enabling. A GitHub issue starts a run only with
+#: its label on a public repository (agents/heartbeat/issues.py).
+BUG_FIXER_BODY: Final[Mapping[str, Any]] = {
+    'name': 'Bug fixer',
+    'description': ('Fixes the bugs customers report: a labelled GitHub issue, or a run of bug reports, becomes a '
+                    'draft pull request that says "Fixes #N"'),
+    'enabled': False,
+    'scope': {'all': True},
+    'instructions': '',
+    'triggers': [
+        {'kind': store.TRIGGER_GITHUB_ISSUE, 'label': store.DEFAULT_ISSUE_LABEL, 'trusted_authors': False,
+         'lookback_days': store.DEFAULT_ISSUE_LOOKBACK_DAYS},
+        {'kind': store.TRIGGER_NEW_REVIEWS, 'min_new': 5, 'cooldown_hours': 24},
+    ],
+    'models': {},
+    'output': {'visibility': 'private'},
+    'budget': {'max_scheduled_runs_per_day': store.DEFAULT_ENGINEERING_RUNS_PER_DAY},
+    'engineering': {'connection': None, 'language': None, 'feedback_type': 'bug'},
+}
+FEATURE_BUILDER_BODY: Final[Mapping[str, Any]] = {
+    'name': 'Feature builder',
+    'description': ('Builds what customers ask for: a labelled GitHub feature issue, a run of feature requests or a '
+                    "project's PRD becomes a draft pull request"),
+    'enabled': False,
+    'scope': {'all': True},
+    'instructions': '',
+    'triggers': [
+        {'kind': store.TRIGGER_GITHUB_ISSUE, 'label': store.DEFAULT_ISSUE_LABEL, 'trusted_authors': False,
+         'lookback_days': store.DEFAULT_ISSUE_LOOKBACK_DAYS},
+        {'kind': store.TRIGGER_NEW_REVIEWS, 'min_new': 10, 'cooldown_hours': 24},
+    ],
+    'models': {},
+    'output': {'visibility': 'private'},
+    'budget': {'max_scheduled_runs_per_day': store.DEFAULT_ENGINEERING_RUNS_PER_DAY},
+    'engineering': {'connection': None, 'language': None, 'feedback_type': 'feature_request'},
+}
+
+#: The monthly budget each seeded engineering agent's flow starts with (the owner's, 2026-11-16): what its runs may
+#: spend in a calendar month, the hard cap forced on every run of it. The Set up dialog shows it; an admin changes it in
+#: the flow (its Workflow tab). The agent still needs its connection and language before it can be enabled.
+SEEDED_MONTHLY_BUDGET_USD: Final = 50
+
+# (table name, marker pk) pairs whose marker is known to be settled in this warm container.
+_settled: set[tuple[str, str]] = set()
 
 
 def default_workflow_copy(table: Any, name: str, caller: Caller) -> str:
@@ -67,13 +118,62 @@ def default_workflow_copy(table: Any, name: str, caller: Caller) -> str:
     return created['workflow_id']
 
 
-def _settled_marker(table: Any) -> bool:
+def _template(template_id: str) -> dict[str, Any]:
+    """An engineering flow template's definition (a copy)."""
+    for template in engineering_templates.list_templates():
+        if template['template_id'] == template_id:
+            return copy.deepcopy(template['definition'])
+    raise LookupError(f'no engineering flow template {template_id}')
+
+
+def bug_fixer_flow() -> dict[str, Any]:
+    """*Issue triage* then *Bug hunt and fix*: the triage's start, memory, classification and location, then the
+    hunt, its board, the quality gate, the commit and the draft pull request (the broker adds ``Fixes #N``). The
+    triage's proposal on the issue and its end are left out: the flow goes on to fix it."""
+    triage, fix = _template('issue-triage'), _template('bug-hunt-and-fix')
+    kept = [node for node in triage['nodes'] if node['id'] in ('start', 'memory', 'classify', 'locate')]
+    offset = 120 * len(kept)
+    hunt = [{**node, 'position': {'x': node['position']['x'], 'y': node['position']['y'] + offset}}
+            for node in fix['nodes'] if node['id'] != 'start']
+    edges = [edge for edge in triage['edges'] if edge['target'] in ('memory', 'classify', 'locate')]
+    edges.append({'id': 'locate-hunt', 'source': 'locate', 'target': 'hunt'})
+    edges += [edge for edge in fix['edges'] if edge['source'] != 'start']
+    return {'schema': workflow_schema.SCHEMA_V2, 'name': 'Bug fixer workflow',
+            'description': f"{triage['description']} Then: {fix['description']}",
+            'nodes': kept + hunt, 'edges': edges, 'loops': [],
+            'budget': {'monthly_usd': SEEDED_MONTHLY_BUDGET_USD}}
+
+
+def feature_builder_flow() -> dict[str, Any]:
+    """*Feature from an issue or a PRD*, as the template has it (it stops at a draft pull request), with the seeded
+    monthly budget."""
+    return {**_template('feature'), 'name': 'Feature builder workflow',
+            'budget': {'monthly_usd': SEEDED_MONTHLY_BUDGET_USD}}
+
+
+@dataclass(frozen=True)
+class Seed:
+    """One seeded agent: its marker, its body and its workflow's definition (None: the built-in template's copy)."""
+
+    key: Mapping[str, str]
+    body: Mapping[str, Any]
+    flow: Callable[[], dict[str, Any]] | None = None
+
+
+DEFAULT_SEED: Final = Seed(SEED_KEY, DEFAULT_AGENT_BODY)
+ENGINEERING_SEEDS: Final = (
+    Seed({'pk': 'AGENTSEED#bug-fixer', 'sk': 'META'}, BUG_FIXER_BODY, bug_fixer_flow),
+    Seed({'pk': 'AGENTSEED#feature-builder', 'sk': 'META'}, FEATURE_BUILDER_BODY, feature_builder_flow),
+)
+
+
+def _settled_marker(table: Any, key: Mapping[str, str] = SEED_KEY) -> bool:
     """True when the marker says the seed is decided (``done`` / ``skipped``)."""
-    item = table.get_item(Key=SEED_KEY, ConsistentRead=True).get('Item')
+    item = table.get_item(Key=dict(key), ConsistentRead=True).get('Item')
     return isinstance(item, dict) and item.get('state') in (STATE_DONE, STATE_SKIPPED)
 
 
-def _claim(table: Any, caller: Caller) -> bool:
+def _claim(table: Any, caller: Caller, key: Mapping[str, str] = SEED_KEY) -> bool:
     """Write the ``seeding`` marker; False when another live request (or an earlier seed) holds it.
 
     Claimable: no marker, a released (``failed``) one, or a ``seeding`` claim older than STALE_CLAIM.
@@ -81,7 +181,7 @@ def _claim(table: Any, caller: Caller) -> bool:
     now = store.utc_now()
     try:
         table.put_item(
-            Item={**SEED_KEY, 'state': STATE_SEEDING, 'claimed_by': caller.subject, 'claimed_at': store.iso(now)},
+            Item={**key, 'state': STATE_SEEDING, 'claimed_by': caller.subject, 'claimed_at': store.iso(now)},
             ConditionExpression=('attribute_not_exists(pk) OR #state = :failed '
                                  'OR (#state = :seeding AND claimed_at < :stale)'),
             ExpressionAttributeNames={'#state': 'state'},
@@ -95,19 +195,37 @@ def _claim(table: Any, caller: Caller) -> bool:
     return True
 
 
-def _settle(table: Any, state: str, agent_id: str | None = None) -> None:
-    item: dict[str, Any] = {**SEED_KEY, 'state': state, 'settled_at': store.iso(store.utc_now())}
+def _settle(table: Any, state: str, agent_id: str | None = None, key: Mapping[str, str] = SEED_KEY) -> None:
+    item: dict[str, Any] = {**key, 'state': state, 'settled_at': store.iso(store.utc_now())}
     if agent_id:
         item['agent_id'] = agent_id
     table.put_item(Item=item)
 
 
-def _seed(table: Any, caller: Caller, categories_config: Callable[[], list[dict]]) -> tuple[str, str | None]:
-    """Create the default agent unless the deployment has one; the marker state and the agent id."""
-    if store.list_agents(table):
+def _workflow_for(table: Any, seed: Seed, name: str, caller: Caller) -> str:
+    if seed.flow is None:
+        return default_workflow_copy(table, name, caller)
+    created = store.create_workflow(table, seed.flow(), created_by=caller.subject, username=caller.username,
+                                    now=store.utc_now())
+    return created['workflow_id']
+
+
+def _already_has(seed: Seed, agents: list[dict]) -> bool:
+    """Whether the deployment has what the seed would add: any agent at all for "Autonomous Product"; an active agent
+    of its name for an engineering agent (one an administrator made by hand is kept, never doubled)."""
+    if seed.flow is None:
+        return bool(agents)
+    return any(agent.get('name') == seed.body['name'] and agent.get('status') != store.AGENT_STATUS_ARCHIVED
+               for agent in agents)
+
+
+def _seed(table: Any, caller: Caller, categories_config: Callable[[], list[dict]],
+          seed: Seed = DEFAULT_SEED) -> tuple[str, str | None]:
+    """Create the seeded agent unless the deployment has it; the marker state and the agent id."""
+    if _already_has(seed, store.list_agents(table)):
         return STATE_SKIPPED, None
-    fields = store.normalize_agent(dict(DEFAULT_AGENT_BODY), categories_config())
-    workflow_id = default_workflow_copy(table, fields['name'], caller)
+    fields = store.normalize_agent(dict(seed.body), categories_config())
+    workflow_id = _workflow_for(table, seed, fields['name'], caller)
     fields['workflow_id'] = workflow_id
     try:
         agent = store.create_agent(table, fields, created_by=caller.subject, now=store.utc_now())
@@ -127,38 +245,50 @@ def _archive_orphan(table: Any, workflow_id: str, caller: Caller) -> None:
                          extra={'workflow_id': workflow_id})
 
 
-def _release(table: Any) -> None:
+def _release(table: Any, key: Mapping[str, str] = SEED_KEY) -> None:
     """Release the claim so a later admin GET retries (best effort: it is already a failure path)."""
     try:
-        _settle(table, STATE_FAILED)
+        _settle(table, STATE_FAILED, key=key)
     except (ClientError, BotoCoreError):
         logger.exception('Default agent seeding could not release its marker')
 
 
-def ensure_default_agent(table: Any, caller: Caller, categories_config: Callable[[], list[dict]]) -> str | None:
-    """Seed the default agent once per deployment; the new agent's id, or None. Never raises.
-
-    ``categories_config`` is read only when the agent is actually created.
-    """
-    name = str(getattr(table, 'name', ''))
-    if name in _settled:
+def _ensure(table: Any, caller: Caller, categories_config: Callable[[], list[dict]], seed: Seed) -> str | None:
+    """Seed ``seed`` once per deployment; the new agent's id, or None. Never raises."""
+    memo = (str(getattr(table, 'name', '')), seed.key['pk'])
+    if memo in _settled:
         return None
     claimed = False
     try:
-        if _settled_marker(table):
-            _settled.add(name)
+        if _settled_marker(table, seed.key):
+            _settled.add(memo)
             return None
-        if not _claim(table, caller):
+        if not _claim(table, caller, seed.key):
             return None  # another request is seeding right now; not memoised, it may still fail
         claimed = True
-        state, agent_id = _seed(table, caller, categories_config)
-        _settle(table, state, agent_id)
+        state, agent_id = _seed(table, caller, categories_config, seed)
+        _settle(table, state, agent_id, key=seed.key)
     except Exception:
-        logger.exception('Default agent seeding failed; a later admin listing retries')
+        logger.exception('Default agent seeding failed; a later admin listing retries', extra={'seed': seed.key['pk']})
         if claimed:
-            _release(table)
+            _release(table, seed.key)
         return None
-    _settled.add(name)
+    _settled.add(memo)
     if agent_id:
-        logger.info('Default agent created', extra={'agent_id': agent_id})
+        logger.info('Default agent created', extra={'agent_id': agent_id, 'seed': seed.key['pk']})
     return agent_id
+
+
+def ensure_default_agent(table: Any, caller: Caller, categories_config: Callable[[], list[dict]]) -> str | None:
+    """Seed "Autonomous Product" once per deployment; the new agent's id, or None. Never raises.
+
+    ``categories_config`` is read only when the agent is actually created.
+    """
+    return _ensure(table, caller, categories_config, DEFAULT_SEED)
+
+
+def ensure_engineering_agents(table: Any, caller: Caller, categories_config: Callable[[], list[dict]]) -> list[str]:
+    """Seed "Bug fixer" and "Feature builder" once per deployment each (the caller runs it only with the engineering
+    module on); the new agents' ids. Never raises."""
+    return [agent_id for seed in ENGINEERING_SEEDS
+            if (agent_id := _ensure(table, caller, categories_config, seed)) is not None]

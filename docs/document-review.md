@@ -208,8 +208,8 @@ All in the projects table:
 | Pass's series | the assist job's `config.series_id` (voc-jobs, `PROJECT#{project}` / `JOB#{job_id}`, 1-day TTL) | The series the pass read, checked when its proposal is saved |
 | Series' current link | `DCOMMENTS#{project}#{series}` / `SHARE` | Points at the link |
 | Link | `DOCSHARE#{share_id}` / `META` | Audience, expiry, revoked; `ttl` 30 days past expiry |
-| The deployment's link registry (7.47.00) | `DOCSHARE_IDS` / `{share_id}` | Every deployment link, a revoked one too, with its `project_id`, `series_id` and `created_at`, written in the link create's transaction, so an erasure by email finds every audience. No `ttl`: it keeps the link's raw id, the secret its URL carries, after the link expires and its row is gone (pruning it is planned, [multi-workspace.md](multi-workspace.md#the-project-plan-phase-3) 3g-p) |
-| The deployment's series registry (7.47.00) | `COMMENT_SERIES_IDS` / `{project}#{series}` | Every commented series, a deleted project's too (its delete leaves its threads), with its ids and `listed_at`; put if absent by the link create and a series' first thread; no `ttl` |
+| The deployment's link registry (7.48.00) | `DOCSHARE_IDS` / `{share_id}` | Every deployment link, a revoked one too, with its `project_id`, `series_id` and `created_at`, written in the link create's transaction, so an erasure by email finds every audience. No `ttl`: it keeps the link's raw id, the secret its URL carries, after the link expires and its row is gone (pruning it is planned, [multi-workspace.md](multi-workspace.md#the-project-plan-phase-3) 3g-p) |
+| The deployment's series registry (7.48.00) | `COMMENT_SERIES_IDS` / `{project}#{series}` | Every commented series, a deleted project's too (its delete leaves its threads), with its ids and `listed_at`; put if absent by the link create and a series' first thread; no `ttl` |
 | Reviewer's daily writes | `DCRATE#{share_id}#{email digest}` / `{day}` | `ttl` 2 days |
 
 Deleting a document or a project does not delete its threads. They are unreachable once the

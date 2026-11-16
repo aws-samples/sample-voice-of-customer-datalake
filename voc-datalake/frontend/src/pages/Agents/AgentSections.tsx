@@ -1,7 +1,10 @@
 /**
  * @fileoverview The agent configuration tabs: Settings (name, description,
  * scope, workflow, hand-off visibility), Instructions, Models and Budget. Each
- * edits the shared draft; the detail page saves the changed fields.
+ * edits the shared draft; the detail page saves the changed fields. An
+ * engineering agent (7.47.00) picks an engineering flow, keeps shorter
+ * instructions (the trusted start of its run's goal) and has only its runs per
+ * day as a budget here: what a run spends is its flow's monthly budget.
  *
  * @module pages/Agents/AgentSections
  */
@@ -9,13 +12,15 @@ import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
 import { AGENT_MODEL_ROLES, AGENT_VISIBILITIES } from '@stream/assistant/tools/agent-limits'
-import { API_AGENT_LIMITS } from '../../api/agentsApi'
+import { API_AGENT_LIMITS, API_ENGINEERING_LIMITS } from '../../api/agentsApi'
 import { workflowsApi, workflowsKeys } from '../../api/workflowsApi'
 import { LabeledField } from '../../components/LabeledField/LabeledField'
 import { EnumSelectField } from '../../components/LabeledField/EnumSelectField'
 import { ClampedNumberField } from './ClampedNumberField'
 import { useVisibleCategories } from '../../hooks/useCategories'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
+import { useSourceProfiles } from '../../hooks/useDimensions'
+import { BUILT_IN_SOURCES } from '../../utils/displayLabels'
 import type { AgentDraft } from './agentDraft'
 import { modelSettingsKey } from '../../api/queryKeys'
 
@@ -23,14 +28,57 @@ export interface SectionProps {
   draft: AgentDraft
   readOnly: boolean
   onChange: (draft: AgentDraft) => void
+  /** An engineering agent's (its `engineering` settings): its own workflows, instructions and budget. */
+  engineering?: boolean
 }
 
-function ScopePicker({ draft, readOnly, onChange }: Readonly<SectionProps>) {
+/** A scope picker's props: the draft alone (the same for either kind of agent). */
+type PickerProps = Omit<SectionProps, 'engineering'>
+
+/**
+ * "Only these sources" (`scope.sources`): the deployment's sources (an agent reads the deployment's feedback),
+ * none ticked for every source. A threshold trigger counts every source, so the Triggers tab offers none with it.
+ */
+function SourcesPicker({ draft, readOnly, onChange }: Readonly<PickerProps>) {
+  const { t } = useTranslation('agents')
+  const labels = useDisplayLabels()
+  const { data: profiles } = useSourceProfiles('deployment')
+  const picked = draft.scope.sources ?? []
+  const ids = [...new Set([...Object.keys(BUILT_IN_SOURCES), ...(profiles ?? []).map((p) => p.id), ...picked])]
+  const toggle = (id: string, on: boolean) => {
+    const next = on ? [...picked, id] : picked.filter((s) => s !== id)
+    const { all, categories, subcategories } = draft.scope
+    onChange({ ...draft, scope: next.length > 0 ? { all, categories, subcategories, sources: next } : { all, categories, subcategories } })
+  }
+  return (
+    <fieldset className="space-y-1.5">
+      <legend className="text-[12px] font-medium text-muted">{t('scope.sources')}</legend>
+      <p className="text-[12px] text-muted">{t('scope.sourcesHint')}</p>
+      <ul className="grid gap-1 sm:grid-cols-3">
+        {ids.map((id) => (
+          <li key={id}>
+            <label className="flex items-center gap-2 text-sm text-text">
+              <input type="checkbox" className="accent-accent" disabled={readOnly || (!picked.includes(id)
+                && picked.length >= API_ENGINEERING_LIMITS.maxScopeSources)}
+                checked={picked.includes(id)} onChange={(e) => toggle(id, e.target.checked)} />
+              {labels.source(id)}
+            </label>
+          </li>
+        ))}
+      </ul>
+    </fieldset>
+  )
+}
+
+function ScopePicker({ draft, readOnly, onChange }: Readonly<PickerProps>) {
   const { t } = useTranslation('agents')
   const { categories } = useVisibleCategories()
   const labels = useDisplayLabels()
   const { scope } = draft
-  const setScope = (next: AgentDraft['scope']) => onChange({ ...draft, scope: next })
+  // (the sources are their own picker's: a change of categories keeps them)
+  const setScope = (next: AgentDraft['scope']) => onChange({
+    ...draft, scope: scope.sources === undefined ? next : { ...next, sources: scope.sources },
+  })
   const toggleCategory = (name: string, on: boolean) => setScope({
     ...scope, all: false,
     categories: on ? [...scope.categories, name] : scope.categories.filter((c) => c !== name),
@@ -80,9 +128,11 @@ function ScopePicker({ draft, readOnly, onChange }: Readonly<SectionProps>) {
   )
 }
 
-export function SettingsSection({ draft, readOnly, onChange }: Readonly<SectionProps>) {
+export function SettingsSection({ draft, readOnly, onChange, engineering = false }: Readonly<SectionProps>) {
   const { t } = useTranslation('agents')
   const { data: workflows } = useQuery({ queryKey: workflowsKeys.list(), queryFn: workflowsApi.list })
+  // An engineering agent runs an engineering flow; any other agent an agents workflow (the server holds both).
+  const kind = engineering ? 'engineering' : 'agents'
   return (
     <div className="space-y-4">
       <LabeledField label={t('fields.name')}>
@@ -94,12 +144,14 @@ export function SettingsSection({ draft, readOnly, onChange }: Readonly<SectionP
           maxLength={API_AGENT_LIMITS.maxDescriptionChars} onChange={(e) => onChange({ ...draft, description: e.target.value })} />}
       </LabeledField>
       <ScopePicker draft={draft} readOnly={readOnly} onChange={onChange} />
+      <SourcesPicker draft={draft} readOnly={readOnly} onChange={onChange} />
+      {engineering && <p className="text-[12px] text-muted">{t('engineeringAgent.deploymentFeedback')}</p>}
       <LabeledField label={t('fields.workflow')} hint={t('fields.workflowHint')}>
         {(id) => (
           <select id={id} className="select w-full" disabled={readOnly} value={draft.workflow_id ?? ''}
             onChange={(e) => onChange({ ...draft, workflow_id: e.target.value === '' ? null : e.target.value })}>
-            {draft.workflow_id === null && <option value="">{t('fields.workflowDefault')}</option>}
-            {(workflows ?? []).filter((w) => w.kind !== 'engineering').map((w) => (
+            {draft.workflow_id === null && !engineering && <option value="">{t('fields.workflowDefault')}</option>}
+            {(workflows ?? []).filter((w) => w.kind === kind).map((w) => (
               <option key={w.workflow_id} value={w.workflow_id}>{w.name} · r{w.revision}</option>
             ))}
           </select>
@@ -112,12 +164,14 @@ export function SettingsSection({ draft, readOnly, onChange }: Readonly<SectionP
   )
 }
 
-export function InstructionsSection({ draft, readOnly, onChange }: Readonly<SectionProps>) {
+export function InstructionsSection({ draft, readOnly, onChange, engineering = false }: Readonly<SectionProps>) {
   const { t } = useTranslation('agents')
+  const max = engineering ? API_ENGINEERING_LIMITS.maxInstructionsChars : API_AGENT_LIMITS.maxInstructionsChars
+  const hint = engineering ? t('fields.engineeringInstructionsHint', { n: max }) : t('fields.instructionsHint', { n: max })
   return (
-    <LabeledField label={t('fields.instructions')} hint={t('fields.instructionsHint', { n: API_AGENT_LIMITS.maxInstructionsChars })}>
-      {(id) => <textarea id={id} rows={14} className="input w-full font-mono text-[13px]" disabled={readOnly}
-        value={draft.instructions} maxLength={API_AGENT_LIMITS.maxInstructionsChars}
+    <LabeledField label={t('fields.instructions')} hint={hint}>
+      {(id) => <textarea id={id} rows={engineering ? 5 : 14} className="input w-full font-mono text-[13px]" disabled={readOnly}
+        value={draft.instructions} maxLength={max}
         onChange={(e) => onChange({ ...draft, instructions: e.target.value })} />}
     </LabeledField>
   )
@@ -145,11 +199,22 @@ export function ModelsSection({ draft, readOnly, onChange }: Readonly<SectionPro
   )
 }
 
-export function BudgetSection({ draft, readOnly, onChange }: Readonly<SectionProps>) {
+export function BudgetSection({ draft, readOnly, onChange, engineering = false }: Readonly<SectionProps>) {
   const { t } = useTranslation('agents')
   const L = API_AGENT_LIMITS
   const budget = draft.budget
   const cap = budget.monthly_call_cap
+  if (engineering) {
+    const E = API_ENGINEERING_LIMITS
+    return (
+      <div className="space-y-4">
+        <ClampedNumberField label={t('budget.runsPerDay')} hint={t('budget.engineeringRunsPerDayHint', { n: E.maxRunsPerDay })}
+          readOnly={readOnly} min={0} max={E.maxRunsPerDay} value={budget.max_scheduled_runs_per_day ?? E.defaultRunsPerDay}
+          onChange={(n) => onChange({ ...draft, budget: { ...budget, max_scheduled_runs_per_day: n } })} />
+        <p className="text-[12px] text-muted">{t('budget.engineeringSpend')}</p>
+      </div>
+    )
+  }
   return (
     <div className="space-y-4">
       <ClampedNumberField label={t('budget.runsPerDay')} hint={t('budget.runsPerDayHint')} readOnly={readOnly}

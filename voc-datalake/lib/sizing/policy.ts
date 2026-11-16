@@ -358,7 +358,7 @@ export const UNCHANGED: Readonly<Record<string, number | null>> = {
   'VocCoreStack/BucketNotificationsHandler050a0587b7544547bf325f094a3db8347ECC3691': null,
   'VocCoreStack/CustomMessageLambda448F9FBF': null,
   'VocCoreStack/AdminBootstrapProviderframeworkonEventF4719509': null,
-  // The stack's AwsCustomResource provider (7.47.00): one DeleteItem per deploy, the review registries' marker reset
+  // The stack's AwsCustomResource provider (7.48.00): one DeleteItem per deploy, the review registries' marker reset
   // (review-registries-marker.ts), at the CDK default.
   'VocCoreStack/AWS679f53fac002430cb0da5b7982bd22872D164C4C': null,
   // The model agreements (BedrockModelAgreements under the id ImageModelAccess, bedrock-access-stack.ts):

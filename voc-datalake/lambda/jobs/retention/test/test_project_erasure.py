@@ -139,7 +139,7 @@ def _seed(aws) -> dict[tuple[str, str], dict[str, Any]]:
     return links
 
 
-#: The deployment's own projects (7.47.00, 3g-d): a live one, and a deleted one whose threads outlived its partition.
+#: The deployment's own projects (7.48.00, 3g-d): a live one, and a deleted one whose threads outlived its partition.
 DEP_LIVE, DEP_GONE = 'proj_dep_000005', 'proj_dep_gone_000006'
 #: A second series of the live project, whose link was revoked (its series' pointer deleted).
 SERIES_TWO: Final = {'series_id': 'ser_' + 'b' * 24, 'document_type': 'prd', 'base_title': 'Pricing'}
@@ -627,7 +627,7 @@ class TestTheWrites:
     def test_every_update_names_only_the_attributes_iam_allows(self, aws, worker_context):
         """Every UpdateItem the job sends to voc-projects names the attributes of one of the two statements IAM grants
         (retention-worker.ts): the lineage marks' (``LINEAGE_UPDATE_ATTRIBUTES``, the deployment's or a workspace's
-        ``PROJECT#`` partition only, since 7.47.00), or the de-identification's (``PEOPLE_UPDATE_ATTRIBUTES``, the
+        ``PROJECT#`` partition only, since 7.48.00), or the de-identification's (``PEOPLE_UPDATE_ATTRIBUTES``, the
         deployment's or a workspace's ``PROJECT#``, ``DCOMMENTS#`` or ``DOCSHARE#`` partition only); each list is the
         TypeScript one of the same name."""
         _seed(aws)
@@ -896,7 +896,7 @@ class TestTheWorkspacesLineage:
         put_workspace_feedback(aws, WS, 'f1', metadata={'email': 'jane@example.com'})
         aws['projects'].put_item(Item={'pk': project_pk('company_personas', workspace=A), 'sk': 'PERSONA#lib',
                                        'input_feedback_ids': ['f1']})
-        # The backfill ran (7.47.00): the deployment's links and series are found by Query too.
+        # The backfill ran (7.48.00): the deployment's links and series are found by Query too.
         with_marker(aws)
 
         with scans_of(aws) as scanned:
@@ -984,11 +984,11 @@ def deployment_project(aws, project_id: str, **meta: Any) -> None:
 def with_marker(aws) -> None:
     """The backfill's complete marker (shared/review_registries.py ``marker_complete``)."""
     aws['projects'].put_item(Item={'pk': 'DOCSHARE_IDS', 'sk': 'MIGRATION#review-registries', 'completed_at': STAMP,
-                                   'links_found': 0, 'series_found': 0, 'projects_found': 0, 'release': '7.47.0'})
+                                   'links_found': 0, 'series_found': 0, 'projects_found': 0, 'release': '7.48.0'})
 
 
 class TestTheDeploymentsLineageByQuery:
-    """Since 7.47.00 (3g-d) the deployment's pass reads its projects through ``PROJECT_IDS`` (a deleted or half-deleted
+    """Since 7.48.00 (3g-d) the deployment's pass reads its projects through ``PROJECT_IDS`` (a deleted or half-deleted
     one too: the delete takes it off ``gsi1-by-type``, never off the registry) and each one's own partition by Query,
     the persona library too; until the backfill's marker is there, it finds the projects by its own Scan."""
 

@@ -9,7 +9,7 @@ Every project is PLANNED before anything is written, and one refusal stops the w
 A member whose email is not in the target pool is dropped from `members` and reported. The
 agent that created a project (`created_by_agent`) is deployment-local and dropped. The project in the deployment's
 project registry and each comment partition's series in its series registry go first (each put if absent, with
-boto3 alone, 7.47.00: an erasure by email finds the project and the threads there), then the objects, the aggregates
+boto3 alone, 7.48.00: an erasure by email finds the project and the threads there), then the objects, the aggregates
 rows, the project's other rows, and META last with a condition
 (`attribute_not_exists`), so a half-written import never lists as a project and a race with
 another writer is refused rather than overwritten.
@@ -46,7 +46,7 @@ def _put_if_absent(table: Any, item: dict[str, Any]) -> None:
 
 def list_copied_series(table: Any, rows: list[dict[str, Any]], listed_at: str | None = None) -> None:
     """List each comment partition the rows hold (``DCOMMENTS#{project}#{series}``) in the deployment's series
-    registry, put if absent, before anything of the project is written (7.47.00, projects 3g-d: an erasure by email
+    registry, put if absent, before anything of the project is written (7.48.00, projects 3g-d: an erasure by email
     finds a deployment's comment partitions there, so an imported reviewer's thread must be listed like one a store
     wrote). The row is shared/project_keys.py ``deployment_series_item``'s, the one a series' first thread puts
     (shared/document_comments.py ``list_deployment_series``; a test holds the two equal)."""
@@ -59,7 +59,7 @@ def list_copied_series(table: Any, rows: list[dict[str, Any]], listed_at: str | 
 
 def list_imported_project(table: Any, project_id: str, created_at: str) -> None:
     """List the imported project in the deployment's project registry (``PROJECT_IDS`` / ``{id}``, put if absent,
-    7.47.00, projects 3g-d), before anything of the project is written, as a create does: the row is
+    7.48.00, projects 3g-d), before anything of the project is written, as a create does: the row is
     shared/project_keys.py ``deployment_project_item``'s, the one shared/project_writes.py
     ``register_deployment_project`` puts. An erasure by email finds a deleted project's rows through it."""
     lambda_on_path()
@@ -222,7 +222,7 @@ class Importer:
         return text.encode('utf-8')
 
     def write(self, plan: ProjectPlan) -> None:
-        # The registry rows first, before any object or row (7.47.00): an import stopped later leaves a listed
+        # The registry rows first, before any object or row (7.48.00): an import stopped later leaves a listed
         # project or series with nothing in it, which a walk reads as nothing, never an unlisted one.
         meta_key = (f'PROJECT#{plan.project_id}', 'META')
         meta = next(item for table, item in plan.rows if table == 'projects' and (item['pk'], item['sk']) == meta_key)

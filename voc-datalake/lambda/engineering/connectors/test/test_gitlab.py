@@ -276,3 +276,16 @@ def test_a_rules_wildcard_matches_as_gitlabs_does(pattern: str, branch: str, mat
 
 def test_a_draft_title_says_so_once() -> None:
     assert (draft_title('Fix'), draft_title('Draft: Fix')) == ('Draft: Fix', 'Draft: Fix')
+
+
+def test_a_starts_head_and_issue_reads(  # (7.47.00: the broker's head)
+) -> None:
+    api = (FakeGitLab().on('GET', f'{P}/repository/branches/develop', answer(200, {'commit': {'id': COMMIT}}))
+           .on('GET', f'{P}/repository/branches/gone', answer(404, {}))
+           .on('GET', f'{P}/issues/9', answer(200, {'iid': 9, 'state': 'opened'}))
+           .on('GET', f'{P}/issues/10', answer(200, {'iid': 10, 'state': 'closed'}))
+           .on('GET', f'{P}/issues/11', answer(404, {})))
+    host = client(api)
+    assert (host.head_commit('conn-1', 'develop'), host.head_commit('conn-1', 'gone')) == (COMMIT, None)
+    assert [host.issue_state('conn-1', n) for n in (9, 10, 11)] == ['open', 'closed', None]
+    assert {s.method for s in api.sent} == {'GET'}

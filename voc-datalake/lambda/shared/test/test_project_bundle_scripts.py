@@ -205,7 +205,7 @@ class TestRoundTrip:
             [AVATAR_KEY, f'prototypes/{PID}/{PROTO_ID}.html', f'projects/{PID}/product_docs/raw/brief.pdf'])
 
     def test_import_lists_each_imported_series_in_the_deployments_series_registry(self, world):
-        """7.47.00 (3g-d): an erasure by email finds a deployment's comment partitions through COMMENT_SERIES_IDS, so
+        """7.48.00 (3g-d): an erasure by email finds a deployment's comment partitions through COMMENT_SERIES_IDS, so
         an imported thread's series is listed before the threads are written; a row already there is kept."""
         _export(world, PID)
         assert _import(world) == 0
@@ -214,7 +214,7 @@ class TestRoundTrip:
             (f'{PID}#{SERIES}', PID, SERIES)]
 
     def test_import_lists_the_project_in_the_deployments_project_registry(self, world):
-        """7.47.00 (3g-d): an erasure by email finds a deployment's projects, a deleted one too, through PROJECT_IDS,
+        """7.48.00 (3g-d): an erasure by email finds a deployment's projects, a deleted one too, through PROJECT_IDS,
         so an imported project is listed (with its META's created_at, else the import's time) before its rows are
         written."""
         _export(world, PID)
@@ -397,7 +397,7 @@ class TestNewIds:
         prd = next(r for r in rows if r['sk'].startswith('PRD#'))
         assert prd['document_id'] == versioned_document_id(new_pid, 'prd', 'alloc_1')
         assert any(r['pk'] == f'DCOMMENTS#{new_pid}#{series_id(new_pid, "prd", "Checkout PRD")}' for r in rows)
-        # The series registry names the rewritten series (7.47.00).
+        # The series registry names the rewritten series (7.48.00).
         assert [r['sk'] for r in rows if r['pk'] == 'COMMENT_SERIES_IDS'] == [
             f'{new_pid}#{series_id(new_pid, "prd", "Checkout PRD")}']
         assert [r['sk'] for r in rows if r['pk'] == 'PROJECT_IDS'] == [new_pid]
@@ -431,7 +431,7 @@ class TestPieces:
 
 class TestTheRegistryRowsOfAPlainImport:
     """A plain import needs Python 3.12 and boto3 only (docs/project-export.md): its registry puts are boto3's own,
-    their rows the shared builders', and they come before any object or row of the project (7.47.00)."""
+    their rows the shared builders', and they come before any object or row of the project (7.48.00)."""
 
     def test_the_rows_are_the_ones_the_stores_put(self, world):
         from shared.document_comments import list_deployment_series

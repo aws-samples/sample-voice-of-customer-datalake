@@ -181,7 +181,7 @@ class Recording:
 
 
 def test_the_deployments_requests_are_the_ones_sent_before(table):
-    """Each request the one sent before; since 7.47.00 (3g-d) a new thread first lists its series in the deployment's
+    """Each request the one sent before; since 7.48.00 (3g-d) a new thread first lists its series in the deployment's
     series registry (read, then put if absent), the requests it adds."""
     recording = Recording(table)
     item = dc.thread_item(project_id=PROJECT, series_id=SERIES, document=DOCUMENT, author={'kind': 'user'},

@@ -437,6 +437,18 @@ class GitLabHost:
         return text_unless_missing(self._api(connection_id, 'GET', f'/repository/branches/{_quoted(branch)}',
                                              'the branch lookup', ok=(200, 404)), 'commit', 'id')
 
+    def head_commit(self, connection_id: str, branch: str) -> str | None:
+        """The head commit of ``branch``, None for none."""
+        return self._head(connection_id, branch)
+
+    def issue_state(self, connection_id: str, number: int) -> str | None:
+        """Issue ``number``'s state (GitLab's ``opened`` read as ``open``), None for no such issue."""
+        response = self._api(connection_id, 'GET', f'/{_THREADS["issue"]}/{int(number)}', 'the issue read',
+                             ok=(200, 404))
+        data = json_of(response) if response.status == 200 else None
+        state = {'opened': 'open', 'closed': 'closed'}.get(str(dig(data, 'state')))
+        return state if isinstance(data, dict) else None
+
     def _listing(self, connection_id: str, ref: str, directory: str,
                  pages_by: float | None = None) -> dict[str, TreeEntry]:
         """The entries of ``directory`` ('' for the root) at ``ref`` by name: empty for a directory it does not have.

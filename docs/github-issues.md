@@ -307,6 +307,19 @@ trends. PR numbers an issue links are kept in `linked_prs`.
 - **`GET /feedback?version=0.4.2&label=bug`**: list filters (also on `/feedback/urgent`).
 - **AI assistant**: `get_metrics` with `metric: "github"`, and `search_feedback` with
   `version: "0.4.2"`.
+- **Engineering agents** (7.47.00, with `-c engineeringAgents=true`; [autonomous-agents.md](autonomous-agents.md#triggers-and-budgets)):
+  an engineering agent's `github_issue` trigger starts a run from an ingested issue (`issue_attributes.kind`
+  `issue`, `state` `open`) of its repository connection's repository, classified as its kind
+  (`dimensions.feedback_type` `bug` or `feature_request`), first ingested within its look-back (1-30 days). On a
+  public repository the issue must carry the trigger's label (`voc-agent` by default: a maintainer's, since only a
+  maintainer labels an issue); on a private one (a connection with `repository_private`, which a connection the
+  GitHub App made carries) a trusted author (`OWNER`, `MEMBER`, `COLLABORATOR`) may stand in for it. The source may
+  sign in with that App ([above](#signing-in-with-a-github-app-74500)) in place of a fine-grained token
+  ([autonomous-agents.md, "To enable Bug fixer"](autonomous-agents.md#default-agents)). Labels are read from the
+  stored item, which a refresh keeps current, so the label may be added after the issue was ingested, within the look-back: a label added later than that is missed. One run per issue, ever (its
+  `ISSUE_RUN#` claim). The run is told the issue's number and repository only, never its text, and its pull request
+  says `Fixes #N`. Only deployment-wide items start a run: a workspace's items (`WS#{ws}#CHANNEL#issue`) do not yet
+  (agents move per workspace in [3g3](multi-workspace.md#the-project-plan-phase-3)).
 
 ## Files
 

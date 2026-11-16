@@ -15,7 +15,9 @@
   },
   "scope": {
     "all": "Wszystkie kategorie",
-    "some": "Obserwuje: {{list}}"
+    "some": "Obserwuje: {{list}}",
+    "sources": "Tylko te źródła",
+    "sourcesHint": "Nie zaznaczaj żadnego, aby obserwować wszystkie źródła. Wyzwalacz progowy liczy wszystkie źródła, dlatego nie jest dostępny przy wybranych źródłach."
   },
   "views": {
     "label": "Sekcje strony agentów",
@@ -90,7 +92,8 @@
     "visibilityHint": "Projekty prywatne są widoczne tylko dla ich właściciela, członków zespołu i administratorów.",
     "workflow": "Przepływ pracy",
     "workflowDefault": "Recenzje → Prototyp (wbudowany)",
-    "workflowHint": "Edytuj kroki na karcie Przepływ pracy."
+    "workflowHint": "Edytuj kroki na karcie Przepływ pracy.",
+    "engineeringInstructionsHint": "Otwierają cel każdego przebiegu (do {{n, number}} znaków). Nigdy nie wklejaj tu tekstu opinii ani zgłoszenia."
   },
   "visibility": {
     "private": "Prywatny",
@@ -125,12 +128,14 @@
     "kinds": {
       "new_reviews": "Nowe recenzje",
       "schedule": "Harmonogram",
-      "threshold": "Próg"
+      "threshold": "Próg",
+      "github_issue": "Zgłoszenie GitHub"
     },
     "kindHints": {
       "new_reviews": "Uruchamia się, gdy w jego zakresie od ostatniego uruchomienia pojawi się wystarczająco dużo nowych opinii.",
       "schedule": "Uruchamia się według stałego harmonogramu.",
-      "threshold": "Uruchamia się, gdy kategoria lub podkategoria osiągnie określoną liczbę recenzji w danym przedziale czasu."
+      "threshold": "Uruchamia się, gdy kategoria lub podkategoria osiągnie określoną liczbę recenzji w danym przedziale czasu.",
+      "github_issue": "Uruchamia się dla otwartego zgłoszenia z jego repozytorium, które data lake pobrał i sklasyfikował jako jego rodzaj."
     },
     "everyOptions": {
       "12h": "12 godzin",
@@ -152,7 +157,15 @@
     "timezone": "Strefa czasowa",
     "count": "Recenzje",
     "per": "Na",
-    "windowDays": "W ciągu (dni)"
+    "windowDays": "W ciągu (dni)",
+    "engineeringHint": "Co budzi agenta inżynieryjnego. Jeden przebieg naraz i nigdy dwa przebiegi dla tego samego zgłoszenia.",
+    "thresholdWithSources": "Próg liczy wszystkie źródła: usuń go albo wyczyść źródła na karcie Ustawienia.",
+    "label": "Etykieta",
+    "labelHint": "W publicznym repozytorium zgłoszenie uruchamia przebieg tylko z tą etykietą, którą dodaje opiekun.",
+    "lookbackDays": "Okres wstecz (dni)",
+    "lookbackHint": "Zgłoszenia pobrane w ciągu tylu ostatnich dni. Etykieta dodana później zostanie pominięta.",
+    "trustedAuthors": "Także zgłoszenia otwarte przez właścicieli, członków i współpracowników repozytorium",
+    "trustedAuthorsHint": "Tylko w prywatnym repozytorium: w publicznym etykieta jest zawsze wymagana."
   },
   "personas": {
     "fixed": "Stałe persony ({{n, number}} z {{max, number}})",
@@ -187,7 +200,9 @@
     "callsPerRun": "Wywołania modeli na przebieg",
     "monthlyCap": "Miesięczny limit wywołań modeli",
     "monthlyCapHint": "Agent przestaje uruchamiać przebiegi, gdy liczba wywołań w miesiącu osiągnie ten limit.",
-    "uncapped": "Bez miesięcznego limitu"
+    "uncapped": "Bez miesięcznego limitu",
+    "engineeringRunsPerDayHint": "Najwyżej {{n, number}} przebiegów dziennie z wyzwalaczy. „Uruchom teraz” nie jest liczone.",
+    "engineeringSpend": "Wydatki jego przebiegów ogranicza miesięczny budżet jego przepływu pracy (w konfiguracji) oraz limity przebiegów wdrożenia; twardy limit jest dla jego przebiegów zawsze włączony."
   },
   "run": {
     "summary": {
@@ -195,13 +210,15 @@
         "manual": "Uruchomiono ręcznie.",
         "schedule": "Uruchomiono zgodnie z harmonogramem.",
         "new_reviews": "Uruchomiono, ponieważ pojawiły się nowe recenzje.",
-        "threshold": "Uruchomiono, ponieważ przekroczono próg."
+        "threshold": "Uruchomiono, ponieważ przekroczono próg.",
+        "github_issue": "Uruchomiony ze zgłoszenia GitHub."
       },
       "startedAt": {
         "manual": "Uruchomiono ręcznie {{when}}.",
         "schedule": "Uruchomiono zgodnie z harmonogramem {{when}}.",
         "new_reviews": "Uruchomiono {{when}}, ponieważ pojawiły się nowe recenzje.",
-        "threshold": "Uruchomiono {{when}}, ponieważ przekroczono próg."
+        "threshold": "Uruchomiono {{when}}, ponieważ przekroczono próg.",
+        "github_issue": "Uruchomiony {{when}} ze zgłoszenia GitHub."
       },
       "outcome": {
         "queued": "Oczekuje na start.",
@@ -237,7 +254,8 @@
       "manual": "Ręcznie",
       "schedule": "Harmonogram",
       "new_reviews": "Nowe opinie",
-      "threshold": "Próg"
+      "threshold": "Próg",
+      "github_issue": "Zgłoszenie GitHub"
     },
     "stepStatus": {
       "idle": "Nie rozpoczęto",
@@ -280,7 +298,22 @@
     "olderRevision": "To uruchomienie użyło wersji {{n}} przepływu pracy.",
     "graphLabel": "Wykres postępu uruchomienia",
     "showAll": "Pokaż wszystkie zdarzenia (filtr: {{step}})",
-    "rounds": "Runda {{n}}"
+    "rounds": "Runda {{n}}",
+    "engineeringConfirmBug": "Agent rozpoczyna przebieg inżynieryjny w swoim repozytorium: pracuje na własnej gałęzi i kończy na szkicu pull requesta. Podaj numer zgłoszenia, aby je naprawić (nawet jeśli było już przetwarzane), albo zostaw puste, aby szukać błędów.",
+    "engineeringConfirmFeature": "Agent rozpoczyna przebieg inżynieryjny w swoim repozytorium ze zgłoszenia: buduje funkcję na własnej gałęzi i kończy na szkicu pull requesta. Aby budować z PRD, otwórz PRD i wybierz „Zbuduj z tego PRD”.",
+    "issueOptional": "Numer zgłoszenia (opcjonalnie)",
+    "issueRequired": "Numer zgłoszenia",
+    "issueInvalid": "Numer zgłoszenia: liczba całkowita od 1.",
+    "issueHint": "Zgłoszenie z repozytorium agenta.",
+    "engineering": {
+      "title": "Przebieg inżynieryjny",
+      "fromIssue": "Uruchomiony ze zgłoszenia #{{number}} w {{repository}}.",
+      "fromPrd": "Uruchomiony z PRD {{document}} projektu {{project}}.",
+      "fromReviews": "Uruchomiony z {{n, number}} opinii w jego zakresie.",
+      "fromNothing": "Uruchomiony, aby szukać błędów w jego repozytorium.",
+      "followHint": "Śledź go i zatrzymaj w monitorze przebiegu: ten przebieg kończy się, gdy kończy się przebieg inżynieryjny.",
+      "openMonitor": "Otwórz monitor przebiegu"
+    }
   },
   "editor": {
     "methodology": {
@@ -1422,5 +1455,36 @@
       "name": "Samodoskonalenie",
       "description": "Coach czyta wcześniejsze przebiegi, proponuje nowe wersje umiejętności i je testuje; administrator akceptuje lub odrzuca każdą z nich."
     }
+  },
+  "engineeringAgent": {
+    "deploymentFeedback": "Działa na opiniach z wdrożenia.",
+    "setupTitle": "Skonfiguruj: {{name}}",
+    "setupDescription": "Wybierz połączenie z repozytorium, na którym pracuje, język repozytorium i ile jego przebiegi mogą wydać w miesiącu. Potem zostanie włączony i będzie działał w Twoim imieniu.",
+    "connection": "Połączenie z repozytorium",
+    "connectionHint": "Przy wyzwalaczu zgłoszeń GitHub widoczne są tylko połączenia GitHub.",
+    "language": "Język",
+    "budget": "Budżet miesięczny (USD)",
+    "budgetHint": "Zapisywany w jego przepływie pracy: ile wszystkie jego przebiegi mogą wydać w miesiącu kalendarzowym.",
+    "budgetInvalid": "Dolary i centy, od 0,01 do 100 000.",
+    "setupFailed": "Nie udało się skonfigurować agenta.",
+    "saveAndEnable": "Zapisz i włącz",
+    "save": "Zapisz",
+    "loadFailed": "Nie udało się odczytać konfiguracji agenta.",
+    "loading": "Odczytywanie konfiguracji agenta",
+    "runsAs": "Działa jako {{name}}.",
+    "changeSetup": "Zmień konfigurację",
+    "connectFirst": "Najpierw połącz repozytorium",
+    "setUp": "Skonfiguruj",
+    "whyNoConnection": "Wyłączony: potrzebuje połączenia z repozytorium, na którym może pracować.",
+    "whySetUp": "Wyłączony do czasu konfiguracji: połączenie, język i budżet miesięczny."
+  },
+  "prdBuild": {
+    "button": "Zbuduj z tego PRD",
+    "started": "Otwórz monitor przebiegu",
+    "title": "Zbudować z tego PRD?",
+    "message": "{{name}} rozpoczyna przebieg inżynieryjny, który buduje funkcję opisaną w tym PRD na własnej gałęzi i kończy na szkicu pull requesta.",
+    "confirm": "Rozpocznij budowę",
+    "agent": "Agent",
+    "inputHint": "Przebieg otrzymuje ten PRD jako dane wejściowe, przez jego identyfikator."
   }
 }

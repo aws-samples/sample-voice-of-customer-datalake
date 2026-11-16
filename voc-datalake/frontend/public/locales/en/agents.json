@@ -13,7 +13,9 @@
   },
   "scope": {
     "all": "All categories",
-    "some": "Watches: {{list}}"
+    "some": "Watches: {{list}}",
+    "sources": "Only these sources",
+    "sourcesHint": "Leave all unticked to watch every source. A threshold trigger counts every source, so it is not offered with sources."
   },
   "views": {
     "label": "Agents page sections",
@@ -88,7 +90,8 @@
     "visibilityHint": "Private projects are visible to their owner, members and administrators only.",
     "workflow": "Workflow",
     "workflowDefault": "Reviews → Prototype (built-in)",
-    "workflowHint": "Edit the steps on the Workflow tab."
+    "workflowHint": "Edit the steps on the Workflow tab.",
+    "engineeringInstructionsHint": "They start every run's goal (up to {{n, number}} characters). Never paste a review's or an issue's text here."
   },
   "visibility": {
     "private": "Private",
@@ -135,12 +138,14 @@
     "kinds": {
       "new_reviews": "New reviews",
       "schedule": "Schedule",
-      "threshold": "Threshold"
+      "threshold": "Threshold",
+      "github_issue": "GitHub issue"
     },
     "kindHints": {
       "new_reviews": "Runs when enough new feedback arrived in its scope since the last run.",
       "schedule": "Runs on a fixed schedule.",
-      "threshold": "Runs when a category or subcategory reaches a number of reviews within a window."
+      "threshold": "Runs when a category or subcategory reaches a number of reviews within a window.",
+      "github_issue": "Runs on an open issue of its repository that the data lake ingested and classified as its kind."
     },
     "everyOptions": {
       "12h": "12 hours",
@@ -150,7 +155,15 @@
     "perOptions": {
       "category": "Category",
       "subcategory": "Subcategory"
-    }
+    },
+    "engineeringHint": "What wakes the engineering agent. One run at a time, and never two runs for the same issue.",
+    "thresholdWithSources": "A threshold counts every source: remove it, or clear the sources on the Settings tab.",
+    "label": "Label",
+    "labelHint": "On a public repository, an issue starts a run only with this label, which a maintainer adds.",
+    "lookbackDays": "Look back (days)",
+    "lookbackHint": "Issues ingested in these last days. A label added after this is missed.",
+    "trustedAuthors": "Also issues opened by the repository's owners, members and collaborators",
+    "trustedAuthorsHint": "Only on a private repository: on a public one the label is always needed."
   },
   "personas": {
     "fixed": "Fixed personas ({{n, number}} of {{max, number}})",
@@ -185,7 +198,9 @@
     "callsPerRun": "Model calls per run",
     "monthlyCap": "Monthly model-call cap",
     "monthlyCapHint": "The agent stops starting runs once the month's calls reach this cap.",
-    "uncapped": "No monthly cap"
+    "uncapped": "No monthly cap",
+    "engineeringRunsPerDayHint": "At most {{n, number}} runs a day from its triggers. Run now is not counted.",
+    "engineeringSpend": "What its runs spend is bounded by its workflow's monthly budget (its set-up) and the deployment's run caps, with the hard cap always on for its runs."
   },
   "run": {
     "hint": "Each run follows the workflow. The graph lights up the steps as they run; it is a view, not a control.",
@@ -210,8 +225,8 @@
     "hideTechnical": "Hide technical log",
     "summary": {
       "title": "What happened",
-      "started": { "manual": "Started by hand.", "schedule": "Started on its schedule.", "new_reviews": "Started because new reviews arrived.", "threshold": "Started because a threshold was crossed." },
-      "startedAt": { "manual": "Started by hand on {{when}}.", "schedule": "Started on its schedule on {{when}}.", "new_reviews": "Started on {{when}} because new reviews arrived.", "threshold": "Started on {{when}} because a threshold was crossed." },
+      "started": { "manual": "Started by hand.", "schedule": "Started on its schedule.", "new_reviews": "Started because new reviews arrived.", "threshold": "Started because a threshold was crossed.", "github_issue": "Started from a GitHub issue." },
+      "startedAt": { "manual": "Started by hand on {{when}}.", "schedule": "Started on its schedule on {{when}}.", "new_reviews": "Started on {{when}} because new reviews arrived.", "threshold": "Started on {{when}} because a threshold was crossed.", "github_issue": "Started on {{when}} from a GitHub issue." },
       "outcome": { "queued": "Waiting to start.", "running": "Working on it now.", "runningStep": "Working on “{{step}}” now.", "completed": "Finished.", "completedAt": "Finished on {{when}}.", "cancelled": "Cancelled.", "cancelledAt": "Cancelled on {{when}}.", "failed": "Stopped before it finished.", "failedBecause": "Stopped before it finished: {{reason}}", "needs_human": "Paused — it needs your decision." },
       "produced": "What it produced",
       "producedNothing": "Nothing yet.",
@@ -241,7 +256,8 @@
       "manual": "Manual",
       "schedule": "Schedule",
       "new_reviews": "New reviews",
-      "threshold": "Threshold"
+      "threshold": "Threshold",
+      "github_issue": "GitHub issue"
     },
     "stepStatus": {
       "idle": "Not started",
@@ -257,6 +273,21 @@
       "verdict": "Verdict",
       "decision": "Decision",
       "artifact": "Artifact"
+    },
+    "engineeringConfirmBug": "The agent starts an engineering run on its repository: it works on a branch of its own and stops at a draft pull request. Give an issue number to fix that issue (even one it ran on before), or leave it empty to hunt for bugs.",
+    "engineeringConfirmFeature": "The agent starts an engineering run on its repository from an issue: it builds the feature on a branch of its own and stops at a draft pull request. To build from a PRD, open the PRD and choose Build from this PRD.",
+    "issueOptional": "Issue number (optional)",
+    "issueRequired": "Issue number",
+    "issueInvalid": "The issue's number: a whole number from 1.",
+    "issueHint": "An issue of the agent's repository.",
+    "engineering": {
+      "title": "Engineering run",
+      "fromIssue": "Started from issue #{{number}} of {{repository}}.",
+      "fromPrd": "Started from the PRD {{document}} of project {{project}}.",
+      "fromReviews": "Started from {{n, number}} reports in its scope.",
+      "fromNothing": "Started to hunt for bugs in its repository.",
+      "followHint": "Follow it and stop it on its run monitor: this run ends when the engineering run does.",
+      "openMonitor": "Open the run monitor"
     }
   },
   "editor": {
@@ -1329,5 +1360,36 @@
       "name": "Self-improvement",
       "description": "The coach reads past runs, proposes new skill versions and benchmarks them; an administrator accepts or declines each one."
     }
+  },
+  "engineeringAgent": {
+    "deploymentFeedback": "Runs on the deployment's feedback.",
+    "setupTitle": "Set up {{name}}",
+    "setupDescription": "Choose the repository connection it works on, the repository's language and what its runs may spend in a month. Then it is enabled, and runs as you.",
+    "connection": "Repository connection",
+    "connectionHint": "With a GitHub issue trigger, only GitHub connections are listed.",
+    "language": "Language",
+    "budget": "Monthly budget (USD)",
+    "budgetHint": "Saved on its workflow: what all its runs may spend in a calendar month.",
+    "budgetInvalid": "Dollars and cents, from 0.01 to 100,000.",
+    "setupFailed": "The agent couldn't be set up.",
+    "saveAndEnable": "Save and enable",
+    "save": "Save",
+    "loadFailed": "The agent's set-up couldn't be read.",
+    "loading": "Reading the agent's set-up",
+    "runsAs": "Runs as {{name}}.",
+    "changeSetup": "Change the set-up",
+    "connectFirst": "Connect a repository first",
+    "setUp": "Set up",
+    "whyNoConnection": "Disabled: it needs a repository connection to work on.",
+    "whySetUp": "Disabled until it is set up: a connection, a language and a monthly budget."
+  },
+  "prdBuild": {
+    "button": "Build from this PRD",
+    "started": "Open the run monitor",
+    "title": "Build from this PRD?",
+    "message": "{{name}} starts an engineering run that builds the feature this PRD describes, on a branch of its own, and stops at a draft pull request.",
+    "confirm": "Start the build",
+    "agent": "Agent",
+    "inputHint": "The run gets this PRD as its input, by its id."
   }
 }

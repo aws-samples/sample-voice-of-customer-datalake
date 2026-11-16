@@ -20,7 +20,9 @@ line has the operation, the caller's role, run and agent index, and the status.
 
 ``reactions`` (7.10.00, ``{"run_id"}``) is voc-engineering-runtime's alone: its execution role in the session named
 after its function (``ENGINEERING_RUNTIME_ROLE_NAME``, ``ENGINEERING_RUNTIME_FUNCTION_NAME``), checked as an agent's
-identity is; an agent asking for it is refused 403, and the runtime asking for any other operation is too.
+identity is; an agent asking for it is refused 403, and the runtime asking for any other operation is too. ``head``
+(7.47.00, ``{"connection", "repository", "branch", "issue"?}``) is voc-engineering-start's alone, admitted the same
+way (``ENGINEERING_START_ROLE_NAME``, ``ENGINEERING_START_FUNCTION_NAME``).
 """
 from __future__ import annotations
 
@@ -35,7 +37,7 @@ from functools import lru_cache
 from typing import Any, Final
 
 from engineering.connectors.broker import Broker, NotNow, NotPermitted
-from engineering.connectors.connections import PARAMETER_PREFIX_ENV
+from engineering.connectors.connections import CONNECTION_ID, PARAMETER_PREFIX_ENV
 from engineering.connectors.credentials import ParameterStoreCredentials
 from engineering.connectors.dial import WaysOfWorking
 from engineering.connectors.github import GitHubHost
@@ -59,11 +61,13 @@ from engineering.connectors.hosts import (
     remaining_until,
 )
 from engineering.connectors.identity import (
+    HEAD,
     OPEN_OR_UPDATE_DRAFT_PR,
     POST_COMMENT,
     PUSH_BUNDLE,
     REACTIONS,
     READ,
+    START_ROLE,
     Caller,
     UnknownCaller,
     caller_from_event,
@@ -76,6 +80,7 @@ from engineering.connectors.router import HostRouter
 from engineering.connectors.write_policy import WriteRefused
 from engineering.runtime.interface import MAX_ATTEMPT
 from engineering.workspace.store import WorkspaceStore
+from shared.engineering_agents import ENGINEERING_TABLE_ENV
 from shared.invocation_cost import instrumented_handler
 from shared.logging import logger
 
@@ -89,7 +94,7 @@ _READ_KINDS: Final[Mapping[str, ReadKind]] = {
     'file': 'file', 'history': 'history', 'issue': 'issue', 'pull_request': 'pull_request'}
 _COMMENT_TARGETS: Final[Mapping[str, CommentTarget]] = {'issue': 'issue', 'pull_request': 'pull_request'}
 #: The stores the run's record, the GO ledger, the patches and the dial live in (set by engineering-broker.ts).
-TABLE_ENV: Final = 'ENGINEERING_TABLE'
+TABLE_ENV: Final = ENGINEERING_TABLE_ENV
 BUCKET_ENV: Final = 'ENGINEERING_WORKSPACE_BUCKET'
 AGGREGATES_ENV: Final = 'AGGREGATES_TABLE'
 #: voc-agents, where the connections' CI attestations are (records.py ``attested``; unnamed: never attested). The
@@ -100,6 +105,10 @@ CONNECTIONS_TABLE_ENV: Final = 'ENGINEERING_CONNECTIONS_TABLE'
 #: agents, for the reactions read alone (identity.py ``runtime_caller_from_event``). Unset: no runtime is admitted.
 RUNTIME_ROLE_NAME_ENV: Final = 'ENGINEERING_RUNTIME_ROLE_NAME'
 RUNTIME_FUNCTION_ENV: Final = 'ENGINEERING_RUNTIME_FUNCTION_NAME'
+#: voc-engineering-start's execution role and function names (engineering-start.ts, 7.47.00): the ``head`` read alone.
+#: Unset: no start is admitted.
+START_ROLE_NAME_ENV: Final = 'ENGINEERING_START_ROLE_NAME'
+START_FUNCTION_ENV: Final = 'ENGINEERING_START_FUNCTION_NAME'
 
 
 class BadRequest(Exception):
@@ -228,12 +237,28 @@ def _reactions(broker: Broker, caller: Caller, args: Mapping[str, object]) -> di
     return {'reactions': None if found is None else found.view()}
 
 
+
+def _head(broker: Broker, caller: Caller, args: Mapping[str, object]) -> dict[str, object]:
+    """``{connection, repository, branch, issue?}`` (voc-engineering-start's alone): ``{"commit", "issue": {number,
+    state} | null}``, the state null when the repository has no such issue."""
+    _keys(args, {'connection', 'repository', 'branch'}, frozenset({'issue'}))
+    connection = _text(args, 'connection', MAX_NAME)
+    if not CONNECTION_ID.fullmatch(connection):
+        raise BadRequest('connection is a connection id.')
+    issue = args.get('issue')
+    if issue is not None and (isinstance(issue, bool) or not isinstance(issue, int) or not 0 < issue < 2 ** 31):
+        raise BadRequest('issue is a positive integer.')
+    return broker.head(caller, connection, _text(args, 'repository', MAX_NAME), _text(args, 'branch', MAX_NAME),
+                       issue if isinstance(issue, int) else None)
+
+
 _OPERATIONS: Final[Mapping[str, Callable[[Broker, Caller, Mapping[str, object]], dict[str, object]]]] = {
     READ: _read,
     POST_COMMENT: _post_comment,
     PUSH_BUNDLE: _push_bundle,
     OPEN_OR_UPDATE_DRAFT_PR: _open_or_update_draft_pr,
     REACTIONS: _reactions,
+    HEAD: _head,
 }
 
 
@@ -263,8 +288,9 @@ def _answer(event: Mapping[str, object], caller: Caller, broker: Broker) -> tupl
 
 
 def _caller(event: Mapping[str, object], role_name_pattern: str, account: str,
-            runtime: tuple[str, str]) -> Caller | None:
-    """An agent of a run, else voc-engineering-runtime (``runtime``: its role's and its function's names), else None."""
+            runtime: tuple[str, str], start: tuple[str, str] = ('', '')) -> Caller | None:
+    """An agent of a run, else voc-engineering-runtime (``runtime``: its role's and its function's names), else
+    voc-engineering-start (``start``, the same), else None."""
     try:
         return caller_from_event(event, role_name_pattern, account)
     except UnknownCaller:
@@ -272,15 +298,19 @@ def _caller(event: Mapping[str, object], role_name_pattern: str, account: str,
     try:
         return runtime_caller_from_event(event, runtime[0], runtime[1], account)
     except UnknownCaller:
+        pass
+    try:
+        return runtime_caller_from_event(event, start[0], start[1], account, role=START_ROLE)
+    except UnknownCaller:
         return None
 
 
 def handle(event: Mapping[str, object], role_name_pattern: str, account: str, broker: Broker,
-           runtime: tuple[str, str] = ('', '')) -> dict[str, Any]:
+           runtime: tuple[str, str] = ('', ''), start: tuple[str, str] = ('', '')) -> dict[str, Any]:
     """The function URL's response to ``event``, for callers of ``account`` (the broker's own): an agent of a run,
     or voc-engineering-runtime (``runtime``: its execution role's name and its function's, which Lambda names its
-    session after; ``('', '')``: none admitted)."""
-    caller = _caller(event, role_name_pattern, account, runtime)
+    session after; ``('', '')``: none admitted), or voc-engineering-start (``start``, the same, 7.47.00)."""
+    caller = _caller(event, role_name_pattern, account, runtime, start)
     if caller is None:
         logger.warning('broker call refused', extra={'status': 403})
         return _response(403, {'error': 'The caller is not an engineering agent.'})
@@ -331,6 +361,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                       broker_for(environ.get(PARAMETER_PREFIX_ENV, ''), environ.get(TABLE_ENV, ''),
                                  environ.get(BUCKET_ENV, ''), environ.get(AGGREGATES_ENV, ''),
                                  environ.get(CONNECTIONS_TABLE_ENV, '')),
-                      (environ.get(RUNTIME_ROLE_NAME_ENV, ''), environ.get(RUNTIME_FUNCTION_ENV, '')))
+                      (environ.get(RUNTIME_ROLE_NAME_ENV, ''), environ.get(RUNTIME_FUNCTION_ENV, '')),
+                      (environ.get(START_ROLE_NAME_ENV, ''), environ.get(START_FUNCTION_ENV, '')))
     finally:
         WRITE_READY_BY.reset(ready)

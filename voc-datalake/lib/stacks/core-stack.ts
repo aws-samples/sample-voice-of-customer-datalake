@@ -582,7 +582,7 @@ export class VocCoreStack extends VocStack {
     new cdk.CfnOutput(this, 'BoardUserPoolClientId', { value: board.userPoolClient.userPoolClientId, description: 'Board and review-link client ID' });
     new cdk.CfnOutput(this, 'BoardSignInMode', { value: board.signIn, description: 'Board sign-in: email_otp (SES, -c emailFrom) or code (Cognito default email)' });
 
-    // The review registries' backfill marker goes when a release that keeps the registries arrives or leaves (7.47.00:
+    // The review registries' backfill marker goes when a release that keeps the registries arrives or leaves (7.48.00:
     // review-registries-marker.ts), through this stack's one AwsCustomResource provider.
     resetReviewRegistriesMarker(this, this.projectsTable, this.kmsKey);
 

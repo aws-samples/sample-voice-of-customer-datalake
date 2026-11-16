@@ -34,7 +34,6 @@ from engineering.connectors.connections import (
     parse_attestation,
     parse_reason,
     parse_request,
-    stored_connection,
 )
 from engineering.connectors.credentials import (
     GitLabTokenCredential,
@@ -53,6 +52,7 @@ from engineering.connectors.test.app_keys import (
     pem,
     private_key,
 )
+from shared.engineering_agent_runs import connection_row
 
 PREFIX = '/voc/engineering/'
 TABLE = 'voc-agents-test'
@@ -205,7 +205,7 @@ def test_a_removed_connection_loses_its_credential_and_is_listed_no_more(env: En
     with pytest.raises(ClientError, match='ParameterNotFound'):
         env.parameter('refunds')
     assert env.store().list() == []
-    assert stored_connection(env.table, 'refunds') is None
+    assert connection_row(env.table, 'refunds') is None   # (the run's start's read: shared/engineering_agent_runs.py)
     with pytest.raises(ConnectionRefused, match='not found') as refused:
         env.store().remove('refunds', ADMIN)
     assert refused.value.kind == 'not_found'

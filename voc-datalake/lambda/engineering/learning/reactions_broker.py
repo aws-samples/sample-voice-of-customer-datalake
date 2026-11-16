@@ -33,6 +33,15 @@ class BrokerUnavailable(RuntimeError):
     """The broker refused the read, or its answer never came whole or could not be read."""
 
 
+class BrokerAnswered(BrokerUnavailable):
+    """The broker answered with a refusal: its status, and its plain reason (the broker's ``error``, never a body it
+    was sent)."""
+
+    def __init__(self, status: int, reason: str) -> None:
+        super().__init__(f'the broker answered {status}')
+        self.status, self.reason = status, reason
+
+
 class _NoFollow(urllib.request.HTTPRedirectHandler):
     """A redirect is answered as the error it is: the signed request never follows one to another host."""
 
@@ -41,6 +50,11 @@ class _NoFollow(urllib.request.HTTPRedirectHandler):
 
 
 _OPENER: Final = urllib.request.build_opener(_NoFollow)
+
+
+def default_opener() -> Any:
+    """The opener every broker call uses unless given one (read when a client is built, so a test's stands in)."""
+    return _OPENER
 
 
 def function_url(url: str) -> str:
@@ -63,23 +77,41 @@ class BrokerReactions:
     opener: Any = field(default_factory=lambda: _OPENER)
 
     def __call__(self, run_id: str) -> object:
-        from botocore.auth import SigV4Auth
-        from botocore.awsrequest import AWSRequest
+        return _reactions(signed_call(self.url, self.region, self.credentials, REACTIONS, {'run_id': run_id},
+                                      opener=self.opener, timeout=TIMEOUT_SECONDS))
 
-        address = function_url(self.url)
-        data = json.dumps({'operation': REACTIONS, 'args': {'run_id': run_id}}, separators=(',', ':')).encode()
-        signed = AWSRequest(method='POST', url=address, data=data, headers={'Content-Type': 'application/json'})
-        SigV4Auth(self.credentials.get_frozen_credentials(), 'lambda', self.region).add_auth(signed)
-        request = urllib.request.Request(address, data=data, method='POST',  # noqa: S310 - https, checked above
-                                         headers=dict(signed.headers.items()))
-        try:
-            with self.opener.open(request, timeout=TIMEOUT_SECONDS) as answer:
-                raw = answer.read(MAX_ANSWER_BYTES + 1)
-        except urllib.error.HTTPError as error:
-            raise BrokerUnavailable(f'the broker answered {error.code}') from error
-        except _LOST as error:
-            raise BrokerUnavailable('the broker\'s answer never came') from error
-        return _reactions(raw)
+
+def _refusal(error: urllib.error.HTTPError) -> str:
+    """The broker's plain reason for a refusal (its ``{"error"}``), '' when it gave none that can be read."""
+    try:
+        parsed = json.loads(error.read(MAX_ANSWER_BYTES) or b'{}')
+    except (ValueError, OSError, AttributeError):
+        return ''
+    reason = parsed.get('error') if isinstance(parsed, dict) else None
+    return reason[:500] if isinstance(reason, str) else ''
+
+
+def signed_call(url: str, region: str, credentials: Any, operation: str, args: dict[str, object], *, opener: Any,
+                timeout: float) -> bytes:
+    """One POST of ``{operation, args}`` to the broker's function URL, SigV4-signed (service ``lambda``) with
+    ``credentials``, sent once, no redirect followed: the answer's bytes; a refusal is ``BrokerAnswered``, a lost or
+    oversized answer ``BrokerUnavailable``."""
+    from botocore.auth import SigV4Auth
+    from botocore.awsrequest import AWSRequest
+
+    address = function_url(url)
+    data = json.dumps({'operation': operation, 'args': args}, separators=(',', ':')).encode()
+    signed = AWSRequest(method='POST', url=address, data=data, headers={'Content-Type': 'application/json'})
+    SigV4Auth(credentials.get_frozen_credentials(), 'lambda', region).add_auth(signed)
+    request = urllib.request.Request(address, data=data, method='POST',  # noqa: S310 - https, checked above
+                                     headers=dict(signed.headers.items()))
+    try:
+        with opener.open(request, timeout=timeout) as answer:
+            return bytes(answer.read(MAX_ANSWER_BYTES + 1))
+    except urllib.error.HTTPError as error:
+        raise BrokerAnswered(error.code, _refusal(error)) from error
+    except _LOST as error:
+        raise BrokerUnavailable('the broker\'s answer never came') from error
 
 
 def _reactions(raw: bytes) -> object:

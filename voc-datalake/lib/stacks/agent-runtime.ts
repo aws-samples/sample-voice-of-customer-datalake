@@ -47,6 +47,7 @@ import {
 import { grantClaudeModels } from '../utils/claude-model-grant';
 import { createWorkerFunction, grantInvokeByName, scheduleWorker, workerRole } from '../utils/worker-lambda';
 import { grantWorkspaceMembershipReads } from '../utils/workspace-resolution-grants';
+import { grantHeartbeatEngineering } from './agent-heartbeat-engineering';
 import { denyHardCapWrites } from './engineering-runtime-grants';
 import { createPlanStepFunction } from './plan-step-lambda';
 import { REALTIME_HTTP_DNS_ENV, type RealtimePublishing } from '../utils/realtime';
@@ -111,6 +112,8 @@ export interface AgentRuntimeProps {
   webSearchGatewayUrl?: string;
   webSearchGatewayArn?: string;
   webSearchToolName?: string;
+  /** voc-engineering (only with -c engineeringAgents=true): the heartbeat reads an engineering run's status (7.47.00). */
+  engineeringTable?: dynamodb.ITable;
 }
 
 export class AgentRuntime extends Construct {
@@ -309,6 +312,10 @@ export class AgentRuntime extends Construct {
     aggregatesTable.grant(role, 'dynamodb:GetItem', 'dynamodb:Query');
     kmsKey.grantEncryptDecrypt(role);
     stateMachine.grantStartExecution(role);
+    // The engineering agents' runs (7.47.00), only with -c engineeringAgents=true (agent-heartbeat-engineering.ts).
+    const engineering = grantHeartbeatEngineering(this, role, {
+      uniqueName, engineeringTable: this.props.engineeringTable, userPool: this.props.userPool,
+    });
 
     const fn = createWorkerFunction(this, 'AgentHeartbeat', {
       tree: 'agents',
@@ -324,6 +331,7 @@ export class AgentRuntime extends Construct {
         FEEDBACK_TABLE: feedbackTable.tableName,
         AGGREGATES_TABLE: aggregatesTable.tableName,
         AGENT_RUN_STATE_MACHINE_ARN: stateMachine.stateMachineArn,
+        ...engineering,
       },
     });
     scheduleWorker(this, 'AgentHeartbeatSchedule', fn, uniqueName('voc-agent-heartbeat-schedule'),

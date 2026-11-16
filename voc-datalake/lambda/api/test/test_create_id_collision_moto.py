@@ -55,7 +55,7 @@ def test_two_creates_in_the_same_second_both_succeed_with_different_ids(table):
 
 
 def test_every_created_project_is_listed_in_the_deployments_project_registry(table):
-    """7.47.00 (3g-d): ``PROJECT_IDS`` / ``{id}`` names every project the deployment made, before its META is put,
+    """7.48.00 (3g-d): ``PROJECT_IDS`` / ``{id}`` names every project the deployment made, before its META is put,
     so an erasure by email reaches a deleted project too (its delete takes it off ``gsi1-by-type``)."""
     with patch('shared.ids.secrets.token_hex', side_effect=['aaaa0000', 'aaaa0000', 'bbbb1111']):
         first, second = _create_project(), _create_project()

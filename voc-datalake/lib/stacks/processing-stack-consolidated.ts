@@ -387,7 +387,7 @@ export class VocProcessingStack extends VocStack {
     const agentRuntime = new AgentRuntime(this, 'AgentRuntime', {
       uniqueName, layer: processingLayer, kmsKey, agentsTable: props.agentsTable, feedbackTable, aggregatesTable,
       rawDataBucket, memoryExtractQueue: this.memoryExtractQueue, jobsTable, userPool: props.userPool, workspacesTable,
-      realtime: props.realtime, webSearchGatewayUrl: props.webSearchGatewayUrl,
+      realtime: props.realtime, webSearchGatewayUrl: props.webSearchGatewayUrl, engineeringTable: props.engineeringTable,
       webSearchGatewayArn: props.webSearchGatewayArn, webSearchToolName: props.webSearchToolName,
     });
     this.agentRunStateMachine = agentRuntime.stateMachine;

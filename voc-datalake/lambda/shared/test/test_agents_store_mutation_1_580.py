@@ -397,6 +397,7 @@ class TestTheAgentBody:
             'models': {'orchestrator': None, 'worker': A_MODEL_ID, 'reviewer': None, 'persona': None},
             'output': {'visibility': 'public'}, 'workflow_id': 'wf_default',
             'budget': {'max_scheduled_runs_per_day': 0, 'max_model_calls_per_run': 10, 'monthly_call_cap': 0},
+            'engineering': None,
         }
 
     def test_omitted_fields_take_their_defaults(self) -> None:
@@ -408,6 +409,7 @@ class TestTheAgentBody:
             'models': {'orchestrator': None, 'worker': None, 'reviewer': None, 'persona': None},
             'output': {'visibility': 'private'}, 'workflow_id': None,
             'budget': {'max_scheduled_runs_per_day': 2, 'max_model_calls_per_run': 150, 'monthly_call_cap': 5000},
+            'engineering': None,
         }
 
     def test_unknown_fields_are_named_in_order(self) -> None:
@@ -581,7 +583,7 @@ class TestTriggers:
         ('daily', 'triggers must be a list of at most 5'),
         ([{'kind': 'threshold'}] * 6, 'triggers must be a list of at most 5'),
         (['daily'], 'trigger must be an object'),
-        ([{}], 'trigger kind must be one of: new_reviews, schedule, threshold'),
+        ([{}], 'trigger kind must be one of: new_reviews, schedule, threshold, github_issue'),
         ([{'kind': 'new_reviews', 'min_new': 0}], 'min_new must be a whole number from 1 to 10000'),
         ([{'kind': 'new_reviews', 'min_new': 10_001}], 'min_new must be a whole number from 1 to 10000'),
         ([{'kind': 'new_reviews', 'cooldown_hours': -1}], 'cooldown_hours must be a whole number from 0 to 168'),

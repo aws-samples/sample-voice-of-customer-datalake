@@ -13,7 +13,9 @@
   },
   "scope": {
     "all": "すべてのカテゴリ",
-    "some": "監視対象: {{list}}"
+    "some": "監視対象: {{list}}",
+    "sources": "対象のソースのみ",
+    "sourcesHint": "何も選ばなければすべてのソースを監視します。しきい値トリガーはすべてのソースを数えるため、ソースを指定すると選べません。"
   },
   "views": {
     "label": "エージェントページのセクション",
@@ -88,7 +90,8 @@
     "visibilityHint": "非公開プロジェクトは、オーナー、メンバー、管理者のみが閲覧できます。",
     "workflow": "ワークフロー",
     "workflowDefault": "レビュー → プロトタイプ（組み込み）",
-    "workflowHint": "ステップは「ワークフロー」タブで編集します。"
+    "workflowHint": "ステップは「ワークフロー」タブで編集します。",
+    "engineeringInstructionsHint": "各実行の目標の冒頭になります（最大 {{n, number}} 文字）。レビューや Issue の本文をここに貼り付けないでください。"
   },
   "visibility": {
     "private": "非公開",
@@ -135,12 +138,14 @@
     "kinds": {
       "new_reviews": "新規レビュー",
       "schedule": "スケジュール",
-      "threshold": "しきい値"
+      "threshold": "しきい値",
+      "github_issue": "GitHub Issue"
     },
     "kindHints": {
       "new_reviews": "前回の実行以降、担当範囲に十分な新規フィードバックが届いたときに実行します。",
       "schedule": "決まったスケジュールで実行します。",
-      "threshold": "カテゴリまたはサブカテゴリのレビュー数が期間内に一定数に達したときに実行します。"
+      "threshold": "カテゴリまたはサブカテゴリのレビュー数が期間内に一定数に達したときに実行します。",
+      "github_issue": "データレイクが取り込み、このエージェントの種類に分類した、リポジトリのオープンな Issue で実行します。"
     },
     "everyOptions": {
       "12h": "12時間",
@@ -150,7 +155,15 @@
     "perOptions": {
       "category": "カテゴリ",
       "subcategory": "サブカテゴリ"
-    }
+    },
+    "engineeringHint": "エンジニアリングエージェントを起動する条件です。実行は一度に 1 つで、同じ Issue で 2 回実行することはありません。",
+    "thresholdWithSources": "しきい値はすべてのソースを数えます。しきい値を削除するか、設定タブでソースを解除してください。",
+    "label": "ラベル",
+    "labelHint": "公開リポジトリでは、メンテナーが付けたこのラベルのある Issue だけが実行を開始します。",
+    "lookbackDays": "対象期間（日）",
+    "lookbackHint": "この日数以内に取り込まれた Issue。期間を過ぎてから付けたラベルは見逃されます。",
+    "trustedAuthors": "リポジトリのオーナー、メンバー、コラボレーターが作成した Issue も対象にする",
+    "trustedAuthorsHint": "非公開リポジトリのみ。公開リポジトリでは常にラベルが必要です。"
   },
   "personas": {
     "fixed": "固定ペルソナ（{{n, number}} / {{max, number}}）",
@@ -185,7 +198,9 @@
     "callsPerRun": "1回の実行あたりのモデル呼び出し数",
     "monthlyCap": "月間モデル呼び出し上限",
     "monthlyCapHint": "当月の呼び出し数がこの上限に達すると、エージェントは新しい実行を開始しません。",
-    "uncapped": "月間上限なし"
+    "uncapped": "月間上限なし",
+    "engineeringRunsPerDayHint": "トリガーによる実行は 1 日最大 {{n, number}} 回です。「今すぐ実行」は数えません。",
+    "engineeringSpend": "実行の支出は、ワークフローの月間予算（セットアップで設定）とデプロイの実行上限で制限されます。このエージェントの実行では常にハードキャップが有効です。"
   },
   "run": {
     "hint": "各実行はワークフローに従います。グラフは実行中のステップを強調表示します。表示専用で、操作はできません。",
@@ -210,8 +225,8 @@
     "hideTechnical": "技術ログを隠す",
     "summary": {
       "title": "何が起きたか",
-      "started": { "manual": "手動で開始しました。", "schedule": "スケジュールで開始しました。", "new_reviews": "新しいレビューが届いたため開始しました。", "threshold": "しきい値を超えたため開始しました。" },
-      "startedAt": { "manual": "{{when}} に手動で開始しました。", "schedule": "{{when}} にスケジュールで開始しました。", "new_reviews": "新しいレビューが届いたため {{when}} に開始しました。", "threshold": "しきい値を超えたため {{when}} に開始しました。" },
+      "started": { "manual": "手動で開始しました。", "schedule": "スケジュールで開始しました。", "new_reviews": "新しいレビューが届いたため開始しました。", "threshold": "しきい値を超えたため開始しました。", "github_issue": "GitHub Issue から開始しました。" },
+      "startedAt": { "manual": "{{when}} に手動で開始しました。", "schedule": "{{when}} にスケジュールで開始しました。", "new_reviews": "新しいレビューが届いたため {{when}} に開始しました。", "threshold": "しきい値を超えたため {{when}} に開始しました。", "github_issue": "{{when}} に GitHub Issue から開始しました。" },
       "outcome": { "queued": "開始を待っています。", "running": "現在作業中です。", "runningStep": "現在「{{step}}」に取り組んでいます。", "completed": "完了しました。", "completedAt": "{{when}} に完了しました。", "cancelled": "キャンセルされました。", "cancelledAt": "{{when}} にキャンセルされました。", "failed": "完了前に停止しました。", "failedBecause": "完了前に停止しました：{{reason}}", "needs_human": "一時停止中：あなたの判断が必要です。" },
       "produced": "作成したもの",
       "producedNothing": "まだありません。",
@@ -241,7 +256,8 @@
       "manual": "手動",
       "schedule": "スケジュール",
       "new_reviews": "新規レビュー",
-      "threshold": "しきい値"
+      "threshold": "しきい値",
+      "github_issue": "GitHub Issue"
     },
     "stepStatus": {
       "idle": "未開始",
@@ -257,6 +273,21 @@
       "verdict": "判定",
       "decision": "決定",
       "artifact": "成果物"
+    },
+    "engineeringConfirmBug": "エージェントがリポジトリでエンジニアリング実行を開始します。専用のブランチで作業し、ドラフトのプルリクエストで止まります。Issue 番号を指定するとその Issue を修正します（以前に実行した Issue でも再実行します）。空欄ならバグを探します。",
+    "engineeringConfirmFeature": "エージェントが Issue からリポジトリでエンジニアリング実行を開始します。専用のブランチで機能を構築し、ドラフトのプルリクエストで止まります。PRD から構築するには、PRD を開いて「この PRD から構築」を選んでください。",
+    "issueOptional": "Issue 番号（任意）",
+    "issueRequired": "Issue 番号",
+    "issueInvalid": "Issue の番号：1 以上の整数。",
+    "issueHint": "エージェントのリポジトリの Issue。",
+    "engineering": {
+      "title": "エンジニアリング実行",
+      "fromIssue": "{{repository}} の Issue #{{number}} から開始しました。",
+      "fromPrd": "プロジェクト {{project}} の PRD {{document}} から開始しました。",
+      "fromReviews": "対象範囲の {{n, number}} 件の報告から開始しました。",
+      "fromNothing": "リポジトリのバグを探すために開始しました。",
+      "followHint": "実行モニターで進行を確認し、停止できます。エンジニアリング実行が終わると、この実行も終わります。",
+      "openMonitor": "実行モニターを開く"
     }
   },
   "editor": {
@@ -1383,5 +1414,36 @@
       "name": "自己改善",
       "description": "コーチが過去の実行を読み、新しいスキルバージョンを提案してベンチマークします。管理者がそれぞれを承認または却下します。"
     }
+  },
+  "engineeringAgent": {
+    "deploymentFeedback": "デプロイのフィードバックで動作します。",
+    "setupTitle": "{{name}} をセットアップ",
+    "setupDescription": "作業するリポジトリ接続、リポジトリの言語、実行が 1 か月に使える金額を選びます。その後エージェントは有効になり、あなたとして実行されます。",
+    "connection": "リポジトリ接続",
+    "connectionHint": "GitHub Issue トリガーがある場合は、GitHub の接続だけが表示されます。",
+    "language": "言語",
+    "budget": "月間予算（USD）",
+    "budgetHint": "ワークフローに保存されます。暦月の間にすべての実行で使える金額です。",
+    "budgetInvalid": "ドルとセントで、0.01 から 100,000 まで。",
+    "setupFailed": "エージェントをセットアップできませんでした。",
+    "saveAndEnable": "保存して有効にする",
+    "save": "保存",
+    "loadFailed": "エージェントのセットアップを読み込めませんでした。",
+    "loading": "エージェントのセットアップを読み込んでいます",
+    "runsAs": "{{name}} として実行します。",
+    "changeSetup": "セットアップを変更",
+    "connectFirst": "先にリポジトリを接続してください",
+    "setUp": "セットアップ",
+    "whyNoConnection": "無効：作業するリポジトリ接続が必要です。",
+    "whySetUp": "セットアップするまで無効です：接続、言語、月間予算。"
+  },
+  "prdBuild": {
+    "button": "この PRD から構築",
+    "started": "実行モニターを開く",
+    "title": "この PRD から構築しますか？",
+    "message": "{{name}} がエンジニアリング実行を開始し、この PRD に書かれた機能を専用のブランチで構築して、ドラフトのプルリクエストで止まります。",
+    "confirm": "構築を開始",
+    "agent": "エージェント",
+    "inputHint": "実行にはこの PRD が ID で入力として渡されます。"
   }
 }

@@ -18,7 +18,7 @@ review, only what the model wrote from them. The update is conditional on the
 lists read, so an artifact regenerated meanwhile is left alone (its new lists
 are checked by the next run that deletes anything).
 
-Two passes (since 7.43.00, projects 3g-b; the deployment's by Query since 7.47.00, 3g-d):
+Two passes (since 7.43.00, projects 3g-b; the deployment's by Query since 7.48.00, 3g-d):
 
 - ``lineage``, the deployment's, run when the run deleted a deployment item or Radar review or de-identified a board
   request, each listed id looked up as ``{feedback_id}``: its projects through its project registry (``PROJECT_IDS``,
@@ -27,8 +27,8 @@ Two passes (since 7.43.00, projects 3g-b; the deployment's by Query since 7.47.0
   marker is there (workspaces.py ``deployment_found``), the backfill's Scan of the projects' ``META`` rows
   (shared/review_registries.py ``PROJECTS``, one Scan page a step); then its company persona library
   (``PROJECT#company_personas``, on no list); in each, the project's own partition by the same filtered Query pages as
-  a workspace's (``deployment_step``). Until 7.43.00 a Scan of the whole of voc-projects, every row read and any row of
-  the table marked; every writer of these lists writes in a project's own partition (personas, research, documents and
+  a workspace's (``deployment_step``). Until 7.48.00 a Scan of the whole of voc-projects, every row read (until 7.43.00
+  any row of the table marked); every writer of these lists writes in a project's own partition (personas, research, documents and
   the persona library's copies), so the Queries reach the same rows. A workspace's rows are never read: a workspace's
   artifact cites that workspace's items, whose tombstones are ``{ws}#{feedback_id}``.
 - ``workspace_lineage``: the workspaces whose item the run deleted (``LINEAGE_WORKSPACES``, noted by copies.py as it
@@ -80,7 +80,7 @@ ID_FIELDS: Final = (INPUT_FEEDBACK_IDS_FIELD, EVIDENCE_FEEDBACK_IDS_FIELD, INPUT
 MARK_FIELD: Final = 'erased_evidence'
 PAGE_SIZE: Final = 100
 #: The attributes a mark's UpdateItem names, with the key: lib/stacks/retention-worker.ts grants them on the
-#: deployment's and one workspace id's ``PROJECT#*`` partitions only (since 7.47.00: no pass Scans any more), in a
+#: deployment's and one workspace id's ``PROJECT#*`` partitions only (since 7.48.00: no pass Scans any more), in a
 #: statement of their own (a test holds the two to each other).
 LINEAGE_UPDATE_ATTRIBUTES: Final = ('pk', 'sk', *ID_FIELDS, MARK_FIELD)
 #: What both passes read of a row, and the names they read it by.
@@ -245,11 +245,11 @@ def _own_partition(project_id: str, scope: WorkspaceScope | None) -> str:
 
 def deployment_step(projects_table: Any, aggregates_table: Any, run: dict[str, Any],
                     cursor: Mapping[str, Any] | None) -> dict[str, Any] | None:
-    """One step of the deployment's pass (``lineage``, since 7.47.00 by Query: the module docstring): first how its
+    """One step of the deployment's pass (``lineage``, since 7.48.00 by Query: the module docstring): first how its
     projects are found (``found``, workspaces.py ``deployment_found``: its registry once the backfill's marker is
     there, else the backfill's ``PROJECTS`` Scan); then a filtered page of the first project's own partition and its
     marks; or the next page of the deployment's projects; or its persona library; None once all are done. A cursor of
-    the Scan before 7.47.00 (a row's key, carried by a hand-over across the upgrade) names none of these steps: the
+    the Scan before 7.48.00 (a row's key, carried by a hand-over across the upgrade) names none of these steps: the
     pass starts again from the top, every mark being idempotent."""
     known = ('found', 'ids', 'start', 'library', *workspaces.projects_keys(None))
     at = {name: value for name, value in (cursor or {}).items() if name in known}

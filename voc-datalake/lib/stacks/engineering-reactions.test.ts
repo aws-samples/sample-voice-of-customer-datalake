@@ -88,7 +88,7 @@ describe('people\'s reactions on the host', () => {
     });
 
     it('asks the broker to admit the runtime\'s own role, by its function\'s name', () => {
-      expect(admitted).toStrictEqual([
+      expect(admitted.filter((entry) => entry.start !== true)).toStrictEqual([
         { role: { Ref: expect.stringMatching(/^EngineeringRuntimeEngineeringSupervisorRole/) }, functionName: 'voc-engineering-runtime' },
       ]);
     });

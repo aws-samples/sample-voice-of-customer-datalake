@@ -136,6 +136,17 @@ class FakeHost:
         self.calls.append(('branch_tree_hash', connection_id, branch))
         return self.tree_hash
 
+    #: The issues the repository has, by number, and their state (7.47.00: a start's ``head``).
+    issues: dict[int, str] = field(default_factory=lambda: {42: 'open', 43: 'closed'})
+
+    def head_commit(self, connection_id: str, branch: str) -> str | None:
+        self.calls.append(('head_commit', connection_id, branch))
+        return BASE if branch in self.branches else None
+
+    def issue_state(self, connection_id: str, number: int) -> str | None:
+        self.calls.append(('issue_state', connection_id, number))
+        return self.issues.get(number)
+
     def push_bundle(self, connection_id: str, branch: str, contents: BundleContents, tree_hash: str,
                     default_branch: str) -> None:
         self.calls.append(('push_bundle', connection_id, branch, contents, tree_hash, default_branch))

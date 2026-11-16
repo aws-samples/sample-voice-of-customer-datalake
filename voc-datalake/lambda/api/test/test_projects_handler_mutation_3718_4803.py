@@ -397,7 +397,7 @@ class TestThePinAnswers:
         ({'sub': 'u-1', 'cognito:groups': 'admins', 'cognito:username': 'n' * 130},
          'u-1', 'n' * 120),
         ({'sub': 'u-1', 'cognito:groups': 'admins'}, 'u-1', 'Team member'),
-        # 7.47.00 (the 7.43.00 rule of a member's thread author): never the address, the username or "Team member".
+        # 7.48.00 (the 7.43.00 rule of a member's thread author): never the address, the username or "Team member".
         ({'sub': 'u-1', 'cognito:groups': 'admins', 'email': 'lead@example.com'}, 'u-1', 'Team member'),
         (AGENT_CLAIMS, 'agent:ag_1', 'Autonomous agent'),
     ])

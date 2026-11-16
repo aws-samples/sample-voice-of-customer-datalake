@@ -108,6 +108,7 @@ from engineering.runtime.runs import (
     RunCaps,
     RunExists,
     RunNotActive,
+    RunOrigin,
     RunStore,
     StartReadFailed,
     TableRunControl,
@@ -528,27 +529,32 @@ def start_run(event: Mapping[str, Any], *, launch: bool = True) -> dict[str, Any
     run_id, runs, status = str(event.get('run_id', '')), _runs(), 'active'
     language = str(event.get('language', ''))
     budget_usd, flow = _optional_number(event, 'budget_usd', float), str(event.get('flow', ''))
+    issue, commit, verified = _optional_number(event, 'issue', int) or 0, str(event.get('commit', '')), False
     first = runs.get(run_id) is None
     if first:   # (a run that cannot fit is refused before anything is written)
         _run_fits(caps)
     if language and first:   # (any first start naming a language: no run records one it cannot run)
         _coordinator_launchable(language)
-    if first and budget_usd is not None and _hard_cap_on():
-        # (the administrators' hard cap: what is left of the flow's month, or no start; a retry of a live run is not
-        # capped again)
+    if first and event.get('resolve_commit') is True:
+        # (an engineering agent's run, 7.47.00: the head of the connection's default branch, and its issue confirmed)
+        commit, verified = _resolved_head(event, issue)
+    # (the administrators' hard cap, or the start's own: what is left of the flow's month, or no start; a retry of a
+    # live run is not capped again)
+    if first and budget_usd is not None and (event.get('hard_cap') is True or _hard_cap_on()):
         caps = hard_capped(caps, budget_usd=budget_usd, flow=flow, table=runs.table, now=int(clock()))
     definition = event.get('flow_definition', '')
     if not isinstance(definition, str):
         raise RuntimeRefused('flow_definition is the stored flow\'s definition, as its JSON text')
     try:
-        runs.start(run_id, caps=caps, now=int(clock()), goal=str(event.get('goal', '')),
+        runs.start(run_id, caps=caps, now=int(clock()), goal=_goal(event),
                    repo=str(event.get('repo', '')), default_branch=str(event.get('default_branch', '')),
                    flow=flow,
-                   connection=str(event.get('connection', '')), commit=str(event.get('commit', '')),
+                   connection=str(event.get('connection', '')), commit=commit,
                    language=language, actor=str(event.get('actor') or ''),
                    budget_usd=budget_usd, flow_definition=definition,
                    flow_revision=_optional_number(event, 'flow_revision', int) or 0,
-                   issue=_optional_number(event, 'issue', int) or 0, host=str(event.get('host', '')))
+                   issue=issue, host=str(event.get('host', '')), issue_verified=verified,
+                   origin=RunOrigin.of(event))
     except RunExists:
         run = runs.get(run_id)
         if run is None or run.status in ENDED:
@@ -567,6 +573,43 @@ def start_run(event: Mapping[str, Any], *, launch: bool = True) -> dict[str, Any
         _to_person(run_id, str(event.get('actor') or ''))
         raise
     return {'run_id': run_id, 'status': status}
+
+
+def _goal(event: Mapping[str, Any]) -> str:
+    """The run's goal; an engineering agent's (``via``, 7.47.00: its instructions and a sentence of its trigger's) with
+    credential-shaped text redacted, as the Agents API redacts a person's."""
+    goal = str(event.get('goal', ''))
+    if event.get('via') is None:
+        return goal
+    from engineering.quality_gate.text import redact
+    return redact(goal)
+
+
+def _resolved_head(event: Mapping[str, Any], issue: int) -> tuple[str, bool]:
+    """The head commit of the connection's stored default branch, read through the broker's ``head`` as this
+    function's own role (``ENGINEERING_BROKER_URL``), and whether the run's ``issue`` is confirmed on the host; before
+    anything is written. A start that names a commit too is refused; so is an issue the repository does not have, or
+    has closed, and a broker refusal (in its words); a broker that cannot be reached is ``StartReadFailed``."""
+    from engineering.learning.reactions_broker import BrokerAnswered, BrokerUnavailable
+    from engineering.runtime.broker_head import BrokerHead
+    if event.get('commit'):
+        raise RuntimeRefused('a start resolves its commit or names one, never both')
+    repository, branch = str(event.get('repo', '')), str(event.get('default_branch', ''))
+    try:
+        head = BrokerHead(url=os.environ['ENGINEERING_BROKER_URL'], region=os.environ.get('AWS_REGION', 'us-east-1'),
+                          credentials=_own_credentials())(str(event.get('connection', '')), repository, branch,
+                                                          issue or None)
+    except BrokerAnswered as refused:
+        if 400 <= refused.status < 500:
+            raise RuntimeRefused(f'the repository refused the start: {refused.reason or refused}') from refused
+        raise StartReadFailed('the repository\'s head could not be read: start the run again') from refused
+    except (BrokerUnavailable, KeyError) as error:
+        raise StartReadFailed('the repository\'s head could not be read: start the run again') from error
+    if issue and head.issue_state == 'closed':
+        raise RuntimeRefused(f'issue #{issue} of {repository} is closed')
+    if issue and head.issue_state != 'open':
+        raise RuntimeRefused(f'issue #{issue} is not an issue of {repository}')
+    return head.commit, bool(issue)
 
 
 def _to_person(run_id: str, actor: str) -> None:

@@ -121,7 +121,7 @@ def test_another_cancellation_is_not_retried_and_writes_no_claim(table):
 
 
 def test_a_deployment_create_sends_the_request_it_always_sent_after_listing_the_project():
-    """Since 7.47.00 (3g-d) the deployment's project registry row first (put if absent), then the META as before."""
+    """Since 7.48.00 (3g-d) the deployment's project registry row first (put if absent), then the META as before."""
     table = MagicMock()
     with patch('projects.projects_table', table), patch('shared.ids.secrets.token_hex', return_value='aaaa0000'):
         project = _create()

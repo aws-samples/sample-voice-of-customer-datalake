@@ -35,7 +35,7 @@ def aws():
         aggregates = create_aggregates_table_with_metric_index(worker.AGGREGATES_TABLE, resource)
         feedback = create_pk_sk_table(worker.FEEDBACK_TABLE, resource)
         create_pk_sk_table('test-radar', resource)
-        # With gsi1-by-type, as core-stack.ts: the lineage pass finds the deployment's projects there (7.47.00).
+        # With gsi1-by-type, as core-stack.ts: the lineage pass finds the deployment's projects there (7.48.00).
         create_projects_table_with_type_index(worker.PROJECTS_TABLE or 'test-projects', resource)
         invoke = MagicMock()
         with patch.object(settings_handler, 'aggregates_table', aggregates), \

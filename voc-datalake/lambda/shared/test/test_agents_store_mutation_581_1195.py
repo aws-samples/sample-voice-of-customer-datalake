@@ -262,7 +262,8 @@ class TestAgentShapes:
         assert store.agent_view(row, NOW) == {
             'agent_id': AGENT_ID, 'name': 'n', 'description': None, 'enabled': None, 'owner_sub': None,
             'scope': None, 'instructions': None, 'personas': None, 'triggers': None, 'models': None,
-            'output': None, 'workflow_id': None, 'budget': {'monthly_call_cap': 3}, 'status': 'active',
+            'output': None, 'workflow_id': None, 'budget': {'monthly_call_cap': 3}, 'engineering': None,
+            'status': 'active', 'owner_username': None,
             'created_by': 'c', 'created_at': 'ca', 'updated_at': 'ua', 'stats': EMPTY_STATS,
         }
 
@@ -591,6 +592,7 @@ class TestRunRows:
             'run_id': RUN_ID, 'agent_id': None, 'status': None, 'trigger': None, 'trigger_detail': None,
             'started_at': None, 'finished_at': None, 'project_id': None, 'current_node_id': None,
             'model_calls': 4, 'error': None, 'workflow_id': None, 'workflow_revision': None,
+            'kind': None, 'engineering_run_id': None, 'issue': None, 'prd': None, 'feedback_count': None,
             'needs_human': None, 'decision': None, 'actions': [],
         }
 

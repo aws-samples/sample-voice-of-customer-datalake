@@ -224,8 +224,9 @@ def test_the_stack_and_the_runtime_agree_on_the_rates_the_idle_timeout_and_the_s
 
 
 def test_the_fewest_sessions_a_deployment_may_set_fit_one_run_the_agents_api_starts():
-    api = (RUNTIME.parent.parent / 'api' / 'agents_handler.py').read_text()
-    cap = re.search(r'^RUN_TASK_CAP = (\d+)$', api, re.MULTILINE)
+    # (the cap of every run the Agents API and the agents' heartbeat start: their shared request builder's, 7.47.00)
+    api = (RUNTIME.parent.parent / 'shared' / 'engineering_agent_runs.py').read_text()
+    cap = re.search(r'^RUN_TASK_CAP: Final = (\d+)$', api, re.MULTILINE)
     assert cap is not None
     assert int(cap.group(1)) + 1 == caps.MIN_MAX_SESSIONS   # (its tasks and its coordinator)
 

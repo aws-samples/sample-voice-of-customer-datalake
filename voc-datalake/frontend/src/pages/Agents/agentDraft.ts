@@ -6,10 +6,14 @@
  *
  * @module pages/Agents/agentDraft
  */
-import { agentFormSchema, API_AGENT_LIMITS } from '../../api/agentsApi'
-import type { Agent, AgentForm } from '../../api/agentsApi'
+import {
+  agentFormSchema, API_AGENT_LIMITS, API_ENGINEERING_LIMITS, ENGINEERING_TRIGGER_KINDS, engineeringAgentFormSchema, TRIGGER_KINDS,
+} from '../../api/agentsApi'
+import type { Agent, AgentForm, AgentTrigger } from '../../api/agentsApi'
 
-export type AgentDraft = Omit<AgentForm, 'workflow_id'> & { workflow_id: string | null }
+/** The draft the form edits: an engineering agent's `engineering` settings are set up on their own card
+ *  (AgentEngineering.tsx), never through the draft. */
+export type AgentDraft = Omit<AgentForm, 'workflow_id' | 'engineering'> & { workflow_id: string | null }
 
 export function draftOf(agent: Agent): AgentDraft {
   return {
@@ -61,14 +65,39 @@ const FIELD_PROBLEMS: Readonly<Record<string, DraftProblem>> = {
 }
 const OTHER_PROBLEM: DraftProblem = { key: 'validation.other' }
 
-/** The PUT body when valid, else what to fix — one plain message per field, never Zod's wording. */
-export function checkUpdate(changes: Partial<AgentDraft>): { body: Partial<AgentForm> } | { errors: DraftProblem[] } {
+/** An engineering agent's own message for its shorter instructions. */
+const ENGINEERING_INSTRUCTIONS: DraftProblem = {
+  key: 'validation.instructions', values: { max: API_ENGINEERING_LIMITS.maxInstructionsChars },
+}
+
+/**
+ * The PUT body when valid, else what to fix — one plain message per field, never Zod's wording. An engineering agent
+ * (``engineering``) is held to its own bounds and may have a ``github_issue`` trigger.
+ */
+export function checkUpdate(changes: Partial<AgentDraft>, engineering = false):
+  { body: Partial<AgentForm> } | { errors: DraftProblem[] } {
   const { workflow_id: workflowId, ...rest } = changes
   const candidate = workflowId === null || workflowId === undefined ? rest : { ...rest, workflow_id: workflowId }
-  const parsed = agentFormSchema.partial().safeParse(candidate)
+  const parsed = (engineering ? engineeringAgentFormSchema : agentFormSchema).partial().safeParse(candidate)
   if (parsed.success) return { body: parsed.data }
-  const problems = parsed.error.issues.map((issue) => FIELD_PROBLEMS[String(issue.path[0])] ?? OTHER_PROBLEM)
+  const problems = parsed.error.issues.map((issue) => {
+    const field = String(issue.path[0])
+    if (engineering && field === 'instructions') return ENGINEERING_INSTRUCTIONS
+    return FIELD_PROBLEMS[field] ?? OTHER_PROBLEM
+  })
   return { errors: [...new Set(problems)] }
+}
+
+/** Whether a draft's scope names sources: a threshold trigger counts every source, so it is not offered then. */
+export const scopesSources = (draft: Pick<AgentDraft, 'scope'>): boolean => (draft.scope.sources ?? []).length > 0
+
+/** The trigger kinds an agent may add: an engineering agent's (one GitHub issue trigger at most), and no threshold
+ *  while the scope names sources (its counters count every source). */
+export function addableKinds(draft: Pick<AgentDraft, 'scope' | 'triggers'>, engineering: boolean):
+  readonly AgentTrigger['kind'][] {
+  const kinds: readonly AgentTrigger['kind'][] = engineering ? ENGINEERING_TRIGGER_KINDS : TRIGGER_KINDS
+  const hasIssue = draft.triggers.some((trigger) => trigger.kind === 'github_issue')
+  return kinds.filter((kind) => !(kind === 'github_issue' && hasIssue) && !(kind === 'threshold' && scopesSources(draft)))
 }
 
 /** A whole number clamped to [min, max]; blank / NaN keeps the fallback. */

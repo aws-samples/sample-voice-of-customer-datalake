@@ -12,7 +12,7 @@ import type { StartRunRequest } from '../../api/engineeringRunsApi'
 /** The languages with an agent image (engineering-images/, `runtime/egress.py` REGISTRY_HOSTS). */
 export const RUN_LANGUAGES = ['java', 'node', 'python', 'rust'] as const
 export type RunLanguage = (typeof RUN_LANGUAGES)[number]
-/** The longest goal (agents_handler.py MAX_RUN_GOAL): longer is refused, never cut. */
+/** The longest goal (shared/engineering_agent_runs.py MAX_RUN_GOAL): longer is refused, never cut. */
 export const MAX_RUN_GOAL = 500
 /** A connection id's longest (runtime/interface.py MAX_ID_LENGTH). */
 export const MAX_CONNECTION_ID = 63
@@ -39,6 +39,12 @@ export type StartRunIssues = Partial<Record<'connection' | 'commit' | 'goal' | '
 function issueNumber(text = ''): number | null {
   const trimmed = text.trim()
   return WHOLE.test(trimmed) && Number(trimmed) <= MAX_ISSUE_NUMBER ? Number(trimmed) : null
+}
+
+/** An engineering agent's Run now issue as typed (7.47.00): null for none, undefined for one off the rule. */
+export function typedIssue(text: string): number | null | undefined {
+  if (text.trim() === '') return null
+  return issueNumber(text) ?? undefined
 }
 
 /** The goal as it is sent: on one line, its spaces collapsed. */

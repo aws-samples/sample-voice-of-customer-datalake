@@ -41,6 +41,7 @@ from engineering.connectors.credentials import AppKeys, CredentialUnusable
 from engineering.connectors.github import API_HOST, METADATA_READ, TOKEN_PATH, send_request, sign_app_jwt
 from engineering.connectors.hosts import HostError, NoConnection
 from engineering.connectors.transport import HttpsTransport, Response, Transport, dig, json_of, text_of
+from shared.invocation_cost import measure_invocation_cost
 from shared.logging import logger
 
 INSPECT: Final = 'inspect_installation'
@@ -254,6 +255,7 @@ def app_tokens(prefix: str) -> AppTokens:
     return AppTokens(prefix)
 
 
+@measure_invocation_cost
 def lambda_handler(event: object, context: object) -> dict[str, Any]:
     """voc-engineering-app-tokens' entry: ``inspect_installation`` or ``issues_token``; anything else, and a request
     off its shape, is refused (``AppTokensRefused``) before the key or GitHub is read."""

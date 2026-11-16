@@ -1,13 +1,13 @@
 /**
  * The review registries' backfill marker is dropped whenever a release that keeps the registries is installed or
- * removed (7.47.00, projects 3g-d; voc-datalake/scripts/projects/backfill_review_registries.py).
+ * removed (7.48.00, projects 3g-d; voc-datalake/scripts/projects/backfill_review_registries.py).
  *
  * The marker (`DOCSHARE_IDS` / `MIGRATION#review-registries` in voc-projects) tells an erasure by email that the
  * deployment's links, series and projects are all in their registries, so it walks them by Query and no longer by
- * Scan. Only the operator's backfill writes it, and only while every writer runs 7.47.0 or later. A release older than
- * 7.47.00 writes no registry row, so a marker left behind by a rollback would make the next upgrade's erasures trust
+ * Scan. Only the operator's backfill writes it, and only while every writer runs 7.48.0 or later. A release older than
+ * 7.48.00 writes no registry row, so a marker left behind by a rollback would make the next upgrade's erasures trust
  * registries that miss what the older release made meanwhile. So a custom resource deletes the marker:
- *   - on Create: the upgrade to 7.47.00 adds the resource (and so does every later upgrade after a rollback below it),
+ *   - on Create: the upgrade to 7.48.00 adds the resource (and so does every later upgrade after a rollback below it),
  *     so a marker that predates this release's writers never counts;
  *   - on Delete: a rollback to a release without the resource (or the stack's removal) removes it, so no marker
  *     outlives the writers that keep the registries.
@@ -19,7 +19,7 @@
  * a project bundle imported from an older checkout, leaves the marker standing while a writer keeps no registry. That
  * case needs the backfill's `--unmark`, which docs/deployment.md says where it describes single-stack deploys; moving
  * the reset into VocApiStack once its budget allows, and a walk's check that the registries still hold every live
- * project, are 3g-d2's (docs/multi-workspace.md). The erasure also refuses a marker that names no release of 7.47.0
+ * project, are 3g-d2's (docs/multi-workspace.md). The erasure also refuses a marker that names no release of 7.48.0
  * or later (lambda/shared/review_registries.py `marker_complete`).
  *
  * The reset deletes the marker only, never the backfill's progress row (`MIGRATION#review-registries#progress`): a

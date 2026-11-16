@@ -1,4 +1,4 @@
-"""The deployment's registries of its review links and of its commented series (since 7.47.00, projects 3g-d;
+"""The deployment's registries of its review links and of its commented series (since 7.48.00, projects 3g-d;
 docs/multi-workspace.md, the project plan's 3g-d).
 
 Every real reviewer address sits in the deployment's own rows today: a link's audience (``DOCSHARE#{id}`` /
@@ -15,12 +15,12 @@ revoke deletes the series' ``SHARE`` pointer, so nothing named a revoked link. S
 - what was made before is listed once by the backfill (scripts/projects/backfill_review_registries.py: these three
   Scans, ``LINKS``, ``SERIES`` and ``PROJECTS``, put if absent, then the marker, ``REVIEW_REGISTRIES_MARKER_SK``, a
   row of the link registry saying it is done, with when, what it found and the release it was taken under:
-  ``marker_complete`` wants every count and a release of 7.47.0 or later);
+  ``marker_complete`` wants every count and a release of 7.48.0 or later);
 - an erasure by email (jobs/retention/project_people.py) and the deployment's lineage pass (jobs/retention/lineage.py)
   read the marker first: a complete one, they walk the registries by Query; none, or an incomplete one, they find the
   same links, series and projects by these same Scans (one read of the table per pass: three per erasure by email,
   one per lineage pass, until it runs). Either way the rows the stores had written when the walk read that part are
-  found, provided every writer since the backfill ran 7.47.00 or later (a VocApiStack-only rollback below
+  found, provided every writer since the backfill ran 7.48.00 or later (a VocApiStack-only rollback below
   it, or a bundle imported from an older checkout, breaks this until the backfill's ``--unmark``); one written after (a thread on a series already walked) is the next erasure's, as in a workspace.
 
 The series registry is deployment-wide, not in each project's partition as a workspace's list is: the deployment's
@@ -68,11 +68,11 @@ _PREFIX: Final = {LINKS: SHARE_PK_PREFIX, SERIES: COMMENT_PARTITION_PREFIX, PROJ
 SCAN_ATTRIBUTES: Final = ('pk', 'sk', ROUTE_WORKSPACE_FIELD, 'project_id', 'series_id', 'created_at')
 _NAMES: Final = {f'#a{n}': name for n, name in enumerate(SCAN_ATTRIBUTES)}
 #: The marker's fields an erasure requires before it trusts the registries, and the release it must name at least:
-#: 7.47.0 lists the projects too (a marker an older build wrote, or one left by a rollback, reads as absent).
+#: 7.48.0 lists the projects too (a marker an older build wrote, or one left by a rollback, reads as absent).
 MARKER_COUNTS: Final = ('links_found', 'series_found', 'projects_found')
 MARKER_TIME: Final = 'completed_at'
 MARKER_RELEASE: Final = 'release'
-FIRST_RELEASE: Final = (7, 47, 0)
+FIRST_RELEASE: Final = (7, 48, 0)
 #: What a walk reads of the marker (a Query's projection; ``marker_complete`` judges it).
 MARKER_PROJECTION: Final = {
     'ProjectionExpression': ', '.join(['#sk', *(f'#m{n}' for n in range(len(MARKER_COUNTS) + 2))]),
@@ -100,7 +100,7 @@ def series_ref(project_id: str, series_id: str) -> str:
 
 
 def release_of(value: object) -> tuple[int, ...] | None:
-    """A release as ``APP_VERSION`` and the marker name it (``7.47.0``), as numbers; None when it is not one."""
+    """A release as ``APP_VERSION`` and the marker name it (``7.48.0``), as numbers; None when it is not one."""
     parts = str(value).split('.') if isinstance(value, str) and value else []
     if len(parts) < 3 or not all(part.isdigit() for part in parts[:3]):
         return None

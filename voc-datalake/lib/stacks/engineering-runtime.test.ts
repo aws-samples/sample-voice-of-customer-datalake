@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import { policiesWithStatement } from '../test-support/engineering-template';
 import {
-  ACCOUNT, EnvSchema, count, functionEnv, policyText, runtimeStack, supervisorEnv,
+  ACCOUNT, type Admitted, EnvSchema, count, functionEnv, policyText, runtimeStack, supervisorEnv,
 } from '../test-support/engineering-runtime-fixture';
 import { ENGINEERING_WORKSPACE_READER_SERVICES } from './dlq-alarms';
 import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
@@ -47,8 +47,9 @@ describe('the engineering runtime is off by default', () => {
 
 describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => {
   let template: Template;
+  let admitted: Admitted[];
   beforeAll(() => {
-    template = runtimeStack({ engineeringAgents: 'true' }).template;
+    ({ template, admitted } = runtimeStack({ engineeringAgents: 'true' }));
   }, SYNTH_TIMEOUT_MS);
 
   it('ticks the supervisor every minute from an EventBridge rule created disabled, failures to the bus\'s DLQ', () => {
@@ -129,14 +130,33 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
     const start = policyText(template, 'EngineeringStartRole');
     expect(start).not.toMatch(/bedrock-agentcore|sts:|events:(PutEvents|DisableRule)|DeleteItem|dynamodb:Query|s3:|sqs:|bedrock:/);
     const actions = new Set(start.match(/"(dynamodb|events|lambda|kms):[A-Za-z]+"/g)
-      ?.filter((name) => !/LeadingKeys|ViaService/.test(name)));
+      ?.filter((name) => !/LeadingKeys|ViaService|FunctionUrlAuthType|InvokedViaFunctionUrl/.test(name)));
     expect([...actions].sort((a, b) => a.localeCompare(b, 'en'))).toStrictEqual([
       '"dynamodb:GetItem"', '"dynamodb:PutItem"', '"dynamodb:UpdateItem"', '"events:EnableRule"',
-      '"kms:Decrypt"', '"kms:GenerateDataKey"', '"lambda:InvokeFunction"']);
+      '"kms:Decrypt"', '"kms:GenerateDataKey"', '"lambda:InvokeFunction"', '"lambda:InvokeFunctionUrl"']);
     // Its writes stay in the runs' partitions and the registry; its other reads are a flow's month and the hard cap.
     expect(start).toMatch(/"WS#\*#RUN#\*","WS#\*#RUNS"/);
     // The agent roles trust only the two launchers, never the start function.
     expect(policyText(template, 'EngineeringAgentFixerRole')).not.toMatch(/EngineeringStartRole/);
+  });
+
+  it('lets a start resolve its commit through the broker\'s function URL alone, IAM-authenticated (7.47.00)', () => {
+    const broker = `${ACCOUNT}:function:voc-engineering-broker`;
+    template.hasResourceProperties('AWS::IAM::Policy', {
+      Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp('EngineeringStartRole') }]),
+      PolicyDocument: { Statement: Match.arrayWith([
+        Match.objectLike({ Sid: 'StartBrokerHead', Action: 'lambda:InvokeFunctionUrl', Resource: broker,
+          Condition: { StringEquals: { 'lambda:FunctionUrlAuthType': 'AWS_IAM' } } }),
+        Match.objectLike({ Sid: 'StartBrokerHeadThroughUrl', Action: 'lambda:InvokeFunction', Resource: broker,
+          Condition: { Bool: { 'lambda:InvokedViaFunctionUrl': 'true' } } }),
+      ]) },
+    });
+    // The broker is asked to admit this role, by the start function's name, for its `head` alone.
+    expect(admitted.filter((entry) => entry.start === true)).toStrictEqual([
+      { role: { Ref: expect.stringMatching(/^EngineeringRuntimeEngineeringStartRole/) }, functionName: 'voc-engineering-start', start: true },
+    ]);
+    expect(Object.keys(EnvSchema.parse(startFunction()?.Properties?.Environment).Variables))
+      .toContain('ENGINEERING_BROKER_URL');
   });
 
   it('configures no agent runtime by default, so every launch is refused until an image is named', () => {

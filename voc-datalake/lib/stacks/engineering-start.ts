@@ -4,7 +4,9 @@
  * role of its own holding only what a start needs (`startRole`), entered at `start_handler`, which takes `start_run` and refuses every other action before anything is read; it writes
  * the run and hands the coordinator's launch on to voc-engineering-runtime (`launch_coordinator`). The API's
  * role may invoke this function and never voc-engineering-runtime, so it can start a run and never tick, launch,
- * signal or end one. Pay per use: no fixed cost.
+ * signal or end one. Since 7.47.00 the agents' heartbeat invokes it too, by name (agent-heartbeat-engineering.ts: an
+ * engineering agent's trigger), and a start that resolves its commit calls the broker's `head` (its function URL, which
+ * admits this role for that operation alone). Pay per use: no fixed cost.
  */
 import * as cdk from 'aws-cdk-lib';
 import type * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
@@ -55,6 +57,10 @@ interface StartProps {
   environment: Record<string, string>;
   /** voc-engineering-runtime, which launches the run's coordinator once the run is written. */
   runtime: lambda.IFunction;
+  /** The connector broker, whose function URL a start that resolves its commit calls for its `head` (7.47.00). */
+  broker: lambda.IFunction;
+  /** The broker's admission of this function's role for `head` alone (EngineeringBroker.admitStart). */
+  admitStart: (role: iam.IRole, functionName: string) => void;
 }
 
 /** What a start writes (lambda/engineering/runtime/runs.py RunStore.start, needs_human): its run's partition, the registry. */
@@ -90,15 +96,28 @@ function startRole(scope: Construct, props: StartProps): iam.Role {
     resources: [stack.formatArn({ service: 'events', resource: 'rule', resourceName: props.ruleName })],
   }));
   grantInvokeByName(stack, role, [props.runtime.functionName], 'HandTheLaunchOn');
+  // An engineering agent's start resolves its commit (7.47.00): the broker's `head`, through its function URL with IAM
+  // auth only, as the agents and the runtime call it; the broker admits this role for that operation alone.
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'StartBrokerHead', actions: ['lambda:InvokeFunctionUrl'], resources: [props.broker.functionArn],
+    conditions: { StringEquals: { 'lambda:FunctionUrlAuthType': 'AWS_IAM' } },
+  }));
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'StartBrokerHeadThroughUrl', actions: ['lambda:InvokeFunction'], resources: [props.broker.functionArn],
+    conditions: { Bool: { 'lambda:InvokedViaFunctionUrl': 'true' } },
+  }));
   return role;
 }
 
 export function createEngineeringStart(scope: Construct, props: StartProps): lambda.Function {
+  const functionName = props.uniqueName(ENGINEERING_START_FUNCTION_BASE_NAME);
+  const role = startRole(scope, props);
+  props.admitStart(role, functionName);
   return createWorkerFunction(scope, 'EngineeringStart', {
     tree: 'engineering',
-    functionName: props.uniqueName(ENGINEERING_START_FUNCTION_BASE_NAME),
+    functionName,
     handler: 'engineering/runtime/handler.start_handler',
-    role: startRole(scope, props),
+    role,
     layer: props.layer,
     // A start only writes the run and switches the rule on, then hands the coordinator's launch on to
     // voc-engineering-runtime (`launch_coordinator`, asynchronously: its 5 minutes cover a session's start, which API

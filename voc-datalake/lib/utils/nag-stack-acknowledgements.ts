@@ -63,7 +63,7 @@ export function acknowledgeStackFindings({ core, ingestion, processing, api }: C
       // documents for an erased address (GetObject only; lambda/jobs/retention/project_people.py, 7.43.00).
       ...WORKSPACE_PRODUCT_DOC_READS.map((key) => raw.arnForObjects(key)),
       // projects/*/product_docs/extracted/*: voc-retention reads the deployment's product documents' extracted text
-      // for an erased address (GetObject only, never an upload; 7.47.00).
+      // for an erased address (GetObject only, never an upload; 7.48.00).
       ...DEPLOYMENT_PRODUCT_DOC_READS.map((key) => raw.arnForObjects(key)),
     ]),
     ...rawDataPrefixSuppressions(raw, ['memory-imports/*', 'prototypes/*', 'scratch/research_jobs/*']),

@@ -19,7 +19,7 @@ call through the workspace layer, and a new link is ONE scoped transaction: the 
 series' pointer, the series' row among the project's commented ones (``comment_series_item``) and the link's row in the
 workspace's registry ``WS#{ws}#DOCSHARE_IDS`` (which the hard delete reads). A reviewer's link is resolved by its id
 alone (``require_share_for``): the ``DOCSHARE#`` row, and for a routing row the link read from the workspace it names.
-Without a workspace every request is the one sent before, but for a link's create, whose transaction since 7.47.00
+Without a workspace every request is the one sent before, but for a link's create, whose transaction since 7.48.00
 (projects 3g-d) also puts the series in the deployment's series registry (``COMMENT_SERIES_IDS``) and the link in the
 deployment's link registry (``DOCSHARE_IDS``), so an erasure by email finds every deployment link by a Query.
 """
@@ -196,7 +196,7 @@ def _workspace_rows(table: Any, project_id: str, series_id: str, share_id: str, 
 
 
 def _deployment_rows(table: Any, project_id: str, series_id: str, share_id: str, at: str) -> list[dict[str, Any]]:
-    """A deployment link's other two rows (since 7.47.00, projects 3g-d), as a workspace's: its series in the
+    """A deployment link's other two rows (since 7.48.00, projects 3g-d), as a workspace's: its series in the
     deployment's series registry (unconditioned, for ``comment_series_item``'s reason) and the link in the
     deployment's link registry (only if new), naming its project and series. An erasure by email finds every link of
     the deployment there, a revoked one too, whose series' pointer the revoke deleted; no ``ttl``, as a workspace's."""

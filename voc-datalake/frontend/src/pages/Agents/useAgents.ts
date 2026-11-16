@@ -8,7 +8,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { agentsApi, agentsKeys, isActiveRun } from '../../api/agentsApi'
 import { mergeBySeq } from '../../api/seqPages'
 import { useConfigStore } from '../../store/configStore'
-import type { Agent, AgentForm, AgentRun, RunEvent } from '../../api/agentsApi'
+import type { Agent, AgentForm, AgentRun, RunEvent, RunNowBody } from '../../api/agentsApi'
 import type { RunDecisionKind } from '../../api/agentRunDecision'
 
 /** Run list / run detail refresh while something is in flight. */
@@ -54,7 +54,7 @@ export function useAgentMutations(agentId: string) {
   })
   const archive = useMutation({ mutationFn: () => agentsApi.archive(agentId), onSuccess: settle })
   const runNow = useMutation({
-    mutationFn: () => agentsApi.run(agentId),
+    mutationFn: (body?: RunNowBody) => agentsApi.run(agentId, body),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: agentsKeys.runs(agentId) })
       void queryClient.invalidateQueries({ queryKey: agentsKeys.detail(agentId) })

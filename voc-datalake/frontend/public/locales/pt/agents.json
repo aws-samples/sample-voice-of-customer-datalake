@@ -14,7 +14,9 @@
   },
   "scope": {
     "all": "Todas as categorias",
-    "some": "Monitora: {{list}}"
+    "some": "Monitora: {{list}}",
+    "sources": "Somente estas fontes",
+    "sourcesHint": "Não marque nenhuma para acompanhar todas as fontes. Um gatilho de limite conta todas as fontes, por isso não é oferecido com fontes."
   },
   "views": {
     "label": "Seções da página de agentes",
@@ -89,7 +91,8 @@
     "visibilityHint": "Projetos privados são visíveis apenas para o proprietário, os membros e os administradores.",
     "workflow": "Fluxo de trabalho",
     "workflowDefault": "Avaliações → Protótipo (integrado)",
-    "workflowHint": "Edite as etapas na aba Fluxo de trabalho."
+    "workflowHint": "Edite as etapas na aba Fluxo de trabalho.",
+    "engineeringInstructionsHint": "Elas abrem o objetivo de cada execução (até {{n, number}} caracteres). Nunca cole aqui o texto de uma avaliação ou de uma issue."
   },
   "visibility": {
     "private": "Privado",
@@ -136,12 +139,14 @@
     "kinds": {
       "new_reviews": "Novas avaliações",
       "schedule": "Agendamento",
-      "threshold": "Limite"
+      "threshold": "Limite",
+      "github_issue": "Issue do GitHub"
     },
     "kindHints": {
       "new_reviews": "Executa quando chega feedback novo suficiente no seu escopo desde a última execução.",
       "schedule": "Executa em um agendamento fixo.",
-      "threshold": "Executa quando uma categoria ou subcategoria atinge um número de avaliações dentro de um período."
+      "threshold": "Executa quando uma categoria ou subcategoria atinge um número de avaliações dentro de um período.",
+      "github_issue": "Executa em uma issue aberta do seu repositório que o data lake ingeriu e classificou como do seu tipo."
     },
     "everyOptions": {
       "12h": "12 horas",
@@ -151,7 +156,15 @@
     "perOptions": {
       "category": "Categoria",
       "subcategory": "Subcategoria"
-    }
+    },
+    "engineeringHint": "O que aciona o agente de engenharia. Uma execução por vez, e nunca duas execuções para a mesma issue.",
+    "thresholdWithSources": "Um limite conta todas as fontes: remova-o ou limpe as fontes na aba Configurações.",
+    "label": "Rótulo",
+    "labelHint": "Em um repositório público, uma issue só inicia uma execução com este rótulo, que um mantenedor adiciona.",
+    "lookbackDays": "Período (dias)",
+    "lookbackHint": "Issues ingeridas nestes últimos dias. Um rótulo adicionado depois é perdido.",
+    "trustedAuthors": "Também issues abertas por proprietários, membros e colaboradores do repositório",
+    "trustedAuthorsHint": "Somente em um repositório privado: em um público, o rótulo é sempre necessário."
   },
   "personas": {
     "fixed": "Personas fixas ({{n, number}} de {{max, number}})",
@@ -186,7 +199,9 @@
     "callsPerRun": "Chamadas de modelo por execução",
     "monthlyCap": "Limite mensal de chamadas de modelo",
     "monthlyCapHint": "O agente para de iniciar execuções quando as chamadas do mês atingem este limite.",
-    "uncapped": "Sem limite mensal"
+    "uncapped": "Sem limite mensal",
+    "engineeringRunsPerDayHint": "No máximo {{n, number}} execuções por dia pelos gatilhos. \"Executar agora\" não é contado.",
+    "engineeringSpend": "O que suas execuções gastam é limitado pelo orçamento mensal do seu fluxo de trabalho (na configuração) e pelos limites de execução da implantação; o limite rígido está sempre ativo para as suas execuções."
   },
   "run": {
     "hint": "Cada execução segue o fluxo de trabalho. O gráfico destaca as etapas à medida que executam; é uma visualização, não um controle.",
@@ -211,8 +226,8 @@
     "hideTechnical": "Ocultar registro técnico",
     "summary": {
       "title": "O que aconteceu",
-      "started": { "manual": "Iniciada manualmente.", "schedule": "Iniciada pela programação.", "new_reviews": "Iniciada porque chegaram novas avaliações.", "threshold": "Iniciada porque um limite foi ultrapassado." },
-      "startedAt": { "manual": "Iniciada manualmente em {{when}}.", "schedule": "Iniciada pela programação em {{when}}.", "new_reviews": "Iniciada em {{when}} porque chegaram novas avaliações.", "threshold": "Iniciada em {{when}} porque um limite foi ultrapassado." },
+      "started": { "manual": "Iniciada manualmente.", "schedule": "Iniciada pela programação.", "new_reviews": "Iniciada porque chegaram novas avaliações.", "threshold": "Iniciada porque um limite foi ultrapassado.", "github_issue": "Iniciada a partir de uma issue do GitHub." },
+      "startedAt": { "manual": "Iniciada manualmente em {{when}}.", "schedule": "Iniciada pela programação em {{when}}.", "new_reviews": "Iniciada em {{when}} porque chegaram novas avaliações.", "threshold": "Iniciada em {{when}} porque um limite foi ultrapassado.", "github_issue": "Iniciada em {{when}} a partir de uma issue do GitHub." },
       "outcome": { "queued": "Aguardando para começar.", "running": "Trabalhando nisso agora.", "runningStep": "Trabalhando agora em “{{step}}”.", "completed": "Concluída.", "completedAt": "Concluída em {{when}}.", "cancelled": "Cancelada.", "cancelledAt": "Cancelada em {{when}}.", "failed": "Parou antes de terminar.", "failedBecause": "Parou antes de terminar: {{reason}}", "needs_human": "Pausada — precisa da sua decisão." },
       "produced": "O que produziu",
       "producedNothing": "Nada ainda.",
@@ -242,7 +257,8 @@
       "manual": "Manual",
       "schedule": "Agendamento",
       "new_reviews": "Novas avaliações",
-      "threshold": "Limite"
+      "threshold": "Limite",
+      "github_issue": "Issue do GitHub"
     },
     "stepStatus": {
       "idle": "Não iniciada",
@@ -258,6 +274,21 @@
       "verdict": "Veredito",
       "decision": "Decisão",
       "artifact": "Artefato"
+    },
+    "engineeringConfirmBug": "O agente inicia uma execução de engenharia no seu repositório: trabalha em um branch próprio e para em um pull request em rascunho. Informe o número de uma issue para corrigi-la (mesmo uma que já foi executada) ou deixe em branco para procurar bugs.",
+    "engineeringConfirmFeature": "O agente inicia uma execução de engenharia no seu repositório a partir de uma issue: constrói a funcionalidade em um branch próprio e para em um pull request em rascunho. Para construir a partir de um PRD, abra o PRD e escolha \"Construir a partir deste PRD\".",
+    "issueOptional": "Número da issue (opcional)",
+    "issueRequired": "Número da issue",
+    "issueInvalid": "O número da issue: um número inteiro a partir de 1.",
+    "issueHint": "Uma issue do repositório do agente.",
+    "engineering": {
+      "title": "Execução de engenharia",
+      "fromIssue": "Iniciada a partir da issue #{{number}} de {{repository}}.",
+      "fromPrd": "Iniciada a partir do PRD {{document}} do projeto {{project}}.",
+      "fromReviews": "Iniciada a partir de {{n, number}} relatos no seu escopo.",
+      "fromNothing": "Iniciada para procurar bugs no seu repositório.",
+      "followHint": "Acompanhe e pare a execução no monitor de execução: esta execução termina quando a execução de engenharia termina.",
+      "openMonitor": "Abrir o monitor de execução"
     }
   },
   "editor": {
@@ -1390,5 +1421,36 @@
       "name": "Autoaperfeiçoamento",
       "description": "O coach lê execuções anteriores, propõe novas versões de habilidades e as avalia; um administrador aceita ou recusa cada uma."
     }
+  },
+  "engineeringAgent": {
+    "deploymentFeedback": "Trabalha com o feedback da implantação.",
+    "setupTitle": "Configurar {{name}}",
+    "setupDescription": "Escolha a conexão de repositório em que ele trabalha, a linguagem do repositório e quanto as suas execuções podem gastar por mês. Depois disso ele é ativado e executa em seu nome.",
+    "connection": "Conexão de repositório",
+    "connectionHint": "Com um gatilho de issues do GitHub, só conexões do GitHub são listadas.",
+    "language": "Linguagem",
+    "budget": "Orçamento mensal (USD)",
+    "budgetHint": "Salvo no seu fluxo de trabalho: quanto todas as suas execuções podem gastar em um mês do calendário.",
+    "budgetInvalid": "Dólares e centavos, de 0,01 a 100.000.",
+    "setupFailed": "Não foi possível configurar o agente.",
+    "saveAndEnable": "Salvar e ativar",
+    "save": "Salvar",
+    "loadFailed": "Não foi possível ler a configuração do agente.",
+    "loading": "Lendo a configuração do agente",
+    "runsAs": "Executa como {{name}}.",
+    "changeSetup": "Alterar a configuração",
+    "connectFirst": "Conecte um repositório primeiro",
+    "setUp": "Configurar",
+    "whyNoConnection": "Desativado: precisa de uma conexão de repositório para trabalhar.",
+    "whySetUp": "Desativado até ser configurado: uma conexão, uma linguagem e um orçamento mensal."
+  },
+  "prdBuild": {
+    "button": "Construir a partir deste PRD",
+    "started": "Abrir o monitor de execução",
+    "title": "Construir a partir deste PRD?",
+    "message": "{{name}} inicia uma execução de engenharia que constrói a funcionalidade descrita neste PRD, em um branch próprio, e para em um pull request em rascunho.",
+    "confirm": "Iniciar a construção",
+    "agent": "Agente",
+    "inputHint": "A execução recebe este PRD como entrada, pelo seu id."
   }
 }

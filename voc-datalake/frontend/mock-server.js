@@ -23,7 +23,7 @@ import { handleBriefingRoutes } from './mock-briefing.js';
 import { handleAlertRoutes } from './mock-alerts.js';
 import { handleEmailInboxRoutes } from './mock-email-inbox.js';
 import { handlePlanRoutes } from './mock-plans.js';
-import { SAMPLE_FLOW_ID, handleEngineeringRunRoutes, sampleEngineeringFlow } from './mock-engineering-runs.js';
+import { SAMPLE_FLOW_ID, SAMPLE_RUN_ID, handleEngineeringRunRoutes, sampleEngineeringFlow } from './mock-engineering-runs.js';
 import { handleEngineeringSkillRoutes } from './mock-engineering-skills.js';
 import { handleDecisionRoutes } from './mock-decisions.js';
 import { handleRadarRoutes } from './mock-radar.js';
@@ -3396,7 +3396,12 @@ const ENGINEERING_TEMPLATES = JSON.parse(
 const AGENT_NOT_FOUND = [404, { success: false, error: 'Agent not found' }];
 const RUN_NOT_FOUND = [404, { success: false, error: 'Run not found' }];
 const WORKFLOW_NOT_FOUND = [404, { success: false, error: 'Workflow not found' }];
-const AGENT_EDITABLE_FIELDS = ['name', 'description', 'enabled', 'owner_sub', 'scope', 'instructions', 'personas', 'triggers', 'models', 'output', 'workflow_id', 'budget'];
+const AGENT_EDITABLE_FIELDS = ['name', 'description', 'enabled', 'owner_sub', 'scope', 'instructions', 'personas', 'triggers', 'models', 'output', 'workflow_id', 'budget', 'engineering'];
+// The engineering agents' seeded flows (lambda/shared/agent_seed.py): each with a $50 monthly budget.
+const BUG_FIXER_FLOW_ID = 'wf_b0f1e2d3c4a5';
+const FEATURE_BUILDER_FLOW_ID = 'wf_fe4b1d2c3a5e';
+const SEEDED_MONTHLY_BUDGET_USD = 50;
+const NOT_SET_UP = "set the agent up first: its repository connection, its language and its flow's monthly budget (Agents → Connections adds a connection)";
 const WORKFLOW_NODE_TYPES = new Set([
   'start', 'aggregate_reviews', 'select_or_create_project', 'select_personas', 'generate_personas',
   'deep_research', 'write_prfaq', 'write_prd', 'persona_review', 'revise_document', 'build_prototype',
@@ -3587,6 +3592,14 @@ storeMockWorkflow(SAMPLE_FLOW_ID, sampleEngineeringFlow(), { at: daysAgo(3) });
   const fast = storeMockWorkflow('wf_3b9e1c0d7a42', fastWorkflowDefinition(2), { derivedFrom: 'wf_default', at: daysAgo(9) });
   fast.revisions.push({ revision: 2, saved_at: daysAgo(2), saved_by_username: 'admin-demo', definition: fastWorkflowDefinition(3) });
 }
+// The seeded engineering agents' flows, from the default engineering flow templates (agent_seed.py joins Issue triage
+// and Bug hunt and fix for the Bug fixer; the mock keeps the second alone).
+for (const [workflowId, templateId, name] of [[BUG_FIXER_FLOW_ID, 'bug-hunt-and-fix', 'Bug fixer workflow'],
+  [FEATURE_BUILDER_FLOW_ID, 'feature', 'Feature builder workflow']]) {
+  const template = ENGINEERING_TEMPLATES.find((entry) => entry.template_id === templateId);
+  storeMockWorkflow(workflowId, { ...structuredClone(template.definition), name, budget: { monthly_usd: SEEDED_MONTHLY_BUDGET_USD } },
+    { at: daysAgo(1) });
+}
 
 // ── Agents ──
 const emptyAgentStats = () => ({
@@ -3599,6 +3612,16 @@ const defaultAgentFields = () => ({
   instructions: '', personas: { fixed: [], allow_generate: true }, triggers: [],
   models: { orchestrator: null, worker: null, reviewer: null, persona: null }, output: { visibility: 'private' },
   workflow_id: 'wf_default', budget: { max_scheduled_runs_per_day: 2, max_model_calls_per_run: 150, monthly_call_cap: 5000 },
+  engineering: null, owner_username: null,
+});
+/** A seeded engineering agent (agent_seed.py): disabled, no connection or language yet. */
+const seededEngineeringAgent = (agentId, name, description, feedbackType, workflowId, minNew) => ({
+  ...defaultAgentFields(), agent_id: agentId, name, description, workflow_id: workflowId,
+  triggers: [{ kind: 'github_issue', label: 'voc-agent', trusted_authors: false, lookback_days: 7 },
+    { kind: 'new_reviews', min_new: minNew, cooldown_hours: 24 }],
+  budget: { max_scheduled_runs_per_day: 1, max_model_calls_per_run: 150, monthly_call_cap: 5000 },
+  engineering: { connection: null, language: null, feedback_type: feedbackType },
+  status: 'active', created_by: MOCK_CALLER.sub, created_at: daysAgo(1), updated_at: daysAgo(1), stats: emptyAgentStats(),
 });
 
 const mockAgents = new Map([
@@ -3623,21 +3646,71 @@ const mockAgents = new Map([
   },
   // Sparse legacy row: no stats, budget, models, personas, output or timestamps.
   { agent_id: 'ag_c0ffee123456', name: 'Legacy packaging agent', enabled: false, scope: { all: true }, triggers: [{ kind: 'schedule', every: '12h' }], workflow_id: 'wf_default' },
+  // The engineering agents the seed adds with the engineering module on (7.47.00): "Set up" on their page.
+  seededEngineeringAgent('ag_b0f1e2d3c4a5', 'Bug fixer', 'Fixes the bugs customers report: a labelled GitHub issue, or a run of bug reports, becomes a draft pull request that says "Fixes #N"', 'bug', BUG_FIXER_FLOW_ID, 5),
+  seededEngineeringAgent('ag_fe4b1d2c3a5e', 'Feature builder', "Builds what customers ask for: a labelled GitHub feature issue, a run of feature requests or a project's PRD becomes a draft pull request", 'feature_request', FEATURE_BUILDER_FLOW_ID, 10),
 ].map((agent) => [agent.agent_id, agent]));
 
 const agentView = (agent) => structuredClone(agent);
 
-function agentFieldsError(body) {
+/** agents_handler.py's checks of an engineering agent's settings: a stored connection, a language with an image. */
+function engineeringSettingsError(engineering) {
+  if (engineering === null || engineering === undefined) return null;
+  if (!isPlainObject(engineering)) return 'engineering must be an object';
+  if (engineering.connection != null && !['storefront', 'docs-site'].includes(engineering.connection)) {
+    return 'engineering.connection names no stored repository connection: add it under Agents → Connections';
+  }
+  if (engineering.language != null && !['java', 'node', 'python', 'rust'].includes(engineering.language)) {
+    return 'engineering.language is one of java, node, python, rust';
+  }
+  return null;
+}
+
+function agentFieldsError(body, agent = null) {
   if (!isPlainObject(body)) return 'Request body must be a JSON object';
   const unknown = Object.keys(body).filter((key) => !AGENT_EDITABLE_FIELDS.includes(key));
   if (unknown.length) return `Unknown fields: ${unknown.join(', ')}`;
   if ('name' in body && (typeof body.name !== 'string' || !body.name.trim() || body.name.length > 80)) return 'name must be 1–80 characters';
   if ('workflow_id' in body && body.workflow_id !== null && !mockWorkflows.has(body.workflow_id)) return 'workflow_id does not name a workflow';
-  if ('workflow_id' in body && body.workflow_id !== null
-    && currentRevision(mockWorkflows.get(body.workflow_id)).definition.schema === 'voc-workflow/2') {
-    return 'an engineering flow is not run by an agent: pick an agents workflow';
+  const engineering = ('engineering' in body ? body.engineering : agent?.engineering) != null;
+  if ('workflow_id' in body && body.workflow_id !== null) {
+    const v2 = currentRevision(mockWorkflows.get(body.workflow_id)).definition.schema === 'voc-workflow/2';
+    if (v2 && !engineering) return 'an engineering flow is not run by an agent without engineering settings: pick an agents workflow, or give the agent its engineering settings';
+    if (!v2 && engineering) return 'an engineering agent runs an engineering flow: pick one';
   }
-  return null;
+  if (engineering && 'owner_sub' in body) return 'an engineering agent runs as the administrator who enabled it: owner_sub is not set by hand';
+  return engineeringSettingsError(body.engineering);
+}
+
+/** An engineering agent is enabled only once it is set up (agents_handler.py _check_engineering). */
+function engineeringSetUp(agent) {
+  const settings = agent.engineering;
+  const flow = mockWorkflows.get(agent.workflow_id);
+  return Boolean(settings?.connection && settings?.language && flow && currentRevision(flow).definition.budget?.monthly_usd);
+}
+
+/** Run now of an engineering agent: an engineering run (the engineering runs mock's sample) and the agent's run. */
+function startMockEngineeringRun(agent, body) {
+  if (!engineeringSetUp(agent)) return [409, { success: false, error: NOT_SET_UP }];
+  if (activeRunOf(agent.agent_id)) return [409, { success: false, error: 'This agent already has a run in progress' }];
+  const issue = Number.isInteger(body?.issue) && body.issue > 0 ? body.issue : null;
+  const prd = isPlainObject(body?.prd) ? { project_id: String(body.prd.project_id), document_id: String(body.prd.document_id) } : null;
+  if (prd && agent.engineering.feedback_type !== 'feature_request') {
+    return [400, { success: false, error: 'a PRD is built by a feature agent (engineering.feedback_type feature_request)' }];
+  }
+  if (!issue && !prd && agent.engineering.feedback_type !== 'bug') {
+    return [400, { success: false, error: 'a feature agent runs on an issue or a PRD: give its issue number or the PRD' }];
+  }
+  const repository = agent.engineering.connection === 'docs-site' ? 'example-group/web/docs-site' : 'example-org/storefront';
+  const run = newMockRun(agent, mockWorkflows.get(agent.workflow_id));
+  Object.assign(run, {
+    status: 'running', kind: 'engineering', engineering_run_id: SAMPLE_RUN_ID, _steps: [],
+    issue: issue === null ? null : { repository, number: issue }, prd, feedback_count: null,
+  });
+  appendRunEvent(run, { kind: 'decision', role: 'system', summary: `Engineering run ${SAMPLE_RUN_ID} started (manual)` });
+  if (agent.stats) Object.assign(agent.stats, { runs_total: agent.stats.runs_total + 1, last_run_at: run.started_at });
+  noteRunOnAgent(run);
+  return [202, { run: runView(run) }];
 }
 
 function createMockAgent(body) {
@@ -3674,22 +3747,28 @@ function routeAgentItem(req, agent, action, body) {
   }
   if (agent.status === 'archived') return AGENT_NOT_FOUND;
   if (req.method === 'PUT' && !action) {
-    const error = agentFieldsError(body);
+    const error = agentFieldsError(body, agent);
     if (error) return [400, { success: false, error }];
     Object.assign(agent, body, { updated_at: stamp });
     return [200, { agent: agentView(agent) }];
   }
   if (req.method === 'POST' && (action === 'enable' || action === 'disable')) {
-    Object.assign(agent, { enabled: action === 'enable', updated_at: stamp });
+    const enabling = action === 'enable';
+    if (enabling && agent.engineering && !engineeringSetUp(agent)) return [400, { success: false, error: NOT_SET_UP }];
+    // An engineering agent runs as the administrator who enabled it.
+    const runsAs = enabling && agent.engineering && !agent.enabled ? { owner_sub: MOCK_CALLER.sub, owner_username: 'admin-demo' } : {};
+    Object.assign(agent, { enabled: enabling, updated_at: stamp, ...runsAs });
     return [200, { agent: agentView(agent) }];
   }
-  if (req.method === 'POST' && action === 'run') return startMockRun(agent);
+  if (req.method === 'POST' && action === 'run') {
+    return agent.engineering ? startMockEngineeringRun(agent, body) : startMockRun(agent);
+  }
   return [405, { success: false, error: 'Method not allowed' }];
 }
 
 // ── Runs: a scripted journal, released one workflow step per events poll ──
 const mockAgentRuns = new Map(); // run_id → run (+ internal _events, _steps, _cursor)
-const RUN_VIEW_KEYS = ['run_id', 'agent_id', 'status', 'trigger', 'trigger_detail', 'started_at', 'finished_at', 'project_id', 'current_node_id', 'model_calls', 'error', 'workflow_id', 'workflow_revision', 'needs_human', 'decision'];
+const RUN_VIEW_KEYS = ['run_id', 'agent_id', 'status', 'trigger', 'trigger_detail', 'started_at', 'finished_at', 'project_id', 'current_node_id', 'model_calls', 'error', 'workflow_id', 'workflow_revision', 'kind', 'engineering_run_id', 'issue', 'prd', 'feedback_count', 'needs_human', 'decision'];
 const RUN_DECISIONS = ['accept', 'another_round', 'stop'];
 // `actions`: what an admin may still decide — only on an undecided needs_human run.
 const runView = (run) => ({
@@ -3869,13 +3948,14 @@ function routeAgentRuns(req, url, agent, rest, body) {
   if (!run || run.agent_id !== agent.agent_id) return RUN_NOT_FOUND;
   if (req.method === 'GET' && !sub) return [200, { run: runView(run) }];
   if (req.method === 'GET' && sub === 'events') {
-    advanceMockRun(run);
+    if (run.kind !== 'engineering') advanceMockRun(run);   // (an engineering run moves on its run monitor)
     const after = Math.max(Number(url.searchParams.get('after')) || 0, 0);
     const items = run._events.filter((e) => e.seq > after).slice(0, 200);
     return [200, { items, next_after: items.length ? items.at(-1).seq : after }];
   }
   if (req.method === 'POST' && sub === 'cancel') {
     if (!MOCK_AGENTS_ADMIN) return AGENTS_FORBIDDEN;
+    if (run.kind === 'engineering') return [409, { success: false, error: 'This is an engineering run: stop it from its run monitor' }];
     if (!ACTIVE_RUN_STATUSES.has(run.status)) return [409, { success: false, error: 'This run has already finished' }];
     finishMockRun(run, 'cancelled');
     appendRunEvent(run, { kind: 'decision', role: 'system', summary: 'Run cancelled by an admin' });

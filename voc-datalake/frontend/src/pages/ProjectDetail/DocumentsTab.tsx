@@ -41,6 +41,7 @@ import { PrototypeView } from './DocumentPrototypeView'
 import { DocumentCoachingNotice } from '../../components/AiCoach/HumanDrivenNotice'
 import DocumentProvenance from '../../components/DocumentCanvas/page/DocumentProvenance'
 import DeleteDocumentButton from '../../components/DocumentCanvas/actions/DeleteDocumentButton'
+import BuildFromPrd from './BuildFromPrd'
 import PrototypeBackButton from './PrototypeBack'
 import { PrototypeWithDraft } from './PrototypeDraftBanner'
 import { useFocusViewActive } from '../../components/DocumentCanvas/page/focusView'
@@ -220,14 +221,24 @@ function SelectedDocument(props: PrototypePaneProps & {
   readonly onPageRename: (rename: PageRename | null) => void
 }) {
   const { document } = props
+  const focusView = useFocusViewActive()
   if (document.document_type === 'prototype') return <PrototypePane {...props} />
-  return (
+  const page = (
     <Suspense fallback={<PageLoading />}>
       {/* Keyed: a page's draft, outline and comments belong to one document (a PRD / PR/FAQ: its series). */}
       <DocumentPage key={documentPageKey(document)} project={props.project} document={document} documents={props.documents}
         canEdit={props.canEdit} onSelectDoc={props.onSelectDoc} onDeleteDoc={props.onDeleteDoc} isDeleting={props.isDeleting}
         openOn={props.openOn} onOpened={props.onOpened} onPageRename={props.onPageRename} />
     </Suspense>
+  )
+  // A PRD can be handed to a feature engineering agent (7.47.00; nothing shows without one, or for a non-admin). Above
+  // the page, out of the way in focus view like the list; its slot stays, so entering it never remounts the page.
+  if (document.document_type !== 'prd') return page
+  return (
+    <div className="min-w-0 space-y-2">
+      {focusView ? null : <BuildFromPrd projectId={props.project.project_id} documentId={document.document_id} />}
+      {page}
+    </div>
   )
 }
 

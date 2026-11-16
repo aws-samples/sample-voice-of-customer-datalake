@@ -1,4 +1,4 @@
-"""Every writer of a comment thread lists its series first (7.47.00, projects 3g-d; docs/multi-workspace.md, 3g-d).
+"""Every writer of a comment thread lists its series first (7.48.00, projects 3g-d; docs/multi-workspace.md, 3g-d).
 
 An erasure by email finds a deployment's comment partitions (``DCOMMENTS#{project}#{series}``) through the deployment's
 series registry (``COMMENT_SERIES_IDS``) once the backfill's marker is there, so a thread written without its series

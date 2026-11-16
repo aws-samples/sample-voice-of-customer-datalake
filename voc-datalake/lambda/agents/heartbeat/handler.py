@@ -20,6 +20,13 @@ enabled, non-archived agent it:
 
 Manual "Run now" runs (agents API) are not counted against the daily cap.
 
+An engineering agent (7.47.00, ``agents/heartbeat/engineering.py``) runs its engineering flow through
+voc-engineering-start instead: its ``new_reviews`` counts only in-scope reviews of its kind (``feedback_type`` ``bug`` or
+``feature_request``) and its runs carry up to 50 of their ids (ids, top category and count, never text); a
+``threshold`` that fires with none of its kind in the window skips (``no_bug_reports``, ``no_feature_requests``); a
+``schedule`` goes ahead with what it finds; its ``github_issue`` trigger starts one run per issue, ever
+(``agents/heartbeat/issues.py``). Its lock is held while the engineering run is live, read from that run's ``META``.
+
 Bundled as ``handler.py`` + ``shared/`` (like the category-reprocess worker), so it
 imports ``shared.*`` from the asset root; tests import it as
 ``agents.heartbeat.handler``.
@@ -28,7 +35,7 @@ imports ``shared.*`` from the asset root; tests import it as
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -37,11 +44,14 @@ from typing import Any, Final
 from boto3.dynamodb.conditions import Attr, Key
 from botocore.exceptions import BotoCoreError, ClientError
 
+from agents.heartbeat import engineering, issues
 from shared import agents_store as store
+from shared import engineering_agent_runs as eng_runs
 from shared import workflow_schema
 from shared.api import get_raw_categories_config
 from shared.aws import get_dynamodb_resource
 from shared.exceptions import ApiError
+from shared.feedback_types import FEEDBACK_TYPE_KEY
 from shared.indexes import FEEDBACK_BY_DATE_INDEX
 from shared.invocation_cost import instrumented_handler
 from shared.logging import logger, metrics
@@ -68,11 +78,15 @@ EVERY_PERIODS: Final = {'12h': timedelta(hours=12), '24h': timedelta(hours=24)}
 
 @dataclass
 class Decision:
-    """The trigger that fired (None when nothing is due) and the agent state to record."""
+    """The trigger that fired (None when nothing is due) and the agent state to record; for an engineering agent,
+    what its run starts from (``issue``, ``feedback``) or why it does not (``skip``)."""
 
     trigger: str | None = None
     detail: dict[str, Any] = field(default_factory=dict)
     agent_sets: dict[str, Any] = field(default_factory=dict)
+    issue: eng_runs.IssueRef | None = None
+    feedback: eng_runs.Feedback | None = None
+    skip: str | None = None
 
 
 # --------------------------------------------------------------------------
@@ -149,28 +163,55 @@ def _window_first_day(trigger: Mapping[str, Any], now: datetime) -> str:
 # Reads.
 # --------------------------------------------------------------------------
 
-def count_new_reviews(feedback_table: Any, scope: Mapping[str, Any], cursor: object, now: datetime,
-                      needed: int) -> int:
-    """Reviews in scope processed after ``cursor`` (stops counting at ``needed``)."""
-    since = parse_iso(cursor) or now - timedelta(days=1)
+def _counted(scope: Mapping[str, Any], item: Mapping[str, Any], feedback_type: str | None) -> bool:
+    """In scope, and (for an engineering agent) of its kind."""
+    if not store.item_in_scope(scope, item):
+        return False
+    dimensions = item.get('dimensions')
+    return feedback_type is None or (isinstance(dimensions, Mapping) and dimensions.get(FEEDBACK_TYPE_KEY) == feedback_type)
+
+
+def walk_reviews(feedback_table: Any, scope: Mapping[str, Any], since: datetime, now: datetime, needed: int, *,
+                 feedback_type: str | None = None) -> tuple[int, list[dict]]:
+    """Reviews in scope (of ``feedback_type``, when given) processed after ``since``, counted until ``needed``, and
+    the first ``eng_runs.MAX_FEEDBACK_IDS`` of them (their id and category: what an engineering run carries)."""
     since = max(since, now - timedelta(days=MAX_NEW_REVIEW_DAYS))
     cursor_key = store.iso(since)
-    count = 0
+    count, kept = 0, []
+    # (only what the scope and the kind read: an agent's source scope its sources, an engineering agent its ids)
+    fields = ['category', 'subcategory', *(['source_platform'] if scope.get('sources') else []),
+              *(['feedback_id', '#dims'] if feedback_type else [])]
     for day in store.iter_days(since.strftime('%Y-%m-%d'), now.strftime('%Y-%m-%d')):
         kwargs: dict[str, Any] = {
             'IndexName': FEEDBACK_BY_DATE_INDEX,
             'KeyConditionExpression': Key('gsi1pk').eq(f'DATE#{day}') & Key('gsi1sk').gt(cursor_key),
-            'ProjectionExpression': 'category, subcategory',
+            'ProjectionExpression': ', '.join(fields),
         }
+        if feedback_type:
+            kwargs['ExpressionAttributeNames'] = {'#dims': 'dimensions'}
         while True:
             page = feedback_table.query(**kwargs)
-            count += sum(1 for item in page.get('Items', []) if store.item_in_scope(scope, item))
+            for item in page.get('Items', []):
+                if _counted(scope, item, feedback_type):
+                    count += 1
+                    if len(kept) < eng_runs.MAX_FEEDBACK_IDS:
+                        kept.append(item)
             if count >= needed:
-                return count
+                return count, kept
             if not page.get('LastEvaluatedKey'):
                 break
             kwargs['ExclusiveStartKey'] = page['LastEvaluatedKey']
-    return count
+    return count, kept
+
+
+def _since_cursor(cursor: object, now: datetime) -> datetime:
+    return parse_iso(cursor) or now - timedelta(days=1)
+
+
+def count_new_reviews(feedback_table: Any, scope: Mapping[str, Any], cursor: object, now: datetime,
+                      needed: int) -> int:
+    """Reviews in scope processed after ``cursor`` (stops counting at ``needed``)."""
+    return walk_reviews(feedback_table, scope, _since_cursor(cursor, now), now, needed)[0]
 
 
 def daily_counts(aggregates_table: Any, pk: str, first_day: str, last_day: str) -> dict[str, int]:
@@ -197,6 +238,8 @@ class Context:
     aggregates_table: Any
     categories_config: list[dict]
     now: datetime
+    #: The invocation's remaining time (Lambda's): an engineering start needs ``engineering.TIME_NEEDED_MS`` of it.
+    remaining_ms: Callable[[], int] = field(default=lambda: 900_000, compare=False, repr=False)
 
 
 def _threshold(trigger: Mapping[str, Any], agent: Mapping[str, Any], ctx: Context,
@@ -226,24 +269,100 @@ def _threshold(trigger: Mapping[str, Any], agent: Mapping[str, Any], ctx: Contex
     return fired
 
 
-def evaluate(agent: Mapping[str, Any], ctx: Context) -> Decision:
+#: Why an engineering agent's threshold or new-reviews trigger fired with none of its kind to work on.
+NOTHING_OF_ITS_KIND: Final[Mapping[str, str]] = {'bug': 'no_bug_reports', 'feature_request': 'no_feature_requests'}
+
+
+def _kind(agent: Mapping[str, Any]) -> str | None:
+    """An engineering agent's ``feedback_type`` (what it works on), None for any other agent."""
+    settings = agent.get('engineering')
+    return str(settings.get('feedback_type')) if isinstance(settings, Mapping) else None
+
+
+def _engineering_feedback(trigger: Mapping[str, Any], agent: Mapping[str, Any], ctx: Context,
+                          kind: str) -> eng_runs.Feedback:
+    """The reviews of the agent's kind an engineering run of ``trigger`` carries: since the agent's cursor (a
+    schedule), or within the threshold's window."""
+    if trigger.get('kind') == store.TRIGGER_THRESHOLD:
+        days = int(store.plain(trigger.get('window_days')) or 7)
+        since = ctx.now - timedelta(days=days)
+    else:
+        since = _since_cursor(agent.get('last_run_cursor'), ctx.now)
+    count, items = walk_reviews(ctx.feedback_table, agent.get('scope') or {}, since, ctx.now,
+                                eng_runs.MAX_FEEDBACK_IDS, feedback_type=kind)
+    return eng_runs.feedback_of(items, count)
+
+
+def _new_reviews_due(trigger: Mapping[str, Any], agent: Mapping[str, Any], ctx: Context,
+                     decision: Decision) -> dict[str, Any] | None:
+    """``new_reviews``: in-scope reviews since the cursor (an engineering agent: of its kind, with their ids)."""
+    needed, of_kind = int(store.plain(trigger.get('min_new')) or 1), _kind(agent)
+    if of_kind is None:
+        found = count_new_reviews(ctx.feedback_table, agent.get('scope') or {}, agent.get('last_run_cursor'),
+                                  ctx.now, needed)
+        return {'new_reviews': found} if found >= needed else None
+    found, items = walk_reviews(ctx.feedback_table, agent.get('scope') or {},
+                                _since_cursor(agent.get('last_run_cursor'), ctx.now), ctx.now, needed,
+                                feedback_type=of_kind)
+    if found < needed:
+        return None
+    if decision.trigger is None:
+        decision.feedback = eng_runs.feedback_of(items, found)
+    return {'new_reviews': found}
+
+
+def _threshold_due(trigger: Mapping[str, Any], agent: Mapping[str, Any], ctx: Context,
+                   decision: Decision) -> dict[str, Any] | None:
+    """``threshold``; for an engineering agent, only with reviews of its kind in the window (else ``decision.skip``)."""
+    fired, of_kind = _threshold(trigger, agent, ctx, decision), _kind(agent)
+    if fired is None or of_kind is None or decision.trigger is not None:
+        return fired
+    feedback = _engineering_feedback(trigger, agent, ctx, of_kind)
+    if not feedback.count:   # (crossed, but none of the agent's kind: no run, unless another trigger is due)
+        decision.skip = NOTHING_OF_ITS_KIND.get(of_kind, 'no_bug_reports')
+        return None
+    decision.feedback = feedback
+    return fired
+
+
+def _evaluate_one(trigger: Mapping[str, Any], agent: Mapping[str, Any], ctx: Context, decision: Decision,
+                  prepared: engineering.Ready | None) -> dict[str, Any] | None:
+    """One trigger's detail when it is due (None otherwise), recording on ``decision`` what an engineering run of it
+    would start from."""
+    kind, of_kind = trigger.get('kind'), _kind(agent)
+    if kind == store.TRIGGER_NEW_REVIEWS and cooldown_elapsed(trigger, agent, ctx.now):
+        return _new_reviews_due(trigger, agent, ctx, decision)
+    if kind == store.TRIGGER_SCHEDULE and schedule_due(trigger, agent, ctx.now):
+        decision.agent_sets['last_schedule_fired_at'] = store.iso(ctx.now)
+        if of_kind is not None and decision.trigger is None:
+            decision.feedback = _engineering_feedback(trigger, agent, ctx, of_kind)
+        return {'every': trigger.get('every')}
+    if kind == store.TRIGGER_THRESHOLD:
+        return _threshold_due(trigger, agent, ctx, decision)
+    if kind == store.TRIGGER_GITHUB_ISSUE and prepared is not None and decision.trigger is None:
+        return _issue_due(trigger, agent, ctx, decision, prepared)
+    return None
+
+
+def _issue_due(trigger: Mapping[str, Any], agent: Mapping[str, Any], ctx: Context, decision: Decision,
+               prepared: engineering.Ready) -> dict[str, Any] | None:
+    """A ``github_issue`` trigger's detail when an issue may start the agent's run (``issues.find_issue``)."""
+    found = issues.find_issue(ctx.feedback_table, prepared.agents_table, agent, trigger, prepared.connection, ctx.now)
+    if found is None:
+        return None
+    decision.issue = found
+    return {'issue': found.number, 'repository': found.repository}
+
+
+def evaluate(agent: Mapping[str, Any], ctx: Context, prepared: engineering.Ready | None = None) -> Decision:
     """Every trigger is evaluated (threshold baselines and schedule marks are recorded
-    for the run that starts); the first due one names the run."""
+    for the run that starts); the first due one names the run (an engineering agent's ``prepared`` connection and
+    flow: its ``github_issue`` trigger reads the repository's issues)."""
     decision = Decision()
     for trigger in agent.get('triggers') or []:
-        kind, detail = trigger.get('kind'), None
-        if kind == store.TRIGGER_NEW_REVIEWS and cooldown_elapsed(trigger, agent, ctx.now):
-            needed = int(store.plain(trigger.get('min_new')) or 1)
-            found = count_new_reviews(ctx.feedback_table, agent.get('scope') or {}, agent.get('last_run_cursor'),
-                                      ctx.now, needed)
-            detail = {'new_reviews': found} if found >= needed else None
-        elif kind == store.TRIGGER_SCHEDULE and schedule_due(trigger, agent, ctx.now):
-            decision.agent_sets['last_schedule_fired_at'] = store.iso(ctx.now)
-            detail = {'every': trigger.get('every')}
-        elif kind == store.TRIGGER_THRESHOLD:
-            detail = _threshold(trigger, agent, ctx, decision)
+        detail = _evaluate_one(trigger, agent, ctx, decision, prepared)
         if detail is not None and decision.trigger is None:
-            decision.trigger, decision.detail = str(kind), detail
+            decision.trigger, decision.detail = str(trigger.get('kind')), detail
     return decision
 
 
@@ -268,6 +387,9 @@ def _heal_lock(table: Any, agent: Mapping[str, Any], now: datetime) -> bool:
     if run is None or run.get('status') not in store.ACTIVE_RUN_STATUSES:
         store.clear_lock(table, agent['agent_id'], run_id)
         return False
+    if run.get('kind') == store.RUN_KIND_ENGINEERING:
+        # (its engineering run's status, never the 24 hours: a run may wait days for a person, holding the lock)
+        return engineering.heal(table, agent, run, now)
     # A resumed run is judged from its resume, not from when it first started.
     started = parse_iso(run.get('resumed_at')) or parse_iso(run.get('started_at'))
     if started and now - started > timedelta(hours=STALE_RUN_HOURS):
@@ -284,6 +406,40 @@ def _record_skip(table: Any, agent: Mapping[str, Any], reason: str) -> str:
     return reason
 
 
+def _engineering_tick(table: Any, agent: Mapping[str, Any], ctx: Context) -> str:
+    """An engineering agent's tick once its lock and caps allow a run: set up, due, then started through
+    voc-engineering-start (``engineering.start``)."""
+    prepared = engineering.ready(table, agent)
+    if prepared is None:
+        return _record_skip(table, agent, 'not_set_up')
+    decision = evaluate(agent, ctx, prepared)
+    if decision.trigger is None:
+        if decision.skip:
+            # (the threshold's baselines move on, so it waits for new reviews rather than firing every tick)
+            store.set_agent_attributes(table, agent['agent_id'], {**decision.agent_sets,
+                                                                  'last_skip_reason': decision.skip})
+            return decision.skip
+        return 'not_due'
+    if ctx.remaining_ms() < engineering.TIME_NEEDED_MS:
+        return 'out_of_time'
+    budget = store.plain(agent.get('budget') or {})
+    issue = decision.issue
+    feedback_type = str((agent.get('engineering') or {}).get('feedback_type'))
+    repository = str(prepared.connection.get('repository') or '')
+    if issue is not None:
+        sentence = eng_runs.issue_sentence(feedback_type, issue.repository, issue.number)
+    elif decision.feedback is not None and decision.feedback.count:
+        sentence = eng_runs.reviews_sentence(feedback_type, decision.feedback.count, agent.get('scope') or {})
+    else:
+        sentence = eng_runs.hunt_sentence(repository)
+    return engineering.start(table, agent, prepared, eng_runs.AgentStart(
+        trigger=decision.trigger, requested_by='heartbeat', actor=str(agent.get('owner_sub') or ''),
+        sentence=sentence, trigger_detail=decision.detail, issue=issue, feedback=decision.feedback,
+        counts_against_daily_cap=True,
+        daily_cap=int(budget.get('max_scheduled_runs_per_day', store.DEFAULT_ENGINEERING_RUNS_PER_DAY)),
+        extra_agent_sets={**decision.agent_sets, 'last_skip_reason': None}), ctx.now)
+
+
 def process_agent(table: Any, agent: Mapping[str, Any], ctx: Context) -> str:
     """One agent's tick; the outcome (``started`` or a skip reason)."""
     if _heal_lock(table, agent, ctx.now):
@@ -291,6 +447,8 @@ def process_agent(table: Any, agent: Mapping[str, Any], ctx: Context) -> str:
     reason = _skip_reason(agent, ctx.now)
     if reason:
         return _record_skip(table, agent, reason)
+    if store.is_engineering_agent(agent):
+        return _engineering_tick(table, agent, ctx)
     decision = evaluate(agent, ctx)
     if decision.trigger is None:
         return 'not_due'
@@ -319,6 +477,18 @@ def _eligible(agent: Mapping[str, Any]) -> bool:
         and store.is_agent_id(agent.get('agent_id'))
 
 
+def _heal_disabled(table: Any, agent: Mapping[str, Any], now: datetime) -> None:
+    """A disabled or archived engineering agent's run still ends when its engineering run does (nothing else ends
+    it: the agents' interpreter never runs it). Best effort: logged, never stopping the others' wakes."""
+    if not (store.is_engineering_agent(agent) and isinstance(agent.get('active_run_id'), str)
+            and store.is_agent_id(agent.get('agent_id'))):
+        return
+    try:
+        _heal_lock(table, agent, now)
+    except (ApiError, ClientError, BotoCoreError):
+        logger.exception('Engineering agent run lock not healed', extra={'agent_id': agent.get('agent_id')})
+
+
 def run_heartbeat(context: Any, now: datetime | None = None) -> dict[str, Any]:
     """One tick over every agent; ``{evaluated, started, outcomes: {reason: n}}``."""
     now = now or datetime.now(UTC)
@@ -328,16 +498,21 @@ def run_heartbeat(context: Any, now: datetime | None = None) -> dict[str, Any]:
         return {'evaluated': 0, 'started': 0, 'outcomes': {}}
     resource = get_dynamodb_resource()
     aggregates = resource.Table(AGGREGATES_TABLE)
-    ctx = Context(resource.Table(FEEDBACK_TABLE), aggregates, list(get_raw_categories_config(aggregates)), now)
+    ctx = Context(resource.Table(FEEDBACK_TABLE), aggregates, list(get_raw_categories_config(aggregates)), now,
+                  remaining_ms=context.get_remaining_time_in_millis)
     outcomes: dict[str, int] = {}
     for agent in store.list_agents(table):
         if not _eligible(agent):
+            _heal_disabled(table, agent, now)
             continue
         if context.get_remaining_time_in_millis() < TIME_RESERVE_MS:
             outcomes['out_of_time'] = outcomes.get('out_of_time', 0) + 1
             continue
         try:
             outcome = process_agent(table, agent, ctx)
+        except engineering.DirectoryUnavailable:
+            logger.warning('Engineering agent owner not checked; not starting', extra={'agent_id': agent.get('agent_id')})
+            outcome = 'error'
         except (ApiError, ClientError, BotoCoreError):
             # One agent's failure must not stop the others' wakes.
             logger.exception('Agent heartbeat failed for one agent', extra={'agent_id': agent.get('agent_id')})

@@ -210,7 +210,7 @@ class TestWholeFileUploads:
 
 
 def _artifact(aws, sk: str, **lists: Any) -> None:
-    """A row of project p1, and the project's ``META`` as made before 7.47.00, with no ``PROJECT_IDS`` row: no
+    """A row of project p1, and the project's ``META`` as made before 7.48.00, with no ``PROJECT_IDS`` row: no
     backfill marker either, so the deployment's lineage pass finds it by its projects' Scan."""
     aws['projects'].put_item(Item={'pk': 'PROJECT#p1', 'sk': 'META', 'gsi1pk': 'TYPE#PROJECT', 'gsi1sk': '2026-01-01'})
     if sk != 'META':

@@ -23,11 +23,15 @@ import { schemaGuard as guard } from './workflowsApi'
 import type { RunDecisionKind } from './agentRunDecision'
 
 export const TRIGGER_KINDS = ['new_reviews', 'schedule', 'threshold'] as const
+/** An engineering agent's triggers (7.47.00): a labelled GitHub issue too. */
+export const ENGINEERING_TRIGGER_KINDS = ['github_issue', ...TRIGGER_KINDS] as const
+/** What an engineering agent works on (`engineering.feedback_type`). */
+export const ENGINEERING_FEEDBACK_TYPES = ['bug', 'feature_request'] as const
 
 const RUN_STATUSES = ['queued', 'running', 'needs_human', 'completed', 'failed', 'cancelled'] as const
 export type RunStatus = (typeof RUN_STATUSES)[number]
 const ACTIVE_RUN_STATUSES: readonly RunStatus[] = ['queued', 'running']
-const RUN_TRIGGERS = ['manual', 'schedule', 'new_reviews', 'threshold'] as const
+const RUN_TRIGGERS = ['manual', 'schedule', 'new_reviews', 'threshold', 'github_issue'] as const
 const RUN_EVENT_KINDS = [
   'node_started', 'node_finished', 'node_failed', 'message', 'verdict', 'decision', 'artifact',
 ] as const
@@ -80,18 +84,40 @@ export const API_AGENT_LIMITS: AgentLimits = {
   monthlyCapNullable: true,
 }
 
-/** Every configurable agent field, strict, for the given limits and id rule. */
-export function buildAgentFieldsShape(limits: AgentLimits, idSchema: z.ZodType<string>) {
+/**
+ * An engineering agent's own bounds (7.47.00), `lambda/shared/agents_store.py` (pinned by agentsApi.lockstep.test.ts):
+ * its instructions become the trusted start of its run's goal, its runs per day, its `github_issue` trigger's label
+ * and look-back, and the `source_platform` ids a scope may name (any agent's).
+ */
+export const API_ENGINEERING_LIMITS = {
+  maxInstructionsChars: 300,
+  maxRunsPerDay: 5,
+  defaultRunsPerDay: 1,
+  maxIssueLabelChars: 50,
+  defaultIssueLabel: 'voc-agent',
+  maxLookbackDays: 30,
+  defaultLookbackDays: 7,
+  maxScopeSources: 20,
+} as const
+
+const SCOPE_RULE = 'scope needs all=true or at least one category or subcategory'
+const CRON_RULE = 'a schedule needs cron exactly when every is "cron"'
+const scopeNamesSome = (s: { all: boolean; categories: unknown[]; subcategories: unknown[] }): boolean =>
+  s.all || s.categories.length > 0 || s.subcategories.length > 0
+
+/** A scope's own fields (all, categories, subcategories), before its rule. */
+function scopeObject(limits: AgentLimits) {
   const categoryName = z.string().trim().min(1).max(limits.maxCategoryNameChars)
-  const scope = z.strictObject({
+  return z.strictObject({
     all: z.boolean(),
     categories: z.array(categoryName).max(limits.maxCategories),
     subcategories: z.array(z.strictObject({ category: categoryName, name: categoryName })).max(limits.maxSubcategories),
-  }).refine(
-    (s) => s.all || s.categories.length > 0 || s.subcategories.length > 0,
-    'scope needs all=true or at least one category or subcategory',
-  )
-  const trigger = z.discriminatedUnion('kind', [
+  })
+}
+
+/** The triggers every agent may have: new reviews, a schedule, a threshold. */
+function triggerVariants(limits: AgentLimits) {
+  return [
     z.strictObject({
       kind: z.literal('new_reviews'),
       min_new: z.number().int().min(1).max(limits.maxMinNew),
@@ -109,10 +135,14 @@ export function buildAgentFieldsShape(limits: AgentLimits, idSchema: z.ZodType<s
       per: z.enum(AGENT_THRESHOLD_PER),
       window_days: z.number().int().min(1).max(limits.maxWindowDays),
     }),
-  ]).refine(
-    (t) => t.kind !== 'schedule' || (t.every === 'cron') === (t.cron !== undefined),
-    'a schedule needs cron exactly when every is "cron"',
-  )
+  ] as const
+}
+
+/** Every configurable agent field, strict, for the given limits and id rule (the assistant's approval cards' too). */
+export function buildAgentFieldsShape(limits: AgentLimits, idSchema: z.ZodType<string>) {
+  const scope = scopeObject(limits).refine(scopeNamesSome, SCOPE_RULE)
+  const trigger = z.discriminatedUnion('kind', triggerVariants(limits)).refine(
+    (t) => t.kind !== 'schedule' || (t.every === 'cron') === (t.cron !== undefined), CRON_RULE)
   const modelOverride = z.string().trim().min(1).max(limits.maxModelIdChars).nullable().optional()
   const monthlyCap = z.number().int().min(0).max(limits.maxMonthlyCallCap)
   return {
@@ -138,11 +168,52 @@ export function buildAgentFieldsShape(limits: AgentLimits, idSchema: z.ZodType<s
   }
 }
 
-const formIdSchema = z.string().trim().min(1).max(128).regex(/^[\w.:-]+$/, 'Invalid identifier')
+// ── The agent form's own fields (7.47.00): never the assistant's (its agent tools have no engineering fields) ──
 
-/** The agent form's body (create/update): every field, API limits. */
-export const agentFormSchema = z.strictObject(buildAgentFieldsShape(API_AGENT_LIMITS, formIdSchema))
-export type AgentForm = z.output<typeof agentFormSchema>
+const sourceId = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/, 'Invalid source id')
+
+/** A scope with `sources`: the `source_platform` ids the agent's reviews come from (none: every source). */
+function formScope(limits: AgentLimits) {
+  return scopeObject(limits).extend({ sources: z.array(sourceId).max(API_ENGINEERING_LIMITS.maxScopeSources).optional() })
+    .refine(scopeNamesSome, SCOPE_RULE)
+}
+
+/** An engineering agent's triggers: a labelled GitHub issue of its repository too. */
+function engineeringTriggers(limits: AgentLimits) {
+  const issue = z.strictObject({
+    kind: z.literal('github_issue'),
+    label: z.string().trim().max(API_ENGINEERING_LIMITS.maxIssueLabelChars),
+    trusted_authors: z.boolean(),
+    lookback_days: z.number().int().min(1).max(API_ENGINEERING_LIMITS.maxLookbackDays),
+  })
+  const trigger = z.discriminatedUnion('kind', [...triggerVariants(limits), issue]).refine(
+    (t) => t.kind !== 'schedule' || (t.every === 'cron') === (t.cron !== undefined), CRON_RULE)
+  return z.array(trigger).max(limits.maxTriggers)
+}
+
+const formIdSchema = z.string().trim().min(1).max(128).regex(/^[\w.:-]+$/, 'Invalid identifier')
+const ENGINEERING_FORM_LIMITS: AgentLimits = {
+  ...API_AGENT_LIMITS, maxInstructionsChars: API_ENGINEERING_LIMITS.maxInstructionsChars,
+  maxScheduledRunsPerDay: API_ENGINEERING_LIMITS.maxRunsPerDay,
+}
+
+/** The agent form's body (create/update) for an agent that runs an agents workflow: every field, API limits. */
+export const agentFormSchema = z.strictObject({
+  ...buildAgentFieldsShape(API_AGENT_LIMITS, formIdSchema), scope: formScope(API_AGENT_LIMITS),
+})
+/** An engineering agent's: its own instructions and runs-per-day bounds, its `github_issue` trigger, its
+ *  `engineering` settings (connection and language null until it is set up). */
+export const engineeringAgentFormSchema = z.strictObject({
+  ...buildAgentFieldsShape(ENGINEERING_FORM_LIMITS, formIdSchema),
+  scope: formScope(ENGINEERING_FORM_LIMITS),
+  triggers: engineeringTriggers(ENGINEERING_FORM_LIMITS),
+  engineering: z.strictObject({
+    connection: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/, 'Invalid connection id').nullable(),
+    language: z.string().trim().min(1).max(32).nullable(),
+    feedback_type: z.enum(ENGINEERING_FEEDBACK_TYPES),
+  }),
+})
+export type AgentForm = z.output<typeof engineeringAgentFormSchema>
 export type AgentTrigger = AgentForm['triggers'][number]
 export type AgentScope = AgentForm['scope']
 
@@ -162,7 +233,20 @@ const LenientTriggerSchema = z.union([
   z.object({
     kind: z.literal('threshold'), count: z.number().int(), per: z.enum(AGENT_THRESHOLD_PER), window_days: z.number().int(),
   }),
+  z.object({
+    kind: z.literal('github_issue'),
+    label: z.string().catch(API_ENGINEERING_LIMITS.defaultIssueLabel),
+    trusted_authors: z.boolean().catch(false),
+    lookback_days: z.number().int().catch(API_ENGINEERING_LIMITS.defaultLookbackDays),
+  }),
 ])
+
+/** An engineering agent's settings (7.47.00): null for an agent that runs an agents workflow. */
+const EngineeringSchema = z.object({
+  connection: z.string().nullable().catch(null),
+  language: z.string().nullable().catch(null),
+  feedback_type: z.enum(ENGINEERING_FEEDBACK_TYPES).catch('bug'),
+}).nullable().catch(null)
 
 const StatsSchema = z.object({
   runs_total: count,
@@ -189,10 +273,14 @@ const AgentSchema = z.object({
   enabled: z.boolean().catch(false),
   status: z.enum(['active', 'archived']).catch('active'),
   owner_sub: nullableString,
+  /** Who an engineering agent runs as: the administrator who enabled it. */
+  owner_username: nullableString,
   scope: z.object({
     all: z.boolean().catch(false),
     categories: lenientList((c): c is string => typeof c === 'string'),
     subcategories: lenientList(guard(z.object({ category: z.string(), name: z.string() }))),
+    /** The `source_platform` ids the agent's reviews come from; left out for every source. */
+    sources: z.array(z.string()).optional().catch(undefined),
   }).catch({ all: true, categories: [], subcategories: [] }),
   instructions: z.string().catch(''),
   personas: z.object({
@@ -209,6 +297,7 @@ const AgentSchema = z.object({
     max_model_calls_per_run: z.number().int().catch(150),
     monthly_call_cap: z.number().int().nullable().catch(5000),
   }).catch({ max_scheduled_runs_per_day: 2, max_model_calls_per_run: 150, monthly_call_cap: 5000 }),
+  engineering: EngineeringSchema,
   created_by: nullableString,
   created_at: nullableString,
   updated_at: nullableString,
@@ -236,6 +325,12 @@ const RunSchema = z.object({
   error: nullableString,
   workflow_id: nullableString,
   workflow_revision: z.number().int().nullable().catch(null),
+  /** An engineering agent's run (7.47.00): its engineering run (the run monitor's) and what it started from. */
+  kind: z.literal('engineering').nullable().catch(null),
+  engineering_run_id: nullableString,
+  issue: z.object({ repository: z.string(), number: z.number().int() }).nullable().catch(null),
+  prd: z.object({ project_id: z.string(), document_id: z.string() }).nullable().catch(null),
+  feedback_count: z.number().int().nullable().catch(null),
   needs_human: NeedsHumanSchema,
   decision: RunDecisionSchema,
   actions: RunActionsSchema,
@@ -296,6 +391,12 @@ function normalizeEventPage(raw: unknown, after: number): { items: RunEvent[]; n
 
 export const isActiveRun = (run: Pick<AgentRun, 'status'>) => ACTIVE_RUN_STATUSES.includes(run.status)
 
+/** An agent that runs an engineering flow (its `engineering` settings, 7.47.00). */
+export const isEngineeringAgent = (agent: Pick<Agent, 'engineering'>): boolean => agent.engineering !== null
+
+/** What an engineering agent's Run now starts from: an issue of its repository, or a project's PRD (a feature agent). */
+export type RunNowBody = { issue: number } | { prd: { project_id: string; document_id: string } }
+
 // ── REST ─────────────────────────────────────────────────────────────────────
 
 export const agentsKeys = {
@@ -330,8 +431,9 @@ export const agentsApi = {
   archive: async (id: string): Promise<Agent> => requireAgent(await fetchApi<unknown>(agentPath(id), del())),
   enable: async (id: string): Promise<Agent> => requireAgent(await fetchApi<unknown>(agentPath(id, '/enable'), post())),
   disable: async (id: string): Promise<Agent> => requireAgent(await fetchApi<unknown>(agentPath(id, '/disable'), post())),
-  /** "Run now" — 409 while a run is active. */
-  run: async (id: string): Promise<AgentRun> => requireRun(await fetchApi<unknown>(agentPath(id, '/run'), post())),
+  /** "Run now" — 409 while a run is active; an engineering agent's may start from an issue or a PRD (`body`). */
+  run: async (id: string, body?: RunNowBody): Promise<AgentRun> =>
+    requireRun(await fetchApi<unknown>(agentPath(id, '/run'), post(body))),
   listRuns: async (id: string, cursor?: string) => {
     const query = cursor === undefined ? '' : `?cursor=${encodeURIComponent(cursor)}`
     return normalizeRunPage(await fetchApi<unknown>(agentPath(id, `/runs${query}`)))

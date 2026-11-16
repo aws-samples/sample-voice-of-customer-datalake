@@ -13,7 +13,9 @@
   },
   "scope": {
     "all": "Alle Kategorien",
-    "some": "Beobachtet: {{list}}"
+    "some": "Beobachtet: {{list}}",
+    "sources": "Nur diese Quellen",
+    "sourcesHint": "Keine auswählen, um alle Quellen zu beobachten. Ein Schwellenwert-Auslöser zählt alle Quellen und wird daher mit Quellen nicht angeboten."
   },
   "views": {
     "label": "Bereiche der Agentenseite",
@@ -88,7 +90,8 @@
     "visibilityHint": "Private Projekte sind nur für Eigentümer, Mitglieder und Administratoren sichtbar.",
     "workflow": "Workflow",
     "workflowDefault": "Bewertungen → Prototyp (integriert)",
-    "workflowHint": "Bearbeiten Sie die Schritte im Tab „Workflow“."
+    "workflowHint": "Bearbeiten Sie die Schritte im Tab „Workflow“.",
+    "engineeringInstructionsHint": "Sie stehen am Anfang des Ziels jedes Laufs (bis zu {{n, number}} Zeichen). Fügen Sie hier niemals Text aus Bewertungen oder Issues ein."
   },
   "visibility": {
     "private": "Privat",
@@ -135,12 +138,14 @@
     "kinds": {
       "new_reviews": "Neue Bewertungen",
       "schedule": "Zeitplan",
-      "threshold": "Schwellenwert"
+      "threshold": "Schwellenwert",
+      "github_issue": "GitHub-Issue"
     },
     "kindHints": {
       "new_reviews": "Läuft, wenn seit dem letzten Lauf genug neues Feedback in seinem Bereich eingegangen ist.",
       "schedule": "Läuft nach einem festen Zeitplan.",
-      "threshold": "Läuft, wenn eine Kategorie oder Unterkategorie innerhalb eines Zeitraums eine Anzahl an Bewertungen erreicht."
+      "threshold": "Läuft, wenn eine Kategorie oder Unterkategorie innerhalb eines Zeitraums eine Anzahl an Bewertungen erreicht.",
+      "github_issue": "Läuft bei einem offenen Issue seines Repositorys, das der Data Lake aufgenommen und seiner Art zugeordnet hat."
     },
     "everyOptions": {
       "12h": "12 Stunden",
@@ -150,7 +155,15 @@
     "perOptions": {
       "category": "Kategorie",
       "subcategory": "Unterkategorie"
-    }
+    },
+    "engineeringHint": "Was den Engineering-Agenten weckt. Immer nur ein Lauf, und nie zwei Läufe für dasselbe Issue.",
+    "thresholdWithSources": "Ein Schwellenwert zählt alle Quellen: Entfernen Sie ihn oder leeren Sie die Quellen im Tab „Einstellungen“.",
+    "label": "Label",
+    "labelHint": "In einem öffentlichen Repository startet ein Issue nur mit diesem Label einen Lauf; ein Maintainer setzt es.",
+    "lookbackDays": "Rückblick (Tage)",
+    "lookbackHint": "Issues, die in diesen letzten Tagen aufgenommen wurden. Ein später gesetztes Label wird übersehen.",
+    "trustedAuthors": "Auch Issues von Eigentümern, Mitgliedern und Mitwirkenden des Repositorys",
+    "trustedAuthorsHint": "Nur in einem privaten Repository: In einem öffentlichen ist das Label immer nötig."
   },
   "personas": {
     "fixed": "Feste Personas ({{n, number}} von {{max, number}})",
@@ -185,7 +198,9 @@
     "callsPerRun": "Modellaufrufe pro Lauf",
     "monthlyCap": "Monatliches Limit für Modellaufrufe",
     "monthlyCapHint": "Der Agent startet keine Läufe mehr, sobald die Aufrufe des Monats dieses Limit erreichen.",
-    "uncapped": "Kein monatliches Limit"
+    "uncapped": "Kein monatliches Limit",
+    "engineeringRunsPerDayHint": "Höchstens {{n, number}} Läufe pro Tag durch Auslöser. „Jetzt ausführen“ wird nicht gezählt.",
+    "engineeringSpend": "Was seine Läufe ausgeben, begrenzen das Monatsbudget seines Workflows (bei der Einrichtung) und die Laufobergrenzen der Bereitstellung; die harte Obergrenze gilt für seine Läufe immer."
   },
   "run": {
     "hint": "Jeder Lauf folgt dem Workflow. Der Graph hebt die Schritte während der Ausführung hervor; er dient nur der Anzeige, nicht der Steuerung.",
@@ -210,8 +225,8 @@
     "hideTechnical": "Technisches Protokoll ausblenden",
     "summary": {
       "title": "Was passiert ist",
-      "started": { "manual": "Von Hand gestartet.", "schedule": "Nach Zeitplan gestartet.", "new_reviews": "Gestartet, weil neue Bewertungen eingingen.", "threshold": "Gestartet, weil ein Schwellenwert überschritten wurde." },
-      "startedAt": { "manual": "Am {{when}} von Hand gestartet.", "schedule": "Am {{when}} nach Zeitplan gestartet.", "new_reviews": "Am {{when}} gestartet, weil neue Bewertungen eingingen.", "threshold": "Am {{when}} gestartet, weil ein Schwellenwert überschritten wurde." },
+      "started": { "manual": "Von Hand gestartet.", "schedule": "Nach Zeitplan gestartet.", "new_reviews": "Gestartet, weil neue Bewertungen eingingen.", "threshold": "Gestartet, weil ein Schwellenwert überschritten wurde.", "github_issue": "Von einem GitHub-Issue gestartet." },
+      "startedAt": { "manual": "Am {{when}} von Hand gestartet.", "schedule": "Am {{when}} nach Zeitplan gestartet.", "new_reviews": "Am {{when}} gestartet, weil neue Bewertungen eingingen.", "threshold": "Am {{when}} gestartet, weil ein Schwellenwert überschritten wurde.", "github_issue": "Am {{when}} von einem GitHub-Issue gestartet." },
       "outcome": { "queued": "Wartet auf den Start.", "running": "Läuft gerade.", "runningStep": "Arbeitet gerade an „{{step}}“.", "completed": "Abgeschlossen.", "completedAt": "Am {{when}} abgeschlossen.", "cancelled": "Abgebrochen.", "cancelledAt": "Am {{when}} abgebrochen.", "failed": "Vor dem Ende gestoppt.", "failedBecause": "Vor dem Ende gestoppt: {{reason}}", "needs_human": "Pausiert – braucht Ihre Entscheidung." },
       "produced": "Was entstanden ist",
       "producedNothing": "Noch nichts.",
@@ -241,7 +256,8 @@
       "manual": "Manuell",
       "schedule": "Zeitplan",
       "new_reviews": "Neue Bewertungen",
-      "threshold": "Schwellenwert"
+      "threshold": "Schwellenwert",
+      "github_issue": "GitHub-Issue"
     },
     "stepStatus": {
       "idle": "Nicht gestartet",
@@ -257,6 +273,21 @@
       "verdict": "Urteil",
       "decision": "Entscheidung",
       "artifact": "Artefakt"
+    },
+    "engineeringConfirmBug": "Der Agent startet einen Engineering-Lauf in seinem Repository: Er arbeitet auf einem eigenen Branch und endet bei einem Pull-Request-Entwurf. Geben Sie eine Issue-Nummer an, um dieses Issue zu beheben (auch eines, das schon einmal lief), oder lassen Sie das Feld leer, um nach Fehlern zu suchen.",
+    "engineeringConfirmFeature": "Der Agent startet einen Engineering-Lauf in seinem Repository aus einem Issue: Er baut das Feature auf einem eigenen Branch und endet bei einem Pull-Request-Entwurf. Um aus einem PRD zu bauen, öffnen Sie das PRD und wählen Sie „Aus diesem PRD bauen“.",
+    "issueOptional": "Issue-Nummer (optional)",
+    "issueRequired": "Issue-Nummer",
+    "issueInvalid": "Die Nummer des Issues: eine ganze Zahl ab 1.",
+    "issueHint": "Ein Issue des Repositorys des Agenten.",
+    "engineering": {
+      "title": "Engineering-Lauf",
+      "fromIssue": "Gestartet von Issue #{{number}} in {{repository}}.",
+      "fromPrd": "Gestartet vom PRD {{document}} des Projekts {{project}}.",
+      "fromReviews": "Gestartet von {{n, number}} Meldungen in seinem Umfang.",
+      "fromNothing": "Gestartet, um in seinem Repository nach Fehlern zu suchen.",
+      "followHint": "Verfolgen und stoppen Sie ihn in seinem Lauf-Monitor: Dieser Lauf endet, wenn der Engineering-Lauf endet.",
+      "openMonitor": "Lauf-Monitor öffnen"
     }
   },
   "editor": {
@@ -1383,5 +1414,36 @@
       "name": "Selbstverbesserung",
       "description": "Der Coach liest frühere Läufe, schlägt neue Skill-Versionen vor und misst sie; eine Administratorin oder ein Administrator nimmt jede an oder lehnt sie ab."
     }
+  },
+  "engineeringAgent": {
+    "deploymentFeedback": "Arbeitet mit dem Feedback der Bereitstellung.",
+    "setupTitle": "{{name}} einrichten",
+    "setupDescription": "Wählen Sie die Repository-Verbindung, an der er arbeitet, die Sprache des Repositorys und was seine Läufe pro Monat ausgeben dürfen. Danach ist er aktiviert und läuft in Ihrem Namen.",
+    "connection": "Repository-Verbindung",
+    "connectionHint": "Mit einem GitHub-Issue-Auslöser werden nur GitHub-Verbindungen angezeigt.",
+    "language": "Sprache",
+    "budget": "Monatsbudget (USD)",
+    "budgetHint": "Wird in seinem Workflow gespeichert: was alle seine Läufe in einem Kalendermonat ausgeben dürfen.",
+    "budgetInvalid": "Dollar und Cent, von 0,01 bis 100.000.",
+    "setupFailed": "Der Agent konnte nicht eingerichtet werden.",
+    "saveAndEnable": "Speichern und aktivieren",
+    "save": "Speichern",
+    "loadFailed": "Die Einrichtung des Agenten konnte nicht gelesen werden.",
+    "loading": "Einrichtung des Agenten wird gelesen",
+    "runsAs": "Läuft als {{name}}.",
+    "changeSetup": "Einrichtung ändern",
+    "connectFirst": "Zuerst ein Repository verbinden",
+    "setUp": "Einrichten",
+    "whyNoConnection": "Deaktiviert: Er braucht eine Repository-Verbindung, an der er arbeiten kann.",
+    "whySetUp": "Deaktiviert, bis er eingerichtet ist: eine Verbindung, eine Sprache und ein Monatsbudget."
+  },
+  "prdBuild": {
+    "button": "Aus diesem PRD bauen",
+    "started": "Lauf-Monitor öffnen",
+    "title": "Aus diesem PRD bauen?",
+    "message": "{{name}} startet einen Engineering-Lauf, der das in diesem PRD beschriebene Feature auf einem eigenen Branch baut und bei einem Pull-Request-Entwurf endet.",
+    "confirm": "Bau starten",
+    "agent": "Agent",
+    "inputHint": "Der Lauf erhält dieses PRD als Eingabe, über seine ID."
   }
 }

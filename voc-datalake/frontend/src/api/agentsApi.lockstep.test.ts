@@ -9,7 +9,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { API_AGENT_LIMITS, type AgentLimits } from './agentsApi'
+import { API_AGENT_LIMITS, API_ENGINEERING_LIMITS, type AgentLimits } from './agentsApi'
 
 const STORE = readFileSync(join(__dirname, '../../../lambda/shared/agents_store.py'), 'utf8')
 
@@ -54,5 +54,21 @@ describe('API_AGENT_LIMITS', () => {
   it('classifies every limit as backend-pinned or SPA-only', () => {
     const byName = (a: string, b: string) => a.localeCompare(b)
     expect(Object.keys(API_AGENT_LIMITS).sort(byName)).toStrictEqual([...Object.keys(FROM_BACKEND), ...SPA_ONLY].sort(byName))
+  })
+})
+
+describe('API_ENGINEERING_LIMITS', () => {
+  it('equals an engineering agent\'s bounds in lambda/shared/agents_store.py (7.47.00)', () => {
+    const label = /^DEFAULT_ISSUE_LABEL: Final = '([^']+)'$/m.exec(STORE)?.[1]
+    expect(API_ENGINEERING_LIMITS).toStrictEqual({
+      maxInstructionsChars: constant('MAX_ENGINEERING_INSTRUCTIONS_CHARS'),
+      maxRunsPerDay: constant('MAX_ENGINEERING_RUNS_PER_DAY'),
+      defaultRunsPerDay: constant('DEFAULT_ENGINEERING_RUNS_PER_DAY'),
+      maxIssueLabelChars: constant('MAX_ISSUE_LABEL_CHARS'),
+      defaultIssueLabel: label,
+      maxLookbackDays: constant('MAX_ISSUE_LOOKBACK_DAYS'),
+      defaultLookbackDays: constant('DEFAULT_ISSUE_LOOKBACK_DAYS'),
+      maxScopeSources: constant('MAX_SCOPE_SOURCES'),
+    })
   })
 })

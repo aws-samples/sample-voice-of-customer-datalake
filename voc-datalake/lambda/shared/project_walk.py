@@ -12,7 +12,7 @@ what is here:
 * ``registry_page``: one strongly consistent page of the workspace's registry of project ids
   (``WS#{ws}#PROJECT_IDS``, read with ``REGISTRY_PROJECTION``: shared/project_tables.py ``registered_project``), its
   ids shaped like a project id, which of them are live, and how many rows were malformed (the persona library's
-  reserved id is left out, uncounted: the walks read the library on their own); without a scope (since 7.47.00, 3g-d)
+  reserved id is left out, uncounted: the walks read the library on their own); without a scope (since 7.48.00, 3g-d)
   the deployment's own registry, ``PROJECT_IDS``, for the retention worker's walks of the deployment (through
   shared/ingest_tables.py ``table_view`` without a scope);
 * ``checked_ids`` / ``checked_key`` / ``is_project_id``: a carried cursor's ids and keys checked before they name a
@@ -104,7 +104,7 @@ class RegistryPage(NamedTuple):
 
 def registry_page(view: WorkspaceTable | DeploymentTable, scope: WorkspaceScope | None,
                   start: Mapping[str, Any] | None) -> RegistryPage:
-    """One strongly consistent page of the scope's registry (a workspace's, or with ``scope`` None, since 7.47.00, the
+    """One strongly consistent page of the scope's registry (a workspace's, or with ``scope`` None, since 7.48.00, the
     deployment's ``PROJECT_IDS``: every project it made, a deleted one too, as its delete keeps the row), each row
     read with ``REGISTRY_PROJECTION`` (any ``deleted_at`` but null reads deleted); the library's reserved id is left
     out, not counted."""

@@ -1462,7 +1462,7 @@ def delete_project(project_id: str, *, actor: Mapping[str, str] | None = None) -
     # their persona ids are read from the partition's keys (one read) before its rows go.
     keys = [key for key in _iter_partition_keys(project_key) if key != meta_key]
     persona_ids = [persona_id for key in keys if (persona_id := _persona_id_from_sort_key(key['sk'])) is not None]
-    # The objects BEFORE the rows (7.47.00): a delete stopped in between leaves a product document's record without
+    # The objects BEFORE the rows (7.48.00): a delete stopped in between leaves a product document's record without
     # its objects, which an erasure by email lists as not checked, never its extracted text without a record, which
     # no erasure would list. An object S3 refuses to delete is logged and the delete still finishes (``deleted``); the
     # erasure lists a deleted project's product documents folder as not checked, since objects may outlive it.

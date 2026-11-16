@@ -26,7 +26,7 @@ review link in ``DOCSHARE#{id}`` (``review_link_key``) and a reviewer's daily co
 (``reviewer_rate_pk``); in a workspace (since 7.37.00) each inside it, the project's commented series listed in its
 own partition (``comment_series_key``), the workspace's links in ``WS#{ws}#DOCSHARE_IDS`` (``review_link_registry_key``)
 and each link's deployment-wide routing row the workspace layer's own (shared/ws_repo.py ``route_share_id``). Since
-7.47.00 (3g-d) the deployment keeps the same two lists, each one deployment-wide partition: its links in
+7.48.00 (3g-d) the deployment keeps the same two lists, each one deployment-wide partition: its links in
 ``DOCSHARE_IDS`` (``deployment_link_registry_key``) and its commented series in ``COMMENT_SERIES_IDS``
 (``deployment_series_registry_key``), not in each project's partition, which a deployment project's delete empties
 (shared/review_registries.py says why and how an erasure reads them).
@@ -88,11 +88,11 @@ COMMENT_SERIES_PREFIX: Final = 'COMMENT_SERIES#'
 _REVIEWER_RATE_PREFIX: Final = 'DCRATE#'
 #: A workspace's registry of its review link ids, one row per link, ``WS#{ws}#DOCSHARE_IDS`` / ``{share id}``.
 _REVIEW_LINK_REGISTRY: Final = 'DOCSHARE_IDS'
-#: The deployment's own registries (since 7.47.00, projects 3g-d): its review links, ``DOCSHARE_IDS`` / ``{share id}``
+#: The deployment's own registries (since 7.48.00, projects 3g-d): its review links, ``DOCSHARE_IDS`` / ``{share id}``
 #: (``deployment_link_registry_key``), and its commented series, ``COMMENT_SERIES_IDS`` / ``{project}#{series}``
 #: (``deployment_series_registry_key``), each one deployment-wide partition, so an erasure by email finds every link
 #: and comment partition of the deployment by a Query. ``REVIEW_REGISTRIES_MARKER_SK``, a row of the link registry,
-#: says the backfill (scripts/projects/backfill_review_registries.py) listed everything made before 7.47.00; until it
+#: says the backfill (scripts/projects/backfill_review_registries.py) listed everything made before 7.48.00; until it
 #: is there, an erasure finds them by its own Scan.
 DEPLOYMENT_LINK_REGISTRY_PK: Final = _REVIEW_LINK_REGISTRY
 DEPLOYMENT_SERIES_REGISTRY_PK: Final = 'COMMENT_SERIES_IDS'
@@ -124,7 +124,7 @@ REVISE_FROM_COMMENTS_STORE: Final = 'Revise from comments'
 PROTOTYPE_BUILDER_STORE: Final = 'Prototype builder'
 #: A workspace's registry of its project ids, one row per project, ``WS#{ws}#PROJECT_IDS`` / ``{id}``.
 _PROJECT_REGISTRY: Final = 'PROJECT_IDS'
-#: The deployment's own registry of its project ids, ``PROJECT_IDS`` / ``{id}`` (since 7.47.00, projects 3g-d;
+#: The deployment's own registry of its project ids, ``PROJECT_IDS`` / ``{id}`` (since 7.48.00, projects 3g-d;
 #: ``deployment_project_registry_key``): put at a project's create, never removed by its delete (which takes the
 #: tombstoned ``META`` off ``gsi1-by-type``), so an erasure by email finds a deleted project's rows too.
 DEPLOYMENT_PROJECT_REGISTRY_PK: Final = _PROJECT_REGISTRY
@@ -185,7 +185,7 @@ def project_registry_key(project_id: str, *, workspace: WorkspaceScope) -> dict[
 
 
 def deployment_project_registry_key(project_id: str) -> dict[str, str]:
-    """A deployment project's row in the deployment's registry, ``PROJECT_IDS`` / ``{id}`` (since 7.47.00, 3g-d): put
+    """A deployment project's row in the deployment's registry, ``PROJECT_IDS`` / ``{id}`` (since 7.48.00, 3g-d): put
     if absent before the project's ``META`` (shared/project_writes.py ``register_deployment_project``), and once for
     every project made before by the backfill (scripts/projects/backfill_review_registries.py)."""
     if not project_id:
@@ -329,7 +329,7 @@ def review_link_registry_key(share_id: str, *, workspace: WorkspaceScope) -> dic
 
 def deployment_link_registry_key(share_id: str) -> dict[str, str]:
     """A deployment's review link's row in the deployment's link registry, ``DOCSHARE_IDS`` / ``{share id}`` (since
-    7.47.00, projects 3g-d): written in the same transaction as the link (shared/document_share.py ``create_share``),
+    7.48.00, projects 3g-d): written in the same transaction as the link (shared/document_share.py ``create_share``),
     and once for every link made before by the backfill (scripts/projects/backfill_review_registries.py), so an
     erasure by email finds every deployment link, a revoked one too (a revoke deletes the series' ``SHARE`` pointer),
     by a Query. No ``ttl``: kept after the link expires and is gone, as a workspace's registry row is."""
@@ -340,7 +340,7 @@ def deployment_link_registry_key(share_id: str) -> dict[str, str]:
 
 def deployment_series_registry_key(project_id: str, series_id: str) -> dict[str, str]:
     """A deployment's commented series in the deployment's series registry, ``COMMENT_SERIES_IDS`` /
-    ``{project}#{series}`` (since 7.47.00, 3g-d). Deployment-wide, not in the project's partition (a workspace's list
+    ``{project}#{series}`` (since 7.48.00, 3g-d). Deployment-wide, not in the project's partition (a workspace's list
     is, ``comment_series_key``): the deployment's project delete empties the project's partition and leaves the
     series' comment partitions, so a list kept there would lose them; this one keeps naming them."""
     if not project_id or not series_id or '#' in project_id or '#' in series_id:

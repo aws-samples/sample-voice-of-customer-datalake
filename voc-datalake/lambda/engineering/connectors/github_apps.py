@@ -435,7 +435,7 @@ class GitHubApps:
         if claim.replay:
             if claim.row['outcome'].get('refused') == 'code':
                 raise ConnectionRefused('conflict', CODE_REFUSED)
-            return self._created(self._app(str(claim.row['outcome'].get('app_id', ''))), actor)
+            return self._conversion_answer(self._app(str(claim.row['outcome'].get('app_id', ''))), actor)
         try:
             self._require_room()
             converted = self._exchange(code)
@@ -447,9 +447,9 @@ class GitHubApps:
             raise
         item = self._store(converted, actor, webhook=claim.row.get('webhook') is True)
         self.states.settle(state, {'app_id': converted.app_id})
-        return self._created(item, actor)
+        return self._conversion_answer(item, actor)
 
-    def _created(self, item: Mapping[str, Any], actor: Actor) -> dict[str, Any]:
+    def _conversion_answer(self, item: Mapping[str, Any], actor: Actor) -> dict[str, Any]:
         install_url, expires_at = self._install_link(item, actor)
         return {'app': self._view(item), 'install_url': install_url, 'expires_at': expires_at}
 
