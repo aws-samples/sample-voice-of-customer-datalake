@@ -212,8 +212,13 @@ class BrokerHttp:
                                                                'attempt': self.attempt})
         return _shaped(result, {'number': int, 'url': str})
 
-    def comment(self, run_id: str, agent_id: str, *, number: int, body: str) -> dict[str, Any]:
+    def comment(self, run_id: str, agent_id: str, *, number: int, body: str,
+                on: str = 'pull_request') -> dict[str, Any]:
+        """The run's own pull request's comment (the PR reviewer's), or its issue's (``on='issue'``: the
+        understander's, 7.50.00); the broker checks the number is the run's own."""
         self._own(run_id, agent_id)
-        result = self.transport.call(POST_COMMENT, {'on': 'pull_request', 'number': number, 'body': body,
+        if on not in ('pull_request', 'issue'):
+            raise ValueError("a comment is on the run's pull request or its issue")
+        result = self.transport.call(POST_COMMENT, {'on': on, 'number': number, 'body': body,
                                                     'attempt': self.attempt})
         return _shaped(result, {'url': str})

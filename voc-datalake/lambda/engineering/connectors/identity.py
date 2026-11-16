@@ -39,6 +39,8 @@ READ: Final = 'read'
 POST_COMMENT: Final = 'post_comment'
 PUSH_BUNDLE: Final = 'push_bundle'
 OPEN_OR_UPDATE_DRAFT_PR: Final = 'open_or_update_draft_pr'
+#: The understander's labels on its run's issue (7.50.00): ``outputs.TRIAGE_LABELS`` only, once per attempt.
+LABEL_ISSUE: Final = 'label_issue'
 #: The runtime's one operation (7.10.00): people's reactions to an ended run's pull request, read only.
 REACTIONS: Final = 'reactions'
 #: voc-engineering-start's one operation (7.47.00): a connection's default branch's head commit, and an issue's state,

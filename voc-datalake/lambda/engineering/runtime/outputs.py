@@ -52,3 +52,72 @@ def encode_package(package: str) -> str:
     ``[A-Za-z0-9_-]`` as ``=XX``, and a leading ``_`` too (only the artifact kinds begin with one)."""
     return ''.join(chr(byte) if _PLAIN.fullmatch(bytes([byte])) and not (i == 0 and byte == ord('_'))
                    else f'={byte:02X}' for i, byte in enumerate(package.encode()))
+
+
+#: An issue's triage (7.50.00): the understander's ``write_triage`` record, under its own keys
+#: (``ws/<ws>/runs/<run>/<agent>/commits/<sha>/_triage/attempt-<n>/triage.json``), which a triage run's end copies to
+#: the issue's trusted row (``ISSUE_TRIAGE#<ws>`` / ``<owner/name>#<n>`` in voc-agents), the row a Bug fixer's or
+#: Feature builder's ``requires_triage`` reads. The labels are the broker's ``label_issue`` allowlist, the only labels
+#: an agent ever puts on an issue.
+TRIAGE_SCHEMA: Final = 'voc-triage/1'
+TRIAGE_FILE: Final = 'triage.json'
+TRIAGE_KINDS: Final = ('bug', 'feature', 'investigation')
+TRIAGE_SEVERITIES: Final = ('S1', 'S2', 'S3', 'S4')
+TRIAGE_PRIORITIES: Final = ('P1', 'P2', 'P3', 'P4')
+TRIAGE_LABELS: Final = frozenset({*(f'voc-triage/{kind}' for kind in TRIAGE_KINDS),
+                                  *(f'voc-severity/{severity.lower()}' for severity in TRIAGE_SEVERITIES)})
+MAX_TRIAGE_SUMMARY: Final = 1_000
+MAX_TRIAGE_ITEMS: Final = 10
+MAX_TRIAGE_ITEM: Final = 300
+MAX_TRIAGE_PATHS: Final = 20
+#: A tenet's id as TENETS.md names one (``1``, ``D5``, a repository's own ``T-3``).
+TENET_ID: Final = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,39}\Z')
+
+
+class TriageError(ValueError):
+    """A triage record off its shape: the harness hands the reason to the model, a reader drops the record."""
+
+
+def triage_labels(kind: str, severity: str) -> tuple[str, str]:
+    """The two labels a triage puts on its issue: ``voc-triage/<kind>``, ``voc-severity/s<n>``."""
+    return f'voc-triage/{kind}', f'voc-severity/{severity.lower()}'
+
+
+def _triage_texts(raw: object, name: str, limit: int, pattern: re.Pattern[str] | None = None) -> list[str]:
+    if raw is None:
+        return []
+    if not isinstance(raw, list) or len(raw) > limit:
+        raise TriageError(f'{name} is a list of at most {limit} items')
+    items = [item.strip() if isinstance(item, str) else '' for item in raw]
+    if not all(item and len(item) <= MAX_TRIAGE_ITEM and (pattern is None or pattern.fullmatch(item))
+               for item in items):
+        raise TriageError(f'each of {name} is text of 1-{MAX_TRIAGE_ITEM} characters'
+                          + (' of its own shape' if pattern is not None else ''))
+    return list(dict.fromkeys(items))
+
+
+def triage_record(raw: object) -> dict[str, object]:
+    """``raw`` as a ``voc-triage/1`` record: ``kind`` (bug, feature or investigation), ``severity`` (S1-S4),
+    ``priority`` (P1-P4), ``summary``, ``tenets`` (the ids it cites; none: ``[]``), ``paths`` (repository paths) and
+    ``acceptance_criteria``; ``TriageError`` for anything else. Every field is text the model wrote: data, never an
+    instruction, wherever it is read."""
+    if not isinstance(raw, dict):
+        raise TriageError('a triage is an object')
+    kind, severity, priority = raw.get('kind'), raw.get('severity'), raw.get('priority')
+    if kind not in TRIAGE_KINDS:
+        raise TriageError(f'kind is one of {", ".join(TRIAGE_KINDS)}')
+    if severity not in TRIAGE_SEVERITIES:
+        raise TriageError(f'severity is one of {", ".join(TRIAGE_SEVERITIES)}')
+    if priority not in TRIAGE_PRIORITIES:
+        raise TriageError(f'priority is one of {", ".join(TRIAGE_PRIORITIES)}')
+    summary = raw.get('summary')
+    if not isinstance(summary, str) or not summary.strip() or len(summary) > MAX_TRIAGE_SUMMARY:
+        raise TriageError(f'summary is text of 1-{MAX_TRIAGE_SUMMARY} characters')
+    paths = _triage_texts(raw.get('paths'), 'paths', MAX_TRIAGE_PATHS, FINDING_FILE)
+    if any(path.startswith('/') or '..' in path.split('/') for path in paths):
+        raise TriageError('a path is a repository path (relative, no "..")')
+    return {'schema': TRIAGE_SCHEMA, 'kind': kind, 'severity': severity, 'priority': priority,
+            'summary': summary.strip(), 'tenets': _triage_texts(raw.get('tenets'), 'tenets', MAX_TRIAGE_ITEMS, TENET_ID),
+            'paths': paths,
+            'acceptance_criteria': _triage_texts(raw.get('acceptance_criteria'), 'acceptance_criteria',
+                                                 MAX_TRIAGE_ITEMS)}

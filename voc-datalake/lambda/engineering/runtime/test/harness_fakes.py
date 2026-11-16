@@ -8,7 +8,7 @@ from typing import Any
 
 from engineering.runtime.checkpoints import agent_prefix, artifact_prefix
 from engineering.runtime.harness.interface import AgentSession
-from engineering.runtime.harness.ports import InboxMessage, TaskBrief
+from engineering.runtime.harness.ports import InboxMessage, SkillAnswer, TaskBrief
 from engineering.runtime.harness.status import StatusReport
 from engineering.runtime.harness.tools import AgentContext, ToolBox
 from engineering.runtime.harness.workspace import Workspace
@@ -75,6 +75,22 @@ class FakeBoard:
         self.moves.append((run_id, task_id, to_state))
         self.results.append(result_keys)
 
+    #: What ``skill`` answers (None: the board's refusal, a crash); ``memories``: what ``memory`` answers.
+    skill_answer: SkillAnswer | None = None
+    memories: tuple[str, ...] = ()
+    skills_asked: list[str] = field(default_factory=list)
+
+    def skill(self, *, run_id: str) -> SkillAnswer:
+        self.skills_asked.append(run_id)
+        if self.skill_answer is None:
+            from engineering.runtime.harness.ports import BrokerRefused
+            raise BrokerRefused(409, 'no skill recorded for this session')
+        return self.skill_answer
+
+    def memory(self, *, run_id: str, task_id: str) -> tuple[str, ...]:
+        del run_id, task_id
+        return self.memories
+
 
 @dataclass
 class FakeInbox:
@@ -122,9 +138,24 @@ class FakeBroker:
                                                                            'body': body}))
         return {'number': 7, 'url': 'https://git.example.org/example/app/pull/7'}
 
-    def comment(self, run_id: str, agent_id: str, *, number: int, body: str) -> dict[str, Any]:
-        self.writes.append(('post_comment', run_id, agent_id, {'on': 'pull_request', 'number': number, 'body': body}))
+    def comment(self, run_id: str, agent_id: str, *, number: int, body: str,
+                on: str = 'pull_request') -> dict[str, Any]:
+        self.writes.append(('post_comment', run_id, agent_id, {'on': on, 'number': number, 'body': body}))
         return {'url': f'https://git.example.org/example/app/pull/{number}#issuecomment-1'}
+
+    #: What ``read`` answers, by ``(kind, target)``; anything else is the broker's 404.
+    pages: dict[tuple[str, str], str] = field(default_factory=dict)
+
+    def read(self, *, kind: str, target: str, cursor: str | None = None) -> dict[str, Any]:
+        from engineering.runtime.harness.ports import BrokerRefused
+        del cursor   # (one page each)
+        if (kind, target) not in self.pages:
+            raise BrokerRefused(404, f'no {kind} {target}')
+        return {'content': self.pages[(kind, target)], 'next_cursor': None}
+
+    def label_issue(self, run_id: str, agent_id: str, *, number: int, labels: tuple[str, ...]) -> dict[str, Any]:
+        self.writes.append(('label_issue', run_id, agent_id, {'number': number, 'labels': list(labels)}))
+        return {'number': number, 'labels': list(labels)}
 
 
 @dataclass

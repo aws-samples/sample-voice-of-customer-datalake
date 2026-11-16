@@ -58,6 +58,26 @@ class Board(Protocol):
 
     def move(self, run_id: str, task_id: str, *, to_state: str, result_keys: tuple[str, ...] = ()) -> None: ...
 
+    def skill(self, *, run_id: str) -> SkillAnswer:
+        """The skill this session runs (7.50.00): the record of the label the launch recorded on the agent's session
+        row, as the board reads it (the agent never names one). Anything but an answer raises: a crash, never a
+        silent fallback to another skill."""
+        ...
+
+    def memory(self, *, run_id: str, task_id: str) -> tuple[str, ...]:
+        """The approved lessons the agent's task takes from memory (7.50.00): its connection's repository memories
+        and its role's lessons there, as data (``AgentMemoryStore.recall_for_task``); none when nothing applies."""
+        ...
+
+
+@dataclass(frozen=True)
+class SkillAnswer:
+    """The board's ``skill`` answer: the label the session row records (``<role>@<version>``,
+    ``<role>@<connection>/<version>``, ``<role>@template-<version>``) and its ``voc-skill/1`` record."""
+
+    label: str
+    record: dict[str, Any]
+
 
 @dataclass(frozen=True)
 class TaskSummary:
@@ -159,8 +179,19 @@ class Broker(Protocol):
         """The broker's ``open_or_update_draft_pr``: the run's draft pull request from ``branch``."""
         ...
 
-    def comment(self, run_id: str, agent_id: str, *, number: int, body: str) -> dict[str, Any]:
-        """The broker's ``post_comment`` on the run's own pull request ``number``."""
+    def comment(self, run_id: str, agent_id: str, *, number: int, body: str,
+                on: str = 'pull_request') -> dict[str, Any]:
+        """The broker's ``post_comment`` on the run's own pull request (``on='issue'``: its issue) ``number``."""
+        ...
+
+    def read(self, *, kind: str, target: str, cursor: str | None = None) -> dict[str, Any]:
+        """One page of a file, a history, an issue or a pull request (every role's read): ``{content,
+        next_cursor}``."""
+        ...
+
+    def label_issue(self, run_id: str, agent_id: str, *, number: int, labels: tuple[str, ...]) -> dict[str, Any]:
+        """The broker's ``label_issue`` (7.50.00, the understander's): ``labels`` (``outputs.TRIAGE_LABELS`` only) on
+        the run's own issue ``number``, once per attempt."""
         ...
 
 
@@ -222,8 +253,13 @@ class PendingHarnessPorts:
     def launch(self, *, run_id: str, task_id: str, role: str, language: str, paths: tuple[str, ...]) -> str:
         raise self._refuse(f'launch({run_id}, {task_id}, {role}, {language}, {len(paths)} paths)')
 
-    def read(self, *, run_id: str, task_id: str, package: str) -> list[str]:
-        raise self._refuse(f'knowledge.read({run_id}, {task_id}): {package[:40]}')
+    def read(self, **arguments: Any) -> Any:
+        """The knowledge reader's ``read`` (``run_id``, ``task_id``, ``package``) and the broker's (``kind``,
+        ``target``, ``cursor``): both refused."""
+        if 'package' in arguments:
+            raise self._refuse(f'knowledge.read({arguments.get("run_id")}, {arguments.get("task_id")}): '
+                               f'{str(arguments["package"])[:40]}')
+        raise self._refuse(f'broker.read({arguments.get("kind")}, {str(arguments.get("target", ""))[:80]})')
 
     def take(self, *, run_id: str, agent_id: str) -> list[InboxMessage]:
         raise self._refuse(f'inbox.take({run_id}, {agent_id})')
@@ -240,5 +276,15 @@ class PendingHarnessPorts:
         raise self._refuse(f'broker.open_draft_pr({run_id}, {agent_id}, {branch[:80]}, {len(body)} characters): '
                            f'{title[:40]}')
 
-    def comment(self, run_id: str, agent_id: str, *, number: int, body: str) -> dict[str, Any]:
-        raise self._refuse(f'broker.comment({run_id}, {agent_id}, #{number}): {body[:40]}')
+    def comment(self, run_id: str, agent_id: str, *, number: int, body: str,
+                on: str = 'pull_request') -> dict[str, Any]:
+        raise self._refuse(f'broker.comment({run_id}, {agent_id}, {on} #{number}): {body[:40]}')
+
+    def label_issue(self, run_id: str, agent_id: str, *, number: int, labels: tuple[str, ...]) -> dict[str, Any]:
+        raise self._refuse(f'broker.label_issue({run_id}, {agent_id}, #{number}, {len(labels)} labels)')
+
+    def skill(self, *, run_id: str) -> SkillAnswer:
+        raise self._refuse(f'board.skill({run_id})')
+
+    def memory(self, *, run_id: str, task_id: str) -> tuple[str, ...]:
+        raise self._refuse(f'board.memory({run_id}, {task_id})')
