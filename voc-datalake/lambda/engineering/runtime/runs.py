@@ -26,6 +26,7 @@ switches the supervisor's schedule.
 """
 from __future__ import annotations
 
+import json
 import math
 import re
 import secrets
@@ -228,6 +229,31 @@ def _history(run_id: str, *, status: str, actor: str, now: int, reason: str = ''
     return item
 
 
+#: How the run's pull request opens (7.50.00, META's ``pull_request``): ready for review unless its flow says
+#: ``pr: draft`` (the flow's settings, its start step's ``data.params``); the broker reads it at the open
+#: (connectors/records.py ``RunRecord.draft_pr``).
+PULL_REQUEST_READY: Final = 'ready'
+PULL_REQUEST_DRAFT: Final = 'draft'
+
+
+def pull_request_mode(definition: str) -> str:
+    """``draft`` when the flow's settings (the start step's ``data.params``: ``{memory, learn, pr}``) say ``pr:
+    draft``, else ``ready``: a run with no flow, a flow that says nothing, or one whose text does not read. Read from
+    the flow's text as the start was handed it, the definition the run's copy is made of."""
+    try:
+        parsed = json.loads(definition) if definition else None
+    except ValueError:
+        return PULL_REQUEST_READY
+    nodes = parsed.get('nodes') if isinstance(parsed, dict) else None
+    for node in nodes if isinstance(nodes, list) else []:
+        if isinstance(node, dict) and node.get('type') == 'start':
+            data = node.get('data')
+            params = data.get('params') if isinstance(data, dict) else None
+            if isinstance(params, dict) and params.get('pr') == PULL_REQUEST_DRAFT:
+                return PULL_REQUEST_DRAFT
+    return PULL_REQUEST_READY
+
+
 def _flow_copy(run_id: str, flow: str, definition: str, revision: object, now: int) -> list[dict[str, Any]]:
     """The run's ``FLOW`` row: the flow's definition, checked again here (the server's own rules, an engineering
     flow, one the conductor can follow) and written as the stored form of what passed; ``RuntimeRefused`` before
@@ -389,6 +415,7 @@ class RunStore:
                                 # confirms it has it (connectors/records.py); '' for the host's own.
                                 'repo': _text(repo), 'default_branch': _text(default_branch), 'flow': _text(flow), 'connection': connection, 'commit': commit,
                                 'language': language, 'agent_count': 1,
+                                'pull_request': pull_request_mode(flow_definition),
                                 # Whose way of working the broker's dial reads (connectors/dial.py): the person
                                 # who started the run, '' for none (then nothing is pushed: Human-driven).
                                 'started_by': _actor(actor) if actor else ''}

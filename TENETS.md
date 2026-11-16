@@ -41,10 +41,11 @@ around it by filing the same text under another document type.
 
 Engineering flows (agents that work in a connected repository) follow the same dial: it decides how far a flow
 goes. **Human-driven**: the agents find and propose (findings, plans, proposed changes for a person to make); they
-push no branch. **AI-assisted**: they write the change on their own branches and open a draft pull request, and
-each step past the plan waits for a person's go. **AI-driven**: they run the flow end to end to a draft pull request.
-In every mode a pull request stays a draft until a person marks it ready, and only a person merges: an agent never
-merges, never marks a pull request ready and never changes the dial.
+push no branch. **AI-assisted**: they write the change on their own branches and open a pull request, and each
+step past the plan waits for a person's go. **AI-driven**: they run the flow end to end to a pull request. A pull
+request opens ready for review, so a person can approve it as it is, or as a draft when the flow says `pr: draft`;
+in every mode only a person approves and merges it: an agent never merges, never approves, never marks a draft
+ready and never changes the dial.
 
 Personas, research and prototypes are AI-backed by design, in every mode: people review, edit and correct what the AI
 produced, and a persona can also be imported from a file. Everything else keeps working without AI: ingestion,

@@ -154,7 +154,7 @@ the module is deployed (404 otherwise), through the Agents API (`voc-datalake/la
 
 The default branch (7.03.01) is the broker's: a run's start copies the stored connection's default branch onto the
 run (META's `default_branch`, beside its `repo`), and the broker holds the run to it (never a push to it, a new branch
-starts on it, a draft pull request is opened against it) once the host confirms the repository has it (one branch
+starts on it, a pull request is opened against it) once the host confirms the repository has it (one branch
 lookup with `contents: read`, kept five minutes, made only after the repository check below, so a credential
 re-pointed at another repository is never used for it); a branch the repository does not have refuses the run's every
 operation, 409, until an administrator corrects the connection and starts the run again. A change of the branch
@@ -323,7 +323,7 @@ includes and components are not supported for now), and `voc-agent/*` stays unpr
   stored AI-assisted or AI-driven lets a run push. A person with no saved way of working pushes nothing (they, or
   an administrator for them, set AI-assisted or AI-driven to let a run push); so does a stored mode outside the
   modes, a run that names no person, or one that names something that is not a person's subject; a read that fails
-  is 503, never a pass. The broker reads only the row's `mode` (a projection, which its IAM grant requires). In every mode a pull request is a draft: no operation marks one ready or merges. The go is one per run, not
+  is 503, never a pass. The broker reads only the row's `mode` (a projection, which its IAM grant requires). In every mode a pull request opens ready for review, or as a draft when the run's flow says `pr: draft` (7.50.00), and no operation marks a draft ready, approves or merges: a person approves and merges on the host. The go is one per run, not
   per step: marking where each flow's later steps wait is planned with the flows.
 
 The broker's role reads exactly these (`voc-datalake/lib/stacks/engineering-broker.ts`, pinned by its test):
@@ -393,8 +393,9 @@ loop (since 7.10.00, people's reactions on that pull request: [below](#peoples-r
 **What is built.** The GitHub client (`connectors/github.py`) reuses a cached installation token or, to mint one, signs
 a nine-minute App JWT (RS256, the App's private key from the connection's parameter, below) for an installation token for the connection's one repository and
 only the permissions the operation needs: a file or history read `contents: read`, an issue read `issues: read`, a
-pull request read `pull_requests: read`, a comment `issues: write` or `pull_requests: write`, a push
-`contents: write`, a draft pull request `contents: read` and `pull_requests: write` (`metadata: read` comes with
+pull request read `pull_requests: read`, a comment `issues: write` or `pull_requests: write`, an issue's triage
+labels `issues: write` (7.50.00), a push `contents: write`, a pull request `contents: read` and `pull_requests:
+write` (`metadata: read` comes with
 every token). A token is kept in memory until five minutes before it expires (GitHub's tokens live an hour). Reads
 follow the `Link` header's next page (the cursor is that page number, nothing else); a pull request read returns the
 pull request, its conversation, its review comments and its reviews, a page of each. A rate limit (`Retry-After`,
@@ -409,11 +410,15 @@ the parent's tree with text files inline and other files as blobs, then a commit
 App's bot), refuses unless the last tree GitHub computed is the tree the broker checked, and only then moves the
 branch with `force: false` (or creates it): a push made meanwhile that the new commit does not descend from makes
 the update fail (a fast-forward of the same lineage still passes, so the head check before it is the lease). Objects of a refused push
-stay unreferenced. A draft pull request is opened, or its title and body updated, only when the branch's head has the
+stay unreferenced. A pull request is opened (7.50.00: ready for review, or as a draft when the run's flow says `pr:
+draft`, META's `pull_request`), or its title and body updated, only when the branch's head has the
 checked tree, and the pull request's head is checked again afterwards: if the branch moved meanwhile, a pull request
 the client just opened is closed, and the write's outcome is unknown (7.02.00: it went out, so it is never answered as
-refused, and never made again for that attempt). An update changes only the title and body: GitHub's REST API
-cannot turn a pull request someone marked ready back into a draft. Every request goes to `api.github.com` through one
+refused, and never made again for that attempt). An update changes only the title and body, never whether it is
+a draft (GitHub's REST API cannot turn a ready pull request back into a draft, and the client never marks a draft
+ready; on GitLab an update keeps the merge request's draft marker as GitLab says it is now, and writes only the
+description when GitLab does not say). The body the broker sends always ends with its own line that only a person
+approves and merges the pull request (`MERGE_IS_HUMAN`). Every request goes to `api.github.com` through one
 transport, with no redirect followed; a token is sent only in the `Authorization` header, never in a URL or a log
 line. The client has no method for a merge, an approval, settings, a change of branch protection, members, webhooks or
 secrets; of the branch rules it only reads what any reader of the repository sees (the CI check, above).
@@ -552,8 +557,9 @@ branch, being refused:
 |---|---|
 | every agent | read files, history, issues and pull requests through the broker; checkouts come from the checkout cache, which its writer fills with the connection's read-only token |
 | issue understander, PR reviewer | post a comment on the run's own issue or pull request (from the run's record) |
+| issue understander | put its triage labels on the run's own issue (7.50.00, `label_issue`: `{number, labels}`, only `voc-triage/bug\|feature\|investigation` and `voc-severity/s1`–`s4`, at most one of each, once per attempt; no dial: a label changes no code) |
 | committer | push its submitted patch, as one commit, to the agent's branch (`push_bundle`: `{branch, patch, tree_hash, message}`) |
-| PR author | open or update the agent's draft pull request |
+| PR author | open or update the agent's pull request (ready for review, or a draft when the run's flow says `pr: draft`) |
 
 Every operation goes through the connector's rules, which refuse, before the host would: a push to any branch but
 the run's own (`voc-agent/{run_id}/…`, the run from the caller's session name), the default branch above all; any
@@ -2922,16 +2928,19 @@ ARN, in the change that first uses it.
 
 - Writes to the host only through the broker, only to the agent's own branches and pull requests and as comments;
   people merge.
-- **Draft pull requests in every mode; the dial decides how far a flow goes** ([TENETS.md](../TENETS.md) tenet 3,
-  agreed by the owner). Human-driven: the agents find and propose (findings, plans, proposed changes for a person to
-  make) and push no branch. AI-assisted: they write the change on their own branches and open a draft pull request,
-  each step past the plan waiting for a person's go. AI-driven: the flow runs end to end to a draft pull request. A
-  person marks a pull request ready and merges it; an agent never merges, never marks one ready and never changes the
+- **A person approves and merges in every mode; the dial decides how far a flow goes** ([TENETS.md](../TENETS.md)
+  tenet 3, agreed by the owner). Human-driven: the agents find and propose (findings, plans, proposed changes for a
+  person to make) and push no branch. AI-assisted: they write the change on their own branches and open a pull
+  request, each step past the plan waiting for a person's go. AI-driven: the flow runs end to end to a pull request.
+  Since 7.50.00 (the owner's decision) the pull request opens ready for review, so a person approves it without a
+  "Ready for review" click (branch protection still requires their approval and the CI check), or as a draft when the
+  flow says `pr: draft`; an agent never merges, never approves, never marks a draft ready and never changes the
   dial. Whether a passing skill version may apply itself in AI-driven mode is not part of this and still waits for
   the owner. *Built for the broker* (6.23.00, [Repository connectors](#repository-connectors)): it reads the dial of
   the person who started the run before every push and pull request, refuses both in Human-driven, holds both for a
   person's go on the run in AI-assisted (one go per run; per-step waits are planned), and has no operation that marks
-  a pull request ready or merges; the rest of a flow does not read the dial yet.
+  a draft ready, approves or merges (a test pins the broker's, the clients' and the router's methods and the clients'
+  request paths); the rest of a flow does not read the dial yet.
 - **Repository text is data, never instructions.** READMEs, code, issues, PR comments, the knowledge pack, memories,
   other agents' messages and customer feedback (which anyone can send through the public forms) reach a model inside
   DATA blocks. That lowers the risk of a planted instruction; it does

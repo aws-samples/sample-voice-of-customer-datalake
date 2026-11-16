@@ -119,6 +119,20 @@ def test_the_issue_a_run_starts_from_is_the_one_its_agents_comment_on(stores: tu
     assert (other.issue_number, other.issue_host) == (None, '')
 
 
+@pytest.mark.parametrize(('stored', 'draft'), [({'S': 'draft'}, True), ({'S': 'ready'}, False), (None, False)],
+                         ids=['flow-says-draft', 'ready', 'before-7.50'])
+def test_the_run_opens_its_pull_request_ready_unless_its_flow_said_draft(stores: tuple[Any, Any],
+                                                                         stored: dict[str, str] | None,
+                                                                         draft: bool) -> None:
+    client, s3 = stores
+    item = {'pk': {'S': PK}, 'sk': {'S': 'META'}, 'run_id': {'S': RUN}, 'status': {'S': 'active'},
+            'connection': {'S': 'conn-1'}, **({'pull_request': stored} if stored else {})}
+    client.put_item(TableName=TABLE, Item=item)
+    run = ledger(client, s3).run(RUN)
+    assert run is not None
+    assert run.draft_pr is draft
+
+
 def test_a_run_started_before_7_03_01_has_no_stored_default_branch(stores: tuple[Any, Any]) -> None:
     client, s3 = stores
     meta(client)

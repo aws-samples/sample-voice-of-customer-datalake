@@ -12,7 +12,7 @@ from engineering.flow.record import FLOW_SK, run_flow
 from engineering.flow.test.fixtures import TEMPLATES
 from engineering.runtime.interface import RuntimeRefused
 from engineering.runtime.ports import FlowStop
-from engineering.runtime.runs import RunCaps, RunExists, RunStore, TableRunControl, flow_step
+from engineering.runtime.runs import RunCaps, RunExists, RunStore, TableRunControl, flow_step, pull_request_mode
 from engineering.runtime.test.conftest import RUN, TABLE
 from shared.workflow_schema import encode_definition
 
@@ -50,6 +50,31 @@ def test_the_start_copies_the_stored_flow_into_the_runs_own_record_once(aws):
 def test_a_run_started_without_a_flow_has_no_copy(aws):
     RunStore(aws[1]).start(RUN, caps=RunCaps(max_tasks=10), now=0, flow='wf_x')
     assert 'Item' not in aws[1].get_item(Key={'pk': PK, 'sk': FLOW_SK})
+    # (and its pull request opens ready for review: 7.50.00)
+    assert aws[1].get_item(Key={'pk': PK, 'sk': 'META'})['Item']['pull_request'] == 'ready'
+
+
+def _with_pr(setting: object) -> dict[str, Any]:
+    definition = copy.deepcopy(TEMPLATES['understand-repository'])
+    start = next(node for node in definition['nodes'] if node['type'] == 'start')
+    start.setdefault('data', {}).setdefault('params', {})['pr'] = setting
+    return definition
+
+
+@pytest.mark.parametrize(('setting', 'mode'), [('draft', 'draft'), ('ready', 'ready'), (None, 'ready'),
+                                                ('Draft', 'ready')])
+def test_the_runs_pull_request_opens_as_its_flows_settings_say(aws, setting: object, mode: str):
+    definition = _with_pr(setting)
+    assert pull_request_mode(json.dumps(definition)) == mode
+    _start(aws[1], encode_definition(definition))
+    assert aws[1].get_item(Key={'pk': PK, 'sk': 'META'})['Item']['pull_request'] == mode
+
+
+@pytest.mark.parametrize('text', ['', 'not json', '[]', '{"nodes": "x"}', '{"nodes": [{"type": "start"}]}',
+                                  '{"pr": "draft"}'])
+def test_a_flow_that_says_nothing_readable_opens_its_pull_request_ready(text: str):
+    # (the top level is never read: the settings are the start step's, as the flow's compiler writes them)
+    assert pull_request_mode(text) == 'ready'
 
 
 def _agents_workflow() -> str:

@@ -76,6 +76,7 @@ from engineering.run_links import (
     stored_link,
     writes_pk,
 )
+from engineering.runtime.runs import PULL_REQUEST_DRAFT
 from engineering.workspace.store import WorkspaceStore
 
 _UNREADABLE: Final = "The run's record could not be read; retry."
@@ -111,7 +112,9 @@ class RunRecords:
             status=status, ci_attested=False, cited_reviews=(), bot_addresses=(AUTHOR,),
             commit=string_attr(item, 'commit'), started_by=string_attr(item, 'started_by'),
             repository=string_attr(item, 'repo'), issue_number=None if issue is None else issue.number,
-            issue_host='' if issue is None else issue.host)
+            issue_host='' if issue is None else issue.host,
+            # (7.50.00: the flow's ``pr``; a run started before it, with no such attribute, opens it ready too)
+            draft_pr=string_attr(item, 'pull_request') == PULL_REQUEST_DRAFT)
 
     def attested(self, run: RunRecord) -> RunRecord:
         if not (self._agents_table and run.connection_id and run.repository):
