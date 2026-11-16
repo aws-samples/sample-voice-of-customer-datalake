@@ -62,6 +62,14 @@ LINEAGE_ALL: Final = 'lineage_all_workspaces'
 UNCHECKED_FILES: Final = 'unchecked_files'
 _UNCHECKED_MORE: Final = 'unchecked_files_more'
 _CARRIED_WORKSPACE_LISTS: Final = (ERASED_WORKSPACES, LINEAGE_WORKSPACES, UNCHECKED_FILES)
+#: How an erasure by email found the deployment's links, series and projects (``registry`` or ``scan``,
+#: project_people.py), and whether it walked the deployment's own projects at all (7.44.00): both on the job and audit
+#: rows of the deployment's erasure by email without a source (``deployment_fields``), so an admin can tell from the
+#: data which jobs to submit again (one that did not walk them never reached them).
+DEPLOYMENT_FOUND: Final = 'deployment_rows_found'
+DEPLOYMENT_WALKED: Final = 'deployment_projects_walked'
+#: The field of an erasure by email (boards.py ``ERASE_FIELD``; that module imports this one).
+_EMAIL_FIELD: Final = 'email'
 # ``workspace_id``: the one workspace a job named (its row's, checked by the handler's ``_named_workspace``).
 _AUDIT_OPTIONAL: Final = ('job_id', 'field', 'source', 'value_hash', 'cutoffs', 'legal_basis', 'legal_bases',
                           'erased_sources', 'workspace_id')
@@ -86,9 +94,11 @@ def new_run(event: Mapping[str, Any], mode: str) -> dict[str, Any]:
         listed = carried.get(name)
         if isinstance(listed, list) and listed:
             run[name] = [str(ws) for ws in listed]
-    for flag in (LINEAGE_ALL, _UNCHECKED_MORE):
+    for flag in (LINEAGE_ALL, _UNCHECKED_MORE, DEPLOYMENT_WALKED):
         if carried.get(flag) is True:
             run[flag] = True
+    if carried.get(DEPLOYMENT_FOUND) in ('registry', 'scan'):
+        run[DEPLOYMENT_FOUND] = carried[DEPLOYMENT_FOUND]
     return run
 
 
@@ -100,8 +110,22 @@ def carried_state(run: Mapping[str, Any]) -> dict[str, Any]:
         **{name: list(run[name]) for name in _CARRIED_LISTS},
         'review_files_more': run['review_files_more'],
         **{name: list(run[name]) for name in _CARRIED_WORKSPACE_LISTS if run.get(name)},
-        **{flag: True for flag in (LINEAGE_ALL, _UNCHECKED_MORE) if run.get(flag) is True},
+        **{flag: True for flag in (LINEAGE_ALL, _UNCHECKED_MORE, DEPLOYMENT_WALKED) if run.get(flag) is True},
+        **({DEPLOYMENT_FOUND: run[DEPLOYMENT_FOUND]} if run.get(DEPLOYMENT_FOUND) else {}),
     }
+
+
+def deployment_fields(run: Mapping[str, Any]) -> dict[str, Any]:
+    """What the deployment's erasure by email without a source (the one job that walks the deployment's own projects,
+    project_people.py ``applies`` with no workspace) says of them on its job and audit rows: ``DEPLOYMENT_WALKED``,
+    true or false (a job handed over past its ``workspace_projects`` phase across the upgrade finishes with false),
+    and ``DEPLOYMENT_FOUND`` once known. Nothing for any other run: a retention run, an erasure by another field or of
+    one source, a workspace's own."""
+    if (run.get('mode') != MODE_ERASE or run.get('field') != _EMAIL_FIELD or run.get('source')
+            or run.get(WORKSPACE_FIELD)):
+        return {}
+    found = {DEPLOYMENT_FOUND: run[DEPLOYMENT_FOUND]} if run.get(DEPLOYMENT_FOUND) else {}
+    return {DEPLOYMENT_WALKED: run.get(DEPLOYMENT_WALKED) is True, **found}
 
 
 def optional_counts(run: Mapping[str, Any]) -> dict[str, int]:
@@ -177,6 +201,7 @@ def write_audit(aggregates_table: Any, run: Mapping[str, Any], status: str, erro
         'status': status, **{counter: run[counter] for counter in COUNTERS}, **optional_counts(run),
         'started_at': run['started_at'], 'finished_at': now,
         **{key: run[key] for key in _AUDIT_OPTIONAL if run.get(key)},
+        **deployment_fields(run),
         **({'files_needing_review': review} if review else {}),
         **({'files_not_checked': unchecked} if unchecked else {}),
         **({'error': error} if error else {}),
@@ -240,6 +265,9 @@ def finish_erasure_job(aggregates_table: Any, run: Mapping[str, Any], status: st
     names = {'#status': 'status'}
     values.update({':status': status, ':now': now_iso()})
     expression = f'SET #status = :status, {clauses}, finished_at = :now'
+    for n, (name, value) in enumerate(deployment_fields(run).items()):
+        expression += f', {name} = :deployment{n}'
+        values[f':deployment{n}'] = value
     review = files_needing_review(run)
     if review:
         expression += ', files_needing_review = :review'

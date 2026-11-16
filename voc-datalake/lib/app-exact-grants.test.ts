@@ -104,7 +104,8 @@ describe('exact grants over the app', () => {
       .map((statement) => [statement.Effect, [...actionsOf(statement)].sort(byCodeUnit)]);
     expect(s3).toStrictEqual([
       ['Allow', ['s3:DeleteObject', 's3:DeleteObjectVersion']],
-      // 7.43.00: a workspace's text product documents, read for an erased address (never written).
+      // 7.43.00: a workspace's text product documents, read for an erased address (never written); since 7.44.00 the
+      // deployment's extracted text too, in the same statement.
       ['Allow', ['s3:GetObject']],
       ['Deny', ['s3:DeleteObject', 's3:DeleteObjectVersion']],
       ['Allow', ['s3:ListBucketVersions']],

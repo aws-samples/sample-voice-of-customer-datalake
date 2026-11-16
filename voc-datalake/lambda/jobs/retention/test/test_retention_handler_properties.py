@@ -158,16 +158,13 @@ def test_each_step_hands_on_its_phase_cursor_and_value(cursor, value):
             assert (given_walk, given_phase, given_cursor) == (walk, phase, cursor)
             scan({'pk': 'next'})
             assert scan_page.call_args.args[1:] == (value or '', {'pk': 'next'})
-    with patch.object(handler, '_walk', return_value=None) as walked, \
-            patch.object(handler.lineage, 'scan_page') as scan_page, \
-            patch.object(handler.lineage, 'mark_rows') as mark_rows:
+    with patch.object(handler, '_step_walk', return_value=None) as walked, \
+            patch.object(handler.lineage, 'deployment_step') as deployment_step:
         handler._mark_lineage(walk, cursor)
-        given_walk, phase, given_cursor, scan, handle = walked.call_args.args
+        given_walk, phase, given_cursor, step = walked.call_args.args
         assert (given_walk, phase, given_cursor) == (walk, 'lineage', cursor)
-        scan({'pk': 'next'})
-        assert scan_page.call_args.args[1] == {'pk': 'next'}
-        assert handle({}, None) is None
-        assert mark_rows.call_args.args[3] == []
+        step({'pk': 'next'})
+        assert deployment_step.call_args.args == (walk.tables['projects'], walk.aggregates, walk.run, {'pk': 'next'})
     with patch.object(handler, 'RAW_DATA_BUCKET', 'raw-bucket'), \
             patch.object(handler.exports, 'clear', return_value=True), \
             patch.object(handler, 'record_progress') as progress:

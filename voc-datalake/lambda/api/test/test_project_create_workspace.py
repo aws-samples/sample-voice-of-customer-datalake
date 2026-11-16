@@ -120,7 +120,8 @@ def test_another_cancellation_is_not_retried_and_writes_no_claim(table):
     assert project_claim(table, FIRST) is None
 
 
-def test_a_deployment_create_sends_exactly_the_request_it_always_sent():
+def test_a_deployment_create_sends_the_request_it_always_sent_after_listing_the_project():
+    """Since 7.44.00 (3g-d) the deployment's project registry row first (put if absent), then the META as before."""
     table = MagicMock()
     with patch('projects.projects_table', table), patch('shared.ids.secrets.token_hex', return_value='aaaa0000'):
         project = _create()
@@ -135,13 +136,15 @@ def test_a_deployment_create_sends_exactly_the_request_it_always_sent():
     # Every call on the table, but the create's own "is a table configured" check.
     requests = [made for made in table.mock_calls if made != call.__bool__()]
     assert requests == [
+        call.put_item(Item={'pk': 'PROJECT_IDS', 'sk': FIRST, 'created_at': NOW},
+                      ConditionExpression='attribute_not_exists(pk)'),
         call.put_item(Item=item, ConditionExpression='attribute_not_exists(pk) AND attribute_not_exists(sk)')]
     assert project['project_id'] == FIRST
 
 
-def test_a_deployment_create_writes_no_claim_and_no_registry_row(table):
+def test_a_deployment_create_writes_no_claim_and_only_the_deployments_registry_row(table):
     with patch('shared.ids.secrets.token_hex', return_value='aaaa0000'):
         _create()
 
-    assert _keys(table) == [(f'PROJECT#{FIRST}', 'META')]
+    assert _keys(table) == sorted([(f'PROJECT#{FIRST}', 'META'), ('PROJECT_IDS', FIRST)])
     assert project_claim(table, FIRST) is None

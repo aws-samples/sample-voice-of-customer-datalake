@@ -89,6 +89,13 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
       why: 'a workspace\'s hard delete (decision 17): its projects, comments and review links, their registries, their '
         + 'id claims and link routes',
     },
+    // 7.44.00 (3g-d): the review registries' backfill marker reset (lib/stacks/review-registries-marker.ts), on its
+    // create and its delete. DOCSHARE_IDS also holds the deployment's link registry; IAM cannot pin the sort key, so
+    // the call names the marker's (no customer data: the marker is a row of the backfill's own).
+    'VocCoreStack/ReviewRegistriesMarkerResetCustomResourcePolicy': {
+      scope: ['DOCSHARE_IDS'],
+      why: 'the backfill marker\'s reset when a release that keeps the review registries is installed or removed',
+    },
   },
   JobsTable: {
     [PROJECTS_API]: { scope: WHOLE_TABLE, why: 'a project delete sweeps its job rows' },
@@ -405,6 +412,8 @@ describe('customer-data, workspace and audit deletes across every stack', () => 
     expect(update?.condition).toStrictEqual({
       'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] },
       'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['email', 'name', 'pk', 'sk'] },
+      // 7.44.00: it asks for no returned values, so it cannot read a membership row back.
+      StringEqualsIfExists: { 'dynamodb:ReturnValues': ['NONE'] },
     });
   });
 

@@ -187,6 +187,14 @@ class TestErasure:
         assert (view['deleted_items'], view['deleted_workspace_items']) == (3, 2)
         assert 'deleted_workspace_items' not in settings_handler.erasure_job_view({'job_id': 'er_000000000002'})
 
+    def test_the_job_view_says_whether_the_deployments_projects_were_walked(self):
+        """7.44.00 (3g-d): an admin finds the jobs to submit again from the job's API view (the panel is 3g-ui's)."""
+        view = settings_handler.erasure_job_view({
+            'job_id': 'er_000000000001', 'deployment_projects_walked': False, 'deployment_rows_found': 'scan'})
+        assert (view['deployment_projects_walked'], view['deployment_rows_found']) == (False, 'scan')
+        bare = settings_handler.erasure_job_view({'job_id': 'er_000000000002'})
+        assert [name for name in bare if name.startswith('deployment_')] == []
+
     @pytest.mark.usefixtures('invoke')
     @pytest.mark.parametrize('field', ['source_id', 'csv_row_id'])
     def test_an_id_erasure_names_its_source(self, route, field):

@@ -160,7 +160,8 @@ def _existing_keys(threads: Sequence[Mapping[str, Any]]) -> set[tuple[str, str, 
 
 
 def _file(table: Any, *, project_id: str, series_id: str, document: Mapping[str, Any], persona: Mapping[str, Any],
-          review: Mapping[str, Any], seen: set[tuple[str, str, str]], workspace: WorkspaceScope | None) -> int:
+          review: Mapping[str, Any], seen: set[tuple[str, str, str]], workspace: WorkspaceScope | None,
+          listed: list[bool]) -> int:
     author = comments.persona_author(str(persona['persona_id']), str(persona.get('name') or ''))
     document_id = str(document.get('document_id'))
     filed = 0
@@ -174,9 +175,13 @@ def _file(table: Any, *, project_id: str, series_id: str, document: Mapping[str,
         if key in seen:
             continue
         seen.add(key)
+        # The series is listed by the review's first thread (``listed``, shared across the run's personas): a review
+        # that files many threads of one series reads, and at most writes, its registry row once (7.44.00).
         comments.put_thread(table, comments.thread_item(
             project_id=project_id, series_id=series_id, document=document, author=author,
-            text=text, anchor=anchor, extra=extra, workspace=workspace), workspace=workspace)
+            text=text, anchor=anchor, extra=extra, workspace=workspace), workspace=workspace,
+            series_listed=listed[0])
+        listed[0] = True
         filed += 1
     return filed
 
@@ -195,13 +200,14 @@ def run_review(table: Any, *, project_id: str, series_id: str, document: Mapping
         reviews = list(pool.map(lambda p: _consult(p, document_type, prompt, text, invoke), personas))
     seen = _existing_keys(comments.list_threads(table, project_id, series_id, workspace=workspace))
     results = []
+    listed = [False]
     for persona, review in zip(personas, reviews, strict=True):
         name = str(persona.get('name') or 'Persona')[:comments.MAX_NAME_CHARS]
         if review is None:
             results.append({'persona_id': persona['persona_id'], 'name': name, 'ok': False, 'filed': 0, 'dropped': 0})
             continue
         filed = _file(table, project_id=project_id, series_id=series_id, document=document, persona=persona,
-                      review=review, seen=seen, workspace=workspace)
+                      review=review, seen=seen, workspace=workspace, listed=listed)
         results.append({'persona_id': persona['persona_id'], 'name': name, 'ok': True, 'stance': review['stance'],
                         'filed': filed, 'dropped': review['dropped']})
     return {'document_id': document.get('document_id'), 'version': document.get('version'),

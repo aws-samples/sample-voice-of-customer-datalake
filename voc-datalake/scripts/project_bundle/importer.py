@@ -7,8 +7,10 @@ Every project is PLANNED before anything is written, and one refusal stops the w
   either (or was not given).
 
 A member whose email is not in the target pool is dropped from `members` and reported. The
-agent that created a project (`created_by_agent`) is deployment-local and dropped. Objects go
-first, then the aggregates rows, the project's other rows, and META last with a condition
+agent that created a project (`created_by_agent`) is deployment-local and dropped. The project in the deployment's
+project registry and each comment partition's series in its series registry go first (each put if absent, with
+boto3 alone, 7.44.00: an erasure by email finds the project and the threads there), then the objects, the aggregates
+rows, the project's other rows, and META last with a condition
 (`attribute_not_exists`), so a half-written import never lists as a project and a race with
 another writer is refused rather than overwritten.
 """
@@ -16,13 +18,53 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from botocore.exceptions import ClientError
+
 from project_bundle.bundle import ObjectRecord, ProjectBundle, object_path
 from project_bundle.deployment import Deployment
-from project_bundle.remap import Rewriter, fix_legacy_assignment, new_id_map
+from project_bundle.remap import Rewriter, fix_legacy_assignment, lambda_on_path, new_id_map, project_keys
 from project_bundle.users import TargetUser, UserDirectory
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def _put_if_absent(table: Any, item: dict[str, Any]) -> None:
+    """Put a registry row only if its key is free (a row the stores, the backfill or an earlier import wrote is kept).
+    boto3 and botocore only, so a plain import needs no Lambda dependency (docs/project-export.md)."""
+    try:
+        table.put_item(Item=item, ConditionExpression='attribute_not_exists(pk)')
+    except ClientError as error:
+        if error.response.get('Error', {}).get('Code') != 'ConditionalCheckFailedException':
+            raise
+
+
+def list_copied_series(table: Any, rows: list[dict[str, Any]], listed_at: str | None = None) -> None:
+    """List each comment partition the rows hold (``DCOMMENTS#{project}#{series}``) in the deployment's series
+    registry, put if absent, before anything of the project is written (7.44.00, projects 3g-d: an erasure by email
+    finds a deployment's comment partitions there, so an imported reviewer's thread must be listed like one a store
+    wrote). The row is shared/project_keys.py ``deployment_series_item``'s, the one a series' first thread puts
+    (shared/document_comments.py ``list_deployment_series``; a test holds the two equal)."""
+    lambda_on_path()
+    keys = project_keys()
+    series = dict.fromkeys(ids for ids in (keys.comment_partition_ids(row.get('pk')) for row in rows) if ids)
+    for project_id, series_id in series:
+        _put_if_absent(table, keys.deployment_series_item(project_id, series_id, listed_at or _now()))
+
+
+def list_imported_project(table: Any, project_id: str, created_at: str) -> None:
+    """List the imported project in the deployment's project registry (``PROJECT_IDS`` / ``{id}``, put if absent,
+    7.44.00, projects 3g-d), before anything of the project is written, as a create does: the row is
+    shared/project_keys.py ``deployment_project_item``'s, the one shared/project_writes.py
+    ``register_deployment_project`` puts. An erasure by email finds a deleted project's rows through it."""
+    lambda_on_path()
+    _put_if_absent(table, project_keys().deployment_project_item(project_id, created_at))
+
 
 PIN_SUBMIT_URL_METADATA_KEY = 'pin-submit-url'
 DROPPED_META_ATTRIBUTES = ('created_by_agent',)
@@ -180,16 +222,20 @@ class Importer:
         return text.encode('utf-8')
 
     def write(self, plan: ProjectPlan) -> None:
+        # The registry rows first, before any object or row (7.44.00): an import stopped later leaves a listed
+        # project or series with nothing in it, which a walk reads as nothing, never an unlisted one.
+        meta_key = (f'PROJECT#{plan.project_id}', 'META')
+        meta = next(item for table, item in plan.rows if table == 'projects' and (item['pk'], item['sk']) == meta_key)
+        list_imported_project(self.tables['projects'], plan.project_id, str(meta.get('created_at') or _now()))
+        list_copied_series(self.tables['projects'], [item for table, item in plan.rows if table == 'projects'])
         for planned in plan.objects:
             extra = {key: value for key, value in (('ContentType', planned.source.content_type),
                                                     ('CacheControl', planned.source.cache_control)) if value}
             self.s3.put_object(Bucket=self.deployment.bucket, Key=planned.key, Body=self._body(planned, plan.rewrite),
                                Metadata=planned.metadata, **extra)
-        meta_key = (f'PROJECT#{plan.project_id}', 'META')
         for table in ('aggregates', 'projects'):  # aggregates first; META held back for the conditional put
             with self.tables[table].batch_writer() as batch:
                 for row_table, item in plan.rows:
                     if row_table == table and (item.get('pk'), item.get('sk')) != meta_key:
                         batch.put_item(Item=item)
-        meta = next(item for table, item in plan.rows if table == 'projects' and (item['pk'], item['sk']) == meta_key)
         self.tables['projects'].put_item(Item=meta, ConditionExpression='attribute_not_exists(pk)')

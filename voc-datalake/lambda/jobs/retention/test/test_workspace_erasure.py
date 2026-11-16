@@ -169,12 +169,14 @@ class TestErasureReachesWorkspaces:
 
     @staticmethod
     def _erase_jane_citing(aws, context: Any, cited: list[str]) -> tuple[dict, Any]:
-        """A persona citing ``cited``; erase Jane's reviews, watching the lineage pass's project scan."""
+        """A deployment project's persona citing ``cited``; erase Jane's reviews, watching the deployment's lineage
+        pass (its steps, by Query since 7.44.00)."""
+        aws['projects'].put_item(Item={'pk': 'PROJECT#p1', 'sk': 'META', 'gsi1pk': 'TYPE#PROJECT', 'gsi1sk': 'x'})
         aws['projects'].put_item(Item={'pk': 'PROJECT#p1', 'sk': 'PERSONA#a', 'input_feedback_ids': cited})
-        with patch.object(lineage, 'scan_page', wraps=lineage.scan_page) as scan:
+        with patch.object(lineage, 'deployment_step', wraps=lineage.deployment_step) as scan:
             return handler.handle_event(_job(aws, 'email', JANE_EMAIL), context), scan
 
-    def test_a_run_that_deleted_only_workspace_items_never_scans_the_projects(self, aws, worker_context):
+    def test_a_run_that_deleted_only_workspace_items_never_reads_the_projects(self, aws, worker_context):
         put_workspace_feedback(aws, WS, 'f1', metadata=JANE)
 
         result, scan = self._erase_jane_citing(aws, worker_context, ['f1'])
@@ -183,7 +185,7 @@ class TestErasureReachesWorkspaces:
         scan.assert_not_called()
         assert result['artifacts_marked'] == 0
 
-    def test_a_run_with_one_deployment_item_scans_the_projects(self, aws, worker_context):
+    def test_a_run_with_one_deployment_item_reads_the_projects(self, aws, worker_context):
         put_workspace_feedback(aws, WS, 'f1', metadata=JANE)
         put_feedback(aws, 'f2', metadata=JANE)
 
@@ -192,7 +194,7 @@ class TestErasureReachesWorkspaces:
         scan.assert_called()
         # Only the deployment's f2 is erased evidence: the workspace's f1 tombstone is `{ws}#f1`, never matched.
         assert result['artifacts_marked'] == 1
-        [persona] = aws['projects'].scan()['Items']
+        persona = aws['projects'].get_item(Key={'pk': 'PROJECT#p1', 'sk': 'PERSONA#a'})['Item']
         assert persona['input_feedback_ids'] == ['f1']
 
     def test_a_workspace_item_never_takes_another_scopes_objects(self, aws, worker_context):

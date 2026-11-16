@@ -54,6 +54,24 @@ def test_two_creates_in_the_same_second_both_succeed_with_different_ids(table):
     assert _meta_ids(table) == {first, second}
 
 
+def test_every_created_project_is_listed_in_the_deployments_project_registry(table):
+    """7.44.00 (3g-d): ``PROJECT_IDS`` / ``{id}`` names every project the deployment made, before its META is put,
+    so an erasure by email reaches a deleted project too (its delete takes it off ``gsi1-by-type``)."""
+    with patch('shared.ids.secrets.token_hex', side_effect=['aaaa0000', 'aaaa0000', 'bbbb1111']):
+        first, second = _create_project(), _create_project()
+    listed = {item['sk'] for item in table.scan()['Items'] if item['pk'] == 'PROJECT_IDS'}
+    assert listed == {first, second}
+
+
+def test_a_failing_registry_put_leaves_no_meta(table):
+    """Round 3: the registry row is put before the META, so a refused registry put writes no unlisted project."""
+    refused = ClientError({'Error': {'Code': 'ProvisionedThroughputExceededException', 'Message': 'slow down'}},
+                          'PutItem')
+    with patch('projects.register_deployment_project', side_effect=refused), pytest.raises(ClientError):
+        _create_project()
+    assert table.scan()['Items'] == []
+
+
 def test_a_colliding_id_is_retried_once_with_a_fresh_one(table):
     # The second create draws the first one's tail, collides on the real
     # conditional put, and retries with the next draw.

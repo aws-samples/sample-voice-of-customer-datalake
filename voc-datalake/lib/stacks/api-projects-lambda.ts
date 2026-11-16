@@ -6,6 +6,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { grantClaudeModels } from '../utils/claude-model-grant';
+import { appVersion } from '../utils/connector-version';
 import { PROJECTS_API_FUNCTION_BASE_NAME } from '../utils/function-names';
 import type { ApiStackContext } from './api-context';
 import { grantMarketplaceSubscription } from './api-marketplace';
@@ -122,6 +123,9 @@ export function createProjectsLambda(ctx: ApiStackContext): ProjectsLambda {
       POWERTOOLS_SERVICE_NAME: 'voc-projects-api',
       LOG_LEVEL: 'INFO',
       [ASSIST_WORKER_ENV]: projectsWorkerName,
+      // The release this function runs (7.44.00): the review registries' backfill reads it (with the operator's own
+      // credentials) and writes its marker only once every writer of links, threads and projects runs 7.44.0 or later.
+      APP_VERSION: appVersion(),
     },
     layers: [apiLayer],
     logGroup: ctx.logGroup('ProjectsApiLogs', ctx.uniqueName('voc-projects-api')),

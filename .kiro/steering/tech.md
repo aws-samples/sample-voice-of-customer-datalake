@@ -233,13 +233,27 @@ documents whose filename or text holds the address listed for review, those it c
 image), and per changed row one UpdateItem and two PutItems, across every workspace, once per erasure by email; the
 listing one Query per 100 workspaces, and at its end one filtered, strongly consistent Query of it per re-walk pass,
 one when nothing moved, plus the walk again of each workspace renamed or created meanwhile:
-`lambda/jobs/retention/workspaces.py`), the
+`lambda/jobs/retention/workspaces.py`; since 7.44.00 the deployment's job first walks the deployment's own projects
+the same way, recorded in `AUDIT#tombstone#deployment_projects`: its links, commented series and projects from its
+registries `DOCSHARE_IDS`, `COMMENT_SERIES_IDS` and `PROJECT_IDS` by Query once the backfill's marker is there, else
+by three Scans of voc-projects, one per pass, until the backfill runs (`lambda/shared/review_registries.py`; a
+deleted or half-deleted project is off `gsi1-by-type`, never off its registry), and its persona library; load: one
+Query for the marker, one per 100 links and one per link, one per 100 series and one per thread page of 100, one per
+100 projects and about 3 per project, at most one GetObject per product document (its extracted text), the same
+writes per changed row; the three registries are single partitions (a Scale note: one hot key each), `PROJECT_IDS`
+written once per project create, `DOCSHARE_IDS` once per link create, `COMMENT_SERIES_IDS` read once per new thread
+(once per persona review, however many threads it files) and written once per first thread of a series (a
+single-partition write), far below a partition's limit; the fallback Scans are strongly consistent and read six
+attributes of each row), the
 whole-source raw sweep, then (an erasure only) the
 exports of every workspace whose item it deleted, membership it de-identified or project row it changed, a derived
 copy (`lambda/jobs/retention/exports.py`:
 the export lock taken, its export jobs marked `erased`, its open uploads aborted, every version under
 `ws/{ws}/exports/` deleted, swept twice, the lock freed), then lineage (the deployment's artifacts in `voc-projects`
-citing an erased id lose it and get `erased_evidence`; a paged Scan that leaves a workspace's rows), then (since
+citing an erased id lose it and get `erased_evidence`; since 7.44.00 its projects through their registry,
+`PROJECT_IDS`, or until the review registries' backfill has run a Scan of the projects' `META` rows, and its persona
+library, each project's partition by filtered Query pages of 100: one Query for the backfill's marker, one Query per
+100 projects, one Query per 100 rows of each project and one BatchGetItem per page of ids), then (since
 7.43.00) `workspace_lineage` (each workspace whose item it deleted, up to 500, or every listed workspace once it
 de-identified a board request or passed 500, the listing walked as for the addresses: its projects through its
 registry and its persona library, by Query, a
@@ -255,13 +269,18 @@ else listed as `files_needing_review`. A whole-source erasure (`field: 'source'`
 `source_platform`, then sweeps `raw/{source}/` (every version), writing progress
 to the job row. Permissions: feedback Get/Query/Scan/DeleteItem,
 aggregates Get/Put/Update/Query + BatchGet (jobs, `AUDIT#retention`, tombstones one PutItem each; no BatchWrite, which would allow deletes),
-radar Scan/DeleteItem + the `SETTINGS#radar` version bump, projects Scan and UpdateItem in two statements since 7.43.00
-(`dynamodb:Attributes`): the lineage marks' id lists and `erased_evidence` on any partition (the deployment's lineage
-Scan), and the de-identification's attributes on one workspace id's `PROJECT#*`, `DCOMMENTS#*` and `DOCSHARE#*` only;
-and (since 7.43.00)
+radar Scan/DeleteItem + the `SETTINGS#radar` version bump, projects Scan (since 7.44.00 only the deployment walks' way
+of finding its links, series and projects until the backfill runs: the table only, six attributes,
+`dynamodb:Select` and `dynamodb:Attributes`) and UpdateItem in two statements since 7.43.00
+(`dynamodb:Attributes`): the lineage marks' id lists and `erased_evidence` on the deployment's and one workspace id's
+`PROJECT#*` only (since 7.44.00; any partition before), and the de-identification's attributes on the deployment's
+(since 7.44.00) and one workspace id's `PROJECT#*`, `DCOMMENTS#*` and `DOCSHARE#*` only; and (since 7.43.00)
 Query of one workspace id's `PROJECT_IDS`, `PROJECT#*`, `DCOMMENTS#*`, `DOCSHARE_IDS` and `DOCSHARE#*` partitions,
-GetObject of `ws/{one id}/projects/*/product_docs/raw/*.md`, `ws/{one id}/projects/*/product_docs/raw/*.txt` and
-`ws/{one id}/projects/*/product_docs/extracted/*` only, workspaces Scan + UpdateItem
+(since 7.44.00) of the deployment's `PROJECT#*`, `DCOMMENTS#*`, `DOCSHARE#*`, `PROJECT_IDS`, `DOCSHARE_IDS` and
+`COMMENT_SERIES_IDS` (of the attributes its reads project only, `dynamodb:Select` `SPECIFIC_ATTRIBUTES` required; no index),
+GetObject of `ws/{one id}/projects/*/product_docs/raw/*.md`, `ws/{one id}/projects/*/product_docs/raw/*.txt`,
+`ws/{one id}/projects/*/product_docs/extracted/*` and (since 7.44.00) `projects/*/product_docs/extracted/*` only,
+workspaces Scan + UpdateItem
 pinned to `WS#*` and the attributes `email` and `name` (since 6.11.00 an erasure by email without a source
 de-identifies the person's `MEMBER#` rows, `lambda/jobs/retention/members.py`), GetItem of a `META`'s status and
 (since 7.43.00) Query of the `WORKSPACES` listing only, raw bucket

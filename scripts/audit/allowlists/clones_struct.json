@@ -51,6 +51,13 @@
     },
     {
       "files": [
+        "voc-datalake/scripts/conversations/backfill_conversants.py",
+        "voc-datalake/scripts/projects/backfill_review_registries.py"
+      ],
+      "reason": "operator backfills (7.19.00, 7.44.00), the entry above's reasons: each keeps its own CloudFormation output lookup (scripts/audit/stack_outputs.py reads an OutputKey only in the file that defines the helper), its own flags in parse_args and the main that resolves its table from them"
+    },
+    {
+      "files": [
         "voc-datalake/lambda/api/projects_handler.py",
         "voc-datalake/lambda/shared/radar_brands.py"
       ],

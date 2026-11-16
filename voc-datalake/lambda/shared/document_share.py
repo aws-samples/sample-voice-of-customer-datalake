@@ -19,7 +19,9 @@ call through the workspace layer, and a new link is ONE scoped transaction: the 
 series' pointer, the series' row among the project's commented ones (``comment_series_item``) and the link's row in the
 workspace's registry ``WS#{ws}#DOCSHARE_IDS`` (which the hard delete reads). A reviewer's link is resolved by its id
 alone (``require_share_for``): the ``DOCSHARE#`` row, and for a routing row the link read from the workspace it names.
-Without a workspace every request is the one sent before.
+Without a workspace every request is the one sent before, but for a link's create, whose transaction since 7.44.00
+(projects 3g-d) also puts the series in the deployment's series registry (``COMMENT_SERIES_IDS``) and the link in the
+deployment's link registry (``DOCSHARE_IDS``), so an erasure by email finds every deployment link by a Query.
 """
 from __future__ import annotations
 
@@ -42,6 +44,8 @@ from shared.participants_settings import validated_domains
 from shared.project_keys import (
     comment_series_item,
     comments_pk,
+    deployment_link_registry_key,
+    deployment_series_item,
     review_link_key,
     review_link_registry_key,
     reviewer_rate_pk,
@@ -166,6 +170,8 @@ def create_share(table: Any, *, project_id: str, series: Mapping[str, str], docu
     if workspace is not None:
         route = route_share_id(share_id, workspace=workspace, routed_at=now.isoformat(), ttl=item['ttl'])
         entries += _workspace_rows(table, project_id, series['series_id'], share_id, now.isoformat(), workspace)
+    else:
+        entries += _deployment_rows(table, project_id, series['series_id'], share_id, now.isoformat())
     try:
         transact_project_writes(table, entries, workspace=workspace, outside=route)
     except ClientError as error:
@@ -186,6 +192,17 @@ def _workspace_rows(table: Any, project_id: str, series_id: str, share_id: str, 
     registry = {**review_link_registry_key(share_id, workspace=workspace), 'created_at': at, 'project_id': project_id,
                 'series_id': series_id}
     return [{'Put': {'TableName': table.name, 'Item': listing}},
+            {'Put': {'TableName': table.name, 'Item': registry, 'ConditionExpression': 'attribute_not_exists(pk)'}}]
+
+
+def _deployment_rows(table: Any, project_id: str, series_id: str, share_id: str, at: str) -> list[dict[str, Any]]:
+    """A deployment link's other two rows (since 7.44.00, projects 3g-d), as a workspace's: its series in the
+    deployment's series registry (unconditioned, for ``comment_series_item``'s reason) and the link in the
+    deployment's link registry (only if new), naming its project and series. An erasure by email finds every link of
+    the deployment there, a revoked one too, whose series' pointer the revoke deleted; no ``ttl``, as a workspace's."""
+    registry = {**deployment_link_registry_key(share_id), 'created_at': at, 'project_id': project_id,
+                'series_id': series_id}
+    return [{'Put': {'TableName': table.name, 'Item': deployment_series_item(project_id, series_id, at)}},
             {'Put': {'TableName': table.name, 'Item': registry, 'ConditionExpression': 'attribute_not_exists(pk)'}}]
 
 

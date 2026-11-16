@@ -38,6 +38,8 @@ NOT_PROJECT_ROW_WRITERS: Final = {
     'lambda/shared/jobs.py': 'job rows in voc-jobs (project_jobs, JOB_FIELDS)',
     'lambda/shared/participants_lists.py': 'list links in voc-participants (project_lists, LIST_FIELDS)',
     'lambda/shared/document_share.py': 'review links and comment pointers (review_links, LINK_FIELDS)',
+    'lambda/shared/document_comments.py': ("comment threads (document_comments, THREAD_FIELDS) and a series' row in "
+                                           "a project's series list or the deployment's series registry (keys only)"),
     'lambda/jobs/workspace_delete/handler.py': "the hard delete's job row and audit rows",
     'lambda/jobs/workspace_export/projects.py': 'the export itself: reads only (its cursor keys look like writes)',
     'lambda/shared/assist_jobs.py': 'assist job rows in voc-jobs (left out of project_jobs)',

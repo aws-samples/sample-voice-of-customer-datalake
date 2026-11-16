@@ -396,7 +396,9 @@ class TestThePinAnswers:
     @pytest.mark.parametrize(('claims', 'by', 'name'), [
         ({'sub': 'u-1', 'cognito:groups': 'admins', 'cognito:username': 'n' * 130},
          'u-1', 'n' * 120),
-        ({'sub': 'u-1', 'cognito:groups': 'admins'}, 'u-1', 'Reviewer'),
+        ({'sub': 'u-1', 'cognito:groups': 'admins'}, 'u-1', 'Team member'),
+        # 7.44.00 (the 7.43.00 rule of a member's thread author): never the address, the username or "Team member".
+        ({'sub': 'u-1', 'cognito:groups': 'admins', 'email': 'lead@example.com'}, 'u-1', 'Team member'),
         (AGENT_CLAIMS, 'agent:ag_1', 'Autonomous agent'),
     ])
     def test_a_reply_names_who_wrote_it(self, api_gateway_event, lambda_context, claims, by,

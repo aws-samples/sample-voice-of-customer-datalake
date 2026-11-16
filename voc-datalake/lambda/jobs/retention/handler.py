@@ -38,14 +38,16 @@ A run walks its PHASES in order, each paged and time-budgeted:
    (``boards.py``); then ``members`` — an erasure by email without a source, when
    ``WORKSPACES_TABLE`` is set: the email and name on the person's workspace membership
    rows are removed (``members.py``); then ``workspace_projects`` — an erasure by email without a source, when
-   ``PROJECTS_TABLE`` is set (and ``WORKSPACES_TABLE``, for the deployment's, which walks every listed workspace;
-   a job that names a workspace walks its own): the address is removed from each walked workspace's reviewer comment
-   threads, review link audiences and project ``META`` rows, and each project's product documents folder is listed
-   for review (``project_people.py``, since 7.43.00);
+   ``PROJECTS_TABLE`` is set (the deployment's job walks the deployment's own projects first, since 7.44.00, then,
+   with ``WORKSPACES_TABLE``, every listed workspace's; a job that names a workspace walks its own): the address is
+   removed from each walked scope's reviewer comment threads, review link audiences and project ``META`` rows, and
+   the product documents that hold it are listed for review (``project_people.py``, since 7.43.00);
 3. ``raw`` — whole-source erasure only: every object version left under
    ``raw/{source}/`` and ``silver/{source}/`` (``shared/retention.delete_raw_prefix_page``);
 4. ``lineage`` — when the run deleted anything of the deployment's and ``PROJECTS_TABLE`` is set:
-   the deployment's artifacts that cited a deleted item are marked (``lineage.py``); then ``workspace_lineage`` —
+   the deployment's artifacts that cited a deleted item are marked, its projects found through its project registry
+   (``PROJECT_IDS``), or, until the review registries' backfill wrote its marker, a Scan of the projects' ``META`` rows
+   (since 7.44.00; ``lineage.py``); then ``workspace_lineage`` —
    when the run deleted a workspace's item: that workspace's artifacts that cite it, found through its project
    registry, never a Scan (``lineage.py``, since 7.43.00).
 
@@ -536,15 +538,11 @@ def _erase_exports(walk: Walk, _cursor: dict | None) -> dict | None:
 
 
 def _mark_lineage(walk: Walk, cursor: dict | None) -> dict | None:
-    """Mark the deployment's artifacts that cited a deleted item (``lineage.py``), page by page; a workspace's rows
-    are the ``workspace_lineage`` phase's."""
+    """Mark the deployment's artifacts that cited a deleted item (``lineage.deployment_step``: its projects by Query,
+    since 7.44.00), step by step; a workspace's rows are the ``workspace_lineage`` phase's."""
     projects = walk.tables['projects']
-
-    def handle(page: dict, _start: dict | None) -> _Resume | None:
-        lineage.mark_rows(projects, walk.aggregates, walk.run, lineage.deployment_rows(page.get('Items', [])))
-        return None
-
-    return _walk(walk, PHASE_LINEAGE, cursor, lambda at: lineage.scan_page(projects, at), handle)
+    return _step_walk(walk, PHASE_LINEAGE, cursor,
+                      lambda at: lineage.deployment_step(projects, walk.aggregates, walk.run, at))
 
 
 def _step_walk(walk: Walk, phase: str, cursor: dict | None, step: Callable[[dict | None], dict | None]) -> dict | None:

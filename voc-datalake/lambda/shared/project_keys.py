@@ -25,7 +25,11 @@ A series' comment threads and its review link's pointer sit in ``DCOMMENTS#{proj
 review link in ``DOCSHARE#{id}`` (``review_link_key``) and a reviewer's daily counter in ``DCRATE#…``
 (``reviewer_rate_pk``); in a workspace (since 7.37.00) each inside it, the project's commented series listed in its
 own partition (``comment_series_key``), the workspace's links in ``WS#{ws}#DOCSHARE_IDS`` (``review_link_registry_key``)
-and each link's deployment-wide routing row the workspace layer's own (shared/ws_repo.py ``route_share_id``).
+and each link's deployment-wide routing row the workspace layer's own (shared/ws_repo.py ``route_share_id``). Since
+7.44.00 (3g-d) the deployment keeps the same two lists, each one deployment-wide partition: its links in
+``DOCSHARE_IDS`` (``deployment_link_registry_key``) and its commented series in ``COMMENT_SERIES_IDS``
+(``deployment_series_registry_key``), not in each project's partition, which a deployment project's delete empties
+(shared/review_registries.py says why and how an erasure reads them).
 
 Every module builds these through here (but the product-doc extractor, a stdlib-only bundle with no ``shared/``,
 which spells ``PROJECT#{id}`` itself: product_doc_extractor/handler.py); shared/test/test_ws_raw_access.py counts
@@ -43,17 +47,21 @@ from shared.scoped_keys import scoped_object_key, scoped_pk
 if TYPE_CHECKING:
     from shared.ws_repo import WorkspaceScope
 
-__all__ = ['AGENT_RUNS_STORE', 'ASSIST_JOB_PREFIX', 'COMMENT_SERIES_PREFIX', 'PRODUCT_CONTEXT_SK',
+__all__ = ['AGENT_RUNS_STORE', 'ASSIST_JOB_PREFIX', 'COMMENT_PARTITION_PREFIX', 'COMMENT_SERIES_PREFIX',
+           'DEPLOYMENT_LINK_REGISTRY_PK', 'DEPLOYMENT_PROJECT_REGISTRY_PK', 'DEPLOYMENT_SERIES_REGISTRY_PK',
+           'PRODUCT_CONTEXT_SK',
            'PRODUCT_DOC_SK_PREFIX', 'PROJECT_GATE_STORE', 'PROJECT_JOB_WORK_STORE',
            'PROJECT_PREFIX', 'PROJECT_TYPE_PK', 'PROTOTYPE_BUILDER_STORE', 'REVIEWER_ROUTES_STORE',
-           'REVISE_FROM_COMMENTS_STORE', 'SERIES_ID_RE', 'NotPerWorkspaceError', 'ProjectPartition',
-           'comment_series_item', 'comments_pk', 'document_keys', 'document_listing', 'document_revision_key',
+           'REVIEW_REGISTRIES_MARKER_SK', 'REVISE_FROM_COMMENTS_STORE', 'SERIES_ID_RE', 'NotPerWorkspaceError',
+           'ProjectPartition', 'comment_partition_ids', 'comment_series_item', 'comments_pk',
+           'deployment_link_registry_key', 'deployment_project_item', 'deployment_series_item',
+           'document_keys', 'document_listing', 'document_revision_key',
            'document_revisions_prefix', 'job_status_pk',
            'legacy_assignment_key', 'legacy_assignment_prefix', 'personas_index_pk', 'product_docs_prefix',
            'project_id_of',
            'project_partitions', 'project_pk', 'project_registry_key', 'project_registry_pk', 'project_type_pk',
            'require_deployment', 'review_link_key', 'review_link_registry_key', 'review_link_registry_pk',
-           'reviewer_rate_pk',
+           'reviewer_rate_pk', 'series_registry_ids',
            'version_allocation_key', 'version_counter_key', 'version_partition_key']
 
 #: The start of every project partition of the deployment (a reader that tells a project's partition from another's).
@@ -71,6 +79,8 @@ _JOB_STATUS_PREFIX: Final = 'STATUS#'
 #: The partition of a series' comment threads and its review link's pointer (shared/document_comments.py,
 #: shared/document_share.py): ``DCOMMENTS#{project}#{series}`` (``comments_pk``).
 _COMMENTS_PREFIX: Final = 'DCOMMENTS#'
+#: The same start, for a reader that tells a deployment's comment partition from a Scan's other rows (3g-d).
+COMMENT_PARTITION_PREFIX: Final = _COMMENTS_PREFIX
 #: The sort-key start of a project's list of its commented series, in the project's own partition (a workspace's
 #: only: ``comment_series_key``), so a delete finds every comment partition by a Query.
 COMMENT_SERIES_PREFIX: Final = 'COMMENT_SERIES#'
@@ -78,6 +88,15 @@ COMMENT_SERIES_PREFIX: Final = 'COMMENT_SERIES#'
 _REVIEWER_RATE_PREFIX: Final = 'DCRATE#'
 #: A workspace's registry of its review link ids, one row per link, ``WS#{ws}#DOCSHARE_IDS`` / ``{share id}``.
 _REVIEW_LINK_REGISTRY: Final = 'DOCSHARE_IDS'
+#: The deployment's own registries (since 7.44.00, projects 3g-d): its review links, ``DOCSHARE_IDS`` / ``{share id}``
+#: (``deployment_link_registry_key``), and its commented series, ``COMMENT_SERIES_IDS`` / ``{project}#{series}``
+#: (``deployment_series_registry_key``), each one deployment-wide partition, so an erasure by email finds every link
+#: and comment partition of the deployment by a Query. ``REVIEW_REGISTRIES_MARKER_SK``, a row of the link registry,
+#: says the backfill (scripts/projects/backfill_review_registries.py) listed everything made before 7.44.00; until it
+#: is there, an erasure finds them by its own Scan.
+DEPLOYMENT_LINK_REGISTRY_PK: Final = _REVIEW_LINK_REGISTRY
+DEPLOYMENT_SERIES_REGISTRY_PK: Final = 'COMMENT_SERIES_IDS'
+REVIEW_REGISTRIES_MARKER_SK: Final = 'MIGRATION#review-registries'
 #: ``REVIEWER_ROUTES_STORE`` (imported above): a review link kept in a workspace, refused by its reviewer routes and its
 #: sign-up trigger alike until the switch (3h); defined in the stdlib module the trigger bundle ships, re-exported here
 #: beside the other stores that refuse a workspace.
@@ -105,6 +124,10 @@ REVISE_FROM_COMMENTS_STORE: Final = 'Revise from comments'
 PROTOTYPE_BUILDER_STORE: Final = 'Prototype builder'
 #: A workspace's registry of its project ids, one row per project, ``WS#{ws}#PROJECT_IDS`` / ``{id}``.
 _PROJECT_REGISTRY: Final = 'PROJECT_IDS'
+#: The deployment's own registry of its project ids, ``PROJECT_IDS`` / ``{id}`` (since 7.44.00, projects 3g-d;
+#: ``deployment_project_registry_key``): put at a project's create, never removed by its delete (which takes the
+#: tombstoned ``META`` off ``gsi1-by-type``), so an erasure by email finds a deleted project's rows too.
+DEPLOYMENT_PROJECT_REGISTRY_PK: Final = _PROJECT_REGISTRY
 #: A project's product context row and its product documents' records, in the project's partition
 #: (api/product_context.py, which names them ``CONTEXT_SK`` and ``DOC_SK_PREFIX``; the workspace export reads them).
 PRODUCT_CONTEXT_SK: Final = 'PRODUCT_CONTEXT'
@@ -159,6 +182,21 @@ def project_registry_key(project_id: str, *, workspace: WorkspaceScope) -> dict[
     if not project_id:
         raise ValueError('a registry row names a project id')
     return {'pk': project_registry_pk(workspace), 'sk': project_id}
+
+
+def deployment_project_registry_key(project_id: str) -> dict[str, str]:
+    """A deployment project's row in the deployment's registry, ``PROJECT_IDS`` / ``{id}`` (since 7.44.00, 3g-d): put
+    if absent before the project's ``META`` (shared/project_writes.py ``register_deployment_project``), and once for
+    every project made before by the backfill (scripts/projects/backfill_review_registries.py)."""
+    if not project_id:
+        raise ValueError('a registry row names a project id')
+    return {'pk': DEPLOYMENT_PROJECT_REGISTRY_PK, 'sk': project_id}
+
+
+def deployment_project_item(project_id: str, created_at: str) -> dict[str, str]:
+    """The one row naming a deployment project in its registry (``deployment_project_registry_key`` and its
+    ``created_at``), put if absent by the create (shared/project_writes.py), the bundle import and the backfill."""
+    return {**deployment_project_registry_key(project_id), 'created_at': created_at}
 
 
 def project_id_of(partition_key: object, *, workspace: WorkspaceScope | None = None) -> str | None:
@@ -287,6 +325,55 @@ def review_link_registry_key(share_id: str, *, workspace: WorkspaceScope) -> dic
     if not share_id:
         raise ValueError('a registry row names a review link id')
     return {'pk': review_link_registry_pk(workspace), 'sk': share_id}
+
+
+def deployment_link_registry_key(share_id: str) -> dict[str, str]:
+    """A deployment's review link's row in the deployment's link registry, ``DOCSHARE_IDS`` / ``{share id}`` (since
+    7.44.00, projects 3g-d): written in the same transaction as the link (shared/document_share.py ``create_share``),
+    and once for every link made before by the backfill (scripts/projects/backfill_review_registries.py), so an
+    erasure by email finds every deployment link, a revoked one too (a revoke deletes the series' ``SHARE`` pointer),
+    by a Query. No ``ttl``: kept after the link expires and is gone, as a workspace's registry row is."""
+    if not share_id:
+        raise ValueError('a registry row names a review link id')
+    return {'pk': DEPLOYMENT_LINK_REGISTRY_PK, 'sk': share_id}
+
+
+def deployment_series_registry_key(project_id: str, series_id: str) -> dict[str, str]:
+    """A deployment's commented series in the deployment's series registry, ``COMMENT_SERIES_IDS`` /
+    ``{project}#{series}`` (since 7.44.00, 3g-d). Deployment-wide, not in the project's partition (a workspace's list
+    is, ``comment_series_key``): the deployment's project delete empties the project's partition and leaves the
+    series' comment partitions, so a list kept there would lose them; this one keeps naming them."""
+    if not project_id or not series_id or '#' in project_id or '#' in series_id:
+        raise ValueError('a series registry row names a project id and a series id')
+    return {'pk': DEPLOYMENT_SERIES_REGISTRY_PK, 'sk': f'{project_id}#{series_id}'}
+
+
+def deployment_series_item(project_id: str, series_id: str, listed_at: str) -> dict[str, str]:
+    """The one row naming a deployment's commented series (``deployment_series_registry_key``, its ids and
+    ``listed_at``): put if absent by a series' first thread (shared/document_comments.py ``put_thread``), unconditioned
+    inside a link's create (its reason: ``comment_series_item``)."""
+    return {**deployment_series_registry_key(project_id, series_id), 'project_id': project_id, 'series_id': series_id,
+            'listed_at': listed_at}
+
+
+def series_registry_ids(sort_key: object) -> tuple[str, str] | None:
+    """``(project id, series id)`` of a series registry row's sort key (``{project}#{series}``), or None when it is not
+    shaped like one (the series id ``SERIES_ID_RE``)."""
+    if not isinstance(sort_key, str):
+        return None
+    parts = sort_key.split('#')
+    if len(parts) != 2 or not parts[0] or SERIES_ID_RE.fullmatch(parts[1]) is None:
+        return None
+    return parts[0], parts[1]
+
+
+def comment_partition_ids(partition_key: object) -> tuple[str, str] | None:
+    """``(project id, series id)`` of a deployment's comment partition (``DCOMMENTS#{project}#{series}``,
+    ``comments_pk`` without a workspace), or None for any other key: the backfill and an erasure's Scan read a
+    series from its comment rows."""
+    if not isinstance(partition_key, str) or not partition_key.startswith(_COMMENTS_PREFIX):
+        return None
+    return series_registry_ids(partition_key[len(_COMMENTS_PREFIX):])
 
 
 def reviewer_rate_pk(share_id: str, email_digest: str, *, workspace: WorkspaceScope | None = None) -> str:

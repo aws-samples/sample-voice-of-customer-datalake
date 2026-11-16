@@ -92,7 +92,9 @@ def test_a_deployment_link_is_its_one_row_and_its_pointer_as_before(table):
     share = _create(table, None)
     assert (share['pk'], share['sk']) == (f"DOCSHARE#{share['share_id']}", 'META')
     assert 'workspace_id' not in _partition(table, share['pk'])[0]
-    assert len(table.scan()['Items']) == 2
+    # The link, its pointer, and since 7.44.00 (3g-d) its rows in the deployment's link and series registries.
+    assert sorted(row['pk'] for row in table.scan()['Items']) == sorted([
+        share['pk'], comments_pk(PROJECT, SERIES['series_id']), 'DOCSHARE_IDS', 'COMMENT_SERIES_IDS'])
 
 
 def test_a_reviewer_resolves_a_workspace_link_by_its_id_alone(table):
@@ -166,15 +168,24 @@ class RecordingClient:
         return self.client.transact_write_items(**request)
 
 
-def test_the_deployments_create_is_the_transaction_sent_before(table, monkeypatch):
+def test_the_deployments_create_is_the_transaction_sent_before_and_its_registry_rows(table, monkeypatch):
+    """The two entries it always sent, then (since 7.44.00, 3g-d) the series in the deployment's series registry
+    (unconditioned) and the link in its link registry (only if new), naming its project and series."""
     recording = RecordingClient(table.meta.client)
     monkeypatch.setattr(table.meta, 'client', recording)
     share = _create(table, None)
+    at = share['created_at']
     index = {'pk': comments_pk(PROJECT, SERIES['series_id']), 'sk': 'SHARE', 'share_id': share['share_id'],
-             'updated_at': share['created_at']}
+             'updated_at': at}
+    series = {'pk': 'COMMENT_SERIES_IDS', 'sk': f"{PROJECT}#{SERIES['series_id']}", 'project_id': PROJECT,
+              'series_id': SERIES['series_id'], 'listed_at': at}
+    registry = {'pk': 'DOCSHARE_IDS', 'sk': share['share_id'], 'created_at': at, 'project_id': PROJECT,
+                'series_id': SERIES['series_id']}
     assert recording.calls == [{'TransactItems': [
         {'Put': {'TableName': TABLE, 'Item': share, 'ConditionExpression': 'attribute_not_exists(pk)'}},
         {'Put': {'TableName': TABLE, 'Item': index}},
+        {'Put': {'TableName': TABLE, 'Item': series}},
+        {'Put': {'TableName': TABLE, 'Item': registry, 'ConditionExpression': 'attribute_not_exists(pk)'}},
     ]}]
 
 

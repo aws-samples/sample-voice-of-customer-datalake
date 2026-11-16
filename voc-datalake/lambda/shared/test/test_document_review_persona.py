@@ -18,7 +18,7 @@ from shared.exceptions import ValidationError
 from shared.test.moto_tables import create_pk_sk_table
 
 SERIES_ID = 'ser_' + 'b' * 24
-CONTENT = ('# Press release\n\nToday we launch **Acme Sync**, which keeps every file in step.\n\n'
+CONTENT = ('# Press release\n\nToday we launch **File Sync**, which keeps every file in step.\n\n'
            '## FAQ\n\nHow much does it cost? It costs ten dollars a month.')
 DOCUMENT = {'pk': 'PROJECT#p1', 'sk': 'PRFAQ#d1', 'document_id': 'd1', 'document_type': 'prfaq', 'version': 1,
             'title': 'Launch (v1)', 'base_title': 'Launch', 'content': CONTENT}
@@ -57,7 +57,7 @@ def _anchored(table):
 
 @pytest.mark.parametrize(('quote', 'exact'), [
     ('keeps every file in step', 'keeps every file in step'),
-    ('Today we launch Acme Sync', 'Today we launch Acme Sync'),
+    ('Today we launch File Sync', 'Today we launch File Sync'),
     ('  It costs\nten   dollars a month.  ', 'It costs ten dollars a month.'),
     ('"It costs ten dollars a month."', 'It costs ten dollars a month.'),
     ('\u201cIt costs ten dollars\u201d', 'It costs ten dollars'),
@@ -70,7 +70,7 @@ def test_a_verbatim_quote_is_located_after_whitespace_and_quote_marks(quote, exa
 
 
 @pytest.mark.parametrize('quote', [
-    'Today we launch **Acme Sync**',  # markdown symbols are not in the reader's text
+    'Today we launch **File Sync**',  # markdown symbols are not in the reader's text
     'It costs twelve dollars a month.',  # paraphrase
     'keeps every FILE in step',  # case differs
     'short',  # below MIN_QUOTE_CHARS
@@ -168,7 +168,30 @@ def test_the_document_is_never_edited(table):
     _run(table, _always(_reply(('keeps every file in step', 'Rewrite this as: free!'))))
     assert table.get_item(Key={'pk': 'PROJECT#p1', 'sk': 'PRFAQ#d1'})['Item'] == before
     written = {row['pk'] for row in table.scan()['Items']}
-    assert written == {'PROJECT#p1', dc.comments_pk('p1', SERIES_ID)}
+    # The threads, and (since 7.44.00) their series in the deployment's series registry.
+    assert written == {'PROJECT#p1', dc.comments_pk('p1', SERIES_ID), 'COMMENT_SERIES_IDS'}
+
+
+def test_a_review_lists_its_series_once_however_many_threads_it_files(table):
+    """7.44.00 (3g-d): the series registry is one partition; a review that files many threads writes it once at most,
+    and reads it once (a series already listed is never written again)."""
+    calls: list[str] = []
+
+    def record(params, **_kwargs):
+        if params.get('Key', params.get('Item', {})).get('pk') == 'COMMENT_SERIES_IDS':
+            calls.append('registry')
+
+    events = table.meta.client.meta.events
+    for operation in ('GetItem', 'PutItem'):
+        events.register(f'provide-client-params.dynamodb.{operation}', record)
+    invoke = _always(_reply(('keeps every file in step', 'One'), ('File Sync', 'Two')))
+    first = _run(table, invoke, personas=PERSONAS[:2])
+    assert first['filed'] >= 4
+    assert len(calls) <= 2
+    calls.clear()
+    _run(table, invoke, personas=PERSONAS[2:], document={**DOCUMENT, 'document_id': 'd2', 'version': 2})
+    # Listed already: one read, no write.
+    assert calls == ['registry']
 
 
 def test_a_rerun_on_the_same_version_files_nothing_twice(table):

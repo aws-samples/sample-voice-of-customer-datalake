@@ -17,8 +17,11 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
+from botocore.exceptions import ClientError
+
+from shared.aws import is_conditional_check_failure
 from shared.ids import write_with_fresh_id
-from shared.project_keys import project_pk, project_registry_key
+from shared.project_keys import deployment_project_item, project_pk, project_registry_key
 from shared.timestamps import now_iso
 from shared.ws_repo import OutOfScopeError, OutsideEntry, WorkspaceScope, claim_project_id, ws_table
 
@@ -143,6 +146,19 @@ def transact_project_writes(
             raise OutOfScopeError('a workspace transaction writes its own table only')
         scoped_entries.append({action: {field: value for field, value in body.items() if field != 'TableName'}})
     ws_table(workspace, table).transact_write_items(scoped_entries, outside=outside)
+
+
+def register_deployment_project(table, project_id: str, created_at: str) -> None:
+    """List a deployment project in the deployment's registry (``PROJECT_IDS`` / ``{id}``, since 7.44.00, 3g-d), put
+    only if absent, before its ``META`` is put: a ``META`` never exists unlisted, and a create refused after this
+    leaves a row naming an empty partition, which a walk reads as nothing. The project delete never removes it (it
+    takes the tombstoned ``META`` off ``gsi1-by-type``), so an erasure by email still finds a deleted project's rows."""
+    try:
+        table.put_item(Item=deployment_project_item(project_id, created_at),
+                       ConditionExpression='attribute_not_exists(pk)')
+    except ClientError as error:
+        if not is_conditional_check_failure(error):
+            raise
 
 
 def create_workspace_project(table, item: dict[str, Any], *, workspace: WorkspaceScope) -> None:

@@ -77,9 +77,17 @@ written, when:
 - the bundle is not a `voc-project-bundle`, is a newer version than the script reads, or names
   an object path outside the bundle directory.
 
-Writes go in this order: S3 objects, pin forms and pins, the project's other rows, and finally
-META with a condition. A failed import therefore never shows as a project in the target's
-list. To retry it, delete the partial rows or run again with `--new-ids`.
+Writes go in this order: the project's row in the deployment's project registry (`PROJECT_IDS`)
+and a row for each copied comment series (`COMMENT_SERIES_IDS`), each put only if absent (since
+7.44.00, so that an erasure by email finds them), then S3 objects, pin forms and pins, the
+project's other rows, and finally META with a condition. A failed import therefore never shows
+as a project in the target's list. It can leave those registry rows behind, which is harmless:
+a walk reads an empty partition as nothing, and a retry puts them only if absent. To retry,
+delete the partial rows or run again with `--new-ids`.
+
+Import only from a checkout of 7.44.00 or later: an older checkout writes comment threads that
+no registry lists, so an erasure by email would not reach them. A bundle holds the reviewers'
+and members' addresses and no erasure reaches it, so delete a bundle once it is imported.
 
 ## What is carried
 

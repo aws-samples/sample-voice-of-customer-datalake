@@ -482,9 +482,12 @@ class TestCreateProject:
             'owner_sub': 'owner-sub', 'owner_username': 'owner',
             'owner_email': 'owner@example.com', 'members': {}, 'visibility': 'private',
         }
-        table.put_item.assert_called_once_with(
-            Item=item, ConditionExpression='attribute_not_exists(pk) AND attribute_not_exists(sk)',
-        )
+        # The deployment's project registry row first (7.44.00), then the META.
+        assert table.put_item.call_args_list == [
+            call(Item={'pk': 'PROJECT_IDS', 'sk': project_id, 'created_at': FIXED_ISO},
+                 ConditionExpression='attribute_not_exists(pk)'),
+            call(Item=item, ConditionExpression='attribute_not_exists(pk) AND attribute_not_exists(sk)'),
+        ]
         assert result == {'success': True, 'project': {
             **item,
             'members': [],

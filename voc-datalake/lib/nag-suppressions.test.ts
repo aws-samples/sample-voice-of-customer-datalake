@@ -282,7 +282,9 @@ describe('cdk-nag acknowledgements', () => {
       // 111 -> 114: voc-retention's read of one workspace's text product documents (7.43.00, 3g-b:
       // `ws/{one id}/projects/*/product_docs/raw/*.md`, `…/raw/*.txt` and `…/extracted/*`), three findings of its one
       // acknowledgement.
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 114, used: 114 });
+      // 114 -> 115: voc-retention's read of the deployment's product documents' extracted text (7.44.00, 3g-d:
+      // `projects/*/product_docs/extracted/*`), one finding of the same acknowledgement.
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 115, used: 115 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

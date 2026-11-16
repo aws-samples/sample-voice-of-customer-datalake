@@ -132,6 +132,7 @@ from shared.project_writes import (
     project_meta_key,
     projects_table_name,
     put_project_item_and_increment,
+    register_deployment_project,
 )
 from shared.prompt_labels import LABEL_INSTRUCTION
 from shared.prompt_labels_store import load_prompt_labels
@@ -536,6 +537,7 @@ def create_project(body: dict, caller: Caller, *, workspace: WorkspaceScope | No
         if workspace is not None:
             create_workspace_project(projects_table, item, workspace=workspace)
             return item
+        register_deployment_project(projects_table, project_id, now)
         projects_table.put_item(
             Item=item,
             ConditionExpression=NEW_ROW_CONDITION,
@@ -1439,9 +1441,9 @@ def _sweep_project_objects(project_id: str, persona_ids: list[str]) -> None:
 def delete_project(project_id: str, *, actor: Mapping[str, str] | None = None) -> dict:
     """Retain a tombstone while deleting every project-owned artifact.
 
-    The project partition, the version partition, the job rows in their own
-    table, and the project's S3 objects (prototypes, product docs, and the
-    avatars it owns; every version). The fence goes down first; every sweep then
+    The project's S3 objects (prototypes, product docs, and the avatars it owns;
+    every version) first, then the project partition, the version partition and
+    the job rows in their own table. The fence goes down first; every sweep then
     deletes only what it still finds, so a retry resumes after a partial failure.
     The tombstoned META is the project's own delete record; an ``AUDIT#delete``
     row (``shared.delete_audit``) also records who deleted it.
@@ -1456,16 +1458,18 @@ def delete_project(project_id: str, *, actor: Mapping[str, str] | None = None) -
 
     # Keep tombstoned META forever. Guarded writers either committed before the
     # fence (and are visible to these strongly consistent scans) or fail after
-    # it; retries repeat both idempotent sweeps. Avatar keys carry no project, so
-    # their persona ids are collected from this pass — the only one that sees them.
-    persona_ids: list[str] = []
+    # it; retries repeat every idempotent sweep. Avatar keys carry no project, so
+    # their persona ids are read from the partition's keys (one read) before its rows go.
+    keys = [key for key in _iter_partition_keys(project_key) if key != meta_key]
+    persona_ids = [persona_id for key in keys if (persona_id := _persona_id_from_sort_key(key['sk'])) is not None]
+    # The objects BEFORE the rows (7.44.00): a delete stopped in between leaves a product document's record without
+    # its objects, which an erasure by email lists as not checked, never its extracted text without a record, which
+    # no erasure would list. An object S3 refuses to delete is logged and the delete still finishes (``deleted``); the
+    # erasure lists a deleted project's product documents folder as not checked, since objects may outlive it.
+    _sweep_project_objects(project_id, persona_ids)
+
     with projects_table.batch_writer() as batch:
-        for key in _iter_partition_keys(project_key):
-            if key == meta_key:
-                continue
-            persona_id = _persona_id_from_sort_key(key['sk'])
-            if persona_id is not None:
-                persona_ids.append(persona_id)
+        for key in keys:
             batch.delete_item(Key=key)
 
     with projects_table.batch_writer() as batch:
@@ -1473,7 +1477,6 @@ def delete_project(project_id: str, *, actor: Mapping[str, str] | None = None) -
             batch.delete_item(Key=key)
 
     _delete_project_job_rows(project_id)
-    _sweep_project_objects(project_id, persona_ids)
 
     projects_table.update_item(
         Key=meta_key,

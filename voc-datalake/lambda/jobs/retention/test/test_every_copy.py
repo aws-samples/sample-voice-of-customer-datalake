@@ -210,7 +210,11 @@ class TestWholeFileUploads:
 
 
 def _artifact(aws, sk: str, **lists: Any) -> None:
-    aws['projects'].put_item(Item={'pk': 'PROJECT#p1', 'sk': sk, 'name': 'Shopper', 'text': 'quote', **lists})
+    """A row of project p1, and the project's ``META`` as made before 7.44.00, with no ``PROJECT_IDS`` row: no
+    backfill marker either, so the deployment's lineage pass finds it by its projects' Scan."""
+    aws['projects'].put_item(Item={'pk': 'PROJECT#p1', 'sk': 'META', 'gsi1pk': 'TYPE#PROJECT', 'gsi1sk': '2026-01-01'})
+    if sk != 'META':
+        aws['projects'].put_item(Item={'pk': 'PROJECT#p1', 'sk': sk, 'name': 'Shopper', 'text': 'quote', **lists})
 
 
 def _row(aws, sk: str) -> dict:
@@ -241,11 +245,11 @@ class TestLineage:
         handler.handle_event(_job(aws, 'author', 'Jane', legal_basis=BASIS), worker_context)
         assert _row(aws, 'PERSONA#a')['erased_evidence']['count'] == 4
 
-    def test_a_run_that_deleted_nothing_never_scans_the_projects(self, aws, worker_context):
+    def test_a_run_that_deleted_nothing_never_reads_the_projects(self, aws, worker_context):
         _artifact(aws, 'PERSONA#a', input_feedback_ids=['f1'])
-        with patch.object(lineage, 'scan_page') as scan:
+        with patch.object(lineage, 'deployment_step') as step:
             handler.handle_event(_job(aws, 'author', 'Nobody', legal_basis=BASIS), worker_context)
-        scan.assert_not_called()
+        step.assert_not_called()
 
     def test_an_artifact_changed_meanwhile_is_left_for_the_next_run(self, aws):
         _artifact(aws, 'PERSONA#a', input_feedback_ids=['f1', 'f2'])
@@ -259,14 +263,15 @@ class TestLineage:
         _artifact(aws, 'PERSONA#a', input_feedback_ids=['f1'])
         _artifact(aws, 'PERSONA#b', input_feedback_ids=['f1'])
         event = _job(aws, 'author', 'Jane', legal_basis=BASIS)
-        # Budget for the one item only; the lineage pass hands over after its first one-row page.
-        budget = iter([900_000])
+        # Budget for the one item and the pass's first two steps (how its projects are found: no backfill marker, so
+        # by the projects' Scan; then the page of its projects): it hands over carrying the project still to read.
+        budget = iter([900_000, 900_000])
         worker_context.get_remaining_time_in_millis.side_effect = lambda: next(budget, 0)
         with patch.object(lineage, 'PAGE_SIZE', 1):
             assert handler.handle_event(event, worker_context)['status'] == 'continued'
             payload = invoke_mock.call_args.args[1]
-            assert (payload['phase'], payload['run']['artifacts_marked']) == ('lineage', 1)
-            assert payload['cursor']
+            assert (payload['phase'], payload['run']['artifacts_marked']) == ('lineage', 0)
+            assert (payload['cursor']['found'], payload['cursor']['ids']) == ('scan', ['p1'])
             worker_context.get_remaining_time_in_millis.side_effect = None
             assert handler.handle_event(payload, worker_context)['artifacts_marked'] == 2
 

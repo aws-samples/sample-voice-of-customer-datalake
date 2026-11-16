@@ -107,6 +107,7 @@ class TestTheAuditRow:
             'deleted_items': 2, 'deleted_objects': 3, 'deleted_radar_items': 4, 'artifacts_marked': 5, 'scanned': 7,
             'started_at': 'S', 'finished_at': NOW, 'job_id': JOB_ID, 'field': 'author', 'source': 'web',
             'value_hash': 'h', 'cutoffs': {'t': 'd'}, 'legal_basis': 'GDPR art. 17', 'legal_bases': {'t': 'DPA'},
+            # No deployment_projects_walked: an erasure by author of one source never walks the deployment's projects.
             'erased_sources': ['web'],
             'files_needing_review': {'count': 1, 'keys': ['raw/csv_upload/k.csv'], 'more': False},
             'error': 'boom'})

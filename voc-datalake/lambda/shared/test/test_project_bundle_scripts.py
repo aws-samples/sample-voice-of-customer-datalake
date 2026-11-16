@@ -204,6 +204,32 @@ class TestRoundTrip:
         assert sorted(_target_keys(world)) == sorted(
             [AVATAR_KEY, f'prototypes/{PID}/{PROTO_ID}.html', f'projects/{PID}/product_docs/raw/brief.pdf'])
 
+    def test_import_lists_each_imported_series_in_the_deployments_series_registry(self, world):
+        """7.44.00 (3g-d): an erasure by email finds a deployment's comment partitions through COMMENT_SERIES_IDS, so
+        an imported thread's series is listed before the threads are written; a row already there is kept."""
+        _export(world, PID)
+        assert _import(world) == 0
+        listed = _partition(world['tables']['tgt-p'], 'COMMENT_SERIES_IDS')
+        assert [(row['sk'], row['project_id'], row['series_id']) for row in listed] == [
+            (f'{PID}#{SERIES}', PID, SERIES)]
+
+    def test_import_lists_the_project_in_the_deployments_project_registry(self, world):
+        """7.44.00 (3g-d): an erasure by email finds a deployment's projects, a deleted one too, through PROJECT_IDS,
+        so an imported project is listed (with its META's created_at, else the import's time) before its rows are
+        written."""
+        _export(world, PID)
+        assert _import(world) == 0
+        [listed] = _partition(world['tables']['tgt-p'], 'PROJECT_IDS')
+        assert (listed['sk'], sorted(listed), bool(listed['created_at'])) == (PID, ['created_at', 'pk', 'sk'], True)
+
+    def test_an_imported_series_already_listed_keeps_its_row(self, world):
+        _export(world, PID)
+        kept = {'pk': 'COMMENT_SERIES_IDS', 'sk': f'{PID}#{SERIES}', 'project_id': PID, 'series_id': SERIES,
+                'listed_at': 'earlier'}
+        world['tables']['tgt-p'].put_item(Item=kept)
+        assert _import(world) == 0
+        assert _partition(world['tables']['tgt-p'], 'COMMENT_SERIES_IDS') == [kept]
+
     def test_a_prototype_draft_is_in_no_bundle(self, world):
         assert _export(world, PID) == 0
         bundle = world['bundle']
@@ -371,6 +397,10 @@ class TestNewIds:
         prd = next(r for r in rows if r['sk'].startswith('PRD#'))
         assert prd['document_id'] == versioned_document_id(new_pid, 'prd', 'alloc_1')
         assert any(r['pk'] == f'DCOMMENTS#{new_pid}#{series_id(new_pid, "prd", "Checkout PRD")}' for r in rows)
+        # The series registry names the rewritten series (7.44.00).
+        assert [r['sk'] for r in rows if r['pk'] == 'COMMENT_SERIES_IDS'] == [
+            f'{new_pid}#{series_id(new_pid, "prd", "Checkout PRD")}']
+        assert [r['sk'] for r in rows if r['pk'] == 'PROJECT_IDS'] == [new_pid]
         proto = next(r for r in rows if r['sk'].startswith('PROTOTYPE#'))
         assert proto['source_document_id'] == prd['document_id']
         form = world['tables']['tgt-a'].get_item(Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{pin_form_id(proto["document_id"])}'})
@@ -397,3 +427,109 @@ class TestPieces:
         fixed = _remap().fix_legacy_assignment({'sk': 'LEGACY_ASSIGNMENT#PRD#abc#old', 'source_document_sk': 'PRD#d2'})
         assert fixed['sk'].startswith('LEGACY_ASSIGNMENT#PRD#abc#')
         assert not fixed['sk'].endswith('#old')
+
+
+class TestTheRegistryRowsOfAPlainImport:
+    """A plain import needs Python 3.12 and boto3 only (docs/project-export.md): its registry puts are boto3's own,
+    their rows the shared builders', and they come before any object or row of the project (7.44.00)."""
+
+    def test_the_rows_are_the_ones_the_stores_put(self, world):
+        from shared.document_comments import list_deployment_series
+        from shared.project_writes import register_deployment_project
+
+        importer = sys.modules['project_bundle.importer']
+        projects = world['tables']['tgt-p']
+        importer.list_imported_project(projects, 'proj_imported_0001', '2026-01-01T00:00:00+00:00')
+        register_deployment_project(world['tables']['src-p'], 'proj_imported_0001', '2026-01-01T00:00:00+00:00')
+        thread = {'pk': f'DCOMMENTS#proj_imported_0001#{SERIES}', 'sk': 'C#dc_1'}
+        importer.list_copied_series(projects, [thread], listed_at='2026-01-02T00:00:00+00:00')
+        list_deployment_series(world['tables']['src-p'], 'proj_imported_0001', SERIES)
+
+        def registries(table: Any) -> list[dict[str, Any]]:
+            return [row for row in _rows(table) if row['pk'] in ('PROJECT_IDS', 'COMMENT_SERIES_IDS')]
+
+        imported, stored = registries(projects), registries(world['tables']['src-p'])
+        assert sorted(sorted(row) for row in imported) == sorted(sorted(row) for row in stored)
+        assert [{k: v for k, v in row.items() if k != 'listed_at'} for row in sorted(imported, key=str)] == [
+            {k: v for k, v in row.items() if k != 'listed_at'} for row in sorted(stored, key=str)]
+
+    def test_a_row_already_there_is_kept(self, world):
+        importer = sys.modules['project_bundle.importer']
+        kept = {'pk': 'PROJECT_IDS', 'sk': PID, 'created_at': 'earlier'}
+        world['tables']['tgt-p'].put_item(Item=kept)
+        importer.list_imported_project(world['tables']['tgt-p'], PID, 'later')
+        assert _partition(world['tables']['tgt-p'], 'PROJECT_IDS') == [kept]
+
+    def test_the_registry_rows_go_before_the_objects(self, world):
+        _export(world, PID)
+        importer_module = sys.modules['project_bundle.importer']
+        seen: list[int] = []
+        real = importer_module.Importer.write
+
+        def noted(self: Any, plan: Any) -> None:
+            put_object = self.s3.put_object
+
+            def first_put(**kwargs: Any) -> Any:
+                seen.append(len(_partition(world['tables']['tgt-p'], 'PROJECT_IDS')))
+                return put_object(**kwargs)
+
+            self.s3 = type('S3', (), {'put_object': staticmethod(first_put)})()
+            real(self, plan)
+
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(importer_module.Importer, 'write', noted)
+            assert _import(world) == 0
+        assert seen
+        assert all(count == 1 for count in seen)
+
+    def test_the_plain_path_imports_no_lambda_dependency(self, tmp_path):
+        """In a fresh interpreter with the Lambda dependencies refused (powertools, shared/aws.py, shared/logging.py),
+        the importer's registry puts run, and the only modules of shared/ loaded are project_keys and its stdlib
+        helpers."""
+        import subprocess
+
+        probe = tmp_path / 'probe.py'
+        probe.write_text(PLAIN_PATH_PROBE)
+        scripts_dir = repo_root() / 'scripts'
+        done = subprocess.run(  # noqa: S603 (this interpreter, a fixed program)
+            [sys.executable, '-I', str(probe), str(scripts_dir)], capture_output=True, text=True, timeout=60,
+            check=False)
+        assert (done.returncode, done.stderr) == (0, '')
+        assert json.loads(done.stdout) == {
+            'puts': 2, 'shared': ['shared', 'shared.digests', 'shared.project_keys', 'shared.review_share_audience',
+                                  'shared.scoped_keys']}
+
+
+PLAIN_PATH_PROBE = """
+import importlib.abc
+import json
+import sys
+
+REFUSED = ('aws_lambda_powertools', 'shared.aws', 'shared.logging', 'shared.project_writes',
+           'shared.document_comments')
+
+
+class Refuse(importlib.abc.MetaPathFinder):
+    def find_spec(self, name, path=None, target=None):
+        if name in REFUSED or name.startswith(REFUSED[0] + '.'):
+            raise ImportError(f'{name} is a Lambda dependency')
+        return None
+
+
+sys.meta_path.insert(0, Refuse())
+sys.path.insert(0, sys.argv[1])
+from project_bundle import importer
+
+
+class Table:
+    puts = 0
+
+    def put_item(self, **kwargs):
+        Table.puts += 1
+
+
+table = Table()
+importer.list_imported_project(table, 'proj_plain_0001', '2026-01-01T00:00:00+00:00')
+importer.list_copied_series(table, [{'pk': 'DCOMMENTS#proj_plain_0001#ser_' + 'a' * 24, 'sk': 'C#dc_1'}])
+print(json.dumps({'puts': Table.puts, 'shared': sorted(n for n in sys.modules if n.split('.')[0] == 'shared')}))
+"""

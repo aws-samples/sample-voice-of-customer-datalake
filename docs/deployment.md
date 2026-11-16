@@ -425,6 +425,17 @@ npx cdk deploy --all --require-approval never && bash scripts/refresh-api-stage.
 
 A clean `cdk synth`/`cdk deploy` prints **zero warnings**. Treat a new warning as something to investigate.
 
+**Rolling back one stack below 7.44.00, or importing a bundle from an older checkout (the review registries' marker).**
+Since 7.44.00 the deployment's erasure by email finds the deployment's projects, review links and commented series
+through registries that the projects API keeps, once the operator's backfill has written its marker
+(`voc-datalake/scripts/projects/backfill_review_registries.py`, CHANGELOG 7.44.00). A writer older than 7.44.00
+keeps none of them. Rolling the whole release back (every stack from the older checkout) deletes the marker by
+itself (VocCoreStack's reset, `lib/stacks/review-registries-marker.ts`), but deploying an older VocApiStack alone
+does not, nor does a project bundle imported from an older checkout: before either, run
+`.venv/bin/python scripts/projects/backfill_review_registries.py --unmark` from `voc-datalake/`, so the erasures go
+back to their own Scans until the backfill runs again after the next upgrade. Without it an erasure trusts registries
+that miss what the older writer made meanwhile.
+
 ### Two Deployments in One Account and Region
 
 Every physical name is `{base}-{account}-{region}`, which keeps two AWS accounts

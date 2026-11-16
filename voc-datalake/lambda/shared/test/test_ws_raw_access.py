@@ -268,6 +268,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/jobs/retention/boards.py': (3, {'raw/': 1}),
     'lambda/jobs/retention/boards_rekey.py': (3, {'meta.client': 1, 'transact': 1}),
     'lambda/jobs/retention/handler.py': (3, {'Table': 3}),
+    # 7.44.00 (3g-d): the deployment's walks' one read of the backfill's marker (deployment_found), on voc-projects
+    # seen as itself (the marker is the deployment's; no workspace has one), shared by the erasure and the lineage pass.
+    'lambda/jobs/retention/workspaces.py': (3, {'ingest_table(None)': 1}),
     # 4d-2: the deployment's category and dimension settings (SETTINGS#categories, SETTINGS#dimensions), read for
     # the closed counter families the delete lists; they move to the workspace with the settings (phase 3).
     # Table: voc-projects (7.28.00), handed only to the layer's own project-id calls, which build their keys

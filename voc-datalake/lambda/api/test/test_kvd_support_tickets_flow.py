@@ -33,7 +33,7 @@ from processor import handler as processor
 from shared.api import clear_categories_cache
 from shared.category_access import access_key
 from shared.test.clock import today_utc
-from shared.test.moto_tables import create_pk_sk_table
+from shared.test.moto_tables import create_pk_sk_table, create_projects_table_with_type_index
 
 SUPPORT = {'id': 'support_tickets', 'label': 'Support tickets', 'pii': 'redact', 'restricted': True,
            'retention_days': 365}
@@ -206,7 +206,8 @@ def retention_tables() -> Iterator[dict]:
         tables = {'feedback': create_pk_sk_table(retention.FEEDBACK_TABLE, resource),
                   'aggregates': create_pk_sk_table(retention.AGGREGATES_TABLE, resource)}
         if retention.PROJECTS_TABLE:  # the lineage phase marks artifacts that cited a deleted item (6.00.00)
-            tables['projects'] = create_pk_sk_table(retention.PROJECTS_TABLE, resource)
+            # With gsi1-by-type, as core-stack.ts: the lineage pass finds the deployment's projects there (7.44.00).
+            tables['projects'] = create_projects_table_with_type_index(retention.PROJECTS_TABLE, resource)
         tables['aggregates'].put_item(Item=PROFILES_ROW)
         with patch.object(retention, 'get_dynamodb_resource', return_value=resource), \
                 patch.object(retention, 'get_s3_client', return_value=s3), \

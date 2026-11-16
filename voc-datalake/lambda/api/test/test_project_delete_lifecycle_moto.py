@@ -13,6 +13,7 @@ deleted.
 from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from moto import mock_aws
@@ -136,6 +137,41 @@ class TestRowsAndTombstone:
         assert (audit['kind'], audit['target'], audit['actor']) == (
             'project', {'project_id': 'proj-1'}, {'sub': 'system', 'kind': 'system'})
         assert 'ttl' not in audit
+
+    def test_the_objects_go_before_the_rows(self, world):
+        """7.44.00 (round 3): a delete stopped between the two leaves a product document's record without its
+        objects (which an erasure lists as not checked), never its extracted text without a record."""
+        import projects
+
+        world.seed_project('proj-1', ('persona_1',))
+        world.projects.put_item(Item={'pk': 'PROJECT#proj-1', 'sk': 'PRODUCT_DOC#d1'})
+        world.put('projects/proj-1/product_docs/extracted/d1.txt')
+        seen: list[bool] = []
+        real = projects._sweep_project_objects
+
+        def noted(project_id: str, persona_ids: list[str]) -> None:
+            seen.append('Item' in world.projects.get_item(Key={'pk': 'PROJECT#proj-1', 'sk': 'PRODUCT_DOC#d1'}))
+            assert persona_ids == ['persona_1']
+            real(project_id, persona_ids)
+
+        with patch.object(projects, '_sweep_project_objects', noted):
+            _delete('proj-1')
+
+        assert seen == [True]
+        assert world.stored_keys() == set()
+
+    def test_the_delete_takes_the_project_off_the_index_and_keeps_its_registry_row(self, world):
+        """7.44.00 (3g-d): the tombstoned META leaves ``gsi1-by-type`` (the fence removes its index keys), so the
+        erasure finds a deleted project through ``PROJECT_IDS``, which the delete never touches."""
+        world.projects.put_item(Item={'pk': 'PROJECT#proj-1', 'sk': 'META', 'project_id': 'proj-1',
+                                      'gsi1pk': 'TYPE#PROJECT', 'gsi1sk': 'x', 'owner_email': 'lead@example.com'})
+        world.projects.put_item(Item={'pk': 'PROJECT_IDS', 'sk': 'proj-1', 'created_at': 'x'})
+
+        _delete('proj-1')
+
+        meta = world.projects.get_item(Key={'pk': 'PROJECT#proj-1', 'sk': 'META'})['Item']
+        assert ('gsi1pk' in meta, meta['owner_email']) == (False, 'lead@example.com')
+        assert 'Item' in world.projects.get_item(Key={'pk': 'PROJECT_IDS', 'sk': 'proj-1'})
 
 
 @pytest.mark.parametrize(('sort_key', 'expected'), [

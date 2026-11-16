@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Generator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
@@ -50,7 +52,7 @@ from shared.project_keys import (
     review_link_key,
     review_link_registry_key,
 )
-from shared.project_writes import create_workspace_project
+from shared.project_writes import create_workspace_project, register_deployment_project
 from shared.retention import BOARD_COUNTER, DOCS_NOT_CHECKED_COUNTER, MALFORMED_ID_COUNTER, PROJECT_COUNTER
 from shared.review_share_audience import audience_admits
 from shared.ws_repo import OutOfScopeError, WorkspaceScope
@@ -137,8 +139,70 @@ def _seed(aws) -> dict[tuple[str, str], dict[str, Any]]:
     return links
 
 
-def _threads(aws, project_id: str, scope: WorkspaceScope) -> list[dict[str, Any]]:
-    pk = comments_pk(project_id, SERIES['series_id'], workspace=scope)
+#: The deployment's own projects (7.44.00, 3g-d): a live one, and a deleted one whose threads outlived its partition.
+DEP_LIVE, DEP_GONE = 'proj_dep_000005', 'proj_dep_gone_000006'
+#: A second series of the live project, whose link was revoked (its series' pointer deleted).
+SERIES_TWO: Final = {'series_id': 'ser_' + 'b' * 24, 'document_type': 'prd', 'base_title': 'Pricing'}
+#: The deployment project's team (role labels, no person's name) and the reviewer's display name.
+LEAD: Final = 'Project lead'
+REVIEWER_NAME: Final = 'Partner reviewer'
+DEP_OWNER: Final = 'Lead@Example.com'
+DEP_MEMBER: Final = 'editor@example.com'
+
+
+def _dep_docs(project_id: str) -> str:
+    return f'projects/{project_id}/product_docs/'
+
+
+def _seed_deployment(aws) -> dict[str, dict[str, Any]]:
+    """The deployment's own rows, written by their own stores (no workspace): a project ``META`` naming the owner and a
+    member by address; a link naming the reviewer and a revoked one; the reviewer's thread and reply and a member's
+    thread; a persona whose research note the reviewer is the author of; three product documents (a PDF whose text
+    names the reviewer, an image whose description does not, a PDF not extracted yet); and a deleted project whose
+    partition its delete emptied, leaving its series' threads. The links by name."""
+    deployment_project(aws, DEP_LIVE, owner_sub='sub-lead', owner_username='lead', owner_email=DEP_OWNER,
+                       members={'sub-editor': {'role': 'editor', 'username': 'editor', 'email': DEP_MEMBER}})
+    creator = {'sub': 'sub-lead', 'name': LEAD}
+    live, _ = ds.create_share(aws['projects'], project_id=DEP_LIVE, series=SERIES, document_id='doc_1', creator=creator,
+                              values=ds.validate_share_body({'audience': {
+                                  'mode': 'list', 'emails': [REVIEWER, OTHER_REVIEWER], 'domains': ['partner.example']}}))
+    revoked, _ = ds.create_share(aws['projects'], project_id=DEP_LIVE, series=SERIES_TWO, document_id='doc_2',
+                                 creator=creator, values=ds.validate_share_body(
+                                     {'audience': {'mode': 'list', 'emails': [REVIEWER]}}))
+    assert ds.revoke_share(aws['projects'], DEP_LIVE, SERIES_TWO['series_id'], LEAD)
+    document = {'document_id': 'doc_1', 'version': 1}
+    for project_id in (DEP_LIVE, DEP_GONE):
+        member = comments.thread_item(project_id=project_id, series_id=SERIES['series_id'], document=document,
+                                      author=comments.user_author('sub-lead', LEAD), text='Member note', anchor=None)
+        member['replies'] = [comments.reply_item(comments.reviewer_author(REVIEWER), 'A reviewer reply.')]
+        reviewer = comments.thread_item(project_id=project_id, series_id=SERIES['series_id'], document=document,
+                                        author=comments.reviewer_author(REVIEWER, REVIEWER_NAME), text='Reviewer note',
+                                        anchor=None, share_id=live['share_id'])
+        for thread in (member, reviewer):
+            comments.put_thread(aws['projects'], thread)
+    # The deleted project: its META tombstoned (off the index, kept in PROJECT_IDS), its partition emptied by its
+    # delete.
+    deployment_project(aws, DEP_GONE, status='deleted', deleted_at=STAMP, owner_email=REVIEWER)
+    own, folder = project_pk(DEP_LIVE), _dep_docs(DEP_LIVE)
+    for item in (
+        {'pk': own, 'sk': 'PERSONA#per_1', 'persona_id': 'per_1', 'input_feedback_ids': ['f1', 'f2'],
+         'research_notes': [{'note_id': 'n1', 'author': REVIEWER, 'text': 'Asked them'}]},
+        {'pk': own, 'sk': 'PRODUCT_DOC#pd_1', 'status': 'ready', 'content_type': 'application/pdf',
+         's3_raw_key': f'{folder}raw/pd_1.pdf', 's3_extracted_key': f'{folder}extracted/pd_1.txt', 'filename': 'a.pdf'},
+        {'pk': own, 'sk': 'PRODUCT_DOC#pd_2', 'status': 'ready', 'content_type': 'image/png',
+         's3_raw_key': f'{folder}raw/pd_2.png', 's3_extracted_key': f'{folder}extracted/pd_2.txt', 'filename': 'b.png'},
+        {'pk': own, 'sk': 'PRODUCT_DOC#pd_3', 'status': 'pending', 'content_type': 'application/pdf',
+         's3_raw_key': f'{folder}raw/pd_3.pdf', 'filename': 'c.pdf'},
+    ):
+        aws['projects'].put_item(Item=item)
+    aws['s3'].put_object(Bucket=BUCKET, Key=f'{folder}extracted/pd_1.txt', Body=f'Ask {REVIEWER} first.'.encode())
+    aws['s3'].put_object(Bucket=BUCKET, Key=f'{folder}extracted/pd_2.txt', Body=b'A chart of sign-ups by week.')
+    return {'live': live, 'revoked': revoked}
+
+
+def _threads(aws, project_id: str, scope: WorkspaceScope | None, series: str = SERIES['series_id']) -> list[
+        dict[str, Any]]:
+    pk = comments_pk(project_id, series, workspace=scope)
     rows = aws['projects'].query(KeyConditionExpression=Key('pk').eq(pk) & Key('sk').begins_with('C#'))['Items']
     return sorted(rows, key=lambda row: row['text'])
 
@@ -147,7 +211,7 @@ def _row(aws, key: dict[str, str]) -> dict[str, Any]:
     return aws['projects'].get_item(Key=key)['Item']
 
 
-def _meta(aws, project_id: str, scope: WorkspaceScope) -> dict[str, Any]:
+def _meta(aws, project_id: str, scope: WorkspaceScope | None) -> dict[str, Any]:
     return _row(aws, {'pk': project_pk(project_id, workspace=scope), 'sk': 'META'})
 
 
@@ -157,6 +221,23 @@ def _persona(aws, project_id: str, scope: WorkspaceScope) -> dict[str, Any]:
 
 def _erase_by_email(aws, context, value: str = REVIEWER, job_id: str = JOB_ID) -> dict[str, Any]:
     return handler.handle_event(erasure_job(aws, job_id, 'email', value, legal_basis=BASIS), context)
+
+
+@contextmanager
+def scans_of(aws) -> Generator[list[str]]:
+    """Every Scan the job sends to voc-projects, by table name (the handler's resource shares this client)."""
+    seen: list[str] = []
+
+    def record(params: dict[str, Any], **_kwargs: Any) -> None:
+        if params.get('TableName') == PROJECTS_TABLE:
+            seen.append(str(params['TableName']))
+
+    events = aws['projects'].meta.client.meta.events
+    events.register('provide-client-params.dynamodb.Scan', record)
+    try:
+        yield seen
+    finally:
+        events.unregister('provide-client-params.dynamodb.Scan', record)
 
 
 def _done_records(aws) -> dict[str, dict[str, Any]]:
@@ -545,12 +626,15 @@ class TestTheWrites:
 
     def test_every_update_names_only_the_attributes_iam_allows(self, aws, worker_context):
         """Every UpdateItem the job sends to voc-projects names the attributes of one of the two statements IAM grants
-        (retention-worker.ts): the lineage marks' (``LINEAGE_UPDATE_ATTRIBUTES``, any partition), or the
-        de-identification's (``PEOPLE_UPDATE_ATTRIBUTES``, a workspace's ``PROJECT#``, ``DCOMMENTS#`` or ``DOCSHARE#``
-        partition only); each list is the TypeScript one of the same name."""
+        (retention-worker.ts): the lineage marks' (``LINEAGE_UPDATE_ATTRIBUTES``, the deployment's or a workspace's
+        ``PROJECT#`` partition only, since 7.44.00), or the de-identification's (``PEOPLE_UPDATE_ATTRIBUTES``, the
+        deployment's or a workspace's ``PROJECT#``, ``DCOMMENTS#`` or ``DOCSHARE#`` partition only); each list is the
+        TypeScript one of the same name."""
         _seed(aws)
+        _seed_deployment(aws)
         put_workspace_feedback(aws, WS, 'f1', metadata={'email': REVIEWER})
         put_feedback(aws, 'fd', metadata={'email': REVIEWER})
+        deployment_project(aws, 'dep')
         aws['projects'].put_item(Item={'pk': 'PROJECT#dep', 'sk': 'PERSONA#a', 'input_feedback_ids': ['fd']})
         sent: list[tuple[str, set[str]]] = []
 
@@ -565,11 +649,17 @@ class TestTheWrites:
         assert (result[PROJECT_COUNTER] > 0, result['artifacts_marked'] > 0) == (True, True)
         lineage_names, people_names = set(lineage.LINEAGE_UPDATE_ATTRIBUTES), set(
             project_people.PEOPLE_UPDATE_ATTRIBUTES)
-        people_partition = re.compile(rf'^WS#{WS}#(PROJECT|DCOMMENTS|DOCSHARE)#|^WS#{WS_TWO}#(PROJECT|DCOMMENTS|DOCSHARE)#')
-        assert [(pk, names) for pk, names in sent if not (names <= lineage_names or (
-            names <= people_names and people_partition.match(pk)))] == []
+        scopes = rf'(WS#{WS}#|WS#{WS_TWO}#)?'
+        people_partition = re.compile(rf'^{scopes}(PROJECT|DCOMMENTS|DOCSHARE)#')
+        lineage_partition = re.compile(rf'^{scopes}PROJECT#')
+        assert [(pk, names) for pk, names in sent if not (
+            (names <= lineage_names and lineage_partition.match(pk))
+            or (names <= people_names and people_partition.match(pk)))] == []
         named = {name for _pk, names in sent for name in names}
         assert {'author', 'erased_evidence'} <= named
+        # The deployment's rows were written too: a thread, a link, a META, and a lineage mark.
+        assert {pk.split('#')[0] for pk, _names in sent if not pk.startswith('WS#')} == {
+            'PROJECT', 'DCOMMENTS', 'DOCSHARE'}
         source = RETENTION_WORKER.read_text(encoding='utf-8')
         for name, listed in (('LINEAGE_UPDATE_ATTRIBUTES', lineage.LINEAGE_UPDATE_ATTRIBUTES),
                              ('PEOPLE_UPDATE_ATTRIBUTES', project_people.PEOPLE_UPDATE_ATTRIBUTES)):
@@ -604,6 +694,16 @@ def _projects_and_tombstones(aws) -> dict[str, Any]:
             'tombstones': sorted(tombstones, key=lambda row: str(row['sk']))}
 
 
+def reseed(aws, rows: list[dict[str, Any]]) -> None:
+    """voc-projects holding ``rows`` again, and voc-aggregates emptied: a walk's tables as they were before it."""
+    for row in aws['projects'].scan()['Items']:
+        aws['projects'].delete_item(Key={'pk': row['pk'], 'sk': row['sk']})
+    for row in rows:
+        aws['projects'].put_item(Item=row)
+    for row in aws['aggregates'].scan()['Items']:
+        aws['aggregates'].delete_item(Key={'pk': row['pk'], 'sk': row['sk']})
+
+
 def _one_row_pages():
     """Every page one row: the listing, the registries, the series lists, the threads, the documents."""
     return patch.multiple(project_walk, ID_PAGE=1), patch.multiple(project_people, ID_PAGE=1, DOCS_PAGE=1), \
@@ -619,12 +719,7 @@ class TestTheWalkHandsOver:
         before = aws['projects'].scan()['Items']
         run, _steps = _walk_to_the_end(aws, hand_over_each_step=False)
         after = _projects_and_tombstones(aws)
-        for row in aws['projects'].scan()['Items']:
-            aws['projects'].delete_item(Key={'pk': row['pk'], 'sk': row['sk']})
-        for row in before:
-            aws['projects'].put_item(Item=row)
-        for row in aws['aggregates'].scan()['Items']:
-            aws['aggregates'].delete_item(Key={'pk': row['pk'], 'sk': row['sk']})
+        reseed(aws, before)
         return after, run
 
     def test_a_walk_resumed_after_every_step_ends_as_one_that_never_was(self, aws, one_shot):
@@ -647,7 +742,7 @@ class TestTheWalkHandsOver:
         _seed(aws)
         pk = comments_pk(LIVE, SERIES['series_id'], workspace=A)
         member, reviewer = sorted(_threads(aws, LIVE, A), key=lambda row: row['sk'])
-        cursor = {'ws': [WS], 'listing_done': True, 'at': {
+        cursor = {'ws': [WS], 'listing_done': True, 'deployment_done': True, 'at': {
             'links_done': True, 'ids': [LIVE], 'part': 'series', 'series': [SERIES['series_id']],
             'start': {'pk': pk, 'sk': member['sk']}}}
 
@@ -714,7 +809,7 @@ class TestTheWalkHandsOver:
                        {'ws': [WS], 'at': {'links_done': True, 'ids': [LIVE], 'part': 'series', 'series': ['ser_x']}},
                        {'ws': [WS], 'at': {'links_done': True, 'ids': [LIVE] * 101}}):
             with pytest.raises(ValueError, match='not a page of ids'):
-                eraser.step(cursor)
+                eraser.step({**cursor, 'deployment_done': True})
 
     @pytest.mark.parametrize(('cursor', 'message'), [
         ({'ws': [], 'listing': 'not a key'}, 'not a map'),
@@ -723,7 +818,7 @@ class TestTheWalkHandsOver:
     ])
     def test_a_carried_cursor_of_the_wrong_shape_fails_the_step(self, aws, cursor, message):
         with pytest.raises(ValueError, match=message):
-            project_people.ProjectPeopleEraser(_run(), _tables(aws), REVIEWER).step(cursor)
+            project_people.ProjectPeopleEraser(_run(), _tables(aws), REVIEWER).step({**cursor, 'deployment_done': True})
 
     @pytest.mark.parametrize('cursor', [
         {'ws': [WS_TWO], 'listing_done': True, 'at': {}},
@@ -801,11 +896,13 @@ class TestTheWorkspacesLineage:
         put_workspace_feedback(aws, WS, 'f1', metadata={'email': 'jane@example.com'})
         aws['projects'].put_item(Item={'pk': project_pk('company_personas', workspace=A), 'sk': 'PERSONA#lib',
                                        'input_feedback_ids': ['f1']})
+        # The backfill ran (7.44.00): the deployment's links and series are found by Query too.
+        with_marker(aws)
 
-        with patch.object(lineage, 'scan_page', wraps=lineage.scan_page) as scan:
+        with scans_of(aws) as scanned:
             result = _erase_by_email(aws, worker_context, 'jane@example.com')
 
-        scan.assert_not_called()
+        assert scanned == []
         assert result['artifacts_marked'] == 1
         assert _row(aws, {'pk': project_pk('company_personas', workspace=A), 'sk': 'PERSONA#lib'})[
             'input_feedback_ids'] == []
@@ -874,21 +971,86 @@ class TestTheWorkspacesLineage:
             lineage.mark_artifact(aws['projects'], row, {'f1'}, _run(), A)
 
 
-class TestTheDeploymentsLineageReadsAsBefore:
-    def test_the_scan_request_is_the_one_sent_before(self):
-        table = MagicMock()
-        lineage.scan_page(table, {'pk': 'x', 'sk': 'y'})
-        kwargs = table.scan.call_args.kwargs
-        assert {name: kwargs[name] for name in ('Limit', 'ProjectionExpression', 'ExpressionAttributeNames',
-                                                 'ExclusiveStartKey')} == {
-            'Limit': 100, 'ProjectionExpression': '#pk, #sk, #ids, #cited, #requests, #mark',
-            'ExpressionAttributeNames': {'#pk': 'pk', '#sk': 'sk', '#ids': 'input_feedback_ids',
-                                         '#cited': 'evidence_feedback_ids', '#requests': 'input_feature_request_ids',
-                                         '#mark': 'erased_evidence'},
-            'ExclusiveStartKey': {'pk': 'x', 'sk': 'y'}}
+def deployment_project(aws, project_id: str, **meta: Any) -> None:
+    """A deployment project as api/projects.py ``create_project`` writes it: listed in ``PROJECT_IDS`` (the same
+    writer), then its ``META`` on ``gsi1-by-type``; one whose ``status`` is ``deleting`` or ``deleted`` as the
+    delete's fence leaves it (``_start_project_deletion`` removes ``gsi1pk`` and ``gsi1sk``)."""
+    register_deployment_project(aws['projects'], project_id, STAMP)
+    index = {} if meta.get('status') in ('deleting', 'deleted') else {'gsi1pk': project_type_pk(), 'gsi1sk': STAMP}
+    aws['projects'].put_item(Item={'pk': project_pk(project_id), 'sk': 'META', 'project_id': project_id,
+                                   'created_at': STAMP, **index, **meta})
+
+
+def with_marker(aws) -> None:
+    """The backfill's complete marker (shared/review_registries.py ``marker_complete``)."""
+    aws['projects'].put_item(Item={'pk': 'DOCSHARE_IDS', 'sk': 'MIGRATION#review-registries', 'completed_at': STAMP,
+                                   'links_found': 0, 'series_found': 0, 'projects_found': 0, 'release': '7.44.0'})
+
+
+class TestTheDeploymentsLineageByQuery:
+    """Since 7.44.00 (3g-d) the deployment's pass reads its projects through ``PROJECT_IDS`` (a deleted or half-deleted
+    one too: the delete takes it off ``gsi1-by-type``, never off the registry) and each one's own partition by Query,
+    the persona library too; until the backfill's marker is there, it finds the projects by its own Scan."""
+
+    @pytest.mark.parametrize('backfilled', [False, True])
+    def test_the_pass_marks_its_projects_a_half_deleted_one_and_the_library(self, aws, worker_context, backfilled):
+        put_feedback(aws, 'f1', author='Reviewer One')
+        deployment_project(aws, 'p1')
+        deployment_project(aws, 'p2', status='deleting')  # the fence ran, the sweep did not finish
+        if backfilled:
+            with_marker(aws)
+        for pk in ('PROJECT#p1', 'PROJECT#p2', 'PROJECT#company_personas'):
+            aws['projects'].put_item(Item={'pk': pk, 'sk': 'PERSONA#a', 'input_feedback_ids': ['f1', 'f9']})
+        aws['projects'].put_item(Item={'pk': 'PROJECT#p1', 'sk': 'PRD#d', 'input_feature_request_ids': ['fr_1']})
+
+        with scans_of(aws) as scanned:
+            result = handler.handle_event(erasure_job(aws, JOB_ID, 'author', 'Reviewer One', legal_basis=BASIS),
+                                          worker_context)
+
+        # By Query once the backfill ran; until then, one Scan of the projects' META rows.
+        assert scanned == ([] if backfilled else ['test-projects'])
+        assert result['artifacts_marked'] == 3
+        for pk in ('PROJECT#p1', 'PROJECT#p2', 'PROJECT#company_personas'):
+            assert _row(aws, {'pk': pk, 'sk': 'PERSONA#a'})['input_feedback_ids'] == ['f9']
+
+    def test_its_steps_hand_over_and_resume_with_one_row_pages(self, aws):
+        aws['aggregates'].put_item(Item={'pk': 'AUDIT#tombstone#web', 'sk': 'f1'})
+        for project_id in ('p1', 'p2', 'p3'):
+            deployment_project(aws, project_id)
+            for n in range(2):
+                aws['projects'].put_item(Item={'pk': project_pk(project_id), 'sk': f'PRD#d{n}',
+                                               'input_feedback_ids': ['f1'] if n else ['f9']})
+        with_marker(aws)
+        run, cursor, steps = {**_run(), 'erased_sources': ['web']}, None, 0
+        with patch.object(lineage, 'PAGE_SIZE', 1), patch.object(project_walk, 'ID_PAGE', 1):
+            while steps < 200:
+                steps += 1
+                cursor = lineage.deployment_step(aws['projects'], aws['aggregates'], run,
+                                                 json.loads(json.dumps(cursor, default=str)) if cursor else None)
+                if cursor is None:
+                    break
+        assert (run['artifacts_marked'], steps > 10) == (3, True)
+        assert lineage.deployment_step(aws['projects'], aws['aggregates'], run, {
+            'found': 'registry', 'projects_done': True, 'library': True}) is None
+
+    def test_a_cursor_of_the_scan_before_starts_the_pass_again(self, aws):
+        """A hand-over across the upgrade carries the old Scan's row key: the pass starts from the top."""
+        deployment_project(aws, 'p1')
+        with_marker(aws)
+        found = lineage.deployment_step(aws['projects'], aws['aggregates'], _run(), {'pk': 'PROJECT#x', 'sk': 'y'})
+        assert found == {'found': 'registry'}
+        moved = lineage.deployment_step(aws['projects'], aws['aggregates'], _run(), found)
+        assert (moved or {}).get('ids') == ['p1']
+
+    def test_a_registry_row_not_shaped_like_a_project_is_counted(self, aws):
+        aws['projects'].put_item(Item={'pk': 'PROJECT_IDS', 'sk': 'bad#id'})
+        run = _run()
+        moved = lineage.deployment_step(aws['projects'], aws['aggregates'], run, {'found': 'registry'})
+        assert ((moved or {}).get('ids'), run[MALFORMED_ID_COUNTER]) == ([], 1)
 
     def test_a_workspace_row_is_never_marked_by_the_deployments_pass(self, aws, worker_context):
         put_feedback(aws, 'f1', metadata={'email': 'jane@example.com'})
+        deployment_project(aws, 'p1')
         aws['projects'].put_item(Item={'pk': 'PROJECT#p1', 'sk': 'PERSONA#a', 'input_feedback_ids': ['f1']})
         aws['projects'].put_item(Item={'pk': f'WS#{WS}#PROJECT#p1', 'sk': 'PERSONA#a', 'input_feedback_ids': ['f1']})
 
@@ -1089,7 +1251,7 @@ def _noting_walks(walked: list[str]) -> Any:
     real = workspaces.registry_step
 
     def noted(projects_table, run, scope, at, **starting):
-        if not at.get('registry'):
+        if scope is not None and not at.get('registry'):
             walked.append(scope.ws)
         return real(projects_table, run, scope, at, **starting)
 

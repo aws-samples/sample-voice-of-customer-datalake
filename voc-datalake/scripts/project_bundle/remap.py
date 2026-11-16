@@ -69,7 +69,7 @@ def fix_legacy_assignment(item: dict[str, Any]) -> dict[str, Any]:
     return {**item, **keys.legacy_assignment_key(counter_key, source)}
 
 
-def _lambda_on_path() -> None:
+def lambda_on_path() -> None:
     lambda_dir = str(Path(__file__).resolve().parents[2] / 'lambda')
     if lambda_dir not in sys.path:
         sys.path.insert(0, lambda_dir)
@@ -78,7 +78,7 @@ def _lambda_on_path() -> None:
 def project_keys() -> Any:
     """`shared/project_keys.py`, the one builder of a project's keys (standard library only: no virtualenv); the
     exporter reads the versions partition through it too."""
-    _lambda_on_path()
+    lambda_on_path()
     from shared import project_keys
 
     return project_keys
@@ -86,7 +86,7 @@ def project_keys() -> Any:
 
 def _shared_helpers() -> SimpleNamespace:
     """`lambda/` on the path, then the id helpers (they need the repo's virtualenv)."""
-    _lambda_on_path()
+    lambda_on_path()
     from shared import document_history, document_series, document_versions, ids, project_keys, prototype_pins
 
     return SimpleNamespace(history=document_history, series=document_series, versions=document_versions,

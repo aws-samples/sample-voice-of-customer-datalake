@@ -72,12 +72,16 @@ export function grantWrites(table: dynamodb.ITable, grantee: iam.IGrantable, wri
 export function grantKeyScopedWrites(
   table: dynamodb.ITable, grantee: iam.IGrantable, writes: readonly TableWrite[], partitions: readonly string[],
   attributes?: readonly string[],
+  options: { noReturnValues?: boolean } = {},
 ): void {
   if (writes.length === 0 || partitions.length === 0) throw new Error('grantKeyScopedWrites: name writes and partitions');
   // `attributes`: the only attribute names the request may touch (`dynamodb:Attributes`, the key's included), so an
-  // update limited to one field cannot rewrite any other.
+  // update limited to one field cannot rewrite any other. `noReturnValues`: the request may ask for no returned values
+  // (`dynamodb:ReturnValues` `NONE` when it names any), so a write limited to some attributes cannot read the whole row
+  // back (`ALL_OLD`, `ALL_NEW`).
   addWriteStatement(table, grantee, writes, {
     'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [...partitions] },
     ...(attributes ? { 'ForAllValues:StringEquals': { 'dynamodb:Attributes': [...attributes] } } : {}),
+    ...(options.noReturnValues ? { StringEqualsIfExists: { 'dynamodb:ReturnValues': ['NONE'] } } : {}),
   });
 }

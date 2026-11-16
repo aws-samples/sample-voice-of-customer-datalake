@@ -28,9 +28,24 @@ from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 
+from shared import review_registries
+from shared.company_personas import COMPANY_PERSONAS_CONTAINER
+from shared.ingest_tables import table_view
 from shared.platform_workspaces import LISTING_PK, RENAMED_AT, listing_ids_page
-from shared.project_walk import ID_PAGE, RegistryPage, StuckQuery, checked_ids, checked_key, registry_page
+from shared.project_keys import DEPLOYMENT_LINK_REGISTRY_PK, REVIEW_REGISTRIES_MARKER_SK
+from shared.project_walk import (
+    ID_PAGE,
+    RegistryPage,
+    StuckQuery,
+    checked_ids,
+    checked_key,
+    merged,
+    query_page,
+    registry_page,
+    sort_key,
+)
 from shared.retention import MALFORMED_ID_COUNTER
+from shared.scoped_query import SK_EQUALS
 from shared.workspace_ids import is_workspace_id
 from shared.ws_repo import WORKSPACE_FIELD, WorkspaceScope, ws_table
 
@@ -41,6 +56,10 @@ MAX_REWALKS: Final = 3
 #: The rows one re-walk pass may walk, and carry for the next to skip.
 MAX_MOVED: Final = 100
 _CREATED_AT: Final = 'created_at'
+#: How a walk of the deployment finds its links, series and projects (``found``, ``deployment_found``): its
+#: registries by Query once the backfill's marker is there, else the backfill's own Scans (shared/review_registries.py).
+FOUND_REGISTRY: Final = 'registry'
+FOUND_SCAN: Final = 'scan'
 _BAD_REWALK_STATE: Final = 'a carried listing pass is not one'
 
 
@@ -60,9 +79,13 @@ def count(run: dict[str, Any], counter: str, n: int = 1) -> None:
 
 
 def named(run: Mapping[str, Any]) -> str | None:
-    """The one workspace a job names, or None for the deployment's."""
+    """The one workspace a job names, or None for the deployment's: None only when the run names none (no
+    ``workspace_id``, or a null one); any other value that is not a workspace id fails the job (ValueError), never
+    reads as the deployment's job, which walks the deployment's projects and every listed workspace."""
     value = run.get(WORKSPACE_FIELD)
-    return str(value) if value else None
+    if value is not None and not is_workspace_id(value):
+        raise ValueError('the job names a workspace id that is not one')
+    return None if value is None else str(value)
 
 
 def listing_start(now: datetime) -> dict[str, Any]:
@@ -89,14 +112,64 @@ def checked_page(run: Mapping[str, Any], here: Mapping[str, Any]) -> list[str]:
     return page
 
 
-def registry_step(projects_table: Any, run: dict[str, Any], scope: WorkspaceScope, at: Mapping[str, Any],
-                  **starting: Any) -> dict[str, Any]:
-    """The workspace's registry's next page, as both phases read it: every project shaped like one, a deleted one too
-    (its rows stay until its delete sweeps them), a malformed row counted (``project_ids_malformed``); ``starting``:
-    the per-project part of the cursor as the page's first project starts."""
-    page: RegistryPage = registry_page(ws_table(scope, projects_table), scope, at.get('registry'))
+def projects_keys(scope: WorkspaceScope | None) -> tuple[str, str]:
+    """The cursor's names for where the scope's list of projects is, and whether it is done: a workspace's registry
+    (``registry``, ``registry_done``), the deployment's (``projects_from``, ``projects_done``)."""
+    return ('registry', 'registry_done') if scope is not None else ('projects_from', 'projects_done')
+
+
+def deployment_found(projects_table: Any) -> str:
+    """How a walk of the deployment finds its links, series and projects (since 7.44.00, 3g-d; a deployment cursor's
+    ``found``): ``FOUND_REGISTRY`` once the backfill's marker is there and complete (one strongly consistent Query,
+    projected to what ``review_registries.marker_complete`` judges), else ``FOUND_SCAN``, the backfill's own Scans."""
+    rows, _ = query_page(table_view(None, projects_table), DEPLOYMENT_LINK_REGISTRY_PK, None, ConsistentRead=True,
+                         **merged(sort_key(SK_EQUALS, {':sk': REVIEW_REGISTRIES_MARKER_SK}),
+                                  review_registries.MARKER_PROJECTION))
+    return FOUND_REGISTRY if rows and review_registries.marker_complete(rows[0]) else FOUND_SCAN
+
+
+def checked_found(at: Mapping[str, Any]) -> str:
+    """A deployment cursor's ``found`` (ValueError when it is not one: a malformed run state)."""
+    found = at.get('found')
+    if found not in (FOUND_REGISTRY, FOUND_SCAN):
+        raise ValueError('a carried way of finding the links is not one')
+    return str(found)
+
+
+def scan(run: dict[str, Any], projects_table: Any, kind: str, start: object,
+         after: object = None) -> review_registries.Found:
+    """One Scan page of the backfill's ``kind`` pass (shared/review_registries.py), its malformed rows counted; a page
+    answering with its own start key fails the job (``StuckQuery``)."""
+    begun = checked_key(start)
+    page = review_registries.scan_page(projects_table, kind, begun, after if isinstance(after, str) else None)
+    if page.following is not None and begun and page.following == begun:
+        raise StuckQuery('a Scan answered with the key it started from')
     count(run, MALFORMED_ID_COUNTER, page.malformed)
-    return {**at, 'registry': page.following, 'registry_done': page.following is None, 'ids': page.ids, **starting}
+    return page
+
+
+def registry_step(projects_table: Any, run: dict[str, Any], scope: WorkspaceScope | None, at: Mapping[str, Any],
+                  **starting: Any) -> dict[str, Any]:
+    """The scope's next page of projects, as every walk reads it: a workspace's registry, or (``scope`` None, since
+    7.44.00) the deployment's, ``PROJECT_IDS`` (shared/project_walk.py ``registry_page``), or until the backfill ran
+    (the cursor's ``found``) a page of its ``PROJECTS`` Scan; every project shaped like one, a deleted or half-deleted
+    one too (its rows, or its kept ``META``, stay; its delete leaves its registry row), a malformed row counted
+    (``project_ids_malformed``); ``starting``: the per-project part of the cursor as the page's first project starts."""
+    following_key, done_key = projects_keys(scope)
+    if scope is None and checked_found(at) == FOUND_SCAN:
+        scanned = scan(run, projects_table, review_registries.PROJECTS, at.get(following_key))
+        ids, following = scanned.ids, scanned.following
+    else:
+        page: RegistryPage = registry_page(table_view(scope, projects_table) if scope is None
+                                           else ws_table(scope, projects_table), scope, at.get(following_key))
+        ids, following = page.ids, page.following
+        count(run, MALFORMED_ID_COUNTER, page.malformed)
+    return {**at, following_key: following, done_key: following is None, 'ids': ids, **starting}
+
+
+def library_step(at: Mapping[str, Any], **starting: Any) -> dict[str, Any]:
+    """The scope's company persona library, which no registry or index lists, walked as a project last."""
+    return {**at, 'ids': [COMPANY_PERSONAS_CONTAINER], 'library': True, **starting}
 
 
 def listing_page(run: dict[str, Any], table: Any, here: Mapping[str, Any], now: datetime) -> dict[str, Any]:

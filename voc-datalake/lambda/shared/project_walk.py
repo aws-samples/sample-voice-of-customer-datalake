@@ -12,7 +12,9 @@ what is here:
 * ``registry_page``: one strongly consistent page of the workspace's registry of project ids
   (``WS#{ws}#PROJECT_IDS``, read with ``REGISTRY_PROJECTION``: shared/project_tables.py ``registered_project``), its
   ids shaped like a project id, which of them are live, and how many rows were malformed (the persona library's
-  reserved id is left out, uncounted: the walks read the library on their own);
+  reserved id is left out, uncounted: the walks read the library on their own); without a scope (since 7.44.00, 3g-d)
+  the deployment's own registry, ``PROJECT_IDS``, for the retention worker's walks of the deployment (through
+  shared/ingest_tables.py ``table_view`` without a scope);
 * ``checked_ids`` / ``checked_key`` / ``is_project_id``: a carried cursor's ids and keys checked before they name a
   partition (ValueError: a malformed run state);
 * ``sort_key``: a Query's key condition on ``sk`` for the layer's ``sort_condition``.
@@ -23,13 +25,14 @@ from collections.abc import Callable, Mapping
 from typing import Any, Final, NamedTuple
 
 from shared.company_personas import COMPANY_PERSONAS_CONTAINER
-from shared.project_keys import project_registry_pk
+from shared.ingest_tables import DeploymentTable
+from shared.project_keys import DEPLOYMENT_PROJECT_REGISTRY_PK, project_registry_pk, series_registry_ids
 from shared.project_tables import REGISTRY_PROJECTION, registered_project
 from shared.row_ids import LONG_OPAQUE_ID_RE
 from shared.ws_repo import WorkspaceScope, WorkspaceTable
 
-__all__ = ['ID_PAGE', 'RegistryPage', 'StuckQuery', 'checked_ids', 'checked_key', 'is_project_id', 'merged',
-           'query_page', 'registry_page', 'sort_key']
+__all__ = ['ID_PAGE', 'RegistryPage', 'StuckQuery', 'checked_ids', 'checked_key', 'is_project_id', 'is_series_ref',
+           'merged', 'query_page', 'registry_page', 'sort_key']
 
 #: The rows one registry or id-list page reads at most (a cursor carries a page of ids: 100 ids of at most 128
 #: characters, about 13 KB, well inside the 256 KB hand-over payload limit the code assumes).
@@ -61,11 +64,16 @@ def merged(*parts: Mapping[str, Any]) -> dict[str, Any]:
     return out
 
 
-def query_page(view: WorkspaceTable, partition: str, start: Mapping[str, Any] | None,
+def query_page(view: WorkspaceTable | DeploymentTable, partition: str, start: Mapping[str, Any] | None,
                **kwargs: Any) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
-    """One Query page of ``partition`` in the workspace from ``start``: its items and the key the next page starts
-    from (None at the end). ``StuckQuery`` when DynamoDB answers with ``start`` itself."""
+    """One Query page of ``partition`` in the view's scope from ``start``: its items and the key the next page starts
+    from (None at the end). ``StuckQuery`` when DynamoDB answers with ``start`` itself. A projected Query says so
+    (``Select`` ``SPECIFIC_ATTRIBUTES``): the retention worker's IAM requires it of every Query of the deployment's
+    partitions, so a Query that named no projection, and would read whole rows, is refused (lib/stacks/
+    retention-worker.ts ``QueryDeploymentProjects``)."""
     options = dict(kwargs)
+    if 'ProjectionExpression' in options:
+        options.setdefault('Select', 'SPECIFIC_ATTRIBUTES')
     if start:
         options['ExclusiveStartKey'] = dict(start)
     page = view.query('pk', partition, **options)
@@ -94,16 +102,27 @@ class RegistryPage(NamedTuple):
     following: dict[str, Any] | None
 
 
-def registry_page(view: WorkspaceTable, scope: WorkspaceScope, start: Mapping[str, Any] | None) -> RegistryPage:
-    """One strongly consistent page of the registry, each row read with ``REGISTRY_PROJECTION`` (any
-    ``deleted_at`` but null reads deleted); the library's reserved id is left out, not counted."""
-    rows, following = query_page(view, project_registry_pk(scope), checked_key(start), Limit=ID_PAGE,
+def registry_page(view: WorkspaceTable | DeploymentTable, scope: WorkspaceScope | None,
+                  start: Mapping[str, Any] | None) -> RegistryPage:
+    """One strongly consistent page of the scope's registry (a workspace's, or with ``scope`` None, since 7.44.00, the
+    deployment's ``PROJECT_IDS``: every project it made, a deleted one too, as its delete keeps the row), each row
+    read with ``REGISTRY_PROJECTION`` (any ``deleted_at`` but null reads deleted); the library's reserved id is left
+    out, not counted."""
+    partition = DEPLOYMENT_PROJECT_REGISTRY_PK if scope is None else project_registry_pk(scope)
+    rows, following = query_page(view, partition, checked_key(start), Limit=ID_PAGE,
                                  ConsistentRead=True, ProjectionExpression=REGISTRY_PROJECTION)
     registered = [registered_project(row) for row in rows if row.get('sk') != COMPANY_PERSONAS_CONTAINER]
     shaped = [project for project in registered if is_project_id(project.project_id)]
     return RegistryPage([project.project_id for project in shaped],
                         [project.project_id for project in shaped if not project.deleted],
                         len(registered) - len(shaped), following)
+
+
+def is_series_ref(value: object) -> bool:
+    """A deployment's series as its registry, a cursor and the backfill's Scan carry it: ``{project id}#{series id}``,
+    the project id shaped like one (``is_project_id``) and the series id ``SERIES_ID_RE``'s; one rule for every mode."""
+    ids = series_registry_ids(value)
+    return ids is not None and is_project_id(ids[0])
 
 
 def checked_ids(carried: object, valid: Callable[[str], object], what: str) -> list[str]:

@@ -68,18 +68,58 @@ describe('voc-retention worker', () => {
     expect(JSON.stringify(template.toJSON())).toContain('"dynamodb:LeadingKeys":["SETTINGS#radar"]');
   });
 
-  it('holds exactly Scan/UpdateItem on projects, and Query of one workspace\'s project partitions — never deletes or puts', () => {
+  it('holds exactly Scan/UpdateItem on projects, and Query of its project partitions — never deletes or puts', () => {
     expect(allowedActions(statements(), 'dynamodb:', 'Projects'))
       .toStrictEqual(['dynamodb:Query', 'dynamodb:Scan', 'dynamodb:UpdateItem']);
     const queries = statements().filter((s) => s.effect === 'Allow' && s.resource.includes('Projects')
       && s.actions.includes('dynamodb:Query'));
-    // 7.43.00: Query alone, on the table (no index), of exactly these partitions of any one workspace id.
-    expect(queries.map((s) => [s.actions, s.resource.includes('/index/')])).toStrictEqual([[['dynamodb:Query'], false]]);
+    // Query alone, on the table only: of any one workspace id's partitions (7.43.00) and of the deployment's
+    // (7.44.00). No index: a deleted project's META is off gsi1-by-type, so the deployment's registry lists them.
+    expect(queries.map((s) => [s.actions, s.resource.includes('/index/')]))
+      .toStrictEqual([[['dynamodb:Query'], false], [['dynamodb:Query'], false]]);
+  });
+
+  it('queries exactly these project partitions: one workspace id\'s and the deployment\'s, its registries included', () => {
     const ws = `WS#ws_${'?'.repeat(26)}`;
-    expect(JSON.stringify(template.toJSON())).toContain(JSON.stringify({ 'ForAllValues:StringLike': {
+    const json = JSON.stringify(template.toJSON());
+    expect(json).toContain(JSON.stringify({ 'ForAllValues:StringLike': {
       'dynamodb:LeadingKeys': [`${ws}#PROJECT_IDS`, `${ws}#PROJECT#*`, `${ws}#DCOMMENTS#*`, `${ws}#DOCSHARE_IDS`,
         `${ws}#DOCSHARE#*`],
     } }));
+    // The deployment's: its own partitions and its registries, each read only for the attributes the erasure and
+    // the lineage marks read (7.44.00).
+    expect(json).toContain(JSON.stringify({
+      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['PROJECT#*', 'DCOMMENTS#*', 'DOCSHARE#*', 'PROJECT_IDS',
+        'DOCSHARE_IDS', 'COMMENT_SERIES_IDS'] },
+      'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'author', 'replies', 'status_by', 'audience',
+        'created_by_name', 'revoked_by', 'revoked', 'project_id', 'owner_email', 'members', 'research_notes',
+        's3_raw_key', 'content_type', 'status', 's3_extracted_key', 'filename', 'deleted_at', 'deletion_started_at',
+        'completed_at', 'release', 'links_found', 'series_found', 'projects_found', 'input_feedback_ids', 'evidence_feedback_ids',
+        'input_feature_request_ids', 'erased_evidence'] },
+      // A Query naming no attribute would pass ForAllValues and read whole rows: SPECIFIC_ATTRIBUTES is required.
+      StringEquals: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+    }));
+  });
+
+  it('asks for no returned values on its attribute-limited updates: the two on projects and the membership one', () => {
+    // An UpdateItem limited to some attributes could otherwise read the whole row back (ALL_OLD, ALL_NEW).
+    const policy = JSON.stringify(template.toJSON().Resources);
+    const noReturn = JSON.stringify({ StringEqualsIfExists: { 'dynamodb:ReturnValues': ['NONE'] } }).slice(1, -1);
+    expect(policy.split(noReturn).length - 1).toBe(3);
+    const limited = statements().filter((s) => s.effect === 'Allow' && s.actions.includes('dynamodb:UpdateItem')
+      && (s.resource.includes('Projects') || s.resource.includes('Workspaces')));
+    expect(limited).toHaveLength(3);
+  });
+
+  it('scans projects on the table only, for the attributes the backfill\'s Scan projects (7.44.00)', () => {
+    const scans = statements().filter((s) => s.effect === 'Allow' && s.resource.includes('Projects')
+      && s.actions.includes('dynamodb:Scan'));
+    expect(scans.map((s) => [s.actions, s.resource.includes('/index/')])).toStrictEqual([[['dynamodb:Scan'], false]]);
+    expect(JSON.stringify(template.toJSON())).toContain(JSON.stringify({
+      StringEquals: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+      'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'workspace_id', 'project_id', 'series_id',
+        'created_at'] },
+    }));
   });
 
   it('reads and updates feature requests, and puts / deletes only under FR#* (it re-keys an erased +1)', () => {
@@ -105,7 +145,8 @@ describe('voc-retention worker', () => {
     expect(update.map((s) => s.actions)).toStrictEqual([['dynamodb:UpdateItem']]);
     expect(JSON.stringify(template.toJSON())).toContain(
       '{"ForAllValues:StringLike":{"dynamodb:LeadingKeys":["WS#*"]},'
-      + '"ForAllValues:StringEquals":{"dynamodb:Attributes":["email","name","pk","sk"]}}');
+      + '"ForAllValues:StringEquals":{"dynamodb:Attributes":["email","name","pk","sk"]},'
+      + '"StringEqualsIfExists":{"dynamodb:ReturnValues":["NONE"]}}');
     expect(worker().Environment.Variables).toHaveProperty('WORKSPACES_TABLE');
   });
 
@@ -134,29 +175,34 @@ describe('voc-retention worker', () => {
       `"s3:prefix":["raw/*","silver/*","${ws}/raw/*","${ws}/silver/*","${ws}/exports/*"]`);
   });
 
-  it('reads objects only under a workspace\'s product documents (an erasure by email looks for the address there)', () => {
+  it('reads objects only under the product documents (an erasure by email looks for the address there)', () => {
     const reads = statements().filter((s) => s.effect === 'Allow' && s.actions.includes('s3:GetObject'));
+    // A workspace's text uploads and extracted text (7.43.00); the deployment's extracted text only (7.44.00).
     expect(reads.map((s) => [s.actions, [...s.resource.matchAll(/"\/([^"]*)"/g)].flatMap((match) => match[1] ?? [])]))
       .toStrictEqual([[['s3:GetObject'], [`ws/ws_${'?'.repeat(26)}/projects/*/product_docs/raw/*.md`,
         `ws/ws_${'?'.repeat(26)}/projects/*/product_docs/raw/*.txt`,
-        `ws/ws_${'?'.repeat(26)}/projects/*/product_docs/extracted/*`]]]);
+        `ws/ws_${'?'.repeat(26)}/projects/*/product_docs/extracted/*`, 'projects/*/product_docs/extracted/*']]]);
   });
 
-  it('updates projects in two statements: the lineage marks anywhere, the de-identification in a workspace only', () => {
+  it('updates projects in two statements, each on the deployment\'s and one workspace\'s partitions of its rows only', () => {
     const updates = statements().filter((s) => s.effect === 'Allow' && s.resource.includes('Projects')
       && s.actions.includes('dynamodb:UpdateItem'));
     expect(updates.map((s) => s.actions)).toStrictEqual([['dynamodb:UpdateItem'], ['dynamodb:UpdateItem']]);
     const ws = `WS#ws_${'?'.repeat(26)}`;
     const json = JSON.stringify(template.toJSON());
+    // 7.44.00: no lineage pass Scans, so the marks are pinned to the project partitions (no longer any partition).
     expect(json).toContain(JSON.stringify({
-      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['*'] },
+      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['PROJECT#*', `${ws}#PROJECT#*`] },
       'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'input_feedback_ids',
         'evidence_feedback_ids', 'input_feature_request_ids', 'erased_evidence'] },
+      StringEqualsIfExists: { 'dynamodb:ReturnValues': ['NONE'] },
     }));
     expect(json).toContain(JSON.stringify({
-      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [`${ws}#PROJECT#*`, `${ws}#DCOMMENTS#*`, `${ws}#DOCSHARE#*`] },
+      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['PROJECT#*', 'DCOMMENTS#*', 'DOCSHARE#*', `${ws}#PROJECT#*`,
+        `${ws}#DCOMMENTS#*`, `${ws}#DOCSHARE#*`] },
       'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'author', 'replies', 'status_by', 'audience',
         'created_by_name', 'revoked_by', 'revoked', 'owner_email', 'members', 'research_notes'] },
+      StringEqualsIfExists: { 'dynamodb:ReturnValues': ['NONE'] },
     }));
   });
 

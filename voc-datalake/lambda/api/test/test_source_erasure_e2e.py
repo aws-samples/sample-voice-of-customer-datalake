@@ -15,7 +15,11 @@ from jobs.retention import handler as worker
 from settings_handler import lambda_handler
 from shared.source_erasure import source_lock_key
 from shared.test.moto_s3 import create_versioned_bucket, version_keys
-from shared.test.moto_tables import create_aggregates_table_with_metric_index, create_pk_sk_table
+from shared.test.moto_tables import (
+    create_aggregates_table_with_metric_index,
+    create_pk_sk_table,
+    create_projects_table_with_type_index,
+)
 
 SOURCE = 'web_reviews_example_air'
 OTHER = 'support_tickets'
@@ -31,7 +35,8 @@ def aws():
         aggregates = create_aggregates_table_with_metric_index(worker.AGGREGATES_TABLE, resource)
         feedback = create_pk_sk_table(worker.FEEDBACK_TABLE, resource)
         create_pk_sk_table('test-radar', resource)
-        create_pk_sk_table(worker.PROJECTS_TABLE or 'test-projects', resource)
+        # With gsi1-by-type, as core-stack.ts: the lineage pass finds the deployment's projects there (7.44.00).
+        create_projects_table_with_type_index(worker.PROJECTS_TABLE or 'test-projects', resource)
         invoke = MagicMock()
         with patch.object(settings_handler, 'aggregates_table', aggregates), \
                 patch.object(settings_handler, 'RETENTION_FUNCTION', 'voc-retention'), \

@@ -130,6 +130,7 @@ from shared.caller_claims import first_claim
 from shared.company_personas import is_company_container
 from shared.data_version import bump_config_version
 from shared.delete_audit import actor_from_event
+from shared.document_comments import TEAM_MEMBER_NAME
 from shared.document_versions import MERGE_OUTPUT_TYPES, MERGE_VERSIONED_DOCUMENT_TYPES, split_versioned_title
 from shared.dynamo_paging import query_all
 from shared.exceptions import (
@@ -4871,11 +4872,13 @@ def _pins_table():
 
 
 def _pin_actor() -> tuple[str, str]:
-    """(stable actor id, display name) for the calling user or agent."""
+    """(stable actor id, display name) for the calling user or agent. The name is the username, else "Team member",
+    never the address (7.44.00: the rule a member's thread author follows since 7.43.00, so a pin reply holds no
+    address an erasure would have to reach; replies written before keep theirs, docs/multi-workspace.md 3g-pin)."""
     caller = _request_caller()
     if caller.agent_id:
         return f'agent:{caller.agent_id}', 'Autonomous agent'
-    return caller.subject, caller.username or caller.email or 'Reviewer'
+    return caller.subject, caller.username or TEAM_MEMBER_NAME
 
 
 def _checked_pin_id(pin_id: str) -> str:

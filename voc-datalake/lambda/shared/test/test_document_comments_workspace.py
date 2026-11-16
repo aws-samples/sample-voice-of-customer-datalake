@@ -181,6 +181,8 @@ class Recording:
 
 
 def test_the_deployments_requests_are_the_ones_sent_before(table):
+    """Each request the one sent before; since 7.44.00 (3g-d) a new thread first lists its series in the deployment's
+    series registry (read, then put if absent), the requests it adds."""
     recording = Recording(table)
     item = dc.thread_item(project_id=PROJECT, series_id=SERIES, document=DOCUMENT, author={'kind': 'user'},
                           text='x', anchor=None)
@@ -189,7 +191,12 @@ def test_the_deployments_requests_are_the_ones_sent_before(table):
     dc.list_threads(recording, PROJECT, SERIES)
     dc.delete_thread(recording, item)
     key = {'pk': f'DCOMMENTS#{PROJECT}#{SERIES}', 'sk': f"C#{item['comment_id']}"}
+    listed_at = recording.calls[1][1]['Item']['listed_at']
     assert recording.calls == [
+        ('get_item', {'Key': {'pk': 'COMMENT_SERIES_IDS', 'sk': f'{PROJECT}#{SERIES}'}, 'ProjectionExpression': 'pk'}),
+        ('put_item', {'Item': {'pk': 'COMMENT_SERIES_IDS', 'sk': f'{PROJECT}#{SERIES}', 'project_id': PROJECT,
+                               'series_id': SERIES, 'listed_at': listed_at},
+                      'ConditionExpression': 'attribute_not_exists(pk)'}),
         ('put_item', {'Item': item, 'ConditionExpression': 'attribute_not_exists(sk)'}),
         ('get_item', {'Key': key, 'ConsistentRead': True}),
         ('query', {'KeyConditionExpression': Key('pk').eq(key['pk']) & Key('sk').begins_with('C#'),

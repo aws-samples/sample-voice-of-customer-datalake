@@ -4,9 +4,9 @@ Personas, research reports and documents in voc-projects record the reviews they
 read (``input_feedback_ids``) and, for a persona, the ones it cites
 (``evidence_feedback_ids``); the board requests they read sit in ``input_feature_request_ids``
 (an erasure de-identifies a request, ``boards.py``, and tombstones it like a deleted review). After a
-run deletes or de-identifies anything, this pass scans
-voc-projects for rows carrying either list (paged, time-budgeted by the caller)
-and looks each listed id up among the tombstones of the sources the run deleted
+run deletes or de-identifies anything, these passes read
+the projects' partitions for rows carrying any list (paged, time-budgeted by the caller)
+and look each listed id up among the tombstones of the sources the run deleted
 from (``AUDIT#tombstone#{source}``). An artifact with an erased id:
 
 - loses that id from its lists, so lineage never points at a deleted item;
@@ -18,13 +18,19 @@ review, only what the model wrote from them. The update is conditional on the
 lists read, so an artifact regenerated meanwhile is left alone (its new lists
 are checked by the next run that deletes anything).
 
-Two passes (since 7.43.00, projects 3g-b):
+Two passes (since 7.43.00, projects 3g-b; the deployment's by Query since 7.44.00, 3g-d):
 
-- ``lineage``, the deployment's, as before: a paged Scan of voc-projects, run when the run deleted a deployment item
-  or Radar review or de-identified a board request, each listed id looked up as ``{feedback_id}``. A row whose
-  partition is a workspace's (``WS#…``) is left out of it (``deployment_rows``): a workspace's artifact cites that
-  workspace's items, whose tombstones are ``{ws}#{feedback_id}``, and the deployment's tombstone of the same id is
-  another copy's, so the deployment's pass must never mark it. The Scan's request is unchanged.
+- ``lineage``, the deployment's, run when the run deleted a deployment item or Radar review or de-identified a board
+  request, each listed id looked up as ``{feedback_id}``: its projects through its project registry (``PROJECT_IDS``,
+  shared/project_walk.py ``registry_page``: put at a project's create, kept by its delete, so a deleted or
+  half-deleted project, which the delete's fence takes off ``gsi1-by-type``, is listed too), or, until the backfill's
+  marker is there (workspaces.py ``deployment_found``), the backfill's Scan of the projects' ``META`` rows
+  (shared/review_registries.py ``PROJECTS``, one Scan page a step); then its company persona library
+  (``PROJECT#company_personas``, on no list); in each, the project's own partition by the same filtered Query pages as
+  a workspace's (``deployment_step``). Until 7.43.00 a Scan of the whole of voc-projects, every row read and any row of
+  the table marked; every writer of these lists writes in a project's own partition (personas, research, documents and
+  the persona library's copies), so the Queries reach the same rows. A workspace's rows are never read: a workspace's
+  artifact cites that workspace's items, whose tombstones are ``{ws}#{feedback_id}``.
 - ``workspace_lineage``: the workspaces whose item the run deleted (``LINEAGE_WORKSPACES``, noted by copies.py as it
   deletes one, in a retention window, the deployment's erasure by email or a workspace's own erasure), or, once the
   run de-identified a board request, every workspace of the platform's listing (workspaces.py: any workspace's
@@ -36,8 +42,12 @@ Two passes (since 7.43.00, projects 3g-b):
   (``workspace_step``). A review id and a cited id are looked up as that workspace's tombstones,
   ``{ws}#{feedback_id}``; a board request id as the deployment's (``feature_requests`` / ``{id}``: the boards are the
   deployment's, not per workspace). Every mark is written through the workspace layer (shared/ws_repo.py
-  ``ws_table``). No Scan: what it reads is the walked workspaces' own projects. A registry row not shaped like a
-  project id is skipped and counted (``project_ids_malformed``).
+  ``ws_table``). No Scan: what it reads is the walked workspaces' own projects. A registry row (or a scanned ``META``)
+  not shaped like a project id is skipped and counted (``project_ids_malformed``).
+
+What neither pass reads (follow-ups): an id cited inside a document's ``derivation`` (its
+``input_feature_request_ids`` there, beside the top-level list this pass filters on), and a persona job's ``result``
+in voc-jobs, which holds the persona's lineage ids until the job row's 7-day ``ttl`` deletes it.
 """
 
 from __future__ import annotations
@@ -46,7 +56,6 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import datetime
 from typing import Any, Final
 
-from boto3.dynamodb.conditions import Attr
 from botocore.exceptions import ClientError
 
 from jobs.retention import workspaces
@@ -54,53 +63,36 @@ from jobs.retention.copies import tombstone_key
 from jobs.retention.runs import LINEAGE_ALL, LINEAGE_WORKSPACES
 from shared.aws import is_conditional_check_failure
 from shared.batch_get import batch_get_all
-from shared.company_personas import COMPANY_PERSONAS_CONTAINER
 from shared.feature_requests_raw import FEATURE_REQUESTS_SOURCE
 from shared.feedback_sampling import INPUT_FEATURE_REQUEST_IDS_FIELD, INPUT_FEEDBACK_IDS_FIELD
+from shared.ingest_tables import table_view
 from shared.logging import logger
 from shared.persona_evidence import EVIDENCE_FEEDBACK_IDS_FIELD
 from shared.project_keys import project_partitions
 from shared.project_walk import checked_ids, checked_key, is_project_id, query_page
 from shared.retention import BOARD_COUNTER
 from shared.timestamps import now_iso
-from shared.ws_repo import WORKSPACE_FIELD, WORKSPACE_KEY_PREFIX, WorkspaceScope, scope_from_message, ws_table
+from shared.ws_repo import WORKSPACE_FIELD, WorkspaceScope, scope_from_message, ws_table
 
 # The board requests a document / persona / research result read (written by the generators, C5 of 6.01.00);
 # a request whose reporter an erasure de-identified has a tombstone under ``feature_requests`` (boards.py).
 ID_FIELDS: Final = (INPUT_FEEDBACK_IDS_FIELD, EVIDENCE_FEEDBACK_IDS_FIELD, INPUT_FEATURE_REQUEST_IDS_FIELD)
 MARK_FIELD: Final = 'erased_evidence'
 PAGE_SIZE: Final = 100
-#: The attributes a mark's UpdateItem names, with the key: lib/stacks/retention-worker.ts grants them on any partition
-#: (the deployment's Scan marks any row it finds), in a statement of their own (a test holds the two to each other).
+#: The attributes a mark's UpdateItem names, with the key: lib/stacks/retention-worker.ts grants them on the
+#: deployment's and one workspace id's ``PROJECT#*`` partitions only (since 7.44.00: no pass Scans any more), in a
+#: statement of their own (a test holds the two to each other).
 LINEAGE_UPDATE_ATTRIBUTES: Final = ('pk', 'sk', *ID_FIELDS, MARK_FIELD)
 #: What both passes read of a row, and the names they read it by.
 _PROJECTION: Final = '#pk, #sk, #ids, #cited, #requests, #mark'
 _NAMES: Final = {'#pk': 'pk', '#sk': 'sk', '#ids': ID_FIELDS[0], '#cited': ID_FIELDS[1], '#requests': ID_FIELDS[2],
                  '#mark': MARK_FIELD}
-#: The workspace pass's filter: the rows that carry a list (the deployment's Scan says the same with ``Attr``).
+#: Both passes' filter: the rows that carry a list.
 _CARRIES_A_LIST: Final = 'attribute_exists(#ids) OR attribute_exists(#cited) OR attribute_exists(#requests)'
 
 
 class TombstonesUnreadable(RuntimeError):
     """The tombstone lookup left keys unprocessed (the run fails and says so; nothing is half-marked)."""
-
-
-def scan_page(projects_table: Any, cursor: Mapping[str, Any] | None) -> dict[str, Any]:
-    """One page of rows that carry a feedback-id list, with only the fields this pass reads."""
-    kwargs: dict[str, Any] = {
-        'Limit': PAGE_SIZE,
-        'FilterExpression': Attr(ID_FIELDS[0]).exists() | Attr(ID_FIELDS[1]).exists() | Attr(ID_FIELDS[2]).exists(),
-        'ProjectionExpression': _PROJECTION,
-        'ExpressionAttributeNames': dict(_NAMES),
-    }
-    if cursor:
-        kwargs['ExclusiveStartKey'] = dict(cursor)
-    return projects_table.scan(**kwargs)
-
-
-def deployment_rows(rows: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
-    """The deployment's rows of a Scan page: a workspace's (``WS#…``) is the ``workspace_lineage`` pass's."""
-    return [row for row in rows if not str(row.get('pk') or '').startswith(WORKSPACE_KEY_PREFIX)]
 
 
 def _listed_ids(row: Mapping[str, Any], fields: Sequence[str] = ID_FIELDS) -> list[str]:
@@ -245,10 +237,41 @@ def has_work(run: Mapping[str, Any], workspaces_table: Any) -> bool:
     return bool(pending_workspaces(run)) or _walks_listing(run, workspaces_table)
 
 
-def _own_partition(project_id: str, scope: WorkspaceScope) -> str:
+def _own_partition(project_id: str, scope: WorkspaceScope | None) -> str:
     """The project's own partition in voc-projects (``project_partitions``' kind ``project``)."""
     [own] = [part.partition for part in project_partitions(project_id, workspace=scope) if part.kind == 'project']
     return own
+
+
+def deployment_step(projects_table: Any, aggregates_table: Any, run: dict[str, Any],
+                    cursor: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """One step of the deployment's pass (``lineage``, since 7.44.00 by Query: the module docstring): first how its
+    projects are found (``found``, workspaces.py ``deployment_found``: its registry once the backfill's marker is
+    there, else the backfill's ``PROJECTS`` Scan); then a filtered page of the first project's own partition and its
+    marks; or the next page of the deployment's projects; or its persona library; None once all are done. A cursor of
+    the Scan before 7.44.00 (a row's key, carried by a hand-over across the upgrade) names none of these steps: the
+    pass starts again from the top, every mark being idempotent."""
+    known = ('found', 'ids', 'start', 'library', *workspaces.projects_keys(None))
+    at = {name: value for name, value in (cursor or {}).items() if name in known}
+    if 'found' not in at:
+        return {'found': workspaces.deployment_found(projects_table)}
+    workspaces.checked_found(at)
+    return _projects_step(projects_table, aggregates_table, run, None, at)
+
+
+def _projects_step(projects_table: Any, aggregates_table: Any, run: dict[str, Any], scope: WorkspaceScope | None,
+                   at: dict[str, Any]) -> dict[str, Any] | None:
+    """One step of a scope's projects, as both passes walk them: a filtered page of the first project's own partition
+    and its marks; or the scope's next page of projects (workspaces.py ``registry_step``: a workspace's registry, the
+    deployment's, or its Scan); or its persona library (``library_step``); None once all are done."""
+    ids = checked_ids(at.get('ids'), is_project_id, 'ids')
+    if ids:
+        return _partition_step(projects_table, aggregates_table, run, scope, ids, at)
+    if not at.get(workspaces.projects_keys(scope)[1]):
+        return workspaces.registry_step(projects_table, run, scope, at, start=None)
+    if not at.get('library'):
+        return workspaces.library_step(at, start=None)
+    return None
 
 
 def _start(run: Mapping[str, Any], workspaces_table: Any, now: datetime) -> dict[str, Any]:
@@ -298,23 +321,15 @@ def workspace_step(projects_table: Any, aggregates_table: Any, run: dict[str, An
         run.pop(LINEAGE_WORKSPACES, None)
         return None
     scope = scope_from_message({WORKSPACE_FIELD: page[0]})
-    at = dict(here.get('at') or {})
-    ids = checked_ids(at.get('ids'), is_project_id, 'ids')
-    if ids:
-        moved = _partition_step(projects_table, aggregates_table, run, scope, ids, at)
-    elif not at.get('registry_done'):
-        moved = workspaces.registry_step(projects_table, run, scope, at, start=None)
-    elif not at.get('library'):
-        moved = {**at, 'ids': [COMPANY_PERSONAS_CONTAINER], 'library': True, 'start': None}
-    else:
-        return _workspace_done(run, here, page)
-    return {**here, 'at': moved}
+    moved = _projects_step(projects_table, aggregates_table, run, scope, dict(here.get('at') or {}))
+    return _workspace_done(run, here, page) if moved is None else {**here, 'at': moved}
 
 
-def _partition_step(projects_table: Any, aggregates_table: Any, run: dict[str, Any], scope: WorkspaceScope,
+def _partition_step(projects_table: Any, aggregates_table: Any, run: dict[str, Any], scope: WorkspaceScope | None,
                     ids: list[str], at: dict[str, Any]) -> dict[str, Any]:
-    """One filtered page of the first project's own partition, and its marks."""
-    rows, following = query_page(ws_table(scope, projects_table), _own_partition(ids[0], scope),
+    """One filtered page of the first project's own partition (a workspace's through the layer, the deployment's,
+    ``scope`` None, on the table), and its marks."""
+    rows, following = query_page(table_view(scope, projects_table), _own_partition(ids[0], scope),
                                  checked_key(at.get('start')), Limit=PAGE_SIZE, FilterExpression=_CARRIES_A_LIST,
                                  ProjectionExpression=_PROJECTION, ExpressionAttributeNames=dict(_NAMES))
     mark_rows(projects_table, aggregates_table, run, rows, scope)
