@@ -33,23 +33,22 @@ def _keys(files: dict[str, str], **kwargs: Any) -> list[str]:
 
 
 class TestShippedPacks:
-    def test_the_three_packs_load(self):
-        assert sorted(BY_ID) == ['java', 'python-ts', 'rust-ts']
-
-    def test_the_typescript_half_is_the_same_in_both_packs(self):
-        """Shared steps run once per root, so they must be identical wherever they appear."""
-        rust_ts = {s.id: s for s in BY_ID['rust-ts'].steps if s.language == 'ts'}
-        python_ts = {s.id: s for s in BY_ID['python-ts'].steps if s.language == 'ts'}
-        assert rust_ts == python_ts
-        assert sorted(rust_ts) == ['ts.install', 'ts.lint', 'ts.test', 'ts.typecheck']
+    def test_the_four_language_packs_load_each_with_one_language(self):
+        assert sorted(BY_ID) == ['java', 'python', 'rust', 'typescript']
+        assert {pack.id: [language.id for language in pack.languages] for pack in PACKS} == {
+            'java': ['java'], 'python': ['python'], 'rust': ['rust'], 'typescript': ['ts']}
+        assert sorted(step.id for step in BY_ID['typescript'].steps) == [
+            'ts.install', 'ts.jscpd', 'ts.knip', 'ts.knip-production', 'ts.lint', 'ts.test', 'ts.typecheck',
+            'ts.typecheck-app', 'ts.typecheck-node']
 
     def test_every_pack_names_its_registries_and_image(self):
         for pack in PACKS:
             assert pack.needs.network, pack.id
             assert pack.needs.image, pack.id
 
-    def test_the_default_directory_is_the_repositorys_engineering_gates(self):
+    def test_the_default_directory_is_the_templates_gates_folder(self):
         assert default_packs_dir() == PACKS_DIR
+        assert PACKS_DIR.parts[-3:] == ('templates', 'orchestration', 'gates')
 
     def test_only_setup_steps_name_registries_and_no_later_step_installs(self):
         for pack in PACKS:
@@ -62,9 +61,9 @@ class TestShippedPacks:
 
 class TestFixtures:
     @pytest.mark.parametrize(('fixture', 'packs', 'checks'), [
-        ('rust-ts/passing', ('python-ts', 'rust-ts'),
-         ['rust.fetch@.', 'rust.fmt@.', 'rust.clippy@.', 'ts.test@.', 'rust.test@.']),
-        ('python-ts/passing', ('python-ts',), ['py.ruff@.', 'py.test@.']),
+        ('rust/passing', ('rust', 'typescript'),
+         ['rust.fetch@.', 'rust.fmt@.', 'rust.clippy@.', 'rust.test@.', 'ts.test@.']),
+        ('python/passing', ('python',), ['py.ruff@.', 'py.test@.']),
         ('java/passing', ('java',), ['java.fetch@.', 'java.maven@.']),
     ])
     def test_each_fixture_gets_its_packs_checks(self, fixture, packs, checks):
@@ -94,20 +93,20 @@ class TestDetection:
     def test_workspace_members_are_checked_through_the_workspace_root(self):
         repo = repo_of({'Cargo.toml': '[workspace]\nmembers = ["crates/*"]', 'crates/a/Cargo.toml': '',
                         'crates/a/src/lib.rs': ''})
-        assert language_roots(BY_ID['rust-ts'].languages[0], repo) == ('',)
+        assert language_roots(BY_ID['rust'].languages[0], repo) == ('',)
         npm = repo_of({'package.json': '{"workspaces": ["web"]}', 'web/package.json': '{}', 'web/a.ts': ''})
-        assert language_roots(BY_ID['rust-ts'].languages[1], npm) == ('',)
+        assert language_roots(BY_ID['typescript'].languages[0], npm) == ('',)
 
     def test_a_marker_that_is_not_a_workspace_hides_no_app_below_it(self):
         files = {'package.json': '{"devDependencies": {}}', 'tools.ts': '',
                  'web/package.json': '{"scripts": {"test": "t"}}', 'web/tsconfig.json': '{}', 'web/src/a.ts': ''}
-        assert language_roots(BY_ID['rust-ts'].languages[1], repo_of(files)) == ('', 'web')
+        assert language_roots(BY_ID['typescript'].languages[0], repo_of(files)) == ('', 'web')
         assert {'ts.typecheck@web', 'ts.test@web'} <= set(_keys(files))
 
     def test_one_workspace_per_app_gives_one_root_per_app(self):
         repo = repo_of({'app1/Cargo.toml': '', 'app1/src/main.rs': '', 'app2/Cargo.toml': '',
                                       'app2/src/main.rs': '', 'docs/Cargo.toml': ''})
-        assert language_roots(BY_ID['rust-ts'].languages[0], repo) == ('app1', 'app2')
+        assert language_roots(BY_ID['rust'].languages[0], repo) == ('app1', 'app2')
 
     def test_a_marker_without_sources_is_not_a_language(self):
         repo = repo_of({'package.json': '{}', 'index.js': ''})
@@ -230,7 +229,7 @@ class TestRefusals:
         ({'steps': [_step(when_any={'file': 'a'})]}, 'conditions must be a list of tables'),
         ({'steps': [_step(when_any=['a'])]}, 'a condition must be a table'),
         ({'steps': [_step(when_any=[{'path': 'a'}])]}, "unknown keys ['path']"),
-        ({'steps': [_step(when_any=[{'file': 'a', 'glob': '*'}])]}, 'exactly one of "file" and "glob"'),
+        ({'steps': [_step(when_any=[{'file': 'a', 'glob': '*'}])]}, 'exactly one of "file", "glob" and "absent"'),
         ({'steps': [_step(when_any=[{'file': '../a'}])]}, '"../a" must be a path inside the repository'),
         ({'own_gate': []}, "unknown keys ['own_gate']"),
         ({'tools': {'x': 'cargo'}}, 'every [tools] entry must be a table'),

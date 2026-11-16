@@ -1,0 +1,137 @@
+# TypeScript gate pack, for a TARGET repository: the gate checks a change with the repository's own configuration and
+# pins; it never adds rules the team did not choose. Steps run in kind order, per root; a failing setup step stops
+# the rest. The setup step installs exactly what the lock file names, from the public registry, with no install
+# script; every later step runs offline, with the repository's own pinned tools (`npx --no-install`). What it runs
+# follows the TypeScript half of the owner's briefs (briefs/python-ts.md, briefs/rust-ts.md; briefs/RECONCILIATION.md
+# lists every difference). It runs in any language's image that installs Node.
+schema = "voc-gate-pack/1"
+id = "typescript"
+name = "TypeScript"
+network = ["registry.npmjs.org"]
+
+[image]
+node = "24"
+
+[languages.ts]
+markers = ["package.json"]
+extensions = [".ts", ".tsx", ".mts", ".cts"]
+workspace = [{ file = "package.json", contains = "\"workspaces\"" }, { file = "pnpm-workspace.yaml" }]
+
+[tools.node]
+version_argv = ["node", "--version"]
+
+[tools.npm]
+version_argv = ["npm", "--version"]
+
+[[steps]]
+id = "ts.install"
+language = "ts"
+name = "install dependencies"
+kind = "setup"
+argv = []
+timeout_s = 1200
+# The lock file's packages from the public registry (the repository's registry settings overridden), no scripts.
+[[steps.prefer]]
+when = [{ file = "package-lock.json" }]
+argv = ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund", "--registry=https://registry.npmjs.org/"]
+[[steps.prefer]]
+when = [{ file = "pnpm-lock.yaml" }]
+argv = ["pnpm", "install", "--frozen-lockfile", "--ignore-scripts", "--ignore-pnpmfile",
+        "--registry=https://registry.npmjs.org/"]
+
+[[steps]]
+id = "ts.typecheck"
+language = "ts"
+name = "tsc"
+kind = "types"
+when_any = [{ file = "tsconfig.json" }, { file = "package.json", npm_script = "typecheck" }]
+argv = ["npx", "--no-install", "tsc", "--noEmit", "-p", "tsconfig.json"]
+timeout_s = 1200
+[[steps.prefer]]
+when = [{ file = "package.json", npm_script = "typecheck" }]
+argv = ["npm", "run", "--silent", "typecheck"]
+
+# One tsc per program (the briefs' app and node configs are programs of their own).
+[[steps]]
+id = "ts.typecheck-app"
+language = "ts"
+name = "tsc: tsconfig.app.json"
+kind = "types"
+when_any = [{ file = "tsconfig.app.json" }]
+argv = ["npx", "--no-install", "tsc", "--noEmit", "-p", "tsconfig.app.json"]
+timeout_s = 1200
+
+[[steps]]
+id = "ts.typecheck-node"
+language = "ts"
+name = "tsc: tsconfig.node.json"
+kind = "types"
+when_any = [{ file = "tsconfig.node.json" }]
+argv = ["npx", "--no-install", "tsc", "--noEmit", "-p", "tsconfig.node.json"]
+timeout_s = 1200
+
+[[steps]]
+id = "ts.lint"
+language = "ts"
+name = "eslint"
+kind = "lint"
+when_any = [
+  { file = "eslint.config.js" }, { file = "eslint.config.mjs" }, { file = "eslint.config.cjs" },
+  { file = "eslint.config.ts" }, { file = ".eslintrc.json" }, { file = ".eslintrc.js" }, { file = ".eslintrc.cjs" },
+  { file = "package.json", npm_script = "lint" },
+]
+# The repository's own severities: a warning is the team's way of measuring a rule before it blocks.
+argv = ["npx", "--no-install", "eslint", "."]
+timeout_s = 1200
+[[steps.prefer]]
+when = [{ file = "package.json", npm_script = "lint" }]
+argv = ["npm", "run", "--silent", "lint"]
+
+[[steps]]
+id = "ts.knip"
+language = "ts"
+name = "knip"
+kind = "lint"
+when_any = [{ file = "knip.json" }, { file = "knip.jsonc" }, { file = "package.json", npm_script = "dead-code" }]
+argv = ["npx", "--no-install", "knip"]
+timeout_s = 900
+[[steps.prefer]]
+when = [{ file = "package.json", npm_script = "dead-code" }]
+argv = ["npm", "run", "--silent", "dead-code"]
+
+[[steps]]
+id = "ts.knip-production"
+language = "ts"
+name = "knip --production"
+kind = "lint"
+when_any = [{ file = "package.json", npm_script = "dead-code:prod" }]
+argv = ["npm", "run", "--silent", "dead-code:prod"]
+timeout_s = 900
+
+[[steps]]
+id = "ts.jscpd"
+language = "ts"
+name = "jscpd: code and tests"
+kind = "lint"
+when_any = [{ file = ".jscpd.json" }, { file = "package.json", npm_script = "duplication" }]
+# --fail-on-empty: a scan that read no file has looked at nothing.
+argv = ["npx", "--no-install", "jscpd", "--fail-on-empty"]
+timeout_s = 900
+[[steps.prefer]]
+when = [{ file = "package.json", npm_script = "duplication" }]
+argv = ["npm", "run", "--silent", "duplication"]
+
+[[steps]]
+id = "ts.test"
+language = "ts"
+name = "tests"
+kind = "test"
+when_any = [
+  { file = "package.json", npm_script = "test" }, { file = "vitest.config.ts" }, { file = "vitest.config.mts" },
+  { file = "vitest.config.js" }, { file = "vitest.config.mjs" },
+]
+argv = ["npx", "--no-install", "vitest", "run"]
+timeout_s = 3600
+[[steps.prefer]]
+when = [{ file = "package.json", npm_script = "test" }]
+argv = ["npm", "test", "--silent"]

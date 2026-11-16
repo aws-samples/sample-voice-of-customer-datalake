@@ -251,10 +251,11 @@ workflow tools (`validate_workflow`, then `create_workflow` or `update_workflow`
 web app's card for a new one checks the module too, before the server does (one already saved is changed anywhere,
 as in the editor).
 
-**The default engineering flows.** Six templates ship in one file that the server and the web app both read,
-`voc-datalake/lambda/shared/engineering_flow_templates.json` (`shared/engineering_templates.py`; every one validated by
-the server's own rules in `shared/test/test_engineering_templates.py`): Understand the repository, Issue triage, Bug
-hunt and fix, Feature from an issue or a PRD, PR review and Self-improvement ([docs/autonomous-engineering.md](autonomous-engineering.md#how-the-agents-work-together)).
+**The default engineering flows.** Five templates are compiled from `voc-datalake/templates/orchestration/flows/`
+into the orchestration bundle (7.50.00), which the server (its copy `lambda/shared/orchestration_bundle.json`,
+`shared/engineering_templates.py`) and the web app both read, every one validated by
+the server's own rules in `shared/test/test_engineering_templates.py`: Understand the repository, Issue triage, Bug
+hunt and fix, Feature from an issue or a PRD and PR review ([docs/autonomous-engineering.md](autonomous-engineering.md#how-the-agents-work-together)).
 `GET /workflows/templates` lists them, each with its `template_id`, `name`, `description` and `definition`, for an
 administrator (403 for anyone else, a delegated credential included) where the module is on (404 elsewhere). A
 template is never stored and there is no "create from template" route: a copy is created by `POST /workflows` with

@@ -1,0 +1,18 @@
+schema: voc-agent-card/1
+id: pr-reviewer
+version: 2
+purpose: Reviews a pull request with the repository's tenets and review guide and comments on it; never an approval.
+harness: converse
+model: {id: global.anthropic.claude-sonnet-5-5}
+inputs:
+  - {name: pages, from: task, required: true}
+  - {name: review_guide, from: knowledge}
+  - {name: pull_request, from: broker.read:pull_request, trust: data}
+outputs:
+  - {name: findings, schema: voc-finding/1, recorded_on: task}
+  - {name: comment, kind: pull_request_comment, recorded_on: pull_request}
+tools: [read_file, list_files, write_findings, post_comment, report_progress, save_checkpoint, finish]
+broker_ops: [read, post_comment]
+caps: {max_turns: 150, max_input_tokens: 120000}
+trust: {untrusted: [pull_request, repository, knowledge], fence: nonce}
+evals: [pr-review/pagination-review]

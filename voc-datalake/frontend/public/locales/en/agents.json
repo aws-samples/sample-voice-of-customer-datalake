@@ -1351,19 +1351,15 @@
     },
     "bugHunt": {
       "name": "Bug hunt and fix",
-      "description": "Hunts bugs in the packages it is given, fixes and reviews each one, runs the quality gate and stops at a draft pull request."
+      "description": "Hunts bugs in the packages it is given, fixes and reviews each one, runs the quality gate and stops at a pull request ready for review."
     },
     "feature": {
       "name": "Feature from an issue or a PRD",
-      "description": "Builds a feature from an issue or a PRD: understands it, plans, builds, commits and reviews, runs the quality gate and stops at a draft pull request."
+      "description": "Builds a feature from an issue or a PRD: understands it, plans, builds, commits and reviews, runs the quality gate and stops at a pull request ready for review."
     },
     "prReview": {
       "name": "PR review",
       "description": "Reviews a pull request in one pass, its pages in parallel, against the repository's tenets and review guide, and leaves review comments."
-    },
-    "selfImprovement": {
-      "name": "Self-improvement",
-      "description": "The coach reads past runs, proposes new skill versions and benchmarks them; an administrator accepts or declines each one."
     }
   },
   "engineeringAgent": {

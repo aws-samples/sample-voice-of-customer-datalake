@@ -1,0 +1,21 @@
+schema: voc-automation/1
+id: issue-triage
+version: 1
+seed_marker: {pk: AGENTSEED#issue-triage, sk: META}
+name: Issue triage
+description: 'Triages each labelled GitHub issue: its kind, severity, the code involved and acceptance criteria, recorded on the issue for Bug fixer and Feature builder'
+flow: issue-triage
+enabled: false
+scope: {all: true}
+instructions: ''
+# One trigger: the labelled issue itself. Until the triage's own issue claim lands (7.50.00, the runtime work), the
+# 7.47.00 issue trigger takes the issues of the agent's feedback_type only.
+triggers:
+  - {kind: github_issue, label: voc-agent, trusted_authors: false, lookback_days: 7}
+models: {}
+output: {visibility: private}
+budget: {monthly_usd: 50, max_scheduled_runs_per_day: 1}
+engineering: {connection: null, language: null, feedback_type: bug}
+learn: {cross_run: 'off'}
+readiness: [connection, app_installation, image, bedrock_models, agentcore_quota, network, session_storage, dial,
+            budget, hard_cap, issues_source, issue_label]

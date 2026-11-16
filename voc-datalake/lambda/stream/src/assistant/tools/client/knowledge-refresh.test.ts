@@ -28,7 +28,7 @@ const CAPS = join(LAMBDA, 'engineering/runtime/caps.py');
 const INTERFACE = join(LAMBDA, 'engineering/runtime/interface.py');
 const WORKFLOW_ENGINEERING = join(LAMBDA, 'shared/workflow_engineering.py');
 const AGENTCORE_STACK = join(LAMBDA, '../lib/stacks/engineering-agentcore.ts');
-const TEMPLATES = join(LAMBDA, 'shared/engineering_flow_templates.json');
+const TEMPLATES = join(LAMBDA, 'shared/orchestration_bundle.json');
 const TEXT = {
   'shared/mcp_global_tools.py': readFileSync(MCP_TOOLS, 'utf8'),
   'shared/mcp_global_tools_steps.py': readFileSync(MCP_STEP_TOOLS, 'utf8'),
@@ -38,7 +38,7 @@ const TEXT = {
   'engineering/runtime/interface.py': readFileSync(INTERFACE, 'utf8'),
   'shared/workflow_engineering.py': readFileSync(WORKFLOW_ENGINEERING, 'utf8'),
   '../lib/stacks/engineering-agentcore.ts': readFileSync(AGENTCORE_STACK, 'utf8'),
-  'shared/engineering_flow_templates.json': readFileSync(TEMPLATES, 'utf8'),
+  'shared/orchestration_bundle.json': readFileSync(TEMPLATES, 'utf8'),
 } as const;
 const read = (path: keyof typeof TEXT): string => TEXT[path];
 
@@ -74,10 +74,10 @@ describe('propose_knowledge_refresh: a proposal, never an action', () => {
 
   it('gives the model the template’s estimate, the template having two agent steps and the most shards', () => {
     expect(tool.spec.toolSpec?.description).toContain('about 77 minutes and $1.50 of agent session time');
-    const templates = JSON.parse(read('shared/engineering_flow_templates.json')) as {
-      templates: { template_id: string; definition: { nodes: { type: string; data: { params?: { shard_cap?: number } } }[] } }[]
+    const bundle = JSON.parse(read('shared/orchestration_bundle.json')) as {
+      flows: { template_id: string; definition: { nodes: { type: string; data: { params?: { shard_cap?: number } } }[] } }[]
     };
-    const understand = templates.templates.find((t) => t.template_id === 'understand-repository')?.definition.nodes ?? [];
+    const understand = bundle.flows.find((t) => t.template_id === 'understand-repository')?.definition.nodes ?? [];
     expect(understand.filter((node) => node.type === 'agent')).toHaveLength(2);
     expect(understand.find((node) => node.type === 'map')?.data.params?.shard_cap).toBe(MAX_SHARD_CAP);
   });

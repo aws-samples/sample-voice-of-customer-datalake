@@ -1,0 +1,24 @@
+schema: voc-agent-card/1
+id: understander
+version: 2
+purpose: Reads an issue, classifies it (bug, feature or investigation) with a severity, finds the code involved and writes the problem statement and acceptance criteria.
+harness: converse
+model: {id: global.anthropic.claude-haiku-5-5}
+inputs:
+  - {name: issue, from: broker.read:issue, required: true, trust: data}
+  - {name: knowledge, from: knowledge}
+  - {name: memory, from: memory}
+  - {name: checkout, from: checkout, required: true}
+outputs:
+  - {name: triage, schema: voc-triage/1, recorded_on: task}
+  - {name: comment, kind: issue_comment, recorded_on: issue}
+  - {name: labels, kind: issue_labels, recorded_on: issue}
+  - {name: finish, kind: summary, recorded_on: task}
+tools: [read_file, list_files, report_progress, save_checkpoint, finish]
+pending_tools: [read_issue, write_triage, post_comment, label_issue]
+broker_ops: [read, post_comment]
+pending_broker_ops: [label_issue]
+caps: {max_turns: 150, max_input_tokens: 120000}
+trust: {untrusted: [issue, repository, knowledge, memory], fence: nonce}
+evals: [issue-triage/divide-floors, issue-triage/power-operation-request, issue-triage/slow-add-investigation,
+        issue-triage/planted-instruction]

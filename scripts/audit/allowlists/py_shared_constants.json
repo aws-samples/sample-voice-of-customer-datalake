@@ -53,6 +53,14 @@
       "reason": "an engineering flow's memory step modes (shared/workflow_engineering.py) and the MCP OAuth scopes: both read and write by coincidence, different meanings"
     },
     {
+      "key": "ALIASES|GATE_PACK_ALIASES::*",
+      "reason": "the two-language gate pack ids a stored flow may still name (7.50.00) in the gate's packs (engineering/quality_gate/packs.py, which the agents' images ship without shared/) and in the workflow editor's rules (shared/workflow_engineering.py, which cannot import the engineering package); quality_gate/test/test_language_packs.py holds the two equal"
+    },
+    {
+      "key": "BUNDLE_SCHEMA|SCHEMA::*",
+      "reason": "the orchestration bundle's schema id, read by its two readers: shared/engineering_templates.py (the agents API, which ships without the engineering package) and engineering/orchestration/bundle.py (the harness's, which the agents' images ship without shared/); orchestration/test/test_orchestration_compile.py holds both to the compiled bundle's"
+    },
+    {
       "key": "REVIEWER_KEYS|REVIEWER_SETTINGS::*",
       "reason": "the quality gate's own reviewer settings (engineering/quality_gate/gate.py) and the workflow editor's copy (shared/workflow_engineering.py): shared/ ships in the agents API without the engineering package (only with -c engineeringAgents=true), so it cannot import the gate's; engineering/test/test_workflow_lockstep.py holds the two equal"
     },

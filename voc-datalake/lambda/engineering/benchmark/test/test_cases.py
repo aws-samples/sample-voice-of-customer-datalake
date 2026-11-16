@@ -30,8 +30,8 @@ def review_check(**finding: Any) -> dict[str, Any]:
 
 
 def test_the_shipped_suite_has_each_kind_and_a_monorepo() -> None:
-    assert [case.id for case in SUITE] == ['duration-hours-feature', 'monorepo-units-bug', 'pagination-review',
-                                           'slug-cut-bug']
+    assert [case.id for case in SUITE] == ['divide-floor-bug', 'duration-hours-feature', 'monorepo-units-bug',
+                                           'pagination-review', 'slug-cut-bug']
     assert {case.kind for case in SUITE} == {'bug', 'feature', 'review'}
     slug = CASES[SLUG]
     assert isinstance(slug.check, CommandCheck)

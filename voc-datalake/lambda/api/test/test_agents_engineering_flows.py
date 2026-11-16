@@ -115,7 +115,8 @@ def test_the_default_flows_are_listed_for_an_administrator_where_the_module_is(l
                                                                                 monkeypatch: pytest.MonkeyPatch) -> None:
     with _api():
         status, body = _call(lambda_context, 'GET', '/workflows/templates')
-        assert (status, body['count']) == (200, 6), body
+        assert (status, body['count']) == (200, 5), body
+        assert all(set(item) == {'template_id', 'name', 'description', 'definition'} for item in body['items'])
         assert [item['template_id'] for item in body['items']][:2] == ['understand-repository', 'issue-triage']
         assert all(item['definition']['schema'] == workflow_schema.SCHEMA_V2 for item in body['items'])
         assert _call(lambda_context, 'GET', '/workflows/templates', claims=USER)[0] == 403

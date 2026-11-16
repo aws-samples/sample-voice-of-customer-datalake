@@ -1,0 +1,19 @@
+# The agents' own default agent (docs/autonomous-agents.md, "Default agents"): it runs the built-in Reviews to
+# Prototype workflow (wf_default, shared/workflow_schema.py default_template), not an engineering flow.
+schema: voc-automation/1
+id: autonomous-product
+version: 1
+seed_marker: {pk: AGENTSEED, sk: META}
+name: Autonomous Product
+description: Turns recurring review problems into a PR/FAQ, PRD and prototype
+flow: wf_default
+enabled: false
+scope: {all: true}
+instructions: ''
+personas: {allow_generate: true, fixed: []}
+triggers:
+  - {kind: threshold, count: 10, per: category, window_days: 7}
+models: {}
+output: {visibility: private}
+budget: {}
+readiness: []

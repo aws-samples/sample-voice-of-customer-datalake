@@ -57,8 +57,8 @@ def test_the_known_fixes_pass_every_shipped_case() -> None:
     assert card.candidate == 'known-fixes'
     assert [(r.case_id, r.passed) for r in card.results] == [(case.id, True) for case in SUITE]
     assert card.pass_rate == 1.0
-    assert math.isclose(card.total_cost_usd, 0.04)
-    assert math.isclose(card.total_seconds, 8.0)
+    assert math.isclose(card.total_cost_usd, 0.05)
+    assert math.isclose(card.total_seconds, 10.0)
     assert {(r.input_tokens, r.output_tokens) for r in card.results} == {(1200, 300)}
     assert card.result(REVIEW) == CaseResult(REVIEW, True, 'every expected finding reported (3), 0 other(s)',
                                              1200, 300, 0.01, 2.0)

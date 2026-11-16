@@ -1,0 +1,52 @@
+schema: voc-flow-template/1
+id: feature
+version: 2
+name: Feature from an issue or a PRD
+description: "Builds a feature from an issue or a PRD: understands it, plans, builds, commits and reviews, runs the quality gate and stops at a pull request ready for review."
+inputs:
+  issue: {type: issue_ref}
+  prd: {type: prd_ref}
+  feedback: {type: feedback_ids, max: 50}
+budget: {monthly_usd: 50, run_token_cap: 3000000, max_tasks: 40}
+memory: {recall: true, scopes: [repo, role], limit: 10}
+learn:
+  enabled: true
+  model: global.anthropic.claude-sonnet-5-5
+  budget_share: 0.05
+  roles: [understander, builder, commit-reviewer, gate-runner, final-go]
+  after_needs_human_hours: 72
+  assert: [{check: learn.proposals_name_case}]
+pr: ready
+requires: {dial: [ai_assisted, ai_driven], ci_attestation: true, image: true, issues_source: false}
+steps:
+  - {id: understand, title: Understand the issue or PRD, agent: understander@latest}
+  - {id: plan, title: Plan the work, agent: coordinator@latest}
+  - id: board
+    title: Build and review each task
+    board: {posters: [coordinator], claimers: [builder, commit-reviewer], until: drained}
+    assert:
+      - {check: patch.submitted, on_fail: block}
+      - {check: patch.touches_tests, on_fail: block}
+      - {check: patch.no_ci_changes, on_fail: block}
+      - {check: review.no_blocking, args: {by: commit-reviewer}, on_fail: block}
+  - id: gate
+    title: Quality gate
+    quality_gate: {packs: auto, max_rounds: 3, runner: gate-runner@latest, final_go: final-go@latest}
+    assert:
+      - {check: gate.pack_checks_ran, on_fail: block}
+      - {check: gate.passed, on_fail: fail_arrow}
+    on: {pass: commit, fail: human}
+  - id: commit
+    title: Commit the build the gate passed
+    agent: committer@latest
+    instructions: Commit the builders' submitted patch, the tree the gate's GO names, to the run's branch.
+    assert: [{check: push.tree_is_judged_tree, on_fail: block}]
+  - id: pr_author
+    title: Open the pull request
+    agent: pr-author@latest
+    instructions: Open the pull request with what was built, what it was built from (the issue or the PRD), the methodology steps it went without, the gate record and the feedback ids it cites. Never merge.
+    assert:
+      - {check: pr.opened, on_fail: block}
+      - {check: pr.state_as_flow, on_fail: block}
+  - {id: pr, title: Pull request, stop_at_pr: {}}
+  - {id: human, title: A person decides, end: {status: needs_human}}

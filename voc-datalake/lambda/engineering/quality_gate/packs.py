@@ -1,8 +1,9 @@
 """Language gate packs: load the manifests, detect the packs a repository needs, plan their checks.
 
-A pack is a directory of voc-datalake/engineering-gates with a manifest.toml (schema voc-gate-pack/1):
-the languages it covers (marker files and source extensions), the repository's own gate it prefers, the tools
-it expects with their pinned versions, the registries it needs, and its ordered steps. Detection reads only a
+A pack is a directory of voc-datalake/templates/orchestration/gates with a manifest.toml (schema voc-gate-pack/1),
+one per language since 7.50.00 (python, typescript, rust, java; ``ALIASES`` keeps the two-language ids a stored flow
+may name): the language it covers (marker files and source extensions), the repository's own gate it prefers, the
+tools it expects with their pinned versions, the registries it needs, and its ordered steps. Detection reads only a
 listing of the repository plus a few small config files (a ``RepoView``: a connector's tree listing works as well
 as a checkout), so a large repository is never read whole.
 
@@ -78,15 +79,19 @@ class RepoView:
 class Condition:
     """True when ``file`` (relative to the root) exists, holds ``contains``, or names ``npm_script``.
 
-    ``glob`` instead of ``file``: true when any file under the root matches it.
+    ``glob`` instead of ``file``: true when any file under the root matches it; ``absent``: true when that file does
+    not exist (a root with no marker of its own).
     """
 
     file: str = ''
     glob: str = ''
     contains: str = ''
     npm_script: str = ''
+    absent: str = ''
 
     def holds(self, repo: RepoView, root: str) -> bool:
+        if self.absent:
+            return join(root, self.absent) not in repo.files
         if self.glob:
             prefix = f'{root}/' if root else ''
             return any(path.startswith(prefix) and fnmatch.fnmatch(path[len(prefix):], self.glob)
@@ -131,6 +136,9 @@ class Language:
     extensions: tuple[str, ...]
     #: A root where one of these holds is a workspace: the roots under it are its members, checked through it.
     workspace: tuple[Condition, ...] = ()
+    #: A repository with no marker of the language at all is still one of its roots when a file matches one of these
+    #: (relative to the repository's root: a Python repository of test files alone, ``test_*.py``).
+    root_globs: tuple[str, ...] = ()
 
 
 #: The repository's own gate: when a repository a pack covers has it, it runs instead of every pack step.
@@ -269,14 +277,17 @@ def _conditions(raw: Any, where: str) -> tuple[Condition, ...]:
         at = f'{where}[{index}]'
         if not isinstance(item, dict):
             raise PackError(f'{at}: a condition must be a table')
-        unknown = set(item) - {'file', 'glob', 'contains', 'npm_script'}
+        unknown = set(item) - {'file', 'glob', 'absent', 'contains', 'npm_script'}
         if unknown:
             raise PackError(f'{at}: unknown keys {sorted(unknown)}')
         file = _relative(_str(item, 'file', at, default=''), at)
         glob = _str(item, 'glob', at, default='')
-        if bool(file) == bool(glob):
-            raise PackError(f'{at}: a condition names exactly one of "file" and "glob"')
-        out.append(Condition(file=file, glob=glob, contains=_str(item, 'contains', at, default=''),
+        absent = _relative(_str(item, 'absent', at, default=''), at)
+        if sum(map(bool, (file, glob, absent))) != 1:
+            raise PackError(f'{at}: a condition names exactly one of "file", "glob" and "absent"')
+        if absent and ('contains' in item or 'npm_script' in item):
+            raise PackError(f'{at}: an "absent" condition takes no "contains" or "npm_script"')
+        out.append(Condition(file=file, glob=glob, absent=absent, contains=_str(item, 'contains', at, default=''),
                              npm_script=_str(item, 'npm_script', at, default='')))
     return tuple(out)
 
@@ -318,9 +329,14 @@ def _languages(data: Mapping[str, Any], where: str) -> tuple[Language, ...]:
         raise PackError(f'{where}: [languages] must declare at least one language')
     if not all(isinstance(spec, dict) for spec in raw.values()):
         raise PackError(f'{where}: every [languages] entry must be a table')
+    for lang_id, spec in raw.items():
+        unknown = set(spec) - {'markers', 'extensions', 'workspace', 'root_globs'}
+        if unknown:
+            raise PackError(f'{where}.languages.{lang_id}: unknown keys {sorted(unknown)}')
     return tuple(Language(id=lang_id, markers=_strs(spec, 'markers', f'{where}.languages.{lang_id}', required=True),
                           extensions=_strs(spec, 'extensions', f'{where}.languages.{lang_id}', required=True),
-                          workspace=_conditions(spec.get('workspace', []), f'{where}.languages.{lang_id}.workspace'))
+                          workspace=_conditions(spec.get('workspace', []), f'{where}.languages.{lang_id}.workspace'),
+                          root_globs=_strs(spec, 'root_globs', f'{where}.languages.{lang_id}'))
                  for lang_id, spec in raw.items())
 
 
@@ -387,9 +403,22 @@ def load_packs(directory: Path) -> tuple[Pack, ...]:
     return tuple(load_pack(manifest) for manifest in manifests)
 
 
+#: Where the agents' images keep the packs (templates/orchestration/gates, copied there by the images' build).
+IMAGE_PACKS_DIR = Path('/opt/voc/gates')
+#: The two-language packs before 7.50.00, which a stored flow's ``packs`` may still name: each stands for its two.
+ALIASES: dict[str, tuple[str, ...]] = {'python-ts': ('python', 'typescript'), 'rust-ts': ('rust', 'typescript')}
+
+
 def default_packs_dir() -> Path:
-    """voc-datalake/engineering-gates, next to this package (the session image keeps the same layout)."""
-    return Path(__file__).resolve().parents[3] / 'engineering-gates'
+    """voc-datalake/templates/orchestration/gates, in this package's tree, or the image's copy (``IMAGE_PACKS_DIR``)
+    where the tree has none."""
+    beside = Path(__file__).resolve().parents[3] / 'templates' / 'orchestration' / 'gates'
+    return beside if beside.is_dir() else IMAGE_PACKS_DIR
+
+
+def expand(pinned: Sequence[str]) -> tuple[str, ...]:
+    """A step's pinned packs with each alias (``ALIASES``) replaced by the packs it stands for, each once, in order."""
+    return tuple(dict.fromkeys(pack for name in pinned for pack in ALIASES.get(name, (name,))))
 
 
 # ── detection and planning ─────────────────────────────────────────────────────
@@ -404,6 +433,8 @@ def language_roots(language: Language, repo: RepoView) -> tuple[str, ...]:
     """
     candidates = sorted({_parent(path) for path in repo.files if PurePosixPath(path).name in language.markers},
                         key=lambda root: (root.count('/') + bool(root), root))
+    if not candidates and any(fnmatch.fnmatch(path, glob) for path in repo.files for glob in language.root_globs):
+        candidates = ['']   # (no marker anywhere: the repository's root, by its own files)
     roots: list[str] = []
     workspaces = [root for root in candidates if any(cond.holds(repo, root) for cond in language.workspace)]
     for candidate in candidates:
@@ -464,7 +495,7 @@ def plan(detections: Sequence[Detection], repo: RepoView, *, changed_paths: Sequ
     ``changed_paths`` limits the checks to the roots the change touches (a round's first pass); ``None`` checks
     every root. A repository a pack covers that has ``OWN_GATE_FILE`` runs that instead of every pack step but the
     dependency steps (``setup``), which run first so the own gate finds its dependencies offline.
-    Steps shared by two packs (the TypeScript half of rust-ts and python-ts) run once per root. ``python`` is
+    A step id two packs both declare runs once per root. ``python`` is
     the sandbox's interpreter, put where a manifest says ``{python}``.
     """
     empty = GatePlan(

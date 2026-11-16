@@ -1,7 +1,7 @@
 /**
  * The dev server serves only the folders and files in `server.fs.allow` (streamSource.ts `streamFsAllow`); a module
  * the SPA imports from outside the frontend and the stream sources fails to load in `npm run dev` alone (vitest and
- * `vite build` never check it). The one Lambda file the SPA imports, the default engineering flows, is allowed by
+ * `vite build` never check it). The one other file the SPA imports, the default engineering flows (the orchestration bundle), is allowed by
  * itself, never its whole folder. Read as text: streamSource.ts is the dev server's config, not the SPA's code.
  */
 import { existsSync, readFileSync } from 'node:fs'
@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest'
 
 const FRONTEND = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const SOURCE = readFileSync(join(FRONTEND, 'streamSource.ts'), 'utf8')
-const RELATIVE = '../lambda/shared/engineering_flow_templates.json'
+const RELATIVE = '../templates/orchestration/bundle.json'
 
 describe("the dev server's allow list", () => {
   it('names the default engineering flows the SPA imports, and the file is there', () => {
@@ -25,6 +25,6 @@ describe("the dev server's allow list", () => {
 
   it('is where the SPA imports the file from', () => {
     expect(readFileSync(join(FRONTEND, 'src', 'api', 'engineeringTemplates.ts'), 'utf8'))
-      .toContain(`from '../../${RELATIVE}'`)
+      .toContain(`import { flows } from '../../${RELATIVE}'`)
   })
 })

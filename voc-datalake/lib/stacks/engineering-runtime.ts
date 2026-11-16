@@ -95,16 +95,16 @@ export const SKILL_PARTITIONS = 'WS#*#SKILL#*';
 const ROLE_MEMORY_PARTITIONS = 'WS#*#AMEM#ROLE#*';
 const SCORECARD_PARTITIONS = 'WS#*#SCORE#*';
 /**
- * The benchmark's case directories (voc-datalake/engineering-benchmark/cases, lambda/engineering/benchmark/cases.py),
- * read at synth: the coach names one of them as the case its version should gain on.
+ * The flows' eval cases (templates/orchestration/evals/<flow>/cases/<case>/, lambda/engineering/benchmark/cases.py),
+ * read at synth: the benchmark's are the voc-bench/1 ones, and the coach names one as the case its version should gain on.
  */
-const BENCHMARK_CASES_DIR = path.join(__dirname, '../../engineering-benchmark/cases');
+const EVALS_DIR = path.join(__dirname, '../../templates/orchestration/evals');
 
-/** The benchmark's case ids (its case directories' names), sorted. */
-export function benchmarkCaseIds(dir: string = BENCHMARK_CASES_DIR): string[] {
-  return fs.readdirSync(dir, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
+/** The benchmark's case ids (the voc-bench/1 cases' directories' names, across the flows), sorted. */
+export function benchmarkCaseIds(dir: string = EVALS_DIR): string[] {
+  const cases = (flow: string): string => path.join(dir, flow, 'cases');
+  return fs.readdirSync(dir).filter((flow) => fs.existsSync(cases(flow))).flatMap((flow) => fs.readdirSync(cases(flow))
+    .filter((id) => /"schema": *"voc-bench\/1"/.test(fs.readFileSync(path.join(cases(flow), id, 'case.json'), 'utf8'))))
     .sort((a, b) => a.localeCompare(b, 'en'));
 }
 /**

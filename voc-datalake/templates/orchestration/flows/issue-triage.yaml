@@ -1,0 +1,32 @@
+schema: voc-flow-template/1
+id: issue-triage
+version: 2
+name: Issue triage
+description: Reads an issue, classifies it as a bug, a feature or an investigation, reproduces or locates it and proposes the next step on the issue.
+inputs:
+  issue: {type: issue_ref, required: true}
+budget: {monthly_usd: 50, max_tasks: 10}
+memory: {recall: true, scopes: [repo], limit: 10}
+learn:
+  enabled: true
+  model: global.anthropic.claude-sonnet-5-5
+  budget_share: 0.05
+  roles: [understander, hunter]
+  after_needs_human_hours: 72
+  assert: [{check: learn.proposals_name_case}]
+requires: {dial: [human_driven, ai_assisted, ai_driven], image: true, issues_source: true}
+steps:
+  - id: classify
+    title: Understand and classify
+    agent: understander@latest
+    instructions: Read the issue, classify it as a bug, a feature or an investigation with a severity and say why; record the triage, comment it on the issue and label the issue.
+    assert:
+      - {check: triage.recorded, on_fail: block}
+      - {check: triage.commented, on_fail: warn}
+      - {check: triage.labelled, on_fail: warn}
+  - id: locate
+    title: Reproduce or locate
+    agent: hunter@latest
+    instructions: Confirm or reproduce what the triage says with run, and write what you found as findings; post no task.
+    assert: [{check: findings.cite_evidence, on_fail: block}]
+  - {id: end, title: The triage on the issue, end: {status: completed}}

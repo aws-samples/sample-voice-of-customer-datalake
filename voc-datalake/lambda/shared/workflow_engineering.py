@@ -23,6 +23,16 @@ to the same answers by the shared fixture ``frontend/src/test/engineeringFlows.j
   with a committer or a PR author (an agent, or a board's claimers) must end there: every way their work can end is
   a stop at PR or a human decision point, and at least one is a stop at PR.
 
+Two settings are 7.50.00's, both optional and kept in ``params``, so a flow saved before them stays valid and every
+editor keeps them as they are (D1; the editor and the assistant leave ``params`` as written):
+
+- ``params.assert`` on any engineering step: ``[{check, args?, on_fail?}]``, checks of the closed vocabulary
+  (``ASSERTION_ARGS``) that platform code evaluates on what the step recorded (engineering/orchestration/assertions.py);
+- the start step's ``params``: the flow's own ``memory`` (``{recall, scopes?, limit?}``: built in, never a step),
+  ``learn`` (the built-in Learn step: ``{enabled, model?, budget_share?, roles?, after_needs_human_hours?, assert?}``)
+  and ``pr`` (``ready``, the default, or ``draft``: how its pull request opens; merging is a person's). ``flow_settings``
+  reads them with their defaults. The templates (voc-datalake/templates/orchestration/flows/) set all three.
+
 Only a quality gate's arrows carry a label; an engineering flow repeats through its board, so it declares no loops.
 
 A flow may carry ``budget: {monthly_usd}``: what its runs may spend in a calendar month (UTC), from 0.01 to
@@ -53,8 +63,11 @@ BOARD_CLAIMERS: Final = ('builder', 'commit-reviewer', 'committer', 'final-go', 
                          'pr-author', 'pr-reviewer', 'understander')
 #: The roles whose work leaves the platform as code: a flow with one of them ends at a stop at PR.
 PUSHING_ROLES: Final = frozenset({'committer', 'pr-author'})
-#: The gate packs (voc-datalake/engineering-gates/; a lockstep test holds the two together).
-GATE_PACKS: Final = ('java', 'python-ts', 'rust-ts')
+#: The gate packs, one per language (voc-datalake/templates/orchestration/gates/; a lockstep test holds the two
+#: together), and the two-language packs before 7.50.00, which a stored flow may still name: each stands for its two.
+GATE_PACKS: Final = ('java', 'python', 'rust', 'typescript')
+GATE_PACK_ALIASES: Final[Mapping[str, tuple[str, ...]]] = {'python-ts': ('python', 'typescript'),
+                                                           'rust-ts': ('rust', 'typescript')}
 SHARD_BY: Final = ('packages', 'history', 'pr_pages')
 BOARD_UNTIL: Final = ('drained', 'caps')
 MEMORY_MODES: Final = ('read', 'write')
@@ -64,13 +77,30 @@ MAX_SHARD_CAP: Final = 200
 MAX_GATE_ROUNDS: Final = 5
 #: What a quality gate step may set (engineering.quality_gate.gate PARAMS but the ids the runtime fills in), and each
 #: reviewer's settings and the default reviewers (its REVIEWER_KEYS and DEFAULT_REVIEWERS; a lockstep test holds them).
-GATE_SETTINGS: Final = frozenset({'max_rounds', 'reviewers', 'packs', 'final_go_model'})
+GATE_SETTINGS: Final = frozenset({'max_rounds', 'reviewers', 'packs', 'final_go_model', 'assert'})
 REVIEWER_SETTINGS: Final = frozenset({'name', 'focus', 'model_id', 'advisory'})
 #: The default reviewers, each with whether it is advisory (a reviewer that leaves ``advisory`` out takes its own).
 DEFAULT_REVIEWERS: Final = {'security': False, 'quality': False, 'first-principles': True}
 _REVIEWER_NAME = re.compile(r'[a-z][a-z0-9-]{0,39}\Z')
 MAX_MEMORY_LIMIT: Final = 50
 MAX_MODEL_CHARS: Final = 128
+#: A step's assertions (``params.assert``, 7.50.00): checks of the closed vocabulary, each with the arguments it takes
+#: (engineering/orchestration/assertions.py VOCABULARY, which evaluates them; a lockstep test holds the two equal).
+ASSERTION_ARGS: Final[Mapping[str, tuple[str, ...]]] = {
+    'findings.cite_evidence': (), 'gate.pack_checks_ran': (), 'gate.passed': (), 'learn.proposals_name_case': (),
+    'notes.cite_sources': (), 'patch.max_lines': ('max',), 'patch.no_ci_changes': (), 'patch.submitted': (),
+    'patch.touches_tests': (), 'pr.links_issue': (), 'pr.opened': (), 'pr.state_as_flow': (),
+    'push.tree_is_judged_tree': (), 'review.commented': (), 'review.no_blocking': ('by',),
+    'tasks.posted': ('role', 'min'), 'triage.commented': (), 'triage.labelled': (), 'triage.recorded': (),
+}
+ASSERTION_ON_FAIL: Final = ('block', 'fail_arrow', 'warn')
+MAX_ASSERTIONS: Final = 10
+#: The flow's own settings, on its start step's params (7.50.00): its memory recall, its built-in Learn step and how
+#: its pull request opens (ready for review by default; a person merges, always).
+LEARN_SETTINGS: Final = frozenset({'enabled', 'model', 'budget_share', 'roles', 'after_needs_human_hours', 'assert'})
+MAX_NEEDS_HUMAN_HOURS: Final = 720
+PR_STATES: Final = ('ready', 'draft')
+DEFAULT_PR: Final = 'ready'
 #: The largest monthly budget a flow takes, in dollars (the editor's and the assistant's schemas take the same).
 MAX_MONTHLY_BUDGET_USD: Final = 100_000
 BUDGET_KEYS: Final = frozenset({'monthly_usd'})
@@ -149,7 +179,7 @@ def _gate_issues(params: Mapping[str, Any]) -> list[str]:
     packs = params.get('packs', 'auto')
     # Each entry a string before any set is built (an unhashable entry is refused, never a crash).
     if packs != 'auto' and not (isinstance(packs, list) and packs and all(isinstance(p, str) for p in packs)
-                                and set(packs) <= set(GATE_PACKS) and len(set(packs)) == len(packs)):
+                                and set(packs) <= {*GATE_PACKS, *GATE_PACK_ALIASES} and len(set(packs)) == len(packs)):
         issues.append(f"a quality gate's params.packs is 'auto' or a list of gate packs: {', '.join(GATE_PACKS)}")
     if not _model(params, 'final_go_model'):
         issues.append(f"a quality gate's params.final_go_model is a model id of at most {MAX_MODEL_CHARS} characters")
@@ -186,8 +216,71 @@ def _memory_issues(params: Mapping[str, Any]) -> list[str]:
     return issues
 
 
+def _assertion_issues(raw: object) -> list[str]:
+    """A step's ``params.assert``: checks of the vocabulary, each with exactly the arguments it takes."""
+    if not isinstance(raw, list) or len(raw) > MAX_ASSERTIONS:
+        return [f"a step's params.assert is a list of at most {MAX_ASSERTIONS} assertions"]
+    issues = []
+    for item in raw:
+        check = item.get('check') if isinstance(item, Mapping) else None
+        args = item.get('args', {}) if isinstance(item, Mapping) else None
+        if not isinstance(item, Mapping) or set(item) - {'check', 'args', 'on_fail'} or check not in ASSERTION_ARGS:
+            issues.append(f"an assertion is {{check, args?, on_fail?}}, its check one of {', '.join(ASSERTION_ARGS)}")
+        elif not isinstance(args, Mapping) or set(args) != set(ASSERTION_ARGS[check]):
+            issues.append(f"the assertion {check} takes {', '.join(ASSERTION_ARGS[check]) or 'no arguments'}")
+        elif item.get('on_fail', 'block') not in ASSERTION_ON_FAIL:
+            issues.append(f"an assertion's on_fail is one of {', '.join(ASSERTION_ON_FAIL)}")
+    return issues
+
+
+def _recall_issues(raw: object) -> list[str]:
+    scopes = raw.get('scopes', ['repo']) if isinstance(raw, Mapping) else None
+    if (not isinstance(raw, Mapping) or set(raw) - {'recall', 'scopes', 'limit'} or not isinstance(raw.get('recall'), bool)
+            or not _roles(scopes, MEMORY_SCOPES) or not _whole(raw, 'limit', 1, MAX_MEMORY_LIMIT, default=10)):
+        return [(f"a flow's memory is {{recall: true or false, scopes?: [{', '.join(MEMORY_SCOPES)}], "
+                f'limit?: 1 to {MAX_MEMORY_LIMIT}}}')]
+    return []
+
+
+def _learn_issues(raw: object) -> list[str]:
+    if not isinstance(raw, Mapping) or set(raw) - LEARN_SETTINGS or not isinstance(raw.get('enabled'), bool):
+        return [f"a flow's learn is {{enabled: true or false}} and optionally {', '.join(sorted(LEARN_SETTINGS - {'enabled'}))}"]
+    issues = []
+    share = raw.get('budget_share', 1)
+    if not _model(raw, 'model') or isinstance(share, bool) or not isinstance(share, (int, float)) or not 0 < share <= 1:
+        issues.append("a flow's learn.model is a model id, and its budget_share above 0 and at most 1")
+    if 'roles' in raw and not _roles(raw['roles'], ENGINEERING_ROLES):
+        issues.append(f"a flow's learn.roles is a list of roles, each once ({', '.join(ENGINEERING_ROLES)})")
+    if not _whole(raw, 'after_needs_human_hours', 1, MAX_NEEDS_HUMAN_HOURS, default=72):
+        issues.append(f"a flow's learn.after_needs_human_hours is a whole number from 1 to {MAX_NEEDS_HUMAN_HOURS}")
+    return issues + (_assertion_issues(raw['assert']) if 'assert' in raw else [])
+
+
+def _start_issues(params: Mapping[str, Any]) -> list[str]:
+    """The flow's own settings on its start step (7.50.00), each optional: ``memory``, ``learn``, ``pr``."""
+    issues = _recall_issues(params['memory']) if 'memory' in params else []
+    issues += _learn_issues(params['learn']) if 'learn' in params else []
+    if params.get('pr', DEFAULT_PR) not in PR_STATES:
+        issues.append(f"a flow's pr is one of {', '.join(PR_STATES)}")
+    return issues
+
+
 _PARAMS = {'agent': _agent_issues, 'quality_gate': _gate_issues, 'board': _board_issues, 'map': _map_issues,
-           'memory': _memory_issues}
+           'memory': _memory_issues, 'start': _start_issues}
+
+
+def flow_settings(definition: Mapping[str, Any]) -> dict[str, Any]:
+    """An engineering flow's ``memory``, ``learn`` and ``pr`` (its start step's params), each with its default when the
+    flow leaves it out (a flow saved before 7.50.00 has none): no recall, Learn on, the pull request ready."""
+    start = next((node for node in definition.get('nodes', ()) if node.get('type') == 'start'), {})
+    params = start.get('data', {}).get('params', {}) if isinstance(start, Mapping) else {}
+    return {'memory': dict(params.get('memory', {'recall': False})), 'learn': dict(params.get('learn', {'enabled': True})),
+            'pr': params.get('pr', DEFAULT_PR)}
+
+
+def step_assertions(node: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """A step's assertions (``params.assert``), none when it has none."""
+    return [dict(item) for item in node.get('data', {}).get('params', {}).get('assert', [])]
 
 
 def budget_of(raw: object) -> tuple[dict[str, float] | None, str | None]:
@@ -208,9 +301,10 @@ def budget_of(raw: object) -> tuple[dict[str, float] | None, str | None]:
 
 
 def params_issues(node_type: str, params: Mapping[str, Any]) -> list[str]:
-    """What is wrong with an engineering step's settings (empty when nothing is)."""
+    """What is wrong with an engineering step's settings (empty when nothing is): its own, and its assertions."""
     check = _PARAMS.get(node_type)
-    return check(params) if check else []
+    asserted = _assertion_issues(params['assert']) if 'assert' in params and node_type in ENGINEERING_NODE_TYPES else []
+    return (check(params) if check else []) + asserted
 
 
 # ── graph rules ──────────────────────────────────────────────────────────────

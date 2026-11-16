@@ -19,7 +19,7 @@ from agents.heartbeat import engineering, issues
 from agents.heartbeat import handler as hb
 from shared import agents_store as store
 from shared import engineering_agent_runs as eng_runs
-from shared.agent_seed import bug_fixer_flow
+from shared.agent_seed import seeded_flow
 from shared.test.agents_fixtures import CATEGORIES, agents_env
 
 NOW = datetime(2026, 11, 16, 9, 30, tzinfo=UTC)
@@ -84,7 +84,7 @@ def _env(*, owner_admin: bool = True, start: Start | None = None) -> Iterator[tu
 
 def _agent(env: Any, *, kind: str = 'bug', triggers: list | None = None, scope: dict | None = None,
            budget: float | None = 50) -> dict:
-    definition = bug_fixer_flow()
+    definition = seeded_flow('bug-fixer')
     definition = {k: v for k, v in definition.items() if k != 'budget'} if budget is None else \
         {**definition, 'budget': {'monthly_usd': budget}}
     flow = store.create_workflow(env.agents, definition, created_by='admin-sub', username='alice', now=CREATED)

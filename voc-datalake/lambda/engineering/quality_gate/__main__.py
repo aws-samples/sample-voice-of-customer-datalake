@@ -24,16 +24,26 @@ from typing import Any
 from engineering.quality_gate.checks import run_plan
 from engineering.quality_gate.gate import GateConfig, GateConfigError, GateInput, QualityGate
 from engineering.quality_gate.models import BedrockModel, ModelClient
-from engineering.quality_gate.packs import GatePlan, RepoView, default_packs_dir, detect, load_packs, plan
+from engineering.quality_gate.packs import (
+    GatePlan,
+    RepoView,
+    default_packs_dir,
+    detect,
+    expand,
+    load_packs,
+    plan,
+)
 from engineering.quality_gate.review import changed_paths
 from engineering.quality_gate.runner import LocalRunner
 
 
 def _plans(args: argparse.Namespace, changed: Sequence[str] | None,
            pinned: Sequence[str] = ()) -> tuple[GatePlan, GatePlan]:
-    """The rounds' plan and the final tree's; ``pinned`` (a workflow step's packs) keeps only those packs."""
+    """The rounds' plan and the final tree's; ``pinned`` (a workflow step's packs, an alias standing for its two) keeps
+    only those packs."""
     repo = RepoView.from_dir(args.repo)
     packs = load_packs(args.packs or default_packs_dir())
+    pinned = expand(pinned)
     unknown = sorted(set(pinned) - {pack.id for pack in packs})
     if unknown:
         raise GateConfigError(f'unknown gate packs: {", ".join(unknown)}')

@@ -39,7 +39,7 @@ from engineering.flow.conductor import (
     conduct,
 )
 from engineering.flow.ledger import FINAL_GO_ROLE
-from engineering.flow.test.fixtures import TEMPLATES
+from engineering.flow.test.fixtures import STORED_7_47, TEMPLATES
 from shared.workflow_schema import validate_definition
 
 STATUSES = frozenset({WAITING, READY, RUNNING, COLLECTING, DONE, NOT_YET_RUN, PASSED, BLOCKED, STOPPED, HUMAN,
@@ -50,10 +50,13 @@ def test_the_task_states_are_the_boards():
     assert (TASK_DONE, TASK_ENDED) == (BOARD_DONE, BOARD_FINAL)
 
 
-def test_the_six_default_flows_are_all_here_and_valid():
-    assert sorted(TEMPLATES) == ['bug-hunt-and-fix', 'feature', 'issue-triage', 'pr-review', 'self-improvement',
-                                 'understand-repository']
+def test_the_five_default_flows_are_all_here_and_valid_and_7_47s_stored_ones_still_are():
+    assert sorted(TEMPLATES) == ['bug-hunt-and-fix', 'feature', 'issue-triage', 'pr-review', 'understand-repository']
     assert all(validate_definition(definition).valid for definition in TEMPLATES.values())
+    assert sorted(name for name in STORED_7_47 if not name.startswith('stored-')) == [
+        *sorted(TEMPLATES)[:4], 'self-improvement', 'understand-repository']
+    assert all(validate_definition(definition).valid for definition in STORED_7_47.values())
+    assert STORED_7_47['stored-feature'] == STORED_7_47['feature']
 
 
 # --- the invariants every plan keeps --------------------------------------------------------------------------
@@ -167,16 +170,22 @@ def test_understand_the_repository_maps_each_package_reduces_drafts_and_waits_fo
         ('task', 'understander', 'understander'),
         ('person', 'approval'), ('finished', 'approval')]
     plan = run.plan()
-    assert (plan.steps['memory'].status, plan.steps['reduce'].status, plan.steps['approval'].status) == (
-        NOT_YET_RUN, DONE, PASSED)
-    assert [state.step for state in plan.not_yet_run()] == ['memory']
+    assert (plan.steps['reduce'].status, plan.steps['approval'].status) == (DONE, PASSED)
+    # Memory is the flow's own setting since 7.50.00, never a step; a flow stored before keeps its memory step,
+    # which is not run yet.
+    assert [state.step for state in plan.not_yet_run()] == []
+    stored = Run(STORED_7_47['understand-repository'])
+    stored.drive()
+    assert [state.step for state in stored.plan().not_yet_run()] == ['memory']
 
 
-def test_issue_triage_recalls_nothing_yet_and_runs_its_three_agents_in_order():
+def test_issue_triage_runs_its_two_agents_in_order_and_a_stored_7_47_one_its_three():
     run = Run(TEMPLATES['issue-triage'])
-    assert run.drive() == [('task', 'classify', 'understander'), ('task', 'locate', 'hunter'),
-                           ('task', 'propose', 'understander'), ('finished', 'end')]
-    assert run.plan().steps['memory'].status == NOT_YET_RUN
+    assert run.drive() == [('task', 'classify', 'understander'), ('task', 'locate', 'hunter'), ('finished', 'end')]
+    stored = Run(STORED_7_47['issue-triage'])
+    assert stored.drive() == [('task', 'classify', 'understander'), ('task', 'locate', 'hunter'),
+                              ('task', 'propose', 'understander'), ('finished', 'end')]
+    assert stored.plan().steps['memory'].status == NOT_YET_RUN
 
 
 def test_bug_hunt_and_fix_takes_the_hunters_posts_while_it_hunts_and_stops_at_the_draft_pr_on_a_go():
@@ -184,10 +193,10 @@ def test_bug_hunt_and_fix_takes_the_hunters_posts_while_it_hunts_and_stops_at_th
     first = run.plan()
     # The board collects the hunter's posts while it hunts: the hunt, then the board, both live.
     assert [(s.step, s.status) for s in first.live()] == [('hunt', READY), ('board', COLLECTING)]
-    assert first.steps['board'].roles == ('understander', 'fixer', 'commit-reviewer')
+    assert first.steps['board'].roles == ('fixer', 'commit-reviewer')
     # The commit comes after the gate's GO (the broker pushes only a GO'd tree), then the draft pull request.
     assert run.drive() == [
-        ('task', 'hunt', 'hunter'), ('task', 'board', 'understander'), ('complete', 'board'),
+        ('task', 'hunt', 'hunter'), ('task', 'board', 'fixer'), ('complete', 'board'),
         ('task', 'gate', 'gate-runner'), ('task', 'gate', 'final-go'), ('task', 'commit', 'committer'),
         ('task', 'pr_author', 'pr-author'), ('finished', 'pr')]
     plan = run.plan()
@@ -233,7 +242,7 @@ def test_pr_review_stops_at_its_map_with_no_shard_source_and_goes_on_only_past_a
 
 
 def test_self_improvement_is_not_run_by_a_flow_yet_and_waits_for_a_person_twice():
-    run = Run(TEMPLATES['self-improvement'])
+    run = Run(STORED_7_47['self-improvement'])
     plan = run.plan()
     assert (plan.at, plan.steps['coach'].status, plan.steps['memory'].status) == ('coach', STOPPED, NOT_YET_RUN)
     assert run.drive() == [('person', 'coach'), ('person', 'acceptance'), ('finished', 'acceptance')]
@@ -480,7 +489,8 @@ def test_the_view_gives_the_live_steps_their_settings_and_what_to_do():
     by_step = {item['step']: item for item in view['steps']}
     assert (view['outcome'], view['at'], view['reason']) == (GOING, None, None)
     assert by_step['mapper']['shards_left'] == ['core']
-    assert by_step['mapper']['settings'] == {'role': 'mapper'}
+    assert by_step['mapper']['settings'] == {'role': 'mapper', 'assert': [{'check': 'notes.cite_sources',
+                                                                           'on_fail': 'block'}]}
     assert 'one task per shard' in by_step['mapper']['next']
     assert 'settings' not in by_step['understander']
     gone = (StepTask('t1', 'hunt', 'hunter', 'done'), GATED, StepTask('t2', 'gate', 'final-go', 'done'))
@@ -493,7 +503,7 @@ def test_the_view_gives_the_live_steps_their_settings_and_what_to_do():
     assert 'instructions' not in feature['understand']
     own = _plan(TEMPLATES['feature'], tasks=(StepTask('t', 'understand', 'understander', 'done'),)).view()
     assert 'do this step yourself' in {item['step']: item for item in own['steps']}['plan']['next']
-    lit = _plan(TEMPLATES['issue-triage']).lit()
+    lit = _plan(STORED_7_47['issue-triage']).lit()
     assert (lit['memory'], lit['classify'], lit['end']) == (NOT_YET_RUN, READY, WAITING)
 
 

@@ -1,5 +1,6 @@
-"""The six default engineering flows (shared/engineering_flow_templates.json): each valid under the server's own rules,
-each as the validator keeps it, none able to merge, and every flow that pushes code ending at a stop at PR."""
+"""The five default engineering flows (the orchestration bundle's, compiled from templates/orchestration/flows/): each
+valid under the server's own rules, each as the validator keeps it, none able to merge, and every flow that pushes code
+ending at a stop at PR."""
 from __future__ import annotations
 
 from typing import Any
@@ -27,12 +28,12 @@ def _ends(definition: dict[str, Any]) -> list[tuple[str, str | None]]:
             if node['type'] in ('end', workflow_engineering.NODE_STOP_AT_PR)]
 
 
-def test_the_six_default_flows_in_the_docs_order() -> None:
-    assert IDS == ['understand-repository', 'issue-triage', 'bug-hunt-and-fix', 'feature', 'pr-review',
-                   'self-improvement']
+def test_the_five_default_flows_in_the_docs_order() -> None:
+    assert IDS == ['understand-repository', 'issue-triage', 'bug-hunt-and-fix', 'feature', 'pr-review']
     assert [template['name'] for template in TEMPLATES] == [
         'Understand the repository', 'Issue triage', 'Bug hunt and fix', 'Feature from an issue or a PRD',
-        'PR review', 'Self-improvement']
+        'PR review']
+    assert all(set(template) == {'template_id', 'name', 'description', 'definition'} for template in TEMPLATES)
 
 
 @pytest.mark.parametrize('template_id', IDS)
@@ -74,18 +75,23 @@ def test_no_template_merges_and_a_pushing_flow_stops_at_a_pr_or_a_person(templat
     ('bug-hunt-and-fix', [('stop_at_pr', None), ('end', 'needs_human')]),
     ('feature', [('stop_at_pr', None), ('end', 'needs_human')]),
     ('pr-review', [('end', 'completed')]),
-    ('self-improvement', [('end', 'needs_human')]),
 ])
 def test_each_flow_stops_where_the_docs_say(template_id: str, ends: list[tuple[str, str | None]]) -> None:
     assert _ends(_by_id(template_id)['definition']) == ends
 
 
-def test_the_steps_the_docs_name() -> None:
-    assert {'map', 'reduce', 'memory'} <= set(_types('understand-repository'))
+def test_the_steps_the_docs_name_and_memory_and_learn_built_in() -> None:
+    assert {'map', 'reduce'} <= set(_types('understand-repository'))
     assert {'map', 'reduce'} <= set(_types('pr-review'))
     assert 'quality_gate' in _types('bug-hunt-and-fix')
     assert 'quality_gate' in _types('feature')
-    assert 'self_improvement' in _types('self-improvement')
+    # Memory and Learn are each flow's own settings (its start step's params), never a step of it.
+    for template in TEMPLATES:
+        assert not {'memory', 'learning_loop', 'self_improvement'} & set(_types(template['template_id']))
+        settings = workflow_engineering.flow_settings(template['definition'])
+        assert settings['learn']['enabled'] is True
+    assert {template_id: workflow_engineering.flow_settings(_by_id(template_id)['definition'])['pr']
+            for template_id in ('bug-hunt-and-fix', 'feature')} == {'bug-hunt-and-fix': 'ready', 'feature': 'ready'}
 
 
 def test_each_pr_author_says_what_its_own_flow_made() -> None:

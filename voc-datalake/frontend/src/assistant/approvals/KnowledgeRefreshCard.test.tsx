@@ -13,7 +13,7 @@ vi.mock('../../api/client', doubles.clientWithMockedFetchApi)
 vi.mock('../../runtimeConfig', moduleDouble.runtimeConfigModule)
 vi.mock('../../store/authStore', doubles.authStoreModule)
 
-import templatesFile from '../../../../lambda/shared/engineering_flow_templates.json'
+import { flows } from '../../../../templates/orchestration/bundle.json'
 import { resetExecutions } from './executionStore'
 import { ApiError } from '../../lib/errors'
 import { isRecord } from '../../lib/typeGuards'
@@ -30,7 +30,7 @@ const START = 'POST /agents/engineering/runs'
 const ESTIMATE = 'About 77 minutes and about $1.50 of agent session time'
 
 function definitionOf(id: string) {
-  const found = templatesFile.templates.find((template) => template.template_id === id)
+  const found = flows.find((template) => template.template_id === id)
   if (found === undefined) throw new Error(`no template ${id}`)
   return found.definition
 }

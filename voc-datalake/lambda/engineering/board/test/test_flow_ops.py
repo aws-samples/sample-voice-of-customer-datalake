@@ -23,7 +23,7 @@ from engineering.bus.publish import EventBridgePublisher
 from engineering.connectors.identity import Caller
 from engineering.connectors.test.test_records import checked_record, gate_record
 from engineering.flow.record import FLOW_SK
-from engineering.flow.test.fixtures import TEMPLATES
+from engineering.flow.test.fixtures import STORED_7_47, TEMPLATES
 from engineering.quality_gate.record import GateRecord
 from engineering.rows import run_pk, run_rows
 from engineering.runtime.runs import RunCaps, RunStore
@@ -41,7 +41,8 @@ def _board(template: str | None, max_tasks: int = 20, gate_records: Any = None) 
     table = boto3.resource('dynamodb', region_name='us-east-1').Table(TABLE)
     RunStore(table).start(RUN, caps=RunCaps(max_tasks=max_tasks), now=1_700_000_000, flow='wf_bugs',
                           connection='repo-1', commit='a' * 40, actor='admin-1',
-                          flow_definition=encode_definition(TEMPLATES[template]) if template else '',
+                          flow_definition=encode_definition({**STORED_7_47, **TEMPLATES}[template]) if template
+                          else '',
                           flow_revision=3 if template else 0)
     ids = count(1)
     store = BoardStore(client, TABLE, new_id=lambda: f'task-{next(ids)}')
@@ -162,7 +163,7 @@ def test_a_maps_shards_are_listed_by_the_coordinator_and_each_task_names_its_sha
 
 def test_the_steps_not_run_yet_are_recorded_once_when_the_plan_is_read() -> None:
     with mock_aws():
-        board = _board('issue-triage')
+        board = _board('stored-issue-triage')   # (a flow stored before 7.50.00: its memory step is not run yet)
         assert steps(call(board, COORDINATOR, op='flow')[1])['memory'] == 'not_yet_run'
         call(board, COORDINATOR, op='flow')
         rows = run_rows(board.client, TABLE, WS, RUN, 'STEP#')

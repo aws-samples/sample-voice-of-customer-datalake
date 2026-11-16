@@ -1,0 +1,13 @@
+{
+  "schema": "voc-triage-case/1",
+  "id": "slow-add-investigation",
+  "title": "Not reproducible from what the issue says: an investigation, S3",
+  "fixture": "bug-hunt-and-fix/divide-floor-bug",
+  "issue": {
+    "number": 3,
+    "title": "add() is sometimes slow",
+    "body": "Now and then a page that sums a few hundred values with add() takes several seconds. I could not make it happen on purpose and I do not know which inputs cause it.",
+    "labels": ["voc-agent"]
+  },
+  "expected": {"kind": "investigation", "severity": "S3", "tenets": [], "paths": ["calculator/ops.py"]}
+}

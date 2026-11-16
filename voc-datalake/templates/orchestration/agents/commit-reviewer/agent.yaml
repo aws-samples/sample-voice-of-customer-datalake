@@ -1,0 +1,19 @@
+schema: voc-agent-card/1
+id: commit-reviewer
+version: 2
+purpose: Reviews one submitted change against the repository's review guide before the quality gate; scope creep is blocking.
+harness: converse
+model: {id: global.anthropic.claude-sonnet-5-5}
+inputs:
+  - {name: change, from: fixer.submit_work, required: true}
+  - {name: task, from: task, required: true}
+  - {name: review_guide, from: knowledge}
+  - {name: checkout, from: checkout, required: true}
+outputs:
+  - {name: findings, schema: voc-finding/1, recorded_on: task}
+  - {name: verdict, kind: summary, recorded_on: task}
+tools: [read_file, list_files, write_findings, report_progress, save_checkpoint, finish]
+broker_ops: [read]
+caps: {max_turns: 150, max_input_tokens: 120000}
+trust: {untrusted: [repository, knowledge, board], fence: nonce}
+evals: [bug-hunt-and-fix/divide-floor-bug, bug-hunt-and-fix/slug-cut-bug]

@@ -1,0 +1,30 @@
+schema: voc-flow-template/1
+id: pr-review
+version: 2
+name: PR review
+description: Reviews a pull request in one pass, its pages in parallel, against the repository's tenets and review guide, and leaves review comments.
+inputs:
+  pull_request: {type: pull_request_ref, required: true}
+budget: {monthly_usd: 50, max_tasks: 60}
+memory: {recall: true, scopes: [repo], limit: 10}
+learn:
+  enabled: true
+  model: global.anthropic.claude-sonnet-5-5
+  budget_share: 0.05
+  roles: [pr-reviewer]
+  after_needs_human_hours: 72
+  assert: [{check: learn.proposals_name_case}]
+requires: {dial: [human_driven, ai_assisted, ai_driven], image: true}
+steps:
+  - {id: map, title: Split the pull request, map: {shard_by: pr_pages, shard_cap: 50}}
+  - id: review
+    title: Review each page
+    agent: pr-reviewer@latest
+    assert: [{check: findings.cite_evidence, on_fail: block}]
+  - {id: reduce, title: Bring the reviews together, reduce: {}}
+  - id: comment
+    title: Leave the review comments
+    agent: pr-reviewer@latest
+    instructions: "Comment on the pull request only: never approve, push to or merge it."
+    assert: [{check: review.commented, on_fail: block}]
+  - {id: end, title: The review comments, end: {status: completed}}

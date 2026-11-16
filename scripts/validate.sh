@@ -149,6 +149,9 @@ def py   python,python-static               "pyright: production (private usage)
 def py   python,python-static               "check_tests_assert"                 'cd "$CDK" && out="$("$PYTHON_BIN" scripts/check_tests_assert.py)" && [ -z "$out" ] || { printf "%s\n" "$out"; exit 1; }'
 # Every test that bounds its own running time is marked `timing` (scripts/check_timing_tests.py).
 def py   python,python-static               "check_timing_tests"                 'cd "$CDK" && "$PYTHON_BIN" scripts/check_timing_tests.py'
+# The orchestration templates (voc-datalake/templates/orchestration): schemas, skills, cards, flows, automations, gates,
+# eval cases, no placeholder, and both compiled bundles equal to a fresh compile (lambda/engineering/orchestration).
+def py   python,python-static               "orchestration: validate"            'cd "$CDK/lambda" && "$PYTHON_BIN" -m engineering.orchestration validate'
 # pytest-xdist; `loadgroup` keeps @pytest.mark.xdist_group tests on one worker.
 # Coverage is gated per file (docs/coverage-gate.md): the check runs after the suite.
 # Tests marked `timing` (they bound their own running time) are left out of that parallel, traced run and

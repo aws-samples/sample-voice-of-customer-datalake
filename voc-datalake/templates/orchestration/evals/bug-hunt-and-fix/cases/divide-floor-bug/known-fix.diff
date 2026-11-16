@@ -1,0 +1,27 @@
+diff --git a/calculator/ops.py b/calculator/ops.py
+--- a/calculator/ops.py
++++ b/calculator/ops.py
+@@ -17,7 +17,7 @@ def divide(a: float, b: float) -> float:
+     """a / b; dividing by zero raises ZeroDivisionError."""
+     if b == 0:
+         raise ZeroDivisionError("division by zero")
+-    return a // b
++    return a / b
+ 
+ 
+ def percent_of(pct: float, value: float) -> float:
+diff --git a/tests/test_ops.py b/tests/test_ops.py
+--- a/tests/test_ops.py
++++ b/tests/test_ops.py
+@@ -15,6 +15,11 @@ def test_multiply():
+     assert multiply(3, 4) == 12
+ 
+ 
++def test_divide_returns_a_float():
++    assert divide(7, 2) == 3.5
++    assert divide(1, 4) == 0.25
++
++
+ def test_divide_by_zero_raises():
+     with pytest.raises(ZeroDivisionError):
+         divide(1, 0)

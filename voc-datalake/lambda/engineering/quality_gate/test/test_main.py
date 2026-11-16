@@ -54,12 +54,12 @@ def _out(capsys: pytest.CaptureFixture[str]) -> dict:
 
 
 def test_plan_prints_the_detected_checks_with_the_sandboxs_python(capsys):
-    assert main(['plan', '--repo', str(FIXTURES / 'python-ts' / 'passing')]) == 0
+    assert main(['plan', '--repo', str(FIXTURES / 'python' / 'passing')]) == 0
     printed = _out(capsys)
-    assert printed['packs'] == ['python-ts']
+    assert printed['packs'] == ['python']
     assert [(c['key'], c['argv'][0], c['kind']) for c in printed['checks']] == [
         ('py.ruff@.', 'python3', 'lint'), ('py.test@.', 'python3', 'test')]
-    assert main(['plan', '--repo', str(FIXTURES / 'python-ts' / 'passing'), '--python', '/sandbox/py']) == 0
+    assert main(['plan', '--repo', str(FIXTURES / 'python' / 'passing'), '--python', '/sandbox/py']) == 0
     assert _out(capsys)['checks'][0]['argv'][0] == '/sandbox/py'
     assert printed['image'] == {'python': '3.12', 'node': '24'}
     # network is a list of host names: counting the exact name, not a substring of a URL.

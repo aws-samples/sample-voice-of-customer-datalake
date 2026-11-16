@@ -6,7 +6,7 @@
  * opens its workflow there; on that page Save as opens the copy without the
  * unsaved-changes guard getting in the way (the draft lives in the copy). Rename
  * (not on the built-in) saves the trimmed name and says why when it is refused.
- * "Start from a template" (beside New engineering flow) lists the six default engineering flows with their
+ * "Start from a template" (beside New engineering flow) lists the five default engineering flows with their
  * descriptions; choosing one opens the editor on an unsaved copy of the server's definition
  * (`GET /workflows/templates`) that nothing stores until Save, the library's own create, which opens the new flow.
  */
@@ -20,7 +20,7 @@ import { workflowView } from '@test/workflowFixtures'
 import { workflowDefinitionSchema } from '../../api/workflowsApi'
 import { emptyDefinition } from '../../components/WorkflowEditor/model-fixtures'
 import { findEngineeringTemplate } from '../../api/engineeringTemplates'
-import templatesFile from '../../../../lambda/shared/engineering_flow_templates.json'
+import { flows } from '../../../../templates/orchestration/bundle.json'
 import type { RouteHandler as Handler } from '@test/fetchApiRoutes'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
@@ -41,7 +41,7 @@ function renderAt(entry: string, extra: Record<string, Handler> = {}) {
     'GET /workflows': () => ({ items: [SUMMARY] }),
     'GET /workflows/wf_1': () => STORED,
     'POST /workflows/validate': () => ({ valid: true, errors: [] }),
-    'GET /workflows/templates': () => ({ items: templatesFile.templates, count: templatesFile.templates.length }),
+    'GET /workflows/templates': () => ({ items: flows, count: flows.length }),
     ...extra,
   })
   const router = createMemoryRouter(
@@ -170,17 +170,17 @@ describe('Workflow page', () => {
 const BUG_HUNT = findEngineeringTemplate('bug-hunt-and-fix')
 
 describe('Workflow library — Start from a template', () => {
-  it('lists the six default flows, each named and described', async () => {
+  it('lists the five default flows, each named and described', async () => {
     renderAt('/agents')
     await userEvent.click(await screen.findByRole('button', { name: 'Start from a template' }))
     const dialog = await screen.findByRole('dialog', { name: 'Start from a template' })
     const links = within(dialog).getAllByRole('link')
     expect(links.map((link) => link.getAttribute('href'))).toStrictEqual([
-      'understand-repository', 'issue-triage', 'bug-hunt-and-fix', 'feature', 'pr-review', 'self-improvement',
+      'understand-repository', 'issue-triage', 'bug-hunt-and-fix', 'feature', 'pr-review',
     ].map((id) => `/agents/workflows/templates/${id}`))
     expect(links.map((link) => (link.getAttribute('aria-describedby') ?? '') !== '')).not.toContain(false)
     expect(within(dialog).getByRole('link', { name: 'Bug hunt and fix' })).toHaveAccessibleDescription(
-      'Hunts bugs in the packages it is given, fixes and reviews each one, runs the quality gate and stops at a draft pull request.')
+      'Hunts bugs in the packages it is given, fixes and reviews each one, runs the quality gate and stops at a pull request ready for review.')
   })
 
   it('closes the list with Escape', async () => {
@@ -234,7 +234,7 @@ describe('Workflow library — Start from a template', () => {
 
   it('tells a person who is not an administrator that templates are for administrators, without asking the server', async () => {
     adminFlag.isAdmin = false
-    const templates = vi.fn(() => ({ items: templatesFile.templates }))
+    const templates = vi.fn(() => ({ items: flows }))
     renderAt('/agents/workflows/templates/pr-review', { 'GET /workflows/templates': templates })
     expect(await screen.findByText(/Only administrators start engineering flows from a template/u)).toBeInTheDocument()
     expect([screen.queryByText(/This template isn't available here/u), templates.mock.calls]).toStrictEqual([null, []])
@@ -270,7 +270,7 @@ describe('Workflow library — Start from a template', () => {
     renderAt('/agents/workflows/templates/pr-review', {
       'GET /workflows/templates': () => {
         if (answers.failing) throw new Error('API Error: 500')
-        return { items: templatesFile.templates }
+        return { items: flows }
       },
     })
     expect(await screen.findByText("The template couldn't be loaded.")).toBeInTheDocument()

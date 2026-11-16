@@ -3389,10 +3389,11 @@ function handleMemoryContextRoutes(req, res, url, send) {
 // completes after its last step, so the run timeline can be watched live.
 const MOCK_AGENTS_ADMIN = process.env.MOCK_AGENTS_NON_ADMIN !== '1';
 const AGENTS_FORBIDDEN = [403, { success: false, error: 'Admin access required' }];
-// The default engineering flows: the file the agents API lists (lambda/shared/engineering_templates.py).
+// The default engineering flows: the orchestration bundle's, as the agents API lists them
+// (lambda/shared/engineering_templates.py reads its Lambda copy).
 const ENGINEERING_TEMPLATES = JSON.parse(
-  readFileSync(new URL('../lambda/shared/engineering_flow_templates.json', import.meta.url), 'utf8'),
-).templates;
+  readFileSync(new URL('../templates/orchestration/bundle.json', import.meta.url), 'utf8'),
+).flows.map(({ template_id, name, description, definition }) => ({ template_id, name, description, definition }));
 const AGENT_NOT_FOUND = [404, { success: false, error: 'Agent not found' }];
 const RUN_NOT_FOUND = [404, { success: false, error: 'Run not found' }];
 const WORKFLOW_NOT_FOUND = [404, { success: false, error: 'Workflow not found' }];
@@ -3592,8 +3593,8 @@ storeMockWorkflow(SAMPLE_FLOW_ID, sampleEngineeringFlow(), { at: daysAgo(3) });
   const fast = storeMockWorkflow('wf_3b9e1c0d7a42', fastWorkflowDefinition(2), { derivedFrom: 'wf_default', at: daysAgo(9) });
   fast.revisions.push({ revision: 2, saved_at: daysAgo(2), saved_by_username: 'admin-demo', definition: fastWorkflowDefinition(3) });
 }
-// The seeded engineering agents' flows, from the default engineering flow templates (agent_seed.py joins Issue triage
-// and Bug hunt and fix for the Bug fixer; the mock keeps the second alone).
+// The seeded engineering agents' flows, from the default engineering flow templates (agent_seed.py: each its
+// automation's flow, named for the agent, with its monthly budget).
 for (const [workflowId, templateId, name] of [[BUG_FIXER_FLOW_ID, 'bug-hunt-and-fix', 'Bug fixer workflow'],
   [FEATURE_BUILDER_FLOW_ID, 'feature', 'Feature builder workflow']]) {
   const template = ENGINEERING_TEMPLATES.find((entry) => entry.template_id === templateId);

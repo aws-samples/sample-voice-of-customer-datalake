@@ -18,7 +18,7 @@ from engineering.runtime import runs
 from shared import agents_store as store
 from shared import engineering_agent_runs as eng_runs
 from shared import workflow_schema
-from shared.agent_seed import bug_fixer_flow
+from shared.agent_seed import seeded_flow
 from shared.exceptions import ConflictError, ServiceUnavailableError, ValidationError
 from shared.test.agents_fixtures import CATEGORIES, agents_env
 
@@ -107,11 +107,11 @@ def test_a_stored_flow_is_an_engineering_flow_with_its_budget() -> None:
     agents_flow = {'definition': workflow_schema.encode_definition(workflow_schema.default_template())}
     with pytest.raises(ValidationError, match='agents workflow'):
         eng_runs.stored_flow(agents_flow)
-    broken = {'definition': workflow_schema.encode_definition({**bug_fixer_flow(), 'budget': {'monthly_usd': -1}})}
+    broken = {'definition': workflow_schema.encode_definition({**seeded_flow('bug-fixer'), 'budget': {'monthly_usd': -1}})}
     with pytest.raises(ConflictError, match='off its rule'):
         eng_runs.stored_flow(broken)
     flow = eng_runs.stored_flow({'revision': 3, 'definition': workflow_schema.encode_definition(
-        {**bug_fixer_flow(), 'budget': {'monthly_usd': 80}})})
+        {**seeded_flow('bug-fixer'), 'budget': {'monthly_usd': 80}})})
     assert (flow.budget_usd, flow.revision, json.loads(flow.definition)['schema']) == (80.0, 3, 'voc-workflow/2')
 
 
@@ -158,7 +158,7 @@ def test_what_came_of_a_start(client: Lambda, outcome: str, message: str) -> Non
 
 def _engineering_agent(env: Any, **settings: Any) -> tuple[dict, dict]:
     """A disabled bug agent on ``shop`` with its flow saved with a budget; the agent and the connection row."""
-    flow = store.create_workflow(env.agents, {**bug_fixer_flow(), 'budget': {'monthly_usd': 80}}, created_by='admin',
+    flow = store.create_workflow(env.agents, {**seeded_flow('bug-fixer'), 'budget': {'monthly_usd': 80}}, created_by='admin',
                                  username='alice', now=NOW)
     fields = store.normalize_agent({
         'name': 'Bug fixer', 'scope': {'all': True}, 'instructions': 'Keep fixes small.',
@@ -237,7 +237,7 @@ def test_a_refused_start_fails_the_agents_run_and_keeps_the_claim() -> None:
 def test_a_flow_without_a_budget_or_a_goal_over_its_limit_writes_nothing() -> None:
     with agents_env() as env:
         agent, row = _engineering_agent(env)
-        definition = {key: value for key, value in bug_fixer_flow().items() if key != 'budget'}
+        definition = {key: value for key, value in seeded_flow('bug-fixer').items() if key != 'budget'}
         unbudgeted = store.create_workflow(env.agents, definition, created_by='a', username='a', now=NOW)
         with pytest.raises(ConflictError, match='no monthly budget'):
             eng_runs.start_agent_run(env.agents, agent, unbudgeted, row, _start(), client=Lambda(), function='f',

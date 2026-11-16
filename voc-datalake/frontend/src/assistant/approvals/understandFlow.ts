@@ -25,7 +25,7 @@ export interface UnderstandFlow {
   monthlyBudgetUsd: number | null
 }
 
-/** The Understand flow's template (lambda/shared/engineering_flow_templates.json). */
+/** The Understand flow's template (the orchestration bundle's, templates/orchestration/bundle.json). */
 export const UNDERSTAND_TEMPLATE_ID = 'understand-repository'
 
 /** The react-query key (under the workflows' own, so their invalidations cover it). */

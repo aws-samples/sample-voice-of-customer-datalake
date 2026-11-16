@@ -1,0 +1,27 @@
+schema: voc-flow-template/1
+id: understand-repository
+version: 2
+name: Understand the repository
+description: Maps the repository package by package and drafts its knowledge pack, tenets and review guide for an administrator's approval.
+inputs:
+  packages: {type: packages}
+budget: {monthly_usd: 50}
+memory: {recall: false}
+learn:
+  enabled: true
+  model: global.anthropic.claude-sonnet-5-5
+  budget_share: 0.05
+  roles: [mapper, understander]
+  after_needs_human_hours: 72
+requires: {dial: [human_driven, ai_assisted, ai_driven], image: true}
+steps:
+  - {id: map, title: Map the packages, map: {shard_by: packages, shard_cap: 200}}
+  - id: mapper
+    title: Read each package
+    agent: mapper@latest
+    assert: [{check: notes.cite_sources, on_fail: block}]
+  - {id: reduce, title: Bring the shards together, reduce: {}}
+  - id: understander
+    title: Draft the knowledge pack, tenets and review guide
+    agent: understander@latest
+  - {id: approval, title: An administrator approves, end: {status: needs_human}}

@@ -1,0 +1,141 @@
+# Python gate pack, for a TARGET repository: the gate checks a change with the repository's own configuration and
+# pins; it never adds rules the team did not choose. Steps run in kind order, per root; a failing setup step stops
+# the rest. Setup steps are the dependency step: they fetch only what the requirement files name, run no build or
+# install script (wheels only), and every later step runs offline. What it runs follows the owner's brief
+# (briefs/python-ts.md; briefs/RECONCILIATION.md lists every difference).
+# {python} is the sandbox's interpreter (the image's python3), never the gate's own.
+schema = "voc-gate-pack/1"
+id = "python"
+name = "Python"
+network = ["pypi.org", "files.pythonhosted.org", "registry.npmjs.org"]
+
+[image]
+python = "3.12"
+node = "24"     # pyright and the other Node tools a Python repository pins in its package.json
+
+[languages.python]
+markers = ["pyproject.toml", "setup.py", "setup.cfg", "requirements.txt", "requirements-dev.txt"]
+extensions = [".py"]
+workspace = [{ file = "pyproject.toml", contains = "[tool.uv.workspace]" }]
+# A repository with no marker at all is still a Python root when its root holds pytest's test files.
+root_globs = ["test_*.py", "tests/test_*.py"]
+
+[tools.python]
+version_argv = ["{python}", "--version"]
+
+[[steps]]
+id = "py.install"
+language = "python"
+name = "install dependencies"
+kind = "setup"
+argv = []
+timeout_s = 1200
+# Wheels only (no setup.py runs), from PyPI, with pip's own configuration ignored; `-I` so a pip.py the
+# repository holds is never the pip that runs.
+[[steps.prefer]]
+when = [{ file = "requirements-dev.txt" }]
+argv = ["{python}", "-I", "-m", "pip", "install", "--isolated", "--quiet", "--only-binary=:all:",
+        "--index-url", "https://pypi.org/simple", "-r", "requirements-dev.txt"]
+[[steps.prefer]]
+when = [{ file = "requirements.txt" }]
+argv = ["{python}", "-I", "-m", "pip", "install", "--isolated", "--quiet", "--only-binary=:all:",
+        "--index-url", "https://pypi.org/simple", "-r", "requirements.txt"]
+# A root with no marker (its tests alone): pytest, at the brief's pin, is the one tool its tests need.
+[[steps.prefer]]
+when = [{ absent = "pyproject.toml" }, { absent = "setup.py" }, { absent = "setup.cfg" }]
+argv = ["{python}", "-I", "-m", "pip", "install", "--isolated", "--quiet", "--only-binary=:all:",
+        "--index-url", "https://pypi.org/simple", "pytest==8.4.2"]
+
+# The Node tools a Python repository pins (pyright, from npm), from its lock file, no install scripts.
+[[steps]]
+id = "py.node-tools"
+language = "python"
+name = "install node tools"
+kind = "setup"
+when_any = [{ file = "package-lock.json", contains = "\"node_modules/pyright\"" }]
+argv = ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund", "--registry=https://registry.npmjs.org/"]
+timeout_s = 1200
+
+[[steps]]
+id = "py.ruff"
+language = "python"
+name = "ruff check"
+kind = "lint"
+when_any = [{ file = "ruff.toml" }, { file = ".ruff.toml" }, { file = "pyproject.toml", contains = "[tool.ruff" }]
+argv = ["{python}", "-m", "ruff", "check", "."]
+timeout_s = 600
+
+[[steps]]
+id = "py.format"
+language = "python"
+name = "ruff format"
+kind = "format"
+when_any = [{ file = "ruff.toml", contains = "[format]" }, { file = "pyproject.toml", contains = "[tool.ruff.format]" }]
+argv = ["{python}", "-m", "ruff", "format", "--check", "."]
+timeout_s = 600
+
+[[steps]]
+id = "py.vulture"
+language = "python"
+name = "vulture: production code"
+kind = "lint"
+when_any = [{ file = "scripts/lint-python.sh" }, { file = "pyproject.toml", contains = "[tool.vulture]" }]
+argv = ["{python}", "-m", "vulture"]
+timeout_s = 600
+[[steps.prefer]]
+when = [{ file = "scripts/lint-python.sh" }]
+argv = ["bash", "scripts/lint-python.sh", "--dead-code"]
+
+[[steps]]
+id = "py.vulture-tests"
+language = "python"
+name = "vulture: test-support code"
+kind = "lint"
+when_any = [{ file = "scripts/lint-python.sh" }]
+argv = ["bash", "scripts/lint-python.sh", "--dead-code-tests"]
+timeout_s = 600
+
+[[steps]]
+id = "py.tests-assert"
+language = "python"
+name = "every test asserts"
+kind = "lint"
+when_any = [{ file = "scripts/check_tests_assert.py" }]
+argv = ["{python}", "-I", "scripts/check_tests_assert.py"]
+timeout_s = 300
+
+[[steps]]
+id = "py.pyright"
+language = "python"
+name = "pyright"
+kind = "types"
+when_any = [{ file = "pyrightconfig.json" }, { file = "pyproject.toml", contains = "[tool.pyright]" }]
+argv = ["{python}", "-m", "pyright"]
+timeout_s = 1200
+# The brief's pyright is npm's, run against the sandbox's interpreter.
+[[steps.prefer]]
+when = [{ file = "package.json", contains = "\"pyright\"" }]
+argv = ["npx", "--no-install", "pyright", "--pythonpath", "{python}"]
+
+[[steps]]
+id = "py.mypy"
+language = "python"
+name = "mypy"
+kind = "types"
+when_any = [
+  { file = "mypy.ini" }, { file = ".mypy.ini" }, { file = "pyproject.toml", contains = "[tool.mypy]" },
+  { file = "setup.cfg", contains = "[mypy" },
+]
+argv = ["{python}", "-m", "mypy", "."]
+timeout_s = 1200
+
+[[steps]]
+id = "py.test"
+language = "python"
+name = "pytest"
+kind = "test"
+when_any = [{ glob = "test_*.py" }, { glob = "*/test_*.py" }, { glob = "*_test.py" }]
+argv = ["{python}", "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+timeout_s = 3600
+# pytest exits 5 when it collected no test: the gate looked at nothing.
+empty_exit_codes = [5]

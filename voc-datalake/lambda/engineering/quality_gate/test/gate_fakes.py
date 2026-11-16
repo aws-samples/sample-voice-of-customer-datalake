@@ -5,17 +5,16 @@ import dataclasses
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 from engineering.quality_gate.checks import GIT
 from engineering.quality_gate.gate import Revision
 from engineering.quality_gate.models import ModelRequest
-from engineering.quality_gate.packs import GatePlan, PlannedCheck, RepoView
+from engineering.quality_gate.packs import GatePlan, PlannedCheck, RepoView, default_packs_dir
 from engineering.quality_gate.review import Finding
 from engineering.quality_gate.runner import CommandResult
 
-PACKS_DIR = Path(__file__).resolve().parents[4] / 'engineering-gates'
+PACKS_DIR = default_packs_dir()
 FIXTURES = PACKS_DIR / 'test' / 'fixtures'
 TREE = 'a' * 40
 TREE_ARGV = (*GIT, 'rev-parse', '--verify', 'HEAD^{tree}')

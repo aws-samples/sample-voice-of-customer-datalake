@@ -1,0 +1,19 @@
+schema: voc-agent-card/1
+id: builder
+version: 2
+purpose: Builds a feature from an issue or a PRD with a test for every acceptance criterion, posting its parts as sub-builds.
+harness: converse
+model: {id: global.anthropic.claude-sonnet-5-5}
+inputs:
+  - {name: feature, from: task, required: true}
+  - {name: problem_statement, from: understander.write_triage}
+  - {name: checkout, from: checkout, required: true}
+outputs:
+  - {name: patch, kind: submitted_patch, recorded_on: task}
+  - {name: sub_builds, kind: board_task, recorded_on: task}
+tools: [read_file, list_files, write_file, run, install_dependencies, submit_work, post_subtask, report_progress,
+        save_checkpoint, finish]
+broker_ops: [read]
+caps: {max_turns: 150, max_input_tokens: 120000}
+trust: {untrusted: [repository, command_output, knowledge, memory], fence: nonce}
+evals: [feature/duration-hours-feature]

@@ -1,0 +1,84 @@
+# Rust gate pack, for a TARGET repository: the gate checks a change with the repository's own configuration and pins;
+# it never adds rules the team did not choose. Steps run in kind order (setup, format, lint, types, build, test), per
+# root; a failing setup step stops the rest. Setup steps are the dependency step: they fetch only what the lock file
+# names (and the toolchain a rust-toolchain.toml pins), run no install script and build nothing; every later step runs
+# offline. What it runs follows the owner's brief (briefs/rust-ts.md; briefs/RECONCILIATION.md lists every
+# difference). A repository with TypeScript besides gets the typescript pack too.
+schema = "voc-gate-pack/1"
+id = "rust"
+name = "Rust"
+# The hosts the setup steps need (the dependency step's egress allowlist); no other step has network.
+# static.rust-lang.org: the toolchain a repository's rust-toolchain.toml pins, which rustup fetches at the first cargo.
+network = ["index.crates.io", "static.crates.io", "static.rust-lang.org"]
+
+[image]
+rust = "1.99.1"   # the image's default toolchain; a repository's rust-toolchain.toml wins
+
+# A root is the outermost directory with a marker and a source file under it; a marker below a workspace root is
+# one of its members (checked through it), any other marker below a root is a root of its own.
+[languages.rust]
+markers = ["Cargo.toml"]
+extensions = [".rs"]
+workspace = [{ file = "Cargo.toml", contains = "[workspace]" }]
+
+[tools.cargo]
+version_argv = ["cargo", "--version"]
+
+[tools.rustc]
+version_argv = ["rustc", "--version"]
+
+[[steps]]
+id = "rust.fetch"
+language = "rust"
+name = "cargo fetch"
+kind = "setup"
+# No rustc wrapper the repository's .cargo/config.toml names runs here.
+argv = ["cargo", "--config", "build.rustc-wrapper=''", "--config", "build.rustc-workspace-wrapper=''", "fetch"]
+timeout_s = 1200
+[[steps.prefer]]
+when = [{ file = "Cargo.lock" }]
+argv = ["cargo", "--config", "build.rustc-wrapper=''", "--config", "build.rustc-workspace-wrapper=''", "fetch",
+        "--locked"]
+
+[[steps]]
+id = "rust.fmt"
+language = "rust"
+name = "rustfmt"
+kind = "format"
+argv = ["cargo", "fmt", "--all", "--check"]
+timeout_s = 300
+
+[[steps]]
+id = "rust.clippy"
+language = "rust"
+name = "clippy"
+kind = "lint"
+argv = ["cargo", "clippy", "--workspace", "--all-targets", "--offline", "--", "-D", "warnings"]
+timeout_s = 2700
+[[steps.prefer]]
+when = [{ file = "Cargo.lock" }]
+argv = ["cargo", "clippy", "--workspace", "--all-targets", "--locked", "--offline", "--", "-D", "warnings"]
+
+[[steps]]
+id = "rust.file-length"
+language = "rust"
+name = "Rust file length"
+kind = "lint"
+when_any = [{ file = "scripts/rust-file-length.sh" }]
+argv = ["bash", "scripts/rust-file-length.sh"]
+timeout_s = 300
+# Proof that it looked: the script names how many files it checked.
+expect_output = 'rust-file-length: [1-9][0-9]* files checked'
+
+[[steps]]
+id = "rust.test"
+language = "rust"
+name = "cargo test"
+kind = "test"
+argv = ["cargo", "test", "--workspace", "--offline"]
+timeout_s = 3600
+# Proof that it looked: at least one test target ran at least one test.
+expect_output = 'test result: ok\. [1-9]'
+[[steps.prefer]]
+when = [{ file = "Cargo.lock" }]
+argv = ["cargo", "test", "--workspace", "--locked", "--offline"]

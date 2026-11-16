@@ -1,12 +1,12 @@
 /**
- * The default engineering flows as the app reads them (`lambda/shared/engineering_flow_templates.json`, the server's
- * own file): all six, each kept whole by the app's model, each valid under the editor's port of the server's rules
+ * The default engineering flows as the app reads them (the orchestration bundle's, `templates/orchestration/bundle.json`,
+ * whose copy the server lists): all five, each kept whole by the app's model, each valid under the editor's port of the server's rules
  * (the server's own test, `shared/test/test_engineering_templates.py`, validates them with the real validator), and
  * each with its copy in the catalogues.
  */
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import templatesFile from '../../../lambda/shared/engineering_flow_templates.json'
+import { flows } from '../../../templates/orchestration/bundle.json'
 import en from '../../public/locales/en/agents.json'
 import { validateLocally } from '../components/WorkflowEditor/graphRules'
 import { ENGINEERING_TEMPLATES, findEngineeringTemplate, templateCopy } from './engineeringTemplates'
@@ -16,20 +16,20 @@ const catalogue = (key: string): unknown =>
   key.replace(/^agents:/, '').split('.').reduce<unknown>((node, part) => Branch.safeParse(node).data?.[part], en)
 
 describe('the default engineering flows', () => {
-  it('offers all six, in the file order', () => {
-    expect(ENGINEERING_TEMPLATES.map((t) => t.templateId)).toStrictEqual(templatesFile.templates.map((t) => t.template_id))
-    expect(ENGINEERING_TEMPLATES).toHaveLength(6)
+  it('offers all five, in the order of the bundle', () => {
+    expect(ENGINEERING_TEMPLATES.map((t) => t.templateId)).toStrictEqual(flows.map((t) => t.template_id))
+    expect(ENGINEERING_TEMPLATES).toHaveLength(5)
   })
 
   it.each(ENGINEERING_TEMPLATES.map((t) => [t.templateId, t] as const))('%s is valid in the editor, as the server has it', (_id, template) => {
-    const raw = templatesFile.templates.find((t) => t.template_id === template.templateId)?.definition
+    const raw = flows.find((t) => t.template_id === template.templateId)?.definition
     expect(template.definition).toStrictEqual(raw)
     expect(template.definition.schema).toBe('voc-workflow/2')
     expect(validateLocally(template.definition)).toStrictEqual([])
   })
 
   it.each(ENGINEERING_TEMPLATES.map((t) => [t.templateId, t] as const))('%s has its name and description in English', (_id, template) => {
-    const raw = templatesFile.templates.find((t) => t.template_id === template.templateId)
+    const raw = flows.find((t) => t.template_id === template.templateId)
     expect([catalogue(template.nameKey), catalogue(template.descriptionKey)]).toStrictEqual([raw?.name, raw?.description])
   })
 

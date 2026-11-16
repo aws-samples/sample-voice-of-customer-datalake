@@ -9,13 +9,15 @@ from typing import Any
 
 import pytest
 
-from engineering.benchmark.cases import ReviewCheck, load_suite
+from engineering.benchmark.cases import DEFAULT_ROOT, ReviewCheck, load_suite
 from engineering.benchmark.runner import Attempt, CandidateError, CaseView, ReportedFinding
 
-SUITE_DIR = Path(__file__).resolve().parents[4] / 'engineering-benchmark' / 'cases'
+SUITE_DIR = DEFAULT_ROOT
 SUITE = load_suite(SUITE_DIR)
 CASES = {case.id: case for case in SUITE}
 SLUG, DURATION, REVIEW, MONOREPO = 'slug-cut-bug', 'duration-hours-feature', 'pagination-review', 'monorepo-units-bug'
+#: The sandbox's seeded bug (the owner's voc-agents-sandbox, issue #1: divide floors), Bug hunt and fix's own case.
+DIVIDE = 'divide-floor-bug'
 needs_node = pytest.mark.skipif(shutil.which('node') is None, reason='node is not installed')
 
 

@@ -1,0 +1,15 @@
+{
+  "schema": "voc-bench/1",
+  "id": "divide-floor-bug",
+  "kind": "bug",
+  "title": "divide() drops the fractional part: divide(7, 2) returns 3",
+  "task": "calculator.divide(7, 2) returns 3; it should return 3.5, and divide(1, 4) should return 0.25 (true division). Dividing by zero still raises ZeroDivisionError. No test covers a non-integer result: fix calculator/ops.py and add that test to tests/test_ops.py. This repository is a copy of the owner's sandbox (voc-agents-sandbox) at the commit that seeded the bug, the case its issue #1 describes.",
+  "fixture": "repo",
+  "check": {
+    "argv": ["python3", "-I", "-P", "-c", "import sys\nsys.path.insert(0, '.')\nfrom calculator import divide\nassert divide(7, 2) == 3.5, divide(7, 2)\nassert divide(1, 4) == 0.25, divide(1, 4)\nassert divide(9, 3) == 3\ntry:\n    divide(1, 0)\nexcept ZeroDivisionError:\n    pass\nelse:\n    raise AssertionError('divide(1, 0) must raise ZeroDivisionError')\n"],
+    "cwd": "",
+    "timeout_seconds": 60,
+    "protected": ["calculator/__init__.py", "pyproject.toml", "requirements-dev.txt"],
+    "allows": ["calculator/ops.py", "tests/test_ops.py"]
+  }
+}

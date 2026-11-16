@@ -1278,9 +1278,10 @@ change (a run follows its flow since 6.28.00, as far as the runtime can do its s
 | PR review | read the PR → reviewers in parallel, one pass, against the repository's tenets and review guide → comments | the review comments |
 | Self-improvement | the coach's loop over past runs → skill-version proposals → benchmark | an administrator's acceptance |
 
-*Built as templates*: the six are `voc-workflow/2` definitions in one file that the server and the web app both
-read, `voc-datalake/lambda/shared/engineering_flow_templates.json` (template ids `understand-repository`,
-`issue-triage`, `bug-hunt-and-fix`, `feature`, `pr-review`, `self-improvement`; `shared/engineering_templates.py`),
+*Built as templates*: since 7.50.00 the five are compiled from `voc-datalake/templates/orchestration/flows/` into
+the orchestration bundle (`templates/orchestration/bundle.json`, its Lambda copy `lambda/shared/orchestration_bundle.json`),
+which the server and the web app both read (template ids `understand-repository`,
+`issue-triage`, `bug-hunt-and-fix`, `feature`, `pr-review`; `shared/engineering_templates.py`),
 each validated by the server's own rules and kept as written (`shared/test/test_engineering_templates.py`, which also
 holds that none can merge and that the two pushing flows, Bug hunt and fix and Feature, end only at a stop at PR or a
 human decision point) and by the editor's port of them (`frontend/src/api/engineeringTemplates.test.ts`). As
@@ -1579,8 +1580,9 @@ gate runner's session is to run; nothing deploys it yet (the [runtime](#runtime-
 not ship it; the workflow's Quality gate step is validated server side, with a `packs` pin the CLI keeps, and the
 editor has the step with its settings panel, [above](#how-the-agents-work-together)). What exists:
 
-- **The packs** (`voc-datalake/engineering-gates/`, [README](../voc-datalake/engineering-gates/README.md)):
-  `rust-ts`, `python-ts` and `java`, each a `manifest.toml` (schema voc-gate-pack/1: the languages' markers and
+- **The packs** (`voc-datalake/templates/orchestration/gates/`, [README](../voc-datalake/templates/orchestration/gates/README.md)):
+  `python`, `typescript`, `rust` and `java` since 7.50.00 (`python-ts` and `rust-ts` remain aliases of their two),
+  each a `manifest.toml` (schema voc-gate-pack/1: the languages' markers and
   extensions, the tools and their versions, the registries the dependency step may reach, the ordered steps), with
   fixtures. Detection reads a listing of the repository and finds every root of a monorepo. A step runs only where
   the repository uses its tool. A repository with `scripts/validate.sh` runs that instead of the pack's checks, after
@@ -2947,11 +2949,11 @@ ARN, in the change that first uses it.
 ## Evaluation
 
 *Partly built*: the harness, its fixtures and the benchmark gate for skill versions
-(`voc-datalake/lambda/engineering/benchmark/`, the cases in `voc-datalake/engineering-benchmark/`), with nothing
+(`voc-datalake/lambda/engineering/benchmark/`, the cases in `voc-datalake/templates/orchestration/evals/`), with nothing
 invoking them yet.
 
 A benchmark of small fixture repositories (written for this sample, MIT, shipped in
-`voc-datalake/engineering-benchmark/`; a monorepo among them):
+`voc-datalake/templates/orchestration/evals/<flow>/cases/`; a monorepo among them):
 known bugs with their fixes, pull requests with known review findings, features with acceptance tests. Each agent is
 scored per model and per skill version on pass rate, cost and time; the results decide the model table above and every
 skill version the coach proposes. The results on the sample's own fixtures are published on this page; a
@@ -2967,8 +2969,8 @@ What exists:
   both compared case aside; a review's is the findings it expects (a file, a line range, a short rule id)
   and how many others it may report. The loader checks every field, bounds the record (64 KB), every text, the
   fixture (400 files, 2 MB, 256 KB a file) and a suite (100 cases), and refuses a path that is not a plain relative
-  one (`..`, absolute, `.git`), any link in the case and anything in a fixture but files and directories. Four cases
-  ship in `voc-datalake/engineering-benchmark/` ([README](../voc-datalake/engineering-benchmark/README.md)): a Python
+  one (`..`, absolute, `.git`), any link in the case and anything in a fixture but files and directories. Five cases
+  ship in `voc-datalake/templates/orchestration/evals/` ([README](../voc-datalake/templates/orchestration/evals/README.md)), among them the owner's sandbox's divide bug, and: a Python
   bug with a failing unittest, a Node feature with acceptance tests (`node --test`, no dependencies), a review with
   three known findings, and a monorepo (a Python and a Node package) whose bug is in one package and whose other
   package is protected. Their checks need only `python3` and `node`, and no network.

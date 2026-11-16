@@ -524,7 +524,7 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
 
     it('names the benchmark\'s shipped cases for the coach', () => {
       expect(benchmarkCaseIds()).toStrictEqual(
-        ['duration-hours-feature', 'monorepo-units-bug', 'pagination-review', 'slug-cut-bug']);
+        ['divide-floor-bug', 'duration-hours-feature', 'monorepo-units-bug', 'pagination-review', 'slug-cut-bug']);
       expect(supervisorEnv(template).ENGINEERING_BENCHMARK_CASES).toBe(JSON.stringify(benchmarkCaseIds()));
     });
   });

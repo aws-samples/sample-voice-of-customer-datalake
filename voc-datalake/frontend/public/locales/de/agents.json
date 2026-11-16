@@ -1405,19 +1405,15 @@
     },
     "bugHunt": {
       "name": "Fehler suchen und beheben",
-      "description": "Sucht Fehler in den angegebenen Paketen, behebt und prüft jeden, durchläuft das Qualitätstor und endet bei einem Pull-Request-Entwurf."
+      "description": "Sucht Fehler in den angegebenen Paketen, behebt und prüft jeden, durchläuft das Qualitätstor und endet bei einem Pull Request, der zur Prüfung bereit ist."
     },
     "feature": {
       "name": "Funktion aus einem Issue oder PRD",
-      "description": "Baut eine Funktion aus einem Issue oder PRD: versteht sie, plant, baut, committet und prüft, durchläuft das Qualitätstor und endet bei einem Pull-Request-Entwurf."
+      "description": "Baut eine Funktion aus einem Issue oder PRD: versteht sie, plant, baut, committet und prüft, durchläuft das Qualitätstor und endet bei einem Pull Request, der zur Prüfung bereit ist."
     },
     "prReview": {
       "name": "PR-Review",
       "description": "Prüft einen Pull Request in einem Durchgang, seine Seiten parallel, anhand der Grundsätze und des Review-Leitfadens des Repositorys, und hinterlässt Review-Kommentare."
-    },
-    "selfImprovement": {
-      "name": "Selbstverbesserung",
-      "description": "Der Coach liest frühere Läufe, schlägt neue Skill-Versionen vor und misst sie; eine Administratorin oder ein Administrator nimmt jede an oder lehnt sie ab."
     }
   },
   "engineeringAgent": {

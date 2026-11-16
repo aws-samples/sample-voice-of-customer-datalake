@@ -99,8 +99,8 @@ describe('a quality gate step', () => {
 
   it('a pinned gate lists the packs to choose', async () => {
     const onParams = renderStep('quality_gate', { packs: ['java'] })
-    await userEvent.click(within(screen.getByRole('group', { name: 'Gate packs' })).getByLabelText('rust-ts'))
-    expect(onParams).toHaveBeenLastCalledWith({ packs: ['java', 'rust-ts'] })
+    await userEvent.click(within(screen.getByRole('group', { name: 'Gate packs' })).getByLabelText('rust'))
+    expect(onParams).toHaveBeenLastCalledWith({ packs: ['java', 'rust'] })
   })
 
   it.each(['reduce', 'learning_loop', 'self_improvement', 'stop_at_pr'] as const)('%s has no settings', (type) => {

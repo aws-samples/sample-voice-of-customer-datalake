@@ -1,7 +1,8 @@
 """The benchmark's cases: the ``voc-bench/1`` record, read from its directory and checked before anything runs.
 
 A case is a directory named for its id, holding ``case.json`` and its fixture (a small repository, the record's
-``fixture``: a directory beside ``case.json``)::
+``fixture``: a directory beside ``case.json``). The shipped ones are the flows' eval cases (7.50.00,
+``DEFAULT_ROOT``: ``templates/orchestration/evals/<flow>/cases/<case>/``; an id is the whole suite's, once)::
 
     {"schema": "voc-bench/1", "id": "slug-cut-bug", "kind": "bug", "title": "...", "task": "...",
      "fixture": "repo", "check": {...}}
@@ -39,6 +40,8 @@ from engineering.skills.model import CASE_ID, MAX_BENCHMARK_CASES
 
 CASE_SCHEMA: Final = 'voc-bench/1'
 CASE_FILE: Final = 'case.json'
+#: The shipped cases (7.50.00): the flows' eval cases, voc-datalake/templates/orchestration/evals/<flow>/cases/<case>/.
+DEFAULT_ROOT: Final = Path(__file__).resolve().parents[3] / 'templates' / 'orchestration' / 'evals'
 KINDS: Final = frozenset({'bug', 'review', 'feature'})
 #: What a check runs: the runner resolves each to an absolute path and puts only their directories on PATH.
 TOOLS: Final = ('python3', 'node')
@@ -306,9 +309,30 @@ def load_case(directory: Path) -> Case:
                 fixture=fixture.resolve(), check=check)
 
 
-def load_suite(root: Path) -> tuple[Case, ...]:
-    """Every case under ``root`` (each directory of it is one), by id; at most ``MAX_BENCHMARK_CASES``."""
-    directories = sorted(entry for entry in root.iterdir() if entry.is_dir() or entry.is_symlink())
+def _benchmark_case(directory: Path) -> bool:
+    """A flow's eval case the benchmark runs: a ``voc-bench/1`` record (an Issue triage case is the flow's own)."""
+    try:
+        return json.loads((directory / CASE_FILE).read_text(encoding='utf-8')).get('schema') == CASE_SCHEMA
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, AttributeError):
+        return True   # (load_case says what is wrong with it)
+
+
+def suite_directories(root: Path) -> list[Path]:
+    """The case directories under ``root``: the evals folder's ``<flow>/cases/<case>`` that are voc-bench/1 cases, or,
+    for a folder of cases, each directory of it."""
+    if any(root.glob(f'*/cases/*/{CASE_FILE}')):
+        return sorted((directory for directory in root.glob('*/cases/*') if directory.is_dir() or directory.is_symlink()
+                       if _benchmark_case(directory)), key=lambda directory: directory.name)
+    return sorted(entry for entry in root.iterdir() if entry.is_dir() or entry.is_symlink())
+
+
+def load_suite(root: Path = DEFAULT_ROOT) -> tuple[Case, ...]:
+    """Every case under ``root`` (``suite_directories``), by id; at most ``MAX_BENCHMARK_CASES``, each id once."""
+    directories = suite_directories(root)
     if not 0 < len(directories) <= MAX_BENCHMARK_CASES:
         raise BenchmarkError(f'a suite holds 1-{MAX_BENCHMARK_CASES} cases')
+    names = [directory.name for directory in directories]
+    twice = sorted({name for name in names if names.count(name) > 1})
+    if twice:
+        raise BenchmarkError(f'two flows have a case {twice[0]}: a case id is the suite\'s, once')
     return tuple(load_case(directory) for directory in directories)

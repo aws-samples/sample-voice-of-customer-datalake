@@ -1,0 +1,13 @@
+{
+  "schema": "voc-triage-case/1",
+  "id": "divide-floors",
+  "title": "A wrong result on a main path: a bug, S2",
+  "fixture": "bug-hunt-and-fix/divide-floor-bug",
+  "issue": {
+    "number": 1,
+    "title": "divide() drops the fractional part: divide(7, 2) returns 3",
+    "body": "calculator.divide(7, 2) returns 3. It should return 3.5. Any division whose result is not a whole number loses its fractional part, so totals computed with it are wrong. Steps: from calculator import divide; print(divide(7, 2)) prints 3, expected 3.5; print(divide(1, 4)) prints 0, expected 0.25. Expected: true division (a / b); dividing by zero still raises ZeroDivisionError.",
+    "labels": ["voc-agent"]
+  },
+  "expected": {"kind": "bug", "severity": "S2", "tenets": [], "paths": ["calculator/ops.py"]}
+}

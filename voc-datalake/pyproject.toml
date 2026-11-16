@@ -98,6 +98,9 @@ ignore_names = [
     # urllib3's connection protocols, which exist only under TYPE_CHECKING: shared/http_utils.py
     # imports them there and names them in its two `cast('type[...]', ...)` strings.
     "BaseHTTPConnection", "BaseHTTPSConnection",
+    # The step assertions' evaluator (engineering/orchestration/assertions.py), the seam the board evaluates a step's
+    # `params.assert` with (7.50.00's runtime work); the local runner (orchestration/test/local_fake.py) calls it today.
+    "evaluate_all",
 ]
 # Decorators that REGISTER the function with a framework, which then calls it: Powertools routes and
 # exception handlers, pydantic validators. Your own wrapper decorators (@api_handler, @tracer.*) are

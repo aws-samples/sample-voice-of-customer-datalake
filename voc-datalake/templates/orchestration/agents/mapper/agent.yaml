@@ -1,0 +1,16 @@
+schema: voc-agent-card/1
+id: mapper
+version: 2
+purpose: Maps one shard of one package for the repository's knowledge pack, one cited claim per note.
+harness: converse
+model: {id: global.anthropic.claude-haiku-5-5}
+inputs:
+  - {name: shard, from: task, required: true}
+  - {name: checkout, from: checkout, required: true}
+outputs:
+  - {name: notes, schema: voc-note/1, recorded_on: task}
+tools: [read_file, list_files, write_notes, report_progress, save_checkpoint, finish]
+broker_ops: [read]
+caps: {max_turns: 150, max_input_tokens: 120000}
+trust: {untrusted: [repository], fence: nonce}
+evals: []

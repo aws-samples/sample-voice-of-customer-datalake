@@ -1,0 +1,89 @@
+# Java gate pack, for a TARGET repository: the build's own configured checks (Checkstyle, PMD, SpotBugs,
+# Error Prone, any memory gates) run through `verify` / `check`; the gate adds no rule the team did not choose. Steps
+# run in kind order, per root. Setup steps are the dependency step; every later step runs offline. The image's Maven
+# and Gradle run, not the repository's wrappers: a wrapper downloads its distribution from an address the repository
+# chooses. What it runs follows the owner's brief (briefs/java.md; briefs/RECONCILIATION.md lists every difference).
+schema = "voc-gate-pack/1"
+id = "java"
+name = "Java (Maven or Gradle)"
+network = ["repo.maven.apache.org", "repo1.maven.org"]
+
+# The brief's build JDK and build tools (a repository's own --release decides the bytecode it targets).
+[image]
+java = "25"
+maven = "3.9.16"
+gradle = "9.8.0"
+
+[languages.java]
+markers = ["pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"]
+extensions = [".java"]
+workspace = [{ file = "pom.xml", contains = "<modules>" }, { file = "settings.gradle" }, { file = "settings.gradle.kts" }]
+
+[tools.java]
+version_argv = ["java", "--version"]
+
+[tools.mvn]
+version_argv = ["mvn", "--version"]
+
+[tools.gradle]
+version_argv = ["gradle", "--version"]
+
+[[steps]]
+id = "java.fetch"
+language = "java"
+name = "mvn dependency:go-offline"
+kind = "setup"
+when_any = [{ file = "pom.xml" }]
+argv = ["mvn", "-B", "-ntp", "dependency:go-offline"]
+timeout_s = 1800
+
+# The brief's dead-code check builds from its own pom (ProGuard): its dependencies come first too.
+[[steps]]
+id = "java.fetch-proguard"
+language = "java"
+name = "mvn dependency:go-offline (dead-code pom)"
+kind = "setup"
+when_any = [{ file = "config/dead-code/proguard.pom.xml" }]
+argv = ["mvn", "-B", "-ntp", "-f", "config/dead-code/proguard.pom.xml", "dependency:go-offline"]
+timeout_s = 1800
+
+[[steps]]
+id = "java.maven"
+language = "java"
+name = "mvn verify"
+kind = "test"
+when_any = [{ file = "pom.xml" }]
+argv = ["mvn", "-B", "-ntp", "--offline", "verify"]
+timeout_s = 5400
+# Proof that it looked: Surefire ran at least one test.
+expect_output = 'Tests run: [1-9]'
+
+# Gradle resolves dependencies only by running the build scripts (repository code), so it has no fetch step that
+# runs no repository code: it runs offline against the image's cache and fails on a dependency the cache lacks.
+[[steps]]
+id = "java.gradle"
+language = "java"
+name = "gradle check"
+kind = "test"
+when_any = [
+  { file = "build.gradle" }, { file = "build.gradle.kts" }, { file = "settings.gradle" }, { file = "settings.gradle.kts" },
+]
+argv = ["gradle", "check", "--offline", "--no-daemon", "--console=plain", "--no-configuration-cache"]
+timeout_s = 5400
+# The brief's dependency health (the build-health plugin) runs with the check where the build applies it.
+[[steps.prefer]]
+when = [{ file = "settings.gradle.kts", contains = "com.autonomousapps.build-health" }]
+argv = ["gradle", "check", "buildHealth", "--offline", "--no-daemon", "--console=plain", "--no-configuration-cache"]
+[[steps.prefer]]
+when = [{ file = "settings.gradle", contains = "com.autonomousapps.build-health" }]
+argv = ["gradle", "check", "buildHealth", "--offline", "--no-daemon", "--console=plain", "--no-configuration-cache"]
+
+# Every test class ran and none was skipped (the brief's report check), after the build that wrote the reports.
+[[steps]]
+id = "java.test-reports"
+language = "java"
+name = "every test class ran and none was skipped"
+kind = "test"
+when_any = [{ file = "scripts/TestReports.java" }]
+argv = ["java", "scripts/TestReports.java", "."]
+timeout_s = 600

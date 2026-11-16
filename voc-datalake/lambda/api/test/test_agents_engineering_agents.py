@@ -60,10 +60,10 @@ def _set_up(lambda_context: Any, agent: dict, **engineering: Any) -> tuple[int, 
                  body={'engineering': {**agent['engineering'], **settings}})
 
 
-def test_an_admin_listing_seeds_both_engineering_agents_beside_autonomous_product(
+def test_an_admin_listing_seeds_the_engineering_agents_beside_autonomous_product(
         lambda_context: Any) -> None:
     agents = _seeded(lambda_context)
-    assert sorted(agents) == ['Autonomous Product', 'Bug fixer', 'Feature builder']
+    assert sorted(agents) == ['Autonomous Product', 'Bug fixer', 'Feature builder', 'Issue triage']
     assert (agents['Bug fixer']['enabled'], agents['Bug fixer']['engineering']['feedback_type']) == (False, 'bug')
     # Inside a workspace the page lists them too: agents are the deployment's until phase 3g3.
     in_workspace = _seeded(lambda_context, headers={'X-Workspace-Id': 'ws_0123456789abcdef'})

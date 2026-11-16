@@ -7,6 +7,7 @@ from engineering.benchmark.cases import BenchmarkError
 from engineering.benchmark.gate import REGRESSIONS_QUOTED, Verdict, benchmark_run, decide
 from engineering.benchmark.runner import CaseResult, Scorecard, Tools, run_suite
 from engineering.benchmark.test.fixtures import (
+    DIVIDE,
     DURATION,
     MONOREPO,
     REVIEW,
@@ -134,19 +135,19 @@ def test_end_to_end_replaying_every_fix_against_itself_passes(baseline: Scorecar
     again = run_suite(SUITE, replays_every_fix(), Tools.installed())
     verdict = decide(baseline, again)
     assert verdict.passed
-    kept = f'{DURATION}, {MONOREPO}, {REVIEW}, {SLUG}'
-    assert verdict.reasons == (f'no regression: the 4 case(s) that passed in the baseline pass in the candidate ({kept})',)
+    kept = f'{DIVIDE}, {DURATION}, {MONOREPO}, {REVIEW}, {SLUG}'
+    assert verdict.reasons == (f'no regression: the 5 case(s) that passed in the baseline pass in the candidate ({kept})',)
 
 
 @needs_node
-@pytest.mark.parametrize('case_id', [SLUG, DURATION, REVIEW, MONOREPO])
+@pytest.mark.parametrize('case_id', [SLUG, DURATION, REVIEW, MONOREPO, DIVIDE])
 def test_end_to_end_a_regression_on_any_shipped_case_fails_the_gate(baseline: Scorecard, case_id: str) -> None:
     worse = run_suite(SUITE, regresses(case_id), Tools.installed())
     verdict = decide(baseline, worse)
     assert not verdict.passed
     assert len(verdict.reasons) == 1
     assert verdict.reasons[0].startswith(f'{case_id} regressed: it passed in the baseline and fails in the candidate')
-    assert worse.pass_rate == 0.75
+    assert worse.pass_rate == 0.8
 
 
 @needs_node
@@ -159,6 +160,6 @@ def test_end_to_end_a_version_that_fixes_the_failure_case_passes_and_is_recorded
     assert verdict.reasons[-1] == (f"{SLUG}, the failure's case, gained: it failed in the baseline and passes in the "
                                    'candidate')
     run = benchmark_run(old, new, verdict)
-    assert (run.before, run.after, run.passed, run.failure_case) == (0.75, 1.0, True, SLUG)
+    assert (run.before, run.after, run.passed, run.failure_case) == (0.8, 1.0, True, SLUG)
     # The same version with no gain on another failure's case: the baseline passed it already.
     assert not decide(old, new, failure_case=MONOREPO).passed

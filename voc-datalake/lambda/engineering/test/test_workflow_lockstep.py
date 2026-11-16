@@ -48,6 +48,7 @@ def test_the_gate_settings_are_the_gates_own() -> None:
 
 @pytest.mark.parametrize('params', [
     {}, {'max_rounds': 2, 'packs': ['python-ts'], 'final_go_model': 'm'}, {'reviewers': [{'name': 'quality'}]},
+    {'packs': ['python', 'typescript'], 'assert': [{'check': 'gate.passed', 'on_fail': 'fail_arrow'}]},
     {'reviewers': [{'name': 'docs', 'focus': 'Are the docs true?', 'advisory': True}]},
     {'reviewers': [{'name': 'quality'}, {'name': 'docs', 'focus': 'Are the docs true?', 'advisory': True}]},
     {'reviewers': [{'name': 'quality'}, {'name': 'quality'}]},

@@ -1412,19 +1412,15 @@
     },
     "bugHunt": {
       "name": "Buscar y corregir errores",
-      "description": "Busca errores en los paquetes indicados, corrige y revisa cada uno, pasa la puerta de calidad y se detiene en una pull request en borrador."
+      "description": "Busca errores en los paquetes indicados, corrige y revisa cada uno, pasa la puerta de calidad y se detiene en una pull request lista para revisión."
     },
     "feature": {
       "name": "Funcionalidad a partir de una incidencia o un PRD",
-      "description": "Crea una funcionalidad a partir de una incidencia o un PRD: la comprende, planifica, construye, confirma y revisa, pasa la puerta de calidad y se detiene en una pull request en borrador."
+      "description": "Crea una funcionalidad a partir de una incidencia o un PRD: la comprende, planifica, construye, confirma y revisa, pasa la puerta de calidad y se detiene en una pull request lista para revisión."
     },
     "prReview": {
       "name": "Revisión de PR",
       "description": "Revisa una pull request en una sola pasada, sus páginas en paralelo, según los principios y la guía de revisión del repositorio, y deja comentarios de revisión."
-    },
-    "selfImprovement": {
-      "name": "Automejora",
-      "description": "El coach lee ejecuciones anteriores, propone nuevas versiones de habilidades y las evalúa; un administrador acepta o rechaza cada una."
     }
   },
   "engineeringAgent": {

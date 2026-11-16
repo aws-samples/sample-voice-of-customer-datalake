@@ -1446,19 +1446,15 @@
     },
     "bugHunt": {
       "name": "Wyszukiwanie i naprawa błędów",
-      "description": "Szuka błędów we wskazanych pakietach, naprawia i recenzuje każdy z nich, przechodzi bramkę jakości i zatrzymuje się na wersji roboczej pull requesta."
+      "description": "Szuka błędów we wskazanych pakietach, naprawia i recenzuje każdy z nich, przechodzi bramkę jakości i zatrzymuje się na pull requeście gotowym do recenzji."
     },
     "feature": {
       "name": "Funkcja ze zgłoszenia lub PRD",
-      "description": "Tworzy funkcję ze zgłoszenia lub PRD: rozumie je, planuje, buduje, zatwierdza i recenzuje, przechodzi bramkę jakości i zatrzymuje się na wersji roboczej pull requesta."
+      "description": "Tworzy funkcję ze zgłoszenia lub PRD: rozumie je, planuje, buduje, zatwierdza i recenzuje, przechodzi bramkę jakości i zatrzymuje się na pull requeście gotowym do recenzji."
     },
     "prReview": {
       "name": "Recenzja PR",
       "description": "Recenzuje pull request w jednym przebiegu, jego strony równolegle, według zasad i przewodnika recenzji repozytorium, i zostawia komentarze."
-    },
-    "selfImprovement": {
-      "name": "Samodoskonalenie",
-      "description": "Coach czyta wcześniejsze przebiegi, proponuje nowe wersje umiejętności i je testuje; administrator akceptuje lub odrzuca każdą z nich."
     }
   },
   "engineeringAgent": {

@@ -1,0 +1,23 @@
+# Learn's card: the coach is never launched as an agent. Learn is a built-in, final step of every flow (the flow's
+# `learn` settings): the run's retrospective, the roles' lessons (an administrator approves each) and the coach's
+# skill proposals, each naming the eval case it should gain on (the benchmark gate, then an administrator's accept).
+schema: voc-agent-card/1
+id: coach
+version: 1
+purpose: Learns from a finished run - its retrospective, the roles' lessons and the coach's skill proposals, each naming its eval case.
+harness: learn
+model: {id: global.anthropic.claude-opus-5-5}
+inputs:
+  - {name: transcripts, from: transcripts, required: true, trust: data}
+  - {name: board, from: board, required: true}
+  - {name: skills, from: flow}
+outputs:
+  - {name: retrospective, kind: scorecard, recorded_on: skills}
+  - {name: lessons, kind: lesson_draft, recorded_on: skills}
+  - {name: proposals, kind: skill_proposal, recorded_on: skills}
+tools: []
+broker_ops: []
+caps: {}
+trust: {untrusted: [transcripts, board, repository, command_output], fence: nonce}
+evals: [bug-hunt-and-fix/divide-floor-bug, bug-hunt-and-fix/slug-cut-bug, feature/duration-hours-feature,
+        pr-review/pagination-review]

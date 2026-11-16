@@ -1,0 +1,22 @@
+schema: voc-agent-card/1
+id: coordinator
+version: 3
+purpose: Follows the run's flow, posts each step's tasks for the roles it takes and launches their agents; changes no code.
+harness: converse
+model: {id: global.anthropic.claude-sonnet-5-5}
+inputs:
+  - {name: goal, from: task, required: true}
+  - {name: flow, from: flow}
+  - {name: board, from: board}
+  - {name: knowledge, from: knowledge}
+  - {name: issue, from: broker.read:issue, trust: data}
+outputs:
+  - {name: tasks, kind: board_task, recorded_on: task}
+  - {name: finish, kind: summary, recorded_on: task}
+tools: [read_flow, read_board, post_task, launch_agent, complete_step, fan_out, read_knowledge, read_file, list_files,
+        report_progress, save_checkpoint, finish]
+pending_tools: [read_issue]
+broker_ops: [read]
+caps: {max_turns: 150, max_input_tokens: 120000}
+trust: {untrusted: [issue, repository, knowledge, board, memory], fence: nonce}
+evals: [bug-hunt-and-fix/divide-floor-bug, bug-hunt-and-fix/slug-cut-bug, feature/duration-hours-feature]

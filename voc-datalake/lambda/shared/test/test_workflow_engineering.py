@@ -80,7 +80,7 @@ POSTERS = 'builder, coordinator, hunter'
 CLAIMERS = ('builder, commit-reviewer, committer, final-go, fixer, hunter, mapper, pr-author, pr-reviewer, '
             'understander')
 SHARE = "an agent's params.budget_share is a fraction of the run's budget, above 0 and at most 1"
-PACKS = "a quality gate's params.packs is 'auto' or a list of gate packs: java, python-ts, rust-ts"
+PACKS = "a quality gate's params.packs is 'auto' or a list of gate packs: java, python, rust, typescript"
 FINAL_GO_MODEL = "a quality gate's params.final_go_model is a model id of at most 128 characters"
 GATE_ARROWS = "a quality gate needs a 'pass' arrow (GO) and a 'fail' arrow (NO-GO), every arrow labelled"
 GATE_FAIL = "a quality gate's 'fail' arrow goes to a human decision point (an end step that needs a human)"

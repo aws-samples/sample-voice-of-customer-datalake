@@ -132,7 +132,7 @@ def test_a_report_says_the_runs_flow_budget_and_its_flag(run: Run) -> None:
 def test_a_report_shows_the_runs_flow_step_by_step_with_the_steps_not_run_yet(run: Run) -> None:
     from engineering.flow.test.fixtures import put_flow
     assert json.loads(stored(run, run.reports.build(RUN, 'goal', RUN)['key']))['flow'] is None
-    put_flow(run.client, TABLE, RUN, 'issue-triage', revision=2)
+    put_flow(run.client, TABLE, RUN, 'stored-issue-triage', revision=2)   # (7.47.00's: a memory step)
     answer = run.reports.build(RUN, 'goal', RUN)
     flow = json.loads(stored(run, answer['key']))['flow']
     assert (flow['revision'], flow['outcome'], flow['at']) == (2, 'running', '')

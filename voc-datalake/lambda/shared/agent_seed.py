@@ -1,23 +1,27 @@
 """The agents every deployment starts with (docs/autonomous-agents.md → "Default agents").
 
 ``GET /agents`` called by an admin runs :func:`ensure_default_agent` (and, with the engineering module on,
-:func:`ensure_engineering_agents`) before it lists. Each seeded agent has its own marker row in ``voc-agents``
-(``AGENTSEED`` / ``META`` for "Autonomous Product"; ``AGENTSEED#<slug>`` / ``META`` for each engineering agent, 7.47.00),
-which decides it ONCE per deployment:
+:func:`ensure_engineering_agents`) before it lists. Each seeded agent is an automation of the orchestration templates
+(voc-datalake/templates/orchestration/automations/, 7.50.00), compiled into the bundle this module reads
+(``shared/engineering_templates.bundle``): its marker, its agent body and the flow it gets. Each has its own marker row
+in ``voc-agents`` (``AGENTSEED`` / ``META`` for "Autonomous Product"; ``AGENTSEED#<slug>`` / ``META`` for each
+engineering agent: Issue triage, Bug fixer and Feature builder), which decides it ONCE per deployment:
 
 - the marker is claimed with a conditional put (``state: seeding``); a lost race does nothing;
 - "Autonomous Product": a deployment that already has any agent (archived included) is marked ``skipped``; an
   engineering agent: a deployment that already has an active agent of its name is marked ``skipped``, and any other,
   a deployment that has run for a while included, gets it once (its marker is its own, so an upgrade seeds it);
 - otherwise the agent is created with its own editable copy of its workflow (the built-in template for "Autonomous
-  Product", exactly what ``POST /agents`` does without a ``workflow_id``; for an engineering agent, the engineering
-  flow templates of ``engineering_flow_templates.json``, joined), and the marker becomes ``done``.
+  Product", exactly what ``POST /agents`` does without a ``workflow_id``; for an engineering agent, its flow template,
+  named for it and with its monthly budget), and the marker becomes ``done``.
 
 Every seeded agent is created DISABLED: nothing runs, nothing is spent, until an admin turns it on (an engineering agent
-needs its repository connection and its language first, "Set up" in the web app; its flow is seeded with a monthly
-budget of ``SEEDED_MONTHLY_BUDGET_USD`` dollars, which an admin may change there or in the flow).
+needs its repository connection and its language first, "Set up" in the web app; its flow is seeded with its
+automation's monthly budget, the owner's $50 for each, which an admin may change there or in the flow).
 A failure after the claim releases the marker (``state: failed``, which a later admin GET claims again) and never
-fails the listing. Deleting or archiving a seeded agent later never brings it back: the marker stays.
+fails the listing. Deleting or archiving a seeded agent later never brings it back: the marker stays. An agent seeded
+before 7.50.00 keeps the flow it was given (no stored row is rewritten); only a new deployment's Bug fixer gets the
+plain Bug hunt and fix flow, Issue triage being its own agent now.
 Once a marker is known to be settled, this warm container never reads it again.
 """
 from __future__ import annotations
@@ -26,6 +30,7 @@ import copy
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import timedelta
+from functools import partial
 from typing import Any, Final
 
 from botocore.exceptions import BotoCoreError, ClientError
@@ -36,7 +41,6 @@ from shared.aws import is_conditional_check_failure
 from shared.logging import logger
 from shared.project_access import Caller
 
-SEED_KEY: Final = {'pk': 'AGENTSEED', 'sk': 'META'}
 STATE_SEEDING: Final = 'seeding'
 STATE_SKIPPED: Final = 'skipped'
 STATE_DONE: Final = 'done'
@@ -47,64 +51,23 @@ STATE_FAILED: Final = 'failed'
 # answers within API Gateway's 29 s); a later admin GET takes it over.
 STALE_CLAIM: Final = timedelta(minutes=15)
 
-# The agent body, through store.normalize_agent (its budget defaults apply).
-DEFAULT_AGENT_BODY: Final[Mapping[str, Any]] = {
-    'name': 'Autonomous Product',
-    'description': 'Turns recurring review problems into a PR/FAQ, PRD and prototype',
-    'enabled': False,
-    'scope': {'all': True},
-    'instructions': '',
-    'personas': {'allow_generate': True, 'fixed': []},
-    'triggers': [{'kind': 'threshold', 'count': 10, 'per': 'category', 'window_days': 7}],
-    'models': {},
-    'output': {'visibility': 'private'},
-}
-
-#: The engineering agents' bodies (7.47.00), seeded only with the engineering module on. No connection or language yet:
-#: an administrator sets them up (and the flow's monthly budget) before enabling. A GitHub issue starts a run only with
-#: its label on a public repository (agents/heartbeat/issues.py).
-BUG_FIXER_BODY: Final[Mapping[str, Any]] = {
-    'name': 'Bug fixer',
-    'description': ('Fixes the bugs customers report: a labelled GitHub issue, or a run of bug reports, becomes a '
-                    'draft pull request that says "Fixes #N"'),
-    'enabled': False,
-    'scope': {'all': True},
-    'instructions': '',
-    'triggers': [
-        {'kind': store.TRIGGER_GITHUB_ISSUE, 'label': store.DEFAULT_ISSUE_LABEL, 'trusted_authors': False,
-         'lookback_days': store.DEFAULT_ISSUE_LOOKBACK_DAYS},
-        {'kind': store.TRIGGER_NEW_REVIEWS, 'min_new': 5, 'cooldown_hours': 24},
-    ],
-    'models': {},
-    'output': {'visibility': 'private'},
-    'budget': {'max_scheduled_runs_per_day': store.DEFAULT_ENGINEERING_RUNS_PER_DAY},
-    'engineering': {'connection': None, 'language': None, 'feedback_type': 'bug'},
-}
-FEATURE_BUILDER_BODY: Final[Mapping[str, Any]] = {
-    'name': 'Feature builder',
-    'description': ('Builds what customers ask for: a labelled GitHub feature issue, a run of feature requests or a '
-                    "project's PRD becomes a draft pull request"),
-    'enabled': False,
-    'scope': {'all': True},
-    'instructions': '',
-    'triggers': [
-        {'kind': store.TRIGGER_GITHUB_ISSUE, 'label': store.DEFAULT_ISSUE_LABEL, 'trusted_authors': False,
-         'lookback_days': store.DEFAULT_ISSUE_LOOKBACK_DAYS},
-        {'kind': store.TRIGGER_NEW_REVIEWS, 'min_new': 10, 'cooldown_hours': 24},
-    ],
-    'models': {},
-    'output': {'visibility': 'private'},
-    'budget': {'max_scheduled_runs_per_day': store.DEFAULT_ENGINEERING_RUNS_PER_DAY},
-    'engineering': {'connection': None, 'language': None, 'feedback_type': 'feature_request'},
-}
-
-#: The monthly budget each seeded engineering agent's flow starts with (the owner's, 2026-11-16): what its runs may
-#: spend in a calendar month, the hard cap forced on every run of it. The Set up dialog shows it; an admin changes it in
-#: the flow (its Workflow tab). The agent still needs its connection and language before it can be enabled.
-SEEDED_MONTHLY_BUDGET_USD: Final = 50
+#: "Autonomous Product"'s automation, and the engineering agents' in the order they are seeded. Each engineering
+#: automation's ``budget.monthly_usd`` (the owner's $50, 2026-11-16) is what its seeded flow's runs may spend in a
+#: calendar month, the hard cap forced on every run of it; the Set up dialog shows it and an admin changes it in the flow
+#: (its Workflow tab). The agent still needs its connection and language before it can be enabled.
+DEFAULT_AUTOMATION: Final = 'autonomous-product'
+ENGINEERING_AUTOMATIONS: Final = ('issue-triage', 'bug-fixer', 'feature-builder')
 
 # (table name, marker pk) pairs whose marker is known to be settled in this warm container.
 _settled: set[tuple[str, str]] = set()
+
+
+def automation(automation_id: str) -> Mapping[str, Any]:
+    """One seeded automation of the bundle: ``seed_marker``, ``body``, ``flow``, ``monthly_budget_usd``."""
+    for item in engineering_templates.bundle()['automations']:
+        if item['id'] == automation_id:
+            return item
+    raise LookupError(f'no automation {automation_id} in the orchestration bundle')
 
 
 def default_workflow_copy(table: Any, name: str, caller: Caller) -> str:
@@ -126,29 +89,14 @@ def _template(template_id: str) -> dict[str, Any]:
     raise LookupError(f'no engineering flow template {template_id}')
 
 
-def bug_fixer_flow() -> dict[str, Any]:
-    """*Issue triage* then *Bug hunt and fix*: the triage's start, memory, classification and location, then the
-    hunt, its board, the quality gate, the commit and the draft pull request (the broker adds ``Fixes #N``). The
-    triage's proposal on the issue and its end are left out: the flow goes on to fix it."""
-    triage, fix = _template('issue-triage'), _template('bug-hunt-and-fix')
-    kept = [node for node in triage['nodes'] if node['id'] in ('start', 'memory', 'classify', 'locate')]
-    offset = 120 * len(kept)
-    hunt = [{**node, 'position': {'x': node['position']['x'], 'y': node['position']['y'] + offset}}
-            for node in fix['nodes'] if node['id'] != 'start']
-    edges = [edge for edge in triage['edges'] if edge['target'] in ('memory', 'classify', 'locate')]
-    edges.append({'id': 'locate-hunt', 'source': 'locate', 'target': 'hunt'})
-    edges += [edge for edge in fix['edges'] if edge['source'] != 'start']
-    return {'schema': workflow_schema.SCHEMA_V2, 'name': 'Bug fixer workflow',
-            'description': f"{triage['description']} Then: {fix['description']}",
-            'nodes': kept + hunt, 'edges': edges, 'loops': [],
-            'budget': {'monthly_usd': SEEDED_MONTHLY_BUDGET_USD}}
-
-
-def feature_builder_flow() -> dict[str, Any]:
-    """*Feature from an issue or a PRD*, as the template has it (it stops at a draft pull request), with the seeded
-    monthly budget."""
-    return {**_template('feature'), 'name': 'Feature builder workflow',
-            'budget': {'monthly_usd': SEEDED_MONTHLY_BUDGET_USD}}
+def seeded_flow(automation_id: str) -> dict[str, Any]:
+    """An engineering automation's flow: its template, named for the agent, with the automation's monthly budget.
+    Bug fixer's is *Bug hunt and fix* as the template has it (the hunt, its board, the quality gate, the commit and the
+    pull request, which the broker opens with ``Fixes #N``): Issue triage is its own agent since 7.50.00, and a Bug
+    fixer seeded before keeps the triage steps 7.47.00 joined in front."""
+    seeded = automation(automation_id)
+    return {**_template(str(seeded['flow'])), 'name': f'{seeded["name"]} workflow'[:workflow_schema.MAX_NAME_CHARS],
+            'budget': {'monthly_usd': seeded['monthly_budget_usd']}}
 
 
 @dataclass(frozen=True)
@@ -160,11 +108,15 @@ class Seed:
     flow: Callable[[], dict[str, Any]] | None = None
 
 
-DEFAULT_SEED: Final = Seed(SEED_KEY, DEFAULT_AGENT_BODY)
-ENGINEERING_SEEDS: Final = (
-    Seed({'pk': 'AGENTSEED#bug-fixer', 'sk': 'META'}, BUG_FIXER_BODY, bug_fixer_flow),
-    Seed({'pk': 'AGENTSEED#feature-builder', 'sk': 'META'}, FEATURE_BUILDER_BODY, feature_builder_flow),
-)
+def _seed_of(automation_id: str, *, engineering: bool) -> Seed:
+    seeded = automation(automation_id)
+    return Seed(dict(seeded['seed_marker']), copy.deepcopy(seeded['body']),
+                partial(seeded_flow, automation_id) if engineering else None)
+
+
+DEFAULT_SEED: Final = _seed_of(DEFAULT_AUTOMATION, engineering=False)
+SEED_KEY: Final = DEFAULT_SEED.key
+ENGINEERING_SEEDS: Final = tuple(_seed_of(name, engineering=True) for name in ENGINEERING_AUTOMATIONS)
 
 
 def _settled_marker(table: Any, key: Mapping[str, str] = SEED_KEY) -> bool:
@@ -288,7 +240,7 @@ def ensure_default_agent(table: Any, caller: Caller, categories_config: Callable
 
 
 def ensure_engineering_agents(table: Any, caller: Caller, categories_config: Callable[[], list[dict]]) -> list[str]:
-    """Seed "Bug fixer" and "Feature builder" once per deployment each (the caller runs it only with the engineering
-    module on); the new agents' ids. Never raises."""
+    """Seed "Issue triage", "Bug fixer" and "Feature builder" once per deployment each (the caller runs it only with
+    the engineering module on); the new agents' ids. Never raises."""
     return [agent_id for seed in ENGINEERING_SEEDS
             if (agent_id := _ensure(table, caller, categories_config, seed)) is not None]

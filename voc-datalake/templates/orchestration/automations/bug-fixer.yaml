@@ -1,0 +1,22 @@
+schema: voc-automation/1
+id: bug-fixer
+version: 2
+seed_marker: {pk: AGENTSEED#bug-fixer, sk: META}       # 7.47.00's marker, unchanged
+name: Bug fixer
+description: 'Fixes the bugs customers report: a labelled GitHub issue, or a run of bug reports, becomes a pull request that says "Fixes #N"'
+flow: bug-hunt-and-fix
+enabled: false
+scope: {all: true}
+instructions: ''
+triggers:
+  - {kind: github_issue, label: voc-agent, trusted_authors: false, lookback_days: 7}
+  - {kind: new_reviews, min_new: 5, cooldown_hours: 24}
+models: {}
+output: {visibility: private}
+budget: {monthly_usd: 50, max_scheduled_runs_per_day: 1}
+engineering: {connection: null, language: null, feedback_type: bug}
+requires_triage: bug
+learn: {cross_run: 'off'}
+pr: ready
+readiness: [connection, app_installation, ci_attestation, branch_rules, image, bedrock_models, agentcore_quota,
+            network, session_storage, dial, budget, hard_cap, issues_source, issue_label, triage_enabled]

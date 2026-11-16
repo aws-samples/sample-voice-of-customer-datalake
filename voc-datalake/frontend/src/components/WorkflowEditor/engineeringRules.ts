@@ -18,7 +18,9 @@ export const BOARD_CLAIMERS = [
   'builder', 'commit-reviewer', 'committer', 'final-go', 'fixer', 'hunter', 'mapper', 'pr-author', 'pr-reviewer',
   'understander',
 ] as const
-export const GATE_PACKS = ['java', 'python-ts', 'rust-ts'] as const
+export const GATE_PACKS = ['java', 'python', 'rust', 'typescript'] as const
+/** The two-language packs before 7.50.00, which a stored flow may still name: each stands for its two. */
+const GATE_PACK_ALIASES = ['python-ts', 'rust-ts'] as const
 export const SHARD_BY = ['packages', 'history', 'pr_pages'] as const
 export const BOARD_UNTIL = ['drained', 'caps'] as const
 export const MEMORY_MODES = ['read', 'write'] as const
@@ -27,7 +29,7 @@ export const MAX_SHARD_CAP = 200
 export const MAX_GATE_ROUNDS = 5
 export const MAX_MEMORY_LIMIT = 50
 const MAX_MODEL_CHARS = 128
-const GATE_SETTINGS = new Set(['max_rounds', 'reviewers', 'packs', 'final_go_model'])
+const GATE_SETTINGS = new Set(['max_rounds', 'reviewers', 'packs', 'final_go_model', 'assert'])
 const REVIEWER_SETTINGS = new Set(['name', 'focus', 'model_id', 'advisory'])
 /** The default reviewers, each with whether it is advisory. */
 const DEFAULT_REVIEWERS: Readonly<Record<string, boolean>> = { security: false, quality: false, 'first-principles': true }
@@ -101,8 +103,8 @@ function reviewersIssue(reviewers: unknown): string | undefined {
 
 function packsOk(params: Params): boolean {
   const packs = 'packs' in params ? params.packs : 'auto'
-  return packs === 'auto' || (Array.isArray(packs) && packs.length > 0 && packs.every((p) => oneOf(GATE_PACKS, p))
-    && new Set(packs).size === packs.length)
+  return packs === 'auto' || (Array.isArray(packs) && packs.length > 0
+    && packs.every((p) => oneOf(GATE_PACKS, p) || oneOf(GATE_PACK_ALIASES, p)) && new Set(packs).size === packs.length)
 }
 
 function gateIssues(params: Params): string[] {

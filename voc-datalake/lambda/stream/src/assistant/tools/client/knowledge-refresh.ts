@@ -15,7 +15,7 @@ import {
 } from '../knowledge-refresh-rules.js';
 import { defineClientTool } from './define.js';
 
-/** The "Understand the repository" template's agent steps (a mapper and an understander: engineering_flow_templates.json). */
+/** The "Understand the repository" template's agent steps (a mapper and an understander: the orchestration bundle's flow). */
 const TEMPLATE_AGENT_STEPS = 2;
 /** The card's estimate for the template as saved (its map cap is the most): the model can say it before the card does. */
 const TEMPLATE_ESTIMATE = refreshEstimate(MAX_SHARD_CAP, TEMPLATE_AGENT_STEPS);

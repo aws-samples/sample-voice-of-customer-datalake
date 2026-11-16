@@ -1412,19 +1412,15 @@
     },
     "bugHunt": {
       "name": "Chasse et correction de bogues",
-      "description": "Cherche les bogues dans les paquets indiqués, corrige et revoit chacun, passe le contrôle qualité et s’arrête sur une pull request en brouillon."
+      "description": "Cherche les bogues dans les paquets indiqués, corrige et revoit chacun, passe le contrôle qualité et s’arrête sur une pull request prête pour la revue."
     },
     "feature": {
       "name": "Fonctionnalité à partir d’un ticket ou d’un PRD",
-      "description": "Construit une fonctionnalité à partir d’un ticket ou d’un PRD : la comprend, planifie, construit, valide et revoit, passe le contrôle qualité et s’arrête sur une pull request en brouillon."
+      "description": "Construit une fonctionnalité à partir d’un ticket ou d’un PRD : la comprend, planifie, construit, valide et revoit, passe le contrôle qualité et s’arrête sur une pull request prête pour la revue."
     },
     "prReview": {
       "name": "Revue de PR",
       "description": "Revoit une pull request en une passe, ses pages en parallèle, selon les principes et le guide de revue du dépôt, et laisse des commentaires de revue."
-    },
-    "selfImprovement": {
-      "name": "Auto-amélioration",
-      "description": "Le coach lit les exécutions passées, propose de nouvelles versions de compétences et les évalue ; un administrateur accepte ou refuse chacune."
     }
   },
   "engineeringAgent": {

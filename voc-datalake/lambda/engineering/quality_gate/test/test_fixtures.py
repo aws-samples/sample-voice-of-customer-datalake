@@ -34,22 +34,22 @@ def _run(tmp_path: Path, fixture: str, step_id: str) -> list[tuple[str, str]]:
 
 @pytest.mark.skipif(importlib.util.find_spec('_pytest') is None, reason='pytest is not installed')
 @pytest.mark.parametrize(('variant', 'expected'), [('passing', 'pass'), ('failing', 'fail')])
-def test_python_ts_pytest(tmp_path, variant, expected):
-    assert _run(tmp_path, f'python-ts/{variant}', 'py.test')[-1][0] == expected
+def test_python_pytest(tmp_path, variant, expected):
+    assert _run(tmp_path, f'python/{variant}', 'py.test')[-1][0] == expected
 
 
 @pytest.mark.slow
 @pytest.mark.skipif(shutil.which('cargo') is None, reason='cargo is not installed')
 @pytest.mark.parametrize(('variant', 'expected'), [('passing', 'pass'), ('failing', 'fail')])
-def test_rust_ts_cargo_test(tmp_path, variant, expected):
-    fetch, test = _run(tmp_path, f'rust-ts/{variant}', 'rust.test')
+def test_rust_cargo_test(tmp_path, variant, expected):
+    fetch, test = _run(tmp_path, f'rust/{variant}', 'rust.test')
     assert fetch == ('pass', 'ok')
     assert test[0] == expected
 
 
 @pytest.mark.skipif(shutil.which('node') is None or shutil.which('npm') is None, reason='node is not installed')
-def test_rust_ts_npm_test(tmp_path):
-    assert _run(tmp_path, 'rust-ts/passing', 'ts.test') == [('pass', 'ok')]
+def test_typescript_npm_test_beside_rust(tmp_path):
+    assert _run(tmp_path, 'rust/passing', 'ts.test') == [('pass', 'ok')]
 
 
 @pytest.mark.slow

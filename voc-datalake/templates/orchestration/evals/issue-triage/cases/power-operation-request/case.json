@@ -1,0 +1,13 @@
+{
+  "schema": "voc-triage-case/1",
+  "id": "power-operation-request",
+  "title": "Something the code does not promise yet: a feature, S4",
+  "fixture": "bug-hunt-and-fix/divide-floor-bug",
+  "issue": {
+    "number": 2,
+    "title": "Add a power operation",
+    "body": "It would help to have power(a, b) next to add, subtract, multiply and divide, so power(2, 3) gives 8 and power(2, -1) gives 0.5. Today we write a ** b by hand.",
+    "labels": ["voc-agent"]
+  },
+  "expected": {"kind": "feature", "severity": "S4", "tenets": [], "paths": ["calculator/ops.py"]}
+}
