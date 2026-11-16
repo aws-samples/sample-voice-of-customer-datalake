@@ -10,8 +10,10 @@
  *   ends the agent's run and frees its lock; no write, no Query;
  * - `cognito-idp:AdminGetUser` and `cognito-idp:AdminListGroupsForUser` on the user pool: the administrator an agent
  *   runs as is re-checked before each start (still enabled, the same person, still in `admins`).
- * Its reads of the connections' rows and its `ISSUE_RUN#` claims are voc-agents rows its existing grant covers (the
- * connections' partitions stay write-denied, denyHardCapWrites). No fixed cost.
+ * Its reads of the connections' rows, its `ISSUE_RUN#` claims and (7.50.00) the issues' trusted `ISSUE_TRIAGE#` rows
+ * are voc-agents rows its existing grant covers (the connections' partitions stay write-denied, denyHardCapWrites, and
+ * the triage rows too, denyIssueTriageWrites in agent-runtime.ts: voc-engineering-runtime is their one writer). No
+ * fixed cost.
  */
 import * as cdk from 'aws-cdk-lib';
 import type * as cognito from 'aws-cdk-lib/aws-cognito';

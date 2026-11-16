@@ -128,6 +128,7 @@ from engineering.runtime.supervisor import (
     landed_session,
     stop_or_keep_lost,
 )
+from engineering.runtime.triage_end import copy_triage_at_end
 from engineering.settings import read_hard_cap
 from shared.invocation_cost import measure_invocation_cost
 from shared.logging import logger, metrics
@@ -1065,6 +1066,7 @@ def _schedule_reactions(run_id: str) -> None:
 
 
 def _retrospect(run_id: str) -> dict[str, Any]:
+    copy_triage_at_end(run_id)   # (7.50.00: a triage run's issue gets its trusted triage row; never raises)
     _reactions_at_end(run_id)   # (the schedule only: no host read here)
     summary = _learning().retrospective(WORKSPACE, run_id)
     for key in summary.to_coach:

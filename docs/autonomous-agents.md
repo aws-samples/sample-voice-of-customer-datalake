@@ -64,8 +64,8 @@ $50 (the owner's; `SEEDED_MONTHLY_BUDGET_USD`, changed in Set up or in the flow)
 
 | Agent | Works on | Workflow | Triggers |
 |---|---|---|---|
-| **Bug fixer** | `feedback_type` `bug` | *Issue triage* (memory, classify, reproduce or locate) then *Bug hunt and fix*, to a draft pull request that says `Fixes #N` | `github_issue` (label `voc-agent`, issues classified as a bug), `new_reviews` (5 bug reports, 24 h cooldown); no schedule |
-| **Feature builder** | `feedback_type` `feature_request` | *Feature from an issue or a PRD*, to a draft pull request | `github_issue` (label `voc-agent`, issues classified as a feature request), `new_reviews` (10 feature requests, 24 h cooldown); and **Build from this PRD** on a project's PRD (a Run now with the PRD's ids) |
+| **Bug fixer** | `feedback_type` `bug` | *Issue triage* (memory, classify, reproduce or locate) then *Bug hunt and fix*, to a pull request that says `Fixes #N` (7.50.00: ready for review unless the flow says `pr: draft`; a person approves and merges) | `github_issue` (label `voc-agent`, issues classified as a bug), `new_reviews` (5 bug reports, 24 h cooldown); no schedule |
+| **Feature builder** | `feedback_type` `feature_request` | *Feature from an issue or a PRD*, to a pull request (ready for review unless the flow says `pr: draft`) | `github_issue` (label `voc-agent`, issues classified as a feature request), `new_reviews` (10 feature requests, 24 h cooldown); and **Build from this PRD** on a project's PRD (a Run now with the PRD's ids) |
 
 Both run at most once a day by default, scope all reviews, no instructions, and need a repository connection and a
 language before they can be enabled (their card says so, on the Agents list for an administrator too since 7.49.00:
@@ -137,7 +137,7 @@ lists or reads one (404).
 | `new_reviews` | ≥ `min_new` in-scope reviews since the agent's cursor, and `cooldown_hours` have passed; an engineering agent counts only those of its kind (`dimensions.feedback_type`) |
 | `schedule` | every 12 h / 24 h / cron, in the agent's timezone |
 | `threshold` | `count` reviews per category or subcategory within `window_days` (`METRIC#daily_subcategory#{cat}#{sub}` rows written by the aggregator); refused with `scope.sources` (its counters have no source); an engineering agent with none of its kind in the window skips (`no_bug_reports`, `no_feature_requests`) and its baseline moves on |
-| `github_issue` (7.47.00, engineering agents with a GitHub connection) | an open issue of the connection's repository, ingested by the [GitHub Issues connector](github-issues.md) within `lookback_days` (1-30, default 7), classified as the agent's kind and in scope, that may start a run (below); at most one such trigger per agent |
+| `github_issue` (7.47.00, engineering agents with a GitHub connection) | an open issue of the connection's repository, ingested by the [GitHub Issues connector](github-issues.md) within `lookback_days` (1-30, default 7), classified as the agent's kind (7.50.00: or triaged as it, `requires_triage`; any kind for a `triage` stage) and in scope, that may start a run (below); at most one such trigger per agent |
 
 `scope.sources` (7.47.00, any agent): the `source_platform` ids its reviews must come from, at most 20 (none: every
 source).
@@ -152,6 +152,21 @@ issue. **One run per issue, ever**: the run takes the issue's claim (`ISSUE_RUN#
 agent) in its start's own transaction, so two ticks or two agents never start the same issue; a start refused later
 keeps the claim (it is never retried), and only an administrator's Run now `{issue}` reruns one. The oldest unclaimed
 issue starts first. A label added after the look-back has passed is missed: the item's time is its first ingest.
+
+**Stages and the triage** (7.50.00): a `github_issue` trigger may also say `stage` (`act`, the default, or `triage`)
+and, on an act trigger, `requires_triage` (`bug` for an agent of `feedback_type` `bug`, `feature` for one of
+`feature_request`; 400 for any other pairing). A **triage** trigger (the seeded Issue triage automation's) takes any
+kind of issue (its run decides the kind; the label rule and the scope hold as above) under a claim of its own,
+`ISSUE_RUN#default` / `<owner/name>#<n>#triage`, beside the act claim, so triaging an issue never keeps the Bug fixer
+or the Feature builder from it; its run's goal asks for the triage (kind, severity, priority, the code involved, the
+acceptance criteria), and its understander records it (`write_triage`, `voc-triage/1`), comments it and labels the issue
+(`voc-triage/<kind>`, `voc-severity/s<n>`: the broker's `label_issue`, those labels only). At that run's end
+voc-engineering-runtime copies the record to the issue's **trusted row**, `ISSUE_TRIAGE#default` / `<owner/name>#<n>`,
+create-only (a rerun's later triage is kept out). An **act** trigger with `requires_triage`, while an enabled agent with
+a triage trigger watches the same connection, takes an issue only once that row says its kind (whatever the item's
+`dimensions.feedback_type`); with no triage agent enabled there it keeps the rule above (the agent's kind). The GitHub
+labels are informative only: a `voc-triage/*` label never stands in for the row. A Run now `{issue}` of a triage agent
+triages the issue under the triage claim.
 
 The heartbeat (EventBridge every 15 minutes) evaluates triggers. Limits: one active run per agent, at most 2
 **scheduled** runs per agent per day (an engineering agent: 0-5, default 1), a per-run model-call cap (150 by default)
@@ -513,7 +528,8 @@ decided) or the agent already has another active run. The run view carries `need
 | `PLANCAP#{approver_sub}` | `META` | `active`: the approver's plans holding one of the 3 active-plan slots — see "Plans" |
 | `AGENTSEED` | `META` | the default-agent marker (`state`, `agent_id`) — see "Default agents" |
 | `AGENTSEED#bug-fixer`, `AGENTSEED#feature-builder` | `META` | the engineering agents' markers (7.47.00, the same shape) |
-| `ISSUE_RUN#default` | `<owner/name>#<n>` (lower case) | one GitHub issue's run, ever (7.47.00): `agent_id`, `agent_run_id`, `engineering_run_id`, `feedback_id`, `claimed_at`; create-only, written in the run's start transaction — see "Triggers and budgets" |
+| `ISSUE_RUN#default` | `<owner/name>#<n>` (lower case), `<owner/name>#<n>#triage` (7.50.00) | one GitHub issue's run of each stage, ever (7.47.00; the triage stage's beside the act one, 7.50.00): `agent_id`, `agent_run_id`, `engineering_run_id`, `feedback_id`, `claimed_at`, `stage`; create-only, written in the run's start transaction — see "Triggers and budgets" |
+| `ISSUE_TRIAGE#default` | `<owner/name>#<n>` (lower case) | an issue's trusted triage (7.50.00): `kind`, `severity`, `priority`, `triage` (the `voc-triage/1` record as JSON), `run_id`, `task_id`, `agent_id`, `written_at`, `written_by`; create-only, written by voc-engineering-runtime alone at a triage run's end (every other voc-agents writer is denied it) — see "Triggers and budgets" |
 
 Index: `gsi1-by-agents-listing`. Agents are archived, never deleted. The table (`createEncryptedTable` in
 `core-stack.ts`) is encrypted with the stack's customer-managed KMS key, has point-in-time recovery and is

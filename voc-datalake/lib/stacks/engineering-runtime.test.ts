@@ -478,14 +478,21 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
   });
 
   describe('the learning loop (a run\'s retrospective, lambda/engineering/learning/)', () => {
-    /** The supervisor role's statement with `sid`. */
-    function statement(sid: string): Record<string, unknown> | undefined {
+    /** voc-agents in the stack fixture (its logical id). */
+    const AGENTS_TABLE = /"Agents[0-9A-F]{8}"/;
+
+    /** The supervisor role's statements. */
+    function supervisorStatements(): Record<string, unknown>[] {
       const policies = template.findResources('AWS::IAM::Policy', {
         Properties: { Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp('EngineeringSupervisorRole') }]) },
       });
       return Object.values(policies)
-        .flatMap((policy) => StatementsSchema.parse(policy.Properties?.PolicyDocument?.Statement))
-        .find((found) => found.Sid === sid);
+        .flatMap((policy) => StatementsSchema.parse(policy.Properties?.PolicyDocument?.Statement));
+    }
+
+    /** The supervisor role's statement with `sid`. */
+    function statement(sid: string): Record<string, unknown> | undefined {
+      return supervisorStatements().find((found) => found.Sid === sid);
     }
 
     it.each([
@@ -503,7 +510,9 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
     it('never lets the runtime touch a person\'s memories, a knowledge pack or delete a learning row', () => {
       const supervisor = policyText(template, 'EngineeringSupervisorRole');
       expect(supervisor).not.toMatch(/AMEM#PERSON|AMEM#REPO|AMEM#\*|#KNOW|WS#\*"/);
-      expect(supervisor.match(/dynamodb:DeleteItem/g)).toHaveLength(1);   // (the registry's, above)
+      // (the registry's, above; the voc-agents Deny of the hard cap's rows names it too, as a Deny)
+      const allows = JSON.stringify(supervisorStatements().filter((found) => found.Effect !== 'Deny'));
+      expect(allows.match(/dynamodb:DeleteItem/g)).toHaveLength(1);
     });
 
     it('reads only the gate records in the workspace bucket, never listing or writing them', () => {
@@ -544,6 +553,31 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
 
     it('runs under a service the denied-reads alarm sums (it reads the gate records as missing when denied)', () => {
       expect(supervisorEnv(template).POWERTOOLS_SERVICE_NAME).toBe(ENGINEERING_WORKSPACE_READER_SERVICES[3]);
+    });
+
+    it('writes an issue\'s trusted triage row create-only: PutItem on ISSUE_TRIAGE#* alone (7.50.00)', () => {
+      expect(statement('IssueTriageRows')).toMatchObject({
+        Effect: 'Allow', Action: 'dynamodb:PutItem',
+        Condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['ISSUE_TRIAGE#*'] } },
+      });
+      expect(JSON.stringify(statement('IssueTriageRows')?.Resource)).toMatch(AGENTS_TABLE);
+      expect(statement('DenyHardCapWrites')).toMatchObject({ Effect: 'Deny' });
+    });
+
+    it('lets the runtime update or delete no triage row and write no other part of voc-agents', () => {
+      const supervisor = policyText(template, 'EngineeringSupervisorRole');
+      expect(supervisor).not.toMatch(/"dynamodb:(UpdateItem|DeleteItem|BatchWriteItem)"[^}]*ISSUE_TRIAGE/);
+      const agentsWrites = supervisorStatements().filter((found) => AGENTS_TABLE.test(JSON.stringify(found.Resource))
+        && found.Effect !== 'Deny' && /PutItem|UpdateItem|DeleteItem/.test(JSON.stringify(found)));
+      expect(agentsWrites.map((found) => found.Sid)).toStrictEqual(['IssueTriageRows']);
+    });
+
+    it('reads only the understanders\' recorded triage objects at a run\'s end, never listing or writing them', () => {
+      const records = statement('IssueTriageRecords');
+      expect(records).toMatchObject({ Effect: 'Allow', Action: 's3:GetObject' });
+      expect(JSON.stringify(records?.Resource))
+        .toMatch(/"Workspace\w*","Arn"\]\},"\/ws\/\*\/runs\/\*\/\*\/commits\/\*\/_triage\/\*"/);
+      expect(policyText(template, 'EngineeringDeliveryRole')).not.toMatch(/_triage|ISSUE_TRIAGE/);
     });
 
     it('names the benchmark\'s shipped cases for the coach', () => {

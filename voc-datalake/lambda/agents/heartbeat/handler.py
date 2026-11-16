@@ -85,6 +85,8 @@ class Decision:
     detail: dict[str, Any] = field(default_factory=dict)
     agent_sets: dict[str, Any] = field(default_factory=dict)
     issue: eng_runs.IssueRef | None = None
+    #: The claim the issue's run takes (7.50.00): its trigger's stage, ``act`` or ``triage``.
+    issue_stage: str = store.ISSUE_STAGE_ACT
     feedback: eng_runs.Feedback | None = None
     skip: str | None = None
 
@@ -240,6 +242,9 @@ class Context:
     now: datetime
     #: The invocation's remaining time (Lambda's): an engineering start needs ``engineering.TIME_NEEDED_MS`` of it.
     remaining_ms: Callable[[], int] = field(default=lambda: 900_000, compare=False, repr=False)
+    #: The connections an enabled Issue triage agent watches this tick (7.50.00, ``issues.triage_connections``): there
+    #: an act trigger's ``requires_triage`` reads the issue's trusted triage row.
+    triage_connections: frozenset[str] = frozenset()
 
 
 def _threshold(trigger: Mapping[str, Any], agent: Mapping[str, Any], ctx: Context,
@@ -347,11 +352,14 @@ def _evaluate_one(trigger: Mapping[str, Any], agent: Mapping[str, Any], ctx: Con
 def _issue_due(trigger: Mapping[str, Any], agent: Mapping[str, Any], ctx: Context, decision: Decision,
                prepared: engineering.Ready) -> dict[str, Any] | None:
     """A ``github_issue`` trigger's detail when an issue may start the agent's run (``issues.find_issue``)."""
-    found = issues.find_issue(ctx.feedback_table, prepared.agents_table, agent, trigger, prepared.connection, ctx.now)
+    found = issues.find_issue(ctx.feedback_table, prepared.agents_table, agent, trigger, prepared.connection, ctx.now,
+                              ctx.triage_connections)
     if found is None:
         return None
     decision.issue = found
-    return {'issue': found.number, 'repository': found.repository}
+    decision.issue_stage = store.issue_stage(trigger)
+    return {'issue': found.number, 'repository': found.repository,
+            **({'stage': decision.issue_stage} if decision.issue_stage != store.ISSUE_STAGE_ACT else {})}
 
 
 def evaluate(agent: Mapping[str, Any], ctx: Context, prepared: engineering.Ready | None = None) -> Decision:
@@ -427,7 +435,7 @@ def _engineering_tick(table: Any, agent: Mapping[str, Any], ctx: Context) -> str
     feedback_type = str((agent.get('engineering') or {}).get('feedback_type'))
     repository = str(prepared.connection.get('repository') or '')
     if issue is not None:
-        sentence = eng_runs.issue_sentence(feedback_type, issue.repository, issue.number)
+        sentence = eng_runs.issue_sentence(feedback_type, issue.repository, issue.number, decision.issue_stage)
     elif decision.feedback is not None and decision.feedback.count:
         sentence = eng_runs.reviews_sentence(feedback_type, decision.feedback.count, agent.get('scope') or {})
     else:
@@ -435,7 +443,7 @@ def _engineering_tick(table: Any, agent: Mapping[str, Any], ctx: Context) -> str
     return engineering.start(table, agent, prepared, eng_runs.AgentStart(
         trigger=decision.trigger, requested_by='heartbeat', actor=str(agent.get('owner_sub') or ''),
         sentence=sentence, trigger_detail=decision.detail, issue=issue, feedback=decision.feedback,
-        counts_against_daily_cap=True,
+        stage=decision.issue_stage, counts_against_daily_cap=True,
         daily_cap=int(budget.get('max_scheduled_runs_per_day', store.DEFAULT_ENGINEERING_RUNS_PER_DAY)),
         extra_agent_sets={**decision.agent_sets, 'last_skip_reason': None}), ctx.now)
 
@@ -498,10 +506,12 @@ def run_heartbeat(context: Any, now: datetime | None = None) -> dict[str, Any]:
         return {'evaluated': 0, 'started': 0, 'outcomes': {}}
     resource = get_dynamodb_resource()
     aggregates = resource.Table(AGGREGATES_TABLE)
+    agents = store.list_agents(table)
     ctx = Context(resource.Table(FEEDBACK_TABLE), aggregates, list(get_raw_categories_config(aggregates)), now,
-                  remaining_ms=context.get_remaining_time_in_millis)
+                  remaining_ms=context.get_remaining_time_in_millis,
+                  triage_connections=issues.triage_connections(agents))
     outcomes: dict[str, int] = {}
-    for agent in store.list_agents(table):
+    for agent in agents:
         if not _eligible(agent):
             _heal_disabled(table, agent, now)
             continue

@@ -80,4 +80,20 @@ describe('the heartbeat with -c engineeringAgents=true', { timeout: SYNTH_TIMEOU
     expect(JSON.stringify(env.ENGINEERING_START_FUNCTION)).toMatch(/voc-engineering-start/);
     expect(Object.keys(env)).toStrictEqual(expect.arrayContaining(['ENGINEERING_TABLE', 'USER_POOL_ID']));
   });
+
+  it('reads an issue\'s trusted triage row (its voc-agents grant) and may never write one (7.50.00)', () => {
+    const deny = statement(template, 'DenyIssueTriageWrites');
+    expect(deny).toMatch(/"Effect":"Deny"/);
+    for (const action of ['BatchWriteItem', 'DeleteItem', 'PutItem', 'UpdateItem']) {
+      expect(deny).toContain(`"dynamodb:${action}"`);
+    }
+    expect(deny).toMatch(/"ForAnyValue:StringLike":\{"dynamodb:LeadingKeys":\["ISSUE_TRIAGE#\*"\]\}/);
+    expect(heartbeatPolicies(template)).toMatch(/"dynamodb:GetItem"/);
+  });
+});
+
+describe('the heartbeat without the engineering agents, on triage', { timeout: SYNTH_TIMEOUT_MS }, () => {
+  it('holds no triage Deny either (the default synth is unchanged)', () => {
+    expect(heartbeatPolicies(synthProcessingTemplate())).not.toMatch(/DenyIssueTriageWrites/);
+  });
 });

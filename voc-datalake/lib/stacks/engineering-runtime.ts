@@ -55,7 +55,7 @@ import { ENGINEERING_CACHE_PREFIX, ENGINEERING_GATE_RECORD_KEYS } from './core-b
 import {
   EngineeringAgentCore, buildMemoryMiB, buildRoles, grantSessions, maxSessions, pricingEnvironment, refuseRemovedSettings,
 } from './engineering-agentcore';
-import { grantBudgetWork, grantSpendLedger, viaServices } from './engineering-runtime-grants';
+import { grantBudgetWork, grantIssueTriage, grantSpendLedger, viaServices } from './engineering-runtime-grants';
 import { grantClaudeModels } from '../utils/claude-model-grant';
 import { booleanContextFlag } from '../utils/context-flag';
 import { type ConnectionParameters, engineeringAgentsEnabled } from './engineering-broker';
@@ -517,6 +517,7 @@ class EngineeringRuntime extends Construct {
     }));
     const functionName = uniqueName(RUNTIME_FUNCTION);
     this.grantLearning(props, role, functionName);
+    grantIssueTriage(role, workspaceBucket, props.agentsTable);   // (7.50.00: a triage run's end, its issue's row)
     return createWorkerFunction(this, 'EngineeringSupervisor', {
       tree: 'engineering',
       functionName,
@@ -596,8 +597,7 @@ class EngineeringRuntime extends Construct {
   private createAlarms(fn: lambda.Function): void {
     new cloudwatch.Alarm(this, 'SupervisorErrorsAlarm', {
       metric: fn.metricErrors({ period: cdk.Duration.minutes(5) }),
-      threshold: 3,
-      evaluationPeriods: 1,
+      threshold: 3, evaluationPeriods: 1,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       alarmDescription: 'The engineering supervisor failed 3 times in 5 minutes: agents may not be watched.',
     });

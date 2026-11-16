@@ -185,8 +185,17 @@ def scope_words(scope: Mapping[str, Any]) -> str:
     return ', '.join(names) if len(names) <= 3 else f'{len(names)} categories'
 
 
-def issue_sentence(feedback_type: str, repository: str, number: int) -> str:
+def issue_sentence(feedback_type: str, repository: str, number: int, stage: str = 'act') -> str:
+    """The goal sentence of a run of issue ``number``: its triage (7.50.00, a ``triage`` stage), else the work its
+    agent's kind does."""
+    if stage == 'triage':
+        return triage_sentence(repository, number)
     return _WORK.get(feedback_type, _WORK['bug'])[0].format(number=number, repository=repository)
+
+
+def triage_sentence(repository: str, number: int) -> str:
+    return (f'Triage issue #{number} of {repository}: its kind, severity, priority, the code involved and its '
+            'acceptance criteria, recorded with write_triage, commented and labelled on the issue.')
 
 
 def reviews_sentence(feedback_type: str, count: int, scope: Mapping[str, Any]) -> str:
@@ -349,6 +358,9 @@ class AgentStart:
     feedback: Feedback | None = None
     prd: Mapping[str, str] | None = None
     claim: bool = True
+    #: The issue's claim this run takes (7.50.00): ``act`` (the issue's run, 7.47.00's claim) or ``triage`` (the
+    #: Issue triage automation's own claim beside it).
+    stage: str = 'act'
     counts_against_daily_cap: bool = False
     daily_cap: int = 0
     extra_agent_sets: Mapping[str, Any] | None = None
@@ -390,7 +402,7 @@ def start_agent_run(table: Any, agent: Mapping[str, Any], workflow: Mapping[str,
         fields['issue'] = {'repository': start.issue.repository, 'number': start.issue.number}
         claim = store.issue_claim_item(start.issue.repository, start.issue.number, agent_id=agent['agent_id'],
                                        run_id=run_id, engineering_run_id=engineering_run_id,
-                                       feedback_id=start.issue.feedback_id, now=now)
+                                       feedback_id=start.issue.feedback_id, now=now, stage=start.stage)
     if start.prd is not None:
         fields['prd'] = dict(start.prd)
     if start.feedback is not None:

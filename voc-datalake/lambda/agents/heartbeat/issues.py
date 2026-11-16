@@ -20,12 +20,21 @@ The oldest kept issue that has not started a run yet (its ``ISSUE_RUN#`` row: ``
 transaction, so two ticks or two agents never start the same issue. A label added after the look-back has passed is
 missed: the item's processing time is its first ingest.
 
+Claims per stage (7.50.00): a trigger's ``stage`` is ``act`` (the default: a Bug fixer, a Feature builder; 7.47.00's
+claim ``<repo>#<n>``) or ``triage`` (the Issue triage automation: its own claim ``<repo>#<n>#triage``, so a triage never
+keeps the agent that acts on the issue from it). A triage trigger takes any kind of issue (its run decides the kind);
+the label rule and the scope hold as for any trigger. An act trigger with ``requires_triage`` (``bug``, ``feature``),
+while an enabled Issue triage agent watches the same connection (``triage_connections``), takes an issue only once its
+trusted triage row (``ISSUE_TRIAGE#default`` / ``<repo>#<n>``, a triage run's end writes it) says that kind, whatever
+its ``dimensions.feedback_type``; with no triage agent enabled there, it keeps 7.47.00's rule (the feedback type).
+GitHub labels are informative only: a ``voc-triage/*`` label never stands in for the row.
+
 Only the item's ids, number and repository are used; never its title or text (the run's goal is trusted text:
 shared/engineering_agent_runs.py).
 """
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from datetime import datetime, timedelta
 from typing import Any, Final
 
@@ -80,9 +89,10 @@ def _number(attributes: Mapping[str, Any]) -> int | None:
     return number if isinstance(number, int) and not isinstance(number, bool) and number > 0 else None
 
 
-def matching(item: Mapping[str, Any], *, repository: str, feedback_type: str, scope: Mapping[str, Any],
+def matching(item: Mapping[str, Any], *, repository: str, feedback_type: str | None, scope: Mapping[str, Any],
              trigger: Mapping[str, Any], private: bool) -> int | None:
-    """The issue's number when ``item`` may start the agent's run (the module's doc), else None."""
+    """The issue's number when ``item`` may start the agent's run (the module's doc), else None. ``feedback_type``
+    None: any kind of issue (a triage trigger's, or one whose kind its trusted triage decides)."""
     attributes = item.get('issue_attributes')
     dimensions = item.get('dimensions')
     if item.get('source_platform') != GITHUB_SOURCE or not isinstance(attributes, Mapping):
@@ -91,29 +101,63 @@ def matching(item: Mapping[str, Any], *, repository: str, feedback_type: str, sc
         return None
     if str(attributes.get('repo') or '').lower() != repository.lower():
         return None
-    if not isinstance(dimensions, Mapping) or dimensions.get(FEEDBACK_TYPE_KEY) != feedback_type:
+    if feedback_type is not None and (not isinstance(dimensions, Mapping)
+                                      or dimensions.get(FEEDBACK_TYPE_KEY) != feedback_type):
         return None
     if not store.item_in_scope(scope, item) or not may_start(attributes, trigger, private=private):
         return None
     return _number(attributes)
 
 
+def triage_connections(agents: Iterable[Mapping[str, Any]]) -> frozenset[str]:
+    """The connections an enabled Issue triage agent watches: an enabled, live agent with a ``triage`` stage
+    ``github_issue`` trigger, by its ``engineering.connection``."""
+    watched = set()
+    for agent in agents:
+        settings = agent.get('engineering')
+        connection = settings.get('connection') if isinstance(settings, Mapping) else None
+        if (agent.get('enabled') is not True or agent.get('status') == store.AGENT_STATUS_ARCHIVED
+                or not isinstance(connection, str) or not connection):
+            continue
+        if any(isinstance(trigger, Mapping) and trigger.get('kind') == store.TRIGGER_GITHUB_ISSUE
+               and store.issue_stage(trigger) == store.ISSUE_STAGE_TRIAGE for trigger in agent.get('triggers') or []):
+            watched.add(connection)
+    return frozenset(watched)
+
+
+def _triaged_as(agents_table: Any, ref: IssueRef, kind: str) -> bool:
+    """Whether the issue's trusted triage row says ``kind`` (a missing row: not triaged yet)."""
+    row = store.issue_triage(agents_table, ref.repository, ref.number)
+    return row is not None and row.get('kind') == kind
+
+
 def find_issue(feedback_table: Any, agents_table: Any, agent: Mapping[str, Any], trigger: Mapping[str, Any],
-               connection: Mapping[str, Any], now: datetime) -> IssueRef | None:
-    """The oldest issue that may start the agent's run and has started none yet; None when there is none."""
+               connection: Mapping[str, Any], now: datetime,
+               triage_watched: frozenset[str] = frozenset()) -> IssueRef | None:
+    """The oldest issue that may start the agent's run at its trigger's stage and has started none of that stage
+    yet; None when there is none. ``triage_watched``: the connections an enabled Issue triage agent watches
+    (``triage_connections``), where an act trigger's ``requires_triage`` reads the trusted triage row."""
     repository = str(connection.get('repository') or '')
     settings = agent.get('engineering') or {}
     if not repository or str(connection.get('host') or 'github') != 'github':
         return None
+    stage = store.issue_stage(trigger)
+    required = trigger.get('requires_triage') if stage == store.ISSUE_STAGE_ACT else None
+    by_triage = isinstance(required, str) and str(settings.get('connection') or '') in triage_watched
+    any_kind = stage == store.ISSUE_STAGE_TRIAGE or by_triage
     days = int(store.plain(trigger.get('lookback_days')) or store.DEFAULT_ISSUE_LOOKBACK_DAYS)
     found: list[IssueRef] = []
     for item in issue_items(feedback_table, now - timedelta(days=days)):
-        number = matching(item, repository=repository, feedback_type=str(settings.get('feedback_type')),
+        number = matching(item, repository=repository,
+                          feedback_type=None if any_kind else str(settings.get('feedback_type')),
                           scope=agent.get('scope') or {}, trigger=trigger,
                           private=connection.get('repository_private') is True)
         if number is not None and all(ref.number != number for ref in found):
             found.append(IssueRef(repository, number, str(item.get('feedback_id') or '')))
     for ref in reversed(found[-MAX_ISSUE_CANDIDATES:]):   # (oldest first: the read is newest first)
-        if not store.issue_claimed(agents_table, ref.repository, ref.number):
-            return ref
+        if store.issue_claimed(agents_table, ref.repository, ref.number, stage):
+            continue
+        if by_triage and not _triaged_as(agents_table, ref, str(required)):
+            continue
+        return ref
     return None

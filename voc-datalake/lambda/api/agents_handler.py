@@ -78,7 +78,7 @@ import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from functools import cache
-from typing import Any
+from typing import Any, Final
 
 from aws_lambda_powertools.event_handler import Response, content_types
 from botocore.exceptions import BotoCoreError, ClientError
@@ -285,6 +285,22 @@ def _check_issue_trigger(fields: Mapping[str, Any], row: Mapping[str, Any] | Non
     if not trigger['label'] and (row is None or not eng_runs.repository_private(row)):
         raise ValidationError('a github_issue trigger needs its label on a public repository: a maintainer puts it on '
                               'an issue to let it start a run')
+    # (7.50.00: an act trigger requires the triage of its own agent's kind: a bug agent's bug, a feature agent's feature)
+    required = trigger.get('requires_triage')
+    kind = str((fields.get('engineering') or {}).get('feedback_type') or 'bug')
+    if required is not None and required != _TRIAGE_OF.get(kind):
+        raise ValidationError(f'requires_triage is the triage of the agent\'s own kind: {_TRIAGE_OF.get(kind)} for '
+                              f'engineering.feedback_type {kind}')
+
+
+#: The triage kind each engineering agent's kind acts on (``requires_triage``, 7.50.00).
+_TRIAGE_OF: Final = {'bug': 'bug', 'feature_request': 'feature'}
+
+
+def _issue_stage(agent: Mapping[str, Any]) -> str:
+    """The stage of the agent's ``github_issue`` trigger (``act`` without one): what a Run now of an issue claims."""
+    trigger = next((t for t in agent.get('triggers') or [] if t.get('kind') == store.TRIGGER_GITHUB_ISSUE), None)
+    return store.ISSUE_STAGE_ACT if trigger is None else store.issue_stage(trigger)
 
 
 def _check_engineering(fields: dict[str, Any], *, enabling: bool) -> None:
@@ -499,11 +515,12 @@ def _run_prd(body: Mapping[str, Any]) -> dict[str, str] | None:
 
 
 def _engineering_sentence(settings: Mapping[str, Any], repository: str, issue: int | None,
-                          prd: Mapping[str, str] | None) -> str:
-    """What a Run now asks of an engineering agent: the issue, the PRD (a feature agent's), or a bug hunt."""
+                          prd: Mapping[str, str] | None, stage: str = store.ISSUE_STAGE_ACT) -> str:
+    """What a Run now asks of an engineering agent: the issue (its triage, for a triage agent), the PRD (a feature
+    agent's), or a bug hunt."""
     feedback_type = str(settings.get('feedback_type'))
     if issue is not None:
-        return eng_runs.issue_sentence(feedback_type, repository, issue)
+        return eng_runs.issue_sentence(feedback_type, repository, issue, stage)
     if prd is not None:
         if feedback_type != 'feature_request':
             raise ValidationError('a PRD is built by a feature agent (engineering.feedback_type feature_request)')
@@ -532,11 +549,12 @@ def _run_engineering_agent(table: Any, agent: dict, caller: Caller) -> Response:
     if row is None or not settings.get('language'):
         raise ConflictError(NOT_SET_UP)
     issue, prd = _start_issue(body), _run_prd(body)
-    repository = str(row.get('repository', ''))
+    repository, stage = str(row.get('repository', '')), _issue_stage(agent)
     started = eng_runs.start_agent_run(
         table, agent, _find_workflow(agent.get('workflow_id')), row,
         eng_runs.AgentStart(trigger=store.TRIGGER_MANUAL, requested_by=caller.subject, actor=caller.subject,
-                            sentence=_engineering_sentence(settings, repository, issue, prd), prd=prd, claim=False,
+                            sentence=_engineering_sentence(settings, repository, issue, prd, stage), prd=prd,
+                            claim=False, stage=stage,
                             issue=None if issue is None else eng_runs.IssueRef(repository, issue)),
         client=_start_client(), function=function, now=store.utc_now())
     if started.run is None or started.answer is None:

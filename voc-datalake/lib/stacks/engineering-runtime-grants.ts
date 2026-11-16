@@ -2,14 +2,19 @@
  * Some of the engineering runtime's grants (engineering-runtime.ts), kept apart so that file stays within its size:
  * the spend ledger's update (the session store's priced writes), the supervisor's budget work (a flow's month total,
  * the budget alerts, the hard cap), the Deny that keeps every other voc-agents writer off the hard cap's row (the
- * agents' runtime, agent-runtime.ts) and a KMS key's use through named services only.
+ * agents' runtime, agent-runtime.ts), an issue's trusted triage row (7.50.00: the runtime's create-only write, and the
+ * Deny that keeps every other voc-agents writer off it) and a KMS key's use through named services only.
  */
 import * as cdk from 'aws-cdk-lib';
 import type * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import type * as kms from 'aws-cdk-lib/aws-kms';
+import type * as s3 from 'aws-cdk-lib/aws-s3';
+import type { Construct } from 'constructs';
 
 import { ENGINEERING_BUDGET_ALERT_PARTITIONS, ENGINEERING_SPEND_PARTITIONS } from './core-buckets';
+import { engineeringAgentsEnabled } from './engineering-broker';
+import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 
 /**
  * The spend ledger's rows (engineering/spend.py): the session store ADDs to them in the same transaction as each
@@ -83,6 +88,59 @@ export function grantBudgetWork(role: iam.IRole, engineeringTable: dynamodb.ITab
     resources: [agentsTable.tableArn],
     conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [HARD_CAP_PARTITION] } },
   }));
+}
+
+/**
+ * An issue's trusted triage rows in voc-agents (7.50.00, `ISSUE_TRIAGE#<ws>` / `<owner/name>#<n>`:
+ * lambda/engineering/runtime/triage_end.py writes them create-only, at a triage run's end; an act trigger's
+ * `requires_triage` reads them, agents/heartbeat/issues.py).
+ */
+export const ISSUE_TRIAGE_PARTITIONS = 'ISSUE_TRIAGE#*';
+/** The Sid of {@link denyIssueTriageWrites}' statement. */
+export const ISSUE_TRIAGE_DENY_SID = 'DenyIssueTriageWrites';
+
+/**
+ * An explicit Deny of every write on the issues' trusted triage rows, for a role that may write voc-agents elsewhere
+ * (the Agents API, the heartbeat, the agents' runtime): voc-engineering-runtime is their one writer, so the row an
+ * engineering agent's `requires_triage` trusts is only ever a triage run's. `ForAnyValue`, as {@link denyHardCapWrites}.
+ */
+export function denyIssueTriageWrites(scope: Construct, role: iam.IRole, agentsTable: dynamodb.ITable): void {
+  // (only with the engineering module: without it no row of the kind exists and the default synth stays as it was)
+  if (!engineeringAgentsEnabled(scope)) return;
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: ISSUE_TRIAGE_DENY_SID,
+    effect: iam.Effect.DENY,
+    actions: ['dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem', 'dynamodb:BatchWriteItem'],
+    resources: [agentsTable.tableArn],
+    conditions: { 'ForAnyValue:StringLike': { 'dynamodb:LeadingKeys': [ISSUE_TRIAGE_PARTITIONS] } },
+  }));
+}
+
+/** An understander's recorded triage of a run (7.50.00, lambda/engineering/runtime/triage_end.py). */
+export const TRIAGE_RECORD_KEYS = 'ws/*/runs/*/*/commits/*/_triage/*';
+
+/**
+ * A triage run's end (7.50.00, lambda/engineering/runtime/triage_end.py, from the retrospective), on the runtime's role:
+ * the understander's recorded triage read (`GetObject` on the runs' `_triage/` objects only, no listing) and the
+ * issue's trusted row written to voc-agents, create-only (`PutItem` on `ISSUE_TRIAGE#*` only: no update, no delete, no
+ * other partition of voc-agents; the hard cap's and the connections' rows explicitly denied, as for every voc-agents
+ * writer).
+ */
+export function grantIssueTriage(role: iam.IRole, workspaceBucket: s3.IBucket, agentsTable: dynamodb.ITable): void {
+  const records = workspaceBucket.arnForObjects(TRIAGE_RECORD_KEYS);
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'IssueTriageRecords', actions: ['s3:GetObject'], resources: [records],
+  }));
+  acknowledgeNag(role, [{
+    id: 'AwsSolutions-IAM5',
+    reason: 'Read-only on the understanders\' triage objects of every run: a run\'s end reads only the key its understander task recorded',
+    findings: [resourceFinding(records)],
+  }]);
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'IssueTriageRows', actions: ['dynamodb:PutItem'], resources: [agentsTable.tableArn],
+    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [ISSUE_TRIAGE_PARTITIONS] } },
+  }));
+  denyHardCapWrites(role, agentsTable);
 }
 
 /** `actions` on `key`, only when one of `services` (in this region) calls KMS for the role. */

@@ -48,7 +48,7 @@ import { grantClaudeModels } from '../utils/claude-model-grant';
 import { createWorkerFunction, grantInvokeByName, scheduleWorker, workerRole } from '../utils/worker-lambda';
 import { grantWorkspaceMembershipReads } from '../utils/workspace-resolution-grants';
 import { grantHeartbeatEngineering } from './agent-heartbeat-engineering';
-import { denyHardCapWrites } from './engineering-runtime-grants';
+import { denyHardCapWrites, denyIssueTriageWrites } from './engineering-runtime-grants';
 import { createPlanStepFunction } from './plan-step-lambda';
 import { REALTIME_HTTP_DNS_ENV, type RealtimePublishing } from '../utils/realtime';
 
@@ -146,6 +146,7 @@ export class AgentRuntime extends Construct {
     // (never the engineering hard cap's row, the repository connections' rows or their history: the Agents API is
     // their one writer)
     denyHardCapWrites(role, agentsTable);
+    denyIssueTriageWrites(this, role, agentsTable);   // (an issue's trusted triage: the engineering runtime's alone)
     aggregatesTable.grant(role, ...spec.aggregatesActions);
     kmsKey.grantEncryptDecrypt(role);
     // agent_* surfaces are picker surfaces (and per-agent overrides), so every
@@ -306,6 +307,7 @@ export class AgentRuntime extends Construct {
     // Enabled agents (index), cursors, the queued RUN row it creates.
     agentsTable.grant(role, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:Query');
     denyHardCapWrites(role, agentsTable);   // (the hard cap's and the connections' rows: the Agents API's alone)
+    denyIssueTriageWrites(this, role, agentsTable);   // (it reads an issue's trusted triage: the runtime writes it)
     // new_reviews trigger: in-scope reviews since the agent's cursor (date index).
     feedbackTable.grant(role, 'dynamodb:Query');
     // threshold trigger: METRIC#daily_category / daily_subcategory rows.

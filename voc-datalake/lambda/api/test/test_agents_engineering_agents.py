@@ -203,3 +203,38 @@ def test_a_start_that_may_have_written_names_the_engineering_run(lambda_context:
     status, body = _call(lambda_context, 'POST', f"/agents/{bug['agent_id']}/run")
     (run,) = store.list_runs(agents_env.agents, bug['agent_id'], limit=5)[0]
     assert (status, body['run_id'], run['status']) == (503, run['engineering_run_id'], 'running')
+
+
+@pytest.mark.parametrize(('feedback_type', 'required', 'ok'), [
+    ('bug', 'bug', True), ('bug', 'feature', False), ('feature_request', 'feature', True),
+    ('feature_request', 'bug', False)])
+def test_an_act_trigger_requires_the_triage_of_its_own_agents_kind(lambda_context: Any, feedback_type: str,
+                                                                    required: str, ok: bool) -> None:
+    # (7.50.00: a Bug fixer waits for an issue triaged as a bug, a Feature builder for one triaged as a feature)
+    bug = _seeded(lambda_context)['Bug fixer']
+    triggers = [{**bug['triggers'][0], 'requires_triage': required}, bug['triggers'][1]]
+    body = {'triggers': triggers, 'engineering': {**bug['engineering'], 'connection': 'shop',
+                                                  'feedback_type': feedback_type}}
+    status, answer = _call(lambda_context, 'PUT', f"/agents/{bug['agent_id']}", body=body)
+    assert status == (200 if ok else 400), answer
+    if ok:
+        assert answer['agent']['triggers'][0]['requires_triage'] == required
+    else:
+        assert "requires_triage is the triage of the agent's own kind" in answer['error']
+
+
+def test_run_now_of_a_triage_agent_triages_the_issue_under_its_own_claim(lambda_context: Any,
+                                                                          env: tuple[Any, Start]) -> None:
+    agents_env, client = env
+    bug = _seeded(lambda_context)['Bug fixer']
+    path = f"/agents/{bug['agent_id']}"
+    status, body = _call(lambda_context, 'PUT', path, body={
+        'triggers': [{**bug['triggers'][0], 'stage': 'triage'}],
+        'engineering': {**bug['engineering'], 'connection': 'shop', 'language': 'python'}})
+    assert status == 200, body
+    status, body = _call(lambda_context, 'POST', f'{path}/run', body={'issue': 7})
+    assert status == 202, body
+    (request,) = client.requests
+    assert json.loads(request['Payload'])['goal'].startswith('Triage issue #7 of example-org/shop')
+    assert store.issue_claimed(agents_env.agents, 'example-org/shop', 7, 'triage')
+    assert not store.issue_claimed(agents_env.agents, 'example-org/shop', 7)

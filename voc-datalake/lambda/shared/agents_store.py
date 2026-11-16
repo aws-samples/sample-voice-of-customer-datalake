@@ -126,6 +126,14 @@ DEFAULT_ISSUE_LABEL: Final = 'voc-agent'
 MAX_ISSUE_LABEL_CHARS: Final = 50
 DEFAULT_ISSUE_LOOKBACK_DAYS: Final = 7
 MAX_ISSUE_LOOKBACK_DAYS: Final = 30
+#: A ``github_issue`` trigger's stage (7.50.00): ``act`` (a Bug fixer, a Feature builder: the issue's run, today's
+#: claim) or ``triage`` (the Issue triage automation: its own claim beside the act one, so triaging an issue never
+#: keeps the agent that acts on it from it).
+ISSUE_STAGE_ACT: Final = 'act'
+ISSUE_STAGE_TRIAGE: Final = 'triage'
+ISSUE_STAGES: Final = (ISSUE_STAGE_ACT, ISSUE_STAGE_TRIAGE)
+#: The triage kind an act trigger may require (``requires_triage``): the issue's trusted triage row must say it.
+REQUIRED_TRIAGE_KINDS: Final = ('bug', 'feature')
 #: ``scope.sources``: the ``source_platform`` ids an agent's reviews come from (none: every source).
 MAX_SCOPE_SOURCES: Final = 20
 DEFAULT_MODEL_CALLS_PER_RUN: Final = 150
@@ -441,14 +449,30 @@ def normalize_scope(value: object, categories_config: list[dict]) -> dict[str, A
 
 
 def _issue_trigger(raw: Mapping[str, Any]) -> dict[str, Any]:
-    """``github_issue``: ``{label, trusted_authors, lookback_days}`` (the label ``voc-agent`` when left out; an empty
-    label only on a private repository, which the agents API checks against the agent's connection)."""
+    """``github_issue``: ``{label, trusted_authors, lookback_days, stage?, requires_triage?}`` (the label
+    ``voc-agent`` when left out; an empty label only on a private repository, which the agents API checks against the
+    agent's connection). ``stage`` (7.50.00): ``act`` when left out, kept only when ``triage``; ``requires_triage``
+    (``bug`` or ``feature``, an act trigger's only): kept only when set."""
     label = raw.get('label', DEFAULT_ISSUE_LABEL)
-    return {'kind': TRIGGER_GITHUB_ISSUE,
-            'label': _text(DEFAULT_ISSUE_LABEL if label is None else label, 'label', MAX_ISSUE_LABEL_CHARS),
-            'trusted_authors': _flag(raw.get('trusted_authors'), 'trusted_authors', False),
-            'lookback_days': _whole(raw.get('lookback_days'), 'lookback_days', 1, MAX_ISSUE_LOOKBACK_DAYS,
-                                    DEFAULT_ISSUE_LOOKBACK_DAYS)}
+    stage = _choice(raw.get('stage') or ISSUE_STAGE_ACT, 'github_issue stage', ISSUE_STAGES)
+    required = raw.get('requires_triage')
+    trigger = {'kind': TRIGGER_GITHUB_ISSUE,
+               'label': _text(DEFAULT_ISSUE_LABEL if label is None else label, 'label', MAX_ISSUE_LABEL_CHARS),
+               'trusted_authors': _flag(raw.get('trusted_authors'), 'trusted_authors', False),
+               'lookback_days': _whole(raw.get('lookback_days'), 'lookback_days', 1, MAX_ISSUE_LOOKBACK_DAYS,
+                                       DEFAULT_ISSUE_LOOKBACK_DAYS)}
+    if stage == ISSUE_STAGE_TRIAGE:
+        if required is not None:
+            raise ValidationError('a triage trigger requires no triage: requires_triage is an act trigger\'s')
+        trigger['stage'] = ISSUE_STAGE_TRIAGE
+    elif required is not None:
+        trigger['requires_triage'] = _choice(required, 'github_issue requires_triage', REQUIRED_TRIAGE_KINDS)
+    return trigger
+
+
+def issue_stage(trigger: Mapping[str, Any]) -> str:
+    """A ``github_issue`` trigger's stage: ``triage`` when it says so, else ``act``."""
+    return ISSUE_STAGE_TRIAGE if trigger.get('stage') == ISSUE_STAGE_TRIAGE else ISSUE_STAGE_ACT
 
 
 def _trigger(value: object) -> dict[str, Any]:
@@ -1010,26 +1034,48 @@ ISSUE_RUN_PK: Final = 'ISSUE_RUN#default'
 RUN_KIND_ENGINEERING: Final = 'engineering'
 
 
-def issue_claim_key(repository: str, number: int) -> dict[str, str]:
-    """The issue's claim row: its repository lower-cased (GitHub's names are case-insensitive) and its number."""
-    return {'pk': ISSUE_RUN_PK, 'sk': f'{repository.lower()}#{number}'}
+def issue_claim_key(repository: str, number: int, stage: str = ISSUE_STAGE_ACT) -> dict[str, str]:
+    """The issue's claim row of ``stage``: its repository lower-cased (GitHub's names are case-insensitive) and its
+    number, ``<repo>#<n>`` for the act (7.47.00's key, unchanged), ``<repo>#<n>#triage`` for the triage (7.50.00)."""
+    suffix = '#triage' if stage == ISSUE_STAGE_TRIAGE else ''
+    return {'pk': ISSUE_RUN_PK, 'sk': f'{repository.lower()}#{number}{suffix}'}
 
 
 def issue_claim_item(repository: str, number: int, *, agent_id: str, run_id: str, engineering_run_id: str,
-                     feedback_id: str, now: datetime) -> dict[str, Any]:
-    """The claim a run of issue ``number`` of ``repository`` writes with its run: which agent, run and engineering run
-    took it, from which feedback item, when. Create-only, never updated or deleted."""
-    return {**issue_claim_key(repository, number), 'repository': repository, 'number': number, 'agent_id': agent_id,
-            'agent_run_id': run_id, 'engineering_run_id': engineering_run_id, 'feedback_id': feedback_id,
-            'claimed_at': iso(now)}
+                     feedback_id: str, now: datetime, stage: str = ISSUE_STAGE_ACT) -> dict[str, Any]:
+    """The claim a run of issue ``number`` of ``repository`` writes with its run, for its ``stage``: which agent, run
+    and engineering run took it, from which feedback item, when. Create-only, never updated or deleted."""
+    return {**issue_claim_key(repository, number, stage), 'repository': repository, 'number': number,
+            'agent_id': agent_id, 'agent_run_id': run_id, 'engineering_run_id': engineering_run_id,
+            'feedback_id': feedback_id, 'claimed_at': iso(now), 'stage': stage}
 
 
-def issue_claimed(table: Any, repository: str, number: int) -> bool:
-    """Whether issue ``number`` of ``repository`` has started a run already (a consistent read of its claim)."""
+def issue_claimed(table: Any, repository: str, number: int, stage: str = ISSUE_STAGE_ACT) -> bool:
+    """Whether issue ``number`` of ``repository`` has started a run of ``stage`` already (a consistent read of its
+    claim)."""
     try:
-        return consistent_item(table, issue_claim_key(repository, number)) is not None
+        return consistent_item(table, issue_claim_key(repository, number, stage)) is not None
     except (ClientError, BotoCoreError) as exc:
         raise _service_error('read the issue claim', exc) from exc
+
+
+#: An issue's trusted triage (7.50.00): one row per issue, ``ISSUE_TRIAGE#<ws>`` / ``<owner/name>#<n>`` (lower-cased),
+#: written create-only by voc-engineering-runtime at a triage run's end from its understander's ``voc-triage/1`` record
+#: (engineering/runtime/triage_end.py); what an act trigger's ``requires_triage`` reads. GitHub labels are informative
+#: only: they never stand in for this row.
+ISSUE_TRIAGE_PK: Final = 'ISSUE_TRIAGE#default'
+
+
+def issue_triage_key(repository: str, number: int) -> dict[str, str]:
+    return {'pk': ISSUE_TRIAGE_PK, 'sk': f'{repository.lower()}#{number}'}
+
+
+def issue_triage(table: Any, repository: str, number: int) -> dict[str, Any] | None:
+    """Issue ``number``'s trusted triage row (a consistent read), None when it has none yet."""
+    try:
+        return consistent_item(table, issue_triage_key(repository, number))
+    except (ClientError, BotoCoreError) as exc:
+        raise _service_error('read the issue triage', exc) from exc
 
 
 def claim_issue_if_free(table: Any, item: Mapping[str, Any]) -> bool:

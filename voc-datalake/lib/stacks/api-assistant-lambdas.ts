@@ -30,6 +30,7 @@ import { engineeringAgentsEnabled, engineeringParameterArns, engineeringParamete
 import { appTokensFunctionName, grantAppTokensInvoke } from './engineering-app-tokens';
 import { engineeringRunCaps } from './engineering-start';
 import { SKILL_PARTITIONS } from './engineering-runtime';
+import { denyIssueTriageWrites } from './engineering-runtime-grants';
 
 /**
  * The assistant's run ceiling: the Lambda timeout AND the /chat/stream
@@ -269,6 +270,8 @@ export function createAssistantLambdas(
   // DeleteItem: DELETE /agents/{id} archives.
   const agentsRole = ctx.role('AgentsLambdaRole');
   agentsTable.grant(agentsRole, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:Query');
+  // (an issue's trusted triage rows: the engineering runtime's alone, 7.50.00)
+  denyIssueTriageWrites(ctx.stack, agentsRole, agentsTable);
   // Category access (which agents a user may see), category config, model picker — all GetItem.
   aggregatesTable.grant(agentsRole, 'dynamodb:GetItem');
   // The stack's key only through the services that encrypt what this role reads and writes with it (7.03.01 audit):
